@@ -133,7 +133,7 @@ import { sweepTopicDeletions, TopicDeletionAdapters, topicRetentionWindowMs } fr
 import { readBacklogFolders } from '../panel/backlogReader';
 import { appendOperatorEvent } from '../bridge/operatorEventQueue';
 import { appendMessage, readRecord, hasCompletionRecord, isRecordCommitted, hasUpdateId, readSwarmIconId, recordSwarmIconId, lastActivityMs } from '../concierge/blTopicStore';
-import { IconStickerLookup, StandingTopicTarget } from '../concierge/topicIcon';
+import { IconStickerLookup, StandingTopicTarget, ROLE_TOPIC_ICON, RoleTopicIconRole, RoleTopicTarget } from '../concierge/topicIcon';
 import { computeRoleGateStatesLive, RoleGateState } from '../bridge/gateSnapshot';
 import { computeCurrentHolders } from '../bridge/holisticProjections';
 import { readRoleHoldingWindows, TicketHoldingWindow } from '../metrics/ticketHoldingWindows';
@@ -1719,6 +1719,26 @@ export function standingTopicTargets(targetPath: string): StandingTopicTarget[] 
   return targets;
 }
 
+// BL-469: every set of {role, topicId} pairs the per-agent steering-topic
+// icon sync should consider - reads BL-425's own role->topicId map
+// (roleTopicMapStore.readRoleTopicMap) directly, filtered to the roles
+// ROLE_TOPIC_ICON actually maps (a role token present in the map but not
+// yet in ROLE_TOPIC_ICON - none exist today, but the filter keeps this
+// forward-safe rather than crashing on a lookup miss).
+const ROLE_TOPIC_ICON_ROLES = new Set(Object.keys(ROLE_TOPIC_ICON));
+
+export function roleTopicTargets(targetPath: string): RoleTopicTarget[] {
+  const topicMap = readRoleTopicMap(targetPath);
+  const targets: RoleTopicTarget[] = [];
+  for (const [role, topicId] of Object.entries(topicMap)) {
+    if (!ROLE_TOPIC_ICON_ROLES.has(role)) {
+      continue;
+    }
+    targets.push({ role: role as RoleTopicIconRole, topicId });
+  }
+  return targets;
+}
+
 // Shared postMessage/editMessage pair for a plain-text edit-in-place standing
 // topic (ApprovalsRosterAdapters, RecertPostingAdapters) - both boil down to
 // the same sendTelegramMessage/editMessageText calls, only the topic-specific
@@ -1814,6 +1834,7 @@ function buildConciergeTickAdapters(targetPath: string, botToken: string, chatId
       recordSwarmIconId: (ticketId, iconId) => recordSwarmIconId(targetPath, ticketId, iconId),
     },
     readStandingTopics: () => standingTopicTargets(targetPath),
+    readRoleTopics: () => roleTopicTargets(targetPath),
     // BL-414: last activity comes from the SAME per-ticket record
     // appendMessage/blTopicStore.ts already maintains - never a second
     // store. setTopicTitle edits only the name, leaving the icon field
