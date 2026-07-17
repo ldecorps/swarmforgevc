@@ -1,19 +1,13 @@
 const assert = require('node:assert/strict');
-const { reconstructionHeaderText, renderedMessageText, decideTopicRestore, recreateTopicFromRecord } = require('../out/concierge/topicRecreation');
+const { reconstructionHeaderText, decideTopicRestore, recreateFoldTopic } = require('../out/concierge/topicRecreation');
 
-// BL-332: recreates a ticket's Telegram topic from its own durable
-// serialised record - the slice that proves BL-331's deletion is actually
-// reversible, not merely claimed to be.
+// BL-332/BL-495: repairs a ticket's Telegram topic when it has genuinely
+// gone. BL-495 (topic-consolidation epic): post-BL-493 there is no
+// per-ticket topic anymore - the repair path targets a ticket's FOLD
+// target (its epic's topic, or the standing Backlog topic), never
+// resurrecting the retired per-ticket model.
 
-function record(messages) {
-  return { id: 'BL-900', messages };
-}
-
-function msg(overrides = {}) {
-  return { seq: 0, ts: 1700000000000, author: 'human', type: 'inbound', text: 'hello', ...overrides };
-}
-
-// ── reconstructionHeaderText / renderedMessageText (pure) ────────────────
+// ── reconstructionHeaderText (pure) ──────────────────────────────────────
 
 test('recreate-topic-02: the reconstruction header names the rebuild date and explicitly says it is NOT the original conversation', () => {
   const text = reconstructionHeaderText(Date.parse('2026-07-14T09:00:00Z'));
@@ -22,158 +16,84 @@ test('recreate-topic-02: the reconstruction header names the rebuild date and ex
   assert.match(text, /not the original/i);
 });
 
-test('recreate-topic-03: a rendered message preserves its ORIGINAL author and timestamp, not the bot/now', () => {
-  const m = msg({ author: 'human', ts: Date.parse('2026-01-02T03:04:05Z'), text: 'the actual words' });
-  const text = renderedMessageText(m);
-  assert.match(text, /human/);
-  assert.match(text, /2026-01-02T03:04:05/);
-  assert.match(text, /the actual words/);
-});
-
-test('renderedMessageText distinguishes swarm vs human authors', () => {
-  const swarmText = renderedMessageText(msg({ author: 'swarm', text: 'a swarm message' }));
-  const humanText = renderedMessageText(msg({ author: 'human', text: 'a human message' }));
-  assert.match(swarmText, /swarm/);
-  assert.match(humanText, /human/);
+test('reconstructionHeaderText names the date only, never the time-of-day', () => {
+  const text = reconstructionHeaderText(Date.parse('2026-07-14T09:00:00Z'));
+  assert.doesNotMatch(text, /09:00/);
+  assert.doesNotMatch(text, /T\d{2}:\d{2}/);
 });
 
 // ── decideTopicRestore (pure) ─────────────────────────────────────────────
 
-test('a topic still mapped (closed, never deleted) prefers the cheap, high-fidelity reopen path', () => {
-  const decision = decideTopicRestore({ 'BL-900': 42 }, 'BL-900');
-  assert.deepEqual(decision, { action: 'reopen', topicId: 42 });
+test('topic-recreation-epic-aware-01: a fold target still mapped (closed, never deleted) prefers the cheap, high-fidelity reopen path', () => {
+  assert.deepEqual(decideTopicRestore(42), { action: 'reopen', topicId: 42 });
 });
 
-test('a topic with no mapping at all (genuinely deleted) falls back to recreate+replay', () => {
-  const decision = decideTopicRestore({}, 'BL-900');
-  assert.deepEqual(decision, { action: 'recreate' });
+test('topic-recreation-epic-aware-01: a fold target with no mapping at all (genuinely deleted) falls back to recreate', () => {
+  assert.deepEqual(decideTopicRestore(undefined), { action: 'recreate' });
 });
 
-test('decideTopicRestore only ever looks at the ONE ticket asked about - an unrelated mapped ticket never leaks in', () => {
-  const decision = decideTopicRestore({ 'BL-111': 99 }, 'BL-900');
-  assert.deepEqual(decision, { action: 'recreate' });
-});
+// ── recreateFoldTopic (adapter-injected) ─────────────────────────────────
 
-// ── recreateTopicFromRecord (adapter-injected) ────────────────────────────
-
-function fakeAdapters(rec, overrides = {}) {
+function fakeAdapters(overrides = {}) {
   const posted = [];
   const recorded = [];
   return {
     posted,
     recorded,
     adapters: {
-      readRecord: () => rec,
       createTopic: async () => 555,
       postMessage: async (topicId, text) => {
         posted.push({ topicId, text });
         return true;
       },
-      recordTopicId: (id, topicId) => {
-        recorded.push({ id, topicId });
+      recordTopicId: (topicId) => {
+        recorded.push(topicId);
       },
       ...overrides,
     },
   };
 }
 
-// recreate-topic-01: the round trip - content matches the serialised record
-test('recreate-topic-01: every serialised message is replayed, in order, into the new topic', async () => {
-  const rec = record([msg({ seq: 0, author: 'human', text: 'first' }), msg({ seq: 1, author: 'swarm', text: 'second' })]);
-  const { posted, adapters } = fakeAdapters(rec);
-  const result = await recreateTopicFromRecord('BL-900', 'a fine feature', adapters, Date.parse('2026-07-14T00:00:00Z'));
+test('recreateFoldTopic creates a fresh topic under the given name and posts only the reconstruction header - no per-ticket history replay', async () => {
+  const { posted, adapters } = fakeAdapters();
+  const result = await recreateFoldTopic('EPIC — a fine initiative', adapters, Date.parse('2026-07-14T00:00:00Z'));
   assert.equal(result.success, true);
   assert.equal(result.topicId, 555);
-  // header first, then the two messages in the record's own order
-  assert.equal(posted.length, 3);
+  assert.equal(posted.length, 1, 'expected only the reconstruction header, never a per-ticket message replay');
   assert.match(posted[0].text, /reconstructed/i);
-  assert.match(posted[1].text, /first/);
-  assert.match(posted[2].text, /second/);
-  assert.ok(posted.every((p) => p.topicId === 555));
+  assert.equal(posted[0].topicId, 555);
 });
 
-// recreate-topic-02
-test('recreate-topic-02: the FIRST message posted into the recreated topic is the reconstruction label', async () => {
-  const rec = record([msg({ text: 'whatever' })]);
-  const { posted, adapters } = fakeAdapters(rec);
-  await recreateTopicFromRecord('BL-900', 'a fine feature', adapters, Date.parse('2026-07-14T00:00:00Z'));
-  assert.match(posted[0].text, /reconstructed/i);
+test('recreateFoldTopic passes the exact name through to createTopic - the caller decides epic vs Backlog naming', async () => {
+  const names = [];
+  const { adapters } = fakeAdapters({
+    createTopic: async (name) => {
+      names.push(name);
+      return 555;
+    },
+  });
+  await recreateFoldTopic('Backlog', adapters, 0);
+  assert.deepEqual(names, ['Backlog']);
 });
 
-// recreate-topic-03
-test('recreate-topic-03: messages from both the swarm and the human each preserve their own original author/timestamp', async () => {
-  const rec = record([
-    msg({ author: 'human', ts: Date.parse('2026-01-01T00:00:00Z'), text: 'asked a question' }),
-    msg({ author: 'swarm', ts: Date.parse('2026-01-01T00:05:00Z'), text: 'answered it' }),
-  ]);
-  const { posted, adapters } = fakeAdapters(rec);
-  await recreateTopicFromRecord('BL-900', 'a fine feature', adapters, Date.parse('2026-07-14T00:00:00Z'));
-  assert.match(posted[1].text, /human/);
-  assert.match(posted[1].text, /2026-01-01T00:00:00/);
-  assert.match(posted[2].text, /swarm/);
-  assert.match(posted[2].text, /2026-01-01T00:05:00/);
+test('recreateFoldTopic records the new topic id on success', async () => {
+  const { recorded, adapters } = fakeAdapters();
+  await recreateFoldTopic('Backlog', adapters, 0);
+  assert.deepEqual(recorded, [555]);
 });
 
-// recreate-topic-04
-test('recreate-topic-04: the new topic id is recorded so the ticket maps to it going forward', async () => {
-  const rec = record([msg()]);
-  const { recorded, adapters } = fakeAdapters(rec);
-  await recreateTopicFromRecord('BL-900', 'a fine feature', adapters, Date.parse('2026-07-14T00:00:00Z'));
-  assert.deepEqual(recorded, [{ id: 'BL-900', topicId: 555 }]);
-});
-
-// recreate-topic-05
-test('recreate-topic-05: recreating reads the record via the injected adapter and never mutates the record object itself', async () => {
-  const rec = record([msg({ text: 'do not touch me' })]);
-  const before = JSON.stringify(rec);
-  const { adapters } = fakeAdapters(rec);
-  await recreateTopicFromRecord('BL-900', 'a fine feature', adapters, Date.parse('2026-07-14T00:00:00Z'));
-  assert.equal(JSON.stringify(rec), before, 'the record must be left byte-identical - recreate is a pure read, never a consume/move');
-});
-
-test('a failed topic creation is a clean no-op: no messages posted, nothing recorded', async () => {
-  const rec = record([msg({ text: 'never posted' })]);
-  const { posted, recorded, adapters } = fakeAdapters(rec, { createTopic: async () => undefined });
-  const result = await recreateTopicFromRecord('BL-900', 'a fine feature', adapters, Date.parse('2026-07-14T00:00:00Z'));
+test('a failed topic creation is a clean no-op: no message posted, nothing recorded', async () => {
+  const { posted, recorded, adapters } = fakeAdapters({ createTopic: async () => undefined });
+  const result = await recreateFoldTopic('Backlog', adapters, 0);
   assert.equal(result.success, false);
   assert.equal(posted.length, 0);
   assert.equal(recorded.length, 0);
 });
 
-test('an empty record still gets its reconstruction header - a topic recreated from nothing is still honestly labelled', async () => {
-  const rec = record([]);
-  const { posted, adapters } = fakeAdapters(rec);
-  await recreateTopicFromRecord('BL-900', 'a fine feature', adapters, Date.parse('2026-07-14T00:00:00Z'));
-  assert.equal(posted.length, 1);
-  assert.match(posted[0].text, /reconstructed/i);
-});
-
-// A failed postMessage must never be silently treated as a success - the
-// mapping must not be armed onto a topic that is missing content, or the
-// ticket routes to an incomplete reconstruction with no way to detect it.
 test('a header postMessage failure fails the whole recreate and never records the mapping', async () => {
-  const rec = record([msg({ text: 'first' })]);
-  const { recorded, adapters } = fakeAdapters(rec, {
-    postMessage: async () => false,
-  });
-  const result = await recreateTopicFromRecord('BL-900', 'a fine feature', adapters, Date.parse('2026-07-14T00:00:00Z'));
+  const { recorded, adapters } = fakeAdapters({ postMessage: async () => false });
+  const result = await recreateFoldTopic('Backlog', adapters, 0);
   assert.equal(result.success, false);
+  assert.equal(result.topicId, 555, 'the created topic id is still reported even on a failed post, so the caller can diagnose');
   assert.equal(recorded.length, 0);
-});
-
-test('a mid-replay postMessage failure fails the whole recreate and never records the mapping, even though the header succeeded', async () => {
-  const rec = record([msg({ seq: 0, text: 'first' }), msg({ seq: 1, text: 'second' })]);
-  const seen = [];
-  const { recorded, adapters } = fakeAdapters(rec, {
-    postMessage: async (topicId, text) => {
-      seen.push(text);
-      return seen.length !== 2; // header (1st call) succeeds, first replayed message (2nd call) fails
-    },
-  });
-  const result = await recreateTopicFromRecord('BL-900', 'a fine feature', adapters, Date.parse('2026-07-14T00:00:00Z'));
-  assert.equal(result.success, false);
-  assert.equal(recorded.length, 0);
-  // still attempts every message - a transient blip on one post should not
-  // abandon the rest of the replay
-  assert.equal(seen.length, 3);
 });
