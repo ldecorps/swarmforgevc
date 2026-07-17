@@ -1,0 +1,81 @@
+id: BL-483
+title: "Multi-option agent questions surface on Telegram with tappable answer capture: an ask that carries enumerated options renders them as buttons (or a poll), and the tap routes back as the answer"
+milestone: M8
+type: feature
+severity: medium
+epic: ""
+priority: 5
+direction: human-requested
+depends_on: []
+source: "Human (ldecorps) 2026-07-17, direct session, with a screenshot of the coordinator's remote-control multi-option question ('Approve this architect.prompt wording...?' with 3 labelled options + free-text): 'can these surface back on telegram with a poll to capture answer.' Today such structured questions live only in the Claude-app remote control or the tmux pane; Telegram's ask surface gets free-text asks with no options and no structured capture."
+
+notes: |
+  THE GAP. The swarm already has a human-in-the-loop ask/answer loop (BL-306 ask+await, BL-325 loop,
+  BL-358 untagged-gate routing to the standing topics) and the front desk already round-trips inline
+  buttons (BL-410: reply_markup.inline_keyboard out, callback_query back, decideCallbackQueryAction
+  dispatch). What is missing is the join: an agent's question that carries ENUMERATED OPTIONS (the
+  AskUserQuestion shape in the screenshot - label + short description per option, plus an implicit
+  "type something else") has no representation in the ask protocol, so the front desk can only post
+  free-prose asks. The human then has to context-switch to the Claude app or the pane to answer a
+  question that is structurally three taps.
+
+  WHAT TO BUILD (design freedom for the architect on wire format; the CONTRACT is the loop):
+    1. The ask protocol (operator ask / gate ask - whatever artifact the front desk currently reads to
+       post a question) gains an OPTIONAL structured options list: [{label, description?}, ...]. An ask
+       without options behaves byte-identically to today (regression guard).
+    2. The front desk renders an options-carrying ask as one inline button per option (BL-410 plumbing;
+       label on the button, description in the message body), PLUS the standing free-text reply path
+       unchanged - Telegram's own reply box IS the "Type something else" affordance, state that in the
+       posted message.
+    3. A tap acknowledges the callback and routes the chosen label back through the SAME answer path a
+       typed reply takes today (awaiting-answer/answer file - one effect path, never a second one; the
+       BL-410 precedent's exact rule).
+    4. Re-validate before executing: the answer handler must tolerate the question having been retracted
+       or already answered (memory precedents: escalation-resends-retracted-question,
+       front-desk-operator-fabricates-backlog-state) - a tap on a stale ask gets a "this question is no
+       longer open" edit, not a side effect.
+    5. Coordinator/role wiring: when unattended (no attended remote-control session), a role asking a
+       multi-option question routes it through this mechanism so it lands on Telegram; the remote-control
+       AskUserQuestion path stays for attended sessions. Role-prompt wording change - human approves it.
+
+  POLL vs BUTTONS - recommendation: BUTTONS, not a native Telegram poll. Rationale to record in the
+  ticket so the choice is deliberate: sendPoll answers arrive as poll_answer updates with a DIFFERENT
+  shape than callback_query (new handler surface), polls cap at 10 options and 100-char option text with
+  no per-option description, cannot carry a "type something else" affordance, and are awkward to close/
+  edit after answering. The BL-410 button loop already exists end-to-end and one-tap-one-callback is the
+  same UX a poll would give a single voter. If the human specifically wants the poll AESTHETIC anyway,
+  that is a one-word amendment on this ticket.
+
+  CONSTRAINTS:
+    - One effect path: a button tap and a typed reply converge on the identical answer artifact.
+    - An ask without options is byte-identical to today's render (no drift on existing asks).
+    - Telegram limits: max ~8 buttons per row, keep one option per row; callback_data <= 64 bytes (use
+      an option index + ask id, never the label text).
+    - The pure decision (ask + options + incoming update -> action) is a directly unit-testable function;
+      the Telegram I/O stays in the thin client (engineering.prompt boundary rules).
+
+  E2E QA PROCEDURE: with the front desk live, have a role file a 3-option ask; observe the Telegram post
+  carrying 3 buttons + the free-text hint. Tap option 2: the asking role receives the same answer
+  artifact a typed "option 2 label" reply produces, and the message visibly updates as answered. Repeat
+  answering by typed free text instead. Then answer an ALREADY-answered ask's button and confirm the
+  no-longer-open edit with no second side effect.
+
+acceptance:
+  feature: specs/features/BL-483-multi-option-ask-buttons.feature
+  steps:
+    - "An ask carrying enumerated options posts to Telegram with one tappable button per option"
+    - "A button tap routes the chosen option back through the same answer path as a typed reply"
+    - "A typed free-text reply still answers an options-carrying ask"
+    - "A tap on a retracted or already-answered ask produces no side effect"
+    - "An ask without options renders byte-identically to the pre-change contract"
+
+human_approval: pending
+
+approval_context: >
+  Human asked for exactly this (2026-07-17 screenshot + 'can these surface back on telegram with a poll
+  to capture answer'). Open for the human at approval: (a) buttons vs native poll - the spec recommends
+  buttons and records why; approving as-is approves buttons; (b) the unattended-routing role-prompt
+  wording lands only after human review (governance). The one-effect-path and no-drift-on-existing-asks
+  constraints are firm.
+
+mutation_cost: medium

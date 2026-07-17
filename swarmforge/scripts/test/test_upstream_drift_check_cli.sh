@@ -121,6 +121,52 @@ if [[ "$LOCK_BEFORE_HASH" != "$LOCK_AFTER_HASH" ]]; then
 fi
 pass "upstream-drift-watch-04: the drift check is read-only - the watch file and the install pin are both untouched after a drifted run"
 
+# ── CLI-failure-path (engineering.prompt): the documented "Exit 2: the ────
+#    watch file could not be read/parsed, or a `git ls-remote` failed"
+#    contract must actually be proven, not just declared in a comment - a
+#    happy-path-only suite never exercises -main's catch block at all.
+set +e
+OUT5="$(bb "$CLI" "$WORKDIR/does-not-exist-watch.json" 2>&1)"
+CODE5=$?
+set -e
+if [[ "$CODE5" -ne 2 ]]; then
+  fail "upstream-drift-watch-05: expected exit 2 for an unreadable watch file, got $CODE5. output: $OUT5"
+fi
+if [[ "$OUT5" != *"error:"* ]]; then
+  fail "upstream-drift-watch-05: expected a stderr 'error:' line for an unreadable watch file, got: $OUT5"
+fi
+pass "upstream-drift-watch-05: a missing/unreadable watch file exits 2 with a stderr error, not a crash or a silent pass"
+
+WATCH6="$WORKDIR/watch-06-malformed.json"
+printf 'not json' > "$WATCH6"
+set +e
+OUT6="$(bb "$CLI" "$WATCH6" 2>&1)"
+CODE6=$?
+set -e
+if [[ "$CODE6" -ne 2 ]]; then
+  fail "upstream-drift-watch-06: expected exit 2 for a malformed watch file, got $CODE6. output: $OUT6"
+fi
+if [[ "$OUT6" != *"error:"* ]]; then
+  fail "upstream-drift-watch-06: expected a stderr 'error:' line for a malformed watch file, got: $OUT6"
+fi
+pass "upstream-drift-watch-06: a malformed (non-JSON) watch file exits 2 with a stderr error, not a crash or a silent pass"
+
+WATCH7="$WORKDIR/watch-07-bad-remote.json"
+cat > "$WATCH7" <<EOF
+{"repos": {"swarm-forge": {"url": "$WORKDIR/does-not-exist-upstream-repo", "branches": {"main": "aaaa"}}}}
+EOF
+set +e
+OUT7="$(bb "$CLI" "$WATCH7" 2>&1)"
+CODE7=$?
+set -e
+if [[ "$CODE7" -ne 2 ]]; then
+  fail "upstream-drift-watch-07: expected exit 2 when git ls-remote fails, got $CODE7. output: $OUT7"
+fi
+if [[ "$OUT7" != *"error:"*"git ls-remote"* ]]; then
+  fail "upstream-drift-watch-07: expected a stderr error naming the failed git ls-remote, got: $OUT7"
+fi
+pass "upstream-drift-watch-07: a failing 'git ls-remote' (bad/unreachable upstream url) exits 2 with a stderr error, not a crash or a silent pass"
+
 # ── default watch-file path resolves to the tracked repo-root file ───────
 # (structural only - never invoke the CLI with no argument here: a bare
 # invocation defaults to the TRACKED upstream-watch.json, whose repos are
