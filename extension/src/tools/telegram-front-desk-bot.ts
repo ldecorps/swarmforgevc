@@ -629,6 +629,46 @@ export async function ensureControlTopic(targetPath: string, botToken: string, c
   return created.messageThreadId;
 }
 
+// BL-497 hardening: extracted out of buildConciergeTickAdapters's
+// boardAdapters.ensureBoardTopic closure so a unit test can drive both the
+// success and failure branch directly through the SAME postFn injection
+// seam every ensureXTopic function above already uses - a closure buried
+// inside buildConciergeTickAdapters (module-private, never exported) is
+// unreachable by any test (see the readPollMap/readApprovalAskMessages
+// comments above on this same pattern for on-disk reads; this is the HTTP-
+// call sibling). Never reuses the topicId across ticks itself - that
+// idempotency is TickState.pipelineBoard.topicId, already owned by
+// pipelineBoardSync.ts's resolveBoardTopicId, so this stays a bare
+// create-and-map-the-result call, mirroring the OTHER ensureXTopic
+// functions' own createForumTopic call but WITHOUT their reuse-or-create
+// branch (the board's own state already gates repeat calls).
+export async function ensureBoardTopicAdapter(botToken: string, chatId: string, postFn?: TelegramPostFn): Promise<{ topicId?: number; error?: string }> {
+  const created = await createForumTopic(botToken, chatId, 'Pipeline Board', postFn);
+  return created.success ? { topicId: created.messageThreadId } : { error: created.error };
+}
+
+// BL-497 hardening: same extraction as ensureBoardTopicAdapter above, for
+// boardAdapters.emitFailureAlert - reuses the SAME Operator topic every
+// other operator-facing alert in this file posts into (ensureOperatorTopic),
+// never a new bespoke channel. Only called by syncPipelineBoard once the
+// consecutive-failure cap is exceeded; returns whether the alert was
+// CONFIRMED delivered so the caller can arm alertArmed only on `true`
+// (BL-215/BL-333's "never arm on the attempt" rule).
+export async function emitPipelineBoardFailureAlert(
+  targetPath: string,
+  botToken: string,
+  chatId: string,
+  message: string,
+  postFn?: TelegramPostFn
+): Promise<boolean> {
+  const topicId = await ensureOperatorTopic(targetPath, botToken, chatId, postFn);
+  if (topicId === undefined) {
+    return false;
+  }
+  const result = await sendTelegramMessage(botToken, chatId, message, undefined, postFn, topicId);
+  return result.success;
+}
+
 // BL-466: {pollId: {threadId, options}} - the poll id -> SUP-### thread
 // mapping sendTelegramPoll's own send-time result needs to survive until a
 // later poll_answer arrives (which carries no thread/topic info at all - see
@@ -2038,11 +2078,11 @@ function buildConciergeTickAdapters(targetPath: string, botToken: string, chatId
     boardAdapters: {
       // BL-497: the error string is now surfaced (never discarded) so
       // syncPipelineBoard can log/classify/self-heal instead of retrying a
-      // dead topic silently forever - the live-outage root cause.
-      ensureBoardTopic: async () => {
-        const created = await createForumTopic(botToken, chatId, 'Pipeline Board');
-        return created.success ? { topicId: created.messageThreadId } : { error: created.error };
-      },
+      // dead topic silently forever - the live-outage root cause. Logic
+      // lives in the exported ensureBoardTopicAdapter above (testable
+      // in-process); this stays a thin wrapper binding the tick's own
+      // botToken/chatId.
+      ensureBoardTopic: () => ensureBoardTopicAdapter(botToken, chatId),
       postMessage: (topicId, text, linksHtml) =>
         sendTelegramMessage(botToken, chatId, wrapPipelineBoardHtml(text, linksHtml), undefined, undefined, topicId, undefined, 'HTML').then((r) =>
           r.success ? { messageId: r.messageId } : { error: r.error }
@@ -2051,18 +2091,11 @@ function buildConciergeTickAdapters(targetPath: string, botToken: string, chatId
       // than editing in place - deletes the previous message (best-effort;
       // see pipelineBoardSync.ts) before the fresh one is posted above.
       deleteMessage: (topicId, messageId) => deleteMessage(botToken, chatId, messageId).then((r) => r.success),
-      // BL-497: the board's own bounded-retry alert - reuses the SAME
-      // Operator topic every other operator-facing alert in this file posts
-      // into (ensureOperatorTopic), never a new bespoke channel. Only called
-      // by syncPipelineBoard once the consecutive-failure cap is exceeded.
-      emitFailureAlert: async (message) => {
-        const topicId = await ensureOperatorTopic(targetPath, botToken, chatId);
-        if (topicId === undefined) {
-          return false;
-        }
-        const result = await sendTelegramMessage(botToken, chatId, message, undefined, undefined, topicId);
-        return result.success;
-      },
+      // BL-497: the board's own bounded-retry alert. Logic lives in the
+      // exported emitPipelineBoardFailureAlert above (testable in-process);
+      // this stays a thin wrapper binding the tick's own
+      // targetPath/botToken/chatId.
+      emitFailureAlert: (message) => emitPipelineBoardFailureAlert(targetPath, botToken, chatId, message),
     },
     // BL-467: enforces the pipeline board as the group's ONLY pin - chat-
     // level (no topicId), reusing the SAME botToken/chatId every other
