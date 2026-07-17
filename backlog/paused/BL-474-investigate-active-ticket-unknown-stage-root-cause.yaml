@@ -53,7 +53,9 @@ acceptance:
   # finding is recorded, OR a concrete follow-up ticket exists for each real tracking-defect.
   outcome: "Audit recorded; each unknown-stage case classified; follow-up ticket(s) filed for any real tracking-defect, or a no-fix-needed finding recorded."
 
-human_approval: >
+human_approval: pending
+
+approval_context: >
   Human-requested 2026-07-16 as the root-cause companion to BL-473 (the human: 'if their position in the
   swarm is not known, it's a bug to fix' — and, when asked, chose 'Also file investigation ticket').
   Specifier-owned spike: enumerate the paths, classify legitimate-transient vs tracking-defect, and spawn

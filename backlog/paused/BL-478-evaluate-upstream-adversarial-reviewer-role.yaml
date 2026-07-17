@@ -62,7 +62,9 @@ acceptance:
   # unless) a concrete "adopt" follow-up ticket is scoped.
   outcome: "A written ADOPT/ADAPT/SKIP recommendation on the upstream adversarial-reviewer role exists, with reasoning against our existing architect/hardener/QA review stages, recorded in docs/upstream-deviations.md (or this ticket's evidence). If ADOPT/ADAPT, a concrete follow-up ticket with its own design + Gherkin exists; if SKIP, the 'already covered' finding is recorded."
 
-human_approval: >
+human_approval: pending
+
+approval_context: >
   Human asked to survey upstream and 'file a ticket if there is anything worth adding' (2026-07-17). The
   survey found exactly one novel element (a dedicated adversarial-reviewer role on the `adversaries`
   branch); everything else upstream is already independently present in our fork, and our fork has no

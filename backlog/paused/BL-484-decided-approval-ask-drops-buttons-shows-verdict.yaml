@@ -1,0 +1,73 @@
+id: BL-484
+title: "A decided approval ask must close itself: strip the Approve/Amend/Reject buttons and edit the message to show the recorded verdict"
+milestone: M8
+type: bug
+severity: medium
+epic: ""
+priority: 4
+depends_on: []
+direction: human-requested
+source: "Human (ldecorps) 2026-07-17, direct session, with a screenshot of the Approvals topic showing BL-479 and BL-480 asks BOTH still carrying live Approve/Amend/Reject buttons although both tickets already read human_approval: approved on disk: 'once approved, remove the buttons and mark the decision on the ticket.'"
+
+notes: |
+  THE DEFECT. The BL-410 buttons flow records the decision (flips the ticket's human_approval field,
+  same effect path as a typed reply) but never touches the posted ask afterwards: the message keeps its
+  reply grammar and its three live buttons indefinitely. Consequences the human hit within the first
+  hour of the buttons being exercised:
+    - No visible record IN THE TOPIC of what was decided or when - the topic reads as if every ask were
+      still open; the only truth is on disk.
+    - The stale buttons stay tappable forever. A later tap on an already-decided ask re-enters the
+      callback path (see the escalation-resends-retracted-question class of incident: acting on a
+      stale question's answer).
+
+  WHAT TO BUILD. When a decision is recorded for an ask (button tap OR typed "approve BL-X"/"reject
+  BL-X ..." reply - BOTH entry points, one closing routine):
+    1. Edit the posted ask message (editMessageText, falling back to editMessageReplyMarkup if text-edit
+       is rejected): REMOVE the inline keyboard entirely and append a decision line, e.g.
+       "-- Approved 2026-07-17 03:07 UTC" / "-- Rejected: <reason>" / "-- Amend requested". Keep the
+       original ask text above it so the topic stays an audit trail.
+    2. The bot must know WHICH message to edit: persist the sendMessage result's message_id alongside
+       the ask when posting (the concierge tick state already persists message ids for the roster and
+       pipeline board - same pattern, no new state shape).
+    3. Defense-in-depth for taps that race the edit: a callback on an ask whose ticket is no longer
+       pending answers the callback with a "already decided: <verdict>" toast (answerCallbackQuery
+       text) and performs NO side effect. This overlaps BL-483's stale-ask rule deliberately - same
+       guard, both surfaces.
+    4. The ticket YAML side is ALREADY correct (human_approval flips on decision; that IS the durable
+       mark on the ticket) - this ticket is about the Telegram surface reflecting it. If the verdict is
+       a rejection, the existing rejected  # <reason> form stays the disk record; the message edit
+       mirrors it.
+
+  CONSTRAINTS:
+    - One closing routine serving both entry points (tap and typed reply) - never two edit paths that
+      can drift.
+    - Editing must be idempotent and tolerate the message having been deleted by a human (edit failure
+      is logged, never crashes the tick/bot loop).
+    - The decision timestamp comes from the runtime's real UTC clock (mind BL-482's local-time-
+      labelled-Z trap).
+    - Pure decision function (ask state + verdict -> edit action) unit-tested; Telegram I/O stays in
+      the thin client.
+
+  E2E QA PROCEDURE: flip a test ticket to pending, let the ask post with buttons. Tap Approve: the
+  message loses its buttons and gains the Approved line within one tick, and the YAML reads approved.
+  Repeat with a typed "reject BL-X because" reply: buttons drop, Rejected line shows the reason. Then
+  tap a button on a pre-decision screenshot of the message (or race a second tap): verify the
+  "already decided" toast and no state change.
+
+acceptance:
+  feature: specs/features/BL-484-decided-ask-closes-itself.feature
+  steps:
+    - "Recording an approval strips the ask's buttons and appends the verdict to the message"
+    - "A typed-reply decision closes the posted ask the same way a button tap does"
+    - "A tap on an already-decided ask yields an informative callback answer and no side effect"
+    - "A failed message edit is logged and does not break the decision recording"
+
+human_approval: pending
+
+approval_context: >
+  Human asked for exactly this behaviour (2026-07-17, screenshot of two decided asks still showing live
+  buttons). Approving approves the close-on-decision contract above; exact verdict-line wording is the
+  pipeline's to polish. Firm: one closing routine for both entry points; no side effect on
+  already-decided taps; the disk record (human_approval flip) stays the single source of decision truth.
+
+mutation_cost: low

@@ -58,7 +58,7 @@ acceptance:
     - "The redundant BL-339 recert deep-link notification is no longer sent"
     - "Recertification is still reachable, now in the Recert Telegram topic"
 
-human_approval: >
+approval_context: >
   PWA-fate fork settled by the human via AskUserQuestion 2026-07-16: RETIRE the PWA recert view (full
   move). This ticket carries out that removal plus the dead BL-339 deep-link notify (its link target is
   removed). Depends on BL-450; sequence after it and after the BL-450-overlapping tickets
