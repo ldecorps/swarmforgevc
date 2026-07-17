@@ -1,0 +1,67 @@
+id: BL-495
+title: "Make the topic recreation/restore repair path target a ticket's epic (or Backlog) topic instead of resurrecting a per-ticket topic"
+milestone: M8
+type: feature
+severity: low
+epic: topic-consolidation
+priority: 7
+direction: human-requested
+depends_on: [BL-493]
+source: "Child of BL-491 (topic-consolidation epic), from Operator intake INTAKE-operator-question-1784277729691.md. With no per-ticket topics, the repair path for a deleted ticket topic must recreate the EPIC/Backlog topic, not the retired per-ticket model."
+
+acceptance:
+  feature: specs/features/BL-495-topic-recreation-epic-aware.feature
+  steps:
+    - "Recreating an epic-bound ticket's topic targets its epic's topic"
+    - "Recreating an epic-less ticket's topic targets the standing Backlog topic"
+    - "The recreation path never resurrects a per-ticket topic"
+
+notes: |
+  REPAIR-PATH SLICE of the BL-491 epic. depends_on BL-493 (the recreation path must follow the new
+  fold model that BL-493 establishes).
+
+  BEHAVIOUR CHANGE (verified live 2026-07-17):
+    - Today `decideTopicRestore(topicMap, ticketId)` (topicRecreation.ts:43) returns
+      `{action: 'reopen', topicId}` if the ticket's OWN per-ticket topic id is in the map, else
+      `{action: 'recreate'}`, and `recreateTopicFromRecord` (topicRecreation.ts:79) /
+      `recreate-bl-topic.ts` rebuild a PER-TICKET topic from its record. Post-consolidation there are
+      no per-ticket topics, so this must resolve the ticket's FOLD TARGET instead:
+        * epic-bound ticket → its epic's topic (reopen if the epic-topic-map id exists, recreate the
+          epic topic if gone).
+        * epic-less ticket  → the standing Backlog topic (BL-492).
+      Never reopen or recreate a per-ticket topic — that model is retired.
+    - The reopen-vs-recreate DECISION stays (reopen if the target topic id is present, recreate if the
+      target is gone), but keyed on the ticket's FOLD-TARGET topic id, not a per-ticket id. If the
+      target already exists (the common case — epic topics and the Backlog topic are ensured
+      elsewhere), the repair is a reopen/no-op, and the ticket's edit-in-place status message
+      (BL-493's ticket-message-map) is what gets re-posted, not a topic.
+    - Update OR retire recreate-bl-topic.ts accordingly so it cannot resurrect the old per-ticket
+      model; whichever, its scenarios' step handlers land in the same parcel (BL-233).
+
+  DELETION/RENAME SAFETY (engineering.prompt shared-registry + call-site-sweep rules): if any
+  per-ticket-topic recreation helper is removed or renamed, grep every live .feature for its steps and
+  `grep -rl` every caller across src and test before handoff.
+
+  TESTABLE SEAMS: the fold-target resolution + reopen-vs-recreate decision is a pure unit-testable
+  function (ticket + topic maps → target topic + reopen|recreate); Telegram I/O stays in the thin
+  client. If recreate-bl-topic.ts keeps a main(), it is thin over exported helpers and called
+  in-process by a test.
+
+  OUT OF SCOPE: the routing change itself (BL-493) and the legacy-topic close (BL-494).
+
+  E2E QA PROCEDURE: invoke the recreation path for an EPIC-BOUND ticket whose epic topic exists → it
+  resolves to a reopen/no-op of the epic topic, no per-ticket topic. Delete the epic topic and invoke
+  again → it recreates the EPIC topic. Invoke for an EPIC-LESS ticket → it resolves to the standing
+  Backlog topic. In every case confirm no "BL-### - Title" per-ticket topic is created.
+
+human_approval: pending
+approval_context: >
+  Repair-path slice of the BL-491 epic. Contract: the topic recreation/restore path resolves a
+  ticket's fold target (epic topic if epic-bound, else the Backlog topic) and reopens-or-recreates
+  THAT, never a per-ticket topic; the old per-ticket recreation model is retired. FIRM: no per-ticket
+  topic is ever resurrected. OPEN for your call: whether to fully RETIRE recreate-bl-topic.ts (since
+  epic/Backlog topics are ensured elsewhere and rarely need a bespoke rebuild) or keep it repurposed to
+  the epic/Backlog target — I specced "update or retire, implementer's/architect's call," with the
+  firm constraint that either way it cannot resurrect a per-ticket topic.
+
+mutation_cost: medium

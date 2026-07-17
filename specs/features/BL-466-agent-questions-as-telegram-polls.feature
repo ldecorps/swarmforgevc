@@ -1,4 +1,4 @@
-Feature: An agent's clarifying question surfaces directly on Telegram, as a native poll when the options are discrete
+Feature: An agent's open-ended clarifying question surfaces directly on Telegram as a plain message, with bounded-await escalation
 
   # BL-466 (feature, human via the Operator front desk 2026-07-16,
   # INTAKE-operator-question-1784230533165). BL-325 (human-in-the-loop ask/answer/unblock) already
@@ -27,19 +27,11 @@ Feature: An agent's clarifying question surfaces directly on Telegram, as a nati
   #   - Telegram creds / bridge remain the untested boundary; keep the question->poll construction and
   #     the answer->return mapping pure/testable behind that boundary.
 
-  # BL-466 agent-question-poll-01
-  Scenario: A discrete-option question is surfaced as a Telegram poll
-    Given the specifier asks a question with two or more discrete options
-    When the question is surfaced to the human
-    Then it is posted as a native Telegram poll in the agent-questions topic
-    And the poll options are the question's options
-
-  # BL-466 agent-question-poll-02
-  Scenario: The human's poll selection returns to the asking agent
-    Given a question surfaced as a Telegram poll
-    When the human selects an option
-    Then the selected option is returned to the asking agent as the answer
-    And the agent is unblocked
+  # BL-466 agent-question-poll-01 and -02 (native-poll render + poll-answer return) RETIRED 2026-07-17:
+  # the discrete-option render moved from a native Telegram poll to tappable inline buttons, superseded by
+  # BL-483 (specs/features/BL-483-multi-option-ask-buttons.feature, scenarios -01/-02). This file now owns
+  # only the open-ended plain-message fallback and the inherited bounded-await escalation for the ask; the
+  # multi-option render + answer-return contract lives in the BL-483 feature file.
 
   # BL-466 agent-question-poll-03
   Scenario: An open-ended question falls back to a plain message
