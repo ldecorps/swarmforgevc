@@ -248,6 +248,40 @@
     (let [dirty (:out (process/sh ["git" "-C" dir "status" "--porcelain" "--" other-path]))]
       (assert-false "the unrelated path remains staged (untouched), not committed and not lost" (str/blank? (str/trim dirty))))))
 
+;; ── real git-mv (coordinator's ticket-close shape): the OLD path no
+;;    longer exists anywhere `git add` can resolve it once `git mv` has
+;;    already staged the rename - `git add -- oldpath newpath` fails its
+;;    WHOLE pathspec atomically on that unresolvable oldpath entry unless
+;;    default-add! filters to paths that still exist on disk. Also proves
+;;    an unrelated concurrently-staged path survives untouched, exactly
+;;    like the coordinator's own shared-checkout scenario. ───────────────
+
+(let [dir (real-git-repo)
+      old-path "backlog/active/BL-999-test.yaml"
+      new-path "backlog/done/BL-999-test.yaml"
+      other-path "unrelated.txt"
+      content "id: BL-999\nhuman_approval: approved\n"]
+  (fs/create-dirs (fs/path dir "backlog" "active"))
+  (fs/create-dirs (fs/path dir "backlog" "done"))
+  (spit (str (fs/path dir old-path)) content)
+  (sh! dir "add" "--" old-path)
+  (sh! dir "commit" "-q" "-m" "seed BL-999")
+  ;; another process's staged-but-not-yet-committed path, sitting in the
+  ;; SAME shared index during our own stage-to-commit window.
+  (spit (str (fs/path dir other-path)) "unrelated: content\n")
+  (sh! dir "add" "--" other-path)
+  ;; the caller's own git mv - already fully stages the rename in the index.
+  (sh! dir "mv" old-path new-path)
+  (let [result (commit-integrity-lib/commit-with-integrity!
+                {:project-root dir :paths [old-path new-path] :message "Close BL-999: move to done"})]
+    (assert-true "a git-mv-shaped commit (old path already gone) succeeds, not :add-failed" (:success result))
+    (assert-false "the old path no longer exists on disk" (fs/exists? (fs/path dir old-path)))
+    (assert-true "the new path exists with the moved content" (fs/exists? (fs/path dir new-path)))
+    (assert= "the new path's committed content is exactly what was moved there"
+             content (commit-integrity-lib/default-show dir (:sha result) new-path))
+    (let [dirty (:out (process/sh ["git" "-C" dir "status" "--porcelain" "--" other-path]))]
+      (assert-false "the unrelated concurrently-staged path is untouched, still staged" (str/blank? (str/trim dirty))))))
+
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (empty? @failures)
   (println "commit_integrity_lib (BL-419): ALL TESTS PASSED")
