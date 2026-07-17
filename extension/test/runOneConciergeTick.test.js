@@ -1,6 +1,6 @@
 const assert = require('node:assert/strict');
 const { runOneConciergeTick } = require('../out/tools/telegram-front-desk-bot');
-const { completionSummaryText } = require('../out/concierge/topicRouter');
+const { buildTicketStatusText } = require('../out/concierge/ticketStatusMessage');
 
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 const RETENTION_MS = 7 * ONE_DAY_MS;
@@ -19,11 +19,12 @@ function folders(overrides = {}) {
 
 function fakeAdapters({ topicMap = {}, priorSnapshot = null, alreadyReconciled = [] } = {}) {
   const state = { snapshot: priorSnapshot, emittedKeys: [] };
-  const sent = [];
-  const closed = [];
+  const posted = [];
+  const edited = [];
   const deletedTopics = [];
   const droppedMappings = [];
   const reportedUnverified = [];
+  const messageStates = {};
   // In production this is the SAME durable record (BL-329's
   // appendMessage/readRecord) that the diff path, the reconciliation
   // safety net, AND the deletion sweep all read/write, so a completion
@@ -38,14 +39,15 @@ function fakeAdapters({ topicMap = {}, priorSnapshot = null, alreadyReconciled =
     }
     return records[backlogId];
   }
-  // The pre-seeded text must be the EXACT real completion summary
-  // (completionSummaryText's own format) - isAlreadyReconciled below now
-  // compares against that exact text, same as production's
+  // The pre-seeded text must be the EXACT real 'done' status text
+  // (buildTicketStatusText's own format) - isAlreadyReconciled/the deletion
+  // sweep below now compare against that exact text, same as production's
   // hasCompletionRecord, so an invented placeholder string would silently
-  // fail to match and defeat the "already reconciled" precondition.
+  // fail to match and defeat the "already reconciled"/"verified" precondition.
   for (const { id, title } of alreadyReconciled) {
-    const text = completionSummaryText({ type: 'TaskCompleted', backlogId: id, payload: {} }, title);
+    const text = buildTicketStatusText(id, title, 'done');
     recordFor(id).messages.push({ seq: 0, ts: 0, author: 'swarm', type: 'outbound', text });
+    messageStates[id] = { topicId: topicMap[id], messageId: 9000, renderedText: text };
   }
   let currentFolders = folders();
   const routeAdapters = {
@@ -56,27 +58,37 @@ function fakeAdapters({ topicMap = {}, priorSnapshot = null, alreadyReconciled =
     recordTopicId: () => {
       throw new Error('this fixture never opens a topic - every ticket already has one mapped');
     },
-    sendMessage: async (topicId, text) => {
-      sent.push({ topicId, text });
-      return true;
-    },
-    closeTopic: async (topicId) => {
-      closed.push(topicId);
-      return true;
-    },
+    sendMessage: async () => true,
+    closeTopic: async () => true,
     recordMessage: (backlogId, text) => {
       const record = recordFor(backlogId);
       record.messages.push({ seq: record.messages.length, ts: 0, author: 'swarm', type: 'outbound', text });
     },
     ensureOperatorTopic: async () => 700,
+    ensureApprovalsTopic: async () => undefined,
+    ensureBacklogTopic: async () => 760,
+    postMessage: async (topicId, text) => {
+      const messageId = 9000 + posted.length;
+      posted.push({ topicId, text, messageId });
+      return messageId;
+    },
+    editMessage: async (topicId, messageId, text) => {
+      edited.push({ topicId, messageId, text });
+      return true;
+    },
+    getTicketMessageState: (backlogId) => messageStates[backlogId],
+    setTicketMessageState: (backlogId, s) => {
+      messageStates[backlogId] = s;
+    },
   };
   return {
-    sent,
-    closed,
+    posted,
+    edited,
     deletedTopics,
     droppedMappings,
     reportedUnverified,
     topicMap,
+    messageStates,
     setFolders: (f) => {
       currentFolders = f;
     },
@@ -120,7 +132,7 @@ function fakeAdapters({ topicMap = {}, priorSnapshot = null, alreadyReconciled =
   };
 }
 
-test('runOneConciergeTick: a ticket already reflected as done in the persisted snapshot, but never posted/closed, is still reconciled by the same tick that runs the diff path', async () => {
+test('runOneConciergeTick: a ticket already reflected as done in the persisted snapshot, but never posted, is still reconciled by the same tick that runs the diff path', async () => {
   // The diff path is structurally blind here BY DESIGN, not by fixture
   // omission: deriveSwarmEvents only ever emits TaskCompleted for a
   // prevDone -> currDone TRANSITION (swarmEventStream.ts's diffTaskCompleted).
@@ -128,13 +140,14 @@ test('runOneConciergeTick: a ticket already reflected as done in the persisted s
   // what BL-328's stale-build/down-bot window produces - means prev and curr
   // agree, so no transition is ever seen again; only the reconciliation
   // safety net, driven by CURRENT STATE rather than a witnessed transition,
-  // can still close it. (A cold-start fixture with snapshot: null would not
+  // can still post it. (A cold-start fixture with snapshot: null would not
   // isolate this - deriveSwarmEvents treats a null prev as an EMPTY baseline,
   // so it would itself emit TaskCompleted for any pre-existing done ticket on
   // the very first tick, masking reconciliation's own distinct contribution.)
   const priorSnapshot = { backlog: { active: [], paused: [], done: ['BL-9'] }, gates: [], roleTicket: {}, ticketSummaries: {} };
-  const { tickAdapters, reconcileAdapters, deletionAdapters, sent, closed, setFolders } = fakeAdapters({
-    topicMap: { 'BL-9': 42 },
+  // BL-493: BL-9 has no LEGACY per-ticket topic mapped (topicMap: {}) - its
+  // epic-less status message targets the standing Backlog topic instead.
+  const { tickAdapters, reconcileAdapters, deletionAdapters, posted, edited, setFolders } = fakeAdapters({
     priorSnapshot,
   });
   setFolders(folders({ done: [{ id: 'BL-9', title: 'a ticket completed while the bot was down' }] }));
@@ -145,14 +158,14 @@ test('runOneConciergeTick: a ticket already reflected as done in the persisted s
   // default, isolating this test to the diff/reconcile wiring it's about.
   await runOneConciergeTick(tickAdapters, reconcileAdapters, deletionAdapters, 0);
 
-  assert.deepEqual(closed, [42], "expected the reconciliation safety net to close BL-9's topic even with no witnessed transition");
-  assert.equal(sent.length, 1, 'expected exactly one post - the diff path emits nothing here, only reconciliation does');
-  assert.match(sent[0].text, /is complete\.$/);
+  assert.deepEqual(edited, [], 'no prior status message existed - this is a post, not an edit');
+  assert.equal(posted.length, 1, 'expected exactly one post - the diff path emits nothing here, only reconciliation does');
+  assert.equal(posted[0].text, buildTicketStatusText('BL-9', 'a ticket completed while the bot was down', 'done'));
 });
 
 test('runOneConciergeTick: an already-reconciled done ticket is left alone by the same call that runs the diff path', async () => {
   const priorSnapshot = { backlog: { active: [], paused: [], done: ['BL-9'] }, gates: [], roleTicket: {}, ticketSummaries: {} };
-  const { tickAdapters, reconcileAdapters, deletionAdapters, sent, closed, setFolders } = fakeAdapters({
+  const { tickAdapters, reconcileAdapters, deletionAdapters, posted, edited, setFolders } = fakeAdapters({
     topicMap: { 'BL-9': 42 },
     priorSnapshot,
     alreadyReconciled: [{ id: 'BL-9', title: 'already reconciled' }],
@@ -161,8 +174,8 @@ test('runOneConciergeTick: an already-reconciled done ticket is left alone by th
 
   await runOneConciergeTick(tickAdapters, reconcileAdapters, deletionAdapters, 0);
 
-  assert.deepEqual(sent, []);
-  assert.deepEqual(closed, []);
+  assert.deepEqual(posted, []);
+  assert.deepEqual(edited, []);
 });
 
 // BL-331: proves the deletion sweep is REALLY wired into the same tick
@@ -170,7 +183,10 @@ test('runOneConciergeTick: an already-reconciled done ticket is left alone by th
 // the diff path just wrote - not merely unit-tested in isolation
 // (topicDeletion.test.js covers decideTopicDeletion/sweepTopicDeletions
 // on their own; this is the wiring proof, same split as BL-330's own two
-// reconciliation tests above vs topicReconciliation.test.js).
+// reconciliation tests above vs topicReconciliation.test.js). BL-493: the
+// deletion sweep itself only ever targets a LEGACY per-ticket topic
+// (topicMap[ticket.id] - a NEW ticket never gets one), so this fixture
+// seeds one directly, as if it predates BL-493 shipping.
 test('runOneConciergeTick: a done ticket already verified-complete and past its retention window is deleted by the same tick', async () => {
   const priorSnapshot = { backlog: { active: [], paused: [], done: ['BL-9'] }, gates: [], roleTicket: {}, ticketSummaries: {} };
   const { tickAdapters, reconcileAdapters, deletionAdapters, deletedTopics, droppedMappings, topicMap, setFolders } = fakeAdapters({

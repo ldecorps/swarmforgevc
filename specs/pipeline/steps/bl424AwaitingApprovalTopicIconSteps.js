@@ -75,6 +75,15 @@ function fakeConciergeAdapters(stickers) {
         recordMessage: () => {},
         ensureOperatorTopic: async () => 700,
         ensureApprovalsTopic: async () => 750,
+        // BL-493: the standing Backlog topic + edit-in-place post/edit pair
+        // + per-ticket message-identity store - this feature's own
+        // scenarios don't assert on ticket-status routing, but
+        // runConciergeTick unconditionally reaches these now.
+        ensureBacklogTopic: async () => 760,
+        postMessage: async () => 9000,
+        editMessage: async () => true,
+        getTicketMessageState: () => undefined,
+        setTicketMessageState: () => {},
       },
       iconAdapters: {
         getIconStickers: async () => stickers,
@@ -130,11 +139,14 @@ function registerSteps(registry) {
   // ── approval-icon-fallback-02 ────────────────────────────────────────
   registry.define(/^the awaiting-approval glyph is absent from Telegram's live forum-topic icon set$/, async (ctx) => {
     ctx.fixture = fakeConciergeAdapters(ALL_STICKERS.filter((s) => s.emoji !== '👀'));
-    // Establish the ticket's topic and swarm ownership first (an active
-    // feature ticket, the same two-tick shape topicIcon-02[paused]
-    // already uses) so the paused re-entry below is an OWNED update, not a
-    // brand-new topic - the realistic shape of "a ticket already promoted
-    // once, later paused awaiting approval".
+    // BL-493: a ticket event no longer opens (or reuses) a per-ticket topic
+    // at all - the icon-sync mechanism only ever still applies to a LEGACY
+    // topic the swarm already owns (from before BL-493 shipped), so that
+    // state is seeded directly rather than relying on a first tick's
+    // TaskStarted to establish it, the same fix
+    // extension/test/conciergeTick.test.js's own topic-icon tests apply.
+    ctx.fixture.topicMap[TICKET_ID] = 600;
+    ctx.fixture.adapters.iconAdapters.recordSwarmIconId(TICKET_ID, 'id-note');
     ctx.fixture.setFolders(folders({ active: [{ id: TICKET_ID, title: 'a fine feature', type: 'feature' }] }));
     await runConciergeTick(ctx.fixture.adapters);
     ctx.fixture.iconsSet.length = 0;

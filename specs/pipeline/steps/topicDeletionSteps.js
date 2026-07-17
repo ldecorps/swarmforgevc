@@ -5,18 +5,22 @@
 // (extension/out/concierge/topicDeletion), with a fake deleteTopic (the
 // real Telegram HTTP leg, the same boundary this session's other
 // acceptance suites draw) but REAL decision logic (decideTopicDeletion,
-// hasCompletionRecord, completionSummaryText) underneath - the actual
-// production verify-then-delete gate, not a hand-rolled substitute.
+// hasCompletionRecord) underneath - the actual production verify-then-
+// delete gate, not a hand-rolled substitute. BL-493: the verified
+// "done" marker is now the ticket-status message's own text
+// (buildTicketStatusText), never the old completionSummaryText format the
+// current mechanism no longer writes (topicDeletion.ts's own comment).
 const path = require('node:path');
 
 const { sweepTopicDeletions } = require(path.join(__dirname, '..', '..', '..', 'extension', 'out', 'concierge', 'topicDeletion'));
-const { completionSummaryText, backlogForTopic } = require(path.join(__dirname, '..', '..', '..', 'extension', 'out', 'concierge', 'topicRouter'));
+const { backlogForTopic } = require(path.join(__dirname, '..', '..', '..', 'extension', 'out', 'concierge', 'topicRouter'));
+const { buildTicketStatusText } = require(path.join(__dirname, '..', '..', '..', 'extension', 'out', 'concierge', 'ticketStatusMessage'));
 
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 const RETENTION_MS = 7 * ONE_DAY_MS;
 
 function completionTextFor(ctx) {
-  return completionSummaryText({ type: 'TaskCompleted', backlogId: ctx.ticketId, payload: {} }, ctx.ticketTitle);
+  return buildTicketStatusText(ctx.ticketId, ctx.ticketTitle, 'done');
 }
 
 function mkAdapters(ctx) {

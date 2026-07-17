@@ -191,6 +191,18 @@ function registerSteps(registry) {
         // BL-329: routeEvent (called by runConciergeTick) calls this
         // unconditionally after a successful send.
         recordMessage: () => {},
+        ensureOperatorTopic: async () => 700,
+        ensureApprovalsTopic: async () => 750,
+        // BL-493: the standing Backlog topic + edit-in-place post/edit
+        // pair - this feature's own scenarios don't assert on
+        // ticket-status routing, but runConciergeTick's own TaskStarted
+        // derivation (the ticket-holding scenario) unconditionally
+        // reaches these now.
+        ensureBacklogTopic: async () => 760,
+        postMessage: async () => 9000,
+        editMessage: async () => true,
+        getTicketMessageState: () => undefined,
+        setTicketMessageState: () => {},
       },
       iconAdapters: {
       // BL-342: a safe default for fixtures that predate topic icons and
@@ -410,6 +422,18 @@ function registerSteps(registry) {
         // BL-329: routeEvent (called by runConciergeTick) calls this
         // unconditionally after a successful send.
         recordMessage: () => {},
+        ensureOperatorTopic: async () => 700,
+        ensureApprovalsTopic: async () => 750,
+        // BL-493: the standing Backlog topic + edit-in-place post/edit
+        // pair - this feature's own scenarios don't assert on
+        // ticket-status routing, but runConciergeTick's own TaskStarted
+        // derivation (the ticket-holding scenario) unconditionally
+        // reaches these now.
+        ensureBacklogTopic: async () => 760,
+        postMessage: async () => 9000,
+        editMessage: async () => true,
+        getTicketMessageState: () => undefined,
+        setTicketMessageState: () => {},
       },
       iconAdapters: {
       // BL-342: a safe default for fixtures that predate topic icons and
