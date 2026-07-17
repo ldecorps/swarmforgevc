@@ -1120,6 +1120,31 @@ function isUnauthorizedCallbackDrop(decision: CallbackButtonDecision): boolean {
   return decision.action === 'drop' && (decision.reason === 'not-my-chat' || decision.reason === 'not-principal');
 }
 
+// BL-484: a tap on an ALREADY-DECIDED ask is stale - answered with an
+// informative toast naming the recorded verdict, no decision side effect
+// at all (no recordApprovalReply, no setPendingButtonAction) - the exact
+// "acting on a stale question's answer" class of incident this guard
+// exists to prevent. Checked for every recognized (non-drop) decision -
+// Approve, Reject, and Amend taps alike - since any of the three can be
+// tapped again after the ticket already resolved. readRecordedApprovalVerdict
+// absent (pre-BL-484 fixtures) or reporting undefined (still pending, or no
+// matching ticket) means this returns false - the tap proceeds exactly as
+// it did before this ticket. Split out of processCallbackQuery below so its
+// own branch count stays at or below the CRAP threshold - the same
+// "extract the guard into a named, tested helper" split this file already
+// uses for isUnauthorizedCallbackDrop above.
+async function answerIfAlreadyDecided(callbackQuery: TelegramCallbackQuery, decision: CallbackButtonDecision, adapters: PollAdapters): Promise<boolean> {
+  if (decision.action === 'drop') {
+    return false;
+  }
+  const recordedVerdict = await adapters.readRecordedApprovalVerdict?.(decision.backlogId);
+  if (!recordedVerdict) {
+    return false;
+  }
+  await adapters.answerCallbackQuery(callbackQuery.id, alreadyDecidedToastText(recordedVerdict));
+  return true;
+}
+
 // BL-410: see isUnauthorizedCallbackDrop above for the answer-spinner
 // rationale. An Approve tap fires recordApprovalReply immediately (nothing
 // else to gather); a Reject/Amend tap has no reason/note in hand yet, so it
@@ -1141,22 +1166,8 @@ async function processCallbackQuery(callbackQuery: TelegramCallbackQuery, princi
   if (isUnauthorizedCallbackDrop(decision)) {
     return 'dropped';
   }
-  // BL-484: a tap on an ALREADY-DECIDED ask is stale - answered with an
-  // informative toast naming the recorded verdict, no decision side effect
-  // at all (no recordApprovalReply, no setPendingButtonAction) - the exact
-  // "acting on a stale question's answer" class of incident this guard
-  // exists to prevent. Checked for every recognized (non-drop) decision -
-  // Approve, Reject, and Amend taps alike - since any of the three can be
-  // tapped again after the ticket already resolved. readRecordedApprovalVerdict
-  // absent (pre-BL-484 fixtures) or reporting undefined (still pending, or
-  // no matching ticket) means this never fires - the tap proceeds exactly
-  // as it did before this ticket.
-  if (decision.action !== 'drop') {
-    const recordedVerdict = await adapters.readRecordedApprovalVerdict?.(decision.backlogId);
-    if (recordedVerdict) {
-      await adapters.answerCallbackQuery(callbackQuery.id, alreadyDecidedToastText(recordedVerdict));
-      return 'dropped';
-    }
+  if (await answerIfAlreadyDecided(callbackQuery, decision, adapters)) {
+    return 'dropped';
   }
   await adapters.answerCallbackQuery(callbackQuery.id);
   if (decision.action === 'drop') {
