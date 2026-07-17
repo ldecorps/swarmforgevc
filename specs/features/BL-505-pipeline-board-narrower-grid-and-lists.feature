@@ -1,10 +1,16 @@
-Feature: the pipeline board grid and below-grid lists render narrow enough to fit a phone
+Feature: the pipeline board grid renders compactly and orders its columns for a phone
 
   # Root intake 2026-07-17 (backlog/INTAKE-pipeline-board-grid-too-wide.md) - a request the
   # human made looking at a live board render: "We have to save space on the grid, it does not
   # fit on the one [screen]. Only keep the digit of the ticket and/or shorten even more the
   # kebab case slug." Human decisions (specifier asked 2026-07-17): (a) narrow BOTH the grid's
   # own columns AND the below-grid list lines; (b) shorten the grid slug from 3 kebab words to 2.
+  # A follow-up ask the same day (direct to the specifier): (c) move the not-started (NS) column
+  # to be the FIRST stage column instead of the last - a deliberate reversal of the human's own
+  # 2026-07-16 "not started column on the right-hand side" preference that BL-473 encoded; BL-473
+  # itself declared that placement "a build-time cosmetic detail, not a promotion gate", and every
+  # existing NS assertion locates the column by name via indexOf (never a fixed position), so this
+  # reorder breaks no test.
   #
   # This REVERSES the widening direction of BL-462 (slug bound 24 -> 40, "longer slug") and
   # BL-465 (3-word grid slug + a wide-title list tail up to 60 chars). Their now-superseded
@@ -22,6 +28,10 @@ Feature: the pipeline board grid and below-grid lists render narrow enough to fi
   #  3. Each below-grid list line (PARKED / AWAITING APPROVAL / ROOT INTAKE / RECENTLY CLOSED)
   #     shows the short kebab slug ONLY - the wide title tail BL-465 appended is dropped - and a
   #     real ticket id there is rendered number-only the same way the grid's is.
+  #  4. The not-started (NS) column is the FIRST stage column (immediately after TICKET and SLUG,
+  #     before the specifier/SP column), not the last - a one-line reorder of
+  #     PIPELINE_BOARD_COLUMN_ORDER. Header, row marks, and the below-grid sections are otherwise
+  #     unchanged.
   # The LINKS section is OUT of scope here (its width is already budgeted by BL-502, and its
   # ordering is BL-506's separate concern) and is left unchanged. The exact header glyph is a
   # build-time/cosmetic detail (BL-452's column-glyph precedent), not pinned by these scenarios.
@@ -66,3 +76,10 @@ Feature: the pipeline board grid and below-grid lists render narrow enough to fi
     Given a root-intake entry "INTAKE-pipeline-board-grid" titled "grid too wide"
     When the pipeline board is rendered
     Then the root intake entry's id is shown unchanged as "INTAKE-pipeline-board-grid"
+
+  # BL-505 pipeline-board-narrower-grid-and-lists-06
+  Scenario: the not-started column leads the stage columns instead of trailing them
+    Given a grid row for a not-started ticket "BL-503"
+    When the pipeline board is rendered
+    Then the "NS" column is the first stage column, before "SP"
+    And the not-started ticket's mark falls in that first stage column
