@@ -107,12 +107,14 @@ export interface PipelineBoardExtras {
 
 // BL-473: the not-started sentinel column - a distinct state for an active
 // ticket no role currently holds, never one of the real pipeline roles.
-// Placed LAST in PIPELINE_BOARD_COLUMN_ORDER below (the human's own stated
-// preference 2026-07-16: "a dedicated 'not started' column on the
-// right-hand side").
+// BL-505: placed FIRST in PIPELINE_BOARD_COLUMN_ORDER below (a same-day
+// follow-up ask reversing BL-473's original "right-hand side" placement -
+// BL-473 itself declared column placement a build-time cosmetic detail, and
+// every NS assertion locates the column by name via indexOf, never a fixed
+// position, so this reorder breaks no existing test).
 export const PIPELINE_BOARD_NOT_STARTED_COLUMN = 'not-started';
 
-export const PIPELINE_BOARD_COLUMN_ORDER: readonly string[] = [...ALL_SWARM_ROLES, PIPELINE_BOARD_NOT_STARTED_COLUMN];
+export const PIPELINE_BOARD_COLUMN_ORDER: readonly string[] = [PIPELINE_BOARD_NOT_STARTED_COLUMN, ...ALL_SWARM_ROLES];
 
 // Short, fixed-width column glyphs - the full role names are far too wide
 // for a grid on a phone screen. Exact glyphs are a build-time/cosmetic
@@ -129,7 +131,11 @@ const COLUMN_LABEL: Record<string, string> = {
   [PIPELINE_BOARD_NOT_STARTED_COLUMN]: 'NS',
 };
 
-const TICKET_HEADER = 'TICKET';
+// BL-505: shortened from "TICKET" (6 chars) so the column floors no wider
+// than the ticket NUMBERS it holds once the BL-/GH- prefix is stripped
+// (deriveDisplayTicketId below) - the exact glyph is a build-time/cosmetic
+// detail, same posture as the role column glyphs above.
+const TICKET_HEADER = 'ID';
 const SLUG_HEADER = 'SLUG';
 const NO_EPIC_LABEL = '(no epic)';
 const PARKED_SECTION_HEADER = 'PARKED:';
@@ -160,7 +166,10 @@ export const PIPELINE_BOARD_MESSAGE_MAX_LENGTH = 4000;
 // (a build-time/cosmetic detail per the ticket's own note) - in practice
 // close to the real on-disk slug, since a title and its filename slug are
 // authored together.
-export function deriveKebabSlug(title: string | undefined, maxWords = 3): string {
+// BL-505: default narrowed from 3 to 2 significant words (the grid's own
+// slug column, and - since deriveListEntryText below now delegates to this
+// same function - every below-grid list line too).
+export function deriveKebabSlug(title: string | undefined, maxWords = 2): string {
   if (!title) {
     return '';
   }
@@ -174,38 +183,28 @@ export function deriveKebabSlug(title: string | undefined, maxWords = 3): string
     .join('-');
 }
 
-// A build-time detail, not a promotion gate (BL-455's own human_approval
-// note) - bounds a slug to a single short, phone-width line. Widened by
-// BL-462 (24 -> 40, "longer slug, same line"); BL-465 widens it again for
-// the below-grid LIST entries specifically ("shows more of the title than
-// the previous limit allowed") - the grid itself no longer uses this bound
-// at all (it shows deriveKebabSlug's own short form instead).
-export const PIPELINE_BOARD_SLUG_MAX_LENGTH = 60;
-
-// BL-455: a short, single-line, delimiter-safe projection of a ticket's
-// title - never the raw title verbatim (engineering external-text-into-
-// structured-output rule: strip newlines before the value reaches any
-// generated output). A missing title renders as an empty slug rather than
-// throwing.
-export function deriveTicketSlug(title: string | undefined): string {
-  if (!title) {
-    return '';
-  }
-  const singleLine = title.replace(/[\r\n]+/g, ' ').trim();
-  return singleLine.length > PIPELINE_BOARD_SLUG_MAX_LENGTH
-    ? `${singleLine.slice(0, PIPELINE_BOARD_SLUG_MAX_LENGTH - 1)}…`
-    : singleLine;
+// BL-505: the below-grid list's own line text - the short kebab slug ONLY.
+// Previously (BL-465) also appended more of the truncated title via the
+// now-retired deriveTicketSlug (a wider, unbounded-word single-line
+// projection); that wide tail is dropped here to fit a phone screen. A
+// missing title still renders an empty slug rather than throwing
+// (deriveKebabSlug's own contract).
+export function deriveListEntryText(title: string | undefined): string {
+  return deriveKebabSlug(title);
 }
 
-// BL-465: the below-grid list's own combined line - leads with the short
-// kebab slug, then fills the remaining width with more of the truncated
-// title (the human's own "both: slug + wider title" decision). A missing
-// title still leads with the kebab slug (empty here too) rather than
-// throwing.
-export function deriveListEntryText(title: string | undefined): string {
-  const kebab = deriveKebabSlug(title);
-  const wider = deriveTicketSlug(title);
-  return kebab ? `${kebab} ${wider}`.trim() : wider;
+// BL-505: the SHORT display form of a ticket/list id, shared by the grid
+// TICKET column and every below-grid list line - strips a recognised BL-/
+// GH- ticket prefix (BL-493 -> "493"); an id with no recognised prefix (a
+// root-intake filename stem, e.g. "INTAKE-...") is returned unchanged.
+// Digits-only is unambiguous today (every real id is BL-, zero GH- exist -
+// grep-verified at spec time); see the ticket's own ID-COLLISION SAFETY
+// note for the future-GH- caveat.
+const TICKET_ID_PREFIX_PATTERN = /^(?:BL|GH)-(\d+)$/;
+
+export function deriveDisplayTicketId(id: string): string {
+  const match = TICKET_ID_PREFIX_PATTERN.exec(id);
+  return match ? match[1] : id;
 }
 
 // Sorts named epics alphabetically, with the no-epic bucket always LAST -
@@ -388,7 +387,7 @@ export function computePipelineBoard(
 }
 
 function idColumnWidth(rows: PipelineBoardRow[]): number {
-  return Math.max(TICKET_HEADER.length, ...rows.map((r) => r.id.length));
+  return Math.max(TICKET_HEADER.length, ...rows.map((r) => deriveDisplayTicketId(r.id).length));
 }
 
 function slugColumnWidth(rows: PipelineBoardRow[]): number {
@@ -402,7 +401,7 @@ function renderHeader(idWidth: number, slugWidth: number): string {
 
 function renderDataRow(idWidth: number, slugWidth: number, row: PipelineBoardRow): string {
   const cells = PIPELINE_BOARD_COLUMN_ORDER.map((c) => (c === row.column ? 'X' : '.').padStart(COLUMN_LABEL[c].length));
-  return [row.id.padEnd(idWidth), row.slug.padEnd(slugWidth), ...cells].join(' ');
+  return [deriveDisplayTicketId(row.id).padEnd(idWidth), row.slug.padEnd(slugWidth), ...cells].join(' ');
 }
 
 function renderEpicHeading(epic: string | undefined): string {
@@ -439,7 +438,7 @@ function renderListSection(header: string, entries: PipelineBoardListEntry[]): s
   }
   const lines: string[] = ['', header];
   for (const entry of entries) {
-    lines.push(`  ${entry.id} ${entry.slug}`.trimEnd());
+    lines.push(`  ${deriveDisplayTicketId(entry.id)} ${entry.slug}`.trimEnd());
   }
   return lines;
 }
