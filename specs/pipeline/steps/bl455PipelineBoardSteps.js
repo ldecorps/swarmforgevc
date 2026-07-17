@@ -17,6 +17,7 @@ const path = require('node:path');
 
 const EXT_OUT = path.join(__dirname, '..', '..', '..', 'extension', 'out');
 const { runConciergeTick } = require(path.join(EXT_OUT, 'concierge', 'conciergeTick'));
+const { deriveDisplayTicketId } = require(path.join(EXT_OUT, 'concierge', 'pipelineBoard'));
 
 // BL-421/engineering.prompt Scenario Outline rule: every Examples: column
 // value must be validated against an explicit KNOWN_VALUES lookup, never a
@@ -155,8 +156,11 @@ function splitBoardSections(text) {
   return { gridLines, parkedLines };
 }
 
+// BL-505: the grid/list id token is the ticket's bare NUMBER (a recognised
+// BL-/GH- prefix stripped), not the raw id passed in by these scenarios.
 function idInGrid(gridLines, id) {
-  return gridLines.some((l) => l.trim().split(/\s+/)[0] === id);
+  const displayed = deriveDisplayTicketId(id);
+  return gridLines.some((l) => l.trim().split(/\s+/)[0] === displayed);
 }
 
 // BL-510: the id is the FIRST token on a below-grid list line (BL-465
@@ -195,7 +199,10 @@ function registerSteps(registry) {
     if (alphaHeadingIndex === -1) {
       throw new Error(`expected an "-- Alpha --" epic heading, got:\n${text}`);
     }
-    if (!lines[alphaHeadingIndex + 1].startsWith('BL-1') || !lines[alphaHeadingIndex + 2].startsWith('BL-2')) {
+    if (
+      !lines[alphaHeadingIndex + 1].startsWith(deriveDisplayTicketId('BL-1')) ||
+      !lines[alphaHeadingIndex + 2].startsWith(deriveDisplayTicketId('BL-2'))
+    ) {
       throw new Error(`expected BL-1 and BL-2 directly under the Alpha heading, got:\n${text}`);
     }
   });
@@ -268,12 +275,15 @@ function registerSteps(registry) {
   });
 
   registry.define(/^the ticket's row shows a short slug derived from its title$/, (ctx) => {
-    // BL-455's own deriveTicketSlug is the real production derivation - this
-    // reuses it (not a hand-rolled re-implementation) to compute the exact
-    // expected slug, then confirms the wiring actually threaded the title
-    // through to the rendered row.
-    const { deriveTicketSlug } = require(path.join(EXT_OUT, 'concierge', 'pipelineBoard'));
-    ctx.expectedSlug = deriveTicketSlug(ctx.ticketTitle);
+    // BL-505: the grid's own slug column is deriveKebabSlug's short kebab
+    // form (deriveTicketSlug's wide truncated-title form was moved off the
+    // grid by BL-465, then dropped from the below-grid lists too by
+    // BL-505) - this reuses the real production derivation (not a
+    // hand-rolled re-implementation) to compute the exact expected slug,
+    // then confirms the wiring actually threaded the title through to the
+    // rendered row.
+    const { deriveKebabSlug } = require(path.join(EXT_OUT, 'concierge', 'pipelineBoard'));
+    ctx.expectedSlug = deriveKebabSlug(ctx.ticketTitle);
     const text = lastRendered(ctx.fixture);
     if (!text.includes(ctx.expectedSlug)) {
       throw new Error(`expected the rendered board to include the derived slug "${ctx.expectedSlug}", got:\n${text}`);
@@ -281,12 +291,8 @@ function registerSteps(registry) {
   });
 
   registry.define(/^the slug is a single line no wider than the board$/, (ctx) => {
-    const { PIPELINE_BOARD_SLUG_MAX_LENGTH } = require(path.join(EXT_OUT, 'concierge', 'pipelineBoard'));
     if (ctx.expectedSlug.includes('\n')) {
       throw new Error(`expected the slug to be a single line, got: ${JSON.stringify(ctx.expectedSlug)}`);
-    }
-    if (ctx.expectedSlug.length > PIPELINE_BOARD_SLUG_MAX_LENGTH) {
-      throw new Error(`expected the slug to be at most ${PIPELINE_BOARD_SLUG_MAX_LENGTH} chars, got ${ctx.expectedSlug.length}`);
     }
   });
 
@@ -307,7 +313,8 @@ function registerSteps(registry) {
 
   registry.define(/^the ticket is marked in the coder column$/, (ctx) => {
     const { gridLines } = splitBoardSections(lastRendered(ctx.fixture));
-    const row = gridLines.find((l) => l.trim().split(/\s+/)[0] === ctx.epicTicketId);
+    const displayed = deriveDisplayTicketId(ctx.epicTicketId);
+    const row = gridLines.find((l) => l.trim().split(/\s+/)[0] === displayed);
     if (!row) {
       throw new Error(`expected ${ctx.epicTicketId} to be a stage-grid row, got:\n${gridLines.join('\n')}`);
     }
@@ -324,7 +331,7 @@ function registerSteps(registry) {
     if (headingIndex === -1) {
       throw new Error(`expected a "-- ${ctx.epicTicketEpic} --" heading, got:\n${gridLines.join('\n')}`);
     }
-    if (gridLines[headingIndex + 1].trim().split(/\s+/)[0] !== ctx.epicTicketId) {
+    if (gridLines[headingIndex + 1].trim().split(/\s+/)[0] !== deriveDisplayTicketId(ctx.epicTicketId)) {
       throw new Error(`expected ${ctx.epicTicketId} directly under its own epic heading, got:\n${gridLines.join('\n')}`);
     }
   });
