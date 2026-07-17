@@ -52,7 +52,7 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
-import { execFile } from 'child_process';
+import { execFile, execFileSync } from 'child_process';
 import { promisify } from 'util';
 import {
   getTelegramUpdates,
@@ -1014,16 +1014,33 @@ export async function runKillAllSwarm(targetPath: string): Promise<{ ok: boolean
   }
 }
 
+// BL-423 architect follow-up: no real timer in a poll loop - now/wait are
+// injected (defaulting to the real clock/setTimeout in production) so a
+// test drives the drain/restart wait deterministically, with zero real
+// wall-clock delay, mirroring this codebase's own established
+// no-real-timers posture (bounceDrain.ts's startBounceDrainWatcher,
+// runContainedLoop, etc.) - a real poll interval in test code was
+// previously the ONLY thing making these two tests take multiple real
+// seconds each.
+export type ControlNowFn = () => number;
+export type ControlWaitFn = (ms: number) => Promise<void>;
+
 // Split out of executeStop below for the same CRAP-budget reason
 // telegramFrontDeskBotCore.ts's extraction comments document throughout
 // (see e.g. gatherControlState there): polls decideDrainOutcome until the
 // pipeline is empty ('drained') or the drain window elapses ('forced'),
 // never returning 'wait' itself.
-async function waitForDrainOutcome(targetPath: string, startedAtMs: number, timeoutMs: number): Promise<'drained' | 'forced'> {
+async function waitForDrainOutcome(
+  targetPath: string,
+  startedAtMs: number,
+  timeoutMs: number,
+  now: ControlNowFn,
+  wait: ControlWaitFn
+): Promise<'drained' | 'forced'> {
   for (;;) {
-    const outcome = decideDrainOutcome(isPipelineEmpty(targetPath), startedAtMs, Date.now(), timeoutMs);
+    const outcome = decideDrainOutcome(isPipelineEmpty(targetPath), startedAtMs, now(), timeoutMs);
     if (outcome === 'wait') {
-      await sleep(CONTROL_DRAIN_POLL_INTERVAL_MS);
+      await wait(CONTROL_DRAIN_POLL_INTERVAL_MS);
       continue;
     }
     return outcome;
@@ -1040,12 +1057,14 @@ export async function executeStop(
   chatId: string,
   controlTopicId: number | undefined,
   mode: 'emergency' | 'drain',
-  postFn?: TelegramPostFn
+  postFn?: TelegramPostFn,
+  now: ControlNowFn = Date.now,
+  wait: ControlWaitFn = sleep
 ): Promise<void> {
   let drainOutcome: 'drained' | 'forced' | undefined;
   if (mode === 'drain') {
     await postControlMessage(botToken, chatId, controlTopicId, 'Draining in-flight work before stopping...', undefined, postFn);
-    drainOutcome = await waitForDrainOutcome(targetPath, Date.now(), controlDrainTimeoutMs());
+    drainOutcome = await waitForDrainOutcome(targetPath, now(), controlDrainTimeoutMs(), now, wait);
     if (drainOutcome === 'forced') {
       await postControlMessage(botToken, chatId, controlTopicId, 'Drain window elapsed with work still in flight - forcing teardown.', undefined, postFn);
     }
@@ -1121,13 +1140,15 @@ export async function executeRestart(
   chatId: string,
   controlTopicId: number | undefined,
   postFn?: TelegramPostFn,
-  checkBootstrapped: (tp: string) => boolean = (tp) => isSwarmReady(tp, defaultRoleBootstrapped)
+  checkBootstrapped: (tp: string) => boolean = (tp) => isSwarmReady(tp, defaultRoleBootstrapped),
+  now: ControlNowFn = Date.now,
+  wait: ControlWaitFn = sleep
 ): Promise<void> {
   writeBounceSentinel(targetPath);
   await postControlMessage(botToken, chatId, controlTopicId, 'Restarting the swarm...', undefined, postFn);
-  const deadline = Date.now() + controlRestartAckTimeoutMs();
+  const deadline = now() + controlRestartAckTimeoutMs();
   let lastPhase: BouncePhase | undefined;
-  while (Date.now() < deadline) {
+  while (now() < deadline) {
     const ack = readBounceAck(targetPath);
     if (ack && ack.phase !== lastPhase) {
       lastPhase = ack.phase;
@@ -1135,7 +1156,7 @@ export async function executeRestart(
         return;
       }
     }
-    await sleep(CONTROL_RESTART_ACK_POLL_INTERVAL_MS);
+    await wait(CONTROL_RESTART_ACK_POLL_INTERVAL_MS);
   }
   await postControlMessage(botToken, chatId, controlTopicId, 'Restart timed out waiting for the bounce to report back.', undefined, postFn);
 }
@@ -1572,6 +1593,7 @@ export function toFoldersSnapshot(targetPath: string): BacklogFoldersSnapshot {
       epic?: string;
       type?: string;
       remainingSlices?: string[];
+      filename?: string;
     }[]
   ) =>
     items.map((item) => ({
@@ -1583,6 +1605,7 @@ export function toFoldersSnapshot(targetPath: string): BacklogFoldersSnapshot {
       epic: item.epic,
       type: item.type,
       remainingSlices: item.remainingSlices,
+      filename: item.filename,
     }));
   return { active: pick(folders.active), paused: pick(folders.paused), done: pick(folders.done) };
 }
@@ -1710,6 +1733,54 @@ function plainTextEditInPlaceAdapters(
   };
 }
 
+// BL-465: raw human asks sitting directly at the backlog/ root (e.g.
+// "INTAKE-...md" files) - the pipeline board's own live/local read (never
+// limited to the git-SHA static PWA projection). Excludes the two standing
+// docs (README.md/STEERING.md - never real intake). id/title are derived
+// from the filename/its own first non-empty line - there is no yaml
+// frontmatter to read the way a real backlog ticket has.
+const ROOT_INTAKE_EXCLUDED_FILES = new Set(['README.md', 'STEERING.md']);
+
+export function readRootIntakeFiles(targetPath: string): { id: string; title?: string; filename: string }[] {
+  const backlogDir = path.join(targetPath, 'backlog');
+  let files: string[];
+  try {
+    files = fs.readdirSync(backlogDir).filter((f) => f.endsWith('.md') && !ROOT_INTAKE_EXCLUDED_FILES.has(f));
+  } catch {
+    return [];
+  }
+  return files.map((filename) => {
+    const id = filename.replace(/\.md$/, '');
+    let title: string | undefined;
+    try {
+      const firstLine = fs
+        .readFileSync(path.join(backlogDir, filename), 'utf8')
+        .split('\n')
+        .find((l) => l.trim().length > 0);
+      title = firstLine ? firstLine.replace(/^#+\s*/, '').trim() : undefined;
+    } catch {
+      title = undefined;
+    }
+    return { id, title, filename };
+  });
+}
+
+// BL-465: the repo's GitHub base URL, derived from the origin remote -
+// undefined (never thrown) when unresolvable (no git remote, git missing,
+// not even a git repo), in which case the board's own link list is simply
+// omitted that tick rather than emitting broken/relative links. Handles
+// both the SSH ("git@github.com:owner/repo.git") and HTTPS
+// ("https://github.com/owner/repo.git") origin forms.
+export function readRepoBaseUrl(targetPath: string): string | undefined {
+  try {
+    const raw = execFileSync('git', ['remote', 'get-url', 'origin'], { cwd: targetPath, encoding: 'utf8' }).trim();
+    const match = raw.match(/github\.com[:/]([^/]+)\/(.+?)(\.git)?$/);
+    return match ? `https://github.com/${match[1]}/${match[2]}` : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function buildConciergeTickAdapters(targetPath: string, botToken: string, chatId: string): ConciergeTickAdapters {
   return {
     readFolders: () => toFoldersSnapshot(targetPath),
@@ -1781,8 +1852,8 @@ function buildConciergeTickAdapters(targetPath: string, botToken: string, chatId
         const created = await createForumTopic(botToken, chatId, 'Pipeline Board');
         return created.success ? created.messageThreadId : undefined;
       },
-      postMessage: (topicId, text) =>
-        sendTelegramMessage(botToken, chatId, wrapPipelineBoardHtml(text), undefined, undefined, topicId, undefined, 'HTML').then((r) =>
+      postMessage: (topicId, text, linksHtml) =>
+        sendTelegramMessage(botToken, chatId, wrapPipelineBoardHtml(text, linksHtml), undefined, undefined, topicId, undefined, 'HTML').then((r) =>
           r.success ? r.messageId : undefined
         ),
       // BL-462: the board reposts at the bottom on a content change rather
@@ -1790,6 +1861,8 @@ function buildConciergeTickAdapters(targetPath: string, botToken: string, chatId
       // see pipelineBoardSync.ts) before the fresh one is posted above.
       deleteMessage: (topicId, messageId) => deleteMessage(botToken, chatId, messageId).then((r) => r.success),
     },
+    readRootIntakeFiles: () => readRootIntakeFiles(targetPath),
+    readRepoBaseUrl: () => readRepoBaseUrl(targetPath),
     // BL-434: the standing "Approvals" topic's own roster sync - shares the
     // SAME ensureApprovalsTopic the ask-routing RouteAdapters above uses
     // (never a second Approvals-topic notion), so the roster and every
