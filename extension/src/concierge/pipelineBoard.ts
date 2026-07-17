@@ -183,33 +183,11 @@ export function deriveKebabSlug(title: string | undefined, maxWords = 2): string
     .join('-');
 }
 
-// A build-time detail, not a promotion gate (BL-455's own human_approval
-// note) - bounds a slug to a single short, phone-width line. Widened by
-// BL-462 (24 -> 40, "longer slug, same line"); BL-465 widens it again for
-// the below-grid LIST entries specifically ("shows more of the title than
-// the previous limit allowed") - the grid itself no longer uses this bound
-// at all (it shows deriveKebabSlug's own short form instead).
-export const PIPELINE_BOARD_SLUG_MAX_LENGTH = 60;
-
-// BL-455: a short, single-line, delimiter-safe projection of a ticket's
-// title - never the raw title verbatim (engineering external-text-into-
-// structured-output rule: strip newlines before the value reaches any
-// generated output). A missing title renders as an empty slug rather than
-// throwing.
-export function deriveTicketSlug(title: string | undefined): string {
-  if (!title) {
-    return '';
-  }
-  const singleLine = title.replace(/[\r\n]+/g, ' ').trim();
-  return singleLine.length > PIPELINE_BOARD_SLUG_MAX_LENGTH
-    ? `${singleLine.slice(0, PIPELINE_BOARD_SLUG_MAX_LENGTH - 1)}…`
-    : singleLine;
-}
-
 // BL-505: the below-grid list's own line text - the short kebab slug ONLY.
-// Previously (BL-465) also appended more of the truncated title via
-// deriveTicketSlug; that wide tail is dropped here to fit a phone screen.
-// A missing title still renders an empty slug rather than throwing
+// Previously (BL-465) also appended more of the truncated title via the
+// now-retired deriveTicketSlug (a wider, unbounded-word single-line
+// projection); that wide tail is dropped here to fit a phone screen. A
+// missing title still renders an empty slug rather than throwing
 // (deriveKebabSlug's own contract).
 export function deriveListEntryText(title: string | undefined): string {
   return deriveKebabSlug(title);

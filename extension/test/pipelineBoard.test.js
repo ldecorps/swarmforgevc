@@ -7,12 +7,10 @@ const {
   budgetPipelineBoardLinks,
   formatUpdatedAtLabel,
   wrapPipelineBoardHtml,
-  deriveTicketSlug,
   deriveKebabSlug,
   deriveListEntryText,
   deriveDisplayTicketId,
   PIPELINE_BOARD_COLUMN_ORDER,
-  PIPELINE_BOARD_SLUG_MAX_LENGTH,
   PIPELINE_BOARD_RECENTLY_CLOSED_MAX,
   PIPELINE_BOARD_NOT_STARTED_COLUMN,
   PIPELINE_BOARD_MESSAGE_MAX_LENGTH,
@@ -200,42 +198,6 @@ test('renderPipelineBoardBody: a not-started row marks only the not-started colu
   rowCols.forEach((cell, i) => {
     assert.equal(cell, i === nsIndex ? 'X' : '.');
   });
-});
-
-// BL-455 pipeline-board-epic-04: a short, single-line, delimiter-safe slug
-// derived from the ticket's title - never the raw title verbatim.
-
-test('deriveTicketSlug: a short title is used as-is', () => {
-  assert.equal(deriveTicketSlug('fix the pipeline board'), 'fix the pipeline board');
-});
-
-test('deriveTicketSlug: no title is an empty slug', () => {
-  assert.equal(deriveTicketSlug(undefined), '');
-});
-
-test('deriveTicketSlug: newlines are stripped to a single line', () => {
-  assert.equal(deriveTicketSlug('first line\nsecond line'), 'first line second line');
-});
-
-test('deriveTicketSlug: a long title is truncated to the bound, never returned verbatim', () => {
-  const longTitle = 'a'.repeat(PIPELINE_BOARD_SLUG_MAX_LENGTH + 20);
-  const slug = deriveTicketSlug(longTitle);
-  assert.ok(slug.length <= PIPELINE_BOARD_SLUG_MAX_LENGTH);
-  assert.notEqual(slug, longTitle);
-});
-
-// BL-462 pipeline-board-refine-01: the slug bound widened 24 -> 40 ("longer
-// slug, same line" - the human's own answer to the specifier's clarifying
-// question). A title that would have overflowed the OLD bound but fits the
-// new one now renders in full, still on a single line.
-const PREVIOUS_SLUG_MAX_LENGTH = 24;
-
-test('deriveTicketSlug: a title longer than the previous slug limit but within the wider limit now fits in full', () => {
-  const title = 'a'.repeat(PREVIOUS_SLUG_MAX_LENGTH + 10);
-  assert.ok(title.length > PREVIOUS_SLUG_MAX_LENGTH && title.length <= PIPELINE_BOARD_SLUG_MAX_LENGTH);
-  const slug = deriveTicketSlug(title);
-  assert.equal(slug, title, 'expected the full title to fit under the widened bound, not truncated');
-  assert.ok(!slug.includes('\n'), 'expected a single line');
 });
 
 test('computePipelineBoard: a role-held ticket with a title gets its derived (grid) kebab slug', () => {
