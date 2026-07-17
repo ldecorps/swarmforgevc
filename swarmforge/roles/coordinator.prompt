@@ -176,7 +176,27 @@ NO push:
      lie BL-328 exists to end.
    - You are the ONLY owner of this step. Do not add a second restart mechanism
      anywhere; BL-328 chose one owner on purpose.
-1. **Close** the ticket: move its YAML from `backlog/active/` to `backlog/done/`.
+1. **Close** the ticket: `git mv` its YAML from `backlog/active/` to
+   `backlog/done/` (a milestone subdirectory if the existing convention there
+   calls for one), then commit that move through the shared commit-integrity
+   helper — **never** a hand-typed `git commit` — since `master` is a checkout
+   shared with no isolation among several concurrent writers (BL-419: this hand-
+   typed path is exactly what twice landed a ticket's `human_approval` as
+   `pending` despite a staged `approved`, because a bare, unlocked, unverified
+   commit can silently drop or be overwritten by a concurrent writer's own
+   commit):
+   ```
+   git mv backlog/active/<TICKET-ID>-<slug>.yaml backlog/done/[<milestone>/]<TICKET-ID>-<slug>.yaml
+   bb swarmforge/scripts/commit_integrity_cli.bb <project-root> \
+     --message "Close <TICKET-ID>: move to done" \
+     --path backlog/active/<TICKET-ID>-<slug>.yaml \
+     --path backlog/done/[<milestone>/]<TICKET-ID>-<slug>.yaml
+   ```
+   The CLI prints one JSON line and exits non-zero on any failure
+   (`:lock-timeout`, `:add-failed`, `:commit-failed`, `:verify-mismatch`). On a
+   non-zero exit, the ticket is **not** closed — do not report it done; retry
+   or surface the failure loudly instead, the same discipline this helper
+   exists to enforce everywhere else on the shared checkout.
 2. **Promote** the next eligible item from `backlog/paused/` into
    `backlog/active/` if below `active_backlog_max_depth`, and recheck the cap.
 

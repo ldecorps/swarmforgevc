@@ -67,8 +67,25 @@
   (let [res (run-git project-root ["rev-parse" "--absolute-git-dir"])]
     (when (zero? (:exit res)) (str/trim (:out res)))))
 
+;; A path a prior `git mv`/`git rm` already removed from BOTH the working
+;; tree and the index (the common case for a caller that renames a file
+;; before calling this helper, e.g. the coordinator's active/->done/ move)
+;; is not resolvable by `git add` AT ALL - not on disk, and no longer in
+;; the index for `git add` to notice a missing-on-disk entry against
+;; (unlike a path merely `rm`ed without `git rm`, which IS still in the
+;; index and DOES resolve). `git add` also fails its ENTIRE pathspec
+;; atomically on one such unresolvable entry ("did not match any files"),
+;; so passing every path through unconditionally would abort staging the
+;; OTHER, perfectly good paths too. Filtering to paths that still exist on
+;; disk is safe: a path already fully staged by the caller's own git
+;; mv/rm needs no re-adding, and the verify step below still catches a
+;; genuinely wrong/missing outcome (the committed content would mismatch
+;; `expected`) rather than silently trusting an unstaged deletion.
 (defn default-add! [project-root paths]
-  (run-git project-root (into ["add" "--"] paths)))
+  (let [existing (filter #(fs/exists? (fs/path project-root %)) paths)]
+    (if (empty? existing)
+      {:exit 0 :out "" :err ""}
+      (run-git project-root (into ["add" "--"] existing)))))
 
 (defn default-commit! [project-root message paths]
   (run-git project-root (into ["commit" "-m" message "--"] paths)))
