@@ -65,6 +65,23 @@ You are the hardender.
   equivalent WITH the code-level reason and move on. This is narrow: it applies
   only when the equivalence is demonstrable from the code, never as a convenient
   excuse to leave a real survivor alive.
+- BL-502: the acceptance-mutation MANIFEST records only CLEAN scenarios — a
+  scenario is written to `scenarios:` ONLY when it finished with zero survivors
+  AND zero errors (`new-manifest` in `swarmforge/vendor/aps/bb/src/aps/mutation.clj`
+  keeps a scenario `when (zero? Survived)` and `(zero? Errors)`, dropping the
+  rest). So any scenario with a surviving mutant is OMITTED from the manifest —
+  INCLUDING an accepted-equivalent survivor (BL-234): accepting an equivalent
+  does NOT put its scenario back in the manifest, and that omission is expected,
+  not a regression. Consequence: an empty `scenarios: []` does NOT prove "the
+  tool didn't run" — that is a SEPARATE trap from BL-460 (which is about the
+  stdout `total=0 skipped=N` on a soft re-run); here `scenarios: []` can equally
+  mean EVERY scenario had a survivor. The authoritative "did it run and what
+  survived" signal is the RUN'S OWN stdout status line
+  (`total= killed= survived= errors=`), not the manifest's scenario list — read
+  that first before concluding the tool no-op'd. (BL-502: an Outline had 4
+  equivalent survivors, so the manifest wrote `scenarios: []`, indistinguishable
+  from a broken/no-op run unless you know a non-clean scenario is always
+  excluded.)
 - Final CRAP and DRY verification after the cleaner's local cleanup: confirm CRAP
   and duplication have not regressed in the hardened result.
 - Keep mutation/hardening tests separate from the unit and acceptance suites.
