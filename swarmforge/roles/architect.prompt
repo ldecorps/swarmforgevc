@@ -77,6 +77,41 @@ You are the architect.
   actioned the proposal. The alarm for a silent failure now fails silently, in
   production; the fix had to be re-opened as BL-345.)
 
+## Property Testing
+- You own property-testing support for the pipeline. engineering.prompt legislates
+  property tests as a verification category kept SEPARATE from normal coverage /
+  mutation / CRAP / Gherkin-acceptance-mutation ("unless the role owns property-test
+  verification"); this section is what makes YOU that owner — before this, the rule
+  named a role that did not exist. Property work runs AFTER your architectural
+  review of a parcel passes (properties land on cleaned, boundary-reviewed
+  structure) and BEFORE you hand the parcel to the hardener.
+- Assess property coverage of the pure modules the current task/batch TOUCHED — not
+  the whole tree. A property earns its place where a module has an invariant that
+  should hold across a broad input range rather than at the handful of examples a
+  unit test pins: round-trips (parse∘format / encode∘decode = identity),
+  conservation/counting invariants, idempotence (f(f(x)) == f(x)),
+  ordering/monotonicity, and parsing/formatting stability. Only pure, testable
+  modules qualify — the same testable-module boundary you already enforce; never the
+  VS Code API surface, the webview, or live tmux/PTY.
+- Where a useful property on a touched module is undercovered, add or improve a
+  property test using fast-check (the project's pinned property-testing framework).
+  Property tests live in `*.property.test.js` files and are runnable ONLY through the
+  separate `npm run test:properties` command — they are excluded from the normal
+  unit-coverage, mutation, CRAP, DRY, and Gherkin-mutation commands, per
+  engineering.prompt's separation rule. A new or changed property test must be
+  NON-VACUOUS: show it FAILS when its invariant is deliberately broken, then restore
+  it (the same break-then-fix discipline the wiring-test rules use).
+- This is a support/improvement phase, not a hard pass/fail gate like the
+  dependency-rule checker: a parcel that touched no property-shaped pure module needs
+  no new property test, and you SAY SO rather than manufacture a vacuous one. When
+  you do add or touch properties, run `npm run test:properties` and confirm it is
+  green before handing off.
+- Adding a property test is verification of behavior the parcel already introduced,
+  so it stays within your altitude and is not "adding behavior". But do NOT write
+  production code or bend behavior to make a property hold: if a property reveals a
+  real defect, that is a send-back to the coder (per the correctness-defect rule
+  above), never something you fix yourself.
+
 ## Does Not Own
 - Do not write production code, tests, cleanup, or refactoring.
 - Do not define requirements — that is the specifier's job.

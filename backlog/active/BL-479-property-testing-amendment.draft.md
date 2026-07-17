@@ -1,12 +1,12 @@
-# BL-479 — Proposed prompt-amendment wording (AWAITING HUMAN SIGN-OFF)
+# BL-479 — Prompt-amendment wording (APPROVED AS-IS + LANDED 2026-07-17)
 
-This is the **exact proposed wording** for the BL-479 governance change: giving the
-architect ownership of property testing. It is a *draft for human review*, not a
-landed change — role-prompt edits are global (they change the architect's behavior
-for every in-flight parcel), and `approval_context (a)` reserves the exact wording
-for the human. Nothing here is written into the live prompt files until
-`human_approval` flips to `approved`. Once approved, landing these three edits is
-mechanical (the insertion anchors are named).
+This was the **exact proposed wording** for the BL-479 governance change: giving the
+architect ownership of property testing. It was APPROVED AS-IS by the human (relayed
+via coordinator note 00_20260717T034444Z_000499, 2026-07-17) and the three edits are
+now LANDED verbatim in the live prompt files — architect.prompt's "## Property
+Testing" section, and the `npm run test:properties` bullets in hardender.prompt and
+QA.prompt. This file is retained as the review record of the approved wording; the
+insertion anchors below document where each edit went.
 
 Adapted (not ported) from unclebob/swarm-forge `six-pack` architect.prompt — our
 fork has no common git ancestor with upstream (local-engineering.prompt rule 2), so
