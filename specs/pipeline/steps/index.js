@@ -253,7 +253,8 @@ const DOMAINS = [
   require('./bl469PerAgentSteeringTopicIconsSteps'),
   require('./bl477UpstreamDriftWatchSteps'),
   require('./bl480ApprovalAskContentSteps'),
-  require('./bl419SharedCheckoutCommitIntegritySteps')
+  require('./bl419SharedCheckoutCommitIntegritySteps'),
+  require('./bl387TheOracleScoresWhatSurvivesThePipelineSteps')
 ];
 
 function registerSteps(registry) {
