@@ -14,6 +14,7 @@ const {
   computeProviderTelemetry,
   groupRolesByWorktreePath,
   combinedRoleKey,
+  extractTicketId,
 } = require('../out/metrics/swarmMetrics');
 
 function mkTmp() {
@@ -245,6 +246,21 @@ test('computeRetries ignores unknown role names', () => {
   const { total } = computeRetries([{ role: 'unknown_role', worktreePath: unknownWt }]);
 
   assert.equal(total, 0);
+});
+
+// --- extractTicketId (BL-504) ---
+
+test('extractTicketId-01 (BL-504 ts-metrics-ticket-id-01): resolves the no-hyphen prefix form and canonicalizes case/hyphenation', () => {
+  assert.equal(extractTicketId('bl493-fold-ticket-events'), 'BL-493');
+  assert.equal(extractTicketId('BL-493-fold-ticket-events'), 'BL-493');
+  assert.equal(extractTicketId('bl-493-fold-ticket-events'), 'BL-493');
+  assert.equal(extractTicketId('gh77-issue-seeded'), 'GH-77');
+});
+
+test('extractTicketId-01 (BL-504 ts-metrics-ticket-id-01): rejects any non-allowlisted prefix, glued or incidental', () => {
+  assert.equal(extractTicketId('ABL-217-glued-prefix'), null);
+  assert.equal(extractTicketId('usable-493-not-a-ticket'), null);
+  assert.equal(extractTicketId('usable493-not-a-ticket'), null);
 });
 
 // --- computeReworkEvents (BL-430) ---

@@ -68,6 +68,31 @@
          "GH-42"
          (chase-sweep-lib/extract-ticket-id "GH-42-inbound-email-webhook"))
 
+;; BL-503: the prefix hyphen is OPTIONAL (a no-hyphen task header, "blNNN",
+;; is the form ~14 in-flight coder tickets were actually minted with), and
+;; every match is now CANONICALIZED to upper-case hyphenated form - this
+;; extractor previously returned the raw, un-canonicalized match, so a
+;; lower-case hyphenated id ("bl-493-...") silently failed the case-sensitive
+;; active-set join downstream.
+(assert= "BL-503: a no-hyphen lower-case leading id resolves and canonicalizes"
+         "BL-493"
+         (chase-sweep-lib/extract-ticket-id "bl493-fold-ticket-events"))
+(assert= "BL-503: a hyphenated but lower-case leading id now canonicalizes (was returned raw)"
+         "BL-493"
+         (chase-sweep-lib/extract-ticket-id "bl-493-fold-ticket-events"))
+(assert= "BL-503: the canonical hyphenated upper-case form is unaffected (regression)"
+         "BL-493"
+         (chase-sweep-lib/extract-ticket-id "BL-493-fold-ticket-events"))
+(assert= "BL-503: a no-hyphen GH- id resolves and canonicalizes"
+         "GH-77"
+         (chase-sweep-lib/extract-ticket-id "gh77-issue-seeded"))
+(assert= "BL-503: a glued prefix still resolves to nil with the hyphen optional (no over-match)"
+         nil
+         (chase-sweep-lib/extract-ticket-id "ABL-217-glued-prefix"))
+(assert= "BL-503: a glued word with no hyphen still resolves to nil (no over-match)"
+         nil
+         (chase-sweep-lib/extract-ticket-id "usable493-not-a-ticket"))
+
 ;; ── dispatch-gap-note-message / dispatch-gap-draft-lines (pure) ───────────
 
 (assert= "the auto-route note message leads with the ticket id (the swarm's own convention)"
