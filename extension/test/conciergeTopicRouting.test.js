@@ -133,6 +133,7 @@ test('approval-ask-content-02: the frozen reply-grammar line and buttons stay by
       { text: 'Approve', callbackData: 'approve:BL-123' },
       { text: 'Amend', callbackData: 'amend:BL-123' },
       { text: 'Reject', callbackData: 'reject:BL-123' },
+      { text: 'Expedite', callbackData: 'expedite:BL-123' },
     ],
   ]);
 });
@@ -198,6 +199,7 @@ test('BL-410: decideTopicAction attaches Approve/Amend/Reject inline-keyboard bu
       { text: 'Approve', callbackData: 'approve:BL-123' },
       { text: 'Amend', callbackData: 'amend:BL-123' },
       { text: 'Reject', callbackData: 'reject:BL-123' },
+      { text: 'Expedite', callbackData: 'expedite:BL-123' },
     ],
   ]);
 });
@@ -213,9 +215,24 @@ test('BL-410: decideTopicAction attaches buttons on the reuse path too, not only
         { text: 'Approve', callbackData: 'approve:BL-123' },
         { text: 'Amend', callbackData: 'amend:BL-123' },
         { text: 'Reject', callbackData: 'reject:BL-123' },
+        { text: 'Expedite', callbackData: 'expedite:BL-123' },
       ],
     ],
   });
+});
+
+// ── BL-490: Expedite is a fourth button alongside Approve/Amend/Reject ────
+
+test('BL-490: the Expedite button carries the expedite verb tagged with the ticket id', () => {
+  const action = decideTopicAction(event({ type: 'ApprovalRequested' }), {}, 'a fine feature');
+  const expedite = action.buttons.flat().find((b) => b.text === 'Expedite');
+  assert.deepEqual(expedite, { text: 'Expedite', callbackData: 'expedite:BL-123' });
+});
+
+test('BL-490: Approve, Amend, and Reject are still present alongside Expedite', () => {
+  const action = decideTopicAction(event({ type: 'ApprovalRequested' }), {}, 'a fine feature');
+  const labels = action.buttons.flat().map((b) => b.text);
+  assert.deepEqual(labels, ['Approve', 'Amend', 'Reject', 'Expedite']);
 });
 
 test('BL-410: decideTopicAction attaches no buttons key at all for other event types (existing shapes unaffected)', () => {

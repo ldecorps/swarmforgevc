@@ -276,7 +276,8 @@ const DOMAINS = [
   require('./bl502PipelineBoardMessageLengthBudgetSteps'),
   require('./bl499ChaseSweepRechasesResolvedNewDuplicateSteps'),
   require('./bl504TsMetricsTicketIdSteps'),
-  require('./bl503TicketIdExtractorHyphenOptionalSteps')
+  require('./bl503TicketIdExtractorHyphenOptionalSteps'),
+  require('./bl490ExpediteApprovalButtonSteps')
 ];
 
 function registerSteps(registry) {
