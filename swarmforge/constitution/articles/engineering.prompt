@@ -376,6 +376,28 @@
   An explicit lookup kills the mutant at the acceptance run (an unknown mutated
   value throws / fails the lookup). (Confirmed 5x across BL-250/BL-252/BL-253 in
   one session.)
+- **Before deleting a step-handler file a note or ticket calls "dead", extract every step
+  pattern it registers and grep EVERY live `.feature` file for a scenario still using any of
+  them — the step registry is ONE global namespace keyed by step text, so a handler outlives
+  the feature that first defined it.** Step handlers are not owned by the feature whose file
+  name they resemble: each `registry.define(/regex/, …)` populates a single shared registry
+  that every feature's scenarios are matched against, so an unscoped `Given`/`When`/`Then`
+  first written for feature A is silently the ONLY handler for the identically-worded step in
+  feature B. Delete A's step file on a dead-code note and B's scenario loses its handler — and
+  the acceptance runner (`specs/pipeline/runtime.js`) THROWS on any scenario lacking a handler,
+  so B's in-flight acceptance hard-fails (and the hardener's gate blocks) over a file B never
+  mentioned. This is the DELETION sibling of the shared-component call-site-sweep guardrail
+  below: a feature scenario is a call site of the shared registry, the registry knows every
+  user of a step and you do not, and a green suite is not proof — the scenario you broke may
+  live on a branch or in-flight ticket not in your worktree. Grep `specs/features/` for each
+  doomed pattern's literal step text before removing the file; if any LIVE feature still uses
+  it, re-home the handler (or keep the file) rather than deleting. (BL-451: its own reader-sweep
+  deleted BL-339's `recertNotifySteps.js`, but BL-451's `retire-pwa-recert-02` scenario reused
+  that file's unscoped `Given a recert batch is waiting on the human`; the delete broke BL-451's
+  OWN acceptance, caught only by the acceptance pre-check. Proposed by the hardender 2026-07-17
+  scoped `role:hardender`; accepted into the shared article instead — the coder implements
+  retirements, the cleaner removes dead code, and the specifier retires features, so this binds
+  every author who deletes step code, not only the role that caught it late.)
 
 ## Verification
 - Before running language, build, or test commands, prefer project-local
