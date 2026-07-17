@@ -97,6 +97,45 @@
   (assert= "the same lock path is used for both acquire and release"
            (second (first @lock-calls)) (second (second @lock-calls))))
 
+;; ── lock acquisition is BOUNDED: a lock-fn! that gives up (returns
+;;    false) fails loudly with :lock-timeout, never hangs, and never
+;;    proceeds to stage/commit/unlock (there is nothing to unlock - the
+;;    lock was never acquired) ─────────────────────────────────────────
+
+(let [dir (real-git-repo)
+      add-called? (atom false)
+      unlock-called? (atom false)
+      result (commit-integrity-lib/commit-with-integrity!
+              {:project-root dir :paths ["notes.txt"] :message "m"
+               :lock-fn! (fn [_lock-dir] false)
+               :unlock-fn! (fn [_lock-dir] (reset! unlock-called? true))
+               :add-fn! (fn [& _] (reset! add-called? true) {:exit 0})})]
+  (assert= "a lock-fn! that gives up reports :lock-timeout, not a hang" {:success false :reason :lock-timeout :attempts 0} result)
+  (assert-false "add-fn! is never called when the lock could not be acquired" @add-called?)
+  (assert-false "unlock-fn! is never called when the lock was never acquired" @unlock-called?))
+
+;; the REAL default acquire-lock! mechanism (not a seam) is itself bounded:
+;; against a lock-dir already held by someone else, it gives up after
+;; max-attempts and returns false rather than spinning forever. Driven
+;; directly (not through commit-with-integrity!) with poll-delay-ms 0 so
+;; this stays instant - a bounded LOOP COUNT is what's under test here,
+;; not a real time delay (the no-real-timers rule bans waiting on the
+;; clock, not a zero-delay poll count).
+(let [dir (real-git-repo)
+      lock-dir (str (fs/path dir ".git" "sfvc-test.lock"))]
+  (fs/create-dirs lock-dir)
+  (let [acquired? (commit-integrity-lib/acquire-lock! lock-dir 3 0)]
+    (assert-false "acquire-lock! gives up (returns false) against an already-held lock instead of spinning forever" acquired?))
+  (fs/delete lock-dir))
+
+;; and it succeeds (returns true) once the lock is actually free.
+(let [dir (real-git-repo)
+      lock-dir (str (fs/path dir ".git" "sfvc-test-free.lock"))]
+  (let [acquired? (commit-integrity-lib/acquire-lock! lock-dir 3 0)]
+    (assert-true "acquire-lock! succeeds against a free lock path" acquired?)
+    (assert-true "acquire-lock! actually created the lock dir" (fs/exists? lock-dir)))
+  (fs/delete lock-dir))
+
 ;; ── :add-failed / :commit-failed short-circuit before any verify ───────
 
 (let [dir (real-git-repo)
@@ -208,6 +247,40 @@
       (assert-false "the commit does NOT sweep in the unrelated staged path" (str/includes? stat other-path)))
     (let [dirty (:out (process/sh ["git" "-C" dir "status" "--porcelain" "--" other-path]))]
       (assert-false "the unrelated path remains staged (untouched), not committed and not lost" (str/blank? (str/trim dirty))))))
+
+;; ── real git-mv (coordinator's ticket-close shape): the OLD path no
+;;    longer exists anywhere `git add` can resolve it once `git mv` has
+;;    already staged the rename - `git add -- oldpath newpath` fails its
+;;    WHOLE pathspec atomically on that unresolvable oldpath entry unless
+;;    default-add! filters to paths that still exist on disk. Also proves
+;;    an unrelated concurrently-staged path survives untouched, exactly
+;;    like the coordinator's own shared-checkout scenario. ───────────────
+
+(let [dir (real-git-repo)
+      old-path "backlog/active/BL-999-test.yaml"
+      new-path "backlog/done/BL-999-test.yaml"
+      other-path "unrelated.txt"
+      content "id: BL-999\nhuman_approval: approved\n"]
+  (fs/create-dirs (fs/path dir "backlog" "active"))
+  (fs/create-dirs (fs/path dir "backlog" "done"))
+  (spit (str (fs/path dir old-path)) content)
+  (sh! dir "add" "--" old-path)
+  (sh! dir "commit" "-q" "-m" "seed BL-999")
+  ;; another process's staged-but-not-yet-committed path, sitting in the
+  ;; SAME shared index during our own stage-to-commit window.
+  (spit (str (fs/path dir other-path)) "unrelated: content\n")
+  (sh! dir "add" "--" other-path)
+  ;; the caller's own git mv - already fully stages the rename in the index.
+  (sh! dir "mv" old-path new-path)
+  (let [result (commit-integrity-lib/commit-with-integrity!
+                {:project-root dir :paths [old-path new-path] :message "Close BL-999: move to done"})]
+    (assert-true "a git-mv-shaped commit (old path already gone) succeeds, not :add-failed" (:success result))
+    (assert-false "the old path no longer exists on disk" (fs/exists? (fs/path dir old-path)))
+    (assert-true "the new path exists with the moved content" (fs/exists? (fs/path dir new-path)))
+    (assert= "the new path's committed content is exactly what was moved there"
+             content (commit-integrity-lib/default-show dir (:sha result) new-path))
+    (let [dirty (:out (process/sh ["git" "-C" dir "status" "--porcelain" "--" other-path]))]
+      (assert-false "the unrelated concurrently-staged path is untouched, still staged" (str/blank? (str/trim dirty))))))
 
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (empty? @failures)
