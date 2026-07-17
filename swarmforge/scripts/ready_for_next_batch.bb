@@ -60,8 +60,8 @@
         (if (handoff-lib/draining?)
           (println "DRAINING")
           (let [new-files (handoff-lib/handoff-files new-dir)
-                completed-basenames (map fs/file-name (handoff-lib/handoff-files completed-dir))
-                abandoned-basenames (map fs/file-name (handoff-lib/handoff-files abandoned-dir))
+                completed-basenames (handoff-lib/terminal-basenames completed-dir)
+                abandoned-basenames (handoff-lib/terminal-basenames abandoned-dir)
                 ;; BL-365: same corrupt-candidate quarantine-and-skip as
                 ;; ready_for_next_task.bb (shared via
                 ;; resolve-dequeueable-candidates) - a corrupt file must
