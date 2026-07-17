@@ -54,7 +54,7 @@ notes: |
   again → it recreates the EPIC topic. Invoke for an EPIC-LESS ticket → it resolves to the standing
   Backlog topic. In every case confirm no "BL-### - Title" per-ticket topic is created.
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   Repair-path slice of the BL-491 epic. Contract: the topic recreation/restore path resolves a
   ticket's fold target (epic topic if epic-bound, else the Backlog topic) and reopens-or-recreates

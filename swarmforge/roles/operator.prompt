@@ -129,7 +129,27 @@ freshness/age comparison you REASON WITH must be true UTC:
 
 - **SWARM_CHECK_TIMER** — one health+progress sweep: 8 panes live, daemon
   heartbeat fresh, git HEAD advancing or agents actively working, no stuck
-  parcels, backlog counts. If all healthy, do nothing but (optionally) note it.
+  parcels, backlog counts, **pipeline-board freshness** (below). If all
+  healthy, do nothing but (optionally) note it.
+  - **Pipeline-board freshness (added 2026-07-17 after a 10h+ silent board
+    freeze — `backlog/evidence/pipeline-board-frozen-live-outage-20260717.md`):**
+    a frozen board is NOT merely an old `lastChangeMs`. A genuinely idle
+    backlog with no changes leaving the board unchanged is a LEGITIMATE steady
+    state — the change-gate in `pipelineBoardSync.ts` is intentional, so
+    "`lastChangeMs` is old" alone is never the signal. The signal is a
+    MISMATCH: read `.swarmforge/operator/concierge-tick-state.json` →
+    `pipelineBoard.lastChangeMs`, and flag only when backlog activity is NEWER
+    than the board's last change by more than a few minutes — i.e.
+    `backlog/active/` + `backlog/paused/` membership/content has moved since
+    `lastChangeMs` (cheap proxy: the most recent `backlog/` file mtime, or the
+    last git commit touching `backlog/`) but the board still hasn't caught up
+    after several ticks (a few minutes, not one tick). A same-file peer moving
+    while the board doesn't — e.g. `approvalsRoster` in the SAME state file
+    updated past `lastChangeMs` — is the same tell (it proves the tick loop is
+    alive and the fault is board-isolated). On a caught freeze: NOTIFY only —
+    you do not patch application code — pointing at that evidence file so the
+    root cause isn't re-derived from scratch; the code fix is tracked as
+    BL-497.
 - **AGENT_EXITED(role)** — confirm the pane is really gone (`pane_dead=1` or
   window absent), not just mid-work. If a single role genuinely died, respawn
   ONLY that pane via its launch script.
