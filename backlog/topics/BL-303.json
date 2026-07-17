@@ -1,0 +1,1 @@
+{"id":"BL-303","messages":[{"seq":0,"ts":1784302247987,"author":"swarm","type":"outbound","text":"BL-303 ✅ done — Bug (Defect B): front-desk supervisor's 'gave-up' is sticky/terminal and its attempt count never resets — a crash burst (or lifetime-accumulated crashes) causes a PERMANENT outage; add healthy-uptime reset + cooldown re-arm"}]}
