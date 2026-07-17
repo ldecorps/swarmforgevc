@@ -24,17 +24,8 @@ const path = require('node:path');
 
 const EXT_OUT = path.join(__dirname, '..', '..', '..', 'extension', 'out');
 const { runConciergeTick } = require(path.join(EXT_OUT, 'concierge', 'conciergeTick'));
-const { computePipelineBoard, deriveTicketSlug, PIPELINE_BOARD_SLUG_MAX_LENGTH, formatUpdatedAtLabel } = require(path.join(
-  EXT_OUT,
-  'concierge',
-  'pipelineBoard'
-));
+const { computePipelineBoard, formatUpdatedAtLabel } = require(path.join(EXT_OUT, 'concierge', 'pipelineBoard'));
 const { syncPipelineBoard } = require(path.join(EXT_OUT, 'concierge', 'pipelineBoardSync'));
-
-// The slug bound BEFORE BL-462 widened it (24 -> current
-// PIPELINE_BOARD_SLUG_MAX_LENGTH) - refine-01 needs a title that overflowed
-// the OLD bound but fits the new one.
-const PREVIOUS_SLUG_MAX_LENGTH = 24;
 
 // The fixed instant the shared "the pipeline board is rendered" step
 // (bl452PipelineBoardSteps.js) always drives runConciergeTick with.
@@ -173,38 +164,11 @@ function registerSteps(registry) {
     ctx.fixture = fakeConciergeAdapters();
   });
 
-  // ── pipeline-board-refine-01 ──────────────────────────────────────────
-  registry.define(/^an active ticket whose title is longer than the previous slug limit but within the wider limit$/, (ctx) => {
-    ctx.fixture = fakeConciergeAdapters();
-    ctx.ticketId = 'BL-1';
-    ctx.ticketTitle = 'a'.repeat(PREVIOUS_SLUG_MAX_LENGTH + 10);
-    if (ctx.ticketTitle.length > PIPELINE_BOARD_SLUG_MAX_LENGTH) {
-      throw new Error('fixture bug: expected the title to fit within the wider limit');
-    }
-    ctx.fixture.setRoleHeldTickets({ coder: [ctx.ticketId] });
-    ctx.fixture.setFolders(folders({ active: [{ id: ctx.ticketId, title: ctx.ticketTitle }] }));
-  });
-
-  registry.define(/^the ticket's row shows a slug carrying more of its title than the previous limit allowed$/, (ctx) => {
-    const expectedSlug = deriveTicketSlug(ctx.ticketTitle);
-    if (expectedSlug.length <= PREVIOUS_SLUG_MAX_LENGTH) {
-      throw new Error(`fixture bug: expected a slug longer than the previous limit, got length ${expectedSlug.length}`);
-    }
-    const text = lastPosted(ctx.fixture);
-    if (!text.includes(expectedSlug)) {
-      throw new Error(`expected the rendered board to include the widened slug "${expectedSlug}", got:\n${text}`);
-    }
-  });
-
-  registry.define(/^the slug is still a single line no wider than the board$/, (ctx) => {
-    const expectedSlug = deriveTicketSlug(ctx.ticketTitle);
-    if (expectedSlug.includes('\n')) {
-      throw new Error(`expected a single-line slug, got: ${JSON.stringify(expectedSlug)}`);
-    }
-    if (expectedSlug.length > PIPELINE_BOARD_SLUG_MAX_LENGTH) {
-      throw new Error(`expected the slug to be at most ${PIPELINE_BOARD_SLUG_MAX_LENGTH} chars, got ${expectedSlug.length}`);
-    }
-  });
+  // pipeline-board-refine-01 RETIRED (BL-505): its step handlers asserted
+  // the GRID row contains deriveTicketSlug(title) beyond the previous slug
+  // bound, a premise BL-465 already superseded (the grid shows a short
+  // kebab slug, never a truncated title) - see the feature file's own
+  // retirement comment for why.
 
   // pipeline-board-refine-02 RETIRED (BL-475): its step handlers asserted
   // the GRID row contains deriveTicketSlug(title), a premise BL-465
