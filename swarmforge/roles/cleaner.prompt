@@ -15,6 +15,35 @@ You are the cleaner.
 - Run language mutation over uncovered or weakly covered changed behavior.
 - Add or improve unit tests until relevant mutants are killed.
 
+## Mutation-Site Size (BL-485)
+- Before handoff, count the mutation sites of the files this cleanup pass changed
+  or added, so an oversized mutation target is caught here — where a split is
+  cheap — rather than at the hardener's downstream mutation gate, where hundreds
+  of sites make the pass slow and its survivors hard to localise:
+  ```
+  node <repo>/extension/out/tools/mutation-site-count.js <changed-file> [<changed-file> ...]
+  ```
+  Pass repo-root-relative paths (from your own `git diff --name-only`), the same
+  convention `dependency-gate.js` and `co-change-report.js` use. It prints each
+  file's mutation-site count and a `within`/`over` verdict. It is COUNT-ONLY —
+  Stryker's pure AST instrumenter, no sandbox, no test-per-mutant loop — and
+  finishes in well under a second per file; it never runs the mutation gate.
+- It counts against the compiled `out/` file, never the `src/` `.ts` (Stryker's
+  mutate scope is `out/**/*.js`), so `npm run compile` first — a changed file with
+  no compiled counterpart counts 0 and is invisible to the check.
+- The threshold is 100 mutation sites (adopted from the upstream six-pack;
+  overridable with `--threshold N`). It is boundary-inclusive: a file is flagged
+  `over` only once it EXCEEDS 100, not at exactly 100.
+- A file reported `over` is a CANDIDATE for a behavior-preserving split — a SOFT
+  advisory you weigh, NOT a machine block on handoff. Split it into cohesive
+  smaller modules ONLY when the split ALSO improves structure and separation of
+  concerns (per Architecture Rules below); never a mechanical line-count chop just
+  to duck the count. A legitimately-cohesive large module that a split would only
+  harm stays whole — that is the correct call, not a gate failure.
+- When you do split, preserve behavior (your no-new-behavior contract still holds)
+  and preserve the mutation manifests across the split. The goal is a tractable
+  downstream mutation pass, not hitting a number.
+
 ## Architecture Rules
 - Keep high-level policy independent of IO, UI, framework, filesystem,
   database, network, and device details.
