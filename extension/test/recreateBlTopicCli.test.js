@@ -49,12 +49,26 @@ function readOperatorTopicMap(root) {
 const CLI_ENV_KEYS = ['TELEGRAM_BOT_TOKEN', 'TELEGRAM_CHAT_ID', 'TELEGRAM_RECREATE_FORCE_RESULT'];
 
 async function runCli(args, overrides = {}) {
+  const { stdout } = await runCliCapturingBoth(args, overrides);
+  return stdout;
+}
+
+// BL-495 hardening: the usage-error tests need the actual stderr TEXT (not
+// just the empty stdout + exit code), or a mutated/blanked usage message
+// would still pass them - a survived mutant confirmed exactly this gap.
+async function runCliCapturingBoth(args, overrides = {}) {
   const previousArgv = process.argv;
   const previousEnv = Object.fromEntries(CLI_ENV_KEYS.map((k) => [k, process.env[k]]));
-  const writes = [];
-  const originalWrite = process.stdout.write.bind(process.stdout);
+  const stdoutWrites = [];
+  const stderrWrites = [];
+  const originalStdoutWrite = process.stdout.write.bind(process.stdout);
+  const originalStderrWrite = process.stderr.write.bind(process.stderr);
   process.stdout.write = (chunk) => {
-    writes.push(chunk);
+    stdoutWrites.push(chunk);
+    return true;
+  };
+  process.stderr.write = (chunk) => {
+    stderrWrites.push(chunk);
     return true;
   };
   try {
@@ -65,22 +79,24 @@ async function runCli(args, overrides = {}) {
     }
     await main();
   } finally {
-    process.stdout.write = originalWrite;
+    process.stdout.write = originalStdoutWrite;
+    process.stderr.write = originalStderrWrite;
     process.argv = previousArgv;
     for (const key of CLI_ENV_KEYS) {
       if (previousEnv[key] === undefined) delete process.env[key];
       else process.env[key] = previousEnv[key];
     }
   }
-  return writes.join('');
+  return { stdout: stdoutWrites.join(''), stderr: stderrWrites.join('') };
 }
 
 test('main() prints usage and exits nonzero when the ticket id is missing', async () => {
   const originalExitCode = process.exitCode;
   process.exitCode = undefined;
   try {
-    const output = await runCli(['/some/root']); // no ticket id
-    assert.equal(output, '');
+    const { stdout, stderr } = await runCliCapturingBoth(['/some/root']); // no ticket id
+    assert.equal(stdout, '');
+    assert.match(stderr, /Usage: recreate-bl-topic\.js <project-root> <ticket-id>/);
     assert.equal(process.exitCode, 1);
   } finally {
     process.exitCode = originalExitCode;
@@ -91,8 +107,9 @@ test('main() prints usage and exits nonzero when the project root is missing', a
   const originalExitCode = process.exitCode;
   process.exitCode = undefined;
   try {
-    const output = await runCli([]); // no args at all
-    assert.equal(output, '');
+    const { stdout, stderr } = await runCliCapturingBoth([]); // no args at all
+    assert.equal(stdout, '');
+    assert.match(stderr, /Usage: recreate-bl-topic\.js <project-root> <ticket-id>/);
     assert.equal(process.exitCode, 1);
   } finally {
     process.exitCode = originalExitCode;
@@ -117,6 +134,29 @@ test('topic-recreation-epic-aware-01: an epic-bound ticket reopens its epic topi
   assert.equal(result.success, true);
   assert.equal(result.topicId, 42);
   assert.deepEqual(readBacklogTopicMap(root), { 'topic-consolidation': 42 }, 'reopen never touches the mapping');
+});
+
+// Exercises the ticket lookup with 2+ candidates whose epics genuinely
+// differ (the hardener's own "a selector must be proven with 2+ candidates"
+// rule) - a decoy ticket sorted FIRST (lower priority number) with a
+// DIFFERENT epic than the requested ticket id. If the lookup ever degraded
+// from "match by id" to "take whichever is first", this would resolve to
+// the decoy's epic instead, which the assertion below would catch.
+test('topic-recreation-epic-aware-01: with 2+ candidate tickets on disk, the ticket is matched by ID, never merely the first one read', async () => {
+  const root = mkFixture();
+  writeTicketYaml(root, 'BL-001-decoy', 'a decoy from a different epic', 'epic: decoy-epic\npriority: 1\n');
+  writeTicketYaml(root, 'BL-900', 'a fine feature', 'epic: topic-consolidation\npriority: 50\n');
+  writeBacklogTopicMap(root, { 'topic-consolidation': 42, 'decoy-epic': 999 });
+
+  const output = await runCli([root, 'BL-900'], {
+    TELEGRAM_BOT_TOKEN: 'x',
+    TELEGRAM_CHAT_ID: 'y',
+    TELEGRAM_RECREATE_FORCE_RESULT: JSON.stringify({ success: true }),
+  });
+
+  const result = JSON.parse(output);
+  assert.equal(result.action, 'reopen');
+  assert.equal(result.topicId, 42, "expected BL-900's OWN epic topic, never the decoy's");
 });
 
 test('topic-recreation-epic-aware-01: an epic-bound ticket recreates its epic topic when it is gone, named after the epic', async () => {
