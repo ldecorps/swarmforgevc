@@ -136,22 +136,32 @@ function matchesAnySignature(error: string, signatures: string[]): boolean {
   return signatures.some((signature) => lower.includes(signature));
 }
 
+// BL-497/BL-502 (cleaner, CRAP budget): the three signature lists above,
+// tried in this fixed order - topic-gone and too-long are both distinct,
+// non-transient causes checked before the broader transient bucket, so an
+// error matching more than one list's wording still lands on the earliest,
+// most specific class. Extracted from classifyBoardFailure below (which
+// repeated the identical `error && matchesAnySignature(error, X)` shape
+// three times) into one ordered lookup, purely to keep that function's own
+// CRAP under threshold - mirrors resolveBoardTopicId's own extraction below
+// for the identical reason.
+const FAILURE_CLASSIFICATION_ORDER: { signatures: string[]; failureClass: PipelineBoardFailureClass }[] = [
+  { signatures: TOPIC_GONE_ERROR_SIGNATURES, failureClass: 'topic-gone' },
+  { signatures: TOO_LONG_ERROR_SIGNATURES, failureClass: 'too-long' },
+  { signatures: TRANSIENT_ERROR_SIGNATURES, failureClass: 'transient' },
+];
+
 // BL-497: a topic-gone classification self-heals (the next tick re-ensures
 // a fresh topic); a transient one retains the topic and bounded-retries; an
 // UNKNOWN/unclassifiable error is deliberately folded into the same
 // retained posture as transient - the ticket's own conservative choice, so
 // a never-seen-before error string can never spawn a duplicate topic.
 export function classifyBoardFailure(error: string | undefined): PipelineBoardFailureClass {
-  if (error && matchesAnySignature(error, TOPIC_GONE_ERROR_SIGNATURES)) {
-    return 'topic-gone';
+  if (!error) {
+    return 'unknown';
   }
-  if (error && matchesAnySignature(error, TOO_LONG_ERROR_SIGNATURES)) {
-    return 'too-long';
-  }
-  if (error && matchesAnySignature(error, TRANSIENT_ERROR_SIGNATURES)) {
-    return 'transient';
-  }
-  return 'unknown';
+  const matched = FAILURE_CLASSIFICATION_ORDER.find(({ signatures }) => matchesAnySignature(error, signatures));
+  return matched?.failureClass ?? 'unknown';
 }
 
 // The topic id is created ONCE then reused - split out purely to keep
