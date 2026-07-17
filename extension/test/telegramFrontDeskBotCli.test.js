@@ -53,6 +53,10 @@ const {
   resolveRolePaneTarget,
   redirectToRole,
   postOperatorContext,
+  queueAmendSteerDirective,
+  resetApprovalAskEmittedState,
+  readTickState,
+  writeTickState,
   openSubjectAndRecord,
   standingTopicTargets,
   roleTopicTargets,
@@ -73,6 +77,7 @@ const {
 } = require('../out/tools/telegram-front-desk-bot');
 const { readRecord: readTopicRecord } = require('../out/concierge/blTopicStore');
 const { readRoleTopicMap, writeRoleTopicMap } = require('../out/concierge/roleTopicMapStore');
+const { approvalRequestedEventKey } = require('../out/events/swarmEventStream');
 
 // parseNextSseRecord's own tests live in telegramFrontDeskBotCore.test.js -
 // its implementation moved there (the testable core); this file re-exports
@@ -1827,6 +1832,64 @@ test('a DIFFERENT update (different updateId) for the same ticket is recorded as
   await postOperatorContext(target, 'BL-123', 'second reply', 502);
   assert.equal(readTopicRecord(target, 'BL-123').messages.length, 2);
   assert.equal(operatorEventCount(target, 'BL-123'), 2);
+});
+
+// ── queueAmendSteerDirective (BL-509: a distinct TELEGRAM_BL_AMEND_STEER
+//    event, deliberately separate from postOperatorContext's own
+//    TELEGRAM_BL_TOPIC_MESSAGE, so a later daemon route can pick it up
+//    without the existing approval-answer sweep mistaking it for one). ────
+
+function operatorEvents(target, backlogId) {
+  const file = path.join(target, '.swarmforge', 'operator', 'events.jsonl');
+  if (!fs.existsSync(file)) {
+    return [];
+  }
+  return fs
+    .readFileSync(file, 'utf8')
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => JSON.parse(line))
+    .filter((event) => event.backlogId === backlogId);
+}
+
+test('queueAmendSteerDirective appends a TELEGRAM_BL_AMEND_STEER event carrying the ticket id and the steer text', async () => {
+  const target = mkTmp();
+  await queueAmendSteerDirective(target, 'BL-509', 'rename the button');
+  const events = operatorEvents(target, 'BL-509');
+  assert.equal(events.length, 1);
+  assert.equal(events[0].type, 'TELEGRAM_BL_AMEND_STEER');
+  assert.equal(events[0].text, 'rename the button');
+});
+
+test('queueAmendSteerDirective never posts a TELEGRAM_BL_TOPIC_MESSAGE - the existing approval-answer sweep must not see it', async () => {
+  const target = mkTmp();
+  await queueAmendSteerDirective(target, 'BL-509', 'rename the button');
+  assert.ok(operatorEvents(target, 'BL-509').every((event) => event.type !== 'TELEGRAM_BL_TOPIC_MESSAGE'));
+});
+
+// ── resetApprovalAskEmittedState (BL-509/BL-357/BL-496: clears a ticket's
+//    ApprovalRequested emittedKeys entry so a later pending->amending->
+//    pending transition re-fires the ask instead of being silently
+//    suppressed as already-emitted). ──────────────────────────────────────
+
+test("resetApprovalAskEmittedState removes only this ticket's ApprovalRequested key, leaving an unrelated ticket's key untouched", async () => {
+  const target = mkTmp();
+  writeTickState(target, { snapshot: null, emittedKeys: [approvalRequestedEventKey('BL-509'), approvalRequestedEventKey('BL-1')] });
+  await resetApprovalAskEmittedState(target, 'BL-509');
+  assert.deepEqual(readTickState(target).emittedKeys, [approvalRequestedEventKey('BL-1')]);
+});
+
+test('resetApprovalAskEmittedState is a no-op when the key is not present - never happened, or already reset', async () => {
+  const target = mkTmp();
+  writeTickState(target, { snapshot: null, emittedKeys: [approvalRequestedEventKey('BL-1')] });
+  await resetApprovalAskEmittedState(target, 'BL-509');
+  assert.deepEqual(readTickState(target).emittedKeys, [approvalRequestedEventKey('BL-1')]);
+});
+
+test('resetApprovalAskEmittedState against a fresh target with no tick-state file yet is a safe no-op', async () => {
+  const target = mkTmp();
+  await resetApprovalAskEmittedState(target, 'BL-509');
+  assert.deepEqual(readTickState(target).emittedKeys, []);
 });
 
 // ── standingTopicTargets (BL-418) ─────────────────────────────────────────
