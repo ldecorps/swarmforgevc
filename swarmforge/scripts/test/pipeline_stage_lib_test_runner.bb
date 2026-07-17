@@ -57,6 +57,14 @@
 (assert= "BL-488: a non-leading id still canonicalizes to upper-case"
          "BL-447"
          (pipeline-stage-lib/extract-ticket-id "continuing bl-447 next slice"))
+;; The word-boundary guard's real effect: without it, the greedy letter-run
+;; would still land a match starting mid-token whenever the id is preceded
+;; by a digit (no \w boundary between a digit and a letter) - a mutant that
+;; drops the \b guards is not caught by any case above, since none of them
+;; place a digit directly before the id-shaped token.
+(assert= "BL-488: an id-shaped token directly preceded by a digit does not resolve (word-boundary guard)"
+         nil
+         (pipeline-stage-lib/extract-ticket-id "v2BL-476 do the thing"))
 
 ;; ── ticket-id-from-headers: task (git_handoff) OR message (note) ─────────
 (assert= "a git_handoff's task header wins when present"
