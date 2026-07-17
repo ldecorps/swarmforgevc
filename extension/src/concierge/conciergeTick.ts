@@ -423,6 +423,30 @@ function recentlyClosedItems(
     .sort((a, b) => (doneClosedAtMs[b.id] ?? -Infinity) - (doneClosedAtMs[a.id] ?? -Infinity));
 }
 
+// BL-465 bounce: stamps this tick's OWN observed instant onto every ticket
+// in doneIds that has never been recorded before - the durable, monotonic
+// record recentlyClosedItems sorts against (see TickState.doneClosedAtMs'
+// own docstring). Deliberately NOT derived from the icon sync's
+// newlyEnteredIds diff (scoped to state.snapshot - the event-ROUTING retry
+// view, which a stuck completion message deliberately holds a ticket back
+// out of to retry next tick). Coupling this timestamp to that retry state
+// would re-stamp - and so silently rejuvenate - a ticket every tick its
+// completion message keeps failing to route. A ticket's OWN closure time
+// has nothing to do with whether the swarm managed to post about it, so
+// this checks the durable map's OWN membership directly: once an id is
+// stamped, it is never restamped. Extracted out of runConciergeTick so
+// THAT function's own branch count stays at or below the CRAP threshold,
+// the same reasoning as syncAllTitleAgeBuckets/syncBoardIfWired above.
+function stampNewlyDoneClosedAtMs(prev: Record<string, number> | undefined, doneIds: string[], nowMs: number): Record<string, number> {
+  const doneClosedAtMs = { ...(prev ?? {}) };
+  for (const id of doneIds) {
+    if (doneClosedAtMs[id] === undefined) {
+      doneClosedAtMs[id] = nowMs;
+    }
+  }
+  return doneClosedAtMs;
+}
+
 async function syncBoardIfWired(
   folders: BacklogFoldersSnapshot,
   prevBoard: PipelineBoardState | undefined,
@@ -875,26 +899,11 @@ export async function runConciergeTick(adapters: ConciergeTickAdapters, nowMs: n
   const alreadyEmitted = new Set(state.emittedKeys);
   const events = deriveSwarmEvents(state.snapshot, curr, alreadyEmitted);
 
-  // BL-465 bounce: stamp this tick's OWN observed instant onto every ticket
-  // in folders.done that has never been recorded before - the durable,
-  // monotonic record recentlyClosedItems sorts against (see
-  // TickState.doneClosedAtMs' own docstring). Deliberately NOT derived from
-  // the icon sync's newlyEnteredIds diff further down, which is scoped to
-  // state.snapshot - the event-ROUTING retry view (a ticket's completion
-  // event that failed to post is deliberately held BACK OUT of that
-  // snapshot by withRetryableTransitionsHeldBack below, to retry it next
-  // tick). Coupling this timestamp to that retry state would re-stamp - and
-  // so silently rejuvenate - a ticket every tick its completion message
-  // keeps failing to route, corrupting recency for as long as that failure
-  // persists. A ticket's OWN closure time has nothing to do with whether
-  // the swarm managed to post about it, so this checks the durable map's
-  // OWN membership directly: once an id is stamped, it is never restamped.
-  const doneClosedAtMs = { ...(state.doneClosedAtMs ?? {}) };
-  for (const id of curr.backlog.done) {
-    if (doneClosedAtMs[id] === undefined) {
-      doneClosedAtMs[id] = nowMs;
-    }
-  }
+  // BL-465 bounce: durable per-ticket closure timestamps, stamped once per
+  // ticket the first time it's observed done (see stampNewlyDoneClosedAtMs'
+  // own docstring for why this is independent of the event-routing retry
+  // snapshot below).
+  const doneClosedAtMs = stampNewlyDoneClosedAtMs(state.doneClosedAtMs, curr.backlog.done, nowMs);
 
   // BL-342: snapshot which tickets already had a topic BEFORE this tick's
   // own event loop runs (which may CREATE fresh ones below) - the ONLY
