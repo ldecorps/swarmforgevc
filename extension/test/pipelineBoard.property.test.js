@@ -1,6 +1,14 @@
 const assert = require('node:assert/strict');
 const fc = require('fast-check');
-const { budgetPipelineBoardLinks, deriveKebabSlug, deriveDisplayTicketId, compareLinksMostRecentFirst } = require('../out/concierge/pipelineBoard');
+const {
+  budgetPipelineBoardLinks,
+  deriveKebabSlug,
+  deriveDisplayTicketId,
+  compareLinksMostRecentFirst,
+  computePipelineBoard,
+  PIPELINE_BOARD_COLUMN_ORDER,
+} = require('../out/concierge/pipelineBoard');
+const { ALL_SWARM_ROLES } = require('../out/concierge/roleTopicMapStore');
 
 // BL-502 (architect, property-testing support): budgetPipelineBoardLinks is
 // the pure trim function this ticket introduced to keep the pipeline board's
@@ -149,6 +157,36 @@ test('property: sorting with compareLinksMostRecentFirst puts every numbered lin
         }
         previousNumber = n;
       }
+    })
+  );
+});
+
+// BL-507 (architect, property-testing support): buildGridRows (via
+// computePipelineBoard) remaps a ticket held by a role ALL_SWARM_ROLES still
+// carries but PIPELINE_BOARD_COLUMN_ORDER no longer does ('coordinator') onto
+// the 'QA' column, so its row always lands on a real header column rather
+// than an orphaned one with no matching cell. pipelineBoard.test.js and the
+// BL-507 feature pin this with the single concrete 'coordinator' example;
+// the invariant - every row's column is always a member of
+// PIPELINE_BOARD_COLUMN_ORDER - holds for a ticket held by ANY of the
+// ALL_SWARM_ROLES roles, not just that one example. This is the "never
+// falls outside the render-able domain" conservation shape
+// architect.prompt's Property Testing section names, and it is exactly the
+// invariant this ticket's remap exists to protect: deleting the `heldRole
+// === 'coordinator' ? 'QA' : heldRole` remap in buildGridRows makes this
+// property fail for role='coordinator' (confirmed by temporarily removing
+// the remap and re-running - it fails as expected, restored after).
+const heldRoleArb = fc.constantFrom(...ALL_SWARM_ROLES);
+
+test('property: a ticket held by any ALL_SWARM_ROLES role always renders on a real column, for any role', () => {
+  fc.assert(
+    fc.property(heldRoleArb, (role) => {
+      const { rows } = computePipelineBoard({ [role]: ['BL-1'] }, [], {}, { activeIds: ['BL-1'] });
+      assert.equal(rows.length, 1, `expected exactly one row for role=${role}`);
+      assert.ok(
+        PIPELINE_BOARD_COLUMN_ORDER.includes(rows[0].column),
+        `role=${role} produced column=${rows[0].column}, not a member of PIPELINE_BOARD_COLUMN_ORDER=${PIPELINE_BOARD_COLUMN_ORDER.join(', ')}`
+      );
     })
   );
 });
