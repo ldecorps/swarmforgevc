@@ -108,10 +108,10 @@ function fakeConciergeAdapters() {
       readStandingTopics: () => [],
       readRoleHeldTickets: () => currentRoleHeldTickets,
       boardAdapters: {
-        ensureBoardTopic: async () => 900,
+        ensureBoardTopic: async () => ({ topicId: 900 }),
         postMessage: async (topicId, text) => {
           posted.push({ topicId, text });
-          return posted.length;
+          return { messageId: posted.length };
         },
         deleteMessage: async (topicId, messageId) => {
           deleted.push({ topicId, messageId });
@@ -139,10 +139,10 @@ function fakeBoardAdapters() {
     posted,
     deleted,
     adapters: {
-      ensureBoardTopic: async () => 900,
+      ensureBoardTopic: async () => ({ topicId: 900 }),
       postMessage: async (topicId, text) => {
         posted.push({ topicId, text });
-        return posted.length;
+        return { messageId: posted.length };
       },
       deleteMessage: async (topicId, messageId) => {
         deleted.push({ topicId, messageId });

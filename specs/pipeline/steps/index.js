@@ -268,7 +268,8 @@ const DOMAINS = [
   require('./bl487BoardFreshnessWithoutCoordinatorSyncSteps'),
   require('./bl488HeldTicketIdResolvesWithoutLeadingTokenSteps'),
   require('./bl467PipelineBoardOnlyPinSteps'),
-  require('./bl498MutationGateExcludesTscImportHelpersSteps')
+  require('./bl498MutationGateExcludesTscImportHelpersSteps'),
+  require('./bl497PipelineBoardPostFailureRecoverySteps')
 ];
 
 function registerSteps(registry) {
