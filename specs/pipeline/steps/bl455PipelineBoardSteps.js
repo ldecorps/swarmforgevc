@@ -267,12 +267,14 @@ function registerSteps(registry) {
   });
 
   registry.define(/^the ticket's row shows a short slug derived from its title$/, (ctx) => {
-    // BL-455's own deriveTicketSlug is the real production derivation - this
-    // reuses it (not a hand-rolled re-implementation) to compute the exact
-    // expected slug, then confirms the wiring actually threaded the title
-    // through to the rendered row.
-    const { deriveTicketSlug } = require(path.join(EXT_OUT, 'concierge', 'pipelineBoard'));
-    ctx.expectedSlug = deriveTicketSlug(ctx.ticketTitle);
+    // BL-465: the grid's own slug column is deriveKebabSlug's short kebab
+    // form (deriveTicketSlug's wide truncated-title form is used by the
+    // below-grid list entries only, deriveListEntryText) - this reuses the
+    // real production derivation (not a hand-rolled re-implementation) to
+    // compute the exact expected slug, then confirms the wiring actually
+    // threaded the title through to the rendered row.
+    const { deriveKebabSlug } = require(path.join(EXT_OUT, 'concierge', 'pipelineBoard'));
+    ctx.expectedSlug = deriveKebabSlug(ctx.ticketTitle);
     const text = lastRendered(ctx.fixture);
     if (!text.includes(ctx.expectedSlug)) {
       throw new Error(`expected the rendered board to include the derived slug "${ctx.expectedSlug}", got:\n${text}`);
