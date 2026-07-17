@@ -70,6 +70,7 @@ function fakeAdapters(overrides = {}) {
         state.pipelineBoard = next.pipelineBoard;
         state.approvalsRoster = next.approvalsRoster;
         state.recertPosted = next.recertPosted;
+        state.doneClosedAtMs = next.doneClosedAtMs;
       },
       routeAdapters: {
         getTopicMap: () => topicMap,
@@ -1469,13 +1470,13 @@ test('BL-418 wiring: standingIconSeenIds persists and grows across ticks rather 
 // see syncPerAgentTopicIcons' own docstring in conciergeTick.ts.
 
 const ROLE_ICON_STICKERS = [
-  { emoji: '🧭', customEmojiId: 'id-compass' },
+  { emoji: '🎬', customEmojiId: 'id-clapper' },
   { emoji: '📝', customEmojiId: 'id-note' },
-  { emoji: '🏗', customEmojiId: 'id-crane' },
-  { emoji: '⌨️', customEmojiId: 'id-keyboard' },
-  { emoji: '🧹', customEmojiId: 'id-broom' },
-  { emoji: '🛡', customEmojiId: 'id-shield' },
-  { emoji: '🔍', customEmojiId: 'id-magnifier' },
+  { emoji: '🏛', customEmojiId: 'id-building' },
+  { emoji: '💻', customEmojiId: 'id-laptop' },
+  { emoji: '🧼', customEmojiId: 'id-soap' },
+  { emoji: '🧪', customEmojiId: 'id-tube' },
+  { emoji: '🔎', customEmojiId: 'id-magnifier-tilted' },
   { emoji: '📚', customEmojiId: 'id-books' },
 ];
 
@@ -1502,19 +1503,19 @@ test('BL-469 per-agent-steering-topic-icon-01: each of the 8 role topics gets it
   assert.deepEqual(
     iconsSet.sort((a, b) => a.topicId - b.topicId),
     [
-      { topicId: 901, iconId: 'id-compass' },
+      { topicId: 901, iconId: 'id-clapper' },
       { topicId: 902, iconId: 'id-note' },
-      { topicId: 903, iconId: 'id-crane' },
-      { topicId: 904, iconId: 'id-keyboard' },
-      { topicId: 905, iconId: 'id-broom' },
-      { topicId: 906, iconId: 'id-shield' },
-      { topicId: 907, iconId: 'id-magnifier' },
+      { topicId: 903, iconId: 'id-building' },
+      { topicId: 904, iconId: 'id-laptop' },
+      { topicId: 905, iconId: 'id-soap' },
+      { topicId: 906, iconId: 'id-tube' },
+      { topicId: 907, iconId: 'id-magnifier-tilted' },
       { topicId: 908, iconId: 'id-books' },
     ]
   );
-  assert.equal(iconOwnership.coordinator, 'id-compass');
-  assert.equal(iconOwnership.coder, 'id-keyboard');
-  assert.equal(iconOwnership.QA, 'id-magnifier');
+  assert.equal(iconOwnership.coordinator, 'id-clapper');
+  assert.equal(iconOwnership.coder, 'id-laptop');
+  assert.equal(iconOwnership.QA, 'id-magnifier-tilted');
 });
 
 // BL-469 per-agent-steering-topic-icon-02
@@ -1522,9 +1523,9 @@ test('BL-469 per-agent-steering-topic-icon-02: an icon Telegram does not offer i
   const { adapters, iconsSet, iconOwnership } = fakeAdapters({
     readRoleTopics: () => ALL_ROLE_TOPIC_TARGETS,
   });
-  // The coder's keyboard sticker is absent from the live set; every other
+  // The coder's laptop sticker is absent from the live set; every other
   // role's mapped icon is still offered.
-  adapters.iconAdapters.getIconStickers = async () => ROLE_ICON_STICKERS.filter((s) => s.emoji !== '⌨️');
+  adapters.iconAdapters.getIconStickers = async () => ROLE_ICON_STICKERS.filter((s) => s.emoji !== '💻');
 
   await assert.doesNotReject(() => runConciergeTick(adapters));
 
@@ -1536,7 +1537,7 @@ test('BL-469 per-agent-steering-topic-icon-02: an icon Telegram does not offer i
   assert.equal(iconOwnership.coder, undefined, 'a skipped-unresolved icon never records ownership');
   // Every other role still resolved and got its own mapped icon.
   assert.equal(iconsSet.length, 7);
-  assert.equal(iconOwnership.QA, 'id-magnifier');
+  assert.equal(iconOwnership.QA, 'id-magnifier-tilted');
   assert.equal(iconOwnership.documenter, 'id-books');
 });
 
@@ -1936,6 +1937,90 @@ test('BL-465: folders.done feeds the board\'s own RECENTLY CLOSED: section direc
 
   assert.ok(posted[0].includes('RECENTLY CLOSED:'), `expected a RECENTLY CLOSED: section, got:\n${posted[0]}`);
   assert.ok(posted[0].includes('BL-9'));
+});
+
+// BL-465 bounce (architect review): folders.done carries NO ordering
+// guarantee (it is a plain directory listing) and is emphatically NOT
+// closure recency - RECENTLY CLOSED must sort by when each ticket ACTUALLY
+// transitioned into folders.done (this tick's own nowMs, stamped once per
+// ticket the first time it is observed there), never by whatever order
+// folders.done happens to hand back. Constructed so folder-array order and
+// true closure order DISAGREE: BL-9 sits FIRST in folders.done (closed on
+// the earlier tick) while BL-1 sits SECOND (closed on the later tick) - a
+// buggy "just filter, never sort" implementation would render BL-9 before
+// BL-1, the wrong order.
+test('BL-465 bounce: RECENTLY CLOSED sorts by actual closure recency, never by folders.done listing order', async () => {
+  const { adapters, setFolders } = fakeAdapters();
+  const posted = [];
+  adapters.boardAdapters.postMessage = async (topicId, text) => {
+    posted.push(text);
+    return 1;
+  };
+  adapters.boardAdapters.ensureBoardTopic = async () => 900;
+  adapters.readRoleHeldTickets = () => ({});
+
+  // Tick 1 (t=1000): only BL-9 is done.
+  setFolders(folders({ done: [{ id: 'BL-9', title: 'shipped thing', filename: 'BL-9-shipped-thing.yaml' }] }));
+  await runConciergeTick(adapters, 1000);
+
+  // Tick 2 (t=2000): BL-1 newly closes. It is placed FIRST in folders.done
+  // (array order), but it closed SECOND (later, more recently) than BL-9.
+  setFolders(
+    folders({
+      done: [
+        { id: 'BL-1', title: 'closed later, listed first', filename: 'BL-1-later.yaml' },
+        { id: 'BL-9', title: 'shipped thing', filename: 'BL-9-shipped-thing.yaml' },
+      ],
+    })
+  );
+  await runConciergeTick(adapters, 2000);
+
+  const last = posted[posted.length - 1];
+  const idxBL1 = last.indexOf('BL-1');
+  const idxBL9 = last.indexOf('BL-9');
+  assert.ok(idxBL1 !== -1 && idxBL9 !== -1, `expected both tickets in the recently-closed section, got:\n${last}`);
+  assert.ok(idxBL1 < idxBL9, `expected the MORE RECENTLY closed BL-1 (t=2000) listed before BL-9 (t=1000); got:\n${last}`);
+});
+
+// A ticket already sitting in folders.done on the VERY FIRST tick this
+// feature ever runs (no prior snapshot) has no way to know its true
+// historical close time - it gets stamped with that first tick's own nowMs,
+// same as every OTHER pre-existing done ticket observed that same tick
+// (the same one-time eventual-consistency gap BL-418's own
+// standingIconSeenIds backfill precedent accepts). Proven here via a
+// SECOND, later-closing ticket that must still sort strictly after it.
+test('BL-465 bounce: a ticket newly closing on a LATER tick still outranks one already done on the FIRST tick', async () => {
+  const { adapters, setFolders } = fakeAdapters();
+  const posted = [];
+  adapters.boardAdapters.postMessage = async (topicId, text) => {
+    posted.push(text);
+    return 1;
+  };
+  adapters.boardAdapters.ensureBoardTopic = async () => 900;
+  adapters.readRoleHeldTickets = () => ({});
+
+  // Tick 1 (t=500): BL-2 is ALREADY done (no prior snapshot - first-ever
+  // tick), so it gets stamped with t=500 despite its real historical close
+  // time being unknown.
+  setFolders(folders({ done: [{ id: 'BL-2', title: 'pre-existing done ticket', filename: 'BL-2-pre.yaml' }] }));
+  await runConciergeTick(adapters, 500);
+
+  // Tick 2 (t=9000): BL-3 closes much later.
+  setFolders(
+    folders({
+      done: [
+        { id: 'BL-2', title: 'pre-existing done ticket', filename: 'BL-2-pre.yaml' },
+        { id: 'BL-3', title: 'closes much later', filename: 'BL-3-later.yaml' },
+      ],
+    })
+  );
+  await runConciergeTick(adapters, 9000);
+
+  const last = posted[posted.length - 1];
+  const idxBL2 = last.indexOf('BL-2');
+  const idxBL3 = last.indexOf('BL-3');
+  assert.ok(idxBL2 !== -1 && idxBL3 !== -1, `expected both tickets in the recently-closed section, got:\n${last}`);
+  assert.ok(idxBL3 < idxBL2, `expected the later-closing BL-3 (t=9000) listed before the first-tick BL-2 (t=500); got:\n${last}`);
 });
 
 test('BL-465: readRepoBaseUrl feeds the below-grid GitHub link list, appended after the closing </pre>', async () => {

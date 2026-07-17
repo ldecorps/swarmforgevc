@@ -197,25 +197,10 @@ function registerSteps(registry) {
     }
   });
 
-  // ── pipeline-board-refine-02 ──────────────────────────────────────────
-  registry.define(/^an active ticket whose title is longer than the wider slug limit$/, (ctx) => {
-    ctx.fixture = fakeConciergeAdapters();
-    ctx.ticketId = 'BL-2';
-    ctx.ticketTitle = 'b'.repeat(PIPELINE_BOARD_SLUG_MAX_LENGTH + 25);
-    ctx.fixture.setRoleHeldTickets({ coder: [ctx.ticketId] });
-    ctx.fixture.setFolders(folders({ active: [{ id: ctx.ticketId, title: ctx.ticketTitle }] }));
-  });
-
-  registry.define(/^the ticket's row shows a truncated single-line slug no wider than the board$/, (ctx) => {
-    const expectedSlug = deriveTicketSlug(ctx.ticketTitle);
-    if (expectedSlug.length > PIPELINE_BOARD_SLUG_MAX_LENGTH || expectedSlug.includes('\n') || expectedSlug === ctx.ticketTitle) {
-      throw new Error(`expected a truncated single-line slug, got: ${JSON.stringify(expectedSlug)}`);
-    }
-    const text = lastPosted(ctx.fixture);
-    if (!text.includes(expectedSlug)) {
-      throw new Error(`expected the rendered board to include the truncated slug "${expectedSlug}", got:\n${text}`);
-    }
-  });
+  // pipeline-board-refine-02 RETIRED (BL-475): its step handlers asserted
+  // the GRID row contains deriveTicketSlug(title), a premise BL-465
+  // superseded (the grid now shows a short kebab slug, never a truncated
+  // title) - see the feature file's own retirement comment for why.
 
   // ── pipeline-board-refine-03 ──────────────────────────────────────────
   registry.define(/^the board content changes at a known instant$/, (ctx) => {
