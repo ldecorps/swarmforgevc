@@ -1,0 +1,70 @@
+id: BL-481
+title: "Cut Operator Telegram reply latency: react out-of-cycle to a fresh inbound message instead of sleeping a full OPERATOR_INTERVAL_MS between ticks"
+milestone: M8
+type: enhancement
+severity: low
+epic: ""
+priority: 6
+direction: human-requested
+depends_on: []
+source: "Coordinator raw intake backlog/INTAKE-operator-response-latency.md (2026-07-17, from a live incident the human reported: a Concierge-topic question felt unanswered for an extended window). Drained by the specifier 2026-07-17. The intake flagged this as a live-process UX change requiring human sign-off on DIRECTION before building; the human chose 'Faster real reply' (out-of-cycle tick on fresh inbound / shorten interval) over an immediate-ack reply or documentation-only."
+
+notes: |
+  VERIFIED ROOT CAUSE (specifier, 2026-07-17 — against real code, not assumed):
+    - operator_runtime.bb `-main` (line 1616-1619) runs `tick!` then UNCONDITIONALLY
+      `(Thread/sleep interval-ms)` where `interval-ms` = OPERATOR_INTERVAL_MS (default 30000 = 30s,
+      line 189). Each `tick!` reads pending events from events.jsonl and, via the already-correct
+      `should-launch-operator?` / `should-launch-front-desk-operator?` decisions, launches the
+      Operator when an inbound message is pending.
+    - So the launch decision is ALREADY immediate once the event is READ — the latency is purely the
+      loop's fixed 30s sleep: a Telegram message that lands just after a tick sits unread in
+      events.jsonl for up to a full OPERATOR_INTERVAL_MS before the next tick picks it up. That is a
+      fixed polling tax (up to ~30s) on every reply, on top of the inherent LLM reasoning time.
+    - IMPORTANT scope-shaping finding: the EXPENSIVE full health sweep is NOT run every tick — it is
+      already gated to `swarm-check-ms` (OPERATOR_SWARM_CHECK_MS, default 1800000 = 30m) via
+      `timer-due?` (line 1447-1455). So the intake's worry that "each invocation does a full health
+      sweep" is only true on the 30m SWARM_CHECK_TIMER cadence, not on an ordinary inbound-message
+      tick. This means the loop can poll far more often for events WITHOUT multiplying health-sweep
+      cost — as long as the fast path keeps the periodic/expensive sweeps gated to their own cadence.
+
+  WHAT THIS TICKET DOES (behaviour, not a prescribed implementation):
+    - Make the runtime react to a fresh inbound Telegram message within a short, bounded window (a
+      few seconds) rather than up to a full OPERATOR_INTERVAL_MS. Candidate mechanisms (architect's
+      call): (a) an adaptive inter-tick sleep — when idle-and-listening, sleep a short, bounded,
+      env-overridable poll interval instead of the full interval; (b) an event-driven wake that
+      blocks on events.jsonl changing with a timeout; and/or (c) simply lowering OPERATOR_INTERVAL_MS
+      with the periodic sweeps gated to their own cadences. The seam convention to follow is the
+      existing `env-ms`/`interval-ms`/`swarm-check-ms` overrides.
+
+  HARD CONSTRAINTS:
+    - Do NOT increase how often expensive periodic work runs. The full health sweep must still fire
+      only on its swarm-check-ms cadence (keep the `timer-due?` gate); the tunnel re-establish and
+      other non-trivial per-tick side actions must not silently run many times more often — gate
+      anything costly to its own cadence, or keep it off the fast event-detection path.
+    - The existing launch guards MUST still hold on the fast path: one full Operator at a time, the
+      front-desk/full mutual exclusion (BL-334), and provider cooldown (`:waiting_for_provider`) —
+      a fast wake must never launch a second or duplicate invocation.
+    - Any wake/poll loop stays BOUNDED per engineering.prompt's bounded-retry rule — a short,
+      configured, non-zero poll interval, never a zero-delay busy-spin.
+    - This targets the runtime's own event-detection delay ONLY. It does not, and cannot, reduce the
+      LLM's reasoning time (the ~1-2min to compose a reply). Expectation calibration: the human
+      explicitly chose this over the immediate-'got it'-ack option, which would have masked the
+      reasoning latency; if the residual reasoning time later proves to be the dominant complaint,
+      that immediate-ack path (deferred now) remains available as a follow-up ticket.
+
+  QA E2E VERIFICATION: with the runtime running, send a Telegram message to the Operator/Concierge
+  topic just after a tick completes and confirm (via operator.log launch-decision timestamps and the
+  reply timestamp) the Operator is launched within the short poll window (a few seconds), not up to
+  ~30s later; then confirm a full SWARM_CHECK_TIMER health sweep still appears at most once per
+  swarm-check-ms cadence in operator.log despite the faster polling. Unit level: the acceptance
+  scenarios drive the pure inter-tick wait / launch-scheduling decision with an injected clock/state.
+
+acceptance: specs/features/BL-481-operator-out-of-cycle-wake.feature
+
+human_approval: >
+  DIRECTION approved by the human 2026-07-17 (chose 'Faster real reply' — out-of-cycle tick on fresh
+  inbound and/or shorten OPERATOR_INTERVAL_MS — over an immediate-ack reply or documentation-only).
+  No further human sign-off is required to FILE this proposal; it sits in paused until the coordinator
+  promotes it. Not a governance/prompt change, so no prompt-wording review gate (unlike BL-479/BL-480).
+
+mutation_cost: low
