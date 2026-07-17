@@ -100,8 +100,7 @@ acceptance:
     - "An expedited ask closes itself like any other decided ask"
     - "A tap on an already-decided ask performs no expedite side effect"
 
-human_approval: pending
-
+human_approval: approved
 approval_context: >
   Approving greenlights the Expedite verb contract above. FIRM (from the human, via Operator intake):
   a fourth Expedite button that approves + force-promotes paused->active + dispatches to build NOW,

@@ -60,8 +60,7 @@ qa_e2e: |
   unchanged (pure refactor — no acceptance scenario changed). The tracker itself is
   "done" only when the CRAP>6 set is empty, reached incrementally, never in one pass.
 
-human_approval: pending
-
+human_approval: approved
 approval_context: >
   Not required to FILE (a low-priority tracker, swarm-proposed in answer to the
   hardener's delegated question). Any actively-scoped decrap slice drawn from it
