@@ -24,6 +24,18 @@
 (assert= "nil for text with no leading ticket id" nil (pipeline-stage-lib/extract-ticket-id "just a note, no ticket"))
 (assert= "nil for nil text" nil (pipeline-stage-lib/extract-ticket-id nil))
 
+;; BL-471: canonicalized to upper-case regardless of the header's own casing
+;; - the fix for the latent case-sensitive active-set join gap.
+(assert= "BL-471: a fully lower-case leading id canonicalizes to upper-case"
+         "BL-447"
+         (pipeline-stage-lib/extract-ticket-id "bl-447 promoted to active/ — starting now"))
+(assert= "BL-471: a mixed-case leading id canonicalizes to upper-case"
+         "BL-447"
+         (pipeline-stage-lib/extract-ticket-id "Bl-447-some-task-name"))
+(assert= "BL-471: an already-upper-case id is unaffected"
+         "BL-447"
+         (pipeline-stage-lib/extract-ticket-id "BL-447-some-task-name"))
+
 ;; ── ticket-id-from-headers: task (git_handoff) OR message (note) ─────────
 (assert= "a git_handoff's task header wins when present"
          "BL-217"
@@ -90,6 +102,20 @@
 (assert= "keeps every ticket that IS active" {"BL-1" "coder" "BL-2" "cleaner"}
          (pipeline-stage-lib/filter-active {"BL-1" "coder" "BL-2" "cleaner"} #{"BL-1" "BL-2"}))
 (assert= "empty active set drops everything" {} (pipeline-stage-lib/filter-active {"BL-1" "coder"} #{}))
+
+;; ── BL-471 board-authoritative-stage-05: end-to-end case-robustness join ──
+;; A handoff header leading with a differently-cased ticket id must still
+;; survive reconcile-stage-map + filter-active against the canonical
+;; (always upper-case) active set - the exact join active-ticket-ids
+;; (pipeline_stage_cli.bb) performs, driven here through the full pipeline
+;; rather than extract-ticket-id in isolation.
+(assert= "BL-471: a lower-case header id resolves to its active (upper-case) ticket and survives the active-set join"
+         {"BL-447" "coder"}
+         (pipeline-stage-lib/filter-active
+          (pipeline-stage-lib/reconcile-stage-map
+           [{:role "coder" :ticket-id (pipeline-stage-lib/ticket-id-from-headers {:task nil :message "bl-447 starting now"})}]
+           ROLE-ORDER)
+          #{"BL-447"}))
 
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (empty? @failures)

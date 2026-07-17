@@ -73,3 +73,11 @@ Feature: The pipeline board shows every active ticket at its true current stage 
     And a ticket is held in a way an in_process git_handoff task-header scrape would miss
     When the pipeline board is rendered
     Then that ticket still appears at its current stage
+
+  # BL-471 board-authoritative-stage-05
+  Scenario: A handoff header that leads with a differently-cased ticket id still resolves to its active ticket
+    Given an active ticket "BL-447"
+    And a role holds a handoff whose header leads with the id "bl-447"
+    When the pipeline board is rendered
+    Then the ticket appears on the board at that role's stage
+    And it appears on exactly one row

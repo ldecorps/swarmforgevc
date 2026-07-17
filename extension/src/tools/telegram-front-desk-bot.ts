@@ -72,6 +72,7 @@ import {
   sendVoiceNote,
   TelegramUpdate,
   TelegramPostFn,
+  InlineKeyboardButton,
 } from '../notify/telegramClient';
 import {
   PollAdapters,
@@ -102,10 +103,19 @@ import {
   decideEnsureAgentQuestionsTopicAction,
   AGENT_QUESTIONS_TOPIC_NAME,
   AGENT_QUESTIONS_SUBJECT_ID,
+  decideEnsureControlTopicAction,
+  CONTROL_TOPIC_NAME,
+  CONTROL_SUBJECT_ID,
   SttResult,
   TtsResult,
   ReplyRelayAdapters,
 } from './telegramFrontDeskBotCore';
+import {
+  PauseState,
+  PendingControlConfirm,
+  CONTROL_CALLBACK_DATA,
+  decideDrainOutcome,
+} from './telegramControlCore';
 import { backlogForTopic } from '../concierge/topicRouter';
 import { recordApprovalReply, recordRejectionReply } from '../concierge/pendingApprovalReply';
 import {
@@ -134,6 +144,10 @@ import { sendInstructionVerified } from '../swarm/verifiedInject';
 import { sleepSync } from '../swarm/sleepSync';
 import { runCliMain } from './swarm-metrics';
 import { atomicWrite } from '../util/atomicWrite';
+import { isSwarmReady, defaultRoleBootstrapped } from '../swarm/swarmLauncher';
+import { readBounceAck, BouncePhase } from '../swarm/bounceAck';
+import { buildRoleInboxes } from '../watchdog/chaserMonitor';
+import { scanInboxNew, scanInProcess } from '../swarm/inboxChaser';
 
 const execFileAsync = promisify(execFile);
 
@@ -528,6 +542,28 @@ export async function ensureAgentQuestionsTopic(targetPath: string, botToken: st
   return created.messageThreadId;
 }
 
+// BL-423: the Control-topic twin of ensureAgentQuestionsTopic above -
+// identical reuse-or-create/idempotent-across-restarts shape, sharing the
+// SAME {topicId: subjectId} map. Called once BEFORE the poll loop starts
+// (same ordering rationale as every other standing topic) - an unbound
+// Control topic must never be reachable by an inbound stop/restart/pause
+// verb before the binding decideControlEventAction depends on exists.
+export async function ensureControlTopic(targetPath: string, botToken: string, chatId: string, postFn?: TelegramPostFn): Promise<number | undefined> {
+  const topicMap = readTopicMap(targetPath);
+  const decision = decideEnsureControlTopicAction(topicMap);
+  if (decision.kind === 'reuse') {
+    return decision.topicId;
+  }
+  const created = await createForumTopic(botToken, chatId, CONTROL_TOPIC_NAME, postFn);
+  if (!created.success || created.messageThreadId === undefined) {
+    process.stderr.write(`ensureControlTopic: failed to create the Control topic: ${created.error ?? 'no messageThreadId returned'}\n`);
+    return undefined;
+  }
+  topicMap[topicMapKey(created.messageThreadId)] = CONTROL_SUBJECT_ID;
+  writeTopicMap(targetPath, topicMap);
+  return created.messageThreadId;
+}
+
 // BL-466: {pollId: {threadId, options}} - the poll id -> SUP-### thread
 // mapping sendTelegramPoll's own send-time result needs to survive until a
 // later poll_answer arrives (which carries no thread/topic info at all - see
@@ -576,6 +612,63 @@ export function readAwaitingAnswer(targetPath: string): { threadId?: string } | 
   } catch {
     return undefined;
   }
+}
+
+// BL-423: the PAUSE marker - this bot's own writer (applyPause/resumeNow
+// below, for an explicit human action) plus the auto-resume sweep's own
+// writer (resume-expired-pauses.ts, on a timed pause's natural expiry) -
+// both converge on the SAME {active:false}, never a conflicting write.
+// backlog_depth_lib.bb's read-pause-state reads this EXACT file/shape from
+// the Babashka side - the sanctioned lever that actually freezes promotion
+// (BL-423's own "wire a REAL reader, not a dark marker" instruction) - so
+// the field names here (camelCase untilMs) are NOT incidental; they are
+// the cross-language contract.
+export function controlPauseStatePath(targetPath: string): string {
+  return path.join(targetPath, '.swarmforge', 'operator', 'control-pause.json');
+}
+
+export function readControlPauseState(targetPath: string): PauseState {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(controlPauseStatePath(targetPath), 'utf8')) as { active?: boolean; untilMs?: number };
+    return parsed.active ? { active: true, untilMs: parsed.untilMs } : { active: false };
+  } catch {
+    return { active: false };
+  }
+}
+
+export function writeControlPauseState(targetPath: string, state: PauseState): void {
+  atomicWrite(controlPauseStatePath(targetPath), JSON.stringify(state.active ? { active: true, untilMs: state.untilMs } : { active: false }));
+}
+
+// BL-423: the pending stop/restart confirm marker - armed by
+// prompt-stop-modes/prompt-restart-confirm, consumed (cleared) by whichever
+// callback tap actually resolves it (execute-*/cancel), same "SOLE writer
+// for this specific state, no cross-process race" posture as
+// readControlPauseState above (only this bot's own dispatch ever reads or
+// writes this file).
+export function pendingControlConfirmPath(targetPath: string): string {
+  return path.join(targetPath, '.swarmforge', 'operator', 'control-pending-confirm.json');
+}
+
+export function readPendingControlConfirm(targetPath: string): PendingControlConfirm {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(pendingControlConfirmPath(targetPath), 'utf8')) as { kind?: string };
+    return parsed.kind === 'stop-modes' || parsed.kind === 'restart-confirm' ? (parsed as PendingControlConfirm) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+export function writePendingControlConfirm(targetPath: string, confirm: PendingControlConfirm): void {
+  if (confirm === undefined) {
+    try {
+      fs.unlinkSync(pendingControlConfirmPath(targetPath));
+    } catch {
+      // absent already - the intended end state either way.
+    }
+    return;
+  }
+  atomicWrite(pendingControlConfirmPath(targetPath), JSON.stringify(confirm));
 }
 
 // BL-425 slice 1 (cleaner): one role's own provision decision + effect,
@@ -818,6 +911,275 @@ export async function synthesizeVoiceReply(openaiApiKey: string, text: string): 
   }
 }
 
+// ── BL-423: swarm control effects - stop (drain/emergency), restart, pause ──
+// telegramControlCore.ts's decideControlEventAction/decideDrainOutcome own
+// every DECISION; everything below is the thin, adapter-injected real
+// effect telegramFrontDeskBotCore.ts's PollAdapters dispatch calls into -
+// this file's own established "testable core, thin live wrapper" split,
+// applied a fourth time (mirrors Approvals/Recert/Agent Questions above).
+
+const CONTROL_DRAIN_TIMEOUT_ENV_VAR = 'SWARMFORGE_CONTROL_DRAIN_TIMEOUT_MS';
+const DEFAULT_CONTROL_DRAIN_TIMEOUT_MS = 10 * 60 * 1000;
+const CONTROL_DRAIN_POLL_INTERVAL_MS = 2000;
+
+// Exported (CLI main() thin-wrapper rule), same shape as
+// conciergeTickIntervalMs below - unset/invalid/non-positive all fall back
+// to the human-decided 10-minute default (2026-07-16), env-overridable so
+// a test can drive the bounded drain wait small and deterministic.
+export function controlDrainTimeoutMs(rawEnv: string | undefined = process.env[CONTROL_DRAIN_TIMEOUT_ENV_VAR]): number {
+  const parsed = rawEnv ? Number(rawEnv) : NaN;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_CONTROL_DRAIN_TIMEOUT_MS;
+}
+
+const CONTROL_RESTART_ACK_TIMEOUT_ENV_VAR = 'SWARMFORGE_CONTROL_RESTART_ACK_TIMEOUT_MS';
+const DEFAULT_CONTROL_RESTART_ACK_TIMEOUT_MS = 5 * 60 * 1000;
+const CONTROL_RESTART_ACK_POLL_INTERVAL_MS = 1000;
+
+export function controlRestartAckTimeoutMs(rawEnv: string | undefined = process.env[CONTROL_RESTART_ACK_TIMEOUT_ENV_VAR]): number {
+  const parsed = rawEnv ? Number(rawEnv) : NaN;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_CONTROL_RESTART_ACK_TIMEOUT_MS;
+}
+
+export async function postControlMessage(
+  botToken: string,
+  chatId: string,
+  controlTopicId: number | undefined,
+  text: string,
+  buttons?: InlineKeyboardButton[][],
+  postFn?: TelegramPostFn
+): Promise<void> {
+  if (controlTopicId === undefined) {
+    return;
+  }
+  await sendTelegramMessage(botToken, chatId, text, undefined, postFn, controlTopicId, buttons);
+}
+
+export function stopModesButtons(): InlineKeyboardButton[][] {
+  return [
+    [
+      { text: 'Drain & stop', callbackData: CONTROL_CALLBACK_DATA.drainStop },
+      { text: 'Emergency stop', callbackData: CONTROL_CALLBACK_DATA.emergencyStop },
+    ],
+    [{ text: 'Cancel', callbackData: CONTROL_CALLBACK_DATA.cancel }],
+  ];
+}
+
+export function restartConfirmButtons(): InlineKeyboardButton[][] {
+  return [[
+    { text: 'Confirm restart', callbackData: CONTROL_CALLBACK_DATA.confirmRestart },
+    { text: 'Cancel', callbackData: CONTROL_CALLBACK_DATA.cancel },
+  ]];
+}
+
+export function pauseMenuButtons(): InlineKeyboardButton[][] {
+  return [
+    [
+      { text: '15 min', callbackData: CONTROL_CALLBACK_DATA.pause15m },
+      { text: '1 hr', callbackData: CONTROL_CALLBACK_DATA.pause1h },
+      { text: '4 hr', callbackData: CONTROL_CALLBACK_DATA.pause4h },
+    ],
+    [{ text: 'Until I resume', callbackData: CONTROL_CALLBACK_DATA.pauseUntilResume }],
+  ];
+}
+
+export function resumeNowButtons(): InlineKeyboardButton[][] {
+  return [[{ text: 'Resume now', callbackData: CONTROL_CALLBACK_DATA.resumeNow }]];
+}
+
+// BL-423: "no parcel in any role's inbox/in_process" (the ticket's own
+// drain-empty definition) - reuses inboxChaser.ts's own scanInboxNew/
+// scanInProcess (the SAME scan the chase sweep itself drives), never a
+// second, divergent notion of "is there work".
+export function isPipelineEmpty(targetPath: string): boolean {
+  // resolveLiveRoles (below) reads the persisted roles.tsv directly - the
+  // SAME source notify-dead-letters.ts's own live-roles resolution uses -
+  // rather than readSwarmRoles's sessions.tsv (only populated while a real
+  // tmux swarm is actually up), so a drain-stop's own "is anything still
+  // in flight" check works from static role/worktree config alone.
+  const roles = resolveLiveRoles(targetPath).map((r) => r.role);
+  const roleInboxes = buildRoleInboxes(targetPath, roles);
+  return roleInboxes.every(({ inboxNewDir, inProcessDir }) => scanInboxNew(inboxNewDir).length === 0 && scanInProcess(inProcessDir).length === 0);
+}
+
+export function killAllSwarmScriptPath(targetPath: string): string {
+  return path.join(targetPath, 'swarmforge', 'scripts', 'kill_all_swarm.sh');
+}
+
+export async function runKillAllSwarm(targetPath: string): Promise<{ ok: boolean; output: string }> {
+  try {
+    const { stdout } = await execFileAsync('bash', [killAllSwarmScriptPath(targetPath), targetPath]);
+    return { ok: true, output: stdout.trim() };
+  } catch (err) {
+    return { ok: false, output: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+// Split out of executeStop below for the same CRAP-budget reason
+// telegramFrontDeskBotCore.ts's extraction comments document throughout
+// (see e.g. gatherControlState there): polls decideDrainOutcome until the
+// pipeline is empty ('drained') or the drain window elapses ('forced'),
+// never returning 'wait' itself.
+async function waitForDrainOutcome(targetPath: string, startedAtMs: number, timeoutMs: number): Promise<'drained' | 'forced'> {
+  for (;;) {
+    const outcome = decideDrainOutcome(isPipelineEmpty(targetPath), startedAtMs, Date.now(), timeoutMs);
+    if (outcome === 'wait') {
+      await sleep(CONTROL_DRAIN_POLL_INTERVAL_MS);
+      continue;
+    }
+    return outcome;
+  }
+}
+
+// BL-423: the ONE reap path both stop modes drive - "drive the reap
+// through kill_all_swarm.sh's socket-scoped path" (the ticket's own
+// words). The ONLY difference between the two modes is whether teardown
+// waits for the drain first.
+export async function executeStop(
+  targetPath: string,
+  botToken: string,
+  chatId: string,
+  controlTopicId: number | undefined,
+  mode: 'emergency' | 'drain',
+  postFn?: TelegramPostFn
+): Promise<void> {
+  let drainOutcome: 'drained' | 'forced' | undefined;
+  if (mode === 'drain') {
+    await postControlMessage(botToken, chatId, controlTopicId, 'Draining in-flight work before stopping...', undefined, postFn);
+    drainOutcome = await waitForDrainOutcome(targetPath, Date.now(), controlDrainTimeoutMs());
+    if (drainOutcome === 'forced') {
+      await postControlMessage(botToken, chatId, controlTopicId, 'Drain window elapsed with work still in flight - forcing teardown.', undefined, postFn);
+    }
+  } else {
+    await postControlMessage(botToken, chatId, controlTopicId, 'Emergency stop - tearing down immediately, no drain wait.', undefined, postFn);
+  }
+  const result = await runKillAllSwarm(targetPath);
+  const label = mode === 'emergency' ? 'stopped (emergency)' : drainOutcome;
+  await postControlMessage(
+    botToken,
+    chatId,
+    controlTopicId,
+    result.ok ? `Stop complete: ${label}.` : `Stop reported an error: ${result.output}`,
+    undefined,
+    postFn
+  );
+}
+
+export function bounceSentinelPath(targetPath: string): string {
+  return path.join(targetPath, '.swarmforge', 'bounce');
+}
+
+// BL-423: REUSES the sanctioned bounce path (remote_bounce.sh's own
+// sentinel write, the owning-context executor already consumes it) rather
+// than inventing a second restart mechanism - see this ticket's own
+// "do not invent a restart mechanism" constraint.
+export function writeBounceSentinel(targetPath: string): void {
+  atomicWrite(bounceSentinelPath(targetPath), 'swarm');
+}
+
+// Split out of executeRestart below for the same CRAP-budget reason
+// waitForDrainOutcome above documents: posts the phase-transition message
+// for one newly-observed bounce-ack phase, and - only for the two terminal
+// phases - the restart's own final verdict, returning whether the restart
+// loop should stop polling.
+async function handleRestartAckPhase(
+  ack: { phase: BouncePhase; message?: string },
+  targetPath: string,
+  botToken: string,
+  chatId: string,
+  controlTopicId: number | undefined,
+  checkBootstrapped: (tp: string) => boolean,
+  postFn?: TelegramPostFn
+): Promise<'continue' | 'stop'> {
+  const suffix = ack.message ? ` - ${ack.message}` : '';
+  await postControlMessage(botToken, chatId, controlTopicId, `Restart: ${ack.phase}${suffix}`, undefined, postFn);
+  if (ack.phase === 'done') {
+    await postControlMessage(
+      botToken,
+      chatId,
+      controlTopicId,
+      checkBootstrapped(targetPath)
+        ? 'Restart complete - every agent bootstrapped.'
+        : 'Restart reported done, but not every agent actually bootstrapped - reporting failed.',
+      undefined,
+      postFn
+    );
+    return 'stop';
+  }
+  return ack.phase === 'failed' ? 'stop' : 'continue';
+}
+
+// BL-423: streams the extension host's own bounce-ack phases back to the
+// Control topic (draining -> stopping -> relaunching -> done/failed), then
+// re-verifies a reported 'done' against isSwarmReady's own strengthened
+// bootstrap check (defaultRoleBootstrapped, tmuxClient.ts's
+// pgrep-for-a-live-pane-child signal) rather than trusting the extension's
+// window-exists-only readiness at face value - the exact "windows created,
+// no agent bootstrapped" half-launch this ticket must never report as done.
+export async function executeRestart(
+  targetPath: string,
+  botToken: string,
+  chatId: string,
+  controlTopicId: number | undefined,
+  postFn?: TelegramPostFn,
+  checkBootstrapped: (tp: string) => boolean = (tp) => isSwarmReady(tp, defaultRoleBootstrapped)
+): Promise<void> {
+  writeBounceSentinel(targetPath);
+  await postControlMessage(botToken, chatId, controlTopicId, 'Restarting the swarm...', undefined, postFn);
+  const deadline = Date.now() + controlRestartAckTimeoutMs();
+  let lastPhase: BouncePhase | undefined;
+  while (Date.now() < deadline) {
+    const ack = readBounceAck(targetPath);
+    if (ack && ack.phase !== lastPhase) {
+      lastPhase = ack.phase;
+      if ((await handleRestartAckPhase(ack, targetPath, botToken, chatId, controlTopicId, checkBootstrapped, postFn)) === 'stop') {
+        return;
+      }
+    }
+    await sleep(CONTROL_RESTART_ACK_POLL_INTERVAL_MS);
+  }
+  await postControlMessage(botToken, chatId, controlTopicId, 'Restart timed out waiting for the bounce to report back.', undefined, postFn);
+}
+
+export function humanizePauseDurationMs(durationMs: number): string {
+  const minutes = Math.round(durationMs / 60_000);
+  return minutes < 60 ? `for ${minutes} min` : `for ${Math.round(minutes / 60)} hr`;
+}
+
+// BL-423: FREEZES new-work intake, never a process suspend/teardown -
+// writes the SAME marker backlog_depth_lib.bb's read-pause-state reads on
+// the Babashka side (the sanctioned lever that actually freezes
+// promotion). Agents stay alive; in-flight parcels finish untouched.
+export async function applyPause(
+  targetPath: string,
+  botToken: string,
+  chatId: string,
+  controlTopicId: number | undefined,
+  durationMs: number | undefined,
+  postFn?: TelegramPostFn
+): Promise<void> {
+  writeControlPauseState(targetPath, { active: true, untilMs: durationMs !== undefined ? Date.now() + durationMs : undefined });
+  const label = durationMs !== undefined ? humanizePauseDurationMs(durationMs) : 'until you resume';
+  await postControlMessage(
+    botToken,
+    chatId,
+    controlTopicId,
+    `Paused - new work will not be promoted ${label}. In-flight work continues.`,
+    resumeNowButtons(),
+    postFn
+  );
+}
+
+export async function resumeNow(
+  targetPath: string,
+  botToken: string,
+  chatId: string,
+  controlTopicId: number | undefined,
+  postFn?: TelegramPostFn
+): Promise<void> {
+  writeControlPauseState(targetPath, { active: false });
+  await postControlMessage(botToken, chatId, controlTopicId, 'Resumed - new work will be promoted again.', undefined, postFn);
+}
+
 function buildPollAdapters(
   botToken: string,
   targetPath: string,
@@ -888,6 +1250,50 @@ function buildPollAdapters(
     agentQuestionsTopicId: () => ensureAgentQuestionsTopic(targetPath, botToken, chatId),
     getPendingAgentQuestionThread: () => Promise.resolve(readAwaitingAnswer(targetPath)?.threadId),
     resolvePollThread: (pollId) => Promise.resolve(readPollMap(targetPath)[pollId]),
+    // ── BL-423: swarm control (stop/restart/pause) ──────────────────────
+    controlTopicId: () => ensureControlTopic(targetPath, botToken, chatId),
+    getPendingControlConfirm: () => Promise.resolve(readPendingControlConfirm(targetPath)),
+    setPendingControlConfirm: (confirm) => {
+      writePendingControlConfirm(targetPath, confirm);
+      return Promise.resolve();
+    },
+    getPauseState: () => Promise.resolve(readControlPauseState(targetPath)),
+    postControlStopModesMenu: async () => {
+      const controlTopicId = await ensureControlTopic(targetPath, botToken, chatId);
+      await postControlMessage(botToken, chatId, controlTopicId, 'Stop the swarm how?', stopModesButtons());
+    },
+    postControlRestartConfirm: async () => {
+      const controlTopicId = await ensureControlTopic(targetPath, botToken, chatId);
+      await postControlMessage(botToken, chatId, controlTopicId, 'Restart the swarm? This tears everything down and relaunches it.', restartConfirmButtons());
+    },
+    postControlCancelled: async () => {
+      const controlTopicId = await ensureControlTopic(targetPath, botToken, chatId);
+      await postControlMessage(botToken, chatId, controlTopicId, 'Cancelled - the swarm is untouched.');
+    },
+    postControlPauseMenu: async () => {
+      const controlTopicId = await ensureControlTopic(targetPath, botToken, chatId);
+      await postControlMessage(botToken, chatId, controlTopicId, 'Pause new work intake for how long?', pauseMenuButtons());
+    },
+    executeEmergencyStop: async () => {
+      const controlTopicId = await ensureControlTopic(targetPath, botToken, chatId);
+      await executeStop(targetPath, botToken, chatId, controlTopicId, 'emergency');
+    },
+    executeDrainStop: async () => {
+      const controlTopicId = await ensureControlTopic(targetPath, botToken, chatId);
+      await executeStop(targetPath, botToken, chatId, controlTopicId, 'drain');
+    },
+    executeRestart: async () => {
+      const controlTopicId = await ensureControlTopic(targetPath, botToken, chatId);
+      await executeRestart(targetPath, botToken, chatId, controlTopicId);
+    },
+    applyPause: async (durationMs) => {
+      const controlTopicId = await ensureControlTopic(targetPath, botToken, chatId);
+      await applyPause(targetPath, botToken, chatId, controlTopicId, durationMs);
+    },
+    resumeNow: async () => {
+      const controlTopicId = await ensureControlTopic(targetPath, botToken, chatId);
+      await resumeNow(targetPath, botToken, chatId, controlTopicId);
+    },
   };
 }
 
@@ -1570,6 +1976,12 @@ export async function main(): Promise<void> {
   // Questions topic must never be reachable by an inbound reply before the
   // binding decideAgentQuestionsReplyAction depends on exists).
   await ensureAgentQuestionsTopic(targetPath, botToken, chatId);
+
+  // BL-423: bind the standing Control topic BEFORE any loop starts polling
+  // too - same ordering rationale as every other standing topic above (an
+  // unbound Control topic must never be reachable by an inbound
+  // stop/restart/pause verb).
+  await ensureControlTopic(targetPath, botToken, chatId);
 
   // BL-425 slice 1: bind each swarm role's own standing steering topic
   // BEFORE any loop starts polling too - same ordering rationale as
