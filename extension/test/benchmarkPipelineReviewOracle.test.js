@@ -58,6 +58,33 @@ test('reviewPrompt embeds the role prompt text, the task id, the stage name, and
   assert.match(prompt, /PIPELINE_ORACLE_VERDICT: REJECT/);
 });
 
+// Pins the FULL prompt content, not spot-check regexes above - the
+// instructional lines between the role prompt and the verdict markers are
+// what the reviewing LLM actually reads to know what to do; a silently
+// emptied or garbled instruction (or lines silently concatenated without
+// their newline separators) would degrade real review quality with no
+// signal any code path could ever catch, since this text is consumed by
+// an LLM, never parsed by this codebase.
+test('reviewPrompt produces the exact newline-joined prompt content', () => {
+  const prompt = reviewPrompt('QA', 'ROLE PROMPT TEXT', { id: 'task-x' });
+  assert.equal(
+    prompt,
+    [
+      'ROLE PROMPT TEXT',
+      '',
+      'You are reviewing a candidate diff for benchmark task "task-x" as the QA role above.',
+      'The diff is already applied to the files in your current working directory.',
+      'If it needs no changes from your perspective, make no edits.',
+      'If it has fixable issues, fix them directly in the working tree now.',
+      'If it has a blocking issue you cannot fix, make no edits and explain why.',
+      'End your final message with exactly one line, nothing after it:',
+      'PIPELINE_ORACLE_VERDICT: ACCEPT   (nothing needed changing)',
+      'PIPELINE_ORACLE_VERDICT: REVISED  (you fixed something)',
+      'PIPELINE_ORACLE_VERDICT: REJECT   (blocking issue, unfixable by you)',
+    ].join('\n')
+  );
+});
+
 // ── rolePromptPath (pure) ────────────────────────────────────────────────
 
 test('rolePromptPath resolves under <repoRoot>/swarmforge/roles/<stage>.prompt', () => {
