@@ -126,20 +126,35 @@
     "chased"
     (if (unresponsive-liveness? liveness) "respawned" "dead-lettered")))
 
+;; BL-499: a new/ item whose basename is ALREADY terminal (present in
+;; completed/ or abandoned/ - the SAME already-terminal? predicate
+;; ready_for_next_task.bb's own dequeue-time dedup applies, BL-218) is
+;; reaped, never chased or dead-lettered. This precedence holds REGARDLESS
+;; of the recipient's liveness/activity - a stale duplicate of provably
+;; finished work is not "stuck" in any sense the age/backoff/liveness logic
+;; below exists to detect; it is a known-benign migration/interrupted-
+;; delivery residue (BL-128/BL-218) that the dequeue path already skips
+;; forever without ever removing, so left unhandled here it would be
+;; chased with exponential backoff FOREVER while the recipient stays
+;; active (chaseCount hit 12+ in one live session), or false-alarm
+;; dead-lettered once the recipient goes idle - neither of which reflects
+;; a real stall.
 (defn decide-item-action
-  [item-mtime-ms chase-count now-ms config liveness last-activity-ms last-chased-at-ms]
-  (let [age-seconds (/ (- now-ms item-mtime-ms) 1000.0)]
-    (if (< age-seconds (:chaseTimeoutSeconds config))
-      "skipped"
-      (let [idle-seconds (/ (- now-ms last-activity-ms) 1000.0)
-            has-recent-activity? (< idle-seconds (:stuckInProcessTimeoutSeconds config))]
-        (if has-recent-activity?
-          (if (nil? last-chased-at-ms)
-            "chased"
-            (let [seconds-since-last-chase (/ (- now-ms last-chased-at-ms) 1000.0)
-                  backoff-seconds (compute-chase-backoff-seconds chase-count config)]
-              (if (>= seconds-since-last-chase backoff-seconds) "chased" "skipped")))
-          (decide-stale-item-action chase-count config liveness))))))
+  [item-mtime-ms chase-count now-ms config liveness last-activity-ms last-chased-at-ms already-terminal?]
+  (if already-terminal?
+    "reaped"
+    (let [age-seconds (/ (- now-ms item-mtime-ms) 1000.0)]
+      (if (< age-seconds (:chaseTimeoutSeconds config))
+        "skipped"
+        (let [idle-seconds (/ (- now-ms last-activity-ms) 1000.0)
+              has-recent-activity? (< idle-seconds (:stuckInProcessTimeoutSeconds config))]
+          (if has-recent-activity?
+            (if (nil? last-chased-at-ms)
+              "chased"
+              (let [seconds-since-last-chase (/ (- now-ms last-chased-at-ms) 1000.0)
+                    backoff-seconds (compute-chase-backoff-seconds chase-count config)]
+                (if (>= seconds-since-last-chase backoff-seconds) "chased" "skipped")))
+            (decide-stale-item-action chase-count config liveness)))))))
 
 (defn decide-stuck-action [last-activity-ms nudge-count now-ms config]
   (let [idle-seconds (/ (- now-ms last-activity-ms) 1000.0)]
@@ -238,6 +253,18 @@
                         (fs/move sc (sidecar-path dead) {:replace-existing false}))
                       ((:log-dead-letter! adapters) role (:filePath item))
                       ((:log-telemetry! adapters) {:type "dead-letter" :role role :handoffId (handoff-id (:filePath item)) :count (:chaseCount item)} now-ms))
+    ;; BL-499: a reaped duplicate is DELETED outright, never moved to
+    ;; .dead - its work is already durably recorded in completed/ (that is
+    ;; precisely what makes it "terminal"), so there is nothing here worth
+    ;; preserving as a dead-letter artifact. Never chased (no wake-up, no
+    ;; chaseCount bump) and never dead-lettered (no human-visible alarm) -
+    ;; an "already-processed" telemetry event is the auditable trail,
+    ;; mirroring BL-218's own dequeue-side "SKIPPED already-processed"
+    ;; idiom one level up (this is the REMOVE half; ready_for_next_task.bb
+    ;; is the SKIP half - see decide-item-action's own comment).
+    "reaped" (do (handoff-lib/remove-sidecars-of! (:filePath item))
+                 (fs/delete (:filePath item))
+                 ((:log-telemetry! adapters) {:type "already-processed" :role role :handoffId (handoff-id (:filePath item)) :count (:chaseCount item)} now-ms))
     nil))
 
 ;; ── BL-232: orphaned chase/nudge sidecar reaping ────────────────────────
@@ -278,15 +305,26 @@
       (doseq [orphan (orphaned-sidecar-filenames filenames)]
         (fs/delete (fs/path inbox-new-dir orphan))))))
 
-(defn sweep-role-inbox! [role inbox-new-dir now-ms config adapters]
+(defn sweep-role-inbox! [role inbox-new-dir completed-dir abandoned-dir now-ms config adapters]
   (reap-orphaned-sidecars! inbox-new-dir)
   (let [items (scan-inbox-new inbox-new-dir)
+        ;; BL-499 (cleaner, DRY): handoff-lib/terminal-basenames - the SAME
+        ;; flat (non-batch-recursing) completed/abandoned reader
+        ;; ready_for_next_task.bb's own dequeue-time dedup (BL-218) already
+        ;; uses - never a second, drifting notion of "what counts as
+        ;; terminal". A non-existent directory (a role whose
+        ;; completed/abandoned has never been created yet) already
+        ;; degrades to [] there.
+        completed-basenames (handoff-lib/terminal-basenames completed-dir)
+        abandoned-basenames (handoff-lib/terminal-basenames abandoned-dir)
         liveness ((:get-liveness adapters) role)
         last-activity-ms ((:get-last-activity-ms adapters) role)
         respawn-cooldown-until-ms (read-respawn-cooldown-until-ms inbox-new-dir)]
     (doseq [item items]
-      (let [decided (decide-item-action (:mtimeMs item) (:chaseCount item) now-ms config
-                                         liveness last-activity-ms (:lastChasedAtMs item))
+      (let [already-terminal? (handoff-lib/already-terminal?
+                                (fs/file-name (:filePath item)) completed-basenames abandoned-basenames)
+            decided (decide-item-action (:mtimeMs item) (:chaseCount item) now-ms config
+                                         liveness last-activity-ms (:lastChasedAtMs item) already-terminal?)
             action (if (and (= decided "respawned") (is-cooling-down? respawn-cooldown-until-ms now-ms))
                      "chased"
                      decided)]
@@ -351,25 +389,26 @@
   ((:send-wake-up! adapters) role)
   ((:mark-rate-limit-cooldown-woken! adapters) role cooldown-until-ms))
 
-(defn- sweep-role! [role inbox-new-dir in-process-dir now-ms config adapters]
+(defn- sweep-role! [role inbox-new-dir in-process-dir completed-dir abandoned-dir now-ms config adapters]
   (sweep-in-process! role in-process-dir now-ms config adapters)
-  (sweep-role-inbox! role inbox-new-dir now-ms config adapters))
+  (sweep-role-inbox! role inbox-new-dir completed-dir abandoned-dir now-ms config adapters))
 
 (defn run-sweep!
-  "role-inboxes: seq of {:role :inbox-new-dir :in-process-dir}. Does not own
-   dead-letter recovery/escalation (handoffRecovery.ts) - deferred to a
-   follow-up ticket rather than widening this parcel.
+  "role-inboxes: seq of {:role :inbox-new-dir :in-process-dir :completed-dir
+   :abandoned-dir}. Does not own dead-letter recovery/escalation
+   (handoffRecovery.ts) - deferred to a follow-up ticket rather than
+   widening this parcel.
    adapters additionally requires (BL-209): :get-rate-limit-cooldown-until-ms
    (fn [role]), :get-rate-limit-cooldown-woken-marker (fn [role]),
    :mark-rate-limit-cooldown-woken! (fn [role until-ms])."
   [role-inboxes now-ms config adapters]
-  (doseq [{:keys [role inbox-new-dir in-process-dir]} role-inboxes]
+  (doseq [{:keys [role inbox-new-dir in-process-dir completed-dir abandoned-dir]} role-inboxes]
     (let [cooldown-until-ms ((:get-rate-limit-cooldown-until-ms adapters) role)]
       (when-not (rate-limit-cooling-down? cooldown-until-ms now-ms)
         (when (should-wake-on-rate-limit-expiry?
                cooldown-until-ms now-ms ((:get-rate-limit-cooldown-woken-marker adapters) role))
           (apply-rate-limit-expiry-wake! role adapters cooldown-until-ms))
-        (sweep-role! role inbox-new-dir in-process-dir now-ms config adapters)))))
+        (sweep-role! role inbox-new-dir in-process-dir completed-dir abandoned-dir now-ms config adapters)))))
 
 ;; ── busy-vs-wedged respawn precheck (BL-137/BL-147 parity) ──────────────────
 ;; The daemon's own respawn action must never regress the exact incident

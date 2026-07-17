@@ -17,7 +17,12 @@ pass() { echo "PASS: $*"; }
 
 make_fixture() {
   ROOT="$(mktemp -d)"
-  mkdir -p "$ROOT/inbox/new" "$ROOT/inbox/in_process"
+  # BL-499: completed/ and abandoned/ - the terminal-basename dirs the
+  # reap check reads (chase_sweep_test_runner.bb wires them alongside
+  # new/in_process for every scenario, including the pre-existing ones
+  # above that never touch them - reading an empty completed/abandoned/
+  # is indistinguishable from a role whose mailbox never created them).
+  mkdir -p "$ROOT/inbox/new" "$ROOT/inbox/in_process" "$ROOT/inbox/completed" "$ROOT/inbox/abandoned"
 }
 
 set_mtime() {
@@ -177,5 +182,78 @@ echo "{\"coder\":{\"untilMs\":$(( NOW_MS - 1000 )),\"wokenForUntilMs\":$(( NOW_M
 run_sweep "unknown" $(( NOW_MS - (STUCK_TIMEOUT_S + 100) * 1000 ))
 grep -q "^wake-up coder$" "$ROOT/calls.log" 2>/dev/null && fail "09b: expected no SECOND wake-up for the same already-woken cooldown; got: $(cat "$ROOT/calls.log" 2>/dev/null)"
 pass "09b (BL-209 resume-at-reset-03): an already-woken cooldown (same until-ms) does not re-wake"
+
+# ── BL-499 chase-sweep-terminal-dup-01a: an already-completed handoff lingering
+#     in new/, recipient ACTIVE, is reaped - never chased ─────────────────────
+make_fixture
+write_handoff "$ROOT/inbox/completed/00_item.handoff"
+write_handoff "$ROOT/inbox/new/00_item.handoff"
+set_mtime "$ROOT/inbox/new/00_item.handoff" $(( (NOW_MS / 1000) - CHASE_TIMEOUT_S - 5 ))
+# recent activity: lastActivityMs just now
+run_sweep "alive" "$NOW_MS"
+
+grep -q "wake-up" "$ROOT/calls.log" 2>/dev/null && fail "10a: expected NO wake-up for a duplicate already terminal in completed/"
+[[ -f "$ROOT/inbox/new/00_item.handoff.chase.json" ]] && fail "10a: expected chaseCount NOT incremented (no sidecar written at all) for a reaped duplicate"
+[[ -f "$ROOT/inbox/new/00_item.handoff" ]] && fail "10a: expected the stale duplicate reaped (removed) from new/, never left to be dequeued"
+pass "10a (BL-499 chase-sweep-terminal-dup-01, completed): an already-terminal duplicate is reaped, not chased"
+
+grep -q "^telemetry already-processed coder 00_item.handoff " "$ROOT/calls.log" \
+  || fail "10a: expected an auditable already-processed telemetry event; got: $(cat "$ROOT/calls.log")"
+pass "10a (BL-499 chase-sweep-terminal-dup-01, completed): the reap is recorded as an auditable already-processed line"
+
+# ── BL-499 chase-sweep-terminal-dup-01b: same, but the duplicate's id is
+#     terminal in abandoned/ instead of completed/ ──────────────────────────
+make_fixture
+write_handoff "$ROOT/inbox/abandoned/00_item.handoff"
+write_handoff "$ROOT/inbox/new/00_item.handoff"
+set_mtime "$ROOT/inbox/new/00_item.handoff" $(( (NOW_MS / 1000) - CHASE_TIMEOUT_S - 5 ))
+run_sweep "alive" "$NOW_MS"
+
+grep -q "wake-up" "$ROOT/calls.log" 2>/dev/null && fail "10b: expected NO wake-up for a duplicate already terminal in abandoned/"
+[[ -f "$ROOT/inbox/new/00_item.handoff" ]] && fail "10b: expected the stale duplicate reaped from new/"
+grep -q "^telemetry already-processed coder 00_item.handoff " "$ROOT/calls.log" \
+  || fail "10b: expected an auditable already-processed telemetry event; got: $(cat "$ROOT/calls.log")"
+pass "10b (BL-499 chase-sweep-terminal-dup-01, abandoned): an already-terminal duplicate is reaped, not chased, either terminal directory"
+
+# ── BL-499 chase-sweep-terminal-dup-02: an IDLE recipient reaps a terminal
+#     duplicate instead of raising a false dead-letter ─────────────────────
+make_fixture
+write_handoff "$ROOT/inbox/completed/00_item.handoff"
+write_handoff "$ROOT/inbox/new/00_item.handoff"
+set_mtime "$ROOT/inbox/new/00_item.handoff" $(( (NOW_MS / 1000) - CHASE_TIMEOUT_S - 5 ))
+python3 -c "import json; json.dump({'chaseCount': 3}, open('$ROOT/inbox/new/00_item.handoff.chase.json','w'))"
+# idle: no recent activity at all
+run_sweep "alive" $(( NOW_MS - (STUCK_TIMEOUT_S + 100) * 1000 ))
+
+grep -q "dead-letter" "$ROOT/calls.log" 2>/dev/null && fail "11: expected NO dead-letter for a terminal duplicate, even from an idle recipient at the chase-count cap"
+[[ -f "$ROOT/inbox/new/00_item.handoff.dead" ]] && fail "11: expected no .dead file created for a reaped duplicate"
+[[ -f "$ROOT/inbox/new/00_item.handoff" ]] && fail "11: expected the stale duplicate reaped from new/"
+pass "11 (BL-499 chase-sweep-terminal-dup-02): an idle role reaps a terminal duplicate rather than raising a false dead-letter"
+
+# ── BL-499 chase-sweep-terminal-dup-03: a GENUINELY stuck handoff (id in
+#     neither completed/ nor abandoned/) to an active role is still chased,
+#     exactly as before - regression guard ─────────────────────────────────
+make_fixture
+write_handoff "$ROOT/inbox/new/00_item.handoff"
+set_mtime "$ROOT/inbox/new/00_item.handoff" $(( (NOW_MS / 1000) - CHASE_TIMEOUT_S - 5 ))
+run_sweep "alive" $(( NOW_MS - (STUCK_TIMEOUT_S + 100) * 1000 ))
+
+grep -q "^wake-up coder$" "$ROOT/calls.log" || fail "12: expected a genuinely stuck (not terminal anywhere) item still chased"
+CHASE_COUNT="$(python3 -c "import json; print(json.load(open('$ROOT/inbox/new/00_item.handoff.chase.json'))['chaseCount'])")"
+[[ "$CHASE_COUNT" == "1" ]] || fail "12: expected chaseCount incremented to 1 for a genuinely stuck item (got $CHASE_COUNT)"
+pass "12 (BL-499 chase-sweep-terminal-dup-03): a genuinely stuck handoff to an active role is still chased, unchanged"
+
+# ── BL-499 chase-sweep-terminal-dup-04: reaping a terminal duplicate leaves
+#     no orphaned .chase.json sidecar behind ───────────────────────────────
+make_fixture
+write_handoff "$ROOT/inbox/completed/00_item.handoff"
+write_handoff "$ROOT/inbox/new/00_item.handoff"
+set_mtime "$ROOT/inbox/new/00_item.handoff" $(( (NOW_MS / 1000) - CHASE_TIMEOUT_S - 5 ))
+python3 -c "import json; json.dump({'chaseCount': 2, 'lastChasedAtMs': $NOW_MS - 999999}, open('$ROOT/inbox/new/00_item.handoff.chase.json','w'))"
+run_sweep "alive" "$NOW_MS"
+
+[[ -f "$ROOT/inbox/new/00_item.handoff" ]] && fail "13: expected the stale duplicate reaped from new/"
+[[ -f "$ROOT/inbox/new/00_item.handoff.chase.json" ]] && fail "13: expected no orphaned .chase.json sidecar left behind after the reap"
+pass "13 (BL-499 chase-sweep-terminal-dup-04): reaping a terminal duplicate leaves no orphaned chase sidecar behind"
 
 echo "ALL PASS"

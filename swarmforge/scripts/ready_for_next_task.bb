@@ -39,8 +39,8 @@
         (if (handoff-lib/draining?)
           (println "DRAINING")
           (let [new-files (handoff-lib/my-handoff-files new-dir)
-                completed-basenames (map fs/file-name (handoff-lib/handoff-files completed-dir))
-                abandoned-basenames (map fs/file-name (handoff-lib/handoff-files abandoned-dir))
+                completed-basenames (handoff-lib/terminal-basenames completed-dir)
+                abandoned-basenames (handoff-lib/terminal-basenames abandoned-dir)
                 ;; BL-365: quarantines any corrupt candidate in place (as
                 ;; *.handoff.dead, the suffix the existing dead-letter sweep
                 ;; already scans and alerts a human on) so it can never be

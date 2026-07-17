@@ -618,11 +618,17 @@
                        :chase {:last_sweep_at (now)})]
     (spit (str duties-file) (json/generate-string updated))))
 
+;; BL-499: completed-dir/abandoned-dir added so chase-sweep-lib/run-sweep!
+;; can reap a new/ duplicate whose basename is already terminal there -
+;; the SAME two directories ready_for_next_task.bb's own dequeue-time
+;; dedup already reads (BL-218), never a second lookup.
 (defn role-inboxes-for-chase [roles]
   (for [[role role-info] roles]
     {:role role
      :inbox-new-dir (str (handoff-lib/mailbox-dir role-info :new))
-     :in-process-dir (str (handoff-lib/mailbox-dir role-info :in_process))}))
+     :in-process-dir (str (handoff-lib/mailbox-dir role-info :in_process))
+     :completed-dir (str (handoff-lib/mailbox-dir role-info :completed))
+     :abandoned-dir (str (handoff-lib/mailbox-dir role-info :abandoned))}))
 
 ;; BL-098: durable per-role chase/nudge/dead-letter/respawn telemetry. The
 ;; existing .chase.json/.nudge sidecars are ephemeral (abandoned once an
