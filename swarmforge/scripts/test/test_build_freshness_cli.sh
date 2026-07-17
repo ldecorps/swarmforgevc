@@ -398,7 +398,7 @@ LIVE_ROOTS=()
 ROOT="$(mk_git_root)"
 LIVE_ROOTS+=("$ROOT")
 mkdir -p "$ROOT/.swarmforge/operator" "$ROOT/extension"
-OPERATOR_INTERVAL_MS=60000 OPERATOR_SKIP_LAUNCH=1 nohup bb "$SCRIPT_DIR/../operator_runtime.bb" "$ROOT" > "$ROOT/.swarmforge/operator/runtime.log" 2>&1 &
+OPERATOR_INTERVAL_MS=60000 OPERATOR_SKIP_LAUNCH=1 SWARMFORGE_ORPHAN_REAP_CANDIDATE_PIDS="" nohup bb "$SCRIPT_DIR/../operator_runtime.bb" "$ROOT" > "$ROOT/.swarmforge/operator/runtime.log" 2>&1 &
 wait_for 10 test -f "$ROOT/.swarmforge/operator/status.json" || fail "operator-restart-race setup: operator_runtime did not publish its first status"
 wait_for 5 test -f "$ROOT/.swarmforge/operator/runtime.pid" || fail "operator-restart-race setup: operator_runtime did not claim its pid file"
 
@@ -452,7 +452,7 @@ LIVE_ROOTS=()
 ROOT="$(mk_git_root)"
 LIVE_ROOTS+=("$ROOT")
 mkdir -p "$ROOT/.swarmforge/operator" "$ROOT/extension"
-OPERATOR_INTERVAL_MS=60000 OPERATOR_SKIP_LAUNCH=1 nohup bb "$SCRIPT_DIR/../operator_runtime.bb" "$ROOT" > "$ROOT/.swarmforge/operator/runtime.log" 2>&1 &
+OPERATOR_INTERVAL_MS=60000 OPERATOR_SKIP_LAUNCH=1 SWARMFORGE_ORPHAN_REAP_CANDIDATE_PIDS="" nohup bb "$SCRIPT_DIR/../operator_runtime.bb" "$ROOT" > "$ROOT/.swarmforge/operator/runtime.log" 2>&1 &
 wait_for 10 test -f "$ROOT/.swarmforge/operator/status.json" || fail "operator-restart-race-04 setup: operator_runtime did not publish its first status"
 
 git -C "$ROOT" commit -q --allow-empty -m "merge: another fix"

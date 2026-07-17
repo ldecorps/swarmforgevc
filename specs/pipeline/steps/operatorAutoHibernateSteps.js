@@ -58,7 +58,7 @@ function readHibernationState(root) {
 function tickOnce(root, env = {}) {
   const out = execFileSync('bb', [OPERATOR_RUNTIME_BB, root, '--tick-once'], {
     encoding: 'utf8',
-    env: { ...process.env, OPERATOR_SKIP_LAUNCH: '1', ...env },
+    env: { ...process.env, OPERATOR_SKIP_LAUNCH: '1', SWARMFORGE_ORPHAN_REAP_CANDIDATE_PIDS: '', ...env },
   });
   return JSON.parse(out);
 }
