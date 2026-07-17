@@ -443,6 +443,45 @@
 (assert= "0 options falls back to nil" nil (operator-lib/poll-options []))
 (assert= "nil raw options falls back to nil" nil (operator-lib/poll-options nil))
 
+;; BL-483: ask-options - normalizes raw ask options (each a plain string OR
+;; a {"label" ... "description" ...} JSON object) to nil (fall back to a
+;; plain message) or a vector of {:label :description} maps (tappable
+;; buttons). Unlike poll-options, a SINGLE option is usable - buttons carry
+;; no Telegram-native "2+ options" constraint the way a poll does.
+(assert= "a plain string option normalizes to a label-only map"
+         [{:label "staging"}]
+         (operator-lib/ask-options ["staging"]))
+(assert= "a {label, description} object keeps both fields"
+         [{:label "staging" :description "pre-prod"}]
+         (operator-lib/ask-options [{"label" "staging" "description" "pre-prod"}]))
+(assert= "a {label} object with no description omits the key entirely"
+         [{:label "staging"}]
+         (operator-lib/ask-options [{"label" "staging"}]))
+(assert= "string and object options mix freely in one list"
+         [{:label "staging"} {:label "prod" :description "live"}]
+         (operator-lib/ask-options ["staging" {"label" "prod" "description" "live"}]))
+(assert= "whitespace is trimmed on both label and description"
+         [{:label "staging" :description "pre-prod"}]
+         (operator-lib/ask-options [{"label" "  staging  " "description" "  pre-prod  "}]))
+(assert= "a blank/whitespace-only label is dropped"
+         [{:label "prod"}]
+         (operator-lib/ask-options ["   " {"label" "prod"}]))
+(assert= "a blank/whitespace-only description is omitted, not kept as blank"
+         [{:label "staging"}]
+         (operator-lib/ask-options [{"label" "staging" "description" "   "}]))
+(assert= "a SINGLE usable option is kept (no 2+ minimum, unlike poll-options)"
+         [{:label "staging"}]
+         (operator-lib/ask-options ["staging"]))
+(assert= "0 options falls back to nil" nil (operator-lib/ask-options []))
+(assert= "every option blank falls back to nil" nil (operator-lib/ask-options ["" "   "]))
+(assert= "nil raw options falls back to nil" nil (operator-lib/ask-options nil))
+(assert= "a non-sequential raw value (e.g. a bare number from malformed JSON) falls back to nil, never throws"
+         nil
+         (operator-lib/ask-options 42))
+(assert= "a raw element that is neither a string nor a map (e.g. a number) is dropped, not a crash"
+         [{:label "staging"}]
+         (operator-lib/ask-options ["staging" 42]))
+
 ;; answer-text-from-messages: the human's own latest reply text.
 (assert= "the human's latest non-operator message is the answer text"
          "use staging"

@@ -32,7 +32,7 @@ make_fixture() {
      "$SRC/support_lib.bb" "$SRC/support_thread_store.bb" \
      "$SRC/operator_memory_lib.bb" "$SRC/operator_memory_store.bb" \
      "$SRC/ticket_status_lib.bb" "$SRC/operator_ask.bb" "$SRC/handoff_lib.bb" \
-     "$SRC/daemon_alarm_lib.bb" "$SRC/disk_space_lib.bb" "$SRC/sandbox_sweep_lib.bb" "$SRC/bounded_delete_sweep_lib.bb" "$SRC/proc_fd_scan_lib.bb" "$SRC/fixture_reaper_lib.bb" "$SRC/fixture_reaper_sweep_lib.bb" \
+     "$SRC/daemon_alarm_lib.bb" "$SRC/disk_space_lib.bb" "$SRC/sandbox_sweep_lib.bb" "$SRC/bounded_delete_sweep_lib.bb" "$SRC/proc_fd_scan_lib.bb" "$SRC/fixture_reaper_lib.bb" "$SRC/fixture_reaper_sweep_lib.bb" "$SRC/orphan_agent_reaper_lib.bb" "$SRC/orphan_agent_reaper_sweep_lib.bb" \
      "$d/swarmforge/scripts/"
   printf '%s' "$d"
 }
@@ -55,7 +55,7 @@ events_and_inflight_text() {
 F="$(make_fixture)"
 HOLD_MS=150
 OPERATOR_SKIP_LAUNCH=1 OPERATOR_EVENTS_LOCK_TEST_HOLD_MS="$HOLD_MS" \
-  SWARMFORGE_SANDBOX_SWEEP_ROOT="$F/.no-sandbox-sweep" SWARMFORGE_FIXTURE_REAP_ROOT="$F/.no-fixture-reap" \
+  SWARMFORGE_SANDBOX_SWEEP_ROOT="$F/.no-sandbox-sweep" SWARMFORGE_FIXTURE_REAP_ROOT="$F/.no-fixture-reap" SWARMFORGE_ORPHAN_REAP_CANDIDATE_PIDS="" \
   bb "$F/swarmforge/scripts/operator_runtime.bb" "$F" --tick-once >/tmp/bl369-tick-1.log 2>&1 &
 TICK_PID=$!
 # Give the tick a head start so it is very likely already holding the lock
@@ -83,7 +83,7 @@ F2="$(make_fixture)"
 mkdir -p "$F2/.swarmforge/operator/events.jsonl.lock" # simulate an orphaned lock
 set +e
 OPERATOR_SKIP_LAUNCH=1 OPERATOR_EVENTS_LOCK_MAX_WAIT_MS=100 OPERATOR_EVENTS_LOCK_RETRY_DELAY_MS=10 \
-  SWARMFORGE_SANDBOX_SWEEP_ROOT="$F2/.no-sandbox-sweep" SWARMFORGE_FIXTURE_REAP_ROOT="$F2/.no-fixture-reap" \
+  SWARMFORGE_SANDBOX_SWEEP_ROOT="$F2/.no-sandbox-sweep" SWARMFORGE_FIXTURE_REAP_ROOT="$F2/.no-fixture-reap" SWARMFORGE_ORPHAN_REAP_CANDIDATE_PIDS="" \
   bb "$F2/swarmforge/scripts/operator_runtime.bb" "$F2" --tick-once >/tmp/bl369-tick-2.log 2>&1
 TICK2_EXIT=$?
 set -e
