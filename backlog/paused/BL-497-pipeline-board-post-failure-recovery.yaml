@@ -101,7 +101,7 @@ acceptance:
   # error and emitting the alert is deliberately NOT pinned; the scenarios hold either way.
   feature: specs/features/BL-497-pipeline-board-post-failure-recovery.feature
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   LIVE, USER-FACING OUTAGE (the board has been frozen 10h+; you asked "when can I get the pipeline
   board working again?"). FIRM and already chosen by you at spec time: recover by SELF-HEALING a
