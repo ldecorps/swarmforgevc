@@ -11,6 +11,7 @@ import { computeTelegramRetryBackoffMs } from '../notify/telegramRetry';
 import { classifyApprovalReplyAction, classifyApprovalsTopicReply } from '../concierge/pendingApprovalReply';
 import { classifyRecertTopicReply } from '../concierge/recertTopicReply';
 import { roleForTopic } from '../concierge/roleTopicMapStore';
+import { ControlEvent, ControlDecision, PendingControlConfirm, PauseState, decideControlEventAction } from './telegramControlCore';
 
 // BL-353: moved from the retired notify/telegramInboundRelay.ts (which
 // also carried the legacy single-chat TelegramInboundRelay class, now
@@ -237,6 +238,26 @@ export type EnsureAgentQuestionsTopicAction = { kind: 'reuse'; topicId: number }
 // above, keyed by its own reserved subject id.
 export function decideEnsureAgentQuestionsTopicAction(topicMap: Record<string, string>): EnsureAgentQuestionsTopicAction {
   const existingTopicId = topicForSubject(topicMap, AGENT_QUESTIONS_SUBJECT_ID);
+  return existingTopicId !== undefined ? { kind: 'reuse', topicId: existingTopicId } : { kind: 'create' };
+}
+
+// BL-423: the reserved subject a standing "Control" forum topic is bound
+// to - the SAME {topicId: subjectId} map every other reserved subject
+// above shares. All three swarm-control verbs (/stop, /restart, /pause)
+// and their button taps only ever act when sent/tapped in THIS topic
+// (decideControlEventAction's own guard, telegramControlCore.ts) - an
+// inbound message here otherwise never falls through to the ordinary
+// subjectForTopic/post-existing path, same posture as Agent Questions
+// above.
+export const CONTROL_SUBJECT_ID = 'CONTROL';
+export const CONTROL_TOPIC_NAME = 'Control';
+
+export type EnsureControlTopicAction = { kind: 'reuse'; topicId: number } | { kind: 'create' };
+
+// Pure: identical reuse-or-create shape to decideEnsureAgentQuestionsTopicAction
+// above, keyed by its own reserved subject id.
+export function decideEnsureControlTopicAction(topicMap: Record<string, string>): EnsureControlTopicAction {
+  const existingTopicId = topicForSubject(topicMap, CONTROL_SUBJECT_ID);
   return existingTopicId !== undefined ? { kind: 'reuse', topicId: existingTopicId } : { kind: 'create' };
 }
 
@@ -705,6 +726,44 @@ export interface PollAdapters {
   // so a poll_answer - which carries no thread/topic info at all - can
   // still map its selected option INDEX to the option's actual TEXT.
   resolvePollThread?: (pollId: string) => Promise<{ threadId: string; options: string[] } | undefined>;
+  // BL-423: the standing Control topic's own id - every stop/restart/pause
+  // verb (text or button tap) only ever acts when sent/tapped here
+  // (decideControlEventAction's own topic guard). Optional so every
+  // PollAdapters fixture written before BL-423 keeps working unchanged;
+  // missing means "swarm control not wired", never a crash.
+  controlTopicId?: () => Promise<number | undefined>;
+  // BL-423: the confirm state machine's own cross-tick memory - which
+  // destructive confirm (if any) is currently awaiting a button tap. Absent
+  // (undefined) means no confirm pending, so a stop-mode/restart-confirm
+  // tap with nothing pending is a stale/already-actioned no-op, never a
+  // fabricated execution.
+  getPendingControlConfirm?: () => Promise<PendingControlConfirm>;
+  setPendingControlConfirm?: (confirm: PendingControlConfirm) => Promise<void>;
+  // BL-423: the pause state machine's own cross-tick memory - read-only
+  // from the poll side (applyPause/resumeNow below own writing it); a
+  // resume-now tap while not actually paused is a deliberate no-op.
+  getPauseState?: () => Promise<PauseState>;
+  // BL-423: one adapter per distinct message the control decision posts -
+  // never a single generic "post text" adapter, since each carries its own
+  // fixed wording/buttons the wiring composes once (mirrors this file's
+  // own per-purpose adapter convention throughout, e.g. notifyApprovalsTopic
+  // vs notifyRecertTopic).
+  postControlStopModesMenu?: () => Promise<void>;
+  postControlRestartConfirm?: () => Promise<void>;
+  postControlCancelled?: () => Promise<void>;
+  postControlPauseMenu?: () => Promise<void>;
+  // BL-423: the three destructive/relaunch effects - each owns its own
+  // real teardown/relaunch mechanism (kill_all_swarm.sh's socket-scoped
+  // reap for the two stop modes, the existing bounce-sentinel/bounce-ack
+  // path for restart, per the ticket's own "reuse the sanctioned bounce
+  // path, do not invent a restart mechanism" constraint) - opaque here,
+  // just an effect this module triggers and awaits.
+  executeEmergencyStop?: () => Promise<void>;
+  executeDrainStop?: () => Promise<void>;
+  executeRestart?: () => Promise<void>;
+  // BL-423: durationMs undefined means "Until I resume" (no timer).
+  applyPause?: (durationMs: number | undefined) => Promise<void>;
+  resumeNow?: () => Promise<void>;
 }
 
 // BL-389: the keystone fix. A DROP is a DECISION (the code looked at the
@@ -977,17 +1036,35 @@ export function decideCallbackQueryAction(
   return kind === 'approve' ? { action: 'approve', backlogId } : { action: 'await-followup', backlogId, kind: kind as 'reject' | 'amend' };
 }
 
-// BL-410: a legitimate tap (right chat, right principal) always clears its
-// own spinner, even when its data is unrecognized/stale - only a
+// A legitimate tap (right chat, right principal) always clears its own
+// spinner, even when its data is unrecognized/stale - only a
 // not-my-chat/not-principal tap is answered never (mirrors the ordinary
-// message path's own silent drop for the same two reasons). An Approve tap
-// fires recordApprovalReply immediately (nothing else to gather); a
-// Reject/Amend tap has no reason/note in hand yet, so it only ever stashes
-// the pending marker deliverOperatorContext above consults on the next
-// reply - never reimplementing recordRejectionReply/the amend effect here.
+// message path's own silent drop for the same two reasons). Split out of
+// processCallbackQuery below for the same CRAP-budget reason as
+// isNoopControlDecision above.
+function isUnauthorizedCallbackDrop(decision: CallbackButtonDecision): boolean {
+  return decision.action === 'drop' && (decision.reason === 'not-my-chat' || decision.reason === 'not-principal');
+}
+
+// BL-410: see isUnauthorizedCallbackDrop above for the answer-spinner
+// rationale. An Approve tap fires recordApprovalReply immediately (nothing
+// else to gather); a Reject/Amend tap has no reason/note in hand yet, so it
+// only ever stashes the pending marker deliverOperatorContext above
+// consults on the next reply - never reimplementing
+// recordRejectionReply/the amend effect here.
 async function processCallbackQuery(callbackQuery: TelegramCallbackQuery, principalUserId: string, adapters: PollAdapters): Promise<UpdateDeliveryOutcome> {
+  // BL-423: the control: callback_data namespace is checked FIRST and
+  // completely separately from the approve/reject/amend dispatch below -
+  // decideCallbackQueryAction's own CALLBACK_DATA_PATTERN would otherwise
+  // treat every control: tap as 'unrecognized-data' and drop it before this
+  // module ever saw it. Any OTHER callback_data (including no data at all)
+  // falls through to the existing dispatch completely unaffected.
+  const controlOutcome = await attemptControlCallbackDelivery(callbackQuery, principalUserId, adapters);
+  if (controlOutcome) {
+    return controlOutcome;
+  }
   const decision = decideCallbackQueryAction(callbackQuery, principalUserId, adapters.chatId);
-  if (decision.action === 'drop' && (decision.reason === 'not-my-chat' || decision.reason === 'not-principal')) {
+  if (isUnauthorizedCallbackDrop(decision)) {
     return 'dropped';
   }
   await adapters.answerCallbackQuery(callbackQuery.id);
@@ -1170,6 +1247,167 @@ async function attemptVoiceDelivery(
   return deliveryOutcome(posted);
 }
 
+// BL-423: the ONE place a decided control action becomes a real effect -
+// every entry is a thin, opaque call into an injected adapter (the ticket's
+// own "adapter-injected orchestration" split), never a second decision. A
+// missing optional adapter degrades to "that effect is simply not wired"
+// (this file's established optional-adapter convention throughout), never a
+// crash - so a fixture that only wires SOME control effects still exercises
+// the rest of the dispatch correctly. Table-driven (rather than a switch)
+// so dispatch itself stays a single lookup; TypeScript's Record type below
+// still requires every non-'apply-pause' action to have an entry, so a new
+// action added to ControlDecision without a handler here is a compile error,
+// the same exhaustiveness guarantee a switch's `default: assertNever` gives.
+type ControlDecisionEffect = (adapters: PollAdapters) => Promise<void>;
+
+const CONTROL_DECISION_EFFECTS: Record<Exclude<ControlDecision['action'], 'apply-pause'>, ControlDecisionEffect> = {
+  ignore: async () => {},
+  refuse: async () => {},
+  'prompt-stop-modes': async (adapters) => {
+    await adapters.setPendingControlConfirm?.({ kind: 'stop-modes' });
+    await adapters.postControlStopModesMenu?.();
+  },
+  'prompt-restart-confirm': async (adapters) => {
+    await adapters.setPendingControlConfirm?.({ kind: 'restart-confirm' });
+    await adapters.postControlRestartConfirm?.();
+  },
+  cancel: async (adapters) => {
+    await adapters.setPendingControlConfirm?.(undefined);
+    await adapters.postControlCancelled?.();
+  },
+  'execute-emergency-stop': async (adapters) => {
+    await adapters.setPendingControlConfirm?.(undefined);
+    await adapters.executeEmergencyStop?.();
+  },
+  'execute-drain-stop': async (adapters) => {
+    await adapters.setPendingControlConfirm?.(undefined);
+    await adapters.executeDrainStop?.();
+  },
+  'execute-restart': async (adapters) => {
+    await adapters.setPendingControlConfirm?.(undefined);
+    await adapters.executeRestart?.();
+  },
+  'post-pause-menu': async (adapters) => {
+    await adapters.postControlPauseMenu?.();
+  },
+  'resume-now': async (adapters) => {
+    await adapters.resumeNow?.();
+  },
+};
+
+async function applyControlDecision(decision: ControlDecision, adapters: PollAdapters): Promise<void> {
+  if (decision.action === 'apply-pause') {
+    await adapters.applyPause?.(decision.durationMs);
+    return;
+  }
+  await CONTROL_DECISION_EFFECTS[decision.action](adapters);
+}
+
+// Shared by attemptControlTextDelivery/attemptControlCallbackDelivery below -
+// both need the SAME pending-confirm/pause state read before deciding, so
+// this is a DRY extraction as much as a CRAP-budget one (the same "extract
+// so branch count stays at or below the CRAP threshold" reasoning this file
+// applies throughout, here also removing a literal duplicate pair of lines).
+async function gatherControlState(adapters: PollAdapters): Promise<{ pendingConfirm: PendingControlConfirm; pauseState: PauseState }> {
+  const pendingConfirm = (await adapters.getPendingControlConfirm?.()) ?? undefined;
+  const pauseState = (await adapters.getPauseState?.()) ?? { active: false };
+  return { pendingConfirm, pauseState };
+}
+
+// Telegram's `from` is optional on both a message and a callback query;
+// ControlEvent.fromId has no such optionality, so both call sites fold a
+// missing id to '' the same way - split out for the same CRAP-budget reason
+// as gatherControlState above.
+function fallbackFromId(id: string | number | undefined): string | number {
+  return id ?? '';
+}
+
+// Split out of attemptControlTextDelivery/attemptControlCallbackDelivery
+// below for the same CRAP-budget reason as gatherControlState above.
+function isNoopControlDecision(decision: ControlDecision): boolean {
+  return decision.action === 'ignore' || decision.action === 'refuse';
+}
+
+// Split out of attemptControlTextDelivery below for the same CRAP-budget
+// reason as gatherControlState above: a message is outside the Control
+// topic both when the topic isn't bound yet (controlTopicId undefined) and
+// when it's bound to a DIFFERENT topic than this message's own.
+function isOutsideControlTopic(controlTopicId: number | undefined, update: TelegramUpdate): boolean {
+  return controlTopicId === undefined || topicIdOf(update) !== controlTopicId;
+}
+
+// BL-423: gathers the pending-confirm/pause state and dispatches through
+// decideControlEventAction - the ONE place a text message becomes a
+// ControlEvent. controlTopicId absent (not wired) or the message being
+// outside the Control topic both return undefined (not applicable), so
+// ordinary routing continues completely unaffected - the Control topic is
+// reserved (like Agent Questions/Approvals/Recert), so once a message IS
+// confirmed to be in it, this NEVER falls through further: even
+// unrecognized chatter resolves to a concrete 'dropped', never an
+// open-for-topic fresh subject.
+async function attemptControlTextDelivery(
+  update: TelegramUpdate,
+  principalUserId: string,
+  adapters: PollAdapters
+): Promise<UpdateDeliveryOutcome | undefined> {
+  if (!adapters.controlTopicId) {
+    return undefined;
+  }
+  const controlTopicId = await adapters.controlTopicId();
+  if (isOutsideControlTopic(controlTopicId, update)) {
+    return undefined;
+  }
+  const text = messageTextOf(update);
+  if (!text) {
+    return 'dropped';
+  }
+  const event: ControlEvent = { kind: 'text', text, fromId: fallbackFromId(update.message?.from?.id), topicId: controlTopicId };
+  const { pendingConfirm, pauseState } = await gatherControlState(adapters);
+  const decision = decideControlEventAction(event, principalUserId, controlTopicId, pendingConfirm, pauseState);
+  if (isNoopControlDecision(decision)) {
+    return 'dropped';
+  }
+  await applyControlDecision(decision, adapters);
+  return 'posted';
+}
+
+// BL-423: the callback-tap twin of attemptControlTextDelivery above - only
+// ever engages for the control: callback_data namespace (never the
+// approve/reject/amend one), so a tap on any OTHER button falls through to
+// the existing dispatch completely unaffected, even one tapped inside the
+// Control topic somehow. A 'refuse' (unauthorised tap) never answers the
+// spinner (BL-410's own "not this bot's spinner to clear" posture for an
+// unauthorised tap); every other outcome - including a stale/mismatched
+// 'ignore' - answers it, since the tap IS a real one of this bot's own
+// buttons.
+async function attemptControlCallbackDelivery(
+  callbackQuery: TelegramCallbackQuery,
+  principalUserId: string,
+  adapters: PollAdapters
+): Promise<UpdateDeliveryOutcome | undefined> {
+  if (!adapters.controlTopicId || !callbackQuery.data?.startsWith('control:')) {
+    return undefined;
+  }
+  const controlTopicId = await adapters.controlTopicId();
+  const event: ControlEvent = {
+    kind: 'callback',
+    data: callbackQuery.data,
+    fromId: fallbackFromId(callbackQuery.from?.id),
+    topicId: callbackQuery.message?.message_thread_id,
+  };
+  const { pendingConfirm, pauseState } = await gatherControlState(adapters);
+  const decision = decideControlEventAction(event, principalUserId, controlTopicId, pendingConfirm, pauseState);
+  if (decision.action === 'refuse') {
+    return 'dropped';
+  }
+  await adapters.answerCallbackQuery(callbackQuery.id);
+  if (decision.action === 'ignore') {
+    return 'dropped';
+  }
+  await applyControlDecision(decision, adapters);
+  return 'posted';
+}
+
 // BL-466: the Agent Questions topic's own side channel - optional adapter
 // (agentQuestionsTopicId), defaults to "not wired" so every PollAdapters
 // fixture written before BL-466 keeps working unchanged, same convention as
@@ -1226,6 +1464,10 @@ async function attemptSideChannelDelivery(
   const voiceOutcome = await attemptVoiceDelivery(update, principalUserId, adapters);
   if (voiceOutcome) {
     return voiceOutcome;
+  }
+  const controlOutcome = await attemptControlTextDelivery(update, principalUserId, adapters);
+  if (controlOutcome) {
+    return controlOutcome;
   }
   return attemptAgentQuestionsTopicDelivery(update, principalUserId, adapters);
 }

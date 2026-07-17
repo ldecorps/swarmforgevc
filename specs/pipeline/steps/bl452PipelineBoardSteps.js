@@ -15,7 +15,7 @@ const path = require('node:path');
 
 const EXT_OUT = path.join(__dirname, '..', '..', '..', 'extension', 'out');
 const { runConciergeTick } = require(path.join(EXT_OUT, 'concierge', 'conciergeTick'));
-const { renderPipelineBoard, renderPipelineBoardBody } = require(path.join(EXT_OUT, 'concierge', 'pipelineBoard'));
+const { renderPipelineBoard } = require(path.join(EXT_OUT, 'concierge', 'pipelineBoard'));
 // BL-464: "the pipeline board is rendered" is VERBATIM identical to this
 // file's own step text below - since this file registers FIRST (index.js
 // order), the registry's first-match-wins resolve() means this handler
@@ -27,11 +27,11 @@ const { renderPipelineBoard, renderPipelineBoardBody } = require(path.join(EXT_O
 const { renderPipelineBoardForFixtureRoot } = require('./bl464PipelineBoardAuthoritativeStageSourceSteps');
 
 // BL-462: every scenario below drives runConciergeTick with nowMs=0 (see the
-// "the pipeline board is rendered"/"the concierge tick runs again" steps),
-// so every expected-text recomputation below passes the SAME fixed instant
-// as the second renderPipelineBoard argument - never a bare real clock read,
-// which would make a byte-for-byte comparison against the real sync's own
-// footer flaky by construction.
+// "the pipeline board is rendered" step), so every expected-text
+// recomputation below passes the SAME fixed instant as the second
+// renderPipelineBoard argument - never a bare real clock read, which would
+// make a byte-for-byte comparison against the real sync's own footer flaky
+// by construction.
 const FIXED_NOW_MS = 0;
 
 // BL-421/engineering.prompt Scenario Outline rule: every Examples: column
@@ -67,12 +67,6 @@ function fakeConciergeAdapters() {
   const state = { snapshot: null, emittedKeys: [] };
   const topicMap = {};
   const posted = [];
-  // BL-462: the board no longer edits in place - `edited` stays permanently
-  // empty (no adapter populates it anymore) so any OLDER step below that
-  // still reads it fails an honest "expected 1, got 0" rather than
-  // crashing on a renamed/missing field. See the SUPERSEDED comment on the
-  // "edited in place" Then-step further down.
-  const edited = [];
   const deleted = [];
   const recordedTopicIds = [];
   const recordedMessages = [];
@@ -82,7 +76,6 @@ function fakeConciergeAdapters() {
     state,
     topicMap,
     posted,
-    edited,
     deleted,
     recordedTopicIds,
     recordedMessages,
@@ -154,13 +147,10 @@ function boardData(rows) {
 }
 
 function lastRendered(fixture) {
-  if (fixture.edited.length > 0) {
-    return fixture.edited[fixture.edited.length - 1].text;
-  }
   if (fixture.posted.length > 0) {
     return fixture.posted[fixture.posted.length - 1].text;
   }
-  throw new Error('expected the board to have been posted or edited at least once, got neither');
+  throw new Error('expected the board to have been posted at least once, got none');
 }
 
 function registerSteps(registry) {
@@ -225,80 +215,6 @@ function registerSteps(registry) {
     const actual = lastRendered(ctx.fixture);
     if (actual !== expected) {
       throw new Error(`expected board:\n${expected}\ngot:\n${actual}`);
-    }
-  });
-
-  // ── pipeline-board-03 ──────────────────────────────────────────────────
-  // BL-462 SUPERSEDED: this scenario's own premise (a stage change edits the
-  // existing board message IN PLACE) no longer holds - BL-462 replaced the
-  // board's edit-in-place mechanism with delete-old + post-fresh-at-the-
-  // bottom (pipelineBoardSync.ts), while approvalsRosterSync.ts keeps
-  // editing in place unchanged. The two Then-steps below now fail HONESTLY
-  // (0 edits, 1 new post) rather than being rewritten to quietly assert the
-  // new behavior under old Gherkin wording - retiring/amending this
-  // scenario's text is a spec change (specifier/Gherkin), outside the
-  // coder's lane (constitution Article 1.9 / engineering.prompt). The prior-
-  // state SEED below is still kept in the NEW state shape
-  // (contentSignature/lastChangeMs, not the old renderedText) purely so the
-  // change-gate itself behaves correctly (a stage change is correctly
-  // detected as a real content change) rather than accidentally always
-  // "changed" (undefined contentSignature never equals a real one), which
-  // would have let a real regression hide behind a mis-shaped fixture.
-  registry.define(/^the board has already been posted in the Pipeline Board topic$/, (ctx) => {
-    ctx.fixture = fakeConciergeAdapters();
-    ctx.fixture.setRoleHeldTickets({ coder: ['BL-1'] });
-    ctx.fixture.state.pipelineBoard = {
-      topicId: 900,
-      messageId: 1,
-      contentSignature: renderPipelineBoardBody(boardData([{ id: 'BL-1', column: 'coder' }])),
-      lastChangeMs: FIXED_NOW_MS,
-    };
-  });
-
-  registry.define(/^a ticket moves to the next stage and the board is rendered again$/, async (ctx) => {
-    ctx.fixture.setRoleHeldTickets({ QA: ['BL-1'] });
-    await runConciergeTick(ctx.fixture.adapters, 0);
-  });
-
-  registry.define(/^the existing board message is edited in place to show the ticket's new stage$/, (ctx) => {
-    if (ctx.fixture.edited.length !== 1) {
-      throw new Error(`expected exactly one edit, got ${ctx.fixture.edited.length}: ${JSON.stringify(ctx.fixture.edited)}`);
-    }
-    const [edit] = ctx.fixture.edited;
-    if (edit.topicId !== 900 || edit.messageId !== 1) {
-      throw new Error(`expected the edit to target the existing topic 900 / message 1, got topicId=${edit.topicId} messageId=${edit.messageId}`);
-    }
-    const expected = renderPipelineBoard(boardData([{ id: 'BL-1', column: 'QA' }]), FIXED_NOW_MS);
-    if (edit.text !== expected) {
-      throw new Error(`expected the edited text to show BL-1 in QA:\n${expected}\ngot:\n${edit.text}`);
-    }
-  });
-
-  registry.define(/^no new board message is posted$/, (ctx) => {
-    if (ctx.fixture.posted.length !== 0) {
-      throw new Error(`expected no new message posted, got: ${JSON.stringify(ctx.fixture.posted)}`);
-    }
-  });
-
-  // ── pipeline-board-04 ──────────────────────────────────────────────────
-  registry.define(/^the board has been posted and no ticket's stage has changed$/, (ctx) => {
-    ctx.fixture = fakeConciergeAdapters();
-    ctx.fixture.setRoleHeldTickets({ coder: ['BL-1'] });
-    ctx.fixture.state.pipelineBoard = {
-      topicId: 900,
-      messageId: 1,
-      contentSignature: renderPipelineBoardBody(boardData([{ id: 'BL-1', column: 'coder' }])),
-      lastChangeMs: FIXED_NOW_MS,
-    };
-  });
-
-  registry.define(/^the concierge tick runs again$/, async (ctx) => {
-    await runConciergeTick(ctx.fixture.adapters, 0);
-  });
-
-  registry.define(/^the board message is not edited$/, (ctx) => {
-    if (ctx.fixture.edited.length !== 0) {
-      throw new Error(`expected no edit for an unchanged board, got: ${JSON.stringify(ctx.fixture.edited)}`);
     }
   });
 
