@@ -1,0 +1,18 @@
+{
+  "_comment": "BL-477: the drift-watch baseline local-engineering.prompt (Architecture Rule 2) refers to - the last-REVIEWED commit SHA per watched upstream repo/branch ('we have looked at everything up to here'). This is the drift review BASELINE; swarmforge.lock.json stays the separate INSTALL pin. Advancing a SHA here is always a human commit, exactly like bumping an install pin - never something swarmforge/scripts/upstream_drift_check.bb does itself (it is strictly read-only). Checked with: bb swarmforge/scripts/upstream_drift_check.bb",
+  "repos": {
+    "unclebob/swarm-forge": {
+      "url": "https://github.com/unclebob/swarm-forge.git",
+      "branches": {
+        "main": "9acd54d2239fef7e41ddacd8fd30dfb0e69672fe",
+        "adversaries": "7aa2f3a2691ed92e26a11be4481d7d5c8e2ff859"
+      }
+    },
+    "unclebob/Acceptance-Pipeline-Specification": {
+      "url": "https://github.com/unclebob/Acceptance-Pipeline-Specification.git",
+      "branches": {
+        "main": "accaa33d503340c56513ef387258f8da929ba902"
+      }
+    }
+  }
+}

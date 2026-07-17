@@ -250,7 +250,8 @@ const DOMAINS = [
   require('./bl423TelegramSwarmControlVerbsSteps'),
   require('./bl468PipelineBoardPostBeforeDeleteSteps'),
   require('./bl465PipelineBoardRenderRound2Steps'),
-  require('./bl469PerAgentSteeringTopicIconsSteps')
+  require('./bl469PerAgentSteeringTopicIconsSteps'),
+  require('./bl477UpstreamDriftWatchSteps')
 ];
 
 function registerSteps(registry) {
