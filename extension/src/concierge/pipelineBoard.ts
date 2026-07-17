@@ -554,6 +554,28 @@ export interface PipelineBoardLinksBudget {
 // how many were dropped - never a silent cap (this codebase's
 // no-silent-cap posture, mirroring PIPELINE_BOARD_RECENTLY_CLOSED_MAX's
 // own bounded list).
+// BL-502 (cleaner, CRAP budget): the trim loop itself - the largest prefix
+// of links that still leaves room for the "+N more" overflow indicator -
+// extracted from budgetPipelineBoardLinks below purely to keep that
+// function's own CRAP under threshold, mirroring conciergeTick.ts's own
+// epicTitleFor/epicUpdateText extractions for the identical reason.
+function trimLinksToBudget(links: PipelineBoardLinkEntry[], repoBaseUrl: string, maxLinksLength: number): string[] {
+  const includedLines: string[] = [];
+  for (const link of links) {
+    const line = pipelineBoardLinkLine(link, repoBaseUrl);
+    const candidateOmitted = links.length - (includedLines.length + 1);
+    const candidateLines = [LINKS_SECTION_HEADER, ...includedLines, line];
+    if (candidateOmitted > 0) {
+      candidateLines.push(pipelineBoardOverflowLine(candidateOmitted));
+    }
+    if (candidateLines.join('\n').length > maxLinksLength) {
+      break;
+    }
+    includedLines.push(line);
+  }
+  return includedLines;
+}
+
 export function budgetPipelineBoardLinks(links: PipelineBoardLinkEntry[], repoBaseUrl: string | undefined, maxLinksLength: number): PipelineBoardLinksBudget {
   if (links.length === 0 || !repoBaseUrl) {
     return { html: '', omittedCount: 0 };
@@ -562,22 +584,14 @@ export function budgetPipelineBoardLinks(links: PipelineBoardLinkEntry[], repoBa
   if (full.length <= maxLinksLength) {
     return { html: full, omittedCount: 0 };
   }
-  const includedLines: string[] = [];
-  for (const link of links) {
-    const candidateOmitted = links.length - (includedLines.length + 1);
-    const candidateLines = [LINKS_SECTION_HEADER, ...includedLines, pipelineBoardLinkLine(link, repoBaseUrl)];
-    if (candidateOmitted > 0) {
-      candidateLines.push(pipelineBoardOverflowLine(candidateOmitted));
-    }
-    if (candidateLines.join('\n').length > maxLinksLength) {
-      break;
-    }
-    includedLines.push(pipelineBoardLinkLine(link, repoBaseUrl));
-  }
+  const includedLines = trimLinksToBudget(links, repoBaseUrl, maxLinksLength);
+  // trimLinksToBudget can never accept every link: its FINAL iteration's
+  // candidate check (for the last link, with every prior one already
+  // included) omits the overflow line entirely - candidateOmitted reaches 0
+  // only there - making that candidate identical to `full` above, which we
+  // already know exceeds maxLinksLength (the very reason this loop runs).
+  // So at least one link is always left out here; omittedCount is never 0.
   const omittedCount = links.length - includedLines.length;
-  if (omittedCount === 0) {
-    return { html: [LINKS_SECTION_HEADER, ...includedLines].join('\n'), omittedCount: 0 };
-  }
   const lines = [LINKS_SECTION_HEADER, ...includedLines, pipelineBoardOverflowLine(omittedCount)];
   if (lines.join('\n').length > maxLinksLength) {
     // Not even the header + omitted-count indicator alone fits within the
