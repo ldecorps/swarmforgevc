@@ -658,6 +658,24 @@ export interface PollAdapters {
   // ticket is already active, satisfying "no redundant promotion" (scenario
   // 05) with no separate active/paused check of its own.
   promoteTicketIfPaused?: (backlogId: string) => Promise<boolean>;
+  // BL-490-VIOLATION (architect bounce, 2026-07-17): the approve+promote
+  // writes above are plain fs.writeFileSync/fs.renameSync against the
+  // shared master checkout's OWN working tree - uncommitted, exactly the
+  // "dangling working-tree edit" the ticket's own DURABILITY HAZARD note
+  // flagged and deferred. Left uncommitted, the mutation is one git
+  // operation away from silent loss (a reset/checkout/re-sync touching
+  // backlog/ would revert it with no error anywhere), and a dispatched
+  // build could start against a promotion that never durably landed.
+  // Commits the ticket's CURRENT file (post-promote path) through the
+  // shared, LOCKED commit-integrity helper (commit_integrity_cli.bb,
+  // BL-419) - never a hand-typed git add/commit, which is exactly the
+  // unmitigated path that produced BL-419's own documented incidents.
+  // Consulted AFTER promote (the file is at its FINAL location by then)
+  // and BEFORE dispatch, so a build never starts against an uncommitted
+  // promotion. Optional: absent degrades to the pre-fix uncommitted
+  // behavior, the same "new capability defaults to a no-op" posture every
+  // other optional adapter in this file already has - never a crash.
+  commitExpediteWrites?: (backlogId: string) => Promise<boolean>;
   // FILE-LEVEL SAFETY CHECK: reads whether an in-flight build touches the
   // same file(s) this ticket's own scope names (expediteSafety.ts's pure
   // findFileCollision, driven by real active-ticket/in-flight-handoff reads
@@ -1067,6 +1085,10 @@ export async function recordExpediteDecisionAndClose(
     return { changed: false };
   }
   await adapters.promoteTicketIfPaused?.(backlogId);
+  // BL-490-VIOLATION: durably commits the approve+promote writes BEFORE any
+  // dispatch can fire - see this adapter's own doc comment (PollAdapters)
+  // for why an uncommitted mutation here is unsafe.
+  await adapters.commitExpediteWrites?.(backlogId);
   const collision = await adapters.checkExpediteFileCollision?.(backlogId);
   if (!collision) {
     await adapters.dispatchExpediteBuild?.(backlogId);

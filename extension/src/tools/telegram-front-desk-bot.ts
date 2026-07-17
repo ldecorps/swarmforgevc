@@ -126,7 +126,7 @@ import {
 import { backlogForTopic } from '../concierge/topicRouter';
 import { recordApprovalReply, recordRejectionReply, readRecordedVerdict } from '../concierge/pendingApprovalReply';
 import { extractScopePaths, findFileCollision, InFlightScope } from '../concierge/expediteSafety';
-import { promoteToActive } from '../panel/backlogWriter';
+import { promoteToActive, findBacklogFilePath } from '../panel/backlogWriter';
 import {
   computeRecertBatch,
   isScenarioUpForRecert,
@@ -1421,6 +1421,45 @@ export async function runExpediteDispatch(targetPath: string, backlogId: string)
   }
 }
 
+export function commitIntegrityCliPath(targetPath: string): string {
+  return path.join(targetPath, 'swarmforge', 'scripts', 'commit_integrity_cli.bb');
+}
+
+// BL-490-VIOLATION (architect bounce): durably commits the Expedite verb's
+// approve+promote writes through the shared, LOCKED commit-integrity helper
+// (commit_integrity_cli.bb, BL-419) - never a hand-typed git add/commit on
+// this shared master checkout, which is exactly the unmitigated path that
+// produced BL-419's own documented dropped-edit incidents. Locates the
+// ticket's CURRENT file via findBacklogFilePath (its final, post-promote
+// path) rather than re-deriving it, and commits that ONE repo-relative
+// path - pathspec-scoped, so a concurrent writer's own commit can never
+// sweep this one in or out. Degrades to false (never throws) on a missing
+// ticket file, a missing bb/CLI, or a non-zero exit - mirrors
+// runExpediteDispatch's own try/catch -> boolean shape above, so a failed
+// commit never crashes the poll tick (the mutation still landed on disk;
+// only its durability guarantee is weaker until a later retry).
+export async function commitExpediteWrites(targetPath: string, backlogId: string): Promise<boolean> {
+  const filePath = findBacklogFilePath(targetPath, backlogId);
+  if (!filePath) {
+    return false;
+  }
+  const relPath = path.relative(targetPath, filePath);
+  try {
+    const { stdout } = await execFileAsync('bb', [
+      commitIntegrityCliPath(targetPath),
+      targetPath,
+      '--message',
+      `Expedite ${backlogId}: record approval + promotion\n\nBy coder.`,
+      '--path',
+      relPath,
+    ]);
+    const result = JSON.parse(stdout.trim().split('\n').pop() ?? '{}') as { success?: boolean };
+    return result.success === true;
+  } catch {
+    return false;
+  }
+}
+
 function buildPollAdapters(
   botToken: string,
   targetPath: string,
@@ -1444,6 +1483,7 @@ function buildPollAdapters(
     // safety check, and the dispatch bridge (shells to the existing
     // route_backlog_to_coder.sh injector).
     promoteTicketIfPaused: (backlogId) => Promise.resolve(promoteToActive(targetPath, backlogId).moved),
+    commitExpediteWrites: (backlogId) => commitExpediteWrites(targetPath, backlogId),
     checkExpediteFileCollision: (backlogId) => Promise.resolve(findExpediteFileCollision(targetPath, backlogId)),
     dispatchExpediteBuild: (backlogId) => runExpediteDispatch(targetPath, backlogId),
     // BL-484: the closing routine's own three adapters - a decided ask
