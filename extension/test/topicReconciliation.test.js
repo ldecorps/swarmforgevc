@@ -126,6 +126,24 @@ test('BL-493: a done ticket with no topic yet mapped is still reconciled - the s
   assert.deepEqual(posted, [{ topicId: 760, text: buildTicketStatusText('BL-123', 'a fine feature', 'done'), messageId: 9000 }]);
 });
 
+test('the idempotency check is queried with the ticket\'s DONE-state status text specifically - not an accidental empty/other state string', async () => {
+  const { adapters } = fakeAdapters();
+  const seenSummaryTexts = [];
+  adapters.isAlreadyReconciled = (backlogId, summaryText) => {
+    seenSummaryTexts.push(summaryText);
+    return false;
+  };
+  await reconcileTopicLifecycle([ticket()], {}, adapters);
+  assert.deepEqual(seenSummaryTexts, [buildTicketStatusText('BL-123', 'a fine feature', 'done')]);
+});
+
+test('a ticket status message that fails to post (no topic available) is never counted as reconciled - the posted flag genuinely gates the result, not just attempted', async () => {
+  const { adapters } = fakeAdapters();
+  adapters.routeAdapters.ensureBacklogTopic = async () => undefined; // simulate topic creation/lookup failure
+  const result = await reconcileTopicLifecycle([ticket()], {}, adapters);
+  assert.deepEqual(result, { reconciled: [] }, 'expected a failed post to never count as reconciled');
+});
+
 test('multiple done tickets are each reconciled independently, in order', async () => {
   const { adapters, posted } = fakeAdapters();
   const result = await reconcileTopicLifecycle([ticket({ id: 'BL-1', title: 'first' }), ticket({ id: 'BL-2', title: 'second' })], {}, adapters);
