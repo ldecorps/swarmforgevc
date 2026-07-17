@@ -5,6 +5,7 @@ const {
   getTelegramUpdates,
   createForumTopic,
   closeForumTopic,
+  closeForumTopicWithRateLimitRetry,
   reopenForumTopic,
   deleteForumTopic,
   editForumTopic,
@@ -383,6 +384,72 @@ test('BL-299: closeForumTopic reports failure on a non-2xx response without leak
   assert.equal(result.success, false);
   assert.match(result.error, /topic already closed/);
   assert.doesNotMatch(result.error, new RegExp(TOKEN));
+});
+
+// ── BL-494: closeForumTopicWithRateLimitRetry - the close-endpoint sibling
+//    of editForumTopicWithRateLimitRetry above, for the one-time legacy
+//    per-ticket topic reconcile. Mirrors that function's own test shapes
+//    exactly (same retry_after-honoring contract, a different Telegram
+//    method under it).
+
+test('BL-494: closeForumTopic propagates retryAfterSeconds on a 429, same shape as editForumTopic', async () => {
+  const postFn = async () => ({ ok: false, status: 429, json: { ok: false, description: 'retry after 26', parameters: { retry_after: 26 } } });
+
+  const result = await closeForumTopic(TOKEN, CHAT_ID, 7, postFn);
+
+  assert.equal(result.success, false);
+  assert.equal(result.retryAfterSeconds, 26);
+});
+
+test('BL-494: closeForumTopicWithRateLimitRetry waits exactly retry_after seconds and retries the SAME topic on a 429', async () => {
+  let calls = 0;
+  const postFn = async () => {
+    calls += 1;
+    if (calls === 1) {
+      return { ok: false, status: 429, json: { ok: false, description: 'Too Many Requests: retry after 26', parameters: { retry_after: 26 } } };
+    }
+    return { ok: true, status: 200, json: { ok: true, result: true } };
+  };
+  const waits = [];
+
+  const result = await closeForumTopicWithRateLimitRetry(TOKEN, CHAT_ID, 101, async (ms) => waits.push(ms), postFn);
+
+  assert.equal(result, true);
+  assert.equal(calls, 2, 'expected the rate-limited call to be retried, never dropped');
+  assert.deepEqual(waits, [26000], 'expected the wait to be EXACTLY retry_after seconds, in ms, never a generic guess');
+});
+
+test('BL-494: closeForumTopicWithRateLimitRetry keeps retrying through MULTIPLE consecutive rate-limit responses until it succeeds', async () => {
+  let calls = 0;
+  const postFn = async () => {
+    calls += 1;
+    if (calls <= 3) {
+      return { ok: false, status: 429, json: { ok: false, description: 'retry after 5', parameters: { retry_after: 5 } } };
+    }
+    return { ok: true, status: 200, json: { ok: true, result: true } };
+  };
+  const waits = [];
+
+  const result = await closeForumTopicWithRateLimitRetry(TOKEN, CHAT_ID, 101, async (ms) => waits.push(ms), postFn);
+
+  assert.equal(result, true);
+  assert.equal(calls, 4);
+  assert.deepEqual(waits, [5000, 5000, 5000]);
+});
+
+test('BL-494: closeForumTopicWithRateLimitRetry does NOT retry a genuine (non-429) failure - returns false immediately', async () => {
+  let calls = 0;
+  const postFn = async () => {
+    calls += 1;
+    return { ok: false, status: 400, json: { ok: false, description: 'topic already closed' } };
+  };
+  const waits = [];
+
+  const result = await closeForumTopicWithRateLimitRetry(TOKEN, CHAT_ID, 101, async (ms) => waits.push(ms), postFn);
+
+  assert.equal(result, false);
+  assert.equal(calls, 1);
+  assert.deepEqual(waits, []);
 });
 
 test('BL-332: reopenForumTopic posts to the Telegram API with the topic\'s message_thread_id and reports success', async () => {

@@ -551,9 +551,14 @@ export async function createForumTopic(
 // BL-299: closes a forum topic (read-only, history preserved) - CLOSE, not
 // delete (deleteForumTopic would destroy the very completion summary just
 // posted into it). Mirrors createForumTopic's own shape/error handling.
+// BL-494: retryAfterSeconds rides the shared TelegramApiCallResult (see
+// callTelegramApi above), same as editForumTopic's own result shape - so
+// the legacy per-ticket topic reconcile can honour a 429's own told-you-so
+// wait instead of treating it as an ordinary opaque failure.
 export interface CloseForumTopicResult {
   success: boolean;
   error?: string;
+  retryAfterSeconds?: number;
 }
 
 export async function closeForumTopic(
@@ -565,9 +570,35 @@ export async function closeForumTopic(
   const body = JSON.stringify({ chat_id: chatId, message_thread_id: messageThreadId });
   const result = await callTelegramApi(token, 'closeForumTopic', body, postFn);
   if (!result.success) {
-    return { success: false, error: result.error };
+    return { success: false, error: result.error, retryAfterSeconds: result.retryAfterSeconds };
   }
   return { success: true };
+}
+
+// BL-494: the close-endpoint sibling of editForumTopicWithRateLimitRetry
+// below - same unbounded-but-server-told retry contract (a mass close over
+// a rate-limited surface at first-run volume is exactly the backfill-storm
+// class editForumTopicWithRateLimitRetry/setTopicIconWithRateLimitRetry
+// already exist to prevent), reused rather than a second throttle
+// mechanism, just wrapping closeForumTopic instead of editForumTopic since
+// close and edit are different Telegram methods.
+export async function closeForumTopicWithRateLimitRetry(
+  token: string,
+  chatId: string,
+  messageThreadId: number,
+  wait: (ms: number) => Promise<void> = defaultWaitMs,
+  postFn: TelegramPostFn = defaultPost
+): Promise<boolean> {
+  for (;;) {
+    const result = await closeForumTopic(token, chatId, messageThreadId, postFn);
+    if (result.success) {
+      return true;
+    }
+    if (result.retryAfterSeconds === undefined) {
+      return false;
+    }
+    await wait(result.retryAfterSeconds * 1000);
+  }
 }
 
 // BL-332: reopens a CLOSED (never deleted) forum topic - history and the
