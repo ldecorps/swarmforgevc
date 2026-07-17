@@ -34,9 +34,6 @@ function fakeDocsTree() {
   return { schemaVersion: 1, generatedAtIso: '2026-07-09T12:00:00Z', sourceSha: 'abc123def456', vision: [], milestones: [], tickets: [] };
 }
 
-function fakeRecertBatch() {
-  return { schemaVersion: 1, generatedAtIso: '2026-07-09T12:00:00Z', batch: [] };
-}
 
 function installFakeCaches(dom) {
   const store = new Map();
@@ -76,9 +73,6 @@ function installFetch(dom, opts = {}) {
     }
     if (url === './docs-tree.json') {
       return Promise.resolve({ json: () => Promise.resolve(fakeDocsTree()) });
-    }
-    if (url === './recert-batch.json') {
-      return Promise.resolve({ json: () => Promise.resolve(fakeRecertBatch()) });
     }
     return Promise.reject(new Error('unexpected fetch: ' + url));
   };
@@ -204,7 +198,6 @@ test('collapsible-sections-04: collapsing one section leaves the others expanded
   assert.equal(sectionBody(dom, 'boardHeading').style.display, 'none');
   assert.notEqual(sectionBody(dom, 'needsApprovalHeading').style.display, 'none');
   assert.notEqual(sectionBody(dom, 'velocityHeading').style.display, 'none');
-  assert.notEqual(sectionBody(dom, 'recertHeading').style.display, 'none');
 });
 
 // ── collapsible-sections-05 ─────────────────────────────────────────────────
@@ -223,14 +216,13 @@ test('collapsible-sections-05: with no saved state, every section starts expande
     'suiteDurationHeading',
     'costHealthHeading',
     'documentationHeading',
-    'recertHeading',
   ];
   keys.forEach((key) => {
     assert.equal(sectionHeader(dom, key).getAttribute('aria-expanded'), 'true', key + ' aria-expanded should be true');
   });
   // suiteDurationSection/costHealthSection are hidden by data-presence, not
   // by collapse - only assert body visibility for the always-shown sections.
-  ['needsApprovalHeading', 'boardHeading', 'velocityHeading', 'burndownHeading', 'cycleTimeHeading', 'documentationHeading', 'recertHeading'].forEach((key) => {
+  ['needsApprovalHeading', 'boardHeading', 'velocityHeading', 'burndownHeading', 'cycleTimeHeading', 'documentationHeading'].forEach((key) => {
     assert.notEqual(sectionBody(dom, key).style.display, 'none', key + ' body should start visible');
   });
 });

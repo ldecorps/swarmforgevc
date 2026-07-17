@@ -154,11 +154,11 @@ function registerSteps(registry) {
     if (!ctx.pwaIndexHtml.includes('aria-label="Switch language"')) {
       throw new Error('the PWA locale toggle must have a static accessible-name fallback');
     }
-    if (!ctx.pwaAppJs.includes("if (e.key === ' ')") || !ctx.pwaAppJs.includes('link.click()')) {
-      throw new Error("the PWA's role=\"button\" mailto link must also activate on Space, completing its ARIA contract");
+    if (!ctx.pwaAppJs.includes("control.header.setAttribute('role', 'button')") || !ctx.pwaAppJs.includes("e.key === 'Enter' || e.key === ' '")) {
+      throw new Error("the PWA's role=\"button\" section headers must also activate on Space, completing its ARIA contract");
     }
-    if (!ctx.pwaAppJs.includes("'aria-label': 'Edit scenario text: ' + scenario.name")) {
-      throw new Error('the PWA recert textarea must have an accessible name');
+    if (!ctx.pwaAppJs.includes("btn.setAttribute('aria-label', tr('startListening'))")) {
+      throw new Error('the PWA Listen control must have an accessible name');
     }
   });
 }

@@ -81,7 +81,6 @@
       notYetImplementedLabel: 'not yet implemented',
       couldNotLoadDocsTree: 'Could not load docs-tree.json (offline and nothing cached yet).',
       couldNotLoadBacklog: 'Could not load backlog.json (offline and nothing cached yet).',
-      couldNotLoadRecertBatch: 'Could not load recert-batch.json (offline and nothing cached yet).',
       showFrenchScenario: 'Show French rendering',
       hideFrenchScenario: 'Hide French rendering',
       // BL-261: shown whenever a rendered *Fr field's paired *Untranslated
@@ -89,15 +88,6 @@
       // fallback text may still be shown, but never silently as if it were
       // a genuine French translation.
       translationUnavailableNotice: 'Machine translation unavailable — showing English.',
-      recertHeading: 'Recertify a scenario',
-      recertNoneNeeded: 'No scenarios need recertification right now.',
-      recertConfirm: 'Confirm — still accurate',
-      recertUpdate: 'Update text',
-      recertDelete: 'Delete — obsolete',
-      recertSendUpdate: 'Send update',
-      recertYesDelete: 'Yes, delete',
-      recertCancel: 'Cancel',
-      recertDeleteWarning: 'This removes the scenario from the acceptance contract once the specifier accepts it. This cannot be undone. Are you sure?',
       asOfPrefix: 'As of ',
       // BL-263: single not-done total (active + paused, excluding done),
       // read from backlog.json's notDoneCount - never recomputed here.
@@ -200,19 +190,9 @@
       notYetImplementedLabel: 'pas encore implémenté',
       couldNotLoadDocsTree: 'Impossible de charger docs-tree.json (hors ligne et rien en cache).',
       couldNotLoadBacklog: 'Impossible de charger backlog.json (hors ligne et rien en cache).',
-      couldNotLoadRecertBatch: 'Impossible de charger recert-batch.json (hors ligne et rien en cache).',
       showFrenchScenario: 'Afficher la version française',
       hideFrenchScenario: 'Masquer la version française',
       translationUnavailableNotice: 'Traduction automatique indisponible — affichage en anglais.',
-      recertHeading: 'Recertifier un scénario',
-      recertNoneNeeded: 'Aucun scénario à recertifier pour le moment.',
-      recertConfirm: 'Confirmer — toujours exact',
-      recertUpdate: 'Modifier le texte',
-      recertDelete: 'Supprimer — obsolète',
-      recertSendUpdate: 'Envoyer la modification',
-      recertYesDelete: 'Oui, supprimer',
-      recertCancel: 'Annuler',
-      recertDeleteWarning: "Cela retire le scénario du contrat d'acceptation une fois accepté par le specifier. Cette action est irréversible. Êtes-vous sûr(e) ?",
       asOfPrefix: 'Au ',
       // BL-263: total non terminé unique (actif + en pause, hors terminé),
       // lu depuis backlog.json's notDoneCount - jamais recalculé ici.

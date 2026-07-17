@@ -232,34 +232,46 @@ function readRecertState(ctx) {
   return JSON.parse(fs.readFileSync(file, 'utf8'));
 }
 
+// Exported so a sibling feature that has no "a standing Recert topic
+// exists" Background of its own (BL-451's retirement scenarios reuse "the
+// recert posting runs" without one) can build the SAME ctx shape rather
+// than reimplementing this fixture wiring a second time.
+function initRecertTopicFixture(ctx) {
+  ctx.targetPath = mkTmpDir('sfvc-bl450-');
+  git(ctx.targetPath, ['init', '-q']);
+  git(ctx.targetPath, ['config', 'user.email', 't@t']);
+  git(ctx.targetPath, ['config', 'user.name', 't']);
+  mkdirp(path.join(ctx.targetPath, '.swarmforge'));
+  fs.writeFileSync(path.join(ctx.targetPath, '.swarmforge', 'roles.tsv'), `specifier\tmaster\t${ctx.targetPath}\tswarmforge-specifier\tSpecifier\tclaude\ttask\n`);
+  ctx.topicMap = {};
+  ctx.created = [];
+  ctx.posted = [];
+  ctx.edited = [];
+  ctx.notified = [];
+  ctx.tickState = { snapshot: null, emittedKeys: [] };
+  ctx.pendingDelete = undefined;
+  ctx.idMap = {};
+  ctx.adapters = buildConciergeAdapters(ctx);
+}
+
+function seedScenariosNeedingRecertification(ctx) {
+  writeRecertTicket(ctx, 'BL-207', 'a fine ticket', [
+    { suffix: 'thing-01', name: 'first', steps: ['Given a', 'When b', 'Then c'] },
+    { suffix: 'thing-02', name: 'second', steps: ['Given x'] },
+  ]);
+}
+
 function registerSteps(registry) {
   const FEATURE_NAME = 'A standing Recert topic is where the human recertifies Gherkin scenarios in-chat';
 
   // ── Background ───────────────────────────────────────────────────────
   registry.define(/^a standing Recert topic exists$/, (ctx) => {
-    ctx.targetPath = mkTmpDir('sfvc-bl450-');
-    git(ctx.targetPath, ['init', '-q']);
-    git(ctx.targetPath, ['config', 'user.email', 't@t']);
-    git(ctx.targetPath, ['config', 'user.name', 't']);
-    mkdirp(path.join(ctx.targetPath, '.swarmforge'));
-    fs.writeFileSync(path.join(ctx.targetPath, '.swarmforge', 'roles.tsv'), `specifier\tmaster\t${ctx.targetPath}\tswarmforge-specifier\tSpecifier\tclaude\ttask\n`);
-    ctx.topicMap = {};
-    ctx.created = [];
-    ctx.posted = [];
-    ctx.edited = [];
-    ctx.notified = [];
-    ctx.tickState = { snapshot: null, emittedKeys: [] };
-    ctx.pendingDelete = undefined;
-    ctx.idMap = {};
-    ctx.adapters = buildConciergeAdapters(ctx);
+    initRecertTopicFixture(ctx);
   });
 
   // ── recert-telegram-01/02 ────────────────────────────────────────────
   registry.define(/^scenarios need recertification$/, (ctx) => {
-    writeRecertTicket(ctx, 'BL-207', 'a fine ticket', [
-      { suffix: 'thing-01', name: 'first', steps: ['Given a', 'When b', 'Then c'] },
-      { suffix: 'thing-02', name: 'second', steps: ['Given x'] },
-    ]);
+    seedScenariosNeedingRecertification(ctx);
   });
 
   registry.define(/^the recert posting runs(?: again with that scenario still the oldest)?$/, async (ctx) => {
@@ -433,4 +445,4 @@ function registerSteps(registry) {
   });
 }
 
-module.exports = { registerSteps };
+module.exports = { registerSteps, initRecertTopicFixture, seedScenariosNeedingRecertification, RECERT_TOPIC_ID };
