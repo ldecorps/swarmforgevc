@@ -45,13 +45,11 @@ notes: |
   not re-announce the same batch. Verify against real surfaces, not a fixture (BL-335).
 
 acceptance:
+  # RETIRED 2026-07-17: all scenarios superseded by the recert-telegram-move epic
+  # (BL-450 build + BL-451 retire, human-approved 2026-07-16). The feature file is
+  # kept as a tombstone pointing at the successor scenarios; see it for the mapping.
   feature: specs/features/BL-339-recert-notify-and-deep-link-via-telegram.feature
-  steps:
-    - "A waiting recert batch is announced on Telegram"
-    - "The announcement links straight to the recert work in the PWA"
-    - "A batch of many scenarios produces one message, not one per scenario"
-    - "An outstanding batch is not re-announced on every tick"
-    - "Nothing is announced when no recert batch is waiting"
+  steps: []
 
 human_approval: pending
 

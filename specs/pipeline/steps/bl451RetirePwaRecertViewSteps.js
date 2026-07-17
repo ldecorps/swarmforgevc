@@ -83,9 +83,15 @@ function registerSteps(registry) {
   );
 
   // ── retire-pwa-recert-02 ────────────────────────────────────────────
-  // "Given a recert batch is waiting on the human" is reused unscoped from
-  // recertNotifySteps.js (BL-339) - pure git-backed fixture setup with no
-  // dependency on the now-deleted notify CLI, so it is still safe to reuse.
+  // "Given a recert batch is waiting on the human" is narrative only here:
+  // this scenario's real proof is source-grepping below (no live
+  // batch/fixture is read by either step). recertNotifySteps.js (BL-339),
+  // which used to register this text with a real git-backed fixture, was
+  // removed once the BL-339 feature was retired to a tombstone (2026-07-17)
+  // - its fixture was never load-bearing for THIS scenario, only for
+  // BL-339's own now-deleted scenarios.
+  registry.defineScoped(/^a recert batch is waiting on the human$/, () => {}, FEATURE_NAME);
+
   registry.defineScoped(
     /^the recert notify sweep runs$/,
     (ctx) => {
