@@ -50,12 +50,17 @@ Feature: The pipeline board shows a wider slug, an updated-at footer bumped only
   Background:
     Given a pipeline board rendered from the active tickets, the parked list, and an injected clock
 
-  # BL-462 pipeline-board-refine-01
-  Scenario: A longer title fills the wider slug on the same row
-    Given an active ticket whose title is longer than the previous slug limit but within the wider limit
-    When the pipeline board is rendered
-    Then the ticket's row shows a slug carrying more of its title than the previous limit allowed
-    And the slug is still a single line no wider than the board
+  # BL-462 pipeline-board-refine-01 RETIRED (BL-505, 2026-07-17): superseded
+  # by BL-465, then narrowed again by BL-505 - the grid's SLUG column has
+  # shown a short kebab slug (never a truncated title) since BL-465, so this
+  # scenario's own premise (a long title fills the grid slug via the widened
+  # PIPELINE_BOARD_SLUG_MAX_LENGTH bound) was already false; it kept passing
+  # only by fixture coincidence (its all-"a" title has no word boundary, so
+  # its kebab slug and its truncated-title slug happen to be byte-identical).
+  # The grid's own kebab-slug behaviour is covered directly by BL-465's
+  # board-round2-01 scenario (now asserting BL-505's 2-word cap). Retired per
+  # the superseded-scenario rule (retire, don't reword) rather than rewritten
+  # to duplicate that scenario's own contract.
 
   # BL-462 pipeline-board-refine-02 RETIRED (BL-475, 2026-07-17): superseded by
   # BL-465 - the grid's SLUG column no longer shows a truncated title at all
