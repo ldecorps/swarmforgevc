@@ -1340,7 +1340,11 @@ function buildPollAdapters(
     // strips its buttons and shows the verdict.
     readRecordedApprovalVerdict: (backlogId) => Promise.resolve(readRecordedVerdict(targetPath, backlogId)),
     readApprovalAskMessage: (backlogId) => Promise.resolve(readApprovalAskMessages(targetPath)[backlogId]),
-    editApprovalAskMessage: (topicId, messageId, text) => editMessageText(botToken, chatId, messageId, text, undefined, undefined, null).then((r) => r.success),
+    // BL-496: the full {success, error, retryAfterSeconds} result is now
+    // passed straight through (no longer collapsed to a bare boolean) so
+    // closeApprovalAskIfPossible can log the real rejection reason and
+    // honour a 429's told-you-so retry_after with its own bounded retry.
+    editApprovalAskMessage: (topicId, messageId, text) => editMessageText(botToken, chatId, messageId, text, undefined, undefined, null),
     notifyApprovalsTopic: (topicId, text) => sendTelegramMessage(botToken, chatId, text, undefined, undefined, topicId).then((r) => r.success),
     // BL-450: recertificationStore.ts's own read-check-write functions -
     // the FIRST live callers of confirmScenario/writeRecertStore/

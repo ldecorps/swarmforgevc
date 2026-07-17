@@ -696,6 +696,31 @@ test('editMessageText reports failure on a non-2xx response without leaking the 
   assert.doesNotMatch(result.error, new RegExp(TOKEN));
 });
 
+// BL-496: the approval-ask close's own bounded retry needs to honour a 429's
+// told-you-so retry_after, exactly like editForumTopic's own BL-342 fix
+// above - editMessageText must surface it too, never treat a 429 as an
+// ordinary opaque failure.
+test('BL-496: editMessageText surfaces retryAfterSeconds from a 429 rate-limit response', async () => {
+  const postFn = async () => ({
+    ok: false,
+    status: 429,
+    json: { ok: false, error_code: 429, description: 'Too Many Requests: retry after 3', parameters: { retry_after: 3 } },
+  });
+
+  const result = await editMessageText(TOKEN, CHAT_ID, 42, 'text', undefined, postFn);
+
+  assert.equal(result.success, false);
+  assert.equal(result.retryAfterSeconds, 3);
+});
+
+test('BL-496: editMessageText leaves retryAfterSeconds undefined for an ordinary (non-429) failure', async () => {
+  const postFn = async () => ({ ok: false, status: 400, json: { ok: false, description: 'message to edit not found' } });
+
+  const result = await editMessageText(TOKEN, CHAT_ID, 42, 'text', undefined, postFn);
+
+  assert.equal(result.retryAfterSeconds, undefined);
+});
+
 // BL-484: a decided approval ask must STRIP its inline keyboard - Telegram's
 // editMessageText leaves an existing reply_markup untouched when the field
 // is omitted, so removing buttons requires explicitly sending an EMPTY
