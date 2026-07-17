@@ -78,6 +78,26 @@
   root>)` and named `notifyDeadLettersCli.test.js` as the seam to copy — that
   instruction was wrong and BL-363 dutifully followed it into a hard-aborted
   mutation run; corrected 2026-07-14.)
+- **Give a CLI's side-effectful call an INJECTED-function seam (BL-494's `postFn` DI),
+  not a `*_FORCE_RESULT` env-seam — an env flag that short-circuits the real branch
+  leaves that branch permanently unkillable by mutation.** A `*_FORCE_RESULT`
+  environment variable that makes the CLI return a canned outcome means the `real()`
+  branch — the actual Telegram/network call and its result handling — NEVER executes
+  under test, because every test forces the result; so mutants inside `real()` survive
+  forever and its CRAP sits unmeasured, the same subprocess blind spot the thin-wrapper
+  rules above close, one seam over. Instead export the effect as an INJECTABLE function
+  parameter (default the real implementation; tests pass a fake), so the success AND
+  failure branches both run in-process and are mutation-killable. BL-494's injected
+  `postFn` in `extension/src/tools/telegram-front-desk-bot.ts` /
+  `provision-onboarding-telegram-channel.ts` is the seam to copy — it hit 100%. New or
+  TOUCHED CLIs use the injected seam; a pre-existing `*_FORCE_RESULT` CLI is retrofitted
+  the next time it is touched. (Proposed by the hardener 2026-07-17 scoped
+  `role:hardender`; accepted into the shared article instead — the CODER authors the CLI
+  seam, so this binds every CLI author, not just the role that catches the survivor late,
+  exactly as the BL-370 note above. Evidence: BL-495 left 9 unkillable survivors in
+  `recreate-bl-topic.ts`'s `TELEGRAM_RECREATE_FORCE_RESULT` `real()` branch, pre-existing
+  since BL-332; the same env-seam shape recurs in `notify-dead-letters.ts`,
+  `resume-expired-pauses.ts`, `run-role-benchmark.ts`, `notify-recert-batch.ts`.)
 - **When you add a branch beside an existing one in a `cond`/`case`/if-else chain, a
   test must drive BOTH branches' trigger conditions TRUE AT ONCE — testing each one
   alone leaves the PRIORITY ORDER entirely unproven.** Ordered dispatch encodes two
