@@ -35,6 +35,14 @@ const OPERATOR_RUNTIME_BB_FILES = [
   'operator_ask.bb',
   'handoff_lib.bb',
   'daemon_alarm_lib.bb',
+  'disk_space_lib.bb',
+  'sandbox_sweep_lib.bb',
+  'bounded_delete_sweep_lib.bb',
+  'proc_fd_scan_lib.bb',
+  'fixture_reaper_lib.bb',
+  'fixture_reaper_sweep_lib.bb',
+  'orphan_agent_reaper_lib.bb',
+  'orphan_agent_reaper_sweep_lib.bb',
 ];
 
 const PRINCIPAL_ID = 111;
@@ -116,7 +124,7 @@ function registerSteps(registry) {
     ctx.tickProcess = spawn(
       'bb',
       [path.join(ctx.runtimeTarget, 'swarmforge', 'scripts', 'operator_runtime.bb'), ctx.runtimeTarget, '--tick-once'],
-      { env: { ...process.env, OPERATOR_SKIP_LAUNCH: '1', OPERATOR_EVENTS_LOCK_TEST_HOLD_MS: '200' } }
+      { env: { ...process.env, OPERATOR_SKIP_LAUNCH: '1', OPERATOR_EVENTS_LOCK_TEST_HOLD_MS: '200', SWARMFORGE_ORPHAN_REAP_CANDIDATE_PIDS: '' } }
     );
     ctx.tickExit = new Promise((resolve) => ctx.tickProcess.on('exit', resolve));
   });
@@ -258,7 +266,7 @@ function registerSteps(registry) {
   registry.define(/^the front desk reconciles its threads against its queue$/, (ctx) => {
     const { execFileSync } = require('node:child_process');
     execFileSync('bb', [path.join(ctx.runtimeTarget, 'swarmforge', 'scripts', 'operator_runtime.bb'), ctx.runtimeTarget, '--tick-once'], {
-      env: { ...process.env, OPERATOR_SKIP_LAUNCH: '1' },
+      env: { ...process.env, OPERATOR_SKIP_LAUNCH: '1', SWARMFORGE_ORPHAN_REAP_CANDIDATE_PIDS: '' },
       encoding: 'utf8',
     });
     ctx.queuedText = queuedEventsText(ctx.runtimeTarget);

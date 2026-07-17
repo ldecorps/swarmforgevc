@@ -26,6 +26,14 @@ const OPERATOR_RUNTIME_BB_FILES = [
   'operator_ask.bb',
   'handoff_lib.bb',
   'daemon_alarm_lib.bb',
+  'disk_space_lib.bb',
+  'sandbox_sweep_lib.bb',
+  'bounded_delete_sweep_lib.bb',
+  'proc_fd_scan_lib.bb',
+  'fixture_reaper_lib.bb',
+  'fixture_reaper_sweep_lib.bb',
+  'orphan_agent_reaper_lib.bb',
+  'orphan_agent_reaper_sweep_lib.bb',
 ];
 
 function mkTmp(prefix) {
@@ -58,7 +66,7 @@ function tick(target) {
   // the read even after the immediate bb process exits (discovered via a
   // real hang in alwaysOnOperatorPresenceSteps.js's own tick() helper).
   return execFileSync('bb', [path.join(target, 'swarmforge', 'scripts', 'operator_runtime.bb'), target, '--tick-once'], {
-    env: { ...process.env, OPERATOR_SKIP_LAUNCH: '1', SWARMFORGE_SKIP_TUNNEL: '1' },
+    env: { ...process.env, OPERATOR_SKIP_LAUNCH: '1', SWARMFORGE_SKIP_TUNNEL: '1', SWARMFORGE_ORPHAN_REAP_CANDIDATE_PIDS: '' },
     encoding: 'utf8',
     timeout: 15000,
   });
