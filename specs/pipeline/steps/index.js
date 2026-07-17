@@ -281,7 +281,8 @@ const DOMAINS = [
   require('./bl495TopicRecreationEpicAwareSteps'),
   require('./bl505PipelineBoardNarrowerGridAndListsSteps'),
   require('./bl509AmendButtonSteersTicketSteps'),
-  require('./bl506PipelineBoardLinksMostRecentFirstSteps')
+  require('./bl506PipelineBoardLinksMostRecentFirstSteps'),
+  require('./bl507PipelineBoardDropCoordinatorColumnSteps')
 ];
 
 function registerSteps(registry) {

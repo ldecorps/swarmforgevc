@@ -8,6 +8,7 @@
 // topicIcon.ts's own pure/adapter split, with pipelineBoardSync.ts as the
 // I/O half).
 import { ALL_SWARM_ROLES } from './roleTopicMapStore';
+import { PIPELINE_CHAIN } from '../swarm/rolePack';
 
 export interface PipelineBoardRow {
   id: string;
@@ -114,7 +115,15 @@ export interface PipelineBoardExtras {
 // position, so this reorder breaks no existing test).
 export const PIPELINE_BOARD_NOT_STARTED_COLUMN = 'not-started';
 
-export const PIPELINE_BOARD_COLUMN_ORDER: readonly string[] = [PIPELINE_BOARD_NOT_STARTED_COLUMN, ...ALL_SWARM_ROLES];
+// BL-507: built from the forward PIPELINE_CHAIN (specifier..QA), NOT
+// ALL_SWARM_ROLES - the coordinator does post-QA backlog bookkeeping only
+// (PIPELINE.md; constitution BL-247), not a forward parcel stage, so the
+// grid carries no coordinator column. ALL_SWARM_ROLES itself is untouched -
+// it still legitimately drives the coordinator's own standing steering
+// topic (roleTopicMapStore.ts, BL-425) and heldRoleByTicketId's iteration
+// below, which is exactly why buildGridRows must remap a coordinator-held
+// row's stage to 'QA' before it renders (see buildGridRows).
+export const PIPELINE_BOARD_COLUMN_ORDER: readonly string[] = [PIPELINE_BOARD_NOT_STARTED_COLUMN, ...PIPELINE_CHAIN];
 
 // Short, fixed-width column glyphs - the full role names are far too wide
 // for a grid on a phone screen. Exact glyphs are a build-time/cosmetic
@@ -312,7 +321,13 @@ function buildGridRows(
   const rowsById = new Map<string, PipelineBoardRow>();
   for (const id of ids) {
     const meta = ticketMeta[id];
-    const column = heldRoleById.get(id) ?? PIPELINE_BOARD_NOT_STARTED_COLUMN;
+    const heldRole = heldRoleById.get(id) ?? PIPELINE_BOARD_NOT_STARTED_COLUMN;
+    // BL-507: heldRoleById still resolves a coordinator-held ticket to
+    // 'coordinator' (heldRoleByTicketId iterates ALL_SWARM_ROLES, unchanged)
+    // but the grid has no coordinator column any more - remap it to 'QA' so
+    // it renders at the end-of-line stage instead of matching no column at
+    // all (an all-dots row) or falling through to not-started.
+    const column = heldRole === 'coordinator' ? 'QA' : heldRole;
     rowsById.set(id, { id, column, epic: meta?.epic, slug: deriveKebabSlug(meta?.title) });
   }
   return [...rowsById.values()].sort((a, b) => epicSortKey(a.epic).localeCompare(epicSortKey(b.epic)));
