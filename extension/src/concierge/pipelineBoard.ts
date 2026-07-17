@@ -136,7 +136,6 @@ const COLUMN_LABEL: Record<string, string> = {
   hardender: 'HD',
   documenter: 'DC',
   QA: 'QA',
-  coordinator: 'CD',
   [PIPELINE_BOARD_NOT_STARTED_COLUMN]: 'NS',
 };
 
