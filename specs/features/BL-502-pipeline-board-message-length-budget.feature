@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-07-17T14:52:07.214043220Z","feature_name":"the pipeline board message stays within Telegram's send limit at any backlog size","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-502-pipeline-board-message-length-budget.feature","background_hash":"1d6f7a07bb85565574eee97bdef520c3377a2140737d8ef168cfe93cf2c2e712","implementation_hash":"unknown","scenarios":[]}
+# acceptance-mutation-manifest-end
+
 Feature: the pipeline board message stays within Telegram's send limit at any backlog size
 
   # Live outage 2026-07-17 (RCA: backlog/evidence/pipeline-board-message-too-long-20260717.md,
