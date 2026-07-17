@@ -20,7 +20,6 @@ const ALL_SECTION_KEYS = [
   'suiteDurationHeading',
   'costHealthHeading',
   'documentationHeading',
-  'recertHeading',
 ];
 
 function render(...args) {
@@ -103,7 +102,7 @@ function registerSteps(registry) {
   // ── collapsible-sections-04 ─────────────────────────────────────────
   registry.define(/^several expanded sections$/, (ctx) => {
     ctx.key = 'boardHeading';
-    ctx.others = ['needsApprovalHeading', 'velocityHeading', 'recertHeading'];
+    ctx.others = ['needsApprovalHeading', 'velocityHeading'];
   });
 
   registry.define(/^one is collapsed$/, (ctx) => {

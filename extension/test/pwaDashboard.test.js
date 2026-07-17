@@ -636,11 +636,11 @@ test('suite-duration-pwa-05: with the field entirely absent from backlog.json, t
   await flush();
   const section = dom.window.document.getElementById('suiteDurationSection');
   assert.equal(section.style.display, 'none');
-  // The two-surface rule: the PWA only ever fetches its own three static,
-  // committed JSON files (backlog.json/docs-tree.json/recert-batch.json,
-  // pre-existing, unrelated to this ticket) - suite duration introduces NO
-  // new fetch of its own (a live host endpoint) to reach the readout.
-  const STATIC_COMMITTED_URLS = ['./backlog.json', './docs-tree.json', './recert-batch.json'];
+  // The two-surface rule: the PWA only ever fetches its own two static,
+  // committed JSON files (backlog.json/docs-tree.json, pre-existing,
+  // unrelated to this ticket) - suite duration introduces NO new fetch of
+  // its own (a live host endpoint) to reach the readout.
+  const STATIC_COMMITTED_URLS = ['./backlog.json', './docs-tree.json'];
   for (const url of dom.fetchCalls) {
     assert.ok(STATIC_COMMITTED_URLS.includes(url), `expected only static committed fetches, got a live fetch to: ${url}`);
   }
