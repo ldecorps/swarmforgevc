@@ -315,18 +315,20 @@ check "operator-ask-04: the still-unanswered (not yet due) question is left unto
   '[[ -f "$F/.swarmforge/operator/awaiting-answer.json" ]] && [[ "$(jget "$F/.swarmforge/operator/awaiting-answer.json" ":thread_id")" == SUP-1 ]]'
 rm -rf "$F"
 
-# ── 13b. BL-466 agent-question-poll-01: a discrete-option ask carries its
-#        options through the CLI to both awaiting-answer.json and the reply
-#        outbox, marked agentQuestion so the Front Desk Bot routes it (and
-#        renders it as a poll) instead of an ordinary reply ─────────────────
+# ── 13b. BL-466/BL-483 agent-question-poll-01: a discrete-option ask carries
+#        its options through the CLI to both awaiting-answer.json and the
+#        reply outbox, marked agentQuestion so the Front Desk Bot routes it
+#        (and renders it as tappable buttons, BL-483) instead of an ordinary
+#        reply. BL-483: each option is a {label, description?} object, not a
+#        bare string - operator-lib/ask-options' own normalized shape. ──────
 F="$(make_fixture)"
 mkdir -p "$F/.swarmforge/support/threads"
 ASK_OUT="$(bb "$F/swarmforge/scripts/operator_ask.bb" "$F" --thread SUP-1 --question "which environment?" --options '["staging","prod"]')"
 check "agent-question-poll-01: the ask CLI reports success" '[[ "$ASK_OUT" == *"\"asked\":true"* ]]'
 check "agent-question-poll-01: awaiting-answer.json records the options" \
-  '[[ "$(jget_in "$F/.swarmforge/operator/awaiting-answer.json" "[:options 0]")" == staging ]] && [[ "$(jget_in "$F/.swarmforge/operator/awaiting-answer.json" "[:options 1]")" == prod ]]'
+  '[[ "$(jget_in "$F/.swarmforge/operator/awaiting-answer.json" "[:options 0 :label]")" == staging ]] && [[ "$(jget_in "$F/.swarmforge/operator/awaiting-answer.json" "[:options 1 :label]")" == prod ]]'
 check "agent-question-poll-01: the reply-outbox entry is marked agentQuestion with its options" \
-  'grep -q "\"agentQuestion\":true" "$F/.swarmforge/operator/telegram-reply-outbox.jsonl" && grep -q "\"options\":\[\"staging\",\"prod\"\]" "$F/.swarmforge/operator/telegram-reply-outbox.jsonl"'
+  'grep -q "\"agentQuestion\":true" "$F/.swarmforge/operator/telegram-reply-outbox.jsonl" && grep -q "\"options\":\[{\"label\":\"staging\"},{\"label\":\"prod\"}\]" "$F/.swarmforge/operator/telegram-reply-outbox.jsonl"'
 rm -rf "$F"
 
 # ── 13c. BL-466 agent-question-poll-03: an ask with fewer than 2 discrete
@@ -981,6 +983,14 @@ printf '{"type":"HUMAN_COMMAND","detail":"x"}\n' > "$F/.swarmforge/operator/even
 sleep 300 & op_pid=$!; FD_PIDS+=("$op_pid"); echo "$op_pid" > "$F/.swarmforge/operator/operator.pid"
 POLL_GUARD_OUT="$(poll "$F")"
 check "BL-481: a poll-once does not relaunch while the full Operator is already running" '[[ "$POLL_GUARD_OUT" == *"\"launched?\":false"* ]]'
+# BL-481 bounce (QA, 2026-07-17): this section pushed op_pid onto FD_PIDS
+# after the BL-334 section's own trap disarm above (cleanup_fd_pids;
+# trap - EXIT) - with no cleanup/re-arm of its own, op_pid (a real `sleep
+# 300`) survived the whole script. Matches the exact convention the BL-334
+# section itself established: clean up, then re-arm the trap so a LATER
+# section (the live loop below) is covered too.
+cleanup_fd_pids
+trap cleanup_fd_pids EXIT
 rm -rf "$F"
 
 # guard: an unexpired cooldown blocks the fast-path launch too, using only
