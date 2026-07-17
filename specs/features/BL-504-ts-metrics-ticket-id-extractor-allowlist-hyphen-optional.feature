@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-07-17T17:42:25.184943864Z","feature_name":"the TS metrics ticket-id extractor uses the BL/GH allowlist and resolves the no-hyphen prefix form","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-504-ts-metrics-ticket-id-extractor-allowlist-hyphen-optional.feature","background_hash":"74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b","implementation_hash":"unknown","scenarios":[]}
+# acceptance-mutation-manifest-end
+
 Feature: the TS metrics ticket-id extractor uses the BL/GH allowlist and resolves the no-hyphen prefix form
 
   # BL-504 (sibling of BL-503, same coordinator rule_proposal, live 2026-07-17). The shared
@@ -35,6 +39,23 @@ Feature: the TS metrics ticket-id extractor uses the BL/GH allowlist and resolve
     Given a role held handoff trail for a ticket whose task header is "bl493-fold-ticket-events"
     When the stage-dwell report is computed
     Then the report includes an entry keyed by "BL-493"
+
+  # Hardener (BL-234 equivalent-mutant note, 2026-07-17): a soft Gherkin mutation pass
+  # single-character-mangled each <task> example value in scenario 01 (14 mutants total:
+  # 7 on <resolved>, all killed; 7 on <task>, all 7 survived). Every <task> survivor
+  # mutates a character strictly PAST the point extractTicketId's anchored regex
+  # `^(BL|GH)-?(\d+)/i` already decides match-or-no-match: the four matching rows
+  # ("bl493-fold-ticket-eVents", "BL-493-fold-Ticket-events", "bl-493-foLd-ticket-events",
+  # "gh77-issue-seedeD") mutate characters after the captured prefix+digits, which the
+  # regex never inspects (no backtracking past a satisfied `\d+`); the three
+  # non-matching rows ("ABL-217-gLued-prefix", "usable-4x3-not-a-ticket",
+  # "usaBle493-not-a-ticket") already fail the `^` anchor at the very first character
+  # ('A'/'u' is neither 'b' nor 'g'), so no mutation anywhere else in the string can
+  # change the NONE outcome. Both are provable from the code, not merely plausible:
+  # the function's return value is a pure function of the leading prefix+digit run
+  # only. The 7 <resolved>-value mutants (the actual expected output) all killed,
+  # proving the extractor itself is fully exercised; no artificial assertion was added
+  # to force these 7 suffix/no-match survivors to die.
 
 # Non-behavioral gates:
 #  - Scope is the SHARED exported swarmMetrics.ts extractTicketId; its consumers (stageDwell,
