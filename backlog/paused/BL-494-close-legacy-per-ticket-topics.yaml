@@ -55,7 +55,7 @@ notes: |
   retry_after and then retrying, and the epic/BACKLOG keys are never closed. Re-run: no topic is
   closed again (all per-ticket keys already dropped) and it exits cleanly.
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   Migration slice implementing your decision D2 (one-time CLOSE of the legacy per-ticket topics —
   read-only, history preserved, never deleted). FIRM: close (not delete), 429-safe via the backfill
