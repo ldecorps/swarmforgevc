@@ -12,6 +12,12 @@ const {
   isObjectDefinePropertyCallee,
   isEsModuleStringLiteralArg,
   isEsModuleCallArguments,
+  isThisMemberNamed,
+  isThisGuardedHelperReference,
+  isTscImportHelperInit,
+  isTscImportHelperDeclarator,
+  isTscImportHelperVariableDeclaration,
+  TSC_IMPORT_HELPER_NAMES,
   EntrypointBoilerplateIgnorer,
 } = require('../out/mutation/entrypointBoilerplateIgnorer');
 
@@ -34,7 +40,11 @@ test('BL-447 entrypoint-boilerplate-excluded-02: exported business logic that no
   // never a "covered?"/"killed?" flag - there is no coverage input it COULD
   // key off of, so an untested real-logic mutant can never be misclassified
   // as boilerplate.
-  assert.equal(classifyMutantLocation({ isRequireMainGuard: false, isEsModuleBoilerplate: false }), 'kept');
+  assert.equal(classifyMutantLocation({ isRequireMainGuard: false, isEsModuleBoilerplate: false, isTscImportHelper: false }), 'kept');
+});
+
+test('BL-498: a tsc import-helper preamble location is excluded', () => {
+  assert.equal(classifyMutantLocation({ isRequireMainGuard: false, isEsModuleBoilerplate: false, isTscImportHelper: true }), 'excluded');
 });
 
 // ── shared AST-shape fixture builders ──────────────────────────────────────
@@ -319,6 +329,131 @@ test('BL-447: a non-CallExpression is rejected on its own type even when its .ca
   assert.equal(isEsModuleBoilerplateNode(node), false);
 });
 
+// ── BL-498: tsc import-helper preamble (pure, plain-object AST shape) ─────
+
+function thisMemberNode(name) {
+  return { type: 'MemberExpression', object: { type: 'ThisExpression' }, property: identifierNode(name) };
+}
+
+function thisGuardedHelperRef(name) {
+  return { type: 'LogicalExpression', operator: '&&', left: { type: 'ThisExpression' }, right: thisMemberNode(name) };
+}
+
+// The right-hand `body` is deliberately a plain, arbitrary node by default -
+// isTscImportHelperInit must never care about its shape (tsc emits a
+// different body per helper: a conditional, an IIFE, a plain function).
+function tscImportHelperInit(name, body = { type: 'FunctionExpression' }) {
+  return { type: 'LogicalExpression', operator: '||', left: thisGuardedHelperRef(name), right: body };
+}
+
+function tscImportHelperVariableDeclarationNode(name, init = tscImportHelperInit(name)) {
+  return {
+    type: 'VariableDeclaration',
+    declarations: [{ type: 'VariableDeclarator', id: identifierNode(name), init }],
+  };
+}
+
+test('BL-498: isThisMemberNamed recognizes this.<name>', () => {
+  assert.equal(isThisMemberNamed(thisMemberNode('__importStar'), '__importStar'), true);
+});
+
+test('BL-498: isThisMemberNamed rejects the right shape on the wrong node type', () => {
+  assert.equal(isThisMemberNamed({ type: 'NotMemberExpr', object: { type: 'ThisExpression' }, property: identifierNode('__importStar') }, '__importStar'), false);
+});
+
+test('BL-498: isThisMemberNamed rejects a member expression whose object is not `this`', () => {
+  assert.equal(isThisMemberNamed(memberExpr('notThis', '__importStar'), '__importStar'), false);
+});
+
+test('BL-498: isThisGuardedHelperReference recognizes `this && this.<name>`', () => {
+  assert.equal(isThisGuardedHelperReference(thisGuardedHelperRef('__importStar'), '__importStar'), true);
+});
+
+test('BL-498: isThisGuardedHelperReference rejects the right shape on the wrong node type', () => {
+  const node = thisGuardedHelperRef('__importStar');
+  node.type = 'NotLogicalExpression';
+  assert.equal(isThisGuardedHelperReference(node, '__importStar'), false);
+});
+
+test('BL-498: isThisGuardedHelperReference rejects an operator other than &&', () => {
+  const node = thisGuardedHelperRef('__importStar');
+  node.operator = '||';
+  assert.equal(isThisGuardedHelperReference(node, '__importStar'), false);
+});
+
+test('BL-498: isThisGuardedHelperReference rejects a left operand that is not a bare `this`', () => {
+  const node = thisGuardedHelperRef('__importStar');
+  node.left = identifierNode('notThis');
+  assert.equal(isThisGuardedHelperReference(node, '__importStar'), false);
+});
+
+test('BL-498: isTscImportHelperInit recognizes `(this && this.<name>) || (…)` regardless of the right-hand body shape', () => {
+  assert.equal(isTscImportHelperInit(tscImportHelperInit('__importStar', { type: 'CallExpression' }), '__importStar'), true);
+  assert.equal(isTscImportHelperInit(tscImportHelperInit('__createBinding', { type: 'ConditionalExpression' }), '__createBinding'), true);
+});
+
+test('BL-498: isTscImportHelperInit rejects the right shape on the wrong node type', () => {
+  const node = tscImportHelperInit('__importStar');
+  node.type = 'NotLogicalExpression';
+  assert.equal(isTscImportHelperInit(node, '__importStar'), false);
+});
+
+test('BL-498: isTscImportHelperInit rejects an operator other than ||', () => {
+  const node = tscImportHelperInit('__importStar');
+  node.operator = '&&';
+  assert.equal(isTscImportHelperInit(node, '__importStar'), false);
+});
+
+test('BL-498: isTscImportHelperInit rejects a left operand that is not the this-guarded reference', () => {
+  const node = tscImportHelperInit('__importStar');
+  node.left = { type: 'NumericLiteral', value: 1 };
+  assert.equal(isTscImportHelperInit(node, '__importStar'), false);
+});
+
+for (const helper of TSC_IMPORT_HELPER_NAMES) {
+  test(`BL-498 mutation-gate-excludes-tsc-import-helpers-01: recognizes the real compiled shape for ${helper}`, () => {
+    assert.equal(isTscImportHelperDeclarator({ type: 'VariableDeclarator', id: identifierNode(helper), init: tscImportHelperInit(helper) }), true);
+    assert.equal(isTscImportHelperVariableDeclaration(tscImportHelperVariableDeclarationNode(helper)), true);
+  });
+}
+
+test('BL-498: TSC_IMPORT_HELPER_NAMES is exactly the four import-related helpers this ticket scopes', () => {
+  assert.deepEqual([...TSC_IMPORT_HELPER_NAMES].sort(), ['__createBinding', '__importDefault', '__importStar', '__setModuleDefault'].sort());
+});
+
+test('BL-498 mutation-gate-excludes-tsc-import-helpers-02: a variable named like a helper but without the tsc init shape is kept (anti-vacuous)', () => {
+  const node = tscImportHelperVariableDeclarationNode('__importStar', { type: 'NumericLiteral', value: 1 });
+  assert.equal(isTscImportHelperVariableDeclaration(node), false);
+});
+
+test('BL-498: a helper-named declarator guarded by `this && this.<OTHER name>` (name mismatch) is kept', () => {
+  const node = tscImportHelperVariableDeclarationNode('__importStar', tscImportHelperInit('__importDefault'));
+  assert.equal(isTscImportHelperVariableDeclaration(node), false);
+});
+
+test('BL-498: a declarator whose name is not in the closed helper set is kept, even with the exact guard shape', () => {
+  const node = tscImportHelperVariableDeclarationNode('__notATscHelper');
+  assert.equal(isTscImportHelperVariableDeclaration(node), false);
+});
+
+test('BL-498 mutation-gate-excludes-tsc-import-helpers-03: an ordinary variable declaration is kept (anti-vacuous)', () => {
+  const node = {
+    type: 'VariableDeclaration',
+    declarations: [{ type: 'VariableDeclarator', id: identifierNode('total'), init: { type: 'BinaryExpression', operator: '+', left: identifierNode('a'), right: identifierNode('b') } }],
+  };
+  assert.equal(isTscImportHelperVariableDeclaration(node), false);
+});
+
+test('BL-498: a non-VariableDeclaration node is never mistaken for the tsc import-helper preamble', () => {
+  assert.equal(isTscImportHelperVariableDeclaration({ type: 'ExpressionStatement', expression: { type: 'CallExpression' } }), false);
+});
+
+test('BL-498: a VariableDeclaration with more than one declarator is never mistaken for the tsc import-helper preamble', () => {
+  const node = tscImportHelperVariableDeclarationNode('__importStar');
+  node.declarations.push({ type: 'VariableDeclarator', id: identifierNode('other'), init: null });
+  assert.equal(isTscImportHelperVariableDeclaration(node), false);
+});
+
 // ── EntrypointBoilerplateIgnorer (thin Stryker Ignorer wiring) ────────────
 
 test('BL-447: the Ignorer excludes a require.main guard NodePath, naming a reason', () => {
@@ -338,5 +473,18 @@ test('BL-447: the Ignorer excludes an __esModule boilerplate NodePath, naming a 
 test('BL-447: the Ignorer never excludes an ordinary node - real logic stays mutatable', () => {
   const ignorer = new EntrypointBoilerplateIgnorer();
   const reason = ignorer.shouldIgnore({ node: { type: 'BinaryExpression', operator: '>=', left: { type: 'Identifier', name: 'durationMs' }, right: { type: 'Identifier', name: 'budgetMs' } } });
+  assert.equal(reason, undefined);
+});
+
+test('BL-498: the Ignorer excludes a tsc import-helper preamble NodePath, naming a reason', () => {
+  const ignorer = new EntrypointBoilerplateIgnorer();
+  const reason = ignorer.shouldIgnore({ node: tscImportHelperVariableDeclarationNode('__importStar') });
+  assert.equal(typeof reason, 'string');
+  assert.ok(reason.length > 0);
+});
+
+test('BL-498: the Ignorer never excludes a same-named variable lacking the tsc init shape', () => {
+  const ignorer = new EntrypointBoilerplateIgnorer();
+  const reason = ignorer.shouldIgnore({ node: tscImportHelperVariableDeclarationNode('__importStar', { type: 'NumericLiteral', value: 1 }) });
   assert.equal(reason, undefined);
 });
