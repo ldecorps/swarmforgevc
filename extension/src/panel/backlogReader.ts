@@ -45,6 +45,12 @@ export interface BacklogItem {
   // (a file path or inline Gherkin string), for the topic-opening
   // summary's own "how it works" line.
   firstAcceptanceStep?: string;
+  // BL-480: the ticket's `approval_context` field (BL-479) - the 2-3
+  // sentences of decision context a specifier writes for exactly this
+  // purpose, so the Approvals-topic ask (topicRouter.ts's
+  // approvalRequestedText) can include it alongside title/notes/
+  // firstAcceptanceStep. Absent on tickets that predate BL-479.
+  approvalContext?: string;
   // BL-341: which epic (a multi-slice body of work) this slice belongs to,
   // as DATA - never inferred from notes: prose. Absent means no epic;
   // every existing ticket stays valid, unchanged. The epic id namespace is
@@ -178,6 +184,7 @@ function assignOptionalFields(item: BacklogItem, content: string): void {
   assignIfDefined(item, 'humanApproval', normalizeHumanApproval(parseYamlScalar(content, 'human_approval')));
   assignIfTruthy(item, 'notes', parseYamlBlockScalar(content, 'notes'));
   assignIfTruthy(item, 'firstAcceptanceStep', parseFirstAcceptanceStep(content));
+  assignIfTruthy(item, 'approvalContext', parseYamlBlockScalar(content, 'approval_context'));
   assignIfTruthy(item, 'epic', parseYamlScalar(content, 'epic'));
   assignIfTruthy(item, 'type', parseYamlScalar(content, 'type'));
   assignIfTruthy(item, 'remainingSlices', parseYamlList(content, 'remaining_slices'));
@@ -293,6 +300,7 @@ function assignOptionalFieldsFromObject(item: BacklogItem, obj: Record<string, u
   assignIfDefined(item, 'humanApproval', normalizeHumanApproval(toOptionalString(obj.human_approval)));
   assignIfTruthy(item, 'notes', toTrimmedOptionalString(obj.notes));
   assignIfTruthy(item, 'firstAcceptanceStep', firstAcceptanceStepFromObject(obj));
+  assignIfTruthy(item, 'approvalContext', toTrimmedOptionalString(obj.approval_context));
   assignIfTruthy(item, 'epic', toOptionalString(obj.epic));
   assignIfTruthy(item, 'type', toOptionalString(obj.type));
   assignIfTruthy(item, 'remainingSlices', toOptionalStringList(obj.remaining_slices));

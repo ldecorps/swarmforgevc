@@ -78,6 +78,107 @@ test('BL-434: the ApprovalRequested ask names the ticket id so a reply can targe
   assert.deepEqual(classifyApprovalsTopicReply('approve BL-123'), { kind: 'approve', backlogId: 'BL-123' });
 });
 
+// ── BL-480: the ask carries enough ticket meat to decide ─────────────────
+// approval-ask-content-01/02/03/04/05/06 - mirrors taskStartedText's own
+// title/notes/firstAcceptanceStep enrichment (BL-322) above, plus
+// approvalContext (BL-479's field). The frozen "<id> needs your approval...
+// Reply here with..." line is ALWAYS the exact pre-change sentence, appended
+// after any enrichment - this both satisfies approval-ask-content-02's
+// byte-identical requirement and preserves the "needs your approval"
+// substring the five sibling step files (bl408/409/410/434,
+// pendingApprovalAsksInTopicSteps.js) locate the ask by.
+const FROZEN_ASK_LINE = 'BL-123 needs your approval before it can proceed. Reply here with "approve BL-123" (or "reject BL-123 <reason>") to act.';
+
+test('approval-ask-content-01: the ask names the ticket id and title, states what it solves, and states the acceptance signal', () => {
+  const text = messageTextForEvent(
+    event({
+      type: 'ApprovalRequested',
+      payload: { title: 'a fine feature', notes: 'This fixes the widget.\n\nSecond paragraph.', firstAcceptanceStep: 'The first step' },
+    })
+  );
+  assert.match(text, /BL-123 — a fine feature/);
+  assert.match(text, /What it solves: This fixes the widget\./);
+  assert.match(text, /First acceptance signal: The first step/);
+  assert.ok(!text.includes('Second paragraph'), 'expected only the first paragraph of notes, same as taskStartedText');
+  assert.ok(text.length > FROZEN_ASK_LINE.length, 'expected more than the bare pre-change id-plus-reply-grammar line');
+  assert.match(
+    text,
+    /^BL-123 — a fine feature\nWhat it solves: This fixes the widget\.\nFirst acceptance signal: The first step\n/,
+    'expected each rendered field on its own line, same buildSummaryBody line-join as taskStartedText'
+  );
+});
+
+test('approval-ask-content-02: the frozen reply-grammar line and buttons stay byte-identical', () => {
+  const { decideTopicAction } = require('../out/concierge/topicRouter');
+  const withSummary = event({
+    type: 'ApprovalRequested',
+    payload: { title: 'a fine feature', notes: 'This fixes the widget.', firstAcceptanceStep: 'The first step' },
+  });
+  const text = messageTextForEvent(withSummary);
+  assert.ok(text.includes(FROZEN_ASK_LINE), `expected the frozen reply-grammar line verbatim, got: ${text}`);
+
+  const action = decideTopicAction(withSummary, {}, 'a fine feature');
+  assert.deepEqual(action.buttons, [
+    [
+      { text: 'Approve', callbackData: 'approve:BL-123' },
+      { text: 'Amend', callbackData: 'amend:BL-123' },
+      { text: 'Reject', callbackData: 'reject:BL-123' },
+    ],
+  ]);
+});
+
+test('approval-ask-content-03: an approval_context, when present, is included in the ask', () => {
+  const text = messageTextForEvent(
+    event({
+      type: 'ApprovalRequested',
+      payload: { title: 'a fine feature', approvalContext: 'Human sign-off needed on the render shape.' },
+    })
+  );
+  assert.match(text, /Approval context: Human sign-off needed on the render shape\./);
+});
+
+test('approval-ask-content-03: no approval_context means no Approval context line', () => {
+  const text = messageTextForEvent(event({ type: 'ApprovalRequested', payload: { title: 'a fine feature' } }));
+  assert.ok(!text.includes('Approval context:'));
+});
+
+// Cleaner (BL-480 pass): buildSummaryBody's shared field loop only applies
+// firstParagraph() to the 'notes' field - every other field (approvalContext,
+// firstAcceptanceStep) renders its raw value verbatim. A multi-paragraph
+// approvalContext pins that: firstParagraph would silently drop everything
+// after the first blank line, which notes intentionally does but
+// approvalContext must not.
+test('approval-ask-content-03: a multi-paragraph approval_context is NOT collapsed to its first paragraph (unlike notes)', () => {
+  const text = messageTextForEvent(
+    event({
+      type: 'ApprovalRequested',
+      payload: { title: 'a fine feature', approvalContext: 'First paragraph.\n\nSecond paragraph.' },
+    })
+  );
+  assert.match(text, /Approval context: First paragraph\.\n\nSecond paragraph\./);
+});
+
+test('approval-ask-content-04: an oversized notes block is truncated within the Telegram message length limit', () => {
+  const hugeNotes = 'x'.repeat(5000);
+  const text = messageTextForEvent(event({ type: 'ApprovalRequested', payload: { title: 'a fine feature', notes: hugeNotes } }));
+  assert.ok(text.length < 4096, `expected the rendered ask under Telegram's 4096-char limit, got ${text.length}`);
+  assert.ok(text.includes('…'), 'expected the oversized notes to be truncated with an ellipsis');
+  assert.ok(text.includes(FROZEN_ASK_LINE), 'expected the frozen reply-grammar line to survive truncation of the enrichment body');
+});
+
+test('approval-ask-content-05: a ticket with no summary source still renders a well-formed ask', () => {
+  const text = messageTextForEvent(event({ type: 'ApprovalRequested' }));
+  assert.equal(text, FROZEN_ASK_LINE, 'expected the exact pre-change bare line when no summary is available');
+  assert.match(text, /BL-123/);
+  assert.ok(text.includes(FROZEN_ASK_LINE));
+});
+
+test('approval-ask-content-06: TaskStarted/TaskCompleted/NeedsApproval renders are unchanged by this feature', () => {
+  assert.equal(messageTextForEvent(event({ type: 'TaskStarted' })), 'TaskStarted: BL-123');
+  assert.equal(messageTextForEvent(event({ type: 'TaskCompleted' })), 'TaskCompleted: BL-123');
+  assert.equal(messageTextForEvent(event({ type: 'NeedsApproval' })), 'NeedsApproval: BL-123');
+});
+
 // ── BL-410: ApprovalRequested carries Approve/Amend/Reject buttons ───────
 
 test('BL-410: decideTopicAction attaches Approve/Amend/Reject inline-keyboard buttons for ApprovalRequested', () => {

@@ -35,6 +35,12 @@ export interface TicketSummary {
   title: string;
   notes?: string;
   firstAcceptanceStep?: string;
+  // BL-480: the ticket's `approval_context` field (BL-479) - the specifier's
+  // 2-3 sentences of decision context, read alongside title/notes/
+  // firstAcceptanceStep so diffApprovalRequested below can carry it into an
+  // ApprovalRequested event's payload the same way diffTaskStarted already
+  // carries the other three fields into a TaskStarted event.
+  approvalContext?: string;
 }
 
 export interface EventStreamSnapshot {
@@ -86,7 +92,10 @@ function emptySnapshot(): EventStreamSnapshot {
 // BL-322: {} degrades to messageTextForEvent's own title-only fallback -
 // an id somehow missing from ticketSummaries (should not happen within
 // one tick) is never a crash, just a plainer topic opener.
-function taskStartedPayload(summary: TicketSummary | undefined): Record<string, unknown> {
+// BL-480: shared by diffApprovalRequested below too, not just diffTaskStarted
+// - both event kinds carry the same TicketSummary shape into their payload,
+// so this is the one place either fires that lookup.
+function ticketSummaryPayload(summary: TicketSummary | undefined): Record<string, unknown> {
   return summary ? { ...summary } : {};
 }
 
@@ -94,7 +103,7 @@ function diffTaskStarted(prev: EventStreamSnapshot, curr: EventStreamSnapshot): 
   const prevActive = new Set(prev.backlog.active);
   return curr.backlog.active
     .filter((id) => !prevActive.has(id))
-    .map((id): SwarmEvent => ({ type: 'TaskStarted', backlogId: id, payload: taskStartedPayload(curr.ticketSummaries[id]) }));
+    .map((id): SwarmEvent => ({ type: 'TaskStarted', backlogId: id, payload: ticketSummaryPayload(curr.ticketSummaries[id]) }));
 }
 
 function diffTaskCompleted(prev: EventStreamSnapshot, curr: EventStreamSnapshot): SwarmEvent[] {
@@ -110,11 +119,15 @@ function diffTaskCompleted(prev: EventStreamSnapshot, curr: EventStreamSnapshot)
 // asked once, never nagged every tick. Always tagged: unlike a role's
 // transient to-human gate, human_approval lives ON the ticket, so there is
 // no "untagged" case to route to the standing Operator topic (BL-358).
+// BL-480: now carries the same ticketSummaries lookup diffTaskStarted uses
+// (payload was previously always {}) - approvalRequestedText (topicRouter.ts)
+// needs title/notes/firstAcceptanceStep/approvalContext to render an ask
+// with enough content to decide from, not just the bare ticket id.
 function diffApprovalRequested(prev: EventStreamSnapshot, curr: EventStreamSnapshot): SwarmEvent[] {
   const prevPending = new Set(prev.pendingApproval);
   return curr.pendingApproval
     .filter((id) => !prevPending.has(id))
-    .map((id): SwarmEvent => ({ type: 'ApprovalRequested', backlogId: id, payload: {} }));
+    .map((id): SwarmEvent => ({ type: 'ApprovalRequested', backlogId: id, payload: ticketSummaryPayload(curr.ticketSummaries[id]) }));
 }
 
 // BL-325: split out of diffNeedsApproval below so its own branch count
