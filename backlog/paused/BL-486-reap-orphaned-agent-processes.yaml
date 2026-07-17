@@ -93,7 +93,7 @@ acceptance:
   # the behaviour and the gates are the contract.
   feature: specs/features/BL-486-reap-orphaned-agent-processes.feature
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   HIGH-RISK reaper of live `claude` processes — needs human sign-off before it lands. FIRM (my design, not
   open): (a) the reaper NEVER pattern-kills — enumeration only surfaces candidates, the kill is per-pid
