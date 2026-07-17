@@ -38,8 +38,14 @@ import { EntrypointBoilerplateIgnorer } from '../mutation/entrypointBoilerplateI
 import { countMutationSites, verdictFor, MutationSiteCountAdapters } from '../quality/mutationSiteCount';
 import { runCliMain, printJsonToStdout } from './swarm-metrics';
 
-// extension/out/tools/ -> repo root.
-const PROJECT_ROOT = path.join(__dirname, '..', '..', '..');
+// extension/out/tools/ -> repo root. Exported so a test can anchor a
+// relative-path fixture to wherever this actually resolves in the CURRENT
+// environment - the value differs between a real checkout and a Stryker
+// mutation sandbox (the sandbox root corresponds to extension/ itself, not
+// its parent), so a test that hardcodes a real repo file's relative path
+// breaks when this same test suite is later run under Stryker's own
+// mutation of this file.
+export const PROJECT_ROOT = path.join(__dirname, '..', '..', '..');
 const DEFAULT_THRESHOLD = 100;
 
 const NOOP_LOGGER: Logger = {
