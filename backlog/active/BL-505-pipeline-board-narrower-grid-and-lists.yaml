@@ -1,0 +1,128 @@
+id: BL-505
+title: "Pipeline board grid layout for a phone: show ticket numbers only (drop BL-/GH- prefix), shorten the grid slug to 2 kebab words, trim the below-grid list lines to the kebab slug only, and move the not-started (NS) column to first"
+milestone: M8
+type: defect
+severity: medium
+epic: ""
+priority: 10
+depends_on: []
+source: "Root intake backlog/INTAKE-pipeline-board-grid-too-wide.md (coordinator-relayed human request 2026-07-17, looking at a live board render), plus a same-day follow-up ask direct to the specifier ('move the NS column to first instead of last'). Specifier asked the human 2026-07-17 and resolved the open UX calls (scope, slug length) before speccing; the NS-first ask was unambiguous and needed no clarifying question."
+
+notes: |
+  The Telegram Pipeline Board's <pre> grid plus its PARKED/AWAITING/ROOT INTAKE/RECENTLY CLOSED
+  list lines are too wide to fit the human's phone without horizontal scroll. The human asked:
+  "Only keep the digit of the ticket and/or shorten even more the kebab case slug." Two levers,
+  both confirmed with the human (specifier questions 2026-07-17):
+    - Width scope: narrow BOTH the grid's own columns AND the below-grid list lines (the list
+      lines carry a wide title tail up to 60 chars and are the widest offenders).
+    - Grid slug: shorten from 3 kebab words to 2.
+
+  THE CHANGE (behaviour pinned in the feature; the exact header glyph is the coder's/architect's
+  cosmetic call, per BL-452's column-glyph precedent):
+    1. TICKET NUMBER ONLY - the grid TICKET column renders the ticket number with a recognised
+       BL-/GH- prefix stripped (BL-493 -> 493). An id with no recognised ticket prefix (a
+       root-intake filename stem, e.g. "INTAKE-...") is shown UNCHANGED. Shorten the column
+       HEADER too (it is currently the 6-char word "TICKET", which floors the column width at 6
+       via idColumnWidth's max(TICKET_HEADER.length, ...)) so the column is no wider than the
+       numbers themselves.
+    2. GRID SLUG -> 2 WORDS - deriveKebabSlug's maxWords drops from 3 to 2 for the grid slug.
+    3. BELOW-GRID LIST LINES -> KEBAB ONLY - deriveListEntryText drops the wide deriveTicketSlug
+       title tail and shows only the short kebab slug; a real ticket id in a list line is
+       rendered number-only the same way the grid's is. (deriveTicketSlug /
+       PIPELINE_BOARD_SLUG_MAX_LENGTH become unused by the lists; the cleaner may remove them if
+       nothing else references them - grep first.)
+    4. NS COLUMN FIRST - a same-day follow-up ask: move the not-started (NS) sentinel column to be
+       the FIRST stage column (immediately after TICKET and SLUG, before SP) instead of the last.
+       This is a one-line reorder of PIPELINE_BOARD_COLUMN_ORDER
+       ([PIPELINE_BOARD_NOT_STARTED_COLUMN, ...ALL_SWARM_ROLES] instead of the reverse). It
+       REVERSES the human's own 2026-07-16 "right-hand side" preference that BL-473 encoded - but
+       BL-473 itself declared column placement "a build-time cosmetic detail, not a promotion
+       gate", and every NS assertion (bl473 steps, conciergeTick + pipelineBoard unit tests)
+       locates the column by name via indexOf, never a fixed position, so the reorder breaks NO
+       test. No BL-473 supersession edit is needed for this part.
+    5. LINKS SECTION UNCHANGED - out of scope here: its width is already budgeted by BL-502 and
+       its ordering is BL-506's separate concern. Do NOT touch renderPipelineBoardLinks /
+       budgetPipelineBoardLinks / the link line format.
+
+  ID-COLLISION SAFETY (documented assumption): showing digits only is unambiguous TODAY because
+  every id across backlog/{active,paused,done} is BL- (445 BL-, zero GH- - grep-verified
+  2026-07-17). The number-strip is therefore safe now. If a foreign prefix (GH-) is ever
+  introduced, two different-prefix ids could share a number and collide on the board; revisit
+  then (retain the prefix only when a same-number foreign-prefix id is present on the same
+  board). Called out so a future reader knows this is a deliberate scoping decision, not an
+  oversight.
+
+  SUPERSEDES BL-462/BL-465 (this reverses their widening) - MUST be revised IN THIS SAME PARCEL,
+  never as a separate main commit (a feature edit landed on main without its matching step-handler
+  change breaks the acceptance runner for every role mid-flight; BL-233: scenarios and their
+  handlers land together). Known contradicting sites (grep BL-455/BL-462/BL-465 features + steps
+  for any remaining slug/title-width assertion - the tool knows every site, you do not):
+    - specs/features/BL-465-pipeline-board-render-round2.feature + specs/pipeline/steps/
+      bl465PipelineBoardRenderRound2Steps.js: the grid-slug assertion expects the 3-word
+      "pipeline-board-shows"; the list-entry assertions require it "shows more of the title than
+      the previous 40-char limit" and "includes the FULL title" - all three now contradict the
+      2-word / kebab-only contract. Revise the scenarios AND their handler.
+    - specs/features/BL-462-pipeline-board-wider-slug-updated-at-repost.feature: the
+      "longer slug, same line" / wider-bound scenario - reconcile with the narrower slug.
+    - extension/test/pipelineBoard.test.js: any slug/list-entry width expectation.
+    - extension/test/conciergeTick.test.js (~L2020): asserts the 3-word "fix-the-pipeline"
+      grid slug (from title "fix the pipeline board") - becomes "fix-the" at 2 words.
+    Per the specifier "superseded scenario: retire, don't reword" posture, prefer RETIRING a stale
+    scenario over contorting it; the specifier owns the feature-file wording, the coder owns the
+    step handlers and unit tests - both land here.
+
+  CHANGE-GATE: renderPipelineBoardBody's text is pipelineBoardSync.ts's content signature, so this
+  render change triggers exactly ONE benign repost when it lands (expected, not a defect - the
+  BL-462/464/465/468/473 change-gate/repost contract is otherwise unchanged).
+
+  SCOPE (verify the live path at build - grep the real callers, do not assume):
+    - extension/src/concierge/pipelineBoard.ts (deriveKebabSlug maxWords, deriveListEntryText,
+      idColumnWidth / TICKET_HEADER / renderHeader / renderDataRow, renderListSection - add one
+      shared display-id helper used by both the grid row and the list line;
+      PIPELINE_BOARD_COLUMN_ORDER for the NS-first reorder).
+    - The superseded features/steps/tests listed above (for the width change only; the NS-first
+      reorder needs no test edit, per note 4).
+
+  ORTHOGONALITY: shares extension/src/concierge/pipelineBoard.ts with BL-506 (LINKS ordering) -
+  the two touch DIFFERENT functions (this one: slug/id/list render; BL-506: buildLinks sort) but
+  the same file, so they are NOT orthogonal: sequence them, do not run concurrently (this one
+  first, priority 10 vs BL-506's 11). Otherwise orthogonal to the rest of the paused queue.
+
+acceptance:
+  # Observable contract: grid TICKET column shows the ticket number without its BL-/GH- prefix
+  # (non-ticket ids unchanged) with a header short enough that the column is no wider than the
+  # numbers; grid slug is at most 2 kebab words; below-grid list lines show the short kebab slug
+  # only (no wide title tail) with number-only ids. LINKS section unchanged. Exact header glyph
+  # is a build-time detail; the scenarios hold whatever glyph is chosen.
+  feature: specs/features/BL-505-pipeline-board-narrower-grid-and-lists.feature
+
+# QA end-to-end procedure (verify the scenarios hold in the live swarm):
+#   1. Build the extension (npm run compile in extension/, or npm test which compiles first).
+#   2. In-process, compute+render the board over a synthetic backlog with 3-digit BL ids, a GH id,
+#      a root-intake entry, a parked ticket, and a long title; assert: TICKET cells show digits
+#      only (BL-493 -> "493", GH-42 -> "42"), the root-intake list id is unchanged, the grid slug
+#      is <= 2 kebab words, the TICKET column width equals the number width (not 6), and each
+#      below-grid list line is the kebab slug only (no title tail).
+#   3. Render the board over the CURRENT live backlog and eyeball that the grid + PARKED +
+#      RECENTLY CLOSED block now fits without horizontal scroll on a phone-width monospace view.
+#   4. Confirm the full acceptance suite (including the revised BL-455/462/465 scenarios) passes -
+#      the supersession did not leave a stale assertion or an unhandled scenario.
+
+human_approval: approved
+approval_context: >
+  Draining the human's own root-intake ask (backlog/INTAKE-pipeline-board-grid-too-wide.md).
+  What needs your sign-off is the exact width contract in the feature file: (a) the grid TICKET
+  column shows the ticket NUMBER only, dropping the "BL-"/"GH-" prefix (safe today - zero GH- ids
+  exist; a non-ticket root-intake id is left unchanged); (b) the grid SLUG drops from 3 kebab
+  words to 2 (your choice from the three options offered); (c) the below-grid list lines
+  (PARKED/AWAITING/ROOT INTAKE/RECENTLY CLOSED) drop their wide title tail and show only the short
+  kebab slug (your "grid + below-grid lists" scope choice); and (d) your same-day follow-up: the
+  not-started (NS) column moves to be the FIRST stage column instead of the last (a one-line
+  reorder; it reverses your 2026-07-16 "right-hand side" call, which BL-473 had treated as
+  cosmetic, so nothing else breaks). The LINKS section is deliberately left unchanged here. FIRM:
+  numbers-only ids, 2-word slug, kebab-only list lines, NS-first. OPEN / the coder's call: the
+  exact short header glyph replacing "TICKET". Please confirm this is the right amount of
+  shrinking, or tell me to go further (e.g. 1-word slug, or a per-word char cap) if it still does
+  not fit your screen.
+
+mutation_cost: low
