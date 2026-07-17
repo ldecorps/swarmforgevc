@@ -86,7 +86,7 @@ function registerSteps(registry) {
   });
 
   registry.define(/^the bot reconciles the topic lifecycle$/, async (ctx) => {
-    ctx.result = await reconcileTopicLifecycle(ctx.doneTickets, mkAdapters(ctx));
+    ctx.result = await reconcileTopicLifecycle(ctx.doneTickets, {}, mkAdapters(ctx));
   });
 
   registry.define(/^that ticket's topic is brought to its completed state$/, (ctx) => {
@@ -112,7 +112,7 @@ function registerSteps(registry) {
     ctx.doneTickets = [{ id: ctx.ticketId, title: ctx.ticketTitle }];
     // Reconcile once for real, so "already in its completed state" is a
     // genuine post-reconciliation fact, not an invented precondition.
-    await reconcileTopicLifecycle(ctx.doneTickets, mkAdapters(ctx));
+    await reconcileTopicLifecycle(ctx.doneTickets, {}, mkAdapters(ctx));
     ctx.postedBeforeSecondSweep = ctx.posted.length;
     ctx.editedBeforeSecondSweep = ctx.edited.length;
   });

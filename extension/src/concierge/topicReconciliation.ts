@@ -12,7 +12,8 @@
 // forbids a parallel one. The only NEW thing here is the DETECTION (state
 // comparison instead of event diffing) and the idempotency check (backed by
 // BL-329's own durable record, not a new marker file).
-import { BacklogFolderItem } from './conciergeTick';
+import { BacklogFolderItem, epicTitleFor } from './conciergeTick';
+import { EpicDefinition } from './epicProgress';
 import { RouteAdapters, BacklogTopicMap, TicketRouteContext, routeEvent } from './topicRouter';
 import { buildTicketStatusText } from './ticketStatusMessage';
 
@@ -42,7 +43,22 @@ export interface ReconcileResult {
 // "never create a topic just to close it" concern left to guard against; a
 // ticket whose completion (or even its very first status message) was
 // entirely missed while the bot was offline still gets it posted now.
-export async function reconcileTopicLifecycle(doneTickets: BacklogFolderItem[], adapters: ReconcileAdapters): Promise<ReconcileResult> {
+// BL-493 architect bounce (2026-07-17): epicDefinitions is REQUIRED so an
+// epic-bound ticket's TicketRouteContext carries the epic's real TITLE
+// (epicTitleFor, conciergeTick.ts) - never its raw id stood in as a
+// title. That mismatch is invisible while the epic's topic already exists
+// (ensureEpicTopicId's reuse branch never touches the name), but names the
+// live Telegram topic "EPIC — <id>" the moment reconciliation is the FIRST
+// path to create it - exactly BL-330's own reason to exist: a ticket whose
+// completion happened while the bot was down, possibly before its epic's
+// topic was ever created through the live tick at all. Callers pass the
+// SAME epicDefinitionsFor(folders) the live tick already computes once per
+// tick - never a second, second-guessing computation here.
+export async function reconcileTopicLifecycle(
+  doneTickets: BacklogFolderItem[],
+  epicDefinitions: Record<string, EpicDefinition>,
+  adapters: ReconcileAdapters
+): Promise<ReconcileResult> {
   const reconciled: string[] = [];
   for (const ticket of doneTickets) {
     const summaryText = buildTicketStatusText(ticket.id, ticket.title, 'done');
@@ -50,7 +66,7 @@ export async function reconcileTopicLifecycle(doneTickets: BacklogFolderItem[], 
       continue; // already brought to completed state - idempotent no-op
     }
     const event = { type: 'TaskCompleted' as const, backlogId: ticket.id, payload: {} };
-    const ticketContext: TicketRouteContext = { epic: ticket.epic, epicTitle: ticket.epic, iconState: 'done' };
+    const ticketContext: TicketRouteContext = { epic: ticket.epic, epicTitle: epicTitleFor(ticket.epic, epicDefinitions), iconState: 'done' };
     const result = await routeEvent(event, ticket.title, adapters.routeAdapters, ticketContext);
     if (result.posted) {
       reconciled.push(ticket.id);
