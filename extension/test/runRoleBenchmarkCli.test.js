@@ -51,6 +51,7 @@ test('runRoleBenchmarkCli loads the task, runs the real benchmark, then writes+c
     },
   };
   const evaluator = { async evaluate() { return { passed: 6, total: 6 }; } };
+  const oracle = { async review() { return { survived: true, bounces: 0 }; } };
   const writeCalls = [];
   const commitCalls = [];
   const printed = [];
@@ -64,6 +65,7 @@ test('runRoleBenchmarkCli loads the task, runs the real benchmark, then writes+c
       nowIso: () => '2026-07-13T10:20:30.000Z',
       executor,
       evaluator,
+      oracle,
       writeReport: (targetPath, report, dateIso) => {
         writeCalls.push({ targetPath, report, dateIso });
         return '/fake/target/docs/benchmarks/2026-07-13.json';
@@ -119,10 +121,15 @@ function mkTargetRepo() {
 }
 
 const FORCE_RESULT_ENV_KEY = 'RUN_ROLE_BENCHMARK_EXECUTOR_FORCE_RESULT';
+// BL-387: createPipelineReviewOracle() checks this env var the same way
+// createClaudeCliExecutor() checks FORCE_RESULT_ENV_KEY above - no real
+// `claude` review subprocess is ever spawned under it either.
+const ORACLE_FORCE_RESULT_ENV_KEY = 'RUN_ROLE_BENCHMARK_ORACLE_FORCE_RESULT';
 
-async function runMain(argv, forcedExecutorResult) {
+async function runMain(argv, forcedExecutorResult, forcedOracleResult = { survived: true, bounces: 0 }) {
   const previousArgv = process.argv;
   const previousForceResult = process.env[FORCE_RESULT_ENV_KEY];
+  const previousOracleForceResult = process.env[ORACLE_FORCE_RESULT_ENV_KEY];
   const writes = [];
   const originalWrite = process.stdout.write.bind(process.stdout);
   process.stdout.write = (chunk) => {
@@ -132,12 +139,15 @@ async function runMain(argv, forcedExecutorResult) {
   try {
     process.argv = ['node', 'run-role-benchmark.js', ...argv];
     process.env[FORCE_RESULT_ENV_KEY] = JSON.stringify(forcedExecutorResult);
+    process.env[ORACLE_FORCE_RESULT_ENV_KEY] = JSON.stringify(forcedOracleResult);
     await main();
   } finally {
     process.stdout.write = originalWrite;
     process.argv = previousArgv;
     if (previousForceResult === undefined) delete process.env[FORCE_RESULT_ENV_KEY];
     else process.env[FORCE_RESULT_ENV_KEY] = previousForceResult;
+    if (previousOracleForceResult === undefined) delete process.env[ORACLE_FORCE_RESULT_ENV_KEY];
+    else process.env[ORACLE_FORCE_RESULT_ENV_KEY] = previousOracleForceResult;
   }
   const printed = writes.join('');
   return printed ? JSON.parse(printed) : null;
@@ -165,6 +175,27 @@ test('main() loads the real fixture, fakes only the claude subprocess, and reall
   assert.match(reportRelPath, /^docs\/benchmarks\/\d{4}-\d{2}-\d{2}\.json$/);
   const committedReport = JSON.parse(fs.readFileSync(path.join(targetRepo, reportRelPath), 'utf8'));
   assert.deepEqual(committedReport.taskIds, ['coder-task-01-word-frequency']);
+});
+
+// BL-387: proves defaultDeps() genuinely wires createPipelineReviewOracle()
+// into the real benchmark run, not just executor/evaluator - forcing the
+// oracle to report the diff never survived must flow all the way to the
+// committed report exactly like the executor's own force-result seam does.
+test('main() also fakes only the pipeline-review subprocess via its own force-result seam, and the never-survived verdict flows through', async () => {
+  const targetRepo = mkTargetRepo();
+  const modelsFile = path.join(mkTmpDir('sfvc-run-role-benchmark-models-'), 'models.json');
+  fs.writeFileSync(modelsFile, JSON.stringify([{ id: 'a', provider: 'claude', model: 'sonnet' }]));
+
+  const forcedExecutorResult = { success: true, costUsd: 0.02, tokens: { inputTokens: 5, outputTokens: 5 }, durationMs: 50 };
+  const forcedOracleResult = { survived: false, bounces: 2 };
+  const batteryRoot = mkBatteryRootWithCoderTask01();
+  const report = await runMain([batteryRoot, modelsFile, '1', '0', targetRepo], forcedExecutorResult, forcedOracleResult);
+
+  const [run] = report.models[0].runs;
+  assert.equal(run.ran, true);
+  assert.equal(run.survived, false, 'expected the forced oracle verdict to flow through to the real report');
+  assert.equal(run.reworkRounds, 2);
+  assert.equal(run.qualityScore, 0, 'expected no credit when the pipeline never accepted the diff');
 });
 
 test('main() prints usage and exits 1 when required arguments are missing', async () => {
