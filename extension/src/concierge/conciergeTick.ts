@@ -113,6 +113,18 @@ export interface TickState {
   // same posture as approvalsRoster above. Absent on an old/fresh TickState
   // file, treated as "no scenario posted yet".
   recertPosted?: RecertPostingState;
+  // BL-465 bounce: durable per-ticket "closed at" tick-observed timestamp -
+  // recorded the FIRST tick a ticket is seen in folders.done (mirrors
+  // standingIconSeenIds/roleIconSeenIds' own "newly entering" durability),
+  // so the pipeline board's recently-closed section can sort by ACTUAL
+  // closure recency instead of folders.done's arbitrary directory-listing
+  // order (readdir gives no ordering guarantee, and is not closure time
+  // regardless). A ticket already done before this field existed has no
+  // entry here - it sorts after every timestamped ticket (unknown
+  // recency), the same eventual-consistency gap BL-418's own
+  // standingIconSeenIds backfill precedent already accepts for a one-time
+  // pre-existing set.
+  doneClosedAtMs?: Record<string, number>;
 }
 
 export interface ConciergeTickAdapters {
@@ -393,8 +405,46 @@ function buildTicketMetaLookup(folders: BacklogFoldersSnapshot): Record<string, 
 // computePipelineBoard's rootIntake/recentlyClosed extras expect. Items
 // with no filename (should not happen post-BL-465, but degrades safely)
 // are skipped rather than emitting a link-less/broken entry.
-function recentlyClosedItems(folders: BacklogFoldersSnapshot): { id: string; title?: string; filename: string }[] {
-  return folders.done.filter((item): item is BacklogFolderItem & { filename: string } => item.filename !== undefined);
+// BL-465 bounce: sorted MOST-RECENTLY-closed first via the durable
+// doneClosedAtMs map (see TickState's own docstring for why folder order
+// alone is not recency) - pipelineBoard.ts's own computePipelineBoard
+// deliberately does no sorting of its own ("the caller decides WHICH items
+// count as 'recent'"), so this is the one place that ordering must happen;
+// without it, PIPELINE_BOARD_RECENTLY_CLOSED_MAX's slice(0, N) truncates
+// an arbitrary N items rather than the N most recently closed. An id with
+// no recorded timestamp (predates this feature) sorts after every
+// timestamped id, never crowding out a genuinely recent one.
+function recentlyClosedItems(
+  folders: BacklogFoldersSnapshot,
+  doneClosedAtMs: Record<string, number>
+): { id: string; title?: string; filename: string }[] {
+  return folders.done
+    .filter((item): item is BacklogFolderItem & { filename: string } => item.filename !== undefined)
+    .sort((a, b) => (doneClosedAtMs[b.id] ?? -Infinity) - (doneClosedAtMs[a.id] ?? -Infinity));
+}
+
+// BL-465 bounce: stamps this tick's OWN observed instant onto every ticket
+// in doneIds that has never been recorded before - the durable, monotonic
+// record recentlyClosedItems sorts against (see TickState.doneClosedAtMs'
+// own docstring). Deliberately NOT derived from the icon sync's
+// newlyEnteredIds diff (scoped to state.snapshot - the event-ROUTING retry
+// view, which a stuck completion message deliberately holds a ticket back
+// out of to retry next tick). Coupling this timestamp to that retry state
+// would re-stamp - and so silently rejuvenate - a ticket every tick its
+// completion message keeps failing to route. A ticket's OWN closure time
+// has nothing to do with whether the swarm managed to post about it, so
+// this checks the durable map's OWN membership directly: once an id is
+// stamped, it is never restamped. Extracted out of runConciergeTick so
+// THAT function's own branch count stays at or below the CRAP threshold,
+// the same reasoning as syncAllTitleAgeBuckets/syncBoardIfWired above.
+function stampNewlyDoneClosedAtMs(prev: Record<string, number> | undefined, doneIds: string[], nowMs: number): Record<string, number> {
+  const doneClosedAtMs = { ...(prev ?? {}) };
+  for (const id of doneIds) {
+    if (doneClosedAtMs[id] === undefined) {
+      doneClosedAtMs[id] = nowMs;
+    }
+  }
+  return doneClosedAtMs;
 }
 
 async function syncBoardIfWired(
@@ -404,7 +454,8 @@ async function syncBoardIfWired(
   readRoleHeldTickets: (() => Record<string, string[]>) | undefined,
   readRootIntakeFiles: (() => { id: string; title?: string; filename: string }[]) | undefined,
   readRepoBaseUrl: (() => string | undefined) | undefined,
-  nowMs: number
+  nowMs: number,
+  doneClosedAtMs: Record<string, number>
 ): Promise<PipelineBoardState | undefined> {
   if (!boardAdapters || !readRoleHeldTickets) {
     return prevBoard;
@@ -412,7 +463,7 @@ async function syncBoardIfWired(
   const repoBaseUrl = readRepoBaseUrl?.();
   const data = computePipelineBoard(readRoleHeldTickets(), folders.paused, buildTicketMetaLookup(folders), {
     rootIntake: readRootIntakeFiles?.() ?? [],
-    recentlyClosed: recentlyClosedItems(folders),
+    recentlyClosed: recentlyClosedItems(folders, doneClosedAtMs),
     repoBaseUrl,
   });
   const result = await syncPipelineBoard(data, prevBoard, boardAdapters, nowMs, repoBaseUrl);
@@ -848,6 +899,12 @@ export async function runConciergeTick(adapters: ConciergeTickAdapters, nowMs: n
   const alreadyEmitted = new Set(state.emittedKeys);
   const events = deriveSwarmEvents(state.snapshot, curr, alreadyEmitted);
 
+  // BL-465 bounce: durable per-ticket closure timestamps, stamped once per
+  // ticket the first time it's observed done (see stampNewlyDoneClosedAtMs'
+  // own docstring for why this is independent of the event-routing retry
+  // snapshot below).
+  const doneClosedAtMs = stampNewlyDoneClosedAtMs(state.doneClosedAtMs, curr.backlog.done, nowMs);
+
   // BL-342: snapshot which tickets already had a topic BEFORE this tick's
   // own event loop runs (which may CREATE fresh ones below) - the ONLY
   // reliable way to tell "this transition's topic is brand new" (always
@@ -919,7 +976,8 @@ export async function runConciergeTick(adapters: ConciergeTickAdapters, nowMs: n
     adapters.readRoleHeldTickets,
     adapters.readRootIntakeFiles,
     adapters.readRepoBaseUrl,
-    nowMs
+    nowMs,
+    doneClosedAtMs
   );
 
   // BL-434: the Approvals topic's own live roster - fed off curr.pendingApproval
@@ -942,6 +1000,7 @@ export async function runConciergeTick(adapters: ConciergeTickAdapters, nowMs: n
     pipelineBoard,
     approvalsRoster,
     recertPosted,
+    doneClosedAtMs,
   });
   return { routed };
 }
