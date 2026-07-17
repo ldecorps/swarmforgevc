@@ -1,0 +1,119 @@
+id: BL-497
+title: "Pipeline board froze silently for 10h+: surface the swallowed Telegram post error and self-heal a gone board topic instead of reposting into a dead topic forever"
+milestone: M8
+type: defect
+severity: high
+epic: ""
+priority: 1
+direction: expedite
+depends_on: []
+source: "Operator-diagnosed live outage (backlog/evidence/pipeline-board-frozen-live-outage-20260717.md), routed directly by the coordinator note 'Live outage: pipeline board frozen 10h+, RCA in evidence/pipeline-board-frozen'. Root human directive (ldecorps 2026-07-17): 'when can I get the pipeline board working again?'. Recovery posture (self-heal by re-ensuring the topic; bounded; one alert on exhaustion) chosen by the human interactively at spec time."
+
+notes: |
+  LIVE, USER-FACING OUTAGE — the Telegram Pipeline Board message went unchanged for 10+ hours
+  (frozen since ~00:44 UTC 2026-07-17, diagnosed ~11:20 UTC). In the SAME window the Approvals
+  roster (same bot token, same chat, same sendTelegramMessage/callTelegramApi path) kept
+  updating, which proves the concierge tick loop is alive and the fault is ISOLATED to the
+  board's own post path — not a process hang, not swarm-wide, not a token/network outage.
+
+  ROOT CAUSE (traced in code, grep-confirmed against the live build):
+    - extension/src/tools/telegram-front-desk-bot.ts boardAdapters.postMessage (~L1917):
+      maps the Telegram result to `r.success ? r.messageId : undefined` — the `error` string is
+      DISCARDED, and the adapter's `Promise<number | undefined>` type has no channel to carry it.
+    - extension/src/concierge/pipelineBoardSync.ts postBoardMessage (L71-76): sees
+      `messageId === undefined`, returns outcome 'failed-post', and leaves the stale
+      topicId/messageId otherwise untouched — so the NEXT tick recomputes a fresh content
+      signature (real backlog differs), reposts, fails again, silently, FOREVER. No cap, no
+      backoff-then-alert, no self-heal.
+    - extension/src/concierge/conciergeTick.ts syncBoardIfWired (L503-504): discards
+      result.outcome entirely, returning only result.state — so nothing logs or reacts.
+    - telegramClient.ts callTelegramApi catches the non-ok response into
+      `{success:false, error:...}` but never logs it. The error text is simply never captured
+      anywhere along the board path (contrast the topic-CREATE paths, which DO stderr-log).
+
+  KEY ANALYTICAL POINT — it is the POST that is failing, not the delete: since BL-462 the board
+  POSTS a fresh message then best-effort DELETES the old one, so a stale messageId can only break
+  the (non-blocking, un-branched) delete. The failing call is the POST into the board topic itself.
+  Likely causes (unconfirmed precisely because the error is never logged): the board topic
+  (topicId 1634 in the frozen state) archived/deleted, an HTML-parse rejection of the wrapped
+  payload, or rate-limiting. The missing error log is therefore load-bearing: step 1 makes the
+  real cause visible on the very next tick.
+
+  THE FIX (behaviour pinned in the feature; mechanism/seam is the architect's call):
+    1. OBSERVABILITY — every failed board outcome (failed-post AND failed-no-topic) surfaces its
+       underlying Telegram error instead of swallowing it. Requires the post/topic adapters to
+       carry the error up (widen the adapter return, or log at the adapter) AND syncBoardIfWired /
+       the tick to consume result.outcome + error, not discard it.
+    2. SELF-HEAL a gone topic (human-chosen posture) — when a failed post's error names the
+       topic/thread as GONE (e.g. "message thread not found"), CLEAR the tracked topicId+messageId
+       so the next tick's resolveBoardTopicId re-ensures a FRESH board topic and posts anew,
+       recovering with no human intervention. A TRANSIENT or unclassifiable error (429 "retry
+       after", network ENOTFOUND/5xx) RETAINS the topic and NEVER recreates it — recreation only
+       on a definitive topic-gone class error, so a transient blip cannot spawn a duplicate
+       "Pipeline Board" topic. Treat an unknown/unclassifiable error as transient (conservative:
+       do not recreate).
+    3. BOUNDED + ONE ALERT — the retry loop is bounded per the engineering bounded-retry rule:
+       after a capped number of consecutive transient failures (architect picks the cap; suggest
+       a small number of ~30s ticks) raise EXACTLY ONE operator alert naming the frozen board,
+       then stop re-alerting every tick. The alert is armed ONLY on CONFIRMED delivery (never on
+       the attempt) and a failed alert-send is retried, not suppressed — the
+       "flag-set-on-confirmed-delivery" rule (BL-215/BL-333: "the alarm for a silent failure
+       failed silently"). A successful post CLEARS the failure count and the armed alert so a
+       later episode alarms fresh (mirrors the push-sweep clear-state-on-success posture).
+    4. DO NOT change the render / content-signature change-gate contract
+       (BL-462/464/465/468/473) — this is a plumbing + observability defect in the post path,
+       not a data or rendering defect.
+
+  IMPLEMENTATION SEAMS (candidates, architect decides — do not pre-bake):
+    - The failure counters / armed-alert flag are natural additions to PipelineBoardState
+      (persisted in TickState.pipelineBoard), so recovery survives across ticks/restarts.
+    - The error classifier (topic-gone vs transient vs unknown) is a pure, testable function over
+      the Telegram error string; keep the known signatures in an explicit lookup, not a bare
+      substring branch (acceptance-mutation rule: make every classified value load-bearing).
+    - The "operator alert" channel is unspecified — reuse an existing surface (a message into the
+      Operator/Control topic, a *.handoff.dead dead-letter picked up by notify-dead-letters, or
+      the daemon alarm path), do not invent a new bespoke one. Pin: raised ONCE per episode,
+      armed on delivery.
+
+  SCOPE (verify the live path at build):
+    - extension/src/concierge/pipelineBoardSync.ts (syncPipelineBoard / postBoardMessage /
+      resolveBoardTopicId, and the PipelineBoardState / adapter interfaces).
+    - extension/src/concierge/conciergeTick.ts (syncBoardIfWired — must consume result.outcome).
+    - extension/src/tools/telegram-front-desk-bot.ts (boardAdapters — must surface the error).
+    - Wiring is in the SAME parcel: a new adapter/seam threaded tick -> bot needs a fixture test
+      that PLACES the failing-adapter case and proves the path is load-bearing (break-then-fix),
+      and the CLI/subprocess failure branches must be driven, per the engineering wiring-test and
+      failure-contract rules. In-process test seams to copy: queueStatusCli.test.js /
+      recordRunCli.test.js (stub accessors, no process.chdir).
+
+  ORTHOGONALITY — NOT orthogonal to BL-487 (active): BL-487 edits the SAME
+  conciergeTick.ts syncBoardIfWired (it changes the board's stage DATA source) while this ticket
+  changes the board's POST path inside the same function. They will conflict if run concurrently.
+  SEQUENCE, do not run in parallel: this is a live outage (expedite, pri 1, bugs-first) and should
+  go FIRST; BL-487 then rebases onto it. Otherwise this parcel is orthogonal to BL-488/489 (bb
+  pipeline_stage_* files) and the paused BL-49x approval-close work.
+
+acceptance:
+  # The observable contract: every failed board outcome surfaces its underlying Telegram error;
+  # a topic-gone error self-heals by re-ensuring a fresh topic while a transient error retains the
+  # topic and never recreates it; the retry loop is bounded and raises exactly one operator alert
+  # on exhaustion, armed on confirmed delivery and cleared on recovery. The seam for surfacing the
+  # error and emitting the alert is deliberately NOT pinned; the scenarios hold either way.
+  feature: specs/features/BL-497-pipeline-board-post-failure-recovery.feature
+
+human_approval: pending
+approval_context: >
+  LIVE, USER-FACING OUTAGE (the board has been frozen 10h+; you asked "when can I get the pipeline
+  board working again?"). FIRM and already chosen by you at spec time: recover by SELF-HEALING a
+  gone board topic — on a definitive "topic/thread gone" post error, clear the tracked topic id so
+  the next tick re-ensures a fresh Pipeline Board topic and posts; a transient/429/network error
+  never recreates the topic (no duplicate topics), just bounded-retries; after the retry cap, raise
+  exactly ONE operator alert (armed on confirmed delivery, cleared on recovery). Also FIRM: every
+  swallowed failure now logs its real Telegram error, and the render/change-gate contract is
+  untouched. What needs your sign-off here is only the SCENARIO CONTRACT in the feature file (the
+  six behaviours above). OPEN, and the architect's call unless you want to steer it: the retry cap
+  N (how many ~30s ticks of transient failure before the single alert), and which existing surface
+  carries the "operator alert" (Operator/Control topic message vs a dead-letter vs the daemon alarm
+  path). Expedite, priority 1 — please pull ahead of routine paused-queue ordering.
+
+mutation_cost: medium
