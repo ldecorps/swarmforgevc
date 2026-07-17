@@ -460,6 +460,28 @@ test('BL-434: a paused ticket pending approval IS asked in the standing Approval
   assert.equal(result.routed, 1);
 });
 
+// BL-480: pendingApprovalFor already scans active AND paused for pending
+// approvals (BL-408), but ticketSummariesFor used to build its map from
+// ACTIVE tickets only - so a paused ticket's ApprovalRequested ask silently
+// degraded to the bare id-only line even when its own YAML carried a title/
+// notes, exactly the ticket meat this feature exists to surface. Proves the
+// paused-ticket summary now reaches the rendered ask, not just its id.
+test('BL-480: a paused ticket pending approval renders its title/notes in the ask, not just the bare id', async () => {
+  const { adapters, setFolders, sent } = fakeAdapters();
+  setFolders(
+    folders({
+      paused: [{ id: 'BL-2', title: 'awaiting promotion', notes: 'this ticket fixes the widget', humanApproval: 'pending' }],
+    })
+  );
+
+  await runConciergeTick(adapters);
+
+  const ask = sent.find((m) => m.text.includes('BL-2 needs your approval') && m.topicId === 750);
+  assert.ok(ask, 'expected the standing Approvals-topic ask');
+  assert.ok(ask.text.includes('awaiting promotion'), `expected the paused ticket's title in the ask, got: ${ask.text}`);
+  assert.ok(ask.text.includes('this ticket fixes the widget'), `expected the paused ticket's notes in the ask, got: ${ask.text}`);
+});
+
 test('BL-434: an ApprovalRequested that fails to post is retried on a later tick', async () => {
   const { adapters, setFolders, state } = fakeAdapters();
   // Isolate to ONLY the ApprovalRequested transition: not newly active this
