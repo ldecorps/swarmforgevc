@@ -177,7 +177,10 @@
 ;; operator_runtime.bb owns a graceful stop-file convention (the SAME one
 ;; handoffd_supervisor.bb's own loop uses) - touched here rather than a
 ;; bare kill, then kill-and-confirm! as the bounded fallback if the running
-;; tick does not notice in time (OPERATOR_INTERVAL_MS could be long).
+;; tick does not notice in time (BL-481: the loop re-checks stop-file every
+;; short OPERATOR_POLL_INTERVAL_MS wake now, not every full
+;; OPERATOR_INTERVAL_MS - still bounded by however long a single in-progress
+;; tick!/poll! call takes to return).
 ;;
 ;; BL-433: restart-front-desk-group! already deletes its own status.json
 ;; before relaunching (so no consumer reads a stale one during the restart

@@ -955,6 +955,45 @@ check "restricted-front-desk-operator-03: no interactive --remote-control channe
 check "restricted-front-desk-operator-03: runs headless (print mode), never an interactive session" \
   '[[ "$DRY_FD" == *"claude -p"* ]]'
 
+# ── BL-481: out-of-cycle poll (--poll-once) ───────────────────────────────
+# The fast, cheap wake -main's loop now runs every OPERATOR_POLL_INTERVAL_MS
+# instead of the full tick! - proves it dispatches a fresh pending message,
+# still honours the existing launch guards, and never touches the heavy
+# per-tick sweep bundle's own artifacts (e.g. never records a swarm-check).
+poll() {
+  OPERATOR_SKIP_LAUNCH=1 SWARMFORGE_SANDBOX_SWEEP_ROOT="$1/.no-sandbox-sweep" SWARMFORGE_FIXTURE_REAP_ROOT="$1/.no-fixture-reap" \
+    bb "$1/swarmforge/scripts/operator_runtime.bb" "$1" --poll-once
+}
+
+F="$(make_fixture)"
+printf '{"type":"HUMAN_COMMAND","detail":"x"}\n' > "$F/.swarmforge/operator/events.jsonl"
+POLL_OUT="$(poll "$F")"
+check "BL-481: a poll-once with a pending event still dispatches"     '[[ "$POLL_OUT" == *"\"launched?\":true"* ]]'
+check "BL-481: a poll-once never records a swarm-check (no heavy sweep bundle)" '[[ ! -f "$F/.swarmforge/operator/last-swarm-check" ]]'
+check "BL-481: a poll-once never writes status.json (that stays the full tick's job)" '[[ ! -f "$F/.swarmforge/operator/status.json" ]]'
+rm -rf "$F"
+
+# guard: an already-running full Operator blocks the fast-path launch too
+# (a genuine background process, same real-disposable-process technique the
+# BL-334 section above uses - pid-alive? checks a genuine ProcessHandle).
+F="$(make_fixture)"
+printf '{"type":"HUMAN_COMMAND","detail":"x"}\n' > "$F/.swarmforge/operator/events.jsonl"
+sleep 300 & op_pid=$!; FD_PIDS+=("$op_pid"); echo "$op_pid" > "$F/.swarmforge/operator/operator.pid"
+POLL_GUARD_OUT="$(poll "$F")"
+check "BL-481: a poll-once does not relaunch while the full Operator is already running" '[[ "$POLL_GUARD_OUT" == *"\"launched?\":false"* ]]'
+rm -rf "$F"
+
+# guard: an unexpired cooldown blocks the fast-path launch too, using only
+# the persisted record - no live tmux pane scan available in this fixture.
+F="$(make_fixture)"
+future=$(( ($(date +%s) + 3600) * 1000 ))
+printf '{"reset_ms":%s,"reset_raw":"resets later"}' "$future" > "$F/.swarmforge/operator/cooldown.json"
+printf '{"type":"HUMAN_COMMAND","detail":"x"}\n' > "$F/.swarmforge/operator/events.jsonl"
+POLL_COOLDOWN_OUT="$(poll "$F")"
+check "BL-481: a poll-once honours a persisted cooldown with no live pane scan" '[[ "$POLL_COOLDOWN_OUT" == *"\"launched?\":false"* ]]'
+check "BL-481: a poll-once reports the cached cooldown provider state"          '[[ "$POLL_COOLDOWN_OUT" == *"\"provider\":\"cooldown\""* ]]'
+rm -rf "$F"
+
 # ── 4. launcher assembles a --remote-control command ─────────────────────────
 DRY="$(OPERATOR_LAUNCH_DRYRUN=1 bash "$SRC/launch_operator.sh" "$SRC/.." /tmp/x.jsonl 2>&1 || true)"
 check "operator named 'Operator' (not a swarm agent)"          '[[ "$DRY" == *"--remote-control Operator"* ]]'
