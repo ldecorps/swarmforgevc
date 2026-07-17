@@ -110,6 +110,13 @@ test('STANDING_TOPIC_ICON: approvals resolves to the clipboard emoji', () => {
   assert.equal(STANDING_TOPIC_ICON.approvals, '📋');
 });
 
+// BL-450: the standing Recert topic's own icon. BL-476: this entry had no
+// direct assertion (a pre-existing gap, not introduced by BL-469), so a
+// string-literal mutant on it survived - added here to close it.
+test('STANDING_TOPIC_ICON: recert resolves to the scroll emoji', () => {
+  assert.equal(STANDING_TOPIC_ICON.recert, '📜');
+});
+
 // ── ROLE_TOPIC_ICON (BL-469 per-agent-steering-topic-icon) ───────────────
 // Each of the 8 per-agent Telegram steering topics (BL-425) gets its own
 // fixed, human-chosen icon (firm 2026-07-16 decision) so the human can tell

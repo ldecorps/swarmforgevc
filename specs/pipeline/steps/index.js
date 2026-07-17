@@ -259,7 +259,10 @@ const DOMAINS = [
   require('./bl388TheRankingConsumesSurvivalAndReworkSteps'),
   require('./bl473PipelineBoardActiveMembershipSteps'),
   require('./bl484DecidedAskClosesItselfSteps'),
-  require('./bl481OperatorOutOfCycleWakeSteps')
+  require('./bl481OperatorOutOfCycleWakeSteps'),
+  require('./bl439FesSecondSwarmBringupSteps'),
+  require('./bl485CleanerMutationSiteSizeGateSteps'),
+  require('./bl487BoardFreshnessWithoutCoordinatorSyncSteps')
 ];
 
 function registerSteps(registry) {
