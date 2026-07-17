@@ -181,8 +181,10 @@ export interface ConciergeTickAdapters {
   // completed+in_process holding WINDOWS, the hop-log-shaped mechanism this
   // ticket's own human decision explicitly rejected as its data source).
   // Optional (defaults to no board sync), same posture as
-  // readStandingTopics/titleAdapters above.
-  readRoleHeldTickets?: () => Record<string, string[]>;
+  // readStandingTopics/titleAdapters above. BL-487: may return a Promise -
+  // the production adapter now recomputes live each tick rather than
+  // reading a coordinator-written cache (see syncBoardIfWired).
+  readRoleHeldTickets?: () => Record<string, string[]> | Promise<Record<string, string[]>>;
   // BL-452: optional (defaults to no board sync) for the same reason
   // titleAdapters above is optional - every existing adapters fixture
   // across this codebase's own acceptance step handlers was built before
@@ -483,7 +485,7 @@ async function syncBoardIfWired(
   folders: BacklogFoldersSnapshot,
   prevBoard: PipelineBoardState | undefined,
   boardAdapters: PipelineBoardAdapters | undefined,
-  readRoleHeldTickets: (() => Record<string, string[]>) | undefined,
+  readRoleHeldTickets: (() => Record<string, string[]> | Promise<Record<string, string[]>>) | undefined,
   readRootIntakeFiles: (() => { id: string; title?: string; filename: string }[]) | undefined,
   readRepoBaseUrl: (() => string | undefined) | undefined,
   nowMs: number,
@@ -493,7 +495,14 @@ async function syncBoardIfWired(
     return prevBoard;
   }
   const repoBaseUrl = readRepoBaseUrl?.();
-  const roleHeldTickets = readRoleHeldTickets();
+  // BL-487: readRoleHeldTickets may now be async (the production adapter
+  // shells to pipeline_stage_cli.bb's side-effect-free `report` each tick,
+  // recomputing live from in_process mailboxes rather than trusting the
+  // coordinator-written ticket-stage-map.json cache - see
+  // buildConciergeTickAdapters in telegram-front-desk-bot.ts). Awaiting a
+  // plain (non-Promise) return value is a no-op passthrough, so every
+  // existing synchronous test fixture keeps working unchanged.
+  const roleHeldTickets = await readRoleHeldTickets();
   const data = computePipelineBoard(roleHeldTickets, folders.paused, buildTicketMetaLookup(folders), {
     rootIntake: readRootIntakeFiles?.() ?? [],
     recentlyClosed: recentlyClosedItems(folders, doneClosedAtMs),

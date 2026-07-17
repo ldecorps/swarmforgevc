@@ -1995,6 +1995,29 @@ test('BL-473 bounce: a role-held ticket absent from folders.active gets no row a
   assert.ok(!row, `expected no board row for BL-1 (absent from folders.active), got:\n${posted[0]}`);
 });
 
+// BL-487: readRoleHeldTickets may now return a Promise - the production
+// adapter (telegram-front-desk-bot.ts's readLiveRoleHeldTickets) shells to
+// pipeline_stage_cli.bb's report subcommand each tick instead of reading
+// the coordinator-written ticket-stage-map.json cache. syncBoardIfWired
+// must await it, not just call it synchronously.
+test('BL-487: an ASYNC readRoleHeldTickets (a Promise-returning adapter) is properly awaited by the board sync', async () => {
+  const { adapters, setFolders } = fakeAdapters();
+  const posted = [];
+  adapters.boardAdapters.postMessage = async (topicId, text) => {
+    posted.push(text);
+    return 1;
+  };
+  adapters.boardAdapters.ensureBoardTopic = async () => 900;
+  setFolders(folders({ active: [{ id: 'BL-1', title: 'async-held ticket' }] }));
+  adapters.readRoleHeldTickets = () => Promise.resolve({ coder: ['BL-1'] });
+
+  await runConciergeTick(adapters);
+
+  assert.equal(posted.length, 1);
+  const row = posted[0].split('\n').find((l) => l.trim().split(/\s+/)[0] === 'BL-1');
+  assert.ok(row, `expected BL-1 to be a board row from the awaited async adapter, got:\n${posted[0]}`);
+});
+
 // ── BL-465: root-intake / recently-closed / GitHub link list wiring ──────
 
 test('BL-465: omitting readRootIntakeFiles/readRepoBaseUrl entirely leaves the board tick unaffected - existing fixtures built before these fields existed keep working unchanged', async () => {
