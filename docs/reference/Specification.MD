@@ -1,6 +1,6 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** July 17, 2026 (BL-467 pipeline board is the only pinned Telegram message, continuously enforced every tick; BL-486 auto-reap orphaned SwarmForge agent processes from stale dry-runs, BL-367-safe never-touch-a-live-agent guard; BL-492 standing "Backlog" catch-all Telegram topic ensured once at boot, topic-consolidation epic foundation slice; BL-483 multi-option agent questions render as tappable Telegram buttons with per-option descriptions, superseding the BL-466 poll branch for this case; BL-488 pipeline board + dispatch-gap sweep resolve a held ticket's id from anywhere in the header, not only a leading position, and close a glued-letter-prefix swallow in both extractors; BL-487 pipeline board recomputes role-held stage live every tick from mailboxes instead of trusting the coordinator's sync cache; BL-439 FES second-swarm bring-up runbook + executable creds/fleet-console acceptance; BL-485 cleaner mutation-site size gate: count-only helper against out/-mapped sources, upstream six-pack survey finding adopted; BL-481 Operator reacts out-of-cycle to a fresh inbound Telegram message, cutting reply latency from up to 30s to a short poll window; BL-473 pipeline board shows every active ticket, not-started when unheld, membership is folders.active only; BL-484 a decided approval ask closes itself: buttons stripped, verdict shown; BL-388 leaderboard consumes survival + rework, closing the role-benchmarking epic; BL-451 retire PWA recert view + BL-339 deep-link notify; BL-436 per-swarm Telegram creds; BL-479 architect owns property testing; BL-419 QA bounce: coordinator ticket-close wired through commit-integrity; BL-387 pipeline-review oracle scores what survives, not a model's first diff; BL-480 Approvals-topic ask carries ticket meat; BL-469 per-agent steering-topic icons, 2nd bounce: epic-pool collision remap; BL-465 pipeline-board render round 2; BL-465 bounce: recently-closed recency sort; BL-477 upstream drift-watch mechanism; BL-423 Telegram swarm control verbs; BL-468 pipeline-board post-before-delete; BL-471 pipeline-board ticket-id case robustness)
+**Last Updated:** July 17, 2026 (BL-498 mutation gate excludes tsc's import-helper preamble, a third boilerplate shape, from EntrypointBoilerplateIgnorer; BL-467 pipeline board is the only pinned Telegram message, continuously enforced every tick; BL-486 auto-reap orphaned SwarmForge agent processes from stale dry-runs, BL-367-safe never-touch-a-live-agent guard; BL-492 standing "Backlog" catch-all Telegram topic ensured once at boot, topic-consolidation epic foundation slice; BL-483 multi-option agent questions render as tappable Telegram buttons with per-option descriptions, superseding the BL-466 poll branch for this case; BL-488 pipeline board + dispatch-gap sweep resolve a held ticket's id from anywhere in the header, not only a leading position, and close a glued-letter-prefix swallow in both extractors; BL-487 pipeline board recomputes role-held stage live every tick from mailboxes instead of trusting the coordinator's sync cache; BL-439 FES second-swarm bring-up runbook + executable creds/fleet-console acceptance; BL-485 cleaner mutation-site size gate: count-only helper against out/-mapped sources, upstream six-pack survey finding adopted; BL-481 Operator reacts out-of-cycle to a fresh inbound Telegram message, cutting reply latency from up to 30s to a short poll window; BL-473 pipeline board shows every active ticket, not-started when unheld, membership is folders.active only; BL-484 a decided approval ask closes itself: buttons stripped, verdict shown; BL-388 leaderboard consumes survival + rework, closing the role-benchmarking epic; BL-451 retire PWA recert view + BL-339 deep-link notify; BL-436 per-swarm Telegram creds; BL-479 architect owns property testing; BL-419 QA bounce: coordinator ticket-close wired through commit-integrity; BL-387 pipeline-review oracle scores what survives, not a model's first diff; BL-480 Approvals-topic ask carries ticket meat; BL-469 per-agent steering-topic icons, 2nd bounce: epic-pool collision remap; BL-465 pipeline-board render round 2; BL-465 bounce: recently-closed recency sort; BL-477 upstream drift-watch mechanism; BL-423 Telegram swarm control verbs; BL-468 pipeline-board post-before-delete; BL-471 pipeline-board ticket-id case robustness)
 
 ## Overview
 
@@ -798,11 +798,20 @@ showed 9/42 unkillable survivors purely from this fixed residue.
   `classifyMutantLocation` is a pure, coverage-blind predicate: it decides
   `excluded`/`kept` from STRUCTURAL LOCATION alone (never from whether a
   mutant has coverage or survived), so an untested mutant in real exported
-  logic structurally cannot be classified as boilerplate — only the two
-  named shapes are ever excluded. `isRequireMainGuardNode`/
+  logic structurally cannot be classified as boilerplate — only the named
+  shapes are ever excluded. `isRequireMainGuardNode`/
   `isEsModuleBoilerplateNode` recognize the guard's `require.main ===
   module` `IfStatement` and tsc's `__esModule` `Object.defineProperty`
-  call by AST shape.
+  call by AST shape. A third shape, tsc's import-helper preamble
+  (`__importStar`/`__importDefault`/`__createBinding`/`__setModuleDefault`,
+  the `var __NAME = (this && this.__NAME) || (…)` init tsc emits at the
+  head of every compiled `import * as x` file), was added by BL-498:
+  ~20-45 behaviorally-equivalent survivors per such file (123 `src` files
+  use that import convention) inflated the gate on every run until this
+  was excluded. Matched the same anti-vacuous way as the other two — a
+  closed set of the exact tsc helper names AND the exact init shape, never
+  name-alone or a broad head-of-file exclusion — so a project variable that
+  happens to share a helper's name but not its initializer stays `kept`.
 - Wired into `extension/src/mutation/stryker-plugin.ts` as
   `EntrypointBoilerplateIgnorer`, a `PluginKind.Ignore` plugin alongside the
   existing Reporter. The first wiring attempt registered the plugin via
