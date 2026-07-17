@@ -45,6 +45,8 @@ const {
   recordApprovalDecisionAndClose,
   composeAskMessageBody,
   composeAskButtons,
+  decideEnsureBacklogTopicAction,
+  BACKLOG_SUBJECT_ID,
 } = require('../out/tools/telegramFrontDeskBotCore');
 
 const PRINCIPAL_ID = 111;
@@ -211,6 +213,30 @@ test('BL-434: decideEnsureApprovalsTopicAction reuses the topic already bound to
 
 test('BL-434: decideEnsureApprovalsTopicAction is reserved-subject-specific - the Operator topic\'s own binding never counts as the Approvals topic', () => {
   assert.deepEqual(decideEnsureApprovalsTopicAction({ '42': OPERATOR_SUBJECT_ID }), { kind: 'create' });
+});
+
+// ── decideEnsureBacklogTopicAction (pure) — BL-492 ────────────────────────
+
+test('BL-492: decideEnsureBacklogTopicAction creates when no topic is bound to the reserved subject yet', () => {
+  assert.deepEqual(decideEnsureBacklogTopicAction({}), { kind: 'create' });
+  assert.deepEqual(decideEnsureBacklogTopicAction({ '7': 'SUP-1' }), { kind: 'create' });
+});
+
+test('BL-492: decideEnsureBacklogTopicAction reuses the topic already bound to BACKLOG_SUBJECT_ID', () => {
+  assert.deepEqual(decideEnsureBacklogTopicAction({ '7': 'SUP-1', '42': BACKLOG_SUBJECT_ID }), { kind: 'reuse', topicId: 42 });
+});
+
+test('BL-492: decideEnsureBacklogTopicAction is reserved-subject-specific - no OTHER standing topic\'s own binding ever counts as the Backlog topic', () => {
+  assert.deepEqual(decideEnsureBacklogTopicAction({ '42': OPERATOR_SUBJECT_ID }), { kind: 'create' });
+  assert.deepEqual(decideEnsureBacklogTopicAction({ '42': APPROVALS_SUBJECT_ID }), { kind: 'create' });
+  assert.deepEqual(decideEnsureBacklogTopicAction({ '42': RECERT_SUBJECT_ID }), { kind: 'create' });
+  assert.deepEqual(decideEnsureBacklogTopicAction({ '42': AGENT_QUESTIONS_SUBJECT_ID }), { kind: 'create' });
+  assert.deepEqual(decideEnsureBacklogTopicAction({ '42': CONTROL_SUBJECT_ID }), { kind: 'create' });
+});
+
+test('BL-492: BACKLOG_SUBJECT_ID does not collide with any other reserved subject id', () => {
+  const reserved = [OPERATOR_SUBJECT_ID, APPROVALS_SUBJECT_ID, RECERT_SUBJECT_ID, AGENT_QUESTIONS_SUBJECT_ID, CONTROL_SUBJECT_ID];
+  assert.ok(!reserved.includes(BACKLOG_SUBJECT_ID), `BACKLOG_SUBJECT_ID must be distinct from every existing reserved id, got a collision with: ${JSON.stringify(reserved)}`);
 });
 
 // ── decideStandingTopicTitleSync (pure) — BL-453 concierge-icon-02/03 ────
