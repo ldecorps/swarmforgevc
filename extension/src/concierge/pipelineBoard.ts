@@ -92,9 +92,27 @@ export interface PipelineBoardExtras {
   // which case the link list is omitted entirely rather than emitting
   // broken/relative links.
   repoBaseUrl?: string;
+  // BL-473: the physical backlog/active/ membership set - ground truth for
+  // "what is active" (the human's own contract: the board must be at least
+  // as complete as the static PWA, which lists every active ticket). Every
+  // id here gets exactly one grid row; the role-held map only DECORATES
+  // that row's stage, defaulting to the not-started state when the map has
+  // no stage for it. Absent (undefined, the pre-BL-473 shape) defaults to
+  // the ids already implied by roleHeldTickets - i.e. every pre-existing
+  // call site (which never passed this) keeps rendering identically; only
+  // a caller that wants a ticket physically active-but-unheld to still
+  // render (conciergeTick.ts's real wiring) passes this.
+  activeIds?: string[];
 }
 
-export const PIPELINE_BOARD_COLUMN_ORDER: readonly string[] = ALL_SWARM_ROLES;
+// BL-473: the not-started sentinel column - a distinct state for an active
+// ticket no role currently holds, never one of the real pipeline roles.
+// Placed LAST in PIPELINE_BOARD_COLUMN_ORDER below (the human's own stated
+// preference 2026-07-16: "a dedicated 'not started' column on the
+// right-hand side").
+export const PIPELINE_BOARD_NOT_STARTED_COLUMN = 'not-started';
+
+export const PIPELINE_BOARD_COLUMN_ORDER: readonly string[] = [...ALL_SWARM_ROLES, PIPELINE_BOARD_NOT_STARTED_COLUMN];
 
 // Short, fixed-width column glyphs - the full role names are far too wide
 // for a grid on a phone screen. Exact glyphs are a build-time/cosmetic
@@ -108,6 +126,7 @@ const COLUMN_LABEL: Record<string, string> = {
   documenter: 'DC',
   QA: 'QA',
   coordinator: 'CD',
+  [PIPELINE_BOARD_NOT_STARTED_COLUMN]: 'NS',
 };
 
 const TICKET_HEADER = 'TICKET';
@@ -200,12 +219,38 @@ function listEntryFor(item: PipelineBoardListSourceItem): PipelineBoardListEntry
   return { id: item.id, slug: deriveListEntryText(item.title) };
 }
 
-// Every role-held ticket first (in PIPELINE_BOARD_COLUMN_ORDER's own role
-// order, never object-key order), then grouped by epic via a STABLE sort
-// (Array#sort is spec-guaranteed stable in Node), so ties within the same
-// epic keep their original role-order. A ticket held by no role never
-// becomes a row (see this module's own "no empty rows" constraint,
-// upstream in BL-455's ticket).
+// BL-464: a ticket id observed under more than one role - the exact
+// double-row defect a mid-transition in_process scrape used to produce -
+// collapses to exactly one held role, never two. ALL_SWARM_ROLES is
+// iterated in pipeline order, so a LATER occurrence (a more downstream
+// role) overwrites an earlier one in the Map, mirroring
+// pipeline_stage_lib.bb's own reconcile-stage-map "most downstream wins"
+// rule - the same guarantee, belt-and-braces at the renderer, whatever the
+// authoritative source's own shape already structurally prevents.
+function heldRoleByTicketId(roleHeldTickets: Record<string, string[]>): Map<string, string> {
+  const heldRoleById = new Map<string, string>();
+  for (const role of ALL_SWARM_ROLES) {
+    for (const id of roleHeldTickets[role] ?? []) {
+      heldRoleById.set(id, role);
+    }
+  }
+  return heldRoleById;
+}
+
+// BL-473: row MEMBERSHIP is exactly `activeIds` (the physical backlog/active/
+// set, ground truth) - the role-held map only DECORATES a member's stage,
+// defaulting to the not-started sentinel when the map has no stage for it.
+// A role-held id absent from activeIds gets no row at all (activeIds is the
+// SOLE source iterated below, never merged with heldRoleById's own keys) -
+// this is what makes "every file in backlog/active/ is a row exactly once,
+// and only those" hold as a property of this function, independent of
+// whatever membership its caller decides to pass. Omitting activeIds
+// (undefined) defaults to the ids already implied by roleHeldTickets - the
+// exact pre-BL-473 behavior every existing call site relied on.
+//
+// Grouped by epic via a STABLE sort (Array#sort is spec-guaranteed stable in
+// Node), so ties within the same epic keep their original role/insertion
+// order.
 //
 // Paused tickets never enter the grid at all (BL-455 rule 2): each becomes
 // a below-grid PipelineBoardParkedEntry instead, sorted by id so the list
@@ -213,29 +258,23 @@ function listEntryFor(item: PipelineBoardListSourceItem): PipelineBoardListEntry
 // 'awaiting-approval'; every other paused ticket (absent, or 'approved') is
 // plain 'parked' - unchanged from BL-452's own column-assignment rule, just
 // relocated off the grid.
-// BL-464: a ticket id is kept in a Map (never a plain array push) so that a
-// SAME id observed under more than one role - the exact double-row defect a
-// mid-transition in_process scrape used to produce - collapses to exactly
-// one row, never two. ALL_SWARM_ROLES is iterated in pipeline order, so a
-// LATER occurrence (a more downstream role) overwrites an earlier one,
-// mirroring pipeline_stage_lib.bb's own reconcile-stage-map "most downstream
-// wins" rule - the same guarantee, belt-and-braces at the renderer, whatever
-// the authoritative source's own shape already structurally prevents.
 // Split out of computePipelineBoard below for the same CRAP-budget reason
 // documented throughout this codebase (e.g. telegramFrontDeskBotCore.ts's
-// gatherControlState) - one role-held ticket becomes one grid row, held in
-// a Map (never a plain array push) per this module's own "no double rows"
-// comment above.
+// gatherControlState) - one active ticket becomes one grid row, held in a
+// Map (never a plain array push) so a duplicate id in `activeIds` collapses
+// to one row too.
 function buildGridRows(
   roleHeldTickets: Record<string, string[]>,
-  ticketMeta: Record<string, PipelineBoardTicketMeta>
+  ticketMeta: Record<string, PipelineBoardTicketMeta>,
+  activeIds?: string[]
 ): PipelineBoardRow[] {
+  const heldRoleById = heldRoleByTicketId(roleHeldTickets);
+  const ids = activeIds ?? [...heldRoleById.keys()];
   const rowsById = new Map<string, PipelineBoardRow>();
-  for (const role of ALL_SWARM_ROLES) {
-    for (const id of roleHeldTickets[role] ?? []) {
-      const meta = ticketMeta[id];
-      rowsById.set(id, { id, column: role, epic: meta?.epic, slug: deriveKebabSlug(meta?.title) });
-    }
+  for (const id of ids) {
+    const meta = ticketMeta[id];
+    const column = heldRoleById.get(id) ?? PIPELINE_BOARD_NOT_STARTED_COLUMN;
+    rowsById.set(id, { id, column, epic: meta?.epic, slug: deriveKebabSlug(meta?.title) });
   }
   return [...rowsById.values()].sort((a, b) => epicSortKey(a.epic).localeCompare(epicSortKey(b.epic)));
 }
@@ -322,7 +361,7 @@ export function computePipelineBoard(
   ticketMeta: Record<string, PipelineBoardTicketMeta>,
   extras: PipelineBoardExtras = {}
 ): PipelineBoardData {
-  const rows = buildGridRows(roleHeldTickets, ticketMeta);
+  const rows = buildGridRows(roleHeldTickets, ticketMeta, extras.activeIds);
   const parked = buildParkedEntries(paused, ticketMeta);
   const rootIntake = [...(extras.rootIntake ?? [])].map(listEntryFor).sort((a, b) => a.id.localeCompare(b.id));
   // BL-465 bounce (architect review): unlike rootIntake/parked above,

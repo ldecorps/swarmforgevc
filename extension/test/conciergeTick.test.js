@@ -1907,6 +1907,61 @@ test('BL-452: omitting readRoleHeldTickets/boardAdapters entirely leaves the tic
   assert.equal(state.pipelineBoard, undefined);
 });
 
+// ── BL-473: folders.active membership - a freshly-promoted-but-unheld
+// ticket still renders (not-started), and folders.active/role-held stay
+// UNIONED so a role-held ticket never vanishes off the board either. ─────
+
+test('BL-473: a ticket physically in backlog/active/ that no role holds still renders, in the not-started state', async () => {
+  const { adapters, setFolders } = fakeAdapters();
+  const posted = [];
+  adapters.boardAdapters.postMessage = async (topicId, text) => {
+    posted.push(text);
+    return 1;
+  };
+  adapters.boardAdapters.ensureBoardTopic = async () => 900;
+  adapters.readRoleHeldTickets = () => ({});
+  setFolders(folders({ active: [{ id: 'BL-1', title: 'freshly promoted' }] }));
+
+  await runConciergeTick(adapters);
+
+  assert.equal(posted.length, 1, 'expected the not-started ticket to still post a board, never silently skipped');
+  const lines = posted[0].split('\n');
+  const header = lines[0].trim().split(/\s+/);
+  const row = lines.find((l) => l.trim().split(/\s+/)[0] === 'BL-1');
+  assert.ok(row, `expected BL-1 to be a board row, got:\n${posted[0]}`);
+  const nsIndex = header.indexOf('NS');
+  assert.ok(nsIndex >= 0, `expected a not-started (NS) column in the header, got: ${header.join(' ')}`);
+  const rowCells = row.trim().split(/\s+/);
+  assert.equal(rowCells[nsIndex], 'X', `expected BL-1 marked in the NS column, got: ${row}`);
+  for (let i = 2; i < rowCells.length; i += 1) {
+    if (i !== nsIndex) {
+      assert.equal(rowCells[i], '.', `expected no pipeline-role column marked for a not-started ticket, got: ${row}`);
+    }
+  }
+});
+
+test('BL-473: a role-held ticket the coordinator has not yet synced into folders.active still renders at its role stage, never dropped', async () => {
+  // folders.active deliberately stays empty here - the union with
+  // readRoleHeldTickets is what keeps this ticket from vanishing (the exact
+  // regression BL-473 fixes: physical membership decorates, but a held
+  // ticket is never SILENTLY dropped just because one of the two
+  // independently-read sources missed it this tick).
+  const { adapters } = fakeAdapters();
+  const posted = [];
+  adapters.boardAdapters.postMessage = async (topicId, text) => {
+    posted.push(text);
+    return 1;
+  };
+  adapters.boardAdapters.ensureBoardTopic = async () => 900;
+  adapters.readRoleHeldTickets = () => ({ coder: ['BL-1'] });
+
+  await runConciergeTick(adapters);
+
+  assert.equal(posted.length, 1);
+  const row = posted[0].split('\n').find((l) => l.trim().split(/\s+/)[0] === 'BL-1');
+  assert.ok(row, `expected BL-1 to still be a board row, got:\n${posted[0]}`);
+});
+
 // ── BL-465: root-intake / recently-closed / GitHub link list wiring ──────
 
 test('BL-465: omitting readRootIntakeFiles/readRepoBaseUrl entirely leaves the board tick unaffected - existing fixtures built before these fields existed keep working unchanged', async () => {
