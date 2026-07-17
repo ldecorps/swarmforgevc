@@ -44,3 +44,15 @@ a prior review.
 `main` and is therefore not adoptable via a simple pin bump either way. It is
 recorded here as context for the next full review, not added as a tracked branch
 pending a closer look at what it actually contains.
+
+### 2026-07-17 — `six-pack` deep-dive (BL-479)
+
+A same-day follow-on survey, deeper than the baseline review above: read every
+role prompt on `unclebob/swarm-forge` `six-pack` and checked each idea against
+this fork's prompts, reporting only what was genuinely absent here.
+
+| Finding | Decision |
+|---------|----------|
+| Property testing has no owner — `engineering.prompt` already legislates property tests as a separate verification category, but no role prompt claims it. Upstream's `six-pack` architect.prompt closes the hole: the architect owns property-test support after architectural review, before the hardener. | **ADOPT** (adapted, not ported). `architect.prompt` gained a "## Property Testing" section (human-approved wording); `hardender.prompt`/`QA.prompt` reference the separate `npm run test:properties` command. `fast-check` is now a pinned devDependency, wired through its own `vitest.properties.config.mjs`, excluded from the normal unit/coverage/mutation run. Seeded with one non-vacuous property suite (`benchmarkAggregate.property.test.js`) — demonstrated to fail when its invariant is deliberately broken, then restored. |
+| Upstream's `six-pack` cleaner has a mutation-site SIZE gate this fork's cleaner lacks: scan/count mutation sites on changed files (without running mutation) and split a file exceeding 100 sites before handoff. | **ADOPT, filed as its own ticket** — BL-485 (paused), per the human's decision, not recorded as a plain adopt/skip here since it is not yet built. |
+| Everything else in the `six-pack` role prompts (differential mutation vs. manifest, soft Gherkin mutation, end-to-end QA suite concept, APS Gherkin-parser discipline) | **Already have it** — verified by grep against this fork's own prompts, not assumed. |
