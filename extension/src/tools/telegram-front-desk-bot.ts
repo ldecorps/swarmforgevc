@@ -127,7 +127,7 @@ import {
 } from '../docs/recertificationStore';
 import { readBacklogTopicMap, writeBacklogTopicMap, dropBacklogTopicMapping } from '../concierge/backlogTopicMapStore';
 import { ALL_SWARM_ROLES, readRoleTopicMap, writeRoleTopicMap } from '../concierge/roleTopicMapStore';
-import { runConciergeTick, ConciergeTickAdapters, BacklogFoldersSnapshot, TickState } from '../concierge/conciergeTick';
+import { runConciergeTick, ConciergeTickAdapters, BacklogFolderItem, BacklogFoldersSnapshot, TickState } from '../concierge/conciergeTick';
 import { reconcileTopicLifecycle, ReconcileAdapters } from '../concierge/topicReconciliation';
 import { sweepTopicDeletions, TopicDeletionAdapters, topicRetentionWindowMs } from '../concierge/topicDeletion';
 import { readBacklogFolders } from '../panel/backlogReader';
@@ -1583,20 +1583,7 @@ async function subscribeReplies(
 // going through this narrowing).
 export function toFoldersSnapshot(targetPath: string): BacklogFoldersSnapshot {
   const folders = readBacklogFolders(targetPath);
-  const pick = (
-    items: {
-      id: string;
-      title: string;
-      notes?: string;
-      firstAcceptanceStep?: string;
-      approvalContext?: string;
-      humanApproval?: 'pending' | 'approved';
-      epic?: string;
-      type?: string;
-      remainingSlices?: string[];
-      filename?: string;
-    }[]
-  ) =>
+  const pick = (items: BacklogFolderItem[]) =>
     items.map((item) => ({
       id: item.id,
       title: item.title,
