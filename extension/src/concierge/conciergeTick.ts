@@ -501,14 +501,19 @@ async function syncStandingTopicIcons(
 // token IS the ROLE_TOPIC_ICON key directly, so there is no separate
 // iconKey field to carry the way StandingTopicTarget needs one (see
 // RoleTopicTarget's own docstring in topicIcon.ts for why).
+// `targets` defaults an absent call to no-op here (rather than at the call
+// site) so runConciergeTick's own call can pass the bare optional adapter
+// result straight through - keeps runConciergeTick's own CRAP budget
+// unaffected by adding this sync (cleaner split, BL-469 follow-up).
 async function syncPerAgentTopicIcons(
-  targets: RoleTopicTarget[],
+  targets: RoleTopicTarget[] | undefined,
   prevSeenIds: string[] | undefined,
   iconAdapters: TopicIconAdapters
 ): Promise<string[]> {
-  const currIds = targets.map((t) => t.role);
+  const resolvedTargets = targets ?? [];
+  const currIds = resolvedTargets.map((t) => t.role);
   const newlyEntered = new Set(newlyEnteredIds(prevSeenIds, currIds));
-  for (const target of targets) {
+  for (const target of resolvedTargets) {
     if (!newlyEntered.has(target.role)) {
       continue;
     }
@@ -895,11 +900,7 @@ export async function runConciergeTick(adapters: ConciergeTickAdapters, nowMs: n
   // BL-469: the per-agent steering topics' own icon sync - see
   // syncPerAgentTopicIcons' own docstring for why this mirrors the
   // standing-topic sync above exactly, with its own independent seen-set.
-  const roleIconSeenIds = await syncPerAgentTopicIcons(
-    adapters.readRoleTopics?.() ?? [],
-    state.roleIconSeenIds,
-    adapters.iconAdapters
-  );
+  const roleIconSeenIds = await syncPerAgentTopicIcons(adapters.readRoleTopics?.(), state.roleIconSeenIds, adapters.iconAdapters);
 
   // BL-414: runs over every ticket across all three folders on every tick
   // (never gated on newlyEnteredIds - see syncTitleAgeForBacklogId's own
