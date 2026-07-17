@@ -268,6 +268,17 @@ test('BL-493: buildTicketStatusText prefixes the ticket id, a lifecycle glyph, a
   assert.equal(buildTicketStatusText('BL-123', 'a fine feature', 'defect'), 'BL-123 🦠 in progress — a fine feature');
 });
 
+// BL-493 (cleaner): 'paused'/'awaiting-approval' never actually reach this
+// builder in production (see ticketStatusMessage.ts's own comment), but
+// STATUS_LABEL/ICON_EMOJI are keyed by the full TopicIconState for
+// TypeScript exhaustiveness - drive both here so a mutated label/glyph on
+// either entry doesn't survive uncaught just because no live caller passes
+// them yet.
+test('BL-493: buildTicketStatusText also renders the exhaustiveness-only paused/awaiting-approval states', () => {
+  assert.equal(buildTicketStatusText('BL-123', 'a fine feature', 'paused'), 'BL-123 🔍 paused — a fine feature');
+  assert.equal(buildTicketStatusText('BL-123', 'a fine feature', 'awaiting-approval'), 'BL-123 👀 awaiting approval — a fine feature');
+});
+
 test('BL-493: a later transition edits the SAME status text - the glyph/state changes, the id/title/separator do not', () => {
   const opened = buildTicketStatusText('BL-123', 'a fine feature', 'feature');
   const closed = buildTicketStatusText('BL-123', 'a fine feature', 'done');
@@ -604,6 +615,30 @@ test('BL-358: an untagged NeedsApproval routes to the standing Operator topic, n
 test('BL-358: an untagged NeedsApproval is never recorded into the per-ticket blTopicStore (it belongs to no ticket)', async () => {
   const { adapters, recorded } = fakeAdapters();
   await routeEvent(untaggedEvent(), 'irrelevant', adapters);
+  assert.deepEqual(recorded, []);
+});
+
+// BL-493: a TAGGED NeedsApproval (a role blocked mid-task, holding a
+// ticket) still goes to the standing Operator topic like an untagged one -
+// never collapsed into the ticket's terse edit-in-place status line, which
+// has no room for the role's free-text question (routeGateEvent's own
+// comment in topicRouter.ts). Unlike the untagged case, its message IS
+// recorded into the ticket's own durable record, since backlogId !== null
+// here.
+test('BL-493: a TAGGED NeedsApproval routes to the standing Operator topic, never the ticket-status path, and IS recorded (unlike an untagged one)', async () => {
+  const { adapters, sent, recorded, posted, ensureOperatorTopicCalls } = fakeAdapters();
+  const result = await routeEvent(event({ type: 'NeedsApproval' }), 'a fine feature', adapters, ticketContext());
+  assert.deepEqual(sent, [{ topicId: 700, text: 'NeedsApproval: BL-123' }]);
+  assert.equal(ensureOperatorTopicCalls.length, 1);
+  assert.deepEqual(posted, [], 'never the edit-in-place ticket-status path');
+  assert.deepEqual(recorded, [{ backlogId: 'BL-123', text: 'NeedsApproval: BL-123' }]);
+  assert.deepEqual(result, { posted: true, skipped: false });
+});
+
+test('BL-493: a TAGGED NeedsApproval is not recorded when the send itself fails', async () => {
+  const { adapters, recorded } = fakeAdapters();
+  adapters.sendMessage = async () => false;
+  await routeEvent(event({ type: 'NeedsApproval' }), 'a fine feature', adapters, ticketContext());
   assert.deepEqual(recorded, []);
 });
 

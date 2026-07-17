@@ -22,7 +22,6 @@ function fakeAdapters({ alreadyReconciledIds = [] } = {}) {
     recorded,
     messageStates,
     adapters: {
-      getTopicMap: () => topicMap,
       isAlreadyReconciled: (backlogId) => alreadyReconciledIds.includes(backlogId),
       routeAdapters: {
         getTopicMap: () => topicMap,

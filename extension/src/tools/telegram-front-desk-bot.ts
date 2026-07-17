@@ -2172,7 +2172,6 @@ export function conciergeTickIntervalMs(rawEnv: string | undefined = process.env
 // parallel marker file.
 function buildReconcileAdapters(targetPath: string, routeAdapters: ConciergeTickAdapters['routeAdapters']): ReconcileAdapters {
   return {
-    getTopicMap: routeAdapters.getTopicMap,
     // BL-331: shares hasCompletionRecord with the deletion sweep's own
     // verification gate below - the exact same "is this ticket's record
     // verified complete" predicate, never a second, drifting notion of it.
