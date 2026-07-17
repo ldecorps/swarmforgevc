@@ -63,7 +63,7 @@ acceptance:
   # (regression). The AST-predicate implementation is not pinned; the classifier contract is.
   feature: specs/features/BL-498-mutation-gate-excludes-tsc-import-helpers.feature
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   Hardener-proposed mutation-gate hygiene fix, low risk. FIRM: extend the BL-447
   EntrypointBoilerplateIgnorer to also exclude tsc's import-helper preamble
