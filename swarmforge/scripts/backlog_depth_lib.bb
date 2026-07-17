@@ -151,17 +151,76 @@
    'a cap of -1 is respected as no configured ceiling, but the recommendation
    can still impose a temporary finite effective ceiling' contract. Every
    other case is an ordinary min, which already guarantees the 'never raises
-   above configured' contract (acceptance scenario 04) for free."
-  [configured recommended]
-  (cond
-    (nil? recommended) configured
-    (no-limit? configured) recommended
-    :else (min configured recommended)))
+   above configured' contract (acceptance scenario 04) for free.
+
+   BL-423: the 3-arity overload folds in a LIVE pause too - paused? true
+   wins outright (0, freezing promotion regardless of configured/
+   recommended), reusing this SAME already-consulted primitive rather than
+   a second, parallel gate. The 2-arity overload defaults paused? to false
+   and is byte-for-byte the pre-BL-423 function - every existing caller
+   (there were none outside read-effective-max-depth below at the time of
+   writing, per the shared-component fan-out sweep) is unaffected."
+  ([configured recommended] (effective-max-depth configured recommended false))
+  ([configured recommended paused?]
+   (cond
+     paused? 0
+     (nil? recommended) configured
+     (no-limit? configured) recommended
+     :else (min configured recommended))))
+
+;; ── BL-423: PAUSE folds into this SAME effective-depth gate - the ticket's
+;; own sanctioned lever ("wire a REAL reader, not a dark marker"), since
+;; effective_backlog_depth_cli.bb's read-effective-max-depth below is the
+;; ONE value the coordinator's own prompt reads before every promotion (see
+;; coordinator.prompt's own reference to this CLI). The front-desk Telegram
+;; bot (telegram-front-desk-bot.ts) is the marker's SOLE writer for an
+;; explicit human apply-pause/resume-now action; the auto-resume sweep
+;; (chase_sweep_lib.bb) is the only OTHER writer, and only to CLEAR an
+;; already-expired marker - both converge on "absent/inactive", never a
+;; conflicting write.
+(def pause-marker-relpath
+  [".swarmforge" "operator" "control-pause.json"])
+
+(defn pause-marker-path [project-root]
+  (apply fs/path project-root pause-marker-relpath))
+
+(defn read-pause-state
+  "The impure fs-reading half: {:active false} for a missing/unreadable/
+   malformed marker (never paused - the same degrade-never-crash posture
+   read-max-depth/read-recommended-cap above use for their own files), or
+   the marker's own {:active true :until-ms N-or-nil} (untilMs absent/null
+   means an 'until I resume' pause with no timer)."
+  [project-root]
+  (try
+    (let [parsed (json/parse-string (slurp (str (pause-marker-path project-root))) true)]
+      (if (:active parsed)
+        {:active true :until-ms (:untilMs parsed)}
+        {:active false}))
+    (catch Exception _ {:active false})))
+
+(defn pause-active?
+  "Pure, injected-clock: an 'until I resume' pause (until-ms nil) stays
+   active until an explicit resume clears the marker outright - it never
+   auto-expires here. A timed pause is active only up to its own until-ms;
+   once now-ms reaches it, this reads as NOT active even before the
+   auto-resume sweep's own next tick physically clears the marker file -
+   the promotion gate must never wait on the sweep's own cadence to
+   un-freeze."
+  [pause-state now-ms]
+  (boolean
+   (and (:active pause-state)
+        (or (nil? (:until-ms pause-state))
+            (< now-ms (:until-ms pause-state))))))
 
 (defn read-effective-max-depth
   "The impure end-to-end read: configured cap (read-max-depth) folded with
-   the currently-recommended throttle (read-recommended-cap) via
+   the currently-recommended throttle (read-recommended-cap) and a live
+   pause (read-pause-state + pause-active?, real clock - this IS the real
+   boundary, pause-active? itself stays fully injected/tested) via
    effective-max-depth above - the ONE value the coordinator's promotion
    decision should ever compare an active count against."
   [project-root]
-  (effective-max-depth (read-max-depth project-root) (read-recommended-cap project-root)))
+  (effective-max-depth
+   (read-max-depth project-root)
+   (read-recommended-cap project-root)
+   (pause-active? (read-pause-state project-root) (System/currentTimeMillis))))

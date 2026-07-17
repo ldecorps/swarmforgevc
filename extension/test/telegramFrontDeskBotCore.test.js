@@ -38,6 +38,8 @@ const {
   decideStandingTopicTitleSync,
   decideEnsureAgentQuestionsTopicAction,
   AGENT_QUESTIONS_SUBJECT_ID,
+  decideEnsureControlTopicAction,
+  CONTROL_SUBJECT_ID,
   decideAgentQuestionsReplyAction,
   decidePollAnswerAction,
 } = require('../out/tools/telegramFrontDeskBotCore');
@@ -235,6 +237,21 @@ test('BL-466: decideEnsureAgentQuestionsTopicAction reuses the topic already bou
 
 test('BL-466: decideEnsureAgentQuestionsTopicAction is reserved-subject-specific - another reserved subject\'s binding never counts', () => {
   assert.deepEqual(decideEnsureAgentQuestionsTopicAction({ '42': OPERATOR_SUBJECT_ID }), { kind: 'create' });
+});
+
+// ── decideEnsureControlTopicAction (pure) — BL-423 ────────────────────────
+
+test('BL-423: decideEnsureControlTopicAction creates when no topic is bound to the reserved subject yet', () => {
+  assert.deepEqual(decideEnsureControlTopicAction({}), { kind: 'create' });
+  assert.deepEqual(decideEnsureControlTopicAction({ '7': 'SUP-1' }), { kind: 'create' });
+});
+
+test('BL-423: decideEnsureControlTopicAction reuses the topic already bound to CONTROL_SUBJECT_ID', () => {
+  assert.deepEqual(decideEnsureControlTopicAction({ '7': 'SUP-1', '42': CONTROL_SUBJECT_ID }), { kind: 'reuse', topicId: 42 });
+});
+
+test('BL-423: decideEnsureControlTopicAction is reserved-subject-specific - another reserved subject\'s binding never counts', () => {
+  assert.deepEqual(decideEnsureControlTopicAction({ '42': OPERATOR_SUBJECT_ID }), { kind: 'create' });
 });
 
 // ── decideAgentQuestionsReplyAction (pure) — BL-466 ───────────────────────
@@ -1843,6 +1860,325 @@ test('BL-466: a poll vote from a non-principal is dropped, never delivered', asy
     },
   });
   assert.equal(result.dropped, 1);
+});
+
+// ── pollAndForward: Control topic verb/callback dispatch — BL-423 ────────
+
+function mkControlCallbackUpdate({ fromId, data, topicId, chatId, callbackId } = {}) {
+  return {
+    update_id: 1,
+    callback_query: { id: callbackId ?? 'ctl-cbq-1', data, from: { id: fromId }, message: { chat: { id: chatId ?? 1 }, message_thread_id: topicId } },
+  };
+}
+
+function controlPollAdapters(overrides = {}) {
+  return {
+    chatId: '1',
+    controlTopicId: overrides.controlTopicId ?? (async () => 900),
+    getPendingControlConfirm: overrides.getPendingControlConfirm ?? (async () => undefined),
+    setPendingControlConfirm: overrides.setPendingControlConfirm ?? (async () => {}),
+    getPauseState: overrides.getPauseState ?? (async () => ({ active: false })),
+    postControlStopModesMenu: overrides.postControlStopModesMenu ?? (async () => {}),
+    postControlRestartConfirm: overrides.postControlRestartConfirm ?? (async () => {}),
+    postControlCancelled: overrides.postControlCancelled ?? (async () => {}),
+    postControlPauseMenu: overrides.postControlPauseMenu ?? (async () => {}),
+    executeEmergencyStop: overrides.executeEmergencyStop ?? (async () => {}),
+    executeDrainStop: overrides.executeDrainStop ?? (async () => {}),
+    executeRestart: overrides.executeRestart ?? (async () => {}),
+    applyPause: overrides.applyPause ?? (async () => {}),
+    resumeNow: overrides.resumeNow ?? (async () => {}),
+    answerCallbackQuery: overrides.answerCallbackQuery ?? (async () => {}),
+    subjectForTopic: () => undefined,
+    backlogForTopic: () => undefined,
+    postToBridge: async () => {
+      throw new Error('postToBridge should not be called for a Control topic event');
+    },
+    openSubjectAndRecord: async () => {
+      throw new Error('openSubjectAndRecord should never open a fresh subject for the reserved Control topic');
+    },
+    postOperatorContext: async () => {
+      throw new Error('postOperatorContext should not be called for a Control topic event');
+    },
+    ...overrides,
+  };
+}
+
+test('BL-423: an authorised /stop in the Control topic prompts the stop-mode menu and arms the confirm', async () => {
+  const armed = [];
+  const menus = [];
+  const result = await pollAndForward(
+    0,
+    PRINCIPAL_ID,
+    controlPollAdapters({
+      getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 900, text: '/stop' })] }),
+      setPendingControlConfirm: async (c) => armed.push(c),
+      postControlStopModesMenu: async () => menus.push(true),
+    })
+  );
+  assert.deepEqual(armed, [{ kind: 'stop-modes' }]);
+  assert.deepEqual(menus, [true]);
+  assert.equal(result.posted, 1);
+});
+
+test('BL-423: tapping Emergency stop while armed executes the emergency stop and clears the confirm', async () => {
+  const cleared = [];
+  const executed = [];
+  const answered = [];
+  const result = await pollAndForward(
+    0,
+    PRINCIPAL_ID,
+    controlPollAdapters({
+      getUpdates: async () => ({
+        success: true,
+        updates: [mkControlCallbackUpdate({ fromId: PRINCIPAL_ID, data: 'control:emergency-stop', topicId: 900 })],
+      }),
+      getPendingControlConfirm: async () => ({ kind: 'stop-modes' }),
+      setPendingControlConfirm: async (c) => cleared.push(c),
+      executeEmergencyStop: async () => executed.push('emergency'),
+      answerCallbackQuery: async (id) => answered.push(id),
+    })
+  );
+  assert.deepEqual(executed, ['emergency']);
+  assert.deepEqual(cleared, [undefined]);
+  assert.deepEqual(answered, ['ctl-cbq-1']);
+  assert.equal(result.posted, 1);
+});
+
+test('BL-423: tapping Drain & stop while armed executes the drain stop', async () => {
+  const executed = [];
+  await pollAndForward(
+    0,
+    PRINCIPAL_ID,
+    controlPollAdapters({
+      getUpdates: async () => ({
+        success: true,
+        updates: [mkControlCallbackUpdate({ fromId: PRINCIPAL_ID, data: 'control:drain-stop', topicId: 900 })],
+      }),
+      getPendingControlConfirm: async () => ({ kind: 'stop-modes' }),
+      executeDrainStop: async () => executed.push('drain'),
+      executeEmergencyStop: async () => {
+        throw new Error('executeEmergencyStop should not fire for a drain-stop tap');
+      },
+    })
+  );
+  assert.deepEqual(executed, ['drain']);
+});
+
+test('BL-423: an emergency-stop tap with no pending stop-modes confirm never executes (stale/already-actioned)', async () => {
+  const executed = [];
+  const result = await pollAndForward(
+    0,
+    PRINCIPAL_ID,
+    controlPollAdapters({
+      getUpdates: async () => ({
+        success: true,
+        updates: [mkControlCallbackUpdate({ fromId: PRINCIPAL_ID, data: 'control:emergency-stop', topicId: 900 })],
+      }),
+      executeEmergencyStop: async () => executed.push('emergency'),
+    })
+  );
+  assert.deepEqual(executed, []);
+  assert.equal(result.dropped, 1);
+});
+
+test('BL-423: cancelling a pending stop confirm clears it and never executes either stop mode', async () => {
+  const cleared = [];
+  const cancelled = [];
+  await pollAndForward(
+    0,
+    PRINCIPAL_ID,
+    controlPollAdapters({
+      getUpdates: async () => ({
+        success: true,
+        updates: [mkControlCallbackUpdate({ fromId: PRINCIPAL_ID, data: 'control:cancel', topicId: 900 })],
+      }),
+      getPendingControlConfirm: async () => ({ kind: 'stop-modes' }),
+      setPendingControlConfirm: async (c) => cleared.push(c),
+      postControlCancelled: async () => cancelled.push(true),
+      executeEmergencyStop: async () => {
+        throw new Error('cancel must never execute emergency stop');
+      },
+      executeDrainStop: async () => {
+        throw new Error('cancel must never execute drain stop');
+      },
+    })
+  );
+  assert.deepEqual(cleared, [undefined]);
+  assert.deepEqual(cancelled, [true]);
+});
+
+test('BL-423: an authorised /restart prompts a restart confirm; tapping confirm executes the restart', async () => {
+  const armed = [];
+  const executed = [];
+  await pollAndForward(
+    0,
+    PRINCIPAL_ID,
+    controlPollAdapters({
+      getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 900, text: '/restart' })] }),
+      setPendingControlConfirm: async (c) => armed.push(c),
+    })
+  );
+  assert.deepEqual(armed, [{ kind: 'restart-confirm' }]);
+
+  await pollAndForward(
+    0,
+    PRINCIPAL_ID,
+    controlPollAdapters({
+      getUpdates: async () => ({
+        success: true,
+        updates: [mkControlCallbackUpdate({ fromId: PRINCIPAL_ID, data: 'control:confirm-restart', topicId: 900 })],
+      }),
+      getPendingControlConfirm: async () => ({ kind: 'restart-confirm' }),
+      executeRestart: async () => executed.push('restart'),
+    })
+  );
+  assert.deepEqual(executed, ['restart']);
+});
+
+test('BL-423: an authorised /pause posts the duration menu without freezing anything yet', async () => {
+  const menus = [];
+  const applied = [];
+  await pollAndForward(
+    0,
+    PRINCIPAL_ID,
+    controlPollAdapters({
+      getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 900, text: '/pause' })] }),
+      postControlPauseMenu: async () => menus.push(true),
+      applyPause: async (d) => applied.push(d),
+    })
+  );
+  assert.deepEqual(menus, [true]);
+  assert.deepEqual(applied, []);
+});
+
+test('BL-423: picking 15 min applies a timed pause immediately - no separate confirm needed', async () => {
+  const applied = [];
+  await pollAndForward(
+    0,
+    PRINCIPAL_ID,
+    controlPollAdapters({
+      getUpdates: async () => ({
+        success: true,
+        updates: [mkControlCallbackUpdate({ fromId: PRINCIPAL_ID, data: 'control:pause-15m', topicId: 900 })],
+      }),
+      applyPause: async (d) => applied.push(d),
+    })
+  );
+  assert.deepEqual(applied, [15 * 60 * 1000]);
+});
+
+test('BL-423: picking "Until I resume" applies a pause with no duration', async () => {
+  const applied = [];
+  await pollAndForward(
+    0,
+    PRINCIPAL_ID,
+    controlPollAdapters({
+      getUpdates: async () => ({
+        success: true,
+        updates: [mkControlCallbackUpdate({ fromId: PRINCIPAL_ID, data: 'control:pause-until-resume', topicId: 900 })],
+      }),
+      applyPause: async (d) => applied.push(d),
+    })
+  );
+  assert.deepEqual(applied, [undefined]);
+});
+
+test('BL-423: tapping Resume now while paused restores intake', async () => {
+  const resumed = [];
+  await pollAndForward(
+    0,
+    PRINCIPAL_ID,
+    controlPollAdapters({
+      getUpdates: async () => ({
+        success: true,
+        updates: [mkControlCallbackUpdate({ fromId: PRINCIPAL_ID, data: 'control:resume-now', topicId: 900 })],
+      }),
+      getPauseState: async () => ({ active: true, untilMs: 12345 }),
+      resumeNow: async () => resumed.push(true),
+    })
+  );
+  assert.deepEqual(resumed, [true]);
+});
+
+test('BL-423: an unauthorised sender\'s /stop in the Control topic is refused with no swarm action', async () => {
+  const menus = [];
+  const result = await pollAndForward(
+    0,
+    PRINCIPAL_ID,
+    controlPollAdapters({
+      getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: 999, topicId: 900, text: '/stop' })] }),
+      postControlStopModesMenu: async () => menus.push(true),
+    })
+  );
+  assert.deepEqual(menus, []);
+  assert.equal(result.dropped, 1);
+});
+
+test('BL-423 guard #4: an unauthorised tap on a control button is refused, spinner never answered, no swarm action', async () => {
+  const executed = [];
+  const answered = [];
+  const result = await pollAndForward(
+    0,
+    PRINCIPAL_ID,
+    controlPollAdapters({
+      getUpdates: async () => ({
+        success: true,
+        updates: [mkControlCallbackUpdate({ fromId: 999, data: 'control:emergency-stop', topicId: 900 })],
+      }),
+      getPendingControlConfirm: async () => ({ kind: 'stop-modes' }),
+      executeEmergencyStop: async () => executed.push('emergency'),
+      answerCallbackQuery: async (id) => answered.push(id),
+    })
+  );
+  assert.deepEqual(executed, []);
+  assert.deepEqual(answered, []);
+  assert.equal(result.dropped, 1);
+});
+
+test('BL-423: a /stop outside the Control topic is ignored with no swarm action, never falls through to ordinary routing', async () => {
+  const menus = [];
+  const result = await pollAndForward(
+    0,
+    PRINCIPAL_ID,
+    controlPollAdapters({
+      getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 5, text: '/stop' })] }),
+      subjectForTopic: () => undefined,
+      postControlStopModesMenu: async () => menus.push(true),
+      openSubjectAndRecord: async () => {
+        // A stray "/stop" outside the Control topic is ordinary chatter -
+        // it legitimately opens a fresh subject via the pre-existing
+        // unmapped-topic path, exactly like any other message would.
+      },
+    })
+  );
+  assert.deepEqual(menus, []);
+  assert.equal(result.posted, 1);
+});
+
+test('BL-423: an ordinary chat message in the Control topic (not a recognized verb) is dropped, never opens a fresh subject', async () => {
+  const result = await pollAndForward(
+    0,
+    PRINCIPAL_ID,
+    controlPollAdapters({
+      getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 900, text: 'hello there' })] }),
+    })
+  );
+  assert.equal(result.dropped, 1);
+});
+
+test('BL-423: a callback tap for an unrelated (approve/reject) button in the Control topic falls through to the ordinary callback dispatch untouched', async () => {
+  const result = await pollAndForward(
+    0,
+    PRINCIPAL_ID,
+    controlPollAdapters({
+      getUpdates: async () => ({
+        success: true,
+        updates: [mkControlCallbackUpdate({ fromId: PRINCIPAL_ID, data: 'approve:BL-1', topicId: 900 })],
+      }),
+      recordApprovalReply: async () => true,
+    })
+  );
+  assert.equal(result.posted, 1);
 });
 
 // ── deliverOperatorContext: pending Reject/Amend follow-up consumption ───
