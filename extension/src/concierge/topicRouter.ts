@@ -199,12 +199,18 @@ export function messageTextForEvent(event: SwarmEvent): string {
 // Every other event type gets no buttons (undefined) - decideTopicAction
 // below only attaches this field to its TopicAction when non-undefined, so
 // every existing TaskStarted/NeedsApproval/TaskCompleted shape is unaffected.
+// BL-490: a fourth verb, Expedite - approve + force-promote paused->active +
+// dispatch to build now, bypassing the coordinator's sequencing triage.
+// Routed through the SAME callback_data namespace/round-trip as the other
+// three (decideCallbackQueryAction's CALLBACK_DATA_PATTERN in
+// telegramFrontDeskBotCore.ts), never a second callback path.
 function approvalRequestedButtons(backlogId: string): InlineKeyboardButton[][] {
   return [
     [
       { text: 'Approve', callbackData: `approve:${backlogId}` },
       { text: 'Amend', callbackData: `amend:${backlogId}` },
       { text: 'Reject', callbackData: `reject:${backlogId}` },
+      { text: 'Expedite', callbackData: `expedite:${backlogId}` },
     ],
   ];
 }

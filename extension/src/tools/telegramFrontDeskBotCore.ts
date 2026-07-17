@@ -10,6 +10,7 @@ import { TelegramUpdate, TelegramCallbackQuery, TelegramPollAnswer, GetUpdatesRe
 import { computeTelegramRetryBackoffMs } from '../notify/telegramRetry';
 import { classifyApprovalReplyAction, classifyApprovalsTopicReply } from '../concierge/pendingApprovalReply';
 import { ApprovalDecisionVerdict, composeDecidedAskText, alreadyDecidedToastText } from '../concierge/approvalAskClosing';
+import { unsafeDispatchToastText } from '../concierge/expediteSafety';
 import { classifyRecertTopicReply } from '../concierge/recertTopicReply';
 import { roleForTopic } from '../concierge/roleTopicMapStore';
 import { ControlEvent, ControlDecision, PendingControlConfirm, PauseState, decideControlEventAction } from './telegramControlCore';
@@ -648,6 +649,29 @@ export interface PollAdapters {
   // effect alongside the unconditional context post, naturally idempotent,
   // no updateId needed).
   recordRejectionReply: (backlogId: string, reason: string) => Promise<boolean>;
+  // BL-490: the Expedite verb's own three effects, each optional - absent
+  // means "not wired", degrading recordExpediteDecisionAndClose to
+  // record-and-close only, the same "new capability defaults to a no-op"
+  // posture every other optional adapter in this file already has.
+  // PROMOTE: force-moves the ticket from backlog/paused/ into backlog/active/
+  // (backlogWriter.ts's promoteToActive) - a no-op (returns false) when the
+  // ticket is already active, satisfying "no redundant promotion" (scenario
+  // 05) with no separate active/paused check of its own.
+  promoteTicketIfPaused?: (backlogId: string) => Promise<boolean>;
+  // FILE-LEVEL SAFETY CHECK: reads whether an in-flight build touches the
+  // same file(s) this ticket's own scope names (expediteSafety.ts's pure
+  // findFileCollision, driven by real active-ticket/in-flight-handoff reads
+  // in the wiring that implements this) - returns the colliding in-flight
+  // ticket's id, or undefined when dispatch is safe. Consulted BEFORE
+  // dispatchExpediteBuild below; a reported collision skips dispatch this
+  // tick without preempting the in-flight build (acceptance scenario 06).
+  checkExpediteFileCollision?: (backlogId: string) => Promise<string | undefined>;
+  // DISPATCH: injects a routing handoff so the ticket starts building
+  // immediately, bypassing the coordinator's own orthogonality/sequencing
+  // triage (route_backlog_to_coder.sh's existing injector, shelled out to -
+  // never a second, hand-rolled dispatcher, and never a hand-written
+  // inbox/new/ file).
+  dispatchExpediteBuild?: (backlogId: string) => Promise<boolean>;
   // BL-434: the Approvals-topic reply's own surfacing channel - a reply
   // naming an id that turns out not to be pending (recordApprovalReply/
   // recordRejectionReply's own `changed` result reports false) is told so
@@ -997,7 +1021,7 @@ async function closeApprovalAskIfPossible(adapters: PollAdapters, backlogId: str
 export async function recordApprovalDecisionAndClose(
   adapters: PollAdapters,
   backlogId: string,
-  verdict: ApprovalDecisionVerdict,
+  verdict: { kind: 'approved' } | { kind: 'rejected'; reason: string },
   nowMs: number = Date.now()
 ): Promise<boolean> {
   const changed =
@@ -1006,6 +1030,49 @@ export async function recordApprovalDecisionAndClose(
     await closeApprovalAskIfPossible(adapters, backlogId, verdict, nowMs);
   }
   return changed;
+}
+
+// BL-490: the Expedite verb's own decision-and-close routine - a sibling of
+// recordApprovalDecisionAndClose above, not a branch inside it, because
+// Expedite's effect is three ordered steps (approve, promote, dispatch)
+// where the other verdicts are only ever one (record + close). Step (a)
+// reuses the EXACT SAME recordApprovalReply effect a plain Approve tap uses
+// (the ticket's own "never a divergent second approval path" constraint) -
+// never recordRejectionReply, which Expedite has no use for. Steps (b)/(c)
+// only run on a REAL transition (changed === true), the same "never act on
+// an already-decided/unknown ticket" posture recordApprovalDecisionAndClose
+// already established - reachable here too even though the caller already
+// guards via answerIfAlreadyDecided, because that guard reads a persisted
+// verdict that can only ever be 'approved'/'rejected' (never 'expedited'
+// itself, since Expedite writes through the same 'approved' field), so a
+// second belt-and-braces check costs nothing and keeps this function safe
+// to call directly (e.g. from an acceptance/unit test) without relying on
+// the caller's own guard ordering.
+// PROMOTE (b) and DISPATCH (c) are both OPTIONAL adapters - absent means
+// "not wired", degrading to record-and-close only, the same "new capability
+// defaults to a no-op" posture every other optional adapter in this file
+// already has. DISPATCH only fires when no same-file collision is reported
+// (checkExpediteFileCollision) - a collision leaves the now-approved,
+// now-promoted ticket to build via the ordinary pipeline instead of jumping
+// the queue immediately, so the in-flight same-file build is never
+// preempted (acceptance scenario 06); the collision id is returned so the
+// caller can surface the "unsafe, queued behind" toast naming it.
+export async function recordExpediteDecisionAndClose(
+  adapters: PollAdapters,
+  backlogId: string,
+  nowMs: number = Date.now()
+): Promise<{ changed: boolean; collision?: string }> {
+  const changed = await adapters.recordApprovalReply(backlogId);
+  if (!changed) {
+    return { changed: false };
+  }
+  await adapters.promoteTicketIfPaused?.(backlogId);
+  const collision = await adapters.checkExpediteFileCollision?.(backlogId);
+  if (!collision) {
+    await adapters.dispatchExpediteBuild?.(backlogId);
+  }
+  await closeApprovalAskIfPossible(adapters, backlogId, { kind: 'expedited' }, nowMs);
+  return { changed: true, collision };
 }
 
 async function deliverOperatorContext(backlogId: string, text: string, updateId: number, adapters: PollAdapters): Promise<boolean> {
@@ -1201,11 +1268,15 @@ export interface AskOption {
 
 export type CallbackButtonDecision =
   | { action: 'approve'; backlogId: string }
+  | { action: 'expedite'; backlogId: string }
   | { action: 'await-followup'; backlogId: string; kind: 'reject' | 'amend' }
   | { action: 'answer-ask'; threadId: string; optionIndex: number }
   | { action: 'drop'; reason: 'not-my-chat' | 'not-principal' | 'unrecognized-data' };
 
-const CALLBACK_DATA_PATTERN = /^(approve|reject|amend):(.+)$/;
+// BL-490: 'expedite' joins the same literal callback_data namespace as
+// approve/reject/amend - routed through the SAME round-trip
+// (decideCallbackQueryAction below), never a second callback path.
+const CALLBACK_DATA_PATTERN = /^(approve|reject|amend|expedite):(.+)$/;
 // BL-483: an ask option's own callback_data - an option INDEX + the ask's
 // threadId, never the label text (the ticket's own "callback_data <= 64
 // bytes" constraint - a label is unbounded, an index plus a short SUP-###
@@ -1255,7 +1326,13 @@ export function decideCallbackQueryAction(
     return { action: 'drop', reason: 'unrecognized-data' };
   }
   const [, kind, backlogId] = match;
-  return kind === 'approve' ? { action: 'approve', backlogId } : { action: 'await-followup', backlogId, kind: kind as 'reject' | 'amend' };
+  if (kind === 'approve') {
+    return { action: 'approve', backlogId };
+  }
+  if (kind === 'expedite') {
+    return { action: 'expedite', backlogId };
+  }
+  return { action: 'await-followup', backlogId, kind: kind as 'reject' | 'amend' };
 }
 
 // A legitimate tap (right chat, right principal) always clears its own
@@ -1395,6 +1472,21 @@ async function deliverAskAnswer(
 // resolveAskOptions, postToBridge vs recordApprovalDecisionAndClose) -
 // dispatched before answerIfAlreadyDecided, which only ever reads
 // decision.backlogId (absent on an 'answer-ask' decision).
+// BL-490: split out of dispatchRecognizedCallbackDecision below for the same
+// CRAP-budget reason this file already applies throughout - an Expedite tap
+// answers its own callback with a CONDITIONAL toast (the unsafe-collision
+// text, or the ordinary silent spinner-clear), unlike every other
+// recognized decision's fixed answerCallbackQuery(id) call just below.
+async function dispatchExpediteCallback(
+  callbackQuery: TelegramCallbackQuery,
+  decision: { action: 'expedite'; backlogId: string },
+  adapters: PollAdapters
+): Promise<UpdateDeliveryOutcome> {
+  const result = await recordExpediteDecisionAndClose(adapters, decision.backlogId);
+  await adapters.answerCallbackQuery(callbackQuery.id, result.collision ? unsafeDispatchToastText(result.collision) : undefined);
+  return 'posted';
+}
+
 async function dispatchRecognizedCallbackDecision(
   callbackQuery: TelegramCallbackQuery,
   decision: CallbackButtonDecision,
@@ -1409,6 +1501,9 @@ async function dispatchRecognizedCallbackDecision(
   }
   if (await answerIfAlreadyDecided(callbackQuery, decision, adapters)) {
     return 'dropped';
+  }
+  if (decision.action === 'expedite') {
+    return dispatchExpediteCallback(callbackQuery, decision, adapters);
   }
   await adapters.answerCallbackQuery(callbackQuery.id);
   if (decision.action === 'drop') {

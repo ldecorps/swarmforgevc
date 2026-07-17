@@ -125,6 +125,8 @@ import {
 } from './telegramControlCore';
 import { backlogForTopic } from '../concierge/topicRouter';
 import { recordApprovalReply, recordRejectionReply, readRecordedVerdict } from '../concierge/pendingApprovalReply';
+import { extractScopePaths, findFileCollision, InFlightScope } from '../concierge/expediteSafety';
+import { promoteToActive } from '../panel/backlogWriter';
 import {
   computeRecertBatch,
   isScenarioUpForRecert,
@@ -1359,6 +1361,59 @@ export async function resumeNow(
   await postControlMessage(botToken, chatId, controlTopicId, 'Resumed - new work will be promoted again.', undefined, postFn);
 }
 
+function scopeTextFor(item: { description?: string; notes?: string } | undefined): string {
+  if (!item) {
+    return '';
+  }
+  return `${item.description ?? ''}\n${item.notes ?? ''}`;
+}
+
+// BL-490: the Expedite verb's real same-file safety read - reuses
+// readRoleTicket below (the SAME "which ticket does each pipeline role
+// currently hold" resolution the pipeline board already relies on,
+// pipeline_stage_cli.bb-backed) rather than a second, hand-rolled "is a
+// build in flight" notion, and readBacklogFolders' own active-item parse
+// for each ticket's own description/notes text (expediteSafety.ts's
+// extractScopePaths reads the SAME "Scope:"/prose convention the
+// coordinator's own Concurrent Work Orthogonality rule already reads by
+// hand - workflow.prompt). The pure decision (findFileCollision) stays in
+// expediteSafety.ts; this is only the impure read/compose that feeds it.
+export function findExpediteFileCollision(targetPath: string, backlogId: string): string | undefined {
+  const active = readBacklogFolders(targetPath).active;
+  const targetPaths = extractScopePaths(scopeTextFor(active.find((item) => item.id === backlogId)));
+  if (targetPaths.length === 0) {
+    return undefined;
+  }
+  const roleTicket = readRoleTicket(targetPath);
+  const inFlightIds = new Set(Object.values(roleTicket).filter((id) => id !== backlogId));
+  const inFlight: InFlightScope[] = [...inFlightIds].map((id) => ({
+    id,
+    paths: extractScopePaths(scopeTextFor(active.find((item) => item.id === id))),
+  }));
+  return findFileCollision(targetPaths, inFlight);
+}
+
+export function routeBacklogToCoderScriptPath(targetPath: string): string {
+  return path.join(targetPath, 'swarmforge', 'scripts', 'route_backlog_to_coder.sh');
+}
+
+// BL-490 DISPATCH step: shells out to the EXISTING routing injector
+// (route_backlog_to_coder.sh, which itself validates+queues through
+// swarm_handoff.sh - never a hand-written inbox/new/ file) - the ticket's
+// own "reuse the injector; do not build a second dispatcher" constraint.
+// Degrades to false on any failure (missing script, non-zero exit, no
+// backlog/active/ match), mirroring runKillAllSwarm's own try/catch ->
+// {ok} shape above - a failed dispatch never crashes the poll tick, the
+// ticket stays approved/promoted and picks up via the ordinary pipeline.
+export async function runExpediteDispatch(targetPath: string, backlogId: string): Promise<boolean> {
+  try {
+    await execFileAsync('bash', [routeBacklogToCoderScriptPath(targetPath), backlogId, targetPath]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function buildPollAdapters(
   botToken: string,
   targetPath: string,
@@ -1377,6 +1432,13 @@ function buildPollAdapters(
     postOperatorContext: (backlogId, text, updateId) => postOperatorContext(targetPath, backlogId, text, updateId),
     recordApprovalReply: (backlogId) => Promise.resolve(recordApprovalReply(targetPath, backlogId)),
     recordRejectionReply: (backlogId, reason) => Promise.resolve(recordRejectionReply(targetPath, backlogId, reason)),
+    // BL-490: the Expedite verb's three real effects - promote (backlogWriter's
+    // promoteToActive, a no-op for an already-active ticket), the file-level
+    // safety check, and the dispatch bridge (shells to the existing
+    // route_backlog_to_coder.sh injector).
+    promoteTicketIfPaused: (backlogId) => Promise.resolve(promoteToActive(targetPath, backlogId).moved),
+    checkExpediteFileCollision: (backlogId) => Promise.resolve(findExpediteFileCollision(targetPath, backlogId)),
+    dispatchExpediteBuild: (backlogId) => runExpediteDispatch(targetPath, backlogId),
     // BL-484: the closing routine's own three adapters - a decided ask
     // strips its buttons and shows the verdict.
     readRecordedApprovalVerdict: (backlogId) => Promise.resolve(readRecordedVerdict(targetPath, backlogId)),

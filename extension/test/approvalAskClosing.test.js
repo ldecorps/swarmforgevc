@@ -46,3 +46,20 @@ test('alreadyDecidedToastText: names the approved verdict', () => {
 test('alreadyDecidedToastText: names the rejected verdict', () => {
   assert.equal(alreadyDecidedToastText('rejected'), 'Already decided: rejected');
 });
+
+// BL-490: an Expedite tap is a decision too - it closes the ask through the
+// SAME routine, with its own "-- Expedited <UTC>" line (never an "Approved"
+// line, so the topic audit trail distinguishes an ordinary approve from a
+// jump-the-queue expedite).
+
+test('decisionLineFor: an expedited verdict records the Expedited verb and the UTC decision time', () => {
+  const nowMs = Date.UTC(2026, 6, 17, 3, 7);
+  assert.equal(decisionLineFor({ kind: 'expedited' }, nowMs), '-- Expedited 2026-07-17 03:07 UTC');
+});
+
+test('composeDecidedAskText: an expedited verdict appends the Expedited line below the original text', () => {
+  const original = 'BL-490 needs your approval...';
+  const nowMs = Date.UTC(2026, 6, 17, 3, 7);
+  const text = composeDecidedAskText(original, { kind: 'expedited' }, nowMs);
+  assert.equal(text, `${original}\n-- Expedited 2026-07-17 03:07 UTC`);
+});

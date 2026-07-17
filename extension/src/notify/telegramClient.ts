@@ -551,9 +551,14 @@ export async function createForumTopic(
 // BL-299: closes a forum topic (read-only, history preserved) - CLOSE, not
 // delete (deleteForumTopic would destroy the very completion summary just
 // posted into it). Mirrors createForumTopic's own shape/error handling.
+// BL-494: retryAfterSeconds rides the shared TelegramApiCallResult (see
+// callTelegramApi above), same as editForumTopic's own result shape - so
+// the legacy per-ticket topic reconcile can honour a 429's own told-you-so
+// wait instead of treating it as an ordinary opaque failure.
 export interface CloseForumTopicResult {
   success: boolean;
   error?: string;
+  retryAfterSeconds?: number;
 }
 
 export async function closeForumTopic(
@@ -565,9 +570,50 @@ export async function closeForumTopic(
   const body = JSON.stringify({ chat_id: chatId, message_thread_id: messageThreadId });
   const result = await callTelegramApi(token, 'closeForumTopic', body, postFn);
   if (!result.success) {
-    return { success: false, error: result.error };
+    return { success: false, error: result.error, retryAfterSeconds: result.retryAfterSeconds };
   }
   return { success: true };
+}
+
+// Shared unbounded-but-server-told retry loop behind every
+// *WithRateLimitRetry wrapper below (closeForumTopic, editForumTopic): honor
+// a 429's own told-you-so retry_after and keep retrying the SAME call, since
+// the wait is a finite, server-given duration rather than an open-ended
+// guess; a genuine (non-429) failure returns false immediately. Extracted so
+// each Telegram method's wrapper differs only in which call it retries, not
+// in the retry mechanics themselves (BL-414 already made this same call for
+// setTopicIconWithRateLimitRetry vs editForumTopicWithRateLimitRetry).
+async function retryOnRateLimit(
+  call: () => Promise<{ success: boolean; retryAfterSeconds?: number }>,
+  wait: (ms: number) => Promise<void>
+): Promise<boolean> {
+  for (;;) {
+    const result = await call();
+    if (result.success) {
+      return true;
+    }
+    if (result.retryAfterSeconds === undefined) {
+      return false;
+    }
+    await wait(result.retryAfterSeconds * 1000);
+  }
+}
+
+// BL-494: the close-endpoint sibling of editForumTopicWithRateLimitRetry
+// below - same unbounded-but-server-told retry contract (a mass close over
+// a rate-limited surface at first-run volume is exactly the backfill-storm
+// class editForumTopicWithRateLimitRetry/setTopicIconWithRateLimitRetry
+// already exist to prevent), reused rather than a second throttle
+// mechanism, just wrapping closeForumTopic instead of editForumTopic since
+// close and edit are different Telegram methods.
+export async function closeForumTopicWithRateLimitRetry(
+  token: string,
+  chatId: string,
+  messageThreadId: number,
+  wait: (ms: number) => Promise<void> = defaultWaitMs,
+  postFn: TelegramPostFn = defaultPost
+): Promise<boolean> {
+  return retryOnRateLimit(() => closeForumTopic(token, chatId, messageThreadId, postFn), wait);
 }
 
 // BL-332: reopens a CLOSED (never deleted) forum topic - history and the
@@ -685,16 +731,7 @@ export async function editForumTopicWithRateLimitRetry(
   wait: (ms: number) => Promise<void> = defaultWaitMs,
   postFn: TelegramPostFn = defaultPost
 ): Promise<boolean> {
-  for (;;) {
-    const result = await editForumTopic(token, chatId, topicId, update, postFn);
-    if (result.success) {
-      return true;
-    }
-    if (result.retryAfterSeconds === undefined) {
-      return false;
-    }
-    await wait(result.retryAfterSeconds * 1000);
-  }
+  return retryOnRateLimit(() => editForumTopic(token, chatId, topicId, update, postFn), wait);
 }
 
 // BL-342: the ONLY valid source of a topic icon id - Telegram accepts icon
