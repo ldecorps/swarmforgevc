@@ -26,13 +26,17 @@ function bestByQualityOf(candidates: ModelAggregate[]): { modelId: string | null
   return top.length === 1 ? { modelId: top[0].modelId, tied: false } : { modelId: null, tied: true };
 }
 
+// BL-388: value and cheapest-acceptable are both priced on
+// meanReworkAdjustedCostUsd, never raw meanCostUsd - a cheap first diff
+// that caused a lot of rework is not cheap, and must not win either
+// category on the strength of its first diff alone.
 function bestByValueOf(pricedCandidates: ModelAggregate[]): ModelAggregate | null {
-  return pricedCandidates.length > 0 ? maxBy(pricedCandidates, (c) => c.meanQuality / (c.meanCostUsd as number)) : null;
+  return pricedCandidates.length > 0 ? maxBy(pricedCandidates, (c) => c.meanQuality / (c.meanReworkAdjustedCostUsd as number)) : null;
 }
 
 function cheapestAcceptableOf(acceptable: ModelAggregate[]): ModelAggregate | null {
   return acceptable.length > 0
-    ? acceptable.reduce((cheapest, c) => ((c.meanCostUsd as number) < (cheapest.meanCostUsd as number) ? c : cheapest))
+    ? acceptable.reduce((cheapest, c) => ((c.meanReworkAdjustedCostUsd as number) < (cheapest.meanReworkAdjustedCostUsd as number) ? c : cheapest))
     : null;
 }
 
@@ -59,7 +63,7 @@ export function rankModels(aggregates: ModelAggregate[], qualityThreshold: numbe
   }
 
   const { modelId: bestByQuality, tied } = bestByQualityOf(candidates);
-  const pricedCandidates = candidates.filter((c) => c.meanCostUsd !== null && c.meanCostUsd > 0);
+  const pricedCandidates = candidates.filter((c) => c.meanReworkAdjustedCostUsd !== null && c.meanReworkAdjustedCostUsd > 0);
   const bestByValue = bestByValueOf(pricedCandidates);
   const acceptable = pricedCandidates.filter((c) => c.meanQuality >= qualityThreshold);
   const cheapestAcceptable = cheapestAcceptableOf(acceptable);

@@ -22,6 +22,8 @@ function outcome(overrides) {
     modelId: 'm',
     repetition: 1,
     ran: true,
+    survived: true,
+    reworkRounds: 0,
     qualityScore: 1,
     testsPassed: 1,
     testsTotal: 1,
@@ -48,4 +50,39 @@ test('excludedModelAggregate never ran a trial and carries its reason', () => {
   assert.equal(agg.excluded, true);
   assert.equal(agg.repetitions, 0);
   assert.equal(agg.exclusionReason, 'cannot execute shell actions autonomously');
+  assert.equal(agg.survivalRate, 0);
+  assert.equal(agg.meanReworkRounds, 0);
+  assert.equal(agg.meanReworkAdjustedCostUsd, null);
+});
+
+// ── BL-388: survival rate and rework-adjusted cost ────────────────────────
+
+test('BL-388 the-ranking-consumes-survival-and-rework-01: survivalRate reflects the fraction of runs that survived the pipeline', () => {
+  const model = { id: 'm', provider: 'claude', model: 'sonnet' };
+  const runs = [outcome({ survived: true }), outcome({ survived: true }), outcome({ survived: false, qualityScore: 0 })];
+  const agg = aggregateModelTrials(model, runs);
+  assert.equal(agg.survivalRate, 2 / 3);
+});
+
+test('survivalRate is 0 for a model with no runs at all', () => {
+  const model = { id: 'm', provider: 'claude', model: 'sonnet' };
+  const agg = aggregateModelTrials(model, []);
+  assert.equal(agg.survivalRate, 0);
+});
+
+test('BL-388: meanReworkAdjustedCostUsd prices each run at costUsd * (1 + reworkRounds), then averages', () => {
+  const model = { id: 'm', provider: 'claude', model: 'sonnet' };
+  // run 1: 0.01 * (1 + 2) = 0.03; run 2: 0.02 * (1 + 0) = 0.02 -> mean 0.025
+  const runs = [outcome({ costUsd: 0.01, reworkRounds: 2 }), outcome({ costUsd: 0.02, reworkRounds: 0 })];
+  const agg = aggregateModelTrials(model, runs);
+  assert.equal(agg.meanReworkAdjustedCostUsd, 0.025);
+  assert.equal(agg.meanReworkRounds, 1);
+});
+
+test('meanReworkAdjustedCostUsd is null under the exact same condition as meanCostUsd - no priced run at all', () => {
+  const model = { id: 'm', provider: 'claude', model: 'sonnet' };
+  const runs = [outcome({ costUsd: null, reworkRounds: 1 })];
+  const agg = aggregateModelTrials(model, runs);
+  assert.equal(agg.meanCostUsd, null);
+  assert.equal(agg.meanReworkAdjustedCostUsd, null);
 });

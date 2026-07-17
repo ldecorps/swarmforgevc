@@ -119,6 +119,10 @@
       roleLeaderboardColCategory: 'Category',
       roleLeaderboardColModel: 'Model',
       roleLeaderboardColQuality: 'Quality',
+      // BL-388: survival + rework are the epic's own thesis surfaced -
+      // what SURVIVED the pipeline, and what rework it cost to get there.
+      roleLeaderboardColSurvived: 'Survived',
+      roleLeaderboardColRework: 'Rework',
       roleLeaderboardColCost: 'Cost',
       roleLeaderboardColDuration: 'Duration',
       roleLeaderboardBest: 'Best',
@@ -131,6 +135,10 @@
       roleLeaderboardNoAcceptableSeparator: ': ',
       roleLeaderboardNoCost: 'no priced usage',
       roleLeaderboardSecondsSuffix: 's',
+      // BL-388: a report committed before survival/rework existed carries
+      // neither field - shown as "no data", never a crash or a bare NaN.
+      roleLeaderboardNoData: 'no data',
+      roleLeaderboardReworkRoundsSuffix: ' rounds',
     },
     fr: {
       pageTitle: 'SwarmForge — tableau de bord',
@@ -226,6 +234,8 @@
       roleLeaderboardColCategory: 'Catégorie',
       roleLeaderboardColModel: 'Modèle',
       roleLeaderboardColQuality: 'Qualité',
+      roleLeaderboardColSurvived: 'A survécu',
+      roleLeaderboardColRework: 'Reprises',
       roleLeaderboardColCost: 'Coût',
       roleLeaderboardColDuration: 'Durée',
       roleLeaderboardBest: 'Meilleur',
@@ -235,6 +245,8 @@
       roleLeaderboardNoAcceptableSeparator: ' : ',
       roleLeaderboardNoCost: 'pas d\'usage tarifé',
       roleLeaderboardSecondsSuffix: 's',
+      roleLeaderboardNoData: 'aucune donnée',
+      roleLeaderboardReworkRoundsSuffix: ' reprises',
     },
   };
 })();
