@@ -1,0 +1,113 @@
+id: BL-486
+title: "Auto-reap orphaned SwarmForge agent processes left by dry-runs, with a BL-367-safe never-touch-a-live-agent predicate"
+milestone: M8
+type: feature
+severity: low
+epic: ""
+priority: 9
+direction: human-requested
+depends_on: []
+source: "backlog/INTAKE-operator-question-1784273464498.md — a directive from the human operator (via the operator console, 2026-07-17T07:31:04Z), filed by the Operator as a raw intake question it could not answer: 'Can the swarm auto-reap orphaned agent processes?' Motivating incident: a 6h43m-old orphaned coder (pid 3168697) from an FES/second-swarm dry-run was found and killed by hand this session — launched with --remote-control SwarmForge-Coder from a /tmp/tmp.XXXX/.swarmforge/... mktemp dir, WITHOUT --dangerously-skip-permissions (the dry-run tell), cwd already `(deleted)`, 0 children, ~0% CPU."
+
+notes: |
+  ORIGIN — operator-relayed human directive, drained from the backlog root. The operator gathered the
+  facts and proposed a safe heuristic but explicitly left FINAL DESIGN to the specifier. This is
+  self-improvement the swarm should own: onboarding / second-swarm bring-up dry-runs (FES) run from a
+  temp checkout and don't always tear their agents down, so long-abandoned agent processes accumulate.
+
+  WHY THIS IS HIGH-RISK (spec defensively):
+    - Auto-killing `claude` processes is the exact bug class behind BL-367, where an unscoped socket glob
+      matched and killed the LIVE swarm's own socket FIVE times in one session (see kill_all_swarm.sh
+      ~L45-66 and test_swarm_socket_not_in_tmp.sh). A pattern-based reaper (`pgrep claude | kill`) is
+      FORBIDDEN. Every existing reaper (kill_all_swarm.sh, swarm-cleanup.sh, swarm-window-watchdog.sh)
+      targets an EXPLICIT tmux socket + window-id list, never a process pattern — this reaper keeps that
+      discipline: enumeration merely SURFACES candidates; the kill decision is per-pid through a pure
+      predicate whose exclusions win first. No code path may kill an enumeration/pattern match directly.
+    - FES second-swarm bring-up (BL-439) is ACTIVE right now. A dry-run agent that is legitimately running
+      must NOT be reaped. The age gate is the discriminator that protects an in-progress dry-run.
+
+  BUILD ON THE BL-458 FIXTURE-REAPER PRECEDENT (do NOT invent a new mechanism):
+    - Pure decision lib (candidate: swarmforge/scripts/orphan_agent_reaper_lib.bb) — a `reapable?` taking
+      decision inputs, mirroring fixture_reaper_lib.bb's `reapable?`, with the live-window-set exclusion
+      checked FIRST and winning over every other signal (the socket-root? precedent). Decision order:
+        (cond
+          in-live-window-set?          false   ; DECAPITATION guard — wins first
+          cwd-inside-root?             false   ; a live agent's cwd resolves inside $ROOT
+          (not remote-control-agent?) false   ; only SwarmForge-* remote-control claude candidates
+          has-children?                false   ; doing work — never reap
+          (not stale?)                 false   ; too young — could be an in-progress dry-run
+          :else true)
+    - Impure sweep lib (candidate: swarmforge/scripts/orphan_agent_reaper_sweep_lib.bb) — enumerates
+      candidate pids, reads each pid's cmdline (SwarmForge-* remote-control tell), cwd via /proc, children
+      via `pgrep -P`, computes the live window pid set, kills via ProcessHandle/kill, and audit-logs each
+      kill. EVERY real read/action is an INJECTABLE ADAPTER (same posture as fixture_reaper_sweep_lib.bb),
+      so a wiring test drives pids it spawned itself while supplying their metadata — and NEVER scans the
+      tester's real /proc for `SwarmForge-*`, which could enumerate (and evaluate) a genuinely live agent
+      (engineering.prompt "the process table is a shared global").
+    - Live wiring: call the new sweep from the SAME always-alive janitor tick that already runs the
+      BL-458 fixture sweep — operator_runtime.bb's `--tick-once` (it already load-files
+      fixture_reaper_sweep_lib.bb at ~L83). Plus a thin standalone CLI (candidate:
+      swarmforge/scripts/reap_orphan_agents.bb) modelled on reap_stale_test_fixtures.bb, so a human/test
+      can trigger the REAL sweep. ONE real implementation, two callers — never a second reimplementation.
+
+  THE GATES (defensive, exclusions win first) — reap a candidate ONLY when ALL hold:
+    1. NOT a member of the live control socket's tmux window set. Enumerate that set the way
+       kill_all_swarm.sh does: read the tracked socket at $ROOT/.swarmforge/tmux-socket (the BL-367-scoped
+       $ROOT/.swarmforge/tmux/*.sock path), `tmux -S <sock> list-panes -a -F '#{pane_pid}'`, then every
+       descendant via `pgrep -P`. This is the decapitation guard; it wins FIRST.
+    2. cwd is `(deleted)` OR resolves OUTSIDE $ROOT/.swarmforge — a live agent's cwd resolves inside root.
+       (The wiring maps a `(deleted)` cwd to cwd-inside-root? = false.)
+    3. no child processes (`pgrep -P <pid>` empty).
+    4. age past a stale threshold (env-seamed like the fixture reaper's SWARMFORGE_FIXTURE_REAP_STALE_HOURS
+       — e.g. SWARMFORGE_ORPHAN_REAP_STALE_HOURS, default proposed 6.0h to match the incident and the
+       fixture-reaper default). This is what protects an in-progress dry-run (BL-439 FES) from being reaped
+       young.
+    Candidate SCOPE: only processes whose cmdline carries `--remote-control SwarmForge-*` are ever
+    considered (`remote-control-agent?`). See approval_context for one OPTIONAL further gate.
+
+  AUDIT: every kill appends exactly one UTC-timestamped line to a dedicated audit log (cf.
+  kill-all-audit.log; candidate .swarmforge/daemon/reap-orphan-agents-audit.log, env-seamed for tests)
+  naming the pid, its resolved cwd, its age, and that all gates passed — surfaced, never silent.
+
+  OUT OF SCOPE: killing anything that is not a SwarmForge-* remote-control candidate; reaping fixture
+  DIRECTORIES (that is BL-458); any `pgrep <pattern> | kill` path; changing kill_all_swarm.sh's teardown.
+
+  E2E / QA PROCEDURE (verify in the live swarm without endangering it):
+    1. Confirm the pure decision: `bb <decision-runner> '<json>'` returns reapable=true only for the
+       all-gates-clear input and false for each single-gate-flipped input (feature scenario 01).
+    2. Reap proof against a PRIVATE fixture: spawn a disposable child (a `sleep`) whose metadata the sweep
+       is handed as an orphan-shaped candidate (old, deleted/outside cwd, no children, not in any window
+       set), run the real sweep pointed at fixture env seams, confirm that exact pid is killed and exactly
+       one audit line names it (scenario 02).
+    3. BL-367 non-regression: spawn a disposable child, register its pid in a FIXTURE tmux window set, run
+       the real sweep, confirm the child survives and NO audit line is written for it (scenario 03).
+    4. Sanity on the real host: with a live swarm up, run `reap_orphan_agents.bb` and confirm every live
+       agent pane pid (`tmux -S $ROOT/.swarmforge/tmux/*.sock list-panes -a -F '#{pane_pid}'`) is still
+       alive afterward and the audit log has no entry for any of them.
+
+acceptance:
+  # The externally-observable reap DECISION and the two most safety-critical WIRING behaviours (a real
+  # orphan is killed + audit-logged; a live-window-set pid is never touched) are pinned as the executable
+  # Gherkin feature below, mirroring BL-458's decision-outline + real-sweep-subprocess pattern. The exact
+  # helper file names, audit-log path, and env-seam names are implementation choices left to the coder;
+  # the behaviour and the gates are the contract.
+  feature: specs/features/BL-486-reap-orphaned-agent-processes.feature
+
+human_approval: pending
+approval_context: >
+  HIGH-RISK reaper of live `claude` processes — needs human sign-off before it lands. FIRM (my design, not
+  open): (a) the reaper NEVER pattern-kills — enumeration only surfaces candidates, the kill is per-pid
+  through the pure predicate; (b) the live control socket's tmux window set is the decapitation guard and
+  wins FIRST (BL-367 non-regression, proven by scenario 03); (c) all four gates required (not-in-window,
+  cwd-deleted-or-outside-root, no-children, stale) and the candidate scope is SwarmForge-* remote-control
+  only; (d) built on the BL-458 fixture-reaper pattern (pure lib + injectable-adapter sweep lib + wired
+  into operator_runtime.bb's existing janitor tick + a standalone CLI), NOT a new mechanism; (e) every kill
+  audit-logged. TWO points for the human's call: (1) the STALE-AGE threshold default — I propose 6.0h
+  (matches the incident and the fixture reaper's default), env-overridable; confirm or set. (2) An OPTIONAL
+  fifth gate the operator's incident notes hint at but did NOT list in its heuristic: reap ONLY processes
+  LACKING `--dangerously-skip-permissions` (the dry-run tell), which would scope reaping to dry-run
+  leftovers and never touch anything that was ever a live agent — but would also leave a crashed LIVE
+  swarm's orphan un-reaped. I left it OUT to stay faithful to the operator's stated 4-gate heuristic; say
+  the word and I add it. Priority 9 (self-improvement, not a live defect).
+
+mutation_cost: medium
