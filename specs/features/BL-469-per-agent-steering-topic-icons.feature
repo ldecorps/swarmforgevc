@@ -1,6 +1,6 @@
-# mutation-stamp: sha256=bd71102f7a219795b8ad3f3082c596f3f651cc51c3b1263102a70fbe3bf28de3
+# mutation-stamp: sha256=92b00a6b48dd5e4da06c3319db711dcd08c7f01d910b7c559b7c3c218640c187
 # acceptance-mutation-manifest-begin
-# {"version":1,"tested_at":"2026-07-17T01:50:03.109973308Z","feature_name":"Per-agent Telegram steering-topic icons","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-469-per-agent-steering-topic-icons.feature","background_hash":"f8f229d28c1b0ca5925e5df0389298aa680fe25f5e6d8f380987268dc953441e","implementation_hash":"unknown","scenarios":[{"index":0,"name":"<role> steering topic shows its mapped icon","scenario_hash":"c463353d05ad356c92412174215bfefb1314b7023246d1a4c3a901984d74b121","mutation_count":16,"result":{"Total":16,"Killed":16,"Survived":0,"Errors":0},"tested_at":"2026-07-17T01:50:03.109973308Z"}]}
+# {"version":1,"tested_at":"2026-07-17T02:33:13.235375345Z","feature_name":"Per-agent Telegram steering-topic icons","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-469-per-agent-steering-topic-icons.feature","background_hash":"f8f229d28c1b0ca5925e5df0389298aa680fe25f5e6d8f380987268dc953441e","implementation_hash":"unknown","scenarios":[{"index":0,"name":"<role> steering topic shows its mapped icon","scenario_hash":"4d57ae2f46e28118515c4b0b026fe040270e6ffc92a17db9c846139b1d3f8a84","mutation_count":16,"result":{"Total":16,"Killed":16,"Survived":0,"Errors":0},"tested_at":"2026-07-17T02:33:13.235375345Z"}]}
 # acceptance-mutation-manifest-end
 
 Feature: Per-agent Telegram steering-topic icons
