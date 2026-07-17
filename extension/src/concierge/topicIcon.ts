@@ -129,21 +129,28 @@ export interface StandingTopicTarget {
 // spelling and uppercase 'QA'. The original 2026-07-16 literal picks
 // (compass/crane/keyboard/broom/shield/magnifier) were QA-bounced
 // 2026-07-17: only 2 of 8 (specifier, documenter) resolved against
-// Telegram's live getForumTopicIconStickers set. This is the human-approved
-// 2026-07-17 remap - all 8 re-verified present in the live 112-sticker set
-// (specifier, real token) before adoption. QA's magnifier changed from 🔍
-// to 🔎, which also resolves the prior collision with ICON_EMOJI.paused.
+// Telegram's live getForumTopicIconStickers set. The first remap (2026-07-17)
+// swapped in 🎬 (coordinator) and 📚 (documenter), both re-verified present in
+// the live 112-sticker set - but QA's 2nd bounce (2026-07-17) found they
+// COLLIDE with the live epic-icon pool (epicIcon.ts's EPIC_ICON_POOL/
+// KNOWN_EPIC_ICON): 🎬 is the onboarding-target-repo epic, 📚 is the pool's
+// tail slot. This is the human-approved amended remap that resolves that
+// collision - coordinator -> 📣 (megaphone), documenter -> 📰 (newspaper),
+// both re-verified present in the live set and checked against every icon
+// table (ICON_EMOJI, STANDING_TOPIC_ICON, EPIC_ICON_POOL) before adoption.
+// QA's magnifier changed from 🔍 to 🔎 in the first remap, which also
+// resolves the prior collision with ICON_EMOJI.paused.
 export type RoleTopicIconRole = 'coordinator' | 'specifier' | 'architect' | 'coder' | 'cleaner' | 'hardender' | 'QA' | 'documenter';
 
 export const ROLE_TOPIC_ICON: Record<RoleTopicIconRole, string> = {
-  coordinator: '🎬',
+  coordinator: '📣',
   specifier: '📝',
   architect: '🏛',
   coder: '💻',
   cleaner: '🧼',
   hardender: '🧪',
   QA: '🔎',
-  documenter: '📚',
+  documenter: '📰',
 };
 
 // A single per-agent steering topic the concierge tick's icon sync targets -

@@ -11,6 +11,18 @@ depends_on: []
 source: "human (ldecorps) via Operator front-desk intake INTAKE-operator-question-1784237909142 (2026-07-16): replied to the icon proposal picking concrete literal icons per role. Verbatim: 'OK: coder as keyboard / Specifier as note taker / Architect as grue (fr) ... / Cleaner as broom / Hardender, first choice / QA ok for magnifier / Documenter as books'. Coordinator icon (not named in the reply) resolved 2026-07-16 by specifier clarifying question: the proposed 🎼 is a notation glyph absent from Telegram's forum-topic sticker set; human chose 🧭 (compass). Folds into the BL-425 per-agent-steering-topic cluster (BL-425 shipped the topics; this adds their icons)."
 
 notes: |
+  2ND QA BOUNCE 2026-07-17 (icon-pool COLLISION) → RESOLVED by human remap 2026-07-17 (specifier amend):
+    The 2026-07-17 remap (🎬📝🏛💻🧼🧪🔎📚) passed live-set validation but QA re-bounced it: coordinator 🎬
+    and documenter 📚 COLLIDE with the LIVE epic-icon pool — 🎬 = the onboarding epic (KNOWN_EPIC_ICON) and
+    is in EPIC_ICON_POOL; 📚 is the EPIC_ICON_POOL tail. The ticket's "no collision" claim below was checked
+    against the STALE epic list 🏆⚡️📁, which BL-449 RETIRED in favour of the musical-form pool
+    (🎙🎭🎬🎤🎨🎩🕺💃✍️📚). The blast radius: BL-469's work shares a batch tree, so BL-465 and BL-477 bounced
+    with it. The coder correctly escalated this as a spec decision (2026-07-17, priority-00 note).
+    FIX (human-chosen 2026-07-17 via ask/answer, both re-verified in the live 112-set + against every pool):
+      - coordinator 🎬 -> 📣 (megaphone, id 5309984423003823246) — dispatches/routes parcels to the roles
+      - documenter  📚 -> 📰 (newspaper, id 5434144690511290129) — published documentation
+    The other 6 (📝🏛💻🧼🧪🔎) are collision-free and unchanged. Corrected mapping: 📣📝🏛💻🧼🧪🔎📰.
+
   QA BOUNCE 2026-07-17 → RESOLVED by human remap approval 2026-07-17 (re-dispatched to coder):
     QA verified the ORIGINAL 8 firm ROLE_TOPIC_ICON emoji against Telegram's LIVE getForumTopicIconStickers
     set (112 stickers) at commit 1d4d0c6bf2, per this ticket's E2E procedure. Only 2 of 8 resolved
@@ -24,12 +36,14 @@ notes: |
   the approval. The FIRM mapping below and the feature file Examples are now the approved contract. All 8
   replacements were RE-VERIFIED by the specifier against the live 112-set on 2026-07-17
   (getForumTopicIconStickers + resolveIconStickerId, real token) — every one RESOLVED:
-    coordinator 🎬 (5368653135101310687), specifier 📝 (5373251851074415873),
+    coordinator 📣 (5309984423003823246), specifier 📝 (5373251851074415873),
     architect 🏛 (5350548830041415279), coder 💻 (5350554349074391003),
     cleaner 🧼 (5377468357907849200), hardender 🧪 (5411138633765757782),
-    QA 🔎 (5309965701241379366), documenter 📚 (5350481781306958339).
+    QA 🔎 (5309965701241379366), documenter 📰 (5434144690511290129).
     The new QA 🔎 also RESOLVES the prior 🔍/ICON_EMOJI.paused collision. No collision with ICON_EMOJI
-    (✅🦠🎵🔍👀), STANDING_TOPIC_ICON (🎟🛎📋📜), or epic icons (🏆⚡️📁).
+    (✅🦠🎵🔍👀), STANDING_TOPIC_ICON (🎟🛎📋📜), or the LIVE epic-icon pool (EPIC_ICON_POOL
+    🎙🎭🎬🎤🎨🎩🕺💃✍️📚 + KNOWN_EPIC_ICON) — coordinator 📣 and documenter 📰 replace the 🎬/📚 that DID
+    collide (see the 2nd-bounce note above; the earlier 🏆⚡️📁 epic list was stale, BL-449-retired).
     This decision also disposes the human's "pivot agents to orchestral icons" intake (INTAKE-...713343):
     the owned orchestral GLYPHS can only ride the PWA/owned-art surface, never Telegram topic icons, and the
     human took the Telegram-remap-only option — so Telegram carries these stock stand-ins and no PWA-glyph
@@ -45,14 +59,14 @@ description: |
   ALL_SWARM_ROLES; note the baked-in 'hardender' spelling and uppercase 'QA'). This is the human's approved
   2026-07-17 remap, adopted after the original literal picks proved absent from Telegram's live set; all 8
   are confirmed present in getForumTopicIconStickers (specifier re-verified against the real token 2026-07-17):
-    - coordinator -> 🎬  (clapper/director — directs the pipeline)
+    - coordinator -> 📣  (megaphone — dispatches/routes parcels to the roles)
     - specifier   -> 📝  (note taker)
     - architect   -> 🏛  (classical building — architecture)
     - coder       -> 💻  (laptop)
     - cleaner     -> 🧼  (soap — cleaning)
     - hardender   -> 🧪  (test tube — testing/hardening)
     - QA          -> 🔎  (magnifier)
-    - documenter  -> 📚  (books)
+    - documenter  -> 📰  (newspaper — published documentation; 📚/books is epic-pool-reserved)
 
   Scope (grep-confirmed live path 2026-07-16):
     - extension/src/concierge/topicIcon.ts: add a new ROLE_TOPIC_ICON table (Record<role-token,string>)
@@ -77,9 +91,14 @@ description: |
       newly-entering-only call) — NOT every tick. 8 topics is well within Telegram's rate limit, but
       reuse the change-gated / newly-owned posture regardless, per the first-tick-mass-transition rule
       (engineering, BL-342/BL-414): do not re-edit icons on a steady-state tick.
-    - No collision with any existing icon table: the approved mapping (🎬📝🏛💻🧼🧪🔎📚) shares no glyph
-      with ICON_EMOJI (✅🦠🎵🔍👀), STANDING_TOPIC_ICON (🎟🛎📋📜), or epic icons (🏆⚡️📁). (The prior
-      QA pick 🔍 collided with ICON_EMOJI.paused; the approved QA 🔎 resolves that collision.)
+    - No collision with any existing icon table: the corrected mapping (📣📝🏛💻🧼🧪🔎📰) shares no glyph
+      with ICON_EMOJI (✅🦠🎵🔍👀), STANDING_TOPIC_ICON (🎟🛎📋📜), or the LIVE epic-icon pool
+      (EPIC_ICON_POOL 🎙🎭🎬🎤🎨🎩🕺💃✍️📚 + KNOWN_EPIC_ICON). (The prior QA pick 🔍 collided with
+      ICON_EMOJI.paused; QA 🔎 resolved that. The 2026-07-17 remap's coordinator 🎬 and documenter 📚
+      then collided with the epic pool — 🎬 = the onboarding epic, 📚 = the pool tail — because the
+      collision check used the STALE 🏆⚡️📁 epic list; corrected to 📣 / 📰, both re-verified in the
+      live 112-set and against every pool. Coder: check the corrected glyphs against ALL four pools at
+      build, not the retired list.)
     - Do NOT touch the board files (pipelineBoardSync.ts / editInPlaceMessageSync.ts) or BL-425's
       question/redirect routing. Icon-only.
 
@@ -89,8 +108,8 @@ description: |
   edits conciergeTick.ts or topicIcon.ts. Self-contained, additive change.
 
   E2E QA PROCEDURE: on the real Telegram surface (BL-335, not a fixture), confirm each of the 8 per-agent
-  steering topics shows its mapped icon (coordinator 🎬, specifier 📝, architect 🏛, coder 💻, cleaner
-  🧼, hardender 🧪, QA 🔎, documenter 📚). All 8 are confirmed present in the live getForumTopicIconStickers
+  steering topics shows its mapped icon (coordinator 📣, specifier 📝, architect 🏛, coder 💻, cleaner
+  🧼, hardender 🧪, QA 🔎, documenter 📰). All 8 are confirmed present in the live getForumTopicIconStickers
   set (specifier re-verified against the real token 2026-07-17), so all 8 must actually resolve and apply —
   none should land on 'skipped-unresolved-icon'. (If any regresses to that outcome, re-run the live-set
   check; it means the set changed.) Force a steady-state tick and confirm no icon is re-edited (no
@@ -103,14 +122,15 @@ acceptance:
     - "An icon Telegram does not offer is surfaced (skipped-unresolved-icon), not applied, and does not block the other roles"
     - "A steady-state tick does not re-edit an already-set per-agent topic icon"
 
-human_approval: >
+approval_context: >
   Mapping is the human's decision. The original 2026-07-16 literal picks (🧭/🏗/⌨️/🧹/🛡/🔍 plus
   specifier 📝, documenter 📚) were QA-bounced 2026-07-17 because 6 of 8 are absent from Telegram's live
   getForumTopicIconStickers set. The human then APPROVED the specifier's proposed remap on 2026-07-17 via
   the ask/answer loop (option "Approve Telegram remap 🎬📝🏛💻🧼🧪🔎📚"; he did NOT take the option to
-  also add orchestral glyphs to the PWA). FIRM contract: the 8 role->icon pairs below (coordinator 🎬,
-  specifier 📝, architect 🏛, coder 💻, cleaner 🧼, hardender 🧪, QA 🔎, documenter 📚) — all 8 verified
-  present in the live set by the specifier 2026-07-17 — and that an unavailable icon is surfaced
+  also add orchestral glyphs to the PWA). FIRM contract: the 8 role->icon pairs below (coordinator 📣,
+  specifier 📝, architect 🏛, coder 💻, cleaner 🧼, hardender 🧪, QA 🔎, documenter 📰) — all 8 verified
+  present in the live set AND collision-free by the specifier 2026-07-17 (coordinator 🎬 and documenter 📚
+  were amended to 📣 / 📰 after QA's 2nd bounce found them colliding with the epic pool) — and that an unavailable icon is surfaced
   (skipped-unresolved-icon), never silently applied. Build-time details NOT gating: the exact table
   name/location, log wording, exact call structure. Icon-only (no BL-425 routing change, no board file
   change). Serialize on topicIcon.ts + conciergeTick.ts against BL-453 and the standing-topic cluster.

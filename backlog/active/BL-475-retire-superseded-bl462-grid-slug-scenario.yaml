@@ -71,7 +71,7 @@ acceptance:
     - "The board reposts at the bottom and bumps its footer only when its content changes"
     - "Rendering and syncing the board modifies no swarm state"
 
-human_approval: >
+approval_context: >
   Swarm-proposed test-contract cleanup, not a human-requested feature — no human sign-off required to
   promote. It retires the BL-462 grid-slug scenario(s) that BL-465's human-approved grid=kebab-slug
   change supersedes, and removes the dead step handler, mirroring the BL-452/BL-470 precedent (retire,

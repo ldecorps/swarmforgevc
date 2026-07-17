@@ -1,5 +1,6 @@
 const assert = require('node:assert/strict');
 const { ICON_EMOJI, resolveIconState, resolveIconStickerId, STANDING_TOPIC_ICON, ROLE_TOPIC_ICON } = require('../out/concierge/topicIcon');
+const { EPIC_ICON_POOL } = require('../out/concierge/epicIcon');
 
 // BL-342: pure icon-state resolution - the ticket's own convention:
 // check = done/shipped; microbe = defect in flight; musical note (BL-417,
@@ -116,18 +117,36 @@ test('STANDING_TOPIC_ICON: approvals resolves to the clipboard emoji', () => {
 // ICON_EMOJI (ticket state) and STANDING_TOPIC_ICON (standing topics).
 
 test('ROLE_TOPIC_ICON: carries the exact human-chosen icon for each of the 8 role topics', () => {
-  assert.equal(ROLE_TOPIC_ICON.coordinator, '🎬');
+  assert.equal(ROLE_TOPIC_ICON.coordinator, '📣');
   assert.equal(ROLE_TOPIC_ICON.specifier, '📝');
   assert.equal(ROLE_TOPIC_ICON.architect, '🏛');
   assert.equal(ROLE_TOPIC_ICON.coder, '💻');
   assert.equal(ROLE_TOPIC_ICON.cleaner, '🧼');
   assert.equal(ROLE_TOPIC_ICON.hardender, '🧪');
   assert.equal(ROLE_TOPIC_ICON.QA, '🔎');
-  assert.equal(ROLE_TOPIC_ICON.documenter, '📚');
+  assert.equal(ROLE_TOPIC_ICON.documenter, '📰');
 });
 
 // BL-469 2026-07-17 remap: the prior QA magnifier (🔍) collided with
 // ICON_EMOJI.paused; the approved replacement (🔎) resolves it.
 test('ROLE_TOPIC_ICON: QA no longer collides with the paused ticket-state icon', () => {
   assert.notEqual(ROLE_TOPIC_ICON.QA, ICON_EMOJI.paused);
+});
+
+// BL-469 2nd QA bounce (2026-07-17): the first remap's coordinator (🎬) and
+// documenter (📚) collided with the live epic-icon pool - 🎬 is the
+// onboarding-target-repo epic, 📚 is the pool's own tail slot. The amended
+// mapping (coordinator 📣, documenter 📰) must not collide with ANY of the
+// four live icon tables/pools, not just the two checked by the tests above.
+test('ROLE_TOPIC_ICON: no role icon collides with the live epic-icon pool', () => {
+  for (const [role, icon] of Object.entries(ROLE_TOPIC_ICON)) {
+    assert.ok(!EPIC_ICON_POOL.includes(icon), `${role}'s icon ${icon} collides with EPIC_ICON_POOL`);
+  }
+});
+
+test('ROLE_TOPIC_ICON: no role icon collides with ICON_EMOJI or STANDING_TOPIC_ICON', () => {
+  const reserved = new Set([...Object.values(ICON_EMOJI), ...Object.values(STANDING_TOPIC_ICON)]);
+  for (const [role, icon] of Object.entries(ROLE_TOPIC_ICON)) {
+    assert.ok(!reserved.has(icon), `${role}'s icon ${icon} collides with ICON_EMOJI/STANDING_TOPIC_ICON`);
+  }
 });
