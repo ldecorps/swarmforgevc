@@ -124,7 +124,7 @@ import {
   decideDrainOutcome,
 } from './telegramControlCore';
 import { backlogForTopic } from '../concierge/topicRouter';
-import { recordApprovalReply, recordRejectionReply, readRecordedVerdict } from '../concierge/pendingApprovalReply';
+import { recordApprovalReply, recordRejectionReply, recordAmendReply, readRecordedVerdict } from '../concierge/pendingApprovalReply';
 import { extractScopePaths, findFileCollision, InFlightScope } from '../concierge/expediteSafety';
 import { promoteToActive, findBacklogFilePath } from '../panel/backlogWriter';
 import {
@@ -138,6 +138,7 @@ import { readBacklogTopicMap, writeBacklogTopicMap, dropBacklogTopicMapping } fr
 import { readTicketMessageMap, writeTicketMessageEntry } from '../concierge/ticketMessageMapStore';
 import { ALL_SWARM_ROLES, readRoleTopicMap, writeRoleTopicMap } from '../concierge/roleTopicMapStore';
 import { runConciergeTick, ConciergeTickAdapters, BacklogFolderItem, BacklogFoldersSnapshot, TickState, epicDefinitionsFor } from '../concierge/conciergeTick';
+import { approvalRequestedEventKey } from '../events/swarmEventStream';
 import { reconcileTopicLifecycle, ReconcileAdapters } from '../concierge/topicReconciliation';
 import { sweepTopicDeletions, TopicDeletionAdapters, topicRetentionWindowMs } from '../concierge/topicDeletion';
 import { readBacklogFolders } from '../panel/backlogReader';
@@ -369,6 +370,35 @@ export async function postOperatorContext(targetPath: string, backlogId: string,
   appendOperatorEvent(targetPath, { type: 'TELEGRAM_BL_TOPIC_MESSAGE', backlogId, text });
   appendMessage(targetPath, backlogId, { author: 'human', type: 'inbound', text, updateId });
   return true;
+}
+
+// BL-509: the amend-steer directive - deliberately a SEPARATE event type
+// from postOperatorContext's own TELEGRAM_BL_TOPIC_MESSAGE above. That one
+// is unconditionally shelled to `operator-decide.js <id> approve <text>` by
+// the existing operator_runtime.bb bl-topic-approval-sweep! (consumed as an
+// approval answer); this one must not be, so a later slice's daemon can
+// route it to the specifier instead. No idempotency key of its own (unlike
+// postOperatorContext) - a redelivered update's amend reply is a no-op at
+// the recordAmendReply layer (the ticket is no longer 'pending' the second
+// time), so this call site is never reached twice for the same update.
+function queueAmendSteerDirective(targetPath: string, backlogId: string, text: string): Promise<void> {
+  appendOperatorEvent(targetPath, { type: 'TELEGRAM_BL_AMEND_STEER', backlogId, text });
+  return Promise.resolve();
+}
+
+// BL-509/BL-357/BL-496: removes this ticket's ApprovalRequested emittedKeys
+// entry, so a later pending->amending->pending transition (slice 3's
+// re-present) re-fires the ask instead of being silently suppressed as
+// already-emitted (the emittedKeys/repaint concern). A no-op when the key
+// is not present (never happened, or already reset), same idempotency
+// posture as the record* writers above.
+function resetApprovalAskEmittedState(targetPath: string, backlogId: string): Promise<void> {
+  const state = readTickState(targetPath);
+  const key = approvalRequestedEventKey(backlogId);
+  if (state.emittedKeys.includes(key)) {
+    writeTickState(targetPath, { ...state, emittedKeys: state.emittedKeys.filter((k) => k !== key) });
+  }
+  return Promise.resolve();
 }
 
 function requiredEnv(name: string): string {
@@ -1482,6 +1512,9 @@ function buildPollAdapters(
     postOperatorContext: (backlogId, text, updateId) => postOperatorContext(targetPath, backlogId, text, updateId),
     recordApprovalReply: (backlogId) => Promise.resolve(recordApprovalReply(targetPath, backlogId)),
     recordRejectionReply: (backlogId, reason) => Promise.resolve(recordRejectionReply(targetPath, backlogId, reason)),
+    recordAmendReply: (backlogId) => Promise.resolve(recordAmendReply(targetPath, backlogId)),
+    queueAmendSteerDirective: (backlogId, text) => queueAmendSteerDirective(targetPath, backlogId, text),
+    resetApprovalAskEmittedState: (backlogId) => resetApprovalAskEmittedState(targetPath, backlogId),
     // BL-490: the Expedite verb's three real effects - promote (backlogWriter's
     // promoteToActive, a no-op for an already-active ticket), the file-level
     // safety check, and the dispatch bridge (shells to the existing

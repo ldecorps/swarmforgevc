@@ -649,6 +649,29 @@ export interface PollAdapters {
   // effect alongside the unconditional context post, naturally idempotent,
   // no updateId needed).
   recordRejectionReply: (backlogId: string, reason: string) => Promise<boolean>;
+  // BL-509: pendingApprovalReply.ts's recordAmendReply, the amend verb's
+  // sibling effect - same posture as recordApprovalReply/recordRejectionReply
+  // (a separate effect alongside the unconditional context post, naturally
+  // idempotent, no updateId needed). Required, not optional, matching its
+  // two siblings - only the amend-steer directive/emitted-state effects
+  // below are new-capability-optional.
+  recordAmendReply: (backlogId: string) => Promise<boolean>;
+  // BL-509: queues the distinct amend-steer directive (ticket id + the
+  // human's steer text) for slice 2's daemon to route to the specifier -
+  // deliberately a SEPARATE event from postOperatorContext's own
+  // TELEGRAM_BL_TOPIC_MESSAGE (that one is consumed as an approval answer by
+  // the existing operator_runtime.bb sweep; this one must not be). Optional:
+  // absent means "slice 2 not wired yet", the same "new capability defaults
+  // to a no-op" posture every other optional adapter in this file has.
+  queueAmendSteerDirective?: (backlogId: string, text: string) => Promise<void>;
+  // BL-509/BL-357/BL-496: clears this ticket's `ApprovalRequested:<id>` key
+  // out of the concierge tick's durable emittedKeys dedup set, so a later
+  // pending->amending->pending transition (slice 3's re-present) re-fires
+  // the ask instead of being silently suppressed as already-emitted (the
+  // emittedKeys/repaint concern). Optional - absent degrades to the
+  // pre-BL-509 behavior (no reset), the same "new capability defaults to a
+  // no-op" posture every other optional adapter in this file has.
+  resetApprovalAskEmittedState?: (backlogId: string) => Promise<void>;
   // BL-490: the Expedite verb's own three effects, each optional - absent
   // means "not wired", degrading recordExpediteDecisionAndClose to
   // record-and-close only, the same "new capability defaults to a no-op"
@@ -1050,6 +1073,28 @@ export async function recordApprovalDecisionAndClose(
   return changed;
 }
 
+// BL-509: the Amend verb's own decision-and-close routine - a sibling of
+// recordApprovalDecisionAndClose above, not a branch inside it, because
+// amend's effect needs the steer text (for the amend-steer directive) and a
+// THIRD adapter call (resetApprovalAskEmittedState) neither approve nor
+// reject need, and its verdict shape ({kind:'amending'}) does not fit
+// recordApprovalDecisionAndClose's narrower 'approved'/'rejected' union.
+// Only fires on a REAL transition (changed === true), the same "never act
+// on an already-decided/unknown ticket" posture every sibling
+// decision-and-close routine in this file already establishes. The reset
+// and the directive queue both ride the same real transition guard as the
+// ask-close itself - an already-amending (or otherwise not-pending) ticket
+// gets none of the three effects, exactly like a no-op approve/reject.
+export async function recordAmendDecisionAndClose(adapters: PollAdapters, backlogId: string, note: string, nowMs: number = Date.now()): Promise<boolean> {
+  const changed = await adapters.recordAmendReply(backlogId);
+  if (changed) {
+    await adapters.resetApprovalAskEmittedState?.(backlogId);
+    await adapters.queueAmendSteerDirective?.(backlogId, note);
+    await closeApprovalAskIfPossible(adapters, backlogId, { kind: 'amending' }, nowMs);
+  }
+  return changed;
+}
+
 // BL-490: the Expedite verb's own decision-and-close routine - a sibling of
 // recordApprovalDecisionAndClose above, not a branch inside it, because
 // Expedite's effect is three ordered steps (approve, promote, dispatch)
@@ -1105,12 +1150,15 @@ async function deliverOperatorContext(backlogId: string, text: string, updateId:
   }
   const contextText = action.kind === 'amend' ? action.note : text;
   const posted = await adapters.postOperatorContext(backlogId, contextText, updateId);
-  // BL-357/BL-409: fires alongside the context post above, never instead of
-  // it - a reply that resolves a ticket is still ALSO context for it.
+  // BL-357/BL-409/BL-509: fires alongside the context post above, never
+  // instead of it - a reply that resolves (or steers) a ticket is still
+  // ALSO context for it.
   if (action.kind === 'approve') {
     await recordApprovalDecisionAndClose(adapters, backlogId, { kind: 'approved' });
   } else if (action.kind === 'reject') {
     await recordApprovalDecisionAndClose(adapters, backlogId, { kind: 'rejected', reason: action.reason });
+  } else if (action.kind === 'amend') {
+    await recordAmendDecisionAndClose(adapters, backlogId, action.note);
   }
   return posted;
 }
@@ -1529,6 +1577,13 @@ type RecognizedApprovalDecision = Exclude<CallbackButtonDecision, { action: 'ans
 // "extract to keep the caller's branch count down" pattern this file already
 // uses throughout - reapplied here because BL-490's 'expedite' branch pushed
 // dispatchRecognizedCallbackDecision's own complexity to 7.
+// BL-509: the Amend tap's own prompt text - a build-time/cosmetic detail
+// (exact wording), not a promotion gate, mirroring deliverRecertDeleteRequest's
+// own "arm a marker, then prompt for the reply it awaits" shape.
+function amendPromptText(backlogId: string): string {
+  return `What would you like to change about ${backlogId}?`;
+}
+
 async function dispatchApproveOrFollowup(
   callbackQuery: TelegramCallbackQuery,
   decision: RecognizedApprovalDecision,
@@ -1542,6 +1597,11 @@ async function dispatchApproveOrFollowup(
     await recordApprovalDecisionAndClose(adapters, decision.backlogId, { kind: 'approved' });
   } else {
     await adapters.setPendingButtonAction(decision.backlogId, decision.kind);
+    // BL-509: only Amend prompts on tap - Reject stays the pre-existing
+    // silent-stash behavior (unchanged by this ticket).
+    if (decision.kind === 'amend') {
+      await adapters.notifyApprovalsTopic?.(callbackQuery.message?.message_thread_id, amendPromptText(decision.backlogId));
+    }
   }
   return 'posted';
 }
