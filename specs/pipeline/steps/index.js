@@ -272,7 +272,8 @@ const DOMAINS = [
   require('./bl497PipelineBoardPostFailureRecoverySteps'),
   require('./bl489ActiveIdJoinIsCaseSymmetricSteps'),
   require('./bl496DecidedAskCloseSurvivesRateLimitSteps'),
-  require('./bl493FoldTicketEventsIntoEpicBacklogTopicSteps')
+  require('./bl493FoldTicketEventsIntoEpicBacklogTopicSteps'),
+  require('./bl502PipelineBoardMessageLengthBudgetSteps')
 ];
 
 function registerSteps(registry) {
