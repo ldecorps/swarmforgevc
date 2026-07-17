@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-07-17T17:45:31.299383627Z","feature_name":"the pipeline board and dispatch-gap sweep resolve a ticket id from a task header that omits the prefix hyphen","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-503-ticket-id-extractor-hyphen-optional.feature","background_hash":"74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b","implementation_hash":"unknown","scenarios":[]}
+# acceptance-mutation-manifest-end
+
 Feature: the pipeline board and dispatch-gap sweep resolve a ticket id from a task header that omits the prefix hyphen
 
   # BL-503 (dispositioned from a coordinator rule_proposal, live 2026-07-17). Both .bb
@@ -28,6 +32,21 @@ Feature: the pipeline board and dispatch-gap sweep resolve a ticket id from a ta
       | gh77-issue-seeded          | GH-77    |
       | ABL-217-glued-prefix       | NONE     |
       | usable493-not-a-ticket     | NONE     |
+
+  # Hardener (BL-234 equivalent-mutant note, 2026-07-17): a soft Gherkin mutation pass
+  # single-character-mangled each <task> example value (12 mutants total: 6 on <resolved>,
+  # all killed; 6 on <task>, all 6 survived). Both .bb extractors decide match-or-no-match
+  # from a fixed leading window (pipeline_stage_lib.bb's `\b(BL|GH)-?(\d+)\b` scans for that
+  # window; chase_sweep_lib.bb's `^(BL|GH)-?(\d+)` anchors it at position 0), so every
+  # survivor mutates a character outside that window and is provably inert: the 4 matching
+  # rows ("bl493-fold-ticket-eVents", "BL-493-fold-Ticket-events", "bl-493-foLd-ticket-events",
+  # "gh77-issue-seedeD") mutate text after the captured prefix+digits, which neither regex
+  # inspects once the digit run ends; the 2 non-matching rows ("ABL-217-gLued-prefix",
+  # "usable49x-not-a-ticket") never contain a "BL"/"GH" pair preceded by a word boundary in
+  # the first place (the preceding letter is itself a word character), so no mutation
+  # anywhere in the string can produce a match. The 6 <resolved>-value mutants (the actual
+  # expected output) all killed, proving both extractors are fully exercised; no artificial
+  # assertion was added to force these 6 suffix/no-match survivors to die.
 
   # BL-503 ticket-id-hyphen-optional-02
   Scenario: a held ticket whose task header omits the prefix hyphen still appears on the pipeline board at its stage
