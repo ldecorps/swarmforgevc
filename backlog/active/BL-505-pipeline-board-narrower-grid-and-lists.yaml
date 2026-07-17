@@ -108,7 +108,7 @@ acceptance:
 #   4. Confirm the full acceptance suite (including the revised BL-455/462/465 scenarios) passes -
 #      the supersession did not leave a stale assertion or an unhandled scenario.
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   Draining the human's own root-intake ask (backlog/INTAKE-pipeline-board-grid-too-wide.md).
   What needs your sign-off is the exact width contract in the feature file: (a) the grid TICKET
