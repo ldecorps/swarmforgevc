@@ -10,6 +10,35 @@ direction: human-requested
 depends_on: []
 source: "human (ldecorps) via Operator front-desk intake INTAKE-operator-question-1784237909142 (2026-07-16): replied to the icon proposal picking concrete literal icons per role. Verbatim: 'OK: coder as keyboard / Specifier as note taker / Architect as grue (fr) ... / Cleaner as broom / Hardender, first choice / QA ok for magnifier / Documenter as books'. Coordinator icon (not named in the reply) resolved 2026-07-16 by specifier clarifying question: the proposed 🎼 is a notation glyph absent from Telegram's forum-topic sticker set; human chose 🧭 (compass). Folds into the BL-425 per-agent-steering-topic cluster (BL-425 shipped the topics; this adds their icons)."
 
+notes: |
+  QA BOUNCE 2026-07-17 (real-surface defect — specifier-owned re-spec, per QA's disposition note):
+    QA verified the 8 firm ROLE_TOPIC_ICON emoji against Telegram's LIVE getForumTopicIconStickers set
+    (112 stickers) at commit 1d4d0c6bf2, per this ticket's own E2E procedure. Result: only 2 of 8 resolve
+    — specifier 📝 and documenter 📚. The other 6 are NOT in the live set and would permanently sit at
+    'skipped-unresolved-icon' (blank): coordinator 🧭, architect 🏗, coder ⌨️, cleaner 🧹, hardender 🛡,
+    QA 🔍. The CODE is correct (syncTopicIcon behaves exactly per Scenario 2); the DEFECT is that the firm
+    icon literals were validated against the real set for only one of the eight (🎼→🧭 during the
+    2026-07-16 clarifying question — and even 🧭 turns out UNRESOLVED). Evidence:
+    .worktrees/QA/backlog/evidence/BL-469-bounce-20260717.md.
+
+    This requires new icon choices from the 112 the live set offers + fresh human approval (QA: "not
+    something the coder can fix by writing different code"). BLOCKED pending that human decision.
+
+  PROPOSED valid remap (specifier, 2026-07-17 — all 8 CONFIRMED present in the live 112-set; semantic
+  role stand-ins, since QA correctly found no LITERAL crane/broom/shield/compass in the set):
+    coordinator 🎬 (director/clapper — directs the pipeline; compass has NO clean stand-in in the set,
+                    most negotiable pick), specifier 📝 (unchanged, resolves), architect 🏛 (classical
+                    building — architecture; note 🏛 was BL-418's since-superseded Operator icon, now free
+                    per BL-453→🛎), coder 💻 (laptop), cleaner 🧼 (soap — cleaning), hardender 🧪 (test
+                    tube — testing/hardening), QA 🔎 (magnifier — also RESOLVES the old 🔍/paused collision),
+                    documenter 📚 (unchanged, resolves).
+    No collision with ICON_EMOJI (✅🦠🎵🔍👀), STANDING_TOPIC_ICON (🎟🛎📋📜), or epic icons (🏆⚡️📁).
+    This is a PROPOSAL only — the mapping is the human's firm decision; awaiting his approve/tweak via the
+    ask/answer loop before the contract (this YAML's FIRM mapping + the feature file Examples) is rewritten
+    and re-dispatched to the coder. Also folds in the human's open "pivot agents to orchestral icons"
+    question (INTAKE-...713343): the real orchestral GLYPHS can only ride the PWA/owned-art surface, never
+    Telegram — so Telegram gets these stock stand-ins regardless.
+
 description: |
   BL-425 shipped a per-agent Telegram steering topic for each of the 8 roles, but they are visually
   identical in the topic list. The human wants each role's topic to carry a distinct, human-chosen icon so
