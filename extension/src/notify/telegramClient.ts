@@ -316,6 +316,69 @@ export async function deleteMessage(token: string, chatId: string, messageId: nu
   return { success: true };
 }
 
+// BL-467: three thin wrappers for the pipeline-board-only-pin enforcement -
+// pinChatMessage/unpinAllChatMessages/getChatPinnedMessageId. Telegram pins
+// are CHAT-level (no message_thread_id), unlike every topic-addressed
+// wrapper above. disable_notification is hardcoded true on the pin call -
+// this feature's own FIRM contract is that a re-pin never alerts the group.
+export interface PinChatMessageResult {
+  success: boolean;
+  error?: string;
+}
+
+export async function pinChatMessage(token: string, chatId: string, messageId: number, postFn: TelegramPostFn = defaultPost): Promise<PinChatMessageResult> {
+  const body = JSON.stringify({ chat_id: chatId, message_id: messageId, disable_notification: true });
+  const result = await callTelegramApi(token, 'pinChatMessage', body, postFn);
+  if (!result.success) {
+    return { success: false, error: result.error };
+  }
+  return { success: true };
+}
+
+export interface UnpinAllChatMessagesResult {
+  success: boolean;
+  error?: string;
+}
+
+export async function unpinAllChatMessages(token: string, chatId: string, postFn: TelegramPostFn = defaultPost): Promise<UnpinAllChatMessagesResult> {
+  const body = JSON.stringify({ chat_id: chatId });
+  const result = await callTelegramApi(token, 'unpinAllChatMessages', body, postFn);
+  if (!result.success) {
+    return { success: false, error: result.error };
+  }
+  return { success: true };
+}
+
+// Extracts result.pinned_message.message_id off a getChat response - absent
+// (undefined) when the chat currently has no pinned message at all, exactly
+// as Telegram omits the field rather than sending it null.
+function extractPinnedMessageId(json: unknown): number | undefined {
+  const pinnedMessage = extractResultObject(json)?.pinned_message;
+  if (pinnedMessage && typeof pinnedMessage === 'object' && typeof (pinnedMessage as Record<string, unknown>).message_id === 'number') {
+    return (pinnedMessage as Record<string, unknown>).message_id as number;
+  }
+  return undefined;
+}
+
+export interface GetChatPinnedMessageResult {
+  success: boolean;
+  pinnedMessageId?: number;
+  error?: string;
+}
+
+export async function getChatPinnedMessageId(
+  token: string,
+  chatId: string,
+  postFn: TelegramPostFn = defaultPost
+): Promise<GetChatPinnedMessageResult> {
+  const body = JSON.stringify({ chat_id: chatId });
+  const result = await callTelegramApi(token, 'getChat', body, postFn);
+  if (!result.success) {
+    return { success: false, error: result.error };
+  }
+  return { success: true, pinnedMessageId: extractPinnedMessageId(result.json) };
+}
+
 export interface TelegramChat {
   id: number | string;
 }

@@ -266,7 +266,8 @@ const DOMAINS = [
   require('./bl483MultiOptionAskButtonsSteps'),
   require('./bl492BacklogStandingTopicSteps'),
   require('./bl487BoardFreshnessWithoutCoordinatorSyncSteps'),
-  require('./bl488HeldTicketIdResolvesWithoutLeadingTokenSteps')
+  require('./bl488HeldTicketIdResolvesWithoutLeadingTokenSteps'),
+  require('./bl467PipelineBoardOnlyPinSteps')
 ];
 
 function registerSteps(registry) {

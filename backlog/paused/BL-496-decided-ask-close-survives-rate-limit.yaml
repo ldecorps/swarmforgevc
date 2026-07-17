@@ -89,7 +89,7 @@ notes: |
 
 acceptance: specs/features/BL-496-decided-ask-close-survives-rate-limit.feature
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   Approving approves the fix contract above: (1) surface the real edit-rejection reason in the log,
   (2) honour Telegram's retry_after with a bounded, injected-clock retry and a loud give-up, (3)
