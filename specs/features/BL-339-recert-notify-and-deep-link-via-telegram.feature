@@ -1,56 +1,28 @@
-Feature: Telegram tells the human a recert batch is waiting, and takes him to it
+Feature: Telegram tells the human a recert batch is waiting, and takes him to it (RETIRED)
 
-# BL-339: the human asked whether he could give Gherkin recertification feedback via Telegram.
-# Today he cannot — verdicts arrive only through the PWA and the inbound email path. He was asked
-# which shape he wanted and chose notify + deep-link: Telegram announces the waiting batch and
-# links into the PWA, where the batch UI already works. Verdicts are NOT given in Telegram. Recert
-# is a batch activity and Telegram is a conversational surface; pushing the batch into a topic
-# would either spam him or rebuild a form the PWA already does better.
-
-Background:
-  Given recertification verdicts are given in the PWA
-
-# BL-339 recert-notify-deep-link-01
-Scenario: A waiting recert batch is announced on Telegram
-  Given a recert batch is waiting on the human
-  When the human is notified
-  Then a message about the waiting batch is sent to Telegram
-
-# BL-339 recert-notify-deep-link-02
-Scenario: The announcement links straight to the recert work in the PWA
-  Given a recert batch is waiting on the human
-  When the human is notified
-  Then the message links to the recert work in the PWA
-  And following the link lands on the recert work
-
-# BL-339 recert-notify-deep-link-03
-Scenario: A batch of many scenarios produces one message, not one per scenario
-  Given a recert batch of many scenarios is waiting on the human
-  When the human is notified
-  Then one message is sent
-
-# BL-339 recert-notify-deep-link-04
-Scenario: An outstanding batch is not re-announced on every tick
-  Given a recert batch is waiting on the human
-  And the batch has already been announced
-  When the human is notified again
-  Then no message is sent
-
-# BL-339 recert-notify-deep-link-05
-Scenario: Nothing is announced when no recert batch is waiting
-  Given no recert batch is waiting on the human
-  When the human is notified
-  Then no message is sent
-
-# BL-339 recert-notify-deep-link-06
-Scenario: A new batch after an answered one is announced again
-  Given a recert batch has been announced and answered
-  And a recert batch is waiting on the human
-  When the human is notified
-  Then a message about the waiting batch is sent to Telegram
-
-# BL-339 recert-notify-deep-link-07
-Scenario: A verdict is still not accepted through Telegram
-  Given a recert batch is waiting on the human
-  When the human replies to the announcement with a verdict
-  Then the verdict is not recorded from Telegram
+# BL-339 RETIRED 2026-07-17 — the whole "notify + deep-link into the PWA" behaviour this
+# feature specified is superseded by the recert-telegram-move epic (BL-450 build half + BL-451
+# retire half), human-approved via AskUserQuestion 2026-07-16. All seven scenarios are retired;
+# the durable contract for recertification now lives in the successor feature files below. Do
+# NOT re-word these into the new behaviour — that would duplicate BL-450/BL-451's contract
+# (one-scenario-per-behaviour / IR-DRY). This file is kept as a tombstone so BL-339's historical
+# acceptance pointer stays valid and the retirement is traceable.
+#
+# Successor scenarios (where each retired BL-339 scenario's behaviour now lives):
+#   - BL-339-01/03/04/05 (a waiting batch is announced; one message not per-scenario; not
+#     re-announced every tick; nothing when empty)  ->  the notify is REMOVED by BL-451
+#     retire-pwa-recert-02 ("the redundant BL-339 recert deep-link notification is no longer
+#     sent"); the "post the oldest scenario, one at a time, edge-triggered, nothing when empty"
+#     behaviour is now BL-450 recert-telegram-01 / -02 / -08 (specs/features/BL-450-recert-standing-telegram-topic.feature).
+#   - BL-339-02/06 (the announcement deep-links into the PWA recert view; a new batch is
+#     re-announced)  ->  the PWA recert view and its deep link are REMOVED by BL-451
+#     retire-pwa-recert-01 ("the phone PWA no longer presents a recert view or its verbs").
+#   - BL-339-07 (a verdict is still NOT accepted through Telegram)  ->  INVERTED by BL-450:
+#     recert verdicts are now given in-chat. See BL-450 recert-telegram-03 (validate advances
+#     the last-reviewed timestamp), -04 (amend), -05/-06 (delete). This scenario began failing
+#     honestly on main the moment BL-450 wired a second confirmScenario caller
+#     (recertificationStore.ts), which is why the hardener routed the stale feature here.
+#
+# The now-dead step handlers (specs/pipeline/steps/recertNotifySteps.js + its index.js entry)
+# are TEST code that reads the notify modules BL-451 deletes — they are removed as part of
+# BL-451's own reader-sweep, not here (the specifier does not edit step handlers).
