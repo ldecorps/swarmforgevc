@@ -1,0 +1,1 @@
+{"id":"BL-304","messages":[{"seq":0,"ts":1784302248085,"author":"swarm","type":"outbound","text":"BL-304 ✅ done — Bug: operator_runtime.bb has no supervisor/autostart (a crash/OOM/reboot leaves the Operator dead) — generate a systemd unit (Restart=always, boot-enabled, never permanently gives up) via the BL-101 generator"}]}

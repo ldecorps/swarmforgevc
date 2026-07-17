@@ -1,0 +1,1 @@
+{"id":"BL-299","messages":[{"seq":0,"ts":1784302240903,"author":"swarm","type":"outbound","text":"BL-299 ✅ done — Concierge slice 4 — on TaskCompleted, post a completion summary into the item's BL-### topic and close that topic (progress events leave it open; no-topic is a no-op)"}]}

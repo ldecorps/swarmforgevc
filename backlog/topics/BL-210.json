@@ -1,0 +1,1 @@
+{"id":"BL-210","messages":[{"seq":0,"ts":1784301538117,"author":"swarm","type":"outbound","text":"BL-210 ✅ done — Reduce paneTailer.ts emitActivityEvents CRAP (93.91) by extracting a pure, covered activity-state decision"}]}

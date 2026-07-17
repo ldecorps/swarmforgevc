@@ -1,0 +1,1 @@
+{"id":"BL-127","messages":[{"seq":0,"ts":1784303497582,"author":"swarm","type":"outbound","text":"BL-127 ✅ done — BUG — backlog list row chip is not colored by stage; only the tile-header badge is (BL-077 regression/gap)"}]}

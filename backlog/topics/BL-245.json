@@ -1,0 +1,1 @@
+{"id":"BL-245","messages":[{"seq":0,"ts":1784301856846,"author":"swarm","type":"outbound","text":"BL-245 ✅ done — Baton: graceful STOP when the coordinator is lost (bounded respawn, then quiesce-and-teardown; fleet shows stopped)"}]}

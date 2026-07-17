@@ -1,0 +1,1 @@
+{"id":"BL-067","messages":[{"seq":0,"ts":1784304107298,"author":"swarm","type":"outbound","text":"BL-067 ✅ done — BUG — stuck-detection missed a 4h overnight stall (in_process held while pane idle)"}]}
