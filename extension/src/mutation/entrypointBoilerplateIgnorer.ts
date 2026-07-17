@@ -21,7 +21,7 @@
 // STRUCTURAL LOCATION only - classifyMutantLocation below takes no
 // coverage/kill signal at all, so it structurally cannot classify an
 // untested real-logic mutant as boilerplate. Never broaden this beyond the
-// two named shapes.
+// named shapes below.
 export interface MutantLocationFacts {
   isRequireMainGuard: boolean;
   isEsModuleBoilerplate: boolean;
