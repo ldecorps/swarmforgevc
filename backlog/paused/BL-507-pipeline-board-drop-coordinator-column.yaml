@@ -94,7 +94,7 @@ acceptance:
 #   5. Confirm the full acceptance + unit suite passes (the new coordinator-held->QA assertion and the
 #      dropped-column header checks all green; no stale KNOWN_COLUMNS/test-name assertion left behind).
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   New tweak to the Telegram Pipeline Board (your ask 2026-07-17: "take the Coordinator column out"). What
   needs your sign-off is the pinned behaviour: (a) the grid drops the Coordinator ("CD") column entirely,

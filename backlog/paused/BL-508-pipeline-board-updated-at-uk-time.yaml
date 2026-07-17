@@ -82,7 +82,7 @@ acceptance:
 #   5. Confirm the full acceptance + unit suite passes (updated UTC->UK unit assertions green; BL-462's
 #      self-consistent footer scenario still green).
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   Your second tweak 2026-07-17: "show the update time in UK time". The board's "updated at" footer is
   currently UTC; this renders it in UK (Europe/London) time instead, DST-aware — so it reads one hour
