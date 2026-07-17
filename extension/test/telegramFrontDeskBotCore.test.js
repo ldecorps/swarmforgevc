@@ -1780,12 +1780,12 @@ function callbackFixtureAdapters(overrides = {}) {
     resolveAskOptions: overrides.resolveAskOptions,
     readAskMessage: overrides.readAskMessage,
     editAskMessage: overrides.editAskMessage,
-    // BL-490: the Expedite verb's own three effects - all optional, same
-    // "absent degrades to a no-op" posture as every other optional field
-    // above.
+    // BL-490: the Expedite verb's own effects - all optional, same "absent
+    // degrades to a no-op" posture as every other optional field above.
     promoteTicketIfPaused: overrides.promoteTicketIfPaused,
     checkExpediteFileCollision: overrides.checkExpediteFileCollision,
     dispatchExpediteBuild: overrides.dispatchExpediteBuild,
+    commitExpediteWrites: overrides.commitExpediteWrites,
   };
 }
 
@@ -2227,6 +2227,7 @@ function expediteFixtureAdapters(overrides = {}) {
   return {
     recordApprovalReply: overrides.recordApprovalReply ?? (async () => true),
     promoteTicketIfPaused: overrides.promoteTicketIfPaused ?? (async () => true),
+    commitExpediteWrites: overrides.commitExpediteWrites ?? (async () => true),
     checkExpediteFileCollision: overrides.checkExpediteFileCollision ?? (async () => undefined),
     dispatchExpediteBuild: overrides.dispatchExpediteBuild ?? (async () => true),
     readApprovalAskMessage: overrides.readApprovalAskMessage,
@@ -2239,6 +2240,61 @@ function expediteFixtureAdapters(overrides = {}) {
     editCalls,
   };
 }
+
+test('BL-490-VIOLATION: recordExpediteDecisionAndClose commits the approve+promote writes AFTER promote and BEFORE dispatch', async () => {
+  const calls = [];
+  const adapters = expediteFixtureAdapters({
+    promoteTicketIfPaused: async (backlogId) => {
+      calls.push(`promote:${backlogId}`);
+      return true;
+    },
+    commitExpediteWrites: async (backlogId) => {
+      calls.push(`commit:${backlogId}`);
+      return true;
+    },
+    dispatchExpediteBuild: async (backlogId) => {
+      calls.push(`dispatch:${backlogId}`);
+      return true;
+    },
+  });
+
+  await recordExpediteDecisionAndClose(adapters, 'BL-490', 0);
+
+  assert.deepEqual(calls, ['promote:BL-490', 'commit:BL-490', 'dispatch:BL-490'], 'expected commit to land after promote and before dispatch - never a build starting against an uncommitted promotion');
+});
+
+test('BL-490-VIOLATION: commitExpediteWrites is never called for a no-op (not-actually-pending) decision', async () => {
+  const committed = [];
+  const adapters = expediteFixtureAdapters({
+    recordApprovalReply: async () => false,
+    commitExpediteWrites: async (backlogId) => {
+      committed.push(backlogId);
+      return true;
+    },
+  });
+
+  const result = await recordExpediteDecisionAndClose(adapters, 'BL-490', 0);
+
+  assert.equal(result.changed, false);
+  assert.deepEqual(committed, []);
+});
+
+test('BL-490-VIOLATION: commitExpediteWrites absent degrades to the pre-fix behavior, never crashes', async () => {
+  // expediteFixtureAdapters' own `??` default always substitutes a
+  // succeeding stub for an explicitly-undefined override (mirrors
+  // closingFixtureAdapters' own established pattern above), so the
+  // genuinely-absent case is built by hand rather than through that helper.
+  const adapters = {
+    recordApprovalReply: async () => true,
+    promoteTicketIfPaused: async () => true,
+    checkExpediteFileCollision: async () => undefined,
+    dispatchExpediteBuild: async () => true,
+  };
+
+  const result = await recordExpediteDecisionAndClose(adapters, 'BL-490', 0);
+
+  assert.equal(result.changed, true);
+});
 
 test('recordExpediteDecisionAndClose: closes the ask with an Expedited decision line, not Approved', async () => {
   const adapters = expediteFixtureAdapters({
