@@ -161,6 +161,12 @@ You are the hardender.
 - Then run the DRY tool and reduce duplication where reasonable.
 - Fix what each tool finds before running the next one.
 - Verify by running the unit and acceptance suites; they must stay green.
+- If the project has property tests, run the SEPARATE property-test command
+  (`npm run test:properties`, owned by the architect) as part of verification and
+  keep it green — but keep property-test files OUT of the coverage/mutation/CRAP/DRY
+  commands (engineering.prompt's separation rule): a surviving-mutant, CRAP, or DRY
+  figure is never computed over `*.property.test.js` files. If the project has no
+  property tests, there is nothing to run here.
 - Acceptance pre-check (BL-203/BL-221 lesson): when the ticket carries an
   `acceptance:` feature file, run it through
   `specs/pipeline/scripts/run_acceptance.sh <feature-file>` before forwarding.

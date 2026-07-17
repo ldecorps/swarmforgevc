@@ -66,13 +66,20 @@ notes: |
       present in our fork — verified by grep, not assumed.
 
   SPECIFIER DRAFT (2026-07-17):
-    STATUS — BLOCKED ON HUMAN WORDING APPROVAL. The three prompt amendments (architect owns property
-    testing; hardender + QA reference the command) are drafted verbatim in the companion file
-    backlog/active/BL-479-property-testing-amendment.draft.md. They are NOT yet written into the live
-    prompt files: a role-prompt edit is GLOBAL (it changes the architect's behavior for every in-flight
-    parcel), and approval_context (a) reserves the exact wording for the human. On `human_approval:
-    approved`, landing those three edits is mechanical (insertion anchors named in the draft). Do not
-    advance the coder build below until the wording is approved.
+    STATUS — WORDING APPROVED AS-IS AND LANDED (2026-07-17, coordinator note
+    00_20260717T034444Z_000499 relaying human approval). The three prompt amendments are now WRITTEN INTO
+    THE LIVE PROMPT FILES: architect.prompt gained the "## Property Testing" section (before "## Does Not
+    Own"); hardender.prompt and QA.prompt each gained the `npm run test:properties` bullet. They match the
+    companion file backlog/active/BL-479-property-testing-amendment.draft.md verbatim. The wording gate is
+    now satisfied — the coder BUILD STEPS below are UNBLOCKED (add fast-check, wire the separate command,
+    seed one non-vacuous property test).
+    NOTE on the human_approval field: it still reads `pending` because the approval was relayed through the
+    coordinator note, not the concierge topic-flip; per backlog-schema.md only the human's reply flips it
+    to `approved`, never the specifier. The wording is landed regardless; the field will settle when the
+    human/concierge flips it (or an "approve" reply in the BL-479 topic fires the concierge flip).
+    Secondary finding (b), the cleaner mutation-site SIZE gate, was FILED as its own ticket BL-485 (paused)
+    per the human's decision — not recorded SKIP. docs/upstream-deviations.md's ADOPT record for both
+    remains a documenter-stage deliverable (build step 5).
 
     BUILD STEPS (coder — after wording approval):
       1. Add `fast-check` as a devDependency in extension/package.json at an EXACT pinned version (no `^`

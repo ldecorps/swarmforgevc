@@ -1,0 +1,76 @@
+id: BL-485
+title: "Adopt upstream six-pack cleaner mutation-site SIZE gate: split any changed file over ~100 mutation sites before handoff (Stryker dry-run/instrument count)"
+milestone: M8
+type: chore
+severity: low
+epic: ""
+priority: 12
+direction: human-requested
+depends_on: []
+source: "Human (ldecorps) 2026-07-17, via coordinator note 'BL-479 wording approved as-is; land prompt edits + file size-gate ticket'. Secondary finding (b) of the BL-479 six-pack upstream survey, filed as its own ticket per the human's decision rather than recorded SKIP."
+
+notes: |
+  ORIGIN — BL-479 six-pack survey, secondary finding (b). The human approved BL-479's property-testing
+  amendment as-is and directed this adjacent finding be filed as its own low-priority ticket (the other
+  option was recording SKIP in docs/upstream-deviations.md). This ticket is that filing; it is a fresh
+  design, NOT a port (our fork has no common git ancestor with unclebob/swarm-forge — local-engineering
+  rule 2).
+
+  THE UPSTREAM CONTROL:
+    - unclebob/swarm-forge `six-pack` cleaner.prompt carries a mutation-site SIZE gate our cleaner lacks:
+      before handoff, use the mutation tool's scan/count mode on changed/new files to COUNT mutation
+      sites WITHOUT running mutation, and if any file exceeds ~100 sites, do a behavior-preserving split
+      before handing off — preserving mutation manifests across the split.
+    - Intent: a preventive control against oversized mutation targets. A file with hundreds of mutation
+      sites makes the hardener's mutation pass slow and its survivors hard to localise; splitting it into
+      cohesive smaller modules at the cleaner stage keeps the downstream mutation gate tractable. This is
+      ADJACENT TO but DISTINCT FROM the already-resolved BL-446 zero-kill defect (that was a vacuous gate;
+      this is about target SIZE, not gate validity).
+
+  WHY IT NEEDS ITS OWN DESIGN (not a bolt-on to BL-479):
+    - Stryker has no direct "count sites without mutating" mode equivalent to upstream's tool. The
+      Stryker-native equivalent is a dry-run / instrument-only pass that reports the mutant count per file
+      WITHOUT executing the test-per-mutant loop. That needs its own scoped design:
+        * Count against `out/`-mapped compiled sources, NOT `src/` — Stryker's mutate scope is `out/`, and
+          counting the wrong scope silently reports ~0 (memory: stryker-mutate-scope-is-out-not-src).
+        * Decide the threshold (upstream's ~100 is a starting point; calibrate to our module sizes).
+        * Decide the gate's teeth: a HARD pre-handoff block (like the dependency-rule checker) vs a SOFT
+          advisory the cleaner weighs — upstream makes it a cleaner responsibility, not a machine gate.
+        * A behavior-preserving split is real cleaner work; the gate must not force a split that harms
+          cohesion just to duck a site count. Keep it a "split when it also improves structure" control,
+          not a mechanical line-count chop.
+
+  SCOPE (this ticket):
+    1. Design + build a Stryker dry-run/instrument-count helper (candidate:
+       extension/scripts/ or a `npm run mutation:count`-style script) that reports mutation-site count per
+       changed file against `out/`-mapped sources, runnable by the cleaner before handoff. It must NOT run
+       the mutation test loop (fast, count-only).
+    2. Amend swarmforge/roles/cleaner.prompt with a "## Mutation-Site Size" section: run the count on
+       changed/new files, and where a file exceeds the chosen threshold do a behavior-preserving split
+       before handoff (only when the split also improves cohesion — never a mechanical chop), preserving
+       mutation manifests. Wording is a GOVERNANCE change → human reviews it (human_approval below) before
+       it lands in the live prompt.
+    3. Record the ADOPT decision in docs/upstream-deviations.md's review log (documenter stage), closing
+       the BL-479 survey's finding (b).
+
+  OUT OF SCOPE: re-litigating BL-446 (resolved); changing the hardener's mutation gate itself; any change
+  to Stryker's mutate scope config.
+
+acceptance:
+  # Governance (cleaner.prompt amendment) + a count-only tooling helper. Outcome-style per the BL-478/479
+  # precedent — the deliverable is a role-prompt control plus a runnable site-count command, not
+  # end-user-visible product behavior. Specifier to convert to a Gherkin feature file if the count helper
+  # grows externally-observable CLI behavior worth pinning.
+  outcome: "A count-only Stryker helper reports mutation-site count per changed file against out/-mapped sources without running the mutation loop; cleaner.prompt (human-approved wording) owns a mutation-site size gate that splits over-threshold changed files behavior-preservingly before handoff while preserving manifests; the ADOPT decision is recorded in docs/upstream-deviations.md's review log."
+
+human_approval: pending
+approval_context: >
+  TWO things need the human's call before/while this builds: (a) the cleaner.prompt "## Mutation-Site
+  Size" wording (a role-prompt edit is global — same posture as BL-479's amendment), drafted for review
+  before it lands; and (b) the site-count THRESHOLD (upstream uses ~100; confirm or set our value) and
+  whether the gate is a HARD pre-handoff block or a SOFT cleaner-judgment advisory. FIRM (not open): the
+  count runs against out/-mapped sources not src/ (Stryker mutate scope), it is count-only (never runs the
+  mutation loop), and a split must preserve behavior + mutation manifests and only happen when it also
+  improves cohesion. Low priority — preventive hardening, not a live defect.
+
+mutation_cost: low
