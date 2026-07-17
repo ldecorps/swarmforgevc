@@ -83,9 +83,23 @@ function registerSteps(registry) {
   );
 
   // ── retire-pwa-recert-02 ────────────────────────────────────────────
-  // "Given a recert batch is waiting on the human" is reused unscoped from
-  // recertNotifySteps.js (BL-339) - pure git-backed fixture setup with no
-  // dependency on the now-deleted notify CLI, so it is still safe to reuse.
+  // "Given a recert batch is waiting on the human" used to be reused
+  // unscoped from recertNotifySteps.js (BL-339) - but that file (and the
+  // notify CLI it drove) is deleted by this SAME parcel, so the step no
+  // longer exists anywhere to reuse (QA bounce 2026-07-17). It is
+  // narrative only here: the actual proof below (no CLI source on disk, no
+  // handoffd shell-out) holds regardless of whether a batch is waiting -
+  // retiring the notify path means nothing is EVER announced, waiting
+  // batch or not, so no fixture is needed to prove it.
+  registry.defineScoped(
+    /^a recert batch is waiting on the human$/,
+    () => {
+      // Narrative only - see "no recert-batch-waiting deep-link message is
+      // sent to Telegram" below for the actual proof.
+    },
+    FEATURE_NAME
+  );
+
   registry.defineScoped(
     /^the recert notify sweep runs$/,
     (ctx) => {
