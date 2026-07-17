@@ -137,7 +137,7 @@ import { IconStickerLookup, StandingTopicTarget, ROLE_TOPIC_ICON, RoleTopicIconR
 import { computeRoleGateStatesLive, RoleGateState } from '../bridge/gateSnapshot';
 import { computeCurrentHolders } from '../bridge/holisticProjections';
 import { readRoleHoldingWindows, TicketHoldingWindow } from '../metrics/ticketHoldingWindows';
-import { parseRolesTsv, readTicketStageMap, invertTicketStageToRoleHeldTickets } from '../swarm/swarmState';
+import { parseRolesTsv, invertTicketStageToRoleHeldTickets } from '../swarm/swarmState';
 import { wrapPipelineBoardHtml } from '../concierge/pipelineBoard';
 import { readTmuxSocket, readSwarmRoles, paneTarget, getPaneBaseIndex, capturePane, sendKeys } from '../swarm/tmuxClient';
 import { sendInstructionVerified } from '../swarm/verifiedInject';
@@ -1834,6 +1834,38 @@ export function readRepoBaseUrl(targetPath: string): string | undefined {
   }
 }
 
+// BL-487: the board's role-held-stage source, replacing a read of the
+// coordinator-written CACHE (readTicketStageMap/ticket-stage-map.json) with
+// a LIVE recomputation every tick. That cache's ONLY invalidator was the
+// coordinator LLM remembering to run `pipeline_stage_cli.bb sync` after
+// every parcel move (coordinator.prompt) - a skipped/crashed/cooldown'd
+// sync left a genuinely-held ticket mis-staged (or entirely absent from the
+// board) for an unbounded time (BL-474 audit finding #1: live 2026-07-17,
+// the cache held 2 of 6 actually-active tickets). `report` computes the
+// IDENTICAL stage-map `sync` would (same compute-stage-map call,
+// pipeline_stage_cli.bb's own -main) but is side-effect-free - it never
+// writes the cache file, so it is safe to shell out to on every tick with
+// no coordination needed against the coordinator's own sync. Shelling to
+// the REAL bb computation (rather than reimplementing the invert over live
+// mailboxes in TS) reuses the one canonical, already-correct id-resolution
+// + cross-role reconciliation + stale-id filtering (pipeline_stage_lib.bb)
+// instead of duplicating that logic in a second language - the exact
+// async-exec + JSON.parse(stdout) pattern openSubject above already
+// established for a sibling .bb script. Tolerant of any failure (bb
+// missing, a torn/non-JSON stdout, a script error) - degrades to "no
+// role-held ticket known this tick" exactly like readTicketStageMap's own
+// missing/corrupt-file tolerance, never throws into the tick loop.
+export async function readLiveRoleHeldTickets(targetPath: string): Promise<Record<string, string[]>> {
+  try {
+    const cli = path.join(targetPath, 'swarmforge', 'scripts', 'pipeline_stage_cli.bb');
+    const { stdout } = await execFileAsync('bb', [cli, targetPath, 'report']);
+    const stageMap = JSON.parse(stdout) as Record<string, string>;
+    return invertTicketStageToRoleHeldTickets(stageMap);
+  } catch {
+    return {};
+  }
+}
+
 function buildConciergeTickAdapters(targetPath: string, botToken: string, chatId: string): ConciergeTickAdapters {
   return {
     readFolders: () => toFoldersSnapshot(targetPath),
@@ -1893,16 +1925,16 @@ function buildConciergeTickAdapters(targetPath: string, botToken: string, chatId
       readLastActivityMs: (ticketId) => lastActivityMs(readRecord(targetPath, ticketId)),
       setTopicTitle: (topicId, title) => editForumTopicWithRateLimitRetry(botToken, chatId, topicId, { name: title }),
     },
-    // BL-464: each role's CURRENTLY held ticket id(s), from the coordinator-
-    // fed AUTHORITATIVE ticket->stage store (readTicketStageMap, written by
-    // `pipeline_stage_cli.bb sync`) - replacing BL-452's own
-    // readPipelineStages(...).heldTicketIds in_process/task-header scrape,
-    // which was blind to a note-only kickoff (BL-434/450 never showed on
-    // the board) and could observe the same ticket at two roles at once
-    // during a transition. Never readRoleTicket above either (that one's
-    // holding-window mechanism is the hop-log family this feature's own
-    // data-source decision explicitly rejected).
-    readRoleHeldTickets: () => invertTicketStageToRoleHeldTickets(readTicketStageMap(targetPath)),
+    // BL-464/BL-487: each role's CURRENTLY held ticket id(s), recomputed
+    // LIVE every tick via readLiveRoleHeldTickets (pipeline_stage_cli.bb
+    // report - see its own docstring for why this replaced a read of the
+    // coordinator-written ticket-stage-map.json cache). Still never
+    // readRoleTicket above (that one's holding-window mechanism is the
+    // hop-log family this feature's own data-source decision explicitly
+    // rejected) - and still note-aware/reconciled/stale-filtered exactly as
+    // BL-464's original cache-backed wiring was, since `report` computes
+    // the identical stage-map `sync` does.
+    readRoleHeldTickets: () => readLiveRoleHeldTickets(targetPath),
     // BL-452: the standing "Pipeline Board" topic is created ONCE - the
     // ticket's own durable TickState.pipelineBoard.topicId marker is what
     // makes this idempotent across ticks/restarts (syncPipelineBoard only
