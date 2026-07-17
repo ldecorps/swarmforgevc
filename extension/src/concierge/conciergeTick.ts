@@ -10,7 +10,7 @@ import { EventStreamSnapshot, GateSignal, SwarmEvent, SwarmEventType, TicketSumm
 import { BacklogTopicMap, RouteAdapters, TopicAction, decideEpicTopicAction, routeEvent } from './topicRouter';
 import { EpicDefinition, computeEpicProgress, epicAnnouncementKey, epicOpeningText, epicProgressText } from './epicProgress';
 import { resolveEpicIcon, isKnownEpic } from './epicIcon';
-import { resolveIconState, ICON_EMOJI, STANDING_TOPIC_ICON, StandingTopicTarget } from './topicIcon';
+import { resolveIconState, ICON_EMOJI, STANDING_TOPIC_ICON, StandingTopicTarget, ROLE_TOPIC_ICON, RoleTopicTarget } from './topicIcon';
 import { TopicIconAdapters, syncTopicIcon } from './topicIconSync';
 import { StalenessBucket } from './topicTitleAge';
 import { TopicTitleAdapters, syncTopicTitle } from './topicTitleSync';
@@ -83,6 +83,15 @@ export interface TickState {
   // tick for anything that already exists, mirroring BL-342's own backfill
   // precedent for pre-existing ticket topics.
   standingIconSeenIds?: string[];
+  // BL-469: the per-agent steering-topic sibling of standingIconSeenIds
+  // above - every role token this tick has EVER seen before, across every
+  // past tick/restart. Same rationale: a per-agent topic is never created
+  // BY this tick (BL-425's roleTopicMapStore seeds it once, out of band),
+  // so there is no in-tick "just created it" signal, and this durable
+  // seen-set is what tells apart a genuinely new appearance (free to set
+  // its initial icon) from a role topic that predates this feature.
+  // Absent on an old/fresh TickState file, treated as empty.
+  roleIconSeenIds?: string[];
   // BL-414: each ticket's durably last-announced title-age bucket - the
   // change-gate the title-age suffix needs, mirroring standingIconSeenIds'
   // own "durable across restarts" posture. Absent/missing entry means "no
@@ -136,6 +145,13 @@ export interface ConciergeTickAdapters {
   // this field existed - keeps working unchanged rather than needing an
   // update just to satisfy a capability its own ticket never touches.
   readStandingTopics?: () => StandingTopicTarget[];
+  // BL-469: every per-agent steering topic (BL-425, one per swarm role)
+  // the icon sync should consider this tick - live-wired to read BL-425's
+  // own role->topicId map (roleTopicMapStore.readRoleTopicMap), filtered to
+  // the roles ROLE_TOPIC_ICON actually maps. Optional for the same reason
+  // readStandingTopics is optional above - every existing adapters fixture
+  // built before this field existed keeps working unchanged.
+  readRoleTopics?: () => RoleTopicTarget[];
   // BL-414: optional (defaults to no title-age sync) for the same reason
   // readStandingTopics above is optional - every existing adapters fixture
   // across this codebase's own acceptance step handlers was built before
@@ -474,6 +490,34 @@ async function syncStandingTopicIcons(
       continue;
     }
     await syncTopicIcon(target.id, target.topicId, STANDING_TOPIC_ICON[target.iconKey], true, iconAdapters);
+  }
+  return [...new Set([...(prevSeenIds ?? []), ...currIds])];
+}
+
+// BL-469: the per-agent steering-topic sibling of syncStandingTopicIcons
+// above - the SAME newly-entering-only change-gate posture (mirrors it
+// exactly), generalized to per-agent role topics rather than standing
+// ones. The sole difference is the icon lookup: a role topic's own `role`
+// token IS the ROLE_TOPIC_ICON key directly, so there is no separate
+// iconKey field to carry the way StandingTopicTarget needs one (see
+// RoleTopicTarget's own docstring in topicIcon.ts for why).
+// `targets` defaults an absent call to no-op here (rather than at the call
+// site) so runConciergeTick's own call can pass the bare optional adapter
+// result straight through - keeps runConciergeTick's own CRAP budget
+// unaffected by adding this sync (cleaner split, BL-469 follow-up).
+async function syncPerAgentTopicIcons(
+  targets: RoleTopicTarget[] | undefined,
+  prevSeenIds: string[] | undefined,
+  iconAdapters: TopicIconAdapters
+): Promise<string[]> {
+  const resolvedTargets = targets ?? [];
+  const currIds = resolvedTargets.map((t) => t.role);
+  const newlyEntered = new Set(newlyEnteredIds(prevSeenIds, currIds));
+  for (const target of resolvedTargets) {
+    if (!newlyEntered.has(target.role)) {
+      continue;
+    }
+    await syncTopicIcon(target.role, target.topicId, ROLE_TOPIC_ICON[target.role], true, iconAdapters);
   }
   return [...new Set([...(prevSeenIds ?? []), ...currIds])];
 }
@@ -853,6 +897,11 @@ export async function runConciergeTick(adapters: ConciergeTickAdapters, nowMs: n
     adapters.iconAdapters
   );
 
+  // BL-469: the per-agent steering topics' own icon sync - see
+  // syncPerAgentTopicIcons' own docstring for why this mirrors the
+  // standing-topic sync above exactly, with its own independent seen-set.
+  const roleIconSeenIds = await syncPerAgentTopicIcons(adapters.readRoleTopics?.(), state.roleIconSeenIds, adapters.iconAdapters);
+
   // BL-414: runs over every ticket across all three folders on every tick
   // (never gated on newlyEnteredIds - see syncTitleAgeForBacklogId's own
   // comment for why), starting from the prior tick's durable bucket map so
@@ -888,6 +937,7 @@ export async function runConciergeTick(adapters: ConciergeTickAdapters, nowMs: n
     snapshot: persistedSnapshot,
     emittedKeys: [...alreadyEmitted],
     standingIconSeenIds,
+    roleIconSeenIds,
     titleAgeBuckets,
     pipelineBoard,
     approvalsRoster,

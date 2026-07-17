@@ -119,3 +119,42 @@ export interface StandingTopicTarget {
   topicId: number;
   iconKey: StandingTopicKey;
 }
+
+// BL-469: per-agent Telegram STEERING topics (BL-425 - one per swarm role)
+// get their own fixed, human-chosen icon so the eight role topics are
+// tellable apart at a glance - a THIRD icon table alongside ICON_EMOJI
+// (ticket state) and STANDING_TOPIC_ICON (standing topics), never
+// overloading either. Keyed on the canonical swarm role tokens
+// (roleTopicMapStore.ALL_SWARM_ROLES) - note the baked-in 'hardender'
+// spelling and uppercase 'QA'. Firm mapping: seven roles are the human's
+// (ldecorps) verbatim 2026-07-16 reply; the coordinator's compass was
+// resolved separately the same day after the originally-proposed 🎼 was
+// flagged as a notation glyph Telegram does not offer as a topic icon.
+// Accepted collision: QA's magnifier equals ICON_EMOJI.paused - different
+// topic classes (a per-agent QA steering topic vs. a paused ticket's own
+// topic), documented rather than avoided.
+export type RoleTopicIconRole = 'coordinator' | 'specifier' | 'architect' | 'coder' | 'cleaner' | 'hardender' | 'QA' | 'documenter';
+
+export const ROLE_TOPIC_ICON: Record<RoleTopicIconRole, string> = {
+  coordinator: '🧭',
+  specifier: '📝',
+  architect: '🏗',
+  coder: '⌨️',
+  cleaner: '🧹',
+  hardender: '🛡',
+  QA: '🔍',
+  documenter: '📚',
+};
+
+// A single per-agent steering topic the concierge tick's icon sync targets -
+// mirrors StandingTopicTarget's shape. `role` doubles as BOTH the durable
+// ownership-marker key (blTopicStore's readSwarmIconId/recordSwarmIconId,
+// reused generically) AND the ROLE_TOPIC_ICON lookup key - unlike
+// StandingTopicTarget, which needs a separate `id`/`iconKey` pair because
+// one standing-topic KIND (support/intake) covers MANY distinct ids (one
+// per open SUP-### subject), a role topic's role token IS already its own
+// stable, unique identity, so no second field is needed.
+export interface RoleTopicTarget {
+  role: RoleTopicIconRole;
+  topicId: number;
+}

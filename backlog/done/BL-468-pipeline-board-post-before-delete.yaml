@@ -5,7 +5,7 @@ type: feature
 severity: low
 status: todo
 epic: ""
-priority: 3
+priority: 1
 direction: human-requested
 depends_on: []
 source: "human (ldecorps) directly 2026-07-16: 'when updating the pipeline board, can you first add the new one, then remove the old one, so there is at least always 1 to look at.' Refines BL-462's delete-then-repost mechanism. Pipeline-board cluster (BL-462/464/465/467)."
