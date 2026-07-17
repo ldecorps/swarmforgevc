@@ -20,30 +20,10 @@ const { pollAndForward, runPollCycle, offsetAfterDelivery } = require(
 );
 const { ingestTelegramInboundMessage } = require(path.join(__dirname, '..', '..', '..', 'extension', 'out', 'bridge', 'bridgeServer'));
 const { appendOperatorEvent } = require(path.join(__dirname, '..', '..', '..', 'extension', 'out', 'bridge', 'operatorEventQueue'));
+const { OPERATOR_RUNTIME_BB_FILES } = require('./lib/operatorRuntimeBbFixtureFiles');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const SWARM_SCRIPTS = path.join(REPO_ROOT, 'swarmforge', 'scripts');
-const OPERATOR_RUNTIME_BB_FILES = [
-  'operator_lib.bb',
-  'operator_runtime.bb',
-  'telegram_topic_lib.bb',
-  'support_lib.bb',
-  'support_thread_store.bb',
-  'operator_memory_lib.bb',
-  'operator_memory_store.bb',
-  'ticket_status_lib.bb',
-  'operator_ask.bb',
-  'handoff_lib.bb',
-  'daemon_alarm_lib.bb',
-  'disk_space_lib.bb',
-  'sandbox_sweep_lib.bb',
-  'bounded_delete_sweep_lib.bb',
-  'proc_fd_scan_lib.bb',
-  'fixture_reaper_lib.bb',
-  'fixture_reaper_sweep_lib.bb',
-  'orphan_agent_reaper_lib.bb',
-  'orphan_agent_reaper_sweep_lib.bb',
-];
 
 const PRINCIPAL_ID = 111;
 
