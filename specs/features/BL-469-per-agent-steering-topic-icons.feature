@@ -22,13 +22,13 @@ Feature: Per-agent Telegram steering-topic icons
 
     Examples:
       | role        | icon |
-      | coordinator | 🧭   |
+      | coordinator | 🎬   |
       | specifier   | 📝   |
-      | architect   | 🏗   |
-      | coder       | ⌨️   |
-      | cleaner     | 🧹   |
-      | hardender   | 🛡   |
-      | QA          | 🔍   |
+      | architect   | 🏛   |
+      | coder       | 💻   |
+      | cleaner     | 🧼   |
+      | hardender   | 🧪   |
+      | QA          | 🔎   |
       | documenter  | 📚   |
 
   # BL-469 per-agent-steering-topic-icon-02
