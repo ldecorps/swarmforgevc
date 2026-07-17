@@ -57,11 +57,14 @@ notes: |
   to Stryker's mutate scope config.
 
 acceptance:
-  # Governance (cleaner.prompt amendment) + a count-only tooling helper. Outcome-style per the BL-478/479
-  # precedent — the deliverable is a role-prompt control plus a runnable site-count command, not
-  # end-user-visible product behavior. Specifier to convert to a Gherkin feature file if the count helper
-  # grows externally-observable CLI behavior worth pinning.
-  outcome: "A count-only Stryker helper reports mutation-site count per changed file against out/-mapped sources without running the mutation loop; cleaner.prompt (human-approved wording) owns a mutation-site size gate that splits over-threshold changed files behavior-preservingly before handoff while preserving manifests; the ADOPT decision is recorded in docs/upstream-deviations.md's review log."
+  # Converted to a hybrid (specifier, 2026-07-17): the count-only helper's externally-observable behaviour
+  # (per-file site count, out/-mapped compiled scope, count-only, threshold comparison) is pinned as the
+  # executable Gherkin feature below. The governance (cleaner.prompt amendment) and doc-recording
+  # deliverables are not Gherkin-testable and stay outcome-style. Threshold value + hard/soft gate remain
+  # the human's call at prompt-amendment time (approval_context) and are deliberately not baked into the
+  # feature — the outline demonstrates the comparison against a configured threshold, not a fixed value.
+  feature: specs/features/BL-485-cleaner-mutation-site-size-gate.feature
+  outcome: "cleaner.prompt (human-approved wording) owns a mutation-site size gate that splits over-threshold changed files behavior-preservingly before handoff while preserving mutation manifests; the ADOPT decision is recorded in docs/upstream-deviations.md's review log."
 
 human_approval: approved
 approval_context: >
