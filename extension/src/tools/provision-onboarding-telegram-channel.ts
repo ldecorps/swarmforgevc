@@ -43,13 +43,22 @@ export interface ProvisionOnboardingTelegramChannelArgs {
   bridgePort: number;
 }
 
+function hasAllRequiredArgs(fields: Array<string | undefined>): boolean {
+  return fields.every((field) => Boolean(field));
+}
+
+function parseBridgePort(raw: string | undefined): number | null {
+  const bridgePort = raw ? Number(raw) : DEFAULT_BRIDGE_PORT;
+  return Number.isFinite(bridgePort) ? bridgePort : null;
+}
+
 export function parseArgs(argv: string[]): ProvisionOnboardingTelegramChannelArgs | null {
   const [targetRepoPath, botToken, botUsername, hostSecretsFilePath, swarmName, bridgePortRaw] = argv;
-  if (!targetRepoPath || !botToken || !botUsername || !hostSecretsFilePath || !swarmName) {
+  if (!hasAllRequiredArgs([targetRepoPath, botToken, botUsername, hostSecretsFilePath, swarmName])) {
     return null;
   }
-  const bridgePort = bridgePortRaw ? Number(bridgePortRaw) : DEFAULT_BRIDGE_PORT;
-  if (!Number.isFinite(bridgePort)) {
+  const bridgePort = parseBridgePort(bridgePortRaw);
+  if (bridgePort === null) {
     return null;
   }
   return { targetRepoPath, botToken, botUsername, hostSecretsFilePath, swarmName, bridgePort };
