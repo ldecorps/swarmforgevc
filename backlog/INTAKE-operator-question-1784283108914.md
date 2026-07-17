@@ -61,3 +61,36 @@ buttons with no verdict line - the exact behaviour BL-484 was meant to fix.
 
 Reopen BL-484 (QA bounce - shipped-but-broken) or file a scoped fix ticket. Not
 mine to decide; not a spec.
+
+## UPDATE (operator, after the human approved a BATCH)
+
+CRITICAL REFINEMENT: the repaint is INTERMITTENT, not a blanket failure. In one
+batch the human approved BL-491..495; some repainted instantly, some did not.
+Per-ask outcome from the message store + supervisor log:
+  - REPAINTED ok: BL-492 (len 955), BL-495 (len 819)
+  - EDIT FAILED : BL-491 (len 907), BL-493 (len 1079), BL-494 (len 954)
+Length is NOT the differentiator: BL-492 (955, ok) vs BL-494 (954, failed) are
+one char apart. All same topic (1785), consecutive message ids, plain text.
+
+LEADING HYPOTHESIS: Telegram per-chat rate-limiting (HTTP 429) on the burst of
+editMessageText calls. The intermittent, batch-correlated pattern fits this
+strongly, AND the code makes it unrecoverable: editApprovalAskMessage does
+`editMessageText(...).then((r) => r.success)` - it DISCARDS r.retryAfterSeconds
+(which callTelegramApi already extracts, telegramClient.js ~line 85) and NEVER
+RETRIES. So any edit that hits a 429 is silently dropped. The bot ALSO edits the
+roster + pipeline-board messages in-place every tick, so approval-ask edits
+compete with those for the same per-chat edit budget even outside a human burst
+(explains BL-491 failing earlier as an apparent single approval).
+
+FIX must therefore, in priority order:
+  1. Surface r.error (stop discarding it) so the real rejection is provable - do
+     NOT ship a fix on this hypothesis without first confirming the 429 in a log.
+  2. Honour retryAfterSeconds with a bounded retry/backoff on the ask-close edit
+     (the retry data is already extracted, just unused here).
+  3. Real-path acceptance that approves MULTIPLE asks in a burst against a
+     rate-limit-simulating Telegram double, not a stub that returns true.
+
+NOTE: an operator attempt to capture the live 429 by replaying the edit with the
+bot's own token was (correctly) gated by the host as an outward-facing action
+using production creds - so #1 (in-code error logging) is the right place to get
+the truth, not an out-of-band operator poke.
