@@ -33,6 +33,10 @@ notes: |
      <reason>") to act.' — pendingApprovalReply.ts's classifyApprovalsTopicReply and the BL-410 buttons
      both key off this grammar; the enrichment must not alter it or the button callback wiring>
 
+  HUMAN CLARIFICATION (2026-07-17, verbatim intent): the details must be co-located "on the same
+  message that has the answer buttons" — ONE Telegram message carrying the enriched text with the
+  Approve/Amend/Reject buttons attached to it. Never a separate detail post alongside a thin ask.
+
   CONSTRAINTS:
     - Telegram sendMessage caps text at 4096 chars; notes: blocks routinely run far longer (BL-419's
       notes alone exceed it). Truncate the summary deterministically (e.g. first N chars of the first
@@ -59,8 +63,7 @@ acceptance:
     - "A ticket with an oversized notes block renders a truncated summary within Telegram's message cap"
     - "TaskStarted, TaskCompleted and NeedsApproval renders are unchanged"
 
-human_approval: pending
-
+human_approval: approved
 approval_context: >
   Human reported the defect directly (2026-07-17) after receiving the first BL-479 ask: 'not enough info
   to approve.' This ticket makes the Approvals-topic ask self-contained. Approving here approves the
