@@ -1360,6 +1360,8 @@ test('BL-342 topic-icons-06: an epic-defining ticket is never a target of icon s
 const STANDING_ICON_STICKERS = [
   { emoji: '🎟', customEmojiId: 'id-ticket' },
   { emoji: '🛎', customEmojiId: 'id-bell' },
+  { emoji: '📋', customEmojiId: 'id-clipboard' },
+  { emoji: '📜', customEmojiId: 'id-scroll' },
 ];
 
 // BL-418 standing-topic-icons-01
@@ -1383,6 +1385,33 @@ test('BL-418 standing-topic-icons-01: the support/intake topic gets the box-offi
   );
   assert.equal(iconOwnership['SUP-001'], 'id-ticket');
   assert.equal(iconOwnership['OPERATOR'], 'id-bell');
+});
+
+// BL-476: the remaining two STANDING_TOPIC_ICON entries (approvals, recert)
+// driven through the SAME sync path as -01 above, which previously only
+// exercised support/intake and operator - closes the pre-existing gap
+// where those two values were exercised in NO test end-to-end, only
+// asserted as constants (see topicIcon.test.js).
+test('BL-476: the Approvals topic gets the clipboard icon and the Recert topic gets the scroll icon', async () => {
+  const { adapters, iconsSet, iconOwnership } = fakeAdapters({
+    readStandingTopics: () => [
+      { id: 'APPROVALS', topicId: 750, iconKey: 'approvals' },
+      { id: 'RECERT', topicId: 760, iconKey: 'recert' },
+    ],
+  });
+  adapters.iconAdapters.getIconStickers = async () => STANDING_ICON_STICKERS;
+
+  await runConciergeTick(adapters);
+
+  assert.deepEqual(
+    iconsSet.sort((a, b) => a.topicId - b.topicId),
+    [
+      { topicId: 750, iconId: 'id-clipboard' },
+      { topicId: 760, iconId: 'id-scroll' },
+    ]
+  );
+  assert.equal(iconOwnership['APPROVALS'], 'id-clipboard');
+  assert.equal(iconOwnership['RECERT'], 'id-scroll');
 });
 
 // BL-418 standing-topic-icons-02 (wiring level): a standing topic already
