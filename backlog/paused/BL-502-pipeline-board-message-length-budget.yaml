@@ -1,0 +1,142 @@
+id: BL-502
+title: "Pipeline board post exceeds Telegram's 4096-char limit and freezes: budget the tappable link list so the board message always fits (with a visible +N-more overflow), and classify a text-too-long failure distinctly"
+milestone: M8
+type: defect
+severity: high
+epic: ""
+priority: 0
+direction: expedite
+depends_on: []
+source: "Operator-diagnosed live outage, follow-on to BL-497. Routed by coordinator note 'Board frozen, NEW cause - see evidence/pipeline-board-message-too-long*'. RCA: backlog/evidence/pipeline-board-message-too-long-20260717.md (and pipeline-board-frozen-live-outage-20260717.md). Unmasked ONLY after BL-497 landed and logged the real Telegram rejection ('status 400: Bad Request: text is too long') for the first time."
+
+notes: |
+  LIVE, USER-FACING OUTAGE — the Telegram Pipeline Board has been frozen since ~00:44 UTC
+  2026-07-17. BL-497 fixed the SILENCE (the swallowed post error) and thereby logged the real
+  cause for the first time; it did not and could not fix THIS, since the cause was invisible until
+  BL-497 shipped:
+      syncBoardIfWired: failed-post (unknown):
+        Telegram API responded with status 400: Bad Request: text is too long
+
+  ROOT CAUSE (traced in code, reproduced against the CURRENT extension/out build and CURRENT
+  backlog on 2026-07-17 ~14:22 UTC):
+    - The board's grid + parked + recently-closed body is ~1500 chars (fine on its own).
+    - BL-465's tappable GitHub link list (renderPipelineBoardLinks in
+      extension/src/concierge/pipelineBoard.ts: one `<a href="<repoBaseUrl>/blob/main/backlog/
+      ....yaml">backlog/....yaml</a>` line per grid + parked + recently-closed + root-intake
+      entry, ~150-190 chars each) has NO length budget and NO cap. For only 16 linkable entries
+      it renders ~3006 chars on its own.
+    - The composed message (wrapPipelineBoardHtml: `<pre>`escaped-body`</pre>` + "\n\n" + the raw
+      link block) is ~4522 chars — OVER Telegram's 4096 sendMessage limit — so every post is
+      rejected 400 "text is too long".
+    - This is STRUCTURAL, not the morning's transient backlog peak (that backlog has since shrunk
+      to 3 active / 9 paused and it is STILL over): the per-entry link line cost times the entry
+      count blows the budget at any backlog of comparable-or-larger size. It will keep failing.
+
+  WHY BL-497 CANNOT RECOVER THIS ON ITS OWN: BL-497's classifier (correctly) treats an
+  unrecognised error as unknown/transient and never recreates the topic — the right call for THIS
+  error, since the TOPIC is fine and only the PAYLOAD is too big. But a "text too long" failure is
+  NOT transient: retrying the SAME oversized payload fails forever until the payload shrinks. So
+  BL-497's bounded alert WILL fire once at the cap (correctly reporting the board is stuck), but
+  the board stays frozen afterward because nothing shrinks the payload. The fix must bound the
+  payload.
+
+  THE FIX (behaviour pinned in the feature; mechanism/seam is the architect's call):
+    1. BUDGET THE MESSAGE — the composed board message (grid body + link block, as
+       wrapPipelineBoardHtml produces it) is always kept within the send limit, with a small
+       safety margin below Telegram's 4096. The GRID + PARKED + RECENTLY-CLOSED body is the core
+       content and is always included IN FULL (it is small and bounded by backlog size); the
+       ELASTIC part is the tappable link list, which is budgeted to the space that remains.
+    2. NO SILENT CAP — links that do not fit the remaining budget are dropped, and a VISIBLE
+       overflow indicator naming HOW MANY links were omitted is shown in their place (this
+       codebase's no-silent-cap posture — same shape as PIPELINE_BOARD_RECENTLY_CLOSED_MAX's own
+       bounded list, and the "+N more" guidance in the RCA). A human must be able to tell the list
+       was trimmed, and by how much.
+    3. STAY LIVE — as a result, the board POSTS successfully at any backlog size (outcome
+       posted/reposted, not failed-post) instead of freezing on an over-limit payload. The common
+       small-backlog case is byte-identical to today: everything fits, all links present, no
+       indicator.
+    4. CLASSIFY TEXT-TOO-LONG DISTINCTLY (defence in depth) — extend BL-497's classifyBoardFailure
+       with a `too-long` class (an explicit signature "text is too long", NOT a bare substring
+       branch — acceptance-mutation load-bearing rule) so that if any payload is ever still over
+       the limit, BL-497's alert LABELS it correctly instead of lumping it under "unknown". A
+       too-long failure RETAINS the topic (the topic is fine — never recreate it, unlike
+       topic-gone).
+    5. DO NOT change the render / content-signature change-gate contract
+       (BL-462/464/465/468/473) or BL-497's failure-recovery/self-heal/bounded-alert contract —
+       this adds a length budget on the emit path, nothing else.
+
+  IMPLEMENTATION SEAMS (candidates, architect decides — do not pre-bake):
+    - The budgeting is naturally a PURE, testable function in pipeline board rendering
+      (pipelineBoard.ts) that composes the final within-budget message (and reports the omitted
+      count), reachable without booting VS Code — the testable-module boundary. syncPipelineBoard
+      already computes `text` and `linksHtml` separately then hands both to the adapter; budget
+      the link block against the body length + wrap overhead BEFORE it reaches Telegram, so the
+      adapter's wrapPipelineBoardHtml output is already within budget.
+    - Introduce the send-limit as ONE named exported constant (e.g. PIPELINE_BOARD_MESSAGE_MAX_
+      LENGTH), <= 4096, read by every consumer — never a hardcoded number of its own.
+    - The `too-long` signature goes in classifyBoardFailure's existing explicit-lookup structure
+      (TOPIC_GONE_ERROR_SIGNATURES / TRANSIENT_ERROR_SIGNATURES); add TOO_LONG_ERROR_SIGNATURES
+      and make it RETAIN the topic.
+    - Trim ordering (which links survive) and whether to ALSO shorten each link's text to raise
+      the practical threshold are the architect's call; scenario -02 only requires that the body
+      is kept in full, that the result fits, and that the omission is shown.
+
+  SCOPE (verify the live path at build — grep for the real callers, do not assume):
+    - extension/src/concierge/pipelineBoard.ts (renderPipelineBoardLinks / wrapPipelineBoardHtml /
+      computePipelineBoard's buildLinks — where the link block and composed message are built).
+    - extension/src/concierge/pipelineBoardSync.ts (syncPipelineBoard composes text + linksHtml;
+      classifyBoardFailure gains the `too-long` class + retain-topic behaviour).
+    - extension/src/tools/telegram-front-desk-bot.ts (boardAdapters.postMessage wraps via
+      wrapPipelineBoardHtml, ~L2086) — confirm the budget takes effect on what THIS actually sends.
+    - Any test that reads a repo-root sibling from the Stryker sandbox is unaffected here; this is
+      pure in-extension logic.
+
+  ORTHOGONALITY: orthogonal to the current active set — BL-489 (bb pipeline_stage id join),
+  BL-493 (route ticket events into epic topics — topic router, not the board renderer), BL-496
+  (approval-ask close under rate limiting). The one shared-file risk is telegram-front-desk-bot.ts
+  (BL-493/496 may touch it); this ticket's change THERE is minimal (the boardAdapters.postMessage
+  wrap already exists) and the load-bearing change is in the two pure concierge modules, so a
+  same-file conflict is unlikely — but the coordinator should sequence if another in-flight parcel
+  is actively editing telegram-front-desk-bot.ts. Expedite, priority 0, bugs-first: pull this
+  ahead of the routine paused queue behind/alongside BL-497's own recovery.
+
+acceptance:
+  # The observable contract: the composed board message is always within Telegram's send limit
+  # (grid/parked body always kept in full; the tappable link list budgeted to the remaining space,
+  # with a VISIBLE +N-more overflow when trimmed — never a silent cap), so the board posts at any
+  # backlog size instead of freezing; and a "text is too long" post failure is classified on its
+  # own class and RETAINS the topic. Budget margin, trim ordering, and per-link shortening are the
+  # architect's call; the scenarios hold either way.
+  feature: specs/features/BL-502-pipeline-board-message-length-budget.feature
+
+# QA end-to-end procedure (verify the scenarios hold in the live swarm):
+#   1. Build the extension (npm run compile in extension/, or npm test which compiles first).
+#   2. In-process, compute the board over a synthetic backlog large enough to exceed the limit
+#      (e.g. ~20+ linkable tickets with a real repoBaseUrl) and assert wrapPipelineBoardHtml's
+#      composed output length <= PIPELINE_BOARD_MESSAGE_MAX_LENGTH (<= 4096), the grid/parked body
+#      is present in full, and a "+N more" overflow line naming the omitted count is present.
+#   3. Compute the board over the CURRENT live backlog and confirm the composed message is within
+#      the limit (the morning's ~4522-char case is now under budget).
+#   4. Drive syncPipelineBoard over an oversize board with an adapter that rejects any message
+#      longer than the limit; assert the outcome is posted/reposted (not failed-post).
+#   5. Confirm classifyBoardFailure('Bad Request: text is too long') === 'too-long' and that the
+#      tracked topic id is RETAINED (not cleared) on that failure.
+
+human_approval: pending
+approval_context: >
+  LIVE, USER-FACING OUTAGE — the Telegram Pipeline Board has been frozen since ~00:44 UTC today.
+  BL-497 (shipped) made the failure visible; this ticket fixes the actual cause it exposed: the
+  BL-465 tappable link list has no length budget, so the composed board message is ~4522 chars,
+  over Telegram's 4096 sendMessage limit, and every post is rejected 400 "text is too long".
+  What needs your sign-off is the BEHAVIOUR CONTRACT in the feature file: (a) the composed board
+  message is always kept within the limit so the board posts at any backlog size; (b) the
+  grid/parked body is always shown in full and the tappable LINK LIST is the part that gets
+  budgeted; (c) when links don't fit they are dropped WITH a visible "+N more" indicator naming how
+  many were omitted (never silently) — please confirm you are OK trimming links this way rather
+  than, say, posting the links as a SEPARATE second message; (d) a "text is too long" failure is
+  labelled distinctly and keeps its topic. OPEN and the architect's call unless you want to steer:
+  the exact safety margin below 4096, which links get dropped first when trimming, and whether to
+  also shorten each link's text to keep more links before the cap bites. Expedite, priority 0 —
+  please pull ahead of the routine paused-queue ordering.
+
+mutation_cost: low
