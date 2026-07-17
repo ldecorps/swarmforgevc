@@ -36,6 +36,13 @@
 ;; not fully close (chiefly a same-path writer not yet routed through this
 ;; helper). Exhausting the budget FAILS LOUDLY (returns :success false)
 ;; rather than ever reporting a dropped edit as a successful commit.
+;;
+;; The lock acquisition itself is BOUNDED the same way: it polls, never
+;; blocks forever, and gives up with a loud :lock-timeout failure rather
+;; than hanging - an unbounded wait here would let one process that dies
+;; mid-lock (kill -9, OOM, host reboot) orphan the lock and freeze every
+;; future caller permanently, which is worse than the bug this helper
+;; exists to fix.
 
 (ns commit-integrity-lib
   (:require [babashka.fs :as fs]
@@ -44,6 +51,8 @@
 
 (def default-max-retries 3)
 (def default-retry-delay-ms 50)
+(def default-lock-max-attempts 100)
+(def default-lock-poll-delay-ms 50)
 
 (defn- run-git [project-root args]
   (process/sh (into ["git" "-C" (str project-root)] args)))
@@ -58,8 +67,25 @@
   (let [res (run-git project-root ["rev-parse" "--absolute-git-dir"])]
     (when (zero? (:exit res)) (str/trim (:out res)))))
 
+;; A path a prior `git mv`/`git rm` already removed from BOTH the working
+;; tree and the index (the common case for a caller that renames a file
+;; before calling this helper, e.g. the coordinator's active/->done/ move)
+;; is not resolvable by `git add` AT ALL - not on disk, and no longer in
+;; the index for `git add` to notice a missing-on-disk entry against
+;; (unlike a path merely `rm`ed without `git rm`, which IS still in the
+;; index and DOES resolve). `git add` also fails its ENTIRE pathspec
+;; atomically on one such unresolvable entry ("did not match any files"),
+;; so passing every path through unconditionally would abort staging the
+;; OTHER, perfectly good paths too. Filtering to paths that still exist on
+;; disk is safe: a path already fully staged by the caller's own git
+;; mv/rm needs no re-adding, and the verify step below still catches a
+;; genuinely wrong/missing outcome (the committed content would mismatch
+;; `expected`) rather than silently trusting an unstaged deletion.
 (defn default-add! [project-root paths]
-  (run-git project-root (into ["add" "--"] paths)))
+  (let [existing (filter #(fs/exists? (fs/path project-root %)) paths)]
+    (if (empty? existing)
+      {:exit 0 :out "" :err ""}
+      (run-git project-root (into ["add" "--"] existing)))))
 
 (defn default-commit! [project-root message paths]
   (run-git project-root (into ["commit" "-m" message "--"] paths)))
@@ -81,17 +107,30 @@
 ;; FileAlreadyExistsException and spins. Mirrors swarm_handoff.bb's own
 ;; `next-sequence` lock convention exactly - no new locking primitive
 ;; introduced into this codebase.
-(defn- acquire-lock! [lock-dir]
-  (fs/create-dirs (fs/parent lock-dir))
-  (loop []
-    (if (try
-          (fs/create-dir lock-dir)
-          true
-          (catch java.nio.file.FileAlreadyExistsException _ false))
-      nil
-      (do (Thread/sleep 50) (recur)))))
+;;
+;; BOUNDED per the project's retry/backoff rule: an unbounded spin here
+;; would mean a process that dies (kill -9, OOM, host reboot) while
+;; holding the lock orphans the lock directory forever, and every
+;; subsequent caller of this helper for the same checkout hangs
+;; indefinitely - a worse, silent failure mode than the dropped-commit bug
+;; this helper exists to fix. Gives up and returns false after
+;; `max-attempts` polls rather than blocking forever; the caller turns
+;; that into a loud, non-throwing failure (:lock-timeout).
+(defn acquire-lock!
+  ([lock-dir] (acquire-lock! lock-dir default-lock-max-attempts default-lock-poll-delay-ms))
+  ([lock-dir max-attempts poll-delay-ms]
+   (fs/create-dirs (fs/parent lock-dir))
+   (loop [attempt 1]
+     (if (try
+           (fs/create-dir lock-dir)
+           true
+           (catch java.nio.file.FileAlreadyExistsException _ false))
+       true
+       (if (< attempt max-attempts)
+         (do (Thread/sleep poll-delay-ms) (recur (inc attempt)))
+         false)))))
 
-(defn- release-lock! [lock-dir]
+(defn release-lock! [lock-dir]
   (try (fs/delete lock-dir) (catch Exception _ nil)))
 
 (defn commit-with-integrity!
@@ -110,9 +149,10 @@
 
    Returns {:success true :sha <str> :attempts n}
         or {:success false :reason kw :attempts n [:mismatched-paths [...]]}
-   `:reason` is one of :no-git-dir, :add-failed, :commit-failed,
-   :verify-mismatch. Never throws for an ordinary git failure - only for a
-   caller-shape error (a missing/blank required option)."
+   `:reason` is one of :no-git-dir, :lock-timeout, :add-failed,
+   :commit-failed, :verify-mismatch. Never throws for an ordinary git
+   failure - only for a caller-shape error (a missing/blank required
+   option)."
   [{:keys [project-root paths message max-retries
            add-fn! commit-fn! rev-parse-fn show-fn read-fn
            git-dir-fn lock-fn! unlock-fn! retry-delay-fn!]
@@ -134,25 +174,26 @@
       {:success false :reason :no-git-dir :attempts 0}
       (let [lock-dir (str (fs/path git-dir "swarmforge-commit-integrity.lock"))
             expected (into {} (map (fn [p] [p (read-fn project-root p)])) paths)]
-        (lock-fn! lock-dir)
-        (try
-          (loop [attempt 1]
-            (let [add-res (add-fn! project-root paths)]
-              (if-not (zero? (:exit add-res))
-                {:success false :reason :add-failed :attempts attempt}
-                (let [commit-res (commit-fn! project-root message paths)]
-                  (if-not (zero? (:exit commit-res))
-                    {:success false :reason :commit-failed :attempts attempt}
-                    (let [sha (rev-parse-fn project-root)
-                          mismatched (vec (keep (fn [[path expected-content]]
-                                                   (when (not= expected-content (show-fn project-root sha path))
-                                                     path))
-                                                 expected))]
-                      (if (empty? mismatched)
-                        {:success true :sha sha :attempts attempt}
-                        (if (< attempt (inc max-retries))
-                          (do (retry-delay-fn! attempt)
-                              (recur (inc attempt)))
-                          {:success false :reason :verify-mismatch
-                           :attempts attempt :mismatched-paths mismatched}))))))))
-          (finally (unlock-fn! lock-dir)))))))
+        (if-not (lock-fn! lock-dir)
+          {:success false :reason :lock-timeout :attempts 0}
+          (try
+            (loop [attempt 1]
+              (let [add-res (add-fn! project-root paths)]
+                (if-not (zero? (:exit add-res))
+                  {:success false :reason :add-failed :attempts attempt}
+                  (let [commit-res (commit-fn! project-root message paths)]
+                    (if-not (zero? (:exit commit-res))
+                      {:success false :reason :commit-failed :attempts attempt}
+                      (let [sha (rev-parse-fn project-root)
+                            mismatched (vec (keep (fn [[path expected-content]]
+                                                     (when (not= expected-content (show-fn project-root sha path))
+                                                       path))
+                                                   expected))]
+                        (if (empty? mismatched)
+                          {:success true :sha sha :attempts attempt}
+                          (if (< attempt (inc max-retries))
+                            (do (retry-delay-fn! attempt)
+                                (recur (inc attempt)))
+                            {:success false :reason :verify-mismatch
+                             :attempts attempt :mismatched-paths mismatched}))))))))
+            (finally (unlock-fn! lock-dir))))))))
