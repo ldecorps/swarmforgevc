@@ -60,8 +60,14 @@
 ;; external-influence surface, not a hypothetical) would extract, reconcile,
 ;; and then silently fail the active-set join - the ticket vanishes from the
 ;; board with no error.
+;;
+;; BL-503: the hyphen between prefix and digits is OPTIONAL (`-?`) - ~14
+;; in-flight coder tickets were minted with a no-hyphen task name ("blNNN",
+;; e.g. "bl493-fold-ticket-events"), which the previously-mandatory hyphen
+;; resolved to nil, silently dropping the ticket from the board. The
+;; allowlist and \b digit/letter-adjacency guards are unchanged.
 (def ^:private ticket-id-pattern
-  (re-pattern (str "(?i)\\b(" (str/join "|" known-ticket-prefixes) ")-(\\d+)\\b")))
+  (re-pattern (str "(?i)\\b(" (str/join "|" known-ticket-prefixes) ")-?(\\d+)\\b")))
 
 (defn extract-ticket-id [text]
   (when text
