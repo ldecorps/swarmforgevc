@@ -61,12 +61,21 @@
 ;;                                 short-circuits the real send entirely
 ;;                                 (mirrors operator_runtime.bb's own
 ;;                                 OPERATOR_ALARM_FORCE_RESULT seam)
-;;   BRIDGE_PORT                   fixed port the bridge listens on (default 8765)
+;;   BRIDGE_PORT                   default bridge port (default 8765) - overridden
+;;                                 by this swarm's own fleet creds file
+;;                                 bridgePort when one exists (BL-436)
 ;;   BRIDGE_TOKEN                  shared bridge token - provisioned by
 ;;                                 launch_front_desk.sh, never generated here
-;;   TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID / TELEGRAM_PRINCIPAL_USER_ID
-;;                                 required for the bot (validated by the
+;;   TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID
+;;                                 fallback ONLY for the primary swarm, when no
+;;                                 fleet creds file exists for its swarm_name
+;;                                 (BL-436: ~/.swarmforge/fleet/<swarm_name>/
+;;                                 telegram.json wins wholesale when present -
+;;                                 see fleet_telegram_creds_lib.bb)
+;;   TELEGRAM_PRINCIPAL_USER_ID    required for the bot (validated by the
 ;;                                 bot's own CLI, not re-validated here)
+;;   SWARMFORGE_FLEET_HOME         overrides the fleet creds root (default the
+;;                                 real $HOME) - test-only seam
 
 (ns front-desk-supervisor
   (:require [babashka.fs :as fs]
@@ -77,6 +86,8 @@
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "front_desk_supervisor_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "operator_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "daemon_alarm_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "swarm_identity_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "fleet_telegram_creds_lib.bb")))
 
 (defn usage []
   (binding [*out* *err*]
@@ -120,7 +131,30 @@
 ;; 15 minutes - long enough to stay a bounded-RATE retry (never a tight
 ;; loop), short enough that a healed fault recovers without a human.
 (def giveup-config {:giveup-cooldown-ms (env-long "FRONT_DESK_GIVEUP_COOLDOWN_MS" 900000)})
-(def bridge-port (env-long "BRIDGE_PORT" 8765))
+
+;; BL-436: this swarm's Telegram identity is a property of the SWARM
+;; (keyed by its own swarm_name - the live source is swarmforge.sh's own
+;; persisted .swarmforge/swarm-identity, never an ambient SWARM_NAME env
+;; var, which is not even exported to child processes), not of whatever
+;; shell launched it - closes the footgun where a second supervisor
+;; launched from a shell that already exported the primary's
+;; TELEGRAM_BOT_TOKEN silently inherited it. SWARMFORGE_FLEET_HOME
+;; overrides the fleet creds root (default the real $HOME) - the same
+;; `${SWARMFORGE_...:-<default>}` seam convention this project already
+;; uses for every other live/shared runtime path, so a test can point
+;; this at its own fixture root rather than the operator's real,
+;; genuinely-populated `~/.swarmforge/fleet/` (confirmed live on this
+;; host: `fes` and `primary` subdirectories already exist for other
+;; fleet-console purposes).
+(def swarm-name (swarm-identity-lib/own-swarm-name project-root))
+(def fleet-home-dir (or (System/getenv "SWARMFORGE_FLEET_HOME") (System/getProperty "user.home")))
+(def resolved-telegram-creds
+  (fleet-telegram-creds-lib/resolve-telegram-creds
+   fleet-home-dir swarm-name
+   {"TELEGRAM_BOT_TOKEN" (System/getenv "TELEGRAM_BOT_TOKEN")
+    "TELEGRAM_CHAT_ID" (System/getenv "TELEGRAM_CHAT_ID")}
+   (env-long "BRIDGE_PORT" 8765)))
+(def bridge-port (:bridge-port resolved-telegram-creds))
 
 ;; BL-370: how long the bot's poll heartbeat can go quiet before it is
 ;; treated as stalled. Default 90s - a healthy long-poll (25s timeout,
@@ -263,8 +297,13 @@
   (when-let [err (ensure-current-build!)]
     (log! "degraded-respawn" "bot" "stale build re-armed -" err))
   (process/process {:out :inherit :err :inherit
-                     :extra-env {"TELEGRAM_BOT_TOKEN" (System/getenv "TELEGRAM_BOT_TOKEN")
-                                 "TELEGRAM_CHAT_ID" (System/getenv "TELEGRAM_CHAT_ID")
+                     ;; BL-436: bot token/chat id come from resolved-telegram-creds
+                     ;; (this swarm's OWN fleet creds file when one exists,
+                     ;; env otherwise) - never a direct System/getenv read
+                     ;; here, or a second swarm sharing this shell's
+                     ;; ambient env would silently inherit the primary's.
+                     :extra-env {"TELEGRAM_BOT_TOKEN" (:bot-token resolved-telegram-creds)
+                                 "TELEGRAM_CHAT_ID" (:chat-id resolved-telegram-creds)
                                  "TELEGRAM_PRINCIPAL_USER_ID" (System/getenv "TELEGRAM_PRINCIPAL_USER_ID")
                                  "BRIDGE_TOKEN" (System/getenv "BRIDGE_TOKEN")
                                  "BRIDGE_CONTROL_TOKEN" (System/getenv "BRIDGE_TOKEN")}}

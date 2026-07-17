@@ -22,7 +22,11 @@ make_fixture() {
   # (reused BL-345 delivery-based alarm arming) and daemon_alarm_lib.bb
   # (the email send path) relative to its own dir - both must ship
   # alongside it in every fixture, or the supervisor fails to even load.
-  cp "$SRC/front_desk_supervisor.bb" "$SRC/front_desk_supervisor_lib.bb" "$SRC/operator_lib.bb" "$SRC/daemon_alarm_lib.bb" "$d/"
+  # BL-436: also load-files swarm_identity_lib.bb (own-swarm-name) and
+  # fleet_telegram_creds_lib.bb (per-swarm creds resolution) - same
+  # requirement.
+  cp "$SRC/front_desk_supervisor.bb" "$SRC/front_desk_supervisor_lib.bb" "$SRC/operator_lib.bb" "$SRC/daemon_alarm_lib.bb" \
+     "$SRC/swarm_identity_lib.bb" "$SRC/fleet_telegram_creds_lib.bb" "$d/"
   # A fake entrypoint that stays alive forever (mirrors the real bridge/bot
   # processes, which never exit on their own while healthy).
   cat > "$d/extension/out/tools/start-bridge-headless.js" <<'EOF'

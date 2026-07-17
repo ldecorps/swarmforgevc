@@ -21,9 +21,19 @@ function mkTmpSecretsPath() {
   return path.join(dir, 'secrets.json');
 }
 
+// BL-436: a fixture HOME directory standing in for the real one -
+// buildAdapters' fleet-creds write must never touch the real $HOME during
+// a test.
+function mkTmpHomeDir() {
+  return mkTmpDir('provision-onboarding-telegram-channel-home-');
+}
+
+const TEST_SWARM_NAME = 'fes';
+const TEST_BRIDGE_PORT = 9001;
+
 test('buildAdapters.getUpdates surfaces a fetch failure as an error, not an empty success', async () => {
   const failingPostFn = async () => ({ ok: false, status: 401, json: { description: 'Unauthorized' } });
-  const adapters = buildAdapters('/unused-target', 'bad-token', mkTmpSecretsPath(), failingPostFn);
+  const adapters = buildAdapters('/unused-target', 'bad-token', mkTmpSecretsPath(), TEST_SWARM_NAME, TEST_BRIDGE_PORT, failingPostFn);
 
   const result = await adapters.getUpdates();
 
@@ -33,7 +43,7 @@ test('buildAdapters.getUpdates surfaces a fetch failure as an error, not an empt
 
 test('buildAdapters.getUpdates returns the fetched updates on success', async () => {
   const okPostFn = async () => ({ ok: true, status: 200, json: { result: [{ update_id: 1 }] } });
-  const adapters = buildAdapters('/unused-target', 'good-token', mkTmpSecretsPath(), okPostFn);
+  const adapters = buildAdapters('/unused-target', 'good-token', mkTmpSecretsPath(), TEST_SWARM_NAME, TEST_BRIDGE_PORT, okPostFn);
 
   const result = await adapters.getUpdates();
 
@@ -50,7 +60,7 @@ test('buildAdapters.getUpdates returns the fetched updates on success', async ()
 
 test('buildAdapters.createNegotiationTopic opens a topic via the injected postFn, no live network', async () => {
   const okPostFn = async () => ({ ok: true, status: 200, json: { result: { message_thread_id: 42 } } });
-  const adapters = buildAdapters('/unused-target', 'good-token', mkTmpSecretsPath(), okPostFn);
+  const adapters = buildAdapters('/unused-target', 'good-token', mkTmpSecretsPath(), TEST_SWARM_NAME, TEST_BRIDGE_PORT, okPostFn);
 
   const result = await adapters.createNegotiationTopic('-100123');
 
@@ -60,7 +70,7 @@ test('buildAdapters.createNegotiationTopic opens a topic via the injected postFn
 
 test('buildAdapters.persistChannel writes the chat id and topic id under the target repo path', () => {
   const targetRepoPath = mkTmpDir('provision-onboarding-telegram-channel-target-');
-  const adapters = buildAdapters(targetRepoPath, 'good-token', mkTmpSecretsPath());
+  const adapters = buildAdapters(targetRepoPath, 'good-token', mkTmpSecretsPath(), TEST_SWARM_NAME, TEST_BRIDGE_PORT, undefined, mkTmpHomeDir());
 
   adapters.persistChannel('-100123', 42);
 
@@ -71,12 +81,42 @@ test('buildAdapters.persistChannel writes the chat id and topic id under the tar
 test('buildAdapters.persistBotToken writes the token to the host secrets file, keyed by target repo path', () => {
   const targetRepoPath = mkTmpDir('provision-onboarding-telegram-channel-target-');
   const secretsFilePath = mkTmpSecretsPath();
-  const adapters = buildAdapters(targetRepoPath, 'good-token', secretsFilePath);
+  const adapters = buildAdapters(targetRepoPath, 'good-token', secretsFilePath, TEST_SWARM_NAME, TEST_BRIDGE_PORT, undefined, mkTmpHomeDir());
 
   adapters.persistBotToken();
 
   const written = JSON.parse(fs.readFileSync(secretsFilePath, 'utf8'));
   assert.equal(written[targetRepoPath], 'good-token');
+});
+
+// ── BL-436: persistChannel ALSO writes the swarm's fleet creds file,
+//    additive to the existing target-repo-keyed write above ──────────────
+
+test('buildAdapters.persistChannel also writes botToken/chatId/bridgePort to the fleet creds file for this swarm', () => {
+  const targetRepoPath = mkTmpDir('provision-onboarding-telegram-channel-target-');
+  const homeDir = mkTmpHomeDir();
+  const adapters = buildAdapters(targetRepoPath, 'fes-bot-token', mkTmpSecretsPath(), TEST_SWARM_NAME, TEST_BRIDGE_PORT, undefined, homeDir);
+
+  adapters.persistChannel('-100123', 42);
+
+  const written = JSON.parse(fs.readFileSync(path.join(homeDir, '.swarmforge', 'fleet', TEST_SWARM_NAME, 'telegram.json'), 'utf8'));
+  assert.deepEqual(written, { botToken: 'fes-bot-token', chatId: '-100123', bridgePort: TEST_BRIDGE_PORT });
+});
+
+test('buildAdapters.persistChannel keeps two different swarms\' fleet creds files separate', () => {
+  const homeDir = mkTmpHomeDir();
+  const targetA = mkTmpDir('provision-onboarding-telegram-channel-target-');
+  const targetB = mkTmpDir('provision-onboarding-telegram-channel-target-');
+  const adaptersA = buildAdapters(targetA, 'token-a', mkTmpSecretsPath(), 'fes', 9001, undefined, homeDir);
+  const adaptersB = buildAdapters(targetB, 'token-b', mkTmpSecretsPath(), 'primary', 8765, undefined, homeDir);
+
+  adaptersA.persistChannel('-100111', 1);
+  adaptersB.persistChannel('-100222', 2);
+
+  const writtenA = JSON.parse(fs.readFileSync(path.join(homeDir, '.swarmforge', 'fleet', 'fes', 'telegram.json'), 'utf8'));
+  const writtenB = JSON.parse(fs.readFileSync(path.join(homeDir, '.swarmforge', 'fleet', 'primary', 'telegram.json'), 'utf8'));
+  assert.deepEqual(writtenA, { botToken: 'token-a', chatId: '-100111', bridgePort: 9001 });
+  assert.deepEqual(writtenB, { botToken: 'token-b', chatId: '-100222', bridgePort: 8765 });
 });
 
 // ── BL-444: the confirm offset is the one piece of state this CLI owns ────
@@ -102,7 +142,7 @@ test('BL-444: buildAdapters.getUpdates reads the persisted offset instead of a h
     seenBodies.push(JSON.parse(body));
     return { ok: true, status: 200, json: { result: [] } };
   };
-  const adapters = buildAdapters(targetRepoPath, 'good-token', mkTmpSecretsPath(), postFn);
+  const adapters = buildAdapters(targetRepoPath, 'good-token', mkTmpSecretsPath(), TEST_SWARM_NAME, TEST_BRIDGE_PORT, postFn);
 
   await adapters.getUpdates();
 
@@ -111,7 +151,7 @@ test('BL-444: buildAdapters.getUpdates reads the persisted offset instead of a h
 
 test('BL-444: buildAdapters.persistConfirmOffset writes the offset that getUpdates will next read', () => {
   const targetRepoPath = mkTmpDir('provision-onboarding-telegram-channel-target-');
-  const adapters = buildAdapters(targetRepoPath, 'good-token', mkTmpSecretsPath());
+  const adapters = buildAdapters(targetRepoPath, 'good-token', mkTmpSecretsPath(), TEST_SWARM_NAME, TEST_BRIDGE_PORT, undefined, mkTmpHomeDir());
 
   adapters.persistConfirmOffset(143744673);
 
@@ -124,7 +164,7 @@ test('BL-444: buildAdapters.createNegotiationTopic surfaces migrateToChatId as a
     status: 400,
     json: { description: 'Bad Request: group chat was upgraded to a supergroup chat', parameters: { migrate_to_chat_id: -1003886489685 } },
   });
-  const adapters = buildAdapters('/unused-target', 'good-token', mkTmpSecretsPath(), migratePostFn);
+  const adapters = buildAdapters('/unused-target', 'good-token', mkTmpSecretsPath(), TEST_SWARM_NAME, TEST_BRIDGE_PORT, migratePostFn);
 
   const result = await adapters.createNegotiationTopic('-5274683022');
 
@@ -134,7 +174,7 @@ test('BL-444: buildAdapters.createNegotiationTopic surfaces migrateToChatId as a
 
 test('buildAdapters.createNegotiationTopic reports no migrateToChatId on an ordinary failure', async () => {
   const failingPostFn = async () => ({ ok: false, status: 400, json: { description: 'Bad Request: chat not found' } });
-  const adapters = buildAdapters('/unused-target', 'good-token', mkTmpSecretsPath(), failingPostFn);
+  const adapters = buildAdapters('/unused-target', 'good-token', mkTmpSecretsPath(), TEST_SWARM_NAME, TEST_BRIDGE_PORT, failingPostFn);
 
   const result = await adapters.createNegotiationTopic('-100123');
 
@@ -144,12 +184,25 @@ test('buildAdapters.createNegotiationTopic reports no migrateToChatId on an ordi
 
 // ── parseArgs ────────────────────────────────────────────────────────────
 
-test('parseArgs returns all four positional args when given', () => {
-  assert.deepEqual(parseArgs(['/target', 'bot-token', 'bot-username', '/host/secrets.json']), {
+test('parseArgs returns all positional args when given, defaulting bridgePort when omitted', () => {
+  assert.deepEqual(parseArgs(['/target', 'bot-token', 'bot-username', '/host/secrets.json', 'fes']), {
     targetRepoPath: '/target',
     botToken: 'bot-token',
     botUsername: 'bot-username',
     hostSecretsFilePath: '/host/secrets.json',
+    swarmName: 'fes',
+    bridgePort: 8765,
+  });
+});
+
+test('parseArgs reads an explicit bridge port when given', () => {
+  assert.deepEqual(parseArgs(['/target', 'bot-token', 'bot-username', '/host/secrets.json', 'fes', '9001']), {
+    targetRepoPath: '/target',
+    botToken: 'bot-token',
+    botUsername: 'bot-username',
+    hostSecretsFilePath: '/host/secrets.json',
+    swarmName: 'fes',
+    bridgePort: 9001,
   });
 });
 
@@ -159,6 +212,14 @@ test('parseArgs returns null when no arguments are given', () => {
 
 test('parseArgs returns null when the host secrets file path is missing', () => {
   assert.equal(parseArgs(['/target', 'bot-token', 'bot-username']), null);
+});
+
+test('parseArgs returns null when swarm-name is missing', () => {
+  assert.equal(parseArgs(['/target', 'bot-token', 'bot-username', '/host/secrets.json']), null);
+});
+
+test('parseArgs returns null when the given bridge port is not a number', () => {
+  assert.equal(parseArgs(['/target', 'bot-token', 'bot-username', '/host/secrets.json', 'fes', 'not-a-port']), null);
 });
 
 // ── main() wiring (no real network - a missing arg is caught by

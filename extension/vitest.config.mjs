@@ -71,7 +71,12 @@ export default defineConfig({
     // its own suites and fails it ("No test suite found") because the
     // fixture calls node:test's own test() directly rather than relying
     // on Vitest's globals.
-    exclude: [...configDefaults.exclude, '**/.stryker-tmp/**', '**/out/**', 'test/fixtures/**'],
+    // BL-479: property tests run only via `npm run test:properties`
+    // (vitest.properties.config.mjs) - excluded here so the normal unit
+    // run, `npm run coverage`, and Stryker's mutation run (which reuses
+    // THIS config, per BL-124) never pick them up, per engineering.prompt's
+    // property-test separation rule.
+    exclude: [...configDefaults.exclude, '**/.stryker-tmp/**', '**/out/**', 'test/fixtures/**', '**/*.property.test.js'],
     // node --test had no default per-test timeout. paneTailerScrollback (the
     // one 30s+ offender, BL-125) now runs in-process via a spy double, so a
     // normal cap is fine; the rest still spawn a fake-tmux binary and stay
