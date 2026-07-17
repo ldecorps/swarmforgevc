@@ -47,7 +47,7 @@ notes: |
   telegram-topic-map.json. Re-boot: no second Backlog topic is created (the recorded id is reused).
   Confirm the STEERING topics and other standing topics are untouched across both boots.
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   Foundation slice of the BL-491 topic-consolidation epic you already blessed at the plan level. This
   ticket's contract: a standing "Backlog" catch-all topic ensured once at boot under a new reserved
