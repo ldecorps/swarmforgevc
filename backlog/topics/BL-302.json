@@ -1,0 +1,1 @@
+{"id":"BL-302","messages":[{"seq":0,"ts":1784302247871,"author":"swarm","type":"outbound","text":"BL-302 ✅ done — Bug: front-desk bot poll loop hot-spins (no backoff) when the Telegram poll socket drops — add bounded backoff + escalation, and isolate the loop from its siblings"}]}
