@@ -9,7 +9,7 @@
 // the board is always the LATEST message in its topic. An unchanged tick is
 // a complete no-op: no delete, no post, no state change - the existing
 // message (and its footer timestamp) stays exactly where it is.
-import { PipelineBoardData, renderPipelineBoard, renderPipelineBoardBody, renderPipelineBoardLinks } from './pipelineBoard';
+import { PipelineBoardData, PIPELINE_BOARD_MESSAGE_MAX_LENGTH, budgetPipelineBoardLinks, renderPipelineBoard, renderPipelineBoardBody, wrapPipelineBoardHtml } from './pipelineBoard';
 
 // BL-497: the board's retry cap - the number of CONSECUTIVE failed ticks
 // (any mix of failed-no-topic/failed-post) tolerated before exactly one
@@ -19,7 +19,7 @@ import { PipelineBoardData, renderPipelineBoard, renderPipelineBoardBody, render
 // hardcoded number of its own.
 export const PIPELINE_BOARD_ALERT_FAILURE_CAP = 5;
 
-export type PipelineBoardFailureClass = 'topic-gone' | 'transient' | 'unknown';
+export type PipelineBoardFailureClass = 'topic-gone' | 'too-long' | 'transient' | 'unknown';
 
 export interface PipelineBoardTopicResult {
   topicId?: number;
@@ -109,6 +109,14 @@ export interface PipelineBoardSyncResult {
 // insensitive match against the (already human-readable) formatted error
 // text callTelegramApi/formatApiFailureError produce.
 const TOPIC_GONE_ERROR_SIGNATURES = ['message thread not found'];
+// BL-502: a too-long payload is NOT transient - retrying the identical
+// oversized message fails forever until the payload itself shrinks
+// (budgetPipelineBoardLinks' own job). Classified on its own class,
+// distinct from transient/unknown, purely so BL-497's alert names the
+// real cause instead of lumping it under "unknown" if a payload is ever
+// still over budget; the topic itself is fine (only the payload is too
+// big), so this retains it exactly like transient/unknown do.
+const TOO_LONG_ERROR_SIGNATURES = ['text is too long'];
 const TRANSIENT_ERROR_SIGNATURES = [
   'too many requests',
   'retry after',
@@ -128,19 +136,32 @@ function matchesAnySignature(error: string, signatures: string[]): boolean {
   return signatures.some((signature) => lower.includes(signature));
 }
 
+// BL-497/BL-502 (cleaner, CRAP budget): the three signature lists above,
+// tried in this fixed order - topic-gone and too-long are both distinct,
+// non-transient causes checked before the broader transient bucket, so an
+// error matching more than one list's wording still lands on the earliest,
+// most specific class. Extracted from classifyBoardFailure below (which
+// repeated the identical `error && matchesAnySignature(error, X)` shape
+// three times) into one ordered lookup, purely to keep that function's own
+// CRAP under threshold - mirrors resolveBoardTopicId's own extraction below
+// for the identical reason.
+const FAILURE_CLASSIFICATION_ORDER: { signatures: string[]; failureClass: PipelineBoardFailureClass }[] = [
+  { signatures: TOPIC_GONE_ERROR_SIGNATURES, failureClass: 'topic-gone' },
+  { signatures: TOO_LONG_ERROR_SIGNATURES, failureClass: 'too-long' },
+  { signatures: TRANSIENT_ERROR_SIGNATURES, failureClass: 'transient' },
+];
+
 // BL-497: a topic-gone classification self-heals (the next tick re-ensures
 // a fresh topic); a transient one retains the topic and bounded-retries; an
 // UNKNOWN/unclassifiable error is deliberately folded into the same
 // retained posture as transient - the ticket's own conservative choice, so
 // a never-seen-before error string can never spawn a duplicate topic.
 export function classifyBoardFailure(error: string | undefined): PipelineBoardFailureClass {
-  if (error && matchesAnySignature(error, TOPIC_GONE_ERROR_SIGNATURES)) {
-    return 'topic-gone';
+  if (!error) {
+    return 'unknown';
   }
-  if (error && matchesAnySignature(error, TRANSIENT_ERROR_SIGNATURES)) {
-    return 'transient';
-  }
-  return 'unknown';
+  const matched = FAILURE_CLASSIFICATION_ORDER.find(({ signatures }) => matchesAnySignature(error, signatures));
+  return matched?.failureClass ?? 'unknown';
 }
 
 // The topic id is created ONCE then reused - split out purely to keep
@@ -224,7 +245,10 @@ async function postBoardMessage(
     // case that "still-good prior message" is a fiction - both topicId and
     // messageId are cleared so the NEXT tick's resolveBoardTopicId
     // re-ensures a genuinely fresh topic and posts into it (self-heal).
-    // Any other class (transient/unknown) retains both untouched.
+    // Any other class (too-long/transient/unknown) retains both untouched -
+    // BL-502: a too-long payload's TOPIC is fine, only the payload was too
+    // big (and budgetPipelineBoardLinks now keeps it under budget going
+    // forward), so recreating the topic would be pointless churn.
     const failureClass = classifyBoardFailure(error);
     const stateOverlay: Partial<PipelineBoardState> = failureClass === 'topic-gone' ? { topicId: undefined, messageId: undefined } : { topicId };
     return failedOutcome(prevState, stateOverlay, 'failed-post', error, failureClass);
@@ -266,7 +290,14 @@ export async function syncPipelineBoard(
 
   const lastChangeMs = nowMs;
   const text = renderPipelineBoard(data, lastChangeMs);
-  const linksHtml = renderPipelineBoardLinks(data.links ?? [], repoBaseUrl);
+  // BL-502: the link list is the ELASTIC part - budgeted against whatever
+  // room remains after the fixed grid/parked/footer body (always included
+  // in full). wrapPipelineBoardHtml(text) (no linksHtml arg) is that body
+  // alone, wrapped exactly as it will be sent; the "\n\n" separator is
+  // reserved too, since it is only added once there is at least one link
+  // line to append.
+  const maxLinksLength = PIPELINE_BOARD_MESSAGE_MAX_LENGTH - wrapPipelineBoardHtml(text).length - 2;
+  const { html: linksHtml } = budgetPipelineBoardLinks(data.links ?? [], repoBaseUrl, maxLinksLength);
   const result = await postBoardMessage(topicResult.topicId, text, linksHtml, contentSignature, lastChangeMs, prevState, adapters);
   return result.outcome === 'failed-post' ? maybeEmitFailureAlert(result, adapters) : result;
 }
