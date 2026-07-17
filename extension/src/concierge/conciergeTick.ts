@@ -463,27 +463,20 @@ function stampNewlyDoneClosedAtMs(prev: Record<string, number> | undefined, done
   return doneClosedAtMs;
 }
 
-// BL-473: the board's active-row membership - physical backlog/active/
-// membership (folders.active, ground truth: the human's own "at least as
-// good as the PWA" contract) UNION every currently role-held id. The union
-// is defensive rather than folders.active alone: a role only ever holds a
-// ticket the coordinator already promoted into backlog/active/, so in every
-// real swarm state the two sets already coincide - the union only matters
-// if that invariant ever momentarily slips (a stale read, a race), and even
-// then it means "never drop a ticket that is visibly being worked", never
-// "show one wrongly" (an active-but-unheld ticket still correctly renders
-// not-started; this only ever ADDS a row, never marks a role stage that
-// isn't real). folders.active alone still gives every unheld active ticket
-// its not-started row - the union only prevents a role-held ticket from
-// ever vanishing off the board.
-function activeMembershipIds(folders: BacklogFoldersSnapshot, roleHeldTickets: Record<string, string[]>): string[] {
-  const ids = new Set(folders.active.map((item) => item.id));
-  for (const heldIds of Object.values(roleHeldTickets)) {
-    for (const id of heldIds) {
-      ids.add(id);
-    }
-  }
-  return [...ids];
+// BL-473 bounce: row membership is EXACTLY folders.active (physical
+// backlog/active/ membership, ground truth for the human's "at least as
+// good as the PWA" contract) - never unioned with roleHeldTickets. A
+// role-held id absent from folders.active must get no row at all
+// (acceptance board-active-membership-03: "no active row exists for a
+// ticket absent from backlog/active/"); a defensive union would violate
+// that "and only those" property the instant the two sources disagree - a
+// role still holding a ticket the coordinator has already moved out of
+// backlog/active/ (closed, or bounced back off-pipeline) would keep
+// rendering an active row for a ticket that is no longer active. The
+// role-held map stays exactly what buildGridRows already documents it as:
+// decoration for a member's stage, never a second membership source.
+function activeMembershipIds(folders: BacklogFoldersSnapshot): string[] {
+  return folders.active.map((item) => item.id);
 }
 
 async function syncBoardIfWired(
@@ -505,7 +498,7 @@ async function syncBoardIfWired(
     rootIntake: readRootIntakeFiles?.() ?? [],
     recentlyClosed: recentlyClosedItems(folders, doneClosedAtMs),
     repoBaseUrl,
-    activeIds: activeMembershipIds(folders, roleHeldTickets),
+    activeIds: activeMembershipIds(folders),
   });
   const result = await syncPipelineBoard(data, prevBoard, boardAdapters, nowMs, repoBaseUrl);
   return result.state;
