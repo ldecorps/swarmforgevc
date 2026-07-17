@@ -22,7 +22,7 @@ make_fixture() {
      "$SRC/support_lib.bb" "$SRC/support_thread_store.bb" \
      "$SRC/operator_memory_lib.bb" "$SRC/operator_memory_store.bb" \
      "$SRC/ticket_status_lib.bb" "$SRC/operator_ask.bb" "$SRC/handoff_lib.bb" \
-     "$SRC/daemon_alarm_lib.bb" "$SRC/disk_space_lib.bb" "$SRC/sandbox_sweep_lib.bb" "$SRC/bounded_delete_sweep_lib.bb" "$SRC/proc_fd_scan_lib.bb" "$SRC/fixture_reaper_lib.bb" "$SRC/fixture_reaper_sweep_lib.bb" \
+     "$SRC/daemon_alarm_lib.bb" "$SRC/disk_space_lib.bb" "$SRC/sandbox_sweep_lib.bb" "$SRC/bounded_delete_sweep_lib.bb" "$SRC/proc_fd_scan_lib.bb" "$SRC/fixture_reaper_lib.bb" "$SRC/fixture_reaper_sweep_lib.bb" "$SRC/orphan_agent_reaper_lib.bb" "$SRC/orphan_agent_reaper_sweep_lib.bb" \
      "$d/swarmforge/scripts/"
   printf '%s' "$d"
 }
@@ -31,7 +31,7 @@ make_fixture() {
 # both sweeps see a missing root and no-op (fs/exists? false), never touching
 # the real /tmp as a side effect of a test that is not ABOUT sweeping.
 tick() {
-  OPERATOR_SKIP_LAUNCH=1 SWARMFORGE_SANDBOX_SWEEP_ROOT="$1/.no-sandbox-sweep" SWARMFORGE_FIXTURE_REAP_ROOT="$1/.no-fixture-reap" \
+  OPERATOR_SKIP_LAUNCH=1 SWARMFORGE_SANDBOX_SWEEP_ROOT="$1/.no-sandbox-sweep" SWARMFORGE_FIXTURE_REAP_ROOT="$1/.no-fixture-reap" SWARMFORGE_ORPHAN_REAP_CANDIDATE_PIDS="" \
     bb "$1/swarmforge/scripts/operator_runtime.bb" "$1" --tick-once
 }
 
