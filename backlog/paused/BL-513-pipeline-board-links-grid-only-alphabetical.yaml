@@ -62,7 +62,7 @@ acceptance:
 #   3. Render over the CURRENT live backlog and confirm the LINKS section now lists only the grid
 #      tickets in alphabetical order (not BL-506's most-recent-first, and no parked/closed/intake links).
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   Carrying out your instruction to make the pipeline-board LINKS section list only the tickets shown
   on the board, in alphabetical order — superseding BL-506 (which had just shipped LINKS most-recent
