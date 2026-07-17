@@ -42,6 +42,7 @@ const {
   CONTROL_SUBJECT_ID,
   decideAgentQuestionsReplyAction,
   decidePollAnswerAction,
+  recordApprovalDecisionAndClose,
 } = require('../out/tools/telegramFrontDeskBotCore');
 
 const PRINCIPAL_ID = 111;
@@ -1027,6 +1028,35 @@ test('BL-357: a reply containing "approve" on a backlog item\'s topic also recor
   assert.equal(result.posted, 1);
 });
 
+// BL-484 decided-ask-closes-02 (per-ticket-topic entry point): a bare-reply
+// approval on a ticket's own topic closes the posted ask too - the SAME
+// recordApprovalDecisionAndClose routine deliverOperatorContext calls,
+// never a divergent edit path from the Approvals-topic reply above.
+test('BL-484: an approval reply on a backlog item\'s own topic also closes the posted ask', async () => {
+  const editCalls = [];
+  await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 42, text: 'I approve this' })] }),
+    postToBridge: async () => {
+      throw new Error('postToBridge should not be called for a backlog-item topic reply');
+    },
+    openSubjectAndRecord: async () => {
+      throw new Error('openSubjectAndRecord should not be called for a backlog-item topic reply');
+    },
+    subjectForTopic: () => undefined,
+    backlogForTopic: (topicId) => (topicId === 42 ? 'BL-123' : undefined),
+    postOperatorContext: async () => true,
+    recordApprovalReply: async () => true,
+    readApprovalAskMessage: async (backlogId) => ({ topicId: 800, messageId: 7, text: `${backlogId} needs your approval...` }),
+    editApprovalAskMessage: async (topicId, messageId, text) => {
+      editCalls.push({ topicId, messageId, text });
+      return true;
+    },
+  });
+  assert.equal(editCalls.length, 1);
+  assert.ok(editCalls[0].text.includes('-- Approved'));
+});
+
 test('BL-357: an ordinary reply with no approval keyword posts operator context but never calls recordApprovalReply', async () => {
   const approvals = [];
   await pollAndForward(0, PRINCIPAL_ID, {
@@ -1231,6 +1261,40 @@ test('BL-434 approvals-standing-topic-02: "reject <id> <reason>" in the Approval
     },
   });
   assert.deepEqual(rejections, [{ backlogId: 'BL-433', reason: 'no good' }]);
+  assert.equal(result.posted, 1);
+});
+
+// BL-484 decided-ask-closes-02: a typed-reply decision closes the posted
+// ask exactly the way a button tap does - proves the Approvals-topic reply
+// path routes through the SAME recordApprovalDecisionAndClose routine as
+// processCallbackQuery above, never a second, divergent edit path.
+test('BL-484: "reject <id> <reason>" in the Approvals topic closes the posted ask - strips buttons, appends the Rejected verdict + reason', async () => {
+  const editCalls = [];
+  const result = await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 750, text: 'reject BL-484 bad scope' })] }),
+    postToBridge: async () => {
+      throw new Error('postToBridge should not be called for an Approvals-topic reply');
+    },
+    openSubjectAndRecord: async () => {
+      throw new Error('openSubjectAndRecord should not be called for an Approvals-topic reply');
+    },
+    subjectForTopic: (topicId) => (topicId === 750 ? APPROVALS_SUBJECT_ID : undefined),
+    backlogForTopic: () => undefined,
+    postOperatorContext: async () => {
+      throw new Error('postOperatorContext should not be called for an Approvals-topic reply');
+    },
+    recordApprovalReply: async () => {
+      throw new Error('recordApprovalReply should not be called for a reject reply');
+    },
+    recordRejectionReply: async () => true,
+    readApprovalAskMessage: async (backlogId) => ({ topicId: 800, messageId: 42, text: `${backlogId} needs your approval...` }),
+    editApprovalAskMessage: async (topicId, messageId, text) => {
+      editCalls.push({ topicId, messageId, text });
+      return true;
+    },
+  });
+  assert.deepEqual(editCalls, [{ topicId: 800, messageId: 42, text: 'BL-484 needs your approval...\n-- Rejected: bad scope' }]);
   assert.equal(result.posted, 1);
 });
 
@@ -1623,6 +1687,9 @@ function callbackFixtureAdapters(overrides = {}) {
     recordRejectionReply: overrides.recordRejectionReply ?? (async () => true),
     setPendingButtonAction: overrides.setPendingButtonAction ?? (async () => {}),
     answerCallbackQuery: overrides.answerCallbackQuery ?? (async () => {}),
+    readRecordedApprovalVerdict: overrides.readRecordedApprovalVerdict,
+    readApprovalAskMessage: overrides.readApprovalAskMessage,
+    editApprovalAskMessage: overrides.editApprovalAskMessage,
   };
 }
 
@@ -1709,6 +1776,184 @@ test('BL-410: every recognized-chat/principal tap answers the spinner, even a no
     })
   );
   assert.deepEqual(answered, ['cbq-1']);
+});
+
+// ── BL-484: a tap on an ALREADY-DECIDED ask is stale - answered with an
+// informative toast naming the recorded verdict, no decision side effect. ──
+
+test('BL-484: an Approve tap on an already-decided (approved) ticket answers with a toast and never records again', async () => {
+  const approvals = [];
+  const answered = [];
+  const result = await pollAndForward(
+    0,
+    PRINCIPAL_ID,
+    callbackFixtureAdapters({
+      data: 'approve:BL-123',
+      recordApprovalReply: async (backlogId) => {
+        approvals.push(backlogId);
+        return true;
+      },
+      answerCallbackQuery: async (id, text) => {
+        answered.push({ id, text });
+      },
+      readRecordedApprovalVerdict: async () => 'approved',
+    })
+  );
+  assert.deepEqual(approvals, [], 'expected no decision side effect on a stale tap');
+  assert.deepEqual(answered, [{ id: 'cbq-1', text: 'Already decided: approved' }]);
+  assert.equal(result.dropped, 1);
+  assert.equal(result.posted, 0);
+});
+
+test('BL-484: a Reject tap on an already-decided (rejected) ticket answers with a toast and never stashes a pending marker', async () => {
+  const pending = [];
+  const answered = [];
+  await pollAndForward(
+    0,
+    PRINCIPAL_ID,
+    callbackFixtureAdapters({
+      data: 'reject:BL-123',
+      setPendingButtonAction: async (backlogId, kind) => {
+        pending.push({ backlogId, kind });
+      },
+      answerCallbackQuery: async (id, text) => {
+        answered.push({ id, text });
+      },
+      readRecordedApprovalVerdict: async () => 'rejected',
+    })
+  );
+  assert.deepEqual(pending, []);
+  assert.deepEqual(answered, [{ id: 'cbq-1', text: 'Already decided: rejected' }]);
+});
+
+test('BL-484: readRecordedApprovalVerdict absent (pre-BL-484 fixtures) keeps every tap proceeding exactly as before (regression)', async () => {
+  const approvals = [];
+  await pollAndForward(
+    0,
+    PRINCIPAL_ID,
+    callbackFixtureAdapters({
+      data: 'approve:BL-123',
+      recordApprovalReply: async (backlogId) => {
+        approvals.push(backlogId);
+        return true;
+      },
+    })
+  );
+  assert.deepEqual(approvals, ['BL-123']);
+});
+
+test('BL-484: readRecordedApprovalVerdict returning undefined (still pending) keeps the tap proceeding normally', async () => {
+  const approvals = [];
+  await pollAndForward(
+    0,
+    PRINCIPAL_ID,
+    callbackFixtureAdapters({
+      data: 'approve:BL-123',
+      recordApprovalReply: async (backlogId) => {
+        approvals.push(backlogId);
+        return true;
+      },
+      readRecordedApprovalVerdict: async () => undefined,
+    })
+  );
+  assert.deepEqual(approvals, ['BL-123']);
+});
+
+// ── BL-484: recordApprovalDecisionAndClose - the ONE closing routine
+// serving both decision entry points (a button tap above, and a typed
+// reply below) ─────────────────────────────────────────────────────────
+
+function closingFixtureAdapters(overrides = {}) {
+  const editCalls = [];
+  return {
+    recordApprovalReply: overrides.recordApprovalReply ?? (async () => true),
+    recordRejectionReply: overrides.recordRejectionReply ?? (async () => true),
+    readApprovalAskMessage: overrides.readApprovalAskMessage,
+    editApprovalAskMessage:
+      overrides.editApprovalAskMessage ??
+      (async (topicId, messageId, text) => {
+        editCalls.push({ topicId, messageId, text });
+        return true;
+      }),
+    editCalls,
+  };
+}
+
+test('recordApprovalDecisionAndClose: an approved decision with a stored ask edits it with the buttons-stripped, verdict-appended text', async () => {
+  const adapters = closingFixtureAdapters({
+    readApprovalAskMessage: async (backlogId) => ({ topicId: 800, messageId: 999, text: `${backlogId} needs your approval...` }),
+  });
+  const nowMs = Date.UTC(2026, 6, 17, 3, 7);
+
+  const changed = await recordApprovalDecisionAndClose(adapters, 'BL-484', { kind: 'approved' }, nowMs);
+
+  assert.equal(changed, true);
+  assert.deepEqual(adapters.editCalls, [
+    { topicId: 800, messageId: 999, text: 'BL-484 needs your approval...\n-- Approved 2026-07-17 03:07 UTC' },
+  ]);
+});
+
+test('recordApprovalDecisionAndClose: a rejected decision appends the reason', async () => {
+  const adapters = closingFixtureAdapters({
+    readApprovalAskMessage: async (backlogId) => ({ topicId: 800, messageId: 999, text: `${backlogId} needs your approval...` }),
+  });
+
+  await recordApprovalDecisionAndClose(adapters, 'BL-484', { kind: 'rejected', reason: 'bad scope' }, 0);
+
+  assert.equal(adapters.editCalls[0].text, 'BL-484 needs your approval...\n-- Rejected: bad scope');
+});
+
+test('recordApprovalDecisionAndClose: no stored ask message (never captured) records the decision but attempts no edit, never crashes', async () => {
+  const adapters = closingFixtureAdapters({ readApprovalAskMessage: undefined });
+
+  const changed = await recordApprovalDecisionAndClose(adapters, 'BL-484', { kind: 'approved' }, 0);
+
+  assert.equal(changed, true);
+  assert.deepEqual(adapters.editCalls, []);
+});
+
+test('recordApprovalDecisionAndClose: a decision that was NOT actually pending (recordApprovalReply reports no change) attempts no edit at all', async () => {
+  const adapters = closingFixtureAdapters({
+    recordApprovalReply: async () => false,
+    readApprovalAskMessage: async () => ({ topicId: 800, messageId: 999, text: 'BL-484 needs your approval...' }),
+  });
+
+  const changed = await recordApprovalDecisionAndClose(adapters, 'BL-484', { kind: 'approved' }, 0);
+
+  assert.equal(changed, false);
+  assert.deepEqual(adapters.editCalls, [], 'expected no edit attempted for a no-op (already-decided) recording');
+});
+
+test('recordApprovalDecisionAndClose: a failed message edit is logged and does not throw - the decision recording still succeeded', async () => {
+  const adapters = closingFixtureAdapters({
+    readApprovalAskMessage: async () => ({ topicId: 800, messageId: 999, text: 'BL-484 needs your approval...' }),
+    editApprovalAskMessage: async () => false,
+  });
+  const originalErrorWrite = process.stderr.write;
+  const errors = [];
+  process.stderr.write = (chunk) => {
+    errors.push(chunk);
+    return true;
+  };
+  let changed;
+  try {
+    changed = await recordApprovalDecisionAndClose(adapters, 'BL-484', { kind: 'approved' }, 0);
+  } finally {
+    process.stderr.write = originalErrorWrite;
+  }
+
+  assert.equal(changed, true, 'expected the decision recording to still be reported as successful');
+  assert.ok(errors.some((e) => e.includes('BL-484')), `expected a failed-edit warning naming the ticket, got: ${JSON.stringify(errors)}`);
+});
+
+test('recordApprovalDecisionAndClose: readApprovalAskMessage/editApprovalAskMessage both absent (pre-BL-484 PollAdapters) records the decision and never crashes', async () => {
+  const changed = await recordApprovalDecisionAndClose(
+    { recordApprovalReply: async () => true, recordRejectionReply: async () => true },
+    'BL-484',
+    { kind: 'approved' },
+    0
+  );
+  assert.equal(changed, true);
 });
 
 // ── pollAndForward: Agent Questions topic reply + poll_answer dispatch — BL-466 ──

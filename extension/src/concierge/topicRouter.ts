@@ -298,6 +298,27 @@ export interface RouteAdapters {
   // undefined only when creation itself failed (degrades to a skipped
   // route, same posture as a failed createTopic/ensureOperatorTopic).
   ensureApprovalsTopic: () => Promise<number | undefined>;
+  // BL-484: posts the approval ask and reports its Telegram message_id -
+  // the ordinary sendMessage above only ever reports success/failure. The
+  // decision-recording path (telegramFrontDeskBotCore.ts's
+  // processCallbackQuery/deliverOperatorContext/deliverApprovalsTopicReply
+  // - a SEPARATE poll-loop subsystem from this tick) needs this id later,
+  // to edit the exact posted message in place (strip its buttons, append
+  // the verdict) once a decision is recorded. Optional and additive:
+  // absent, routeApprovalRequestedEvent below falls back to the ordinary
+  // sendMessage/recordMessage path with no id ever captured, so no closing
+  // edit fires for that ask - the same "new capability is an optional
+  // adapter, absent degrades to the prior behavior" posture every other
+  // adapter in this interface already has (ensureApprovalsTopic et al.).
+  sendApprovalAsk?: (topicId: number, text: string, buttons: InlineKeyboardButton[][]) => Promise<{ success: boolean; messageId?: number }>;
+  // Persists the id sendApprovalAsk reported (plus the exact ask TEXT, so
+  // the closing routine can compose "original text + decision line"
+  // without a second lookup), keyed by backlogId, for the poll loop to
+  // read back later. Called only after a successful sendApprovalAsk that
+  // reported a concrete messageId - a success with no messageId (should
+  // not happen in practice, but degrades safely) simply never gets a
+  // closing edit, same as sendApprovalAsk being absent.
+  recordApprovalAskMessageId?: (backlogId: string, topicId: number, messageId: number, text: string) => void;
 }
 
 export interface RouteResult {
@@ -400,6 +421,29 @@ async function ensurePerTicketTopicForIcon(backlogId: string, title: string, ada
 // emits it for a real ticket id), so sendAndRecord still serialises the ask
 // into the ticket's own durable record (blTopicStore) exactly as before -
 // only the DESTINATION topic changes.
+// BL-484: sendApprovalAsk's own send-then-record sequence - mirrors
+// sendAndRecord's shape exactly, but additionally captures the posted
+// message's id (via recordApprovalAskMessageId) on a successful send that
+// reports one, so the decision-recording path can later edit this exact
+// message. Split out for the same reason sendAndRecord itself was: keeps
+// routeApprovalRequestedEvent's own branch count low.
+async function sendApprovalAskAndRecord(
+  topicId: number,
+  text: string,
+  backlogId: string,
+  adapters: RouteAdapters,
+  buttons: InlineKeyboardButton[][]
+): Promise<boolean> {
+  const result = await adapters.sendApprovalAsk!(topicId, text, buttons);
+  if (result.success) {
+    adapters.recordMessage(backlogId, text);
+    if (result.messageId !== undefined) {
+      adapters.recordApprovalAskMessageId?.(backlogId, topicId, result.messageId, text);
+    }
+  }
+  return result.success;
+}
+
 async function routeApprovalRequestedEvent(event: SwarmEvent, title: string, adapters: RouteAdapters): Promise<RouteResult> {
   if (event.backlogId === null) {
     return { posted: false, skipped: true };
@@ -411,7 +455,9 @@ async function routeApprovalRequestedEvent(event: SwarmEvent, title: string, ada
   }
   const text = messageTextForEvent(event);
   const buttons = messageButtonsForEvent(event);
-  const ok = await sendAndRecord(topicId, text, event.backlogId, adapters, buttons);
+  const ok = adapters.sendApprovalAsk
+    ? await sendApprovalAskAndRecord(topicId, text, event.backlogId, adapters, buttons!)
+    : await sendAndRecord(topicId, text, event.backlogId, adapters, buttons);
   return { posted: ok, skipped: false };
 }
 

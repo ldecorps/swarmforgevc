@@ -257,7 +257,8 @@ const DOMAINS = [
   require('./bl436PerSwarmTelegramCredsSteps'),
   require('./bl451RetirePwaRecertViewSteps'),
   require('./bl388TheRankingConsumesSurvivalAndReworkSteps'),
-  require('./bl473PipelineBoardActiveMembershipSteps')
+  require('./bl473PipelineBoardActiveMembershipSteps'),
+  require('./bl484DecidedAskClosesItselfSteps')
 ];
 
 function registerSteps(registry) {

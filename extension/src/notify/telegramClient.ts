@@ -262,19 +262,32 @@ export interface EditMessageTextResult {
   error?: string;
 }
 
+// BL-484: buttons added LAST (after postFn), same existing-callers-
+// unaffected posture as sendTelegramMessage's own trailing additions.
+// `undefined` (omitted) sends NO reply_markup field at all, so Telegram
+// leaves whatever keyboard the message already had untouched - the exact
+// pre-BL-484 behavior every existing call site relied on. `null` explicitly
+// strips the keyboard (an empty inline_keyboard) - Telegram does NOT do
+// this on its own when reply_markup is merely absent, so a decided
+// approval ask that wants its buttons gone must send this explicitly. A
+// real buttons array replaces the keyboard with that new one.
 export async function editMessageText(
   token: string,
   chatId: string,
   messageId: number,
   text: string,
   parseMode?: 'HTML',
-  postFn: TelegramPostFn = defaultPost
+  postFn: TelegramPostFn = defaultPost,
+  buttons?: InlineKeyboardButton[][] | null
 ): Promise<EditMessageTextResult> {
   const body = JSON.stringify({
     chat_id: chatId,
     message_id: messageId,
     text,
     ...(parseMode !== undefined ? { parse_mode: parseMode } : {}),
+    ...(buttons !== undefined
+      ? { reply_markup: { inline_keyboard: (buttons ?? []).map((row) => row.map((b) => ({ text: b.text, callback_data: b.callbackData }))) } }
+      : {}),
   });
   const result = await callTelegramApi(token, 'editMessageText', body, postFn);
   if (!result.success) {
@@ -400,12 +413,19 @@ export interface AnswerCallbackQueryResult {
   error?: string;
 }
 
+// BL-484: an optional toast `text` added LAST (after postFn), same
+// existing-callers-unaffected posture as editMessageText's own trailing
+// `buttons` addition above - lets a stale/already-decided tap tell the
+// human something ("Already decided: approved") without any other side
+// effect. Omitted (undefined) sends no `text` field, the exact pre-BL-484
+// silent-clear-the-spinner behavior.
 export async function answerCallbackQuery(
   token: string,
   callbackQueryId: string,
-  postFn: TelegramPostFn = defaultPost
+  postFn: TelegramPostFn = defaultPost,
+  text?: string
 ): Promise<AnswerCallbackQueryResult> {
-  const body = JSON.stringify({ callback_query_id: callbackQueryId });
+  const body = JSON.stringify({ callback_query_id: callbackQueryId, ...(text !== undefined ? { text } : {}) });
   const result = await callTelegramApi(token, 'answerCallbackQuery', body, postFn);
   if (!result.success) {
     return { success: false, error: result.error };
