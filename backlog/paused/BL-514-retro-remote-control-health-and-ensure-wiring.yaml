@@ -90,7 +90,7 @@ qa_e2e: |
      its agent:<role> line (not double-respawned), and the overall exit status reflects any FAILED.
   Verify against the real ensure path, not a fixture-only assertion.
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   Retro-ticketing the remote-control health/respawn tooling that landed on main WITHOUT a ticket
   (commit 7dd4d14e, an ancestor of BL-506's approved commit) — the constitution requires such
