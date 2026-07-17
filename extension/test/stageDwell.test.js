@@ -49,6 +49,21 @@ test('deriveDwellRecords computes queue wait and processing from enqueued/dequeu
   assert.equal(records[0].processingMs, 60 * 60 * 1000);
 });
 
+test('deriveDwellRecords resolves a no-hyphen task header to its canonical ticketId (BL-504 ts-metrics-ticket-id-02)', () => {
+  const { records } = deriveDwellRecords(
+    [
+      {
+        task: 'bl493-fold-ticket-events',
+        enqueued_at: '2026-07-09T08:00:00Z',
+        dequeued_at: '2026-07-09T08:05:00Z',
+        completed_at: '2026-07-09T09:05:00Z',
+      },
+    ],
+    'coder'
+  );
+  assert.equal(records[0].ticketId, 'BL-493');
+});
+
 test('deriveDwellRecords reports queueWaitMs null when enqueued_at is absent, keeping processing', () => {
   const { records, unparseableCount } = deriveDwellRecords(
     [{ task: 'BL-102-x', dequeued_at: '2026-07-09T08:00:00Z', completed_at: '2026-07-09T08:30:00Z' }],

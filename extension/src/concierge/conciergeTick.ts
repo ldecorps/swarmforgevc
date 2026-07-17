@@ -756,7 +756,7 @@ function epicSlicesFor(folders: BacklogFoldersSnapshot, epicId: string) {
 // `type: 'epic'` IS that epic's definition (its own title + remainingSlices
 // fields), found across all three folders (an epic's own umbrella ticket
 // can itself be active, paused, or done).
-function epicDefinitionsFor(folders: BacklogFoldersSnapshot): Record<string, EpicDefinition> {
+export function epicDefinitionsFor(folders: BacklogFoldersSnapshot): Record<string, EpicDefinition> {
   const all = [...folders.active, ...folders.paused, ...folders.done];
   const definitions: Record<string, EpicDefinition> = {};
   for (const item of all) {
@@ -765,6 +765,21 @@ function epicDefinitionsFor(folders: BacklogFoldersSnapshot): Record<string, Epi
     }
   }
   return definitions;
+}
+
+// BL-493 architect bounce (2026-07-17): the epic's human TITLE, resolved
+// through epicDefinitions - never the raw epic id used as a stand-in. An
+// epic with no defining ticket yet (epicDefinitions has no entry) falls
+// back to its own id, the SAME degrade postEpicUpdateIfApplicable already
+// uses for an undocumented epic. epic-less (undefined) stays undefined.
+// The single definition both ticketRouteContextFor below AND
+// topicReconciliation.ts's reconcileTopicLifecycle resolve a ticket's
+// epicTitle through - reconciliation used to stand the raw id in for the
+// title directly, which (once ensureEpicTopicId had to CREATE rather than
+// reuse the epic's topic) named the live Telegram topic "EPIC — <id>"
+// instead of its real title.
+export function epicTitleFor(epic: string | undefined, epicDefinitions: Record<string, EpicDefinition>): string | undefined {
+  return epic ? (epicDefinitions[epic]?.title ?? epic) : undefined;
 }
 
 // BL-341: the opening line on a slice's FIRST appearance (TaskStarted) vs
@@ -947,15 +962,6 @@ function withRetryableTransitionsHeldBack(curr: EventStreamSnapshot, unrouted: R
 // never consults it on those branches) or the "should not happen within one
 // tick" case of a ticket absent from every folder (mirrors
 // syncIconForBacklogId's own folder-undefined guard).
-// BL-493 (cleaner, CRAP budget): resolves an epic id to its human title,
-// falling back to the id itself when the epic has no documented title yet
-// (the 'undocumented-epic' case) - extracted from ticketRouteContextFor
-// below purely to keep that function's own CRAP under threshold, mirroring
-// epicUpdateText's own extraction above for the identical reason.
-function epicTitleFor(epic: string | undefined, epicDefinitions: Record<string, EpicDefinition>): string | undefined {
-  return epic ? epicDefinitions[epic]?.title ?? epic : undefined;
-}
-
 function ticketRouteContextFor(event: SwarmEvent, folders: BacklogFoldersSnapshot, epicDefinitions: Record<string, EpicDefinition>): TicketRouteContext | undefined {
   // BL-493/BL-358: only a ticket lifecycle transition (TaskStarted/
   // TaskCompleted) ever collapses into the ticket's status line -

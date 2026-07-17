@@ -135,7 +135,7 @@ import {
 import { readBacklogTopicMap, writeBacklogTopicMap, dropBacklogTopicMapping } from '../concierge/backlogTopicMapStore';
 import { readTicketMessageMap, writeTicketMessageEntry } from '../concierge/ticketMessageMapStore';
 import { ALL_SWARM_ROLES, readRoleTopicMap, writeRoleTopicMap } from '../concierge/roleTopicMapStore';
-import { runConciergeTick, ConciergeTickAdapters, BacklogFolderItem, BacklogFoldersSnapshot, TickState } from '../concierge/conciergeTick';
+import { runConciergeTick, ConciergeTickAdapters, BacklogFolderItem, BacklogFoldersSnapshot, TickState, epicDefinitionsFor } from '../concierge/conciergeTick';
 import { reconcileTopicLifecycle, ReconcileAdapters } from '../concierge/topicReconciliation';
 import { sweepTopicDeletions, TopicDeletionAdapters, topicRetentionWindowMs } from '../concierge/topicDeletion';
 import { readBacklogFolders } from '../panel/backlogReader';
@@ -2222,8 +2222,16 @@ export async function runOneConciergeTick(
   retentionWindowMs: number = topicRetentionWindowMs()
 ): Promise<void> {
   await runConciergeTick(adapters, nowMs);
-  const doneTickets = adapters.readFolders().done;
-  await reconcileTopicLifecycle(doneTickets, reconcileAdapters);
+  // BL-493 architect bounce: folders is read ONCE and reused for BOTH
+  // doneTickets and epicDefinitionsFor - reconcileTopicLifecycle needs the
+  // latter to resolve an epic-bound done ticket's real epic TITLE (never
+  // its raw id), the same resolution the live tick's own
+  // ticketRouteContextFor already applies. A second, independent
+  // adapters.readFolders() call here would re-parse the whole backlog for
+  // no reason - this tick's own snapshot already has everything both need.
+  const folders = adapters.readFolders();
+  const doneTickets = folders.done;
+  await reconcileTopicLifecycle(doneTickets, epicDefinitionsFor(folders), reconcileAdapters);
   await sweepTopicDeletions(doneTickets, deletionAdapters, nowMs, retentionWindowMs);
 }
 
