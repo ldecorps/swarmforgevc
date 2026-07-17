@@ -6,6 +6,7 @@ const {
   rolePromptPath,
   pipelineReviewForceResultFromEnv,
   createPipelineReviewOracle,
+  runReviewChain,
 } = require('../out/benchmark/pipelineReviewOracle');
 
 // ── parseReviewVerdict (pure) ───────────────────────────────────────────
@@ -60,6 +61,51 @@ test('reviewPrompt embeds the role prompt text, the task id, the stage name, and
 
 test('rolePromptPath resolves under <repoRoot>/swarmforge/roles/<stage>.prompt', () => {
   assert.equal(rolePromptPath('/some/repo', 'hardender'), path.join('/some/repo', 'swarmforge', 'roles', 'hardender.prompt'));
+});
+
+// ── runReviewChain (pure orchestration - stop-on-REJECT, bounce
+//    accumulation across stages - driven with scripted verdicts, no
+//    subprocess) ────────────────────────────────────────────────────────
+
+test('runReviewChain: every stage ACCEPT survives with zero bounces, and every stage is invoked', async () => {
+  const invoked = [];
+  const result = await runReviewChain(['cleaner', 'architect'], async (stage) => {
+    invoked.push(stage);
+    return 'ACCEPT';
+  });
+  assert.deepEqual(result, { survived: true, bounces: 0 });
+  assert.deepEqual(invoked, ['cleaner', 'architect']);
+});
+
+test('runReviewChain: a REVISED stage counts one round of rework and the chain continues', async () => {
+  const result = await runReviewChain(['cleaner', 'architect'], async (stage) =>
+    stage === 'cleaner' ? 'REVISED' : 'ACCEPT'
+  );
+  assert.deepEqual(result, { survived: true, bounces: 1 });
+});
+
+test('runReviewChain: multiple REVISED stages accumulate bounces across the whole chain', async () => {
+  const result = await runReviewChain(['cleaner', 'architect', 'hardender', 'QA'], async () => 'REVISED');
+  assert.deepEqual(result, { survived: true, bounces: 4 });
+});
+
+test('runReviewChain: a REJECT stops the chain immediately - later stages are never invoked', async () => {
+  const invoked = [];
+  const result = await runReviewChain(['cleaner', 'architect', 'hardender', 'QA'], async (stage) => {
+    invoked.push(stage);
+    return stage === 'architect' ? 'REJECT' : 'ACCEPT';
+  });
+  assert.deepEqual(result, { survived: false, bounces: 0 });
+  assert.deepEqual(invoked, ['cleaner', 'architect']);
+});
+
+test('runReviewChain: a REJECT preserves the rework count accumulated before it', async () => {
+  const result = await runReviewChain(['cleaner', 'architect', 'hardender'], async (stage) => {
+    if (stage === 'cleaner') return 'REVISED';
+    if (stage === 'architect') return 'REVISED';
+    return 'REJECT';
+  });
+  assert.deepEqual(result, { survived: false, bounces: 2 });
 });
 
 // ── pipelineReviewForceResultFromEnv / createPipelineReviewOracle's own

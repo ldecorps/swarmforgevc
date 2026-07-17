@@ -81,6 +81,31 @@ export function pipelineReviewForceResultFromEnv(): PipelineReviewResult | null 
   return forced ? (JSON.parse(forced) as PipelineReviewResult) : null;
 }
 
+// Pure: drives the review stages in order given an already-resolved verdict
+// for each, so the chain's own decision logic - stop immediately on REJECT,
+// count one round of rework per REVISED, run every stage through on ACCEPT -
+// is unit-testable with scripted verdicts and no real subprocess. Split out
+// of createPipelineReviewOracle (mirroring claudeCliExecutor.ts's own
+// parse-vs-shell split in this same parcel) so only the per-stage CLI
+// invocation itself stays untested; the chain's stop/rework logic that
+// review() previously carried inline does not.
+export async function runReviewChain(
+  stages: readonly ReviewStage[],
+  invokeStage: (stage: ReviewStage) => Promise<ReviewVerdict>
+): Promise<PipelineReviewResult> {
+  let bounces = 0;
+  for (const stage of stages) {
+    const verdict = await invokeStage(stage);
+    if (verdict === 'REJECT') {
+      return { survived: false, bounces };
+    }
+    if (verdict === 'REVISED') {
+      bounces += 1;
+    }
+  }
+  return { survived: true, bounces };
+}
+
 // Real, live invocation of the pipeline's own review roles in headless
 // print mode, one stage at a time, in the SAME order the live swarm
 // forwards a parcel (cleaner -> architect -> hardener -> QA). A REJECT
@@ -96,29 +121,20 @@ export function createPipelineReviewOracle(repoRoot: string, model: string, time
       if (forced) {
         return forced;
       }
-      let bounces = 0;
-      for (const stage of REVIEW_STAGES) {
+      return runReviewChain(REVIEW_STAGES, async (stage) => {
         const rolePromptText = fs.readFileSync(rolePromptPath(repoRoot, stage), 'utf8');
         const prompt = reviewPrompt(stage, rolePromptText, task);
-        let verdict: ReviewVerdict;
         try {
           const stdout = execFileSync(
             'claude',
             ['-p', prompt, '--model', model, '--output-format', 'json', '--dangerously-skip-permissions'],
             { cwd: diffDir, encoding: 'utf8', timeout: timeoutMs, maxBuffer: 32 * 1024 * 1024 }
           );
-          verdict = parseReviewVerdict(stdout);
+          return parseReviewVerdict(stdout);
         } catch {
-          verdict = 'REJECT';
+          return 'REJECT';
         }
-        if (verdict === 'REJECT') {
-          return { survived: false, bounces };
-        }
-        if (verdict === 'REVISED') {
-          bounces += 1;
-        }
-      }
-      return { survived: true, bounces };
+      });
     },
   };
 }
