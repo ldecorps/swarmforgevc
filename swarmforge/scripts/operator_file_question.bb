@@ -36,6 +36,7 @@
 
 (def script-dir (str (fs/parent (fs/canonicalize *file*))))
 (load-file (str (fs/path script-dir "operator_lib.bb")))
+(load-file (str (fs/path script-dir "commit_integrity_lib.bb")))
 
 (defn usage []
   (binding [*out* *err*]
@@ -54,26 +55,25 @@
 (defn now-iso []
   (.format (java.time.format.DateTimeFormatter/ISO_INSTANT) (java.time.Instant/now)))
 
-;; Scoped `git add -- <path>` / `git commit -- <path>` - never a broader
-;; `git add -A`/`.`, which would sweep in whatever else happens to be
-;; sitting dirty in the backlog root at the time (engineering.prompt: "a
-;; script that cd's..."/one-bad-pathspec-stages-nothing guardrails apply
-;; here in spirit - stay narrowly scoped to exactly the file this CLI
-;; itself just wrote). Returns the filing commit's sha on success, nil
-;; (never throws) on any git failure - the caller decides how loudly to
-;; report it.
-(defn write-and-commit-intake! [abs-path content]
+;; BL-419: routed through the shared commit-integrity helper - locked
+;; (serialized against every other master-checkout writer that also routes
+;; through it), pathspec-scoped to exactly this intake file (never a
+;; broader `git add -A`/`.` that would sweep in whatever else happens to
+;; be sitting dirty in the backlog root at the time), and verified+retried
+;; against a dropped/clobbered commit on the shared master checkout. This
+;; CLI is itself one of the concurrent master-checkout writers named in
+;; BL-419's own bug report. Returns the filing commit's sha on success,
+;; nil (never throws) on any git failure - the caller decides how loudly
+;; to report it.
+(defn write-and-commit-intake! [rel-path abs-path content]
   (fs/create-dirs (fs/parent abs-path))
   (spit (str abs-path) content)
   (try
-    (let [add (process/sh ["git" "-C" project-root "add" "--" (str abs-path)])]
-      (when (zero? (:exit add))
-        (let [commit (process/sh ["git" "-C" project-root "commit" "-m"
-                                   "Operator: file a question as raw intake for the swarm\n\nBy operator."
-                                   "--" (str abs-path)])]
-          (when (zero? (:exit commit))
-            (let [rev (process/sh ["git" "-C" project-root "rev-parse" "HEAD"])]
-              (when (zero? (:exit rev)) (str/trim (:out rev))))))))
+    (let [result (commit-integrity-lib/commit-with-integrity!
+                  {:project-root project-root
+                   :paths [rel-path]
+                   :message "Operator: file a question as raw intake for the swarm\n\nBy operator."})]
+      (when (:success result) (:sha result)))
     (catch Exception _ nil)))
 
 ;; BL-415: the origin remote, when there is one - a permalink is a
@@ -93,7 +93,7 @@
         content (operator-lib/question-intake-content question (now-iso))
         rel-path (str "backlog/INTAKE-" slug ".md")
         abs-path (fs/path project-root rel-path)
-        sha (write-and-commit-intake! abs-path content)]
+        sha (write-and-commit-intake! rel-path abs-path content)]
     (if-not sha
       (do
         (binding [*out* *err*]
