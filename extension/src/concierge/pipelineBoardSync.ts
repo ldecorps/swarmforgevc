@@ -9,11 +9,16 @@
 // the board is always the LATEST message in its topic. An unchanged tick is
 // a complete no-op: no delete, no post, no state change - the existing
 // message (and its footer timestamp) stays exactly where it is.
-import { PipelineBoardData, renderPipelineBoard, renderPipelineBoardBody } from './pipelineBoard';
+import { PipelineBoardData, renderPipelineBoard, renderPipelineBoardBody, renderPipelineBoardLinks } from './pipelineBoard';
 
 export interface PipelineBoardAdapters {
   ensureBoardTopic: () => Promise<number | undefined>;
-  postMessage: (topicId: number, text: string) => Promise<number | undefined>;
+  // BL-465: linksHtml added LAST (after text) - the below-grid GitHub link
+  // list, already rendered as its own HTML fragment (renderPipelineBoardLinks)
+  // so the real adapter can append it AFTER the closing </pre> tag rather
+  // than escaping it into the monospace block. Optional/empty for every
+  // pre-BL-465 fixture that never passes a 3rd arg.
+  postMessage: (topicId: number, text: string, linksHtml?: string) => Promise<number | undefined>;
   // BL-462: replaces editMessage - the board never edits in place anymore.
   // Best-effort: its result is intentionally not branched on (see
   // syncPipelineBoard's own comment) - an orphaned undeleted old message is
@@ -57,12 +62,13 @@ function resolveBoardTopicId(prevState: PipelineBoardState | undefined, adapters
 async function postBoardMessage(
   topicId: number,
   text: string,
+  linksHtml: string,
   contentSignature: string,
   lastChangeMs: number,
   prevState: PipelineBoardState | undefined,
   adapters: PipelineBoardAdapters
 ): Promise<PipelineBoardSyncResult> {
-  const messageId = await adapters.postMessage(topicId, text);
+  const messageId = await adapters.postMessage(topicId, text, linksHtml);
   if (messageId === undefined) {
     // A failed post must never delete the still-good prior message - the
     // existing board (and its own tracked messageId) is left exactly as it
@@ -85,7 +91,8 @@ export async function syncPipelineBoard(
   data: PipelineBoardData,
   prevState: PipelineBoardState | undefined,
   adapters: PipelineBoardAdapters,
-  nowMs: number
+  nowMs: number,
+  repoBaseUrl?: string
 ): Promise<PipelineBoardSyncResult> {
   const contentSignature = renderPipelineBoardBody(data);
   if (contentSignature === prevState?.contentSignature) {
@@ -99,5 +106,6 @@ export async function syncPipelineBoard(
 
   const lastChangeMs = nowMs;
   const text = renderPipelineBoard(data, lastChangeMs);
-  return postBoardMessage(topicId, text, contentSignature, lastChangeMs, prevState, adapters);
+  const linksHtml = renderPipelineBoardLinks(data.links ?? [], repoBaseUrl);
+  return postBoardMessage(topicId, text, linksHtml, contentSignature, lastChangeMs, prevState, adapters);
 }
