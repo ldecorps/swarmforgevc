@@ -143,6 +143,15 @@ function fakeAdapters(overrides = {}) {
         postMessage: async () => undefined,
         deleteMessage: async () => true,
       },
+      // BL-467: no pin enforcement by default - a safe no-op posture
+      // mirroring boardAdapters above, so every existing test that never
+      // touches pin enforcement is completely unaffected. Tests that DO
+      // exercise it override pinAdapters.
+      pinAdapters: {
+        getTopPinnedMessageId: async () => undefined,
+        unpinAllMessages: async () => true,
+        pinMessage: async () => true,
+      },
       // BL-434: a safe no-op default (ensureApprovalsTopic resolves to
       // undefined -> 'failed-no-topic', harmless) mirroring boardAdapters'
       // own posture above, so every existing test that never touches the
@@ -1934,6 +1943,66 @@ test('BL-452: omitting readRoleHeldTickets/boardAdapters entirely leaves the tic
   const { adapters, state } = fakeAdapters();
   delete adapters.readRoleHeldTickets;
   delete adapters.boardAdapters;
+
+  await runConciergeTick(adapters);
+
+  assert.equal(state.pipelineBoard, undefined);
+});
+
+// ── BL-467: pipeline-board-only-pin wiring ────────────────────────────────
+
+test('BL-467: the pin sync runs after the board sync and enforces against THIS tick freshly-posted board messageId', async () => {
+  const { adapters, setFolders } = fakeAdapters();
+  const pinCalls = [];
+  adapters.boardAdapters.ensureBoardTopic = async () => 900;
+  adapters.boardAdapters.postMessage = async () => 42;
+  adapters.readRoleHeldTickets = () => ({ coder: ['BL-1'] });
+  adapters.pinAdapters = {
+    getTopPinnedMessageId: async () => 7,
+    unpinAllMessages: async () => {
+      pinCalls.push('unpinAll');
+      return true;
+    },
+    pinMessage: async (messageId) => {
+      pinCalls.push(`pin:${messageId}`);
+      return true;
+    },
+  };
+  setFolders(folders({ active: [{ id: 'BL-1', title: 'test ticket' }] }));
+
+  await runConciergeTick(adapters);
+
+  assert.deepEqual(pinCalls, ['unpinAll', 'pin:42'], 'expected the pin sync to enforce against the board messageId posted THIS tick');
+});
+
+test('BL-467: an already-clean tick (the board is already the top pin) makes no unpin/pin call', async () => {
+  const { adapters, setFolders } = fakeAdapters();
+  const pinCalls = [];
+  adapters.boardAdapters.ensureBoardTopic = async () => 900;
+  adapters.boardAdapters.postMessage = async () => 42;
+  adapters.readRoleHeldTickets = () => ({ coder: ['BL-1'] });
+  adapters.pinAdapters = {
+    getTopPinnedMessageId: async () => 42,
+    unpinAllMessages: async () => {
+      pinCalls.push('unpinAll');
+      return true;
+    },
+    pinMessage: async (messageId) => {
+      pinCalls.push(`pin:${messageId}`);
+      return true;
+    },
+  };
+  setFolders(folders({ active: [{ id: 'BL-1', title: 'test ticket' }] }));
+
+  await runConciergeTick(adapters);
+
+  assert.deepEqual(pinCalls, []);
+});
+
+test('BL-467: omitting pinAdapters entirely leaves the tick unaffected - existing adapters fixtures built before this field existed keep working unchanged', async () => {
+  const { adapters, state } = fakeAdapters();
+  delete adapters.boardAdapters;
+  delete adapters.pinAdapters;
 
   await runConciergeTick(adapters);
 
