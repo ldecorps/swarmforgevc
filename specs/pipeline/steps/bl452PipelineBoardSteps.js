@@ -117,6 +117,15 @@ function fakeConciergeAdapters() {
         },
         ensureOperatorTopic: async () => 700,
         ensureApprovalsTopic: async () => 750,
+        // BL-493: runConciergeTick's own TaskStarted/TaskCompleted
+        // derivation reaches the ticket's status-line routing
+        // unconditionally now - this feature's own scenarios don't assert
+        // on it, so a safe no-op-tracking default is enough.
+        ensureBacklogTopic: async () => 760,
+        postMessage: async () => 9000,
+        editMessage: async () => true,
+        getTicketMessageState: () => undefined,
+        setTicketMessageState: () => {},
       },
       iconAdapters: {
         getIconStickers: async () => [],

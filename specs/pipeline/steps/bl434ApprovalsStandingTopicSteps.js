@@ -64,6 +64,15 @@ function buildConciergeAdapters(ctx) {
       recordMessage: () => {},
       ensureOperatorTopic: async () => 700,
       ensureApprovalsTopic: async () => APPROVALS_TOPIC_ID,
+      // BL-493: the standing Backlog topic + edit-in-place post/edit pair +
+      // per-ticket message-identity store - this feature's own scenarios
+      // don't assert on ticket-status routing, but runConciergeTick
+      // unconditionally reaches these now.
+      ensureBacklogTopic: async () => 760,
+      postMessage: async () => 9000,
+      editMessage: async () => true,
+      getTicketMessageState: () => undefined,
+      setTicketMessageState: () => {},
     },
     iconAdapters: {
       getIconStickers: async () => [],

@@ -4,6 +4,7 @@ const {
   renderPipelineBoard,
   renderPipelineBoardBody,
   renderPipelineBoardLinks,
+  budgetPipelineBoardLinks,
   formatUpdatedAtLabel,
   wrapPipelineBoardHtml,
   deriveTicketSlug,
@@ -13,6 +14,7 @@ const {
   PIPELINE_BOARD_SLUG_MAX_LENGTH,
   PIPELINE_BOARD_RECENTLY_CLOSED_MAX,
   PIPELINE_BOARD_NOT_STARTED_COLUMN,
+  PIPELINE_BOARD_MESSAGE_MAX_LENGTH,
 } = require('../out/concierge/pipelineBoard');
 
 // BL-452/BL-455 pipeline-board-01/02: a ticket held by a role becomes a row
@@ -670,4 +672,74 @@ test('wrapPipelineBoardHtml: with linksHtml, appends it AFTER the closing </pre>
   // The link tag itself must never be HTML-escaped (it would stop being a
   // real link) - confirmed by its literal '<a href' substring surviving.
   assert.ok(result.includes('<a href="https://x">BL-1</a>'));
+});
+
+// ── BL-502: budgetPipelineBoardLinks - live outage 2026-07-17 ────────────
+// The link list has no bound of its own, so at realistic backlog sizes the
+// FULL list alone pushes the composed message over Telegram's 4096-char
+// send limit and every post is rejected "text is too long", freezing the
+// board. budgetPipelineBoardLinks trims the link list (never the grid/
+// parked body) to whatever room the caller says remains, with a VISIBLE
+// "+N more" indicator when trimmed - never a silent cap.
+
+const REPO_BASE_URL = 'https://github.com/ldecorps/swarmforgevc';
+
+function manyLinks(count) {
+  return Array.from({ length: count }, (_, i) => ({ id: `BL-${i}`, path: `backlog/active/BL-${i}-a-fine-feature-with-a-longish-slug.yaml` }));
+}
+
+test('budgetPipelineBoardLinks: empty when there are no links at all', () => {
+  assert.deepEqual(budgetPipelineBoardLinks([], REPO_BASE_URL, 1000), { html: '', omittedCount: 0 });
+});
+
+test('budgetPipelineBoardLinks: empty when repoBaseUrl is not resolvable, even with links present', () => {
+  assert.deepEqual(budgetPipelineBoardLinks([{ id: 'BL-1', path: 'backlog/active/BL-1-foo.yaml' }], undefined, 1000), { html: '', omittedCount: 0 });
+});
+
+// pipeline-board-message-length-budget-01
+test('budgetPipelineBoardLinks: a small link list that fits is included in FULL, byte-identical to the unbudgeted render, with no overflow indicator', () => {
+  const links = manyLinks(3);
+  const full = renderPipelineBoardLinks(links, REPO_BASE_URL);
+  const result = budgetPipelineBoardLinks(links, REPO_BASE_URL, full.length + 500);
+  assert.equal(result.html, full);
+  assert.equal(result.omittedCount, 0);
+  assert.ok(!result.html.includes('more'), 'expected no overflow indicator when everything fits');
+});
+
+// pipeline-board-message-length-budget-02
+test('budgetPipelineBoardLinks: an oversized link list is trimmed to fit, with a visible "+N more" indicator naming the omission - never silent', () => {
+  const links = manyLinks(30);
+  const full = renderPipelineBoardLinks(links, REPO_BASE_URL);
+  const budget = Math.floor(full.length / 2);
+  const result = budgetPipelineBoardLinks(links, REPO_BASE_URL, budget);
+  assert.ok(result.html.length <= budget, `expected the trimmed html (${result.html.length}) within the budget (${budget})`);
+  assert.ok(result.omittedCount > 0, 'expected some links omitted at half the full budget');
+  assert.ok(result.html.includes(`+${result.omittedCount} more`), `expected a visible "+${result.omittedCount} more" indicator, got: ${result.html}`);
+  // The included links are a PREFIX of the full list, in order - never a
+  // silent reordering or arbitrary subset.
+  const includedIds = links.slice(0, links.length - result.omittedCount).map((l) => l.id);
+  for (const id of includedIds) {
+    assert.ok(result.html.includes(`${id}:`), `expected included link ${id} present in the trimmed html`);
+  }
+});
+
+test('budgetPipelineBoardLinks: the omission count is exact - included + omitted equals the total link count', () => {
+  const links = manyLinks(50);
+  const full = renderPipelineBoardLinks(links, REPO_BASE_URL);
+  const result = budgetPipelineBoardLinks(links, REPO_BASE_URL, Math.floor(full.length / 4));
+  const includedCount = links.length - result.omittedCount;
+  assert.ok(includedCount >= 0 && includedCount <= links.length);
+  assert.ok(result.omittedCount > 0);
+});
+
+test('budgetPipelineBoardLinks: a budget too small even for the header + omitted-count indicator degrades to no links at all, never a message still over budget', () => {
+  const links = manyLinks(10);
+  const result = budgetPipelineBoardLinks(links, REPO_BASE_URL, 3);
+  assert.equal(result.html, '');
+  assert.equal(result.omittedCount, links.length);
+});
+
+test('PIPELINE_BOARD_MESSAGE_MAX_LENGTH stays at or under Telegram\'s real 4096-char sendMessage limit', () => {
+  assert.ok(PIPELINE_BOARD_MESSAGE_MAX_LENGTH <= 4096);
+  assert.ok(PIPELINE_BOARD_MESSAGE_MAX_LENGTH > 0);
 });

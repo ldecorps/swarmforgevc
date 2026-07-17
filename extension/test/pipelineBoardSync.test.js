@@ -1,6 +1,6 @@
 const assert = require('node:assert/strict');
 const { syncPipelineBoard, classifyBoardFailure, PIPELINE_BOARD_ALERT_FAILURE_CAP } = require('../out/concierge/pipelineBoardSync');
-const { renderPipelineBoardBody } = require('../out/concierge/pipelineBoard');
+const { renderPipelineBoardBody, wrapPipelineBoardHtml } = require('../out/concierge/pipelineBoard');
 
 function fakeAdapters(overrides = {}) {
   return {
@@ -262,6 +262,90 @@ test('classifyBoardFailure: a network ENOTFOUND error classifies as transient', 
 test('classifyBoardFailure: an unrecognized error classifies as unknown, and undefined classifies as unknown', () => {
   assert.equal(classifyBoardFailure('some never-seen-before Telegram rejection'), 'unknown');
   assert.equal(classifyBoardFailure(undefined), 'unknown');
+});
+
+// BL-502 pipeline-board-message-length-budget-04: a too-long payload is
+// classified on its OWN class, distinct from topic-gone/transient/unknown -
+// live outage 2026-07-17, "Bad Request: text is too long".
+
+test('classifyBoardFailure: a "text is too long" error classifies as too-long, not unknown or transient', () => {
+  assert.equal(classifyBoardFailure('Bad Request: text is too long'), 'too-long');
+});
+
+test('syncPipelineBoard: a too-long post failure is classified too-long and RETAINS the tracked topic id - the topic is fine, only the payload was too big', async () => {
+  const first = await syncPipelineBoard(board([{ id: 'BL-1', column: 'coder', slug: '' }]), undefined, fakeAdapters(), T1);
+
+  const result = await syncPipelineBoard(
+    board([{ id: 'BL-1', column: 'QA', slug: '' }]),
+    first.state,
+    fakeAdapters({ postMessage: async () => ({ error: 'Bad Request: text is too long' }) }),
+    T2
+  );
+
+  assert.equal(result.outcome, 'failed-post');
+  assert.equal(result.failureClass, 'too-long');
+  assert.equal(result.state.topicId, first.state.topicId, 'expected the tracked topic id retained - too-long never recreates the topic');
+});
+
+// ── BL-502 pipeline-board-message-length-budget-03: the board still posts
+//    at a backlog size whose full link list would exceed the send limit ──
+
+function manyLinkRows(count) {
+  return Array.from({ length: count }, (_, i) => ({ id: `BL-${i}`, column: 'coder', slug: '' }));
+}
+
+function manyLinks(count) {
+  return Array.from({ length: count }, (_, i) => ({ id: `BL-${i}`, path: `backlog/active/BL-${i}-a-fine-feature-with-a-longish-slug.yaml` }));
+}
+
+test('syncPipelineBoard: the board still posts at a backlog size whose full link list would exceed Telegram\'s send limit, never freezes on length', async () => {
+  const rows = manyLinkRows(40);
+  const links = manyLinks(40);
+  let capturedComposedLength;
+
+  const result = await syncPipelineBoard(
+    { rows, parked: [], links },
+    undefined,
+    fakeAdapters({
+      postMessage: async (topicId, text, linksHtml) => {
+        // Mirrors Telegram's own real rejection of the actual composed
+        // message - the same wrap the live adapter (telegram-front-desk-
+        // bot.ts) applies before sending.
+        capturedComposedLength = wrapPipelineBoardHtml(text, linksHtml).length;
+        if (capturedComposedLength > 4096) {
+          return { error: 'Bad Request: text is too long' };
+        }
+        return { messageId: 1 };
+      },
+    }),
+    T1,
+    'https://github.com/ldecorps/swarmforgevc'
+  );
+
+  assert.equal(result.outcome, 'posted', 'expected the board to post successfully instead of failing on length');
+  assert.ok(capturedComposedLength <= 4096, `expected the composed message within Telegram's real limit, got ${capturedComposedLength}`);
+});
+
+test('syncPipelineBoard: linksHtml handed to postMessage is already within budget, never the unbudgeted full list', async () => {
+  const rows = manyLinkRows(40);
+  const links = manyLinks(40);
+  let capturedLinksHtml;
+
+  await syncPipelineBoard(
+    { rows, parked: [], links },
+    undefined,
+    fakeAdapters({
+      postMessage: async (topicId, text, linksHtml) => {
+        capturedLinksHtml = linksHtml;
+        return { messageId: 1 };
+      },
+    }),
+    T1,
+    'https://github.com/ldecorps/swarmforgevc'
+  );
+
+  assert.ok(capturedLinksHtml.includes('more'), 'expected the 40-link list trimmed with a visible overflow indicator');
+  assert.ok(!capturedLinksHtml.includes('BL-39:'), 'expected the tail of the list to be the omitted part');
 });
 
 // BL-497 pipeline-board-post-failure-recovery-01: every failed outcome
