@@ -64,7 +64,7 @@ acceptance:
   # TS-reimplement) is deliberately NOT pinned; the scenarios hold either way.
   feature: specs/features/BL-487-board-freshness-without-coordinator-sync.feature
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   ARCHITECTURAL change to a core surface (who owns pipeline-board freshness), so flagging for review. FIRM:
   board freshness must recompute from live in_process mailboxes on the concierge tick, so a skipped/stale
