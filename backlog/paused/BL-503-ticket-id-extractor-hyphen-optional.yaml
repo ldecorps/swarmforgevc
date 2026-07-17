@@ -1,0 +1,122 @@
+id: BL-503
+title: "Both .bb ticket-id extractors require a prefix hyphen (BL-NNN); coder task names using the no-hyphen form (blNNN) resolve to nil, so those tickets silently drop off the pipeline board and are falsely reported as dispatch gaps"
+milestone: M8
+type: defect
+severity: medium
+epic: ""
+priority: 4
+direction: expedite   # silent, human-invisible daemon defect (board drop + spurious auto-route) — bugs-first, eligible regardless of declared direction
+depends_on: []
+source: >
+  Coordinator rule_proposal (scope engineering), live 2026-07-17, handoff 000558.
+  Dispositioned by the specifier as a DEFECT, not a governance rule: a sentence in
+  engineering.prompt cannot change how a running daemon parses a task header, and the
+  general principle (canonicalize an external id at the ONE extraction point) is already
+  carried by pipeline_stage_lib.bb's BL-471 comment and BL-488's id-anywhere hardening.
+  The fix is code in the two .bb extractors; this ticket is that fix. The TS metrics
+  sibling (swarmMetrics.ts extractTicketId, same defect, lower severity, different gate)
+  is filed separately as BL-504.
+
+notes: |
+  ROOT CAUSE (traced in code, grep-confirmed 2026-07-17):
+    - swarmforge/scripts/pipeline_stage_lib.bb:63-69 — ticket-id-pattern is
+      `(?i)\b(BL|GH)-(\d+)\b` (hyphen REQUIRED between prefix and digits). A task header
+      "bl493-fold-ticket-events" has NO hyphen between "bl" and "493", so re-find returns
+      nil. Live effect: BL-493 (active, held at cleaner, task "bl493-...") is absent from the
+      pipeline-stage sync board (the reported sync showed only BL-502). extract-ticket-id here
+      already canonicalizes its match to upper-case hyphenated form `(str/upper-case (str
+      prefix "-" digits))`, so once it MATCHES the output is correct — only the match fails.
+    - swarmforge/scripts/chase_sweep_lib.bb:436-451 — leading-ticket-id-pattern is
+      `(?i)^((?:BL|GH)-\d+)` (hyphen REQUIRED, leading-anchored), and extract-ticket-id
+      returns the raw `(second (re-find ...))` match WITHOUT canonicalizing. Two bugs in one:
+      (1) "bl493-..." doesn't match -> nil; (2) even a lower-case hyphenated "bl-493-..."
+      would match and return "bl-493", which then fails the case-sensitive join in
+      decide-dispatch-gaps (L413: `(contains? dispatched-ids (:id %))` where :id is the
+      active yaml's canonical "BL-493"). Live effect: BL-493's dispatch trail is invisible to
+      collect-dispatched-ticket-ids, so decide-dispatch-gaps reports BL-493 as having NO
+      trail and the daemon auto-routes a spurious dispatch-gap note to the coordinator for a
+      ticket that is, in fact, dispatched and progressing.
+
+  PREVALENCE (not a one-off): grep of every task header in .swarmforge/handoffs/ found ~14
+  tickets minted with the no-hyphen lower-case form (bl317, bl318, bl322, bl324, bl325,
+  bl327, bl329, bl334, bl335, bl336, bl337, bl343, bl345, bl450, and now bl493). The
+  canonical "BL-NNN-slug" form dominates, but the blNNN drift recurs often enough that the
+  passive board/sweep readers — which do not control task-naming — must tolerate it.
+
+  THE FIX (observable contract pinned in the feature; exact regex is the coder's call):
+    1. HYPHEN OPTIONAL — make the prefix hyphen optional in BOTH extractors so "blNNN" and
+       "BL-NNN" both match (e.g. `-?` between prefix and digits). Keep the (?i) and the
+       existing digit/letter-adjacency guards.
+    2. CANONICALIZE AT THE EXTRACTION POINT — every match returns the upper-case, hyphenated
+       BL-NNN form, regardless of the input's case or hyphenation. pipeline_stage_lib.bb
+       already does this; chase_sweep_lib.bb must START doing it (upper-case + reinsert the
+       hyphen), so its output always joins the canonical active id (BL-471's rationale,
+       applied to the second extractor).
+    3. ALLOWLIST UNCHANGED — the prefix stays the (BL|GH) allowlist, never an unbounded
+       [A-Za-z]+. A glued prefix ("ABL-217") or a glued word ("usable493") must still resolve
+       to nil — no ticket is ever mis-swallowed (BL-217/BL-222; the glued-prefix rows in
+       feature scenario 01 are the regression guard).
+    4. KEEP THE TWO EXTRACTORS IN SYNC — they are independent small copies by design (each
+       file's own known-ticket-prefixes comment documents the deliberate duplication); do not
+       let one accept the no-hyphen form while the other rejects it.
+
+  SCOPE (verify the live path at build):
+    - swarmforge/scripts/pipeline_stage_lib.bb — ticket-id-pattern / extract-ticket-id.
+    - swarmforge/scripts/chase_sweep_lib.bb — leading-ticket-id-pattern / extract-ticket-id
+      (add canonicalization here).
+    - This is a .bb change: per engineering.prompt there is NO mutation/CRAP/DRY gate for
+      .bb — the real gate is the unit suite under swarmforge/scripts/test/ (the
+      pipeline_stage and chase_sweep test runners) PLUS the Gherkin acceptance below. Add unit
+      coverage of the no-hyphen and glued-prefix cases for BOTH extractors there.
+
+  ORTHOGONALITY / SEQUENCING (coordinator, at promotion): this ticket edits
+  chase_sweep_lib.bb, which the currently-ACTIVE BL-499 also edits (BL-499 touches
+  scan-inbox-new / decide-item-action / sweep-role-inbox!; this touches
+  leading-ticket-id-pattern / extract-ticket-id — different functions, low direct-conflict
+  risk, but the same file). Prefer promoting this AFTER BL-499 lands, or expect the coder to
+  merge main and re-read before building. Otherwise disjoint from all other in-flight work.
+  pipeline_stage_lib.bb has no other active ticket touching it (BL-488/489 are done).
+
+  QA E2E PROCEDURE (run the real .bb, not only fixtures):
+    1. pipeline board: in a scratch mailbox, place a git_handoff to "cleaner" with
+       `task: bl493-fold-ticket-events` and `commit: <any 10-hex>`; add BL-493 to the active
+       backlog. Run the pipeline-stage sync CLI and assert BL-493 shows at cleaner.
+    2. dispatch gap: with BL-493 active and only a "bl493-..."-tasked handoff as its trail,
+       run the dispatch-gap sweep and assert BL-493 is counted as dispatched and NO auto-route
+       note is emitted for it.
+    3. regression: repeat (1) with the canonical `task: BL-493-fold-ticket-events` and assert
+       identical board placement (no behavior change on the canonical form).
+    4. over-match guard: a handoff whose task is "ABL-217-..." or "usable217-..." for an
+       active BL-217 must NOT resolve to BL-217 (board shows no row for that unresolved header;
+       gap sweep does not count BL-217 as dispatched from that header).
+
+acceptance:
+  # The observable contract: both .bb ticket-id extractors resolve a task/message header that
+  # omits the prefix hyphen (blNNN) to the canonical upper-case BL-NNN, so a no-hyphen-tasked
+  # ticket appears on the pipeline board at its stage and is counted as dispatched (no spurious
+  # gap); a glued prefix still resolves to nil (no over-match). The canonical form is unchanged.
+  feature: specs/features/BL-503-ticket-id-extractor-hyphen-optional.feature
+
+human_approval: approved
+approval_context: >
+  New defect fix for a SILENT, live daemon bug surfaced by the coordinator today. Both .bb
+  ticket-id extractors require a hyphen between the prefix and digits (BL-NNN), but ~14
+  tickets — including the currently-active BL-493 (task "bl493-...") — were minted with the
+  no-hyphen form, so extract-ticket-id returns nil for them. Two observable consequences,
+  both silent: (a) the pipeline-stage board DROPS the ticket (BL-493 missing from the live
+  sync, which showed only BL-502); (b) the dispatch-gap sweep sees no trail and would
+  auto-route BL-493 to the coordinator as a spurious gap. FIRM in the scenario contract: the
+  prefix hyphen becomes OPTIONAL in both extractors, every match is canonicalized to the
+  upper-case hyphenated BL-NNN form (chase_sweep_lib.bb must start canonicalizing — it does
+  not today), the (BL|GH) allowlist and glued-prefix nil guard are unchanged, and the
+  canonical form is byte-for-byte unaffected. The ONE thing worth your call: I chose to
+  make the READERS tolerant (fix the board/sweep to accept blNNN) rather than ENFORCE
+  canonical task names at handoff creation (a validation gate in swarm_handoff), because the
+  readers are passive observers that cannot retroactively fix the ~14 in-flight/historical
+  blNNN task names, and tolerant extraction is the same hardening posture these functions
+  already took (BL-471 case, BL-488 id-anywhere). If you would rather ALSO add a
+  handoff-time canonical-task-name guard so the drift stops being minted, say so and I will
+  spec that as a follow-on. Expedite, priority 4 — a silent correctness/noise defect, peer
+  to BL-499.
+
+mutation_cost: low
