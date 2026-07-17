@@ -979,27 +979,8 @@
     :qa-bounce-line qa-bounce-briefing-line
     :log! (fn [& parts] (apply log! parts))}))
 
-;; BL-339: shells to the compiled notify-recert-batch.js CLI (Babashka has
-;; no way to import compiled TS, same posture as the *-briefing-line fns
-;; above) - reuses computeRecertBatch unchanged, the SAME data the PWA
-;; itself renders, so the Telegram announcement can never disagree with
-;; what the human sees when he follows the link. The CLI itself owns the
-;; edge-triggered arm/disarm decision and the delivery-based state
-;; (BL-345's own "arm on delivery, never on attempt" lesson) - this
-;; adapter only owns invoking it. Any failure (CLI not yet compiled, no
-;; TELEGRAM_BOT_TOKEN in this daemon's env) degrades to a no-op - never
-;; crashes the sweep, never fabricates a sent notification.
-(defn recert-notify-sweep! []
-  (try
-    (let [cli-path (str (fs/path project-root "extension" "out" "tools" "notify-recert-batch.js"))
-          {:keys [exit out]} (process/sh ["node" cli-path] {:dir (str project-root)})]
-      (when (zero? exit)
-        (log! "recert-notify" (str/trim out))))
-    (catch Exception e
-      (log! "recert-notify-sweep-error" (.getMessage e)))))
-
 ;; BL-353: shells to the compiled notify-dead-letters.js CLI, same posture
-;; as recert-notify-sweep! above - ports the retired legacy narrator's
+;; as the other *-sweep! adapters below - ports the retired legacy narrator's
 ;; "dead-letter" signal (telegramNarrator.ts:diffNewDeadLetters) onto the
 ;; headless front desk, into BL-346's reserved Operator topic (a dead
 ;; letter is not reliably ticket-scoped, unlike a NeedsApproval gate). The
@@ -1015,8 +996,8 @@
       (log! "dead-letter-notify-sweep-error" (.getMessage e)))))
 
 ;; BL-350 (BL-336 finding H1): shells to the compiled sample-resources.js
-;; CLI, same posture as dead-letter-notify-sweep!/recert-notify-sweep!
-;; above - reuses BL-264's startResourceSampler pid-resolution/append path
+;; CLI, same posture as dead-letter-notify-sweep! above - reuses BL-264's
+;; startResourceSampler pid-resolution/append path
 ;; unchanged, so a swarm running headless (no editor attached) finally
 ;; produces the resource_sample telemetry the cost-health sidecar's
 ;; resourceAnomalies field has depended on since BL-213 and never received.
@@ -1177,7 +1158,7 @@
       (log! "answer-file-drain-sweep-error" (.getMessage e)))))
 
 ;; BL-423: shells to the compiled resume-expired-pauses.js CLI, same
-;; posture as dead-letter-notify-sweep!/recert-notify-sweep! above - the
+;; posture as dead-letter-notify-sweep! above - the
 ;; ticket's own "ride the daemon's existing sweep cadence" instruction for
 ;; the timed-pause auto-resume + its Control-topic announcement. The CLI
 ;; itself owns the pause-expiry decision (decidePauseAutoResume, an
@@ -1519,16 +1500,9 @@
                       (role-context-clear-sweep! (load-roles) socket)
                       (catch Exception e
                         (log! "role-context-clear-sweep-error" (.getMessage e))))
-                    ;; BL-339: recert-notify sweep shares the same cadence -
-                    ;; no separate timeout, same rationale as BL-222/BL-214/
-                    ;; BL-258/BL-309/BL-316 above.
-                    (try
-                      (recert-notify-sweep!)
-                      (catch Exception e
-                        (log! "recert-notify-sweep-error" (.getMessage e))))
                     ;; BL-353: dead-letter-notify sweep shares the same
                     ;; cadence - no separate timeout, same rationale as
-                    ;; BL-222/BL-214/BL-258/BL-309/BL-316/BL-339 above.
+                    ;; BL-222/BL-214/BL-258/BL-309/BL-316 above.
                     (try
                       (dead-letter-notify-sweep!)
                       (catch Exception e

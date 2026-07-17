@@ -7,15 +7,7 @@
 
   var DASHBOARD_URL = './backlog.json';
   var DOCS_TREE_URL = './docs-tree.json';
-  var RECERT_BATCH_URL = './recert-batch.json';
   var SVG_NS = 'http://www.w3.org/2000/svg';
-  // BL-223: the inbound address comes from recert-batch.json's own
-  // recertEmailTo field (recertificationStore.ts's readRecertEmailTo,
-  // swarmforge.conf's recert_email_to - never hardcoded here a second time,
-  // so a future custom-domain swap is a config change only). This fallback
-  // only covers recertBatch not having loaded/lacking the field yet - it is
-  // never the reserved .invalid TLD, which can never resolve.
-  var RECERT_EMAIL_FALLBACK = 'recert@tolokarooo.resend.app';
 
   // BL-118: bilingual chrome + content. English is always the first-launch
   // default (bilingual-01) regardless of browser locale - currentLocale
@@ -210,10 +202,6 @@
     if (docsTree) {
       setDocsAsOfText(docsTree);
       renderDocsExplorer();
-    }
-    if (recertBatch) {
-      setRecertAsOfText(recertBatch);
-      renderRecertContent();
     }
   }
 
@@ -983,14 +971,10 @@
   // first time each relevant render runs, so a LATER re-render (locale
   // toggle, manual "back" navigation) never re-applies it and fights the
   // user's own navigation.
-  // BL-339: a #recert=1 fragment (built by pwaDeepLinks.ts's own
-  // buildRecertDeepLink) lands the human directly on the recert work
-  // (recertSection), not the PWA's front page - Telegram's own
-  // waiting-batch announcement is the real caller.
   var initialHashRoute = (function () {
     var hash = (location.hash || '').replace(/^#/, '');
     var params = new URLSearchParams(hash);
-    return { ticketId: params.get('ticket'), approvalId: params.get('approval'), recert: params.get('recert') !== null };
+    return { ticketId: params.get('ticket'), approvalId: params.get('approval') };
   })();
 
   // BL-263: renders backlog.json's own notDoneCount verbatim - never
@@ -1352,169 +1336,6 @@
     }
   }
 
-  // BL-150: recertification - a separate section from the read-only docs
-  // explorer above (which keeps its own docs-drilldown-05 "no edit
-  // affordance anywhere" guarantee unchanged). The PWA is fully static
-  // (published to GitHub Pages, no live backend it can reach), so every
-  // outcome (confirm/update/delete) leaves the phone the same way: a
-  // mailto: link the human taps, matching extension/src/docs/recertification.ts's
-  // buildRecertEmailSubject/buildRecertEmailBody exactly so the extension
-  // host's inbound parser understands it.
-  var recertBatch = null;
-
-  function recertEmailSubject(scenarioId, outcome) {
-    return 'SwarmForge recert: ' + outcome + ' ' + scenarioId;
-  }
-
-  function recertEmailBody(scenarioId, outcome, newText) {
-    var lines = ['scenario: ' + scenarioId, 'outcome: ' + outcome];
-    if (outcome === 'update') {
-      lines.push('---', newText || '');
-    }
-    return lines.join('\n');
-  }
-
-  function recertEmailTo() {
-    return (recertBatch && recertBatch.recertEmailTo) || RECERT_EMAIL_FALLBACK;
-  }
-
-  function recertMailtoHref(scenarioId, outcome, newText) {
-    var subject = recertEmailSubject(scenarioId, outcome);
-    var body = recertEmailBody(scenarioId, outcome, newText);
-    return 'mailto:' + encodeURIComponent(recertEmailTo()) + '?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body);
-  }
-
-  // BL-238: role="button" on an <a href> promises Space-bar activation per
-  // ARIA button semantics, but a native anchor only activates on Enter/
-  // click - this keydown handler completes that contract rather than
-  // leaving Space silently do nothing for a keyboard/screen-reader user.
-  function mailtoLink(label, href) {
-    var link = el('a', { href: href, class: 'recert-send-link', role: 'button' }, [label]);
-    link.addEventListener('keydown', function (e) {
-      if (e.key === ' ') {
-        e.preventDefault();
-        link.click();
-      }
-    });
-    return link;
-  }
-
-  function renderRecertUpdateForm(container, scenario) {
-    container.innerHTML = '';
-    container.appendChild(el('h4', {}, [scenario.name]));
-    // BL-238: the preceding <h4> is not programmatically associated with
-    // this control (no <label for>/id pairing in this codebase's plain-DOM
-    // helper style) - aria-label gives it an accessible name directly.
-    var textarea = el('textarea', { class: 'recert-update-text', 'aria-label': 'Edit scenario text: ' + scenario.name }, []);
-    textarea.value = scenario.text;
-    container.appendChild(textarea);
-
-    var actions = el('div', { class: 'recert-actions' }, []);
-    var sendLink = mailtoLink(tr('recertSendUpdate'), recertMailtoHref(scenario.id, 'update', textarea.value));
-    // the mailto: href must reflect whatever the human has actually typed
-    // by the time they tap it, not just the text the form opened with.
-    textarea.addEventListener('input', function () {
-      sendLink.setAttribute('href', recertMailtoHref(scenario.id, 'update', textarea.value));
-    });
-    actions.appendChild(sendLink);
-    var cancelBtn = el('button', { type: 'button' }, [tr('recertCancel')]);
-    cancelBtn.addEventListener('click', renderRecertContent);
-    actions.appendChild(cancelBtn);
-    container.appendChild(actions);
-  }
-
-  // recert-04: delete is a double gate on top of the specifier's own
-  // proposal review - this in-app confirmation step is separate from, and
-  // must precede, the mailto: compose itself. The "Yes, delete" link's
-  // href (and so its ability to actually send anything) only exists once
-  // this confirmation screen is showing; cancelling returns to the normal
-  // confirm/update/delete choice with nothing sent.
-  function renderRecertDeleteConfirm(container, scenario) {
-    container.innerHTML = '';
-    container.appendChild(el('h4', {}, [scenario.name]));
-    container.appendChild(el('p', { class: 'recert-delete-warning' }, [tr('recertDeleteWarning')]));
-
-    var actions = el('div', { class: 'recert-actions' }, []);
-    actions.appendChild(mailtoLink(tr('recertYesDelete'), recertMailtoHref(scenario.id, 'delete')));
-    var cancelBtn = el('button', { type: 'button' }, [tr('recertCancel')]);
-    cancelBtn.addEventListener('click', renderRecertContent);
-    actions.appendChild(cancelBtn);
-    container.appendChild(actions);
-  }
-
-  // BL-280: shows which backlog item the scenario being recertified belongs
-  // to, above the scenario itself. A LINK (tap-through via the docs
-  // explorer's own in-page navigation - navButton -> docsView {level:
-  // 'ticket'} -> renderDocsTicket, the SAME mechanism the docs explorer
-  // already uses, never a new routing mechanism) when the batch carries a
-  // resolvable ticketTitle; otherwise the bare id with no link and no error
-  // (recert-context-04). Reuses ticketTitle()'s existing locale-fallback
-  // (French title under the fr locale, else English) unchanged.
-  function renderRecertTicketContext(container, scenario) {
-    if (!scenario.ticketTitle) {
-      container.appendChild(el('p', { class: 'recert-ticket-context' }, [scenario.ticketId]));
-      return;
-    }
-    var label = scenario.ticketId + ' — ' + ticketTitle({ title: scenario.ticketTitle, titleFr: scenario.ticketTitleFr });
-    container.appendChild(navButton(label, { level: 'ticket', milestone: '', ticketId: scenario.ticketId }, 'recert-ticket-context'));
-  }
-
-  function renderRecertContent() {
-    var container = document.getElementById('recertContent');
-    container.innerHTML = '';
-    if (!recertBatch || !recertBatch.batch || recertBatch.batch.length === 0) {
-      container.appendChild(noDataParagraph(tr('recertNoneNeeded')));
-      return;
-    }
-    var scenario = recertBatch.batch[0];
-    renderRecertTicketContext(container, scenario);
-    container.appendChild(el('h4', {}, [scenario.name]));
-    container.appendChild(el('pre', { class: 'gherkin' }, [scenario.text]));
-    // BL-271: reuse BL-266's Listen control unchanged - adapt the recert
-    // scenario (.name + .text) into the { description, scenarios } shape
-    // assembleSpokenText already expects, rather than a second TTS path.
-    renderListenControl(container, { description: scenario.name, scenarios: [{ text: scenario.text }] });
-
-    var actions = el('div', { class: 'recert-actions' }, []);
-    actions.appendChild(mailtoLink(tr('recertConfirm'), recertMailtoHref(scenario.id, 'confirm')));
-
-    var updateBtn = el('button', { type: 'button' }, [tr('recertUpdate')]);
-    updateBtn.addEventListener('click', function () {
-      renderRecertUpdateForm(container, scenario);
-    });
-    actions.appendChild(updateBtn);
-
-    var deleteBtn = el('button', { type: 'button' }, [tr('recertDelete')]);
-    deleteBtn.addEventListener('click', function () {
-      renderRecertDeleteConfirm(container, scenario);
-    });
-    actions.appendChild(deleteBtn);
-
-    container.appendChild(actions);
-  }
-
-  function setRecertAsOfText(data) {
-    var asOf = document.getElementById('recertAsOf');
-    asOf.textContent = tr('asOfPrefix') + new Date(data.generatedAtIso).toLocaleString();
-  }
-
-  function renderRecertBatch(data) {
-    recertBatch = data;
-    setRecertAsOfText(data);
-    renderRecertContent();
-    // BL-339 deep-link-lands-on-recert-work: consumed (nulled) on first
-    // use, same "never re-apply on a later re-render" contract as the
-    // #ticket/#approval routes above - a locale toggle or manual scroll
-    // away must never snap the human back here.
-    if (initialHashRoute.recert) {
-      initialHashRoute.recert = false;
-      var section = document.getElementById('recertSection');
-      if (section && section.scrollIntoView) {
-        section.scrollIntoView();
-      }
-    }
-  }
-
   function registerServiceWorker() {
     if (!('serviceWorker' in navigator)) {
       return Promise.resolve(null);
@@ -1758,15 +1579,6 @@
     .then(renderDocsTree)
     .catch(function () {
       document.getElementById('docsAsOf').textContent = tr('couldNotLoadDocsTree');
-    });
-
-  fetch(RECERT_BATCH_URL)
-    .then(function (res) {
-      return res.json();
-    })
-    .then(renderRecertBatch)
-    .catch(function () {
-      document.getElementById('recertAsOf').textContent = tr('couldNotLoadRecertBatch');
     });
 
   registerServiceWorker().then(registerPeriodicSync);
