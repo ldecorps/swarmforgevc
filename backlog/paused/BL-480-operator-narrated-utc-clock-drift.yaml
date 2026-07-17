@@ -1,0 +1,79 @@
+id: BL-480
+title: "Operator's self-narrated operator.log timestamps/freshness claims drift ~1h off real UTC: it sources 'now' from local (UTC+1) time labelled Z"
+milestone: M8
+type: bug
+severity: low
+epic: ""
+priority: 8
+direction: swarm-detected
+depends_on: []
+source: "Coordinator raw intake backlog/INTAKE-operator-log-timestamp-offset.md (2026-07-17), surfaced while investigating the Operator response-latency report (INTAKE-operator-response-latency.md, now BL-481); filed separately as a distinct root cause. Drained by the specifier 2026-07-17 after verifying the root cause against real code."
+
+notes: |
+  VERIFIED ROOT CAUSE (specifier, 2026-07-17 — checked against real code, not assumed):
+    - The CODE clock is CORRECT UTC. operator_runtime.bb line 222-234: `now-iso` =
+      `(.format ISO_INSTANT (java.time.Instant/now))` — a genuine UTC instant. Both the
+      `log!` code path (line 234) and the heartbeat write (line 1405,
+      `(atomic-spit! heartbeat-file (now-iso))`) use it, and the live heartbeat file reads
+      `2026-07-17T01:51:54...Z` at a real UTC of 01:51 — correct. So NOTHING in the runtime
+      computes a wrong clock; do NOT "fix" now-iso.
+    - The drift is in the interactive-pane Operator's OWN self-narration into operator.log
+      (an LLM-authored line, not the `log!` code path — evidenced by non-uniform formatting:
+      some entries carry seconds, some only minutes). operator.log line 756 reads
+      `2026-07-17T02:15Z TELEGRAM_TOPIC_MESSAGE ... handoffd heartbeat 02:14:34Z fresh` and
+      sits BETWEEN line 755 (`01:01Z`) and line 757 (`01:16Z`) — one entry ~59-60min AHEAD
+      of both neighbours; every other entry in the window is correctly in the real 00:xx-01:xx
+      UTC range.
+    - Host is UTC+1 (BST): `date` = 02:51 BST while `date -u` = 01:51 UTC. The magnitude is
+      exactly this offset, so the Operator sourced "now" from a LOCAL-time value and labelled it
+      `Z`: either `date` without `-u`, or an unconverted git author date (commits here carry a
+      `+01:00` suffix). The Operator USUALLY converts correctly (line 736 narrates
+      "22:27:03+01:00 (21:27:03Z)"), so this is an intermittent narration slip, not a constant
+      offset — matching the coordinator's "one-time observation, not confirmed systemic" note.
+
+  WHY IT'S WORTH FIXING DESPITE LOW SEVERITY:
+    - The Operator's health/freshness reasoning (the GREEN/SWARM_CHECK_TIMER sweeps) explicitly
+      COMPARES its own narrated "now" against heartbeat/HEAD UTC timestamps to judge staleness.
+      A self-consistent-but-wrong clock can make a fresh signal read as ~1h stale (false alarm /
+      needless restart) or vice-versa (a real stall read as fresh — false-GREEN) — the exact
+      blind spot that turns a genuine stall into a wrong health verdict.
+
+  FIX SHAPE (behaviour, not a prescribed implementation):
+    - Amend swarmforge/roles/operator.prompt so the Operator sources "now" ONLY as UTC for all
+      log-line prefixes AND every in-narrative freshness/age comparison — prefer `date -u` or the
+      runtime's own correct-UTC surfaces (heartbeat file / now-iso), and always convert a local
+      `+01:00` author date to UTC before writing a `Z`-suffixed timestamp; never run bare `date`
+      (local) and label it Z.
+    - OPTIONAL, stronger: have the runtime stamp an authoritative UTC `now` (from the same
+      `now-iso` the heartbeat uses) into each event the Operator consumes, so the Operator uses a
+      PROVIDED value instead of computing time itself — closes the "LLM forgets to convert" gap
+      structurally rather than by instruction. If taken, this half is real, testable code (pin an
+      injected clock, assert the event context carries a correct-UTC now); the prompt half stays a
+      governance amendment.
+
+  SCOPE: swarmforge/roles/operator.prompt (primary); optionally operator_runtime.bb event-context
+  build for the authoritative-now injection. Do NOT touch now-iso / the heartbeat write — verified
+  correct.
+
+  QA E2E VERIFICATION: after the prompt lands and the Operator has run several ticks, diff a handful
+  of consecutive operator.log narrated timestamps against real wall-clock UTC (`date -u`) captured at
+  inspection time; every narrated `Z` prefix and in-narrative freshness claim must be within a small
+  tolerance of true UTC, with no ~60-minute local-offset entry. If the runtime authoritative-now
+  injection is built, also run its unit test (injected clock -> event context now field == that UTC).
+
+acceptance:
+  # Outcome-style, per the BL-478/BL-479 precedent: the deliverable is a role-prompt amendment (plus an
+  # optional runtime injection), and the core behaviour — an LLM narrating correct UTC — is not
+  # deterministically unit-testable. No Gherkin feature file for the prompt half; if the optional
+  # authoritative-now runtime injection is built, that half carries a real unit test.
+  outcome: "swarmforge/roles/operator.prompt instructs the Operator to source 'now' only as UTC (never bare local `date`/an unconverted +01:00 author date) for all operator.log narration and every freshness/age comparison — human-approved wording; now-iso and the heartbeat write are left unchanged (verified already-correct UTC); a spot-check of consecutive operator.log narrated timestamps against real wall-clock UTC shows no ~60-minute local-offset entry; if the optional authoritative-now event-context injection is built, a unit test pins it to the runtime's correct clock."
+
+human_approval: >
+  The operator.prompt wording is a role/governance change — the human reviews the exact amendment
+  wording before it lands (BL-479 precedent). No human sign-off is required to FILE this proposal; it
+  sits in paused until the coordinator promotes it. The coordinator's own note flagged this as a
+  one-time, not-yet-confirmed-systemic observation — a re-check of a few more operator.log entries
+  against real UTC at promotion time is reasonable, but the root cause (local time labelled Z) is
+  already code-verified above.
+
+mutation_cost: low
