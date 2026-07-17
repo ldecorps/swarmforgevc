@@ -14,18 +14,21 @@
 ;; clobbering it, so a second ask from a later run cannot lose track of the
 ;; first.
 ;;
-;; BL-466: an optional --options carries the question's discrete options (a
-;; JSON array of strings) - normalized by operator-lib/poll-options to nil
-;; (2-or-more requirement not met: falls back to a plain message, today's
-;; unchanged behavior) or a vector of 2+ trimmed, non-blank options (the
-;; Front Desk Bot renders these as a native Telegram poll instead of a plain
-;; message - see telegramFrontDeskBotCore.ts's deliverAgentQuestion). Every
-;; entry this file appends to the reply outbox is marked "agentQuestion":
-;; true, the routing signal the bot uses to send it to the dedicated
+;; BL-466/BL-483: an optional --options carries the question's discrete
+;; options - a JSON array whose elements are each either a plain string
+;; (label only) or a {"label": ..., "description": ...} object - normalized
+;; by operator-lib/ask-options to nil (no usable option: falls back to a
+;; plain message, today's unchanged behavior) or a vector of 1+ trimmed,
+;; non-blank {:label :description} options (the Front Desk Bot renders
+;; these as tappable inline-keyboard buttons - see
+;; telegramFrontDeskBotCore.ts's deliverAgentQuestion; BL-483 supersedes
+;; BL-466's native-Telegram-poll rendering for this exact case). Every entry
+;; this file appends to the reply outbox is marked "agentQuestion": true,
+;; the routing signal the bot uses to send it to the dedicated
 ;; agent-questions topic regardless of which topic the SUP-### thread itself
 ;; is otherwise bound to.
 ;;
-;; Usage: operator_ask.bb <project-root> --thread <SUP-###> --question <q> [--options '["a","b"]']
+;; Usage: operator_ask.bb <project-root> --thread <SUP-###> --question <q> [--options '["a","b"]'] [--options '[{"label":"a","description":"..."}]']
 
 (ns operator-ask
   (:require [babashka.fs :as fs]
@@ -77,20 +80,20 @@
     (fs/move tmp path {:replace-existing true :atomic-move true})))
 
 (defn parse-options
-  "BL-466 hardening: --options must degrade to nil (this ticket's own
+  "BL-466/BL-483 hardening: --options must degrade to nil (this ticket's own
    plain-message-fallback contract for 'no usable discrete options') on ANY
    malformed input - invalid JSON, or valid JSON that is not an array of
-   strings (a number, an object, an array of non-strings) - never crash the
-   ask CLI. A crash here would silently lose the agent's question entirely
-   (never even reaching the plain-message fallback the ticket already
-   specifies for the no-options case), which is strictly worse."
+   strings/label-objects (a number, an object, an array of neither) - never
+   crash the ask CLI. A crash here would silently lose the agent's question
+   entirely (never even reaching the plain-message fallback the ticket
+   already specifies for the no-options case), which is strictly worse."
   [raw]
   (when raw
     (try
-      (operator-lib/poll-options (json/parse-string raw))
+      (operator-lib/ask-options (json/parse-string raw))
       (catch Exception e
         (binding [*out* *err*]
-          (println (str "operator_ask.bb: --options was not a usable JSON array of strings (" (.getMessage e) ") - falling back to a plain message")))
+          (println (str "operator_ask.bb: --options was not a usable JSON array of strings/label-objects (" (.getMessage e) ") - falling back to a plain message")))
         nil))))
 
 (defn -main []

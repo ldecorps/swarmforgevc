@@ -22,7 +22,7 @@ make_project_fixture() {
      "$SRC/operator_memory_lib.bb" "$SRC/operator_memory_store.bb" \
      "$SRC/ticket_status_lib.bb" "$SRC/operator_ask.bb" "$SRC/handoff_lib.bb" \
      "$SRC/daemon_alarm_lib.bb" "$SRC/disk_space_lib.bb" "$SRC/sandbox_sweep_lib.bb" "$SRC/bounded_delete_sweep_lib.bb" "$SRC/proc_fd_scan_lib.bb" \
-     "$SRC/fixture_reaper_lib.bb" "$SRC/fixture_reaper_sweep_lib.bb" \
+     "$SRC/fixture_reaper_lib.bb" "$SRC/fixture_reaper_sweep_lib.bb" "$SRC/orphan_agent_reaper_lib.bb" "$SRC/orphan_agent_reaper_sweep_lib.bb" \
      "$d/swarmforge/scripts/"
   printf '%s' "$d"
 }
@@ -96,7 +96,7 @@ old_mtime "$SOCKET_ROOT"
 # FRESH keeps its just-created mtime.
 
 # ── run one reaper tick ───────────────────────────────────────────────────────
-SWARMFORGE_FIXTURE_REAP_ROOT="$REAP_ROOT" \
+SWARMFORGE_FIXTURE_REAP_ROOT="$REAP_ROOT" SWARMFORGE_ORPHAN_REAP_CANDIDATE_PIDS="" \
   SWARMFORGE_LEGACY_SOCKET_DIR="$SOCKET_ROOT" \
   SWARMFORGE_FIXTURE_REAP_STALE_HOURS=1 \
   SWARMFORGE_SANDBOX_SWEEP_ROOT="$PROJECT/.no-sandbox-sweep" \

@@ -262,7 +262,10 @@ const DOMAINS = [
   require('./bl481OperatorOutOfCycleWakeSteps'),
   require('./bl439FesSecondSwarmBringupSteps'),
   require('./bl485CleanerMutationSiteSizeGateSteps'),
-  require('./bl487BoardFreshnessWithoutCoordinatorSyncSteps')
+  require('./bl486ReapOrphanedAgentProcessesSteps'),
+  require('./bl483MultiOptionAskButtonsSteps'),
+  require('./bl487BoardFreshnessWithoutCoordinatorSyncSteps'),
+  require('./bl488HeldTicketIdResolvesWithoutLeadingTokenSteps')
 ];
 
 function registerSteps(registry) {
