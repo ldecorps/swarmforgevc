@@ -186,8 +186,14 @@ function registerSteps(registry) {
     }
     const flat = buttons.flat();
     const labels = flat.map((b) => b.text);
-    if (labels.join(',') !== 'Approve,Amend,Reject') {
-      throw new Error(`expected Approve/Amend/Reject buttons in that order, got: ${JSON.stringify(labels)}`);
+    // BL-490: Expedite joined as a fourth button, after Reject - this
+    // scenario's own title only ever claimed Approve/Amend/Reject are
+    // present (never "ONLY" those three), so the exact-order check widens
+    // to the current full button set rather than narrowing BL-490's own
+    // acceptance scenario (expedite-approval-01, which owns proving
+    // Expedite's own presence/tag).
+    if (labels.join(',') !== 'Approve,Amend,Reject,Expedite') {
+      throw new Error(`expected Approve/Amend/Reject/Expedite buttons in that order, got: ${JSON.stringify(labels)}`);
     }
     for (const button of flat) {
       if (button.callbackData !== `${button.text.toLowerCase()}:${BACKLOG_ID}`) {

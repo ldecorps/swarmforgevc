@@ -43,6 +43,7 @@ const {
   decideAgentQuestionsReplyAction,
   decidePollAnswerAction,
   recordApprovalDecisionAndClose,
+  recordExpediteDecisionAndClose,
   composeAskMessageBody,
   composeAskButtons,
   decideEnsureBacklogTopicAction,
@@ -1666,6 +1667,11 @@ test('BL-410: decideCallbackQueryAction resolves an Amend tap as awaiting a foll
   assert.deepEqual(decideCallbackQueryAction(cq, PRINCIPAL_ID, '1'), { action: 'await-followup', backlogId: 'BL-123', kind: 'amend' });
 });
 
+test('BL-490: decideCallbackQueryAction resolves an Expedite tap', () => {
+  const cq = mkCallbackUpdate({ fromId: PRINCIPAL_ID, data: 'expedite:BL-123' }).callback_query;
+  assert.deepEqual(decideCallbackQueryAction(cq, PRINCIPAL_ID, '1'), { action: 'expedite', backlogId: 'BL-123' });
+});
+
 test('BL-410: decideCallbackQueryAction drops a tap from a foreign chat as not-my-chat', () => {
   const cq = mkCallbackUpdate({ fromId: PRINCIPAL_ID, data: 'approve:BL-123', chatId: 2 }).callback_query;
   assert.deepEqual(decideCallbackQueryAction(cq, PRINCIPAL_ID, '1'), { action: 'drop', reason: 'not-my-chat' });
@@ -1774,6 +1780,12 @@ function callbackFixtureAdapters(overrides = {}) {
     resolveAskOptions: overrides.resolveAskOptions,
     readAskMessage: overrides.readAskMessage,
     editAskMessage: overrides.editAskMessage,
+    // BL-490: the Expedite verb's own three effects - all optional, same
+    // "absent degrades to a no-op" posture as every other optional field
+    // above.
+    promoteTicketIfPaused: overrides.promoteTicketIfPaused,
+    checkExpediteFileCollision: overrides.checkExpediteFileCollision,
+    dispatchExpediteBuild: overrides.dispatchExpediteBuild,
   };
 }
 
@@ -2094,6 +2106,198 @@ test('BL-484: readRecordedApprovalVerdict returning undefined (still pending) ke
     })
   );
   assert.deepEqual(approvals, ['BL-123']);
+});
+
+// ── BL-490: Expedite tap dispatch (pollAndForward level) ─────────────────
+
+test('BL-490: an Expedite tap records approval through the same recordApprovalReply effect a plain Approve tap uses', async () => {
+  const approvals = [];
+  await pollAndForward(
+    0,
+    PRINCIPAL_ID,
+    callbackFixtureAdapters({
+      data: 'expedite:BL-123',
+      recordApprovalReply: async (backlogId) => {
+        approvals.push(backlogId);
+        return true;
+      },
+    })
+  );
+  assert.deepEqual(approvals, ['BL-123']);
+});
+
+test('BL-490: an Expedite tap force-promotes the ticket via promoteTicketIfPaused', async () => {
+  const promoted = [];
+  await pollAndForward(
+    0,
+    PRINCIPAL_ID,
+    callbackFixtureAdapters({
+      data: 'expedite:BL-123',
+      promoteTicketIfPaused: async (backlogId) => {
+        promoted.push(backlogId);
+        return true;
+      },
+    })
+  );
+  assert.deepEqual(promoted, ['BL-123']);
+});
+
+test('BL-490: an Expedite tap dispatches the build immediately when no same-file collision is reported', async () => {
+  const dispatched = [];
+  await pollAndForward(
+    0,
+    PRINCIPAL_ID,
+    callbackFixtureAdapters({
+      data: 'expedite:BL-123',
+      checkExpediteFileCollision: async () => undefined,
+      dispatchExpediteBuild: async (backlogId) => {
+        dispatched.push(backlogId);
+        return true;
+      },
+    })
+  );
+  assert.deepEqual(dispatched, ['BL-123']);
+});
+
+test('BL-490: a same-file collision skips dispatch and answers with an unsafe-dispatch toast, without preempting the in-flight build', async () => {
+  const dispatched = [];
+  const answered = [];
+  const result = await pollAndForward(
+    0,
+    PRINCIPAL_ID,
+    callbackFixtureAdapters({
+      data: 'expedite:BL-123',
+      checkExpediteFileCollision: async () => 'BL-100',
+      dispatchExpediteBuild: async (backlogId) => {
+        dispatched.push(backlogId);
+        return true;
+      },
+      answerCallbackQuery: async (id, text) => {
+        answered.push({ id, text });
+      },
+    })
+  );
+  assert.deepEqual(dispatched, [], 'expected the in-flight build never preempted - no dispatch on a collision');
+  assert.equal(answered.length, 1);
+  assert.match(answered[0].text, /unsafe/i);
+  assert.match(answered[0].text, /BL-100/);
+  assert.equal(result.posted, 1, 'the ticket is still approved - Expedite always answers "posted", never "dropped", for a fresh decision');
+});
+
+test('BL-490: an Expedite tap on an already-decided ticket answers with the already-decided toast and performs no approve/promote/dispatch side effect', async () => {
+  const approvals = [];
+  const promoted = [];
+  const dispatched = [];
+  const answered = [];
+  const result = await pollAndForward(
+    0,
+    PRINCIPAL_ID,
+    callbackFixtureAdapters({
+      data: 'expedite:BL-123',
+      recordApprovalReply: async (backlogId) => {
+        approvals.push(backlogId);
+        return true;
+      },
+      promoteTicketIfPaused: async (backlogId) => {
+        promoted.push(backlogId);
+        return true;
+      },
+      dispatchExpediteBuild: async (backlogId) => {
+        dispatched.push(backlogId);
+        return true;
+      },
+      answerCallbackQuery: async (id, text) => {
+        answered.push({ id, text });
+      },
+      readRecordedApprovalVerdict: async () => 'approved',
+    })
+  );
+  assert.deepEqual(approvals, [], 'expected no recordApprovalReply call for a stale tap');
+  assert.deepEqual(promoted, [], 'expected no promotion for a stale tap');
+  assert.deepEqual(dispatched, [], 'expected no dispatch for a stale tap');
+  assert.deepEqual(answered, [{ id: 'cbq-1', text: 'Already decided: approved' }]);
+  assert.equal(result.dropped, 1);
+});
+
+// ── BL-490: recordExpediteDecisionAndClose - the Expedite verb's own
+// approve+promote+dispatch+close routine ─────────────────────────────────
+
+function expediteFixtureAdapters(overrides = {}) {
+  const editCalls = [];
+  return {
+    recordApprovalReply: overrides.recordApprovalReply ?? (async () => true),
+    promoteTicketIfPaused: overrides.promoteTicketIfPaused ?? (async () => true),
+    checkExpediteFileCollision: overrides.checkExpediteFileCollision ?? (async () => undefined),
+    dispatchExpediteBuild: overrides.dispatchExpediteBuild ?? (async () => true),
+    readApprovalAskMessage: overrides.readApprovalAskMessage,
+    editApprovalAskMessage:
+      overrides.editApprovalAskMessage ??
+      (async (topicId, messageId, text) => {
+        editCalls.push({ topicId, messageId, text });
+        return { success: true };
+      }),
+    editCalls,
+  };
+}
+
+test('recordExpediteDecisionAndClose: closes the ask with an Expedited decision line, not Approved', async () => {
+  const adapters = expediteFixtureAdapters({
+    readApprovalAskMessage: async (backlogId) => ({ topicId: 800, messageId: 999, text: `${backlogId} needs your approval...` }),
+  });
+  const nowMs = Date.UTC(2026, 6, 17, 3, 7);
+
+  const result = await recordExpediteDecisionAndClose(adapters, 'BL-490', nowMs);
+
+  assert.equal(result.changed, true);
+  assert.equal(result.collision, undefined);
+  assert.deepEqual(adapters.editCalls, [{ topicId: 800, messageId: 999, text: 'BL-490 needs your approval...\n-- Expedited 2026-07-17 03:07 UTC' }]);
+});
+
+test('recordExpediteDecisionAndClose: a same-file collision is reported and skips dispatch, but still promotes/closes', async () => {
+  const dispatched = [];
+  const adapters = expediteFixtureAdapters({
+    checkExpediteFileCollision: async () => 'BL-100',
+    dispatchExpediteBuild: async (backlogId) => {
+      dispatched.push(backlogId);
+      return true;
+    },
+    readApprovalAskMessage: async () => ({ topicId: 800, messageId: 999, text: 'BL-490 needs your approval...' }),
+  });
+
+  const result = await recordExpediteDecisionAndClose(adapters, 'BL-490', 0);
+
+  assert.equal(result.collision, 'BL-100');
+  assert.deepEqual(dispatched, []);
+  assert.equal(adapters.editCalls.length, 1, 'expected the ask to still close even when dispatch is skipped for safety');
+});
+
+test('recordExpediteDecisionAndClose: no real transition (recordApprovalReply reports no change) attempts no promote/dispatch/close at all', async () => {
+  const promoted = [];
+  const dispatched = [];
+  const adapters = expediteFixtureAdapters({
+    recordApprovalReply: async () => false,
+    promoteTicketIfPaused: async (backlogId) => {
+      promoted.push(backlogId);
+      return true;
+    },
+    dispatchExpediteBuild: async (backlogId) => {
+      dispatched.push(backlogId);
+      return true;
+    },
+    readApprovalAskMessage: async () => ({ topicId: 800, messageId: 999, text: 'BL-490 needs your approval...' }),
+  });
+
+  const result = await recordExpediteDecisionAndClose(adapters, 'BL-490', 0);
+
+  assert.equal(result.changed, false);
+  assert.deepEqual(promoted, []);
+  assert.deepEqual(dispatched, []);
+  assert.deepEqual(adapters.editCalls, []);
+});
+
+test('recordExpediteDecisionAndClose: every optional adapter absent degrades to record-and-close only, never crashes', async () => {
+  const result = await recordExpediteDecisionAndClose({ recordApprovalReply: async () => true }, 'BL-490', 0);
+  assert.equal(result.changed, true);
 });
 
 // ── BL-484: recordApprovalDecisionAndClose - the ONE closing routine
