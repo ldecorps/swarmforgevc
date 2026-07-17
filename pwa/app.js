@@ -862,6 +862,23 @@
     return Math.round(model.meanDurationMs / 1000) + tr('roleLeaderboardSecondsSuffix');
   }
 
+  // BL-388: a report committed before survival/rework existed (schemaVersion
+  // predates this ticket) carries neither field - "no data", never a bare
+  // NaN, mirrors formatBenchmarkCost's own null-usage fallback above.
+  function formatBenchmarkSurvival(model) {
+    if (typeof model.survivalRate !== 'number') {
+      return tr('roleLeaderboardNoData');
+    }
+    return Math.round(model.survivalRate * 100) + '%';
+  }
+
+  function formatBenchmarkRework(model) {
+    if (typeof model.meanReworkRounds !== 'number') {
+      return tr('roleLeaderboardNoData');
+    }
+    return model.meanReworkRounds.toFixed(1) + tr('roleLeaderboardReworkRoundsSuffix');
+  }
+
   function benchmarkLeaderboardRow(category, modelId, models) {
     var model = modelId ? findBenchmarkModel(models, modelId) : null;
     if (!model) {
@@ -871,6 +888,8 @@
       el('td', {}, [category]),
       el('td', {}, [model.label || model.modelId]),
       el('td', {}, [formatBenchmarkQuality(model)]),
+      el('td', {}, [formatBenchmarkSurvival(model)]),
+      el('td', {}, [formatBenchmarkRework(model)]),
       el('td', {}, [formatBenchmarkCost(model)]),
       el('td', {}, [formatBenchmarkDuration(model)]),
     ]);
@@ -881,7 +900,7 @@
   // noAcceptableModelReason, BL-385's bestByQuality/couldNotDiscriminateReason):
   // a single full-width row, category-prefixed, never a silent blank.
   function benchmarkLeaderboardReasonRow(category, reason) {
-    return el('tr', {}, [el('td', { colspan: '5' }, [category + tr('roleLeaderboardNoAcceptableSeparator') + (reason || '')])]);
+    return el('tr', {}, [el('td', { colspan: '7' }, [category + tr('roleLeaderboardNoAcceptableSeparator') + (reason || '')])]);
   }
 
   // BL-347: the PWA's own presentation of BL-340's committed benchmark
@@ -923,6 +942,8 @@
           el('th', {}, [tr('roleLeaderboardColCategory')]),
           el('th', {}, [tr('roleLeaderboardColModel')]),
           el('th', {}, [tr('roleLeaderboardColQuality')]),
+          el('th', {}, [tr('roleLeaderboardColSurvived')]),
+          el('th', {}, [tr('roleLeaderboardColRework')]),
           el('th', {}, [tr('roleLeaderboardColCost')]),
           el('th', {}, [tr('roleLeaderboardColDuration')]),
         ]),

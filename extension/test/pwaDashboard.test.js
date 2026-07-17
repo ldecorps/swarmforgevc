@@ -741,6 +741,70 @@ test('role-leaderboard-surface-04: a difference between models can be told from 
   assert.match(text, /90% \(±5%\)/);
 });
 
+// ── BL-388: the leaderboard presents survival + rework, the epic's own signals ─
+
+test('BL-388 the-ranking-consumes-survival-and-rework-03: the leaderboard shows what survived and what the rework cost', async () => {
+  const dom = renderDashboard(
+    fakeDashboard({
+      roleLeaderboard: fakeBenchmarkReport({
+        models: [
+          {
+            modelId: 'claude-haiku',
+            provider: 'claude',
+            model: 'haiku',
+            label: 'Claude Haiku 4.5',
+            excluded: false,
+            exclusionReason: null,
+            repetitions: 2,
+            meanQuality: 1,
+            qualityStdDev: 0,
+            meanCostUsd: 0.0431,
+            costStdDev: 0.0009,
+            meanDurationMs: 23420,
+            meanTokens: 1762.5,
+            survivalRate: 1,
+            meanReworkRounds: 0,
+            meanReworkAdjustedCostUsd: 0.0431,
+            runs: [],
+          },
+          {
+            modelId: 'claude-sonnet',
+            provider: 'claude',
+            model: 'sonnet',
+            label: 'Claude Sonnet 5',
+            excluded: false,
+            exclusionReason: null,
+            repetitions: 2,
+            meanQuality: 0.9,
+            qualityStdDev: 0.05,
+            meanCostUsd: 0.1383,
+            costStdDev: 0.0003,
+            meanDurationMs: 17815,
+            meanTokens: 974,
+            survivalRate: 0.5,
+            meanReworkRounds: 2.5,
+            meanReworkAdjustedCostUsd: 0.4842,
+            runs: [],
+          },
+        ],
+      }),
+    })
+  );
+  await flush();
+  const text = dom.window.document.getElementById('roleLeaderboard').textContent;
+  assert.match(text, /100%/, 'expected claude-haiku\'s 100% survival rate shown');
+  assert.match(text, /50%/, 'expected claude-sonnet\'s 50% survival rate shown');
+  assert.match(text, /2\.5 rounds/, 'expected claude-sonnet\'s mean rework rounds shown');
+});
+
+test('BL-388: a report committed before survival/rework existed shows "no data", never a crash or a bare NaN', async () => {
+  const dom = renderDashboard(fakeDashboard({ roleLeaderboard: fakeBenchmarkReport() }));
+  await flush();
+  const text = dom.window.document.getElementById('roleLeaderboard').textContent;
+  assert.match(text, /no data/);
+  assert.doesNotMatch(text, /NaN/);
+});
+
 test('role-leaderboard-surface-05: the leaderboard is hidden entirely when no benchmark has been committed, not rendered empty', async () => {
   const dom = renderDashboard(fakeDashboard());
   await flush();

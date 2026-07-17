@@ -108,13 +108,31 @@ export interface ModelAggregate {
   repetitions: number;
   // BL-386: reflects the model's showing across EVERY task in the battery
   // (computed over all runs, not one task's) - the ticket's own load-
-  // bearing requirement (scenario 03).
+  // bearing requirement (scenario 03). meanQuality already reflects
+  // survival implicitly (runTrial.ts scores a non-surviving run 0), but
+  // BL-388 exposes survivalRate explicitly below so the signal reaches the
+  // human legibly rather than staying folded into one averaged number.
   meanQuality: number;
   qualityStdDev: number;
   meanCostUsd: number | null;
   costStdDev: number | null;
   meanDurationMs: number;
   meanTokens: number | null;
+  // BL-388: the fraction of this model's runs whose diff survived the
+  // pipeline's review chain (BL-387's `survived` signal) - 0 when the
+  // model has no runs at all.
+  survivalRate: number;
+  // BL-388: mean rounds of rework (BL-387's `bounces`) a run needed,
+  // across ALL runs (0 for a run that never ran or never bounced) - the
+  // signal `meanReworkAdjustedCostUsd` below is priced from.
+  meanReworkRounds: number;
+  // BL-388: what the model actually cost INCLUDING the rework it caused -
+  // each run's own cost priced at (costUsd * (1 + reworkRounds)), then
+  // averaged the same way meanCostUsd is. null under the exact same
+  // condition as meanCostUsd (no run has a priced cost at all), never
+  // independently null - a cheap-first-diff-but-heavy-rework model must
+  // not be ranked as cheap on the strength of its first diff alone.
+  meanReworkAdjustedCostUsd: number | null;
   taskScores: TaskScore[];
   runs: TrialOutcome[];
 }
