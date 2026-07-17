@@ -262,6 +262,7 @@ const DOMAINS = [
   require('./bl481OperatorOutOfCycleWakeSteps'),
   require('./bl439FesSecondSwarmBringupSteps'),
   require('./bl485CleanerMutationSiteSizeGateSteps'),
+  require('./bl486ReapOrphanedAgentProcessesSteps'),
   require('./bl487BoardFreshnessWithoutCoordinatorSyncSteps'),
   require('./bl488HeldTicketIdResolvesWithoutLeadingTokenSteps')
 ];

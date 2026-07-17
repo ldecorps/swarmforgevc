@@ -96,6 +96,11 @@
 ;; supervisor/bridge/bot/tmux trees a crashed acceptance run left behind) -
 ;; loads its own pure decision lib via load-file internally.
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "fixture_reaper_sweep_lib.bb")))
+;; BL-486: the orphaned SwarmForge agent-process reaper (kills stale
+;; --remote-control SwarmForge-* claude processes a dry-run/second-swarm
+;; bring-up left behind) - loads its own pure decision lib via load-file
+;; internally, reuses proc_fd_scan_lib.bb loaded just above.
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "orphan_agent_reaper_sweep_lib.bb")))
 
 (defn usage []
   (binding [*out* *err*]
@@ -1579,6 +1584,19 @@
     (fixture-reaper-sweep-lib/sweep!
      (assoc (fixture-reaper-sweep-lib/default-adapters)
             :log! (fn [msg] (log! "fixture-reaper-sweep" msg))))
+
+    ;; BL-486: orphaned SwarmForge agent-process reaper - kills stale
+    ;; --remote-control SwarmForge-* claude processes an onboarding/
+    ;; second-swarm dry-run (e.g. FES) left behind, same "best-effort side
+    ;; action every tick" posture as the sweeps above, never gates the
+    ;; launch decision below. HIGH-RISK by design (it evaluates real claude
+    ;; processes for killing): the live control socket's tmux window set is
+    ;; the decapitation guard and wins first, exactly the BL-367 posture
+    ;; the fixture-reaper-sweep! above already follows for /tmp entries.
+    (orphan-agent-reaper-sweep-lib/sweep!
+     project-root
+     (assoc (orphan-agent-reaper-sweep-lib/default-adapters project-root)
+            :log! (fn [msg] (log! "orphan-agent-reaper-sweep" msg))))
 
     ;; BL-306: bounded escalate-once-then-drop on an unanswered clarifying
     ;; question - same "best-effort side action every tick" posture as the
