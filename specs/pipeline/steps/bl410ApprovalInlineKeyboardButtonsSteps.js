@@ -14,21 +14,17 @@
 // elsewhere): stepRegistry.js's resolve() dispatches a step's text to the
 // FIRST matching pattern registered across the WHOLE suite, regardless of
 // which feature file it came from. This feature's own text happens to be
-// VERBATIM IDENTICAL, for one step ("the reply is recorded against the
-// ticket", scenario 05), to text already registered by
+// VERBATIM IDENTICAL, for three steps, to text already registered by
 // bl409ApproveRejectAmendSteps.js (required before this file in
-// steps/index.js) - so that step is deliberately NOT re-registered here;
-// bl409's own handler runs instead. Its handler closure hardcodes
-// BACKLOG_ID='BL-409-fixture' - so THIS file's own BACKLOG_ID matches that
-// exact value, letting the hijacked handler resolve and flip THIS
-// scenario's own ticket file (ctx.targetPath is still this scenario's own
-// tmp dir) rather than one that doesn't exist here. The colliding step is
-// marked below at its would-be registration point.
-// (BL-509, 2026-07-17: scenario 04's own two colliding Then steps - "the
-// note is posted as operator context on the ticket" /
-// "the ticket's human_approval value is unchanged" - were retired along
-// with the scenario; see the feature file's own retirement comment. Only
-// the one collision above remains.)
+// steps/index.js) - so those three steps are deliberately NOT re-registered
+// here; bl409's own handler runs instead. Its handler closures hardcode
+// BACKLOG_ID='BL-409-fixture' (and, for the amend-note check, the literal
+// note text 'tighten the acceptance criteria') - so THIS file's own
+// BACKLOG_ID/ticket fixture matches those exact values, letting the
+// hijacked handler resolve and flip THIS scenario's own ticket file
+// (ctx.targetPath is still this scenario's own tmp dir) rather than one
+// that doesn't exist here. The three colliding steps are marked below at
+// their would-be registration point.
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
@@ -243,10 +239,25 @@ function registerSteps(registry) {
     }
   });
 
-  // inline-keyboard-04 (tapping Amend) RETIRED by BL-509 - its Given/When
-  // ("a callback_query for the Amend button followed by a note reply" /
-  // "the bot processes the callback and the note") were removed with the
-  // scenario; see the feature file's own retirement comment.
+  // ── inline-keyboard-04: tapping Amend ───────────────────────────────────
+  registry.define(/^a callback_query for the Amend button followed by a note reply$/, (ctx) => {
+    ctx.callbackId = 'cbq-amend-1';
+    ctx.callbackData = `amend:${BACKLOG_ID}`;
+    // Must equal bl409's own hardcoded expectation for this shared Then step
+    // (see the file-level comment) - not a real behavioral requirement of
+    // BL-410 itself.
+    ctx.followupText = 'tighten the acceptance criteria';
+  });
+
+  registry.define(/^the bot processes the callback and the note$/, async (ctx) => {
+    await deliverCallback(ctx, ctx.callbackId, ctx.callbackData);
+    ctx.deliverResult = await deliverReply(ctx, ctx.followupText);
+  });
+
+  // "the note is posted as operator context on the ticket" and "the
+  // ticket's human_approval value is unchanged" are NOT registered here -
+  // both are verbatim identical to bl409ApproveRejectAmendSteps.js's own
+  // steps; see the file-level comment.
 
   // ── inline-keyboard-05: typed replies unaffected ────────────────────────
   registry.define(/^a topic reply of "([^"]*)" sent instead of tapping a button$/, (ctx, replyText) => {

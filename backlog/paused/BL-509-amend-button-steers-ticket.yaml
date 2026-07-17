@@ -103,7 +103,7 @@ acceptance:
 #      stale "amend does not change approval state" assertion left behind).
 #   (Slices 2/3 add: the specifier mailbox receives the steer note; the specifier revises + re-presents.)
 
-human_approval: approved
+human_approval: pending
 approval_context: >
   Your ask 2026-07-17: "the amend button should enable me to steer the ticket." I investigated and found
   Amend today does almost nothing useful — it silently files your note to an operator queue, leaves the

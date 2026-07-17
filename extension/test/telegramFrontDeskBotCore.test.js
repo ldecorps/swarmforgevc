@@ -44,7 +44,6 @@ const {
   decidePollAnswerAction,
   recordApprovalDecisionAndClose,
   recordExpediteDecisionAndClose,
-  recordAmendDecisionAndClose,
   composeAskMessageBody,
   composeAskButtons,
   decideEnsureBacklogTopicAction,
@@ -67,11 +66,8 @@ function mkVoiceUpdate({ fromId, topicId, chatId, fileId, updateId } = {}) {
 
 // BL-410: a tapped inline-keyboard button's own update shape - mutually
 // exclusive with `message` above.
-function mkCallbackUpdate({ fromId, data, chatId, callbackId, topicId } = {}) {
-  return {
-    update_id: 1,
-    callback_query: { id: callbackId ?? 'cbq-1', data, from: { id: fromId }, message: { chat: { id: chatId ?? 1 }, message_thread_id: topicId } },
-  };
+function mkCallbackUpdate({ fromId, data, chatId, callbackId } = {}) {
+  return { update_id: 1, callback_query: { id: callbackId ?? 'cbq-1', data, from: { id: fromId }, message: { chat: { id: chatId ?? 1 } } } };
 }
 
 // ── isFromPrincipal / topicIdOf / messageTextOf (pure) ──────────────────
@@ -1148,18 +1144,10 @@ test('BL-409: a "reject <reason>" reply records the rejection reason, alongside 
   assert.equal(result.posted, 1);
 });
 
-// BL-509: supersedes the old BL-409 contract ("amend posts only the note,
-// changes no approval state") - Amend now flips the ticket to 'amending',
-// closes the posted ask, and queues a distinct amend-steer directive,
-// alongside the unchanged unconditional operator-context post.
-test('BL-509: an "amend <note>" reply flips the ticket to amending, closes the ask, posts the note as context, and queues a distinct amend-steer directive', async () => {
+test('BL-409: an "amend <note>" reply posts only the note as operator context and changes no approval state', async () => {
   const contexts = [];
   const rejections = [];
   const approvals = [];
-  const amends = [];
-  const directives = [];
-  const resets = [];
-  const editCalls = [];
   await pollAndForward(0, PRINCIPAL_ID, {
     chatId: '1',
     getUpdates: async () => ({
@@ -1186,104 +1174,10 @@ test('BL-509: an "amend <note>" reply flips the ticket to amending, closes the a
       rejections.push({ backlogId, reason });
       return true;
     },
-    recordAmendReply: async (backlogId) => {
-      amends.push(backlogId);
-      return true;
-    },
-    queueAmendSteerDirective: async (backlogId, text) => {
-      directives.push({ backlogId, text });
-    },
-    resetApprovalAskEmittedState: async (backlogId) => {
-      resets.push(backlogId);
-    },
-    readApprovalAskMessage: async (backlogId) => ({ topicId: 800, messageId: 7, text: `${backlogId} needs your approval...` }),
-    editApprovalAskMessage: async (topicId, messageId, text) => {
-      editCalls.push({ topicId, messageId, text });
-      return { success: true };
-    },
   });
   assert.deepEqual(contexts, [{ backlogId: 'BL-123', text: 'tighten the acceptance criteria' }]);
   assert.deepEqual(approvals, []);
   assert.deepEqual(rejections, []);
-  assert.deepEqual(amends, ['BL-123']);
-  assert.deepEqual(directives, [{ backlogId: 'BL-123', text: 'tighten the acceptance criteria' }]);
-  assert.deepEqual(resets, ['BL-123']);
-  assert.equal(editCalls.length, 1);
-  assert.ok(editCalls[0].text.includes('-- Amending'));
-});
-
-// BL-509: an amend-steer directive must be distinguishable from the
-// unconditional TELEGRAM_BL_TOPIC_MESSAGE context post (that one is
-// consumed as an approval answer by the existing operator_runtime.bb
-// sweep) - the two are separate adapter calls with separate effects, never
-// collapsed into one.
-test('BL-509: a real transition queues the amend-steer directive as a call SEPARATE from the operator-context post', async () => {
-  const calls = [];
-  await pollAndForward(0, PRINCIPAL_ID, {
-    chatId: '1',
-    getUpdates: async () => ({
-      success: true,
-      updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 42, text: 'amend tighten the acceptance criteria' })],
-    }),
-    postToBridge: async () => {
-      throw new Error('postToBridge should not be called for a backlog-item topic reply');
-    },
-    openSubjectAndRecord: async () => {
-      throw new Error('openSubjectAndRecord should not be called for a backlog-item topic reply');
-    },
-    subjectForTopic: () => undefined,
-    backlogForTopic: (topicId) => (topicId === 42 ? 'BL-123' : undefined),
-    postOperatorContext: async (backlogId, text) => {
-      calls.push({ kind: 'context', backlogId, text });
-      return true;
-    },
-    recordApprovalReply: async () => true,
-    recordRejectionReply: async () => true,
-    recordAmendReply: async () => true,
-    queueAmendSteerDirective: async (backlogId, text) => {
-      calls.push({ kind: 'directive', backlogId, text });
-    },
-  });
-  assert.deepEqual(calls, [
-    { kind: 'context', backlogId: 'BL-123', text: 'tighten the acceptance criteria' },
-    { kind: 'directive', backlogId: 'BL-123', text: 'tighten the acceptance criteria' },
-  ]);
-});
-
-// BL-509: a ticket that is no longer pending (already decided, or already
-// amending) gets none of the amend effects - the same "no real transition,
-// no side effects" posture recordApprovalDecisionAndClose already
-// establishes for approve/reject.
-test('BL-509: an amend reply on a ticket with no real transition (recordAmendReply reports no change) queues no directive and resets no state', async () => {
-  const directives = [];
-  const resets = [];
-  await pollAndForward(0, PRINCIPAL_ID, {
-    chatId: '1',
-    getUpdates: async () => ({
-      success: true,
-      updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 42, text: 'amend tighten the acceptance criteria' })],
-    }),
-    postToBridge: async () => {
-      throw new Error('postToBridge should not be called for a backlog-item topic reply');
-    },
-    openSubjectAndRecord: async () => {
-      throw new Error('openSubjectAndRecord should not be called for a backlog-item topic reply');
-    },
-    subjectForTopic: () => undefined,
-    backlogForTopic: (topicId) => (topicId === 42 ? 'BL-123' : undefined),
-    postOperatorContext: async () => true,
-    recordApprovalReply: async () => true,
-    recordRejectionReply: async () => true,
-    recordAmendReply: async () => false,
-    queueAmendSteerDirective: async (backlogId, text) => {
-      directives.push({ backlogId, text });
-    },
-    resetApprovalAskEmittedState: async (backlogId) => {
-      resets.push(backlogId);
-    },
-  });
-  assert.deepEqual(directives, []);
-  assert.deepEqual(resets, []);
 });
 
 test('BL-409: an approve reply still never calls recordRejectionReply (priority-order regression guard)', async () => {
@@ -1875,15 +1769,11 @@ function callbackFixtureAdapters(overrides = {}) {
     },
     recordApprovalReply: overrides.recordApprovalReply ?? (async () => true),
     recordRejectionReply: overrides.recordRejectionReply ?? (async () => true),
-    recordAmendReply: overrides.recordAmendReply ?? (async () => true),
     setPendingButtonAction: overrides.setPendingButtonAction ?? (async () => {}),
     answerCallbackQuery: overrides.answerCallbackQuery ?? (async () => {}),
     readRecordedApprovalVerdict: overrides.readRecordedApprovalVerdict,
     readApprovalAskMessage: overrides.readApprovalAskMessage,
     editApprovalAskMessage: overrides.editApprovalAskMessage,
-    // BL-509: the Amend tap's own prompt - optional, same "absent degrades
-    // to a no-op" posture as every other optional field here.
-    notifyApprovalsTopic: overrides.notifyApprovalsTopic,
     // BL-483: an ask-option tap's own resolution/close adapters - all
     // optional, same "absent degrades to a no-op/proceeds" posture as every
     // other optional PollAdapters field above.
@@ -1955,55 +1845,6 @@ test('BL-410: an Amend tap stashes the pending note-awaited marker', async () =>
     })
   );
   assert.deepEqual(pending, [{ backlogId: 'BL-123', kind: 'amend' }]);
-});
-
-// BL-509: unlike a Reject tap (silent stash, unchanged), an Amend tap now
-// ALSO prompts the human in the same topic the button was tapped in - the
-// verdict itself stays untouched until the reply arrives (asserted via
-// recordApprovalReply/recordRejectionReply/recordAmendReply never firing on
-// the tap path, which callbackFixtureAdapters' own defaults already throw
-// away, so this test only needs to assert the new prompt).
-test('BL-509: an Amend tap prompts the human in the tapped topic for what to change, verdict untouched', async () => {
-  const pending = [];
-  const prompts = [];
-  await pollAndForward(
-    0,
-    PRINCIPAL_ID,
-    callbackFixtureAdapters({
-      update: { fromId: PRINCIPAL_ID, data: 'amend:BL-123', topicId: 900 },
-      setPendingButtonAction: async (backlogId, kind) => {
-        pending.push({ backlogId, kind });
-      },
-      notifyApprovalsTopic: async (topicId, text) => {
-        prompts.push({ topicId, text });
-        return true;
-      },
-    })
-  );
-  assert.deepEqual(pending, [{ backlogId: 'BL-123', kind: 'amend' }]);
-  assert.equal(prompts.length, 1);
-  assert.equal(prompts[0].topicId, 900);
-  assert.match(prompts[0].text, /BL-123/);
-  assert.match(prompts[0].text, /change/i);
-});
-
-// BL-509: a Reject tap must NOT gain the new prompt - only Amend's contract
-// changed. Pins the boundary so a future edit that accidentally widens the
-// `if (decision.kind === 'amend')` guard is caught immediately.
-test('BL-509: a Reject tap still sends no prompt (only Amend prompts on tap)', async () => {
-  const prompts = [];
-  await pollAndForward(
-    0,
-    PRINCIPAL_ID,
-    callbackFixtureAdapters({
-      data: 'reject:BL-123',
-      notifyApprovalsTopic: async (topicId, text) => {
-        prompts.push({ topicId, text });
-        return true;
-      },
-    })
-  );
-  assert.deepEqual(prompts, []);
 });
 
 test('BL-410: a non-principal tap is dropped and NEVER answered (its spinner is not this bot\'s to clear)', async () => {
@@ -2513,77 +2354,6 @@ test('recordExpediteDecisionAndClose: no real transition (recordApprovalReply re
 test('recordExpediteDecisionAndClose: every optional adapter absent degrades to record-and-close only, never crashes', async () => {
   const result = await recordExpediteDecisionAndClose({ recordApprovalReply: async () => true }, 'BL-490', 0);
   assert.equal(result.changed, true);
-});
-
-// ── BL-509: recordAmendDecisionAndClose - the Amend verb's own
-// record+reset+queue+close routine ────────────────────────────────────────
-
-function amendFixtureAdapters(overrides = {}) {
-  const editCalls = [];
-  return {
-    recordAmendReply: overrides.recordAmendReply ?? (async () => true),
-    resetApprovalAskEmittedState: overrides.resetApprovalAskEmittedState ?? (async () => {}),
-    queueAmendSteerDirective: overrides.queueAmendSteerDirective ?? (async () => {}),
-    readApprovalAskMessage: overrides.readApprovalAskMessage,
-    editApprovalAskMessage:
-      overrides.editApprovalAskMessage ??
-      (async (topicId, messageId, text) => {
-        editCalls.push({ topicId, messageId, text });
-        return { success: true };
-      }),
-    editCalls,
-  };
-}
-
-test('recordAmendDecisionAndClose: a real transition records amending, resets emitted state, queues the directive, and closes with an Amending decision line', async () => {
-  const resets = [];
-  const directives = [];
-  const adapters = amendFixtureAdapters({
-    resetApprovalAskEmittedState: async (backlogId) => {
-      resets.push(backlogId);
-    },
-    queueAmendSteerDirective: async (backlogId, text) => {
-      directives.push({ backlogId, text });
-    },
-    readApprovalAskMessage: async (backlogId) => ({ topicId: 800, messageId: 999, text: `${backlogId} needs your approval...` }),
-  });
-  const nowMs = Date.UTC(2026, 6, 17, 3, 7);
-
-  const result = await recordAmendDecisionAndClose(adapters, 'BL-509', 'tighten the acceptance criteria', nowMs);
-
-  assert.equal(result, true);
-  assert.deepEqual(resets, ['BL-509']);
-  assert.deepEqual(directives, [{ backlogId: 'BL-509', text: 'tighten the acceptance criteria' }]);
-  assert.deepEqual(adapters.editCalls, [
-    { topicId: 800, messageId: 999, text: 'BL-509 needs your approval...\n-- Amending 2026-07-17 03:07 UTC' },
-  ]);
-});
-
-test('recordAmendDecisionAndClose: no real transition (recordAmendReply reports no change) resets no state, queues no directive, closes nothing', async () => {
-  const resets = [];
-  const directives = [];
-  const adapters = amendFixtureAdapters({
-    recordAmendReply: async () => false,
-    resetApprovalAskEmittedState: async (backlogId) => {
-      resets.push(backlogId);
-    },
-    queueAmendSteerDirective: async (backlogId, text) => {
-      directives.push({ backlogId, text });
-    },
-    readApprovalAskMessage: async () => ({ topicId: 800, messageId: 999, text: 'BL-509 needs your approval...' }),
-  });
-
-  const result = await recordAmendDecisionAndClose(adapters, 'BL-509', 'tighten the acceptance criteria', 0);
-
-  assert.equal(result, false);
-  assert.deepEqual(resets, []);
-  assert.deepEqual(directives, []);
-  assert.deepEqual(adapters.editCalls, []);
-});
-
-test('recordAmendDecisionAndClose: every optional adapter absent degrades to record-only, never crashes', async () => {
-  const result = await recordAmendDecisionAndClose({ recordAmendReply: async () => true }, 'BL-509', 'tighten the acceptance criteria', 0);
-  assert.equal(result, true);
 });
 
 // ── BL-484: recordApprovalDecisionAndClose - the ONE closing routine
@@ -3429,12 +3199,10 @@ test('BL-410: a bare reply while a Reject tap is pending is treated as the rejec
   assert.deepEqual(pending, {}, 'the one-shot pending marker must be cleared once consumed');
 });
 
-test('BL-509: a bare reply while an Amend tap is pending is treated as the amendment note, same effect as typed "amend <note>" (flips to amending, closes the ask, queues a directive)', async () => {
+test('BL-410: a bare reply while an Amend tap is pending is treated as the amendment note, same effect as typed "amend <note>"', async () => {
   const contexts = [];
   const approvals = [];
   const rejections = [];
-  const amends = [];
-  const directives = [];
   const pending = { 'BL-123': 'amend' };
   await pollAndForward(0, PRINCIPAL_ID, {
     chatId: '1',
@@ -3462,13 +3230,6 @@ test('BL-509: a bare reply while an Amend tap is pending is treated as the amend
       rejections.push({ backlogId, reason });
       return true;
     },
-    recordAmendReply: async (backlogId) => {
-      amends.push(backlogId);
-      return true;
-    },
-    queueAmendSteerDirective: async (backlogId, text) => {
-      directives.push({ backlogId, text });
-    },
     getPendingButtonAction: async (backlogId) => pending[backlogId],
     clearPendingButtonAction: async (backlogId) => {
       delete pending[backlogId];
@@ -3477,8 +3238,6 @@ test('BL-509: a bare reply while an Amend tap is pending is treated as the amend
   assert.deepEqual(contexts, [{ backlogId: 'BL-123', text: 'tighten the acceptance criteria' }]);
   assert.deepEqual(approvals, []);
   assert.deepEqual(rejections, []);
-  assert.deepEqual(amends, ['BL-123']);
-  assert.deepEqual(directives, [{ backlogId: 'BL-123', text: 'tighten the acceptance criteria' }]);
   assert.deepEqual(pending, {}, 'the one-shot pending marker must be cleared once consumed');
 });
 
@@ -3542,7 +3301,6 @@ test('BL-410: a padded bare reply while an Amend tap is pending has its whitespa
     },
     recordApprovalReply: async () => true,
     recordRejectionReply: async () => true,
-    recordAmendReply: async () => true,
     getPendingButtonAction: async (backlogId) => pending[backlogId],
     clearPendingButtonAction: async (backlogId) => {
       delete pending[backlogId];

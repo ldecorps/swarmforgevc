@@ -60,10 +60,7 @@ acceptance:
     - "An ApprovalRequested message carries Approve, Amend, and Reject buttons"
     - "Tapping Approve flips the ticket the same way a typed approve reply does"
     - "Tapping Reject records a reason the same way a typed reject reply does"
-    # "Tapping Amend prompts for a note and records it without changing approval state"
-    # RETIRED by BL-509 (2026-07-17): tapping Amend now flips the ticket to 'amending' and
-    # closes the ask. The durable amend-tap contract lives in
-    # specs/features/BL-509-amend-button-steers-ticket.feature.
+    - "Tapping Amend prompts for a note and records it without changing approval state"
     - "Typed replies still work unchanged alongside the buttons"
     - "Every button tap clears its Telegram loading spinner"
 

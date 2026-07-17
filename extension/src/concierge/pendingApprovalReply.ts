@@ -126,20 +126,6 @@ function sanitizeForYamlComment(text: string): string {
   return text.replace(/[\r\n]+/g, ' ').trim();
 }
 
-// BL-509: same targeted-line-replace shape as approveHumanApprovalText, for
-// the amend verb - 'amending' is a distinct, non-terminal verdict (unlike
-// approved/rejected): the specifier flips it back to pending on re-present
-// (slice 3), so a ticket can legitimately re-enter the pending->amending
-// transition more than once over its lifetime. The steer text itself is not
-// embedded on this line (unlike reject's reason) - it already rides the
-// ticket's topic record via the unconditional postOperatorContext post.
-export function amendHumanApprovalText(rawText: string): { text: string; changed: boolean } {
-  if (!HUMAN_APPROVAL_PENDING_PATTERN.test(rawText)) {
-    return { text: rawText, changed: false };
-  }
-  return { text: rawText.replace(HUMAN_APPROVAL_PENDING_PATTERN, 'human_approval: amending'), changed: true };
-}
-
 // BL-409: same targeted-line-replace shape as approveHumanApprovalText, but
 // records WHY as a trailing comment on the same line - the reason rides the
 // ticket file itself (no second store), matching this project's convention
@@ -235,23 +221,6 @@ export function recordRejectionReply(targetPath: string, backlogId: string, reas
   }
   const rawText = fs.readFileSync(filePath, 'utf8');
   const { text, changed } = rejectHumanApprovalText(rawText, reason);
-  if (changed) {
-    fs.writeFileSync(filePath, text);
-  }
-  return changed;
-}
-
-// BL-509: same shape as recordApprovalReply, for the amend verb - marks the
-// ticket as being steered (human_approval: amending) rather than resolved.
-// A ticket not currently pending (already decided, already amending, or no
-// matching file) is left untouched, reported as no-op.
-export function recordAmendReply(targetPath: string, backlogId: string): boolean {
-  const filePath = findTicketFilePath(targetPath, backlogId);
-  if (!filePath) {
-    return false;
-  }
-  const rawText = fs.readFileSync(filePath, 'utf8');
-  const { text, changed } = amendHumanApprovalText(rawText);
   if (changed) {
     fs.writeFileSync(filePath, text);
   }

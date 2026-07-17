@@ -14,11 +14,7 @@
 // "step (a) must reuse the EXISTING approval writer" constraint), but the
 // topic's own audit trail must still show which verb decided it, so the
 // closing line reads "-- Expedited <UTC>", never "-- Approved <UTC>".
-// BL-509: 'amending' is a FOURTH, non-terminal verdict - unlike the other
-// three, it is not a final resolution (the specifier flips it back to
-// pending on re-present, slice 3), but it still closes the posted ask the
-// same way (the ticket leaves the Approvals topic while being revised).
-export type ApprovalDecisionVerdict = { kind: 'approved' } | { kind: 'rejected'; reason: string } | { kind: 'expedited' } | { kind: 'amending' };
+export type ApprovalDecisionVerdict = { kind: 'approved' } | { kind: 'rejected'; reason: string } | { kind: 'expedited' };
 
 // A build-time/cosmetic detail (exact wording), not a promotion gate - the
 // ticket's own examples: "-- Approved 2026-07-17 03:07 UTC" /
@@ -36,9 +32,6 @@ export function decisionLineFor(verdict: ApprovalDecisionVerdict, nowMs: number)
   }
   if (verdict.kind === 'expedited') {
     return `-- Expedited ${formatUtcStamp(nowMs)}`;
-  }
-  if (verdict.kind === 'amending') {
-    return `-- Amending ${formatUtcStamp(nowMs)}`;
   }
   return `-- Rejected: ${verdict.reason}`;
 }

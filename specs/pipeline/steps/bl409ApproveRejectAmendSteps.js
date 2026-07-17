@@ -184,11 +184,23 @@ function registerSteps(registry) {
     }
   });
 
-  // approve-reject-amend-02 (amend) RETIRED by BL-509 - its two Then steps
-  // ("the note is posted as operator context on the ticket" /
-  // "the ticket's human_approval value is unchanged") were removed with the
-  // scenario; see the feature file's own retirement comment. Confirmed by
-  // grep: no other live feature references either step text.
+  // ── approve-reject-amend-02: amend ──────────────────────────────────────
+  registry.define(/^the note is posted as operator context on the ticket$/, (ctx) => {
+    const posted = ctx.contexts.find((c) => c.backlogId === BACKLOG_ID);
+    if (!posted) {
+      throw new Error(`expected an operator-context post for ${BACKLOG_ID}, got ${JSON.stringify(ctx.contexts)}`);
+    }
+    if (posted.text !== 'tighten the acceptance criteria') {
+      throw new Error(`expected only the extracted note (verb prefix stripped) as context text, got: ${JSON.stringify(posted.text)}`);
+    }
+  });
+
+  registry.define(/^the ticket's human_approval value is unchanged$/, (ctx) => {
+    const content = readTicketContent(ctx);
+    if (!/^human_approval: pending$/m.test(content)) {
+      throw new Error(`expected human_approval to remain 'pending' after an amend reply, got:\n${content}`);
+    }
+  });
 
   // ── approve-reject-amend-03: approve regression guard ───────────────────
   registry.define(/^its backlog file's human_approval line becomes approved$/, (ctx) => {

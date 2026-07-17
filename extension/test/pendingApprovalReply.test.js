@@ -10,8 +10,6 @@ const {
   classifyApprovalReplyAction,
   rejectHumanApprovalText,
   recordRejectionReply,
-  amendHumanApprovalText,
-  recordAmendReply,
   isTicketPendingApproval,
   classifyApprovalsTopicReply,
   readRecordedVerdict,
@@ -334,81 +332,6 @@ test('a backlog id with no matching ticket file is a clean no-op for reject too'
   assert.equal(changed, false);
 });
 
-// ── amendHumanApprovalText (pure) - BL-509 ─────────────────────────────────
-
-test('flips a pending ticket to amending', () => {
-  const raw = 'id: BL-950\ntitle: t\nhuman_approval: pending\n';
-  const result = amendHumanApprovalText(raw);
-  assert.equal(result.changed, true);
-  assert.match(result.text, /^human_approval: amending$/m);
-});
-
-test('flips a pending-review ticket to amending too', () => {
-  const raw = 'id: BL-951\ntitle: t\nhuman_approval: pending-review\n';
-  const result = amendHumanApprovalText(raw);
-  assert.equal(result.changed, true);
-  assert.match(result.text, /^human_approval: amending$/m);
-});
-
-test('a ticket already approved is left untouched by amend (never overwrites a resolved ticket)', () => {
-  const raw = 'id: BL-952\ntitle: t\nhuman_approval: approved\n';
-  const result = amendHumanApprovalText(raw);
-  assert.equal(result.changed, false);
-  assert.equal(result.text, raw);
-});
-
-test('a ticket already amending is left untouched by a second amend (idempotent)', () => {
-  const raw = 'id: BL-953\ntitle: t\nhuman_approval: amending\n';
-  const result = amendHumanApprovalText(raw);
-  assert.equal(result.changed, false);
-  assert.equal(result.text, raw);
-});
-
-test('amendHumanApprovalText only changes the human_approval line - every other line is preserved verbatim', () => {
-  const raw = 'id: BL-954\ntitle: t\nhuman_approval: pending\nmutation_cost: medium\n';
-  const result = amendHumanApprovalText(raw);
-  assert.equal(result.text, 'id: BL-954\ntitle: t\nhuman_approval: amending\nmutation_cost: medium\n');
-});
-
-// ── recordAmendReply (impure, real fs) - BL-509 ────────────────────────────
-
-test('flips a pending ticket to amending by its own id: field', () => {
-  const targetPath = mkTmp();
-  writeTicket(path.join(targetPath, 'backlog', 'active'), 'BL-960-some-slug.yaml', 'id: BL-960\ntitle: t\nhuman_approval: pending\n');
-
-  const changed = recordAmendReply(targetPath, 'BL-960');
-
-  assert.equal(changed, true);
-  assert.match(fs.readFileSync(path.join(targetPath, 'backlog', 'active', 'BL-960-some-slug.yaml'), 'utf8'), /human_approval: amending/);
-});
-
-test('flips a pending PAUSED ticket to amending too', () => {
-  const targetPath = mkTmp();
-  writeTicket(path.join(targetPath, 'backlog', 'paused'), 'BL-961-slug.yaml', 'id: BL-961\ntitle: t\nhuman_approval: pending\n');
-
-  const changed = recordAmendReply(targetPath, 'BL-961');
-
-  assert.equal(changed, true);
-  assert.match(fs.readFileSync(path.join(targetPath, 'backlog', 'paused', 'BL-961-slug.yaml'), 'utf8'), /human_approval: amending/);
-});
-
-test('an already-amending ticket is left untouched and reports no change (idempotent)', () => {
-  const targetPath = mkTmp();
-  const before = 'id: BL-962\ntitle: t\nhuman_approval: amending\n';
-  writeTicket(path.join(targetPath, 'backlog', 'active'), 'BL-962-slug.yaml', before);
-
-  const changed = recordAmendReply(targetPath, 'BL-962');
-
-  assert.equal(changed, false);
-  assert.equal(fs.readFileSync(path.join(targetPath, 'backlog', 'active', 'BL-962-slug.yaml'), 'utf8'), before);
-});
-
-test('a backlog id with no matching ticket file is a clean no-op for amend too', () => {
-  const targetPath = mkTmp();
-  const changed = recordAmendReply(targetPath, 'BL-999');
-  assert.equal(changed, false);
-});
-
 // ── isTicketPendingApproval (read-only, real fs) - BL-416 ─────────────────
 
 test('a ticket with human_approval: pending is reported pending', () => {
@@ -480,19 +403,6 @@ test('a ticket with no human_approval field at all reports no recorded verdict',
   const targetPath = mkTmp();
   writeTicket(path.join(targetPath, 'backlog', 'active'), 'BL-943-slug.yaml', 'id: BL-943\ntitle: t\n');
   assert.equal(readRecordedVerdict(targetPath, 'BL-943'), undefined);
-});
-
-// BL-509: 'amending' is deliberately NOT a terminal verdict for the
-// stale-tap guard's purposes - unlike approved/rejected, the specifier
-// flips it back to pending (slice 3), so a ticket legitimately cycles
-// through this state more than once. readRecordedVerdict's own pattern
-// stays scoped to approved|rejected; widening it is out of this slice's
-// scope (no scenario in the live feature exercises a stale re-tap on an
-// amending ticket).
-test('an amending ticket reports no recorded verdict (amending is not a stale-tap-guard terminal state)', () => {
-  const targetPath = mkTmp();
-  writeTicket(path.join(targetPath, 'backlog', 'active'), 'BL-944-slug.yaml', 'id: BL-944\ntitle: t\nhuman_approval: amending\n');
-  assert.equal(readRecordedVerdict(targetPath, 'BL-944'), undefined);
 });
 
 test('a backlog id with no matching ticket file reports no recorded verdict, never a crash', () => {
