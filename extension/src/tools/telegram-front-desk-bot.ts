@@ -1014,6 +1014,22 @@ export async function runKillAllSwarm(targetPath: string): Promise<{ ok: boolean
   }
 }
 
+// Split out of executeStop below for the same CRAP-budget reason
+// telegramFrontDeskBotCore.ts's extraction comments document throughout
+// (see e.g. gatherControlState there): polls decideDrainOutcome until the
+// pipeline is empty ('drained') or the drain window elapses ('forced'),
+// never returning 'wait' itself.
+async function waitForDrainOutcome(targetPath: string, startedAtMs: number, timeoutMs: number): Promise<'drained' | 'forced'> {
+  for (;;) {
+    const outcome = decideDrainOutcome(isPipelineEmpty(targetPath), startedAtMs, Date.now(), timeoutMs);
+    if (outcome === 'wait') {
+      await sleep(CONTROL_DRAIN_POLL_INTERVAL_MS);
+      continue;
+    }
+    return outcome;
+  }
+}
+
 // BL-423: the ONE reap path both stop modes drive - "drive the reap
 // through kill_all_swarm.sh's socket-scoped path" (the ticket's own
 // words). The ONLY difference between the two modes is whether teardown
@@ -1029,16 +1045,7 @@ export async function executeStop(
   let drainOutcome: 'drained' | 'forced' | undefined;
   if (mode === 'drain') {
     await postControlMessage(botToken, chatId, controlTopicId, 'Draining in-flight work before stopping...', undefined, postFn);
-    const startedAtMs = Date.now();
-    for (;;) {
-      const outcome = decideDrainOutcome(isPipelineEmpty(targetPath), startedAtMs, Date.now(), controlDrainTimeoutMs());
-      if (outcome === 'wait') {
-        await sleep(CONTROL_DRAIN_POLL_INTERVAL_MS);
-        continue;
-      }
-      drainOutcome = outcome;
-      break;
-    }
+    drainOutcome = await waitForDrainOutcome(targetPath, Date.now(), controlDrainTimeoutMs());
     if (drainOutcome === 'forced') {
       await postControlMessage(botToken, chatId, controlTopicId, 'Drain window elapsed with work still in flight - forcing teardown.', undefined, postFn);
     }
@@ -1069,6 +1076,38 @@ export function writeBounceSentinel(targetPath: string): void {
   atomicWrite(bounceSentinelPath(targetPath), 'swarm');
 }
 
+// Split out of executeRestart below for the same CRAP-budget reason
+// waitForDrainOutcome above documents: posts the phase-transition message
+// for one newly-observed bounce-ack phase, and - only for the two terminal
+// phases - the restart's own final verdict, returning whether the restart
+// loop should stop polling.
+async function handleRestartAckPhase(
+  ack: { phase: BouncePhase; message?: string },
+  targetPath: string,
+  botToken: string,
+  chatId: string,
+  controlTopicId: number | undefined,
+  checkBootstrapped: (tp: string) => boolean,
+  postFn?: TelegramPostFn
+): Promise<'continue' | 'stop'> {
+  const suffix = ack.message ? ` - ${ack.message}` : '';
+  await postControlMessage(botToken, chatId, controlTopicId, `Restart: ${ack.phase}${suffix}`, undefined, postFn);
+  if (ack.phase === 'done') {
+    await postControlMessage(
+      botToken,
+      chatId,
+      controlTopicId,
+      checkBootstrapped(targetPath)
+        ? 'Restart complete - every agent bootstrapped.'
+        : 'Restart reported done, but not every agent actually bootstrapped - reporting failed.',
+      undefined,
+      postFn
+    );
+    return 'stop';
+  }
+  return ack.phase === 'failed' ? 'stop' : 'continue';
+}
+
 // BL-423: streams the extension host's own bounce-ack phases back to the
 // Control topic (draining -> stopping -> relaunching -> done/failed), then
 // re-verifies a reported 'done' against isSwarmReady's own strengthened
@@ -1092,21 +1131,7 @@ export async function executeRestart(
     const ack = readBounceAck(targetPath);
     if (ack && ack.phase !== lastPhase) {
       lastPhase = ack.phase;
-      await postControlMessage(botToken, chatId, controlTopicId, `Restart: ${ack.phase}${ack.message ? ` - ${ack.message}` : ''}`, undefined, postFn);
-      if (ack.phase === 'done') {
-        await postControlMessage(
-          botToken,
-          chatId,
-          controlTopicId,
-          checkBootstrapped(targetPath)
-            ? 'Restart complete - every agent bootstrapped.'
-            : 'Restart reported done, but not every agent actually bootstrapped - reporting failed.',
-          undefined,
-          postFn
-        );
-        return;
-      }
-      if (ack.phase === 'failed') {
+      if ((await handleRestartAckPhase(ack, targetPath, botToken, chatId, controlTopicId, checkBootstrapped, postFn)) === 'stop') {
         return;
       }
     }
