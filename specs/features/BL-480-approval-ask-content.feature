@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=942c59706a2ef491733e67c4e4f622b22a9d597a3d6f24b2831151505450a447
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-07-17T03:05:13.423246011Z","feature_name":"The Approvals-topic ask carries enough ticket meat to decide","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-480-approval-ask-content.feature","background_hash":"c97b6c9437759ebded8dda033360713dc71a954d75b1a02587e8c002e7f564e9","implementation_hash":"unknown","scenarios":[{"index":5,"name":"Every non-ApprovalRequested render is unchanged by this feature","scenario_hash":"7e237e49eea8a11eb3b1b2c6693b396662d96a25a2097469a191dd5e5df88b95","mutation_count":3,"result":{"Total":3,"Killed":3,"Survived":0,"Errors":0},"tested_at":"2026-07-17T03:05:13.423246011Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: The Approvals-topic ask carries enough ticket meat to decide
 
 # BL-480: approvalRequestedText (extension/src/concierge/topicRouter.ts) renders an
