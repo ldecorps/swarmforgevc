@@ -89,12 +89,13 @@ export function readRecertEmailTo(targetPath: string): string {
   return readConfigValue(targetPath, 'recert_email_to') ?? DEFAULT_RECERT_EMAIL_TO;
 }
 
-// The one impure orchestrator generate-recert-batch.ts's CLI wraps (same
-// split as docsTree.ts's computeDocsTree/buildDocsTree): resolves the
-// current recertifiable pool from the docs tree and the durable
-// last-reviewed store, then hands the already oldest-first-sorted batch to
-// the published artifact - the PWA client stays a pure renderer of it,
-// matching BL-117's own "no derivation logic in the PWA client" posture.
+// The one impure orchestrator BL-450's standing Recert Telegram topic reads
+// (conciergeTick.ts, via recertPosting.ts - same split as docsTree.ts's
+// computeDocsTree/buildDocsTree): resolves the current recertifiable pool
+// from the docs tree and the durable last-reviewed store, then hands the
+// already oldest-first-sorted batch to the caller. BL-451 retired this
+// function's former PWA-artifact caller (generate-recert-batch.ts); the
+// Recert Telegram topic is now recertification's only live surface.
 export function computeRecertBatch(
   targetPath: string,
   batchSize: number = DEFAULT_RECERT_BATCH_SIZE,

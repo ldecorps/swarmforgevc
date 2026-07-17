@@ -4,9 +4,9 @@
 // - Static shell (index.html/app.js/manifest.json/icon.svg): cache-first,
 //   so the app shell itself is available offline immediately after first
 //   install.
-// - backlog.json, docs-tree.json, and recert-batch.json (BL-150): network-
-//   first with a cache fallback, so an online open always shows the
-//   freshest data while an offline open still renders whatever was last
+// - backlog.json and docs-tree.json: network-first with a cache fallback,
+//   so an online open always shows the freshest data while an offline
+//   open still renders whatever was last
 //   successfully fetched (dashboard-04's "as of <generation time>" honesty
 //   requirement, and BL-117's docs-drilldown-04 same requirement for the
 //   docs tree - the client, not this worker, surfaces that timestamp from
@@ -28,7 +28,7 @@
 // _site/) is ever stamped.
 const CACHE_NAME = '__PWA_CACHE_NAME_PLACEHOLDER__';
 const SHELL_ASSETS = ['./', './index.html', './app.js', './locales.js', './manifest.json', './icon.svg'];
-const DATA_URLS = ['./backlog.json', './docs-tree.json', './recert-batch.json'];
+const DATA_URLS = ['./backlog.json', './docs-tree.json'];
 
 // BL-249 hardener bounce: app.js persists the locale (BL-118) and font-size
 // (BL-220) user preferences in a SEPARATE Cache Storage cache under this

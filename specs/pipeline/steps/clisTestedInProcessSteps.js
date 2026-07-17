@@ -19,14 +19,18 @@ const path = require('node:path');
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const EXTENSION_TEST_DIR = path.join(REPO_ROOT, 'extension', 'test');
 
-// The 30 files BL-363 owns (every CLI test file except dependencyGateCli.test.js,
+// The 29 files BL-363 owns (every CLI test file except dependencyGateCli.test.js,
 // which BL-362 owns, and paneTailerClass.test.js, BL-362's other file).
+// BL-451 retired recertificationStore.test.js's own generate-recert-batch
+// CLI coverage (the CLI itself was retired along with the PWA recert view
+// it fed) - that file is now a pure unit-test file for recertificationStore.ts
+// with no compiled CLI left to spawn, so it no longer belongs in this list.
 const OWNED_CLI_TEST_FILES = [
   'backfillHumanApproval', 'bakeoffRunCli', 'briefingDigestLineCli', 'chaseTrendLineCli',
   'coChangeReportCli', 'emitCostHealthSidecarCli', 'fleetConsoleCli', 'generateBacklogDashboardCli',
   'generateDocsTreeCli', 'needsApprovalLineCli', 'negotiateOnboardingContractCli', 'notDoneCountLineCli',
   'onboardingContractGateCli', 'operatorDecideCli', 'parkCycleReportCli', 'proposeOnboardingContractCli',
-  'proposeOnboardingPromptsCli', 'queueStatusCli', 'recertificationStore', 'recordRunCli',
+  'proposeOnboardingPromptsCli', 'queueStatusCli', 'recordRunCli',
   'recruiterDiscoverCli', 'recruiterRunCli', 'renderBriefingDiagramsCli', 'sampleResourcesCli',
   'stageDwellReportCli', 'startBridgeHeadlessCli', 'suiteDurationLineCli', 'swarmMetricsCli',
   'telegramFrontDeskBotCli', 'traceHopMain',

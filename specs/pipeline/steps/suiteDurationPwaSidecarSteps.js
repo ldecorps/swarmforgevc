@@ -199,7 +199,7 @@ function registerSteps(registry) {
     if (ctx.rendered.hidden || !/no local data/.test(ctx.rendered.text)) {
       throw new Error(`expected a visible no-data readout, got: ${JSON.stringify(ctx.rendered)}`);
     }
-    const STATIC_COMMITTED_URLS = ['./backlog.json', './docs-tree.json', './recert-batch.json'];
+    const STATIC_COMMITTED_URLS = ['./backlog.json', './docs-tree.json'];
     for (const url of ctx.rendered.fetchCalls) {
       if (!STATIC_COMMITTED_URLS.includes(url)) {
         throw new Error(`expected only static committed fetches (the two-surface rule), got a live fetch to: ${url}`);
