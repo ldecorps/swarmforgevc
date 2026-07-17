@@ -1589,6 +1589,7 @@ export function toFoldersSnapshot(targetPath: string): BacklogFoldersSnapshot {
       title: string;
       notes?: string;
       firstAcceptanceStep?: string;
+      approvalContext?: string;
       humanApproval?: 'pending' | 'approved';
       epic?: string;
       type?: string;
@@ -1601,6 +1602,7 @@ export function toFoldersSnapshot(targetPath: string): BacklogFoldersSnapshot {
       title: item.title,
       notes: item.notes,
       firstAcceptanceStep: item.firstAcceptanceStep,
+      approvalContext: item.approvalContext,
       humanApproval: item.humanApproval,
       epic: item.epic,
       type: item.type,

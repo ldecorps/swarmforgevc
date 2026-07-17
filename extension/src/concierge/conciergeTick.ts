@@ -29,6 +29,10 @@ export interface BacklogFolderItem {
   // second reader).
   notes?: string;
   firstAcceptanceStep?: string;
+  // BL-480: read straight off the SAME BacklogItem.approvalContext field
+  // backlogReader.ts parses from `approval_context` (BL-479) - never a
+  // second parse.
+  approvalContext?: string;
   // BL-357: read straight off the SAME BacklogItem.humanApproval field
   // backfill-human-approval.ts seeded and backlogReader.ts already parses -
   // never a second approval-state derivation.
@@ -217,13 +221,25 @@ export interface TickResult {
   routed: number;
 }
 
-// BL-322: only ACTIVE tickets need an entry - TaskStarted only ever fires
-// for an id entering backlog.active (diffTaskStarted), so a paused/done
-// ticket's summary is never read.
-function ticketSummariesFor(active: BacklogFolderItem[]): Record<string, TicketSummary> {
+// BL-322: TaskStarted only ever fires for an id entering backlog.active
+// (diffTaskStarted), so it only ever needs an active ticket's summary.
+// BL-480: ApprovalRequested can ALSO fire for a ticket still in paused/ -
+// pendingApprovalFor below scans active AND paused (BL-408: a ticket awaits
+// human review in paused/ until promotion) - so this must build summaries
+// for BOTH folders too, or a paused ticket's ask silently degrades to the
+// bare id-only line despite its YAML carrying real title/notes/
+// firstAcceptanceStep/approvalContext. Previously active-only (comment said
+// "only ACTIVE tickets need an entry", true only while TaskStarted was the
+// sole consumer of this map).
+function ticketSummariesFor(active: BacklogFolderItem[], paused: BacklogFolderItem[]): Record<string, TicketSummary> {
   const summaries: Record<string, TicketSummary> = {};
-  for (const item of active) {
-    summaries[item.id] = { title: item.title, notes: item.notes, firstAcceptanceStep: item.firstAcceptanceStep };
+  for (const item of [...active, ...paused]) {
+    summaries[item.id] = {
+      title: item.title,
+      notes: item.notes,
+      firstAcceptanceStep: item.firstAcceptanceStep,
+      approvalContext: item.approvalContext,
+    };
   }
   return summaries;
 }
@@ -249,7 +265,7 @@ function toEventStreamSnapshot(folders: BacklogFoldersSnapshot, gates: GateSigna
     },
     gates,
     roleTicket,
-    ticketSummaries: ticketSummariesFor(folders.active),
+    ticketSummaries: ticketSummariesFor(folders.active, folders.paused),
     pendingApproval: pendingApprovalFor(folders.active, folders.paused),
   };
 }

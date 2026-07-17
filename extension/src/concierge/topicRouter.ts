@@ -119,9 +119,52 @@ function taskStartedText(event: SwarmEvent): string {
 // is the exact recognizer for this id-qualified grammar (the Approvals
 // topic's own sibling of isApprovalReplyText above, which still governs the
 // per-ticket-topic reply grammar unchanged elsewhere).
-function approvalRequestedText(backlogId: string | null): string {
-  const id = backlogId ?? 'unknown';
+//
+// BL-480: this sentence is now the FROZEN tail of a richer ask, not the
+// whole text - reply-grammar clause and "needs your approval" substring both
+// preserved byte-for-byte (the reply grammar per BL-357/434's own frozen
+// contract; the "needs your approval" phrase because five sibling step
+// files - bl408/409/410/434, pendingApprovalAsksInTopicSteps.js - locate the
+// posted ask by that exact substring). Kept as its own function so the
+// frozen string has one definition, read both when composing the enriched
+// text below and when a summary-less ticket falls back to it verbatim.
+function frozenApprovalAskLine(id: string): string {
   return `${id} needs your approval before it can proceed. Reply here with "approve ${id}" (or "reject ${id} <reason>") to act.`;
+}
+
+// BL-480: the Approvals-topic ask used to carry ONLY the frozen line above -
+// enough to reply to, nothing to decide from. Mirrors taskStartedText's own
+// title/what-it-solves/how-it-works shape (same stringPayloadField reads,
+// same truncate/firstParagraph field cap), plus a fourth line for
+// approvalContext (BL-479's field, parsed end-to-end through
+// backlogReader.ts -> conciergeTick.ts's ticketSummariesFor ->
+// diffApprovalRequested's payload). The frozen line is appended AFTER the
+// enrichment body's own truncate() call, never inside it, so a truly
+// oversized notes: block can only ever eat into the enrichment body -
+// the reply-grammar clause and the "needs your approval" locator substring
+// always survive intact, satisfying approval-ask-content-04's truncation
+// case without also breaking -02's byte-identical requirement.
+function approvalRequestedText(event: SwarmEvent): string {
+  const id = event.backlogId ?? 'unknown';
+  const frozen = frozenApprovalAskLine(id);
+  const title = stringPayloadField(event, 'title');
+  if (!title) {
+    return frozen;
+  }
+  const notes = stringPayloadField(event, 'notes');
+  const firstAcceptanceStep = stringPayloadField(event, 'firstAcceptanceStep');
+  const approvalContext = stringPayloadField(event, 'approvalContext');
+  const lines = [`${id} — ${title}`];
+  if (notes) {
+    lines.push(`What it solves: ${truncate(firstParagraph(notes), TASK_STARTED_FIELD_MAX_LENGTH)}`);
+  }
+  if (firstAcceptanceStep) {
+    lines.push(`First acceptance signal: ${truncate(firstAcceptanceStep, TASK_STARTED_FIELD_MAX_LENGTH)}`);
+  }
+  if (approvalContext) {
+    lines.push(`Approval context: ${truncate(approvalContext, TASK_STARTED_FIELD_MAX_LENGTH)}`);
+  }
+  return `${truncate(lines.join('\n'), TASK_STARTED_MESSAGE_MAX_LENGTH)}\n${frozen}`;
 }
 
 export function messageTextForEvent(event: SwarmEvent): string {
@@ -129,7 +172,7 @@ export function messageTextForEvent(event: SwarmEvent): string {
     return taskStartedText(event);
   }
   if (event.type === 'ApprovalRequested') {
-    return approvalRequestedText(event.backlogId);
+    return approvalRequestedText(event);
   }
   const identity = event.backlogId ?? event.role ?? 'unknown';
   const base = `${event.type}: ${identity}`;
