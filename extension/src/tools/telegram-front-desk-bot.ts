@@ -202,7 +202,11 @@ export function readTopicMap(targetPath: string): Record<string, string> {
 // BL-294: the write half of readTopicMap above - records a newly-opened
 // subject's mapping so subsequent messages in the same context resolve via
 // subjectForTopic instead of opening a second subject.
-function writeTopicMap(targetPath: string, topicMap: Record<string, string>): void {
+// BL-495: exported so recreate-bl-topic.ts's own repair path can record a
+// recreated standing Backlog topic's id through the SAME write this file's
+// own ensureBacklogTopic already uses - never a second parallel writer of
+// telegram-topic-map.json.
+export function writeTopicMap(targetPath: string, topicMap: Record<string, string>): void {
   fs.mkdirSync(path.dirname(topicMapPath(targetPath)), { recursive: true });
   fs.writeFileSync(topicMapPath(targetPath), JSON.stringify(topicMap));
 }
@@ -410,7 +414,10 @@ async function openSubject(targetPath: string, text: string): Promise<string> {
   return thread.id;
 }
 
-function topicMapKey(topicId: number | undefined): string {
+// BL-495: exported for the same reason as writeTopicMap above - the repair
+// path needs the identical key shape ensureBacklogTopic already writes
+// under, never a second convention.
+export function topicMapKey(topicId: number | undefined): string {
   return topicId === undefined ? DEFAULT_SUBJECT_KEY : String(topicId);
 }
 
