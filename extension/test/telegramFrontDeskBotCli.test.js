@@ -868,6 +868,22 @@ function fakeSendOk(messageId) {
   return { postFn, calls };
 }
 
+// BL-423 architect follow-up: executeStop/executeRestart's own drain/
+// restart-ack poll loops take an injected now()/wait() (defaulting to the
+// real clock/setTimeout in production) - this fake advances a virtual
+// clock on every wait() call with NO real delay at all, so a test that
+// needs the loop to cross its own timeout can do so in ~0ms rather than
+// taking real wall-clock seconds.
+function fakeClock(startMs = 0) {
+  let current = startMs;
+  return {
+    now: () => current,
+    advance: (ms) => {
+      current += ms;
+    },
+  };
+}
+
 test('postControlMessage sends nothing at all when the Control topic is not yet bound (controlTopicId undefined)', async () => {
   const { postFn, calls } = fakeSendOk(1);
   await postControlMessage('fake-token', 'fake-chat', undefined, 'hello', undefined, postFn);
@@ -964,11 +980,16 @@ test('BL-423: executeStop in drain mode reports drained once the pipeline is alr
   fs.mkdirSync(path.join(root, '.swarmforge', 'handoffs', 'inbox', 'in_process'), { recursive: true });
   writeFakeKillAllSwarm(root, 'exit 0');
   const { postFn, calls } = fakeSendOk(1);
-  await executeStop(root, 'fake-token', 'fake-chat', 900, 'drain', postFn);
+  const clock = fakeClock();
+  let waitCalls = 0;
+  await executeStop(root, 'fake-token', 'fake-chat', 900, 'drain', postFn, clock.now, async () => {
+    waitCalls += 1;
+  });
   const texts = calls.map((c) => JSON.parse(c.body).text);
   assert.ok(texts.some((t) => /Draining in-flight work/.test(t)));
   assert.ok(texts.some((t) => /Stop complete: drained/.test(t)));
   assert.ok(!texts.some((t) => /forcing teardown/.test(t)));
+  assert.equal(waitCalls, 0, 'expected the drain wait loop never to poll at all - the pipeline was already empty on the first check');
 });
 
 test('BL-423: executeStop in drain mode forces teardown and reports forced once the drain window elapses with work still in flight', async () => {
@@ -980,21 +1001,23 @@ test('BL-423: executeStop in drain mode forces teardown and reports forced once 
   // Never drains - a queued item sits in inbox/new for the whole test.
   fs.writeFileSync(path.join(newDir, 'BL-1.handoff'), 'type: note\nto: coder\npriority: 50\n\nhi\n');
   writeFakeKillAllSwarm(root, 'exit 0');
-  const originalEnv = process.env.SWARMFORGE_CONTROL_DRAIN_TIMEOUT_MS;
-  process.env.SWARMFORGE_CONTROL_DRAIN_TIMEOUT_MS = '10';
-  try {
-    const { postFn, calls } = fakeSendOk(1);
-    await executeStop(root, 'fake-token', 'fake-chat', 900, 'drain', postFn);
-    const texts = calls.map((c) => JSON.parse(c.body).text);
-    assert.ok(texts.some((t) => /forcing teardown/.test(t)));
-    assert.ok(texts.some((t) => /Stop complete: forced/.test(t)));
-  } finally {
-    if (originalEnv === undefined) {
-      delete process.env.SWARMFORGE_CONTROL_DRAIN_TIMEOUT_MS;
-    } else {
-      process.env.SWARMFORGE_CONTROL_DRAIN_TIMEOUT_MS = originalEnv;
-    }
-  }
+  const { postFn, calls } = fakeSendOk(1);
+  const clock = fakeClock();
+  // Jumps the injected clock 20 minutes forward on every wait() call - past
+  // even the 10-minute default drain timeout in a single hop, no real
+  // delay and no SWARMFORGE_CONTROL_DRAIN_TIMEOUT_MS override needed.
+  const waitCallArgs = [];
+  await executeStop(root, 'fake-token', 'fake-chat', 900, 'drain', postFn, clock.now, async (ms) => {
+    waitCallArgs.push(ms);
+    clock.advance(20 * 60 * 1000);
+  });
+  const texts = calls.map((c) => JSON.parse(c.body).text);
+  assert.ok(texts.some((t) => /forcing teardown/.test(t)));
+  assert.ok(texts.some((t) => /Stop complete: forced/.test(t)));
+  // Proves the injected wait seam is genuinely load-bearing (called with a
+  // real positive interval), not silently bypassed - the wiring-test rule
+  // for a new seam this file's own engineering conventions call for.
+  assert.ok(waitCallArgs.length >= 1 && waitCallArgs.every((ms) => ms > 0), `expected the drain loop to call wait() with a positive interval, got: ${JSON.stringify(waitCallArgs)}`);
 });
 
 // ── writeBounceSentinel / executeRestart (BL-423) ─────────────────────────
@@ -1050,20 +1073,19 @@ test('BL-423: executeRestart stops streaming once the bounce-ack reports failed,
 test('BL-423: executeRestart times out and reports it when the bounce-ack never arrives', async () => {
   const root = mkTmpRoot();
   fs.mkdirSync(path.join(root, '.swarmforge'), { recursive: true });
-  const originalEnv = process.env.SWARMFORGE_CONTROL_RESTART_ACK_TIMEOUT_MS;
-  process.env.SWARMFORGE_CONTROL_RESTART_ACK_TIMEOUT_MS = '10';
-  try {
-    const { postFn, calls } = fakeSendOk(1);
-    await executeRestart(root, 'fake-token', 'fake-chat', 900, postFn, () => true);
-    const texts = calls.map((c) => JSON.parse(c.body).text);
-    assert.ok(texts.some((t) => /timed out/.test(t)));
-  } finally {
-    if (originalEnv === undefined) {
-      delete process.env.SWARMFORGE_CONTROL_RESTART_ACK_TIMEOUT_MS;
-    } else {
-      process.env.SWARMFORGE_CONTROL_RESTART_ACK_TIMEOUT_MS = originalEnv;
-    }
-  }
+  const { postFn, calls } = fakeSendOk(1);
+  const clock = fakeClock();
+  // Jumps the injected clock 20 minutes forward on every wait() call - past
+  // even the 5-minute default restart-ack timeout in a single hop, no real
+  // delay and no SWARMFORGE_CONTROL_RESTART_ACK_TIMEOUT_MS override needed.
+  const waitCallArgs = [];
+  await executeRestart(root, 'fake-token', 'fake-chat', 900, postFn, () => true, clock.now, async (ms) => {
+    waitCallArgs.push(ms);
+    clock.advance(20 * 60 * 1000);
+  });
+  const texts = calls.map((c) => JSON.parse(c.body).text);
+  assert.ok(texts.some((t) => /timed out/.test(t)));
+  assert.ok(waitCallArgs.length >= 1 && waitCallArgs.every((ms) => ms > 0), `expected the restart-ack loop to call wait() with a positive interval, got: ${JSON.stringify(waitCallArgs)}`);
 });
 
 // ── applyPause / resumeNow (BL-423) ────────────────────────────────────────

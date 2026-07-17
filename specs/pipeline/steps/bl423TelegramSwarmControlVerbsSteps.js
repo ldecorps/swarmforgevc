@@ -310,6 +310,10 @@ function registerSteps(registry) {
   });
 
   // ── control-stop-drain-clean-08 ────────────────────────────────────────
+  // BL-423 architect follow-up: executeStop's own drain-poll loop takes an
+  // injected now()/wait() - both drain scenarios below drive it with a fake
+  // wait() (advances a virtual clock, no real setTimeout at all) instead of
+  // a real setTimeout/env-var-shrunk-timeout trick.
   registry.define(/^the authorised human has confirmed a drain stop and in-flight work finishes within the drain window$/, (ctx) => {
     const root = ctx.root;
     fs.writeFileSync(path.join(root, '.swarmforge', 'roles.tsv'), `coder\tcoder\t${root}\t_\tcoder\tclaude\n`);
@@ -318,17 +322,24 @@ function registerSteps(registry) {
     fs.mkdirSync(path.join(root, '.swarmforge', 'handoffs', 'inbox', 'in_process'), { recursive: true });
     const queued = path.join(newDir, 'BL-1.handoff');
     fs.writeFileSync(queued, 'type: note\nto: coder\npriority: 50\n\nhi\n');
-    // Work finishes shortly after the drain starts - proves the drain
-    // WAITS and re-checks, rather than trivially seeing an already-empty
-    // pipeline on its very first poll.
-    setTimeout(() => {
-      try {
-        fs.unlinkSync(queued);
-      } catch {
-        // already gone - fine.
-      }
-    }, 500);
     writeFakeKillAllSwarm(root, 'exit 0');
+    let clockMs = 0;
+    let waitCalls = 0;
+    ctx.now = () => clockMs;
+    // Work finishes on the SECOND poll - proves the drain WAITS and
+    // re-checks, rather than trivially seeing an already-empty pipeline on
+    // its very first poll, with no real delay at all.
+    ctx.wait = async () => {
+      clockMs += 2000;
+      waitCalls += 1;
+      if (waitCalls >= 1) {
+        try {
+          fs.unlinkSync(queued);
+        } catch {
+          // already gone - fine.
+        }
+      }
+    };
   });
 
   registry.define(/^it waits for the in-flight work to finish, then reaps every swarm-owned process leaving no orphaned tmux windows or vitest workers, and reports the stop as drained$/, async (ctx) => {
@@ -338,7 +349,7 @@ function registerSteps(registry) {
       postedTexts.push(JSON.parse(body).text);
       return { ok: true, status: 200, json: { ok: true, result: { message_id: 1 } } };
     };
-    await executeStop(root, 'fake-token', 'fake-chat', CONTROL_TOPIC_ID, 'drain', postFn);
+    await executeStop(root, 'fake-token', 'fake-chat', CONTROL_TOPIC_ID, 'drain', postFn, ctx.now, ctx.wait);
     if (!postedTexts.some((t) => /Draining in-flight work/.test(t))) {
       throw new Error(`expected the drain wait to be announced, got: ${JSON.stringify(postedTexts)}`);
     }
@@ -361,31 +372,28 @@ function registerSteps(registry) {
     // work still queued.
     fs.writeFileSync(path.join(newDir, 'BL-1.handoff'), 'type: note\nto: coder\npriority: 50\n\nhi\n');
     writeFakeKillAllSwarm(root, 'exit 0');
-    ctx.drainTimeoutOverride = process.env.SWARMFORGE_CONTROL_DRAIN_TIMEOUT_MS;
-    process.env.SWARMFORGE_CONTROL_DRAIN_TIMEOUT_MS = '10';
+    let clockMs = 0;
+    ctx.now = () => clockMs;
+    // Jumps 20 minutes forward on every call - past even the 10-minute
+    // default drain timeout in a single hop, no real delay.
+    ctx.wait = async () => {
+      clockMs += 20 * 60 * 1000;
+    };
   });
 
   registry.define(/^it forces the teardown after the drain window, reaps every swarm-owned process leaving no orphaned tmux windows or vitest workers, and reports the stop as forced$/, async (ctx) => {
     const root = ctx.root;
-    try {
-      const postedTexts = [];
-      const postFn = async (url, body) => {
-        postedTexts.push(JSON.parse(body).text);
-        return { ok: true, status: 200, json: { ok: true, result: { message_id: 1 } } };
-      };
-      await executeStop(root, 'fake-token', 'fake-chat', CONTROL_TOPIC_ID, 'drain', postFn);
-      if (!postedTexts.some((t) => /forcing teardown/.test(t))) {
-        throw new Error(`expected the drain timeout to force teardown, got: ${JSON.stringify(postedTexts)}`);
-      }
-      if (!postedTexts.some((t) => /Stop complete: forced/.test(t))) {
-        throw new Error(`expected the stop reported as forced, got: ${JSON.stringify(postedTexts)}`);
-      }
-    } finally {
-      if (ctx.drainTimeoutOverride === undefined) {
-        delete process.env.SWARMFORGE_CONTROL_DRAIN_TIMEOUT_MS;
-      } else {
-        process.env.SWARMFORGE_CONTROL_DRAIN_TIMEOUT_MS = ctx.drainTimeoutOverride;
-      }
+    const postedTexts = [];
+    const postFn = async (url, body) => {
+      postedTexts.push(JSON.parse(body).text);
+      return { ok: true, status: 200, json: { ok: true, result: { message_id: 1 } } };
+    };
+    await executeStop(root, 'fake-token', 'fake-chat', CONTROL_TOPIC_ID, 'drain', postFn, ctx.now, ctx.wait);
+    if (!postedTexts.some((t) => /forcing teardown/.test(t))) {
+      throw new Error(`expected the drain timeout to force teardown, got: ${JSON.stringify(postedTexts)}`);
+    }
+    if (!postedTexts.some((t) => /Stop complete: forced/.test(t))) {
+      throw new Error(`expected the stop reported as forced, got: ${JSON.stringify(postedTexts)}`);
     }
   });
 
@@ -400,6 +408,11 @@ function registerSteps(registry) {
     );
   }
 
+  // BL-423 architect follow-up: executeRestart's own ack-poll loop takes an
+  // injected now()/wait() - this drives all four phase transitions through
+  // a fake wait() that writes the NEXT phase to disk and advances a virtual
+  // clock, with NO real setInterval/setTimeout at all (previously ~4.4s of
+  // real wall-clock wait per run).
   registry.define(/^the relaunch runs through the owning-context executor$/, async (ctx) => {
     const root = ctx.root;
     const postedTexts = [];
@@ -410,28 +423,18 @@ function registerSteps(registry) {
     const phases = ['draining', 'stopping', 'relaunching', 'done'];
     let i = 0;
     writeBounceAck(root, phases[i]);
-    const timer = setInterval(() => {
+    let clockMs = 0;
+    const now = () => clockMs;
+    const wait = async () => {
+      clockMs += 1000;
       i += 1;
       if (i < phases.length) {
         writeBounceAck(root, phases[i]);
-      } else {
-        clearInterval(timer);
       }
-    }, 1100);
-    const originalEnv = process.env.SWARMFORGE_CONTROL_RESTART_ACK_TIMEOUT_MS;
-    process.env.SWARMFORGE_CONTROL_RESTART_ACK_TIMEOUT_MS = '8000';
-    try {
-      await executeRestart(root, 'fake-token', 'fake-chat', CONTROL_TOPIC_ID, postFn, () => true);
-    } finally {
-      clearInterval(timer);
-      if (originalEnv === undefined) {
-        delete process.env.SWARMFORGE_CONTROL_RESTART_ACK_TIMEOUT_MS;
-      } else {
-        process.env.SWARMFORGE_CONTROL_RESTART_ACK_TIMEOUT_MS = originalEnv;
-      }
-    }
+    };
+    await executeRestart(root, 'fake-token', 'fake-chat', CONTROL_TOPIC_ID, postFn, () => true, now, wait);
     ctx.postedTexts = postedTexts;
-    if (!fs.existsSync(require('path').join(root, '.swarmforge', 'bounce'))) {
+    if (!fs.existsSync(path.join(root, '.swarmforge', 'bounce'))) {
       throw new Error('expected the sanctioned bounce sentinel to have been written');
     }
   });

@@ -1014,16 +1014,33 @@ export async function runKillAllSwarm(targetPath: string): Promise<{ ok: boolean
   }
 }
 
+// BL-423 architect follow-up: no real timer in a poll loop - now/wait are
+// injected (defaulting to the real clock/setTimeout in production) so a
+// test drives the drain/restart wait deterministically, with zero real
+// wall-clock delay, mirroring this codebase's own established
+// no-real-timers posture (bounceDrain.ts's startBounceDrainWatcher,
+// runContainedLoop, etc.) - a real poll interval in test code was
+// previously the ONLY thing making these two tests take multiple real
+// seconds each.
+export type ControlNowFn = () => number;
+export type ControlWaitFn = (ms: number) => Promise<void>;
+
 // Split out of executeStop below for the same CRAP-budget reason
 // telegramFrontDeskBotCore.ts's extraction comments document throughout
 // (see e.g. gatherControlState there): polls decideDrainOutcome until the
 // pipeline is empty ('drained') or the drain window elapses ('forced'),
 // never returning 'wait' itself.
-async function waitForDrainOutcome(targetPath: string, startedAtMs: number, timeoutMs: number): Promise<'drained' | 'forced'> {
+async function waitForDrainOutcome(
+  targetPath: string,
+  startedAtMs: number,
+  timeoutMs: number,
+  now: ControlNowFn,
+  wait: ControlWaitFn
+): Promise<'drained' | 'forced'> {
   for (;;) {
-    const outcome = decideDrainOutcome(isPipelineEmpty(targetPath), startedAtMs, Date.now(), timeoutMs);
+    const outcome = decideDrainOutcome(isPipelineEmpty(targetPath), startedAtMs, now(), timeoutMs);
     if (outcome === 'wait') {
-      await sleep(CONTROL_DRAIN_POLL_INTERVAL_MS);
+      await wait(CONTROL_DRAIN_POLL_INTERVAL_MS);
       continue;
     }
     return outcome;
@@ -1040,12 +1057,14 @@ export async function executeStop(
   chatId: string,
   controlTopicId: number | undefined,
   mode: 'emergency' | 'drain',
-  postFn?: TelegramPostFn
+  postFn?: TelegramPostFn,
+  now: ControlNowFn = Date.now,
+  wait: ControlWaitFn = sleep
 ): Promise<void> {
   let drainOutcome: 'drained' | 'forced' | undefined;
   if (mode === 'drain') {
     await postControlMessage(botToken, chatId, controlTopicId, 'Draining in-flight work before stopping...', undefined, postFn);
-    drainOutcome = await waitForDrainOutcome(targetPath, Date.now(), controlDrainTimeoutMs());
+    drainOutcome = await waitForDrainOutcome(targetPath, now(), controlDrainTimeoutMs(), now, wait);
     if (drainOutcome === 'forced') {
       await postControlMessage(botToken, chatId, controlTopicId, 'Drain window elapsed with work still in flight - forcing teardown.', undefined, postFn);
     }
@@ -1121,13 +1140,15 @@ export async function executeRestart(
   chatId: string,
   controlTopicId: number | undefined,
   postFn?: TelegramPostFn,
-  checkBootstrapped: (tp: string) => boolean = (tp) => isSwarmReady(tp, defaultRoleBootstrapped)
+  checkBootstrapped: (tp: string) => boolean = (tp) => isSwarmReady(tp, defaultRoleBootstrapped),
+  now: ControlNowFn = Date.now,
+  wait: ControlWaitFn = sleep
 ): Promise<void> {
   writeBounceSentinel(targetPath);
   await postControlMessage(botToken, chatId, controlTopicId, 'Restarting the swarm...', undefined, postFn);
-  const deadline = Date.now() + controlRestartAckTimeoutMs();
+  const deadline = now() + controlRestartAckTimeoutMs();
   let lastPhase: BouncePhase | undefined;
-  while (Date.now() < deadline) {
+  while (now() < deadline) {
     const ack = readBounceAck(targetPath);
     if (ack && ack.phase !== lastPhase) {
       lastPhase = ack.phase;
@@ -1135,7 +1156,7 @@ export async function executeRestart(
         return;
       }
     }
-    await sleep(CONTROL_RESTART_ACK_POLL_INTERVAL_MS);
+    await wait(CONTROL_RESTART_ACK_POLL_INTERVAL_MS);
   }
   await postControlMessage(botToken, chatId, controlTopicId, 'Restart timed out waiting for the bounce to report back.', undefined, postFn);
 }
