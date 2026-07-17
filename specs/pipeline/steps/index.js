@@ -155,7 +155,6 @@ const DOMAINS = [
   require('./routingBreakEvenSteps'),
   require('./standingRuleViolationsSteps'),
   require('./onboardingNegotiationSteps'),
-  require('./recertNotifySteps'),
   require('./standingOperatorTopicSteps'),
   require('./stuckEscalationEmailSteps'),
   require('./frontDeskSurvivesRebootSteps'),
@@ -255,7 +254,8 @@ const DOMAINS = [
   require('./bl480ApprovalAskContentSteps'),
   require('./bl419SharedCheckoutCommitIntegritySteps'),
   require('./bl387TheOracleScoresWhatSurvivesThePipelineSteps'),
-  require('./bl436PerSwarmTelegramCredsSteps')
+  require('./bl436PerSwarmTelegramCredsSteps'),
+  require('./bl451RetirePwaRecertViewSteps')
 ];
 
 function registerSteps(registry) {
