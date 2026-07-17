@@ -57,11 +57,13 @@ Feature: The pipeline board shows a wider slug, an updated-at footer bumped only
     Then the ticket's row shows a slug carrying more of its title than the previous limit allowed
     And the slug is still a single line no wider than the board
 
-  # BL-462 pipeline-board-refine-02
-  Scenario: A title longer than the wider limit is truncated to one line
-    Given an active ticket whose title is longer than the wider slug limit
-    When the pipeline board is rendered
-    Then the ticket's row shows a truncated single-line slug no wider than the board
+  # BL-462 pipeline-board-refine-02 RETIRED (BL-475, 2026-07-17): superseded by
+  # BL-465 - the grid's SLUG column no longer shows a truncated title at all
+  # (it shows a short 2-3 word kebab slug instead; the wider-truncated-title
+  # behaviour this scenario asserted moved to the below-grid lists, now
+  # covered by BL-465's own board-round2-01b scenario). Retired per the
+  # superseded-scenario rule (retire, don't reword) rather than rewritten to
+  # duplicate BL-465's own contract.
 
   # BL-462 pipeline-board-refine-03
   Scenario: The board carries an updated-at footer showing the last content-change time
