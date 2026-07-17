@@ -235,7 +235,7 @@ function ticketNumberOf(id: string): number | undefined {
 // break the tie by plain id order, so the render stays deterministic
 // tick-over-tick (the board's own content-signature change-gate requires
 // it).
-function compareLinksMostRecentFirst(a: PipelineBoardLinkEntry, b: PipelineBoardLinkEntry): number {
+export function compareLinksMostRecentFirst(a: PipelineBoardLinkEntry, b: PipelineBoardLinkEntry): number {
   const aNum = ticketNumberOf(a.id);
   const bNum = ticketNumberOf(b.id);
   if (aNum === undefined) {
