@@ -11,33 +11,29 @@ depends_on: []
 source: "human (ldecorps) via Operator front-desk intake INTAKE-operator-question-1784237909142 (2026-07-16): replied to the icon proposal picking concrete literal icons per role. Verbatim: 'OK: coder as keyboard / Specifier as note taker / Architect as grue (fr) ... / Cleaner as broom / Hardender, first choice / QA ok for magnifier / Documenter as books'. Coordinator icon (not named in the reply) resolved 2026-07-16 by specifier clarifying question: the proposed 🎼 is a notation glyph absent from Telegram's forum-topic sticker set; human chose 🧭 (compass). Folds into the BL-425 per-agent-steering-topic cluster (BL-425 shipped the topics; this adds their icons)."
 
 notes: |
-  QA BOUNCE 2026-07-17 (real-surface defect — specifier-owned re-spec, per QA's disposition note):
-    QA verified the 8 firm ROLE_TOPIC_ICON emoji against Telegram's LIVE getForumTopicIconStickers set
-    (112 stickers) at commit 1d4d0c6bf2, per this ticket's own E2E procedure. Result: only 2 of 8 resolve
-    — specifier 📝 and documenter 📚. The other 6 are NOT in the live set and would permanently sit at
-    'skipped-unresolved-icon' (blank): coordinator 🧭, architect 🏗, coder ⌨️, cleaner 🧹, hardender 🛡,
-    QA 🔍. The CODE is correct (syncTopicIcon behaves exactly per Scenario 2); the DEFECT is that the firm
-    icon literals were validated against the real set for only one of the eight (🎼→🧭 during the
-    2026-07-16 clarifying question — and even 🧭 turns out UNRESOLVED). Evidence:
-    .worktrees/QA/backlog/evidence/BL-469-bounce-20260717.md.
+  QA BOUNCE 2026-07-17 → RESOLVED by human remap approval 2026-07-17 (re-dispatched to coder):
+    QA verified the ORIGINAL 8 firm ROLE_TOPIC_ICON emoji against Telegram's LIVE getForumTopicIconStickers
+    set (112 stickers) at commit 1d4d0c6bf2, per this ticket's E2E procedure. Only 2 of 8 resolved
+    (specifier 📝, documenter 📚); the other 6 (coordinator 🧭, architect 🏗, coder ⌨️, cleaner 🧹,
+    hardender 🛡, QA 🔍) were absent from the live set and would have sat at 'skipped-unresolved-icon'.
+    The CODE was correct (syncTopicIcon behaves per Scenario 2); the defect was that the firm literals were
+    never validated against the real set. Evidence: .worktrees/QA/backlog/evidence/BL-469-bounce-20260717.md.
 
-    This requires new icon choices from the 112 the live set offers + fresh human approval (QA: "not
-    something the coder can fix by writing different code"). BLOCKED pending that human decision.
-
-  PROPOSED valid remap (specifier, 2026-07-17 — all 8 CONFIRMED present in the live 112-set; semantic
-  role stand-ins, since QA correctly found no LITERAL crane/broom/shield/compass in the set):
-    coordinator 🎬 (director/clapper — directs the pipeline; compass has NO clean stand-in in the set,
-                    most negotiable pick), specifier 📝 (unchanged, resolves), architect 🏛 (classical
-                    building — architecture; note 🏛 was BL-418's since-superseded Operator icon, now free
-                    per BL-453→🛎), coder 💻 (laptop), cleaner 🧼 (soap — cleaning), hardender 🧪 (test
-                    tube — testing/hardening), QA 🔎 (magnifier — also RESOLVES the old 🔍/paused collision),
-                    documenter 📚 (unchanged, resolves).
-    No collision with ICON_EMOJI (✅🦠🎵🔍👀), STANDING_TOPIC_ICON (🎟🛎📋📜), or epic icons (🏆⚡️📁).
-    This is a PROPOSAL only — the mapping is the human's firm decision; awaiting his approve/tweak via the
-    ask/answer loop before the contract (this YAML's FIRM mapping + the feature file Examples) is rewritten
-    and re-dispatched to the coder. Also folds in the human's open "pivot agents to orchestral icons"
-    question (INTAKE-...713343): the real orchestral GLYPHS can only ride the PWA/owned-art surface, never
-    Telegram — so Telegram gets these stock stand-ins regardless.
+  REMAP APPROVED by the human (ldecorps) via the ask/answer loop 2026-07-17 (he took option 1
+  "Approve Telegram remap", NOT the option to also add orchestral glyphs to the PWA); coordinator relayed
+  the approval. The FIRM mapping below and the feature file Examples are now the approved contract. All 8
+  replacements were RE-VERIFIED by the specifier against the live 112-set on 2026-07-17
+  (getForumTopicIconStickers + resolveIconStickerId, real token) — every one RESOLVED:
+    coordinator 🎬 (5368653135101310687), specifier 📝 (5373251851074415873),
+    architect 🏛 (5350548830041415279), coder 💻 (5350554349074391003),
+    cleaner 🧼 (5377468357907849200), hardender 🧪 (5411138633765757782),
+    QA 🔎 (5309965701241379366), documenter 📚 (5350481781306958339).
+    The new QA 🔎 also RESOLVES the prior 🔍/ICON_EMOJI.paused collision. No collision with ICON_EMOJI
+    (✅🦠🎵🔍👀), STANDING_TOPIC_ICON (🎟🛎📋📜), or epic icons (🏆⚡️📁).
+    This decision also disposes the human's "pivot agents to orchestral icons" intake (INTAKE-...713343):
+    the owned orchestral GLYPHS can only ride the PWA/owned-art surface, never Telegram topic icons, and the
+    human took the Telegram-remap-only option — so Telegram carries these stock stand-ins and no PWA-glyph
+    work is opened here.
 
 description: |
   BL-425 shipped a per-agent Telegram steering topic for each of the 8 roles, but they are visually
@@ -46,15 +42,16 @@ description: |
   questions/redirects (BL-425).
 
   FIRM mapping (role token -> icon), keyed by the canonical swarm role tokens (roleTopicMapStore's
-  ALL_SWARM_ROLES; note the baked-in 'hardender' spelling and uppercase 'QA'):
-    - coordinator -> 🧭  (compass; the coordinator routes/navigates parcels. Chosen 2026-07-16 after the
-      proposed 🎼 was flagged as a notation glyph Telegram does not offer as a topic icon.)
+  ALL_SWARM_ROLES; note the baked-in 'hardender' spelling and uppercase 'QA'). This is the human's approved
+  2026-07-17 remap, adopted after the original literal picks proved absent from Telegram's live set; all 8
+  are confirmed present in getForumTopicIconStickers (specifier re-verified against the real token 2026-07-17):
+    - coordinator -> 🎬  (clapper/director — directs the pipeline)
     - specifier   -> 📝  (note taker)
-    - architect   -> 🏗  ('grue' = FR construction crane)
-    - coder       -> ⌨️  (keyboard)
-    - cleaner     -> 🧹  (broom)
-    - hardender   -> 🛡  (shield; the human's first choice)
-    - QA          -> 🔍  (magnifier)
+    - architect   -> 🏛  (classical building — architecture)
+    - coder       -> 💻  (laptop)
+    - cleaner     -> 🧼  (soap — cleaning)
+    - hardender   -> 🧪  (test tube — testing/hardening)
+    - QA          -> 🔎  (magnifier)
     - documenter  -> 📚  (books)
 
   Scope (grep-confirmed live path 2026-07-16):
@@ -80,10 +77,9 @@ description: |
       newly-entering-only call) — NOT every tick. 8 topics is well within Telegram's rate limit, but
       reuse the change-gated / newly-owned posture regardless, per the first-tick-mass-transition rule
       (engineering, BL-342/BL-414): do not re-edit icons on a steady-state tick.
-    - Known collision, accepted: QA's 🔍 equals ICON_EMOJI.paused (the paused ticket-state icon). These
-      are DIFFERENT topic classes — a per-agent QA steering topic vs a paused ticket's own topic — and
-      🔍 is the human's firm pick, so this is documented, not a defect. No other mapping collides with an
-      existing table.
+    - No collision with any existing icon table: the approved mapping (🎬📝🏛💻🧼🧪🔎📚) shares no glyph
+      with ICON_EMOJI (✅🦠🎵🔍👀), STANDING_TOPIC_ICON (🎟🛎📋📜), or epic icons (🏆⚡️📁). (The prior
+      QA pick 🔍 collided with ICON_EMOJI.paused; the approved QA 🔎 resolves that collision.)
     - Do NOT touch the board files (pipelineBoardSync.ts / editInPlaceMessageSync.ts) or BL-425's
       question/redirect routing. Icon-only.
 
@@ -93,10 +89,12 @@ description: |
   edits conciergeTick.ts or topicIcon.ts. Self-contained, additive change.
 
   E2E QA PROCEDURE: on the real Telegram surface (BL-335, not a fixture), confirm each of the 8 per-agent
-  steering topics shows its mapped icon (coordinator 🧭, specifier 📝, architect 🏗, coder ⌨️, cleaner
-  🧹, hardender 🛡, QA 🔍, documenter 📚). If Telegram's live set does not offer one of them, confirm it is
-  LOGGED as 'skipped-unresolved-icon' (surfaced, not silently blank). Force a steady-state tick and
-  confirm no icon is re-edited (no editForumTopic churn).
+  steering topics shows its mapped icon (coordinator 🎬, specifier 📝, architect 🏛, coder 💻, cleaner
+  🧼, hardender 🧪, QA 🔎, documenter 📚). All 8 are confirmed present in the live getForumTopicIconStickers
+  set (specifier re-verified against the real token 2026-07-17), so all 8 must actually resolve and apply —
+  none should land on 'skipped-unresolved-icon'. (If any regresses to that outcome, re-run the live-set
+  check; it means the set changed.) Force a steady-state tick and confirm no icon is re-edited (no
+  editForumTopic churn).
 
 acceptance:
   feature: specs/features/BL-469-per-agent-steering-topic-icons.feature
@@ -106,16 +104,17 @@ acceptance:
     - "A steady-state tick does not re-edit an already-set per-agent topic icon"
 
 human_approval: >
-  Mapping is the human's decision. Seven roles are the human's verbatim 2026-07-16 reply
-  (specifier 📝, architect 🏗 'grue', coder ⌨️, cleaner 🧹, hardender 🛡 'first choice', QA 🔍,
-  documenter 📚). Coordinator 🧭 (compass) chosen by the human 2026-07-16 via a specifier clarifying
-  question, after the earlier proposal 🎼 was flagged as a notation glyph Telegram does not offer as a
-  forum-topic icon. FIRM contract: the 8 role->icon pairs and that an unavailable icon is surfaced
+  Mapping is the human's decision. The original 2026-07-16 literal picks (🧭/🏗/⌨️/🧹/🛡/🔍 plus
+  specifier 📝, documenter 📚) were QA-bounced 2026-07-17 because 6 of 8 are absent from Telegram's live
+  getForumTopicIconStickers set. The human then APPROVED the specifier's proposed remap on 2026-07-17 via
+  the ask/answer loop (option "Approve Telegram remap 🎬📝🏛💻🧼🧪🔎📚"; he did NOT take the option to
+  also add orchestral glyphs to the PWA). FIRM contract: the 8 role->icon pairs below (coordinator 🎬,
+  specifier 📝, architect 🏛, coder 💻, cleaner 🧼, hardender 🧪, QA 🔎, documenter 📚) — all 8 verified
+  present in the live set by the specifier 2026-07-17 — and that an unavailable icon is surfaced
   (skipped-unresolved-icon), never silently applied. Build-time details NOT gating: the exact table
   name/location, log wording, exact call structure. Icon-only (no BL-425 routing change, no board file
   change). Serialize on topicIcon.ts + conciergeTick.ts against BL-453 and the standing-topic cluster.
-  NEW feature file specs/features/BL-469-per-agent-steering-topic-icons.feature — APPROVED as-specced
-  by the human (ldecorps) directly 2026-07-16; feature file reviewed, no changes requested. Ready for
-  promotion.
+  Feature file specs/features/BL-469-per-agent-steering-topic-icons.feature Examples updated to the
+  approved remap 2026-07-17.
 
 mutation_cost: low
