@@ -1,4 +1,4 @@
-id: BL-480
+id: BL-482
 title: "Operator's self-narrated operator.log timestamps/freshness claims drift ~1h off real UTC: it sources 'now' from local (UTC+1) time labelled Z"
 milestone: M8
 type: bug
@@ -68,10 +68,13 @@ acceptance:
   # authoritative-now runtime injection is built, that half carries a real unit test.
   outcome: "swarmforge/roles/operator.prompt instructs the Operator to source 'now' only as UTC (never bare local `date`/an unconverted +01:00 author date) for all operator.log narration and every freshness/age comparison — human-approved wording; now-iso and the heartbeat write are left unchanged (verified already-correct UTC); a spot-check of consecutive operator.log narrated timestamps against real wall-clock UTC shows no ~60-minute local-offset entry; if the optional authoritative-now event-context injection is built, a unit test pins it to the runtime's correct clock."
 
-human_approval: >
+human_approval: pending
+
+approval_context: >
+  Renumbered from BL-480 (then BL-481, twice collided with the live specifier's own numbering) (id collision with the approvals-ask-content ticket filed the same night;
+  that ticket keeps BL-480 because the Telegram ask/approval/dedup artifacts already carry that id).
   The operator.prompt wording is a role/governance change — the human reviews the exact amendment
-  wording before it lands (BL-479 precedent). No human sign-off is required to FILE this proposal; it
-  sits in paused until the coordinator promotes it. The coordinator's own note flagged this as a
+  wording before it lands (BL-479 precedent). The coordinator's own note flagged this as a
   one-time, not-yet-confirmed-systemic observation — a re-check of a few more operator.log entries
   against real UTC at promotion time is reasonable, but the root cause (local time labelled Z) is
   already code-verified above.

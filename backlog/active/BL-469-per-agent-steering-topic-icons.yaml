@@ -103,7 +103,7 @@ acceptance:
     - "An icon Telegram does not offer is surfaced (skipped-unresolved-icon), not applied, and does not block the other roles"
     - "A steady-state tick does not re-edit an already-set per-agent topic icon"
 
-human_approval: >
+approval_context: >
   Mapping is the human's decision. The original 2026-07-16 literal picks (🧭/🏗/⌨️/🧹/🛡/🔍 plus
   specifier 📝, documenter 📚) were QA-bounced 2026-07-17 because 6 of 8 are absent from Telegram's live
   getForumTopicIconStickers set. The human then APPROVED the specifier's proposed remap on 2026-07-17 via
