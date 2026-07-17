@@ -1453,6 +1453,10 @@ export async function commitExpediteWrites(targetPath: string, backlogId: string
       '--path',
       relPath,
     ]);
+    // `?? '{}'` satisfies Array.prototype.pop()'s general `T | undefined` return type - unreachable
+    // here since String.prototype.split always returns a non-empty array (even '' splits to ['']),
+    // so .pop() on it always returns a defined string. A malformed/empty last line still reaches
+    // JSON.parse and throws, caught by this function's own try/catch below - never this fallback.
     const result = JSON.parse(stdout.trim().split('\n').pop() ?? '{}') as { success?: boolean };
     return result.success === true;
   } catch {

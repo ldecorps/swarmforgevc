@@ -1348,6 +1348,15 @@ export function decideCallbackQueryAction(
     return { action: 'drop', reason: 'unrecognized-data' };
   }
   const [, kind, backlogId] = match;
+  return decisionForApprovalCallbackKind(kind, backlogId);
+}
+
+// Hardener 2026-07-17: split out of decideCallbackQueryAction above so ITS
+// OWN branch count stays at or below the CRAP threshold - the same
+// "extract the kind->decision mapping into a named helper" split this file
+// already applies throughout - reapplied here because BL-490's 'expedite'
+// branch pushed decideCallbackQueryAction's own complexity to 7.
+function decisionForApprovalCallbackKind(kind: string, backlogId: string): CallbackButtonDecision {
   if (kind === 'approve') {
     return { action: 'approve', backlogId };
   }
@@ -1509,6 +1518,34 @@ async function dispatchExpediteCallback(
   return 'posted';
 }
 
+// The remaining decision shapes once 'answer-ask' and 'expedite' have both
+// already been dispatched by the caller - narrowed via Exclude (rather than
+// re-checked with an `as`) so dispatchApproveOrFollowup below stays
+// type-safe over exactly the variants it can actually receive.
+type RecognizedApprovalDecision = Exclude<CallbackButtonDecision, { action: 'answer-ask' } | { action: 'expedite' }>;
+
+// Hardener 2026-07-17: split out of dispatchRecognizedCallbackDecision below
+// so ITS OWN branch count stays at or below the CRAP threshold - the same
+// "extract to keep the caller's branch count down" pattern this file already
+// uses throughout - reapplied here because BL-490's 'expedite' branch pushed
+// dispatchRecognizedCallbackDecision's own complexity to 7.
+async function dispatchApproveOrFollowup(
+  callbackQuery: TelegramCallbackQuery,
+  decision: RecognizedApprovalDecision,
+  adapters: PollAdapters
+): Promise<UpdateDeliveryOutcome> {
+  await adapters.answerCallbackQuery(callbackQuery.id);
+  if (decision.action === 'drop') {
+    return 'dropped';
+  }
+  if (decision.action === 'approve') {
+    await recordApprovalDecisionAndClose(adapters, decision.backlogId, { kind: 'approved' });
+  } else {
+    await adapters.setPendingButtonAction(decision.backlogId, decision.kind);
+  }
+  return 'posted';
+}
+
 async function dispatchRecognizedCallbackDecision(
   callbackQuery: TelegramCallbackQuery,
   decision: CallbackButtonDecision,
@@ -1527,16 +1564,7 @@ async function dispatchRecognizedCallbackDecision(
   if (decision.action === 'expedite') {
     return dispatchExpediteCallback(callbackQuery, decision, adapters);
   }
-  await adapters.answerCallbackQuery(callbackQuery.id);
-  if (decision.action === 'drop') {
-    return 'dropped';
-  }
-  if (decision.action === 'approve') {
-    await recordApprovalDecisionAndClose(adapters, decision.backlogId, { kind: 'approved' });
-  } else {
-    await adapters.setPendingButtonAction(decision.backlogId, decision.kind);
-  }
-  return 'posted';
+  return dispatchApproveOrFollowup(callbackQuery, decision, adapters);
 }
 
 async function processCallbackQuery(
