@@ -149,6 +149,66 @@
 (assert-true "interval elapsed is due" (operator-lib/timer-due? 0 600 500))
 (assert-false "interval not elapsed is not due" (operator-lib/timer-due? 400 600 500))
 
+;; ── BL-481: out-of-cycle poll wait/launch decision ─────────────────────────
+(assert= "resolve-poll-interval-ms passes through a sane configured value"
+         5000 (operator-lib/resolve-poll-interval-ms 5000))
+(assert= "resolve-poll-interval-ms clamps a zero value to the 1s floor"
+         1000 (operator-lib/resolve-poll-interval-ms 0))
+(assert= "resolve-poll-interval-ms clamps a negative value to the 1s floor"
+         1000 (operator-lib/resolve-poll-interval-ms -500))
+(assert= "resolve-poll-interval-ms falls back to 3000 when nil, still above the floor"
+         3000 (operator-lib/resolve-poll-interval-ms nil))
+
+;; base fixture for next-poll-decision: idle, listening, nothing pending
+(def idle-poll-fixture
+  {:llm-running? false :front-desk-running? false :provider-state :available
+   :pending-count 0 :front-desk-pending-count 0 :poll-interval-ms 3000})
+
+(assert= "operator-out-of-cycle-wake-01: idle-and-listening decides the short poll wait, never OPERATOR_INTERVAL_MS"
+         3000 (:wait-ms (operator-lib/next-poll-decision idle-poll-fixture)))
+(assert-true "operator-out-of-cycle-wake-01: the decided wait is genuinely short, not the 30s default full interval"
+             (< (:wait-ms (operator-lib/next-poll-decision idle-poll-fixture)) 30000))
+
+(assert-true "operator-out-of-cycle-wake-02: a fresh inbound message pending, nothing running, provider available - launches"
+             (:launch? (operator-lib/next-poll-decision
+                        (assoc idle-poll-fixture :pending-count 1))))
+
+(assert-false "operator-out-of-cycle-wake-03: full-operator-running guard blocks the fast-path launch"
+              (:launch? (operator-lib/next-poll-decision
+                         (assoc idle-poll-fixture :llm-running? true :pending-count 1))))
+(assert-false "operator-out-of-cycle-wake-03: front-desk-operator-running guard blocks the fast-path front-desk launch"
+              (:launch-front-desk? (operator-lib/next-poll-decision
+                                    (assoc idle-poll-fixture
+                                           :llm-running? true :front-desk-running? true
+                                           :front-desk-pending-count 1))))
+(assert-false "operator-out-of-cycle-wake-03: provider-cooldown guard blocks the fast-path launch"
+              (:launch? (operator-lib/next-poll-decision
+                         (assoc idle-poll-fixture :provider-state :cooldown :pending-count 1))))
+
+;; Simulates many short poll wakes (every 3s) across ONE swarm-check-ms
+;; (1,800,000ms) window - starting right after a swarm check already fired
+;; at t=0 (last-ms=0), each poll re-checks timer-due? against whatever
+;; last-ms the PRIOR fire recorded, the same state-threading the real
+;; runtime's record-swarm-check! does. Proves the sweep fires zero more
+;; times while still inside that window, then fires exactly once the
+;; instant the NEXT cadence becomes due.
+(let [swarm-check-ms 1800000
+      poll-ms 3000
+      wake-times-inside-window (range poll-ms swarm-check-ms poll-ms)
+      fires (atom 0)
+      last-ms (atom 0)]
+  (doseq [now wake-times-inside-window]
+    (when (operator-lib/timer-due? @last-ms now swarm-check-ms)
+      (swap! fires inc)
+      (reset! last-ms now)))
+  (assert= "operator-out-of-cycle-wake-04: the full health sweep fires zero more times across many short poll wakes still inside one swarm-check cadence"
+           0 @fires)
+  (assert-true "operator-out-of-cycle-wake-04: the full health sweep fires once the NEXT swarm-check cadence becomes due"
+               (operator-lib/timer-due? @last-ms swarm-check-ms swarm-check-ms)))
+
+(assert-false "operator-out-of-cycle-wake-05: the poll interval is never a zero-delay spin, even misconfigured to 0"
+              (zero? (operator-lib/resolve-poll-interval-ms 0)))
+
 ;; ── roles.tsv + dead-agent events ─────────────────────────────────────────
 (def sample-roles
   "coder\tcoder\t/w/coder\tswarmforge-coder\tCoder\tclaude\ttask\toff\ncoordinator\tmaster\t/w\tswarmforge-coordinator\tCoordinator\tclaude\ttask\toff")

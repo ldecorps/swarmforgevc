@@ -18,12 +18,27 @@
 ;; Usage:
 ;;   operator_runtime.bb <project-root>              ; run the loop
 ;;   operator_runtime.bb <project-root> --tick-once  ; a single observe/act tick
+;;   operator_runtime.bb <project-root> --poll-once  ; a single out-of-cycle poll
 ;;
 ;; Tunables via environment (ms unless noted):
-;;   OPERATOR_INTERVAL_MS        loop sleep between ticks     (default 30000)
+;;   OPERATOR_INTERVAL_MS        full per-tick sweep bundle cadence (default 30000)
+;;   OPERATOR_POLL_INTERVAL_MS   out-of-cycle poll cadence (BL-481) (default 3000)
 ;;   OPERATOR_SWARM_CHECK_MS     periodic swarm-check cadence (default 1800000 = 30m)
 ;;   OPERATOR_HEARTBEAT          set to 0 to skip heartbeat writes (tests)
 ;;   OPERATOR_SKIP_LAUNCH        set to 1 to never actually launch the LLM (dry-run)
+;;
+;; BL-481: -main's loop now wakes every OPERATOR_POLL_INTERVAL_MS (a few
+;; seconds) instead of sleeping a full OPERATOR_INTERVAL_MS between ticks, so
+;; a fresh inbound Telegram message (already appended straight to events-file
+;; by the bridge, independent of tick cadence - see BL-281) is dispatched
+;; within a few seconds rather than up to 30s later. Most wakes run the cheap
+;; poll! (event-detection + launch decision only, operator_lib.bb's
+;; next-poll-decision); the full tick! - and everything expensive it does
+;; (idle-nudge/disk-space/sandbox/fixture-reaper/closing-pass sweeps, the
+;; live provider-state pane scan, the gated SWARM_CHECK_TIMER health sweep) -
+;; still runs only once every OPERATOR_INTERVAL_MS, exactly its pre-BL-481
+;; cadence, via the SAME timer-due? gate swarm-check already used. A faster
+;; poll therefore never multiplies the cost of that per-tick sweep bundle.
 
 (ns operator-runtime
   (:require [babashka.fs :as fs]
@@ -84,11 +99,12 @@
 
 (defn usage []
   (binding [*out* *err*]
-    (println "Usage: operator_runtime.bb <project-root> [--tick-once]"))
+    (println "Usage: operator_runtime.bb <project-root> [--tick-once|--poll-once]"))
   (System/exit 1))
 
 (def project-root (or (first *command-line-args*) (usage)))
 (def tick-once? (some #{"--tick-once"} *command-line-args*))
+(def poll-once? (some #{"--poll-once"} *command-line-args*))
 
 ;; BL-328: this long-lived process's own build identity, captured ONCE at
 ;; startup (a fresh bb invocation on every --tick-once call too, which is
@@ -187,6 +203,9 @@
   (or (some-> (System/getenv name) parse-long) default))
 
 (def interval-ms (env-ms "OPERATOR_INTERVAL_MS" 30000))
+;; BL-481: -main's own loop-sleep cadence - see operator-lib/resolve-poll-
+;; interval-ms for the busy-spin floor this is clamped to.
+(def poll-interval-ms (operator-lib/resolve-poll-interval-ms (env-ms "OPERATOR_POLL_INTERVAL_MS" 3000)))
 (def swarm-check-ms (env-ms "OPERATOR_SWARM_CHECK_MS" 1800000))
 ;; BL-305: fail-open cooldown config - see operator_lib.bb's own
 ;; resolve-provider-state docstring for what each bounds.
@@ -1067,6 +1086,31 @@
       :bounded-fallback-ms cooldown-bounded-fallback-ms
       :plausible-max-ms cooldown-plausible-max-ms})))
 
+(defn cached-provider-state
+  "BL-481: the SAME {:state ...} shape scan-provider-state returns, but
+   without its live tmux pane capture - just the persisted cooldown record
+   against now. Correct for both directions the fast out-of-cycle poll's
+   launch decision cares about: resolve-provider-state's own priority order
+   never re-consults live pane text while an EXISTING cooldown is still
+   cooling (branch 1: authoritative on its own reset-ms alone), and an
+   elapsed cooldown resumes unconditionally the instant now-ms passes it
+   (branch 2), regardless of limited-text. The one thing this cannot detect
+   is a BRAND NEW usage-limit banner with no prior record yet - that
+   transition still needs scan-provider-state's real pane capture, which
+   stays on the full tick's own cadence (BL-481 targets event-dispatch
+   latency, not cooldown-entry-detection latency)."
+  [now]
+  (let [existing (read-cooldown)]
+    (:state (operator-lib/resolve-provider-state
+             {:limited-text nil
+              :parsed-reset-ms nil
+              :reset-raw nil
+              :existing-reset-ms (:reset_ms existing)
+              :existing-reset-raw (:reset_raw existing)
+              :now-ms now
+              :bounded-fallback-ms cooldown-bounded-fallback-ms
+              :plausible-max-ms cooldown-plausible-max-ms}))))
+
 ;; ── timer ─────────────────────────────────────────────────────────────────────
 
 (defn last-swarm-check-ms []
@@ -1399,6 +1443,45 @@
     (try (json/parse-string (slurp (str tunnel-status-file)) true)
          (catch Exception _ nil))))
 
+;; ── out-of-cycle poll (BL-481) ──────────────────────────────────────────────
+
+(defn poll!
+  "The cheap wake -main's loop runs on every OPERATOR_POLL_INTERVAL_MS
+   iteration: read whatever is pending in events-file right now (the bridge
+   already appends a fresh TELEGRAM_TOPIC_MESSAGE straight there - BL-281 -
+   so this never has to poll Telegram itself), evaluate the SAME launch
+   gates a full tick! uses (operator-lib/next-poll-decision, itself built on
+   should-launch-operator?/should-launch-front-desk-operator?) against a
+   CHEAP provider-state read (cached-provider-state - no live tmux pane
+   scan), and launch when eligible. Deliberately skips every other per-tick
+   side action (the sweep bundle, dead-agent detection, the
+   SWARM_CHECK_TIMER health sweep, status.json refresh) - those stay on
+   tick!'s own interval-ms cadence (see -main), which is what keeps this
+   faster poll from multiplying their cost."
+  [now]
+  (when heartbeat? (atomic-spit! heartbeat-file (now-iso)))
+  (let [llm-running? (operator-running?)
+        pending (read-events events-file)
+        pending-count (count pending)
+        front-desk-running? (front-desk-operator-running?)
+        front-desk-pending-count (count (filter #(= (:type %) "TELEGRAM_TOPIC_MESSAGE") pending))
+        provider-state (cached-provider-state now)
+        {:keys [launch? launch-front-desk? wait-ms]}
+        (operator-lib/next-poll-decision
+         {:llm-running? llm-running? :front-desk-running? front-desk-running?
+          :provider-state provider-state :pending-count pending-count
+          :front-desk-pending-count front-desk-pending-count
+          :poll-interval-ms poll-interval-ms})]
+    (when launch?
+      (log! "decision" "launch (pending=" (str pending-count) ")")
+      (launch-operator!)
+      (fs/delete-if-exists command-file))
+    (when launch-front-desk?
+      (log! "decision" "launch-front-desk (pending=" (str front-desk-pending-count) ")")
+      (launch-front-desk-operator!))
+    {:launched? launch? :front_desk_launched? launch-front-desk?
+     :pending pending-count :provider provider-state :wait_ms wait-ms}))
+
 ;; ── one tick ──────────────────────────────────────────────────────────────────
 
 (defn tick! []
@@ -1607,18 +1690,31 @@
 
 (defn -main []
   (fs/create-dirs op-dir)
-  (if tick-once?
-    (println (json/generate-string (tick!)))
+  (cond
+    tick-once? (println (json/generate-string (tick!)))
+    poll-once? (println (json/generate-string (poll! (now-ms))))
+    :else
     (do
       (atomic-spit! pid-file (str (.pid (java.lang.ProcessHandle/current))))
       (log! "operator-runtime started"
-            (str "interval-ms=" interval-ms " swarm-check-ms=" swarm-check-ms))
-      (try
-        (while (not (fs/exists? stop-file))
-          (try (tick!) (catch Exception e (log! "tick-error" (.getMessage e))))
-          (Thread/sleep interval-ms))
-        (finally
-          (fs/delete-if-exists pid-file)
-          (log! "operator-runtime stopped"))))))
+            (str "interval-ms=" interval-ms " poll-interval-ms=" poll-interval-ms
+                 " swarm-check-ms=" swarm-check-ms))
+      ;; BL-481: last-full-tick-ms is process-local (never persisted) - a
+      ;; restart simply runs one full tick! immediately, exactly the
+      ;; existing always-fires-first-tick behavior every startup already
+      ;; had (timer-due? treats nil as due), so this loses nothing.
+      (let [last-full-tick-ms (atom nil)]
+        (try
+          (while (not (fs/exists? stop-file))
+            (try
+              (let [now (now-ms)]
+                (if (operator-lib/timer-due? @last-full-tick-ms now interval-ms)
+                  (do (tick!) (reset! last-full-tick-ms now))
+                  (poll! now)))
+              (catch Exception e (log! "tick-error" (.getMessage e))))
+            (Thread/sleep poll-interval-ms))
+          (finally
+            (fs/delete-if-exists pid-file)
+            (log! "operator-runtime stopped")))))))
 
 (-main)
