@@ -97,7 +97,7 @@ acceptance:
   # gap); a glued prefix still resolves to nil (no over-match). The canonical form is unchanged.
   feature: specs/features/BL-503-ticket-id-extractor-hyphen-optional.feature
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   New defect fix for a SILENT, live daemon bug surfaced by the coordinator today. Both .bb
   ticket-id extractors require a hyphen between the prefix and digits (BL-NNN), but ~14

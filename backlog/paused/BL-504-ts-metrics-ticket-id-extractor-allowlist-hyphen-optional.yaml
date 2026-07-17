@@ -62,7 +62,7 @@ acceptance:
   # hyphenated form. Consumers (stage-dwell, holding windows, rework observatory) inherit it.
   feature: specs/features/BL-504-ts-metrics-ticket-id-extractor-allowlist-hyphen-optional.feature
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   Lower-severity TS sibling of BL-503, same root cause surfaced by the coordinator today.
   The shared swarmMetrics.ts extractTicketId both (a) drops no-hyphen task names (blNNN ->
