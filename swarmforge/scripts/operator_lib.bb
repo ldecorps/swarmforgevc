@@ -278,6 +278,40 @@
                 (= provider-state :available)
                 (pos? (or pending-count 0)))))
 
+;; ── BL-481: out-of-cycle poll wait/launch decision ─────────────────────────
+;; The runtime used to sleep a full OPERATOR_INTERVAL_MS (30s) between every
+;; tick unconditionally, so a Telegram message landing just after a tick sat
+;; unread for up to that whole interval. This decouples event-DISPATCH
+;; latency from the EXPENSIVE per-tick sweep bundle's own cadence: -main now
+;; wakes every short poll-interval-ms and evaluates this decision, while the
+;; heavy sweeps (and the SWARM_CHECK_TIMER health sweep) stay gated to their
+;; existing timer-due? cadence regardless of how often the poll itself wakes.
+
+(defn resolve-poll-interval-ms
+  "Bounds a configured OPERATOR_POLL_INTERVAL_MS to a 1s floor so a missing,
+   zero, or negative value can never produce a zero-delay busy-spin loop."
+  [configured-ms]
+  (max 1000 (long (or configured-ms 3000))))
+
+(defn next-poll-decision
+  "The decision -main's loop makes on EVERY out-of-cycle poll wake: whether
+   to launch the Operator and/or the front-desk Operator for whatever is
+   pending right now, and how long to wait before the next poll. Reuses the
+   SAME should-launch-operator?/should-launch-front-desk-operator? gates a
+   full tick uses - a fast poll launches under EXACTLY the same rules a full
+   tick would, never a looser fast-path exception. wait-ms is always the
+   short, bounded poll interval - never the full inter-tick interval, which
+   exists only to bound the per-tick sweep bundle's own cadence, not event
+   detection."
+  [{:keys [llm-running? front-desk-running? provider-state
+           pending-count front-desk-pending-count poll-interval-ms]}]
+  {:launch? (should-launch-operator?
+             {:llm-running? llm-running? :provider-state provider-state :pending-count pending-count})
+   :launch-front-desk? (should-launch-front-desk-operator?
+                         {:full-operator-running? llm-running? :front-desk-running? front-desk-running?
+                          :provider-state provider-state :pending-count front-desk-pending-count})
+   :wait-ms (resolve-poll-interval-ms poll-interval-ms)})
+
 ;; BL-383: the SAME "field: " line-prefix scan already established as
 ;; read-yaml-field in ticket_status_lib.bb (and duplicated again in
 ;; role_lifecycle_lib.bb) - kept as its own small private copy here rather
