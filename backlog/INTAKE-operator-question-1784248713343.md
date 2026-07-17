@@ -1,5 +1,13 @@
 # Intake: a question the Operator could not answer
 
+> SPECIFIER STATUS 2026-07-17: NOT YET SPECCED — a clarifying question was posted to
+> the human (OPERATOR/Concierge thread) via operator_ask.bb, pinning WHICH surface the
+> orchestral icons target (PWA/owned-art vs Telegram stock-emoji stand-ins vs both);
+> Telegram forum-topic icons cannot be arbitrary SVG glyphs, so the surface must be
+> confirmed before speccing. `.swarmforge/operator/awaiting-answer.json` holds the
+> pending question — DO NOT re-ask on a future drain; spec (or re-spec BL-469) only
+> once the human answers.
+
 Filed by the Operator (2026-07-17T00:38:33.343502239Z) - a question came in via Telegram
 that the Operator judged it could not answer itself. This is a RAW
 ask, not a spec: the specifier drains this like any other backlog-root

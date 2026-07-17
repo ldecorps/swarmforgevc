@@ -1470,13 +1470,13 @@ test('BL-418 wiring: standingIconSeenIds persists and grows across ticks rather 
 // see syncPerAgentTopicIcons' own docstring in conciergeTick.ts.
 
 const ROLE_ICON_STICKERS = [
-  { emoji: '🧭', customEmojiId: 'id-compass' },
+  { emoji: '🎬', customEmojiId: 'id-clapper' },
   { emoji: '📝', customEmojiId: 'id-note' },
-  { emoji: '🏗', customEmojiId: 'id-crane' },
-  { emoji: '⌨️', customEmojiId: 'id-keyboard' },
-  { emoji: '🧹', customEmojiId: 'id-broom' },
-  { emoji: '🛡', customEmojiId: 'id-shield' },
-  { emoji: '🔍', customEmojiId: 'id-magnifier' },
+  { emoji: '🏛', customEmojiId: 'id-building' },
+  { emoji: '💻', customEmojiId: 'id-laptop' },
+  { emoji: '🧼', customEmojiId: 'id-soap' },
+  { emoji: '🧪', customEmojiId: 'id-tube' },
+  { emoji: '🔎', customEmojiId: 'id-magnifier-tilted' },
   { emoji: '📚', customEmojiId: 'id-books' },
 ];
 
@@ -1503,19 +1503,19 @@ test('BL-469 per-agent-steering-topic-icon-01: each of the 8 role topics gets it
   assert.deepEqual(
     iconsSet.sort((a, b) => a.topicId - b.topicId),
     [
-      { topicId: 901, iconId: 'id-compass' },
+      { topicId: 901, iconId: 'id-clapper' },
       { topicId: 902, iconId: 'id-note' },
-      { topicId: 903, iconId: 'id-crane' },
-      { topicId: 904, iconId: 'id-keyboard' },
-      { topicId: 905, iconId: 'id-broom' },
-      { topicId: 906, iconId: 'id-shield' },
-      { topicId: 907, iconId: 'id-magnifier' },
+      { topicId: 903, iconId: 'id-building' },
+      { topicId: 904, iconId: 'id-laptop' },
+      { topicId: 905, iconId: 'id-soap' },
+      { topicId: 906, iconId: 'id-tube' },
+      { topicId: 907, iconId: 'id-magnifier-tilted' },
       { topicId: 908, iconId: 'id-books' },
     ]
   );
-  assert.equal(iconOwnership.coordinator, 'id-compass');
-  assert.equal(iconOwnership.coder, 'id-keyboard');
-  assert.equal(iconOwnership.QA, 'id-magnifier');
+  assert.equal(iconOwnership.coordinator, 'id-clapper');
+  assert.equal(iconOwnership.coder, 'id-laptop');
+  assert.equal(iconOwnership.QA, 'id-magnifier-tilted');
 });
 
 // BL-469 per-agent-steering-topic-icon-02
@@ -1523,9 +1523,9 @@ test('BL-469 per-agent-steering-topic-icon-02: an icon Telegram does not offer i
   const { adapters, iconsSet, iconOwnership } = fakeAdapters({
     readRoleTopics: () => ALL_ROLE_TOPIC_TARGETS,
   });
-  // The coder's keyboard sticker is absent from the live set; every other
+  // The coder's laptop sticker is absent from the live set; every other
   // role's mapped icon is still offered.
-  adapters.iconAdapters.getIconStickers = async () => ROLE_ICON_STICKERS.filter((s) => s.emoji !== '⌨️');
+  adapters.iconAdapters.getIconStickers = async () => ROLE_ICON_STICKERS.filter((s) => s.emoji !== '💻');
 
   await assert.doesNotReject(() => runConciergeTick(adapters));
 
@@ -1537,7 +1537,7 @@ test('BL-469 per-agent-steering-topic-icon-02: an icon Telegram does not offer i
   assert.equal(iconOwnership.coder, undefined, 'a skipped-unresolved icon never records ownership');
   // Every other role still resolved and got its own mapped icon.
   assert.equal(iconsSet.length, 7);
-  assert.equal(iconOwnership.QA, 'id-magnifier');
+  assert.equal(iconOwnership.QA, 'id-magnifier-tilted');
   assert.equal(iconOwnership.documenter, 'id-books');
 });
 
