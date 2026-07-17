@@ -264,6 +264,7 @@ const DOMAINS = [
   require('./bl485CleanerMutationSiteSizeGateSteps'),
   require('./bl486ReapOrphanedAgentProcessesSteps'),
   require('./bl483MultiOptionAskButtonsSteps'),
+  require('./bl492BacklogStandingTopicSteps'),
   require('./bl487BoardFreshnessWithoutCoordinatorSyncSteps'),
   require('./bl488HeldTicketIdResolvesWithoutLeadingTokenSteps')
 ];

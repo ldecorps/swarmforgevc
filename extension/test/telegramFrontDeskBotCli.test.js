@@ -14,6 +14,7 @@ const {
   ensureApprovalsTopic,
   ensureRecertTopic,
   ensureAgentQuestionsTopic,
+  ensureBacklogTopic,
   ensureControlTopic,
   controlDrainTimeoutMs,
   controlRestartAckTimeoutMs,
@@ -655,6 +656,75 @@ test('BL-466: an already-bound Agent Questions topic returns its existing topicI
   writeTopicMapFixture(root, { '42': 'AGENT_QUESTIONS' });
   const { postFn, calls } = fakeCreateOk(999);
   const topicId = await ensureAgentQuestionsTopic(root, 'fake-token', 'fake-chat', postFn);
+  assert.equal(topicId, 42);
+  assert.equal(calls.length, 0);
+});
+
+// ── ensureBacklogTopic (BL-492, mirrors ensureAgentQuestionsTopic above) ──
+
+test('BL-492: creates the Backlog topic and binds it to the reserved subject when the map has no binding yet', async () => {
+  const root = mkTmpRoot();
+  const { postFn, calls } = fakeCreateOk(42);
+  await ensureBacklogTopic(root, 'fake-token', 'fake-chat', postFn);
+  assert.equal(calls.length, 1);
+  const map = readTopicMapFixture(root);
+  assert.equal(map['42'], 'BACKLOG');
+});
+
+test('BL-492: the create call names the topic "Backlog"', async () => {
+  const root = mkTmpRoot();
+  const { postFn, calls } = fakeCreateOk(7);
+  await ensureBacklogTopic(root, 'fake-token', 'fake-chat', postFn);
+  assert.match(calls[0].url, /createForumTopic$/);
+  assert.match(calls[0].body, /"name":"Backlog"/);
+});
+
+test('BL-492: a map that already binds the reserved Backlog subject never creates a second topic', async () => {
+  const root = mkTmpRoot();
+  writeTopicMapFixture(root, { '42': 'BACKLOG' });
+  const { postFn, calls } = fakeCreateOk(999);
+  await ensureBacklogTopic(root, 'fake-token', 'fake-chat', postFn);
+  assert.equal(calls.length, 0);
+  assert.deepEqual(readTopicMapFixture(root), { '42': 'BACKLOG' });
+});
+
+test('BL-492: the Backlog topic and the STEERING/other standing topics bind independently in the SAME map, never colliding or disturbing them', async () => {
+  const root = mkTmpRoot();
+  writeTopicMapFixture(root, {
+    '10': 'OPERATOR',
+    '11': 'APPROVALS',
+    '12': 'RECERT',
+    '13': 'AGENT_QUESTIONS',
+    '14': 'CONTROL',
+    '15': 'STEERING:coder',
+  });
+  const { postFn, calls } = fakeCreateOk(55);
+  const topicId = await ensureBacklogTopic(root, 'fake-token', 'fake-chat', postFn);
+  assert.equal(calls.length, 1);
+  assert.equal(topicId, 55);
+  const map = readTopicMapFixture(root);
+  assert.equal(map['55'], 'BACKLOG');
+  assert.equal(map['10'], 'OPERATOR');
+  assert.equal(map['11'], 'APPROVALS');
+  assert.equal(map['12'], 'RECERT');
+  assert.equal(map['13'], 'AGENT_QUESTIONS');
+  assert.equal(map['14'], 'CONTROL');
+  assert.equal(map['15'], 'STEERING:coder');
+});
+
+test('BL-492: a failed create degrades quietly - never throws, never writes a partial binding', async () => {
+  const root = mkTmpRoot();
+  const postFn = async () => ({ ok: false, status: 500, json: { description: 'simulated failure' } });
+  const topicId = await ensureBacklogTopic(root, 'fake-token', 'fake-chat', postFn);
+  assert.equal(topicId, undefined);
+  assert.equal(fs.existsSync(topicMapPath(root)), false);
+});
+
+test('BL-492: an already-bound Backlog topic returns its existing topicId, without calling create', async () => {
+  const root = mkTmpRoot();
+  writeTopicMapFixture(root, { '42': 'BACKLOG' });
+  const { postFn, calls } = fakeCreateOk(999);
+  const topicId = await ensureBacklogTopic(root, 'fake-token', 'fake-chat', postFn);
   assert.equal(topicId, 42);
   assert.equal(calls.length, 0);
 });

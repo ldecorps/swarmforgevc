@@ -1,0 +1,91 @@
+id: BL-491
+title: "EPIC — consolidate Telegram forum topics: fold per-ticket topics into one topic per epic + one standing Backlog topic; tracks children, do not promote directly"
+milestone: M8
+type: epic
+status: todo
+epic: topic-consolidation
+priority: 6
+direction: human-requested
+depends_on: []
+decomposes_into: [BL-492, BL-493, BL-494, BL-495]
+source: "Human (ldecorps) 2026-07-17, via Operator intake backlog/INTAKE-operator-question-1784277729691.md: the concierge mints a brand-new Telegram forum topic PER backlog ticket ('BL-### - Title'), proliferating into hundreds of topics. The human wants topic count bounded to roughly the number of KINDS of topics, not the number of items: one topic per EPIC, one standing catch-all 'Backlog' topic for epic-less tickets, the 8 per-role STEERING topics and all other standing topics left as-is."
+
+remaining_slices: []
+
+notes: |
+  UMBRELLA / tracking item, not directly promotable. The actionable work is its children
+  (BL-492..495), sequenced by their depends_on chain. Do NOT close this epic until all four land
+  and the live swarm posts ticket events into epic/Backlog topics with no new per-ticket topic minted.
+
+  THE ASK (human directive, drained from the intake doc). Reduce how many Telegram forum topics the
+  swarm creates. Today one topic is created per backlog ticket; the human wants:
+    - One topic per EPIC. A ticket that belongs to an epic (its `epic:` field is a non-empty id) no
+      longer gets its own topic — its swarm events post as MESSAGES into that epic's topic, prefixed
+      with the ticket id.
+    - Epic-less tickets (the majority, `epic: ""`) post as messages into ONE new standing "Backlog"
+      catch-all topic, again prefixed with the ticket id.
+    - Keep the 8 per-role STEERING topics and every other standing topic (Concierge, Approvals,
+      Recert, Agent Questions, Control, Pipeline Board, Contract negotiation) exactly as-is.
+  Net: instead of `#epics + #tickets` topics we have `#epics + 1 Backlog` topic for product work,
+  plus the existing standing/role topics.
+
+  HUMAN DECISIONS SETTLED AT SPEC TIME (specifier asked, human answered 2026-07-17):
+    D1 — PER-TICKET STATE RENDER = EDIT ONE MESSAGE IN PLACE. A ticket that no longer owns a topic
+       can't own a topic ICON (today's lifecycle state carrier, topicIcon.ts ICON_EMOJI). Instead
+       each ticket gets ONE message in its epic/Backlog topic whose status prefix is EDITED in place
+       on each lifecycle transition (e.g. "BL-### 🎵 in progress" → "BL-### ✅ done"), not a new
+       message appended per transition. Model on the existing editInPlaceMessageSync.ts
+       (syncEditInPlaceMessage; posted/edited/skipped-unchanged outcomes) — reuse it, do not
+       reinvent. → BL-493.
+    D2 — MIGRATION = ONE-TIME CLOSE. The hundreds of existing per-ticket topics already in the live
+       Telegram group and in backlog-topic-map.json are CLOSED once (closeForumTopic, read-only /
+       collapsed, history preserved) by a one-time reconcile tool — not deleted, not left open. The
+       reconcile MUST honor a 429's own retry_after exactly as backfill-topic-icons.ts does
+       (engineering.prompt: a change-gated/backfill mass edit over a rate-limited surface is a storm
+       risk). → BL-494.
+    D3 — AWAITING-APPROVAL SIGNAL = APPROVALS TOPIC ONLY. The icon-only approval path
+       (ensurePerTicketTopicForIcon, topicRouter.ts:390) exists ONLY to hang a 👀 icon on a
+       per-ticket topic; the ask TEXT already posts to the standing Approvals topic (BL-424). With no
+       per-ticket topics, DROP that path entirely — no extra awaiting-approval indicator in the
+       epic/Backlog topic. → part of BL-493.
+
+  SLICE PLAN (each child carries `epic: topic-consolidation`):
+    - BL-492 — Standing "Backlog" catch-all topic ensured once at boot (reserved subject-id + reuse-
+      or-create), the target for epic-less tickets. Foundation; fires live at boot.
+    - BL-493 — THE WIRING SLICE (runtime-wiring rule): route a ticket event into its epic's topic
+      (epic non-empty) or the Backlog topic (epic-less) as an edit-in-place status message; STOP
+      creating per-ticket topics (decideTopicAction/routeTaggedOrUntaggedEvent); DROP the icon-only
+      approval path (D3). This is where the pure resolver + status-text builder are CALLED on a real
+      event and their per-ticket message-id state is persisted — the epic is not "done" behavior-wise
+      until this lands (engineering.prompt: pure modules with no live caller are dark features).
+    - BL-494 — One-time close of legacy per-ticket topics (D2), 429-safe.
+    - BL-495 — Make the topic recreation/restore repair path (topicRecreation.ts, recreate-bl-topic.ts)
+      epic/Backlog-aware instead of resurrecting the old per-ticket model.
+
+  OVERLAP WATCH (coordinator sequencing). All four children touch the hot shared standing-topic
+  surface — topicRouter.ts, conciergeTick.ts, telegram-front-desk-bot.ts, the topic-map stores —
+  which the BL-434/450/452/424/449 cluster also touches (operator memory: standing-topic-feature-
+  overlap-cluster). Sequence these serially against any in-flight work on those files; the depends_on
+  chain (492 → 493 → {494, 495}) already serializes the epic internally.
+
+  DONE WHEN: BL-492..495 all land; a live ticket lifecycle event edits one status message in its
+  epic topic (or the Backlog topic if epic-less), prefixed with the ticket id; NO new per-ticket
+  topic is minted for any event including ApprovalRequested; the legacy per-ticket topics are closed;
+  and the recreation repair path targets epic/Backlog topics.
+
+human_approval: approved
+approval_context: >
+  The high-level routing and the three product decisions (D1 edit-in-place status message, D2 one-time
+  close migration, D3 awaiting-approval via the Approvals topic only) were chosen by you directly
+  (specifier asked, you answered 2026-07-17). This ticket asks you to bless the DECOMPOSITION into four
+  slices (BL-492 Backlog standing topic → BL-493 the routing+edit-in-place wiring that removes
+  per-ticket topics and the icon-only path → BL-494 one-time close of legacy topics → BL-495 recreation
+  path epic-aware) and their sequencing. FIRM: the net effect (#epics + 1 Backlog topic), keeping the 8
+  STEERING topics and all other standing topics untouched, edit-in-place status, one-time close, and
+  Approvals-topic-only awaiting signal. OPEN for your call at approval: whether the legacy-close
+  migration (BL-494) should run automatically once BL-493 ships or stay a hand-run operator tool — I
+  have specced it as a hand-run one-time CLI (safer: you pick the moment, it can't storm a live group
+  unattended). Each child slice's own feature file carries its own human_approval: pending for the
+  detailed contract.
+
+mutation_cost: low

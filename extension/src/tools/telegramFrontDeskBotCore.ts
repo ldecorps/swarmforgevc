@@ -242,6 +242,26 @@ export function decideEnsureAgentQuestionsTopicAction(topicMap: Record<string, s
   return existingTopicId !== undefined ? { kind: 'reuse', topicId: existingTopicId } : { kind: 'create' };
 }
 
+// BL-492: the reserved subject a standing "Backlog" catch-all forum topic is
+// bound to - the SAME {topicId: subjectId} map every other reserved subject
+// above shares. Foundation slice of the BL-491 topic-consolidation epic:
+// the routing target epic-less tickets post into instead of a per-ticket
+// topic each (BL-493 wires the actual routing; this ticket only ensures the
+// topic itself exists, exactly like every other standing topic's own
+// ensure* helper).
+export const BACKLOG_SUBJECT_ID = 'BACKLOG';
+export const BACKLOG_TOPIC_NAME = 'Backlog';
+
+export type EnsureBacklogTopicAction = { kind: 'reuse'; topicId: number } | { kind: 'create' };
+
+// Pure: identical reuse-or-create shape to decideEnsureApprovalsTopicAction/
+// decideEnsureRecertTopicAction/decideEnsureAgentQuestionsTopicAction above,
+// keyed by its own reserved subject id.
+export function decideEnsureBacklogTopicAction(topicMap: Record<string, string>): EnsureBacklogTopicAction {
+  const existingTopicId = topicForSubject(topicMap, BACKLOG_SUBJECT_ID);
+  return existingTopicId !== undefined ? { kind: 'reuse', topicId: existingTopicId } : { kind: 'create' };
+}
+
 // BL-423: the reserved subject a standing "Control" forum topic is bound
 // to - the SAME {topicId: subjectId} map every other reserved subject
 // above shares. All three swarm-control verbs (/stop, /restart, /pause)

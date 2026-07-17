@@ -103,6 +103,9 @@ import {
   decideEnsureAgentQuestionsTopicAction,
   AGENT_QUESTIONS_TOPIC_NAME,
   AGENT_QUESTIONS_SUBJECT_ID,
+  decideEnsureBacklogTopicAction,
+  BACKLOG_TOPIC_NAME,
+  BACKLOG_SUBJECT_ID,
   decideEnsureControlTopicAction,
   CONTROL_TOPIC_NAME,
   CONTROL_SUBJECT_ID,
@@ -575,6 +578,28 @@ export async function ensureAgentQuestionsTopic(targetPath: string, botToken: st
     return undefined;
   }
   topicMap[topicMapKey(created.messageThreadId)] = AGENT_QUESTIONS_SUBJECT_ID;
+  writeTopicMap(targetPath, topicMap);
+  return created.messageThreadId;
+}
+
+// BL-492: the Backlog-topic twin of ensureAgentQuestionsTopic above -
+// identical reuse-or-create/idempotent-across-restarts shape, sharing the
+// SAME {topicId: subjectId} map. Foundation slice of the BL-491
+// topic-consolidation epic: the standing catch-all topic epic-less tickets
+// route into instead of a per-ticket topic each - BL-493 wires the actual
+// routing; this only ensures the topic itself exists.
+export async function ensureBacklogTopic(targetPath: string, botToken: string, chatId: string, postFn?: TelegramPostFn): Promise<number | undefined> {
+  const topicMap = readTopicMap(targetPath);
+  const decision = decideEnsureBacklogTopicAction(topicMap);
+  if (decision.kind === 'reuse') {
+    return decision.topicId;
+  }
+  const created = await createForumTopic(botToken, chatId, BACKLOG_TOPIC_NAME, postFn);
+  if (!created.success || created.messageThreadId === undefined) {
+    process.stderr.write(`ensureBacklogTopic: failed to create the Backlog topic: ${created.error ?? 'no messageThreadId returned'}\n`);
+    return undefined;
+  }
+  topicMap[topicMapKey(created.messageThreadId)] = BACKLOG_SUBJECT_ID;
   writeTopicMap(targetPath, topicMap);
   return created.messageThreadId;
 }
@@ -2221,6 +2246,13 @@ export async function main(): Promise<void> {
   // ensureOperatorTopic just above (an unbound role topic must never be
   // reachable by an inbound message).
   await ensureRoleTopics(targetPath, botToken, chatId);
+
+  // BL-492: bind the standing Backlog catch-all topic BEFORE any loop
+  // starts polling too - same ordering rationale as every other standing
+  // topic above. Foundation slice of the BL-491 topic-consolidation epic;
+  // nothing routes INTO it yet (that is BL-493), but the topic itself must
+  // exist and be idempotently reused across restarts like every sibling.
+  await ensureBacklogTopic(targetPath, botToken, chatId);
 
   // BL-302 LOOP ISOLATION: each of the three forever-loops runs inside its
   // own runContainedLoop - a fault (thrown exception) in one is caught,
