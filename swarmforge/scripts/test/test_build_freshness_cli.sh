@@ -416,7 +416,16 @@ cat > "$FAKE_BIN_OP/npm" <<'NPMEOF'
 exit 0
 NPMEOF
 chmod +x "$FAKE_BIN_OP/npm"
-SYNC_OUT="$(PATH="$FAKE_BIN_OP:$PATH" OPERATOR_SKIP_LAUNCH=1 bb "$CLI" "$ROOT" sync)"
+# BL-486-VIOLATION: the initial nohup launch above is isolated, but sync's
+# OWN restart-operator-group! spawns a SECOND, real operator_runtime.bb
+# process (to replace the one it just killed) that runs its first tick! -
+# including the real orphan-agent-reaper sweep - immediately on startup.
+# That child inherits THIS process's env (build_freshness_cli.bb never
+# passes :env to the process/process call), so without this override here
+# too, the respawned process falls through to a genuine /proc-wide scan for
+# SwarmForge-* remote-control processes on this self-hosting box, exactly
+# the live-agent-killing hazard BL-486 exists to prevent.
+SYNC_OUT="$(PATH="$FAKE_BIN_OP:$PATH" OPERATOR_SKIP_LAUNCH=1 SWARMFORGE_ORPHAN_REAP_CANDIDATE_PIDS="" bb "$CLI" "$ROOT" sync)"
 SYNC_EXIT=$?
 rm -rf "$FAKE_BIN_OP"
 REPORT_AFTER="$(bb "$CLI" "$ROOT" report)"
@@ -472,7 +481,11 @@ chmod +x "$FAKE_BIN_OP4/npm"
 # own established use elsewhere for the identical "force the bound to fire
 # now" reason).
 ERR_FILE_04="$(mktemp)"
-PATH="$FAKE_BIN_OP4:$PATH" OPERATOR_SKIP_LAUNCH=1 BUILD_FRESHNESS_OPERATOR_SETTLE_TIMEOUT_MS=1 bb "$CLI" "$ROOT" sync >/dev/null 2>"$ERR_FILE_04"
+# BL-486-VIOLATION: same gap as the -01/02/03 block above - the settle wait
+# fails fast here (1ms bound), but restart-operator-group! already spawned
+# the real replacement operator_runtime.bb BEFORE that wait, detached, so it
+# keeps running (and reaching its first tick!) after this CLI call returns.
+PATH="$FAKE_BIN_OP4:$PATH" OPERATOR_SKIP_LAUNCH=1 BUILD_FRESHNESS_OPERATOR_SETTLE_TIMEOUT_MS=1 SWARMFORGE_ORPHAN_REAP_CANDIDATE_PIDS="" bb "$CLI" "$ROOT" sync >/dev/null 2>"$ERR_FILE_04"
 SYNC_EXIT_04=$?
 SYNC_ERR_04="$(cat "$ERR_FILE_04")"
 rm -f "$ERR_FILE_04"
