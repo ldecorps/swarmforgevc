@@ -5,9 +5,14 @@ This article defines how parcels move between roles in the SwarmForge pipeline.
 
 ## 2.2 Draft Format
 A handoff draft is plain `field: value` header lines — one per line, no JSON,
-no body (`swarm_handoff.sh` generates the body) — written to
-`swarmforge/runtime/handoff-draft.txt` and sent via `swarm_handoff.sh` (not
-repo-root `tmp/` or `.swarmforge/`, which are gitignored). A JSON envelope is
+no body (`swarm_handoff.sh` generates the body) — written to a per-role draft
+file and sent via `swarm_handoff.sh`. Where that draft file lives depends on the
+role's worktree: a role with its own `.worktrees/<role>` checkout (coder,
+cleaner, architect, hardender, documenter, QA) writes it to its worktree-local
+`tmp/handoff.txt` (gitignored per worktree, the right home for a transient
+draft); the master-resident roles that share the master checkout (coordinator,
+specifier) write it to `swarmforge/runtime/handoff-draft.txt` instead. Do not put
+the draft in `.swarmforge/` (gitignored runtime state). A JSON envelope is
 **rejected**: every brace/quote line parses as an unknown header.
 
 **`type`** must be one of `awake`, `git_handoff`, `note`, or `rule_proposal`.
