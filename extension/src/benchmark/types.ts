@@ -45,6 +45,25 @@ export interface QualityEvaluator {
   evaluate(cwd: string, task: TaskSpec): Promise<QualityResult>;
 }
 
+// BL-387: the diff a model produces is judged by the REAL pipeline review
+// chain (cleaner -> architect -> hardener -> QA) before it is ever scored -
+// a model's value is the diff that SURVIVES that chain, not its first
+// diff. `survived` is false whenever any stage rejects it outright;
+// `bounces` counts every stage that had to revise the diff before it could
+// proceed, whether or not it ultimately survived.
+export interface PipelineReviewResult {
+  survived: boolean;
+  bounces: number;
+}
+
+export interface PipelineOracle {
+  // `diffDir` is the SAME scratch directory the model's diff was executed
+  // into - a stage that revises the diff edits those files directly, so
+  // whatever the caller reads from `diffDir` after review() resolves is
+  // exactly what the pipeline accepted, not what the model first produced.
+  review(diffDir: string, task: TaskSpec): Promise<PipelineReviewResult>;
+}
+
 export interface TrialOutcome {
   // BL-386: which battery task this trial ran - a model's runs[] now spans
   // every task in the battery, not implicitly "the one task", so each run
@@ -53,6 +72,11 @@ export interface TrialOutcome {
   modelId: string;
   repetition: number;
   ran: boolean;
+  // BL-387: whether the diff survived the pipeline's review chain, and how
+  // many rounds of rework (bounces) it took. Both are false/0 when the
+  // model never ran at all (ran: false) - there was nothing to review.
+  survived: boolean;
+  reworkRounds: number;
   qualityScore: number;
   testsPassed: number;
   testsTotal: number;
