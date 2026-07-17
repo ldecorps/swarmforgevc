@@ -78,7 +78,7 @@ function registerSteps(registry) {
       readApprovalAskMessage: async () => ({ topicId: ASK_TOPIC_ID, messageId: ASK_MESSAGE_ID, text: ORIGINAL_ASK_TEXT }),
       editApprovalAskMessage: async (topicId, messageId, text) => {
         ctx.editCalls.push({ topicId, messageId, text });
-        return ctx.editSucceeds;
+        return { success: ctx.editSucceeds };
       },
       readRecordedApprovalVerdict: async () => ctx.recordedVerdict,
     });
@@ -111,7 +111,7 @@ function registerSteps(registry) {
       readApprovalAskMessage: async () => ({ topicId: ASK_TOPIC_ID, messageId: ASK_MESSAGE_ID, text: ORIGINAL_ASK_TEXT }),
       editApprovalAskMessage: async (topicId, messageId, editedText) => {
         ctx.editCalls.push({ topicId, messageId, text: editedText });
-        return ctx.editSucceeds;
+        return { success: ctx.editSucceeds };
       },
       readRecordedApprovalVerdict: async () => ctx.recordedVerdict,
     });
@@ -191,7 +191,7 @@ function registerSteps(registry) {
       readApprovalAskMessage: async () => ({ topicId: ASK_TOPIC_ID, messageId: ASK_MESSAGE_ID, text: ORIGINAL_ASK_TEXT }),
       editApprovalAskMessage: async (topicId, messageId, text) => {
         ctx.editCalls.push({ topicId, messageId, text });
-        return true;
+        return { success: true };
       },
       readRecordedApprovalVerdict: async () => ctx.recordedVerdict,
     });
@@ -235,7 +235,7 @@ function registerSteps(registry) {
           readApprovalAskMessage: async () => ({ topicId: ASK_TOPIC_ID, messageId: ASK_MESSAGE_ID, text: ORIGINAL_ASK_TEXT }),
           editApprovalAskMessage: async (topicId, messageId, text) => {
             ctx.editCalls.push({ topicId, messageId, text });
-            return ctx.editSucceeds;
+            return { success: ctx.editSucceeds };
           },
         },
         TICKET_ID,

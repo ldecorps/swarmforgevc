@@ -6,7 +6,7 @@
 // untested-boundary process that injects the real adapters (real
 // getUpdates, a real fetch POST to the bridge, the real persisted topic
 // map) into pollAndForward below.
-import { TelegramUpdate, TelegramCallbackQuery, TelegramPollAnswer, GetUpdatesResult, InlineKeyboardButton } from '../notify/telegramClient';
+import { TelegramUpdate, TelegramCallbackQuery, TelegramPollAnswer, GetUpdatesResult, InlineKeyboardButton, EditMessageTextResult } from '../notify/telegramClient';
 import { computeTelegramRetryBackoffMs } from '../notify/telegramRetry';
 import { classifyApprovalReplyAction, classifyApprovalsTopicReply } from '../concierge/pendingApprovalReply';
 import { ApprovalDecisionVerdict, composeDecidedAskText, alreadyDecidedToastText } from '../concierge/approvalAskClosing';
@@ -724,11 +724,25 @@ export interface PollAdapters {
   readApprovalAskMessage?: (backlogId: string) => Promise<{ topicId: number; messageId: number; text: string } | undefined>;
   // BL-484: performs the actual close - strips the ask's inline keyboard
   // and replaces its text with the decided version (composeDecidedAskText).
-  // Reports whether the edit succeeded; a failure is logged by the caller
-  // and never blocks or unwinds the decision recording that already
-  // happened (the ticket's own "never crashes the tick/bot loop"
-  // constraint).
-  editApprovalAskMessage?: (topicId: number, messageId: number, text: string) => Promise<boolean>;
+  // BL-496: widened past a bare boolean to the full {success, error,
+  // retryAfterSeconds} shape editMessageText's own result already carries -
+  // a failure is logged by the caller with its REAL rejection reason, and
+  // a rate-limited one (retryAfterSeconds present) is retried, bounded (see
+  // closeApprovalAskIfPossible); it never blocks or unwinds the decision
+  // recording that already happened (the ticket's own "never crashes the
+  // tick/bot loop" constraint).
+  editApprovalAskMessage?: (topicId: number, messageId: number, text: string) => Promise<EditMessageTextResult>;
+  // BL-496: the ask-close retry loop's own injected wait seam - defaults to
+  // a real setTimeout wait in production; a test injects one that resolves
+  // immediately while recording the requested duration, so the loop's own
+  // "wait retry_after seconds before the next attempt" behavior is provable
+  // without a real clock (engineering's absolute no-real-timers rule).
+  waitForAskCloseRetry?: (ms: number) => Promise<void>;
+  // BL-496: the bounded number of edit attempts the ask-close retry loop
+  // makes before giving up and logging the undelivered close loudly.
+  // Defaults to a sane production value; a test pins a small budget so its
+  // "exhausted retries" scenario runs in a handful of iterations.
+  askCloseRetryBudget?: number;
   // BL-484: the stale-tap guard's own read - the SPECIFIC verdict already
   // recorded for this ticket, if any (pendingApprovalReply.ts's
   // readRecordedVerdict, adapter-injected). Optional: absent means the
@@ -882,24 +896,80 @@ function classifyWithPendingButton(
   return pending === 'reject' ? { kind: 'reject', reason: trimmed } : { kind: 'amend', note: trimmed };
 }
 
+// BL-496: the default retry budget when the adapter doesn't pin its own -
+// a sane production value; the acceptance/unit fixtures pin a small one
+// (e.g. 3) so an "exhausted retries" scenario runs in a handful of
+// iterations rather than this many.
+const DEFAULT_ASK_CLOSE_RETRY_BUDGET = 5;
+
+function defaultAskCloseWait(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// BL-496: the ask-close's own bounded, retry_after-honouring edit loop -
+// distinct from telegramClient.ts's editForumTopicWithRateLimitRetry
+// (UNBOUNDED: safe there because the wait is always a finite, server-told
+// duration and that caller is a one-shot backfill/sync, never a live poll
+// tick) and from telegramRetry.ts's sendWithBoundedRetry (retries ANY
+// failure with an EXPONENTIAL backoff it computes itself). Neither fits: a
+// genuine, non-rate-limited rejection here must fail FAST - attempted
+// EXACTLY once, never retried (BL-496's own scenario 01) - and a
+// rate-limited one must wait EXACTLY Telegram's own told-you-so
+// retryAfterSeconds, never a guessed backoff. So this retries ONLY when the
+// failure carries a retryAfterSeconds, up to a bounded maxAttempts.
+async function editApprovalAskWithBoundedRateLimitRetry(
+  edit: () => Promise<EditMessageTextResult>,
+  maxAttempts: number,
+  wait: (ms: number) => Promise<void>
+): Promise<EditMessageTextResult> {
+  let lastResult: EditMessageTextResult = { success: false };
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    lastResult = await edit();
+    if (lastResult.success || lastResult.retryAfterSeconds === undefined) {
+      return lastResult;
+    }
+    if (attempt < maxAttempts) {
+      await wait(lastResult.retryAfterSeconds * 1000);
+    }
+  }
+  return lastResult;
+}
+
 // BL-484: performs the actual Telegram edit that closes a decided ask -
 // split out of recordApprovalDecisionAndClose below for the same CRAP-
 // budget reason this file already applies throughout (e.g.
-// isApprovalsTopicReplyDecision above). A missing readApprovalAskMessage/
-// editApprovalAskMessage adapter, or no stored message for this backlogId
-// (never captured - posted before this feature shipped, or capture
-// failed), means there is nothing to edit, so this simply no-ops rather
-// than crashing. A failed edit is LOGGED, never thrown - the ticket's own
-// explicit "editing must ... never crash the tick/bot loop" constraint.
+// isApprovalsTopicReplyDecision above). A missing readApprovalAskMessage
+// adapter, or no stored message for this backlogId (never captured -
+// posted before this feature shipped, or capture failed), means there is
+// nothing to edit, so this simply no-ops rather than crashing. A failed
+// edit is LOGGED, never thrown - the ticket's own explicit "editing must
+// ... never crash the tick/bot loop" constraint.
+// BL-496: a rate-limited failure (retryAfterSeconds present) is retried,
+// bounded, honouring Telegram's own told-you-so wait; a genuine rejection
+// is logged once with its real reason and not retried; exhausting the
+// retry budget is logged loudly, naming the ticket and the rate limit.
 async function closeApprovalAskIfPossible(adapters: PollAdapters, backlogId: string, verdict: ApprovalDecisionVerdict, nowMs: number): Promise<void> {
   const stored = await adapters.readApprovalAskMessage?.(backlogId);
   if (!stored) {
     return;
   }
   const newText = composeDecidedAskText(stored.text, verdict, nowMs);
-  const ok = await adapters.editApprovalAskMessage?.(stored.topicId, stored.messageId, newText);
-  if (!ok) {
-    process.stderr.write(`front-desk bot: failed to close the approval ask for ${backlogId} (message edit failed or not wired)\n`);
+  const editFn = adapters.editApprovalAskMessage;
+  const result = editFn
+    ? await editApprovalAskWithBoundedRateLimitRetry(
+        () => editFn(stored.topicId, stored.messageId, newText),
+        adapters.askCloseRetryBudget ?? DEFAULT_ASK_CLOSE_RETRY_BUDGET,
+        adapters.waitForAskCloseRetry ?? defaultAskCloseWait
+      )
+    : { success: false };
+  if (!result.success) {
+    if (result.retryAfterSeconds !== undefined) {
+      process.stderr.write(
+        `front-desk bot: failed to close the approval ask for ${backlogId} - rate-limited, retry budget exhausted, close not delivered (last retry_after=${result.retryAfterSeconds}s)\n`
+      );
+    } else {
+      process.stderr.write(`front-desk bot: failed to close the approval ask for ${backlogId}: ${result.error ?? 'message edit failed or not wired'}\n`);
+    }
   }
 }
 

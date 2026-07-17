@@ -270,7 +270,8 @@ const DOMAINS = [
   require('./bl467PipelineBoardOnlyPinSteps'),
   require('./bl498MutationGateExcludesTscImportHelpersSteps'),
   require('./bl497PipelineBoardPostFailureRecoverySteps'),
-  require('./bl489ActiveIdJoinIsCaseSymmetricSteps')
+  require('./bl489ActiveIdJoinIsCaseSymmetricSteps'),
+  require('./bl496DecidedAskCloseSurvivesRateLimitSteps')
 ];
 
 function registerSteps(registry) {

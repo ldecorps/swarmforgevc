@@ -1078,7 +1078,7 @@ test('BL-484: an approval reply on a backlog item\'s own topic also closes the p
     readApprovalAskMessage: async (backlogId) => ({ topicId: 800, messageId: 7, text: `${backlogId} needs your approval...` }),
     editApprovalAskMessage: async (topicId, messageId, text) => {
       editCalls.push({ topicId, messageId, text });
-      return true;
+      return { success: true };
     },
   });
   assert.equal(editCalls.length, 1);
@@ -1319,7 +1319,7 @@ test('BL-484: "reject <id> <reason>" in the Approvals topic closes the posted as
     readApprovalAskMessage: async (backlogId) => ({ topicId: 800, messageId: 42, text: `${backlogId} needs your approval...` }),
     editApprovalAskMessage: async (topicId, messageId, text) => {
       editCalls.push({ topicId, messageId, text });
-      return true;
+      return { success: true };
     },
   });
   assert.deepEqual(editCalls, [{ topicId: 800, messageId: 42, text: 'BL-484 needs your approval...\n-- Rejected: bad scope' }]);
@@ -2110,8 +2110,14 @@ function closingFixtureAdapters(overrides = {}) {
       overrides.editApprovalAskMessage ??
       (async (topicId, messageId, text) => {
         editCalls.push({ topicId, messageId, text });
-        return true;
+        return { success: true };
       }),
+    // BL-496: pass through only when the test actually supplies one - an
+    // absent field means "use closeApprovalAskIfPossible's own production
+    // default", the exact posture every other optional PollAdapters field
+    // already has.
+    waitForAskCloseRetry: overrides.waitForAskCloseRetry,
+    askCloseRetryBudget: overrides.askCloseRetryBudget,
     editCalls,
   };
 }
@@ -2164,7 +2170,7 @@ test('recordApprovalDecisionAndClose: a decision that was NOT actually pending (
 test('recordApprovalDecisionAndClose: a failed message edit is logged and does not throw - the decision recording still succeeded', async () => {
   const adapters = closingFixtureAdapters({
     readApprovalAskMessage: async () => ({ topicId: 800, messageId: 999, text: 'BL-484 needs your approval...' }),
-    editApprovalAskMessage: async () => false,
+    editApprovalAskMessage: async () => ({ success: false, error: 'Bad Request: message to edit not found' }),
   });
   const originalErrorWrite = process.stderr.write;
   const errors = [];
@@ -2191,6 +2197,134 @@ test('recordApprovalDecisionAndClose: readApprovalAskMessage/editApprovalAskMess
     0
   );
   assert.equal(changed, true);
+});
+
+// ── BL-496: the ask-close's own bounded, retry_after-honouring retry ─────
+
+test('BL-496 ask-close-rate-limit-01: a non-rate-limit rejection is attempted exactly once and logs the real reason, never retried', async () => {
+  let attempts = 0;
+  const waits = [];
+  const adapters = closingFixtureAdapters({
+    readApprovalAskMessage: async () => ({ topicId: 800, messageId: 999, text: 'BL-484 needs your approval...' }),
+    editApprovalAskMessage: async () => {
+      attempts += 1;
+      return { success: false, error: 'Bad Request: message to edit not found' };
+    },
+    waitForAskCloseRetry: async (ms) => {
+      waits.push(ms);
+    },
+  });
+  const originalErrorWrite = process.stderr.write;
+  const errors = [];
+  process.stderr.write = (chunk) => {
+    errors.push(chunk);
+    return true;
+  };
+  try {
+    await recordApprovalDecisionAndClose(adapters, 'BL-484', { kind: 'approved' }, 0);
+  } finally {
+    process.stderr.write = originalErrorWrite;
+  }
+
+  assert.equal(attempts, 1, 'expected exactly one edit attempt for a non-rate-limit rejection');
+  assert.deepEqual(waits, [], 'expected no wait requested - a non-rate-limit failure is never retried');
+  assert.ok(
+    errors.some((e) => e.includes('BL-484') && e.includes('Bad Request: message to edit not found')),
+    `expected the logged failure to include the real rejection reason, got: ${JSON.stringify(errors)}`
+  );
+});
+
+test('BL-496 ask-close-rate-limit-02: a rate-limited edit waits the told-you-so retry-after and retries until it succeeds', async () => {
+  let attempts = 0;
+  const waits = [];
+  const adapters = closingFixtureAdapters({
+    readApprovalAskMessage: async () => ({ topicId: 800, messageId: 999, text: 'BL-484 needs your approval...' }),
+    askCloseRetryBudget: 3,
+    editApprovalAskMessage: async (topicId, messageId, text) => {
+      attempts += 1;
+      if (attempts < 3) {
+        return { success: false, retryAfterSeconds: 3 };
+      }
+      adapters.editCalls.push({ topicId, messageId, text });
+      return { success: true };
+    },
+    waitForAskCloseRetry: async (ms) => {
+      waits.push(ms);
+    },
+  });
+
+  const changed = await recordApprovalDecisionAndClose(adapters, 'BL-484', { kind: 'approved' }, 0);
+
+  assert.equal(changed, true);
+  assert.equal(attempts, 3, 'expected 3 total edit attempts (2 failed + 1 succeeded)');
+  assert.deepEqual(waits, [3000, 3000], 'expected a 3-second wait requested before each of the 2 retries');
+  assert.equal(adapters.editCalls.length, 1, 'expected the message finally edited on the successful attempt');
+});
+
+test('BL-496 ask-close-rate-limit-03: a persistently rate-limited edit stops at its bounded budget, logs the undelivered close, and never throws', async () => {
+  let attempts = 0;
+  const waits = [];
+  const adapters = closingFixtureAdapters({
+    readApprovalAskMessage: async () => ({ topicId: 800, messageId: 999, text: 'BL-484 needs your approval...' }),
+    askCloseRetryBudget: 3,
+    editApprovalAskMessage: async () => {
+      attempts += 1;
+      return { success: false, retryAfterSeconds: 3 };
+    },
+    waitForAskCloseRetry: async (ms) => {
+      waits.push(ms);
+    },
+  });
+  const originalErrorWrite = process.stderr.write;
+  const errors = [];
+  process.stderr.write = (chunk) => {
+    errors.push(chunk);
+    return true;
+  };
+  let changed;
+  try {
+    changed = await recordApprovalDecisionAndClose(adapters, 'BL-484', { kind: 'approved' }, 0);
+  } finally {
+    process.stderr.write = originalErrorWrite;
+  }
+
+  assert.equal(changed, true, 'expected the decision recording to still succeed despite the undelivered close');
+  assert.equal(attempts, 3, 'expected exactly the bounded budget of attempts, never more');
+  assert.deepEqual(waits, [3000, 3000], 'expected a wait only BETWEEN attempts, never after the last one');
+  assert.ok(
+    errors.some((e) => e.includes('BL-484') && /rate.?limit/i.test(e)),
+    `expected a loud undelivered-close warning naming the rate limit, got: ${JSON.stringify(errors)}`
+  );
+});
+
+test('BL-496 ask-close-rate-limit-04: three decided asks each rate-limited once then succeeding all close in one burst', async () => {
+  async function closeOne(ticketId) {
+    const waits = [];
+    let attempts = 0;
+    const adapters = closingFixtureAdapters({
+      readApprovalAskMessage: async () => ({ topicId: 800, messageId: 999, text: `${ticketId} needs your approval...` }),
+      askCloseRetryBudget: 3,
+      editApprovalAskMessage: async (topicId, messageId, text) => {
+        attempts += 1;
+        if (attempts === 1) {
+          return { success: false, retryAfterSeconds: 2 };
+        }
+        adapters.editCalls.push({ topicId, messageId, text });
+        return { success: true };
+      },
+      waitForAskCloseRetry: async (ms) => {
+        waits.push(ms);
+      },
+    });
+    await recordApprovalDecisionAndClose(adapters, ticketId, { kind: 'approved' }, 0);
+    return adapters.editCalls;
+  }
+
+  const results = await Promise.all(['BL-491', 'BL-492', 'BL-493'].map(closeOne));
+
+  for (const [i, editCalls] of results.entries()) {
+    assert.equal(editCalls.length, 1, `expected ${['BL-491', 'BL-492', 'BL-493'][i]} finally edited exactly once`);
+  }
 });
 
 // ── pollAndForward: Agent Questions topic reply + poll_answer dispatch — BL-466 ──
