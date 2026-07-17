@@ -89,3 +89,26 @@ test('BL-487: a fixture root with no swarmforge/scripts at all (the real CLI mis
 
   assert.deepEqual(result, {});
 });
+
+// BL-487 hardening: the function's own docstring names THREE tolerated
+// failure modes - "bb missing, a torn/non-JSON stdout, a script error" -
+// but every test above only exercises a non-zero bb EXIT (the missing-
+// script-file case above genuinely exits non-zero with stderr, since `bb
+// <nonexistent path>` errors immediately - confirmed empirically). None
+// drove the exit-0-but-garbage-stdout path, so the JSON.parse(stdout)
+// call inside the try/catch was never actually reached with a failing
+// parse - only ever with well-formed JSON or never at all. Per
+// engineering.prompt's CLI-failure-path rule (a wiring test over a
+// shelled-out CLI must drive its documented failure contract, not only
+// the happy path), replace the real pipeline_stage_cli.bb with a fake
+// script that exits 0 but prints non-JSON garbage, proving the parse
+// failure alone - independent of any process/exit failure - still
+// degrades gracefully rather than throwing into the concierge tick.
+test('BL-487: a CLI that exits 0 but prints non-JSON garbage degrades gracefully to an empty map, never throws', async () => {
+  const root = mkFixtureRoot();
+  fs.writeFileSync(path.join(root, 'swarmforge', 'scripts', 'pipeline_stage_cli.bb'), '(println "not valid json {")\n');
+
+  const result = await readLiveRoleHeldTickets(root);
+
+  assert.deepEqual(result, {});
+});
