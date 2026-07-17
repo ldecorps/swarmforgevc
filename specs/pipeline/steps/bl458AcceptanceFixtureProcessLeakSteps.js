@@ -197,6 +197,10 @@ function registerSteps(registry) {
         // touches the real /tmp as a side effect of a scenario that is
         // only about the fixture reaper.
         SWARMFORGE_SANDBOX_SWEEP_ROOT: path.join(ctx.reapProjectRoot, '.no-sandbox-sweep'),
+        // BL-486: isolates the orphan-agent-process reaper, also wired into
+        // the SAME tick - never scans the real /proc table as a side
+        // effect of a scenario that is only about the fixture reaper.
+        SWARMFORGE_ORPHAN_REAP_CANDIDATE_PIDS: '',
       },
     });
     await new Promise((resolve) => setTimeout(resolve, 300));

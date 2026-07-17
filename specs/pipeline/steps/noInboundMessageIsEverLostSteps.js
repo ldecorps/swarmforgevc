@@ -20,22 +20,10 @@ const { pollAndForward, runPollCycle, offsetAfterDelivery } = require(
 );
 const { ingestTelegramInboundMessage } = require(path.join(__dirname, '..', '..', '..', 'extension', 'out', 'bridge', 'bridgeServer'));
 const { appendOperatorEvent } = require(path.join(__dirname, '..', '..', '..', 'extension', 'out', 'bridge', 'operatorEventQueue'));
+const { OPERATOR_RUNTIME_BB_FILES } = require('./lib/operatorRuntimeBbFixtureFiles');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const SWARM_SCRIPTS = path.join(REPO_ROOT, 'swarmforge', 'scripts');
-const OPERATOR_RUNTIME_BB_FILES = [
-  'operator_lib.bb',
-  'operator_runtime.bb',
-  'telegram_topic_lib.bb',
-  'support_lib.bb',
-  'support_thread_store.bb',
-  'operator_memory_lib.bb',
-  'operator_memory_store.bb',
-  'ticket_status_lib.bb',
-  'operator_ask.bb',
-  'handoff_lib.bb',
-  'daemon_alarm_lib.bb',
-];
 
 const PRINCIPAL_ID = 111;
 
@@ -116,7 +104,7 @@ function registerSteps(registry) {
     ctx.tickProcess = spawn(
       'bb',
       [path.join(ctx.runtimeTarget, 'swarmforge', 'scripts', 'operator_runtime.bb'), ctx.runtimeTarget, '--tick-once'],
-      { env: { ...process.env, OPERATOR_SKIP_LAUNCH: '1', OPERATOR_EVENTS_LOCK_TEST_HOLD_MS: '200' } }
+      { env: { ...process.env, OPERATOR_SKIP_LAUNCH: '1', OPERATOR_EVENTS_LOCK_TEST_HOLD_MS: '200', SWARMFORGE_ORPHAN_REAP_CANDIDATE_PIDS: '' } }
     );
     ctx.tickExit = new Promise((resolve) => ctx.tickProcess.on('exit', resolve));
   });
@@ -258,7 +246,7 @@ function registerSteps(registry) {
   registry.define(/^the front desk reconciles its threads against its queue$/, (ctx) => {
     const { execFileSync } = require('node:child_process');
     execFileSync('bb', [path.join(ctx.runtimeTarget, 'swarmforge', 'scripts', 'operator_runtime.bb'), ctx.runtimeTarget, '--tick-once'], {
-      env: { ...process.env, OPERATOR_SKIP_LAUNCH: '1' },
+      env: { ...process.env, OPERATOR_SKIP_LAUNCH: '1', SWARMFORGE_ORPHAN_REAP_CANDIDATE_PIDS: '' },
       encoding: 'utf8',
     });
     ctx.queuedText = queuedEventsText(ctx.runtimeTarget);
