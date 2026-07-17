@@ -1,77 +1,128 @@
 id: BL-513
-title: "Pipeline board LINKS section: list only the grid tickets, in plain alphabetical order (supersedes BL-506's most-recent-first)"
+title: "Pipeline board LINKS: link EVERY ticket shown on the board message (grid + parked + recently-closed + root-intake), alphabetically, each link resolving to the ticket's CURRENT backlog folder — and re-post the pinned board when a link's path changes"
 milestone: M8
 type: feature
 epic: ""
 priority: 10
 direction: human-requested
 depends_on: [BL-506]
-source: "Human directive relayed in-session 2026-07-18: 'in the LINKS section, put only the YAMLs for the tickets shown on the message, in alphabetical order.' Specifier asked and the human chose 'Supersede: grid-only, alphabetical' over keeping BL-506's most-recent-first ordering. BL-506 was ALREADY QA-approved (bcbae0426f) and integrating when the directive arrived, so it could not be amended in-flight; this new ticket carries out the supersession."
+source: "Human directive relayed in-session 2026-07-18, in TWO parts. (1) 'in the LINKS section, put only the YAMLs for the tickets shown on the message, in alphabetical order.' (2) Follow-up: 'the links point to the yamls in the wrong places as the tickets might not be in the paused folder anymore (might be active or done).' On the follow-up the specifier asked what the link fix should cover and the human chose 'Current folder, all shown links' — every link the board shows resolves to the ticket's ACTUAL current folder, keeping done/parked links reachable. That REVERSES this ticket's original grid-only reading of 'shown on the message': the board MESSAGE shows the grid PLUS the parked / recently-closed / root-intake lists, so 'the tickets shown on the message' means all of them, not the grid alone."
 
 notes: |
-  WHY A NEW TICKET, not a BL-506 amendment: the human's supersede decision arrived while BL-506
-  (LINKS most-recent-first, numeric-aware, all four sources) was ALREADY past the final QA gate and
-  integrating (QA-approved bcbae0426f, merge-up broadcast sent). An approved, integrating parcel
-  cannot be amended in-flight, so BL-506 ships as-is and THIS ticket supersedes its ordering. Land
-  order therefore matters: depends_on BL-506 (both edit the SAME buildLinks function — never run
-  concurrently).
+  AMENDED IN-FLIGHT 2026-07-18 (was 'grid-only, alphabetical'). This ticket was promoted to active
+  and dispatched to the coder as "links grid-only+alpha" (commit 86795be1). Before the coder built
+  the grid-only version the human's follow-up directive corrected the interpretation, so the scope
+  below REPLACES the grid-only one. Coder: merge `main`, RE-READ this YAML and its feature file, and
+  build against THIS spec — not the version you were originally handed. (Constitution "Amending An
+  In-Flight Ticket's Spec".)
+
+  WHAT "SHOWN ON THE MESSAGE" ACTUALLY MEANS: the board message renders the GRID (active pipeline
+  rows) AND three below-grid lists — parked, recently-closed, root-intake. Every ticket in ANY of
+  those is "shown on the message" and gets a link. The original grid-only reading dropped the parked
+  / recently-closed / root-intake link sources; that is now WRONG — keep all four sources (this is
+  BL-506's set; the net change from BL-506 is ORDER + PATH-correctness below, NOT the set).
 
   THE CHANGE (behaviour pinned in the feature):
-    1. LINKS include ONLY the tickets shown on the board GRID (the active pipeline rows rendered in
-       the board message). The parked, recently-closed, and root-intake link sources that buildLinks
-       currently merges in (and that BL-506 just ordered) are DROPPED from LINKS entirely.
-    2. Order the remaining grid links ALPHABETICALLY (lexicographic, A->Z) by id — plain string
-       order, replacing BL-506's most-recent-first numeric comparator. [Flagged for human sign-off:
-       literal alphabetical is NOT numeric-aware, so "BL-1000" sorts ABOVE "BL-999" lexicographically;
-       the active grid is small/same-width today so this only bites past the 4-digit boundary — easy
-       to flip to numeric if the human prefers. See approval_context.]
+    1. SET — LINKS list EVERY ticket shown anywhere on the board message: the grid rows PLUS the
+       parked, recently-closed, and root-intake lists. Do NOT go grid-only; do NOT drop any source.
+    2. ORDER — order the whole link list ALPHABETICALLY (lexicographic, A->Z) by id, replacing
+       BL-506's most-recent-first comparator. [Flagged for human sign-off: literal alphabetical is
+       NOT numeric-aware, so "BL-1000" sorts ABOVE "BL-999" lexicographically; the boards are small
+       and same-width today so this only bites past the 4-digit boundary — easy to flip to numeric if
+       the human prefers. See approval_context.]
+    3. PATH — each link must resolve to the folder the ticket is ACTUALLY in RIGHT NOW: an active
+       ticket -> backlog/active/<file>, a paused ticket -> backlog/paused/<file>, a closed ticket ->
+       backlog/done/<file>, a root-intake item -> backlog/<file>. A link must never point at a folder
+       the ticket has left (the reported defect: a paused/-path link for a ticket now in active/ or
+       done/). If the same id transiently appears in more than one folder (a stale duplicate left
+       during promotion/close), the link resolves to the AUTHORITATIVE folder — active wins over
+       paused wins over done — never a stale copy.
+    4. FRESHNESS — the pinned board must RE-POST when a shown ticket's link PATH changes, even when
+       the rest of the visible body is otherwise unchanged. Today the board's change-gate skips a
+       tick as "unchanged" whenever the body signature is unchanged, and that signature deliberately
+       EXCLUDES the link list (see SCOPE); so a folder move / file rename that changes a link's path
+       but not the grid/list body is silently NOT re-posted, and the pinned message keeps the stale
+       link. That is the root of the "links point to the wrong places" report.
 
-  Everything else unchanged: the grid, the below-grid lists, the link TEXT/format, and BL-502's
-  link-budget/overflow behaviour (budgetPipelineBoardLinks / "+N more"). Note the budget now trims
-  from the END of an alphabetical list, so the highest-id grid tickets are dropped first under budget
-  pressure — acceptable since LINKS is now grid-only (a small set that rarely hits the budget).
+  Everything else unchanged: the grid, the below-grid LISTS themselves, the link TEXT/format, and
+  BL-502's link-budget/overflow behaviour (budgetPipelineBoardLinks / "+N more"). The budget now
+  trims from the END of an alphabetical list, so the highest-id links drop first under budget
+  pressure (acceptable; note it in tests).
 
-  SCOPE (verify the live path at build):
-    - extension/src/concierge/pipelineBoard.ts buildLinks (~L357-364): (a) narrow the link SET to the
-      grid tickets only — drop the parked / recently-closed / root-intake sources from LINKS; confirm
-      which of the four merged sources correspond to the rendered GRID rows before cutting (grep the
-      board render to see exactly which set is "shown on the message"); (b) replace BL-506's
-      most-recent-first comparator with a plain a.id.localeCompare(b.id) ascending sort. A small pure
-      helper, unit + acceptance testable without booting VS Code.
-    - Update the pipelineBoard.test.js and acceptance fixtures that BL-506 set to pin most-recent-first
-      LINKS order, and any that assert the now-dropped non-grid link sources, so this fix does not just
-      move the defect into a stale expectation (grep pipelineBoard.test.js + the BL-506 feature/steps).
+  SCOPE (verify the live path at build — grep before editing, layers may have moved):
+    - extension/src/concierge/pipelineBoard.ts:
+        * buildLinks (~L381-395): KEEP all four sources (linksFromRows + linksFromParked +
+          linksFromRecentlyClosed + linksFromRootIntake); replace compareLinksMostRecentFirst with a
+          plain ascending a.id.localeCompare(b.id). (compareLinksMostRecentFirst may become dead —
+          the cleaner removes it if so.)
+        * linkPathFor (~L250-255) + PipelineBoardTicketMeta.location (~L65-69): location is currently
+          only 'active' | 'paused'. Add 'done' so a closed ticket's meta can resolve to
+          backlog/done/<file> the way linksFromRecentlyClosed already hardcodes; keep the guard that
+          returns undefined (no broken link) when filename/location are missing.
+    - extension/src/concierge/conciergeTick.ts buildTicketMetaLookup (~L407-416): it loads
+      folders.active THEN folders.paused into one map, so a stale id present in BOTH ends up
+      location:'paused' even when it is an active grid row (paused overwrites active) — the collision
+      that yields a paused link for an active ticket. Make active AUTHORITATIVE over paused, and add a
+      done pass so closed tickets carry location:'done'. (folders.done is already loaded every tick.)
+    - extension/src/concierge/pipelineBoardSync.ts (~L280) contentSignature = renderPipelineBoardBody:
+      fold the rendered LINK paths (or the whole links render) into the content signature so a
+      link-path change is a real content change and triggers a re-post. This directly reverses
+      BL-462's exclusion (pipelineBoard.ts ~L502-508), whose comment claims "the link list is fully
+      DERIVED from the same rows/parked/rootIntake/recentlyClosed data already in the signature ...
+      so omitting it here cannot hide a real content change" — that claim is FALSE: a link path is
+      backlog/{location}/{filename}, and neither the real filename nor the folder is present in the
+      body signature (which keys on id + stage column + TITLE-derived slug), so a path change CAN and
+      does hide behind an unchanged body. Keep the footer timestamp OUT of the signature as today.
+    - Update pipelineBoard.test.js + the acceptance fixtures/steps BL-506 set to pin most-recent-first
+      order and any that assert grid-only / the excluded-links signature, so this fix does not just
+      move the defect into a stale expectation (grep pipelineBoard.test.js and the BL-506 feature/steps).
 
-  ORTHOGONALITY: shares extension/src/concierge/pipelineBoard.ts (buildLinks) with BL-506 — NOT
-  orthogonal; depends_on BL-506 and must land after it, never concurrently. Also check BL-507/BL-508
-  (board tickets) for buildLinks overlap before promoting.
+  ORTHOGONALITY (COORDINATOR — read before/while this is active): this now touches pipelineBoard.ts,
+  conciergeTick.ts, AND pipelineBoardSync.ts. BL-507 (drop-coordinator-column) and BL-508
+  (updated-at-uk-time) are BOTH active and BOTH edit pipelineBoard.ts — three board tickets on the
+  same file concurrently. These are NOT orthogonal; expect merge/rework. Sequence them (let one land,
+  then rebase the others) rather than racing all three through the pipeline at once.
 
 acceptance:
-  # Observable contract: the LINKS section lists ONLY the tickets shown on the board grid (non-grid
-  # sources — parked / recently-closed / root-intake — get no link), ordered in plain alphabetical
-  # (lexicographic) id order A->Z (so "BL-1000" sorts above "BL-999"). Grid, below-grid lists, link
-  # text/format, and BL-502's link budget are unchanged.
+  # Observable contract: the LINKS section lists EVERY ticket shown on the board message (grid +
+  # parked + recently-closed + root-intake — none dropped), ordered alphabetically (lexicographic)
+  # A->Z by id (so "BL-1000" sorts above "BL-999"); each link resolves to the ticket's CURRENT folder
+  # (active/paused/done, or root for intake), preferring the authoritative folder for a stale
+  # cross-folder duplicate; and the pinned board re-posts when a shown ticket's link path changes even
+  # if the rest of the body is unchanged. Grid, below-grid lists, link text/format, and BL-502's link
+  # budget are otherwise unchanged.
   feature: specs/features/BL-513-pipeline-board-links-grid-only-alphabetical.feature
 
 # QA end-to-end procedure (verify the scenarios hold in the live swarm):
 #   1. Build the extension (npm run compile in extension/, or npm test which compiles first).
 #   2. In-process, compute the board over a synthetic backlog whose GRID shows a few active tickets
-#      plus parked / recently-closed / root-intake entries NOT on the grid, with a real repoBaseUrl;
-#      assert the rendered LINKS contain only the grid tickets (no link for the non-grid entries) and
-#      are ordered alphabetically A->Z, with "BL-1000" appearing before "BL-999".
-#   3. Render over the CURRENT live backlog and confirm the LINKS section now lists only the grid
-#      tickets in alphabetical order (not BL-506's most-recent-first, and no parked/closed/intake links).
+#      AND that has parked, recently-closed(done), and root-intake entries, with a real repoBaseUrl.
+#      Assert every shown ticket has a link (grid + parked + closed + intake), the links are ordered
+#      alphabetically A->Z (with "BL-1000" before "BL-999"), and each href path matches the ticket's
+#      real folder: backlog/active/… for an active id, backlog/paused/… for a parked id,
+#      backlog/done/… for a closed id, backlog/… for a root-intake id.
+#   3. Duplicate-folder case: place the same id in active/ AND leave a stale copy in paused/; assert
+#      its link resolves to backlog/active/… (authoritative), not the stale paused path.
+#   4. Freshness: render and post the board; then MOVE a shown ticket's file to a different folder (or
+#      rename it) without changing anything else visible; render again and assert the board RE-POSTS
+#      with the corrected link path (not skipped-unchanged with a stale link).
+#   5. Render over the CURRENT live backlog and confirm the LINKS section lists all shown tickets in
+#      alphabetical order with each link pointing at the ticket's real current backlog file.
 
-human_approval: approved
+human_approval: pending
 approval_context: >
-  Carrying out your instruction to make the pipeline-board LINKS section list only the tickets shown
-  on the board, in alphabetical order — superseding BL-506 (which had just shipped LINKS most-recent
-  first across all link sources, so this reverses that ordering and drops the non-grid link sources).
-  Two things for your sign-off: (a) "alphabetical" is spec'd as LITERAL lexicographic order, which is
-  NOT numeric-aware — so once any id reaches four digits, "BL-1000" sorts ABOVE "BL-999". The active
-  grid is small and same-width today so it won't bite yet, but say the word if you'd actually prefer
-  numeric order (BL-999 then BL-1000). (b) "tickets shown on the message" is read as the active
-  pipeline GRID rows — so parked, recently-closed, and root-intake links are removed from the LINKS
-  section entirely. Tell me if you meant a different set.
+  This AMENDS BL-513 after your follow-up. Your first instruction ("only the YAMLs for the tickets
+  shown on the message, alphabetical") I had originally read as grid-only; your follow-up ("links
+  point to the wrong places — tickets might be active or done", then "current folder, all shown
+  links") makes clear "shown on the message" means everything the board renders — the grid AND the
+  parked / recently-closed / root-intake lists below it. So the LINKS section now keeps a link for
+  every ticket shown anywhere on the board (NOT grid-only, reversing my earlier reading), still
+  ordered alphabetically, and each link now resolves to the ticket's CURRENT folder
+  (active/paused/done) so it never points at a folder the ticket has left. I also fold in the actual
+  cause of the stale links — the pinned board's change-gate ignores the link list, so a folder move
+  is silently not re-posted. Two things for your sign-off, unchanged from before: (a) "alphabetical"
+  is LITERAL lexicographic, so once ids hit four digits "BL-1000" sorts ABOVE "BL-999" — say the word
+  if you want numeric order instead. (b) I'm keeping all four link sources (grid + parked +
+  recently-closed + root-intake); tell me if you actually wanted a narrower set.
 
 mutation_cost: low
