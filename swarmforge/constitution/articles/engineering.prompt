@@ -396,9 +396,20 @@
   vitest.related=false (the tests `require('../out/..')` in CommonJS, which
   Vitest's `related` module-graph cannot map). perTest runs only the tests
   that cover each mutant (~28 vs the whole ~1150-test suite before). Still
-  scope `--mutate` to the parcel's changed files. The old 'off' + command-
-  runner, full-suite-per-mutant tradeoff (which pushed a 4-file pass past 6
-  hours) is RETIRED — do not reintroduce the command runner.
+  scope `--mutate` to the parcel's changed files — but to their COMPILED
+  `out/**/*.js` paths, NEVER the `src/**/*.ts` sources. The tests
+  `require('../out/..')`, so `--mutate src/…` (or any `.ts`-scoped `--mutate`)
+  mutates a file that NO test loads and silently reports 0% coverage / 0
+  killed — indistinguishable from a genuine gap, so it reads as a BL-446-class
+  tool defect when it is really an operator scoping error. `stryker.config.json`
+  already defaults `mutate` to `out/**/*.js`; a hand-passed `--mutate` must stay
+  inside `out/`. The old 'off' + command-runner, full-suite-per-mutant tradeoff
+  (which pushed a 4-file pass past 6 hours) is RETIRED — do not reintroduce the
+  command runner. (BL-387, 2026-07-17: a hardener `--mutate src/` scored 0/73
+  killed / 0% coverage on pipelineReviewOracle.ts while hand-mutation caught the
+  same mutants fine under plain vitest; the confirmed root cause was the
+  src/-vs-out/ `--mutate` scope, NOT a Stryker/BL-446 tool defect nor a stale
+  incremental cache.)
 - The Stryker sandbox copies only the mutated project directory (`extension/`);
   it does NOT include ANY sibling path that lives outside that root. When a test
   (or the code under test) resolves a runtime path into a repo-root sibling —
