@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=886cef264e258fa9a713b8263ee69140de47d3f47e147e734e58dfc42bdc0b86
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-07-17T11:40:08.208914990Z","feature_name":"the swarm auto-reaps orphaned SwarmForge agent processes, and never a live agent","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-486-reap-orphaned-agent-processes.feature","background_hash":"6de432d2dc90f2991d20ecbd8e762604fb8537ff3a84c08d265adf407e69535a","implementation_hash":"unknown","scenarios":[{"index":0,"name":"an orphaned agent pid is reaped only when it clears every safety gate, and the live-window-set exclusion wins first","scenario_hash":"6056781702992e810ddc16d49e2364f659ef1d5cd4654eeabee65e53d110bad9","mutation_count":36,"result":{"Total":36,"Killed":36,"Survived":0,"Errors":0},"tested_at":"2026-07-17T11:40:08.208914990Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: the swarm auto-reaps orphaned SwarmForge agent processes, and never a live agent
 
   # Onboarding / second-swarm bring-up DRY-RUNS (e.g. FES) launch claude agents
