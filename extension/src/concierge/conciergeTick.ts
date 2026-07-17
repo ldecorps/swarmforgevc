@@ -947,6 +947,15 @@ function withRetryableTransitionsHeldBack(curr: EventStreamSnapshot, unrouted: R
 // never consults it on those branches) or the "should not happen within one
 // tick" case of a ticket absent from every folder (mirrors
 // syncIconForBacklogId's own folder-undefined guard).
+// BL-493 (cleaner, CRAP budget): resolves an epic id to its human title,
+// falling back to the id itself when the epic has no documented title yet
+// (the 'undocumented-epic' case) - extracted from ticketRouteContextFor
+// below purely to keep that function's own CRAP under threshold, mirroring
+// epicUpdateText's own extraction above for the identical reason.
+function epicTitleFor(epic: string | undefined, epicDefinitions: Record<string, EpicDefinition>): string | undefined {
+  return epic ? epicDefinitions[epic]?.title ?? epic : undefined;
+}
+
 function ticketRouteContextFor(event: SwarmEvent, folders: BacklogFoldersSnapshot, epicDefinitions: Record<string, EpicDefinition>): TicketRouteContext | undefined {
   // BL-493/BL-358: only a ticket lifecycle transition (TaskStarted/
   // TaskCompleted) ever collapses into the ticket's status line -
@@ -964,8 +973,7 @@ function ticketRouteContextFor(event: SwarmEvent, folders: BacklogFoldersSnapsho
   const type = typeForBacklogId(folders, event.backlogId);
   const humanApproval = humanApprovalForBacklogId(folders, event.backlogId);
   const epic = epicForBacklogId(folders, event.backlogId);
-  const epicTitle = epic ? (epicDefinitions[epic]?.title ?? epic) : undefined;
-  return { epic, epicTitle, iconState: resolveIconState(folder, type, humanApproval) };
+  return { epic, epicTitle: epicTitleFor(epic, epicDefinitions), iconState: resolveIconState(folder, type, humanApproval) };
 }
 
 async function processConciergeEvent(

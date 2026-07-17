@@ -13,11 +13,10 @@
 // comparison instead of event diffing) and the idempotency check (backed by
 // BL-329's own durable record, not a new marker file).
 import { BacklogFolderItem } from './conciergeTick';
-import { RouteAdapters, BacklogTopicMap, TicketRouteContext, routeEvent } from './topicRouter';
+import { RouteAdapters, TicketRouteContext, routeEvent } from './topicRouter';
 import { buildTicketStatusText } from './ticketStatusMessage';
 
 export interface ReconcileAdapters {
-  getTopicMap: () => BacklogTopicMap;
   // True when this ticket's status message has already been brought to its
   // completed state (a 'done' status text matching summaryText already
   // recorded) - the idempotency guard scenario 03 requires.
@@ -34,9 +33,10 @@ export interface ReconcileResult {
 // Callers pass ONLY done tickets (folders.done) - an active/paused ticket
 // is never even offered to this function, a structural guarantee that it
 // is left alone (scenario 04), not a runtime status check that could drift.
-// BL-493: no per-ticket topic exists to gate on anymore (getTopicMap's old
-// per-ticket lookup is retained on the interface for now, unused here) -
-// the ticket's status message targets its epic topic (epic-bound) or the
+// BL-493 (cleaner): no per-ticket topic exists to gate on anymore, so the
+// old per-ticket getTopicMap lookup this function used to gate on is
+// removed from ReconcileAdapters entirely rather than kept unused - the
+// ticket's status message targets its epic topic (epic-bound) or the
 // standing Backlog topic (epic-less, BL-492), both SHARED, standing
 // infrastructure rather than a disposable per-ticket topic, so there is no
 // "never create a topic just to close it" concern left to guard against; a
