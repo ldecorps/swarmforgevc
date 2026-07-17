@@ -1,0 +1,53 @@
+# BL-509 EPIC — SLICES 2 & 3 (parked design; NOT executed by the acceptance runner).
+# This is a .feature.draft: no *.feature glob or the runtime picks it up, so the up-front design is
+# preserved without hard-failing the gate on unbuilt slices (specifier slice-scoping rule, BL-233).
+# When a slice is built, MOVE its scenarios into a live specs/features/BL-509-*.feature in that same
+# parcel, with its step handlers.
+
+Feature: The queued amend-steer is delivered to the specifier, who revises the ticket and re-presents it for approval
+
+  # SLICE 2 — daemon wiring (the runtime-wiring slice; without it slice 1's amend-steer directive is a
+  # DARK consumer-less emit: the ticket sits in 'amending' forever). The reachable seam is the Operator
+  # daemon operator_runtime.bb, which already partitions TELEGRAM_BL_TOPIC_* events and already shells
+  # role injectors (e.g. route_backlog_to_coder.sh) — it co-runs with the swarm so swarm_handoff.sh works
+  # there, unlike the headless bot. Add a sweep branch: for an amend-steer directive, inject a `note` to
+  # the SPECIFIER (via swarm_handoff.sh / inject_note_to_role.sh) carrying the backlog id + the human's
+  # steering text, INSTEAD OF the current operator-decide.js `approve` path consuming it as an approval
+  # answer. Scope: swarmforge/scripts/operator_runtime.bb (+ operator_lib.bb partition), a small injector
+  # script if inject_note_to_role.sh cannot carry the text within the 80-char note cap (long steer -> file
+  # + short pointer note, per the note-handoff cap rule).
+
+  # BL-509 amend-steers-ticket-04
+  Scenario: An amend-steer directive is delivered to the specifier as a handoff note
+    Given an amend-steer directive for ticket "BL-901" carrying steering text
+    When the operator runtime processes the directive
+    Then the specifier's mailbox receives a note naming ticket "BL-901"
+    And the note carries the human's steering text
+
+  # BL-509 amend-steers-ticket-05
+  Scenario: An amend-steer directive is not consumed as an approval answer
+    Given an amend-steer directive for a ticket
+    When the operator runtime processes the directive
+    Then no approval-answer reply is composed for the ticket
+
+  # SLICE 3 — specifier revise-and-re-present loop (mostly a swarmforge/roles/specifier.prompt addition:
+  # how to handle an inbound amend-steer note). On receiving the note the specifier revises the paused
+  # ticket's spec + feature file per the human's text, flips human_approval from 'amending' back to
+  # 'pending' (which re-fires the ApprovalRequested ask on the not-pending -> pending transition — schema
+  # BL-357 — so no new re-present mechanism is needed), commits to main, and notifies the coordinator.
+  # The revision follows the existing "amending an in-flight ticket" discipline; for a still-paused ticket
+  # it is a plain edit + re-flag. Scope: swarmforge/roles/specifier.prompt (a new "Amend-steer intake"
+  # section); relies on the existing pending-transition detector for the re-ask.
+
+  # BL-509 amend-steers-ticket-06
+  Scenario: The specifier revises the ticket per the steer and flips it back to pending
+    Given the specifier receives an amend-steer note for a paused ticket in the "amending" state
+    When the specifier revises the ticket's spec and feature file per the steer
+    Then the ticket's human_approval is flipped from "amending" back to "pending"
+    And the revision is committed to main
+
+  # BL-509 amend-steers-ticket-07
+  Scenario: Flipping the revised ticket back to pending re-presents it for approval
+    Given a revised ticket whose human_approval returns to "pending" from "amending"
+    When the concierge next evaluates approvals
+    Then the ticket is re-presented on the Approvals topic
