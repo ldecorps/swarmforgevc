@@ -1379,7 +1379,18 @@ test('toFoldersSnapshot carries remainingSlices through from the real ticket fil
   assert.deepEqual(snapshot.paused[0].remainingSlices, ['warm-core/break-even tuning']);
 });
 
-test('toFoldersSnapshot leaves humanApproval/epic/type/remainingSlices undefined for a ticket that declares none', () => {
+// BL-480: approvalContext is the SAME class of field as epic/humanApproval
+// above (added to the pick() narrowing, easy to drop silently) - proven the
+// same way, a real fixture file through the real read, not an injected
+// BacklogFolderItem fixture (which would prove nothing about this hop).
+test('toFoldersSnapshot carries approvalContext through from the real ticket file', () => {
+  const target = mkTmp();
+  writeBacklogTicket(target, 'paused', 'BL-1.yaml', 'id: BL-1\ntitle: t\napproval_context: >\n  Sign-off needed here.\n');
+  const snapshot = toFoldersSnapshot(target);
+  assert.equal(snapshot.paused[0].approvalContext, 'Sign-off needed here.');
+});
+
+test('toFoldersSnapshot leaves humanApproval/epic/type/remainingSlices/approvalContext undefined for a ticket that declares none', () => {
   const target = mkTmp();
   writeBacklogTicket(target, 'active', 'BL-1.yaml', 'id: BL-1\ntitle: t\n');
   const snapshot = toFoldersSnapshot(target);
@@ -1387,6 +1398,7 @@ test('toFoldersSnapshot leaves humanApproval/epic/type/remainingSlices undefined
   assert.equal(snapshot.active[0].epic, undefined);
   assert.equal(snapshot.active[0].type, undefined);
   assert.equal(snapshot.active[0].remainingSlices, undefined);
+  assert.equal(snapshot.active[0].approvalContext, undefined);
 });
 
 // ── postOperatorContext (BL-389 scenarios 04/05: a message delivered twice
