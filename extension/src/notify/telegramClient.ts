@@ -260,6 +260,14 @@ export async function sendTelegramPoll(
 export interface EditMessageTextResult {
   success: boolean;
   error?: string;
+  // BL-496: set only on a genuine 429 (callTelegramApi already extracts
+  // it, same field/shape as SendMessageResult's own retryAfterSeconds
+  // origin) - a caller that needs to honour Telegram's told-you-so wait
+  // (the approval-ask close's own bounded retry) reads this rather than
+  // treating a 429 as an ordinary, unclassified failure. Every existing
+  // caller (roster/pipeline-board edit-in-place) reads only `.success`
+  // today, so this addition is purely additive.
+  retryAfterSeconds?: number;
 }
 
 // BL-484: buttons added LAST (after postFn), same existing-callers-
@@ -291,7 +299,7 @@ export async function editMessageText(
   });
   const result = await callTelegramApi(token, 'editMessageText', body, postFn);
   if (!result.success) {
-    return { success: false, error: result.error };
+    return { success: false, error: result.error, retryAfterSeconds: result.retryAfterSeconds };
   }
   return { success: true };
 }
