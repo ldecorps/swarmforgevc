@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=8bd0973a5e7f64ad068523a3c330ba9bd9a0351836e809fa8a15a1a5b0661b1c
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-07-17T12:10:44.410042010Z","feature_name":"the mutation gate excludes tsc's import-helper preamble as structurally-unkillable boilerplate","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-498-mutation-gate-excludes-tsc-import-helpers.feature","background_hash":"544d59117cbb72776880cd57bf5002e8a4382c2f297a38c946db8568ebec593c","implementation_hash":"unknown","scenarios":[{"index":0,"name":"a tsc import-helper shim assignment is excluded from the mutation gate","scenario_hash":"cb0632809421ca9b2ffe1705338ea12f10a92dbb2483972713cfe41603b54e81","mutation_count":4,"result":{"Total":4,"Killed":4,"Survived":0,"Errors":0},"tested_at":"2026-07-17T12:10:44.410042010Z"},{"index":3,"name":"the two pre-existing boilerplate shapes stay excluded (regression)","scenario_hash":"f7bf3aca633a42fe2a0d06dc4b4f5115813ead90c1e416a09983a88b6a7dc645","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-07-17T12:10:44.410042010Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: the mutation gate excludes tsc's import-helper preamble as structurally-unkillable boilerplate
 
   # BL-485 hardening surfaced a third structurally-unkillable boilerplate shape the

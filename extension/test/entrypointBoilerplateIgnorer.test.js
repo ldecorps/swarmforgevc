@@ -417,6 +417,17 @@ for (const helper of TSC_IMPORT_HELPER_NAMES) {
   });
 }
 
+// isTscImportHelperVariableDeclaration's own declarations.length===1 guard short-circuits
+// before ever calling isTscImportHelperDeclarator on a bad shape, so its guard clause
+// (node type / id type) needs direct coverage of its own.
+test('BL-498: isTscImportHelperDeclarator rejects a non-VariableDeclarator node', () => {
+  assert.equal(isTscImportHelperDeclarator({ type: 'NotVariableDeclarator', id: identifierNode('__importStar'), init: tscImportHelperInit('__importStar') }), false);
+});
+
+test('BL-498: isTscImportHelperDeclarator rejects a declarator whose id is not an Identifier', () => {
+  assert.equal(isTscImportHelperDeclarator({ type: 'VariableDeclarator', id: { type: 'ObjectPattern', properties: [] }, init: tscImportHelperInit('__importStar') }), false);
+});
+
 test('BL-498: TSC_IMPORT_HELPER_NAMES is exactly the four import-related helpers this ticket scopes', () => {
   assert.deepEqual([...TSC_IMPORT_HELPER_NAMES].sort(), ['__createBinding', '__importDefault', '__importStar', '__setModuleDefault'].sort());
 });
