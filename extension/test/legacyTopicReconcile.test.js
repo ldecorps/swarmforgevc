@@ -27,6 +27,15 @@ test('isLegacyPerTicketTopicKey: rejects a non-numeric suffix', () => {
   assert.equal(isLegacyPerTicketTopicKey('BL-abc'), false);
 });
 
+test('isLegacyPerTicketTopicKey: rejects a key with a prefix before BL- (anchors the start)', () => {
+  assert.equal(isLegacyPerTicketTopicKey('XBL-123'), false);
+});
+
+test('isLegacyPerTicketTopicKey: rejects a key with a suffix after the digits (anchors the end)', () => {
+  assert.equal(isLegacyPerTicketTopicKey('BL-123X'), false);
+  assert.equal(isLegacyPerTicketTopicKey('BL-123-extra'), false);
+});
+
 test('selectLegacyPerTicketTopics: selects only BL-### entries out of a mixed map', () => {
   const topicMap = { 'BL-1': 101, 'topic-consolidation': 500, BACKLOG: 600, 'BL-2': 102 };
   assert.deepEqual(selectLegacyPerTicketTopics(topicMap), [
