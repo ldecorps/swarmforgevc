@@ -12,6 +12,9 @@
 import { SwarmEvent } from '../events/swarmEventStream';
 import { InlineKeyboardButton } from '../notify/telegramClient';
 import { keyForId } from '../util/inverseLookup';
+import { EditInPlaceMessageAdapters, EditInPlaceMessageState, syncEditInPlaceMessage } from './editInPlaceMessageSync';
+import { TopicIconState } from './topicIcon';
+import { buildTicketStatusText, resolveTicketStatusTarget } from './ticketStatusMessage';
 
 // backlogId -> Telegram forum topic id (message_thread_id) - the reverse
 // key direction of the Front Desk Bot's own {topicId: subjectId} map
@@ -256,12 +259,16 @@ export function decideTopicAction(event: SwarmEvent, topicMap: BacklogTopicMap, 
 // non-ticket key sharing this map). "EPIC — " prefixes the created topic's
 // name so it reads distinctly from a per-ticket topic in Telegram's own
 // topic list.
+export function epicTopicName(epicTitle: string): string {
+  return `EPIC — ${epicTitle}`;
+}
+
 export function decideEpicTopicAction(epicId: string, epicTitle: string, topicMap: BacklogTopicMap, text: string): TopicAction {
   const existingTopicId = topicMap[epicId];
   if (existingTopicId !== undefined) {
     return { kind: 'reuse', topicId: existingTopicId, text };
   }
-  return { kind: 'create', topicName: `EPIC — ${epicTitle}`, text };
+  return { kind: 'create', topicName: epicTopicName(epicTitle), text };
 }
 
 export interface RouteAdapters {
@@ -319,6 +326,30 @@ export interface RouteAdapters {
   // not happen in practice, but degrades safely) simply never gets a
   // closing edit, same as sendApprovalAsk being absent.
   recordApprovalAskMessageId?: (backlogId: string, topicId: number, messageId: number, text: string) => void;
+  // BL-493: resolves (creating on first use) the ONE standing Backlog
+  // topic's id (BL-492's ensureBacklogTopic) - the destination for an
+  // epic-LESS ticket's edit-in-place status message. Mirrors
+  // ensureOperatorTopic/ensureApprovalsTopic's own reuse-or-create shape;
+  // undefined only when creation itself failed, same degrade-to-skipped
+  // posture as every other ensure* adapter above.
+  ensureBacklogTopic: () => Promise<number | undefined>;
+  // BL-493: posts a NEW message and reports its Telegram message_id - the
+  // edit-in-place sibling of sendMessage above (which only ever reports
+  // success/failure, never an id to edit later). Generic over topicId
+  // (never bound to one fixed topic), the same shape
+  // EditInPlaceMessageAdapters.postMessage already requires.
+  postMessage: (topicId: number, text: string) => Promise<number | undefined>;
+  // BL-493: edits an already-posted message in place - the other half of
+  // the edit-in-place pair above.
+  editMessage: (topicId: number, messageId: number, text: string) => Promise<boolean>;
+  // BL-493: reads/writes the per-ticket edit-in-place message identity
+  // (ticketMessageMapStore.ts's ticket-message-map.json) - so a later
+  // lifecycle transition edits the SAME status message rather than posting
+  // a new one. Mirrors getTopicMap/recordTopicId's own read/write pairing
+  // above, one level more specific (per-ticket message identity, not just
+  // per-ticket topic identity).
+  getTicketMessageState: (backlogId: string) => EditInPlaceMessageState | undefined;
+  setTicketMessageState: (backlogId: string, state: EditInPlaceMessageState) => void;
 }
 
 export interface RouteResult {
@@ -326,48 +357,34 @@ export interface RouteResult {
   skipped: boolean;
 }
 
-// BL-299: TaskCompleted gets its OWN routing path, never decideTopicAction's
-// reuse-or-CREATE logic - an item that completed with no topic ever mapped
-// has nothing to summarize and gets no topic created just to immediately
-// close it (a no-op, mirroring routeEvent's own create-failure skip shape).
-// ORDER MATTERS: the summary is posted into the topic BEFORE it closes (a
-// closed topic can no longer be posted into) - close only follows a
-// successful post, never an attempted one.
-async function routeCompletionEvent(event: SwarmEvent, title: string, adapters: RouteAdapters): Promise<RouteResult> {
-  // TaskCompleted is always tagged (diffTaskCompleted only ever fires for a
-  // real backlog id) - this never actually triggers, but keeps the map
-  // lookup below honestly typed rather than asserting past it.
-  if (event.backlogId === null) {
-    return { posted: false, skipped: true };
-  }
-  const topicId = adapters.getTopicMap()[event.backlogId];
-  if (topicId === undefined) {
-    return { posted: false, skipped: true };
-  }
-  const text = completionSummaryText(event, title);
-  const ok = await adapters.sendMessage(topicId, text);
-  if (ok) {
-    adapters.recordMessage(event.backlogId, text);
-    await adapters.closeTopic(topicId);
-  }
-  return { posted: ok, skipped: false };
-}
-
-// BL-358: the untagged-gate twin of routeCompletionEvent above - a
-// NeedsApproval whose gated role holds no ticket has no per-ticket topic to
-// reuse/create (decideTopicAction's whole job), so it goes to the ONE
-// standing Operator topic instead. recordMessage/recordTopicId are
-// deliberately never called here: those serialise into the per-ticket
-// blTopicStore/BacklogTopicMap, and this event belongs to no ticket - the
-// Operator topic's own id is already durably owned by the front-desk bot's
-// separate {topicId: subjectId} map, not this module's.
-async function routeUntaggedGateEvent(event: SwarmEvent, adapters: RouteAdapters): Promise<RouteResult> {
+// BL-358/BL-493: NeedsApproval's own routing path, tagged or not - a role
+// blocked mid-task is asking its OWN question (e.g. "which design should I
+// pick?"), never a ticket lifecycle transition, so it never collapses into
+// the ticket's terse edit-in-place status line (which carries no room for
+// free-text content) - it goes to the ONE standing Operator topic instead,
+// the same destination an untagged gate (holds no ticket) always used.
+// BL-493 (human decision, 2026-07-17): previously a TAGGED NeedsApproval
+// posted into the ticket's own per-ticket topic (decideTopicAction) - now
+// that no per-ticket topic exists, routing it into the generic ticket-
+// status line would silently lose the role's actual question with no
+// human-reachable trace at all (BL-358's own existing contract: the human
+// must be asked the role's question). The standing Operator topic already
+// carries every untagged question; a tagged one differs only in that its
+// text also names the ticket id (messageTextForEvent's own existing
+// backlogId-first identity), keeping the ticket association legible
+// without a second topic. A tagged event's message IS still serialised
+// into that ticket's own durable record (recordMessage) - unlike a
+// genuinely untagged one, which belongs to no ticket to record into.
+async function routeGateEvent(event: SwarmEvent, adapters: RouteAdapters): Promise<RouteResult> {
   const topicId = await adapters.ensureOperatorTopic();
   if (topicId === undefined) {
     return { posted: false, skipped: true };
   }
   const text = messageTextForEvent(event);
   const ok = await adapters.sendMessage(topicId, text);
+  if (ok && event.backlogId !== null) {
+    adapters.recordMessage(event.backlogId, text);
+  }
   return { posted: ok, skipped: false };
 }
 
@@ -388,30 +405,6 @@ async function sendAndRecord(
     adapters.recordMessage(backlogId, text);
   }
   return ok;
-}
-
-// BL-424 regression guard: a ticket that has NEVER been active (a paused
-// ticket awaiting approval before its first promotion) previously got its
-// FIRST-EVER per-ticket topic created as a side effect of the old
-// ApprovalRequested-through-decideTopicAction path (routeApprovalRequestedEvent
-// below no longer touches that path at all). Without a per-ticket topic, BL-424's
-// awaiting-approval icon sync (syncIconForBacklogId, conciergeTick.ts) has
-// nothing to set an icon ON (its own topicId-undefined guard silently no-ops) -
-// exactly the "keep the per-ticket topic-icon awaiting-approval state working"
-// constraint this ticket's own spec calls out. So: ensure the per-ticket topic
-// EXISTS (create-if-missing, mirroring decideTopicAction's own reuse-or-create),
-// but never post a message into it - the ask itself still only ever goes to the
-// standing Approvals topic. A creation failure here is best-effort and never
-// blocks the ask from posting (the icon simply stays unset until a later tick
-// retries, the same degrade-gracefully posture syncIconForBacklogId already has).
-async function ensurePerTicketTopicForIcon(backlogId: string, title: string, adapters: RouteAdapters): Promise<void> {
-  if (adapters.getTopicMap()[backlogId] !== undefined) {
-    return;
-  }
-  const created = await adapters.createTopic(topicNameForItem(backlogId, title));
-  if (created.success && created.topicId !== undefined) {
-    adapters.recordTopicId(backlogId, created.topicId);
-  }
 }
 
 // BL-434: ApprovalRequested's own routing path - replaces the old per-
@@ -444,11 +437,17 @@ async function sendApprovalAskAndRecord(
   return result.success;
 }
 
+// BL-493 (human decision D3): the icon-only per-ticket-topic ensure
+// (formerly ensurePerTicketTopicForIcon here) is DELETED - awaiting-approval
+// already renders in the standing Approvals topic below, so no throwaway
+// per-ticket topic is minted just to hang an icon on, and no awaiting
+// indicator is added to the ticket's epic/Backlog status line either (see
+// ticketStatusMessage.ts's own comment on why 'awaiting-approval' never
+// reaches that builder in practice).
 async function routeApprovalRequestedEvent(event: SwarmEvent, title: string, adapters: RouteAdapters): Promise<RouteResult> {
   if (event.backlogId === null) {
     return { posted: false, skipped: true };
   }
-  await ensurePerTicketTopicForIcon(event.backlogId, title, adapters);
   const topicId = await adapters.ensureApprovalsTopic();
   if (topicId === undefined) {
     return { posted: false, skipped: true };
@@ -461,30 +460,83 @@ async function routeApprovalRequestedEvent(event: SwarmEvent, title: string, ada
   return { posted: ok, skipped: false };
 }
 
-// BL-358/BL-434 (cleaner review): the remaining default path - an
-// ordinary tagged event, or an untagged NeedsApproval - split out of
-// routeEvent so that dispatcher's own branch count (one per event kind)
-// stays flat as new kinds (BL-358's untagged gate, BL-434's Approvals
-// topic) keep getting their own routing path; this is the SAME
-// decideTopicAction-driven reuse-or-create logic routeEvent always ran for
-// the non-TaskCompleted case, unchanged in behavior.
-async function routeTaggedOrUntaggedEvent(event: SwarmEvent, title: string, adapters: RouteAdapters): Promise<RouteResult> {
-  const { backlogId } = event;
-  if (backlogId === null) {
-    return routeUntaggedGateEvent(event, adapters);
+// BL-493: an epic-bound ticket's status message ensures its EPIC topic
+// (create-or-reuse against the SAME BacklogTopicMap decideEpicTopicAction
+// already targets) - never touching its icon here. Icon-on-create for a
+// genuinely NEW epic topic is owned entirely by conciergeTick.ts's own
+// postEpicUpdateIfApplicable/postEpicAction, which conciergeTick.ts's
+// processConciergeEvent now runs BEFORE this routing for every applicable
+// event (TaskStarted/TaskCompleted always precede any other tagged event for
+// the same ticket, so by the time a ticket-status message ever needs the
+// epic topic, either that epic-progress path already created+iconed it, or
+// this call becomes the FIRST creator and simply leaves the icon unset,
+// exactly as syncIconForBacklogId already degrades for a topic with no icon
+// touch yet - never a second, competing icon-setting mechanism here).
+async function ensureEpicTopicId(epicId: string, epicTitle: string, adapters: RouteAdapters): Promise<number | undefined> {
+  const existingTopicId = adapters.getTopicMap()[epicId];
+  if (existingTopicId !== undefined) {
+    return existingTopicId;
   }
-  const action = decideTopicAction(event, adapters.getTopicMap(), title);
-  if (action.kind === 'reuse') {
-    const ok = await sendAndRecord(action.topicId, action.text, backlogId, adapters, action.buttons);
-    return { posted: ok, skipped: false };
-  }
-  const created = await adapters.createTopic(action.topicName);
+  const created = await adapters.createTopic(epicTopicName(epicTitle));
   if (!created.success || created.topicId === undefined) {
+    return undefined;
+  }
+  adapters.recordTopicId(epicId, created.topicId);
+  return created.topicId;
+}
+
+// BL-493: the per-ticket context routeTicketStatusEvent needs and only
+// conciergeTick.ts can resolve (the ticket's epic membership and its
+// CURRENT folder/type/humanApproval-derived lifecycle icon state) - threaded
+// into routeEvent the same way `title` already is, rather than this module
+// reaching into a folder snapshot itself.
+export interface TicketRouteContext {
+  epic?: string;
+  epicTitle?: string;
+  iconState: TopicIconState;
+}
+
+// BL-493: THE new ticket-event routing path - replaces the old per-ticket
+// topic create/reuse (decideTopicAction/routeTaggedOrUntaggedEvent) and the
+// old TaskCompleted summary-then-close (routeCompletionEvent) with ONE
+// mechanism: an edit-in-place status message ("BL-### <glyph> <state> —
+// <title>"), targeting the ticket's epic topic (epic-bound) or the standing
+// Backlog topic (epic-less, BL-492), reused via syncEditInPlaceMessage
+// rather than reinvented. No per-ticket topic is ever created here (BL-493
+// acceptance scenario 04). The persisted {topicId, messageId} is written
+// back regardless of outcome, mirroring syncEditInPlaceMessage's own
+// "advance only on success, otherwise retry against the same stale state"
+// contract.
+async function routeTicketStatusEvent(
+  backlogId: string,
+  title: string,
+  context: TicketRouteContext,
+  adapters: RouteAdapters
+): Promise<RouteResult> {
+  const target = resolveTicketStatusTarget(context.epic);
+  const text = buildTicketStatusText(backlogId, title, context.iconState);
+  const prevState = adapters.getTicketMessageState(backlogId);
+  const editAdapters: EditInPlaceMessageAdapters = {
+    ensureTopic: () =>
+      target.kind === 'epic' ? ensureEpicTopicId(target.epicId, context.epicTitle ?? target.epicId, adapters) : adapters.ensureBacklogTopic(),
+    postMessage: adapters.postMessage,
+    editMessage: adapters.editMessage,
+  };
+  const result = await syncEditInPlaceMessage(text, prevState, editAdapters);
+  adapters.setTicketMessageState(backlogId, result.state);
+  if (result.outcome === 'posted' || result.outcome === 'edited') {
+    adapters.recordMessage(backlogId, text);
+    return { posted: true, skipped: false };
+  }
+  // 'skipped-unchanged' is a SUCCESS (the status line already reflects
+  // reality - nothing to retry), never treated as a failed route.
+  if (result.outcome === 'skipped-unchanged') {
+    return { posted: true, skipped: false };
+  }
+  if (result.outcome === 'failed-no-topic') {
     return { posted: false, skipped: true };
   }
-  adapters.recordTopicId(backlogId, created.topicId);
-  const ok = await sendAndRecord(created.topicId, action.text, backlogId, adapters, action.buttons);
-  return { posted: ok, skipped: false };
+  return { posted: false, skipped: false };
 }
 
 // Adapter-injected: routes one event end to end. NEVER-MAIN-CHAT is a
@@ -493,16 +545,33 @@ async function routeTaggedOrUntaggedEvent(event: SwarmEvent, title: string, adap
 // that can call it without one. When topic creation fails (no supergroup,
 // rate-limited, etc.) the event is skipped - never a fallback post to a
 // main chat that does not exist in this function's adapter surface at all.
-export async function routeEvent(event: SwarmEvent, title: string, adapters: RouteAdapters): Promise<RouteResult> {
-  if (event.type === 'TaskCompleted') {
-    return routeCompletionEvent(event, title, adapters);
-  }
-  // BL-434: routed to the standing Approvals topic - checked before the
-  // untagged-gate branch below too, though ApprovalRequested is always
-  // tagged in practice; this keeps the dispatch order explicit rather than
-  // relying on that invariant holding silently.
+// BL-493: `ticketContext` carries the epic/icon-state resolution only
+// conciergeTick.ts's folder snapshot can supply - every production call for
+// a TaskStarted/TaskCompleted event now provides it (see conciergeTick.ts's
+// ticketRouteContextFor); its absence degrades to a skipped route rather
+// than guessing, the same defensive posture a failed createTopic already
+// has elsewhere in this module.
+export async function routeEvent(event: SwarmEvent, title: string, adapters: RouteAdapters, ticketContext?: TicketRouteContext): Promise<RouteResult> {
+  // BL-434: routed to the standing Approvals topic - checked first, though
+  // ApprovalRequested is always tagged in practice; this keeps the dispatch
+  // order explicit rather than relying on that invariant holding silently.
   if (event.type === 'ApprovalRequested') {
     return routeApprovalRequestedEvent(event, title, adapters);
   }
-  return routeTaggedOrUntaggedEvent(event, title, adapters);
+  // BL-358/BL-493: NeedsApproval never collapses into the ticket's status
+  // line (see routeGateEvent's own comment for why) - tagged or untagged,
+  // it always goes to the standing Operator topic.
+  if (event.type === 'NeedsApproval') {
+    return routeGateEvent(event, adapters);
+  }
+  if (event.backlogId === null) {
+    // TaskStarted/TaskCompleted are always tagged in practice - never
+    // actually reached, but degrades to the Operator topic rather than
+    // guessing if that invariant is ever loosened upstream.
+    return routeGateEvent(event, adapters);
+  }
+  if (!ticketContext) {
+    return { posted: false, skipped: true };
+  }
+  return routeTicketStatusEvent(event.backlogId, title, ticketContext, adapters);
 }

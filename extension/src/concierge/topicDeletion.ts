@@ -8,7 +8,8 @@
 // same "never creates/touches a topic it has no business touching" care).
 import { BacklogFolderItem } from './conciergeTick';
 import { TopicRecord, hasCompletionRecord } from './blTopicStore';
-import { BacklogTopicMap, completionSummaryText } from './topicRouter';
+import { BacklogTopicMap } from './topicRouter';
+import { buildTicketStatusText } from './ticketStatusMessage';
 
 // A ticket's topic is only ever considered for deletion once this many ms
 // have elapsed since its VERIFIED completion - overridable for tests/
@@ -21,8 +22,16 @@ export function topicRetentionWindowMs(rawEnv: string | undefined = process.env.
   return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_RETENTION_WINDOW_MS;
 }
 
-function completionEvent(ticketId: string) {
-  return { type: 'TaskCompleted' as const, backlogId: ticketId, payload: {} };
+// BL-493: the durable "verified complete" marker is now the ticket-status
+// message's own 'done' text (buildTicketStatusText, the SAME text
+// reconcileTopicLifecycle/routeTicketStatusEvent record via recordMessage)
+// - never the old completionSummaryText format, which the current
+// mechanism no longer writes. This keeps a LEGACY per-ticket topic
+// (topicMap still carries a BL-### entry from before BL-493 shipped)
+// eligible for this sweep once its ticket's status message reaches 'done',
+// exactly as before, just matching the new recorded format.
+function completionText(ticketId: string, title: string): string {
+  return buildTicketStatusText(ticketId, title, 'done');
 }
 
 // The verified completion message's OWN timestamp is the ticket's
@@ -70,11 +79,11 @@ export function decideTopicDeletion(
   if (topicId === undefined) {
     return { action: 'keep', reason: 'no-topic' };
   }
-  const completionText = completionSummaryText(completionEvent(ticket.id), ticket.title);
-  if (!hasCompletionRecord(record, completionText) || !recordIsCommitted) {
+  const text = completionText(ticket.id, ticket.title);
+  if (!hasCompletionRecord(record, text) || !recordIsCommitted) {
     return { action: 'keep', reason: 'unverified' };
   }
-  const completedAt = verifiedCompletedAtMs(record, completionText);
+  const completedAt = verifiedCompletedAtMs(record, text);
   if (completedAt === undefined || nowMs - completedAt < retentionWindowMs) {
     return { action: 'keep', reason: 'retention-window' };
   }

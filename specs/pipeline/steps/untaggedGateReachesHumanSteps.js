@@ -46,6 +46,15 @@ function buildAdapters(ctx) {
       closeTopic: async () => true,
       recordMessage: () => {},
       ensureOperatorTopic: async () => OPERATOR_TOPIC_ID,
+      // BL-493: the standing Backlog topic + edit-in-place post/edit pair -
+      // this feature's own scenarios don't assert on ticket-status
+      // routing, but runConciergeTick's own TaskStarted derivation (the
+      // ticket-holding scenario) unconditionally reaches these now.
+      ensureBacklogTopic: async () => 760,
+      postMessage: async () => 9000,
+      editMessage: async () => true,
+      getTicketMessageState: () => undefined,
+      setTicketMessageState: () => {},
     },
     iconAdapters: {
       // BL-342: a safe default for fixtures that predate topic icons and
@@ -101,13 +110,21 @@ function registerSteps(registry) {
     }
   });
 
+  // BL-358/BL-493 (human decision, 2026-07-17): a tagged NeedsApproval no
+  // longer has a per-ticket topic to post into (none is ever created) - it
+  // now asks in the SAME standing Operator topic an untagged gate always
+  // used, with the ticket id folded into the question text itself
+  // (messageTextForEvent's own backlogId-first identity) rather than a
+  // separate topic. This step's own Gherkin wording ("in that ticket's
+  // topic") is now stale prose the specifier should retire/reword - the
+  // invariant it protects (the role's own question reaches the human,
+  // legibly tied to its ticket) still holds and is what this asserts.
   registry.define(/^the human is asked the role's question in that ticket's topic$/, (ctx) => {
-    const topicId = ctx.topicMap[BACKLOG_ID];
-    if (topicId === undefined) {
-      throw new Error(`expected ${BACKLOG_ID} to have a mapped topic, got ${JSON.stringify(ctx.topicMap)}`);
+    if (!ctx.sent.some((m) => m.topicId === OPERATOR_TOPIC_ID && m.text === `NeedsApproval: ${BACKLOG_ID} - ${QUESTION}`)) {
+      throw new Error(`expected the role's question (naming ${BACKLOG_ID}) posted into the standing Operator topic (${OPERATOR_TOPIC_ID}), got ${JSON.stringify(ctx.sent)}`);
     }
-    if (!ctx.sent.some((m) => m.topicId === topicId && m.text === `NeedsApproval: ${BACKLOG_ID} - ${QUESTION}`)) {
-      throw new Error(`expected the role's question posted into ${BACKLOG_ID}'s own topic, got ${JSON.stringify(ctx.sent)}`);
+    if (ctx.created.length !== 0) {
+      throw new Error(`expected no per-ticket topic created for a tagged gate either, got ${JSON.stringify(ctx.created)}`);
     }
   });
 

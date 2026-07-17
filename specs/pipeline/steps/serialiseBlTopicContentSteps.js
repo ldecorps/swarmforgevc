@@ -36,8 +36,9 @@ function mkGitRepo() {
 }
 
 // Real routeEvent, real recordMessage -> real appendMessage - only
-// sendMessage/createTopic are stubbed (the actual Telegram HTTP leg,
-// same boundary BL-320's own acceptance steps draw around sendReply).
+// sendMessage/createTopic/postMessage/editMessage are stubbed (the actual
+// Telegram HTTP leg, same boundary BL-320's own acceptance steps draw
+// around sendReply).
 function realOutboundAdapters(ctx) {
   return {
     getTopicMap: () => ({ [ctx.ticketId]: 42 }),
@@ -46,6 +47,15 @@ function realOutboundAdapters(ctx) {
     sendMessage: async () => true,
     closeTopic: async () => true,
     recordMessage: (backlogId, text) => appendMessage(ctx.target, backlogId, { author: 'swarm', type: 'outbound', text }),
+    ensureOperatorTopic: async () => 700,
+    ensureApprovalsTopic: async () => 750,
+    // BL-493: the standing Backlog topic (this ticket declares no epic) +
+    // edit-in-place post/edit pair.
+    ensureBacklogTopic: async () => 760,
+    postMessage: async () => 9000,
+    editMessage: async () => true,
+    getTicketMessageState: () => undefined,
+    setTicketMessageState: () => {},
   };
 }
 
@@ -64,6 +74,10 @@ function registerSteps(registry) {
     // this step can dictate, so it is set to the exact deterministic
     // string routeEvent will itself generate for the event used below,
     // matching REAL production behavior rather than an invented value.
+    // BL-358/BL-493: a tagged NeedsApproval routes to the standing
+    // Operator topic (never the ticket's edit-in-place status line, which
+    // has no room for the role's free-text question) - same
+    // messageTextForEvent rendering as before.
     ctx.messageText = direction === 'inbound' ? 'a real human question' : 'NeedsApproval: BL-900';
   });
 
