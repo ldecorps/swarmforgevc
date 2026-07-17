@@ -24,6 +24,12 @@
 (def role "coder")
 (def inbox-new-dir (str (fs/path fixture-root "inbox" "new")))
 (def in-process-dir (str (fs/path fixture-root "inbox" "in_process")))
+;; BL-499: completed/abandoned - the terminal-basename dirs run-sweep! now
+;; reads to reap an already-processed new/ duplicate. Absent from a
+;; fixture that never created them degrades to [] (terminal-basenames'
+;; own fs/exists? guard, mirroring handoff-lib/handoff-files).
+(def completed-dir (str (fs/path fixture-root "inbox" "completed")))
+(def abandoned-dir (str (fs/path fixture-root "inbox" "abandoned")))
 (def calls-log (str (fs/path fixture-root "calls.log")))
 
 (defn env-num [name default]
@@ -62,4 +68,7 @@
    :mark-rate-limit-cooldown-woken!
    (fn [role until-ms] (chase-sweep-lib/mark-rate-limit-cooldown-woken! rate-limit-state-dir role until-ms))})
 
-(chase-sweep-lib/run-sweep! [{:role role :inbox-new-dir inbox-new-dir :in-process-dir in-process-dir}] now-ms config adapters)
+(chase-sweep-lib/run-sweep!
+ [{:role role :inbox-new-dir inbox-new-dir :in-process-dir in-process-dir
+   :completed-dir completed-dir :abandoned-dir abandoned-dir}]
+ now-ms config adapters)
