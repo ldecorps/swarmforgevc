@@ -55,6 +55,14 @@ const KNOWN_STATES = {
     fixture.setRoleHeldTickets({ QA: [id] });
     fixture.setFolders(folders({ active: [{ id }] }));
   },
+  // BL-507: a ticket physically in backlog/active/ whose authoritative
+  // stage is the coordinator (the brief post-QA bookkeeping window) - its
+  // row is remapped to the QA column at render time (see the "marked only
+  // in the QA column" assertion this state feeds), never its own column.
+  'held by the coordinator': (id, fixture) => {
+    fixture.setRoleHeldTickets({ coordinator: [id] });
+    fixture.setFolders(folders({ active: [{ id }] }));
+  },
   parked: (id, fixture) => fixture.setFolders(folders({ paused: [{ id }] })),
   'awaiting approval': (id, fixture) => fixture.setFolders(folders({ paused: [{ id, humanApproval: 'pending' }] })),
 };
@@ -63,7 +71,11 @@ const KNOWN_STATES = {
 // moved to the below-grid list) - dropped from the known-values set so a
 // Gherkin mutation into either string is correctly treated as unrecognized,
 // not silently accepted as a once-real column.
-const KNOWN_COLUMNS = new Set(['specifier', 'coder', 'cleaner', 'architect', 'hardender', 'documenter', 'QA', 'coordinator']);
+// BL-507: 'coordinator' dropped too - the grid carries no coordinator
+// column any more (a coordinator-held ticket now asserts the 'QA' column
+// instead), so no scenario's <column> example value can legitimately be
+// 'coordinator' - a mutation into it is correctly unrecognized.
+const KNOWN_COLUMNS = new Set(['specifier', 'coder', 'cleaner', 'architect', 'hardender', 'documenter', 'QA']);
 
 function folders(overrides = {}) {
   return { active: [], paused: [], done: [], ...overrides };
