@@ -44,10 +44,32 @@ notes: |
       re-derive (DRY with taskStartedText's own summarizer; extract a shared helper if needed).
     - The buttons row (Approve/Amend/Reject, approvalRequestedButtons) stays EXACTLY as is.
     - Only the ApprovalRequested branch changes; TaskStarted/TaskCompleted/NeedsApproval renders are
-      regression-guarded (topic-opening-summary-04) and must not drift.
+      regression-guarded (topic-opening-summary-04, and this feature's own -06) and must not drift.
     - Pure-function change: approvalRequestedText grows a ticketSummary parameter (same shape
       messageTextForEvent already threads for TaskStarted) — directly unit-testable with fixture
       summaries, no I/O.
+
+  CODER WIRING NOTES (specifier, 2026-07-17, verified against the tree):
+    - The event path is symmetric to BL-322: swarmEventStream.ts:117 diffApprovalRequested currently
+      mints payload {} (exactly as TaskStarted did pre-BL-322). Build its payload from
+      curr.ticketSummaries[id] the way taskStartedPayload (swarmEventStream.ts:89) already does, then
+      have approvalRequestedText render it. ticketSummariesFor (conciergeTick.ts:198) already carries
+      {title, notes, firstAcceptanceStep}.
+    - approval_context is NOT yet parsed. backlogReader.ts reads title/notes/firstAcceptanceStep but no
+      approval_context; TicketSummary lacks the field. To render the "Approval context:" line you must
+      wire approval_context end-to-end this parcel: parse it in backlogReader.ts, add it to
+      TicketSummary + ticketSummariesFor, thread it into the ApprovalRequested payload, and render it.
+      The raw field exists on disk (BL-479), so the data source is real — only the parse hop is missing.
+      (Guard scenario -03 with a fixture whose approval_context is load-bearing per the disk-input
+      test rule.)
+    - CO-CHANGE HAZARD — five sibling step files locate the approval message by the substring
+      "needs your approval" (bl408/bl409/bl410/bl434 step handlers + pendingApprovalAsksInTopicSteps.js
+      via APPROVAL_TEXT_PATTERN=/needs your approval/). If the enriched render drops that phrase, all
+      five setups fail to find the message and their features false-fail. Either KEEP the "needs your
+      approval" phrase in the enriched text (simplest, meaning-preserving), or update those five
+      locators in THIS parcel (grep -rl 'needs your approval' before handoff — engineering.prompt
+      call-site-sweep rule). The FROZEN contract is only the reply-grammar clause
+      ('Reply here with "approve <id>" (or "reject <id> <reason>") to act.') and the buttons.
 
   E2E QA PROCEDURE: with the front desk live, flip a paused test ticket's human_approval to literal
   'pending' and observe the Approvals-topic post: it must show the id, title, a bounded summary, the
@@ -58,9 +80,11 @@ notes: |
 acceptance:
   feature: specs/features/BL-480-approval-ask-content.feature
   steps:
-    - "An ApprovalRequested post carries the ticket title and a bounded summary alongside the id"
+    - "An ApprovalRequested post carries the ticket title, a what-it-solves summary, and the acceptance signal alongside the id"
     - "The reply-grammar line and Approve/Amend/Reject buttons are byte-identical to the pre-change contract"
+    - "A ticket's approval_context, when present, is included in the ask"
     - "A ticket with an oversized notes block renders a truncated summary within Telegram's message cap"
+    - "A ticket with no summary source still renders a well-formed ask carrying the reply-grammar line"
     - "TaskStarted, TaskCompleted and NeedsApproval renders are unchanged"
 
 human_approval: approved
