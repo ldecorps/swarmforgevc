@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=9c6026dfbcad53883bcbb96a89608e4c7e48d04e76c6a86af0facc96f2fb096c
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-07-17T12:03:54.381424444Z","feature_name":"The pipeline board message is the only pinned message in the Telegram group","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-467-pipeline-board-only-pin.feature","background_hash":"6eb778c71c6221c34f07f7815b91f94a933901caac15f57704dd5d68f81eae5a","implementation_hash":"unknown","scenarios":[{"index":0,"name":"The pin sync enforces the board as the single pin only when it is not already the top pin","scenario_hash":"9c4ccc77529154b5555dcecc633fe76f0a1fd22d63b6b5477f612cb6265b8ccf","mutation_count":20,"result":{"Total":20,"Killed":20,"Survived":0,"Errors":0},"tested_at":"2026-07-17T12:03:54.381424444Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: The pipeline board message is the only pinned message in the Telegram group
 
   # BL-467 (feature, human-requested via the Operator front desk, relayed 2026-07-16 from a Telegram
