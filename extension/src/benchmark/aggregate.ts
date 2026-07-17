@@ -20,6 +20,14 @@ function tokenTotal(outcome: TrialOutcome): number | null {
   return outcome.tokens ? outcome.tokens.inputTokens + outcome.tokens.outputTokens : null;
 }
 
+// BL-388: one run's cost, priced to include the rework it caused - a run
+// that bounced through N rounds of review effectively cost N+1 passes,
+// not just its first-pass invocation cost. null only when the run itself
+// has no priced cost at all (mirrors costUsd's own null semantics).
+function reworkAdjustedCost(run: TrialOutcome): number | null {
+  return run.costUsd !== null ? run.costUsd * (1 + run.reworkRounds) : null;
+}
+
 // BL-386: the model's showing on EACH task separately (acceptance scenario
 // 02) - grouped via a Map to preserve the runs' own encounter order
 // (battery order), never object-key iteration order. meanQuality here is
@@ -48,8 +56,10 @@ function taskScoresFrom(runs: TrialOutcome[]): TaskScore[] {
 export function aggregateModelTrials(model: BenchmarkModelConfig, runs: TrialOutcome[]): ModelAggregate {
   const qualities = runs.map((r) => r.qualityScore);
   const costs = runs.filter((r) => r.costUsd !== null).map((r) => r.costUsd as number);
+  const reworkAdjustedCosts = runs.map(reworkAdjustedCost).filter((c): c is number => c !== null);
   const tokens = runs.map(tokenTotal).filter((t): t is number => t !== null);
   const durations = runs.map((r) => r.durationMs);
+  const survivedCount = runs.filter((r) => r.survived).length;
 
   return {
     modelId: model.id,
@@ -65,6 +75,9 @@ export function aggregateModelTrials(model: BenchmarkModelConfig, runs: TrialOut
     costStdDev: costs.length > 0 ? computeStdDev(costs) : null,
     meanDurationMs: computeMean(durations),
     meanTokens: tokens.length > 0 ? computeMean(tokens) : null,
+    survivalRate: runs.length > 0 ? survivedCount / runs.length : 0,
+    meanReworkRounds: computeMean(runs.map((r) => r.reworkRounds)),
+    meanReworkAdjustedCostUsd: reworkAdjustedCosts.length > 0 ? computeMean(reworkAdjustedCosts) : null,
     taskScores: taskScoresFrom(runs),
     runs,
   };
@@ -88,6 +101,9 @@ export function excludedModelAggregate(model: BenchmarkModelConfig, reason: stri
     costStdDev: null,
     meanDurationMs: 0,
     meanTokens: null,
+    survivalRate: 0,
+    meanReworkRounds: 0,
+    meanReworkAdjustedCostUsd: null,
     taskScores: [],
     runs: [],
   };
