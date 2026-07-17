@@ -258,7 +258,8 @@ const DOMAINS = [
   require('./bl451RetirePwaRecertViewSteps'),
   require('./bl388TheRankingConsumesSurvivalAndReworkSteps'),
   require('./bl473PipelineBoardActiveMembershipSteps'),
-  require('./bl484DecidedAskClosesItselfSteps')
+  require('./bl484DecidedAskClosesItselfSteps'),
+  require('./bl481OperatorOutOfCycleWakeSteps')
 ];
 
 function registerSteps(registry) {

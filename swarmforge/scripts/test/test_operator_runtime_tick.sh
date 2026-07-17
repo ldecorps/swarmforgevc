@@ -955,6 +955,107 @@ check "restricted-front-desk-operator-03: no interactive --remote-control channe
 check "restricted-front-desk-operator-03: runs headless (print mode), never an interactive session" \
   '[[ "$DRY_FD" == *"claude -p"* ]]'
 
+# ── BL-481: out-of-cycle poll (--poll-once) ───────────────────────────────
+# The fast, cheap wake -main's loop now runs every OPERATOR_POLL_INTERVAL_MS
+# instead of the full tick! - proves it dispatches a fresh pending message,
+# still honours the existing launch guards, and never touches the heavy
+# per-tick sweep bundle's own artifacts (e.g. never records a swarm-check).
+poll() {
+  OPERATOR_SKIP_LAUNCH=1 SWARMFORGE_SANDBOX_SWEEP_ROOT="$1/.no-sandbox-sweep" SWARMFORGE_FIXTURE_REAP_ROOT="$1/.no-fixture-reap" \
+    bb "$1/swarmforge/scripts/operator_runtime.bb" "$1" --poll-once
+}
+
+F="$(make_fixture)"
+printf '{"type":"HUMAN_COMMAND","detail":"x"}\n' > "$F/.swarmforge/operator/events.jsonl"
+POLL_OUT="$(poll "$F")"
+check "BL-481: a poll-once with a pending event still dispatches"     '[[ "$POLL_OUT" == *"\"launched?\":true"* ]]'
+check "BL-481: a poll-once never records a swarm-check (no heavy sweep bundle)" '[[ ! -f "$F/.swarmforge/operator/last-swarm-check" ]]'
+check "BL-481: a poll-once never writes status.json (that stays the full tick's job)" '[[ ! -f "$F/.swarmforge/operator/status.json" ]]'
+rm -rf "$F"
+
+# guard: an already-running full Operator blocks the fast-path launch too
+# (a genuine background process, same real-disposable-process technique the
+# BL-334 section above uses - pid-alive? checks a genuine ProcessHandle).
+F="$(make_fixture)"
+printf '{"type":"HUMAN_COMMAND","detail":"x"}\n' > "$F/.swarmforge/operator/events.jsonl"
+sleep 300 & op_pid=$!; FD_PIDS+=("$op_pid"); echo "$op_pid" > "$F/.swarmforge/operator/operator.pid"
+POLL_GUARD_OUT="$(poll "$F")"
+check "BL-481: a poll-once does not relaunch while the full Operator is already running" '[[ "$POLL_GUARD_OUT" == *"\"launched?\":false"* ]]'
+rm -rf "$F"
+
+# guard: an unexpired cooldown blocks the fast-path launch too, using only
+# the persisted record - no live tmux pane scan available in this fixture.
+F="$(make_fixture)"
+future=$(( ($(date +%s) + 3600) * 1000 ))
+printf '{"reset_ms":%s,"reset_raw":"resets later"}' "$future" > "$F/.swarmforge/operator/cooldown.json"
+printf '{"type":"HUMAN_COMMAND","detail":"x"}\n' > "$F/.swarmforge/operator/events.jsonl"
+POLL_COOLDOWN_OUT="$(poll "$F")"
+check "BL-481: a poll-once honours a persisted cooldown with no live pane scan" '[[ "$POLL_COOLDOWN_OUT" == *"\"launched?\":false"* ]]'
+check "BL-481: a poll-once reports the cached cooldown provider state"          '[[ "$POLL_COOLDOWN_OUT" == *"\"provider\":\"cooldown\""* ]]'
+rm -rf "$F"
+
+# ── BL-481: the LIVE -main loop actually alternates tick!/poll! ──────────────
+# Everything above drives --tick-once and --poll-once as ISOLATED one-shot
+# invocations - neither exercises the new branch inside -main's own while
+# loop (`(if (timer-due? @last-full-tick-ms now interval-ms) (tick!) (poll!
+# now))`) or the last-full-tick-ms atom that threads state across
+# iterations. That branch is the entire point of this ticket and was
+# otherwise completely dark. Runs the REAL loop (no --tick-once/--poll-once
+# flag) with tiny env-overridden intervals - the same seam-and-shrink
+# technique BL-349 established for a hardcoded-timeout wiring proof - so
+# this proves the alternation in a few seconds, never a real 30s/3s wait.
+# poll-interval-ms floors at 1000ms (resolve-poll-interval-ms's busy-spin
+# guard), so OPERATOR_INTERVAL_MS must clear a few multiples of that floor
+# for the "several poll wakes, then a second tick" shape to appear.
+F="$(make_fixture)"
+OPERATOR_SKIP_LAUNCH=1 SWARMFORGE_SANDBOX_SWEEP_ROOT="$F/.no-sandbox-sweep" SWARMFORGE_FIXTURE_REAP_ROOT="$F/.no-fixture-reap" \
+  OPERATOR_INTERVAL_MS=3500 OPERATOR_POLL_INTERVAL_MS=1000 \
+  bb "$F/swarmforge/scripts/operator_runtime.bb" "$F" >"$F/loop.out" 2>&1 &
+loop_pid=$!; FD_PIDS+=("$loop_pid")
+
+# The FIRST wake is always due (last-full-tick-ms starts nil) and must run a
+# full tick! - status.json is written ONLY by tick!, never by poll! (proven
+# above), so its appearance is the tick marker.
+deadline=$((SECONDS + 5))
+while [[ ! -f "$F/.swarmforge/operator/status.json" ]] && [[ $SECONDS -lt $deadline ]]; do sleep 0.05; done
+check "BL-481 live loop: the first wake runs a full tick (status.json appears immediately)" \
+  '[[ -f "$F/.swarmforge/operator/status.json" ]]'
+FIRST_STATUS="$(cat "$F/.swarmforge/operator/status.json" 2>/dev/null)"
+FIRST_HEARTBEAT="$(cat "$F/.swarmforge/operator/heartbeat" 2>/dev/null)"
+
+# Several poll-only wakes (every 1000ms) happen well inside the SAME
+# 3500ms tick interval - status.json must stay byte-identical (no re-run of
+# the full tick! / heavy sweep bundle), while the heartbeat - written by
+# BOTH tick! and poll! - still advances, proving the loop is alive and
+# genuinely waking on schedule rather than having stalled.
+sleep 2.5
+MID_STATUS="$(cat "$F/.swarmforge/operator/status.json" 2>/dev/null)"
+MID_HEARTBEAT="$(cat "$F/.swarmforge/operator/heartbeat" 2>/dev/null)"
+check "BL-481 live loop: poll-only wakes inside one tick interval never rewrite status.json" \
+  '[[ "$MID_STATUS" == "$FIRST_STATUS" ]]'
+check "BL-481 live loop: the loop is genuinely alive during the poll-only window (heartbeat advances)" \
+  '[[ "$MID_HEARTBEAT" != "$FIRST_HEARTBEAT" ]]'
+
+# Once OPERATOR_INTERVAL_MS genuinely elapses, last-full-tick-ms's threading
+# must re-trigger a SECOND full tick - not just the first-ever "nil counts
+# as due" freebie.
+deadline=$((SECONDS + 5))
+while [[ "$(cat "$F/.swarmforge/operator/status.json" 2>/dev/null)" == "$FIRST_STATUS" ]] && [[ $SECONDS -lt $deadline ]]; do sleep 0.1; done
+LATER_STATUS="$(cat "$F/.swarmforge/operator/status.json" 2>/dev/null)"
+check "BL-481 live loop: a second full tick fires once OPERATOR_INTERVAL_MS elapses" \
+  '[[ "$LATER_STATUS" != "$FIRST_STATUS" ]]'
+
+# Graceful shutdown via the runtime's own stop-file convention (still
+# re-checked every short poll-interval-ms wake, per BL-481's comment in
+# build_freshness_cli.bb) - no force-kill needed.
+touch "$F/.swarmforge/operator/stop"
+deadline=$((SECONDS + 5))
+while kill -0 "$loop_pid" 2>/dev/null && [[ $SECONDS -lt $deadline ]]; do sleep 0.1; done
+check "BL-481 live loop: the loop exits on its own stop-file within one poll interval" \
+  '! kill -0 "$loop_pid" 2>/dev/null'
+check "BL-481 live loop: pid-file is cleaned up on stop" '[[ ! -f "$F/.swarmforge/operator/runtime.pid" ]]'
+rm -rf "$F"
+
 # ── 4. launcher assembles a --remote-control command ─────────────────────────
 DRY="$(OPERATOR_LAUNCH_DRYRUN=1 bash "$SRC/launch_operator.sh" "$SRC/.." /tmp/x.jsonl 2>&1 || true)"
 check "operator named 'Operator' (not a swarm agent)"          '[[ "$DRY" == *"--remote-control Operator"* ]]'
