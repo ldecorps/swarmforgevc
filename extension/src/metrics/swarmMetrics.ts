@@ -348,9 +348,21 @@ export interface RetryCounts {
 // BL-102: exported so stageDwell.ts's dwell-record derivation and
 // ticketHoldingWindows.ts's window derivation both reuse this same
 // ticket-id extraction instead of keeping their own duplicate copies.
+//
+// BL-504: an ALLOWLIST, never a denylist - mirrors known-ticket-prefixes in
+// pipeline_stage_lib.bb / chase_sweep_lib.bb. The only prefixes this project
+// mints are "BL" and "GH"; an unbounded [A-Za-z]+ prefix cannot be safely
+// disambiguated from a glued one ("ABL-217" would absorb "ABL" as if it were
+// the ticket's own prefix), so this must stay anchored to the allowlist, not
+// widened to a broad letter-run glob. The hyphen between prefix and digits is
+// OPTIONAL ("bl493-..." and "BL-493-..." both resolve), and the result is
+// always canonicalized to upper-case hyphenated form regardless of the
+// input's case/hyphenation, so downstream keys/joins agree on one shape.
+const TICKET_ID_PATTERN = /^(BL|GH)-?(\d+)/i;
+
 export function extractTicketId(task: string): string | null {
-  const match = task.match(/^([A-Za-z]+-\d+)/);
-  return match ? match[1] : null;
+  const match = task.match(TICKET_ID_PATTERN);
+  return match ? `${match[1].toUpperCase()}-${match[2]}` : null;
 }
 
 function isGitHandoff(headers: Record<string, string>): boolean {
