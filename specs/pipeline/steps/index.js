@@ -275,7 +275,8 @@ const DOMAINS = [
   require('./bl493FoldTicketEventsIntoEpicBacklogTopicSteps'),
   require('./bl502PipelineBoardMessageLengthBudgetSteps'),
   require('./bl499ChaseSweepRechasesResolvedNewDuplicateSteps'),
-  require('./bl504TsMetricsTicketIdSteps')
+  require('./bl504TsMetricsTicketIdSteps'),
+  require('./bl503TicketIdExtractorHyphenOptionalSteps')
 ];
 
 function registerSteps(registry) {

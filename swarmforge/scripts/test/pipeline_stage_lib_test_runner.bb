@@ -82,6 +82,26 @@
          "GH-42"
          (pipeline-stage-lib/extract-ticket-id "continuing GH-42 next slice"))
 
+;; BL-503: the prefix hyphen is OPTIONAL - a no-hyphen task header ("blNNN",
+;; the form ~14 in-flight coder tickets were actually minted with, e.g.
+;; "bl493-fold-ticket-events") must resolve the same as its hyphenated form,
+;; canonicalized identically. The allowlist/glued-prefix guards are unchanged.
+(assert= "BL-503: a no-hyphen lower-case leading id resolves and canonicalizes"
+         "BL-493"
+         (pipeline-stage-lib/extract-ticket-id "bl493-fold-ticket-events"))
+(assert= "BL-503: the canonical hyphenated form is unaffected (regression)"
+         "BL-493"
+         (pipeline-stage-lib/extract-ticket-id "BL-493-fold-ticket-events"))
+(assert= "BL-503: a no-hyphen GH- id resolves and canonicalizes"
+         "GH-77"
+         (pipeline-stage-lib/extract-ticket-id "gh77-issue-seeded"))
+(assert= "BL-503: a glued prefix still resolves to nil with the hyphen optional (no over-match)"
+         nil
+         (pipeline-stage-lib/extract-ticket-id "ABL-217-glued-prefix"))
+(assert= "BL-503: a glued word with no hyphen still resolves to nil (no over-match)"
+         nil
+         (pipeline-stage-lib/extract-ticket-id "usable493-not-a-ticket"))
+
 ;; ── ticket-id-from-headers: task (git_handoff) OR message (note) ─────────
 (assert= "a git_handoff's task header wins when present"
          "BL-217"
