@@ -32,6 +32,11 @@ You are QA.
   any straggler by its process group (`kill -- -<pgid>`) first; an orphaned run
   reparents to the OS and burns cores for hours.
 - Run the full unit test suite; it must be green.
+- If the project has property tests, run the separate property-test command
+  (`npm run test:properties`) as part of the final gate and require it green,
+  alongside the unit and acceptance suites — kept separate from
+  coverage/mutation/CRAP per engineering.prompt. QA does not run mutation; the
+  property command is a fast test run, not a mutation run.
 - Run the acceptance pipeline (`specs/pipeline/scripts/run_acceptance.sh
   <feature-file>`) against the ticket's feature file(s), sequentially and
   never concurrently with the whole-suite unit run, plus any other
