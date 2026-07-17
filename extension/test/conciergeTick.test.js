@@ -1972,9 +1972,77 @@ test('BL-497: a failed board post logs the surfaced Telegram error instead of sw
   }
 
   assert.ok(
-    errors.some((e) => e.includes('failed-post') && e.includes('Bad Request: message thread not found')),
-    `expected the surfaced Telegram error logged, got: ${JSON.stringify(errors)}`
+    errors.some((e) => e.includes('failed-post') && e.includes('(topic-gone)') && e.includes('Bad Request: message thread not found')),
+    `expected the surfaced Telegram error and its classification logged, got: ${JSON.stringify(errors)}`
   );
+});
+
+test('BL-497: a failed board topic creation (failed-no-topic) also logs the surfaced Telegram error', async () => {
+  const { adapters, setFolders } = fakeAdapters();
+  adapters.readRoleHeldTickets = () => ({ coder: ['BL-1'] });
+  adapters.boardAdapters.ensureBoardTopic = async () => ({ error: 'Forbidden: bot was kicked from the group chat' });
+  setFolders(folders({ active: [{ id: 'BL-1', title: 'test ticket' }] }));
+
+  const originalErrorWrite = process.stderr.write;
+  const errors = [];
+  process.stderr.write = (chunk) => {
+    errors.push(chunk);
+    return true;
+  };
+  try {
+    await runConciergeTick(adapters);
+  } finally {
+    process.stderr.write = originalErrorWrite;
+  }
+
+  assert.ok(
+    errors.some((e) => e.includes('failed-no-topic') && e.includes('Forbidden: bot was kicked from the group chat')),
+    `expected the surfaced Telegram error logged for failed-no-topic, got: ${JSON.stringify(errors)}`
+  );
+});
+
+test('BL-497: a successful board post never writes an error line to stderr', async () => {
+  const { adapters, setFolders } = fakeAdapters();
+  adapters.readRoleHeldTickets = () => ({ coder: ['BL-1'] });
+  adapters.boardAdapters.ensureBoardTopic = async () => ({ topicId: 900 });
+  adapters.boardAdapters.postMessage = async () => ({ messageId: 42 });
+  setFolders(folders({ active: [{ id: 'BL-1', title: 'test ticket' }] }));
+
+  const originalErrorWrite = process.stderr.write;
+  const errors = [];
+  process.stderr.write = (chunk) => {
+    errors.push(chunk);
+    return true;
+  };
+  try {
+    await runConciergeTick(adapters);
+  } finally {
+    process.stderr.write = originalErrorWrite;
+  }
+
+  assert.equal(errors.length, 0, `expected no stderr output on a successful board post, got: ${JSON.stringify(errors)}`);
+});
+
+test('BL-497: a failed post with no error string logs nothing - the log is gated on a real error, never on the bare outcome', async () => {
+  const { adapters, setFolders } = fakeAdapters();
+  adapters.readRoleHeldTickets = () => ({ coder: ['BL-1'] });
+  adapters.boardAdapters.ensureBoardTopic = async () => ({ topicId: 900 });
+  adapters.boardAdapters.postMessage = async () => ({});
+  setFolders(folders({ active: [{ id: 'BL-1', title: 'test ticket' }] }));
+
+  const originalErrorWrite = process.stderr.write;
+  const errors = [];
+  process.stderr.write = (chunk) => {
+    errors.push(chunk);
+    return true;
+  };
+  try {
+    await runConciergeTick(adapters);
+  } finally {
+    process.stderr.write = originalErrorWrite;
+  }
+
+  assert.equal(errors.length, 0, `expected no stderr output for a failed-post with no error string, got: ${JSON.stringify(errors)}`);
 });
 
 test('BL-497: emitFailureAlert wired through boardAdapters fires via a real runConciergeTick loop once the retry cap is exceeded, armed only on confirmed delivery', async () => {
