@@ -60,3 +60,15 @@ The evidence points hard at the stale-incremental-cache artifact, not a new defe
 Either way, do not treat a zero-kill run as a clean pass: `mutationGateHealth` already marks
 it suspect. The point of clearing the cache first is to know whether the suspect reading is
 the cache lying or the gate genuinely failing — and only the second is a defect worth a ticket.
+
+## CONFIRMED ROOT CAUSE (hardender, 2026-07-17, note `20260717T052458Z_000370`)
+
+The **decision above stands** (rejected as a durable rule; not a tool defect), but the
+"most likely cause" analysis was WRONG. The hardener found it: the `--mutate` was scoped to
+`src/` instead of `out/` — *"my --mutate used src/ not out/ — my scoping bug, not a tool
+defect."* So it WAS the out/-vs-src/ attribution problem this file confidently ruled out: the
+`.ts` sources were mutated while the tests load `out/`, giving 0 coverage / 0 killed. It was
+neither a Stryker/BL-446 tool defect nor the stale incremental cache. The durable fix is not a
+new rule but a sharpening of the existing `--mutate` guidance: `engineering.prompt`'s Stryker
+line now states `--mutate` must target compiled `out/**/*.js`, never `src/**/*.ts` (the trap
+that produced this scare). See the memory note "Stryker mutate scope is out/ not src/".
