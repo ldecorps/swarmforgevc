@@ -30,7 +30,7 @@ test('computePipelineBoard: a ticket held by a role is a row in that role column
   ]);
 });
 
-test('computePipelineBoard: rows follow pipeline order (specifier..coordinator), not object key order, within an epic group', () => {
+test('computePipelineBoard: rows follow pipeline order (specifier..QA), not object key order, within an epic group', () => {
   const { rows } = computePipelineBoard({ QA: ['BL-2'], coder: ['BL-1'] }, [], {});
   assert.deepEqual(
     rows.map((r) => r.id),
@@ -516,6 +516,31 @@ test('renderPipelineBoardBody: a root-intake list entry keeps its non-ticket id 
 test('PIPELINE_BOARD_COLUMN_ORDER: the not-started column leads the stage columns instead of trailing them', () => {
   assert.equal(PIPELINE_BOARD_COLUMN_ORDER[0], PIPELINE_BOARD_NOT_STARTED_COLUMN);
   assert.ok(PIPELINE_BOARD_COLUMN_ORDER.indexOf('coder') > 0, 'expected every pipeline role column after the not-started column');
+});
+
+// BL-507: the coordinator is not a forward pipeline stage (it does post-QA
+// backlog bookkeeping only), so the grid drops its column entirely - built
+// from the forward PIPELINE_CHAIN (specifier..QA) plus the not-started
+// sentinel, never from ALL_SWARM_ROLES (which still legitimately includes
+// 'coordinator' for the coordinator's own standing steering topic).
+test('PIPELINE_BOARD_COLUMN_ORDER: carries no coordinator column', () => {
+  assert.ok(!PIPELINE_BOARD_COLUMN_ORDER.includes('coordinator'), `expected no 'coordinator' column, got: ${PIPELINE_BOARD_COLUMN_ORDER.join(', ')}`);
+});
+
+test('PIPELINE_BOARD_COLUMN_ORDER: still carries every forward pipeline stage from specifier to QA', () => {
+  for (const stage of ['specifier', 'coder', 'cleaner', 'architect', 'hardender', 'documenter', 'QA']) {
+    assert.ok(PIPELINE_BOARD_COLUMN_ORDER.includes(stage), `expected a "${stage}" column, got: ${PIPELINE_BOARD_COLUMN_ORDER.join(', ')}`);
+  }
+});
+
+// BL-507: a ticket physically in backlog/active/ whose authoritative stage
+// is the coordinator (the brief post-QA bookkeeping window) is marked at
+// the QA stage, not blank and not not-started - heldRoleByTicketId still
+// resolves it to 'coordinator' (ALL_SWARM_ROLES is unchanged), so
+// buildGridRows must remap that one stage to 'QA' before it renders.
+test('computePipelineBoard: a coordinator-held ticket is marked at the QA stage, not left unrendered', () => {
+  const { rows } = computePipelineBoard({ coordinator: ['BL-950'] }, [], {}, { activeIds: ['BL-950'] });
+  assert.deepEqual(rows, [{ id: 'BL-950', column: 'QA', epic: undefined, slug: '' }]);
 });
 
 test('renderPipelineBoardBody: the not-started ticket mark falls in the first stage column, before specifier', () => {
