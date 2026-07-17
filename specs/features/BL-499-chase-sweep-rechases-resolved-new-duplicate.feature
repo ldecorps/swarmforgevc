@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=a8fa70c241639ced6368361d059023863cc7def3fff3b1a4030359ff82dfd56b
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-07-17T14:59:35.307880141Z","feature_name":"the chase sweep never re-chases an already-completed handoff still lingering in new/","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-499-chase-sweep-rechases-resolved-new-duplicate.feature","background_hash":"d8494b6a4d82c3584b4c29ef93f5b9eb2c121a253ceace4fc2c32e9494afbddf","implementation_hash":"unknown","scenarios":[{"index":0,"name":"an already-terminal handoff lingering in new/ is reaped, never chased","scenario_hash":"a2aef356601518351451e18f9b77cbae38a3d351f1d4d1ffe438ba302717ca69","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-07-17T14:59:35.307880141Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: the chase sweep never re-chases an already-completed handoff still lingering in new/
 
   # BL-499 (dispositioned from a coordinator rule_proposal, live 2026-07-17). The chase
