@@ -1,6 +1,6 @@
 const assert = require('node:assert/strict');
 const fc = require('fast-check');
-const { computeMean, computeStdDev } = require('../out/benchmark/aggregate');
+const { computeMean, computeStdDev, aggregateModelTrials } = require('../out/benchmark/aggregate');
 
 // BL-479: seeds the architect-owned property-test command with a real,
 // non-vacuous suite against computeMean/computeStdDev (extension/src/
@@ -84,6 +84,66 @@ test('property: doubling an array (concatenating it with itself) never changes i
         approxEqual(computeMean(values), computeMean([...values, ...values])),
         'expected the mean of an array duplicated onto itself to equal the original mean'
       );
+    })
+  );
+});
+
+const MODEL = { id: 'm', provider: 'claude', model: 'm', label: 'm' };
+
+function runOf(costUsd, reworkRounds) {
+  return {
+    taskId: 't',
+    modelId: 'm',
+    repetition: 1,
+    ran: true,
+    survived: true,
+    reworkRounds,
+    qualityScore: 0.9,
+    testsPassed: 9,
+    testsTotal: 10,
+    durationMs: 1000,
+    costUsd,
+    tokens: { inputTokens: 100, outputTokens: 100 },
+  };
+}
+
+// BL-388: meanReworkAdjustedCostUsd prices each run at costUsd * (1 +
+// reworkRounds) - a run that bounced through more rework rounds must never
+// come out CHEAPER than the same run with fewer rounds, holding its raw
+// cost fixed. This is the monotonicity invariant the whole ticket rests
+// on: rank.ts's bestByValue/cheapestAcceptable both switched from
+// meanCostUsd to this field on the strength of exactly this guarantee (a
+// cheap-first-diff model that reworks heavily must not look cheap). A
+// single-run aggregate isolates the pricing function itself from the
+// cross-run averaging computeMean already covers above.
+test('property: meanReworkAdjustedCostUsd is monotonically non-decreasing in reworkRounds, for a fixed cost', () => {
+  fc.assert(
+    fc.property(
+      fc.double({ noNaN: true, noDefaultInfinity: true, min: 0.0001, max: 1000 }),
+      fc.integer({ min: 0, max: 50 }),
+      fc.integer({ min: 0, max: 50 }),
+      (costUsd, roundsA, roundsB) => {
+        const lo = Math.min(roundsA, roundsB);
+        const hi = Math.max(roundsA, roundsB);
+        const cheaper = aggregateModelTrials(MODEL, [runOf(costUsd, lo)]).meanReworkAdjustedCostUsd;
+        const pricier = aggregateModelTrials(MODEL, [runOf(costUsd, hi)]).meanReworkAdjustedCostUsd;
+        assert.ok(
+          pricier >= cheaper - EPSILON,
+          `expected ${hi} rework rounds (cost ${pricier}) to never price cheaper than ${lo} rounds (cost ${cheaper})`
+        );
+      }
+    )
+  );
+});
+
+// A run with no priced cost at all stays unpriced regardless of how much
+// rework it needed - reworkRounds must never manufacture a cost out of
+// null, mirroring meanCostUsd's own null-when-unpriced semantics.
+test('property: meanReworkAdjustedCostUsd stays null for an unpriced run, for any reworkRounds', () => {
+  fc.assert(
+    fc.property(fc.integer({ min: 0, max: 50 }), (reworkRounds) => {
+      const aggregate = aggregateModelTrials(MODEL, [runOf(null, reworkRounds)]);
+      assert.equal(aggregate.meanReworkAdjustedCostUsd, null, `expected a null-cost run to stay unpriced, got ${aggregate.meanReworkAdjustedCostUsd}`);
     })
   );
 });
