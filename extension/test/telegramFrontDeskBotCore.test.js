@@ -43,6 +43,8 @@ const {
   decideAgentQuestionsReplyAction,
   decidePollAnswerAction,
   recordApprovalDecisionAndClose,
+  composeAskMessageBody,
+  composeAskButtons,
 } = require('../out/tools/telegramFrontDeskBotCore');
 
 const PRINCIPAL_ID = 111;
@@ -1663,6 +1665,54 @@ test('BL-410: decideCallbackQueryAction drops a callback with no data at all', (
   assert.deepEqual(decideCallbackQueryAction(cq, PRINCIPAL_ID, '1'), { action: 'drop', reason: 'unrecognized-data' });
 });
 
+// ── BL-483: decideCallbackQueryAction resolves an ask-option tap ─────────
+
+test('BL-483: decideCallbackQueryAction resolves a tapped ask option to its thread and index', () => {
+  const cq = mkCallbackUpdate({ fromId: PRINCIPAL_ID, data: 'ask:SUP-42:1' }).callback_query;
+  assert.deepEqual(decideCallbackQueryAction(cq, PRINCIPAL_ID, '1'), { action: 'answer-ask', threadId: 'SUP-42', optionIndex: 1 });
+});
+
+test('BL-483: decideCallbackQueryAction resolves an ask-option tap at index 0', () => {
+  const cq = mkCallbackUpdate({ fromId: PRINCIPAL_ID, data: 'ask:SUP-42:0' }).callback_query;
+  assert.deepEqual(decideCallbackQueryAction(cq, PRINCIPAL_ID, '1'), { action: 'answer-ask', threadId: 'SUP-42', optionIndex: 0 });
+});
+
+test('BL-483: decideCallbackQueryAction still checks not-my-chat/not-principal before an ask-option tap', () => {
+  const foreignChat = mkCallbackUpdate({ fromId: PRINCIPAL_ID, data: 'ask:SUP-42:0', chatId: 2 }).callback_query;
+  assert.deepEqual(decideCallbackQueryAction(foreignChat, PRINCIPAL_ID, '1'), { action: 'drop', reason: 'not-my-chat' });
+  const foreignSender = mkCallbackUpdate({ fromId: 999, data: 'ask:SUP-42:0' }).callback_query;
+  assert.deepEqual(decideCallbackQueryAction(foreignSender, PRINCIPAL_ID, '1'), { action: 'drop', reason: 'not-principal' });
+});
+
+// ── BL-483: composeAskMessageBody / composeAskButtons (pure) ─────────────
+
+test('BL-483: composeAskMessageBody lists each option with its description and states the free-text fallback', () => {
+  const body = composeAskMessageBody('Which environment?', [
+    { label: 'staging', description: 'the pre-prod environment' },
+    { label: 'prod', description: 'the live environment' },
+  ]);
+  assert.match(body, /Which environment\?/);
+  assert.match(body, /staging/);
+  assert.match(body, /the pre-prod environment/);
+  assert.match(body, /prod/);
+  assert.match(body, /the live environment/);
+  assert.match(body, /reply with your own answer/i);
+});
+
+test('BL-483: composeAskMessageBody omits a missing description without leaving a dangling separator', () => {
+  const body = composeAskMessageBody('Pick one', [{ label: 'only-option' }]);
+  assert.match(body, /only-option/);
+  assert.doesNotMatch(body, /only-option\s*[—-]\s*$/m);
+});
+
+test('BL-483: composeAskButtons renders one button per option, one option per row, callback_data carries the ask id + index (never the label)', () => {
+  const buttons = composeAskButtons('SUP-42', [{ label: 'staging' }, { label: 'prod' }]);
+  assert.deepEqual(buttons, [
+    [{ text: 'staging', callbackData: 'ask:SUP-42:0' }],
+    [{ text: 'prod', callbackData: 'ask:SUP-42:1' }],
+  ]);
+});
+
 // ── pollAndForward: callback_query dispatch (adapter-injected) ───────────
 
 function callbackFixtureAdapters(overrides = {}) {
@@ -1672,9 +1722,11 @@ function callbackFixtureAdapters(overrides = {}) {
       success: true,
       updates: [mkCallbackUpdate(overrides.update ?? { fromId: PRINCIPAL_ID, data: overrides.data })],
     }),
-    postToBridge: async () => {
-      throw new Error('postToBridge should not be called for a callback_query');
-    },
+    postToBridge:
+      overrides.postToBridge ??
+      (async () => {
+        throw new Error('postToBridge should not be called for an approve/reject/amend callback_query');
+      }),
     openSubjectAndRecord: async () => {
       throw new Error('openSubjectAndRecord should not be called for a callback_query');
     },
@@ -1690,6 +1742,12 @@ function callbackFixtureAdapters(overrides = {}) {
     readRecordedApprovalVerdict: overrides.readRecordedApprovalVerdict,
     readApprovalAskMessage: overrides.readApprovalAskMessage,
     editApprovalAskMessage: overrides.editApprovalAskMessage,
+    // BL-483: an ask-option tap's own resolution/close adapters - all
+    // optional, same "absent degrades to a no-op/proceeds" posture as every
+    // other optional PollAdapters field above.
+    resolveAskOptions: overrides.resolveAskOptions,
+    readAskMessage: overrides.readAskMessage,
+    editAskMessage: overrides.editAskMessage,
   };
 }
 
@@ -1776,6 +1834,159 @@ test('BL-410: every recognized-chat/principal tap answers the spinner, even a no
     })
   );
   assert.deepEqual(answered, ['cbq-1']);
+});
+
+// ── BL-483: a tapped ask-option button routes back as the answer, through
+// the SAME postToBridge path a typed reply takes (BL-466's poll answer
+// used the identical call) - one effect path, never a second one.
+// resolveAskOptions doubles as the staleness check - undefined means this
+// thread's ask is no longer the pending one (answered/retracted/superseded
+// - "ONE pending question at a time" is the awaiting-answer store's own
+// contract), the SAME "undefined collapses every closed case" posture
+// resolvePollThread already established for an unknown/stale poll id. ────
+
+test('BL-483: a tap on an open ask resolves the option label, answers via postToBridge (same path as a typed reply), and answers the spinner', async () => {
+  const bridged = [];
+  const answered = [];
+  const result = await pollAndForward(
+    0,
+    PRINCIPAL_ID,
+    callbackFixtureAdapters({
+      data: 'ask:SUP-42:1',
+      resolveAskOptions: async (threadId) => (threadId === 'SUP-42' ? [{ label: 'staging' }, { label: 'prod' }] : undefined),
+      postToBridge: async (threadId, text, updateId) => {
+        bridged.push({ threadId, text, updateId });
+        return true;
+      },
+      answerCallbackQuery: async (id) => answered.push(id),
+    })
+  );
+  assert.deepEqual(bridged, [{ threadId: 'SUP-42', text: 'prod', updateId: 1 }]);
+  assert.deepEqual(answered, ['cbq-1']);
+  assert.equal(result.posted, 1);
+});
+
+test('BL-483: the ask message is updated to show it was answered', async () => {
+  const edits = [];
+  await pollAndForward(
+    0,
+    PRINCIPAL_ID,
+    callbackFixtureAdapters({
+      data: 'ask:SUP-42:0',
+      resolveAskOptions: async () => [{ label: 'staging' }],
+      postToBridge: async () => true,
+      readAskMessage: async () => ({ topicId: 800, messageId: 900, text: 'Which environment?\n\n1. staging' }),
+      editAskMessage: async (topicId, messageId, text) => {
+        edits.push({ topicId, messageId, text });
+        return true;
+      },
+    })
+  );
+  assert.equal(edits.length, 1);
+  assert.equal(edits[0].topicId, 800);
+  assert.equal(edits[0].messageId, 900);
+  assert.match(edits[0].text, /staging/);
+  assert.match(edits[0].text, /answered/i);
+});
+
+test('BL-483: a postToBridge failure is reported as failed, never edits the message as answered', async () => {
+  const edits = [];
+  const result = await pollAndForward(
+    0,
+    PRINCIPAL_ID,
+    callbackFixtureAdapters({
+      data: 'ask:SUP-42:0',
+      resolveAskOptions: async () => [{ label: 'staging' }],
+      postToBridge: async () => false,
+      readAskMessage: async () => ({ topicId: 800, messageId: 900, text: 'Which environment?' }),
+      editAskMessage: async (topicId, messageId, text) => {
+        edits.push({ topicId, messageId, text });
+        return true;
+      },
+    })
+  );
+  assert.equal(result.failed, 1);
+  assert.deepEqual(edits, []);
+});
+
+test('BL-483: an option index outside the resolved options never fabricates an answer, drops instead', async () => {
+  const bridged = [];
+  const result = await pollAndForward(
+    0,
+    PRINCIPAL_ID,
+    callbackFixtureAdapters({
+      data: 'ask:SUP-42:9',
+      resolveAskOptions: async () => [{ label: 'staging' }],
+      postToBridge: async (threadId, text) => {
+        bridged.push({ threadId, text });
+        return true;
+      },
+    })
+  );
+  assert.deepEqual(bridged, []);
+  assert.equal(result.dropped, 1);
+});
+
+test('BL-483: resolveAskOptions absent (pre-BL-483 fixtures) never crashes - the tap is dropped rather than guessing an answer', async () => {
+  const bridged = [];
+  const result = await pollAndForward(
+    0,
+    PRINCIPAL_ID,
+    callbackFixtureAdapters({
+      data: 'ask:SUP-42:0',
+      postToBridge: async (threadId, text, updateId) => {
+        bridged.push({ threadId, text, updateId });
+        return true;
+      },
+    })
+  );
+  assert.deepEqual(bridged, [], 'no adapter to resolve the option label from - must never guess or fabricate an answer');
+  assert.equal(result.dropped, 1);
+});
+
+// ── BL-483: a tap on a retracted/already-answered ask is stale - answered
+// with a toast, edited to show it is no longer open, NO side effect. ─────
+
+test('BL-483: a tap on a closed (already-answered/retracted) ask performs no postToBridge side effect', async () => {
+  const bridged = [];
+  const answered = [];
+  const result = await pollAndForward(
+    0,
+    PRINCIPAL_ID,
+    callbackFixtureAdapters({
+      data: 'ask:SUP-42:0',
+      resolveAskOptions: async () => undefined,
+      postToBridge: async (threadId, text, updateId) => {
+        bridged.push({ threadId, text, updateId });
+        return true;
+      },
+      answerCallbackQuery: async (id, text) => answered.push({ id, text }),
+    })
+  );
+  assert.deepEqual(bridged, [], 'a stale tap must never record a second, spurious answer');
+  assert.equal(answered.length, 1);
+  assert.equal(answered[0].id, 'cbq-1');
+  assert.match(answered[0].text ?? '', /no longer open|already/i);
+  assert.equal(result.dropped, 1);
+});
+
+test('BL-483: a tap on a closed ask edits the message to show it is no longer open', async () => {
+  const edits = [];
+  await pollAndForward(
+    0,
+    PRINCIPAL_ID,
+    callbackFixtureAdapters({
+      data: 'ask:SUP-42:0',
+      resolveAskOptions: async () => undefined,
+      readAskMessage: async () => ({ topicId: 800, messageId: 900, text: 'Which environment?\n\n1. staging' }),
+      editAskMessage: async (topicId, messageId, text) => {
+        edits.push({ topicId, messageId, text });
+        return true;
+      },
+    })
+  );
+  assert.equal(edits.length, 1);
+  assert.match(edits[0].text, /no longer open|already/i);
 });
 
 // ── BL-484: a tap on an ALREADY-DECIDED ask is stale - answered with an
@@ -3007,25 +3218,25 @@ test('BL-426: relaySseReplies behaves exactly as before when the voice adapters 
 
 // ── relaySseReplies / deliverAgentQuestion — BL-466 ───────────────────────
 
-test('BL-466 agent-question-poll-01: an agentQuestion record with 2+ options sends a native poll into the Agent Questions topic and records the poll mapping', async () => {
-  const polled = [];
+test('BL-483 multi-option-ask-buttons-01: an agentQuestion record carrying options sends tappable buttons (never a poll) into the Agent Questions topic and records the message for later resolution/editing', async () => {
+  const posted = [];
   const recorded = [];
   const sentReplies = [];
   await relaySseReplies(
     '',
     {
       readChunk: mkChunkReader([
-        'event: telegram-reply\ndata: {"id":"r1","threadId":"SUP-1","text":"which environment?","agentQuestion":true,"options":["staging","prod"]}\n\n',
+        'event: telegram-reply\ndata: {"id":"r1","threadId":"SUP-1","text":"which environment?","agentQuestion":true,"options":[{"label":"staging","description":"pre-prod"},{"label":"prod","description":"live"}]}\n\n',
       ]),
       sendReply: async (topicId, text) => {
         sentReplies.push({ topicId, text });
       },
-      sendPoll: async (topicId, question, options) => {
-        polled.push({ topicId, question, options });
-        return { pollId: 'poll-1' };
+      sendAskButtons: async (topicId, text, buttons) => {
+        posted.push({ topicId, text, buttons });
+        return { success: true, messageId: 555 };
       },
-      recordPollMapping: async (pollId, threadId, options) => {
-        recorded.push({ pollId, threadId, options });
+      recordAskMessage: async (threadId, topicId, messageId, text) => {
+        recorded.push({ threadId, topicId, messageId, text });
       },
       agentQuestionsTopicId: async () => 42,
       resolveDelivery: () => {
@@ -3035,13 +3246,22 @@ test('BL-466 agent-question-poll-01: an agentQuestion record with 2+ options sen
     },
     new Set()
   );
-  assert.deepEqual(polled, [{ topicId: 42, question: 'which environment?', options: ['staging', 'prod'] }]);
-  assert.deepEqual(recorded, [{ pollId: 'poll-1', threadId: 'SUP-1', options: ['staging', 'prod'] }]);
-  assert.deepEqual(sentReplies, [], 'a 2+-option agentQuestion must never ALSO send an ordinary reply');
+  assert.equal(posted.length, 1);
+  assert.equal(posted[0].topicId, 42);
+  assert.match(posted[0].text, /staging/);
+  assert.match(posted[0].text, /pre-prod/);
+  assert.match(posted[0].text, /prod/);
+  assert.match(posted[0].text, /live/);
+  assert.deepEqual(posted[0].buttons, [
+    [{ text: 'staging', callbackData: 'ask:SUP-1:0' }],
+    [{ text: 'prod', callbackData: 'ask:SUP-1:1' }],
+  ]);
+  assert.deepEqual(recorded, [{ threadId: 'SUP-1', topicId: 42, messageId: 555, text: posted[0].text }]);
+  assert.deepEqual(sentReplies, [], 'an options-carrying agentQuestion must never ALSO send an ordinary reply');
 });
 
-test('BL-466 agent-question-poll-03: an agentQuestion record with no options falls back to a plain message in the Agent Questions topic', async () => {
-  const polled = [];
+test('BL-483 multi-option-ask-buttons-05: an agentQuestion record with no options renders byte-identically to the pre-change (plain message) contract', async () => {
+  const posted = [];
   const sentReplies = [];
   await relaySseReplies(
     '',
@@ -3050,9 +3270,9 @@ test('BL-466 agent-question-poll-03: an agentQuestion record with no options fal
       sendReply: async (topicId, text) => {
         sentReplies.push({ topicId, text });
       },
-      sendPoll: async (topicId, question, options) => {
-        polled.push({ topicId, question, options });
-        return { pollId: 'poll-1' };
+      sendAskButtons: async (topicId, text, buttons) => {
+        posted.push({ topicId, text, buttons });
+        return { success: true, messageId: 555 };
       },
       agentQuestionsTopicId: async () => 42,
       resolveDelivery: () => {
@@ -3063,21 +3283,43 @@ test('BL-466 agent-question-poll-03: an agentQuestion record with no options fal
     new Set()
   );
   assert.deepEqual(sentReplies, [{ topicId: 42, text: 'anything else?' }]);
-  assert.deepEqual(polled, [], 'an open-ended agentQuestion must never send a poll');
+  assert.deepEqual(posted, [], 'an open-ended agentQuestion must never send buttons');
 });
 
-test('BL-466: a poll send that fails (no pollId returned) records no mapping, never crashes the relay', async () => {
+test('BL-483: an agentQuestion record with an EMPTY options array also falls back to a plain message', async () => {
+  const posted = [];
+  const sentReplies = [];
+  await relaySseReplies(
+    '',
+    {
+      readChunk: mkChunkReader(['event: telegram-reply\ndata: {"id":"r1","threadId":"SUP-1","text":"anything else?","agentQuestion":true,"options":[]}\n\n']),
+      sendReply: async (topicId, text) => sentReplies.push({ topicId, text }),
+      sendAskButtons: async (topicId, text, buttons) => {
+        posted.push({ topicId, text, buttons });
+        return { success: true, messageId: 555 };
+      },
+      agentQuestionsTopicId: async () => 42,
+      resolveDelivery: () => ({ kind: 'undeliverable' }),
+      ackReply: async () => {},
+    },
+    new Set()
+  );
+  assert.deepEqual(sentReplies, [{ topicId: 42, text: 'anything else?' }]);
+  assert.deepEqual(posted, []);
+});
+
+test('BL-483: a button send that fails (no messageId returned) records no mapping, never crashes the relay', async () => {
   const recorded = [];
   await relaySseReplies(
     '',
     {
       readChunk: mkChunkReader([
-        'event: telegram-reply\ndata: {"id":"r1","threadId":"SUP-1","text":"which environment?","agentQuestion":true,"options":["staging","prod"]}\n\n',
+        'event: telegram-reply\ndata: {"id":"r1","threadId":"SUP-1","text":"which environment?","agentQuestion":true,"options":[{"label":"staging"},{"label":"prod"}]}\n\n',
       ]),
       sendReply: async () => {},
-      sendPoll: async () => ({}),
-      recordPollMapping: async (pollId, threadId, options) => {
-        recorded.push({ pollId, threadId, options });
+      sendAskButtons: async () => ({ success: false }),
+      recordAskMessage: async (threadId, topicId, messageId, text) => {
+        recorded.push({ threadId, topicId, messageId, text });
       },
       agentQuestionsTopicId: async () => 42,
       resolveDelivery: () => ({ kind: 'undeliverable' }),

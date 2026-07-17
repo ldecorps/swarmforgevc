@@ -473,6 +473,40 @@
   (let [trimmed (->> raw-options (map str/trim) (remove str/blank?) vec)]
     (when (>= (count trimmed) 2) trimmed)))
 
+;; BL-483: normalizes a raw ask's options (each element either a plain
+;; string, kept as a label-only option, or a {"label" ... "description" ...}
+;; JSON object, kept as both) to either nil (falls back to a plain message)
+;; or a vector of {:label :description} maps (tappable buttons -
+;; telegramFrontDeskBotCore.ts's own AskOption shape). Unlike poll-options'
+;; native-Telegram-poll 2+ minimum, a SINGLE usable option is kept - a
+;; button has no such constraint. A raw element that is neither a string
+;; nor a map, or a raw-options value that is not sequential at all
+;; (malformed JSON reaching here as e.g. a bare number), degrades to
+;; dropping that element / the whole result respectively, never a crash -
+;; the same "malformed input degrades to the documented fallback" posture
+;; operator_ask.bb's own parse-options catch already establishes one layer
+;; up.
+(defn- blank-to-nil [s]
+  (let [trimmed (str/trim (str s))]
+    (when-not (str/blank? trimmed) trimmed)))
+
+(defn- normalize-ask-option [raw]
+  (cond
+    (string? raw)
+    (some->> raw blank-to-nil (hash-map :label))
+
+    (map? raw)
+    (when-let [label (blank-to-nil (get raw "label"))]
+      (cond-> {:label label}
+        (blank-to-nil (get raw "description")) (assoc :description (blank-to-nil (get raw "description")))))
+
+    :else nil))
+
+(defn ask-options [raw-options]
+  (when (sequential? raw-options)
+    (let [normalized (->> raw-options (keep normalize-ask-option) vec)]
+      (when (seq normalized) normalized))))
+
 (defn answer-text-from-messages
   "The human's own LATEST reply text out of a thread's messages - the
    plain-text 'answer' to pair alongside :pending-question in the

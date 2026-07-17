@@ -109,6 +109,7 @@ import {
   SttResult,
   TtsResult,
   ReplyRelayAdapters,
+  AskOption,
 } from './telegramFrontDeskBotCore';
 import {
   PauseState,
@@ -638,16 +639,65 @@ export function writePollMap(targetPath: string, map: PollMap): void {
 // Used only to resolve "which SUP-### thread is the CURRENTLY pending agent
 // question on" for an in-topic plain-message reply (BL-306's own "one
 // pending question at a time" MVP constraint means this is never ambiguous).
+// BL-483: also returns the pending question's own :options (operator_ask.bb
+// already persists them, unused by this side until now) - PollAdapters.
+// resolveAskOptions below builds on this SAME read rather than a second file
+// parse, so an ask-option tap's staleness check and the approve/reject/amend
+// staleness check (readRecordedApprovalVerdict) reuse the identical
+// single-source-of-truth posture.
 // Hardener: exported for the same fixture-proof reason as readPollMap above.
-export function readAwaitingAnswer(targetPath: string): { threadId?: string } | undefined {
+export function readAwaitingAnswer(targetPath: string): { threadId?: string; options?: AskOption[] } | undefined {
   try {
     const parsed = JSON.parse(fs.readFileSync(path.join(targetPath, '.swarmforge', 'operator', 'awaiting-answer.json'), 'utf8')) as {
       thread_id?: string;
+      options?: AskOption[];
     };
-    return { threadId: parsed.thread_id };
+    return { threadId: parsed.thread_id, options: parsed.options };
   } catch {
     return undefined;
   }
+}
+
+// BL-483: resolves an options-carrying ask's own options for the CURRENTLY
+// pending question only - undefined for every other threadId (answered,
+// retracted, or superseded by a later question), which
+// telegramFrontDeskBotCore.ts's own PollAdapters.resolveAskOptions doc
+// comment names as the stale-tap signal. Never a second store: reads the
+// SAME awaiting-answer.json readAwaitingAnswer already parses.
+export function resolveAskOptions(targetPath: string, threadId: string): AskOption[] | undefined {
+  const awaiting = readAwaitingAnswer(targetPath);
+  return awaiting?.threadId === threadId ? awaiting.options : undefined;
+}
+
+// BL-483: {threadId: {topicId, messageId, text}} - the Telegram message an
+// options-carrying ask's buttons live at, so a later tap (answered) or a
+// stale tap (no longer open) can edit that exact message - the same
+// "bot-owned, machine-local, no durability promise beyond one process
+// lifetime" posture as telegram-approval-ask-messages.json above, keyed by
+// threadId instead of backlogId (an ask has no backlog ticket of its own).
+export interface StoredAskMessage {
+  topicId: number | undefined;
+  messageId: number;
+  text: string;
+}
+
+export function askMessagesPath(targetPath: string): string {
+  return path.join(targetPath, '.swarmforge', 'operator', 'telegram-ask-messages.json');
+}
+
+export function readAskMessages(targetPath: string): Record<string, StoredAskMessage> {
+  try {
+    return JSON.parse(fs.readFileSync(askMessagesPath(targetPath), 'utf8')) as Record<string, StoredAskMessage>;
+  } catch {
+    return {};
+  }
+}
+
+export function recordAskMessage(targetPath: string, threadId: string, topicId: number | undefined, messageId: number, text: string): void {
+  const messages = readAskMessages(targetPath);
+  messages[threadId] = { topicId, messageId, text };
+  fs.mkdirSync(path.dirname(askMessagesPath(targetPath)), { recursive: true });
+  fs.writeFileSync(askMessagesPath(targetPath), JSON.stringify(messages));
 }
 
 // BL-423: the PAUSE marker - this bot's own writer (applyPause/resumeNow
@@ -1315,6 +1365,10 @@ function buildPollAdapters(
     agentQuestionsTopicId: () => ensureAgentQuestionsTopic(targetPath, botToken, chatId),
     getPendingAgentQuestionThread: () => Promise.resolve(readAwaitingAnswer(targetPath)?.threadId),
     resolvePollThread: (pollId) => Promise.resolve(readPollMap(targetPath)[pollId]),
+    // BL-483: an ask-option tap's own resolution/close adapters.
+    resolveAskOptions: (threadId) => Promise.resolve(resolveAskOptions(targetPath, threadId)),
+    readAskMessage: (threadId) => Promise.resolve(readAskMessages(targetPath)[threadId]),
+    editAskMessage: (topicId, messageId, text) => editMessageText(botToken, chatId, messageId, text, undefined, undefined, null).then((r) => r.success),
     // ── BL-423: swarm control (stop/restart/pause) ──────────────────────
     controlTopicId: () => ensureControlTopic(targetPath, botToken, chatId),
     getPendingControlConfirm: () => Promise.resolve(readPendingControlConfirm(targetPath)),
@@ -1519,11 +1573,23 @@ async function connectAndRelayReplies(
       // telegramFrontDeskBotCore.ts). agentQuestionsTopicId reuses the SAME
       // ensureAgentQuestionsTopic the inbound side (buildPollAdapters above)
       // and main()'s own pre-loop binding call use - never a second lookup.
+      // BL-483: sendPoll/recordPollMapping kept wired (their poll-answer
+      // sibling, processPollAnswer, is still valid, generically reusable
+      // code) but deliverAgentQuestion no longer calls them for an
+      // options-carrying ask - see sendAskButtons/recordAskMessage below.
       sendPoll: (topicId, question, options) => sendTelegramPoll(botToken, chatId, question, options, topicId).then((r) => ({ pollId: r.pollId })),
       recordPollMapping: (pollId, threadId, options) => {
         const map = readPollMap(targetPath);
         map[pollId] = { threadId, options };
         writePollMap(targetPath, map);
+        return Promise.resolve();
+      },
+      // BL-483: tappable inline-keyboard buttons - the SUPERSEDING outbound
+      // half of the agent-question round trip for an options-carrying ask.
+      sendAskButtons: (topicId, text, buttons) =>
+        sendTelegramMessage(botToken, chatId, text, undefined, undefined, topicId, buttons).then((r) => ({ success: r.success, messageId: r.messageId })),
+      recordAskMessage: (threadId, topicId, messageId, text) => {
+        recordAskMessage(targetPath, threadId, topicId, messageId, text);
         return Promise.resolve();
       },
       agentQuestionsTopicId: () => ensureAgentQuestionsTopic(targetPath, botToken, chatId),
