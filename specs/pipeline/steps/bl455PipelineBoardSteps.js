@@ -97,10 +97,10 @@ function fakeConciergeAdapters() {
       readStandingTopics: () => [],
       readRoleHeldTickets: () => currentRoleHeldTickets,
       boardAdapters: {
-        ensureBoardTopic: async () => 900,
+        ensureBoardTopic: async () => ({ topicId: 900 }),
         postMessage: async (topicId, text) => {
           posted.push({ topicId, text });
-          return 1;
+          return { messageId: 1 };
         },
         deleteMessage: async (topicId, messageId) => {
           deleted.push({ topicId, messageId });

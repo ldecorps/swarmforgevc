@@ -6,6 +6,7 @@ const { runConciergeTick } = require('../out/concierge/conciergeTick');
 // file uses the plain always-succeeds titlesSet stub from fakeAdapters.
 const { editForumTopicWithRateLimitRetry } = require('../out/notify/telegramClient');
 const { wrapPipelineBoardHtml } = require('../out/concierge/pipelineBoard');
+const { PIPELINE_BOARD_ALERT_FAILURE_CAP } = require('../out/concierge/pipelineBoardSync');
 
 function folders(overrides = {}) {
   return { active: [], paused: [], done: [], ...overrides };
@@ -139,8 +140,8 @@ function fakeAdapters(overrides = {}) {
       // DO exercise the board override readRoleHeldTickets/boardAdapters.
       readRoleHeldTickets: () => ({}),
       boardAdapters: {
-        ensureBoardTopic: async () => undefined,
-        postMessage: async () => undefined,
+        ensureBoardTopic: async () => ({}),
+        postMessage: async () => ({}),
         deleteMessage: async () => true,
       },
       // BL-467: no pin enforcement by default - a safe no-op posture
@@ -1807,11 +1808,11 @@ test('BL-462: the pipeline board reposts at the bottom (delete + post) on a stag
   adapters.boardAdapters = {
     ensureBoardTopic: async () => {
       ensured.push(true);
-      return 900;
+      return { topicId: 900 };
     },
     postMessage: async (topicId, text) => {
       posted.push({ topicId, text });
-      return 42;
+      return { messageId: 42 };
     },
     deleteMessage: async (topicId, messageId) => {
       deleted.push({ topicId, messageId });
@@ -1861,9 +1862,9 @@ test('BL-455: role-held tickets are joined to their backlog item epic/title - gr
   const posted = [];
   adapters.boardAdapters.postMessage = async (topicId, text) => {
     posted.push(text);
-    return 1;
+    return { messageId: 1 };
   };
-  adapters.boardAdapters.ensureBoardTopic = async () => 900;
+  adapters.boardAdapters.ensureBoardTopic = async () => ({ topicId: 900 });
   adapters.readRoleHeldTickets = () => ({ coder: ['BL-1'], QA: ['BL-2'] });
   setFolders(
     folders({
@@ -1898,9 +1899,9 @@ test('BL-455: a paused ticket awaiting human approval and a plain paused ticket 
   const posted = [];
   adapters.boardAdapters.postMessage = async (topicId, text) => {
     posted.push(text);
-    return 1;
+    return { messageId: 1 };
   };
-  adapters.boardAdapters.ensureBoardTopic = async () => 900;
+  adapters.boardAdapters.ensureBoardTopic = async () => ({ topicId: 900 });
   setFolders(
     folders({
       paused: [
@@ -1949,13 +1950,73 @@ test('BL-452: omitting readRoleHeldTickets/boardAdapters entirely leaves the tic
   assert.equal(state.pipelineBoard, undefined);
 });
 
+// ── BL-497: pipeline-board-post-failure-recovery wiring ───────────────────
+
+test('BL-497: a failed board post logs the surfaced Telegram error instead of swallowing it', async () => {
+  const { adapters, setFolders } = fakeAdapters();
+  adapters.readRoleHeldTickets = () => ({ coder: ['BL-1'] });
+  adapters.boardAdapters.ensureBoardTopic = async () => ({ topicId: 900 });
+  adapters.boardAdapters.postMessage = async () => ({ error: 'Bad Request: message thread not found' });
+  setFolders(folders({ active: [{ id: 'BL-1', title: 'test ticket' }] }));
+
+  const originalErrorWrite = process.stderr.write;
+  const errors = [];
+  process.stderr.write = (chunk) => {
+    errors.push(chunk);
+    return true;
+  };
+  try {
+    await runConciergeTick(adapters);
+  } finally {
+    process.stderr.write = originalErrorWrite;
+  }
+
+  assert.ok(
+    errors.some((e) => e.includes('failed-post') && e.includes('Bad Request: message thread not found')),
+    `expected the surfaced Telegram error logged, got: ${JSON.stringify(errors)}`
+  );
+});
+
+test('BL-497: emitFailureAlert wired through boardAdapters fires via a real runConciergeTick loop once the retry cap is exceeded, armed only on confirmed delivery', async () => {
+  const { adapters, setFolders, state } = fakeAdapters();
+  adapters.readRoleHeldTickets = () => ({ coder: ['BL-1'] });
+  adapters.boardAdapters.ensureBoardTopic = async () => ({ topicId: 900 });
+  adapters.boardAdapters.postMessage = async () => ({ error: 'Too Many Requests: retry after 26' });
+  const alertsSent = [];
+  adapters.boardAdapters.emitFailureAlert = async (message) => {
+    alertsSent.push(message);
+    return true;
+  };
+
+  let tick = 0;
+  for (let i = 0; i < PIPELINE_BOARD_ALERT_FAILURE_CAP; i += 1) {
+    tick += 1;
+    // A distinct title each tick keeps the content signature changing, so
+    // the board actually attempts a post every tick rather than short-
+    // circuiting on "unchanged" - break-then-fix: without this the fixture
+    // would never even reach postMessage, and the test would pass for the
+    // wrong reason.
+    setFolders(folders({ active: [{ id: 'BL-1', title: `test ticket ${tick}` }] }));
+    await runConciergeTick(adapters, tick * 1000);
+  }
+
+  assert.equal(alertsSent.length, 1, `expected exactly one alert emitted once wired through the real tick loop, got: ${JSON.stringify(alertsSent)}`);
+  assert.equal(state.pipelineBoard.alertArmed, true, 'expected the alert armed once delivery was confirmed');
+
+  // One further failing tick past the cap must not re-alert.
+  tick += 1;
+  setFolders(folders({ active: [{ id: 'BL-1', title: `test ticket ${tick}` }] }));
+  await runConciergeTick(adapters, tick * 1000);
+  assert.equal(alertsSent.length, 1, 'expected no additional alert once already armed');
+});
+
 // ── BL-467: pipeline-board-only-pin wiring ────────────────────────────────
 
 test('BL-467: the pin sync runs after the board sync and enforces against THIS tick freshly-posted board messageId', async () => {
   const { adapters, setFolders } = fakeAdapters();
   const pinCalls = [];
-  adapters.boardAdapters.ensureBoardTopic = async () => 900;
-  adapters.boardAdapters.postMessage = async () => 42;
+  adapters.boardAdapters.ensureBoardTopic = async () => ({ topicId: 900 });
+  adapters.boardAdapters.postMessage = async () => ({ messageId: 42 });
   adapters.readRoleHeldTickets = () => ({ coder: ['BL-1'] });
   adapters.pinAdapters = {
     getTopPinnedMessageId: async () => 7,
@@ -1978,8 +2039,8 @@ test('BL-467: the pin sync runs after the board sync and enforces against THIS t
 test('BL-467: an already-clean tick (the board is already the top pin) makes no unpin/pin call', async () => {
   const { adapters, setFolders } = fakeAdapters();
   const pinCalls = [];
-  adapters.boardAdapters.ensureBoardTopic = async () => 900;
-  adapters.boardAdapters.postMessage = async () => 42;
+  adapters.boardAdapters.ensureBoardTopic = async () => ({ topicId: 900 });
+  adapters.boardAdapters.postMessage = async () => ({ messageId: 42 });
   adapters.readRoleHeldTickets = () => ({ coder: ['BL-1'] });
   adapters.pinAdapters = {
     getTopPinnedMessageId: async () => 42,
@@ -2018,9 +2079,9 @@ test('BL-473: a ticket physically in backlog/active/ that no role holds still re
   const posted = [];
   adapters.boardAdapters.postMessage = async (topicId, text) => {
     posted.push(text);
-    return 1;
+    return { messageId: 1 };
   };
-  adapters.boardAdapters.ensureBoardTopic = async () => 900;
+  adapters.boardAdapters.ensureBoardTopic = async () => ({ topicId: 900 });
   adapters.readRoleHeldTickets = () => ({});
   setFolders(folders({ active: [{ id: 'BL-1', title: 'freshly promoted' }] }));
 
@@ -2052,9 +2113,9 @@ test('BL-473 bounce: a role-held ticket absent from folders.active gets no row a
   const posted = [];
   adapters.boardAdapters.postMessage = async (topicId, text) => {
     posted.push(text);
-    return 1;
+    return { messageId: 1 };
   };
-  adapters.boardAdapters.ensureBoardTopic = async () => 900;
+  adapters.boardAdapters.ensureBoardTopic = async () => ({ topicId: 900 });
   adapters.readRoleHeldTickets = () => ({ coder: ['BL-1'] });
 
   await runConciergeTick(adapters);
@@ -2074,9 +2135,9 @@ test('BL-487: an ASYNC readRoleHeldTickets (a Promise-returning adapter) is prop
   const posted = [];
   adapters.boardAdapters.postMessage = async (topicId, text) => {
     posted.push(text);
-    return 1;
+    return { messageId: 1 };
   };
-  adapters.boardAdapters.ensureBoardTopic = async () => 900;
+  adapters.boardAdapters.ensureBoardTopic = async () => ({ topicId: 900 });
   setFolders(folders({ active: [{ id: 'BL-1', title: 'async-held ticket' }] }));
   adapters.readRoleHeldTickets = () => Promise.resolve({ coder: ['BL-1'] });
 
@@ -2094,9 +2155,9 @@ test('BL-465: omitting readRootIntakeFiles/readRepoBaseUrl entirely leaves the b
   const posted = [];
   adapters.boardAdapters.postMessage = async (topicId, text) => {
     posted.push(text);
-    return 1;
+    return { messageId: 1 };
   };
-  adapters.boardAdapters.ensureBoardTopic = async () => 900;
+  adapters.boardAdapters.ensureBoardTopic = async () => ({ topicId: 900 });
   adapters.readRoleHeldTickets = () => ({ coder: ['BL-1'] });
   setFolders(folders({ active: [{ id: 'BL-1', title: 'fix the widget' }] }));
 
@@ -2111,9 +2172,9 @@ test('BL-465: readRootIntakeFiles feeds the board\'s own ROOT INTAKE: section', 
   const posted = [];
   adapters.boardAdapters.postMessage = async (topicId, text) => {
     posted.push(text);
-    return 1;
+    return { messageId: 1 };
   };
-  adapters.boardAdapters.ensureBoardTopic = async () => 900;
+  adapters.boardAdapters.ensureBoardTopic = async () => ({ topicId: 900 });
   adapters.readRoleHeldTickets = () => ({});
   adapters.readRootIntakeFiles = () => [{ id: 'INTAKE-1', title: 'a raw ask', filename: 'INTAKE-1.md' }];
   setFolders(folders());
@@ -2129,9 +2190,9 @@ test('BL-465: folders.done feeds the board\'s own RECENTLY CLOSED: section direc
   const posted = [];
   adapters.boardAdapters.postMessage = async (topicId, text) => {
     posted.push(text);
-    return 1;
+    return { messageId: 1 };
   };
-  adapters.boardAdapters.ensureBoardTopic = async () => 900;
+  adapters.boardAdapters.ensureBoardTopic = async () => ({ topicId: 900 });
   adapters.readRoleHeldTickets = () => ({});
   setFolders(folders({ done: [{ id: 'BL-9', title: 'shipped thing', filename: 'BL-9-shipped-thing.yaml' }] }));
 
@@ -2156,9 +2217,9 @@ test('BL-465 bounce: RECENTLY CLOSED sorts by actual closure recency, never by f
   const posted = [];
   adapters.boardAdapters.postMessage = async (topicId, text) => {
     posted.push(text);
-    return 1;
+    return { messageId: 1 };
   };
-  adapters.boardAdapters.ensureBoardTopic = async () => 900;
+  adapters.boardAdapters.ensureBoardTopic = async () => ({ topicId: 900 });
   adapters.readRoleHeldTickets = () => ({});
 
   // Tick 1 (t=1000): only BL-9 is done.
@@ -2196,9 +2257,9 @@ test('BL-465 bounce: a ticket newly closing on a LATER tick still outranks one a
   const posted = [];
   adapters.boardAdapters.postMessage = async (topicId, text) => {
     posted.push(text);
-    return 1;
+    return { messageId: 1 };
   };
-  adapters.boardAdapters.ensureBoardTopic = async () => 900;
+  adapters.boardAdapters.ensureBoardTopic = async () => ({ topicId: 900 });
   adapters.readRoleHeldTickets = () => ({});
 
   // Tick 1 (t=500): BL-2 is ALREADY done (no prior snapshot - first-ever
@@ -2230,9 +2291,9 @@ test('BL-465: readRepoBaseUrl feeds the below-grid GitHub link list, appended af
   const posted = [];
   adapters.boardAdapters.postMessage = async (topicId, text, linksHtml) => {
     posted.push(wrapPipelineBoardHtml(text, linksHtml));
-    return 1;
+    return { messageId: 1 };
   };
-  adapters.boardAdapters.ensureBoardTopic = async () => 900;
+  adapters.boardAdapters.ensureBoardTopic = async () => ({ topicId: 900 });
   adapters.readRoleHeldTickets = () => ({ coder: ['BL-1'] });
   adapters.readRepoBaseUrl = () => 'https://github.com/ldecorps/swarmforgevc';
   setFolders(folders({ active: [{ id: 'BL-1', title: 'fix the widget', filename: 'BL-1-fix-the-widget.yaml' }] }));
@@ -2249,9 +2310,9 @@ test('BL-465: no readRepoBaseUrl means no link list at all, even with active row
   const posted = [];
   adapters.boardAdapters.postMessage = async (topicId, text, linksHtml) => {
     posted.push(wrapPipelineBoardHtml(text, linksHtml));
-    return 1;
+    return { messageId: 1 };
   };
-  adapters.boardAdapters.ensureBoardTopic = async () => 900;
+  adapters.boardAdapters.ensureBoardTopic = async () => ({ topicId: 900 });
   adapters.readRoleHeldTickets = () => ({ coder: ['BL-1'] });
   setFolders(folders({ active: [{ id: 'BL-1', title: 'fix the widget', filename: 'BL-1-fix-the-widget.yaml' }] }));
 

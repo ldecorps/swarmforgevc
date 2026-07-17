@@ -1,11 +1,11 @@
 const assert = require('node:assert/strict');
-const { syncPipelineBoard } = require('../out/concierge/pipelineBoardSync');
+const { syncPipelineBoard, classifyBoardFailure, PIPELINE_BOARD_ALERT_FAILURE_CAP } = require('../out/concierge/pipelineBoardSync');
 const { renderPipelineBoardBody } = require('../out/concierge/pipelineBoard');
 
 function fakeAdapters(overrides = {}) {
   return {
-    ensureBoardTopic: async () => 900,
-    postMessage: async () => 1,
+    ensureBoardTopic: async () => ({ topicId: 900 }),
+    postMessage: async () => ({ messageId: 1 }),
     deleteMessage: async () => true,
     ...overrides,
   };
@@ -32,11 +32,11 @@ test('syncPipelineBoard: first call with no prior state creates the topic, posts
     fakeAdapters({
       ensureBoardTopic: async () => {
         created.push(true);
-        return 900;
+        return { topicId: 900 };
       },
       postMessage: async (topicId, text) => {
         posted.push({ topicId, text });
-        return 42;
+        return { messageId: 42 };
       },
       deleteMessage: async (topicId, messageId) => {
         deleted.push({ topicId, messageId });
@@ -54,6 +54,8 @@ test('syncPipelineBoard: first call with no prior state creates the topic, posts
   assert.equal(result.state.messageId, 42);
   assert.equal(result.state.lastChangeMs, T1);
   assert.equal(result.state.contentSignature, renderPipelineBoardBody(board([{ id: 'BL-1', column: 'coder', slug: '' }])));
+  assert.equal(result.state.consecutiveFailures, 0);
+  assert.equal(result.state.alertArmed, false);
 });
 
 test('syncPipelineBoard: a content change posts the fresh message BEFORE deleting the previously posted one', async () => {
@@ -66,7 +68,7 @@ test('syncPipelineBoard: a content change posts the fresh message BEFORE deletin
     fakeAdapters({
       postMessage: async (topicId, text) => {
         calls.push({ fn: 'post', topicId, text });
-        return 99;
+        return { messageId: 99 };
       },
       deleteMessage: async (topicId, messageId) => {
         calls.push({ fn: 'delete', topicId, messageId });
@@ -101,7 +103,7 @@ test('BL-468: a failed repost never deletes the old message, and its messageId s
     board([{ id: 'BL-1', column: 'QA', slug: '' }]),
     first.state,
     fakeAdapters({
-      postMessage: async () => undefined,
+      postMessage: async () => ({}),
       deleteMessage: async (topicId, messageId) => {
         deleted.push({ topicId, messageId });
         return true;
@@ -124,7 +126,7 @@ test('syncPipelineBoard: unchanged content is a no-op - no post, no delete, stat
   const posted = [];
   const deleted = [];
   const data = board([{ id: 'BL-1', column: 'coder', slug: '' }]);
-  const first = await syncPipelineBoard(data, undefined, fakeAdapters({ postMessage: async () => 42 }), T1);
+  const first = await syncPipelineBoard(data, undefined, fakeAdapters({ postMessage: async () => ({ messageId: 42 }) }), T1);
 
   const result = await syncPipelineBoard(
     data,
@@ -132,7 +134,7 @@ test('syncPipelineBoard: unchanged content is a no-op - no post, no delete, stat
     fakeAdapters({
       postMessage: async (topicId, text) => {
         posted.push({ topicId, text });
-        return 99;
+        return { messageId: 99 };
       },
       deleteMessage: async (topicId, messageId) => {
         deleted.push({ topicId, messageId });
@@ -153,16 +155,17 @@ test('syncPipelineBoard: a failed topic creation is a no-op, retried next tick',
   const result = await syncPipelineBoard(
     board([{ id: 'BL-1', column: 'coder', slug: '' }]),
     undefined,
-    fakeAdapters({ ensureBoardTopic: async () => undefined }),
+    fakeAdapters({ ensureBoardTopic: async () => ({}) }),
     T1
   );
 
   assert.equal(result.outcome, 'failed-no-topic');
-  assert.deepEqual(result.state, {});
+  assert.equal(result.state.topicId, undefined);
+  assert.equal(result.state.consecutiveFailures, 1);
 });
 
 test('syncPipelineBoard: a failed post leaves the topic id persisted but no message id/signature bump, retried next tick', async () => {
-  const result = await syncPipelineBoard(board([{ id: 'BL-1', column: 'coder', slug: '' }]), undefined, fakeAdapters({ postMessage: async () => undefined }), T1);
+  const result = await syncPipelineBoard(board([{ id: 'BL-1', column: 'coder', slug: '' }]), undefined, fakeAdapters({ postMessage: async () => ({}) }), T1);
 
   assert.equal(result.outcome, 'failed-post');
   assert.equal(result.state.topicId, 900);
@@ -181,7 +184,7 @@ test('syncPipelineBoard: a failed delete of the old message still lets the fresh
       deleteMessage: async () => false,
       postMessage: async (topicId, text) => {
         posted.push({ topicId, text });
-        return 55;
+        return { messageId: 55 };
       },
     }),
     T2
@@ -202,7 +205,7 @@ test('syncPipelineBoard: a topic already created (topicId persisted) is reused, 
     fakeAdapters({
       ensureBoardTopic: async () => {
         created.push(true);
-        return 901;
+        return { topicId: 901 };
       },
     }),
     T2
@@ -224,11 +227,11 @@ test('syncPipelineBoard: only the injected adapters are ever called - no other s
     fakeAdapters({
       ensureBoardTopic: async () => {
         ensureCalls += 1;
-        return 900;
+        return { topicId: 900 };
       },
       postMessage: async () => {
         postCalls += 1;
-        return 42;
+        return { messageId: 42 };
       },
       deleteMessage: async () => {
         deleteCalls += 1;
@@ -240,4 +243,247 @@ test('syncPipelineBoard: only the injected adapters are ever called - no other s
   assert.equal(ensureCalls, 1);
   assert.equal(postCalls, 1);
   assert.equal(deleteCalls, 0);
+});
+
+// ── BL-497: pipeline-board-post-failure-recovery ──────────────────────────
+
+test('classifyBoardFailure: a "message thread not found" error classifies as topic-gone', () => {
+  assert.equal(classifyBoardFailure('Bad Request: message thread not found'), 'topic-gone');
+});
+
+test('classifyBoardFailure: a 429 retry-after error classifies as transient', () => {
+  assert.equal(classifyBoardFailure('Too Many Requests: retry after 26'), 'transient');
+});
+
+test('classifyBoardFailure: a network ENOTFOUND error classifies as transient', () => {
+  assert.equal(classifyBoardFailure('ENOTFOUND api.telegram.org'), 'transient');
+});
+
+test('classifyBoardFailure: an unrecognized error classifies as unknown, and undefined classifies as unknown', () => {
+  assert.equal(classifyBoardFailure('some never-seen-before Telegram rejection'), 'unknown');
+  assert.equal(classifyBoardFailure(undefined), 'unknown');
+});
+
+// BL-497 pipeline-board-post-failure-recovery-01: every failed outcome
+// surfaces its underlying error instead of swallowing it.
+
+test('syncPipelineBoard: a failed post surfaces its underlying Telegram error on the result', async () => {
+  const result = await syncPipelineBoard(
+    board([{ id: 'BL-1', column: 'coder', slug: '' }]),
+    undefined,
+    fakeAdapters({ postMessage: async () => ({ error: 'Bad Request: message thread not found' }) }),
+    T1
+  );
+  assert.equal(result.outcome, 'failed-post');
+  assert.equal(result.error, 'Bad Request: message thread not found');
+});
+
+test('syncPipelineBoard: a failed topic creation surfaces its underlying Telegram error on the result', async () => {
+  const result = await syncPipelineBoard(
+    board([{ id: 'BL-1', column: 'coder', slug: '' }]),
+    undefined,
+    fakeAdapters({ ensureBoardTopic: async () => ({ error: 'Too Many Requests: retry after 26' }) }),
+    T1
+  );
+  assert.equal(result.outcome, 'failed-no-topic');
+  assert.equal(result.error, 'Too Many Requests: retry after 26');
+});
+
+// BL-497 pipeline-board-post-failure-recovery-02: classification decides
+// whether the stale topic id is cleared (self-heal) or retained.
+
+test('syncPipelineBoard: a topic-gone post failure is classified topic-gone and clears the tracked topic id', async () => {
+  const first = await syncPipelineBoard(board([{ id: 'BL-1', column: 'coder', slug: '' }]), undefined, fakeAdapters(), T1);
+
+  const result = await syncPipelineBoard(
+    board([{ id: 'BL-1', column: 'QA', slug: '' }]),
+    first.state,
+    fakeAdapters({ postMessage: async () => ({ error: 'Bad Request: message thread not found' }) }),
+    T2
+  );
+
+  assert.equal(result.failureClass, 'topic-gone');
+  assert.equal(result.state.topicId, undefined, 'expected the tracked topic id cleared so the next tick re-ensures a fresh one');
+  assert.equal(result.state.messageId, undefined, 'expected the stale messageId cleared too - it belongs to the now-gone topic');
+});
+
+test('syncPipelineBoard: a transient post failure is classified transient and retains the tracked topic id', async () => {
+  const first = await syncPipelineBoard(board([{ id: 'BL-1', column: 'coder', slug: '' }]), undefined, fakeAdapters(), T1);
+
+  const result = await syncPipelineBoard(
+    board([{ id: 'BL-1', column: 'QA', slug: '' }]),
+    first.state,
+    fakeAdapters({ postMessage: async () => ({ error: 'Too Many Requests: retry after 26' }) }),
+    T2
+  );
+
+  assert.equal(result.failureClass, 'transient');
+  assert.equal(result.state.topicId, 900, 'expected the topic id retained - a transient blip must never spawn a duplicate topic');
+});
+
+test('syncPipelineBoard: an ENOTFOUND post failure is classified transient and retains the tracked topic id', async () => {
+  const first = await syncPipelineBoard(board([{ id: 'BL-1', column: 'coder', slug: '' }]), undefined, fakeAdapters(), T1);
+
+  const result = await syncPipelineBoard(
+    board([{ id: 'BL-1', column: 'QA', slug: '' }]),
+    first.state,
+    fakeAdapters({ postMessage: async () => ({ error: 'ENOTFOUND api.telegram.org' }) }),
+    T2
+  );
+
+  assert.equal(result.failureClass, 'transient');
+  assert.equal(result.state.topicId, 900);
+});
+
+// BL-497 pipeline-board-post-failure-recovery-03: after a topic-gone clear,
+// the next tick re-ensures a fresh topic and recovers with no human
+// intervention.
+
+test('syncPipelineBoard: after a topic-gone clear, the next tick re-ensures a fresh topic and posts the board', async () => {
+  const first = await syncPipelineBoard(board([{ id: 'BL-1', column: 'coder', slug: '' }]), undefined, fakeAdapters(), T1);
+  const failed = await syncPipelineBoard(
+    board([{ id: 'BL-1', column: 'QA', slug: '' }]),
+    first.state,
+    fakeAdapters({ postMessage: async () => ({ error: 'Bad Request: message thread not found' }) }),
+    T2
+  );
+  assert.equal(failed.state.topicId, undefined, 'sanity check: prior test already covers this - the clear must have happened');
+
+  const ensured = [];
+  const posted = [];
+  const recovered = await syncPipelineBoard(
+    board([{ id: 'BL-1', column: 'QA', slug: '' }]),
+    failed.state,
+    fakeAdapters({
+      ensureBoardTopic: async () => {
+        ensured.push(true);
+        return { topicId: 950 };
+      },
+      postMessage: async (topicId, text) => {
+        posted.push({ topicId, text });
+        return { messageId: 5 };
+      },
+    }),
+    Date.UTC(2026, 6, 16, 20, 7)
+  );
+
+  assert.equal(ensured.length, 1, 'expected a fresh board topic ensured');
+  assert.equal(posted.length, 1, 'expected the board posted into the fresh topic');
+  assert.equal(posted[0].topicId, 950);
+  assert.equal(recovered.outcome, 'posted');
+  assert.equal(recovered.state.topicId, 950);
+  assert.equal(recovered.state.consecutiveFailures, 0, 'expected the failure episode cleared on recovery');
+});
+
+// BL-497 pipeline-board-post-failure-recovery-04/06: bounded retry + exactly
+// one operator alert, armed only on confirmed delivery.
+
+async function driveTransientFailures(count, state, alertAdapterOverrides = {}) {
+  let current = state;
+  const alertsSent = [];
+  const adapters = fakeAdapters({
+    postMessage: async () => ({ error: 'Too Many Requests: retry after 26' }),
+    emitFailureAlert: async (message) => {
+      alertsSent.push(message);
+      return true;
+    },
+    ...alertAdapterOverrides,
+  });
+  let result;
+  for (let i = 0; i < count; i += 1) {
+    result = await syncPipelineBoard(board([{ id: 'BL-1', column: 'QA', slug: `${i}` }]), current, adapters, T2 + i * 1000);
+    current = result.state;
+  }
+  return { result, alertsSent, adapters };
+}
+
+test('syncPipelineBoard: repeated transient failures raise exactly one operator alert at the retry cap', async () => {
+  const first = await syncPipelineBoard(board([{ id: 'BL-1', column: 'coder', slug: '' }]), undefined, fakeAdapters(), T1);
+
+  const { result, alertsSent } = await driveTransientFailures(PIPELINE_BOARD_ALERT_FAILURE_CAP, first.state);
+
+  assert.equal(result.state.consecutiveFailures, PIPELINE_BOARD_ALERT_FAILURE_CAP);
+  assert.equal(alertsSent.length, 1, `expected exactly one alert emitted at the cap, got: ${JSON.stringify(alertsSent)}`);
+  assert.equal(result.state.topicId, 900, 'expected the same topic id retained, no new topic created');
+  assert.equal(result.state.alertArmed, true);
+});
+
+test('syncPipelineBoard: a further transient failure past the cap emits no additional alert', async () => {
+  const first = await syncPipelineBoard(board([{ id: 'BL-1', column: 'coder', slug: '' }]), undefined, fakeAdapters(), T1);
+  const { result: atCap, alertsSent } = await driveTransientFailures(PIPELINE_BOARD_ALERT_FAILURE_CAP, first.state);
+  assert.equal(alertsSent.length, 1);
+
+  const again = await syncPipelineBoard(
+    board([{ id: 'BL-1', column: 'QA', slug: 'one-more' }]),
+    atCap.state,
+    fakeAdapters({
+      postMessage: async () => ({ error: 'Too Many Requests: retry after 26' }),
+      emitFailureAlert: async (message) => {
+        alertsSent.push(message);
+        return true;
+      },
+    }),
+    T2 + 999_000
+  );
+
+  assert.equal(again.outcome, 'failed-post');
+  assert.equal(alertsSent.length, 1, 'expected no additional alert once already armed');
+  assert.equal(again.state.topicId, 900, 'expected the same topic id retained, no new topic created');
+});
+
+// BL-497 pipeline-board-post-failure-recovery-05: a successful post clears
+// the failure state so a later episode alarms fresh.
+
+test('syncPipelineBoard: a successful post clears the consecutive-failure count and the armed alert', async () => {
+  const first = await syncPipelineBoard(board([{ id: 'BL-1', column: 'coder', slug: '' }]), undefined, fakeAdapters(), T1);
+  const { result: atCap } = await driveTransientFailures(PIPELINE_BOARD_ALERT_FAILURE_CAP, first.state);
+  assert.equal(atCap.state.alertArmed, true);
+
+  const recovered = await syncPipelineBoard(
+    board([{ id: 'BL-1', column: 'done', slug: 'recovered' }]),
+    atCap.state,
+    fakeAdapters({ postMessage: async () => ({ messageId: 77 }) }),
+    T2 + 1_000_000
+  );
+
+  assert.equal(recovered.outcome, 'reposted');
+  assert.equal(recovered.state.consecutiveFailures, 0);
+  assert.equal(recovered.state.alertArmed, false);
+
+  // A later transient episode must be able to alarm again from zero.
+  const { alertsSent: laterAlerts } = await driveTransientFailures(PIPELINE_BOARD_ALERT_FAILURE_CAP, recovered.state);
+  assert.equal(laterAlerts.length, 1, 'expected the later episode to alarm again after the count reset');
+});
+
+// BL-497 pipeline-board-post-failure-recovery-06: the alert arms only on
+// confirmed delivery, never on the attempt.
+
+test('syncPipelineBoard: a failed alert send is not recorded as delivered, and the next failing tick attempts it again', async () => {
+  const first = await syncPipelineBoard(board([{ id: 'BL-1', column: 'coder', slug: '' }]), undefined, fakeAdapters(), T1);
+  const attempts = [];
+  const { result: atCap } = await driveTransientFailures(PIPELINE_BOARD_ALERT_FAILURE_CAP, first.state, {
+    emitFailureAlert: async (message) => {
+      attempts.push(message);
+      return false;
+    },
+  });
+
+  assert.equal(attempts.length, 1, 'expected the alert attempted once at the cap');
+  assert.equal(atCap.state.alertArmed, false, 'expected the alert NOT recorded as delivered - the send failed');
+
+  const nextTick = await syncPipelineBoard(
+    board([{ id: 'BL-1', column: 'QA', slug: 'retry-alert' }]),
+    atCap.state,
+    fakeAdapters({
+      postMessage: async () => ({ error: 'Too Many Requests: retry after 26' }),
+      emitFailureAlert: async (message) => {
+        attempts.push(message);
+        return true;
+      },
+    }),
+    T2 + 2_000_000
+  );
+
+  assert.equal(attempts.length, 2, 'expected the next failing tick to attempt the alert again rather than suppressing it');
+  assert.equal(nextTick.state.alertArmed, true, 'expected the alert armed once delivery is finally confirmed');
 });

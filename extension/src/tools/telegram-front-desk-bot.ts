@@ -2036,18 +2036,33 @@ function buildConciergeTickAdapters(targetPath: string, botToken: string, chatId
     // separate topic-map file/reuse-lookup is needed the way
     // ensureOperatorTopic's own reuse-or-create needs one.
     boardAdapters: {
+      // BL-497: the error string is now surfaced (never discarded) so
+      // syncPipelineBoard can log/classify/self-heal instead of retrying a
+      // dead topic silently forever - the live-outage root cause.
       ensureBoardTopic: async () => {
         const created = await createForumTopic(botToken, chatId, 'Pipeline Board');
-        return created.success ? created.messageThreadId : undefined;
+        return created.success ? { topicId: created.messageThreadId } : { error: created.error };
       },
       postMessage: (topicId, text, linksHtml) =>
         sendTelegramMessage(botToken, chatId, wrapPipelineBoardHtml(text, linksHtml), undefined, undefined, topicId, undefined, 'HTML').then((r) =>
-          r.success ? r.messageId : undefined
+          r.success ? { messageId: r.messageId } : { error: r.error }
         ),
       // BL-462: the board reposts at the bottom on a content change rather
       // than editing in place - deletes the previous message (best-effort;
       // see pipelineBoardSync.ts) before the fresh one is posted above.
       deleteMessage: (topicId, messageId) => deleteMessage(botToken, chatId, messageId).then((r) => r.success),
+      // BL-497: the board's own bounded-retry alert - reuses the SAME
+      // Operator topic every other operator-facing alert in this file posts
+      // into (ensureOperatorTopic), never a new bespoke channel. Only called
+      // by syncPipelineBoard once the consecutive-failure cap is exceeded.
+      emitFailureAlert: async (message) => {
+        const topicId = await ensureOperatorTopic(targetPath, botToken, chatId);
+        if (topicId === undefined) {
+          return false;
+        }
+        const result = await sendTelegramMessage(botToken, chatId, message, undefined, undefined, topicId);
+        return result.success;
+      },
     },
     // BL-467: enforces the pipeline board as the group's ONLY pin - chat-
     // level (no topicId), reusing the SAME botToken/chatId every other
