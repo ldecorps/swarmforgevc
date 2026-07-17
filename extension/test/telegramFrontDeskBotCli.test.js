@@ -48,6 +48,7 @@ const {
   postOperatorContext,
   openSubjectAndRecord,
   standingTopicTargets,
+  roleTopicTargets,
   iconStickersOnce,
   __resetIconStickersCacheForTest,
   transcribeVoiceNote,
@@ -57,7 +58,7 @@ const {
   main,
 } = require('../out/tools/telegram-front-desk-bot');
 const { readRecord: readTopicRecord } = require('../out/concierge/blTopicStore');
-const { readRoleTopicMap } = require('../out/concierge/roleTopicMapStore');
+const { readRoleTopicMap, writeRoleTopicMap } = require('../out/concierge/roleTopicMapStore');
 
 // parseNextSseRecord's own tests live in telegramFrontDeskBotCore.test.js -
 // its implementation moved there (the testable core); this file re-exports
@@ -1494,6 +1495,54 @@ test('standingTopicTargets returns an empty list when the map file does not exis
   const root = mkTmpRoot();
 
   assert.deepEqual(standingTopicTargets(root), []);
+});
+
+// ── roleTopicTargets (BL-469) ──────────────────────────────────────────────
+// Classifies BL-425's own role->topicId map (roleTopicMapStore) into the
+// per-agent RoleTopicTarget list conciergeTick.ts's icon sync wants - reads
+// the SAME file BL-425's ensureRoleTopics already maintains, no second
+// store.
+
+test('roleTopicTargets maps every bound role to its own {role, topicId} target', () => {
+  const root = mkTmpRoot();
+  writeRoleTopicMap(root, { coder: 904, QA: 907, coordinator: 901 });
+
+  const targets = roleTopicTargets(root);
+
+  assert.deepEqual(
+    targets.sort((a, b) => a.topicId - b.topicId),
+    [
+      { role: 'coordinator', topicId: 901 },
+      { role: 'coder', topicId: 904 },
+      { role: 'QA', topicId: 907 },
+    ]
+  );
+});
+
+// Defensive: a role key present in the map but absent from ROLE_TOPIC_ICON
+// (none exist today - every ALL_SWARM_ROLES entry has a mapping) is
+// filtered out rather than producing a target with an unresolvable icon
+// lookup.
+test('roleTopicTargets excludes a role key not present in ROLE_TOPIC_ICON', () => {
+  const root = mkTmpRoot();
+  writeRoleTopicMap(root, { coder: 904, 'not-a-real-role': 999 });
+
+  const targets = roleTopicTargets(root);
+
+  assert.deepEqual(targets, [{ role: 'coder', topicId: 904 }]);
+});
+
+test('roleTopicTargets returns an empty list when the map has no bindings yet', () => {
+  const root = mkTmpRoot();
+  writeRoleTopicMap(root, {});
+
+  assert.deepEqual(roleTopicTargets(root), []);
+});
+
+test('roleTopicTargets returns an empty list when the map file does not exist at all', () => {
+  const root = mkTmpRoot();
+
+  assert.deepEqual(roleTopicTargets(root), []);
 });
 
 // ── iconStickersOnce (BL-342: fetch-once-per-process cache) ───────────────

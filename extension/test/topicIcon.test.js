@@ -1,5 +1,5 @@
 const assert = require('node:assert/strict');
-const { ICON_EMOJI, resolveIconState, resolveIconStickerId, STANDING_TOPIC_ICON } = require('../out/concierge/topicIcon');
+const { ICON_EMOJI, resolveIconState, resolveIconStickerId, STANDING_TOPIC_ICON, ROLE_TOPIC_ICON } = require('../out/concierge/topicIcon');
 
 // BL-342: pure icon-state resolution - the ticket's own convention:
 // check = done/shipped; microbe = defect in flight; musical note (BL-417,
@@ -107,4 +107,29 @@ test('STANDING_TOPIC_ICON: operator resolves to the bell emoji (BL-453 Concierge
 // BL-434: the standing Approvals topic's own icon.
 test('STANDING_TOPIC_ICON: approvals resolves to the clipboard emoji', () => {
   assert.equal(STANDING_TOPIC_ICON.approvals, '📋');
+});
+
+// ── ROLE_TOPIC_ICON (BL-469 per-agent-steering-topic-icon) ───────────────
+// Each of the 8 per-agent Telegram steering topics (BL-425) gets its own
+// fixed, human-chosen icon (firm 2026-07-16 decision) so the human can tell
+// the role topics apart at a glance - a THIRD table, distinct from
+// ICON_EMOJI (ticket state) and STANDING_TOPIC_ICON (standing topics).
+
+test('ROLE_TOPIC_ICON: carries the exact human-chosen icon for each of the 8 role topics', () => {
+  assert.equal(ROLE_TOPIC_ICON.coordinator, '🧭');
+  assert.equal(ROLE_TOPIC_ICON.specifier, '📝');
+  assert.equal(ROLE_TOPIC_ICON.architect, '🏗');
+  assert.equal(ROLE_TOPIC_ICON.coder, '⌨️');
+  assert.equal(ROLE_TOPIC_ICON.cleaner, '🧹');
+  assert.equal(ROLE_TOPIC_ICON.hardender, '🛡');
+  assert.equal(ROLE_TOPIC_ICON.QA, '🔍');
+  assert.equal(ROLE_TOPIC_ICON.documenter, '📚');
+});
+
+// Documents the accepted collision named in the ticket: QA's magnifier is
+// the SAME glyph as ICON_EMOJI.paused, but these are different topic
+// classes (a per-agent QA steering topic vs. a paused ticket's own topic) -
+// not a defect.
+test('ROLE_TOPIC_ICON: QA intentionally collides with the paused ticket-state icon (different topic classes, documented)', () => {
+  assert.equal(ROLE_TOPIC_ICON.QA, ICON_EMOJI.paused);
 });
