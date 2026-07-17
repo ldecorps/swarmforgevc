@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-07-17T13:04:13.850237693Z","feature_name":"the pipeline board surfaces and recovers from a failed post instead of freezing silently","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-497-pipeline-board-post-failure-recovery.feature","background_hash":"167d7f3fcbb7a5e1f5e447208325ff261acee3c5142ef004864f34abebcd8912","implementation_hash":"unknown","scenarios":[]}
+# acceptance-mutation-manifest-end
+
 Feature: the pipeline board surfaces and recovers from a failed post instead of freezing silently
 
   # Live outage 2026-07-17 (RCA: backlog/evidence/pipeline-board-frozen-live-outage-20260717.md).
@@ -30,6 +34,23 @@ Feature: the pipeline board surfaces and recovers from a failed post instead of 
     Given the board content has changed since the last post so a post is attempted
     And the board's tracked topic id is "1634" with a prior posted message
 
+  # Hardener (BL-234 equivalent-mutant note, 2026-07-17): a soft Gherkin mutation pass
+  # single-character-mangles every <error> example VALUE in both outlines below (13
+  # mutants total: 8 killed, 5 survived - all 5 survivors are <error> text mutations,
+  # e.g. "message thread not found" -> "meSsage thread not found"). Each is an
+  # equivalent mutant, not a gap: the SAME <error> string drives both the Given step
+  # (injects it as the adapter's returned error) and the Then step (asserts the
+  # surfaced error equals that same string) in outline -01, so a mutated value simply
+  # round-trips to itself - a self-consistency check no <error> mutation could ever
+  # fail. pipelineBoardSync.ts only ever carries `error` through OPAQUELY: passed
+  # straight into the result (postBoardMessage/syncPipelineBoard) and interpolated,
+  # unvalidated, into the human-facing alert text (buildFailureAlertText) - it is never
+  # compared against a closed set the way <class>/<topic_action> in outline -02 are
+  # (via classifyBoardFailure's explicit TOPIC_GONE/TRANSIENT signature lookups), which
+  # is exactly why every <class>/<topic_action> mutant in outline -02 IS killed while
+  # every <error>-text mutant in both outlines survives. Same class as BL-452's own
+  # <id>-passthrough equivalent-mutant note in that feature file. No artificial
+  # assertion was added to force these 5 to die.
   # BL-497 pipeline-board-post-failure-recovery-01
   Scenario Outline: a failed board outcome surfaces its underlying Telegram error instead of swallowing it
     Given the board <failing_step> fails with error "<error>"
