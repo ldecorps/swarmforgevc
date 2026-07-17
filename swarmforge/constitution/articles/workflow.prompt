@@ -127,6 +127,35 @@
   verified work, and QA approved a parcel whose code never existed in its
   tree.)
 
+## An Approval Authorizes Only Its Ticket's Work — Don't Forward Foreign, Ticket-less Changes (BL-506, 2026-07-18)
+- A parcel carries ONE ticket's task name, and a QA approval authorizes ONLY that ticket's work.
+  But a role's worktree can accumulate functional changes that belong to no ticket — most often
+  operator/supervision tooling hot-synced in as untracked files (the operator-contamination
+  hazard), or another concern a role edits in passing. If a stage `git add`s broadly (or commits
+  with `-a`) it folds those foreign changes into its parcel commit, and because every downstream
+  stage merges that commit forward, the ticket-less work becomes an ANCESTOR of the commit QA
+  approves — so QA's approval lands work on `main` that no spec, ticket, or review ever authorized.
+- So before you commit and forward, confirm your parcel commit contains ONLY changes that belong to
+  the ticket whose task it carries. Never `git add -A` / `git commit -a` blindly; stage the specific
+  paths your ticket touched. If unrelated, ticket-less functional files have appeared in your
+  worktree (operator hot-sync contamination, a stray edit), do NOT commit them into your parcel —
+  leave them unstaged; if they were already committed upstream, stop and surface it rather than
+  forwarding it onward.
+- The reviewing stages (architect, hardener, documenter, QA) own the mirror check: a forwarded
+  parcel's diff against its base must map to its ticket's scope. Functional files with no connection
+  to the ticket AND no ticket of their own are a defect in the parcel — bounce it (and revert the
+  foreign change out of your branch per the bounce-hygiene rule below), never approve it. An
+  approval states that THIS ticket's work is correct; it must never be the vehicle that smuggles
+  someone else's un-ticketed work onto `main`.
+- This is the exact mirror of "Forwarded Commits Carry Their Lineage" above: that rule stops a
+  forward from DROPPING upstream work; this one stops it from ADDING un-authorized work. (BL-506,
+  2026-07-18: the hardener's BL-506 commit `7dd4d14e` added 514 lines of real, tested
+  `remote_control_health*.bb` / `remote_control_respawn.bb` operator tooling — no backlog ticket —
+  which became an ancestor of BL-506's QA-approved `bcbae0426f` and rode its approval onto `main`.
+  BL-506 is pipeline-board LINKS ordering; the RC tooling has nothing to do with it. Proposed by QA
+  scoped `constitution`. Any such already-landed ticket-less work is retroactively ticketed or
+  reverted — an approval is not a substitute for a spec.)
+
 ## A Bounce Must Be Reverted Out Of The Bouncing Branch (BL-490/BL-495, 2026-07-17)
 - Bouncing a parcel sends a `note` back to an earlier role — it does NOT remove the
   bounced commit from your branch. You reviewed the parcel by `merge_and_process`, so
