@@ -65,6 +65,7 @@ function fakeAdapters(overrides = {}) {
         state.snapshot = next.snapshot;
         state.emittedKeys = next.emittedKeys;
         state.standingIconSeenIds = next.standingIconSeenIds;
+        state.roleIconSeenIds = next.roleIconSeenIds;
         state.titleAgeBuckets = next.titleAgeBuckets;
         state.pipelineBoard = next.pipelineBoard;
         state.approvalsRoster = next.approvalsRoster;
@@ -112,6 +113,10 @@ function fakeAdapters(overrides = {}) {
       // BL-418: no standing topics by default - tests that exercise the
       // standing-topic icon sync override this via `overrides`.
       readStandingTopics: () => [],
+      // BL-469: no per-agent role topics by default - tests that exercise
+      // the per-agent steering-topic icon sync override this via
+      // `overrides`, the same safe-default posture as readStandingTopics.
+      readRoleTopics: () => [],
       // BL-414: no recorded activity by default (readLastActivityMs
       // undefined -> 'skipped-no-activity') - a safe, always-no-op default
       // exactly like iconAdapters' own empty sticker list above, so every
@@ -1456,6 +1461,136 @@ test('BL-418 wiring: standingIconSeenIds persists and grows across ticks rather 
   await runConciergeTick(adapters);
 
   assert.deepEqual([...state.standingIconSeenIds].sort(), ['OPERATOR', 'SUP-001']);
+});
+
+// ── BL-469: per-agent Telegram steering-topic icons ───────────────────────
+// Reuses syncStandingTopicIcons' EXACT change-gated (newly-entering-only)
+// posture, generalized to per-agent role topics rather than standing ones -
+// see syncPerAgentTopicIcons' own docstring in conciergeTick.ts.
+
+const ROLE_ICON_STICKERS = [
+  { emoji: '🧭', customEmojiId: 'id-compass' },
+  { emoji: '📝', customEmojiId: 'id-note' },
+  { emoji: '🏗', customEmojiId: 'id-crane' },
+  { emoji: '⌨️', customEmojiId: 'id-keyboard' },
+  { emoji: '🧹', customEmojiId: 'id-broom' },
+  { emoji: '🛡', customEmojiId: 'id-shield' },
+  { emoji: '🔍', customEmojiId: 'id-magnifier' },
+  { emoji: '📚', customEmojiId: 'id-books' },
+];
+
+const ALL_ROLE_TOPIC_TARGETS = [
+  { role: 'coordinator', topicId: 901 },
+  { role: 'specifier', topicId: 902 },
+  { role: 'architect', topicId: 903 },
+  { role: 'coder', topicId: 904 },
+  { role: 'cleaner', topicId: 905 },
+  { role: 'hardender', topicId: 906 },
+  { role: 'QA', topicId: 907 },
+  { role: 'documenter', topicId: 908 },
+];
+
+// BL-469 per-agent-steering-topic-icon-01
+test('BL-469 per-agent-steering-topic-icon-01: each of the 8 role topics gets its own mapped icon on first tick', async () => {
+  const { adapters, iconsSet, iconOwnership } = fakeAdapters({
+    readRoleTopics: () => ALL_ROLE_TOPIC_TARGETS,
+  });
+  adapters.iconAdapters.getIconStickers = async () => ROLE_ICON_STICKERS;
+
+  await runConciergeTick(adapters);
+
+  assert.deepEqual(
+    iconsSet.sort((a, b) => a.topicId - b.topicId),
+    [
+      { topicId: 901, iconId: 'id-compass' },
+      { topicId: 902, iconId: 'id-note' },
+      { topicId: 903, iconId: 'id-crane' },
+      { topicId: 904, iconId: 'id-keyboard' },
+      { topicId: 905, iconId: 'id-broom' },
+      { topicId: 906, iconId: 'id-shield' },
+      { topicId: 907, iconId: 'id-magnifier' },
+      { topicId: 908, iconId: 'id-books' },
+    ]
+  );
+  assert.equal(iconOwnership.coordinator, 'id-compass');
+  assert.equal(iconOwnership.coder, 'id-keyboard');
+  assert.equal(iconOwnership.QA, 'id-magnifier');
+});
+
+// BL-469 per-agent-steering-topic-icon-02
+test('BL-469 per-agent-steering-topic-icon-02: an icon Telegram does not offer is surfaced (skipped-unresolved-icon) and does not block the other roles', async () => {
+  const { adapters, iconsSet, iconOwnership } = fakeAdapters({
+    readRoleTopics: () => ALL_ROLE_TOPIC_TARGETS,
+  });
+  // The coder's keyboard sticker is absent from the live set; every other
+  // role's mapped icon is still offered.
+  adapters.iconAdapters.getIconStickers = async () => ROLE_ICON_STICKERS.filter((s) => s.emoji !== '⌨️');
+
+  await assert.doesNotReject(() => runConciergeTick(adapters));
+
+  assert.equal(
+    iconsSet.find((s) => s.topicId === 904),
+    undefined,
+    'the coder topic never got an icon set - its sticker is unresolved'
+  );
+  assert.equal(iconOwnership.coder, undefined, 'a skipped-unresolved icon never records ownership');
+  // Every other role still resolved and got its own mapped icon.
+  assert.equal(iconsSet.length, 7);
+  assert.equal(iconOwnership.QA, 'id-magnifier');
+  assert.equal(iconOwnership.documenter, 'id-books');
+});
+
+// BL-469 per-agent-steering-topic-icon-03
+test('BL-469 per-agent-steering-topic-icon-03: a steady-state tick does not re-edit an already-set per-agent topic icon', async () => {
+  const { adapters, iconsSet } = fakeAdapters({
+    readRoleTopics: () => ALL_ROLE_TOPIC_TARGETS,
+  });
+  adapters.iconAdapters.getIconStickers = async () => ROLE_ICON_STICKERS;
+
+  await runConciergeTick(adapters);
+  assert.equal(iconsSet.length, 8);
+  iconsSet.length = 0;
+
+  await runConciergeTick(adapters);
+  assert.deepEqual(iconsSet, [], 'expected the second, unchanged tick to be a no-op for every already-seen role topic');
+});
+
+// BL-469 wiring: a role topic already known BEFORE this feature's first
+// tick (simulating one that predates BL-469 and may already carry a
+// human-customised icon) is never touched, even though the swarm has no
+// ownership marker for it - mirrors BL-418 standing-topic-icons-02.
+test('BL-469: a role topic already in the seen-set with no ownership marker is left untouched', async () => {
+  const { adapters, iconsSet } = fakeAdapters({
+    readRoleTopics: () => [{ role: 'coder', topicId: 904 }],
+  });
+  adapters.iconAdapters.getIconStickers = async () => ROLE_ICON_STICKERS;
+  adapters.readTickState().roleIconSeenIds = ['coder'];
+
+  await runConciergeTick(adapters);
+
+  assert.deepEqual(iconsSet, [], 'expected no icon to be set for an already-seen, not-swarm-owned role topic');
+});
+
+// BL-469 wiring: roleIconSeenIds persists and grows across ticks rather
+// than being clobbered - mirrors BL-418's own standingIconSeenIds test.
+test('BL-469: roleIconSeenIds persists and grows across ticks rather than being clobbered', async () => {
+  const { adapters, state } = fakeAdapters({
+    readRoleTopics: () => [{ role: 'coordinator', topicId: 901 }],
+  });
+  adapters.iconAdapters.getIconStickers = async () => ROLE_ICON_STICKERS;
+  await runConciergeTick(adapters);
+  assert.deepEqual(state.roleIconSeenIds, ['coordinator']);
+
+  // A second role's topic appears on a later tick alongside the
+  // already-seen coordinator topic - both must end up in the persisted
+  // seen-set, and only the genuinely new one gets its icon set.
+  adapters.readRoleTopics = () => [
+    { role: 'coordinator', topicId: 901 },
+    { role: 'coder', topicId: 904 },
+  ];
+  await runConciergeTick(adapters);
+
+  assert.deepEqual([...state.roleIconSeenIds].sort(), ['coder', 'coordinator']);
 });
 
 // ── BL-414: topic-title age suffix ────────────────────────────────────────
