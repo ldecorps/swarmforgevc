@@ -48,10 +48,17 @@
 ;; backlog/active/ is flat, so "**.yaml" (rather than one level deep) is a
 ;; harmless superset here, kept identical to that file's own pattern for
 ;; the day backlog/active/ ever nests the way backlog/done/ already does.
+;;
+;; BL-489: upper-cased to match extract-ticket-id's own str/upper-case
+;; canonicalization on the stage-map key side - filter-active's
+;; case-sensitive membership test only ever agrees when both sides share
+;; the same case, so a mis-cased yaml `id:` (ids are conventionally
+;; upper-case today, but this is a real when-not-if surface) would
+;; otherwise silently drop a genuinely-held ticket from the board.
 (defn- active-ticket-ids [project-root]
   (let [dir (fs/path project-root "backlog" "active")]
     (if (fs/exists? dir)
-      (set (keep #(read-yaml-field (slurp (str %)) "id") (fs/glob dir "**.yaml")))
+      (set (keep #(some-> (read-yaml-field (slurp (str %)) "id") str/upper-case) (fs/glob dir "**.yaml")))
       #{})))
 
 ;; Duplicated from chase_sweep_lib.bb's own (private) list-handoff-files/
