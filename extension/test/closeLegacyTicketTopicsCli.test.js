@@ -171,6 +171,35 @@ test('main() prints usage and exits non-zero with no target path argument', asyn
   }
 });
 
+test('main() reads the botToken/chatId env, closes nothing for an empty map, and prints the summary + JSON output', async () => {
+  const target = mkTmp();
+  writeTopicMap(target, {});
+  const originalArgv = process.argv;
+  const originalToken = process.env.TELEGRAM_BOT_TOKEN;
+  const originalChatId = process.env.TELEGRAM_CHAT_ID;
+  const originalStdoutWrite = process.stdout.write;
+  const out = [];
+  process.stdout.write = (chunk) => {
+    out.push(chunk);
+    return true;
+  };
+  try {
+    process.argv = ['node', 'close-legacy-ticket-topics.js', target];
+    process.env.TELEGRAM_BOT_TOKEN = TOKEN;
+    process.env.TELEGRAM_CHAT_ID = CHAT_ID;
+    await main();
+    assert.ok(out.some((line) => line.includes('CLOSED 0/0')), 'expected the summary line on stdout');
+    assert.ok(out.some((line) => line.trim() === '[]'), 'expected the JSON outcomes array on stdout');
+  } finally {
+    process.argv = originalArgv;
+    if (originalToken === undefined) delete process.env.TELEGRAM_BOT_TOKEN;
+    else process.env.TELEGRAM_BOT_TOKEN = originalToken;
+    if (originalChatId === undefined) delete process.env.TELEGRAM_CHAT_ID;
+    else process.env.TELEGRAM_CHAT_ID = originalChatId;
+    process.stdout.write = originalStdoutWrite;
+  }
+});
+
 test('the compiled CLI runs standalone as a subprocess and reports a missing target path', () => {
   const CLI = path.join(__dirname, '..', 'out', 'tools', 'close-legacy-ticket-topics.js');
   assert.throws(() => execFileSync('node', [CLI], { encoding: 'utf8' }));
