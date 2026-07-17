@@ -221,12 +221,15 @@ function listEntryFor(item: PipelineBoardListSourceItem): PipelineBoardListEntry
 // mirroring pipeline_stage_lib.bb's own reconcile-stage-map "most downstream
 // wins" rule - the same guarantee, belt-and-braces at the renderer, whatever
 // the authoritative source's own shape already structurally prevents.
-export function computePipelineBoard(
+// Split out of computePipelineBoard below for the same CRAP-budget reason
+// documented throughout this codebase (e.g. telegramFrontDeskBotCore.ts's
+// gatherControlState) - one role-held ticket becomes one grid row, held in
+// a Map (never a plain array push) per this module's own "no double rows"
+// comment above.
+function buildGridRows(
   roleHeldTickets: Record<string, string[]>,
-  paused: PipelineBoardPausedItem[],
-  ticketMeta: Record<string, PipelineBoardTicketMeta>,
-  extras: PipelineBoardExtras = {}
-): PipelineBoardData {
+  ticketMeta: Record<string, PipelineBoardTicketMeta>
+): PipelineBoardRow[] {
   const rowsById = new Map<string, PipelineBoardRow>();
   for (const role of ALL_SWARM_ROLES) {
     for (const id of roleHeldTickets[role] ?? []) {
@@ -234,9 +237,16 @@ export function computePipelineBoard(
       rowsById.set(id, { id, column: role, epic: meta?.epic, slug: deriveKebabSlug(meta?.title) });
     }
   }
-  const rows = [...rowsById.values()].sort((a, b) => epicSortKey(a.epic).localeCompare(epicSortKey(b.epic)));
+  return [...rowsById.values()].sort((a, b) => epicSortKey(a.epic).localeCompare(epicSortKey(b.epic)));
+}
 
-  const parked = [...paused]
+// Split out of computePipelineBoard below for the same CRAP-budget reason
+// as buildGridRows above.
+function buildParkedEntries(
+  paused: PipelineBoardPausedItem[],
+  ticketMeta: Record<string, PipelineBoardTicketMeta>
+): PipelineBoardParkedEntry[] {
+  return [...paused]
     .map(
       (item): PipelineBoardParkedEntry => ({
         id: item.id,
@@ -245,35 +255,81 @@ export function computePipelineBoard(
       })
     )
     .sort((a, b) => a.id.localeCompare(b.id));
+}
 
+// The four link SOURCES below each mirror one of the board's own sections
+// (grid rows, parked, recently-closed, root-intake) - split into one
+// function per source (rather than four loops inlined in buildLinks) for
+// the same CRAP-budget reason as buildGridRows above; buildLinks itself
+// just concatenates and sorts.
+function linksFromRows(rows: PipelineBoardRow[], ticketMeta: Record<string, PipelineBoardTicketMeta>): PipelineBoardLinkEntry[] {
+  const links: PipelineBoardLinkEntry[] = [];
+  for (const row of rows) {
+    const path = linkPathFor(ticketMeta[row.id]);
+    if (path) {
+      links.push({ id: row.id, path });
+    }
+  }
+  return links;
+}
+
+function linksFromParked(
+  parked: PipelineBoardParkedEntry[],
+  ticketMeta: Record<string, PipelineBoardTicketMeta>
+): PipelineBoardLinkEntry[] {
+  const links: PipelineBoardLinkEntry[] = [];
+  for (const entry of parked) {
+    const path = linkPathFor(ticketMeta[entry.id]);
+    if (path) {
+      links.push({ id: entry.id, path });
+    }
+  }
+  return links;
+}
+
+function linksFromRecentlyClosed(extras: PipelineBoardExtras): PipelineBoardLinkEntry[] {
+  return (extras.recentlyClosed ?? []).map((item) => ({ id: item.id, path: `backlog/done/${item.filename}` }));
+}
+
+function linksFromRootIntake(extras: PipelineBoardExtras): PipelineBoardLinkEntry[] {
+  return (extras.rootIntake ?? []).map((item) => ({ id: item.id, path: `backlog/${item.filename}` }));
+}
+
+// Split out of computePipelineBoard below for the same CRAP-budget reason
+// as buildGridRows above. Only called once extras.repoBaseUrl is confirmed
+// present (see computePipelineBoard's own ternary) - a link list without a
+// resolvable repo base would emit broken/relative links, per
+// PipelineBoardExtras.repoBaseUrl's own comment.
+function buildLinks(
+  rows: PipelineBoardRow[],
+  parked: PipelineBoardParkedEntry[],
+  extras: PipelineBoardExtras,
+  ticketMeta: Record<string, PipelineBoardTicketMeta>
+): PipelineBoardLinkEntry[] {
+  const links = [
+    ...linksFromRows(rows, ticketMeta),
+    ...linksFromParked(parked, ticketMeta),
+    ...linksFromRecentlyClosed(extras),
+    ...linksFromRootIntake(extras),
+  ];
+  links.sort((a, b) => a.id.localeCompare(b.id));
+  return links;
+}
+
+export function computePipelineBoard(
+  roleHeldTickets: Record<string, string[]>,
+  paused: PipelineBoardPausedItem[],
+  ticketMeta: Record<string, PipelineBoardTicketMeta>,
+  extras: PipelineBoardExtras = {}
+): PipelineBoardData {
+  const rows = buildGridRows(roleHeldTickets, ticketMeta);
+  const parked = buildParkedEntries(paused, ticketMeta);
   const rootIntake = [...(extras.rootIntake ?? [])].map(listEntryFor).sort((a, b) => a.id.localeCompare(b.id));
   const recentlyClosed = [...(extras.recentlyClosed ?? [])]
     .slice(0, PIPELINE_BOARD_RECENTLY_CLOSED_MAX)
     .map(listEntryFor)
     .sort((a, b) => a.id.localeCompare(b.id));
-
-  const links: PipelineBoardLinkEntry[] = [];
-  if (extras.repoBaseUrl) {
-    for (const row of rows) {
-      const path = linkPathFor(ticketMeta[row.id]);
-      if (path) {
-        links.push({ id: row.id, path });
-      }
-    }
-    for (const entry of parked) {
-      const path = linkPathFor(ticketMeta[entry.id]);
-      if (path) {
-        links.push({ id: entry.id, path });
-      }
-    }
-    for (const item of extras.recentlyClosed ?? []) {
-      links.push({ id: item.id, path: `backlog/done/${item.filename}` });
-    }
-    for (const item of extras.rootIntake ?? []) {
-      links.push({ id: item.id, path: `backlog/${item.filename}` });
-    }
-    links.sort((a, b) => a.id.localeCompare(b.id));
-  }
+  const links = extras.repoBaseUrl ? buildLinks(rows, parked, extras, ticketMeta) : [];
 
   return { rows, parked, rootIntake, recentlyClosed, links };
 }

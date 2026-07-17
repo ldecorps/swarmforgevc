@@ -502,6 +502,28 @@ test('computePipelineBoard: a ticket with no filename/location in its meta gets 
   assert.deepEqual(links, []);
 });
 
+test('computePipelineBoard: a parked ticket with no filename/location in its meta gets no link at all, never a broken one', () => {
+  const { links } = computePipelineBoard({}, [{ id: 'BL-2' }], { 'BL-2': {} }, { repoBaseUrl: 'https://github.com/ldecorps/swarmforgevc' });
+  assert.deepEqual(links, []);
+});
+
+test('computePipelineBoard: links combined from every source (row, parked, recently-closed, root-intake) come out sorted by id', () => {
+  const { links } = computePipelineBoard(
+    { coder: ['BL-9'] },
+    [{ id: 'BL-5' }],
+    { 'BL-9': { filename: 'BL-9-foo.yaml', location: 'active' }, 'BL-5': { filename: 'BL-5-bar.yaml', location: 'paused' } },
+    {
+      recentlyClosed: [{ id: 'BL-7', title: 'done thing', filename: 'BL-7-done.yaml' }],
+      rootIntake: [{ id: 'INTAKE-1', title: 'an ask', filename: 'INTAKE-1.md' }],
+      repoBaseUrl: 'https://github.com/ldecorps/swarmforgevc',
+    }
+  );
+  assert.deepEqual(
+    links.map((l) => l.id),
+    ['BL-5', 'BL-7', 'BL-9', 'INTAKE-1']
+  );
+});
+
 // ── BL-465: renderPipelineBoardBody's new below-grid sections ────────────
 
 test('renderPipelineBoardBody: an empty root-intake/recently-closed list renders no section at all', () => {
