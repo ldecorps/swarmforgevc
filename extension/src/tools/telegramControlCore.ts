@@ -77,40 +77,36 @@ function decideControlTextAction(text: string): ControlDecision {
   return { action: 'ignore' };
 }
 
-// A tap is only ever actioned against the confirm/pause state it actually
-// matches - a stop-mode pick with no pending stop-modes confirm (a stale/
-// already-actioned tap), a restart confirm with no pending restart confirm,
-// or a resume-now tap while not actually paused, all resolve to 'ignore'
-// (a decision, never a crash) rather than executing on ambient state that
-// no longer applies.
+// Per-verb handlers, keyed by the callback's own verb suffix. Each handler
+// decides against exactly the confirm/pause state it needs - a stop-mode
+// pick with no pending stop-modes confirm (a stale/already-actioned tap), a
+// restart confirm with no pending restart confirm, or a resume-now tap
+// while not actually paused, all resolve to 'ignore' (a decision, never a
+// crash) rather than executing on ambient state that no longer applies.
+type ControlCallbackHandler = (pendingConfirm: PendingControlConfirm, pauseState: PauseState) => ControlDecision;
+
+const CONTROL_CALLBACK_HANDLERS: Record<string, ControlCallbackHandler> = {
+  cancel: () => ({ action: 'cancel' }),
+  'emergency-stop': (pendingConfirm) =>
+    pendingConfirm?.kind === 'stop-modes' ? { action: 'execute-emergency-stop' } : { action: 'ignore' },
+  'drain-stop': (pendingConfirm) =>
+    pendingConfirm?.kind === 'stop-modes' ? { action: 'execute-drain-stop' } : { action: 'ignore' },
+  'confirm-restart': (pendingConfirm) =>
+    pendingConfirm?.kind === 'restart-confirm' ? { action: 'execute-restart' } : { action: 'ignore' },
+  'resume-now': (_pendingConfirm, pauseState) => (pauseState.active ? { action: 'resume-now' } : { action: 'ignore' }),
+  'pause-until-resume': () => ({ action: 'apply-pause', durationMs: undefined }),
+  'pause-15m': () => ({ action: 'apply-pause', durationMs: PAUSE_DURATIONS_MS['pause-15m'] }),
+  'pause-1h': () => ({ action: 'apply-pause', durationMs: PAUSE_DURATIONS_MS['pause-1h'] }),
+  'pause-4h': () => ({ action: 'apply-pause', durationMs: PAUSE_DURATIONS_MS['pause-4h'] }),
+};
+
 function decideControlCallbackAction(data: string, pendingConfirm: PendingControlConfirm, pauseState: PauseState): ControlDecision {
   const match = data.match(CONTROL_CALLBACK_PATTERN);
   if (!match) {
     return { action: 'ignore' };
   }
-  const verb = match[1];
-  if (verb === 'cancel') {
-    return { action: 'cancel' };
-  }
-  if (verb === 'emergency-stop') {
-    return pendingConfirm?.kind === 'stop-modes' ? { action: 'execute-emergency-stop' } : { action: 'ignore' };
-  }
-  if (verb === 'drain-stop') {
-    return pendingConfirm?.kind === 'stop-modes' ? { action: 'execute-drain-stop' } : { action: 'ignore' };
-  }
-  if (verb === 'confirm-restart') {
-    return pendingConfirm?.kind === 'restart-confirm' ? { action: 'execute-restart' } : { action: 'ignore' };
-  }
-  if (verb === 'resume-now') {
-    return pauseState.active ? { action: 'resume-now' } : { action: 'ignore' };
-  }
-  if (verb in PAUSE_DURATIONS_MS) {
-    return { action: 'apply-pause', durationMs: PAUSE_DURATIONS_MS[verb] };
-  }
-  if (verb === 'pause-until-resume') {
-    return { action: 'apply-pause', durationMs: undefined };
-  }
-  return { action: 'ignore' };
+  const handler = CONTROL_CALLBACK_HANDLERS[match[1]];
+  return handler ? handler(pendingConfirm, pauseState) : { action: 'ignore' };
 }
 
 // The whole guard + dispatch decision, per event. Guard order is load-

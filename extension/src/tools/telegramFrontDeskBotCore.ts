@@ -1036,14 +1036,22 @@ export function decideCallbackQueryAction(
   return kind === 'approve' ? { action: 'approve', backlogId } : { action: 'await-followup', backlogId, kind: kind as 'reject' | 'amend' };
 }
 
-// BL-410: a legitimate tap (right chat, right principal) always clears its
-// own spinner, even when its data is unrecognized/stale - only a
+// A legitimate tap (right chat, right principal) always clears its own
+// spinner, even when its data is unrecognized/stale - only a
 // not-my-chat/not-principal tap is answered never (mirrors the ordinary
-// message path's own silent drop for the same two reasons). An Approve tap
-// fires recordApprovalReply immediately (nothing else to gather); a
-// Reject/Amend tap has no reason/note in hand yet, so it only ever stashes
-// the pending marker deliverOperatorContext above consults on the next
-// reply - never reimplementing recordRejectionReply/the amend effect here.
+// message path's own silent drop for the same two reasons). Split out of
+// processCallbackQuery below for the same CRAP-budget reason as
+// isNoopControlDecision above.
+function isUnauthorizedCallbackDrop(decision: CallbackButtonDecision): boolean {
+  return decision.action === 'drop' && (decision.reason === 'not-my-chat' || decision.reason === 'not-principal');
+}
+
+// BL-410: see isUnauthorizedCallbackDrop above for the answer-spinner
+// rationale. An Approve tap fires recordApprovalReply immediately (nothing
+// else to gather); a Reject/Amend tap has no reason/note in hand yet, so it
+// only ever stashes the pending marker deliverOperatorContext above
+// consults on the next reply - never reimplementing
+// recordRejectionReply/the amend effect here.
 async function processCallbackQuery(callbackQuery: TelegramCallbackQuery, principalUserId: string, adapters: PollAdapters): Promise<UpdateDeliveryOutcome> {
   // BL-423: the control: callback_data namespace is checked FIRST and
   // completely separately from the approve/reject/amend dispatch below -
@@ -1056,7 +1064,7 @@ async function processCallbackQuery(callbackQuery: TelegramCallbackQuery, princi
     return controlOutcome;
   }
   const decision = decideCallbackQueryAction(callbackQuery, principalUserId, adapters.chatId);
-  if (decision.action === 'drop' && (decision.reason === 'not-my-chat' || decision.reason === 'not-principal')) {
+  if (isUnauthorizedCallbackDrop(decision)) {
     return 'dropped';
   }
   await adapters.answerCallbackQuery(callbackQuery.id);
@@ -1239,58 +1247,93 @@ async function attemptVoiceDelivery(
   return deliveryOutcome(posted);
 }
 
-function assertNeverControlDecision(decision: never): never {
-  throw new Error(`unhandled control decision: ${JSON.stringify(decision)}`);
-}
-
 // BL-423: the ONE place a decided control action becomes a real effect -
-// every branch is a thin, opaque call into an injected adapter (the ticket's
+// every entry is a thin, opaque call into an injected adapter (the ticket's
 // own "adapter-injected orchestration" split), never a second decision. A
 // missing optional adapter degrades to "that effect is simply not wired"
 // (this file's established optional-adapter convention throughout), never a
 // crash - so a fixture that only wires SOME control effects still exercises
-// the rest of the dispatch correctly.
+// the rest of the dispatch correctly. Table-driven (rather than a switch)
+// so dispatch itself stays a single lookup; TypeScript's Record type below
+// still requires every non-'apply-pause' action to have an entry, so a new
+// action added to ControlDecision without a handler here is a compile error,
+// the same exhaustiveness guarantee a switch's `default: assertNever` gives.
+type ControlDecisionEffect = (adapters: PollAdapters) => Promise<void>;
+
+const CONTROL_DECISION_EFFECTS: Record<Exclude<ControlDecision['action'], 'apply-pause'>, ControlDecisionEffect> = {
+  ignore: async () => {},
+  refuse: async () => {},
+  'prompt-stop-modes': async (adapters) => {
+    await adapters.setPendingControlConfirm?.({ kind: 'stop-modes' });
+    await adapters.postControlStopModesMenu?.();
+  },
+  'prompt-restart-confirm': async (adapters) => {
+    await adapters.setPendingControlConfirm?.({ kind: 'restart-confirm' });
+    await adapters.postControlRestartConfirm?.();
+  },
+  cancel: async (adapters) => {
+    await adapters.setPendingControlConfirm?.(undefined);
+    await adapters.postControlCancelled?.();
+  },
+  'execute-emergency-stop': async (adapters) => {
+    await adapters.setPendingControlConfirm?.(undefined);
+    await adapters.executeEmergencyStop?.();
+  },
+  'execute-drain-stop': async (adapters) => {
+    await adapters.setPendingControlConfirm?.(undefined);
+    await adapters.executeDrainStop?.();
+  },
+  'execute-restart': async (adapters) => {
+    await adapters.setPendingControlConfirm?.(undefined);
+    await adapters.executeRestart?.();
+  },
+  'post-pause-menu': async (adapters) => {
+    await adapters.postControlPauseMenu?.();
+  },
+  'resume-now': async (adapters) => {
+    await adapters.resumeNow?.();
+  },
+};
+
 async function applyControlDecision(decision: ControlDecision, adapters: PollAdapters): Promise<void> {
-  switch (decision.action) {
-    case 'ignore':
-    case 'refuse':
-      return;
-    case 'prompt-stop-modes':
-      await adapters.setPendingControlConfirm?.({ kind: 'stop-modes' });
-      await adapters.postControlStopModesMenu?.();
-      return;
-    case 'prompt-restart-confirm':
-      await adapters.setPendingControlConfirm?.({ kind: 'restart-confirm' });
-      await adapters.postControlRestartConfirm?.();
-      return;
-    case 'cancel':
-      await adapters.setPendingControlConfirm?.(undefined);
-      await adapters.postControlCancelled?.();
-      return;
-    case 'execute-emergency-stop':
-      await adapters.setPendingControlConfirm?.(undefined);
-      await adapters.executeEmergencyStop?.();
-      return;
-    case 'execute-drain-stop':
-      await adapters.setPendingControlConfirm?.(undefined);
-      await adapters.executeDrainStop?.();
-      return;
-    case 'execute-restart':
-      await adapters.setPendingControlConfirm?.(undefined);
-      await adapters.executeRestart?.();
-      return;
-    case 'post-pause-menu':
-      await adapters.postControlPauseMenu?.();
-      return;
-    case 'apply-pause':
-      await adapters.applyPause?.(decision.durationMs);
-      return;
-    case 'resume-now':
-      await adapters.resumeNow?.();
-      return;
-    default:
-      assertNeverControlDecision(decision);
+  if (decision.action === 'apply-pause') {
+    await adapters.applyPause?.(decision.durationMs);
+    return;
   }
+  await CONTROL_DECISION_EFFECTS[decision.action](adapters);
+}
+
+// Shared by attemptControlTextDelivery/attemptControlCallbackDelivery below -
+// both need the SAME pending-confirm/pause state read before deciding, so
+// this is a DRY extraction as much as a CRAP-budget one (the same "extract
+// so branch count stays at or below the CRAP threshold" reasoning this file
+// applies throughout, here also removing a literal duplicate pair of lines).
+async function gatherControlState(adapters: PollAdapters): Promise<{ pendingConfirm: PendingControlConfirm; pauseState: PauseState }> {
+  const pendingConfirm = (await adapters.getPendingControlConfirm?.()) ?? undefined;
+  const pauseState = (await adapters.getPauseState?.()) ?? { active: false };
+  return { pendingConfirm, pauseState };
+}
+
+// Telegram's `from` is optional on both a message and a callback query;
+// ControlEvent.fromId has no such optionality, so both call sites fold a
+// missing id to '' the same way - split out for the same CRAP-budget reason
+// as gatherControlState above.
+function fallbackFromId(id: string | number | undefined): string | number {
+  return id ?? '';
+}
+
+// Split out of attemptControlTextDelivery/attemptControlCallbackDelivery
+// below for the same CRAP-budget reason as gatherControlState above.
+function isNoopControlDecision(decision: ControlDecision): boolean {
+  return decision.action === 'ignore' || decision.action === 'refuse';
+}
+
+// Split out of attemptControlTextDelivery below for the same CRAP-budget
+// reason as gatherControlState above: a message is outside the Control
+// topic both when the topic isn't bound yet (controlTopicId undefined) and
+// when it's bound to a DIFFERENT topic than this message's own.
+function isOutsideControlTopic(controlTopicId: number | undefined, update: TelegramUpdate): boolean {
+  return controlTopicId === undefined || topicIdOf(update) !== controlTopicId;
 }
 
 // BL-423: gathers the pending-confirm/pause state and dispatches through
@@ -1311,18 +1354,17 @@ async function attemptControlTextDelivery(
     return undefined;
   }
   const controlTopicId = await adapters.controlTopicId();
-  if (controlTopicId === undefined || topicIdOf(update) !== controlTopicId) {
+  if (isOutsideControlTopic(controlTopicId, update)) {
     return undefined;
   }
   const text = messageTextOf(update);
   if (!text) {
     return 'dropped';
   }
-  const event: ControlEvent = { kind: 'text', text, fromId: update.message?.from?.id ?? '', topicId: controlTopicId };
-  const pendingConfirm = (await adapters.getPendingControlConfirm?.()) ?? undefined;
-  const pauseState = (await adapters.getPauseState?.()) ?? { active: false };
+  const event: ControlEvent = { kind: 'text', text, fromId: fallbackFromId(update.message?.from?.id), topicId: controlTopicId };
+  const { pendingConfirm, pauseState } = await gatherControlState(adapters);
   const decision = decideControlEventAction(event, principalUserId, controlTopicId, pendingConfirm, pauseState);
-  if (decision.action === 'ignore' || decision.action === 'refuse') {
+  if (isNoopControlDecision(decision)) {
     return 'dropped';
   }
   await applyControlDecision(decision, adapters);
@@ -1350,11 +1392,10 @@ async function attemptControlCallbackDelivery(
   const event: ControlEvent = {
     kind: 'callback',
     data: callbackQuery.data,
-    fromId: callbackQuery.from?.id ?? '',
+    fromId: fallbackFromId(callbackQuery.from?.id),
     topicId: callbackQuery.message?.message_thread_id,
   };
-  const pendingConfirm = (await adapters.getPendingControlConfirm?.()) ?? undefined;
-  const pauseState = (await adapters.getPauseState?.()) ?? { active: false };
+  const { pendingConfirm, pauseState } = await gatherControlState(adapters);
   const decision = decideControlEventAction(event, principalUserId, controlTopicId, pendingConfirm, pauseState);
   if (decision.action === 'refuse') {
     return 'dropped';
