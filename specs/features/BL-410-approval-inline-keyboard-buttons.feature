@@ -21,12 +21,15 @@ Feature: Telegram inline-keyboard buttons offer a one-tap alternative to typed a
     When the bot processes the callback and the reason
     Then the ticket's backlog file human_approval line becomes rejected with that reason
 
-  # BL-410 approval-inline-keyboard-04
-  Scenario: tapping Amend prompts for a note and records it without changing approval state
-    Given a callback_query for the Amend button followed by a note reply
-    When the bot processes the callback and the note
-    Then the note is posted as operator context on the ticket
-    And the ticket's human_approval value is unchanged
+  # BL-410 approval-inline-keyboard-04 RETIRED by BL-509 (2026-07-17): tapping
+  # Amend no longer "records it without changing approval state" - it now
+  # prompts for the steer, then on reply flips the ticket to 'amending',
+  # closes the ask, and queues a distinct amend-steer directive. The durable
+  # amend-tap contract now lives in
+  # specs/features/BL-509-amend-button-steers-ticket.feature
+  # (amend-steers-ticket-01/02/03); this scenario duplicated that contract
+  # under the old, now-false wording, so it is retired rather than reworded
+  # (superseded-scenario-retire-not-reword).
 
   # BL-410 approval-inline-keyboard-05
   Scenario: typed replies still work unchanged alongside the buttons
