@@ -20,17 +20,8 @@ function findMatchingBacklogFile(dir: string, itemId: string): string | null {
   return null;
 }
 
-function findActiveBacklogFilePath(targetPath: string, itemId: string): string | null {
-  const dir = path.join(targetPath, 'backlog', 'active');
-  try {
-    return findMatchingBacklogFile(dir, itemId);
-  } catch {
-    return null;
-  }
-}
-
-function findPausedBacklogFilePath(targetPath: string, itemId: string): string | null {
-  const dir = path.join(targetPath, 'backlog', 'paused');
+function findBacklogFilePathIn(targetPath: string, folder: 'active' | 'paused', itemId: string): string | null {
+  const dir = path.join(targetPath, 'backlog', folder);
   try {
     return findMatchingBacklogFile(dir, itemId);
   } catch {
@@ -42,7 +33,7 @@ function findPausedBacklogFilePath(targetPath: string, itemId: string): string |
 // other line is left byte-identical, so this edits the field in place with
 // a targeted regex rather than regenerating the file from parsed structure.
 export function setAssignedTo(targetPath: string, itemId: string, assignedTo: string): boolean {
-  const filePath = findActiveBacklogFilePath(targetPath, itemId);
+  const filePath = findBacklogFilePathIn(targetPath, 'active', itemId);
   if (!filePath) {
     return false;
   }
@@ -54,16 +45,25 @@ export function setAssignedTo(targetPath: string, itemId: string, assignedTo: st
   return true;
 }
 
-export interface MarkDoneResult {
+export interface BacklogMoveResult {
   moved: boolean;
   destination?: string;
+}
+
+// Shared by markDone and promoteToActive: both are a find-then-rename into
+// a destination folder, differing only in how that folder is computed.
+function moveBacklogFileTo(filePath: string, destDir: string): BacklogMoveResult {
+  fs.mkdirSync(destDir, { recursive: true });
+  const destination = path.join(destDir, path.basename(filePath));
+  fs.renameSync(filePath, destination);
+  return { moved: true, destination };
 }
 
 // Moves the file only - it never rewrites the status field. The done/
 // folder is the authoritative signal (BL-033), matching readBacklog's own
 // override of done-folder items regardless of their YAML status.
-export function markDone(targetPath: string, itemId: string): MarkDoneResult {
-  const filePath = findActiveBacklogFilePath(targetPath, itemId);
+export function markDone(targetPath: string, itemId: string): BacklogMoveResult {
+  const filePath = findBacklogFilePathIn(targetPath, 'active', itemId);
   if (!filePath) {
     return { moved: false };
   }
@@ -71,35 +71,23 @@ export function markDone(targetPath: string, itemId: string): MarkDoneResult {
   const destDir = item?.milestone
     ? path.join(targetPath, 'backlog', 'done', item.milestone)
     : path.join(targetPath, 'backlog', 'done');
-  fs.mkdirSync(destDir, { recursive: true });
-  const destination = path.join(destDir, path.basename(filePath));
-  fs.renameSync(filePath, destination);
-  return { moved: true, destination };
-}
-
-export interface PromoteToActiveResult {
-  moved: boolean;
-  destination?: string;
+  return moveBacklogFileTo(filePath, destDir);
 }
 
 // BL-490: the Expedite verb's force-promote step - no paused->active mover
 // existed before this (the only prior mover was markDone's active->done
 // above; promotion was otherwise the coordinator's exclusive manual duty).
-// Mirrors markDone's own find/move shape exactly, one folder pair earlier:
 // backlog/active/ is flat (unlike backlog/done/, never split by milestone),
 // so the destination is always a plain rename into that directory. An item
 // not found in backlog/paused/ - because it does not exist, or is already
 // active - is reported as moved: false rather than an error, so the
 // Expedite effect can call this unconditionally and skip promotion for an
 // already-active ticket (acceptance scenario 05) with no separate check.
-export function promoteToActive(targetPath: string, itemId: string): PromoteToActiveResult {
-  const filePath = findPausedBacklogFilePath(targetPath, itemId);
+export function promoteToActive(targetPath: string, itemId: string): BacklogMoveResult {
+  const filePath = findBacklogFilePathIn(targetPath, 'paused', itemId);
   if (!filePath) {
     return { moved: false };
   }
   const destDir = path.join(targetPath, 'backlog', 'active');
-  fs.mkdirSync(destDir, { recursive: true });
-  const destination = path.join(destDir, path.basename(filePath));
-  fs.renameSync(filePath, destination);
-  return { moved: true, destination };
+  return moveBacklogFileTo(filePath, destDir);
 }
