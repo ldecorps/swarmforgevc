@@ -12,6 +12,7 @@ const {
   findExpediteFileCollision,
   routeBacklogToCoderScriptPath,
   runExpediteDispatch,
+  commitExpediteWrites,
   toFoldersSnapshot,
   ensureOperatorTopic,
   ensureApprovalsTopic,
@@ -275,6 +276,62 @@ test('runExpediteDispatch passes the ticket id and target path as positional arg
   await runExpediteDispatch(root, 'BL-490');
 
   assert.equal(fs.readFileSync(capturedArgsPath, 'utf8').trim(), `BL-490 ${root}`);
+});
+
+// ── commitExpediteWrites (BL-490-VIOLATION: durably commits the approve+
+// promote writes through the REAL commit_integrity_cli.bb, BL-419) ───────
+// Drives the real `bb` binary and the real commit-integrity helper against
+// a real git repo fixture - never a hand-rolled git add/commit substitute,
+// per the ticket's own "route through the shared, locked helper" fix.
+
+function gitFixture() {
+  const root = mkTmp();
+  execFileSync('git', ['init', '-q'], { cwd: root });
+  execFileSync('git', ['config', 'user.email', 't@t'], { cwd: root });
+  execFileSync('git', ['config', 'user.name', 't'], { cwd: root });
+  execFileSync('git', ['commit', '-q', '-m', 'init', '--allow-empty'], { cwd: root });
+  return root;
+}
+
+function copyCommitIntegrityScripts(root) {
+  const scriptsDir = path.join(root, 'swarmforge', 'scripts');
+  fs.mkdirSync(scriptsDir, { recursive: true });
+  const repoScriptsDir = path.join(__dirname, '..', '..', 'swarmforge', 'scripts');
+  for (const name of ['commit_integrity_cli.bb', 'commit_integrity_lib.bb']) {
+    fs.copyFileSync(path.join(repoScriptsDir, name), path.join(scriptsDir, name));
+  }
+}
+
+test('commitExpediteWrites commits the ticket file at its CURRENT (post-promote) path through the real commit-integrity helper', async () => {
+  const root = gitFixture();
+  copyCommitIntegrityScripts(root);
+  fs.mkdirSync(path.join(root, 'backlog', 'active'), { recursive: true });
+  const filePath = path.join(root, 'backlog', 'active', 'BL-490-fixture.yaml');
+  fs.writeFileSync(filePath, 'id: BL-490\ntitle: t\nhuman_approval: approved\n');
+
+  const ok = await commitExpediteWrites(root, 'BL-490');
+
+  assert.equal(ok, true);
+  const log = execFileSync('git', ['log', '-1', '--format=%s', '--', 'backlog/active/BL-490-fixture.yaml'], { cwd: root, encoding: 'utf8' });
+  assert.match(log, /Expedite BL-490/);
+  const status = execFileSync('git', ['status', '--porcelain', '--', 'backlog'], { cwd: root, encoding: 'utf8' });
+  assert.equal(status.trim(), '', 'expected backlog/ clean - the edit is now committed (the copied swarmforge/scripts/ fixture files are a separate, deliberately-untracked test setup artifact)');
+});
+
+test('commitExpediteWrites returns false (never throws) when the ticket file cannot be found', async () => {
+  const root = gitFixture();
+  copyCommitIntegrityScripts(root);
+  fs.mkdirSync(path.join(root, 'backlog', 'active'), { recursive: true });
+
+  assert.equal(await commitExpediteWrites(root, 'BL-404'), false);
+});
+
+test('commitExpediteWrites returns false (never throws) when the commit-integrity CLI is missing entirely', async () => {
+  const root = gitFixture();
+  fs.mkdirSync(path.join(root, 'backlog', 'active'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'backlog', 'active', 'BL-490-fixture.yaml'), 'id: BL-490\ntitle: t\n');
+
+  assert.equal(await commitExpediteWrites(root, 'BL-490'), false);
 });
 
 // ── main() wiring (no real network - every case below fails before any

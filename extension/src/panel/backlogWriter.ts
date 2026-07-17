@@ -91,3 +91,13 @@ export function promoteToActive(targetPath: string, itemId: string): BacklogMove
   const destDir = path.join(targetPath, 'backlog', 'active');
   return moveBacklogFileTo(filePath, destDir);
 }
+
+// BL-490-VIOLATION: locates a ticket's CURRENT file regardless of which live
+// folder it sits in - active checked first (the common case, and where a
+// just-promoted ticket now lives), paused second. Exists so a caller that
+// just wrote/moved a ticket (e.g. the Expedite verb's durable-commit step)
+// can resolve the right repo-relative path to commit without duplicating
+// findBacklogFilePathIn's own active/paused scan logic.
+export function findBacklogFilePath(targetPath: string, itemId: string): string | null {
+  return findBacklogFilePathIn(targetPath, 'active', itemId) ?? findBacklogFilePathIn(targetPath, 'paused', itemId);
+}
