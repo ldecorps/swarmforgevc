@@ -1,0 +1,1 @@
+{"id":"BL-084","messages":[{"seq":0,"ts":1784302557883,"author":"swarm","type":"outbound","text":"BL-084 ✅ done — BUG — activation re-attach 3s budget too short for concurrent host+swarm cold-start (BL-080 follow-up)"}]}
