@@ -1755,12 +1755,16 @@ test('BL-414 hardener bounce: a first-tick mass fan-out over many tickets honour
 // ── BL-452/BL-462: pipeline board wiring ──────────────────────────────────
 
 test('BL-462: the pipeline board reposts at the bottom (delete + post) on a stage change, and is a complete no-op - including the footer time - when unchanged', async () => {
-  const { adapters, state } = fakeAdapters();
+  const { adapters, state, setFolders } = fakeAdapters();
   const ensured = [];
   const posted = [];
   const deleted = [];
   const T1 = Date.UTC(2026, 6, 16, 20, 5);
   const T2 = Date.UTC(2026, 6, 16, 20, 6);
+  // BL-473 bounce: row membership is folders.active only, so a role-held
+  // fixture also needs the matching backlog/active/ entry for its row to
+  // exist at all.
+  setFolders(folders({ active: [{ id: 'BL-1', title: 'test ticket' }] }));
   adapters.readRoleHeldTickets = () => ({ coder: ['BL-1'] });
   adapters.boardAdapters = {
     ensureBoardTopic: async () => {
@@ -1908,8 +1912,8 @@ test('BL-452: omitting readRoleHeldTickets/boardAdapters entirely leaves the tic
 });
 
 // ── BL-473: folders.active membership - a freshly-promoted-but-unheld
-// ticket still renders (not-started), and folders.active/role-held stay
-// UNIONED so a role-held ticket never vanishes off the board either. ─────
+// ticket still renders (not-started), and membership is EXACTLY
+// folders.active - never unioned with role-held ids. ─────────────────────
 
 test('BL-473: a ticket physically in backlog/active/ that no role holds still renders, in the not-started state', async () => {
   const { adapters, setFolders } = fakeAdapters();
@@ -1940,12 +1944,12 @@ test('BL-473: a ticket physically in backlog/active/ that no role holds still re
   }
 });
 
-test('BL-473: a role-held ticket the coordinator has not yet synced into folders.active still renders at its role stage, never dropped', async () => {
-  // folders.active deliberately stays empty here - the union with
-  // readRoleHeldTickets is what keeps this ticket from vanishing (the exact
-  // regression BL-473 fixes: physical membership decorates, but a held
-  // ticket is never SILENTLY dropped just because one of the two
-  // independently-read sources missed it this tick).
+test('BL-473 bounce: a role-held ticket absent from folders.active gets no row at all - membership is folders.active only, never unioned with role-held ids', async () => {
+  // folders.active stays empty while a role still reports holding BL-1 -
+  // this is exactly the state a defensive union would misrender as an
+  // active row for a ticket that is no longer physically active (e.g. the
+  // coordinator already moved it out of backlog/active/ before this tick's
+  // role-held read caught up). The board must show nothing for it.
   const { adapters } = fakeAdapters();
   const posted = [];
   adapters.boardAdapters.postMessage = async (topicId, text) => {
@@ -1959,7 +1963,7 @@ test('BL-473: a role-held ticket the coordinator has not yet synced into folders
 
   assert.equal(posted.length, 1);
   const row = posted[0].split('\n').find((l) => l.trim().split(/\s+/)[0] === 'BL-1');
-  assert.ok(row, `expected BL-1 to still be a board row, got:\n${posted[0]}`);
+  assert.ok(!row, `expected no board row for BL-1 (absent from folders.active), got:\n${posted[0]}`);
 });
 
 // ── BL-465: root-intake / recently-closed / GitHub link list wiring ──────
