@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=e78cbbf75d73eba469eb1c49209d9303df574ea1123162beb4e83b9746c81468
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-07-17T09:36:40.134415822Z","feature_name":"Operator reacts out-of-cycle to a fresh inbound Telegram message","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-481-operator-out-of-cycle-wake.feature","background_hash":"7e7705841ec064d1ab7f5cd457417b92c4bb8d27e5d10ce2cb04ff7d7f0259de","implementation_hash":"unknown","scenarios":[{"index":2,"name":"the fast path still honours the existing launch guards","scenario_hash":"8d60e3d2fb46e7e48354ebb69c0ef7a8e78e7b3de9bb2e0395d2afd02649a699","mutation_count":3,"result":{"Total":3,"Killed":3,"Survived":0,"Errors":0},"tested_at":"2026-07-17T09:36:40.134415822Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: Operator reacts out-of-cycle to a fresh inbound Telegram message
   The Operator runtime's tick loop currently sleeps a full OPERATOR_INTERVAL_MS
   (30s) between ticks unconditionally, so a Telegram message that arrives just
