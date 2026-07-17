@@ -122,9 +122,20 @@ export function createPipelineReviewOracle(repoRoot: string, model: string, time
         return forced;
       }
       return runReviewChain(REVIEW_STAGES, async (stage) => {
-        const rolePromptText = fs.readFileSync(rolePromptPath(repoRoot, stage), 'utf8');
-        const prompt = reviewPrompt(stage, rolePromptText, task);
+        // BL-387 QA bounce: the setup step (reading the stage's own
+        // role-prompt file) must degrade to REJECT exactly like a bad CLI
+        // response does - a missing/unreadable swarmforge/roles/<stage>.prompt
+        // (e.g. a target repo not yet onboarded) is a synchronous throw
+        // that, if left outside this boundary, propagates uncaught through
+        // runReviewChain -> runTrial -> runModel -> runBenchmark and aborts
+        // the ENTIRE run (every model/task/repetition already completed),
+        // rather than recording just this one trial as not surviving -
+        // mirroring the ModelExecutor sibling boundary in runTrial.ts,
+        // which already turns an execution failure into `ran:false`
+        // instead of throwing.
         try {
+          const rolePromptText = fs.readFileSync(rolePromptPath(repoRoot, stage), 'utf8');
+          const prompt = reviewPrompt(stage, rolePromptText, task);
           const stdout = execFileSync(
             'claude',
             ['-p', prompt, '--model', model, '--output-format', 'json', '--dangerously-skip-permissions'],
