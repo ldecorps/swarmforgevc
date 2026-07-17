@@ -43,18 +43,9 @@ const FIXED_NOW_MS = 0;
 // BL-421/engineering.prompt Scenario Outline rule: every Examples: column
 // value must be validated against an explicit KNOWN_VALUES lookup, never a
 // bare passthrough - each entry seeds the fixture for that <state>.
-// BL-510: a role-held id also needs an active/ row (BL-473 made grid
-// membership exactly `folders.active`, never role-held alone - a
-// role-held-only fixture now renders no row at all).
 const KNOWN_STATES = {
-  'held by the coder': (id, fixture) => {
-    fixture.setRoleHeldTickets({ coder: [id] });
-    fixture.setFolders(folders({ active: [{ id }] }));
-  },
-  'held by QA': (id, fixture) => {
-    fixture.setRoleHeldTickets({ QA: [id] });
-    fixture.setFolders(folders({ active: [{ id }] }));
-  },
+  'held by the coder': (id, fixture) => fixture.setRoleHeldTickets({ coder: [id] }),
+  'held by QA': (id, fixture) => fixture.setRoleHeldTickets({ QA: [id] }),
   parked: (id, fixture) => fixture.setFolders(folders({ paused: [{ id }] })),
   'awaiting approval': (id, fixture) => fixture.setFolders(folders({ paused: [{ id, humanApproval: 'pending' }] })),
 };
