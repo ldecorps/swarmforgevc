@@ -105,7 +105,7 @@ acceptance:
   # the scenarios hold either way.
   feature: specs/features/BL-499-chase-sweep-rechases-resolved-new-duplicate.feature
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   New defect fix for a SILENT, live daemon bug: the chase sweep re-chases forever a new/
   handoff whose work is already completed (it wakes an active agent every cycle, chaseCount
