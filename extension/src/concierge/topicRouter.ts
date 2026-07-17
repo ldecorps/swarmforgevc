@@ -64,6 +64,28 @@ function firstParagraph(text: string): string {
   return text.split(/\n\s*\n/)[0].trim();
 }
 
+// The shared shape behind both taskStartedText and approvalRequestedText
+// below: a leading line, then zero or more "<label>: <value>" lines for
+// whichever optional payload fields are present, each field-capped, the
+// whole body then message-capped as a backstop. notes is special-cased to
+// its firstParagraph (never the whole notes: block); every other field
+// renders its raw value. Extracted (cleaner review, BL-480) once
+// approvalRequestedText grew the identical title/notes/firstAcceptanceStep
+// shape taskStartedText already had, plus one more optional field -
+// carrying that as two near-duplicate function bodies would have DRY'd
+// worse with every future field either one grows.
+function buildSummaryBody(event: SwarmEvent, leadingLine: string, fields: Array<{ label: string; field: string }>): string {
+  const lines = [leadingLine];
+  for (const { label, field } of fields) {
+    const value = stringPayloadField(event, field);
+    if (value) {
+      const text = field === 'notes' ? firstParagraph(value) : value;
+      lines.push(`${label}: ${truncate(text, TASK_STARTED_FIELD_MAX_LENGTH)}`);
+    }
+  }
+  return truncate(lines.join('\n'), TASK_STARTED_MESSAGE_MAX_LENGTH);
+}
+
 // BL-322: a TaskStarted event's payload (diffTaskStarted's own
 // taskStartedPayload) carries {title, notes?, firstAcceptanceStep?} when a
 // ticket summary was resolved, {} when it degraded (should not happen
@@ -75,16 +97,10 @@ function taskStartedText(event: SwarmEvent): string {
   if (!title) {
     return `${event.type}: ${event.backlogId}`;
   }
-  const notes = stringPayloadField(event, 'notes');
-  const firstAcceptanceStep = stringPayloadField(event, 'firstAcceptanceStep');
-  const lines = [`What it is: ${title}`];
-  if (notes) {
-    lines.push(`What it solves: ${truncate(firstParagraph(notes), TASK_STARTED_FIELD_MAX_LENGTH)}`);
-  }
-  if (firstAcceptanceStep) {
-    lines.push(`How it works: ${truncate(firstAcceptanceStep, TASK_STARTED_FIELD_MAX_LENGTH)}`);
-  }
-  return truncate(lines.join('\n'), TASK_STARTED_MESSAGE_MAX_LENGTH);
+  return buildSummaryBody(event, `What it is: ${title}`, [
+    { label: 'What it solves', field: 'notes' },
+    { label: 'How it works', field: 'firstAcceptanceStep' },
+  ]);
 }
 
 // Human-readable, but always contains the event's own type verbatim - the
@@ -119,9 +135,44 @@ function taskStartedText(event: SwarmEvent): string {
 // is the exact recognizer for this id-qualified grammar (the Approvals
 // topic's own sibling of isApprovalReplyText above, which still governs the
 // per-ticket-topic reply grammar unchanged elsewhere).
-function approvalRequestedText(backlogId: string | null): string {
-  const id = backlogId ?? 'unknown';
+//
+// BL-480: this sentence is now the FROZEN tail of a richer ask, not the
+// whole text - reply-grammar clause and "needs your approval" substring both
+// preserved byte-for-byte (the reply grammar per BL-357/434's own frozen
+// contract; the "needs your approval" phrase because five sibling step
+// files - bl408/409/410/434, pendingApprovalAsksInTopicSteps.js - locate the
+// posted ask by that exact substring). Kept as its own function so the
+// frozen string has one definition, read both when composing the enriched
+// text below and when a summary-less ticket falls back to it verbatim.
+function frozenApprovalAskLine(id: string): string {
   return `${id} needs your approval before it can proceed. Reply here with "approve ${id}" (or "reject ${id} <reason>") to act.`;
+}
+
+// BL-480: the Approvals-topic ask used to carry ONLY the frozen line above -
+// enough to reply to, nothing to decide from. Mirrors taskStartedText's own
+// title/what-it-solves/how-it-works shape via the same buildSummaryBody
+// helper, plus a fourth field for approvalContext (BL-479's field, parsed
+// end-to-end through backlogReader.ts -> conciergeTick.ts's
+// ticketSummariesFor -> diffApprovalRequested's payload). The frozen line
+// is appended AFTER buildSummaryBody's own message-cap truncate, never
+// inside it, so a truly oversized notes: block can only ever eat into the
+// enrichment body - the reply-grammar clause and the "needs your approval"
+// locator substring always survive intact, satisfying
+// approval-ask-content-04's truncation case without also breaking -02's
+// byte-identical requirement.
+function approvalRequestedText(event: SwarmEvent): string {
+  const id = event.backlogId ?? 'unknown';
+  const frozen = frozenApprovalAskLine(id);
+  const title = stringPayloadField(event, 'title');
+  if (!title) {
+    return frozen;
+  }
+  const body = buildSummaryBody(event, `${id} — ${title}`, [
+    { label: 'What it solves', field: 'notes' },
+    { label: 'First acceptance signal', field: 'firstAcceptanceStep' },
+    { label: 'Approval context', field: 'approvalContext' },
+  ]);
+  return `${body}\n${frozen}`;
 }
 
 export function messageTextForEvent(event: SwarmEvent): string {
@@ -129,7 +180,7 @@ export function messageTextForEvent(event: SwarmEvent): string {
     return taskStartedText(event);
   }
   if (event.type === 'ApprovalRequested') {
-    return approvalRequestedText(event.backlogId);
+    return approvalRequestedText(event);
   }
   const identity = event.backlogId ?? event.role ?? 'unknown';
   const base = `${event.type}: ${identity}`;

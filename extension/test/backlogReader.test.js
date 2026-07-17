@@ -258,6 +258,36 @@ test('parseBacklogYaml omits notes/firstAcceptanceStep when absent', () => {
   assert.equal(Object.prototype.hasOwnProperty.call(item, 'firstAcceptanceStep'), false);
 });
 
+// BL-480: approval_context (BL-479's own field, a folded `>` block scalar
+// stating what specifically needs the human's sign-off) - parsed the same
+// way notes: is above, via the strict js-yaml path.
+
+test('parseBacklogYaml parses a folded approval_context block scalar via strict YAML', () => {
+  const yaml = 'id: BL-007\ntitle: t\nstatus: active\napproval_context: >\n  Human sign-off needed on the\n  render shape below.\n';
+  const item = parseBacklogYaml(yaml);
+  assert.equal(item.approvalContext, 'Human sign-off needed on the render shape below.');
+});
+
+test('parseBacklogYaml omits approvalContext when absent', () => {
+  const yaml = 'id: BL-007\ntitle: t\nstatus: active\n';
+  const item = parseBacklogYaml(yaml);
+  assert.equal(Object.prototype.hasOwnProperty.call(item, 'approvalContext'), false);
+});
+
+test('parseBacklogYaml extracts approval_context via the lenient fallback on a strict-unparsable ticket', () => {
+  const yaml = [
+    'id: BL-093',
+    'title: BUG — colon: breaks strict YAML',
+    'status: done',
+    'approval_context: >',
+    '  Sign-off needed here.',
+    '',
+  ].join('\n');
+  const item = parseBacklogYaml(yaml);
+  assert.ok(item, 'expected the lenient parser to still surface a ticket');
+  assert.equal(item.approvalContext, 'Sign-off needed here.');
+});
+
 // ── parseYamlBlockScalar via the LENIENT regex fallback (strict js-yaml
 // throws on a gnarly title first, matching the real BL-093-shaped fixture
 // already covered by BL-129's no-regression test) ──────────────────────────

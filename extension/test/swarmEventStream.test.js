@@ -134,6 +134,35 @@ test('BL-357: a ticket newly pending approval emits ApprovalRequested tagged wit
   assert.deepEqual(events, [{ type: 'ApprovalRequested', backlogId: 'BL-500', payload: {} }]);
 });
 
+// BL-480: mirrors typed-events-01's own TaskStarted-carries-a-summary test
+// above - the Approvals-topic ask needs the same title/notes/
+// firstAcceptanceStep (plus approvalContext, BL-479's field) to render more
+// than a bare id.
+test('BL-480: an ApprovalRequested event carries the ticket summary (title/notes/firstAcceptanceStep/approvalContext) when one is resolved', () => {
+  const prev = snapshot();
+  const curr = snapshot({
+    pendingApproval: ['BL-500'],
+    ticketSummaries: {
+      'BL-500': { title: 'a fine feature', notes: 'the notes', firstAcceptanceStep: 'the first step', approvalContext: 'sign off please' },
+    },
+  });
+  const events = deriveSwarmEvents(prev, curr);
+  assert.deepEqual(events, [
+    {
+      type: 'ApprovalRequested',
+      backlogId: 'BL-500',
+      payload: { title: 'a fine feature', notes: 'the notes', firstAcceptanceStep: 'the first step', approvalContext: 'sign off please' },
+    },
+  ]);
+});
+
+test('BL-480: an ApprovalRequested event with no resolved summary still emits payload {} (degraded, never a crash)', () => {
+  const prev = snapshot();
+  const curr = snapshot({ pendingApproval: ['BL-500'], ticketSummaries: {} });
+  const events = deriveSwarmEvents(prev, curr);
+  assert.deepEqual(events, [{ type: 'ApprovalRequested', backlogId: 'BL-500', payload: {} }]);
+});
+
 test('BL-357: a ticket that stays pending across two polls only emits once (on the not-pending -> pending transition)', () => {
   const pending = snapshot({ pendingApproval: ['BL-500'] });
   assert.deepEqual(deriveSwarmEvents(pending, pending), []);
