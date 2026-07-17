@@ -84,6 +84,30 @@ check "board-authoritative-stage-04: a note-only-held ticket (no task header any
   '[[ "$OUT" == *"\"BL-450\":\"specifier\""* ]]'
 rm -rf "$ROOT"
 
+# ── BL-489: the active-set id join is case-symmetric - a mis-cased
+#    backlog/active yaml id must not silently drop the held ticket ─────────
+mk_fixture
+mkdir -p "$ROOT/backlog/active"
+printf 'id: bl-490\ntitle: "fixture ticket"\n' > "$ROOT/backlog/active/bl-490-fixture.yaml"
+DIR="$(role_in_process_dir coder)"
+mkdir -p "$DIR"
+printf 'from: specifier\nto: coder\ntype: git_handoff\npriority: 50\ntask: BL-490-thing\ncommit: 1234567890\n\nmerge_and_process specifier 1234567890\n' > "$DIR/50_a.handoff"
+OUT="$(run_cli report)"
+check "BL-489: a lower-cased backlog/active yaml id (bl-490) still resolves the held ticket" \
+  '[[ "$OUT" == *"\"BL-490\":\"coder\""* ]]'
+rm -rf "$ROOT"
+
+mk_fixture
+mkdir -p "$ROOT/backlog/active"
+printf 'id: Bl-490\ntitle: "fixture ticket"\n' > "$ROOT/backlog/active/Bl-490-fixture.yaml"
+DIR="$(role_in_process_dir coder)"
+mkdir -p "$DIR"
+printf 'from: specifier\nto: coder\ntype: git_handoff\npriority: 50\ntask: BL-490-thing\ncommit: 1234567890\n\nmerge_and_process specifier 1234567890\n' > "$DIR/50_a.handoff"
+OUT="$(run_cli report)"
+check "BL-489: a mixed-cased backlog/active yaml id (Bl-490) still resolves the held ticket" \
+  '[[ "$OUT" == *"\"BL-490\":\"coder\""* ]]'
+rm -rf "$ROOT"
+
 # ── a batch role's SEVERAL simultaneously in_process tickets each survive ──
 mk_fixture
 write_backlog_active "BL-1"
