@@ -1,0 +1,111 @@
+id: BL-507
+title: "Pipeline board grid drops the Coordinator (CD) column: build the column set from the forward pipeline chain (specifier..QA) + not-started only, and mark a coordinator-held active ticket at the QA stage"
+milestone: M8
+type: defect
+severity: low
+epic: ""
+priority: 12
+depends_on: ["BL-505"]
+source: "Direct human request to the specifier 2026-07-17 ('Another tweak to the pipeline board: take the Coordinator column out'). Specifier asked the human one clarifying question 2026-07-17 — where a coordinator-held active ticket renders once its column is gone — and the human chose 'mark it under QA'. No other ambiguity remained."
+
+notes: |
+  The Telegram Pipeline Board grid renders one column per role in PIPELINE_BOARD_COLUMN_ORDER, which is
+  built from ALL_SWARM_ROLES (extension/src/concierge/roleTopicMapStore.ts:
+  `[...PIPELINE_CHAIN, 'coordinator']`). So the grid header carries a Coordinator column (glyph "CD",
+  COLUMN_LABEL['coordinator']) after QA. The coordinator is NOT a forward parcel stage — it does post-QA
+  backlog bookkeeping only (PIPELINE.md; constitution BL-247) — so it does not belong among the pipeline
+  stages the board shows. The human asked to take it out.
+
+  THE CHANGE (behaviour pinned in the feature; exact glyphs/placement remain the coder's/architect's
+  cosmetic call, per BL-452/BL-473's column-glyph precedent):
+    1. DROP THE CD COLUMN — build PIPELINE_BOARD_COLUMN_ORDER from the forward PIPELINE_CHAIN
+       (specifier..QA) plus the not-started sentinel, NOT from ALL_SWARM_ROLES. The grid then shows a
+       column for every specifier..QA stage plus NS, and no coordinator column.
+    2. COORDINATOR-HELD -> QA — a ticket physically in backlog/active/ whose authoritative stage is the
+       coordinator (the brief post-QA bookkeeping window: QA has approved and landed the commit, but the
+       coordinator has not yet moved the file to backlog/done/) is marked in the QA column. Human decision
+       2026-07-17: it has cleared the pipeline, so it reads at the end-of-line QA stage — NOT blank and
+       NOT not-started. Realise this in buildGridRows by collapsing a coordinator-held row's stage to 'QA'
+       before it renders. CRITICAL: heldRoleByTicketId still iterates ALL_SWARM_ROLES, so a
+       coordinator-held id resolves to 'coordinator' and MUST be remapped to 'QA' here — if it is left as
+       'coordinator' with the column gone, renderDataRow finds no matching column and the row renders with
+       no X at all (an all-dots row). Do not instead let it fall through to the not-started default (the
+       human rejected NS for this case).
+    3. EVERYTHING ELSE UNCHANGED — a held ticket still marks exactly its own stage (BL-452), a not-started
+       ticket still marks only NS (BL-473), row membership is still exactly backlog/active/ (BL-473),
+       ordering/epic-grouping stays deterministic, the board stays READ-ONLY and edge-triggered. The
+       below-grid lists and LINKS section are untouched.
+
+  DO NOT TOUCH ALL_SWARM_ROLES ITSELF. It still legitimately carries 'coordinator' for the coordinator's
+  OWN standing steering topic (roleTopicMapStore.ts, BL-425 "all 8 roles"). This ticket narrows only the
+  BOARD's grid column set — introduce a board-local column source (PIPELINE_CHAIN + NS), leaving
+  ALL_SWARM_ROLES and every non-board consumer of it (heldRoleByTicketId's iteration, the role-topic map)
+  as-is. COLUMN_LABEL['coordinator'] = 'CD' becomes unused once the column order no longer references it;
+  the cleaner may remove it after a grep confirms nothing else reads it.
+
+  CHANGE-GATE / REPOST: renderPipelineBoardBody's text is pipelineBoardSync.ts's content signature, so
+  dropping a header column changes the rendered text and triggers exactly ONE benign repost when it lands
+  (expected, not a defect — the BL-462/464/465/468/473 change-gate/repost contract is otherwise
+  unchanged).
+
+  SCOPE (verify the live path at build — grep the real callers, do not assume):
+    - extension/src/concierge/pipelineBoard.ts: PIPELINE_BOARD_COLUMN_ORDER built from PIPELINE_CHAIN + NS
+      (import PIPELINE_CHAIN from '../swarm/rolePack'); buildGridRows coordinator->QA remap;
+      COLUMN_LABEL['coordinator'] left unused (cleaner may prune).
+    - specs/pipeline/steps/bl452PipelineBoardSteps.js: add a "held by the coordinator" KNOWN_STATES entry
+      (setRoleHeldTickets({ coordinator: [id] })) for the new coordinator-held->QA scenario, and drop
+      'coordinator' from KNOWN_COLUMNS (no scenario asserts a coordinator column any more — grep to
+      confirm before removing).
+    - extension/test/pipelineBoard.test.js: the test at ~L33 has a cosmetic name "specifier..coordinator"
+      that should read "specifier..QA" now the grid ends at QA; add a unit test that a coordinator-held
+      ticket's row column resolves to 'QA' (no existing unit test feeds `{ coordinator: [...] }`, so this
+      is a net-new assertion, not a supersession). The header/column-count tests (~L190-303) locate
+      columns by glyph via indexOf and iterate PIPELINE_BOARD_COLUMN_ORDER, so they stay green under the
+      narrower order without edits — confirm at build.
+
+  SEQUENCING (NOT orthogonal — same file, and BL-507 + BL-505 conflict on the SAME line):
+    - depends_on BL-505 (paused, priority 10, approved): BL-505 rewrites the exact
+      PIPELINE_BOARD_COLUMN_ORDER assignment to put NS first (`[NS, ...ALL_SWARM_ROLES]`). This ticket
+      rewrites the same line to source from PIPELINE_CHAIN instead of ALL_SWARM_ROLES. Land BL-505 first,
+      then this ticket produces `[PIPELINE_BOARD_NOT_STARTED_COLUMN, ...PIPELINE_CHAIN]` (preserving
+      BL-505's NS-first placement, coordinator dropped). Do NOT run the two concurrently.
+    - BL-506 (paused, priority 11) touches buildLinks in the same file but a different function — sequence
+      after it too; no shared line, so no hard depends_on beyond the file-serialisation the board cluster
+      already requires.
+    - Per BL-233, the feature scenarios and their step handlers (bl452PipelineBoardSteps.js) land in the
+      SAME parcel — never a feature edit on main without its matching handler change.
+
+acceptance:
+  # Observable contract: the grid header shows a column for every forward pipeline stage (specifier..QA)
+  # plus the not-started (NS) sentinel and NO coordinator column; a ticket the coordinator currently holds
+  # is marked only in the QA column (a single X, not blank, not NS). Exact glyphs/placement are a
+  # build-time detail; the scenarios hold whatever glyph/placement is chosen (and survive BL-505's
+  # NS-first reorder, which locates columns by name).
+  feature: specs/features/BL-507-pipeline-board-drop-coordinator-column.feature
+
+# QA end-to-end procedure (verify the scenarios hold in the live swarm):
+#   1. Build the extension (npm run compile in extension/, or npm test which compiles first).
+#   2. In-process, render the board and assert the grid header contains NO coordinator ("CD") column and
+#      still contains a column for every specifier..QA stage plus NS, with header and data-row column
+#      counts aligned (no orphaned cell where CD used to be).
+#   3. Render a synthetic board where one active ticket is held by the coordinator; assert its row is
+#      marked with a single X in the QA column (not blank, not NS).
+#   4. Render over the CURRENT live backlog and eyeball that the grid no longer shows the CD column.
+#   5. Confirm the full acceptance + unit suite passes (the new coordinator-held->QA assertion and the
+#      dropped-column header checks all green; no stale KNOWN_COLUMNS/test-name assertion left behind).
+
+human_approval: pending
+approval_context: >
+  New tweak to the Telegram Pipeline Board (your ask 2026-07-17: "take the Coordinator column out"). What
+  needs your sign-off is the pinned behaviour: (a) the grid drops the Coordinator ("CD") column entirely,
+  showing a column for every forward pipeline stage specifier..QA plus the not-started (NS) column and
+  nothing for the coordinator; and (b) your answer to my one clarifying question — a ticket that is
+  briefly "held by the coordinator" (the post-QA bookkeeping window, after QA approved and landed the
+  commit but before it is moved to done/) is marked under QA, reading as end-of-line rather than blank or
+  not-started. I am deliberately NOT touching the coordinator's own steering topic — only the board's grid
+  columns change. This lands after BL-505 (they edit the same column-order line) and preserves BL-505's
+  NS-first placement. FIRM: no coordinator column, coordinator-held marked under QA. Say the word if
+  you'd rather a coordinator-held ticket render differently (e.g. its own trailing marker) or if the
+  column should stay.
+
+mutation_cost: low

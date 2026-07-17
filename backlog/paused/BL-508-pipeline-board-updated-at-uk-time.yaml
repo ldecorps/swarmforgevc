@@ -1,0 +1,97 @@
+id: BL-508
+title: "Pipeline board updated-at footer shows UK (Europe/London) time, DST-aware (BST/GMT), instead of UTC, with an explicit zone marker"
+milestone: M8
+type: defect
+severity: low
+epic: ""
+priority: 13
+depends_on: []
+source: "Direct human request to the specifier 2026-07-17 ('one more tweak to bake in: can you show the update time in UK time'), sent mid-turn alongside BL-507. No ambiguity needing a question — 'UK time' is unambiguously the Europe/London zone; the specifier chose to add a DST-aware zone marker (BST/GMT) so it can't be misread as the UTC it replaces, flagged in approval_context as easy to drop."
+
+notes: |
+  The board's footer renders "updated at MMM DD HH:MM" in UTC — formatUpdatedAtLabel
+  (extension/src/concierge/pipelineBoard.ts, ~L490) reads every field via getUTCMonth/getUTCDate/
+  getUTCHours/getUTCMinutes. The human reads the board on a UK phone and wants the update time in their
+  own wall-clock.
+
+  "UK time" = the Europe/London zone, which is DST-AWARE: British Summer Time (BST, UTC+1) from late
+  March to late October, Greenwich Mean Time (GMT, UTC+0) the rest of the year. A naive fixed +1 would be
+  WRONG for half the year — the render must resolve the Europe/London wall-clock so the offset, and any
+  date rollover it causes near midnight, follow DST automatically.
+
+  THE CHANGE (behaviour pinned in the feature; exact glyphs a build-time cosmetic detail per BL-462's own
+  footer note):
+    1. UK WALL-CLOCK — the footer renders the injected last-content-change instant in Europe/London time:
+       a 20:05 UTC summer instant shows 21:05 (BST); a 03:07 UTC winter instant still shows 03:07 (GMT);
+       a 23:30 UTC June instant shows the NEXT day 00:30 (the zone shift crosses midnight).
+    2. ZONE MARKER — the footer carries an explicit BST/GMT marker so the time is unambiguous and cannot
+       be misread as the UTC it used to be. [Specifier decision flagged for sign-off: I ADDED the zone
+       marker; the human only asked for "UK time". Trivial to drop the marker if they'd rather see a bare
+       UK clock. Easy to flip on approval.]
+    3. STAYS PURE — formatUpdatedAtLabel remains a pure function of its injected epoch-ms (engineering
+       no-real-clock rule — never a bare new Date()/Date.now(); the existing `new Date(epochMs)` on an
+       injected arg is fine). Europe/London formatting of a fixed epoch is deterministic (Intl with a
+       named timeZone), so same epoch still yields the same label.
+
+  Recommended implementation (the coder's call, not a gate): Intl.DateTimeFormat with
+  `timeZone: 'Europe/London'` gives the DST-aware wall-clock parts deterministically from the epoch;
+  derive month/day/hour/minute and the zone abbreviation from it (Intl can emit the 'GMT'/'BST' short
+  timeZoneName). Keep renderUpdatedAtFooter / renderPipelineBoard callers unchanged in shape.
+
+  CHANGE-GATE: the footer is EXCLUDED from pipelineBoardSync.ts's content signature
+  (renderPipelineBoardBody covers the grid + below-grid sections only, never the footer — BL-462's own
+  contract), so this change does NOT by itself trigger a repost. It takes visible effect on the next
+  content-triggered repost. Expected, not a defect.
+
+  SCOPE (verify the live path at build — grep the real callers, do not assume):
+    - extension/src/concierge/pipelineBoard.ts formatUpdatedAtLabel (Europe/London formatting + zone
+      marker; keep pure).
+    - extension/test/pipelineBoard.test.js (~L405-412): the two existing unit tests pin the UTC output
+      ("Jul 16 20:05" for a July epoch, "Jan 05 03:07" for a January epoch) — update them to the
+      Europe/London expectation (July -> 21:05 BST, January -> 03:07 GMT). They already exercise BOTH DST
+      states, so they double as the DST proof; add a near-midnight summer case if the coder wants the
+      date-rollover pinned at unit level too. Fix the test NAME ("...in UTC" -> "...in UK/London time").
+    - specs/pipeline/steps/bl462PipelineBoardRefinementsSteps.js:221 derives its expected footer from
+      formatUpdatedAtLabel ITSELF (self-consistent), so BL-462's acceptance scenario stays green with no
+      edit — confirm at build, do not rewrite it.
+
+  ORTHOGONALITY / SEQUENCING: shares extension/src/concierge/pipelineBoard.ts with BL-505 (slug/id/list
+  render), BL-506 (buildLinks sort) and BL-507 (grid column set), but touches a DIFFERENT function
+  (formatUpdatedAtLabel) than all of them — no shared line, so no hard depends_on. Same-file board
+  cluster convention still says serialise rather than run concurrently; build on whatever board
+  scaffolding is on main at build time. Per BL-233, feature scenarios and their step handlers land in the
+  same parcel.
+
+acceptance:
+  # Observable contract: the updated-at footer renders the injected last-content-change instant in UK
+  # (Europe/London) wall-clock time, DST-aware — BST (UTC+1) in summer, GMT (UTC+0) in winter, with the
+  # zone shift moving the date across midnight where applicable — and carries an explicit BST/GMT zone
+  # marker. formatUpdatedAtLabel stays pure; the footer stays out of the content signature. Exact glyphs
+  # are a build-time detail.
+  feature: specs/features/BL-508-pipeline-board-updated-at-uk-time.feature
+
+# QA end-to-end procedure (verify the scenarios hold in the live swarm):
+#   1. Build the extension (npm run compile in extension/, or npm test which compiles first).
+#   2. In-process, render the footer for a fixed SUMMER epoch (e.g. 2026-07-16 20:05 UTC) and a fixed
+#      WINTER epoch (e.g. 2026-01-05 03:07 UTC); assert the summer one reads 21:05 with a "BST" marker and
+#      the winter one reads 03:07 with a "GMT" marker; assert a near-midnight summer epoch (Jun 30 23:30
+#      UTC) rolls the date forward to Jul 01 00:30 BST.
+#   3. Confirm formatUpdatedAtLabel is still pure (same epoch twice -> identical label).
+#   4. Render over the CURRENT live board and eyeball that "updated at" now reads UK time with its zone,
+#      not UTC.
+#   5. Confirm the full acceptance + unit suite passes (updated UTC->UK unit assertions green; BL-462's
+#      self-consistent footer scenario still green).
+
+human_approval: pending
+approval_context: >
+  Your second tweak 2026-07-17: "show the update time in UK time". The board's "updated at" footer is
+  currently UTC; this renders it in UK (Europe/London) time instead, DST-aware — so it reads one hour
+  ahead of UTC in summer (BST) and level with UTC in winter (GMT), handled automatically by the zone
+  rather than a fixed offset that would be wrong half the year. One small call I made for you, easy to
+  flip: I ADDED an explicit "BST"/"GMT" marker to the footer so the time can't be misread as the UTC it
+  replaced — say the word if you'd rather just see a bare UK clock with no zone label. FIRM: UK
+  (Europe/London) wall-clock, DST-aware. This is a separate change from BL-507 (it touches the footer
+  formatter, not the grid columns) and, because the footer is deliberately excluded from the board's
+  change-detector, it will first appear on the next content update rather than instantly.
+
+mutation_cost: low
