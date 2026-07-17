@@ -100,6 +100,32 @@ test('the retention window boundary is inclusive - exactly the window elapsed is
   assert.deepEqual(decision, { action: 'delete', topicId: 42 });
 });
 
+// The completion timestamp must come from the message that actually
+// matches BOTH type==='outbound' AND text===completionText - not just the
+// first message in the array, and not a message matching only one half of
+// that predicate. Three decoys precede the real completion message:
+// wrong-type-right-text, right-type-wrong-text, and (implicitly, by being
+// first) any predicate collapsed to unconditional-true would grab the
+// first entry. `now` is chosen so the real completedAt (1000) reads as
+// "inside the retention window" (keep) while EITHER decoy's timestamp (0
+// or 500) reads as "outside it" (delete) - a wrong match is observable as
+// a wrong ACTION, not just a wrong internal timestamp.
+test('the completion timestamp comes from the message matching type+text together, never a decoy matching only one half or mere array position', () => {
+  const t = ticket();
+  const text = summaryFor(t);
+  const record = {
+    id: t.id,
+    messages: [
+      { seq: 0, ts: 0, author: 'human', type: 'inbound', text }, // right text, wrong type
+      { seq: 1, ts: 500, author: 'swarm', type: 'outbound', text: 'unrelated outbound message' }, // right type, wrong text
+      { seq: 2, ts: 1000, author: 'swarm', type: 'outbound', text }, // the real match
+    ],
+  };
+  const now = 1000 + RETENTION_MS - 1;
+  const decision = decideTopicDeletion(t, { [t.id]: 42 }, record, true, now, RETENTION_MS);
+  assert.deepEqual(decision, { action: 'keep', reason: 'retention-window' }, 'expected the real match (ts=1000) to gate retention, not either decoy');
+});
+
 test('a completed ticket with no topic ever mapped is left alone - never deletes something that does not exist', () => {
   const t = ticket();
   const now = RETENTION_MS + ONE_DAY_MS;
