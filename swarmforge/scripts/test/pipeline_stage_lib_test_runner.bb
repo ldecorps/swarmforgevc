@@ -66,6 +66,22 @@
          nil
          (pipeline-stage-lib/extract-ticket-id "v2BL-476 do the thing"))
 
+;; BL-488-VIOLATION: a LETTER directly glued in front of a real ticket id
+;; must not be swallowed into the extracted prefix. `\b` alone cannot guard
+;; this - a run of letters has no internal `\b` to reject at, so greedy
+;; [A-Za-z]+ starting at a valid boundary (here, string-start) absorbs the
+;; WHOLE run "ABL" as if it were the ticket's own prefix. Only a known,
+;; finite prefix allowlist (this project mints exactly "BL-" and "GH-"
+;; tickets) can disambiguate a glued stray letter from a real multi-letter
+;; prefix - the same allowlist-never-a-denylist posture
+;; fixture_reaper_lib.bb's own known-fixture-prefixes already establishes.
+(assert= "BL-488-VIOLATION: a letter glued directly in front of a real id resolves to nil, not the glued prefix"
+         nil
+         (pipeline-stage-lib/extract-ticket-id "ABL-476 do the thing"))
+(assert= "BL-488-VIOLATION: the known-prefix allowlist still recognizes a real GH- ticket id"
+         "GH-42"
+         (pipeline-stage-lib/extract-ticket-id "continuing GH-42 next slice"))
+
 ;; ── ticket-id-from-headers: task (git_handoff) OR message (note) ─────────
 (assert= "a git_handoff's task header wins when present"
          "BL-217"

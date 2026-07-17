@@ -14,6 +14,24 @@
 (ns pipeline-stage-lib
   (:require [clojure.string :as str]))
 
+;; BL-488-VIOLATION: an ALLOWLIST, never a denylist - the same posture
+;; fixture_reaper_lib.bb's own known-fixture-prefixes already establishes.
+;; The only ticket-id prefixes this project actually mints: "BL-" for
+;; swarm-numbered tickets, "GH-" for a GitHub-issue-seeded ticket (Article
+;; 1.8 / handoff-protocol.md's "close the GH issue for a GH-seeded ticket").
+;; An unbounded [A-Za-z]+ prefix cannot be safely disambiguated from a
+;; GLUED prefix: `\b` only guards a DIGIT-adjacent embedding (no `\w`
+;; boundary exists between a digit and a letter) - it does NOT guard a
+;; LETTER-adjacent one, because a run of letters has no `\b` anywhere
+;; INSIDE it, so greedy [A-Za-z]+ starting at a valid boundary (e.g.
+;; string-start) absorbs the WHOLE run: "ABL-476" would extract "ABL-476"
+;; as if "ABL" were the ticket's own prefix, silently swallowing the real
+;; "BL-476" reference instead of resolving it - the exact "durable false
+;; not-started" failure mode this ticket exists to close, just reached a
+;; different way. Extend this list explicitly as new prefixes are minted,
+;; never widen it to a broad `[A-Za-z]+` glob.
+(def known-ticket-prefixes ["BL" "GH"])
+
 ;; The SAME "<PREFIX>-<digits> id-shaped token" convention chase_sweep_lib.bb's
 ;; own extract-ticket-id/dispatch-ticket-ref already establish for the
 ;; dispatch-gap sweep. Duplicated here rather than cross-namespace-coupled to
@@ -25,14 +43,10 @@
 ;; a leading one - a held ticket's task/message header carrying a textual
 ;; prefix before the id ("Re: BL-476 …", "continuing BL-476 next slice") used
 ;; to match nothing and resolve to nil, reading as a durable false
-;; not-started on the board. `\b` on both sides guards against a
-;; DIGIT-adjacent embedding, where the greedy `[A-Za-z]+` would otherwise
-;; still land on a match starting mid-token (e.g. "v2BL-476" would extract
-;; "BL-476" without the guard; with it, no boundary exists between the "2"
-;; and "B" so it resolves to nil instead). It does NOT guard against a
-;; LETTER-adjacent prefix - "ABL-476" still matches, greedily capturing the
-;; whole run of letters as "ABL-476", which is harmless here because that
-;; extracted (non-ticket) id never joins the active set. Byte-identical on
+;; not-started on the board. `\b` on both sides guards a DIGIT-adjacent
+;; embedding (e.g. "v2BL-476" resolves to nil: no boundary exists between
+;; the "2" and "B"); the known-prefix allowlist above guards the
+;; LETTER-adjacent case `\b` cannot (see its own comment). Byte-identical on
 ;; an already-leading id, since the first id-shaped token IS the leading one
 ;; there.
 ;;
@@ -46,9 +60,13 @@
 ;; external-influence surface, not a hypothetical) would extract, reconcile,
 ;; and then silently fail the active-set join - the ticket vanishes from the
 ;; board with no error.
+(def ^:private ticket-id-pattern
+  (re-pattern (str "(?i)\\b(" (str/join "|" known-ticket-prefixes) ")-(\\d+)\\b")))
+
 (defn extract-ticket-id [text]
   (when text
-    (some-> (re-find #"\b([A-Za-z]+-\d+)\b" text) second str/upper-case)))
+    (when-let [[_ prefix digits] (re-find ticket-id-pattern text)]
+      (str/upper-case (str prefix "-" digits)))))
 
 ;; A handoff file's own ticket reference for board-tracking purposes: its
 ;; task header (git_handoff) if present, else its message header (note) -

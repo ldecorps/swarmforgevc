@@ -418,14 +418,36 @@
   [active-items dispatched-ids]
   (vec (remove #(contains? dispatched-ids (:id %)) active-items)))
 
+;; BL-488-VIOLATION: an ALLOWLIST, never a denylist - mirrors
+;; pipeline_stage_lib.bb's own known-ticket-prefixes exactly (this codebase's
+;; own "small live-glue duplicated across independent pure libs" posture, see
+;; that file's comment). The only ticket-id prefixes this project actually
+;; mints: "BL-" for swarm-numbered tickets, "GH-" for a GitHub-issue-seeded
+;; ticket. An unbounded [A-Za-z]+ prefix cannot be safely disambiguated from
+;; a GLUED prefix: a leading run of letters has no internal boundary to
+;; reject at, so greedy [A-Za-z]+ anchored at string-start absorbs the WHOLE
+;; run - "ABL-217 active..." would extract "ABL-217" as if "ABL" were the
+;; ticket's own prefix, silently swallowing the real "BL-217" reference and
+;; feeding a wrong/non-existent id into collect-dispatched-ticket-ids, which
+;; can misreport a genuinely-dispatched ticket as gapped (or vice versa) -
+;; the exact "durable false" failure mode BL-217/BL-222 exist to close, just
+;; reached a different way through this sweep's own leading-token extractor.
+(def known-ticket-prefixes ["BL" "GH"])
+
+(def ^:private leading-ticket-id-pattern
+  (re-pattern (str "(?i)^((?:" (str/join "|" known-ticket-prefixes) ")-\\d+)")))
+
 (defn extract-ticket-id
   "The leading <PREFIX>-<digits> token from a task or message field (e.g.
    \"BL-217\" from \"BL-217-inbound-email-webhook\" or from a routing
    note's own \"BL-217 active, spec-complete...\" message text - every
-   routing note in this swarm conventionally leads with the ticket id)."
+   routing note in this swarm conventionally leads with the ticket id).
+   Matched against known-ticket-prefixes above, never an unbounded
+   [A-Za-z]+, so a stray letter glued directly in front of a real id
+   (\"ABL-217 ...\") resolves to nil instead of swallowing it."
   [text]
   (when text
-    (second (re-find #"^([A-Za-z]+-\d+)" text))))
+    (second (re-find leading-ticket-id-pattern text))))
 
 (defn- list-handoff-files [dir]
   (if-not (fs/exists? dir)

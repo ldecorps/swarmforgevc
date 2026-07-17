@@ -58,6 +58,16 @@
          nil
          (chase-sweep-lib/extract-ticket-id nil))
 
+;; BL-488-VIOLATION: mirrors pipeline_stage_lib_test_runner.bb's own
+;; glued-letter-prefix coverage for this sweep's sibling extract-ticket-id.
+(assert= "a letter glued directly in front of a real id resolves to nil, not the glued prefix"
+         nil
+         (chase-sweep-lib/extract-ticket-id "ABL-217 active, spec-complete."))
+
+(assert= "the known-prefix allowlist still recognizes a real GH- ticket id"
+         "GH-42"
+         (chase-sweep-lib/extract-ticket-id "GH-42-inbound-email-webhook"))
+
 ;; ── dispatch-gap-note-message / dispatch-gap-draft-lines (pure) ───────────
 
 (assert= "the auto-route note message leads with the ticket id (the swarm's own convention)"
