@@ -133,6 +133,7 @@ import {
   queueRecertDeleteProposal,
 } from '../docs/recertificationStore';
 import { readBacklogTopicMap, writeBacklogTopicMap, dropBacklogTopicMapping } from '../concierge/backlogTopicMapStore';
+import { readTicketMessageMap, writeTicketMessageEntry } from '../concierge/ticketMessageMapStore';
 import { ALL_SWARM_ROLES, readRoleTopicMap, writeRoleTopicMap } from '../concierge/roleTopicMapStore';
 import { runConciergeTick, ConciergeTickAdapters, BacklogFolderItem, BacklogFoldersSnapshot, TickState } from '../concierge/conciergeTick';
 import { reconcileTopicLifecycle, ReconcileAdapters } from '../concierge/topicReconciliation';
@@ -2037,6 +2038,15 @@ function buildConciergeTickAdapters(targetPath: string, botToken: string, chatId
       sendApprovalAsk: (topicId, text, buttons) =>
         sendTelegramMessage(botToken, chatId, text, undefined, undefined, topicId, buttons).then((r) => ({ success: r.success, messageId: r.messageId })),
       recordApprovalAskMessageId: (backlogId, topicId, messageId, text) => recordApprovalAskMessage(targetPath, backlogId, topicId, messageId, text),
+      // BL-493: the standing Backlog topic (BL-492) - the destination for
+      // an epic-less ticket's edit-in-place status message.
+      ensureBacklogTopic: () => ensureBacklogTopic(targetPath, botToken, chatId),
+      // BL-493: the SAME generic post/edit pair the Approvals roster and
+      // Recert postings already use (plainTextEditInPlaceAdapters) - reused
+      // rather than a second sendTelegramMessage/editMessageText wiring.
+      ...plainTextEditInPlaceAdapters(botToken, chatId),
+      getTicketMessageState: (backlogId) => readTicketMessageMap(targetPath)[backlogId],
+      setTicketMessageState: (backlogId, state) => writeTicketMessageEntry(targetPath, backlogId, state),
     },
     iconAdapters: {
       getIconStickers: () => iconStickersOnce(botToken),
@@ -2162,7 +2172,6 @@ export function conciergeTickIntervalMs(rawEnv: string | undefined = process.env
 // parallel marker file.
 function buildReconcileAdapters(targetPath: string, routeAdapters: ConciergeTickAdapters['routeAdapters']): ReconcileAdapters {
   return {
-    getTopicMap: routeAdapters.getTopicMap,
     // BL-331: shares hasCompletionRecord with the deletion sweep's own
     // verification gate below - the exact same "is this ticket's record
     // verified complete" predicate, never a second, drifting notion of it.

@@ -5,7 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { decideTopicDeletion, sweepTopicDeletions, topicRetentionWindowMs } = require('../out/concierge/topicDeletion');
-const { completionSummaryText } = require('../out/concierge/topicRouter');
+const { buildTicketStatusText } = require('../out/concierge/ticketStatusMessage');
 const { readRecord, appendMessage, recordPath } = require('../out/concierge/blTopicStore');
 
 // BL-331: slice 3 of archive-then-delete - a done ticket's topic is only
@@ -27,7 +27,7 @@ function ticket(overrides = {}) {
 }
 
 function summaryFor(t) {
-  return completionSummaryText({ type: 'TaskCompleted', backlogId: t.id, payload: {} }, t.title);
+  return buildTicketStatusText(t.id, t.title, 'done');
 }
 
 function verifiedRecord(t, completedAtMs) {

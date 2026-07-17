@@ -1,6 +1,16 @@
 const assert = require('node:assert/strict');
-const { decideTopicAction, routeEvent, topicNameForItem, messageTextForEvent, backlogForTopic, completionSummaryText, decideEpicTopicAction } = require('../out/concierge/topicRouter');
+const {
+  decideTopicAction,
+  routeEvent,
+  topicNameForItem,
+  messageTextForEvent,
+  backlogForTopic,
+  completionSummaryText,
+  decideEpicTopicAction,
+  epicTopicName,
+} = require('../out/concierge/topicRouter');
 const { parseBacklogYaml } = require('../out/panel/backlogReader');
+const { resolveTicketStatusTarget, buildTicketStatusText } = require('../out/concierge/ticketStatusMessage');
 
 function event(overrides = {}) {
   return { type: 'TaskStarted', backlogId: 'BL-123', payload: {}, ...overrides };
@@ -238,6 +248,47 @@ test('BL-341: decideEpicTopicAction is looked up through the SAME BacklogTopicMa
   assert.equal(epicAction.topicId, 42);
 });
 
+// ── BL-493: the target resolver and status-text builder (pure seams) ────
+
+test('BL-493: epicTopicName is the single definition decideEpicTopicAction itself uses', () => {
+  assert.equal(epicTopicName('Dynamic Routing'), 'EPIC — Dynamic Routing');
+});
+
+test('BL-493: resolveTicketStatusTarget targets the epic when the ticket declares one', () => {
+  assert.deepEqual(resolveTicketStatusTarget('dynamic-routing'), { kind: 'epic', epicId: 'dynamic-routing' });
+});
+
+test('BL-493: resolveTicketStatusTarget targets the standing Backlog topic when the ticket declares no epic', () => {
+  assert.deepEqual(resolveTicketStatusTarget(undefined), { kind: 'backlog' });
+});
+
+test('BL-493: buildTicketStatusText prefixes the ticket id, a lifecycle glyph, a plain-text state, and the title', () => {
+  assert.equal(buildTicketStatusText('BL-123', 'a fine feature', 'feature'), 'BL-123 🎵 in progress — a fine feature');
+  assert.equal(buildTicketStatusText('BL-123', 'a fine feature', 'done'), 'BL-123 ✅ done — a fine feature');
+  assert.equal(buildTicketStatusText('BL-123', 'a fine feature', 'defect'), 'BL-123 🦠 in progress — a fine feature');
+});
+
+// BL-493 (cleaner): 'paused'/'awaiting-approval' never actually reach this
+// builder in production (see ticketStatusMessage.ts's own comment), but
+// STATUS_LABEL/ICON_EMOJI are keyed by the full TopicIconState for
+// TypeScript exhaustiveness - drive both here so a mutated label/glyph on
+// either entry doesn't survive uncaught just because no live caller passes
+// them yet.
+test('BL-493: buildTicketStatusText also renders the exhaustiveness-only paused/awaiting-approval states', () => {
+  assert.equal(buildTicketStatusText('BL-123', 'a fine feature', 'paused'), 'BL-123 🔍 paused — a fine feature');
+  assert.equal(buildTicketStatusText('BL-123', 'a fine feature', 'awaiting-approval'), 'BL-123 👀 awaiting approval — a fine feature');
+});
+
+test('BL-493: a later transition edits the SAME status text - the glyph/state changes, the id/title/separator do not', () => {
+  const opened = buildTicketStatusText('BL-123', 'a fine feature', 'feature');
+  const closed = buildTicketStatusText('BL-123', 'a fine feature', 'done');
+  assert.notEqual(opened, closed);
+  assert.ok(opened.startsWith('BL-123 '));
+  assert.ok(closed.startsWith('BL-123 '));
+  assert.ok(opened.endsWith('— a fine feature'));
+  assert.ok(closed.endsWith('— a fine feature'));
+});
+
 // BL-322 hardening: the ticket's own E2E procedure insists on a REAL
 // oversized ticket, "not a synthetic short fixture, the bug is precisely
 // about real notes being huge" - but neither the delivered unit tests nor
@@ -329,23 +380,35 @@ function fakeAdapters(initialMap = {}) {
   const sent = [];
   const closed = [];
   const recorded = [];
+  const posted = [];
+  const edited = [];
+  const messageStates = {};
   let operatorTopicId = 700;
   let approvalsTopicId = 800;
+  let backlogTopicId = 900;
   const ensureOperatorTopicCalls = [];
   const ensureApprovalsTopicCalls = [];
+  const ensureBacklogTopicCalls = [];
   return {
     map,
     created,
     sent,
     closed,
     recorded,
+    posted,
+    edited,
+    messageStates,
     ensureOperatorTopicCalls,
     ensureApprovalsTopicCalls,
+    ensureBacklogTopicCalls,
     setOperatorTopicId: (id) => {
       operatorTopicId = id;
     },
     setApprovalsTopicId: (id) => {
       approvalsTopicId = id;
+    },
+    setBacklogTopicId: (id) => {
+      backlogTopicId = id;
     },
     adapters: {
       getTopicMap: () => map,
@@ -380,6 +443,24 @@ function fakeAdapters(initialMap = {}) {
         ensureApprovalsTopicCalls.push(true);
         return approvalsTopicId;
       },
+      // BL-493: the standing Backlog topic (epic-less ticket-status target).
+      ensureBacklogTopic: async () => {
+        ensureBacklogTopicCalls.push(true);
+        return backlogTopicId;
+      },
+      postMessage: async (topicId, text) => {
+        const messageId = 9000 + posted.length;
+        posted.push({ topicId, text, messageId });
+        return messageId;
+      },
+      editMessage: async (topicId, messageId, text) => {
+        edited.push({ topicId, messageId, text });
+        return true;
+      },
+      getTicketMessageState: (backlogId) => messageStates[backlogId],
+      setTicketMessageState: (backlogId, state) => {
+        messageStates[backlogId] = state;
+      },
     },
   };
 }
@@ -388,108 +469,135 @@ function untaggedEvent(overrides = {}) {
   return { type: 'NeedsApproval', backlogId: null, role: 'coder', payload: {}, ...overrides };
 }
 
-test('topic-routing-01: the first event for an unmapped item creates a topic once and records the mapping', async () => {
-  const { adapters, created, sent, map } = fakeAdapters();
-  const result = await routeEvent(event(), 'a fine feature', adapters);
-  assert.deepEqual(created, ['BL-123 - a fine feature']);
-  assert.equal(map['BL-123'], 501);
-  assert.deepEqual(sent, [{ topicId: 501, text: 'TaskStarted: BL-123' }]);
+// BL-493: builds the per-ticket routing context conciergeTick.ts resolves
+// from its folder snapshot and threads into routeEvent - epic-less/'feature'
+// state by default (an ordinary active, non-bug ticket), overridable per test.
+function ticketContext(overrides = {}) {
+  return { iconState: 'feature', ...overrides };
+}
+
+// ── BL-493: ticket-status routing (epic-bound -> epic topic, epic-less ->
+// Backlog topic), edit-in-place, no per-ticket topic ever created ─────────
+
+test('BL-493 fold-ticket-events-02: an epic-less ticket event posts into the standing Backlog topic, prefixed with the ticket id', async () => {
+  const { adapters, created, posted, ensureBacklogTopicCalls, messageStates } = fakeAdapters();
+  const result = await routeEvent(event(), 'a fine feature', adapters, ticketContext());
+  assert.deepEqual(created, [], 'no epic topic and no per-ticket topic - this ticket declares no epic');
+  assert.equal(ensureBacklogTopicCalls.length, 1);
+  assert.deepEqual(posted, [{ topicId: 900, text: 'BL-123 🎵 in progress — a fine feature', messageId: 9000 }]);
+  assert.deepEqual(messageStates['BL-123'], { topicId: 900, messageId: 9000, renderedText: 'BL-123 🎵 in progress — a fine feature' });
   assert.deepEqual(result, { posted: true, skipped: false });
 });
 
-test('topic-routing-01: a later (non-completion) event for the SAME item reuses the topic - no second create', async () => {
-  const { adapters, created, sent } = fakeAdapters();
-  await routeEvent(event(), 'a fine feature', adapters);
-  await routeEvent(event({ type: 'NeedsApproval' }), 'a fine feature', adapters);
-  assert.equal(created.length, 1, 'expected exactly one createTopic call across both events');
-  assert.deepEqual(sent, [
-    { topicId: 501, text: 'TaskStarted: BL-123' },
-    { topicId: 501, text: 'NeedsApproval: BL-123' },
+test('BL-493 fold-ticket-events-01: an epic-bound ticket event posts into its epic topic (created once), prefixed with the ticket id', async () => {
+  const { adapters, created, posted, map } = fakeAdapters();
+  const result = await routeEvent(event(), 'a fine feature', adapters, ticketContext({ epic: 'dynamic-routing', epicTitle: 'Dynamic Routing' }));
+  assert.deepEqual(created, ['EPIC — Dynamic Routing']);
+  assert.equal(map['dynamic-routing'], 501, 'the epic topic id is recorded into the SAME BacklogTopicMap decideEpicTopicAction reads');
+  assert.deepEqual(posted, [{ topicId: 501, text: 'BL-123 🎵 in progress — a fine feature', messageId: 9000 }]);
+  assert.deepEqual(result, { posted: true, skipped: false });
+});
+
+test('BL-493: an epic-bound ticket event reuses an already-mapped epic topic - no second create', async () => {
+  const { adapters, created, posted } = fakeAdapters({ 'dynamic-routing': 42 });
+  await routeEvent(event(), 'a fine feature', adapters, ticketContext({ epic: 'dynamic-routing', epicTitle: 'Dynamic Routing' }));
+  assert.deepEqual(created, []);
+  assert.deepEqual(posted, [{ topicId: 42, text: 'BL-123 🎵 in progress — a fine feature', messageId: 9000 }]);
+});
+
+test('BL-493 fold-ticket-events-04: no per-ticket topic is ever created for a ticket event, epic-bound or epic-less', async () => {
+  const epicLess = fakeAdapters();
+  await routeEvent(event(), 'a fine feature', epicLess.adapters, ticketContext());
+  assert.deepEqual(epicLess.created, []);
+  assert.deepEqual(epicLess.map, {}, 'the per-ticket BacklogTopicMap must never gain a BL-### entry');
+
+  const epicBound = fakeAdapters();
+  await routeEvent(event(), 'a fine feature', epicBound.adapters, ticketContext({ epic: 'dynamic-routing', epicTitle: 'Dynamic Routing' }));
+  assert.deepEqual(epicBound.created, ['EPIC — Dynamic Routing']);
+  assert.equal(epicBound.map['BL-123'], undefined, 'the epic topic is created, but never one keyed by the ticket\'s own id');
+});
+
+test('BL-493 fold-ticket-events-03: a later lifecycle transition edits the SAME status message in place - no additional message posted', async () => {
+  const { adapters, posted, edited, messageStates } = fakeAdapters();
+  await routeEvent(event(), 'a fine feature', adapters, ticketContext({ iconState: 'feature' }));
+  const result = await routeEvent(event({ type: 'TaskCompleted' }), 'a fine feature', adapters, ticketContext({ iconState: 'done' }));
+  assert.equal(posted.length, 1, 'expected exactly one post across both transitions');
+  assert.deepEqual(edited, [{ topicId: 900, messageId: 9000, text: 'BL-123 ✅ done — a fine feature' }]);
+  assert.deepEqual(messageStates['BL-123'], { topicId: 900, messageId: 9000, renderedText: 'BL-123 ✅ done — a fine feature' });
+  assert.deepEqual(result, { posted: true, skipped: false });
+});
+
+test('BL-493: a transition whose rendered text is unchanged is a no-op - never a redundant edit', async () => {
+  const { adapters, posted, edited } = fakeAdapters();
+  await routeEvent(event(), 'a fine feature', adapters, ticketContext({ iconState: 'feature' }));
+  // A second ticket-status routing pass while the ticket's own lifecycle
+  // state has not moved (still active/'feature') renders the IDENTICAL
+  // status text - exactly the case a re-derived-but-unchanged transition
+  // produces.
+  const result = await routeEvent(event(), 'a fine feature', adapters, ticketContext({ iconState: 'feature' }));
+  assert.equal(posted.length, 1);
+  assert.deepEqual(edited, [], 'expected no editMessage call when the text has not changed');
+  assert.deepEqual(result, { posted: true, skipped: false }, 'skipped-unchanged is a SUCCESS, never treated as a failed route');
+});
+
+test('BL-493: an epic-topic creation failure is a skip, never a fallback post anywhere else', async () => {
+  const { adapters, posted } = fakeAdapters();
+  adapters.createTopic = async () => ({ success: false });
+  const result = await routeEvent(event(), 'a fine feature', adapters, ticketContext({ epic: 'dynamic-routing', epicTitle: 'Dynamic Routing' }));
+  assert.deepEqual(result, { posted: false, skipped: true });
+  assert.deepEqual(posted, []);
+});
+
+test('BL-493: a failed postMessage reports posted:false but is not itself a skip (the topic exists, delivery just failed)', async () => {
+  const { adapters, messageStates } = fakeAdapters();
+  adapters.postMessage = async () => undefined;
+  const result = await routeEvent(event(), 'a fine feature', adapters, ticketContext());
+  assert.deepEqual(result, { posted: false, skipped: false });
+  assert.deepEqual(messageStates['BL-123'], { topicId: 900 }, 'no message id remembered when the post itself failed');
+});
+
+test('BL-493: a failed editMessage reports posted:false but the PRIOR message state is preserved for the next retry', async () => {
+  const { adapters, messageStates } = fakeAdapters();
+  await routeEvent(event(), 'a fine feature', adapters, ticketContext({ iconState: 'feature' }));
+  adapters.editMessage = async () => false;
+  const result = await routeEvent(event({ type: 'TaskCompleted' }), 'a fine feature', adapters, ticketContext({ iconState: 'done' }));
+  assert.deepEqual(result, { posted: false, skipped: false });
+  assert.deepEqual(messageStates['BL-123'], { topicId: 900, messageId: 9000, renderedText: 'BL-123 🎵 in progress — a fine feature' });
+});
+
+test('BL-493: a tagged event with no ticketContext supplied is skipped, never guesses a route (defensive)', async () => {
+  const { adapters, posted, created } = fakeAdapters();
+  const result = await routeEvent(event(), 'a fine feature', adapters);
+  assert.deepEqual(result, { posted: false, skipped: true });
+  assert.deepEqual(posted, []);
+  assert.deepEqual(created, []);
+});
+
+// ── recordMessage (BL-329: outbound serialisation) - ticket-status path ───
+// Only ever called after a GENUINELY successful post/edit - mirrors
+// emittedKeys' own "only record what actually posted" convention (BL-322).
+
+test('BL-329: a successful post is recorded with the exact backlogId and rendered text', async () => {
+  const { adapters, recorded } = fakeAdapters();
+  await routeEvent(event(), 'a fine feature', adapters, ticketContext());
+  assert.deepEqual(recorded, [{ backlogId: 'BL-123', text: 'BL-123 🎵 in progress — a fine feature' }]);
+});
+
+test('BL-329: a successful edit is ALSO recorded, not just the initial post', async () => {
+  const { adapters, recorded } = fakeAdapters();
+  await routeEvent(event(), 'a fine feature', adapters, ticketContext({ iconState: 'feature' }));
+  await routeEvent(event({ type: 'TaskCompleted' }), 'a fine feature', adapters, ticketContext({ iconState: 'done' }));
+  assert.deepEqual(recorded, [
+    { backlogId: 'BL-123', text: 'BL-123 🎵 in progress — a fine feature' },
+    { backlogId: 'BL-123', text: 'BL-123 ✅ done — a fine feature' },
   ]);
 });
 
-test('topic-routing-02: every sendMessage call carries a concrete topicId - the adapter signature has no main-chat path at all', async () => {
-  const { adapters, sent } = fakeAdapters();
-  await routeEvent(event(), 'a fine feature', adapters);
-  assert.equal(sent.length, 1);
-  assert.equal(typeof sent[0].topicId, 'number');
-});
-
-test('topic-routing-03: the posted message states the event\'s type', async () => {
-  const { adapters, sent } = fakeAdapters();
-  await routeEvent(event({ type: 'NeedsApproval' }), 'a fine feature', adapters);
-  assert.match(sent[0].text, /NeedsApproval/);
-});
-
-// ── BL-410: routeEvent threads decideTopicAction's buttons through to sendMessage ──
-
-test('BL-410: routeEvent passes ApprovalRequested\'s buttons through to sendMessage', async () => {
-  const { adapters, sent } = fakeAdapters();
-  await routeEvent(event({ type: 'ApprovalRequested' }), 'a fine feature', adapters);
-  assert.ok(Array.isArray(sent[0].buttons), 'expected sendMessage to receive the buttons array');
-  assert.deepEqual(
-    sent[0].buttons.flat().map((b) => b.text),
-    ['Approve', 'Amend', 'Reject']
-  );
-});
-
-test('BL-410: routeEvent passes undefined buttons for a non-ApprovalRequested event (no regression)', async () => {
-  const { adapters, sent } = fakeAdapters();
-  await routeEvent(event({ type: 'TaskStarted' }), 'a fine feature', adapters);
-  assert.equal(sent[0].buttons, undefined);
-});
-
-test('a topic-create failure skips the event - never a fallback post', async () => {
-  const map = {};
-  const sent = [];
-  const adapters = {
-    getTopicMap: () => map,
-    createTopic: async () => ({ success: false }),
-    recordTopicId: () => {
-      throw new Error('recordTopicId should never be called when create fails');
-    },
-    sendMessage: async (topicId, text) => {
-      sent.push({ topicId, text });
-      return true;
-    },
-    recordMessage: () => {
-      throw new Error('recordMessage should never be called when create fails');
-    },
-  };
-  const result = await routeEvent(event(), 'a fine feature', adapters);
-  assert.deepEqual(result, { posted: false, skipped: true });
-  assert.deepEqual(sent, []);
-  assert.deepEqual(map, {});
-});
-
-test('a topic-create success with no topicId also skips (never posts with an undefined thread)', async () => {
-  const sent = [];
-  const adapters = {
-    getTopicMap: () => ({}),
-    createTopic: async () => ({ success: true }),
-    recordTopicId: () => {
-      throw new Error('recordTopicId should never be called with no topicId');
-    },
-    sendMessage: async (topicId, text) => {
-      sent.push({ topicId, text });
-      return true;
-    },
-    recordMessage: () => {
-      throw new Error('recordMessage should never be called with no topicId');
-    },
-  };
-  const result = await routeEvent(event(), 'a fine feature', adapters);
-  assert.deepEqual(result, { posted: false, skipped: true });
-  assert.deepEqual(sent, []);
-});
-
-test('a failed sendMessage reports posted:false but is not itself a skip (the topic exists, delivery just failed)', async () => {
-  const { adapters, map, recorded } = fakeAdapters({ 'BL-123': 42 });
-  adapters.sendMessage = async () => false;
-  const result = await routeEvent(event(), 'a fine feature', adapters);
-  assert.deepEqual(result, { posted: false, skipped: false });
-  assert.equal(map['BL-123'], 42);
-  assert.deepEqual(recorded, [], 'a failed send must never be recorded into the ticket\'s own durable record');
+test('BL-329: a skipped-unchanged transition is never recorded a second time', async () => {
+  const { adapters, recorded } = fakeAdapters();
+  await routeEvent(event(), 'a fine feature', adapters, ticketContext({ iconState: 'feature' }));
+  await routeEvent(event(), 'a fine feature', adapters, ticketContext({ iconState: 'feature' }));
+  assert.deepEqual(recorded, [{ backlogId: 'BL-123', text: 'BL-123 🎵 in progress — a fine feature' }]);
 });
 
 // ── routeEvent untagged-gate path (BL-358) ────────────────────────────────
@@ -510,6 +618,30 @@ test('BL-358: an untagged NeedsApproval is never recorded into the per-ticket bl
   assert.deepEqual(recorded, []);
 });
 
+// BL-493: a TAGGED NeedsApproval (a role blocked mid-task, holding a
+// ticket) still goes to the standing Operator topic like an untagged one -
+// never collapsed into the ticket's terse edit-in-place status line, which
+// has no room for the role's free-text question (routeGateEvent's own
+// comment in topicRouter.ts). Unlike the untagged case, its message IS
+// recorded into the ticket's own durable record, since backlogId !== null
+// here.
+test('BL-493: a TAGGED NeedsApproval routes to the standing Operator topic, never the ticket-status path, and IS recorded (unlike an untagged one)', async () => {
+  const { adapters, sent, recorded, posted, ensureOperatorTopicCalls } = fakeAdapters();
+  const result = await routeEvent(event({ type: 'NeedsApproval' }), 'a fine feature', adapters, ticketContext());
+  assert.deepEqual(sent, [{ topicId: 700, text: 'NeedsApproval: BL-123' }]);
+  assert.equal(ensureOperatorTopicCalls.length, 1);
+  assert.deepEqual(posted, [], 'never the edit-in-place ticket-status path');
+  assert.deepEqual(recorded, [{ backlogId: 'BL-123', text: 'NeedsApproval: BL-123' }]);
+  assert.deepEqual(result, { posted: true, skipped: false });
+});
+
+test('BL-493: a TAGGED NeedsApproval is not recorded when the send itself fails', async () => {
+  const { adapters, recorded } = fakeAdapters();
+  adapters.sendMessage = async () => false;
+  await routeEvent(event({ type: 'NeedsApproval' }), 'a fine feature', adapters, ticketContext());
+  assert.deepEqual(recorded, []);
+});
+
 test('BL-358: a failed Operator-topic creation skips the event, never falls back anywhere else', async () => {
   const { adapters, sent } = fakeAdapters();
   adapters.ensureOperatorTopic = async () => undefined;
@@ -525,10 +657,10 @@ test('BL-358: a failed send to an existing Operator topic reports posted:false b
   assert.deepEqual(result, { posted: false, skipped: false });
 });
 
-test('BL-358: a tagged event still routes through the ordinary per-ticket path, unaffected (regression)', async () => {
-  const { adapters, created, ensureOperatorTopicCalls } = fakeAdapters();
-  await routeEvent(event(), 'a fine feature', adapters);
-  assert.deepEqual(created, ['BL-123 - a fine feature']);
+test('BL-358: a tagged event still routes through the ticket-status path, unaffected (regression)', async () => {
+  const { adapters, posted, ensureOperatorTopicCalls } = fakeAdapters();
+  await routeEvent(event(), 'a fine feature', adapters, ticketContext());
+  assert.equal(posted.length, 1);
   assert.equal(ensureOperatorTopicCalls.length, 0, 'a tagged event must never touch the Operator topic');
 });
 
@@ -543,35 +675,27 @@ test('BL-434: an ApprovalRequested ask posts ONLY into the standing Approvals to
   assert.deepEqual(result, { posted: true, skipped: false });
 });
 
-// BL-424 regression guard: without a per-ticket topic to set an icon ON,
-// BL-424's awaiting-approval icon sync silently no-ops (topicId-undefined
-// guard) - a ticket that has NEVER been active (paused awaiting approval
-// before its first promotion) must still get its own per-ticket topic
-// created, even though the ask itself never posts into it.
-test('BL-434/BL-424: an ApprovalRequested ask for a ticket with NO per-ticket topic yet creates one (for the icon sync), but posts nothing into it', async () => {
+// BL-493 (human decision D3): the icon-only per-ticket-topic ensure this
+// pair used to guard (ensurePerTicketTopicForIcon) is DELETED - awaiting-
+// approval now surfaces via the standing Approvals topic ONLY, no
+// throwaway per-ticket topic minted just to hang an icon on, whether or not
+// the ticket has ever had one before.
+test('BL-493 fold-ticket-events-05: an ApprovalRequested ask for a ticket with no prior topic mints NO per-ticket topic at all', async () => {
   const { adapters, created, sent, map } = fakeAdapters();
   await routeEvent(event({ type: 'ApprovalRequested' }), 'a fine feature', adapters);
-  assert.deepEqual(created, ['BL-123 - a fine feature'], 'expected the per-ticket topic created once, for the icon sync');
-  assert.equal(map['BL-123'], 501, 'expected the new per-ticket topic id recorded into the BacklogTopicMap');
+  assert.deepEqual(created, [], 'expected NO topic created for the ask - not the Approvals topic (already ensured) and not a per-ticket one');
+  assert.deepEqual(map, {}, 'expected the BacklogTopicMap to gain no BL-### entry');
   assert.deepEqual(
     sent.map((m) => m.topicId),
-    [800],
-    'expected no message ever sent into the newly-created per-ticket topic (801 is never in this list)'
+    [800]
   );
 });
 
-test('BL-434: an ApprovalRequested ask for a ticket that ALREADY has a per-ticket topic never creates a second one', async () => {
-  const { adapters, created, map } = fakeAdapters({ 'BL-123': 42 });
+test('BL-493: an ApprovalRequested ask for a ticket that already has a (legacy) per-ticket topic leaves that mapping untouched and still posts only to Approvals', async () => {
+  const { adapters, created, map, sent } = fakeAdapters({ 'BL-123': 42 });
   await routeEvent(event({ type: 'ApprovalRequested' }), 'a fine feature', adapters);
-  assert.deepEqual(created, [], 'expected no new per-ticket topic when one is already mapped');
-  assert.equal(map['BL-123'], 42, 'expected the existing mapping left untouched');
-});
-
-test('BL-434: a failed per-ticket topic creation (for the icon) never blocks the ask itself from posting to the Approvals topic', async () => {
-  const { adapters, sent } = fakeAdapters();
-  adapters.createTopic = async () => ({ success: false });
-  const result = await routeEvent(event({ type: 'ApprovalRequested' }), 'a fine feature', adapters);
-  assert.deepEqual(result, { posted: true, skipped: false });
+  assert.deepEqual(created, []);
+  assert.equal(map['BL-123'], 42, 'expected the existing legacy mapping left untouched, never re-derived');
   assert.deepEqual(
     sent.map((m) => m.topicId),
     [800]
@@ -599,10 +723,10 @@ test('BL-434: a failed send to the Approvals topic reports posted:false but is n
   assert.deepEqual(result, { posted: false, skipped: false });
 });
 
-test('BL-434: a non-ApprovalRequested tagged event still routes through the ordinary per-ticket path, never touching the Approvals topic', async () => {
-  const { adapters, created, ensureApprovalsTopicCalls } = fakeAdapters();
-  await routeEvent(event(), 'a fine feature', adapters);
-  assert.deepEqual(created, ['BL-123 - a fine feature']);
+test('BL-434: a non-ApprovalRequested tagged event still routes through the ticket-status path, never touching the Approvals topic', async () => {
+  const { adapters, posted, ensureApprovalsTopicCalls } = fakeAdapters();
+  await routeEvent(event(), 'a fine feature', adapters, ticketContext());
+  assert.equal(posted.length, 1);
   assert.equal(ensureApprovalsTopicCalls.length, 0, 'a non-ApprovalRequested event must never touch the Approvals topic');
 });
 
@@ -688,86 +812,38 @@ test('BL-484: sendApprovalAsk absent keeps the ordinary sendMessage path fully u
   assert.equal(recorded.length, 1);
 });
 
-// ── recordMessage (BL-329: outbound serialisation) ─────────────────────────
-// Only ever called after a GENUINELY successful sendMessage - mirrors
-// emittedKeys' own "only record what actually posted" convention (BL-322).
-
-test('BL-329: a successful send on the reuse path is recorded with the exact backlogId and text', async () => {
-  const { adapters, recorded } = fakeAdapters({ 'BL-123': 42 });
-  await routeEvent(event(), 'a fine feature', adapters);
-  assert.deepEqual(recorded, [{ backlogId: 'BL-123', text: 'TaskStarted: BL-123' }]);
-});
-
-test('BL-329: a successful send on the create-topic path is ALSO recorded, not just the reuse path', async () => {
-  const { adapters, recorded } = fakeAdapters();
-  await routeEvent(event(), 'a fine feature', adapters);
-  assert.deepEqual(recorded, [{ backlogId: 'BL-123', text: 'TaskStarted: BL-123' }]);
-});
-
-test('BL-329: multiple events for the same ticket are recorded in the order they were routed', async () => {
-  const { adapters, recorded } = fakeAdapters();
-  await routeEvent(event(), 'a fine feature', adapters);
-  await routeEvent(event({ type: 'NeedsApproval' }), 'a fine feature', adapters);
-  assert.deepEqual(recorded, [
-    { backlogId: 'BL-123', text: 'TaskStarted: BL-123' },
-    { backlogId: 'BL-123', text: 'NeedsApproval: BL-123' },
-  ]);
-});
-
-// ── completionSummaryText (pure) — BL-299 ──────────────────────────────────
+// ── completionSummaryText (pure, orphaned by BL-493) — BL-299 ─────────────
+// The old per-ticket-topic summary-then-close mechanism (routeCompletionEvent)
+// is gone from routeEvent's production dispatch - TaskCompleted now routes
+// through the SAME ticket-status edit-in-place path as every other ticket
+// event (see the BL-493 section above). completionSummaryText itself is left
+// defined and tested (orphaned, not deleted - cleanup is the cleaner's call,
+// same posture the ticket's own spec already applies to topicNameForItem).
 
 test('completionSummaryText names the item and states it is complete', () => {
   assert.equal(completionSummaryText(event({ type: 'TaskCompleted' }), 'a fine feature'), 'BL-123 - a fine feature is complete.');
 });
 
-// ── routeEvent completion path (adapter-injected) — BL-299 topic-complete-01 ──
+// ── routeEvent TaskCompleted path (adapter-injected) — BL-493 ────────────
+// TaskCompleted no longer gets a bespoke summary-then-close: it is an
+// ordinary ticket-status transition, editing the SAME status message
+// (glyph flips to done ✅) with no topic ever closed - the epic/Backlog
+// topic is shared by many tickets and is never this one ticket's to close.
 
-test('topic-complete-01 [completion, has a topic]: posts a completion summary naming the item, then closes the topic', async () => {
-  const { adapters, sent, closed, recorded } = fakeAdapters({ 'BL-123': 42 });
-  const result = await routeEvent(event({ type: 'TaskCompleted' }), 'a fine feature', adapters);
-  assert.deepEqual(sent, [{ topicId: 42, text: 'BL-123 - a fine feature is complete.' }]);
-  assert.deepEqual(closed, [42]);
-  assert.deepEqual(result, { posted: true, skipped: false });
-  assert.deepEqual(recorded, [{ backlogId: 'BL-123', text: 'BL-123 - a fine feature is complete.' }], 'BL-329: the completion summary must be serialised too, not just posted');
-});
-
-test('topic-complete-01: the summary is posted BEFORE the topic closes (order matters - a closed topic cannot be posted into)', async () => {
-  const order = [];
-  const { adapters } = fakeAdapters({ 'BL-123': 42 });
-  adapters.sendMessage = async (topicId, text) => {
-    order.push('sendMessage');
-    return true;
-  };
-  adapters.closeTopic = async (topicId) => {
-    order.push('closeTopic');
-    return true;
-  };
-  await routeEvent(event({ type: 'TaskCompleted' }), 'a fine feature', adapters);
-  assert.deepEqual(order, ['sendMessage', 'closeTopic']);
-});
-
-test('topic-complete-01 [progress, has a topic]: a non-completion event posts its line and leaves the topic open (no close call)', async () => {
-  const { adapters, sent, closed } = fakeAdapters({ 'BL-123': 42 });
-  const result = await routeEvent(event({ type: 'TaskStarted' }), 'a fine feature', adapters);
-  assert.deepEqual(sent, [{ topicId: 42, text: 'TaskStarted: BL-123' }]);
-  assert.deepEqual(closed, []);
+test('BL-493: TaskCompleted edits the existing status message to the done glyph - no topic is ever closed', async () => {
+  const { adapters, posted, edited, closed } = fakeAdapters();
+  await routeEvent(event(), 'a fine feature', adapters, ticketContext({ iconState: 'feature' }));
+  const result = await routeEvent(event({ type: 'TaskCompleted' }), 'a fine feature', adapters, ticketContext({ iconState: 'done' }));
+  assert.equal(posted.length, 1);
+  assert.deepEqual(edited, [{ topicId: 900, messageId: 9000, text: 'BL-123 ✅ done — a fine feature' }]);
+  assert.deepEqual(closed, [], 'no per-ticket topic exists for this ticket to close');
   assert.deepEqual(result, { posted: true, skipped: false });
 });
 
-test('topic-complete-01 [completion, has no topic]: posts nothing and closes no topic (a no-op, never creates a topic just to close it)', async () => {
-  const { adapters, sent, closed, created } = fakeAdapters();
-  const result = await routeEvent(event({ type: 'TaskCompleted' }), 'a fine feature', adapters);
-  assert.deepEqual(sent, []);
+test('BL-493: a TaskCompleted for a ticket with no PRIOR status message still posts one (first-ever event happens to be completion)', async () => {
+  const { adapters, posted, closed } = fakeAdapters();
+  const result = await routeEvent(event({ type: 'TaskCompleted' }), 'a fine feature', adapters, ticketContext({ iconState: 'done' }));
+  assert.deepEqual(posted, [{ topicId: 900, text: 'BL-123 ✅ done — a fine feature', messageId: 9000 }]);
   assert.deepEqual(closed, []);
-  assert.deepEqual(created, []);
-  assert.deepEqual(result, { posted: false, skipped: true });
-});
-
-test('a completed item whose summary post fails is never closed', async () => {
-  const { adapters, closed, recorded } = fakeAdapters({ 'BL-123': 42 });
-  adapters.sendMessage = async () => false;
-  const result = await routeEvent(event({ type: 'TaskCompleted' }), 'a fine feature', adapters);
-  assert.deepEqual(closed, []);
-  assert.deepEqual(result, { posted: false, skipped: false });
-  assert.deepEqual(recorded, [], 'a failed completion send must never be recorded either');
+  assert.deepEqual(result, { posted: true, skipped: false });
 });

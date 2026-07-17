@@ -56,6 +56,14 @@ function buildAdapters(ctx) {
       // the ticket's own per-ticket topic - scenarios below that check
       // WHERE the ask landed now check this destination instead.
       ensureApprovalsTopic: async () => APPROVALS_TOPIC_ID,
+      // BL-493: the standing Backlog topic + edit-in-place post/edit pair -
+      // this feature's own scenarios don't assert on ticket-status
+      // routing, but runConciergeTick unconditionally reaches these now.
+      ensureBacklogTopic: async () => 760,
+      postMessage: async () => 9000,
+      editMessage: async () => true,
+      getTicketMessageState: () => undefined,
+      setTicketMessageState: () => {},
     },
     iconAdapters: {
       // BL-342: a safe default for fixtures that predate topic icons and
@@ -160,16 +168,21 @@ function registerSteps(registry) {
   registry.define(/^the request for the human's approval could not be posted$/, async (ctx) => {
     ctx.sendShouldFail = true;
     ctx.firstResult = await runConciergeTick(ctx.adapters);
-    // Clears before the shared "the swarm next reviews..." When step below
-    // runs the RETRY tick - the same state-transition-held-back mechanism
-    // means that retry needs no separate fixture setup of its own.
+    // BL-493: the ticket's own TaskStarted status message now routes
+    // through a SEPARATE, independent channel (postMessage) from the
+    // ApprovalRequested ask (sendMessage) - only the latter is made to
+    // fail here, so the first tick's overall routed count reflects
+    // TaskStarted's own success, not the ask's failure. What this
+    // scenario actually proves (the ask itself is retried, never dropped)
+    // is that NOTHING matching the ask's own text posted on this first
+    // tick - checked directly, rather than via the tick's total count.
+    if (ctx.sent.some((m) => APPROVAL_TEXT_PATTERN.test(m.text))) {
+      throw new Error(`expected the failed ask to post nothing on the first tick, got ${JSON.stringify(ctx.sent)}`);
+    }
     ctx.sendShouldFail = false;
   });
 
   registry.define(/^the request is made again$/, (ctx) => {
-    if (ctx.firstResult.routed !== 0) {
-      throw new Error(`expected the failed first tick to route nothing, got ${ctx.firstResult.routed}`);
-    }
     if (!ctx.sent.some((m) => APPROVAL_TEXT_PATTERN.test(m.text))) {
       throw new Error(`expected the retried approval request to post, got ${JSON.stringify(ctx.sent)}`);
     }

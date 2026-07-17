@@ -144,6 +144,15 @@ const LINKS_SECTION_HEADER = 'LINKS:';
 // decides WHICH items count as "recent"; this only bounds the list length.
 export const PIPELINE_BOARD_RECENTLY_CLOSED_MAX = 5;
 
+// BL-502: Telegram's own sendMessage text limit is 4096 chars; a small
+// safety margin below it absorbs the HTML entity expansion escapeHtml adds
+// (each &/</> becomes 4-5 chars) and any off-by-a-few in a future render
+// tweak, without eating meaningfully into the link budget. Every consumer
+// of the send limit (budgetPipelineBoardLinks below, its caller in
+// pipelineBoardSync.ts) reads this ONE constant, never a hardcoded number
+// of its own.
+export const PIPELINE_BOARD_MESSAGE_MAX_LENGTH = 4000;
+
 // BL-465: the grid's own short kebab slug - 2-3 significant words, lower-
 // cased and hyphenated, mirroring the ticket's own backlog-filename slug
 // convention (e.g. "BL-467-pipeline-board-only-pin" -> "pipeline-board-
@@ -504,6 +513,10 @@ export function renderPipelineBoard(data: PipelineBoardData, lastChangeMs: numbe
   return [...renderBodySections(data), '', renderUpdatedAtFooter(lastChangeMs)].join('\n');
 }
 
+function pipelineBoardLinkLine(link: PipelineBoardLinkEntry, repoBaseUrl: string): string {
+  return `${link.id}: <a href="${repoBaseUrl}/blob/main/${link.path}">${link.path}</a>`;
+}
+
 // BL-465: the tappable link list below the grid, as its OWN plain-HTML
 // fragment (real <a href> tags) - never placed inside the <pre> block
 // above. Empty string (nothing to append) when there are no links at all,
@@ -513,8 +526,82 @@ export function renderPipelineBoardLinks(links: PipelineBoardLinkEntry[], repoBa
   if (links.length === 0 || !repoBaseUrl) {
     return '';
   }
-  const lines = [LINKS_SECTION_HEADER, ...links.map((link) => `${link.id}: <a href="${repoBaseUrl}/blob/main/${link.path}">${link.path}</a>`)];
+  const lines = [LINKS_SECTION_HEADER, ...links.map((link) => pipelineBoardLinkLine(link, repoBaseUrl))];
   return lines.join('\n');
+}
+
+function pipelineBoardOverflowLine(omittedCount: number): string {
+  return `+${omittedCount} more`;
+}
+
+export interface PipelineBoardLinksBudget {
+  html: string;
+  omittedCount: number;
+}
+
+// BL-502: the link list above has NO bound of its own - one line per
+// linkable entry - so at any backlog of comparable-or-larger size than
+// ~16 entries the FULL list alone pushes the composed message over
+// Telegram's whole-message send limit, and every post is rejected "text
+// is too long" (live outage 2026-07-17). Unlike a transient failure,
+// retrying the SAME oversized payload never succeeds - the PAYLOAD must
+// shrink. This budgets the link list to maxLinksLength (the space
+// PIPELINE_BOARD_MESSAGE_MAX_LENGTH has left after the grid/parked body,
+// computed by the caller - pipelineBoardSync.ts) - included IN FULL when
+// it fits (the common case, byte-identical to the pre-budget render,
+// omittedCount 0), else TRIMMED, in list order, to the largest prefix
+// that still leaves room for a VISIBLE "+N more" indicator naming exactly
+// how many were dropped - never a silent cap (this codebase's
+// no-silent-cap posture, mirroring PIPELINE_BOARD_RECENTLY_CLOSED_MAX's
+// own bounded list).
+// BL-502 (cleaner, CRAP budget): the trim loop itself - the largest prefix
+// of links that still leaves room for the "+N more" overflow indicator -
+// extracted from budgetPipelineBoardLinks below purely to keep that
+// function's own CRAP under threshold, mirroring conciergeTick.ts's own
+// epicTitleFor/epicUpdateText extractions for the identical reason.
+function trimLinksToBudget(links: PipelineBoardLinkEntry[], repoBaseUrl: string, maxLinksLength: number): string[] {
+  const includedLines: string[] = [];
+  for (const link of links) {
+    const line = pipelineBoardLinkLine(link, repoBaseUrl);
+    const candidateOmitted = links.length - (includedLines.length + 1);
+    const candidateLines = [LINKS_SECTION_HEADER, ...includedLines, line];
+    if (candidateOmitted > 0) {
+      candidateLines.push(pipelineBoardOverflowLine(candidateOmitted));
+    }
+    if (candidateLines.join('\n').length > maxLinksLength) {
+      break;
+    }
+    includedLines.push(line);
+  }
+  return includedLines;
+}
+
+export function budgetPipelineBoardLinks(links: PipelineBoardLinkEntry[], repoBaseUrl: string | undefined, maxLinksLength: number): PipelineBoardLinksBudget {
+  if (links.length === 0 || !repoBaseUrl) {
+    return { html: '', omittedCount: 0 };
+  }
+  const full = renderPipelineBoardLinks(links, repoBaseUrl);
+  if (full.length <= maxLinksLength) {
+    return { html: full, omittedCount: 0 };
+  }
+  const includedLines = trimLinksToBudget(links, repoBaseUrl, maxLinksLength);
+  // trimLinksToBudget can never accept every link: its FINAL iteration's
+  // candidate check (for the last link, with every prior one already
+  // included) omits the overflow line entirely - candidateOmitted reaches 0
+  // only there - making that candidate identical to `full` above, which we
+  // already know exceeds maxLinksLength (the very reason this loop runs).
+  // So at least one link is always left out here; omittedCount is never 0.
+  const omittedCount = links.length - includedLines.length;
+  const lines = [LINKS_SECTION_HEADER, ...includedLines, pipelineBoardOverflowLine(omittedCount)];
+  if (lines.join('\n').length > maxLinksLength) {
+    // Not even the header + omitted-count indicator alone fits within the
+    // remaining budget - degrade to no links at all rather than emit a
+    // message still over budget (never happens at realistic backlog sizes:
+    // the grid/parked body is small and bounded, so this remains a
+    // generous budget in practice).
+    return { html: '', omittedCount: links.length };
+  }
+  return { html: lines.join('\n'), omittedCount };
 }
 
 // Telegram's own HTML parse_mode requires only these three characters

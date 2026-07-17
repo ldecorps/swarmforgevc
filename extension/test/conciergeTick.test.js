@@ -19,6 +19,9 @@ function fakeAdapters(overrides = {}) {
   const sent = [];
   const closed = [];
   const recorded = [];
+  const posted = [];
+  const edited = [];
+  const messageStates = {};
   const iconsSet = [];
   const iconOwnership = {};
   const titlesSet = [];
@@ -28,6 +31,7 @@ function fakeAdapters(overrides = {}) {
   let currentRoleTicket = {};
   let operatorTopicId = 700;
   let approvalsTopicId = 750;
+  let backlogTopicId = 760;
   return {
     state,
     topicMap,
@@ -35,6 +39,9 @@ function fakeAdapters(overrides = {}) {
     sent,
     closed,
     recorded,
+    posted,
+    edited,
+    messageStates,
     iconsSet,
     iconOwnership,
     titlesSet,
@@ -47,6 +54,9 @@ function fakeAdapters(overrides = {}) {
     },
     setApprovalsTopicId: (id) => {
       approvalsTopicId = id;
+    },
+    setBacklogTopicId: (id) => {
+      backlogTopicId = id;
     },
     setFolders: (f) => {
       currentFolders = f;
@@ -95,6 +105,24 @@ function fakeAdapters(overrides = {}) {
         },
         ensureOperatorTopic: async () => operatorTopicId,
         ensureApprovalsTopic: async () => approvalsTopicId,
+        // BL-493: the standing Backlog topic (epic-less ticket-status
+        // target) plus the edit-in-place post/edit pair and the per-ticket
+        // message-identity store - mirrors the equivalent block added to
+        // conciergeTopicRouting.test.js's own fakeAdapters.
+        ensureBacklogTopic: async () => backlogTopicId,
+        postMessage: async (topicId, text) => {
+          const messageId = 9000 + posted.length;
+          posted.push({ topicId, text, messageId });
+          return messageId;
+        },
+        editMessage: async (topicId, messageId, text) => {
+          edited.push({ topicId, messageId, text });
+          return true;
+        },
+        getTicketMessageState: (backlogId) => messageStates[backlogId],
+        setTicketMessageState: (backlogId, s) => {
+          messageStates[backlogId] = s;
+        },
       },
       // BL-342: an EMPTY sticker list by default - resolveIconStickerId
       // then never finds a match, so syncTopicIcon safely no-ops
@@ -181,27 +209,27 @@ function fakeAdapters(overrides = {}) {
 
 // ── concierge-wiring-01 [started being worked] ────────────────────────────
 
-test('concierge-wiring-01: a newly-active item creates its topic, posts its opening message, and persists the mapping', async () => {
-  const { adapters, setFolders, created, sent, topicMap, state } = fakeAdapters();
+test('concierge-wiring-01: a newly-active item posts its status message into the standing Backlog topic (epic-less) and persists the message identity', async () => {
+  const { adapters, setFolders, created, posted, messageStates, state } = fakeAdapters();
   setFolders(folders({ active: [{ id: 'BL-1', title: 'a fine feature' }] }));
 
   const result = await runConciergeTick(adapters);
 
-  assert.deepEqual(created, ['BL-1 - a fine feature']);
-  // BL-322: TaskStarted now renders a derived summary, not the bare
-  // "TaskStarted: BL-1" line - title-only here since this fixture's
-  // BacklogFolderItem carries no notes/firstAcceptanceStep.
-  assert.deepEqual(sent, [{ topicId: 801, text: 'What it is: a fine feature' }]);
-  assert.equal(topicMap['BL-1'], 801);
+  // BL-493: no per-ticket topic is ever created for a ticket event - the
+  // ticket declares no epic, so its status message targets the standing
+  // Backlog topic instead.
+  assert.deepEqual(created, []);
+  assert.deepEqual(posted, [{ topicId: 760, text: 'BL-1 🎵 in progress — a fine feature', messageId: 9000 }]);
+  assert.deepEqual(messageStates['BL-1'], { topicId: 760, messageId: 9000, renderedText: 'BL-1 🎵 in progress — a fine feature' });
   assert.equal(result.routed, 1);
   assert.equal(state.snapshot.backlog.active[0], 'BL-1');
 });
 
 // ── concierge-wiring-01 [completed] ───────────────────────────────────────
 
-test('concierge-wiring-01: a newly-completed item posts a completion summary into its topic and closes it', async () => {
-  const { adapters, setFolders, sent, closed } = fakeAdapters();
-  // First tick: item is active (opens its topic).
+test('concierge-wiring-01: a newly-completed item edits its SAME status message to the done glyph - no topic is ever closed', async () => {
+  const { adapters, setFolders, posted, edited, closed } = fakeAdapters();
+  // First tick: item is active (posts its status message).
   setFolders(folders({ active: [{ id: 'BL-1', title: 'a fine feature' }] }));
   await runConciergeTick(adapters);
 
@@ -209,21 +237,22 @@ test('concierge-wiring-01: a newly-completed item posts a completion summary int
   setFolders(folders({ done: [{ id: 'BL-1', title: 'a fine feature' }] }));
   const result = await runConciergeTick(adapters);
 
-  assert.deepEqual(sent[sent.length - 1], { topicId: 801, text: 'BL-1 - a fine feature is complete.' });
-  assert.deepEqual(closed, [801]);
+  assert.equal(posted.length, 1, 'expected exactly one post across both ticks - the second is an edit');
+  assert.deepEqual(edited, [{ topicId: 760, messageId: 9000, text: 'BL-1 ✅ done — a fine feature' }]);
+  assert.deepEqual(closed, [], 'the standing Backlog topic is shared by many tickets and is never closed');
   assert.equal(result.routed, 1);
 });
 
 // ── concierge-wiring-02: durable restart-safe dedup ───────────────────────
 
 test('concierge-wiring-02: an event already routed is not re-routed on a later tick with no change', async () => {
-  const { adapters, setFolders, created, sent } = fakeAdapters();
+  const { adapters, setFolders, posted, edited } = fakeAdapters();
   setFolders(folders({ active: [{ id: 'BL-1', title: 'a fine feature' }] }));
   await runConciergeTick(adapters);
   const result = await runConciergeTick(adapters); // no change
 
-  assert.equal(created.length, 1);
-  assert.equal(sent.length, 1);
+  assert.equal(posted.length, 1);
+  assert.equal(edited.length, 0);
   assert.equal(result.routed, 0);
 });
 
@@ -233,18 +262,18 @@ test('concierge-wiring-02: reloading the durable state fresh (simulated restart)
   await runConciergeTick(first.adapters);
 
   // Simulate a restart: a FRESH adapters object, but readTickState/
-  // readFolders/topicMap are backed by the SAME persisted state (as a real
-  // restart would read the same files back off disk).
+  // readFolders/messageStates are backed by the SAME persisted state (as a
+  // real restart would read the same files back off disk).
   const second = fakeAdapters();
   second.state.snapshot = first.state.snapshot;
   second.state.emittedKeys = [...first.state.emittedKeys];
-  Object.assign(second.topicMap, first.topicMap);
+  Object.assign(second.messageStates, first.messageStates);
   second.setFolders(folders({ active: [{ id: 'BL-1', title: 'a fine feature' }] }));
 
   const result = await runConciergeTick(second.adapters);
 
-  assert.equal(second.created.length, 0);
-  assert.equal(second.sent.length, 0);
+  assert.equal(second.posted.length, 0);
+  assert.equal(second.edited.length, 0);
   assert.equal(result.routed, 0);
 });
 
@@ -256,7 +285,7 @@ test('the tick state always advances (writeTickState is called every tick, even 
 });
 
 test('a title is looked up per event from the folders snapshot, not hardcoded', async () => {
-  const { adapters, setFolders, created } = fakeAdapters();
+  const { adapters, setFolders, posted } = fakeAdapters();
   setFolders(
     folders({
       active: [
@@ -266,12 +295,15 @@ test('a title is looked up per event from the folders snapshot, not hardcoded', 
     })
   );
   await runConciergeTick(adapters);
-  assert.deepEqual(created.sort(), ['BL-1 - first item', 'BL-2 - second item']);
+  assert.deepEqual(
+    posted.map((m) => m.text).sort(),
+    ['BL-1 🎵 in progress — first item', 'BL-2 🎵 in progress — second item']
+  );
 });
 
 test('routing multiple events in one tick only marks the SUCCESSFULLY posted ones as emitted', async () => {
   const { adapters, setFolders, state } = fakeAdapters();
-  adapters.routeAdapters.createTopic = async (name) => (name.startsWith('BL-1 ') ? { success: false } : { success: true, topicId: 900 });
+  adapters.routeAdapters.postMessage = async (topicId, text) => (text.startsWith('BL-1 ') ? undefined : 900);
   setFolders(
     folders({
       active: [
@@ -289,15 +321,19 @@ test('routing multiple events in one tick only marks the SUCCESSFULLY posted one
 // Regression (found during cleaner review): a failed route was never
 // marked emitted, but the persisted snapshot advanced past the transition
 // anyway, so the diff could never see it as "new" again on a later tick -
-// a transient createTopic failure silently and permanently dropped the
-// event. Fixed by holding a failed transition's id back out of the
-// persisted snapshot so the next tick's diff still treats it as pending.
+// a transient post failure silently and permanently dropped the event.
+// Fixed by holding a failed transition's id back out of the persisted
+// snapshot so the next tick's diff still treats it as pending.
 test('a route that fails to post is retried on a later tick once the transition is still pending', async () => {
-  const { adapters, setFolders, created, state } = fakeAdapters();
+  const { adapters, setFolders, posted, state } = fakeAdapters();
   let shouldFail = true;
-  adapters.routeAdapters.createTopic = async (name) => {
-    created.push(name);
-    return shouldFail ? { success: false } : { success: true, topicId: 950 };
+  adapters.routeAdapters.postMessage = async (topicId, text) => {
+    if (shouldFail) {
+      return undefined;
+    }
+    const messageId = 950;
+    posted.push({ topicId, text, messageId });
+    return messageId;
   };
   setFolders(folders({ active: [{ id: 'BL-1', title: 'flaky open' }] }));
 
@@ -308,26 +344,29 @@ test('a route that fails to post is retried on a later tick once the transition 
   shouldFail = false;
   const second = await runConciergeTick(adapters); // folders unchanged - still active
   assert.equal(second.routed, 1);
-  assert.deepEqual(created, ['BL-1 - flaky open', 'BL-1 - flaky open']);
+  assert.deepEqual(posted, [{ topicId: 760, text: 'BL-1 🎵 in progress — flaky open', messageId: 950 }]);
   assert.ok(state.emittedKeys.includes('TaskStarted:BL-1'));
 });
 
 // ── needs-approval-01/02 — BL-301 ─────────────────────────────────────────
 
-test('needs-approval-01 [a backlog item]: a newly-gated role holding a ticket posts NeedsApproval into that ticket\'s topic', async () => {
-  const { adapters, setFolders, setGates, setRoleTicket, created, sent, topicMap } = fakeAdapters();
+test('needs-approval-01 [a backlog item]: a newly-gated role holding a ticket - TaskStarted posts the ticket status, NeedsApproval asks in the standing Operator topic', async () => {
+  const { adapters, setFolders, setGates, setRoleTicket, created, posted, sent } = fakeAdapters();
   setFolders(folders({ active: [{ id: 'BL-1', title: 'a fine feature' }] }));
   setRoleTicket({ coder: 'BL-1' });
   setGates([{ role: 'coder', gated: true }]);
 
   const result = await runConciergeTick(adapters);
 
-  // Both TaskStarted (newly active) and NeedsApproval (newly gated,
-  // tagged BL-1) derive on this same first tick - both route into BL-1's
-  // ONE topic (created once), never two topics for one item.
-  assert.equal(created.length, 1);
-  assert.equal(topicMap['BL-1'], 801);
-  assert.ok(sent.some((m) => m.text === 'NeedsApproval: BL-1' && m.topicId === 801));
+  // Both TaskStarted (newly active) and NeedsApproval (newly gated, tagged
+  // BL-1) derive on this same first tick. BL-493: no per-ticket topic is
+  // ever created; TaskStarted posts the ticket's own status message into
+  // the standing Backlog topic. BL-358: NeedsApproval never collapses into
+  // that status line (no room for the role's free-text question) - it
+  // asks in the standing Operator topic instead, naming the ticket id.
+  assert.deepEqual(created, []);
+  assert.deepEqual(posted, [{ topicId: 760, text: 'BL-1 🎵 in progress — a fine feature', messageId: 9000 }]);
+  assert.ok(sent.some((m) => m.text === 'NeedsApproval: BL-1' && m.topicId === 700));
   assert.equal(result.routed, 2);
 });
 
@@ -416,18 +455,18 @@ test('needs-approval-01: a gate that stays captured across two polls only posts 
 // ── pending-approval-asks (BL-357) ────────────────────────────────────────
 
 test('BL-434: an active ticket newly pending approval asks for it in the standing Approvals topic, not its own topic', async () => {
-  const { adapters, setFolders, created, sent, topicMap } = fakeAdapters();
+  const { adapters, setFolders, created, sent, posted } = fakeAdapters();
   setFolders(folders({ active: [{ id: 'BL-1', title: 'a fine feature', humanApproval: 'pending' }] }));
 
   const result = await runConciergeTick(adapters);
 
-  // TaskStarted (newly active) creates BL-1's own topic; ApprovalRequested
-  // (newly pending) routes to the standing Approvals topic instead - no
-  // second per-ticket topic is created for it.
-  assert.equal(created.length, 1);
-  assert.equal(topicMap['BL-1'], 801);
+  // TaskStarted (newly active) posts BL-1's own status message into the
+  // standing Backlog topic (epic-less, no per-ticket topic); ApprovalRequested
+  // (newly pending) routes to the standing Approvals topic instead - never
+  // a per-ticket topic for either.
+  assert.deepEqual(created, []);
+  assert.deepEqual(posted, [{ topicId: 760, text: 'BL-1 🎵 in progress — a fine feature', messageId: 9000 }]);
   assert.ok(sent.some((m) => m.text.includes('BL-1 needs your approval') && m.topicId === 750));
-  assert.ok(!sent.some((m) => m.text.includes('needs your approval') && m.topicId === 801), "the ask must not be posted into the ticket's own topic");
   assert.equal(result.routed, 2);
 });
 
@@ -454,18 +493,18 @@ test('BL-357: an active ticket whose approval is not pending is never asked abou
 
 // BL-408: paused tickets awaiting approval are now asked too - they sit in
 // paused/ until promotion. Only done/ tickets are out of scope.
-test('BL-434: a paused ticket pending approval IS asked in the standing Approvals topic, not its own topic', async () => {
-  const { adapters, setFolders, sent, topicMap } = fakeAdapters();
+test('BL-434: a paused ticket pending approval IS asked in the standing Approvals topic, and mints NO per-ticket topic at all', async () => {
+  const { adapters, setFolders, sent, created, topicMap } = fakeAdapters();
   setFolders(folders({ paused: [{ id: 'BL-2', title: 'awaiting promotion', humanApproval: 'pending' }] }));
 
   const result = await runConciergeTick(adapters);
 
   // Approval request for the paused ticket fires (no TaskStarted since not
-  // yet active) and routes to the standing Approvals topic. A per-ticket
-  // topic IS created as a side effect (BL-424: the icon sync needs one to
-  // set the awaiting-approval icon on), but never receives the ask itself.
-  assert.equal(topicMap['BL-2'], 801);
-  assert.ok(!sent.some((m) => m.topicId === 801), "the ask must never post into the ticket's own topic");
+  // yet active) and routes to the standing Approvals topic. BL-493 (human
+  // decision D3): the old per-ticket-topic-for-the-icon side effect
+  // (ensurePerTicketTopicForIcon) is deleted - no topic is minted at all.
+  assert.deepEqual(created, []);
+  assert.equal(topicMap['BL-2'], undefined);
   assert.ok(sent.some((m) => m.text.includes('BL-2 needs your approval') && m.topicId === 750));
   assert.equal(result.routed, 1);
 });
@@ -532,14 +571,17 @@ test('BL-434: an ApprovalRequested that fails to post is retried on a later tick
 
 test('needs-approval-02: a NeedsApproval whose post fails is retried on the next tick, not dropped', async () => {
   const { adapters, setFolders, setGates, setRoleTicket, state } = fakeAdapters();
-  // The item already has a topic (an earlier TaskStarted already opened
-  // it) and is NOT newly active this tick - isolates the scenario to ONLY
-  // the NeedsApproval transition, so only its own send can fail/retry.
+  // TaskStarted is pre-marked emitted (as if an earlier tick already routed
+  // it) so THIS tick's only new transition is NeedsApproval - isolates the
+  // scenario to its own send succeeding/failing. BL-358/BL-493: a tagged
+  // NeedsApproval routes to the standing Operator topic (never the
+  // ticket's status line, which has no room for the role's free-text
+  // question) - same sendMessage-based mechanism an untagged gate always
+  // used.
   setFolders(folders({ active: [{ id: 'BL-1', title: 'a fine feature' }] }));
   adapters.writeTickState({ snapshot: { backlog: { active: ['BL-1'], paused: [], done: [] }, gates: [], roleTicket: {} }, emittedKeys: ['TaskStarted:BL-1'] });
   setRoleTicket({ coder: 'BL-1' });
   setGates([{ role: 'coder', gated: true }]);
-  adapters.routeAdapters.getTopicMap = () => ({ 'BL-1': 42 });
   let shouldFail = true;
   const sent = [];
   adapters.routeAdapters.sendMessage = async (topicId, text) => {
@@ -560,7 +602,7 @@ test('needs-approval-02: a NeedsApproval whose post fails is retried on the next
   shouldFail = false;
   const second = await runConciergeTick(adapters); // gate still true, unchanged live state
   assert.equal(second.routed, 1);
-  assert.deepEqual(sent, [{ topicId: 42, text: 'NeedsApproval: BL-1' }]);
+  assert.deepEqual(sent, [{ topicId: 700, text: 'NeedsApproval: BL-1' }]);
   assert.ok(state.emittedKeys.includes('NeedsApproval:BL-1'));
 });
 
@@ -648,15 +690,17 @@ test('BL-341 epics-05/06: the epic states a remaining slice that has no ticket, 
   assert.equal(last.text.includes('Epic complete'), false, 'never reported complete while an untracked slice remains');
 });
 
-test('BL-341 epics-07: a ticket with no epic behaves exactly as before - no epic topic created or posted into', async () => {
-  const { adapters, setFolders, created, sent } = fakeAdapters();
+test('BL-341 epics-07: a ticket with no epic behaves exactly as before - no epic topic created or posted into (its own status message still routes to the standing Backlog topic)', async () => {
+  const { adapters, setFolders, created, sent, posted, edited } = fakeAdapters();
   setFolders(folders({ active: [{ id: 'BL-1', title: 'a fine feature' }] }));
 
   await runConciergeTick(adapters);
   setFolders(folders({ done: [{ id: 'BL-1', title: 'a fine feature' }] }));
   await runConciergeTick(adapters);
 
-  assert.deepEqual(created, ['BL-1 - a fine feature']);
+  assert.deepEqual(created, [], 'no epic topic (this ticket declares none) and no per-ticket topic (BL-493)');
+  assert.deepEqual(posted, [{ topicId: 760, text: 'BL-1 🎵 in progress — a fine feature', messageId: 9000 }]);
+  assert.deepEqual(edited, [{ topicId: 760, messageId: 9000, text: 'BL-1 ✅ done — a fine feature' }]);
   assert.ok(!sent.some((m) => m.text.includes('ticketed slice') || m.text.startsWith('Epic:')));
 });
 
@@ -1105,7 +1149,13 @@ test('BL-394 epic-gate-05: a failed epic post is not recorded as announced, and 
   // contract. Here the ticket-level post keeps failing (forcing the same
   // TaskCompleted event to re-derive every tick, same mechanism as
   // epic-gate-01) AND the epic's own progress post fails on its first
-  // attempt too.
+  // attempt too. BL-493: the ticket-level status message and the epic's own
+  // progress line now travel through DIFFERENT adapter methods
+  // (editMessage/postMessage vs sendMessage) - each is overridden
+  // independently rather than the one shared sendMessage this test used to
+  // rely on for both.
+  adapters.routeAdapters.editMessage = async () => false;
+  adapters.routeAdapters.postMessage = async () => undefined;
   let epicPostAttempts = 0;
   adapters.routeAdapters.sendMessage = async (topicId, text) => {
     sent.push({ topicId, text });
@@ -1150,15 +1200,43 @@ const ICON_STICKERS = [
 ];
 
 // BL-417: feature-in-flight remapped from the bulb to the musical note.
-test('BL-417/BL-342 topic-icons-01: a newly-active feature ticket gets the musical-note icon on its brand-new topic', async () => {
-  const { adapters, setFolders, iconsSet, iconOwnership, topicMap } = fakeAdapters();
+// BL-493: TaskStarted no longer creates (or reuses) a PER-TICKET topic - a
+// ticket's own event now routes to its epic/Backlog topic as an
+// edit-in-place status line instead (see conciergeTopicRouting.test.js's
+// own BL-493 section). syncIconForBacklogId's topicId lookup reads the
+// SAME BacklogTopicMap ticket routing used to populate and no longer does -
+// so for a ticket that has NEVER had a topic, this is a silent no-op by
+// construction (topicId undefined), never a crash and never a fallback.
+test('BL-493: a newly-active ticket has no per-ticket topic to set an icon ON, so its icon sync is a silent no-op', async () => {
+  const { adapters, setFolders, iconsSet, iconOwnership } = fakeAdapters();
   adapters.iconAdapters.getIconStickers = async () => ICON_STICKERS;
   setFolders(folders({ active: [{ id: 'BL-1', title: 'a fine feature', type: 'feature' }] }));
 
   await runConciergeTick(adapters);
 
-  const topicId = topicMap['BL-1'];
-  assert.deepEqual(iconsSet, [{ topicId, iconId: 'id-note' }]);
+  assert.deepEqual(iconsSet, []);
+  assert.equal(iconOwnership['BL-1'], undefined);
+});
+
+// The topic-icon mechanism itself (syncIconForBacklogId/syncTopicIcon) is
+// UNCHANGED code - it still applies to a ticket that already carries a
+// LEGACY per-ticket topic (one created before BL-493 shipped, or by the
+// still-open BL-494/BL-495 legacy-topic tracks) and that the swarm already
+// owns. These tests seed that legacy {topicMap, iconOwnership} state
+// directly - simulating a topic and ownership marker established in a
+// PRIOR session - rather than relying on a tick to create it, which no
+// ticket event does anymore.
+
+test('BL-342 topic-icons-01: a feature ticket with an already-owned LEGACY topic gets the musical-note icon on its next transition', async () => {
+  const { adapters, setFolders, iconsSet, iconOwnership, topicMap } = fakeAdapters();
+  adapters.iconAdapters.getIconStickers = async () => ICON_STICKERS;
+  topicMap['BL-1'] = 600;
+  iconOwnership['BL-1'] = 'id-magnifier';
+  setFolders(folders({ active: [{ id: 'BL-1', title: 'a fine feature', type: 'feature' }] }));
+
+  await runConciergeTick(adapters);
+
+  assert.deepEqual(iconsSet, [{ topicId: 600, iconId: 'id-note' }]);
   assert.equal(iconOwnership['BL-1'], 'id-note');
 });
 
@@ -1166,8 +1244,10 @@ test('BL-417/BL-342 topic-icons-01: a newly-active feature ticket gets the music
 // musical note skips the icon (topicIconSync.ts's existing scenario-06
 // unresolved-icon path) rather than crashing the tick.
 test('BL-417 feature-topic-icon-musical-note-03: a live sticker set without the musical note skips the icon without failing the tick', async () => {
-  const { adapters, setFolders, iconsSet } = fakeAdapters();
+  const { adapters, setFolders, iconsSet, iconOwnership, topicMap } = fakeAdapters();
   adapters.iconAdapters.getIconStickers = async () => ICON_STICKERS.filter((s) => s.emoji !== '🎵');
+  topicMap['BL-1'] = 600;
+  iconOwnership['BL-1'] = 'id-magnifier';
   setFolders(folders({ active: [{ id: 'BL-1', title: 'a fine feature', type: 'feature' }] }));
 
   await runConciergeTick(adapters);
@@ -1175,23 +1255,27 @@ test('BL-417 feature-topic-icon-musical-note-03: a live sticker set without the 
   assert.deepEqual(iconsSet, [], 'expected no icon to be set when the musical note is absent from the live sticker set');
 });
 
-test('BL-342 topic-icons-01: a newly-active bug ticket gets the microbe icon', async () => {
-  const { adapters, setFolders, iconsSet, topicMap } = fakeAdapters();
+test('BL-342 topic-icons-01: a bug ticket with an already-owned LEGACY topic gets the microbe icon on its next transition', async () => {
+  const { adapters, setFolders, iconsSet, topicMap, iconOwnership } = fakeAdapters();
   adapters.iconAdapters.getIconStickers = async () => ICON_STICKERS;
+  topicMap['BL-2'] = 601;
+  iconOwnership['BL-2'] = 'id-magnifier';
   setFolders(folders({ active: [{ id: 'BL-2', title: 'a nasty defect', type: 'bug' }] }));
 
   await runConciergeTick(adapters);
 
-  assert.deepEqual(iconsSet, [{ topicId: topicMap['BL-2'], iconId: 'id-microbe' }]);
+  assert.deepEqual(iconsSet, [{ topicId: 601, iconId: 'id-microbe' }]);
 });
 
-test('BL-342 topic-icons-02/03: a ticket the swarm already owns gets the check icon on completion, even though its topic is closed', async () => {
+test('BL-342 topic-icons-02/03: a ticket the swarm already owns (a LEGACY topic) gets the check icon on completion, even though its topic is closed', async () => {
   const { adapters, setFolders, iconsSet, iconOwnership, topicMap } = fakeAdapters();
   adapters.iconAdapters.getIconStickers = async () => ICON_STICKERS;
+  topicMap['BL-1'] = 600;
+  iconOwnership['BL-1'] = 'id-note';
   setFolders(folders({ active: [{ id: 'BL-1', title: 'a fine feature', type: 'feature' }] }));
   await runConciergeTick(adapters);
   iconsSet.length = 0;
-  assert.equal(iconOwnership['BL-1'], 'id-note', 'expected ownership already established from TaskStarted');
+  assert.equal(iconOwnership['BL-1'], 'id-note', 'expected ownership already established (legacy)');
 
   setFolders(folders({ done: [{ id: 'BL-1', title: 'a fine feature', type: 'feature' }] }));
   await runConciergeTick(adapters);
@@ -1213,7 +1297,7 @@ test('BL-342 topic-icons-04/05: an existing topic the swarm never set an icon fo
   assert.deepEqual(iconsSet, [], 'expected the swarm to never call setTopicIcon for a topic it does not own');
 });
 
-test('BL-342 topic-icons-02: a paused ticket promoted into active for the first time gets the musical-note icon, reusing its existing topic', async () => {
+test('BL-342 topic-icons-02: a paused ticket promoted into active for the first time gets the musical-note icon, reusing its LEGACY topic', async () => {
   // NOT a done->active bounce: diffTaskStarted's own durable emittedKeys
   // dedup (swarmEventStream.ts) means a (TaskStarted, backlogId) key, once
   // emitted, never re-fires even if the ticket later returns to active -
@@ -1225,8 +1309,11 @@ test('BL-342 topic-icons-02: a paused ticket promoted into active for the first 
   // ticket's OWN backlog folder at all, so it needs no icon change either.
   const { adapters, setFolders, iconsSet, iconOwnership, topicMap } = fakeAdapters();
   adapters.iconAdapters.getIconStickers = async () => ICON_STICKERS;
-  // A topic already exists for this ticket (opened on an earlier paused
-  // -> active -> paused round-trip) and the swarm already owns its icon.
+  // BL-493: a topic can no longer be opened BY a ticket event - simulate a
+  // LEGACY topic + ownership marker (established before BL-493 shipped)
+  // directly, then exercise active -> paused -> active over it.
+  topicMap['BL-1'] = 600;
+  iconOwnership['BL-1'] = 'id-note';
   setFolders(folders({ active: [{ id: 'BL-1', title: 'a fine feature', type: 'feature' }] }));
   await runConciergeTick(adapters);
   setFolders(folders({ paused: [{ id: 'BL-1', title: 'a fine feature', type: 'feature' }] }));
@@ -1237,12 +1324,14 @@ test('BL-342 topic-icons-02: a paused ticket promoted into active for the first 
   setFolders(folders({ active: [{ id: 'BL-1', title: 'a fine feature', type: 'feature' }] }));
   await runConciergeTick(adapters);
 
-  assert.deepEqual(iconsSet, [{ topicId: topicMap['BL-1'], iconId: 'id-note' }]);
+  assert.deepEqual(iconsSet, [{ topicId: 600, iconId: 'id-note' }]);
 });
 
-test('BL-342 topic-icons-02 [paused]: a ticket newly entering paused gets the magnifier icon (no SwarmEvent needed)', async () => {
+test('BL-342 topic-icons-02 [paused]: a ticket with a LEGACY topic newly entering paused gets the magnifier icon (no SwarmEvent needed)', async () => {
   const { adapters, setFolders, iconsSet, iconOwnership, topicMap } = fakeAdapters();
   adapters.iconAdapters.getIconStickers = async () => ICON_STICKERS;
+  topicMap['BL-1'] = 600;
+  iconOwnership['BL-1'] = 'id-note';
   setFolders(folders({ active: [{ id: 'BL-1', title: 'a fine feature', type: 'feature' }] }));
   await runConciergeTick(adapters);
   iconsSet.length = 0;
@@ -1250,11 +1339,11 @@ test('BL-342 topic-icons-02 [paused]: a ticket newly entering paused gets the ma
   setFolders(folders({ paused: [{ id: 'BL-1', title: 'a fine feature', type: 'feature' }] }));
   await runConciergeTick(adapters);
 
-  assert.deepEqual(iconsSet, [{ topicId: topicMap['BL-1'], iconId: 'id-magnifier' }]);
+  assert.deepEqual(iconsSet, [{ topicId: 600, iconId: 'id-magnifier' }]);
   assert.equal(iconOwnership['BL-1'], 'id-magnifier');
 });
 
-test('BL-342: a ticket newly entering paused with no topic at all yet (never promoted) is a silent no-op', async () => {
+test('BL-342: a ticket newly entering paused with no topic at all (the ordinary case under BL-493 - no ticket event opens one) is a silent no-op', async () => {
   const { adapters, setFolders, iconsSet } = fakeAdapters();
   adapters.iconAdapters.getIconStickers = async () => ICON_STICKERS;
   setFolders(folders({ paused: [{ id: 'BL-9', title: 'freshly specced, never promoted', type: 'feature' }] }));
@@ -1266,11 +1355,15 @@ test('BL-342: a ticket newly entering paused with no topic at all yet (never pro
 // ── BL-424 approval-icon-state-01/02: the icon-sync caller now reads
 //    human_approval off the same folders snapshot and passes it through to
 //    resolveIconState - a paused ticket blocked ONLY on the human's
-//    approval gets a distinct icon from any other paused hold ────────────
+//    approval gets a distinct icon from any other paused hold - but only
+//    ever for a ticket carrying a LEGACY topic (see the BL-493 note below
+//    the break-then-fix test) ──────────────────────────────────────────
 
-test('BL-424: a ticket newly entering paused with human_approval pending gets the eyes icon, not the plain magnifier', async () => {
+test('BL-424: a ticket with a LEGACY topic newly entering paused with human_approval pending gets the eyes icon, not the plain magnifier', async () => {
   const { adapters, setFolders, iconsSet, iconOwnership, topicMap } = fakeAdapters();
   adapters.iconAdapters.getIconStickers = async () => ICON_STICKERS;
+  topicMap['BL-1'] = 600;
+  iconOwnership['BL-1'] = 'id-note';
   setFolders(folders({ active: [{ id: 'BL-1', title: 'a fine feature', type: 'feature' }] }));
   await runConciergeTick(adapters);
   iconsSet.length = 0;
@@ -1278,7 +1371,7 @@ test('BL-424: a ticket newly entering paused with human_approval pending gets th
   setFolders(folders({ paused: [{ id: 'BL-1', title: 'a fine feature', type: 'feature', humanApproval: 'pending' }] }));
   await runConciergeTick(adapters);
 
-  assert.deepEqual(iconsSet, [{ topicId: topicMap['BL-1'], iconId: 'id-eyes' }]);
+  assert.deepEqual(iconsSet, [{ topicId: 600, iconId: 'id-eyes' }]);
   assert.equal(iconOwnership['BL-1'], 'id-eyes');
 });
 
@@ -1286,9 +1379,15 @@ test('BL-424: a ticket newly entering paused with human_approval pending gets th
 // (the "wiring test that adds a new on-disk input" engineering rule) -
 // break-then-fix: blank the field on an otherwise-identical fixture and
 // confirm the icon reverts to the plain paused magnifier, then restore it.
-test('BL-424: a paused ticket with no human_approval field gets the plain magnifier icon, not the eyes icon (break-then-fix)', async () => {
-  const { adapters, setFolders, iconsSet, topicMap } = fakeAdapters();
+// Both BL-1 and BL-2 carry a LEGACY topic - a ticket with no topic at all
+// is covered separately below (BL-493: ensurePerTicketTopicForIcon, the
+// ONLY mechanism that used to open a topic for a never-active ticket
+// awaiting approval, is deleted per human decision D3).
+test('BL-424: a paused ticket (LEGACY topic) with no human_approval field gets the plain magnifier icon, not the eyes icon (break-then-fix)', async () => {
+  const { adapters, setFolders, iconsSet, topicMap, iconOwnership } = fakeAdapters();
   adapters.iconAdapters.getIconStickers = async () => ICON_STICKERS;
+  topicMap['BL-1'] = 600;
+  iconOwnership['BL-1'] = 'id-note';
   setFolders(folders({ active: [{ id: 'BL-1', title: 'a fine feature', type: 'feature' }] }));
   await runConciergeTick(adapters);
   iconsSet.length = 0;
@@ -1298,22 +1397,48 @@ test('BL-424: a paused ticket with no human_approval field gets the plain magnif
   await runConciergeTick(adapters);
   assert.deepEqual(
     iconsSet,
-    [{ topicId: topicMap['BL-1'], iconId: 'id-magnifier' }],
+    [{ topicId: 600, iconId: 'id-magnifier' }],
     'expected the plain paused icon when human_approval is absent from the fixture'
   );
   iconsSet.length = 0;
 
-  // FIXED: a fresh ticket restores human_approval: pending and gets the
-  // distinct eyes icon - proving the earlier magnifier result above was
-  // really driven by the field's absence, not some other cause.
+  // FIXED: a second, LEGACY-topic ticket restores human_approval: pending
+  // and gets the distinct eyes icon - proving the earlier magnifier result
+  // above was really driven by the field's absence, not some other cause.
+  topicMap['BL-2'] = 601;
+  iconOwnership['BL-2'] = 'id-note';
+  setFolders(folders({ active: [{ id: 'BL-2', title: 'another feature', type: 'feature' }] }));
+  await runConciergeTick(adapters);
+  iconsSet.length = 0;
   setFolders(folders({ paused: [{ id: 'BL-2', title: 'another feature', type: 'feature', humanApproval: 'pending' }] }));
   await runConciergeTick(adapters);
-  assert.deepEqual(iconsSet, [{ topicId: topicMap['BL-2'], iconId: 'id-eyes' }]);
+  assert.deepEqual(iconsSet, [{ topicId: 601, iconId: 'id-eyes' }]);
 });
 
-test('BL-424: a paused ticket that is approved (not pending) keeps the plain magnifier icon', async () => {
-  const { adapters, setFolders, iconsSet, topicMap } = fakeAdapters();
+// BL-493 (human decision D3): ensurePerTicketTopicForIcon - the ONLY
+// mechanism that used to open a per-ticket topic for a ticket that had
+// NEVER been active, specifically so this awaiting-approval icon had
+// somewhere to render - is DELETED. Acceptance scenario 05's own words:
+// "no throwaway per-ticket topic is minted to carry an awaiting-approval
+// icon". So a never-active ticket entering paused+pending now gets NO
+// topic and thus NO icon at all - a silent no-op, same as any other
+// topic-less ticket.
+test('BL-493 fold-ticket-events-05: a ticket that has NEVER been active, entering paused+pending, gets no per-ticket topic and thus no awaiting-approval icon at all', async () => {
+  const { adapters, setFolders, iconsSet, iconOwnership } = fakeAdapters();
   adapters.iconAdapters.getIconStickers = async () => ICON_STICKERS;
+
+  setFolders(folders({ paused: [{ id: 'BL-9', title: 'never active', type: 'feature', humanApproval: 'pending' }] }));
+  await runConciergeTick(adapters);
+
+  assert.deepEqual(iconsSet, []);
+  assert.equal(iconOwnership['BL-9'], undefined);
+});
+
+test('BL-424: a paused ticket (LEGACY topic) that is approved (not pending) keeps the plain magnifier icon', async () => {
+  const { adapters, setFolders, iconsSet, topicMap, iconOwnership } = fakeAdapters();
+  adapters.iconAdapters.getIconStickers = async () => ICON_STICKERS;
+  topicMap['BL-1'] = 600;
+  iconOwnership['BL-1'] = 'id-note';
   setFolders(folders({ active: [{ id: 'BL-1', title: 'a fine feature', type: 'feature' }] }));
   await runConciergeTick(adapters);
   iconsSet.length = 0;
@@ -1321,28 +1446,32 @@ test('BL-424: a paused ticket that is approved (not pending) keeps the plain mag
   setFolders(folders({ paused: [{ id: 'BL-1', title: 'a fine feature', type: 'feature', humanApproval: 'approved' }] }));
   await runConciergeTick(adapters);
 
-  assert.deepEqual(iconsSet, [{ topicId: topicMap['BL-1'], iconId: 'id-magnifier' }]);
+  assert.deepEqual(iconsSet, [{ topicId: 600, iconId: 'id-magnifier' }]);
 });
 
 // BL-424 approval-icon-fallback-02: the eyes glyph absent from the live set
 // falls back to the plain paused icon rather than skipping the topic.
-test('BL-424: a live sticker set without the eyes glyph falls back to the plain magnifier icon for an awaiting-approval ticket', async () => {
-  const { adapters, setFolders, iconsSet, topicMap } = fakeAdapters();
+test('BL-424: a live sticker set without the eyes glyph falls back to the plain magnifier icon for an awaiting-approval ticket with a LEGACY topic', async () => {
+  const { adapters, setFolders, iconsSet, topicMap, iconOwnership } = fakeAdapters();
   adapters.iconAdapters.getIconStickers = async () => ICON_STICKERS.filter((s) => s.emoji !== '👀');
+  topicMap['BL-1'] = 600;
+  iconOwnership['BL-1'] = 'id-note';
 
   setFolders(folders({ paused: [{ id: 'BL-1', title: 'a fine feature', type: 'feature', humanApproval: 'pending' }] }));
   await runConciergeTick(adapters);
 
   assert.deepEqual(
     iconsSet,
-    [{ topicId: topicMap['BL-1'], iconId: 'id-magnifier' }],
+    [{ topicId: 600, iconId: 'id-magnifier' }],
     'expected the fallback to the plain paused icon rather than skipping the topic entirely'
   );
 });
 
 test('BL-342: the paused diff does not re-fire on a later tick where the ticket is still paused (edge-triggered, not level-triggered)', async () => {
-  const { adapters, setFolders, iconsSet } = fakeAdapters();
+  const { adapters, setFolders, iconsSet, topicMap, iconOwnership } = fakeAdapters();
   adapters.iconAdapters.getIconStickers = async () => ICON_STICKERS;
+  topicMap['BL-1'] = 600;
+  iconOwnership['BL-1'] = 'id-note';
   setFolders(folders({ active: [{ id: 'BL-1', title: 'a fine feature', type: 'feature' }] }));
   await runConciergeTick(adapters);
   setFolders(folders({ paused: [{ id: 'BL-1', title: 'a fine feature', type: 'feature' }] }));
