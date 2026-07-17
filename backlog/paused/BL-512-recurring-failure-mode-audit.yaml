@@ -75,7 +75,7 @@ acceptance:
 #   4. Confirm this ticket landed NO fix to the underlying failure modes (it is inventory-only); the
 #      proposed fix tickets exist as a list, not as applied changes.
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   Draining your question "can we run a ticket to fix the recurring loose ends agents keep tripping
   on." You chose AUDIT-FIRST, so this ticket does the inventory, not the fixes: it produces (1) a
