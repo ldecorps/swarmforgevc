@@ -169,6 +169,16 @@ export function swarmEventKey(event: SwarmEvent): string {
   return `${event.type}:${event.backlogId ?? `role:${event.role}`}`;
 }
 
+// BL-509: the exact emittedKeys entry a posted ApprovalRequested ask for
+// this ticket dedupes under (swarmEventKey's own format, for a tagged
+// ApprovalRequested event) - exposed so a caller that needs to REMOVE that
+// key (the amend flow's own "reset the ask so a later re-present re-fires
+// it" effect, the emittedKeys/repaint concern) never has to construct a
+// throwaway SwarmEvent (with a fabricated payload) just to compute it.
+export function approvalRequestedEventKey(backlogId: string): string {
+  return swarmEventKey({ type: 'ApprovalRequested', backlogId, payload: {} });
+}
+
 // Pure: given the previously-seen snapshot (or null for a stream never
 // derived before - treated as an empty baseline, same posture as
 // diffNarrationEvents' own `prev?.field ?? []`) and the current snapshot,
