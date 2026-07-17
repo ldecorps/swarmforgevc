@@ -643,7 +643,10 @@ test('computePipelineBoard: a parked ticket with no filename/location in its met
   assert.deepEqual(links, []);
 });
 
-test('computePipelineBoard: links combined from every source (row, parked, recently-closed, root-intake) come out sorted by id', () => {
+test('computePipelineBoard: links combined from every source (row, parked, recently-closed, root-intake) come out ordered highest ticket number first', () => {
+  // BL-506: was ascending id order; the human wants most-recent (highest
+  // ticket number) first, with an unnumbered root-intake id sorting after
+  // every numbered link.
   const { links } = computePipelineBoard(
     { coder: ['BL-9'] },
     [{ id: 'BL-5' }],
@@ -656,7 +659,63 @@ test('computePipelineBoard: links combined from every source (row, parked, recen
   );
   assert.deepEqual(
     links.map((l) => l.id),
-    ['BL-5', 'BL-7', 'BL-9', 'INTAKE-1']
+    ['BL-9', 'BL-7', 'BL-5', 'INTAKE-1']
+  );
+});
+
+test('computePipelineBoard: links order is numeric-aware, so a four-digit ticket sorts above a three-digit one', () => {
+  // BL-506: a plain string sort would place "BL-1000" below "BL-999" - the
+  // exact bug the fix must avoid at the four-digit boundary.
+  const { links } = computePipelineBoard(
+    { coder: ['BL-999', 'BL-1000'] },
+    [],
+    {
+      'BL-999': { filename: 'BL-999-a.yaml', location: 'active' },
+      'BL-1000': { filename: 'BL-1000-b.yaml', location: 'active' },
+    },
+    { repoBaseUrl: 'https://github.com/ldecorps/swarmforgevc' }
+  );
+  assert.deepEqual(
+    links.map((l) => l.id),
+    ['BL-1000', 'BL-999']
+  );
+});
+
+test('computePipelineBoard: links with no parseable trailing ticket number sort after every numbered link', () => {
+  const { links } = computePipelineBoard(
+    { coder: ['BL-101', 'BL-504'] },
+    [],
+    {
+      'BL-101': { filename: 'BL-101-a.yaml', location: 'active' },
+      'BL-504': { filename: 'BL-504-b.yaml', location: 'active' },
+    },
+    {
+      rootIntake: [{ id: 'INTAKE-pipeline-board-links-order', title: 'an ask', filename: 'INTAKE-pipeline-board-links-order.md' }],
+      repoBaseUrl: 'https://github.com/ldecorps/swarmforgevc',
+    }
+  );
+  assert.deepEqual(
+    links.map((l) => l.id),
+    ['BL-504', 'BL-101', 'INTAKE-pipeline-board-links-order']
+  );
+});
+
+test('computePipelineBoard: a root-intake id ending in digits (a timestamp-suffixed filename stem) still sorts after every numbered link, never parsed as a ticket number', () => {
+  // A generic trailing-digit parse would misread a huge embedded timestamp
+  // as a ticket number and sort this ahead of every real ticket - a live
+  // shape (e.g. backlog/INTAKE-operator-question-1784328071807.md).
+  const { links } = computePipelineBoard(
+    { coder: ['BL-9'] },
+    [],
+    { 'BL-9': { filename: 'BL-9-a.yaml', location: 'active' } },
+    {
+      rootIntake: [{ id: 'INTAKE-operator-question-1784328071807', title: 'an ask', filename: 'INTAKE-operator-question-1784328071807.md' }],
+      repoBaseUrl: 'https://github.com/ldecorps/swarmforgevc',
+    }
+  );
+  assert.deepEqual(
+    links.map((l) => l.id),
+    ['BL-9', 'INTAKE-operator-question-1784328071807']
   );
 });
 
