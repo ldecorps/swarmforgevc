@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const {
@@ -55,6 +56,33 @@ test('reviewPrompt embeds the role prompt text, the task id, the stage name, and
   assert.match(prompt, /PIPELINE_ORACLE_VERDICT: ACCEPT/);
   assert.match(prompt, /PIPELINE_ORACLE_VERDICT: REVISED/);
   assert.match(prompt, /PIPELINE_ORACLE_VERDICT: REJECT/);
+});
+
+// Pins the FULL prompt content, not spot-check regexes above - the
+// instructional lines between the role prompt and the verdict markers are
+// what the reviewing LLM actually reads to know what to do; a silently
+// emptied or garbled instruction (or lines silently concatenated without
+// their newline separators) would degrade real review quality with no
+// signal any code path could ever catch, since this text is consumed by
+// an LLM, never parsed by this codebase.
+test('reviewPrompt produces the exact newline-joined prompt content', () => {
+  const prompt = reviewPrompt('QA', 'ROLE PROMPT TEXT', { id: 'task-x' });
+  assert.equal(
+    prompt,
+    [
+      'ROLE PROMPT TEXT',
+      '',
+      'You are reviewing a candidate diff for benchmark task "task-x" as the QA role above.',
+      'The diff is already applied to the files in your current working directory.',
+      'If it needs no changes from your perspective, make no edits.',
+      'If it has fixable issues, fix them directly in the working tree now.',
+      'If it has a blocking issue you cannot fix, make no edits and explain why.',
+      'End your final message with exactly one line, nothing after it:',
+      'PIPELINE_ORACLE_VERDICT: ACCEPT   (nothing needed changing)',
+      'PIPELINE_ORACLE_VERDICT: REVISED  (you fixed something)',
+      'PIPELINE_ORACLE_VERDICT: REJECT   (blocking issue, unfixable by you)',
+    ].join('\n')
+  );
 });
 
 // ── rolePromptPath (pure) ────────────────────────────────────────────────
@@ -148,4 +176,21 @@ test('createPipelineReviewOracle short-circuits to the forced result and never s
   // genuinely bypasses the real path, not merely that the real path
   // happens to also produce this value.
   assert.deepEqual(result, { survived: true, bounces: 1 });
+});
+
+// ── BL-387 QA bounce: a setup failure (missing/unreadable role-prompt
+//    file) must degrade to REJECT exactly like a bad CLI response does,
+//    never propagate as an uncaught exception - drives the REAL
+//    createPipelineReviewOracle closure (no FORCE_RESULT short-circuit,
+//    no scripted runReviewChain verdicts) against a repo root that has NO
+//    swarmforge/roles/*.prompt files at all, mirroring QA's own repro. ──
+
+test('createPipelineReviewOracle degrades to survived:false rather than throwing when a role-prompt file is missing', async () => {
+  const repoRootWithNoRolePrompts = mkTmpDir('sfvc-oracle-no-roles-');
+  const diffDir = mkTmpDir('sfvc-oracle-diffdir-');
+  const oracle = createPipelineReviewOracle(repoRootWithNoRolePrompts, 'sonnet');
+
+  const result = await withEnv(ENV_KEY, undefined, () => oracle.review(diffDir, { id: 'task-x' }));
+
+  assert.deepEqual(result, { survived: false, bounces: 0 }, `expected a degraded REJECT result, not a thrown exception, got: ${JSON.stringify(result)}`);
 });
