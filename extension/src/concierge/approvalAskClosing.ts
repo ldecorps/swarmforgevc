@@ -8,7 +8,13 @@
 // persisted message-id lookup live in the thin adapters that call this
 // (telegram-front-desk-bot.ts's wiring).
 
-export type ApprovalDecisionVerdict = { kind: 'approved' } | { kind: 'rejected'; reason: string };
+// BL-490: 'expedited' is a THIRD verdict, distinct from 'approved' - the
+// underlying human_approval field write reuses the exact same
+// recordApprovalReply effect an ordinary Approve tap uses (the ticket's own
+// "step (a) must reuse the EXISTING approval writer" constraint), but the
+// topic's own audit trail must still show which verb decided it, so the
+// closing line reads "-- Expedited <UTC>", never "-- Approved <UTC>".
+export type ApprovalDecisionVerdict = { kind: 'approved' } | { kind: 'rejected'; reason: string } | { kind: 'expedited' };
 
 // A build-time/cosmetic detail (exact wording), not a promotion gate - the
 // ticket's own examples: "-- Approved 2026-07-17 03:07 UTC" /
@@ -21,7 +27,13 @@ function formatUtcStamp(nowMs: number): string {
 }
 
 export function decisionLineFor(verdict: ApprovalDecisionVerdict, nowMs: number): string {
-  return verdict.kind === 'approved' ? `-- Approved ${formatUtcStamp(nowMs)}` : `-- Rejected: ${verdict.reason}`;
+  if (verdict.kind === 'approved') {
+    return `-- Approved ${formatUtcStamp(nowMs)}`;
+  }
+  if (verdict.kind === 'expedited') {
+    return `-- Expedited ${formatUtcStamp(nowMs)}`;
+  }
+  return `-- Rejected: ${verdict.reason}`;
 }
 
 // Keeps the original ask text ABOVE the appended decision line (the
