@@ -26,9 +26,9 @@ test('readBacklogFolders projects active, paused, and done items unchanged from 
 
   const folders = readBacklogFolders(target);
 
-  assert.deepEqual(folders.active, [{ id: 'BL-001', title: 'active one', status: 'todo' }]);
-  assert.deepEqual(folders.paused, [{ id: 'BL-002', title: 'paused one', status: 'todo' }]);
-  assert.deepEqual(folders.done, [{ id: 'BL-003', title: 'done one', status: 'done' }]);
+  assert.deepEqual(folders.active, [{ id: 'BL-001', title: 'active one', status: 'todo', filename: 'BL-001.yaml' }]);
+  assert.deepEqual(folders.paused, [{ id: 'BL-002', title: 'paused one', status: 'todo', filename: 'BL-002.yaml' }]);
+  assert.deepEqual(folders.done, [{ id: 'BL-003', title: 'done one', status: 'done', filename: 'BL-003.yaml' }]);
 });
 
 test('readBacklogFolders groups done items under milestone subfolders', () => {
@@ -37,7 +37,7 @@ test('readBacklogFolders groups done items under milestone subfolders', () => {
 
   const folders = readBacklogFolders(target);
 
-  assert.deepEqual(folders.done, [{ id: 'BL-004', title: 'milestone done', status: 'done', milestone: 'M1' }]);
+  assert.deepEqual(folders.done, [{ id: 'BL-004', title: 'milestone done', status: 'done', milestone: 'M1', filename: 'BL-004.yaml' }]);
 });
 
 test('readBacklogFolders returns empty arrays for folders that do not exist', () => {

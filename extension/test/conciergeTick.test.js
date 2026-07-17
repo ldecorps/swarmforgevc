@@ -5,6 +5,7 @@ const { runConciergeTick } = require('../out/concierge/conciergeTick');
 // Telegram-agnostic (see its own header comment); every other test in this
 // file uses the plain always-succeeds titlesSet stub from fakeAdapters.
 const { editForumTopicWithRateLimitRetry } = require('../out/notify/telegramClient');
+const { wrapPipelineBoardHtml } = require('../out/concierge/pipelineBoard');
 
 function folders(overrides = {}) {
   return { active: [], paused: [], done: [], ...overrides };
@@ -1684,8 +1685,10 @@ test('BL-455: role-held tickets are joined to their backlog item epic/title - gr
   const concertoIndex = lines.findIndex((l) => l.includes('Concerto'));
   assert.ok(concertoIndex >= 0, `expected a Concerto epic heading, got:\n${posted[0]}`);
   assert.ok(lines[concertoIndex + 1].startsWith('BL-1'), 'expected BL-1 grouped directly under its epic heading');
-  assert.ok(posted[0].includes('fix the pipeline board'), 'expected BL-1 row to carry its derived slug');
-  assert.ok(posted[0].includes('unrelated ticket'), 'expected BL-2 (no epic) to still carry its own slug');
+  // BL-465: the grid's own slug column now shows a SHORT (2-3 word) kebab
+  // slug, not the full title - "fix the pipeline board" -> "fix-the-pipeline".
+  assert.ok(posted[0].includes('fix-the-pipeline'), 'expected BL-1 row to carry its derived kebab slug');
+  assert.ok(posted[0].includes('unrelated-ticket'), 'expected BL-2 (no epic) to still carry its own kebab slug');
   const noEpicIndex = lines.findIndex((l) => l.trim() === '-- (no epic) --');
   assert.ok(noEpicIndex > concertoIndex, 'expected the no-epic group to sort after the named epic group');
 });
@@ -1710,16 +1713,30 @@ test('BL-455: a paused ticket awaiting human approval and a plain paused ticket 
   await runConciergeTick(adapters);
 
   const lines = posted[0].split('\n');
+  // BL-465: awaiting-approval now gets its OWN section (no per-line AA/PK
+  // label anymore) - the section header itself is the label.
   const parkedHeaderIndex = lines.findIndex((l) => l.trim() === 'PARKED:');
+  const awaitingHeaderIndex = lines.findIndex((l) => l.trim() === 'AWAITING APPROVAL:');
   assert.ok(parkedHeaderIndex > 0, `expected a PARKED: section, got:\n${posted[0]}`);
-  const gridLines = lines.slice(0, parkedHeaderIndex);
-  const belowLines = lines.slice(parkedHeaderIndex);
+  assert.ok(awaitingHeaderIndex > 0, `expected an AWAITING APPROVAL: section, got:\n${posted[0]}`);
+  const gridLines = lines.slice(0, Math.min(parkedHeaderIndex, awaitingHeaderIndex));
   assert.ok(!gridLines.some((l) => l.trim().split(/\s+/)[0] === 'BL-2'), 'expected BL-2 absent from the grid');
   assert.ok(!gridLines.some((l) => l.trim().split(/\s+/)[0] === 'BL-3'), 'expected BL-3 absent from the grid');
-  const bl2Line = belowLines.find((l) => l.includes('BL-2'));
-  const bl3Line = belowLines.find((l) => l.includes('BL-3'));
-  assert.ok(bl2Line && bl2Line.trim().startsWith('AA'), `expected BL-2 marked AA (awaiting-approval), got: ${bl2Line}`);
-  assert.ok(bl3Line && bl3Line.trim().startsWith('PK'), `expected BL-3 marked PK (parked), got: ${bl3Line}`);
+  // The nearest SECTION HEADER preceding a given line is that line's own
+  // section - the label BL-455's old per-line PK/AA glyphs used to carry.
+  const sectionFor = (lineIndex) => {
+    for (let i = lineIndex - 1; i >= 0; i -= 1) {
+      if (lines[i].trim().endsWith(':')) {
+        return lines[i].trim();
+      }
+    }
+    return undefined;
+  };
+  const bl2Index = lines.findIndex((l) => l.includes('BL-2'));
+  const bl3Index = lines.findIndex((l) => l.includes('BL-3'));
+  assert.ok(!lines[bl2Index].trim().startsWith('AA') && !lines[bl2Index].trim().startsWith('PK'), `expected no per-line AA/PK label, got: ${lines[bl2Index]}`);
+  assert.equal(sectionFor(bl2Index), 'AWAITING APPROVAL:', 'expected BL-2 under its own AWAITING APPROVAL: section');
+  assert.equal(sectionFor(bl3Index), 'PARKED:', 'expected BL-3 under the PARKED: section');
 });
 
 test('BL-452: omitting readRoleHeldTickets/boardAdapters entirely leaves the tick unaffected - existing adapters fixtures built before this field existed keep working unchanged', async () => {
@@ -1730,6 +1747,95 @@ test('BL-452: omitting readRoleHeldTickets/boardAdapters entirely leaves the tic
   await runConciergeTick(adapters);
 
   assert.equal(state.pipelineBoard, undefined);
+});
+
+// ── BL-465: root-intake / recently-closed / GitHub link list wiring ──────
+
+test('BL-465: omitting readRootIntakeFiles/readRepoBaseUrl entirely leaves the board tick unaffected - existing fixtures built before these fields existed keep working unchanged', async () => {
+  const { adapters, setFolders } = fakeAdapters();
+  const posted = [];
+  adapters.boardAdapters.postMessage = async (topicId, text) => {
+    posted.push(text);
+    return 1;
+  };
+  adapters.boardAdapters.ensureBoardTopic = async () => 900;
+  adapters.readRoleHeldTickets = () => ({ coder: ['BL-1'] });
+  setFolders(folders({ active: [{ id: 'BL-1', title: 'fix the widget' }] }));
+
+  await runConciergeTick(adapters);
+
+  assert.equal(posted.length, 1);
+  assert.ok(!posted[0].includes('ROOT INTAKE'));
+});
+
+test('BL-465: readRootIntakeFiles feeds the board\'s own ROOT INTAKE: section', async () => {
+  const { adapters, setFolders } = fakeAdapters();
+  const posted = [];
+  adapters.boardAdapters.postMessage = async (topicId, text) => {
+    posted.push(text);
+    return 1;
+  };
+  adapters.boardAdapters.ensureBoardTopic = async () => 900;
+  adapters.readRoleHeldTickets = () => ({});
+  adapters.readRootIntakeFiles = () => [{ id: 'INTAKE-1', title: 'a raw ask', filename: 'INTAKE-1.md' }];
+  setFolders(folders());
+
+  await runConciergeTick(adapters);
+
+  assert.ok(posted[0].includes('ROOT INTAKE:'), `expected a ROOT INTAKE: section, got:\n${posted[0]}`);
+  assert.ok(posted[0].includes('INTAKE-1'));
+});
+
+test('BL-465: folders.done feeds the board\'s own RECENTLY CLOSED: section directly - no extra adapter needed', async () => {
+  const { adapters, setFolders } = fakeAdapters();
+  const posted = [];
+  adapters.boardAdapters.postMessage = async (topicId, text) => {
+    posted.push(text);
+    return 1;
+  };
+  adapters.boardAdapters.ensureBoardTopic = async () => 900;
+  adapters.readRoleHeldTickets = () => ({});
+  setFolders(folders({ done: [{ id: 'BL-9', title: 'shipped thing', filename: 'BL-9-shipped-thing.yaml' }] }));
+
+  await runConciergeTick(adapters);
+
+  assert.ok(posted[0].includes('RECENTLY CLOSED:'), `expected a RECENTLY CLOSED: section, got:\n${posted[0]}`);
+  assert.ok(posted[0].includes('BL-9'));
+});
+
+test('BL-465: readRepoBaseUrl feeds the below-grid GitHub link list, appended after the closing </pre>', async () => {
+  const { adapters, setFolders } = fakeAdapters();
+  const posted = [];
+  adapters.boardAdapters.postMessage = async (topicId, text, linksHtml) => {
+    posted.push(wrapPipelineBoardHtml(text, linksHtml));
+    return 1;
+  };
+  adapters.boardAdapters.ensureBoardTopic = async () => 900;
+  adapters.readRoleHeldTickets = () => ({ coder: ['BL-1'] });
+  adapters.readRepoBaseUrl = () => 'https://github.com/ldecorps/swarmforgevc';
+  setFolders(folders({ active: [{ id: 'BL-1', title: 'fix the widget', filename: 'BL-1-fix-the-widget.yaml' }] }));
+
+  await runConciergeTick(adapters);
+
+  assert.ok(posted[0].includes('</pre>'));
+  const [, afterPre] = posted[0].split('</pre>');
+  assert.ok(afterPre.includes('<a href="https://github.com/ldecorps/swarmforgevc/blob/main/backlog/active/BL-1-fix-the-widget.yaml">'));
+});
+
+test('BL-465: no readRepoBaseUrl means no link list at all, even with active rows', async () => {
+  const { adapters, setFolders } = fakeAdapters();
+  const posted = [];
+  adapters.boardAdapters.postMessage = async (topicId, text, linksHtml) => {
+    posted.push(wrapPipelineBoardHtml(text, linksHtml));
+    return 1;
+  };
+  adapters.boardAdapters.ensureBoardTopic = async () => 900;
+  adapters.readRoleHeldTickets = () => ({ coder: ['BL-1'] });
+  setFolders(folders({ active: [{ id: 'BL-1', title: 'fix the widget', filename: 'BL-1-fix-the-widget.yaml' }] }));
+
+  await runConciergeTick(adapters);
+
+  assert.ok(!posted[0].includes('<a href'));
 });
 
 // ── BL-434: Approvals topic roster wiring ─────────────────────────────────
