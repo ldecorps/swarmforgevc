@@ -1,0 +1,59 @@
+id: BL-488
+title: "Board id-extraction is leading-token-only: a role-held ticket whose handoff header doesn't lead with the id reads as a durable false not-started"
+milestone: M8
+type: defect
+severity: low
+epic: ""
+priority: 8
+direction: human-requested
+depends_on: []
+source: "BL-474 unknown-stage root-cause audit (backlog/evidence/BL-474-unknown-stage-root-cause-audit-20260717.md), follow-up F-2 (finding #3, REAL/latent). Filed per BL-474's mandate via coordinator note 'spec follow-ups F-1 F-2 F-3 as tickets'. Root human directive (ldecorps 2026-07-16): 'if their position in the swarm is not known, it's a bug to fix.'"
+
+notes: |
+  ORIGIN — BL-474 audit finding #3. A real, latent tracking-defect path where a genuinely-held ticket reads
+  as not-started on the board, indistinguishable from a legitimately-un-dequeued one.
+
+  THE DEFECT (grep-confirmed against live code):
+    - swarmforge/scripts/pipeline_stage_lib.bb `extract-ticket-id` anchors on `^([A-Za-z]+-\d+)` — the
+      ticket id must be the FIRST token of the task/message header. A held ticket whose header carries any
+      textual prefix before the id ("Re: BL-476 …", "continuing BL-476 slice 2", a wrapped/quoted prefix)
+      matches nothing, so `ticket-id-from-headers` returns nil and the held ticket resolves to NO role →
+      durable false not-started on the board.
+
+  THE FIX (behaviour pinned in the feature):
+    - Resolve the FIRST ticket-id-shaped token in the header regardless of leading position, staying
+      deterministic: first id-shaped token wins (so a note that leads with the ticket it is about still
+      resolves to that ticket), still upper-cased (unchanged from today). A header with no id-shaped token
+      still resolves to nothing (no false positive).
+    - This is strictly more permissive than today on the id-anywhere case and byte-identical on the
+      already-leading case, so it cannot regress any header that resolves correctly now.
+    - (The audit noted an alternative: enforce a leading-id CONTRACT on the coordinator's note/task header
+      instead. Rejected as the primary fix — a contract the LLM must remember is exactly the fragility
+      BL-487 is removing elsewhere; make the extractor robust instead.)
+
+  SCOPE:
+    - swarmforge/scripts/pipeline_stage_lib.bb `extract-ticket-id` (loosen the anchor to first-id-token),
+      and its in-process/unit tests. Confirm `ticket-id-from-headers` (task OR message) still routes both
+      header kinds through the loosened extractor.
+    - Do NOT touch the upper-casing (that is BL-489/F-3's concern) or the reconcile most-downstream-wins
+      logic.
+
+  ORTHOGONALITY: edits pipeline_stage_lib.bb — SAME FILE as BL-489/F-3. The coordinator must sequence
+  BL-488 and BL-489, never run them concurrently (overlapping edits to extract-ticket-id / the stage lib).
+
+acceptance:
+  # The observable resolution behaviour — a held ticket's id resolves from the first id-shaped token
+  # wherever it sits in the header, and a header with no id token resolves to nothing — is pinned as the
+  # executable Gherkin feature (Scenario Outline; resolved_id validated against a KNOWN lookup {BL-476,
+  # NONE} per the Scenario-Outline load-bearing rule).
+  feature: specs/features/BL-488-held-ticket-id-resolves-without-leading-token.feature
+
+human_approval: pending
+approval_context: >
+  Clear latent tracking-defect fix mandated by BL-474; new feature file, so flagging for review. FIRM: the
+  extractor resolves the first ticket-id-shaped token in a handoff header regardless of leading position
+  (deterministic first-id-wins, still upper-cased), and a header with no id token resolves to nothing. This
+  cannot regress a currently-correct leading-id header (byte-identical on that case). Low priority; latent,
+  not a live outage. Sequence with BL-489 (both edit pipeline_stage_lib.bb).
+
+mutation_cost: low
