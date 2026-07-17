@@ -254,7 +254,8 @@ const DOMAINS = [
   require('./bl477UpstreamDriftWatchSteps'),
   require('./bl480ApprovalAskContentSteps'),
   require('./bl419SharedCheckoutCommitIntegritySteps'),
-  require('./bl387TheOracleScoresWhatSurvivesThePipelineSteps')
+  require('./bl387TheOracleScoresWhatSurvivesThePipelineSteps'),
+  require('./bl436PerSwarmTelegramCredsSteps')
 ];
 
 function registerSteps(registry) {

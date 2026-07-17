@@ -19,7 +19,10 @@ make_fixture() {
   local d; d="$(mktemp -d)"
   register_tmp_dir "$d"
   mkdir -p "$d/.swarmforge/operator" "$d/extension/out/tools"
-  cp "$SRC/front_desk_supervisor.bb" "$SRC/front_desk_supervisor_lib.bb" "$SRC/operator_lib.bb" "$SRC/daemon_alarm_lib.bb" "$d/"
+  # BL-436: also load-files swarm_identity_lib.bb (own-swarm-name) and
+  # fleet_telegram_creds_lib.bb (per-swarm creds resolution).
+  cp "$SRC/front_desk_supervisor.bb" "$SRC/front_desk_supervisor_lib.bb" "$SRC/operator_lib.bb" "$SRC/daemon_alarm_lib.bb" \
+     "$SRC/swarm_identity_lib.bb" "$SRC/fleet_telegram_creds_lib.bb" "$d/"
   cat > "$d/extension/out/tools/start-bridge-headless.js" <<'EOF'
 setInterval(() => {}, 1000);
 EOF
