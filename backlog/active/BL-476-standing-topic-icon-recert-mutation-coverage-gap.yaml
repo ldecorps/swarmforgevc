@@ -55,8 +55,7 @@ acceptance:
   # Outcome-style acceptance per the BL-428 / BL-474 debt-and-spike precedent; no Gherkin feature file.
   outcome: "A string-literal mutation on any STANDING_TOPIC_ICON entry — specifically the previously-uncovered recert ('📜') — is Killed by a test. topicIcon.test.js asserts all four STANDING_TOPIC_ICON values directly, mirroring the existing three; a --mutate run on topicIcon.ts reports zero Survived among the STANDING_TOPIC_ICON string literals."
 
-human_approval: pending
-
+human_approval: approved
 approval_context: >
   Human surfaced the survivor (2026-07-17) and judged it pre-existing standing-topic-icon debt rather than
   a BL-469 gap. Specifier confirmed the exact uncovered entry (STANDING_TOPIC_ICON.recert '📜') against the
