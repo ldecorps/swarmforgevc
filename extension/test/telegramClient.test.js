@@ -13,6 +13,9 @@ const {
   answerCallbackQuery,
   editMessageText,
   deleteMessage,
+  pinChatMessage,
+  unpinAllChatMessages,
+  getChatPinnedMessageId,
   getFile,
   downloadTelegramFile,
   sendVoiceNote,
@@ -765,6 +768,102 @@ test('deleteMessage reports a redacted failure on a thrown network error', async
   };
 
   const result = await deleteMessage(TOKEN, CHAT_ID, 42, postFn);
+
+  assert.equal(result.success, false);
+  assert.doesNotMatch(result.error, new RegExp(TOKEN));
+});
+
+// ── BL-467: pinChatMessage / unpinAllChatMessages / getChatPinnedMessageId ──
+
+test('pinChatMessage posts message_id and disable_notification:true to the Telegram API', async () => {
+  const calls = [];
+  const postFn = async (url, body) => {
+    calls.push({ url, body });
+    return { ok: true, status: 200, json: { ok: true, result: true } };
+  };
+
+  const result = await pinChatMessage(TOKEN, CHAT_ID, 42, postFn);
+
+  assert.deepEqual(result, { success: true });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, `https://api.telegram.org/bot${TOKEN}/pinChatMessage`);
+  assert.deepEqual(JSON.parse(calls[0].body), { chat_id: CHAT_ID, message_id: 42, disable_notification: true });
+});
+
+test('pinChatMessage reports failure on a non-2xx response without leaking the token', async () => {
+  const postFn = async () => ({ ok: false, status: 400, json: { ok: false, description: 'message to pin not found' } });
+
+  const result = await pinChatMessage(TOKEN, CHAT_ID, 42, postFn);
+
+  assert.equal(result.success, false);
+  assert.match(result.error, /message to pin not found/);
+  assert.doesNotMatch(result.error, new RegExp(TOKEN));
+});
+
+test('pinChatMessage reports a redacted failure on a thrown network error', async () => {
+  const postFn = async () => {
+    throw new Error(`connection reset while calling bot${TOKEN}`);
+  };
+
+  const result = await pinChatMessage(TOKEN, CHAT_ID, 42, postFn);
+
+  assert.equal(result.success, false);
+  assert.doesNotMatch(result.error, new RegExp(TOKEN));
+});
+
+test('unpinAllChatMessages posts chat_id only to the Telegram API', async () => {
+  const calls = [];
+  const postFn = async (url, body) => {
+    calls.push({ url, body });
+    return { ok: true, status: 200, json: { ok: true, result: true } };
+  };
+
+  const result = await unpinAllChatMessages(TOKEN, CHAT_ID, postFn);
+
+  assert.deepEqual(result, { success: true });
+  assert.equal(calls[0].url, `https://api.telegram.org/bot${TOKEN}/unpinAllChatMessages`);
+  assert.deepEqual(JSON.parse(calls[0].body), { chat_id: CHAT_ID });
+});
+
+test('unpinAllChatMessages reports a redacted failure on a thrown network error', async () => {
+  const postFn = async () => {
+    throw new Error(`connection reset while calling bot${TOKEN}`);
+  };
+
+  const result = await unpinAllChatMessages(TOKEN, CHAT_ID, postFn);
+
+  assert.equal(result.success, false);
+  assert.doesNotMatch(result.error, new RegExp(TOKEN));
+});
+
+test('getChatPinnedMessageId reads result.pinned_message.message_id off a getChat response', async () => {
+  const calls = [];
+  const postFn = async (url, body) => {
+    calls.push({ url, body });
+    return { ok: true, status: 200, json: { ok: true, result: { id: CHAT_ID, pinned_message: { message_id: 77 } } } };
+  };
+
+  const result = await getChatPinnedMessageId(TOKEN, CHAT_ID, postFn);
+
+  assert.deepEqual(result, { success: true, pinnedMessageId: 77 });
+  assert.equal(calls[0].url, `https://api.telegram.org/bot${TOKEN}/getChat`);
+  assert.deepEqual(JSON.parse(calls[0].body), { chat_id: CHAT_ID });
+});
+
+test('getChatPinnedMessageId reports pinnedMessageId undefined when the chat has no pinned message', async () => {
+  const postFn = async () => ({ ok: true, status: 200, json: { ok: true, result: { id: CHAT_ID } } });
+
+  const result = await getChatPinnedMessageId(TOKEN, CHAT_ID, postFn);
+
+  assert.deepEqual(result, { success: true, pinnedMessageId: undefined });
+});
+
+test('getChatPinnedMessageId reports a redacted failure on a thrown network error', async () => {
+  const postFn = async () => {
+    throw new Error(`connection reset while calling bot${TOKEN}`);
+  };
+
+  const result = await getChatPinnedMessageId(TOKEN, CHAT_ID, postFn);
 
   assert.equal(result.success, false);
   assert.doesNotMatch(result.error, new RegExp(TOKEN));
