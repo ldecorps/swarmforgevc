@@ -497,8 +497,9 @@
 
     (map? raw)
     (when-let [label (blank-to-nil (get raw "label"))]
-      (cond-> {:label label}
-        (blank-to-nil (get raw "description")) (assoc :description (blank-to-nil (get raw "description")))))
+      (let [description (blank-to-nil (get raw "description"))]
+        (cond-> {:label label}
+          description (assoc :description description))))
 
     :else nil))
 
