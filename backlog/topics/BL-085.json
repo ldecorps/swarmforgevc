@@ -1,0 +1,1 @@
+{"id":"BL-085","messages":[{"seq":0,"ts":1784302564722,"author":"swarm","type":"outbound","text":"BL-085 ✅ done — BUG — typing into an agent tile no longer reaches the tmux pane (all tiles)"}]}

@@ -1,0 +1,1 @@
+{"id":"BL-108","messages":[{"seq":0,"ts":1784302859809,"author":"swarm","type":"outbound","text":"BL-108 ✅ done — BUG — stopping the extension orphans spawned test/mutation-test process trees; they reparent to launchd and pin every core indefinitely"}]}

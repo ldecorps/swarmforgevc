@@ -1,0 +1,1 @@
+{"id":"BL-106","messages":[{"seq":0,"ts":1784301210882,"author":"swarm","type":"outbound","text":"BL-106 ✅ done — unify worktree branch naming to <swarm_name>/<role> so one repo hosts multiple swarms without collisions"}]}

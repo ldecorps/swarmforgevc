@@ -1,0 +1,1 @@
+{"id":"BL-083","messages":[{"seq":0,"ts":1784302557784,"author":"swarm","type":"outbound","text":"BL-083 ✅ done — BUG — handoffd archive step not idempotent; leaves .error stubs for already-archived outbox files"}]}

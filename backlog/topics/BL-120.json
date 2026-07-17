@@ -1,0 +1,1 @@
+{"id":"BL-120","messages":[{"seq":0,"ts":1784302860214,"author":"swarm","type":"outbound","text":"BL-120 ✅ done — BUG — swarm panel drifts out of sync with the live swarm; tile CONTENT (and the title ticket badge) show stale frames with little relation to what agents are actually doing"}]}
