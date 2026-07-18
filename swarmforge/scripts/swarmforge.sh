@@ -1108,7 +1108,17 @@ RESUMECHECK
       elif [[ -n "$CLAUDE_SETTINGS_PERMISSION_MODE" ]]; then
         claude_permission_flags=" --permission-mode '$CLAUDE_SETTINGS_PERMISSION_MODE'"
       fi
-      launch_body="claude --settings '$settings_file'${claude_permission_flags}${claude_flags:+ $claude_flags} --append-system-prompt-file '$prompt_file' -n 'SwarmForge ${display}' \"\${RESUME_NOTE}\$(cat '$prompt_file')\""
+      # BL-519: claude is the only agent with a separate --append-system-
+      # prompt-file argument, so (unlike codex/copilot/grok/vibe below, whose
+      # ONLY delivery channel is this first-message cat) it must not ALSO
+      # re-cat the same now-fully-inlined constitution/PIPELINE/role content
+      # into the first user message - that would pay full input-token price
+      # a second time on every single launch for content the system prompt
+      # already carries, defeating the prompt-caching saving this ticket
+      # exists to capture. The system prompt file already carries the full
+      # instructions; the first turn only needs a short kickoff (plus the
+      # resume note, unchanged, when one applies).
+      launch_body="claude --settings '$settings_file'${claude_permission_flags}${claude_flags:+ $claude_flags} --append-system-prompt-file '$prompt_file' -n 'SwarmForge ${display}' \"\${RESUME_NOTE}Your constitution, pipeline, and role are already loaded above via --append-system-prompt-file. Begin your role loop now; if idle, run ready_for_next.sh.\""
       ;;
     codex)
       launch_body="codex${extra_cli:+ $extra_cli} -C '$role_worktree' \"\${RESUME_NOTE}\$(cat '$prompt_file')\""
@@ -1420,11 +1430,55 @@ start_ancillary_services
 
 copilot_trust_swarm_paths
 
+# BL-519: launch-time cache-warm decision. The stable prefix every claude
+# role's appended system prompt now inlines (constitution+PIPELINE) is a
+# prompt-caching key - a content-hash of that prefix plus this pack's own
+# model/effort routing (CONFIG_FILE's raw text already encodes both) tells
+# us whether THIS launch is re-serving an already-warm cache (:reuse-cache)
+# or must warm a fresh one (:rewarm - first launch of this pack, or the
+# constitution/pack config changed since the last one). Never let this
+# decorating check block a real launch: any failure (missing bb, a stale
+# worktree without cache_warm_cli.bb) degrades to the safe default of
+# "assume warm, no stagger" rather than aborting the swarm.
+CACHE_WARM_DECISION="reuse-cache"
+if command -v bb >/dev/null 2>&1 && [[ -f "$SCRIPT_DIR/cache_warm_cli.bb" ]]; then
+  CACHE_WARM_STATE_DIR="$STATE_DIR/cache-warm"
+  CACHE_WARM_PACK_NAME="$(basename "$CONFIG_FILE")"
+  CACHE_WARM_ROUTING_TEXT="$(cat "$CONFIG_FILE" 2>/dev/null || true)"
+  CACHE_WARM_DECISION="$(bb "$SCRIPT_DIR/cache_warm_cli.bb" decide-and-record-warm \
+    "$CACHE_WARM_STATE_DIR" "$CACHE_WARM_PACK_NAME" "$CACHE_WARM_ROUTING_TEXT" 2>/dev/null \
+    | head -1 || echo "reuse-cache")"
+  [[ "$CACHE_WARM_DECISION" == "rewarm" || "$CACHE_WARM_DECISION" == "reuse-cache" ]] \
+    || CACHE_WARM_DECISION="reuse-cache"
+fi
+echo -e "${CYAN}cache-warm: ${CACHE_WARM_DECISION} (pack=${CACHE_WARM_PACK_NAME:-$(basename "$CONFIG_FILE")})${RESET}"
+
 echo -e "${GREEN}Starting agents...${RESET}"
+# BL-519 fallback warm mechanism: on a :rewarm decision, bring up the FIRST
+# claude role of each distinct model tier, pause briefly, THEN launch the
+# rest of that tier - so the first request per tier has a head start on
+# writing the cache before same-tier siblings would otherwise race it with
+# N parallel cold writes. No stagger at all on :reuse-cache (the common
+# case): the cache is already known-warm, so serializing launches would
+# only slow the swarm down for no benefit.
+typeset -A CACHE_WARM_TIER_SEEN
+CACHE_WARM_STAGGER_SECONDS=4
 for (( i = 1; i <= ${#ROLES[@]}; i++ )); do
   [[ -n "${REFUSED_ROLE_INDICES[$i]:-}" ]] && continue
   is_sequential_dormant "$i" && continue
+  is_first_of_tier=0
+  if [[ "$CACHE_WARM_DECISION" == "rewarm" && "${AGENTS[$i]}" == "claude" ]]; then
+    claude_settings_and_flags_from_extra_cli "${EXTRA_CLI_ARGS[$i]}"
+    tier="${CLAUDE_SETTINGS_MODEL:-default}"
+    if [[ -z "${CACHE_WARM_TIER_SEEN[$tier]:-}" ]]; then
+      CACHE_WARM_TIER_SEEN[$tier]=1
+      is_first_of_tier=1
+    fi
+  fi
   launch_role "$i"
+  if [[ "$is_first_of_tier" == 1 ]]; then
+    sleep "$CACHE_WARM_STAGGER_SECONDS"
+  fi
 done
 
 # BL-518: under `rotation router`, every dormant pipeline role needs its own
