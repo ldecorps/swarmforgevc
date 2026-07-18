@@ -487,6 +487,16 @@ flags; omitting them leaves `ANTHROPIC_AUTH_TOKEN` empty and every turn fails
 `.swarmforge/launch/<role>.sh` at the project root — never a worktree-local
 copy — so a repair cannot relaunch the wrong role's script into a session.
 
+### Mono-router panel live feed
+
+Under `config rotation router`, only the resident pipeline pane and the
+coordinator session stand. The VS Code/Cursor panel must treat
+`sessions.tsv` ∩ live tmux sessions as the tile set (`readLiveSwarmRoles`):
+`isSwarmReady` is true when resident + coordinator are up (not when every
+pack role has a pane), and `runningSwarmMatchesConfig` compares pack
+`window` lines to non-coordinator `sessions.tsv` rows so coordinator
+provisioning does not falsely mark a mismatch.
+
 ### Mono-router rotate targets resident session
 
 `rotate_to_role.sh` must respawn the standing pipeline pane (home role

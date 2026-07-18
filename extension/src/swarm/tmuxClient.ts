@@ -185,24 +185,6 @@ export function getPanePidAndCommand(socketPath: string, target: string): { pid:
   return { pid: pid ?? '', command: command ?? '' };
 }
 
-// BL-423: the half-launch check for a role's pane - a window/session can
-// exist (sessionExists true) with an idle SHELL sitting in it and no agent
-// ever spawned (the 12:05Z SWARM_CONTROL_LOST failure mode). pane_pid alone
-// only names the pane's own shell, never the agent - the operator's own
-// "pane_current_command reports zsh with a live claude child" experience is
-// that pane_current_command is not a reliable bootstrapped/not signal
-// either (a shell can wrap/background its child so the pane still reports
-// the shell). The robust, agent-agnostic signal is whether that shell pid
-// has ANY live child process at all - real bootstrap always forks one,
-// an unbootstrapped idle shell never does.
-export function hasLivePaneChild(panePid: string): boolean {
-  if (!panePid) {
-    return false;
-  }
-  const result = runCommand('pgrep', ['-P', panePid]);
-  return result.exitCode === 0 && result.stdout.trim().length > 0;
-}
-
 export function capturePane(
   socketPath: string,
   target: string,
@@ -332,6 +314,20 @@ export function readSwarmRoles(targetPath: string): SwarmRole[] {
   }
 
   return roles;
+}
+
+/**
+ * sessions.tsv ∩ live tmux sessions. Under config rotation router, the pack
+ * still lists every pipeline role in sessions.tsv, but only the resident
+ * pane (usually coder) and coordinator exist — dormant roles must not be
+ * treated as tiles or readiness blockers.
+ */
+export function readLiveSwarmRoles(targetPath: string): SwarmRole[] {
+  const socket = readTmuxSocket(targetPath);
+  if (!socket) {
+    return [];
+  }
+  return readSwarmRoles(targetPath).filter((role) => sessionExists(socket, role.session));
 }
 
 export interface RespawnResult {

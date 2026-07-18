@@ -6,14 +6,10 @@ import * as path from 'path';
 import type { SecretStorage } from 'vscode';
 import {
   listTmuxSessions,
+  readLiveSwarmRoles,
   readSwarmRoles,
   readTmuxSocket,
   sessionExists,
-  SwarmRole,
-  getPaneBaseIndex,
-  resolveAgentPaneTarget,
-  getPanePid,
-  hasLivePaneChild,
 } from './tmuxClient';
 import { stopSwarm } from './swarmStopper';
 import { spawnTrackedJob } from './childJobRegistry';
@@ -99,30 +95,7 @@ function persistLaunchLog(targetPath: string, record: LaunchAttemptRecord): void
   }
 }
 
-// BL-423: the actual-bootstrap check reusing isSwarmReady's own
-// window-exists chain (getPaneBaseIndex -> resolveAgentPaneTarget ->
-// getPanePid, the exact discovery resourceSamplerActivation.ts's
-// resolvePanePid already uses) plus hasLivePaneChild's "any live child at
-// all" signal - agent-agnostic, so it doesn't need to know claude/aider/
-// copilot's own process name.
-export function defaultRoleBootstrapped(socketPath: string, role: SwarmRole): boolean {
-  const target = resolveAgentPaneTarget(socketPath, role.session, getPaneBaseIndex(socketPath));
-  return hasLivePaneChild(getPanePid(socketPath, target));
-}
-
-// checkRoleBootstrapped is OPTIONAL and undefined by default - isSwarmReady's
-// own pre-BL-423 contract (window/session existence only) is preserved
-// unchanged for every existing caller (launchSwarm's polling loop,
-// waitForSwarmReady, swarmOrchestrator.ts) so none of them slow down or
-// risk a false "not ready" from a slow-to-fork agent process during an
-// ordinary launch's own settle window. Only a caller that explicitly wants
-// the stronger "agents actually bootstrapped" guarantee (BL-423's own
-// restart-verification step, reusing this SAME function rather than a
-// parallel readiness mechanism) passes defaultRoleBootstrapped above.
-export function isSwarmReady(
-  targetPath: string,
-  checkRoleBootstrapped?: (socketPath: string, role: SwarmRole) => boolean
-): boolean {
+export function isSwarmReady(targetPath: string): boolean {
   const socket = readTmuxSocket(targetPath);
   if (!socket) {
     return false;
@@ -137,7 +110,18 @@ export function isSwarmReady(
     return false;
   }
 
-  return roles.every((role) => sessionExists(socket, role.session) && (!checkRoleBootstrapped || checkRoleBootstrapped(socket, role)));
+  // Classic packs: every sessions.tsv row has a standing pane.
+  if (roles.every((role) => sessionExists(socket, role.session))) {
+    return true;
+  }
+
+  // Mono-router (config rotation router): dormant roles stay in sessions.tsv
+  // but only the resident + coordinator panes exist. Attach when both are up
+  // so the live feed is not stuck dark forever.
+  const live = readLiveSwarmRoles(targetPath);
+  const hasCoordinator = live.some((role) => role.role === 'coordinator');
+  const hasResident = live.some((role) => role.role !== 'coordinator');
+  return hasCoordinator && hasResident;
 }
 
 // Dirs where tmux, bb (babashka), claude, and aider are commonly installed.
@@ -332,7 +316,13 @@ export function countRolesInConfig(configPath: string): number {
   }
 }
 
-/** True when roles.tsv matches the configured pack/profile role count. */
+/**
+ * True when the pipeline window count in the pack/profile matches the
+ * non-coordinator rows in sessions.tsv. Coordinator is provisioned outside
+ * `window` lines (BL-243), so counting it against `window` lines falsely
+ * marks every mono/full forge pack as a mismatch and can trigger stopSwarm
+ * on activation.
+ */
 export function runningSwarmMatchesConfig(targetPath: string, configPath?: string): boolean {
   const resolved = configPath?.trim() || resolveSwarmConfigPath();
   if (!resolved) {
@@ -346,7 +336,8 @@ export function runningSwarmMatchesConfig(targetPath: string, configPath?: strin
   if (roles.length === 0) {
     return false;
   }
-  return roles.length === expected;
+  const pipelineRoles = roles.filter((role) => role.role !== 'coordinator');
+  return pipelineRoles.length === expected;
 }
 
 export function buildLaunchEnv(runName?: string, configPath?: string): NodeJS.ProcessEnv {
