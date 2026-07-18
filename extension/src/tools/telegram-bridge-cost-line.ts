@@ -34,22 +34,41 @@ export function bridgeCostLogPath(mainWorktreePath: string): string {
   return path.join(mainWorktreePath, '.swarmforge', 'operator', 'bridge-cost.jsonl');
 }
 
+// Split out of isBridgeCostRecord below for the same CRAP-budget reason
+// qaBounceStore.ts's hasQaBounceRecordShape/hasKnownQaBounceValues split
+// documents - a flat multi-clause boolean chain pushed the type guard's own
+// branch count over the project's CRAP threshold.
+function isKnownKind(kind: unknown): kind is BridgeCostRecord['kind'] {
+  return kind === 'front-desk' || kind === 'operator';
+}
+
+function isValidCost(cost: unknown): cost is number | null {
+  return cost === null || typeof cost === 'number';
+}
+
 function isBridgeCostRecord(value: unknown): value is BridgeCostRecord {
   if (!value || typeof value !== 'object') {
     return false;
   }
   const candidate = value as Partial<BridgeCostRecord>;
-  return (
-    typeof candidate.ts === 'string' &&
-    (candidate.kind === 'front-desk' || candidate.kind === 'operator') &&
-    (candidate.total_cost_usd === null || typeof candidate.total_cost_usd === 'number')
-  );
+  return typeof candidate.ts === 'string' && isKnownKind(candidate.kind) && isValidCost(candidate.total_cost_usd);
 }
 
 // A malformed/unrecognized line is skipped, never a crash - same forgiving-
-// reader posture as qaBounceStore.ts's readQaBounceFile. A missing or
-// unreadable log file degrades to an empty list (line-omitted-when-nothing-
-// to-show-07's "absent"/"unreadable" cases), never an error.
+// reader posture as qaBounceStore.ts's readQaBounceFile/parseQaBounceLine
+// split, which this mirrors for the same CRAP-budget reason.
+function parseBridgeCostLine(line: string): BridgeCostRecord | null {
+  try {
+    const parsed: unknown = JSON.parse(line);
+    return isBridgeCostRecord(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+// A missing or unreadable log file degrades to an empty list
+// (line-omitted-when-nothing-to-show-07's "absent"/"unreadable" cases),
+// never an error.
 export function readBridgeCostRecords(logPath: string): BridgeCostRecord[] {
   let content: string;
   try {
@@ -62,13 +81,9 @@ export function readBridgeCostRecords(logPath: string): BridgeCostRecord[] {
     if (!line.trim()) {
       continue;
     }
-    try {
-      const parsed: unknown = JSON.parse(line);
-      if (isBridgeCostRecord(parsed)) {
-        records.push(parsed);
-      }
-    } catch {
-      // skip malformed line
+    const record = parseBridgeCostLine(line);
+    if (record) {
+      records.push(record);
     }
   }
   return records;

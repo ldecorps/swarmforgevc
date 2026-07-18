@@ -78,6 +78,30 @@ test('readBridgeCostRecords: a malformed line is skipped, valid lines around it 
   assert.equal(readBridgeCostRecords(logPath).length, 2);
 });
 
+test('readBridgeCostRecords: a line that parses to valid JSON but not an object is skipped', () => {
+  const root = mkRepo();
+  const logPath = bridgeCostLogPath(root);
+  fs.mkdirSync(path.dirname(logPath), { recursive: true });
+  fs.writeFileSync(logPath, ['42', JSON.stringify({ ts: `${DAY}T09:00:00Z`, kind: 'front-desk', total_cost_usd: 0.04 })].join('\n'));
+  assert.equal(readBridgeCostRecords(logPath).length, 1);
+});
+
+test('readBridgeCostRecords: a record with an unrecognized kind is skipped', () => {
+  const root = mkRepo();
+  const logPath = bridgeCostLogPath(root);
+  fs.mkdirSync(path.dirname(logPath), { recursive: true });
+  fs.writeFileSync(logPath, JSON.stringify({ ts: `${DAY}T09:00:00Z`, kind: 'bogus', total_cost_usd: 0.04 }));
+  assert.equal(readBridgeCostRecords(logPath).length, 0);
+});
+
+test('readBridgeCostRecords: a record with a non-numeric, non-null total_cost_usd is skipped', () => {
+  const root = mkRepo();
+  const logPath = bridgeCostLogPath(root);
+  fs.mkdirSync(path.dirname(logPath), { recursive: true });
+  fs.writeFileSync(logPath, JSON.stringify({ ts: `${DAY}T09:00:00Z`, kind: 'front-desk', total_cost_usd: 'a lot' }));
+  assert.equal(readBridgeCostRecords(logPath).length, 0);
+});
+
 // ── end-to-end: process.cwd/argv stubbed, console.log mocked ─────────────
 
 async function runCli(root, dayKey) {
