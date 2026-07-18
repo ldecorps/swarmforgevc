@@ -129,9 +129,15 @@
 ;; per-ticket-type breakdown, derived from the durable qa_bounces log
 ;; (record-qa-bounce.js's go-forward writes plus backfill-qa-bounces.js's
 ;; one-time seed from the evidence corpus).
+;; BL-511: :telegram-bridge-cost-line - the day's estimated Telegram
+;; front-desk bridge cost (the exact total_cost_usd each front-desk
+;; invocation already reports, captured before it was otherwise thrown away
+;; with its result file), the first cost content wired into the email
+;; itself.
 (def optional-section-adapter-keys
   [:suite-duration-line :needs-approval-section :merged-blocked-digest :stage-dwell-section :chase-trend-section
-   :not-done-count-line :standing-rule-violations-line :suboptimality-verdict-line :qa-bounce-line])
+   :not-done-count-line :standing-rule-violations-line :suboptimality-verdict-line :qa-bounce-line
+   :telegram-bridge-cost-line])
 
 (defn- apply-optional-sections [content adapters]
   (reduce
