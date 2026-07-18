@@ -152,12 +152,23 @@ test('BL-511: prints nothing when the log file is unreadable garbage (never cras
 
 test('BL-511: prints the cost line once records exist for the day', async () => {
   const root = mkRepo();
+  writeLog(root, [{ ts: `${DAY}T09:00:00Z`, kind: 'front-desk', model: 'claude-opus-4-8', total_cost_usd: 0.04 }]);
+  const output = await runCli(root, DAY);
+  assert.match(output, /^Telegram bridge cost: \$0\.04 today/);
+});
+
+// BL-511 amended to front-desk-only: an 'operator'-kind line (a stray
+// leftover from before the amendment, or a hand-edited log) is unrecognized
+// and skipped, never counted toward the total or rendered as an "Operator
+// ... attributed" term.
+test("BL-511: an 'operator'-kind log line is unrecognized and skipped, never counted", async () => {
+  const root = mkRepo();
   writeLog(root, [
     { ts: `${DAY}T09:00:00Z`, kind: 'front-desk', model: 'claude-opus-4-8', total_cost_usd: 0.04 },
     { ts: `${DAY}T09:05:00Z`, kind: 'operator', model: 'claude-opus-4-8', total_cost_usd: 0.08, telegram_events: 1, total_events: 4 },
   ]);
   const output = await runCli(root, DAY);
-  assert.match(output, /^Telegram bridge cost: \$0\.06 today/);
+  assert.match(output, /^Telegram bridge cost: \$0\.04 today \(1 front-desk call\)$/);
 });
 
 test('the compiled CLI runs standalone as a subprocess and produces the same empty-state result', () => {

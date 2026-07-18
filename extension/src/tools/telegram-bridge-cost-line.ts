@@ -39,7 +39,7 @@ export function bridgeCostLogPath(mainWorktreePath: string): string {
 // documents - a flat multi-clause boolean chain pushed the type guard's own
 // branch count over the project's CRAP threshold.
 function isKnownKind(kind: unknown): kind is BridgeCostRecord['kind'] {
-  return kind === 'front-desk' || kind === 'operator';
+  return kind === 'front-desk';
 }
 
 function isValidCost(cost: unknown): cost is number | null {
