@@ -611,6 +611,40 @@
            "Headline\n"
            (first @sent-texts)))
 
+;; BL-511: the Telegram bridge-cost line reaches the actual sent content
+;; too, the same real-production-caller wiring bar established above for
+;; every other optional section.
+(let [dir (mk-tmp)
+      sent-texts (atom [])]
+  (spit (str (fs/path dir "2026-07-09.md")) "Headline\n")
+  (briefing-email-lib/send-unsent-briefings!
+   dir
+   {:read-briefing-content (fn [f] (slurp (str (fs/path dir f))))
+    :send-email! (fn [_subject text & _] (swap! sent-texts conj text) {:success true})
+    :telegram-bridge-cost-line (fn [] "Telegram bridge cost: $0.06 today (1 front-desk call, Operator $0.02 attributed)")
+    :log! (fn [& _] nil)})
+  (assert= "BL-511: the Telegram bridge-cost line reaches the actual sent content"
+           true
+           (str/includes? (first @sent-texts) "Telegram bridge cost: $0.06 today")))
+
+;; A nil-returning (or absent) :telegram-bridge-cost-line adapter degrades to
+;; the original content unchanged - same graceful-degrade contract as every
+;; other optional section (and the CLI itself returns nothing on a
+;; no-activity, absent, or unreadable log, so this is also the everyday
+;; no-Telegram-activity path).
+(let [dir (mk-tmp)
+      sent-texts (atom [])]
+  (spit (str (fs/path dir "2026-07-09.md")) "Headline\n")
+  (briefing-email-lib/send-unsent-briefings!
+   dir
+   {:read-briefing-content (fn [f] (slurp (str (fs/path dir f))))
+    :send-email! (fn [_subject text & _] (swap! sent-texts conj text) {:success true})
+    :telegram-bridge-cost-line (fn [] nil)
+    :log! (fn [& _] nil)})
+  (assert= "BL-511: a nil-returning :telegram-bridge-cost-line adapter leaves content unchanged"
+           "Headline\n"
+           (first @sent-texts)))
+
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (seq @failures)
   (do

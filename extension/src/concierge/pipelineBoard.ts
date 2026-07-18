@@ -67,7 +67,11 @@ export interface PipelineBoardTicketMeta {
   epic?: string;
   title?: string;
   filename?: string;
-  location?: 'active' | 'paused';
+  // BL-513: 'done' added so a closed ticket's meta can resolve to
+  // backlog/done/<file> via linkPathFor - needed for the authoritative-
+  // folder rule (active wins over paused wins over done) when a stale
+  // duplicate of a shown ticket lingers in backlog/done/.
+  location?: 'active' | 'paused' | 'done';
 }
 
 // BL-465: recently-closed/root-intake items feed in as raw {id, title,
@@ -224,37 +228,6 @@ function epicSortKey(epic: string | undefined): string {
   return epic === undefined ? `￿${NO_EPIC_LABEL}` : epic;
 }
 
-// BL-506: only a BL-/GH- ticket id carries a ticket NUMBER to rank by - a
-// root-intake id (a raw filename stem, e.g.
-// "INTAKE-operator-question-1784328071807") is not a ticket id at all and
-// must never be parsed as one just because it happens to end in digits (a
-// root-intake filename stem commonly does, from an embedded timestamp).
-// Reuses deriveDisplayTicketId's own anchored TICKET_ID_PREFIX_PATTERN
-// rather than a generic trailing-digit regex, for exactly that reason.
-function ticketNumberOf(id: string): number | undefined {
-  const match = TICKET_ID_PREFIX_PATTERN.exec(id);
-  return match ? Number(match[1]) : undefined;
-}
-
-// BL-506: the LINKS section lists most-recent first - highest ticket
-// NUMBER first, numeric (not lexicographic, so BL-1000 sorts above
-// BL-999). An id with no ticket number (a root-intake filename stem)
-// sorts after every numbered link; equal numbers (or two unnumbered ids)
-// break the tie by plain id order, so the render stays deterministic
-// tick-over-tick (the board's own content-signature change-gate requires
-// it).
-export function compareLinksMostRecentFirst(a: PipelineBoardLinkEntry, b: PipelineBoardLinkEntry): number {
-  const aNum = ticketNumberOf(a.id);
-  const bNum = ticketNumberOf(b.id);
-  if (aNum === undefined) {
-    return bNum === undefined ? a.id.localeCompare(b.id) : 1;
-  }
-  if (bNum === undefined) {
-    return -1;
-  }
-  return aNum !== bNum ? bNum - aNum : a.id.localeCompare(b.id);
-}
-
 function linkPathFor(meta: PipelineBoardTicketMeta | undefined): string | undefined {
   if (!meta?.filename || !meta.location) {
     return undefined;
@@ -404,7 +377,16 @@ function buildLinks(
     ...linksFromRecentlyClosed(extras),
     ...linksFromRootIntake(extras),
   ];
-  links.sort(compareLinksMostRecentFirst);
+  // BL-513: reversed from BL-506's most-recent-first (highest ticket number
+  // first) to plain ascending alphabetical (lexicographic) by id, per the
+  // human's follow-up directive - a link list every ticket shown on the
+  // board message, in the same order regardless of source. Lexicographic,
+  // not numeric: "BL-1000" sorts above "BL-999" once ids hit four digits
+  // (localeCompare's default collation already produces this - confirmed,
+  // not assumed). BL-506's compareLinksMostRecentFirst comparator (and its
+  // ticketNumberOf helper) had no remaining caller and was removed by the
+  // cleaner along with its unit and property tests.
+  links.sort((a, b) => a.id.localeCompare(b.id));
   return links;
 }
 

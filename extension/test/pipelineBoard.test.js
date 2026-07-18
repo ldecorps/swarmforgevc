@@ -10,7 +10,6 @@ const {
   deriveKebabSlug,
   deriveListEntryText,
   deriveDisplayTicketId,
-  compareLinksMostRecentFirst,
   PIPELINE_BOARD_COLUMN_ORDER,
   PIPELINE_BOARD_RECENTLY_CLOSED_MAX,
   PIPELINE_BOARD_NOT_STARTED_COLUMN,
@@ -669,10 +668,24 @@ test('computePipelineBoard: a parked ticket with no filename/location in its met
   assert.deepEqual(links, []);
 });
 
-test('computePipelineBoard: links combined from every source (row, parked, recently-closed, root-intake) come out ordered highest ticket number first', () => {
-  // BL-506: was ascending id order; the human wants most-recent (highest
-  // ticket number) first, with an unnumbered root-intake id sorting after
-  // every numbered link.
+// BL-513: PipelineBoardTicketMeta.location gained 'done' - linkPathFor must
+// resolve it the same generic way it already resolves 'active'/'paused'
+// (needed so a stale duplicate resolution in buildTicketMetaLookup can
+// prefer active/paused over a done-folder copy for the SAME row/parked id).
+test("computePipelineBoard: a row whose ticketMeta location is 'done' resolves to backlog/done/<file>", () => {
+  const { links } = computePipelineBoard(
+    { coder: ['BL-1'] },
+    [],
+    { 'BL-1': { filename: 'BL-1-a.yaml', location: 'done' } },
+    { repoBaseUrl: 'https://github.com/ldecorps/swarmforgevc' }
+  );
+  assert.deepEqual(links, [{ id: 'BL-1', path: 'backlog/done/BL-1-a.yaml' }]);
+});
+
+test('computePipelineBoard: links combined from every source (row, parked, recently-closed, root-intake) come out in plain alphabetical order', () => {
+  // BL-513: reversed from BL-506's most-recent-first (highest ticket number
+  // first) to plain ascending alphabetical by id, across every source with
+  // no special-casing.
   const { links } = computePipelineBoard(
     { coder: ['BL-9'] },
     [{ id: 'BL-5' }],
@@ -685,13 +698,14 @@ test('computePipelineBoard: links combined from every source (row, parked, recen
   );
   assert.deepEqual(
     links.map((l) => l.id),
-    ['BL-9', 'BL-7', 'BL-5', 'INTAKE-1']
+    ['BL-5', 'BL-7', 'BL-9', 'INTAKE-1']
   );
 });
 
-test('computePipelineBoard: links order is numeric-aware, so a four-digit ticket sorts above a three-digit one', () => {
-  // BL-506: a plain string sort would place "BL-1000" below "BL-999" - the
-  // exact bug the fix must avoid at the four-digit boundary.
+test('computePipelineBoard: links order is lexicographic, not numeric, so a four-digit ticket sorts above a three-digit one', () => {
+  // BL-513 (pinned load-bearing edge, carried over from BL-506's own
+  // discovery): once ids hit four digits, "BL-1000" sorts ABOVE "BL-999" -
+  // confirmed against localeCompare's actual default collation, not assumed.
   const { links } = computePipelineBoard(
     { coder: ['BL-999', 'BL-1000'] },
     [],
@@ -707,7 +721,11 @@ test('computePipelineBoard: links order is numeric-aware, so a four-digit ticket
   );
 });
 
-test('computePipelineBoard: links with no parseable trailing ticket number sort after every numbered link', () => {
+test('computePipelineBoard: numbered and unnumbered ids interleave by plain alphabetical order, no more numbered-first special-casing', () => {
+  // BL-513: BL-506's "unnumbered ids always sort last" rule is gone - a
+  // root-intake id now sorts purely on its own text, which happens to fall
+  // after every "BL-" id here only because 'I' > 'B', not because of any
+  // special-casing.
   const { links } = computePipelineBoard(
     { coder: ['BL-101', 'BL-504'] },
     [],
@@ -722,14 +740,15 @@ test('computePipelineBoard: links with no parseable trailing ticket number sort 
   );
   assert.deepEqual(
     links.map((l) => l.id),
-    ['BL-504', 'BL-101', 'INTAKE-pipeline-board-links-order']
+    ['BL-101', 'BL-504', 'INTAKE-pipeline-board-links-order']
   );
 });
 
-test('computePipelineBoard: a root-intake id ending in digits (a timestamp-suffixed filename stem) still sorts after every numbered link, never parsed as a ticket number', () => {
-  // A generic trailing-digit parse would misread a huge embedded timestamp
-  // as a ticket number and sort this ahead of every real ticket - a live
-  // shape (e.g. backlog/INTAKE-operator-question-1784328071807.md).
+test('computePipelineBoard: a root-intake id ending in digits (a timestamp-suffixed filename stem) sorts on its own text, never parsed as a ticket number', () => {
+  // BL-513: no ticket-number parsing happens in the comparator at all any
+  // more (a.id.localeCompare(b.id) only) - this is now purely a plain
+  // string comparison, so a huge embedded timestamp is never at risk of
+  // being misread as a ticket number in the first place.
   const { links } = computePipelineBoard(
     { coder: ['BL-9'] },
     [],
@@ -745,12 +764,7 @@ test('computePipelineBoard: a root-intake id ending in digits (a timestamp-suffi
   );
 });
 
-test('computePipelineBoard: two links with no ticket number tie-break by plain id order', () => {
-  // BL-506 coverage gap: every other link-order test pairs at most one
-  // unnumbered id against numbered ones, so compareLinksMostRecentFirst's
-  // "both sides unnumbered" branch (the a.id.localeCompare(b.id) tie-break)
-  // never ran. Two root-intake entries, given out of alphabetical order,
-  // must still come out sorted by plain id.
+test('computePipelineBoard: two root-intake links with no ticket id still sort by plain id order', () => {
   const { links } = computePipelineBoard(
     { coder: ['BL-9'] },
     [],
@@ -767,47 +781,6 @@ test('computePipelineBoard: two links with no ticket number tie-break by plain i
     links.map((l) => l.id),
     ['BL-9', 'INTAKE-aaa-earlier', 'INTAKE-zzz-later']
   );
-});
-
-// BL-506 cleanup: compareLinksMostRecentFirst is a general-purpose Array.sort
-// comparator, so it must handle EITHER argument order correctly - not just
-// the order buildLinks's fixed [numbered sources..., root-intake...]
-// concatenation happens to feed it today. Every links-ordering test above
-// only ever observes the comparator through Array.sort, and V8's sort
-// algorithm never actually calls it with a numbered link first and an
-// unnumbered one second for that input shape (the "being inserted" element
-// is always the later-original-index one, and root-intake links are always
-// last), so that argument order - and its own defensive "return -1" branch
-// - stayed unreachable through the public API. Exported and unit-tested
-// directly here so the comparator's own contract is pinned regardless of
-// how a future caller/array shape happens to invoke it.
-test('compareLinksMostRecentFirst: a numbered id sorts before an unnumbered one, in EITHER argument order', () => {
-  const numbered = { id: 'BL-9', path: 'backlog/active/BL-9.yaml' };
-  const unnumbered = { id: 'INTAKE-x', path: 'backlog/INTAKE-x.md' };
-  assert.ok(compareLinksMostRecentFirst(unnumbered, numbered) > 0, 'unnumbered first arg sorts after numbered');
-  assert.ok(compareLinksMostRecentFirst(numbered, unnumbered) < 0, 'numbered first arg sorts before unnumbered');
-});
-
-test('compareLinksMostRecentFirst: two unnumbered ids tie-break by plain id order, in EITHER argument order', () => {
-  const a = { id: 'INTAKE-aaa', path: 'backlog/INTAKE-aaa.md' };
-  const b = { id: 'INTAKE-zzz', path: 'backlog/INTAKE-zzz.md' };
-  assert.equal(compareLinksMostRecentFirst(a, b), a.id.localeCompare(b.id));
-  assert.equal(compareLinksMostRecentFirst(b, a), b.id.localeCompare(a.id));
-});
-
-test('compareLinksMostRecentFirst: two numbered ids with the SAME ticket number tie-break by plain id order', () => {
-  // Not a realistic backlog state (ids are unique in practice), but the
-  // comparator's own contract still pins a deterministic outcome for it.
-  const a = { id: 'BL-9', path: 'backlog/active/BL-9.yaml' };
-  const b = { id: 'GH-9', path: 'backlog/active/GH-9.yaml' };
-  assert.equal(compareLinksMostRecentFirst(a, b), a.id.localeCompare(b.id));
-});
-
-test('compareLinksMostRecentFirst: two numbered ids with DIFFERENT numbers sort highest number first', () => {
-  const a = { id: 'BL-999', path: 'backlog/active/BL-999.yaml' };
-  const b = { id: 'BL-1000', path: 'backlog/active/BL-1000.yaml' };
-  assert.ok(compareLinksMostRecentFirst(a, b) > 0, 'lower number sorts after higher number');
-  assert.ok(compareLinksMostRecentFirst(b, a) < 0, 'higher number sorts before lower number');
 });
 
 // ── BL-465: renderPipelineBoardBody's new below-grid sections ────────────
