@@ -934,6 +934,24 @@
       (when (zero? exit) (str/trim out)))
     (catch Exception _ nil)))
 
+;; BL-511: shells to the compiled telegram-bridge-cost-line.js CLI, same
+;; shell-out pattern as the *-briefing-line fns above - reuses
+;; computeTelegramBridgeCostForDay/formatTelegramBridgeCostLine unchanged,
+;; fed by the durable bridge-cost log operator_lib.bb's
+;; front-desk-cost-record appends at reap time (operator_runtime.bb). The
+;; CLI itself prints nothing (empty stdout) when the day has no records at
+;; all, so `str/trim out` naturally degrades to a blank block (no briefing
+;; noise) in that case, same as every sibling section here; any other
+;; failure (CLI not yet compiled, etc.) degrades identically - never
+;; crashes the sweep. No day-key arg is passed - the CLI defaults to real
+;; UTC-today in production (a test fixes it via an explicit arg instead).
+(defn telegram-bridge-cost-briefing-line []
+  (try
+    (let [cli-path (str (fs/path project-root "extension" "out" "tools" "telegram-bridge-cost-line.js"))
+          {:keys [exit out]} (process/sh ["node" cli-path] {:dir (str project-root)})]
+      (when (zero? exit) (str/trim out)))
+    (catch Exception _ nil)))
+
 (defn standing-rule-violations-briefing-line []
   (try
     (let [files (for [f (standing-rule-violations-files/rule-source-files project-root)]
@@ -983,6 +1001,7 @@
     :standing-rule-violations-line standing-rule-violations-briefing-line
     :suboptimality-verdict-line suboptimality-verdict-briefing-line
     :qa-bounce-line qa-bounce-briefing-line
+    :telegram-bridge-cost-line telegram-bridge-cost-briefing-line
     :log! (fn [& parts] (apply log! parts))}))
 
 ;; BL-353: shells to the compiled notify-dead-letters.js CLI, same posture
