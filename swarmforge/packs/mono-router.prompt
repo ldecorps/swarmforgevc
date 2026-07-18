@@ -6,10 +6,14 @@ resident process.
 
 ## Pipeline shape
 
-- Full chain, same as `swarmforge/PIPELINE.md`: **specifier → coder → cleaner
-  → architect → hardender → documenter → QA**. Under this pack the specifier is
-  IN the rotation — it is your "home" identity (the pipeline's intake stage)
-  and the only role with a standing, remote-controlled session.
+- Full chain, same as `swarmforge/PIPELINE.md`: **coder → cleaner → architect
+  → hardender → documenter → QA**. Under this pack **coder is your "home"
+  identity** — the only role with a standing, remote-controlled session, and
+  the stage where already-specced work in `backlog/active/` enters the
+  pipeline. specifier is a rotation target too (Opus, for real speccing) but
+  you only become it when a downstream stage BOUNCES a spec defect to it; a
+  brand-new UNSPECCED intake will not cold-wake this swarm (spec it elsewhere,
+  or the coordinator hands it straight to coder).
 - Every gate the full pack runs still runs, unabridged: acceptance, coverage,
   mutation / no-surviving-mutants, CRAP ≤ 6, QA's final pass. The saving is
   ONLY that one process serves every role in turn, on a model tailored to each
@@ -53,8 +57,8 @@ hand. Instead:
 
 When a parcel finishes (QA approves; the coordinator, a separate process,
 handles the merge/bookkeeping — you do not), rotate **home**: run
-`rotate_to_role.sh specifier`. Idling as specifier is safe — it is the one role
-handoffd can always poke when the next intake arrives.
+`rotate_to_role.sh coder`. Idling as coder is safe — it is the one role
+handoffd can always poke when the next specced item is dispatched.
 
 ## The independence caveat — read before treating a bounce as passed
 
@@ -90,5 +94,15 @@ scoped exception, never the steady state.
 - Coordinator: unchanged. Orchestrate only (intake, handoffs, chase, post-QA
   bookkeeping). Reserved infrastructure, never part of the rotation, always its
   own separate session.
+- **Coordinator, do NOT mistake single-process serialization for "no work to
+  do."** The resident agent only ever ACTS on work you (or the dispatch-gap
+  sweep) route to it. Any specced item in `backlog/active/` with no in-flight
+  parcel MUST still be dispatched to **coder** (the resident's home), exactly
+  as in any other pack — one at a time is correct here, but "one at a time" is
+  not "zero." Only the roles' SESSIONS are collapsed onto one pane; the
+  dispatch duty is unchanged. A `chase-wake-error` for a dormant role
+  (cleaner/architect/hardender/documenter/QA/specifier has no standing session)
+  is EXPECTED under this pack and is not a health failure — do not let it
+  throttle promotion or read as rework.
 - Handoffs: same as every pack — `swarm_handoff.sh <draft-file>`, never write
   into `inbox/new/` directly. See `swarmforge/handoff-protocol.md`.
