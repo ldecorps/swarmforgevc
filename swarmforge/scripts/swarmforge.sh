@@ -1182,6 +1182,12 @@ RESUMECHECK
 
   local billing_guard=""
   local copilot_guard=""
+  local cerebras_guard=""
+  # Re-apply CEREBRAS→OPENAI map inside the launch script. Panes often source
+  # ~/.zshenv which re-exports the real OPENAI_API_KEY and would otherwise
+  # override the tmux -e mapping (Wrong API Key against api.cerebras.ai).
+  # Key value is never written — only $CEREBRAS_API_KEY from pane env (BL-130).
+  cerebras_guard=$'if [[ "${SWARMFORGE_USE_CEREBRAS:-}" == "1" && -n "${CEREBRAS_API_KEY:-}" ]]; then\n  export OPENAI_API_KEY="$CEREBRAS_API_KEY"\n  export OPENAI_API_BASE="${OPENAI_API_BASE:-https://api.cerebras.ai/v1}"\n  export OPENAI_BASE_URL="${OPENAI_BASE_URL:-https://api.cerebras.ai/v1}"\nfi\n'
   if [[ "$agent" == "claude" ]]; then
     if role_uses_openrouter "$role"; then
       # OpenRouter-backed claude role: do NOT unset the auth token (that unset
@@ -1214,7 +1220,7 @@ export SWARMFORGE_ROLE='$role'
 export PATH='$role_script_dir':\$PATH
 cd '$role_worktree'
 ${resume_check}
-${billing_guard}${copilot_guard}${launch_body}
+${billing_guard}${copilot_guard}${cerebras_guard}${launch_body}
 LAUNCH
 
   # Only wire cleanup when a GUI terminal backend owns windows to close.
@@ -1310,14 +1316,26 @@ launch_role() {
   local -a provider_env_flags=()
   if [[ "$agent" != "claude" ]]; then
     local provider_key
+    local use_cerebras=0
+    if [[ "${SWARMFORGE_USE_CEREBRAS:-}" == "1" && -n "${CEREBRAS_API_KEY:-}" ]]; then
+      use_cerebras=1
+    fi
     for provider_key in OPENAI_API_KEY MISTRAL_API_KEY CEREBRAS_API_KEY; do
+      # When Cerebras OpenAI-compat mode is on, do NOT forward the host
+      # OPENAI_API_KEY (real OpenAI sk-*). Panes must use CEREBRAS→OPENAI map.
+      if [[ "$use_cerebras" == "1" && "$provider_key" == "OPENAI_API_KEY" ]]; then
+        continue
+      fi
       if [[ -n "${(P)provider_key:-}" ]]; then
         provider_env_flags+=(-e "${provider_key}=${(P)provider_key}")
       fi
     done
-    if [[ "${SWARMFORGE_USE_CEREBRAS:-}" == "1" && -n "${CEREBRAS_API_KEY:-}" ]]; then
+    if [[ "$use_cerebras" == "1" ]]; then
       # Cerebras OpenAI-compatible API for aider packs: map key → OPENAI_* via -e
       # (BL-130). Window lines supply non-secret --openai-api-base.
+      # Also set SWARMFORGE_USE_CEREBRAS so launch scripts can re-apply after
+      # ~/.zshenv re-exports the real OPENAI_API_KEY.
+      provider_env_flags+=(-e "SWARMFORGE_USE_CEREBRAS=1")
       provider_env_flags+=(-e "OPENAI_API_KEY=${CEREBRAS_API_KEY}")
       provider_env_flags+=(-e "OPENAI_API_BASE=https://api.cerebras.ai/v1")
       provider_env_flags+=(-e "OPENAI_BASE_URL=https://api.cerebras.ai/v1")
