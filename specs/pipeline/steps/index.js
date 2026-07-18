@@ -284,8 +284,7 @@ const DOMAINS = [
   require('./bl506PipelineBoardLinksMostRecentFirstSteps'),
   require('./bl507PipelineBoardDropCoordinatorColumnSteps'),
   require('./bl511TelegramBridgeCostBriefingSteps'),
-  require('./gherkinLintGateWrappedStepRejectionSteps'),
-  require('./bl519InlineConstitutionCacheSteps')
+  require('./gherkinLintGateWrappedStepRejectionSteps')
 ];
 
 function registerSteps(registry) {

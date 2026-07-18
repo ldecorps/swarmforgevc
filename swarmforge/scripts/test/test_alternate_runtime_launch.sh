@@ -165,10 +165,8 @@ grep -q "^Read swarmforge" "$PROMPT6" \
   && fail "06: aider prompt must not use bare Read-lines that tmux splits into separate turns"
 zsh -c "source '$SWARMFORGE_SH' '$ROOT6'; write_agent_instruction_file coder '$PROMPT6' claude"
 grep -q "^Read swarmforge/constitution.prompt" "$PROMPT6" \
-  && fail "06: claude roles must no longer emit bare Read-lines for the constitution (BL-519: inlined into the appended system prompt instead)"
-grep -q "# SwarmForge Constitution" "$PROMPT6" \
-  || fail "06: claude roles must inline the actual constitution content (BL-519), got: $(cat "$PROMPT6" | head -3)"
-pass "06: aider roles get aider-specific bootstrap; claude roles get the BL-519 inlined constitution/PIPELINE/role content"
+  || fail "06: claude roles must keep the standard three-line bootstrap"
+pass "06: aider roles get aider-specific bootstrap; claude roles keep Read-lines"
 
 # ── 7: aider coordinator bootstrap forbids coding and notes two-pack routing ─
 ROOT7="$(mk_root)"
