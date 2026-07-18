@@ -1,5 +1,5 @@
 id: BL-519
-title: "Cut per-respawn rehydration cost: inline constitution+PIPELINE into the cacheable system-prompt prefix (prompt caching)"
+title: "Cut rehydration cost across ALL packs: inline constitution+PIPELINE into the cacheable system-prompt prefix + a launch-time cache-warm/rebuild step that runs on any new swarm config (prompt caching)"
 milestone: M8
 type: feature
 epic: ""
@@ -53,10 +53,42 @@ notes: |
       default. Do NOT add tools to "help" — tool defs render at prefix position 0 and any tool-set
       change invalidates the whole cache (net negative).
 
-  ORTHOGONALITY: touches swarmforge/scripts/agent_runtime_cli.bb (+ its lib) and the
-  bootstrap-text call site in swarmforge.sh; benefits every pack, not just mono-router. NOT
-  orthogonal to any other in-flight change to agent bootstrap / prompt assembly. Orthogonal to the
-  gherkin-lint and console-epic tickets.
+  GENERALIZE — ALL PACKS, PACK-AGNOSTIC: this is a change to the SHARED bootstrap generation, so it
+  must apply to every pack, not just mono-router. In a standing-fleet pack (full-forge, seven-pack)
+  each role is its own long-lived process that pays the constitution re-read at boot AND on every
+  respawn (idle-clear / chase / ensure). Inlining removes that for all of them. Same-model-tier
+  roles within a pack share the byte-identical stable prefix and can read each other's cache within
+  the TTL where the base-prompt prefix (esp. cwd) allows — e.g. full-forge's Sonnet roles
+  (coder/cleaner/architect/hardender/documenter/QA) vs its Opus specifier. NO mono-router-specific
+  branch: the same code path serves every pack; measure the cache-read behaviour PER PACK.
+
+  CACHE-WARM / REBUILD ON ANY NEW CONFIG (bake it into the launcher): the first real request per
+  model tier must not be a cold write, and — critically — N same-tier agents launched concurrently
+  (full-forge's default) all cold-write the same prefix in parallel, because Anthropic caching only
+  exposes an entry AFTER the first response begins (no reader can read what the others are still
+  writing). So warm deterministically:
+    - For each distinct model tier the launched pack uses, bring ONE role of that tier up first,
+      let it establish the cache (first response begins), THEN launch the rest of that tier so they
+      read it instead of racing N cold writes. (Launch-ordering is the concrete warm mechanism.)
+    - REBUILD-ON-CHANGE — the whole point of "any new swarm config": the cache key IS the exact-byte
+      stable prefix. Any change to the constitution / PIPELINE / role-prompt content, OR to a pack's
+      model routing, changes that prefix and silently orphans the old cache. The warm step therefore
+      runs on EVERY launch of ANY config, keyed off a CONTENT-HASH of the assembled stable prefix:
+      a changed pack/constitution/tier yields a new hash -> warm the new prefix fresh rather than
+      relying on a stale/absent entry. Persist the last-warmed hash so the launcher can tell "same
+      config, still warm" from "new config, needs rebuild".
+    - Use the 1-hour TTL; if a swarm can idle longer than the TTL, hook a periodic re-warm onto the
+      existing handoffd sweep cadence so the entry stays live.
+    - FEASIBILITY the build must resolve AND measure: agents run via the Claude Code CLI, so an
+      external raw-API max_tokens:0 pre-warm only hits if it reproduces the CLI's exact prefix
+      byte-for-byte (including Claude Code's own base system prompt). If that is not reliably
+      reproducible, launch-ordering (staggered per-tier bring-up) is the fallback warm mechanism.
+      Report which mechanism actually produces cache_read hits — do not assume the raw-API path works.
+
+  ORTHOGONALITY: touches swarmforge/scripts/agent_runtime_cli.bb (+ its lib), the bootstrap-text
+  call site in swarmforge.sh, and the launch sequence in swarmforge.sh / start-swarm.sh (the warm
+  step). Benefits every pack. NOT orthogonal to any other in-flight change to agent bootstrap,
+  prompt assembly, or the launch sequence. Orthogonal to the gherkin-lint and console-epic tickets.
 
 acceptance:
   # Observable contract:
@@ -70,6 +102,14 @@ acceptance:
   #     stable chunk in the appended system prompt (prefix-stability check on the generated text).
   #  4. Behaviour is unchanged: the agent still obeys the constitution and its role (an existing
   #     role's normal flow still runs; a spot-check parcel completes as before).
+  #  5. PACK-AGNOSTIC: launching a standing-fleet pack (e.g. full-forge) also inlines the stable
+  #     content and shows cache_read_input_tokens > 0 on same-tier roles/respawns within the TTL
+  #     (measured), with no mono-router-specific special-casing in the bootstrap code path.
+  #  6. WARM/REBUILD ON ANY CONFIG: launching ANY pack runs a cache-warm step keyed to a content
+  #     hash of the assembled stable prefix — the first same-tier agent writes the cache and later
+  #     same-tier agents read it (not N parallel cold writes); changing the constitution or a
+  #     pack's model routing changes the hash and triggers a fresh warm on the next launch instead
+  #     of relying on a stale/orphaned entry.
   feature: specs/features/BL-519-inline-constitution-cache.feature
 
 # QA end-to-end procedure (verify in the live swarm):
@@ -83,6 +123,14 @@ acceptance:
 #      (date, session id, ticket id, RESUME-ON-START) — none may precede it.
 #   4. Run one real parcel through a role bootstrapped the new way; confirm it obeys the
 #      constitution and completes its stage exactly as before (no behaviour regression).
+#   5. Launch full-forge; capture two same-tier roles' generated appended prompts (e.g. coder + QA,
+#      both Sonnet) and confirm the stable chunk is byte-identical between them; from usage
+#      telemetry confirm the second same-tier role reads cache (cache_read>0) rather than
+#      cold-writing. Confirm no mono-router-specific branching in the bootstrap code path.
+#   6. Launch a pack and confirm the cache-warm step ran (records the stable-prefix content hash).
+#      Edit the constitution (or a pack's model tier) and relaunch; confirm the warm step sees a
+#      new hash and re-warms fresh (cache_creation on the new prefix, not a stale read). If a
+#      periodic re-warm is implemented, confirm an idle>TTL gap triggers it.
 
 human_approval: approved
 approval_context: >
