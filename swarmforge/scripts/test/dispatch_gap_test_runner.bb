@@ -201,6 +201,60 @@
            []
            (chase-sweep-lib/dispatch-gap-items active-dir [new-dir])))
 
+
+;; ── Unassigned-active → coordinator nudge (not auto-assign) ───────────────
+
+(let [tmp (mk-tmp)
+      active-dir (str (fs/path tmp "active"))]
+  (fs/create-dirs active-dir)
+  (spit (str (fs/path active-dir "BL-523-demo.yaml"))
+        "id: BL-523\ntitle: \"demo\"\nstatus: todo\n")
+  (assert= "read-unassigned-active-items finds active with no assigned_to"
+           [{:id "BL-523" :assigned-to nil}]
+           (chase-sweep-lib/read-unassigned-active-items active-dir))
+  (assert= "read-active-items still skips unassigned (BL-222 assignee auto-route unchanged)"
+           []
+           (chase-sweep-lib/read-active-items active-dir)))
+
+(let [tmp (mk-tmp)
+      active-dir (str (fs/path tmp "active"))]
+  (write-active-item! active-dir "BL-1" "coder")
+  (assert= "read-unassigned-active-items skips items that already have assigned_to"
+           []
+           (chase-sweep-lib/read-unassigned-active-items active-dir)))
+
+(let [tmp (mk-tmp)
+      active-dir (str (fs/path tmp "active"))
+      scan (str (fs/path tmp "empty-mail"))]
+  (fs/create-dirs active-dir)
+  (fs/create-dirs scan)
+  (spit (str (fs/path active-dir "BL-523-demo.yaml")) "id: BL-523\ntitle: \"x\"\n")
+  (assert= "unassigned-active-items returns unassigned with no trail"
+           [{:id "BL-523" :assigned-to nil}]
+           (chase-sweep-lib/unassigned-active-items active-dir [scan])))
+
+(let [tmp (mk-tmp)
+      active-dir (str (fs/path tmp "active"))
+      coord-new (str (fs/path tmp "coord-new"))]
+  (fs/create-dirs active-dir)
+  (spit (str (fs/path active-dir "BL-523-demo.yaml")) "id: BL-523\ntitle: \"x\"\n")
+  (write-handoff! coord-new "00_nudge.handoff"
+                  {:from "coordinator" :to "coordinator" :type "note"
+                   :message "BL-523 active unassigned - assign_to and route it."})
+  (assert= "unassigned-active-items does not re-nudge once a trail exists"
+           []
+           (chase-sweep-lib/unassigned-active-items active-dir [coord-new])))
+
+(assert= "unassigned-active-draft-lines address the coordinator only"
+         ["type: note" "to: coordinator" "priority: 00"
+          "message: BL-523 active unassigned - assign_to and route it."]
+         (chase-sweep-lib/unassigned-active-draft-lines {:id "BL-523" :assigned-to nil}))
+
+(assert= "unassigned draft never targets coder/specifier"
+         true
+         (not (some #(str/includes? % "to: coder")
+                    (chase-sweep-lib/unassigned-active-draft-lines {:id "BL-1"}))))
+
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (seq @failures)
   (do

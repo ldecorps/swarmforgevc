@@ -14,7 +14,7 @@ The **coordinator** sits outside the forward chain: it controls intake, routes
 the first parcel to the specifier, tracks which stage holds the parcel, unblocks
 stalls, and — after QA approval — performs backlog bookkeeping (move ticket to
 `done/`, promote the next item). It does NOT merge to `main` or push — QA lands
-the approved commit on `main` itself (BL-247).
+the approved commit on `main` itself (BL-247). An active ticket with no `assigned_to` is nudged to the coordinator by `handoffd`'s unassigned-active sweep (see `swarmforge/handoff-protocol.md`); the daemon never assigns for it.
 
 The **specifier** writes specifications only. It does not merge, close tickets,
 or promote backlog items.

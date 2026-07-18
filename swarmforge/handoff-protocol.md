@@ -481,18 +481,30 @@ You have new handoff mail. If idle, run ready_for_next.sh.
 The daemon's existing chase/nudge sweep only watches inbox mail (queued or
 in-process handoffs), so a `backlog/active/` item that never received a
 routing handoff at all — no inbox mail ever existed for it — was invisible
-to that sweep and could sit indefinitely with its assignee idle and no
-alert (BL-217 sat this way roughly 3 hours before being noticed manually).
+to that sweep and could sit indefinitely with no alert (BL-217 sat this way
+roughly 3 hours before being noticed manually).
 
-On the same sweep cadence, the daemon now also scans every active backlog
-item against every role's outbox/sent/completed/in_process/new handoff
-trail (by ticket id, read from a `git_handoff`'s `task` header or a
-`note`'s leading ticket id). Any active item with **no** trail anywhere is a
-dispatch gap: the daemon auto-routes it by sending a `note` to the
-coordinator via the normal `swarm_handoff.bb` outbound path (not a
-hand-written inbox file), attributed `from: coordinator`. A gap already
-covered by an in-flight, not-yet-delivered auto-routed note (still sitting
-in an outbox) is not re-routed on the next sweep.
+On the same sweep cadence, the daemon also scans every active backlog item
+against every role's outbox/sent/completed/in_process/new handoff trail (by
+ticket id, read from a `git_handoff`'s `task` header or a `note`'s leading
+ticket id). Two complementary closes run from that scan, both via the normal
+`swarm_handoff.bb` outbound path (never a hand-written inbox file), attributed
+`from: coordinator`:
+
+1. **Assigned, never dispatched (BL-222).** An active item that already has
+   `assigned_to` but **no** trail anywhere is auto-routed: the daemon sends a
+   `note` **to that assignee** so the living role picks the work up. A gap
+   already covered by an in-flight auto-routed note is not re-routed on the
+   next sweep.
+
+2. **Active but unassigned.** An active item with an `id` and a missing/blank
+   `assigned_to` is invisible to (1) — there is nowhere to auto-route — and the
+   coordinator often idles on mailbox `NO_TASK` because it must not self-poll.
+   The daemon therefore sends a `note` **to the coordinator only**
+   (`"<id> active unassigned - assign_to and route it."`). The sweep never
+   writes `assigned_to` itself; intake and routing remain the coordinator's
+   exclusive duty. Once that nudge note exists as a trail, the item is not
+   re-nudged.
 
 ### Push sweep
 

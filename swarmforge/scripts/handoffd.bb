@@ -788,6 +788,27 @@
       (catch Exception e
         (log! "dispatch-gap-autoroute-error" (:id item) (:assigned-to item) (.getMessage e))))))
 
+
+;; ── Unassigned-active coordinator nudge (sibling of BL-222) ────────────────
+;; Does NOT set assigned_to. Drops a note on the coordinator so it assigns
+;; and routes. Same SWARMFORGE_ROLE=coordinator outbound path as auto-route!.
+
+(defn nudge-coordinator-unassigned! [item]
+  (let [draft (write-scratch-draft! (chase-sweep-lib/unassigned-active-draft-lines item))
+        env (merge (into {} (System/getenv)) {"SWARMFORGE_ROLE" "coordinator"})
+        result (process/sh ["bb" (swarm-handoff-script) (str draft)] {:dir (str project-root) :env env})]
+    (if (zero? (:exit result))
+      (log! "unassigned-active-nudge" (:id item))
+      (log! "unassigned-active-nudge-error" (:id item) (str (:err result))))))
+
+(defn unassigned-active-nudge-sweep! [roles]
+  (doseq [item (chase-sweep-lib/unassigned-active-items (active-backlog-dir) (dispatch-gap-scan-dirs roles))]
+    (try
+      (nudge-coordinator-unassigned! item)
+      (catch Exception e
+        (log! "unassigned-active-nudge-error" (:id item) (.getMessage e))))))
+
+
 ;; ── BL-214: briefing-email sweep - the daemon's fourth duty ─────────────────
 ;; Runs on the SAME cadence as chase-sweep!/dispatch-gap-sweep! above (no
 ;; separate timeout) since this daemon already runs unattended regardless of
@@ -1498,6 +1519,10 @@
                       (dispatch-gap-sweep! (load-roles))
                       (catch Exception e
                         (log! "dispatch-gap-sweep-error" (.getMessage e))))
+                    (try
+                      (unassigned-active-nudge-sweep! (load-roles))
+                      (catch Exception e
+                        (log! "unassigned-active-nudge-sweep-error" (.getMessage e))))
                     ;; BL-214: briefing-email sweep shares the same cadence -
                     ;; no separate timeout, same rationale as BL-222 above.
                     (try
