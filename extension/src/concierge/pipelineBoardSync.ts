@@ -4,11 +4,17 @@
 // by approvalsRosterSync.ts - DO NOT touch that shared module or point the
 // roster at this one). The board now change-gates on a CONTENT SIGNATURE
 // (the rendered grid + parked list, EXCLUDING the footer timestamp - see
-// pipelineBoard.ts's renderPipelineBoardBody) and, on a real content change,
-// DELETES the previously-posted message (if any) and POSTS a fresh one, so
-// the board is always the LATEST message in its topic. An unchanged tick is
-// a complete no-op: no delete, no post, no state change - the existing
+// pipelineBoard.ts's renderPipelineBoardBody - PLUS the link list's id:path
+// pairs, see linksSignature below) and, on a real content change, DELETES
+// the previously-posted message (if any) and POSTS a fresh one, so the
+// board is always the LATEST message in its topic. An unchanged tick is a
+// complete no-op: no delete, no post, no state change - the existing
 // message (and its footer timestamp) stays exactly where it is.
+// BL-513: the link list WAS excluded from the signature (BL-462's own claim
+// that it "cannot hide a real content change" was false - a link's path is
+// backlog/{folder}/{filename}, and neither the folder nor the real filename
+// is present in the body signature) - a shown ticket's folder move/rename
+// silently kept a stale link on the pinned board. Now included.
 import { PipelineBoardData, PIPELINE_BOARD_MESSAGE_MAX_LENGTH, budgetPipelineBoardLinks, renderPipelineBoard, renderPipelineBoardBody, wrapPipelineBoardHtml } from './pipelineBoard';
 
 // BL-497: the board's retry cap - the number of CONSECUTIVE failed ticks
@@ -270,6 +276,19 @@ async function postBoardMessage(
   };
 }
 
+// BL-513: a link's PATH is not derivable from renderPipelineBoardBody's own
+// text (which keys on id + stage column + title-derived slug, never the
+// backlog folder or real filename) - so a folder move/rename that changes a
+// shown ticket's link path but nothing else visible was silently invisible
+// to the old content signature (BL-462's own claim that the link list
+// "cannot hide a real content change" was false; see pipelineBoard.ts's
+// buildLinks comment). Folded in here, alongside the body, rather than
+// inside renderPipelineBoardBody itself, which stays link-free for its
+// other callers (e.g. the unit suite's own body-only fixtures).
+function linksSignature(data: PipelineBoardData): string {
+  return (data.links ?? []).map((l) => `${l.id}:${l.path}`).join('\n');
+}
+
 export async function syncPipelineBoard(
   data: PipelineBoardData,
   prevState: PipelineBoardState | undefined,
@@ -277,7 +296,7 @@ export async function syncPipelineBoard(
   nowMs: number,
   repoBaseUrl?: string
 ): Promise<PipelineBoardSyncResult> {
-  const contentSignature = renderPipelineBoardBody(data);
+  const contentSignature = renderPipelineBoardBody(data) + '\n' + linksSignature(data);
   if (contentSignature === prevState?.contentSignature) {
     return { state: prevState ?? {}, outcome: 'skipped-unchanged' };
   }
