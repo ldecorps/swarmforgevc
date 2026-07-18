@@ -8,6 +8,15 @@
 // base url is configured...") is already registered by
 // bl502PipelineBoardMessageLengthBudgetSteps.js - reused verbatim, not
 // redefined here.
+//
+// BL-513: "the pipeline board links are rendered" and "the links appear in
+// the order (.+)" are VERBATIM identical to this file's own step text
+// below, so this file's registration (first in index.js order) owns both
+// texts for BL-513's own scenarios too (BL-464's "identical text, first-
+// registered wins" convention) - extended, never forked, to also thread
+// ctx.paused/ctx.recentlyClosed through to computePipelineBoard (both
+// default to their pre-BL-513 empty value, so every existing BL-506
+// scenario - which never sets either - renders identically).
 const path = require('node:path');
 
 const EXT_OUT = path.join(__dirname, '..', '..', '..', 'extension', 'out');
@@ -47,8 +56,9 @@ function registerSteps(registry) {
   });
 
   registry.define(/^the pipeline board links are rendered$/, (ctx) => {
-    ctx.board = computePipelineBoard(ctx.roleHeldTickets ?? {}, [], ctx.ticketMeta ?? {}, {
+    ctx.board = computePipelineBoard(ctx.roleHeldTickets ?? {}, ctx.paused ?? [], ctx.ticketMeta ?? {}, {
       rootIntake: ctx.rootIntake ?? [],
+      recentlyClosed: ctx.recentlyClosed ?? [],
       repoBaseUrl: ctx.repoBaseUrl,
     });
   });

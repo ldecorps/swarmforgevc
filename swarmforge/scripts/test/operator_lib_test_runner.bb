@@ -808,6 +808,16 @@
 (assert= "front-desk-reply-text: no result at all has no reply"
          nil (operator-lib/front-desk-reply-text {:is_error false}))
 
+;; ── BL-511: the durable bridge-cost record built at reap time ─────────────
+(assert= "front-desk-cost-record: carries the exact reported cost, model, and kind"
+         {:ts "2026-07-18T00:00:00Z" :kind "front-desk" :model "claude-opus-4-8" :total_cost_usd 0.0123}
+         (operator-lib/front-desk-cost-record
+          {:total_cost_usd 0.0123 :model "claude-opus-4-8"} "2026-07-18T00:00:00Z"))
+(assert= "front-desk-cost-record: an unpriced/unknown cost stays nil, never coerced to 0"
+         {:ts "2026-07-18T00:00:00Z" :kind "front-desk" :model "some-unpriced-model" :total_cost_usd nil}
+         (operator-lib/front-desk-cost-record
+          {:total_cost_usd nil :model "some-unpriced-model"} "2026-07-18T00:00:00Z"))
+
 ;; ── BL-334: the self-contained prompt text for the restricted Operator -
 ;;    it has no Read tool, so everything it needs must be inlined here ─────
 (let [prompt (operator-lib/front-desk-reply-prompt
