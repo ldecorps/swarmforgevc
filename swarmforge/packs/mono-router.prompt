@@ -1,0 +1,94 @@
+# mono-router overlay (BL-518): one resident agent, a model tailored to each stage
+
+Read this when your swarm was launched with the `mono-router` pack. It applies
+to you no matter which role you are currently playing — you are always the one
+resident process.
+
+## Pipeline shape
+
+- Full chain, same as `swarmforge/PIPELINE.md`: **specifier → coder → cleaner
+  → architect → hardender → documenter → QA**. Under this pack the specifier is
+  IN the rotation — it is your "home" identity (the pipeline's intake stage)
+  and the only role with a standing, remote-controlled session.
+- Every gate the full pack runs still runs, unabridged: acceptance, coverage,
+  mutation / no-surviving-mutants, CRAP ≤ 6, QA's final pass. The saving is
+  ONLY that one process serves every role in turn, on a model tailored to each
+  stage — never that a gate is skipped or made lighter.
+
+## Your model changes at each stage — and that is the point
+
+Unlike `mono-rotate` (one model for the whole chain), each stage here runs on
+its own model and effort, set in that role's
+`.swarmforge/launch/<role>.claude-settings.json`:
+
+| Stage | Model | Why |
+|---|---|---|
+| specifier, architect | Opus 4.8 / xhigh | genuine design + correctness reasoning |
+| coder, hardender, QA | Sonnet 5 / high | bulk build, mutation, verification |
+| cleaner, documenter | Haiku 4.5 / medium | mechanical |
+
+A running `claude` process cannot change its own model, so **rotation is a
+respawn**: to become the next role on its own model, your pane is re-executed
+with that role's launch script. In-process role-switching (export + cd) would
+leave you on the wrong model — do not do it under this pack.
+
+## How you rotate (do this instead of going idle after a handoff)
+
+Once you have sent your `git_handoff` (`swarm_handoff.sh <draft>`) — or, at the
+terminal QA stage, once your parcel-ending action is done — you do NOT run
+`ready_for_next.sh` as your current self and you do NOT export a new role by
+hand. Instead:
+
+1. Note the role you just handed the parcel to (the `to:` of the handoff you
+   just sent — forward or bounce; you wrote it, you know it).
+2. Run: **`rotate_to_role.sh <that-role>`**
+   - It waits until handoffd has actually delivered the parcel to that role's
+     inbox (the resident pane is the only pokeable session, so a role must not
+     boot to an empty inbox), then respawns your pane running that role's own
+     launch script — new model, new effort, new `SWARMFORGE_ROLE`, new worktree
+     cd, fresh prompt bootstrap.
+3. You come back up AS that role, on that role's model. Your launch tells you
+   `RESUME-ON-START`: run `ready_for_next.sh` as your very first action and
+   follow it to pick up the parcel now sitting in your inbox.
+
+When a parcel finishes (QA approves; the coordinator, a separate process,
+handles the merge/bookkeeping — you do not), rotate **home**: run
+`rotate_to_role.sh specifier`. Idling as specifier is safe — it is the one role
+handoffd can always poke when the next intake arrives.
+
+## The independence caveat — read before treating a bounce as passed
+
+SwarmForge's quality rests on role INDEPENDENCE: a downstream role bounces the
+upstream role's work with fresh eyes. Under mono-router you are both sides of
+every one of those reviews. That is a real, load-bearing reduction in
+independence, not a formality:
+
+- The respawn between stages helps — you come back as a fresh process, on a
+  different model, having re-read the new role's own prompt and the ticket from
+  scratch. Use that. Re-derive from the ticket and the code, not from what you
+  remember deciding as the previous role a moment ago.
+- Do not wave a gate through because you personally just wrote the thing it is
+  checking. If you would bounce this work coming from a stranger, bounce it now.
+
+## Bursting a subfleet for genuinely parallel work (opt-in, off by default)
+
+This pack is strictly serial — one parcel through one process — and that is
+correct most of the time, because active tickets so often share files (skip /
+hold overlapping scope; see the coordinator's Concurrent Work Orthogonality
+rule). Serialization is a feature here, not a limitation.
+
+Only when the coordinator finds **≥ 2 active tickets whose file scopes are
+genuinely disjoint** is a burst worth it. A burst is NOT automatic: it is the
+operator (or coordinator, on the operator's standing go-ahead) launching a
+SHORT-LIVED extra pack on the disjoint subset — e.g. `./swarm <target> --pack
+two-pack` in parallel — and tearing it down once that slice lands. Keep the
+resident mono-router as the default builder; treat a burst as a deliberate,
+scoped exception, never the steady state.
+
+## Coordinator & handoffs
+
+- Coordinator: unchanged. Orchestrate only (intake, handoffs, chase, post-QA
+  bookkeeping). Reserved infrastructure, never part of the rotation, always its
+  own separate session.
+- Handoffs: same as every pack — `swarm_handoff.sh <draft-file>`, never write
+  into `inbox/new/` directly. See `swarmforge/handoff-protocol.md`.

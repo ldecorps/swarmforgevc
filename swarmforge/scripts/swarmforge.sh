@@ -34,10 +34,14 @@ WORKING_DIR="$(cd "$WORKING_DIR" && pwd)"
 SWARM_FORGE_DIR="$WORKING_DIR/swarmforge"
 CONFIG_FILE="${SWARMFORGE_CONFIG:-$SWARM_FORGE_DIR/swarmforge.conf}"
 for (( idx = 2; idx <= $#; idx++ )); do
-  if [[ "${!idx}" == "--pack" ]]; then
+  # BL-518: zsh indirect expansion is ${(P)var}; ${!var} is a bashism that
+  # errors "bad substitution" under this script's zsh shebang, so --pack had
+  # never actually worked here (every launch fell through to the default
+  # swarmforge.conf). Fixed so packs/<name>.conf can be selected.
+  if [[ "${(P)idx}" == "--pack" ]]; then
     next=$((idx + 1))
     if [[ $next -le $# ]]; then
-      CONFIG_FILE="$SWARM_FORGE_DIR/packs/${!next}.conf"
+      CONFIG_FILE="$SWARM_FORGE_DIR/packs/${(P)next}.conf"
     fi
     break
   fi
@@ -394,8 +398,17 @@ parse_config() {
             sequential)
               ROTATION_MODE="sequential"
               ;;
+            router)
+              # BL-518: mono-router - like sequential (ONE resident process)
+              # but the resident pane respawns AS the next role at each
+              # handoff, so each stage runs on its own tailored model/effort
+              # (the model swap in-process 'sequential' rotation cannot do).
+              # Every pipeline role's launch script is pre-generated below so
+              # rotate_to_role.bb can re-exec .swarmforge/launch/<role>.sh.
+              ROTATION_MODE="router"
+              ;;
             *)
-              echo -e "${RED}Error:${RESET} Invalid config line $line_no: rotation must be 'sequential'"
+              echo -e "${RED}Error:${RESET} Invalid config line $line_no: rotation must be 'sequential' or 'router'"
               exit 1
               ;;
           esac
@@ -600,7 +613,12 @@ pack_size() {
 # reserved infrastructure, provisioned exactly as in every other pack.
 is_sequential_dormant() {
   local i="$1"
-  [[ "$ROTATION_MODE" == "sequential" ]] || return 1
+  # BL-518: 'router' shares sequential's single-resident-process topology -
+  # only index 1 (the resident agent) and the last-registered coordinator get
+  # a real session/process; every middle pipeline role stays dormant (worktree
+  # + roles.tsv + a pre-generated launch script only) until the resident agent
+  # respawns its pane AS that role.
+  [[ "$ROTATION_MODE" == "sequential" || "$ROTATION_MODE" == "router" ]] || return 1
   (( i > 1 && i < ${#ROLES[@]} ))
 }
 
@@ -1408,6 +1426,22 @@ for (( i = 1; i <= ${#ROLES[@]}; i++ )); do
   is_sequential_dormant "$i" && continue
   launch_role "$i"
 done
+
+# BL-518: under `rotation router`, every dormant pipeline role needs its own
+# launch script + settings JSON on disk so the ONE resident agent can respawn
+# its pane AS that role (picking up that role's tailored model/effort) at each
+# handoff - rotate_to_role.bb re-execs .swarmforge/launch/<role>.sh. Dormant
+# roles skip launch_role (which is what normally writes these), so generate
+# them here with no session and no process, exactly the two file-writers
+# launch_role would have called.
+if [[ "$ROTATION_MODE" == "router" ]]; then
+  for (( i = 1; i <= ${#ROLES[@]}; i++ )); do
+    is_sequential_dormant "$i" || continue
+    write_agent_instruction_file "${ROLES[$i]}" "$PROMPTS_DIR/${ROLES[$i]}.md" "${AGENTS[$i]}"
+    write_role_launch_script "$i" >/dev/null
+    echo -e "  ${CYAN}[${DISPLAY_NAMES[$i]}]${RESET} launch script pre-generated (dormant, router rotation target)"
+  done
+fi
 
 echo ""
 echo -e "${GREEN}${BOLD}SwarmForge is ready.${RESET}"

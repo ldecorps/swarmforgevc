@@ -354,6 +354,61 @@
         script (launch-script-path role-name)]
     (sh/sh "tmux" "-S" socket "respawn-pane" "-k" "-t" pane (str "zsh '" script "'"))))
 
+;; ── BL-518: mono-router rotation ────────────────────────────────────────────
+;; respawn-self! re-execs the CURRENT role's launch script (idle-boundary
+;; refresh). respawn-as! re-execs a DIFFERENT role's launch script in the same
+;; pane: the resident mono-router agent becomes the next pipeline role, and
+;; because each role's <role>.sh bakes in its own --settings (model + effort),
+;; the model actually changes for that stage - the one thing in-process
+;; ('rotation sequential') rotation cannot do.
+(defn wait-for-delivery!
+  "Blocks until handoffd has delivered a parcel into <role>'s inbox/new (or it
+   is already in_process), up to timeout-ms. Returns true if a parcel is there,
+   false on timeout. The resident pane is the ONLY standing session under
+   router rotation, so a dormant role respawned to an empty inbox would idle
+   with nothing able to poke it - we confirm the parcel landed before rotating."
+  [role timeout-ms]
+  (let [role-info (load-role-info role)
+        dirs (when role-info
+               [(mailbox-dir role-info :new) (mailbox-dir role-info :in_process)])
+        has-parcel? (fn []
+                      (some (fn [d]
+                              (and d (fs/exists? d)
+                                   (some #(let [nm (str (fs/file-name %))]
+                                            (or (str/ends-with? nm ".handoff")
+                                                (str/starts-with? nm "batch_")))
+                                         (fs/list-dir d))))
+                            dirs))
+        deadline (+ (System/currentTimeMillis) timeout-ms)]
+    (loop []
+      (cond
+        (has-parcel?) true
+        (>= (System/currentTimeMillis) deadline) false
+        :else (do (Thread/sleep 500) (recur))))))
+
+(defn respawn-as!
+  "Rotate the resident pane to <target-role>, running that role's own launch
+   script (its tailored model/effort). Waits for the parcel to be delivered to
+   target-role first (best-effort; proceeds after timeout with a loud warning
+   so a fresh role never boots to an inbox handoffd merely hasn't reached yet).
+   The target role's launch script must already exist - the router-mode
+   launcher pre-generates every pipeline role's <role>.sh at startup."
+  [target-role]
+  (let [socket (tmux-socket)
+        pane (pane-id socket)
+        script (launch-script-path target-role)]
+    (when-not (fs/exists? script)
+      (binding [*out* *err*]
+        (println (str "rotate: no launch script for role '" target-role "' at " script
+                      " - is this swarm a mono-router (config rotation router) launch?")))
+      (System/exit 3))
+    (when-not (wait-for-delivery! target-role 30000)
+      (binding [*out* *err*]
+        (println (str "rotate: WARNING no parcel delivered to '" target-role
+                      "' within 30s; rotating anyway (it will resume via RESUME-ON-START if it arrives).")))
+      (flush))
+    (sh/sh "tmux" "-S" socket "respawn-pane" "-k" "-t" pane (str "zsh '" script "'"))))
+
 ;; ── BL-365: durable install ──────────────────────────────────────────────
 ;; A bare `spit` + `fs/move` pair is atomic in ORDERING (the rename is one
 ;; syscall) but not in DURABILITY: `spit` does not fsync, so the file's
