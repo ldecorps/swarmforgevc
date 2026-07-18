@@ -72,4 +72,89 @@ echo "$OUT" | grep -q "^Error: APS tools not vendored - run install_aps_tools.sh
   || fail "expected the not-vendored error naming the fix; got: $OUT"
 pass "an un-vendored APS toolchain fails fast, naming install_aps_tools.sh as the fix"
 
+# ── BL-515: a step wrapped onto a bare 2nd line - with a <param> the ──────
+# vendored parser silently drops - is rejected even though the parser
+# itself reports a clean parse.
+WRAPPED="$TMP/wrapped.feature"
+cat > "$WRAPPED" <<'EOF'
+Feature: sample
+
+  Scenario Outline: wraps
+    Given a record with <telegram> Telegram
+      events out of <total> total events
+    When something happens
+    Then it works
+
+    Examples:
+      | telegram | total |
+      | 5        | 10    |
+EOF
+
+set +e
+OUT="$(bash "$GATE" "$WRAPPED" "$ROOT" 2>&1)"
+RC=$?
+set -e
+[[ "$RC" -ne 0 ]] || fail "515-01: expected a nonzero exit for a step wrapped onto a bare 2nd line; got 0"
+echo "$OUT" | grep -q "bare continuation line" \
+  || fail "515-01: expected a FAIL line naming the dropped continuation line; got: $OUT"
+echo "$OUT" | grep -q "events out of <total> total events" \
+  || fail "515-01: expected the FAIL line to quote the dropped line text; got: $OUT"
+pass "515-01: a wrapped step's dropped continuation line is rejected, not silently parsed clean"
+
+# ── BL-515: an Examples column referenced by no step parameter is ────────
+# rejected (the param-loss signature; also a phantom column on its own).
+PHANTOM_COLUMN="$TMP/phantom_column.feature"
+cat > "$PHANTOM_COLUMN" <<'EOF'
+Feature: sample
+
+  Scenario Outline: has an unreferenced column
+    Given a value of <a>
+    Then the result is checked
+
+    Examples:
+      | a | unused |
+      | 1 | 2      |
+EOF
+
+set +e
+OUT="$(bash "$GATE" "$PHANTOM_COLUMN" "$ROOT" 2>&1)"
+RC=$?
+set -e
+[[ "$RC" -ne 0 ]] || fail "515-02: expected a nonzero exit for a phantom Examples column; got 0"
+echo "$OUT" | grep -q '"unused"' \
+  || fail "515-02: expected the FAIL line to name the unreferenced column; got: $OUT"
+pass "515-02: an Examples column referenced by no step parameter is rejected"
+
+# ── BL-515: every existing project feature file still passes the gate ────
+# (no false positives from the new checks).
+while IFS= read -r -d '' feature; do
+  set +e
+  OUT="$(bash "$GATE" "$feature" "$ROOT" 2>&1)"
+  RC=$?
+  set -e
+  [[ "$RC" -eq 0 ]] || fail "515-03: $feature no longer passes the gate: $OUT"
+done < <(find "$ROOT/specs/features" -name '*.feature' -print0)
+pass "515-03: every existing specs/features/*.feature still passes the gate"
+
+# ── BL-515: the legacy-wraps allowlist is load-bearing - break it and ────
+# confirm a currently-grandfathered file goes back to FAILING, proving
+# 515-03's pass above is the allowlist's doing, not a fluke.
+LEGACY_FEATURE="$ROOT/specs/features/BL-096-velocity-burndown-metrics.feature"
+[[ -f "$LEGACY_FEATURE" ]] || fail "515-04 setup: expected fixture $LEGACY_FEATURE to exist"
+
+LEGACY_IR="$TMP/legacy-ir.json"
+(cd "$ROOT/swarmforge/vendor/aps" && bb gherkin-parser "$LEGACY_FEATURE" "$LEGACY_IR" >/dev/null 2>&1)
+
+EMPTY_ALLOWLIST="$TMP/empty-allowlist.txt"
+: > "$EMPTY_ALLOWLIST"
+
+set +e
+OUT="$(bb "$ROOT/swarmforge/scripts/gherkin_lint_gate_cli.bb" "$LEGACY_FEATURE" "$LEGACY_IR" "$ROOT" "$EMPTY_ALLOWLIST" 2>&1)"
+RC=$?
+set -e
+[[ "$RC" -ne 0 ]] || fail "515-04: expected a grandfathered file to fail again once the allowlist is emptied; got 0"
+echo "$OUT" | grep -q "bare continuation line" \
+  || fail "515-04: expected the FAIL to name the continuation line; got: $OUT"
+pass "515-04: emptying the allowlist un-grandfathers BL-096, proving the allowlist read is load-bearing"
+
 echo "ALL PASS"
