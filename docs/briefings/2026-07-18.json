@@ -5,7 +5,7 @@
     {
       "role": "coder",
       "tokens": {
-        "value": 694618,
+        "value": 695058,
         "trend": {
           "series": [
             {
@@ -46,17 +46,17 @@
             },
             {
               "periodStart": "2026-07-18T00:00:00.000Z",
-              "value": 694618
+              "value": 695058
             }
           ],
-          "currentValue": 694618,
+          "currentValue": 695058,
           "priorValue": 3506852,
-          "delta": -2812234,
+          "delta": -2811794,
           "direction": "down"
         }
       },
       "costUsd": {
-        "value": 128.53474080000015,
+        "value": 128.60951325000013,
         "trend": {
           "series": [
             {
@@ -97,12 +97,12 @@
             },
             {
               "periodStart": "2026-07-18T00:00:00.000Z",
-              "value": 128.53474080000015
+              "value": 128.60951325000013
             }
           ],
-          "currentValue": 128.53474080000015,
+          "currentValue": 128.60951325000013,
           "priorValue": 679.4032503000003,
-          "delta": -550.8685095000002,
+          "delta": -550.7937370500001,
           "direction": "down"
         }
       }
@@ -110,7 +110,7 @@
     {
       "role": "coordinator+specifier",
       "tokens": {
-        "value": 1490373,
+        "value": 1493187,
         "trend": {
           "series": [
             {
@@ -151,17 +151,17 @@
             },
             {
               "periodStart": "2026-07-18T00:00:00.000Z",
-              "value": 1490373
+              "value": 1493187
             }
           ],
-          "currentValue": 1490373,
+          "currentValue": 1493187,
           "priorValue": 4548815,
-          "delta": -3058442,
+          "delta": -3055628,
           "direction": "down"
         }
       },
       "costUsd": {
-        "value": 517.2120012000005,
+        "value": 517.7609725500005,
         "trend": {
           "series": [
             {
@@ -202,12 +202,12 @@
             },
             {
               "periodStart": "2026-07-18T00:00:00.000Z",
-              "value": 517.2120012000005
+              "value": 517.7609725500005
             }
           ],
-          "currentValue": 517.2120012000005,
+          "currentValue": 517.7609725500005,
           "priorValue": 1130.3133815999986,
-          "delta": -613.1013803999981,
+          "delta": -612.5524090499981,
           "direction": "down"
         }
       }
@@ -745,7 +745,7 @@
     },
     {
       "ticketId": "BL-515",
-      "costUsd": 46.87580055000001
+      "costUsd": 46.950573000000006
     },
     {
       "ticketId": "BL-118",
@@ -946,7 +946,7 @@
   },
   "reliability": {
     "chases": {
-      "value": 13277,
+      "value": 13280,
       "trend": {
         "series": [
           {
@@ -987,12 +987,12 @@
           },
           {
             "periodStart": "2026-07-18T00:00:00.000Z",
-            "value": 13277
+            "value": 13280
           }
         ],
-        "currentValue": 13277,
+        "currentValue": 13280,
         "priorValue": 6180,
-        "delta": 7097,
+        "delta": 7100,
         "direction": "up"
       }
     },
@@ -1222,7 +1222,7 @@
   },
   "costPerTicket": {
     "average": {
-      "value": 10.596909084482755,
+      "value": 10.597768537931032,
       "trend": {
         "series": [
           {
@@ -1235,12 +1235,12 @@
           },
           {
             "periodStart": "2026-07-16T00:00:00.000Z",
-            "value": 10.596909084482755
+            "value": 10.597768537931032
           }
         ],
-        "currentValue": 10.596909084482755,
+        "currentValue": 10.597768537931032,
         "priorValue": 9.47112014062222,
-        "delta": 1.1257889438605346,
+        "delta": 1.126648397308811,
         "direction": "up"
       }
     },
@@ -1257,7 +1257,7 @@
       },
       {
         "periodStart": "2026-07-16T00:00:00.000Z",
-        "value": 10.596909084482755
+        "value": 10.597768537931032
       }
     ],
     "basis": "Average of each DELIVERED ticket's total cost, summed across every role that held it (BL-312's non-double-counted totals). Includes rework: every bounce/re-hold's usage counts toward the ticket, not just its first pass. Excludes usage outside any recorded holding window ('unattributed') and tickets with no priced model available for any of their usage - those are counted separately (see excluded count), never as $0."
