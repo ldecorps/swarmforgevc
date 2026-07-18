@@ -487,6 +487,16 @@ flags; omitting them leaves `ANTHROPIC_AUTH_TOKEN` empty and every turn fails
 `.swarmforge/launch/<role>.sh` at the project root — never a worktree-local
 copy — so a repair cannot relaunch the wrong role's script into a session.
 
+### Mono-router rotate targets resident session
+
+`rotate_to_role.sh` must respawn the standing pipeline pane (home role
+session from `roles.tsv`, usually `swarmforge-coder`), not whatever
+`tmux display-message` returns without `-t`. Headless agent shells often
+resolve the wrong pane, so rotation can print success while the resident
+stays on the old role. The same OpenRouter `-e` injection as chase/ensure
+applies on rotate and idle-clear respawn.
+
+
 ### Dispatch-gap sweep
 
 The daemon's existing chase/nudge sweep only watches inbox mail (queued or

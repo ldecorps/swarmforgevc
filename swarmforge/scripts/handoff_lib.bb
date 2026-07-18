@@ -338,9 +338,41 @@
 (defn launch-script-path [role-name]
   (str (fs/path (target-root) ".swarmforge" "launch" (str role-name ".sh"))))
 
-(defn pane-id [socket]
-  (let [result (sh/sh "tmux" "-S" socket "display-message" "-p" "#{pane_id}")]
-    (str/trim (:out result))))
+(defn openrouter-pane-env-args
+  "Same BL-130 ephemeral -e injection launch_role / chase / ensure use.
+   Mono-router rotate and idle-clear respawns must not drop OPENROUTER_API_KEY
+   or the next role boots with an empty ANTHROPIC_AUTH_TOKEN."
+  []
+  (cond-> []
+    (not (str/blank? (System/getenv "OPENROUTER_API_KEY")))
+    (concat ["-e" (str "OPENROUTER_API_KEY=" (System/getenv "OPENROUTER_API_KEY"))])
+    (not (str/blank? (System/getenv "CLAUDE_CODE_MAX_OUTPUT_TOKENS")))
+    (concat ["-e" (str "CLAUDE_CODE_MAX_OUTPUT_TOKENS=" (System/getenv "CLAUDE_CODE_MAX_OUTPUT_TOKENS"))])))
+
+(defn mono-router-resident-session
+  "Standing pipeline pane under config rotation router: first non-coordinator
+   roles.tsv session (packs pin home as coder → swarmforge-coder). Never use
+   bare `tmux display-message` without -t — headless shells resolve the wrong
+   pane (or none), so rotate_to_role.sh can print success while leaving the
+   resident on the old role."
+  []
+  (when (fs/exists? (roles-tsv-path))
+    (some (fn [line]
+            (let [fields (str/split line #"\t" -1)
+                  role (first fields)
+                  session (get fields 3)]
+              (when (and role (not= "coordinator" role) (not (str/blank? session)))
+                session)))
+          (str/split-lines (slurp (str (roles-tsv-path)))))))
+
+(defn pane-id
+  "Prefer an explicit -t target. Bare display-message is only a last resort."
+  ([socket] (pane-id socket nil))
+  ([socket session]
+   (let [args (cond-> ["tmux" "-S" socket "display-message" "-p" "#{pane_id}"]
+                (not (str/blank? session)) (concat ["-t" session]))
+         result (apply sh/sh args)]
+     (str/trim (:out result)))))
 
 (defn respawn-self!
   "Respawns this role's own tmux pane at the idle boundary (BL-089), running
@@ -350,9 +382,12 @@
    replaced instead of from an operator pane."
   [role-name]
   (let [socket (tmux-socket)
-        pane (pane-id socket)
-        script (launch-script-path role-name)]
-    (sh/sh "tmux" "-S" socket "respawn-pane" "-k" "-t" pane (str "zsh '" script "'"))))
+        session (or (mono-router-resident-session) (pane-id socket))
+        script (launch-script-path role-name)
+        env-args (openrouter-pane-env-args)]
+    (apply sh/sh (concat ["tmux" "-S" socket "respawn-pane" "-k"]
+                         env-args
+                         ["-t" session (str "zsh '" script "'")]))))
 
 ;; ── BL-518: mono-router rotation ────────────────────────────────────────────
 ;; respawn-self! re-execs the CURRENT role's launch script (idle-boundary
@@ -395,8 +430,14 @@
    launcher pre-generates every pipeline role's <role>.sh at startup."
   [target-role]
   (let [socket (tmux-socket)
-        pane (pane-id socket)
-        script (launch-script-path target-role)]
+        session (or (mono-router-resident-session)
+                    (pane-id socket))
+        script (launch-script-path target-role)
+        env-args (openrouter-pane-env-args)]
+    (when (str/blank? session)
+      (binding [*out* *err*]
+        (println "rotate: could not resolve mono-router resident session"))
+      (System/exit 4))
     (when-not (fs/exists? script)
       (binding [*out* *err*]
         (println (str "rotate: no launch script for role '" target-role "' at " script
@@ -407,7 +448,9 @@
         (println (str "rotate: WARNING no parcel delivered to '" target-role
                       "' within 30s; rotating anyway (it will resume via RESUME-ON-START if it arrives).")))
       (flush))
-    (sh/sh "tmux" "-S" socket "respawn-pane" "-k" "-t" pane (str "zsh '" script "'"))))
+    (apply sh/sh (concat ["tmux" "-S" socket "respawn-pane" "-k"]
+                         env-args
+                         ["-t" session (str "zsh '" script "'")]))))
 
 ;; ── BL-365: durable install ──────────────────────────────────────────────
 ;; A bare `spit` + `fs/move` pair is atomic in ORDERING (the rename is one
