@@ -476,6 +476,23 @@ Example tmux wake-up (from the shared constant):
 You have new handoff mail. If idle, run ready_for_next.sh.
 ```
 
+### OpenRouter provider for claude-harness roles (BL-523)
+
+Set `SWARMFORGE_OPENROUTER_ROLES` to a space-separated list of role names
+(for example via `.swarmforge/openrouter.env`). Listed claude-harness roles
+point Claude Code at OpenRouter's Anthropic-compatible endpoint
+(`ANTHROPIC_BASE_URL=https://openrouter.ai/api`) and authenticate with
+`OPENROUTER_API_KEY` (injected ephemerally via `tmux respawn-pane -e`, never
+written into launch scripts — BL-130). Unlisted or empty list → unchanged
+first-party subscription auth (`unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN`).
+The role's `--model` still comes from the pack `window` line / settings JSON.
+
+Pack example: `swarmforge/packs/openrouter-cheap-mono-router.conf`. Check the
+API key's **monthly spend limit** in the OpenRouter dashboard — account
+credits alone are not enough when the key cap is exhausted.
+
+Acceptance shell coverage: `swarmforge/scripts/test/test_openrouter_provider_support.sh`.
+
 ### OpenRouter pane env on respawn
 
 `launch_role` injects `OPENROUTER_API_KEY` (and optional

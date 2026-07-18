@@ -35,6 +35,18 @@ description: |
   - OPENROUTER_API_KEY follows BL-130: ephemeral -e pane injection only, never
     persisted to disk.
 
+assigned_to: coder
 priority: 20
 mutation_cost: medium
 acceptance: specs/features/BL-523-openrouter-provider-support.feature
+
+status: done
+feature: specs/features/BL-523-openrouter-provider-support.feature
+acceptance_test: swarmforge/scripts/test/test_openrouter_provider_support.sh
+human_approval: approved
+approval_context: >
+  Implementation already on main (bd1b89c3+). Shell acceptance tests added and
+  passed. Pipeline cleared coder→cleaner→architect→hardender; documenter/QA
+  finished by operator mono-router impersonation after OR key-limit stalls.
+  Approved to close.
+
