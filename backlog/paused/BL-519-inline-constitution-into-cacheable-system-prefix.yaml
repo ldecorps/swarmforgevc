@@ -1,0 +1,99 @@
+id: BL-519
+title: "Cut per-respawn rehydration cost: inline constitution+PIPELINE into the cacheable system-prompt prefix (prompt caching)"
+milestone: M8
+type: feature
+epic: ""
+priority: 2
+direction: operator-requested
+source: "Operator 2026-07-18: mono-router (BL-518) rehydration analysis. Every respawn re-reads the full constitution recursively + PIPELINE + role prompt at full input-token price; under mono-router that's ~6x per ticket. Prompt caching can turn the stable chunk into a ~0.1x cache read instead. Expedite requested."
+
+notes: |
+  WHAT / WHY: today an agent's launch bootstrap tells it to Read swarmforge/constitution.prompt
+  (recursively, all articles) + PIPELINE.md + roles/<role>.prompt as its first actions. Those
+  Reads land in the conversation (messages) as tool results, at full input-token price, and are
+  re-paid on EVERY respawn — initial launch, idle-clear respawn, chase respawn, ensure respawn,
+  and (mono-router, BL-518) every stage rotation. The constitution is large and byte-identical
+  across roles, so this is the dominant "rehydration" cost.
+
+  Anthropic prompt caching keys on an exact-byte prefix (rendered tools -> system -> messages),
+  is server-side, model-scoped, and org-scoped, with a 5-min (1.25x write) or 1-hour (2x write,
+  {"ttl":"1h"}) TTL; cache reads are ~0.1x base input price. Crucially it is shared across
+  SEPARATE CLI process invocations that send a byte-identical prefix within the TTL — exactly the
+  respawn case. So if the stable content lives in the CACHEABLE SYSTEM-PROMPT PREFIX (not read at
+  runtime into messages), respawns within the window pay ~0.1x for it instead of full price.
+
+  FIX BOUNDARY (our layer only; the vendored Anthropic/Claude Code CLI is off-limits):
+    - Change the agent bootstrap generation (agent_runtime_cli.bb `bootstrap-text`, consumed by
+      swarmforge.sh write_agent_instruction_file -> the per-role <role>.md that is passed to
+      `claude --append-system-prompt-file`) so the appended system prompt INLINES the actual
+      content — constitution (recursively expanded) + PIPELINE.md + role prompt + pack overlay —
+      instead of emitting "Read ..." instructions the agent executes at runtime.
+    - ORDER STABLE-SHARED CONTENT FIRST: constitution + PIPELINE (identical across every role of a
+      pack) at the front, role-specific text (role.prompt, overlay, role name) LAST. This makes
+      the large shared chunk a byte-identical prefix so it caches once per model tier and is read
+      by every same-tier stage.
+    - NO SILENT INVALIDATORS AHEAD OF THE STABLE CHUNK: nothing volatile (dates, session ids,
+      ticket ids, RESUME-ON-START note, counts) may precede the constitution in the appended
+      prompt, or the prefix changes every respawn and never caches. The RESUME-ON-START note and
+      any per-parcel context must come AFTER the stable chunk (or stay in the first user message,
+      not the appended system prompt).
+    - PRESERVE BEHAVIOUR: the agent must still obey the constitution and read its role exactly as
+      today — this is a delivery-mechanism change (content in the cached system prompt vs. read via
+      tools), NOT a change to what the agent is told or a lighter bootstrap.
+
+  KNOWN CAVEAT TO MEASURE, NOT ASSUME: Claude Code prepends its own base system prompt (tools,
+  cwd, date) BEFORE our appended content. cwd differs per role worktree, so cross-STAGE sharing
+  (coder-worktree vs cleaner-worktree) may be blocked even with inlining, while same-ROLE respawns
+  (same worktree) will cache. The build must MEASURE actual cache reads (usage.cache_read_input_
+  tokens) rather than assume — and report which respawn classes hit. If cwd busts cross-stage
+  reuse, note it and land the same-role-respawn win anyway (still removes the re-read on every
+  idle-clear/chase/ensure respawn); a stable-working-dir mitigation is a follow-up, out of scope.
+    - Prefer the 1-hour TTL where the CLI exposes it (a ticket's rotations span minutes, well
+      inside 1h); if TTL isn't operator-configurable via the CLI, document that and rely on the
+      default. Do NOT add tools to "help" — tool defs render at prefix position 0 and any tool-set
+      change invalidates the whole cache (net negative).
+
+  ORTHOGONALITY: touches swarmforge/scripts/agent_runtime_cli.bb (+ its lib) and the
+  bootstrap-text call site in swarmforge.sh; benefits every pack, not just mono-router. NOT
+  orthogonal to any other in-flight change to agent bootstrap / prompt assembly. Orthogonal to the
+  gherkin-lint and console-epic tickets.
+
+acceptance:
+  # Observable contract:
+  #  1. A launched/respawned claude agent receives the constitution + PIPELINE + role prompt as
+  #     INLINED content in its appended system prompt, ordered constitution/PIPELINE first, and
+  #     no longer performs runtime Read tool-calls to fetch them at boot.
+  #  2. Across two respawns of the same role within the cache TTL, the second respawn reports
+  #     usage.cache_read_input_tokens > 0 for the stable chunk (measured, not assumed), proving
+  #     the rehydration is served from cache rather than re-processed at full price.
+  #  3. No volatile content (date, session id, ticket id, RESUME-ON-START note) precedes the
+  #     stable chunk in the appended system prompt (prefix-stability check on the generated text).
+  #  4. Behaviour is unchanged: the agent still obeys the constitution and its role (an existing
+  #     role's normal flow still runs; a spot-check parcel completes as before).
+  feature: specs/features/BL-519-inline-constitution-cache.feature
+
+# QA end-to-end procedure (verify in the live swarm):
+#   1. Launch a role; capture the generated <role>.md (the --append-system-prompt-file content).
+#      Confirm the constitution + PIPELINE text is INLINED and appears BEFORE any role-specific or
+#      volatile text; confirm the boot no longer instructs a recursive Read of the constitution.
+#   2. Respawn the same role twice within the TTL; from the run's usage telemetry (or a
+#      count_tokens/usage probe) confirm cache_read_input_tokens > 0 on the second respawn for the
+#      stable prefix. Record which respawn classes hit (same-role idle/chase/ensure; cross-stage).
+#   3. Grep the generated appended prompt for silent invalidators ahead of the stable chunk
+#      (date, session id, ticket id, RESUME-ON-START) — none may precede it.
+#   4. Run one real parcel through a role bootstrapped the new way; confirm it obeys the
+#      constitution and completes its stage exactly as before (no behaviour regression).
+
+human_approval: approved
+approval_context: >
+  Operator (ldecorps) requested this directly on 2026-07-18 and asked to expedite. Goal: stop
+  paying full input-token price to re-read the (large, identical-across-roles) constitution +
+  PIPELINE on every agent respawn — most acute under mono-router (BL-518), where a single ticket
+  respawns ~6 times. Fix: inline that stable content into the cacheable system-prompt prefix,
+  stable-content-first, so respawns within the cache TTL serve it as a ~0.1x cache read instead of
+  a full re-read. Behaviour is preserved (same instructions, cheaper delivery). Sign-off is on:
+  moving constitution/PIPELINE from runtime Read into the appended system prompt, and requiring
+  the build to MEASURE actual cache reads (cwd-in-base-prompt may limit cross-stage sharing — land
+  the measured win regardless). Approved by the requester.
+
+mutation_cost: medium
