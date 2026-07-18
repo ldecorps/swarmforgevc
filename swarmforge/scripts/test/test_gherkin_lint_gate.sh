@@ -157,4 +157,24 @@ echo "$OUT" | grep -q "bare continuation line" \
   || fail "515-04: expected the FAIL to name the continuation line; got: $OUT"
 pass "515-04: emptying the allowlist un-grandfathers BL-096, proving the allowlist read is load-bearing"
 
+# ── BL-515: the CLI's own arg-count guard fires on a malformed invocation ─
+# (never a bb crash/stacktrace) - a call site typo must fail fast and named.
+set +e
+OUT="$(bb "$ROOT/swarmforge/scripts/gherkin_lint_gate_cli.bb" 2>&1)"
+RC=$?
+set -e
+[[ "$RC" -ne 0 ]] || fail "515-05: expected a nonzero exit for a missing-args CLI invocation; got 0"
+echo "$OUT" | grep -q "^Usage: gherkin_lint_gate_cli.bb " \
+  || fail "515-05: expected a Usage line, not a stacktrace; got: $OUT"
+pass "515-05: the CLI's arg-count guard fails fast with a Usage line, not a crash"
+
+set +e
+OUT="$(bb "$ROOT/swarmforge/scripts/gherkin_lint_gate_cli.bb" one two three four five 2>&1)"
+RC=$?
+set -e
+[[ "$RC" -ne 0 ]] || fail "515-06: expected a nonzero exit for a too-many-args CLI invocation; got 0"
+echo "$OUT" | grep -q "^Usage: gherkin_lint_gate_cli.bb " \
+  || fail "515-06: expected a Usage line, not a stacktrace; got: $OUT"
+pass "515-06: the CLI's arg-count guard rejects too many arguments too"
+
 echo "ALL PASS"
