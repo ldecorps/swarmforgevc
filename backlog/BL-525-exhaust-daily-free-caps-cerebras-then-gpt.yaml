@@ -44,6 +44,25 @@ description: |
      preferred again if quota reset.
   4. Secrets remain BL-130: keys via pane `-e` / login env only.
 
+
+operator_notes_20260718: |
+  Cerebras path verified live:
+    SWARMFORGE_USE_CEREBRAS=1 ./swarm <root> --pack cerebras-mono-router
+  Auth gotcha fixed in swarmforge.sh (e57ff5b2): host OPENAI_API_KEY must not
+  shadow CEREBRAS→OPENAI map (zshenv re-export).
+
+  Manual GPT failover until this ticket is implemented:
+    1) Detect Cerebras daily exhaust (429/402 / quota body; aider "Wrong API Key"
+       alone is NOT exhaustion — that was the shadowing bug).
+    2) bash swarmforge/scripts/kill_all_swarm.sh <root>
+    3) unset SWARMFORGE_USE_CEREBRAS
+    4) ensure OPENAI_API_KEY is in env (from ~/.zshenv)
+    5) ./swarm <root> --pack codex-mono-router
+       (requires `codex` on PATH; key via pane -e, BL-130)
+
+  Preference order for implementation: Cerebras free daily → GPT/codex pack
+  → existing paid backends. Do not burn OpenRouter while Cerebras free remains.
+
 acceptance: |
   Specifier produces paused APS feature + draining notes. Coder implements
   detection + failover (or pack switch helper) with tests. Documenter writes
