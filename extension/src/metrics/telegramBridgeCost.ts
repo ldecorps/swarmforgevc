@@ -56,43 +56,56 @@ function hasKnownCost(record: BridgeCostRecord): record is BridgeCostRecord & { 
   return typeof record.total_cost_usd === 'number';
 }
 
+interface DayAccumulator {
+  frontDeskCount: number;
+  frontDeskUsd: number;
+  operatorCount: number;
+  operatorAttributedUsd: number;
+  unknownCount: number;
+}
+
+// Split out of computeTelegramBridgeCostForDay below for the same CRAP-budget
+// reason qaBounceStore.ts's isQaBounceRecord split documents - one function
+// carrying both kinds' branching plus the Operator proration math pushed the
+// day-aggregator over the project's CRAP threshold. Each half is scored (and
+// mutation-tested) on only its own branches.
+function accumulateFrontDesk(acc: DayAccumulator, record: BridgeCostRecord): void {
+  acc.frontDeskCount += 1;
+  if (hasKnownCost(record)) {
+    acc.frontDeskUsd += record.total_cost_usd;
+  } else {
+    acc.unknownCount += 1;
+  }
+}
+
+function operatorTelegramShare(record: BridgeCostRecord & { total_cost_usd: number }): number {
+  const totalEvents = record.total_events ?? 0;
+  const telegramEvents = record.telegram_events ?? 0;
+  return totalEvents > 0 ? record.total_cost_usd * (telegramEvents / totalEvents) : 0;
+}
+
+function accumulateOperator(acc: DayAccumulator, record: BridgeCostRecord): void {
+  acc.operatorCount += 1;
+  if (hasKnownCost(record)) {
+    acc.operatorAttributedUsd += operatorTelegramShare(record);
+  } else {
+    acc.unknownCount += 1;
+  }
+}
+
 export function computeTelegramBridgeCostForDay(records: BridgeCostRecord[], dayKey: string): BridgeCostDaySummary {
   const dayRecords = records.filter((r) => dayKeyOf(r.ts) === dayKey);
-  let frontDeskCount = 0;
-  let frontDeskUsd = 0;
-  let operatorCount = 0;
-  let operatorAttributedUsd = 0;
-  let unknownCount = 0;
+  const acc: DayAccumulator = { frontDeskCount: 0, frontDeskUsd: 0, operatorCount: 0, operatorAttributedUsd: 0, unknownCount: 0 };
 
   for (const record of dayRecords) {
     if (record.kind === 'front-desk') {
-      frontDeskCount += 1;
-      if (hasKnownCost(record)) {
-        frontDeskUsd += record.total_cost_usd;
-      } else {
-        unknownCount += 1;
-      }
+      accumulateFrontDesk(acc, record);
     } else if (record.kind === 'operator') {
-      operatorCount += 1;
-      if (hasKnownCost(record)) {
-        const totalEvents = record.total_events ?? 0;
-        const telegramEvents = record.telegram_events ?? 0;
-        const share = totalEvents > 0 ? telegramEvents / totalEvents : 0;
-        operatorAttributedUsd += record.total_cost_usd * share;
-      } else {
-        unknownCount += 1;
-      }
+      accumulateOperator(acc, record);
     }
   }
 
-  return {
-    totalUsd: frontDeskUsd + operatorAttributedUsd,
-    frontDeskCount,
-    frontDeskUsd,
-    operatorCount,
-    operatorAttributedUsd,
-    unknownCount,
-  };
+  return { totalUsd: acc.frontDeskUsd + acc.operatorAttributedUsd, ...acc };
 }
 
 // Omitted (empty string) ONLY when the day has NO records at all -
