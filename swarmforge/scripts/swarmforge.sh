@@ -1061,7 +1061,15 @@ RESUMECHECK
       launch_body="claude --settings '$settings_file'${claude_permission_flags}${claude_flags:+ $claude_flags} --append-system-prompt-file '$prompt_file' -n 'SwarmForge ${display}' \"\${RESUME_NOTE}\$(cat '$prompt_file')\""
       ;;
     codex)
-      launch_body="codex${extra_cli:+ $extra_cli} -C '$role_worktree' \"\${RESUME_NOTE}\$(cat '$prompt_file')\""
+      # BL-519 + codex: inlined prompts exceed Linux MAX_ARG_STRLEN (~128KiB),
+      # so point at the prompt file instead of $(cat) into argv. Unattended
+      # swarm needs --dangerously-bypass-approvals-and-sandbox (Codex has no
+      # --yolo); --add-dir master when role worktree differs.
+      local codex_dirs=""
+      if [[ "$role_worktree" != "$WORKING_DIR" ]]; then
+        codex_dirs=" --add-dir '$WORKING_DIR'"
+      fi
+      launch_body="codex${extra_cli:+ $extra_cli} --dangerously-bypass-approvals-and-sandbox -C '$role_worktree'${codex_dirs} \"\${RESUME_NOTE}Read and obey every instruction in $prompt_file (one file; it already inlines constitution + PIPELINE + your role — do not separately Read constitution articles or PIPELINE.md). Then run ready_for_next.sh and process work.\""
       ;;
     copilot)
       local copilot_dirs=""
@@ -1096,7 +1104,12 @@ RESUMECHECK
       if [[ "$role_worktree" != "$WORKING_DIR" ]]; then
         vibe_dirs=" --add-dir '$WORKING_DIR'"
       fi
-      launch_body="vibe${extra_cli:+ $extra_cli} --yolo --trust --workdir '$role_worktree'${vibe_dirs} \"\${RESUME_NOTE}\$(cat '$prompt_file')\""
+      # BL-519 + vibe: inlined bootstrap prompts are ~110–140KiB. Linux rejects
+      # a single argv longer than MAX_ARG_STRLEN (~128KiB) with "argument list
+      # too long", so we must NOT $(cat) the prompt into vibe's positional
+      # PROMPT. Point at the file once instead; the file itself still carries
+      # the inlined constitution (no recursive article Reads).
+      launch_body="vibe${extra_cli:+ $extra_cli} --yolo --trust --workdir '$role_worktree'${vibe_dirs} \"\${RESUME_NOTE}Read and obey every instruction in $prompt_file (one file; it already inlines constitution + PIPELINE + your role — do not separately Read constitution articles or PIPELINE.md). Then run ready_for_next.sh and process work.\""
       ;;
     *)
       echo -e "${RED}Error:${RESET} Unsupported agent '$agent' for role '$role'"
@@ -1224,7 +1237,7 @@ launch_role() {
   local -a provider_env_flags=()
   if [[ "$agent" != "claude" ]]; then
     local provider_key
-    for provider_key in OPENAI_API_KEY MISTRAL_API_KEY; do
+    for provider_key in OPENAI_API_KEY MISTRAL_API_KEY GEMINI_API_KEY PERPLEXITY_API_KEY DEEPSEEK_API_KEY; do
       if [[ -n "${(P)provider_key:-}" ]]; then
         provider_env_flags+=(-e "${provider_key}=${(P)provider_key}")
       fi
@@ -1374,6 +1387,16 @@ for (( i = 1; i <= ${#ROLES[@]}; i++ )); do
   [[ -n "${REFUSED_ROLE_INDICES[$i]:-}" ]] && continue
   launch_role "$i"
 done
+
+# Mono-router resume: resident boots as home (coder). If an active ticket
+# already has newer parcels waiting further along, rotate there so a pack
+# relaunch does not restart the pipeline from the beginning.
+if [[ "$ROTATION_MODE" == "router" ]]; then
+  if [[ -f "$SCRIPT_DIR/mono_router_resume.bb" ]]; then
+    echo -e "${CYAN}Mono-router: resuming resident at newest held stage (if any)...${RESET}"
+    bb "$SCRIPT_DIR/mono_router_resume.bb" "$WORKING_DIR" || true
+  fi
+fi
 
 echo ""
 echo -e "${GREEN}${BOLD}SwarmForge is ready.${RESET}"

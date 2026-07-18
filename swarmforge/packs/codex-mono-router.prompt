@@ -1,0 +1,42 @@
+# codex-mono-router overlay: one resident OpenAI Codex agent, full pipeline stages
+
+Read this when your swarm was launched with the `codex-mono-router` pack. It
+applies no matter which role you are currently playing — you are always the
+one resident process (OpenAI Codex via `OPENAI_API_KEY`, not Claude / not
+Mistral Vibe).
+
+## Pipeline shape
+
+- Full chain, same as `swarmforge/PIPELINE.md`: **coder → cleaner → architect
+  → hardender → documenter → QA**. **coder is your "home" identity** — the only
+  standing session, and where already-specced `backlog/active/` work enters.
+- specifier is a rotation target too, but you only become it when a downstream
+  stage BOUNCES a spec defect; brand-new unspecced intake will not cold-wake
+  this pack.
+- Every gate still runs unabridged.
+- Coordinator is a SEPARATE codex process. You do not play coordinator.
+
+## How you rotate (instead of idling after a handoff)
+
+Once you have sent your `git_handoff` (`swarm_handoff.sh <draft>`) — or, at
+terminal QA, once your parcel-ending action is done — do NOT run
+`ready_for_next.sh` as your current self:
+
+1. Note the `to:` role of the handoff you just sent (forward or bounce).
+2. Run: **`rotate_to_role.sh <that-role>`**
+3. You come back up AS that role. Launch says `RESUME-ON-START`: run
+   `ready_for_next.sh` first and pick up the parcel.
+
+When a parcel finishes (QA approves; coordinator merges — you do not), rotate
+**home**: `rotate_to_role.sh coder`.
+
+## Independence caveat
+
+You are both sides of every review. Re-derive from the ticket and code; do not
+wave a gate because you personally just wrote the change.
+
+## Handoff drafts
+
+Write to `swarmforge/runtime/handoff-draft.txt` then run
+`swarmforge/scripts/swarm_handoff.sh` on that file. Never use repo-root `tmp/`
+for drafts.

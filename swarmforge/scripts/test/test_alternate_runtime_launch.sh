@@ -186,4 +186,27 @@ grep -q "swarmforge/runtime/handoff-draft.txt" "$PROMPT7" \
   || fail "07: coordinator prompt must use runtime handoff draft path"
 pass "07: aider coordinator gets orchestration-only two-pack bootstrap"
 
+# ── 8: vibe launch must not $(cat) the prompt into argv (Linux MAX_ARG_STRLEN
+#      ~128KiB; BL-519 inlined prompts are larger and E2BIG on exec) ─────────
+ROOT8="$(mk_root)"
+mkdir -p "$ROOT8/swarmforge/packs"
+# Oversized prompt file — would blow argv if launch still $(cat)'d it.
+python3 -c "open('$ROOT8/.swarmforge/prompts/coder.md','w').write('X'*140000)"
+cat > "$ROOT8/swarmforge/packs/vibe-argv.conf" <<CONF
+config active_backlog_max_depth 1
+window coder vibe coder --max-price 1.00
+CONF
+LAUNCH8="$ROOT8/.swarmforge/launch/coder.sh"
+zsh -f -c "
+  SWARMFORGE_CONFIG='$ROOT8/swarmforge/packs/vibe-argv.conf' source '$SWARMFORGE_SH' '$ROOT8'
+  parse_config
+  $index_of_role_snippet
+  write_role_launch_script \"\$(index_of_role coder)\" >/dev/null
+"
+grep -q '$(cat' "$LAUNCH8" \
+  && fail "08: vibe launch must not \$(cat) prompt into argv; got: $(tail -5 "$LAUNCH8")"
+grep -q 'Read and obey every instruction' "$LAUNCH8" \
+  || fail "08: vibe launch must point at the prompt file; got: $(tail -5 "$LAUNCH8")"
+pass "08: vibe launch points at prompt file (no \$(cat) argv — avoids E2BIG)"
+
 echo "ALL PASS"
