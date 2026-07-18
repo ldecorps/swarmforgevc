@@ -4,11 +4,22 @@
 # gherkin-parser (swarmforge/vendor/aps/, installed by
 # install_aps_tools.sh) so the gate is a runnable script, not aspirational.
 #
+# BL-515: a clean parse from the vendored parser is not proof the feature
+# file is well-formed - it silently drops a step's wrapped second line (and
+# any <param> on it) while still exiting 0. On top of the parser's own
+# parse check, this gate also runs gherkin_lint_gate_cli.bb (backed by the
+# pure gherkin_lint_gate_lib.bb) to reject that silent drop and an Examples
+# column no step references. A small grandfathered allowlist
+# (gherkin_lint_gate_legacy_wraps.txt) exempts known pre-existing wraps
+# from the continuation-line check only - never from the phantom-column
+# check, and never a file not already listed - so this enforces
+# unconditionally for every new or changed feature file.
+#
 # Usage: gherkin_lint_gate.sh <feature-file> [repo-root]
 #
-# Exits 0 with an OK line on a clean parse; exits nonzero (gherkin-parser's
-# own exit code) with a FAIL line naming the parse error on a malformed
-# file.
+# Exits 0 with an OK line on a clean, well-formed parse; exits nonzero with
+# a FAIL line naming the parse error (a malformed file) or the offending
+# line/column (a wrapped step or a phantom Examples column).
 
 set -euo pipefail
 
@@ -33,10 +44,20 @@ PARSE_OUTPUT="$(cd "$VENDOR_DIR" && bb gherkin-parser "$ABS_FEATURE_FILE" "$TMP_
 STATUS=$?
 set -e
 
-if [[ "$STATUS" -eq 0 ]]; then
-  echo "OK: $FEATURE_FILE parses cleanly"
-  exit 0
-else
+if [[ "$STATUS" -ne 0 ]]; then
   echo "FAIL: $FEATURE_FILE did not parse: $PARSE_OUTPUT" >&2
   exit "$STATUS"
 fi
+
+set +e
+LINT_OUTPUT="$(bb "$SCRIPT_DIR/gherkin_lint_gate_cli.bb" "$ABS_FEATURE_FILE" "$TMP_IR" "$ROOT" 2>&1)"
+LINT_STATUS=$?
+set -e
+
+if [[ "$LINT_STATUS" -ne 0 ]]; then
+  echo "$LINT_OUTPUT" >&2
+  exit "$LINT_STATUS"
+fi
+
+echo "OK: $FEATURE_FILE parses cleanly"
+exit 0
