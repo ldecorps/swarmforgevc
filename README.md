@@ -117,7 +117,7 @@ SwarmForge is a lightweight, tmux-based orchestration layer that:
 
 - Launches a **config-driven swarm** from a project-local `swarmforge/swarmforge.conf`
 - Creates one tmux session per configured role and opens a terminal surface for each role when the selected backend supports it
-- Reads behavior from project-local `swarmforge/roles/<role>.prompt` files plus a layered `swarmforge/constitution.prompt`
+- Follows behavior defined in project-local `swarmforge/roles/<role>.prompt` files plus a layered `swarmforge/constitution.prompt`
 - Supports per-role backends such as `claude`, `codex`, `copilot`, or `grok`
 - Puts the shared `swarmforge/scripts/` directory on each agent's `PATH`, including handoff helpers for active swarm communication
 - Creates git worktrees under `.worktrees/` for roles assigned to dedicated worktree names
@@ -128,7 +128,7 @@ SwarmForge is a lightweight, tmux-based orchestration layer that:
 
 - **Config-Driven Topology** — The swarm shape comes from `swarmforge/swarmforge.conf`, not hardcoded shell variables.
 - **Project-Local Roles** — Each role is defined by `swarmforge/roles/<role>.prompt` in the working tree being orchestrated.
-- **Layered Constitution** — `swarmforge/constitution.prompt` directs agents to read article files under `swarmforge/constitution/articles/`.
+- **Layered Constitution** — `swarmforge/constitution.prompt` defines the rules and structure that all agents follow, with articles stored under `swarmforge/constitution/articles/`.
 - **Backend Selection Per Role** — A role can launch `claude`, `codex`, `copilot`, or `grok`.
 - **Observable Swarm** — Open one Terminal window per role and watch the sessions in real time.
 - **Self-Hosted & Lightweight** — Runs locally in tmux and Terminal with minimal machinery.
@@ -152,7 +152,7 @@ swarmforge/
     ...
 ```
 
-`constitution.prompt` is the entry point. Runnable branches normally use it to tell agents to read every file in `swarmforge/constitution/articles/`.
+`constitution.prompt` is the entry point. Runnable branches use it to define the constitution that all agents follow, with articles under `swarmforge/constitution/articles/`. At launch, the bootstrap generation inlines this content into each agent's system prompt for prompt-caching efficiency.
 
 Shared default articles live on `main` under:
 
