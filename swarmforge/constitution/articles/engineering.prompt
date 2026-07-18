@@ -403,6 +403,10 @@
   An explicit lookup kills the mutant at the acceptance run (an unknown mutated
   value throws / fails the lookup). (Confirmed 5x across BL-250/BL-252/BL-253 in
   one session.)
+- Gherkin lint gate must fail when a Scenario Outline's source text contains Examples
+  blocks but the vendored parser's IR has an empty examples list (the parser silently
+  drops all Examples tables while reporting a clean parse; BL-515's gate currently misses
+  this - detected hardening BL-515 2026-07-18).
 - **Before deleting a step-handler file a note or ticket calls "dead", extract every step
   pattern it registers and grep EVERY live `.feature` file for a scenario still using any of
   them — the step registry is ONE global namespace keyed by step text, so a handler outlives
