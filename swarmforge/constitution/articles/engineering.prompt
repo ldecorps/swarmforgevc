@@ -163,7 +163,14 @@
   catch/nonzero-exit branches dark; the same untested-error-path gap sits in its sibling `*-sweep!`
   wiring tests in `handoffd.bb` — 11 by the hardener's count. Proposed by the hardender 2026-07-16
   scoped `engineering`; the coder writes these tests, so this binds every test author, not only the
-  role that caught it late.)
+  role that caught it late.) This binds PER-ADAPTER, not just per-`*-sweep!`: each
+  `*-briefing-line`/`-section` adapter in `handoffd.bb` that shells its OWN compiled CLI needs its
+  OWN failure-path wiring test (non-zero exit + spawn failure) asserting its documented
+  degrade-to-`nil`/omit contract. `briefing_email_lib.bb`'s fake-adapter compose test proves only the
+  section-ASSEMBLY logic over stubs and does NOT substitute for it — a green compose test leaves every
+  real adapter's CLI-failure branch dark. (BL-511's `telegram-bridge-cost-briefing-line` shipped with
+  zero such coverage, the same gap as its `qa-bounce` / `suboptimality-verdict` /
+  `standing-rule-violations` siblings; proposed by the hardender 2026-07-18 scoped `engineering`.)
 
 ## Test Speed And Isolation
 - Strive to keep the unit suite running in seconds. Speed is a correctness
