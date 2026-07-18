@@ -147,3 +147,64 @@ test('property: a ticket held by any ALL_SWARM_ROLES role always renders on a re
     })
   );
 });
+
+// BL-513 (architect, property-testing support): buildLinks (via
+// computePipelineBoard) sorts EVERY shown ticket's link ascending
+// lexicographically by id, across all four sources (grid rows, parked,
+// recently-closed, root-intake) concatenated together. pipelineBoard.test.js
+// and the BL-513 feature pin this with a handful of hand-picked ids; the
+// invariant - the returned links are non-decreasing by
+// id.localeCompare(next.id), regardless of which source each id came from
+// or the concatenation order of the sources - holds for any set of ids, not
+// just those examples. This is the "ordering/monotonicity" shape
+// architect.prompt's Property Testing section names, and it is exactly the
+// invariant BL-513's `links.sort((a, b) => a.id.localeCompare(b.id))` exists
+// to protect: commenting out that sort call makes this property fail for
+// most non-trivial id sets (confirmed by temporarily removing the sort and
+// re-running - it fails as expected, restored after).
+const linkIdArb = fc.stringMatching(/^[A-Za-z0-9-]{1,8}$/);
+const sourceArb = fc.constantFrom('row', 'parked', 'closed', 'intake');
+
+test('property: links are always sorted ascending lexicographically by id, across all four sources combined', () => {
+  fc.assert(
+    fc.property(
+      fc.uniqueArray(linkIdArb, { maxLength: 24 }),
+      fc.array(sourceArb, { minLength: 1, maxLength: 24 }),
+      (ids, sourcesRaw) => {
+        const rows = [];
+        const parked = [];
+        const recentlyClosed = [];
+        const rootIntake = [];
+        const ticketMeta = {};
+        ids.forEach((id, i) => {
+          const source = sourcesRaw[i % sourcesRaw.length];
+          const filename = `${id}.yaml`;
+          if (source === 'row') {
+            rows.push(id);
+            ticketMeta[id] = { filename, location: 'active' };
+          } else if (source === 'parked') {
+            parked.push(id);
+            ticketMeta[id] = { filename, location: 'paused' };
+          } else if (source === 'closed') {
+            recentlyClosed.push({ id, filename });
+          } else {
+            rootIntake.push({ id, filename });
+          }
+        });
+        const { links } = computePipelineBoard(
+          {},
+          parked.map((id) => ({ id })),
+          ticketMeta,
+          { activeIds: rows, recentlyClosed, rootIntake, repoBaseUrl: REPO_BASE_URL }
+        );
+        assert.equal(links.length, ids.length, `expected every one of ${ids.length} ids to produce exactly one link`);
+        for (let i = 1; i < links.length; i += 1) {
+          assert.ok(
+            links[i - 1].id.localeCompare(links[i].id) <= 0,
+            `links out of order: ${links[i - 1].id} before ${links[i].id} in [${links.map((l) => l.id).join(', ')}]`
+          );
+        }
+      }
+    )
+  );
+});
