@@ -1,24 +1,25 @@
-Feature: the pipeline board LINKS section links every shown ticket, alphabetically, to its current folder
+Feature: the pipeline board LINKS section links every shown ticket to its current folder, most-recent-first
 
-  # AMENDED 2026-07-18 (was "grid-only, alphabetical"). Human directive, two parts:
-  #  (1) "in the LINKS section, put only the YAMLs for the tickets shown on the message, in
-  #      alphabetical order."
-  #  (2) "the links point to the yamls in the wrong places as the tickets might not be in the paused
-  #      folder anymore (might be active or done)" -> on follow-up the human chose "Current folder,
-  #      all shown links": every link the board shows resolves to the ticket's ACTUAL current folder,
-  #      keeping done/parked links reachable.
-  # "The tickets shown on the message" = everything the board message renders: the GRID (active
-  # pipeline rows) AND the below-grid lists (parked, recently-closed, root-intake) - NOT the grid
-  # alone. So the LINKS section links EVERY shown ticket (all four sources, reversing the earlier
-  # grid-only reading), ordered alphabetically, each link resolving to the ticket's current folder.
+  # AMENDED 2026-07-18 (twice). Original: "grid-only, alphabetical." Human directives:
+  #  (1) "in the LINKS section, put only the YAMLs for the tickets shown on the message" — every ticket the
+  #      board renders (grid PLUS the parked / recently-closed / root-intake lists), not the grid alone.
+  #  (2) "the links point to the yamls in the wrong places (tickets might be active or done, not paused)"
+  #      -> "Current folder, all shown links": each link resolves to the ticket's ACTUAL current folder.
+  #  (3) "i want the most recent tickets at the top as the ordering" — REVERSED the earlier "alphabetical"
+  #      reading. Order stays MOST-RECENT-FIRST (highest ticket number first, numeric-aware), which is
+  #      BL-506's existing behaviour — so THIS ticket does NOT change the order and does NOT retire BL-506.
+  #
+  # Net change over BL-506: PATH-correctness + FRESHNESS only. The link SET (all four sources) and the
+  # ORDER (most-recent-first) are BL-506's, unchanged. BL-506's feature remains the ordering contract; this
+  # feature covers the current-folder path resolution and the re-post-on-path-change freshness.
   #
   # Verified live layer (grep before editing; layers may have moved):
-  #  - pipelineBoard.ts buildLinks keeps all four link sources; comparator -> ascending id
-  #    localeCompare. linkPathFor + PipelineBoardTicketMeta.location gain a 'done' case.
-  #  - conciergeTick.ts buildTicketMetaLookup makes active AUTHORITATIVE over paused for a duplicated
-  #    id and adds a done pass (folders.done already loaded each tick).
-  #  - pipelineBoardSync.ts folds the link paths into the content signature (reversing BL-462's
-  #    exclusion) so a link-path change re-posts the pinned board instead of being skipped-unchanged.
+  #  - pipelineBoard.ts buildLinks keeps all four link sources AND keeps compareLinksMostRecentFirst
+  #    (do NOT change the comparator). linkPathFor + PipelineBoardTicketMeta.location gain a 'done' case.
+  #  - conciergeTick.ts buildTicketMetaLookup makes active AUTHORITATIVE over paused for a duplicated id
+  #    and adds a done pass (folders.done already loaded each tick).
+  #  - pipelineBoardSync.ts folds the link paths into the content signature (reversing BL-462's exclusion)
+  #    so a link-path change re-posts the pinned board instead of being skipped-unchanged.
 
   Background:
     Given a repo base url is configured so the board renders tappable ticket links
@@ -32,19 +33,6 @@ Feature: the pipeline board LINKS section links every shown ticket, alphabetical
     When the pipeline board links are rendered
     Then every shown ticket has a link
     And "BL-504", "BL-493", "BL-260", "BL-101" and "INTAKE-2026-07-18" all have links
-
-  # BL-513 pipeline-board-links-alphabetical-02
-  Scenario Outline: the links are listed in plain alphabetical (lexicographic) order across the whole set
-    Given the board shows tickets <tickets>
-    When the pipeline board links are rendered
-    Then the links appear in the order <order>
-
-    # Row 1: plain A->Z across mixed sources. Row 2: the load-bearing edge - lexicographic, NOT
-    # numeric, so the four-digit "BL-1000" sorts ABOVE the three-digit "BL-999".
-    Examples:
-      | tickets                        | order                          |
-      | "BL-504", "BL-101", "BL-260"   | "BL-101", "BL-260", "BL-504"   |
-      | "BL-999", "BL-1000"            | "BL-1000", "BL-999"            |
 
   # BL-513 pipeline-board-links-current-folder-03
   Scenario Outline: a link resolves to the folder the ticket is actually in

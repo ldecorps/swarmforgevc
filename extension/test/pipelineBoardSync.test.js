@@ -46,19 +46,14 @@ test('syncPipelineBoard: first call with no prior state creates the topic, posts
     T1
   );
 
-  const body = renderPipelineBoardBody(board([{ id: 'BL-1', column: 'coder', slug: '' }]));
   assert.equal(result.outcome, 'posted');
   assert.equal(created.length, 1);
   assert.equal(deleted.length, 0, 'expected no delete call - nothing was posted before');
-  // BL-513: result.state.contentSignature now folds in the (here empty)
-  // links signature too, so it is no longer byte-identical to the rendered
-  // body text or to the actually-POSTED text - assert the posted text
-  // directly against renderPipelineBoardBody + footer instead.
-  assert.deepEqual(posted, [{ topicId: 900, text: body + '\n\nupdated at Jul 16 20:05' }]);
+  assert.deepEqual(posted, [{ topicId: 900, text: result.state.contentSignature + '\n\nupdated at Jul 16 20:05' }]);
   assert.equal(result.state.topicId, 900);
   assert.equal(result.state.messageId, 42);
   assert.equal(result.state.lastChangeMs, T1);
-  assert.equal(result.state.contentSignature, body + '\n');
+  assert.equal(result.state.contentSignature, renderPipelineBoardBody(board([{ id: 'BL-1', column: 'coder', slug: '' }])));
   assert.equal(result.state.consecutiveFailures, 0);
   assert.equal(result.state.alertArmed, false);
 });
@@ -154,45 +149,6 @@ test('syncPipelineBoard: unchanged content is a no-op - no post, no delete, stat
   assert.deepEqual(deleted, []);
   assert.deepEqual(result.state, first.state);
   assert.equal(result.state.lastChangeMs, T1, 'expected the footer instant to stay at the last REAL change, not bump to T2');
-});
-
-// BL-513 pipeline-board-links-freshness-05: a shown ticket's link PATH
-// changing (e.g. a folder move/rename) - with the grid/parked body
-// otherwise byte-identical - must NOT be skipped as unchanged. BL-462's own
-// content signature excluded the link list entirely, so this exact case
-// silently kept a stale link on the pinned board; the signature now folds
-// link id:path pairs in too (see linksSignature in pipelineBoardSync.ts).
-test('BL-513: a link path change alone (body otherwise identical) reposts, never skipped as unchanged', async () => {
-  const posted = [];
-  const deleted = [];
-  const rows = [{ id: 'BL-540', column: 'coder', slug: '' }];
-  const dataBefore = { ...board(rows), links: [{ id: 'BL-540', path: 'backlog/paused/BL-540.yaml' }] };
-  const first = await syncPipelineBoard(dataBefore, undefined, fakeAdapters({ postMessage: async () => ({ messageId: 42 }) }), T1);
-
-  // Same rows/parked (so renderPipelineBoardBody's own text is byte-
-  // identical) - only the link's path changed, as it would once BL-540
-  // moves from paused/ to active/.
-  const dataAfter = { ...board(rows), links: [{ id: 'BL-540', path: 'backlog/active/BL-540.yaml' }] };
-  const result = await syncPipelineBoard(
-    dataAfter,
-    first.state,
-    fakeAdapters({
-      postMessage: async (topicId, text) => {
-        posted.push({ topicId, text });
-        return { messageId: 99 };
-      },
-      deleteMessage: async (topicId, messageId) => {
-        deleted.push({ topicId, messageId });
-        return true;
-      },
-    }),
-    T2
-  );
-
-  assert.equal(result.outcome, 'reposted', `expected a repost on a link-path-only change, got: ${result.outcome}`);
-  assert.equal(posted.length, 1);
-  assert.equal(deleted.length, 1, 'expected the stale-link message deleted after the fresh one posts');
-  assert.notEqual(result.state.contentSignature, first.state.contentSignature);
 });
 
 test('syncPipelineBoard: a failed topic creation is a no-op, retried next tick', async () => {

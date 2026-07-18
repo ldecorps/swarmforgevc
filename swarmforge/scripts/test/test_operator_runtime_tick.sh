@@ -896,8 +896,7 @@ printf '{"id":"SUP-1","status":"open","messages":[{"channel":"telegram","timesta
   > "$F/.swarmforge/support/threads/SUP-1.json"
 printf '{"type":"TELEGRAM_TOPIC_MESSAGE","subject":"SUP-1"}\n' > "$F/.swarmforge/operator/front-desk.events.inflight.jsonl"
 printf '{"thread-id":"SUP-1"}' > "$F/.swarmforge/operator/front-desk-dispatch-context.json"
-printf '{"is_error":false,"result":"BL-1 is targeted for this week.","total_cost_usd":0.0456,"model":"claude-opus-4-8"}' \
-  > "$F/.swarmforge/operator/front-desk-result.json"
+printf '{"is_error":false,"result":"BL-1 is targeted for this week."}' > "$F/.swarmforge/operator/front-desk-result.json"
 echo "$(( $(date +%s) * 1000 ))" > "$F/.swarmforge/operator/last-swarm-check"
 tick "$F" >/dev/null
 check "restricted-front-desk-operator-04: the reply reaches the SAME reply-outbox any Operator reply uses" \
@@ -906,16 +905,6 @@ check "restricted-front-desk-operator-04: the reply is appended to the thread's 
   'grep -q "BL-1 is targeted for this week." "$F/.swarmforge/support/threads/SUP-1.json"'
 check "restricted-front-desk-operator-04: the inflight batch is archived, not left dangling" \
   '[[ ! -f "$F/.swarmforge/operator/front-desk.events.inflight.jsonl" ]] && [[ -n "$(ls "$F/.swarmforge/operator/front-desk-events-done/" 2>/dev/null)" ]]'
-# ── BL-511: the exact reported cost is captured to the durable bridge-cost
-#    log, and this happens BEFORE the result file it lived in is deleted
-#    (both effects land within the same reap call - "before" is a code-
-#    ordering guarantee, proven here by both post-conditions holding).
-check "BL-511: the front-desk invocation's exact cost/model is captured to the bridge-cost log" \
-  'grep -q "\"kind\":\"front-desk\"" "$F/.swarmforge/operator/bridge-cost.jsonl" \
-     && grep -q "\"total_cost_usd\":0.0456" "$F/.swarmforge/operator/bridge-cost.jsonl" \
-     && grep -q "\"model\":\"claude-opus-4-8\"" "$F/.swarmforge/operator/bridge-cost.jsonl"'
-check "BL-511: the cost record was written before the result file it read was deleted" \
-  '[[ -f "$F/.swarmforge/operator/bridge-cost.jsonl" ]] && [[ ! -f "$F/.swarmforge/operator/front-desk-result.json" ]]'
 rm -rf "$F"
 
 # ── an errored/blank result never posts garbage to the human ─────────────
@@ -924,16 +913,13 @@ mkdir -p "$F/.swarmforge/support/threads"
 printf '{"id":"SUP-1","status":"open","messages":[]}' > "$F/.swarmforge/support/threads/SUP-1.json"
 printf '{"type":"TELEGRAM_TOPIC_MESSAGE","subject":"SUP-1"}\n' > "$F/.swarmforge/operator/front-desk.events.inflight.jsonl"
 printf '{"thread-id":"SUP-1"}' > "$F/.swarmforge/operator/front-desk-dispatch-context.json"
-printf '{"is_error":true,"result":"boom","total_cost_usd":0.0089,"model":"claude-opus-4-8"}' \
-  > "$F/.swarmforge/operator/front-desk-result.json"
+printf '{"is_error":true,"result":"boom"}' > "$F/.swarmforge/operator/front-desk-result.json"
 echo "$(( $(date +%s) * 1000 ))" > "$F/.swarmforge/operator/last-swarm-check"
 tick "$F" >/dev/null
 check "restricted-front-desk-operator: an errored result posts no reply" \
   '[[ ! -f "$F/.swarmforge/operator/telegram-reply-outbox.jsonl" ]]'
 check "restricted-front-desk-operator: the inflight is still archived even on error (never left dangling)" \
   '[[ ! -f "$F/.swarmforge/operator/front-desk.events.inflight.jsonl" ]]'
-check "BL-511: an errored call's cost is still captured (money was spent regardless of the reply outcome)" \
-  'grep -q "\"total_cost_usd\":0.0089" "$F/.swarmforge/operator/bridge-cost.jsonl"'
 rm -rf "$F"
 
 # ── 07: both Operators are reported, one atomic write, neither overwrites

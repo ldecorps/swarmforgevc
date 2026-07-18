@@ -403,23 +403,6 @@
   (when (and (not is_error) (not (str/blank? (or result ""))))
     result))
 
-;; BL-511: the ONE durable per-invocation record captured at reap time,
-;; BEFORE the front-desk result file is deleted (operator_runtime.bb) - the
-;; exact total_cost_usd that call already computed is otherwise thrown away
-;; with the result file it lived in. total_cost_usd is passed through
-;; UNCHANGED (nil stays nil, never coerced to 0 - the TypeScript attribution
-;; reader's own honest-null discipline depends on this: an unpriced/unknown
-;; cost must read as "unknown", never as "free"). The front-desk operator is
-;; DEDICATED to Telegram (100% of its cost is bridge cost, per the
-;; attribution rule this ticket pins), so telegram-events/total-events carry
-;; no meaning for this :kind and are omitted rather than a fabricated 1/1.
-(defn front-desk-cost-record
-  [{:keys [total_cost_usd model]} now-iso-str]
-  {:ts now-iso-str
-   :kind "front-desk"
-   :model model
-   :total_cost_usd total_cost_usd})
-
 ;; restricted-front-desk-operator-07: the front-desk Operator's own status,
 ;; reported ALONGSIDE (never instead of, never overwriting) the full
 ;; Operator's render-status above. operator_runtime.bb nests this under one

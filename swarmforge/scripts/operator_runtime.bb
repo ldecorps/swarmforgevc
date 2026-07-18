@@ -159,13 +159,6 @@
 ;; thread id it was dispatched for, so the LATER tick that reaps the result
 ;; knows which SUP-### thread to post the reply onto.
 (def front-desk-dispatch-context-file (fs/path op-dir "front-desk-dispatch-context.json"))
-;; BL-511: the durable, append-only per-invocation bridge-cost log - machine-
-;; local runtime state (gitignored .swarmforge/, never committed, never
-;; pushed into the static PWA/backlog.json projection per local-engineering
-;; rule 5). The daily-briefing CLI (extension/src/tools/
-;; telegram-bridge-cost-line.ts) reads this to attribute a day's Telegram
-;; front-desk bridge cost.
-(def bridge-cost-log-file (fs/path op-dir "bridge-cost.jsonl"))
 (def front-desk-session "front-desk-operator")
 ;; BL-325: the SAME BL-285 approve relay bl-topic-approval-sweep! below
 ;; shells out to directly - never a second relay.
@@ -374,14 +367,6 @@
 (defn append-event! [event]
   (fs/create-dirs op-dir)
   (spit (str events-file) (str (json/generate-string event) "\n") :append true))
-
-;; BL-511: thin append-only write of one bridge-cost record - the record
-;; itself is built by the PURE operator-lib/front-desk-cost-record; this is
-;; just the same append-event!-shaped IO glue, kept thin per the ticket's
-;; own "heavy attribution/formatting logic lives in TypeScript" scope.
-(defn append-bridge-cost-record! [record]
-  (fs/create-dirs op-dir)
-  (spit (str bridge-cost-log-file) (str (json/generate-string record) "\n") :append true))
 
 ;; BL-281: whole-file overwrite counterpart to append-event! - launch-
 ;; operator! below uses this to write EXACTLY the selected dispatch batch
@@ -1372,13 +1357,6 @@
                (support-lib/append-message thread support-lib/operator-channel (now-iso) reply)))
             (log! "front-desk-replied" thread-id))
         (when thread-id (log! "front-desk-no-reply" thread-id)))
-      ;; BL-511: capture the exact cost this invocation already computed
-      ;; BEFORE front-desk-result-file is deleted below - otherwise that
-      ;; figure is thrown away with the file it lived in. `result` is nil
-      ;; when the file never existed or failed to parse; the append is
-      ;; skipped rather than recording a fabricated zero.
-      (when result
-        (append-bridge-cost-record! (operator-lib/front-desk-cost-record result (now-iso))))
       (archive-inflight-batch! front-desk-inflight-file "front-desk-events-done")
       (fs/delete-if-exists front-desk-pid-file)
       (fs/delete-if-exists front-desk-dispatch-context-file)

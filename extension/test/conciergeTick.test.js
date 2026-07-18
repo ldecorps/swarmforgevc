@@ -2537,39 +2537,6 @@ test('BL-465: no readRepoBaseUrl means no link list at all, even with active row
   assert.ok(!posted[0].includes('<a href'));
 });
 
-// BL-513: buildTicketMetaLookup's authoritative-folder rule - a ticket id
-// that transiently exists in more than one folder at once (a stale
-// duplicate left behind during promotion) must link to the AUTHORITATIVE
-// folder (active wins over paused wins over done), never a stale copy.
-test('BL-513: a ticket active AND still duplicated in paused links to its active path, not the stale paused one', async () => {
-  const { adapters, setFolders } = fakeAdapters();
-  const posted = [];
-  adapters.boardAdapters.postMessage = async (topicId, text, linksHtml) => {
-    posted.push(wrapPipelineBoardHtml(text, linksHtml));
-    return { messageId: 1 };
-  };
-  adapters.boardAdapters.ensureBoardTopic = async () => ({ topicId: 900 });
-  adapters.readRoleHeldTickets = () => ({ coder: ['BL-540'] });
-  adapters.readRepoBaseUrl = () => 'https://github.com/ldecorps/swarmforgevc';
-  setFolders(
-    folders({
-      active: [{ id: 'BL-540', title: 'fix the widget', filename: 'BL-540-fix-the-widget.yaml' }],
-      // The stale duplicate: same id, still physically present under
-      // paused/ (e.g. a promotion that moved the active copy but left the
-      // old paused file behind).
-      paused: [{ id: 'BL-540', title: 'fix the widget', filename: 'BL-540-fix-the-widget.yaml' }],
-    })
-  );
-
-  await runConciergeTick(adapters);
-
-  assert.ok(
-    posted[0].includes('<a href="https://github.com/ldecorps/swarmforgevc/blob/main/backlog/active/BL-540-fix-the-widget.yaml">'),
-    `expected the active path linked, got:\n${posted[0]}`
-  );
-  assert.ok(!posted[0].includes('backlog/paused/BL-540'), `expected no stale paused-path link, got:\n${posted[0]}`);
-});
-
 // ── BL-434: Approvals topic roster wiring ─────────────────────────────────
 
 test('BL-434 approvals-standing-topic-04: the Approvals roster is posted once, then edited in place as the pending set grows', async () => {
