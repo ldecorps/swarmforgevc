@@ -102,9 +102,49 @@ test('readBridgeCostRecords: a record with a non-numeric, non-null total_cost_us
   assert.equal(readBridgeCostRecords(logPath).length, 0);
 });
 
+// null is a VALID cost (the honest-null "unpriced model" case) - present, well-formed
+// and must be ACCEPTED here, not confused with "malformed" and rejected. Pins the
+// well-formed side of isValidCost's `cost === null || typeof cost === 'number'` check.
+test('readBridgeCostRecords: a record with a null total_cost_usd (unpriced) is accepted, not skipped', () => {
+  const root = mkRepo();
+  const logPath = bridgeCostLogPath(root);
+  fs.mkdirSync(path.dirname(logPath), { recursive: true });
+  fs.writeFileSync(logPath, JSON.stringify({ ts: `${DAY}T09:00:00Z`, kind: 'front-desk', total_cost_usd: null }));
+  const records = readBridgeCostRecords(logPath);
+  assert.equal(records.length, 1);
+  assert.equal(records[0].total_cost_usd, null);
+});
+
+// A record missing `ts` (or carrying a non-string one) must be rejected at the parse
+// gate, never accepted with an unusable ts - downstream day-bucketing
+// (telegramBridgeCost.ts's dayKeyOf) calls `.slice(0, 10)` on it with no guard of its
+// own, so a record that slipped through here with a non-string ts would crash the
+// whole CLI the next time a day's records are computed, not merely mis-bucket.
+test('readBridgeCostRecords: a record with a missing ts is skipped, never accepted with an unusable ts', () => {
+  const root = mkRepo();
+  const logPath = bridgeCostLogPath(root);
+  fs.mkdirSync(path.dirname(logPath), { recursive: true });
+  fs.writeFileSync(logPath, JSON.stringify({ kind: 'front-desk', total_cost_usd: 0.04 }));
+  assert.equal(readBridgeCostRecords(logPath).length, 0);
+});
+
+test('readBridgeCostRecords: a record with a non-string ts is skipped', () => {
+  const root = mkRepo();
+  const logPath = bridgeCostLogPath(root);
+  fs.mkdirSync(path.dirname(logPath), { recursive: true });
+  fs.writeFileSync(logPath, JSON.stringify({ ts: 1784329533201, kind: 'front-desk', total_cost_usd: 0.04 }));
+  assert.equal(readBridgeCostRecords(logPath).length, 0);
+});
+
 // ── end-to-end: process.cwd/argv stubbed, console.log mocked ─────────────
 
-async function runCli(root, dayKey) {
+// Returns the console.log CALL COUNT alongside the joined text: joining zero calls and
+// joining one call with an empty-string argument both produce '' from Array#join, so a
+// string-only assertion cannot tell "never printed" apart from "printed a blank line" -
+// the exact difference between `if (line)` and a mutant `if (true)` guarding the one
+// console.log call below. Callers that need to prove "nothing was ever printed" must
+// assert on `calls`, not just `output`.
+async function runCliRaw(root, dayKey) {
   const originalCwd = process.cwd;
   const originalArgv = process.argv;
   const writes = [];
@@ -114,14 +154,18 @@ async function runCli(root, dayKey) {
   };
   try {
     process.cwd = () => root;
-    process.argv = ['node', 'telegram-bridge-cost-line.js', dayKey];
+    process.argv = dayKey === undefined ? ['node', 'telegram-bridge-cost-line.js'] : ['node', 'telegram-bridge-cost-line.js', dayKey];
     await main();
   } finally {
     console.log = originalLog;
     process.cwd = originalCwd;
     process.argv = originalArgv;
   }
-  return writes.join('\n');
+  return { output: writes.join('\n'), calls: writes.length };
+}
+
+async function runCli(root, dayKey) {
+  return (await runCliRaw(root, dayKey)).output;
 }
 
 function runCliSubprocess(root, dayKey) {
@@ -130,8 +174,11 @@ function runCliSubprocess(root, dayKey) {
 
 test('BL-511: prints nothing when the bridge-cost log has no records for the day (absent)', async () => {
   const root = mkRepo();
-  const output = await runCli(root, DAY);
+  const { output, calls } = await runCliRaw(root, DAY);
   assert.equal(output, '');
+  // Not just "the joined text is empty" (true for zero calls AND for one call logging
+  // an empty string alike) but that console.log was never actually invoked.
+  assert.equal(calls, 0);
 });
 
 test('BL-511: prints nothing when the bridge-cost log has records, but none for the requested day', async () => {
@@ -155,6 +202,20 @@ test('BL-511: prints the cost line once records exist for the day', async () => 
   writeLog(root, [{ ts: `${DAY}T09:00:00Z`, kind: 'front-desk', model: 'claude-opus-4-8', total_cost_usd: 0.04 }]);
   const output = await runCli(root, DAY);
   assert.match(output, /^Telegram bridge cost: \$0\.04 today/);
+});
+
+// The day-key arg is OPTIONAL (documented default: real UTC-today) - every other test
+// in this file injects it explicitly (the missing-seam/no-real-clock convention), so
+// this is the one deliberate exception: it pins the fallback itself, which by
+// definition only fires when the arg is OMITTED. Both reads of "now" (the fixture's
+// and the CLI's own todayUtc()) happen within the same synchronous test tick, so a
+// UTC-midnight race is not a realistic flake risk here.
+test('BL-511: an omitted day key falls back to real UTC-today, not a fixed/injected one', async () => {
+  const root = mkRepo();
+  const today = new Date().toISOString().slice(0, 10);
+  writeLog(root, [{ ts: `${today}T09:00:00Z`, kind: 'front-desk', total_cost_usd: 0.03 }]);
+  const output = await runCli(root, undefined);
+  assert.match(output, /^Telegram bridge cost: \$0\.03 today/);
 });
 
 // BL-511 amended to front-desk-only: an 'operator'-kind line (a stray

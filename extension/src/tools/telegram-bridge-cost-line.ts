@@ -46,6 +46,13 @@ function isValidCost(cost: unknown): cost is number | null {
   return cost === null || typeof cost === 'number';
 }
 
+// hardener note: the `!value || typeof value !== 'object'` guard and its `return false`
+// are mutation-equivalent at every real call site (parseBridgeCostLine below is the
+// only caller, and it wraps this whole call in a try/catch) - removing the guard just
+// means a non-object `value` (e.g. null) throws reading `candidate.ts` instead of
+// returning false, and that throw is caught one frame up with the same net result
+// (null). Do not chase a test to kill those mutants; there is no observable difference
+// to assert on.
 function isBridgeCostRecord(value: unknown): value is BridgeCostRecord {
   if (!value || typeof value !== 'object') {
     return false;
@@ -57,6 +64,11 @@ function isBridgeCostRecord(value: unknown): value is BridgeCostRecord {
 // A malformed/unrecognized line is skipped, never a crash - same forgiving-
 // reader posture as qaBounceStore.ts's readQaBounceFile/parseQaBounceLine
 // split, which this mirrors for the same CRAP-budget reason.
+//
+// hardener note: an empty `catch {}` (dropping the explicit `return null`) is also
+// mutation-equivalent - the only caller (readBridgeCostRecords below) only ever checks
+// the result for truthiness (`if (record)`), so an implicit `undefined` return behaves
+// identically to `null` there.
 function parseBridgeCostLine(line: string): BridgeCostRecord | null {
   try {
     const parsed: unknown = JSON.parse(line);
@@ -78,6 +90,9 @@ export function readBridgeCostRecords(logPath: string): BridgeCostRecord[] {
   }
   const records: BridgeCostRecord[] = [];
   for (const line of content.split('\n')) {
+    // hardener note: this blank-line skip is also mutation-equivalent - a blank/
+    // whitespace-only line always fails JSON.parse below regardless, so removing or
+    // widening this guard produces the same end result (line skipped) either way.
     if (!line.trim()) {
       continue;
     }

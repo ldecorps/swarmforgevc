@@ -60,6 +60,21 @@ test('computeTelegramBridgeCostForDay: an empty record list yields a zeroed, emp
   assert.deepEqual(summary, { totalUsd: 0, frontDeskCount: 0, frontDeskUsd: 0, unknownCount: 0 });
 });
 
+// The type says `kind: 'front-desk'` (the only variant left after the front-desk-only
+// amendment), but this function is an exported pure boundary reachable directly, not
+// only via the parse gate that already filters non-front-desk kinds - so its own
+// `kind === 'front-desk'` clause needs its own direct proof, independent of the CLI's
+// upstream gate (readBridgeCostRecords/telegramBridgeCostLineCli.test.js covers that
+// upstream rejection separately).
+test('computeTelegramBridgeCostForDay: a record of a foreign kind is excluded even if handed to this function directly', () => {
+  const summary = computeTelegramBridgeCostForDay(
+    [frontDesk({ total_cost_usd: 0.03 }), { ts: `${DAY}T10:00:00Z`, kind: 'operator', total_cost_usd: 0.5 }],
+    DAY
+  );
+  assert.equal(summary.frontDeskCount, 1);
+  assert.equal(summary.totalUsd, 0.03);
+});
+
 // ── BL-511 briefing-line-total-and-frontdesk-count-05 ─────────────────────
 
 test('formatTelegramBridgeCostLine: a day with front-desk activity shows the total and the call count, no Operator term', () => {
