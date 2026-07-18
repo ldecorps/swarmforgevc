@@ -557,12 +557,13 @@ export function startBridge(
     const server = http.createServer((req, res) => {
       const url = requestPath(req);
 
-      if (!isAuthorizedForRead(req.headers.authorization, url, registry)) {
-        res.writeHead(401, { 'content-type': 'application/json' });
-        res.end(JSON.stringify({ error: 'unauthorized' }));
-        return;
-      }
-
+      // BL-094: the root HTML shell includes an in-page token gate. Serve it
+      // WITHOUT requiring auth first — otherwise a plain browser open of the
+      // bridge URL (or the Cloudflare tunnel) only ever shows
+      // {"error":"unauthorized"} Pretty-print JSON, and the gate is unreachable.
+      // Data routes (/pipeline, /events, /holistic, …) stay bearer-gated below.
+      // ?token= is still accepted client-side for auto-unlock (and historically
+      // for server-side root auth); wrong tokens simply fail subsequent fetches.
       if (isRootPath(url)) {
         res.writeHead(200, {
           'content-type': 'text/html; charset=utf-8',
@@ -571,6 +572,12 @@ export function startBridge(
           'content-security-policy': "default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'",
         });
         res.end(getHolisticUiHtml());
+        return;
+      }
+
+      if (!isAuthorizedForRead(req.headers.authorization, url, registry)) {
+        res.writeHead(401, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ error: 'unauthorized' }));
         return;
       }
 

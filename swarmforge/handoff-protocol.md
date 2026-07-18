@@ -848,3 +848,10 @@ sessions before exiting 0.
 `./swarm ensure <root>` on a mono-router standing shape reports pipeline rotate
 targets as `DORMANT` (not `FAILED`), and respawns standing panes with full
 provider `-e` passthrough (OpenAI / Cerebras map / OpenRouter / Mistral).
+
+## Remote bridge UI (holistic / pipeline board)
+
+Headless bridge listens on port 8765 (`BRIDGE_TOKEN` from
+`.swarmforge/operator/bridge-token`). Open the **root** URL (not `/pipeline`):
+enter the bearer token, or use `/?token=…` once. A bare `/pipeline` URL still
+returns JSON 401 by design.

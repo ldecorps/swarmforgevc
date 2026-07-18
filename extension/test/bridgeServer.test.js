@@ -1,4 +1,3 @@
-const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -9,7 +8,7 @@ const { installInProcessTmux } = require('./helpers/fakeTmux');
 const TOKEN = 'test-token-123';
 
 function mkTmp() {
-  return mkTmpDir('sfvc-bridge-server-');
+  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-bridge-server-'));
 }
 
 function mkdirp(dir) {
@@ -823,21 +822,27 @@ test('a read-scoped device can list gates without the control step-up', async ()
   }
 });
 
-// BL-094: the root HTML shell - the one route reachable by a plain browser
-// navigation, so it accepts the token via query string as well as header.
-test('rejects a plain (unauthenticated) request to the root URL', async () => {
+// BL-094: the root HTML shell is reachable by a plain browser navigation so
+// the in-page token gate is usable. Auth still gates every data route.
+test('serves the root HTML token gate without a prior bearer/query token', async () => {
   const target = mkTmp();
   await withBridge(target, {}, async (handle) => {
     const res = await fetch(`http://127.0.0.1:${handle.port}/`);
-    assert.equal(res.status, 401);
+    assert.equal(res.status, 200);
+    assert.match(res.headers.get('content-type'), /text\/html/);
+    const body = await res.text();
+    assert.match(body, /tokenGate|bearer token/i);
   });
 });
 
-test('rejects a root request with the wrong query token', async () => {
+test('serves the root HTML shell even when the query token is wrong (data routes still 401)', async () => {
   const target = mkTmp();
   await withBridge(target, {}, async (handle) => {
     const res = await fetch(`http://127.0.0.1:${handle.port}/?token=wrong`);
-    assert.equal(res.status, 401);
+    assert.equal(res.status, 200);
+    assert.match(res.headers.get('content-type'), /text\/html/);
+    const denied = await fetch(`http://127.0.0.1:${handle.port}/pipeline?token=wrong`);
+    assert.equal(denied.status, 401);
   });
 });
 
