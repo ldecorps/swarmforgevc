@@ -1137,7 +1137,10 @@ RESUMECHECK
       launch_body="claude --settings '$settings_file'${claude_permission_flags}${claude_flags:+ $claude_flags} --append-system-prompt-file '$prompt_file' -n 'SwarmForge ${display}' \"\${RESUME_NOTE}Your constitution, pipeline, and role are already loaded above via --append-system-prompt-file. Begin your role loop now; if idle, run ready_for_next.sh.\""
       ;;
     codex)
-      launch_body="codex${extra_cli:+ $extra_cli} -C '$role_worktree' \"\${RESUME_NOTE}\$(cat '$prompt_file')\""
+      # Full prompt files exceed Linux MAX_ARG_STRLEN (~128KiB) when $(cat)'d
+      # into argv (coordinator ~135KB). Keep argv short: RESUME_NOTE + path.
+      # OPENAI_API_KEY arrives via tmux -e (BL-130), never written here.
+      launch_body="codex${extra_cli:+ $extra_cli} -C '$role_worktree' \"\${RESUME_NOTE}Read and obey every instruction in '$prompt_file' (constitution, pipeline, role, pack). Then begin your role loop; if idle, run ready_for_next.sh.\""
       ;;
     copilot)
       local copilot_dirs=""
