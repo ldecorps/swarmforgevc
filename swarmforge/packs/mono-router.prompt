@@ -106,3 +106,30 @@ scoped exception, never the steady state.
   throttle promotion or read as rework.
 - Handoffs: same as every pack — `swarm_handoff.sh <draft-file>`, never write
   into `inbox/new/` directly. See `swarmforge/handoff-protocol.md`.
+
+## After a parcel finishes (QA done) — home vs intake drain
+
+When the parcel ends (QA approved; coordinator does bookkeeping — you do not
+merge), do **not** always rotate straight home to coder.
+
+1. **Scan the backlog root** (`backlog/*.yaml` and `backlog/*.yml` sitting
+   directly under `backlog/`, not in `active/`/`paused/`/`done/`). Those are
+   raw human intakes.
+2. If **any root intake exists**, rotate to specifier and drain them first:
+   `rotate_to_role.sh specifier`
+   On wake as specifier: run `ready_for_next.sh` if a parcel is waiting; else
+   drain the root per constitution / specifier.prompt (write proper specs into
+   `backlog/paused/`, remove the raw root files, note the coordinator). Root
+   intake beats promoting or picking up already-paused work.
+3. If the root is **empty**, rotate **home**: `rotate_to_role.sh coder`.
+   Coordinator promotes from `paused/` → `active/` on its own loop; as coder
+   you then `ready_for_next.sh` for the next active parcel.
+
+## Idle at home (coder) with no parcel
+
+If you are **coder**, `ready_for_next.sh` returns `NO_TASK`, and the backlog
+root still has intake files — do not stay conversationally idle. Rotate to
+specifier and drain (`rotate_to_role.sh specifier`). Specifier is not only for
+downstream spec bounces; on this pack it also owns cold root-intake drain when
+the pipeline is otherwise empty.
+

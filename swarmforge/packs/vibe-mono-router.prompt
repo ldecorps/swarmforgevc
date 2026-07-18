@@ -1,30 +1,33 @@
-# codex-mono-router overlay: one resident OpenAI Codex agent, full pipeline stages
+# vibe-mono-router overlay: one resident Mistral Vibe agent, full pipeline stages
 
-Read this when your swarm was launched with the `codex-mono-router` pack. It
+Read this when your swarm was launched with the `vibe-mono-router` pack. It
 applies no matter which role you are currently playing — you are always the
-one resident process (OpenAI Codex via `OPENAI_API_KEY`, not Claude / not
-Mistral Vibe).
+one resident process (Mistral Vibe via `MISTRAL_API_KEY`, not Claude / not
+OpenRouter).
 
 ## Pipeline shape
 
 - Full chain, same as `swarmforge/PIPELINE.md`: **coder → cleaner → architect
   → hardender → documenter → QA**. **coder is your "home" identity** — the only
   standing session, and where already-specced `backlog/active/` work enters.
-- specifier is a rotation target for (a) downstream **spec-defect bounces** and
-  (b) **backlog-root intake drain** when raw `backlog/*.yaml` intakes exist and
-  the resident would otherwise be idle at home / post-QA with an empty root
-  check failing open toward specifier (see "After a parcel finishes" below).
-- Every gate still runs unabridged.
-- Coordinator is a SEPARATE codex process. You do not play coordinator.
+- specifier is a rotation target too, but you only become it when a downstream
+  stage BOUNCES a spec defect; brand-new unspecced intake will not cold-wake
+  this pack (spec elsewhere, or coordinator hands it straight to coder).
+- Every gate still runs unabridged. The saving is ONE process serving every
+  role in turn — never a lighter gate.
+- Coordinator is a SEPARATE vibe process. You do not play coordinator.
 
 ## How you rotate (instead of idling after a handoff)
 
 Once you have sent your `git_handoff` (`swarm_handoff.sh <draft>`) — or, at
 terminal QA, once your parcel-ending action is done — do NOT run
-`ready_for_next.sh` as your current self:
+`ready_for_next.sh` as your current self and do NOT export a new role by hand:
 
 1. Note the `to:` role of the handoff you just sent (forward or bounce).
 2. Run: **`rotate_to_role.sh <that-role>`**
+   - Waits until handoffd delivered the parcel to that role's inbox, then
+     respawns THIS pane running that role's launch script (new
+     `SWARMFORGE_ROLE`, worktree, prompt bootstrap).
 3. You come back up AS that role. Launch says `RESUME-ON-START`: run
    `ready_for_next.sh` first and pick up the parcel.
 
@@ -58,7 +61,8 @@ the pipeline is otherwise empty.
 ## Independence caveat
 
 You are both sides of every review. Re-derive from the ticket and code; do not
-wave a gate because you personally just wrote the change.
+wave a gate because you personally just wrote the change. If you would bounce
+a stranger, bounce yourself.
 
 ## Handoff drafts
 
