@@ -110,7 +110,7 @@
     {
       "role": "coordinator+specifier",
       "tokens": {
-        "value": 1504198,
+        "value": 1505373,
         "trend": {
           "series": [
             {
@@ -151,17 +151,17 @@
             },
             {
               "periodStart": "2026-07-18T00:00:00.000Z",
-              "value": 1504198
+              "value": 1505373
             }
           ],
-          "currentValue": 1504198,
+          "currentValue": 1505373,
           "priorValue": 4548815,
-          "delta": -3044617,
+          "delta": -3043442,
           "direction": "down"
         }
       },
       "costUsd": {
-        "value": 521.6290135500003,
+        "value": 522.0598983000002,
         "trend": {
           "series": [
             {
@@ -202,12 +202,12 @@
             },
             {
               "periodStart": "2026-07-18T00:00:00.000Z",
-              "value": 521.6290135500003
+              "value": 522.0598983000002
             }
           ],
-          "currentValue": 521.6290135500003,
+          "currentValue": 522.0598983000002,
           "priorValue": 1130.3133815999986,
-          "delta": -608.6843680499983,
+          "delta": -608.2534832999984,
           "direction": "down"
         }
       }
@@ -946,7 +946,7 @@
   },
   "reliability": {
     "chases": {
-      "value": 13300,
+      "value": 13301,
       "trend": {
         "series": [
           {
@@ -987,12 +987,12 @@
           },
           {
             "periodStart": "2026-07-18T00:00:00.000Z",
-            "value": 13300
+            "value": 13301
           }
         ],
-        "currentValue": 13300,
+        "currentValue": 13301,
         "priorValue": 6180,
-        "delta": 7120,
+        "delta": 7121,
         "direction": "up"
       }
     },
@@ -1048,7 +1048,7 @@
       }
     },
     "respawns": {
-      "value": 325,
+      "value": 327,
       "trend": {
         "series": [
           {
@@ -1089,12 +1089,12 @@
           },
           {
             "periodStart": "2026-07-18T00:00:00.000Z",
-            "value": 325
+            "value": 327
           }
         ],
-        "currentValue": 325,
+        "currentValue": 327,
         "priorValue": 154,
-        "delta": 171,
+        "delta": 173,
         "direction": "up"
       }
     },
