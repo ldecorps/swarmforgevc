@@ -3,6 +3,7 @@ title: "ModelFactory — assign agent models to roles (recruiter-backed; cheap v
 milestone: M5
 type: feature
 status: todo
+human_approval: pending
 severity: medium
 priority: 12
 direction: human-requested
