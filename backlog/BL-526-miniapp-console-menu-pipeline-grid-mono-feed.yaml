@@ -1,0 +1,56 @@
+id: BL-526
+title: "Miniapp console menu: portrait phone page with 2 buttons — pipeline grid-only view + mono-router resident live feed"
+milestone: M8
+type: feature
+epic: swarmforge-console
+priority: 7
+direction: human-requested
+depends_on: []
+parent: BL-517
+source: "Human directive in-session 2026-07-19: add a new intake for the miniapp console Milestone — menu page with 2 buttons pointing to (1) the pipeline grid (not the links below, so it fits phone portrait) and (2) the mono-router resident live feed. Land as backlog/ root intake for specifier drain."
+
+notes: |
+  WHAT / WHY: Slice 4 of the SwarmForge Console epic (BL-517) — the phone mini-app / webview entry
+  surface. Operator needs a portrait-first menu on a handset: two large tap targets, nothing else on the
+  landing page. One opens the pipeline board *grid only* (no link rail / list below the grid — same intent
+  as paused BL-513 grid-only portrait constraints). The other opens a live feed of the mono-router
+  resident (the single rotated role session: pane/trace/status), so the operator can glance at what the
+  resident is doing without SSH/WSL.
+
+  ACCEPTANCE (product — specifier must pin surface + exact feed source):
+    1. Landing / menu page shows exactly TWO primary buttons (labels may vary; meaning fixed):
+         a) Pipeline grid — navigates to pipeline board rendered as the STATUS GRID only in portrait;
+            do NOT include the "links below" / secondary link list that pushes content off a phone screen.
+         b) Mono-router live feed — navigates to a live view of the mono-router RESIDENT (active rotated
+            role: coder|specifier|qa|…), not the dormant peer panes and not the coordinator unless
+            specifier + human explicitly expand scope.
+    2. Portrait phone: menu + each destination usable without horizontal scroll; grid destination omits
+       the below-grid links section.
+    3. Auth / allowlist: ride the console allowlisted channel (Telegram mini-app / bridge holistic token
+       gate — specifier picks ONE transport; do not invent a second public frontend). No swarm data to
+       non-allowlisted callers; secrets never committed.
+    4. Specifier pins: which existing surface to extend (operator Telegram mini-app vs bridge HTML at
+       :8765 vs PWA), how "mono-router resident live feed" is sourced (pane-tail / operator status /
+       handoff stream), and how this child is recorded on BL-517 `decomposes_into`.
+
+  OUT OF SCOPE:
+    - Slice 1 command console (BL-516), slice 2 proactive alerts, slice 3 write/onboarding.
+    - Rebuilding the full pipeline board feature set unrelated to grid-only portrait + menu chrome.
+    - Promoting this umbrella-style — this IS a promotable child of BL-517, not another epic.
+
+  RELATED (do not duplicate; invent against these):
+    - BL-517 epic (slice 4 mini-app webview was "NOT YET TICKETED" — this intake IS that child).
+    - BL-513 paused: pipeline board links/grid alphabetical / grid-only portrait friction.
+    - BL-505–508 pipeline board / holistic UI line.
+    - Live bridge: holistic token-gate HTML on the operator bridge (portrait phone already a consumer).
+
+  SUCCESS: after specifier APS + pipeline, phone opens console menu → tap1 = pipeline status grid only →
+  tap2 = mono-router resident live feed; both fit portrait; allowlisted.
+
+suggested_test: |
+  Given the miniapp console menu is open on a portrait phone viewport
+  When the operator taps the pipeline-grid button
+  Then the pipeline STATUS GRID is shown without the below-grid links section
+  And when they return and tap the mono-router feed button
+  Then a live feed of the mono-router RESIDENT is shown
+  And neither destination requires horizontal scroll at a typical phone portrait width
