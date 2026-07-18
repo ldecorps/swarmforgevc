@@ -17,6 +17,30 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # Telegram is configured) the front-desk bridge+bot in one idempotent
 # command, then exits - it never falls into the full (destructive,
 # always-relaunch) launch flow below.
+# Usage / help before path resolution — otherwise `./swarm --help` is treated
+# as WORKING_DIR and fails with `cd: no such file or directory: --help`.
+if [[ "${1:-}" == "--help" || "${1:-}" == "-h" || "${1:-}" == "help" ]]; then
+  cat <<'USAGE'
+SwarmForge launcher
+
+  ./swarm <project-root> [--pack NAME]
+      Launch (or relaunch) the swarm for <project-root>.
+      --pack NAME  → swarmforge/packs/NAME.conf
+
+  ./swarm ensure <project-root>
+      Idempotent repair: extension, standing agent panes, handoffd,
+      operator, Telegram front desk. Mono-router dormant rotate targets
+      report DORMANT (not FAILED).
+
+  ./swarm attach ...
+      Attach helpers (see swarm_attach.sh).
+
+  Pack switch helpers (cold swap until BL-525 ModelFactory):
+      swarmforge/scripts/failover_to_gpt.sh <project-root>
+USAGE
+  exit 0
+fi
+
 if [[ "${1:-}" == "ensure" ]]; then
   shift
   ENSURE_WORKING_DIR="${1:-$PWD}"

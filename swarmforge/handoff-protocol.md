@@ -838,3 +838,13 @@ or the removed send/receive/complete/resend wrapper scripts.
 - Helper scripts do not provide recovery modes for ambiguous queue state.
 - The daemon does not perform a second full validation pass on outbox files;
   `swarm_handoff.sh` is the validation boundary.
+
+## Cold pack switch (until BL-525 ModelFactory)
+
+`swarmforge/scripts/failover_to_gpt.sh <root>` — kill + relaunch `--pack codex-mono-router`
+with `OPENAI_API_KEY` from the environment (BL-130). Verifies coder+coordinator
+sessions before exiting 0.
+
+`./swarm ensure <root>` on a mono-router standing shape reports pipeline rotate
+targets as `DORMANT` (not `FAILED`), and respawns standing panes with full
+provider `-e` passthrough (OpenAI / Cerebras map / OpenRouter / Mistral).

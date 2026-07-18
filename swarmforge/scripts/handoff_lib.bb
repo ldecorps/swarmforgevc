@@ -339,23 +339,39 @@
   (str (fs/path (target-root) ".swarmforge" "launch" (str role-name ".sh"))))
 
 (defn openrouter-pane-env-args
-  "Same BL-130 ephemeral -e injection launch_role / chase / ensure use.
-   Mono-router rotate and idle-clear respawns must not drop OPENROUTER_API_KEY
-   or the next role boots with an empty ANTHROPIC_AUTH_TOKEN."
+  "BL-130 ephemeral -e injection for launch_role / chase / ensure / rotate.
+   Must not drop OpenRouter/OpenAI/Mistral/Cerebras auth on respawn. When
+   SWARMFORGE_USE_CEREBRAS=1, CEREBRAS_API_KEY wins for OPENAI_* (host
+   OPENAI_API_KEY must not shadow the Cerebras OpenAI-compat path)."
   []
-  (cond-> []
-    (not (str/blank? (System/getenv "OPENROUTER_API_KEY")))
-    (concat ["-e" (str "OPENROUTER_API_KEY=" (System/getenv "OPENROUTER_API_KEY"))])
-    (not (str/blank? (System/getenv "CLAUDE_CODE_MAX_OUTPUT_TOKENS")))
-    (concat ["-e" (str "CLAUDE_CODE_MAX_OUTPUT_TOKENS=" (System/getenv "CLAUDE_CODE_MAX_OUTPUT_TOKENS"))])
-    (not (str/blank? (System/getenv "CEREBRAS_API_KEY")))
-    (concat ["-e" (str "CEREBRAS_API_KEY=" (System/getenv "CEREBRAS_API_KEY"))])
-    (not (str/blank? (System/getenv "OPENAI_API_KEY")))
-    (concat ["-e" (str "OPENAI_API_KEY=" (System/getenv "OPENAI_API_KEY"))])
-    (not (str/blank? (System/getenv "OPENAI_API_BASE")))
-    (concat ["-e" (str "OPENAI_API_BASE=" (System/getenv "OPENAI_API_BASE"))])
-    (not (str/blank? (System/getenv "OPENAI_BASE_URL")))
-    (concat ["-e" (str "OPENAI_BASE_URL=" (System/getenv "OPENAI_BASE_URL"))])))
+  (let [use-cerebras (= "1" (System/getenv "SWARMFORGE_USE_CEREBRAS"))
+        cerebras (System/getenv "CEREBRAS_API_KEY")
+        openai (if (and use-cerebras (not (str/blank? cerebras)))
+                 cerebras
+                 (System/getenv "OPENAI_API_KEY"))
+        openai-base (if (and use-cerebras (not (str/blank? cerebras)))
+                      "https://api.cerebras.ai/v1"
+                      (System/getenv "OPENAI_API_BASE"))
+        openai-base-url (if (and use-cerebras (not (str/blank? cerebras)))
+                          "https://api.cerebras.ai/v1"
+                          (System/getenv "OPENAI_BASE_URL"))]
+    (cond-> []
+      (not (str/blank? (System/getenv "OPENROUTER_API_KEY")))
+      (concat ["-e" (str "OPENROUTER_API_KEY=" (System/getenv "OPENROUTER_API_KEY"))])
+      (not (str/blank? (System/getenv "CLAUDE_CODE_MAX_OUTPUT_TOKENS")))
+      (concat ["-e" (str "CLAUDE_CODE_MAX_OUTPUT_TOKENS=" (System/getenv "CLAUDE_CODE_MAX_OUTPUT_TOKENS"))])
+      (not (str/blank? (System/getenv "MISTRAL_API_KEY")))
+      (concat ["-e" (str "MISTRAL_API_KEY=" (System/getenv "MISTRAL_API_KEY"))])
+      (not (str/blank? cerebras))
+      (concat ["-e" (str "CEREBRAS_API_KEY=" cerebras)])
+      use-cerebras
+      (concat ["-e" "SWARMFORGE_USE_CEREBRAS=1"])
+      (not (str/blank? openai))
+      (concat ["-e" (str "OPENAI_API_KEY=" openai)])
+      (not (str/blank? openai-base))
+      (concat ["-e" (str "OPENAI_API_BASE=" openai-base)])
+      (not (str/blank? openai-base-url))
+      (concat ["-e" (str "OPENAI_BASE_URL=" openai-base-url)]))))
 
 (defn mono-router-resident-session
   "Standing pipeline pane under config rotation router: first non-coordinator
