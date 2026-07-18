@@ -1,0 +1,13 @@
+id: BL-526
+title: Miniapp Console Menu Pipeline Grid
+milestone: M8
+epic: swarmforge-console
+acceptance:
+  - scenario: Accessing Pipeline Status Grid
+    given: The miniapp console menu is open on a portrait phone viewport
+    when: The operator taps the pipeline-grid button
+    then: The pipeline STATUS GRID is shown without the below-grid links section
+    and: When they return and tap the mono-router feed button
+    then: A live feed of the mono-router RESIDENT is shown
+    and: Neither destination requires horizontal scroll at a typical phone portrait width
+notes: Transport pinning (bridge/Telegram miniapp)
