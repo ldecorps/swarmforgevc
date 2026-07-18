@@ -1310,11 +1310,18 @@ launch_role() {
   local -a provider_env_flags=()
   if [[ "$agent" != "claude" ]]; then
     local provider_key
-    for provider_key in OPENAI_API_KEY MISTRAL_API_KEY; do
+    for provider_key in OPENAI_API_KEY MISTRAL_API_KEY CEREBRAS_API_KEY; do
       if [[ -n "${(P)provider_key:-}" ]]; then
         provider_env_flags+=(-e "${provider_key}=${(P)provider_key}")
       fi
     done
+    if [[ "${SWARMFORGE_USE_CEREBRAS:-}" == "1" && -n "${CEREBRAS_API_KEY:-}" ]]; then
+      # Cerebras OpenAI-compatible API for aider packs: map key → OPENAI_* via -e
+      # (BL-130). Window lines supply non-secret --openai-api-base.
+      provider_env_flags+=(-e "OPENAI_API_KEY=${CEREBRAS_API_KEY}")
+      provider_env_flags+=(-e "OPENAI_API_BASE=https://api.cerebras.ai/v1")
+      provider_env_flags+=(-e "OPENAI_BASE_URL=https://api.cerebras.ai/v1")
+    fi
   elif role_uses_openrouter "$role"; then
     # OpenRouter-backed claude role: same ephemeral -e injection - the key
     # reaches the launch script's `export ANTHROPIC_AUTH_TOKEN="$OPENROUTER_API_KEY"`

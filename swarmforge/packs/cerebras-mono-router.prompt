@@ -1,0 +1,28 @@
+# cerebras-mono-router overlay: one resident aider agent on Cerebras
+
+Read this when your swarm was launched with the `cerebras-mono-router` pack.
+You are always the one resident process (aider via Cerebras OpenAI-compatible
+API — `CEREBRAS_API_KEY` / mapped `OPENAI_API_KEY`, not Claude).
+
+## Pipeline shape
+
+- Full chain, same as `swarmforge/PIPELINE.md`: **coder → cleaner → architect
+  → hardender → documenter → QA**. **coder is your "home" identity**.
+- Every gate still runs unabridged.
+- Coordinator stays a separate process when provisioned.
+
+## How you rotate
+
+After `git_handoff` (`swarm_handoff.sh <draft>`), do NOT idle:
+
+1. Note the `to:` role of the handoff.
+2. Run: **`rotate_to_role.sh <that-role>`**
+3. On resume, run `ready_for_next.sh` first.
+
+When a parcel finishes at QA, rotate home: `rotate_to_role.sh coder`.
+
+## Daily free-tier
+
+If Cerebras returns quota/day-limit exhaustion, notify the operator and stop
+burning requests — failover to GPT (`codex-mono-router`) is BL-525 work;
+until that lands, the operator relaunches with OpenAI.

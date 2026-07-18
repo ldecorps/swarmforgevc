@@ -347,7 +347,15 @@
     (not (str/blank? (System/getenv "OPENROUTER_API_KEY")))
     (concat ["-e" (str "OPENROUTER_API_KEY=" (System/getenv "OPENROUTER_API_KEY"))])
     (not (str/blank? (System/getenv "CLAUDE_CODE_MAX_OUTPUT_TOKENS")))
-    (concat ["-e" (str "CLAUDE_CODE_MAX_OUTPUT_TOKENS=" (System/getenv "CLAUDE_CODE_MAX_OUTPUT_TOKENS"))])))
+    (concat ["-e" (str "CLAUDE_CODE_MAX_OUTPUT_TOKENS=" (System/getenv "CLAUDE_CODE_MAX_OUTPUT_TOKENS"))])
+    (not (str/blank? (System/getenv "CEREBRAS_API_KEY")))
+    (concat ["-e" (str "CEREBRAS_API_KEY=" (System/getenv "CEREBRAS_API_KEY"))])
+    (not (str/blank? (System/getenv "OPENAI_API_KEY")))
+    (concat ["-e" (str "OPENAI_API_KEY=" (System/getenv "OPENAI_API_KEY"))])
+    (not (str/blank? (System/getenv "OPENAI_API_BASE")))
+    (concat ["-e" (str "OPENAI_API_BASE=" (System/getenv "OPENAI_API_BASE"))])
+    (not (str/blank? (System/getenv "OPENAI_BASE_URL")))
+    (concat ["-e" (str "OPENAI_BASE_URL=" (System/getenv "OPENAI_BASE_URL"))])))
 
 (defn mono-router-resident-session
   "Standing pipeline pane under config rotation router: first non-coordinator

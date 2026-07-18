@@ -1,0 +1,58 @@
+id: BL-525
+title: "Exhaust daily free-tier caps across capped providers (Cerebras → GPT fallback)"
+milestone: M5
+type: feature
+status: todo
+severity: medium
+priority: 15
+direction: human-requested
+depends_on: []
+assigned_to: specifier
+source: "human (ldecorps) via Cursor chat 2026-07-18 — after Cerebras API key save + request to try swarm on Cerebras and switch to GPT when free tokens are exhausted: 'File in ticket (which will be implemented next) that aims at exhausting my daily limits from the providers which offer a daily cap, such as cerebras and gpt.'"
+
+description: |
+  Raw human intake — specifier drains first into paused/ with a proper APS
+  feature + notes. Implementation is NEXT after this intake is filed.
+
+  Goal: automatically (or with a one-command operator path) burn through
+  providers that expose a **daily free/usage cap**, then fail over to the next
+  provider in a preference order — starting with Cerebras free daily, then GPT
+  (OpenAI Codex / `codex-mono-router` or equivalent), without wasting paid
+  OpenRouter / Claude quota while free daily remains.
+
+  Observed operator posture (2026-07-18):
+  - `CEREBRAS_API_KEY` saved in `~/.zshenv` (BL-130; never commit).
+  - Want: start swarm on Cerebras; when free daily exhausted, switch to GPT.
+  - Related existing machinery (do not reinvent blindly):
+    - `provider_quota_lib.bb` / `provider_quota_alert.bb` — dry/quota alerts
+      (openai/mistral/gemini/…; Cerebras not listed yet).
+    - Packs: `openrouter-cheap-mono-router`, `codex-mono-router`,
+      `mistral-lean` / aider alternate runtime (BL-130).
+    - OpenRouter key **monthly** spend cap is a different failure mode than a
+      provider **daily** free cap — ticket must distinguish them.
+
+  Specifier must pin:
+  1. Which providers count as "daily capped" (Cerebras free tier, OpenAI
+     free/daily if applicable, others as discovered) and how "exhausted
+     today" is detected (HTTP 402/429 + body classification, provider usage
+     API if any, local spend counter).
+  2. Preference / failover order (default: Cerebras free → GPT → existing
+     paid backends), pack or runtime switch procedure (kill+relaunch pack vs
+     in-place rotate), and operator Telegram notify on switch.
+  3. BDD: exhausting Cerebras daily does not burn OpenRouter; GPT pack starts
+     only after Cerebras classified dry-for-today; next calendar day Cerebras
+     preferred again if quota reset.
+  4. Secrets remain BL-130: keys via pane `-e` / login env only.
+
+acceptance: |
+  Specifier produces paused APS feature + draining notes. Coder implements
+  detection + failover (or pack switch helper) with tests. Documenter writes
+  runbook: how free-daily exhaustion is detected and how GPT takeover is
+  triggered. QA verifies against live Cerebras dry / GPT availability signals
+  (fixture-friendly where live caps cannot be forced).
+
+out_of_scope: |
+  - Paying to raise paid caps.
+  - Auto-purchasing provider credits.
+  - Replacing OpenRouter monthly-limit handling (already operator-known);
+    cross-link only.
