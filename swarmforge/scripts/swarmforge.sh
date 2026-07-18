@@ -300,6 +300,22 @@ validate_agent() {
   esac
 }
 
+
+# OpenRouter: a claude-harness role is OpenRouter-backed when its name appears
+# in the space-separated SWARMFORGE_OPENROUTER_ROLES env list. Env-gated on
+# purpose (NOT a conf schema change): default-empty means every claude role
+# keeps first-party subscription auth exactly as before, and the routing is
+# fully reversible per launch (unset the var / drop the role from it). The
+# role's OpenRouter model slug is carried by its existing --model flag in the
+# conf window line; only the auth target changes here, not the harness.
+role_uses_openrouter() {
+  local role="$1" r
+  for r in ${(s: :)SWARMFORGE_OPENROUTER_ROLES:-}; do
+    [[ "$r" == "$role" ]] && return 0
+  done
+  return 1
+}
+
 # Registers one role into the parallel ROLES/AGENTS/SESSIONS/etc. arrays -
 # shared by parse_config's per-conf-line loop and provision_coordinator
 # (BL-243) so the role model (which array a role occupies a slot in) is a
@@ -1167,7 +1183,17 @@ RESUMECHECK
   local billing_guard=""
   local copilot_guard=""
   if [[ "$agent" == "claude" ]]; then
-    billing_guard=$'unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN\n'
+    if role_uses_openrouter "$role"; then
+      # OpenRouter-backed claude role: do NOT unset the auth token (that unset
+      # is what forces subscription auth for every other claude role). Point the
+      # harness at OpenRouter's Anthropic-compatible endpoint ("Anthropic Skin")
+      # and authenticate with OPENROUTER_API_KEY, which arrives in the pane env
+      # via respawn-pane -e (see launch_role) and is never written into this
+      # file - same BL-130 secrets rule as the MISTRAL/OPENAI provider keys.
+      billing_guard=$'export ANTHROPIC_BASE_URL=\'https://openrouter.ai/api\'\nexport ANTHROPIC_AUTH_TOKEN="$OPENROUTER_API_KEY"\n'
+    else
+      billing_guard=$'unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN\n'
+    fi
   elif [[ "$agent" == "copilot" ]]; then
     copilot_guard=$'export COPILOT_ALLOW_ALL=1\n'
   fi
@@ -1289,6 +1315,18 @@ launch_role() {
         provider_env_flags+=(-e "${provider_key}=${(P)provider_key}")
       fi
     done
+  elif role_uses_openrouter "$role"; then
+    # OpenRouter-backed claude role: same ephemeral -e injection - the key
+    # reaches the launch script's `export ANTHROPIC_AUTH_TOKEN="$OPENROUTER_API_KEY"`
+    # via the pane env, never persisted to disk (BL-130).
+    if [[ -n "${OPENROUTER_API_KEY:-}" ]]; then
+      provider_env_flags+=(-e "OPENROUTER_API_KEY=${OPENROUTER_API_KEY}")
+    fi
+    # Cap max output so OpenRouter's pre-reserve against remaining credits
+    # does not 402 expensive models (Gemini) when balance is thin.
+    if [[ -n "${CLAUDE_CODE_MAX_OUTPUT_TOKENS:-}" ]]; then
+      provider_env_flags+=(-e "CLAUDE_CODE_MAX_OUTPUT_TOKENS=${CLAUDE_CODE_MAX_OUTPUT_TOKENS}")
+    fi
   fi
 
   wait_for_session_pane "$session"

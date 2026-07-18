@@ -595,19 +595,42 @@
                                      (.toMillis (fs/last-modified-time d))))]
     (chase-sweep-lib/track-pane-activity! (:role role-info) pane outbox-activity-ms now-ms)))
 
+(defn openrouter-respawn-env-args
+  "BL-130: OPENROUTER_API_KEY must reach the pane via ephemeral tmux -e, never
+   a launch-script export. launch_role in swarmforge.sh already does this on
+   first start; chase/ensure respawns historically omitted -e, so an
+   OpenRouter-backed pane came back with an empty ANTHROPIC_AUTH_TOKEN and
+   then failed every turn (malformed/empty HTTP 200). Pass the key (and the
+   optional max-output cap) whenever they are present in the daemon env."
+  []
+  (cond-> []
+    (not (str/blank? (System/getenv "OPENROUTER_API_KEY")))
+    (concat ["-e" (str "OPENROUTER_API_KEY=" (System/getenv "OPENROUTER_API_KEY"))])
+    (not (str/blank? (System/getenv "CLAUDE_CODE_MAX_OUTPUT_TOKENS")))
+    (concat ["-e" (str "CLAUDE_CODE_MAX_OUTPUT_TOKENS=" (System/getenv "CLAUDE_CODE_MAX_OUTPUT_TOKENS"))])))
+
 (defn do-respawn!
   "Busy-vs-wedged precheck (BL-137/BL-147 parity): never types/respawns into
    a pane showing Claude Code's busy footer. Otherwise force-relaunches the
    role's persisted launch script in place, the same tmux respawn-pane -k
-   invocation launch_role/swarm_ensure.bb already use."
+   invocation launch_role/swarm_ensure.bb already use.
+
+   Launch script is always the canonical project-root
+   .swarmforge/launch/<role>.sh (same as swarm_ensure.bb/respawn-role!) —
+   never a worktree-local copy, which can drift or be missing and which once
+   left the coordinator session running the coder script after a bad repair."
   [role-info socket]
   (let [session (:session role-info)
+        role (:role role-info)
         pane (try (capture-pane-text socket session) (catch Exception _ ""))]
     (if (chase-sweep-lib/actively-processing? pane)
-      (log! "chase-respawn-skip-busy" (:role role-info))
-      (let [launch-script (fs/path (:worktree-path role-info) ".swarmforge" "launch" (str (:role role-info) ".sh"))]
-        (log! "chase-respawn" (:role role-info))
-        (tmux! "-S" socket "respawn-pane" "-k" "-t" session (str "zsh '" launch-script "'"))))))
+      (log! "chase-respawn-skip-busy" role)
+      (let [launch-script (fs/path state-dir "launch" (str role ".sh"))
+            env-args (openrouter-respawn-env-args)]
+        (log! "chase-respawn" role (str launch-script))
+        (apply tmux! (concat ["-S" socket "respawn-pane" "-k"]
+                             env-args
+                             ["-t" session (str "zsh '" launch-script "'")]))))))
 
 (defn write-chase-status! [now-ms]
   (fs/create-dirs daemon-dir)
@@ -787,6 +810,27 @@
       (auto-route! item)
       (catch Exception e
         (log! "dispatch-gap-autoroute-error" (:id item) (:assigned-to item) (.getMessage e))))))
+
+
+;; ── Unassigned-active coordinator nudge (sibling of BL-222) ────────────────
+;; Does NOT set assigned_to. Drops a note on the coordinator so it assigns
+;; and routes. Same SWARMFORGE_ROLE=coordinator outbound path as auto-route!.
+
+(defn nudge-coordinator-unassigned! [item]
+  (let [draft (write-scratch-draft! (chase-sweep-lib/unassigned-active-draft-lines item))
+        env (merge (into {} (System/getenv)) {"SWARMFORGE_ROLE" "coordinator"})
+        result (process/sh ["bb" (swarm-handoff-script) (str draft)] {:dir (str project-root) :env env})]
+    (if (zero? (:exit result))
+      (log! "unassigned-active-nudge" (:id item))
+      (log! "unassigned-active-nudge-error" (:id item) (str (:err result))))))
+
+(defn unassigned-active-nudge-sweep! [roles]
+  (doseq [item (chase-sweep-lib/unassigned-active-items (active-backlog-dir) (dispatch-gap-scan-dirs roles))]
+    (try
+      (nudge-coordinator-unassigned! item)
+      (catch Exception e
+        (log! "unassigned-active-nudge-error" (:id item) (.getMessage e))))))
+
 
 ;; ── BL-214: briefing-email sweep - the daemon's fourth duty ─────────────────
 ;; Runs on the SAME cadence as chase-sweep!/dispatch-gap-sweep! above (no
@@ -1498,6 +1542,10 @@
                       (dispatch-gap-sweep! (load-roles))
                       (catch Exception e
                         (log! "dispatch-gap-sweep-error" (.getMessage e))))
+                    (try
+                      (unassigned-active-nudge-sweep! (load-roles))
+                      (catch Exception e
+                        (log! "unassigned-active-nudge-sweep-error" (.getMessage e))))
                     ;; BL-214: briefing-email sweep shares the same cadence -
                     ;; no separate timeout, same rationale as BL-222 above.
                     (try

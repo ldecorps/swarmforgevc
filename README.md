@@ -195,7 +195,7 @@ In a runnable branch:
 
 ## Handoff Protocol
 
-Startup syncs the shared helper scripts into every role worktree under `swarmforge/scripts/` and puts that local directory on the agent's `PATH`. Agents do not send tmux messages directly. The launcher starts `handoffd.bb`, which owns tmux socket access, watches each agent outbox, copies validated handoff files into recipient inboxes, and sends only generic wake-up notifications.
+Startup syncs the shared helper scripts into every role worktree under `swarmforge/scripts/` and puts that local directory on the agent's `PATH`. Agents do not send tmux messages directly. The launcher starts `handoffd.bb`, which owns tmux socket access, watches each agent outbox, copies validated handoff files into recipient inboxes, and sends only generic wake-up notifications. On the same cadence it also closes dispatch gaps: assigned-but-never-routed active tickets get an auto-route note to their assignee (BL-222), and active-but-unassigned tickets get a note to the coordinator asking it to `assigned_to` + route (the daemon never writes `assigned_to` itself).
 
 Agents interact with handoffs through three helper scripts:
 

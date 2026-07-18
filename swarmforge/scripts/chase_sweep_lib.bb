@@ -595,3 +595,54 @@
    (str "to: " (:assigned-to item))
    "priority: 00"
    (str "message: " (dispatch-gap-note-message (:id item)))])
+
+;; ── Unassigned-active coordinator nudge ─────────────────────────────────────
+;; Sibling of BL-222 dispatch-gap: an active/*.yaml with an id but NO
+;; assigned_to is invisible to read-active-items / auto-route (those require
+;; an assignee). Without a nudge, the ticket sits at board NS forever while
+;; the coordinator idles on mailbox NO_TASK (it must not self-poll). The
+;; durable close is: the daemon notices unassigned actives with no handoff
+;; trail yet and drops a note on the COORDINATOR so *it* assigns + routes —
+;; never inventing assigned_to here (constitution: intake/routing is the
+;; coordinator's exclusive duty).
+
+(defn- blank-assigned? [assigned-to]
+  (or (nil? assigned-to) (str/blank? assigned-to)))
+
+(defn read-unassigned-active-items
+  "Every backlog/active/*.yaml with an id and a missing/blank assigned_to.
+   These need a coordinator nudge, not an assignee auto-route."
+  [active-dir]
+  (if-not (fs/exists? active-dir)
+    []
+    (->> (fs/list-dir active-dir)
+         (filter #(str/ends-with? (fs/file-name %) ".yaml"))
+         (map read-active-item)
+         (filter #(and (:id %) (blank-assigned? (:assigned-to %))))
+         vec)))
+
+(defn unassigned-active-items
+  "Unassigned actives that still have no handoff trail anywhere — same
+   decide-dispatch-gaps core as BL-222, different input set."
+  [active-dir scan-dirs]
+  (decide-dispatch-gaps (read-unassigned-active-items active-dir)
+                        (collect-dispatched-ticket-ids scan-dirs)))
+
+(defn unassigned-active-note-message
+  "Leads with the ticket id so the next sweep treats the nudge itself as a
+   trail (no spam). Coordinator must then assign_to + route; we never set
+   assigned_to from this sweep."
+  [item-id]
+  (let [msg (str item-id " active unassigned - assign_to and route it.")]
+    (if (<= (count msg) dispatch-gap-note-max-length)
+      msg
+      (subs msg 0 dispatch-gap-note-max-length))))
+
+(defn unassigned-active-draft-lines
+  "Note to the coordinator only — never to coder/specifier. Assignment is
+   the coordinator's job."
+  [item]
+  ["type: note"
+   "to: coordinator"
+   "priority: 00"
+   (str "message: " (unassigned-active-note-message (:id item)))])
