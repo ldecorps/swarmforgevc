@@ -1,0 +1,40 @@
+id: BL-523
+title: Add OpenRouter as alternate provider for claude-harness roles
+description: |
+  Add OpenRouter provider support to allow claude-harness roles to use OpenRouter's
+  Anthropic-compatible endpoint instead of first-party subscription auth. This enables
+  model selection per role via OpenRouter's model catalog while maintaining the existing
+  auth model for roles not configured to use OpenRouter.
+
+  Key requirements:
+  - OpenRouter routing is controlled by SWARMFORGE_OPENROUTER_ROLES environment variable
+    (space-separated list of role names). Empty/default means all claude roles use
+    first-party subscription auth (unchanged behavior).
+  - OPENROUTER_API_KEY is injected ephemerally via tmux pane env (BL-130 rule), never
+    written to swarmforge.conf or any tracked file.
+  - The role's model slug continues to be carried by the existing --model flag in the
+    conf window line; only the auth target and base URL change.
+  - The mechanism must be fully reversible: unsetting SWARMFORGE_OPENROUTER_ROLES or
+    removing a role from it restores first-party auth for that role.
+  - Must not break existing claude roles that do not use OpenRouter.
+  
+  Implementation scope:
+  - swarmforge/scripts/swarmforge.sh: add role_uses_openrouter() helper and update
+    billing_guard/launch_role logic to route OpenRouter-backed claude roles to
+    OpenRouter's Anthropic-compatible endpoint.
+  - Test coverage per engineering.prompt: shell test coverage in
+    swarmforge/scripts/test/ for the new routing logic.
+
+  Out of scope:
+  - Changing which specific models roles use (model selection is a separate human
+    decision per role, not part of the mechanism). The draft patch includes a
+    worked example switching documenter to deepseek/deepseek-chat; this is an
+    example usage, not a requirement of the mechanism itself.
+
+  Secrets handling:
+  - OPENROUTER_API_KEY follows BL-130: ephemeral -e pane injection only, never
+    persisted to disk.
+
+priority: 20
+mutation_cost: medium
+acceptance: specs/features/BL-523-openrouter-provider-support.feature
