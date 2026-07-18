@@ -51,3 +51,4 @@ notes: |
 acceptance:
   # An epic tracker has no acceptance of its own; acceptance lives on each child slice. Slice 1: BL-516.
   none: "tracker only — see decomposes_into children for acceptance"
+mutation_cost: high

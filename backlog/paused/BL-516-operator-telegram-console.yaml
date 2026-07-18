@@ -103,7 +103,7 @@ acceptance:
 #   7. Run test/test_operator_telegram.sh (allowlist, kill-switch, auth-lost, single-flight /ensure,
 #      disabled-when-no-token) — all pass — and confirm the operator_runtime tick tests stay green.
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   Draining your "Operator Telegram console (status slice)" brief into slice 1. I verified the tree and
   resolved your 5 open questions: poller = supervised subprocess mirroring the tunnel; file =
