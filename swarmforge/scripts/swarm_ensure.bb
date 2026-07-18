@@ -126,10 +126,24 @@
     (and (zero? (:exit result))
          (not (str/includes? (:out result) "1")))))
 
+(defn openrouter-respawn-env-args
+  "Same BL-130 OpenRouter pane-env passthrough as handoffd.bb/do-respawn! —
+   ensure repairs must not strip OPENROUTER_API_KEY from a live OpenRouter
+   pane (empty token -> every turn fails)."
+  []
+  (cond-> []
+    (not (str/blank? (System/getenv "OPENROUTER_API_KEY")))
+    (concat ["-e" (str "OPENROUTER_API_KEY=" (System/getenv "OPENROUTER_API_KEY"))])
+    (not (str/blank? (System/getenv "CLAUDE_CODE_MAX_OUTPUT_TOKENS")))
+    (concat ["-e" (str "CLAUDE_CODE_MAX_OUTPUT_TOKENS=" (System/getenv "CLAUDE_CODE_MAX_OUTPUT_TOKENS"))])))
+
 (defn respawn-role! [socket role session]
-  (let [launch-script (fs/path state-dir "launch" (str role ".sh"))]
-    (process/sh {:continue true} "tmux" "-S" socket "respawn-pane" "-k" "-t" session
-                (str "zsh '" launch-script "'"))))
+  (let [launch-script (fs/path state-dir "launch" (str role ".sh"))
+        env-args (openrouter-respawn-env-args)
+        cmd (concat ["tmux" "-S" socket "respawn-pane" "-k"]
+                    env-args
+                    ["-t" session (str "zsh '" launch-script "'")])]
+    (apply process/sh {:continue true} cmd)))
 
 ;; ── daemon component ─────────────────────────────────────────────────────────
 

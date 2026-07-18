@@ -476,6 +476,17 @@ Example tmux wake-up (from the shared constant):
 You have new handoff mail. If idle, run ready_for_next.sh.
 ```
 
+### OpenRouter pane env on respawn
+
+`launch_role` injects `OPENROUTER_API_KEY` (and optional
+`CLAUDE_CODE_MAX_OUTPUT_TOKENS`) via ephemeral `tmux respawn-pane -e` so the
+launch script can point Claude Code at OpenRouter without writing secrets to
+disk (BL-130). Chase and `./swarm ensure` respawns must pass the same `-e`
+flags; omitting them leaves `ANTHROPIC_AUTH_TOKEN` empty and every turn fails
+(empty/malformed HTTP 200). Respawn always uses the canonical
+`.swarmforge/launch/<role>.sh` at the project root — never a worktree-local
+copy — so a repair cannot relaunch the wrong role's script into a session.
+
 ### Dispatch-gap sweep
 
 The daemon's existing chase/nudge sweep only watches inbox mail (queued or

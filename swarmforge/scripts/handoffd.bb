@@ -595,19 +595,42 @@
                                      (.toMillis (fs/last-modified-time d))))]
     (chase-sweep-lib/track-pane-activity! (:role role-info) pane outbox-activity-ms now-ms)))
 
+(defn openrouter-respawn-env-args
+  "BL-130: OPENROUTER_API_KEY must reach the pane via ephemeral tmux -e, never
+   a launch-script export. launch_role in swarmforge.sh already does this on
+   first start; chase/ensure respawns historically omitted -e, so an
+   OpenRouter-backed pane came back with an empty ANTHROPIC_AUTH_TOKEN and
+   then failed every turn (malformed/empty HTTP 200). Pass the key (and the
+   optional max-output cap) whenever they are present in the daemon env."
+  []
+  (cond-> []
+    (not (str/blank? (System/getenv "OPENROUTER_API_KEY")))
+    (concat ["-e" (str "OPENROUTER_API_KEY=" (System/getenv "OPENROUTER_API_KEY"))])
+    (not (str/blank? (System/getenv "CLAUDE_CODE_MAX_OUTPUT_TOKENS")))
+    (concat ["-e" (str "CLAUDE_CODE_MAX_OUTPUT_TOKENS=" (System/getenv "CLAUDE_CODE_MAX_OUTPUT_TOKENS"))])))
+
 (defn do-respawn!
   "Busy-vs-wedged precheck (BL-137/BL-147 parity): never types/respawns into
    a pane showing Claude Code's busy footer. Otherwise force-relaunches the
    role's persisted launch script in place, the same tmux respawn-pane -k
-   invocation launch_role/swarm_ensure.bb already use."
+   invocation launch_role/swarm_ensure.bb already use.
+
+   Launch script is always the canonical project-root
+   .swarmforge/launch/<role>.sh (same as swarm_ensure.bb/respawn-role!) —
+   never a worktree-local copy, which can drift or be missing and which once
+   left the coordinator session running the coder script after a bad repair."
   [role-info socket]
   (let [session (:session role-info)
+        role (:role role-info)
         pane (try (capture-pane-text socket session) (catch Exception _ ""))]
     (if (chase-sweep-lib/actively-processing? pane)
-      (log! "chase-respawn-skip-busy" (:role role-info))
-      (let [launch-script (fs/path (:worktree-path role-info) ".swarmforge" "launch" (str (:role role-info) ".sh"))]
-        (log! "chase-respawn" (:role role-info))
-        (tmux! "-S" socket "respawn-pane" "-k" "-t" session (str "zsh '" launch-script "'"))))))
+      (log! "chase-respawn-skip-busy" role)
+      (let [launch-script (fs/path state-dir "launch" (str role ".sh"))
+            env-args (openrouter-respawn-env-args)]
+        (log! "chase-respawn" role (str launch-script))
+        (apply tmux! (concat ["-S" socket "respawn-pane" "-k"]
+                             env-args
+                             ["-t" session (str "zsh '" launch-script "'")]))))))
 
 (defn write-chase-status! [now-ms]
   (fs/create-dirs daemon-dir)
