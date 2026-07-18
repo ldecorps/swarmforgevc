@@ -32,15 +32,20 @@
   {:action (if (and idle? new-close?) :clear nil)})
 
 (defn startup-reread-instruction
-  "The literal instruction text injected immediately after /clear - the
-   constitution's own required re-read (workflow.prompt's \"Context Clear
-   Requires Startup Re-Read\": whoever issues a /clear must follow it with
-   this). Generic over role-name so the predicate stays reusable past the
-   coordinator-only wiring this ticket ships."
+  "Literal text injected immediately after /clear (BL-309/BL-316).
+
+   BL-519 inlines constitution+PIPELINE+role into claude
+   --append-system-prompt-file at launch; that system prefix survives a
+   conversation /clear without a respawn. The pre-BL-519 instruction that
+   told the agent to Read constitution.prompt, PIPELINE.md, and
+   roles/<role>.prompt therefore (a) fights the cacheable prefix and
+   (b) left panes empty/Resident:unknown when that poke failed. Match the
+   launch kickoff instead. role-name is kept for call-site compatibility
+   but is not interpolated — the inlined role prompt already names the role."
   [role-name]
-  (str "Re-read swarmforge/constitution.prompt (and every file it refers to, "
-       "recursively), swarmforge/PIPELINE.md, and your own "
-       "swarmforge/roles/" role-name ".prompt, then resume your role loop."))
+  (str "Your constitution, pipeline, and role are already loaded above via "
+       "--append-system-prompt-file. Begin your role loop now; if idle, run "
+       "ready_for_next.sh."))
 
 (defn evaluate-closing-context-clear!
   "One tick's full evaluation, adapter-injected (mirrors

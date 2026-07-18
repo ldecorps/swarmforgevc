@@ -45,10 +45,12 @@
 ;; ── startup-reread-instruction (pure) ─────────────────────────────────────
 
 (let [text (closing-context-clear-lib/startup-reread-instruction "coordinator")]
-  (assert-true "names the constitution" (clojure.string/includes? text "swarmforge/constitution.prompt"))
-  (assert-true "names PIPELINE.md" (clojure.string/includes? text "swarmforge/PIPELINE.md"))
-  (assert-true "names the role's own prompt file"
-               (clojure.string/includes? text "swarmforge/roles/coordinator.prompt")))
+  (assert-true "BL-519: points at append-system-prompt-file, not a file re-read"
+               (clojure.string/includes? text "--append-system-prompt-file"))
+  (assert-true "BL-519: sends the agent back to ready_for_next.sh"
+               (clojure.string/includes? text "ready_for_next.sh"))
+  (assert-true "BL-519: does not tell the agent to Read constitution.prompt"
+               (not (clojure.string/includes? text "swarmforge/constitution.prompt"))))
 
 ;; ── evaluate-closing-context-clear! (adapter-injected) ───────────────────
 ;; clear-fires-at-safe-close-01: exactly clear -> reread -> record, in order.

@@ -13,16 +13,21 @@
 ## Context Clear Requires Startup Re-Read
 - Whenever an agent's context is cleared (a `/clear`, an idle-boundary context
   clear, a respawn, or any other event that empties the conversation), the very
-  next thing the agent does is re-run its full startup instructions: re-read
-  `swarmforge/constitution.prompt` (and every file it refers to, recursively),
-  `swarmforge/PIPELINE.md`, and its own `swarmforge/roles/<role>.prompt`, then
-  resume its role loop (for most roles: `ready_for_next.sh`).
-- Never continue working after a clear on remembered or summarized instructions
-  alone — the governing files are the source of truth and may have changed
-  since they were last read.
-- Whoever issues a `/clear` to an agent pane must follow it with the startup
-  instruction message; an agent left cleared without one must still perform the
-  re-read on its next wake-up before touching any work.
+  next thing the agent does is re-enter its role loop from a fresh chat.
+- Under BL-519 the constitution, PIPELINE, and role are already inlined into the
+  process's `--append-system-prompt-file` at launch; that system prefix survives
+  a conversation `/clear` without a respawn. Whoever issues a `/clear` must
+  therefore follow it with the launch kickoff (not a file re-read):
+  "Your constitution, pipeline, and role are already loaded above via
+  `--append-system-prompt-file`. Begin your role loop now; if idle, run
+  `ready_for_next.sh`." Do not tell the agent to `Read` constitution / PIPELINE
+  / role files after a clear — that pays cold input tokens for content the
+  system prefix already carries and is what left panes empty when the poke
+  failed.
+- Never continue working after a clear on remembered or summarized chat alone —
+  resume via that kickoff + `ready_for_next.sh`. An agent left cleared without
+  the kickoff must still run `ready_for_next.sh` on its next wake before
+  touching any work.
 - The maximum number of items allowed in `backlog/active/` at once is defined in
   `swarmforge/swarmforge.conf` by the line `config active_backlog_max_depth <N>`.
 - Reading that config line is part of reading this constitution: any role whose
