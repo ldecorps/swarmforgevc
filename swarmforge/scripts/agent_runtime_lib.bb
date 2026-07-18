@@ -2,22 +2,7 @@
 ;; Agent runtime facade — pure strategy (no tmux). Callers use the same
 ;; operations; agent-specific syntax lives here only.
 (ns agent-runtime-lib
-  (:require [babashka.fs :as fs]
-            [clojure.string :as str]))
-
-;; ── BL-519: repo-relative file resolution ──────────────────────────────────
-;; Resolved from this file's own location (never cwd) so bootstrap-text works
-;; the same regardless of the caller's working directory.
-(def ^:private lib-dir (fs/parent (fs/canonicalize *file*)))
-(def ^:private repo-root (fs/parent (fs/parent lib-dir)))
-
-(defn- repo-file [rel-path]
-  (str (fs/path repo-root rel-path)))
-
-(defn- slurp-repo [rel-path]
-  (slurp (repo-file rel-path)))
-
-(def constitution-articles-dir-rel "swarmforge/constitution/articles")
+  (:require [clojure.string :as str]))
 
 (def supported-agents #{"claude" "aider" "grok" "codex" "copilot" "vibe" "mock"})
 
@@ -164,66 +149,6 @@
 (defn mock-bootstrap-text [role]
   (str "MOCK_BOOTSTRAP_TEXT role=" role))
 
-;; ── BL-519: inline the constitution + PIPELINE as a cacheable, ────────────
-;; stable-first prefix instead of runtime "Read ..." instructions. Every
-;; respawn used to pay full input-token price re-reading these files via
-;; tool calls; inlining them into the appended system prompt lets Anthropic
-;; prompt caching serve repeat respawns from a ~0.1x cache read instead.
-;; The prefix takes NO role/pack arguments, so it is byte-identical across
-;; every role and every pack built from this same code path (BL-519
-;; stable-prefix-byte-identical-across-packs-04) - do not thread role or
-;; overlay info into it; that content belongs strictly after it.
-(defn- inline-repo-file-or-note
-  "Inlines rel-path's content, or a visible placeholder if it does not
-   exist. Every external file this namespace inlines (constitution,
-   PIPELINE, role prompt, overlay/pack prompt) goes through this same
-   degrade-not-crash seam: a real launch always has every file, but a test
-   fixture built for an unrelated concern (provider selection, conf
-   parsing, ...) often stubs only what ITS OWN assertions touch, and must
-   not be forced to maintain a full mirror of unrelated content just
-   because bootstrap-text now reads real files instead of emitting inert
-   path strings."
-  [rel-path]
-  (if (fs/exists? (repo-file rel-path))
-    (slurp-repo rel-path)
-    (str "[[missing file: " rel-path "]]")))
-
-(defn constitution-text
-  "swarmforge/constitution.prompt plus every article/prompt file it refers
-   to under swarmforge/constitution/articles/, in deterministic
-   sorted-filename order (numbered articles, then the unnumbered
-   project-wide prompts) - the constitution's own recursive expansion."
-  []
-  (let [articles-dir (repo-file constitution-articles-dir-rel)
-        article-paths (if (fs/exists? articles-dir)
-                         (->> (fs/list-dir articles-dir) (map str) sort)
-                         [])]
-    (str/join "\n"
-              (into [(inline-repo-file-or-note "swarmforge/constitution.prompt")]
-                    (map slurp article-paths)))))
-
-(defn pipeline-text []
-  (inline-repo-file-or-note "swarmforge/PIPELINE.md"))
-
-(defn stable-prefix-text
-  "The cacheable, stable-shared chunk: constitution (recursively expanded)
-   then PIPELINE, in that order, ahead of any role-specific content."
-  []
-  (str (constitution-text) "\n" (pipeline-text)))
-
-(defn stable-bootstrap-prefix
-  "The full byte-identical prefix generic-bootstrap-text emits before any
-   role-specific content: a constant framing sentence, then stable-prefix-
-   text, then the constant framing sentence that introduces the role
-   section. Takes no role/pack arguments - every generic-style bootstrap-
-   text call (any role, any pack) starts with exactly this text, which is
-   what makes it a valid Anthropic prompt-caching prefix."
-  []
-  (str "The following is your constitution and pipeline. Obey it exactly, as if you had just read it.\n\n"
-       (stable-prefix-text)
-       "\n\n"
-       "The following is your role. Follow it exactly, as if you had just read it.\n\n"))
-
 ;; BL-206: bootstrap-text's own dispatch (below) reads only
 ;; :bootstrap-text-style, never the provider name - registering a new
 ;; provider under :bootstrap-text-style :generic needs no new text-builder
@@ -248,22 +173,18 @@
          "Do not self-schedule polling (/loop, cron, or \"check again in N minutes\").")))
 
 (defn generic-bootstrap-text [role draft two-pack? overlay? overlay-prompt]
-  (str (stable-bootstrap-prefix)
-       (inline-repo-file-or-note (str "swarmforge/roles/" role ".prompt"))
-       "\n"
+  (str "Read swarmforge/constitution.prompt, then read every file it refers to recursively, and obey all of those instructions.\n"
+       "Read swarmforge/PIPELINE.md and follow the parcel flow for your role.\n"
+       "Read swarmforge/roles/" role ".prompt, then read every file it refers to recursively, and follow all of those instructions.\n"
        (when two-pack?
-         (str "\nThe following swarm-pack overlay applies to your role. Follow it for this pack.\n\n"
-              (inline-repo-file-or-note "swarmforge/packs/two-pack.prompt")
-              "\n"
+         (str "Read swarmforge/packs/two-pack.prompt and follow it for this pack.\n"
               "Handoff drafts: write to " draft " then run swarmforge/scripts/swarm_handoff.sh on that file. Never use repo-root tmp/ for drafts (gitignored).\n"))
        (when overlay?
-         (str "\nThe following swarm-profile overlay applies to your role. Follow it for this swarm profile.\n\n"
-              (inline-repo-file-or-note overlay-prompt)
-              "\n"
+         (str "Read " overlay-prompt " and follow it for this swarm profile.\n"
               (when (not two-pack?)
                 (str "Handoff drafts: write to " draft " then run swarmforge/scripts/swarm_handoff.sh on that file. Never use repo-root tmp/ for drafts (gitignored).\n"))))
        (when (and (= role "coordinator") (or two-pack? overlay?))
-         "\nTo route the top active backlog item to coder mechanically: swarmforge/scripts/route_backlog_to_coder.sh\n")))
+         "To route the top active backlog item to coder mechanically: swarmforge/scripts/route_backlog_to_coder.sh\n")))
 
 (defn bootstrap-text
   [agent role & {:keys [two-pack? overlay-prompt coordinator-two-pack-note]}]

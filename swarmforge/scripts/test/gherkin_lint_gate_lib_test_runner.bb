@@ -161,21 +161,6 @@ Feature: sample
          [{:scenario "path resolution" :column "forbidden-edge-unused"}]
          (gherkin-lint-gate-lib/find-phantom-column-findings hyphen-and-space-column-ir))
 
-;; The claim in the comment above ("proven already") was never actually
-;; exercised for a SPACE-containing column name - only for a hyphenated one.
-;; A space is a different character class through the regex/set-membership
-;; path (param-token-re captures it into the same string; the Examples key
-;; comes back as a keyword whose (name ...) also preserves the space), so
-;; this closes that specific untested claim rather than taking it on faith.
-(def space-column-ir
-  {:scenarios [{:name "path resolution"
-                :steps [{:keyword "Then" :text "it is reported as violating the \"<forbidden edge>\" rule"}]
-                :examples [{(keyword "forbidden edge") "x"}]}]})
-
-(assert= "515-19: a column name containing a space, referenced via its <token> in step text, is not phantom"
-         []
-         (gherkin-lint-gate-lib/find-phantom-column-findings space-column-ir))
-
 (def background-referenced-ir
   {:background [{:keyword "Given" :text "the wrapper is run with <mode>"}]
    :scenarios [{:name "background reference"

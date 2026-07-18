@@ -20,8 +20,6 @@
   (println "  handoff-draft-path <agent>")
   (println "  wake-text <agent>")
   (println "  bootstrap-text <agent> <role> [two-pack:0|1] [overlay-prompt-rel-path]")
-  (println "  stable-prefix-text")
-  (println "  stable-bootstrap-prefix")
   (println "  run-bootstrap <socket> <session> <agent> <role> <prompt-file> [two-pack:0|1] [overlay-prompt-rel-path]")
   (System/exit 1))
 
@@ -42,12 +40,6 @@
       (print (agent-runtime-lib/bootstrap-text agent role
                                                :two-pack? two-pack?
                                                :overlay-prompt overlay)))
-
-    "stable-prefix-text"
-    (print (agent-runtime-lib/stable-prefix-text))
-
-    "stable-bootstrap-prefix"
-    (print (agent-runtime-lib/stable-bootstrap-prefix))
 
     "run-bootstrap"
     (let [socket (nth args 1)
