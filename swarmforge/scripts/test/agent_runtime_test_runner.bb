@@ -116,56 +116,9 @@
              (str/includes? (agent-runtime-lib/bootstrap-text "aider" "coordinator")
                             "swarmforge/runtime/handoff-draft.txt"))
 
-;; ── BL-519: inlined stable prefix, not runtime Read instructions ──────────
-(assert-true "claude coder text inlines the constitution instead of instructing a Read"
-             (not (str/includes? (agent-runtime-lib/bootstrap-text "claude" "coder")
-                                 "Read swarmforge/constitution.prompt, then read every file it refers to recursively")))
-
-(assert-true "claude coder text contains the actual inlined constitution content"
+(assert-true "claude coder text uses Read-lines"
              (str/includes? (agent-runtime-lib/bootstrap-text "claude" "coder")
-                            "# SwarmForge Constitution"))
-
-(assert-true "claude coder text contains the actual inlined PIPELINE content"
-             (str/includes? (agent-runtime-lib/bootstrap-text "claude" "coder")
-                            "# Parcel Flow"))
-
-(let [text (agent-runtime-lib/bootstrap-text "claude" "coder")
-      constitution-idx (str/index-of text "# SwarmForge Constitution")
-      pipeline-idx (str/index-of text "# Parcel Flow")
-      role-idx (str/index-of text "You are the coder.")]
-  (assert-true "constitution content is found" (some? constitution-idx))
-  (assert-true "PIPELINE content is found" (some? pipeline-idx))
-  (assert-true "role content is found" (some? role-idx))
-  (assert-true "stable content (constitution, PIPELINE) precedes role-specific content"
-               (and (< constitution-idx role-idx) (< pipeline-idx role-idx))))
-
-;; The stable prefix takes no role/pack/ticket/session/date argument at all
-;; (constitution + PIPELINE content is fixed), so no LIVE-generated volatile
-;; marker - the RESUME-ON-START note swarmforge.sh prepends only to the
-;; first-turn message, never to this prefix - can appear in it. The
-;; constitution's own historical BL-xxx/date references are static
-;; documented content, not per-launch volatile state, and legitimately
-;; appear throughout; this only checks the live marker itself is absent.
-(assert-true "no RESUME-ON-START note precedes the stable chunk"
-             (not (str/includes? (agent-runtime-lib/stable-bootstrap-prefix) "RESUME-ON-START")))
-
-(assert=
- "the stable bootstrap prefix is byte-identical across two different roles"
- (subs (agent-runtime-lib/bootstrap-text "claude" "coder")
-       0 (count (agent-runtime-lib/stable-bootstrap-prefix)))
- (subs (agent-runtime-lib/bootstrap-text "claude" "cleaner")
-       0 (count (agent-runtime-lib/stable-bootstrap-prefix))))
-
-(assert=
- "the stable bootstrap prefix is byte-identical across two different packs (two-pack vs overlay)"
- (subs (agent-runtime-lib/bootstrap-text "claude" "coder" :two-pack? true)
-       0 (count (agent-runtime-lib/stable-bootstrap-prefix)))
- (subs (agent-runtime-lib/bootstrap-text "claude" "coder" :overlay-prompt "swarmforge/packs/mono-router.prompt")
-       0 (count (agent-runtime-lib/stable-bootstrap-prefix))))
-
-(assert-true "stable-bootstrap-prefix equals the literal leading substring of generic bootstrap text"
-             (str/starts-with? (agent-runtime-lib/bootstrap-text "claude" "coder")
-                                (agent-runtime-lib/stable-bootstrap-prefix)))
+                            "Read swarmforge/constitution.prompt"))
 
 (assert-true "needs-tmux-bootstrap distinguishes agents"
              (and (agent-runtime-lib/needs-tmux-bootstrap? "aider")
@@ -209,9 +162,9 @@
              (agent-runtime-lib/wake-steps "synthetic-provider"))
     (assert-true "a synthetic embedded-style provider needs no tmux bootstrap, same as claude"
                  (empty? (agent-runtime-lib/bootstrap-steps "synthetic-provider" "coder")))
-    (assert-true "a synthetic generic-text-style provider gets the generic (inlined) bootstrap text"
-                 (str/starts-with? (agent-runtime-lib/bootstrap-text "synthetic-provider" "coder")
-                                   (agent-runtime-lib/stable-bootstrap-prefix)))))
+    (assert-true "a synthetic generic-text-style provider gets the generic bootstrap text"
+                 (str/includes? (agent-runtime-lib/bootstrap-text "synthetic-provider" "coder")
+                                "Read swarmforge/constitution.prompt"))))
 
 ;; ── BL-206 lifecycle-verbs-03: health/stop/respawn produce a step for ─────
 ;; every supported provider, with no brand-specific branching anywhere in
