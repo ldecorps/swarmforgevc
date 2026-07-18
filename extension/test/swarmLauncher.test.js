@@ -1,9 +1,11 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const {
   isSwarmReady,
+  defaultRoleBootstrapped,
   buildLaunchEnv,
   launchSwarm,
   waitForSwarmReady,
@@ -16,7 +18,7 @@ const { installExecutable } = require('./helpers/sharedBin');
 const { readTrackedJobs } = require('../out/swarm/childJobRegistry');
 
 function mkTmp() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-launch-'));
+  return mkTmpDir('sfvc-launch-');
 }
 
 function writeReadyState(targetPath, roleLines = '1\tcoder\tswarmforge-coder\tCoder\tclaude\n') {
@@ -138,6 +140,92 @@ test('runningSwarmMatchesConfig ignores coordinator when comparing to window lin
     ].join('\n')
   );
   assert.equal(runningSwarmMatchesConfig(targetPath, configPath), true);
+});
+
+// BL-423: checkRoleBootstrapped is an OPTIONAL, opt-in extra gate - passing
+// none preserves isSwarmReady's exact pre-BL-423 contract (window/session
+// existence only), so every pre-existing caller (launchSwarm's own polling
+// loop, waitForSwarmReady, swarmOrchestrator.ts) is completely unaffected.
+test('isSwarmReady ignores bootstrap entirely when no checkRoleBootstrapped is passed (pre-BL-423 behavior preserved)', () => {
+  const targetPath = mkTmp();
+  writeReadyState(targetPath);
+  const fake = installFakeTmux([{ exitCode: 0, stdout: '' }]);
+  try {
+    assert.equal(isSwarmReady(targetPath), true);
+  } finally {
+    fake.restore();
+  }
+});
+
+test('isSwarmReady reports false when a role session exists but checkRoleBootstrapped says the pane never bootstrapped (the half-launch case)', () => {
+  const targetPath = mkTmp();
+  writeReadyState(targetPath);
+  const fake = installFakeTmux([{ exitCode: 0, stdout: '' }]);
+  try {
+    assert.equal(isSwarmReady(targetPath, () => false), false);
+  } finally {
+    fake.restore();
+  }
+});
+
+test('isSwarmReady reports true when every role session exists and checkRoleBootstrapped confirms each one', () => {
+  const targetPath = mkTmp();
+  writeReadyState(targetPath);
+  const fake = installFakeTmux([{ exitCode: 0, stdout: '' }]);
+  const seenRoles = [];
+  try {
+    assert.equal(
+      isSwarmReady(targetPath, (socketPath, role) => {
+        seenRoles.push(role.role);
+        return true;
+      }),
+      true
+    );
+    assert.deepEqual(seenRoles, ['coder']);
+  } finally {
+    fake.restore();
+  }
+});
+
+// BL-423: defaultRoleBootstrapped is isSwarmReady's own real, production
+// implementation of checkRoleBootstrapped - it re-derives the pane target
+// through the SAME getPaneBaseIndex -> resolveAgentPaneTarget chain
+// resourceSamplerActivation.ts's resolvePanePid already uses, then defers
+// the live-child decision to hasLivePaneChild (tmuxClient.test.js owns
+// that half's own unit tests) - so this covers the wiring, not
+// hasLivePaneChild's own pgrep exit-code logic a second time.
+function installFakePgrepForBootstrap(hasChild) {
+  const dir = mkTmpDir('sfvc-fake-pgrep-bootstrap-');
+  installExecutable(path.join(dir, 'pgrep'), `#!/bin/sh\n${hasChild ? 'echo 424242\nexit 0' : 'exit 1'}\n`);
+  const originalPath = process.env.PATH;
+  process.env.PATH = `${dir}${path.delimiter}${originalPath}`;
+  return {
+    restore() {
+      process.env.PATH = originalPath;
+    },
+  };
+}
+
+test('defaultRoleBootstrapped is true once the pane has a live child process', () => {
+  const tmux = installFakeTmux([{ exitCode: 0, stdout: '1\n' }]);
+  const pgrep = installFakePgrepForBootstrap(true);
+  try {
+    assert.equal(defaultRoleBootstrapped('/tmp/fake.sock', { index: 1, role: 'coder', session: 'swarmforge-coder', displayName: 'Coder', agent: 'claude' }), true);
+  } finally {
+    pgrep.restore();
+    tmux.restore();
+  }
+});
+
+test('defaultRoleBootstrapped is false for a half-launched pane (window exists, no live child)', () => {
+  const tmux = installFakeTmux([{ exitCode: 0, stdout: '1\n' }]);
+  const pgrep = installFakePgrepForBootstrap(false);
+  try {
+    assert.equal(defaultRoleBootstrapped('/tmp/fake.sock', { index: 1, role: 'coder', session: 'swarmforge-coder', displayName: 'Coder', agent: 'claude' }), false);
+  } finally {
+    pgrep.restore();
+    tmux.restore();
+  }
 });
 
 test('buildLaunchEnv sets SWARM_RUN_NAME when runName provided', () => {
