@@ -1,0 +1,28 @@
+# BL-515: known pre-existing wrapped-step-line violations, grandfathered
+# in when the lint gate started enforcing single-line steps, so shipping
+# the gate does not retroactively block 19 already-landed feature files.
+# The gate still enforces single-line steps unconditionally for every
+# file NOT listed here (including any new file). Each entry is a
+# repo-relative feature-file path, one per line; blank lines and lines
+# starting with # are ignored. A follow-up ticket rewraps these and
+# removes them from this list one at a time - do not add a NEW file here;
+# fix the wrap instead.
+specs/features/BL-091-remote-swarm-bringup-wsl2.feature
+specs/features/BL-094-holistic-dev-state-web-ui.feature
+specs/features/BL-096-velocity-burndown-metrics.feature
+specs/features/BL-097-backlog-dashboard-pwa-pages.feature
+specs/features/BL-100-token-cost-resource-telemetry.feature
+specs/features/BL-111-aps-stage1-feature-files.feature
+specs/features/BL-113-aps-stage3-gherkin-mutation.feature
+specs/features/BL-114-issue-intake-loop-closing.feature
+specs/features/BL-116-launch-path-probe-and-log.feature
+specs/features/BL-117-pwa-docs-drilldown-explorer.feature
+specs/features/BL-118-pwa-bilingual-french.feature
+specs/features/BL-131-eliminate-real-timers-in-test-suite.feature
+specs/features/BL-132-surface-mutation-progress-eta.feature
+specs/features/BL-142-agent-brand-abstraction-layer.feature
+specs/features/BL-151-handoff-transport-reliability-epic.feature
+specs/features/BL-210-paneTailer-emitActivityEvents-crap.feature
+specs/features/BL-211-velocity-burndown-charts-bl094-ui.feature
+specs/features/BL-212-deflake-spawn-registry-01.feature
+specs/features/BL-213-cost-health-briefing-phone.feature
