@@ -10,7 +10,6 @@ const {
   deriveKebabSlug,
   deriveListEntryText,
   deriveDisplayTicketId,
-  compareLinksMostRecentFirst,
   PIPELINE_BOARD_COLUMN_ORDER,
   PIPELINE_BOARD_RECENTLY_CLOSED_MAX,
   PIPELINE_BOARD_NOT_STARTED_COLUMN,
@@ -782,47 +781,6 @@ test('computePipelineBoard: two root-intake links with no ticket id still sort b
     links.map((l) => l.id),
     ['BL-9', 'INTAKE-aaa-earlier', 'INTAKE-zzz-later']
   );
-});
-
-// BL-506 cleanup: compareLinksMostRecentFirst is a general-purpose Array.sort
-// comparator, so it must handle EITHER argument order correctly - not just
-// the order buildLinks's fixed [numbered sources..., root-intake...]
-// concatenation happens to feed it today. Every links-ordering test above
-// only ever observes the comparator through Array.sort, and V8's sort
-// algorithm never actually calls it with a numbered link first and an
-// unnumbered one second for that input shape (the "being inserted" element
-// is always the later-original-index one, and root-intake links are always
-// last), so that argument order - and its own defensive "return -1" branch
-// - stayed unreachable through the public API. Exported and unit-tested
-// directly here so the comparator's own contract is pinned regardless of
-// how a future caller/array shape happens to invoke it.
-test('compareLinksMostRecentFirst: a numbered id sorts before an unnumbered one, in EITHER argument order', () => {
-  const numbered = { id: 'BL-9', path: 'backlog/active/BL-9.yaml' };
-  const unnumbered = { id: 'INTAKE-x', path: 'backlog/INTAKE-x.md' };
-  assert.ok(compareLinksMostRecentFirst(unnumbered, numbered) > 0, 'unnumbered first arg sorts after numbered');
-  assert.ok(compareLinksMostRecentFirst(numbered, unnumbered) < 0, 'numbered first arg sorts before unnumbered');
-});
-
-test('compareLinksMostRecentFirst: two unnumbered ids tie-break by plain id order, in EITHER argument order', () => {
-  const a = { id: 'INTAKE-aaa', path: 'backlog/INTAKE-aaa.md' };
-  const b = { id: 'INTAKE-zzz', path: 'backlog/INTAKE-zzz.md' };
-  assert.equal(compareLinksMostRecentFirst(a, b), a.id.localeCompare(b.id));
-  assert.equal(compareLinksMostRecentFirst(b, a), b.id.localeCompare(a.id));
-});
-
-test('compareLinksMostRecentFirst: two numbered ids with the SAME ticket number tie-break by plain id order', () => {
-  // Not a realistic backlog state (ids are unique in practice), but the
-  // comparator's own contract still pins a deterministic outcome for it.
-  const a = { id: 'BL-9', path: 'backlog/active/BL-9.yaml' };
-  const b = { id: 'GH-9', path: 'backlog/active/GH-9.yaml' };
-  assert.equal(compareLinksMostRecentFirst(a, b), a.id.localeCompare(b.id));
-});
-
-test('compareLinksMostRecentFirst: two numbered ids with DIFFERENT numbers sort highest number first', () => {
-  const a = { id: 'BL-999', path: 'backlog/active/BL-999.yaml' };
-  const b = { id: 'BL-1000', path: 'backlog/active/BL-1000.yaml' };
-  assert.ok(compareLinksMostRecentFirst(a, b) > 0, 'lower number sorts after higher number');
-  assert.ok(compareLinksMostRecentFirst(b, a) < 0, 'higher number sorts before lower number');
 });
 
 // ── BL-465: renderPipelineBoardBody's new below-grid sections ────────────
