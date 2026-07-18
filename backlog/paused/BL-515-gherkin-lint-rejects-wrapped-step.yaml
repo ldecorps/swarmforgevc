@@ -71,7 +71,7 @@ acceptance:
 #   4. Run the helper's unit suite (swarmforge/scripts/test/) and confirm the param-wrapped,
 #      param-less-wrapped, phantom-column, and clean-table cases are each covered.
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A swarm-surfaced tooling bug the coder hit while building BL-511: a Gherkin step whose text
   wraps onto a second line has that line and any <params> on it SILENTLY dropped by the
