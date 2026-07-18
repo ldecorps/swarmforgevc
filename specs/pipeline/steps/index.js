@@ -283,8 +283,7 @@ const DOMAINS = [
   require('./bl509AmendButtonSteersTicketSteps'),
   require('./bl506PipelineBoardLinksMostRecentFirstSteps'),
   require('./bl507PipelineBoardDropCoordinatorColumnSteps'),
-  require('./bl511TelegramBridgeCostBriefingSteps'),
-  require('./bl513PipelineBoardLinksAllShownAlphabeticalSteps')
+  require('./bl511TelegramBridgeCostBriefingSteps')
 ];
 
 function registerSteps(registry) {
