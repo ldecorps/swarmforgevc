@@ -404,13 +404,22 @@ async function syncAllTitleAgeBuckets(
 // id is always an active ticket, a parked/awaiting-approval id is always a
 // paused one, so this single lookup covers computePipelineBoard's own two
 // inputs (roleHeldTickets, paused) without a second read.
+// BL-513: a ticket id can transiently exist in more than one folder at once
+// (a stale duplicate left behind during promotion/close) - the
+// AUTHORITATIVE folder wins: active over paused over done, never a stale
+// copy. Populated LOWEST-priority first so each later pass's assignment
+// overwrites any earlier one for the same id, leaving the highest-priority
+// folder's entry as the final value in the map.
 function buildTicketMetaLookup(folders: BacklogFoldersSnapshot): Record<string, PipelineBoardTicketMeta> {
   const lookup: Record<string, PipelineBoardTicketMeta> = {};
-  for (const item of folders.active) {
-    lookup[item.id] = { epic: item.epic, title: item.title, filename: item.filename, location: 'active' };
+  for (const item of folders.done) {
+    lookup[item.id] = { epic: item.epic, title: item.title, filename: item.filename, location: 'done' };
   }
   for (const item of folders.paused) {
     lookup[item.id] = { epic: item.epic, title: item.title, filename: item.filename, location: 'paused' };
+  }
+  for (const item of folders.active) {
+    lookup[item.id] = { epic: item.epic, title: item.title, filename: item.filename, location: 'active' };
   }
   return lookup;
 }

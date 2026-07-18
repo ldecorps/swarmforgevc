@@ -67,7 +67,11 @@ export interface PipelineBoardTicketMeta {
   epic?: string;
   title?: string;
   filename?: string;
-  location?: 'active' | 'paused';
+  // BL-513: 'done' added so a closed ticket's meta can resolve to
+  // backlog/done/<file> via linkPathFor - needed for the authoritative-
+  // folder rule (active wins over paused wins over done) when a stale
+  // duplicate of a shown ticket lingers in backlog/done/.
+  location?: 'active' | 'paused' | 'done';
 }
 
 // BL-465: recently-closed/root-intake items feed in as raw {id, title,
@@ -404,7 +408,15 @@ function buildLinks(
     ...linksFromRecentlyClosed(extras),
     ...linksFromRootIntake(extras),
   ];
-  links.sort(compareLinksMostRecentFirst);
+  // BL-513: reversed from BL-506's most-recent-first (highest ticket number
+  // first) to plain ascending alphabetical (lexicographic) by id, per the
+  // human's follow-up directive - a link list every ticket shown on the
+  // board message, in the same order regardless of source. Lexicographic,
+  // not numeric: "BL-1000" sorts above "BL-999" once ids hit four digits
+  // (localeCompare's default collation already produces this - confirmed,
+  // not assumed). compareLinksMostRecentFirst above is no longer called in
+  // production; the cleaner may remove it once confirmed dead.
+  links.sort((a, b) => a.id.localeCompare(b.id));
   return links;
 }
 
