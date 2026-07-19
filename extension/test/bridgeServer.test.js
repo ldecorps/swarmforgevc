@@ -872,11 +872,56 @@ test('serves the root URL given a valid query-string token (a plain browser navi
   });
 });
 
-test('the query-token fallback does not unlock any other (data) route', async () => {
+test('the query-token fallback does not unlock ordinary data routes (pipeline stays bearer-only)', async () => {
   const target = mkTmp();
   await withBridge(target, {}, async (handle) => {
     const res = await fetch(`http://127.0.0.1:${handle.port}/pipeline?token=${TOKEN}`);
-    assert.equal(res.status, 401, 'query-token auth is scoped to the root HTML shell only, per bridgeAuth.ts');
+    assert.equal(res.status, 401, 'query-token auth stays scoped away from ordinary data routes');
+  });
+});
+
+// BL-522: Resident Spy Mini App — HTML without prior auth; pane JSON via ?token=.
+test('serves /resident-spy HTML without a prior bearer/query token', async () => {
+  const target = mkTmp();
+  await withBridge(target, {}, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/resident-spy`);
+    assert.equal(res.status, 200);
+    assert.match(res.headers.get('content-type'), /text\/html/);
+    const body = await res.text();
+    assert.match(body, /Resident Spy/);
+    assert.match(body, /resident-pane\?token=/);
+  });
+});
+
+test('rejects /resident-pane without a token', async () => {
+  const target = mkTmp();
+  await withBridge(target, {}, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/resident-pane`);
+    assert.equal(res.status, 401);
+  });
+});
+
+test('serves /resident-pane JSON given a valid query-string token', async () => {
+  const target = mkTmp();
+  await withBridge(target, {}, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/resident-pane?token=${TOKEN}`);
+    assert.equal(res.status, 200);
+    assert.match(res.headers.get('content-type'), /application\/json/);
+    const body = await res.json();
+    // No live tmux pane in the fixture → unavailable sentinel (not 401/404).
+    assert.equal(body.available, false);
+  });
+});
+
+test('serves /resident-pane JSON given a valid bearer token', async () => {
+  const target = mkTmp();
+  await withBridge(target, {}, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/resident-pane`, {
+      headers: { authorization: `Bearer ${TOKEN}` },
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.available, false);
   });
 });
 

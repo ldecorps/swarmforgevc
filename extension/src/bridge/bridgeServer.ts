@@ -10,6 +10,8 @@ import {
 } from './bridgeState';
 import { extractBearerToken, isAuthorizedByQueryToken } from './bridgeAuth';
 import { getHolisticUiHtml } from './holisticUiHtml';
+import { getResidentSpyUiHtml } from './residentSpyUiHtml';
+import { captureResidentPaneLive } from './residentPaneLive';
 import { answerCapturedGateLive } from './gateAnswerLive';
 import { computeRoleGateStatesLive, filterPendingGates } from './gateSnapshot';
 import { readSwarmRoles } from '../swarm/tmuxClient';
@@ -135,6 +137,16 @@ function resolveEventsSnapshot(lastSnapshot: string | undefined, targetPath: str
 
 function isRootPath(url: string): boolean {
   return url === '/' || url.startsWith('/?');
+}
+
+// BL-522: Telegram Mini App shell (served without prior auth, like root).
+function isResidentSpyPath(url: string): boolean {
+  return url === '/resident-spy' || url.startsWith('/resident-spy?');
+}
+
+// BL-522: JSON pane feed polled by the Mini App with ?token=.
+function isResidentPanePath(url: string): boolean {
+  return url === '/resident-pane' || url.startsWith('/resident-pane?');
 }
 
 // BL-240: the ONLY route on this server that reads a request body - every
@@ -453,7 +465,10 @@ function isAuthorizedForRead(authHeader: string | undefined, url: string, regist
   if (findDeviceByToken(registry, extractBearerToken(authHeader))) {
     return true;
   }
-  return isRootPath(url) && isAuthorizedByQueryToken(queryToken(url), primaryTokenOf(registry));
+  // Root HTML uses query token client-side; /resident-pane also accepts it
+  // because the Mini App fetch cannot set an Authorization header.
+  return (isRootPath(url) || isResidentPanePath(url))
+    && isAuthorizedByQueryToken(queryToken(url), primaryTokenOf(registry));
 }
 
 // BL-241 control-requires-step-up-04: control actions require a SEPARATE
@@ -533,6 +548,16 @@ function buildJsonRoutes(targetPath: string, runLogPath: string, nowMs?: number)
       matches: (url) => url === '/burn-rate',
       compute: () => buildBurnRateState(targetPath, nowMs),
     },
+    {
+      // BL-522: live mono-router resident pane snapshot for the Telegram Mini
+      // App. Query-token auth is allowed specifically for this path (see
+      // isAuthorizedForRead); bearer still works too.
+      matches: isResidentPanePath,
+      compute: () => {
+        const snap = captureResidentPaneLive(targetPath);
+        return snap ?? { available: false };
+      },
+    },
   ];
 }
 
@@ -572,6 +597,18 @@ export function startBridge(
           'content-security-policy': "default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'",
         });
         res.end(getHolisticUiHtml());
+        return;
+      }
+
+      // BL-522: Resident Spy Mini App shell — same pre-auth posture as root so
+      // Telegram can open /resident-spy?token=… without a Bearer header. The
+      // page then polls /resident-pane?token=… (query-token allowed there).
+      if (isResidentSpyPath(url)) {
+        res.writeHead(200, {
+          'content-type': 'text/html; charset=utf-8',
+          'content-security-policy': "default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline' https://telegram.org; connect-src 'self'",
+        });
+        res.end(getResidentSpyUiHtml());
         return;
       }
 

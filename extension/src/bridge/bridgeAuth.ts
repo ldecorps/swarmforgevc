@@ -29,13 +29,13 @@ export function isAuthorizedRequest(authHeader: string | undefined, token: strin
   return timingSafeStringEqual(provided, token);
 }
 
-// BL-094: a plain browser navigation to the holistic UI's root URL cannot
-// set an Authorization header, so that one route additionally accepts the
-// token via query string (the extension's "open bridge" command includes
-// it in the URL it offers). Every other route stays header-only - this
-// query-token path never discloses swarm/dev state itself, only unlocks
-// the static HTML shell, which then uses the header path for every actual
-// data/SSE request it makes client-side.
+// BL-094/BL-522: a plain browser (or Telegram Mini App) navigation cannot
+// set an Authorization header, so selected routes additionally accept the
+// token via query string (the extension's "open bridge" command and the
+// Resident Spy Mini App URL include it). The root HTML shell uses the
+// token client-side for bearer fetches; /resident-pane accepts the query
+// token server-side because its poll cannot set a header. Other data
+// routes stay header-only.
 export function isAuthorizedByQueryToken(queryToken: string | undefined, token: string): boolean {
   if (!queryToken) {
     return false;
