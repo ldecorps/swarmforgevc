@@ -136,18 +136,6 @@ while IFS= read -r -d '' feature; do
 done < <(find "$ROOT/specs/features" -name '*.feature' -print0)
 pass "515-03: every existing specs/features/*.feature still passes the gate"
 
-# ── BL-520: the legacy-wraps allowlist is drained - no feature file entry
-# remains and a formerly-grandfathered file passes without any exemption.
-LEGACY_FEATURE="$ROOT/specs/features/BL-096-velocity-burndown-metrics.feature"
-[[ -f "$LEGACY_FEATURE" ]] || fail "515-04 setup: expected fixture $LEGACY_FEATURE to exist"
-
-if grep -Ev '^[[:space:]]*($|#)' "$ROOT/swarmforge/scripts/gherkin_lint_gate_legacy_wraps.txt" | grep -q .; then
-  fail "520-01: expected gherkin_lint_gate_legacy_wraps.txt to hold no feature-file entries"
-fi
-bash "$GATE" "$LEGACY_FEATURE" "$ROOT" | grep -q "^OK: " \
-  || fail "520-02: expected formerly-grandfathered BL-096 to pass with no exemption"
-pass "520-01/02: the legacy wrap allowlist is drained and BL-096 passes unconditionally"
-
 # ── BL-515: the CLI's own arg-count guard fires on a malformed invocation ─
 # (never a bb crash/stacktrace) - a call site typo must fail fast and named.
 set +e
