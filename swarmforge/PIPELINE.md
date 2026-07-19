@@ -77,3 +77,34 @@ or promote backlog items.
   helper configured for your role.
 - The full draft format, message types, queue helpers, and audit rules are in
   `swarmforge/handoff-protocol.md`.
+
+
+## Mono-router idle and open slots
+
+Mono-router packs (`config rotation sequential`, e.g. `perplexity-mono-router`,
+`cerebras-mono-router`, `codex-mono-router`) keep **one resident** process
+(usually **coder** as home) and rotate other pipeline roles in on demand. The
+coordinator remains a separate always-on pane.
+
+When the home resident runs `ready_for_next.sh` and gets `NO_TASK`:
+
+1. **Stop.** Do not re-poll, invent a `/loop`, or burn tokens waiting.
+2. If `backlog/*.yaml` root intakes exist → rotate to **specifier**.
+3. Else if `backlog/active/` is empty and `backlog/paused/` has eligible work →
+   send **one** `note` to the coordinator asking it to promote and route, then
+   idle for a wake.
+4. The coordinator, on wake with capacity under `active_backlog_max_depth`,
+   promotes and routes — it does not wait for a human chat turn.
+
+Promotion is still coordinator-owned (file move `paused/` → `active/`); there
+is no separate daemon that fills open slots on its own.
+
+
+## Endless-loop hard stop
+
+If a role's pane shows a repeated `ready_for_next` → `NO_TASK` spin (the pane
+keeps changing, so ordinary stuck-activity detection never fires), the handoff
+daemon **halts the whole swarm** after three consecutive chase observations (~15s) of
+that pattern — alerting on **Telegram** (standing Operator topic) **and email**, then running `kill_all_swarm.sh`. This is
+deliberate: burning tokens on an idle loop has no upside. Fix the idle path,
+then relaunch with `./swarm`.
