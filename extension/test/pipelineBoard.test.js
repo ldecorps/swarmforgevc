@@ -375,14 +375,19 @@ test('wrapPipelineBoardHtml: escapes HTML-significant characters', () => {
 // formatter over an injected instant - never a bare new Date()/Date.now()
 // in the renderer or its formatter.
 
-test('formatUpdatedAtLabel: formats an injected epoch-ms as "Mon DD HH:MM" in UTC', () => {
+test('formatUpdatedAtLabel: formats an injected summer epoch-ms in UK/London time with the BST marker', () => {
   const epochMs = Date.UTC(2026, 6, 16, 20, 5); // Jul 16 2026, 20:05 UTC
-  assert.equal(formatUpdatedAtLabel(epochMs), 'Jul 16 20:05');
+  assert.equal(formatUpdatedAtLabel(epochMs), 'Jul 16 21:05 BST');
 });
 
-test('formatUpdatedAtLabel: pads single-digit day/hour/minute', () => {
+test('formatUpdatedAtLabel: formats an injected winter epoch-ms in UK/London time with the GMT marker', () => {
   const epochMs = Date.UTC(2026, 0, 5, 3, 7); // Jan 5 2026, 03:07 UTC
-  assert.equal(formatUpdatedAtLabel(epochMs), 'Jan 05 03:07');
+  assert.equal(formatUpdatedAtLabel(epochMs), 'Jan 05 03:07 GMT');
+});
+
+test('formatUpdatedAtLabel: applies Europe/London date rollover near midnight in summer', () => {
+  const epochMs = Date.UTC(2026, 5, 30, 23, 30); // Jun 30 2026, 23:30 UTC
+  assert.equal(formatUpdatedAtLabel(epochMs), 'Jul 01 00:30 BST');
 });
 
 test('formatUpdatedAtLabel: is a pure function of its input - same epoch, same label', () => {
@@ -995,6 +1000,6 @@ test('BL-526 renderPipelineBoardGridOnly: optional footer stamps updated-at with
     { rows: [{ id: 'BL-1', column: 'coder', slug: 'x' }], parked: [] },
     Date.UTC(2026, 6, 19, 0, 30)
   );
-  assert.match(text, /updated at Jul 19 00:30/);
+  assert.match(text, /updated at Jul 19 01:30 BST/);
   assert.ok(!text.includes('PARKED:'));
 });

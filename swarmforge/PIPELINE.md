@@ -63,6 +63,12 @@ or promote backlog items.
    - Moves the backlog item from `backlog/active/` to `backlog/done/`.
    - Rechecks `active_backlog_max_depth` and promotes the next paused item if a
      slot is open.
+   - **Routes** that promoted item in the same turn (mono-router: Work note to
+     coder / `promote_and_route_next.sh` / `route_backlog_to_coder.sh`).
+     Promote without route leaves the resident on `NO_TASK` until a chase or
+     human intervenes. handoffd may nudge the coordinator with
+     `open slot + paused work - promote+route` when active is under cap and
+     paused work exists; the coordinator still owns the promote.
 7. A role must **not** forward a `git_handoff` when the received commit produces
    no functional project change. It completes the inbound task instead (see
    `handoff-protocol.md`).
@@ -94,7 +100,9 @@ When the home resident runs `ready_for_next.sh` and gets `NO_TASK`:
    promotes and routes — it does not wait for a human chat turn.
 
 Promotion is still coordinator-owned (file move `paused/` → `active/`); there
-is no separate daemon that fills open slots on its own.
+is no separate daemon that fills open slots on its own. handoffd's open-slot
+nudge only wakes the coordinator; `promote_and_route_next.sh` is the
+preferred one-shot for that wake.
 
 
 ## Endless-loop hard stop

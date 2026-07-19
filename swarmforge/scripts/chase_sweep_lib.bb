@@ -661,3 +661,71 @@
    "to: coordinator"
    "priority: 00"
    (str "message: " (unassigned-active-note-message (:id item)))])
+
+;; ── Open-slot coordinator nudge (sibling of unassigned-active) ──────────────
+;; Empty/under-cap active/ + eligible paused/ is invisible to BL-222 (which
+;; only sees already-active tickets). The daemon notices and drops a note on
+;; the COORDINATOR to promote+route — never git-mv'ing paused→active itself
+;; (constitution: intake remains coordinator-owned; do not reintroduce
+;; BL-226 receive-path auto-promote).
+
+(def open-slot-nudge-phrase "open slot + paused work - promote+route")
+
+(def open-slot-nudge-cooldown-ms
+  "Default 5 minutes between open-slot nudges when no pending note remains."
+  (* 5 60 1000))
+
+(defn open-slot-nudge-message
+  "Fixed message — kept under the 80-char handoff limit. No ticket id: the
+   trail/cooldown is phrase + optional cooldown file, not BL-222's id set."
+  []
+  open-slot-nudge-phrase)
+
+(defn decide-open-slot-nudge?
+  "Pure decision: capacity under cap, at least one eligible paused ticket,
+   no pending open-slot note still sitting in coordinator new/in_process,
+   and not within the post-send cooldown window."
+  [active-count cap paused-eligible-count {:keys [pending-nudge? within-cooldown?]
+                                           :or {pending-nudge? false within-cooldown? false}}]
+  (and (number? active-count)
+       (number? cap)
+       (< active-count cap)
+       (pos? (long (or paused-eligible-count 0)))
+       (not pending-nudge?)
+       (not within-cooldown?)))
+
+(defn count-backlog-yaml
+  "Count *.yaml tickets in a backlog folder (active/ or paused/). Ignores
+   non-yaml (e.g. .gitkeep)."
+  [dir]
+  (if-not (fs/exists? dir)
+    0
+    (->> (fs/list-dir dir)
+         (filter #(and (fs/regular-file? %) (str/ends-with? (fs/file-name %) ".yaml")))
+         count)))
+
+(defn open-slot-nudge-pending?
+  "True when any handoff in scan-dirs carries the open-slot nudge phrase in
+   its message header (pending mail = do not spam another)."
+  [scan-dirs]
+  (->> scan-dirs
+       (mapcat list-handoff-files-with-batches)
+       (keep #(read-header-field % "message"))
+       (some #(and % (str/includes? % open-slot-nudge-phrase)))
+       boolean))
+
+(defn within-open-slot-cooldown?
+  "True when last-sent-ms is within cooldown-ms of now-ms."
+  [last-sent-ms now-ms cooldown-ms]
+  (and (number? last-sent-ms)
+       (number? now-ms)
+       (number? cooldown-ms)
+       (<= 0 (- now-ms last-sent-ms) cooldown-ms)))
+
+(defn open-slot-nudge-draft-lines
+  "Note to the coordinator only — never promotes or routes to coder."
+  []
+  ["type: note"
+   "to: coordinator"
+   "priority: 00"
+   (str "message: " (open-slot-nudge-message))])

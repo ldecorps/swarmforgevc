@@ -2,9 +2,9 @@ id: BL-538
 title: "Console paused-ticket pager: one paused item per page (id+title, YAML, Expedite); swipe to next/previous"
 milestone: M8
 type: feature
-status: todo
+status: done
 epic: swarmforge-console
-assigned_to: QA
+assigned_to: 
 priority: 1
 mutation_cost: medium
 direction: human-requested

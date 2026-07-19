@@ -95,3 +95,5 @@ approval_context: >
   change-detector, it will first appear on the next content update rather than instantly.
 
 mutation_cost: low
+
+assigned_to: coder

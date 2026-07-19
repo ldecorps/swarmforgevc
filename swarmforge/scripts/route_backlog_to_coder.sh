@@ -54,6 +54,13 @@ if [[ -z "$YAML" || ! -f "$YAML" ]]; then
 fi
 
 BASENAME="$(basename "$YAML" .yaml)"
+# Ensure the active ticket is assigned to coder before the Work note lands.
+if grep -qE '^assigned_to:' "$YAML"; then
+  sed -i 's/^assigned_to:.*/assigned_to: coder/' "$YAML"
+else
+  printf '\nassigned_to: coder\n' >> "$YAML"
+fi
+
 MSG="Work ${BASENAME}: read file in backlog/active"
 if (( ${#MSG} > 80 )); then
   MSG="${MSG:0:80}"
