@@ -27,7 +27,7 @@ make_fixture() {
   # closing-pass-sweep! uses for per-role inbox/in-process counts).
   # BL-333: + daemon_alarm_lib.bb (the starvation alarm reuses the SAME
   # daemon-death email path, never a second notifier).
-  cp "$SRC/operator_lib.bb" "$SRC/operator_runtime.bb" "$SRC/telegram_topic_lib.bb" \
+  cp "$SRC/operator_lib.bb" "$SRC/operator_runtime.bb" "$SRC/operator_telegram.bb" "$SRC/operator_telegram_lib.bb" "$SRC/telegram_topic_lib.bb" \
      "$SRC/support_lib.bb" "$SRC/support_thread_store.bb" \
      "$SRC/operator_memory_lib.bb" "$SRC/operator_memory_store.bb" \
      "$SRC/ticket_status_lib.bb" "$SRC/operator_ask.bb" "$SRC/handoff_lib.bb" \
@@ -54,6 +54,8 @@ check "status.json written"                    '[[ -f "$F/.swarmforge/operator/s
 check "provider_state available"               '[[ "$(jget "$F/.swarmforge/operator/status.json" ":provider_state")" == available ]]'
 check "state dispatching"                      '[[ "$(jget "$F/.swarmforge/operator/status.json" ":state")" == dispatching ]]'
 check "pending_events >= 1"                     '[[ "$(jget "$F/.swarmforge/operator/status.json" ":pending_events")" -ge 1 ]]'
+check "BL-516: missing operator Telegram token disables console" \
+  '[[ "$(jget_in "$F/.swarmforge/operator/status.json" "[:telegram_console :state]")" == disabled ]]'
 check "heartbeat written"                       '[[ -f "$F/.swarmforge/operator/heartbeat" ]]'
 check "events moved to inflight"                '[[ -f "$F/.swarmforge/operator/events.inflight.jsonl" ]]'
 check "swarm-check timer recorded"              '[[ -f "$F/.swarmforge/operator/last-swarm-check" ]]'
@@ -63,6 +65,16 @@ OUT2="$(tick "$F")"
 check "second tick does not relaunch"          '[[ "$OUT2" == *"\"launched?\":false"* ]]'
 check "state back to idle"                      '[[ "$(jget "$F/.swarmforge/operator/status.json" ":state")" == idle ]]'
 check "inflight reaped to events-done"          '[[ -n "$(ls "$F/.swarmforge/operator/events-done/" 2>/dev/null)" ]]'
+rm -rf "$F"
+
+# ── BL-516: valid operator Telegram config is supervised by the runtime tick ──
+F="$(make_fixture)"
+OUT_TELE="$(OPERATOR_TELEGRAM_BOT_TOKEN=TOKEN OPERATOR_TELEGRAM_ALLOWED_USER_ID=123 OPERATOR_TELEGRAM_FAKE_POLL=1 tick "$F")"
+check "BL-516: valid operator Telegram config keeps console ok" \
+  '[[ "$(jget_in "$F/.swarmforge/operator/status.json" "[:telegram_console :state]")" == ok ]]'
+check "BL-516: runtime tick starts the Telegram console poller" \
+  '[[ -f "$F/.swarmforge/operator/telegram-console.pid" ]] && kill -0 "$(cat "$F/.swarmforge/operator/telegram-console.pid")" 2>/dev/null'
+bb "$F/swarmforge/scripts/operator_telegram.bb" stop "$F" >/dev/null
 rm -rf "$F"
 
 # ── 3. cooldown: future reset holds the launch, event stays queued ───────────
@@ -929,7 +941,7 @@ printf '{"is_error":true,"result":"boom","total_cost_usd":0.0089,"model":"claude
 echo "$(( $(date +%s) * 1000 ))" > "$F/.swarmforge/operator/last-swarm-check"
 tick "$F" >/dev/null
 check "restricted-front-desk-operator: an errored result posts no reply" \
-  '[[ ! -f "$F/.swarmforge/operator/telegram-reply-outbox.jsonl" ]]'
+  '[[ ! -f "$F/.swarmforge/operator/telegram-reply-outbox.jsonl" ]] || ! grep -q "boom" "$F/.swarmforge/operator/telegram-reply-outbox.jsonl"'
 check "restricted-front-desk-operator: the inflight is still archived even on error (never left dangling)" \
   '[[ ! -f "$F/.swarmforge/operator/front-desk.events.inflight.jsonl" ]]'
 check "BL-511: an errored call's cost is still captured (money was spent regardless of the reply outcome)" \

@@ -119,3 +119,5 @@ approval_context: >
   slice builds the reusable sendMessage seam they'll need. Sign off if that all matches your intent.
 
 mutation_cost: low
+
+assigned_to: coder

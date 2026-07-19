@@ -186,6 +186,8 @@
 ;; always-alive runtime rather than a transient session. See operator_tunnel.sh.
 (def tunnel-helper (fs/path script-dir "operator_tunnel.sh"))
 (def tunnel-status-file (fs/path op-dir "tunnel.status.json"))
+(def telegram-console-helper (fs/path script-dir "operator_telegram.bb"))
+(def telegram-console-status-file (fs/path op-dir "telegram-console.status.json"))
 
 ;; The Operator is NOT a swarm agent: it runs on its OWN tmux socket (see
 ;; launch_operator.sh) and its session/RC name deliberately drop the
@@ -1470,6 +1472,25 @@
     (try (json/parse-string (slurp (str tunnel-status-file)) true)
          (catch Exception _ nil))))
 
+(defn ensure-telegram!
+  "Best-effort: keep the separate allowlisted operator Telegram console poller
+   alive. Mirrors ensure-tunnel!: disabled/missing-token state is represented
+   by the helper's status file and failures are logged, never thrown into the
+   operator tick."
+  []
+  (try
+    (process/sh {:continue true
+                 :extra-env {"OPERATOR_TELEGRAM_BOT_TOKEN" (System/getenv "OPERATOR_TELEGRAM_BOT_TOKEN")
+                             "OPERATOR_TELEGRAM_ALLOWED_USER_ID" (System/getenv "OPERATOR_TELEGRAM_ALLOWED_USER_ID")
+                             "OPERATOR_TELEGRAM_FAKE_POLL" (System/getenv "OPERATOR_TELEGRAM_FAKE_POLL")}}
+                "bb" (str telegram-console-helper) "ensure" project-root)
+    (catch Exception e (log! "telegram-console-error" (.getMessage e)))))
+
+(defn read-telegram-console-status []
+  (when (fs/exists? telegram-console-status-file)
+    (try (json/parse-string (slurp (str telegram-console-status-file)) true)
+         (catch Exception _ nil))))
+
 ;; ── out-of-cycle poll (BL-481) ──────────────────────────────────────────────
 
 (defn poll!
@@ -1653,11 +1674,14 @@
 
     ;; keep the resilient remote-access tunnel alive (best-effort, non-blocking)
     (ensure-tunnel!)
+    ;; keep the allowlisted operator Telegram console alive (best-effort)
+    (ensure-telegram!)
 
     (let [llm-running? (operator-running?)
           pending (read-events events-file)
           pending-count (count pending)
           tunnel (read-tunnel-status)
+          telegram-console (read-telegram-console-status)
           decision (operator-lib/should-launch-operator?
                     {:llm-running? llm-running?
                      :provider-state provider-state
@@ -1710,6 +1734,7 @@
                                :pending-count pending-count
                                :oldest-pending-age-ms oldest-pending-age-ms})
                        tunnel (assoc :tunnel tunnel)
+                       telegram-console (assoc :telegram_console telegram-console)
                        true (assoc :build_sha own-build-sha)
                        true (assoc :front_desk
                                    (operator-lib/render-front-desk-status
