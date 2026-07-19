@@ -155,3 +155,4 @@ acceptance: |
   #    invoking it and publishing.
   #  - No metric derivation exists in client JS (renderer only).
   #  - Action failures are visible in CI but never gate the pipeline.
+mutation_cost: high

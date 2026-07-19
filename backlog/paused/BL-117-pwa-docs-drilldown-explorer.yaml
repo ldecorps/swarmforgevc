@@ -103,3 +103,4 @@ acceptance: |
   #  - Self-contained client assets (no CDN fetches), consistent with
   #    BL-097; no browser storage beyond the PWA cache of the artifact.
   #  - Public-repo exposure note from BL-097 applies unchanged.
+mutation_cost: high

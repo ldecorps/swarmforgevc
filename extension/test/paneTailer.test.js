@@ -124,10 +124,14 @@ test('mapSpecialKeyToTmux returns undefined for empty string', () => {
   assert.equal(mapSpecialKeyToTmux(''), undefined);
 });
 
-const { isStalled, STALL_THRESHOLD_MS } = require('../out/panel/paneTailer');
+const { isStalled, STALL_THRESHOLD_MS, WORKING_INDICATOR_MS } = require('../out/panel/paneTailer');
 
 test('STALL_THRESHOLD_MS is 120000', () => {
   assert.equal(STALL_THRESHOLD_MS, 120_000);
+});
+
+test('WORKING_INDICATOR_MS is 30000', () => {
+  assert.equal(WORKING_INDICATOR_MS, 30_000);
 });
 
 test('isStalled returns false when elapsed < threshold', () => {

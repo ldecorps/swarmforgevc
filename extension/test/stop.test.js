@@ -4,7 +4,7 @@ const os = require('node:os');
 const path = require('node:path');
 
 const { spawn } = require('node:child_process');
-const { buildKillSessionArgs, stopSwarm } = require('../out/swarm/swarmStopper');
+const { buildKillSessionArgs, stopSwarm, stopSwarmOnExtensionShutdown } = require('../out/swarm/swarmStopper');
 const { installFakeTmux } = require('./helpers/fakeTmux');
 
 function mkTmp() {
@@ -161,6 +161,35 @@ test('stopSwarm tolerates a daemon pid file pointing at an already-dead process'
   const fake = installFakeTmux([{ subcommand: 'kill-session', exitCode: 0 }]);
   try {
     assert.doesNotThrow(() => stopSwarm(tmp));
+  } finally {
+    fake.restore();
+  }
+});
+
+test('stopSwarmOnExtensionShutdown is a no-op when target path is missing', () => {
+  assert.equal(stopSwarmOnExtensionShutdown(null), null);
+  assert.equal(stopSwarmOnExtensionShutdown(undefined), null);
+  assert.equal(stopSwarmOnExtensionShutdown(''), null);
+});
+
+test('stopSwarmOnExtensionShutdown tears down a live swarm like stopSwarm', () => {
+  const tmp = mkTmp();
+  mkdirp(path.join(tmp, '.swarmforge'));
+  fs.writeFileSync(path.join(tmp, '.swarmforge', 'tmux-socket'), '/fake/swarm.sock');
+  fs.writeFileSync(
+    path.join(tmp, '.swarmforge', 'sessions.tsv'),
+    '1\tcoder\tswarmforge-coder\tCoder\tclaude\n'
+  );
+
+  const fake = installFakeTmux([
+    { subcommand: 'kill-session', exitCode: 0 },
+    { subcommand: 'kill-server', exitCode: 0 },
+  ]);
+  try {
+    const result = stopSwarmOnExtensionShutdown(tmp);
+    assert.equal(result?.success, true);
+    assert.deepEqual(result?.sessionsKilled, ['swarmforge-coder']);
+    assert.equal(fs.existsSync(path.join(tmp, '.swarmforge', 'tmux-socket')), false);
   } finally {
     fake.restore();
   }

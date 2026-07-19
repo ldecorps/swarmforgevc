@@ -1,7 +1,9 @@
 // pipeline smoke test BL-029
 import * as cp from 'child_process';
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
+import type { SecretStorage } from 'vscode';
 import {
   listTmuxSessions,
   readSwarmRoles,
@@ -76,14 +78,31 @@ export function isSwarmReady(targetPath: string): boolean {
   return roles.every((role) => sessionExists(socket, role.session));
 }
 
-// Dirs where tmux, bb (babashka), and claude are commonly installed. A
-// Dock/Finder-launched VS Code inherits a minimal PATH without these, so the
+// Dirs where tmux, bb (babashka), claude, and aider are commonly installed.
+// A Dock/Finder-launched VS Code inherits a minimal PATH without these, so the
 // spawned ./swarm cannot find its tools and the launch silently fails.
-const COMMON_TOOL_PATHS = ['/opt/homebrew/bin', '/usr/local/bin'];
+const COMMON_TOOL_PATHS = [
+  '/opt/homebrew/bin',
+  '/usr/local/bin',
+  path.join(os.homedir(), '.local', 'bin'),
+];
+
+function pythonUserBinDirs(): string[] {
+  const base = path.join(os.homedir(), 'Library', 'Python');
+  try {
+    return fs
+      .readdirSync(base)
+      .map((version) => path.join(base, version, 'bin'))
+      .filter((dir) => fs.existsSync(dir));
+  } catch {
+    return [];
+  }
+}
 
 export function augmentPath(currentPath: string | undefined): string {
+  const toolPaths = [...COMMON_TOOL_PATHS, ...pythonUserBinDirs()];
   const existing = (currentPath ?? '').split(':').filter((p) => p.length > 0);
-  const missing = COMMON_TOOL_PATHS.filter((dir) => !existing.includes(dir));
+  const missing = toolPaths.filter((dir) => !existing.includes(dir));
   return [...missing, ...existing].join(':');
 }
 
@@ -107,6 +126,33 @@ export function resolveSwarmConfigPath(): string | undefined {
   }
 
   return undefined;
+}
+
+/** Count `window` lines in a swarmforge pack/profile config file. */
+export function countRolesInConfig(configPath: string): number {
+  try {
+    const content = fs.readFileSync(configPath, 'utf8');
+    return content.split('\n').filter((line) => line.trimStart().startsWith('window ')).length;
+  } catch {
+    return 0;
+  }
+}
+
+/** True when roles.tsv matches the configured pack/profile role count. */
+export function runningSwarmMatchesConfig(targetPath: string, configPath?: string): boolean {
+  const resolved = configPath?.trim() || resolveSwarmConfigPath();
+  if (!resolved) {
+    return true;
+  }
+  const expected = countRolesInConfig(resolved);
+  if (expected === 0) {
+    return true;
+  }
+  const roles = readSwarmRoles(targetPath);
+  if (roles.length === 0) {
+    return false;
+  }
+  return roles.length === expected;
 }
 
 export function buildLaunchEnv(runName?: string, configPath?: string): NodeJS.ProcessEnv {
@@ -141,10 +187,28 @@ export function buildLaunchEnv(runName?: string, configPath?: string): NodeJS.Pr
   return env;
 }
 
+/** BL-130: forward provider API keys to ./swarm without writing them to disk. */
+export async function enrichLaunchEnvWithProviderKeys(
+  env: NodeJS.ProcessEnv,
+  secrets?: SecretStorage
+): Promise<NodeJS.ProcessEnv> {
+  const { resolveMistralApiKey, resolveOpenAIApiKey } = await import('../notify/secrets');
+  const mistralKey = await resolveMistralApiKey(secrets);
+  if (mistralKey) {
+    env['MISTRAL_API_KEY'] = mistralKey;
+  }
+  const openaiKey = await resolveOpenAIApiKey(secrets);
+  if (openaiKey) {
+    env['OPENAI_API_KEY'] = openaiKey;
+  }
+  return env;
+}
+
 export async function launchSwarm(
   targetPath: string,
   runName?: string,
-  readyTimeoutMs = 120_000
+  readyTimeoutMs = 120_000,
+  secrets?: SecretStorage
 ): Promise<LaunchResult> {
   const swarmScript = path.join(targetPath, 'swarm');
   if (!fs.existsSync(swarmScript)) {
@@ -167,6 +231,11 @@ export async function launchSwarm(
   // three-role resilience-min while seven-pack is configured).
   stopSwarm(targetPath);
 
+  const launchEnv = await enrichLaunchEnvWithProviderKeys(
+    buildLaunchEnv(runName, configPath),
+    secrets
+  );
+
   return new Promise((resolve) => {
     // BL-108 spawn-registry-01: detached:true makes child.pid the new
     // process GROUP's leader, so a registry entry keyed on it can reap the
@@ -177,7 +246,7 @@ export async function launchSwarm(
       () =>
         cp.spawn(swarmScript, [targetPath], {
           cwd: targetPath,
-          env: buildLaunchEnv(runName, configPath),
+          env: launchEnv,
           stdio: ['ignore', 'pipe', 'pipe'],
           detached: true,
         }),

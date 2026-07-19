@@ -77,3 +77,4 @@ acceptance: |
   #    changed paths / ticket fields (no live GitHub in tests).
   #  - Workflow YAML contains no repo secrets and no business logic beyond
   #    sync + nudge.
+mutation_cost: low

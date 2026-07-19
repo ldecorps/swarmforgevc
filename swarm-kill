@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# Stop every SwarmForge agent, daemon, and stale tmux server for this repo.
+#
+# Usage:
+#   ./swarm-kill                  # kill processes + clear state
+#   ./swarm-kill --sweep-inbox      # also archive pending handoffs
+#   ./swarm-kill --reset-worktrees  # also reset role worktrees
+#   ./swarm-kill --full             # kill + inbox sweep + worktree reset
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+exec bash "$SCRIPT_DIR/swarmforge/scripts/kill_all_swarm.sh" "$@"

@@ -54,6 +54,7 @@ SPEC_SCRIPT="$ROOT1/.swarmforge/launch/specifier.sh"
 [[ -f "$DOC_SCRIPT" ]] || fail "01: documenter launch script was not written"
 grep -q "^aider " "$DOC_SCRIPT" || fail "01: expected documenter launch body to invoke aider, got: $(cat "$DOC_SCRIPT")"
 grep -q -- "--model mistral/mistral-large-latest" "$DOC_SCRIPT" || fail "01: expected the configured model flag to reach aider's launch body"
+grep -q -- "--message-file" "$DOC_SCRIPT" && fail "01: aider must stay in persistent chat mode, not one-shot --message-file"
 grep -q "^claude " "$SPEC_SCRIPT" || fail "01: unconfigured role specifier must still default to claude, got: $(cat "$SPEC_SCRIPT")"
 pass "01: agent=aider produces a non-claude launch body; unconfigured roles keep claude"
 
@@ -148,5 +149,41 @@ MISTRAL_API_KEY=test-secret-do-not-leak OPENAI_API_KEY=another-secret PATH="$FAK
 grep -q -- "-e " "$TMUX_LOG5" \
   && fail "05: a claude role's respawn-pane must never receive a provider-key -e flag; got: $(cat "$TMUX_LOG5")"
 pass "05: a claude role's respawn-pane never receives a provider-key -e flag, even with provider keys set in env"
+
+# ── 6: aider roles get an explicit bootstrap prompt (not bare Read-lines that
+#      split into three tmux submissions and confuse weaker models) ───────
+ROOT6="$(mk_root)"
+PROMPT6="$ROOT6/.swarmforge/prompts/coder.md"
+zsh -c "source '$SWARMFORGE_SH' '$ROOT6'; write_agent_instruction_file coder '$PROMPT6' aider"
+grep -q "full repository read and write access" "$PROMPT6" \
+  || fail "06: aider coder prompt must assert repo access, got: $(cat "$PROMPT6")"
+grep -q "^Read swarmforge" "$PROMPT6" \
+  && fail "06: aider prompt must not use bare Read-lines that tmux splits into separate turns"
+zsh -c "source '$SWARMFORGE_SH' '$ROOT6'; write_agent_instruction_file coder '$PROMPT6' claude"
+grep -q "^Read swarmforge/constitution.prompt" "$PROMPT6" \
+  || fail "06: claude roles must keep the standard three-line bootstrap"
+pass "06: aider roles get aider-specific bootstrap; claude roles keep Read-lines"
+
+# ── 7: aider coordinator bootstrap forbids coding and notes two-pack routing ─
+ROOT7="$(mk_root)"
+echo "role prompt" > "$ROOT7/swarmforge/roles/coordinator.prompt"
+echo "role prompt" > "$ROOT7/swarmforge/roles/coder.prompt"
+echo "role prompt" > "$ROOT7/swarmforge/roles/cleaner.prompt"
+mkdir -p "$ROOT7/swarmforge/packs"
+cat > "$ROOT7/swarmforge/packs/two-pack-mistral.conf" <<CONF
+config active_backlog_max_depth 1
+window coordinator aider master --model mistral/mistral-large-latest
+window coder aider master --model mistral/codestral-latest
+window cleaner aider cleaner batch --model mistral/mistral-large-latest
+CONF
+PROMPT7="$ROOT7/.swarmforge/prompts/coordinator.md"
+zsh -c "SWARMFORGE_CONFIG='$ROOT7/swarmforge/packs/two-pack-mistral.conf' source '$SWARMFORGE_SH' '$ROOT7'; write_agent_instruction_file coordinator '$PROMPT7' aider"
+grep -q "ORCHESTRATOR ONLY" "$PROMPT7" \
+  || fail "07: aider coordinator prompt must forbid coding, got: $(cat "$PROMPT7")"
+grep -q "no specifier" "$PROMPT7" \
+  || fail "07: two-pack coordinator prompt must note direct-to-coder routing"
+grep -q "swarmforge/runtime/handoff-draft.txt" "$PROMPT7" \
+  || fail "07: coordinator prompt must use runtime handoff draft path"
+pass "07: aider coordinator gets orchestration-only two-pack bootstrap"
 
 echo "ALL PASS"

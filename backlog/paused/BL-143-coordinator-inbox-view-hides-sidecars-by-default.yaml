@@ -55,3 +55,4 @@ acceptance: |
   # Non-behavioral gates:
   #  - Add tests for listing/counting behavior with mixed payload+sidecar sets.
   #  - Update docs/runbooks with payload-first queue inspection examples.
+mutation_cost: low

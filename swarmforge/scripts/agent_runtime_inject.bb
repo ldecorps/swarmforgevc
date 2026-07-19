@@ -97,7 +97,7 @@
       (let [capture (capture-pane-text socket session)]
         (cond
           (agent-runtime-lib/wake-delivery-confirmed? agent capture pending-text)
-          (do (report! "ok" nil attempt stacked?) nil)
+          (do (report! "ok" nil attempt stacked?) :ok)
 
           (>= attempt (notify-max-retries-for agent))
           (let [detail (if stacked?
@@ -105,7 +105,7 @@
                          (str "submit not confirmed after " attempt " attempt(s)"))]
             (log! "notify-delivery-failed" session detail)
             (report! "failed" detail attempt stacked?)
-            nil)
+            :failed)
 
           :else
           (do

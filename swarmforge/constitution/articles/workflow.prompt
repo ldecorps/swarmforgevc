@@ -98,13 +98,23 @@
 - Before sending any forward, run that ancestry check; if it fails, you
   are about to forward a parcel that silently drops upstream work — stop
   and merge the received commit properly.
-- The receiving role (including the specifier at merge time) re-runs the
+- The receiving role (including the coordinator at main integration) re-runs the
   same check and refuses parcels that fail it, reporting to the
   coordinator instead of processing them.
 - (Added 2026-07-05 after BL-090/BL-103's implementation was dropped: the
   documenter forwarded its docs commit without merging the hardener's
   verified work, and QA approved a parcel whose code never existed in its
   tree.)
+
+## QA merge-up broadcast (worktree roles)
+- Pipeline worktree roles (`coder`, `cleaner`, `architect`, `hardender`,
+  `documenter`) may receive a `note` from QA after final verification passes,
+  instructing them to merge their branch up to QA's approved commit.
+- On that note: `git merge <qa-commit>` in your worktree (plain merge or
+  `--no-ff`), resolve conflicts as the receiver, then `done_with_current.sh`.
+  Do not forward the parcel — the pipeline chain ended at QA.
+- The **specifier** and **coordinator** are not merge-up recipients; the
+  coordinator integrates on `main` separately after QA notifies it.
 
 ## Announcements
 - Do not add role bylines to announcements or check-in comments.

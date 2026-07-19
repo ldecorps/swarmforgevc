@@ -80,5 +80,5 @@ SWARMFORGE_SKIP_DAEMON=1 ./swarmforge/scripts/inject_note_to_role.sh QA "probe"
 
 ## Phase mapping (BL-153)
 
-- **BL-154 (now):** Primary path only; `inject-traffic.log` + `inject_traffic.sh`.
-- **BL-155 (next):** Daemon backup when sync fails; extension supervises daemon health.
+- **BL-154 (done):** Primary path only; `inject-traffic.log` + `inject_traffic.sh`.
+- **BL-155 (done):** Daemon backup when sync inject fails; default launch starts handoffd.

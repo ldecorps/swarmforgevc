@@ -91,3 +91,4 @@ acceptance: |
   #    dwell/bounce).
   #  - Chaser decision functions remain pure; logging happens in adapters.
   #  - Existing chaser suites (BL-067, BL-087, BL-088) stay green.
+mutation_cost: low

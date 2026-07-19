@@ -113,3 +113,20 @@ export function stopSwarm(targetPath: string): StopResult {
     sessionsKilled: killed,
   };
 }
+
+/**
+ * Best-effort swarm teardown when the extension host stops. Idempotent and
+ * never throws — a partially torn-down swarm must not block deactivate().
+ */
+export function stopSwarmOnExtensionShutdown(
+  targetPath: string | null | undefined
+): StopResult | null {
+  if (!targetPath) {
+    return null;
+  }
+  try {
+    return stopSwarm(targetPath);
+  } catch {
+    return null;
+  }
+}

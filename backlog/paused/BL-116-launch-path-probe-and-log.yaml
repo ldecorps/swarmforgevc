@@ -57,3 +57,4 @@ acceptance: |
   #  - Probe uses a short timeout and never blocks activation.
   #  - Tested through the existing swarmLauncher seams (fake shell probe,
   #    fake fs); no live tmux in tests.
+mutation_cost: high
