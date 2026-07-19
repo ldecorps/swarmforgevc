@@ -174,7 +174,9 @@ export function detectCompletedCanaries(targetPath: string, nowMs: number, coord
     // Look for a completed handoff with this canary's task name. The filename
     // in completed/ will be named with the canary task and marked _for_coordinator.
     let found = false;
-    if (fs.existsSync(coordinatorCompletedDir)) {
+    const completedDirExists = fs.existsSync(coordinatorCompletedDir);
+    const completedDirIsDirectory = completedDirExists && fs.statSync(coordinatorCompletedDir).isDirectory();
+    if (completedDirIsDirectory) {
       for (const entry of fs.readdirSync(coordinatorCompletedDir)) {
         // Match handoff files (must be .handoff, not sidecar files)
         if (!entry.endsWith('.handoff')) {

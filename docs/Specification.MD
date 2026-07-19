@@ -1,23 +1,19 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** July 6, 2026
+**Last Updated:** July 9, 2026
 
 ## Overview
 
-A VS Code extension that runs a multi-agent coding swarm and brings the work back as a PR. It is a **standalone orchestrator** — inspired by Uncle Bob's SwarmForge agent-orchestration model, but it spawns and manages the agent processes itself rather than driving SwarmForge or tmux. The extension lives entirely in the forge codebase. It points at any target project, runs the swarm on it, and brings the work back as a PR. The target project carries only two swarm bootstrap files and otherwise has no knowledge of the swarm machinery.
+A VS Code extension that drives and observes a multi-agent coding swarm and brings the work back as a PR. It is a **tmux-driven front-end** for an unmodified SwarmForge install — it shells out to `./swarm`, reads `.swarmforge/` state, and tails the live tmux panes instead of spawning agent processes itself. The extension lives entirely in the forge codebase. It points at any target project, runs the swarm on it, and brings the work back as a PR. The target project carries only two swarm bootstrap files and otherwise has no knowledge of the swarm machinery.
 
 **Getting started?** See [Getting Started with SwarmForge VC](GettingStarted.md) for install, setup, and first run. This specification is the detailed reference.
 
 **Diagrams:** [Architecture diagram](diagrams/architecture.mmd) and
 [Swarm workflow flow diagram](diagrams/swarm-flow.mmd) (Mermaid sources)
-depict the system as actually built. Flagging a doc/code disagreement here
-per BL-095: the Overview paragraph above describes a "standalone
-orchestrator" that spawns and manages agent processes itself — the code
-does not do this. The extension drives an unmodified, separately-installed
-SwarmForge over tmux and reads its `.swarmforge/` state files (see
+depict the system as actually built. The diagrams reflect the tmux-driving
+architecture described in
 `swarmforge/constitution/articles/local-engineering.prompt` and
-`swarmDiscovery.ts`'s own BL-066 note); it never spawns agent processes
-directly. The diagrams reflect the tmux-driving architecture.
+`swarmDiscovery.ts`'s BL-066 note.
 
 ---
 
@@ -35,21 +31,7 @@ directly. The diagrams reflect the tmux-driving architecture.
 
 ## Relationship to SwarmForge (Inspired By, Not Dependent On)
 
-The extension is a **standalone orchestrator** inspired by SwarmForge — it borrows the *model* (a sequential role pipeline, worktree-per-role, filesystem-mediated handoffs) but spawns and manages the agent processes itself. SwarmForge is **not a runtime dependency**: no fork, no vendored source, no `./swarm` wrapper, no tmux, nothing fetched at setup.
-
-**Why own orchestration.** The driving constraint is native Windows. tmux — SwarmForge's process substrate — has no native Windows implementation, and WSL/emulation layers were explicitly rejected in favor of a clean cross-platform path. Owning the orchestrator means one process API across Windows, macOS, and Linux. The cost is giving up upstream feature relay; the benefit is a substrate the extension fully controls and can run anywhere VS Code runs.
-
-**The substrate is process + filesystem, owned in-repo.** The extension runs the swarm through its own thin orchestrator:
-- spawns each agent as an `InteractiveProcess` (a `child_process.spawn` shell backend, or an in-process `vscode.lm` runtime — see Agent Backends),
-- owns each process's output stream directly (`onData`), which is what makes live tiles, message-bus capture, and input forwarding all work from a single handle,
-- reads and writes swarm state under `.swarmforge/` (messages, heartbeats) and `.worktrees/` in the target clone,
-- configures swarm shape through this repo's own role/constitution prompt files and pack config — all *configuration in this repo*, not an external dependency.
-
-Almost everything in this spec — hardened comms, watchdog/heartbeat, work tree, tiles, cost logic — sits on top of that owned substrate.
-
-**Reproducibility.** Because the orchestrator, role runtimes, message bus, and all prompts live in this repo and are versioned in git, a given extension version *is* the complete definition of swarm behaviour. Nothing is fetched upstream that could silently change results between two runs of the same version. (The former `dependency-pinning.md` / `swarmforge.lock.json` discipline is therefore retired — there is no upstream artifact to pin.)
-
-**Borrowing from SwarmForge going forward.** Uncle Bob's pipeline shape remains a useful reference; a human may consult it and port ideas deliberately into this repo's prompts or orchestrator. That is a human design act, not an automated fetch — the inspiration never re-enters as a runtime input.
+The extension is a **tmux-driven front-end** for SwarmForge — it borrows the *model* (a sequential role pipeline, worktree-per-role, filesystem-mediated handoffs) but leaves process orchestration to the external SwarmForge install. SwarmForge **is** a runtime dependency here: the extension shells out to `./swarm`, tails panes, and reads `.swarmforge/` state. The extension itself stays in the forge repo, while the target repo stays clean apart from the two bootstrap prompt files.
 
 ---
 
@@ -217,6 +199,9 @@ The bridge is an **opt-in local HTTP server** that exposes the same on-disk swar
 
 **Security:**
 - Every request requires a valid bearer token in the `Authorization` header: `Authorization: Bearer <token>`
+- Browser clients may pass the same token as a `?token=<token>` query
+  parameter for the read-only resident-spy console and SSE stream, where custom
+  headers are awkward.
 - The token is generated per run and held only in the extension host environment — it never appears in the target repo or any commit
 - Requests without a valid token receive a 401 Unauthorized response with no state disclosed
 - The bridge listens on 127.0.0.1 only; it is not accessible over the network
@@ -230,6 +215,8 @@ The bridge is an **opt-in local HTTP server** that exposes the same on-disk swar
 | `GET /api/backlog` | JSON: active/paused/done items | Backlog folders and ticket metadata |
 | `GET /api/runlog` | JSON: timeline of stage transitions and key events | Run history and audit trail |
 | `GET /events` | Server-Sent Events (SSE) stream | Real-time updates when stage or agent state changes |
+| `GET /resident-spy` | HTML miniapp | Console menu with `STATUS GRID` and `mono-router RESIDENT` views |
+| `GET /metrics/stage-dwell` | JSON: per-role dwell summary | Completed handoff processing median/max within the rolling window |
 
 **Example usage (cURL):**
 
@@ -242,6 +229,9 @@ curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:9999/api/pipeline
 
 # Subscribe to the event stream
 curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:9999/events
+
+# Open the browser console menu
+open "http://127.0.0.1:9999/resident-spy?token=$TOKEN"
 ```
 
 **Stateless design:**

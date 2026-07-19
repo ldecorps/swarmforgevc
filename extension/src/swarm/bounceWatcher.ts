@@ -159,19 +159,14 @@ class BounceFSWatcher extends EventEmitter {
   }
 
   close(): void {
-    this.suppressReconnect = true;
-    this.closeCurrentWatcher();
-    this.suppressReconnect = false;
-    if (!this.permanentlyClosed) {
-      this.attachWatcher();
-    }
-  }
-
-  dispose(): void {
     this.permanentlyClosed = true;
     this.suppressReconnect = true;
     this.closeCurrentWatcher();
     this.removeAllListeners();
+  }
+
+  dispose(): void {
+    this.close();
   }
 
   private closeCurrentWatcher(): void {
@@ -187,5 +182,9 @@ export function startBounceWatcher(
   onBounce: (bounceType: BounceType) => void,
   onError?: (error: string) => void,
 ): BounceWatcher | null {
+  const swarmforgeDir = path.join(targetPath, '.swarmforge');
+  if (!fs.existsSync(swarmforgeDir)) {
+    return null;
+  }
   return new BounceFSWatcher(targetPath, onBounce, onError) as unknown as BounceWatcher;
 }
