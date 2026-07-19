@@ -49,7 +49,7 @@ In the Extension Development Host window:
 
 ## 3. Run and watch
 
-1. Run **SwarmForge: Run Swarm** (`swarmforge.run`) to shell out
+1. Run **SwarmForge: Launch Swarm** (`swarmforge.launchSwarm`) to shell out
    to the target's `./swarm` wrapper and start the agents.
 2. The extension automatically opens the tiled agent panel when the swarm
    launches. If you close the panel, reopen the SwarmForge panel from the
@@ -62,7 +62,7 @@ In the Extension Development Host window:
 See `docs/specs/headless-reattach-doctrine.md` for the full reattach vs launch decision table.
 
 To stop the swarm cleanly at any point, run **SwarmForge: Stop Swarm**
-(`swarmforge.stop`).
+(`swarmforge.stopSwarm`).
 
 ## 4. Get your PR
 

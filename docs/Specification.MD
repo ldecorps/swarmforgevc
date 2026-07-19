@@ -199,6 +199,9 @@ The bridge is an **opt-in local HTTP server** that exposes the same on-disk swar
 
 **Security:**
 - Every request requires a valid bearer token in the `Authorization` header: `Authorization: Bearer <token>`
+- Browser clients may pass the same token as a `?token=<token>` query
+  parameter for the read-only resident-spy console and SSE stream, where custom
+  headers are awkward.
 - The token is generated per run and held only in the extension host environment — it never appears in the target repo or any commit
 - Requests without a valid token receive a 401 Unauthorized response with no state disclosed
 - The bridge listens on 127.0.0.1 only; it is not accessible over the network
@@ -212,6 +215,8 @@ The bridge is an **opt-in local HTTP server** that exposes the same on-disk swar
 | `GET /api/backlog` | JSON: active/paused/done items | Backlog folders and ticket metadata |
 | `GET /api/runlog` | JSON: timeline of stage transitions and key events | Run history and audit trail |
 | `GET /events` | Server-Sent Events (SSE) stream | Real-time updates when stage or agent state changes |
+| `GET /resident-spy` | HTML miniapp | Console menu with `STATUS GRID` and `mono-router RESIDENT` views |
+| `GET /metrics/stage-dwell` | JSON: per-role dwell summary | Completed handoff processing median/max within the rolling window |
 
 **Example usage (cURL):**
 
@@ -224,6 +229,9 @@ curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:9999/api/pipeline
 
 # Subscribe to the event stream
 curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:9999/events
+
+# Open the browser console menu
+open "http://127.0.0.1:9999/resident-spy?token=$TOKEN"
 ```
 
 **Stateless design:**
