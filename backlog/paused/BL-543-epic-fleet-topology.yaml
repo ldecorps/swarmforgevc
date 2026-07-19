@@ -1,0 +1,22 @@
+id: BL-543
+title: "EPIC — Fleet topology: secondary/headless swarms and remote-control health/ensure wiring; do not promote directly; tracks children"
+milestone: M8
+status: todo
+type: epic
+epic: fleet-topology
+priority: 00
+depends_on: []
+decomposes_into: [BL-101, BL-514]
+source: "Human hygiene 2026-07-19: every ticket must have an epic; every epic must have a milestone. Tracker created during open-backlog cleanup."
+
+notes: |
+  UMBRELLA / tracking item (type: epic), NOT directly promotable — the coordinator
+  promotes CHILD slices, never this. Children carry `epic: fleet-topology` and are
+  listed in `decomposes_into`.
+
+  VISION: multi-host / secondary swarm topology and remote-control health stay
+  ticketed and ensure-able, not tribal knowledge.
+
+acceptance:
+  none: "tracker only — see decomposes_into children for acceptance"
+mutation_cost: high

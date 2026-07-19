@@ -283,6 +283,19 @@ export function decideEnsureControlTopicAction(topicMap: Record<string, string>)
   return existingTopicId !== undefined ? { kind: 'reuse', topicId: existingTopicId } : { kind: 'create' };
 }
 
+// Babysitter standing topic — outside the pipeline chain. Publishes glitches
+// and remediations from the always-on reliability watcher (babysit.sh).
+export const BABYSITTER_SUBJECT_ID = 'BABYSITTER';
+export const BABYSITTER_TOPIC_NAME = 'Babysitter';
+
+export type EnsureBabysitterTopicAction = { kind: 'reuse'; topicId: number } | { kind: 'create' };
+
+export function decideEnsureBabysitterTopicAction(topicMap: Record<string, string>): EnsureBabysitterTopicAction {
+  const existingTopicId = topicForSubject(topicMap, BABYSITTER_SUBJECT_ID);
+  return existingTopicId !== undefined ? { kind: 'reuse', topicId: existingTopicId } : { kind: 'create' };
+}
+
+
 export type EnsureRoleTopicAction = { kind: 'reuse'; topicId: number } | { kind: 'create' };
 
 // BL-425 slice 1: the per-role twin of decideEnsureOperatorTopicAction

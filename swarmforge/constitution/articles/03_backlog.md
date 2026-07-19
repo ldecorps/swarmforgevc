@@ -3,6 +3,8 @@
 ## 3.1 Backlog Structure
 - `backlog/paused/` – Items awaiting promotion.
 - `backlog/active/` – Items currently in the pipeline.
+- `backlog/hold/` – Human-held items. Never auto-promote from here; they sit
+  until a human moves them back to `paused/` or `active/`.
 - `backlog/done/` – Completed items.
 
 ## 3.2 Promotion Rules

@@ -1,0 +1,29 @@
+id: BL-532
+title: "Isolate bounce recovery from sibling defect contamination"
+milestone: M8
+type: defect
+status: todo
+epic: swarm-reliability
+assigned_to: specifier
+priority: 6
+mutation_cost: medium
+direction: human-requested
+depends_on: []
+source: "BL-512 audit BL-FIX-005. Evidence: multi bounce write-ups 'blocked by BL-469 icon collision in shared batch tree'; rule_proposals L11."
+
+notes: |
+  WHAT / WHY: Healthy parcels re-bounce because a sibling's defect rides shared
+  worktree / batched merges (BL-469 collision pattern).
+
+  ROOT CAUSE: bounce recovery does not isolate trees or skip re-queue when the
+  failure signature matches a sibling's open bounce.
+
+  OUTCOME: isolate bounce recovery trees; skip re-queue when signature matches an
+  open sibling bounce. Specifier owns APS feature.
+
+acceptance: |
+  Feature: sibling bounce contamination does not re-queue healthy parcels
+    Scenario: open sibling bounce with same signature skips re-queue
+      Given ticket A bounced for signature S and ticket B shares the batch tree
+      When B would be re-queued for S without its own failing proof
+      Then B is not re-queued solely due to A's open bounce

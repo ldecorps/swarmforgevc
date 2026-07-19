@@ -12,6 +12,7 @@
 
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "handoff_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "chase_sweep_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "backlog_depth_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "agent_runtime_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "agent_runtime_inject.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "daemon_alarm_lib.bb")))
@@ -23,6 +24,7 @@
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "standing_rule_violations_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "standing_rule_violations_files.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "stuck_escalation_email_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "loop_detect_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "push_sweep_lib.bb")))
 
 (def poll-ms 1000)
@@ -42,6 +44,13 @@
    :respawnCooldownSeconds 300
    :chaseBackoffBaseSeconds 30
    :chaseBackoffMaxSeconds 300})
+
+;; Endless NO_TASK-spin circuit breaker: pane activity hashing alone cannot
+;; see a busy-loop that keeps changing the pane with the same idle ritual.
+;; Per-role strike state lives in this process only; a daemon restart that
+;; loses strikes is safe (the spin re-arms within two chase observations).
+(def loop-detect-states (atom {}))
+(def loop-halt-triggered? (atom false))
 
 (defn usage []
   (binding [*out* *err*]
@@ -270,9 +279,10 @@
 
 (defn notify!
   [socket session agent]
-  (agent-runtime-inject/notify-agent! socket session (or agent "claude")
-                                        :log-fn (fn [tag sess detail] (log! tag sess detail))
-                                        :script-rel-path agent-runtime-lib/ready-script-rel-path))
+  (let [session (handoff-lib/wake-session socket session)]
+    (agent-runtime-inject/notify-agent! socket session (or agent "claude")
+                                          :log-fn (fn [tag sess detail] (log! tag sess detail))
+                                          :script-rel-path agent-runtime-lib/ready-script-rel-path)))
 
 (defn maybe-notify!
   "Tmux wake after mailbox delivery. Skipped when SWARMFORGE_MAILBOX_ONLY=1."
@@ -322,6 +332,28 @@
         (log! "failed-to-archive" (str path) (.getMessage move-ex))
         (spit (str path ".error") (str reason "\n"))))))
 
+
+;; Babysitter hawk (outside chain): after a successful handoff delivery,
+;; enqueue a wake so the idle babysitter observes. No-op unless
+;; .swarmforge/babysitter/enabled exists (babysit.sh creates it).
+(defn enqueue-babysitter-wake!
+  [sender-role recipients path headers]
+  (let [enabled (fs/path state-dir "babysitter" "enabled")
+        queue (fs/path state-dir "babysitter" "wake-queue.jsonl")]
+    (when (fs/exists? enabled)
+      (try
+        (fs/create-dirs (fs/parent queue))
+        (let [event {:type "handoff"
+                     :from (str sender-role)
+                     :to (str/join "," recipients)
+                     :path (str path)
+                     :task (or (get headers "task") "")
+                     :at (str (java.time.Instant/now))}]
+          (spit (str queue) (str (json/generate-string event) "\n") :append true)
+          (log! "babysitter-wake-enqueued" (str path)))
+        (catch Exception e
+          (log! "babysitter-wake-error" (.getMessage e)))))))
+
 (defn deliver! [roles socket sender-role path]
   (let [filename (fs/file-name path)]
     ;; BL-365: a corrupt outbox file (empty, truncated mid-header, or
@@ -356,7 +388,8 @@
             (when (= "rule_proposal" (get headers "type"))
               (append-rule-proposal! headers))
             (move-with-collision path (sent-dir (get roles sender-role)))
-            (log! "delivered" (str path))))))))
+            (log! "delivered" (str path))
+            (enqueue-babysitter-wake! sender-role recipients path headers)))))))
 
 (defn inbox-new-files [role-info]
   (let [new-dir (handoff-lib/mailbox-dir role-info :new)]
@@ -587,6 +620,10 @@
   (:out (tmux! "-S" socket "capture-pane" "-p" "-t" session "-S" (str "-" n))))
 
 (defn get-last-activity-ms [role-info socket now-ms]
+  ;; Loop detection is NOT done here: bb/SCI cannot forward-reference
+  ;; observe-pane-loop! (defined later). Standing sessions are observed from
+  ;; chase-sweep! → observe-standing-role-loops! instead, which also covers
+  ;; the empty-mailbox NO_TASK spin that in_process-gated activity misses.
   (let [pane (try (capture-pane-lines socket (:session role-info) 50) (catch Exception _ ""))
         outbox-dir (handoff-lib/mailbox-dir role-info :outbox)
         sent-dir* (handoff-lib/mailbox-dir role-info :sent)
@@ -715,6 +752,55 @@
       :log-warning! (fn [msg] (log! "email-misconfigured" msg))
       :mark-warned! (fn [] (reset! escalation-email-missing-key-warned? true))})))
 
+(defn halt-for-endless-loop!
+  "Hard-stop the swarm when a role is burning tokens on a NO_TASK spin.
+   Alerts first (Telegram Operator topic + email), then touches the supervisor
+   stop file and runs kill_all_swarm.sh. compare-and-set so concurrent chase
+   observations only halt once. Alert order is intentional: outbox + email
+   land on disk/network before tmux/daemon teardown."
+  [role state]
+  (when (compare-and-set! loop-halt-triggered? false true)
+    (let [reason (loop-detect-lib/format-halt-reason role state)
+          subject (loop-detect-lib/format-email-subject role)
+          tg-text (loop-detect-lib/format-telegram-alert role state)
+          reply-outbox (fs/path state-dir "operator" "telegram-reply-outbox.jsonl")]
+      (log! "endless-loop-halt" role reason)
+      ;; Telegram: same OPERATOR-topic outbox disk-space / idle-nudge use
+      ;; (bridge polls telegram-reply-outbox.jsonl). Durable before kill.
+      (try
+        (fs/create-dirs (fs/parent reply-outbox))
+        (spit (str reply-outbox)
+              (str (json/generate-string {"threadId" "OPERATOR" "text" tg-text}) "\n")
+              :append true)
+        (log! "endless-loop-telegram" role)
+        (catch Exception e (log! "endless-loop-telegram-error" (.getMessage e))))
+      (try
+        (daemon-alarm-lib/send-configured-email!
+         project-root conf-file subject reason
+         {:already-warned?! (fn [] @escalation-email-missing-key-warned?)
+          :log-warning! (fn [msg] (log! "email-misconfigured" msg))
+          :mark-warned! (fn [] (reset! escalation-email-missing-key-warned? true))})
+        (log! "endless-loop-email" role)
+        (catch Exception e (log! "endless-loop-email-error" (.getMessage e))))
+      (try
+        (fs/create-dirs daemon-dir)
+        (spit (str stop-file) "")
+        (catch Exception e (log! "endless-loop-stop-file-error" (.getMessage e))))
+      (try
+        (process/sh ["bash" (str (fs/path script-dir "kill_all_swarm.sh")) (str project-root)])
+        (catch Exception e (log! "endless-loop-kill-error" (.getMessage e)))))))
+
+(defn observe-pane-loop!
+  "Feed one pane snapshot into loop_detect_lib; halt the swarm on :halt."
+  [role pane]
+  (when-not @loop-halt-triggered?
+    (let [prev (get @loop-detect-states role)
+          decision (loop-detect-lib/decide-loop-action prev pane)]
+      (swap! loop-detect-states assoc role (:state decision))
+      (when (= :halt (:action decision))
+        (halt-for-endless-loop! role (:state decision))))))
+
+
 (defn stuck-escalation-email-sweep! [role escalated? now-ms]
   (try
     (stuck-escalation-email-lib/sweep!
@@ -723,6 +809,20 @@
       :log! (fn [& parts] (apply log! parts))})
     (catch Exception e
       (log! "stuck-escalation-email-error" role (.getMessage e)))))
+
+
+(defn observe-standing-role-loops!
+  "Walk every role that still has a live tmux session and feed its pane into
+   the endless-loop detector. Must not depend on in_process mail — the classic
+   token-burn failure is an empty mailbox with ready_for_next → NO_TASK spinning."
+  [roles socket]
+  (doseq [[role role-info] roles]
+    (let [session (:session role-info)]
+      (when (and session (handoff-lib/session-exists? socket session))
+        ;; Last 20 lines only — older scrollback from a prior spin must not
+        ;; false-positive a healthy idle prompt after relaunch.
+        (let [pane (try (capture-pane-lines socket session 20) (catch Exception _ ""))]
+          (observe-pane-loop! role pane))))))
 
 (defn chase-sweep! [roles socket]
   (let [now-ms (System/currentTimeMillis)
@@ -738,7 +838,15 @@
                   :get-last-activity-ms (fn [role] (get-last-activity-ms (get roles role) socket now-ms))
                   :on-stuck-escalation! (fn [role escalated?]
                                           (chase-sweep-lib/write-escalation! (str daemon-dir) role escalated?)
-                                          (stuck-escalation-email-sweep! role escalated? now-ms))
+                                          ;; Mono-router dormant roles keep roles.tsv session names
+                                          ;; with no standing pane. Emailing "specifier is stuck"
+                                          ;; for a mailbox-only rotate target floods the human and
+                                          ;; cannot be fixed by attaching that session. Still record
+                                          ;; chase-escalations.json for consoles; skip the email.
+                                          (let [session (:session (get roles role))]
+                                            (when (or (not escalated?)
+                                                      (handoff-lib/session-exists? socket session))
+                                              (stuck-escalation-email-sweep! role escalated? now-ms))))
                   ;; BL-208: :provider is the one common, brand-name field
                   ;; every telemetry event now carries (chase_sweep_lib.bb
                   ;; itself stays agent-agnostic - this is the only place
@@ -760,6 +868,7 @@
                   :mark-rate-limit-cooldown-woken!
                   (fn [role until-ms] (chase-sweep-lib/mark-rate-limit-cooldown-woken! (str state-dir) role until-ms))}]
     (chase-sweep-lib/run-sweep! (role-inboxes-for-chase roles) now-ms chase-sweep-config adapters)
+    (observe-standing-role-loops! roles socket)
     (write-chase-status! now-ms)))
 
 ;; ── BL-222: dispatch-gap sweep - the daemon's third duty ────────────────────
@@ -830,6 +939,59 @@
       (nudge-coordinator-unassigned! item)
       (catch Exception e
         (log! "unassigned-active-nudge-error" (:id item) (.getMessage e))))))
+
+
+;; ── Open-slot coordinator nudge (sibling of unassigned-active) ──────────────
+;; Does NOT promote. Drops a note on the coordinator when active count is
+;; under the configured cap and paused/ has eligible work. Pending note in
+;; coordinator new/in_process + a short cooldown file prevent spam.
+
+(defn open-slot-cooldown-path []
+  (fs/path daemon-dir "open-slot-nudge-cooldown.json"))
+
+(defn read-open-slot-last-sent-ms []
+  (let [data (try
+               (json/parse-string (slurp (str (open-slot-cooldown-path))) true)
+               (catch Exception _ nil))]
+    (when (number? (:lastSentMs data)) (:lastSentMs data))))
+
+(defn write-open-slot-last-sent! [now-ms]
+  (fs/create-dirs daemon-dir)
+  (spit (str (open-slot-cooldown-path))
+        (json/generate-string {:lastSentMs now-ms})))
+
+(defn coordinator-pending-dirs [roles]
+  (when-let [coord (get roles "coordinator")]
+    [(str (handoff-lib/mailbox-dir coord :new))
+     (str (handoff-lib/mailbox-dir coord :in_process))]))
+
+(defn nudge-coordinator-open-slot! []
+  (let [draft (write-scratch-draft! (chase-sweep-lib/open-slot-nudge-draft-lines))
+        env (merge (into {} (System/getenv)) {"SWARMFORGE_ROLE" "coordinator"})
+        result (process/sh ["bb" (swarm-handoff-script) (str draft)] {:dir (str project-root) :env env})]
+    (if (zero? (:exit result))
+      (do
+        (write-open-slot-last-sent! (System/currentTimeMillis))
+        (log! "open-slot-nudge"))
+      (log! "open-slot-nudge-error" (str (:err result))))))
+
+(defn open-slot-nudge-sweep! [roles]
+  (try
+    (let [active-count (chase-sweep-lib/count-backlog-yaml backlog-active-dir)
+          paused-count (chase-sweep-lib/count-backlog-yaml backlog-paused-dir)
+          cap (backlog-depth-lib/read-max-depth project-root)
+          pending-dirs (or (coordinator-pending-dirs roles) [])
+          pending? (chase-sweep-lib/open-slot-nudge-pending? pending-dirs)
+          now-ms (System/currentTimeMillis)
+          cool? (chase-sweep-lib/within-open-slot-cooldown?
+                 (read-open-slot-last-sent-ms) now-ms
+                 chase-sweep-lib/open-slot-nudge-cooldown-ms)]
+      (when (chase-sweep-lib/decide-open-slot-nudge?
+             active-count cap paused-count
+             {:pending-nudge? pending? :within-cooldown? cool?})
+        (nudge-coordinator-open-slot!)))
+    (catch Exception e
+      (log! "open-slot-nudge-sweep-error" (.getMessage e)))))
 
 
 ;; ── BL-214: briefing-email sweep - the daemon's fourth duty ─────────────────
@@ -1394,16 +1556,17 @@
 ;; call, differing only in which role-info/socket they target - only
 ;; :record-clear! differs per sweep, so that stays sweep-local.
 (defn context-clear-injectors [socket role-info]
-  {:inject-clear! (fn []
-                     (agent-runtime-inject/notify-agent!
-                      socket (:session role-info) (or (:agent role-info) "claude")
-                      :log-fn (fn [tag sess detail] (log! tag sess detail))
-                      :text "/clear"))
-   :inject-startup-reread! (fn [instruction-text]
-                              (agent-runtime-inject/notify-agent!
-                               socket (:session role-info) (or (:agent role-info) "claude")
-                               :log-fn (fn [tag sess detail] (log! tag sess detail))
-                               :text instruction-text))})
+  (let [session (handoff-lib/wake-session socket (:session role-info))]
+    {:inject-clear! (fn []
+                       (agent-runtime-inject/notify-agent!
+                        socket session (or (:agent role-info) "claude")
+                        :log-fn (fn [tag sess detail] (log! tag sess detail))
+                        :text "/clear"))
+     :inject-startup-reread! (fn [instruction-text]
+                                (agent-runtime-inject/notify-agent!
+                                 socket session (or (:agent role-info) "claude")
+                                 :log-fn (fn [tag sess detail] (log! tag sess detail))
+                                 :text instruction-text))}))
 
 (defn closing-context-clear-sweep! [roles socket]
   ;; BL-309 bounce fix: :record-clear! durably poisons closed-ticket-id
@@ -1546,6 +1709,10 @@
                       (unassigned-active-nudge-sweep! (load-roles))
                       (catch Exception e
                         (log! "unassigned-active-nudge-sweep-error" (.getMessage e))))
+                    (try
+                      (open-slot-nudge-sweep! (load-roles))
+                      (catch Exception e
+                        (log! "open-slot-nudge-sweep-error" (.getMessage e))))
                     ;; BL-214: briefing-email sweep shares the same cadence -
                     ;; no separate timeout, same rationale as BL-222 above.
                     (try

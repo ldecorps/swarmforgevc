@@ -31,6 +31,7 @@ here.
 - [Wiring the Phone Recert Inbound Address Live](how-to/BL-223-recert-inbound-address-golive.md)
 - [Answering the Swarm Offline](how-to/BL-441-answering-offline-runbook.md)
 - [Bringing Up the FES Second Swarm (mono-rotate, own Telegram identity)](how-to/BL-439-fes-second-swarm-bringup.md)
+- [Launching the Perplexity mono-router pack](how-to/perplexity-mono-router-launch.md)
 
 ## Reference
 

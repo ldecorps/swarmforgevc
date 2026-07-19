@@ -2,6 +2,7 @@ id: BL-428
 title: "Standing tracker: bring the ~88 pre-existing high-CRAP (>6) functions under threshold OPPORTUNISTICALLY (on-touch / small module slices), never as a big-bang sweep"
 milestone: M8
 type: chore
+epic: code-quality-gates
 severity: low
 priority: 5
 direction: swarm-proposed

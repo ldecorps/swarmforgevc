@@ -69,9 +69,11 @@
 
 (defn notify!
   "Delivers agent-specific wake to session's pane with verified submit.
-   Throws on wake failure (sync deliver path)."
+   Throws on wake failure (sync deliver path). Remaps missing mono-router
+   dormant sessions to the resident pane (see handoff-lib/wake-session)."
   [socket session & {:keys [log-fn traffic agent]}]
-  (let [on-outcome (fn [outcome detail attempts stacked?]
+  (let [session (handoff-lib/wake-session socket session)
+        on-outcome (fn [outcome detail attempts stacked?]
                      (when traffic
                        (record-inject-traffic! (:project-root traffic)
                                                (cond-> {:source (or (:source traffic) "inject")

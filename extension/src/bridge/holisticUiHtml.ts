@@ -312,7 +312,10 @@ export function getHolisticUiHtml(): string {
 
   function fetchJson(path) {
     return fetch(path, { headers: authHeaders() }).then(function (res) {
-      if (!res.ok) { throw new Error(path + ' -> ' + res.status); }
+      if (!res.ok) {
+        var hint = res.status === 401 ? 'unauthorized (bad/missing bridge token)' : String(res.status);
+        throw new Error(path + ' -> ' + hint);
+      }
       return res.json();
     });
   }
@@ -384,6 +387,7 @@ export function getHolisticUiHtml(): string {
   }
 
   function unlock() {
+    document.getElementById('tokenError').textContent = '';
     document.getElementById('tokenGate').style.display = 'none';
     document.getElementById('app').style.display = 'block';
     loadOnce().then(function () {
@@ -391,7 +395,12 @@ export function getHolisticUiHtml(): string {
     }).then(function (results) {
       subscribeEvents(results[0], results[1], results[2]);
     }).catch(function (err) {
-      document.getElementById('status').textContent = '(failed to load: ' + err.message + ')';
+      // Wrong/missing token often surfaces as HTTP 401 → show the gate again.
+      document.getElementById('app').style.display = 'none';
+      document.getElementById('tokenGate').style.display = 'block';
+      document.getElementById('tokenError').textContent =
+        (err && err.message) ? String(err.message) : 'unauthorized — check the bridge token';
+      document.getElementById('status').textContent = '(failed to load)';
     });
   }
 

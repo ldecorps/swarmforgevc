@@ -2,7 +2,7 @@ id: BL-513
 title: "Pipeline board LINKS: link EVERY ticket shown on the board message (grid + parked + recently-closed + root-intake), MOST-RECENT-FIRST (highest ticket number), each link resolving to the ticket's CURRENT backlog folder — and re-post the pinned board when a link's path changes"
 milestone: M8
 type: feature
-epic: ""
+epic: pipeline-board
 priority: 10
 direction: human-requested
 depends_on: [BL-506]
@@ -109,7 +109,7 @@ acceptance:
 #   5. Render over the CURRENT live backlog and confirm the LINKS section lists all shown tickets
 #      most-recent-first with each link pointing at the ticket's real current backlog file.
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   This RE-AMENDS BL-513 after your "most recent tickets at the top" directive. Ordering now stays
   MOST-RECENT-FIRST (highest ticket number first, BL-506's existing rule — the only deterministic "most

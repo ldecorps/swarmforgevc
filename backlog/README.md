@@ -6,6 +6,8 @@ One YAML file per work item. On startup, read the `active/` items to know what t
 
 - `active/` — items currently queued for implementation (M2+)
 - `paused/` — staged items waiting for coordinator promotion
+- `hold/` — human-held items; do **not** auto-promote. They sit here until a
+  human explicitly moves them back to `paused/` or `active/`
 - `done/` — items that are complete and merged
 - Root — the human's raw intake queue. The specifier drains root items first
   (turning each into a spec in `paused/`) before looking at queued work.

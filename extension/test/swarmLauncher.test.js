@@ -62,6 +62,86 @@ test('isSwarmReady returns false when socket file is missing', () => {
   assert.equal(isSwarmReady(targetPath), false);
 });
 
+// Mono-router: sessions.tsv lists every pack role, but only resident +
+// coordinator panes stand. Requiring every row to exist kept the panel dark.
+test('isSwarmReady is true for mono-router when only resident + coordinator sessions exist', () => {
+  const { installInProcessTmux } = require('./helpers/fakeTmux');
+  const targetPath = mkTmp();
+  const stateDir = path.join(targetPath, '.swarmforge');
+  fs.mkdirSync(stateDir, { recursive: true });
+  fs.writeFileSync(path.join(stateDir, 'tmux-socket'), '/tmp/sfvc-mono-router.sock');
+  fs.writeFileSync(
+    path.join(stateDir, 'sessions.tsv'),
+    [
+      '1\tcoder\tswarmforge-coder\tCoder\tclaude',
+      '2\tspecifier\tswarmforge-specifier\tSpecifier\tclaude',
+      '3\tcleaner\tswarmforge-cleaner\tCleaner\tclaude',
+      '4\tarchitect\tswarmforge-architect\tArchitect\tclaude',
+      '5\thardender\tswarmforge-hardender\tHardender\tclaude',
+      '6\tdocumenter\tswarmforge-documenter\tDocumenter\tclaude',
+      '7\tQA\tswarmforge-QA\tQa\tclaude',
+      '8\tcoordinator\tswarmforge-coordinator\tCoordinator\tclaude',
+      '',
+    ].join('\n')
+  );
+  const fake = installInProcessTmux([
+    { subcommand: 'list-sessions', exitCode: 0, stdout: 'swarmforge-coder\nswarmforge-coordinator\n' },
+    { subcommand: 'has-session', argsInclude: 'swarmforge-coder', exitCode: 0 },
+    { subcommand: 'has-session', argsInclude: 'swarmforge-coordinator', exitCode: 0 },
+    { subcommand: 'has-session', exitCode: 1 },
+  ]);
+  try {
+    assert.equal(isSwarmReady(targetPath), true);
+  } finally {
+    fake.restore();
+  }
+});
+
+test('isSwarmReady is false when only the resident is up (coordinator missing)', () => {
+  const { installInProcessTmux } = require('./helpers/fakeTmux');
+  const targetPath = mkTmp();
+  const stateDir = path.join(targetPath, '.swarmforge');
+  fs.mkdirSync(stateDir, { recursive: true });
+  fs.writeFileSync(path.join(stateDir, 'tmux-socket'), '/tmp/sfvc-mono-partial.sock');
+  fs.writeFileSync(
+    path.join(stateDir, 'sessions.tsv'),
+    [
+      '1\tcoder\tswarmforge-coder\tCoder\tclaude',
+      '2\tcoordinator\tswarmforge-coordinator\tCoordinator\tclaude',
+      '',
+    ].join('\n')
+  );
+  const fake = installInProcessTmux([
+    { subcommand: 'list-sessions', exitCode: 0, stdout: 'swarmforge-coder\n' },
+    { subcommand: 'has-session', argsInclude: 'swarmforge-coder', exitCode: 0 },
+    { subcommand: 'has-session', exitCode: 1 },
+  ]);
+  try {
+    assert.equal(isSwarmReady(targetPath), false);
+  } finally {
+    fake.restore();
+  }
+});
+
+test('runningSwarmMatchesConfig ignores coordinator when comparing to window lines', () => {
+  const targetPath = mkTmp();
+  const configPath = path.join(targetPath, 'seven.conf');
+  fs.writeFileSync(
+    configPath,
+    Array.from({ length: 7 }, (_, i) => `window role${i} claude master`).join('\n')
+  );
+  fs.mkdirSync(path.join(targetPath, '.swarmforge'), { recursive: true });
+  fs.writeFileSync(
+    path.join(targetPath, '.swarmforge', 'sessions.tsv'),
+    [
+      ...Array.from({ length: 7 }, (_, i) => `${i + 1}\trole${i}\tswarmforge-role${i}\tRole${i}\tclaude`),
+      '8\tcoordinator\tswarmforge-coordinator\tCoordinator\tclaude',
+      '',
+    ].join('\n')
+  );
+  assert.equal(runningSwarmMatchesConfig(targetPath, configPath), true);
+});
+
 // BL-423: checkRoleBootstrapped is an OPTIONAL, opt-in extra gate - passing
 // none preserves isSwarmReady's exact pre-BL-423 contract (window/session
 // existence only), so every pre-existing caller (launchSwarm's own polling

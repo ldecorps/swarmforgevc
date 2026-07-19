@@ -112,6 +112,9 @@ import {
   decideEnsureControlTopicAction,
   CONTROL_TOPIC_NAME,
   CONTROL_SUBJECT_ID,
+  BABYSITTER_SUBJECT_ID,
+  BABYSITTER_TOPIC_NAME,
+  decideEnsureBabysitterTopicAction,
   SttResult,
   TtsResult,
   ReplyRelayAdapters,
@@ -668,6 +671,25 @@ export async function ensureControlTopic(targetPath: string, botToken: string, c
   writeTopicMap(targetPath, topicMap);
   return created.messageThreadId;
 }
+
+// Babysitter standing topic twin — outside the pipeline. Called before poll
+// and by babysit.sh / notify-babysitter so the hawk has a place to publish.
+export async function ensureBabysitterTopic(targetPath: string, botToken: string, chatId: string, postFn?: TelegramPostFn): Promise<number | undefined> {
+  const topicMap = readTopicMap(targetPath);
+  const decision = decideEnsureBabysitterTopicAction(topicMap);
+  if (decision.kind === 'reuse') {
+    return decision.topicId;
+  }
+  const created = await createForumTopic(botToken, chatId, BABYSITTER_TOPIC_NAME, postFn);
+  if (!created.success || created.messageThreadId === undefined) {
+    process.stderr.write(`ensureBabysitterTopic: failed to create the Babysitter topic: ${created.error ?? 'no messageThreadId returned'}\n`);
+    return undefined;
+  }
+  topicMap[topicMapKey(created.messageThreadId)] = BABYSITTER_SUBJECT_ID;
+  writeTopicMap(targetPath, topicMap);
+  return created.messageThreadId;
+}
+
 
 // BL-497 hardening: extracted out of buildConciergeTickAdapters's
 // boardAdapters.ensureBoardTopic closure so a unit test can drive both the
@@ -1598,6 +1620,8 @@ function buildPollAdapters(
     getPauseState: () => Promise.resolve(readControlPauseState(targetPath)),
     postControlStopModesMenu: async () => {
       const controlTopicId = await ensureControlTopic(targetPath, botToken, chatId);
+
+  // Babysitter standing topic — outside-chain reliability hawk.
       await postControlMessage(botToken, chatId, controlTopicId, 'Stop the swarm how?', stopModesButtons());
     },
     postControlRestartConfirm: async () => {
@@ -2466,6 +2490,9 @@ export async function main(): Promise<void> {
   // unbound Control topic must never be reachable by an inbound
   // stop/restart/pause verb).
   await ensureControlTopic(targetPath, botToken, chatId);
+
+  // Babysitter standing topic — outside-chain reliability hawk.
+  await ensureBabysitterTopic(targetPath, botToken, chatId);
 
   // BL-425 slice 1: bind each swarm role's own standing steering topic
   // BEFORE any loop starts polling too - same ordering rationale as

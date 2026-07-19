@@ -1,0 +1,22 @@
+id: BL-541
+title: "EPIC — Code quality gates: CRAP-on-touch, Babashka hardening toolchain, wrapped-step rewrap debt; do not promote directly; tracks children"
+milestone: M8
+status: todo
+type: epic
+epic: code-quality-gates
+priority: 00
+depends_on: []
+decomposes_into: [BL-428, BL-472, BL-520]
+source: "Human hygiene 2026-07-19: every ticket must have an epic; every epic must have a milestone. Tracker created during open-backlog cleanup."
+
+notes: |
+  UMBRELLA / tracking item (type: epic), NOT directly promotable — the coordinator
+  promotes CHILD slices, never this. Children carry `epic: code-quality-gates` and are
+  listed in `decomposes_into`.
+
+  VISION: keep mutation/CRAP/DRY tooling wired and drain grandfathered spec debt
+  so quality gates stay enforceable.
+
+acceptance:
+  none: "tracker only — see decomposes_into children for acceptance"
+mutation_cost: high

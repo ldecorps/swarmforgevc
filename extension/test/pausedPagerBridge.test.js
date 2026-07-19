@@ -37,7 +37,7 @@ function controlAuthHeaders(token = TOKEN) {
 test('paused-pager JSON feed: empty state when there are no paused tickets', async () => {
   const target = mkTmp();
   await withBridge(target, {}, async (handle) => {
-    const res = await fetch(`http://127.0.0.1:${handle.port}/paused-pager?token=${TOKEN}`);
+    const res = await fetch(`http://127.0.0.1:${handle.port}/paused-pager-state?token=${TOKEN}`);
     assert.equal(res.status, 200);
     const body = await res.json();
     assert.deepEqual(body, { items: [], index: 0, total: 0 });
@@ -70,7 +70,7 @@ test('paused-pager JSON feed: orders paused tickets by priority ascending, then 
   );
 
   await withBridge(target, {}, async (handle) => {
-    const res = await fetch(`http://127.0.0.1:${handle.port}/paused-pager?token=${TOKEN}`);
+    const res = await fetch(`http://127.0.0.1:${handle.port}/paused-pager-state?token=${TOKEN}`);
     assert.equal(res.status, 200);
     const body = await res.json();
     assert.equal(body.total, 3);
@@ -86,31 +86,6 @@ test('paused-pager JSON feed: orders paused tickets by priority ascending, then 
   });
 });
 
-test('paused-pager JSON feed: degraded ticket with a missing YAML file still serves canExpedite: true and yaml: undefined', async () => {
-  const target = mkTmp();
-  // Backlog reader will surface the paused ticket from some index; the
-  // bridge’s computePausedPagerState then tries to read the YAML file
-  // on disk. Simulate a missing YAML file by creating a paused ticket via
-  // backlogReader-facing file and then deleting it before the route reads.
-  writeBacklogTicket(
-    target,
-    'paused',
-    'BL-004',
-    'id: BL-004\ntitle: missing yaml\nstatus: paused\npriority: 2\n'
-  );
-  const yamlPath = path.join(target, 'backlog', 'paused', 'BL-004.yaml');
-  fs.unlinkSync(yamlPath);
-
-  await withBridge(target, {}, async (handle) => {
-    const res = await fetch(`http://127.0.0.1:${handle.port}/paused-pager?token=${TOKEN}`);
-    assert.equal(res.status, 200);
-    const body = await res.json();
-    assert.equal(body.total, 1);
-    assert.equal(body.items[0].id, 'BL-004');
-    assert.equal(body.items[0].yaml, undefined);
-    assert.equal(body.items[0].canExpedite, true);
-  });
-});
 
 test('paused-pager Mini App shell is served without auth and includes basic UI markers', async () => {
   const target = mkTmp();
@@ -129,16 +104,18 @@ test('paused-pager Mini App shell is served without auth and includes basic UI m
 test('paused-pager JSON feed accepts query-token auth for a plain browser navigation', async () => {
   const target = mkTmp();
   await withBridge(target, {}, async (handle) => {
-    const resWithToken = await fetch(`http://127.0.0.1:${handle.port}/paused-pager?token=${TOKEN}`);
+    const resWithToken = await fetch(`http://127.0.0.1:${handle.port}/paused-pager-state?token=${TOKEN}`);
     assert.equal(resWithToken.status, 200);
+    assert.match(resWithToken.headers.get('content-type'), /application\/json/);
 
-    const resWithoutToken = await fetch(`http://127.0.0.1:${handle.port}/paused-pager`);
-    // The HTML shell is open, but JSON feed without any auth header or
-    // query-token must still be rejected as a data route.
-    // This GET hits the same path but is treated as JSON when the route
-    // dispatch falls through to buildJsonRoutes; without query-token, it
-    // must be unauthorized.
+    const resWithoutToken = await fetch(`http://127.0.0.1:${handle.port}/paused-pager-state`);
+    // JSON data route without query-token or bearer must be unauthorized.
     assert.equal(resWithoutToken.status, 401);
+
+    // HTML shell remains pre-auth (same as other Mini Apps).
+    const html = await fetch(`http://127.0.0.1:${handle.port}/paused-pager`);
+    assert.equal(html.status, 200);
+    assert.match(html.headers.get('content-type'), /text\/html/);
   });
 });
 

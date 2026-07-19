@@ -119,6 +119,11 @@ You are the specifier.
   pipeline needs an explicit runtime-wiring ticket" rule.)
 
 ## Drain the backlog root first
+- On mono-router packs the resident may be rotated here *because* root intake
+  exists and the pipeline is otherwise idle (post-QA or coder `NO_TASK`). That
+  is intentional: treat draining the root as your immediate job even when no
+  mailbox parcel is waiting — do not wait for a handoff to start a root drain.
+
 - The backlog root (`backlog/` itself, not `active/` or `paused/`) is the human's
   raw intake queue. Before doing any other spec work — and before looking at
   items already queued in `backlog/paused/` or `backlog/active/` — drain the root.
