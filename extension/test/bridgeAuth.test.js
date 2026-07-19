@@ -1,5 +1,5 @@
 const assert = require('node:assert/strict');
-const { isAuthorizedRequest } = require('../out/bridge/bridgeAuth');
+const { isAuthorizedRequest, isAuthorizedToken } = require('../out/bridge/bridgeAuth');
 
 const TOKEN = 'abc123def456';
 
@@ -28,4 +28,11 @@ test('isAuthorizedRequest rejects a header missing the Bearer prefix', () => {
 
 test('isAuthorizedRequest rejects an empty token value', () => {
   assert.equal(isAuthorizedRequest('Bearer ', TOKEN), false);
+});
+
+test('isAuthorizedToken accepts only the exact raw token', () => {
+  assert.equal(isAuthorizedToken(TOKEN, TOKEN), true);
+  assert.equal(isAuthorizedToken(undefined, TOKEN), false);
+  assert.equal(isAuthorizedToken('wrong-token', TOKEN), false);
+  assert.equal(isAuthorizedToken('xyz789uvw012', TOKEN), false);
 });

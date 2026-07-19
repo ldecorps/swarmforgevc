@@ -1,4 +1,6 @@
 const assert = require('node:assert/strict');
+const os = require('node:os');
+const path = require('node:path');
 const {
   resolveResendApiKey,
   RESEND_SECRET_KEY,
@@ -189,6 +191,13 @@ test('resolveMistralApiKey falls back to SecretStorage when no env var is set', 
 
 test('resolveMistralApiKey returns undefined when neither source has a value', async () => {
   delete process.env.MISTRAL_API_KEY;
+  const originalHomedir = os.homedir;
+  const emptyHome = path.join(__dirname, 'fixtures', 'no-shell-profile');
 
-  assert.equal(await resolveMistralApiKey(undefined), undefined);
+  os.homedir = () => emptyHome;
+  try {
+    assert.equal(await resolveMistralApiKey(undefined), undefined);
+  } finally {
+    os.homedir = originalHomedir;
+  }
 });

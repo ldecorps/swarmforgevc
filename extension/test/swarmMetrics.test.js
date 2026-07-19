@@ -6,6 +6,7 @@ const { execFileSync } = require('node:child_process');
 const {
   computeMeanTicketTime,
   computeBusyness,
+  computeStageDwellReport,
   computeRetries,
   computeSwarmMetrics,
 } = require('../out/metrics/swarmMetrics');
@@ -316,6 +317,42 @@ test('computeBusyness skips an in_process handoff it cannot read (permission den
   } finally {
     fs.chmodSync(filePath, 0o644); // restore so the tmp dir can be cleaned up
   }
+});
+
+test('computeStageDwellReport summarizes completed handoffs in flat and batch directories', () => {
+  const target = mkTmp();
+  const cleanerWt = path.join(target, 'cleaner-wt');
+  const completedDir = path.join(cleanerWt, '.swarmforge', 'handoffs', 'inbox', 'completed');
+  const batchDir = path.join(completedDir, 'batch_20260702T000000Z_000001');
+  const now = Date.parse('2026-07-02T12:00:00Z');
+
+  writeHandoff(completedDir, '00_flat.handoff', {
+    dequeued_at: '2026-07-02T09:00:00Z',
+    completed_at: '2026-07-02T09:10:00Z',
+  });
+  writeHandoff(batchDir, '00_batch.handoff', {
+    dequeued_at: '2026-07-02T10:00:00Z',
+    completed_at: '2026-07-02T10:20:00Z',
+  });
+  writeHandoff(completedDir, '00_old.handoff', {
+    dequeued_at: '2026-07-01T09:00:00Z',
+    completed_at: '2026-07-01T09:30:00Z',
+  });
+
+  const report = computeStageDwellReport(target, [{ role: 'cleaner', worktreePath: cleanerWt }], 6 * 60 * 60 * 1000, now);
+
+  assert.equal(report.windowStartIso, '2026-07-02T06:00:00.000Z');
+  assert.equal(report.windowEndIso, '2026-07-02T12:00:00.000Z');
+  assert.deepEqual(report.stages, [
+    {
+      role: 'cleaner',
+      parcelsProcessed: 2,
+      processingMs: {
+        median: 15 * 60 * 1000,
+        max: 20 * 60 * 1000,
+      },
+    },
+  ]);
 });
 
 test('computeBusyness takes the earliest dequeued_at across multiple open in_process entries', () => {
