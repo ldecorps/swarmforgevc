@@ -124,22 +124,24 @@
                                                 :status status
                                                 :roles roles
                                                 :state state})
-            next-state (:next-state result)]
+            next-state (:next-state result)
+            persisted-state
+            (if (= :ensure (:control-action result))
+              (let [ensure-result (run-ensure!)
+                    final-result (telegram-lib/handle-command {:text "confirm"
+                                                               :status status
+                                                               :roles roles
+                                                               :state (assoc state :ensure-pending? true)
+                                                               :ensure-result ensure-result})]
+                (when (:chat-id result)
+                  (send-message! token (:chat-id result) (:reply final-result)))
+                (assoc (:next-state final-result) :ensure-running? false))
+              next-state)]
         (when-let [event (some-> result :log :event name)]
           (log! event (str (:user-id (:log result)))))
-        (when (= :ensure (:control-action result))
-          (let [ensure-result (run-ensure!)
-                final-result (telegram-lib/handle-command {:text "confirm"
-                                                           :status status
-                                                           :roles roles
-                                                           :state (assoc state :ensure-pending? true)
-                                                           :ensure-result ensure-result})]
-            (when (:chat-id result)
-              (send-message! token (:chat-id result) (:reply final-result)))
-            (write-json! state-file (assoc (:next-state final-result) :ensure-running? false))))
         (when (and (:reply result) (:chat-id result) (not (:control-action result)))
           (send-message! token (:chat-id result) (:reply result)))
-        (write-json! state-file next-state)
+        (write-json! state-file persisted-state)
         :processed)
 
       :else :idle)))

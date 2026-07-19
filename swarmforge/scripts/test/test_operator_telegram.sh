@@ -67,6 +67,30 @@ check "auth_lost in backoff does not start poller" '[[ ! -f "$F/.swarmforge/oper
 check "auth_lost state is preserved" \
   '[[ "$(jget "$F/.swarmforge/operator/telegram-console.status.json" ":state")" == auth_lost ]]'
 
+# ── /ensure confirmation runs once and clears running state ────────────────
+F="$(make_fixture ensure-confirm)"
+OUTBOX="$F/.swarmforge/operator/outbox.jsonl"
+COUNT="$F/.swarmforge/operator/ensure-count.txt"
+UPDATE_ENSURE='{"message":{"chat":{"id":9},"from":{"id":123},"text":"/ensure"}}'
+OPERATOR_TELEGRAM_BOT_TOKEN=TOKEN OPERATOR_TELEGRAM_ALLOWED_USER_ID=123 \
+  OPERATOR_TELEGRAM_SEND_OUTBOX="$OUTBOX" OPERATOR_TELEGRAM_FAKE_UPDATE="$UPDATE_ENSURE" \
+  bb "$F/swarmforge/scripts/operator_telegram.bb" poll-once "$F" >/dev/null
+check "/ensure prompt does not run ensure" '[[ ! -f "$COUNT" ]]'
+check "/ensure records pending state" \
+  '[[ "$(jget "$F/.swarmforge/operator/telegram-console.state.json" ":ensure-pending?")" == true ]]'
+
+UPDATE_CONFIRM='{"message":{"chat":{"id":9},"from":{"id":123},"text":"confirm"}}'
+OPERATOR_TELEGRAM_BOT_TOKEN=TOKEN OPERATOR_TELEGRAM_ALLOWED_USER_ID=123 \
+  OPERATOR_TELEGRAM_SEND_OUTBOX="$OUTBOX" OPERATOR_TELEGRAM_ENSURE_COUNT_FILE="$COUNT" \
+  OPERATOR_TELEGRAM_FAKE_ENSURE_RESULT='{"exit":0,"tail":"ok"}' OPERATOR_TELEGRAM_FAKE_UPDATE="$UPDATE_CONFIRM" \
+  bb "$F/swarmforge/scripts/operator_telegram.bb" poll-once "$F" >/dev/null
+check "confirm runs ensure once" '[[ "$(wc -l < "$COUNT")" == 1 ]]'
+check "confirm clears pending state" \
+  '[[ "$(jget "$F/.swarmforge/operator/telegram-console.state.json" ":ensure-pending?")" == false ]]'
+check "confirm clears running state after result" \
+  '[[ "$(jget "$F/.swarmforge/operator/telegram-console.state.json" ":ensure-running?")" == false ]]'
+check "confirm reports ensure result" 'grep -q "./swarm ensure exit 0" "$OUTBOX"'
+
 if [[ "$fail" -eq 0 ]]; then
   echo "operator_telegram smoke: ALL CHECKS PASSED"
 else
