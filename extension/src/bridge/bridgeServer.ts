@@ -19,6 +19,7 @@ export interface BridgeHandle {
 export interface StartBridgeOptions {
   port?: number;
   pollIntervalMs?: number;
+  nowMs?: () => number;
 }
 
 type StateRoute = '/pipeline' | '/agents' | '/backlog' | '/runlog';
@@ -29,9 +30,10 @@ interface BridgeRequestContext {
   token: string;
   sseClients: Set<http.ServerResponse>;
   getLastSnapshot: () => string | undefined;
+  nowMs: () => number;
 }
 
-function buildStageDwellReport(targetPath: string): unknown {
+function buildStageDwellReport(targetPath: string, nowMs: number): unknown {
   const rolesTsvPath = path.join(targetPath, '.swarmforge', 'roles.tsv');
   let rolesTsv: string;
   try {
@@ -40,7 +42,7 @@ function buildStageDwellReport(targetPath: string): unknown {
     return {};
   }
   const roles = parseRolesTsv(rolesTsv);
-  return computeStageDwellReport(targetPath, roles, 24 * 60 * 60 * 1000, Date.now());
+  return computeStageDwellReport(targetPath, roles, 24 * 60 * 60 * 1000, nowMs);
 }
 
 function stateForRoute(state: BridgeState, route: StateRoute): unknown {
@@ -115,7 +117,7 @@ function serveAuthorizedRoute(
     return true;
   }
   if (url === '/metrics/stage-dwell') {
-    writeJson(res, 200, buildStageDwellReport(context.targetPath));
+    writeJson(res, 200, buildStageDwellReport(context.targetPath, context.nowMs()));
     return true;
   }
   return false;
@@ -143,6 +145,7 @@ export function startBridge(
 ): Promise<BridgeHandle> {
   const port = options.port ?? 0;
   const pollIntervalMs = options.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
+  const nowMs = options.nowMs ?? Date.now;
 
   return new Promise((resolve) => {
     const sseClients = new Set<http.ServerResponse>();
@@ -154,6 +157,7 @@ export function startBridge(
       token,
       sseClients,
       getLastSnapshot: () => lastSnapshot,
+      nowMs,
     };
 
     const server = http.createServer((req, res) => handleBridgeRequest(req, res, context));

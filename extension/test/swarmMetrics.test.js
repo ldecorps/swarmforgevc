@@ -299,24 +299,23 @@ test('computeBusyness skips an unreadable in_process entry without throwing', ()
   assert.doesNotThrow(() => computeBusyness([{ role: 'coder', worktreePath: coderWt }], runStart, now));
 });
 
-test('computeBusyness skips an in_process handoff it cannot read (permission denied)', () => {
+test('computeBusyness skips an in_process handoff path it cannot read', () => {
   const target = mkTmp();
   const coderWt = path.join(target, 'coder-wt');
-  const inProcessDir = path.join(coderWt, '.swarmforge', 'handoffs', 'inbox', 'in_process');
-  const filePath = path.join(inProcessDir, '00_unreadable.handoff');
-  writeHandoff(inProcessDir, '00_unreadable.handoff', {
-    dequeued_at: new Date(Date.now() - 30 * 60 * 1000).toISOString(),
-  });
-  fs.chmodSync(filePath, 0o000);
+  const batchDir = path.join(
+    coderWt,
+    '.swarmforge',
+    'handoffs',
+    'inbox',
+    'in_process',
+    'batch_20260702T000000Z_000002'
+  );
+  mkdirp(path.join(batchDir, '00_directory.handoff'));
 
-  const now = Date.now();
+  const now = Date.parse('2026-07-02T12:00:00Z');
   const runStart = now - 60 * 60 * 1000;
 
-  try {
-    assert.doesNotThrow(() => computeBusyness([{ role: 'coder', worktreePath: coderWt }], runStart, now));
-  } finally {
-    fs.chmodSync(filePath, 0o644); // restore so the tmp dir can be cleaned up
-  }
+  assert.doesNotThrow(() => computeBusyness([{ role: 'coder', worktreePath: coderWt }], runStart, now));
 });
 
 test('computeStageDwellReport summarizes completed handoffs in flat and batch directories', () => {
