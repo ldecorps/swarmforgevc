@@ -334,11 +334,10 @@ machine-executable:
      the same substitution rules as the runtime — not the parser's narrower field
      inspection). The gate flags Examples columns that never appear as tokens,
      indicating a mismatch between the test data and the steps it feeds.
-   - **Grandfathered violations**: Pre-existing wrapped steps in 19 already-landed
-     feature files are listed in `swarmforge/scripts/gherkin_lint_gate_legacy_wraps.txt`
-     and are exempt from the wrap check only. New and changed feature files enforce
-     both rules unconditionally. The legacy list is not a dumping ground — follow-up
-     tickets rewrap those files and remove them from the list one at a time.
+   - **No legacy exemptions**: The old wrapped-step grandfather list has been
+     drained, so every feature file is checked by the same rules. If a legacy
+     scenario needs to keep long prose, rewrite the step onto one physical line
+     and reconcile its step-handler pattern to the full text in the same change.
 4. **Human approval gate.** A freshly drafted or changed feature file is not
    treated as final until a human has reviewed it. Tickets carry this
    explicitly, e.g. a trailing `# HUMAN APPROVAL: ...` comment and/or a
