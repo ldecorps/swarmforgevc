@@ -76,3 +76,5 @@ approval_context: >
   purely paying down the acceptance-contract debt BL-515 deliberately deferred.
 
 mutation_cost: low
+
+assigned_to: coder
