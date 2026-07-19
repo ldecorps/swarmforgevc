@@ -49,12 +49,12 @@
           in-process-files (handoff-lib/handoff-files in-process-dir)]
       (when (seq in-process-files)
         (handoff-lib/fail! 2
-               "TASK_IN_PROCESS_IS_SINGLE: use ready_for_next.sh or done_with_current.sh."
-               (str/join "\n" (map #(str "- " %) in-process-files))))
+                           "TASK_IN_PROCESS_IS_SINGLE: use ready_for_next.sh or done_with_current.sh."
+                           (str/join "\n" (map #(str "- " %) in-process-files))))
       (when (> (count in-process-batches) 1)
         (handoff-lib/fail! 2
-               "AMBIGUOUS_TASK_STATE: multiple batches are already in process."
-               (str/join "\n" (map #(str "- " %) in-process-batches))))
+                           "AMBIGUOUS_TASK_STATE: multiple batches are already in process."
+                           (str/join "\n" (map #(str "- " %) in-process-batches))))
       (if (= 1 (count in-process-batches))
         (print-batch (first in-process-batches))
         (if (handoff-lib/draining?)
