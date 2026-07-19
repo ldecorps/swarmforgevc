@@ -98,14 +98,80 @@
                   "-d" "disable_web_page_preview=true"
                   url))))
 
+(defn parse-http-status [s]
+  (try (Long/parseLong (str/trim (or s "")))
+       (catch Exception _ nil)))
+
+(defn curl-json-with-status [args]
+  (let [{:keys [exit out err]} (apply process/sh {:continue true} args)
+        lines (str/split-lines (or out ""))
+        status (parse-http-status (last lines))
+        body (str/join "\n" (butlast lines))]
+    (if (zero? (long (or exit 0)))
+      {:status status
+       :body (try (json/parse-string body true)
+                  (catch Exception e
+                    {:ok false :description (str "invalid JSON: " (.getMessage e))}))}
+      {:status status :error (str/trim (or err "curl failed"))})))
+
+(defn get-updates! [token offset]
+  (let [url (str "https://api.telegram.org/bot" token "/getUpdates")
+        args (cond-> ["curl" "-sS" "-w" "\n%{http_code}" "-G"
+                      "-d" "timeout=25"
+                      "-d" "allowed_updates=[\"message\"]"
+                      url]
+               offset (conj "-d" (str "offset=" offset)))
+        {:keys [status body error]} (curl-json-with-status args)]
+    (cond
+      error {:status status :error error}
+      (= 401 status) {:status 401}
+      (not= 200 status) {:status status :error (or (:description body) "Telegram getUpdates failed")}
+      (false? (:ok body)) {:status status :error (or (:description body) "Telegram getUpdates returned ok=false")}
+      :else {:status status :updates (vec (or (:result body) []))})))
+
+(defn updates-from-source! [token state]
+  (if-let [raw (System/getenv "OPERATOR_TELEGRAM_FAKE_UPDATE")]
+    {:status 200 :updates [(json/parse-string raw true)] :fake? true}
+    (get-updates! token (:offset state))))
+
+(defn next-offset [state updates]
+  (let [ids (seq (keep :update_id updates))
+        max-id (when ids (apply max ids))]
+    (if max-id
+      (assoc state :offset (inc (long max-id)))
+      state)))
+
+(defn process-update! [token allowed-id status roles state update]
+  (let [result (telegram-lib/handle-update {:allowed-user-id allowed-id
+                                            :update update
+                                            :status status
+                                            :roles roles
+                                            :state state})
+        next-state (:next-state result)
+        persisted-state
+        (if (= :ensure (:control-action result))
+          (let [ensure-result (run-ensure!)
+                final-result (telegram-lib/handle-command {:text "confirm"
+                                                           :status status
+                                                           :roles roles
+                                                           :state (assoc state :ensure-pending? true)
+                                                           :ensure-result ensure-result})]
+            (when (:chat-id result)
+              (send-message! token (:chat-id result) (:reply final-result)))
+            (assoc (:next-state final-result) :ensure-running? false))
+          next-state)]
+    (when-let [event (some-> result :log :event name)]
+      (log! event (str (:user-id (:log result)))))
+    (when (and (:reply result) (:chat-id result) (not (:control-action result)))
+      (send-message! token (:chat-id result) (:reply result)))
+    persisted-state))
+
 (defn poll-once! []
   (let [token (System/getenv "OPERATOR_TELEGRAM_BOT_TOKEN")
         allowed-id (System/getenv "OPERATOR_TELEGRAM_ALLOWED_USER_ID")
-        status (read-json operator-status-file {})
+        operator-status (read-json operator-status-file {})
         roles (read-roles)
         state (read-json state-file {})
-        update (when-let [raw (System/getenv "OPERATOR_TELEGRAM_FAKE_UPDATE")]
-                 (json/parse-string raw true))
         fake-auth? (= "1" (System/getenv "OPERATOR_TELEGRAM_FAKE_AUTH_LOST"))]
     (cond
       fake-auth?
@@ -118,33 +184,38 @@
         (log! "auth-lost")
         :auth-lost)
 
-      update
-      (let [result (telegram-lib/handle-update {:allowed-user-id allowed-id
-                                                :update update
-                                                :status status
-                                                :roles roles
-                                                :state state})
-            next-state (:next-state result)
-            persisted-state
-            (if (= :ensure (:control-action result))
-              (let [ensure-result (run-ensure!)
-                    final-result (telegram-lib/handle-command {:text "confirm"
-                                                               :status status
-                                                               :roles roles
-                                                               :state (assoc state :ensure-pending? true)
-                                                               :ensure-result ensure-result})]
-                (when (:chat-id result)
-                  (send-message! token (:chat-id result) (:reply final-result)))
-                (assoc (:next-state final-result) :ensure-running? false))
-              next-state)]
-        (when-let [event (some-> result :log :event name)]
-          (log! event (str (:user-id (:log result)))))
-        (when (and (:reply result) (:chat-id result) (not (:control-action result)))
-          (send-message! token (:chat-id result) (:reply result)))
-        (write-json! state-file persisted-state)
-        :processed)
+      :else
+      (let [{:keys [status updates error]} (updates-from-source! token state)]
+        (cond
+          (= 401 status)
+          (let [next-state (telegram-lib/next-auth-state {:status 401} state
+                                                         {:now-ms (now-ms)
+                                                          :backoff-base-ms 1000
+                                                          :backoff-max-ms 60000})]
+            (write-status! next-state)
+            (write-json! state-file next-state)
+            (log! "auth-lost")
+            :auth-lost)
 
-      :else :idle)))
+          error
+          (do
+            (log! "get-updates-error" (str status) error)
+            :telegram-error)
+
+          (seq updates)
+          (let [next-state (next-offset
+                            (reduce (fn [s update]
+                                      (process-update! token allowed-id operator-status roles s update))
+                                    state
+                                    updates)
+                            updates)]
+            (write-json! state-file next-state)
+            :processed)
+
+          :else
+          (do
+            (write-json! state-file (next-offset state updates))
+            :idle))))))
 
 (defn run-loop! []
   (fs/create-dirs op-dir)

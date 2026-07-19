@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=280128a33fa40b12312d8aa7e990b0052fe945ff8f208cf824e6d1846fb55e4b
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-07-19T20:52:32.258731331Z","feature_name":"the operator Telegram console gives a phone-glanceable, allowlisted status + ensure surface","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-516-operator-telegram-console.feature","background_hash":"9e744a1207cd29721a277062749ff1f9b1e4fe6e0b1b976e88c6e73a24506629","implementation_hash":"unknown","scenarios":[{"index":5,"name":"a read-only command returns only its own information and runs no control action","scenario_hash":"b3e60311434a7ff01b05c9d7773e1198df90ac4a606387c33e218cf793c4bb92","mutation_count":4,"result":{"Total":4,"Killed":4,"Survived":0,"Errors":0},"tested_at":"2026-07-19T20:52:32.258731331Z"},{"index":6,"name":"the console disables cleanly and marks itself disabled, daemon otherwise unaffected","scenario_hash":"4eb67512c1c1aafbe591951addbdbf10f31f54dfad09aacdb1224de22aa802f4","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-07-19T20:52:17.915015217Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: the operator Telegram console gives a phone-glanceable, allowlisted status + ensure surface
 
   # Human spec brief 2026-07-18 ("Operator Telegram console — status slice"), Slice 1 of the Telegram

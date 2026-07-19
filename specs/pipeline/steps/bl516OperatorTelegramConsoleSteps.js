@@ -14,6 +14,8 @@ const READONLY_RESPONSES = new Map([
   ['/help', 'the list of supported commands']
 ]);
 
+const KNOWN_COMMANDS = new Set(['/status', '/ensure', '/tunnel', '/help']);
+
 const DISABLING_CONDITIONS = new Set([
   'SWARMFORGE_SKIP_TELEGRAM is set in the env',
   'no operator bot token is configured'
@@ -103,6 +105,9 @@ function registerSteps(registry) {
   });
 
   registry.define(/^I send "([^"]+)"$/, (ctx, command) => {
+    if (!KNOWN_COMMANDS.has(command)) {
+      throw new Error(`unknown operator Telegram command example: ${command}`);
+    }
     runPoll(ctx, command);
   });
 

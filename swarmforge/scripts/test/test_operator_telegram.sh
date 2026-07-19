@@ -91,6 +91,39 @@ check "confirm clears running state after result" \
   '[[ "$(jget "$F/.swarmforge/operator/telegram-console.state.json" ":ensure-running?")" == false ]]'
 check "confirm reports ensure result" 'grep -q "./swarm ensure exit 0" "$OUTBOX"'
 
+# ── live getUpdates branch: no fake update shortcut ────────────────────────
+F="$(make_fixture live-getupdates)"
+cat > "$F/.swarmforge/operator/status.json" <<'EOF'
+{"state":"idle","provider_state":"available","agents_running":7,"pending_events":2,"updated_at":"2026-07-19T20:00:00Z","tunnel":{"state":"running","url":"https://vscode.dev/tunnel/swarmforge/abc"}}
+EOF
+printf 'coder\tworking\nQA\tidle\n' > "$F/.swarmforge/roles.tsv"
+FAKEBIN="$F/bin"
+mkdir -p "$FAKEBIN"
+cat > "$FAKEBIN/curl" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$OPERATOR_TELEGRAM_CURL_LOG"
+if [[ "$*" == *"offset=42"* ]]; then
+  printf '{"ok":true,"result":[]}\n200'
+else
+  printf '{"ok":true,"result":[{"update_id":41,"message":{"chat":{"id":9},"from":{"id":123},"text":"/status@operator_bot"}}]}\n200'
+fi
+EOF
+chmod +x "$FAKEBIN/curl"
+OUTBOX="$F/.swarmforge/operator/outbox.jsonl"
+CURL_LOG="$F/.swarmforge/operator/curl.log"
+PATH="$FAKEBIN:$PATH" OPERATOR_TELEGRAM_CURL_LOG="$CURL_LOG" \
+  OPERATOR_TELEGRAM_BOT_TOKEN=TOKEN OPERATOR_TELEGRAM_ALLOWED_USER_ID=123 \
+  OPERATOR_TELEGRAM_SEND_OUTBOX="$OUTBOX" \
+  bb "$F/swarmforge/scripts/operator_telegram.bb" poll-once "$F" >/dev/null
+check "live getUpdates branch replies to allowlisted /status@bot" 'grep -q "state: idle" "$OUTBOX"'
+check "live getUpdates branch persists next offset" \
+  '[[ "$(jget "$F/.swarmforge/operator/telegram-console.state.json" ":offset")" == 42 ]]'
+PATH="$FAKEBIN:$PATH" OPERATOR_TELEGRAM_CURL_LOG="$CURL_LOG" \
+  OPERATOR_TELEGRAM_BOT_TOKEN=TOKEN OPERATOR_TELEGRAM_ALLOWED_USER_ID=123 \
+  OPERATOR_TELEGRAM_SEND_OUTBOX="$OUTBOX" \
+  bb "$F/swarmforge/scripts/operator_telegram.bb" poll-once "$F" >/dev/null
+check "subsequent getUpdates call passes persisted offset" 'grep -q "offset=42" "$CURL_LOG"'
+
 if [[ "$fail" -eq 0 ]]; then
   echo "operator_telegram smoke: ALL CHECKS PASSED"
 else
