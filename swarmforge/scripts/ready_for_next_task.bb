@@ -18,14 +18,14 @@
     (handoff-lib/respawn-self! (handoff-lib/current-role))))
 
 (defn -main []
-  (let [new-dir (handoff-lib/my-mailbox-dir :new)
+  (let [new-dir        (handoff-lib/my-mailbox-dir :new)
         in-process-dir (handoff-lib/my-mailbox-dir :in_process)
-        completed-dir (handoff-lib/my-mailbox-dir :completed)
-        abandoned-dir (handoff-lib/my-mailbox-dir :abandoned)]
+        completed-dir  (handoff-lib/my-mailbox-dir :completed)
+        abandoned-dir  (handoff-lib/my-mailbox-dir :abandoned)]
     (doseq [dir [new-dir in-process-dir completed-dir abandoned-dir]]
       (fs/create-dirs dir))
     (let [in-process-batches (handoff-lib/batch-dirs in-process-dir)
-          in-process-files (handoff-lib/my-handoff-files in-process-dir)]
+          in-process-files   (handoff-lib/my-handoff-files in-process-dir)]
       (when (seq in-process-batches)
         (handoff-lib/fail! 2
                            "TASK_IN_PROCESS_IS_BATCH: use ready_for_next.sh or done_with_current.sh."
@@ -38,7 +38,7 @@
         (handoff-lib/print-task (first in-process-files))
         (if (handoff-lib/draining?)
           (println "DRAINING")
-          (let [new-files (handoff-lib/my-handoff-files new-dir)
+          (let [new-files            (handoff-lib/my-handoff-files new-dir)
                 completed-basenames (handoff-lib/terminal-basenames completed-dir)
                 abandoned-basenames (handoff-lib/terminal-basenames abandoned-dir)
                 ;; BL-365: quarantines any corrupt candidate in place (as
@@ -46,7 +46,7 @@
                 ;; already scans and alerts a human on) so it can never be
                 ;; promoted into in_process/ as a task; falls through to the
                 ;; next genuinely-dequeueable file.
-                dequeueable (handoff-lib/resolve-dequeueable-candidates new-files completed-basenames abandoned-basenames)]
+                dequeueable         (handoff-lib/resolve-dequeueable-candidates new-files completed-basenames abandoned-basenames)]
             (if (empty? dequeueable)
               (do
                 (println "NO_TASK")

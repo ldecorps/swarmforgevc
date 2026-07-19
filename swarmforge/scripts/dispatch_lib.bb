@@ -20,7 +20,7 @@
 (defn command [& args]
   (apply sh/sh args))
 
-(defn git-root []
+defn git-root []
   (let [result (command "git" "rev-parse" "--show-toplevel")]
     (when (zero? (:exit result))
       (str/trim (:out result)))))
@@ -67,7 +67,7 @@
    .sh wrapper to exec."
   [mode->script]
   (let [role-name (role)
-        mode (receive-mode role-name)]
+        mode      (receive-mode role-name)]
     (if-let [script (get mode->script mode)]
       (run-helper! script)
       (exit! 2 (str "INVALID_RECEIVE_MODE: " mode " for role " role-name)))))

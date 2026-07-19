@@ -14,11 +14,11 @@
 
 (defn -main []
   (let [in-process-dir (handoff-lib/my-mailbox-dir :in_process)
-        completed-dir (handoff-lib/my-mailbox-dir :completed)]
+        completed-dir  (handoff-lib/my-mailbox-dir :completed)]
     (doseq [dir [in-process-dir completed-dir]]
       (fs/create-dirs dir))
     (let [in-process-batches (handoff-lib/batch-dirs in-process-dir)
-          in-process-files (handoff-lib/my-handoff-files in-process-dir)]
+          in-process-files   (handoff-lib/my-handoff-files in-process-dir)]
       (when (seq in-process-batches)
         (handoff-lib/fail! 2
                            "CURRENT_WORK_IS_BATCH: use done_with_current.sh."
