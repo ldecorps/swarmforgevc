@@ -153,7 +153,7 @@ export function getPausedPagerUiHtml(): string {
     html += '<div class="controls">';
     html += '<button id="prev" class="secondary"' + (disablePrev ? ' disabled' : '') + '>Prev</button>';
     html += '<button id="next" class="secondary"' + (disableNext ? ' disabled' : '') + '>Next</button>';
-    html += '<button id="expedite"' + (item.canExpedite ? '' : ' disabled') + '>Expedite</button>';
+    html += '<button id="expedite"' + (item.canExpedite ? '' : ' disabled') + '>Set highest priority, expedite</button>';
     html += '</div>';
     html += '<pre id="yaml"></pre>';
     contentEl.innerHTML = html;
@@ -176,7 +176,7 @@ export function getPausedPagerUiHtml(): string {
     };
     document.getElementById('expedite').onclick = function () {
       if (!item.canExpedite || loading) return;
-      var confirmText = 'Expedite ' + item.id + '?\\n\\nThis sets priority to 0 and promotes it to active.';
+      var confirmText = 'Set highest priority and expedite ' + item.id + '?\\n\\nThis sets priority to 0, promotes it to active, and may dispatch immediately.';
       if (!window.confirm(confirmText)) {
         return;
       }
