@@ -410,7 +410,14 @@ function buildTicketMetaLookup(folders: BacklogFoldersSnapshot): Record<string, 
     lookup[item.id] = { epic: item.epic, title: item.title, filename: item.filename, location: 'active' };
   }
   for (const item of folders.paused) {
-    lookup[item.id] = { epic: item.epic, title: item.title, filename: item.filename, location: 'paused' };
+    if (lookup[item.id] === undefined) {
+      lookup[item.id] = { epic: item.epic, title: item.title, filename: item.filename, location: 'paused' };
+    }
+  }
+  for (const item of folders.done) {
+    if (lookup[item.id] === undefined) {
+      lookup[item.id] = { epic: item.epic, title: item.title, filename: item.filename, location: 'done' };
+    }
   }
   return lookup;
 }

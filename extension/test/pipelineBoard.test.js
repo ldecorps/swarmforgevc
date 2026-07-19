@@ -645,6 +645,16 @@ test('computePipelineBoard: links resolve a parked ticket to its backlog/paused 
   assert.deepEqual(links, [{ id: 'BL-2', path: 'backlog/paused/BL-2-bar.yaml' }]);
 });
 
+test('computePipelineBoard: links resolve a shown ticket with done meta to its backlog/done path', () => {
+  const { links } = computePipelineBoard(
+    { QA: ['BL-3'] },
+    [],
+    { 'BL-3': { filename: 'BL-3-done.yaml', location: 'done' } },
+    { repoBaseUrl: 'https://github.com/ldecorps/swarmforgevc' }
+  );
+  assert.deepEqual(links, [{ id: 'BL-3', path: 'backlog/done/BL-3-done.yaml' }]);
+});
+
 test('computePipelineBoard: links resolve a recently-closed item to its backlog/done path', () => {
   const { links } = computePipelineBoard(
     {},
