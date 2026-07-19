@@ -5,6 +5,10 @@ status: blocked
 epic: fleet-topology
 
 blocked_notes: |
+  COORDINATOR NOTE 2026-07-19: human hardware verification only; no coder work,
+  no re-promotion, no route onward. Leave this ticket blocked until the operator
+  completes the manual checklist on real hardware and moves it to done/.
+
   CORRECTION (coordinator, 2026-07-10): first closed this to done/, then
   QA sent an explicit follow-up note: "do NOT close to done/ - no HW
   verify yet." Reverted — parked here in paused/ instead, NOT done/.

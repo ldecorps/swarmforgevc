@@ -17,7 +17,8 @@ Scenario: the test passes deterministically under parallel load
 Scenario: the tracked-job recording contract stays covered
   Given the de-flaked test and the existing spawnTrackedJob unit tests
   When the suite runs
-  Then the "launchSwarm records a swarm-launch job keyed on the process group" contract remains verified
+  Then the "launchSwarm records a swarm-launch job keyed on the process group"
+    contract remains verified
 
 # Non-behavioral gates:
 #  - No real detached process and no real timers in the test (isolation rule).

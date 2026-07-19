@@ -19,7 +19,8 @@ Scenario: documentation content is translated and stays live
   Given a published artifact rendered after a docs/backlog change
   When the user browses the documentation explorer in FR mode
   Then doc sections, ticket titles, and descriptions display in French
-  And a source string unchanged since the previous publish was served from the translation cache, not re-translated
+  And a source string unchanged since the previous publish was served
+    from the translation cache, not re-translated
 
 # BL-118 bilingual-04
 Scenario: Gherkin shows canonical English with French on tap
@@ -37,7 +38,8 @@ Scenario: missing translations degrade to flagged English
 # BL-118 bilingual-06
 Scenario: identifiers and code are never translated
   Given FR mode
-  Then ticket ids, file paths, commit hashes, code blocks, and diagram sources render verbatim as authored
+  Then ticket ids, file paths, commit hashes, code blocks, and diagram
+    sources render verbatim as authored
 
 # BL-118 bilingual-07
 Scenario: offline works in both languages

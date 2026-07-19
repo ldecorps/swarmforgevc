@@ -29,10 +29,12 @@ Scenario: offline shows last-known state honestly
 
 # BL-097 dashboard-06
 Scenario: background sync keeps the cache recent on Android
-  Given the PWA is installed on Android Chrome with periodic sync granted
+  Given the PWA is installed on Android Chrome with periodic sync
+    granted
   When the browser fires the registered periodic sync event
   Then the service worker re-fetches backlog.json into the cache
-  And a later offline open renders that refreshed data with its "as of" time
+  And a later offline open renders that refreshed data with its
+    "as of" time
 
 # BL-097 dashboard-07
 Scenario: platforms without periodic sync degrade silently

@@ -11,7 +11,8 @@ Scenario: a running mutation pass exposes machine-readable progress
 # BL-132 hang-vs-progress-02
 Scenario: a stalled run is distinguishable from a progressing one
   Given the progress file's updated_at timestamp
-  Then a consumer can tell a live-advancing run from one that has stopped updating (a hang), per the constitution's long-run progress rule
+  Then a consumer can tell a live-advancing run from one that has stopped
+    updating (a hang), per the constitution's long-run progress rule
 
 # BL-132 tile-03 (layered, non-blocking)
 Scenario: the tile shows mutation progress when the webview is healthy

@@ -5,9 +5,11 @@ Scenario: full drill path from vision to a Gherkin scenario
   Given the published documentation artifact for the current main
   When the app user opens the documentation explorer
   Then the vision level lists the product docs and both diagrams
-  And drilling into a milestone lists that milestone's tickets with folder-authoritative status
+  And drilling into a milestone lists that milestone's tickets with
+    folder-authoritative status
   And drilling into a ticket shows its prose description
-  And drilling into the ticket's acceptance shows its Gherkin scenarios as readable scenario text
+  And drilling into the ticket's acceptance shows its Gherkin scenarios
+    as readable scenario text
 
 # BL-117 docs-drilldown-02
 Scenario: the documentation is live against main
@@ -37,7 +39,8 @@ Scenario: offline exploration of the cached snapshot
 # BL-117 docs-drilldown-05
 Scenario: exploration is read-only
   Given any level of the documentation explorer
-  Then no affordance exists to edit documentation or create/modify tickets
+  Then no affordance exists to edit documentation or create/modify
+    tickets
 
 # Non-behavioral gates:
 #  - All derivation lives in the Action renderer (tested); the PWA

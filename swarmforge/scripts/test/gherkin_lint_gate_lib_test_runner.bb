@@ -203,17 +203,35 @@ Feature: sample
          (gherkin-lint-gate-lib/clean?
           (gherkin-lint-gate-lib/lint-findings clean-single-line-feature fully-referenced-ir)))
 
-;; ── BL-520: legacy wrap exemptions are drained ────────────────────────────
+;; ── legacy-wrap allowlist (grandfathering pre-existing violations) ────────
 
-(assert= "520-01: continuation-line findings are no longer suppressible by path"
+(assert= "515-15: a file NOT in the allowlist still gets its continuation-line finding"
          [{:line 5 :text "events out of <total> total events"}]
          (:continuation-lines
-          (gherkin-lint-gate-lib/lint-findings param-wrapped-step-feature fully-referenced-ir)))
+          (gherkin-lint-gate-lib/lint-findings
+           param-wrapped-step-feature phantom-column-ir
+           "specs/features/some-other-file.feature" #{"specs/features/legacy.feature"})))
 
-(assert= "520-02: clean? stays false for a wrapped file even when every Examples column is referenced"
-         false
+(assert= "515-16: a file IN the allowlist has its continuation-line finding dropped"
+         []
+         (:continuation-lines
+          (gherkin-lint-gate-lib/lint-findings
+           param-wrapped-step-feature phantom-column-ir
+           "specs/features/legacy.feature" #{"specs/features/legacy.feature"})))
+
+(assert= "515-17: the allowlist NEVER exempts a phantom-column finding, even for a grandfathered file"
+         [{:scenario "wraps" :column "total"}]
+         (:phantom-columns
+          (gherkin-lint-gate-lib/lint-findings
+           param-wrapped-step-feature phantom-column-ir
+           "specs/features/legacy.feature" #{"specs/features/legacy.feature"})))
+
+(assert= "515-18: clean? is true for a grandfathered file whose only finding was the exempted wrap"
+         true
          (gherkin-lint-gate-lib/clean?
-          (gherkin-lint-gate-lib/lint-findings param-wrapped-step-feature fully-referenced-ir)))
+          (gherkin-lint-gate-lib/lint-findings
+           param-wrapped-step-feature fully-referenced-ir
+           "specs/features/legacy.feature" #{"specs/features/legacy.feature"})))
 
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (seq @failures)

@@ -4,14 +4,16 @@ Feature: token, cost, and resource telemetry with trends
 Scenario: per-agent daily tokens match the transcripts
   Given role worktree transcript JSONLs with known usage records
   When per-agent token metrics are computed for a day
-  Then each role's input/output/cache totals equal the sum of its transcript usage entries for that day
+  Then each role's input/output/cache totals equal the sum of its
+    transcript usage entries for that day
 
 # BL-100 cost-02
 Scenario: per-ticket attribution is windowed and honest
   Given a role held ticket A for a known window and ticket B after it
   When per-ticket tokens are computed
   Then usage timestamped inside each window is attributed to that ticket
-  And usage outside any holding window lands in the role's "unattributed" bucket
+  And usage outside any holding window lands in the role's
+    "unattributed" bucket
 
 # BL-100 cost-03
 Scenario: cost derives from the committed pricing table
