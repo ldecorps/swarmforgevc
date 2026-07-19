@@ -954,7 +954,7 @@
   },
   "reliability": {
     "chases": {
-      "value": 11994,
+      "value": 11997,
       "trend": {
         "series": [
           {
@@ -999,12 +999,12 @@
           },
           {
             "periodStart": "2026-07-19T00:00:00.000Z",
-            "value": 11994
+            "value": 11997
           }
         ],
-        "currentValue": 11994,
+        "currentValue": 11997,
         "priorValue": 33993,
-        "delta": -21999,
+        "delta": -21996,
         "direction": "down"
       }
     },
