@@ -21,12 +21,13 @@
   (System/exit 1))
 
 (defn -main [& args]
-  (when (not= 3 (count args))
+  (when (not (= 3 (count args)))
     (usage))
   (let [[feature-file ir-file _repo-root] args
         feature-text (slurp feature-file)
         parsed-ir (json/parse-string (slurp ir-file) true)
-        findings (gherkin-lint-gate-lib/lint-findings feature-text parsed-ir)]
+        findings (gherkin-lint-gate-lib/lint-findings
+                  feature-text parsed-ir)]
     (if (gherkin-lint-gate-lib/clean? findings)
       (System/exit 0)
       (do
