@@ -6,7 +6,7 @@ type: epic
 epic: swarmforge-console
 priority: 00
 depends_on: []
-decomposes_into: [BL-516, BL-526]
+decomposes_into: [BL-516, BL-526, BL-538]
 source: "Human directive in-session 2026-07-18: upload 'Spec brief — Operator Telegram console (status slice)' labelled 'epic: swarmforge console', then 'you've got to create a console epic for that'. UMBRELLA/tracking item — not directly promotable; children are promoted individually."
 
 notes: |
@@ -30,7 +30,10 @@ notes: |
       to the allowlisted id. Slice 1's sendMessage primitive IS the seam; slice 2 only adds triggers.
     - Slice 3 — Repo onboarding / a guarded write path (NOT YET TICKETED). e.g. swarm-intake issue
       creation from the phone. Deliberately deferred — any new write path needs its own spec + review.
-    - Slice 4 — Mini-app webview / console UI (NOT YET TICKETED). The tiles+Mermaid frontend; when built it
+    - Slice 4a — Paused-ticket pager (TICKETED: BL-538). One paused item per page
+      (id+title, YAML, Expedite button); swipe next/prev. Mini-app/webview host.
+    - Slice 4 — Mini-app webview / console UI (NOT YET TICKETED; BL-538 is the first
+      concrete page on this surface). The tiles+Mermaid frontend; when built it
       becomes the Telegram webview on this same allowlisted channel — do NOT build a second frontend.
 
   DISCIPLINE ACROSS SLICES (pin at the epic level so no slice ships a dark or unsafe surface):
