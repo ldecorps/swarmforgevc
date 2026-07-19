@@ -19,7 +19,7 @@
        (= (str allowed-user-id) (user-id update))))
 
 (defn- command-token [text]
-  (some-> text str/trim (str/split #"\s+") first str/lower-case (str/replace #">@.*$" "")))
+  (some-> text str/trim (str/split #"\s+") first str/lower-case (str/replace #"@.*$" "")))
 
 (defn- role-summary [roles]
   (let [items (->> roles

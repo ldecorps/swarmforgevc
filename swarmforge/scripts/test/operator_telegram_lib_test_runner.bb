@@ -44,6 +44,13 @@
   (assert-contains "/status includes tunnel URL" reply "https://vscode.dev/tunnel/swarmforge/abc")
   (assert= "/status does not alter state" {} next-state))
 
+(let [{:keys [reply control-action]} (sut/handle-command {:text "/status@operator_bot"
+                                                          :status status
+                                                          :roles roles
+                                                          :state {}})]
+  (assert= "/status@bot mention is read-only" nil control-action)
+  (assert-contains "/status@bot mention dispatches status" reply "state: idle"))
+
 (doseq [[cmd expected] [["/tunnel" "running"]
                        ["/help" "/ensure"]]]
   (let [{:keys [reply control-action]} (sut/handle-command {:text cmd :status status :roles roles :state {}})]
