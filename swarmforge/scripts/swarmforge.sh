@@ -17,6 +17,44 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # Telegram is configured) the front-desk bridge+bot in one idempotent
 # command, then exits - it never falls into the full (destructive,
 # always-relaunch) launch flow below.
+# Usage / help before path resolution — otherwise `./swarm --help` is treated
+# as WORKING_DIR and fails with `cd: no such file or directory: --help`.
+if [[ "${1:-}" == "--help" || "${1:-}" == "-h" || "${1:-}" == "help" ]]; then
+  cat <<'USAGE'
+SwarmForge launcher
+
+  ./swarm <project-root> [--pack NAME]
+      Launch (or relaunch) the swarm for <project-root>.
+      --pack NAME  → swarmforge/packs/NAME.conf
+
+  ./swarm status [project-root] [--handoffs N]
+      Read-only snapshot: agents, daemons, Telegram bridge (with uptime),
+      and the last N handoffs (ticket, from→to, when).
+
+  ./swarm ensure <project-root>
+      Idempotent repair: extension, standing agent panes, handoffd,
+      operator, Telegram front desk. Mono-router dormant rotate targets
+      report DORMANT (not FAILED).
+
+  ./swarm attach ...
+      Attach helpers (see swarm_attach.sh).
+
+  Pack switch helpers (cold swap until BL-525 ModelFactory):
+      swarmforge/scripts/failover_to_gpt.sh <project-root>
+USAGE
+  exit 0
+fi
+
+if [[ "${1:-}" == "status" ]]; then
+  shift
+  STATUS_ROOT="$PWD"
+  if [[ $# -gt 0 && "${1}" != -* && -d "$1" ]]; then
+    STATUS_ROOT="$(cd "$1" && pwd)"
+    shift
+  fi
+  exec bb "$SCRIPT_DIR/swarm_status.bb" "$STATUS_ROOT" "$@"
+fi
+
 if [[ "${1:-}" == "ensure" ]]; then
   shift
   ENSURE_WORKING_DIR="${1:-$PWD}"
@@ -599,6 +637,14 @@ provision_coordinator() {
   local extra_cli=""
   if [[ "$COORDINATOR_AGENT" == "claude" ]]; then
     extra_cli="--model $COORDINATOR_MODEL --dangerously-skip-permissions --effort $COORDINATOR_EFFORT"
+  elif [[ "$COORDINATOR_AGENT" == "codex" ]]; then
+    # Pack must set coordinator_model to a Codex catalog id (e.g. gpt-5.4-mini);
+    # otherwise the Claude Sonnet default would be meaningless here.
+    extra_cli="--model $COORDINATOR_MODEL"
+  elif [[ "$COORDINATOR_AGENT" == "aider" ]]; then
+    # Aider coordinator: pack sets coordinator_model (e.g. openai/sonar). OpenAI-compat
+    # base URL comes from pane env remap (Cerebras/Perplexity guards), not from flags.
+    extra_cli="--model $COORDINATOR_MODEL --no-gitignore --no-show-model-warnings --no-check-update"
   fi
   if [[ "$REMOTE_CONTROL_DEFAULT" == 1 ]]; then
     extra_cli+="${extra_cli:+ }--remote-control $(remote_control_session_name_for_role "$role")"
@@ -699,8 +745,12 @@ absolute_config_file() {
 
 write_swarm_identity_file() {
   resolve_effective_backlog_max_depth
-  printf 'swarm_name\t%s\nswarm_mode\t%s\nswarm_mode_primary\t%s\nactive_backlog_max_depth\t%s\nactive_backlog_max_depth_conf_path\t%s\n' \
-    "$SWARM_NAME" "$SWARM_MODE" "$SWARM_MODE_PRIMARY" "$EFFECTIVE_MAX_DEPTH" "$(absolute_config_file)" > "$STATE_DIR/swarm-identity"
+  local rotation_value=""
+  if [[ "$ROTATION_MODE" == "router" || "$ROTATION_MODE" == "sequential" ]]; then
+    rotation_value="$ROTATION_MODE"
+  fi
+  printf 'swarm_name\t%s\nswarm_mode\t%s\nswarm_mode_primary\t%s\nactive_backlog_max_depth\t%s\nactive_backlog_max_depth_conf_path\t%s\nrotation\t%s\n' \
+    "$SWARM_NAME" "$SWARM_MODE" "$SWARM_MODE_PRIMARY" "$EFFECTIVE_MAX_DEPTH" "$(absolute_config_file)" "$rotation_value" > "$STATE_DIR/swarm-identity"
 }
 
 write_sessions_file() {
@@ -1137,7 +1187,13 @@ RESUMECHECK
       launch_body="claude --settings '$settings_file'${claude_permission_flags}${claude_flags:+ $claude_flags} --append-system-prompt-file '$prompt_file' -n 'SwarmForge ${display}' \"\${RESUME_NOTE}Your constitution, pipeline, and role are already loaded above via --append-system-prompt-file. Begin your role loop now; if idle, run ready_for_next.sh.\""
       ;;
     codex)
-      launch_body="codex${extra_cli:+ $extra_cli} -C '$role_worktree' \"\${RESUME_NOTE}\$(cat '$prompt_file')\""
+      # Full prompt files exceed Linux MAX_ARG_STRLEN (~128KiB) when $(cat)'d
+      # into argv (coordinator ~135KB). Keep argv short: RESUME_NOTE + path.
+      # OPENAI_API_KEY arrives via tmux -e (BL-130), never written here.
+      # --dangerously-bypass-approvals-and-sandbox is the Codex equivalent of
+      # Claude's --dangerously-skip-permissions / Copilot's --yolo: swarm
+      # agents must run unattended (no per-command approval prompts).
+      launch_body="codex${extra_cli:+ $extra_cli} --dangerously-bypass-approvals-and-sandbox -C '$role_worktree' \"\${RESUME_NOTE}Read and obey every instruction in '$prompt_file' (constitution, pipeline, role, pack). Then begin your role loop; if idle, run ready_for_next.sh.\""
       ;;
     copilot)
       local copilot_dirs=""
@@ -1182,6 +1238,22 @@ RESUMECHECK
 
   local billing_guard=""
   local copilot_guard=""
+  local cerebras_guard=""
+  local perplexity_guard=""
+  # Re-apply CEREBRAS→OPENAI map inside the launch script. Panes often source
+  # ~/.zshenv which re-exports the real OPENAI_API_KEY and would otherwise
+  # override the tmux -e mapping (Wrong API Key against api.cerebras.ai).
+  # Key value is never written — only $CEREBRAS_API_KEY from pane env (BL-130).
+  cerebras_guard=$'if [[ "${SWARMFORGE_USE_CEREBRAS:-}" == "1" && -n "${CEREBRAS_API_KEY:-}" ]]; then\n  export OPENAI_API_KEY="$CEREBRAS_API_KEY"\n  export OPENAI_API_BASE="${OPENAI_API_BASE:-https://api.cerebras.ai/v1}"\n  export OPENAI_BASE_URL="${OPENAI_BASE_URL:-https://api.cerebras.ai/v1}"\nfi\n'
+  # Same posture for Perplexity Sonar OpenAI-compat (no /v1 on the API host).
+  # SRE 2026-07-19: if this role's pack CLI targets api.perplexity.ai, ALWAYS
+  # remap — do not depend solely on SWARMFORGE_USE_PERPLEXITY in the launching
+  # shell (window lines can declare Perplexity while the flag is unset → 401).
+  if [[ "$extra_cli" == *perplexity.ai* ]]; then
+    perplexity_guard=$'if [[ -n "${PERPLEXITY_API_KEY:-}" ]]; then\n  export SWARMFORGE_USE_PERPLEXITY=1\n  export OPENAI_API_KEY="$PERPLEXITY_API_KEY"\n  export OPENAI_API_BASE=https://api.perplexity.ai\n  export OPENAI_BASE_URL=https://api.perplexity.ai\nelse\n  echo "SwarmForge: PERPLEXITY_API_KEY required (launch CLI targets api.perplexity.ai)" >&2\n  exit 1\nfi\n'
+  else
+    perplexity_guard=$'if [[ "${SWARMFORGE_USE_PERPLEXITY:-}" == "1" && -n "${PERPLEXITY_API_KEY:-}" ]]; then\n  export OPENAI_API_KEY="$PERPLEXITY_API_KEY"\n  export OPENAI_API_BASE="${OPENAI_API_BASE:-https://api.perplexity.ai}"\n  export OPENAI_BASE_URL="${OPENAI_BASE_URL:-https://api.perplexity.ai}"\nfi\n'
+  fi
   if [[ "$agent" == "claude" ]]; then
     if role_uses_openrouter "$role"; then
       # OpenRouter-backed claude role: do NOT unset the auth token (that unset
@@ -1214,7 +1286,7 @@ export SWARMFORGE_ROLE='$role'
 export PATH='$role_script_dir':\$PATH
 cd '$role_worktree'
 ${resume_check}
-${billing_guard}${copilot_guard}${launch_body}
+${billing_guard}${copilot_guard}${cerebras_guard}${perplexity_guard}${launch_body}
 LAUNCH
 
   # Only wire cleanup when a GUI terminal backend owns windows to close.
@@ -1310,11 +1382,46 @@ launch_role() {
   local -a provider_env_flags=()
   if [[ "$agent" != "claude" ]]; then
     local provider_key
-    for provider_key in OPENAI_API_KEY MISTRAL_API_KEY; do
+    local use_cerebras=0
+    local use_perplexity=0
+    if [[ "${SWARMFORGE_USE_CEREBRAS:-}" == "1" && -n "${CEREBRAS_API_KEY:-}" ]]; then
+      use_cerebras=1
+    fi
+    if [[ "${SWARMFORGE_USE_PERPLEXITY:-}" == "1" && -n "${PERPLEXITY_API_KEY:-}" ]]; then
+      use_perplexity=1
+    fi
+    # SRE 2026-07-19: pack window --openai-api-base perplexity forces remap
+    # even when the launching shell forgot SWARMFORGE_USE_PERPLEXITY=1.
+    if [[ "${EXTRA_CLI_ARGS[$index]}" == *perplexity.ai* && -n "${PERPLEXITY_API_KEY:-}" ]]; then
+      use_perplexity=1
+    fi
+    for provider_key in OPENAI_API_KEY MISTRAL_API_KEY CEREBRAS_API_KEY PERPLEXITY_API_KEY; do
+      # When Cerebras/Perplexity OpenAI-compat mode is on, do NOT forward the host
+      # OPENAI_API_KEY (real OpenAI sk-*). Panes must use the provider→OPENAI map.
+      if [[ ( "$use_cerebras" == "1" || "$use_perplexity" == "1" ) && "$provider_key" == "OPENAI_API_KEY" ]]; then
+        continue
+      fi
       if [[ -n "${(P)provider_key:-}" ]]; then
         provider_env_flags+=(-e "${provider_key}=${(P)provider_key}")
       fi
     done
+    if [[ "$use_cerebras" == "1" ]]; then
+      # Cerebras OpenAI-compatible API for aider packs: map key → OPENAI_* via -e
+      # (BL-130). Window lines supply non-secret --openai-api-base.
+      # Also set SWARMFORGE_USE_CEREBRAS so launch scripts can re-apply after
+      # ~/.zshenv re-exports the real OPENAI_API_KEY.
+      provider_env_flags+=(-e "SWARMFORGE_USE_CEREBRAS=1")
+      provider_env_flags+=(-e "OPENAI_API_KEY=${CEREBRAS_API_KEY}")
+      provider_env_flags+=(-e "OPENAI_API_BASE=https://api.cerebras.ai/v1")
+      provider_env_flags+=(-e "OPENAI_BASE_URL=https://api.cerebras.ai/v1")
+    fi
+    if [[ "$use_perplexity" == "1" ]]; then
+      # Perplexity Sonar OpenAI-compat (no /v1). Same BL-130 / zshenv re-export posture.
+      provider_env_flags+=(-e "SWARMFORGE_USE_PERPLEXITY=1")
+      provider_env_flags+=(-e "OPENAI_API_KEY=${PERPLEXITY_API_KEY}")
+      provider_env_flags+=(-e "OPENAI_API_BASE=https://api.perplexity.ai")
+      provider_env_flags+=(-e "OPENAI_BASE_URL=https://api.perplexity.ai")
+    fi
   elif role_uses_openrouter "$role"; then
     # OpenRouter-backed claude role: same ephemeral -e injection - the key
     # reaches the launch script's `export ANTHROPIC_AUTH_TOKEN="$OPENROUTER_API_KEY"`

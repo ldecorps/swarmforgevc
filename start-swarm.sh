@@ -63,12 +63,60 @@ stop_existing() {
   sleep 1
 }
 
-expected_role_count() {
-  # The launcher creates one session per `window` line in the active config,
-  # so that count is what "ready" means for the run we're about to start.
-  local conf="$TARGET/swarmforge/swarmforge.conf"
+resolve_launch_pack() {
+  # Prefer explicit env, then last-launched pack from swarm-identity, then
+  # perplexity-mono-router when present (current primary pack).
+  if [[ -n "${SWARMFORGE_PACK:-}" ]]; then
+    printf '%s\n' "$SWARMFORGE_PACK"
+    return
+  fi
+  if [[ -n "${SWARMFORGE_CONFIG:-}" ]]; then
+    local base
+    base="$(basename "$SWARMFORGE_CONFIG" .conf)"
+    printf '%s\n' "$base"
+    return
+  fi
+  local identity="$TARGET/.swarmforge/swarm-identity"
+  if [[ -f "$identity" ]]; then
+    local conf_path
+    conf_path="$(awk -F'\t' '$1=="active_backlog_max_depth_conf_path"{print $2; exit}' "$identity")"
+    if [[ -n "$conf_path" && -f "$conf_path" ]]; then
+      basename "$conf_path" .conf
+      return
+    fi
+  fi
+  if [[ -f "$TARGET/swarmforge/packs/perplexity-mono-router.conf" ]]; then
+    echo "perplexity-mono-router"
+    return
+  fi
+  echo ""
+}
+
+resolve_launch_conf() {
+  local pack
+  pack="$(resolve_launch_pack)"
+  if [[ -n "$pack" && -f "$TARGET/swarmforge/packs/${pack}.conf" ]]; then
+    printf '%s\n' "$TARGET/swarmforge/packs/${pack}.conf"
+  else
+    printf '%s\n' "$TARGET/swarmforge/swarmforge.conf"
+  fi
+}
+
+expected_session_count() {
+  # Mono-router / sequential rotation: resident + coordinator only (2).
+  # Otherwise: one session per window line (+ coordinator is auto-added, but
+  # window lines already exclude coordinator in packs).
+  local conf
+  conf="$(resolve_launch_conf)"
+  if [[ -f "$conf" ]] && grep -qE '^[[:space:]]*config[[:space:]]+rotation[[:space:]]+(router|sequential)[[:space:]]*$' "$conf"; then
+    echo 2
+    return
+  fi
   if [[ -f "$conf" ]]; then
-    grep -cE '^[[:space:]]*window[[:space:]]' "$conf" 2>/dev/null || echo 0
+    # window lines + auto-provisioned coordinator
+    local windows
+    windows="$(grep -cE '^[[:space:]]*window[[:space:]]' "$conf" 2>/dev/null || echo 0)"
+    echo $((windows + 1))
   else
     local roles_file="$TARGET/.swarmforge/roles.tsv"
     [[ -f "$roles_file" ]] && grep -cve '^[[:space:]]*$' "$roles_file" || echo 0
@@ -111,8 +159,9 @@ check_detached() {
 echo "Target: $TARGET"
 stop_existing
 
-WANT="$(expected_role_count)"
-echo "Launching headless swarm (expecting $WANT roles) ..."
+PACK="$(resolve_launch_pack)"
+WANT="$(expected_session_count)"
+echo "Launching headless swarm (pack=${PACK:-default}, expecting $WANT sessions) ..."
 mkdir -p "$TARGET/.swarmforge"
 # BL-372: detach the launch from this wrapper's own session/process group -
 # the same portable nohup ... & idiom start_handoff_daemon.sh already uses
@@ -121,7 +170,11 @@ mkdir -p "$TARGET/.swarmforge"
 # (exiting, its window being killed, a hangup signal), instead of dying
 # with it. wait_for_ready below is unaffected: it polls the socket/session
 # state directly, never the launch subprocess's own exit.
-nohup env SWARMFORGE_TERMINAL=none "$TARGET/swarm" "$TARGET" >> "$TARGET/.swarmforge/start-swarm-launch.log" 2>&1 &
+LAUNCH_ARGS=("$TARGET")
+if [[ -n "$PACK" ]]; then
+  LAUNCH_ARGS+=(--pack "$PACK")
+fi
+nohup env SWARMFORGE_TERMINAL=none "$TARGET/swarm" "${LAUNCH_ARGS[@]}" >> "$TARGET/.swarmforge/start-swarm-launch.log" 2>&1 &
 LAUNCH_PID=$!
 disown
 
@@ -138,12 +191,4 @@ fi
 
 if ! wait_for_ready "$WANT"; then
   exit 1
-fi
-
-# Full-stack ensure: repair/start handoffd, operator runtime, and Telegram
-# front desk (when configured / previously used) after sessions are up.
-# Idempotent; safe if ./swarm already started them during launch.
-echo "Ensuring ancillaries (daemon, operator, front desk) ..."
-if ! "$TARGET/swarm" ensure "$TARGET"; then
-  echo "WARNING: ./swarm ensure reported failures — check output above" >&2
 fi

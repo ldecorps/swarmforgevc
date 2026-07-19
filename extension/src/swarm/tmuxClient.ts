@@ -334,6 +334,20 @@ export function readSwarmRoles(targetPath: string): SwarmRole[] {
   return roles;
 }
 
+/**
+ * sessions.tsv ∩ live tmux sessions. Under config rotation router, the pack
+ * still lists every pipeline role in sessions.tsv, but only the resident
+ * pane (usually coder) and coordinator exist — dormant roles must not be
+ * treated as tiles or readiness blockers.
+ */
+export function readLiveSwarmRoles(targetPath: string): SwarmRole[] {
+  const socket = readTmuxSocket(targetPath);
+  if (!socket) {
+    return [];
+  }
+  return readSwarmRoles(targetPath).filter((role) => sessionExists(socket, role.session));
+}
+
 export interface RespawnResult {
   success: boolean;
   message: string;

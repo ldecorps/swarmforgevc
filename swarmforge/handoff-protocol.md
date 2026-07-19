@@ -476,6 +476,23 @@ Example tmux wake-up (from the shared constant):
 You have new handoff mail. If idle, run ready_for_next.sh.
 ```
 
+### OpenRouter provider for claude-harness roles (BL-523)
+
+Set `SWARMFORGE_OPENROUTER_ROLES` to a space-separated list of role names
+(for example via `.swarmforge/openrouter.env`). Listed claude-harness roles
+point Claude Code at OpenRouter's Anthropic-compatible endpoint
+(`ANTHROPIC_BASE_URL=https://openrouter.ai/api`) and authenticate with
+`OPENROUTER_API_KEY` (injected ephemerally via `tmux respawn-pane -e`, never
+written into launch scripts — BL-130). Unlisted or empty list → unchanged
+first-party subscription auth (`unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN`).
+The role's `--model` still comes from the pack `window` line / settings JSON.
+
+Pack example: `swarmforge/packs/openrouter-cheap-mono-router.conf`. Check the
+API key's **monthly spend limit** in the OpenRouter dashboard — account
+credits alone are not enough when the key cap is exhausted.
+
+Acceptance shell coverage: `swarmforge/scripts/test/test_openrouter_provider_support.sh`.
+
 ### OpenRouter pane env on respawn
 
 `launch_role` injects `OPENROUTER_API_KEY` (and optional
@@ -486,6 +503,26 @@ flags; omitting them leaves `ANTHROPIC_AUTH_TOKEN` empty and every turn fails
 (empty/malformed HTTP 200). Respawn always uses the canonical
 `.swarmforge/launch/<role>.sh` at the project root — never a worktree-local
 copy — so a repair cannot relaunch the wrong role's script into a session.
+
+### Mono-router panel live feed
+
+Under `config rotation router`, only the resident pipeline pane and the
+coordinator session stand. The VS Code/Cursor panel must treat
+`sessions.tsv` ∩ live tmux sessions as the tile set (`readLiveSwarmRoles`):
+`isSwarmReady` is true when resident + coordinator are up (not when every
+pack role has a pane), and `runningSwarmMatchesConfig` compares pack
+`window` lines to non-coordinator `sessions.tsv` rows so coordinator
+provisioning does not falsely mark a mismatch.
+
+### Mono-router rotate targets resident session
+
+`rotate_to_role.sh` must respawn the standing pipeline pane (home role
+session from `roles.tsv`, usually `swarmforge-coder`), not whatever
+`tmux display-message` returns without `-t`. Headless agent shells often
+resolve the wrong pane, so rotation can print success while the resident
+stays on the old role. The same OpenRouter `-e` injection as chase/ensure
+applies on rotate and idle-clear respawn.
+
 
 ### Dispatch-gap sweep
 
@@ -801,3 +838,20 @@ or the removed send/receive/complete/resend wrapper scripts.
 - Helper scripts do not provide recovery modes for ambiguous queue state.
 - The daemon does not perform a second full validation pass on outbox files;
   `swarm_handoff.sh` is the validation boundary.
+
+## Cold pack switch (until BL-525 ModelFactory)
+
+`swarmforge/scripts/failover_to_gpt.sh <root>` — kill + relaunch `--pack codex-mono-router`
+with `OPENAI_API_KEY` from the environment (BL-130). Verifies coder+coordinator
+sessions before exiting 0.
+
+`./swarm ensure <root>` on a mono-router standing shape reports pipeline rotate
+targets as `DORMANT` (not `FAILED`), and respawns standing panes with full
+provider `-e` passthrough (OpenAI / Cerebras map / OpenRouter / Mistral).
+
+## Remote bridge UI (holistic / pipeline board)
+
+Headless bridge listens on port 8765 (`BRIDGE_TOKEN` from
+`.swarmforge/operator/bridge-token`). Open the **root** URL (not `/pipeline`):
+enter the bearer token, or use `/?token=…` once. A bare `/pipeline` URL still
+returns JSON 401 by design.

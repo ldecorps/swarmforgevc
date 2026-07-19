@@ -1,0 +1,23 @@
+id: BL-539
+title: "EPIC — Swarm reliability / auto-heal: claim-without-progress, branch≠claim, launch-config heal, provider auth, mono-router dormancy; do not promote directly; tracks children"
+milestone: M8
+status: todo
+type: epic
+epic: swarm-reliability
+priority: 00
+depends_on: []
+decomposes_into: [BL-528, BL-529, BL-530, BL-531, BL-532, BL-533, BL-534, BL-535, BL-536, BL-537]
+source: "Human hygiene 2026-07-19: every ticket must have an epic; every epic must have a milestone. Tracker created during open-backlog cleanup."
+
+notes: |
+  UMBRELLA / tracking item (type: epic), NOT directly promotable — the coordinator
+  promotes CHILD slices, never this. Children carry `epic: swarm-reliability` and are
+  listed in `decomposes_into`.
+
+  VISION: the swarm stays green only when claims, sessions, and provider auth match
+  reality — auto-heal preferred over babysitter restarts. Originated in the BL-512
+  recurring failure-mode audit and the 2026-07-19 Perplexity/OpenAI key incident.
+
+acceptance:
+  none: "tracker only — see decomposes_into children for acceptance"
+mutation_cost: high

@@ -488,18 +488,27 @@ function renderListSection(header: string, entries: PipelineBoardListEntry[]): s
   return lines;
 }
 
+// BL-526: STATUS GRID only (header + epic headings + role columns) — no
+// below-grid lists and never the LINKS fragment. Phone miniapp portrait
+// destination; Telegram pin continues to use renderBodySections below.
+function renderGridOnlySections(data: PipelineBoardData): string[] {
+  const idWidth = idColumnWidth(data.rows);
+  const slugWidth = slugColumnWidth(data.rows);
+  return [
+    renderHeader(idWidth, slugWidth),
+    ...renderGridLines(data.rows, idWidth, slugWidth),
+  ];
+}
+
 // BL-465: defaults every below-grid section to empty (?? []) - a fixture
 // built before this ticket (still ubiquitous across pre-existing unit/
 // acceptance tests) supplies only {rows, parked}; the two NEW sections
 // this ticket adds simply render as absent, exactly the pre-BL-465 shape,
 // rather than every one of those fixtures needing a mechanical update.
 function renderBodySections(data: PipelineBoardData): string[] {
-  const idWidth = idColumnWidth(data.rows);
-  const slugWidth = slugColumnWidth(data.rows);
   const parked = data.parked ?? [];
   return [
-    renderHeader(idWidth, slugWidth),
-    ...renderGridLines(data.rows, idWidth, slugWidth),
+    ...renderGridOnlySections(data),
     ...renderListSection(
       PARKED_SECTION_HEADER,
       parked.filter((p) => p.status === 'parked')
@@ -513,6 +522,17 @@ function renderBodySections(data: PipelineBoardData): string[] {
   ];
 }
 
+// BL-526: portrait phone miniapp — STATUS GRID (+ optional updated-at
+// footer). Omits PARKED / AWAITING / ROOT INTAKE / RECENTLY CLOSED and
+// never includes LINKS: (that fragment is a separate render).
+export function renderPipelineBoardGridOnly(data: PipelineBoardData, lastChangeMs?: number): string {
+  const sections = renderGridOnlySections(data);
+  if (lastChangeMs === undefined) {
+    return sections.join('\n');
+  }
+  return [...sections, '', renderUpdatedAtFooter(lastChangeMs)].join('\n');
+}
+
 // BL-462: the grid + below-grid sections only, EXCLUDING the footer
 // timestamp AND the link list - pipelineBoardSync.ts's own content
 // signature is this text (never the full renderPipelineBoard output
@@ -524,20 +544,27 @@ export function renderPipelineBoardBody(data: PipelineBoardData): string {
   return renderBodySections(data).join('\n');
 }
 
-const MONTH_LABELS: readonly string[] = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+// BL-462/BL-508: a pure function of an injected epoch-ms - never a bare
+// new Date()/Date.now() (engineering no-real-clock rule). Europe/London is
+// named explicitly so DST and date rollover are resolved from the injected
+// instant, not from the host's local timezone.
+const UPDATED_AT_TIME_FORMATTER = new Intl.DateTimeFormat('en-GB', {
+  timeZone: 'Europe/London',
+  month: 'short',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  hourCycle: 'h23',
+  timeZoneName: 'short',
+});
 
-// BL-462: a pure function of an injected epoch-ms - never a bare
-// new Date()/Date.now() (engineering no-real-clock rule). UTC throughout so
-// the label is deterministic regardless of the host's local timezone; exact
-// glyphs/timezone are a build-time detail, not a promotion gate (the
-// ticket's own human_approval note).
+function formatPart(parts: Intl.DateTimeFormatPart[], type: Intl.DateTimeFormatPartTypes): string {
+  return parts.find((p) => p.type === type)?.value ?? '';
+}
+
 export function formatUpdatedAtLabel(epochMs: number): string {
-  const d = new Date(epochMs);
-  const month = MONTH_LABELS[d.getUTCMonth()];
-  const day = String(d.getUTCDate()).padStart(2, '0');
-  const hours = String(d.getUTCHours()).padStart(2, '0');
-  const minutes = String(d.getUTCMinutes()).padStart(2, '0');
-  return `${month} ${day} ${hours}:${minutes}`;
+  const parts = UPDATED_AT_TIME_FORMATTER.formatToParts(epochMs);
+  return `${formatPart(parts, 'month')} ${formatPart(parts, 'day')} ${formatPart(parts, 'hour')}:${formatPart(parts, 'minute')} ${formatPart(parts, 'timeZoneName')}`;
 }
 
 function renderUpdatedAtFooter(lastChangeMs: number): string {

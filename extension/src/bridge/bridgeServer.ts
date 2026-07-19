@@ -1,4 +1,11 @@
+/// BL-094/BL-241/BL-522/BL-526/BL-538 bridge server: HTTP entrypoint for
+/// SwarmForge's read JSON routes, SSE feed, Mini App shells, and a handful
+/// of control-scoped POST routes (gate answers, Telegram inbound, reply
+/// ack, paused-pager expedite).
+
 import * as http from 'http';
+import * as fs from 'fs';
+import * as path from 'path';
 import {
   buildBridgeState,
   buildDeliveryMetricsState,
@@ -10,6 +17,11 @@ import {
 } from './bridgeState';
 import { extractBearerToken, isAuthorizedByQueryToken } from './bridgeAuth';
 import { getHolisticUiHtml } from './holisticUiHtml';
+import { getResidentSpyUiHtml } from './residentSpyUiHtml';
+import { getConsoleMenuUiHtml } from './consoleMenuUiHtml';
+import { getPipelineGridUiHtml } from './pipelineGridUiHtml';
+import { captureResidentPaneLive } from './residentPaneLive';
+import { capturePipelineGridLive } from './pipelineGridLive';
 import { answerCapturedGateLive } from './gateAnswerLive';
 import { computeRoleGateStatesLive, filterPendingGates } from './gateSnapshot';
 import { readSwarmRoles } from '../swarm/tmuxClient';
@@ -26,6 +38,10 @@ import {
   findDeviceByToken,
   findDeviceByControlToken,
 } from './deviceRegistry';
+import { readBacklogFolders, BacklogItem } from '../panel/backlogReader';
+import { promoteToActive, findBacklogFilePath } from '../panel/backlogWriter';
+import { atomicWrite } from '../util/atomicWrite';
+import { getPausedPagerUiHtml } from './pausedPagerUiHtml';
 
 const DEFAULT_POLL_INTERVAL_MS = 1000;
 const LOCALHOST = '127.0.0.1';
@@ -41,6 +57,8 @@ const TELEGRAM_INBOUND_MAX_BODY_BYTES = 16 * 1024;
 // BL-320: a reply-ack body ({id}) is a single idempotency-key string -
 // same small-body posture as the gate-answer/telegram-inbound bodies above.
 const REPLY_ACK_MAX_BODY_BYTES = 4 * 1024;
+// BL-538: Expedite body ({id}) from the /paused-pager Mini App.
+const PAUSED_PAGER_EXPEDITE_MAX_BODY_BYTES = 4 * 1024;
 
 export interface BridgeHandle {
   port: number;
@@ -137,6 +155,53 @@ function isRootPath(url: string): boolean {
   return url === '/' || url.startsWith('/?');
 }
 
+// BL-522: Telegram Mini App shell (served without prior auth, like root).
+function isResidentSpyPath(url: string): boolean {
+  return url === '/resident-spy' || url.startsWith('/resident-spy?');
+}
+
+// BL-522: JSON pane feed polled by the Mini App with ?token=.
+function isResidentPanePath(url: string): boolean {
+  return url === '/resident-pane' || url.startsWith('/resident-pane?');
+}
+
+// BL-526: console landing menu (two portrait buttons).
+function isConsolePath(url: string): boolean {
+  return url === '/console' || url.startsWith('/console?');
+}
+
+// BL-526: pipeline STATUS GRID Mini App shell.
+function isPipelineGridPath(url: string): boolean {
+  return url === '/pipeline-grid' || url.startsWith('/pipeline-grid?');
+}
+
+// BL-526: JSON board feed polled by the grid Mini App with ?token=.
+function isPipelineBoardPath(url: string): boolean {
+  return url === '/pipeline-board' || url.startsWith('/pipeline-board?');
+}
+
+// BL-538: paused-ticket pager Mini App shell.
+function isPausedPagerPath(url: string): boolean {
+  return url === '/paused-pager' || url.startsWith('/paused-pager?');
+}
+
+// BL-538: JSON state for the paused-ticket pager Mini App.
+// Separate from the HTML shell path (same pattern as /pipeline-grid vs /pipeline-board).
+function isPausedPagerStatePath(url: string): boolean {
+  return url === '/paused-pager-state' || url.startsWith('/paused-pager-state?');
+}
+
+const MINIAPP_CSP =
+  "default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline' https://telegram.org; connect-src 'self'";
+
+function serveMiniAppHtml(res: http.ServerResponse, html: string): void {
+  res.writeHead(200, {
+    'content-type': 'text/html; charset=utf-8',
+    'content-security-policy': MINIAPP_CSP,
+  });
+  res.end(html);
+}
+
 // BL-240: the ONLY route on this server that reads a request body - every
 // other route is GET/no-body. Rejects (never parses) a body over the cap
 // rather than buffering an unbounded stream into memory.
@@ -183,13 +248,6 @@ function isGateAnswerRequestShape(value: unknown): value is { role: string; answ
   );
 }
 
-// BL-240: matcher + handler for the write route, split out of the main
-// request dispatcher (mirroring this file's existing route-predicate style,
-// e.g. isRootPath/isStateRoute) so the new branch's own if/&&/body-parsing
-// doesn't grow the dispatcher's own complexity - the same "table instead of
-// per-route branch" reasoning buildJsonRoutes's comment above documents,
-// applied to a route whose body-read + non-200 statuses don't fit that
-// table's uniform "match, compute JSON, respond 200" shape.
 function isGateAnswerRoute(req: http.IncomingMessage, url: string): boolean {
   return req.method === 'POST' && url === '/gate-answer';
 }
@@ -203,6 +261,7 @@ function isGateAnswerRoute(req: http.IncomingMessage, url: string): boolean {
 // are control-scoped write routes with the exact same auth-check/body-cap/
 // shape-validate shell around a different action; factored out so a
 // future write route reuses this shell instead of a third copy of it.
+
 function respondJson(res: http.ServerResponse, status: number, body: unknown): void {
   res.writeHead(status, { 'content-type': 'application/json' });
   res.end(JSON.stringify(body));
@@ -251,19 +310,10 @@ function handleGateAnswerRoute(req: http.IncomingMessage, res: http.ServerRespon
   });
 }
 
-// Split out of isTelegramInboundRequestShape below to keep that function's
-// own CRAP under the project's cap (cleaner pass, BL-369): updateId is
-// optional, so a missing one is as valid as a numeric one.
 function isValidOptionalUpdateId(value: unknown): boolean {
   return value === undefined || typeof value === 'number';
 }
 
-// BL-281: {subjectId, channel, text} - the Front Desk Bot has ALREADY
-// resolved which SUP-### thread this belongs to (topic<->SUP-### mapping
-// is entirely bot-owned); the bridge only ever ingests an already-resolved
-// subject, never a raw Telegram update. BL-369: updateId (Telegram's own
-// update_id) is optional so an older/other caller with no update behind it
-// still ingests exactly as before - dedup is simply unavailable without it.
 function isTelegramInboundRequestShape(value: unknown): value is { subjectId: string; channel: string; text: string; updateId?: number } {
   if (!value || typeof value !== 'object') {
     return false;
@@ -276,20 +326,10 @@ function isTelegramInboundRoute(req: http.IncomingMessage, url: string): boolean
   return req.method === 'POST' && url === '/telegram-inbound';
 }
 
-// Split out of ingestTelegramInboundMessage below (cleaner pass, BL-369) to
-// keep that function's own CRAP under the project's cap: a redelivered
-// updateId only ever resolves against an already-read thread, never a null
-// one, so this stays a plain lookup with no thread-nullability branch of
-// its own.
 function findExistingMessage(thread: SupportThread | null, updateId: number | undefined): ThreadMessage | undefined {
   return thread && updateId !== undefined ? messageForUpdateId(thread, updateId) : undefined;
 }
 
-// Split out of ingestTelegramInboundMessage below: resolves the thread and
-// message this update maps to, appending a fresh transcript entry only when
-// no message for this updateId is already recorded. The returned thread is
-// always the up-to-date, non-null one - the caller never needs its own
-// null-thread branch.
 function resolveInboundMessage(
   targetPath: string,
   subjectId: string,
@@ -307,28 +347,6 @@ function resolveInboundMessage(
   return { thread, message: thread.messages[thread.messages.length - 1] };
 }
 
-// BL-369: the bridge's own durable-accept gate. Two writes - the SUP-###
-// transcript and the Operator-wake event - used to run unconditionally,
-// in that order, with no error path and no idempotency key (bug #3: "the
-// bridge's ingest is TWO NON-ATOMIC WRITES, IN THE WRONG ORDER, WITH NO
-// ERROR PATH"). Now:
-//   1. Dedup by updateId FIRST (scenario 03) - a redelivered message whose
-//      transcript line AND queued event are both already confirmed is a
-//      pure no-op (still reports success, since it genuinely WAS handled).
-//      resolveInboundMessage above owns steps 1-2.
-//   2. The transcript write happens only if no message for this updateId
-//      exists yet - never twice for the same update.
-//   3. The event enqueue is attempted whether the message is fresh or was
-//      written by a PRIOR failed attempt (message.eventQueued still
-//      false) - a retry after a transcript-succeeded-but-enqueue-failed
-//      crash re-attempts ONLY the enqueue, never re-appends the transcript.
-//   4. eventQueued flips to true ONLY after the enqueue is CONFIRMED to
-//      have not thrown - "arm on confirmed delivery, never on attempt"
-//      (engineering.prompt's own alarm-flag rule, reused here for the
-//      identical reason).
-// Any step throwing is caught and reported as {success:false} - never left
-// to hang the response (bug #3's "the route may never even respond") and
-// never silently treated as delivered.
 export function ingestTelegramInboundMessage(
   targetPath: string,
   subjectId: string,
@@ -351,12 +369,6 @@ export function ingestTelegramInboundMessage(
   }
 }
 
-// BL-281 telegram-topic-01/telegram-topic-02: mirrors handleGateAnswerRoute
-// exactly - same control-scope step-up auth, same body-cap/shape-validate/
-// dispatch shape. ASYNC, not RPC (the ticket's own explicit constraint):
-// this ingests the message and responds immediately - it never waits for
-// the Operator to react, so the reply (if any) is guaranteed to not exist
-// yet when this response is sent.
 function handleTelegramInboundRoute(req: http.IncomingMessage, res: http.ServerResponse, targetPath: string, registry: DeviceRegistry): void {
   if (!requireControlAuth(req, res, registry)) {
     return;
@@ -377,9 +389,6 @@ function handleTelegramInboundRoute(req: http.IncomingMessage, res: http.ServerR
   });
 }
 
-// BL-320: {id} - the idempotency key of the outbox entry the bot just
-// finished processing (posted to Telegram, or decided to drop as
-// unmapped) - the ONLY thing that ever advances the persisted cursor.
 function isReplyAckRequestShape(value: unknown): value is { id: string } {
   return !!value && typeof value === 'object' && typeof (value as Record<string, unknown>).id === 'string';
 }
@@ -388,16 +397,6 @@ function isReplyAckRoute(req: http.IncomingMessage, url: string): boolean {
   return req.method === 'POST' && url === '/reply-ack';
 }
 
-// BL-320: the ack-driven cursor's only writer. Deliberately stateless
-// (re-reads the persisted cursor fresh on every call rather than
-// threading per-bridge-instance mutable state through the write-route
-// table) - acks are low-frequency (one human reply at a time) so the tiny
-// extra file read/write per ack costs nothing, and it keeps this route the
-// same "plain function of (targetPath, body)" shape as every other route
-// here instead of needing closure access to startBridge's internals.
-// advanceCursorOnAck (pure) refuses to advance past an entry that does not
-// match the ack's id, so a stale or out-of-order ack is a harmless no-op,
-// never a corrupted cursor.
 function handleReplyAckRoute(req: http.IncomingMessage, res: http.ServerResponse, targetPath: string, registry: DeviceRegistry): void {
   if (!requireControlAuth(req, res, registry)) {
     return;
@@ -416,6 +415,65 @@ function handleReplyAckRoute(req: http.IncomingMessage, res: http.ServerResponse
   });
 }
 
+// BL-538: Paused-pager Expedite request shape and route.
+function isPausedPagerExpediteRoute(req: http.IncomingMessage, url: string): boolean {
+  return req.method === 'POST' && (url === '/paused-pager/expedite' || url.startsWith('/paused-pager/expedite?'));
+}
+
+function isPausedPagerExpediteRequestShape(value: unknown): value is { id: string } {
+  return !!value && typeof value === 'object' && typeof (value as Record<string, unknown>).id === 'string';
+}
+
+function handlePausedPagerExpediteRoute(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  targetPath: string,
+  registry: DeviceRegistry
+): void {
+  if (!requireControlAuth(req, res, registry)) {
+    return;
+  }
+  readValidatedBody(
+    req,
+    res,
+    PAUSED_PAGER_EXPEDITE_MAX_BODY_BYTES,
+    isPausedPagerExpediteRequestShape,
+    'expected a JSON body of {id}'
+  ).then((value) => {
+    if (!value) {
+      return;
+    }
+    const backlogId = value.id;
+    try {
+      // BL-538: Expedite from paused-pager — reuse BL-490's force-promote
+      // semantics (promote paused->active if present) and set priority 0
+      // in the ticket YAML. commitExpediteWrites/dispatch are owned by
+      // telegramFrontDeskBotCore; here we only mutate YAML and folders.
+      promoteToActive(targetPath, backlogId);
+      const filePath = findBacklogFilePath(targetPath, backlogId);
+      if (!filePath) {
+        respondJson(res, 404, { success: false, reason: 'ticket not found in active/paused' });
+        return;
+      }
+      const content = fs.readFileSync(filePath, 'utf8');
+      const PRIORITY_LINE = /^priority:\s*.+$/m;
+      let updated: string;
+      if (PRIORITY_LINE.test(content)) {
+        updated = content.replace(PRIORITY_LINE, 'priority: 0');
+      } else {
+        updated = content.trimEnd() + '\npriority: 0\n';
+      }
+      atomicWrite(filePath, updated);
+      respondJson(res, 200, { success: true, id: backlogId });
+    } catch (err) {
+      respondJson(res, 500, {
+        success: false,
+        reason: err instanceof Error ? err.message : 'unknown error',
+      });
+    }
+  });
+}
+
 interface WriteRoute {
   matches: (req: http.IncomingMessage, url: string) => boolean;
   handle: (req: http.IncomingMessage, res: http.ServerResponse, targetPath: string, registry: DeviceRegistry) => void;
@@ -428,6 +486,8 @@ const writeRoutes: WriteRoute[] = [
   { matches: isGateAnswerRoute, handle: handleGateAnswerRoute },
   { matches: isTelegramInboundRoute, handle: handleTelegramInboundRoute },
   { matches: isReplyAckRoute, handle: handleReplyAckRoute },
+  // BL-538: paused-pager Expedite route, control-scoped.
+  { matches: isPausedPagerExpediteRoute, handle: handlePausedPagerExpediteRoute },
 ];
 
 function requestPath(req: http.IncomingMessage): string {
@@ -453,7 +513,11 @@ function isAuthorizedForRead(authHeader: string | undefined, url: string, regist
   if (findDeviceByToken(registry, extractBearerToken(authHeader))) {
     return true;
   }
-  return isRootPath(url) && isAuthorizedByQueryToken(queryToken(url), primaryTokenOf(registry));
+  // Root HTML uses query token client-side; Mini App JSON polls
+  // (/resident-pane, /pipeline-board, /paused-pager-state) also accept it because those fetches
+  // cannot set an Authorization header.
+  return (isRootPath(url) || isResidentPanePath(url) || isPipelineBoardPath(url) || isPausedPagerPath(url) || isPausedPagerStatePath(url))
+    && isAuthorizedByQueryToken(queryToken(url), primaryTokenOf(registry));
 }
 
 // BL-241 control-requires-step-up-04: control actions require a SEPARATE
@@ -471,6 +535,51 @@ interface JsonRoute {
   compute: (url: string) => unknown;
 }
 
+// BL-538: compute paused-pager JSON state from backlog paused tickets.
+// ORDER: paused tickets sorted by priority ascending (lower number = higher
+// urgency), then by ticket id ascending. Includes YAML text and a simple
+// canExpedite flag per item.
+function computePausedPagerState(targetPath: string): unknown {
+  const folders = readBacklogFolders(targetPath);
+  const paused = folders.paused.slice();
+
+  if (!paused || paused.length === 0) {
+    return { items: [], index: 0, total: 0 };
+  }
+
+  const MAX_PRIORITY = Number.MAX_SAFE_INTEGER;
+
+  const sorted = paused.sort((a: BacklogItem, b: BacklogItem) => {
+    const pa = a.priority ?? MAX_PRIORITY;
+    const pb = b.priority ?? MAX_PRIORITY;
+    if (pa !== pb) {
+      return pa - pb;
+    }
+    // Tie-breaker: id ascending.
+    return a.id.localeCompare(b.id);
+  });
+
+  const items = sorted.map((item) => {
+    let yamlText: string | undefined;
+    if (item.filename) {
+      const filePath = path.join(targetPath, 'backlog', 'paused', item.filename);
+      try {
+        yamlText = fs.readFileSync(filePath, 'utf8');
+      } catch {
+        yamlText = undefined;
+      }
+    }
+    return {
+      id: item.id,
+      title: item.title,
+      yaml: yamlText,
+      canExpedite: true,
+    };
+  });
+
+  return { items, index: 0, total: items.length };
+}
+
 // Every route below except /events (and the root HTML shell, a different
 // content-type entirely) follows the same "match, compute JSON, respond
 // 200" shape. A data-driven table instead of one `if` per route keeps the
@@ -485,53 +594,44 @@ function buildJsonRoutes(targetPath: string, runLogPath: string, nowMs?: number)
       compute: (url) => stateForRoute(buildBridgeState(targetPath, runLogPath), url as StateRoute),
     },
     {
-      // BL-096: computed fresh per-request only, deliberately outside
-      // buildBridgeState/the SSE poll loop above (git-history-walk cost -
-      // see buildDeliveryMetricsState's own comment).
       matches: (url) => url === '/metrics',
       compute: () => buildDeliveryMetricsState(targetPath),
     },
     {
-      // BL-100: same posture as /metrics - transcript + telemetry reads are
-      // too expensive for the SSE poll loop, computed only on direct request.
       matches: (url) => url === '/cost-telemetry',
       compute: () => buildCostTelemetryState(targetPath),
     },
     {
-      // BL-094: same posture as /metrics/cost-telemetry - git-history +
-      // handoff-state reads, too expensive for the SSE poll loop.
       matches: (url) => url === '/holistic',
       compute: () => buildHolisticState(targetPath, runLogPath),
     },
     {
-      // BL-102: same posture as /metrics/cost-telemetry/holistic - scans
-      // every role's completed-handoff audit trail, too expensive for the
-      // SSE poll loop. BL-270: nowMs defaults to undefined here too -
-      // buildStageDwellState/computeStageDwellReportForRoles fall back to
-      // the real clock unless a test injected an instant via
-      // StartBridgeOptions.nowMs, so production behavior is unchanged.
       matches: (url) => url === '/stage-dwell',
       compute: () => buildStageDwellState(targetPath, nowMs),
     },
     {
-      // BL-265 slice 1: lists the currently-PENDING to-human gates (a live
-      // tmux pane capture per role) - same "too expensive for the SSE poll
-      // loop, computed only on direct request" posture as every sibling
-      // route above. READ-scoped only (the global isAuthorizedForRead check
-      // ahead of this table already covers it) - answering a gate stays the
-      // separate, control-step-up-gated POST /gate-answer route below; this
-      // never writes anything.
       matches: (url) => url === '/gates',
       compute: () => filterPendingGates(computeRoleGateStatesLive(targetPath, readSwarmRoles(targetPath).map((r) => r.role))),
     },
     {
-      // BL-273: same posture as /cost-telemetry above - transcript scans are
-      // too expensive for the SSE poll loop, computed only on direct
-      // request. nowMs mirrors /stage-dwell's own StartBridgeOptions.nowMs
-      // injection (BL-270) so a test can pin the same instant its fixture
-      // and this route both evaluate against.
       matches: (url) => url === '/burn-rate',
       compute: () => buildBurnRateState(targetPath, nowMs),
+    },
+    {
+      matches: isResidentPanePath,
+      compute: () => {
+        const snap = captureResidentPaneLive(targetPath);
+        return snap ?? { available: false };
+      },
+    },
+    {
+      matches: isPipelineBoardPath,
+      compute: () => capturePipelineGridLive(targetPath, nowMs),
+    },
+    {
+      // BL-538: paused-ticket pager JSON feed for the Mini App.
+      matches: isPausedPagerStatePath,
+      compute: () => computePausedPagerState(targetPath),
     },
   ];
 }
@@ -548,29 +648,41 @@ export function startBridge(
   return new Promise((resolve) => {
     const sseClients = new Set<http.ServerResponse>();
     let lastSnapshot: string | undefined;
-    // BL-241: mutable so rotate/revoke/register (via the BridgeHandle
-    // methods below) take effect on the NEXT request without restarting
-    // the bridge - token-rotation-01/device-revocation-02 both need a
-    // live bridge whose auth state can actually change mid-run.
     let registry: DeviceRegistry = normalizeToRegistry(tokenOrRegistry);
 
     const server = http.createServer((req, res) => {
       const url = requestPath(req);
 
-      if (!isAuthorizedForRead(req.headers.authorization, url, registry)) {
-        res.writeHead(401, { 'content-type': 'application/json' });
-        res.end(JSON.stringify({ error: 'unauthorized' }));
-        return;
-      }
-
       if (isRootPath(url)) {
         res.writeHead(200, {
           'content-type': 'text/html; charset=utf-8',
-          // Inline style/script only, matching the page's own "self-contained,
-          // no external fetch" scope note - no external origin needs allowing.
           'content-security-policy': "default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'",
         });
         res.end(getHolisticUiHtml());
+        return;
+      }
+
+      // Mini App HTML shells — pre-auth like root so Telegram can open ?token=…
+      if (isResidentSpyPath(url)) {
+        serveMiniAppHtml(res, getResidentSpyUiHtml());
+        return;
+      }
+      if (isConsolePath(url)) {
+        serveMiniAppHtml(res, getConsoleMenuUiHtml());
+        return;
+      }
+      if (isPipelineGridPath(url)) {
+        serveMiniAppHtml(res, getPipelineGridUiHtml());
+        return;
+      }
+      if (isPausedPagerPath(url)) {
+        serveMiniAppHtml(res, getPausedPagerUiHtml());
+        return;
+      }
+
+      if (!isAuthorizedForRead(req.headers.authorization, url, registry)) {
+        res.writeHead(401, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ error: 'unauthorized' }));
         return;
       }
 
@@ -584,34 +696,10 @@ export function startBridge(
         res.write(`data: ${snapshot}\n\n`);
         sseClients.add(res);
         req.on('close', () => sseClients.delete(res));
-        // BL-320: replay every entry the persisted cursor still considers
-        // unacked to THIS freshly (re)connected client - covers both "the
-        // previous connection dropped mid-relay before acking" and "the
-        // bridge itself restarted" (the persisted cursor, re-read fresh
-        // here rather than trusted from a stale in-memory copy, is exactly
-        // what survived the restart). Sent only to the new client, not
-        // broadcast to every already-connected one, since an existing
-        // client has no reason to see history it may have already acked.
-        // Deliberately does NOT touch emittedIndex: /events can have more
-        // than one live client (the front-desk bot AND a holistic-UI
-        // viewer both subscribe), and emittedIndex is the poll tick's own
-        // "already broadcast to everyone" pointer - advancing it here from
-        // a single new client's catch-up replay would make the NEXT poll
-        // tick skip broadcasting that same still-unacked range to every
-        // OTHER already-connected client, silently starving them of an
-        // entry they never actually received. The bot's own idempotency-
-        // by-id dedup already makes an extra, unadvanced-emittedIndex
-        // redelivery on the very next tick harmless.
         relayEntriesFrom(readPersistedCursor(targetPath).ackedIndex, [res]);
         return;
       }
 
-      // BL-240/BL-241/BL-281: the bridge's write (POST) routes - answering a
-      // captured to-human gate, and ingesting a resolved Telegram inbound
-      // message. Read-level auth is already enforced above, uniformly with
-      // every other route; each handler enforces its own additional control
-      // step-up. GET (or any other method) to either path falls through to
-      // the 404 below, same as any unrecognized route.
       const writeRoute = writeRoutes.find((route) => route.matches(req, url));
       if (writeRoute) {
         writeRoute.handle(req, res, targetPath, registry);
@@ -629,24 +717,8 @@ export function startBridge(
       res.end(JSON.stringify({ error: 'not_found' }));
     });
 
-    // BL-281/BL-320 telegram-topic-03: how the Operator's reply reaches the
-    // bot - the disposable Operator (via operator_reply.bb) appends {id,
-    // threadId, text} to .swarmforge/operator/telegram-reply-outbox.jsonl.
-    // emittedIndex is an in-memory, best-effort "already pushed to the
-    // CURRENTLY connected client(s)" pointer - it exists only to avoid
-    // re-broadcasting the same unacked entry on every single poll tick; it
-    // carries no durability requirement of its own (losing it costs at
-    // most one redundant replay, which the bot's own idempotency-by-id
-    // guard already absorbs harmlessly). The genuinely durable, at-least-
-    // once-delivery cursor is the ACKED one persisted in
-    // telegram-reply-relay-cursor.json (replyRelayCursor.ts) - that file,
-    // never this variable, is what the "/events" connect handler above
-    // replays from on every fresh connection.
     let emittedIndex = readPersistedCursor(targetPath).ackedIndex;
 
-    // Split out of the poll tick below so that callback's own branch count
-    // stays low - each half of the tick (state snapshot, reply relay) is
-    // independently a couple of branches, not one six-branch function.
     function broadcastSnapshotIfChanged(previousSnapshot: string | undefined): string {
       const snapshot = JSON.stringify(buildBridgeState(targetPath, runLogPath));
       if (snapshot === previousSnapshot) {

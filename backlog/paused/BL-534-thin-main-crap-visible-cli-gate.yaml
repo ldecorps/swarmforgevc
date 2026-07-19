@@ -1,0 +1,26 @@
+id: BL-534
+title: "Gate: extension tools keep main() thin and CRAP-visible"
+milestone: M8
+type: chore
+status: todo
+epic: swarm-reliability
+assigned_to: specifier
+priority: 8
+mutation_cost: low
+direction: human-requested
+depends_on: []
+source: "BL-512 audit BL-FIX-007. Evidence: rule_proposals L5–L6 (hardener/engineering, recurring)."
+
+notes: |
+  WHAT / WHY: Logic left in CLI main() only hit via subprocess is CRAP-invisible
+  (0% coverage) and slips regressions. Recurring hardener rule proposals.
+
+  OUTCOME: lint/gate for extension/src/tools/* — export pure helpers; main() is a
+  thin wrapper only (same pattern BL-512 inventory CLI already follows).
+
+acceptance: |
+  Feature: tool CLIs keep logic out of main()
+    Scenario: non-thin main fails the tools gate
+      Given a new or changed file under extension/src/tools/
+      When the thin-main gate runs
+      Then branching/formatting logic outside an exported helper fails the gate

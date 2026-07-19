@@ -39,6 +39,8 @@ const {
   decideEnsureAgentQuestionsTopicAction,
   AGENT_QUESTIONS_SUBJECT_ID,
   decideEnsureControlTopicAction,
+  decideEnsureBabysitterTopicAction,
+  BABYSITTER_SUBJECT_ID,
   CONTROL_SUBJECT_ID,
   decideAgentQuestionsReplyAction,
   decidePollAnswerAction,
@@ -219,6 +221,23 @@ test('BL-434: decideEnsureApprovalsTopicAction reuses the topic already bound to
 test('BL-434: decideEnsureApprovalsTopicAction is reserved-subject-specific - the Operator topic\'s own binding never counts as the Approvals topic', () => {
   assert.deepEqual(decideEnsureApprovalsTopicAction({ '42': OPERATOR_SUBJECT_ID }), { kind: 'create' });
 });
+
+// ── decideEnsureBabysitterTopicAction (pure) — standing babysitter topic ──
+
+test('Babysitter: decideEnsureBabysitterTopicAction creates when no topic is bound yet', () => {
+  assert.deepEqual(decideEnsureBabysitterTopicAction({}), { kind: 'create' });
+  assert.deepEqual(decideEnsureBabysitterTopicAction({ '7': 'SUP-1' }), { kind: 'create' });
+});
+
+test('Babysitter: decideEnsureBabysitterTopicAction reuses the topic already bound to BABYSITTER_SUBJECT_ID', () => {
+  assert.deepEqual(decideEnsureBabysitterTopicAction({ '7': 'SUP-1', '99': BABYSITTER_SUBJECT_ID }), { kind: 'reuse', topicId: 99 });
+});
+
+test('Babysitter: Operator/Approvals bindings never count as the Babysitter topic', () => {
+  assert.deepEqual(decideEnsureBabysitterTopicAction({ '42': OPERATOR_SUBJECT_ID, '43': APPROVALS_SUBJECT_ID }), { kind: 'create' });
+});
+
+
 
 // ── decideEnsureBacklogTopicAction (pure) — BL-492 ────────────────────────
 

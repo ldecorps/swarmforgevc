@@ -1,7 +1,7 @@
 import {
   capturePane,
   getPanePidAndCommand,
-  readSwarmRoles,
+  readLiveSwarmRoles,
   readTmuxSocket,
   resizeWindow,
   resolveAgentPaneTarget,
@@ -258,7 +258,7 @@ export class PaneTailer {
 
   refreshState(): void {
     this.socketPath = readTmuxSocket(this.targetPath) ?? '';
-    this.roles = readSwarmRoles(this.targetPath);
+    this.roles = readLiveSwarmRoles(this.targetPath);
     this.lastText.clear();
     this.lastRawText.clear();
     this.lastChangedAt.clear();
@@ -479,7 +479,7 @@ export class PaneTailer {
 
   private applySocketChange(latestSocket: string): void {
     this.socketPath = latestSocket;
-    this.roles = readSwarmRoles(this.targetPath);
+    this.roles = readLiveSwarmRoles(this.targetPath);
     this.lastText.clear();
     this.lastRawText.clear();
     this.paneHistory.clear();
@@ -496,7 +496,7 @@ export class PaneTailer {
   // the cleaner). Re-read roles.tsv each poll and refresh the panel when the
   // role set changes, so the new tile appears without a full relaunch.
   private refreshRolesOnUnchangedSocket(): void {
-    const latestRoles = readSwarmRoles(this.targetPath);
+    const latestRoles = readLiveSwarmRoles(this.targetPath);
     if (!rolesChanged(this.roles, latestRoles)) {
       return;
     }
