@@ -28,6 +28,7 @@
             [clojure.string :as str]))
 
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "agent_runtime_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "provider_compat_lib.bb")))
 
 (defn usage []
   (binding [*out* *err*]
@@ -144,46 +145,53 @@
 (defn provider-respawn-env-args
   "BL-130 pane -e passthrough for ensure repairs — same keys rotate/chase need
    so a repair never strips OpenRouter/OpenAI/Mistral/Cerebras/Perplexity auth
-   from a live alternate-runtime pane. When SWARMFORGE_USE_CEREBRAS=1 or
-   SWARMFORGE_USE_PERPLEXITY=1, that provider key wins for OPENAI_*."
-  []
-  (let [use-cerebras (= "1" (System/getenv "SWARMFORGE_USE_CEREBRAS"))
-        use-perplexity (= "1" (System/getenv "SWARMFORGE_USE_PERPLEXITY"))
-        cerebras (System/getenv "CEREBRAS_API_KEY")
-        perplexity (System/getenv "PERPLEXITY_API_KEY")
-        openai (cond
-                 (and use-cerebras (not (str/blank? cerebras))) cerebras
-                 (and use-perplexity (not (str/blank? perplexity))) perplexity
-                 :else (System/getenv "OPENAI_API_KEY"))
-        openai-base (cond
-                      (and use-cerebras (not (str/blank? cerebras))) "https://api.cerebras.ai/v1"
-                      (and use-perplexity (not (str/blank? perplexity))) "https://api.perplexity.ai"
-                      :else (System/getenv "OPENAI_API_BASE"))
-        openai-base-url (cond
-                          (and use-cerebras (not (str/blank? cerebras))) "https://api.cerebras.ai/v1"
-                          (and use-perplexity (not (str/blank? perplexity))) "https://api.perplexity.ai"
-                          :else (System/getenv "OPENAI_BASE_URL"))]
-    (cond-> []
-      (not (str/blank? (System/getenv "OPENROUTER_API_KEY")))
-      (concat ["-e" (str "OPENROUTER_API_KEY=" (System/getenv "OPENROUTER_API_KEY"))])
-      (not (str/blank? (System/getenv "CLAUDE_CODE_MAX_OUTPUT_TOKENS")))
-      (concat ["-e" (str "CLAUDE_CODE_MAX_OUTPUT_TOKENS=" (System/getenv "CLAUDE_CODE_MAX_OUTPUT_TOKENS"))])
-      (not (str/blank? (System/getenv "MISTRAL_API_KEY")))
-      (concat ["-e" (str "MISTRAL_API_KEY=" (System/getenv "MISTRAL_API_KEY"))])
-      (not (str/blank? cerebras))
-      (concat ["-e" (str "CEREBRAS_API_KEY=" cerebras)])
-      (not (str/blank? perplexity))
-      (concat ["-e" (str "PERPLEXITY_API_KEY=" perplexity)])
-      use-cerebras
-      (concat ["-e" "SWARMFORGE_USE_CEREBRAS=1"])
-      use-perplexity
-      (concat ["-e" "SWARMFORGE_USE_PERPLEXITY=1"])
-      (not (str/blank? openai))
-      (concat ["-e" (str "OPENAI_API_KEY=" openai)])
-      (not (str/blank? openai-base))
-      (concat ["-e" (str "OPENAI_API_BASE=" openai-base)])
-      (not (str/blank? openai-base-url))
-      (concat ["-e" (str "OPENAI_BASE_URL=" openai-base-url)]))))
+   from a live alternate-runtime pane.
+
+   SRE 2026-07-19: when role's launch script CLI targets api.perplexity.ai,
+   Perplexity wins for OPENAI_* even if SWARMFORGE_USE_PERPLEXITY was unset
+   in the ensure process (provider_compat_lib/must-remap-to-perplexity?)."
+  ([] (provider-respawn-env-args nil))
+  ([role]
+   (let [launch-cli (when role
+                      (let [p (fs/path state-dir "launch" (str role ".sh"))]
+                        (when (fs/exists? p) (slurp (str p)))))
+         use-cerebras (= "1" (System/getenv "SWARMFORGE_USE_CEREBRAS"))
+         use-perplexity (= "1" (System/getenv "SWARMFORGE_USE_PERPLEXITY"))
+         cerebras (System/getenv "CEREBRAS_API_KEY")
+         perplexity (System/getenv "PERPLEXITY_API_KEY")
+         resolved (provider-compat-lib/resolve-openai-compat
+                   {:use-cerebras use-cerebras
+                    :use-perplexity use-perplexity
+                    :cerebras-api-key cerebras
+                    :perplexity-api-key perplexity
+                    :openai-api-key (System/getenv "OPENAI_API_KEY")
+                    :launch-cli launch-cli})
+         openai (:openai-api-key resolved)
+         openai-base (:openai-api-base resolved)
+         openai-base-url (:openai-base-url resolved)
+         force-perplexity (= :perplexity (:provider resolved))
+         force-cerebras (= :cerebras (:provider resolved))]
+     (cond-> []
+       (not (str/blank? (System/getenv "OPENROUTER_API_KEY")))
+       (concat ["-e" (str "OPENROUTER_API_KEY=" (System/getenv "OPENROUTER_API_KEY"))])
+       (not (str/blank? (System/getenv "CLAUDE_CODE_MAX_OUTPUT_TOKENS")))
+       (concat ["-e" (str "CLAUDE_CODE_MAX_OUTPUT_TOKENS=" (System/getenv "CLAUDE_CODE_MAX_OUTPUT_TOKENS"))])
+       (not (str/blank? (System/getenv "MISTRAL_API_KEY")))
+       (concat ["-e" (str "MISTRAL_API_KEY=" (System/getenv "MISTRAL_API_KEY"))])
+       (not (str/blank? cerebras))
+       (concat ["-e" (str "CEREBRAS_API_KEY=" cerebras)])
+       (not (str/blank? perplexity))
+       (concat ["-e" (str "PERPLEXITY_API_KEY=" perplexity)])
+       (or use-cerebras force-cerebras)
+       (concat ["-e" "SWARMFORGE_USE_CEREBRAS=1"])
+       (or use-perplexity force-perplexity)
+       (concat ["-e" "SWARMFORGE_USE_PERPLEXITY=1"])
+       (not (str/blank? openai))
+       (concat ["-e" (str "OPENAI_API_KEY=" openai)])
+       (not (str/blank? openai-base))
+       (concat ["-e" (str "OPENAI_API_BASE=" openai-base)])
+       (not (str/blank? openai-base-url))
+       (concat ["-e" (str "OPENAI_BASE_URL=" openai-base-url)])))))
 
 (defn openrouter-respawn-env-args
   "Deprecated name — prefer provider-respawn-env-args."
@@ -192,7 +200,7 @@
 
 (defn respawn-role! [socket role session]
   (let [launch-script (fs/path state-dir "launch" (str role ".sh"))
-        env-args (provider-respawn-env-args)
+        env-args (provider-respawn-env-args role)
         cmd (concat ["tmux" "-S" socket "respawn-pane" "-k"]
                     env-args
                     ["-t" session (str "zsh '" launch-script "'")])]

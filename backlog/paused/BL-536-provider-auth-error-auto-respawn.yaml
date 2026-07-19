@@ -1,0 +1,28 @@
+id: BL-536
+title: "Detect provider auth errors in pane scrollback and auto-respawn with compat env"
+milestone: M8
+type: defect
+status: todo
+assigned_to: specifier
+priority: 2
+mutation_cost: medium
+direction: swarm-surfaced
+depends_on: [BL-535]
+source: "SRE incident 2026-07-19 — AuthenticationError left standing roles idle while handoffd stayed healthy."
+
+notes: |
+  WHAT / WHY: classify-provider-error already maps Invalid API key → :auth,
+  and provider_compat_lib/provider-auth-error-text? exists, but nothing in
+  handoffd/ensure observes pane scrollback for auth and heals.
+
+  OUTCOME: standing-role observe (or ensure tick) that on auth-class text
+  respawns the role via provider-respawn-env-args (CLI-forced remap), alerts
+  after N failures, never busy-loops token burn on repeated 401.
+
+acceptance: |
+  Feature: provider auth failures auto-heal
+    Scenario: AuthenticationError in pane triggers respawn with compat env
+      Given a standing role pane whose recent scrollback matches auth-class text
+      When the reliability observe tick runs
+      Then the role is respawned with provider-compat env
+      And an operator-visible alert is recorded if auth persists after respawn

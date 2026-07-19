@@ -1,0 +1,30 @@
+id: BL-537
+title: "Mono-router: missing rotate-target session must heal, not report healthy-dormant"
+milestone: M8
+type: defect
+status: todo
+assigned_to: specifier
+priority: 3
+mutation_cost: medium
+direction: swarm-surfaced
+depends_on: []
+source: "SRE incident 2026-07-19 — killing aider tore down coder/specifier sessions; ensure reported DORMANT and left them gone."
+
+notes: |
+  WHAT / WHY: Under config rotation router, ensure classifies coder/specifier
+  as DORMANT when no standing session exists. If sessions were created at
+  launch and later die, ensure will not recreate them and rotate_to_role
+  may also fail without a resident — silent loss of pipeline roles.
+
+  OUTCOME: either (a) rotate targets always keep a session (respawn on death),
+  or (b) ensure verifies a living resident + working rotate_to_role path and
+  FIXED-recreates when the rotate path is broken. Never report HEALTHY when
+  the swarm cannot place work on specifier/coder.
+
+acceptance: |
+  Feature: mono-router role placement remains possible after session death
+    Scenario: dead rotate-target session is repaired or resident rotate works
+      Given config rotation router and a missing swarmforge-specifier session
+      When swarm ensure runs
+      Then either the session is recreated or rotate_to_role specifier succeeds
+      And ensure does not report the swarm fully healthy if neither is true

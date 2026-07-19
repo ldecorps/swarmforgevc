@@ -1,0 +1,47 @@
+id: BL-535
+title: "Provider-compat invariant: pack API base must force key remap (Perplexity/Cerebras)"
+milestone: M8
+type: defect
+status: todo
+assigned_to: coder
+priority: 1
+mutation_cost: medium
+direction: swarm-surfaced
+depends_on: []
+source: "SRE incident 2026-07-19 — backlog/evidence/incident-20260719-perplexity-openai-key-mismatch.md. Framework reliability takes precedence over feature velocity."
+
+notes: |
+  WHAT / WHY: perplexity-mono-router window lines can declare
+  --openai-api-base https://api.perplexity.ai while panes keep host
+  OPENAI_API_KEY=sk-* when SWARMFORGE_USE_PERPLEXITY was unset at write/launch
+  or launch scripts went stale without remap guards. Agents 401; ensure/health
+  still green. Soft coupling between pack CLI, flag, tmux -e, and launch guards.
+
+  ROOT CAUSE: no hard invariant that "launch CLI targets provider host ⇒
+  OPENAI_* must be that provider's key."
+
+  OUTCOME (partially landed with this ticket's first slice):
+    - provider_compat_lib.bb (pure) + TDD runner
+    - swarmforge.sh forces remap when extra_cli contains perplexity.ai
+    - swarm_ensure provider-respawn-env-args reads launch script via the lib
+  Remaining slices: auth-text observe→auto-respawn; refuse start on
+  compat-mismatch; regenerate-launch-scripts on every ensure when pack hash
+  changes; mono-router session-death must not report healthy-dormant without
+  a resident rotate path (separate ticket if needed).
+
+  ORTHOGONAL to BL-528/529/530 (claim/branch/launch-model) but same reliability
+  epic intent. Prefer this over feature work while auth is broken.
+
+acceptance: |
+  Feature: OpenAI-compat provider key matches launch API host
+    Scenario: perplexity API base in launch CLI forces perplexity key
+      Given a role launch CLI containing api.perplexity.ai
+      And PERPLEXITY_API_KEY is set
+      When provider compat is resolved
+      Then OPENAI_API_KEY resolves to the Perplexity key
+      And a live sk-* key is reported as a compat mismatch
+    Scenario: ensure respawn applies CLI-forced remap without the use flag
+      Given SWARMFORGE_USE_PERPLEXITY is unset in the ensure process
+      And the role launch script targets api.perplexity.ai
+      When provider-respawn-env-args runs for that role
+      Then the pane -e set includes OPENAI_API_KEY from PERPLEXITY_API_KEY

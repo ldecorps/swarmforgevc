@@ -1228,7 +1228,14 @@ RESUMECHECK
   # Key value is never written — only $CEREBRAS_API_KEY from pane env (BL-130).
   cerebras_guard=$'if [[ "${SWARMFORGE_USE_CEREBRAS:-}" == "1" && -n "${CEREBRAS_API_KEY:-}" ]]; then\n  export OPENAI_API_KEY="$CEREBRAS_API_KEY"\n  export OPENAI_API_BASE="${OPENAI_API_BASE:-https://api.cerebras.ai/v1}"\n  export OPENAI_BASE_URL="${OPENAI_BASE_URL:-https://api.cerebras.ai/v1}"\nfi\n'
   # Same posture for Perplexity Sonar OpenAI-compat (no /v1 on the API host).
-  perplexity_guard=$'if [[ "${SWARMFORGE_USE_PERPLEXITY:-}" == "1" && -n "${PERPLEXITY_API_KEY:-}" ]]; then\n  export OPENAI_API_KEY="$PERPLEXITY_API_KEY"\n  export OPENAI_API_BASE="${OPENAI_API_BASE:-https://api.perplexity.ai}"\n  export OPENAI_BASE_URL="${OPENAI_BASE_URL:-https://api.perplexity.ai}"\nfi\n'
+  # SRE 2026-07-19: if this role's pack CLI targets api.perplexity.ai, ALWAYS
+  # remap — do not depend solely on SWARMFORGE_USE_PERPLEXITY in the launching
+  # shell (window lines can declare Perplexity while the flag is unset → 401).
+  if [[ "$extra_cli" == *perplexity.ai* ]]; then
+    perplexity_guard=$'if [[ -n "${PERPLEXITY_API_KEY:-}" ]]; then\n  export SWARMFORGE_USE_PERPLEXITY=1\n  export OPENAI_API_KEY="$PERPLEXITY_API_KEY"\n  export OPENAI_API_BASE=https://api.perplexity.ai\n  export OPENAI_BASE_URL=https://api.perplexity.ai\nelse\n  echo "SwarmForge: PERPLEXITY_API_KEY required (launch CLI targets api.perplexity.ai)" >&2\n  exit 1\nfi\n'
+  else
+    perplexity_guard=$'if [[ "${SWARMFORGE_USE_PERPLEXITY:-}" == "1" && -n "${PERPLEXITY_API_KEY:-}" ]]; then\n  export OPENAI_API_KEY="$PERPLEXITY_API_KEY"\n  export OPENAI_API_BASE="${OPENAI_API_BASE:-https://api.perplexity.ai}"\n  export OPENAI_BASE_URL="${OPENAI_BASE_URL:-https://api.perplexity.ai}"\nfi\n'
+  fi
   if [[ "$agent" == "claude" ]]; then
     if role_uses_openrouter "$role"; then
       # OpenRouter-backed claude role: do NOT unset the auth token (that unset
@@ -1363,6 +1370,11 @@ launch_role() {
       use_cerebras=1
     fi
     if [[ "${SWARMFORGE_USE_PERPLEXITY:-}" == "1" && -n "${PERPLEXITY_API_KEY:-}" ]]; then
+      use_perplexity=1
+    fi
+    # SRE 2026-07-19: pack window --openai-api-base perplexity forces remap
+    # even when the launching shell forgot SWARMFORGE_USE_PERPLEXITY=1.
+    if [[ "${EXTRA_CLI_ARGS[$index]}" == *perplexity.ai* && -n "${PERPLEXITY_API_KEY:-}" ]]; then
       use_perplexity=1
     fi
     for provider_key in OPENAI_API_KEY MISTRAL_API_KEY CEREBRAS_API_KEY PERPLEXITY_API_KEY; do
