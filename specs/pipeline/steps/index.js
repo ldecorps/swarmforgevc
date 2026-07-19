@@ -283,6 +283,7 @@ const DOMAINS = [
   require('./bl505PipelineBoardNarrowerGridAndListsSteps'),
   require('./bl509AmendButtonSteersTicketSteps'),
   require('./bl506PipelineBoardLinksMostRecentFirstSteps'),
+  require('./bl513PipelineBoardLinksCurrentFolderSteps'),
   require('./bl507PipelineBoardDropCoordinatorColumnSteps'),
   require('./bl508PipelineBoardUpdatedAtUkTimeSteps'),
   require('./bl511TelegramBridgeCostBriefingSteps'),

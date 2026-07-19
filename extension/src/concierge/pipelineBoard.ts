@@ -67,7 +67,7 @@ export interface PipelineBoardTicketMeta {
   epic?: string;
   title?: string;
   filename?: string;
-  location?: 'active' | 'paused';
+  location?: 'active' | 'paused' | 'done';
 }
 
 // BL-465: recently-closed/root-intake items feed in as raw {id, title,
@@ -398,12 +398,18 @@ function buildLinks(
   extras: PipelineBoardExtras,
   ticketMeta: Record<string, PipelineBoardTicketMeta>
 ): PipelineBoardLinkEntry[] {
-  const links = [
+  const linksById = new Map<string, PipelineBoardLinkEntry>();
+  for (const link of [
     ...linksFromRows(rows, ticketMeta),
     ...linksFromParked(parked, ticketMeta),
     ...linksFromRecentlyClosed(extras),
     ...linksFromRootIntake(extras),
-  ];
+  ]) {
+    if (!linksById.has(link.id)) {
+      linksById.set(link.id, link);
+    }
+  }
+  const links = [...linksById.values()];
   links.sort(compareLinksMostRecentFirst);
   return links;
 }
@@ -534,12 +540,9 @@ export function renderPipelineBoardGridOnly(data: PipelineBoardData, lastChangeM
 }
 
 // BL-462: the grid + below-grid sections only, EXCLUDING the footer
-// timestamp AND the link list - pipelineBoardSync.ts's own content
-// signature is this text (never the full renderPipelineBoard output
-// below). The link list is fully DERIVED from the same rows/parked/
-// rootIntake/recentlyClosed data already in the signature (never an
-// independent source of change) and repoBaseUrl is a render-time-only
-// concern, so omitting it here cannot hide a real content change.
+// timestamp AND the link list. This is the visible body; pipelineBoardSync
+// adds link path data to its content signature separately (BL-513), because
+// a ticket can move folders while this body stays byte-identical.
 export function renderPipelineBoardBody(data: PipelineBoardData): string {
   return renderBodySections(data).join('\n');
 }

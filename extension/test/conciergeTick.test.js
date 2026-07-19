@@ -2521,6 +2521,46 @@ test('BL-465: readRepoBaseUrl feeds the below-grid GitHub link list, appended af
   assert.ok(afterPre.includes('<a href="https://github.com/ldecorps/swarmforgevc/blob/main/backlog/active/BL-1-fix-the-widget.yaml">'));
 });
 
+test('BL-513: a stale paused duplicate never overrides the active ticket link path', async () => {
+  const { adapters, setFolders } = fakeAdapters();
+  const posted = [];
+  adapters.boardAdapters.postMessage = async (topicId, text, linksHtml) => {
+    posted.push(wrapPipelineBoardHtml(text, linksHtml));
+    return { messageId: 1 };
+  };
+  adapters.boardAdapters.ensureBoardTopic = async () => ({ topicId: 900 });
+  adapters.readRoleHeldTickets = () => ({ coder: ['BL-540'] });
+  adapters.readRepoBaseUrl = () => 'https://github.com/ldecorps/swarmforgevc';
+  setFolders(
+    folders({
+      active: [{ id: 'BL-540', title: 'current active ticket', filename: 'BL-540-active.yaml' }],
+      paused: [{ id: 'BL-540', title: 'stale paused duplicate', filename: 'BL-540-paused.yaml' }],
+    })
+  );
+
+  await runConciergeTick(adapters);
+
+  assert.ok(posted[0].includes('backlog/active/BL-540-active.yaml'), posted[0]);
+  assert.ok(!posted[0].includes('backlog/paused/BL-540-paused.yaml'), posted[0]);
+});
+
+test('BL-513: done ticket metadata can feed a backlog/done link path when a shown id resolves from done', async () => {
+  const { adapters, setFolders } = fakeAdapters();
+  const posted = [];
+  adapters.boardAdapters.postMessage = async (topicId, text, linksHtml) => {
+    posted.push(wrapPipelineBoardHtml(text, linksHtml));
+    return { messageId: 1 };
+  };
+  adapters.boardAdapters.ensureBoardTopic = async () => ({ topicId: 900 });
+  adapters.readRoleHeldTickets = () => ({ QA: ['BL-101'] });
+  adapters.readRepoBaseUrl = () => 'https://github.com/ldecorps/swarmforgevc';
+  setFolders(folders({ done: [{ id: 'BL-101', title: 'closed ticket', filename: 'BL-101-closed.yaml' }] }));
+
+  await runConciergeTick(adapters);
+
+  assert.ok(posted[0].includes('backlog/done/BL-101-closed.yaml'), posted[0]);
+});
+
 test('BL-465: no readRepoBaseUrl means no link list at all, even with active rows', async () => {
   const { adapters, setFolders } = fakeAdapters();
   const posted = [];

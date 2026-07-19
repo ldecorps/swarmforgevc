@@ -49,11 +49,12 @@ test('syncPipelineBoard: first call with no prior state creates the topic, posts
   assert.equal(result.outcome, 'posted');
   assert.equal(created.length, 1);
   assert.equal(deleted.length, 0, 'expected no delete call - nothing was posted before');
-  assert.deepEqual(posted, [{ topicId: 900, text: result.state.contentSignature + '\n\nupdated at Jul 16 21:05 BST' }]);
+  const body = renderPipelineBoardBody(board([{ id: 'BL-1', column: 'coder', slug: '' }]));
+  assert.deepEqual(posted, [{ topicId: 900, text: `${body}\n\nupdated at Jul 16 21:05 BST` }]);
   assert.equal(result.state.topicId, 900);
   assert.equal(result.state.messageId, 42);
   assert.equal(result.state.lastChangeMs, T1);
-  assert.equal(result.state.contentSignature, renderPipelineBoardBody(board([{ id: 'BL-1', column: 'coder', slug: '' }])));
+  assert.ok(result.state.contentSignature.startsWith(body));
   assert.equal(result.state.consecutiveFailures, 0);
   assert.equal(result.state.alertArmed, false);
 });
@@ -149,6 +150,45 @@ test('syncPipelineBoard: unchanged content is a no-op - no post, no delete, stat
   assert.deepEqual(deleted, []);
   assert.deepEqual(result.state, first.state);
   assert.equal(result.state.lastChangeMs, T1, 'expected the footer instant to stay at the last REAL change, not bump to T2');
+});
+
+test('syncPipelineBoard: a link path change reposts even when the visible board body is unchanged', async () => {
+  const posted = [];
+  const deleted = [];
+  const firstData = {
+    rows: [{ id: 'BL-540', column: 'coder', slug: 'same-body' }],
+    parked: [],
+    links: [{ id: 'BL-540', path: 'backlog/paused/BL-540.yaml' }],
+  };
+  const secondData = {
+    rows: [{ id: 'BL-540', column: 'coder', slug: 'same-body' }],
+    parked: [],
+    links: [{ id: 'BL-540', path: 'backlog/active/BL-540.yaml' }],
+  };
+  assert.equal(renderPipelineBoardBody(firstData), renderPipelineBoardBody(secondData), 'sanity: body text is unchanged');
+
+  const first = await syncPipelineBoard(firstData, undefined, fakeAdapters({ postMessage: async () => ({ messageId: 42 }) }), T1, 'https://github.com/acme/repo');
+  const result = await syncPipelineBoard(
+    secondData,
+    first.state,
+    fakeAdapters({
+      postMessage: async (topicId, text, linksHtml) => {
+        posted.push({ topicId, text, linksHtml });
+        return { messageId: 99 };
+      },
+      deleteMessage: async (topicId, messageId) => {
+        deleted.push({ topicId, messageId });
+        return true;
+      },
+    }),
+    T2,
+    'https://github.com/acme/repo'
+  );
+
+  assert.equal(result.outcome, 'reposted');
+  assert.equal(posted.length, 1, 'expected a repost for the changed link path');
+  assert.ok(posted[0].linksHtml.includes('backlog/active/BL-540.yaml'), posted[0].linksHtml);
+  assert.deepEqual(deleted, [{ topicId: 900, messageId: 42 }]);
 });
 
 test('syncPipelineBoard: a failed topic creation is a no-op, retried next tick', async () => {

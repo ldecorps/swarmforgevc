@@ -18,6 +18,7 @@ import { PipelineBoardData, PIPELINE_BOARD_MESSAGE_MAX_LENGTH, budgetPipelineBoa
 // wants a different value - every consumer reads this one constant, never a
 // hardcoded number of its own.
 export const PIPELINE_BOARD_ALERT_FAILURE_CAP = 5;
+const LINKS_SIGNATURE_SECTION_HEADER = 'LINKS:';
 
 export type PipelineBoardFailureClass = 'topic-gone' | 'too-long' | 'transient' | 'unknown';
 
@@ -174,6 +175,11 @@ function resolveBoardTopicId(prevState: PipelineBoardState | undefined, adapters
   return adapters.ensureBoardTopic();
 }
 
+function renderPipelineBoardContentSignature(data: PipelineBoardData): string {
+  const linkLines = (data.links ?? []).map((link) => `${link.id}\t${link.path}`);
+  return [renderPipelineBoardBody(data), LINKS_SIGNATURE_SECTION_HEADER, ...linkLines].join('\n');
+}
+
 // BL-497: builds a failed PipelineBoardSyncResult - shared by both failure
 // sites below so the consecutive-failure count, the alert-armed carry-over,
 // and the shouldAlert threshold check are computed identically regardless
@@ -277,7 +283,7 @@ export async function syncPipelineBoard(
   nowMs: number,
   repoBaseUrl?: string
 ): Promise<PipelineBoardSyncResult> {
-  const contentSignature = renderPipelineBoardBody(data);
+  const contentSignature = renderPipelineBoardContentSignature(data);
   if (contentSignature === prevState?.contentSignature) {
     return { state: prevState ?? {}, outcome: 'skipped-unchanged' };
   }
