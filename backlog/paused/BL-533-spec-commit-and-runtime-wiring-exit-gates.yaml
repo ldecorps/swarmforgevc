@@ -1,0 +1,27 @@
+id: BL-533
+title: "Exit gates: feature committed + runtime wiring before 'done'"
+milestone: M8
+type: feature
+status: todo
+epic: swarm-reliability
+assigned_to: specifier
+priority: 8
+mutation_cost: medium
+direction: human-requested
+depends_on: []
+source: "BL-512 audit BL-FIX-006. Evidence: rule_proposals L8–L9; BL-256 coverage-never-built bounce subject."
+
+notes: |
+  WHAT / WHY: Specs and modules get reported ready while untracked or unwired
+  (dark features). Rule proposals: feature not delivered until committed; multi-slice
+  epics need an explicit runtime-wiring ticket.
+
+  OUTCOME: specifier/coder exit gates — git status clean for claimed paths; runtime
+  wiring checklist for multi-slice epics before close.
+
+acceptance: |
+  Feature: claimed deliverables are tracked and wired before close
+    Scenario: untracked feature file cannot be reported spec-ready
+      Given a ticket whose acceptance feature is untracked
+      When the role attempts to report spec-ready or complete
+      Then the exit gate fails until the path is committed

@@ -54,6 +54,16 @@
          nil
          (chase-sweep-lib/extract-ticket-id "just a note with no ticket reference"))
 
+(assert= "Spec BL-### verb-first notes count as a dispatch trail (no auto-route spam)"
+         "BL-538"
+         (chase-sweep-lib/extract-ticket-id
+          "Spec BL-538 console paused-ticket pager — high priority, epic swarmforge-console"))
+
+(assert= "Work BL-### verb-first notes count as a dispatch trail"
+         "BL-512"
+         (chase-sweep-lib/extract-ticket-id
+          "Work BL-512-recurring-failure-mode-audit: read file in backlog/active"))
+
 (assert= "returns nil for nil input"
          nil
          (chase-sweep-lib/extract-ticket-id nil))
@@ -254,6 +264,96 @@
          true
          (not (some #(str/includes? % "to: coder")
                     (chase-sweep-lib/unassigned-active-draft-lines {:id "BL-1"}))))
+
+;; ── Open-slot → coordinator nudge (never auto-promote) ────────────────────
+
+(assert= "open-slot-01: under cap + paused + no pending/cooldown → nudge"
+         true
+         (chase-sweep-lib/decide-open-slot-nudge? 0 1 3 {}))
+
+(assert= "open-slot-02: at cap → no nudge"
+         false
+         (chase-sweep-lib/decide-open-slot-nudge? 1 1 3 {}))
+
+(assert= "open-slot-03: no paused eligible → no nudge"
+         false
+         (chase-sweep-lib/decide-open-slot-nudge? 0 1 0 {}))
+
+(assert= "open-slot-04: pending open-slot note → no nudge (no spam)"
+         false
+         (chase-sweep-lib/decide-open-slot-nudge? 0 1 2 {:pending-nudge? true}))
+
+(assert= "open-slot-05: within cooldown → no nudge"
+         false
+         (chase-sweep-lib/decide-open-slot-nudge? 0 1 2 {:within-cooldown? true}))
+
+(assert= "open-slot-06: under cap with room for more than one still nudges once"
+         true
+         (chase-sweep-lib/decide-open-slot-nudge? 1 3 5 {}))
+
+(assert= "open-slot message stays within 80-char handoff limit"
+         true
+         (<= (count (chase-sweep-lib/open-slot-nudge-message))
+             chase-sweep-lib/dispatch-gap-note-max-length))
+
+(assert= "open-slot-nudge-draft-lines address the coordinator only"
+         ["type: note" "to: coordinator" "priority: 00"
+          "message: open slot + paused work - promote+route"]
+         (chase-sweep-lib/open-slot-nudge-draft-lines))
+
+(assert= "open-slot draft never targets coder"
+         true
+         (not (some #(str/includes? % "to: coder")
+                    (chase-sweep-lib/open-slot-nudge-draft-lines))))
+
+(assert= "within-open-slot-cooldown? true inside window"
+         true
+         (chase-sweep-lib/within-open-slot-cooldown? 1000 2000 5000))
+
+(assert= "within-open-slot-cooldown? false after window"
+         false
+         (chase-sweep-lib/within-open-slot-cooldown? 1000 7000 5000))
+
+(assert= "within-open-slot-cooldown? false when never sent"
+         false
+         (chase-sweep-lib/within-open-slot-cooldown? nil 7000 5000))
+
+(let [tmp (mk-tmp)
+      active-dir (str (fs/path tmp "active"))
+      paused-dir (str (fs/path tmp "paused"))]
+  (fs/create-dirs active-dir)
+  (fs/create-dirs paused-dir)
+  (spit (str (fs/path active-dir ".gitkeep")) "")
+  (spit (str (fs/path paused-dir "BL-1-demo.yaml")) "id: BL-1\ntitle: \"x\"\n")
+  (spit (str (fs/path paused-dir "BL-2-demo.yaml")) "id: BL-2\ntitle: \"y\"\n")
+  (assert= "count-backlog-yaml ignores .gitkeep and counts yaml"
+           0
+           (chase-sweep-lib/count-backlog-yaml active-dir))
+  (assert= "count-backlog-yaml counts paused yaml tickets"
+           2
+           (chase-sweep-lib/count-backlog-yaml paused-dir)))
+
+(let [tmp (mk-tmp)
+      coord-new (str (fs/path tmp "coord-new"))]
+  (fs/create-dirs coord-new)
+  (assert= "open-slot-nudge-pending? false when inbox empty"
+           false
+           (chase-sweep-lib/open-slot-nudge-pending? [coord-new]))
+  (write-handoff! coord-new "00_nudge.handoff"
+                  {:from "coordinator" :to "coordinator" :type "note"
+                   :message "open slot + paused work - promote+route"})
+  (assert= "open-slot-nudge-pending? true when phrase is in new/"
+           true
+           (chase-sweep-lib/open-slot-nudge-pending? [coord-new])))
+
+(let [tmp (mk-tmp)
+      coord-new (str (fs/path tmp "coord-new"))]
+  (write-handoff! coord-new "00_other.handoff"
+                  {:from "coder" :to "coordinator" :type "note"
+                   :message "BL-508 coder idle"})
+  (assert= "open-slot-nudge-pending? ignores unrelated coordinator notes"
+           false
+           (chase-sweep-lib/open-slot-nudge-pending? [coord-new])))
 
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (seq @failures)

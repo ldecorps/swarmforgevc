@@ -6,6 +6,7 @@ import * as path from 'path';
 import type { SecretStorage } from 'vscode';
 import {
   listTmuxSessions,
+  readLiveSwarmRoles,
   readSwarmRoles,
   readTmuxSocket,
   sessionExists,
@@ -137,7 +138,28 @@ export function isSwarmReady(
     return false;
   }
 
-  return roles.every((role) => sessionExists(socket, role.session) && (!checkRoleBootstrapped || checkRoleBootstrapped(socket, role)));
+  // Classic packs: every sessions.tsv row has a standing pane.
+  const classicReady = roles.every(
+    (role) => sessionExists(socket, role.session) && (!checkRoleBootstrapped || checkRoleBootstrapped(socket, role))
+  );
+  if (classicReady) {
+    return true;
+  }
+
+  // Mono-router (config rotation router): dormant roles stay in sessions.tsv
+  // but only the resident + coordinator panes exist. Attach when both are up
+  // so the live feed is not stuck dark forever. Optional bootstrap check
+  // (BL-423) still applies to the live roles only.
+  const live = readLiveSwarmRoles(targetPath);
+  const hasCoordinator = live.some((role) => role.role === 'coordinator');
+  const hasResident = live.some((role) => role.role !== 'coordinator');
+  if (!(hasCoordinator && hasResident)) {
+    return false;
+  }
+  if (!checkRoleBootstrapped) {
+    return true;
+  }
+  return live.every((role) => checkRoleBootstrapped(socket, role));
 }
 
 // Dirs where tmux, bb (babashka), claude, and aider are commonly installed.
@@ -346,7 +368,9 @@ export function runningSwarmMatchesConfig(targetPath: string, configPath?: strin
   if (roles.length === 0) {
     return false;
   }
-  return roles.length === expected;
+  // Coordinator is provisioned outside pack `window` lines (BL-243).
+  const pipelineRoles = roles.filter((role) => role.role !== 'coordinator');
+  return pipelineRoles.length === expected;
 }
 
 export function buildLaunchEnv(runName?: string, configPath?: string): NodeJS.ProcessEnv {

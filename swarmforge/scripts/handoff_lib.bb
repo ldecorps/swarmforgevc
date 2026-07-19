@@ -338,9 +338,95 @@
 (defn launch-script-path [role-name]
   (str (fs/path (target-root) ".swarmforge" "launch" (str role-name ".sh"))))
 
-(defn pane-id [socket]
-  (let [result (sh/sh "tmux" "-S" socket "display-message" "-p" "#{pane_id}")]
-    (str/trim (:out result))))
+(defn openrouter-pane-env-args
+  "BL-130 ephemeral -e injection for launch_role / chase / ensure / rotate.
+   Must not drop OpenRouter/OpenAI/Mistral/Cerebras/Perplexity auth on respawn.
+   When SWARMFORGE_USE_CEREBRAS=1 or SWARMFORGE_USE_PERPLEXITY=1, that provider
+   key wins for OPENAI_* (host OPENAI_API_KEY must not shadow the compat path)."
+  []
+  (let [use-cerebras (= "1" (System/getenv "SWARMFORGE_USE_CEREBRAS"))
+        use-perplexity (= "1" (System/getenv "SWARMFORGE_USE_PERPLEXITY"))
+        cerebras (System/getenv "CEREBRAS_API_KEY")
+        perplexity (System/getenv "PERPLEXITY_API_KEY")
+        openai (cond
+                 (and use-cerebras (not (str/blank? cerebras))) cerebras
+                 (and use-perplexity (not (str/blank? perplexity))) perplexity
+                 :else (System/getenv "OPENAI_API_KEY"))
+        openai-base (cond
+                      (and use-cerebras (not (str/blank? cerebras))) "https://api.cerebras.ai/v1"
+                      (and use-perplexity (not (str/blank? perplexity))) "https://api.perplexity.ai"
+                      :else (System/getenv "OPENAI_API_BASE"))
+        openai-base-url (cond
+                          (and use-cerebras (not (str/blank? cerebras))) "https://api.cerebras.ai/v1"
+                          (and use-perplexity (not (str/blank? perplexity))) "https://api.perplexity.ai"
+                          :else (System/getenv "OPENAI_BASE_URL"))]
+    (cond-> []
+      (not (str/blank? (System/getenv "OPENROUTER_API_KEY")))
+      (concat ["-e" (str "OPENROUTER_API_KEY=" (System/getenv "OPENROUTER_API_KEY"))])
+      (not (str/blank? (System/getenv "CLAUDE_CODE_MAX_OUTPUT_TOKENS")))
+      (concat ["-e" (str "CLAUDE_CODE_MAX_OUTPUT_TOKENS=" (System/getenv "CLAUDE_CODE_MAX_OUTPUT_TOKENS"))])
+      (not (str/blank? (System/getenv "MISTRAL_API_KEY")))
+      (concat ["-e" (str "MISTRAL_API_KEY=" (System/getenv "MISTRAL_API_KEY"))])
+      (not (str/blank? cerebras))
+      (concat ["-e" (str "CEREBRAS_API_KEY=" cerebras)])
+      (not (str/blank? perplexity))
+      (concat ["-e" (str "PERPLEXITY_API_KEY=" perplexity)])
+      use-cerebras
+      (concat ["-e" "SWARMFORGE_USE_CEREBRAS=1"])
+      use-perplexity
+      (concat ["-e" "SWARMFORGE_USE_PERPLEXITY=1"])
+      (not (str/blank? openai))
+      (concat ["-e" (str "OPENAI_API_KEY=" openai)])
+      (not (str/blank? openai-base))
+      (concat ["-e" (str "OPENAI_API_BASE=" openai-base)])
+      (not (str/blank? openai-base-url))
+      (concat ["-e" (str "OPENAI_BASE_URL=" openai-base-url)]))))
+
+(defn mono-router-resident-session
+  "Standing pipeline pane under config rotation router: first non-coordinator
+   roles.tsv session (packs pin home as coder → swarmforge-coder). Never use
+   bare `tmux display-message` without -t — headless shells resolve the wrong
+   pane (or none), so rotate_to_role.sh can print success while leaving the
+   resident on the old role."
+  []
+  (when (fs/exists? (roles-tsv-path))
+    (some (fn [line]
+            (let [fields (str/split line #"\t" -1)
+                  role (first fields)
+                  session (get fields 3)]
+              (when (and role (not= "coordinator" role) (not (str/blank? session)))
+                session)))
+          (str/split-lines (slurp (str (roles-tsv-path)))))))
+
+(defn session-exists?
+  "True when tmux has a live session of this name on the project socket."
+  [socket session]
+  (and (not (str/blank? socket))
+       (not (str/blank? session))
+       (zero? (:exit (sh/sh "tmux" "-S" socket "has-session" "-t" session)))))
+
+(defn wake-session
+  "Session that should receive a tmux wake for a roles.tsv session name.
+   Under mono-router / sequential rotation, dormant pipeline roles keep their
+   own session names in roles.tsv but have no standing pane — only the
+   resident (plus coordinator) exists. Waking the missing name fails with
+   `tmux send-literal failed` and falsely marks parcels failed even when the
+   mailbox copy landed. Remap missing sessions to the resident when present."
+  [socket configured-session]
+  (cond
+    (session-exists? socket configured-session) configured-session
+    :else (or (when-let [resident (mono-router-resident-session)]
+                (when (session-exists? socket resident) resident))
+              configured-session)))
+
+(defn pane-id
+  "Prefer an explicit -t target. Bare display-message is only a last resort."
+  ([socket] (pane-id socket nil))
+  ([socket session]
+   (let [args (cond-> ["tmux" "-S" socket "display-message" "-p" "#{pane_id}"]
+                (not (str/blank? session)) (concat ["-t" session]))
+         result (apply sh/sh args)]
+     (str/trim (:out result)))))
 
 (defn respawn-self!
   "Respawns this role's own tmux pane at the idle boundary (BL-089), running
@@ -350,9 +436,12 @@
    replaced instead of from an operator pane."
   [role-name]
   (let [socket (tmux-socket)
-        pane (pane-id socket)
-        script (launch-script-path role-name)]
-    (sh/sh "tmux" "-S" socket "respawn-pane" "-k" "-t" pane (str "zsh '" script "'"))))
+        session (or (mono-router-resident-session) (pane-id socket))
+        script (launch-script-path role-name)
+        env-args (openrouter-pane-env-args)]
+    (apply sh/sh (concat ["tmux" "-S" socket "respawn-pane" "-k"]
+                         env-args
+                         ["-t" session (str "zsh '" script "'")]))))
 
 ;; ── BL-518: mono-router rotation ────────────────────────────────────────────
 ;; respawn-self! re-execs the CURRENT role's launch script (idle-boundary
@@ -395,8 +484,14 @@
    launcher pre-generates every pipeline role's <role>.sh at startup."
   [target-role]
   (let [socket (tmux-socket)
-        pane (pane-id socket)
-        script (launch-script-path target-role)]
+        session (or (mono-router-resident-session)
+                    (pane-id socket))
+        script (launch-script-path target-role)
+        env-args (openrouter-pane-env-args)]
+    (when (str/blank? session)
+      (binding [*out* *err*]
+        (println "rotate: could not resolve mono-router resident session"))
+      (System/exit 4))
     (when-not (fs/exists? script)
       (binding [*out* *err*]
         (println (str "rotate: no launch script for role '" target-role "' at " script
@@ -407,7 +502,9 @@
         (println (str "rotate: WARNING no parcel delivered to '" target-role
                       "' within 30s; rotating anyway (it will resume via RESUME-ON-START if it arrives).")))
       (flush))
-    (sh/sh "tmux" "-S" socket "respawn-pane" "-k" "-t" pane (str "zsh '" script "'"))))
+    (apply sh/sh (concat ["tmux" "-S" socket "respawn-pane" "-k"]
+                         env-args
+                         ["-t" session (str "zsh '" script "'")]))))
 
 ;; ── BL-365: durable install ──────────────────────────────────────────────
 ;; A bare `spit` + `fs/move` pair is atomic in ORDERING (the rename is one

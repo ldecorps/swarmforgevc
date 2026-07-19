@@ -2,6 +2,7 @@ id: BL-101
 title: headless secondary swarms on small Linux hosts — Raspberry Pi and VPS bring-up (systemd, headless auth, throughput-aware assignment)
 milestone: M6
 status: blocked
+epic: fleet-topology
 
 blocked_notes: |
   CORRECTION (coordinator, 2026-07-10): first closed this to done/, then

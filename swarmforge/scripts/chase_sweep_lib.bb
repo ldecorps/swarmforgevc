@@ -481,11 +481,23 @@
 (def ^:private leading-ticket-id-pattern
   (re-pattern (str "(?i)^(" (str/join "|" known-ticket-prefixes) ")-?(\\d+)")))
 
+;; Spec/Work notes conventionally put the verb first ("Spec BL-538 …"), so a
+;; leading-only extractor misses them and BL-222 dispatch-gap re-fires a
+;; redundant "no dispatch on record" auto-route while the Spec note already
+;; sits in the assignee inbox (live 2026-07-19 BL-538 stall).
+(def ^:private spec-work-ticket-id-pattern
+  (re-pattern (str "(?i)\\b(?:Spec|Work)\\s+("
+                   (str/join "|" known-ticket-prefixes)
+                   ")-?(\\d+)\\b")))
+
 (defn extract-ticket-id
   "The leading <PREFIX>-<digits> token from a task or message field (e.g.
    \"BL-217\" from \"BL-217-inbound-email-webhook\" or from a routing
    note's own \"BL-217 active, spec-complete...\" message text - every
    routing note in this swarm conventionally leads with the ticket id).
+   Also recognizes \"Spec BL-###\" / \"Work BL-###\" (verb-first Spec/Work
+   notes) so dispatch-gap does not treat an already-specced ticket as
+   never-dispatched.
    Matched against known-ticket-prefixes above, never an unbounded
    [A-Za-z]+, so a stray letter glued directly in front of a real id
    (\"ABL-217 ...\") resolves to nil instead of swallowing it. The prefix
@@ -497,8 +509,11 @@
    own BL-471 canonicalization)."
   [text]
   (when text
-    (when-let [[_ prefix digits] (re-find leading-ticket-id-pattern text)]
-      (str/upper-case (str prefix "-" digits)))))
+    (or
+     (when-let [[_ prefix digits] (re-find leading-ticket-id-pattern text)]
+       (str/upper-case (str prefix "-" digits)))
+     (when-let [[_ prefix digits] (re-find spec-work-ticket-id-pattern text)]
+       (str/upper-case (str prefix "-" digits))))))
 
 (defn- list-handoff-files [dir]
   (if-not (fs/exists? dir)
@@ -646,3 +661,71 @@
    "to: coordinator"
    "priority: 00"
    (str "message: " (unassigned-active-note-message (:id item)))])
+
+;; ── Open-slot coordinator nudge (sibling of unassigned-active) ──────────────
+;; Empty/under-cap active/ + eligible paused/ is invisible to BL-222 (which
+;; only sees already-active tickets). The daemon notices and drops a note on
+;; the COORDINATOR to promote+route — never git-mv'ing paused→active itself
+;; (constitution: intake remains coordinator-owned; do not reintroduce
+;; BL-226 receive-path auto-promote).
+
+(def open-slot-nudge-phrase "open slot + paused work - promote+route")
+
+(def open-slot-nudge-cooldown-ms
+  "Default 5 minutes between open-slot nudges when no pending note remains."
+  (* 5 60 1000))
+
+(defn open-slot-nudge-message
+  "Fixed message — kept under the 80-char handoff limit. No ticket id: the
+   trail/cooldown is phrase + optional cooldown file, not BL-222's id set."
+  []
+  open-slot-nudge-phrase)
+
+(defn decide-open-slot-nudge?
+  "Pure decision: capacity under cap, at least one eligible paused ticket,
+   no pending open-slot note still sitting in coordinator new/in_process,
+   and not within the post-send cooldown window."
+  [active-count cap paused-eligible-count {:keys [pending-nudge? within-cooldown?]
+                                           :or {pending-nudge? false within-cooldown? false}}]
+  (and (number? active-count)
+       (number? cap)
+       (< active-count cap)
+       (pos? (long (or paused-eligible-count 0)))
+       (not pending-nudge?)
+       (not within-cooldown?)))
+
+(defn count-backlog-yaml
+  "Count *.yaml tickets in a backlog folder (active/ or paused/). Ignores
+   non-yaml (e.g. .gitkeep)."
+  [dir]
+  (if-not (fs/exists? dir)
+    0
+    (->> (fs/list-dir dir)
+         (filter #(and (fs/regular-file? %) (str/ends-with? (fs/file-name %) ".yaml")))
+         count)))
+
+(defn open-slot-nudge-pending?
+  "True when any handoff in scan-dirs carries the open-slot nudge phrase in
+   its message header (pending mail = do not spam another)."
+  [scan-dirs]
+  (->> scan-dirs
+       (mapcat list-handoff-files-with-batches)
+       (keep #(read-header-field % "message"))
+       (some #(and % (str/includes? % open-slot-nudge-phrase)))
+       boolean))
+
+(defn within-open-slot-cooldown?
+  "True when last-sent-ms is within cooldown-ms of now-ms."
+  [last-sent-ms now-ms cooldown-ms]
+  (and (number? last-sent-ms)
+       (number? now-ms)
+       (number? cooldown-ms)
+       (<= 0 (- now-ms last-sent-ms) cooldown-ms)))
+
+(defn open-slot-nudge-draft-lines
+  "Note to the coordinator only — never promotes or routes to coder."
+  []
+  ["type: note"
+   "to: coordinator"
+   "priority: 00"
+   (str "message: " (open-slot-nudge-message))])

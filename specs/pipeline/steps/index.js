@@ -229,6 +229,7 @@ const DOMAINS = [
   require('./bl448MonoRotatePackSteps'),
   require('./bl426AudioVoiceNoteCoordinatorSteps'),
   require('./bl454QaBounceMetricSteps'),
+  require('./bl512RecurringFailureModeAuditSteps'),
   require('./bl456DivioDocsReorgSteps'),
   require('./bl455PipelineBoardSteps'),
   require('./bl413StaleSandboxSweepSteps'),
@@ -283,9 +284,11 @@ const DOMAINS = [
   require('./bl509AmendButtonSteersTicketSteps'),
   require('./bl506PipelineBoardLinksMostRecentFirstSteps'),
   require('./bl507PipelineBoardDropCoordinatorColumnSteps'),
+  require('./bl508PipelineBoardUpdatedAtUkTimeSteps'),
   require('./bl511TelegramBridgeCostBriefingSteps'),
   require('./gherkinLintGateWrappedStepRejectionSteps'),
-  require('./bl519InlineConstitutionCacheSteps')
+  require('./bl519InlineConstitutionCacheSteps'),
+  require('./bl526MiniappConsoleMenuSteps')
 ];
 
 function registerSteps(registry) {

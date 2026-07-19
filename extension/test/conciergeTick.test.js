@@ -5,7 +5,7 @@ const { runConciergeTick } = require('../out/concierge/conciergeTick');
 // Telegram-agnostic (see its own header comment); every other test in this
 // file uses the plain always-succeeds titlesSet stub from fakeAdapters.
 const { editForumTopicWithRateLimitRetry } = require('../out/notify/telegramClient');
-const { wrapPipelineBoardHtml } = require('../out/concierge/pipelineBoard');
+const { formatUpdatedAtLabel, wrapPipelineBoardHtml } = require('../out/concierge/pipelineBoard');
 const { PIPELINE_BOARD_ALERT_FAILURE_CAP } = require('../out/concierge/pipelineBoardSync');
 
 function folders(overrides = {}) {
@@ -1973,7 +1973,10 @@ test('BL-462: the pipeline board reposts at the bottom (delete + post) on a stag
   assert.equal(deleted.length, 0, 'expected no delete - nothing was posted before');
   assert.equal(posted[0].topicId, 900);
   assert.ok(hasRowFor(posted[0].text, 'BL-1'));
-  assert.ok(posted[0].text.endsWith('updated at Jul 16 20:05'), `expected a footer stamped with T1, got:\n${posted[0].text}`);
+  assert.ok(
+    posted[0].text.endsWith(`updated at ${formatUpdatedAtLabel(T1)}`),
+    `expected a footer stamped with T1, got:\n${posted[0].text}`
+  );
   assert.equal(state.pipelineBoard.topicId, 900);
   assert.equal(state.pipelineBoard.messageId, 42);
   assert.equal(state.pipelineBoard.lastChangeMs, T1);
@@ -1989,7 +1992,10 @@ test('BL-462: the pipeline board reposts at the bottom (delete + post) on a stag
   assert.equal(deleted[0].messageId, 42);
   assert.equal(posted.length, 2, 'expected the fresh message posted as a new message, never an edit');
   assert.equal(posted[1].topicId, 900);
-  assert.ok(posted[1].text.endsWith('updated at Jul 16 20:06'), `expected the footer bumped to T2, got:\n${posted[1].text}`);
+  assert.ok(
+    posted[1].text.endsWith(`updated at ${formatUpdatedAtLabel(T2)}`),
+    `expected the footer bumped to T2, got:\n${posted[1].text}`
+  );
   assert.equal(state.pipelineBoard.messageId, 42, 'expected the new messageId returned by postMessage, never edited in place');
   assert.equal(state.pipelineBoard.lastChangeMs, T2);
 

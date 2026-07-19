@@ -27,5 +27,5 @@ for i in $(seq 1 45); do
   sleep 1
 done
 [ -n "$URL" ] || { echo "no tunnel URL yet; see $LOG" >&2; exit 1; }
-python3 -c "import json;print(json.dumps({'url':'$URL','port':$PORT}, indent=2))" > "$STATE"
+python3 -c "import json;print(json.dumps({'url':'$URL','port':$PORT,'path':'/resident-spy'}, indent=2))" > "$STATE"
 echo "$URL"

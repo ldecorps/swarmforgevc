@@ -2,6 +2,8 @@ id: BL-512
 title: "Recurring failure-mode audit: inventory what agents keep tripping on and emit a prioritized root-cause fix-ticket slate"
 milestone: M8
 type: feature
+status: done
+assigned_to: coder
 epic: ""
 priority: 4
 direction: human-requested
@@ -90,3 +92,6 @@ approval_context: >
   you'd rather I also spec the top open-cluster fixes now instead of waiting for the audit's slate.
 
 mutation_cost: medium
+
+# 2026-07-19 human+Cursor: inventory+audit landed (commit on main). Open-code slate
+# filed as paused BL-528..BL-534 (auto-heal first). Ready for QA of BL-512 itself.

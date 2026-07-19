@@ -3,7 +3,7 @@ title: "Pipeline board updated-at footer shows UK (Europe/London) time, DST-awar
 milestone: M8
 type: defect
 severity: low
-epic: ""
+epic: pipeline-board
 priority: 13
 depends_on: []
 source: "Direct human request to the specifier 2026-07-17 ('one more tweak to bake in: can you show the update time in UK time'), sent mid-turn alongside BL-507. No ambiguity needing a question — 'UK time' is unambiguously the Europe/London zone; the specifier chose to add a DST-aware zone marker (BST/GMT) so it can't be misread as the UTC it replaces, flagged in approval_context as easy to drop."
@@ -95,3 +95,5 @@ approval_context: >
   change-detector, it will first appear on the next content update rather than instantly.
 
 mutation_cost: low
+
+assigned_to: coder

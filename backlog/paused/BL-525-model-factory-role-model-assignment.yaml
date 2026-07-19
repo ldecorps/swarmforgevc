@@ -1,0 +1,166 @@
+id: BL-525
+title: "ModelFactory — assign agent models to roles (recruiter-backed; cheap vs quality rules; cold then hot swap)"
+milestone: M5
+type: feature
+status: todo
+epic: model-routing
+human_approval: pending
+severity: medium
+priority: 12
+direction: human-requested
+depends_on: []
+assigned_to: specifier
+source: |
+  human (ldecorps) via Cursor chat 2026-07-18 — first as daily free-cap
+  Cerebras→GPT failover intake; then expanded: "beef up the next ticket about
+  rotating the agent. Let's introduce the concept of ModelFactory, that the
+  swarm calls to assign agent models to its roles. Slice one is to have to stop
+  the whole swarm and restart to change a model. Slice 2 is to be able to do
+  that but hot-swap style. The factory should use the recruiter services to know
+  which agent to assign to which role. The factory will have rules to steer the
+  choices towards cheap, or towards quality."
+
+description: |
+  Specifier drains this intake into paused/ with a proper APS feature + notes.
+  Implementation follows the slices below (Slice 1 before Slice 2).
+
+  ## Problem
+
+  Today, role→(agent runtime, model, provider) is mostly **static pack config**
+  (`window <role> <agent> … --model …`) plus ad-hoc operator kill/relaunch when
+  a provider dries up (Cerebras free daily → GPT, OpenRouter monthly cap, etc.).
+  Mono-router already **rotates the resident through roles** (`rotate_to_role.sh`)
+  but does **not** own a shared policy for *which model* each role should run.
+
+  Recruiter (BL-233, done) discovers/qualifies/ranks models per role but
+  **recommend-only** — it never applies a choice. Per-tile hot-swap (BL-235,
+  done) can respawn one role on a new backend in-memory, but has no
+  swarm-wide policy engine and no recruiter feedback loop.
+
+  ## Concept — ModelFactory
+
+  Introduce a **ModelFactory** the swarm (launcher, `swarm ensure`, operator,
+  coordinator, and eventually mono-router rotate) calls to answer:
+
+      assign(role, context) → { agent, provider, model, reason, policy }
+
+  where `context` includes at least: active pack, steering mode
+  (`cheap` | `quality` | explicit override), current live assignment,
+  provider dry/quota signals, and recruiter leaderboard snapshots.
+
+  The factory does **not** invent models out of thin air: it **consumes
+  recruiter services** (BL-233 outputs / qualify & rank APIs / leaderboard
+  artifacts) to know which agent+model fits which role, then applies
+  **steering rules** to pick among eligible candidates.
+
+  ### Steering rules (minimum)
+
+  - **cheap mode**: prefer free/daily-capped plan remaining, then lowest
+    $/quality that still meets role battery floor; prefer exhausting
+    Cerebras-class daily free before paid GPT/OpenRouter/Claude.
+  - **quality mode**: prefer highest capability (role battery / bake-off
+    rank) within an explicit cost ceiling if set; otherwise top compliant
+    rank for that role.
+  - Daily-cap / dry-provider detection is a **first-class cheap-mode
+    input** (this ticket's original Cerebras→GPT intake): when Cerebras
+    free-daily is classified exhausted for today, factory must not keep
+    assigning Cerebras; next preference is GPT (`codex-mono-router` /
+    OpenAI) before burning OpenRouter monthly or Claude subscription.
+  - Secrets stay BL-130: factory emits assignment descriptors; keys arrive
+    only via pane `-e` / host secret store, never written into packs or
+    launch scripts.
+
+  Cross-links (reuse, do not reinvent):
+    - BL-233 recruiter (recommend/leaderboard/qualify)
+    - BL-231 / BL-386 battery discrimination
+    - BL-235 per-tile switch/respawn (Slice 2 mechanism)
+    - BL-130 / BL-319 / BL-523 multi-provider + OpenRouter
+    - `provider_quota_lib.bb` / alerts (extend for Cerebras daily if missing)
+    - Existing packs: `cerebras-mono-router`, `codex-mono-router`,
+      `openrouter-cheap-mono-router`, `mono-router`
+
+  ## Slice 1 — cold swap (MUST ship first)
+
+  Changing a model/assignment requires **stopping the swarm and restarting**
+  with a factory-resolved pack or generated effective config.
+
+  Observable:
+    1. Operator (or coordinator) asks factory for a full-swarm assignment
+       under `cheap` or `quality`.
+    2. Factory returns a role→{agent,model,provider} map + rationale,
+       grounded in recruiter ranks + steering rules + quota signals.
+    3. Apply path: write/select effective pack or in-memory→restart plan
+       (specifier pins exact artifact; must remain BL-130 safe).
+    4. `kill_all_swarm` + `./swarm --pack <resolved>` (or documented
+       equivalent helper; today: `failover_to_gpt.sh` is a manual preview
+       of one cheap-mode edge).
+    5. After restart, live panes match the factory map (spot-check coder +
+       coordinator at minimum on mono-router).
+
+  Non-goals for Slice 1: no mid-flight respawn; no silent conf commits.
+
+  ## Slice 2 — hot-swap
+
+  Same factory API, but apply **without full swarm restart**: respawn
+  affected role pane(s) (mono-router: resident + coordinator as needed)
+  using BL-235-class switch/respawn, preserving in_process parcels and
+  constitution re-read on launch.
+
+  Observable:
+    1. Factory returns a delta (roles whose assignment changed).
+    2. Only those roles respawn on the new agent/model/provider.
+    3. Other roles uninterrupted; mailboxes/in_process preserved.
+    4. Disk pack/conf unchanged unless operator explicitly persists
+       (default ephemeral in-memory, matching BL-235 posture — specifier
+       confirms).
+    5. Operator notify (Telegram/status) on policy-driven swaps
+       (e.g. daily-cap failover).
+
+  ## Specifier must pin
+
+  1. Factory module boundary (host extension tool vs Babashka lib vs both)
+     and the exact recruiter read API / artifact paths.
+  2. Assignment artifact schema + where Slice 1 materializes it (generated
+     pack vs overlay vs `swarmforge.conf` fragment — prefer generated
+     gitignored overlay).
+  3. Exhaustion detectors for daily-capped providers (Cerebras, GPT if
+     applicable): HTTP taxonomy vs usage API vs local counter.
+  4. BDD: cheap mode does not burn OpenRouter while Cerebras free-daily
+     remains; quality mode can select a stronger model even if a cheaper
+     compliant one exists; Slice 1 vs Slice 2 apply paths; next calendar
+     day Cerebras preferred again after reset.
+  5. Interaction with mono-router `rotate_to_role`: whether rotate may
+     call factory each hop or only on policy events (recommend: policy
+     events + explicit operator/coordinator request in Slice 1; optional
+     per-hop in a later slice — call out as out_of_scope if deferred).
+
+acceptance: |
+  Specifier produces paused APS feature + draining notes covering both
+  slices. Coder implements Slice 1 with tests (factory assign + cold
+  apply helper). Slice 2 builds on Slice 1 + BL-235 respawn path with
+  tests. Documenter adds runbook: how to request cheap vs quality, how
+  daily-cap failover is detected, cold vs hot apply. QA verifies
+  fixture-friendly signals for dry providers and recruiter-backed picks
+  (live caps/fixtures where forced exhaustion is impossible).
+
+out_of_scope: |
+  - Recruiter re-implementation (BL-233 stays scout/recommend; factory
+    *consumes* it).
+  - Auto-purchasing credits / raising paid caps.
+  - Replacing OpenRouter monthly-limit handling (cross-link only).
+  - Per-hop model change on every mono-router rotate unless specifier
+    explicitly pulls it into Slice 2+ with a clear cost model.
+
+operator_notes_20260718: |
+  Manual preview of one cheap-mode cold path (until factory ships):
+    SWARMFORGE_USE_CEREBRAS=1 ./swarm <root> --pack cerebras-mono-router
+    # when Cerebras daily exhausted:
+    swarmforge/scripts/failover_to_gpt.sh <root>
+    # → kill + ./swarm --pack codex-mono-router (OPENAI_API_KEY via -e)
+
+  Auth gotcha fixed earlier: host OPENAI_API_KEY must not shadow
+  CEREBRAS→OPENAI mapping when USE_CEREBRAS=1.
+
+  Codex launch must not $(cat) full prompt into argv (MAX_ARG_STRLEN);
+  already fixed on main for mono-router GPT bring-up.
+mutation_cost: high

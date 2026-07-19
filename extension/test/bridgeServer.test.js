@@ -1,4 +1,3 @@
-const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -9,7 +8,7 @@ const { installInProcessTmux } = require('./helpers/fakeTmux');
 const TOKEN = 'test-token-123';
 
 function mkTmp() {
-  return mkTmpDir('sfvc-bridge-server-');
+  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-bridge-server-'));
 }
 
 function mkdirp(dir) {
@@ -823,21 +822,27 @@ test('a read-scoped device can list gates without the control step-up', async ()
   }
 });
 
-// BL-094: the root HTML shell - the one route reachable by a plain browser
-// navigation, so it accepts the token via query string as well as header.
-test('rejects a plain (unauthenticated) request to the root URL', async () => {
+// BL-094: the root HTML shell is reachable by a plain browser navigation so
+// the in-page token gate is usable. Auth still gates every data route.
+test('serves the root HTML token gate without a prior bearer/query token', async () => {
   const target = mkTmp();
   await withBridge(target, {}, async (handle) => {
     const res = await fetch(`http://127.0.0.1:${handle.port}/`);
-    assert.equal(res.status, 401);
+    assert.equal(res.status, 200);
+    assert.match(res.headers.get('content-type'), /text\/html/);
+    const body = await res.text();
+    assert.match(body, /tokenGate|bearer token/i);
   });
 });
 
-test('rejects a root request with the wrong query token', async () => {
+test('serves the root HTML shell even when the query token is wrong (data routes still 401)', async () => {
   const target = mkTmp();
   await withBridge(target, {}, async (handle) => {
     const res = await fetch(`http://127.0.0.1:${handle.port}/?token=wrong`);
-    assert.equal(res.status, 401);
+    assert.equal(res.status, 200);
+    assert.match(res.headers.get('content-type'), /text\/html/);
+    const denied = await fetch(`http://127.0.0.1:${handle.port}/pipeline?token=wrong`);
+    assert.equal(denied.status, 401);
   });
 });
 
@@ -867,11 +872,115 @@ test('serves the root URL given a valid query-string token (a plain browser navi
   });
 });
 
-test('the query-token fallback does not unlock any other (data) route', async () => {
+test('the query-token fallback does not unlock ordinary data routes (pipeline stays bearer-only)', async () => {
   const target = mkTmp();
   await withBridge(target, {}, async (handle) => {
     const res = await fetch(`http://127.0.0.1:${handle.port}/pipeline?token=${TOKEN}`);
-    assert.equal(res.status, 401, 'query-token auth is scoped to the root HTML shell only, per bridgeAuth.ts');
+    assert.equal(res.status, 401, 'query-token auth stays scoped away from ordinary data routes');
+  });
+});
+
+// BL-522: Resident Spy Mini App — HTML without prior auth; pane JSON via ?token=.
+test('serves /resident-spy HTML without a prior bearer/query token', async () => {
+  const target = mkTmp();
+  await withBridge(target, {}, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/resident-spy`);
+    assert.equal(res.status, 200);
+    assert.match(res.headers.get('content-type'), /text\/html/);
+    const body = await res.text();
+    assert.match(body, /Resident Spy/);
+    assert.match(body, /resident-pane\?token=/);
+  });
+});
+
+test('rejects /resident-pane without a token', async () => {
+  const target = mkTmp();
+  await withBridge(target, {}, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/resident-pane`);
+    assert.equal(res.status, 401);
+  });
+});
+
+test('serves /resident-pane JSON given a valid query-string token', async () => {
+  const target = mkTmp();
+  await withBridge(target, {}, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/resident-pane?token=${TOKEN}`);
+    assert.equal(res.status, 200);
+    assert.match(res.headers.get('content-type'), /application\/json/);
+    const body = await res.json();
+    // No live tmux pane in the fixture → unavailable sentinel (not 401/404).
+    assert.equal(body.available, false);
+  });
+});
+
+test('serves /resident-pane JSON given a valid bearer token', async () => {
+  const target = mkTmp();
+  await withBridge(target, {}, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/resident-pane`, {
+      headers: { authorization: `Bearer ${TOKEN}` },
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.available, false);
+  });
+});
+
+// BL-526: Console menu + pipeline STATUS GRID Mini App
+test('serves /console HTML without a prior bearer/query token', async () => {
+  const target = mkTmp();
+  await withBridge(target, {}, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/console`);
+    assert.equal(res.status, 200);
+    assert.match(res.headers.get('content-type'), /text\/html/);
+    const body = await res.text();
+    assert.match(body, /pipeline-grid/);
+    assert.match(body, /resident-spy/);
+    assert.match(body, /data-testid="pipeline-grid"/);
+    assert.match(body, /data-testid="mono-router-feed"/);
+    assert.match(body, /flex-direction:\s*column/);
+    assert.match(body, /overflow-x:\s*hidden/);
+  });
+});
+
+test('serves /pipeline-grid HTML without a prior bearer/query token', async () => {
+  const target = mkTmp();
+  await withBridge(target, {}, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/pipeline-grid`);
+    assert.equal(res.status, 200);
+    const body = await res.text();
+    assert.match(body, /pipeline-board\?token=/);
+    assert.match(body, /STATUS GRID/);
+    assert.match(body, /overflow-x:\s*hidden/);
+    assert.ok(!body.includes('LINKS:'), 'grid shell must not hardcode a LINKS section');
+  });
+});
+
+test('rejects /pipeline-board without a token', async () => {
+  const target = mkTmp();
+  await withBridge(target, {}, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/pipeline-board`);
+    assert.equal(res.status, 401);
+  });
+});
+
+test('serves /pipeline-board JSON grid-only given a valid query-string token', async () => {
+  const target = mkTmp();
+  mkdirp(path.join(target, 'backlog', 'active'));
+  mkdirp(path.join(target, 'backlog', 'paused'));
+  mkdirp(path.join(target, 'backlog', 'done'));
+  fs.writeFileSync(
+    path.join(target, 'backlog', 'active', 'BL-526-console.yaml'),
+    'id: BL-526\ntitle: Console menu\nepic: swarmforge-console\n'
+  );
+  await withBridge(target, { nowMs: Date.UTC(2026, 6, 19, 1, 0) }, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/pipeline-board?token=${TOKEN}`);
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(typeof body.boardText, 'string');
+    assert.match(body.boardText, /526/);
+    assert.ok(!body.boardText.includes('LINKS:'), body.boardText);
+    assert.ok(!body.boardText.includes('PARKED:'), body.boardText);
+    assert.ok(!body.boardText.includes('<a href'), body.boardText);
   });
 });
 

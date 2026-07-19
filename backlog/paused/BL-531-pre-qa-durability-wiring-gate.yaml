@@ -1,0 +1,32 @@
+id: BL-531
+title: "Pre-QA durability and wiring gate (cut behavior-bounce storm)"
+milestone: M8
+type: feature
+status: todo
+epic: swarm-reliability
+assigned_to: specifier
+priority: 5
+mutation_cost: high
+direction: human-requested
+depends_on: []
+source: "BL-512 audit BL-FIX-004. Evidence: qa_bounce:behavior:coder count=31; BL-419/BL-490 bounce write-ups."
+
+notes: |
+  WHAT / WHY: Largest non-chaser inventory mode is qa_bounce:behavior:coder (31).
+  Many bounces are incomplete delivery / false-green (wiring never landed, fix commit
+  not on the ancestry QA tests). See backlog/evidence/BL-419-shared-checkout-commit-integrity-bounce-20260717.md
+  and BL-490 expedite bounce evidence.
+
+  ROOT CAUSE: parcels reach QA without durable commit-ancestry / required-wiring checks
+  the feature itself asked for.
+
+  OUTCOME: a pre-QA gate that verifies ticket commit ancestry and feature-declared
+  wiring greps before handoff to QA. Specifier defines the contract in APS.
+
+acceptance: |
+  Feature: QA handoff requires durability and wiring proofs
+    Scenario: missing ticket ancestry or required wiring fails before QA
+      Given a parcel whose cited commit does not contain the ticket's own merges
+      Or whose feature-required wiring greps miss
+      When pre-QA gate runs
+      Then the handoff to QA is refused with a bounce-class reason
