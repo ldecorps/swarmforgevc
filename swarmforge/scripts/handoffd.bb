@@ -331,6 +331,28 @@
         (log! "failed-to-archive" (str path) (.getMessage move-ex))
         (spit (str path ".error") (str reason "\n"))))))
 
+
+;; Babysitter hawk (outside chain): after a successful handoff delivery,
+;; enqueue a wake so the idle babysitter observes. No-op unless
+;; .swarmforge/babysitter/enabled exists (babysit.sh creates it).
+(defn enqueue-babysitter-wake!
+  [sender-role recipients path headers]
+  (let [enabled (fs/path state-dir "babysitter" "enabled")
+        queue (fs/path state-dir "babysitter" "wake-queue.jsonl")]
+    (when (fs/exists? enabled)
+      (try
+        (fs/create-dirs (fs/parent queue))
+        (let [event {:type "handoff"
+                     :from (str sender-role)
+                     :to (str/join "," recipients)
+                     :path (str path)
+                     :task (or (get headers "task") "")
+                     :at (str (java.time.Instant/now))}]
+          (spit (str queue) (str (json/generate-string event) "\n") :append true)
+          (log! "babysitter-wake-enqueued" (str path)))
+        (catch Exception e
+          (log! "babysitter-wake-error" (.getMessage e)))))))
+
 (defn deliver! [roles socket sender-role path]
   (let [filename (fs/file-name path)]
     ;; BL-365: a corrupt outbox file (empty, truncated mid-header, or
@@ -365,7 +387,8 @@
             (when (= "rule_proposal" (get headers "type"))
               (append-rule-proposal! headers))
             (move-with-collision path (sent-dir (get roles sender-role)))
-            (log! "delivered" (str path))))))))
+            (log! "delivered" (str path))
+            (enqueue-babysitter-wake! sender-role recipients path headers)))))))
 
 (defn inbox-new-files [role-info]
   (let [new-dir (handoff-lib/mailbox-dir role-info :new)]

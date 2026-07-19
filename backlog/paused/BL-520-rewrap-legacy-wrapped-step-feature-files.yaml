@@ -2,7 +2,7 @@ id: BL-520
 title: "Rewrap the 19 grandfathered wrapped-step feature files and drain the BL-515 legacy allowlist"
 milestone: M8
 type: task
-epic: ""
+epic: code-quality-gates
 priority: 5
 direction: swarm-surfaced
 source: "Coder note 2026-07-18 after BL-515 landed: BL-515 started enforcing single-line Gherkin steps but grandfathered 19 pre-existing offenders via swarmforge/scripts/gherkin_lint_gate_legacy_wraps.txt so shipping the gate wouldn't retroactively block already-landed feature files. That allowlist is tech debt to drain: rewrap each file and remove its entry."

@@ -2,8 +2,9 @@ id: BL-535
 title: "Provider-compat invariant: pack API base must force key remap (Perplexity/Cerebras)"
 milestone: M8
 type: defect
-status: todo
-assigned_to: coder
+status: hold
+epic: swarm-reliability
+assigned_to:
 priority: 1
 mutation_cost: medium
 direction: swarm-surfaced
@@ -45,3 +46,5 @@ acceptance: |
       And the role launch script targets api.perplexity.ai
       When provider-respawn-env-args runs for that role
       Then the pane -e set includes OPENAI_API_KEY from PERPLEXITY_API_KEY
+
+# Human hold 2026-07-19: "can 535 be put in hold" via Telegram SUP-2. Sits in backlog/hold/ until human resumes.

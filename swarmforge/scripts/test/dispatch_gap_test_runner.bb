@@ -54,6 +54,16 @@
          nil
          (chase-sweep-lib/extract-ticket-id "just a note with no ticket reference"))
 
+(assert= "Spec BL-### verb-first notes count as a dispatch trail (no auto-route spam)"
+         "BL-538"
+         (chase-sweep-lib/extract-ticket-id
+          "Spec BL-538 console paused-ticket pager — high priority, epic swarmforge-console"))
+
+(assert= "Work BL-### verb-first notes count as a dispatch trail"
+         "BL-512"
+         (chase-sweep-lib/extract-ticket-id
+          "Work BL-512-recurring-failure-mode-audit: read file in backlog/active"))
+
 (assert= "returns nil for nil input"
          nil
          (chase-sweep-lib/extract-ticket-id nil))

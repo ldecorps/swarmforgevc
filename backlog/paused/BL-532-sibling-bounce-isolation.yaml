@@ -3,6 +3,7 @@ title: "Isolate bounce recovery from sibling defect contamination"
 milestone: M8
 type: defect
 status: todo
+epic: swarm-reliability
 assigned_to: specifier
 priority: 6
 mutation_cost: medium

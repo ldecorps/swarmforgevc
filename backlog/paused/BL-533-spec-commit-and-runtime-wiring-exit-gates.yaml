@@ -3,6 +3,7 @@ title: "Exit gates: feature committed + runtime wiring before 'done'"
 milestone: M8
 type: feature
 status: todo
+epic: swarm-reliability
 assigned_to: specifier
 priority: 8
 mutation_cost: medium

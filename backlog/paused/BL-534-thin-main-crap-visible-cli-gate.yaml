@@ -3,6 +3,7 @@ title: "Gate: extension tools keep main() thin and CRAP-visible"
 milestone: M8
 type: chore
 status: todo
+epic: swarm-reliability
 assigned_to: specifier
 priority: 8
 mutation_cost: low

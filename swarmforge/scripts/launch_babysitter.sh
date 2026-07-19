@@ -12,6 +12,7 @@ PROMPT="$ROOT/swarmforge/roles/babysitter.prompt"
 SESSION="babysitter"
 SOCK="$BB_DIR/babysitter-tmux.sock"
 MODEL="${BABYSITTER_MODEL:-openai/sonar-reasoning-pro}"
+KICKOFF="$BB_DIR/babysitter-kickoff.txt"
 
 mkdir -p "$BB_DIR"
 
@@ -40,10 +41,32 @@ if [[ -S "$SOCK" ]]; then
   rm -f "$SOCK"
 fi
 
+# Imperative kickoff — same posture as Operator: act, don't chat about files.
+cat > "$KICKOFF" <<EOF
+You are the SwarmForge Babysitter (OUTSIDE the pipeline). This is NOT a code-edit
+chat and NOT an "add files to the chat" session.
+
+Project root: $ROOT
+Role prompt: $PROMPT
+
+DO NOW (use shell with ! — do not ask the human anything):
+1) Read $PROMPT fully (it is already --file'd; or ! cat it).
+2) Run ONE observe pass from the prompt (tmux sessions under .swarmforge/tmux,
+   auth errors in panes, handoffd heartbeat, claim-without-progress).
+3) If anything is wrong: remediate minimally OR file a backlog defect + notify
+   Telegram via: ! node extension/out/tools/notify-babysitter.js --project-root $ROOT --text "..."
+4) Then IDLE at the > prompt. Do NOT self-sleep loops. Do NOT propose files to add.
+   A cheap runtime will WAKE you on handoff delivery and ~every 20 minutes.
+EOF
+
 LAUNCH="$BB_DIR/launch.sh"
+# Stay-alive loop: aider sometimes exits after kickoff / API blips; the
+# babysitter runtime expects a living pane to inject WAKE text into. Without
+# the loop, runtime logs "llm-down relaunching" every cycle and observe never
+# sticks. Kickoff (--message-file) only on first start; restarts idle at >.
 cat > "$LAUNCH" <<EOF
 #!/usr/bin/env zsh
-set -euo pipefail
+set -uo pipefail
 export SWARMFORGE_ROLE=babysitter
 export SWARMFORGE_USE_PERPLEXITY=1
 export OPENAI_API_KEY="\$PERPLEXITY_API_KEY"
@@ -54,10 +77,25 @@ cd '$ROOT'
 if [[ -n "\${PERPLEXITY_API_KEY:-}" ]]; then
   export OPENAI_API_KEY="\$PERPLEXITY_API_KEY"
 fi
-exec aider --model $MODEL \\
-  --openai-api-base https://api.perplexity.ai \\
-  --no-gitignore --no-show-model-warnings --no-check-update --yes-always \\
-  --message "You are the SwarmForge Babysitter (outside the pipeline). Read $PROMPT completely and begin your observe loop. Project root: $ROOT"
+first=1
+while true; do
+  if [[ \$first -eq 1 ]]; then
+    first=0
+    aider --model $MODEL \\
+      --openai-api-base https://api.perplexity.ai \\
+      --no-gitignore --no-show-model-warnings --no-check-update --yes-always \\
+      --file '$PROMPT' \\
+      --message-file '$KICKOFF' || true
+  else
+    echo "[babysitter] aider exited; relaunching idle in 3s..." >&2
+    sleep 3
+    aider --model $MODEL \\
+      --openai-api-base https://api.perplexity.ai \\
+      --no-gitignore --no-show-model-warnings --no-check-update --yes-always \\
+      --file '$PROMPT' || true
+  fi
+  sleep 2
+done
 EOF
 chmod +x "$LAUNCH"
 

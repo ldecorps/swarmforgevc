@@ -3,6 +3,7 @@ title: "Pre-turn guard: worktree branch must match claimed ticket"
 milestone: M8
 type: defect
 status: todo
+epic: swarm-reliability
 assigned_to: specifier
 priority: 3
 mutation_cost: medium

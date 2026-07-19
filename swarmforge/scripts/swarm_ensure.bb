@@ -29,6 +29,7 @@
 
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "agent_runtime_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "provider_compat_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "mono_router_lib.bb")))
 
 (defn usage []
   (binding [*out* *err*]
@@ -101,8 +102,25 @@
          (map (fn [line]
                 (let [fields (str/split line #"\t" -1)]
                   {:role (get fields 0) :session (get fields 3)})))
-         (remove #(str/blank? (:session %))))
+         (remove #(or (str/blank? (:role %)) (str/blank? (:session %)))))
     []))
+
+(defn ordered-role-names []
+  (mapv :role (role-rows)))
+
+(defn rotation-router-mode?
+  "True when this project is running (or last launched as) rotation router."
+  []
+  (let [identity-path (fs/path state-dir "swarm-identity")
+        identity-text (when (fs/exists? identity-path) (slurp (str identity-path)))
+        conf-path (or (get (mono-router-lib/parse-identity-map (or identity-text ""))
+                           "active_backlog_max_depth_conf_path")
+                      (str (fs/path project-root "swarmforge" "swarmforge.conf")))
+        conf-text (when (and conf-path (fs/exists? conf-path))
+                    (slurp conf-path))]
+    (boolean
+     (or (mono-router-lib/rotation-router-from-identity? identity-text)
+         (mono-router-lib/conf-rotation-router? conf-text)))))
 
 ;; ── extension component ──────────────────────────────────────────────────────
 
@@ -120,9 +138,8 @@
   (zero? (:exit (process/sh {:continue true} "tmux" "-S" socket "has-session" "-t" session))))
 
 (defn mono-router-standing-shape?
-  "True when some configured role sessions are alive and others are absent —
-   the BL-518 mono-router shape (resident + coordinator standing; remaining
-   roles are dormant rotate targets, not crashed panes)."
+  "Deprecated heuristic — prefer rotation-router-mode? + mono_router_lib.
+   Kept for older callers/tests: some sessions alive and some absent."
   [socket rows]
   (let [alive? (fn [{:keys [session]}] (session-exists? socket session))
         alive (filter alive? rows)
@@ -205,6 +222,22 @@
                     env-args
                     ["-t" session (str "zsh '" launch-script "'")])]
     (apply process/sh {:continue true} cmd)))
+
+(defn create-session! [socket session]
+  (process/sh {:continue true}
+              "tmux" "-S" socket "new-session" "-d" "-s" session "-n" "swarm"))
+
+(defn kill-session! [socket session]
+  (process/sh {:continue true}
+              "tmux" "-S" socket "kill-session" "-t" session))
+
+(defn ensure-standing-role!
+  "Create the session if missing, then respawn the launch script into it."
+  [socket role session]
+  (when-not (session-exists? socket session)
+    (create-session! socket session)
+    (Thread/sleep 250))
+  (respawn-role! socket role session))
 
 ;; ── daemon component ─────────────────────────────────────────────────────────
 
@@ -299,6 +332,41 @@
         {:component name :status :failed :action detail
          :category (:category (agent-runtime-lib/classify-provider-error detail))}))))
 
+(defn ensure-mono-router-role!
+  "BL-518 topology repair for one role under rotation router."
+  [socket ordered-roles {:keys [role session]}]
+  (let [alive (session-exists? socket session)
+        action (mono-router-lib/topology-action ordered-roles role alive)
+        class-name (name (mono-router-lib/classify-role ordered-roles role))]
+    (case action
+      :ok
+      (if (pane-alive? socket session)
+        {:component (str "agent:" role) :status :healthy
+         :action (str "mono-router " class-name)}
+        (ensure-component! (str "agent:" role)
+                           #(pane-alive? socket session)
+                           #(ensure-standing-role! socket role session)
+                           (str "respawned dead mono-router " class-name " pane")))
+
+      :dormant-ok
+      {:component (str "agent:" role) :status :dormant
+       :action "mono-router rotate target; no standing session"}
+
+      :teardown-illicit
+      (do
+        (kill-session! socket session)
+        (if (session-exists? socket session)
+          {:component (str "agent:" role) :status :failed
+           :action "could not tear down illicit standing session"}
+          {:component (str "agent:" role) :status :fixed
+           :action "tore down illicit standing session (mono-router dormant target)"}))
+
+      :ensure-standing
+      (ensure-component! (str "agent:" role)
+                         #(pane-alive? socket session)
+                         #(ensure-standing-role! socket role session)
+                         (str "restored mono-router " class-name " pane")))))
+
 (defn report-line [{:keys [component status action category]}]
   (case status
     :healthy (str component ": HEALTHY")
@@ -317,16 +385,15 @@
         extension-result (ensure-component! "extension" extension-healthy? bounce-extension!
                                              "bounced the extension dev host")
         rows (role-rows)
-        router-shape? (and socket (mono-router-standing-shape? socket rows))
+        ordered (mapv :role rows)
+        router? (rotation-router-mode?)
         role-results (if socket
-                       (mapv (fn [{:keys [role session]}]
-                               (if (and router-shape? (not (session-exists? socket session)))
-                                 {:component (str "agent:" role)
-                                  :status :dormant
-                                  :action "mono-router rotate target; no standing session"}
-                                 (ensure-component! (str "agent:" role)
-                                                     #(pane-alive? socket session)
-                                                     #(respawn-role! socket role session)
+                       (mapv (fn [row]
+                               (if router?
+                                 (ensure-mono-router-role! socket ordered row)
+                                 (ensure-component! (str "agent:" (:role row))
+                                                     #(pane-alive? socket (:session row))
+                                                     #(ensure-standing-role! socket (:role row) (:session row))
                                                      "respawned pane from its persisted launch script")))
                              rows)
                        (mapv (fn [{:keys [role]}]
@@ -345,6 +412,8 @@
                                                 "restarted the Telegram front desk (bridge + bot)"))
         results (concat [extension-result] role-results [daemon-result]
                         (remove nil? [operator-result front-desk-result]))]
+    (when router?
+      (println "mono-router: enforcing resident + coordinator only"))
     (doseq [r results] (println (report-line r)))
     (System/exit (if (some #(= :failed (:status %)) results) 1 0))))
 

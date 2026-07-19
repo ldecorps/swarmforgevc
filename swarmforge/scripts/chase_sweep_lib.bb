@@ -193,20 +193,9 @@
                     (.digest (.getBytes (or pane-content "") "UTF-8")))
         hash (apply str (map #(format "%02x" %) digest))
         previous (get @activity-records role)]
-    (cond
-      ;; First observation after daemon start is NOT proof of fresh human/agent
-      ;; activity. Returning now-ms here re-armed "recently active" on every
-      ;; handoffd restart and cleared stuck-email arming, so a still-stuck
-      ;; in_process role re-emailed the human after each restart (flood).
-      (nil? previous)
-      (do (swap! activity-records assoc role {:hash hash :lastChangeMs (max 0 outbox-activity-ms)})
-          (max 0 outbox-activity-ms))
-
-      (not= (:hash previous) hash)
+    (if (or (nil? previous) (not= (:hash previous) hash))
       (do (swap! activity-records assoc role {:hash hash :lastChangeMs now-ms})
           now-ms)
-
-      :else
       (max (:lastChangeMs previous) outbox-activity-ms))))
 
 (defn reset-pane-activity! []
@@ -231,11 +220,7 @@
     (let [count (inc (:nudgeCount item))]
       (write-nudge-count! (:filePath item) count)
       ((:log-telemetry! adapters) {:type "nudge" :role role :handoffId (handoff-id (:filePath item)) :count count} now-ms)))
-  ;; Do NOT call on-stuck-escalation! false here. Nudge is still inside a stuck
-  ;; episode; clearing the escalation edge re-arms the stuck email on the next
-  ;; alert and floods the human (especially under mono-router, where a dormant
-  ;; role's in_process can sit forever while chase wakes the resident).
-  nil)
+  ((:on-stuck-escalation! adapters) role false))
 
 (defn- clear-stale-nudge-counts! [held]
   (doseq [item held :when (pos? (:nudgeCount item))]
@@ -496,11 +481,23 @@
 (def ^:private leading-ticket-id-pattern
   (re-pattern (str "(?i)^(" (str/join "|" known-ticket-prefixes) ")-?(\\d+)")))
 
+;; Spec/Work notes conventionally put the verb first ("Spec BL-538 …"), so a
+;; leading-only extractor misses them and BL-222 dispatch-gap re-fires a
+;; redundant "no dispatch on record" auto-route while the Spec note already
+;; sits in the assignee inbox (live 2026-07-19 BL-538 stall).
+(def ^:private spec-work-ticket-id-pattern
+  (re-pattern (str "(?i)\\b(?:Spec|Work)\\s+("
+                   (str/join "|" known-ticket-prefixes)
+                   ")-?(\\d+)\\b")))
+
 (defn extract-ticket-id
   "The leading <PREFIX>-<digits> token from a task or message field (e.g.
    \"BL-217\" from \"BL-217-inbound-email-webhook\" or from a routing
    note's own \"BL-217 active, spec-complete...\" message text - every
    routing note in this swarm conventionally leads with the ticket id).
+   Also recognizes \"Spec BL-###\" / \"Work BL-###\" (verb-first Spec/Work
+   notes) so dispatch-gap does not treat an already-specced ticket as
+   never-dispatched.
    Matched against known-ticket-prefixes above, never an unbounded
    [A-Za-z]+, so a stray letter glued directly in front of a real id
    (\"ABL-217 ...\") resolves to nil instead of swallowing it. The prefix
@@ -512,8 +509,11 @@
    own BL-471 canonicalization)."
   [text]
   (when text
-    (when-let [[_ prefix digits] (re-find leading-ticket-id-pattern text)]
-      (str/upper-case (str prefix "-" digits)))))
+    (or
+     (when-let [[_ prefix digits] (re-find leading-ticket-id-pattern text)]
+       (str/upper-case (str prefix "-" digits)))
+     (when-let [[_ prefix digits] (re-find spec-work-ticket-id-pattern text)]
+       (str/upper-case (str prefix "-" digits))))))
 
 (defn- list-handoff-files [dir]
   (if-not (fs/exists? dir)

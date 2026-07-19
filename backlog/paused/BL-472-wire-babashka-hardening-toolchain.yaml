@@ -4,7 +4,7 @@ milestone: M8
 type: chore
 severity: low
 status: todo
-epic: ""
+epic: code-quality-gates
 priority: 5
 direction: swarm-proposed
 depends_on: []

@@ -3,6 +3,7 @@ title: "Detect provider auth errors in pane scrollback and auto-respawn with com
 milestone: M8
 type: defect
 status: todo
+epic: swarm-reliability
 assigned_to: specifier
 priority: 2
 mutation_cost: medium

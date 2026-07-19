@@ -3,6 +3,7 @@ title: "Auto-heal claim-without-progress (idle TASK reclaim loop)"
 milestone: M8
 type: defect
 status: todo
+epic: swarm-reliability
 assigned_to: specifier
 priority: 2
 mutation_cost: medium

@@ -1,0 +1,22 @@
+id: BL-542
+title: "EPIC — Model routing / ModelFactory: assign agent models to roles; do not promote directly; tracks children"
+milestone: M8
+status: todo
+type: epic
+epic: model-routing
+priority: 00
+depends_on: []
+decomposes_into: [BL-525]
+source: "Human hygiene 2026-07-19: every ticket must have an epic; every epic must have a milestone. Tracker created during open-backlog cleanup."
+
+notes: |
+  UMBRELLA / tracking item (type: epic), NOT directly promotable — the coordinator
+  promotes CHILD slices, never this. Children carry `epic: model-routing` and are
+  listed in `decomposes_into`.
+
+  VISION: recruiter-backed role→model assignment (ModelFactory) so packs stop
+  hard-coding model lines as the only routing surface.
+
+acceptance:
+  none: "tracker only — see decomposes_into children for acceptance"
+mutation_cost: high

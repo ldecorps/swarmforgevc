@@ -27,6 +27,10 @@ SwarmForge launcher
       Launch (or relaunch) the swarm for <project-root>.
       --pack NAME  → swarmforge/packs/NAME.conf
 
+  ./swarm status [project-root] [--handoffs N]
+      Read-only snapshot: agents, daemons, Telegram bridge (with uptime),
+      and the last N handoffs (ticket, from→to, when).
+
   ./swarm ensure <project-root>
       Idempotent repair: extension, standing agent panes, handoffd,
       operator, Telegram front desk. Mono-router dormant rotate targets
@@ -39,6 +43,16 @@ SwarmForge launcher
       swarmforge/scripts/failover_to_gpt.sh <project-root>
 USAGE
   exit 0
+fi
+
+if [[ "${1:-}" == "status" ]]; then
+  shift
+  STATUS_ROOT="$PWD"
+  if [[ $# -gt 0 && "${1}" != -* && -d "$1" ]]; then
+    STATUS_ROOT="$(cd "$1" && pwd)"
+    shift
+  fi
+  exec bb "$SCRIPT_DIR/swarm_status.bb" "$STATUS_ROOT" "$@"
 fi
 
 if [[ "${1:-}" == "ensure" ]]; then
@@ -731,8 +745,12 @@ absolute_config_file() {
 
 write_swarm_identity_file() {
   resolve_effective_backlog_max_depth
-  printf 'swarm_name\t%s\nswarm_mode\t%s\nswarm_mode_primary\t%s\nactive_backlog_max_depth\t%s\nactive_backlog_max_depth_conf_path\t%s\n' \
-    "$SWARM_NAME" "$SWARM_MODE" "$SWARM_MODE_PRIMARY" "$EFFECTIVE_MAX_DEPTH" "$(absolute_config_file)" > "$STATE_DIR/swarm-identity"
+  local rotation_value=""
+  if [[ "$ROTATION_MODE" == "router" || "$ROTATION_MODE" == "sequential" ]]; then
+    rotation_value="$ROTATION_MODE"
+  fi
+  printf 'swarm_name\t%s\nswarm_mode\t%s\nswarm_mode_primary\t%s\nactive_backlog_max_depth\t%s\nactive_backlog_max_depth_conf_path\t%s\nrotation\t%s\n' \
+    "$SWARM_NAME" "$SWARM_MODE" "$SWARM_MODE_PRIMARY" "$EFFECTIVE_MAX_DEPTH" "$(absolute_config_file)" "$rotation_value" > "$STATE_DIR/swarm-identity"
 }
 
 write_sessions_file() {

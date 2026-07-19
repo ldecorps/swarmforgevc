@@ -4,7 +4,7 @@ milestone: M8
 type: chore
 severity: low
 status: todo
-epic: ""
+epic: fleet-topology
 priority: 20
 direction: swarm-proposed
 depends_on: []
