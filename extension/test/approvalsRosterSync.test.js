@@ -149,9 +149,73 @@ test('syncApprovalsRoster: a topic already created (topicId persisted) is reused
     fakeAdapters({
       ensureApprovalsTopic: async () => {
         created.push(true);
-        return 801;
+        return 800;
       },
     })
   );
-  assert.deepEqual(created, [], 'expected ensureApprovalsTopic never called once a topicId is already persisted');
+  // Live ensure is consulted every tick (remint-safe); same id means edit-in-place, not create.
+  assert.equal(created.length, 1, 'expected ensureApprovalsTopic consulted so a remint is visible');
+});
+
+// 2026-07-19: Approvals topic reminted (telegram-topic-map lost APPROVALS binding /
+// createForumTopic minted a new thread). Asks always call ensureApprovalsTopic and
+// followed the new id; the roster sticky-cached prevState.topicId and kept editing
+// the dead topic — Approvals channel looked empty while Operator/Concierge stayed busy.
+test('syncApprovalsRoster: when ensureApprovalsTopic remints, roster follows the new topic (not sticky-cached topicId)', async () => {
+  let approvalsTopicId = 750;
+  const posted = [];
+  const edited = [];
+  const adapters = fakeAdapters({
+    ensureApprovalsTopic: async () => approvalsTopicId,
+    postMessage: async (topicId, text) => {
+      posted.push({ topicId, text });
+      return 42 + posted.length;
+    },
+    editMessage: async (topicId, messageId, text) => {
+      edited.push({ topicId, messageId, text });
+      return true;
+    },
+  });
+
+  const first = await syncApprovalsRoster([{ id: 'BL-525', title: 'ModelFactory' }], undefined, adapters);
+  assert.equal(first.outcome, 'posted');
+  assert.equal(first.state.topicId, 750);
+
+  approvalsTopicId = 751;
+  const second = await syncApprovalsRoster(
+    [
+      { id: 'BL-525', title: 'ModelFactory' },
+      { id: 'BL-999', title: 'other' },
+    ],
+    first.state,
+    adapters
+  );
+
+  assert.equal(second.state.topicId, 751, 'roster must track the reminted Approvals topic id');
+  assert.ok(
+    posted.some((p) => p.topicId === 751) || edited.some((e) => e.topicId === 751),
+    'roster write must target the reminted Approvals topic, not the stale cached id'
+  );
+  assert.ok(!edited.some((e) => e.topicId === 750), 'must not keep editing the dead pre-remint topic');
+});
+
+test('syncApprovalsRoster: remint with unchanged roster text still re-posts onto the new Approvals topic', async () => {
+  let approvalsTopicId = 750;
+  const posted = [];
+  const adapters = fakeAdapters({
+    ensureApprovalsTopic: async () => approvalsTopicId,
+    postMessage: async (topicId, text) => {
+      posted.push({ topicId, text });
+      return 99;
+    },
+  });
+  const tickets = [{ id: 'BL-525', title: 'ModelFactory' }];
+  const first = await syncApprovalsRoster(tickets, undefined, adapters);
+  assert.equal(first.outcome, 'posted');
+
+  approvalsTopicId = 751;
+  const second = await syncApprovalsRoster(tickets, first.state, adapters);
+  assert.equal(second.state.topicId, 751);
+  assert.equal(second.outcome, 'posted', 'same text on a reminted topic must post fresh, not skip-unchanged against the dead topic');
+  assert.ok(posted.some((p) => p.topicId === 751));
 });

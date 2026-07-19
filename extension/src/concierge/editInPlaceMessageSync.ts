@@ -6,6 +6,11 @@
 // change-gated on rendered text" syncs; this module is that one mechanism,
 // with each caller supplying its own render step and its own
 // (differently-named) ensureTopic adapter.
+//
+// 2026-07-19 remint harden: always consult ensureTopic() (never sticky-cache
+// prevState.topicId alone). Asks already re-resolved Approvals every tick;
+// the roster did not — after a telegram-topic-map remint the roster kept
+// editing a dead topic while Approvals looked empty and Operator stayed busy.
 export interface EditInPlaceMessageAdapters {
   ensureTopic: () => Promise<number | undefined>;
   postMessage: (topicId: number, text: string) => Promise<number | undefined>;
@@ -26,12 +31,6 @@ export interface EditInPlaceMessageResult {
   // rather than silently marked caught-up.
   state: EditInPlaceMessageState;
   outcome: EditInPlaceMessageOutcome;
-}
-
-// The topic id is created ONCE then reused - split out purely to keep
-// syncEditInPlaceMessage's own CRAP under threshold.
-function resolveTopicId(prevState: EditInPlaceMessageState | undefined, adapters: EditInPlaceMessageAdapters): Promise<number | undefined> {
-  return Promise.resolve(prevState?.topicId ?? adapters.ensureTopic());
 }
 
 async function postOrEditMessage(
@@ -60,14 +59,21 @@ export async function syncEditInPlaceMessage(
   prevState: EditInPlaceMessageState | undefined,
   adapters: EditInPlaceMessageAdapters
 ): Promise<EditInPlaceMessageResult> {
-  if (text === prevState?.renderedText) {
-    return { state: prevState ?? {}, outcome: 'skipped-unchanged' };
-  }
-
-  const topicId = await resolveTopicId(prevState, adapters);
+  const topicId = await adapters.ensureTopic();
   if (topicId === undefined) {
     return { state: prevState ?? {}, outcome: 'failed-no-topic' };
   }
 
-  return postOrEditMessage(topicId, text, prevState, adapters);
+  const reminted = prevState?.topicId !== undefined && prevState.topicId !== topicId;
+  if (!reminted && text === prevState?.renderedText) {
+    return { state: prevState ?? {}, outcome: 'skipped-unchanged' };
+  }
+
+  // Remint: drop the stale messageId so we post onto the live topic instead
+  // of editing a message that no longer exists on the old thread.
+  const stateForPost: EditInPlaceMessageState | undefined = reminted
+    ? { topicId }
+    : { ...prevState, topicId };
+
+  return postOrEditMessage(topicId, text, stateForPost, adapters);
 }

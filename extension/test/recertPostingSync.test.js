@@ -129,18 +129,44 @@ test('a failed topic creation is a no-op, retried next tick', async () => {
   assert.deepEqual(result.state, {});
 });
 
-test('a topic already created (topicId persisted) is reused, never re-created', async () => {
+test('a topic already created (topicId persisted) still consults ensureRecertTopic (remint-safe)', async () => {
   const created = [];
+  const posted = [];
   const prevState = { topicId: 900, messageId: 42, renderedText: 'stale text' };
-  await syncRecertPosting(
+  const result = await syncRecertPosting(
     scenario(),
     prevState,
     fakeAdapters({
       ensureRecertTopic: async () => {
         created.push(true);
-        return 901;
+        return 900;
+      },
+      postMessage: async (topicId, text) => {
+        posted.push({ topicId, text });
+        return 99;
       },
     })
   );
-  assert.deepEqual(created, [], 'expected ensureRecertTopic never called once a topicId is already persisted');
+  assert.equal(created.length, 1, 'expected ensureRecertTopic consulted every sync');
+  assert.equal(result.state.topicId, 900);
+  assert.equal(posted.length, 0, 'same live topic id edits in place, does not re-post');
+});
+
+test('when ensureRecertTopic remints, posting follows the new topic id', async () => {
+  const posted = [];
+  const prevState = { topicId: 900, messageId: 42, renderedText: 'stale text' };
+  const result = await syncRecertPosting(
+    scenario(),
+    prevState,
+    fakeAdapters({
+      ensureRecertTopic: async () => 901,
+      postMessage: async (topicId, text) => {
+        posted.push({ topicId, text });
+        return 77;
+      },
+    })
+  );
+  assert.equal(result.state.topicId, 901);
+  assert.equal(result.outcome, 'posted');
+  assert.deepEqual(posted, [{ topicId: 901, text: result.state.renderedText }]);
 });

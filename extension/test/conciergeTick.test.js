@@ -2620,7 +2620,9 @@ test('BL-434 approvals-standing-topic-04: the Approvals roster is posted once, t
   );
   await runConciergeTick(adapters);
 
-  assert.equal(ensured.length, 1, 'expected the topic to be created only once');
+  // Remint-safe: ensureApprovalsTopic is consulted every tick (so a topic-map
+  // remint is visible). Same live id → edit in place, never a second post.
+  assert.ok(ensured.length >= 1, 'expected ensureApprovalsTopic consulted');
   assert.equal(posted.length, 1, 'expected no second message ever posted');
   assert.equal(edited.length, 1);
   assert.equal(edited[0].topicId, 750);
