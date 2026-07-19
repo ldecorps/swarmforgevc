@@ -1,5 +1,6 @@
 id: BL-508
 title: "Pipeline board updated-at footer shows UK (Europe/London) time, DST-aware (BST/GMT), instead of UTC, with an explicit zone marker"
+status: done
 milestone: M8
 type: defect
 severity: low
