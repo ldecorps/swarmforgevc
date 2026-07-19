@@ -382,6 +382,17 @@
       (not (str/blank? openai-base-url))
       (concat ["-e" (str "OPENAI_BASE_URL=" openai-base-url)]))))
 
+(defn parse-mono-router-resident-session
+  "Pure: first non-coordinator session column from roles.tsv text."
+  [roles-tsv-text]
+  (some (fn [line]
+          (let [fields (str/split line #"\t" -1)
+                role (first fields)
+                session (get fields 3)]
+            (when (and role (not= "coordinator" role) (not (str/blank? session)))
+              session)))
+        (str/split-lines (or roles-tsv-text ""))))
+
 (defn mono-router-resident-session
   "Standing pipeline pane under config rotation router: first non-coordinator
    roles.tsv session (packs pin home as coder → swarmforge-coder). Never use
@@ -390,13 +401,7 @@
    resident on the old role."
   []
   (when (fs/exists? (roles-tsv-path))
-    (some (fn [line]
-            (let [fields (str/split line #"\t" -1)
-                  role (first fields)
-                  session (get fields 3)]
-              (when (and role (not= "coordinator" role) (not (str/blank? session)))
-                session)))
-          (str/split-lines (slurp (str (roles-tsv-path)))))))
+    (parse-mono-router-resident-session (slurp (str (roles-tsv-path))))))
 
 (defn mono-router-home-role
   "First non-coordinator role in roles.tsv — mono-router resident home identity."
@@ -439,6 +444,17 @@
        (not (str/blank? session))
        (zero? (:exit (sh/sh "tmux" "-S" socket "has-session" "-t" session)))))
 
+(defn resolve-wake-session
+  "Pure wake target for a roles.tsv session name under mono-router.
+   Prefer the configured session when it exists; otherwise remap to the
+   resident pane when that exists. Keeps the configured name when nothing
+   stands so the caller still sees a real tmux failure."
+  [{:keys [configured-session configured-exists? resident-session resident-exists?]}]
+  (cond
+    configured-exists? configured-session
+    (and (not (str/blank? resident-session)) resident-exists?) resident-session
+    :else configured-session))
+
 (defn wake-session
   "Session that should receive a tmux wake for a roles.tsv session name.
    Under mono-router / sequential rotation, dormant pipeline roles keep their
@@ -447,11 +463,12 @@
    `tmux send-literal failed` and falsely marks parcels failed even when the
    mailbox copy landed. Remap missing sessions to the resident when present."
   [socket configured-session]
-  (cond
-    (session-exists? socket configured-session) configured-session
-    :else (or (when-let [resident (mono-router-resident-session)]
-                (when (session-exists? socket resident) resident))
-              configured-session)))
+  (let [resident (mono-router-resident-session)]
+    (resolve-wake-session
+     {:configured-session configured-session
+      :configured-exists? (session-exists? socket configured-session)
+      :resident-session resident
+      :resident-exists? (boolean (and resident (session-exists? socket resident)))})))
 
 (defn pane-id
   "Prefer an explicit -t target. Bare display-message is only a last resort."

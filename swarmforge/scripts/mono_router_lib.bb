@@ -105,3 +105,13 @@
   [home-role active-role]
   (let [active (some-> active-role str str/trim not-empty)]
     (or active home-role)))
+
+(defn should-send-stuck-escalation-email?
+  "Whether handoffd should email the human for a stuck-escalation edge.
+   Mono-router dormant roles keep roles.tsv session names with no standing
+   pane — emailing \"specifier is stuck\" floods the human and cannot be
+   fixed by attaching that session. Still record chase-escalations.json;
+   skip the email when escalating a role with no live session. Clearing
+   (escalated?=false) always proceeds so recovery can disarm state."
+  [{:keys [escalated? session-exists?]}]
+  (or (not escalated?) (boolean session-exists?)))

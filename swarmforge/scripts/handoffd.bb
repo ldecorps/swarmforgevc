@@ -900,8 +900,11 @@
                                           ;; cannot be fixed by attaching that session. Still record
                                           ;; chase-escalations.json for consoles; skip the email.
                                           (let [session (:session (get roles role))]
-                                            (when (or (not escalated?)
-                                                      (handoff-lib/session-exists? socket session))
+                                            (when (mono-router-lib/should-send-stuck-escalation-email?
+                                                   {:escalated? escalated?
+                                                    :session-exists? (boolean
+                                                                     (and session
+                                                                          (handoff-lib/session-exists? socket session)))})
                                               (stuck-escalation-email-sweep! role escalated? now-ms))))
                   ;; BL-208: :provider is the one common, brand-name field
                   ;; every telemetry event now carries (chase_sweep_lib.bb

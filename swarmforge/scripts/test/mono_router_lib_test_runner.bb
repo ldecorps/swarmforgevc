@@ -100,6 +100,16 @@
          "coder"
          (mono-router-lib/resident-launch-role "coder" nil))
 
+(assert-true "clearing stuck email always ok"
+             (mono-router-lib/should-send-stuck-escalation-email?
+              {:escalated? false :session-exists? false}))
+(assert-true "standing role may get stuck email"
+             (mono-router-lib/should-send-stuck-escalation-email?
+              {:escalated? true :session-exists? true}))
+(assert-true "dormant escalate skips email"
+             (not (mono-router-lib/should-send-stuck-escalation-email?
+                   {:escalated? true :session-exists? false})))
+
 (when (seq @failures)
   (binding [*out* *err*]
     (doseq [f @failures] (println f)))

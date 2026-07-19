@@ -10,12 +10,55 @@
 # every configured role session is up.
 #
 # Usage:
-#   ./start-swarm.sh [target-path]     # defaults to this repo's root
+#   ./start-swarm.sh [options] [target-path]   # defaults to this repo's root
+#
+# Options:
+#   -clean, --clean   After stopping any live swarm, hard-reset every role
+#                     worktree (and its agent branch tip) onto main, then
+#                     git clean -fd, so all roles start aligned with main.
 #
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-TARGET="${1:-$SCRIPT_DIR}"
+
+CLEAN=0
+TARGET=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -clean|--clean)
+      CLEAN=1
+      shift
+      ;;
+    -h|--help)
+      cat <<'EOF'
+start-swarm.sh — reliably (re)start the SwarmForge swarm headless.
+
+Usage:
+  ./start-swarm.sh [options] [target-path]   # defaults to this repo's root
+
+Options:
+  -clean, --clean   Hard-reset every role worktree onto main (git reset
+                    --hard + git clean -fd) before launching.
+EOF
+      exit 0
+      ;;
+    -*)
+      echo "ERROR: unknown option: $1" >&2
+      echo "Usage: ./start-swarm.sh [-clean|--clean] [target-path]" >&2
+      exit 2
+      ;;
+    *)
+      if [[ -n "$TARGET" ]]; then
+        echo "ERROR: unexpected extra argument: $1" >&2
+        exit 2
+      fi
+      TARGET="$1"
+      shift
+      ;;
+  esac
+done
+
+TARGET="${TARGET:-$SCRIPT_DIR}"
 TARGET="$(cd "$TARGET" && pwd)"
 
 # GUI-launched processes (VS Code) often miss Homebrew paths where tmux/bb/claude live.
@@ -61,6 +104,11 @@ stop_existing() {
     [[ "$pid" =~ ^[0-9]+$ ]] && kill -TERM "$pid" 2>/dev/null || true
   fi
   sleep 1
+}
+
+align_worktrees_to_main() {
+  echo "Cleaning role worktrees onto main (-clean) ..."
+  bash "$SCRIPT_DIR/swarmforge/scripts/reset_worktrees.sh" --align-main "$TARGET"
 }
 
 resolve_launch_pack() {
@@ -158,6 +206,10 @@ check_detached() {
 
 echo "Target: $TARGET"
 stop_existing
+
+if [[ "$CLEAN" -eq 1 ]]; then
+  align_worktrees_to_main
+fi
 
 PACK="$(resolve_launch_pack)"
 WANT="$(expected_session_count)"

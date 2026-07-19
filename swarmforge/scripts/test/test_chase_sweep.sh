@@ -122,6 +122,12 @@ grep -q "^telemetry nudge coder 00_item.handoff 1$" "$ROOT/calls.log" \
   || fail "05: expected a BL-098 nudge telemetry event; got: $(cat "$ROOT/calls.log")"
 pass "05 (BL-098 telemetry-02): a nudge decision emits one telemetry event"
 
+# 2026-07-19 flood: nudge cleared on-stuck-escalation!(false), re-arming the
+# stuck email on the next alert. Nudge is still inside the stuck episode.
+grep -q "^escalation coder false$" "$ROOT/calls.log" \
+  && fail "05b: a stuck nudge must NOT clear the escalation edge (got: $(cat "$ROOT/calls.log"))"
+pass "05b: a stuck nudge does not clear on-stuck-escalation! (no email re-arm)"
+
 # ── 06: in_process work stuck across maxChases nudges escalates to alert, never nudges again ─
 make_fixture
 write_handoff "$ROOT/inbox/in_process/00_item.handoff"
