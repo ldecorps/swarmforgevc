@@ -23,6 +23,9 @@
 ;; second copy) for orphan reaping below.
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "handoff_lib.bb")))
 
+;; BL-528: claim-without-progress detection.
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "claim_progress_lib.bb")))
+
 ;; ── sidecar files (exact JSON shapes/paths as inboxChaser.ts) ───────────────
 
 (defn sidecar-path [handoff-file-path]
@@ -201,9 +204,25 @@
 (defn reset-pane-activity! []
   (reset! activity-records {}))
 
+;; ── BL-528: claim-progress sidecar read/write ───────────────────────────────
+
+(defn read-claim-progress [in-process-file-path]
+  (let [path (claim-progress-lib/claim-progress-sidecar-path in-process-file-path)
+        data (read-json path)]
+    (when (and (map? data) (string? (:claimCommit data)) (number? (:claimAtMs data)))
+      data)))
+
+(defn write-claim-progress! [in-process-file-path progress]
+  (spit (claim-progress-lib/claim-progress-sidecar-path in-process-file-path)
+        (json/generate-string progress)))
+
 ;; ── impure sweep application (adapters map, mirrors ChaserAdapters) ─────────
 ;; adapters keys: :get-liveness :send-wake-up! :trigger-respawn! :log-dead-letter!
 ;;                :get-last-activity-ms :on-stuck-escalation! :log-telemetry!
+;;                :get-role-head-commit   — BL-528: returns current 10-char HEAD
+;;                                          for a role's worktree, or "" on error
+;;                :on-claim-idle-bounce!  — BL-528: called when reclaims reach bounce threshold
+;;                :on-claim-idle-halt!    — BL-528: called when reclaims reach halt threshold
 
 ;; BL-098: durable per-role chase/nudge/dead-letter/respawn counts. The
 ;; existing sidecars (.chase.json/.nudge) are ephemeral - abandoned once an
@@ -215,7 +234,11 @@
   (fs/file-name file-path))
 
 (defn- apply-stuck-nudge! [role held adapters now-ms]
-  ((:send-wake-up! adapters) role)
+  ;; Prefer an in-process resume wake when the adapter provides one — re-running
+  ;; ready_for_next on aider just reprints the same TASK and loops.
+  (if-let [resume! (:send-in-process-resume! adapters)]
+    (resume! role)
+    ((:send-wake-up! adapters) role))
   (doseq [item held]
     (let [count (inc (:nudgeCount item))]
       (write-nudge-count! (:filePath item) count)
@@ -225,6 +248,58 @@
 (defn- clear-stale-nudge-counts! [held]
   (doseq [item held :when (pos? (:nudgeCount item))]
     (write-nudge-count! (:filePath item) 0)))
+
+(defn- apply-claim-progress-check!
+  "BL-528: Check each in_process item for idle-reclaim (no new commits).
+   Initialises the .claim-progress.json sidecar on first sight, advances
+   the reclaim counter when HEAD is unchanged past the timeout, and calls
+   the appropriate adapter on :nudge / :bounce / :halt.
+   Returns true when a halt was triggered (caller should short-circuit)."
+  [role held now-ms config adapters]
+  (when-let [get-head (:get-role-head-commit adapters)]
+    (let [current-commit (get-head role)
+          claim-cfg      (select-keys config [:claim-idle-timeout-ms
+                                              :nudge-threshold
+                                              :bounce-threshold
+                                              :halt-threshold])
+          halt-triggered (atom false)]
+      (doseq [item held
+              :when (not @halt-triggered)]
+        (let [fp       (:filePath item)
+              progress (or (read-claim-progress fp)
+                           (claim-progress-lib/make-claim-progress current-commit now-ms))
+              signal   (claim-progress-lib/classify-claim-progress
+                        progress current-commit now-ms claim-cfg)]
+          (case signal
+            :progressed
+            (write-claim-progress! fp (claim-progress-lib/make-claim-progress current-commit now-ms))
+
+            :claimed-idle
+            (let [p'     (claim-progress-lib/increment-reclaims progress)
+                  action (claim-progress-lib/decide-claim-idle-action (:reclaims p') claim-cfg)]
+              (write-claim-progress! fp p')
+              ((:log-telemetry! adapters)
+               {:type "claim-idle" :role role :handoffId (handoff-id fp)
+                :reclaims (:reclaims p') :action (name action)}
+               now-ms)
+              (case action
+                :nudge
+                (do (if-let [resume! (:send-in-process-resume! adapters)]
+                      (resume! role)
+                      ((:send-wake-up! adapters) role))
+                    (write-nudge-count! fp (inc (:nudgeCount item))))
+
+                :bounce
+                ((:on-claim-idle-bounce! adapters) role fp p')
+
+                :halt
+                (do ((:on-claim-idle-halt! adapters) role fp p')
+                    (reset! halt-triggered true))))
+
+            ;; :not-yet-overdue — write sidecar if not yet initialised, else leave it
+            (when (nil? (read-claim-progress fp))
+              (write-claim-progress! fp progress)))))
+      @halt-triggered)))
 
 (defn sweep-in-process! [role in-process-dir now-ms config adapters]
   (let [held (scan-in-process in-process-dir)]
@@ -236,7 +311,10 @@
           "nudge" (apply-stuck-nudge! role held adapters now-ms)
           "alert" ((:on-stuck-escalation! adapters) role true)
           (do (clear-stale-nudge-counts! held)
-              ((:on-stuck-escalation! adapters) role false)))))))
+              ((:on-stuck-escalation! adapters) role false)
+              ;; BL-528: even when pane-activity looks healthy, check whether
+              ;; the role's worktree HEAD has advanced since the claim.
+              (apply-claim-progress-check! role held now-ms config adapters)))))))
 
 (defn- apply-inbox-item-action! [role item action adapters now-ms]
   (case action
@@ -594,22 +672,31 @@
 (def dispatch-gap-note-max-length 80)
 
 (defn dispatch-gap-note-message
-  "Leads with the ticket id (the swarm's own routing-note convention,
-   which is exactly what makes it detectable as a dispatch trail on the
-   next sweep via dispatch-ticket-ref/extract-ticket-id above)."
+  "Legacy soft-note text (kept for callers/tests that still assert the phrase).
+   Production auto-route now emits a git_handoff via dispatch-gap-draft-lines
+   when a HEAD commit is supplied."
   [item-id]
   (str item-id " is active with no dispatch on record - auto-routed by the sweep."))
 
 (defn dispatch-gap-draft-lines
-  "The swarm_handoff.sh draft text for one auto-route note - pure string
-   construction; handoffd.bb's auto-route! writes this to a temp file and
-   shells to swarm_handoff.bb, the normal outbound handoff path, rather
-   than hand-writing an inbox file."
-  [item]
-  ["type: note"
-   (str "to: " (:assigned-to item))
-   "priority: 00"
-   (str "message: " (dispatch-gap-note-message (:id item)))])
+  "The swarm_handoff.sh draft for one auto-route — a real git_handoff so the
+   assignee gets merge_and_process + a task id, not a soft note the agent
+   can narrate and idle on. `commit` must already be the 10-char HEAD
+   abbreviation swarm_handoff.bb validates. handoffd.bb's auto-route!
+   supplies HEAD. Without a commit, falls back to the legacy soft note so a
+   dispatch trail still lands rather than silently dropping."
+  ([item] (dispatch-gap-draft-lines item nil))
+  ([item commit]
+   (if (str/blank? commit)
+     ["type: note"
+      (str "to: " (:assigned-to item))
+      "priority: 00"
+      (str "message: " (dispatch-gap-note-message (:id item)))]
+     ["type: git_handoff"
+      (str "to: " (:assigned-to item))
+      "priority: 00"
+      (str "task: " (:id item))
+      (str "commit: " commit)])))
 
 ;; ── Unassigned-active coordinator nudge ─────────────────────────────────────
 ;; Sibling of BL-222 dispatch-gap: an active/*.yaml with an id but NO

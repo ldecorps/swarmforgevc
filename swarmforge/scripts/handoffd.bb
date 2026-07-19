@@ -801,6 +801,41 @@
         (process/sh ["bash" (str (fs/path script-dir "kill_all_swarm.sh")) (str project-root)])
         (catch Exception e (log! "endless-loop-kill-error" (.getMessage e)))))))
 
+;; BL-528: claim-without-progress halt (separate atom so a claim-idle halt
+;; does not suppress an in-flight NO_TASK halt and vice-versa).
+(def claim-progress-halt-triggered? (atom false))
+
+(defn halt-for-claim-progress! [role progress]
+  (when (compare-and-set! claim-progress-halt-triggered? false true)
+    (let [reclaims (or (:reclaims progress) 0)
+          reason   (claim-progress-lib/format-halt-reason role reclaims)
+          subject  (claim-progress-lib/format-email-subject role)
+          tg-text  (claim-progress-lib/format-telegram-alert role reclaims)
+          reply-outbox (fs/path state-dir "operator" "telegram-reply-outbox.jsonl")]
+      (log! "claim-progress-halt" role reason)
+      (try
+        (fs/create-dirs (fs/parent reply-outbox))
+        (spit (str reply-outbox)
+              (str (json/generate-string {"threadId" "OPERATOR" "text" tg-text}) "\n")
+              :append true)
+        (log! "claim-progress-telegram" role)
+        (catch Exception e (log! "claim-progress-telegram-error" (.getMessage e))))
+      (try
+        (daemon-alarm-lib/send-configured-email!
+         project-root conf-file subject reason
+         {:already-warned?! (fn [] @escalation-email-missing-key-warned?)
+          :log-warning! (fn [msg] (log! "email-misconfigured" msg))
+          :mark-warned! (fn [] (reset! escalation-email-missing-key-warned? true))})
+        (log! "claim-progress-email" role)
+        (catch Exception e (log! "claim-progress-email-error" (.getMessage e))))
+      (try
+        (fs/create-dirs daemon-dir)
+        (spit (str stop-file) "")
+        (catch Exception e (log! "claim-progress-stop-file-error" (.getMessage e))))
+      (try
+        (process/sh ["bash" (str (fs/path script-dir "kill_all_swarm.sh")) (str project-root)])
+        (catch Exception e (log! "claim-progress-kill-error" (.getMessage e)))))))
+
 (defn observe-pane-loop!
   "Feed one pane snapshot into loop_detect_lib; halt the swarm on :halt."
   [role pane]
@@ -847,12 +882,81 @@
       :active-role (handoff-lib/read-mono-router-active-role)
       :target-role role})))
 
-(defn chase-rotate-to! [role]
-  (let [result (handoff-lib/rotate-resident-to! role)]
-    (if (:ok result)
-      (log! "chase-rotate" role)
-      (log! "chase-rotate-error" role (str (:reason result))))
-    result))
+(def last-chase-rotate-at-ms (atom 0))
+
+(defn- handoff-header-field [file-path field]
+  (try
+    (let [header (first (str/split (slurp file-path) #"\n\n" 2))
+          prefix (str field ": ")]
+      (some (fn [line] (when (str/starts-with? line prefix) (subs line (count prefix))))
+            (str/split-lines (or header ""))))
+    (catch Exception _ nil)))
+
+(defn- role-mail-row
+  "Score one role's mailbox for mono-router rotate preference."
+  [role role-info]
+  (let [new-dir (str (handoff-lib/mailbox-dir role-info :new))
+        ip-dir (str (handoff-lib/mailbox-dir role-info :in_process))
+        held (chase-sweep-lib/scan-in-process ip-dir)
+        news (chase-sweep-lib/scan-inbox-new new-dir)
+        git-hfs (filterv #(= "git_handoff" (handoff-header-field (:filePath %) "type")) news)
+        newest (or (->> (concat held git-hfs)
+                        (keep #(handoff-header-field (:filePath %) "created_at"))
+                        sort
+                        last)
+                   "")]
+    {:role role
+     :newest-created-at newest
+     :actionable? (mono-router-lib/actionable-mail?
+                   {:in-process-count (count held)
+                    :git-handoff-count (count git-hfs)})}))
+
+(defn preferred-mono-rotate-role
+  "At most one dormant role may rotate the resident per decision — the one
+   with the newest actionable mail. Broadcast notes never qualify."
+  [roles]
+  (mono-router-lib/preferred-rotate-target
+   (map (fn [[role ri]] (role-mail-row role ri)) roles)))
+
+(defn resident-pane-busy?
+  "True when the mono-router resident pane shows a busy footer — do not
+   rotate or inject wake spam mid-turn (chase thrash incident 2026-07-19)."
+  [socket]
+  (if-let [sess (handoff-lib/mono-router-resident-session)]
+    (let [pane (try (capture-pane-text socket sess) (catch Exception _ ""))]
+      (chase-sweep-lib/actively-processing? pane))
+    false))
+
+(defn chase-rotate-to! [socket roles role]
+  (let [preferred (preferred-mono-rotate-role roles)
+        row (role-mail-row role (get roles role))]
+    (cond
+      (not (:actionable? row))
+      (do (log! "chase-rotate-skip-broadcast" role)
+          {:ok false :reason "broadcast"})
+
+      (and preferred (not= preferred role))
+      (do (log! "chase-rotate-skip-not-preferred" role preferred)
+          {:ok false :reason "not-preferred"})
+
+      :else
+      (let [gate (mono-router-lib/should-rotate-resident?
+                  {:active-role (handoff-lib/read-mono-router-active-role)
+                   :target-role role
+                   :resident-busy? (resident-pane-busy? socket)
+                   :last-rotate-at-ms @last-chase-rotate-at-ms
+                   :now-ms (System/currentTimeMillis)
+                   :cooldown-ms mono-router-lib/default-rotate-cooldown-ms})]
+        (if (not= gate :rotate)
+          (do (log! (str "chase-rotate-" (name gate)) role)
+              {:ok false :reason (name gate)})
+          (let [result (handoff-lib/rotate-resident-to! role)]
+            (when (:ok result)
+              (reset! last-chase-rotate-at-ms (System/currentTimeMillis))
+              (log! "chase-rotate" role))
+            (when-not (:ok result)
+              (log! "chase-rotate-error" role (str (:reason result))))
+            result))))))
 
 (defn chase-sweep! [roles socket]
   (let [now-ms (System/currentTimeMillis)
@@ -860,35 +964,40 @@
                   :send-wake-up! (fn [role]
                                     (when-not (tmux-inject-disabled?)
                                       (try
-                                        (let [action (chase-poke-action roles socket role)
-                                              ri (get roles role)]
-                                          (case action
-                                            :rotate (chase-rotate-to! role)
-                                            (notify! socket (:session ri) (:agent ri))))
+                                        ;; Busy resident: never inject "new mail" / never rotate.
+                                        (if (resident-pane-busy? socket)
+                                          (log! "chase-wake-skip-busy" role)
+                                          (let [action (chase-poke-action roles socket role)
+                                                ri (get roles role)]
+                                            (case action
+                                              :rotate (chase-rotate-to! socket roles role)
+                                              (notify! socket (:session ri) (:agent ri)))))
                                         (catch Exception e (log! "chase-wake-error" role (.getMessage e))))))
                   :send-in-process-resume! (fn [role]
                                               (when-not (tmux-inject-disabled?)
                                                 (try
-                                                  (let [action (chase-poke-action roles socket role)
-                                                        ri (get roles role)]
-                                                    (case action
-                                                      ;; Stuck in_process on a dormant role: rotate so
-                                                      ;; RESUME-ON-START / ready_for_next can claim it.
-                                                      :rotate (chase-rotate-to! role)
-                                                      (notify-in-process-resume!
-                                                       socket
-                                                       (:session ri)
-                                                       (:agent ri))))
+                                                  (if (resident-pane-busy? socket)
+                                                    (log! "chase-in-process-resume-skip-busy" role)
+                                                    (let [action (chase-poke-action roles socket role)
+                                                          ri (get roles role)]
+                                                      (case action
+                                                        :rotate (chase-rotate-to! socket roles role)
+                                                        (notify-in-process-resume!
+                                                         socket
+                                                         (:session ri)
+                                                         (:agent ri)))))
                                                   (catch Exception e
                                                     (log! "chase-in-process-resume-error" role (.getMessage e))))))
                   :trigger-respawn! (fn [role]
                                        (try
-                                         (let [action (chase-poke-action roles socket role)
-                                               ri (get roles role)]
-                                           (case action
-                                             :rotate (chase-rotate-to! role)
-                                             :wake-resident (chase-rotate-to! role)
-                                             (do-respawn! ri socket)))
+                                         (if (resident-pane-busy? socket)
+                                           (log! "chase-respawn-skip-busy" role)
+                                           (let [action (chase-poke-action roles socket role)
+                                                 ri (get roles role)]
+                                             (case action
+                                               :rotate (chase-rotate-to! socket roles role)
+                                               :wake-resident (chase-rotate-to! socket roles role)
+                                               (do-respawn! ri socket))))
                                          (catch Exception e (log! "chase-respawn-error" role (.getMessage e)))))
                   :log-dead-letter! (fn [role path] (log! "dead-letter" role (fs/file-name path)))
                   :get-last-activity-ms (fn [role] (get-last-activity-ms (get roles role) socket now-ms))
@@ -922,7 +1031,17 @@
                   :get-rate-limit-cooldown-woken-marker
                   (fn [role] (chase-sweep-lib/read-rate-limit-cooldown-woken-marker (str state-dir) role))
                   :mark-rate-limit-cooldown-woken!
-                  (fn [role until-ms] (chase-sweep-lib/mark-rate-limit-cooldown-woken! (str state-dir) role until-ms))}]
+                  (fn [role until-ms] (chase-sweep-lib/mark-rate-limit-cooldown-woken! (str state-dir) role until-ms))
+                  ;; BL-528: claim-without-progress adapters.
+                  :get-role-head-commit
+                  (fn [role] (worktree-head-commit-10 (load-roles) role))
+                  :on-claim-idle-bounce!
+                  (fn [role _fp progress]
+                    (log! "claim-progress-bounce" role
+                          (claim-progress-lib/format-bounce-log role (:reclaims progress))))
+                  :on-claim-idle-halt!
+                  (fn [role _fp progress]
+                    (halt-for-claim-progress! role progress))}]
     (chase-sweep-lib/run-sweep! (role-inboxes-for-chase roles) now-ms chase-sweep-config adapters)
     (observe-standing-role-loops! roles socket)
     (write-chase-status! now-ms)))
@@ -962,6 +1081,18 @@
   (let [result (process/sh ["git" "rev-parse" "--short=10" "HEAD"] {:dir (str project-root)})]
     (when (zero? (:exit result))
       (str/trim (:out result)))))
+
+(defn- worktree-head-commit-10
+  "BL-528: 10-char HEAD of a role's worktree, or \"\" on error.
+   Uses the worktree-path from loaded roles so each role's own branch is
+   read, not the master checkout."
+  [roles role]
+  (let [ri  (get roles role)
+        dir (or (:worktree-path ri) (str project-root))]
+    (try
+      (let [result (process/sh ["git" "rev-parse" "--short=10" "HEAD"] {:dir dir})]
+        (if (zero? (:exit result)) (str/trim (:out result)) ""))
+      (catch Exception _ ""))))
 
 (defn auto-route! [item]
   (let [commit (or (head-commit-10) "")
