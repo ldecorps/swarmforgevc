@@ -25,7 +25,7 @@
     (when (zero? (:exit result))
       (str/trim (:out result)))))
 
-(defn git-common-dir []
+defn git-common-dir []
   (let [result (command "git" "rev-parse" "--git-common-dir")]
     (when (zero? (:exit result))
       (let [path (str/trim (:out result))]
