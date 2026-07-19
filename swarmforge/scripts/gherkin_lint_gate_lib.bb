@@ -130,26 +130,12 @@
 
 (defn lint-findings
   "Combined findings for a feature file: {:continuation-lines [...]
-   :phantom-columns [...]}. Both empty means the gate should pass.
-
-   Optional `relative-path` + `legacy-wrap-allowlist` (a set of
-   repo-relative feature-file paths): a bare-continuation-line finding for
-   a file IN that set is dropped - known pre-existing wraps grandfathered
-   in at BL-515 time rather than rewritten as part of this ticket's scope
-   (touches gherkin_lint_gate.sh + this helper only; a follow-up ticket
-   rewraps them). The allowlist NEVER exempts a phantom-column finding -
-   that signature is not grandfathered, and a NEW file is never in the
-   allowlist, so the gate still enforces single-line steps unconditionally
-   for anything not already known-and-tracked as legacy debt."
-  ([feature-text parsed-ir]
-   (lint-findings feature-text parsed-ir nil nil))
-  ([feature-text parsed-ir relative-path legacy-wrap-allowlist]
-   (let [continuation-lines (find-continuation-line-findings feature-text)
-         grandfathered? (and relative-path
-                              legacy-wrap-allowlist
-                              (contains? legacy-wrap-allowlist relative-path))]
-     {:continuation-lines (if grandfathered? [] continuation-lines)
-      :phantom-columns (find-phantom-column-findings parsed-ir)})))
+   :phantom-columns [...]}. Both empty means the gate should pass. BL-520
+   drained the grandfathered wrap allowlist, so continuation-line findings
+   are never suppressed."
+  [feature-text parsed-ir]
+  {:continuation-lines (find-continuation-line-findings feature-text)
+   :phantom-columns (find-phantom-column-findings parsed-ir)})
 
 (defn clean?
   [findings]

@@ -5,47 +5,28 @@
 ;; clean IR - this is the "does the clean parse hide a silent wrap/phantom
 ;; column drop" check, never a substitute for the parser's own parse gate.
 ;;
-;; Usage: gherkin_lint_gate_cli.bb <feature-file> <ir-json-file> <repo-root> [allowlist-file]
+;; Usage: gherkin_lint_gate_cli.bb <feature-file> <ir-json-file> <repo-root>
 ;; Prints one FAIL line per finding and exits 1 if any exist; prints
-;; nothing and exits 0 when the feature file is clean (or its only
-;; findings are bare-continuation-line ones for a file grandfathered into
-;; the legacy-wraps allowlist - see gherkin_lint_gate_legacy_wraps.txt).
+;; nothing and exits 0 when the feature file is clean.
 
 (ns gherkin-lint-gate-cli
   (:require [babashka.fs :as fs]
-            [cheshire.core :as json]
-            [clojure.string :as str]))
+            [cheshire.core :as json]))
 
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "gherkin_lint_gate_lib.bb")))
 
 (defn usage []
   (binding [*out* *err*]
-    (println "Usage: gherkin_lint_gate_cli.bb <feature-file> <ir-json-file> <repo-root> [allowlist-file]"))
+    (println "Usage: gherkin_lint_gate_cli.bb <feature-file> <ir-json-file> <repo-root>"))
   (System/exit 1))
 
-(defn- read-allowlist
-  [allowlist-file]
-  (if (fs/exists? allowlist-file)
-    (->> (str/split-lines (slurp allowlist-file))
-         (map str/trim)
-         (remove str/blank?)
-         (remove #(str/starts-with? % "#"))
-         set)
-    #{}))
-
 (defn -main [& args]
-  (when (not (#{3 4} (count args)))
+  (when (not= 3 (count args))
     (usage))
-  (let [[feature-file ir-file repo-root allowlist-file] args
-        allowlist-file (or allowlist-file
-                            (str (fs/path (fs/parent (fs/canonicalize *file*))
-                                           "gherkin_lint_gate_legacy_wraps.txt")))
+  (let [[feature-file ir-file _repo-root] args
         feature-text (slurp feature-file)
         parsed-ir (json/parse-string (slurp ir-file) true)
-        relative-path (str (fs/relativize (fs/canonicalize repo-root) (fs/canonicalize feature-file)))
-        legacy-allowlist (read-allowlist allowlist-file)
-        findings (gherkin-lint-gate-lib/lint-findings
-                  feature-text parsed-ir relative-path legacy-allowlist)]
+        findings (gherkin-lint-gate-lib/lint-findings feature-text parsed-ir)]
     (if (gherkin-lint-gate-lib/clean? findings)
       (System/exit 0)
       (do

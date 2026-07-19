@@ -6,15 +6,13 @@ Background:
 # BL-094 holistic-ui-01
 Scenario: the bridge serves the UI
   When a browser with the bearer token opens the bridge root URL
-  Then a single page renders the backlog board, per-swarm panel,
-    pipeline flow, and recent activity sections
+  Then a single page renders the backlog board, per-swarm panel, pipeline flow, and recent activity sections
 
 # BL-094 holistic-ui-02
 Scenario: every in-flight parcel is visible with stage and swarm
   Given active tickets exist, some carrying a swarm assignment field
   When the holistic view renders
-  Then each active ticket shows its assigned swarm and current pipeline
-    stage
+  Then each active ticket shows its assigned swarm and current pipeline stage
   And tickets without an assignment display as the primary swarm's
 
 # BL-094 holistic-ui-03

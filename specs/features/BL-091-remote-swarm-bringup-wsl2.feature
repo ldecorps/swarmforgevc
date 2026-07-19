@@ -5,8 +5,7 @@ Background:
 
 # BL-091 wsl2-swarm-01
 Scenario: launch without a coordinator window
-  Given a swarmforge.conf naming swarm_name second with all roles except
-    coordinator
+  Given a swarmforge.conf naming swarm_name second with all roles except coordinator
   When ./swarm launches inside WSL2
   Then all configured role panes come up with live agents
   And handoffd delivers local handoffs between them normally
