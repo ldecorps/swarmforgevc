@@ -286,6 +286,7 @@ const DOMAINS = [
   require('./bl507PipelineBoardDropCoordinatorColumnSteps'),
   require('./bl508PipelineBoardUpdatedAtUkTimeSteps'),
   require('./bl511TelegramBridgeCostBriefingSteps'),
+  require('./bl516OperatorTelegramConsoleSteps'),
   require('./gherkinLintGateWrappedStepRejectionSteps'),
   require('./bl519InlineConstitutionCacheSteps'),
   require('./bl520RewrapLegacyWrappedSteps'),
