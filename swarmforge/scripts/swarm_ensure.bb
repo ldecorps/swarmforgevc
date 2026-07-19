@@ -332,21 +332,39 @@
         {:component name :status :failed :action detail
          :category (:category (agent-runtime-lib/classify-provider-error detail))}))))
 
+(defn read-mono-router-active-role-marker
+  "Contents of .swarmforge/mono-router-active-role, or nil."
+  []
+  (let [p (fs/path state-dir "mono-router-active-role")]
+    (when (fs/exists? p)
+      (str/trim (slurp (str p))))))
+
 (defn ensure-mono-router-role!
   "BL-518 topology repair for one role under rotation router."
   [socket ordered-roles {:keys [role session]}]
   (let [alive (session-exists? socket session)
         action (mono-router-lib/topology-action ordered-roles role alive)
-        class-name (name (mono-router-lib/classify-role ordered-roles role))]
+        class (mono-router-lib/classify-role ordered-roles role)
+        class-name (name class)
+        ;; Resident session name stays home (coder), but launch script follows
+        ;; the durable active-role marker after rotate_to_role.
+        launch-role (if (= class :resident)
+                      (mono-router-lib/resident-launch-role
+                       role (read-mono-router-active-role-marker))
+                      role)]
     (case action
       :ok
       (if (pane-alive? socket session)
         {:component (str "agent:" role) :status :healthy
-         :action (str "mono-router " class-name)}
+         :action (str "mono-router " class-name
+                      (when (and (= class :resident) (not= launch-role role))
+                        (str " as " launch-role)))}
         (ensure-component! (str "agent:" role)
                            #(pane-alive? socket session)
-                           #(ensure-standing-role! socket role session)
-                           (str "respawned dead mono-router " class-name " pane")))
+                           #(ensure-standing-role! socket launch-role session)
+                           (str "respawned dead mono-router " class-name " pane"
+                                (when (not= launch-role role)
+                                  (str " as " launch-role)))))
 
       :dormant-ok
       {:component (str "agent:" role) :status :dormant
@@ -364,8 +382,10 @@
       :ensure-standing
       (ensure-component! (str "agent:" role)
                          #(pane-alive? socket session)
-                         #(ensure-standing-role! socket role session)
-                         (str "restored mono-router " class-name " pane")))))
+                         #(ensure-standing-role! socket launch-role session)
+                         (str "restored mono-router " class-name " pane"
+                              (when (not= launch-role role)
+                                (str " as " launch-role)))))))
 
 (defn report-line [{:keys [component status action category]}]
   (case status
