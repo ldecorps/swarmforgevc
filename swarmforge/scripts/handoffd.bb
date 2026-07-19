@@ -739,7 +739,15 @@
                   :get-last-activity-ms (fn [role] (get-last-activity-ms (get roles role) socket now-ms))
                   :on-stuck-escalation! (fn [role escalated?]
                                           (chase-sweep-lib/write-escalation! (str daemon-dir) role escalated?)
-                                          (stuck-escalation-email-sweep! role escalated? now-ms))
+                                          ;; Mono-router dormant roles keep roles.tsv session names
+                                          ;; with no standing pane. Emailing "specifier is stuck"
+                                          ;; for a mailbox-only rotate target floods the human and
+                                          ;; cannot be fixed by attaching that session. Still record
+                                          ;; chase-escalations.json for consoles; skip the email.
+                                          (let [session (:session (get roles role))]
+                                            (when (or (not escalated?)
+                                                      (handoff-lib/session-exists? socket session))
+                                              (stuck-escalation-email-sweep! role escalated? now-ms))))
                   ;; BL-208: :provider is the one common, brand-name field
                   ;; every telemetry event now carries (chase_sweep_lib.bb
                   ;; itself stays agent-agnostic - this is the only place

@@ -59,4 +59,8 @@ done
 TARGET="${TARGET:-$SCRIPT_DIR}"
 TARGET="$(cd "$TARGET" && pwd)"
 
-exec bash "$KILL_ALL" "${OPTS[@]}" "$TARGET"
+if ((${#OPTS[@]})); then
+  exec bash "$KILL_ALL" "${OPTS[@]}" "$TARGET"
+else
+  exec bash "$KILL_ALL" "$TARGET"
+fi

@@ -193,9 +193,20 @@
                     (.digest (.getBytes (or pane-content "") "UTF-8")))
         hash (apply str (map #(format "%02x" %) digest))
         previous (get @activity-records role)]
-    (if (or (nil? previous) (not= (:hash previous) hash))
+    (cond
+      ;; First observation after daemon start is NOT proof of fresh human/agent
+      ;; activity. Returning now-ms here re-armed "recently active" on every
+      ;; handoffd restart and cleared stuck-email arming, so a still-stuck
+      ;; in_process role re-emailed the human after each restart (flood).
+      (nil? previous)
+      (do (swap! activity-records assoc role {:hash hash :lastChangeMs (max 0 outbox-activity-ms)})
+          (max 0 outbox-activity-ms))
+
+      (not= (:hash previous) hash)
       (do (swap! activity-records assoc role {:hash hash :lastChangeMs now-ms})
           now-ms)
+
+      :else
       (max (:lastChangeMs previous) outbox-activity-ms))))
 
 (defn reset-pane-activity! []
@@ -220,7 +231,11 @@
     (let [count (inc (:nudgeCount item))]
       (write-nudge-count! (:filePath item) count)
       ((:log-telemetry! adapters) {:type "nudge" :role role :handoffId (handoff-id (:filePath item)) :count count} now-ms)))
-  ((:on-stuck-escalation! adapters) role false))
+  ;; Do NOT call on-stuck-escalation! false here. Nudge is still inside a stuck
+  ;; episode; clearing the escalation edge re-arms the stuck email on the next
+  ;; alert and floods the human (especially under mono-router, where a dormant
+  ;; role's in_process can sit forever while chase wakes the resident).
+  nil)
 
 (defn- clear-stale-nudge-counts! [held]
   (doseq [item held :when (pos? (:nudgeCount item))]
