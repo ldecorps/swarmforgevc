@@ -544,20 +544,23 @@ export function renderPipelineBoardBody(data: PipelineBoardData): string {
   return renderBodySections(data).join('\n');
 }
 
-const MONTH_LABELS: readonly string[] = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-
-// BL-462: a pure function of an injected epoch-ms - never a bare
-// new Date()/Date.now() (engineering no-real-clock rule). UTC throughout so
-// the label is deterministic regardless of the host's local timezone; exact
-// glyphs/timezone are a build-time detail, not a promotion gate (the
-// ticket's own human_approval note).
+// BL-462/BL-508: a pure function of an injected epoch-ms - never a bare
+// new Date()/Date.now() (engineering no-real-clock rule). Europe/London is
+// named explicitly so DST and date rollover are resolved from the injected
+// instant, not from the host's local timezone.
 export function formatUpdatedAtLabel(epochMs: number): string {
-  const d = new Date(epochMs);
-  const month = MONTH_LABELS[d.getUTCMonth()];
-  const day = String(d.getUTCDate()).padStart(2, '0');
-  const hours = String(d.getUTCHours()).padStart(2, '0');
-  const minutes = String(d.getUTCMinutes()).padStart(2, '0');
-  return `${month} ${day} ${hours}:${minutes}`;
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Europe/London',
+    month: 'short',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+    timeZoneName: 'short',
+  }).formatToParts(epochMs);
+  const part = (type: Intl.DateTimeFormatPartTypes): string =>
+    parts.find((p) => p.type === type)?.value ?? '';
+  return `${part('month')} ${part('day')} ${part('hour')}:${part('minute')} ${part('timeZoneName')}`;
 }
 
 function renderUpdatedAtFooter(lastChangeMs: number): string {
