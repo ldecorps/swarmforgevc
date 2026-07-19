@@ -210,9 +210,7 @@ test('main writes an incrementing attempt number across repeated retries', () =>
 // as the subprocess's own cwd option did.
 
 test('BL-133 master-checkout-01: a hop from the master checkout lands in the pre-seeded repo-rooted trace log, not one level above the repo', () => {
-  const parentDir = fs.realpathSync(mkTmp());
-  const repoRoot = path.join(parentDir, 'repo');
-  fs.mkdirSync(repoRoot);
+  const repoRoot = fs.realpathSync(mkTmp());
   execSync('git init -q', { cwd: repoRoot });
   execSync('git -c user.email=t@t -c user.name=t commit -q --allow-empty -m init', { cwd: repoRoot });
 
@@ -229,7 +227,7 @@ test('BL-133 master-checkout-01: a hop from the master checkout lands in the pre
 
   // The literal historical symptom (BL-133): a stray .swarmforge one level
   // above the repo root instead of inside it.
-  const strayDir = path.join(parentDir, '.swarmforge');
+  const strayDir = path.join(path.dirname(repoRoot), '.swarmforge');
   assert.equal(fs.existsSync(strayDir), false, 'no .swarmforge directory must be created outside the repository');
 });
 

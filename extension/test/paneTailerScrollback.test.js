@@ -25,7 +25,6 @@ const { PaneTailer } = require('../out/panel/paneTailer');
 // milliseconds, with no real timers and no subprocesses.
 let capturedWindow = '';
 beforeEach(() => {
-  vi.spyOn(tmuxClient, 'readLiveSwarmRoles').mockImplementation(tmuxClient.readSwarmRoles);
   vi.spyOn(tmuxClient, 'sessionExists').mockReturnValue(true);
   vi.spyOn(tmuxClient, 'getPaneBaseIndex').mockReturnValue(0);
   vi.spyOn(tmuxClient, 'getPanePidAndCommand').mockReturnValue({ pid: '1', command: 'claude' });

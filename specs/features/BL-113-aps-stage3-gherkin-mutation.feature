@@ -14,7 +14,8 @@ Scenario: a surviving mutant is reported
 
 # BL-113 gherkin-mutation-03
 Scenario: long mutation runs are distinguishable from hangs
-  Given a Gherkin mutation run over multiple mutants While the run is in progress
+  Given a Gherkin mutation run over multiple mutants
+  When the run is in progress
   Then periodic progress/status output is emitted
 
 # Non-behavioral gates:

@@ -75,7 +75,7 @@ function registerSteps(registry) {
   });
 
   // ── gherkin-mutation-03 ──────────────────────────────────────────────
-  registry.define(/^a Gherkin mutation run over multiple mutants While the run is in progress$/, (ctx) => {
+  registry.define(/^a Gherkin mutation run over multiple mutants$/, (ctx) => {
     copyFixtureAndRun(ctx, 'full');
   });
 
