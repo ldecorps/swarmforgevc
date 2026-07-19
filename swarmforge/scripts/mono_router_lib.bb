@@ -74,3 +74,34 @@
     {:actions actions
      :illicit (filterv #(= :teardown-illicit (:action %)) actions)
      :missing-standing (filterv #(= :ensure-standing (:action %)) actions)}))
+
+(defn dormant-mailbox-chase-action
+  "How chase should poke a role that may be a mono-router dormant target.
+
+   Incident 2026-07-19: wake-session remapped cleaner→resident while the
+   resident was still identity=coder. Chase injected 'new handoff mail' into
+   the coder pane; ready_for_next read coder's empty mailbox → NO_TASK, while
+   cleaner/inbox/new held the real parcels. Coordinator could not promote the
+   next ticket because BL-508 stayed active waiting on cleaner.
+
+   Returns:
+     :wake-own-session — role has its own standing pane; wake that session
+     :wake-resident    — no own pane, but resident already IS this role
+     :rotate           — no own pane, and resident is a different identity;
+                         must respawn-as! before any wake
+     :wake-own-session — also the degrade path when no resident pane exists"
+  [{:keys [target-session-exists? resident-session-exists? active-role target-role]}]
+  (cond
+    target-session-exists? :wake-own-session
+    (not resident-session-exists?) :wake-own-session
+    (= (str active-role) (str target-role)) :wake-resident
+    :else :rotate))
+
+(defn resident-launch-role
+  "Under mono-router the standing tmux session keeps the home role's session
+   name (usually coder), but after rotate_to_role the pane runs a different
+   role's launch script. `./swarm ensure` must restore THAT script, not always
+   home — otherwise ensure mid-pipeline wipes cleaner/architect/… back to coder."
+  [home-role active-role]
+  (let [active (some-> active-role str str/trim not-empty)]
+    (or active home-role)))

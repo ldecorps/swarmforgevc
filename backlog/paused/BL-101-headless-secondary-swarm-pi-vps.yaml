@@ -71,3 +71,5 @@ description: |
 
 acceptance: specs/features/BL-101-headless-secondary-swarm-pi-vps.feature
 mutation_cost: high
+
+assigned_to: coder

@@ -9,11 +9,9 @@ Scenario: detection reads a provider registry, not inline brand names
 
 # BL-142 new-provider-is-data-02
 Scenario: adding a provider requires only a new descriptor
-  Given a new provider descriptor with name, cli pattern, busy pattern,
-    banner, and startup copy is added to the registry
+  Given a new provider descriptor with name, cli pattern, busy pattern, banner, and startup copy is added to the registry
   When a pane runs that provider's CLI
-  Then the provider is recognized and its busy, running, and startup states
-    are detected from the descriptor
+  Then the provider is recognized and its busy, running, and startup states are detected from the descriptor
   And no detection function is edited to add it
 
 # BL-142 startup-copy-03

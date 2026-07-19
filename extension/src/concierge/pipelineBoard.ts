@@ -548,23 +548,19 @@ export function renderPipelineBoardBody(data: PipelineBoardData): string {
 // new Date()/Date.now() (engineering no-real-clock rule). Europe/London is
 // named explicitly so DST and date rollover are resolved from the injected
 // instant, not from the host's local timezone.
-const UPDATED_AT_TIME_FORMATTER = new Intl.DateTimeFormat('en-GB', {
-  timeZone: 'Europe/London',
-  month: 'short',
-  day: '2-digit',
-  hour: '2-digit',
-  minute: '2-digit',
-  hourCycle: 'h23',
-  timeZoneName: 'short',
-});
-
-function formatPart(parts: Intl.DateTimeFormatPart[], type: Intl.DateTimeFormatPartTypes): string {
-  return parts.find((p) => p.type === type)?.value ?? '';
-}
-
 export function formatUpdatedAtLabel(epochMs: number): string {
-  const parts = UPDATED_AT_TIME_FORMATTER.formatToParts(epochMs);
-  return `${formatPart(parts, 'month')} ${formatPart(parts, 'day')} ${formatPart(parts, 'hour')}:${formatPart(parts, 'minute')} ${formatPart(parts, 'timeZoneName')}`;
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Europe/London',
+    month: 'short',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+    timeZoneName: 'short',
+  }).formatToParts(epochMs);
+  const part = (type: Intl.DateTimeFormatPartTypes): string =>
+    parts.find((p) => p.type === type)?.value ?? '';
+  return `${part('month')} ${part('day')} ${part('hour')}:${part('minute')} ${part('timeZoneName')}`;
 }
 
 function renderUpdatedAtFooter(lastChangeMs: number): string {
