@@ -21,14 +21,14 @@
           in-process-files (handoff-lib/my-handoff-files in-process-dir)]
       (when (seq in-process-batches)
         (handoff-lib/fail! 2
-               "CURRENT_WORK_IS_BATCH: use done_with_current.sh."
-               (str/join "\n" (map #(str "- " %) in-process-batches))))
+                        "CURRENT_WORK_IS_BATCH: use done_with_current.sh."
+                        (str/join "\n" (map #(str "- " %) in-process-batches))))
       (when (empty? in-process-files)
         (handoff-lib/fail! 1 "NO_CURRENT_TASK"))
       (when (> (count in-process-files) 1)
         (handoff-lib/fail! 2
-               "AMBIGUOUS_TASK_STATE: multiple tasks are in process."
-               (str/join "\n" (map #(str "- " %) in-process-files))))
+                        "AMBIGUOUS_TASK_STATE: multiple tasks are in process."
+                        (str/join "\n" (map #(str "- " %) in-process-files))))
       (let [source-file (first in-process-files)
             target-file (fs/path completed-dir (fs/file-name source-file))]
         (handoff-lib/set-header! source-file "completed_at" (handoff-lib/timestamp))
