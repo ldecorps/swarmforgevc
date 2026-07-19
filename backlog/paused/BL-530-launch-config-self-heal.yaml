@@ -1,0 +1,30 @@
+id: BL-530
+title: "Ensure-time self-heal for COORDINATOR_MODEL and ROTATION_MODE"
+milestone: M8
+type: defect
+status: todo
+assigned_to: specifier
+priority: 3
+mutation_cost: medium
+direction: human-requested
+depends_on: []
+source: "BL-512 audit BL-FIX-003. Human confirmed 2026-07-19. Related: BL-314 coordinator-model history."
+
+notes: |
+  WHAT / WHY: Packs can launch "healthy" with missing launch contract — coordinator
+  aider without --model, ROTATION_MODE unset ("parameter not set") — producing
+  weak/idle thrash that looks green.
+
+  ROOT CAUSE: provision/ensure paths partially wire models and rotation; missing
+  values are not validated or rewritten at ensure-time.
+
+  OUTCOME: refuse start or auto-rewrite launch argv when COORDINATOR_MODEL /
+  ROTATION_MODE / pack contract fields required by the pack are missing. Specifier
+  writes the feature; prefer ensure-time heal over silent degrade.
+
+acceptance: |
+  Feature: swarm ensure refuses or heals missing launch contract
+    Scenario: missing coordinator model or rotation mode is caught at ensure
+      Given a pack that requires COORDINATOR_MODEL and ROTATION_MODE
+      When ensure runs with either unset
+      Then ensure fails loudly or applies the pack default before agents start

@@ -155,11 +155,21 @@ function registerSteps(registry) {
 
   registry.define(/^every open-code mode appears as a distinct proposed fix ticket$/, (ctx) => {
     const doc = ctx.auditDoc;
-    const tickets = doc.match(/proposed fix ticket:\s*`?BL-FIX-\d+/gi) || doc.match(/BL-FIX-\d+/g) || [];
+    // Accept audit placeholders (BL-FIX-*) or filed backlog ids (BL-528..).
+    const tickets =
+      doc.match(/proposed fix ticket:\s*`?BL-(?:FIX-)?\d+/gi) ||
+      doc.match(/BL-FIX-\d+/g) ||
+      doc.match(/\*\*BL-\d+\*\*/g) ||
+      [];
     if (tickets.length < 1) {
-      throw new Error('expected at least one BL-FIX-* proposed fix ticket in the audit doc');
+      throw new Error('expected at least one proposed fix ticket (BL-FIX-* or BL-*) in the audit doc');
     }
-    ctx.proposedFixCount = new Set(tickets.map((t) => t.toUpperCase().replace(/.*BL-FIX/, 'BL-FIX'))).size;
+    ctx.proposedFixCount = new Set(
+      tickets.map((t) => {
+        const m = t.toUpperCase().match(/BL-(?:FIX-)?\d+/);
+        return m ? m[0] : t;
+      }),
+    ).size;
   });
 
   registry.define(/^the proposed fix tickets are ranked by occurrence frequency and impact$/, (ctx) => {

@@ -81,43 +81,43 @@ Genuinely open defects or missing automation. Each gets a **root cause** and one
 - **Signature / evidence:** Live BL-512 session (coder repeatedly `ready_for_next` → same TASK → idle at `>`); related historical green-but-halted swarm in `backlog/evidence/BL-109-BL-121-BL-122-handoff-halt-20260706.md`. Chaser `nudge:coder` ×3 on 2026-07-19.
 - **Root cause:** Inbox/claim layer treats “task assigned” as healthy. Loop detector covers **NO_TASK spin**, not **TASK claimed but no commits / no tool use / same reclaim**.
 - **Why auto-heal matters:** Human should not babysit; handoffd should bounce the claim, re-route, or escalate after N idle reclaim cycles.
-- **proposed fix ticket:** `BL-FIX-001` — Auto-heal claim-without-progress (detect idle reclaim of same task; nudge → reassign → halt+alert).
+- **proposed fix ticket:** `BL-528` — Auto-heal claim-without-progress (detect idle reclaim of same task; nudge → reassign → halt+alert).
 
 #### Rank 2 — Worktree / branch ≠ claimed ticket
 
 - **Signature / evidence:** Live: coder worktree still on **`BL-526`** while claim is **BL-512**; bounce hygiene in `backlog/evidence/BL-490-expedite-approval-button-bounce-20260717.md` (fix commit not on the line QA tests); rule_proposals L11–L12 (sibling bounce / ancestor checks).
 - **Root cause:** Resume-on-start and bounce merges do not assert `worktree branch/ticket == active claim` before the agent spends a turn.
-- **proposed fix ticket:** `BL-FIX-002` — Pre-turn ticket/branch guard; auto-checkout or refuse-and-requeue on mismatch.
+- **proposed fix ticket:** `BL-529` — Pre-turn ticket/branch guard; auto-checkout or refuse-and-requeue on mismatch.
 
 #### Rank 3 — Launch-config drift (coordinator model, rotation mode)
 
 - **Signature / evidence:** Live mono-router: coordinator bare `aider --yes-always` (no `--model`); `ROTATION_MODE: parameter not set` on role launch from dirty/unstaged `swarmforge.sh`; historical `backlog/evidence` for BL-314 coordinator-model bounce.
 - **Root cause:** Provision paths partially wire models; pack/env defaults are not self-validated at ensure-time. Weak models + missing rotation → busy-idle thrash that looks “healthy.”
-- **proposed fix ticket:** `BL-FIX-003` — Ensure-time self-heal: refuse start / auto-rewrite launch argv when `COORDINATOR_MODEL` / `ROTATION_MODE` / pack contract missing.
+- **proposed fix ticket:** `BL-530` — Ensure-time self-heal: refuse start / auto-rewrite launch argv when `COORDINATOR_MODEL` / `ROTATION_MODE` / pack contract missing.
 
 #### Rank 4 — Coder behavior-bounce storm (incomplete delivery / false-green)
 
 - **Signature / evidence:** `qa_bounce:behavior:coder` **count=31** (largest non-chaser mode); e.g. BL-419 evidence (`backlog/evidence/BL-419-shared-checkout-commit-integrity-bounce-20260717.md` — wiring never landed); BL-490 durability bounce.
 - **Root cause:** Heterogeneous product bugs, but a shared meta-cause: parcels reach QA without durable commit ancestry / wiring checks the specs themselves asked for.
-- **proposed fix ticket:** `BL-FIX-004` — Pre-QA durability gate (ancestor of ticket commits + required wiring greps from the feature) before handoff to QA.
+- **proposed fix ticket:** `BL-531` — Pre-QA durability gate (ancestor of ticket commits + required wiring greps from the feature) before handoff to QA.
 
 #### Rank 5 — Inherited / sibling bounce contamination
 
 - **Signature / evidence:** Multiple bounce write-ups citing “blocked by BL-469 icon collision in shared batch tree”; rule_proposals L11.
 - **Root cause:** Shared worktrees / batched merges re-bounce healthy parcels for a sibling’s defect.
-- **proposed fix ticket:** `BL-FIX-005` — Isolate bounce recovery trees; skip re-queue when failure signature matches a sibling’s open bounce.
+- **proposed fix ticket:** `BL-532` — Isolate bounce recovery trees; skip re-queue when failure signature matches a sibling’s open bounce.
 
 #### Rank 6 — Spec/feature delivered uncommitted; dark modules
 
 - **Signature / evidence:** rule_proposals L8, L9; BL-256 bounce subject (feature claimed coverage never built).
 - **Root cause:** “Spec ready” / “module done” reported before git track + runtime wire.
-- **proposed fix ticket:** `BL-FIX-006` — Specifier/coder exit gates: `git status` clean for claimed paths; runtime-wiring checklist for multi-slice epics.
+- **proposed fix ticket:** `BL-533` — Specifier/coder exit gates: `git status` clean for claimed paths; runtime-wiring checklist for multi-slice epics.
 
 #### Rank 7 — CLI / CRAP-invisible main() pattern
 
 - **Signature / evidence:** rule_proposals L5, L6 (recurring hardener proposal).
 - **Root cause:** Logic left in `main()` only hit via subprocess → 0% CRAP visibility → regressions slip.
-- **proposed fix ticket:** `BL-FIX-007` — Lint/gate: tools under `extension/src/tools/` must export pure helpers; `main()` thin-wrapper only.
+- **proposed fix ticket:** `BL-534` — Lint/gate: tools under `extension/src/tools/` must export pure helpers; `main()` thin-wrapper only.
 
 classification: `open-code` — disposition is root cause + proposed fix ticket (`BL-FIX-*`) above.
 
@@ -133,7 +133,7 @@ Not primarily a code bug; needs a **guardrail** or **operator procedure**.
 | High chase/respawn on specifier/QA/cleaner | chaser chase ×7k / respawn ×100–200 | Operational SLO: alert when respawn/hour exceeds threshold; prefer heal over respawn. |
 | Rule proposals accumulate without closure | 19 unique proposals, count=1 each | Procedure: weekly rule-proposal triage (accept → constitution/role file, or reject with reason). Governance ticket already paused (BL-035 family) — reopen or supersede. |
 | Inventory commit-subject noise (`architect review: pass`) | commit signature count 8 | Procedure: evidence commits use stable bounce prefixes; ignore “review: pass” in future scans. |
-| Human expects auto-heal; today many recovers are manual | BL-109 forensics; 2026-07-19 live | Operator procedure until BL-FIX-001–003 land: on green-but-stuck, check claim vs branch vs last commit age before relaunch. |
+| Human expects auto-heal; today many recovers are manual | BL-109 forensics; 2026-07-19 live | Operator procedure until BL-528–003 land: on green-but-stuck, check claim vs branch vs last commit age before relaunch. |
 
 classification: `operational` — disposition is guardrail or operator-procedure change.
 
@@ -145,15 +145,15 @@ Priority = occurrence frequency × blast radius (token burn / whole-swarm stall 
 
 | Rank | proposed fix ticket | Mode | Freq signal | Impact |
 |-----:|---|---|---|---|
-| 1 | **BL-FIX-001** | Claim-without-progress auto-heal | Live + nudge:coder×3; related BL-109 | High — burns tokens, blocks pipeline |
-| 2 | **BL-FIX-002** | Ticket/branch mismatch guard | Live BL-512/BL-526; BL-490 lineage | High — silent wrong work |
-| 3 | **BL-FIX-003** | Launch-config self-heal (model/rotation) | Live ROTATION_MODE / aider --model | High — pack-wide misbehavior |
-| 4 | **BL-FIX-004** | Pre-QA durability / wiring gate | qa_bounce:behavior:coder ×31 | High — bounce volume |
-| 5 | **BL-FIX-005** | Sibling-bounce isolation | Multi evidence “blocked by BL-469…” | Medium — false rework |
-| 6 | **BL-FIX-006** | Spec commit + runtime-wiring exit gates | rule_proposals L8–L9 | Medium |
-| 7 | **BL-FIX-007** | Thin-main / CRAP-visible CLI gate | rule_proposals L5–L6 | Medium — quality gate |
+| 1 | **BL-528** | Claim-without-progress auto-heal | Live + nudge:coder×3; related BL-109 | High — burns tokens, blocks pipeline |
+| 2 | **BL-529** | Ticket/branch mismatch guard | Live BL-512/BL-526; BL-490 lineage | High — silent wrong work |
+| 3 | **BL-530** | Launch-config self-heal (model/rotation) | Live ROTATION_MODE / aider --model | High — pack-wide misbehavior |
+| 4 | **BL-531** | Pre-QA durability / wiring gate | qa_bounce:behavior:coder ×31 | High — bounce volume |
+| 5 | **BL-532** | Sibling-bounce isolation | Multi evidence “blocked by BL-469…” | Medium — false rework |
+| 6 | **BL-533** | Spec commit + runtime-wiring exit gates | rule_proposals L8–L9 | Medium |
+| 7 | **BL-534** | Thin-main / CRAP-visible CLI gate | rule_proposals L5–L6 | Medium — quality gate |
 
-Specifier follow-on: file real `BL-*` tickets from this slate (ids above are audit placeholders).
+Filed 2026-07-19 into `backlog/paused/` as BL-528..BL-534 (was audit placeholders BL-FIX-001..007). Specifier still writes APS features.
 
 ---
 
@@ -170,7 +170,7 @@ It still **cannot** auto-heal:
 2. wrong branch for the claim,
 3. missing launch contract (`--model`, `ROTATION_MODE`).
 
-Those three are why a “healthy” dashboard can still sit useless until a human intervenes. **BL-FIX-001–003** are the audit’s primary recommendation.
+Those three are why a “healthy” dashboard can still sit useless until a human intervenes. **BL-528–003** are the audit’s primary recommendation.
 
 ---
 

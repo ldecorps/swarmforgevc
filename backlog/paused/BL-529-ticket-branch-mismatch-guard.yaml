@@ -1,0 +1,31 @@
+id: BL-529
+title: "Pre-turn guard: worktree branch must match claimed ticket"
+milestone: M8
+type: defect
+status: todo
+assigned_to: specifier
+priority: 3
+mutation_cost: medium
+direction: human-requested
+depends_on: []
+source: "BL-512 audit BL-FIX-002. Human confirmed 2026-07-19."
+
+notes: |
+  WHAT / WHY: Agents spend turns on the wrong branch relative to the active claim
+  (live: coder worktree on BL-526 while claim was BL-512). Bounce lineage failures
+  (e.g. backlog/evidence/BL-490-expedite-approval-button-bounce-20260717.md) and
+  rule_proposals about sibling/ancestor checks are the same family.
+
+  ROOT CAUSE: resume-on-start / bounce merge does not assert worktree ticket == claim
+  before the agent turn.
+
+  OUTCOME: before a turn, refuse branch/ticket matches claim; auto-checkout to the
+  claim branch or refuse-and-requeue on mismatch. Specifier owns the APS feature.
+
+acceptance: |
+  Feature: claimed ticket and worktree branch stay aligned
+    Scenario: mismatch refuses the turn and requeues rather than working blind
+      Given a role whose worktree branch does not match its claimed ticket
+      When a turn would begin
+      Then the host refuses or auto-corrects to the claim branch
+      And no productive turn runs on the mismatched branch
