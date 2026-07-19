@@ -1,1 +1,1 @@
-{"id":"BL-080","messages":[{"seq":0,"ts":1784302557606,"author":"swarm","type":"outbound","text":"BL-080 ✅ done — BUG — forge does not re-attach the live swarm on startup"}]}
+{"id":"BL-080","messages":[{"seq":0,"ts":1784302557606,"author":"swarm","type":"outbound","text":"BL-080 ✅ done — BUG — forge does not re-attach the live swarm on startup"},{"seq":1,"ts":1784503947517,"author":"swarm","type":"outbound","text":"BL-080 ✅ done — BUG — forge does not re-attach the live swarm on startup"}]}
