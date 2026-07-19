@@ -213,15 +213,20 @@ NO push:
    `backlog/active/` if below `active_backlog_max_depth`, and recheck the cap.
 3. **Route** that newly promoted ticket immediately — do not leave it sitting
    in `active/` unassigned/unrouted. On a mono-router pack (`config rotation
-   router`, home role = coder): set `assigned_to: coder` and send a `Work
-   BL-###…` note to coder (or run
-   `swarmforge/scripts/route_backlog_to_coder.sh <BL-id>`). Prefer the next
-   *buildable* paused item (already has a feature/acceptance contract) over
-   raw unspecced work when both are eligible. Root intake still drains via
-   specifier first when present (see Mono-router section above) — but once you
-   promote a paused ticket into an open slot, routing it is mandatory in the
-   same turn as the promote. BL-222 only backfills never-dispatched actives;
-   it is not a substitute for this step.
+   router`, home role = coder): prefer the one-shot
+   `swarmforge/scripts/promote_and_route_next.sh` (or
+   `promote_and_route_next.sh <BL-id>`) which promotes under the effective
+   depth cap, sets `assigned_to: coder`, and calls
+   `route_backlog_to_coder.sh`. Prefer the next *buildable* paused item
+   (already has a feature/acceptance contract) over raw unspecced work when
+   both are eligible. Root intake still drains via specifier first when
+   present (see Mono-router section above) — but once you promote a paused
+   ticket into an open slot, routing it is mandatory in the same turn as the
+   promote. An open-slot note from handoffd
+   (`open slot + paused work - promote+route`) means run
+   `promote_and_route_next.sh` in that wake — do not only acknowledge. BL-222
+   only backfills never-dispatched actives; it is not a substitute for this
+   step.
 
 You do NOT merge the approved commit into `main`, push `main`, or run the
 GH-issue-close step (`issue_done.sh`) — QA, the integration owner, does those
@@ -350,11 +355,13 @@ thing the coordinator does is physically move the backlog tickets"). Keep the
   than a single item per close. **Promote without Route is incomplete** —
   every item you move into `active/` in this recheck must get a Work/Spec
   handoff in the same turn (mono-router home = coder for buildable work).
-  A specifier-assigned ticket (a spec to refine/slice, a tracer) is routable
-  work; do not leave it unrouted while slots sit open. Filling up to the
-  cap is using configured capacity, not flooding — the cap remains the
-  human-pace ceiling. (Rationale: active repeatedly sat well below cap and
-  post-QA slots sat empty because promote ran without route.)
+  Prefer `swarmforge/scripts/promote_and_route_next.sh` per open slot so
+  Promote+Route is one command. A specifier-assigned ticket (a spec to
+  refine/slice, a tracer) is routable work; do not leave it unrouted while
+  slots sit open. Filling up to the cap is using configured capacity, not
+  flooding — the cap remains the human-pace ceiling. (Rationale: active
+  repeatedly sat well below cap and post-QA slots sat empty because promote
+  ran without route.)
 - Re-evaluate holds on every recheck: a ticket parked on a hold
   (mutation-cost timing, or an overlap/dependency wait) is held only while
   its guarding risk is live. Once the overlapping/blocking item has merged or

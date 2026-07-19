@@ -12,6 +12,7 @@
 
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "handoff_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "chase_sweep_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "backlog_depth_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "agent_runtime_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "agent_runtime_inject.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "daemon_alarm_lib.bb")))
@@ -940,6 +941,59 @@
         (log! "unassigned-active-nudge-error" (:id item) (.getMessage e))))))
 
 
+;; ── Open-slot coordinator nudge (sibling of unassigned-active) ──────────────
+;; Does NOT promote. Drops a note on the coordinator when active count is
+;; under the configured cap and paused/ has eligible work. Pending note in
+;; coordinator new/in_process + a short cooldown file prevent spam.
+
+(defn open-slot-cooldown-path []
+  (fs/path daemon-dir "open-slot-nudge-cooldown.json"))
+
+(defn read-open-slot-last-sent-ms []
+  (let [data (try
+               (json/parse-string (slurp (str (open-slot-cooldown-path))) true)
+               (catch Exception _ nil))]
+    (when (number? (:lastSentMs data)) (:lastSentMs data))))
+
+(defn write-open-slot-last-sent! [now-ms]
+  (fs/create-dirs daemon-dir)
+  (spit (str (open-slot-cooldown-path))
+        (json/generate-string {:lastSentMs now-ms})))
+
+(defn coordinator-pending-dirs [roles]
+  (when-let [coord (get roles "coordinator")]
+    [(str (handoff-lib/mailbox-dir coord :new))
+     (str (handoff-lib/mailbox-dir coord :in_process))]))
+
+(defn nudge-coordinator-open-slot! []
+  (let [draft (write-scratch-draft! (chase-sweep-lib/open-slot-nudge-draft-lines))
+        env (merge (into {} (System/getenv)) {"SWARMFORGE_ROLE" "coordinator"})
+        result (process/sh ["bb" (swarm-handoff-script) (str draft)] {:dir (str project-root) :env env})]
+    (if (zero? (:exit result))
+      (do
+        (write-open-slot-last-sent! (System/currentTimeMillis))
+        (log! "open-slot-nudge"))
+      (log! "open-slot-nudge-error" (str (:err result))))))
+
+(defn open-slot-nudge-sweep! [roles]
+  (try
+    (let [active-count (chase-sweep-lib/count-backlog-yaml backlog-active-dir)
+          paused-count (chase-sweep-lib/count-backlog-yaml backlog-paused-dir)
+          cap (backlog-depth-lib/read-max-depth project-root)
+          pending-dirs (or (coordinator-pending-dirs roles) [])
+          pending? (chase-sweep-lib/open-slot-nudge-pending? pending-dirs)
+          now-ms (System/currentTimeMillis)
+          cool? (chase-sweep-lib/within-open-slot-cooldown?
+                 (read-open-slot-last-sent-ms) now-ms
+                 chase-sweep-lib/open-slot-nudge-cooldown-ms)]
+      (when (chase-sweep-lib/decide-open-slot-nudge?
+             active-count cap paused-count
+             {:pending-nudge? pending? :within-cooldown? cool?})
+        (nudge-coordinator-open-slot!)))
+    (catch Exception e
+      (log! "open-slot-nudge-sweep-error" (.getMessage e)))))
+
+
 ;; ── BL-214: briefing-email sweep - the daemon's fourth duty ─────────────────
 ;; Runs on the SAME cadence as chase-sweep!/dispatch-gap-sweep! above (no
 ;; separate timeout) since this daemon already runs unattended regardless of
@@ -1655,6 +1709,10 @@
                       (unassigned-active-nudge-sweep! (load-roles))
                       (catch Exception e
                         (log! "unassigned-active-nudge-sweep-error" (.getMessage e))))
+                    (try
+                      (open-slot-nudge-sweep! (load-roles))
+                      (catch Exception e
+                        (log! "open-slot-nudge-sweep-error" (.getMessage e))))
                     ;; BL-214: briefing-email sweep shares the same cadence -
                     ;; no separate timeout, same rationale as BL-222 above.
                     (try
