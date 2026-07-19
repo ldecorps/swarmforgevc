@@ -60,13 +60,13 @@
         (if (handoff-lib/draining?)
           (println "DRAINING")
           (let [new-files            (handoff-lib/handoff-files new-dir)
-                completed-basenames (handoff-lib/terminal-basenames completed-dir)
-                abandoned-basenames (handoff-lib/terminal-basenames abandoned-dir)
+                completed-basenames  (handoff-lib/terminal-basenames completed-dir)
+                abandoned-basenames   (handoff-lib/terminal-basenames abandoned-dir)
                 ;; BL-365: same corrupt-candidate quarantine-and-skip as
                 ;; ready_for_next_task.bb (shared via
                 ;; resolve-dequeueable-candidates) - a corrupt file must
                 ;; never be promoted into a batch as work.
-                dequeueable         (handoff-lib/resolve-dequeueable-candidates new-files completed-basenames abandoned-basenames)]
+                dequeueable          (handoff-lib/resolve-dequeueable-candidates new-files completed-basenames abandoned-basenames)]
             (if (empty? dequeueable)
               (do
                 (println "NO_TASK")
