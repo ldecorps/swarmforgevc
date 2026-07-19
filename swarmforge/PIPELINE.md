@@ -102,6 +102,6 @@ is no separate daemon that fills open slots on its own.
 If a role's pane shows a repeated `ready_for_next` → `NO_TASK` spin (the pane
 keeps changing, so ordinary stuck-activity detection never fires), the handoff
 daemon **halts the whole swarm** after three consecutive chase observations (~15s) of
-that pattern — emailing the operator and running `kill_all_swarm.sh`. This is
+that pattern — alerting on **Telegram** (standing Operator topic) **and email**, then running `kill_all_swarm.sh`. This is
 deliberate: burning tokens on an idle loop has no upside. Fix the idle path,
 then relaunch with `./swarm`.

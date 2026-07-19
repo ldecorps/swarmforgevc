@@ -730,28 +730,38 @@
 
 (defn halt-for-endless-loop!
   "Hard-stop the swarm when a role is burning tokens on a NO_TASK spin.
-   Touches the supervisor stop file, emails the operator (best-effort), and
-   runs kill_all_swarm.sh. compare-and-set so concurrent chase observations
-   only halt once."
+   Alerts first (Telegram Operator topic + email), then touches the supervisor
+   stop file and runs kill_all_swarm.sh. compare-and-set so concurrent chase
+   observations only halt once. Alert order is intentional: outbox + email
+   land on disk/network before tmux/daemon teardown."
   [role state]
   (when (compare-and-set! loop-halt-triggered? false true)
     (let [reason (loop-detect-lib/format-halt-reason role state)
-          subject (str "SwarmForge: endless loop halt (" role ")")]
+          subject (loop-detect-lib/format-email-subject role)
+          tg-text (loop-detect-lib/format-telegram-alert role state)
+          reply-outbox (fs/path state-dir "operator" "telegram-reply-outbox.jsonl")]
       (log! "endless-loop-halt" role reason)
+      ;; Telegram: same OPERATOR-topic outbox disk-space / idle-nudge use
+      ;; (bridge polls telegram-reply-outbox.jsonl). Durable before kill.
       (try
-        (fs/create-dirs daemon-dir)
-        (spit (str stop-file) "")
-        (catch Exception e (log! "endless-loop-stop-file-error" (.getMessage e))))
+        (fs/create-dirs (fs/parent reply-outbox))
+        (spit (str reply-outbox)
+              (str (json/generate-string {"threadId" "OPERATOR" "text" tg-text}) "\n")
+              :append true)
+        (log! "endless-loop-telegram" role)
+        (catch Exception e (log! "endless-loop-telegram-error" (.getMessage e))))
       (try
-        ;; Call daemon-alarm-lib directly (not send-escalation-alarm-email!) so
-        ;; this defn does not depend on a later handoffd var — bb failed to
-        ;; resolve that forward reference at runtime.
         (daemon-alarm-lib/send-configured-email!
          project-root conf-file subject reason
          {:already-warned?! (fn [] @escalation-email-missing-key-warned?)
           :log-warning! (fn [msg] (log! "email-misconfigured" msg))
           :mark-warned! (fn [] (reset! escalation-email-missing-key-warned? true))})
+        (log! "endless-loop-email" role)
         (catch Exception e (log! "endless-loop-email-error" (.getMessage e))))
+      (try
+        (fs/create-dirs daemon-dir)
+        (spit (str stop-file) "")
+        (catch Exception e (log! "endless-loop-stop-file-error" (.getMessage e))))
       (try
         (process/sh ["bash" (str (fs/path script-dir "kill_all_swarm.sh")) (str project-root)])
         (catch Exception e (log! "endless-loop-kill-error" (.getMessage e)))))))

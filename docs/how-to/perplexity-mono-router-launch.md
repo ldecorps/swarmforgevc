@@ -65,5 +65,5 @@ coordinator promote+route job.
 
 The handoff daemon watches resident panes for a repeated `ready_for_next` →
 `NO_TASK` spin. Three consecutive chase hits (~15s) of that pattern **stop the swarm**
-(operator email + `kill_all_swarm.sh`) so tokens are not burned on a no-op
+(Telegram Operator alert + email + `kill_all_swarm.sh`) so tokens are not burned on a no-op
 loop. After a halt, fix the cause and relaunch.

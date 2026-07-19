@@ -86,6 +86,13 @@
 (assert-true "format-halt-reason names the role"
              (boolean (re-find #"coder" (loop-detect-lib/format-halt-reason "coder" {:strikes 2}))))
 
+(assert-true "format-telegram-alert names the role and HALTED"
+             (let [s (loop-detect-lib/format-telegram-alert "coder" {:strikes 3})]
+               (boolean (and (re-find #"coder" s) (re-find #"(?i)halted" s)))))
+
+(assert-true "format-email-subject names the role"
+             (boolean (re-find #"coder" (loop-detect-lib/format-email-subject "coder"))))
+
 (when (seq @failures)
   (doseq [f @failures] (println f))
   (System/exit 1))

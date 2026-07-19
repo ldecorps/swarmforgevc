@@ -100,3 +100,16 @@
        "). Swarm halted to stop token burn. "
        "Re-launch after fixing the idle path (mono-router: STOP after NO_TASK; "
        "coordinator must promote paused work into open active slots)."))
+
+(defn format-email-subject
+  [role]
+  (str "SwarmForge: endless loop halt (" role ") — swarm stopped"))
+
+(defn format-telegram-alert
+  "Standing Operator-topic text (telegram-reply-outbox.jsonl threadId OPERATOR)."
+  [role state]
+  (str "🚨 Swarm HALTED — endless idle loop on `" role "` "
+       "(NO_TASK spin, strikes=" (or (:strikes state) 0) "). "
+       "Tokens were being burned doing nothing; kill_all_swarm ran. "
+       "Fix the idle path, then relaunch with ./swarm."))
+
