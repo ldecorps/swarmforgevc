@@ -627,6 +627,10 @@ provision_coordinator() {
     # Pack must set coordinator_model to a Codex catalog id (e.g. gpt-5.4-mini);
     # otherwise the Claude Sonnet default would be meaningless here.
     extra_cli="--model $COORDINATOR_MODEL"
+  elif [[ "$COORDINATOR_AGENT" == "aider" ]]; then
+    # Aider coordinator: pack sets coordinator_model (e.g. openai/sonar). OpenAI-compat
+    # base URL comes from pane env remap (Cerebras/Perplexity guards), not from flags.
+    extra_cli="--model $COORDINATOR_MODEL --no-gitignore --no-show-model-warnings --no-check-update"
   fi
   if [[ "$REMOTE_CONTROL_DEFAULT" == 1 ]]; then
     extra_cli+="${extra_cli:+ }--remote-control $(remote_control_session_name_for_role "$role")"
@@ -1217,11 +1221,14 @@ RESUMECHECK
   local billing_guard=""
   local copilot_guard=""
   local cerebras_guard=""
+  local perplexity_guard=""
   # Re-apply CEREBRAS→OPENAI map inside the launch script. Panes often source
   # ~/.zshenv which re-exports the real OPENAI_API_KEY and would otherwise
   # override the tmux -e mapping (Wrong API Key against api.cerebras.ai).
   # Key value is never written — only $CEREBRAS_API_KEY from pane env (BL-130).
   cerebras_guard=$'if [[ "${SWARMFORGE_USE_CEREBRAS:-}" == "1" && -n "${CEREBRAS_API_KEY:-}" ]]; then\n  export OPENAI_API_KEY="$CEREBRAS_API_KEY"\n  export OPENAI_API_BASE="${OPENAI_API_BASE:-https://api.cerebras.ai/v1}"\n  export OPENAI_BASE_URL="${OPENAI_BASE_URL:-https://api.cerebras.ai/v1}"\nfi\n'
+  # Same posture for Perplexity Sonar OpenAI-compat (no /v1 on the API host).
+  perplexity_guard=$'if [[ "${SWARMFORGE_USE_PERPLEXITY:-}" == "1" && -n "${PERPLEXITY_API_KEY:-}" ]]; then\n  export OPENAI_API_KEY="$PERPLEXITY_API_KEY"\n  export OPENAI_API_BASE="${OPENAI_API_BASE:-https://api.perplexity.ai}"\n  export OPENAI_BASE_URL="${OPENAI_BASE_URL:-https://api.perplexity.ai}"\nfi\n'
   if [[ "$agent" == "claude" ]]; then
     if role_uses_openrouter "$role"; then
       # OpenRouter-backed claude role: do NOT unset the auth token (that unset
@@ -1254,7 +1261,7 @@ export SWARMFORGE_ROLE='$role'
 export PATH='$role_script_dir':\$PATH
 cd '$role_worktree'
 ${resume_check}
-${billing_guard}${copilot_guard}${cerebras_guard}${launch_body}
+${billing_guard}${copilot_guard}${cerebras_guard}${perplexity_guard}${launch_body}
 LAUNCH
 
   # Only wire cleanup when a GUI terminal backend owns windows to close.
@@ -1351,13 +1358,17 @@ launch_role() {
   if [[ "$agent" != "claude" ]]; then
     local provider_key
     local use_cerebras=0
+    local use_perplexity=0
     if [[ "${SWARMFORGE_USE_CEREBRAS:-}" == "1" && -n "${CEREBRAS_API_KEY:-}" ]]; then
       use_cerebras=1
     fi
-    for provider_key in OPENAI_API_KEY MISTRAL_API_KEY CEREBRAS_API_KEY; do
-      # When Cerebras OpenAI-compat mode is on, do NOT forward the host
-      # OPENAI_API_KEY (real OpenAI sk-*). Panes must use CEREBRAS→OPENAI map.
-      if [[ "$use_cerebras" == "1" && "$provider_key" == "OPENAI_API_KEY" ]]; then
+    if [[ "${SWARMFORGE_USE_PERPLEXITY:-}" == "1" && -n "${PERPLEXITY_API_KEY:-}" ]]; then
+      use_perplexity=1
+    fi
+    for provider_key in OPENAI_API_KEY MISTRAL_API_KEY CEREBRAS_API_KEY PERPLEXITY_API_KEY; do
+      # When Cerebras/Perplexity OpenAI-compat mode is on, do NOT forward the host
+      # OPENAI_API_KEY (real OpenAI sk-*). Panes must use the provider→OPENAI map.
+      if [[ ( "$use_cerebras" == "1" || "$use_perplexity" == "1" ) && "$provider_key" == "OPENAI_API_KEY" ]]; then
         continue
       fi
       if [[ -n "${(P)provider_key:-}" ]]; then
@@ -1373,6 +1384,13 @@ launch_role() {
       provider_env_flags+=(-e "OPENAI_API_KEY=${CEREBRAS_API_KEY}")
       provider_env_flags+=(-e "OPENAI_API_BASE=https://api.cerebras.ai/v1")
       provider_env_flags+=(-e "OPENAI_BASE_URL=https://api.cerebras.ai/v1")
+    fi
+    if [[ "$use_perplexity" == "1" ]]; then
+      # Perplexity Sonar OpenAI-compat (no /v1). Same BL-130 / zshenv re-export posture.
+      provider_env_flags+=(-e "SWARMFORGE_USE_PERPLEXITY=1")
+      provider_env_flags+=(-e "OPENAI_API_KEY=${PERPLEXITY_API_KEY}")
+      provider_env_flags+=(-e "OPENAI_API_BASE=https://api.perplexity.ai")
+      provider_env_flags+=(-e "OPENAI_BASE_URL=https://api.perplexity.ai")
     fi
   elif role_uses_openrouter "$role"; then
     # OpenRouter-backed claude role: same ephemeral -e injection - the key

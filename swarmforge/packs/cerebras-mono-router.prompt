@@ -34,7 +34,7 @@ merge), do **not** always rotate straight home to coder.
    `backlog/paused/`, remove the raw root files, note the coordinator). Root
    intake beats promoting or picking up already-paused work.
 3. If the root is **empty**, rotate **home**: `rotate_to_role.sh coder`.
-   Coordinator promotes from `paused/` → `active/` on its own loop; as coder
+   Coordinator promotes from `paused/` → `active/` when woken (open slot); as coder
    you then `ready_for_next.sh` for the next active parcel.
 
 ## Idle at home (coder) with no parcel
@@ -51,3 +51,18 @@ the pipeline is otherwise empty.
 If Cerebras returns quota/day-limit exhaustion, notify the operator and stop
 burning requests — failover to GPT (`codex-mono-router`) is BL-525 work;
 until that lands, the operator relaunches with OpenAI.
+
+
+## Idle at home — STOP after NO_TASK (mono-router anti-loop)
+
+When you are the home resident (**coder**) and `ready_for_next.sh` returns
+`NO_TASK`:
+
+1. **Do not re-run** `ready_for_next.sh` / do not self-poll / do not invent a
+   `/loop`. Exit the turn and wait for a tmux/operator/daemon wake.
+2. If backlog **root** still has `backlog/*.yaml` intakes → `rotate_to_role.sh specifier`.
+3. Else if `backlog/active/` is empty and `backlog/paused/` has work → send **one**
+   `note` to coordinator (`swarm_handoff.sh`) asking it to promote + route the
+   next eligible paused ticket into the open slot, then idle for wake.
+4. Coordinator: same anti-loop. On wake with open capacity under
+   `active_backlog_max_depth`, promote and route — do not wait for a human chat.

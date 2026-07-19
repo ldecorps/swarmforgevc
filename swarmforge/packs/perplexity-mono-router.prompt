@@ -1,32 +1,39 @@
-# openrouter-cheap-mono-router overlay — OpenRouter multi-model mono-router
+# perplexity-mono-router overlay: one resident aider agent on Perplexity Sonar
 
-Read this when launched with `openrouter-cheap-mono-router`. You are the one
-resident Claude Code process, billed through **OpenRouter** (`OPENROUTER_API_KEY`
-+ `ANTHROPIC_BASE_URL=https://openrouter.ai/api`). Each stage respawns onto a
-different OpenRouter model slug tailored to that role.
+Read this when your swarm was launched with the `perplexity-mono-router` pack.
+You are always the one resident process (aider via Perplexity OpenAI-compat
+`PERPLEXITY_API_KEY` → `OPENAI_*`, not Claude / not Codex).
 
 ## Model routing (this pack)
 
-| Role | OpenRouter model |
+| Role | Perplexity model |
 |------|------------------|
-| specifier / architect | `google/gemini-2.5-pro` |
-| coder | `deepseek/deepseek-chat` (DeepSeek V3) |
-| cleaner / documenter / QA | `qwen/qwen3-32b` |
-| hardender / coordinator | `google/gemini-2.5-flash` |
+| specifier / architect | `sonar-reasoning-pro` |
+| coder / hardender / QA | `sonar-pro` |
+| cleaner / documenter / coordinator | `sonar` |
 
 ## Pipeline shape
 
-Same as `swarmforge/PIPELINE.md` / mono-router: **coder (home) → cleaner →
-architect → hardender → documenter → QA**. Coordinator is a separate process.
+- Full chain, same as `swarmforge/PIPELINE.md`: **coder → cleaner → architect
+  → hardender → documenter → QA**. **coder is your "home" identity** — the only
+  standing session, and where already-specced `backlog/active/` work enters.
+- specifier is a rotation target for (a) downstream **spec-defect bounces** and
+  (b) **backlog-root intake drain** when raw `backlog/*.yaml` intakes exist and
+  the resident would otherwise be idle at home / post-QA with an empty root
+  check failing open toward specifier (see "After a parcel finishes" below).
+- Every gate still runs unabridged.
+- Coordinator is a SEPARATE aider process. You do not play coordinator.
 
-## How you rotate
+## How you rotate (instead of idling after a handoff)
 
-After `swarm_handoff.sh <draft>` (or terminal QA action):
+Once you have sent your `git_handoff` (`swarm_handoff.sh <draft>`) — or, at
+terminal QA, once your parcel-ending action is done — do NOT run
+`ready_for_next.sh` as your current self:
 
-1. Note the `to:` role.
-2. Run **`rotate_to_role.sh <that-role>`** — respawns this pane as that role
-   (new model + prompt).
-3. On wake, `RESUME-ON-START` → `ready_for_next.sh` first.
+1. Note the `to:` role of the handoff you just sent (forward or bounce).
+2. Run: **`rotate_to_role.sh <that-role>`**
+3. You come back up AS that role. Launch says `RESUME-ON-START`: run
+   `ready_for_next.sh` first and pick up the parcel.
 
 ## After a parcel finishes (QA done) — home vs intake drain
 
@@ -54,11 +61,12 @@ specifier and drain (`rotate_to_role.sh specifier`). Specifier is not only for
 downstream spec bounces; on this pack it also owns cold root-intake drain when
 the pipeline is otherwise empty.
 
-
 ## Handoff drafts
 
 Write to `swarmforge/runtime/handoff-draft.txt`, then
-`swarmforge/scripts/swarm_handoff.sh` on that file. Never repo-root `tmp/`.
+`swarm_handoff.sh swarmforge/runtime/handoff-draft.txt`. Always use absolute
+or PATH-resolved helpers under `swarmforge/scripts/` (never invent stub
+copies under `swarmforge/runtime/`).
 
 
 ## Idle at home — STOP after NO_TASK (mono-router anti-loop)

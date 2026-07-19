@@ -143,21 +143,26 @@
 
 (defn provider-respawn-env-args
   "BL-130 pane -e passthrough for ensure repairs — same keys rotate/chase need
-   so a repair never strips OpenRouter/OpenAI/Mistral/Cerebras auth from a
-   live alternate-runtime pane. When SWARMFORGE_USE_CEREBRAS=1, map
-   CEREBRAS_API_KEY onto OPENAI_* (host OPENAI_API_KEY must not win)."
+   so a repair never strips OpenRouter/OpenAI/Mistral/Cerebras/Perplexity auth
+   from a live alternate-runtime pane. When SWARMFORGE_USE_CEREBRAS=1 or
+   SWARMFORGE_USE_PERPLEXITY=1, that provider key wins for OPENAI_*."
   []
   (let [use-cerebras (= "1" (System/getenv "SWARMFORGE_USE_CEREBRAS"))
+        use-perplexity (= "1" (System/getenv "SWARMFORGE_USE_PERPLEXITY"))
         cerebras (System/getenv "CEREBRAS_API_KEY")
-        openai (if (and use-cerebras (not (str/blank? cerebras)))
-                 cerebras
-                 (System/getenv "OPENAI_API_KEY"))
-        openai-base (if (and use-cerebras (not (str/blank? cerebras)))
-                      "https://api.cerebras.ai/v1"
-                      (System/getenv "OPENAI_API_BASE"))
-        openai-base-url (if (and use-cerebras (not (str/blank? cerebras)))
-                          "https://api.cerebras.ai/v1"
-                          (System/getenv "OPENAI_BASE_URL"))]
+        perplexity (System/getenv "PERPLEXITY_API_KEY")
+        openai (cond
+                 (and use-cerebras (not (str/blank? cerebras))) cerebras
+                 (and use-perplexity (not (str/blank? perplexity))) perplexity
+                 :else (System/getenv "OPENAI_API_KEY"))
+        openai-base (cond
+                      (and use-cerebras (not (str/blank? cerebras))) "https://api.cerebras.ai/v1"
+                      (and use-perplexity (not (str/blank? perplexity))) "https://api.perplexity.ai"
+                      :else (System/getenv "OPENAI_API_BASE"))
+        openai-base-url (cond
+                          (and use-cerebras (not (str/blank? cerebras))) "https://api.cerebras.ai/v1"
+                          (and use-perplexity (not (str/blank? perplexity))) "https://api.perplexity.ai"
+                          :else (System/getenv "OPENAI_BASE_URL"))]
     (cond-> []
       (not (str/blank? (System/getenv "OPENROUTER_API_KEY")))
       (concat ["-e" (str "OPENROUTER_API_KEY=" (System/getenv "OPENROUTER_API_KEY"))])
@@ -167,8 +172,12 @@
       (concat ["-e" (str "MISTRAL_API_KEY=" (System/getenv "MISTRAL_API_KEY"))])
       (not (str/blank? cerebras))
       (concat ["-e" (str "CEREBRAS_API_KEY=" cerebras)])
+      (not (str/blank? perplexity))
+      (concat ["-e" (str "PERPLEXITY_API_KEY=" perplexity)])
       use-cerebras
       (concat ["-e" "SWARMFORGE_USE_CEREBRAS=1"])
+      use-perplexity
+      (concat ["-e" "SWARMFORGE_USE_PERPLEXITY=1"])
       (not (str/blank? openai))
       (concat ["-e" (str "OPENAI_API_KEY=" openai)])
       (not (str/blank? openai-base))
