@@ -4,7 +4,7 @@ milestone: M8
 type: feature
 status: todo
 epic: swarmforge-console
-assigned_to: specifier
+assigned_to: coder
 priority: 1
 mutation_cost: medium
 direction: human-requested
