@@ -56,5 +56,5 @@
         (fs/delete source-dir)
         (println "COMPLETED_BATCH:" (str target-dir))
         (run-ready!)))))
-        
+
 (-main)
