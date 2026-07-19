@@ -185,9 +185,10 @@ function isPausedPagerPath(url: string): boolean {
   return url === '/paused-pager' || url.startsWith('/paused-pager?');
 }
 
-// BL-538: JSON state for the paused-ticket pager Mini App (same path, JSON).
+// BL-538: JSON state for the paused-ticket pager Mini App.
+// Separate from the HTML shell path (same pattern as /pipeline-grid vs /pipeline-board).
 function isPausedPagerStatePath(url: string): boolean {
-  return isPausedPagerPath(url);
+  return url === '/paused-pager-state' || url.startsWith('/paused-pager-state?');
 }
 
 const MINIAPP_CSP =
@@ -246,6 +247,20 @@ function isGateAnswerRequestShape(value: unknown): value is { role: string; answ
     typeof (value as Record<string, unknown>).answer === 'string'
   );
 }
+
+function isGateAnswerRoute(req: http.IncomingMessage, url: string): boolean {
+  return req.method === 'POST' && url === '/gate-answer';
+}
+
+// BL-241 control-requires-step-up-04: the step-up check is enforced here
+// (not in the dispatcher) so the dispatcher's own complexity stays flat as
+// this route's auth grows - a read-scoped device passes the dispatcher's
+// read-level gate (it can view) but is refused here (read-only-cannot-
+// control-03).
+// Shared by handleGateAnswerRoute/handleTelegramInboundRoute below - both
+// are control-scoped write routes with the exact same auth-check/body-cap/
+// shape-validate shell around a different action; factored out so a
+// future write route reuses this shell instead of a third copy of it.
 
 function respondJson(res: http.ServerResponse, status: number, body: unknown): void {
   res.writeHead(status, { 'content-type': 'application/json' });
@@ -499,9 +514,9 @@ function isAuthorizedForRead(authHeader: string | undefined, url: string, regist
     return true;
   }
   // Root HTML uses query token client-side; Mini App JSON polls
-  // (/resident-pane, /pipeline-board, /paused-pager) also accept it because those fetches
+  // (/resident-pane, /pipeline-board, /paused-pager-state) also accept it because those fetches
   // cannot set an Authorization header.
-  return (isRootPath(url) || isResidentPanePath(url) || isPipelineBoardPath(url) || isPausedPagerPath(url))
+  return (isRootPath(url) || isResidentPanePath(url) || isPipelineBoardPath(url) || isPausedPagerPath(url) || isPausedPagerStatePath(url))
     && isAuthorizedByQueryToken(queryToken(url), primaryTokenOf(registry));
 }
 

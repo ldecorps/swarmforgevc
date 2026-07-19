@@ -1,7 +1,7 @@
 /// BL-538: Telegram Mini App shell for the console PAUSED TICKET PAGER.
 /// Shows paused backlog tickets (id + title, YAML details) with Prev/Next
 /// navigation and an Expedite action (confirm -> priority 0 + promotion to
-/// active). Polls GET /paused-pager?token=... on the same origin for JSON
+/// active). Polls GET /paused-pager-state?token=... on the same origin for JSON
 /// state. Empty state ("No paused tickets") when there are none.
 
 export function getPausedPagerUiHtml(): string {
@@ -211,7 +211,7 @@ export function getPausedPagerUiHtml(): string {
   }
 
   function refresh() {
-    fetch('/paused-pager' + q, { cache: 'no-store' })
+    fetch('/paused-pager-state' + q, { cache: 'no-store' })
       .then(function (r) {
         if (!r.ok) throw new Error('HTTP ' + r.status);
         return r.json();
