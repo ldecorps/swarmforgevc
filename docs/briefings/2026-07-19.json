@@ -954,7 +954,7 @@
   },
   "reliability": {
     "chases": {
-      "value": 11975,
+      "value": 11977,
       "trend": {
         "series": [
           {
@@ -999,12 +999,12 @@
           },
           {
             "periodStart": "2026-07-19T00:00:00.000Z",
-            "value": 11975
+            "value": 11977
           }
         ],
-        "currentValue": 11975,
+        "currentValue": 11977,
         "priorValue": 33993,
-        "delta": -22018,
+        "delta": -22016,
         "direction": "down"
       }
     },
@@ -1064,7 +1064,7 @@
       }
     },
     "respawns": {
-      "value": 343,
+      "value": 344,
       "trend": {
         "series": [
           {
@@ -1109,12 +1109,12 @@
           },
           {
             "periodStart": "2026-07-19T00:00:00.000Z",
-            "value": 343
+            "value": 344
           }
         ],
-        "currentValue": 343,
+        "currentValue": 344,
         "priorValue": 854,
-        "delta": -511,
+        "delta": -510,
         "direction": "down"
       }
     },
