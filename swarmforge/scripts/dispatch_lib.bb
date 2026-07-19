@@ -20,7 +20,7 @@
 (defn command [& args]
   (apply sh/sh args))
 
-defn git-root []
+(defn git-root []
   (let [result (command "git" "rev-parse" "--show-toplevel")]
     (when (zero? (:exit result))
       (str/trim (:out result)))))
