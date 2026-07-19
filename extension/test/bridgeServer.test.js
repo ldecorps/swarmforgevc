@@ -1,14 +1,14 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
 const { startBridge } = require('../out/bridge/bridgeServer');
 const { installInProcessTmux } = require('./helpers/fakeTmux');
+const { mkTmpDir } = require('./helpers/tmpDir');
 
 const TOKEN = 'test-token-123';
 
 function mkTmp() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-bridge-server-'));
+  return mkTmpDir('sfvc-bridge-server-');
 }
 
 function mkdirp(dir) {

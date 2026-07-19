@@ -1,17 +1,5 @@
-import {
-  capturePane,
-  getPanePidAndCommand,
-  readLiveSwarmRoles,
-  readTmuxSocket,
-  resizeWindow,
-  resolveAgentPaneTarget,
-  sendKeys,
-  sessionExists,
-  setHistoryLimit,
-  setWindowSizeManual,
-  SwarmRole,
-  getPaneBaseIndex,
-} from '../swarm/tmuxClient';
+import * as tmuxClient from '../swarm/tmuxClient';
+import { SwarmRole } from '../swarm/tmuxClient';
 import { appendInputEntry } from '../swarm/inputLog';
 import { recordHumanInput } from '../swarm/humanInputTracker';
 import { agentPaneStatusMessage, isAgentActivelyWorking } from './agentPaneState';
@@ -222,11 +210,11 @@ export class PaneTailer {
     if (!this.socketPath) {
       return;
     }
-    setHistoryLimit(this.socketPath, this.historyLines);
-    setWindowSizeManual(this.socketPath);
+    tmuxClient.setHistoryLimit(this.socketPath, this.historyLines);
+    tmuxClient.setWindowSizeManual(this.socketPath);
     for (const role of this.roles) {
       const rows = this.rolePaneRows.get(role.role) ?? this.paneRows;
-      resizeWindow(this.socketPath, role.session, TILE_PANE_COLS, rows);
+      tmuxClient.resizeWindow(this.socketPath, role.session, TILE_PANE_COLS, rows);
     }
   }
 
@@ -257,8 +245,8 @@ export class PaneTailer {
   }
 
   refreshState(): void {
-    this.socketPath = readTmuxSocket(this.targetPath) ?? '';
-    this.roles = readLiveSwarmRoles(this.targetPath);
+    this.socketPath = tmuxClient.readTmuxSocket(this.targetPath) ?? '';
+    this.roles = tmuxClient.readSwarmRoles(this.targetPath);
     this.lastText.clear();
     this.lastRawText.clear();
     this.lastChangedAt.clear();
@@ -271,7 +259,7 @@ export class PaneTailer {
     this.paneHistoryContentLines.clear();
     this.panePids.clear();
     if (this.socketPath) {
-      this.paneBaseIndex = getPaneBaseIndex(this.socketPath);
+      this.paneBaseIndex = tmuxClient.getPaneBaseIndex(this.socketPath);
       this.applyPaneSettings();
     }
   }
@@ -297,7 +285,7 @@ export class PaneTailer {
     if (!target) {
       return;
     }
-    resizeWindow(this.socketPath, target.session, TILE_PANE_COLS, normalized);
+    tmuxClient.resizeWindow(this.socketPath, target.session, TILE_PANE_COLS, normalized);
   }
 
   private poll(): void {
@@ -469,7 +457,7 @@ export class PaneTailer {
   // (e.g. a state-file race) can be caught without also swallowing the
   // per-role capture loop below.
   private refreshRolesForTick(): void {
-    const latestSocket = readTmuxSocket(this.targetPath) ?? '';
+    const latestSocket = tmuxClient.readTmuxSocket(this.targetPath) ?? '';
     if (latestSocket !== this.socketPath) {
       this.applySocketChange(latestSocket);
       return;
@@ -479,13 +467,13 @@ export class PaneTailer {
 
   private applySocketChange(latestSocket: string): void {
     this.socketPath = latestSocket;
-    this.roles = readLiveSwarmRoles(this.targetPath);
+    this.roles = tmuxClient.readSwarmRoles(this.targetPath);
     this.lastText.clear();
     this.lastRawText.clear();
     this.paneHistory.clear();
     this.paneHistoryContentLines.clear();
     if (this.socketPath) {
-      this.paneBaseIndex = getPaneBaseIndex(this.socketPath);
+      this.paneBaseIndex = tmuxClient.getPaneBaseIndex(this.socketPath);
       this.applyPaneSettings();
     }
     this.onRoles?.(this.roles);
@@ -496,7 +484,7 @@ export class PaneTailer {
   // the cleaner). Re-read roles.tsv each poll and refresh the panel when the
   // role set changes, so the new tile appears without a full relaunch.
   private refreshRolesOnUnchangedSocket(): void {
-    const latestRoles = readLiveSwarmRoles(this.targetPath);
+    const latestRoles = tmuxClient.readSwarmRoles(this.targetPath);
     if (!rolesChanged(this.roles, latestRoles)) {
       return;
     }
@@ -531,7 +519,7 @@ export class PaneTailer {
   // Returns true when the session is dead and the caller should stop -
   // updates/deadEvents are already populated for that case.
   private handleDeadSession(role: SwarmRole, updates: TileOutput[], deadEvents: DeadEvent[]): boolean {
-    if (sessionExists(this.socketPath, role.session)) {
+    if (tmuxClient.sessionExists(this.socketPath, role.session)) {
       return false;
     }
     const text = `Session "${role.session}" is not running.\n\nUse SwarmForge: Stop Swarm, then Launch Swarm.`;
@@ -571,11 +559,11 @@ export class PaneTailer {
   // Captures this role's pane and returns the text to diff, or null when the
   // capture itself failed (a message was already pushed for that case).
   private captureRoleOutput(role: SwarmRole, updates: TileOutput[]): string | null {
-    const target = resolveAgentPaneTarget(this.socketPath, role.session, this.paneBaseIndex);
+    const target = tmuxClient.resolveAgentPaneTarget(this.socketPath, role.session, this.paneBaseIndex);
 
     // BL-362 QA bounce follow-up: one display-message call for both values
     // (getPanePidAndCommand), not two separate tmux subprocess spawns.
-    const { pid: currentPid, command: paneCommand } = getPanePidAndCommand(this.socketPath, target);
+    const { pid: currentPid, command: paneCommand } = tmuxClient.getPanePidAndCommand(this.socketPath, target);
     if (didPaneRespawn(this.panePids.get(role.role), currentPid)) {
       this.resetRoleRetainedState(role.role);
     }
@@ -583,7 +571,7 @@ export class PaneTailer {
       this.panePids.set(role.role, currentPid);
     }
 
-    const result = capturePane(this.socketPath, target, -this.historyLines);
+    const result = tmuxClient.capturePane(this.socketPath, target, -this.historyLines);
 
     if (result.exitCode !== 0) {
       const text = `Could not read tmux pane for ${role.displayName}.\n\nTry SwarmForge: Stop Swarm, then Launch Swarm.`;
@@ -656,7 +644,7 @@ export class PaneTailer {
     if (!role) {
       return undefined;
     }
-    return resolveAgentPaneTarget(
+    return tmuxClient.resolveAgentPaneTarget(
       this.socketPath,
       role.session,
       this.paneBaseIndex
@@ -669,7 +657,7 @@ export class PaneTailer {
       return;
     }
     const mapped = mapInputToTmuxKey(data);
-    sendKeys(this.socketPath, target, mapped.key, mapped.literal);
+    tmuxClient.sendKeys(this.socketPath, target, mapped.key, mapped.literal);
     recordHumanInput(roleName);
     this.logInput(roleName, data);
   }
@@ -681,7 +669,7 @@ export class PaneTailer {
     }
     const tmuxKey = mapSpecialKeyToTmux(key);
     if (tmuxKey) {
-      sendKeys(this.socketPath, target, tmuxKey);
+      tmuxClient.sendKeys(this.socketPath, target, tmuxKey);
       recordHumanInput(roleName);
       this.logInput(roleName, key);
     }
