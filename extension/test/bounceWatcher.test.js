@@ -190,6 +190,15 @@ test('startBounceWatcher creates .swarmforge and watches it when missing', async
   }
 });
 
+test('startBounceWatcher watches an existing .swarmforge directory', () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-bouncewatch-'));
+  fs.mkdirSync(path.join(tmpDir, '.swarmforge'));
+  const watcher = startBounceWatcher(tmpDir, () => {});
+  assert.ok(watcher);
+  assert.equal(fs.existsSync(path.join(tmpDir, '.swarmforge')), true);
+  watcher.close();
+});
+
 test('startBounceWatcher detects a bounce file written after watching starts', async () => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-bouncewatch-'));
   fs.mkdirSync(path.join(tmpDir, '.swarmforge'), { recursive: true });
