@@ -119,7 +119,7 @@ Genuinely open defects or missing automation. Each gets a **root cause** and one
 - **Root cause:** Logic left in `main()` only hit via subprocess → 0% CRAP visibility → regressions slip.
 - **proposed fix ticket:** `BL-534` — Lint/gate: tools under `extension/src/tools/` must export pure helpers; `main()` thin-wrapper only.
 
-classification: `open-code` — disposition is root cause + proposed fix ticket (`BL-FIX-*`) above.
+classification: `open-code` — disposition is root cause + proposed fix ticket (`BL-528`..`BL-534`) above.
 
 ---
 
@@ -133,7 +133,7 @@ Not primarily a code bug; needs a **guardrail** or **operator procedure**.
 | High chase/respawn on specifier/QA/cleaner | chaser chase ×7k / respawn ×100–200 | Operational SLO: alert when respawn/hour exceeds threshold; prefer heal over respawn. |
 | Rule proposals accumulate without closure | 19 unique proposals, count=1 each | Procedure: weekly rule-proposal triage (accept → constitution/role file, or reject with reason). Governance ticket already paused (BL-035 family) — reopen or supersede. |
 | Inventory commit-subject noise (`architect review: pass`) | commit signature count 8 | Procedure: evidence commits use stable bounce prefixes; ignore “review: pass” in future scans. |
-| Human expects auto-heal; today many recovers are manual | BL-109 forensics; 2026-07-19 live | Operator procedure until BL-528–003 land: on green-but-stuck, check claim vs branch vs last commit age before relaunch. |
+| Human expects auto-heal; today many recovers are manual | BL-109 forensics; 2026-07-19 live | Operator procedure until BL-528..BL-530 land: on green-but-stuck, check claim vs branch vs last commit age before relaunch. |
 
 classification: `operational` — disposition is guardrail or operator-procedure change.
 
@@ -170,7 +170,7 @@ It still **cannot** auto-heal:
 2. wrong branch for the claim,
 3. missing launch contract (`--model`, `ROTATION_MODE`).
 
-Those three are why a “healthy” dashboard can still sit useless until a human intervenes. **BL-528–003** are the audit’s primary recommendation.
+Those three are why a “healthy” dashboard can still sit useless until a human intervenes. **BL-528..BL-530** are the audit’s primary recommendation.
 
 ---
 
