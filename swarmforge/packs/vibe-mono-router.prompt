@@ -46,8 +46,14 @@ merge), do **not** always rotate straight home to coder.
    `backlog/paused/`, remove the raw root files, note the coordinator). Root
    intake beats promoting or picking up already-paused work.
 3. If the root is **empty**, rotate **home**: `rotate_to_role.sh coder`.
-   Coordinator promotes from `paused/` → `active/` when woken (open slot); as coder
-   you then `ready_for_next.sh` for the next active parcel.
+   The coordinator — woken by QA's close/bookkeeping handoff — must in the
+   **same turn**: Close → Promote next eligible paused → **Route Work to coder**
+   (see coordinator.prompt QA bookkeeping step 3 / `route_backlog_to_coder.sh`).
+   There is **no** coordinator self-loop; if you land as coder and get
+   `NO_TASK` with an open slot and paused work, send **one** note asking the
+   coordinator to promote+route, then idle for wake. Then run
+   `ready_for_next.sh` for the Work parcel.
+
 
 ## Idle at home (coder) with no parcel
 
@@ -79,11 +85,13 @@ When you are the home resident (**coder**) and `ready_for_next.sh` returns
 1. **Do not re-run** `ready_for_next.sh` / do not self-poll / do not invent a
    `/loop`. Exit the turn and wait for a tmux/operator/daemon wake.
 2. If backlog **root** still has `backlog/*.yaml` intakes → `rotate_to_role.sh specifier`.
-3. Else if `backlog/active/` is empty and `backlog/paused/` has work → send **one**
-   `note` to coordinator (`swarm_handoff.sh`) asking it to promote + route the
-   next eligible paused ticket into the open slot, then idle for wake.
-4. Coordinator: same anti-loop. On wake with open capacity under
-   `active_backlog_max_depth`, promote and route — do not wait for a human chat.
-
+3. Else if `backlog/active/` is empty (or under cap with an open slot) and
+   `backlog/paused/` has eligible work → send **one** `note` to coordinator
+   (`swarm_handoff.sh`) asking it to **promote + route** the next eligible
+   paused ticket to coder, then idle for wake.
+4. Coordinator: same anti-loop. On a QA-close wake or this note, with open
+   capacity under `active_backlog_max_depth`, Close (if needed) → Promote →
+   Route Work to coder in one turn — do not wait for a human chat.
 5. If you ignore (1) and keep re-polling, the **handoff daemon will hard-stop
    the entire swarm** (endless-loop circuit breaker) to stop token burn.
+
