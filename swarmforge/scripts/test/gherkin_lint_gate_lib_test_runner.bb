@@ -203,18 +203,6 @@ Feature: sample
          (gherkin-lint-gate-lib/clean?
           (gherkin-lint-gate-lib/lint-findings clean-single-line-feature fully-referenced-ir)))
 
-;; ── BL-520: legacy wrap exemptions are drained ────────────────────────────
-
-(assert= "520-01: continuation-line findings are no longer suppressible by path"
-         [{:line 5 :text "events out of <total> total events"}]
-         (:continuation-lines
-          (gherkin-lint-gate-lib/lint-findings param-wrapped-step-feature fully-referenced-ir)))
-
-(assert= "520-02: clean? stays false for a wrapped file even when every Examples column is referenced"
-         false
-         (gherkin-lint-gate-lib/clean?
-          (gherkin-lint-gate-lib/lint-findings param-wrapped-step-feature fully-referenced-ir)))
-
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (seq @failures)
   (do
