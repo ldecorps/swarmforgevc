@@ -9,8 +9,8 @@
 # any <param> on it) while still exiting 0. On top of the parser's own
 # parse check, this gate also runs gherkin_lint_gate_cli.bb (backed by the
 # pure gherkin_lint_gate_lib.bb) to reject that silent drop and an Examples
-# column no step references. BL-520 drained the temporary legacy wrap
-# exemptions, so single-line step enforcement is unconditional.
+# column no step references. The checks are unconditional for every new or
+# changed feature file.
 #
 # Usage: gherkin_lint_gate.sh <feature-file> [repo-root]
 #
@@ -47,7 +47,7 @@ if [[ "$STATUS" -ne 0 ]]; then
 fi
 
 set +e
-LINT_OUTPUT="$(bb "$SCRIPT_DIR/gherkin_lint_gate_cli.bb" "$ABS_FEATURE_FILE" "$TMP_IR" "$ROOT" 2>&1)"
+LINT_OUTPUT="$(bb "$SCRIPT_DIR/gherkin_lint_gate_cli.bb" "$ABS_FEATURE_FILE" "$TMP_IR" 2>&1)"
 LINT_STATUS=$?
 set -e
 
