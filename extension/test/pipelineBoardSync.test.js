@@ -1,6 +1,6 @@
 const assert = require('node:assert/strict');
 const { syncPipelineBoard, classifyBoardFailure, PIPELINE_BOARD_ALERT_FAILURE_CAP } = require('../out/concierge/pipelineBoardSync');
-const { formatUpdatedAtLabel, renderPipelineBoardBody, wrapPipelineBoardHtml } = require('../out/concierge/pipelineBoard');
+const { renderPipelineBoardBody, wrapPipelineBoardHtml } = require('../out/concierge/pipelineBoard');
 
 function fakeAdapters(overrides = {}) {
   return {
@@ -49,7 +49,7 @@ test('syncPipelineBoard: first call with no prior state creates the topic, posts
   assert.equal(result.outcome, 'posted');
   assert.equal(created.length, 1);
   assert.equal(deleted.length, 0, 'expected no delete call - nothing was posted before');
-  assert.deepEqual(posted, [{ topicId: 900, text: `${result.state.contentSignature}\n\nupdated at ${formatUpdatedAtLabel(T1)}` }]);
+  assert.deepEqual(posted, [{ topicId: 900, text: result.state.contentSignature + '\n\nupdated at Jul 16 21:05 BST' }]);
   assert.equal(result.state.topicId, 900);
   assert.equal(result.state.messageId, 42);
   assert.equal(result.state.lastChangeMs, T1);

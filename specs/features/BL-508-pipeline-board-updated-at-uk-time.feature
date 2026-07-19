@@ -1,8 +1,3 @@
-# mutation-stamp: sha256=03b2ca06fc1e59559da3c739d241c9c02dde60462b6ee61859b358ce126f2f7f
-# acceptance-mutation-manifest-begin
-# {"version":1,"tested_at":"2026-07-19T18:15:23.685735723Z","feature_name":"The pipeline board's updated-at footer shows the time in UK (Europe/London) time, DST-aware, instead of UTC","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-508-pipeline-board-updated-at-uk-time.feature","background_hash":"74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b","implementation_hash":"unknown","scenarios":[{"index":0,"name":"The updated-at footer renders the instant in UK time, DST-aware, with its zone","scenario_hash":"088f03a05fcc816cb1870aa6d077eb9c069ea49f5ea3e757d031ce51de140a5a","mutation_count":9,"result":{"Total":9,"Killed":9,"Survived":0,"Errors":0},"tested_at":"2026-07-19T18:15:23.685735723Z"}]}
-# acceptance-mutation-manifest-end
-
 Feature: The pipeline board's updated-at footer shows the time in UK (Europe/London) time, DST-aware, instead of UTC
 
   # BL-508 (human-requested — ldecorps 2026-07-17, direct: "one more tweak to bake in: can you show the
