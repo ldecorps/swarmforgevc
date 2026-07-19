@@ -23,6 +23,7 @@
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "standing_rule_violations_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "standing_rule_violations_files.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "stuck_escalation_email_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "loop_detect_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "push_sweep_lib.bb")))
 
 (def poll-ms 1000)
@@ -42,6 +43,13 @@
    :respawnCooldownSeconds 300
    :chaseBackoffBaseSeconds 30
    :chaseBackoffMaxSeconds 300})
+
+;; Endless NO_TASK-spin circuit breaker: pane activity hashing alone cannot
+;; see a busy-loop that keeps changing the pane with the same idle ritual.
+;; Per-role strike state lives in this process only; a daemon restart that
+;; loses strikes is safe (the spin re-arms within two chase observations).
+(def loop-detect-states (atom {}))
+(def loop-halt-triggered? (atom false))
 
 (defn usage []
   (binding [*out* *err*]
@@ -588,6 +596,10 @@
   (:out (tmux! "-S" socket "capture-pane" "-p" "-t" session "-S" (str "-" n))))
 
 (defn get-last-activity-ms [role-info socket now-ms]
+  ;; Loop detection is NOT done here: bb/SCI cannot forward-reference
+  ;; observe-pane-loop! (defined later). Standing sessions are observed from
+  ;; chase-sweep! → observe-standing-role-loops! instead, which also covers
+  ;; the empty-mailbox NO_TASK spin that in_process-gated activity misses.
   (let [pane (try (capture-pane-lines socket (:session role-info) 50) (catch Exception _ ""))
         outbox-dir (handoff-lib/mailbox-dir role-info :outbox)
         sent-dir* (handoff-lib/mailbox-dir role-info :sent)
@@ -716,6 +728,45 @@
       :log-warning! (fn [msg] (log! "email-misconfigured" msg))
       :mark-warned! (fn [] (reset! escalation-email-missing-key-warned? true))})))
 
+(defn halt-for-endless-loop!
+  "Hard-stop the swarm when a role is burning tokens on a NO_TASK spin.
+   Touches the supervisor stop file, emails the operator (best-effort), and
+   runs kill_all_swarm.sh. compare-and-set so concurrent chase observations
+   only halt once."
+  [role state]
+  (when (compare-and-set! loop-halt-triggered? false true)
+    (let [reason (loop-detect-lib/format-halt-reason role state)
+          subject (str "SwarmForge: endless loop halt (" role ")")]
+      (log! "endless-loop-halt" role reason)
+      (try
+        (fs/create-dirs daemon-dir)
+        (spit (str stop-file) "")
+        (catch Exception e (log! "endless-loop-stop-file-error" (.getMessage e))))
+      (try
+        ;; Call daemon-alarm-lib directly (not send-escalation-alarm-email!) so
+        ;; this defn does not depend on a later handoffd var — bb failed to
+        ;; resolve that forward reference at runtime.
+        (daemon-alarm-lib/send-configured-email!
+         project-root conf-file subject reason
+         {:already-warned?! (fn [] @escalation-email-missing-key-warned?)
+          :log-warning! (fn [msg] (log! "email-misconfigured" msg))
+          :mark-warned! (fn [] (reset! escalation-email-missing-key-warned? true))})
+        (catch Exception e (log! "endless-loop-email-error" (.getMessage e))))
+      (try
+        (process/sh ["bash" (str (fs/path script-dir "kill_all_swarm.sh")) (str project-root)])
+        (catch Exception e (log! "endless-loop-kill-error" (.getMessage e)))))))
+
+(defn observe-pane-loop!
+  "Feed one pane snapshot into loop_detect_lib; halt the swarm on :halt."
+  [role pane]
+  (when-not @loop-halt-triggered?
+    (let [prev (get @loop-detect-states role)
+          decision (loop-detect-lib/decide-loop-action prev pane)]
+      (swap! loop-detect-states assoc role (:state decision))
+      (when (= :halt (:action decision))
+        (halt-for-endless-loop! role (:state decision))))))
+
+
 (defn stuck-escalation-email-sweep! [role escalated? now-ms]
   (try
     (stuck-escalation-email-lib/sweep!
@@ -724,6 +775,20 @@
       :log! (fn [& parts] (apply log! parts))})
     (catch Exception e
       (log! "stuck-escalation-email-error" role (.getMessage e)))))
+
+
+(defn observe-standing-role-loops!
+  "Walk every role that still has a live tmux session and feed its pane into
+   the endless-loop detector. Must not depend on in_process mail — the classic
+   token-burn failure is an empty mailbox with ready_for_next → NO_TASK spinning."
+  [roles socket]
+  (doseq [[role role-info] roles]
+    (let [session (:session role-info)]
+      (when (and session (handoff-lib/session-exists? socket session))
+        ;; Last 20 lines only — older scrollback from a prior spin must not
+        ;; false-positive a healthy idle prompt after relaunch.
+        (let [pane (try (capture-pane-lines socket session 20) (catch Exception _ ""))]
+          (observe-pane-loop! role pane))))))
 
 (defn chase-sweep! [roles socket]
   (let [now-ms (System/currentTimeMillis)
@@ -769,6 +834,7 @@
                   :mark-rate-limit-cooldown-woken!
                   (fn [role until-ms] (chase-sweep-lib/mark-rate-limit-cooldown-woken! (str state-dir) role until-ms))}]
     (chase-sweep-lib/run-sweep! (role-inboxes-for-chase roles) now-ms chase-sweep-config adapters)
+    (observe-standing-role-loops! roles socket)
     (write-chase-status! now-ms)))
 
 ;; ── BL-222: dispatch-gap sweep - the daemon's third duty ────────────────────

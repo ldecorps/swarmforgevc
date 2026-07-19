@@ -60,3 +60,10 @@ See `swarmforge/PIPELINE.md` (“Mono-router idle and open slots”) and
 `swarmforge/packs/perplexity-mono-router.prompt`. Home resident must not
 busy-loop `ready_for_next.sh` on `NO_TASK`; open capacity with paused work is a
 coordinator promote+route job.
+
+## Endless-loop hard stop
+
+The handoff daemon watches resident panes for a repeated `ready_for_next` →
+`NO_TASK` spin. Three consecutive chase hits (~15s) of that pattern **stop the swarm**
+(operator email + `kill_all_swarm.sh`) so tokens are not burned on a no-op
+loop. After a halt, fix the cause and relaunch.

@@ -80,3 +80,6 @@ When you are the home resident (**coder**) and `ready_for_next.sh` returns
    next eligible paused ticket into the open slot, then idle for wake.
 4. Coordinator: same anti-loop. On wake with open capacity under
    `active_backlog_max_depth`, promote and route — do not wait for a human chat.
+
+5. If you ignore (1) and keep re-polling, the **handoff daemon will hard-stop
+   the entire swarm** (endless-loop circuit breaker) to stop token burn.
