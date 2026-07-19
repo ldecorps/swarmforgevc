@@ -130,7 +130,9 @@
 
 (defn lint-findings
   "Combined findings for a feature file: {:continuation-lines [...]
-   :phantom-columns [...]}. Both empty means the gate should pass."
+   :phantom-columns [...]}. Both empty means the gate should pass. BL-520
+   drained the grandfathered wrap allowlist, so continuation-line findings
+   are never suppressed."
   [feature-text parsed-ir]
   {:continuation-lines (find-continuation-line-findings feature-text)
    :phantom-columns (find-phantom-column-findings parsed-ir)})
