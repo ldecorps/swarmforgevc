@@ -6,6 +6,7 @@
             [clojure.string :as str]))
 
 (def scripts-dir (fs/path (fs/parent (fs/canonicalize *file*))))
+(load-file (str (fs/path scripts-dir "handoff_lib.bb")))
 (load-file (str (fs/path scripts-dir "agent_runtime_lib.bb")))
 (load-file (str (fs/path scripts-dir "agent_runtime_inject.bb")))
 
@@ -67,9 +68,11 @@
       (and (zero? (:exit cr)) (zero? (:exit lf))))))
 
 (defn notify!
-  "Delivers agent-specific wake to session's pane with verified submit."
+  "Delivers agent-specific wake to session's pane with verified submit.
+   Throws on wake failure (sync deliver path). Remaps missing mono-router
+   dormant sessions to the resident pane (see handoff-lib/wake-session)."
   [socket session & {:keys [log-fn traffic agent]}]
-  (let [log! (or log-fn (fn [& _] nil))
+  (let [session (handoff-lib/wake-session socket session)
         on-outcome (fn [outcome detail attempts stacked?]
                      (when traffic
                        (record-inject-traffic! (:project-root traffic)
@@ -80,11 +83,14 @@
                                                         :parcel (:parcel traffic)}
                                                  detail (assoc :detail detail)
                                                  attempts (assoc :attempts attempts)
-                                                 stacked? (assoc :stacked stacked?)))))]
-    (agent-runtime-inject/notify-agent! socket session (or agent "claude")
-                                        :log-fn log-fn
-                                        :on-outcome on-outcome
-                                        :script-rel-path agent-runtime-lib/ready-script-rel-path)))
+                                                 stacked? (assoc :stacked stacked?)))))
+        result (agent-runtime-inject/notify-agent! socket session (or agent "claude")
+                                                   :log-fn log-fn
+                                                   :on-outcome on-outcome
+                                                   :script-rel-path agent-runtime-lib/ready-script-rel-path)]
+    (when (= :failed result)
+      (throw (ex-info "tmux wake delivery failed" {:session session :agent agent})))
+    result))
 
 (defn read-lines [path]
   (when (fs/exists? path)
@@ -140,12 +146,11 @@
   (str/replace filename #"\.handoff$" (str "_for_" recipient ".handoff")))
 
 (defn target-path [role-info filename recipient]
-  (fs/path (:worktree-path role-info)
-           ".swarmforge" "handoffs" "inbox" "new"
+  (fs/path (handoff-lib/mailbox-dir role-info :new)
            (delivered-filename filename recipient)))
 
 (defn sent-dir [role-info]
-  (fs/path (:worktree-path role-info) ".swarmforge" "handoffs" "sent"))
+  (handoff-lib/mailbox-dir role-info :sent))
 
 (defn move-with-collision [source target-dir]
   (fs/create-dirs target-dir)

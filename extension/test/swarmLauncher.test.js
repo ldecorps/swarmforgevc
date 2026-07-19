@@ -8,6 +8,8 @@ const {
   launchSwarm,
   waitForSwarmReady,
   chooseReattachTimeoutMs,
+  countRolesInConfig,
+  runningSwarmMatchesConfig,
 } = require('../out/swarm/swarmLauncher');
 const { installFakeTmux } = require('./helpers/fakeTmux');
 const { installExecutable } = require('./helpers/sharedBin');
@@ -369,4 +371,29 @@ test('buildLaunchEnv deletes inherited SWARM_RUN_NAME when runName is empty stri
       delete process.env.SWARM_RUN_NAME;
     }
   }
+});
+
+test('countRolesInConfig counts window lines in a pack/profile conf', () => {
+  const targetPath = mkTmp();
+  const configPath = path.join(targetPath, 'cheap.conf');
+  fs.writeFileSync(
+    configPath,
+    'config active_backlog_max_depth 3\nwindow coordinator copilot master\nwindow coder copilot coder\n'
+  );
+  assert.equal(countRolesInConfig(configPath), 2);
+});
+
+test('runningSwarmMatchesConfig is false when roles.tsv count differs from config', () => {
+  const targetPath = mkTmp();
+  const configPath = path.join(targetPath, 'seven.conf');
+  fs.writeFileSync(
+    configPath,
+    Array.from({ length: 8 }, (_, i) => `window role${i} copilot master`).join('\n')
+  );
+  fs.mkdirSync(path.join(targetPath, '.swarmforge'), { recursive: true });
+  fs.writeFileSync(
+    path.join(targetPath, '.swarmforge', 'roles.tsv'),
+    'coordinator\tmaster\t' + targetPath + '\tswarmforge-coordinator\tCoordinator\tcopilot\ttask\toff\n'
+  );
+  assert.equal(runningSwarmMatchesConfig(targetPath, configPath), false);
 });

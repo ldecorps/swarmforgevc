@@ -135,3 +135,4 @@ acceptance: |
   #    git-log parsing isolated behind a thin tested adapter (fake history
   #    in unit tests, no live git required).
   #  - BL-071 metrics-module suite and BL-065 bridge suite stay green.
+mutation_cost: medium

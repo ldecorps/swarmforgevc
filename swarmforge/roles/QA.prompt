@@ -40,21 +40,18 @@ You are QA.
 
 ## Handoff
 - When verification PASSES:
-  - Send `git_handoff` to `specifier` with priority `00` — QA verified, ready to merge.
-  - Send `note` broadcast to every other role
-    `specifier,coder,cleaner,architect,hardender,documenter,coordinator` with
-    priority `00`. This broadcast is an explicit instruction to every recipient:
-    **merge your own worktree branch up to QA's branch at the approved commit** —
-    i.e. sync your branch with QA's verified state. The point is that all
-    worktrees converge on the QA-approved code, so the next parcel each role picks
-    up branches from an up-to-date base and does not diverge or collide at merge
-    time. State the QA-approved commit in the message so recipients know exactly
-    what to merge to (the `note` body is one line ≤ 80 chars, e.g.
-    `<ID> QA-approved <commit> — merge your branch up to QA's`).
-  - The specifier, in addition to syncing like everyone else, performs the actual
-    merge of the approved commit into `main` per its own role — only the specifier
-    merges to `main`; every other role merges its worktree branch to QA's branch,
-    not to `main`.
+  - Send `git_handoff` or `note` to **`coordinator`** with priority `00` — QA
+    verified; include the approved commit hash and stable task/backlog id
+    (e.g. `BL-042 verified at a1b2c3d4 — integrate on main`).
+  - Send `note` broadcast to every **pipeline worktree** role:
+    `coder,cleaner,architect,hardender,documenter` with priority `00`. This
+    broadcast instructs each recipient to **merge its own worktree branch up to
+    QA's approved commit** — sync with QA's verified state, not with `main`.
+    State the commit in the message (≤ 80 chars), e.g.
+    `BL-042 QA-approved a1b2c3d4 — merge your branch up to QA's`.
+  - Do **not** send merge-up or integration handoffs to the **specifier** — the
+    specifier specifies only; the coordinator performs mechanical merge-to-main,
+    close, promote, and push on `main`.
 - When verification FAILS (bounce evidence contract, BL-140):
   - Every bounce MUST carry reproducible failure proof. Before sending the
     bounce, write an evidence file `backlog/evidence/<task>-bounce-<YYYYMMDD>.md`

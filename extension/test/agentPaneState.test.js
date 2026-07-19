@@ -101,3 +101,20 @@ test('isPaneActivelyProcessing returns false for the idle "shift+tab to cycle" f
 test('isPaneActivelyProcessing returns false for plain shell text', () => {
   assert.equal(isPaneActivelyProcessing('ls -la\ntotal 0'), false);
 });
+
+test('isAgentCliRunning detects aider in the pane command', () => {
+  const {
+    isAgentCliRunning,
+    isAgentActivelyWorking,
+  } = require('../out/panel/agentPaneState');
+  assert.equal(
+    isAgentCliRunning('/Users/me/Library/Python/3.9/bin/aider', ''),
+    true
+  );
+  assert.equal(
+    isAgentCliRunning('aider', 'Aider v0.82.3\nModel: mistral/mistral-large-latest'),
+    true
+  );
+  assert.equal(isAgentActivelyWorking('aider', 'Tokens: 9.1k sent, 3 received.'), true);
+  assert.equal(isAgentActivelyWorking('aider', 'Repo-map: using 4096 tokens'), false);
+});

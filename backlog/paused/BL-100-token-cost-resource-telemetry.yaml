@@ -129,3 +129,4 @@ acceptance: |
   #  - Pricing table is versioned data in-repo; no rates hardcoded.
   #  - backlog.json changes are additive (schema_version respected).
   #  - BL-096 trend function reused unmodified for every new series.
+mutation_cost: low

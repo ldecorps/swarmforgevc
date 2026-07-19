@@ -82,3 +82,4 @@ acceptance: |
   #    excluded by the shared engineering article).
   #  - This enforces the existing "Test Speed And Isolation" rule already in
   #    the engineering article; it does not add a new rule.
+mutation_cost: high

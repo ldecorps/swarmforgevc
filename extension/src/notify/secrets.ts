@@ -1,3 +1,6 @@
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import * as vscode from 'vscode';
 
 // Per the constitution's secrets rule: RESEND_API_KEY is never a workspace
@@ -51,6 +54,29 @@ export function describeClearResult(envVarSet: boolean): string {
 export const OPENAI_SECRET_KEY = 'swarmforge.openaiApiKey';
 export const MISTRAL_SECRET_KEY = 'swarmforge.mistralApiKey';
 
+/** Last-resort: read an export from the operator shell profile (never written to repo). */
+export function readMistralKeyFromShellProfile(): string | undefined {
+  const profileFiles = [
+    path.join(os.homedir(), '.zshrc'),
+    path.join(os.homedir(), '.bash_profile'),
+    path.join(os.homedir(), '.profile'),
+  ];
+  for (const file of profileFiles) {
+    try {
+      const content = fs.readFileSync(file, 'utf8');
+      const match = content.match(/^\s*export\s+MISTRAL_API_KEY=(.+)$/m);
+      if (!match) {
+        continue;
+      }
+      const raw = match[1].trim();
+      return raw.replace(/^(['"])(.*)\1$/, '$2');
+    } catch {
+      // profile absent or unreadable
+    }
+  }
+  return undefined;
+}
+
 export async function resolveOpenAIApiKey(
   secrets?: vscode.SecretStorage
 ): Promise<string | undefined> {
@@ -72,7 +98,10 @@ export async function resolveMistralApiKey(
     return envKey;
   }
   if (secrets) {
-    return await secrets.get(MISTRAL_SECRET_KEY);
+    const stored = await secrets.get(MISTRAL_SECRET_KEY);
+    if (stored) {
+      return stored;
+    }
   }
-  return undefined;
+  return readMistralKeyFromShellProfile();
 }

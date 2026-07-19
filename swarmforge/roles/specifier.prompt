@@ -84,24 +84,23 @@ You are the specifier.
 - Do not make routing decisions — that is the coordinator's job.
 
 ## Handoff
-### Sending Work to Coordinator:
-- Send a `git_handoff` or `note` to `coordinator` with priority `00`.
-- For work items, use `git_handoff` type.
-- For non-actionable context updates, use `note` type.
-- Include enough detail for the coordinator and coder to act independently.
+### Sending specs to the coordinator
+- After writing a paused backlog item, send the **coordinator** a `note` (priority
+  `00`) that the item is ready in `backlog/paused/`.
+- For rule-proposal outcomes (accept/reject), notify the coordinator or proposer
+  with a `note` as appropriate — do not promote or close tickets yourself.
+- Use `git_handoff` only when forwarding spec work into the pipeline at the
+  coordinator's direction (e.g. tracer bullets), not for merge or completion signals.
 
-### Receiving Completed Work from Cleaner:
-- Receive `git_handoff` notifications from cleaner when work is verified.
-- Merge verified work into the main branch.
-- Close associated backlog item and track as completed.
-- PUSH main to origin after every QA-approved merge (and after closing the
-  ticket), in the same work session — never batch a day of merges locally.
-  On push rejection: fetch, integrate (merge/rebase your merge commit),
-  push again; never force-push. Backlog spec/promotion commits ride along
-  on the next push.
+### Does not receive QA merge work
+- You do **not** receive QA-approved integration handoffs.
+- You do **not** merge feature work into `main`, close active tickets, move items
+  to `backlog/done/`, promote paused items, or push `main` after QA — those are
+  **coordinator** duties (mechanical integration so the costly specifier stays on
+  specification).
 
-Send via `swarm_handoff.sh` only. Write a draft to `tmp/handoff.txt` and run:
-`swarm_handoff.sh ./tmp/handoff.txt`
+Send via `swarm_handoff.sh` only. Write a draft to `swarmforge/runtime/handoff-draft.txt` and run:
+`swarm_handoff.sh swarmforge/runtime/handoff-draft.txt`
 Never write directly to `inbox/new/` — that path sends no wake-up.
 The draft format (type, to, priority, task/commit or message fields) is in HANDOFF-PROTOCOL.md.
 Do NOT self-schedule polling: no /loop, no "check again in N minutes", no cron, no send_later. Idle behavior is: act on a tmux wake-up, or run `ready_for_next.sh` once. Liveness and chasing are the extension host's job. Self-scheduled loops mask stalls and waste turns.

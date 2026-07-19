@@ -42,9 +42,9 @@ The normal flow is `specifier` -> `coder` -> `refactorer` -> `architect` -> `spe
 - `cleaner` performs local behavior-preserving cleanup, coverage improvement, CRAP and DRY review, and mutation-site scans.
 - `architect` reviews module structure, boundaries, dependency direction, and property-test coverage.
 - `hardender` performs mutation hardening, language mutation, CRAP and DRY verification, and soft Gherkin mutation.
-- `QA` converts the specifier's QA procedures into executable scripts, runs final user-interface verification, checks handoff consistency, and sends completion notifications.
+- `QA` converts the specifier's QA procedures into executable scripts, runs final user-interface verification, checks handoff consistency, broadcasts merge-up to worktree roles, and notifies the coordinator to integrate on `main`.
 
-The normal flow is `specifier` -> `coder` -> `cleaner` -> `architect` -> `hardender` -> `QA` -> completion. Use this branch when you want each review and verification concern owned by a separate agent.
+The normal flow is `specifier` -> `coder` -> `cleaner` -> `architect` -> `hardender` -> `QA` -> coordinator (integrate). Use this branch when you want each review and verification concern owned by a separate agent.
 
 ## Prerequisites
 

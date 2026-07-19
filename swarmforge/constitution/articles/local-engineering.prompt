@@ -56,7 +56,8 @@ Per the shared Diagrams rule, the diagrams this project maintains are:
 2. **Swarm workflow flow diagram** — the CURRENT parcel flow: intake at the
    backlog root, specifier speccing to paused/, coordinator promotion and
    assignment, the specifier→coder→cleaner→architect→hardender→documenter→QA
-   chain, and the QA-approved merge back to main. When the pipeline
+   chain, QA approval, merge-up broadcast to worktree roles, and coordinator
+   integration on `main` (close ticket, promote next). When the pipeline
    topology or backlog flow changes, this diagram changes in the same
    parcel.
 Both live under `docs/diagrams/` as Mermaid sources.
