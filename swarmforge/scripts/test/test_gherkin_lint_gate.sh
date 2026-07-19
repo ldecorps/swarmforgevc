@@ -148,7 +148,7 @@ echo "$OUT" | grep -q "^Usage: gherkin_lint_gate_cli.bb " \
 pass "515-05: the CLI's arg-count guard fails fast with a Usage line, not a crash"
 
 set +e
-OUT="$(bb "$ROOT/swarmforge/scripts/gherkin_lint_gate_cli.bb" one two three four five 2>&1)"
+OUT="$(bb "$ROOT/swarmforge/scripts/gherkin_lint_gate_cli.bb" one two three 2>&1)"
 RC=$?
 set -e
 [[ "$RC" -ne 0 ]] || fail "515-06: expected a nonzero exit for a too-many-args CLI invocation; got 0"

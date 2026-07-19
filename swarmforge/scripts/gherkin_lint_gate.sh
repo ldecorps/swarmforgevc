@@ -47,7 +47,7 @@ if [[ "$STATUS" -ne 0 ]]; then
 fi
 
 set +e
-LINT_OUTPUT="$(bb "$SCRIPT_DIR/gherkin_lint_gate_cli.bb" "$ABS_FEATURE_FILE" "$TMP_IR" "$ROOT" 2>&1)"
+LINT_OUTPUT="$(bb "$SCRIPT_DIR/gherkin_lint_gate_cli.bb" "$ABS_FEATURE_FILE" "$TMP_IR" 2>&1)"
 LINT_STATUS=$?
 set -e
 
