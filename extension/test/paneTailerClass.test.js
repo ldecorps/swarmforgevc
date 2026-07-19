@@ -86,22 +86,18 @@ test('start/poll reports pane output for a live session, stop halts further poll
 test('poll reports a dead session and fires onDead once, then revives it', async () => {
   const targetPath = mkTmp();
   writeState(targetPath);
-  const fake = installInProcessTmux([{ subcommand: 'has-session', exitCode: 1 }]);
+  const fake = installInProcessTmux([{ subcommand: 'has-session', exitCode: 0 }]);
   try {
     const updates = [];
     const deadEvents = [];
     const tailer = new PaneTailer(targetPath, (u) => updates.push(...u), undefined, (e) => deadEvents.push(...e));
-    // BL-362: start() is driven by an injected fake tick, never the real
-    // setInterval, so no test in this file waits on the wall clock. Further
-    // poll()s are driven directly so refreshState() doesn't reset dead/live
-    // tracking in between.
-    const { scheduleTick, clearTick } = fakeScheduler();
-    tailer.start(1_000_000, scheduleTick, clearTick);
-    tailer.stop(clearTick);
+    tailer.refreshState();
 
+    fake.setRules([{ subcommand: 'has-session', exitCode: 1 }]);
+    tailer.poll();
     assert.equal(updates.length, 1);
     assert.match(updates[0].text, /is not running/);
-    // liveRoles was never populated (session was dead from the start), so no dead event yet.
+    // refreshState seeds the role list but liveRoles is populated only after a successful poll.
     assert.equal(deadEvents.length, 0);
 
     fake.setRules([{ subcommand: 'has-session', exitCode: 0 }, { exitCode: 0, stdout: '' }]);
@@ -237,18 +233,19 @@ test('an unchanged pid across polls keeps accumulating history normally (no fals
 test('a session that stays not-running across repeated polls only pushes the message once', async () => {
   const targetPath = mkTmp();
   writeState(targetPath);
-  const fake = installInProcessTmux([{ subcommand: 'has-session', exitCode: 1 }]);
+  const fake = installInProcessTmux([{ subcommand: 'has-session', exitCode: 0 }]);
   try {
     const updates = [];
     const tailer = new PaneTailer(targetPath, (u) => updates.push(...u));
-    const { scheduleTick, clearTick } = fakeScheduler();
-    tailer.start(1_000_000, scheduleTick, clearTick);
+    tailer.refreshState();
+
+    fake.setRules([{ subcommand: 'has-session', exitCode: 1 }]);
+    tailer.poll();
     assert.equal(updates.length, 1, 'first poll must report the not-running message');
 
     fake.setRules([{ subcommand: 'has-session', exitCode: 1 }]);
     tailer.poll();
 
-    tailer.stop(clearTick);
     assert.equal(updates.length, 1, 'polling again with the same not-running state must not re-push identical text');
   } finally {
     fake.restore();

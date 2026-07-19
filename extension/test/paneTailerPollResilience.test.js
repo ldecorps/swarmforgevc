@@ -25,9 +25,10 @@ paneHistory.accumulatePaneHistory = (previousContentLines, history, rawCaptureTe
 
 const tmuxClient = require('../out/swarm/tmuxClient');
 const originalReadSwarmRoles = tmuxClient.readSwarmRoles;
+const originalReadLiveSwarmRoles = tmuxClient.readLiveSwarmRoles;
 
 let faultRolesRead = false;
-tmuxClient.readSwarmRoles = (targetPath) => {
+tmuxClient.readLiveSwarmRoles = (targetPath) => {
   if (faultRolesRead) {
     throw new Error('simulated state-file race');
   }
@@ -74,6 +75,7 @@ const { PaneTailer } = require('../out/panel/paneTailer');
 afterAll(() => {
   paneHistory.accumulatePaneHistory = originalAccumulate;
   tmuxClient.readSwarmRoles = originalReadSwarmRoles;
+  tmuxClient.readLiveSwarmRoles = originalReadLiveSwarmRoles;
   Object.assign(tmuxClient, originals);
 });
 
