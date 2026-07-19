@@ -68,6 +68,7 @@ export function getConsoleMenuUiHtml(): string {
   <p class="sub">Portrait menu — pick a view</p>
   <a class="btn" id="pipeline-grid" data-testid="pipeline-grid" href="#">Pipeline grid</a>
   <a class="btn secondary" id="mono-feed" data-testid="mono-router-feed" href="#">Mono-router feed</a>
+  <a class="btn secondary" id="paused-pager" data-testid="paused-ticket-pager" href="#">Paused tickets</a>
 </main>
 <script>
 (function () {
@@ -77,6 +78,7 @@ export function getConsoleMenuUiHtml(): string {
   var q = token ? ('?token=' + encodeURIComponent(token)) : '';
   document.getElementById('pipeline-grid').href = '/pipeline-grid' + q;
   document.getElementById('mono-feed').href = '/resident-spy' + q;
+  document.getElementById('paused-pager').href = '/paused-pager' + q;
 })();
 </script>
 </body>
