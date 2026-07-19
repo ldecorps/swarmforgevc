@@ -4,8 +4,7 @@ Feature: GitHub issues that seeded backlog items hear back automatically
 Scenario: draining a GH item comments and labels the issue
   Given a drained root item with id GH-<n> and a source issue URL
   When the specced helper runs for it
-  Then the issue receives a comment with the spec summary and the
-    paused item path
+  Then the issue receives a comment with the spec summary and the paused item path
   And the issue is labeled swarm-specced
 
 # BL-114 issue-loop-02

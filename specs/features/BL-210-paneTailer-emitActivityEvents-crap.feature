@@ -2,19 +2,16 @@ Feature: pane activity-state decision is pure, covered, and behavior-preserving
 
 # BL-210 pure-decision-01
 Scenario: the per-role working-state decision is a pure function
-  Given a role's command, raw pane text, last-changed time, current time, and
-    prior working state
+  Given a role's command, raw pane text, last-changed time, current time, and prior working state
   When the working-state decision is computed
-  Then it returns whether the role is working now and whether a change event
-    should emit
+  Then it returns whether the role is working now and whether a change event should emit
   And it reads no class instance state and does not call the real clock
 
 # BL-210 behavior-preserved-02
 Scenario: the emitted activity events are unchanged after the refactor
   Given the same sequence of pane updates as before the refactor
   When emitActivityEvents runs
-  Then it emits the same activity events, with the same role/working values in
-    the same order, as before
+  Then it emits the same activity events, with the same role/working values in the same order, as before
 
 # BL-210 dead-role-clears-working-03
 Scenario: a role that becomes dead while working emits a not-working event

@@ -5,8 +5,7 @@ Scenario: a deterministic sidecar is emitted from the telemetry producers
   Given a day's BL-100 cost/health telemetry
   When the daily briefing flow runs
   Then it emits a committed docs/briefings/<date>.json sidecar
-  And the sidecar carries per-agent tokens and cost, top expensive tickets,
-    flow balance, reliability counts, and CPU/RAM anomaly flags
+  And the sidecar carries per-agent tokens and cost, top expensive tickets, flow balance, reliability counts, and CPU/RAM anomaly flags
   And each figure carries a trend direction
   And no raw runtime telemetry file is committed
 

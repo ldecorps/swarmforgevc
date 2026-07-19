@@ -288,6 +288,7 @@ const DOMAINS = [
   require('./bl511TelegramBridgeCostBriefingSteps'),
   require('./gherkinLintGateWrappedStepRejectionSteps'),
   require('./bl519InlineConstitutionCacheSteps'),
+  require('./bl520RewrapLegacyWrappedSteps'),
   require('./bl526MiniappConsoleMenuSteps')
 ];
 
