@@ -14,11 +14,11 @@
 
 (defn -main []
   (let [in-process-dir (handoff-lib/my-mailbox-dir :in_process)
-        completed-dir (handoff-lib/my-mailbox-dir :completed)]
+        completed-dir  (handoff-lib/my-mailbox-dir :completed)]
     (doseq [dir [in-process-dir completed-dir]]
       (fs/create-dirs dir))
     (let [in-process-batches (handoff-lib/batch-dirs in-process-dir)
-          in-process-files (handoff-lib/handoff-files in-process-dir)]
+          in-process-files   (handoff-lib/handoff-files in-process-dir)]
       (when (seq in-process-files)
         (handoff-lib/fail! 2
                            "CURRENT_WORK_IS_SINGLE_TASK: use done_with_current.sh."
@@ -29,9 +29,9 @@
         (handoff-lib/fail! 2
                            "AMBIGUOUS_TASK_STATE: multiple batches are in process."
                            (str/join "\n" (map #(str "- " %) in-process-batches))))
-      (let [source-dir (first in-process-batches)
+      (let [source-dir  (first in-process-batches)
             batch-files (handoff-lib/handoff-files source-dir)
-            target-dir (fs/path completed-dir (fs/file-name source-dir))
+            target-dir  (fs/path completed-dir (fs/file-name source-dir))
             completed-at (handoff-lib/timestamp)]
         ;; BL-119: a batch dir holding only leftover chaser sidecars (its
         ;; real .handoff payloads already moved by an earlier, interrupted

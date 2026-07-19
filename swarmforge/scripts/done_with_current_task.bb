@@ -19,10 +19,13 @@
       (fs/create-dirs dir))
     (let [in-process-batches (handoff-lib/batch-dirs in-process-dir)
           in-process-files   (handoff-lib/my-handoff-files in-process-dir)]
+      ;; Batch work must be completed via the batch helpers; task-mode done
+      ;; cannot operate on batch directories.
       (when (seq in-process-batches)
         (handoff-lib/fail! 2
                            "CURRENT_WORK_IS_BATCH: use done_with_current.sh."
                            (str/join "\n" (map #(str "- " %) in-process-batches))))
+      ;; There must be exactly one current task in-process to complete.
       (when (empty? in-process-files)
         (handoff-lib/fail! 1 "NO_CURRENT_TASK"))
       (when (> (count in-process-files) 1)
@@ -37,6 +40,9 @@
         (fs/move source-file target-file)
         (handoff-lib/remove-sidecars-of! source-file)
         (println "COMPLETED:" (str target-file))
+        ;; After completing the current task, immediately ask for the next
+        ;; one, marking this call as an idle-boundary so ready_for_next_task
+        ;; can consider any configured idle clear behavior.
         (run-ready!)))))
 
 (-main)
