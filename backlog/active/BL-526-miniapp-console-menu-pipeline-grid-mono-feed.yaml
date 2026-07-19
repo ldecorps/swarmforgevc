@@ -1,4 +1,5 @@
 id: BL-526
+assigned_to: coder
 title: Miniapp Console Menu Pipeline Grid
 milestone: M8
 epic: swarmforge-console
@@ -11,3 +12,4 @@ acceptance:
     then: A live feed of the mono-router RESIDENT is shown
     and: Neither destination requires horizontal scroll at a typical phone portrait width
 notes: Transport pinning (bridge/Telegram miniapp)
+mutation_cost: medium

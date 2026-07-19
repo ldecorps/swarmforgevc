@@ -34,6 +34,7 @@ SHIPPED_CONFS=(
   "$REPO_ROOT/swarmforge/packs/resilience-min.conf"
   "$REPO_ROOT/swarmforge/profiles/stabilize-two-pack.conf"
   "$REPO_ROOT/swarmforge/profiles/cheap-copilot-seven-pack.conf"
+  "$REPO_ROOT/swarmforge/profiles/mono-router-gpt.conf"
   "$REPO_ROOT/swarmforge/scripts/test/connected/packs/connected-two-pack-claude.conf"
   "$REPO_ROOT/swarmforge/scripts/test/connected/packs/connected-two-pack-mistral.conf"
   "$REPO_ROOT/swarmforge/scripts/test/connected/packs/connected-two-pack-gpt.conf"

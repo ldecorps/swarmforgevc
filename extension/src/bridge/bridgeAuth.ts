@@ -29,13 +29,13 @@ export function isAuthorizedRequest(authHeader: string | undefined, token: strin
   return timingSafeStringEqual(provided, token);
 }
 
-// BL-094/BL-522: a plain browser (or Telegram Mini App) navigation cannot
-// set an Authorization header, so selected routes additionally accept the
-// token via query string (the extension's "open bridge" command and the
-// Resident Spy Mini App URL include it). The root HTML shell uses the
-// token client-side for bearer fetches; /resident-pane accepts the query
-// token server-side because its poll cannot set a header. Other data
-// routes stay header-only.
+// BL-094/BL-522/BL-526: a plain browser (or Telegram Mini App) navigation
+// cannot set an Authorization header, so selected routes additionally
+// accept the token via query string (the extension's "open bridge" command
+// and Mini App URLs include it). The root HTML shell uses the token
+// client-side for bearer fetches; /resident-pane and /pipeline-board accept
+// the query token server-side because their polls cannot set a header.
+// Other data routes stay header-only.
 export function isAuthorizedByQueryToken(queryToken: string | undefined, token: string): boolean {
   if (!queryToken) {
     return false;

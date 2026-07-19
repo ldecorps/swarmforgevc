@@ -162,3 +162,4 @@ operator_notes_20260718: |
 
   Codex launch must not $(cat) full prompt into argv (MAX_ARG_STRLEN);
   already fixed on main for mono-router GPT bring-up.
+mutation_cost: high

@@ -11,7 +11,10 @@ import {
 import { extractBearerToken, isAuthorizedByQueryToken } from './bridgeAuth';
 import { getHolisticUiHtml } from './holisticUiHtml';
 import { getResidentSpyUiHtml } from './residentSpyUiHtml';
+import { getConsoleMenuUiHtml } from './consoleMenuUiHtml';
+import { getPipelineGridUiHtml } from './pipelineGridUiHtml';
 import { captureResidentPaneLive } from './residentPaneLive';
+import { capturePipelineGridLive } from './pipelineGridLive';
 import { answerCapturedGateLive } from './gateAnswerLive';
 import { computeRoleGateStatesLive, filterPendingGates } from './gateSnapshot';
 import { readSwarmRoles } from '../swarm/tmuxClient';
@@ -147,6 +150,32 @@ function isResidentSpyPath(url: string): boolean {
 // BL-522: JSON pane feed polled by the Mini App with ?token=.
 function isResidentPanePath(url: string): boolean {
   return url === '/resident-pane' || url.startsWith('/resident-pane?');
+}
+
+// BL-526: console landing menu (two portrait buttons).
+function isConsolePath(url: string): boolean {
+  return url === '/console' || url.startsWith('/console?');
+}
+
+// BL-526: pipeline STATUS GRID Mini App shell.
+function isPipelineGridPath(url: string): boolean {
+  return url === '/pipeline-grid' || url.startsWith('/pipeline-grid?');
+}
+
+// BL-526: JSON board feed polled by the grid Mini App with ?token=.
+function isPipelineBoardPath(url: string): boolean {
+  return url === '/pipeline-board' || url.startsWith('/pipeline-board?');
+}
+
+const MINIAPP_CSP =
+  "default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline' https://telegram.org; connect-src 'self'";
+
+function serveMiniAppHtml(res: http.ServerResponse, html: string): void {
+  res.writeHead(200, {
+    'content-type': 'text/html; charset=utf-8',
+    'content-security-policy': MINIAPP_CSP,
+  });
+  res.end(html);
 }
 
 // BL-240: the ONLY route on this server that reads a request body - every
@@ -465,9 +494,10 @@ function isAuthorizedForRead(authHeader: string | undefined, url: string, regist
   if (findDeviceByToken(registry, extractBearerToken(authHeader))) {
     return true;
   }
-  // Root HTML uses query token client-side; /resident-pane also accepts it
-  // because the Mini App fetch cannot set an Authorization header.
-  return (isRootPath(url) || isResidentPanePath(url))
+  // Root HTML uses query token client-side; Mini App JSON polls
+  // (/resident-pane, /pipeline-board) also accept it because those fetches
+  // cannot set an Authorization header.
+  return (isRootPath(url) || isResidentPanePath(url) || isPipelineBoardPath(url))
     && isAuthorizedByQueryToken(queryToken(url), primaryTokenOf(registry));
 }
 
@@ -558,6 +588,11 @@ function buildJsonRoutes(targetPath: string, runLogPath: string, nowMs?: number)
         return snap ?? { available: false };
       },
     },
+    {
+      // BL-526: pipeline STATUS GRID (no below-grid LINKS) for the Mini App.
+      matches: isPipelineBoardPath,
+      compute: () => capturePipelineGridLive(targetPath, nowMs),
+    },
   ];
 }
 
@@ -600,15 +635,19 @@ export function startBridge(
         return;
       }
 
-      // BL-522: Resident Spy Mini App shell — same pre-auth posture as root so
-      // Telegram can open /resident-spy?token=… without a Bearer header. The
-      // page then polls /resident-pane?token=… (query-token allowed there).
+      // BL-522/BL-526: Mini App HTML shells — pre-auth like root so Telegram
+      // can open ?token=… without a Bearer header; pages then poll JSON
+      // routes that accept the query token server-side.
       if (isResidentSpyPath(url)) {
-        res.writeHead(200, {
-          'content-type': 'text/html; charset=utf-8',
-          'content-security-policy': "default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline' https://telegram.org; connect-src 'self'",
-        });
-        res.end(getResidentSpyUiHtml());
+        serveMiniAppHtml(res, getResidentSpyUiHtml());
+        return;
+      }
+      if (isConsolePath(url)) {
+        serveMiniAppHtml(res, getConsoleMenuUiHtml());
+        return;
+      }
+      if (isPipelineGridPath(url)) {
+        serveMiniAppHtml(res, getPipelineGridUiHtml());
         return;
       }
 

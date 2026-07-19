@@ -389,6 +389,27 @@
                 session)))
           (str/split-lines (slurp (str (roles-tsv-path)))))))
 
+(defn session-exists?
+  "True when tmux has a live session of this name on the project socket."
+  [socket session]
+  (and (not (str/blank? socket))
+       (not (str/blank? session))
+       (zero? (:exit (sh/sh "tmux" "-S" socket "has-session" "-t" session)))))
+
+(defn wake-session
+  "Session that should receive a tmux wake for a roles.tsv session name.
+   Under mono-router / sequential rotation, dormant pipeline roles keep their
+   own session names in roles.tsv but have no standing pane — only the
+   resident (plus coordinator) exists. Waking the missing name fails with
+   `tmux send-literal failed` and falsely marks parcels failed even when the
+   mailbox copy landed. Remap missing sessions to the resident when present."
+  [socket configured-session]
+  (cond
+    (session-exists? socket configured-session) configured-session
+    :else (or (when-let [resident (mono-router-resident-session)]
+                (when (session-exists? socket resident) resident))
+              configured-session)))
+
 (defn pane-id
   "Prefer an explicit -t target. Bare display-message is only a last resort."
   ([socket] (pane-id socket nil))

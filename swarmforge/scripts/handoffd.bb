@@ -270,9 +270,10 @@
 
 (defn notify!
   [socket session agent]
-  (agent-runtime-inject/notify-agent! socket session (or agent "claude")
-                                        :log-fn (fn [tag sess detail] (log! tag sess detail))
-                                        :script-rel-path agent-runtime-lib/ready-script-rel-path))
+  (let [session (handoff-lib/wake-session socket session)]
+    (agent-runtime-inject/notify-agent! socket session (or agent "claude")
+                                          :log-fn (fn [tag sess detail] (log! tag sess detail))
+                                          :script-rel-path agent-runtime-lib/ready-script-rel-path)))
 
 (defn maybe-notify!
   "Tmux wake after mailbox delivery. Skipped when SWARMFORGE_MAILBOX_ONLY=1."
@@ -1394,16 +1395,17 @@
 ;; call, differing only in which role-info/socket they target - only
 ;; :record-clear! differs per sweep, so that stays sweep-local.
 (defn context-clear-injectors [socket role-info]
-  {:inject-clear! (fn []
-                     (agent-runtime-inject/notify-agent!
-                      socket (:session role-info) (or (:agent role-info) "claude")
-                      :log-fn (fn [tag sess detail] (log! tag sess detail))
-                      :text "/clear"))
-   :inject-startup-reread! (fn [instruction-text]
-                              (agent-runtime-inject/notify-agent!
-                               socket (:session role-info) (or (:agent role-info) "claude")
-                               :log-fn (fn [tag sess detail] (log! tag sess detail))
-                               :text instruction-text))})
+  (let [session (handoff-lib/wake-session socket (:session role-info))]
+    {:inject-clear! (fn []
+                       (agent-runtime-inject/notify-agent!
+                        socket session (or (:agent role-info) "claude")
+                        :log-fn (fn [tag sess detail] (log! tag sess detail))
+                        :text "/clear"))
+     :inject-startup-reread! (fn [instruction-text]
+                                (agent-runtime-inject/notify-agent!
+                                 socket session (or (:agent role-info) "claude")
+                                 :log-fn (fn [tag sess detail] (log! tag sess detail))
+                                 :text instruction-text))}))
 
 (defn closing-context-clear-sweep! [roles socket]
   ;; BL-309 bounce fix: :record-clear! durably poisons closed-ticket-id

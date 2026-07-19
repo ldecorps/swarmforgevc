@@ -6,7 +6,7 @@ type: epic
 epic: swarmforge-console
 priority: 00
 depends_on: []
-decomposes_into: [BL-516]
+decomposes_into: [BL-516, BL-526]
 source: "Human directive in-session 2026-07-18: upload 'Spec brief — Operator Telegram console (status slice)' labelled 'epic: swarmforge console', then 'you've got to create a console epic for that'. UMBRELLA/tracking item — not directly promotable; children are promoted individually."
 
 notes: |

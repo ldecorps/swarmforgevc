@@ -488,18 +488,27 @@ function renderListSection(header: string, entries: PipelineBoardListEntry[]): s
   return lines;
 }
 
+// BL-526: STATUS GRID only (header + epic headings + role columns) — no
+// below-grid lists and never the LINKS fragment. Phone miniapp portrait
+// destination; Telegram pin continues to use renderBodySections below.
+function renderGridOnlySections(data: PipelineBoardData): string[] {
+  const idWidth = idColumnWidth(data.rows);
+  const slugWidth = slugColumnWidth(data.rows);
+  return [
+    renderHeader(idWidth, slugWidth),
+    ...renderGridLines(data.rows, idWidth, slugWidth),
+  ];
+}
+
 // BL-465: defaults every below-grid section to empty (?? []) - a fixture
 // built before this ticket (still ubiquitous across pre-existing unit/
 // acceptance tests) supplies only {rows, parked}; the two NEW sections
 // this ticket adds simply render as absent, exactly the pre-BL-465 shape,
 // rather than every one of those fixtures needing a mechanical update.
 function renderBodySections(data: PipelineBoardData): string[] {
-  const idWidth = idColumnWidth(data.rows);
-  const slugWidth = slugColumnWidth(data.rows);
   const parked = data.parked ?? [];
   return [
-    renderHeader(idWidth, slugWidth),
-    ...renderGridLines(data.rows, idWidth, slugWidth),
+    ...renderGridOnlySections(data),
     ...renderListSection(
       PARKED_SECTION_HEADER,
       parked.filter((p) => p.status === 'parked')
@@ -511,6 +520,17 @@ function renderBodySections(data: PipelineBoardData): string[] {
     ...renderListSection(ROOT_INTAKE_SECTION_HEADER, data.rootIntake ?? []),
     ...renderListSection(RECENTLY_CLOSED_SECTION_HEADER, data.recentlyClosed ?? []),
   ];
+}
+
+// BL-526: portrait phone miniapp — STATUS GRID (+ optional updated-at
+// footer). Omits PARKED / AWAITING / ROOT INTAKE / RECENTLY CLOSED and
+// never includes LINKS: (that fragment is a separate render).
+export function renderPipelineBoardGridOnly(data: PipelineBoardData, lastChangeMs?: number): string {
+  const sections = renderGridOnlySections(data);
+  if (lastChangeMs === undefined) {
+    return sections.join('\n');
+  }
+  return [...sections, '', renderUpdatedAtFooter(lastChangeMs)].join('\n');
 }
 
 // BL-462: the grid + below-grid sections only, EXCLUDING the footer

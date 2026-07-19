@@ -623,6 +623,10 @@ provision_coordinator() {
   local extra_cli=""
   if [[ "$COORDINATOR_AGENT" == "claude" ]]; then
     extra_cli="--model $COORDINATOR_MODEL --dangerously-skip-permissions --effort $COORDINATOR_EFFORT"
+  elif [[ "$COORDINATOR_AGENT" == "codex" ]]; then
+    # Pack must set coordinator_model to a Codex catalog id (e.g. gpt-5.4-mini);
+    # otherwise the Claude Sonnet default would be meaningless here.
+    extra_cli="--model $COORDINATOR_MODEL"
   fi
   if [[ "$REMOTE_CONTROL_DEFAULT" == 1 ]]; then
     extra_cli+="${extra_cli:+ }--remote-control $(remote_control_session_name_for_role "$role")"
@@ -1164,7 +1168,10 @@ RESUMECHECK
       # Full prompt files exceed Linux MAX_ARG_STRLEN (~128KiB) when $(cat)'d
       # into argv (coordinator ~135KB). Keep argv short: RESUME_NOTE + path.
       # OPENAI_API_KEY arrives via tmux -e (BL-130), never written here.
-      launch_body="codex${extra_cli:+ $extra_cli} -C '$role_worktree' \"\${RESUME_NOTE}Read and obey every instruction in '$prompt_file' (constitution, pipeline, role, pack). Then begin your role loop; if idle, run ready_for_next.sh.\""
+      # --dangerously-bypass-approvals-and-sandbox is the Codex equivalent of
+      # Claude's --dangerously-skip-permissions / Copilot's --yolo: swarm
+      # agents must run unattended (no per-command approval prompts).
+      launch_body="codex${extra_cli:+ $extra_cli} --dangerously-bypass-approvals-and-sandbox -C '$role_worktree' \"\${RESUME_NOTE}Read and obey every instruction in '$prompt_file' (constitution, pipeline, role, pack). Then begin your role loop; if idle, run ready_for_next.sh.\""
       ;;
     copilot)
       local copilot_dirs=""

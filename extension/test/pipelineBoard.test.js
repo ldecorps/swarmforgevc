@@ -3,6 +3,7 @@ const {
   computePipelineBoard,
   renderPipelineBoard,
   renderPipelineBoardBody,
+  renderPipelineBoardGridOnly,
   renderPipelineBoardLinks,
   budgetPipelineBoardLinks,
   formatUpdatedAtLabel,
@@ -958,4 +959,42 @@ test('budgetPipelineBoardLinks: a budget too small even for the header + omitted
 test('PIPELINE_BOARD_MESSAGE_MAX_LENGTH stays at or under Telegram\'s real 4096-char sendMessage limit', () => {
   assert.ok(PIPELINE_BOARD_MESSAGE_MAX_LENGTH <= 4096);
   assert.ok(PIPELINE_BOARD_MESSAGE_MAX_LENGTH > 0);
+});
+
+// ── BL-526: grid-only render for the phone miniapp ────────────────────────
+
+test('BL-526 renderPipelineBoardGridOnly: includes STATUS GRID header and row marks', () => {
+  const text = renderPipelineBoardGridOnly({
+    rows: [{ id: 'BL-526', column: 'coder', slug: 'console-menu' }],
+    parked: [],
+  });
+  assert.match(text, /ID/);
+  assert.match(text, /526/);
+  assert.match(text, /console-menu/);
+  assert.ok(text.includes('X'), 'expected an X mark in the coder column');
+});
+
+test('BL-526 renderPipelineBoardGridOnly: omits below-grid lists and never emits LINKS', () => {
+  const text = renderPipelineBoardGridOnly({
+    rows: [{ id: 'BL-1', column: 'coder', slug: 'a' }],
+    parked: [{ id: 'BL-2', slug: 'parked-thing', status: 'parked' }],
+    rootIntake: [{ id: 'INTAKE-x', slug: 'intake' }],
+    recentlyClosed: [{ id: 'BL-3', slug: 'closed' }],
+    links: [{ id: 'BL-1', path: 'backlog/active/BL-1-a.yaml' }],
+  });
+  assert.ok(!text.includes('PARKED:'), text);
+  assert.ok(!text.includes('AWAITING APPROVAL:'), text);
+  assert.ok(!text.includes('ROOT INTAKE:'), text);
+  assert.ok(!text.includes('RECENTLY CLOSED:'), text);
+  assert.ok(!text.includes('LINKS:'), text);
+  assert.ok(!text.includes('<a href'), text);
+});
+
+test('BL-526 renderPipelineBoardGridOnly: optional footer stamps updated-at without lists', () => {
+  const text = renderPipelineBoardGridOnly(
+    { rows: [{ id: 'BL-1', column: 'coder', slug: 'x' }], parked: [] },
+    Date.UTC(2026, 6, 19, 0, 30)
+  );
+  assert.match(text, /updated at Jul 19 00:30/);
+  assert.ok(!text.includes('PARKED:'));
 });

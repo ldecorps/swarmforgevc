@@ -925,6 +925,65 @@ test('serves /resident-pane JSON given a valid bearer token', async () => {
   });
 });
 
+// BL-526: Console menu + pipeline STATUS GRID Mini App
+test('serves /console HTML without a prior bearer/query token', async () => {
+  const target = mkTmp();
+  await withBridge(target, {}, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/console`);
+    assert.equal(res.status, 200);
+    assert.match(res.headers.get('content-type'), /text\/html/);
+    const body = await res.text();
+    assert.match(body, /pipeline-grid/);
+    assert.match(body, /resident-spy/);
+    assert.match(body, /data-testid="pipeline-grid"/);
+    assert.match(body, /data-testid="mono-router-feed"/);
+    assert.match(body, /flex-direction:\s*column/);
+    assert.match(body, /overflow-x:\s*hidden/);
+  });
+});
+
+test('serves /pipeline-grid HTML without a prior bearer/query token', async () => {
+  const target = mkTmp();
+  await withBridge(target, {}, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/pipeline-grid`);
+    assert.equal(res.status, 200);
+    const body = await res.text();
+    assert.match(body, /pipeline-board\?token=/);
+    assert.match(body, /STATUS GRID/);
+    assert.match(body, /overflow-x:\s*hidden/);
+    assert.ok(!body.includes('LINKS:'), 'grid shell must not hardcode a LINKS section');
+  });
+});
+
+test('rejects /pipeline-board without a token', async () => {
+  const target = mkTmp();
+  await withBridge(target, {}, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/pipeline-board`);
+    assert.equal(res.status, 401);
+  });
+});
+
+test('serves /pipeline-board JSON grid-only given a valid query-string token', async () => {
+  const target = mkTmp();
+  mkdirp(path.join(target, 'backlog', 'active'));
+  mkdirp(path.join(target, 'backlog', 'paused'));
+  mkdirp(path.join(target, 'backlog', 'done'));
+  fs.writeFileSync(
+    path.join(target, 'backlog', 'active', 'BL-526-console.yaml'),
+    'id: BL-526\ntitle: Console menu\nepic: swarmforge-console\n'
+  );
+  await withBridge(target, { nowMs: Date.UTC(2026, 6, 19, 1, 0) }, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/pipeline-board?token=${TOKEN}`);
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(typeof body.boardText, 'string');
+    assert.match(body.boardText, /526/);
+    assert.ok(!body.boardText.includes('LINKS:'), body.boardText);
+    assert.ok(!body.boardText.includes('PARKED:'), body.boardText);
+    assert.ok(!body.boardText.includes('<a href'), body.boardText);
+  });
+});
+
 test('returns 404 for an unknown route, even when authorized', async () => {
   const target = mkTmp();
   await withBridge(target, {}, async (handle) => {
