@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=83e664f8199e821aba60f22bf86cf01fbaf043561e1c046480ee4da306ab7a46
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-07-19T21:13:05.658273792Z","feature_name":"the pipeline board LINKS section links every shown ticket to its current folder, most-recent-first","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-513-pipeline-board-links-grid-only-alphabetical.feature","background_hash":"14c9eb179a3e57a28a392190e103be47dcc554a30dbf4e002650e70e83af8fdc","implementation_hash":"unknown","scenarios":[{"index":1,"name":"a link resolves to the folder the ticket is actually in","scenario_hash":"cc937ea130161657e701d9278f08b35ae1a9b089cadb63d778f2546d9eb98a60","mutation_count":12,"result":{"Total":12,"Killed":12,"Survived":0,"Errors":0},"tested_at":"2026-07-19T21:13:05.658273792Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: the pipeline board LINKS section links every shown ticket to its current folder, most-recent-first
 
   # AMENDED 2026-07-18 (twice). Original: "grid-only, alphabetical." Human directives:
