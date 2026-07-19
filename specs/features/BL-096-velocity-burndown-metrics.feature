@@ -2,8 +2,7 @@ Feature: delivery metrics computed from repo history and exposed via endpoint/CL
 
 # BL-096 metrics-01
 Scenario: velocity series matches git-recorded closes
-  Given a repo whose history contains tickets closed into done/ on known
-    dates
+  Given a repo whose history contains tickets closed into done/ on known dates
   When the velocity series is computed
   Then each time bucket's count equals the closes git records for it
   And recomputing on the same history yields the identical series
@@ -12,8 +11,7 @@ Scenario: velocity series matches git-recorded closes
 Scenario: burndown reconstructs a milestone's past
   Given a milestone whose tickets were specced and closed across history
   When its burndown series is computed
-  Then each point equals that date's remaining open-ticket count for the
-    milestone
+  Then each point equals that date's remaining open-ticket count for the milestone
   And the final point matches the current backlog folder state
 
 # BL-096 metrics-03
@@ -35,8 +33,7 @@ Scenario: every open ticket and milestone carries a forecast
 Scenario: every metric carries a trend
   Given at least two windows of history exist for a metric
   When the metrics surface is queried
-  Then each metric reports its series, current-window value, and the
-    delta and direction versus the prior window
+  Then each metric reports its series, current-window value, and the delta and direction versus the prior window
 
 # BL-096 metrics-07
 Scenario: suite-duration trend from local records
@@ -56,8 +53,7 @@ Scenario: metrics are exposed as JSON via the token-gated endpoint and via CLI
 # BL-096 metrics-05
 Scenario: no new bookkeeping state
   When metrics are computed twice with no intervening git changes
-  Then no file in the repo or .swarmforge/ was created or modified by
-    the computation
+  Then no file in the repo or .swarmforge/ was created or modified by the computation
 
 # Non-behavioral gates:
 #  - All derivations pure functions over a provided history/event list;

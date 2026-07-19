@@ -136,26 +136,17 @@ while IFS= read -r -d '' feature; do
 done < <(find "$ROOT/specs/features" -name '*.feature' -print0)
 pass "515-03: every existing specs/features/*.feature still passes the gate"
 
-# ── BL-515: the legacy-wraps allowlist is load-bearing - break it and ────
-# confirm a currently-grandfathered file goes back to FAILING, proving
-# 515-03's pass above is the allowlist's doing, not a fluke.
+# ── BL-520: the legacy-wraps allowlist is drained - no feature file entry
+# remains and a formerly-grandfathered file passes without any exemption.
 LEGACY_FEATURE="$ROOT/specs/features/BL-096-velocity-burndown-metrics.feature"
 [[ -f "$LEGACY_FEATURE" ]] || fail "515-04 setup: expected fixture $LEGACY_FEATURE to exist"
 
-LEGACY_IR="$TMP/legacy-ir.json"
-(cd "$ROOT/swarmforge/vendor/aps" && bb gherkin-parser "$LEGACY_FEATURE" "$LEGACY_IR" >/dev/null 2>&1)
-
-EMPTY_ALLOWLIST="$TMP/empty-allowlist.txt"
-: > "$EMPTY_ALLOWLIST"
-
-set +e
-OUT="$(bb "$ROOT/swarmforge/scripts/gherkin_lint_gate_cli.bb" "$LEGACY_FEATURE" "$LEGACY_IR" "$ROOT" "$EMPTY_ALLOWLIST" 2>&1)"
-RC=$?
-set -e
-[[ "$RC" -ne 0 ]] || fail "515-04: expected a grandfathered file to fail again once the allowlist is emptied; got 0"
-echo "$OUT" | grep -q "bare continuation line" \
-  || fail "515-04: expected the FAIL to name the continuation line; got: $OUT"
-pass "515-04: emptying the allowlist un-grandfathers BL-096, proving the allowlist read is load-bearing"
+if grep -Ev '^[[:space:]]*($|#)' "$ROOT/swarmforge/scripts/gherkin_lint_gate_legacy_wraps.txt" | grep -q .; then
+  fail "520-01: expected gherkin_lint_gate_legacy_wraps.txt to hold no feature-file entries"
+fi
+bash "$GATE" "$LEGACY_FEATURE" "$ROOT" | grep -q "^OK: " \
+  || fail "520-02: expected formerly-grandfathered BL-096 to pass with no exemption"
+pass "520-01/02: the legacy wrap allowlist is drained and BL-096 passes unconditionally"
 
 # ── BL-515: the CLI's own arg-count guard fires on a malformed invocation ─
 # (never a bb crash/stacktrace) - a call site typo must fail fast and named.

@@ -9,11 +9,8 @@
 # any <param> on it) while still exiting 0. On top of the parser's own
 # parse check, this gate also runs gherkin_lint_gate_cli.bb (backed by the
 # pure gherkin_lint_gate_lib.bb) to reject that silent drop and an Examples
-# column no step references. A small grandfathered allowlist
-# (gherkin_lint_gate_legacy_wraps.txt) exempts known pre-existing wraps
-# from the continuation-line check only - never from the phantom-column
-# check, and never a file not already listed - so this enforces
-# unconditionally for every new or changed feature file.
+# column no step references. BL-520 drained the temporary legacy wrap
+# exemptions, so single-line step enforcement is unconditional.
 #
 # Usage: gherkin_lint_gate.sh <feature-file> [repo-root]
 #

@@ -12,6 +12,7 @@
 
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "handoff_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "chase_sweep_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "mono_router_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "backlog_depth_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "agent_runtime_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "agent_runtime_inject.bb")))
@@ -283,6 +284,16 @@
     (agent-runtime-inject/notify-agent! socket session (or agent "claude")
                                           :log-fn (fn [tag sess detail] (log! tag sess detail))
                                           :script-rel-path agent-runtime-lib/ready-script-rel-path)))
+
+(defn notify-in-process-resume!
+  "Stuck nudge for work already sitting in in_process — chat order, never
+   another ready_for_next shell wake (that reprints the same TASK)."
+  [socket session agent]
+  (let [session (handoff-lib/wake-session socket session)
+        text (:text (first (agent-runtime-lib/in-process-resume-steps (or agent "claude"))))]
+    (agent-runtime-inject/notify-agent! socket session (or agent "claude")
+                                          :log-fn (fn [tag sess detail] (log! tag sess detail))
+                                          :text text)))
 
 (defn maybe-notify!
   "Tmux wake after mailbox delivery. Skipped when SWARMFORGE_MAILBOX_ONLY=1."
@@ -824,16 +835,61 @@
         (let [pane (try (capture-pane-lines socket session 20) (catch Exception _ ""))]
           (observe-pane-loop! role pane))))))
 
+(defn chase-poke-action
+  "Decide how to poke `role` under mono-router (pure wrapper around
+   mono-router-lib/dormant-mailbox-chase-action with live tmux probes)."
+  [roles socket role]
+  (let [session (:session (get roles role))
+        resident (handoff-lib/mono-router-resident-session)]
+    (mono-router-lib/dormant-mailbox-chase-action
+     {:target-session-exists? (boolean (and session (handoff-lib/session-exists? socket session)))
+      :resident-session-exists? (boolean (and resident (handoff-lib/session-exists? socket resident)))
+      :active-role (handoff-lib/read-mono-router-active-role)
+      :target-role role})))
+
+(defn chase-rotate-to! [role]
+  (let [result (handoff-lib/rotate-resident-to! role)]
+    (if (:ok result)
+      (log! "chase-rotate" role)
+      (log! "chase-rotate-error" role (str (:reason result))))
+    result))
+
 (defn chase-sweep! [roles socket]
   (let [now-ms (System/currentTimeMillis)
         adapters {:get-liveness get-liveness
                   :send-wake-up! (fn [role]
                                     (when-not (tmux-inject-disabled?)
-                                      (try (notify! socket (:session (get roles role)) (:agent (get roles role)))
-                                           (catch Exception e (log! "chase-wake-error" role (.getMessage e))))))
+                                      (try
+                                        (let [action (chase-poke-action roles socket role)
+                                              ri (get roles role)]
+                                          (case action
+                                            :rotate (chase-rotate-to! role)
+                                            (notify! socket (:session ri) (:agent ri))))
+                                        (catch Exception e (log! "chase-wake-error" role (.getMessage e))))))
+                  :send-in-process-resume! (fn [role]
+                                              (when-not (tmux-inject-disabled?)
+                                                (try
+                                                  (let [action (chase-poke-action roles socket role)
+                                                        ri (get roles role)]
+                                                    (case action
+                                                      ;; Stuck in_process on a dormant role: rotate so
+                                                      ;; RESUME-ON-START / ready_for_next can claim it.
+                                                      :rotate (chase-rotate-to! role)
+                                                      (notify-in-process-resume!
+                                                       socket
+                                                       (:session ri)
+                                                       (:agent ri))))
+                                                  (catch Exception e
+                                                    (log! "chase-in-process-resume-error" role (.getMessage e))))))
                   :trigger-respawn! (fn [role]
-                                       (try (do-respawn! (get roles role) socket)
-                                            (catch Exception e (log! "chase-respawn-error" role (.getMessage e)))))
+                                       (try
+                                         (let [action (chase-poke-action roles socket role)
+                                               ri (get roles role)]
+                                           (case action
+                                             :rotate (chase-rotate-to! role)
+                                             :wake-resident (chase-rotate-to! role)
+                                             (do-respawn! ri socket)))
+                                         (catch Exception e (log! "chase-respawn-error" role (.getMessage e)))))
                   :log-dead-letter! (fn [role path] (log! "dead-letter" role (fs/file-name path)))
                   :get-last-activity-ms (fn [role] (get-last-activity-ms (get roles role) socket now-ms))
                   :on-stuck-escalation! (fn [role escalated?]
@@ -900,8 +956,16 @@
 ;; hand-writing an inbox file, per the ticket's "must go through the normal
 ;; outbound handoff path" constraint - reuses its full existing validation,
 ;; sequencing, and atomic outbox write, plus its own sync-delivery attempt.
+(defn- head-commit-10
+  "Exactly 10 hex chars for swarm_handoff.bb's git_handoff commit contract."
+  []
+  (let [result (process/sh ["git" "rev-parse" "--short=10" "HEAD"] {:dir (str project-root)})]
+    (when (zero? (:exit result))
+      (str/trim (:out result)))))
+
 (defn auto-route! [item]
-  (let [draft (write-scratch-draft! (chase-sweep-lib/dispatch-gap-draft-lines item))
+  (let [commit (or (head-commit-10) "")
+        draft (write-scratch-draft! (chase-sweep-lib/dispatch-gap-draft-lines item commit))
         env (merge (into {} (System/getenv)) {"SWARMFORGE_ROLE" "coordinator"})
         ;; process/sh's varargs form (cmd arg1 arg2 opts-map) silently drops
         ;; :dir/:env overrides - only the [cmd & args] vector form applies
@@ -910,7 +974,8 @@
         ;; resolves to "coordinator" inside the subprocess.
         result (process/sh ["bb" (swarm-handoff-script) (str draft)] {:dir (str project-root) :env env})]
     (if (zero? (:exit result))
-      (log! "dispatch-gap-autoroute" (:id item) (:assigned-to item))
+      (log! "dispatch-gap-autoroute" (:id item) (:assigned-to item)
+            (if (str/blank? commit) "note-fallback" "git_handoff"))
       (log! "dispatch-gap-autoroute-error" (:id item) (:assigned-to item) (str (:err result))))))
 
 (defn dispatch-gap-sweep! [roles]

@@ -7,7 +7,8 @@
 #
 # Gates:
 #   - aborts if active yaml count >= effective depth cap
-#   - skips hold/; prefers buildable paused (acceptance: or matching feature file)
+#   - skips hold/; prefers buildable paused (acceptance: or matching feature
+#     file) in priority/id order
 #   - never promotes epics tagged do-not-promote in notes
 #   - sets assigned_to: coder and calls route_backlog_to_coder.sh
 #
@@ -88,6 +89,11 @@ is_epic_type() {
   grep -qE '^type:[[:space:]]*epic[[:space:]]*$' "$f" 2>/dev/null
 }
 
+is_blocked_status() {
+  local f="$1"
+  grep -qE '^status:[[:space:]]*blocked[[:space:]]*$' "$f" 2>/dev/null
+}
+
 is_buildable() {
   local f="$1"
   local id
@@ -109,6 +115,35 @@ is_buildable() {
   return 1
 }
 
+ticket_priority() {
+  local f="$1" raw
+  raw="$(awk -F': *' '/^priority:[[:space:]]*/{print $2; exit}' "$f" 2>/dev/null | tr -d '\r')"
+  if [[ "$raw" =~ ^[0-9]+$ ]]; then
+    printf '%d' "$((10#$raw))"
+  else
+    printf '%d' 999999
+  fi
+}
+
+ticket_id() {
+  local f="$1" id
+  id="$(grep -E '^id:' "$f" | head -1 | awk '{print $2}' | tr -d '\r')"
+  if [[ -n "$id" ]]; then
+    printf '%s' "$id"
+  else
+    basename "$f" .yaml
+  fi
+}
+
+candidate_sort_line() {
+  local f="$1"
+  printf '%s\t%s\t%s\n' "$(ticket_priority "$f")" "$(ticket_id "$f")" "$f"
+}
+
+pick_lowest_sort_line() {
+  sort -t $'\t' -k1,1n -k2,2 <<<"$1" | head -1 | cut -f3-
+}
+
 pick_candidate() {
   local f
   local buildable=()
@@ -120,8 +155,8 @@ pick_candidate() {
       echo "Error: no paused yaml for $ITEM" >&2
       return 1
     fi
-    if is_do_not_promote "$f" || is_epic_type "$f"; then
-      echo "Error: $ITEM is do-not-promote or epic" >&2
+    if is_do_not_promote "$f" || is_epic_type "$f" || is_blocked_status "$f"; then
+      echo "Error: $ITEM is do-not-promote, epic, or blocked" >&2
       return 1
     fi
     echo "$f"
@@ -132,20 +167,21 @@ pick_candidate() {
     [[ -f "$f" ]] || continue
     is_do_not_promote "$f" && continue
     is_epic_type "$f" && continue
+    is_blocked_status "$f" && continue
     # Never promote out of hold/ (hold is a sibling folder, not under paused)
     if is_buildable "$f"; then
-      buildable+=("$f")
+      buildable+=("$(candidate_sort_line "$f")")
     else
-      other+=("$f")
+      other+=("$(candidate_sort_line "$f")")
     fi
   done < <(find "$PAUSED_DIR" -maxdepth 1 -name '*.yaml' -type f 2>/dev/null | sort)
 
   if ((${#buildable[@]} > 0)); then
-    echo "${buildable[0]}"
+    pick_lowest_sort_line "$(printf '%s\n' "${buildable[@]}")"
     return 0
   fi
   if ((${#other[@]} > 0)); then
-    echo "${other[0]}"
+    pick_lowest_sort_line "$(printf '%s\n' "${other[@]}")"
     return 0
   fi
   echo "Error: no eligible paused ticket" >&2

@@ -398,6 +398,40 @@
                 session)))
           (str/split-lines (slurp (str (roles-tsv-path)))))))
 
+(defn mono-router-home-role
+  "First non-coordinator role in roles.tsv — mono-router resident home identity."
+  []
+  (when (fs/exists? (roles-tsv-path))
+    (some (fn [line]
+            (let [role (first (str/split line #"\t" -1))]
+              (when (and role (not= "coordinator" role) (not (str/blank? role)))
+                role)))
+          (str/split-lines (slurp (str (roles-tsv-path)))))))
+
+(defn mono-router-active-role-path
+  "Durable identity of whoever the resident pane is currently running as.
+   Chase uses this so a dormant-role wake rotates instead of false-waking
+   coder while cleaner mail sits unclaimed."
+  []
+  (fs/path (target-root) ".swarmforge" "mono-router-active-role"))
+
+(defn write-mono-router-active-role!
+  [role]
+  (when-not (str/blank? role)
+    (let [p (mono-router-active-role-path)]
+      (fs/create-dirs (fs/parent p))
+      (spit (str p) (str role "\n")))))
+
+(defn read-mono-router-active-role
+  "Current resident identity, or home role when the marker is missing."
+  []
+  (let [p (mono-router-active-role-path)]
+    (or (when (fs/exists? p)
+          (let [v (str/trim (slurp (str p)))]
+            (when-not (str/blank? v) v)))
+        (mono-router-home-role)
+        "coder")))
+
 (defn session-exists?
   "True when tmux has a live session of this name on the project socket."
   [socket session]
@@ -438,10 +472,13 @@
   (let [socket (tmux-socket)
         session (or (mono-router-resident-session) (pane-id socket))
         script (launch-script-path role-name)
-        env-args (openrouter-pane-env-args)]
-    (apply sh/sh (concat ["tmux" "-S" socket "respawn-pane" "-k"]
-                         env-args
-                         ["-t" session (str "zsh '" script "'")]))))
+        env-args (openrouter-pane-env-args)
+        result (apply sh/sh (concat ["tmux" "-S" socket "respawn-pane" "-k"]
+                                    env-args
+                                    ["-t" session (str "zsh '" script "'")]))]
+    (when (zero? (:exit result))
+      (write-mono-router-active-role! role-name))
+    result))
 
 ;; ── BL-518: mono-router rotation ────────────────────────────────────────────
 ;; respawn-self! re-execs the CURRENT role's launch script (idle-boundary
@@ -475,6 +512,38 @@
         (>= (System/currentTimeMillis) deadline) false
         :else (do (Thread/sleep 500) (recur))))))
 
+(defn rotate-resident-to!
+  "Rotate the resident pane to <target-role>. Returns {:ok true} or
+   {:ok false :reason ...}. Never System/exit — safe for handoffd chase."
+  [target-role]
+  (try
+    (let [socket (tmux-socket)
+          session (or (mono-router-resident-session) (pane-id socket))
+          script (launch-script-path target-role)
+          env-args (openrouter-pane-env-args)]
+      (cond
+        (str/blank? session)
+        {:ok false :reason "no-resident-session"}
+        (not (fs/exists? script))
+        {:ok false :reason "no-launch-script"}
+        :else
+        (do
+          (when-not (wait-for-delivery! target-role 30000)
+            (binding [*out* *err*]
+              (println (str "rotate: WARNING no parcel delivered to '" target-role
+                            "' within 30s; rotating anyway (it will resume via RESUME-ON-START if it arrives).")))
+            (flush))
+          (let [result (apply sh/sh (concat ["tmux" "-S" socket "respawn-pane" "-k"]
+                                            env-args
+                                            ["-t" session (str "zsh '" script "'")]))]
+            (if (zero? (:exit result))
+              (do (write-mono-router-active-role! target-role)
+                  {:ok true})
+              {:ok false :reason (or (not-empty (str/trim (str (:err result))))
+                                     (str "tmux-exit-" (:exit result)))})))))
+    (catch Exception e
+      {:ok false :reason (.getMessage e)})))
+
 (defn respawn-as!
   "Rotate the resident pane to <target-role>, running that role's own launch
    script (its tailored model/effort). Waits for the parcel to be delivered to
@@ -483,28 +552,21 @@
    The target role's launch script must already exist - the router-mode
    launcher pre-generates every pipeline role's <role>.sh at startup."
   [target-role]
-  (let [socket (tmux-socket)
-        session (or (mono-router-resident-session)
-                    (pane-id socket))
-        script (launch-script-path target-role)
-        env-args (openrouter-pane-env-args)]
-    (when (str/blank? session)
+  (let [result (rotate-resident-to! target-role)]
+    (when-not (:ok result)
       (binding [*out* *err*]
-        (println "rotate: could not resolve mono-router resident session"))
-      (System/exit 4))
-    (when-not (fs/exists? script)
-      (binding [*out* *err*]
-        (println (str "rotate: no launch script for role '" target-role "' at " script
-                      " - is this swarm a mono-router (config rotation router) launch?")))
-      (System/exit 3))
-    (when-not (wait-for-delivery! target-role 30000)
-      (binding [*out* *err*]
-        (println (str "rotate: WARNING no parcel delivered to '" target-role
-                      "' within 30s; rotating anyway (it will resume via RESUME-ON-START if it arrives).")))
-      (flush))
-    (apply sh/sh (concat ["tmux" "-S" socket "respawn-pane" "-k"]
-                         env-args
-                         ["-t" session (str "zsh '" script "'")]))))
+        (case (:reason result)
+          "no-resident-session"
+          (println "rotate: could not resolve mono-router resident session")
+          "no-launch-script"
+          (println (str "rotate: no launch script for role '" target-role
+                        "' - is this swarm a mono-router (config rotation router) launch?"))
+          (println (str "rotate: failed for '" target-role "': " (:reason result)))))
+      (System/exit (case (:reason result)
+                     "no-resident-session" 4
+                     "no-launch-script" 3
+                     1)))
+    result))
 
 ;; ── BL-365: durable install ──────────────────────────────────────────────
 ;; A bare `spit` + `fs/move` pair is atomic in ORDERING (the rename is one
@@ -653,12 +715,21 @@
     valid))
 
 (defn print-task [file]
-  (let [task-name (header-field file "task")]
+  (let [task-name (header-field file "task")
+        typ (header-value file "type" "unknown")]
     (println "TASK:" (str file))
     (println "FROM:" (header-value file "from" "unknown"))
-    (println "TYPE:" (header-value file "type" "unknown"))
+    (println "TYPE:" typ)
     (println "PRIORITY:" (header-value file "priority" "50"))
     (when task-name
       (println "TASK_NAME:" task-name))
     (println "PAYLOAD:")
-    (print (body file))))
+    (print (body file))
+    (println)
+    (println "ACTION: This parcel is already in_process. Do NOT run ready_for_next.sh again until you finish it.")
+    (when (= "git_handoff" typ)
+      (println "1) Execute the PAYLOAD (merge_and_process …) in this worktree.")
+      (when task-name
+        (println (str "2) Implement " task-name " from backlog/active/ with your edit/test tools.")))
+      (println "3) Commit, git_handoff to the next role, then done_with_current / ready_for_next.")
+      (println "USE YOUR TOOLS NOW. Narrating or re-printing this TASK is not progress."))))

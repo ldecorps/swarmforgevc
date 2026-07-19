@@ -60,6 +60,46 @@
              (mono-router-lib/rotation-router-from-identity?
               "swarm_name\tprimary\nrotation\trouter\n"))
 
+;; Dormant-mailbox chase: never false-wake the resident as the wrong identity
+(assert= "own session wakes itself"
+         :wake-own-session
+         (mono-router-lib/dormant-mailbox-chase-action
+          {:target-session-exists? true
+           :resident-session-exists? true
+           :active-role "coder"
+           :target-role "cleaner"}))
+(assert= "dormant + wrong identity → rotate"
+         :rotate
+         (mono-router-lib/dormant-mailbox-chase-action
+          {:target-session-exists? false
+           :resident-session-exists? true
+           :active-role "coder"
+           :target-role "cleaner"}))
+(assert= "dormant + already that role → wake resident"
+         :wake-resident
+         (mono-router-lib/dormant-mailbox-chase-action
+          {:target-session-exists? false
+           :resident-session-exists? true
+           :active-role "cleaner"
+           :target-role "cleaner"}))
+(assert= "no resident degrades to own-session wake"
+         :wake-own-session
+         (mono-router-lib/dormant-mailbox-chase-action
+          {:target-session-exists? false
+           :resident-session-exists? false
+           :active-role "coder"
+           :target-role "cleaner"}))
+
+(assert= "ensure restores cleaner when marker says cleaner"
+         "cleaner"
+         (mono-router-lib/resident-launch-role "coder" "cleaner"))
+(assert= "ensure falls back to home when marker empty"
+         "coder"
+         (mono-router-lib/resident-launch-role "coder" "  "))
+(assert= "ensure falls back to home when marker nil"
+         "coder"
+         (mono-router-lib/resident-launch-role "coder" nil))
+
 (when (seq @failures)
   (binding [*out* *err*]
     (doseq [f @failures] (println f)))
