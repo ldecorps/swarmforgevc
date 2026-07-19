@@ -13,6 +13,9 @@ const BL131_FEATURE = path.join(REPO_ROOT, 'specs', 'features', 'BL-131-eliminat
 const SAMPLE_REWRAPPED_FEATURE = path.join(REPO_ROOT, 'specs', 'features', 'BL-096-velocity-burndown-metrics.feature');
 
 function legacyAllowlistEntries() {
+  if (!fs.existsSync(LEGACY_ALLOWLIST)) {
+    return [];
+  }
   return fs.readFileSync(LEGACY_ALLOWLIST, 'utf8')
     .split(/\r?\n/)
     .map((line) => line.trim())
