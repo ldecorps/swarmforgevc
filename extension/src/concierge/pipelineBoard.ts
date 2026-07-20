@@ -433,8 +433,13 @@ export function computePipelineBoard(
   return { rows, parked, rootIntake, recentlyClosed, links };
 }
 
+// Every stage line is "<2-char label> <mark>" — pad the ticket id so it
+// sits in the mark column, not above the label column.
+const PIVOTED_MARK_COLUMN_OFFSET = 3;
+
 function renderPivotedTicketBlock(row: PipelineBoardRow): string[] {
-  const lines: string[] = [deriveDisplayTicketId(row.id)];
+  const displayId = deriveDisplayTicketId(row.id);
+  const lines: string[] = [`${' '.repeat(PIVOTED_MARK_COLUMN_OFFSET)}${displayId}`];
   for (const c of PIPELINE_BOARD_COLUMN_ORDER) {
     const mark = c === row.column ? 'X' : '.';
     lines.push(`${COLUMN_LABEL[c]} ${mark}`);

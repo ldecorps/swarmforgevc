@@ -245,8 +245,10 @@ test('renderPipelineBoardBody: two tickets in different columns each mark only t
   const lines = text.split('\n');
   assert.ok(lines.some((l) => l.trim() === '387'));
   assert.ok(lines.some((l) => l.trim() === '413'));
-  const block387 = lines.slice(lines.indexOf('387'), lines.indexOf('387') + 9);
-  const block413 = lines.slice(lines.indexOf('413'), lines.indexOf('413') + 9);
+  const block387Start = lines.findIndex((l) => l.trim() === '387');
+  const block413Start = lines.findIndex((l) => l.trim() === '413');
+  const block387 = lines.slice(block387Start, block387Start + 9);
+  const block413 = lines.slice(block413Start, block413Start + 9);
   assert.ok(block387.some((l) => l.trim() === 'CO X'));
   assert.ok(block413.some((l) => l.trim() === 'QA X'));
 });
@@ -299,7 +301,7 @@ test('renderPipelineBoardBody: a no-epic row renders under its own heading, dist
   const noEpicIndex = lines.findIndex((l) => l.startsWith('--') && !l.includes('Alpha'));
   assert.ok(alphaIndex >= 0 && noEpicIndex > alphaIndex);
   // BL-505: the grid TICKET column shows the ticket NUMBER only.
-  assert.ok(lines[noEpicIndex + 1].startsWith('2'));
+  assert.ok(lines[noEpicIndex + 1].trim().startsWith('2'));
 });
 
 // BL-455 pipeline-board-epic-02/03: parked/awaiting-approval tickets render
@@ -461,6 +463,16 @@ test('renderPipelineBoardBody: the grid shows ticket numbers without BL-/GH- pre
   const lines = text.split('\n');
   assert.ok(lines.some((l) => l.trim() === '493'));
   assert.ok(lines.some((l) => l.trim() === '42'));
+});
+
+test('renderPipelineBoardBody: pivoted ticket ids align with the mark column, not the label column', () => {
+  const text = renderPipelineBoardBody({ rows: [{ id: 'BL-513', column: 'not-started', epic: 'pipeline-board', slug: '' }], parked: [] });
+  const lines = text.split('\n');
+  const ticketLine = lines.find((l) => l.trim() === '513');
+  const nsLine = lines.find((l) => l.startsWith('NS '));
+  assert.ok(ticketLine, `expected ticket id line, got:\n${text}`);
+  assert.equal(nsLine?.trim(), 'NS X');
+  assert.equal(ticketLine.indexOf('513'), nsLine?.indexOf('X'), 'ticket id should start where stage marks start');
 });
 
 test('renderPipelineBoardBody: pivoted ticket ids are never padded with trailing spaces', () => {
