@@ -957,7 +957,7 @@
       }
     },
     "nudges": {
-      "value": 284,
+      "value": 285,
       "trend": {
         "series": [
           {
@@ -966,12 +966,12 @@
           },
           {
             "periodStart": "2026-07-20T00:00:00.000Z",
-            "value": 284
+            "value": 285
           }
         ],
-        "currentValue": 284,
+        "currentValue": 285,
         "priorValue": 27,
-        "delta": 257,
+        "delta": 258,
         "direction": "up"
       }
     },
