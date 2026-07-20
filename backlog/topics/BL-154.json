@@ -1,1 +1,1 @@
-{"id":"BL-154","messages":[{"seq":0,"ts":1784303169892,"author":"swarm","type":"outbound","text":"BL-154 ✅ done — Phase 1 — handoff delivery via tmux injection only (SWARMFORGE_SKIP_DAEMON=1)"}]}
+{"id":"BL-154","messages":[{"seq":0,"ts":1784303169892,"author":"swarm","type":"outbound","text":"BL-154 ✅ done — Phase 1 — handoff delivery via tmux injection only (SWARMFORGE_SKIP_DAEMON=1)"},{"seq":1,"ts":1784518898525,"author":"swarm","type":"outbound","text":"BL-154 ✅ done — Phase 1 — handoff delivery via tmux injection only (SWARMFORGE_SKIP_DAEMON=1)"}]}
