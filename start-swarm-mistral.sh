@@ -17,7 +17,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$HOME/.zshenv" 2>/dev/null || true
 export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
 
-unset SWARMFORGE_USE_CEREBRAS SWARMFORGE_USE_PERPLEXITY OPENAI_API_BASE OPENAI_BASE_URL || true
+unset SWARMFORGE_USE_CEREBRAS SWARMFORGE_USE_PERPLEXITY SWARMFORGE_USE_QWEN OPENAI_API_BASE OPENAI_BASE_URL || true
 
 if [[ -z "${MISTRAL_API_KEY:-}" ]]; then
   echo "ERROR: MISTRAL_API_KEY missing (export or add to ~/.zshenv)" >&2

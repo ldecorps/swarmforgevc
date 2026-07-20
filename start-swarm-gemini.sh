@@ -17,7 +17,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$HOME/.zshenv" 2>/dev/null || true
 export PATH="$HOME/.npm-global/bin:$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
 
-unset SWARMFORGE_USE_CEREBRAS SWARMFORGE_USE_PERPLEXITY OPENAI_API_BASE OPENAI_BASE_URL || true
+unset SWARMFORGE_USE_CEREBRAS SWARMFORGE_USE_PERPLEXITY SWARMFORGE_USE_QWEN OPENAI_API_BASE OPENAI_BASE_URL || true
 
 if [[ -z "${GEMINI_API_KEY:-${SWARMFORGE_GEMINI_API_KEY:-}}" ]]; then
   echo "ERROR: GEMINI_API_KEY missing (export or add to ~/.zshenv)" >&2

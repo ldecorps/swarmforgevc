@@ -1255,6 +1255,7 @@ RESUMECHECK
   local copilot_guard=""
   local cerebras_guard=""
   local perplexity_guard=""
+  local qwen_guard=""
   # Re-apply CEREBRAS→OPENAI map inside the launch script. Panes often source
   # ~/.zshenv which re-exports the real OPENAI_API_KEY and would otherwise
   # override the tmux -e mapping (Wrong API Key against api.cerebras.ai).
@@ -1268,6 +1269,12 @@ RESUMECHECK
     perplexity_guard=$'if [[ -n "${PERPLEXITY_API_KEY:-}" ]]; then\n  export SWARMFORGE_USE_PERPLEXITY=1\n  export OPENAI_API_KEY="$PERPLEXITY_API_KEY"\n  export OPENAI_API_BASE=https://api.perplexity.ai\n  export OPENAI_BASE_URL=https://api.perplexity.ai\nelse\n  echo "SwarmForge: PERPLEXITY_API_KEY required (launch CLI targets api.perplexity.ai)" >&2\n  exit 1\nfi\n'
   else
     perplexity_guard=$'if [[ "${SWARMFORGE_USE_PERPLEXITY:-}" == "1" && -n "${PERPLEXITY_API_KEY:-}" ]]; then\n  export OPENAI_API_KEY="$PERPLEXITY_API_KEY"\n  export OPENAI_API_BASE="${OPENAI_API_BASE:-https://api.perplexity.ai}"\n  export OPENAI_BASE_URL="${OPENAI_BASE_URL:-https://api.perplexity.ai}"\nfi\n'
+  fi
+  # Qwen Coding Plan (DashScope intl) — same zshenv-override posture as Cerebras.
+  if [[ "$extra_cli" == *dashscope.aliyuncs.com* ]]; then
+    qwen_guard=$'if [[ -z "${QWEN_API_KEY:-}" && -n "${BAILIAN_CODING_PLAN_API_KEY:-}" ]]; then\n  export QWEN_API_KEY="$BAILIAN_CODING_PLAN_API_KEY"\nfi\nif [[ -n "${QWEN_API_KEY:-}" ]]; then\n  export SWARMFORGE_USE_QWEN=1\n  export OPENAI_API_KEY="$QWEN_API_KEY"\n  export OPENAI_API_BASE=https://coding-intl.dashscope.aliyuncs.com/v1\n  export OPENAI_BASE_URL=https://coding-intl.dashscope.aliyuncs.com/v1\nelse\n  echo "SwarmForge: QWEN_API_KEY required (launch CLI targets coding-intl.dashscope.aliyuncs.com)" >&2\n  exit 1\nfi\n'
+  else
+    qwen_guard=$'if [[ -z "${QWEN_API_KEY:-}" && -n "${BAILIAN_CODING_PLAN_API_KEY:-}" ]]; then\n  export QWEN_API_KEY="$BAILIAN_CODING_PLAN_API_KEY"\nfi\nif [[ "${SWARMFORGE_USE_QWEN:-}" == "1" && -n "${QWEN_API_KEY:-}" ]]; then\n  export OPENAI_API_KEY="$QWEN_API_KEY"\n  export OPENAI_API_BASE="${OPENAI_API_BASE:-https://coding-intl.dashscope.aliyuncs.com/v1}"\n  export OPENAI_BASE_URL="${OPENAI_BASE_URL:-https://coding-intl.dashscope.aliyuncs.com/v1}"\nfi\n'
   fi
   if [[ "$agent" == "claude" ]]; then
     if role_uses_openrouter "$role"; then
@@ -1301,7 +1308,7 @@ export SWARMFORGE_ROLE='$role'
 export PATH='$role_script_dir':\$PATH
 cd '$role_worktree'
 ${resume_check}
-${billing_guard}${copilot_guard}${cerebras_guard}${perplexity_guard}${launch_body}
+${billing_guard}${copilot_guard}${cerebras_guard}${perplexity_guard}${qwen_guard}${launch_body}
 LAUNCH
 
   # Only wire cleanup when a GUI terminal backend owns windows to close.
@@ -1399,10 +1406,14 @@ launch_role() {
     local provider_key
     local use_cerebras=0
     local use_perplexity=0
+    local use_qwen=0
     # Gemini CLI reads GEMINI_API_KEY; allow SWARMFORGE_GEMINI_API_KEY as alias
     # so operators can keep provider keys under a SwarmForge-prefixed name.
     if [[ -z "${GEMINI_API_KEY:-}" && -n "${SWARMFORGE_GEMINI_API_KEY:-}" ]]; then
       export GEMINI_API_KEY="$SWARMFORGE_GEMINI_API_KEY"
+    fi
+    if [[ -z "${QWEN_API_KEY:-}" && -n "${BAILIAN_CODING_PLAN_API_KEY:-}" ]]; then
+      export QWEN_API_KEY="$BAILIAN_CODING_PLAN_API_KEY"
     fi
     if [[ "${SWARMFORGE_USE_CEREBRAS:-}" == "1" && -n "${CEREBRAS_API_KEY:-}" ]]; then
       use_cerebras=1
@@ -1410,15 +1421,21 @@ launch_role() {
     if [[ "${SWARMFORGE_USE_PERPLEXITY:-}" == "1" && -n "${PERPLEXITY_API_KEY:-}" ]]; then
       use_perplexity=1
     fi
+    if [[ "${SWARMFORGE_USE_QWEN:-}" == "1" && -n "${QWEN_API_KEY:-}" ]]; then
+      use_qwen=1
+    fi
     # SRE 2026-07-19: pack window --openai-api-base perplexity forces remap
     # even when the launching shell forgot SWARMFORGE_USE_PERPLEXITY=1.
     if [[ "${EXTRA_CLI_ARGS[$index]}" == *perplexity.ai* && -n "${PERPLEXITY_API_KEY:-}" ]]; then
       use_perplexity=1
     fi
-    for provider_key in OPENAI_API_KEY MISTRAL_API_KEY CEREBRAS_API_KEY PERPLEXITY_API_KEY GEMINI_API_KEY; do
-      # When Cerebras/Perplexity OpenAI-compat mode is on, do NOT forward the host
+    if [[ "${EXTRA_CLI_ARGS[$index]}" == *dashscope.aliyuncs.com* && -n "${QWEN_API_KEY:-}" ]]; then
+      use_qwen=1
+    fi
+    for provider_key in OPENAI_API_KEY MISTRAL_API_KEY CEREBRAS_API_KEY PERPLEXITY_API_KEY GEMINI_API_KEY QWEN_API_KEY; do
+      # When Cerebras/Perplexity/Qwen OpenAI-compat mode is on, do NOT forward the host
       # OPENAI_API_KEY (real OpenAI sk-*). Panes must use the provider→OPENAI map.
-      if [[ ( "$use_cerebras" == "1" || "$use_perplexity" == "1" ) && "$provider_key" == "OPENAI_API_KEY" ]]; then
+      if [[ ( "$use_cerebras" == "1" || "$use_perplexity" == "1" || "$use_qwen" == "1" ) && "$provider_key" == "OPENAI_API_KEY" ]]; then
         continue
       fi
       if [[ -n "${(P)provider_key:-}" ]]; then
@@ -1441,6 +1458,13 @@ launch_role() {
       provider_env_flags+=(-e "OPENAI_API_KEY=${PERPLEXITY_API_KEY}")
       provider_env_flags+=(-e "OPENAI_API_BASE=https://api.perplexity.ai")
       provider_env_flags+=(-e "OPENAI_BASE_URL=https://api.perplexity.ai")
+    fi
+    if [[ "$use_qwen" == "1" ]]; then
+      # Qwen Coding Plan (DashScope intl). Same BL-130 / zshenv re-export posture.
+      provider_env_flags+=(-e "SWARMFORGE_USE_QWEN=1")
+      provider_env_flags+=(-e "OPENAI_API_KEY=${QWEN_API_KEY}")
+      provider_env_flags+=(-e "OPENAI_API_BASE=https://coding-intl.dashscope.aliyuncs.com/v1")
+      provider_env_flags+=(-e "OPENAI_BASE_URL=https://coding-intl.dashscope.aliyuncs.com/v1")
     fi
   elif role_uses_openrouter "$role"; then
     # OpenRouter-backed claude role: same ephemeral -e injection - the key

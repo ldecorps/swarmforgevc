@@ -10,7 +10,7 @@ export PATH="$HOME/.npm-global/bin:$HOME/.local/bin:$PATH"
 
 # shellcheck disable=SC1090
 source "$HOME/.zshenv" 2>/dev/null || true
-unset SWARMFORGE_USE_CEREBRAS SWARMFORGE_USE_PERPLEXITY OPENAI_API_BASE OPENAI_BASE_URL || true
+unset SWARMFORGE_USE_CEREBRAS SWARMFORGE_USE_PERPLEXITY SWARMFORGE_USE_QWEN OPENAI_API_BASE OPENAI_BASE_URL || true
 
 if [[ -z "${OPENAI_API_KEY:-}" ]]; then
   echo "failover_to_gpt: OPENAI_API_KEY missing (export or ~/.zshenv)" >&2

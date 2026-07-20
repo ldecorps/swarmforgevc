@@ -15,6 +15,7 @@
 
 (def perplexity-host-re #"(?i)api\.perplexity\.ai")
 (def cerebras-host-re #"(?i)api\.cerebras\.ai")
+(def qwen-host-re #"(?i)dashscope\.aliyuncs\.com")
 
 (defn launch-cli-implies-perplexity?
   "True when the role's extra CLI / launch body targets Perplexity's OpenAI-compat host."
@@ -27,12 +28,18 @@
   (boolean (and (string? launch-cli)
                 (re-find cerebras-host-re launch-cli))))
 
+(defn launch-cli-implies-qwen?
+  [launch-cli]
+  (boolean (and (string? launch-cli)
+                (re-find qwen-host-re launch-cli))))
+
 (defn openai-key-family
   "Coarse family for an OPENAI_API_KEY value. Never logs the key."
   [key]
   (cond
     (str/blank? key) :missing
     (str/starts-with? key "pplx-") :perplexity
+    (str/starts-with? key "sk-sp-") :qwen
     (or (str/starts-with? key "sk-")
         (str/starts-with? key "sk-proj-")) :openai
     (str/starts-with? key "csk-") :cerebras
@@ -51,13 +58,19 @@
       (= "1" use-cerebras)
       (launch-cli-implies-cerebras? launch-cli)))
 
+(defn must-remap-to-qwen?
+  [{:keys [use-qwen launch-cli]}]
+  (or (= true use-qwen)
+      (= "1" use-qwen)
+      (launch-cli-implies-qwen? launch-cli)))
+
 (defn resolve-openai-compat
   "Returns {:openai-api-key :openai-api-base :openai-base-url :provider :reason}
-   for the pane. Prefer Cerebras over Perplexity if both somehow apply (explicit
-   flag order matches swarmforge.sh). Never embeds secrets into reason strings
-   beyond family labels."
-  [{:keys [use-perplexity use-cerebras
-           perplexity-api-key cerebras-api-key openai-api-key
+   for the pane. Prefer Cerebras over Perplexity over Qwen if multiple somehow
+   apply (explicit flag order matches swarmforge.sh). Never embeds secrets into
+   reason strings beyond family labels."
+  [{:keys [use-perplexity use-cerebras use-qwen
+           perplexity-api-key cerebras-api-key qwen-api-key openai-api-key
            launch-cli]
     :as opts}]
   (cond
@@ -84,6 +97,22 @@
      :provider :perplexity
      :reason :perplexity-key-missing}
 
+    (and (must-remap-to-qwen? opts) (not (str/blank? qwen-api-key)))
+    {:openai-api-key qwen-api-key
+     :openai-api-base "https://coding-intl.dashscope.aliyuncs.com/v1"
+     :openai-base-url "https://coding-intl.dashscope.aliyuncs.com/v1"
+     :provider :qwen
+     :reason (if (launch-cli-implies-qwen? launch-cli)
+               :launch-cli-qwen
+               :use-qwen-flag)}
+
+    (and (must-remap-to-qwen? opts) (str/blank? qwen-api-key))
+    {:openai-api-key nil
+     :openai-api-base "https://coding-intl.dashscope.aliyuncs.com/v1"
+     :openai-base-url "https://coding-intl.dashscope.aliyuncs.com/v1"
+     :provider :qwen
+     :reason :qwen-key-missing}
+
     :else
     {:openai-api-key openai-api-key
      :openai-api-base nil
@@ -99,8 +128,10 @@
         live (openai-key-family live-openai-key)]
     (cond
       (= :perplexity-key-missing (:reason resolved)) true
+      (= :qwen-key-missing (:reason resolved)) true
       (= required :perplexity) (not= live :perplexity)
       (= required :cerebras) (not= live :cerebras)
+      (= required :qwen) (not= live :qwen)
       :else false)))
 
 (defn provider-auth-error-text?
