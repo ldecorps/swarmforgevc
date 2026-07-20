@@ -1,1 +1,1 @@
-{"id":"BL-232","messages":[{"seq":0,"ts":1784301613730,"author":"swarm","type":"outbound","text":"BL-232 ✅ done — BUG: chase/nudge sidecars orphan in inbox/new/ on dequeue and accumulate unbounded"}]}
+{"id":"BL-232","messages":[{"seq":0,"ts":1784301613730,"author":"swarm","type":"outbound","text":"BL-232 ✅ done — BUG: chase/nudge sidecars orphan in inbox/new/ on dequeue and accumulate unbounded"},{"seq":1,"ts":1784509059756,"author":"swarm","type":"outbound","text":"BL-232 ✅ done — BUG: chase/nudge sidecars orphan in inbox/new/ on dequeue and accumulate unbounded"}]}
