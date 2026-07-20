@@ -1,1 +1,1 @@
-{"id":"BL-056","messages":[{"seq":0,"ts":1784303814241,"author":"swarm","type":"outbound","text":"BL-056 ✅ done — BUG — anchor handoff outbox/inbox at the worktree root (nested-outbox stall)"}]}
+{"id":"BL-056","messages":[{"seq":0,"ts":1784303814241,"author":"swarm","type":"outbound","text":"BL-056 ✅ done — BUG — anchor handoff outbox/inbox at the worktree root (nested-outbox stall)"},{"seq":1,"ts":1784519635475,"author":"swarm","type":"outbound","text":"BL-056 ✅ done — BUG — anchor handoff outbox/inbox at the worktree root (nested-outbox stall)"}]}
