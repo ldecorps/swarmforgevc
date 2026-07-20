@@ -1,0 +1,1113 @@
+const assert = require('node:assert/strict');
+const {
+  computePipelineBoard,
+  renderPipelineBoard,
+  renderPipelineBoardBody,
+  renderPipelineBoardGridOnly,
+  renderPipelineBoardLinks,
+  budgetPipelineBoardLinks,
+  formatUpdatedAtLabel,
+  wrapPipelineBoardHtml,
+  composePipelineBoardHtml,
+  deriveKebabSlug,
+  deriveListEntryText,
+  deriveDisplayTicketId,
+  compareLinksMostRecentFirst,
+  PIPELINE_BOARD_COLUMN_ORDER,
+  PIPELINE_BOARD_RECENTLY_CLOSED_MAX,
+  PIPELINE_BOARD_NOT_STARTED_COLUMN,
+  PIPELINE_BOARD_MESSAGE_MAX_LENGTH,
+} = require('../out/concierge/pipelineBoard');
+
+// BL-452/BL-455 pipeline-board-01/02: a ticket held by a role becomes a row
+// marked only in that role's column; every other column in that row stays
+// blank. A paused ticket never becomes a grid row at all (BL-455) - it
+// becomes a below-grid parked entry instead.
+
+test('computePipelineBoard: a ticket held by a role is a row in that role column', () => {
+  const { rows } = computePipelineBoard({ coder: ['BL-387'], QA: ['BL-413'] }, [], {});
+  assert.deepEqual(rows, [
+    { id: 'BL-387', column: 'coder', epic: undefined, slug: '' },
+    { id: 'BL-413', column: 'QA', epic: undefined, slug: '' },
+  ]);
+});
+
+test('computePipelineBoard: rows follow pipeline order (specifier..QA), not object key order, within an epic group', () => {
+  const { rows } = computePipelineBoard({ QA: ['BL-2'], coder: ['BL-1'] }, [], {});
+  assert.deepEqual(
+    rows.map((r) => r.id),
+    ['BL-1', 'BL-2']
+  );
+});
+
+test('computePipelineBoard: a batch role holding several tickets gets one row per ticket', () => {
+  const { rows } = computePipelineBoard({ cleaner: ['BL-100', 'BL-101'] }, [], {});
+  assert.deepEqual(rows, [
+    { id: 'BL-100', column: 'cleaner', epic: undefined, slug: '' },
+    { id: 'BL-101', column: 'cleaner', epic: undefined, slug: '' },
+  ]);
+});
+
+test('computePipelineBoard: no role-held tickets renders no grid rows', () => {
+  assert.deepEqual(computePipelineBoard({}, [], {}).rows, []);
+});
+
+// ── BL-464 board-authoritative-stage-02/03: a ticket observed at two roles
+// at once (a mid-transition scrape's own double-row defect) collapses to
+// exactly one row, at the MORE DOWNSTREAM role - never two rows, never the
+// stale/upstream one. ──────────────────────────────────────────────────
+
+test('BL-464: a ticket held under two roles at once collapses to exactly one row, at the more downstream role', () => {
+  const { rows } = computePipelineBoard({ coder: ['BL-460'], cleaner: ['BL-460'] }, [], {});
+  assert.deepEqual(rows, [{ id: 'BL-460', column: 'cleaner', epic: undefined, slug: '' }]);
+});
+
+test('BL-464: the double-role collapse is independent of which role the input map lists first', () => {
+  const { rows } = computePipelineBoard({ cleaner: ['BL-460'], coder: ['BL-460'] }, [], {});
+  assert.deepEqual(rows, [{ id: 'BL-460', column: 'cleaner', epic: undefined, slug: '' }]);
+});
+
+test('BL-464: a ticket held under two roles alongside other distinct tickets still yields one row per distinct id', () => {
+  const { rows } = computePipelineBoard({ coder: ['BL-1', 'BL-460'], cleaner: ['BL-460', 'BL-2'] }, [], {});
+  assert.deepEqual(rows.map((r) => `${r.id}:${r.column}`).sort(), ['BL-1:coder', 'BL-2:cleaner', 'BL-460:cleaner']);
+});
+
+// BL-455 pipeline-board-epic-01: rows sharing an epic sort together, and
+// no-epic rows sort together too (as one bucket) - always LAST, deterministic
+// regardless of iteration order.
+
+test('computePipelineBoard: rows sharing an epic are grouped together, no-epic rows grouped together and last', () => {
+  const { rows } = computePipelineBoard(
+    { coder: ['BL-1'], architect: ['BL-2'], QA: ['BL-3'], hardender: ['BL-4'] },
+    [],
+    {
+      'BL-1': { epic: 'Beta', title: 'first' },
+      'BL-2': { epic: 'Alpha', title: 'second' },
+      'BL-3': { epic: 'Alpha', title: 'third' },
+      'BL-4': { title: 'fourth' },
+    }
+  );
+  assert.deepEqual(
+    rows.map((r) => r.id),
+    ['BL-2', 'BL-3', 'BL-1', 'BL-4'],
+    'expected epic Alpha (BL-2, BL-3) before epic Beta (BL-1), no-epic (BL-4) last'
+  );
+});
+
+test('computePipelineBoard: grouping is a stable sort - ties within one epic keep role order', () => {
+  const { rows } = computePipelineBoard({ documenter: ['BL-9'], coder: ['BL-8'] }, [], {
+    'BL-9': { epic: 'Same' },
+    'BL-8': { epic: 'Same' },
+  });
+  assert.deepEqual(
+    rows.map((r) => r.id),
+    ['BL-8', 'BL-9'],
+    'expected coder (pipeline-earlier) before documenter even though BL-9 was inserted first'
+  );
+});
+
+// BL-455 pipeline-board-epic-02/03: parked/awaiting-approval tickets never
+// become grid rows - they become below-grid parked entries instead.
+
+test('computePipelineBoard: a paused ticket never becomes a grid row', () => {
+  const { rows, parked } = computePipelineBoard({}, [{ id: 'BL-436' }], {});
+  assert.deepEqual(rows, []);
+  assert.equal(parked.length, 1);
+});
+
+test('computePipelineBoard: a paused ticket with no pending approval is "parked"', () => {
+  const { parked } = computePipelineBoard({}, [{ id: 'BL-436' }], {});
+  assert.deepEqual(parked, [{ id: 'BL-436', slug: '', status: 'parked' }]);
+});
+
+test('computePipelineBoard: a paused ticket with humanApproval "approved" is still "parked"', () => {
+  const { parked } = computePipelineBoard({}, [{ id: 'BL-436', humanApproval: 'approved' }], {});
+  assert.deepEqual(parked, [{ id: 'BL-436', slug: '', status: 'parked' }]);
+});
+
+test('computePipelineBoard: a paused ticket awaiting human approval is "awaiting-approval"', () => {
+  const { parked } = computePipelineBoard({}, [{ id: 'BL-449', humanApproval: 'pending' }], {});
+  assert.deepEqual(parked, [{ id: 'BL-449', slug: '', status: 'awaiting-approval' }]);
+});
+
+test('computePipelineBoard: the parked list is sorted by id, deterministic regardless of input order', () => {
+  const { parked } = computePipelineBoard({}, [{ id: 'BL-9' }, { id: 'BL-2' }], {});
+  assert.deepEqual(
+    parked.map((p) => p.id),
+    ['BL-2', 'BL-9']
+  );
+});
+
+test('computePipelineBoard: every ticket lands in exactly one place - role-held in rows, paused in parked, never both', () => {
+  const { rows, parked } = computePipelineBoard({ coder: ['BL-1'] }, [{ id: 'BL-2' }], {});
+  assert.deepEqual(
+    rows.map((r) => r.id),
+    ['BL-1']
+  );
+  assert.deepEqual(
+    parked.map((p) => p.id),
+    ['BL-2']
+  );
+});
+
+test('computePipelineBoard: no active or paused tickets renders an empty board', () => {
+  assert.deepEqual(computePipelineBoard({}, [], {}), { rows: [], parked: [], rootIntake: [], recentlyClosed: [], links: [] });
+});
+
+// ── BL-473: extras.activeIds (physical backlog/active/ membership) is the
+// board's row-membership ground truth - a role-held ticket only decorates a
+// row's stage once membership already includes it. Omitting activeIds
+// defaults to the ids already implied by roleHeldTickets, so every
+// pre-BL-473 call site above (none of which pass activeIds) keeps rendering
+// identically. ──────────────────────────────────────────────────────────
+
+test('computePipelineBoard: an active id no role holds renders as a not-started row', () => {
+  const { rows } = computePipelineBoard({}, [], {}, { activeIds: ['BL-1'] });
+  assert.deepEqual(rows, [{ id: 'BL-1', column: PIPELINE_BOARD_NOT_STARTED_COLUMN, epic: undefined, slug: '' }]);
+});
+
+test('computePipelineBoard: an active id a role holds still renders at that role\'s stage, not not-started', () => {
+  const { rows } = computePipelineBoard({ coder: ['BL-1'] }, [], {}, { activeIds: ['BL-1'] });
+  assert.deepEqual(rows, [{ id: 'BL-1', column: 'coder', epic: undefined, slug: '' }]);
+});
+
+test('computePipelineBoard: activeIds is the sole membership source - a role-held ticket absent from it gets no row at all', () => {
+  const { rows } = computePipelineBoard({ coder: ['BL-2'] }, [], {}, { activeIds: ['BL-1'] });
+  assert.deepEqual(rows, [{ id: 'BL-1', column: PIPELINE_BOARD_NOT_STARTED_COLUMN, epic: undefined, slug: '' }]);
+});
+
+test('computePipelineBoard: every activeIds entry is a row exactly once, even with duplicates in the input', () => {
+  const { rows } = computePipelineBoard({ coder: ['BL-1'] }, [], {}, { activeIds: ['BL-1', 'BL-2', 'BL-1'] });
+  assert.deepEqual(
+    rows.map((r) => r.id).sort(),
+    ['BL-1', 'BL-2']
+  );
+});
+
+test('computePipelineBoard: a not-started row carries its ticket meta (epic/slug) same as a held row would', () => {
+  const { rows } = computePipelineBoard({}, [], { 'BL-1': { epic: 'Alpha', title: 'fix the widget' } }, { activeIds: ['BL-1'] });
+  assert.deepEqual(rows, [{ id: 'BL-1', column: PIPELINE_BOARD_NOT_STARTED_COLUMN, epic: 'Alpha', slug: 'fix-the' }]);
+});
+
+test('renderPipelineBoardBody: a not-started row marks only the not-started column, no pipeline role column', () => {
+  const text = renderPipelineBoardBody({ rows: [{ id: 'BL-1', column: PIPELINE_BOARD_NOT_STARTED_COLUMN, slug: 'x' }], parked: [] });
+  const lines = text.split('\n');
+  assert.equal(lines.find((l) => l.trim() === '1')?.trim(), '1');
+  assert.equal(lines.find((l) => l.startsWith('NS '))?.trim(), 'NS X');
+  for (const role of ['SP', 'CO', 'CL', 'AR', 'HD', 'DC', 'QA']) {
+    assert.equal(lines.find((l) => l.startsWith(`${role} `))?.trim(), `${role} .`);
+  }
+});
+
+test('computePipelineBoard: a role-held ticket with a title gets its derived (grid) kebab slug', () => {
+  const { rows } = computePipelineBoard({ coder: ['BL-1'] }, [], { 'BL-1': { title: 'fix the widget' } });
+  assert.equal(rows[0].slug, 'fix-the');
+});
+
+test('computePipelineBoard: a paused ticket with a title gets its derived (list) kebab-only slug', () => {
+  const { parked } = computePipelineBoard({}, [{ id: 'BL-2' }], { 'BL-2': { title: 'clean up docs' } });
+  assert.equal(parked[0].slug, 'clean-up');
+});
+
+// BL-452/BL-455 pipeline-board-01: each ticket block lists every pipeline
+// stage vertically; exactly one stage line carries X, every other stage . .
+
+test('renderPipelineBoardBody: an empty board renders no grid lines', () => {
+  const text = renderPipelineBoardBody({ rows: [], parked: [] });
+  assert.equal(text.trim(), '');
+});
+
+test('renderPipelineBoardBody: a pivoted ticket block lists every stage column vertically', () => {
+  const text = renderPipelineBoardBody({ rows: [{ id: 'BL-1', column: 'coder', slug: '' }], parked: [] });
+  for (const label of ['NS', 'SP', 'CO', 'CL', 'AR', 'HD', 'DC', 'QA']) {
+    assert.ok(text.includes(`${label} `), `expected stage line ${label} in:\n${text}`);
+  }
+});
+
+test('renderPipelineBoardBody: a row is marked only in its own stage line', () => {
+  const text = renderPipelineBoardBody({ rows: [{ id: 'BL-387', column: 'coder', slug: 'x' }], parked: [] });
+  const lines = text.split('\n');
+  assert.equal(lines.find((l) => l.trim() === '387')?.trim(), '387');
+  assert.equal(lines.find((l) => l.startsWith('CO '))?.trim(), 'CO X');
+  for (const label of ['NS', 'SP', 'CL', 'AR', 'HD', 'DC', 'QA']) {
+    assert.equal(lines.find((l) => l.startsWith(`${label} `))?.trim(), `${label} .`);
+  }
+});
+
+test('renderPipelineBoardBody: two tickets in different columns each mark only their own stage line', () => {
+  const text = renderPipelineBoardBody({
+    rows: [
+      { id: 'BL-387', column: 'coder', slug: '' },
+      { id: 'BL-413', column: 'QA', slug: '' },
+    ],
+    parked: [],
+  });
+  const lines = text.split('\n');
+  assert.ok(lines.some((l) => l.trim() === '387'));
+  assert.ok(lines.some((l) => l.trim() === '413'));
+  const block387Start = lines.findIndex((l) => l.trim() === '387');
+  const block413Start = lines.findIndex((l) => l.trim() === '413');
+  const block387 = lines.slice(block387Start, block387Start + 9);
+  const block413 = lines.slice(block413Start, block413Start + 9);
+  assert.ok(block387.some((l) => l.trim() === 'CO X'));
+  assert.ok(block413.some((l) => l.trim() === 'QA X'));
+});
+
+test('renderPipelineBoardBody: each ticket id renders on its own line in the pivoted grid', () => {
+  const text = renderPipelineBoardBody({
+    rows: [
+      { id: 'BL-9', column: 'coder', slug: '' },
+      { id: 'BL-123456', column: 'QA', slug: '' },
+    ],
+    parked: [],
+  });
+  const idLines = text.split('\n').filter((l) => /^\d+$/.test(l.trim()));
+  assert.deepEqual(idLines.map((l) => l.trim()).sort(), ['123456', '9']);
+});
+
+test('renderPipelineBoardBody: rendering is a pure function of its data - same input, same text', () => {
+  const data = { rows: [{ id: 'BL-1', column: 'coder', slug: '' }], parked: [] };
+  assert.equal(renderPipelineBoardBody(data), renderPipelineBoardBody(data));
+});
+
+// BL-455 pipeline-board-epic-01/05: rows are grouped by epic under a
+// heading; a no-epic bucket is grouped together too.
+
+test('renderPipelineBoardBody: rows sharing an epic render under one heading', () => {
+  const text = renderPipelineBoardBody({
+    rows: [
+      { id: 'BL-1', column: 'coder', epic: 'Alpha', slug: '' },
+      { id: 'BL-2', column: 'QA', epic: 'Alpha', slug: '' },
+    ],
+    parked: [],
+  });
+  const lines = text.split('\n');
+  assert.equal(lines.filter((l) => l.includes('Alpha')).length, 1, 'expected exactly one Alpha heading');
+  const headingIndex = lines.findIndex((l) => l.includes('Alpha'));
+  assert.ok(lines.some((l) => l.trim() === '1'));
+  assert.ok(lines.some((l) => l.trim() === '2'));
+});
+
+test('renderPipelineBoardBody: a no-epic row renders under its own heading, distinct from a named epic', () => {
+  const text = renderPipelineBoardBody({
+    rows: [
+      { id: 'BL-1', column: 'coder', epic: 'Alpha', slug: '' },
+      { id: 'BL-2', column: 'QA', slug: '' },
+    ],
+    parked: [],
+  });
+  const lines = text.split('\n');
+  const alphaIndex = lines.findIndex((l) => l.includes('Alpha'));
+  const noEpicIndex = lines.findIndex((l) => l.startsWith('--') && !l.includes('Alpha'));
+  assert.ok(alphaIndex >= 0 && noEpicIndex > alphaIndex);
+  // BL-505: the grid TICKET column shows the ticket NUMBER only.
+  assert.ok(lines[noEpicIndex + 1].trim().startsWith('2'));
+});
+
+// BL-455 pipeline-board-epic-02/03: parked/awaiting-approval tickets render
+// in a below-grid list, never as stage-grid rows.
+
+test('renderPipelineBoardBody: an empty parked list renders no below-grid section', () => {
+  const text = renderPipelineBoardBody({ rows: [{ id: 'BL-1', column: 'coder', slug: '' }], parked: [] });
+  assert.ok(!text.includes('PARKED'));
+});
+
+test('renderPipelineBoardBody: parked entries render below the grid, not as grid rows', () => {
+  const text = renderPipelineBoardBody({
+    rows: [{ id: 'BL-1', column: 'coder', slug: '' }],
+    parked: [{ id: 'BL-436', slug: 'stalled work', status: 'parked' }],
+  });
+  const lines = text.split('\n');
+  const parkedHeaderIndex = lines.findIndex((l) => l.trim() === 'PARKED:');
+  assert.ok(parkedHeaderIndex > 0);
+  const gridLines = lines.slice(0, parkedHeaderIndex);
+  const belowLines = lines.slice(parkedHeaderIndex);
+  // BL-505: below-grid list lines show the ticket NUMBER only.
+  assert.ok(!gridLines.some((l) => l.trim().split(/\s+/)[0] === '436'), 'expected 436 to be absent from the grid');
+  assert.ok(belowLines.some((l) => l.includes('436') && l.includes('stalled work')));
+});
+
+test('renderPipelineBoardBody: an awaiting-approval entry is distinguishable from a plain parked one below the grid', () => {
+  const text = renderPipelineBoardBody({
+    rows: [],
+    parked: [
+      { id: 'BL-436', slug: '', status: 'parked' },
+      { id: 'BL-449', slug: '', status: 'awaiting-approval' },
+    ],
+  });
+  const lines = text.split('\n');
+  // BL-505: below-grid list lines show the ticket NUMBER only.
+  const parkedLine = lines.find((l) => l.includes('436'));
+  const awaitingLine = lines.find((l) => l.includes('449'));
+  assert.notEqual(parkedLine.trim().split(/\s+/)[0], awaitingLine.trim().split(/\s+/)[0]);
+});
+
+// BL-452: the board posts as a Telegram HTML <pre> block so the grid stays
+// monospace/aligned; only the handful of HTML-significant characters ever
+// need escaping (ticket ids and column glyphs never carry them in
+// practice, but the wrap must not corrupt the markup if they ever did).
+
+test('wrapPipelineBoardHtml: wraps the grid text in a <pre> block', () => {
+  assert.equal(wrapPipelineBoardHtml('TICKET SP\nBL-1    X'), '<pre>TICKET SP\nBL-1    X</pre>');
+});
+
+test('wrapPipelineBoardHtml: escapes HTML-significant characters', () => {
+  assert.equal(wrapPipelineBoardHtml('a & b < c > d'), '<pre>a &amp; b &lt; c &gt; d</pre>');
+});
+
+// BL-462 pipeline-board-refine-03: an "updated at" footer, fed a pure
+// formatter over an injected instant - never a bare new Date()/Date.now()
+// in the renderer or its formatter.
+
+test('formatUpdatedAtLabel: formats an injected summer epoch-ms in UK/London time with the BST marker', () => {
+  const epochMs = Date.UTC(2026, 6, 16, 20, 5); // Jul 16 2026, 20:05 UTC
+  assert.equal(formatUpdatedAtLabel(epochMs), 'Jul 16 21:05 BST');
+});
+
+test('formatUpdatedAtLabel: formats an injected winter epoch-ms in UK/London time with the GMT marker', () => {
+  const epochMs = Date.UTC(2026, 0, 5, 3, 7); // Jan 5 2026, 03:07 UTC
+  assert.equal(formatUpdatedAtLabel(epochMs), 'Jan 05 03:07 GMT');
+});
+
+test('formatUpdatedAtLabel: applies Europe/London date rollover near midnight in summer', () => {
+  const epochMs = Date.UTC(2026, 5, 30, 23, 30); // Jun 30 2026, 23:30 UTC
+  assert.equal(formatUpdatedAtLabel(epochMs), 'Jul 01 00:30 BST');
+});
+
+test('formatUpdatedAtLabel: is a pure function of its input - same epoch, same label', () => {
+  const epochMs = 1752696300000;
+  assert.equal(formatUpdatedAtLabel(epochMs), formatUpdatedAtLabel(epochMs));
+});
+
+test('renderPipelineBoard: appends an "updated at" footer showing the injected instant', () => {
+  const data = { rows: [{ id: 'BL-1', column: 'coder', slug: '' }], parked: [] };
+  const epochMs = Date.UTC(2026, 6, 16, 20, 5);
+  const text = renderPipelineBoard(data, epochMs);
+  const lines = text.split('\n');
+  assert.equal(lines[lines.length - 1], `updated at ${formatUpdatedAtLabel(epochMs)}`);
+});
+
+test('renderPipelineBoard: the footer is appended after the body - renderPipelineBoardBody is unaffected', () => {
+  const data = { rows: [{ id: 'BL-1', column: 'coder', slug: '' }], parked: [] };
+  const withFooter = renderPipelineBoard(data, 1234567890);
+  const body = renderPipelineBoardBody(data);
+  assert.ok(withFooter.startsWith(body), 'expected the body to render identically, footer only appended after it');
+  assert.notEqual(withFooter, body);
+});
+
+test('renderPipelineBoard: two different lastChangeMs values a minute apart produce two different footers over the identical body', () => {
+  const data = { rows: [], parked: [] };
+  const first = renderPipelineBoard(data, Date.UTC(2026, 6, 16, 20, 5));
+  const second = renderPipelineBoard(data, Date.UTC(2026, 6, 16, 20, 6));
+  assert.notEqual(first, second);
+  assert.equal(renderPipelineBoardBody(data), renderPipelineBoardBody(data), 'expected the content-only body to stay identical regardless of the clock');
+});
+
+// ── BL-465: deriveKebabSlug / deriveListEntryText (pure) ──────────────────
+
+test('deriveKebabSlug: takes the first 2 significant words, lowercased and hyphenated', () => {
+  assert.equal(deriveKebabSlug('Pipeline Board: Post The New Message'), 'pipeline-board');
+});
+
+test('deriveKebabSlug: strips punctuation rather than treating it as a word boundary only', () => {
+  assert.equal(deriveKebabSlug("BL-467: Pipeline board's own pin"), 'bl-467');
+});
+
+test('deriveKebabSlug: a short title (fewer than 2 words) uses every word it has', () => {
+  assert.equal(deriveKebabSlug('fix'), 'fix');
+});
+
+test('deriveKebabSlug: a title with exactly maxWords words uses every word it has', () => {
+  assert.equal(deriveKebabSlug('fix widget'), 'fix-widget');
+});
+
+test('deriveKebabSlug: no title is an empty slug', () => {
+  assert.equal(deriveKebabSlug(undefined), '');
+});
+
+test('deriveKebabSlug: a custom maxWords bound is honoured', () => {
+  assert.equal(deriveKebabSlug('one two three four five', 3), 'one-two-three');
+});
+
+test('deriveListEntryText: is the short kebab slug only, no wider title tail', () => {
+  assert.equal(deriveListEntryText('clean up docs'), 'clean-up');
+});
+
+test('deriveListEntryText: no title is an empty string (never throws)', () => {
+  assert.equal(deriveListEntryText(undefined), '');
+});
+
+// ── BL-505: deriveDisplayTicketId / narrower grid+list rendering / NS-first ──
+// BL-505 pipeline-board-narrower-grid-and-lists-01/03/04/05/06
+
+test('deriveDisplayTicketId: strips a recognised BL- prefix, leaving the number only', () => {
+  assert.equal(deriveDisplayTicketId('BL-493'), '493');
+});
+
+test('deriveDisplayTicketId: strips a recognised GH- prefix, leaving the number only', () => {
+  assert.equal(deriveDisplayTicketId('GH-42'), '42');
+});
+
+test('deriveDisplayTicketId: an id with no recognised ticket prefix is left unchanged', () => {
+  assert.equal(deriveDisplayTicketId('INTAKE-pipeline-board-grid'), 'INTAKE-pipeline-board-grid');
+});
+
+test('renderPipelineBoardBody: the grid shows ticket numbers without BL-/GH- prefix on their own lines', () => {
+  const text = renderPipelineBoardBody({
+    rows: [
+      { id: 'BL-493', column: 'coder', slug: '' },
+      { id: 'GH-42', column: 'QA', slug: '' },
+    ],
+    parked: [],
+  });
+  const lines = text.split('\n');
+  assert.ok(lines.some((l) => l.trim() === '493'));
+  assert.ok(lines.some((l) => l.trim() === '42'));
+});
+
+test('renderPipelineBoardBody: pivoted ticket ids align with the mark column, not the label column', () => {
+  const text = renderPipelineBoardBody({ rows: [{ id: 'BL-513', column: 'not-started', epic: 'pipeline-board', slug: '' }], parked: [] });
+  const lines = text.split('\n');
+  const ticketLine = lines.find((l) => l.includes('513') && !l.includes('pipeline-board'));
+  const nsLine = lines.find((l) => l.startsWith('NS '));
+  assert.ok(ticketLine, `expected ticket id line, got:\n${text}`);
+  assert.equal(nsLine?.trim(), 'NS X');
+  assert.equal(ticketLine.indexOf('513'), nsLine?.indexOf('X'), 'ticket id should start where stage marks start');
+  assert.ok(ticketLine.startsWith('\u00a0'), 'expected NBSP padding so Telegram does not strip the indent');
+});
+
+test('renderPipelineBoardBody: pivoted ticket ids are never padded with trailing spaces', () => {
+  const text = renderPipelineBoardBody({
+    rows: [
+      { id: 'BL-493', column: 'coder', slug: '' },
+      { id: 'BL-504', column: 'QA', slug: '' },
+    ],
+    parked: [],
+  });
+  const idLines = text.split('\n').filter((l) => /^\d+$/.test(l.trim()));
+  assert.deepEqual(idLines.map((l) => l.trim()).sort(), ['493', '504']);
+});
+
+test('renderPipelineBoardBody: a below-grid list line shows the short kebab slug only and a number-only id', () => {
+  const text = renderPipelineBoardBody({
+    rows: [],
+    parked: [{ id: 'BL-472', slug: deriveListEntryText('Pipeline board shows a lot more of the title now'), status: 'parked' }],
+  });
+  const lines = text.split('\n');
+  const entryLine = lines.find((l) => l.trim().split(/\s+/)[0] === '472');
+  assert.ok(entryLine, `expected a "472" parked entry, got:\n${text}`);
+  assert.equal(entryLine.trim(), '472 pipeline-board', 'expected the kebab slug only, no further title words');
+});
+
+test('renderPipelineBoardBody: a root-intake list entry keeps its non-ticket id unchanged', () => {
+  const text = renderPipelineBoardBody({
+    rows: [],
+    parked: [],
+    rootIntake: [{ id: 'INTAKE-pipeline-board-grid', slug: deriveListEntryText('grid too wide') }],
+    recentlyClosed: [],
+    links: [],
+  });
+  const lines = text.split('\n');
+  assert.ok(lines.some((l) => l.trim().split(/\s+/)[0] === 'INTAKE-pipeline-board-grid'));
+});
+
+test('PIPELINE_BOARD_COLUMN_ORDER: the not-started column leads the stage columns instead of trailing them', () => {
+  assert.equal(PIPELINE_BOARD_COLUMN_ORDER[0], PIPELINE_BOARD_NOT_STARTED_COLUMN);
+  assert.ok(PIPELINE_BOARD_COLUMN_ORDER.indexOf('coder') > 0, 'expected every pipeline role column after the not-started column');
+});
+
+// BL-507: the coordinator is not a forward pipeline stage (it does post-QA
+// backlog bookkeeping only), so the grid drops its column entirely - built
+// from the forward PIPELINE_CHAIN (specifier..QA) plus the not-started
+// sentinel, never from ALL_SWARM_ROLES (which still legitimately includes
+// 'coordinator' for the coordinator's own standing steering topic).
+test('PIPELINE_BOARD_COLUMN_ORDER: carries no coordinator column', () => {
+  assert.ok(!PIPELINE_BOARD_COLUMN_ORDER.includes('coordinator'), `expected no 'coordinator' column, got: ${PIPELINE_BOARD_COLUMN_ORDER.join(', ')}`);
+});
+
+test('PIPELINE_BOARD_COLUMN_ORDER: still carries every forward pipeline stage from specifier to QA', () => {
+  for (const stage of ['specifier', 'coder', 'cleaner', 'architect', 'hardender', 'documenter', 'QA']) {
+    assert.ok(PIPELINE_BOARD_COLUMN_ORDER.includes(stage), `expected a "${stage}" column, got: ${PIPELINE_BOARD_COLUMN_ORDER.join(', ')}`);
+  }
+});
+
+// BL-507: a ticket physically in backlog/active/ whose authoritative stage
+// is the coordinator (the brief post-QA bookkeeping window) is marked at
+// the QA stage, not blank and not not-started - heldRoleByTicketId still
+// resolves it to 'coordinator' (ALL_SWARM_ROLES is unchanged), so
+// buildGridRows must remap that one stage to 'QA' before it renders.
+test('computePipelineBoard: a coordinator-held ticket is marked at the QA stage, not left unrendered', () => {
+  const { rows } = computePipelineBoard({ coordinator: ['BL-950'] }, [], {}, { activeIds: ['BL-950'] });
+  assert.deepEqual(rows, [{ id: 'BL-950', column: 'QA', epic: undefined, slug: '' }]);
+});
+
+test('renderPipelineBoardBody: the not-started ticket mark falls on the NS line before specifier', () => {
+  const text = renderPipelineBoardBody({
+    rows: [{ id: 'BL-503', column: PIPELINE_BOARD_NOT_STARTED_COLUMN, slug: 'x' }],
+    parked: [],
+  });
+  const lines = text.split('\n');
+  const ticketIndex = lines.findIndex((l) => l.trim() === '503');
+  const nsIndex = lines.findIndex((l) => l.startsWith('NS '));
+  const spIndex = lines.findIndex((l) => l.startsWith('SP '));
+  assert.ok(ticketIndex >= 0 && nsIndex > ticketIndex && spIndex > nsIndex, lines.join('\n'));
+  assert.equal(lines[nsIndex].trim(), 'NS X');
+  assert.equal(lines[spIndex].trim(), 'SP .');
+});
+
+// ── BL-465: computePipelineBoard's new rootIntake/recentlyClosed/links ───
+
+test('computePipelineBoard: rootIntake defaults to empty when no extras are given', () => {
+  assert.deepEqual(computePipelineBoard({}, [], {}).rootIntake, []);
+});
+
+test('computePipelineBoard: rootIntake items render as list entries, sorted by id', () => {
+  const { rootIntake } = computePipelineBoard(
+    {},
+    [],
+    {},
+    { rootIntake: [
+      { id: 'INTAKE-2', title: 'second ask', filename: 'INTAKE-2.md' },
+      { id: 'INTAKE-1', title: 'first ask', filename: 'INTAKE-1.md' },
+    ] }
+  );
+  assert.deepEqual(
+    rootIntake.map((r) => r.id),
+    ['INTAKE-1', 'INTAKE-2']
+  );
+  assert.equal(rootIntake[0].slug, deriveListEntryText('first ask'));
+});
+
+test('computePipelineBoard: recentlyClosed is capped at PIPELINE_BOARD_RECENTLY_CLOSED_MAX items', () => {
+  const items = Array.from({ length: PIPELINE_BOARD_RECENTLY_CLOSED_MAX + 3 }, (_, i) => ({
+    id: `BL-${i}`,
+    title: `closed ${i}`,
+    filename: `BL-${i}-closed.yaml`,
+  }));
+  const { recentlyClosed } = computePipelineBoard({}, [], {}, { recentlyClosed: items });
+  assert.equal(recentlyClosed.length, PIPELINE_BOARD_RECENTLY_CLOSED_MAX);
+});
+
+// BL-465 bounce (architect review): recently-closed order IS the whole
+// point of the section - the caller (conciergeTick.ts's recentlyClosedItems)
+// is documented as the one deciding order (this function "only bounds the
+// list length"), so computePipelineBoard must never re-sort it. Deliberately
+// fed in NON-alphabetical order (BL-9 before BL-1) - a bug that silently
+// re-sorts by id would flip this to BL-1 first and this test would catch it.
+test('computePipelineBoard: recentlyClosed preserves the caller-supplied order, never re-sorted alphabetically', () => {
+  const { recentlyClosed } = computePipelineBoard(
+    {},
+    [],
+    {},
+    {
+      recentlyClosed: [
+        { id: 'BL-9', title: 'closed most recently', filename: 'BL-9-closed.yaml' },
+        { id: 'BL-1', title: 'closed earlier', filename: 'BL-1-closed.yaml' },
+      ],
+    }
+  );
+  assert.deepEqual(recentlyClosed.map((e) => e.id), ['BL-9', 'BL-1']);
+});
+
+test('computePipelineBoard: links are empty when repoBaseUrl is absent, even with active rows', () => {
+  const { links } = computePipelineBoard({ coder: ['BL-1'] }, [], { 'BL-1': { filename: 'BL-1-foo.yaml', location: 'active' } });
+  assert.deepEqual(links, []);
+});
+
+test('computePipelineBoard: links resolve an active row to its backlog/active path when repoBaseUrl is given', () => {
+  const { links } = computePipelineBoard(
+    { coder: ['BL-1'] },
+    [],
+    { 'BL-1': { filename: 'BL-1-foo.yaml', location: 'active' } },
+    { repoBaseUrl: 'https://github.com/ldecorps/swarmforgevc' }
+  );
+  assert.deepEqual(links, [{ id: 'BL-1', path: 'backlog/active/BL-1-foo.yaml' }]);
+});
+
+test('computePipelineBoard: links resolve a parked ticket to its backlog/paused path', () => {
+  const { links } = computePipelineBoard(
+    {},
+    [{ id: 'BL-2' }],
+    { 'BL-2': { filename: 'BL-2-bar.yaml', location: 'paused' } },
+    { repoBaseUrl: 'https://github.com/ldecorps/swarmforgevc' }
+  );
+  assert.deepEqual(links, [{ id: 'BL-2', path: 'backlog/paused/BL-2-bar.yaml' }]);
+});
+
+test('computePipelineBoard: links resolve a shown ticket with done meta to its backlog/done path', () => {
+  const { links } = computePipelineBoard(
+    { QA: ['BL-3'] },
+    [],
+    { 'BL-3': { filename: 'BL-3-done.yaml', location: 'done' } },
+    { repoBaseUrl: 'https://github.com/ldecorps/swarmforgevc' }
+  );
+  assert.deepEqual(links, [{ id: 'BL-3', path: 'backlog/done/BL-3-done.yaml' }]);
+});
+
+test('computePipelineBoard: links resolve a recently-closed item to its backlog/done path', () => {
+  const { links } = computePipelineBoard(
+    {},
+    [],
+    {},
+    { recentlyClosed: [{ id: 'BL-3', title: 'done thing', filename: 'BL-3-done.yaml' }], repoBaseUrl: 'https://github.com/ldecorps/swarmforgevc' }
+  );
+  assert.deepEqual(links, [{ id: 'BL-3', path: 'backlog/done/BL-3-done.yaml' }]);
+});
+
+test('computePipelineBoard: links resolve a root-intake item to its raw backlog/ root path', () => {
+  const { links } = computePipelineBoard(
+    {},
+    [],
+    {},
+    { rootIntake: [{ id: 'INTAKE-1', title: 'an ask', filename: 'INTAKE-1.md' }], repoBaseUrl: 'https://github.com/ldecorps/swarmforgevc' }
+  );
+  assert.deepEqual(links, [{ id: 'INTAKE-1', path: 'backlog/INTAKE-1.md' }]);
+});
+
+test('computePipelineBoard: a ticket with no filename/location in its meta gets no link at all, never a broken one', () => {
+  const { links } = computePipelineBoard({ coder: ['BL-1'] }, [], { 'BL-1': {} }, { repoBaseUrl: 'https://github.com/ldecorps/swarmforgevc' });
+  assert.deepEqual(links, []);
+});
+
+test('computePipelineBoard: a parked ticket with no filename/location in its meta gets no link at all, never a broken one', () => {
+  const { links } = computePipelineBoard({}, [{ id: 'BL-2' }], { 'BL-2': {} }, { repoBaseUrl: 'https://github.com/ldecorps/swarmforgevc' });
+  assert.deepEqual(links, []);
+});
+
+test('computePipelineBoard: links combined from every source (row, parked, recently-closed, root-intake) come out ordered highest ticket number first', () => {
+  // BL-506: was ascending id order; the human wants most-recent (highest
+  // ticket number) first, with an unnumbered root-intake id sorting after
+  // every numbered link.
+  const { links } = computePipelineBoard(
+    { coder: ['BL-9'] },
+    [{ id: 'BL-5' }],
+    { 'BL-9': { filename: 'BL-9-foo.yaml', location: 'active' }, 'BL-5': { filename: 'BL-5-bar.yaml', location: 'paused' } },
+    {
+      recentlyClosed: [{ id: 'BL-7', title: 'done thing', filename: 'BL-7-done.yaml' }],
+      rootIntake: [{ id: 'INTAKE-1', title: 'an ask', filename: 'INTAKE-1.md' }],
+      repoBaseUrl: 'https://github.com/ldecorps/swarmforgevc',
+    }
+  );
+  assert.deepEqual(
+    links.map((l) => l.id),
+    ['BL-9', 'BL-7', 'BL-5', 'INTAKE-1']
+  );
+});
+
+test('computePipelineBoard: links order is numeric-aware, so a four-digit ticket sorts above a three-digit one', () => {
+  // BL-506: a plain string sort would place "BL-1000" below "BL-999" - the
+  // exact bug the fix must avoid at the four-digit boundary.
+  const { links } = computePipelineBoard(
+    { coder: ['BL-999', 'BL-1000'] },
+    [],
+    {
+      'BL-999': { filename: 'BL-999-a.yaml', location: 'active' },
+      'BL-1000': { filename: 'BL-1000-b.yaml', location: 'active' },
+    },
+    { repoBaseUrl: 'https://github.com/ldecorps/swarmforgevc' }
+  );
+  assert.deepEqual(
+    links.map((l) => l.id),
+    ['BL-1000', 'BL-999']
+  );
+});
+
+test('computePipelineBoard: links with no parseable trailing ticket number sort after every numbered link', () => {
+  const { links } = computePipelineBoard(
+    { coder: ['BL-101', 'BL-504'] },
+    [],
+    {
+      'BL-101': { filename: 'BL-101-a.yaml', location: 'active' },
+      'BL-504': { filename: 'BL-504-b.yaml', location: 'active' },
+    },
+    {
+      rootIntake: [{ id: 'INTAKE-pipeline-board-links-order', title: 'an ask', filename: 'INTAKE-pipeline-board-links-order.md' }],
+      repoBaseUrl: 'https://github.com/ldecorps/swarmforgevc',
+    }
+  );
+  assert.deepEqual(
+    links.map((l) => l.id),
+    ['BL-504', 'BL-101', 'INTAKE-pipeline-board-links-order']
+  );
+});
+
+test('computePipelineBoard: a root-intake id ending in digits (a timestamp-suffixed filename stem) still sorts after every numbered link, never parsed as a ticket number', () => {
+  // A generic trailing-digit parse would misread a huge embedded timestamp
+  // as a ticket number and sort this ahead of every real ticket - a live
+  // shape (e.g. backlog/INTAKE-operator-question-1784328071807.md).
+  const { links } = computePipelineBoard(
+    { coder: ['BL-9'] },
+    [],
+    { 'BL-9': { filename: 'BL-9-a.yaml', location: 'active' } },
+    {
+      rootIntake: [{ id: 'INTAKE-operator-question-1784328071807', title: 'an ask', filename: 'INTAKE-operator-question-1784328071807.md' }],
+      repoBaseUrl: 'https://github.com/ldecorps/swarmforgevc',
+    }
+  );
+  assert.deepEqual(
+    links.map((l) => l.id),
+    ['BL-9', 'INTAKE-operator-question-1784328071807']
+  );
+});
+
+test('computePipelineBoard: two links with no ticket number tie-break by plain id order', () => {
+  // BL-506 coverage gap: every other link-order test pairs at most one
+  // unnumbered id against numbered ones, so compareLinksMostRecentFirst's
+  // "both sides unnumbered" branch (the a.id.localeCompare(b.id) tie-break)
+  // never ran. Two root-intake entries, given out of alphabetical order,
+  // must still come out sorted by plain id.
+  const { links } = computePipelineBoard(
+    { coder: ['BL-9'] },
+    [],
+    { 'BL-9': { filename: 'BL-9-a.yaml', location: 'active' } },
+    {
+      rootIntake: [
+        { id: 'INTAKE-zzz-later', title: 'an ask', filename: 'INTAKE-zzz-later.md' },
+        { id: 'INTAKE-aaa-earlier', title: 'another ask', filename: 'INTAKE-aaa-earlier.md' },
+      ],
+      repoBaseUrl: 'https://github.com/ldecorps/swarmforgevc',
+    }
+  );
+  assert.deepEqual(
+    links.map((l) => l.id),
+    ['BL-9', 'INTAKE-aaa-earlier', 'INTAKE-zzz-later']
+  );
+});
+
+// BL-506 cleanup: compareLinksMostRecentFirst is a general-purpose Array.sort
+// comparator, so it must handle EITHER argument order correctly - not just
+// the order buildLinks's fixed [numbered sources..., root-intake...]
+// concatenation happens to feed it today. Every links-ordering test above
+// only ever observes the comparator through Array.sort, and V8's sort
+// algorithm never actually calls it with a numbered link first and an
+// unnumbered one second for that input shape (the "being inserted" element
+// is always the later-original-index one, and root-intake links are always
+// last), so that argument order - and its own defensive "return -1" branch
+// - stayed unreachable through the public API. Exported and unit-tested
+// directly here so the comparator's own contract is pinned regardless of
+// how a future caller/array shape happens to invoke it.
+test('compareLinksMostRecentFirst: a numbered id sorts before an unnumbered one, in EITHER argument order', () => {
+  const numbered = { id: 'BL-9', path: 'backlog/active/BL-9.yaml' };
+  const unnumbered = { id: 'INTAKE-x', path: 'backlog/INTAKE-x.md' };
+  assert.ok(compareLinksMostRecentFirst(unnumbered, numbered) > 0, 'unnumbered first arg sorts after numbered');
+  assert.ok(compareLinksMostRecentFirst(numbered, unnumbered) < 0, 'numbered first arg sorts before unnumbered');
+});
+
+test('compareLinksMostRecentFirst: two unnumbered ids tie-break by plain id order, in EITHER argument order', () => {
+  const a = { id: 'INTAKE-aaa', path: 'backlog/INTAKE-aaa.md' };
+  const b = { id: 'INTAKE-zzz', path: 'backlog/INTAKE-zzz.md' };
+  assert.equal(compareLinksMostRecentFirst(a, b), a.id.localeCompare(b.id));
+  assert.equal(compareLinksMostRecentFirst(b, a), b.id.localeCompare(a.id));
+});
+
+test('compareLinksMostRecentFirst: two numbered ids with the SAME ticket number tie-break by plain id order', () => {
+  // Not a realistic backlog state (ids are unique in practice), but the
+  // comparator's own contract still pins a deterministic outcome for it.
+  const a = { id: 'BL-9', path: 'backlog/active/BL-9.yaml' };
+  const b = { id: 'GH-9', path: 'backlog/active/GH-9.yaml' };
+  assert.equal(compareLinksMostRecentFirst(a, b), a.id.localeCompare(b.id));
+});
+
+test('compareLinksMostRecentFirst: two numbered ids with DIFFERENT numbers sort highest number first', () => {
+  const a = { id: 'BL-999', path: 'backlog/active/BL-999.yaml' };
+  const b = { id: 'BL-1000', path: 'backlog/active/BL-1000.yaml' };
+  assert.ok(compareLinksMostRecentFirst(a, b) > 0, 'lower number sorts after higher number');
+  assert.ok(compareLinksMostRecentFirst(b, a) < 0, 'higher number sorts before lower number');
+});
+
+// ── BL-465: renderPipelineBoardBody's new below-grid sections ────────────
+
+test('renderPipelineBoardBody: an empty root-intake/recently-closed list renders no section at all', () => {
+  const text = renderPipelineBoardBody({ rows: [], parked: [], rootIntake: [], recentlyClosed: [], links: [] });
+  assert.ok(!text.includes('ROOT INTAKE'));
+  assert.ok(!text.includes('RECENTLY CLOSED'));
+});
+
+test('renderPipelineBoardBody: root-intake and recently-closed entries render under their own sections', () => {
+  const text = renderPipelineBoardBody({
+    rows: [],
+    parked: [],
+    rootIntake: [{ id: 'INTAKE-1', slug: 'an-ask an ask for something' }],
+    recentlyClosed: [{ id: 'BL-9', slug: 'shipped-thing shipped thing' }],
+    links: [],
+  });
+  const lines = text.split('\n');
+  const rootIntakeHeaderIndex = lines.findIndex((l) => l.trim() === 'ROOT INTAKE:');
+  const closedHeaderIndex = lines.findIndex((l) => l.trim() === 'RECENTLY CLOSED:');
+  // BL-505: a non-ticket root-intake id renders unchanged; a real ticket id
+  // (BL-9) renders number-only ("9").
+  assert.ok(rootIntakeHeaderIndex > 0 && lines[rootIntakeHeaderIndex + 1].includes('INTAKE-1'));
+  assert.ok(closedHeaderIndex > 0 && lines[closedHeaderIndex + 1].trim().startsWith('9 '));
+});
+
+test('renderPipelineBoardBody: awaiting-approval renders under its own section, distinct from PARKED - no per-line label', () => {
+  const text = renderPipelineBoardBody({
+    rows: [],
+    parked: [
+      { id: 'BL-436', slug: 'stalled-work stalled work', status: 'parked' },
+      { id: 'BL-449', slug: 'needs-a-look needs a look', status: 'awaiting-approval' },
+    ],
+    rootIntake: [],
+    recentlyClosed: [],
+    links: [],
+  });
+  const lines = text.split('\n');
+  const parkedIndex = lines.findIndex((l) => l.trim() === 'PARKED:');
+  const awaitingIndex = lines.findIndex((l) => l.trim() === 'AWAITING APPROVAL:');
+  assert.ok(parkedIndex > 0 && awaitingIndex > 0 && parkedIndex !== awaitingIndex);
+  // BL-505: below-grid list lines show the ticket NUMBER only.
+  assert.ok(lines[parkedIndex + 1].includes('436') && !lines[parkedIndex + 1].trim().startsWith('PK'));
+  assert.ok(lines[awaitingIndex + 1].includes('449') && !lines[awaitingIndex + 1].trim().startsWith('AA'));
+});
+
+test('renderPipelineBoardBody: a fixture missing the new sections entirely (pre-BL-465 shape) still renders - defaults to empty', () => {
+  const text = renderPipelineBoardBody({ rows: [{ id: 'BL-1', column: 'coder', slug: 'x' }], parked: [] });
+  assert.ok(!text.includes('ROOT INTAKE'));
+  assert.ok(!text.includes('RECENTLY CLOSED'));
+});
+
+// ── BL-465: renderPipelineBoardLinks / wrapPipelineBoardHtml ──────────────
+
+test('renderPipelineBoardLinks: empty when there are no links at all', () => {
+  assert.equal(renderPipelineBoardLinks([], 'https://github.com/ldecorps/swarmforgevc'), '');
+});
+
+test('renderPipelineBoardLinks: empty when repoBaseUrl is not resolvable, even with links present', () => {
+  assert.equal(renderPipelineBoardLinks([{ id: 'BL-1', path: 'backlog/active/BL-1-foo.yaml' }], undefined), '');
+});
+
+test('renderPipelineBoardLinks: renders a real <a href> tag per link, pointing at the GitHub blob URL', () => {
+  const html = renderPipelineBoardLinks([{ id: 'BL-1', path: 'backlog/active/BL-1-foo.yaml' }], 'https://github.com/ldecorps/swarmforgevc');
+  assert.ok(html.includes('<a href="https://github.com/ldecorps/swarmforgevc/blob/main/backlog/active/BL-1-foo.yaml">'));
+  assert.ok(html.includes('BL-1'));
+});
+
+test('wrapPipelineBoardHtml: with no linksHtml, wraps exactly as before BL-465 (byte-for-byte)', () => {
+  assert.equal(wrapPipelineBoardHtml('TICKET SP\nBL-1    X'), '<pre>TICKET SP\nBL-1    X</pre>');
+});
+
+test('wrapPipelineBoardHtml: with linksHtml, appends it AFTER the closing </pre>, never inside it', () => {
+  const result = wrapPipelineBoardHtml('TICKET SP\nBL-1    X', '<a href="https://x">BL-1</a>');
+  assert.ok(result.startsWith('<pre>TICKET SP\nBL-1    X</pre>'));
+  assert.ok(result.endsWith('<a href="https://x">BL-1</a>'));
+  // The link tag itself must never be HTML-escaped (it would stop being a
+  // real link) - confirmed by its literal '<a href' substring surviving.
+  assert.ok(result.includes('<a href="https://x">BL-1</a>'));
+});
+
+// ── BL-502: budgetPipelineBoardLinks - live outage 2026-07-17 ────────────
+// The link list has no bound of its own, so at realistic backlog sizes the
+// FULL list alone pushes the composed message over Telegram's 4096-char
+// send limit and every post is rejected "text is too long", freezing the
+// board. budgetPipelineBoardLinks trims the link list (never the grid/
+// parked body) to whatever room the caller says remains, with a VISIBLE
+// "+N more" indicator when trimmed - never a silent cap.
+
+const REPO_BASE_URL = 'https://github.com/ldecorps/swarmforgevc';
+
+function manyLinks(count) {
+  return Array.from({ length: count }, (_, i) => ({ id: `BL-${i}`, path: `backlog/active/BL-${i}-a-fine-feature-with-a-longish-slug.yaml` }));
+}
+
+test('budgetPipelineBoardLinks: empty when there are no links at all', () => {
+  assert.deepEqual(budgetPipelineBoardLinks([], REPO_BASE_URL, 1000), { html: '', omittedCount: 0 });
+});
+
+test('budgetPipelineBoardLinks: empty when repoBaseUrl is not resolvable, even with links present', () => {
+  assert.deepEqual(budgetPipelineBoardLinks([{ id: 'BL-1', path: 'backlog/active/BL-1-foo.yaml' }], undefined, 1000), { html: '', omittedCount: 0 });
+});
+
+// pipeline-board-message-length-budget-01
+test('budgetPipelineBoardLinks: a small link list that fits is included in FULL, byte-identical to the unbudgeted render, with no overflow indicator', () => {
+  const links = manyLinks(3);
+  const full = renderPipelineBoardLinks(links, REPO_BASE_URL);
+  const result = budgetPipelineBoardLinks(links, REPO_BASE_URL, full.length + 500);
+  assert.equal(result.html, full);
+  assert.equal(result.omittedCount, 0);
+  assert.ok(!result.html.includes('more'), 'expected no overflow indicator when everything fits');
+});
+
+// pipeline-board-message-length-budget-02
+test('budgetPipelineBoardLinks: an oversized link list is trimmed to fit, with a visible "+N more" indicator naming the omission - never silent', () => {
+  const links = manyLinks(30);
+  const full = renderPipelineBoardLinks(links, REPO_BASE_URL);
+  const budget = Math.floor(full.length / 2);
+  const result = budgetPipelineBoardLinks(links, REPO_BASE_URL, budget);
+  assert.ok(result.html.length <= budget, `expected the trimmed html (${result.html.length}) within the budget (${budget})`);
+  assert.ok(result.omittedCount > 0, 'expected some links omitted at half the full budget');
+  assert.ok(result.html.includes(`+${result.omittedCount} more`), `expected a visible "+${result.omittedCount} more" indicator, got: ${result.html}`);
+  // The included links are a PREFIX of the full list, in order - never a
+  // silent reordering or arbitrary subset.
+  const includedIds = links.slice(0, links.length - result.omittedCount).map((l) => l.id);
+  for (const id of includedIds) {
+    assert.ok(result.html.includes(`${id}:`), `expected included link ${id} present in the trimmed html`);
+  }
+});
+
+test('budgetPipelineBoardLinks: the omission count is exact - included + omitted equals the total link count', () => {
+  const links = manyLinks(50);
+  const full = renderPipelineBoardLinks(links, REPO_BASE_URL);
+  const result = budgetPipelineBoardLinks(links, REPO_BASE_URL, Math.floor(full.length / 4));
+  const includedCount = links.length - result.omittedCount;
+  assert.ok(includedCount >= 0 && includedCount <= links.length);
+  assert.ok(result.omittedCount > 0);
+});
+
+test('budgetPipelineBoardLinks: a budget too small even for the header + omitted-count indicator degrades to no links at all, never a message still over budget', () => {
+  const links = manyLinks(10);
+  const result = budgetPipelineBoardLinks(links, REPO_BASE_URL, 3);
+  assert.equal(result.html, '');
+  assert.equal(result.omittedCount, links.length);
+});
+
+test('PIPELINE_BOARD_MESSAGE_MAX_LENGTH stays at or under Telegram\'s real 4096-char sendMessage limit', () => {
+  assert.ok(PIPELINE_BOARD_MESSAGE_MAX_LENGTH <= 4096);
+  assert.ok(PIPELINE_BOARD_MESSAGE_MAX_LENGTH > 0);
+});
+
+// ── BL-526: grid-only render for the phone miniapp ────────────────────────
+
+test('BL-526 renderPipelineBoardGridOnly: includes pivoted STATUS GRID and row marks', () => {
+  const text = renderPipelineBoardGridOnly({
+    rows: [{ id: 'BL-526', column: 'coder', slug: 'console-menu' }],
+    parked: [],
+  });
+  assert.match(text, /526/);
+  assert.ok(text.includes('CO X'), text);
+  assert.ok(text.includes('NS .'), text);
+  assert.ok(!text.includes('PARKED:'));
+});
+
+test('BL-526 renderPipelineBoardGridOnly: omits below-grid lists and never emits LINKS', () => {
+  const text = renderPipelineBoardGridOnly({
+    rows: [{ id: 'BL-1', column: 'coder', slug: 'a' }],
+    parked: [{ id: 'BL-2', slug: 'parked-thing', status: 'parked' }],
+    rootIntake: [{ id: 'INTAKE-x', slug: 'intake' }],
+    recentlyClosed: [{ id: 'BL-3', slug: 'closed' }],
+    links: [{ id: 'BL-1', path: 'backlog/active/BL-1-a.yaml' }],
+  });
+  assert.ok(!text.includes('PARKED:'), text);
+  assert.ok(!text.includes('AWAITING APPROVAL:'), text);
+  assert.ok(!text.includes('ROOT INTAKE:'), text);
+  assert.ok(!text.includes('RECENTLY CLOSED:'), text);
+  assert.ok(!text.includes('LINKS:'), text);
+  assert.ok(!text.includes('<a href'), text);
+});
+
+test('BL-526 renderPipelineBoardGridOnly: optional footer stamps updated-at without lists', () => {
+  const text = renderPipelineBoardGridOnly(
+    { rows: [{ id: 'BL-1', column: 'coder', slug: 'x' }], parked: [] },
+    Date.UTC(2026, 6, 19, 0, 30)
+  );
+  assert.match(text, /updated at Jul 19 01:30 BST/);
+  assert.ok(!text.includes('PARKED:'));
+});
+
+// ── In-board ticket hyperlinks (Telegram: no links inside <pre>) ──────────
+// Telegram forbids nesting <a> inside <pre>/<code>, so the composed message
+// keeps the status GRID in one <pre> (plain ids — column alignment), then
+// renders below-grid lists as HTML with tappable ticket numbers. No separate
+// LINKS: footer. Grid-only tickets get a compact linked id line after the
+// pre so every board ticket remains reachable.
+
+const IN_BOARD_REPO = 'https://github.com/ldecorps/swarmforgevc';
+
+test('composePipelineBoardHtml: ticket numbers in below-grid lists are GitHub <a href> links', () => {
+  const { html } = composePipelineBoardHtml(
+    {
+      rows: [{ id: 'BL-528', column: 'coder', slug: 'auto-heal', epic: 'swarm-reliability' }],
+      parked: [
+        { id: 'BL-543', slug: 'epic-fleet', status: 'parked' },
+        { id: 'BL-525', slug: 'modelfactory-assign', status: 'awaiting-approval' },
+      ],
+      rootIntake: [],
+      recentlyClosed: [{ id: 'BL-513', slug: 'pipeline-board' }],
+      links: [
+        { id: 'BL-528', path: 'backlog/active/BL-528-auto-heal.yaml' },
+        { id: 'BL-543', path: 'backlog/paused/BL-543-epic-fleet.yaml' },
+        { id: 'BL-525', path: 'backlog/paused/BL-525-modelfactory-assign.yaml' },
+        { id: 'BL-513', path: 'backlog/done/BL-513-pipeline-board.yaml' },
+      ],
+    },
+    Date.UTC(2026, 6, 19, 22, 54),
+    IN_BOARD_REPO
+  );
+  assert.ok(html.includes('<a href="https://github.com/ldecorps/swarmforgevc/blob/main/backlog/paused/BL-543-epic-fleet.yaml">543</a>'), html);
+  assert.ok(html.includes('<a href="https://github.com/ldecorps/swarmforgevc/blob/main/backlog/paused/BL-525-modelfactory-assign.yaml">525</a>'), html);
+  assert.ok(html.includes('<a href="https://github.com/ldecorps/swarmforgevc/blob/main/backlog/done/BL-513-pipeline-board.yaml">513</a>'), html);
+  assert.ok(html.includes('epic-fleet'), html);
+  assert.ok(html.includes('modelfactory-assign'), html);
+});
+
+test('composePipelineBoardHtml: grid-only tickets are linked just under the pre (ids inside pre cannot be anchors)', () => {
+  const { html } = composePipelineBoardHtml(
+    {
+      rows: [{ id: 'BL-528', column: 'coder', slug: 'auto-heal', epic: 'swarm-reliability' }],
+      parked: [],
+      links: [{ id: 'BL-528', path: 'backlog/active/BL-528-auto-heal.yaml' }],
+    },
+    Date.UTC(2026, 6, 19, 22, 54),
+    IN_BOARD_REPO
+  );
+  const preClose = html.indexOf('</pre>');
+  assert.ok(preClose >= 0, html);
+  const afterPre = html.slice(preClose);
+  assert.ok(
+    afterPre.includes('<a href="https://github.com/ldecorps/swarmforgevc/blob/main/backlog/active/BL-528-auto-heal.yaml">528</a>'),
+    afterPre
+  );
+});
+test('composePipelineBoardHtml: never emits a redundant LINKS: section', () => {
+  const { html } = composePipelineBoardHtml(
+    {
+      rows: [{ id: 'BL-1', column: 'coder', slug: 'x' }],
+      parked: [{ id: 'BL-2', slug: 'parked', status: 'parked' }],
+      links: [
+        { id: 'BL-1', path: 'backlog/active/BL-1-x.yaml' },
+        { id: 'BL-2', path: 'backlog/paused/BL-2-parked.yaml' },
+      ],
+    },
+    Date.UTC(2026, 6, 19, 12, 0),
+    IN_BOARD_REPO
+  );
+  assert.ok(!html.includes('LINKS:'), html);
+});
+
+test('composePipelineBoardHtml: status grid stays inside one <pre>; <a> tags never nest inside it', () => {
+  const { html } = composePipelineBoardHtml(
+    {
+      rows: [{ id: 'BL-528', column: 'coder', slug: 'auto-heal', epic: 'swarm-reliability' }],
+      parked: [{ id: 'BL-543', slug: 'epic-fleet', status: 'parked' }],
+      links: [
+        { id: 'BL-528', path: 'backlog/active/BL-528-auto-heal.yaml' },
+        { id: 'BL-543', path: 'backlog/paused/BL-543-epic-fleet.yaml' },
+      ],
+    },
+    Date.UTC(2026, 6, 19, 22, 54),
+    IN_BOARD_REPO
+  );
+  const preOpen = html.indexOf('<pre>');
+  const preClose = html.indexOf('</pre>');
+  assert.ok(preOpen >= 0 && preClose > preOpen, html);
+  const preBody = html.slice(preOpen, preClose + '</pre>'.length);
+  assert.ok(preBody.includes('528'), preBody);
+  assert.ok(preBody.includes('NS'), preBody);
+  assert.ok(preBody.includes('CO X'), preBody);
+  assert.ok(!preBody.includes('<a href'), preBody);
+  assert.ok(html.indexOf('<a href') > preClose, html);
+});
+
+test('composePipelineBoardHtml: without repoBaseUrl, board still renders but ticket ids are plain text', () => {
+  const { html } = composePipelineBoardHtml(
+    {
+      rows: [],
+      parked: [{ id: 'BL-543', slug: 'epic-fleet', status: 'parked' }],
+      links: [{ id: 'BL-543', path: 'backlog/paused/BL-543-epic-fleet.yaml' }],
+    },
+    Date.UTC(2026, 6, 19, 22, 54),
+    undefined
+  );
+  assert.ok(!html.includes('<a href'), html);
+  assert.ok(html.includes('543'), html);
+  assert.ok(html.includes('PARKED:'), html);
+});
