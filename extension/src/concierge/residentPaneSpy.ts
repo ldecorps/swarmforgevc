@@ -15,6 +15,13 @@ export interface ResidentPaneSpySnapshot {
   roleLabel: string;
   paneText: string;
   sessionTarget?: string;
+  modelLabel?: string;
+}
+
+export function formatResidentSpyHeader(snap: Pick<ResidentPaneSpySnapshot, 'roleLabel' | 'modelLabel' | 'sessionTarget'>): string {
+  const model = snap.modelLabel ? ` on ${snap.modelLabel}` : '';
+  const session = snap.sessionTarget ? ` (${snap.sessionTarget})` : '';
+  return `Resident: ${snap.roleLabel}${model}${session}`;
 }
 
 export function inferRoleLabelFromPane(paneText: string): string {
@@ -48,8 +55,7 @@ function escapeHtml(text: string): string {
 }
 
 function renderHeader(snap: ResidentPaneSpySnapshot): string {
-  const session = snap.sessionTarget ? ` (${snap.sessionTarget})` : '';
-  return `Resident: ${snap.roleLabel}${session}`;
+  return formatResidentSpyHeader(snap);
 }
 
 export function renderResidentPaneSpyBody(snap: ResidentPaneSpySnapshot): string {
