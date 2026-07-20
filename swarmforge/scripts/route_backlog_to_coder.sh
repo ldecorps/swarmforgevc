@@ -56,7 +56,7 @@ fi
 BASENAME="$(basename "$YAML" .yaml)"
 # Ensure the active ticket is assigned to coder before the Work note lands.
 if grep -qE '^assigned_to:' "$YAML"; then
-  sed -i 's/^assigned_to:.*/assigned_to: coder/' "$YAML"
+  perl -pi -e 's/^assigned_to:.*/assigned_to: coder/' "$YAML"
 else
   printf '\nassigned_to: coder\n' >> "$YAML"
 fi

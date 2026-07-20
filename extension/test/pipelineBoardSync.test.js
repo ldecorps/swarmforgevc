@@ -1,6 +1,6 @@
 const assert = require('node:assert/strict');
 const { syncPipelineBoard, classifyBoardFailure, PIPELINE_BOARD_ALERT_FAILURE_CAP } = require('../out/concierge/pipelineBoardSync');
-const { renderPipelineBoardBody, wrapPipelineBoardHtml } = require('../out/concierge/pipelineBoard');
+const { renderPipelineBoardBody } = require('../out/concierge/pipelineBoard');
 
 function fakeAdapters(overrides = {}) {
   return {
@@ -172,8 +172,8 @@ test('syncPipelineBoard: a link path change reposts even when the visible board 
     secondData,
     first.state,
     fakeAdapters({
-      postMessage: async (topicId, text, linksHtml) => {
-        posted.push({ topicId, text, linksHtml });
+      postMessage: async (topicId, text, boardHtml) => {
+        posted.push({ topicId, text, boardHtml });
         return { messageId: 99 };
       },
       deleteMessage: async (topicId, messageId) => {
@@ -187,7 +187,7 @@ test('syncPipelineBoard: a link path change reposts even when the visible board 
 
   assert.equal(result.outcome, 'reposted');
   assert.equal(posted.length, 1, 'expected a repost for the changed link path');
-  assert.ok(posted[0].linksHtml.includes('backlog/active/BL-540.yaml'), posted[0].linksHtml);
+  assert.ok(posted[0].boardHtml.includes('backlog/active/BL-540.yaml'), posted[0].boardHtml);
   assert.deepEqual(deleted, [{ topicId: 900, messageId: 42 }]);
 });
 
@@ -347,11 +347,8 @@ test('syncPipelineBoard: the board still posts at a backlog size whose full link
     { rows, parked: [], links },
     undefined,
     fakeAdapters({
-      postMessage: async (topicId, text, linksHtml) => {
-        // Mirrors Telegram's own real rejection of the actual composed
-        // message - the same wrap the live adapter (telegram-front-desk-
-        // bot.ts) applies before sending.
-        capturedComposedLength = wrapPipelineBoardHtml(text, linksHtml).length;
+      postMessage: async (topicId, text, boardHtml) => {
+        capturedComposedLength = boardHtml.length;
         if (capturedComposedLength > 4096) {
           return { error: 'Bad Request: text is too long' };
         }
@@ -366,17 +363,17 @@ test('syncPipelineBoard: the board still posts at a backlog size whose full link
   assert.ok(capturedComposedLength <= 4096, `expected the composed message within Telegram's real limit, got ${capturedComposedLength}`);
 });
 
-test('syncPipelineBoard: linksHtml handed to postMessage is already within budget, never the unbudgeted full list', async () => {
+test('syncPipelineBoard: boardHtml handed to postMessage stays within the message budget (anchors dropped when needed)', async () => {
   const rows = manyLinkRows(40);
   const links = manyLinks(40);
-  let capturedLinksHtml;
+  let capturedBoardHtml;
 
   await syncPipelineBoard(
     { rows, parked: [], links },
     undefined,
     fakeAdapters({
-      postMessage: async (topicId, text, linksHtml) => {
-        capturedLinksHtml = linksHtml;
+      postMessage: async (topicId, text, boardHtml) => {
+        capturedBoardHtml = boardHtml;
         return { messageId: 1 };
       },
     }),
@@ -384,10 +381,9 @@ test('syncPipelineBoard: linksHtml handed to postMessage is already within budge
     'https://github.com/ldecorps/swarmforgevc'
   );
 
-  assert.ok(capturedLinksHtml.includes('more'), 'expected the 40-link list trimmed with a visible overflow indicator');
-  assert.ok(!capturedLinksHtml.includes('BL-39:'), 'expected the tail of the list to be the omitted part');
+  assert.ok(capturedBoardHtml.length <= 4000, `expected boardHtml within PIPELINE_BOARD_MESSAGE_MAX_LENGTH, got ${capturedBoardHtml.length}`);
+  assert.ok(!capturedBoardHtml.includes('LINKS:'), 'expected no legacy LINKS: section');
 });
-
 // BL-497 pipeline-board-post-failure-recovery-01: every failed outcome
 // surfaces its underlying error instead of swallowing it.
 

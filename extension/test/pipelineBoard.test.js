@@ -8,6 +8,7 @@ const {
   budgetPipelineBoardLinks,
   formatUpdatedAtLabel,
   wrapPipelineBoardHtml,
+  composePipelineBoardHtml,
   deriveKebabSlug,
   deriveListEntryText,
   deriveDisplayTicketId,
@@ -1012,4 +1013,113 @@ test('BL-526 renderPipelineBoardGridOnly: optional footer stamps updated-at with
   );
   assert.match(text, /updated at Jul 19 01:30 BST/);
   assert.ok(!text.includes('PARKED:'));
+});
+
+// ── In-board ticket hyperlinks (Telegram: no links inside <pre>) ──────────
+// Telegram forbids nesting <a> inside <pre>/<code>, so the composed message
+// keeps the status GRID in one <pre> (plain ids — column alignment), then
+// renders below-grid lists as HTML with tappable ticket numbers. No separate
+// LINKS: footer. Grid-only tickets get a compact linked id line after the
+// pre so every board ticket remains reachable.
+
+const IN_BOARD_REPO = 'https://github.com/ldecorps/swarmforgevc';
+
+test('composePipelineBoardHtml: ticket numbers in below-grid lists are GitHub <a href> links', () => {
+  const { html } = composePipelineBoardHtml(
+    {
+      rows: [{ id: 'BL-528', column: 'coder', slug: 'auto-heal', epic: 'swarm-reliability' }],
+      parked: [
+        { id: 'BL-543', slug: 'epic-fleet', status: 'parked' },
+        { id: 'BL-525', slug: 'modelfactory-assign', status: 'awaiting-approval' },
+      ],
+      rootIntake: [],
+      recentlyClosed: [{ id: 'BL-513', slug: 'pipeline-board' }],
+      links: [
+        { id: 'BL-528', path: 'backlog/active/BL-528-auto-heal.yaml' },
+        { id: 'BL-543', path: 'backlog/paused/BL-543-epic-fleet.yaml' },
+        { id: 'BL-525', path: 'backlog/paused/BL-525-modelfactory-assign.yaml' },
+        { id: 'BL-513', path: 'backlog/done/BL-513-pipeline-board.yaml' },
+      ],
+    },
+    Date.UTC(2026, 6, 19, 22, 54),
+    IN_BOARD_REPO
+  );
+  assert.ok(html.includes('<a href="https://github.com/ldecorps/swarmforgevc/blob/main/backlog/paused/BL-543-epic-fleet.yaml">543</a>'), html);
+  assert.ok(html.includes('<a href="https://github.com/ldecorps/swarmforgevc/blob/main/backlog/paused/BL-525-modelfactory-assign.yaml">525</a>'), html);
+  assert.ok(html.includes('<a href="https://github.com/ldecorps/swarmforgevc/blob/main/backlog/done/BL-513-pipeline-board.yaml">513</a>'), html);
+  assert.ok(html.includes('epic-fleet'), html);
+  assert.ok(html.includes('modelfactory-assign'), html);
+});
+
+test('composePipelineBoardHtml: grid-only tickets are linked just under the pre (ids inside pre cannot be anchors)', () => {
+  const { html } = composePipelineBoardHtml(
+    {
+      rows: [{ id: 'BL-528', column: 'coder', slug: 'auto-heal', epic: 'swarm-reliability' }],
+      parked: [],
+      links: [{ id: 'BL-528', path: 'backlog/active/BL-528-auto-heal.yaml' }],
+    },
+    Date.UTC(2026, 6, 19, 22, 54),
+    IN_BOARD_REPO
+  );
+  const preClose = html.indexOf('</pre>');
+  assert.ok(preClose >= 0, html);
+  const afterPre = html.slice(preClose);
+  assert.ok(
+    afterPre.includes('<a href="https://github.com/ldecorps/swarmforgevc/blob/main/backlog/active/BL-528-auto-heal.yaml">528</a>'),
+    afterPre
+  );
+});
+test('composePipelineBoardHtml: never emits a redundant LINKS: section', () => {
+  const { html } = composePipelineBoardHtml(
+    {
+      rows: [{ id: 'BL-1', column: 'coder', slug: 'x' }],
+      parked: [{ id: 'BL-2', slug: 'parked', status: 'parked' }],
+      links: [
+        { id: 'BL-1', path: 'backlog/active/BL-1-x.yaml' },
+        { id: 'BL-2', path: 'backlog/paused/BL-2-parked.yaml' },
+      ],
+    },
+    Date.UTC(2026, 6, 19, 12, 0),
+    IN_BOARD_REPO
+  );
+  assert.ok(!html.includes('LINKS:'), html);
+});
+
+test('composePipelineBoardHtml: status grid stays inside one <pre>; <a> tags never nest inside it', () => {
+  const { html } = composePipelineBoardHtml(
+    {
+      rows: [{ id: 'BL-528', column: 'coder', slug: 'auto-heal', epic: 'swarm-reliability' }],
+      parked: [{ id: 'BL-543', slug: 'epic-fleet', status: 'parked' }],
+      links: [
+        { id: 'BL-528', path: 'backlog/active/BL-528-auto-heal.yaml' },
+        { id: 'BL-543', path: 'backlog/paused/BL-543-epic-fleet.yaml' },
+      ],
+    },
+    Date.UTC(2026, 6, 19, 22, 54),
+    IN_BOARD_REPO
+  );
+  const preOpen = html.indexOf('<pre>');
+  const preClose = html.indexOf('</pre>');
+  assert.ok(preOpen >= 0 && preClose > preOpen, html);
+  const preBody = html.slice(preOpen, preClose + '</pre>'.length);
+  assert.ok(preBody.includes('NS'), preBody);
+  assert.ok(preBody.includes('SP'), preBody);
+  assert.ok(preBody.includes('auto-heal'), preBody);
+  assert.ok(!preBody.includes('<a href'), preBody);
+  assert.ok(html.indexOf('<a href') > preClose, html);
+});
+
+test('composePipelineBoardHtml: without repoBaseUrl, board still renders but ticket ids are plain text', () => {
+  const { html } = composePipelineBoardHtml(
+    {
+      rows: [],
+      parked: [{ id: 'BL-543', slug: 'epic-fleet', status: 'parked' }],
+      links: [{ id: 'BL-543', path: 'backlog/paused/BL-543-epic-fleet.yaml' }],
+    },
+    Date.UTC(2026, 6, 19, 22, 54),
+    undefined
+  );
+  assert.ok(!html.includes('<a href'), html);
+  assert.ok(html.includes('543'), html);
+  assert.ok(html.includes('PARKED:'), html);
 });

@@ -28,8 +28,7 @@ const {
   computePipelineBoard,
   renderPipelineBoard,
   renderPipelineBoardBody,
-  renderPipelineBoardLinks,
-  wrapPipelineBoardHtml,
+  composePipelineBoardHtml,
   deriveDisplayTicketId,
 } = require(path.join(EXT_OUT, 'concierge', 'pipelineBoard'));
 
@@ -50,8 +49,9 @@ function render(ctx) {
     activeIds: ctx.activeIds,
   });
   ctx.gridText = renderPipelineBoard(ctx.board, 0);
-  ctx.linksHtml = renderPipelineBoardLinks(ctx.board.links, ctx.repoBaseUrl);
-  ctx.html = wrapPipelineBoardHtml(ctx.gridText, ctx.linksHtml);
+  const composed = composePipelineBoardHtml(ctx.board, 0, ctx.repoBaseUrl);
+  ctx.html = composed.html;
+  ctx.linksHtml = composed.html;
 }
 
 function registerSteps(registry) {
@@ -175,12 +175,13 @@ function registerSteps(registry) {
   });
 
   registry.define(/^a link list below the grid links each ticket id to its backlog file on GitHub$/, (ctx) => {
-    if (!ctx.linksHtml.includes('LINKS:')) {
-      throw new Error(`expected a link list, got: ${ctx.linksHtml}`);
+    if (ctx.html.includes('LINKS:')) {
+      throw new Error(`expected no legacy LINKS: section, got: ${ctx.html}`);
     }
     for (const id of ['BL-1', 'BL-2', 'BL-3']) {
-      if (!ctx.linksHtml.includes(`${REPO_BASE_URL}/blob/main/`) || !ctx.linksHtml.includes(id)) {
-        throw new Error(`expected ${id} to have a GitHub link, got: ${ctx.linksHtml}`);
+      const display = deriveDisplayTicketId(id);
+      if (!ctx.html.includes(`${REPO_BASE_URL}/blob/main/`) || !ctx.html.includes(`>${display}</a>`)) {
+        throw new Error(`expected ${id} (display ${display}) to have an in-board GitHub link, got: ${ctx.html}`);
       }
     }
   });

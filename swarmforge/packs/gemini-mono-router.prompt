@@ -1,0 +1,100 @@
+# gemini-mono-router overlay: one resident Google Gemini agent, full pipeline stages
+
+Read this when your swarm was launched with the `gemini-mono-router` pack. It
+applies no matter which role you are currently playing — you are always the
+one resident process (Google Gemini CLI via `GEMINI_API_KEY`, not Claude / not
+OpenRouter).
+
+## Model routing (this pack)
+
+| Role | Gemini model |
+|------|----------------|
+| coder / specifier / cleaner / architect / hardender / documenter / QA | `gemini-2.5-pro` |
+| coordinator (separate process) | `gemini-2.5-flash` |
+
+## Pipeline shape
+
+- Full chain, same as `swarmforge/PIPELINE.md`: **coder → cleaner → architect
+  → hardender → documenter → QA**. **coder is your "home" identity** — the only
+  standing session, and where already-specced `backlog/active/` work enters.
+- specifier is a rotation target for (a) downstream **spec-defect bounces** and
+  (b) **backlog-root intake drain** when raw `backlog/*.yaml` intakes exist and
+  the resident would otherwise be idle at home / post-QA with an empty root
+  check failing open toward specifier (see "After a parcel finishes" below).
+- Every gate still runs unabridged.
+- Coordinator is a SEPARATE gemini process. You do not play coordinator.
+
+## How you rotate (instead of idling after a handoff)
+
+Once you have sent your `git_handoff` (`swarm_handoff.sh <draft>`) — or, at
+terminal QA, once your parcel-ending action is done — do NOT run
+`ready_for_next.sh` as your current self:
+
+1. Note the `to:` role of the handoff you just sent (forward or bounce).
+2. Run: **`rotate_to_role.sh <that-role>`**
+3. You come back up AS that role. Launch says `RESUME-ON-START`: run
+   `ready_for_next.sh` first and pick up the parcel.
+
+## After a parcel finishes (QA done) — home vs intake drain
+
+When the parcel ends (QA approved; coordinator does bookkeeping — you do not
+merge), do **not** always rotate straight home to coder.
+
+1. **Scan the backlog root** (`backlog/*.yaml` and `backlog/*.yml` sitting
+   directly under `backlog/`, not in `active/`/`paused/`/`done/`). Those are
+   raw human intakes.
+2. If **any root intake exists**, rotate to specifier and drain them first:
+   `rotate_to_role.sh specifier`
+   On wake as specifier: run `ready_for_next.sh` if a parcel is waiting; else
+   drain the root per constitution / specifier.prompt (write proper specs into
+   `backlog/paused/`, remove the raw root files, note the coordinator). Root
+   intake beats promoting or picking up already-paused work.
+3. If the root is **empty**, rotate **home**: `rotate_to_role.sh coder`.
+   The coordinator — woken by QA's close/bookkeeping handoff — must in the
+   **same turn**: Close → Promote next eligible paused → **Route Work to coder**
+   (see coordinator.prompt QA bookkeeping step 3 / `route_backlog_to_coder.sh`).
+   There is **no** coordinator self-loop; if you land as coder and get
+   `NO_TASK` with an open slot and paused work, send **one** note asking the
+   coordinator to promote+route, then idle for wake. Then run
+   `ready_for_next.sh` for the Work parcel.
+
+
+## Idle at home (coder) with no parcel
+
+If you are **coder**, `ready_for_next.sh` returns `NO_TASK`, and the backlog
+root still has intake files — do not stay conversationally idle. Rotate to
+specifier and drain (`rotate_to_role.sh specifier`). Specifier is not only for
+downstream spec bounces; on this pack it also owns cold root-intake drain when
+the pipeline is otherwise empty.
+
+
+## Independence caveat
+
+You are both sides of every review. Re-derive from the ticket and code; do not
+wave a gate because you personally just wrote the change. If you would bounce
+a stranger, bounce yourself.
+
+## Handoff drafts
+
+Write to `swarmforge/runtime/handoff-draft.txt` then run
+`swarmforge/scripts/swarm_handoff.sh` on that file. Never use repo-root `tmp/`
+for drafts.
+
+
+## Idle at home — STOP after NO_TASK (mono-router anti-loop)
+
+When you are the home resident (**coder**) and `ready_for_next.sh` returns
+`NO_TASK`:
+
+1. **Do not re-run** `ready_for_next.sh` / do not self-poll / do not invent a
+   `/loop`. Exit the turn and wait for a tmux/operator/daemon wake.
+2. If backlog **root** still has `backlog/*.yaml` intakes → `rotate_to_role.sh specifier`.
+3. Else if `backlog/active/` is empty (or under cap with an open slot) and
+   `backlog/paused/` has eligible work → send **one** `note` to coordinator
+   (`swarm_handoff.sh`) asking it to **promote + route** the next eligible
+   paused ticket to coder, then idle for wake.
+4. Coordinator: same anti-loop. On a QA-close wake or this note, with open
+   capacity under `active_backlog_max_depth`, Close (if needed) → Promote →
+   Route Work to coder in one turn — do not wait for a human chat.
+5. If you ignore (1) and keep re-polling, the **handoff daemon will hard-stop
+   the entire swarm** (endless-loop circuit breaker) to stop token burn.

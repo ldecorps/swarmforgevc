@@ -2,11 +2,12 @@
 // the Y axis, pipeline roles on the X axis, a single mark at each ticket's
 // current stage, grouped by epic; parked/awaiting-approval/paused/
 // root-intake/recently-closed items are listed separately below the grid,
-// each entry leading with a short kebab slug, plus a tappable GitHub link
-// list keyed by ticket id (Telegram cannot render links inside the grid's
-// own <pre> block). Pure row-computation + render only (no I/O; mirrors
-// topicIcon.ts's own pure/adapter split, with pipelineBoardSync.ts as the
-// I/O half).
+// each entry leading with a short kebab slug. Telegram cannot nest <a>
+// inside the grid's <pre>, so ticket numbers in the below-grid lists (and
+// grid-only tickets) are composed as HTML anchors after that <pre> by
+// composePipelineBoardHtml — never a separate LINKS: footer. Pure
+// row-computation + render only (no I/O; mirrors topicIcon.ts's own
+// pure/adapter split, with pipelineBoardSync.ts as the I/O half).
 import { ALL_SWARM_ROLES } from './roleTopicMapStore';
 import { PIPELINE_CHAIN } from '../swarm/rolePack';
 
@@ -574,17 +575,182 @@ function renderUpdatedAtFooter(lastChangeMs: number): string {
 // at" footer stamped with the last CONTENT-change instant (never the
 // current clock - the caller, pipelineBoardSync.ts, only ever passes the
 // instant it recorded for the last actual content change, per its own
-// change-gate). Stays the <pre>-wrapped monospace portion ONLY - the link
-// list is a SEPARATE render (renderPipelineBoardLinks below), since
-// Telegram never renders a real <a href> tag placed inside a <pre> block
-// (same platform wall as BL-449's icon glyphs) - it would just show up as
-// escaped literal text, not a tappable link.
+// change-gate). Plain-text form used for content signatures and test
+// fixtures; Telegram HTML is composePipelineBoardHtml (links cannot live
+// inside the monospace <pre> grid).
 export function renderPipelineBoard(data: PipelineBoardData, lastChangeMs: number): string {
   return [...renderBodySections(data), '', renderUpdatedAtFooter(lastChangeMs)].join('\n');
 }
 
+function pipelineBoardBlobUrl(repoBaseUrl: string, path: string): string {
+  return `${repoBaseUrl}/blob/main/${path}`;
+}
+
 function pipelineBoardLinkLine(link: PipelineBoardLinkEntry, repoBaseUrl: string): string {
-  return `${link.id}: <a href="${repoBaseUrl}/blob/main/${link.path}">${link.path}</a>`;
+  return `${link.id}: <a href="${pipelineBoardBlobUrl(repoBaseUrl, link.path)}">${link.path}</a>`;
+}
+
+function pathByIdFromLinks(links: PipelineBoardLinkEntry[]): Map<string, string> {
+  return new Map(links.map((link) => [link.id, link.path]));
+}
+
+function listSectionTicketIds(data: PipelineBoardData): Set<string> {
+  const ids = new Set<string>();
+  for (const entry of data.parked ?? []) {
+    ids.add(entry.id);
+  }
+  for (const entry of data.rootIntake ?? []) {
+    ids.add(entry.id);
+  }
+  for (const entry of data.recentlyClosed ?? []) {
+    ids.add(entry.id);
+  }
+  return ids;
+}
+
+// Linked ticket id (or plain escaped display id when not linkable).
+function formatTicketIdHtml(
+  id: string,
+  path: string | undefined,
+  repoBaseUrl: string | undefined
+): string {
+  const display = escapeHtml(deriveDisplayTicketId(id));
+  if (!path || !repoBaseUrl) {
+    return display;
+  }
+  return `<a href="${pipelineBoardBlobUrl(repoBaseUrl, path)}">${display}</a>`;
+}
+
+function formatBoardListLineHtml(
+  id: string,
+  slug: string,
+  path: string | undefined,
+  repoBaseUrl: string | undefined
+): string {
+  const idHtml = formatTicketIdHtml(id, path, repoBaseUrl);
+  const slugPart = slug ? ` ${escapeHtml(slug)}` : '';
+  return `  ${idHtml}${slugPart}`.trimEnd();
+}
+
+function renderListSectionHtml(
+  header: string,
+  entries: PipelineBoardListEntry[],
+  pathById: Map<string, string>,
+  repoBaseUrl: string | undefined,
+  linkedIds: Set<string> | undefined
+): string[] {
+  if (entries.length === 0) {
+    return [];
+  }
+  const lines: string[] = ['', escapeHtml(header)];
+  for (const entry of entries) {
+    const path =
+      linkedIds !== undefined && !linkedIds.has(entry.id) ? undefined : pathById.get(entry.id);
+    lines.push(formatBoardListLineHtml(entry.id, entry.slug, path, repoBaseUrl));
+  }
+  return lines;
+}
+
+function renderGridTapLinesHtml(
+  data: PipelineBoardData,
+  pathById: Map<string, string>,
+  repoBaseUrl: string | undefined,
+  linkedIds: Set<string> | undefined
+): string[] {
+  if (!repoBaseUrl) {
+    return [];
+  }
+  const inLists = listSectionTicketIds(data);
+  const lines: string[] = [];
+  for (const row of data.rows) {
+    if (inLists.has(row.id)) {
+      continue;
+    }
+    if (linkedIds !== undefined && !linkedIds.has(row.id)) {
+      continue;
+    }
+    const path = pathById.get(row.id);
+    if (!path) {
+      continue;
+    }
+    lines.push(formatBoardListLineHtml(row.id, row.slug, path, repoBaseUrl));
+  }
+  return lines.length === 0 ? [] : ['', ...lines];
+}
+
+function buildPipelineBoardHtml(
+  data: PipelineBoardData,
+  lastChangeMs: number,
+  repoBaseUrl: string | undefined,
+  linkedIds: Set<string> | undefined
+): string {
+  const pathById = pathByIdFromLinks(data.links ?? []);
+  const gridText = renderGridOnlySections(data).join('\n');
+  const pre = `<pre>${escapeHtml(gridText)}</pre>`;
+  const parked = data.parked ?? [];
+  const afterPre = [
+    ...renderGridTapLinesHtml(data, pathById, repoBaseUrl, linkedIds),
+    ...renderListSectionHtml(
+      PARKED_SECTION_HEADER,
+      parked.filter((p) => p.status === 'parked'),
+      pathById,
+      repoBaseUrl,
+      linkedIds
+    ),
+    ...renderListSectionHtml(
+      AWAITING_APPROVAL_SECTION_HEADER,
+      parked.filter((p) => p.status === 'awaiting-approval'),
+      pathById,
+      repoBaseUrl,
+      linkedIds
+    ),
+    ...renderListSectionHtml(ROOT_INTAKE_SECTION_HEADER, data.rootIntake ?? [], pathById, repoBaseUrl, linkedIds),
+    ...renderListSectionHtml(
+      RECENTLY_CLOSED_SECTION_HEADER,
+      data.recentlyClosed ?? [],
+      pathById,
+      repoBaseUrl,
+      linkedIds
+    ),
+    '',
+    escapeHtml(renderUpdatedAtFooter(lastChangeMs)),
+  ];
+  return [pre, ...afterPre].join('\n');
+}
+
+export interface PipelineBoardHtmlComposition {
+  html: string;
+  omittedLinkCount: number;
+}
+
+// Telegram HTML board: status GRID in one <pre> (plain ids — column
+// alignment); below-grid list ticket numbers (and grid-only tickets) as
+// real <a href> tags AFTER the pre. No LINKS: footer. When the composed
+// message would exceed maxLength, anchors are dropped from the oldest
+// tickets first (most-recent-first order kept for those that remain) until
+// it fits — unlinked ids still render as plain numbers on the board.
+export function composePipelineBoardHtml(
+  data: PipelineBoardData,
+  lastChangeMs: number,
+  repoBaseUrl: string | undefined,
+  maxLength: number = PIPELINE_BOARD_MESSAGE_MAX_LENGTH
+): PipelineBoardHtmlComposition {
+  const full = buildPipelineBoardHtml(data, lastChangeMs, repoBaseUrl, undefined);
+  if (full.length <= maxLength || !repoBaseUrl || (data.links ?? []).length === 0) {
+    return { html: full, omittedLinkCount: 0 };
+  }
+  const sorted = [...(data.links ?? [])].sort(compareLinksMostRecentFirst);
+  for (let keep = sorted.length - 1; keep >= 0; keep -= 1) {
+    const linkedIds = new Set(sorted.slice(0, keep).map((link) => link.id));
+    const candidate = buildPipelineBoardHtml(data, lastChangeMs, repoBaseUrl, linkedIds);
+    if (candidate.length <= maxLength) {
+      return { html: candidate, omittedLinkCount: sorted.length - keep };
+    }
+  }
+  return {
+    html: buildPipelineBoardHtml(data, lastChangeMs, undefined, new Set()),
+    omittedLinkCount: sorted.length,
+  };
 }
 
 // BL-465: the tappable link list below the grid, as its OWN plain-HTML
@@ -682,12 +848,10 @@ function escapeHtml(text: string): string {
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-// BL-465: only the grid/list/footer TEXT (renderPipelineBoard's own output)
-// is wrapped in <pre> - the link list (renderPipelineBoardLinks, already
-// real HTML) is appended AFTER the closing </pre>, completely unescaped,
-// so its <a href> tags render as tappable links. linksHtml empty (the
-// common case: no links yet, or no repoBaseUrl) leaves the message
-// byte-for-byte the pre-BL-465 <pre>-only shape.
+// BL-465 / in-board links: prefer composePipelineBoardHtml for live posts.
+// This helper remains for fixtures/BDD that still compose <pre>+optional
+// legacy LINKS: fragment. When boardHtml is already a full composed
+// message (starts with <pre>), callers should send it directly instead.
 export function wrapPipelineBoardHtml(boardText: string, linksHtml = ''): string {
   const pre = `<pre>${escapeHtml(boardText)}</pre>`;
   return linksHtml ? `${pre}\n\n${linksHtml}` : pre;

@@ -119,6 +119,10 @@ export interface SendMessageResult {
   success: boolean;
   messageId?: number;
   error?: string;
+  // A 429's told-you-so retry_after (seconds). sendTelegramMessageWithRateLimitRetry
+  // (and the Approvals ask wiring) honour this rather than treating a rate-limited
+  // send as a permanent miss that only the next tick can retry.
+  retryAfterSeconds?: number;
 }
 
 // BL-410: a row-of-rows of tappable buttons attached to a message via
@@ -203,9 +207,52 @@ export async function sendTelegramMessage(
 
   const result = await callTelegramApi(token, 'sendMessage', body, postFn);
   if (!result.success) {
-    return { success: false, error: result.error };
+    return { success: false, error: result.error, retryAfterSeconds: result.retryAfterSeconds };
   }
   return { success: true, messageId: extractMessageId(result.json) };
+}
+
+// Resolve a forum topic's display name by replying to its creating service
+// message (message_id === message_thread_id). Bot API has no listForumTopics;
+// this is the read path ensureApprovalsTopic uses before minting a twin.
+// Deletes the probe message on success. Missing/invalid threads return
+// undefined (never throw).
+export async function resolveForumTopicName(
+  token: string,
+  chatId: string,
+  messageThreadId: number,
+  postFn: TelegramPostFn = defaultPost
+): Promise<string | undefined> {
+  const body = JSON.stringify({
+    chat_id: chatId,
+    text: '.',
+    message_thread_id: messageThreadId,
+    reply_to_message_id: messageThreadId,
+  });
+  const result = await callTelegramApi(token, 'sendMessage', body, postFn);
+  if (!result.success) {
+    return undefined;
+  }
+  const msgId = extractMessageId(result.json);
+  const name = extractForumTopicCreatedName(result.json);
+  if (msgId !== undefined) {
+    await deleteMessage(token, chatId, msgId, postFn);
+  }
+  return name;
+}
+
+function extractForumTopicCreatedName(json: unknown): string | undefined {
+  const result = extractResultObject(json);
+  const reply = result?.reply_to_message;
+  if (!reply || typeof reply !== 'object') {
+    return undefined;
+  }
+  const created = (reply as Record<string, unknown>).forum_topic_created;
+  if (!created || typeof created !== 'object') {
+    return undefined;
+  }
+  const name = (created as Record<string, unknown>).name;
+  return typeof name === 'string' ? name : undefined;
 }
 
 // BL-466: native Telegram poll - sendPoll's own request shape differs from
@@ -514,6 +561,11 @@ export interface CreateForumTopicResult {
   // supergroup chat" - the caller's chat id has migrated, and this is the
   // new one to retry against, never a terminal failure.
   migrateToChatId?: number;
+  // Same posture as closeForumTopic/editForumTopic: a 429's told-you-so
+  // retry_after (seconds). ensureApprovalsTopic's rate-limit retry reads
+  // this rather than treating mint failure as permanently unbound (which
+  // left Approvals silent and later successful creates as name-twin orphans).
+  retryAfterSeconds?: number;
 }
 
 function extractMessageThreadId(json: unknown): number | undefined {
@@ -543,7 +595,12 @@ export async function createForumTopic(
   });
   const result = await callTelegramApi(token, 'createForumTopic', body, postFn);
   if (!result.success) {
-    return { success: false, error: result.error, migrateToChatId: result.migrateToChatId };
+    return {
+      success: false,
+      error: result.error,
+      migrateToChatId: result.migrateToChatId,
+      retryAfterSeconds: result.retryAfterSeconds,
+    };
   }
   return { success: true, messageThreadId: extractMessageThreadId(result.json) };
 }
@@ -614,6 +671,65 @@ export async function closeForumTopicWithRateLimitRetry(
   postFn: TelegramPostFn = defaultPost
 ): Promise<boolean> {
   return retryOnRateLimit(() => closeForumTopic(token, chatId, messageThreadId, postFn), wait);
+}
+
+// Honour a 429's retry_after when minting a standing topic — same contract
+// as closeForumTopicWithRateLimitRetry. Without this, ensureApprovalsTopic
+// returned undefined on every 429, left APPROVALS unbound, and the next
+// successful create minted a duplicate "Approvals" forum topic.
+export async function createForumTopicWithRateLimitRetry(
+  token: string,
+  chatId: string,
+  name: string,
+  postFn: TelegramPostFn = defaultPost,
+  wait: (ms: number) => Promise<void> = defaultWaitMs,
+  iconCustomEmojiId?: string
+): Promise<CreateForumTopicResult> {
+  for (;;) {
+    const result = await createForumTopic(token, chatId, name, postFn, iconCustomEmojiId);
+    if (result.success || result.retryAfterSeconds === undefined) {
+      return result;
+    }
+    await wait(result.retryAfterSeconds * 1000);
+  }
+}
+
+// Honour a 429's retry_after when posting a message (Approvals asks with
+// Approve/Amend/Reject/Expedite buttons). Without this, a rate-limited ask
+// fails the tick, pendingApproval is held back, and the next tick races the
+// same 429 again — the human only ever sees the text roster, never the
+// buttoned ask. Preserves messageId on success so recordApprovalAskMessageId
+// can still close the ask later.
+//
+// Bounded (unlike createForumTopicWithRateLimitRetry): an Approvals ask is
+// attempted every tick while pending, so an unbounded wait on a sustained
+// 429 would freeze the whole concierge loop (board/roster/icons never
+// advance). After maxAttempts exhausted, return the last failure; the tick
+// holds pendingApproval back and retries on the next interval.
+export async function sendTelegramMessageWithRateLimitRetry(
+  token: string,
+  chatId: string,
+  text: string,
+  replyToMessageId?: number,
+  postFn: TelegramPostFn = defaultPost,
+  messageThreadId?: number,
+  buttons?: InlineKeyboardButton[][],
+  parseMode?: 'HTML',
+  wait: (ms: number) => Promise<void> = defaultWaitMs,
+  maxAttempts: number = 4
+): Promise<SendMessageResult> {
+  let last: SendMessageResult = { success: false, error: 'sendTelegramMessageWithRateLimitRetry: no attempts' };
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    last = await sendTelegramMessage(token, chatId, text, replyToMessageId, postFn, messageThreadId, buttons, parseMode);
+    if (last.success || last.retryAfterSeconds === undefined) {
+      return last;
+    }
+    if (attempt + 1 >= maxAttempts) {
+      return last;
+    }
+    await wait(last.retryAfterSeconds * 1000);
+  }
+  return last;
 }
 
 // BL-332: reopens a CLOSED (never deleted) forum topic - history and the

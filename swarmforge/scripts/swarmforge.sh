@@ -330,7 +330,7 @@ worktree_path_for_name() {
 validate_agent() {
   local agent="$1" role="$2"
   case "$agent" in
-    claude|codex|copilot|grok|aider|vibe) ;;
+    claude|codex|copilot|grok|aider|vibe|gemini) ;;
     *)
       echo -e "${RED}Error:${RESET} Unsupported agent '$agent' for role '$role'"
       exit 1
@@ -641,6 +641,8 @@ provision_coordinator() {
     # Pack must set coordinator_model to a Codex catalog id (e.g. gpt-5.4-mini);
     # otherwise the Claude Sonnet default would be meaningless here.
     extra_cli="--model $COORDINATOR_MODEL"
+  elif [[ "$COORDINATOR_AGENT" == "gemini" ]]; then
+    extra_cli="--model $COORDINATOR_MODEL"
   elif [[ "$COORDINATOR_AGENT" == "aider" ]]; then
     # Aider coordinator: pack sets coordinator_model (e.g. openai/sonar). OpenAI-compat
     # base URL comes from pane env remap (Cerebras/Perplexity guards), not from flags.
@@ -913,6 +915,8 @@ check_backend_dependencies() {
       copilot) check_dependency copilot ;;
       grok) check_dependency grok ;;
       aider) check_dependency aider ;;
+      vibe) check_dependency vibe ;;
+      gemini) check_dependency gemini ;;
     esac
   done
 }
@@ -1230,6 +1234,14 @@ RESUMECHECK
       fi
       launch_body="vibe${extra_cli:+ $extra_cli} --yolo --trust --workdir '$role_worktree'${vibe_dirs} \"\${RESUME_NOTE}\$(cat '$prompt_file')\""
       ;;
+    gemini)
+      # Google Gemini CLI (`npm i -g @google/gemini-cli` or similar). -y/--yolo
+      # auto-approves tools (Claude's --dangerously-skip-permissions equivalent).
+      # GEMINI_API_KEY arrives via tmux -e (BL-130), never written here.
+      # Keep argv short (path to prompt file) — full prompt slurps exceed
+      # MAX_ARG_STRLEN the same way Codex does.
+      launch_body="cd '$role_worktree' && gemini -y${extra_cli:+ $extra_cli} \"\${RESUME_NOTE}Read and obey every instruction in '$prompt_file' (constitution, pipeline, role, pack). Then begin your role loop; if idle, run ready_for_next.sh.\""
+      ;;
     *)
       echo -e "${RED}Error:${RESET} Unsupported agent '$agent' for role '$role'"
       exit 1
@@ -1384,6 +1396,11 @@ launch_role() {
     local provider_key
     local use_cerebras=0
     local use_perplexity=0
+    # Gemini CLI reads GEMINI_API_KEY; allow SWARMFORGE_GEMINI_API_KEY as alias
+    # so operators can keep provider keys under a SwarmForge-prefixed name.
+    if [[ -z "${GEMINI_API_KEY:-}" && -n "${SWARMFORGE_GEMINI_API_KEY:-}" ]]; then
+      export GEMINI_API_KEY="$SWARMFORGE_GEMINI_API_KEY"
+    fi
     if [[ "${SWARMFORGE_USE_CEREBRAS:-}" == "1" && -n "${CEREBRAS_API_KEY:-}" ]]; then
       use_cerebras=1
     fi
@@ -1395,7 +1412,7 @@ launch_role() {
     if [[ "${EXTRA_CLI_ARGS[$index]}" == *perplexity.ai* && -n "${PERPLEXITY_API_KEY:-}" ]]; then
       use_perplexity=1
     fi
-    for provider_key in OPENAI_API_KEY MISTRAL_API_KEY CEREBRAS_API_KEY PERPLEXITY_API_KEY; do
+    for provider_key in OPENAI_API_KEY MISTRAL_API_KEY CEREBRAS_API_KEY PERPLEXITY_API_KEY GEMINI_API_KEY; do
       # When Cerebras/Perplexity OpenAI-compat mode is on, do NOT forward the host
       # OPENAI_API_KEY (real OpenAI sk-*). Panes must use the provider→OPENAI map.
       if [[ ( "$use_cerebras" == "1" || "$use_perplexity" == "1" ) && "$provider_key" == "OPENAI_API_KEY" ]]; then

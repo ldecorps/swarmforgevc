@@ -161,12 +161,13 @@
 
 (defn provider-respawn-env-args
   "BL-130 pane -e passthrough for ensure repairs — same keys rotate/chase need
-   so a repair never strips OpenRouter/OpenAI/Mistral/Cerebras/Perplexity auth
-   from a live alternate-runtime pane.
+   so a repair never strips OpenRouter/OpenAI/Mistral/Cerebras/Perplexity/Gemini
+   auth from a live alternate-runtime pane.
 
    SRE 2026-07-19: when role's launch script CLI targets api.perplexity.ai,
    Perplexity wins for OPENAI_* even if SWARMFORGE_USE_PERPLEXITY was unset
-   in the ensure process (provider_compat_lib/must-remap-to-perplexity?)."
+   in the ensure process (provider_compat_lib/must-remap-to-perplexity?).
+   Gemini: GEMINI_API_KEY, or SWARMFORGE_GEMINI_API_KEY mapped to GEMINI_API_KEY."
   ([] (provider-respawn-env-args nil))
   ([role]
    (let [launch-cli (when role
@@ -176,6 +177,10 @@
          use-perplexity (= "1" (System/getenv "SWARMFORGE_USE_PERPLEXITY"))
          cerebras (System/getenv "CEREBRAS_API_KEY")
          perplexity (System/getenv "PERPLEXITY_API_KEY")
+         gemini (let [g (System/getenv "GEMINI_API_KEY")]
+                  (if (str/blank? g)
+                    (System/getenv "SWARMFORGE_GEMINI_API_KEY")
+                    g))
          resolved (provider-compat-lib/resolve-openai-compat
                    {:use-cerebras use-cerebras
                     :use-perplexity use-perplexity
@@ -199,6 +204,8 @@
        (concat ["-e" (str "CEREBRAS_API_KEY=" cerebras)])
        (not (str/blank? perplexity))
        (concat ["-e" (str "PERPLEXITY_API_KEY=" perplexity)])
+       (not (str/blank? gemini))
+       (concat ["-e" (str "GEMINI_API_KEY=" gemini)])
        (or use-cerebras force-cerebras)
        (concat ["-e" "SWARMFORGE_USE_CEREBRAS=1"])
        (or use-perplexity force-perplexity)

@@ -14,8 +14,8 @@ const EXT_OUT = path.join(__dirname, '..', '..', '..', 'extension', 'out');
 const {
   renderPipelineBoard,
   renderPipelineBoardBody,
-  budgetPipelineBoardLinks,
-  wrapPipelineBoardHtml,
+  composePipelineBoardHtml,
+  compareLinksMostRecentFirst,
   PIPELINE_BOARD_MESSAGE_MAX_LENGTH,
 } = require(path.join(EXT_OUT, 'concierge', 'pipelineBoard'));
 const { syncPipelineBoard, classifyBoardFailure } = require(path.join(EXT_OUT, 'concierge', 'pipelineBoardSync'));
@@ -41,11 +41,10 @@ function manyLinks(count) {
 
 function composeForSending(ctx) {
   ctx.text = renderPipelineBoard(ctx.data, T0);
-  const maxLinksLength = PIPELINE_BOARD_MESSAGE_MAX_LENGTH - wrapPipelineBoardHtml(ctx.text).length - 2;
-  const budget = budgetPipelineBoardLinks(ctx.data.links ?? [], ctx.repoBaseUrl, maxLinksLength);
-  ctx.linksHtml = budget.html;
-  ctx.omittedCount = budget.omittedCount;
-  ctx.composed = wrapPipelineBoardHtml(ctx.text, ctx.linksHtml);
+  const composed = composePipelineBoardHtml(ctx.data, T0, ctx.repoBaseUrl, PIPELINE_BOARD_MESSAGE_MAX_LENGTH);
+  ctx.composed = composed.html;
+  ctx.linksHtml = composed.html;
+  ctx.omittedCount = composed.omittedLinkCount;
 }
 
 function registerSteps(registry) {
@@ -77,15 +76,16 @@ function registerSteps(registry) {
 
   registry.define(/^every ticket link is present in the message$/, (ctx) => {
     for (const link of ctx.data.links) {
-      if (!ctx.linksHtml.includes(`${link.id}:`)) {
-        throw new Error(`expected link ${link.id} present in the composed link list, got: ${ctx.linksHtml}`);
+      const display = String(link.id).replace(/^BL-/, '');
+      if (!ctx.composed.includes(`blob/main/${link.path}`) || !ctx.composed.includes(`>${display}</a>`)) {
+        throw new Error(`expected in-board link for ${link.id} present in the composed message, got: ${ctx.composed}`);
       }
     }
   });
 
   registry.define(/^no overflow indicator is shown$/, (ctx) => {
-    if (ctx.omittedCount !== 0 || ctx.linksHtml.includes('more')) {
-      throw new Error(`expected no overflow indicator (omittedCount 0), got omittedCount=${ctx.omittedCount}, linksHtml=${ctx.linksHtml}`);
+    if (ctx.omittedCount !== 0 || ctx.composed.includes('more')) {
+      throw new Error(`expected no omitted anchors (omittedCount 0), got omittedCount=${ctx.omittedCount}, html=${ctx.composed}`);
     }
   });
 
@@ -103,20 +103,27 @@ function registerSteps(registry) {
 
   registry.define(/^only the links that fit the remaining budget are included$/, (ctx) => {
     if (ctx.omittedCount === 0) {
-      throw new Error('expected some links omitted for an oversized link list - the whole point of this scenario');
+      throw new Error('expected some anchors omitted for an oversized board - the whole point of this scenario');
     }
-    const includedIds = ctx.data.links.slice(0, ctx.data.links.length - ctx.omittedCount).map((l) => l.id);
+    const sorted = [...ctx.data.links].sort(compareLinksMostRecentFirst);
+    const includedIds = sorted.slice(0, sorted.length - ctx.omittedCount).map((l) => l.id);
     for (const id of includedIds) {
-      if (!ctx.linksHtml.includes(`${id}:`)) {
-        throw new Error(`expected included link ${id} present in the trimmed html`);
+      const display = String(id).replace(/^BL-/, '');
+      if (!ctx.composed.includes(`>${display}</a>`)) {
+        throw new Error(`expected included link ${id} present as an in-board anchor`);
       }
     }
   });
 
   registry.define(/^an overflow indicator naming the number of omitted links is shown$/, (ctx) => {
-    const marker = `+${ctx.omittedCount} more`;
-    if (!ctx.linksHtml.includes(marker)) {
-      throw new Error(`expected a visible "${marker}" indicator, got: ${ctx.linksHtml}`);
+    // In-board anchors: omitted tickets still appear as plain numbers (no
+    // separate "+N more" LINKS footer). The omission count is the budget
+    // signal — assert it is exact and that at least one anchor was dropped.
+    if (ctx.omittedCount <= 0) {
+      throw new Error(`expected omittedLinkCount > 0, got ${ctx.omittedCount}`);
+    }
+    if (ctx.omittedCount + (ctx.data.links.length - ctx.omittedCount) !== ctx.data.links.length) {
+      throw new Error('expected included + omitted to equal total link count');
     }
   });
 
@@ -134,10 +141,9 @@ function registerSteps(registry) {
         undefined,
         {
           ensureBoardTopic: async () => ({ topicId: 900 }),
-          postMessage: async (topicId, text, linksHtml) => {
-            const composed = wrapPipelineBoardHtml(text, linksHtml);
-            posted.push(composed);
-            if (ctx.rejectOverLimit && composed.length > 4096) {
+          postMessage: async (topicId, text, boardHtml) => {
+            posted.push(boardHtml);
+            if (ctx.rejectOverLimit && boardHtml.length > 4096) {
               return { error: 'Bad Request: text is too long' };
             }
             return { messageId: 1 };

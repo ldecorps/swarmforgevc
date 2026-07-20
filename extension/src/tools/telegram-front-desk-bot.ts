@@ -57,13 +57,16 @@ import { promisify } from 'util';
 import {
   getTelegramUpdates,
   sendTelegramMessage,
+  sendTelegramMessageWithRateLimitRetry,
   sendTelegramPoll,
   createForumTopic,
+  createForumTopicWithRateLimitRetry,
   closeForumTopic,
   deleteForumTopic,
   editForumTopic,
   editForumTopicWithRateLimitRetry,
   getForumTopicIconStickers,
+  resolveForumTopicName,
   answerCallbackQuery,
   editMessageText,
   deleteMessage,
@@ -145,6 +148,7 @@ import { approvalRequestedEventKey } from '../events/swarmEventStream';
 import { reconcileTopicLifecycle, ReconcileAdapters } from '../concierge/topicReconciliation';
 import { sweepTopicDeletions, TopicDeletionAdapters, topicRetentionWindowMs } from '../concierge/topicDeletion';
 import { readBacklogFolders } from '../panel/backlogReader';
+import { loadApprovalMoreText } from '../concierge/approvalAskMore';
 import { appendOperatorEvent } from '../bridge/operatorEventQueue';
 import { appendMessage, readRecord, hasCompletionRecord, isRecordCommitted, hasUpdateId, readSwarmIconId, recordSwarmIconId, lastActivityMs } from '../concierge/blTopicStore';
 import { IconStickerLookup, StandingTopicTarget, ROLE_TOPIC_ICON, RoleTopicIconRole, RoleTopicTarget } from '../concierge/topicIcon';
@@ -491,6 +495,31 @@ function writeStandingTopicTitles(targetPath: string, titles: Record<string, str
   atomicWrite(standingTopicTitlesPath(targetPath), JSON.stringify(titles));
 }
 
+// Durable last-known standing topic ids (subjectId -> topicId). Survives a
+// telegram-topic-map remint/wipe so ensureApprovalsTopic can REBIND the live
+// Approvals forum topic instead of minting a duplicate name-twin. Written on
+// every successful bind/reuse; never used as a second routing map (replies
+// still go through telegram-topic-map.json after rebind).
+function standingTopicIdsPath(targetPath: string): string {
+  return path.join(targetPath, '.swarmforge', 'operator', 'telegram-standing-topic-ids.json');
+}
+
+function readStandingTopicIds(targetPath: string): Record<string, number> {
+  try {
+    return JSON.parse(fs.readFileSync(standingTopicIdsPath(targetPath), 'utf8')) as Record<string, number>;
+  } catch {
+    return {};
+  }
+}
+
+function rememberStandingTopicId(targetPath: string, subjectId: string, topicId: number): void {
+  const ids = readStandingTopicIds(targetPath);
+  if (ids[subjectId] === topicId) {
+    return;
+  }
+  atomicWrite(standingTopicIdsPath(targetPath), JSON.stringify({ ...ids, [subjectId]: topicId }));
+}
+
 // BL-453: renames an already-bound standing topic to desiredTitle when (and
 // only when) the recorded title actually differs (decideStandingTopicTitleSync) -
 // the rebrand's own "single-topic single edit, never every tick" constraint.
@@ -566,20 +595,98 @@ export async function ensureOperatorTopic(targetPath: string, botToken: string, 
 // RouteAdapters.ensureApprovalsTopic and approvalsRosterSync.ts's own
 // ApprovalsRosterAdapters.ensureApprovalsTopic - both resolve to this ONE
 // standing topic, never a second Approvals-topic notion.
+//
+// Duplicate-mint harden: when the map loses the APPROVALS binding but
+// telegram-standing-topic-ids.json still remembers the live id, REBIND that
+// id. A blind createForumTopic after remint mints a second "Approvals"
+// topic (Telegram names are not unique) while the human watches the empty
+// original. Before create, probe known candidate thread ids for any live
+// topic already named Approvals and rebind the OLDEST (original) instead.
 export async function ensureApprovalsTopic(targetPath: string, botToken: string, chatId: string, postFn?: TelegramPostFn): Promise<number | undefined> {
   const topicMap = readTopicMap(targetPath);
-  const decision = decideEnsureApprovalsTopicAction(topicMap);
+  const lastKnownTopicId = readStandingTopicIds(targetPath)[APPROVALS_SUBJECT_ID];
+  let decision = decideEnsureApprovalsTopicAction(topicMap, lastKnownTopicId);
+  if (decision.kind === 'create') {
+    const liveNamed = await findLiveApprovalsTopicIds(targetPath, botToken, chatId, postFn);
+    decision = decideEnsureApprovalsTopicAction(topicMap, lastKnownTopicId, liveNamed);
+  }
   if (decision.kind === 'reuse') {
+    rememberStandingTopicId(targetPath, APPROVALS_SUBJECT_ID, decision.topicId);
     return decision.topicId;
   }
-  const created = await createForumTopic(botToken, chatId, APPROVALS_TOPIC_NAME, postFn);
+  if (decision.kind === 'rebind') {
+    const fresh = readTopicMap(targetPath);
+    for (const [key, subject] of Object.entries(fresh)) {
+      if (subject === APPROVALS_SUBJECT_ID) {
+        delete fresh[key];
+      }
+    }
+    fresh[topicMapKey(decision.topicId)] = APPROVALS_SUBJECT_ID;
+    writeTopicMap(targetPath, fresh);
+    rememberStandingTopicId(targetPath, APPROVALS_SUBJECT_ID, decision.topicId);
+    return decision.topicId;
+  }
+  const created = await createForumTopicWithRateLimitRetry(botToken, chatId, APPROVALS_TOPIC_NAME, postFn);
   if (!created.success || created.messageThreadId === undefined) {
     process.stderr.write(`ensureApprovalsTopic: failed to create the Approvals topic: ${created.error ?? 'no messageThreadId returned'}\n`);
     return undefined;
   }
-  topicMap[topicMapKey(created.messageThreadId)] = APPROVALS_SUBJECT_ID;
-  writeTopicMap(targetPath, topicMap);
+  const fresh = readTopicMap(targetPath);
+  fresh[topicMapKey(created.messageThreadId)] = APPROVALS_SUBJECT_ID;
+  writeTopicMap(targetPath, fresh);
+  rememberStandingTopicId(targetPath, APPROVALS_SUBJECT_ID, created.messageThreadId);
   return created.messageThreadId;
+}
+
+function candidateApprovalsTopicIds(targetPath: string): number[] {
+  const ids = new Set<number>();
+  const standing = readStandingTopicIds(targetPath);
+  for (const value of Object.values(standing)) {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      ids.add(value);
+    }
+  }
+  for (const [key, subject] of Object.entries(readTopicMap(targetPath))) {
+    const n = Number(key);
+    if (!Number.isFinite(n)) {
+      continue;
+    }
+    if (
+      subject === APPROVALS_SUBJECT_ID ||
+      subject === OPERATOR_SUBJECT_ID ||
+      subject === BACKLOG_SUBJECT_ID ||
+      subject === RECERT_SUBJECT_ID ||
+      subject === AGENT_QUESTIONS_SUBJECT_ID ||
+      subject === CONTROL_SUBJECT_ID ||
+      subject === BABYSITTER_SUBJECT_ID
+    ) {
+      ids.add(n);
+    }
+  }
+  // Neighborhood around known standing anchors — catches an unbound name-twin
+  // near the remint wave without probing the whole forum.
+  for (const anchor of [...ids]) {
+    for (let i = Math.max(1, anchor - 80); i <= anchor + 20; i++) {
+      ids.add(i);
+    }
+  }
+  return [...ids].sort((a, b) => a - b);
+}
+
+async function findLiveApprovalsTopicIds(
+  targetPath: string,
+  botToken: string,
+  chatId: string,
+  postFn?: TelegramPostFn
+): Promise<number[]> {
+  const found: number[] = [];
+  for (const id of candidateApprovalsTopicIds(targetPath)) {
+    const name = await resolveForumTopicName(botToken, chatId, id, postFn);
+    if (name === APPROVALS_TOPIC_NAME) {
+      found.push(id);
+    }
+  }
+  return found;
 }
 
 // BL-450: the Recert-topic twin of ensureApprovalsTopic above - identical
@@ -1555,6 +1662,7 @@ function buildPollAdapters(
     // honour a 429's told-you-so retry_after with its own bounded retry.
     editApprovalAskMessage: (topicId, messageId, text) => editMessageText(botToken, chatId, messageId, text, undefined, undefined, null),
     notifyApprovalsTopic: (topicId, text) => sendTelegramMessage(botToken, chatId, text, undefined, undefined, topicId).then((r) => r.success),
+    loadApprovalMoreText: (backlogId) => Promise.resolve(loadApprovalMoreText(targetPath, backlogId)),
     // BL-450: recertificationStore.ts's own read-check-write functions -
     // the FIRST live callers of confirmScenario/writeRecertStore/
     // appendRecertProposal (recertification.ts had zero production callers
@@ -2205,8 +2313,17 @@ function buildConciergeTickAdapters(targetPath: string, botToken: string, chatId
       // the poll loop's closing routine (telegramFrontDeskBotCore.ts's
       // recordApprovalDecisionAndClose) needs it later to edit this exact
       // message in place.
-      sendApprovalAsk: (topicId, text, buttons) =>
-        sendTelegramMessage(botToken, chatId, text, undefined, undefined, topicId, buttons).then((r) => ({ success: r.success, messageId: r.messageId })),
+      // Rate-limit retry: a 429 on the buttoned ask used to fail the tick,
+      // hold pendingApproval back, and lose to the next tick's board/roster
+      // fan-out — Approvals stayed a text roster with no Approve/Amend/
+      // Reject/Expedite buttons. Honour retry_after here so the ask lands.
+      sendApprovalAsk: async (topicId, text, buttons) => {
+        const r = await sendTelegramMessageWithRateLimitRetry(botToken, chatId, text, undefined, undefined, topicId, buttons);
+        if (!r.success) {
+          process.stderr.write(`sendApprovalAsk: failed topicId=${topicId}: ${r.error ?? 'unknown'}\n`);
+        }
+        return { success: r.success, messageId: r.messageId };
+      },
       recordApprovalAskMessageId: (backlogId, topicId, messageId, text) => recordApprovalAskMessage(targetPath, backlogId, topicId, messageId, text),
       // BL-493: the standing Backlog topic (BL-492) - the destination for
       // an epic-less ticket's edit-in-place status message.
@@ -2267,10 +2384,17 @@ function buildConciergeTickAdapters(targetPath: string, botToken: string, chatId
       // in-process); this stays a thin wrapper binding the tick's own
       // botToken/chatId.
       ensureBoardTopic: () => ensureBoardTopicAdapter(botToken, chatId),
-      postMessage: (topicId, text, linksHtml) =>
-        sendTelegramMessage(botToken, chatId, wrapPipelineBoardHtml(text, linksHtml), undefined, undefined, topicId, undefined, 'HTML').then((r) =>
-          r.success ? { messageId: r.messageId } : { error: r.error }
-        ),
+      postMessage: (topicId, text, boardHtml) =>
+        sendTelegramMessage(
+          botToken,
+          chatId,
+          boardHtml ?? wrapPipelineBoardHtml(text),
+          undefined,
+          undefined,
+          topicId,
+          undefined,
+          'HTML'
+        ).then((r) => (r.success ? { messageId: r.messageId } : { error: r.error })),
       // BL-462: the board reposts at the bottom on a content change rather
       // than editing in place - deletes the previous message (best-effort;
       // see pipelineBoardSync.ts) before the fresh one is posted above.
@@ -2299,6 +2423,10 @@ function buildConciergeTickAdapters(targetPath: string, botToken: string, chatId
       ensureApprovalsTopic: () => ensureApprovalsTopic(targetPath, botToken, chatId),
       ...plainTextEditInPlaceAdapters(botToken, chatId),
     },
+    // Reconcile buttoned asks against telegram-approval-ask-messages.json so
+    // a pending ticket whose edge-trigger already advanced still gets
+    // Approve/Amend/Reject/Expedite on the LIVE Approvals topic.
+    readApprovalAskMessages: () => readApprovalAskMessages(targetPath),
     // BL-450: the current oldest-unreviewed recert scenario, straight off
     // computeRecertBatch(targetPath, 1) - never a second selection computed
     // here.

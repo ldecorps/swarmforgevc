@@ -708,6 +708,32 @@ test('BL-434: an already-bound Approvals topic returns its existing topicId, wit
   assert.equal(calls.length, 0);
 });
 
+// Duplicate-mint guard (live symptom: two "Approvals" forum topics): when the
+// topic map loses the APPROVALS binding but a last-known id was persisted,
+// ensureApprovalsTopic must REBIND that id and never call createForumTopic.
+test('ensureApprovalsTopic: last-known Approvals id is rebound when map binding is missing — no createForumTopic', async () => {
+  const root = mkTmpRoot();
+  writeTopicMapFixture(root, { '3817': 'BACKLOG' });
+  const idsPath = path.join(root, '.swarmforge', 'operator', 'telegram-standing-topic-ids.json');
+  fs.mkdirSync(path.dirname(idsPath), { recursive: true });
+  fs.writeFileSync(idsPath, JSON.stringify({ APPROVALS: 3857 }));
+  const { postFn, calls } = fakeCreateOk(9999);
+  const topicId = await ensureApprovalsTopic(root, 'fake-token', 'fake-chat', postFn);
+  assert.equal(topicId, 3857);
+  assert.equal(calls.length, 0, 'expected no createForumTopic — would mint a duplicate Approvals topic');
+  const map = readTopicMapFixture(root);
+  assert.equal(map['3857'], 'APPROVALS');
+  assert.equal(map['3817'], 'BACKLOG');
+});
+
+test('ensureApprovalsTopic: successful create persists last-known id for later rebind', async () => {
+  const root = mkTmpRoot();
+  const { postFn } = fakeCreateOk(77);
+  await ensureApprovalsTopic(root, 'fake-token', 'fake-chat', postFn);
+  const ids = JSON.parse(fs.readFileSync(path.join(root, '.swarmforge', 'operator', 'telegram-standing-topic-ids.json'), 'utf8'));
+  assert.equal(ids.APPROVALS, 77);
+});
+
 // ── ensureRecertTopic (BL-450, mirrors ensureApprovalsTopic above) ───────
 
 test('BL-450: creates the Recert topic and binds it to the reserved subject when the map has no binding yet', async () => {

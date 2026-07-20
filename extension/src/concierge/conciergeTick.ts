@@ -20,6 +20,7 @@ import { PipelineBoardPinAdapters, syncPipelineBoardPin } from './pipelineBoardP
 import { ApprovalsRosterAdapters, ApprovalsRosterState, syncApprovalsRoster } from './approvalsRosterSync';
 import { RecertPostingAdapters, RecertPostingState, syncRecertPosting } from './recertPostingSync';
 import { RecertifiableScenario } from '../docs/recertification';
+import { RecordedApprovalAsk, approvalAsksNeedingRepost } from './approvalAskReconcile';
 
 export interface BacklogFolderItem {
   id: string;
@@ -208,6 +209,12 @@ export interface ConciergeTickAdapters {
   // this codebase's own acceptance step handlers was built before this
   // field existed.
   rosterAdapters?: ApprovalsRosterAdapters;
+  // Recorded per-ticket ApprovalRequested ask identities (topicId at
+  // minimum) - live-wired from telegram-approval-ask-messages.json. Used to
+  // re-fire buttoned asks when pendingApproval is already in the tick
+  // baseline but no ask exists on the LIVE Approvals topic (remint / missed
+  // post). Optional: absent => treat as no recorded asks.
+  readApprovalAskMessages?: () => Readonly<Record<string, RecordedApprovalAsk>>;
   // BL-450: the current oldest-unreviewed recert scenario (or undefined
   // when none needs recertification) - live-wired from
   // recertificationStore.ts's computeRecertBatch(targetPath, 1), never a
@@ -989,6 +996,34 @@ function ticketRouteContextFor(event: SwarmEvent, folders: BacklogFoldersSnapsho
   return { epic, epicTitle: epicTitleFor(epic, epicDefinitions), iconState: resolveIconState(folder, type, humanApproval) };
 }
 
+// Synthesize ApprovalRequested events for pending tickets that still need
+// a buttoned ask on the LIVE Approvals topic. Complements deriveSwarmEvents'
+// edge-trigger; never duplicates an id already queued this tick.
+async function synthesizeMissingApprovalAsks(
+  curr: EventStreamSnapshot,
+  alreadyQueuedIds: ReadonlySet<string>,
+  alreadyEmitted: ReadonlySet<string>,
+  adapters: ConciergeTickAdapters
+): Promise<SwarmEvent[]> {
+  if (curr.pendingApproval.length === 0) {
+    return [];
+  }
+  const liveApprovalsTopicId = await adapters.routeAdapters.ensureApprovalsTopic();
+  const recordedAsks = adapters.readApprovalAskMessages?.() ?? {};
+  const needing = approvalAsksNeedingRepost(curr.pendingApproval, recordedAsks, liveApprovalsTopicId, alreadyEmitted).filter(
+    (id) => !alreadyQueuedIds.has(id)
+  );
+  return needing.map(
+    (id): SwarmEvent => ({
+      type: 'ApprovalRequested',
+      backlogId: id,
+      // Same TicketSummary spread diffApprovalRequested uses via
+      // ticketSummaryPayload - keep ask meat (title/notes/…) intact.
+      payload: curr.ticketSummaries[id] ? { ...curr.ticketSummaries[id] } : {},
+    })
+  );
+}
+
 async function processConciergeEvent(
   event: SwarmEvent,
   folders: BacklogFoldersSnapshot,
@@ -1035,7 +1070,12 @@ export async function runConciergeTick(adapters: ConciergeTickAdapters, nowMs: n
   const epicIcons = resolveAllEpicIcons(allEpicIdsFor(folders));
   const state = adapters.readTickState();
   const alreadyEmitted = new Set(state.emittedKeys);
-  const events = deriveSwarmEvents(state.snapshot, curr, alreadyEmitted);
+  const edgeEvents = deriveSwarmEvents(state.snapshot, curr, alreadyEmitted);
+  const alreadyQueuedApprovalIds = new Set(
+    edgeEvents.filter((e) => e.type === 'ApprovalRequested' && e.backlogId !== null).map((e) => e.backlogId as string)
+  );
+  const reconciledAsks = await synthesizeMissingApprovalAsks(curr, alreadyQueuedApprovalIds, alreadyEmitted, adapters);
+  const events = [...edgeEvents, ...reconciledAsks];
 
   // BL-465 bounce: durable per-ticket closure timestamps, stamped once per
   // ticket the first time it's observed done (see stampNewlyDoneClosedAtMs'

@@ -9,7 +9,7 @@
 // the board is always the LATEST message in its topic. An unchanged tick is
 // a complete no-op: no delete, no post, no state change - the existing
 // message (and its footer timestamp) stays exactly where it is.
-import { PipelineBoardData, PIPELINE_BOARD_MESSAGE_MAX_LENGTH, budgetPipelineBoardLinks, renderPipelineBoard, renderPipelineBoardBody, wrapPipelineBoardHtml } from './pipelineBoard';
+import { PipelineBoardData, PIPELINE_BOARD_MESSAGE_MAX_LENGTH, composePipelineBoardHtml, renderPipelineBoard, renderPipelineBoardBody } from './pipelineBoard';
 
 // BL-497: the board's retry cap - the number of CONSECUTIVE failed ticks
 // (any mix of failed-no-topic/failed-post) tolerated before exactly one
@@ -41,12 +41,12 @@ export interface PipelineBoardAdapters {
   // and must be updated to `{ topicId }` / `{ error }`, same for
   // postMessage below).
   ensureBoardTopic: () => Promise<PipelineBoardTopicResult>;
-  // BL-465: linksHtml added LAST (after text) - the below-grid GitHub link
-  // list, already rendered as its own HTML fragment (renderPipelineBoardLinks)
-  // so the real adapter can append it AFTER the closing </pre> tag rather
-  // than escaping it into the monospace block. Optional/empty for every
-  // pre-BL-465 fixture that never passes a 3rd arg.
-  postMessage: (topicId: number, text: string, linksHtml?: string) => Promise<PipelineBoardPostResult>;
+  // Board HTML already composed by sync (composePipelineBoardHtml) — the
+  // live adapter sends this as the message body with parse_mode HTML.
+  // Plain `text` remains the renderPipelineBoard plain-text body for
+  // fixtures that assert on content without HTML. Optional for pre-existing
+  // fixtures that never pass a 3rd arg (treated as "compose from text").
+  postMessage: (topicId: number, text: string, boardHtml?: string) => Promise<PipelineBoardPostResult>;
   // BL-462: replaces editMessage - the board never edits in place anymore.
   // Best-effort: its result is intentionally not branched on (see
   // syncPipelineBoard's own comment) - an orphaned undeleted old message is
@@ -112,7 +112,7 @@ export interface PipelineBoardSyncResult {
 const TOPIC_GONE_ERROR_SIGNATURES = ['message thread not found'];
 // BL-502: a too-long payload is NOT transient - retrying the identical
 // oversized message fails forever until the payload itself shrinks
-// (budgetPipelineBoardLinks' own job). Classified on its own class,
+// (composePipelineBoardHtml's own job). Classified on its own class,
 // distinct from transient/unknown, purely so BL-497's alert names the
 // real cause instead of lumping it under "unknown" if a payload is ever
 // still over budget; the topic itself is fine (only the payload is too
@@ -236,13 +236,13 @@ async function maybeEmitFailureAlert(result: PipelineBoardSyncResult, adapters: 
 async function postBoardMessage(
   topicId: number,
   text: string,
-  linksHtml: string,
+  boardHtml: string,
   contentSignature: string,
   lastChangeMs: number,
   prevState: PipelineBoardState | undefined,
   adapters: PipelineBoardAdapters
 ): Promise<PipelineBoardSyncResult> {
-  const { messageId, error } = await adapters.postMessage(topicId, text, linksHtml);
+  const { messageId, error } = await adapters.postMessage(topicId, text, boardHtml);
   if (messageId === undefined) {
     // A failed post must never delete the still-good prior message - the
     // existing board (and its own tracked messageId) is left exactly as it
@@ -253,7 +253,7 @@ async function postBoardMessage(
     // re-ensures a genuinely fresh topic and posts into it (self-heal).
     // Any other class (too-long/transient/unknown) retains both untouched -
     // BL-502: a too-long payload's TOPIC is fine, only the payload was too
-    // big (and budgetPipelineBoardLinks now keeps it under budget going
+    // big (and composePipelineBoardHtml now keeps it under budget going
     // forward), so recreating the topic would be pointless churn.
     const failureClass = classifyBoardFailure(error);
     const stateOverlay: Partial<PipelineBoardState> = failureClass === 'topic-gone' ? { topicId: undefined, messageId: undefined } : { topicId };
@@ -296,14 +296,9 @@ export async function syncPipelineBoard(
 
   const lastChangeMs = nowMs;
   const text = renderPipelineBoard(data, lastChangeMs);
-  // BL-502: the link list is the ELASTIC part - budgeted against whatever
-  // room remains after the fixed grid/parked/footer body (always included
-  // in full). wrapPipelineBoardHtml(text) (no linksHtml arg) is that body
-  // alone, wrapped exactly as it will be sent; the "\n\n" separator is
-  // reserved too, since it is only added once there is at least one link
-  // line to append.
-  const maxLinksLength = PIPELINE_BOARD_MESSAGE_MAX_LENGTH - wrapPipelineBoardHtml(text).length - 2;
-  const { html: linksHtml } = budgetPipelineBoardLinks(data.links ?? [], repoBaseUrl, maxLinksLength);
-  const result = await postBoardMessage(topicResult.topicId, text, linksHtml, contentSignature, lastChangeMs, prevState, adapters);
+  // In-board ticket anchors (no LINKS: footer). composePipelineBoardHtml
+  // itself budgets by dropping the oldest anchors when over the send limit.
+  const { html: boardHtml } = composePipelineBoardHtml(data, lastChangeMs, repoBaseUrl, PIPELINE_BOARD_MESSAGE_MAX_LENGTH);
+  const result = await postBoardMessage(topicResult.topicId, text, boardHtml, contentSignature, lastChangeMs, prevState, adapters);
   return result.outcome === 'failed-post' ? maybeEmitFailureAlert(result, adapters) : result;
 }

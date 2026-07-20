@@ -222,6 +222,54 @@ test('BL-434: decideEnsureApprovalsTopicAction is reserved-subject-specific - th
   assert.deepEqual(decideEnsureApprovalsTopicAction({ '42': OPERATOR_SUBJECT_ID }), { kind: 'create' });
 });
 
+// Duplicate-mint guard: when telegram-topic-map loses the APPROVALS binding but
+// we still remember the live forum topic id, REBIND that id — never createForumTopic
+// again (Telegram allows multiple topics named "Approvals"; create mints orphans).
+test('decideEnsureApprovalsTopicAction: lastKnownTopicId rebinds when the map has no APPROVALS binding', () => {
+  assert.deepEqual(decideEnsureApprovalsTopicAction({ '7': 'BACKLOG' }, 3857), { kind: 'rebind', topicId: 3857 });
+  assert.deepEqual(decideEnsureApprovalsTopicAction({}, 42), { kind: 'rebind', topicId: 42 });
+});
+
+test('decideEnsureApprovalsTopicAction: map binding wins over lastKnownTopicId (no rebind/create)', () => {
+  assert.deepEqual(
+    decideEnsureApprovalsTopicAction({ '99': APPROVALS_SUBJECT_ID }, 3857),
+    { kind: 'reuse', topicId: 99 }
+  );
+});
+
+test('decideEnsureApprovalsTopicAction: absent lastKnown still creates when unbound', () => {
+  assert.deepEqual(decideEnsureApprovalsTopicAction({ '7': 'BACKLOG' }, undefined), { kind: 'create' });
+});
+
+test('decideEnsureApprovalsTopicAction: live topics named Approvals rebind to the OLDEST id (prefer original over remint twin)', () => {
+  assert.deepEqual(
+    decideEnsureApprovalsTopicAction({ '3857': APPROVALS_SUBJECT_ID }, 3857, [1200, 3857]),
+    { kind: 'rebind', topicId: 1200 }
+  );
+});
+
+test('decideEnsureApprovalsTopicAction: live named Approvals reuses when map already points at the oldest', () => {
+  assert.deepEqual(
+    decideEnsureApprovalsTopicAction({ '1200': APPROVALS_SUBJECT_ID }, 3857, [1200, 3857]),
+    { kind: 'reuse', topicId: 1200 }
+  );
+});
+
+test('decideEnsureApprovalsTopicAction: live named Approvals rebinds before create when map is unbound', () => {
+  assert.deepEqual(
+    decideEnsureApprovalsTopicAction({ '7': 'BACKLOG' }, undefined, [3857]),
+    { kind: 'rebind', topicId: 3857 }
+  );
+});
+
+test('decideEnsureApprovalsTopicAction: empty live list does not override map reuse / lastKnown', () => {
+  assert.deepEqual(
+    decideEnsureApprovalsTopicAction({ '99': APPROVALS_SUBJECT_ID }, 3857, []),
+    { kind: 'reuse', topicId: 99 }
+  );
+  assert.deepEqual(decideEnsureApprovalsTopicAction({}, 42, []), { kind: 'rebind', topicId: 42 });
+});
+
 // ── decideEnsureBabysitterTopicAction (pure) — standing babysitter topic ──
 
 test('Babysitter: decideEnsureBabysitterTopicAction creates when no topic is bound yet', () => {
@@ -1797,6 +1845,11 @@ test('BL-490: decideCallbackQueryAction resolves an Expedite tap', () => {
   assert.deepEqual(decideCallbackQueryAction(cq, PRINCIPAL_ID, '1'), { action: 'expedite', backlogId: 'BL-123' });
 });
 
+test('Approvals More: decideCallbackQueryAction resolves a More tap', () => {
+  const cq = mkCallbackUpdate({ fromId: PRINCIPAL_ID, data: 'more:BL-525' }).callback_query;
+  assert.deepEqual(decideCallbackQueryAction(cq, PRINCIPAL_ID, '1'), { action: 'more', backlogId: 'BL-525' });
+});
+
 test('BL-410: decideCallbackQueryAction drops a tap from a foreign chat as not-my-chat', () => {
   const cq = mkCallbackUpdate({ fromId: PRINCIPAL_ID, data: 'approve:BL-123', chatId: 2 }).callback_query;
   assert.deepEqual(decideCallbackQueryAction(cq, PRINCIPAL_ID, '1'), { action: 'drop', reason: 'not-my-chat' });
@@ -1903,6 +1956,7 @@ function callbackFixtureAdapters(overrides = {}) {
     // BL-509: the Amend tap's own prompt - optional, same "absent degrades
     // to a no-op" posture as every other optional field here.
     notifyApprovalsTopic: overrides.notifyApprovalsTopic,
+    loadApprovalMoreText: overrides.loadApprovalMoreText,
     // BL-483: an ask-option tap's own resolution/close adapters - all
     // optional, same "absent degrades to a no-op/proceeds" posture as every
     // other optional PollAdapters field above.
@@ -1938,6 +1992,47 @@ test('BL-410: an Approve tap records the approval and answers the callback, coun
   assert.deepEqual(approvals, ['BL-123']);
   assert.deepEqual(answered, ['cbq-1']);
   assert.equal(result.posted, 1);
+});
+
+test('Approvals More: a More tap posts Spec+Gherkin via notifyApprovalsTopic and answers the callback', async () => {
+  const posted = [];
+  const answered = [];
+  const result = await pollAndForward(
+    0,
+    PRINCIPAL_ID,
+    callbackFixtureAdapters({
+      update: { fromId: PRINCIPAL_ID, data: 'more:BL-525', topicId: 1200 },
+      loadApprovalMoreText: async (backlogId) => `MORE-FOR-${backlogId}`,
+      notifyApprovalsTopic: async (topicId, text) => {
+        posted.push({ topicId, text });
+        return true;
+      },
+      answerCallbackQuery: async (id) => {
+        answered.push(id);
+      },
+    })
+  );
+  assert.deepEqual(answered, ['cbq-1']);
+  assert.deepEqual(posted, [{ topicId: 1200, text: 'MORE-FOR-BL-525' }]);
+  assert.equal(result.posted, 1);
+});
+
+test('Approvals More: missing loadApprovalMoreText still posts placeholders (never throws)', async () => {
+  const posted = [];
+  await pollAndForward(
+    0,
+    PRINCIPAL_ID,
+    callbackFixtureAdapters({
+      data: 'more:BL-9',
+      notifyApprovalsTopic: async (_topicId, text) => {
+        posted.push(text);
+        return true;
+      },
+    })
+  );
+  assert.equal(posted.length, 1);
+  assert.match(posted[0], /no spec on disk/);
+  assert.match(posted[0], /no Gherkin scenarios on disk/);
 });
 
 test('BL-410: a Reject tap stashes the pending reason-awaited marker, never calling recordRejectionReply itself', async () => {

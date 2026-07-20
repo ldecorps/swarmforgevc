@@ -5,7 +5,6 @@ const { runConciergeTick } = require('../out/concierge/conciergeTick');
 // Telegram-agnostic (see its own header comment); every other test in this
 // file uses the plain always-succeeds titlesSet stub from fakeAdapters.
 const { editForumTopicWithRateLimitRetry } = require('../out/notify/telegramClient');
-const { wrapPipelineBoardHtml } = require('../out/concierge/pipelineBoard');
 const { PIPELINE_BOARD_ALERT_FAILURE_CAP } = require('../out/concierge/pipelineBoardSync');
 
 function folders(overrides = {}) {
@@ -219,6 +218,10 @@ function fakeAdapters(overrides = {}) {
         postMessage: async () => undefined,
         editMessage: async () => true,
       },
+      // Default: no recorded asks — reconcile treats every pending without
+      // an emittedKeys hit as needing a buttoned ask (live gap). Tests that
+      // seed a prior ask override this.
+      readApprovalAskMessages: () => ({}),
       ...overrides,
     },
   };
@@ -546,6 +549,110 @@ test('BL-480: a paused ticket pending approval renders its title/notes in the as
   assert.ok(ask, 'expected the standing Approvals-topic ask');
   assert.ok(ask.text.includes('awaiting promotion'), `expected the paused ticket's title in the ask, got: ${ask.text}`);
   assert.ok(ask.text.includes('this ticket fixes the widget'), `expected the paused ticket's notes in the ask, got: ${ask.text}`);
+});
+
+// Approvals ask reconcile: diffApprovalRequested is edge-triggered
+// (not-pending → pending). When pendingApproval is ALREADY in the persisted
+// baseline but no buttoned ask was ever recorded on the live Approvals
+// topic (failed post then baseline advanced, remint, wiped ask-messages
+// file), the roster can still sync while the human sees only a text index —
+// never Approve/Amend/Reject/Expedite. Reconcile synthesizes the missing
+// ApprovalRequested so routeApprovalRequestedEvent posts the buttoned ask.
+test('approval ask reconcile: pending already in baseline with no recorded ask posts a buttoned Approvals ask', async () => {
+  const { adapters, setFolders, state } = fakeAdapters();
+  setFolders(
+    folders({
+      paused: [{ id: 'BL-525', title: 'ModelFactory', notes: 'assign models to roles', humanApproval: 'pending' }],
+    })
+  );
+  adapters.writeTickState({
+    snapshot: {
+      backlog: { active: [], paused: ['BL-525'], done: [] },
+      gates: [],
+      roleTicket: {},
+      ticketSummaries: { 'BL-525': { title: 'ModelFactory', notes: 'assign models to roles' } },
+      pendingApproval: ['BL-525'],
+    },
+    emittedKeys: [],
+  });
+  const asks = [];
+  adapters.routeAdapters.sendApprovalAsk = async (topicId, text, buttons) => {
+    asks.push({ topicId, text, buttons });
+    return { success: true, messageId: 42 };
+  };
+  adapters.readApprovalAskMessages = () => ({});
+
+  const result = await runConciergeTick(adapters);
+
+  assert.equal(result.routed, 1);
+  assert.equal(asks.length, 1);
+  assert.equal(asks[0].topicId, 750);
+  assert.ok(asks[0].text.includes('BL-525 needs your approval'), `expected ask text, got: ${asks[0].text}`);
+  assert.ok(asks[0].text.includes('ModelFactory'), `expected ticket title in ask, got: ${asks[0].text}`);
+  assert.deepEqual(asks[0].buttons, [
+    [
+      { text: 'Approve', callbackData: 'approve:BL-525' },
+      { text: 'Amend', callbackData: 'amend:BL-525' },
+      { text: 'Reject', callbackData: 'reject:BL-525' },
+      { text: 'Expedite', callbackData: 'expedite:BL-525' },
+    ],
+  ]);
+  assert.ok(state.emittedKeys.includes('ApprovalRequested:BL-525'));
+});
+
+test('approval ask reconcile: recorded ask on a STALE Approvals topic id is re-posted onto the live topic', async () => {
+  const { adapters, setFolders, state } = fakeAdapters();
+  setFolders(folders({ paused: [{ id: 'BL-525', title: 'ModelFactory', humanApproval: 'pending' }] }));
+  adapters.writeTickState({
+    snapshot: {
+      backlog: { active: [], paused: ['BL-525'], done: [] },
+      gates: [],
+      roleTicket: {},
+      ticketSummaries: { 'BL-525': { title: 'ModelFactory' } },
+      pendingApproval: ['BL-525'],
+    },
+    emittedKeys: ['ApprovalRequested:BL-525'],
+  });
+  const asks = [];
+  adapters.routeAdapters.sendApprovalAsk = async (topicId, text, buttons) => {
+    asks.push({ topicId, text, buttons });
+    return { success: true, messageId: 99 };
+  };
+  adapters.readApprovalAskMessages = () => ({ 'BL-525': { topicId: 100 } });
+
+  const result = await runConciergeTick(adapters);
+
+  assert.equal(result.routed, 1);
+  assert.equal(asks.length, 1);
+  assert.equal(asks[0].topicId, 750);
+  assert.ok(asks[0].buttons?.[0]?.some((b) => b.text === 'Approve'));
+  assert.ok(state.emittedKeys.includes('ApprovalRequested:BL-525'));
+});
+
+test('approval ask reconcile: recorded ask on the LIVE Approvals topic is a no-op', async () => {
+  const { adapters, setFolders } = fakeAdapters();
+  setFolders(folders({ paused: [{ id: 'BL-525', title: 'ModelFactory', humanApproval: 'pending' }] }));
+  adapters.writeTickState({
+    snapshot: {
+      backlog: { active: [], paused: ['BL-525'], done: [] },
+      gates: [],
+      roleTicket: {},
+      ticketSummaries: { 'BL-525': { title: 'ModelFactory' } },
+      pendingApproval: ['BL-525'],
+    },
+    emittedKeys: ['ApprovalRequested:BL-525'],
+  });
+  const asks = [];
+  adapters.routeAdapters.sendApprovalAsk = async (topicId, text, buttons) => {
+    asks.push({ topicId, text, buttons });
+    return { success: true, messageId: 1 };
+  };
+  adapters.readApprovalAskMessages = () => ({ 'BL-525': { topicId: 750 } });
+
+  const result = await runConciergeTick(adapters);
+
+  assert.equal(result.routed, 0);
+  assert.equal(asks.length, 0);
 });
 
 test('BL-434: an ApprovalRequested that fails to post is retried on a later tick', async () => {
@@ -2502,11 +2609,11 @@ test('BL-465 bounce: a ticket newly closing on a LATER tick still outranks one a
   assert.ok(idxBL3 < idxBL2, `expected the later-closing BL-3 (t=9000) listed before the first-tick BL-2 (t=500); got:\n${last}`);
 });
 
-test('BL-465: readRepoBaseUrl feeds the below-grid GitHub link list, appended after the closing </pre>', async () => {
+test('BL-465: readRepoBaseUrl feeds in-board GitHub links after the closing </pre>', async () => {
   const { adapters, setFolders } = fakeAdapters();
   const posted = [];
-  adapters.boardAdapters.postMessage = async (topicId, text, linksHtml) => {
-    posted.push(wrapPipelineBoardHtml(text, linksHtml));
+  adapters.boardAdapters.postMessage = async (topicId, text, boardHtml) => {
+    posted.push(boardHtml);
     return { messageId: 1 };
   };
   adapters.boardAdapters.ensureBoardTopic = async () => ({ topicId: 900 });
@@ -2524,8 +2631,8 @@ test('BL-465: readRepoBaseUrl feeds the below-grid GitHub link list, appended af
 test('BL-513: a stale paused duplicate never overrides the active ticket link path', async () => {
   const { adapters, setFolders } = fakeAdapters();
   const posted = [];
-  adapters.boardAdapters.postMessage = async (topicId, text, linksHtml) => {
-    posted.push(wrapPipelineBoardHtml(text, linksHtml));
+  adapters.boardAdapters.postMessage = async (topicId, text, boardHtml) => {
+    posted.push(boardHtml);
     return { messageId: 1 };
   };
   adapters.boardAdapters.ensureBoardTopic = async () => ({ topicId: 900 });
@@ -2547,8 +2654,8 @@ test('BL-513: a stale paused duplicate never overrides the active ticket link pa
 test('BL-513: done ticket metadata can feed a backlog/done link path when a shown id resolves from done', async () => {
   const { adapters, setFolders } = fakeAdapters();
   const posted = [];
-  adapters.boardAdapters.postMessage = async (topicId, text, linksHtml) => {
-    posted.push(wrapPipelineBoardHtml(text, linksHtml));
+  adapters.boardAdapters.postMessage = async (topicId, text, boardHtml) => {
+    posted.push(boardHtml);
     return { messageId: 1 };
   };
   adapters.boardAdapters.ensureBoardTopic = async () => ({ topicId: 900 });
@@ -2564,8 +2671,8 @@ test('BL-513: done ticket metadata can feed a backlog/done link path when a show
 test('BL-465: no readRepoBaseUrl means no link list at all, even with active rows', async () => {
   const { adapters, setFolders } = fakeAdapters();
   const posted = [];
-  adapters.boardAdapters.postMessage = async (topicId, text, linksHtml) => {
-    posted.push(wrapPipelineBoardHtml(text, linksHtml));
+  adapters.boardAdapters.postMessage = async (topicId, text, boardHtml) => {
+    posted.push(boardHtml);
     return { messageId: 1 };
   };
   adapters.boardAdapters.ensureBoardTopic = async () => ({ topicId: 900 });

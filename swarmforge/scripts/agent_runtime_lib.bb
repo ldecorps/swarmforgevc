@@ -19,7 +19,8 @@
 
 (def constitution-articles-dir-rel "swarmforge/constitution/articles")
 
-(def supported-agents #{"claude" "aider" "grok" "codex" "copilot" "vibe" "mock"})
+(def supported-agents #{"claude" "aider" "grok" "codex" "copilot" "vibe" "gemini" "mock"})
+
 
 (def handoff-draft-rel-path "swarmforge/runtime/handoff-draft.txt")
 
@@ -74,6 +75,13 @@ USE YOUR TOOLS NOW. Re-printing the task or chatting without edits is failure.")
    ;; that cannot execute, and that difference is what makes aider unusable as
    ;; a swarm role. Capability entries describe the AGENT, not the model.
    "vibe"    {:wake-style :chat-message
+              :bootstrap-style :embedded
+              :bootstrap-text-style :generic
+              :startup-delay-ms 3000}
+   ;; Google Gemini CLI (`gemini`): interactive coding agent with YOLO mode
+   ;; (-y). Same wake/bootstrap shape as vibe/codex — prompt path in the
+   ;; first message; woken by chatting. Auth via GEMINI_API_KEY (tmux -e).
+   "gemini"  {:wake-style :chat-message
               :bootstrap-style :embedded
               :bootstrap-text-style :generic
               :startup-delay-ms 3000}

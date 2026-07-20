@@ -1,22 +1,27 @@
 # Checking Pipeline Board Ticket Links
 
-Use the Telegram pipeline board's `LINKS:` section when you need to open the
-backlog YAML for a ticket shown on the board. The link list covers every ticket
-or intake item visible in the board message:
+Tap a ticket **number** on the Telegram pipeline board (PARKED / AWAITING
+APPROVAL / ROOT INTAKE / RECENTLY CLOSED, or the compact grid-ticket line
+under the status grid) to open that ticket's backlog YAML on GitHub.
 
-- active tickets in the grid;
+There is no separate `LINKS:` footer — Telegram cannot put tappable anchors
+inside the monospace `<pre>` status grid, so list (and grid-only) ticket
+numbers are HTML links placed after that `<pre>` block.
+
+The board covers every ticket or intake item visible in the message:
+
+- active tickets in the grid (linked just under the grid when they have a path);
 - parked or awaiting-approval tickets;
 - recently closed tickets;
 - root-intake items.
 
-The links are ordered most-recent-first by ticket number, with the highest
-numbered ticket first. Intake items without a ticket number appear after
-numbered tickets.
+When the message would exceed Telegram's length budget, the oldest ticket
+anchors are dropped first (numbers stay visible as plain text).
 
 ## Open The Current Backlog File
 
-Tap a ticket in `LINKS:` to open the backlog file in GitHub. The path reflects
-where that file is now:
+Each linked number opens the backlog file in GitHub. The path reflects where
+that file is now:
 
 - active tickets link under `backlog/active/`;
 - paused or parked tickets link under `backlog/paused/`;

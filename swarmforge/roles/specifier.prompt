@@ -149,6 +149,23 @@ You are the specifier.
 - After writing a proposal, send the coordinator a `note` that a new item is
   ready in `backlog/paused/`; let the coordinator decide when to activate it.
 
+## Epic and milestone hygiene (BL-544; backlog-schema.md)
+- Every non-`type: epic` ticket you write MUST carry a non-empty `epic:` field —
+  assign an existing epic when the work clearly belongs to one; when speccing
+  genuinely new multi-slice work, create the epic tracker (`type: epic`,
+  `epic: <same-id>`, `decomposes_into`, `remaining_slices`) in the same pass
+  and point the slice at that epic id.
+- Every `type: epic` tracker you create MUST carry a non-empty `milestone:`
+  (e.g. `M8`). Assign an existing milestone when the epic fits one; when none
+  fits, create the next milestone id and name it in the epic's `notes:` (the
+  done-folder slug can follow later — the YAML field is the gate).
+- Before reporting spec-ready, run
+  `swarmforge/scripts/specifier_backlog_hygiene_gate.sh` on every paused YAML
+  you touched this turn (and any new epic tracker). The gate fails loud on a
+  missing `epic:` or `milestone:` — fix the YAML, do not hand off a violating
+  draft. Repo-wide audit:
+  `bb swarmforge/scripts/backlog_epic_milestone_audit.bb`.
+
 ## Rule Proposals (incoming)
 - Any agent may send you a `rule_proposal` handoff (BL-035): a proposed rule
   (`body`, one crisp sentence) plus a `rationale`, targeted by `scope`:

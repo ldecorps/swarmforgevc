@@ -195,13 +195,44 @@ export function decideStandingTopicTitleSync(recordedTitle: string | undefined, 
 export const APPROVALS_SUBJECT_ID = 'APPROVALS';
 export const APPROVALS_TOPIC_NAME = 'Approvals';
 
-export type EnsureApprovalsTopicAction = { kind: 'reuse'; topicId: number } | { kind: 'create' };
+// 'rebind': map lost the APPROVALS binding but we still know the live forum
+// topic id (sidecar last-known). Re-attach that id — NEVER createForumTopic
+// again. Telegram permits multiple topics with the same display name, so a
+// blind create after a map remint/wipe mints a duplicate "Approvals" orphan
+// while the human still watches the empty original thread.
+export type EnsureApprovalsTopicAction =
+  | { kind: 'reuse'; topicId: number }
+  | { kind: 'rebind'; topicId: number }
+  | { kind: 'create' };
 
-// Pure: the Approvals-topic twin of decideEnsureOperatorTopicAction above -
-// identical reuse-or-create shape, keyed by its own reserved subject id.
-export function decideEnsureApprovalsTopicAction(topicMap: Record<string, string>): EnsureApprovalsTopicAction {
+// Pure: when live forum topics named "Approvals" are known, ALWAYS bind the
+// oldest (lowest thread id = created first) — Telegram permits duplicate
+// display names, so a reminted twin must not displace the original the human
+// watches. Otherwise: reuse map binding, else rebind lastKnownTopicId, else create.
+export function decideEnsureApprovalsTopicAction(
+  topicMap: Record<string, string>,
+  lastKnownTopicId?: number,
+  liveTopicIdsNamedApprovals?: number[]
+): EnsureApprovalsTopicAction {
+  const named = (liveTopicIdsNamedApprovals ?? [])
+    .filter((id) => typeof id === 'number' && Number.isFinite(id))
+    .sort((a, b) => a - b);
+  if (named.length > 0) {
+    const oldest = named[0];
+    const existingTopicId = topicForSubject(topicMap, APPROVALS_SUBJECT_ID);
+    if (existingTopicId === oldest) {
+      return { kind: 'reuse', topicId: oldest };
+    }
+    return { kind: 'rebind', topicId: oldest };
+  }
   const existingTopicId = topicForSubject(topicMap, APPROVALS_SUBJECT_ID);
-  return existingTopicId !== undefined ? { kind: 'reuse', topicId: existingTopicId } : { kind: 'create' };
+  if (existingTopicId !== undefined) {
+    return { kind: 'reuse', topicId: existingTopicId };
+  }
+  if (lastKnownTopicId !== undefined) {
+    return { kind: 'rebind', topicId: lastKnownTopicId };
+  }
+  return { kind: 'create' };
 }
 
 // BL-450: the reserved subject a standing "Recert" forum topic is bound to -
@@ -738,6 +769,10 @@ export interface PollAdapters {
   // than a crash, mirroring this file's own established optional-adapter
   // convention (e.g. getPendingButtonAction above).
   notifyApprovalsTopic?: (topicId: number | undefined, text: string) => Promise<boolean>;
+  // More button: loads Spec + Gherkin for the tapped ticket. Optional —
+  // absent degrades to the same placeholder body formatApprovalMoreFallback
+  // renders (never a crash), matching every other optional PollAdapters seam.
+  loadApprovalMoreText?: (backlogId: string) => Promise<string>;
   // BL-450: recertificationStore.ts's own read-check-write functions,
   // adapter-injected. Each already refuses (returns false, writes nothing)
   // when the named scenarioId is not the one currently up for recert - the
@@ -1352,6 +1387,7 @@ export interface AskOption {
 export type CallbackButtonDecision =
   | { action: 'approve'; backlogId: string }
   | { action: 'expedite'; backlogId: string }
+  | { action: 'more'; backlogId: string }
   | { action: 'await-followup'; backlogId: string; kind: 'reject' | 'amend' }
   | { action: 'answer-ask'; threadId: string; optionIndex: number }
   | { action: 'drop'; reason: 'not-my-chat' | 'not-principal' | 'unrecognized-data' };
@@ -1359,7 +1395,9 @@ export type CallbackButtonDecision =
 // BL-490: 'expedite' joins the same literal callback_data namespace as
 // approve/reject/amend - routed through the SAME round-trip
 // (decideCallbackQueryAction below), never a second callback path.
-const CALLBACK_DATA_PATTERN = /^(approve|reject|amend|expedite):(.+)$/;
+// More: read-only expand of the ask (spec + Gherkin) — same namespace,
+// never a decision verb.
+const CALLBACK_DATA_PATTERN = /^(approve|reject|amend|expedite|more):(.+)$/;
 // BL-483: an ask option's own callback_data - an option INDEX + the ask's
 // threadId, never the label text (the ticket's own "callback_data <= 64
 // bytes" constraint - a label is unbounded, an index plus a short SUP-###
@@ -1424,6 +1462,9 @@ function decisionForApprovalCallbackKind(kind: string, backlogId: string): Callb
   if (kind === 'expedite') {
     return { action: 'expedite', backlogId };
   }
+  if (kind === 'more') {
+    return { action: 'more', backlogId };
+  }
   return { action: 'await-followup', backlogId, kind: kind as 'reject' | 'amend' };
 }
 
@@ -1451,7 +1492,8 @@ function isUnauthorizedCallbackDrop(decision: CallbackButtonDecision): boolean {
 // "extract the guard into a named, tested helper" split this file already
 // uses for isUnauthorizedCallbackDrop above.
 async function answerIfAlreadyDecided(callbackQuery: TelegramCallbackQuery, decision: CallbackButtonDecision, adapters: PollAdapters): Promise<boolean> {
-  if (decision.action === 'drop' || decision.action === 'answer-ask') {
+  // More is read-only — still useful after a verdict (re-read the spec).
+  if (decision.action === 'drop' || decision.action === 'answer-ask' || decision.action === 'more') {
     return false;
   }
   const recordedVerdict = await adapters.readRecordedApprovalVerdict?.(decision.backlogId);
@@ -1583,7 +1625,10 @@ async function dispatchExpediteCallback(
 // already been dispatched by the caller - narrowed via Exclude (rather than
 // re-checked with an `as`) so dispatchApproveOrFollowup below stays
 // type-safe over exactly the variants it can actually receive.
-type RecognizedApprovalDecision = Exclude<CallbackButtonDecision, { action: 'answer-ask' } | { action: 'expedite' }>;
+type RecognizedApprovalDecision = Exclude<
+  CallbackButtonDecision,
+  { action: 'answer-ask' } | { action: 'expedite' } | { action: 'more' }
+>;
 
 // Hardener 2026-07-17: split out of dispatchRecognizedCallbackDecision below
 // so ITS OWN branch count stays at or below the CRAP threshold - the same
@@ -1595,6 +1640,21 @@ type RecognizedApprovalDecision = Exclude<CallbackButtonDecision, { action: 'ans
 // own "arm a marker, then prompt for the reply it awaits" shape.
 function amendPromptText(backlogId: string): string {
   return `What would you like to change about ${backlogId}?`;
+}
+
+async function dispatchMoreCallback(
+  callbackQuery: TelegramCallbackQuery,
+  decision: { action: 'more'; backlogId: string },
+  adapters: PollAdapters
+): Promise<UpdateDeliveryOutcome> {
+  await adapters.answerCallbackQuery(callbackQuery.id);
+  const text = (await adapters.loadApprovalMoreText?.(decision.backlogId)) ?? formatApprovalMoreFallback(decision.backlogId);
+  const ok = (await adapters.notifyApprovalsTopic?.(callbackQuery.message?.message_thread_id, text)) ?? false;
+  return deliveryOutcome(ok);
+}
+
+function formatApprovalMoreFallback(backlogId: string): string {
+  return `${backlogId}\n\n— Spec —\n(no spec on disk for this ticket)\n\n— Gherkin —\n(no Gherkin scenarios on disk for this ticket)`;
 }
 
 async function dispatchApproveOrFollowup(
@@ -1636,6 +1696,9 @@ async function dispatchRecognizedCallbackDecision(
   }
   if (decision.action === 'expedite') {
     return dispatchExpediteCallback(callbackQuery, decision, adapters);
+  }
+  if (decision.action === 'more') {
+    return dispatchMoreCallback(callbackQuery, decision, adapters);
   }
   return dispatchApproveOrFollowup(callbackQuery, decision, adapters);
 }

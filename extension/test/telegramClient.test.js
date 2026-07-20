@@ -1,9 +1,11 @@
 const assert = require('node:assert/strict');
 const {
   sendTelegramMessage,
+  sendTelegramMessageWithRateLimitRetry,
   sendTelegramPoll,
   getTelegramUpdates,
   createForumTopic,
+  createForumTopicWithRateLimitRetry,
   closeForumTopic,
   closeForumTopicWithRateLimitRetry,
   reopenForumTopic,
@@ -11,6 +13,7 @@ const {
   editForumTopic,
   editForumTopicWithRateLimitRetry,
   getForumTopicIconStickers,
+  resolveForumTopicName,
   answerCallbackQuery,
   editMessageText,
   deleteMessage,
@@ -24,6 +27,103 @@ const {
 
 const TOKEN = '123456:test-bot-token';
 const CHAT_ID = '999888777';
+
+test('sendTelegramMessage surfaces retryAfterSeconds from a 429 rate-limit response', async () => {
+  const postFn = async () => ({
+    ok: false,
+    status: 429,
+    json: { ok: false, description: 'Too Many Requests: retry after 7', parameters: { retry_after: 7 } },
+  });
+
+  const result = await sendTelegramMessage(TOKEN, CHAT_ID, 'needs your approval', undefined, postFn, 3857, [
+    [{ text: 'Approve', callbackData: 'approve:BL-525' }],
+  ]);
+
+  assert.equal(result.success, false);
+  assert.equal(result.retryAfterSeconds, 7);
+});
+
+test('sendTelegramMessageWithRateLimitRetry waits retry_after then retries the SAME send until success', async () => {
+  const waits = [];
+  let attempts = 0;
+  const postFn = async () => {
+    attempts += 1;
+    if (attempts === 1) {
+      return {
+        ok: false,
+        status: 429,
+        json: { ok: false, description: 'Too Many Requests: retry after 3', parameters: { retry_after: 3 } },
+      };
+    }
+    return { ok: true, status: 200, json: { ok: true, result: { message_id: 4242 } } };
+  };
+
+  const result = await sendTelegramMessageWithRateLimitRetry(
+    TOKEN,
+    CHAT_ID,
+    'BL-525 needs your approval',
+    undefined,
+    postFn,
+    3857,
+    [[{ text: 'Approve', callbackData: 'approve:BL-525' }]],
+    undefined,
+    async (ms) => {
+      waits.push(ms);
+    }
+  );
+
+  assert.deepEqual(result, { success: true, messageId: 4242 });
+  assert.deepEqual(waits, [3000]);
+  assert.equal(attempts, 2);
+});
+
+test('sendTelegramMessageWithRateLimitRetry stops after maxAttempts on sustained 429 (does not freeze forever)', async () => {
+  const waits = [];
+  let attempts = 0;
+  const postFn = async () => {
+    attempts += 1;
+    return {
+      ok: false,
+      status: 429,
+      json: { ok: false, description: 'Too Many Requests: retry after 1', parameters: { retry_after: 1 } },
+    };
+  };
+
+  const result = await sendTelegramMessageWithRateLimitRetry(
+    TOKEN,
+    CHAT_ID,
+    'BL-525 needs your approval',
+    undefined,
+    postFn,
+    3857,
+    undefined,
+    undefined,
+    async (ms) => {
+      waits.push(ms);
+    },
+    3
+  );
+
+  assert.equal(result.success, false);
+  assert.equal(result.retryAfterSeconds, 1);
+  assert.equal(attempts, 3);
+  assert.deepEqual(waits, [1000, 1000]);
+});
+
+test('sendTelegramMessageWithRateLimitRetry does NOT retry a genuine (non-429) failure', async () => {
+  let attempts = 0;
+  const postFn = async () => {
+    attempts += 1;
+    return { ok: false, status: 400, json: { ok: false, description: 'Bad Request: chat not found' } };
+  };
+
+  const result = await sendTelegramMessageWithRateLimitRetry(TOKEN, CHAT_ID, 'hi', undefined, postFn, 1, undefined, undefined, async () => {
+    assert.fail('wait must not be called for a non-429 failure');
+  });
+
+  assert.equal(result.success, false);
+  assert.equal(attempts, 1);
+});
 
 test('sendTelegramMessage posts to the Telegram API and reports success with the new message id', async () => {
   const calls = [];
@@ -334,6 +434,93 @@ test('BL-444: createForumTopic leaves migrateToChatId undefined for an ordinary 
   const result = await createForumTopic(TOKEN, CHAT_ID, 'billing question', postFn);
 
   assert.equal(result.migrateToChatId, undefined);
+});
+
+test('createForumTopic surfaces retryAfterSeconds from a 429 rate-limit response', async () => {
+  const postFn = async () => ({
+    ok: false,
+    status: 429,
+    json: { ok: false, description: 'Too Many Requests: retry after 13', parameters: { retry_after: 13 } },
+  });
+
+  const result = await createForumTopic(TOKEN, CHAT_ID, 'Approvals', postFn);
+
+  assert.equal(result.success, false);
+  assert.equal(result.retryAfterSeconds, 13);
+});
+
+test('createForumTopicWithRateLimitRetry waits retry_after then retries the SAME create until success', async () => {
+  const waits = [];
+  let attempts = 0;
+  const postFn = async () => {
+    attempts += 1;
+    if (attempts === 1) {
+      return {
+        ok: false,
+        status: 429,
+        json: { ok: false, description: 'Too Many Requests: retry after 2', parameters: { retry_after: 2 } },
+      };
+    }
+    return { ok: true, status: 200, json: { ok: true, result: { message_thread_id: 3857, name: 'Approvals' } } };
+  };
+
+  const result = await createForumTopicWithRateLimitRetry(TOKEN, CHAT_ID, 'Approvals', postFn, async (ms) => {
+    waits.push(ms);
+  });
+
+  assert.deepEqual(result, { success: true, messageThreadId: 3857 });
+  assert.deepEqual(waits, [2000]);
+  assert.equal(attempts, 2);
+});
+
+test('createForumTopicWithRateLimitRetry does NOT retry a genuine (non-429) failure', async () => {
+  let attempts = 0;
+  const postFn = async () => {
+    attempts += 1;
+    return { ok: false, status: 400, json: { ok: false, description: 'Topics are not enabled' } };
+  };
+
+  const result = await createForumTopicWithRateLimitRetry(TOKEN, CHAT_ID, 'Approvals', postFn, async () => {
+    assert.fail('wait must not be called for a non-429 failure');
+  });
+
+  assert.equal(result.success, false);
+  assert.equal(attempts, 1);
+});
+
+test('resolveForumTopicName reads forum_topic_created.name from the probe reply and deletes the probe', async () => {
+  const calls = [];
+  const postFn = async (url, body) => {
+    calls.push({ url, body: JSON.parse(body) });
+    if (url.includes('sendMessage')) {
+      return {
+        ok: true,
+        status: 200,
+        json: {
+          ok: true,
+          result: {
+            message_id: 99,
+            reply_to_message: { forum_topic_created: { name: 'Approvals' } },
+          },
+        },
+      };
+    }
+    return { ok: true, status: 200, json: { ok: true, result: true } };
+  };
+  const name = await resolveForumTopicName(TOKEN, CHAT_ID, 3857, postFn);
+  assert.equal(name, 'Approvals');
+  assert.equal(calls[0].body.message_thread_id, 3857);
+  assert.equal(calls[0].body.reply_to_message_id, 3857);
+  assert.ok(calls.some((c) => c.url.includes('deleteMessage') && c.body.message_id === 99));
+});
+
+test('resolveForumTopicName returns undefined when the thread is invalid', async () => {
+  const postFn = async () => ({
+    ok: false,
+    status: 400,
+    json: { ok: false, description: 'Bad Request: message thread not found' },
+  });
+  assert.equal(await resolveForumTopicName(TOKEN, CHAT_ID, 1, postFn), undefined);
 });
 
 // ── BL-342: createForumTopic's own optional icon at creation time ───────

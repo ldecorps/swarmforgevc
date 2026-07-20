@@ -89,8 +89,8 @@ function boardDataWithLink(pathValue) {
 function fakeAdapters(ctx) {
   return {
     ensureBoardTopic: async () => ({ topicId: 900 }),
-    postMessage: async (topicId, text, linksHtml) => {
-      ctx.posts.push({ topicId, text, linksHtml });
+    postMessage: async (topicId, text, boardHtml) => {
+      ctx.posts.push({ topicId, text, boardHtml, linksHtml: boardHtml });
       return { messageId: ctx.posts.length + 40 };
     },
     deleteMessage: async (topicId, messageId) => {
@@ -196,10 +196,10 @@ function registerSteps(registry) {
 
   registry.define(/^"([^"]+)" is now linked at "([^"]+)"$/, (ctx, id, expectedPath) => {
     const lastPost = ctx.posts[ctx.posts.length - 1];
-    if (!lastPost.linksHtml.includes(`${id}:`) || !lastPost.linksHtml.includes(expectedPath)) {
-      throw new Error(`expected latest linksHtml to include ${id} at ${expectedPath}, got: ${lastPost.linksHtml}`);
+    const display = id.replace(/^(?:BL|GH)-/, '');
+    if (!lastPost.boardHtml.includes(expectedPath) || !lastPost.boardHtml.includes(`>${display}</a>`)) {
+      throw new Error(`expected latest boardHtml to link ${id} at ${expectedPath}, got: ${lastPost.boardHtml}`);
     }
   });
 }
-
 module.exports = { registerSteps };
