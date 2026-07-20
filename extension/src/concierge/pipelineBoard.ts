@@ -433,13 +433,14 @@ export function computePipelineBoard(
   return { rows, parked, rootIntake, recentlyClosed, links };
 }
 
-// Every stage line is "<2-char label> <mark>" — pad the ticket id so it
-// sits in the mark column, not above the label column.
-const PIVOTED_MARK_COLUMN_OFFSET = 3;
+// Every stage line is "<2-char label> <mark>". Pad the ticket id to the mark
+// column with NBSP — Telegram HTML collapses leading regular spaces inside
+// <pre>, which would left-flush the id against the label column.
+const PIVOTED_MARK_COLUMN_PADDING = '\u00a0'.repeat(3);
 
 function renderPivotedTicketBlock(row: PipelineBoardRow): string[] {
   const displayId = deriveDisplayTicketId(row.id);
-  const lines: string[] = [`${' '.repeat(PIVOTED_MARK_COLUMN_OFFSET)}${displayId}`];
+  const lines: string[] = [`${PIVOTED_MARK_COLUMN_PADDING}${displayId}`];
   for (const c of PIPELINE_BOARD_COLUMN_ORDER) {
     const mark = c === row.column ? 'X' : '.';
     lines.push(`${COLUMN_LABEL[c]} ${mark}`);

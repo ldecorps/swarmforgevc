@@ -468,11 +468,12 @@ test('renderPipelineBoardBody: the grid shows ticket numbers without BL-/GH- pre
 test('renderPipelineBoardBody: pivoted ticket ids align with the mark column, not the label column', () => {
   const text = renderPipelineBoardBody({ rows: [{ id: 'BL-513', column: 'not-started', epic: 'pipeline-board', slug: '' }], parked: [] });
   const lines = text.split('\n');
-  const ticketLine = lines.find((l) => l.trim() === '513');
+  const ticketLine = lines.find((l) => l.includes('513') && !l.includes('pipeline-board'));
   const nsLine = lines.find((l) => l.startsWith('NS '));
   assert.ok(ticketLine, `expected ticket id line, got:\n${text}`);
   assert.equal(nsLine?.trim(), 'NS X');
   assert.equal(ticketLine.indexOf('513'), nsLine?.indexOf('X'), 'ticket id should start where stage marks start');
+  assert.ok(ticketLine.startsWith('\u00a0'), 'expected NBSP padding so Telegram does not strip the indent');
 });
 
 test('renderPipelineBoardBody: pivoted ticket ids are never padded with trailing spaces', () => {
