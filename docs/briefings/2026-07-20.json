@@ -738,7 +738,7 @@
   ],
   "flowBalance": {
     "speccedPerDay": {
-      "value": 0,
+      "value": 1,
       "trend": {
         "series": [
           {
@@ -827,12 +827,12 @@
           },
           {
             "periodStart": "2026-07-20T00:00:00.000Z",
-            "value": 0
+            "value": 1
           }
         ],
-        "currentValue": 0,
+        "currentValue": 1,
         "priorValue": 16,
-        "delta": -16,
+        "delta": -15,
         "direction": "down"
       }
     },
@@ -938,7 +938,7 @@
   },
   "reliability": {
     "chases": {
-      "value": 1319,
+      "value": 1320,
       "trend": {
         "series": [
           {
@@ -947,17 +947,17 @@
           },
           {
             "periodStart": "2026-07-20T00:00:00.000Z",
-            "value": 1319
+            "value": 1320
           }
         ],
-        "currentValue": 1319,
+        "currentValue": 1320,
         "priorValue": 353,
-        "delta": 966,
+        "delta": 967,
         "direction": "up"
       }
     },
     "nudges": {
-      "value": 276,
+      "value": 278,
       "trend": {
         "series": [
           {
@@ -966,12 +966,12 @@
           },
           {
             "periodStart": "2026-07-20T00:00:00.000Z",
-            "value": 276
+            "value": 278
           }
         ],
-        "currentValue": 276,
+        "currentValue": 278,
         "priorValue": 27,
-        "delta": 249,
+        "delta": 251,
         "direction": "up"
       }
     },
