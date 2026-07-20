@@ -2,6 +2,7 @@
 .env
 .claude/
 .swarmforge/
+swarmforge/scripts/.bin/
 .worktrees/
 /tmp/
 extension/tmp/

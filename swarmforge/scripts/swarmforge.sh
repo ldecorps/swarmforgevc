@@ -647,6 +647,9 @@ provision_coordinator() {
     # Aider coordinator: pack sets coordinator_model (e.g. openai/sonar). OpenAI-compat
     # base URL comes from pane env remap (Cerebras/Perplexity guards), not from flags.
     extra_cli="--model $COORDINATOR_MODEL --no-gitignore --no-show-model-warnings --no-check-update"
+  elif [[ "$COORDINATOR_AGENT" == "vibe" ]]; then
+    # Vibe coordinator: coordinator_model is the --max-price cap (dollars).
+    extra_cli="--max-price ${COORDINATOR_MODEL:-2.00}"
   fi
   if [[ "$REMOTE_CONTROL_DEFAULT" == 1 ]]; then
     extra_cli+="${extra_cli:+ }--remote-control $(remote_control_session_name_for_role "$role")"
