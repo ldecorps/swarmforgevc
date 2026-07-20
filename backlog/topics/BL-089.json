@@ -1,1 +1,1 @@
-{"id":"BL-089","messages":[{"seq":0,"ts":1784302565731,"author":"swarm","type":"outbound","text":"BL-089 ✅ done — per-role feature flag — clear a role's session context at the idle boundary"}]}
+{"id":"BL-089","messages":[{"seq":0,"ts":1784302565731,"author":"swarm","type":"outbound","text":"BL-089 ✅ done — per-role feature flag — clear a role's session context at the idle boundary"},{"seq":1,"ts":1784518669285,"author":"swarm","type":"outbound","text":"BL-089 ✅ done — per-role feature flag — clear a role's session context at the idle boundary"}]}
