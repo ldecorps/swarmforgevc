@@ -12,11 +12,14 @@ import {
   RESIDENT_PANE_SPY_DEFAULT_LINES,
   inferRoleLabelFromPane,
 } from '../concierge/residentPaneSpy';
+import { readCurrentModel } from '../swarm/backendSwitch';
+import { formatModelDisplayName } from '../swarm/modelDisplayName';
 
 export interface ResidentPaneLiveSnapshot {
   roleLabel: string;
   paneText: string;
   sessionTarget: string;
+  modelLabel?: string;
 }
 
 export function captureResidentPaneLive(targetPath: string): ResidentPaneLiveSnapshot | undefined {
@@ -44,10 +47,12 @@ export function captureResidentPaneLive(targetPath: string): ResidentPaneLiveSna
     if (!paneText.trim()) {
       continue;
     }
+    const modelId = readCurrentModel(targetPath, roleEntry.role);
     return {
       roleLabel: inferRoleLabelFromPane(paneText),
       paneText,
       sessionTarget: target,
+      modelLabel: modelId ? formatModelDisplayName(modelId) : undefined,
     };
   }
   return undefined;

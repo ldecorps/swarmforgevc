@@ -85,7 +85,9 @@ export function getResidentSpyUiHtml(): string {
           setStatus('err', 'no pane');
           return;
         }
-        roleEl.textContent = 'Resident: ' + (data.roleLabel || 'unknown');
+        var header = 'Resident: ' + (data.roleLabel || 'unknown');
+        if (data.modelLabel) header += ' on ' + data.modelLabel;
+        roleEl.textContent = header;
         sessionEl.textContent = data.sessionTarget || '';
         paneEl.textContent = data.paneText || '(empty)';
         lastOk = Date.now();
