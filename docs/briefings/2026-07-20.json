@@ -957,7 +957,7 @@
       }
     },
     "nudges": {
-      "value": 283,
+      "value": 284,
       "trend": {
         "series": [
           {
@@ -966,17 +966,17 @@
           },
           {
             "periodStart": "2026-07-20T00:00:00.000Z",
-            "value": 283
+            "value": 284
           }
         ],
-        "currentValue": 283,
+        "currentValue": 284,
         "priorValue": 27,
-        "delta": 256,
+        "delta": 257,
         "direction": "up"
       }
     },
     "respawns": {
-      "value": 81,
+      "value": 82,
       "trend": {
         "series": [
           {
@@ -985,12 +985,12 @@
           },
           {
             "periodStart": "2026-07-20T00:00:00.000Z",
-            "value": 81
+            "value": 82
           }
         ],
-        "currentValue": 81,
+        "currentValue": 82,
         "priorValue": 28,
-        "delta": 53,
+        "delta": 54,
         "direction": "up"
       }
     },
