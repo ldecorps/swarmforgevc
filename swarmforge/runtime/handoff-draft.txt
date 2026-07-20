@@ -2,5 +2,5 @@ type: git_handoff
 to: cleaner
 priority: 50
 task: BL-513
-commit: HEAD
+commit: 2cc46a1a
 message: Implemented path+freshness for pipeline board links per BL-513 yaml. Kept most-recent-first order (no alphabetical). No ui/ files touched. All tests pass.
