@@ -957,7 +957,7 @@
       }
     },
     "nudges": {
-      "value": 291,
+      "value": 292,
       "trend": {
         "series": [
           {
@@ -966,12 +966,12 @@
           },
           {
             "periodStart": "2026-07-20T00:00:00.000Z",
-            "value": 291
+            "value": 292
           }
         ],
-        "currentValue": 291,
+        "currentValue": 292,
         "priorValue": 27,
-        "delta": 264,
+        "delta": 265,
         "direction": "up"
       }
     },
@@ -1023,7 +1023,7 @@
   "resourceAnomalies": [
     {
       "role": "coder",
-      "rssBytes": 860160,
+      "rssBytes": 856064,
       "cpuPercent": 0,
       "rssTrend": {
         "series": [
@@ -1093,12 +1093,12 @@
           },
           {
             "periodStart": "2026-07-20T12:00:00.000Z",
-            "value": 1024512
+            "value": 1005795.5555555555
           }
         ],
-        "currentValue": 1024512,
+        "currentValue": 1005795.5555555555,
         "priorValue": 851968,
-        "delta": 172544,
+        "delta": 153827.5555555555,
         "direction": "up"
       },
       "cpuTrend": {
@@ -1180,7 +1180,7 @@
     },
     {
       "role": "coordinator",
-      "rssBytes": 860160,
+      "rssBytes": 856064,
       "cpuPercent": 0,
       "rssTrend": {
         "series": [
@@ -1250,12 +1250,12 @@
           },
           {
             "periodStart": "2026-07-20T12:00:00.000Z",
-            "value": 1058816
+            "value": 1036288
           }
         ],
-        "currentValue": 1058816,
+        "currentValue": 1036288,
         "priorValue": 851968,
-        "delta": 206848,
+        "delta": 184320,
         "direction": "up"
       },
       "cpuTrend": {
