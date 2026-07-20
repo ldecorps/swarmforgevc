@@ -10,9 +10,10 @@ import {
 import { stripAnsi } from '../panel/ansi';
 import {
   RESIDENT_PANE_SPY_DEFAULT_LINES,
-  inferRoleLabelFromPane,
+  RESIDENT_PANE_SPY_ROLE_SEARCH_LINES,
+  resolveResidentRoleIdentity,
 } from '../concierge/residentPaneSpy';
-import { readCurrentModel } from '../swarm/backendSwitch';
+import { readRoleModelId } from '../swarm/backendSwitch';
 import { formatModelDisplayName } from '../swarm/modelDisplayName';
 
 export interface ResidentPaneLiveSnapshot {
@@ -47,9 +48,12 @@ export function captureResidentPaneLive(targetPath: string): ResidentPaneLiveSna
     if (!paneText.trim()) {
       continue;
     }
-    const modelId = readCurrentModel(targetPath, roleEntry.role);
+    const roleSearchCaptured = capturePane(socketPath, target, -RESIDENT_PANE_SPY_ROLE_SEARCH_LINES);
+    const roleSearchText = stripAnsi(roleSearchCaptured.stdout ?? paneText);
+    const identity = resolveResidentRoleIdentity(roleSearchText, roleEntry, roles);
+    const modelId = readRoleModelId(targetPath, identity.modelRole);
     return {
-      roleLabel: inferRoleLabelFromPane(paneText),
+      roleLabel: identity.roleLabel,
       paneText,
       sessionTarget: target,
       modelLabel: modelId ? formatModelDisplayName(modelId) : undefined,
