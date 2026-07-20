@@ -1,1 +1,1 @@
-{"id":"BL-215","messages":[{"seq":0,"ts":1784301545482,"author":"swarm","type":"outbound","text":"BL-215 ✅ done — Warn loudly when email is configured but RESEND_API_KEY is missing (headless no-op)"}]}
+{"id":"BL-215","messages":[{"seq":0,"ts":1784301545482,"author":"swarm","type":"outbound","text":"BL-215 ✅ done — Warn loudly when email is configured but RESEND_API_KEY is missing (headless no-op)"},{"seq":1,"ts":1784508131312,"author":"swarm","type":"outbound","text":"BL-215 ✅ done — Warn loudly when email is configured but RESEND_API_KEY is missing (headless no-op)"}]}
