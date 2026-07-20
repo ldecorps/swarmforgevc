@@ -57,13 +57,13 @@ function registerSteps(registry) {
 
   registry.define(/^the ticket column is (\d+) characters wide$/, (ctx, width) => {
     const expectedWidth = Number(width);
-    const dataLines = ctx.gridText.split('\n').filter((l) => /^\d/.test(l));
-    if (dataLines.length === 0) {
-      throw new Error(`expected at least one grid data row, got:\n${ctx.gridText}`);
+    const idLines = ctx.gridText.split('\n').filter((l) => /^\d+$/.test(l.trim()));
+    if (idLines.length === 0) {
+      throw new Error(`expected at least one ticket id line, got:\n${ctx.gridText}`);
     }
-    for (const line of dataLines) {
-      if (line[expectedWidth] !== ' ') {
-        throw new Error(`expected a ${expectedWidth}-char-wide ticket column boundary in "${line}"`);
+    for (const line of idLines) {
+      if (line.trim().length > expectedWidth) {
+        throw new Error(`expected ticket id line no wider than ${expectedWidth} chars, got "${line.trim()}"`);
       }
     }
   });
@@ -121,26 +121,26 @@ function registerSteps(registry) {
   });
 
   registry.define(/^the "([^"]+)" column is the first stage column, before "([^"]+)"$/, (ctx, first, second) => {
-    const header = ctx.gridText.split('\n')[0].trim().split(/\s+/);
-    const firstIndex = header.indexOf(first);
-    const secondIndex = header.indexOf(second);
-    if (firstIndex < 0 || secondIndex < 0 || !(firstIndex < secondIndex)) {
-      throw new Error(`expected "${first}" before "${second}" in the header, got: ${header.join(' ')}`);
+    const lines = ctx.gridText.split('\n');
+    const displayed = deriveDisplayTicketId(ctx.rowId);
+    const ticketIndex = lines.findIndex((l) => l.trim() === displayed);
+    const firstIndex = lines.findIndex((l) => l.startsWith(`${first} `));
+    const secondIndex = lines.findIndex((l) => l.startsWith(`${second} `));
+    if (ticketIndex < 0 || firstIndex < 0 || secondIndex < 0 || !(ticketIndex < firstIndex && firstIndex < secondIndex)) {
+      throw new Error(`expected "${first}" before "${second}" after ticket id in the pivoted block, got:\n${ctx.gridText}`);
     }
   });
 
   registry.define(/^the not-started ticket's mark falls in that first stage column$/, (ctx) => {
     const lines = ctx.gridText.split('\n');
-    const header = lines[0].trim().split(/\s+/);
     const displayed = deriveDisplayTicketId(ctx.rowId);
-    const rowLine = lines.find((l) => firstToken(l) === displayed);
-    if (!rowLine) {
-      throw new Error(`expected a not-started row for "${displayed}", got:\n${ctx.gridText}`);
+    const ticketIndex = lines.findIndex((l) => l.trim() === displayed);
+    if (ticketIndex < 0) {
+      throw new Error(`expected a not-started block for "${displayed}", got:\n${ctx.gridText}`);
     }
-    const row = rowLine.trim().split(/\s+/);
-    const nsIndex = header.indexOf('NS');
-    if (row[nsIndex] !== 'X') {
-      throw new Error(`expected the not-started ticket marked in the NS column, got: ${rowLine}`);
+    const nsLine = lines.find((l) => l.startsWith('NS '));
+    if (nsLine?.trim() !== 'NS X') {
+      throw new Error(`expected the not-started ticket marked on the NS line, got: ${nsLine ?? '(missing)'}`);
     }
   });
 }

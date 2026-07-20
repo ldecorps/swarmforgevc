@@ -50,7 +50,7 @@ Feature: The pipeline board shows wider descriptions, distinct sections for park
     Given a long-titled ticket occupies a stage-grid row
     When the pipeline board is rendered
     Then the grid row's slug column shows the ticket's short kebab slug
-    And the grid row remains a single aligned line
+    And the grid row renders as a pivoted vertical ticket block
 
   # BL-465 board-round2-01b RETIRED (BL-505, 2026-07-17): superseded - a
   # below-grid list entry (parked/awaiting-approval/root-intake/recently-

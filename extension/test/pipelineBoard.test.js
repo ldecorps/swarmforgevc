@@ -192,15 +192,11 @@ test('computePipelineBoard: a not-started row carries its ticket meta (epic/slug
 test('renderPipelineBoardBody: a not-started row marks only the not-started column, no pipeline role column', () => {
   const text = renderPipelineBoardBody({ rows: [{ id: 'BL-1', column: PIPELINE_BOARD_NOT_STARTED_COLUMN, slug: 'x' }], parked: [] });
   const lines = text.split('\n');
-  const header = lines[0].trim().split(/\s+/);
-  const row = lines[2].trim().split(/\s+/);
-  const headerCols = header.slice(2);
-  const rowCols = row.slice(2);
-  const nsIndex = headerCols.indexOf('NS');
-  assert.ok(nsIndex >= 0, `expected a not-started (NS) column in the header, got: ${header.join(' ')}`);
-  rowCols.forEach((cell, i) => {
-    assert.equal(cell, i === nsIndex ? 'X' : '.');
-  });
+  assert.equal(lines.find((l) => l.trim() === '1')?.trim(), '1');
+  assert.equal(lines.find((l) => l.startsWith('NS '))?.trim(), 'NS X');
+  for (const role of ['SP', 'CO', 'CL', 'AR', 'HD', 'DC', 'QA']) {
+    assert.equal(lines.find((l) => l.startsWith(`${role} `))?.trim(), `${role} .`);
+  }
 });
 
 test('computePipelineBoard: a role-held ticket with a title gets its derived (grid) kebab slug', () => {
@@ -213,43 +209,32 @@ test('computePipelineBoard: a paused ticket with a title gets its derived (list)
   assert.equal(parked[0].slug, 'clean-up');
 });
 
-// BL-452/BL-455 pipeline-board-01: the header names every pipeline role
-// column (parked/awaiting-approval are no longer grid columns); each data
-// row marks exactly one role column, every other role column stays blank.
+// BL-452/BL-455 pipeline-board-01: each ticket block lists every pipeline
+// stage vertically; exactly one stage line carries X, every other stage . .
 
-test('renderPipelineBoardBody: header lists every pipeline role column, plus ID and SLUG', () => {
-  const header = renderPipelineBoardBody({ rows: [], parked: [] });
-  for (const column of PIPELINE_BOARD_COLUMN_ORDER) {
-    assert.ok(header.length > 0, `expected the header to render for role ${column}`);
-  }
-  assert.equal(renderPipelineBoardBody({ rows: [], parked: [] }), header);
-});
-
-test('renderPipelineBoardBody: an empty board is just the header line', () => {
+test('renderPipelineBoardBody: an empty board renders no grid lines', () => {
   const text = renderPipelineBoardBody({ rows: [], parked: [] });
-  assert.equal(text.split('\n').length, 1);
+  assert.equal(text.trim(), '');
 });
 
-test('renderPipelineBoardBody: a row is marked only in its own column', () => {
-  // A non-empty slug ('x') guarantees the slug cell survives whitespace-split
-  // parsing below as its own token - an empty slug collapses into the
-  // surrounding padding and would silently misalign this test's column check.
+test('renderPipelineBoardBody: a pivoted ticket block lists every stage column vertically', () => {
+  const text = renderPipelineBoardBody({ rows: [{ id: 'BL-1', column: 'coder', slug: '' }], parked: [] });
+  for (const label of ['NS', 'SP', 'CO', 'CL', 'AR', 'HD', 'DC', 'QA']) {
+    assert.ok(text.includes(`${label} `), `expected stage line ${label} in:\n${text}`);
+  }
+});
+
+test('renderPipelineBoardBody: a row is marked only in its own stage line', () => {
   const text = renderPipelineBoardBody({ rows: [{ id: 'BL-387', column: 'coder', slug: 'x' }], parked: [] });
   const lines = text.split('\n');
-  // line 0: header, line 1: epic heading ("-- (no epic) --"), line 2: data row.
-  assert.equal(lines.length, 3);
-  const header = lines[0].trim().split(/\s+/);
-  const row = lines[2].trim().split(/\s+/);
-  const headerRoleCols = header.slice(2); // drop ID, SLUG
-  const rowRoleCols = row.slice(2); // drop id, slug
-  assert.equal(rowRoleCols.length, headerRoleCols.length);
-  const coderIndex = headerRoleCols.indexOf('CO');
-  rowRoleCols.forEach((cell, i) => {
-    assert.equal(cell, i === coderIndex ? 'X' : '.');
-  });
+  assert.equal(lines.find((l) => l.trim() === '387')?.trim(), '387');
+  assert.equal(lines.find((l) => l.startsWith('CO '))?.trim(), 'CO X');
+  for (const label of ['NS', 'SP', 'CL', 'AR', 'HD', 'DC', 'QA']) {
+    assert.equal(lines.find((l) => l.startsWith(`${label} `))?.trim(), `${label} .`);
+  }
 });
 
-test('renderPipelineBoardBody: two tickets in different columns each mark only their own', () => {
+test('renderPipelineBoardBody: two tickets in different columns each mark only their own stage line', () => {
   const text = renderPipelineBoardBody({
     rows: [
       { id: 'BL-387', column: 'coder', slug: '' },
@@ -258,12 +243,15 @@ test('renderPipelineBoardBody: two tickets in different columns each mark only t
     parked: [],
   });
   const lines = text.split('\n');
-  // BL-505: the grid TICKET column shows the ticket NUMBER only.
-  assert.ok(lines.some((l) => l.startsWith('387')));
-  assert.ok(lines.some((l) => l.startsWith('413')));
+  assert.ok(lines.some((l) => l.trim() === '387'));
+  assert.ok(lines.some((l) => l.trim() === '413'));
+  const block387 = lines.slice(lines.indexOf('387'), lines.indexOf('387') + 9);
+  const block413 = lines.slice(lines.indexOf('413'), lines.indexOf('413') + 9);
+  assert.ok(block387.some((l) => l.trim() === 'CO X'));
+  assert.ok(block413.some((l) => l.trim() === 'QA X'));
 });
 
-test('renderPipelineBoardBody: ticket-id column widens to fit the longest DISPLAYED id without breaking alignment', () => {
+test('renderPipelineBoardBody: each ticket id renders on its own line in the pivoted grid', () => {
   const text = renderPipelineBoardBody({
     rows: [
       { id: 'BL-9', column: 'coder', slug: '' },
@@ -271,14 +259,8 @@ test('renderPipelineBoardBody: ticket-id column widens to fit the longest DISPLA
     ],
     parked: [],
   });
-  // BL-505: the column width is driven by the NUMBER-only display ids
-  // ("9", "123456"), not the raw "BL-"-prefixed ids.
-  const idWidth = '123456'.length;
-  const dataLines = text.split('\n').filter((l) => /^\d/.test(l));
-  assert.equal(dataLines.length, 2);
-  for (const line of dataLines) {
-    assert.equal(line[idWidth], ' ', `expected a column boundary at ${idWidth} in "${line}"`);
-  }
+  const idLines = text.split('\n').filter((l) => /^\d+$/.test(l.trim()));
+  assert.deepEqual(idLines.map((l) => l.trim()).sort(), ['123456', '9']);
 });
 
 test('renderPipelineBoardBody: rendering is a pure function of its data - same input, same text', () => {
@@ -300,9 +282,8 @@ test('renderPipelineBoardBody: rows sharing an epic render under one heading', (
   const lines = text.split('\n');
   assert.equal(lines.filter((l) => l.includes('Alpha')).length, 1, 'expected exactly one Alpha heading');
   const headingIndex = lines.findIndex((l) => l.includes('Alpha'));
-  // BL-505: the grid TICKET column shows the ticket NUMBER only.
-  assert.ok(lines[headingIndex + 1].startsWith('1'));
-  assert.ok(lines[headingIndex + 2].startsWith('2'));
+  assert.ok(lines.some((l) => l.trim() === '1'));
+  assert.ok(lines.some((l) => l.trim() === '2'));
 });
 
 test('renderPipelineBoardBody: a no-epic row renders under its own heading, distinct from a named epic', () => {
@@ -469,7 +450,7 @@ test('deriveDisplayTicketId: an id with no recognised ticket prefix is left unch
   assert.equal(deriveDisplayTicketId('INTAKE-pipeline-board-grid'), 'INTAKE-pipeline-board-grid');
 });
 
-test('renderPipelineBoardBody: the grid ticket column shows the ticket number without its BL-/GH- prefix', () => {
+test('renderPipelineBoardBody: the grid shows ticket numbers without BL-/GH- prefix on their own lines', () => {
   const text = renderPipelineBoardBody({
     rows: [
       { id: 'BL-493', column: 'coder', slug: '' },
@@ -478,11 +459,11 @@ test('renderPipelineBoardBody: the grid ticket column shows the ticket number wi
     parked: [],
   });
   const lines = text.split('\n');
-  assert.ok(lines.some((l) => l.trim().split(/\s+/)[0] === '493'));
-  assert.ok(lines.some((l) => l.trim().split(/\s+/)[0] === '42'));
+  assert.ok(lines.some((l) => l.trim() === '493'));
+  assert.ok(lines.some((l) => l.trim() === '42'));
 });
 
-test('renderPipelineBoardBody: the ticket column is no wider than the ticket numbers it contains', () => {
+test('renderPipelineBoardBody: pivoted ticket ids are never padded with trailing spaces', () => {
   const text = renderPipelineBoardBody({
     rows: [
       { id: 'BL-493', column: 'coder', slug: '' },
@@ -490,11 +471,8 @@ test('renderPipelineBoardBody: the ticket column is no wider than the ticket num
     ],
     parked: [],
   });
-  const dataLines = text.split('\n').filter((l) => /^\d/.test(l));
-  assert.equal(dataLines.length, 2);
-  for (const line of dataLines) {
-    assert.equal(line[3], ' ', `expected a 3-char-wide ticket column boundary in "${line}"`);
-  }
+  const idLines = text.split('\n').filter((l) => /^\d+$/.test(l.trim()));
+  assert.deepEqual(idLines.map((l) => l.trim()).sort(), ['493', '504']);
 });
 
 test('renderPipelineBoardBody: a below-grid list line shows the short kebab slug only and a number-only id', () => {
@@ -550,21 +528,18 @@ test('computePipelineBoard: a coordinator-held ticket is marked at the QA stage,
   assert.deepEqual(rows, [{ id: 'BL-950', column: 'QA', epic: undefined, slug: '' }]);
 });
 
-test('renderPipelineBoardBody: the not-started ticket mark falls in the first stage column, before specifier', () => {
-  // A non-empty slug ('x') guarantees the slug cell survives whitespace-split
-  // parsing below as its own token - an empty slug collapses into the
-  // surrounding padding and would silently misalign the column index check.
+test('renderPipelineBoardBody: the not-started ticket mark falls on the NS line before specifier', () => {
   const text = renderPipelineBoardBody({
     rows: [{ id: 'BL-503', column: PIPELINE_BOARD_NOT_STARTED_COLUMN, slug: 'x' }],
     parked: [],
   });
   const lines = text.split('\n');
-  const header = lines[0].trim().split(/\s+/);
-  const row = lines.find((l) => l.trim().split(/\s+/)[0] === '503').trim().split(/\s+/);
-  const nsIndex = header.indexOf('NS');
-  const spIndex = header.indexOf('SP');
-  assert.ok(nsIndex >= 0 && spIndex >= 0 && nsIndex < spIndex, `expected NS before SP in the header, got: ${header.join(' ')}`);
-  assert.equal(row[nsIndex], 'X', `expected the not-started ticket marked in the NS column, got: ${row.join(' ')}`);
+  const ticketIndex = lines.findIndex((l) => l.trim() === '503');
+  const nsIndex = lines.findIndex((l) => l.startsWith('NS '));
+  const spIndex = lines.findIndex((l) => l.startsWith('SP '));
+  assert.ok(ticketIndex >= 0 && nsIndex > ticketIndex && spIndex > nsIndex, lines.join('\n'));
+  assert.equal(lines[nsIndex].trim(), 'NS X');
+  assert.equal(lines[spIndex].trim(), 'SP .');
 });
 
 // ── BL-465: computePipelineBoard's new rootIntake/recentlyClosed/links ───
@@ -979,15 +954,15 @@ test('PIPELINE_BOARD_MESSAGE_MAX_LENGTH stays at or under Telegram\'s real 4096-
 
 // ── BL-526: grid-only render for the phone miniapp ────────────────────────
 
-test('BL-526 renderPipelineBoardGridOnly: includes STATUS GRID header and row marks', () => {
+test('BL-526 renderPipelineBoardGridOnly: includes pivoted STATUS GRID and row marks', () => {
   const text = renderPipelineBoardGridOnly({
     rows: [{ id: 'BL-526', column: 'coder', slug: 'console-menu' }],
     parked: [],
   });
-  assert.match(text, /ID/);
   assert.match(text, /526/);
-  assert.match(text, /console-menu/);
-  assert.ok(text.includes('X'), 'expected an X mark in the coder column');
+  assert.ok(text.includes('CO X'), text);
+  assert.ok(text.includes('NS .'), text);
+  assert.ok(!text.includes('PARKED:'));
 });
 
 test('BL-526 renderPipelineBoardGridOnly: omits below-grid lists and never emits LINKS', () => {
@@ -1102,9 +1077,9 @@ test('composePipelineBoardHtml: status grid stays inside one <pre>; <a> tags nev
   const preClose = html.indexOf('</pre>');
   assert.ok(preOpen >= 0 && preClose > preOpen, html);
   const preBody = html.slice(preOpen, preClose + '</pre>'.length);
+  assert.ok(preBody.includes('528'), preBody);
   assert.ok(preBody.includes('NS'), preBody);
-  assert.ok(preBody.includes('SP'), preBody);
-  assert.ok(preBody.includes('auto-heal'), preBody);
+  assert.ok(preBody.includes('CO X'), preBody);
   assert.ok(!preBody.includes('<a href'), preBody);
   assert.ok(html.indexOf('<a href') > preClose, html);
 });

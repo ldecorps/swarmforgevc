@@ -75,10 +75,12 @@ function registerSteps(registry) {
     }
   });
 
-  registry.define(/^the grid row remains a single aligned line$/, (ctx) => {
-    const line = ctx.gridText.split('\n').find((l) => l.startsWith('1 '));
-    if (!line || line.includes('\n')) {
-      throw new Error(`expected BL-1's row (displayed as "1") on a single line, got: ${JSON.stringify(line)}`);
+  registry.define(/^the grid row renders as a pivoted vertical ticket block$/, (ctx) => {
+    const lines = ctx.gridText.split('\n');
+    const ticketIndex = lines.findIndex((l) => l.trim() === deriveDisplayTicketId('BL-1'));
+    const nsIndex = lines.findIndex((l) => l.startsWith('NS '));
+    if (ticketIndex < 0 || nsIndex <= ticketIndex) {
+      throw new Error(`expected BL-1 ticket id followed by vertical stage lines, got:\n${ctx.gridText}`);
     }
   });
 

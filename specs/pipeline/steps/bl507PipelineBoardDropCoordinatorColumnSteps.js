@@ -18,14 +18,16 @@ const { deriveDisplayTicketId } = require(path.join(EXT_OUT, 'concierge', 'pipel
 
 // Header glyphs are a fixed build-time constant (pipelineBoard.ts's own
 // COLUMN_LABEL, not exported) - hardcoded here the same way the unit suite
-// and bl452/bl505's own step handlers already locate columns by glyph
-// (e.g. indexOf('CO'), indexOf('NS')), never re-derived at test time.
+// already locates columns by glyph in the pivoted vertical grid.
 const COORDINATOR_GLYPH = 'CD';
 const FORWARD_STAGE_GLYPHS = ['SP', 'CO', 'CL', 'AR', 'HD', 'DC', 'QA'];
 const NOT_STARTED_GLYPH = 'NS';
 
-function headerCells(ctx) {
-  return ctx.gridText.split('\n')[0].trim().split(/\s+/);
+function stageGlyphs(gridText) {
+  return gridText
+    .split('\n')
+    .filter((l) => /^[A-Z]{2} [X.]$/.test(l.trim()))
+    .map((l) => l.trim().split(/\s+/)[0]);
 }
 
 function registerSteps(registry) {
@@ -34,59 +36,52 @@ function registerSteps(registry) {
     ctx.ticketId = 'BL-950';
     ctx.roleHeldTickets = { coordinator: [ctx.ticketId] };
     ctx.activeIds = [ctx.ticketId];
-    // A non-empty title (-> non-empty slug) guarantees the slug cell
-    // survives whitespace-split parsing below as its own token (same
-    // convention as bl505PipelineBoardNarrowerGridAndListsSteps.js's own
-    // not-started-ticket Given).
     ctx.ticketMeta = { [ctx.ticketId]: { title: 'coordinator held ticket' } };
   });
 
   // ── board-drop-coordinator-01/03 ───────────────────────────────────────
   registry.define(/^the board grid has no coordinator column$/, (ctx) => {
-    const header = headerCells(ctx);
-    if (header.includes(COORDINATOR_GLYPH)) {
-      throw new Error(`expected no coordinator ("${COORDINATOR_GLYPH}") column in the header, got: ${header.join(' ')}`);
+    const glyphs = stageGlyphs(ctx.gridText);
+    if (glyphs.includes(COORDINATOR_GLYPH)) {
+      throw new Error(`expected no coordinator ("${COORDINATOR_GLYPH}") stage line, got: ${glyphs.join(' ')}`);
     }
   });
 
   // ── board-drop-coordinator-02 ───────────────────────────────────────────
   registry.define(/^the board grid has a column for every forward pipeline stage from specifier to QA$/, (ctx) => {
-    const header = headerCells(ctx);
+    const glyphs = stageGlyphs(ctx.gridText);
     for (const glyph of FORWARD_STAGE_GLYPHS) {
-      if (!header.includes(glyph)) {
-        throw new Error(`expected a "${glyph}" column in the header, got: ${header.join(' ')}`);
+      if (!glyphs.includes(glyph)) {
+        throw new Error(`expected a "${glyph}" stage line, got: ${glyphs.join(' ')}`);
       }
     }
   });
 
   registry.define(/^the board grid has a not-started column$/, (ctx) => {
-    const header = headerCells(ctx);
-    if (!header.includes(NOT_STARTED_GLYPH)) {
-      throw new Error(`expected a "${NOT_STARTED_GLYPH}" column in the header, got: ${header.join(' ')}`);
+    const glyphs = stageGlyphs(ctx.gridText);
+    if (!glyphs.includes(NOT_STARTED_GLYPH)) {
+      throw new Error(`expected a "${NOT_STARTED_GLYPH}" stage line, got: ${glyphs.join(' ')}`);
     }
   });
 
   // ── board-drop-coordinator-03 ───────────────────────────────────────────
   registry.define(/^the ticket is marked only in the QA column$/, (ctx) => {
     const lines = ctx.gridText.split('\n');
-    const header = headerCells(ctx);
     const displayed = deriveDisplayTicketId(ctx.ticketId);
-    const rowLine = lines.find((l) => l.trim().split(/\s+/)[0] === displayed);
-    if (!rowLine) {
-      throw new Error(`expected a grid row for "${displayed}", got:\n${ctx.gridText}`);
+    const ticketIndex = lines.findIndex((l) => l.trim() === displayed);
+    if (ticketIndex < 0) {
+      throw new Error(`expected a grid block for "${displayed}", got:\n${ctx.gridText}`);
     }
-    const headerCols = header.slice(2); // drop ID, SLUG
-    const rowCols = rowLine.trim().split(/\s+/).slice(2); // drop id, slug
-    const qaIndex = headerCols.indexOf('QA');
-    if (qaIndex < 0) {
-      throw new Error(`expected a "QA" column in the header, got: ${header.join(' ')}`);
+    const block = lines.slice(ticketIndex, ticketIndex + 9);
+    if (block.find((l) => l.trim() === 'QA X') === undefined) {
+      throw new Error(`expected ${displayed} marked at QA, got block:\n${block.join('\n')}`);
     }
-    rowCols.forEach((cell, i) => {
-      const expected = i === qaIndex ? 'X' : '.';
-      if (cell !== expected) {
-        throw new Error(`expected ${displayed} marked only in the QA column, got row: ${rowLine}`);
+    for (const glyph of [...FORWARD_STAGE_GLYPHS, NOT_STARTED_GLYPH].filter((g) => g !== 'QA')) {
+      const line = block.find((l) => l.startsWith(`${glyph} `));
+      if (line?.trim() !== `${glyph} .`) {
+        throw new Error(`expected ${displayed} unmarked at ${glyph}, got block:\n${block.join('\n')}`);
       }
-    });
+    }
   });
 }
 

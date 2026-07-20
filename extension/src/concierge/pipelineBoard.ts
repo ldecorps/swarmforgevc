@@ -1,13 +1,12 @@
 // BL-452/BL-455/BL-465: a live pipeline-board grid - active BL tickets on
-// the Y axis, pipeline roles on the X axis, a single mark at each ticket's
-// current stage, grouped by epic; parked/awaiting-approval/paused/
-// root-intake/recently-closed items are listed separately below the grid,
-// each entry leading with a short kebab slug. Telegram cannot nest <a>
-// inside the grid's <pre>, so ticket numbers in the below-grid lists (and
-// grid-only tickets) are composed as HTML anchors after that <pre> by
-// composePipelineBoardHtml — never a separate LINKS: footer. Pure
-// row-computation + render only (no I/O; mirrors topicIcon.ts's own
-// pure/adapter split, with pipelineBoardSync.ts as the I/O half).
+// the X axis (one vertical block per ticket), pipeline stages on the Y axis
+// (each role/stage on its own line: "NS .", "CO X", …) — pivoted for phone
+// portrait so the grid fits without horizontal scroll; grouped by epic;
+// parked/awaiting-approval/root-intake/recently-closed items are listed
+// separately below the grid. Telegram cannot nest <a> inside the grid's
+// <pre>, so ticket numbers in the below-grid lists (and grid-only tickets)
+// are composed as HTML anchors after that <pre> by composePipelineBoardHtml
+// — never a separate LINKS: footer.
 import { ALL_SWARM_ROLES } from './roleTopicMapStore';
 import { PIPELINE_CHAIN } from '../swarm/rolePack';
 
@@ -140,12 +139,8 @@ const COLUMN_LABEL: Record<string, string> = {
   [PIPELINE_BOARD_NOT_STARTED_COLUMN]: 'NS',
 };
 
-// BL-505: shortened from "TICKET" (6 chars) so the column floors no wider
-// than the ticket NUMBERS it holds once the BL-/GH- prefix is stripped
-// (deriveDisplayTicketId below) - the exact glyph is a build-time/cosmetic
-// detail, same posture as the role column glyphs above.
-const TICKET_HEADER = 'ID';
-const SLUG_HEADER = 'SLUG';
+// BL-505: shortened from "TICKET" (6 chars) — kept for deriveDisplayTicketId
+// docs only; the pivoted grid shows ticket numbers on their own line.
 const NO_EPIC_LABEL = '(no epic)';
 const PARKED_SECTION_HEADER = 'PARKED:';
 const AWAITING_APPROVAL_SECTION_HEADER = 'AWAITING APPROVAL:';
@@ -438,22 +433,13 @@ export function computePipelineBoard(
   return { rows, parked, rootIntake, recentlyClosed, links };
 }
 
-function idColumnWidth(rows: PipelineBoardRow[]): number {
-  return Math.max(TICKET_HEADER.length, ...rows.map((r) => deriveDisplayTicketId(r.id).length));
-}
-
-function slugColumnWidth(rows: PipelineBoardRow[]): number {
-  return Math.max(SLUG_HEADER.length, ...rows.map((r) => r.slug.length));
-}
-
-function renderHeader(idWidth: number, slugWidth: number): string {
-  const cells = PIPELINE_BOARD_COLUMN_ORDER.map((c) => COLUMN_LABEL[c]);
-  return [TICKET_HEADER.padEnd(idWidth), SLUG_HEADER.padEnd(slugWidth), ...cells].join(' ');
-}
-
-function renderDataRow(idWidth: number, slugWidth: number, row: PipelineBoardRow): string {
-  const cells = PIPELINE_BOARD_COLUMN_ORDER.map((c) => (c === row.column ? 'X' : '.').padStart(COLUMN_LABEL[c].length));
-  return [deriveDisplayTicketId(row.id).padEnd(idWidth), row.slug.padEnd(slugWidth), ...cells].join(' ');
+function renderPivotedTicketBlock(row: PipelineBoardRow): string[] {
+  const lines: string[] = [deriveDisplayTicketId(row.id)];
+  for (const c of PIPELINE_BOARD_COLUMN_ORDER) {
+    const mark = c === row.column ? 'X' : '.';
+    lines.push(`${COLUMN_LABEL[c]} ${mark}`);
+  }
+  return lines;
 }
 
 function renderEpicHeading(epic: string | undefined): string {
@@ -462,8 +448,9 @@ function renderEpicHeading(epic: string | undefined): string {
 
 // Interleaves an epic-group heading before the first row of each epic -
 // rows already arrive epic-grouped via computePipelineBoard's own stable
-// sort, so this is a pure formatting pass, never a re-sort.
-function renderGridLines(rows: PipelineBoardRow[], idWidth: number, slugWidth: number): string[] {
+// sort, so this is a pure formatting pass, never a re-sort. Each ticket
+// renders as a vertical block (ticket id, then one line per stage column).
+function renderGridLines(rows: PipelineBoardRow[]): string[] {
   const lines: string[] = [];
   let started = false;
   let currentEpic: string | undefined;
@@ -473,7 +460,7 @@ function renderGridLines(rows: PipelineBoardRow[], idWidth: number, slugWidth: n
       currentEpic = row.epic;
       started = true;
     }
-    lines.push(renderDataRow(idWidth, slugWidth, row));
+    lines.push(...renderPivotedTicketBlock(row));
   }
   return lines;
 }
@@ -495,16 +482,11 @@ function renderListSection(header: string, entries: PipelineBoardListEntry[]): s
   return lines;
 }
 
-// BL-526: STATUS GRID only (header + epic headings + role columns) — no
+// BL-526: STATUS GRID only (pivoted epic blocks + stage lines) — no
 // below-grid lists and never the LINKS fragment. Phone miniapp portrait
 // destination; Telegram pin continues to use renderBodySections below.
 function renderGridOnlySections(data: PipelineBoardData): string[] {
-  const idWidth = idColumnWidth(data.rows);
-  const slugWidth = slugColumnWidth(data.rows);
-  return [
-    renderHeader(idWidth, slugWidth),
-    ...renderGridLines(data.rows, idWidth, slugWidth),
-  ];
+  return renderGridLines(data.rows);
 }
 
 // BL-465: defaults every below-grid section to empty (?? []) - a fixture

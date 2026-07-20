@@ -314,14 +314,13 @@ function registerSteps(registry) {
   registry.define(/^the ticket is marked in the coder column$/, (ctx) => {
     const { gridLines } = splitBoardSections(lastRendered(ctx.fixture));
     const displayed = deriveDisplayTicketId(ctx.epicTicketId);
-    const row = gridLines.find((l) => l.trim().split(/\s+/)[0] === displayed);
-    if (!row) {
-      throw new Error(`expected ${ctx.epicTicketId} to be a stage-grid row, got:\n${gridLines.join('\n')}`);
+    const ticketIndex = gridLines.findIndex((l) => l.trim() === displayed);
+    if (ticketIndex < 0) {
+      throw new Error(`expected ${ctx.epicTicketId} to be a stage-grid block, got:\n${gridLines.join('\n')}`);
     }
-    const header = gridLines[0].trim().split(/\s+/);
-    const coderIndex = header.indexOf('CO');
-    if (row.trim().split(/\s+/)[coderIndex] !== 'X') {
-      throw new Error(`expected ${ctx.epicTicketId}'s row to mark the CO column, got: "${row}"`);
+    const block = gridLines.slice(ticketIndex, ticketIndex + 9);
+    if (!block.some((l) => l.trim() === 'CO X')) {
+      throw new Error(`expected ${ctx.epicTicketId}'s block to mark CO, got:\n${block.join('\n')}`);
     }
   });
 
@@ -331,7 +330,7 @@ function registerSteps(registry) {
     if (headingIndex === -1) {
       throw new Error(`expected a "-- ${ctx.epicTicketEpic} --" heading, got:\n${gridLines.join('\n')}`);
     }
-    if (gridLines[headingIndex + 1].trim().split(/\s+/)[0] !== deriveDisplayTicketId(ctx.epicTicketId)) {
+    if (gridLines[headingIndex + 1].trim() !== deriveDisplayTicketId(ctx.epicTicketId)) {
       throw new Error(`expected ${ctx.epicTicketId} directly under its own epic heading, got:\n${gridLines.join('\n')}`);
     }
   });
