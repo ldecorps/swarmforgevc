@@ -17,6 +17,8 @@
 // rewrites one field of and respawns via, per claudeSettingsFile.ts (the
 // read/write/respawn plumbing shared with effortDial.ts's effort switch).
 
+import * as fs from 'fs';
+import * as path from 'path';
 import { PRICING_TABLE } from '../metrics/pricingTable';
 import { RespawnResult } from './tmuxClient';
 import { readClaudeSettingsField, writeClaudeSettingsFieldAndRespawn } from './claudeSettingsFile';
@@ -33,6 +35,33 @@ export const AVAILABLE_CLAUDE_MODELS: readonly string[] = Object.keys(PRICING_TA
 export function readCurrentModel(targetPath: string, role: string): string | undefined {
   const model = readClaudeSettingsField(targetPath, role, 'model');
   return typeof model === 'string' ? model : undefined;
+}
+
+function readConfiguredModelFromConf(targetPath: string, role: string): string | undefined {
+  try {
+    const conf = fs.readFileSync(path.join(targetPath, 'swarmforge', 'swarmforge.conf'), 'utf8');
+    for (const line of conf.split('\n')) {
+      const trimmed = line.trim();
+      if (!trimmed.startsWith('window ')) {
+        continue;
+      }
+      const parts = trimmed.split(/\s+/);
+      if (parts[1] !== role) {
+        continue;
+      }
+      const match = trimmed.match(/--model\s+(\S+)/);
+      return match?.[1];
+    }
+  } catch {
+    // no conf or unreadable
+  }
+  return undefined;
+}
+
+// Live settings file first (true runtime value after launch / model switch),
+// then swarmforge.conf's window line as a fallback when settings are absent.
+export function readRoleModelId(targetPath: string, role: string): string | undefined {
+  return readCurrentModel(targetPath, role) ?? readConfiguredModelFromConf(targetPath, role);
 }
 
 // Rewrites role's settings-file model in place, preserving every other

@@ -39,6 +39,28 @@ test('captureResidentPaneLive includes modelLabel from the role settings file', 
   }
 });
 
+test('captureResidentPaneLive falls back to roster role when pane banner scrolled away', () => {
+  const tmp = mkTmpDir('sfvc-resident-pane-live-');
+  const paneText = seedResidentPaneFixture(tmp, {
+    role: 'coder',
+    model: 'claude-sonnet-5',
+    paneText: 'Running command...\n$ git merge origin/main',
+  });
+  const fake = installInProcessTmux([
+    { subcommand: 'show-window-options', exitCode: 0, stdout: '0\n' },
+    { subcommand: 'list-windows', exitCode: 0, stdout: '0\n' },
+    { subcommand: 'capture-pane', exitCode: 0, stdout: paneText },
+  ]);
+  try {
+    const snap = captureResidentPaneLive(tmp);
+    assert.ok(snap);
+    assert.equal(snap.roleLabel, 'Coder');
+    assert.equal(snap.modelLabel, 'Sonnet 4.6');
+  } finally {
+    fake.restore();
+  }
+});
+
 test('captureResidentPaneLive omits modelLabel when settings file is absent', () => {
   const tmp = mkTmpDir('sfvc-resident-pane-live-');
   const paneText = seedResidentPaneFixture(tmp, { role: 'coder', model: null });

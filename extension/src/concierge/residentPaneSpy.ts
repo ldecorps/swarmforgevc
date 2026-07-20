@@ -8,8 +8,16 @@ import { formatUpdatedAtLabel } from './pipelineBoard';
 export const RESIDENT_PANE_SPY_MESSAGE_MAX_LENGTH = 4000;
 export const RESIDENT_PANE_SPY_TOPIC_NAME = 'Resident Spy';
 export const RESIDENT_PANE_SPY_DEFAULT_LINES = 40;
+// Wider scrollback for role banner search — the SwarmForge title scrolls off
+// the default tail while the agent is mid-tool-run.
+export const RESIDENT_PANE_SPY_ROLE_SEARCH_LINES = 300;
 
 const ROLE_BANNER = /SwarmForge\s+(\S+)/i;
+
+export interface ResidentRoleIdentity {
+  roleLabel: string;
+  modelRole: string;
+}
 
 export interface ResidentPaneSpySnapshot {
   roleLabel: string;
@@ -27,6 +35,24 @@ export function formatResidentSpyHeader(snap: Pick<ResidentPaneSpySnapshot, 'rol
 export function inferRoleLabelFromPane(paneText: string): string {
   const match = paneText.match(ROLE_BANNER);
   return match?.[1] ?? 'unknown';
+}
+
+export function resolveResidentRoleIdentity(
+  paneText: string,
+  homeRoleEntry: { role: string; displayName: string },
+  roles: ReadonlyArray<{ role: string; displayName: string }>
+): ResidentRoleIdentity {
+  const banner = inferRoleLabelFromPane(paneText);
+  if (banner !== 'unknown') {
+    const matched =
+      roles.find((entry) => entry.displayName.toLowerCase() === banner.toLowerCase()) ??
+      roles.find((entry) => entry.role.toLowerCase() === banner.toLowerCase());
+    if (matched) {
+      return { roleLabel: matched.displayName, modelRole: matched.role };
+    }
+    return { roleLabel: banner, modelRole: homeRoleEntry.role };
+  }
+  return { roleLabel: homeRoleEntry.displayName, modelRole: homeRoleEntry.role };
 }
 
 /** Keep the TAIL of the pane (what the agent is doing NOW). */

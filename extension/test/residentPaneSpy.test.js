@@ -3,11 +3,32 @@ const {
   formatResidentSpyHeader,
   renderResidentPaneSpyBody,
   inferRoleLabelFromPane,
+  resolveResidentRoleIdentity,
 } = require('../out/concierge/residentPaneSpy');
+
+const ROLES = [
+  { role: 'coder', displayName: 'Coder' },
+  { role: 'cleaner', displayName: 'Cleaner' },
+];
+const CODER = { role: 'coder', displayName: 'Coder' };
 
 test('inferRoleLabelFromPane reads the SwarmForge banner role name', () => {
   const pane = 'SwarmForge Cleaner\n> doing work';
   assert.equal(inferRoleLabelFromPane(pane), 'Cleaner');
+});
+
+test('resolveResidentRoleIdentity maps a pane banner to the roster role and model role', () => {
+  assert.deepEqual(resolveResidentRoleIdentity('SwarmForge Cleaner\n>', CODER, ROLES), {
+    roleLabel: 'Cleaner',
+    modelRole: 'cleaner',
+  });
+});
+
+test('resolveResidentRoleIdentity falls back to the home role when the banner scrolled away', () => {
+  assert.deepEqual(resolveResidentRoleIdentity('Running command...\n$ git merge', CODER, ROLES), {
+    roleLabel: 'Coder',
+    modelRole: 'coder',
+  });
 });
 
 test('formatResidentSpyHeader includes model when present', () => {

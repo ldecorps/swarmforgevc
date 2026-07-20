@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { AVAILABLE_CLAUDE_MODELS, readCurrentModel, switchRoleModel } = require('../out/swarm/backendSwitch');
+const { AVAILABLE_CLAUDE_MODELS, readCurrentModel, readRoleModelId, switchRoleModel } = require('../out/swarm/backendSwitch');
 const { installExecutable } = require('./helpers/sharedBin');
 const { installInProcessTmux } = require('./helpers/fakeTmux');
 
@@ -56,6 +56,16 @@ test('readCurrentModel reads the model field from the role\'s own settings file'
 test('readCurrentModel returns undefined when no settings file exists yet', () => {
   const tmp = mkTmp();
   assert.equal(readCurrentModel(tmp, 'coder'), undefined);
+});
+
+test('readRoleModelId falls back to swarmforge.conf when settings file is absent', () => {
+  const tmp = mkTmp();
+  fs.mkdirSync(path.join(tmp, 'swarmforge'), { recursive: true });
+  fs.writeFileSync(
+    path.join(tmp, 'swarmforge', 'swarmforge.conf'),
+    'window coder claude coder --model claude-sonnet-5\n'
+  );
+  assert.equal(readRoleModelId(tmp, 'coder'), 'claude-sonnet-5');
 });
 
 test('switchRoleModel rewrites the model field, preserving every other field unchanged', () => {
