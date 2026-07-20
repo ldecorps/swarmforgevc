@@ -274,8 +274,18 @@ async function postBoardMessage(
 
   // BL-497: a successful post clears the failure episode entirely - the
   // next transient/topic-gone run starts a fresh count and can alarm again.
+  // Carry forward durable pin-sync fields (lastPinnedBoardMessageId) so a
+  // repost does not forget which board revision was already pinned.
   return {
-    state: { topicId, messageId, contentSignature, lastChangeMs, consecutiveFailures: 0, alertArmed: false },
+    state: {
+      ...prevState,
+      topicId,
+      messageId,
+      contentSignature,
+      lastChangeMs,
+      consecutiveFailures: 0,
+      alertArmed: false,
+    },
     outcome: hadPriorMessage ? 'reposted' : 'posted',
   };
 }

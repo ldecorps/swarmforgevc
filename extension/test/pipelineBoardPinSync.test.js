@@ -1,5 +1,9 @@
 const assert = require('node:assert/strict');
-const { decidePipelineBoardPinAction, syncPipelineBoardPin } = require('../out/concierge/pipelineBoardPinSync');
+const {
+  decidePipelineBoardPinAction,
+  shouldUnpinAllBeforePin,
+  syncPipelineBoardPin,
+} = require('../out/concierge/pipelineBoardPinSync');
 
 function fakeAdapters(overrides = {}) {
   return {
@@ -41,6 +45,18 @@ test('decidePipelineBoardPinAction: a reposted board id still enforces when last
   assert.equal(decidePipelineBoardPinAction(undefined, 101, 100), 'enforce');
 });
 
+test('shouldUnpinAllBeforePin: false when replacing our own previous board pin on repost', () => {
+  assert.equal(shouldUnpinAllBeforePin(100, 101, 100), false);
+});
+
+test('shouldUnpinAllBeforePin: true when a human pinned a different message', () => {
+  assert.equal(shouldUnpinAllBeforePin(55, 100, 100), true);
+});
+
+test('shouldUnpinAllBeforePin: false when nothing is pinned', () => {
+  assert.equal(shouldUnpinAllBeforePin(undefined, 100, 100), false);
+});
+
 test('syncPipelineBoardPin: no board message yet - skip-no-board, no unpin-all, no pin call', async () => {
   const unpinCalls = [];
   const pinCalls = [];
@@ -64,7 +80,7 @@ test('syncPipelineBoardPin: no board message yet - skip-no-board, no unpin-all, 
   assert.deepEqual(pinCalls, []);
 });
 
-test('syncPipelineBoardPin: nothing currently pinned - enforces (unpin-all then pin the board)', async () => {
+test('syncPipelineBoardPin: nothing currently pinned - pins the board without unpin-all', async () => {
   const calls = [];
   const result = await syncPipelineBoardPin(
     100,
@@ -83,7 +99,7 @@ test('syncPipelineBoardPin: nothing currently pinned - enforces (unpin-all then 
 
   assert.equal(result.outcome, 'enforce');
   assert.equal(result.lastPinnedBoardMessageId, 100);
-  assert.deepEqual(calls, ['unpinAll', 'pin:100']);
+  assert.deepEqual(calls, ['pin:100']);
 });
 
 test('syncPipelineBoardPin: the board is already the top pin - skip-clean, no unpin-all, no pin call', async () => {
@@ -152,6 +168,29 @@ test('syncPipelineBoardPin: a different message is pinned than the board - enfor
 
   assert.equal(result.outcome, 'enforce');
   assert.deepEqual(calls, ['unpinAll', 'pin:100']);
+});
+
+test('syncPipelineBoardPin: a repost pins the new board without unpin-all when the old board is still top', async () => {
+  const calls = [];
+  const result = await syncPipelineBoardPin(
+    101,
+    fakeAdapters({
+      getTopPinnedMessageId: async () => 100,
+      unpinAllMessages: async () => {
+        calls.push('unpinAll');
+        return true;
+      },
+      pinMessage: async (messageId) => {
+        calls.push(`pin:${messageId}`);
+        return true;
+      },
+    }),
+    100
+  );
+
+  assert.equal(result.outcome, 'enforce');
+  assert.equal(result.lastPinnedBoardMessageId, 101);
+  assert.deepEqual(calls, ['pin:101']);
 });
 
 // BL-467 pipeline-board-only-pin-02
