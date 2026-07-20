@@ -1094,12 +1094,16 @@
           {
             "periodStart": "2026-07-20T12:00:00.000Z",
             "value": 979316.3636363636
+          },
+          {
+            "periodStart": "2026-07-20T13:00:00.000Z",
+            "value": 860160
           }
         ],
-        "currentValue": 979316.3636363636,
-        "priorValue": 851968,
-        "delta": 127348.36363636365,
-        "direction": "up"
+        "currentValue": 860160,
+        "priorValue": 979316.3636363636,
+        "delta": -119156.36363636365,
+        "direction": "down"
       },
       "cpuTrend": {
         "series": [
@@ -1169,6 +1173,10 @@
           },
           {
             "periodStart": "2026-07-20T12:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-20T13:00:00.000Z",
             "value": 0
           }
         ],
@@ -1251,12 +1259,16 @@
           {
             "periodStart": "2026-07-20T12:00:00.000Z",
             "value": 1004264.7272727273
+          },
+          {
+            "periodStart": "2026-07-20T13:00:00.000Z",
+            "value": 860160
           }
         ],
-        "currentValue": 1004264.7272727273,
-        "priorValue": 851968,
-        "delta": 152296.7272727273,
-        "direction": "up"
+        "currentValue": 860160,
+        "priorValue": 1004264.7272727273,
+        "delta": -144104.7272727273,
+        "direction": "down"
       },
       "cpuTrend": {
         "series": [
@@ -1326,6 +1338,10 @@
           },
           {
             "periodStart": "2026-07-20T12:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-20T13:00:00.000Z",
             "value": 0
           }
         ],
