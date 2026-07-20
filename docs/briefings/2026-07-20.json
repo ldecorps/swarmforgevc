@@ -938,7 +938,7 @@
   },
   "reliability": {
     "chases": {
-      "value": 1367,
+      "value": 1368,
       "trend": {
         "series": [
           {
@@ -947,17 +947,17 @@
           },
           {
             "periodStart": "2026-07-20T00:00:00.000Z",
-            "value": 1367
+            "value": 1368
           }
         ],
-        "currentValue": 1367,
+        "currentValue": 1368,
         "priorValue": 353,
-        "delta": 1014,
+        "delta": 1015,
         "direction": "up"
       }
     },
     "nudges": {
-      "value": 288,
+      "value": 290,
       "trend": {
         "series": [
           {
@@ -966,12 +966,12 @@
           },
           {
             "periodStart": "2026-07-20T00:00:00.000Z",
-            "value": 288
+            "value": 290
           }
         ],
-        "currentValue": 288,
+        "currentValue": 290,
         "priorValue": 27,
-        "delta": 261,
+        "delta": 263,
         "direction": "up"
       }
     },
