@@ -1105,12 +1105,12 @@
           },
           {
             "periodStart": "2026-07-20T15:00:00.000Z",
-            "value": 585728
+            "value": 571392
           }
         ],
-        "currentValue": 585728,
+        "currentValue": 571392,
         "priorValue": 858670.5454545454,
-        "delta": -272942.5454545454,
+        "delta": -287278.5454545454,
         "direction": "down"
       },
       "cpuTrend": {
@@ -1286,12 +1286,12 @@
           },
           {
             "periodStart": "2026-07-20T15:00:00.000Z",
-            "value": 585728
+            "value": 571392
           }
         ],
-        "currentValue": 585728,
+        "currentValue": 571392,
         "priorValue": 858670.5454545454,
-        "delta": -272942.5454545454,
+        "delta": -287278.5454545454,
         "direction": "down"
       },
       "cpuTrend": {
