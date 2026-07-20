@@ -1023,7 +1023,7 @@
   "resourceAnomalies": [
     {
       "role": "coder",
-      "rssBytes": 860160,
+      "rssBytes": 856064,
       "cpuPercent": 0,
       "rssTrend": {
         "series": [
@@ -1097,12 +1097,12 @@
           },
           {
             "periodStart": "2026-07-20T13:00:00.000Z",
-            "value": 857429.3333333334
+            "value": 857088
           }
         ],
-        "currentValue": 857429.3333333334,
+        "currentValue": 857088,
         "priorValue": 979316.3636363636,
-        "delta": -121887.03030303027,
+        "delta": -122228.36363636365,
         "direction": "down"
       },
       "cpuTrend": {
@@ -1188,7 +1188,7 @@
     },
     {
       "role": "coordinator",
-      "rssBytes": 860160,
+      "rssBytes": 856064,
       "cpuPercent": 0,
       "rssTrend": {
         "series": [
@@ -1262,12 +1262,12 @@
           },
           {
             "periodStart": "2026-07-20T13:00:00.000Z",
-            "value": 857429.3333333334
+            "value": 857088
           }
         ],
-        "currentValue": 857429.3333333334,
+        "currentValue": 857088,
         "priorValue": 1004264.7272727273,
-        "delta": -146835.39393939392,
+        "delta": -147176.7272727273,
         "direction": "down"
       },
       "cpuTrend": {
