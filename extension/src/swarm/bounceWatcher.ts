@@ -87,6 +87,20 @@ class BounceFSWatcher extends EventEmitter {
     fs.mkdirSync(swarmforgeDir, { recursive: true });
     const bounceFilePath = path.join(swarmforgeDir, 'bounce');
 
+    const scheduleBounceProbe = () => {
+      const probe = () => {
+        if (this.watcherGeneration !== generation) {
+          return;
+        }
+        if (fs.existsSync(bounceFilePath)) {
+          processBounceFile(bounceFilePath, this.onBounce, this.onError);
+        }
+      };
+
+      setTimeout(probe, 50);
+      setTimeout(probe, 250);
+    };
+
     const watcher = fs.watch(swarmforgeDir, (_eventType, filename) => {
       if (filename !== 'bounce') {
         return;
@@ -98,6 +112,8 @@ class BounceFSWatcher extends EventEmitter {
         }
       }, 50);
     });
+
+    scheduleBounceProbe();
 
     const handleError = (error: Error) => {
       if (this.watcherGeneration !== generation) {
@@ -143,19 +159,14 @@ class BounceFSWatcher extends EventEmitter {
   }
 
   close(): void {
-    this.suppressReconnect = true;
-    this.closeCurrentWatcher();
-    this.suppressReconnect = false;
-    if (!this.permanentlyClosed) {
-      this.attachWatcher();
-    }
-  }
-
-  dispose(): void {
     this.permanentlyClosed = true;
     this.suppressReconnect = true;
     this.closeCurrentWatcher();
     this.removeAllListeners();
+  }
+
+  dispose(): void {
+    this.close();
   }
 
   private closeCurrentWatcher(): void {
@@ -171,5 +182,9 @@ export function startBounceWatcher(
   onBounce: (bounceType: BounceType) => void,
   onError?: (error: string) => void,
 ): BounceWatcher | null {
+  const swarmforgeDir = path.join(targetPath, '.swarmforge');
+  if (!fs.existsSync(swarmforgeDir)) {
+    return null;
+  }
   return new BounceFSWatcher(targetPath, onBounce, onError) as unknown as BounceWatcher;
 }

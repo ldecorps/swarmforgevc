@@ -14,9 +14,9 @@ run a swarm, and get a PR.
 
 This `main` branch is documentary: it explains the system and carries the shared operational scripts and default constitution articles. The runnable workflow branches carry the project-facing configurations, role prompts, and local constitution articles that define specific workflows.
 
-SwarmForge is an agent coordination system that facilitates communication between agents working in different git worktrees.
+SwarmForge is a tmux-based agent coordination system that facilitates communication between agents working in different git worktrees.
 
-It provides a shared structure for role-specific prompts, worktree assignment, tmux sessions, and message passing so multiple agents can collaborate on the same project without stepping on each other.
+It provides a shared structure for role-specific prompts, worktree assignment, tmux sessions, and daemon-delivered handoff files so multiple agents can collaborate on the same project without stepping on each other.
 
 ## Branches
 
@@ -127,7 +127,7 @@ SwarmForge is a lightweight, tmux-based orchestration layer that:
 - **Project-Local Roles** — Each role is defined by `swarmforge/roles/<role>.prompt` in the working tree being orchestrated.
 - **Layered Constitution** — `swarmforge/constitution.prompt` directs agents to read article files under `swarmforge/constitution/articles/`.
 - **Backend Selection Per Role** — A role can launch `claude`, `codex`, `copilot`, or `grok`.
-- **Observable Swarm** — Open one Terminal window per role and watch the sessions in real time.
+- **Observable Swarm** — Open one terminal surface per role and watch the sessions in real time.
 - **Self-Hosted & Lightweight** — Runs locally in tmux and Terminal with minimal machinery.
 
 ## Constitution Structure

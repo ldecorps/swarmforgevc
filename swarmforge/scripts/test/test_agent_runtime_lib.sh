@@ -5,6 +5,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+unset SWARMFORGE_CONFIG
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 pass() { echo "PASS: $*"; }
@@ -42,5 +43,11 @@ bash "$SCRIPT_DIR/test_agent_runtime_inject_mock.sh" \
   || fail "test_agent_runtime_inject_mock.sh"
 
 pass "04: mock agent inject through fake tmux"
+
+# ── 5: alternate runtime launch integration ─────────────────────────────────
+bash "$SCRIPT_DIR/test_alternate_runtime_launch.sh" \
+  || fail "test_alternate_runtime_launch.sh"
+
+pass "05: alternate runtime launch"
 
 echo "ALL PASS"

@@ -295,6 +295,60 @@ export function getWebviewHtml(scriptUri: string, cspSource: string): string {
       background: #e53935;
       color: #fff;
     }
+    /* handoffd process status — always visible in the header. */
+    .daemon-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      margin-left: 8px;
+      padding: 1px 8px;
+      border-radius: 3px;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      border: 1px solid transparent;
+    }
+    .daemon-status::before {
+      content: '';
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: currentColor;
+      opacity: 0.9;
+    }
+    .daemon-status.skipped {
+      color: var(--vscode-descriptionForeground);
+      border-color: var(--vscode-panel-border);
+      background: var(--vscode-editor-background);
+    }
+    .daemon-status.dead,
+    .daemon-status.halted {
+      color: #fff;
+      background: #c62828;
+      border-color: #b71c1c;
+    }
+    .daemon-status.starting,
+    .daemon-status.stale {
+      color: #1e1e1e;
+      background: #ffb300;
+      border-color: #ff8f00;
+      animation: daemon-pulse 1.4s ease-in-out infinite;
+    }
+    .daemon-status.up {
+      color: #fff;
+      background: #2e7d32;
+      border-color: #1b5e20;
+    }
+    .daemon-status.polling {
+      color: #fff;
+      background: #00897b;
+      border-color: #00695c;
+      animation: daemon-pulse 1.8s ease-in-out infinite;
+    }
+    @keyframes daemon-pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.72; }
+    }
     /* BL-069 graceful bounce: draining banner + per-tile busy/idle hint. */
     .bounce-drain-banner {
       display: none;
@@ -554,6 +608,7 @@ export function getWebviewHtml(scriptUri: string, cspSource: string): string {
     <h1>SwarmForge</h1>
     <span class="status" id="status">Waiting for swarm...</span>
     <span class="stage" id="stage"></span>
+    <span class="daemon-status skipped" id="daemon-status">handoffd …</span>
     <span class="transport-health" id="transport-health"></span>
     <button id="open-pr-btn" title="Open pull request for this swarm run">Open PR</button>
   </header>

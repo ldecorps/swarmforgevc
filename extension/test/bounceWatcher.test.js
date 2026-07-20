@@ -174,8 +174,15 @@ test('processBounceFile with whitespace content reports error', () => {
 
 // --- startBounceWatcher ---
 
-test('startBounceWatcher creates .swarmforge and watches it when missing', () => {
+test('startBounceWatcher returns null when .swarmforge is missing', () => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-bouncewatch-'));
+  const watcher = startBounceWatcher(tmpDir, () => {});
+  assert.equal(watcher, null);
+});
+
+test('startBounceWatcher watches an existing .swarmforge directory', () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-bouncewatch-'));
+  fs.mkdirSync(path.join(tmpDir, '.swarmforge'));
   const watcher = startBounceWatcher(tmpDir, () => {});
   assert.ok(watcher);
   assert.equal(fs.existsSync(path.join(tmpDir, '.swarmforge')), true);
@@ -229,24 +236,6 @@ test('startBounceWatcher reports invalid bounce file content via onError', async
     fs.writeFileSync(path.join(tmpDir, '.swarmforge', 'bounce'), 'garbage\n');
     await waitUntil(() => errors.length > 0);
     assert.match(errors[0], /Unknown bounce type/);
-  } finally {
-    watcher.close();
-  }
-});
-
-test('startBounceWatcher re-establishes after watcher close', async () => {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-bouncewatch-'));
-  fs.mkdirSync(path.join(tmpDir, '.swarmforge'), { recursive: true });
-
-  const bounces = [];
-  const watcher = startBounceWatcher(tmpDir, (type) => bounces.push(type));
-  try {
-    const firstWatcher = watcher;
-    firstWatcher.close();
-
-    fs.writeFileSync(path.join(tmpDir, '.swarmforge', 'bounce'), 'extension\n');
-    await waitUntil(() => bounces.length > 0, 2000, 20);
-    assert.deepEqual(bounces, ['extension']);
   } finally {
     watcher.close();
   }

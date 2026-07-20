@@ -997,16 +997,7 @@ start_handoff_daemon() {
   if [[ "${SWARMFORGE_MAILBOX_ONLY:-}" == "1" ]]; then
     echo -e "${CYAN}Mailbox-only mode: handoffd delivers files without tmux wake (SWARMFORGE_MAILBOX_ONLY=1).${RESET}"
   fi
-  rm -f "$DAEMON_DIR/stop"
-  # Rotate the previous log aside instead of truncating it, so evidence of a
-  # crash or hang survives the restart (BL-061).
-  if [[ -s "$HANDOFF_DAEMON_LOG" ]]; then
-    mv "$HANDOFF_DAEMON_LOG" "$HANDOFF_DAEMON_LOG.$(date -u +%Y%m%dT%H%M%SZ)"
-  fi
-  nohup "$SCRIPT_DIR/handoffd.bb" "$WORKING_DIR" >> "$HANDOFF_DAEMON_LOG" 2>&1 &
-  echo -e "${GREEN}Started handoff daemon.${RESET}"
-  nohup "$SCRIPT_DIR/handoffd_supervisor.bb" "$WORKING_DIR" >> "$DAEMON_DIR/handoffd-supervisor.log" 2>&1 &
-  echo -e "${GREEN}Started handoff daemon supervisor.${RESET}"
+  SWARMFORGE_DAEMON_START_CALLER=swarmforge.sh bash "$SCRIPT_DIR/start_handoff_daemon.sh" "$WORKING_DIR"
 }
 
 # BL-089: guarded so a test can `source` this file (e.g. to exercise

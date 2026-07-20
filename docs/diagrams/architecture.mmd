@@ -1,13 +1,10 @@
-%% BL-146: SwarmForge VC architecture as built (2026-07-07).
+%% BL-146: SwarmForge VC architecture as built (2026-07-09).
 %% Two layers: the VS Code extension host (view/control) and the tmux
 %% substrate (the actual SwarmForge agent processes). The extension never
-%% spawns agent processes directly; it shells out to tmux/git and reads
-%% .swarmforge/ state files. See swarmforge/constitution/articles/
-%% local-engineering.prompt Architecture Rule 1 and swarmDiscovery.ts's
-%% BL-066 note: the extension drives real SwarmForge over tmux, not the
-%% "standalone orchestrator" model docs/Specification.MD's overview once
-%% described. BL-146 consolidated chase/watchdog liveness into the daemon
-%% (handoffd.bb now owns both delivery and chase sweeps).
+%% spawns agent processes directly; it shells out to ./swarm, tails tmux,
+%% and reads .swarmforge/ state files. See
+%% swarmforge/constitution/articles/local-engineering.prompt Architecture
+%% Rule 1 and swarmDiscovery.ts's BL-066 note.
 flowchart TB
   subgraph HOST["Extension Host (Node.js, VS Code Extension API)"]
     EXT["extension.ts\n(command registration)"]
@@ -38,7 +35,7 @@ flowchart TB
   subgraph SWARMSTATE[".swarmforge/ State (files, shared)"]
     ROLESTSV["roles.tsv, sessions.tsv"]
     HANDOFFS["handoffs/{inbox,outbox,sent,failed}/"]
-    DAEMONDIR["daemon/ (handoffd pid, heartbeat, log)"]
+    DAEMONDIR["daemon/ (handoffd pid, log, stop)"]
     BACKLOGDIR["../backlog/{root,paused,active,done}/"]
   end
 
