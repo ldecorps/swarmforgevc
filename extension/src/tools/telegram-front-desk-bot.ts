@@ -118,6 +118,9 @@ import {
   BABYSITTER_SUBJECT_ID,
   BABYSITTER_TOPIC_NAME,
   decideEnsureBabysitterTopicAction,
+  RESIDENT_SPY_SUBJECT_ID,
+  RESIDENT_SPY_TOPIC_NAME,
+  decideEnsureResidentSpyTopicAction,
   SttResult,
   TtsResult,
   ReplyRelayAdapters,
@@ -793,6 +796,24 @@ export async function ensureBabysitterTopic(targetPath: string, botToken: string
     return undefined;
   }
   topicMap[topicMapKey(created.messageThreadId)] = BABYSITTER_SUBJECT_ID;
+  writeTopicMap(targetPath, topicMap);
+  return created.messageThreadId;
+}
+
+// BL-522: standing Resident Spy topic — Mini App live-feed URL is posted
+// here (notify-resident-spy-tunnel.ts) when the cloudflare tunnel changes.
+export async function ensureResidentSpyTopic(targetPath: string, botToken: string, chatId: string, postFn?: TelegramPostFn): Promise<number | undefined> {
+  const topicMap = readTopicMap(targetPath);
+  const decision = decideEnsureResidentSpyTopicAction(topicMap);
+  if (decision.kind === 'reuse') {
+    return decision.topicId;
+  }
+  const created = await createForumTopic(botToken, chatId, RESIDENT_SPY_TOPIC_NAME, postFn);
+  if (!created.success || created.messageThreadId === undefined) {
+    process.stderr.write(`ensureResidentSpyTopic: failed to create the Resident Spy topic: ${created.error ?? 'no messageThreadId returned'}\n`);
+    return undefined;
+  }
+  topicMap[topicMapKey(created.messageThreadId)] = RESIDENT_SPY_SUBJECT_ID;
   writeTopicMap(targetPath, topicMap);
   return created.messageThreadId;
 }
@@ -2621,6 +2642,9 @@ export async function main(): Promise<void> {
 
   // Babysitter standing topic — outside-chain reliability hawk.
   await ensureBabysitterTopic(targetPath, botToken, chatId);
+
+  // BL-522: standing Resident Spy topic — Mini App URL lives here.
+  await ensureResidentSpyTopic(targetPath, botToken, chatId);
 
   // BL-425 slice 1: bind each swarm role's own standing steering topic
   // BEFORE any loop starts polling too - same ordering rationale as

@@ -326,6 +326,18 @@ export function decideEnsureBabysitterTopicAction(topicMap: Record<string, strin
   return existingTopicId !== undefined ? { kind: 'reuse', topicId: existingTopicId } : { kind: 'create' };
 }
 
+// BL-522: standing Resident Spy topic — hosts the live Mini App URL (cloudflare
+// quick tunnel + bridge token). Distinct from the pane snapshot body (BL-521).
+export const RESIDENT_SPY_SUBJECT_ID = 'RESIDENT_SPY';
+export const RESIDENT_SPY_TOPIC_NAME = 'Resident Spy';
+
+export type EnsureResidentSpyTopicAction = { kind: 'reuse'; topicId: number } | { kind: 'create' };
+
+export function decideEnsureResidentSpyTopicAction(topicMap: Record<string, string>): EnsureResidentSpyTopicAction {
+  const existingTopicId = topicForSubject(topicMap, RESIDENT_SPY_SUBJECT_ID);
+  return existingTopicId !== undefined ? { kind: 'reuse', topicId: existingTopicId } : { kind: 'create' };
+}
+
 
 export type EnsureRoleTopicAction = { kind: 'reuse'; topicId: number } | { kind: 'create' };
 

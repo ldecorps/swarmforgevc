@@ -244,3 +244,12 @@ fi
 if ! wait_for_ready "$WANT"; then
   exit 1
 fi
+
+# BL-522: cloudflare quick tunnel for the Resident Spy Mini App; posts the
+# live URL into the standing Telegram topic when it changes.
+if [[ -f "$SCRIPT_DIR/swarmforge/scripts/launch_resident_spy_tunnel.sh" ]]; then
+  # shellcheck disable=SC1090
+  source "$HOME/.zshenv" 2>/dev/null || true
+  bash "$SCRIPT_DIR/swarmforge/scripts/launch_resident_spy_tunnel.sh" "$TARGET" || \
+    echo "WARN: resident spy tunnel launch/notify failed (see $TARGET/.swarmforge/operator/resident-spy-cloudflared.log)" >&2
+fi
