@@ -552,15 +552,21 @@ async function syncBoardIfWired(
 // BL-467: runs AFTER syncBoardIfWired so boardMessageId is this tick's
 // freshly-posted (or reposted) board message id, never the prior tick's
 // stale one. Absent pinAdapters (not wired) is a no-op, same posture as
-// syncBoardIfWired/syncApprovalsRosterIfWired above - the result is not
-// otherwise persisted (getTopPinnedMessageId is re-read live every tick, so
-// there is no durable state to carry across restarts, unlike the board/
-// roster/recert syncs).
-async function syncPinIfWired(boardMessageId: number | undefined, pinAdapters: PipelineBoardPinAdapters | undefined): Promise<void> {
-  if (!pinAdapters) {
-    return;
+// syncBoardIfWired/syncApprovalsRosterIfWired above. lastPinnedBoardMessageId
+// is persisted on PipelineBoardState so getChat() gaps do not re-pin every
+// tick.
+async function syncPinIfWired(
+  boardState: PipelineBoardState | undefined,
+  pinAdapters: PipelineBoardPinAdapters | undefined
+): Promise<PipelineBoardState | undefined> {
+  if (!pinAdapters || boardState?.messageId === undefined) {
+    return boardState;
   }
-  await syncPipelineBoardPin(boardMessageId, pinAdapters);
+  const pinResult = await syncPipelineBoardPin(boardState.messageId, pinAdapters, boardState.lastPinnedBoardMessageId);
+  if (pinResult.lastPinnedBoardMessageId === boardState.lastPinnedBoardMessageId) {
+    return boardState;
+  }
+  return { ...boardState, lastPinnedBoardMessageId: pinResult.lastPinnedBoardMessageId };
 }
 
 // BL-434: the Approvals topic's own roster sync - runs on EVERY tick (never
@@ -1147,7 +1153,7 @@ export async function runConciergeTick(adapters: ConciergeTickAdapters, nowMs: n
   // gated on a folder-membership transition, same posture as the title-age
   // sync above), because the change-gate that matters is the rendered TEXT,
   // not any one ticket's transition; syncPipelineBoard owns that gate.
-  const pipelineBoard = await syncBoardIfWired(
+  let pipelineBoard = await syncBoardIfWired(
     folders,
     state.pipelineBoard,
     adapters.boardAdapters,
@@ -1160,7 +1166,7 @@ export async function runConciergeTick(adapters: ConciergeTickAdapters, nowMs: n
 
   // BL-467: enforces the board as the group's ONLY pin - runs right after
   // the board sync above so it always sees this tick's own messageId.
-  await syncPinIfWired(pipelineBoard?.messageId, adapters.pinAdapters);
+  pipelineBoard = await syncPinIfWired(pipelineBoard, adapters.pinAdapters);
 
   // BL-434: the Approvals topic's own live roster - fed off curr.pendingApproval
   // (the SAME set this tick already derived ApprovalRequested events from),

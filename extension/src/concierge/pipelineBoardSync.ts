@@ -78,6 +78,10 @@ export interface PipelineBoardState {
   // BL-497: consecutive failed-post/failed-no-topic ticks since the last
   // successful post - reset to 0 the instant a post succeeds.
   consecutiveFailures?: number;
+  // BL-467: the board message id this pin sync last successfully pinned -
+  // persisted so a tick where getChat().pinned_message omits the board
+  // (common for forum-topic messages) does not unpin+re-pin every cycle.
+  lastPinnedBoardMessageId?: number;
   // BL-497: true once the "board frozen" operator alert has been CONFIRMED
   // delivered for the CURRENT failure episode. Cleared to false on the next
   // successful post, so a later episode alarms fresh.

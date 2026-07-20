@@ -29,6 +29,18 @@ test('decidePipelineBoardPinAction: a different message pinned than the board is
   assert.equal(decidePipelineBoardPinAction(55, 100), 'enforce');
 });
 
+test('decidePipelineBoardPinAction: getChat omits the pin but this board was already pinned - skip-clean', () => {
+  assert.equal(decidePipelineBoardPinAction(undefined, 100, 100), 'skip-clean');
+});
+
+test('decidePipelineBoardPinAction: a human pin still wins over a matching lastPinned record - enforce', () => {
+  assert.equal(decidePipelineBoardPinAction(55, 100, 100), 'enforce');
+});
+
+test('decidePipelineBoardPinAction: a reposted board id still enforces when lastPinned is stale - enforce', () => {
+  assert.equal(decidePipelineBoardPinAction(undefined, 101, 100), 'enforce');
+});
+
 test('syncPipelineBoardPin: no board message yet - skip-no-board, no unpin-all, no pin call', async () => {
   const unpinCalls = [];
   const pinCalls = [];
@@ -70,6 +82,7 @@ test('syncPipelineBoardPin: nothing currently pinned - enforces (unpin-all then 
   );
 
   assert.equal(result.outcome, 'enforce');
+  assert.equal(result.lastPinnedBoardMessageId, 100);
   assert.deepEqual(calls, ['unpinAll', 'pin:100']);
 });
 
@@ -92,8 +105,32 @@ test('syncPipelineBoardPin: the board is already the top pin - skip-clean, no un
   );
 
   assert.equal(result.outcome, 'skip-clean');
+  assert.equal(result.lastPinnedBoardMessageId, 100);
   assert.deepEqual(unpinCalls, []);
   assert.deepEqual(pinCalls, []);
+});
+
+test('syncPipelineBoardPin: getChat omits the pin but lastPinned matches - skip-clean, no pin call', async () => {
+  const calls = [];
+  const result = await syncPipelineBoardPin(
+    100,
+    fakeAdapters({
+      getTopPinnedMessageId: async () => undefined,
+      unpinAllMessages: async () => {
+        calls.push('unpinAll');
+        return true;
+      },
+      pinMessage: async (messageId) => {
+        calls.push(`pin:${messageId}`);
+        return true;
+      },
+    }),
+    100
+  );
+
+  assert.equal(result.outcome, 'skip-clean');
+  assert.equal(result.lastPinnedBoardMessageId, 100);
+  assert.deepEqual(calls, []);
 });
 
 test('syncPipelineBoardPin: a different message is pinned than the board - enforces (unpin-all then pin the board)', async () => {
