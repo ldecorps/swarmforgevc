@@ -2381,6 +2381,35 @@ test('BL-467: an already-clean tick (the board is already the top pin) makes no 
   assert.deepEqual(pinCalls, []);
 });
 
+test('BL-467: an unchanged board that is already pinned skips getChat and pin calls entirely', async () => {
+  const { adapters, setFolders } = fakeAdapters();
+  const pinCalls = [];
+  adapters.boardAdapters.ensureBoardTopic = async () => ({ topicId: 900 });
+  adapters.boardAdapters.postMessage = async () => ({ messageId: 42 });
+  adapters.readRoleHeldTickets = () => ({ coder: ['BL-1'] });
+  adapters.pinAdapters = {
+    getTopPinnedMessageId: async () => {
+      pinCalls.push('getTop');
+      return undefined;
+    },
+    unpinAllMessages: async () => {
+      pinCalls.push('unpinAll');
+      return true;
+    },
+    pinMessage: async (messageId) => {
+      pinCalls.push(`pin:${messageId}`);
+      return true;
+    },
+  };
+  setFolders(folders({ active: [{ id: 'BL-1', title: 'test ticket' }] }));
+
+  await runConciergeTick(adapters);
+  pinCalls.length = 0;
+  await runConciergeTick(adapters, 2000);
+
+  assert.deepEqual(pinCalls, []);
+});
+
 test('BL-467: omitting pinAdapters entirely leaves the tick unaffected - existing adapters fixtures built before this field existed keep working unchanged', async () => {
   const { adapters, state } = fakeAdapters();
   delete adapters.boardAdapters;

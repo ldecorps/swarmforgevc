@@ -54,6 +54,24 @@ export function decidePipelineBoardPinAction(
   return 'enforce';
 }
 
+// True only when a NON-board message is currently pinned (typically a human
+// hand-pin). A repost leaves our PREVIOUS board message at currentTop until
+// the new board is pinned - unpin-all before that replacement spams extra
+// "pinned" service messages without helping.
+export function shouldUnpinAllBeforePin(
+  currentTopPinnedId: number | undefined,
+  boardMessageId: number | undefined,
+  lastPinnedBoardMessageId: number | undefined = undefined
+): boolean {
+  if (currentTopPinnedId === undefined || currentTopPinnedId === boardMessageId) {
+    return false;
+  }
+  if (lastPinnedBoardMessageId !== undefined && currentTopPinnedId === lastPinnedBoardMessageId) {
+    return false;
+  }
+  return true;
+}
+
 export async function syncPipelineBoardPin(
   boardMessageId: number | undefined,
   adapters: PipelineBoardPinAdapters,
@@ -67,7 +85,9 @@ export async function syncPipelineBoardPin(
       lastPinnedBoardMessageId: boardMessageId ?? lastPinnedBoardMessageId,
     };
   }
-  await adapters.unpinAllMessages();
+  if (shouldUnpinAllBeforePin(currentTopPinnedId, boardMessageId, lastPinnedBoardMessageId)) {
+    await adapters.unpinAllMessages();
+  }
   const pinned = await adapters.pinMessage(boardMessageId!);
   return {
     outcome,
