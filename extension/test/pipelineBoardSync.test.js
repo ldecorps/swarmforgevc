@@ -103,22 +103,6 @@ test('syncPipelineBoard: a content change posts the fresh message BEFORE deletin
   assert.equal(result.state.lastChangeMs, T2, 'expected the footer instant bumped to the NEW change');
 });
 
-test('syncPipelineBoard: a repost preserves lastPinnedBoardMessageId until pin sync updates it', async () => {
-  const first = await syncPipelineBoard(board([{ id: 'BL-1', column: 'coder', slug: '' }]), undefined, fakeAdapters(), T1);
-  const withPin = { ...first.state, lastPinnedBoardMessageId: first.state.messageId };
-
-  const result = await syncPipelineBoard(
-    board([{ id: 'BL-1', column: 'QA', slug: '' }]),
-    withPin,
-    fakeAdapters({ postMessage: async () => ({ messageId: 99 }) }),
-    T2
-  );
-
-  assert.equal(result.outcome, 'reposted');
-  assert.equal(result.state.messageId, 99);
-  assert.equal(result.state.lastPinnedBoardMessageId, withPin.lastPinnedBoardMessageId);
-});
-
 test('BL-468: a failed repost never deletes the old message, and its messageId stays in state - the board is always visible', async () => {
   const deleted = [];
   const first = await syncPipelineBoard(board([{ id: 'BL-1', column: 'coder', slug: '' }]), undefined, fakeAdapters(), T1);

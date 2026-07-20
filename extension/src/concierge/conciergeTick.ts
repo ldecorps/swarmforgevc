@@ -16,7 +16,6 @@ import { StalenessBucket } from './topicTitleAge';
 import { TopicTitleAdapters, syncTopicTitle } from './topicTitleSync';
 import { PipelineBoardTicketMeta, computePipelineBoard } from './pipelineBoard';
 import { PipelineBoardAdapters, PipelineBoardState, PipelineBoardSyncResult, syncPipelineBoard } from './pipelineBoardSync';
-import { PipelineBoardPinAdapters, syncPipelineBoardPin } from './pipelineBoardPinSync';
 import { ApprovalsRosterAdapters, ApprovalsRosterState, syncApprovalsRoster } from './approvalsRosterSync';
 import { RecertPostingAdapters, RecertPostingState, syncRecertPosting } from './recertPostingSync';
 import { RecertifiableScenario } from '../docs/recertification';
@@ -225,11 +224,6 @@ export interface ConciergeTickAdapters {
   // optional (defaults to no recert posting), same posture as
   // rosterAdapters above.
   recertPostingAdapters?: RecertPostingAdapters;
-  // BL-467: enforces the pipeline board as the ONLY pinned message in the
-  // group - optional (defaults to no pin enforcement), same posture as
-  // boardAdapters above. Runs AFTER the board sync so it always sees this
-  // tick's freshly-posted board messageId, never a stale one.
-  pinAdapters?: PipelineBoardPinAdapters;
 }
 
 export interface TickResult {
@@ -556,27 +550,6 @@ async function syncBoardIfWired(
   const result = await syncPipelineBoard(data, prevBoard, boardAdapters, nowMs, repoBaseUrl);
   logBoardSyncFailure(result);
   return { state: result.state, outcome: result.outcome };
-}
-
-// BL-467: runs AFTER syncBoardIfWired so boardMessageId is this tick's
-// freshly-posted (or reposted) board message id, never the prior tick's
-// stale one. Absent pinAdapters (not wired) is a no-op, same posture as
-// syncBoardIfWired/syncApprovalsRosterIfWired above. Pin enforcement runs
-// ONLY on posted/reposted ticks — unchanged ticks skip pin entirely so forum-
-// topic getChat gaps and human hand-pins do not spam "pinned a message".
-async function syncPinIfWired(
-  boardState: PipelineBoardState | undefined,
-  pinAdapters: PipelineBoardPinAdapters | undefined,
-  boardUnchanged = false
-): Promise<PipelineBoardState | undefined> {
-  if (!pinAdapters || boardState?.messageId === undefined || boardUnchanged) {
-    return boardState;
-  }
-  const pinResult = await syncPipelineBoardPin(boardState.messageId, pinAdapters, boardState.lastPinnedBoardMessageId);
-  if (pinResult.lastPinnedBoardMessageId === boardState.lastPinnedBoardMessageId) {
-    return boardState;
-  }
-  return { ...boardState, lastPinnedBoardMessageId: pinResult.lastPinnedBoardMessageId };
 }
 
 // BL-434: the Approvals topic's own roster sync - runs on EVERY tick (never
@@ -1173,15 +1146,7 @@ export async function runConciergeTick(adapters: ConciergeTickAdapters, nowMs: n
     nowMs,
     doneClosedAtMs
   );
-  let pipelineBoard = boardSync.state;
-
-  // BL-467: enforces the board as the group's ONLY pin - runs right after
-  // the board sync above so it always sees this tick's own messageId.
-  pipelineBoard = await syncPinIfWired(
-    pipelineBoard,
-    adapters.pinAdapters,
-    boardSync.outcome === 'skipped-unchanged'
-  );
+  const pipelineBoard = boardSync.state;
 
   // BL-434: the Approvals topic's own live roster - fed off curr.pendingApproval
   // (the SAME set this tick already derived ApprovalRequested events from),

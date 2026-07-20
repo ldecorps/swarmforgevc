@@ -81,10 +81,6 @@ export interface PipelineBoardState {
   // BL-497: consecutive failed-post/failed-no-topic ticks since the last
   // successful post - reset to 0 the instant a post succeeds.
   consecutiveFailures?: number;
-  // BL-467: the board message id this pin sync last successfully pinned -
-  // persisted so a tick where getChat().pinned_message omits the board
-  // (common for forum-topic messages) does not unpin+re-pin every cycle.
-  lastPinnedBoardMessageId?: number;
   // Prior board message ids whose best-effort delete failed on repost - swept
   // on later ticks (including skipped-unchanged) until gone or topic remint.
   orphanMessageIds?: number[];
@@ -338,8 +334,6 @@ async function postBoardMessage(
 
   // BL-497: a successful post clears the failure episode entirely - the
   // next transient/topic-gone run starts a fresh count and can alarm again.
-  // Carry forward durable pin-sync fields (lastPinnedBoardMessageId) so a
-  // repost does not forget which board revision was already pinned.
   return {
     state: {
       ...prevState,

@@ -70,9 +70,6 @@ import {
   answerCallbackQuery,
   editMessageText,
   deleteMessage,
-  pinChatMessage,
-  unpinAllChatMessages,
-  getChatPinnedMessageId,
   getFile,
   downloadTelegramFile,
   sendVoiceNote,
@@ -2425,14 +2422,6 @@ function buildConciergeTickAdapters(targetPath: string, botToken: string, chatId
       // this stays a thin wrapper binding the tick's own
       // targetPath/botToken/chatId.
       emitFailureAlert: (message) => emitPipelineBoardFailureAlert(targetPath, botToken, chatId, message),
-    },
-    // BL-467: enforces the pipeline board as the group's ONLY pin - chat-
-    // level (no topicId), reusing the SAME botToken/chatId every other
-    // adapter block here does.
-    pinAdapters: {
-      getTopPinnedMessageId: () => getChatPinnedMessageId(botToken, chatId).then((r) => r.pinnedMessageId),
-      unpinAllMessages: () => unpinAllChatMessages(botToken, chatId).then((r) => r.success),
-      pinMessage: (messageId) => pinChatMessage(botToken, chatId, messageId).then((r) => r.success),
     },
     readRootIntakeFiles: () => readRootIntakeFiles(targetPath),
     readRepoBaseUrl: () => readRepoBaseUrl(targetPath),
