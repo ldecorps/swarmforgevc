@@ -411,7 +411,10 @@ async function syncAllTitleAgeBuckets(
 // id is always an active ticket, a parked/awaiting-approval id is always a
 // paused one, so this single lookup covers computePipelineBoard's own two
 // inputs (roleHeldTickets, paused) without a second read.
-function buildTicketMetaLookup(folders: BacklogFoldersSnapshot): Record<string, PipelineBoardTicketMeta> {
+function buildTicketMetaLookup(
+  folders: BacklogFoldersSnapshot,
+  rootIntake?: { id: string; title?: string; filename: string }[]
+): Record<string, PipelineBoardTicketMeta> {
   const lookup: Record<string, PipelineBoardTicketMeta> = {};
   for (const item of folders.active) {
     lookup[item.id] = { epic: item.epic, title: item.title, filename: item.filename, location: 'active' };
@@ -424,6 +427,11 @@ function buildTicketMetaLookup(folders: BacklogFoldersSnapshot): Record<string, 
   for (const item of folders.done) {
     if (lookup[item.id] === undefined) {
       lookup[item.id] = { epic: item.epic, title: item.title, filename: item.filename, location: 'done' };
+    }
+  }
+  for (const item of rootIntake ?? []) {
+    if (lookup[item.id] === undefined) {
+      lookup[item.id] = { title: item.title, filename: item.filename, location: 'root' };
     }
   }
   return lookup;
@@ -538,8 +546,9 @@ async function syncBoardIfWired(
   // plain (non-Promise) return value is a no-op passthrough, so every
   // existing synchronous test fixture keeps working unchanged.
   const roleHeldTickets = await readRoleHeldTickets();
-  const data = computePipelineBoard(roleHeldTickets, folders.paused, buildTicketMetaLookup(folders), {
-    rootIntake: readRootIntakeFiles?.() ?? [],
+  const rootIntakeFiles = readRootIntakeFiles?.() ?? [];
+  const data = computePipelineBoard(roleHeldTickets, folders.paused, buildTicketMetaLookup(folders, rootIntakeFiles), {
+    rootIntake: rootIntakeFiles,
     recentlyClosed: recentlyClosedItems(folders, doneClosedAtMs),
     repoBaseUrl,
     activeIds: activeMembershipIds(folders),

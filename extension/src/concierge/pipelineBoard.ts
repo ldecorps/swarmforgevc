@@ -67,7 +67,7 @@ export interface PipelineBoardTicketMeta {
   epic?: string;
   title?: string;
   filename?: string;
-  location?: 'active' | 'paused' | 'done';
+  location?: 'active' | 'paused' | 'done' | 'root';
 }
 
 // BL-465: recently-closed/root-intake items feed in as raw {id, title,
@@ -255,6 +255,9 @@ function linkPathFor(meta: PipelineBoardTicketMeta | undefined): string | undefi
   if (!meta?.filename || !meta.location) {
     return undefined;
   }
+  if (meta.location === 'root') {
+    return `backlog/${meta.filename}`;
+  }
   return `backlog/${meta.location}/${meta.filename}`;
 }
 
@@ -375,12 +378,34 @@ function linksFromParked(
   return links;
 }
 
-function linksFromRecentlyClosed(extras: PipelineBoardExtras): PipelineBoardLinkEntry[] {
-  return (extras.recentlyClosed ?? []).map((item) => ({ id: item.id, path: `backlog/done/${item.filename}` }));
+function linksFromRecentlyClosed(
+  extras: PipelineBoardExtras,
+  ticketMeta: Record<string, PipelineBoardTicketMeta>
+): PipelineBoardLinkEntry[] {
+  const links: PipelineBoardLinkEntry[] = [];
+  for (const item of extras.recentlyClosed ?? []) {
+    const meta = ticketMeta[item.id];
+    const path = meta ? linkPathFor(meta) : `backlog/done/${item.filename}`;
+    if (path) {
+      links.push({ id: item.id, path });
+    }
+  }
+  return links;
 }
 
-function linksFromRootIntake(extras: PipelineBoardExtras): PipelineBoardLinkEntry[] {
-  return (extras.rootIntake ?? []).map((item) => ({ id: item.id, path: `backlog/${item.filename}` }));
+function linksFromRootIntake(
+  extras: PipelineBoardExtras,
+  ticketMeta: Record<string, PipelineBoardTicketMeta>
+): PipelineBoardLinkEntry[] {
+  const links: PipelineBoardLinkEntry[] = [];
+  for (const item of extras.rootIntake ?? []) {
+    const meta = ticketMeta[item.id];
+    const path = meta ? linkPathFor(meta) : `backlog/${item.filename}`;
+    if (path) {
+      links.push({ id: item.id, path });
+    }
+  }
+  return links;
 }
 
 // Split out of computePipelineBoard below for the same CRAP-budget reason
@@ -398,8 +423,8 @@ function buildLinks(
   for (const link of [
     ...linksFromRows(rows, ticketMeta),
     ...linksFromParked(parked, ticketMeta),
-    ...linksFromRecentlyClosed(extras),
-    ...linksFromRootIntake(extras),
+    ...linksFromRecentlyClosed(extras, ticketMeta),
+    ...linksFromRootIntake(extras, ticketMeta),
   ]) {
     if (!linksById.has(link.id)) {
       linksById.set(link.id, link);
