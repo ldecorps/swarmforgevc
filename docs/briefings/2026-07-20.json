@@ -957,7 +957,7 @@
       }
     },
     "nudges": {
-      "value": 306,
+      "value": 307,
       "trend": {
         "series": [
           {
@@ -966,12 +966,12 @@
           },
           {
             "periodStart": "2026-07-20T00:00:00.000Z",
-            "value": 306
+            "value": 307
           }
         ],
-        "currentValue": 306,
+        "currentValue": 307,
         "priorValue": 27,
-        "delta": 279,
+        "delta": 280,
         "direction": "up"
       }
     },
@@ -1106,12 +1106,16 @@
           {
             "periodStart": "2026-07-20T15:00:00.000Z",
             "value": 597643.6363636364
+          },
+          {
+            "periodStart": "2026-07-20T16:00:00.000Z",
+            "value": 860160
           }
         ],
-        "currentValue": 597643.6363636364,
-        "priorValue": 858670.5454545454,
-        "delta": -261026.90909090906,
-        "direction": "down"
+        "currentValue": 860160,
+        "priorValue": 597643.6363636364,
+        "delta": 262516.36363636365,
+        "direction": "up"
       },
       "cpuTrend": {
         "series": [
@@ -1193,6 +1197,10 @@
           },
           {
             "periodStart": "2026-07-20T15:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-20T16:00:00.000Z",
             "value": 0
           }
         ],
@@ -1287,12 +1295,16 @@
           {
             "periodStart": "2026-07-20T15:00:00.000Z",
             "value": 597643.6363636364
+          },
+          {
+            "periodStart": "2026-07-20T16:00:00.000Z",
+            "value": 860160
           }
         ],
-        "currentValue": 597643.6363636364,
-        "priorValue": 858670.5454545454,
-        "delta": -261026.90909090906,
-        "direction": "down"
+        "currentValue": 860160,
+        "priorValue": 597643.6363636364,
+        "delta": 262516.36363636365,
+        "direction": "up"
       },
       "cpuTrend": {
         "series": [
@@ -1374,6 +1386,10 @@
           },
           {
             "periodStart": "2026-07-20T15:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-20T16:00:00.000Z",
             "value": 0
           }
         ],
