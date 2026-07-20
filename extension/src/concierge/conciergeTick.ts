@@ -561,18 +561,15 @@ async function syncBoardIfWired(
 // BL-467: runs AFTER syncBoardIfWired so boardMessageId is this tick's
 // freshly-posted (or reposted) board message id, never the prior tick's
 // stale one. Absent pinAdapters (not wired) is a no-op, same posture as
-// syncBoardIfWired/syncApprovalsRosterIfWired above. lastPinnedBoardMessageId
-// is persisted on PipelineBoardState so getChat() gaps do not re-pin every
-// tick.
+// syncBoardIfWired/syncApprovalsRosterIfWired above. Pin enforcement runs
+// ONLY on posted/reposted ticks — unchanged ticks skip pin entirely so forum-
+// topic getChat gaps and human hand-pins do not spam "pinned a message".
 async function syncPinIfWired(
   boardState: PipelineBoardState | undefined,
   pinAdapters: PipelineBoardPinAdapters | undefined,
   boardUnchanged = false
 ): Promise<PipelineBoardState | undefined> {
-  if (!pinAdapters || boardState?.messageId === undefined) {
-    return boardState;
-  }
-  if (boardUnchanged && boardState.lastPinnedBoardMessageId === boardState.messageId) {
+  if (!pinAdapters || boardState?.messageId === undefined || boardUnchanged) {
     return boardState;
   }
   const pinResult = await syncPipelineBoardPin(boardState.messageId, pinAdapters, boardState.lastPinnedBoardMessageId);

@@ -18,6 +18,9 @@ import { PipelineBoardData, PIPELINE_BOARD_MESSAGE_MAX_LENGTH, composePipelineBo
 // wants a different value - every consumer reads this one constant, never a
 // hardcoded number of its own.
 export const PIPELINE_BOARD_ALERT_FAILURE_CAP = 5;
+// Cap orphan tracking so a long-lived topic with chronic delete failures
+// never grows an unbounded retry list.
+export const PIPELINE_BOARD_ORPHAN_TRACK_CAP = 20;
 const LINKS_SIGNATURE_SECTION_HEADER = 'LINKS:';
 
 export type PipelineBoardFailureClass = 'topic-gone' | 'too-long' | 'transient' | 'unknown';
@@ -82,6 +85,9 @@ export interface PipelineBoardState {
   // persisted so a tick where getChat().pinned_message omits the board
   // (common for forum-topic messages) does not unpin+re-pin every cycle.
   lastPinnedBoardMessageId?: number;
+  // Prior board message ids whose best-effort delete failed on repost - swept
+  // on later ticks (including skipped-unchanged) until gone or topic remint.
+  orphanMessageIds?: number[];
   // BL-497: true once the "board frozen" operator alert has been CONFIRMED
   // delivered for the CURRENT failure episode. Cleared to false on the next
   // successful post, so a later episode alarms fresh.
@@ -216,6 +222,55 @@ function buildFailureAlertText(consecutiveFailures: number, error: string | unde
   return `Pipeline Board frozen: ${consecutiveFailures} consecutive failed post attempts${error ? ` (last error: ${error})` : ''}.`;
 }
 
+export function trackOrphanBoardMessageId(
+  orphanMessageIds: number[] | undefined,
+  messageId: number | undefined,
+  liveMessageId: number | undefined
+): number[] {
+  if (messageId === undefined || messageId === liveMessageId) {
+    return orphanMessageIds ?? [];
+  }
+  const next = (orphanMessageIds ?? []).filter((id) => id !== liveMessageId);
+  if (next.includes(messageId)) {
+    return next;
+  }
+  next.push(messageId);
+  if (next.length <= PIPELINE_BOARD_ORPHAN_TRACK_CAP) {
+    return next;
+  }
+  return next.slice(next.length - PIPELINE_BOARD_ORPHAN_TRACK_CAP);
+}
+
+export function dropOrphanBoardMessageId(orphanMessageIds: number[] | undefined, messageId: number | undefined): number[] {
+  if (messageId === undefined || orphanMessageIds === undefined || orphanMessageIds.length === 0) {
+    return orphanMessageIds ?? [];
+  }
+  const next = orphanMessageIds.filter((id) => id !== messageId);
+  return next.length === orphanMessageIds.length ? orphanMessageIds : next;
+}
+
+export async function sweepOrphanBoardMessages(
+  topicId: number | undefined,
+  liveMessageId: number | undefined,
+  orphanMessageIds: number[] | undefined,
+  deleteMessage: (topicId: number, messageId: number) => Promise<boolean>
+): Promise<number[]> {
+  if (topicId === undefined || liveMessageId === undefined || orphanMessageIds === undefined || orphanMessageIds.length === 0) {
+    return orphanMessageIds ?? [];
+  }
+  const remaining: number[] = [];
+  for (const messageId of orphanMessageIds) {
+    if (messageId === liveMessageId) {
+      continue;
+    }
+    const deleted = await deleteMessage(topicId, messageId);
+    if (!deleted) {
+      remaining.push(messageId);
+    }
+  }
+  return remaining;
+}
+
 // BL-497: emits the alert exactly when a failed result crosses the cap, and
 // arms `alertArmed` ONLY on CONFIRMED delivery - never on the attempt (the
 // BL-215/BL-333 lesson). A missing adapter (not wired) or a failed send
@@ -260,17 +315,26 @@ async function postBoardMessage(
     // big (and composePipelineBoardHtml now keeps it under budget going
     // forward), so recreating the topic would be pointless churn.
     const failureClass = classifyBoardFailure(error);
-    const stateOverlay: Partial<PipelineBoardState> = failureClass === 'topic-gone' ? { topicId: undefined, messageId: undefined } : { topicId };
+    const stateOverlay: Partial<PipelineBoardState> =
+      failureClass === 'topic-gone'
+        ? { topicId: undefined, messageId: undefined, orphanMessageIds: undefined }
+        : { topicId };
     return failedOutcome(prevState, stateOverlay, 'failed-post', error, failureClass);
   }
 
   const hadPriorMessage = prevState?.messageId !== undefined;
+  let orphanMessageIds = trackOrphanBoardMessageId(prevState?.orphanMessageIds, prevState?.messageId, messageId);
   if (hadPriorMessage) {
     // Best-effort, only now that the new latest message already exists: an
     // already-gone or failed delete never blocks or undoes the post above -
-    // see the adapters interface's own comment above.
-    await adapters.deleteMessage(topicId, prevState!.messageId!);
+    // see the adapters interface's own comment above. Failed deletes are
+    // tracked in orphanMessageIds and retried on later ticks.
+    const deleted = await adapters.deleteMessage(topicId, prevState!.messageId!);
+    orphanMessageIds = deleted
+      ? dropOrphanBoardMessageId(orphanMessageIds, prevState!.messageId!)
+      : orphanMessageIds;
   }
+  orphanMessageIds = await sweepOrphanBoardMessages(topicId, messageId, orphanMessageIds, adapters.deleteMessage.bind(adapters));
 
   // BL-497: a successful post clears the failure episode entirely - the
   // next transient/topic-gone run starts a fresh count and can alarm again.
@@ -285,6 +349,7 @@ async function postBoardMessage(
       lastChangeMs,
       consecutiveFailures: 0,
       alertArmed: false,
+      orphanMessageIds: orphanMessageIds.length > 0 ? orphanMessageIds : undefined,
     },
     outcome: hadPriorMessage ? 'reposted' : 'posted',
   };
@@ -299,6 +364,22 @@ export async function syncPipelineBoard(
 ): Promise<PipelineBoardSyncResult> {
   const contentSignature = renderPipelineBoardContentSignature(data);
   if (contentSignature === prevState?.contentSignature) {
+    const orphanMessageIds = await sweepOrphanBoardMessages(
+      prevState?.topicId,
+      prevState?.messageId,
+      prevState?.orphanMessageIds,
+      adapters.deleteMessage.bind(adapters)
+    );
+    const prevOrphans = prevState?.orphanMessageIds ?? [];
+    if (orphanMessageIds.length !== prevOrphans.length) {
+      return {
+        state: {
+          ...prevState,
+          orphanMessageIds: orphanMessageIds.length > 0 ? orphanMessageIds : undefined,
+        },
+        outcome: 'skipped-unchanged',
+      };
+    }
     return { state: prevState ?? {}, outcome: 'skipped-unchanged' };
   }
 

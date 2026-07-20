@@ -1,5 +1,12 @@
 const assert = require('node:assert/strict');
-const { syncPipelineBoard, classifyBoardFailure, PIPELINE_BOARD_ALERT_FAILURE_CAP } = require('../out/concierge/pipelineBoardSync');
+const {
+  syncPipelineBoard,
+  classifyBoardFailure,
+  PIPELINE_BOARD_ALERT_FAILURE_CAP,
+  trackOrphanBoardMessageId,
+  dropOrphanBoardMessageId,
+  sweepOrphanBoardMessages,
+} = require('../out/concierge/pipelineBoardSync');
 const { renderPipelineBoardBody } = require('../out/concierge/pipelineBoard');
 
 function fakeAdapters(overrides = {}) {
@@ -249,6 +256,57 @@ test('syncPipelineBoard: a failed delete of the old message still lets the fresh
   assert.equal(result.outcome, 'reposted');
   assert.equal(posted.length, 1, 'expected the fresh message posted despite the delete failure');
   assert.equal(result.state.messageId, 55);
+  assert.deepEqual(result.state.orphanMessageIds, [1], 'expected the undeleted prior board message tracked for later sweep');
+});
+
+test('syncPipelineBoard: an unchanged tick sweeps orphan board messages until they are gone', async () => {
+  const deleted = [];
+  const first = await syncPipelineBoard(board([{ id: 'BL-1', column: 'coder', slug: '' }]), undefined, fakeAdapters(), T1);
+  const reposted = await syncPipelineBoard(
+    board([{ id: 'BL-1', column: 'QA', slug: '' }]),
+    first.state,
+    fakeAdapters({
+      deleteMessage: async () => false,
+      postMessage: async () => ({ messageId: 55 }),
+    }),
+    T2
+  );
+  assert.deepEqual(reposted.state.orphanMessageIds, [1]);
+
+  const swept = await syncPipelineBoard(
+    board([{ id: 'BL-1', column: 'QA', slug: '' }]),
+    reposted.state,
+    fakeAdapters({
+      deleteMessage: async (topicId, messageId) => {
+        deleted.push(messageId);
+        return true;
+      },
+    }),
+    T2
+  );
+
+  assert.equal(swept.outcome, 'skipped-unchanged');
+  assert.deepEqual(deleted, [1]);
+  assert.equal(swept.state.orphanMessageIds, undefined);
+});
+
+test('trackOrphanBoardMessageId: caps the orphan list and ignores the live message id', () => {
+  let orphans = trackOrphanBoardMessageId(undefined, 10, 20);
+  assert.deepEqual(orphans, [10]);
+  orphans = trackOrphanBoardMessageId(orphans, 10, 20);
+  assert.deepEqual(orphans, [10]);
+  orphans = dropOrphanBoardMessageId(orphans, 10);
+  assert.deepEqual(orphans, []);
+});
+
+test('sweepOrphanBoardMessages: retries deletes and keeps failures on the list', async () => {
+  const attempts = [];
+  const remaining = await sweepOrphanBoardMessages(900, 55, [1, 2, 55], async (_topicId, messageId) => {
+    attempts.push(messageId);
+    return messageId === 1;
+  });
+  assert.deepEqual(attempts, [1, 2]);
+  assert.deepEqual(remaining, [2]);
 });
 
 test('syncPipelineBoard: a topic already created (topicId persisted) is reused, never re-created', async () => {
