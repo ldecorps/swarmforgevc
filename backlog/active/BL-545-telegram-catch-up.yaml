@@ -1,0 +1,34 @@
+id: BL-545
+title: "Telegram catch-up pager: triage unread agent messages one at a time (mark read / keep unread)"
+milestone: M8
+type: feature
+status: active
+epic: swarmforge-console
+assigned_to:
+priority: 1
+mutation_cost: medium
+direction: human-requested
+depends_on: [BL-516, BL-526]
+source: "Human (sponsor) 2026-07-21 intake: Teams Android-style catch-up for Telegram — quickly eyeball all agent messages across topics and prioritize what needs attention."
+
+notes: |
+  USER STORY
+    As the sponsor overseeing the swarm
+    I want to quickly eyeball all agent messages
+    So that I can prioritize what needs attention
+
+  BEHAVIOUR
+    - On open, asynchronously fetch unread outbound messages from backlog/topics/*.json
+      into an in-memory client queue (oldest-first snapshot).
+    - Present the LAST (newest) unread message first with sender, topic label, ago, body.
+    - Two buttons: Mark as read (persists host-side) / Keep as unread (skip only).
+    - Each choice advances to the next older message; empty queue → "All caught up".
+    - Offline: once the queue is built, triage continues in-memory; mark-read POST may fail
+      silently but still advances (BL-545 catch-up-offline-06).
+
+  SURFACE
+    Telegram Mini App on the BL-526 console: /catch-up shell, /catch-up-state JSON,
+    POST /catch-up/mark-read (control-scoped). Read markers in
+    .swarmforge/catch-up-read-state.json.
+
+acceptance: specs/features/BL-545-telegram-catch-up.feature
