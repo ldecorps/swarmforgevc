@@ -33,7 +33,7 @@ notes: |
 
 acceptance: specs/features/BL-529-ticket-branch-mismatch-guard.feature
 
-human_approval: pending
+human_approval: approved
 
 approval_context: >
   Feature file at specs/features/BL-529-ticket-branch-mismatch-guard.feature.
