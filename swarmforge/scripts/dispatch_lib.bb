@@ -67,7 +67,7 @@
    .sh wrapper to exec."
   [mode->script]
   (let [role-name (role)
-        mode (receive-mode role-name)]
+        mode      (receive-mode role-name)]
     (if-let [script (get mode->script mode)]
       (run-helper! script)
       (exit! 2 (str "INVALID_RECEIVE_MODE: " mode " for role " role-name)))))
