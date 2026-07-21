@@ -70,6 +70,7 @@ description: |
     observable, backwards compatible with BL-519 stable-prefix caching.
 
   Cross-links (reuse, do not reinvent):
+    - BL-548 prompt calibration loop (experiment variants → steward evaluate → promote)
     - BL-519 inline constitution + stable-prefix cache contract
     - BL-206 provider capability model (`provider-capabilities` in agent_runtime_lib.bb)
     - BL-269 onboarding target prompts (`extension/src/onboarding/promptProposal.ts`)

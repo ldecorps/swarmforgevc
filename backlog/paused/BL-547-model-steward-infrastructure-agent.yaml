@@ -73,6 +73,7 @@ description: |
       steward certifies, factory assigns.
 
   Cross-links (reuse, do not reinvent):
+    - BL-548 prompt calibration loop (evaluate invoked per experimental variant)
     - BL-233 recruiter discover/qualify/rank/recommend
     - BL-231 / BL-386 battery discrimination
     - `extension/src/tools/bakeoff-run.ts` benchmarking harness
