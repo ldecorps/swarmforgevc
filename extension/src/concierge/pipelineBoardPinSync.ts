@@ -58,22 +58,15 @@ export function decidePipelineBoardPinAction(
   return 'enforce';
 }
 
-// True only when a NON-board message is currently pinned (typically a human
-// hand-pin). A repost leaves our PREVIOUS board message at currentTop until
-// the new board is pinned - unpin-all before that replacement spams extra
-// "pinned" service messages without helping.
+// True whenever an enforce pass is about to pin the board - always clear the
+// chat-level pin list first so a stale pin (including our own previous board
+// message that getChat still reports, or one getChat omits) cannot block the
+// fresh board message from becoming the sole pin.
 export function shouldUnpinAllBeforePin(
   currentTopPinnedId: number | undefined,
-  boardMessageId: number | undefined,
-  lastPinnedBoardMessageId: number | undefined = undefined
+  boardMessageId: number | undefined
 ): boolean {
-  if (currentTopPinnedId === undefined || currentTopPinnedId === boardMessageId) {
-    return false;
-  }
-  if (lastPinnedBoardMessageId !== undefined && currentTopPinnedId === lastPinnedBoardMessageId) {
-    return false;
-  }
-  return true;
+  return boardMessageId !== undefined && currentTopPinnedId !== boardMessageId;
 }
 
 export async function syncPipelineBoardPin(
@@ -85,12 +78,13 @@ export async function syncPipelineBoardPin(
   const currentTopPinnedId = await adapters.getTopPinnedMessageId();
   const outcome = decidePipelineBoardPinAction(currentTopPinnedId, boardMessageId, lastPinnedBoardMessageId, forceEnforce);
   if (outcome !== 'enforce') {
+    const confirmedByGetChat = currentTopPinnedId === boardMessageId;
     return {
       outcome,
-      lastPinnedBoardMessageId: boardMessageId ?? lastPinnedBoardMessageId,
+      lastPinnedBoardMessageId: confirmedByGetChat ? boardMessageId : lastPinnedBoardMessageId,
     };
   }
-  if (shouldUnpinAllBeforePin(currentTopPinnedId, boardMessageId, lastPinnedBoardMessageId)) {
+  if (shouldUnpinAllBeforePin(currentTopPinnedId, boardMessageId)) {
     await adapters.unpinAllMessages();
   }
   const pinned = await adapters.pinMessage(boardMessageId!);

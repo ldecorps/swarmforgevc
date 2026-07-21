@@ -2101,7 +2101,7 @@ test('BL-462: the pipeline board reposts at the bottom (delete + post) on a stag
   assert.equal(state.pipelineBoard.lastChangeMs, T2, 'expected the footer to stay at the last REAL content change');
 });
 
-test('BL-467: the pin sync follows a board repost to the new message id without unpin-all when the old board is still top', async () => {
+test('BL-467: the pin sync follows a board repost to the new message id with unpin-all when the old board is still top', async () => {
   const { adapters, state, setFolders } = fakeAdapters();
   const pinCalls = [];
   const T1 = Date.UTC(2026, 6, 16, 20, 5);
@@ -2129,7 +2129,7 @@ test('BL-467: the pin sync follows a board repost to the new message id without 
   await runConciergeTick(adapters, T1);
   assert.equal(state.pipelineBoard.messageId, 100);
   assert.equal(state.pipelineBoard.lastPinnedBoardMessageId, 100);
-  assert.deepEqual(pinCalls, ['pin:100']);
+  assert.deepEqual(pinCalls, ['unpinAll', 'pin:100']);
 
   adapters.readRoleHeldTickets = () => ({ QA: ['BL-1'] });
   nextMessageId = 101;
@@ -2138,7 +2138,7 @@ test('BL-467: the pin sync follows a board repost to the new message id without 
 
   assert.equal(state.pipelineBoard.messageId, 101);
   assert.equal(state.pipelineBoard.lastPinnedBoardMessageId, 101);
-  assert.deepEqual(pinCalls, ['pin:101'], 'expected pin on the new board without unpin-all when the old board is still top');
+  assert.deepEqual(pinCalls, ['unpinAll', 'pin:101'], 'expected unpin-all then pin on the new board when the old board is still top');
 });
 
 test('BL-455: role-held tickets are joined to their backlog item epic/title - grouped by epic, and shown with a derived slug', async () => {

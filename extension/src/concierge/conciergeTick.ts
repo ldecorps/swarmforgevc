@@ -16,7 +16,7 @@ import { StalenessBucket } from './topicTitleAge';
 import { TopicTitleAdapters, syncTopicTitle } from './topicTitleSync';
 import { PipelineBoardTicketMeta, computePipelineBoard } from './pipelineBoard';
 import { PipelineBoardAdapters, PipelineBoardState, PipelineBoardSyncResult, syncPipelineBoard } from './pipelineBoardSync';
-import { PipelineBoardPinAdapters, syncPipelineBoardPin } from './pipelineBoardPinSync';
+import { PipelineBoardPinAdapters, PipelineBoardPinSyncResult, syncPipelineBoardPin } from './pipelineBoardPinSync';
 import { ApprovalsRosterAdapters, ApprovalsRosterState, syncApprovalsRoster } from './approvalsRosterSync';
 import { RecertPostingAdapters, RecertPostingState, syncRecertPosting } from './recertPostingSync';
 import { RecertifiableScenario } from '../docs/recertification';
@@ -563,6 +563,16 @@ async function syncBoardIfWired(
 // boardPinAdapters being wired (absent adapters = no pin sync, same
 // posture as boardAdapters). Best-effort: a failed pin/unpin never throws
 // and never aborts the tick.
+function logBoardPinSyncFailure(boardMessageId: number | undefined, result: PipelineBoardPinSyncResult): void {
+  if (
+    result.outcome === 'enforce' &&
+    boardMessageId !== undefined &&
+    result.lastPinnedBoardMessageId !== boardMessageId
+  ) {
+    process.stderr.write(`syncBoardPinIfWired: enforce failed to pin board message ${boardMessageId}\n`);
+  }
+}
+
 async function syncBoardPinIfWired(
   pipelineBoard: PipelineBoardState | undefined,
   boardPinAdapters: PipelineBoardPinAdapters | undefined
@@ -581,13 +591,16 @@ async function syncBoardPinIfWired(
     pipelineBoard?.lastPinnedBoardMessageId,
     forceRepin
   );
+  logBoardPinSyncFailure(pipelineBoard?.messageId, result);
   if (!pipelineBoard) {
     return pipelineBoard;
   }
+  const pinSettled =
+    pipelineBoard.messageId !== undefined && result.lastPinnedBoardMessageId === pipelineBoard.messageId;
   return {
     ...pipelineBoard,
     lastPinnedBoardMessageId: result.lastPinnedBoardMessageId,
-    forceBoardPinOnNextTick: undefined,
+    forceBoardPinOnNextTick: pinSettled ? undefined : true,
   };
 }
 
