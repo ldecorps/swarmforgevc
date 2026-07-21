@@ -4,7 +4,7 @@ milestone: M5
 type: feature
 status: todo
 epic: swarm-intelligence-layer
-human_approval: pending
+human_approval: approved
 approval_context: >
   Sign-off on the Swarm Intelligence Layer umbrella (BL-545) and its first two
   child specs: BL-546 PromptEngine Slice 1 contract (compose API extraction from

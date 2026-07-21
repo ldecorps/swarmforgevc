@@ -4,7 +4,7 @@ milestone: M5
 type: feature
 status: todo
 epic: swarm-intelligence-layer
-human_approval: pending
+human_approval: approved
 approval_context: >
   Sign-off on the closed-loop calibration design: PromptEngine composes experimental
   adapter variants, Model Steward evaluate scores them against a real model+role,
