@@ -5,6 +5,14 @@ type: feature
 status: todo
 epic: swarm-intelligence-layer
 human_approval: pending
+approval_context: >
+  Sign-off on the Swarm Intelligence Layer umbrella (BL-545) and its first two
+  child specs: BL-546 PromptEngine Slice 1 contract (compose API extraction from
+  agent_runtime_lib.bb; BL-519 stable-prefix preserved) and BL-547 Model Steward
+  Slice 1 contract (registry schema + certification gate). Slices 2–3 scenarios
+  are parked in .feature.draft files per slice-scoping rule. Firm: no launch
+  script may assemble prompt text after BL-546 Slice 1; ModelFactory must
+  respect certification status after BL-547 Slice 1.
 severity: medium
 priority: 10
 direction: human-requested
@@ -131,6 +139,15 @@ description: |
   4. Migration path: `agent_runtime_lib.bb` delegates to PromptEngine; existing
      `agent_runtime_cli.bb` commands remain as thin wrappers until callers migrate.
   5. BDD: see `specs/features/BL-546-prompt-engine-model-aware-prompt-composition.feature`.
+     Slices 2–3 parked in `specs/features/BL-546-prompt-engine-slices-2-3.feature.draft`.
+
+  QA end-to-end (Slice 1, live swarm):
+    1. Launch mono-router seven-pack; confirm `.swarmforge/prompts/<role>.md` exists
+       for coder and cleaner.
+    2. Grep launch scripts: no prompt text literals outside PromptEngine CLI calls.
+    3. Re-run BL-519 spot-check: constitution inlined, stable prefix byte-identical
+       across roles, cache-warm hash changes when constitution edits.
+    4. Respawn one role; confirm prompt artifact regenerated via PromptEngine only.
 
 acceptance: |
   See specs/features/BL-546-prompt-engine-model-aware-prompt-composition.feature

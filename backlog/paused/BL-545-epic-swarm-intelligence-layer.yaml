@@ -7,6 +7,12 @@ epic: swarm-intelligence-layer
 priority: 00
 depends_on: []
 decomposes_into: [BL-525, BL-546, BL-547]
+remaining_slices:
+  - "PromptEngine Slice 2: fragment registry + per-model adapters"
+  - "PromptEngine Slice 3: versioning, validation, inspect CLI"
+  - "Model Steward Slice 2: recruiter/bakeoff evaluate ingestion"
+  - "Model Steward Slice 3: steward infrastructure role + compatibility docs"
+  - "ModelFactory Slice 2: hot-swap apply path (BL-525)"
 source: |
   Human intake 2026-07-21 via Cursor chat — two foundational write-ups (PromptEngine,
   Model Steward) plus the existing ModelFactory intake (BL-525). The human framed

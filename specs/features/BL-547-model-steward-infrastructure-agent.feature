@@ -4,8 +4,12 @@ Feature: Model Steward owns model lifecycle knowledge and certification for the 
   # configs, recruiter scorecards, and operator memory. Model Steward introduces
   # permanent infrastructure for onboarding, benchmarking, certification, and role
   # recommendation. ModelFactory (BL-525) consumes steward artifacts; PromptEngine
-  # (BL-546) consumes adapter catalogue entries. These scenarios pin Slice 1
-  # (registries + role matrix) and Slice 2 (benchmark ingestion) contracts.
+  # (BL-546) consumes adapter catalogue entries.
+  #
+  # SLICE 1 CONTRACT (this file): file-based registries, role matrix, certification
+  # status, adapter catalogue schema. Slices 2 (benchmark ingestion) and 3 (steward
+  # role + compatibility docs) are parked in
+  # BL-547-model-steward-slices-2-3.feature.draft.
 
   Background:
     Given the Model Steward registry is initialised
@@ -47,7 +51,7 @@ Feature: Model Steward owns model lifecycle knowledge and certification for the 
       | coder      |
       | cleaner    |
       | QA         |
-      | hardener   |
+      | hardender  |
       | documenter |
       | specifier  |
 
@@ -78,34 +82,3 @@ Feature: Model Steward owns model lifecycle knowledge and certification for the 
     When a re-evaluation shows regression below the certification floor
     Then its registry status becomes "deprecated" or "candidate"
     And the certification report records the regression reason
-
-  @slice-2
-  # BL-547 evaluate-ingests-recruiter-08
-  Scenario: evaluate ingests recruiter battery results into the capability registry
-    Given a recruiter qualify scorecard for model "winner-model" and role "coder"
-    When model-steward evaluate is run for that model and role
-    Then the capability registry entry is updated from the scorecard
-    And the certification report references the scorecard id
-
-  @slice-2
-  # BL-547 evaluate-ingests-bakeoff-09
-  Scenario: evaluate ingests bake-off benchmark results into the capability registry
-    Given a bake-off run artifact for model "winner-model"
-    When model-steward evaluate ingests the bake-off results
-    Then the capability registry includes bake-off-derived scores
-    And the certification report references the bake-off run id
-
-  @slice-3
-  # BL-547 steward-role-exists-10
-  Scenario: Model Steward is provisioned as an infrastructure role with a constitution
-    Given the swarm infrastructure roles are configured
-    Then a model-steward role prompt exists under swarmforge/roles/
-    And the coordinator may assign steward tasks without mutating production routing directly
-
-  @slice-3
-  # BL-547 compatibility-docs-generated-11
-  Scenario: compatibility documentation is generated from the registry
-    Given the Model Registry contains certified and candidate models
-    When compatibility documentation is generated
-    Then it lists each model's certification status and known limitations
-    And it links to the role recommendation matrix

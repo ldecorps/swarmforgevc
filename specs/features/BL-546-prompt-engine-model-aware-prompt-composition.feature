@@ -4,10 +4,13 @@ Feature: PromptEngine is the single authority for all swarm prompt composition
   # agent_runtime_lib.bb, swarmforge.sh, pack overlays, and role prompts. As
   # provider support grows, each model needs different prompting strategies while
   # still adhering to the Constitution. PromptEngine centralises composition,
-  # fragment reuse, and model adapters behind one API. These scenarios pin Slice 1
-  # (extract + centralise) and Slice 2 (fragments + adapters) contracts.
-  # Slice 3 (versioning/validation/inspect) scenarios are marked for a follow-on
-  # implementation pass once Slice 2 lands.
+  # fragment reuse, and model adapters behind one API.
+  #
+  # SLICE 1 CONTRACT (this file): extract and centralise today's prompt assembly
+  # behind a compose API; preserve BL-519 stable-prefix contract. Slices 2
+  # (fragments + adapters) and 3 (versioning/validation/inspect) are parked in
+  # BL-546-prompt-engine-slices-2-3.feature.draft — move each slice's scenarios
+  # into this file when that slice is built.
 
   Background:
     Given the PromptEngine compose API is available
@@ -36,32 +39,6 @@ Feature: PromptEngine is the single authority for all swarm prompt composition
     Given PromptEngine is invoked twice with the same compose request and deterministic mode enabled
     Then both composed system prompts are byte-identical
 
-  # BL-546 fragment-assembly-05
-  Scenario Outline: PromptEngine assembles prompts from named fragments
-    Given the compose request includes fragment "<fragment>"
-    When PromptEngine composes the system prompt
-    Then the composed prompt includes content from fragment "<fragment>"
-
-    Examples:
-      | fragment        |
-      | constitution    |
-      | pipeline        |
-      | role            |
-      | pack-overlay    |
-
-  # BL-546 model-adapter-selection-06
-  Scenario Outline: model-specific adapters adjust prompt wording without forking the constitution
-    Given the compose request targets model "<model>" on provider "<provider>"
-    When PromptEngine applies the model adapter
-    Then the adapter id is "<adapter>"
-    And the constitution fragment content is unchanged
-    And tool instructions match the adapter shape for "<provider>"
-
-    Examples:
-      | provider | model              | adapter        |
-      | claude   | claude-sonnet-5    | generic        |
-      | aider    | mistral-large      | aider-editor   |
-
   # BL-546 no-direct-agent-construction-07
   Scenario: swarm agents do not construct prompts directly
     Given a running swarm role pane
@@ -80,18 +57,3 @@ Feature: PromptEngine is the single authority for all swarm prompt composition
       | unchanged             | reuses the still-warm cache |
       | constitution-changed  | re-warms the new prefix     |
       | model-routing-changed | re-warms the new prefix     |
-
-  @slice-3
-  # BL-546 validation-rejects-invalid-09
-  Scenario: validation rejects a compose result with volatile content before the stable chunk
-    Given a compose request that would place volatile content before the stable chunk
-    When PromptEngine validates the composed prompt
-    Then validation fails with a stable-ordering error
-
-  @slice-3
-  # BL-546 inspect-manifest-10
-  Scenario: inspect mode exposes the composed prompt and fragment hash manifest
-    Given PromptEngine has composed a system prompt for role "coder"
-    When an operator requests prompt inspection for that role
-    Then the inspection output includes the full composed prompt
-    And a fragment hash manifest with no secret values

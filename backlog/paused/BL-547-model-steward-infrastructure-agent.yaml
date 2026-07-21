@@ -5,10 +5,15 @@ type: feature
 status: todo
 epic: swarm-intelligence-layer
 human_approval: pending
+approval_context: >
+  Sign-off on Model Steward Slice 1: registry schema under swarmforge/model-steward/,
+  certification status gate for ModelFactory production assignment, and role
+  recommendation matrix contract. Benchmark ingestion (Slice 2) and steward role
+  pane (Slice 3) are parked in BL-547-model-steward-slices-2-3.feature.draft.
 severity: medium
 priority: 11
 direction: human-requested
-depends_on: [BL-546]
+depends_on: []
 assigned_to: specifier
 source: |
   Human intake 2026-07-21 via Cursor chat — "Introduce Model Steward Infrastructure
@@ -134,6 +139,13 @@ description: |
   4. Certification gate contract for ModelFactory `assign()` — production mode
      excludes non-certified unless `context.override-uncertified`.
   5. BDD: see `specs/features/BL-547-model-steward-infrastructure-agent.feature`.
+     Slices 2–3 parked in `specs/features/BL-547-model-steward-slices-2-3.feature.draft`.
+
+  QA end-to-end (Slice 1):
+    1. Run `model-steward status`; confirm registry summary renders.
+    2. Register a candidate model; certify it; confirm status flip and report path.
+    3. Query role matrix for coder; confirm only certified models rank for production.
+    4. ModelFactory assign() dry-run with production mode excludes uncertified model.
 
 acceptance: |
   See specs/features/BL-547-model-steward-infrastructure-agent.feature for
