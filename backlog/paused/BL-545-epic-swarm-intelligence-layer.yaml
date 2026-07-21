@@ -6,12 +6,14 @@ type: epic
 epic: swarm-intelligence-layer
 priority: 00
 depends_on: []
-decomposes_into: [BL-525, BL-546, BL-547]
+decomposes_into: [BL-525, BL-546, BL-547, BL-548]
 remaining_slices:
   - "PromptEngine Slice 2: fragment registry + per-model adapters"
   - "PromptEngine Slice 3: versioning, validation, inspect CLI"
   - "Model Steward Slice 2: recruiter/bakeoff evaluate ingestion"
   - "Model Steward Slice 3: steward infrastructure role + compatibility docs"
+  - "Prompt calibration Slice 2: rank variants + operator report (BL-548)"
+  - "Prompt calibration Slice 3: promote/rollback with human approval (BL-548)"
   - "ModelFactory Slice 2: hot-swap apply path (BL-525)"
 source: |
   Human intake 2026-07-21 via Cursor chat — two foundational write-ups (PromptEngine,
@@ -44,10 +46,14 @@ notes: |
     - BL-525 ModelFactory — recruiter-backed role→model assignment with cheap/quality
       steering and cold-then-hot swap apply paths. Consumes Model Steward artifacts
       and recruiter ranks; does not invent models or prompts.
+    - BL-548 Prompt calibration loop — test experimental adapter variants against a
+      real model via Model Steward evaluate; promote winners to the adapter catalogue
+      with human approval and regression guard.
 
   RELATIONSHIPS:
     PromptEngine produces prompts.
     Model Steward improves PromptEngine (adapters, metadata, certification).
+    Prompt calibration closes the loop: compose variants → evaluate on model → promote.
     ModelFactory uses Model Steward knowledge to select the most appropriate model.
     Recruiter (BL-233, done) remains recommend-only scout; Model Steward certifies
     and ModelFactory assigns.

@@ -1,0 +1,160 @@
+id: BL-548
+title: "Prompt calibration loop — test prompt variants against a model via Model Steward evaluate; promote winners to adapter catalogue"
+milestone: M5
+type: feature
+status: todo
+epic: swarm-intelligence-layer
+human_approval: pending
+approval_context: >
+  Sign-off on the closed-loop calibration design: PromptEngine composes experimental
+  adapter variants, Model Steward evaluate scores them against a real model+role,
+  results land in a calibration report, and production adapters stay untouched until
+  an explicit operator promote (Slice 3) with human approval. Slice 1 is harness +
+  report only — no auto-promote. Firm: experiments must use SWARMFORGE_PROMPT_EXPERIMENT
+  isolation; production compose path unchanged unless promoted.
+severity: medium
+priority: 13
+direction: human-requested
+depends_on: [BL-546, BL-547]
+assigned_to: specifier
+source: |
+  Human intake 2026-07-21 via Cursor chat — follow-up to Swarm Intelligence Layer
+  spec session: "Go for it" on speccing automatic PromptEngine calibration that tests
+  prompts with the given model and closes the steward → adapter feedback loop.
+
+description: |
+  Specifier drains this intake into paused/ with a proper APS feature + notes.
+  Implementation follows the slices below (Slice 1 before Slice 2).
+
+  ## Problem
+
+  BL-546 PromptEngine composes prompts and BL-547 Model Steward tests models, but
+  there is no closed loop: when a model responds poorly to a prompt shape, an
+  operator must manually guess adapter tweaks, re-launch, and re-run batteries.
+  Prompt effectiveness is not an explicit, repeatable, evidence-backed workflow.
+
+  ## Concept — Prompt Calibration Loop
+
+  Introduce a **calibration harness** that, for a given `(provider, model, role)`:
+
+    1. Composes one or more **experimental adapter variants** via PromptEngine
+       (never mutating production adapters in place).
+    2. Runs each variant through **Model Steward evaluate** (recruiter battery +
+       bakeoff ingestion per BL-547 Slice 2) so the **actual model** is exercised
+       with that prompt shape.
+    3. Records scores in a **calibration report** artifact with evidence pointers.
+    4. Ranks variants against the **incumbent** production adapter (Slice 2).
+    5. On operator request, **promotes** the winning variant to the Prompt Adapter
+       catalogue (Slice 3) — gated by `human_approval` and a regression floor.
+
+  PromptEngine does not call LLM APIs directly for calibration; it delegates
+  model exercise to Model Steward evaluate, which already owns battery/bakeoff.
+
+  ## Architecture
+
+  ```
+  Operator / Model Steward task
+    → prompt-calibration run --model X --role coder --variants v1,v2,v3
+        → PromptEngine compose (experiment mode, per variant)
+        → model-steward evaluate (battery per variant)
+        → calibration report (.swarmforge/model-steward/calibration/<run-id>.json)
+    → prompt-calibration report <run-id>   # Slice 2: ranked summary
+    → prompt-calibration promote <run-id> --variant v2  # Slice 3: human-approved
+        → updates Prompt Adapter catalogue (production)
+  ```
+
+  Isolation (reuse BL-546 Slice 3 experimental flag):
+    - `SWARMFORGE_PROMPT_EXPERIMENT=<run-id>` selects experimental adapter set;
+      absent/unset → production catalogue only.
+    - Launch paths for live swarm roles NEVER read experiment adapters unless
+      operator explicitly enables experiment mode on a dedicated calibration pane
+      (not production pipeline roles).
+
+  Cross-links:
+    - BL-546 PromptEngine compose + adapters + experimental mode
+    - BL-547 Model Steward evaluate + adapter catalogue + certification floor
+    - BL-233 recruiter battery (via evaluate)
+    - `extension/src/tools/bakeoff-run.ts` (optional extended scoring)
+
+  ## Slice 1 — experiment harness and report (MUST ship first)
+
+  Observable:
+    1. Calibration experiment schema under `swarmforge/model-steward/calibration-schema/`
+       defining: run id, target (provider, model, role), variant adapter ids,
+       incumbent adapter id, timestamps, status.
+    2. CLI `prompt-calibration run --model <m> --role <r> --variants <ids...>`
+       composes each variant via PromptEngine experiment mode and invokes
+       `model-steward evaluate` for each composed prompt+model pair.
+    3. Calibration report artifact written to
+       `.swarmforge/model-steward/calibration/<run-id>.json` with per-variant:
+       scorecard summary, battery evidence ids, composed prompt hash (not full
+       prompt — inspect separately), pass/fail vs role floor.
+    4. Production Prompt Adapter catalogue unchanged after `run` (no side effects).
+    5. `prompt-calibration status` lists recent runs and their completion state.
+
+  Non-goals for Slice 1: ranking UI, auto-promote, steward agent autonomy.
+
+  ## Slice 2 — rank variants and operator review
+
+  Observable:
+    1. `prompt-calibration report <run-id>` prints ranked variants by aggregate
+       battery score for the target role, with incumbent marked as baseline.
+    2. Report highlights variants that beat incumbent on capability and do not
+       regress below certification floor on any gate.
+    3. Ties broken by cost/latency from capability registry when scores equal.
+
+  ## Slice 3 — promote winner with regression guard
+
+  Observable:
+    1. `prompt-calibration promote <run-id> --variant <id>` requires
+       `human_approval: approved` on BL-548 or per-run approval record.
+    2. Promotion writes the variant to the production Prompt Adapter catalogue
+       for `(provider, model)` and records prior adapter id for rollback.
+    3. Promotion rejected when variant regresses below incumbent on any
+       mandatory gate for that role (configurable floor in schema).
+    4. Model Steward certification report updated with calibration run id +
+       promoted adapter version stamp.
+    5. Rollback: `prompt-calibration rollback --model <m> --role <r>` restores
+       prior catalogue entry from promotion history.
+
+  ## Specifier pins
+
+  1. Module boundary: `swarmforge/scripts/prompt_calibration_lib.bb` + CLI;
+     reads PromptEngine compose API and shells to `model-steward evaluate`.
+  2. Experiment isolation env contract (`SWARMFORGE_PROMPT_EXPERIMENT`).
+  3. Calibration report JSON schema + example committed under
+     `swarmforge/model-steward/calibration-schema/`.
+  4. Promotion requires human approval — never auto-promote on score alone.
+  5. BDD: see `specs/features/BL-548-prompt-calibration-loop.feature`.
+     Slices 2–3 parked in `specs/features/BL-548-prompt-calibration-slices-2-3.feature.draft`.
+
+acceptance: |
+  See specs/features/BL-548-prompt-calibration-loop.feature for Slice 1 scenarios.
+  Slices 2–3 parked in specs/features/BL-548-prompt-calibration-slices-2-3.feature.draft.
+  Coder implements Slice 1 after BL-546 Slice 2 and BL-547 Slice 2 land (evaluate
+  ingestion required for real model exercise). Documenter adds runbook: running a
+  calibration experiment, reading the report, promoting vs rolling back. QA verifies
+  production catalogue unchanged after run-only, and that evaluate was invoked per
+  variant with distinct composed prompt hashes.
+
+  QA end-to-end (Slice 1, fixture-friendly):
+    1. Define two experimental adapter variants for a fixture model+role.
+    2. Run `prompt-calibration run`; confirm report artifact with two variant entries.
+    3. Confirm production adapter catalogue entry unchanged.
+    4. Confirm each variant's evaluate evidence id differs (distinct prompts exercised).
+    5. Launch production role without SWARMFORGE_PROMPT_EXPERIMENT; confirm incumbent
+       adapter still used.
+
+out_of_scope: |
+  - PromptEngine auto-tuning without steward evaluate (no direct LLM calls from
+    PromptEngine for calibration).
+  - Auto-promote on best score without operator + human approval.
+  - Replacing recruiter battery or bakeoff harness internals.
+  - Multi-model sweep in one run (one target model per run in Slice 1).
+
+operator_notes_20260721: |
+  Until BL-548 ships, adapter tuning remains manual: edit adapter, relaunch, re-run
+  recruiter/bakeoff by hand. File calibration requests against this ticket instead
+  of ad-hoc prompt experiments on production roles.
+
+mutation_cost: high
