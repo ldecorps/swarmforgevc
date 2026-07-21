@@ -1829,6 +1829,7 @@ async function pollLoop(
 ): Promise<void> {
   const adapters = buildPollAdapters(botToken, targetPath, bridgeUrl, controlToken, chatId, openaiApiKey);
   let state: PollLoopState = { offset: 0, consecutiveFailures: 0, stuckAttempts: 0 };
+  writeFrontDeskPollHeartbeat(targetPath);
   for (;;) {
     const cycle = await runPollCycle(state, principalUserId, adapters, POLL_BACKOFF_CONFIG);
     state = cycle.state;

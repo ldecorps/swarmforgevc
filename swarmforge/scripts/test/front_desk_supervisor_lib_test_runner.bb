@@ -174,6 +174,10 @@
          true
          (front-desk-supervisor-lib/poll-heartbeat-stale? nil 90000 90000))
 
+(assert= "a freshly spawned bot with no heartbeat yet is NOT stale during startup grace"
+         false
+         (front-desk-supervisor-lib/poll-heartbeat-stale? nil 50000 90000 1000 90000))
+
 ;; ── BL-370: check-one! extended with heartbeat-stale? ────────────────────
 
 ;; front-desk-liveness-01: running + pid alive + heartbeat stale -> "stalled",

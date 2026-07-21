@@ -73,11 +73,17 @@
 ;; seams, e.g. the mkdir-mutex lock) - the REAL restart decision here must
 ;; never depend on the TS process's own event loop being alive to compute
 ;; it. "No completed poll within the stall window" means genuinely stuck,
-;; never merely quiet - a nil last-heartbeat-ms (never yet written) counts
-;; as stale too, so a bot that never got as far as its first poll cycle is
-;; still caught.
-(defn poll-heartbeat-stale? [last-heartbeat-ms now-ms stall-ms]
-  (boolean (or (nil? last-heartbeat-ms) (>= (- now-ms last-heartbeat-ms) stall-ms))))
+;; never merely quiet - EXCEPT during startup-grace-ms after started-at-ms,
+;; when a nil heartbeat is expected (first long-poll cycle not done yet).
+(defn poll-heartbeat-stale?
+  ([last-heartbeat-ms now-ms stall-ms]
+   (poll-heartbeat-stale? last-heartbeat-ms now-ms stall-ms nil stall-ms))
+  ([last-heartbeat-ms now-ms stall-ms started-at-ms startup-grace-ms]
+   (if (and started-at-ms (nil? last-heartbeat-ms)
+            (< (- now-ms started-at-ms) startup-grace-ms))
+     false
+     (boolean (or (nil? last-heartbeat-ms)
+                  (>= (- now-ms last-heartbeat-ms) stall-ms))))))
 
 ;; One process's whole check-and-react, pure/adapter-injected: now-ms,
 ;; pid-alive?, spawn!, and kill-pid! (returns a fresh pid) are ALL

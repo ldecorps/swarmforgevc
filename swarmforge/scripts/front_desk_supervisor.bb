@@ -163,6 +163,10 @@
 ;; stuck loop misses it by a wide margin.
 (def stall-ms (env-long "FRONT_DESK_STALL_MS" 90000))
 
+;; How long after spawn a missing poll heartbeat is tolerated while the
+;; bot's first long-poll cycle completes. Default matches stall-ms.
+(def heartbeat-startup-grace-ms (env-long "FRONT_DESK_HEARTBEAT_STARTUP_GRACE_MS" 90000))
+
 ;; BL-403: grace period for graceful process termination (SIGTERM -> SIGKILL).
 ;; Default 2s - time to flush logs/state before SIGKILL. Must be shorter than
 ;; FRONT_DESK_INTERVAL_MS to avoid blocking the supervisor loop.
@@ -310,9 +314,12 @@
                     "node" (str bot-entrypoint) (str "http://127.0.0.1:" bridge-port) project-root))
 
 (def process-specs
-  [{:key :bridge :spawn-pid! (fn [] (.pid (:proc (spawn-bridge!)))) :heartbeat-stale? (constantly false)}
+  [{:key :bridge :spawn-pid! (fn [] (.pid (:proc (spawn-bridge!)))) :heartbeat-stale? (fn [_ _] false)}
    {:key :bot :spawn-pid! (fn [] (.pid (:proc (spawn-bot!))))
-    :heartbeat-stale? (fn [now] (front-desk-supervisor-lib/poll-heartbeat-stale? (read-poll-heartbeat-ms) now stall-ms))}])
+    :heartbeat-stale? (fn [now entry]
+                        (front-desk-supervisor-lib/poll-heartbeat-stale?
+                          (read-poll-heartbeat-ms) now stall-ms
+                          (:started-at-ms entry) heartbeat-startup-grace-ms))}])
 
 ;; ── persisted state (JSON: {"bridge": {...}, "bot": {...}}) ───────────────
 
@@ -446,7 +453,7 @@
         next-state (into {}
                           (map (fn [spec]
                                  (let [entry (merge (front-desk-supervisor-lib/default-entry) (get prior (:key spec)))
-                                       heartbeat-stale? ((:heartbeat-stale? spec) now)
+                                       heartbeat-stale? ((:heartbeat-stale? spec) now entry)
                                        {:keys [entry event]} (front-desk-supervisor-lib/check-one!
                                                                entry now pid-alive? (:spawn-pid! spec) restart-config giveup-config heartbeat-stale? kill-pid!)
                                        entry (stamp-build-sha entry event)]
