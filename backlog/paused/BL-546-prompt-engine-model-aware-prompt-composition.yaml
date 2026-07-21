@@ -1,0 +1,156 @@
+id: BL-546
+title: "PromptEngine — model-aware prompt composition engine (single authority for all swarm prompts)"
+milestone: M5
+type: feature
+status: todo
+epic: swarm-intelligence-layer
+human_approval: pending
+severity: medium
+priority: 10
+direction: human-requested
+depends_on: []
+assigned_to: specifier
+source: |
+  Human intake 2026-07-21 via Cursor chat — "Introduce PromptEngine: Model-Aware
+  Prompt Composition Engine". Part of the Swarm Intelligence Layer epic (BL-545).
+
+description: |
+  Specifier drains this intake into paused/ with a proper APS feature + notes.
+  Implementation follows the slices below (Slice 1 before Slice 2).
+
+  ## Problem
+
+  Prompt construction is distributed across `agent_runtime_lib.bb` (bootstrap-text,
+  stable-prefix, constitution inlining per BL-519), `swarmforge.sh`
+  (`write_agent_instruction_file`, `write_role_launch_script`), pack overlays,
+  role prompts, and onboarding tools. As SwarmForge adds providers, each model
+  needs different prompting strategies while still adhering to the Constitution
+  and workflow. There is no single module agents or launchers call; no fragment
+  reuse contract; no adapter boundary for model-specific wording.
+
+  ## Concept — PromptEngine
+
+  Introduce **PromptEngine** as the single authority for generating every prompt
+  used by SwarmForge. No swarm agent or launch script constructs prompts directly.
+
+  PromptEngine shall:
+    - Generate all system prompts.
+    - Assemble prompts from reusable fragments.
+    - Apply model-specific adapters.
+    - Compose role constitutions.
+    - Inject project context.
+    - Inject task context.
+    - Inject tool instructions.
+    - Support prompt versioning.
+    - Cache reusable prompt fragments.
+    - Validate generated prompts.
+    - Expose prompt inspection for debugging.
+    - Produce deterministic prompts when requested.
+
+  ## Architecture goals
+
+    - Separate prompt composition from agent launching.
+    - Support any LLM provider.
+    - Minimise duplicated prompt text.
+    - Allow prompt fragments to evolve independently.
+    - Support future prompt optimisation.
+    - Allow experimentation without impacting production.
+
+  ## Non-functional requirements
+
+    Modular, testable, provider-independent, easily extensible, low overhead,
+    observable, backwards compatible with BL-519 stable-prefix caching.
+
+  Cross-links (reuse, do not reinvent):
+    - BL-519 inline constitution + stable-prefix cache contract
+    - BL-206 provider capability model (`provider-capabilities` in agent_runtime_lib.bb)
+    - BL-269 onboarding target prompts (`extension/src/onboarding/promptProposal.ts`)
+    - `cache_warm_lib.bb` stable-prefix content hash
+    - `swarmforge.sh` `write_agent_instruction_file` / `--append-system-prompt-file`
+
+  ## Slice 1 — extract and centralise (MUST ship first)
+
+  Extract today's prompt assembly from `agent_runtime_lib.bb` into a dedicated
+  PromptEngine module boundary. All existing launch paths (`swarmforge.sh`,
+  `rotate_to_role.bb`, `agent_runtime_cli.bb`) delegate to PromptEngine instead
+  of inlining composition logic.
+
+  Observable:
+    1. `compose(role, context) → { systemPrompt, stablePrefix, metadata }` API
+       where `context` includes at least: agent/provider, model id, pack overlay,
+       two-pack flag, overlay prompt path, and optional task injection.
+    2. Generated `.swarmforge/prompts/<role>.md` artifacts are produced ONLY via
+       PromptEngine — no parallel string assembly in launch scripts.
+    3. BL-519 contract preserved: constitution + PIPELINE inlined, stable content
+       ordered first, byte-identical stable prefix across roles, cache-warm hash
+       tracks stable-prefix changes.
+    4. Launch scripts contain zero prompt text literals beyond calling PromptEngine.
+    5. Deterministic mode (`:deterministic? true`) yields byte-stable output for
+       the same inputs (no timestamps/session ids in stable chunk).
+
+  Non-goals for Slice 1: model-specific adapters beyond today's generic/aider split;
+  fragment versioning UI; production A/B experimentation harness.
+
+  ## Slice 2 — model adapters and fragment catalogue
+
+  Introduce a fragment registry and per-model adapter plugins. Adapters adjust
+  wording, tool-instruction shape, and context ordering without forking the
+  constitution. Model Steward (BL-547) owns adapter metadata; PromptEngine
+  loads adapters by model/provider key.
+
+  Observable:
+    1. Fragments are addressable units (constitution, pipeline, role, pack-overlay,
+       tool-instructions) composed by reference, not copy-paste.
+    2. Adapter selection is keyed off model/provider, not scattered case branches.
+    3. Adding a new adapter does not edit core compose logic (BL-206 discipline).
+    4. Fragment cache keyed by content hash; cache hit skips re-read of unchanged
+       fragment files.
+
+  ## Slice 3 — versioning, validation, and inspection
+
+  Prompt versioning, schema validation, and operator/debug inspection surface.
+
+  Observable:
+    1. Each composed prompt carries a version stamp and fragment hash manifest.
+    2. Validation rejects empty stable chunks, volatile-before-stable ordering,
+       and missing required fragments for a role.
+    3. CLI `prompt-engine inspect <role>` dumps composed prompt + manifest for
+       operator debugging (no secrets).
+    4. Experimental prompt sets can be selected by env flag without changing
+       production defaults.
+
+  ## Specifier pins
+
+  1. Module boundary: `swarmforge/scripts/prompt_engine_lib.bb` (+ CLI) as primary;
+     optional TypeScript mirror in `extension/src/swarm/promptEngine.ts` for UI
+     preview only — must not duplicate composition logic.
+  2. `compose` request/response schema and where artifacts land
+     (`.swarmforge/prompts/<role>.md`, stable-prefix hash for `cache_warm_lib.bb`).
+  3. Relationship to onboarding-generated `project.prompt` / `engineering.prompt`
+     (target-repo fragments, not runtime system-prompt assembly).
+  4. Migration path: `agent_runtime_lib.bb` delegates to PromptEngine; existing
+     `agent_runtime_cli.bb` commands remain as thin wrappers until callers migrate.
+  5. BDD: see `specs/features/BL-546-prompt-engine-model-aware-prompt-composition.feature`.
+
+acceptance: |
+  See specs/features/BL-546-prompt-engine-model-aware-prompt-composition.feature
+  for executable acceptance scenarios (Slice 1–2 now; Slice 3 tagged @slice-3).
+  Coder implements Slice 1 with tests (compose API + launch delegation + BL-519
+  regression). Slice 2 adds fragment registry + adapters with tests. Slice 3
+  adds versioning/validation/inspect CLI. Documenter adds reference: PromptEngine
+  API, fragment catalogue, adapter authoring. QA verifies BL-519 scenarios remain
+  green through PromptEngine delegation and that no launch script embeds prompt
+  literals post-migration.
+
+out_of_scope: |
+  - Replacing onboarding survey → target prompt generation (BL-269 stays separate).
+  - Model selection / assignment (BL-525 ModelFactory).
+  - Model benchmarking or certification (BL-547 Model Steward).
+  - Live Anthropic cache-read telemetry (remains QA end-to-end per BL-519).
+
+operator_notes_20260721: |
+  Today prompt assembly lives in agent_runtime_lib.bb + swarmforge.sh. Any new
+  provider-specific wording added to launch scripts should STOP — file against
+  BL-546 Slice 2 adapter work instead.
+
+mutation_cost: high

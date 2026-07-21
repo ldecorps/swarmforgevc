@@ -1,0 +1,159 @@
+id: BL-547
+title: "Model Steward — infrastructure agent for model lifecycle, certification, and capability knowledge"
+milestone: M5
+type: feature
+status: todo
+epic: swarm-intelligence-layer
+human_approval: pending
+severity: medium
+priority: 11
+direction: human-requested
+depends_on: [BL-546]
+assigned_to: specifier
+source: |
+  Human intake 2026-07-21 via Cursor chat — "Introduce Model Steward Infrastructure
+  Agent". Part of the Swarm Intelligence Layer epic (BL-545).
+
+description: |
+  Specifier drains this intake into paused/ with a proper APS feature + notes.
+  Implementation follows the slices below (Slice 1 before Slice 2).
+
+  ## Problem
+
+  SwarmForge supports an increasing number of LLM providers. Knowledge about each
+  model — reasoning behaviour, tool usage, protocol compliance, latency, cost,
+  context size, prompt sensitivity, coding strengths — is scattered across pack
+  configs, recruiter scorecards, bake-off artifacts, and operator memory. There
+  is no permanent infrastructure role or registry that owns model integration,
+  and no certification gate before a model enters production routing.
+
+  ## Concept — Model Steward
+
+  Introduce a permanent **infrastructure swarm role** named Model Steward. The
+  Model Steward owns the complete lifecycle of model integration into SwarmForge.
+  Rather than building application features, it continuously improves the swarm's
+  understanding and utilisation of language models.
+
+  Responsibilities:
+    - Model onboarding: evaluate, integrate providers, create PromptEngine adapters,
+      maintain model metadata.
+    - Benchmarking: coding, architecture, QA, documentation, protocol compliance,
+      handoff reliability, autonomy, latency, cost, context handling, tool usage.
+    - Role recommendation: capability matrix per swarm role (Architect, Coder,
+      Cleaner, QA, Hardener, Documenter, Specifier, future roles).
+    - Certification: only certify models meeting SwarmForge quality standards;
+      non-certified models must not be recommended for production.
+    - Continuous improvement: monitor provider changes, regressions, benchmark
+      evolution, prompt effectiveness, protocol failures; improve PromptEngine
+      adapters accordingly.
+
+  Deliverables the Model Steward maintains:
+    - Model Registry
+    - Capability Registry
+    - Prompt Adapter catalogue
+    - Benchmark suite
+    - Certification reports
+    - Compatibility documentation
+    - Role recommendation matrix
+
+  ## Relationships
+
+    - PromptEngine (BL-546) produces prompts; Model Steward improves PromptEngine
+      by authoring adapters and supplying model metadata.
+    - ModelFactory (BL-525) uses Model Steward knowledge to select models; must
+      refuse non-certified models for production assignment unless explicit
+      operator override.
+    - Recruiter (BL-233, done) discovers and qualifies candidates; Model Steward
+      certifies and publishes the authoritative registry — recruiter recommends,
+      steward certifies, factory assigns.
+
+  Cross-links (reuse, do not reinvent):
+    - BL-233 recruiter discover/qualify/rank/recommend
+    - BL-231 / BL-386 battery discrimination
+    - `extension/src/tools/bakeoff-run.ts` benchmarking harness
+    - `extension/src/benchmark/providerCapability.ts` autonomy checks
+    - BL-206 provider capability lifecycle
+    - BL-546 PromptEngine adapter plugin boundary
+
+  ## Slice 1 — registries and role matrix (MUST ship first)
+
+  File-based registries under `.swarmforge/model-steward/` (gitignored runtime
+  state) with a committed schema and seed examples in `swarmforge/model-steward/`.
+  No autonomous steward agent pane required for Slice 1 — deliver the data model,
+  CLI tools, and role prompt stub; the steward role pane ships in Slice 2.
+
+  Observable:
+    1. Model Registry: every supported model has metadata (provider, model id,
+       context window, cost class, status: candidate | certified | deprecated).
+    2. Capability Registry: per-model scores/flags for the benchmark dimensions
+       listed in the intake (at minimum: coding, protocol compliance, tool usage,
+       autonomy, cost, latency).
+    3. Role Recommendation Matrix: for each swarm role, ranked certified models
+       with evidence pointers (recruiter scorecard id, bake-off run id).
+    4. Prompt Adapter catalogue: maps (provider, model) → PromptEngine adapter id;
+       uncertified models may have candidate adapters but not production default.
+    5. CLI `model-steward status` prints registry summary; `model-steward certify
+       <model>` records certification with report artifact path.
+    6. ModelFactory (BL-525) can read the role matrix and certification status
+       as an input to `assign()` — cross-ticket contract only in Slice 1.
+
+  Non-goals for Slice 1: autonomous steward agent loop; automated provider
+  monitoring; hot certification on every provider API change.
+
+  ## Slice 2 — benchmark suite integration
+
+  Wire Model Steward onboarding to recruiter qualify + bakeoff-run outputs so
+  certification is evidence-based, not manual YAML editing.
+
+  Observable:
+    1. `model-steward evaluate <model> --role <role>` runs or ingests battery +
+       bake-off results and updates capability registry entries.
+    2. Certification report artifact includes benchmark timestamps, pass/fail
+       gates, and regression diff vs prior certification.
+    3. Decertification when a model regresses below floor on a previously passed
+       gate (manual or scripted trigger).
+
+  ## Slice 3 — steward role and continuous improvement loop
+
+  Provision Model Steward as an infrastructure role (like coordinator/operator)
+  with constitution, mailbox, and standing tasks: monitor provider changelogs,
+  re-run benchmarks on schedule, propose adapter updates to PromptEngine.
+
+  Observable:
+    1. `swarmforge/roles/model-steward.prompt` exists; coordinator can assign
+       steward tasks (onboard model X, re-certify Y, investigate regression Z).
+    2. Steward produces handoff parcels with certification updates, never mutates
+       production routing directly (ModelFactory applies).
+    3. Compatibility documentation auto-generated from registry for operators.
+
+  ## Specifier pins
+
+  1. Registry schema (JSON or EDN) and committed seed under `swarmforge/model-steward/`.
+  2. Runtime artifact paths under `.swarmforge/model-steward/`.
+  3. CLI boundary: Babashka lib + CLI; extension mirror read-only for UI.
+  4. Certification gate contract for ModelFactory `assign()` — production mode
+     excludes non-certified unless `context.override-uncertified`.
+  5. BDD: see `specs/features/BL-547-model-steward-infrastructure-agent.feature`.
+
+acceptance: |
+  See specs/features/BL-547-model-steward-infrastructure-agent.feature for
+  executable acceptance scenarios (Slice 1–2 now; Slice 3 tagged @slice-3).
+  Coder implements Slice 1 with tests (registry CRUD, role matrix, certification
+  status, adapter catalogue schema). Slice 2 wires recruiter/bakeoff ingestion.
+  Slice 3 adds steward role prompt + coordinator task patterns. Documenter adds
+  runbook: onboarding a new model, certification workflow, reading the role matrix.
+  QA verifies ModelFactory can consume certification status and that non-certified
+  models are excluded from production recommendations.
+
+out_of_scope: |
+  - Replacing recruiter discovery/qualify (BL-233).
+  - Auto-purchasing credits or raising provider caps.
+  - ModelFactory apply paths (BL-525).
+  - Prompt composition logic (BL-546) — steward authors adapter *metadata* only.
+
+operator_notes_20260721: |
+  Until BL-547 ships, model knowledge remains in pack configs and recruiter
+  reports. Do not add new hard-coded model assumptions to launch scripts — file
+  against the steward registry instead.
+
+mutation_cost: high

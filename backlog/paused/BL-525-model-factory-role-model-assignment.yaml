@@ -3,12 +3,12 @@ title: "ModelFactory — assign agent models to roles (recruiter-backed; cheap v
 milestone: M5
 type: feature
 status: todo
-epic: model-routing
+epic: swarm-intelligence-layer
 human_approval: pending
 severity: medium
 priority: 12
 direction: human-requested
-depends_on: []
+depends_on: [BL-547]
 assigned_to: specifier
 source: |
   human (ldecorps) via Cursor chat 2026-07-18 — first as daily free-cap
@@ -71,6 +71,9 @@ description: |
     launch scripts.
 
   Cross-links (reuse, do not reinvent):
+    - BL-545 Swarm Intelligence Layer epic (umbrella)
+    - BL-546 PromptEngine (model-aware prompts for assigned models)
+    - BL-547 Model Steward (certification, role matrix, adapter catalogue)
     - BL-233 recruiter (recommend/leaderboard/qualify)
     - BL-231 / BL-386 battery discrimination
     - BL-235 per-tile switch/respawn (Slice 2 mechanism)
