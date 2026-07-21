@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 #
-# start-swarm.sh — reliably (re)start the SwarmForge swarm headless.
+# start-swarm.sh — reliably (re)start the full SwarmForge stack headless.
 #
 # The bare `./swarm` uses a terminal backend (Terminal.app / ghostty) that can
 # fail when launched outside an interactive shell (e.g. from the VS Code
 # extension host, which also may not have tmux/bb/claude on its PATH). This
 # wrapper forces headless mode, makes sure common tool paths are present,
-# cleanly stops any swarm already on the socket, then starts and waits until
-# every configured role session is up.
+# cleanly stops any swarm already on the socket, launches agents, then brings
+# up operator / Telegram front desk / babysitter / tunnels and runs ensure.
 #
 # Usage:
 #   ./start-swarm.sh [options] [target-path]   # defaults to this repo's root
@@ -20,6 +20,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+START_ANCILLARY="$SCRIPT_DIR/swarmforge/scripts/start_ancillary_services.sh"
 
 CLEAN=0
 TARGET=""
@@ -31,7 +32,7 @@ while [[ $# -gt 0 ]]; do
       ;;
     -h|--help)
       cat <<'EOF'
-start-swarm.sh — reliably (re)start the SwarmForge swarm headless.
+start-swarm.sh — reliably (re)start the full SwarmForge stack headless.
 
 Usage:
   ./start-swarm.sh [options] [target-path]   # defaults to this repo's root
@@ -39,6 +40,9 @@ Usage:
 Options:
   -clean, --clean   Hard-reset every role worktree onto main (git reset
                     --hard + git clean -fd) before launching.
+
+Provider packs: use ./start-swarm-qwen.sh, ./start-swarm-gpt.sh, etc.
+Skip ancillaries: SWARMFORGE_SKIP_OPERATOR=1 SWARMFORGE_SKIP_BABYSITTER=1 ...
 EOF
       exit 0
       ;;
@@ -61,10 +65,11 @@ done
 TARGET="${TARGET:-$SCRIPT_DIR}"
 TARGET="$(cd "$TARGET" && pwd)"
 
-# GUI-launched processes (VS Code) often miss Homebrew paths where tmux/bb/claude live.
-export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
+# shellcheck disable=SC1090
+source "$HOME/.zshenv" 2>/dev/null || true
+export PATH="$HOME/.npm-global/bin:$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
 
-for tool in tmux; do
+for tool in tmux bb; do
   if ! command -v "$tool" >/dev/null 2>&1; then
     echo "ERROR: required tool '$tool' not found on PATH ($PATH)" >&2
     exit 1
@@ -75,9 +80,6 @@ SOCKET_FILE="$TARGET/.swarmforge/tmux-socket"
 DAEMON_PID_FILE="$TARGET/.swarmforge/daemon/handoffd.pid"
 
 read_socket() {
-  # Prints the tmux socket path from $SOCKET_FILE and returns 0 if it exists
-  # and is non-empty; returns 1 (nothing printed) otherwise. Shared by every
-  # caller that needs to resolve the current socket.
   [[ -f "$SOCKET_FILE" ]] || return 1
   local s
   s="$(cat "$SOCKET_FILE" 2>/dev/null || true)"
@@ -112,8 +114,6 @@ align_worktrees_to_main() {
 }
 
 resolve_launch_pack() {
-  # Prefer explicit env, then last-launched pack from swarm-identity, then
-  # perplexity-mono-router when present (current primary pack).
   if [[ -n "${SWARMFORGE_PACK:-}" ]]; then
     printf '%s\n' "$SWARMFORGE_PACK"
     return
@@ -151,9 +151,6 @@ resolve_launch_conf() {
 }
 
 expected_session_count() {
-  # Mono-router / sequential rotation: resident + coordinator only (2).
-  # Otherwise: one session per window line (+ coordinator is auto-added, but
-  # window lines already exclude coordinator in packs).
   local conf
   conf="$(resolve_launch_conf)"
   if [[ -f "$conf" ]] && grep -qE '^[[:space:]]*config[[:space:]]+rotation[[:space:]]+(router|sequential)[[:space:]]*$' "$conf"; then
@@ -161,7 +158,6 @@ expected_session_count() {
     return
   fi
   if [[ -f "$conf" ]]; then
-    # window lines + auto-provisioned coordinator
     local windows
     windows="$(grep -cE '^[[:space:]]*window[[:space:]]' "$conf" 2>/dev/null || echo 0)"
     echo $((windows + 1))
@@ -177,7 +173,7 @@ wait_for_ready() {
     if sock="$(read_socket)"; then
       n="$(tmux -S "$sock" list-sessions 2>/dev/null | grep -c . || true)"
       if [[ "${n:-0}" -ge "$want" && "$want" -gt 0 ]]; then
-        echo "SwarmForge is up: $n session(s) on $sock"
+        echo "SwarmForge agents are up: $n session(s) on $sock"
         tmux -S "$sock" list-sessions 2>/dev/null || true
         return 0
       fi
@@ -189,17 +185,6 @@ wait_for_ready() {
 }
 
 check_detached() {
-  # BL-372: ASSERT the launch job we just backgrounded actually detached
-  # from us (this script) - never a silent pass. Checked against OUR OWN
-  # launch job's pid, right after backgrounding it (LAUNCH_PID, still
-  # captured below), not against the eventual tmux server: an architect
-  # review (2026-07-14) reproduced, twice, that a real tmux server's own
-  # process always self-daemonizes (reparented, SIGHUP already ignored)
-  # regardless of whether the launcher used nohup - checking the SERVER
-  # can never discriminate a working fix from a broken one. Checking OUR
-  # OWN launch job's SIGHUP disposition (nohup's own direct, immediate
-  # effect) does. Decision logic lives in swarm_detach_lib.bb (pure,
-  # unit-tested); this is I/O wiring only.
   local pid="$1"
   bb "$SCRIPT_DIR/swarmforge/scripts/check_swarm_detached.bb" 1 "$pid"
 }
@@ -215,13 +200,7 @@ PACK="$(resolve_launch_pack)"
 WANT="$(expected_session_count)"
 echo "Launching headless swarm (pack=${PACK:-default}, expecting $WANT sessions) ..."
 mkdir -p "$TARGET/.swarmforge"
-# BL-372: detach the launch from this wrapper's own session/process group -
-# the same portable nohup ... & idiom start_handoff_daemon.sh already uses
-# for handoffd - so a swarm launched from a short-lived caller (a
-# disposable Operator window) survives however that caller goes away
-# (exiting, its window being killed, a hangup signal), instead of dying
-# with it. wait_for_ready below is unaffected: it polls the socket/session
-# state directly, never the launch subprocess's own exit.
+
 LAUNCH_ARGS=("$TARGET")
 if [[ -n "$PACK" ]]; then
   LAUNCH_ARGS+=(--pack "$PACK")
@@ -230,12 +209,6 @@ nohup env SWARMFORGE_TERMINAL=none "$TARGET/swarm" "${LAUNCH_ARGS[@]}" >> "$TARG
 LAUNCH_PID=$!
 disown
 
-# Checked right away, not after wait_for_ready: nohup's effect (SIGHUP set
-# to ignored) takes hold before the wrapped command even execs, so there is
-# no race to wait out - and the launch job may well have already exited
-# (normally - it just finishes provisioning and returns) by the time
-# wait_for_ready succeeds, at which point its own state is no longer
-# checkable at all.
 if ! check_detached "$LAUNCH_PID"; then
   echo "ERROR: swarm launch is still owned by the caller - it will die when this shell exits" >&2
   exit 1
@@ -245,11 +218,14 @@ if ! wait_for_ready "$WANT"; then
   exit 1
 fi
 
-# BL-522: cloudflare quick tunnel for the Resident Spy Mini App; posts the
-# live URL into the standing Telegram topic when it changes.
-if [[ -f "$SCRIPT_DIR/swarmforge/scripts/launch_resident_spy_tunnel.sh" ]]; then
-  # shellcheck disable=SC1090
-  source "$HOME/.zshenv" 2>/dev/null || true
-  bash "$SCRIPT_DIR/swarmforge/scripts/launch_resident_spy_tunnel.sh" "$TARGET" || \
-    echo "WARN: resident spy tunnel launch/notify failed (see $TARGET/.swarmforge/operator/resident-spy-cloudflared.log)" >&2
+echo "Starting ancillaries (operator, front desk, babysitter, tunnels) ..."
+bash "$START_ANCILLARY" "$TARGET"
+
+echo "Running ./swarm ensure ..."
+if ! "$TARGET/swarm" ensure "$TARGET"; then
+  echo "WARN: ./swarm ensure reported failures — check output above." >&2
 fi
+
+echo ""
+echo "Full stack launch complete. Status:"
+"$TARGET/swarm" status "$TARGET" 2>/dev/null || true

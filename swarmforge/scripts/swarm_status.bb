@@ -212,26 +212,50 @@
     (try (json/parse-string (slurp (str path)) true)
          (catch Exception _ nil))))
 
+(defn front-desk-child-alive?
+  "A bridge/bot row is UP only when status.json says running AND the pid is
+   still alive — stale JSON after stop-swarm must not read as healthy."
+  [entry]
+  (and entry
+       (= "running" (str (:status entry)))
+       (pid-alive? (:pid entry))))
+
 (defn gather-telegram [now]
   (let [status-path (fs/path state-dir "operator" "front-desk-supervisor.status.json")
         st (read-json status-path)
         bridge (:bridge st)
         bot (:bot st)
         supervisor-pid-file (fs/path state-dir "operator" "front-desk-supervisor.pid")
-        sup (daemon-from-pid "front-desk-supervisor" supervisor-pid-file)]
+        sup (daemon-from-pid "front-desk-supervisor" supervisor-pid-file)
+        bridge-alive? (front-desk-child-alive? bridge)
+        bot-alive? (front-desk-child-alive? bot)]
     (cond-> [sup]
       bridge
       (conj (swarm-status-lib/daemon-status-row
              {:name "telegram-bridge"
-              :alive? (= "running" (str (:status bridge)))
-              :uptime (swarm-status-lib/uptime-from-started-ms now (:started-at-ms bridge))
-              :detail (str "pid=" (:pid bridge) " status=" (:status bridge))}))
+              :alive? bridge-alive?
+              :uptime (when bridge-alive?
+                        (swarm-status-lib/uptime-from-started-ms now (:started-at-ms bridge)))
+              :detail (str/join " "
+                                (remove str/blank?
+                                          [(str "pid=" (:pid bridge))
+                                           (str "status=" (:status bridge))
+                                           (when (and (= "running" (str (:status bridge)))
+                                                      (not bridge-alive?))
+                                             "stale-pid")]))}))
       bot
       (conj (swarm-status-lib/daemon-status-row
              {:name "front-desk-bot"
-              :alive? (= "running" (str (:status bot)))
-              :uptime (swarm-status-lib/uptime-from-started-ms now (:started-at-ms bot))
-              :detail (str "pid=" (:pid bot) " status=" (:status bot))})))))
+              :alive? bot-alive?
+              :uptime (when bot-alive?
+                        (swarm-status-lib/uptime-from-started-ms now (:started-at-ms bot)))
+              :detail (str/join " "
+                                (remove str/blank?
+                                          [(str "pid=" (:pid bot))
+                                           (str "status=" (:status bot))
+                                           (when (and (= "running" (str (:status bot)))
+                                                      (not bot-alive?))
+                                             "stale-pid")]))})))))
 
 (defn list-sent-handoffs []
   (let [root (fs/path state-dir "handoffs")]

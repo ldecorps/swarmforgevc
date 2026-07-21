@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 #
-# stop-swarm.sh — stop the SwarmForge swarm for this repo (or a target path).
+# stop-swarm.sh — stop the full SwarmForge stack for this repo.
 #
-# Thin root shortcut for swarmforge/scripts/kill_all_swarm.sh, paired with
-# ./start-swarm.sh. Idempotent — safe when nothing is running.
+# Stops ancillaries first (babysitter, operator, Telegram front desk, tunnels),
+# then the swarm agents + handoffd via kill_all_swarm.sh. Idempotent.
 #
 # Usage:
 #   ./stop-swarm.sh [options] [target-path]   # defaults to this repo's root
 #
-# Options (forwarded to kill_all_swarm.sh):
+# Options (forwarded to kill_all_swarm.sh after ancillaries stop):
 #   --sweep-inbox
 #   --reset-worktrees
 #   --full                 # inbox sweep + worktree reset
@@ -17,6 +17,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 KILL_ALL="$SCRIPT_DIR/swarmforge/scripts/kill_all_swarm.sh"
+STOP_ANCILLARY="$SCRIPT_DIR/swarmforge/scripts/stop_ancillary_services.sh"
 
 OPTS=()
 TARGET=""
@@ -28,15 +29,20 @@ while [[ $# -gt 0 ]]; do
       ;;
     -h|--help)
       cat <<'EOF'
-stop-swarm.sh — stop the SwarmForge swarm for this repo (or a target path).
+stop-swarm.sh — stop the full SwarmForge stack for this repo.
+
+Stops: babysitter, operator runtime, Telegram front desk, remote tunnels,
+       then swarm agent sessions and handoffd.
 
 Usage:
   ./stop-swarm.sh [options] [target-path]   # defaults to this repo's root
 
-Options (forwarded to kill_all_swarm.sh):
+Options (swarm agents / handoffd only — after ancillaries):
   --sweep-inbox
   --reset-worktrees
   --full                 # inbox sweep + worktree reset
+
+For agents-only stop (tests / surgical): ./swarm-kill
 EOF
       exit 0
       ;;
@@ -59,6 +65,7 @@ done
 TARGET="${TARGET:-$SCRIPT_DIR}"
 TARGET="$(cd "$TARGET" && pwd)"
 
+bash "$STOP_ANCILLARY" "$TARGET"
 if ((${#OPTS[@]})); then
   exec bash "$KILL_ALL" "${OPTS[@]}" "$TARGET"
 else
