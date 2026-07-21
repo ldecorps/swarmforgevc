@@ -18,35 +18,43 @@
     (handoff-lib/respawn-self! (handoff-lib/current-role))))
 
 (defn -main []
-  (let [new-dir (handoff-lib/my-mailbox-dir :new)
+  (let [new-dir        (handoff-lib/my-mailbox-dir :new)
         in-process-dir (handoff-lib/my-mailbox-dir :in_process)
-        completed-dir (handoff-lib/my-mailbox-dir :completed)
-        abandoned-dir (handoff-lib/my-mailbox-dir :abandoned)]
+        completed-dir  (handoff-lib/my-mailbox-dir :completed)
+        abandoned-dir  (handoff-lib/my-mailbox-dir :abandoned)]
     (doseq [dir [new-dir in-process-dir completed-dir abandoned-dir]]
       (fs/create-dirs dir))
     (let [in-process-batches (handoff-lib/batch-dirs in-process-dir)
-          in-process-files (handoff-lib/my-handoff-files in-process-dir)]
+          in-process-files   (handoff-lib/my-handoff-files in-process-dir)]
+      ;; If any batch work is in process, this helper must not run; batch mode
+      ;; has its own ready/done helpers.
       (when (seq in-process-batches)
         (handoff-lib/fail! 2
-               "TASK_IN_PROCESS_IS_BATCH: use ready_for_next.sh or done_with_current.sh."
-               (str/join "\n" (map #(str "- " %) in-process-batches))))
+                           "TASK_IN_PROCESS_IS_BATCH: use ready_for_next.sh or done_with_current.sh."
+                           (str/join "\n" (map #(str "- " %) in-process-batches))))
+      ;; A role must never have more than one in-process task; this is a hard
+      ;; invariant for mailbox state.
       (when (> (count in-process-files) 1)
         (handoff-lib/fail! 2
-               "AMBIGUOUS_TASK_STATE: multiple tasks are already in process."
-               (str/join "\n" (map #(str "- " %) in-process-files))))
+                           "AMBIGUOUS_TASK_STATE: multiple tasks are already in process."
+                           (str/join "\n" (map #(str "- " %) in-process-files))))
       (if (= 1 (count in-process-files))
+        ;; When there is exactly one in-process task, print it and do not
+        ;; dequeue a new one. This is the behavior that produces the
+        ;; "STOP. You already have in_process handoff work." message seen by
+        ;; callers of ready_for_next.sh.
         (handoff-lib/print-task (first in-process-files))
         (if (handoff-lib/draining?)
           (println "DRAINING")
-          (let [new-files (handoff-lib/my-handoff-files new-dir)
-                completed-basenames (handoff-lib/terminal-basenames completed-dir)
-                abandoned-basenames (handoff-lib/terminal-basenames abandoned-dir)
+          (let [new-files            (handoff-lib/my-handoff-files new-dir)
+                completed-basenames  (handoff-lib/terminal-basenames completed-dir)
+                abandoned-basenames  (handoff-lib/terminal-basenames abandoned-dir)
                 ;; BL-365: quarantines any corrupt candidate in place (as
                 ;; *.handoff.dead, the suffix the existing dead-letter sweep
                 ;; already scans and alerts a human on) so it can never be
                 ;; promoted into in_process/ as a task; falls through to the
                 ;; next genuinely-dequeueable file.
-                dequeueable (handoff-lib/resolve-dequeueable-candidates new-files completed-basenames abandoned-basenames)]
+                dequeueable          (handoff-lib/resolve-dequeueable-candidates new-files completed-basenames abandoned-basenames)]
             (if (empty? dequeueable)
               (do
                 (println "NO_TASK")

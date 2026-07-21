@@ -9,6 +9,11 @@
 ;; Config tunables via env (all optional, sensible test defaults):
 ;;   CHASE_TIMEOUT_SECONDS, MAX_CHASES, STUCK_TIMEOUT_SECONDS,
 ;;   RESPAWN_COOLDOWN_SECONDS
+;;
+;; BL-528 tunables:
+;;   CLAIM_IDLE_TIMEOUT_MS    — default 300000 (5 min)
+;;   CLAIM_HEAD_COMMIT        — fake HEAD commit for :get-role-head-commit
+;;                              (omit to disable BL-528 check, as before)
 
 (ns chase-sweep-test-runner
   (:require [babashka.fs :as fs]
@@ -40,7 +45,9 @@
    :chaseTimeoutSeconds (env-num "CHASE_TIMEOUT_SECONDS" 30)
    :maxChases (long (env-num "MAX_CHASES" 3))
    :stuckInProcessTimeoutSeconds (env-num "STUCK_TIMEOUT_SECONDS" 60)
-   :respawnCooldownSeconds (env-num "RESPAWN_COOLDOWN_SECONDS" 300)})
+   :respawnCooldownSeconds (env-num "RESPAWN_COOLDOWN_SECONDS" 300)
+   ;; BL-528: claim-progress config (inherit claim_progress_lib.bb defaults unless overridden)
+   :claim-idle-timeout-ms (long (env-num "CLAIM_IDLE_TIMEOUT_MS" (* 5 60 1000)))})
 
 (defn log-call! [& parts]
   (spit calls-log (str (str/join " " parts) "\n") :append true))
@@ -66,7 +73,18 @@
    :get-rate-limit-cooldown-woken-marker
    (fn [role] (chase-sweep-lib/read-rate-limit-cooldown-woken-marker rate-limit-state-dir role))
    :mark-rate-limit-cooldown-woken!
-   (fn [role until-ms] (chase-sweep-lib/mark-rate-limit-cooldown-woken! rate-limit-state-dir role until-ms))})
+   (fn [role until-ms] (chase-sweep-lib/mark-rate-limit-cooldown-woken! rate-limit-state-dir role until-ms))
+   ;; BL-528: claim-progress adapters. CLAIM_HEAD_COMMIT env var must be set
+   ;; to enable the check; absent = disabled (backward compat for old tests).
+   :get-role-head-commit
+   (when-let [h (System/getenv "CLAIM_HEAD_COMMIT")]
+     (fn [_role] h))
+   :on-claim-idle-bounce!
+   (fn [role _fp progress]
+     (log-call! "claim-bounce" role (str (:reclaims progress))))
+   :on-claim-idle-halt!
+   (fn [role _fp progress]
+     (log-call! "claim-halt" role (str (:reclaims progress))))})
 
 (chase-sweep-lib/run-sweep!
  [{:role role :inbox-new-dir inbox-new-dir :in-process-dir in-process-dir
