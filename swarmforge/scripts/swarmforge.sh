@@ -646,7 +646,7 @@ provision_coordinator() {
   elif [[ "$COORDINATOR_AGENT" == "aider" ]]; then
     # Aider coordinator: pack sets coordinator_model (e.g. openai/sonar). OpenAI-compat
     # base URL comes from pane env remap (Cerebras/Perplexity guards), not from flags.
-    extra_cli="--model $COORDINATOR_MODEL --no-gitignore --no-show-model-warnings --no-check-update"
+    extra_cli="--model $COORDINATOR_MODEL --no-gitignore --no-show-model-warnings --no-check-update --no-detect-urls"
   elif [[ "$COORDINATOR_AGENT" == "vibe" ]]; then
     # Vibe coordinator: coordinator_model is the --max-price cap (dollars).
     extra_cli="--max-price ${COORDINATOR_MODEL:-2.00}"
@@ -1213,7 +1213,10 @@ RESUMECHECK
       launch_body="grok${extra_cli:+ $extra_cli} --cwd '$role_worktree' --permission-mode acceptEdits --rules \"\${RESUME_NOTE}\$(cat '$prompt_file')\""
       ;;
     aider)
-      launch_body="aider${extra_cli:+ $extra_cli} --yes-always"
+      # --yes-always auto-confirms aider's "Open URL?" prompts (including
+      # Perplexity/billing links parsed from API exceptions). Never open a
+      # browser from headless swarm panes: noop BROWSER + --no-detect-urls.
+      launch_body=$'export BROWSER="${BROWSER:-/usr/bin/true}"\naider'"${extra_cli:+ $extra_cli}"' --yes-always --no-detect-urls'
       ;;
     vibe)
       # Mistral Vibe (pipx install mistral-vibe): a real CLI coding AGENT with
@@ -1270,11 +1273,11 @@ RESUMECHECK
   else
     perplexity_guard=$'if [[ "${SWARMFORGE_USE_PERPLEXITY:-}" == "1" && -n "${PERPLEXITY_API_KEY:-}" ]]; then\n  export OPENAI_API_KEY="$PERPLEXITY_API_KEY"\n  export OPENAI_API_BASE="${OPENAI_API_BASE:-https://api.perplexity.ai}"\n  export OPENAI_BASE_URL="${OPENAI_BASE_URL:-https://api.perplexity.ai}"\nfi\n'
   fi
-  # Qwen Coding Plan (DashScope intl) — same zshenv-override posture as Cerebras.
-  if [[ "$extra_cli" == *dashscope.aliyuncs.com* ]]; then
-    qwen_guard=$'if [[ -z "${QWEN_API_KEY:-}" && -n "${BAILIAN_CODING_PLAN_API_KEY:-}" ]]; then\n  export QWEN_API_KEY="$BAILIAN_CODING_PLAN_API_KEY"\nfi\nif [[ -n "${QWEN_API_KEY:-}" ]]; then\n  export SWARMFORGE_USE_QWEN=1\n  export OPENAI_API_KEY="$QWEN_API_KEY"\n  export OPENAI_API_BASE=https://coding-intl.dashscope.aliyuncs.com/v1\n  export OPENAI_BASE_URL=https://coding-intl.dashscope.aliyuncs.com/v1\nelse\n  echo "SwarmForge: QWEN_API_KEY required (launch CLI targets coding-intl.dashscope.aliyuncs.com)" >&2\n  exit 1\nfi\n'
+  # Qwen Token Plan (SEA) — same zshenv-override posture as Cerebras.
+  if [[ "$extra_cli" == *token-plan.ap-southeast-1.maas.aliyuncs.com* || "$extra_cli" == *dashscope.aliyuncs.com* ]]; then
+    qwen_guard=$'if [[ -z "${QWEN_API_KEY:-}" && -n "${BAILIAN_CODING_PLAN_API_KEY:-}" ]]; then\n  export QWEN_API_KEY="$BAILIAN_CODING_PLAN_API_KEY"\nfi\nif [[ -n "${QWEN_API_KEY:-}" ]]; then\n  export SWARMFORGE_USE_QWEN=1\n  export OPENAI_API_KEY="$QWEN_API_KEY"\n  export OPENAI_API_BASE=https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1\n  export OPENAI_BASE_URL=https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1\nelse\n  echo "SwarmForge: QWEN_API_KEY required (launch CLI targets token-plan.ap-southeast-1.maas.aliyuncs.com)" >&2\n  exit 1\nfi\n'
   else
-    qwen_guard=$'if [[ -z "${QWEN_API_KEY:-}" && -n "${BAILIAN_CODING_PLAN_API_KEY:-}" ]]; then\n  export QWEN_API_KEY="$BAILIAN_CODING_PLAN_API_KEY"\nfi\nif [[ "${SWARMFORGE_USE_QWEN:-}" == "1" && -n "${QWEN_API_KEY:-}" ]]; then\n  export OPENAI_API_KEY="$QWEN_API_KEY"\n  export OPENAI_API_BASE="${OPENAI_API_BASE:-https://coding-intl.dashscope.aliyuncs.com/v1}"\n  export OPENAI_BASE_URL="${OPENAI_BASE_URL:-https://coding-intl.dashscope.aliyuncs.com/v1}"\nfi\n'
+    qwen_guard=$'if [[ -z "${QWEN_API_KEY:-}" && -n "${BAILIAN_CODING_PLAN_API_KEY:-}" ]]; then\n  export QWEN_API_KEY="$BAILIAN_CODING_PLAN_API_KEY"\nfi\nif [[ "${SWARMFORGE_USE_QWEN:-}" == "1" && -n "${QWEN_API_KEY:-}" ]]; then\n  export OPENAI_API_KEY="$QWEN_API_KEY"\n  export OPENAI_API_BASE="${OPENAI_API_BASE:-https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1}"\n  export OPENAI_BASE_URL="${OPENAI_BASE_URL:-https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1}"\nfi\n'
   fi
   if [[ "$agent" == "claude" ]]; then
     if role_uses_openrouter "$role"; then
@@ -1429,6 +1432,9 @@ launch_role() {
     if [[ "${EXTRA_CLI_ARGS[$index]}" == *perplexity.ai* && -n "${PERPLEXITY_API_KEY:-}" ]]; then
       use_perplexity=1
     fi
+    if [[ "${EXTRA_CLI_ARGS[$index]}" == *token-plan.ap-southeast-1.maas.aliyuncs.com* && -n "${QWEN_API_KEY:-}" ]]; then
+      use_qwen=1
+    fi
     if [[ "${EXTRA_CLI_ARGS[$index]}" == *dashscope.aliyuncs.com* && -n "${QWEN_API_KEY:-}" ]]; then
       use_qwen=1
     fi
@@ -1460,11 +1466,11 @@ launch_role() {
       provider_env_flags+=(-e "OPENAI_BASE_URL=https://api.perplexity.ai")
     fi
     if [[ "$use_qwen" == "1" ]]; then
-      # Qwen Coding Plan (DashScope intl). Same BL-130 / zshenv re-export posture.
+      # Qwen Token Plan (SEA). Same BL-130 / zshenv re-export posture.
       provider_env_flags+=(-e "SWARMFORGE_USE_QWEN=1")
       provider_env_flags+=(-e "OPENAI_API_KEY=${QWEN_API_KEY}")
-      provider_env_flags+=(-e "OPENAI_API_BASE=https://coding-intl.dashscope.aliyuncs.com/v1")
-      provider_env_flags+=(-e "OPENAI_BASE_URL=https://coding-intl.dashscope.aliyuncs.com/v1")
+      provider_env_flags+=(-e "OPENAI_API_BASE=https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1")
+      provider_env_flags+=(-e "OPENAI_BASE_URL=https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1")
     fi
   elif role_uses_openrouter "$role"; then
     # OpenRouter-backed claude role: same ephemeral -e injection - the key

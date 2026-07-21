@@ -45,6 +45,10 @@ test('decidePipelineBoardPinAction: a reposted board id still enforces when last
   assert.equal(decidePipelineBoardPinAction(undefined, 101, 100), 'enforce');
 });
 
+test('decidePipelineBoardPinAction: forceEnforce repins even when getChat and lastPinned both match the board - enforce', () => {
+  assert.equal(decidePipelineBoardPinAction(100, 100, 100, true), 'enforce');
+});
+
 test('shouldUnpinAllBeforePin: false when replacing our own previous board pin on repost', () => {
   assert.equal(shouldUnpinAllBeforePin(100, 101, 100), false);
 });

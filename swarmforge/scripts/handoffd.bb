@@ -1699,9 +1699,31 @@
   (spit (str role-context-clear-marker-file)
         (json/generate-string (assoc (read-role-context-clear-marker) (keyword role-name) entry-id))))
 
+(defn rotation-router-mode?
+  "True when this project is running (or last launched as) rotation router.
+   Same resolution as swarm_ensure.bb: swarm-identity rotation key, else the
+   persisted active pack conf path, else swarmforge/swarmforge.conf."
+  []
+  (let [identity-path (fs/path state-dir "swarm-identity")
+        identity-text (when (fs/exists? identity-path) (slurp (str identity-path)))
+        conf-path (or (get (mono-router-lib/parse-identity-map (or identity-text ""))
+                           "active_backlog_max_depth_conf_path")
+                      (str conf-file))
+        conf-text (when (and conf-path (fs/exists? conf-path))
+                    (slurp conf-path))]
+    (boolean
+     (or (mono-router-lib/rotation-router-from-identity? identity-text)
+         (mono-router-lib/conf-rotation-router? conf-text)))))
+
 (defn role-context-clear-sweep! [roles socket]
-  (if (tmux-inject-disabled?)
+  (cond
+    (tmux-inject-disabled?)
     (log! "role-context-clear-skip-mailbox-only")
+
+    (rotation-router-mode?)
+    (log! "role-context-clear-skip-rotation-router")
+
+    :else
     (doseq [[role-name role-info] roles
             :when (not= role-name "coordinator")]
       (try

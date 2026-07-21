@@ -11,6 +11,11 @@ test('formatModelDisplayName falls back to the raw id for unknown models', () =>
   assert.equal(formatModelDisplayName('some-custom-model'), 'some-custom-model');
 });
 
+test('formatModelDisplayName maps qwen models and strips openai/ prefix for unknown gateway ids', () => {
+  assert.equal(formatModelDisplayName('openai/qwen3.7-plus'), 'Qwen 3.7 Plus');
+  assert.equal(formatModelDisplayName('openai/some-other-model'), 'some-other-model');
+});
+
 test('MODEL_DISPLAY_NAMES covers every priced claude model', () => {
   const { PRICING_TABLE } = require('../out/metrics/pricingTable');
   for (const modelId of Object.keys(PRICING_TABLE)) {

@@ -11,6 +11,7 @@ import { stripAnsi } from '../panel/ansi';
 import {
   RESIDENT_PANE_SPY_DEFAULT_LINES,
   RESIDENT_PANE_SPY_ROLE_SEARCH_LINES,
+  readMonoRouterActiveRole,
   resolveResidentRoleIdentity,
 } from '../concierge/residentPaneSpy';
 import { readRoleModelId } from '../swarm/backendSwitch';
@@ -50,7 +51,12 @@ export function captureResidentPaneLive(targetPath: string): ResidentPaneLiveSna
     }
     const roleSearchCaptured = capturePane(socketPath, target, -RESIDENT_PANE_SPY_ROLE_SEARCH_LINES);
     const roleSearchText = stripAnsi(roleSearchCaptured.stdout ?? paneText);
-    const identity = resolveResidentRoleIdentity(roleSearchText, roleEntry, roles);
+    const identity = resolveResidentRoleIdentity(
+      roleSearchText,
+      roleEntry,
+      roles,
+      readMonoRouterActiveRole(targetPath)
+    );
     const modelId = readRoleModelId(targetPath, identity.modelRole);
     return {
       roleLabel: identity.roleLabel,

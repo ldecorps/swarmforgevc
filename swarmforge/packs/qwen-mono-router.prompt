@@ -1,16 +1,18 @@
-# qwen-mono-router overlay: one resident aider agent on Qwen Coding Plan
+# qwen-mono-router overlay: one resident aider agent on Alibaba Token Plan
 
 Read this when your swarm was launched with the `qwen-mono-router` pack.
-You are always the one resident process (aider via Alibaba DashScope Coding
-Plan OpenAI-compatible API — `QWEN_API_KEY` / mapped `OPENAI_API_KEY`, not
-Claude).
+You are always the one resident process (aider via Alibaba Token Plan
+OpenAI-compatible API — `QWEN_API_KEY` / mapped `OPENAI_API_KEY`, not Claude).
 
 ## Model routing (this pack)
 
 | Role | Qwen model |
 |------|------------|
-| coder / specifier / cleaner / architect / hardender / documenter / QA | `qwen3-coder-plus` |
-| coordinator (separate process) | `qwen3.5-plus` |
+| coder / specifier / cleaner / architect / hardender / documenter / QA | `qwen3.7-max` |
+| coordinator (separate process) | `qwen3.6-flash` |
+
+API host: `https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1`
+
 
 ## Pipeline shape
 

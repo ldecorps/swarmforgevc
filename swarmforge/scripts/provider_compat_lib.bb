@@ -15,7 +15,7 @@
 
 (def perplexity-host-re #"(?i)api\.perplexity\.ai")
 (def cerebras-host-re #"(?i)api\.cerebras\.ai")
-(def qwen-host-re #"(?i)dashscope\.aliyuncs\.com")
+(def qwen-host-re #"(?i)(token-plan\.[a-z0-9-]+\.maas\.aliyuncs\.com|dashscope\.aliyuncs\.com)")
 
 (defn launch-cli-implies-perplexity?
   "True when the role's extra CLI / launch body targets Perplexity's OpenAI-compat host."
@@ -64,6 +64,8 @@
       (= "1" use-qwen)
       (launch-cli-implies-qwen? launch-cli)))
 
+(def qwen-openai-base "https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1")
+
 (defn resolve-openai-compat
   "Returns {:openai-api-key :openai-api-base :openai-base-url :provider :reason}
    for the pane. Prefer Cerebras over Perplexity over Qwen if multiple somehow
@@ -99,8 +101,8 @@
 
     (and (must-remap-to-qwen? opts) (not (str/blank? qwen-api-key)))
     {:openai-api-key qwen-api-key
-     :openai-api-base "https://coding-intl.dashscope.aliyuncs.com/v1"
-     :openai-base-url "https://coding-intl.dashscope.aliyuncs.com/v1"
+     :openai-api-base qwen-openai-base
+     :openai-base-url qwen-openai-base
      :provider :qwen
      :reason (if (launch-cli-implies-qwen? launch-cli)
                :launch-cli-qwen
@@ -108,8 +110,8 @@
 
     (and (must-remap-to-qwen? opts) (str/blank? qwen-api-key))
     {:openai-api-key nil
-     :openai-api-base "https://coding-intl.dashscope.aliyuncs.com/v1"
-     :openai-base-url "https://coding-intl.dashscope.aliyuncs.com/v1"
+     :openai-api-base qwen-openai-base
+     :openai-base-url qwen-openai-base
      :provider :qwen
      :reason :qwen-key-missing}
 

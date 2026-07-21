@@ -142,6 +142,9 @@ const COLUMN_LABEL: Record<string, string> = {
 // BL-505: shortened from "TICKET" (6 chars) — kept for deriveDisplayTicketId
 // docs only; the pivoted grid shows ticket numbers on their own line.
 const NO_EPIC_LABEL = '(no epic)';
+// Steady state when backlog/active/ is empty — keeps the Telegram <pre>
+// grid from rendering as a blank block between pipeline clears.
+const NO_ACTIVE_TICKETS_LABEL = '(no active tickets)';
 const PARKED_SECTION_HEADER = 'PARKED:';
 const AWAITING_APPROVAL_SECTION_HEADER = 'AWAITING APPROVAL:';
 const ROOT_INTAKE_SECTION_HEADER = 'ROOT INTAKE:';
@@ -482,6 +485,9 @@ function renderEpicHeading(epic: string | undefined): string {
 // sort, so this is a pure formatting pass, never a re-sort. Each ticket
 // renders as a vertical block (ticket id, then one line per stage column).
 function renderGridLines(rows: PipelineBoardRow[]): string[] {
+  if (rows.length === 0) {
+    return [renderEpicHeading(NO_ACTIVE_TICKETS_LABEL)];
+  }
   const lines: string[] = [];
   let started = false;
   let currentEpic: string | undefined;

@@ -14,18 +14,34 @@ const CODER = { role: 'coder', displayName: 'Coder' };
 
 test('inferRoleLabelFromPane reads the SwarmForge banner role name', () => {
   const pane = 'SwarmForge Cleaner\n> doing work';
-  assert.equal(inferRoleLabelFromPane(pane), 'Cleaner');
+  assert.equal(inferRoleLabelFromPane(pane, ROLES), 'Cleaner');
+});
+
+test('inferRoleLabelFromPane ignores aider SwarmForge environment prose', () => {
+  const pane = [
+    'The user is acting as the SwarmForge environment, relaying the output of ready_for_next.sh.',
+    'SwarmForge Coder',
+    '> working',
+  ].join('\n');
+  assert.equal(inferRoleLabelFromPane(pane, ROLES), 'Coder');
+});
+
+test('resolveResidentRoleIdentity prefers mono-router active-role marker over pane text', () => {
+  assert.deepEqual(
+    resolveResidentRoleIdentity('SwarmForge environment\n>', CODER, ROLES, 'cleaner'),
+    { roleLabel: 'Cleaner', modelRole: 'cleaner' }
+  );
 });
 
 test('resolveResidentRoleIdentity maps a pane banner to the roster role and model role', () => {
-  assert.deepEqual(resolveResidentRoleIdentity('SwarmForge Cleaner\n>', CODER, ROLES), {
+  assert.deepEqual(resolveResidentRoleIdentity('SwarmForge Cleaner\n>', CODER, ROLES, undefined), {
     roleLabel: 'Cleaner',
     modelRole: 'cleaner',
   });
 });
 
 test('resolveResidentRoleIdentity falls back to the home role when the banner scrolled away', () => {
-  assert.deepEqual(resolveResidentRoleIdentity('Running command...\n$ git merge', CODER, ROLES), {
+  assert.deepEqual(resolveResidentRoleIdentity('Running command...\n$ git merge', CODER, ROLES, undefined), {
     roleLabel: 'Coder',
     modelRole: 'coder',
   });

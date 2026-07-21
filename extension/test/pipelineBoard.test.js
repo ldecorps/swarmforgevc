@@ -212,9 +212,9 @@ test('computePipelineBoard: a paused ticket with a title gets its derived (list)
 // BL-452/BL-455 pipeline-board-01: each ticket block lists every pipeline
 // stage vertically; exactly one stage line carries X, every other stage . .
 
-test('renderPipelineBoardBody: an empty board renders no grid lines', () => {
+test('renderPipelineBoardBody: an empty board shows a no-active-tickets grid placeholder', () => {
   const text = renderPipelineBoardBody({ rows: [], parked: [] });
-  assert.equal(text.trim(), '');
+  assert.equal(text.trim(), '-- (no active tickets) --');
 });
 
 test('renderPipelineBoardBody: a pivoted ticket block lists every stage column vertically', () => {

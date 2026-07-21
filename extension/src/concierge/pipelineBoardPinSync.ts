@@ -37,10 +37,14 @@ export interface PipelineBoardPinSyncResult {
 export function decidePipelineBoardPinAction(
   currentTopPinnedId: number | undefined,
   boardMessageId: number | undefined,
-  lastPinnedBoardMessageId: number | undefined = undefined
+  lastPinnedBoardMessageId: number | undefined = undefined,
+  forceEnforce: boolean = false
 ): PipelineBoardPinSyncOutcome {
   if (boardMessageId === undefined) {
     return 'skip-no-board';
+  }
+  if (forceEnforce) {
+    return 'enforce';
   }
   if (currentTopPinnedId === boardMessageId) {
     return 'skip-clean';
@@ -75,10 +79,11 @@ export function shouldUnpinAllBeforePin(
 export async function syncPipelineBoardPin(
   boardMessageId: number | undefined,
   adapters: PipelineBoardPinAdapters,
-  lastPinnedBoardMessageId: number | undefined = undefined
+  lastPinnedBoardMessageId: number | undefined = undefined,
+  forceEnforce: boolean = false
 ): Promise<PipelineBoardPinSyncResult> {
   const currentTopPinnedId = await adapters.getTopPinnedMessageId();
-  const outcome = decidePipelineBoardPinAction(currentTopPinnedId, boardMessageId, lastPinnedBoardMessageId);
+  const outcome = decidePipelineBoardPinAction(currentTopPinnedId, boardMessageId, lastPinnedBoardMessageId, forceEnforce);
   if (outcome !== 'enforce') {
     return {
       outcome,

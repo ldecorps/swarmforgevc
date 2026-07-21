@@ -37,6 +37,25 @@ export function readCurrentModel(targetPath: string, role: string): string | und
   return typeof model === 'string' ? model : undefined;
 }
 
+// Aider-backed roles (Qwen, etc.) encode the live model in the launch script's
+// --model flag; that is ground truth for what tmux is actually running.
+// Stale *.claude-settings.json files may remain from prior Claude-backed launches.
+function readLaunchScriptModel(targetPath: string, role: string): { model?: string; isAider: boolean } {
+  try {
+    const script = fs.readFileSync(
+      path.join(targetPath, '.swarmforge', 'launch', `${role}.sh`),
+      'utf8'
+    );
+    const isAider = /\baider\b/.test(script);
+    const match =
+      script.match(/\baider\b[^\n]*--model\s+(\S+)/) ??
+      (isAider ? script.match(/--model\s+(\S+)/) : null);
+    return { model: match?.[1], isAider };
+  } catch {
+    return { isAider: false };
+  }
+}
+
 function readConfiguredModelFromConf(targetPath: string, role: string): string | undefined {
   try {
     const conf = fs.readFileSync(path.join(targetPath, 'swarmforge', 'swarmforge.conf'), 'utf8');
@@ -58,10 +77,19 @@ function readConfiguredModelFromConf(targetPath: string, role: string): string |
   return undefined;
 }
 
-// Live settings file first (true runtime value after launch / model switch),
-// then swarmforge.conf's window line as a fallback when settings are absent.
+// Aider launch script first (ignores stale claude settings from prior backends),
+// then live claude settings file, then launch script --model for other agents,
+// then swarmforge.conf's window line as a last-resort fallback.
 export function readRoleModelId(targetPath: string, role: string): string | undefined {
-  return readCurrentModel(targetPath, role) ?? readConfiguredModelFromConf(targetPath, role);
+  const launch = readLaunchScriptModel(targetPath, role);
+  if (launch.isAider && launch.model) {
+    return launch.model;
+  }
+  return (
+    readCurrentModel(targetPath, role) ??
+    launch.model ??
+    readConfiguredModelFromConf(targetPath, role)
+  );
 }
 
 // Rewrites role's settings-file model in place, preserving every other

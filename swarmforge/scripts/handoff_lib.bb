@@ -367,12 +367,12 @@
         openai-base (cond
                       (and use-cerebras (not (str/blank? cerebras))) "https://api.cerebras.ai/v1"
                       (and use-perplexity (not (str/blank? perplexity))) "https://api.perplexity.ai"
-                      (and use-qwen (not (str/blank? qwen))) "https://coding-intl.dashscope.aliyuncs.com/v1"
+                      (and use-qwen (not (str/blank? qwen))) "https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1"
                       :else (System/getenv "OPENAI_API_BASE"))
         openai-base-url (cond
                           (and use-cerebras (not (str/blank? cerebras))) "https://api.cerebras.ai/v1"
                           (and use-perplexity (not (str/blank? perplexity))) "https://api.perplexity.ai"
-                          (and use-qwen (not (str/blank? qwen))) "https://coding-intl.dashscope.aliyuncs.com/v1"
+                          (and use-qwen (not (str/blank? qwen))) "https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1"
                           :else (System/getenv "OPENAI_BASE_URL"))]
     (cond-> []
       (not (str/blank? (System/getenv "OPENROUTER_API_KEY")))

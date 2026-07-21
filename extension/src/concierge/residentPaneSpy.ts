@@ -3,6 +3,8 @@
 // change-gated on the body (role + pane text) so an unchanged pane does not
 // bump the footer every concierge tick. I/O half is residentPaneSpySync.ts.
 
+import * as fs from 'fs';
+import * as path from 'path';
 import { formatUpdatedAtLabel } from './pipelineBoard';
 
 export const RESIDENT_PANE_SPY_MESSAGE_MAX_LENGTH = 4000;
@@ -12,7 +14,7 @@ export const RESIDENT_PANE_SPY_DEFAULT_LINES = 40;
 // the default tail while the agent is mid-tool-run.
 export const RESIDENT_PANE_SPY_ROLE_SEARCH_LINES = 300;
 
-const ROLE_BANNER = /SwarmForge\s+(\S+)/i;
+const ROLE_BANNER = /\bSwarmForge\s+(\S+)/gi;
 
 export interface ResidentRoleIdentity {
   roleLabel: string;
@@ -32,21 +34,61 @@ export function formatResidentSpyHeader(snap: Pick<ResidentPaneSpySnapshot, 'rol
   return `Resident: ${snap.roleLabel}${model}${session}`;
 }
 
-export function inferRoleLabelFromPane(paneText: string): string {
-  const match = paneText.match(ROLE_BANNER);
-  return match?.[1] ?? 'unknown';
+export function readMonoRouterActiveRole(targetPath: string): string | undefined {
+  try {
+    const role = fs
+      .readFileSync(path.join(targetPath, '.swarmforge', 'mono-router-active-role'), 'utf8')
+      .trim();
+    return role || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function rosterEntryForToken(
+  token: string,
+  roles: ReadonlyArray<{ role: string; displayName: string }>
+): { role: string; displayName: string } | undefined {
+  const lower = token.toLowerCase();
+  return (
+    roles.find((entry) => entry.displayName.toLowerCase() === lower) ??
+    roles.find((entry) => entry.role.toLowerCase() === lower)
+  );
+}
+
+export function inferRoleLabelFromPane(
+  paneText: string,
+  roles?: ReadonlyArray<{ role: string; displayName: string }>
+): string {
+  if (!roles?.length) {
+    const match = /\bSwarmForge\s+(\S+)/i.exec(paneText);
+    return match?.[1] ?? 'unknown';
+  }
+  let lastKnown: string | undefined;
+  for (const match of paneText.matchAll(ROLE_BANNER)) {
+    const token = match[1];
+    if (rosterEntryForToken(token, roles)) {
+      lastKnown = token;
+    }
+  }
+  return lastKnown ?? 'unknown';
 }
 
 export function resolveResidentRoleIdentity(
   paneText: string,
   homeRoleEntry: { role: string; displayName: string },
-  roles: ReadonlyArray<{ role: string; displayName: string }>
+  roles: ReadonlyArray<{ role: string; displayName: string }>,
+  activeRoleId?: string
 ): ResidentRoleIdentity {
-  const banner = inferRoleLabelFromPane(paneText);
+  if (activeRoleId) {
+    const active = roles.find((entry) => entry.role === activeRoleId);
+    if (active) {
+      return { roleLabel: active.displayName, modelRole: active.role };
+    }
+  }
+  const banner = inferRoleLabelFromPane(paneText, roles);
   if (banner !== 'unknown') {
-    const matched =
-      roles.find((entry) => entry.displayName.toLowerCase() === banner.toLowerCase()) ??
-      roles.find((entry) => entry.role.toLowerCase() === banner.toLowerCase());
+    const matched = rosterEntryForToken(banner, roles);
     if (matched) {
       return { roleLabel: matched.displayName, modelRole: matched.role };
     }

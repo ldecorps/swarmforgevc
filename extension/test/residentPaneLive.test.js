@@ -61,6 +61,32 @@ test('captureResidentPaneLive falls back to roster role when pane banner scrolle
   }
 });
 
+test('captureResidentPaneLive reads model from launch script when claude settings are absent', () => {
+  const tmp = mkTmpDir('sfvc-resident-pane-live-');
+  const stateDir = path.join(tmp, '.swarmforge');
+  const launchDir = path.join(stateDir, 'launch');
+  fs.mkdirSync(launchDir, { recursive: true });
+  fs.writeFileSync(path.join(stateDir, 'tmux-socket'), '/tmp/fake.sock');
+  fs.writeFileSync(path.join(stateDir, 'sessions.tsv'), '1\tcoder\tswarmforge-coder\tCoder\tclaude\n');
+  fs.writeFileSync(
+    path.join(launchDir, 'coder.sh'),
+    '#!/bin/bash\naider --model openai/qwen3.7-plus --openai-api-base https://example/v1\n'
+  );
+  const paneText = 'SwarmForge Coder\n> working';
+  const fake = installInProcessTmux([
+    { subcommand: 'show-window-options', exitCode: 0, stdout: '0\n' },
+    { subcommand: 'list-windows', exitCode: 0, stdout: '0\n' },
+    { subcommand: 'capture-pane', exitCode: 0, stdout: paneText },
+  ]);
+  try {
+    const snap = captureResidentPaneLive(tmp);
+    assert.ok(snap);
+    assert.equal(snap.modelLabel, 'Qwen 3.7 Plus');
+  } finally {
+    fake.restore();
+  }
+});
+
 test('captureResidentPaneLive omits modelLabel when settings file is absent', () => {
   const tmp = mkTmpDir('sfvc-resident-pane-live-');
   const paneText = seedResidentPaneFixture(tmp, { role: 'coder', model: null });

@@ -68,6 +68,32 @@ test('readRoleModelId falls back to swarmforge.conf when settings file is absent
   assert.equal(readRoleModelId(tmp, 'coder'), 'claude-sonnet-5');
 });
 
+test('readRoleModelId prefers launch script --model over swarmforge.conf for aider roles', () => {
+  const tmp = mkTmp();
+  const launchDir = path.join(tmp, '.swarmforge', 'launch');
+  fs.mkdirSync(launchDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(launchDir, 'coder.sh'),
+  '#!/bin/bash\naider --model openai/qwen3.7-plus --openai-api-base https://example/v1\n'
+  );
+  fs.mkdirSync(path.join(tmp, 'swarmforge'), { recursive: true });
+  fs.writeFileSync(
+    path.join(tmp, 'swarmforge', 'swarmforge.conf'),
+    'window coder claude coder --model claude-sonnet-5\n'
+  );
+  assert.equal(readRoleModelId(tmp, 'coder'), 'openai/qwen3.7-plus');
+});
+
+test('readRoleModelId prefers aider launch script over stale claude settings file', () => {
+  const tmp = mkTmp();
+  writeRespawnState(tmp, 'coder', { model: 'claude-sonnet-5' });
+  fs.writeFileSync(
+    path.join(tmp, '.swarmforge', 'launch', 'coder.sh'),
+    '#!/bin/bash\naider --model openai/qwen3.7-plus --openai-api-base https://example/v1\n'
+  );
+  assert.equal(readRoleModelId(tmp, 'coder'), 'openai/qwen3.7-plus');
+});
+
 test('switchRoleModel rewrites the model field, preserving every other field unchanged', () => {
   const tmp = mkTmp();
   writeRespawnState(tmp, 'coder', { model: 'claude-sonnet-5', effortLevel: 'high', permissions: { defaultMode: 'bypassPermissions' } });

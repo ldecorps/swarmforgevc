@@ -34,6 +34,9 @@ fi
 export OPENAI_API_KEY="$PERPLEXITY_API_KEY"
 export OPENAI_API_BASE=https://api.perplexity.ai
 export OPENAI_BASE_URL=https://api.perplexity.ai
+# Aider --yes-always auto-opens billing/docs URLs from API errors; never do that
+# in the headless babysitter pane (was spamming perplexity.ai/settings/api).
+export BROWSER="${BROWSER:-/usr/bin/true}"
 
 # Kill prior session on this socket (idempotent restart).
 if [[ -S "$SOCK" ]]; then
@@ -72,6 +75,7 @@ export SWARMFORGE_USE_PERPLEXITY=1
 export OPENAI_API_KEY="\$PERPLEXITY_API_KEY"
 export OPENAI_API_BASE=https://api.perplexity.ai
 export OPENAI_BASE_URL=https://api.perplexity.ai
+export BROWSER="\${BROWSER:-/usr/bin/true}"
 cd '$ROOT'
 # Re-apply remap after zshenv may re-export host OPENAI (BL-535 / SRE).
 if [[ -n "\${PERPLEXITY_API_KEY:-}" ]]; then
@@ -83,7 +87,7 @@ while true; do
     first=0
     aider --model $MODEL \\
       --openai-api-base https://api.perplexity.ai \\
-      --no-gitignore --no-show-model-warnings --no-check-update --yes-always \\
+      --no-gitignore --no-show-model-warnings --no-check-update --yes-always --no-detect-urls \\
       --file '$PROMPT' \\
       --message-file '$KICKOFF' || true
   else
@@ -91,7 +95,7 @@ while true; do
     sleep 3
     aider --model $MODEL \\
       --openai-api-base https://api.perplexity.ai \\
-      --no-gitignore --no-show-model-warnings --no-check-update --yes-always \\
+      --no-gitignore --no-show-model-warnings --no-check-update --yes-always --no-detect-urls \\
       --file '$PROMPT' || true
   fi
   sleep 2
@@ -105,6 +109,7 @@ tmux -S "$SOCK" new-session -d -s "$SESSION" -n Babysitter \
   -e "OPENAI_API_KEY=${PERPLEXITY_API_KEY}" \
   -e "OPENAI_API_BASE=https://api.perplexity.ai" \
   -e "OPENAI_BASE_URL=https://api.perplexity.ai" \
+  -e "BROWSER=${BROWSER:-/usr/bin/true}" \
   "zsh '$LAUNCH'"
 
 echo "$SOCK" > "$BB_DIR/socket.path"

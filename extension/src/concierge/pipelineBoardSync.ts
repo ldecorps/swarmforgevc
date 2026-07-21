@@ -88,6 +88,15 @@ export interface PipelineBoardState {
   // delivered for the CURRENT failure episode. Cleared to false on the next
   // successful post, so a later episode alarms fresh.
   alertArmed?: boolean;
+  // BL-467: the board message id this pin sync last successfully pinned -
+  // durable across ticks so getChat().pinned_message omitting a forum-topic
+  // board does not spam unpin+re-pin every tick.
+  lastPinnedBoardMessageId?: number;
+  // BL-467: arm one enforce pass on the next pin sync (cleared after that
+  // tick) - set on repost and when lastPinned still does not match messageId
+  // so a stale chat-level pin is corrected without waiting for board content
+  // to change again.
+  forceBoardPinOnNextTick?: boolean;
 }
 
 export type PipelineBoardSyncOutcome = 'posted' | 'reposted' | 'skipped-unchanged' | 'failed-no-topic' | 'failed-post';
@@ -344,6 +353,11 @@ async function postBoardMessage(
       consecutiveFailures: 0,
       alertArmed: false,
       orphanMessageIds: orphanMessageIds.length > 0 ? orphanMessageIds : undefined,
+      // BL-467: arm one enforce pass so the chat-level pin follows the new
+      // message id immediately (lastPinnedBoardMessageId stays at the prior
+      // value until the pin sync succeeds - that lets shouldUnpinAllBeforePin
+      // skip unpin-all when our own previous board is still top).
+      ...(hadPriorMessage ? { forceBoardPinOnNextTick: true } : {}),
     },
     outcome: hadPriorMessage ? 'reposted' : 'posted',
   };
