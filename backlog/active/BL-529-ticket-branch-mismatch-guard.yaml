@@ -20,13 +20,39 @@ notes: |
   ROOT CAUSE: resume-on-start / bounce merge does not assert worktree ticket == claim
   before the agent turn.
 
-  OUTCOME: before a turn, refuse branch/ticket matches claim; auto-checkout to the
-  claim branch or refuse-and-requeue on mismatch. Specifier owns the APS feature.
+  OUTCOME: before a turn the guard checks whether the worktree branch is named after
+  a DIFFERENT ticket from the active claim.
+    - Generic / role-standard branch (swarmforge-coder, main, etc.) → no conflict.
+    - Branch name starts with a BL-NNN ticket ID that matches the claim → no conflict.
+    - Branch name starts with a BL-NNN ticket ID that DIFFERS from the claim → guard fires:
+        clean worktree  → auto-checkout to the role's standard branch and proceed.
+        dirty worktree  → requeue the in-process task to new/, refuse the turn, log.
 
-acceptance: |
-  Feature: claimed ticket and worktree branch stay aligned
-    Scenario: mismatch refuses the turn and requeues rather than working blind
-      Given a role whose worktree branch does not match its claimed ticket
-      When a turn would begin
-      Then the host refuses or auto-corrects to the claim branch
-      And no productive turn runs on the mismatched branch
+  SCOPE: the guard is in the Babashka runtime (ready_for_next_task.bb or a new
+  pre-turn gate script called from it). Step handlers live in specs/pipeline/.
+
+acceptance: specs/features/BL-529-ticket-branch-mismatch-guard.feature
+
+human_approval: pending
+
+approval_context: >
+  Feature file at specs/features/BL-529-ticket-branch-mismatch-guard.feature.
+  Review whether the four scenarios (standard-branch pass, per-ticket-match pass,
+  clean-mismatch auto-correct, dirty-mismatch refuse+requeue) correctly capture
+  the desired guard behavior. In particular confirm: (a) "generic branch" vs
+  "ticket-named branch" detection is clear to the coder, and (b) "auto-checkout
+  to a branch for ticket X" is precise enough — should it always target the role's
+  standard branch rather than a ticket-specific branch?
+
+qa_procedure: |
+  1. After coder implements the guard, QA sets up three controlled fixture roots:
+     a. coder worktree on "swarmforge-coder" with BL-529 task in in_process/ → run
+        ready_for_next.sh and confirm guard emits no warning and prints TASK.
+     b. coder worktree on "BL-526" with BL-512 task in in_process/, clean worktree
+        → run ready_for_next, confirm branch changed away from BL-526 and TASK printed.
+     c. same as (b) but introduce an uncommitted file → run ready_for_next, confirm
+        BL-512 task moved back to new/, turn refused, warning logged.
+  2. Run the acceptance test suite:
+     bb specs/pipeline/run_acceptance.sh specs/features/BL-529-ticket-branch-mismatch-guard.feature
+  3. Run mutation gate on the guard implementation file(s) scoped to out/**/*.js
+     or the .bb source (whichever the coder uses).
