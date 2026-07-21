@@ -15,6 +15,7 @@
 
 import * as path from 'path';
 import { listDeadLetters, DeadLetterInfo } from '../swarm/inboxChaser';
+import { mailboxDir } from '../swarm/swarmState';
 import { resolveProjectRoot, loadRoles, runCliMain } from './swarm-metrics';
 
 export function formatDeadLetterListing(deadLetters: DeadLetterInfo[]): string {
@@ -37,7 +38,7 @@ export function main(): void {
 
   const roleInboxes = roles.map((r) => ({
     role: r.role,
-    inboxNewDir: path.join(r.worktreePath, '.swarmforge', 'handoffs', 'inbox', 'new'),
+    inboxNewDir: mailboxDir(r, 'inbox', 'new'),
   }));
 
   console.log(formatDeadLetterListing(listDeadLetters(roleInboxes)));

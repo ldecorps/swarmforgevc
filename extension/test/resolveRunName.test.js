@@ -2,7 +2,7 @@
  * BL-024: resolveRunName — unit tests (written before implementation).
  */
 const assert = require('node:assert/strict');
-const { resolveRunName } = require('../out/run/resolveRunName');
+const { resolveRunName, generateDefaultRunName } = require('../out/run/resolveRunName');
 
 const DEFAULT = 'swarm-20260630T120000z';
 
@@ -47,4 +47,20 @@ test('promptEnabled=true + non-blank promptResult returns trimmed value', () => 
 test('promptEnabled=true + promptResult with surrounding whitespace returns trimmed value', () => {
   const result = resolveRunName({ promptEnabled: true, promptResult: '  my-run  ', defaultName: DEFAULT });
   assert.equal(result, 'my-run');
+});
+
+// ── generateDefaultRunName (BL-352: moved out of extension.ts so a
+//    headless caller can generate the SAME timestamp-default shape) ──────
+
+test('BL-352: generateDefaultRunName formats a fixed instant as run-YYYYMMDD-HHMM', () => {
+  const result = generateDefaultRunName(new Date(2026, 6, 13, 9, 5));
+  assert.equal(result, 'run-20260713-0905');
+});
+
+test('BL-352: generateDefaultRunName defaults to the current time when no instant is given', () => {
+  const before = new Date();
+  const result = generateDefaultRunName();
+  assert.match(result, /^run-\d{8}-\d{4}$/);
+  const year = String(before.getFullYear());
+  assert.ok(result.includes(year), `expected the current year in the default name, got: ${result}`);
 });

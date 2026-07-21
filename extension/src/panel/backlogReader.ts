@@ -5,12 +5,76 @@ import * as yaml from 'js-yaml';
 export interface BacklogItem {
   id: string;
   title: string;
-  status: 'todo' | 'active' | 'done';
+  // BL-234: the folder a ticket physically sits in is authoritative for
+  // which bucket it belongs to (readBacklogFolders/readBacklog never gate
+  // on this field) - status is optional because the pipeline moves files
+  // between folders without touching this field, and a great many real
+  // tickets never set it at all. A present-but-unrecognized value (e.g.
+  // "blocked", "paused") is treated the same as absent rather than stored
+  // raw, keeping this type's three known values coherent for the few
+  // consumers (readBacklog's own overrideStatus callers) that DO rely on
+  // it being one of them.
+  status?: 'todo' | 'active' | 'done';
   assignedTo?: string;
   milestone?: string;
   priority?: number;
   dependsOn?: string[];
   pack?: string[];
+  // BL-090/BL-094: which swarm this ticket is assigned to. Absent means the
+  // primary swarm (BL-090's own default) - callers must apply that fallback
+  // themselves, since no swarm: field exists in live ticket YAML yet.
+  swarm?: string;
+  // BL-117: prose description and acceptance reference/inline-Gherkin, for
+  // the docs drill-down explorer's ticket and Gherkin levels.
+  description?: string;
+  acceptance?: string;
+  // BL-251: structured human-approval status - the single source of truth
+  // for the needs-approval list (never re-derived from the free-text
+  // "# HUMAN APPROVAL:" comment). Absent means not applicable (no approval
+  // needed, or a legacy ticket the one-time backfill hasn't reached).
+  // BL-408: pending-review is the primary pending state (written by specifier);
+  // read as 'pending' here for normalization.
+  humanApproval?: 'pending' | 'approved';
+  // BL-322: the ticket's full notes: block scalar, for the topic-opening
+  // summary's own "what it solves" line (topicOpeningSummary.ts takes just
+  // the first paragraph and truncates - kept full here since other
+  // consumers may want more).
+  notes?: string;
+  // BL-322: the FIRST entry of the modern nested `acceptance: {steps:
+  // [...]}` schema - distinct from the legacy `acceptance` field above
+  // (a file path or inline Gherkin string), for the topic-opening
+  // summary's own "how it works" line.
+  firstAcceptanceStep?: string;
+  // BL-480: the ticket's `approval_context` field (BL-479) - the 2-3
+  // sentences of decision context a specifier writes for exactly this
+  // purpose, so the Approvals-topic ask (topicRouter.ts's
+  // approvalRequestedText) can include it alongside title/notes/
+  // firstAcceptanceStep. Absent on tickets that predate BL-479.
+  approvalContext?: string;
+  // BL-341: which epic (a multi-slice body of work) this slice belongs to,
+  // as DATA - never inferred from notes: prose. Absent means no epic;
+  // every existing ticket stays valid, unchanged. The epic id namespace is
+  // separate from BL-### ticket ids (never a ticket id itself).
+  epic?: string;
+  // BL-341: the backlog's own `type:` field (e.g. "feature", "defect",
+  // "epic") - an ALREADY-LIVE convention this ticket discovered in use
+  // (BL-384's `type: epic`) rather than one it introduces. The one ticket
+  // per epic id carrying `type: epic` IS that epic's own definition
+  // (title + remainingSlices below), distinct from an ordinary slice
+  // merely declaring the same `epic:` id.
+  type?: string;
+  // BL-341: free-text descriptions of work known to belong to this epic
+  // but not yet ticketed - only meaningful on the epic-defining ticket
+  // itself (type: epic). Nothing in the backlog can derive an unticketed
+  // slice's existence on its own; a human/specifier authors this list.
+  remainingSlices?: string[];
+  // BL-465: the backlog yaml's own basename (e.g.
+  // "BL-467-pipeline-board-only-pin.yaml") - the join key the pipeline
+  // board's GitHub link list needs to resolve an id to its real backlog
+  // file path (active/paused/done), rather than reconstructing a filename
+  // by convention (which could 404 if a title-derived guess ever drifts
+  // from the real slug on disk).
+  filename?: string;
 }
 
 const VALID_STATUSES = new Set(['todo', 'active', 'done']);
@@ -32,27 +96,98 @@ function parseYamlList(content: string, field: string): string[] | undefined {
   return entries.length > 0 ? entries : undefined;
 }
 
+// BL-117: extracts a `field: |` (or `>`) literal block scalar's prose,
+// dedented to its own minimum indentation - the lenient-parser counterpart
+// to js-yaml's own block-scalar handling, for description/acceptance text
+// on tickets whose free-form prose elsewhere in the file isn't strict YAML.
+function parseYamlBlockScalar(content: string, field: string): string | undefined {
+  const blockMatch = content.match(new RegExp(`^${field}:\\s*[|>][+-]?\\s*\\n((?:[ \\t]*\\n|[ \\t]+.*\\n?)*)`, 'm'));
+  if (!blockMatch) {
+    return undefined;
+  }
+  const rawLines = blockMatch[1].split('\n');
+  while (rawLines.length > 0 && rawLines[rawLines.length - 1].trim() === '') {
+    rawLines.pop();
+  }
+  if (rawLines.length === 0) {
+    return undefined;
+  }
+  const indent = Math.min(...rawLines.filter((l) => l.trim() !== '').map((l) => l.match(/^ */)![0].length));
+  return rawLines.map((l) => l.slice(indent)).join('\n');
+}
+
+// BL-117: acceptance is usually a single-line file reference
+// (`specs/features/<name>.feature`) but older tickets carry inline Gherkin
+// as a block scalar - try the scalar form first, then the block form.
+function parseAcceptanceField(content: string): string | undefined {
+  return parseYamlScalar(content, 'acceptance') ?? parseYamlBlockScalar(content, 'acceptance');
+}
+
+// BL-322: the FIRST item of a nested `acceptance:\n  steps:\n    - "..."`
+// block - the lenient regex-fallback counterpart to
+// firstAcceptanceStepFromObject below (js-yaml's own strict parse path).
+// Distinct from parseAcceptanceField above, which reads the LEGACY flat
+// `acceptance: <path-or-gherkin>` scalar/block form - the two schemas are
+// never confused because this only ever looks inside a nested `steps:`
+// list, never at acceptance:'s own top-level value.
+function parseFirstAcceptanceStep(content: string): string | undefined {
+  const acceptanceBlockMatch = content.match(/^acceptance:\s*\n((?:[ \t]+.*\n?|[ \t]*\n)*)/m);
+  if (!acceptanceBlockMatch) {
+    return undefined;
+  }
+  const stepsMatch = acceptanceBlockMatch[1].match(/^[ \t]*steps:\s*\n((?:[ \t]+-[^\n]*\n?)*)/m);
+  if (!stepsMatch) {
+    return undefined;
+  }
+  const firstLine = stepsMatch[1].split('\n').find((l) => /^[ \t]*-/.test(l));
+  if (!firstLine) {
+    return undefined;
+  }
+  const item = firstLine.replace(/^[ \t]*-\s*/, '').replace(/^["']|["']$/g, '').trim();
+  return item || undefined;
+}
+
 function parsePriority(priorityStr: string | undefined): number | undefined {
   if (priorityStr === undefined) return undefined;
   const n = Number(priorityStr);
   return !Number.isNaN(n) ? n : undefined;
 }
 
+// Assigns key only when value is truthy (undefined AND empty-string/empty-
+// array both count as "field absent") - the shape every optional field
+// EXCEPT priority uses, where 0 is a meaningful value, not an absence
+// (assignIfDefined below). Split out of assignOptionalFields/
+// assignOptionalFieldsFromObject so each stays under the CRAP<=6 gate as
+// fields are added (BL-094's swarm: field pushed both over it) - a nested
+// function body doesn't count toward its caller's complexity.
+function assignIfTruthy<K extends keyof BacklogItem>(item: BacklogItem, key: K, value: BacklogItem[K] | undefined): void {
+  if (value) {
+    item[key] = value;
+  }
+}
+
+function assignIfDefined<K extends keyof BacklogItem>(item: BacklogItem, key: K, value: BacklogItem[K] | undefined): void {
+  if (value !== undefined) {
+    item[key] = value;
+  }
+}
+
 function assignOptionalFields(item: BacklogItem, content: string): void {
-  const assignedTo = parseYamlScalar(content, 'assigned_to');
-  if (assignedTo) item.assignedTo = assignedTo;
-
-  const milestone = parseYamlScalar(content, 'milestone');
-  if (milestone) item.milestone = milestone;
-
-  const priority = parsePriority(parseYamlScalar(content, 'priority'));
-  if (priority !== undefined) item.priority = priority;
-
-  const dependsOn = parseYamlList(content, 'depends_on');
-  if (dependsOn) item.dependsOn = dependsOn;
-
-  const pack = parseYamlList(content, 'pack');
-  if (pack) item.pack = pack;
+  assignIfTruthy(item, 'assignedTo', parseYamlScalar(content, 'assigned_to'));
+  assignIfTruthy(item, 'milestone', parseYamlScalar(content, 'milestone'));
+  assignIfDefined(item, 'priority', parsePriority(parseYamlScalar(content, 'priority')));
+  assignIfTruthy(item, 'dependsOn', parseYamlList(content, 'depends_on'));
+  assignIfTruthy(item, 'pack', parseYamlList(content, 'pack'));
+  assignIfTruthy(item, 'swarm', parseYamlScalar(content, 'swarm'));
+  assignIfTruthy(item, 'description', parseYamlBlockScalar(content, 'description'));
+  assignIfTruthy(item, 'acceptance', parseAcceptanceField(content));
+  assignIfDefined(item, 'humanApproval', normalizeHumanApproval(parseYamlScalar(content, 'human_approval')));
+  assignIfTruthy(item, 'notes', parseYamlBlockScalar(content, 'notes'));
+  assignIfTruthy(item, 'firstAcceptanceStep', parseFirstAcceptanceStep(content));
+  assignIfTruthy(item, 'approvalContext', parseYamlBlockScalar(content, 'approval_context'));
+  assignIfTruthy(item, 'epic', parseYamlScalar(content, 'epic'));
+  assignIfTruthy(item, 'type', parseYamlScalar(content, 'type'));
+  assignIfTruthy(item, 'remainingSlices', parseYamlList(content, 'remaining_slices'));
 }
 
 function toOptionalNumber(value: unknown): number | undefined {
@@ -70,33 +205,105 @@ function toOptionalStringList(value: unknown): string[] | undefined {
   return entries.length > 0 ? entries : undefined;
 }
 
+function toOptionalString(value: unknown): string | undefined {
+  return typeof value === 'string' && value ? value : undefined;
+}
+
+// BL-117: js-yaml's default `|` clip chomping keeps exactly one trailing
+// newline, while the lenient block-scalar extractor strips all trailing
+// blank lines - trimmed here so description/acceptance read the same
+// regardless of which parser path produced them.
+function toTrimmedOptionalString(value: unknown): string | undefined {
+  const str = toOptionalString(value);
+  return str ? str.trim() : undefined;
+}
+
+// BL-234: a status value that isn't one of VALID_STATUSES (unrecognized,
+// e.g. "blocked"/"paused", or simply absent) reads as undefined rather than
+// dropping the ticket or storing the raw string - the folder is
+// authoritative for bucketing, this field is never a gate.
+function normalizeStatus(statusRaw: string | undefined): BacklogItem['status'] {
+  return statusRaw !== undefined && VALID_STATUSES.has(statusRaw) ? (statusRaw as BacklogItem['status']) : undefined;
+}
+
+const VALID_HUMAN_APPROVALS = new Set(['pending', 'pending-review', 'approved']);
+
+// BL-251: mirrors normalizeStatus's own "known value or undefined" shape -
+// an unrecognized/absent value reads as undefined rather than storing raw
+// text or gating the ticket.
+// BL-408: 'pending-review' is normalized to 'pending' for internal consistency.
+function normalizeHumanApproval(raw: string | undefined): BacklogItem['humanApproval'] {
+  if (raw === undefined || !VALID_HUMAN_APPROVALS.has(raw)) {
+    return undefined;
+  }
+  return raw === 'pending-review' ? 'pending' : (raw as BacklogItem['humanApproval']);
+}
+
 // Builds a BacklogItem from a strictly-parsed js-yaml document. Reads only
 // the known BacklogItem fields off the parsed object so extra keys elsewhere
-// in the document (e.g. `evidence:`, `notes:`) never leak into the contract
-// pinned by backlogReader.test.js.
+// in the document (e.g. `evidence:`) never leak into the contract pinned by
+// backlogReader.test.js. `notes:` is now one of the known fields read here
+// (BL-322) - no longer an example of an excluded one.
 // Split out of buildItemFromParsedObject (hardening pass, BL-129): isolates
 // the required-field validation from optional-field assignment so each half
 // stays independently low-complexity/testable.
 function extractRequiredFields(obj: Record<string, unknown>): Pick<BacklogItem, 'id' | 'title' | 'status'> | null {
-  const id = typeof obj.id === 'string' ? obj.id : undefined;
-  const title = typeof obj.title === 'string' ? obj.title : undefined;
-  const statusRaw = typeof obj.status === 'string' ? obj.status : undefined;
+  const id = toOptionalString(obj.id);
+  const title = toOptionalString(obj.title);
 
-  if (!id || !title || !statusRaw || !VALID_STATUSES.has(statusRaw)) {
+  if (!id || !title) {
     return null;
   }
-  return { id, title, status: statusRaw as BacklogItem['status'] };
+  const status = normalizeStatus(toOptionalString(obj.status));
+  const result: Pick<BacklogItem, 'id' | 'title' | 'status'> = { id, title };
+  if (status !== undefined) {
+    result.status = status;
+  }
+  return result;
+}
+
+// A real (non-array, non-null) object - the same shape check
+// parseBacklogYaml's own top-level parsed-YAML guard already needs;
+// shared here rather than duplicated per caller.
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+// The first non-empty string at index 0 of an array-shaped value, or
+// undefined - split out of firstAcceptanceStepFromObject below so that
+// function's own branch count stays low (cleaner review: two independent
+// guard chains pushed it over the CRAP threshold even at full coverage).
+function firstNonEmptyStringAt0(value: unknown): string | undefined {
+  return Array.isArray(value) && typeof value[0] === 'string' && value[0] ? value[0] : undefined;
+}
+
+// BL-322: the strict-parse counterpart to parseFirstAcceptanceStep above -
+// js-yaml parses the modern `acceptance: {steps: [...]}` schema as a real
+// nested object, so this reads obj.acceptance.steps[0] directly rather
+// than regex-scanning. The LEGACY flat acceptance field (a string) simply
+// has no .steps property and falls through to undefined here, same as an
+// absent acceptance: field entirely.
+function firstAcceptanceStepFromObject(obj: Record<string, unknown>): string | undefined {
+  const acceptance = obj.acceptance;
+  return isPlainObject(acceptance) ? firstNonEmptyStringAt0(acceptance.steps) : undefined;
 }
 
 function assignOptionalFieldsFromObject(item: BacklogItem, obj: Record<string, unknown>): void {
-  if (typeof obj.assigned_to === 'string' && obj.assigned_to) item.assignedTo = obj.assigned_to;
-  if (typeof obj.milestone === 'string' && obj.milestone) item.milestone = obj.milestone;
-  const priority = toOptionalNumber(obj.priority);
-  if (priority !== undefined) item.priority = priority;
-  const dependsOn = toOptionalStringList(obj.depends_on);
-  if (dependsOn) item.dependsOn = dependsOn;
-  const pack = toOptionalStringList(obj.pack);
-  if (pack) item.pack = pack;
+  assignIfTruthy(item, 'assignedTo', toOptionalString(obj.assigned_to));
+  assignIfTruthy(item, 'milestone', toOptionalString(obj.milestone));
+  assignIfDefined(item, 'priority', toOptionalNumber(obj.priority));
+  assignIfTruthy(item, 'dependsOn', toOptionalStringList(obj.depends_on));
+  assignIfTruthy(item, 'pack', toOptionalStringList(obj.pack));
+  assignIfTruthy(item, 'swarm', toOptionalString(obj.swarm));
+  assignIfTruthy(item, 'description', toTrimmedOptionalString(obj.description));
+  assignIfTruthy(item, 'acceptance', toTrimmedOptionalString(obj.acceptance));
+  assignIfDefined(item, 'humanApproval', normalizeHumanApproval(toOptionalString(obj.human_approval)));
+  assignIfTruthy(item, 'notes', toTrimmedOptionalString(obj.notes));
+  assignIfTruthy(item, 'firstAcceptanceStep', firstAcceptanceStepFromObject(obj));
+  assignIfTruthy(item, 'approvalContext', toTrimmedOptionalString(obj.approval_context));
+  assignIfTruthy(item, 'epic', toOptionalString(obj.epic));
+  assignIfTruthy(item, 'type', toOptionalString(obj.type));
+  assignIfTruthy(item, 'remainingSlices', toOptionalStringList(obj.remaining_slices));
 }
 
 function buildItemFromParsedObject(obj: Record<string, unknown>): BacklogItem | null {
@@ -112,13 +319,13 @@ function buildItemFromParsedObject(obj: Record<string, unknown>): BacklogItem | 
 function parseBacklogYamlLenient(content: string): BacklogItem | null {
   const id = parseYamlScalar(content, 'id');
   const title = parseYamlScalar(content, 'title');
-  const statusRaw = parseYamlScalar(content, 'status');
 
-  if (!id || !title || !statusRaw || !VALID_STATUSES.has(statusRaw)) {
+  if (!id || !title) {
     return null;
   }
 
-  const item: BacklogItem = { id, title, status: statusRaw as BacklogItem['status'] };
+  const item: BacklogItem = { id, title };
+  assignIfDefined(item, 'status', normalizeStatus(parseYamlScalar(content, 'status')));
   assignOptionalFields(item, content);
   return item;
 }
@@ -132,8 +339,8 @@ function parseBacklogYamlLenient(content: string): BacklogItem | null {
 export function parseBacklogYaml(content: string): BacklogItem | null {
   try {
     const parsed = yaml.load(content);
-    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-      return buildItemFromParsedObject(parsed as Record<string, unknown>);
+    if (isPlainObject(parsed)) {
+      return buildItemFromParsedObject(parsed);
     }
   } catch {
     // fall through to the lenient extractor below
@@ -154,6 +361,9 @@ function readYamlFiles(dir: string, overrideStatus?: BacklogItem['status']): Bac
       const item = parseBacklogYaml(content);
       if (item && overrideStatus !== undefined) {
         item.status = overrideStatus;
+      }
+      if (item) {
+        item.filename = f;
       }
       return item ? [item] : [];
     } catch {

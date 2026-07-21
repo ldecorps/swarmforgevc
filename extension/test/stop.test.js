@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -5,10 +6,10 @@ const path = require('node:path');
 
 const { spawn } = require('node:child_process');
 const { buildKillSessionArgs, stopSwarm, stopSwarmOnExtensionShutdown } = require('../out/swarm/swarmStopper');
-const { installFakeTmux } = require('./helpers/fakeTmux');
+const { installInProcessTmux } = require('./helpers/fakeTmux');
 
 function mkTmp() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-stop-'));
+  return mkTmpDir('sfvc-stop-');
 }
 
 function mkdirp(dir) {
@@ -87,7 +88,7 @@ test('stopSwarm reports success and the killed session list when tmux kills succ
     path.join(tmp, '.swarmforge', 'sessions.tsv'),
     '1\tcoder\tswarmforge-coder\tCoder\tclaude\n2\tcleaner\tswarmforge-cleaner\tCleaner\tclaude\n'
   );
-  const fake = installFakeTmux([{ subcommand: 'kill-session', exitCode: 0 }]);
+  const fake = installInProcessTmux([{ subcommand: 'kill-session', exitCode: 0 }]);
   try {
     const result = stopSwarm(tmp);
     assert.equal(result.success, true);
@@ -114,7 +115,7 @@ test('stopSwarm sends SIGTERM to a live daemon pid and still succeeds', async ()
   const exited = new Promise((resolve) => dummy.once('exit', (code, signal) => resolve(signal)));
   fs.writeFileSync(path.join(tmp, '.swarmforge', 'daemon', 'handoffd.pid'), String(dummy.pid));
 
-  const fake = installFakeTmux([{ subcommand: 'kill-session', exitCode: 0 }]);
+  const fake = installInProcessTmux([{ subcommand: 'kill-session', exitCode: 0 }]);
   try {
     const result = stopSwarm(tmp);
     assert.equal(result.success, true);
@@ -136,7 +137,7 @@ test('stopSwarm ignores a daemon pid file with non-numeric content', () => {
   mkdirp(path.join(tmp, '.swarmforge', 'daemon'));
   fs.writeFileSync(path.join(tmp, '.swarmforge', 'daemon', 'handoffd.pid'), 'not-a-pid');
 
-  const fake = installFakeTmux([{ subcommand: 'kill-session', exitCode: 0 }]);
+  const fake = installInProcessTmux([{ subcommand: 'kill-session', exitCode: 0 }]);
   try {
     assert.doesNotThrow(() => stopSwarm(tmp));
   } finally {
@@ -158,7 +159,7 @@ test('stopSwarm tolerates a daemon pid file pointing at an already-dead process'
   const deadPid = await new Promise((resolve) => dummy.once('exit', () => resolve(dummy.pid)));
   fs.writeFileSync(path.join(tmp, '.swarmforge', 'daemon', 'handoffd.pid'), String(deadPid));
 
-  const fake = installFakeTmux([{ subcommand: 'kill-session', exitCode: 0 }]);
+  const fake = installInProcessTmux([{ subcommand: 'kill-session', exitCode: 0 }]);
   try {
     assert.doesNotThrow(() => stopSwarm(tmp));
   } finally {
@@ -181,7 +182,7 @@ test('stopSwarmOnExtensionShutdown tears down a live swarm like stopSwarm', () =
     '1\tcoder\tswarmforge-coder\tCoder\tclaude\n'
   );
 
-  const fake = installFakeTmux([
+  const fake = installInProcessTmux([
     { subcommand: 'kill-session', exitCode: 0 },
     { subcommand: 'kill-server', exitCode: 0 },
   ]);

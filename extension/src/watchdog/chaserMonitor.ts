@@ -47,10 +47,50 @@ export function buildRoleInboxes(targetPath: string, rolesList: string[]): RoleI
     });
 }
 
-export function startChaserMonitor(
+// BL-148 root cause: chase_sweep_lib.bb's stuck-in-process "alert" escalation
+// (BL-067) now runs in the daemon (BL-146 moved the sweep there) and writes
+// chase-escalations.json across the daemon/extension-host process boundary -
+// nothing on the TS side ever read it back. escalatedStuckRoles() (which
+// feeds the panel's needsHumanReconciler AND the BL-073 email notifier) was
+// only ever updated by two narrower paths (BL-122 dead-letter-recovery
+// exhaustion, and the wedged-respawn-trigger fallback) - never by a genuine
+// BL-067 stuck-in-process wedge. The surfacing code existed; the bridge that
+// feeds it from the daemon's real signal did not.
+export function readChaseEscalations(daemonDir: string): Set<string> {
+  try {
+    const raw = JSON.parse(fs.readFileSync(path.join(daemonDir, 'chase-escalations.json'), 'utf-8'));
+    return new Set(Object.keys(raw).filter((role) => raw[role] === true));
+  } catch {
+    return new Set();
+  }
+}
+
+// Called every role, not just currently-escalated ones, so a resolved
+// escalation also clears (mirrors chase_sweep_lib.bb's own write-escalation!
+// semantics, which dissoc's a role once it is no longer escalated).
+export function syncStuckEscalations(
+  targetPath: string,
+  rolesList: string[],
+  onStuckEscalation: (role: string, escalated: boolean) => void
+): void {
+  const escalated = readChaseEscalations(path.join(targetPath, '.swarmforge', 'daemon'));
+  for (const role of rolesList) {
+    onStuckEscalation(role, escalated.has(role));
+  }
+}
+
+// BL-131: scheduleTick/clearTick are injected (same pattern as
+// briefingScheduler.ts's startBriefingScheduler) rather than calling the
+// global setInterval/clearInterval directly, so tests can capture and fire
+// the tick callback synchronously instead of waiting on the real clock.
+// Production callers (extension.ts) pass the real setInterval/clearInterval
+// explicitly - no default value here, matching that same precedent, so
+// runtime behavior is completely unchanged.
+export function startChaserMonitor<H>(
   config: ChaserMonitorConfig,
-  callbacks: ChaserCallbacks
-): NodeJS.Timeout | null {
+  callbacks: ChaserCallbacks,
+  scheduleTick: (fn: () => void, ms: number) => H
+): H | null {
   const swarmforgeDir = path.join(config.targetPath, '.swarmforge');
   if (!fs.existsSync(swarmforgeDir)) {
     return null;
@@ -82,15 +122,20 @@ export function startChaserMonitor(
     });
   };
 
-  const intervalId = setInterval(() => {
+  const intervalId = scheduleTick(() => {
+    // BL-148: sync the daemon's real stuck-in-process escalation state first,
+    // so a genuine wedge reaches callbacks.onStuckEscalation (and whatever
+    // it drives - the panel badge, the BL-073 email notifier) on this SAME
+    // panel-independent interval, not only when the webview happens to be open.
+    syncStuckEscalations(config.targetPath, config.rolesList, callbacks.onStuckEscalation);
     runRecoverySweep();
   }, config.chaseIntervalSeconds * 1000);
 
   return intervalId;
 }
 
-export function stopChaserMonitor(intervalId: NodeJS.Timeout | null): void {
+export function stopChaserMonitor<H>(intervalId: H | null, clearTick: (handle: H) => void): void {
   if (intervalId) {
-    clearInterval(intervalId);
+    clearTick(intervalId);
   }
 }

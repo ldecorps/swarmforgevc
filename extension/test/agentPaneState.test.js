@@ -4,6 +4,10 @@ const {
   isClaudeAgentRunning,
   isShellOnlyPane,
   isPaneActivelyProcessing,
+  isAgentCliRunning,
+  isAgentActivelyWorking,
+  PROVIDER_DESCRIPTORS,
+  findProviderDescriptor,
 } = require('../out/panel/agentPaneState');
 
 test('isClaudeAgentRunning detects claude process name', () => {
@@ -103,10 +107,6 @@ test('isPaneActivelyProcessing returns false for plain shell text', () => {
 });
 
 test('isAgentCliRunning detects aider in the pane command', () => {
-  const {
-    isAgentCliRunning,
-    isAgentActivelyWorking,
-  } = require('../out/panel/agentPaneState');
   assert.equal(
     isAgentCliRunning('/Users/me/Library/Python/3.9/bin/aider', ''),
     true
@@ -117,4 +117,70 @@ test('isAgentCliRunning detects aider in the pane command', () => {
   );
   assert.equal(isAgentActivelyWorking('aider', 'Tokens: 9.1k sent, 3 received.'), true);
   assert.equal(isAgentActivelyWorking('aider', 'Repo-map: using 4096 tokens'), false);
+});
+
+test('isAgentActivelyWorking is false for a recognized provider with no busyPattern configured (claude/codex/copilot/grok)', () => {
+  // claude has a descriptor but no busyPattern (isPaneActivelyProcessing's
+  // own text signals are its only busy check) - the optional-chained
+  // descriptor?.busyPattern?.test(...) must not throw or false-positive
+  // when busyPattern is simply absent.
+  assert.equal(isAgentActivelyWorking('claude', 'some ordinary output, not a busy footer'), false);
+});
+
+// ── BL-142 slice 1: provider-descriptor-driven detection ───────────────────
+
+test('BL-142 descriptor-parity-01: registry has one descriptor per currently-supported provider', () => {
+  const names = PROVIDER_DESCRIPTORS.map((d) => d.name).sort();
+  assert.deepEqual(names, ['aider', 'claude', 'codex', 'copilot', 'grok']);
+});
+
+test('BL-142 descriptor-parity-01: isAgentCliRunning recognizes every provider by its own CLI name, not just claude/aider', () => {
+  assert.equal(isAgentCliRunning('codex', ''), true);
+  assert.equal(isAgentCliRunning('copilot', ''), true);
+  assert.equal(isAgentCliRunning('grok', ''), true);
+  assert.equal(isAgentCliRunning('/usr/local/bin/codex', ''), true);
+});
+
+test('BL-142 new-provider-is-data-02: a new descriptor is recognized by the existing detection functions with no code changes', () => {
+  // Proves the detection functions are genuinely data-driven: mutating the
+  // exported registry (as a caller/plugin would to add a provider) is
+  // picked up immediately, with zero edits to isAgentCliRunning itself.
+  const fakeDescriptor = {
+    name: 'mockprovider',
+    cliPattern: /(?:^|\/)mockprovider$/,
+    busyPattern: /mock-working/,
+    bannerPattern: /Mock Provider v\d/,
+    startupCopy: 'Mock Provider',
+  };
+  PROVIDER_DESCRIPTORS.push(fakeDescriptor);
+  try {
+    assert.equal(isAgentCliRunning('mockprovider', ''), true);
+    assert.equal(isAgentCliRunning('bash', 'Mock Provider v1.0 starting up'), true);
+    assert.equal(isAgentActivelyWorking('mockprovider', 'mock-working on it'), true);
+  } finally {
+    PROVIDER_DESCRIPTORS.pop();
+  }
+});
+
+test('BL-142 startup-copy-03: the waiting-to-start message names the expected provider from its descriptor', () => {
+  assert.match(agentPaneStatusMessage('bash', '', 'aider'), /Waiting for Aider to start/);
+  assert.match(agentPaneStatusMessage('bash', '', 'codex'), /Waiting for Codex to start/);
+  assert.match(agentPaneStatusMessage('bash', '', 'copilot'), /Waiting for Copilot to start/);
+  assert.match(agentPaneStatusMessage('bash', '', 'grok'), /Waiting for Grok to start/);
+});
+
+test('BL-142 startup-copy-03: an unrecognized or omitted expected provider falls back to Claude (pre-refactor default)', () => {
+  assert.match(agentPaneStatusMessage('bash', ''), /Waiting for Claude to start/);
+  assert.match(agentPaneStatusMessage('bash', '', 'some-unknown-provider'), /Waiting for Claude to start/);
+});
+
+test('BL-142: the "agent not running" message also names the expected provider, not a hardcoded Claude literal', () => {
+  const message = agentPaneStatusMessage('bash', 'Laurents-Air:swarmforgevc ldecorps$ ', 'aider');
+  assert.match(message, /start Aider agents/);
+});
+
+test('findProviderDescriptor is case-insensitive and returns undefined for an unknown name', () => {
+  assert.equal(findProviderDescriptor('AIDER').name, 'aider');
+  assert.equal(findProviderDescriptor('nope'), undefined);
+  assert.equal(findProviderDescriptor(undefined), undefined);
 });

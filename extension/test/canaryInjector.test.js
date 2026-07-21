@@ -1,6 +1,12 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 /**
- * BL-121: Canary injector unit tests — synthetic handoffs that prove delivery
- * is working by making a full round-trip through the pipeline.
+ * BL-121: canary injector — sends periodic synthetic handoffs through the
+ * real delivery pipeline to detect transport-level breakage independent of
+ * process liveness.
+ *
+ * A successful canary round-trip (sent → delivered → completed) updates
+ * canary-status.json. A missed canary (not completed within budget) signals
+ * transport broken, even if the daemon process heartbeats healthy.
  */
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -8,295 +14,351 @@ const os = require('node:os');
 const path = require('node:path');
 
 const {
-  generateCanaryTaskName,
-  readCanaryStatus,
-  writeCanaryStatus,
-  readTrackedCanaries,
-  isCanaryWithinBudget,
-  tryInjectCanary,
-  detectCompletedCanaries,
-  canaryOutboxFilename,
-  generateCanaryHandoffDraft,
+  sendCanary,
+  trackCanaryCompletion,
+  recordCanaryRoundTrip,
+  readCanaryStatusFile,
+  writeCanaryStatusFile,
+  computeCanaryInjectionSchedule,
+  reconcileCanary,
+  runCanaryCycle,
 } = require('../out/swarm/canaryInjector');
 
 const NOW = new Date('2026-07-05T22:00:00Z').getTime();
 
 function mkTmp() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-canary-'));
+  return mkTmpDir('sfvc-canary-');
 }
 
-// ── generateCanaryTaskName ────────────────────────────────────────────────
+// ── sendCanary ─────────────────────────────────────────────────────────────
 
-test('generateCanaryTaskName creates a stable, unique name from a timestamp', () => {
-  const name1 = generateCanaryTaskName(NOW);
-  const name2 = generateCanaryTaskName(NOW + 1000);
-
-  assert.match(name1, /^canary-\d{8}T\d{6}Z$/);
-  assert.notEqual(name1, name2);
-});
-
-test('generateCanaryTaskName embeds the ISO timestamp compacted for filename safety', () => {
-  const utc = new Date('2026-07-05T22:15:30.123Z');
-  const name = generateCanaryTaskName(utc.getTime());
-  assert.match(name, /^canary-20260705T221530Z$/);
-});
-
-// ── readCanaryStatus / writeCanaryStatus ──────────────────────────────────
-
-test('readCanaryStatus returns null when the status file does not exist', () => {
+test('sendCanary creates a canary handoff draft with task prefix and timestamp', () => {
   const target = mkTmp();
-  const status = readCanaryStatus(target);
-  assert.deepEqual(status, { lastRoundTripMs: null });
+  const taskName = sendCanary(target, NOW);
+
+  assert(taskName.startsWith('canary-'));
+  assert(taskName.includes('20260705T220000Z'));
 });
 
-test('readCanaryStatus reads a recorded round-trip time', () => {
+test('sendCanary uses a deterministic format that includes the timestamp', () => {
   const target = mkTmp();
-  writeCanaryStatus(target, 60_000);
-  const status = readCanaryStatus(target);
-  assert.equal(status.lastRoundTripMs, 60_000);
-});
+  const taskName1 = sendCanary(target, NOW);
+  const taskName2 = sendCanary(target, NOW + 1000); // 1 second later
 
-test('writeCanaryStatus creates the directory structure and writes atomically', () => {
-  const target = mkTmp();
-  writeCanaryStatus(target, 120_000);
-  assert(fs.existsSync(path.join(target, '.swarmforge', 'daemon', 'canary-status.json')));
-});
-
-test('readCanaryStatus handles corrupted status file gracefully', () => {
-  const target = mkTmp();
-  const dir = path.join(target, '.swarmforge', 'daemon');
-  fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, 'canary-status.json'), 'invalid json', 'utf-8');
-  const status = readCanaryStatus(target);
-  assert.deepEqual(status, { lastRoundTripMs: null });
-});
-
-// ── isCanaryWithinBudget ──────────────────────────────────────────────────
-
-test('isCanaryWithinBudget returns true when age is less than budget', () => {
-  assert.equal(isCanaryWithinBudget(60, 300), true);
-});
-
-test('isCanaryWithinBudget returns true when age equals budget (inclusive)', () => {
-  assert.equal(isCanaryWithinBudget(300, 300), true);
-});
-
-test('isCanaryWithinBudget returns false when age exceeds budget', () => {
-  assert.equal(isCanaryWithinBudget(301, 300), false);
-});
-
-// ── tryInjectCanary ───────────────────────────────────────────────────────
-
-test('tryInjectCanary injects immediately when no prior canary exists', () => {
-  const target = mkTmp();
-  const roles = ['coordinator', 'specifier', 'coder'];
-  const taskName = tryInjectCanary(target, NOW, { injectionIntervalSeconds: 600, budgetSeconds: 300 }, roles);
-
-  assert(taskName);
-  assert.match(taskName, /^canary-\d{8}T\d{6}Z$/);
-
-  const tracked = readTrackedCanaries(target);
-  assert.equal(tracked.length, 1);
-  assert.equal(tracked[0].canaryTaskName, taskName);
-  assert.equal(tracked[0].injectedAtMs, NOW);
-});
-
-test('tryInjectCanary returns null when the injection interval has not elapsed', () => {
-  const target = mkTmp();
-  const roles = ['coordinator', 'specifier', 'coder'];
-  const config = { injectionIntervalSeconds: 600, budgetSeconds: 300 };
-
-  const taskName1 = tryInjectCanary(target, NOW, config, roles);
-  const taskName2 = tryInjectCanary(target, NOW + 300_000, config, roles); // 5 minutes later (< 10 min interval)
-
-  assert(taskName1);
-  assert.equal(taskName2, null); // Too soon
-
-  const tracked = readTrackedCanaries(target);
-  assert.equal(tracked.length, 1);
-  assert.equal(tracked[0].canaryTaskName, taskName1);
-});
-
-test('tryInjectCanary injects a new canary after the interval has elapsed', () => {
-  const target = mkTmp();
-  const roles = ['coordinator', 'specifier', 'coder'];
-  const config = { injectionIntervalSeconds: 600, budgetSeconds: 300 };
-
-  const taskName1 = tryInjectCanary(target, NOW, config, roles);
-  const taskName2 = tryInjectCanary(target, NOW + 601_000, config, roles); // 10+ min later
-
-  assert(taskName1);
-  assert(taskName2);
   assert.notEqual(taskName1, taskName2);
-
-  const tracked = readTrackedCanaries(target);
-  assert.equal(tracked.length, 2);
+  assert(taskName2.includes('20260705T220001Z')); // Second incremented
 });
 
-// ── detectCompletedCanaries ───────────────────────────────────────────────
-
-test('detectCompletedCanaries records round-trip time when a canary completes', () => {
+test('sendCanary writes a real handoff file into the pending canary queue', () => {
   const target = mkTmp();
-  const roles = ['coordinator', 'specifier', 'coder'];
+  const taskName = sendCanary(target, NOW);
 
-  const taskName = tryInjectCanary(target, NOW, { injectionIntervalSeconds: 600, budgetSeconds: 300 }, roles);
-  assert(taskName);
+  const pendingDir = path.join(target, '.swarmforge', 'daemon', 'canary-queue', 'pending');
+  const files = fs.readdirSync(pendingDir);
+  assert.equal(files.length, 1);
+  assert(files[0].endsWith('.handoff'));
 
-  // Simulate canary arriving in completed/ after 45 seconds
-  // File must be a .handoff file and must contain the matching task name
-  const completedDir = mkTmp();
-  const completedName = `00_20260705T220045Z_000001_from_QA_to_coordinator_for_coordinator.handoff`;
-  const content = `id: 20260705T220045Z_000001_from_QA
-from: QA
-to: coordinator
-recipient: coordinator
-priority: 00
-type: git_handoff
-role: QA
-task: ${taskName}
-commit: 1234567890
-
-Canary completed`;
-  fs.writeFileSync(path.join(completedDir, completedName), content, 'utf-8');
-
-  detectCompletedCanaries(target, NOW + 45_000, completedDir);
-
-  const status = readCanaryStatus(target);
-  assert.equal(status.lastRoundTripMs, 45_000);
-
-  // Canary should be removed from tracked list once detected
-  const tracked = readTrackedCanaries(target);
-  assert.equal(tracked.length, 0);
+  const content = fs.readFileSync(path.join(pendingDir, files[0]), 'utf-8');
+  assert(content.includes(`task: ${taskName}`));
 });
 
-test('detectCompletedCanaries does not fail when completed dir does not exist', () => {
+test('the canary queue lives under the daemon namespace, never under any role handoff inbox', () => {
   const target = mkTmp();
-  const roles = ['coordinator', 'specifier', 'coder'];
+  sendCanary(target, NOW);
 
-  tryInjectCanary(target, NOW, { injectionIntervalSeconds: 600, budgetSeconds: 300 }, roles);
-  const nonexistentDir = path.join(mkTmp(), 'does-not-exist');
-
-  // Should not throw
-  detectCompletedCanaries(target, NOW + 10_000, nonexistentDir);
-
-  // Canary still tracked (not yet completed)
-  const tracked = readTrackedCanaries(target);
-  assert.equal(tracked.length, 1);
+  // Structural isolation (BL-121 canary-isolation-04): canary-queue is a
+  // sibling of canary-status.json under .swarmforge/daemon/, not under
+  // .swarmforge/handoffs/ where ready_for_next.sh and role dispatch read
+  // from. A canary can therefore never be delivered to a pipeline role.
+  assert(!fs.existsSync(path.join(target, '.swarmforge', 'handoffs')));
+  assert(fs.existsSync(path.join(target, '.swarmforge', 'daemon', 'canary-queue', 'pending')));
 });
 
-test('detectCompletedCanaries still records a valid canary when an earlier entry is unreadable', () => {
+// ── trackCanaryCompletion ──────────────────────────────────────────────────
+
+test('trackCanaryCompletion finds a completed canary handoff by task name', () => {
   const target = mkTmp();
-  const roles = ['coordinator', 'specifier', 'coder'];
+  const coordinatorCompleted = path.join(target, '.swarmforge', 'handoffs', 'inbox', 'completed');
+  fs.mkdirSync(coordinatorCompleted, { recursive: true });
 
-  const taskName = tryInjectCanary(target, NOW, { injectionIntervalSeconds: 600, budgetSeconds: 300 }, roles);
-  assert(taskName);
+  // Write a completed canary handoff
+  const handoffPath = path.join(coordinatorCompleted, '00_x_canary.handoff');
+  fs.writeFileSync(handoffPath, 'task: canary-20260705T220000Z\n\nbody');
 
-  const completedDir = mkTmp();
-  const unreadableName = `00_20260705T220045Z_000001_from_QA_to_coordinator_for_coordinator.handoff`;
-  const unreadablePath = path.join(completedDir, unreadableName);
-  fs.writeFileSync(unreadablePath, 'not readable', 'utf-8');
-  fs.chmodSync(unreadablePath, 0o000);
-
-  try {
-    const validName = `00_20260705T220046Z_000002_from_QA_to_coordinator_for_coordinator.handoff`;
-    const validContent = `id: 20260705T220046Z_000002_from_QA
-from: QA
-to: coordinator
-recipient: coordinator
-priority: 00
-type: git_handoff
-role: QA
-task: ${taskName}
-commit: 1234567890
-
-Canary completed`;
-    fs.writeFileSync(path.join(completedDir, validName), validContent, 'utf-8');
-
-    detectCompletedCanaries(target, NOW + 45_000, completedDir);
-
-    const status = readCanaryStatus(target);
-    assert.equal(status.lastRoundTripMs, 45_000);
-    const tracked = readTrackedCanaries(target);
-    assert.equal(tracked.length, 0);
-  } finally {
-    fs.chmodSync(unreadablePath, 0o644);
-  }
+  const result = trackCanaryCompletion(target, 'canary-20260705T220000Z', coordinatorCompleted);
+  assert(result !== null);
+  assert.equal(result.found, true);
 });
 
-test('detectCompletedCanaries ignores a completed-path that is not a directory', () => {
+test('trackCanaryCompletion returns null when canary has not completed yet', () => {
   const target = mkTmp();
-  const roles = ['coordinator', 'specifier', 'coder'];
+  const coordinatorCompleted = path.join(target, '.swarmforge', 'handoffs', 'inbox', 'completed');
+  fs.mkdirSync(coordinatorCompleted, { recursive: true });
 
-  tryInjectCanary(target, NOW, { injectionIntervalSeconds: 600, budgetSeconds: 300 }, roles);
-  const filePath = path.join(mkTmp(), 'completed-path');
-  fs.writeFileSync(filePath, 'not a directory', 'utf-8');
-
-  assert.doesNotThrow(() => detectCompletedCanaries(target, NOW + 10_000, filePath));
-
-  const tracked = readTrackedCanaries(target);
-  assert.equal(tracked.length, 1);
+  const result = trackCanaryCompletion(target, 'canary-20260705T220000Z', coordinatorCompleted);
+  assert(result === null);
 });
 
-test('detectCompletedCanaries cleans up old undelivered canaries (age > 1h)', () => {
+test('trackCanaryCompletion returns null when the completed inbox dir does not exist', () => {
   const target = mkTmp();
-  const roles = ['coordinator', 'specifier', 'coder'];
+  const coordinatorCompleted = path.join(target, '.swarmforge', 'handoffs', 'inbox', 'completed');
 
-  const taskName = tryInjectCanary(target, NOW, { injectionIntervalSeconds: 600, budgetSeconds: 300 }, roles);
-  assert(taskName);
-
-  // Run detector 2 hours later — canary should be considered lost
-  detectCompletedCanaries(target, NOW + 7200_000, mkTmp());
-
-  const tracked = readTrackedCanaries(target);
-  assert.equal(tracked.length, 0);
+  const result = trackCanaryCompletion(target, 'canary-20260705T220000Z', coordinatorCompleted);
+  assert(result === null);
 });
 
-test('detectCompletedCanaries keeps recently-injected canaries (age < 1h)', () => {
+test('trackCanaryCompletion ignores non-.handoff entries in the completed dir', () => {
   const target = mkTmp();
-  const roles = ['coordinator', 'specifier', 'coder'];
+  const coordinatorCompleted = path.join(target, '.swarmforge', 'handoffs', 'inbox', 'completed');
+  fs.mkdirSync(coordinatorCompleted, { recursive: true });
+  fs.writeFileSync(path.join(coordinatorCompleted, 'README.md'), 'task: canary-20260705T220000Z\n');
 
-  tryInjectCanary(target, NOW, { injectionIntervalSeconds: 600, budgetSeconds: 300 }, roles);
-
-  // Run detector 30 minutes later — canary still pending
-  detectCompletedCanaries(target, NOW + 1800_000, mkTmp());
-
-  const tracked = readTrackedCanaries(target);
-  assert.equal(tracked.length, 1); // Still tracked, not yet old enough to clean up
+  const result = trackCanaryCompletion(target, 'canary-20260705T220000Z', coordinatorCompleted);
+  assert(result === null);
 });
 
-// ── canaryOutboxFilename ──────────────────────────────────────────────────
-
-test('canaryOutboxFilename generates a deterministic outbox filename', () => {
-  const filename = canaryOutboxFilename('canary-20260705T220000Z', 7);
-  assert.match(filename, /^00_canary[0-9TZ]+_from_coordinator_to_coordinator(,coordinator){6}\.handoff$/);
-});
-
-// ── generateCanaryHandoffDraft ────────────────────────────────────────────
-
-test('generateCanaryHandoffDraft creates a valid handoff draft with all roles', () => {
-  const roles = ['coordinator', 'specifier', 'coder', 'cleaner'];
-  const draft = generateCanaryHandoffDraft('canary-20260705T220000Z', roles);
-
-  assert(draft.includes('type: git_handoff'));
-  assert(draft.includes(`task: canary-20260705T220000Z`));
-  assert(draft.includes(`to: ${roles.join(',')}`));
-  assert(draft.includes('priority: 00'));
-  assert(draft.includes('Testing delivery: canary handoff round-trip'));
-});
-
-// ── readTrackedCanaries ───────────────────────────────────────────────────
-
-test('readTrackedCanaries returns an empty array when the file does not exist', () => {
+test('trackCanaryCompletion skips an unreadable .handoff entry instead of throwing', () => {
   const target = mkTmp();
-  const tracked = readTrackedCanaries(target);
-  assert.deepEqual(tracked, []);
+  const coordinatorCompleted = path.join(target, '.swarmforge', 'handoffs', 'inbox', 'completed');
+  // A directory named `*.handoff` fails fs.readFileSync (EISDIR) — exercises the catch/skip path.
+  fs.mkdirSync(path.join(coordinatorCompleted, 'broken.handoff'), { recursive: true });
+
+  const result = trackCanaryCompletion(target, 'canary-20260705T220000Z', coordinatorCompleted);
+  assert(result === null);
 });
 
-test('readTrackedCanaries handles corrupted JSON gracefully', () => {
+// ── recordCanaryRoundTrip ──────────────────────────────────────────────────
+
+test('recordCanaryRoundTrip updates the canary status file with the round-trip time', () => {
   const target = mkTmp();
-  const dir = path.join(target, '.swarmforge', 'daemon');
-  fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, 'canaries.json'), 'not valid json', 'utf-8');
-  const tracked = readTrackedCanaries(target);
-  assert.deepEqual(tracked, []);
+  const daemonDir = path.join(target, '.swarmforge', 'daemon');
+  fs.mkdirSync(daemonDir, { recursive: true });
+
+  const sentAtMs = NOW - 30_000; // 30 seconds ago
+  recordCanaryRoundTrip(target, sentAtMs, NOW);
+
+  const statusPath = path.join(daemonDir, 'canary-status.json');
+  assert(fs.existsSync(statusPath));
+  const status = JSON.parse(fs.readFileSync(statusPath, 'utf-8'));
+  assert.equal(status.lastRoundTripMs, NOW);
+});
+
+// ── readCanaryStatusFile / writeCanaryStatusFile ────────────────────────────
+
+test('readCanaryStatusFile returns null when no canary status file exists', () => {
+  const target = mkTmp();
+  const status = readCanaryStatusFile(target);
+  assert.equal(status, null);
+});
+
+test('readCanaryStatusFile reads and parses the canary status file', () => {
+  const target = mkTmp();
+  const daemonDir = path.join(target, '.swarmforge', 'daemon');
+  fs.mkdirSync(daemonDir, { recursive: true });
+  fs.writeFileSync(path.join(daemonDir, 'canary-status.json'), JSON.stringify({ lastRoundTripMs: NOW }));
+
+  const status = readCanaryStatusFile(target);
+  assert.equal(status.lastRoundTripMs, NOW);
+});
+
+test('writeCanaryStatusFile creates the daemon directory if needed', () => {
+  const target = mkTmp();
+  writeCanaryStatusFile(target, { lastRoundTripMs: NOW });
+
+  const statusPath = path.join(target, '.swarmforge', 'daemon', 'canary-status.json');
+  assert(fs.existsSync(statusPath));
+});
+
+// ── computeCanaryInjectionSchedule ─────────────────────────────────────────
+
+test('computeCanaryInjectionSchedule returns null when no prior injection exists', () => {
+  const target = mkTmp();
+  const budget = 300; // 5 minutes
+  const result = computeCanaryInjectionSchedule(target, NOW, budget);
+
+  assert.equal(result.shouldInject, true);
+  assert.equal(result.nextCheckMs, NOW + 60_000); // 1 min default check interval
+});
+
+test('computeCanaryInjectionSchedule skips injection if last canary is still fresh', () => {
+  const target = mkTmp();
+  const daemonDir = path.join(target, '.swarmforge', 'daemon');
+  fs.mkdirSync(daemonDir, { recursive: true });
+
+  // Last canary completed 30 seconds ago
+  const lastRoundTripMs = NOW - 30_000;
+  writeCanaryStatusFile(target, { lastRoundTripMs });
+
+  const budget = 300; // 5 minute budget, canary within budget
+  const result = computeCanaryInjectionSchedule(target, NOW, budget);
+
+  assert.equal(result.shouldInject, false);
+});
+
+test('computeCanaryInjectionSchedule injects when last canary is stale but not missed', () => {
+  const target = mkTmp();
+  const daemonDir = path.join(target, '.swarmforge', 'daemon');
+  fs.mkdirSync(daemonDir, { recursive: true });
+
+  // Last canary completed 250 seconds ago, 50 seconds before budget expires
+  const lastRoundTripMs = NOW - 250_000;
+  writeCanaryStatusFile(target, { lastRoundTripMs });
+
+  const budget = 300; // 5 minute budget
+  const result = computeCanaryInjectionSchedule(target, NOW, budget);
+
+  assert.equal(result.shouldInject, true);
+});
+
+test('computeCanaryInjectionSchedule schedules the next check to occur before the canary budget expires', () => {
+  const target = mkTmp();
+  const daemonDir = path.join(target, '.swarmforge', 'daemon');
+  fs.mkdirSync(daemonDir, { recursive: true });
+
+  const lastRoundTripMs = NOW - 100_000;
+  writeCanaryStatusFile(target, { lastRoundTripMs });
+
+  const budget = 300; // 5 minutes
+  const result = computeCanaryInjectionSchedule(target, NOW, budget);
+
+  // Next check should be before canary goes stale (budget expires)
+  const timeUntilBudgetMs = (budget * 1000) - (NOW - lastRoundTripMs);
+  assert(result.nextCheckMs <= lastRoundTripMs + budget * 1000);
+});
+
+// ── reconcileCanary ────────────────────────────────────────────────────────
+
+function pendingDirFor(target) {
+  return path.join(target, '.swarmforge', 'daemon', 'canary-queue', 'pending');
+}
+
+test('reconcileCanary is a no-op when there are no pending canaries', () => {
+  const target = mkTmp();
+  const completedDir = path.join(target, '.swarmforge', 'handoffs', 'inbox', 'completed');
+
+  const result = reconcileCanary(target, completedDir);
+
+  assert.deepEqual(result.reconciledTaskNames, []);
+  assert.equal(readCanaryStatusFile(target), null);
+});
+
+test('reconcileCanary records the round trip and clears a pending canary once it completes', () => {
+  const target = mkTmp();
+  const completedDir = path.join(target, '.swarmforge', 'handoffs', 'inbox', 'completed');
+  fs.mkdirSync(completedDir, { recursive: true });
+
+  const sentAtMs = NOW - 5_000;
+  const taskName = sendCanary(target, sentAtMs);
+
+  // The real transport delivered and completed the canary.
+  fs.writeFileSync(path.join(completedDir, '00_x_canary.handoff'), `task: ${taskName}\n\nbody`);
+
+  const result = reconcileCanary(target, completedDir);
+
+  assert.deepEqual(result.reconciledTaskNames, [taskName]);
+  const status = readCanaryStatusFile(target);
+  assert(status !== null);
+  assert.equal(fs.readdirSync(pendingDirFor(target)).length, 0);
+});
+
+test('reconcileCanary leaves a pending canary in place when it has not completed yet', () => {
+  const target = mkTmp();
+  const completedDir = path.join(target, '.swarmforge', 'handoffs', 'inbox', 'completed');
+
+  const taskName = sendCanary(target, NOW - 5_000);
+
+  const result = reconcileCanary(target, completedDir);
+
+  assert.deepEqual(result.reconciledTaskNames, []);
+  assert.equal(readCanaryStatusFile(target), null);
+  const remaining = fs.readdirSync(pendingDirFor(target));
+  assert.equal(remaining.length, 1);
+  assert(remaining[0].includes(taskName));
+});
+
+test('reconcileCanary ignores non-.handoff entries sitting in the pending queue', () => {
+  const target = mkTmp();
+  const completedDir = path.join(target, '.swarmforge', 'handoffs', 'inbox', 'completed');
+  fs.mkdirSync(pendingDirFor(target), { recursive: true });
+  fs.writeFileSync(path.join(pendingDirFor(target), 'notes.txt'), 'not a canary');
+
+  const result = reconcileCanary(target, completedDir);
+
+  assert.deepEqual(result.reconciledTaskNames, []);
+  assert.equal(fs.readdirSync(pendingDirFor(target)).length, 1);
+});
+
+test('reconcileCanary skips a pending entry with no task field instead of throwing', () => {
+  const target = mkTmp();
+  const completedDir = path.join(target, '.swarmforge', 'handoffs', 'inbox', 'completed');
+  fs.mkdirSync(pendingDirFor(target), { recursive: true });
+  fs.writeFileSync(path.join(pendingDirFor(target), 'malformed.handoff'), 'not: a-task-field\n');
+
+  const result = reconcileCanary(target, completedDir);
+
+  assert.deepEqual(result.reconciledTaskNames, []);
+  assert.equal(fs.readdirSync(pendingDirFor(target)).length, 1);
+});
+
+test('reconcileCanary falls back to file mtime when a completed canary has no sent_at field', () => {
+  const target = mkTmp();
+  const completedDir = path.join(target, '.swarmforge', 'handoffs', 'inbox', 'completed');
+  fs.mkdirSync(completedDir, { recursive: true });
+  fs.mkdirSync(pendingDirFor(target), { recursive: true });
+
+  const taskName = 'canary-20260705T220000Z';
+  // Pending entry deliberately has no `sent_at:` header.
+  fs.writeFileSync(path.join(pendingDirFor(target), `${taskName}.handoff`), `task: ${taskName}\n`);
+  fs.writeFileSync(path.join(completedDir, '00_x_canary.handoff'), `task: ${taskName}\n\nbody`);
+
+  const result = reconcileCanary(target, completedDir);
+
+  assert.deepEqual(result.reconciledTaskNames, [taskName]);
+  const status = readCanaryStatusFile(target);
+  assert(status !== null);
+  assert(Number.isFinite(status.lastRoundTripMs));
+});
+
+// ── runCanaryCycle ─────────────────────────────────────────────────────────
+
+test('runCanaryCycle injects a canary on the first call when no prior canary exists', () => {
+  const target = mkTmp();
+  const completedDir = path.join(target, '.swarmforge', 'handoffs', 'inbox', 'completed');
+  const budget = 300;
+
+  const result = runCanaryCycle(target, completedDir, NOW, budget);
+
+  assert.equal(result.injected, true);
+  assert(result.taskName !== null);
+  assert.deepEqual(result.reconciled, []);
+  assert.equal(fs.readdirSync(pendingDirFor(target)).length, 1);
+});
+
+test('runCanaryCycle reconciles a completed canary and records its round trip', () => {
+  const target = mkTmp();
+  const completedDir = path.join(target, '.swarmforge', 'handoffs', 'inbox', 'completed');
+  fs.mkdirSync(completedDir, { recursive: true });
+
+  const taskName = sendCanary(target, NOW - 5_000);
+  fs.writeFileSync(path.join(completedDir, '00_x_canary.handoff'), `task: ${taskName}\n\nbody`);
+
+  const budget = 300;
+  const result = runCanaryCycle(target, completedDir, NOW, budget);
+
+  assert.deepEqual(result.reconciled, [taskName]);
+  const status = readCanaryStatusFile(target);
+  assert(status !== null);
+});
+
+test('runCanaryCycle does not inject a new canary while the last one is still fresh', () => {
+  const target = mkTmp();
+  const completedDir = path.join(target, '.swarmforge', 'handoffs', 'inbox', 'completed');
+  const budget = 300;
+
+  writeCanaryStatusFile(target, { lastRoundTripMs: NOW - 30_000 }); // well within budget
+
+  const result = runCanaryCycle(target, completedDir, NOW, budget);
+
+  assert.equal(result.injected, false);
+  assert.equal(result.taskName, null);
 });

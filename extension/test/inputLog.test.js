@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -6,7 +7,7 @@ const path = require('node:path');
 const { appendInputEntry, INPUT_LOG_FILENAME } = require('../out/swarm/inputLog');
 
 function mkTmp() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-inputlog-'));
+  return mkTmpDir('sfvc-inputlog-');
 }
 
 test('INPUT_LOG_FILENAME is .swarmforge/input-log.jsonl', () => {

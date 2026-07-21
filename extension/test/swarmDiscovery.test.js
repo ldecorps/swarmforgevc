@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -6,7 +7,7 @@ const path = require('node:path');
 const { hasPriorRunState, shouldOfferResumePrompt } = require('../out/swarm/swarmDiscovery');
 
 function mkTarget() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-swarm-discovery-'));
+  return mkTmpDir('sfvc-swarm-discovery-');
 }
 
 test('hasPriorRunState is false for a target that has never launched a swarm', () => {

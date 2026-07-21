@@ -1,0 +1,1266 @@
+const assert = require('node:assert/strict');
+const {
+  sendTelegramMessage,
+  sendTelegramMessageWithRateLimitRetry,
+  sendTelegramPoll,
+  getTelegramUpdates,
+  createForumTopic,
+  createForumTopicWithRateLimitRetry,
+  closeForumTopic,
+  closeForumTopicWithRateLimitRetry,
+  reopenForumTopic,
+  deleteForumTopic,
+  editForumTopic,
+  editForumTopicWithRateLimitRetry,
+  getForumTopicIconStickers,
+  resolveForumTopicName,
+  answerCallbackQuery,
+  editMessageText,
+  deleteMessage,
+  pinChatMessage,
+  unpinAllChatMessages,
+  getChatPinnedMessageId,
+  getFile,
+  downloadTelegramFile,
+  sendVoiceNote,
+} = require('../out/notify/telegramClient');
+
+const TOKEN = '123456:test-bot-token';
+const CHAT_ID = '999888777';
+
+test('sendTelegramMessage surfaces retryAfterSeconds from a 429 rate-limit response', async () => {
+  const postFn = async () => ({
+    ok: false,
+    status: 429,
+    json: { ok: false, description: 'Too Many Requests: retry after 7', parameters: { retry_after: 7 } },
+  });
+
+  const result = await sendTelegramMessage(TOKEN, CHAT_ID, 'needs your approval', undefined, postFn, 3857, [
+    [{ text: 'Approve', callbackData: 'approve:BL-525' }],
+  ]);
+
+  assert.equal(result.success, false);
+  assert.equal(result.retryAfterSeconds, 7);
+});
+
+test('sendTelegramMessageWithRateLimitRetry waits retry_after then retries the SAME send until success', async () => {
+  const waits = [];
+  let attempts = 0;
+  const postFn = async () => {
+    attempts += 1;
+    if (attempts === 1) {
+      return {
+        ok: false,
+        status: 429,
+        json: { ok: false, description: 'Too Many Requests: retry after 3', parameters: { retry_after: 3 } },
+      };
+    }
+    return { ok: true, status: 200, json: { ok: true, result: { message_id: 4242 } } };
+  };
+
+  const result = await sendTelegramMessageWithRateLimitRetry(
+    TOKEN,
+    CHAT_ID,
+    'BL-525 needs your approval',
+    undefined,
+    postFn,
+    3857,
+    [[{ text: 'Approve', callbackData: 'approve:BL-525' }]],
+    undefined,
+    async (ms) => {
+      waits.push(ms);
+    }
+  );
+
+  assert.deepEqual(result, { success: true, messageId: 4242 });
+  assert.deepEqual(waits, [3000]);
+  assert.equal(attempts, 2);
+});
+
+test('sendTelegramMessageWithRateLimitRetry stops after maxAttempts on sustained 429 (does not freeze forever)', async () => {
+  const waits = [];
+  let attempts = 0;
+  const postFn = async () => {
+    attempts += 1;
+    return {
+      ok: false,
+      status: 429,
+      json: { ok: false, description: 'Too Many Requests: retry after 1', parameters: { retry_after: 1 } },
+    };
+  };
+
+  const result = await sendTelegramMessageWithRateLimitRetry(
+    TOKEN,
+    CHAT_ID,
+    'BL-525 needs your approval',
+    undefined,
+    postFn,
+    3857,
+    undefined,
+    undefined,
+    async (ms) => {
+      waits.push(ms);
+    },
+    3
+  );
+
+  assert.equal(result.success, false);
+  assert.equal(result.retryAfterSeconds, 1);
+  assert.equal(attempts, 3);
+  assert.deepEqual(waits, [1000, 1000]);
+});
+
+test('sendTelegramMessageWithRateLimitRetry does NOT retry a genuine (non-429) failure', async () => {
+  let attempts = 0;
+  const postFn = async () => {
+    attempts += 1;
+    return { ok: false, status: 400, json: { ok: false, description: 'Bad Request: chat not found' } };
+  };
+
+  const result = await sendTelegramMessageWithRateLimitRetry(TOKEN, CHAT_ID, 'hi', undefined, postFn, 1, undefined, undefined, async () => {
+    assert.fail('wait must not be called for a non-429 failure');
+  });
+
+  assert.equal(result.success, false);
+  assert.equal(attempts, 1);
+});
+
+test('sendTelegramMessage posts to the Telegram API and reports success with the new message id', async () => {
+  const calls = [];
+  const postFn = async (url, body) => {
+    calls.push({ url, body });
+    return { ok: true, status: 200, json: { ok: true, result: { message_id: 42 } } };
+  };
+
+  const result = await sendTelegramMessage(TOKEN, CHAT_ID, 'coder is idle -> active', undefined, postFn);
+
+  assert.deepEqual(result, { success: true, messageId: 42 });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, `https://api.telegram.org/bot${TOKEN}/sendMessage`);
+  const parsed = JSON.parse(calls[0].body);
+  assert.deepEqual(parsed, { chat_id: CHAT_ID, text: 'coder is idle -> active' });
+});
+
+test('sendTelegramMessage includes reply_to_message_id when threading into an existing run', async () => {
+  let capturedBody = null;
+  const postFn = async (url, body) => {
+    capturedBody = body;
+    return { ok: true, status: 200, json: { ok: true, result: { message_id: 43 } } };
+  };
+
+  await sendTelegramMessage(TOKEN, CHAT_ID, 'PR ready: https://example.com/pr/1', 42, postFn);
+
+  assert.deepEqual(JSON.parse(capturedBody), {
+    chat_id: CHAT_ID,
+    text: 'PR ready: https://example.com/pr/1',
+    reply_to_message_id: 42,
+  });
+});
+
+test('sendTelegramMessage reports failure on a non-2xx response without leaking the token', async () => {
+  const postFn = async () => ({ ok: false, status: 401, json: { ok: false, description: 'Unauthorized' } });
+
+  const result = await sendTelegramMessage(TOKEN, CHAT_ID, 'hi', undefined, postFn);
+
+  assert.equal(result.success, false);
+  assert.match(result.error, /401/);
+  assert.match(result.error, /Unauthorized/);
+  assert.doesNotMatch(result.error, new RegExp(TOKEN));
+});
+
+test('sendTelegramMessage catches a thrown/network error and redacts the token even if the error text echoes it', async () => {
+  const postFn = async () => {
+    throw new Error(`ECONNREFUSED for https://api.telegram.org/bot${TOKEN}/sendMessage`);
+  };
+
+  const result = await sendTelegramMessage(TOKEN, CHAT_ID, 'hi', undefined, postFn);
+
+  assert.equal(result.success, false);
+  assert.match(result.error, /ECONNREFUSED/);
+  assert.doesNotMatch(result.error, new RegExp(TOKEN), 'the token must be redacted even out of an arbitrary thrown error message');
+  assert.match(result.error, /\[redacted\]/);
+});
+
+test('getTelegramUpdates returns the update batch from a successful poll', async () => {
+  const updates = [{ update_id: 5, message: { message_id: 7, chat: { id: 999888777 }, text: 'yes' } }];
+  const postFn = async (url, body) => {
+    assert.equal(url, `https://api.telegram.org/bot${TOKEN}/getUpdates`);
+    assert.deepEqual(JSON.parse(body), { offset: 6, timeout: 25 });
+    return { ok: true, status: 200, json: { ok: true, result: updates } };
+  };
+
+  const result = await getTelegramUpdates(TOKEN, 6, 25, postFn);
+
+  assert.deepEqual(result, { success: true, updates });
+});
+
+test('getTelegramUpdates reports failure without leaking the token', async () => {
+  const postFn = async () => ({ ok: false, status: 404, json: { ok: false, description: 'Not Found' } });
+
+  const result = await getTelegramUpdates(TOKEN, 0, 25, postFn);
+
+  assert.equal(result.success, false);
+  assert.deepEqual(result.updates, []);
+  assert.doesNotMatch(result.error, new RegExp(TOKEN));
+});
+
+// ── BL-281: forum-topic support ──────────────────────────────────────────
+
+test('sendTelegramMessage includes message_thread_id when replying into a forum topic', async () => {
+  let capturedBody = null;
+  const postFn = async (url, body) => {
+    capturedBody = body;
+    return { ok: true, status: 200, json: { ok: true, result: { message_id: 44 } } };
+  };
+
+  await sendTelegramMessage(TOKEN, CHAT_ID, 'reply in topic', undefined, postFn, 7);
+
+  assert.deepEqual(JSON.parse(capturedBody), {
+    chat_id: CHAT_ID,
+    text: 'reply in topic',
+    message_thread_id: 7,
+  });
+});
+
+test('sendTelegramMessage omits message_thread_id entirely when not given (existing callers unaffected)', async () => {
+  let capturedBody = null;
+  const postFn = async (url, body) => {
+    capturedBody = body;
+    return { ok: true, status: 200, json: { ok: true, result: { message_id: 45 } } };
+  };
+
+  await sendTelegramMessage(TOKEN, CHAT_ID, 'no topic', undefined, postFn);
+
+  assert.equal(Object.prototype.hasOwnProperty.call(JSON.parse(capturedBody), 'message_thread_id'), false);
+});
+
+// ── BL-410: inline-keyboard buttons + answerCallbackQuery ────────────────
+
+test('sendTelegramMessage attaches reply_markup.inline_keyboard when buttons are given, translating callbackData to callback_data', async () => {
+  let capturedBody = null;
+  const postFn = async (url, body) => {
+    capturedBody = body;
+    return { ok: true, status: 200, json: { ok: true, result: { message_id: 46 } } };
+  };
+
+  await sendTelegramMessage(TOKEN, CHAT_ID, 'needs your approval', undefined, postFn, 7, [
+    [
+      { text: 'Approve', callbackData: 'approve:BL-410' },
+      { text: 'Amend', callbackData: 'amend:BL-410' },
+      { text: 'Reject', callbackData: 'reject:BL-410' },
+    ],
+  ]);
+
+  assert.deepEqual(JSON.parse(capturedBody), {
+    chat_id: CHAT_ID,
+    text: 'needs your approval',
+    message_thread_id: 7,
+    reply_markup: {
+      inline_keyboard: [
+        [
+          { text: 'Approve', callback_data: 'approve:BL-410' },
+          { text: 'Amend', callback_data: 'amend:BL-410' },
+          { text: 'Reject', callback_data: 'reject:BL-410' },
+        ],
+      ],
+    },
+  });
+});
+
+test('sendTelegramMessage omits reply_markup entirely when no buttons are given (existing callers unaffected)', async () => {
+  let capturedBody = null;
+  const postFn = async (url, body) => {
+    capturedBody = body;
+    return { ok: true, status: 200, json: { ok: true, result: { message_id: 47 } } };
+  };
+
+  await sendTelegramMessage(TOKEN, CHAT_ID, 'no buttons', undefined, postFn, 7);
+
+  assert.equal(Object.prototype.hasOwnProperty.call(JSON.parse(capturedBody), 'reply_markup'), false);
+});
+
+// ── BL-466: sendTelegramPoll ──────────────────────────────────────────────
+
+test('sendTelegramPoll posts a native poll to the Telegram API and reports success with the poll id', async () => {
+  const calls = [];
+  const postFn = async (url, body) => {
+    calls.push({ url, body });
+    return { ok: true, status: 200, json: { ok: true, result: { message_id: 50, poll: { id: 'poll-1' } } } };
+  };
+
+  const result = await sendTelegramPoll(TOKEN, CHAT_ID, 'which environment?', ['staging', 'prod'], 7, postFn);
+
+  assert.deepEqual(result, { success: true, pollId: 'poll-1', messageId: 50 });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, `https://api.telegram.org/bot${TOKEN}/sendPoll`);
+  const parsed = JSON.parse(calls[0].body);
+  assert.deepEqual(parsed, {
+    chat_id: CHAT_ID,
+    question: 'which environment?',
+    options: [{ text: 'staging' }, { text: 'prod' }],
+    message_thread_id: 7,
+    is_anonymous: false,
+  });
+});
+
+test('sendTelegramPoll omits message_thread_id entirely when not given (existing callers unaffected)', async () => {
+  let capturedBody = null;
+  const postFn = async (url, body) => {
+    capturedBody = body;
+    return { ok: true, status: 200, json: { ok: true, result: { message_id: 51, poll: { id: 'poll-2' } } } };
+  };
+
+  await sendTelegramPoll(TOKEN, CHAT_ID, 'which environment?', ['staging', 'prod'], undefined, postFn);
+
+  assert.equal(Object.prototype.hasOwnProperty.call(JSON.parse(capturedBody), 'message_thread_id'), false);
+});
+
+test('sendTelegramPoll reports failure on a non-2xx response without leaking the token', async () => {
+  const postFn = async () => ({ ok: false, status: 400, json: { ok: false, description: 'Bad Request: poll must have at least 2 options' } });
+
+  const result = await sendTelegramPoll(TOKEN, CHAT_ID, 'which environment?', ['staging'], undefined, postFn);
+
+  assert.equal(result.success, false);
+  assert.match(result.error, /400/);
+  assert.doesNotMatch(result.error, new RegExp(TOKEN));
+});
+
+test('sendTelegramPoll catches a thrown/network error and redacts the token', async () => {
+  const postFn = async () => {
+    throw new Error(`ECONNREFUSED for https://api.telegram.org/bot${TOKEN}/sendPoll`);
+  };
+
+  const result = await sendTelegramPoll(TOKEN, CHAT_ID, 'which environment?', ['staging', 'prod'], undefined, postFn);
+
+  assert.equal(result.success, false);
+  assert.doesNotMatch(result.error, new RegExp(TOKEN));
+});
+
+test('answerCallbackQuery posts the callback_query_id to the Telegram API and reports success', async () => {
+  const calls = [];
+  const postFn = async (url, body) => {
+    calls.push({ url, body });
+    return { ok: true, status: 200, json: { ok: true, result: true } };
+  };
+
+  const result = await answerCallbackQuery(TOKEN, 'cbq-1', postFn);
+
+  assert.deepEqual(result, { success: true });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, `https://api.telegram.org/bot${TOKEN}/answerCallbackQuery`);
+  assert.deepEqual(JSON.parse(calls[0].body), { callback_query_id: 'cbq-1' });
+});
+
+test('answerCallbackQuery reports failure on a non-2xx response without leaking the token', async () => {
+  const postFn = async () => ({ ok: false, status: 400, json: { ok: false, description: 'query is too old' } });
+
+  const result = await answerCallbackQuery(TOKEN, 'cbq-2', postFn);
+
+  assert.equal(result.success, false);
+  assert.match(result.error, /query is too old/);
+  assert.doesNotMatch(result.error, new RegExp(TOKEN));
+});
+
+// BL-484: an optional toast text - a stale/already-decided tap needs to tell
+// the human something ("already decided: approved") without any other side
+// effect. Added LAST (after postFn), same "new param never disturbs an
+// existing positional call site" posture as sendTelegramMessage/
+// editMessageText's own trailing additions.
+test('answerCallbackQuery includes an optional toast text when given', async () => {
+  const calls = [];
+  const postFn = async (url, body) => {
+    calls.push({ url, body });
+    return { ok: true, status: 200, json: { ok: true, result: true } };
+  };
+
+  await answerCallbackQuery(TOKEN, 'cbq-3', postFn, 'Already decided: approved');
+
+  assert.deepEqual(JSON.parse(calls[0].body), { callback_query_id: 'cbq-3', text: 'Already decided: approved' });
+});
+
+test('answerCallbackQuery omits text entirely when not given', async () => {
+  const postFn = async (url, body) => {
+    assert.equal(Object.prototype.hasOwnProperty.call(JSON.parse(body), 'text'), false);
+    return { ok: true, status: 200, json: { ok: true, result: true } };
+  };
+
+  await answerCallbackQuery(TOKEN, 'cbq-4', postFn);
+});
+
+test('createForumTopic posts to the Telegram API and reports the new topic\'s message_thread_id', async () => {
+  const calls = [];
+  const postFn = async (url, body) => {
+    calls.push({ url, body });
+    return { ok: true, status: 200, json: { ok: true, result: { message_thread_id: 7, name: 'billing question' } } };
+  };
+
+  const result = await createForumTopic(TOKEN, CHAT_ID, 'billing question', postFn);
+
+  assert.deepEqual(result, { success: true, messageThreadId: 7 });
+  assert.equal(calls[0].url, `https://api.telegram.org/bot${TOKEN}/createForumTopic`);
+  assert.deepEqual(JSON.parse(calls[0].body), { chat_id: CHAT_ID, name: 'billing question' });
+});
+
+test('createForumTopic reports failure on a non-2xx response without leaking the token', async () => {
+  const postFn = async () => ({ ok: false, status: 400, json: { ok: false, description: 'Topics are not enabled' } });
+
+  const result = await createForumTopic(TOKEN, CHAT_ID, 'billing question', postFn);
+
+  assert.equal(result.success, false);
+  assert.match(result.error, /Topics are not enabled/);
+  assert.doesNotMatch(result.error, new RegExp(TOKEN));
+});
+
+// BL-444: "group chat was upgraded to a supergroup chat" carries the new id
+// in parameters.migrate_to_chat_id - a REDIRECT the caller should follow,
+// not an ordinary opaque failure.
+test('BL-444: createForumTopic surfaces migrateToChatId from a "upgraded to a supergroup" failure', async () => {
+  const postFn = async () => ({
+    ok: false,
+    status: 400,
+    json: { ok: false, description: 'Bad Request: group chat was upgraded to a supergroup chat', parameters: { migrate_to_chat_id: -1003886489685 } },
+  });
+
+  const result = await createForumTopic(TOKEN, CHAT_ID, 'Contract negotiation', postFn);
+
+  assert.equal(result.success, false);
+  assert.equal(result.migrateToChatId, -1003886489685);
+  assert.match(result.error, /upgraded to a supergroup/);
+});
+
+test('BL-444: createForumTopic leaves migrateToChatId undefined for an ordinary (non-migration) failure', async () => {
+  const postFn = async () => ({ ok: false, status: 400, json: { ok: false, description: 'Topics are not enabled' } });
+
+  const result = await createForumTopic(TOKEN, CHAT_ID, 'billing question', postFn);
+
+  assert.equal(result.migrateToChatId, undefined);
+});
+
+test('createForumTopic surfaces retryAfterSeconds from a 429 rate-limit response', async () => {
+  const postFn = async () => ({
+    ok: false,
+    status: 429,
+    json: { ok: false, description: 'Too Many Requests: retry after 13', parameters: { retry_after: 13 } },
+  });
+
+  const result = await createForumTopic(TOKEN, CHAT_ID, 'Approvals', postFn);
+
+  assert.equal(result.success, false);
+  assert.equal(result.retryAfterSeconds, 13);
+});
+
+test('createForumTopicWithRateLimitRetry waits retry_after then retries the SAME create until success', async () => {
+  const waits = [];
+  let attempts = 0;
+  const postFn = async () => {
+    attempts += 1;
+    if (attempts === 1) {
+      return {
+        ok: false,
+        status: 429,
+        json: { ok: false, description: 'Too Many Requests: retry after 2', parameters: { retry_after: 2 } },
+      };
+    }
+    return { ok: true, status: 200, json: { ok: true, result: { message_thread_id: 3857, name: 'Approvals' } } };
+  };
+
+  const result = await createForumTopicWithRateLimitRetry(TOKEN, CHAT_ID, 'Approvals', postFn, async (ms) => {
+    waits.push(ms);
+  });
+
+  assert.deepEqual(result, { success: true, messageThreadId: 3857 });
+  assert.deepEqual(waits, [2000]);
+  assert.equal(attempts, 2);
+});
+
+test('createForumTopicWithRateLimitRetry does NOT retry a genuine (non-429) failure', async () => {
+  let attempts = 0;
+  const postFn = async () => {
+    attempts += 1;
+    return { ok: false, status: 400, json: { ok: false, description: 'Topics are not enabled' } };
+  };
+
+  const result = await createForumTopicWithRateLimitRetry(TOKEN, CHAT_ID, 'Approvals', postFn, async () => {
+    assert.fail('wait must not be called for a non-429 failure');
+  });
+
+  assert.equal(result.success, false);
+  assert.equal(attempts, 1);
+});
+
+test('resolveForumTopicName reads forum_topic_created.name from the probe reply and deletes the probe', async () => {
+  const calls = [];
+  const postFn = async (url, body) => {
+    calls.push({ url, body: JSON.parse(body) });
+    if (url.includes('sendMessage')) {
+      return {
+        ok: true,
+        status: 200,
+        json: {
+          ok: true,
+          result: {
+            message_id: 99,
+            reply_to_message: { forum_topic_created: { name: 'Approvals' } },
+          },
+        },
+      };
+    }
+    return { ok: true, status: 200, json: { ok: true, result: true } };
+  };
+  const name = await resolveForumTopicName(TOKEN, CHAT_ID, 3857, postFn);
+  assert.equal(name, 'Approvals');
+  assert.equal(calls[0].body.message_thread_id, 3857);
+  assert.equal(calls[0].body.reply_to_message_id, 3857);
+  assert.ok(calls.some((c) => c.url.includes('deleteMessage') && c.body.message_id === 99));
+});
+
+test('resolveForumTopicName returns undefined when the thread is invalid', async () => {
+  const postFn = async () => ({
+    ok: false,
+    status: 400,
+    json: { ok: false, description: 'Bad Request: message thread not found' },
+  });
+  assert.equal(await resolveForumTopicName(TOKEN, CHAT_ID, 1, postFn), undefined);
+});
+
+// ── BL-342: createForumTopic's own optional icon at creation time ───────
+
+test('BL-342: createForumTopic includes icon_custom_emoji_id in the request body when given', async () => {
+  let capturedBody = null;
+  const postFn = async (url, body) => {
+    capturedBody = body;
+    return { ok: true, status: 200, json: { ok: true, result: { message_thread_id: 9 } } };
+  };
+
+  await createForumTopic(TOKEN, CHAT_ID, 'BL-900 - a fine feature', postFn, 'icon-abc');
+
+  assert.deepEqual(JSON.parse(capturedBody), { chat_id: CHAT_ID, name: 'BL-900 - a fine feature', icon_custom_emoji_id: 'icon-abc' });
+});
+
+test('BL-342: createForumTopic omits icon_custom_emoji_id entirely when not given (existing callers unaffected)', async () => {
+  let capturedBody = null;
+  const postFn = async (url, body) => {
+    capturedBody = body;
+    return { ok: true, status: 200, json: { ok: true, result: { message_thread_id: 9 } } };
+  };
+
+  await createForumTopic(TOKEN, CHAT_ID, 'BL-900 - a fine feature', postFn);
+
+  assert.deepEqual(JSON.parse(capturedBody), { chat_id: CHAT_ID, name: 'BL-900 - a fine feature' });
+});
+
+test('BL-299: closeForumTopic posts to the Telegram API with the topic\'s message_thread_id and reports success', async () => {
+  const calls = [];
+  const postFn = async (url, body) => {
+    calls.push({ url, body });
+    return { ok: true, status: 200, json: { ok: true, result: true } };
+  };
+
+  const result = await closeForumTopic(TOKEN, CHAT_ID, 7, postFn);
+
+  assert.deepEqual(result, { success: true });
+  assert.equal(calls[0].url, `https://api.telegram.org/bot${TOKEN}/closeForumTopic`);
+  assert.deepEqual(JSON.parse(calls[0].body), { chat_id: CHAT_ID, message_thread_id: 7 });
+});
+
+test('BL-299: closeForumTopic reports failure on a non-2xx response without leaking the token', async () => {
+  const postFn = async () => ({ ok: false, status: 400, json: { ok: false, description: 'topic already closed' } });
+
+  const result = await closeForumTopic(TOKEN, CHAT_ID, 7, postFn);
+
+  assert.equal(result.success, false);
+  assert.match(result.error, /topic already closed/);
+  assert.doesNotMatch(result.error, new RegExp(TOKEN));
+});
+
+// ── BL-494: closeForumTopicWithRateLimitRetry - the close-endpoint sibling
+//    of editForumTopicWithRateLimitRetry above, for the one-time legacy
+//    per-ticket topic reconcile. Mirrors that function's own test shapes
+//    exactly (same retry_after-honoring contract, a different Telegram
+//    method under it).
+
+test('BL-494: closeForumTopic propagates retryAfterSeconds on a 429, same shape as editForumTopic', async () => {
+  const postFn = async () => ({ ok: false, status: 429, json: { ok: false, description: 'retry after 26', parameters: { retry_after: 26 } } });
+
+  const result = await closeForumTopic(TOKEN, CHAT_ID, 7, postFn);
+
+  assert.equal(result.success, false);
+  assert.equal(result.retryAfterSeconds, 26);
+});
+
+test('BL-494: closeForumTopicWithRateLimitRetry waits exactly retry_after seconds and retries the SAME topic on a 429', async () => {
+  let calls = 0;
+  const postFn = async () => {
+    calls += 1;
+    if (calls === 1) {
+      return { ok: false, status: 429, json: { ok: false, description: 'Too Many Requests: retry after 26', parameters: { retry_after: 26 } } };
+    }
+    return { ok: true, status: 200, json: { ok: true, result: true } };
+  };
+  const waits = [];
+
+  const result = await closeForumTopicWithRateLimitRetry(TOKEN, CHAT_ID, 101, async (ms) => waits.push(ms), postFn);
+
+  assert.equal(result, true);
+  assert.equal(calls, 2, 'expected the rate-limited call to be retried, never dropped');
+  assert.deepEqual(waits, [26000], 'expected the wait to be EXACTLY retry_after seconds, in ms, never a generic guess');
+});
+
+test('BL-494: closeForumTopicWithRateLimitRetry keeps retrying through MULTIPLE consecutive rate-limit responses until it succeeds', async () => {
+  let calls = 0;
+  const postFn = async () => {
+    calls += 1;
+    if (calls <= 3) {
+      return { ok: false, status: 429, json: { ok: false, description: 'retry after 5', parameters: { retry_after: 5 } } };
+    }
+    return { ok: true, status: 200, json: { ok: true, result: true } };
+  };
+  const waits = [];
+
+  const result = await closeForumTopicWithRateLimitRetry(TOKEN, CHAT_ID, 101, async (ms) => waits.push(ms), postFn);
+
+  assert.equal(result, true);
+  assert.equal(calls, 4);
+  assert.deepEqual(waits, [5000, 5000, 5000]);
+});
+
+test('BL-494: closeForumTopicWithRateLimitRetry does NOT retry a genuine (non-429) failure - returns false immediately', async () => {
+  let calls = 0;
+  const postFn = async () => {
+    calls += 1;
+    return { ok: false, status: 400, json: { ok: false, description: 'topic already closed' } };
+  };
+  const waits = [];
+
+  const result = await closeForumTopicWithRateLimitRetry(TOKEN, CHAT_ID, 101, async (ms) => waits.push(ms), postFn);
+
+  assert.equal(result, false);
+  assert.equal(calls, 1);
+  assert.deepEqual(waits, []);
+});
+
+test('BL-332: reopenForumTopic posts to the Telegram API with the topic\'s message_thread_id and reports success', async () => {
+  const calls = [];
+  const postFn = async (url, body) => {
+    calls.push({ url, body });
+    return { ok: true, status: 200, json: { ok: true, result: true } };
+  };
+
+  const result = await reopenForumTopic(TOKEN, CHAT_ID, 7, postFn);
+
+  assert.deepEqual(result, { success: true });
+  assert.equal(calls[0].url, `https://api.telegram.org/bot${TOKEN}/reopenForumTopic`);
+  assert.deepEqual(JSON.parse(calls[0].body), { chat_id: CHAT_ID, message_thread_id: 7 });
+});
+
+test('BL-332: reopenForumTopic reports failure on a non-2xx response without leaking the token', async () => {
+  const postFn = async () => ({ ok: false, status: 400, json: { ok: false, description: 'topic not found' } });
+
+  const result = await reopenForumTopic(TOKEN, CHAT_ID, 7, postFn);
+
+  assert.equal(result.success, false);
+  assert.match(result.error, /topic not found/);
+  assert.doesNotMatch(result.error, new RegExp(TOKEN));
+});
+
+test('BL-332: reopenForumTopic reports a redacted failure on a thrown network error', async () => {
+  const postFn = async () => {
+    throw new Error(`connection reset while calling bot${TOKEN}`);
+  };
+
+  const result = await reopenForumTopic(TOKEN, CHAT_ID, 7, postFn);
+
+  assert.equal(result.success, false);
+  assert.doesNotMatch(result.error, new RegExp(TOKEN));
+});
+
+test('BL-331: deleteForumTopic posts to the Telegram API with the topic\'s message_thread_id and reports success', async () => {
+  const calls = [];
+  const postFn = async (url, body) => {
+    calls.push({ url, body });
+    return { ok: true, status: 200, json: { ok: true, result: true } };
+  };
+
+  const result = await deleteForumTopic(TOKEN, CHAT_ID, 7, postFn);
+
+  assert.deepEqual(result, { success: true });
+  assert.equal(calls[0].url, `https://api.telegram.org/bot${TOKEN}/deleteForumTopic`);
+  assert.deepEqual(JSON.parse(calls[0].body), { chat_id: CHAT_ID, message_thread_id: 7 });
+});
+
+test('BL-331: deleteForumTopic reports failure on a non-2xx response without leaking the token', async () => {
+  const postFn = async () => ({ ok: false, status: 400, json: { ok: false, description: 'topic not found' } });
+
+  const result = await deleteForumTopic(TOKEN, CHAT_ID, 7, postFn);
+
+  assert.equal(result.success, false);
+  assert.match(result.error, /topic not found/);
+  assert.doesNotMatch(result.error, new RegExp(TOKEN));
+});
+
+test('BL-331: deleteForumTopic reports a redacted failure on a thrown network error', async () => {
+  const postFn = async () => {
+    throw new Error(`connection reset while calling bot${TOKEN}`);
+  };
+
+  const result = await deleteForumTopic(TOKEN, CHAT_ID, 7, postFn);
+
+  assert.equal(result.success, false);
+  assert.doesNotMatch(result.error, new RegExp(TOKEN));
+});
+
+// ── BL-342: editForumTopic - the wrapper the intake assumed existed ─────
+
+test('BL-342: editForumTopic posts name/icon updates with the topic\'s message_thread_id and reports success', async () => {
+  const calls = [];
+  const postFn = async (url, body) => {
+    calls.push({ url, body });
+    return { ok: true, status: 200, json: { ok: true, result: true } };
+  };
+
+  const result = await editForumTopic(TOKEN, CHAT_ID, 7, { iconCustomEmojiId: 'icon-abc' }, postFn);
+
+  assert.deepEqual(result, { success: true });
+  assert.equal(calls[0].url, `https://api.telegram.org/bot${TOKEN}/editForumTopic`);
+  assert.deepEqual(JSON.parse(calls[0].body), { chat_id: CHAT_ID, message_thread_id: 7, icon_custom_emoji_id: 'icon-abc' });
+});
+
+test('BL-342: editForumTopic includes name when given, alongside or instead of the icon', async () => {
+  let capturedBody = null;
+  const postFn = async (url, body) => {
+    capturedBody = body;
+    return { ok: true, status: 200, json: { ok: true, result: true } };
+  };
+
+  await editForumTopic(TOKEN, CHAT_ID, 7, { name: 'BL-900 - renamed' }, postFn);
+
+  assert.deepEqual(JSON.parse(capturedBody), { chat_id: CHAT_ID, message_thread_id: 7, name: 'BL-900 - renamed' });
+});
+
+test('BL-342: editForumTopic reports failure on a non-2xx response without leaking the token', async () => {
+  const postFn = async () => ({ ok: false, status: 400, json: { ok: false, description: 'topic not found' } });
+
+  const result = await editForumTopic(TOKEN, CHAT_ID, 7, { iconCustomEmojiId: 'icon-abc' }, postFn);
+
+  assert.equal(result.success, false);
+  assert.match(result.error, /topic not found/);
+  assert.doesNotMatch(result.error, new RegExp(TOKEN));
+});
+
+test('BL-342: editForumTopic reports a redacted failure on a thrown network error', async () => {
+  const postFn = async () => {
+    throw new Error(`connection reset while calling bot${TOKEN}`);
+  };
+
+  const result = await editForumTopic(TOKEN, CHAT_ID, 7, { iconCustomEmojiId: 'icon-abc' }, postFn);
+
+  assert.equal(result.success, false);
+  assert.doesNotMatch(result.error, new RegExp(TOKEN));
+});
+
+// BL-342: the Operator's own real repro - 26 icon-set calls hit "Too Many
+// Requests: retry after 26" after 19 calls and 7 were silently dropped.
+// editForumTopic must surface retry_after so a caller can honour it,
+// rather than treating a 429 as an ordinary opaque failure.
+test('BL-342: editForumTopic surfaces retryAfterSeconds from a 429 rate-limit response', async () => {
+  const postFn = async () => ({
+    ok: false,
+    status: 429,
+    json: { ok: false, error_code: 429, description: 'Too Many Requests: retry after 26', parameters: { retry_after: 26 } },
+  });
+
+  const result = await editForumTopic(TOKEN, CHAT_ID, 7, { iconCustomEmojiId: 'icon-abc' }, postFn);
+
+  assert.equal(result.success, false);
+  assert.equal(result.retryAfterSeconds, 26);
+});
+
+test('BL-342: editForumTopic leaves retryAfterSeconds undefined for an ordinary (non-429) failure', async () => {
+  const postFn = async () => ({ ok: false, status: 400, json: { ok: false, description: 'topic not found' } });
+
+  const result = await editForumTopic(TOKEN, CHAT_ID, 7, { iconCustomEmojiId: 'icon-abc' }, postFn);
+
+  assert.equal(result.retryAfterSeconds, undefined);
+});
+
+// ── BL-414 hardener bounce: editForumTopicWithRateLimitRetry - the shared
+//    retry-loop generalization of backfill-topic-icons.ts's own
+//    setTopicIconWithRateLimitRetry (BL-342), so a NAME edit (title-age
+//    sync) can honour a 429's retry_after the same way an ICON edit (the
+//    backfill) already does. Mirrors that file's own test shapes exactly.
+
+test('BL-414: editForumTopicWithRateLimitRetry waits exactly retry_after seconds and retries the SAME topic on a 429', async () => {
+  let calls = 0;
+  const postFn = async () => {
+    calls += 1;
+    if (calls === 1) {
+      return { ok: false, status: 429, json: { ok: false, description: 'Too Many Requests: retry after 26', parameters: { retry_after: 26 } } };
+    }
+    return { ok: true, status: 200, json: { ok: true, result: true } };
+  };
+  const waits = [];
+
+  const result = await editForumTopicWithRateLimitRetry(TOKEN, CHAT_ID, 101, { name: 'BL-900 - renamed' }, async (ms) => waits.push(ms), postFn);
+
+  assert.equal(result, true);
+  assert.equal(calls, 2, 'expected the rate-limited call to be retried, never dropped');
+  assert.deepEqual(waits, [26000], 'expected the wait to be EXACTLY retry_after seconds, in ms, never a generic guess');
+});
+
+test('BL-414: editForumTopicWithRateLimitRetry keeps retrying through MULTIPLE consecutive rate-limit responses until it succeeds', async () => {
+  let calls = 0;
+  const postFn = async () => {
+    calls += 1;
+    if (calls <= 3) {
+      return { ok: false, status: 429, json: { ok: false, description: 'retry after 5', parameters: { retry_after: 5 } } };
+    }
+    return { ok: true, status: 200, json: { ok: true, result: true } };
+  };
+  const waits = [];
+
+  const result = await editForumTopicWithRateLimitRetry(TOKEN, CHAT_ID, 101, { name: 'BL-900 - renamed' }, async (ms) => waits.push(ms), postFn);
+
+  assert.equal(result, true);
+  assert.equal(calls, 4);
+  assert.deepEqual(waits, [5000, 5000, 5000]);
+});
+
+test('BL-414: editForumTopicWithRateLimitRetry does NOT retry a genuine (non-429) failure - returns false immediately', async () => {
+  let calls = 0;
+  const postFn = async () => {
+    calls += 1;
+    return { ok: false, status: 400, json: { ok: false, description: 'topic not found' } };
+  };
+  const waits = [];
+
+  const result = await editForumTopicWithRateLimitRetry(TOKEN, CHAT_ID, 101, { name: 'BL-900 - renamed' }, async (ms) => waits.push(ms), postFn);
+
+  assert.equal(result, false);
+  assert.equal(calls, 1);
+  assert.deepEqual(waits, []);
+});
+
+// ── BL-342: getForumTopicIconStickers - the validated set icon ids must
+//    be resolved against, never a hardcoded id (scenario 06) ─────────────
+
+test('BL-342: getForumTopicIconStickers returns the sticker list with custom_emoji_id and emoji', async () => {
+  const postFn = async () => ({
+    ok: true,
+    status: 200,
+    json: {
+      ok: true,
+      result: [
+        { width: 100, height: 100, emoji: '✅', custom_emoji_id: 'icon-check' },
+        { width: 100, height: 100, emoji: '🐛', custom_emoji_id: 'icon-bug' },
+      ],
+    },
+  });
+
+  const result = await getForumTopicIconStickers(TOKEN, postFn);
+
+  assert.equal(result.success, true);
+  assert.deepEqual(result.stickers, [
+    { emoji: '✅', customEmojiId: 'icon-check' },
+    { emoji: '🐛', customEmojiId: 'icon-bug' },
+  ]);
+});
+
+test('BL-342: getForumTopicIconStickers reports failure on a non-2xx response without leaking the token', async () => {
+  const postFn = async () => ({ ok: false, status: 500, json: { ok: false, description: 'internal error' } });
+
+  const result = await getForumTopicIconStickers(TOKEN, postFn);
+
+  assert.equal(result.success, false);
+  assert.deepEqual(result.stickers, []);
+  assert.doesNotMatch(result.error, new RegExp(TOKEN));
+});
+
+// ── BL-452: parse_mode + editMessageText (the pipeline board's own edit-in-
+// place mechanism - the first feature in this codebase to edit a MESSAGE's
+// text by message_id, rather than a forum topic's name/icon) ────────────
+
+test('sendTelegramMessage includes parse_mode when given (the pipeline board posts as HTML)', async () => {
+  let capturedBody = null;
+  const postFn = async (url, body) => {
+    capturedBody = body;
+    return { ok: true, status: 200, json: { ok: true, result: { message_id: 48 } } };
+  };
+
+  await sendTelegramMessage(TOKEN, CHAT_ID, '<pre>grid</pre>', undefined, postFn, 7, undefined, 'HTML');
+
+  assert.deepEqual(JSON.parse(capturedBody), {
+    chat_id: CHAT_ID,
+    text: '<pre>grid</pre>',
+    message_thread_id: 7,
+    parse_mode: 'HTML',
+  });
+});
+
+test('sendTelegramMessage omits parse_mode entirely when not given (existing callers unaffected)', async () => {
+  let capturedBody = null;
+  const postFn = async (url, body) => {
+    capturedBody = body;
+    return { ok: true, status: 200, json: { ok: true, result: { message_id: 49 } } };
+  };
+
+  await sendTelegramMessage(TOKEN, CHAT_ID, 'plain', undefined, postFn);
+
+  assert.equal(Object.prototype.hasOwnProperty.call(JSON.parse(capturedBody), 'parse_mode'), false);
+});
+
+test('editMessageText posts message_id + text to the Telegram API and reports success', async () => {
+  const calls = [];
+  const postFn = async (url, body) => {
+    calls.push({ url, body });
+    return { ok: true, status: 200, json: { ok: true, result: { message_id: 42 } } };
+  };
+
+  const result = await editMessageText(TOKEN, CHAT_ID, 42, '<pre>grid v2</pre>', 'HTML', postFn);
+
+  assert.deepEqual(result, { success: true });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, `https://api.telegram.org/bot${TOKEN}/editMessageText`);
+  assert.deepEqual(JSON.parse(calls[0].body), {
+    chat_id: CHAT_ID,
+    message_id: 42,
+    text: '<pre>grid v2</pre>',
+    parse_mode: 'HTML',
+  });
+});
+
+test('editMessageText omits parse_mode entirely when not given', async () => {
+  let capturedBody = null;
+  const postFn = async (url, body) => {
+    capturedBody = body;
+    return { ok: true, status: 200, json: { ok: true, result: { message_id: 42 } } };
+  };
+
+  await editMessageText(TOKEN, CHAT_ID, 42, 'plain text', undefined, postFn);
+
+  assert.equal(Object.prototype.hasOwnProperty.call(JSON.parse(capturedBody), 'parse_mode'), false);
+});
+
+test('editMessageText reports failure on a non-2xx response without leaking the token', async () => {
+  const postFn = async () => ({ ok: false, status: 400, json: { ok: false, description: 'message to edit not found' } });
+
+  const result = await editMessageText(TOKEN, CHAT_ID, 42, 'text', undefined, postFn);
+
+  assert.equal(result.success, false);
+  assert.match(result.error, /message to edit not found/);
+  assert.doesNotMatch(result.error, new RegExp(TOKEN));
+});
+
+// BL-496: the approval-ask close's own bounded retry needs to honour a 429's
+// told-you-so retry_after, exactly like editForumTopic's own BL-342 fix
+// above - editMessageText must surface it too, never treat a 429 as an
+// ordinary opaque failure.
+test('BL-496: editMessageText surfaces retryAfterSeconds from a 429 rate-limit response', async () => {
+  const postFn = async () => ({
+    ok: false,
+    status: 429,
+    json: { ok: false, error_code: 429, description: 'Too Many Requests: retry after 3', parameters: { retry_after: 3 } },
+  });
+
+  const result = await editMessageText(TOKEN, CHAT_ID, 42, 'text', undefined, postFn);
+
+  assert.equal(result.success, false);
+  assert.equal(result.retryAfterSeconds, 3);
+});
+
+test('BL-496: editMessageText leaves retryAfterSeconds undefined for an ordinary (non-429) failure', async () => {
+  const postFn = async () => ({ ok: false, status: 400, json: { ok: false, description: 'message to edit not found' } });
+
+  const result = await editMessageText(TOKEN, CHAT_ID, 42, 'text', undefined, postFn);
+
+  assert.equal(result.retryAfterSeconds, undefined);
+});
+
+// BL-484: a decided approval ask must STRIP its inline keyboard - Telegram's
+// editMessageText leaves an existing reply_markup untouched when the field
+// is omitted, so removing buttons requires explicitly sending an EMPTY
+// inline_keyboard, not just leaving the field out. `buttons: null` is that
+// explicit strip; `buttons` omitted (undefined) keeps the pre-BL-484
+// behavior (no reply_markup field at all) for every existing call site.
+test('editMessageText with buttons: null explicitly strips the inline keyboard', async () => {
+  const calls = [];
+  const postFn = async (url, body) => {
+    calls.push({ url, body });
+    return { ok: true, status: 200, json: { ok: true, result: { message_id: 42 } } };
+  };
+
+  await editMessageText(TOKEN, CHAT_ID, 42, 'decided text', undefined, postFn, null);
+
+  assert.deepEqual(JSON.parse(calls[0].body).reply_markup, { inline_keyboard: [] });
+});
+
+test('editMessageText omits reply_markup entirely when buttons is not given', async () => {
+  const postFn = async (url, body) => {
+    assert.equal(Object.prototype.hasOwnProperty.call(JSON.parse(body), 'reply_markup'), false);
+    return { ok: true, status: 200, json: { ok: true, result: { message_id: 42 } } };
+  };
+
+  await editMessageText(TOKEN, CHAT_ID, 42, 'text', undefined, postFn);
+});
+
+test('editMessageText with a real buttons array sends it as the new inline keyboard', async () => {
+  const calls = [];
+  const postFn = async (url, body) => {
+    calls.push({ url, body });
+    return { ok: true, status: 200, json: { ok: true, result: { message_id: 42 } } };
+  };
+
+  await editMessageText(TOKEN, CHAT_ID, 42, 'text', undefined, postFn, [[{ text: 'Approve', callbackData: 'approve:BL-1' }]]);
+
+  assert.deepEqual(JSON.parse(calls[0].body).reply_markup, { inline_keyboard: [[{ text: 'Approve', callback_data: 'approve:BL-1' }]] });
+});
+
+// ── BL-462: deleteMessage - the pipeline board's own repost-at-bottom ────
+
+test('deleteMessage posts message_id to the Telegram API and reports success', async () => {
+  const calls = [];
+  const postFn = async (url, body) => {
+    calls.push({ url, body });
+    return { ok: true, status: 200, json: { ok: true, result: true } };
+  };
+
+  const result = await deleteMessage(TOKEN, CHAT_ID, 42, postFn);
+
+  assert.deepEqual(result, { success: true });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, `https://api.telegram.org/bot${TOKEN}/deleteMessage`);
+  assert.deepEqual(JSON.parse(calls[0].body), { chat_id: CHAT_ID, message_id: 42 });
+});
+
+test('deleteMessage reports failure on a non-2xx response without leaking the token', async () => {
+  const postFn = async () => ({ ok: false, status: 400, json: { ok: false, description: 'message to delete not found' } });
+
+  const result = await deleteMessage(TOKEN, CHAT_ID, 42, postFn);
+
+  assert.equal(result.success, false);
+  assert.match(result.error, /message to delete not found/);
+  assert.doesNotMatch(result.error, new RegExp(TOKEN));
+});
+
+test('deleteMessage reports a redacted failure on a thrown network error', async () => {
+  const postFn = async () => {
+    throw new Error(`connection reset while calling bot${TOKEN}`);
+  };
+
+  const result = await deleteMessage(TOKEN, CHAT_ID, 42, postFn);
+
+  assert.equal(result.success, false);
+  assert.doesNotMatch(result.error, new RegExp(TOKEN));
+});
+
+// ── BL-467: pinChatMessage / unpinAllChatMessages / getChatPinnedMessageId ──
+
+test('pinChatMessage posts message_id and disable_notification:true to the Telegram API', async () => {
+  const calls = [];
+  const postFn = async (url, body) => {
+    calls.push({ url, body });
+    return { ok: true, status: 200, json: { ok: true, result: true } };
+  };
+
+  const result = await pinChatMessage(TOKEN, CHAT_ID, 42, postFn);
+
+  assert.deepEqual(result, { success: true });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, `https://api.telegram.org/bot${TOKEN}/pinChatMessage`);
+  assert.deepEqual(JSON.parse(calls[0].body), { chat_id: CHAT_ID, message_id: 42, disable_notification: true });
+});
+
+test('pinChatMessage reports failure on a non-2xx response without leaking the token', async () => {
+  const postFn = async () => ({ ok: false, status: 400, json: { ok: false, description: 'message to pin not found' } });
+
+  const result = await pinChatMessage(TOKEN, CHAT_ID, 42, postFn);
+
+  assert.equal(result.success, false);
+  assert.match(result.error, /message to pin not found/);
+  assert.doesNotMatch(result.error, new RegExp(TOKEN));
+});
+
+test('pinChatMessage reports a redacted failure on a thrown network error', async () => {
+  const postFn = async () => {
+    throw new Error(`connection reset while calling bot${TOKEN}`);
+  };
+
+  const result = await pinChatMessage(TOKEN, CHAT_ID, 42, postFn);
+
+  assert.equal(result.success, false);
+  assert.doesNotMatch(result.error, new RegExp(TOKEN));
+});
+
+test('unpinAllChatMessages posts chat_id only to the Telegram API', async () => {
+  const calls = [];
+  const postFn = async (url, body) => {
+    calls.push({ url, body });
+    return { ok: true, status: 200, json: { ok: true, result: true } };
+  };
+
+  const result = await unpinAllChatMessages(TOKEN, CHAT_ID, postFn);
+
+  assert.deepEqual(result, { success: true });
+  assert.equal(calls[0].url, `https://api.telegram.org/bot${TOKEN}/unpinAllChatMessages`);
+  assert.deepEqual(JSON.parse(calls[0].body), { chat_id: CHAT_ID });
+});
+
+test('unpinAllChatMessages reports a redacted failure on a thrown network error', async () => {
+  const postFn = async () => {
+    throw new Error(`connection reset while calling bot${TOKEN}`);
+  };
+
+  const result = await unpinAllChatMessages(TOKEN, CHAT_ID, postFn);
+
+  assert.equal(result.success, false);
+  assert.doesNotMatch(result.error, new RegExp(TOKEN));
+});
+
+test('getChatPinnedMessageId reads result.pinned_message.message_id off a getChat response', async () => {
+  const calls = [];
+  const postFn = async (url, body) => {
+    calls.push({ url, body });
+    return { ok: true, status: 200, json: { ok: true, result: { id: CHAT_ID, pinned_message: { message_id: 77 } } } };
+  };
+
+  const result = await getChatPinnedMessageId(TOKEN, CHAT_ID, postFn);
+
+  assert.deepEqual(result, { success: true, pinnedMessageId: 77 });
+  assert.equal(calls[0].url, `https://api.telegram.org/bot${TOKEN}/getChat`);
+  assert.deepEqual(JSON.parse(calls[0].body), { chat_id: CHAT_ID });
+});
+
+test('getChatPinnedMessageId reports pinnedMessageId undefined when the chat has no pinned message', async () => {
+  const postFn = async () => ({ ok: true, status: 200, json: { ok: true, result: { id: CHAT_ID } } });
+
+  const result = await getChatPinnedMessageId(TOKEN, CHAT_ID, postFn);
+
+  assert.deepEqual(result, { success: true, pinnedMessageId: undefined });
+});
+
+test('getChatPinnedMessageId reports a redacted failure on a thrown network error', async () => {
+  const postFn = async () => {
+    throw new Error(`connection reset while calling bot${TOKEN}`);
+  };
+
+  const result = await getChatPinnedMessageId(TOKEN, CHAT_ID, postFn);
+
+  assert.equal(result.success, false);
+  assert.doesNotMatch(result.error, new RegExp(TOKEN));
+});
+
+// ── BL-426: getFile / downloadTelegramFile / sendVoiceNote ───────────────
+
+test('BL-426: getFile resolves a file_id to its file_path', async () => {
+  const calls = [];
+  const postFn = async (url, body) => {
+    calls.push({ url, body });
+    return { ok: true, status: 200, json: { ok: true, result: { file_id: 'abc', file_path: 'voice/file_1.oga' } } };
+  };
+
+  const result = await getFile(TOKEN, 'abc', postFn);
+
+  assert.deepEqual(result, { success: true, filePath: 'voice/file_1.oga' });
+  assert.equal(calls[0].url, `https://api.telegram.org/bot${TOKEN}/getFile`);
+  assert.deepEqual(JSON.parse(calls[0].body), { file_id: 'abc' });
+});
+
+test('BL-426: getFile reports failure on a non-2xx response without leaking the token', async () => {
+  const postFn = async () => ({ ok: false, status: 400, json: { ok: false, description: 'file not found' } });
+
+  const result = await getFile(TOKEN, 'abc', postFn);
+
+  assert.equal(result.success, false);
+  assert.match(result.error, /file not found/);
+  assert.doesNotMatch(result.error, new RegExp(TOKEN));
+});
+
+test('BL-426: getFile reports failure when the response has no file_path', async () => {
+  const postFn = async () => ({ ok: true, status: 200, json: { ok: true, result: {} } });
+
+  const result = await getFile(TOKEN, 'abc', postFn);
+
+  assert.equal(result.success, false);
+});
+
+test('BL-426: downloadTelegramFile fetches the resolved path and returns its bytes', async () => {
+  const calls = [];
+  const download = async (url) => {
+    calls.push(url);
+    return { ok: true, status: 200, bytes: Buffer.from('audio-bytes') };
+  };
+
+  const result = await downloadTelegramFile(TOKEN, 'voice/file_1.oga', download);
+
+  assert.equal(result.success, true);
+  assert.deepEqual(result.bytes, Buffer.from('audio-bytes'));
+  assert.deepEqual(calls, [`https://api.telegram.org/file/bot${TOKEN}/voice/file_1.oga`]);
+});
+
+test('BL-426: downloadTelegramFile reports a redacted failure on a non-2xx response', async () => {
+  const download = async () => ({ ok: false, status: 404, bytes: Buffer.alloc(0) });
+
+  const result = await downloadTelegramFile(TOKEN, 'voice/file_1.oga', download);
+
+  assert.equal(result.success, false);
+  assert.doesNotMatch(result.error, new RegExp(TOKEN));
+});
+
+test('BL-426: downloadTelegramFile reports a redacted failure on a thrown network error', async () => {
+  const download = async () => {
+    throw new Error(`network down (token ${TOKEN})`);
+  };
+
+  const result = await downloadTelegramFile(TOKEN, 'voice/file_1.oga', download);
+
+  assert.equal(result.success, false);
+  assert.doesNotMatch(result.error, new RegExp(TOKEN));
+});
+
+test('BL-426: sendVoiceNote uploads the audio as multipart form data with chat_id and message_thread_id', async () => {
+  const calls = [];
+  const postVoiceFn = async (url, form) => {
+    calls.push({ url, form });
+    return { ok: true, status: 200, json: { ok: true, result: { message_id: 7 } } };
+  };
+
+  const result = await sendVoiceNote(TOKEN, CHAT_ID, Buffer.from('synth-audio'), 42, postVoiceFn);
+
+  assert.deepEqual(result, { success: true });
+  assert.equal(calls[0].url, `https://api.telegram.org/bot${TOKEN}/sendVoice`);
+  assert.equal(calls[0].form.get('chat_id'), CHAT_ID);
+  assert.equal(calls[0].form.get('message_thread_id'), '42');
+  assert.ok(calls[0].form.get('voice'));
+});
+
+test('BL-426: sendVoiceNote omits message_thread_id when not given', async () => {
+  const calls = [];
+  const postVoiceFn = async (url, form) => {
+    calls.push(form);
+    return { ok: true, status: 200, json: { ok: true, result: { message_id: 7 } } };
+  };
+
+  await sendVoiceNote(TOKEN, CHAT_ID, Buffer.from('synth-audio'), undefined, postVoiceFn);
+
+  assert.equal(calls[0].has('message_thread_id'), false);
+});
+
+test('BL-426: sendVoiceNote reports failure on a non-2xx response without leaking the token', async () => {
+  const postVoiceFn = async () => ({ ok: false, status: 400, json: { ok: false, description: 'VOICE_INVALID' } });
+
+  const result = await sendVoiceNote(TOKEN, CHAT_ID, Buffer.from('synth-audio'), undefined, postVoiceFn);
+
+  assert.equal(result.success, false);
+  assert.match(result.error, /VOICE_INVALID/);
+  assert.doesNotMatch(result.error, new RegExp(TOKEN));
+});
+
+test('BL-426: sendVoiceNote reports a redacted failure on a thrown network error', async () => {
+  const postVoiceFn = async () => {
+    throw new Error(`network down (token ${TOKEN})`);
+  };
+
+  const result = await sendVoiceNote(TOKEN, CHAT_ID, Buffer.from('synth-audio'), undefined, postVoiceFn);
+
+  assert.equal(result.success, false);
+  assert.doesNotMatch(result.error, new RegExp(TOKEN));
+});

@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -54,7 +55,7 @@ test('resetPaneActivity clears tracked state so the next observation counts as f
 });
 
 function mkTarget() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-paneactivity-'));
+  return mkTmpDir('sfvc-paneactivity-');
 }
 
 test('outboxNewestMtimeMs returns 0 when roles.tsv does not exist', () => {

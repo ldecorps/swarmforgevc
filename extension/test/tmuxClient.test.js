@@ -1,13 +1,18 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const tmuxClient = require('../out/swarm/tmuxClient');
+const sleepSyncModule = require('../out/swarm/sleepSync');
 const {
   getPaneBaseIndex,
   paneTarget,
   resolveAgentPaneTarget,
   getPaneCommand,
   getPanePid,
+  getPanePidAndCommand,
+  hasLivePaneChild,
   capturePane,
   sendKeys,
   sessionExists,
@@ -19,13 +24,30 @@ const {
   shapeRunResult,
   hasRequiredRoleFields,
   parseRoleLine,
-} = require('../out/swarm/tmuxClient');
+} = tmuxClient;
 const { installExecutable } = require('./helpers/sharedBin');
 
-const { installFakeTmux } = require('./helpers/fakeTmux');
+const { installInProcessTmux } = require('./helpers/fakeTmux');
 
 function mkTmp() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-tmuxclient-'));
+  return mkTmpDir('sfvc-tmuxclient-');
+}
+
+// BL-423: hasLivePaneChild shells to the real `pgrep`, never tmux - the
+// in-process tmux double (installInProcessTmux) only intercepts a `tmux`
+// argv0 and forwards everything else (including pgrep) to the real
+// spawnSync, so a fake `pgrep` executable on PATH is its own small double,
+// mirroring installFakeTmux's own "fake executable on PATH" shape.
+function installFakePgrep(hasChild) {
+  const dir = mkTmpDir('sfvc-fake-pgrep-');
+  installExecutable(path.join(dir, 'pgrep'), `#!/bin/sh\n${hasChild ? 'echo 424242\nexit 0' : 'exit 1'}\n`);
+  const originalPath = process.env.PATH;
+  process.env.PATH = `${dir}${path.delimiter}${originalPath}`;
+  return {
+    restore() {
+      process.env.PATH = originalPath;
+    },
+  };
 }
 
 test('paneTarget builds session:window.paneIndex', () => {
@@ -33,7 +55,7 @@ test('paneTarget builds session:window.paneIndex', () => {
 });
 
 test('getPaneBaseIndex parses numeric stdout from tmux', () => {
-  const fake = installFakeTmux([
+  const fake = installInProcessTmux([
     { subcommand: 'show-window-options', exitCode: 0, stdout: '1\n' },
   ]);
   try {
@@ -44,7 +66,7 @@ test('getPaneBaseIndex parses numeric stdout from tmux', () => {
 });
 
 test('getPaneBaseIndex returns 0 when tmux output is not numeric', () => {
-  const fake = installFakeTmux([
+  const fake = installInProcessTmux([
     { subcommand: 'show-window-options', exitCode: 0, stdout: 'not-a-number\n' },
   ]);
   try {
@@ -55,7 +77,7 @@ test('getPaneBaseIndex returns 0 when tmux output is not numeric', () => {
 });
 
 test('resolveAgentPaneTarget uses the first window index from tmux', () => {
-  const fake = installFakeTmux([
+  const fake = installInProcessTmux([
     { subcommand: 'list-windows', exitCode: 0, stdout: '2\n3\n' },
   ]);
   try {
@@ -69,7 +91,7 @@ test('resolveAgentPaneTarget uses the first window index from tmux', () => {
 });
 
 test('resolveAgentPaneTarget falls back to window 0 when tmux call fails', () => {
-  const fake = installFakeTmux([
+  const fake = installInProcessTmux([
     { subcommand: 'list-windows', exitCode: 1, stdout: '' },
   ]);
   try {
@@ -83,7 +105,7 @@ test('resolveAgentPaneTarget falls back to window 0 when tmux call fails', () =>
 });
 
 test('resolveAgentPaneTarget falls back to window 0 when tmux returns empty stdout', () => {
-  const fake = installFakeTmux([
+  const fake = installInProcessTmux([
     { subcommand: 'list-windows', exitCode: 0, stdout: '' },
   ]);
   try {
@@ -97,7 +119,7 @@ test('resolveAgentPaneTarget falls back to window 0 when tmux returns empty stdo
 });
 
 test('getPaneCommand returns trimmed pane command on success', () => {
-  const fake = installFakeTmux([
+  const fake = installInProcessTmux([
     { subcommand: 'display-message', exitCode: 0, stdout: 'node\n' },
   ]);
   try {
@@ -108,7 +130,7 @@ test('getPaneCommand returns trimmed pane command on success', () => {
 });
 
 test('getPaneCommand returns empty string when tmux call fails', () => {
-  const fake = installFakeTmux([
+  const fake = installInProcessTmux([
     { subcommand: 'display-message', exitCode: 1, stdout: '' },
   ]);
   try {
@@ -119,7 +141,7 @@ test('getPaneCommand returns empty string when tmux call fails', () => {
 });
 
 test('getPanePid returns trimmed pane pid on success', () => {
-  const fake = installFakeTmux([
+  const fake = installInProcessTmux([
     { subcommand: 'display-message', exitCode: 0, stdout: '54321\n' },
   ]);
   try {
@@ -130,7 +152,7 @@ test('getPanePid returns trimmed pane pid on success', () => {
 });
 
 test('getPanePid returns empty string when tmux call fails', () => {
-  const fake = installFakeTmux([
+  const fake = installInProcessTmux([
     { subcommand: 'display-message', exitCode: 1, stdout: '' },
   ]);
   try {
@@ -140,8 +162,75 @@ test('getPanePid returns empty string when tmux call fails', () => {
   }
 });
 
+// BL-362 QA bounce follow-up: one display-message call for both pane_pid and
+// pane_current_command, instead of PaneTailer's poll path spawning two.
+test('getPanePidAndCommand splits pid and command from a single tab-separated call', () => {
+  const fake = installInProcessTmux([
+    { subcommand: 'display-message', exitCode: 0, stdout: '54321\tnode\n' },
+  ]);
+  try {
+    assert.deepEqual(getPanePidAndCommand('/tmp/fake.sock', 'sess:0.1'), { pid: '54321', command: 'node' });
+    const call = fake.calls().find((args) => args.includes('display-message'));
+    assert.ok(call.includes('#{pane_pid}\t#{pane_current_command}'), 'expected a single combined format string');
+  } finally {
+    fake.restore();
+  }
+});
+
+test('getPanePidAndCommand returns empty pid and command when tmux call fails', () => {
+  const fake = installInProcessTmux([
+    { subcommand: 'display-message', exitCode: 1, stdout: '' },
+  ]);
+  try {
+    assert.deepEqual(getPanePidAndCommand('/tmp/fake.sock', 'sess:0.1'), { pid: '', command: '' });
+  } finally {
+    fake.restore();
+  }
+});
+
+// A successful call whose output is missing the tab separator (no
+// pane_current_command half) is a different case from a failed call - the
+// pid half is still real and must not be discarded just because command
+// could not be split out.
+test('getPanePidAndCommand keeps a real pid and defaults command to empty when the output has no tab separator', () => {
+  const fake = installInProcessTmux([
+    { subcommand: 'display-message', exitCode: 0, stdout: '54321\n' },
+  ]);
+  try {
+    assert.deepEqual(getPanePidAndCommand('/tmp/fake.sock', 'sess:0.1'), { pid: '54321', command: '' });
+  } finally {
+    fake.restore();
+  }
+});
+
+// BL-423: the half-launch signal - a pane whose shell has forked at least
+// one live child (the agent process) vs. one that never bootstrapped
+// anything at all. Agent-agnostic on purpose (never asserts the child is
+// specifically `claude`/`aider`/etc.) - see hasLivePaneChild's own comment.
+test('hasLivePaneChild returns true when pgrep finds a live child of the pane pid', () => {
+  const fake = installFakePgrep(true);
+  try {
+    assert.equal(hasLivePaneChild('12345'), true);
+  } finally {
+    fake.restore();
+  }
+});
+
+test('hasLivePaneChild returns false when pgrep finds no child (the half-launch case)', () => {
+  const fake = installFakePgrep(false);
+  try {
+    assert.equal(hasLivePaneChild('12345'), false);
+  } finally {
+    fake.restore();
+  }
+});
+
+test('hasLivePaneChild returns false without shelling out at all when panePid is empty', () => {
+  assert.equal(hasLivePaneChild(''), false);
+});
+
 test('capturePane returns captured stdout on success', () => {
-  const fake = installFakeTmux([
+  const fake = installInProcessTmux([
     { subcommand: 'capture-pane', exitCode: 0, stdout: 'hello world\n' },
   ]);
   try {
@@ -154,7 +243,7 @@ test('capturePane returns captured stdout on success', () => {
 });
 
 test('capturePane includes a start-line flag when startLine is provided', () => {
-  const fake = installFakeTmux([{ subcommand: 'capture-pane', exitCode: 0, stdout: '' }]);
+  const fake = installInProcessTmux([{ subcommand: 'capture-pane', exitCode: 0, stdout: '' }]);
   try {
     capturePane('/tmp/fake.sock', 'sess:0.1', -500);
     const call = fake.calls().find((args) => args.includes('capture-pane'));
@@ -166,7 +255,7 @@ test('capturePane includes a start-line flag when startLine is provided', () => 
 });
 
 test('sendKeys sends a named key non-literally', () => {
-  const fake = installFakeTmux([{ subcommand: 'send-keys', exitCode: 0, stdout: '' }]);
+  const fake = installInProcessTmux([{ subcommand: 'send-keys', exitCode: 0, stdout: '' }]);
   try {
     sendKeys('/tmp/fake.sock', 'sess:0.1', 'Enter', false);
     const call = fake.calls().find((args) => args.includes('send-keys'));
@@ -177,7 +266,7 @@ test('sendKeys sends a named key non-literally', () => {
 });
 
 test('sendKeys sends literal text with -l --', () => {
-  const fake = installFakeTmux([{ subcommand: 'send-keys', exitCode: 0, stdout: '' }]);
+  const fake = installInProcessTmux([{ subcommand: 'send-keys', exitCode: 0, stdout: '' }]);
   try {
     sendKeys('/tmp/fake.sock', 'sess:0.1', 'hello', true);
     const call = fake.calls().find((args) => args.includes('send-keys'));
@@ -197,7 +286,7 @@ test('sendKeys sends literal text with -l --', () => {
 });
 
 test('sessionExists returns true when tmux has-session succeeds', () => {
-  const fake = installFakeTmux([{ subcommand: 'has-session', exitCode: 0, stdout: '' }]);
+  const fake = installInProcessTmux([{ subcommand: 'has-session', exitCode: 0, stdout: '' }]);
   try {
     assert.equal(sessionExists('/tmp/fake.sock', 'swarmforge-coder'), true);
   } finally {
@@ -206,7 +295,7 @@ test('sessionExists returns true when tmux has-session succeeds', () => {
 });
 
 test('sessionExists returns false when tmux has-session fails', () => {
-  const fake = installFakeTmux([{ subcommand: 'has-session', exitCode: 1, stdout: '' }]);
+  const fake = installInProcessTmux([{ subcommand: 'has-session', exitCode: 1, stdout: '' }]);
   try {
     assert.equal(sessionExists('/tmp/fake.sock', 'swarmforge-coder'), false);
   } finally {
@@ -315,7 +404,7 @@ function writeRespawnState(tmp, role = 'coder') {
 test('respawnAgent sends the launch script into the role pane, never running it in-host', () => {
   const tmp = mkTmp();
   const { script, marker } = writeRespawnState(tmp);
-  const fake = installFakeTmux([
+  const fake = installInProcessTmux([
     { subcommand: 'show-window-options', exitCode: 0, stdout: '1\n' },
     { subcommand: 'list-windows', exitCode: 0, stdout: '2\n' },
     { subcommand: 'send-keys', exitCode: 0, stdout: '' },
@@ -351,6 +440,9 @@ test('respawnAgent fails without touching tmux when the launch script is missing
   const result = respawnAgent(tmp, 'coder');
   assert.equal(result.success, false);
   assert.match(result.message, /No launch script found/);
+  // BL-207: orchestration/UI can branch on the stable category instead of
+  // parsing this message text.
+  assert.equal(result.category, 'launch-failed');
 });
 
 test('respawnAgent fails when no tmux socket is recorded', () => {
@@ -362,12 +454,13 @@ test('respawnAgent fails when no tmux socket is recorded', () => {
   const result = respawnAgent(tmp, 'coder');
   assert.equal(result.success, false);
   assert.match(result.message, /no tmux socket/i);
+  assert.equal(result.category, 'launch-failed');
 });
 
 test('respawnAgent fails when the role has no session in sessions.tsv', () => {
   const tmp = mkTmp();
   writeRespawnState(tmp, 'coder');
-  const fake = installFakeTmux([]);
+  const fake = installInProcessTmux([]);
   try {
     const result = respawnAgent(tmp, 'cleaner');
     assert.equal(result.success, false);
@@ -386,7 +479,7 @@ test('respawnAgent fails when the role has no session in sessions.tsv', () => {
 test('respawnAgent reports failure when tmux send-keys fails', () => {
   const tmp = mkTmp();
   writeRespawnState(tmp);
-  const fake = installFakeTmux([
+  const fake = installInProcessTmux([
     { subcommand: 'show-window-options', exitCode: 0, stdout: '1\n' },
     { subcommand: 'list-windows', exitCode: 0, stdout: '2\n' },
     { subcommand: 'send-keys', exitCode: 1, stderr: 'no such session' },
@@ -409,7 +502,7 @@ test('respawnAgent reports failure when tmux send-keys fails', () => {
 test('respawnAgent wedged-respawn-04: escalates to a forced pane respawn when the pane never confirms submission', () => {
   const tmp = mkTmp();
   const { script } = writeRespawnState(tmp);
-  const fake = installFakeTmux([
+  const fake = installInProcessTmux([
     { subcommand: 'show-window-options', exitCode: 0, stdout: '1\n' },
     { subcommand: 'list-windows', exitCode: 0, stdout: '2\n' },
     { subcommand: 'send-keys', exitCode: 0, stdout: '' },
@@ -419,7 +512,10 @@ test('respawnAgent wedged-respawn-04: escalates to a forced pane respawn when th
     { subcommand: 'respawn-pane', exitCode: 0, stdout: '' },
   ]);
   try {
-    const result = respawnAgent(tmp, 'coder');
+    // BL-376: an injected no-op wait, never the real Atomics.wait - this
+    // test drives the retry loop to exhaustion and must do so with zero
+    // real time spent.
+    const result = respawnAgent(tmp, 'coder', () => {});
     assert.equal(result.success, true);
     assert.match(result.message, /wedged/i);
     const respawnCalls = fake.calls().filter((args) => args.includes('respawn-pane'));
@@ -437,10 +533,80 @@ test('respawnAgent wedged-respawn-04: escalates to a forced pane respawn when th
   }
 });
 
+// --- BL-376: respawnAgent's retry backoff waits on an INJECTED clock, never
+//     the real one. verifiedInject's own `wait` seam existed one layer down;
+//     respawnAgent never exposed it upward, so no test could reach it and
+//     every wedged-pane retry blocked on a real Atomics.wait. ---
+
+function wedgedFixture(tmp, script) {
+  return installInProcessTmux([
+    { subcommand: 'show-window-options', exitCode: 0, stdout: '1\n' },
+    { subcommand: 'list-windows', exitCode: 0, stdout: '2\n' },
+    { subcommand: 'send-keys', exitCode: 0, stdout: '' },
+    { subcommand: 'capture-pane', exitCode: 0, stdout: `❯ bash ${script}` },
+    { subcommand: 'respawn-pane', exitCode: 0, stdout: '' },
+  ]);
+}
+
+test('BL-376 respawn-backoff-injected-clock-01/03: every backoff is served by the injected wait, and the real blocking sleep is never called', () => {
+  const tmp = mkTmp();
+  const { script } = writeRespawnState(tmp);
+  const sleepSpy = vi.spyOn(sleepSyncModule, 'sleepSync');
+  const fake = wedgedFixture(tmp, script);
+  const waits = [];
+  try {
+    const result = respawnAgent(tmp, 'coder', (ms) => waits.push(ms));
+    assert.equal(result.success, true, 'the retry loop must still run to exhaustion and escalate, unchanged');
+    assert.ok(waits.length > 0, 'expected the retry loop to actually ask for at least one backoff');
+    assert.equal(sleepSpy.mock.calls.length, 0, 'expected the real blocking sleep to never be called when a wait is injected');
+  } finally {
+    fake.restore();
+    sleepSpy.mockRestore();
+  }
+});
+
+test('BL-376 respawn-backoff-injected-clock-03: the injected wait is called once per retry up to the cap, with non-decreasing delays', () => {
+  const tmp = mkTmp();
+  const { script } = writeRespawnState(tmp);
+  const fake = wedgedFixture(tmp, script);
+  const waits = [];
+  try {
+    respawnAgent(tmp, 'coder', (ms) => waits.push(ms));
+    // The bounded retry (maxRetries=3, verifiedInject.ts's own default) is
+    // itself required behavior - a "fix" that removed the wait by removing
+    // the retry would swap a slow test for a real regression. This must
+    // still see the SAME bounded, backed-off schedule as production.
+    assert.ok(waits.length > 0 && waits.length < 10, `expected a small, bounded number of waits, got ${waits.length}`);
+    for (let i = 1; i < waits.length; i++) {
+      assert.ok(waits[i] >= waits[i - 1], `expected each delay to be no shorter than the one before it, got ${JSON.stringify(waits)}`);
+    }
+  } finally {
+    fake.restore();
+  }
+});
+
+test('BL-376 respawn-backoff-injected-clock-02: production still falls back to the real blocking sleep, unchanged, when no wait is injected', () => {
+  const tmp = mkTmp();
+  const { script } = writeRespawnState(tmp);
+  // mockImplementation replaces the REAL Atomics.wait with a no-op so this
+  // test proves the wiring (the real sleepSync IS reached) without paying
+  // for it in real elapsed time.
+  const sleepSpy = vi.spyOn(sleepSyncModule, 'sleepSync').mockImplementation(() => {});
+  const fake = wedgedFixture(tmp, script);
+  try {
+    const result = respawnAgent(tmp, 'coder');
+    assert.equal(result.success, true);
+    assert.ok(sleepSpy.mock.calls.length > 0, 'expected respawnAgent with no wait argument to fall back to the real sleepSync');
+  } finally {
+    fake.restore();
+    sleepSpy.mockRestore();
+  }
+});
+
 test('respawnAgent wedged-respawn-05: never forces a pane respawn when send-keys is confirmed delivered', () => {
   const tmp = mkTmp();
   writeRespawnState(tmp);
-  const fake = installFakeTmux([
+  const fake = installInProcessTmux([
     { subcommand: 'show-window-options', exitCode: 0, stdout: '1\n' },
     { subcommand: 'list-windows', exitCode: 0, stdout: '2\n' },
     { subcommand: 'send-keys', exitCode: 0, stdout: '' },
@@ -461,7 +627,7 @@ test('respawnAgent wedged-respawn-05: never forces a pane respawn when send-keys
 test('respawnAgent reports failure when both verified send-keys and the forced pane respawn fail', () => {
   const tmp = mkTmp();
   const { script } = writeRespawnState(tmp);
-  const fake = installFakeTmux([
+  const fake = installInProcessTmux([
     { subcommand: 'show-window-options', exitCode: 0, stdout: '1\n' },
     { subcommand: 'list-windows', exitCode: 0, stdout: '2\n' },
     { subcommand: 'send-keys', exitCode: 0, stdout: '' },
@@ -469,7 +635,8 @@ test('respawnAgent reports failure when both verified send-keys and the forced p
     { subcommand: 'respawn-pane', exitCode: 1, stderr: 'no such pane' },
   ]);
   try {
-    const result = respawnAgent(tmp, 'coder');
+    // BL-376: injected no-op wait - see the wedged-respawn-04 test above.
+    const result = respawnAgent(tmp, 'coder', () => {});
     assert.equal(result.success, false);
     assert.match(result.message, /no such pane/);
   } finally {
@@ -488,7 +655,7 @@ test('respawnAgent reports failure when both verified send-keys and the forced p
 test('respawnAgent refuses to type into a pane that is actively processing a turn (BL-137 misfire guard)', () => {
   const tmp = mkTmp();
   writeRespawnState(tmp);
-  const fake = installFakeTmux([
+  const fake = installInProcessTmux([
     { subcommand: 'show-window-options', exitCode: 0, stdout: '1\n' },
     { subcommand: 'list-windows', exitCode: 0, stdout: '2\n' },
     { subcommand: 'capture-pane', exitCode: 0, stdout: '  auto mode on · esc to interrupt' },
@@ -502,6 +669,9 @@ test('respawnAgent refuses to type into a pane that is actively processing a tur
     // wrongly consume the bound and could escalate to needs-human.
     assert.equal(result.skippedBusy, true);
     assert.match(result.message, /actively processing|esc to interrupt/i);
+    // BL-207: a deliberate safety skip is not a backend failure to
+    // categorize - no category assigned.
+    assert.equal(result.category, undefined);
     const sendCalls = fake.calls().filter((args) => args.includes('send-keys'));
     assert.equal(sendCalls.length, 0, 'must never type into a pane that is actively processing a turn');
     const respawnCalls = fake.calls().filter((args) => args.includes('respawn-pane'));
@@ -514,7 +684,7 @@ test('respawnAgent refuses to type into a pane that is actively processing a tur
 test('respawnAgent types the launch command in literal mode, not tmux key-name mode', () => {
   const tmp = mkTmp();
   const { script } = writeRespawnState(tmp);
-  const fake = installFakeTmux([
+  const fake = installInProcessTmux([
     { subcommand: 'show-window-options', exitCode: 0, stdout: '1\n' },
     { subcommand: 'list-windows', exitCode: 0, stdout: '2\n' },
     { subcommand: 'send-keys', exitCode: 0, stdout: '' },
@@ -541,7 +711,7 @@ test('respawnAgent never sends a follow-up Enter after send-keys itself fails at
   // literal-text one.
   const tmp = mkTmp();
   writeRespawnState(tmp);
-  const fake = installFakeTmux([
+  const fake = installInProcessTmux([
     { subcommand: 'show-window-options', exitCode: 0, stdout: '1\n' },
     { subcommand: 'list-windows', exitCode: 0, stdout: '2\n' },
     { subcommand: 'send-keys', exitCode: 1, stderr: 'no such session' },
@@ -558,7 +728,7 @@ test('respawnAgent never sends a follow-up Enter after send-keys itself fails at
 test('respawnAgent falls back to reporting the exit code when send-keys fails with no stderr/stdout', () => {
   const tmp = mkTmp();
   writeRespawnState(tmp);
-  const fake = installFakeTmux([
+  const fake = installInProcessTmux([
     { subcommand: 'show-window-options', exitCode: 0, stdout: '1\n' },
     { subcommand: 'list-windows', exitCode: 0, stdout: '2\n' },
     { subcommand: 'send-keys', exitCode: 17 },
@@ -580,7 +750,7 @@ test('respawnAgent discards capture-pane output when the capture itself failed, 
   // something already there.
   const tmp = mkTmp();
   const { script } = writeRespawnState(tmp);
-  const fake = installFakeTmux([
+  const fake = installInProcessTmux([
     { subcommand: 'show-window-options', exitCode: 0, stdout: '1\n' },
     { subcommand: 'list-windows', exitCode: 0, stdout: '2\n' },
     { subcommand: 'send-keys', exitCode: 0, stdout: '' },
@@ -601,7 +771,7 @@ test('respawnAgent discards capture-pane output when the capture itself failed, 
 test('respawnAgent falls back to reporting the exit code when the forced pane respawn fails with no stderr/stdout', () => {
   const tmp = mkTmp();
   const { script } = writeRespawnState(tmp);
-  const fake = installFakeTmux([
+  const fake = installInProcessTmux([
     { subcommand: 'show-window-options', exitCode: 0, stdout: '1\n' },
     { subcommand: 'list-windows', exitCode: 0, stdout: '2\n' },
     { subcommand: 'send-keys', exitCode: 0, stdout: '' },
@@ -609,7 +779,8 @@ test('respawnAgent falls back to reporting the exit code when the forced pane re
     { subcommand: 'respawn-pane', exitCode: 23 },
   ]);
   try {
-    const result = respawnAgent(tmp, 'coder');
+    // BL-376: injected no-op wait - see the wedged-respawn-04 test above.
+    const result = respawnAgent(tmp, 'coder', () => {});
     assert.equal(result.success, false);
     assert.match(result.message, /exit 23/);
   } finally {

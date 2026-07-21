@@ -75,3 +75,15 @@ test('backlogRowHtml omits the milestone badge for done items with no milestone'
   const html = backlogRowHtml(item);
   assert.doesNotMatch(html, /bl-milestone/);
 });
+
+// BL-238: the assignee select and "Done" button are otherwise identical
+// across every active row - an aria-label naming the ticket is the only
+// thing that disambiguates them for a screen reader.
+test('backlogRowHtml labels the assignee select and mark-done button with the ticket id', () => {
+  global.holderMap = {};
+  global.tiles = new Map([['coder', {}]]);
+  const item = { id: 'BL-042', title: 'Active item', status: 'active' };
+  const html = backlogRowHtml(item);
+  assert.match(html, /aria-label="Assignee for BL-042"/);
+  assert.match(html, /aria-label="Mark BL-042 done"/);
+});

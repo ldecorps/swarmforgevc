@@ -16,6 +16,7 @@ import { StalenessBucket } from './topicTitleAge';
 import { TopicTitleAdapters, syncTopicTitle } from './topicTitleSync';
 import { PipelineBoardTicketMeta, computePipelineBoard } from './pipelineBoard';
 import { PipelineBoardAdapters, PipelineBoardState, PipelineBoardSyncResult, syncPipelineBoard } from './pipelineBoardSync';
+import { PipelineBoardPinAdapters, PipelineBoardPinSyncResult, syncPipelineBoardPin } from './pipelineBoardPinSync';
 import { ApprovalsRosterAdapters, ApprovalsRosterState, syncApprovalsRoster } from './approvalsRosterSync';
 import { RecertPostingAdapters, RecertPostingState, syncRecertPosting } from './recertPostingSync';
 import { RecertifiableScenario } from '../docs/recertification';
@@ -191,6 +192,11 @@ export interface ConciergeTickAdapters {
   // across this codebase's own acceptance step handlers was built before
   // this field existed.
   boardAdapters?: PipelineBoardAdapters;
+  // BL-467: optional (defaults to no pin sync), same posture as
+  // boardAdapters above - every existing adapters fixture across this
+  // codebase's own acceptance step handlers was built before this field
+  // existed.
+  boardPinAdapters?: PipelineBoardPinAdapters;
   // BL-465: raw backlog/ root asks (e.g. "INTAKE-...md" files) - a live
   // fs read, never limited to the git-SHA static PWA projection (this is
   // the LIVE Telegram surface). Optional (defaults to no root-intake
@@ -550,6 +556,52 @@ async function syncBoardIfWired(
   const result = await syncPipelineBoard(data, prevBoard, boardAdapters, nowMs, repoBaseUrl);
   logBoardSyncFailure(result);
   return { state: result.state, outcome: result.outcome };
+}
+
+// BL-467: the pipeline board's own pin enforcement - runs every tick AFTER
+// syncBoardIfWired (so it sees the freshly-posted messageId), gated on
+// boardPinAdapters being wired (absent adapters = no pin sync, same
+// posture as boardAdapters). Best-effort: a failed pin/unpin never throws
+// and never aborts the tick.
+function logBoardPinSyncFailure(boardMessageId: number | undefined, result: PipelineBoardPinSyncResult): void {
+  if (
+    result.outcome === 'enforce' &&
+    boardMessageId !== undefined &&
+    result.lastPinnedBoardMessageId !== boardMessageId
+  ) {
+    process.stderr.write(`syncBoardPinIfWired: enforce failed to pin board message ${boardMessageId}\n`);
+  }
+}
+
+async function syncBoardPinIfWired(
+  pipelineBoard: PipelineBoardState | undefined,
+  boardPinAdapters: PipelineBoardPinAdapters | undefined
+): Promise<PipelineBoardState | undefined> {
+  if (!boardPinAdapters) {
+    return pipelineBoard;
+  }
+  const forceRepin =
+    pipelineBoard?.forceBoardPinOnNextTick === true ||
+    (pipelineBoard?.messageId !== undefined &&
+      (pipelineBoard.lastPinnedBoardMessageId === undefined ||
+        pipelineBoard.lastPinnedBoardMessageId !== pipelineBoard.messageId));
+  const result = await syncPipelineBoardPin(
+    pipelineBoard?.messageId,
+    boardPinAdapters,
+    pipelineBoard?.lastPinnedBoardMessageId,
+    forceRepin
+  );
+  logBoardPinSyncFailure(pipelineBoard?.messageId, result);
+  if (!pipelineBoard) {
+    return pipelineBoard;
+  }
+  const pinSettled =
+    pipelineBoard.messageId !== undefined && result.lastPinnedBoardMessageId === pipelineBoard.messageId;
+  return {
+    ...pipelineBoard,
+    lastPinnedBoardMessageId: result.lastPinnedBoardMessageId,
+    forceBoardPinOnNextTick: pinSettled ? undefined : true,
+  };
 }
 
 // BL-434: the Approvals topic's own roster sync - runs on EVERY tick (never
@@ -1146,7 +1198,7 @@ export async function runConciergeTick(adapters: ConciergeTickAdapters, nowMs: n
     nowMs,
     doneClosedAtMs
   );
-  const pipelineBoard = boardSync.state;
+  const pipelineBoard = await syncBoardPinIfWired(boardSync.state, adapters.boardPinAdapters);
 
   // BL-434: the Approvals topic's own live roster - fed off curr.pendingApproval
   // (the SAME set this tick already derived ApprovalRequested events from),
