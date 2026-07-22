@@ -1025,7 +1025,7 @@
     (cond
       (and (not (str/blank? from-hib))
            (not (= (str (fs/canonicalize (fs/path from-hib)))
-                   (str (fs/canonicalize (fs/path default-conf)))))
+                   (str (fs/canonicalize (fs/path default-conf))))))
       from-hib
 
       :else
