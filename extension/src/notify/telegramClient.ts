@@ -371,6 +371,40 @@ export async function deleteMessage(token: string, chatId: string, messageId: nu
   return { success: true };
 }
 
+export interface SetChatMenuButtonResult {
+  success: boolean;
+  error?: string;
+}
+
+export async function setChatMenuButton(
+  token: string,
+  menuButton: { type: 'web_app'; text: string; webAppUrl: string } | { type: 'default' },
+  chatId?: string,
+  postFn: TelegramPostFn = defaultPost
+): Promise<SetChatMenuButtonResult> {
+  const body = JSON.stringify({
+    ...(chatId !== undefined ? { chat_id: chatId } : {}),
+    menu_button:
+      menuButton.type === 'default'
+        ? { type: 'default' }
+        : { type: 'web_app', text: menuButton.text, web_app: { url: menuButton.webAppUrl } },
+  });
+  const result = await callTelegramApi(token, 'setChatMenuButton', body, postFn);
+  if (!result.success) {
+    return { success: false, error: result.error };
+  }
+  return { success: true };
+}
+
+export async function getBotUsername(token: string, postFn: TelegramPostFn = defaultPost): Promise<string | undefined> {
+  const result = await callTelegramApi(token, 'getMe', '{}', postFn);
+  if (!result.success) {
+    return undefined;
+  }
+  const username = extractResultObject(result.json)?.username;
+  return typeof username === 'string' ? username : undefined;
+}
+
 // BL-467: three thin wrappers for the pipeline-board-only-pin enforcement -
 // pinChatMessage/unpinAllChatMessages/getChatPinnedMessageId. Telegram pins
 // are CHAT-level (no message_thread_id), unlike every topic-addressed
