@@ -1001,10 +1001,7 @@ write_agent_instruction_file() {
 
   is_two_pack_config && two_pack_flag=1
   overlay="$(config_overlay_prompt)"
-  # BL-546: PromptEngine is the single authority for prompt composition -
-  # this CLI call is the ONLY way a launch path produces a system-prompt
-  # artifact; no prompt text is assembled in this script.
-  bb "$SCRIPT_DIR/prompt_engine_cli.bb" compose "$agent" "$role" "$two_pack_flag" "$overlay" > "$prompt_file"
+  bb "$SCRIPT_DIR/agent_runtime_cli.bb" bootstrap-text "$agent" "$role" "$two_pack_flag" "$overlay" > "$prompt_file"
 }
 
 agent-runtime-needs-bootstrap() {

@@ -293,8 +293,7 @@ const DOMAINS = [
   require('./bl519InlineConstitutionCacheSteps'),
   require('./bl520RewrapLegacyWrappedSteps'),
   require('./bl526MiniappConsoleMenuSteps'),
-  require('./bl529TicketBranchMismatchGuardSteps'),
-  require('./bl546PromptEngineSteps')
+  require('./bl529TicketBranchMismatchGuardSteps')
 ];
 
 function registerSteps(registry) {
