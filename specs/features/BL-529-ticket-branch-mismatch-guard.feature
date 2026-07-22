@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=ffbe3646b505e695b81b82d2578c5ab1aad47f13639e78b5d861821e80d0bc33
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-07-22T06:26:38.859389277Z","feature_name":"Worktree branch and active claim stay aligned before each agent turn","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-529-ticket-branch-mismatch-guard.feature","background_hash":"5778b10b4b3aef5a9387edf85f194506734e82807c2006747260bf0502b39d64","implementation_hash":"unknown","scenarios":[{"index":0,"name":"Turn proceeds when branch is not ticket-specific or matches claim","scenario_hash":"ec94f8a99c89d884082f378e5e27e1d136f20bc61aae1ffc3ef1eecb0471a1b5","mutation_count":6,"result":{"Total":6,"Killed":6,"Survived":0,"Errors":0},"tested_at":"2026-07-22T06:26:20.419572708Z"}]}
+# acceptance-mutation-manifest-end
+
 # BL-529 ticket-branch-mismatch-guard
 Feature: Worktree branch and active claim stay aligned before each agent turn
 

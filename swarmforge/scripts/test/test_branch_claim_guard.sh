@@ -223,4 +223,66 @@ run_ready
   || fail "dequeue-dirty: the claim must end up back in new/, never in_process"
 pass "guard-04: a fresh dequeue on a dirty mismatched branch refuses with the claim in new/"
 
+# ── guard-04: a requeue that would clobber a same-named new/ file refuses ──
+# (the BL-128 stale-copy window: a redelivered duplicate already sits in new/;
+# the requeue must never silently overwrite it - refuse loudly and preserve both)
+reset_case
+switch_branch BL-526
+echo "in-flight edit" >> "$CODER_WT/tracked.txt"
+drop_handoff "$INBOX/in_process" "collide1" "BL-512-some-claim" "git_handoff"
+drop_handoff "$INBOX/new" "collide1" "BL-512-some-claim" "git_handoff"
+echo "stale new copy marker" >> "$INBOX/new/00_collide1.handoff"
+run_ready
+[[ $RC -ne 0 ]] || fail "04-collision: expected a refusal, rc=0 out=$OUT"
+echo "$OUT" | grep -q "^TASK:" && fail "04-collision: no task may print on a refused turn: $OUT"
+echo "$ERR" | grep -q "BRANCH_CLAIM_GUARD: cannot requeue" \
+  || fail "04-collision: expected the cannot-requeue diagnostic, got: $ERR"
+[[ -f "$INBOX/in_process/00_collide1.handoff" ]] \
+  || fail "04-collision: the in-process claim must be left in place when requeue is impossible"
+grep -q "stale new copy marker" "$INBOX/new/00_collide1.handoff" \
+  || fail "04-collision: the existing new/ copy must be preserved, never overwritten"
+[[ "$(current_branch)" == "BL-526" ]] || fail "04-collision: branch moved to $(current_branch)"
+pass "guard-04: a requeue that would clobber a same-named new/ file refuses loudly and preserves both"
+
+# ── guard-04: requeue drops the claim's sidecars at its old in_process/ home ──
+# (sidecars only ever described the now-vacated in_process/ state - the requeue
+# must not leave them behind, same discipline as the dequeue path's cleanup)
+reset_case
+switch_branch BL-526
+echo "in-flight edit" >> "$CODER_WT/tracked.txt"
+drop_handoff "$INBOX/in_process" "sidecar1" "BL-512-some-claim" "git_handoff"
+: > "$INBOX/in_process/00_sidecar1.handoff.nudge"
+: > "$INBOX/in_process/00_sidecar1.handoff.claim-progress.json"
+run_ready
+[[ $RC -ne 0 ]] || fail "04-sidecar: expected a refusal, rc=0 out=$OUT"
+[[ -f "$INBOX/new/00_sidecar1.handoff" && ! -e "$INBOX/in_process/00_sidecar1.handoff" ]] \
+  || fail "04-sidecar: the claim must be requeued to new/"
+[[ ! -e "$INBOX/in_process/00_sidecar1.handoff.nudge" \
+   && ! -e "$INBOX/in_process/00_sidecar1.handoff.claim-progress.json" ]] \
+  || fail "04-sidecar: sidecars at the vacated in_process/ location must be dropped"
+pass "guard-04: requeue drops the vacated in_process/ sidecars with the claim"
+
+# ── guard-03: standard-branch refs exist but the checkout itself fails ─────
+# (both candidates checked out in OTHER worktrees - git refuses the switch.
+# Uncorrectable beats working blind: requeue + refuse, same as a missing ref)
+reset_case
+git -C "$ROOT" branch swarmforge-coder 2>/dev/null || true  # ref was deleted by an earlier case
+git -C "$ROOT" worktree add -q "$ROOT/.worktrees/holder-pc" primary/coder \
+  || fail "fixture: could not add holder worktree for primary/coder"
+git -C "$ROOT" worktree add -q "$ROOT/.worktrees/holder-sc" swarmforge-coder \
+  || fail "fixture: could not add holder worktree for swarmforge-coder"
+switch_branch BL-526
+drop_handoff "$INBOX/in_process" "held1" "BL-512-some-claim" "git_handoff"
+run_ready
+[[ $RC -ne 0 ]] || fail "03-checkout-fails: expected a refusal, rc=0 out=$OUT"
+echo "$OUT" | grep -q "^TASK:" && fail "03-checkout-fails: no task may print on a refused turn: $OUT"
+[[ "$(current_branch)" == "BL-526" ]] || fail "03-checkout-fails: branch moved to $(current_branch)"
+[[ -f "$INBOX/new/00_held1.handoff" && ! -e "$INBOX/in_process/00_held1.handoff" ]] \
+  || fail "03-checkout-fails: the claim must be requeued to new/"
+echo "$ERR" | grep -q "no standard branch available to auto-correct onto" \
+  || fail "03-checkout-fails: expected the uncorrectable reason, got: $ERR"
+git -C "$ROOT" worktree remove --force "$ROOT/.worktrees/holder-pc"
+git -C "$ROOT" worktree remove --force "$ROOT/.worktrees/holder-sc"
+pass "guard-03: a checkout that fails although the ref exists requeues and refuses"
+
 echo "ALL PASS"
