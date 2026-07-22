@@ -104,12 +104,12 @@ export async function notifyResidentSpyTunnelUrl(
   const prevState = readNotifyState(projectRoot);
   const result = await syncResidentSpyTunnelUrl(fullUrl, prevState, {
     ensureTopic: () => ensureResidentSpyTopicStandalone(projectRoot, token, chatId),
-    postMessage: async (topicId, text) => {
-      const sent = await sendTelegramMessage(token, chatId, text, undefined, undefined, topicId);
+    postMessage: async (topicId, text, buttons) => {
+      const sent = await sendTelegramMessage(token, chatId, text, undefined, undefined, topicId, buttons);
       return sent.success ? sent.messageId : undefined;
     },
-    editMessage: async (topicId, messageId, text) => {
-      const edited = await editMessageText(token, chatId, messageId, text);
+    editMessage: async (topicId, messageId, text, buttons) => {
+      const edited = await editMessageText(token, chatId, messageId, text, undefined, undefined, buttons);
       return edited.success;
     },
   });

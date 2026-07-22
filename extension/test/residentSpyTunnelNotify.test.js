@@ -2,8 +2,14 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const {
   buildResidentSpyMiniAppUrl,
+  buildConsoleMiniAppUrl,
+  consoleUrlFromLiveUrl,
+  buildResidentSpyTunnelWebAppButtons,
   formatResidentSpyTunnelTopicMessage,
+  shouldNotifyResidentSpyTunnel,
   shouldNotifyResidentSpyTunnelUrl,
+  RESIDENT_SPY_TUNNEL_NOTIFY_FORMAT_VERSION,
+  syncResidentSpyTunnelUrl,
 } = require('../out/concierge/residentSpyTunnelNotify');
 
 test('buildResidentSpyMiniAppUrl appends resident-spy path and token query', () => {
@@ -13,18 +19,75 @@ test('buildResidentSpyMiniAppUrl appends resident-spy path and token query', () 
   );
 });
 
-test('formatResidentSpyTunnelTopicMessage includes the full URL on its own line', () => {
-  const url = 'https://foo.trycloudflare.com/resident-spy?token=abc';
-  assert.match(formatResidentSpyTunnelTopicMessage(url), /Live feed \(Mini App\):/);
-  assert.match(formatResidentSpyTunnelTopicMessage(url), new RegExp(url.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+test('buildConsoleMiniAppUrl appends console path and token query', () => {
+  assert.equal(
+    buildConsoleMiniAppUrl('https://foo.trycloudflare.com/', 'abc123'),
+    'https://foo.trycloudflare.com/console?token=abc123'
+  );
 });
 
-test('shouldNotifyResidentSpyTunnelUrl is true only when the URL changed', () => {
+test('consoleUrlFromLiveUrl rewrites the path to /console', () => {
+  const live = 'https://foo.trycloudflare.com/resident-spy?token=abc';
+  assert.equal(consoleUrlFromLiveUrl(live), 'https://foo.trycloudflare.com/console?token=abc');
+});
+
+test('formatResidentSpyTunnelTopicMessage prompts in-app open without a raw URL', () => {
+  const text = formatResidentSpyTunnelTopicMessage();
+  assert.match(text, /inside Telegram/i);
+  assert.doesNotMatch(text, /https:\/\//);
+});
+
+test('buildResidentSpyTunnelWebAppButtons wires console and live screen web_app URLs', () => {
+  const live = 'https://foo.trycloudflare.com/resident-spy?token=abc';
+  const buttons = buildResidentSpyTunnelWebAppButtons({
+    liveUrl: live,
+    consoleUrl: consoleUrlFromLiveUrl(live),
+  });
+  assert.equal(buttons.length, 2);
+  assert.equal(buttons[0][0].webAppUrl, 'https://foo.trycloudflare.com/console?token=abc');
+  assert.equal(buttons[1][0].webAppUrl, live);
+});
+
+test('shouldNotifyResidentSpyTunnel is true when the URL changed or format version is stale', () => {
+  const live = 'https://foo.trycloudflare.com/resident-spy?token=abc';
+  const urls = { liveUrl: live, consoleUrl: consoleUrlFromLiveUrl(live) };
+  assert.equal(shouldNotifyResidentSpyTunnel(undefined, urls), true);
+  assert.equal(
+    shouldNotifyResidentSpyTunnel({ liveUrl: live, consoleUrl: urls.consoleUrl }, urls),
+    true
+  );
+  assert.equal(
+    shouldNotifyResidentSpyTunnel(
+      { liveUrl: live, consoleUrl: urls.consoleUrl, formatVersion: RESIDENT_SPY_TUNNEL_NOTIFY_FORMAT_VERSION },
+      urls
+    ),
+    false
+  );
+  assert.equal(
+    shouldNotifyResidentSpyTunnel({ url: live }, urls),
+    true
+  );
+});
+
+test('shouldNotifyResidentSpyTunnelUrl remains compatible with live URL only', () => {
   const url = 'https://foo.trycloudflare.com/resident-spy?token=abc';
   assert.equal(shouldNotifyResidentSpyTunnelUrl(undefined, url), true);
   assert.equal(shouldNotifyResidentSpyTunnelUrl(url, url), false);
-  assert.equal(
-    shouldNotifyResidentSpyTunnelUrl(url, 'https://bar.trycloudflare.com/resident-spy?token=abc'),
-    true
-  );
+});
+
+test('syncResidentSpyTunnelUrl posts web_app buttons on first notify', async () => {
+  const live = 'https://foo.trycloudflare.com/resident-spy?token=abc';
+  let posted;
+  const result = await syncResidentSpyTunnelUrl(live, undefined, {
+    ensureTopic: async () => 42,
+    postMessage: async (topicId, text, buttons) => {
+      posted = { topicId, text, buttons };
+      return 99;
+    },
+    editMessage: async () => false,
+  });
+  assert.equal(result.outcome, 'posted');
+  assert.equal(result.state.messageId, 99);
+  assert.equal(posted.topicId, 42);
+  assert.equal(posted.buttons[0][0].webAppUrl, consoleUrlFromLiveUrl(live));
 });
