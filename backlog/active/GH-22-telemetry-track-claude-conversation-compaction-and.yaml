@@ -6,6 +6,7 @@ type: feature
 priority: 03
 direction: human-requested
 human_approval: pending
+assigned_to: coder
 depends_on: []
 source: https://github.com/ldecorps/swarmforgevc/issues/22
 mutation_cost: medium
