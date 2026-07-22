@@ -1,0 +1,48 @@
+id: BL-549
+title: "co-change-report silently reports 'no co-changers found' repo-wide once history exceeds 1 MiB (ENOBUFS)"
+milestone: M8
+type: defect
+status: todo
+epic: code-quality-gates
+priority: 15
+mutation_cost: low
+direction: architect-found
+depends_on: []
+assigned_to: specifier
+source: "Architect defect report during BL-529 review, 2026-07-22. Detail: .worktrees/architect/tmp/DF-cochange.md"
+
+description: |
+  `extension/src/metrics/gitHistoryAdapter.ts:60`'s `runGitLog` calls
+  `execFileSync` with no `maxBuffer`, so the default 1 MiB cap applies. This
+  repo's full-history `--name-status` output is now 1,153,189 bytes, so the
+  full-tree call from `co-change-report.ts:96` (`runGitLog(repoRoot, '.')`)
+  throws ENOBUFS — and the `catch { return [] }` at gitHistoryAdapter.ts:63
+  swallows it into an empty history. `co-change-report.js <file>` then prints
+  "(no co-changers found)" for every file, indistinguishable from a genuine
+  no-coupling result. The architect role is required to consult this tool per
+  parcel, so it has been returning a false negative on the logical-coupling
+  signal for every parcel since history crossed 1 MiB, with no visible error.
+
+  This is a distinct defect from BL-268 (cwd-scoping) — BL-268 fixed which
+  pathspec/cwd runGitLog reads relative to; this is about the read failing
+  once its output is large, regardless of cwd.
+
+  Fix shape (precedent in-repo): set an explicit `maxBuffer` on the
+  `execFileSync` call in `runGitLog` — `dependency-gate.ts:72` already sets
+  `maxBuffer: 64 * 1024 * 1024` for the same reason. Also make the `catch`
+  non-silent (log a diagnostic to stderr identifying the failure and its
+  cause) so a future overflow past even the new cap fails loudly instead of
+  rendering a plausible-looking empty result. The backlog-scoped callers
+  (`runGitLog(targetPath, 'backlog')` in deliveryMetrics, backlogDashboard,
+  reworkObservatorySource) are under the cap today but share the same latent
+  defect as backlog history grows — the fix in `runGitLog` covers all callers
+  since they share the one adapter function.
+
+acceptance: specs/features/BL-549-co-change-report-maxbuffer-enobufs.feature
+
+notes: |
+  Regression test per architect's suggested shape: inject a history payload
+  larger than 1 MiB (or a tiny test-injected maxBuffer) and assert the tool
+  still returns co-changers / surfaces the error rather than silently
+  reporting none — do not rely on this actual repo's history staying over
+  1 MiB, which is incidental and could shrink.

@@ -426,3 +426,10 @@ export function readBacklogFolders(targetPath: string): BacklogFolders {
     done: readDoneItems(path.join(targetPath, 'backlog', 'done')),
   };
 }
+
+/** Case-insensitive lookup across active, paused, and done backlog folders. */
+export function lookupBacklogItemById(targetPath: string, backlogId: string): BacklogItem | undefined {
+  const folders = readBacklogFolders(targetPath);
+  const needle = backlogId.toUpperCase();
+  return [...folders.active, ...folders.paused, ...folders.done].find((item) => item.id.toUpperCase() === needle);
+}

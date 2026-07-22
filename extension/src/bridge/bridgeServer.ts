@@ -20,7 +20,7 @@ import { getHolisticUiHtml } from './holisticUiHtml';
 import { getResidentSpyUiHtml } from './residentSpyUiHtml';
 import { getConsoleMenuUiHtml } from './consoleMenuUiHtml';
 import { getPipelineGridUiHtml } from './pipelineGridUiHtml';
-import { captureResidentPaneLive } from './residentPaneLive';
+import { captureMonoRouterLiveScreen } from './residentPaneLive';
 import { capturePipelineGridLive } from './pipelineGridLive';
 import { answerCapturedGateLive } from './gateAnswerLive';
 import { computeRoleGateStatesLive, filterPendingGates } from './gateSnapshot';
@@ -608,10 +608,7 @@ function buildJsonRoutes(targetPath: string, runLogPath: string, nowMs?: number)
     },
     {
       matches: isResidentPanePath,
-      compute: () => {
-        const snap = captureResidentPaneLive(targetPath);
-        return snap ?? { available: false };
-      },
+      compute: () => captureMonoRouterLiveScreen(targetPath),
     },
     {
       matches: isPipelineBoardPath,

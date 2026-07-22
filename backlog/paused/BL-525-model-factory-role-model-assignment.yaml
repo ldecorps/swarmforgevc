@@ -8,7 +8,7 @@ human_approval: approved
 severity: medium
 priority: 12
 direction: human-requested
-depends_on: []
+depends_on: [BL-546]
 assigned_to: specifier
 source: |
   human (ldecorps) via Cursor chat 2026-07-18 — first as daily free-cap

@@ -6,7 +6,7 @@ type: epic
 epic: code-quality-gates
 priority: 00
 depends_on: []
-decomposes_into: [BL-428, BL-472, BL-520]
+decomposes_into: [BL-428, BL-472, BL-520, BL-549]
 source: "Human hygiene 2026-07-19: every ticket must have an epic; every epic must have a milestone. Tracker created during open-backlog cleanup."
 
 notes: |

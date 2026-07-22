@@ -2,9 +2,9 @@ id: BL-528
 title: "Auto-heal claim-without-progress (idle TASK reclaim loop)"
 milestone: M8
 type: defect
-status: todo
+status: paused
 epic: swarm-reliability
-assigned_to: coder
+assigned_to:
 priority: 2
 mutation_cost: medium
 direction: human-requested

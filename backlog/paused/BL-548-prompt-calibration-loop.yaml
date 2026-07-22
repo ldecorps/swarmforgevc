@@ -16,6 +16,10 @@ severity: medium
 priority: 13
 direction: human-requested
 depends_on: [BL-546, BL-547]
+promotion_blockers: >
+  Slice 1 needs BL-546 Slice 2 (adapters + experiment mode) AND BL-547 Slice 2
+  (model-steward evaluate) on main — not merely those tickets done at Slice 1.
+  Coordinator: verify both Slice 2 parcels landed before promoting this ticket.
 assigned_to: specifier
 source: |
   Human intake 2026-07-21 via Cursor chat — follow-up to Swarm Intelligence Layer

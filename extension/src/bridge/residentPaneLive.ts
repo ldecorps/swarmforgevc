@@ -1,4 +1,4 @@
-// BL-522: live resident-pane capture for the bridge Mini App / JSON feed.
+// BL-522: live mono-router panes for the bridge Mini App / JSON feed.
 
 import {
   readTmuxSocket,
@@ -6,6 +6,7 @@ import {
   getPaneBaseIndex,
   resolveAgentPaneTarget,
   capturePane,
+  SwarmRole,
 } from '../swarm/tmuxClient';
 import { stripAnsi } from '../panel/ansi';
 import {
@@ -13,18 +14,88 @@ import {
   RESIDENT_PANE_SPY_ROLE_SEARCH_LINES,
   readMonoRouterActiveRole,
   resolveResidentRoleIdentity,
+  resolveResidentHeldTicketMeta,
+  formatResidentSpyHeader,
 } from '../concierge/residentPaneSpy';
 import { readRoleModelId } from '../swarm/backendSwitch';
 import { formatModelDisplayName } from '../swarm/modelDisplayName';
 
-export interface ResidentPaneLiveSnapshot {
-  roleLabel: string;
-  paneText: string;
-  sessionTarget: string;
+export interface PaneLiveSnapshot {
+  available: boolean;
+  roleLabel?: string;
+  paneText?: string;
+  sessionTarget?: string;
   modelLabel?: string;
+  ticketId?: string;
+  ticketTitle?: string;
+  header?: string;
 }
 
-export function captureResidentPaneLive(targetPath: string): ResidentPaneLiveSnapshot | undefined {
+/** @deprecated Use PaneLiveSnapshot — kept for existing imports. */
+export type ResidentPaneLiveSnapshot = PaneLiveSnapshot;
+
+export interface MonoRouterLiveScreenSnapshot {
+  available: boolean;
+  resident: PaneLiveSnapshot;
+  coordinator: PaneLiveSnapshot;
+}
+
+function unavailablePane(): PaneLiveSnapshot {
+  return { available: false };
+}
+
+function withHeader(snap: PaneLiveSnapshot, prefix: 'Resident' | 'Coordinator'): PaneLiveSnapshot {
+  if (!snap.available || !snap.roleLabel) {
+    return snap;
+  }
+  return {
+    ...snap,
+    header: formatResidentSpyHeader(
+      {
+        roleLabel: snap.roleLabel,
+        modelLabel: snap.modelLabel,
+        sessionTarget: snap.sessionTarget,
+        ticketId: snap.ticketId,
+        ticketTitle: snap.ticketTitle,
+      },
+      prefix
+    ),
+  };
+}
+
+function tryCaptureRolePane(
+  targetPath: string,
+  socketPath: string,
+  roleEntry: SwarmRole,
+  roles: SwarmRole[],
+  paneBaseIndex: number,
+  monoRouterActiveRole?: string
+): PaneLiveSnapshot | undefined {
+  const target = resolveAgentPaneTarget(socketPath, roleEntry.session, paneBaseIndex);
+  const captured = capturePane(socketPath, target, -RESIDENT_PANE_SPY_DEFAULT_LINES);
+  if (captured.exitCode !== 0) {
+    return undefined;
+  }
+  const paneText = stripAnsi(captured.stdout ?? '');
+  if (!paneText.trim()) {
+    return undefined;
+  }
+  const roleSearchCaptured = capturePane(socketPath, target, -RESIDENT_PANE_SPY_ROLE_SEARCH_LINES);
+  const roleSearchText = stripAnsi(roleSearchCaptured.stdout ?? paneText);
+  const identity = resolveResidentRoleIdentity(roleSearchText, roleEntry, roles, monoRouterActiveRole);
+  const modelId = readRoleModelId(targetPath, identity.modelRole);
+  const heldTicket = resolveResidentHeldTicketMeta(targetPath, identity.modelRole);
+  return {
+    available: true,
+    roleLabel: identity.roleLabel,
+    paneText,
+    sessionTarget: target,
+    modelLabel: modelId ? formatModelDisplayName(modelId) : undefined,
+    ...heldTicket,
+  };
+}
+
+export function captureResidentPaneLive(targetPath: string): PaneLiveSnapshot | undefined {
   const socketPath = readTmuxSocket(targetPath);
   if (!socketPath) {
     return undefined;
@@ -35,35 +106,44 @@ export function captureResidentPaneLive(targetPath: string): ResidentPaneLiveSna
     ...roles.map((r) => r.role).filter((role) => role !== 'coder' && role !== 'coordinator'),
   ];
   const paneBaseIndex = getPaneBaseIndex(socketPath);
+  const activeRole = readMonoRouterActiveRole(targetPath);
   for (const role of ordered) {
     const roleEntry = roles.find((r) => r.role === role);
     if (!roleEntry) {
       continue;
     }
-    const target = resolveAgentPaneTarget(socketPath, roleEntry.session, paneBaseIndex);
-    const captured = capturePane(socketPath, target, -RESIDENT_PANE_SPY_DEFAULT_LINES);
-    if (captured.exitCode !== 0) {
-      continue;
+    const snap = tryCaptureRolePane(targetPath, socketPath, roleEntry, roles, paneBaseIndex, activeRole);
+    if (snap) {
+      return snap;
     }
-    const paneText = stripAnsi(captured.stdout ?? '');
-    if (!paneText.trim()) {
-      continue;
-    }
-    const roleSearchCaptured = capturePane(socketPath, target, -RESIDENT_PANE_SPY_ROLE_SEARCH_LINES);
-    const roleSearchText = stripAnsi(roleSearchCaptured.stdout ?? paneText);
-    const identity = resolveResidentRoleIdentity(
-      roleSearchText,
-      roleEntry,
-      roles,
-      readMonoRouterActiveRole(targetPath)
-    );
-    const modelId = readRoleModelId(targetPath, identity.modelRole);
-    return {
-      roleLabel: identity.roleLabel,
-      paneText,
-      sessionTarget: target,
-      modelLabel: modelId ? formatModelDisplayName(modelId) : undefined,
-    };
   }
   return undefined;
+}
+
+export function captureCoordinatorPaneLive(targetPath: string): PaneLiveSnapshot | undefined {
+  const socketPath = readTmuxSocket(targetPath);
+  if (!socketPath) {
+    return undefined;
+  }
+  const roles = readSwarmRoles(targetPath);
+  const roleEntry = roles.find((r) => r.role === 'coordinator');
+  if (!roleEntry) {
+    return undefined;
+  }
+  return tryCaptureRolePane(targetPath, socketPath, roleEntry, roles, getPaneBaseIndex(socketPath));
+}
+
+export function captureMonoRouterLiveScreen(targetPath: string): MonoRouterLiveScreenSnapshot {
+  const residentRaw = captureResidentPaneLive(targetPath);
+  const coordinatorRaw = captureCoordinatorPaneLive(targetPath);
+  const resident = withHeader(residentRaw ? { ...residentRaw, available: true } : unavailablePane(), 'Resident');
+  const coordinator = withHeader(
+    coordinatorRaw ? { ...coordinatorRaw, available: true } : unavailablePane(),
+    'Coordinator'
+  );
+  return {
+    available: resident.available,
+    resident,
+    coordinator,
+  };
 }
