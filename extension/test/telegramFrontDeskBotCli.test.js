@@ -303,8 +303,13 @@ function copyCommitIntegrityScripts(root) {
   const scriptsDir = path.join(root, 'swarmforge', 'scripts');
   fs.mkdirSync(scriptsDir, { recursive: true });
   const repoScriptsDir = path.join(__dirname, '..', '..', 'swarmforge', 'scripts');
-  for (const name of ['commit_integrity_cli.bb', 'commit_integrity_lib.bb']) {
-    fs.copyFileSync(path.join(repoScriptsDir, name), path.join(scriptsDir, name));
+  // BL-551: commit_integrity_cli loads ticket_close_guard_lib and its full
+  // Babashka dependency chain — copy every .bb helper the real scripts dir
+  // carries so expedite fixtures exercise the same CLI production does.
+  for (const name of fs.readdirSync(repoScriptsDir)) {
+    if (name.endsWith('.bb')) {
+      fs.copyFileSync(path.join(repoScriptsDir, name), path.join(scriptsDir, name));
+    }
   }
 }
 
@@ -685,7 +690,8 @@ test('BL-434: the Approvals topic and the Operator topic bind independently in t
   writeTopicMapFixture(root, { '42': 'OPERATOR' });
   const { postFn, calls } = fakeCreateOk(55);
   const topicId = await ensureApprovalsTopic(root, 'fake-token', 'fake-chat', postFn);
-  assert.equal(calls.length, 1);
+  const createCalls = calls.filter((c) => String(c.url).endsWith('createForumTopic'));
+  assert.equal(createCalls.length, 1);
   assert.equal(topicId, 55);
   const map = readTopicMapFixture(root);
   assert.equal(map['55'], 'APPROVALS');
