@@ -60,6 +60,13 @@ done
 
 pass "04: capability exposes all five benchmark dimensions"
 
+bb "$CLI" capability nope/nope >/tmp/model-steward-capability-missing.out 2>&1 && fail "04: capability should exit non-zero for an unknown model" || true
+grep -q "no capability entry for nope/nope" /tmp/model-steward-capability-missing.out \
+  || fail "04: capability did not report the missing-entry error to stderr"
+rm -f /tmp/model-steward-capability-missing.out
+
+pass "04b: capability errors loudly on unknown models"
+
 # ── 5: register + certify writes a certification report artifact ───────────
 bb "$CLI" register bl547test/smoke-model --status candidate --context-window 8000 --cost-class low >/dev/null
 CERTIFY_OUT="$(bb "$CLI" certify bl547test/smoke-model)"
@@ -117,5 +124,63 @@ ADAPTER_OUT="$(bb "$CLI" adapter anthropic/claude-sonnet-5)"
   || fail "09: expected the certified model's adapter entry to be a production default"
 
 pass "09: adapter catalogue exposes PromptEngine adapter metadata"
+
+bb "$CLI" adapter nope/nope >/tmp/model-steward-adapter-missing.out 2>&1 && fail "09b: adapter should exit non-zero for an unknown model" || true
+grep -q "no adapter entry for nope/nope" /tmp/model-steward-adapter-missing.out \
+  || fail "09b: adapter did not report the missing-entry error to stderr"
+rm -f /tmp/model-steward-adapter-missing.out
+
+pass "09b: adapter errors loudly on unknown models"
+
+# ── 10: decertify requires --reason, refuses a blank/missing one ───────────
+bb "$CLI" decertify anthropic/claude-sonnet-5 >/tmp/model-steward-decertify-noreason.out 2>&1 \
+  && fail "10: decertify should exit non-zero when --reason is missing" || true
+grep -q "decertify requires --reason" /tmp/model-steward-decertify-noreason.out \
+  || fail "10: decertify did not report the missing-reason error to stderr"
+rm -f /tmp/model-steward-decertify-noreason.out
+
+bb "$CLI" decertify anthropic/claude-sonnet-5 --reason "" >/tmp/model-steward-decertify-blankreason.out 2>&1 \
+  && fail "10: decertify should exit non-zero when --reason is blank" || true
+grep -q "decertify requires --reason" /tmp/model-steward-decertify-blankreason.out \
+  || fail "10: decertify did not report the blank-reason error to stderr"
+rm -f /tmp/model-steward-decertify-blankreason.out
+
+pass "10: decertify refuses a missing or blank --reason"
+
+# ── 11: decertifying a seed-certified model has no prior report to read ────
+# anthropic/claude-sonnet-5 was certified only via the committed seed, never
+# through `certify` — its certification_report_path is nil, so this is the
+# only path that exercises build-regression-report's nil-prior-report branch
+# through the real store wiring rather than the pure-lib unit test alone.
+SEED_DECERT_OUT="$(bb "$CLI" decertify anthropic/claude-sonnet-5 --reason "protocol_compliance regressed")"
+[[ "$SEED_DECERT_OUT" == *"candidate"* ]] \
+  || fail "11: decertifying the seed-certified model did not default new-status to candidate"
+SEED_DECERT_REPORT_REL="$(echo "$SEED_DECERT_OUT" | sed -n 's/.*report=\(certification-reports\/.*\)$/\1/p')"
+[[ -n "$SEED_DECERT_REPORT_REL" ]] \
+  || fail "11: could not parse a regression report path from the seed-model decertify output"
+grep -q '"prior_report":null' "$STATE_DIR/$SEED_DECERT_REPORT_REL" \
+  || fail "11: regression report for a seed-certified model should record a null prior_report, not a fabricated one"
+grep -q '"provider":"anthropic"' "$STATE_DIR/$SEED_DECERT_REPORT_REL" \
+  || fail "11: regression report for a seed-certified model still names its provider"
+
+pass "11: decertifying a seed-certified model handles a nil prior certification report"
+
+# ── 12: parse-provider-model rejects a composite with no "/" ───────────────
+bb "$CLI" show not-a-composite >/tmp/model-steward-malformed.out 2>&1 \
+  && fail "12: show should exit non-zero for a malformed provider/model argument" || true
+grep -q "expected <provider>/<model>" /tmp/model-steward-malformed.out \
+  || fail "12: malformed provider/model argument did not report the expected error"
+rm -f /tmp/model-steward-malformed.out
+
+pass "12: parse-provider-model rejects a composite argument with no separator"
+
+# ── 13: an unrecognised command falls through to usage and exits non-zero ──
+bb "$CLI" bogus-command >/tmp/model-steward-usage.out 2>&1 \
+  && fail "13: an unrecognised command should exit non-zero" || true
+grep -q "^Usage: model_steward_cli.bb" /tmp/model-steward-usage.out \
+  || fail "13: unrecognised command did not print usage"
+rm -f /tmp/model-steward-usage.out
+
+pass "13: an unrecognised command falls through to usage"
 
 echo "ALL PASS"
