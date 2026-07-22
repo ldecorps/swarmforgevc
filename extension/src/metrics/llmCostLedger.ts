@@ -207,3 +207,143 @@ export function rollupLlmInvocationsByOrigin(records: LlmInvocationRecord[], opt
   }
   return Array.from(groups.values()).sort((a, b) => b.costUsd - a.costUsd);
 }
+
+// ── origin cost trend series (trend-series-11 .. trend-surface-15) ───────
+//
+// A rolling 7-day, per-origin spend series for the multi-line trend chart
+// the notes call for (PWA cost card + briefing/sidecar). Three logarithmic
+// TIME bands sample more finely the closer a bucket is to `nowMs` (Band A:
+// last 3h, finest; Band B: 3h-24h ago, medium; Band C: 24h-7d ago,
+// coarsest) - the ticket pins only the RELATIVE ordering of bucket widths,
+// not their exact values, so DEFAULT_ORIGIN_COST_TREND_BANDS below is the
+// one place that pins the concrete widths every reader/surface shares.
+
+export interface OriginCostTrendBand {
+  // Reuses the same named-horizon vocabulary as LLM_COST_HORIZONS_MS: the
+  // band covers (now - sinceMs, now - <next finer band's sinceMs>], with
+  // the finest band (smallest sinceMs) covering (now - sinceMs, now].
+  name: LlmCostHorizon;
+  sinceMs: number;
+  bucketMs: number;
+}
+
+export const DEFAULT_ORIGIN_COST_TREND_BANDS: OriginCostTrendBand[] = [
+  { name: '3h', sinceMs: LLM_COST_HORIZONS_MS['3h'], bucketMs: 15 * 60 * 1000 },
+  { name: '24h', sinceMs: LLM_COST_HORIZONS_MS['24h'], bucketMs: 60 * 60 * 1000 },
+  { name: '7d', sinceMs: LLM_COST_HORIZONS_MS['7d'], bucketMs: 6 * 60 * 60 * 1000 },
+];
+
+interface TrendBucketRange {
+  startMs: number;
+  endMs: number;
+}
+
+// Pure: expands the band config into concrete, non-overlapping bucket
+// ranges spanning the full window, ordered oldest (index 0) to latest
+// (last index) - the order buildOriginCostTrendSeries's own buckets array
+// inherits directly, satisfying "oldest on the left, latest on the right"
+// (trend-series-11) without a separate sort step.
+function buildTrendBucketRanges(nowMs: number, bands: OriginCostTrendBand[]): TrendBucketRange[] {
+  const bySinceAsc = [...bands].sort((a, b) => a.sinceMs - b.sinceMs);
+  const ranges: TrendBucketRange[] = [];
+  for (let i = bySinceAsc.length - 1; i >= 0; i -= 1) {
+    const band = bySinceAsc[i];
+    const bandStartMs = nowMs - band.sinceMs;
+    const bandEndMs = i === 0 ? nowMs : nowMs - bySinceAsc[i - 1].sinceMs;
+    for (let bucketStart = bandStartMs; bucketStart < bandEndMs; bucketStart += band.bucketMs) {
+      ranges.push({ startMs: bucketStart, endMs: Math.min(bucketStart + band.bucketMs, bandEndMs) });
+    }
+  }
+  return ranges;
+}
+
+export interface OriginCostTrendBucket {
+  bucketStartMs: number;
+  bucketEndMs: number;
+  costUsd: number;
+}
+
+export interface OriginCostTrendSeries {
+  key: Record<string, string | null>;
+  buckets: OriginCostTrendBucket[];
+}
+
+export interface BuildOriginCostTrendSeriesOptions {
+  nowMs: number;
+  groupBy?: LlmInvocationOriginDimension[];
+  bands?: OriginCostTrendBand[];
+  topN?: number;
+}
+
+// "Same method" per the ticket's trend-graph-10 notes: default groupBy is
+// the same origin fingerprint the rollups already use.
+const DEFAULT_TREND_GROUP_BY: LlmInvocationOriginDimension[] = ['role', 'trigger', 'script'];
+const DEFAULT_TREND_TOP_N = 5;
+
+// Pure: one rolling cost series per distinct origin, bucketed into the
+// three time bands, ranked by cost in the RIGHTMOST (latest) bucket
+// descending (trend-rank-latest-13) - a lifetime/whole-window total would
+// rank a once-expensive-now-quiet origin above a newly expensive one,
+// which is exactly the ordering the ticket calls out as wrong. Unpriced
+// invocations are skipped per-bucket, never coerced to $0 (unknown-cost-07's
+// discipline extended to the trend surface).
+export function buildOriginCostTrendSeries(records: LlmInvocationRecord[], options: BuildOriginCostTrendSeriesOptions): OriginCostTrendSeries[] {
+  const bands = options.bands ?? DEFAULT_ORIGIN_COST_TREND_BANDS;
+  const groupBy = options.groupBy ?? DEFAULT_TREND_GROUP_BY;
+  const windowMs = Math.max(...bands.map((band) => band.sinceMs));
+  const ranges = buildTrendBucketRanges(options.nowMs, bands);
+  const inWindow = records.filter((record) => withinHorizon(record, windowMs, options.nowMs));
+
+  const seriesByKey = new Map<string, OriginCostTrendSeries>();
+  for (const record of inWindow) {
+    const compositeKey = groupKey(record, groupBy);
+    let series = seriesByKey.get(compositeKey);
+    if (!series) {
+      const key: Record<string, string | null> = {};
+      for (const dimension of groupBy) {
+        key[dimension] = record.origin[dimension] as string | null;
+      }
+      series = { key, buckets: ranges.map((range) => ({ bucketStartMs: range.startMs, bucketEndMs: range.endMs, costUsd: 0 })) };
+      seriesByKey.set(compositeKey, series);
+    }
+    if (record.costUsd === null) {
+      continue;
+    }
+    const ms = atMs(record);
+    const bucketIndex = ranges.findIndex((range) => ms > range.startMs && ms <= range.endMs);
+    if (bucketIndex !== -1) {
+      series.buckets[bucketIndex].costUsd += record.costUsd;
+    }
+  }
+
+  const all = Array.from(seriesByKey.values());
+  all.sort((a, b) => latestBucketCost(b) - latestBucketCost(a));
+  const topN = options.topN ?? DEFAULT_TREND_TOP_N;
+  return all.slice(0, topN);
+}
+
+function latestBucketCost(series: OriginCostTrendSeries): number {
+  return series.buckets.length > 0 ? series.buckets[series.buckets.length - 1].costUsd : 0;
+}
+
+// Pure: log when the priced (>0) cost range across every bucket of every
+// given series spans at least a tenfold ratio (trend-log-scale-14),
+// otherwise linear. Zero/unpriced buckets never participate in the ratio -
+// a single priced bucket (or none at all) is never "log".
+export function chooseCostTrendAxisScale(series: OriginCostTrendSeries[]): 'log' | 'linear' {
+  let minCostUsd = Infinity;
+  let maxCostUsd = 0;
+  for (const s of series) {
+    for (const bucket of s.buckets) {
+      if (bucket.costUsd <= 0) {
+        continue;
+      }
+      minCostUsd = Math.min(minCostUsd, bucket.costUsd);
+      maxCostUsd = Math.max(maxCostUsd, bucket.costUsd);
+    }
+  }
+  if (!Number.isFinite(minCostUsd) || maxCostUsd <= 0) {
+    return 'linear';
+  }
+  return maxCostUsd / minCostUsd >= 10 ? 'log' : 'linear';
+}
