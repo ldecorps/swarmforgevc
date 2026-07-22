@@ -88,7 +88,7 @@ test('syncPipelineBoardPin: no board message yet - skip-no-board, no unpin-all, 
   assert.deepEqual(pinCalls, []);
 });
 
-test('syncPipelineBoardPin: nothing currently pinned - pins the board without unpin-all', async () => {
+test('syncPipelineBoardPin: nothing currently pinned - unpin-all then pins the board', async () => {
   const calls = [];
   const result = await syncPipelineBoardPin(
     100,
@@ -107,7 +107,7 @@ test('syncPipelineBoardPin: nothing currently pinned - pins the board without un
 
   assert.equal(result.outcome, 'enforce');
   assert.equal(result.lastPinnedBoardMessageId, 100);
-  assert.deepEqual(calls, ['pin:100']);
+  assert.deepEqual(calls, ['unpinAll', 'pin:100']);
 });
 
 test('syncPipelineBoardPin: the board is already the top pin - skip-clean, no unpin-all, no pin call', async () => {

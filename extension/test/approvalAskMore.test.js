@@ -1,7 +1,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
+const { mkTmpDir } = require('./helpers/tmpDir');
 
 const {
   formatApprovalMoreText,
@@ -48,7 +48,7 @@ test('approvalMoreContentFromItem: prefers description over notes for the Spec s
 });
 
 test('loadApprovalMoreText: loads description + feature file from a real backlog fixture', () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'approval-more-'));
+  const root = mkTmpDir('approval-more-');
   const featureRel = 'specs/features/BL-1-demo.feature';
   fs.mkdirSync(path.join(root, 'backlog', 'paused'), { recursive: true });
   fs.mkdirSync(path.join(root, 'specs', 'features'), { recursive: true });
@@ -76,7 +76,7 @@ test('loadApprovalMoreText: loads description + feature file from a real backlog
 });
 
 test('loadApprovalMoreText: unknown ticket still returns placeholders (never throws)', () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'approval-more-missing-'));
+  const root = mkTmpDir('approval-more-missing-');
   fs.mkdirSync(path.join(root, 'backlog', 'paused'), { recursive: true });
   const text = loadApprovalMoreText(root, 'BL-999');
   assert.match(text, /no spec on disk/);

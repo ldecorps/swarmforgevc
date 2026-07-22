@@ -587,6 +587,7 @@ test('approval ask reconcile: pending already in baseline with no recorded ask p
       { text: 'Reject', callbackData: 'reject:BL-525' },
       { text: 'Expedite', callbackData: 'expedite:BL-525' },
     ],
+    [{ text: 'More', callbackData: 'more:BL-525' }],
   ]);
   assert.ok(state.emittedKeys.includes('ApprovalRequested:BL-525'));
 });
@@ -2169,11 +2170,12 @@ test('BL-455: role-held tickets are joined to their backlog item epic/title - gr
   // grouping logic.
   const concertoIndex = lines.findIndex((l) => l.includes('Concerto'));
   assert.ok(concertoIndex >= 0, `expected a Concerto epic heading, got:\n${posted[0]}`);
-  assert.ok(lines[concertoIndex + 1].startsWith(displayId('BL-1')), 'expected BL-1 grouped directly under its epic heading');
-  // BL-465/BL-505: the grid's own slug column now shows a SHORT (2-word)
-  // kebab slug, not the full title - "fix the pipeline board" -> "fix-the".
-  assert.ok(posted[0].includes('fix-the'), 'expected BL-1 row to carry its derived kebab slug');
-  assert.ok(posted[0].includes('unrelated-ticket'), 'expected BL-2 (no epic) to still carry its own kebab slug');
+  const bl1LineIdx = lines.findIndex(
+    (l, i) => i > concertoIndex && l.replace(/\u00a0/g, '').trim() === displayId('BL-1')
+  );
+  assert.ok(bl1LineIdx > concertoIndex, 'expected BL-1 grouped under its Concerto epic heading in the pivoted grid');
+  // BL-526 pivoted grid: the status block shows ticket number + stage marks
+  // only — short kebab slugs moved to below-grid list sections, not inline.
   const noEpicIndex = lines.findIndex((l) => l.trim() === '-- (no epic) --');
   assert.ok(noEpicIndex > concertoIndex, 'expected the no-epic group to sort after the named epic group');
 });
@@ -2381,17 +2383,13 @@ test('BL-473: a ticket physically in backlog/active/ that no role holds still re
 
   assert.equal(posted.length, 1, 'expected the not-started ticket to still post a board, never silently skipped');
   const lines = posted[0].split('\n');
-  const header = lines[0].trim().split(/\s+/);
-  const row = lines.find((l) => l.trim().split(/\s+/)[0] === displayId('BL-1'));
-  assert.ok(row, `expected BL-1 to be a board row, got:\n${posted[0]}`);
-  const nsIndex = header.indexOf('NS');
-  assert.ok(nsIndex >= 0, `expected a not-started (NS) column in the header, got: ${header.join(' ')}`);
-  const rowCells = row.trim().split(/\s+/);
-  assert.equal(rowCells[nsIndex], 'X', `expected BL-1 marked in the NS column, got: ${row}`);
-  for (let i = 2; i < rowCells.length; i += 1) {
-    if (i !== nsIndex) {
-      assert.equal(rowCells[i], '.', `expected no pipeline-role column marked for a not-started ticket, got: ${row}`);
-    }
+  assert.ok(hasRowFor(posted[0], 'BL-1'), `expected BL-1 to be a board row, got:\n${posted[0]}`);
+  const ticketLineIdx = lines.findIndex((l) => l.replace(/\u00a0/g, '').trim() === displayId('BL-1'));
+  assert.ok(ticketLineIdx >= 0, `expected BL-1 ticket line in pivoted grid, got:\n${posted[0]}`);
+  const stageLines = lines.slice(ticketLineIdx + 1, ticketLineIdx + 8);
+  assert.equal(stageLines[0].trim(), 'NS X', `expected BL-1 marked not-started, got: ${stageLines[0]}`);
+  for (let i = 1; i < stageLines.length; i += 1) {
+    assert.match(stageLines[i].trim(), /^[A-Z]{2} \.$/, `expected pipeline stage unmarked for a not-started ticket, got: ${stageLines[i]}`);
   }
 });
 
