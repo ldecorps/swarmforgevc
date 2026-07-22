@@ -1,5 +1,9 @@
 id: GH-23
 title: "Console Mini App: Context Budget & Conversation Telemetry dashboard"
+priority: 02
+direction: human-requested
+human_approval: approved
+depends_on: [GH-22]
 source: https://github.com/ldecorps/swarmforgevc/issues/23
 description: |
   ## Summary

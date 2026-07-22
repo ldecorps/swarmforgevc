@@ -1,4 +1,7 @@
 # Human directive — intelligence layer routing (operator session)
+#
+# **SUPERSEDED** by `INTAKE-20260722-compaction-telemetry-priority.md` (2026-07-22):
+# compaction telemetry (GH-22/GH-23) now outranks ModelFactory / BL-546 S2 drain.
 
 **From:** human (via Cursor operator session)  
 **Date:** 2026-07-22  
