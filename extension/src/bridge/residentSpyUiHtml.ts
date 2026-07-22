@@ -20,20 +20,21 @@ export function getResidentSpyUiHtml(): string {
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     background: var(--tg-theme-bg-color, #0d1117);
     color: var(--tg-theme-text-color, #e6edf3);
-    min-height: 100vh;
+    min-height: 100dvh;
     display: flex;
     flex-direction: column;
   }
-  header {
-    flex: 0 0 auto;
-    display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap;
-    padding: 10px 14px;
-    background: color-mix(in srgb, var(--tg-theme-bg-color, #0d1117) 88%, #000);
-    border-bottom: 1px solid color-mix(in srgb, var(--tg-theme-hint-color, #8b949e) 35%, transparent);
+  .dot {
+    position: fixed;
+    bottom: max(6px, env(safe-area-inset-bottom));
+    left: max(6px, env(safe-area-inset-left));
+    z-index: 10;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #3fb950;
+    pointer-events: none;
   }
-  h1 { font-size: 14px; margin: 0; font-weight: 600; letter-spacing: 0.02em; }
-  .meta { font-size: 12px; color: var(--tg-theme-hint-color, #8b949e); }
-  .dot { width: 8px; height: 8px; border-radius: 50%; background: #3fb950; display: inline-block; }
   .dot.stale { background: #d29922; }
   .dot.err { background: #f85149; }
   .split {
@@ -42,14 +43,14 @@ export function getResidentSpyUiHtml(): string {
     flex-direction: row;
     flex-wrap: wrap;
     align-content: stretch;
+    min-height: 100dvh;
     min-height: 0;
     overflow: hidden;
   }
   .pane-col {
     flex: 1 1 50%;
     min-width: 0;
-    min-height: 120px;
-    max-height: 50vh;
+    min-height: 0;
     display: flex;
     flex-direction: column;
     border-right: 1px solid color-mix(in srgb, var(--tg-theme-hint-color, #8b949e) 25%, transparent);
@@ -87,6 +88,10 @@ export function getResidentSpyUiHtml(): string {
     white-space: nowrap;
   }
   .split-btn {
+    position: fixed;
+    top: max(8px, env(safe-area-inset-top));
+    right: max(8px, env(safe-area-inset-right));
+    z-index: 10;
     font: inherit;
     font-size: 11px;
     padding: 4px 8px;
@@ -95,6 +100,7 @@ export function getResidentSpyUiHtml(): string {
     color: var(--tg-theme-button-text-color, #fff);
     background: var(--tg-theme-button-color, #2ea043);
     border: none;
+    box-shadow: 0 2px 8px color-mix(in srgb, #000 40%, transparent);
   }
   .pane-kind {
     font-size: 10px;
@@ -136,12 +142,8 @@ export function getResidentSpyUiHtml(): string {
 </style>
 </head>
 <body>
-<header>
-  <span id="dot" class="dot"></span>
-  <h1>${MONO_ROUTER_LIVE_SCREEN_NAME}</h1>
-  <span class="meta" id="age">connecting…</span>
-  <button type="button" class="split-btn" id="split-btn" hidden>All panes</button>
-</header>
+<span id="dot" class="dot" hidden></span>
+<button type="button" class="split-btn" id="split-btn" hidden>All panes</button>
 <div class="split" id="pane-split"></div>
 <script>
 (function () {
@@ -150,7 +152,6 @@ export function getResidentSpyUiHtml(): string {
   var params = new URLSearchParams(location.search);
   var token = params.get('token') || '';
   var splitEl = document.getElementById('pane-split');
-  var ageEl = document.getElementById('age');
   var dotEl = document.getElementById('dot');
   var splitBtn = document.getElementById('split-btn');
   var focusPane = null;
@@ -203,15 +204,15 @@ export function getResidentSpyUiHtml(): string {
     applyFocus();
   });
 
-  function setStatus(kind, text) {
+  function setStatus(kind) {
+    dotEl.hidden = false;
     dotEl.className = 'dot' + (kind === 'ok' ? '' : ' ' + kind);
-    ageEl.textContent = text;
   }
 
   function tickAge() {
     if (!lastOk) return;
     var s = Math.round((Date.now() - lastOk) / 1000);
-    setStatus(s > 5 ? 'stale' : 'ok', 'updated ' + s + 's ago');
+    setStatus(s > 5 ? 'stale' : 'ok');
   }
 
   function formatClaimEnteredAgo(claimEnteredAtMs) {
@@ -325,20 +326,20 @@ export function getResidentSpyUiHtml(): string {
       })
       .then(function (data) {
         if (!data) {
-          setStatus('err', 'no data');
+          setStatus('err');
           return;
         }
         var panes = normalizePanes(data);
         renderAllPanes(panes);
         if (!data.available) {
-          setStatus('err', 'no live panes');
+          setStatus('err');
         } else {
           lastOk = Date.now();
-          setStatus('ok', 'updated 0s ago');
+          setStatus('ok');
         }
       })
-      .catch(function (err) {
-        setStatus('err', String(err && err.message || err));
+      .catch(function () {
+        setStatus('err');
       });
   }
 
