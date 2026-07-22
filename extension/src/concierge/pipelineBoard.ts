@@ -45,6 +45,9 @@ export interface PipelineBoardLinkEntry {
 export interface PipelineBoardData {
   rows: PipelineBoardRow[];
   parked: PipelineBoardParkedEntry[];
+  // BL-559: paused type:epic trackers collapsed to one line per epic slug
+  // with active/paused child-slice counts — never plain parked ticket lines.
+  collapsedEpics?: PipelineBoardCollapsedEpicEntry[];
   rootIntake: PipelineBoardListEntry[];
   recentlyClosed: PipelineBoardListEntry[];
   links: PipelineBoardLinkEntry[];
@@ -54,10 +57,23 @@ export interface PipelineBoardData {
   parkedOmittedCount?: number;
 }
 
+export interface PipelineBoardCollapsedEpicEntry {
+  epicSlug: string;
+  trackerId: string;
+  pausedChildCount: number;
+  activeChildCount: number;
+}
+
 export interface PipelineBoardPausedItem {
   id: string;
   humanApproval?: 'pending' | 'approved';
   priority?: number;
+  type?: string;
+  epic?: string;
+}
+
+export function isEpicTrackerPausedItem(item: PipelineBoardPausedItem): boolean {
+  return item.type === 'epic';
 }
 
 // BL-455: the join key a caller (conciergeTick.ts's syncBoardIfWired) feeds
@@ -70,6 +86,7 @@ export interface PipelineBoardPausedItem {
 // reconstructed from the title (which could drift and 404).
 export interface PipelineBoardTicketMeta {
   epic?: string;
+  type?: string;
   title?: string;
   filename?: string;
   location?: 'active' | 'paused' | 'done' | 'root';
@@ -357,13 +374,17 @@ function comparePausedByPriority(a: PipelineBoardPausedItem, b: PipelineBoardPau
 }
 
 // Awaiting-approval tickets are always shown. Plain parked tickets are
-// capped to PIPELINE_BOARD_PAUSED_MAX by priority (then id).
+// capped to PIPELINE_BOARD_PAUSED_MAX by priority (then id). Epic trackers
+// (type: epic) are excluded — they render as collapsed epic summaries.
 export function selectPausedForBoard(paused: PipelineBoardPausedItem[]): {
   selected: PipelineBoardPausedItem[];
   parkedOmittedCount: number;
 } {
-  const awaiting = paused.filter((item) => item.humanApproval === 'pending').sort(comparePausedByPriority);
-  const plainParked = paused.filter((item) => item.humanApproval !== 'pending').sort(comparePausedByPriority);
+  const workflowPaused = paused.filter(
+    (item) => !isEpicTrackerPausedItem(item) || item.humanApproval === 'pending'
+  );
+  const awaiting = workflowPaused.filter((item) => item.humanApproval === 'pending').sort(comparePausedByPriority);
+  const plainParked = workflowPaused.filter((item) => item.humanApproval !== 'pending').sort(comparePausedByPriority);
   const shownParked = plainParked.slice(0, PIPELINE_BOARD_PAUSED_MAX);
   return {
     selected: [...awaiting, ...shownParked],
@@ -371,12 +392,66 @@ export function selectPausedForBoard(paused: PipelineBoardPausedItem[]): {
   };
 }
 
+function countEpicSliceChildren(
+  epicSlug: string,
+  ticketMeta: Record<string, PipelineBoardTicketMeta>
+): { paused: number; active: number } {
+  let paused = 0;
+  let active = 0;
+  for (const meta of Object.values(ticketMeta)) {
+    if (meta.epic !== epicSlug || meta.type === 'epic') {
+      continue;
+    }
+    if (meta.location === 'paused') {
+      paused += 1;
+    } else if (meta.location === 'active') {
+      active += 1;
+    }
+  }
+  return { paused, active };
+}
+
+function buildCollapsedEpicEntries(
+  paused: PipelineBoardPausedItem[],
+  ticketMeta: Record<string, PipelineBoardTicketMeta>
+): PipelineBoardCollapsedEpicEntry[] {
+  return paused
+    .filter((item) => isEpicTrackerPausedItem(item) && item.humanApproval !== 'pending')
+    .sort(comparePausedByPriority)
+    .map((item) => {
+      const epicSlug = item.epic ?? ticketMeta[item.id]?.epic ?? '';
+      const counts = countEpicSliceChildren(epicSlug, ticketMeta);
+      return {
+        epicSlug,
+        trackerId: item.id,
+        pausedChildCount: counts.paused,
+        activeChildCount: counts.active,
+      };
+    });
+}
+
+export function formatCollapsedEpicLine(entry: PipelineBoardCollapsedEpicEntry): string {
+  const parts: string[] = [];
+  if (entry.activeChildCount > 0) {
+    parts.push(`${entry.activeChildCount} active`);
+  }
+  if (entry.pausedChildCount > 0) {
+    parts.push(`${entry.pausedChildCount} paused`);
+  }
+  const suffix = parts.length > 0 ? ` (${parts.join(', ')})` : '';
+  return `  ${entry.epicSlug}${suffix}`;
+}
+
 // Split out of computePipelineBoard below for the same CRAP-budget reason
 // as buildGridRows above.
 function buildParkedEntries(
   paused: PipelineBoardPausedItem[],
   ticketMeta: Record<string, PipelineBoardTicketMeta>
-): { parked: PipelineBoardParkedEntry[]; parkedOmittedCount: number } {
+): {
+  parked: PipelineBoardParkedEntry[];
+  collapsedEpics: PipelineBoardCollapsedEpicEntry[];
+  parkedOmittedCount: number;
+} {
   const { selected, parkedOmittedCount } = selectPausedForBoard(paused);
   const parked = selected.map(
     (item): PipelineBoardParkedEntry => ({
@@ -385,7 +460,8 @@ function buildParkedEntries(
       status: item.humanApproval === 'pending' ? 'awaiting-approval' : 'parked',
     })
   );
-  return { parked, parkedOmittedCount };
+  const collapsedEpics = buildCollapsedEpicEntries(paused, ticketMeta);
+  return { parked, collapsedEpics, parkedOmittedCount };
 }
 
 // The four link SOURCES below each mirror one of the board's own sections
@@ -453,9 +529,24 @@ function linksFromRootIntake(
 // present (see computePipelineBoard's own ternary) - a link list without a
 // resolvable repo base would emit broken/relative links, per
 // PipelineBoardExtras.repoBaseUrl's own comment.
+function linksFromCollapsedEpics(
+  collapsedEpics: PipelineBoardCollapsedEpicEntry[],
+  ticketMeta: Record<string, PipelineBoardTicketMeta>
+): PipelineBoardLinkEntry[] {
+  const links: PipelineBoardLinkEntry[] = [];
+  for (const entry of collapsedEpics) {
+    const path = linkPathFor(ticketMeta[entry.trackerId]);
+    if (path) {
+      links.push({ id: entry.trackerId, path });
+    }
+  }
+  return links;
+}
+
 function buildLinks(
   rows: PipelineBoardRow[],
   parked: PipelineBoardParkedEntry[],
+  collapsedEpics: PipelineBoardCollapsedEpicEntry[],
   extras: PipelineBoardExtras,
   ticketMeta: Record<string, PipelineBoardTicketMeta>
 ): PipelineBoardLinkEntry[] {
@@ -463,6 +554,7 @@ function buildLinks(
   for (const link of [
     ...linksFromRows(rows, ticketMeta),
     ...linksFromParked(parked, ticketMeta),
+    ...linksFromCollapsedEpics(collapsedEpics, ticketMeta),
     ...linksFromRecentlyClosed(extras, ticketMeta),
     ...linksFromRootIntake(extras, ticketMeta),
   ]) {
@@ -482,7 +574,7 @@ export function computePipelineBoard(
   extras: PipelineBoardExtras = {}
 ): PipelineBoardData {
   const rows = buildGridRows(roleHeldTickets, ticketMeta, extras.activeIds);
-  const { parked, parkedOmittedCount } = buildParkedEntries(paused, ticketMeta);
+  const { parked, collapsedEpics, parkedOmittedCount } = buildParkedEntries(paused, ticketMeta);
   const rootIntake = [...(extras.rootIntake ?? [])].map(listEntryFor).sort((a, b) => a.id.localeCompare(b.id));
   // BL-465 bounce (architect review): unlike rootIntake/parked above,
   // recently-closed order IS the whole point of the section - re-sorting
@@ -493,9 +585,9 @@ export function computePipelineBoard(
   // WHICH items count as 'recent'; this only bounds the list length").
   // Slice-then-map only, preserving the caller's order exactly.
   const recentlyClosed = [...(extras.recentlyClosed ?? [])].slice(0, PIPELINE_BOARD_RECENTLY_CLOSED_MAX).map(listEntryFor);
-  const links = extras.repoBaseUrl ? buildLinks(rows, parked, extras, ticketMeta) : [];
+  const links = extras.repoBaseUrl ? buildLinks(rows, parked, collapsedEpics, extras, ticketMeta) : [];
 
-  return { rows, parked, rootIntake, recentlyClosed, links, parkedOmittedCount };
+  return { rows, parked, collapsedEpics, rootIntake, recentlyClosed, links, parkedOmittedCount };
 }
 
 // Every stage line is "<2-char label> <mark>". Pad the ticket id to the mark
@@ -543,7 +635,29 @@ function pipelineBoardParkedOverflowLine(omittedCount: number): string {
   return `+${omittedCount} more parked`;
 }
 
-// BL-465: renders one below-grid section (parked/awaiting-approval/root-
+function renderParkedSection(
+  collapsedEpics: PipelineBoardCollapsedEpicEntry[],
+  parked: PipelineBoardParkedEntry[],
+  overflowLine?: string
+): string[] {
+  const plainParked = parked.filter((p) => p.status === 'parked');
+  if (collapsedEpics.length === 0 && plainParked.length === 0 && (overflowLine === undefined || overflowLine === '')) {
+    return [];
+  }
+  const lines: string[] = ['', PARKED_SECTION_HEADER];
+  for (const epic of collapsedEpics) {
+    lines.push(formatCollapsedEpicLine(epic));
+  }
+  for (const entry of plainParked) {
+    lines.push(`  ${deriveDisplayTicketId(entry.id)} ${entry.slug}`.trimEnd());
+  }
+  if (overflowLine) {
+    lines.push(`  ${overflowLine}`);
+  }
+  return lines;
+}
+
+// BL-465: renders one below-grid section (awaiting-approval/root-
 // intake/recently-closed) - omitted entirely when empty (BL-455's own
 // "every active ticket lands in exactly one place" convention, extended
 // here to every below-grid list: an empty section is a normal steady
@@ -581,11 +695,7 @@ function renderBodySections(data: PipelineBoardData): string[] {
     (data.parkedOmittedCount ?? 0) > 0 ? pipelineBoardParkedOverflowLine(data.parkedOmittedCount ?? 0) : undefined;
   return [
     ...renderGridOnlySections(data),
-    ...renderListSection(
-      PARKED_SECTION_HEADER,
-      parked.filter((p) => p.status === 'parked'),
-      parkedOverflow
-    ),
+    ...renderParkedSection(data.collapsedEpics ?? [], parked, parkedOverflow),
     ...renderListSection(
       AWAITING_APPROVAL_SECTION_HEADER,
       parked.filter((p) => p.status === 'awaiting-approval')
@@ -699,6 +809,54 @@ function formatBoardListLineHtml(
   return `  ${idHtml}${slugPart}`.trimEnd();
 }
 
+function formatCollapsedEpicLineHtml(
+  entry: PipelineBoardCollapsedEpicEntry,
+  path: string | undefined,
+  repoBaseUrl: string | undefined
+): string {
+  const label = escapeHtml(entry.epicSlug);
+  const nameHtml =
+    path && repoBaseUrl ? `<a href="${pipelineBoardBlobUrl(repoBaseUrl, path)}">${label}</a>` : label;
+  const parts: string[] = [];
+  if (entry.activeChildCount > 0) {
+    parts.push(`${entry.activeChildCount} active`);
+  }
+  if (entry.pausedChildCount > 0) {
+    parts.push(`${entry.pausedChildCount} paused`);
+  }
+  const suffix = parts.length > 0 ? ` (${parts.join(', ')})` : '';
+  return `  ${nameHtml}${escapeHtml(suffix)}`;
+}
+
+function renderParkedSectionHtml(
+  collapsedEpics: PipelineBoardCollapsedEpicEntry[],
+  parked: PipelineBoardParkedEntry[],
+  pathById: Map<string, string>,
+  repoBaseUrl: string | undefined,
+  linkedIds: Set<string> | undefined,
+  overflowLine?: string
+): string[] {
+  const plainParked = parked.filter((p) => p.status === 'parked');
+  if (collapsedEpics.length === 0 && plainParked.length === 0 && (overflowLine === undefined || overflowLine === '')) {
+    return [];
+  }
+  const lines: string[] = ['', escapeHtml(PARKED_SECTION_HEADER)];
+  for (const epic of collapsedEpics) {
+    const path =
+      linkedIds !== undefined && !linkedIds.has(epic.trackerId) ? undefined : pathById.get(epic.trackerId);
+    lines.push(formatCollapsedEpicLineHtml(epic, path, repoBaseUrl));
+  }
+  for (const entry of plainParked) {
+    const path =
+      linkedIds !== undefined && !linkedIds.has(entry.id) ? undefined : pathById.get(entry.id);
+    lines.push(formatBoardListLineHtml(entry.id, entry.slug, path, repoBaseUrl));
+  }
+  if (overflowLine) {
+    lines.push(`  ${escapeHtml(overflowLine)}`);
+  }
+  return lines;
+}
+
 function renderListSectionHtml(
   header: string,
   entries: PipelineBoardListEntry[],
@@ -763,9 +921,9 @@ function buildPipelineBoardHtml(
     (data.parkedOmittedCount ?? 0) > 0 ? pipelineBoardParkedOverflowLine(data.parkedOmittedCount ?? 0) : undefined;
   const afterPre = [
     ...renderGridTapLinesHtml(data, pathById, repoBaseUrl, linkedIds),
-    ...renderListSectionHtml(
-      PARKED_SECTION_HEADER,
-      parked.filter((p) => p.status === 'parked'),
+    ...renderParkedSectionHtml(
+      data.collapsedEpics ?? [],
+      parked,
       pathById,
       repoBaseUrl,
       linkedIds,

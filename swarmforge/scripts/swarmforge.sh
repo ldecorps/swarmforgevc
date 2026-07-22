@@ -823,6 +823,11 @@ check_helper_scripts() {
 prepare_workspace() {
   mkdir -p "$STATE_DIR" "$NOTIFY_DIR" "$PROMPTS_DIR" "$WORKTREES_DIR" "$TMUX_SOCKET_DIR" "$DAEMON_DIR" "$STATE_DIR/launch"
   printf '%s\n' "$TMUX_SOCKET" > "$TMUX_SOCKET_FILE"
+  if [[ "${SWARMFORGE_TERMINAL:-}" == "none" || "${TERMINAL_BACKEND:-}" == "none" ]]; then
+    : > "$STATE_DIR/headless-swarm"
+  else
+    rm -f "$STATE_DIR/headless-swarm"
+  fi
   check_helper_scripts
   write_sessions_file
   write_roles_file
@@ -1777,6 +1782,7 @@ if terminal_backend_can_open_sessions; then
   fi
 else
   if [[ "$TERMINAL_BACKEND" == "none" ]]; then
+    : > "$STATE_DIR/headless-swarm"
     echo -e "${GREEN}Running headless (SWARMFORGE_TERMINAL=none). Attach manually if needed.${RESET}"
   else
     echo -e "${YELLOW}No terminal backend found; attaching current shell to '${SESSIONS[$CLEANUP_OWNER_INDEX]}' instead.${RESET}"

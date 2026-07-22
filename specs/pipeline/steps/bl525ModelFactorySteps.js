@@ -13,8 +13,8 @@
 // .swarmforge/model-steward/ or .swarmforge/model-factory/.
 const path = require('node:path');
 const fs = require('node:fs');
+const os = require('node:os');
 const { execFileSync } = require('node:child_process');
-const { mkTmpDir } = require('../../../extension/test/helpers/tmpDir');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const SCRIPTS_DIR = path.join(REPO_ROOT, 'swarmforge', 'scripts');
@@ -55,7 +55,7 @@ function cli(ctx, args) {
 // and is re-persisted after every addition.
 function ensureFixtureRegistry(ctx) {
   if (!ctx.fixtureModels) {
-    ctx.stewardStateDir = mkTmpDir('bl525-model-factory-steward-');
+    ctx.stewardStateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'bl525-model-factory-steward-'));
     ctx.fixtureModels = {};
     ctx.fixtureRoleMatrix = {};
   }
@@ -98,11 +98,11 @@ function resolveAssignment(ctx, role, mode, { override } = {}) {
 function registerSteps(registry) {
   // ── Background ─────────────────────────────────────────────────────────
   registry.define(/^the Model Steward registry is initialised with certified and candidate models$/, (ctx) => {
-    ctx.stewardStateDir = mkTmpDir('bl525-model-factory-steward-');
+    ctx.stewardStateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'bl525-model-factory-steward-'));
   });
 
   registry.define(/^ModelFactory reads the role matrix, certification status, and provider quota signals$/, (ctx) => {
-    ctx.factoryStateDir = mkTmpDir('bl525-model-factory-state-');
+    ctx.factoryStateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'bl525-model-factory-state-'));
     // Any real assign call lazily initialises both the steward registry (from
     // its committed seed) and the factory quota-state (from its own seed),
     // proving the module boundary end to end rather than merely asserting
@@ -278,7 +278,7 @@ function registerSteps(registry) {
   });
 
   registry.define(/^the cold apply helper is invoked with a stubbed launch seam$/, (ctx) => {
-    const seamDir = mkTmpDir('bl525-model-factory-seam-');
+    const seamDir = fs.mkdtempSync(path.join(os.tmpdir(), 'bl525-model-factory-seam-'));
     ctx.stubSeamPath = path.join(seamDir, 'stub-seam.sh');
     ctx.stubInvocationLog = path.join(seamDir, 'invocation.log');
     fs.writeFileSync(

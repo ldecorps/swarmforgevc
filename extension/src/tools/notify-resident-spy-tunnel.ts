@@ -19,6 +19,8 @@ import {
 import { createForumTopic, deleteMessage, editForumTopic, editMessageText, getBotUsername, sendTelegramMessage, setChatMenuButton } from '../notify/telegramClient';
 import {
   ResidentSpyTunnelNotifyState,
+  buildResidentSpyTunnelPrivateWebAppButtons,
+  consoleUrlFromLiveUrl,
   syncResidentSpyTunnelUrl,
 } from '../concierge/residentSpyTunnelNotify';
 import { runCliMain } from './swarm-metrics';
@@ -149,30 +151,63 @@ export async function ensureResidentSpyTopicStandalone(
 export async function notifyResidentSpyTunnelUrl(
   projectRoot: string,
   fullUrl: string,
-): Promise<{ notified: boolean; outcome: string; topicId?: number; reason?: string; error?: string }> {
+): Promise<{ notified: boolean; outcome: string; topicId?: number; reason?: string; error?: string; menuButton?: string; privateOutcome?: string }> {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   const chatId = process.env.TELEGRAM_CHAT_ID;
   if (!token || !chatId) {
     return { notified: false, outcome: 'skipped', reason: 'missing-telegram-config' };
   }
   const prevState = readNotifyState(projectRoot);
-  const result = await syncResidentSpyTunnelUrl(fullUrl, prevState, {
-    ensureTopic: () => ensureResidentSpyTopicStandalone(projectRoot, token, chatId),
-    postMessage: async (topicId, text) => {
-      const sent = await sendTelegramMessage(token, chatId, text, undefined, undefined, topicId);
-      return sent.success ? sent.messageId : undefined;
+  const botUsername = await getBotUsername(token);
+  const consoleUrl = consoleUrlFromLiveUrl(fullUrl);
+  const result = await syncResidentSpyTunnelUrl(
+    fullUrl,
+    prevState,
+    {
+      ensureTopic: () => ensureResidentSpyTopicStandalone(projectRoot, token, chatId),
+      postMessage: async (topicId, text, buttons) => {
+        const sent = await sendTelegramMessage(token, chatId, text, undefined, undefined, topicId, buttons);
+        return sent.success ? sent.messageId : undefined;
+      },
+      editMessage: async (topicId, messageId, text, buttons) => {
+        const edited = await editMessageText(token, chatId, messageId, text, undefined, undefined, buttons);
+        return edited.success;
+      },
+      deleteMessage: async (messageId) => {
+        const deleted = await deleteMessage(token, chatId, messageId);
+        return deleted.success;
+      },
     },
-    editMessage: async (topicId, messageId, text) => {
-      const edited = await editMessageText(token, chatId, messageId, text);
-      return edited.success;
-    },
-  });
+    { botUsername }
+  );
   writeNotifyState(projectRoot, result.state);
+
+  const menu = await setChatMenuButton(token, { type: 'web_app', text: 'SwarmForge', webAppUrl: consoleUrl });
+  const principalUserId = process.env.TELEGRAM_PRINCIPAL_USER_ID;
+  let privateOutcome: string | undefined;
+  if (principalUserId) {
+    const privateButtons = buildResidentSpyTunnelPrivateWebAppButtons({
+      liveUrl: fullUrl,
+      consoleUrl,
+    });
+    const dm = await sendTelegramMessage(
+      token,
+      principalUserId,
+      'SwarmForge console — tap to open inside Telegram:',
+      undefined,
+      undefined,
+      undefined,
+      privateButtons
+    );
+    privateOutcome = dm.success ? 'private-dm-sent' : dm.error ?? 'private-dm-failed';
+  }
   const notified = result.outcome === 'posted' || result.outcome === 'edited';
   return {
     notified,
     outcome: result.outcome,
     topicId: result.state.topicId ?? topicForSubject(readTopicMap(projectRoot), RESIDENT_SPY_SUBJECT_ID),
+    menuButton: menu.success ? 'set' : menu.error ?? 'menu-failed',
+    privateOutcome,
   };
 }
 
