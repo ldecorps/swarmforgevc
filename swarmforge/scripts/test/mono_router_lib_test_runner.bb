@@ -172,6 +172,10 @@
              (mono-router-lib/rotate-home?
               {:rotation-router? true :role "cleaner" :home-role "documenter"
                :mailbox-empty? true}))
+(assert-true "nil role never rotates (no SWARMFORGE_ROLE, nothing to divert)"
+             (not (mono-router-lib/rotate-home?
+                   {:rotation-router? true :role nil :home-role "coder"
+                    :mailbox-empty? true})))
 
 (when (seq @failures)
   (binding [*out* *err*]
