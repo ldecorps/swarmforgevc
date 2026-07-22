@@ -73,11 +73,19 @@ test('property: bucketed trend series conserve total priced cost per origin', ()
   );
 });
 
+// Bucket costs are either exactly 0 (no spend) or at least a hundredth of a
+// cent - real USD invocation costs never land in the subnormal range
+// (e.g. 5e-323). Allowing subnormals here made the invariance property
+// below fail spuriously: scaling a subnormal costUsd by k loses enough
+// precision to flip which side of the log/linear ratio threshold it lands
+// on, even though the ratio is exactly scale-invariant in real arithmetic.
+const bucketCostUsdArb = fc.oneof(fc.constant(0), fc.double({ min: 0.0001, max: 1000, noNaN: true }));
+
 const trendSeriesArb = fc
   .array(
     fc.record({
       role: fc.constantFrom(...ROLES),
-      buckets: fc.array(fc.double({ min: 0, max: 1000, noNaN: true }), { minLength: 1, maxLength: 10 }),
+      buckets: fc.array(bucketCostUsdArb, { minLength: 1, maxLength: 10 }),
     }),
     { minLength: 1, maxLength: 3 }
   )
