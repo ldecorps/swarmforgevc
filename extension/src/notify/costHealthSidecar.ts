@@ -13,10 +13,12 @@ import {
   LlmCostHorizon,
   LlmCostRollupGroup,
   rollupLlmInvocationsByOrigin,
+} from '../metrics/llmCostLedger';
+import {
   buildOriginCostTrendSeries,
   chooseCostTrendAxisScale,
   OriginCostTrendSeries,
-} from '../metrics/llmCostLedger';
+} from '../metrics/llmCostTrendSeries';
 import { readLlmInvocationRecords } from '../metrics/llmCostLedgerStore';
 
 // BL-213: the daily cost & health sidecar - a deterministic, committed
