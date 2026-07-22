@@ -295,7 +295,8 @@ const DOMAINS = [
   require('./bl526MiniappConsoleMenuSteps'),
   require('./bl529TicketBranchMismatchGuardSteps'),
   require('./bl546PromptEngineSteps'),
-  require('./bl547ModelStewardSteps')
+  require('./bl547ModelStewardSteps'),
+  require('./bl551LlmCostLedgerSteps')
 ];
 
 function registerSteps(registry) {
