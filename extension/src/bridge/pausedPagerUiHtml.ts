@@ -1,7 +1,7 @@
 /// BL-538: Telegram Mini App shell for the console PAUSED TICKET PAGER.
 /// Shows paused backlog tickets (id + title, YAML details) with Prev/Next
-/// navigation and an Expedite action (confirm -> priority 0 + promotion to
-/// active). Polls GET /paused-pager-state?token=... on the same origin for JSON
+/// navigation and Expedite / Approve actions (confirm -> priority 0 + promotion to
+/// active, or human_approval flip). Polls GET /paused-pager-state?token=... on the
 /// state. Empty state ("No paused tickets") when there are none.
 
 export function getPausedPagerUiHtml(): string {
@@ -106,6 +106,10 @@ export function getPausedPagerUiHtml(): string {
     background: color-mix(in srgb, var(--tg-theme-button-color, #388bfd) 85%, #111);
     border-color: color-mix(in srgb, var(--tg-theme-button-color, #388bfd) 55%, #000);
   }
+  button.approve {
+    background: color-mix(in srgb, #a371f7 80%, #111);
+    border-color: color-mix(in srgb, #a371f7 55%, #000);
+  }
   button[disabled] {
     opacity: 0.4;
     cursor: default;
@@ -190,6 +194,48 @@ export function getPausedPagerUiHtml(): string {
   };
   loadFont();
 
+  function controlAuthHeaders() {
+    if (!token) {
+      return { 'content-type': 'application/json' };
+    }
+    return {
+      'content-type': 'application/json',
+      authorization: 'Bearer ' + token,
+      'x-control-token': token,
+    };
+  }
+
+  function postPausedPagerAction(path, item, opts) {
+    if (loading) return;
+    if (!window.confirm(opts.confirmText)) {
+      return;
+    }
+    loading = true;
+    setStatus(opts.progressText);
+    fetch(path + q, {
+      method: 'POST',
+      headers: controlAuthHeaders(),
+      body: JSON.stringify({ id: item.id }),
+    }).then(function (r) {
+      loading = false;
+      if (!r.ok) {
+        setStatus(opts.failText + ' (HTTP ' + r.status + ')');
+        return r.json().catch(function () { return {}; });
+      }
+      return r.json().then(function (payload) {
+        if (payload && payload.success) {
+          setStatus(opts.successText);
+          refresh();
+        } else {
+          setStatus(payload && payload.reason ? String(payload.reason) : opts.failText);
+        }
+      });
+    }).catch(function (err) {
+      loading = false;
+      setStatus(opts.errorPrefix + String(err && err.message || err));
+    });
+  }
+
   function setStatus(text) {
     statusEl.textContent = text;
   }
@@ -219,6 +265,9 @@ export function getPausedPagerUiHtml(): string {
     html += '<div class="controls">';
     html += '<button id="prev" class="secondary"' + (disablePrev ? ' disabled' : '') + '>Prev</button>';
     html += '<button id="next" class="secondary"' + (disableNext ? ' disabled' : '') + '>Next</button>';
+    if (item.canApprove) {
+      html += '<button id="approve" class="approve">Approve</button>';
+    }
     html += '<button id="expedite"' + (item.canExpedite ? '' : ' disabled') + '>Set highest priority, expedite</button>';
     html += '</div>';
     html += '<pre id="yaml"></pre>';
@@ -242,36 +291,27 @@ export function getPausedPagerUiHtml(): string {
     };
     document.getElementById('expedite').onclick = function () {
       if (!item.canExpedite || loading) return;
-      var confirmText = 'Set highest priority and expedite ' + item.id + '?\\n\\nThis sets priority to 0, promotes it to active, and may dispatch immediately.';
-      if (!window.confirm(confirmText)) {
-        return;
-      }
-      loading = true;
-      setStatus('Expediting ' + item.id + '…');
-      fetch('/paused-pager/expedite' + q, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ id: item.id })
-      }).then(function (r) {
-        loading = false;
-        if (!r.ok) {
-          setStatus('Expedite failed (HTTP ' + r.status + ')');
-          return r.json().catch(function () { return {}; });
-        }
-        return r.json().then(function (payload) {
-          if (payload && payload.success) {
-            setStatus('Expedited ' + item.id + ' (priority 0)');
-            // Re-fetch to reflect updated paused list (ticket may have moved to active).
-            refresh();
-          } else {
-            setStatus('Expedite failed');
-          }
-        });
-      }).catch(function (err) {
-        loading = false;
-        setStatus('Expedite error: ' + String(err && err.message || err));
+      postPausedPagerAction('/paused-pager/expedite', item, {
+        confirmText: 'Set highest priority and expedite ' + item.id + '?\\n\\nThis sets priority to 0, promotes it to active, and may dispatch immediately.',
+        progressText: 'Expediting ' + item.id + '…',
+        successText: 'Expedited ' + item.id + ' (priority 0)',
+        failText: 'Expedite failed',
+        errorPrefix: 'Expedite error: ',
       });
     };
+    var approveBtn = document.getElementById('approve');
+    if (approveBtn) {
+      approveBtn.onclick = function () {
+        if (!item.canApprove || loading) return;
+        postPausedPagerAction('/paused-pager/approve', item, {
+          confirmText: 'Approve ' + item.id + '?\\n\\nThis records human approval on the ticket (human_approval: approved). It does not promote or expedite.',
+          progressText: 'Approving ' + item.id + '…',
+          successText: 'Approved ' + item.id,
+          failText: 'Approve failed',
+          errorPrefix: 'Approve error: ',
+        });
+      };
+    }
 
     setStatus('Ticket ' + (index + 1) + ' of ' + total);
   }

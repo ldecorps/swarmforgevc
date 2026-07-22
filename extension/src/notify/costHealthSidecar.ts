@@ -376,6 +376,11 @@ function trendArrow(trend: TrendResult): string {
 // when that section has nothing to show), so renderCostHealthSection
 // itself is just concatenation - split out so every function stays under
 // the CRAP<=6 gate.
+
+function originLabel(keyRecord: Record<string, string | null>): string {
+  return Object.values(keyRecord).filter((v) => v !== null).join('/') || 'unknown origin';
+}
+
 function renderAgentLines(agents: AgentDailyCost[]): string[] {
   return agents.map((agent) => {
     const costText = agent.costUsd !== null ? `$${agent.costUsd.value.toFixed(2)} ${trendArrow(agent.costUsd.trend)}` : 'no priced usage';
@@ -426,7 +431,7 @@ function renderTopExpensiveOriginsLines(byHorizon: Record<LlmCostHorizon, LlmCos
     }
     lines.push(`- ${horizon}:`);
     for (const group of groups) {
-      const label = Object.values(group.key).filter((v) => v !== null).join('/') || 'unknown origin';
+      const label = originLabel(group.key);
       const unknownNote = group.unknownCostCount > 0 ? ` (${group.unknownCostCount} unpriced)` : '';
       lines.push(`  - ${label}: $${group.costUsd.toFixed(2)}${unknownNote}`);
     }
@@ -446,7 +451,7 @@ export function renderCostTrendChartLines(series: OriginCostTrendSeries[]): stri
   const scale = chooseCostTrendAxisScale(series);
   const lines: string[] = ['', `**Cost trend (7d, ${scale} scale):**`];
   for (const s of series) {
-    const label = Object.values(s.key).filter((v) => v !== null).join('/') || 'unknown origin';
+    const label = originLabel(s.key);
     const points = s.buckets.map((b) => b.costUsd.toFixed(2)).join(' -> ');
     lines.push(`- ${label}: ${points}`);
   }
