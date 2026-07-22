@@ -62,22 +62,14 @@ notes: |
 
   READERS / SURFACES:
     - Pure `rankLlmInvocations(records, { horizonMs, nowMs, topN, groupBy? })`
-    - Pure `buildOriginCostTrendSeries(records, { nowMs, windowMs: 7d, bands })`
-      rolling 7d per-origin spend series with three log-compressed time bands
-      (3h / 24h / 7d): finer buckets toward the latest measurement (exact widths
-      left to specifier/coder); rank chart lines by cost in the rightmost bucket;
-      log Y when spread ≥10×.
     - Horizons (fixed, named): `3h` (10_800_000 ms), `24h` (86_400_000 ms),
       `7d` (604_800_000 ms). Evaluated at injected `nowMs` in tests.
     - CLI: `extension/out/tools/swarm-cost-rank.js` (or bb wrapper) — prints
       top-N invocations AND optional rollups by origin dimension per horizon
     - Bridge: `GET /cost-rank?horizon=24h&top=20&groupBy=trigger,role`
-      plus `GET /cost-trend?window=7d&top=5` for multi-line chart payload
     - Cost-health sidecar: fold top-5 expensive origins per horizon into
-      `docs/briefings/<date>.json` (additive fields, honest nulls) AND carry
-      `originCostTrendSeries` for the 7d multi-line chart / sparkline
-    - PWA cost card: 7d trend chart (one line per top origin, time → right);
-      horizon tabs keep the existing 3h/24h/7d rollup table as secondary detail
+      `docs/briefings/<date>.json` (additive fields, honest nulls)
+    - PWA cost card: three horizon tabs or stacked summary lines
 
   RANKING: default sort `cost_usd DESC NULLS LAST`, tie-break `at DESC`.
   Grouped rollups sum `cost_usd` and `token totals` per composite origin key.
