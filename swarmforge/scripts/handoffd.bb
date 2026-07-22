@@ -301,11 +301,31 @@
                                           :log-fn (fn [tag sess detail] (log! tag sess detail))
                                           :text text)))
 
+(defn recipient-pane-busy?
+  "BL-135 parity on the delivery path: mail lands in inbox/new either way;
+   do not inject wake spam while the recipient is mid-turn."
+  [socket roles role]
+  (when-let [ri (get roles role)]
+    (let [pane (try (capture-pane-text socket (:session ri)) (catch Exception _ ""))]
+      (chase-sweep-lib/actively-processing? pane))))
+
 (defn maybe-notify!
-  "Tmux wake after mailbox delivery. Skipped when SWARMFORGE_MAILBOX_ONLY=1."
-  [socket session role recipient-path agent]
-  (if (tmux-inject-disabled?)
+  "Tmux wake after mailbox delivery. Skipped when SWARMFORGE_MAILBOX_ONLY=1,
+   the inbox file already existed (duplicate delivery), or the recipient pane
+   is actively working a turn (BL-135 / mono-router resident mid-task)."
+  [socket roles session role recipient-path agent & {:keys [new-delivery?]
+                                                     :or {new-delivery? true}}]
+  (cond
+    (not new-delivery?)
+    (log! "deliver-notify-skip-duplicate" role (str recipient-path))
+
+    (tmux-inject-disabled?)
     (log! "delivered-mailbox-only" role (str recipient-path))
+
+    (recipient-pane-busy? socket roles role)
+    (log! "deliver-notify-skip-busy" role (str recipient-path))
+
+    :else
     (notify! socket session agent)))
 
 (defn move-with-collision
@@ -393,15 +413,17 @@
                 (when-not role-info
                   (throw (ex-info (str "unknown recipient " recipient) {:recipient recipient})))
                 (let [target (target-path role-info filename recipient)
-                      delivered (add-delivery-headers message recipient)]
+                      delivered (add-delivery-headers message recipient)
+                      new-delivery? (not (fs/exists? target))]
                   (fs/create-dirs (fs/parent target))
-                  (when-not (fs/exists? target)
+                  (when new-delivery?
                     ;; BL-365: durable write - the recipient's inbox copy is
                     ;; a SEPARATE file from the sender's own outbox/sent
                     ;; copy, and carries the identical crash-durability gap
                     ;; if written with a bare spit.
                     (handoff-lib/atomic-write! target (render-message (:headers delivered) (:body delivered))))
-                  (maybe-notify! socket (:session role-info) recipient (str target) (:agent role-info)))))
+                  (maybe-notify! socket roles (:session role-info) recipient (str target)
+                                 (:agent role-info) :new-delivery? new-delivery?))))
             (when (= "rule_proposal" (get headers "type"))
               (append-rule-proposal! headers))
             (move-with-collision path (sent-dir (get roles sender-role)))
@@ -446,12 +468,14 @@
 (defn startup-notify-pending! [roles socket]
   (when-not (tmux-inject-disabled?)
     (doseq [[_ role-info] roles
-            :when (seq (inbox-new-files role-info))]
-      (log! "startup-notify" (:role role-info))
+            :let [role (:role role-info)]
+            :when (and (seq (inbox-new-files role-info))
+                       (not (recipient-pane-busy? socket roles role)))]
+      (log! "startup-notify" role)
       (try
         (notify! socket (:session role-info) (:agent role-info))
         (catch Exception e
-          (log! "startup-notify-error" (:role role-info) (.getMessage e)))))))
+          (log! "startup-notify-error" role (.getMessage e)))))))
 
 (defn poll-once! []
   (let [roles (load-roles)
