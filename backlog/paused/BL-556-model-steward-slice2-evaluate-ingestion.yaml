@@ -1,0 +1,162 @@
+id: BL-556
+title: "Model Steward Slice 2 — `evaluate` ingests captured recruiter/bakeoff artifacts into the capability registry + certification report"
+milestone: M5
+type: feature
+status: needs_design
+epic: swarm-intelligence-layer
+human_approval: pending
+approval_context: |
+  Drains BL-547 Slice 2 out of specs/features/BL-547-model-steward-slices-2-3.feature.draft
+  into its own ticket + live feature file. Two design forks the human ruled on
+  2026-07-22 (via Cursor operator session), pinned below so the coder does not
+  re-litigate them:
+
+  1. INGEST BOUNDARY (ruled: ingest a captured JSON artifact file). Verified at
+     spec time: recruiter-run.ts and bakeoff-run.ts BOTH print their report to
+     stdout — there is NO durable scorecard/bakeoff artifact on disk to read
+     today (my role's live-data-dependency rule). So `evaluate` is a PURE
+     ingest of a captured JSON artifact path; it does NOT spawn the battery or
+     recruiter itself, keeping it inside the testable-module boundary (no
+     subprocess/network in the steward gate). A separate `capture` concern (an
+     operator pipe, or a named future wiring step) writes recruiter-run /
+     bakeoff-run stdout to a file first. This slice specs the ingest side and
+     the file contract it reads — it does NOT build an autonomous capture loop.
+
+  2. Slice 3 (role pane) is a SEPARATE ticket (BL-557); do not fold role-pane
+     work into this slice.
+
+  Feature file drafted; NOT final until a human reviews it (human_approval:
+  pending, per role rule — my own draft is not automatically authoritative).
+
+severity: medium
+priority: 12
+direction: human-requested
+depends_on:
+  - BL-547
+source: |
+  Human directive 2026-07-22 (backlog/INTAKE-20260722-model-steward-continuation.md):
+  "Model Steward Slices 2-3 (BL-547 follow-on): Slice 1 is done on main. Drain
+  the parked draft scenarios into proper paused/ tickets + APS features.
+  Slice 2: recruiter/bakeoff evaluate ingestion. Specifier should own the drain."
+
+description: |
+  ## Problem
+
+  BL-547 Slice 1 shipped the Model Registry, Capability Registry, Role
+  Recommendation Matrix, adapter catalogue, and the CLI
+  (`swarmforge/scripts/model_steward_cli.bb`: status/show/register/certify/
+  decertify/role-matrix/capability/adapter/eligible). But certification today
+  is MANUAL: `run-certify` calls `build-certification-report` with an EMPTY
+  gate list (`model_steward_lib.bb:144-153`) — the operator vouches for a model
+  by hand, no benchmark evidence is ingested, and capability-registry entries
+  are hand-edited. There is no path from real recruiter/bakeoff evidence to a
+  capability entry or an evidence-backed certification report.
+
+  ## Wanted behavior (Slice 2)
+
+  A `model-steward evaluate <provider>/<model> --role <role>` command that
+  INGESTS a captured evidence artifact and updates the registry:
+
+    model-steward evaluate anthropic/claude-sonnet-5 --role coder \
+      --scorecard <path-to-recruiter-scorecard.json> \
+      [--bakeoff <path-to-bakeoff-run.json>]
+
+    1. Reads the captured recruiter qualify scorecard JSON (the shape
+       recruiter-run.ts / qualify.ts's BatteryScorecard emits: {model,
+       entries[], overall}) from --scorecard, and optionally a captured
+       bake-off run JSON (bakeoff-run.ts's LabeledRecruiterReport shape) from
+       --bakeoff.
+    2. Writes/updates the capability registry entry for that model from the
+       scorecard's benchmark dimensions (via set-capability-entry) — coding
+       quality, protocol compliance, tool usage, autonomy, cost, latency (the
+       Slice-1 dimensions).
+    3. Records a role-matrix ranking entry (add-role-ranking) whose `evidence`
+       pointer is the scorecard id (and bake-off run id when --bakeoff given) —
+       satisfying Slice 1's "each ranked entry includes an evidence pointer".
+    4. Produces a certification report artifact whose `gates` are populated
+       from the ingested evidence (replacing Slice 1's empty-gates report), and
+       whose report references the scorecard id (and bake-off run id when
+       given). This is the evidence-based `build-certification-report` path.
+    5. Certification-report artifact includes: benchmark timestamps, per-gate
+       pass/fail, and a regression diff vs the prior certification report when
+       one exists (the model already had a certification_report_path).
+    6. Decertification-on-regression stays as Slice 1's `decertify`, but Slice 2
+       adds a SCRIPTED trigger: when an `evaluate` ingest shows a gate that
+       previously passed now failing below floor, evaluate reports the
+       regression and (with an explicit flag) drives decertify with the
+       regression reason. Manual `decertify` remains available.
+
+  ## Pins for the coder (before this leaves needs_design after human approval)
+
+  1. `evaluate` is PURE INGEST — no subprocess, no network. It reads a JSON
+     file path; it does NOT run compliance_battery.bb or recruiter itself.
+     (Ruled by human 2026-07-22 — see approval_context fork 1.) Any actual
+     re-run/capture of recruiter-run/bakeoff-run to produce the artifact is
+     out of scope for this slice.
+  2. Artifact input shapes are the EXISTING emitted shapes — do NOT invent a
+     new scorecard schema:
+       - scorecard: extension/src/recruiter/candidate.ts BatteryScorecard
+         ({model, entries: BatteryEntry[], overall}).
+       - bake-off: extension/src/tools/bakeoff-run.ts LabeledRecruiterReport.
+     Pin an explicit "scorecard id" / "bake-off run id" field to use as the
+     evidence pointer; if the emitted shape lacks a stable id, the ingest reads
+     it from a wrapper field the capture step adds (name that field here) —
+     never fabricate an id.
+  3. Capability + certification + role-matrix writes reuse the Slice-1 pure lib
+     (`model_steward_lib.bb`: set-capability-entry, add-role-ranking, certify,
+     build-certification-report) and store (`model_steward_store.bb`) — extend
+     those namespaces, do not reimplement registry IO in the CLI.
+  4. New CLI subcommand `evaluate` wired into model_steward_cli.bb's `case`
+     dispatch; usage line updated. main() stays a thin dispatcher over testable
+     lib helpers (engineering.prompt CLI-main rule).
+  5. Regression-diff format for the report is a NEW concern — pin it: prior
+     report + current gates -> which gates changed pass/fail. Keep it pure in
+     the lib.
+  6. Evidence artifacts read from a project-local path under
+     `.swarmforge/model-steward/evidence/` (gitignored runtime state); confirm
+     the store's state-dir seam so tests inject a fixture dir, never a live
+     path (engineering.prompt test-isolation rule).
+
+  QA end-to-end (Slice 2):
+    1. Capture a recruiter scorecard: `node extension/out/tools/recruiter-run.js
+       <fixture files> > .swarmforge/model-steward/evidence/<id>.json`.
+    2. `model-steward evaluate anthropic/claude-sonnet-5 --role coder
+       --scorecard <that file>`; confirm the capability entry now shows the
+       ingested dimensions and the role-matrix entry carries the scorecard id
+       as its evidence pointer.
+    3. `model-steward show anthropic/claude-sonnet-5`; confirm the certification
+       report path's artifact has non-empty gates (no longer the Slice-1 empty
+       list) and references the scorecard id.
+    4. Re-evaluate with a scorecard showing a regressed gate; confirm evaluate
+       reports the regression and (with the decertify-on-regression flag) flips
+       status and records the reason.
+
+acceptance: |
+  See specs/features/BL-556-model-steward-slice2-evaluate-ingestion.feature for
+  the executable acceptance scenarios. The coder wires the `evaluate` CLI
+  subcommand + pure ingest helpers with tests (scorecard ingest -> capability
+  entry, evidence-pointer role ranking, evidence-backed certification report
+  with populated gates, regression diff vs prior report, scripted
+  decertify-on-regression). Documenter extends the model-steward runbook with
+  the capture-then-evaluate workflow. QA runs the end-to-end above against real
+  recruiter-run output captured to a file.
+
+out_of_scope: |
+  - An autonomous capture loop or a standing steward pane (that is Slice 3 /
+    BL-557).
+  - `evaluate` spawning compliance_battery.bb / recruiter / bakeoff itself
+    (ruled out: pure ingest — approval_context fork 1).
+  - Inventing a new scorecard/bake-off schema (reuse the emitted shapes).
+  - ModelFactory apply paths (BL-525).
+  - Making recruiter-run.ts / bakeoff-run.ts write artifacts to disk — this
+    slice reads a file the operator/capture step already produced; if a durable
+    artifact writer is later wanted, file it as its own ticket.
+
+operator_notes_20260722: |
+  Verified at spec time: recruiter-run.ts and bakeoff-run.ts print to stdout;
+  no durable artifact store exists yet. This slice deliberately ingests a
+  captured file rather than re-running the battery, per the human's 2026-07-22
+  ruling. If a first-class artifact store is wanted later, that is a separate
+  ticket, not a silent expansion of this one.
+
+mutation_cost: high

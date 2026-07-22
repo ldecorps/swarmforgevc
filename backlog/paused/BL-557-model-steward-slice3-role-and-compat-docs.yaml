@@ -1,0 +1,132 @@
+id: BL-557
+title: "Model Steward Slice 3 — graduate role prompt to coordinator-assignable, generate compatibility docs from the registry (no standing pane)"
+milestone: M5
+type: feature
+status: needs_design
+epic: swarm-intelligence-layer
+human_approval: pending
+approval_context: |
+  Drains BL-547 Slice 3 out of specs/features/BL-547-model-steward-slices-2-3.feature.draft
+  into its own ticket + live feature file. Human ruling 2026-07-22 (via Cursor
+  operator session) pinned the SCOPE of "provision as an infrastructure role":
+
+    Coordinator-ASSIGNABLE task pattern + compatibility docs, NO always-on
+    autonomous pane. The Slice 1 stub (swarmforge/roles/model-steward.prompt)
+    graduates from "not a live role" to a real role prompt the coordinator MAY
+    assign steward tasks to (onboard model X, re-certify Y, investigate
+    regression Z) as ordinary parcels. Compatibility documentation
+    auto-generates from the registry. There is NO new always-on pane, NO
+    mailbox/worktree/standing loop, NO scheduled re-benchmark daemon — that
+    heavier "live infrastructure pane" is explicitly deferred (would be its own
+    epic branch, not one slice).
+
+  This matches the token-lean reality and the draft's two Slice-3 scenarios
+  (steward-role-exists-10, compatibility-docs-generated-11). Feature file
+  drafted; NOT final until a human reviews it (human_approval: pending).
+
+severity: medium
+priority: 13
+direction: human-requested
+depends_on:
+  - BL-547
+  - BL-556
+source: |
+  Human directive 2026-07-22 (backlog/INTAKE-20260722-model-steward-continuation.md):
+  "Model Steward Slices 2-3 (BL-547 follow-on) ... Slice 3: steward
+  infrastructure role pane + compatibility docs. Specifier should own the drain."
+  Scope pinned by human ruling same day: coordinator-assignable + compat docs,
+  no standing pane (see approval_context).
+
+description: |
+  ## Problem
+
+  BL-547 Slice 1 shipped swarmforge/roles/model-steward.prompt as a STUB that
+  explicitly says "not yet a live pipeline role ... no mailbox, no worktree, no
+  coordinator task-assignment pattern ... do not assign this file to a pane, do
+  not route handoffs to it." Model knowledge is created/read only by whichever
+  role directly invokes model_steward_cli.bb. There is (a) no sanctioned way for
+  the coordinator to hand the steward a discrete task, and (b) no operator-facing
+  compatibility documentation generated from the registry.
+
+  ## Wanted behavior (Slice 3 — coordinator-assignable + compat docs)
+
+  1. Role prompt graduates from stub to a REAL role prompt:
+       - swarmforge/roles/model-steward.prompt describes an infrastructure role
+         (alongside coordinator/operator) that owns model lifecycle KNOWLEDGE,
+         not pipeline throughput; it is not in the specifier->...->QA chain.
+       - The coordinator MAY assign the steward a discrete task (onboard model
+         X, re-certify Y, investigate regression Z) as an ordinary parcel/note.
+       - The steward's output is a certification/registry UPDATE (via the
+         Slice-1/2 CLI); it NEVER mutates production routing directly
+         (ModelFactory/BL-525 applies) — it emits knowledge, not assignments.
+       - NO always-on pane: this slice does NOT add a mailbox, worktree,
+         standing loop, launch-script wiring, or scheduled re-benchmark. A
+         steward task is run on demand by whoever the coordinator assigns
+         (today: a rotated/existing role), not a new persistent process.
+  2. A `model-steward compat-docs` command generates compatibility
+     documentation FROM the registry:
+       - Lists each model's certification status and known limitations.
+       - Links to the role recommendation matrix (per-role ranked models).
+       - Written to a committed docs path (e.g. docs/reference/) so operators
+         can read it; regenerated from registry state, never hand-edited.
+
+  ## Pins for the coder (before this leaves needs_design after human approval)
+
+  1. NO new always-on pane / mailbox / worktree / standing loop / launch wiring
+     (human ruling — approval_context). If the role ever needs a live pane, that
+     is a SEPARATE future ticket, not this slice. Do not add a "model-steward"
+     session to any launch/teardown path.
+  2. "Coordinator may assign steward tasks" is a PROMPT/CONTRACT deliverable +
+     (if needed) a documented note pattern — not a new routing engine. Confirm
+     against the constitution's role/handoff articles; the steward is an
+     infrastructure role like the operator, external to the forward chain.
+  3. `compat-docs` reuses the Slice-1 pure lib (model_steward_lib.bb registry
+     reads: registry-summary, role-recommendations, model-entry) — it is a pure
+     projection of registry state to a doc, no new registry IO. New CLI
+     subcommand wired into model_steward_cli.bb's `case` dispatch; usage
+     updated; main() stays a thin dispatcher over a testable doc-render helper.
+  4. "Known limitations" source: pin where a model's limitations live in the
+     registry/capability entry (a field on the model or capability entry). If
+     no such field exists in the Slice-1 schema, add it to the committed schema
+     (swarmforge/model-steward/schema/registry.schema.json) + seed in the same
+     parcel — do not read a field that no writer populates (my role's
+     live-data-dependency rule).
+  5. Compat-docs output path: pin the committed docs file
+     (docs/reference/model-compatibility.md is the likely home) and whether it
+     is a text-based, diffable source per engineering.prompt's docs rule.
+
+  QA end-to-end (Slice 3):
+    1. Read swarmforge/roles/model-steward.prompt; confirm it is a real role
+       prompt (no "not a live role / do not assign" stub language) and states
+       the coordinator-assignable, knowledge-only, no-standing-pane contract.
+    2. Run `model-steward compat-docs`; confirm the generated doc lists each
+       registered model with its certification status and known limitations and
+       links to the role recommendation matrix.
+    3. Confirm regeneration after a certify/decertify reflects the new status
+       (doc is a live projection, not stale hand-edited text).
+    4. Confirm NO new pane/session/mailbox was added to any launch path.
+
+acceptance: |
+  See specs/features/BL-557-model-steward-slice3-role-and-compat-docs.feature
+  for the executable acceptance scenarios. The coder graduates the role prompt
+  and wires the `compat-docs` CLI subcommand + pure doc-render helper with tests
+  (doc lists status + limitations per model, links to role matrix, regenerates
+  from registry state). Documenter folds the compatibility doc into the
+  model-steward runbook and the architecture/docs index. QA verifies the role
+  prompt contract and the generated doc, and that no always-on pane was added.
+
+out_of_scope: |
+  - An always-on autonomous steward pane, mailbox, worktree, standing loop, or
+    scheduled re-benchmark daemon (human ruling — deferred to a future epic
+    branch, NOT this slice).
+  - Automated provider-changelog monitoring / hot re-certification.
+  - ModelFactory apply paths (BL-525) and PromptEngine composition (BL-546).
+  - The benchmark-ingestion `evaluate` command (that is Slice 2 / BL-556).
+
+operator_notes_20260722: |
+  Scope deliberately excludes the heavy "live infrastructure pane" reading of
+  "provision as a role." If a persistent steward process is later wanted
+  (scheduled benchmarks, changelog watch), file it as its own multi-slice ticket
+  — this slice only makes the role coordinator-assignable and generates docs.
+
+mutation_cost: medium
