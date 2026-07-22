@@ -1,5 +1,8 @@
 id: GH-22
 title: "Telemetry: Track Claude conversation compaction and context utilisation"
+priority: 03
+direction: human-requested
+human_approval: approved
 source: https://github.com/ldecorps/swarmforgevc/issues/22
 description: |
   ## Problem

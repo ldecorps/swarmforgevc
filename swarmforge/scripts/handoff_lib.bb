@@ -332,6 +332,26 @@
                   (= "on" (get fields 7)))))
             (str/split-lines (slurp (str (roles-tsv-path))))))))
 
+(defn handoff-body-lead
+  "Preamble prepended to git_handoff / note / rule_proposal parcel bodies.
+
+   Claude agents (BL-519) already carry constitution + PIPELINE + role in
+   --append-system-prompt-file at launch/respawn. The legacy 'Re-read your
+   role and constitution' line invites a duplicate Read into conversation
+   history — especially on mono-router, where rotate_to_role.sh respawns
+   with a fresh system prefix right before ready_for_next picks up the parcel.
+
+   Agents that still bootstrap via tmux file injection (aider, grok) keep the
+   reminder."
+  ([recipients] (handoff-body-lead recipients (target-root)))
+  ([recipients root]
+   (let [agents (vec (keep #(some-> (load-role-info % root) :agent str/trim)
+                           recipients))]
+     (if (and (seq agents)
+              (every? #(= "claude" %) agents))
+       ""
+       "Re-read your role and constitution.\n\n"))))
+
 (defn tmux-socket []
   (str/trim (slurp (str (fs/path (target-root) ".swarmforge" "tmux-socket")))))
 
