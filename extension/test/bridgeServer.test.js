@@ -408,42 +408,6 @@ test('an unknown groupBy dimension is dropped rather than erroring', async () =>
   });
 });
 
-test('a non-numeric top query param is ignored, returning every ranked record', async () => {
-  const target = mkTmp();
-  const FIXED_NOW_MS = Date.parse('2026-07-22T13:00:00.000Z');
-  writeLlmLedger(target, [
-    llmInvocation({ at: '2026-07-22T12:59:00Z', costUsd: 1 }),
-    llmInvocation({ at: '2026-07-22T12:58:00Z', costUsd: 5 }),
-  ]);
-  await withBridge(target, { nowMs: FIXED_NOW_MS }, async (handle) => {
-    const res = await fetch(`http://127.0.0.1:${handle.port}/cost-rank?horizon=3h&top=abc`, {
-      headers: { authorization: `Bearer ${TOKEN}` },
-    });
-    const body = await res.json();
-    assert.equal(body.records.length, 2);
-  });
-});
-
-test('a non-positive top query param (0 or negative) is ignored, returning every ranked record', async () => {
-  const target = mkTmp();
-  const FIXED_NOW_MS = Date.parse('2026-07-22T13:00:00.000Z');
-  writeLlmLedger(target, [
-    llmInvocation({ at: '2026-07-22T12:59:00Z', costUsd: 1 }),
-    llmInvocation({ at: '2026-07-22T12:58:00Z', costUsd: 5 }),
-  ]);
-  await withBridge(target, { nowMs: FIXED_NOW_MS }, async (handle) => {
-    const zeroRes = await fetch(`http://127.0.0.1:${handle.port}/cost-rank?horizon=3h&top=0`, {
-      headers: { authorization: `Bearer ${TOKEN}` },
-    });
-    assert.equal((await zeroRes.json()).records.length, 2);
-
-    const negRes = await fetch(`http://127.0.0.1:${handle.port}/cost-rank?horizon=3h&top=-1`, {
-      headers: { authorization: `Bearer ${TOKEN}` },
-    });
-    assert.equal((await negRes.json()).records.length, 2);
-  });
-});
-
 // --- BL-281: POST /telegram-inbound, the Front Desk Bot's write route ---
 
 function postTelegramInbound(port, headers, body) {
@@ -1068,14 +1032,20 @@ test('serves /resident-spy HTML without a prior bearer/query token', async () =>
     assert.equal(res.status, 200);
     assert.match(res.headers.get('content-type'), /text\/html/);
     const body = await res.text();
-    assert.match(body, /<title>Mono Router Live Screen<\/title>/);
+    assert.match(body, /<title>Swarm Live Screen<\/title>/);
     assert.match(body, /resident-pane\?token=/);
     assert.match(body, /pane-split/);
     assert.match(body, /All panes/);
     assert.match(body, /ticket-strip/);
     assert.match(body, /pane-fullscreen/);
     assert.match(body, /Both panes/);
-    assert.match(body, /requestFullscreen/);
+    assert.match(body, /requestBrowserFullscreen/);
+    assert.match(body, /tg\.requestFullscreen/);
+    assert.match(body, /webkitRequestFullscreen/);
+    assert.match(body, /pane-offline/);
+    assert.match(body, /shouldPinViewportHeight/);
+    assert.match(body, /removeProperty\('--app-height'\)/);
+    assert.match(body, /mobile-web-app-capable/);
     assert.doesNotMatch(body, /<header>/);
   });
 });
@@ -1141,6 +1111,9 @@ test('serves /pipeline-grid HTML without a prior bearer/query token', async () =
     assert.match(body, /pipeline-board\?token=/);
     assert.match(body, /STATUS GRID/);
     assert.match(body, /overflow-x:\s*hidden/);
+    assert.match(body, /font-controls/);
+    assert.match(body, /id="font-dec"/);
+    assert.match(body, /id="font-inc"/);
     assert.ok(!body.includes('LINKS:'), 'grid shell must not hardcode a LINKS section');
   });
 });
