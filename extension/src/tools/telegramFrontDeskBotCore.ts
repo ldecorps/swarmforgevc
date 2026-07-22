@@ -12,7 +12,7 @@ import { classifyApprovalReplyAction, classifyApprovalsTopicReply } from '../con
 import { ApprovalDecisionVerdict, composeDecidedAskText, alreadyDecidedToastText } from '../concierge/approvalAskClosing';
 import { unsafeDispatchToastText } from '../concierge/expediteSafety';
 import { classifyRecertTopicReply } from '../concierge/recertTopicReply';
-import { MONO_ROUTER_LIVE_SCREEN_NAME } from '../concierge/residentPaneSpy';
+import { SWARM_LIVE_SCREEN_NAME } from '../concierge/residentPaneSpy';
 import { roleForTopic } from '../concierge/roleTopicMapStore';
 import { ControlEvent, ControlDecision, PendingControlConfirm, PauseState, decideControlEventAction } from './telegramControlCore';
 
@@ -327,10 +327,10 @@ export function decideEnsureBabysitterTopicAction(topicMap: Record<string, strin
   return existingTopicId !== undefined ? { kind: 'reuse', topicId: existingTopicId } : { kind: 'create' };
 }
 
-// BL-522: standing Mono Router Live Screen topic — hosts the live Mini App URL (cloudflare
+// BL-522: standing Swarm Live Screen topic — hosts the live Mini App URL (cloudflare
 // quick tunnel + bridge token). Distinct from the pane snapshot body (BL-521).
 export const RESIDENT_SPY_SUBJECT_ID = 'RESIDENT_SPY';
-export const RESIDENT_SPY_TOPIC_NAME = MONO_ROUTER_LIVE_SCREEN_NAME;
+export const RESIDENT_SPY_TOPIC_NAME = SWARM_LIVE_SCREEN_NAME;
 
 export type EnsureResidentSpyTopicAction = { kind: 'reuse'; topicId: number } | { kind: 'create' };
 

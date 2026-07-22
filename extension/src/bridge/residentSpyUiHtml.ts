@@ -2,7 +2,7 @@
 // full stack). Self-contained except telegram-web-app.js. Polls GET
 // /resident-pane?token=... on the same origin.
 
-import { MONO_ROUTER_LIVE_SCREEN_NAME } from '../concierge/residentPaneSpy';
+import { SWARM_LIVE_SCREEN_NAME } from '../concierge/residentPaneSpy';
 
 export function getResidentSpyUiHtml(): string {
   return `<!DOCTYPE html>
@@ -14,7 +14,7 @@ export function getResidentSpyUiHtml(): string {
 <meta name="apple-mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
 <meta name="theme-color" content="#0d1117"/>
-<title>${MONO_ROUTER_LIVE_SCREEN_NAME}</title>
+<title>${SWARM_LIVE_SCREEN_NAME}</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
   :root {

@@ -1032,7 +1032,7 @@ test('serves /resident-spy HTML without a prior bearer/query token', async () =>
     assert.equal(res.status, 200);
     assert.match(res.headers.get('content-type'), /text\/html/);
     const body = await res.text();
-    assert.match(body, /<title>Mono Router Live Screen<\/title>/);
+    assert.match(body, /<title>Swarm Live Screen<\/title>/);
     assert.match(body, /resident-pane\?token=/);
     assert.match(body, /pane-split/);
     assert.match(body, /All panes/);
