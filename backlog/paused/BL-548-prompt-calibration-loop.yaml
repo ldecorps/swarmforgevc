@@ -13,7 +13,7 @@ approval_context: >
   report only — no auto-promote. Firm: experiments must use SWARMFORGE_PROMPT_EXPERIMENT
   isolation; production compose path unchanged unless promoted.
 severity: medium
-priority: 13
+priority: 03
 direction: human-requested
 depends_on: [BL-546, BL-547]
 promotion_blockers: >
