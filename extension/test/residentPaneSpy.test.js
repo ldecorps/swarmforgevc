@@ -4,6 +4,7 @@ const {
   renderResidentPaneSpyBody,
   inferRoleLabelFromPane,
   resolveResidentRoleIdentity,
+  resolveResidentHeldTicketMeta,
 } = require('../out/concierge/residentPaneSpy');
 
 const ROLES = [
@@ -67,6 +68,45 @@ test('formatResidentSpyHeader keeps session target in parentheses', () => {
 
 test('formatResidentSpyHeader omits model clause when unknown', () => {
   assert.equal(formatResidentSpyHeader({ roleLabel: 'Coder' }), 'Resident: Coder');
+});
+
+test('formatResidentSpyHeader includes held ticket id and title after the model', () => {
+  assert.equal(
+    formatResidentSpyHeader({
+      roleLabel: 'Architect',
+      modelLabel: 'Sonnet 4.6',
+      ticketId: 'BL-529',
+      ticketTitle: 'Pre-turn guard: worktree branch must match claimed ticket',
+    }),
+    'Resident: Architect on Sonnet 4.6 - BL-529 - Pre-turn guard: worktree branch must match claimed ticket'
+  );
+});
+
+test('resolveResidentHeldTicketMeta reads the in_process claim and backlog title', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const { mkTmpDir } = require('./helpers/tmpDir');
+  const tmp = mkTmpDir('sfvc-resident-held-ticket-');
+  const worktree = path.join(tmp, 'coder-wt');
+  fs.mkdirSync(path.join(tmp, '.swarmforge'), { recursive: true });
+  fs.mkdirSync(path.join(worktree, '.swarmforge', 'handoffs', 'inbox', 'in_process'), { recursive: true });
+  fs.mkdirSync(path.join(tmp, 'backlog', 'active'), { recursive: true });
+  fs.writeFileSync(
+    path.join(tmp, '.swarmforge', 'roles.tsv'),
+    `coder\tcoder-wt\t${worktree}\tswarmforge-coder\tCoder\tclaude\n`
+  );
+  fs.writeFileSync(
+    path.join(worktree, '.swarmforge', 'handoffs', 'inbox', 'in_process', '00_test.handoff'),
+    'task: BL-529-ticket-branch-mismatch-guard\ndequeued_at: 2026-07-21T00:00:00Z\n\nbody\n'
+  );
+  fs.writeFileSync(
+    path.join(tmp, 'backlog', 'active', 'BL-529-ticket-branch-mismatch-guard.yaml'),
+    'id: BL-529\ntitle: "Pre-turn guard: worktree branch must match claimed ticket"\n'
+  );
+  assert.deepEqual(resolveResidentHeldTicketMeta(tmp, 'coder'), {
+    ticketId: 'BL-529',
+    ticketTitle: 'Pre-turn guard: worktree branch must match claimed ticket',
+  });
 });
 
 test('renderResidentPaneSpyBody puts header above pane text', () => {

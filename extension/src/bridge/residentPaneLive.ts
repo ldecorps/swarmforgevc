@@ -13,6 +13,7 @@ import {
   RESIDENT_PANE_SPY_ROLE_SEARCH_LINES,
   readMonoRouterActiveRole,
   resolveResidentRoleIdentity,
+  resolveResidentHeldTicketMeta,
 } from '../concierge/residentPaneSpy';
 import { readRoleModelId } from '../swarm/backendSwitch';
 import { formatModelDisplayName } from '../swarm/modelDisplayName';
@@ -22,6 +23,8 @@ export interface ResidentPaneLiveSnapshot {
   paneText: string;
   sessionTarget: string;
   modelLabel?: string;
+  ticketId?: string;
+  ticketTitle?: string;
 }
 
 export function captureResidentPaneLive(targetPath: string): ResidentPaneLiveSnapshot | undefined {
@@ -58,11 +61,13 @@ export function captureResidentPaneLive(targetPath: string): ResidentPaneLiveSna
       readMonoRouterActiveRole(targetPath)
     );
     const modelId = readRoleModelId(targetPath, identity.modelRole);
+    const heldTicket = resolveResidentHeldTicketMeta(targetPath, identity.modelRole);
     return {
       roleLabel: identity.roleLabel,
       paneText,
       sessionTarget: target,
       modelLabel: modelId ? formatModelDisplayName(modelId) : undefined,
+      ...heldTicket,
     };
   }
   return undefined;

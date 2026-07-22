@@ -87,6 +87,45 @@ test('captureResidentPaneLive reads model from launch script when claude setting
   }
 });
 
+test('captureResidentPaneLive includes held ticket metadata when the role has an in_process claim', () => {
+  const tmp = mkTmpDir('sfvc-resident-pane-live-');
+  const worktree = path.join(tmp, 'coder-wt');
+  const stateDir = path.join(tmp, '.swarmforge');
+  const launchDir = path.join(stateDir, 'launch');
+  fs.mkdirSync(path.join(worktree, '.swarmforge', 'handoffs', 'inbox', 'in_process'), { recursive: true });
+  fs.mkdirSync(path.join(tmp, 'backlog', 'active'), { recursive: true });
+  fs.mkdirSync(launchDir, { recursive: true });
+  fs.writeFileSync(path.join(stateDir, 'tmux-socket'), '/tmp/fake.sock');
+  fs.writeFileSync(path.join(stateDir, 'sessions.tsv'), `1\tcoder\tswarmforge-coder\tCoder\tclaude\n`);
+  fs.writeFileSync(
+    path.join(stateDir, 'roles.tsv'),
+    `coder\tcoder-wt\t${worktree}\tswarmforge-coder\tCoder\tclaude\n`
+  );
+  fs.writeFileSync(path.join(launchDir, 'coder.claude-settings.json'), JSON.stringify({ model: 'claude-sonnet-5' }));
+  fs.writeFileSync(
+    path.join(worktree, '.swarmforge', 'handoffs', 'inbox', 'in_process', '00_test.handoff'),
+    'task: BL-529-ticket-branch-mismatch-guard\ndequeued_at: 2026-07-21T00:00:00Z\n\nbody\n'
+  );
+  fs.writeFileSync(
+    path.join(tmp, 'backlog', 'active', 'BL-529-ticket-branch-mismatch-guard.yaml'),
+    'id: BL-529\ntitle: "Pre-turn guard: worktree branch must match claimed ticket"\n'
+  );
+  const paneText = 'SwarmForge Architect\n> working';
+  const fake = installInProcessTmux([
+    { subcommand: 'show-window-options', exitCode: 0, stdout: '0\n' },
+    { subcommand: 'list-windows', exitCode: 0, stdout: '0\n' },
+    { subcommand: 'capture-pane', exitCode: 0, stdout: paneText },
+  ]);
+  try {
+    const snap = captureResidentPaneLive(tmp);
+    assert.ok(snap);
+    assert.equal(snap.ticketId, 'BL-529');
+    assert.equal(snap.ticketTitle, 'Pre-turn guard: worktree branch must match claimed ticket');
+  } finally {
+    fake.restore();
+  }
+});
+
 test('captureResidentPaneLive omits modelLabel when settings file is absent', () => {
   const tmp = mkTmpDir('sfvc-resident-pane-live-');
   const paneText = seedResidentPaneFixture(tmp, { role: 'coder', model: null });

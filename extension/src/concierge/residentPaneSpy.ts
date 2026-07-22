@@ -6,6 +6,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { formatUpdatedAtLabel } from './pipelineBoard';
+import { lookupBacklogItemById } from '../panel/backlogReader';
+import { readPipelineStages } from '../swarm/swarmState';
 
 export const RESIDENT_PANE_SPY_MESSAGE_MAX_LENGTH = 4000;
 export const RESIDENT_PANE_SPY_TOPIC_NAME = 'Resident Spy';
@@ -26,12 +28,32 @@ export interface ResidentPaneSpySnapshot {
   paneText: string;
   sessionTarget?: string;
   modelLabel?: string;
+  ticketId?: string;
+  ticketTitle?: string;
 }
 
-export function formatResidentSpyHeader(snap: Pick<ResidentPaneSpySnapshot, 'roleLabel' | 'modelLabel' | 'sessionTarget'>): string {
+export function formatResidentSpyHeader(
+  snap: Pick<ResidentPaneSpySnapshot, 'roleLabel' | 'modelLabel' | 'sessionTarget' | 'ticketId' | 'ticketTitle'>
+): string {
   const model = snap.modelLabel ? ` on ${snap.modelLabel}` : '';
+  const ticket =
+    snap.ticketId !== undefined
+      ? ` - ${snap.ticketId}${snap.ticketTitle ? ` - ${snap.ticketTitle}` : ''}`
+      : '';
   const session = snap.sessionTarget ? ` (${snap.sessionTarget})` : '';
-  return `Resident: ${snap.roleLabel}${model}${session}`;
+  return `Resident: ${snap.roleLabel}${model}${ticket}${session}`;
+}
+
+export function resolveResidentHeldTicketMeta(
+  targetPath: string,
+  modelRole: string
+): Pick<ResidentPaneSpySnapshot, 'ticketId' | 'ticketTitle'> {
+  const ticketId = readPipelineStages(targetPath).find((stage) => stage.role === modelRole)?.heldTicketIds[0];
+  if (!ticketId) {
+    return {};
+  }
+  const item = lookupBacklogItemById(targetPath, ticketId);
+  return item ? { ticketId: item.id, ticketTitle: item.title } : { ticketId };
 }
 
 export function readMonoRouterActiveRole(targetPath: string): string | undefined {

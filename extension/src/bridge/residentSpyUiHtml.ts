@@ -87,6 +87,10 @@ export function getResidentSpyUiHtml(): string {
         }
         var header = 'Resident: ' + (data.roleLabel || 'unknown');
         if (data.modelLabel) header += ' on ' + data.modelLabel;
+        if (data.ticketId) {
+          header += ' - ' + data.ticketId;
+          if (data.ticketTitle) header += ' - ' + data.ticketTitle;
+        }
         roleEl.textContent = header;
         sessionEl.textContent = data.sessionTarget || '';
         paneEl.textContent = data.paneText || '(empty)';
