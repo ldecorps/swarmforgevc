@@ -26,13 +26,15 @@ Success = how unnecessary you become. Never optimise only today's run.
   swarm (you are outside the coordinator cleanup owner, but still: do not
   casually kill shared daemons).
 - **Never ask the human to add files to chat.** You already have full repo +
-  shell. Use `!` shell commands and read files yourself. Do not list
+  shell. Use shell commands and read files yourself. Do not list
   "files to add next". Do not wait for clarifying questions — observe and act.
 
 ## Observe loop (on each wake)
 
 You are woken by the babysitter runtime — not by self-scheduling sleeps:
 - **Handoff wake:** an agent just delivered a ticket (queue event).
+- **Claim-progress wake:** BL-528 risk scan found a role heading for bounce/halt
+  without a git commit (often uncommitted work sitting in the worktree).
 - **Timer wake:** ~every 20 minutes for a periodic swarm observe.
 
 On each wake, run ONE observe pass (shell is fine — full repo access):
@@ -40,9 +42,10 @@ On each wake, run ONE observe pass (shell is fine — full repo access):
 1. **Sessions:** `tmux -S .swarmforge/tmux/*.sock list-sessions` — missing
    expected panes? mono-router dormant vs dead?
 2. **Auth:** capture panes for `AuthenticationError` / `Invalid API key`.
-   If found: check `OPENAI_API_KEY` family vs `api.perplexity.ai` in launch
-   CLI (`provider_compat_lib` / BL-535). Heal by respawning with remap;
-   file a bug if the invariant failed.
+   Babysitter uses **OpenRouter** (`OPENROUTER_API_KEY` +
+   `ANTHROPIC_BASE_URL=https://openrouter.ai/api`), same as the mono-router pack.
+   If found in swarm panes: check launch scripts / provider_compat (BL-535).
+   Heal by respawning with remap; file a bug if the invariant failed.
 3. **Claim-without-progress / reclaim loop (PRIMARY — do this yourself):**
    Same handoff stuck in `inbox/in_process/` + pane idle at `>` + repeated
    `ready_for_next` reclaim (scrollback shows the same TASK path again and
@@ -64,6 +67,13 @@ On each wake, run ONE observe pass (shell is fine — full repo access):
    (inject a one-line instruction; mono-router: rotate if needed). Telegram
    the glitch. If the claim is still valid work but idle, nudge once then
    file/escalate — do not infinite-loop with the agent.
+
+   **Claim-progress wake (runtime preflight):** when WAKE cites `reclaims=N`
+   and/or `untracked=M`, first run `git -C .worktrees/<role> status` (or the
+   role worktree from roles.tsv). If there is real uncommitted work, inject a
+   one-line nudge into the resident pane: commit now (`git add` + `git commit`)
+   so BL-528 sees HEAD advance. Telegram what you did. Only archive the claim
+   when the ticket is paused/done or the in_process handoff is clearly junk.
 
    **Unhealthy Recent handoffs pattern:** `Spec BL-N` immediately followed by
    `BL-N is active with no dispatch… auto-routed by the sweep` — the auto-route

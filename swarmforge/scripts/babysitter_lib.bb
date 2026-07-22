@@ -32,9 +32,10 @@
     (boolean (and debounce-ok (or due-timer has-pending)))))
 
 (defn classify-wake-reason
-  "Prefer handoff over timer when both apply."
+  "Prefer claim-progress risk over handoff over timer when multiple apply."
   [pending-events timer-due?]
   (cond
+    (some #(= "claim-progress" (:type %)) pending-events) :claim-progress
     (seq pending-events) :handoff
     timer-due? :timer
     :else :none))
@@ -43,10 +44,28 @@
   "Chat text injected into the babysitter pane."
   [reason events]
   (let [header (case reason
+                 :claim-progress
+                 "WAKE [claim-progress]: BL-528 risk — a role may halt soon without a git commit."
                  :handoff "WAKE [handoff]: an agent just handed off work."
                  :timer "WAKE [timer]: periodic swarm observe (~20 min)."
                  "WAKE: observe the swarm.")
-        detail (when (seq events)
+        claim-detail (when (= reason :claim-progress)
+                       (str "\nClaim risks:\n"
+                            (->> events
+                                 (filter #(= "claim-progress" (:type %)))
+                                 (map (fn [e]
+                                        (str "- " (:role e) " " (:severity e)
+                                             " reclaims=" (:reclaims e)
+                                             " halt-in=" (:reclaims-to-halt e)
+                                             (when (pos? (long (or (:untracked-files e) 0)))
+                                               (str " untracked=" (:untracked-files e)))
+                                             (when-let [h (:hint e)] (str " — " h)))))
+                                 (str/join "\n"))
+                            "\n\nPRIORITY: for each risk above, check if work is real but uncommitted "
+                            "(git status in the role worktree). If so, nudge the resident to commit NOW. "
+                            "If the claim is stale/obsolete, archive in_process and wake onto real work. "
+                            "Telegram the glitch. Do NOT restart the swarm unless already halted."))
+        detail (when (and (seq events) (not= reason :claim-progress))
                  (str "\nEvents:\n"
                       (->> events
                            (take 8)
@@ -57,12 +76,12 @@
                                        (when-let [t (:to e)] (str " to=" t))
                                        (when-let [task (:task e)] (str " task=" task)))))
                            (str/join "\n"))))
-        footer (str "\nRun ONE observe pass per your prompt (use ! shell; "
+        footer (str "\nRun ONE observe pass per your prompt (use shell; "
                     "do NOT ask to add files). "
                     "Post glitches to Telegram (notify-babysitter). "
                     "Then idle at > — do NOT self-schedule sleeps or loops; "
                     "the babysitter runtime will wake you again.")]
-    (str header detail footer)))
+    (str header claim-detail detail footer)))
 
 (defn parse-wake-queue-line
   "Parse one jsonl wake event; nil on malformed."

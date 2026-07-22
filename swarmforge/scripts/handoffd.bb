@@ -370,26 +370,31 @@
         (spit (str path ".error") (str reason "\n"))))))
 
 
-;; Babysitter hawk (outside chain): after a successful handoff delivery,
-;; enqueue a wake so the idle babysitter observes. No-op unless
+;; Babysitter hawk (outside chain): enqueue structured wake events. No-op unless
 ;; .swarmforge/babysitter/enabled exists (babysit.sh creates it).
-(defn enqueue-babysitter-wake!
-  [sender-role recipients path headers]
+(defn enqueue-babysitter-event!
+  [event]
   (let [enabled (fs/path state-dir "babysitter" "enabled")
         queue (fs/path state-dir "babysitter" "wake-queue.jsonl")]
     (when (fs/exists? enabled)
       (try
         (fs/create-dirs (fs/parent queue))
-        (let [event {:type "handoff"
-                     :from (str sender-role)
-                     :to (str/join "," recipients)
-                     :path (str path)
-                     :task (or (get headers "task") "")
-                     :at (str (java.time.Instant/now))}]
-          (spit (str queue) (str (json/generate-string event) "\n") :append true)
-          (log! "babysitter-wake-enqueued" (str path)))
+        (spit (str queue)
+              (str (json/generate-string (assoc event :at (str (java.time.Instant/now)))) "\n")
+              :append true)
+        (log! "babysitter-wake-enqueued" (or (:type event) "event")
+              (or (:role event) (:path event) ""))
         (catch Exception e
           (log! "babysitter-wake-error" (.getMessage e)))))))
+
+(defn enqueue-babysitter-wake!
+  [sender-role recipients path headers]
+  (enqueue-babysitter-event!
+   {:type "handoff"
+    :from (str sender-role)
+    :to (str/join "," recipients)
+    :path (str path)
+    :task (or (get headers "task") "")}))
 
 (defn deliver! [roles socket sender-role path]
   (let [filename (fs/file-name path)]
@@ -1088,9 +1093,17 @@
                   :get-role-head-commit
                   (fn [role] (worktree-head-commit-10 (load-roles) role))
                   :on-claim-idle-bounce!
-                  (fn [role _fp progress]
+                  (fn [role fp progress]
                     (log! "claim-progress-bounce" role
-                          (claim-progress-lib/format-bounce-log role (:reclaims progress))))
+                          (claim-progress-lib/format-bounce-log role (:reclaims progress)))
+                    (enqueue-babysitter-event!
+                     {:type "claim-progress"
+                      :from "handoffd"
+                      :role role
+                      :severity "critical"
+                      :reclaims (:reclaims progress)
+                      :handoff (str fp)
+                      :hint "BL-528 bounce — archive stale claim or nudge commit before halt."}))
                   :on-claim-idle-halt!
                   (fn [role _fp progress]
                     (halt-for-claim-progress! role progress))}]
