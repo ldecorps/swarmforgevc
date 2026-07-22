@@ -1,0 +1,8 @@
+{
+  "model": "anthropic/claude-sonnet-5",
+  "effortLevel": "high",
+  "skipDangerousModePermissionPrompt": true,
+  "permissions": {
+    "defaultMode": "bypassPermissions"
+  }
+}

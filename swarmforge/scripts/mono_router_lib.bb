@@ -133,6 +133,42 @@
            last
            :role))
 
+;; ── BL-550: non-home resident strands after a merge-up note ────────────────
+;; QA's merge-up note broadcasts to all 5 pipeline roles at once. On the full
+;; 7-pack that's fine (each role is its own process); on mono-router there is
+;; ONE resident that rotates through roles to consume each note and is left
+;; stranded in whichever non-home role processed the LAST one. The next wake
+;; (e.g. a fresh coder handoff) then runs ready_for_next.sh AS that stranded
+;; role, gets NO_TASK on an empty mailbox, and idles - the real work sits
+;; unseen until a coordinator manually chases it back home.
+
+(def default-rotation-home
+  "The role ready_for_next* rotates back to when a non-home role's mailbox
+   goes empty. Pack-agnostic: read from `config rotation_home`, never
+   hard-coded at any call site - a future pack with a different home role
+   only has to set that one conf line."
+  "coder")
+
+(defn parse-rotation-home
+  "Pure: `config rotation_home <role>` from conf text, or default-rotation-home
+   when the line is absent/unparseable."
+  [conf-text]
+  (or (some-> (re-find #"(?m)^(?:config\s+)?rotation_home\s+(\S+)" (str conf-text))
+              second)
+      default-rotation-home))
+
+(defn rotate-home?
+  "True when the current role should rotate back to home instead of
+   reporting NO_TASK: mono-router is active, this role is NOT home, and its
+   mailbox (in_process + dequeueable new/) is empty. The home role itself
+   never rotates to itself, and a role holding real work is never diverted."
+  [{:keys [rotation-router? role home-role mailbox-empty?]}]
+  (boolean
+   (and rotation-router?
+        mailbox-empty?
+        role
+        (not= (str role) (str home-role)))))
+
 (defn should-rotate-resident?
   "Gate resident rotation during chase — avoid mid-turn thrash and burst rotates."
   [{:keys [active-role target-role resident-busy? last-rotate-at-ms now-ms cooldown-ms]}]

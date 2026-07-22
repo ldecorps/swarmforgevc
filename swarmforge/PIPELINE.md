@@ -104,6 +104,25 @@ is no separate daemon that fills open slots on its own. handoffd's open-slot
 nudge only wakes the coordinator; `promote_and_route_next.sh` is the
 preferred one-shot for that wake.
 
+### Non-home role after QA merge-up (BL-550)
+
+On mono-router packs with `config rotation router`, QA's merge-up `note` is
+broadcast to **all five** pipeline worktree roles at once. The single resident
+rotates through each role to process its copy; without an explicit return path
+it strands in the last non-home role and never sees the next coder handoff.
+
+**Pack prompt rule:** as a non-home role (cleaner, architect, hardender,
+documenter), after `done_with_current.sh` on any note — including merge-up —
+if your inbox is empty, call `rotate_to_role.sh <home>` proactively (`coder`
+for `openrouter-kimi-sonnet-mono-router`; home role comes from
+`config rotation_home` in swarmforge.conf).
+
+**Tool backstop:** when a non-home role runs `ready_for_next.sh` with an empty
+mailbox (`inbox/new/` and `inbox/in_process/`), the helper prints
+`ROTATE_HOME` (not `NO_TASK`) and the `.sh` wrapper execs
+`rotate_to_role.sh` for the configured home role. The home role itself never
+self-rotates; non-home roles with work still in `in_process/` keep `TASK`.
+
 
 ## Endless-loop hard stop
 

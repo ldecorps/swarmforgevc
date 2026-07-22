@@ -16,6 +16,11 @@ The directory also carries project-wide prompt articles (not numbered) that appl
 alongside the numbered articles: `engineering.prompt`, `workflow.prompt`,
 `local-engineering.prompt`, and `project.prompt`.
 
+Long-form incident-backed elaborations live under
+`swarmforge/constitution/articles/reference/` (for example
+`engineering-detailed.prompt`). Those files are **not** inlined into the boot
+system prompt — read them on demand when a task touches that domain.
+
 ## Key Rules
 1. **Pipeline Flow**: Parcels move through the chain `specifier → coder → cleaner → architect → hardener → documenter → QA (integrate) → coordinator (bookkeep)`.
 2. **Worktrees**: Each role works in its own branch (e.g., `.worktrees/coder`). **QA** lands QA-approved work on `main`; the coordinator does backlog bookkeeping only and the specifier never performs integration merges (BL-247).

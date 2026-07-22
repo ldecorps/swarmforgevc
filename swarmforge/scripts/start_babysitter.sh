@@ -16,16 +16,14 @@ mkdir -p "$BB_DIR"
 rm -f "$BB_DIR/stop"
 date -u +%Y-%m-%dT%H:%M:%SZ > "$BB_DIR/enabled"
 
-# Load telegram + perplexity env for topic ensure / notify.
-if [[ -f "$ROOT/.swarmforge/perplexity.env" ]]; then
-  # shellcheck disable=SC1091
-  set -a; source "$ROOT/.swarmforge/perplexity.env"; set +a
-fi
-# Common telegram env locations (never commit tokens).
-for f in "$HOME/.zshenv" "$ROOT/.swarmforge/telegram.env" "$ROOT/.swarmforge/operator/telegram.env"; do
-  if [[ -f "$f" ]]; then
+# Load telegram + OpenRouter env for topic ensure / notify / claude launch.
+for env_file in \
+  "$ROOT/.swarmforge/openrouter.env" \
+  "$ROOT/.swarmforge/telegram.env" \
+  "$ROOT/.swarmforge/operator/telegram.env"; do
+  if [[ -f "$env_file" ]]; then
     # shellcheck disable=SC1090
-    eval "$(grep -E '^export TELEGRAM_(BOT_TOKEN|CHAT_ID)=' "$f" 2>/dev/null | tail -2)" || true
+    set -a; source "$env_file"; set +a
   fi
 done
 # Also accept already-exported TELEGRAM_* from the parent shell.
