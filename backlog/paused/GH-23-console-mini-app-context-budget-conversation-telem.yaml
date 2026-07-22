@@ -1,0 +1,106 @@
+id: GH-23
+title: "Console Mini App: Context Budget dashboard — read view over GH-22 telemetry (Slice 1)"
+epic: swarmforge-console
+milestone: M8
+type: feature
+priority: 04
+direction: human-requested
+human_approval: pending
+depends_on: [GH-22]
+source: https://github.com/ldecorps/swarmforgevc/issues/23
+mutation_cost: medium
+
+description: |
+  Specifier drains this GitHub-seeded intake into paused/, per human
+  directive `backlog/INTAKE-20260722-compaction-telemetry-priority.md`
+  (coordinator promotes GH-22 first, then GH-23, as soon as BL-525 lands in
+  done/).
+
+  ## Summary
+
+  Extend the Console Mini App with a dedicated Context Budget dashboard
+  showing per-agent context/compaction telemetry, per GH-22's captured
+  fields.
+
+  ## Surface pin (project rule: two phone-viewable surfaces, one boundary)
+
+  This is machine-local, host-computed data (a read over GH-22's telemetry
+  log) — it belongs on the LIVE holistic Mini App
+  (`extension/src/bridge/bridgeServer.ts`, token-gated), never the static
+  backlog-dashboard PWA. Mirrors BL-538/BL-526's HOST: add a dedicated
+  `/context-budget` shell + a fourth button on the BL-526 console menu
+  (`/console`), alongside the existing pipeline-grid, resident-spy, and
+  paused-pager buttons. Do not invent a second unauthenticated public page.
+
+  ## Data source pin
+
+  Do NOT reimplement GH-22's aggregation logic in TypeScript. The bridge
+  server shells out to `bb swarmforge/scripts/context_telemetry_cli.bb
+  summary --agent <agent> --json` (extend the CLI with a `--json` flag if
+  Slice 1 of GH-22 did not already add one) and renders the returned
+  summary. This mirrors how other host tools consume Babashka CLIs rather
+  than duplicating pure logic across languages.
+
+  ## Slice 1 (this ticket) — numeric/text read view, real data IF present
+
+  Because GH-22 Slice 1 ships the recorder/query engine but not live
+  capture wiring (Slice 2, a GH-22 follow-on), this dashboard will only
+  show data for agents/sessions that actually have recorded events —
+  fixture-recorded or manually recorded via the CLI until GH-22's Slice 2
+  lands. Do not build this ticket as if live data is guaranteed; the page
+  must handle the empty/no-events case explicitly (see scenarios).
+
+  Display (from GH-22's schema, text/numeric only — no charts yet):
+    - Agent name, provider/model
+    - Context utilisation (%)
+    - Number of compactions
+    - Time to first compaction
+    - Prompt Engine / system prompt / history / tool-output token counts
+    - Input/output tokens (most recent invocation)
+    - Estimated cost (if present; may be null — GH-22 does not compute it)
+
+  Non-goals for Slice 1: stacked context-budget bar, timeline chart,
+  compaction markers on a timeline, top-contributors breakdown, "updates
+  live while agents execute" polling. These are Slice 2 (visualisation),
+  parked in specs/features/GH-23-context-budget-slice-2-visualisation.feature.draft.
+
+  ## Benefits
+
+  Lets operators identify why an agent is approaching context limits and
+  optimise prompts/tools/workflows. Complements the existing LLM Cost
+  Ledger.
+
+specifier_pins_20260722: |
+  1. HOST — extension/src/bridge/bridgeServer.ts, new pre-auth shell
+     `/context-budget` (same token-gated pattern as /pipeline-grid,
+     /resident-spy, /paused-pager); fourth button added to the /console
+     menu.
+  2. DATA — bridge server process shells out to
+     context_telemetry_cli.bb summary --agent <agent> --json (add --json
+     output mode to that CLI in this ticket if GH-22 did not already
+     provide one) rather than re-parsing the JSONL log or re-deriving
+     aggregates in TypeScript.
+  3. AGENT SELECTION — Slice 1 shows one agent at a time, selected the same
+     way BL-538's pager selects a ticket (a simple picker/next-prev over
+     the set of agents with at least one recorded event); a "no telemetry
+     recorded yet for any agent" empty state is required, not optional,
+     given GH-22 Slice 2 (live wiring) has not landed.
+  4. VISUALISATION — all chart/graph requirements (stacked bar, timeline,
+     compaction markers, top contributors) deferred to Slice 2; parked in
+     the .feature.draft companion, not this ticket's live feature file.
+
+acceptance: specs/features/GH-23-context-budget-dashboard.feature
+
+qa_e2e_procedure: |
+  Record 2-3 fixture events via context_telemetry_cli.bb (from GH-22) for a
+  test agent, open /context-budget on the Mini App with an allowlisted
+  console token, confirm the displayed numbers match the recorded fixture
+  events exactly. Then query an agent with zero recorded events and confirm
+  the empty state renders instead of an error.
+
+out_of_scope: |
+  - Any visualisation/chart work (Slice 2, parked in .feature.draft).
+  - Live auto-refresh while an agent is actively running (depends on GH-22
+    Slice 2 wiring landing first).
+  - Cost computation (estimated_cost_usd stays whatever GH-22 recorded, or
+    null).
