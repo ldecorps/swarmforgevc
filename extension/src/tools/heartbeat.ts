@@ -10,6 +10,7 @@ export interface HeartbeatData {
   phase: 'entry' | 'exit';
   in_flight: boolean;
   beat_count: number;
+  task?: string;
 }
 
 /**
@@ -19,7 +20,7 @@ export interface HeartbeatData {
  * mapping compatible with parseYamlLine() below.
  */
 export function writeHeartbeat(dir: string, data: HeartbeatData): void {
-  const yaml = `role: ${data.role}
+  let yaml = `role: ${data.role}
 pid: ${data.pid}
 last_beat: "${data.last_beat}"
 last_tool: ${data.last_tool}
@@ -27,6 +28,9 @@ phase: ${data.phase}
 in_flight: ${data.in_flight}
 beat_count: ${data.beat_count}
 `;
+  if (data.task) {
+    yaml += `task: ${data.task}\n`;
+  }
   const filePath = path.join(dir, `${data.role}.yaml`);
   atomicWrite(filePath, yaml);
 }

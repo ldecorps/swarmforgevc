@@ -1,0 +1,50 @@
+# BL-546 EPIC — SLICES 2 & 3 (parked design; NOT executed by the acceptance runner).
+# This is a .feature.draft: no *.feature glob or the runtime picks it up, so the up-front design is
+# preserved without hard-failing the gate on unbuilt slices (specifier slice-scoping rule, BL-233).
+# When a slice is built, MOVE its scenarios into specs/features/BL-546-prompt-engine-model-aware-prompt-composition.feature
+# in that same parcel, with its step handlers.
+
+Feature: PromptEngine fragments, adapters, versioning, and inspection
+
+  # SLICE 2 — fragment registry and per-model adapters.
+
+  # BL-546 fragment-assembly-05
+  Scenario Outline: PromptEngine assembles prompts from named fragments
+    Given the compose request includes fragment "<fragment>"
+    When PromptEngine composes the system prompt
+    Then the composed prompt includes content from fragment "<fragment>"
+
+    Examples:
+      | fragment        |
+      | constitution    |
+      | pipeline        |
+      | role            |
+      | pack-overlay    |
+
+  # BL-546 model-adapter-selection-06
+  Scenario Outline: model-specific adapters adjust prompt wording without forking the constitution
+    Given the compose request targets model "<model>" on provider "<provider>"
+    When PromptEngine applies the model adapter
+    Then the adapter id is "<adapter>"
+    And the constitution fragment content is unchanged
+    And tool instructions match the adapter shape for "<provider>"
+
+    Examples:
+      | provider | model              | adapter        |
+      | claude   | claude-sonnet-5    | generic        |
+      | aider    | mistral-large      | aider-editor   |
+
+  # SLICE 3 — versioning, validation, and inspect CLI.
+
+  # BL-546 validation-rejects-invalid-09
+  Scenario: validation rejects a compose result with volatile content before the stable chunk
+    Given a compose request that would place volatile content before the stable chunk
+    When PromptEngine validates the composed prompt
+    Then validation fails with a stable-ordering error
+
+  # BL-546 inspect-manifest-10
+  Scenario: inspect mode exposes the composed prompt and fragment hash manifest
+    Given PromptEngine has composed a system prompt for role "coder"
+    When an operator requests prompt inspection for that role
+    Then the inspection output includes the full composed prompt
+    And a fragment hash manifest with no secret values
