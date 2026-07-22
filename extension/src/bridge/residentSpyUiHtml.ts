@@ -54,7 +54,7 @@ export function getResidentSpyUiHtml(): string {
   .dot.stale { background: #d29922; }
   .dot.err { background: #f85149; }
   .split-view {
-    flex: 1 1 0;
+    flex: 1 1 auto;
     min-height: 0;
     display: flex;
     flex-direction: column;
@@ -88,8 +88,19 @@ export function getResidentSpyUiHtml(): string {
     font-size: 10px;
     color: var(--tg-theme-hint-color, #8b949e);
   }
+  .pane-offline {
+    flex: 0 0 auto;
+    margin: 10px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    font-size: 12px;
+    line-height: 1.4;
+    color: #f85149;
+    background: color-mix(in srgb, #f85149 12%, var(--tg-theme-bg-color, #0d1117));
+    border: 1px solid color-mix(in srgb, #f85149 35%, transparent);
+  }
   .split {
-    flex: 1 1 0;
+    flex: 1 1 auto;
     display: flex;
     flex-direction: row;
     flex-wrap: wrap;
@@ -104,7 +115,7 @@ export function getResidentSpyUiHtml(): string {
   .pane-col {
     flex: 1 1 50%;
     min-width: 0;
-    min-height: 0;
+    min-height: 80px;
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -113,7 +124,8 @@ export function getResidentSpyUiHtml(): string {
     border-bottom: 1px solid color-mix(in srgb, var(--tg-theme-hint-color, #8b949e) 25%, transparent);
   }
   .split.pane-count-2 .pane-col {
-    flex: 1 1 0;
+    flex: 1 1 50%;
+    min-height: 0;
   }
   .split.pane-count-3 .pane-col,
   .split.pane-count-4 .pane-col { flex-basis: 33.33%; }
@@ -243,6 +255,7 @@ export function getResidentSpyUiHtml(): string {
     <div class="ticket-strip-title" id="ticket-strip-title"></div>
     <div class="ticket-strip-meta" id="ticket-strip-meta"></div>
   </div>
+  <div id="pane-offline" class="pane-offline" hidden>Live panes unavailable — swarm agents may be down.</div>
   <div class="split" id="pane-split"></div>
 </div>
 <div id="pane-fullscreen" class="pane-fullscreen" hidden>
@@ -263,6 +276,7 @@ export function getResidentSpyUiHtml(): string {
   var ticketStripIdEl = document.getElementById('ticket-strip-id');
   var ticketStripTitleEl = document.getElementById('ticket-strip-title');
   var ticketStripMetaEl = document.getElementById('ticket-strip-meta');
+  var paneOfflineEl = document.getElementById('pane-offline');
   var paneFullscreenEl = document.getElementById('pane-fullscreen');
   var fsTopEl = document.getElementById('fs-top');
   var fsHeadEl = document.getElementById('fs-head');
@@ -277,6 +291,7 @@ export function getResidentSpyUiHtml(): string {
   var fsClaimEnteredAtMs = null;
   var fsTitleBase = '';
   var lastPanes = [];
+  var lastFetchAvailable = false;
 
   function inTelegram() {
     return !!(tg && tg.initData);
@@ -553,9 +568,20 @@ export function getResidentSpyUiHtml(): string {
       return data.panes;
     }
     return [
-      { id: 'resident', label: 'Resident', pane: data.resident },
-      { id: 'coordinator', label: 'Coordinator', pane: data.coordinator }
+      { id: 'resident', label: 'Resident', pane: data.resident || { available: false } },
+      { id: 'coordinator', label: 'Coordinator', pane: data.coordinator || { available: false } }
     ];
+  }
+
+  function updateOfflineBanner(panes, available) {
+    if (focusPane) {
+      paneOfflineEl.hidden = true;
+      return;
+    }
+    var anyLive = !!available && panes.some(function (entry) {
+      return entry.pane && entry.pane.available !== false;
+    });
+    paneOfflineEl.hidden = anyLive;
   }
 
   function pickTicketPane(panes) {
@@ -656,6 +682,7 @@ export function getResidentSpyUiHtml(): string {
       );
     }
     updateTicketStrip(panes);
+    updateOfflineBanner(panes, lastFetchAvailable);
     if (focusPane) {
       syncFullscreenContent();
     }
@@ -674,6 +701,7 @@ export function getResidentSpyUiHtml(): string {
         }
         var panes = normalizePanes(data);
         lastPanes = panes;
+        lastFetchAvailable = !!data.available;
         renderAllPanes(panes);
         if (!data.available) {
           setStatus('err');
