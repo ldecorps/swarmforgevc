@@ -74,6 +74,7 @@
 ;; script constructs a mailbox path by hand), for closing-pass-sweep!'s own
 ;; per-role inbox/in-process gathering below.
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "handoff_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "swarm_identity_lib.bb")))
 ;; BL-333: the starvation alarm reuses the SAME daemon-death email path
 ;; (build-alarm-email/send-configured-email!), never a second notifier -
 ;; the ticket's own explicit "REUSE IT; do not build a new notifier".
@@ -1009,11 +1010,33 @@
   (when-let [sock (tmux-socket)]
     (process/sh {:continue true} "tmux" "-S" sock "kill-server")))
 
+(defn- active-launch-config-path []
+  (or (not-empty (System/getenv "SWARMFORGE_CONFIG"))
+      (let [identity (swarm-identity-lib/read-swarm-identity project-root)]
+        (or (when-let [launch-pack (not-empty (str/trim (get identity "launch_pack" "")))]
+              (str (fs/path project-root "swarmforge/packs" (str launch-pack ".conf"))))
+            (when-let [prev-conf (get identity "active_backlog_max_depth_conf_path")]
+              (when (and (fs/exists? prev-conf)
+                         (swarm-identity-lib/conf-rotation-mode prev-conf))
+                prev-conf))))))
+
+(defn- resolve-relaunch-config-path []
+  (let [default-conf (swarm-identity-lib/default-swarmforge-conf-path project-root)
+        from-hib (:config_path (read-hibernation-state))]
+    (cond
+      (and (not (str/blank? from-hib))
+           (not (= (str (fs/canonicalize (fs/path from-hib)))
+                   (str (fs/canonicalize (fs/path default-conf))))))
+      from-hib
+
+      :else
+      (or (active-launch-config-path) ""))))
+
 (defn- write-hibernation-state! [now-ms]
   (atomic-spit! hibernation-state-file
                 (json/generate-string
                  {:hibernated true :hibernated_at_ms now-ms
-                  :config_path (or (System/getenv "SWARMFORGE_CONFIG") "")})))
+                  :config_path (or (active-launch-config-path) "")})))
 
 (defn- clear-hibernation-state! [] (fs/delete-if-exists hibernation-state-file))
 
@@ -1025,12 +1048,17 @@
    SAME dry-run flag launch-operator! already respects, so tests never spawn
    a real swarm relaunch."
   []
-  (let [config (or (:config_path (read-hibernation-state)) "")]
+  (let [config (resolve-relaunch-config-path)]
     (if skip-launch?
       (log! "relaunch-swarm" "SKIPPED (OPERATOR_SKIP_LAUNCH=1)")
-      (process/process ["zsh" (str swarmforge-sh) project-root]
-                        {:out :inherit :err :inherit
-                         :extra-env {"SWARMFORGE_CONFIG" config "SWARMFORGE_TERMINAL" "none"}}))))
+      (do
+        (when (str/blank? config)
+          (log! "relaunch-swarm" "WARN no mono-router config resolved; refusing bare default launch"))
+        (when (not (str/blank? config))
+          (process/process ["zsh" (str swarmforge-sh) project-root]
+                           {:out :inherit :err :inherit
+                            :extra-env {"SWARMFORGE_CONFIG" config
+                                        "SWARMFORGE_TERMINAL" "none"}}))))))
 
 (defn closing-pass-adapters []
   {:backup-roster! backup-roster!

@@ -144,15 +144,20 @@
          (prompt-engine-lib/stable-bootstrap-prefix)
          (:stable-prefix (prompt-engine-lib/compose "coder" claude-ctx)))
 
-;; ── engineering split: reference/ is on-demand, not inlined at boot ─────────
+;; ── reference/ splits: on-demand only, not inlined at boot ──────────────────
 (assert-true "reference engineering-detailed body is not in the stable prefix"
              (not (str/includes? (prompt-engine-lib/stable-prefix-text)
                                  "acquire-events-lock!")))
+(assert-true "reference workflow-detailed body is not in the stable prefix"
+             (not (str/includes? (prompt-engine-lib/stable-prefix-text)
+                                 "7dd4d14e")))
 (assert-true "slim engineering.prompt still inlined"
              (str/includes? (prompt-engine-lib/stable-prefix-text) "# Engineering Rules"))
+(assert-true "slim workflow.prompt still inlined"
+             (str/includes? (prompt-engine-lib/stable-prefix-text) "# Workflow Rules"))
 (let [stable-len (count (prompt-engine-lib/stable-prefix-text))]
-  (assert-true "stable prefix under 60KB after engineering split (< 61440 chars)"
-               (< stable-len 61440))
+  (assert-true "stable prefix under 50KB after article splits (< 51200 chars)"
+               (< stable-len 51200))
   (println (str "stable-prefix chars: " stable-len)))
 
 ;; ── report ──────────────────────────────────────────────────────────────────

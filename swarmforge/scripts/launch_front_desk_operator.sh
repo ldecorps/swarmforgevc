@@ -1,32 +1,15 @@
 #!/usr/bin/env bash
-# BL-334 — launch the RESTRICTED, front-desk-only disposable LLM.
+# BL-334 — launch the RESTRICTED, front-desk-only disposable LLM (Concierge).
 #
-# Structurally incapable of acting on the swarm: `--tools ""` removes EVERY
-# tool from the session (no Bash, no Write, no Edit, no Read, no MCP - pure
-# text reasoning only), so there is no capability for the model to exercise
-# regardless of what it is told, asked, or tricked into attempting. This is
-# NOT a permission prompt a human could accidentally approve - the tool
-# simply does not exist in this session. Verified empirically 2026-07-13: a
-# `--tools ""` session instructed to run a shell command narrated intent but
-# produced no filesystem effect at all (no tool_use, nothing to approve).
-#
-# NEVER pass --dangerously-skip-permissions or --remote-control here - the
-# first exists to bypass exactly the restriction this launcher depends on,
-# the second would hand the session an interactive channel a human could be
-# talked into approving something through. Runs headless (`-p`), one shot,
-# and exits on its own the moment it answers - no operator.done marker, no
-# window-kill step, unlike the unrestricted Operator's long-lived RC session.
-#
-# Called by operator_runtime.bb's launch-front-desk-operator! only when the
-# full (unrestricted) Operator is already holding the single-Operator slot
-# and a front-desk message is pending - see should-launch-front-desk-
-# operator? in operator_lib.bb for the exact gate.
+# Provider follows the active swarm pack (see ancillary_provider_lib.sh) —
+# never bills a different vendor than the pipeline agents.
 #
 # Usage: launch_front_desk_operator.sh <project-root> <prompt-file> <result-file>
 #
 # Env:
-#   FRONT_DESK_LAUNCH_DRYRUN=1  print the assembled command, do not launch
-#                               (used by the smoke test; no tokens spent)
+#   FRONT_DESK_LAUNCH_DRYRUN=1
+#   FRONT_DESK_OPERATOR_MODEL=...
+#   FRONT_DESK_OPERATOR_EFFORT=...
 set -euo pipefail
 
 ROOT="${1:?usage: launch_front_desk_operator.sh <project-root> <prompt-file> <result-file>}"
@@ -34,43 +17,42 @@ PROMPT_FILE="${2:?usage: launch_front_desk_operator.sh <project-root> <prompt-fi
 RESULT_FILE="${3:?usage: launch_front_desk_operator.sh <project-root> <prompt-file> <result-file>}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-OP_DIR="$ROOT/.swarmforge/operator"
-SETTINGS="$SCRIPT_DIR/front-desk-operator.claude-settings.json"
-SESSION="front-desk-operator"
+# shellcheck source=ancillary_provider_lib.sh
+source "$SCRIPT_DIR/ancillary_provider_lib.sh"
+ancillary_provider_load "$ROOT"
 
-# Own dedicated tmux socket, same resilience posture as launch_operator.sh/
-# launch_support.sh - a dead swarm tmux must never take this down with it,
-# and its liveness must never be confused with the unrestricted Operator's
-# own operator-tmux.sock (a DIFFERENT socket file entirely).
+OP_DIR="$ROOT/.swarmforge/operator"
+SESSION="front-desk-operator"
 FD_SOCK="$OP_DIR/front-desk-operator-tmux.sock"
+RUNNER="$SCRIPT_DIR/run_ancillary_front_desk.sh"
 
 mkdir -p "$OP_DIR"
 
-CLAUDE_CMD=(claude -p --output-format json --tools "" --settings "$SETTINGS")
-
 if [[ "${FRONT_DESK_LAUNCH_DRYRUN:-}" == "1" ]]; then
   printf 'DRYRUN launch_front_desk_operator session=%s\n' "$SESSION"
-  printf 'DRYRUN cmd:'; printf ' %q' "${CLAUDE_CMD[@]}"; printf ' <prompt from %s>\n' "$PROMPT_FILE"
+  printf 'DRYRUN pack=%s provider=%s\n' "$(ancillary_provider_pack)" "$(ancillary_provider_dryrun_label)"
+  printf 'DRYRUN cmd: %q %q %q %q\n' "$RUNNER" "$ROOT" "$PROMPT_FILE" "$RESULT_FILE"
+  case "$(ancillary_provider_family)" in
+    openrouter|claude_direct)
+      printf "DRYRUN would run: claude -p --output-format json --tools '' --settings <pack-settings>\n"
+      ;;
+  esac
   exit 0
 fi
 
-# Reuse if one is somehow already present (the runtime gates on
-# front-desk-operator-running?, so this is just belt-and-braces).
+ancillary_provider_require_credentials
+
 if tmux -S "$FD_SOCK" has-session -t "$SESSION" 2>/dev/null; then
   echo "launch_front_desk_operator: session already present; not double-launching" >&2
   exit 0
 fi
 
-# unset provider keys so it uses the same auth path as the swarm agents.
-# The prompt is passed via a file (never inlined into the tmux command
-# string) so arbitrary message content never has to survive shell quoting.
-tmux -S "$FD_SOCK" new-session -d -s "$SESSION" -n "$SESSION" \
-  "cd '$ROOT'; unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN; ${CLAUDE_CMD[*]@Q} \"\$(cat '$PROMPT_FILE')\" > '$RESULT_FILE' 2>'$RESULT_FILE.err'"
+ancillary_provider_fill_tmux_env
+chmod +x "$RUNNER"
 
-# Record the pane pid for liveness tracking (best-effort). The session
-# disappears on its own once the one-shot `claude -p` exits - no done-marker
-# or window-kill step needed, unlike the unrestricted Operator's long-lived
-# RC session.
+tmux -S "$FD_SOCK" new-session -d -s "$SESSION" -n "$SESSION" "${ANCILLARY_TMUX_ENV[@]}" \
+  "bash '$RUNNER' '$ROOT' '$PROMPT_FILE' '$RESULT_FILE'"
+
 sleep 0.3
 tmux -S "$FD_SOCK" list-panes -t "$SESSION" -F '#{pane_pid}' 2>/dev/null | head -1 > "$OP_DIR/front-desk-operator.pid" || true
-echo "launch_front_desk_operator: started $SESSION on its own socket $FD_SOCK"
+echo "launch_front_desk_operator: started $SESSION on $FD_SOCK (pack=$(ancillary_provider_pack) provider=$(ancillary_provider_family))"

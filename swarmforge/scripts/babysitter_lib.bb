@@ -62,7 +62,8 @@
                                              (when-let [h (:hint e)] (str " — " h)))))
                                  (str/join "\n"))
                             "\n\nPRIORITY: for each risk above, check if work is real but uncommitted "
-                            "(git status in the role worktree). If so, nudge the resident to commit NOW. "
+                            "(git status in the role worktree). If so, nudge via "
+                            "babysitter_nudge_resident.bb (never raw tmux send-keys). "
                             "If the claim is stale/obsolete, archive in_process and wake onto real work. "
                             "Telegram the glitch. Do NOT restart the swarm unless already halted."))
         detail (when (and (seq events) (not= reason :claim-progress))

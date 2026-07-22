@@ -212,6 +212,16 @@
       :else
       (max (:lastChangeMs previous) outbox-activity-ms))))
 
+(defn get-pane-last-change-ms [role]
+  (get-in @activity-records [role :lastChangeMs]))
+
+(defn pane-recently-active?
+  "True when pane content changed within recent-ms (covers shell/mutation runs
+   that never show Claude's esc-to-interrupt footer)."
+  [role now-ms recent-ms]
+  (let [last-ms (get-pane-last-change-ms role)]
+    (and (some? last-ms) (< (- now-ms last-ms) recent-ms))))
+
 (defn reset-pane-activity! []
   (reset! activity-records {}))
 
@@ -269,25 +279,52 @@
    Initialises the .claim-progress.json sidecar on first sight, advances
    the reclaim counter when HEAD is unchanged past the timeout, and calls
    the appropriate adapter on :nudge / :bounce / :halt.
+   Before counting reclaims: skip when the resident is working, the worktree
+   has uncommitted work, or a mono-router dormant mailbox is stale; probe
+   the agent once before the first reclaim.
    Returns true when a halt was triggered (caller should short-circuit)."
   [role held now-ms config adapters]
   (when-let [get-head (:get-role-head-commit adapters)]
     (let [current-commit (get-head role)
           claim-cfg      (select-keys config [:claim-idle-timeout-ms
+                                              :role-idle-timeout-ms
+                                              :probe-grace-ms
                                               :nudge-threshold
                                               :bounce-threshold
                                               :halt-threshold])
+          agent-busy?    (when-let [f (:role-agent-busy? adapters)] (f role))
+          worktree-dirty? (when-let [f (:role-worktree-dirty? adapters)] (f role))
+          idle-ctx       (when-let [f (:claim-idle-context adapters)] (f role))
           halt-triggered (atom false)]
       (doseq [item held
               :when (not @halt-triggered)]
         (let [fp       (:filePath item)
               progress (or (read-claim-progress fp)
                            (claim-progress-lib/make-claim-progress current-commit now-ms))
-              signal   (claim-progress-lib/classify-claim-progress
-                        progress current-commit now-ms claim-cfg)]
+              ctx      (merge {:role role
+                               :agent-busy? (boolean agent-busy?)
+                               :worktree-dirty? (boolean worktree-dirty?)}
+                              (or idle-ctx {}))
+              signal   (claim-progress-lib/evaluate-claim-idle-signal
+                        progress current-commit now-ms claim-cfg ctx)]
           (case signal
             :progressed
             (write-claim-progress! fp (claim-progress-lib/make-claim-progress current-commit now-ms))
+
+            :paused-dormant
+            (write-claim-progress! fp (claim-progress-lib/pause-for-active-rotation progress now-ms))
+
+            :probe-agent
+            (let [elapsed-min (quot (max 0 (- now-ms (or (:claimAtMs progress) 0))) 60000)
+                  p' (claim-progress-lib/mark-idle-probe progress now-ms)]
+              (write-claim-progress! fp p')
+              ((:log-telemetry! adapters)
+               {:type "claim-idle-probe" :role role :handoffId (handoff-id fp)
+                :elapsedMin elapsed-min}
+               now-ms)
+              (when-let [probe! (:send-claim-idle-probe! adapters)]
+                (probe! role (claim-progress-lib/format-idle-probe-message
+                              {:role role :elapsed-min elapsed-min}))))
 
             :claimed-idle
             (let [p'     (claim-progress-lib/increment-reclaims progress)
@@ -308,10 +345,15 @@
                 ((:on-claim-idle-bounce! adapters) role fp p')
 
                 :halt
-                (do ((:on-claim-idle-halt! adapters) role fp p')
-                    (reset! halt-triggered true))))
+                (if (claim-progress-lib/should-refuse-claim-halt? ctx)
+                  ((:log-telemetry! adapters)
+                   {:type "claim-idle-halt-refused" :role role :handoffId (handoff-id fp)
+                    :reason "resident-active-or-dormant-stale"}
+                   now-ms)
+                  (do ((:on-claim-idle-halt! adapters) role fp p')
+                      (reset! halt-triggered true)))))
 
-            ;; :not-yet-overdue — write sidecar if not yet initialised, else leave it
+            :not-yet-overdue
             (when (nil? (read-claim-progress fp))
               (write-claim-progress! fp progress)))))
       @halt-triggered)))

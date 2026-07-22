@@ -197,6 +197,68 @@
           (let [{a5 :action _p5 :progress} (decide p4)]
             (assert= "ladder: reclaims=5 → :halt" :halt a5)))))))
 
+;; ── evaluate-claim-idle-signal (probe + activity gates) ─────────────────────
+
+(let [timeout-ms 1000
+      cfg {:claim-idle-timeout-ms timeout-ms :probe-grace-ms 500}
+      commit "aaaa000000"
+      base {:claimCommit commit :claimAtMs 0 :reclaims 0}
+      past (+ timeout-ms 100)
+      idle-ctx {:role "coder" :agent-busy? false :worktree-dirty? false
+                :resident-busy? false :resident-recently-active? false
+                :active-role "coder" :rotation-router? false}]
+
+  (assert= "hardender timeout is 90min"
+           (* 90 60 1000)
+           (claim-progress-lib/resolve-claim-idle-timeout-ms "hardender" {}))
+
+  (assert= "mono-router stale coder claim while hardender active → paused"
+           :paused-dormant
+           (claim-progress-lib/evaluate-claim-idle-signal base commit past cfg
+                                                          (assoc idle-ctx
+                                                                 :role "coder"
+                                                                 :active-role "hardender"
+                                                                 :rotation-router? true)))
+
+  (assert= "resident busy skips reclaim for any role"
+           :not-yet-overdue
+           (claim-progress-lib/evaluate-claim-idle-signal base commit past cfg
+                                                          (assoc idle-ctx :resident-busy? true)))
+
+  (assert= "busy agent skips reclaim"
+           :not-yet-overdue
+           (claim-progress-lib/evaluate-claim-idle-signal base commit past cfg
+                                                          (assoc idle-ctx :agent-busy? true)))
+
+  (assert= "dirty worktree skips reclaim"
+           :not-yet-overdue
+           (claim-progress-lib/evaluate-claim-idle-signal base commit past cfg
+                                                          (assoc idle-ctx :worktree-dirty? true)))
+
+  (assert= "first overdue → probe before reclaim"
+           :probe-agent
+           (claim-progress-lib/evaluate-claim-idle-signal base commit past cfg idle-ctx))
+
+  (assert= "within probe grace → not yet"
+           :not-yet-overdue
+           (claim-progress-lib/evaluate-claim-idle-signal
+            (claim-progress-lib/mark-idle-probe base 900) commit past cfg idle-ctx))
+
+  (assert= "after probe grace → claimed-idle"
+           :claimed-idle
+           (claim-progress-lib/evaluate-claim-idle-signal
+            (claim-progress-lib/mark-idle-probe base 400) commit past cfg idle-ctx))
+
+  (assert= "legacy reclaims>0 without probe → claimed-idle"
+           :claimed-idle
+           (claim-progress-lib/evaluate-claim-idle-signal
+            {:claimCommit commit :claimAtMs 0 :reclaims 3} commit past cfg idle-ctx))
+
+  (assert-true "should-refuse halt for stale dormant coder claim"
+               (claim-progress-lib/should-refuse-claim-halt?
+                {:role "coder" :active-role "hardender" :rotation-router? true
+                 :resident-busy? false :resident-recently-active? false})))
+
 (when (seq @failures)
   (doseq [f @failures] (println f))
   (System/exit 1))
