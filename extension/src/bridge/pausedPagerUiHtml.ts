@@ -13,7 +13,10 @@ export function getPausedPagerUiHtml(): string {
 <title>Paused Tickets</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
-  :root { color-scheme: dark; }
+  :root {
+    color-scheme: dark;
+    --pp-font-px: 15px;
+  }
   * { box-sizing: border-box; }
   body {
     margin: 0;
@@ -25,18 +28,43 @@ export function getPausedPagerUiHtml(): string {
     overflow-x: hidden;
   }
   header {
-    position: sticky; top: 0; z-index: 1;
-    display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap;
-    padding: 10px 14px;
+    position: sticky; top: 0; z-index: 2;
+    display: flex; align-items: center; gap: 6px 8px; flex-wrap: wrap;
+    padding: 8px 14px;
     background: color-mix(in srgb, var(--tg-theme-bg-color, #0d1117) 88%, #000);
     border-bottom: 1px solid color-mix(in srgb, var(--tg-theme-hint-color, #8b949e) 35%, transparent);
   }
-  h1 { font-size: 14px; margin: 0; font-weight: 600; letter-spacing: 0.02em; }
-  .meta { font-size: 12px; color: var(--tg-theme-hint-color, #8b949e); }
+  h1 {
+    font-size: calc(var(--pp-font-px) + 1px);
+    margin: 0;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .meta { font-size: calc(var(--pp-font-px) - 2px); color: var(--tg-theme-hint-color, #8b949e); width: 100%; }
   a.back {
-    font-size: 12px;
+    font-size: calc(var(--pp-font-px) - 2px);
     color: var(--tg-theme-link-color, #58a6ff);
     text-decoration: none;
+    flex: 0 0 auto;
+  }
+  .font-controls {
+    display: flex;
+    gap: 4px;
+    flex: 0 0 auto;
+    margin-left: auto;
+  }
+  button.font-btn {
+    padding: 2px 7px;
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1.3;
+    border-radius: 6px;
+    border: 1px solid color-mix(in srgb, var(--tg-theme-hint-color, #8b949e) 45%, transparent);
+    background: color-mix(in srgb, var(--tg-theme-bg-color, #0d1117) 70%, #fff 8%);
+    color: var(--tg-theme-text-color, #e6edf3);
+    cursor: pointer;
   }
   main {
     padding: 12px 14px 16px;
@@ -50,22 +78,23 @@ export function getPausedPagerUiHtml(): string {
   }
   .ticket-id {
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    font-size: 12px;
+    font-size: calc(var(--pp-font-px) - 1px);
     color: var(--tg-theme-hint-color, #8b949e);
   }
   .ticket-title {
-    font-size: 14px;
+    font-size: calc(var(--pp-font-px) + 2px);
     font-weight: 600;
   }
   .controls {
     display: flex;
     gap: 8px;
     margin-bottom: 8px;
+    flex-wrap: wrap;
   }
   button {
     flex: 0 0 auto;
-    padding: 6px 10px;
-    font-size: 12px;
+    padding: 8px 12px;
+    font-size: calc(var(--pp-font-px) - 1px);
     font-weight: 500;
     border-radius: 8px;
     border: 1px solid color-mix(in srgb, var(--tg-theme-button-color, #238636) 60%, #000);
@@ -89,12 +118,12 @@ export function getPausedPagerUiHtml(): string {
     white-space: pre-wrap;
     overflow-wrap: anywhere;
     word-break: break-word;
-    font-size: 11px;
-    line-height: 1.4;
+    font-size: var(--pp-font-px);
+    line-height: 1.45;
     max-width: 100%;
   }
   .empty {
-    font-size: 13px;
+    font-size: calc(var(--pp-font-px) + 1px);
     color: var(--tg-theme-hint-color, #8b949e);
   }
 </style>
@@ -103,6 +132,10 @@ export function getPausedPagerUiHtml(): string {
 <header>
   <a class="back" id="menu" href="#">Menu</a>
   <h1>Paused tickets</h1>
+  <div class="font-controls">
+    <button type="button" class="font-btn" id="font-dec" aria-label="Smaller text">A-</button>
+    <button type="button" class="font-btn" id="font-inc" aria-label="Larger text">A+</button>
+  </div>
   <span class="meta" id="status">Loading…</span>
 </header>
 <main>
@@ -123,6 +156,39 @@ export function getPausedPagerUiHtml(): string {
   var index = 0;
   var lastData = null;
   var loading = false;
+
+  var FONT_KEY = 'swarmforge-paused-pager-font-px';
+  var FONT_MIN = 12;
+  var FONT_MAX = 26;
+  var FONT_DEFAULT = 15;
+  var FONT_STEP = 2;
+
+  function currentFontPx() {
+    var raw = document.documentElement.style.getPropertyValue('--pp-font-px');
+    var parsed = parseInt(raw, 10);
+    return Number.isFinite(parsed) ? parsed : FONT_DEFAULT;
+  }
+
+  function applyFont(px) {
+    var clamped = Math.min(FONT_MAX, Math.max(FONT_MIN, px));
+    document.documentElement.style.setProperty('--pp-font-px', clamped + 'px');
+    try { localStorage.setItem(FONT_KEY, String(clamped)); } catch (_) {}
+    document.getElementById('font-dec').disabled = clamped <= FONT_MIN;
+    document.getElementById('font-inc').disabled = clamped >= FONT_MAX;
+  }
+
+  function loadFont() {
+    var stored = parseInt(localStorage.getItem(FONT_KEY), 10);
+    applyFont(Number.isFinite(stored) ? stored : FONT_DEFAULT);
+  }
+
+  document.getElementById('font-dec').onclick = function () {
+    applyFont(currentFontPx() - FONT_STEP);
+  };
+  document.getElementById('font-inc').onclick = function () {
+    applyFont(currentFontPx() + FONT_STEP);
+  };
+  loadFont();
 
   function setStatus(text) {
     statusEl.textContent = text;

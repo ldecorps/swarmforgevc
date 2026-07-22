@@ -28,7 +28,7 @@ import { readSwarmRoles } from '../swarm/tmuxClient';
 import {
   isKnownLlmCostHorizon,
   LLM_COST_HORIZONS_MS,
-  LlmInvocationOriginDimension,
+  isKnownOriginDimension,
   rankLlmInvocations,
   rollupLlmInvocationsByOrigin,
 } from '../metrics/llmCostLedger';
@@ -211,6 +211,8 @@ function serveMiniAppHtml(res: http.ServerResponse, html: string): void {
   res.writeHead(200, {
     'content-type': 'text/html; charset=utf-8',
     'content-security-policy': MINIAPP_CSP,
+    'cache-control': 'no-store, no-cache, must-revalidate',
+    pragma: 'no-cache',
   });
   res.end(html);
 }
@@ -581,14 +583,6 @@ function computePausedPagerState(targetPath: string): unknown {
   });
 
   return { items, index: 0, total: items.length };
-}
-
-const KNOWN_ORIGIN_DIMENSIONS: LlmInvocationOriginDimension[] = [
-  'subsystem', 'role', 'stage', 'trigger', 'ticketId', 'script', 'pack', 'model', 'provider',
-];
-
-function isKnownOriginDimension(value: string): value is LlmInvocationOriginDimension {
-  return (KNOWN_ORIGIN_DIMENSIONS as string[]).includes(value);
 }
 
 function queryParams(url: string): URLSearchParams {

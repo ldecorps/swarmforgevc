@@ -1039,8 +1039,10 @@ test('serves /resident-spy HTML without a prior bearer/query token', async () =>
     assert.match(body, /ticket-strip/);
     assert.match(body, /pane-fullscreen/);
     assert.match(body, /Both panes/);
-    assert.match(body, /requestFullscreen/);
-    assert.match(body, /webkitRequestFullscreen/);
+    assert.match(body, /CSS overlay fills the visual viewport/);
+    assert.match(body, /tg\.requestFullscreen/);
+    assert.doesNotMatch(body, /document\.documentElement\.requestFullscreen/);
+    assert.doesNotMatch(body, /webkitRequestFullscreen/);
     assert.match(body, /pane-offline/);
     assert.match(body, /shouldPinViewportHeight/);
     assert.match(body, /removeProperty\('--app-height'\)/);
@@ -1110,6 +1112,9 @@ test('serves /pipeline-grid HTML without a prior bearer/query token', async () =
     assert.match(body, /pipeline-board\?token=/);
     assert.match(body, /STATUS GRID/);
     assert.match(body, /overflow-x:\s*hidden/);
+    assert.match(body, /font-controls/);
+    assert.match(body, /id="font-dec"/);
+    assert.match(body, /id="font-inc"/);
     assert.ok(!body.includes('LINKS:'), 'grid shell must not hardcode a LINKS section');
   });
 });

@@ -75,6 +75,9 @@ test('paused-pager Mini App shell is served without auth and includes basic UI m
     assert.match(body, /Set highest priority, expedite/);
     assert.match(body, /paused-pager-state/);
     assert.match(body, /paused-pager\/expedite/);
+    assert.match(body, /font-controls/);
+    assert.match(body, /id="font-dec"/);
+    assert.match(body, /id="font-inc"/);
   });
 });
 

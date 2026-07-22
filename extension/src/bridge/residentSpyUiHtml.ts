@@ -20,6 +20,9 @@ export function getResidentSpyUiHtml(): string {
   :root {
     color-scheme: dark;
     --app-height: 100dvh;
+    --app-width: 100vw;
+    --vv-offset-top: 0px;
+    --vv-offset-left: 0px;
     --safe-top: env(safe-area-inset-top, 0px);
     --safe-right: env(safe-area-inset-right, 0px);
     --safe-bottom: env(safe-area-inset-bottom, 0px);
@@ -28,8 +31,16 @@ export function getResidentSpyUiHtml(): string {
   * { box-sizing: border-box; }
   html, body {
     margin: 0;
+    width: 100%;
     height: var(--app-height);
     max-height: var(--app-height);
+    overflow: hidden;
+  }
+  body.pane-fullscreen-active {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100%;
     overflow: hidden;
   }
   body {
@@ -204,20 +215,14 @@ export function getResidentSpyUiHtml(): string {
   .pane-fullscreen {
     display: none;
     position: fixed;
-    inset: 0;
+    top: var(--vv-offset-top);
+    left: var(--vv-offset-left);
+    width: var(--app-width);
+    height: var(--app-height);
     z-index: 30;
     flex-direction: column;
     background: var(--tg-theme-bg-color, #0d1117);
     color: var(--tg-theme-text-color, #e6edf3);
-    height: var(--app-height);
-    max-height: var(--app-height);
-    padding: var(--safe-top) var(--safe-right) var(--safe-bottom) var(--safe-left);
-  }
-  .pane-fullscreen:fullscreen,
-  .pane-fullscreen:-webkit-full-screen {
-    width: 100%;
-    height: 100%;
-    max-height: none;
     padding: var(--safe-top) var(--safe-right) var(--safe-bottom) var(--safe-left);
   }
   body.pane-fullscreen-active .pane-fullscreen {
@@ -297,10 +302,6 @@ export function getResidentSpyUiHtml(): string {
     return !!(tg && tg.initData);
   }
 
-  function isBrowserFullscreen() {
-    return !!(document.fullscreenElement || document.webkitFullscreenElement);
-  }
-
   function applySafeAreas() {
     if (!tg || !tg.safeAreaInset) return;
     var inset = tg.safeAreaInset;
@@ -317,15 +318,32 @@ export function getResidentSpyUiHtml(): string {
   function applyViewportHeight() {
     if (!shouldPinViewportHeight()) {
       document.documentElement.style.removeProperty('--app-height');
+      document.documentElement.style.removeProperty('--app-width');
+      document.documentElement.style.removeProperty('--vv-offset-top');
+      document.documentElement.style.removeProperty('--vv-offset-left');
       return;
     }
-    var h = 0;
-    if (window.visualViewport && window.visualViewport.height > 0) {
-      h = Math.round(window.visualViewport.height);
-    } else if (tg) {
-      h = tg.viewportStableHeight || tg.viewportHeight || 0;
+    var w = window.innerWidth;
+    var h = window.innerHeight;
+    if (window.visualViewport) {
+      if (window.visualViewport.width > 0) {
+        w = Math.round(window.visualViewport.width);
+      }
+      if (window.visualViewport.height > 0) {
+        h = Math.round(window.visualViewport.height);
+      }
+      document.documentElement.style.setProperty('--vv-offset-top', Math.round(window.visualViewport.offsetTop) + 'px');
+      document.documentElement.style.setProperty('--vv-offset-left', Math.round(window.visualViewport.offsetLeft) + 'px');
+    } else {
+      document.documentElement.style.setProperty('--vv-offset-top', '0px');
+      document.documentElement.style.setProperty('--vv-offset-left', '0px');
     }
-    if (!h) h = window.innerHeight;
+    if (tg && !focusPane) {
+      h = tg.viewportStableHeight || tg.viewportHeight || h;
+    }
+    if (w > 0) {
+      document.documentElement.style.setProperty('--app-width', w + 'px');
+    }
     if (h > 0) {
       document.documentElement.style.setProperty('--app-height', h + 'px');
     }
@@ -351,36 +369,14 @@ export function getResidentSpyUiHtml(): string {
   window.addEventListener('resize', applyViewportHeight);
   if (window.visualViewport) {
     window.visualViewport.addEventListener('resize', applyViewportHeight);
+    window.visualViewport.addEventListener('scroll', applyViewportHeight);
   }
-  document.addEventListener('fullscreenchange', applyViewportHeight);
-  document.addEventListener('webkitfullscreenchange', applyViewportHeight);
   applyViewportHeight();
 
-  function requestBrowserFullscreen() {
-    if (isBrowserFullscreen()) return;
-    var target = paneFullscreenEl;
-    var req =
-      target.requestFullscreen ||
-      target.webkitRequestFullscreen ||
-      document.documentElement.requestFullscreen ||
-      document.documentElement.webkitRequestFullscreen;
-    if (!req) return;
-    try {
-      var p = req.call(target);
-      if (p && typeof p.catch === 'function') p.catch(function () {});
-    } catch (e) {}
-  }
-
-  function exitBrowserFullscreen() {
-    if (!isBrowserFullscreen()) return;
-    var exit = document.exitFullscreen || document.webkitExitFullscreen;
-    if (!exit) return;
-    try {
-      var p = exit.call(document);
-      if (p && typeof p.catch === 'function') p.catch(function () {});
-    } catch (e) {}
-  }
-
+  // CSS overlay fills the visual viewport (see .pane-fullscreen). In Telegram
+  // also call tg.requestFullscreen() — it expands the Mini App chrome without
+  // the browser's "drag to exit" banner. Never use document.requestFullscreen()
+  // (that banner appears on phone browsers, e.g. Cloudflare tunnel).
   function enterImmersiveFullscreen() {
     applyViewportHeight();
     if (inTelegram()) {
@@ -393,8 +389,6 @@ export function getResidentSpyUiHtml(): string {
           tg.requestFullscreen();
         } catch (e) {}
       }
-    } else {
-      requestBrowserFullscreen();
     }
   }
 
@@ -406,8 +400,6 @@ export function getResidentSpyUiHtml(): string {
         } catch (e) {}
       }
       tg.expand();
-    } else {
-      exitBrowserFullscreen();
     }
     applyViewportHeight();
   }
@@ -479,10 +471,10 @@ export function getResidentSpyUiHtml(): string {
     if (active) {
       syncFullscreenContent();
       enterImmersiveFullscreen();
+      applyViewportHeight();
       if (tg && typeof tg.disableVerticalSwipes === 'function') tg.disableVerticalSwipes();
     } else {
       exitImmersiveFullscreen();
-      applyViewportHeight();
       if (tg && typeof tg.enableVerticalSwipes === 'function') tg.enableVerticalSwipes();
     }
   }
