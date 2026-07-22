@@ -43,9 +43,23 @@
                     :pending-count 0 :debounce-ms 0})))
 
 ;; ── reason + message ────────────────────────────────────────────────────────
+(assert= "claim-progress beats handoff"
+         :claim-progress
+         (babysitter-lib/classify-wake-reason
+          [{:type "claim-progress" :role "coder"} {:type "handoff"}]
+          true))
 (assert= "handoff beats timer"
          :handoff
          (babysitter-lib/classify-wake-reason [{:type "handoff"}] true))
+
+(let [msg (babysitter-lib/format-wake-message
+           :claim-progress
+           [{:type "claim-progress" :role "coder" :severity "warn"
+             :reclaims 4 :reclaims-to-halt 6 :untracked-files 2
+             :hint "nudge commit"}])]
+  (assert-true "claim-progress wake header" (str/includes? msg "WAKE [claim-progress]"))
+  (assert-true "claim-progress cites role" (str/includes? msg "coder"))
+  (assert-true "claim-progress cites untracked" (str/includes? msg "untracked=2")))
 (assert= "timer when no events"
          :timer
          (babysitter-lib/classify-wake-reason [] true))

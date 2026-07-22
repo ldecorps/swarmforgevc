@@ -124,15 +124,19 @@
     (str "[[missing file: " rel-path "]]")))
 
 (defn constitution-text
-  "swarmforge/constitution.prompt plus every article/prompt file it refers
-   to under swarmforge/constitution/articles/, in deterministic
-   sorted-filename order (numbered articles, then the unnumbered
-   project-wide prompts) - the constitution's own recursive expansion."
+  "swarmforge/constitution.prompt plus every *top-level* article/prompt file in
+   swarmforge/constitution/articles/ (sorted), in deterministic order.
+   Subdirectories (e.g. articles/reference/) are on-demand only — not inlined
+   at boot, to keep the BL-519 stable prefix within context budget."
   []
   (let [articles-dir (repo-file constitution-articles-dir-rel)
         article-paths (if (fs/exists? articles-dir)
-                         (->> (fs/list-dir articles-dir) (map str) sort)
-                         [])]
+                        (->> (fs/list-dir articles-dir)
+                             (map str)
+                             (filter #(and (fs/regular-file? %)
+                                           (not (str/starts-with? (fs/file-name %) "."))))
+                             sort)
+                        [])]
     (str/join "\n"
               (into [(inline-repo-file-or-note "swarmforge/constitution.prompt")]
                     (map slurp article-paths)))))

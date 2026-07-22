@@ -1,0 +1,42 @@
+# BL-525 SLICE 2 — HOT-SWAP (parked design; NOT executed by the acceptance runner).
+# Move these scenarios into the live BL-525 feature file when Slice 2 is built
+# (BL-233 slice scoping — a .feature.draft is picked up by no *.feature glob).
+#
+# Slice 2 reuses the SAME factory assign() API as Slice 1, but applies the result
+# WITHOUT a full swarm restart: it respawns only the affected role pane(s) using
+# the BL-235-class per-tile switch/respawn path, preserving in_process parcels and
+# the launch-time constitution re-read. Disk pack/conf stays unchanged unless the
+# operator explicitly persists (default ephemeral in-memory, matching BL-235).
+
+Feature: ModelFactory hot-swaps changed role assignments without a full swarm restart
+
+  Background:
+    Given a running swarm with a current live role-to-model assignment
+    And ModelFactory can resolve a new full-swarm assignment on demand
+
+  # BL-525 hot-swap-delta-only-09
+  Scenario: hot apply computes the delta of roles whose assignment changed
+    Given a new resolved assignment differs from the live assignment for role "coder" only
+    When ModelFactory hot-applies the new assignment
+    Then only role "coder" is scheduled for respawn
+    And no other role is scheduled for respawn
+
+  # BL-525 hot-swap-preserves-inprocess-10
+  Scenario: hot apply preserves in_process parcels and mailboxes for respawned roles
+    Given role "coder" has an in_process parcel when a hot swap targets it
+    When the role is respawned on the new agent, model, and provider
+    Then the in_process parcel is preserved
+    And the role re-reads its constitution and role on launch
+
+  # BL-525 hot-swap-other-roles-uninterrupted-11
+  Scenario: roles outside the delta keep running through a hot swap
+    Given a hot swap targets role "coder" only
+    When ModelFactory hot-applies the new assignment
+    Then every other role's process is uninterrupted
+    And no disk pack or conf file is modified unless the operator persists explicitly
+
+  # BL-525 hot-swap-operator-notify-12
+  Scenario: a policy-driven hot swap notifies the operator
+    Given a daily-cap failover triggers a hot swap for role "coder"
+    When ModelFactory hot-applies the new assignment
+    Then the operator is notified of the policy-driven swap and the reason
