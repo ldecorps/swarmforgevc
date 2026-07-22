@@ -47,6 +47,7 @@
             [clojure.string :as str]))
 
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "operator_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "llm_cost_ledger_lib.bb")))
 ;; BL-281 (reshaped 2026-07-11, bridge-client architecture): Telegram
 ;; forum-topic threads over the bridge. The runtime NEVER talks to
 ;; Telegram directly - telegram_topic_lib.bb is now only the pure per-
@@ -1380,7 +1381,18 @@
       ;; when the file never existed or failed to parse; the append is
       ;; skipped rather than recording a fabricated zero.
       (when result
-        (append-bridge-cost-record! (operator-lib/front-desk-cost-record result (now-iso))))
+        (append-bridge-cost-record! (operator-lib/front-desk-cost-record result (now-iso)))
+        ;; BL-551 writer-reap-03: the SAME captured result, folded into the
+        ;; unified ledger too (in addition to, never instead of,
+        ;; bridge-cost.jsonl above - the two files serve different
+        ;; readers). try/catch'd so a telemetry write failure never blocks
+        ;; the real reap (archival, pid/context file cleanup) below it.
+        (try
+          (llm-cost-ledger-lib/append-llm-invocation-record!
+           (str state-dir)
+           (operator-lib/front-desk-reap-llm-invocation-record result (now-iso)))
+          (catch Exception e
+            (log! "llm-cost-ledger-append-error" "front-desk-reap" (.getMessage e)))))
       (archive-inflight-batch! front-desk-inflight-file "front-desk-events-done")
       (fs/delete-if-exists front-desk-pid-file)
       (fs/delete-if-exists front-desk-dispatch-context-file)
