@@ -294,6 +294,7 @@ const DOMAINS = [
   require('./bl520RewrapLegacyWrappedSteps'),
   require('./bl526MiniappConsoleMenuSteps'),
   require('./bl529TicketBranchMismatchGuardSteps'),
+  require('./bl550MonoRouterRotateHomeSteps'),
   require('./bl546PromptEngineSteps'),
   require('./bl547ModelStewardSteps'),
   require('./bl551LlmCostLedgerSteps')

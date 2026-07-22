@@ -24,14 +24,15 @@
   (:require [clojure.string :as str]))
 
 (def default-config
-  {;; Minutes without a new commit before we start counting idle reclaims.
-   :claim-idle-timeout-ms (* 5 60 1000)
+  {;; No git commit on the claimed task for this long before idle reclaims
+   ;; start (large features need headroom to spec/survey before first commit).
+   :claim-idle-timeout-ms (* 20 60 1000)
    ;; Idle reclaims before nudging again (first nudge fires at 1).
    :nudge-threshold 1
    ;; Idle reclaims before we log a bounce-claim event (reassign/release).
-   :bounce-threshold 3
+   :bounce-threshold 6
    ;; Idle reclaims before we halt the swarm.
-   :halt-threshold 5})
+   :halt-threshold 10})
 
 ;; ── sidecar path ─────────────────────────────────────────────────────────────
 

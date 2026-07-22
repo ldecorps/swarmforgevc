@@ -87,7 +87,13 @@ if [[ -z "$SOCK" ]]; then
   exit 1
 fi
 
-if ! tmux -S "$SOCK" info >/dev/null 2>&1; then
+tmux_server_alive() {
+  # `tmux info` fails with "no current client" on a live headless server
+  # (SWARMFORGE_TERMINAL=none) — list-sessions talks to the server directly.
+  tmux -S "$1" list-sessions >/dev/null 2>&1
+}
+
+if ! tmux_server_alive "$SOCK"; then
   echo "Tmux socket not live: $SOCK" >&2
   echo "Stale socket file? Relaunch the swarm or remove $SOCKET_FILE" >&2
   exit 1
