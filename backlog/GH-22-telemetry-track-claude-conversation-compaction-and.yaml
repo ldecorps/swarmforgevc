@@ -1,0 +1,40 @@
+id: GH-22
+title: "Telemetry: Track Claude conversation compaction and context utilisation"
+priority: 03
+direction: human-requested
+human_approval: approved
+source: https://github.com/ldecorps/swarmforgevc/issues/22
+description: |
+  ## Problem
+  
+  Resident agents appear to compact conversations frequently, making it difficult to understand the root cause and optimise context usage.
+  
+  ## Goals
+  
+  Add telemetry to measure context growth and compaction events.
+  
+  ## Capture
+  
+  - Number of compactions per agent/session
+  - Time to first compaction
+  - Context window utilisation (%) over time
+  - Prompt Engine token count
+  - System prompt token count
+  - Conversation history token count
+  - Tool output token count
+  - Input/output token usage per invocation
+  - Estimated cost per invocation
+  - Provider/model (Anthropic/OpenRouter/etc.)
+  - Whether compaction occurred before or after the invocation
+  - Average work completed between compactions
+  
+  ## Stretch goals
+  
+  - Visual timeline of context growth.
+  - Identify largest contributors to context consumption.
+  - Correlate compactions with specific tools (git diff, tests, logs, etc.).
+  - Compare providers and models to determine whether compaction frequency differs.
+  
+  ## Success criteria
+  
+  The telemetry should allow us to determine whether frequent compaction is primarily caused by Prompt Engine size, resident conversations, tool output volume, repeated context injection, or provider behaviour.

@@ -556,6 +556,8 @@
   [#"(?i)esc to interrupt"
    ;; Claude Code status spinners (e.g. "· Whirlpooling… (6m · ↓ 14k tokens)")
    #"(?i)(?:whirlpooling|vibing|perambulating|swirling|marinating|incubating|pondering|noodling|dilly-dallying)[…\.]"
+   ;; Long context compaction (omits "esc to interrupt" but is still mid-turn)
+   #"(?i)compacting conversation"
    ;; Active explore/bash subagent chrome in the footer or body
    #"[◯●]\s+Explore"
    #"(?i)Explore\("

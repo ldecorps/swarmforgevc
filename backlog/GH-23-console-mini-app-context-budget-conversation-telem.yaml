@@ -1,0 +1,43 @@
+id: GH-23
+title: "Console Mini App: Context Budget & Conversation Telemetry dashboard"
+priority: 04
+direction: human-requested
+human_approval: approved
+depends_on: [GH-22]
+source: https://github.com/ldecorps/swarmforgevc/issues/23
+description: |
+  ## Summary
+
+  Extend the Console Mini App with a dedicated Context Budget dashboard to visualise conversation growth and compaction behaviour in real time.
+
+  ## UI
+
+  - Add a new button/screen in the Console Mini App.
+  - Dashboard updates live while agents execute.
+
+  ## Display
+
+  - Context utilisation (%)
+  - Remaining context budget
+  - Number of compactions
+  - Time since last compaction
+  - Time to first compaction
+  - Prompt Engine token usage
+  - System prompt token usage
+  - Conversation history token usage
+  - Tool output token usage
+  - Input/output tokens per invocation
+  - Estimated cost
+  - Provider/model
+  - Agent name
+
+  ## Visualisation
+
+  - Stacked context budget bar (system/prompt/history/tools/free)
+  - Timeline of context growth
+  - Compaction markers on the timeline
+  - Top contributors to context usage
+
+  ## Benefits
+
+  Allows operators to immediately identify why an agent is approaching context limits and optimise prompts, tools and workflows accordingly. Complements the existing LLM Cost Ledger.

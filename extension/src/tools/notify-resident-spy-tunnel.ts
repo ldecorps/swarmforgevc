@@ -13,9 +13,10 @@ import {
   RESIDENT_SPY_SUBJECT_ID,
   RESIDENT_SPY_TOPIC_NAME,
   decideEnsureResidentSpyTopicAction,
+  decideStandingTopicTitleSync,
   topicForSubject,
 } from './telegramFrontDeskBotCore';
-import { createForumTopic, deleteMessage, editMessageText, getBotUsername, sendTelegramMessage, setChatMenuButton } from '../notify/telegramClient';
+import { createForumTopic, deleteMessage, editForumTopic, editMessageText, getBotUsername, sendTelegramMessage, setChatMenuButton } from '../notify/telegramClient';
 import {
   ResidentSpyTunnelNotifyState,
   buildResidentSpyTunnelPrivateWebAppButtons,
@@ -63,6 +64,45 @@ function writeNotifyState(projectRoot: string, state: ResidentSpyTunnelNotifySta
   fs.writeFileSync(notifyStatePath(projectRoot), JSON.stringify(state, null, 2) + '\n');
 }
 
+function standingTopicTitlesPath(projectRoot: string): string {
+  return path.join(projectRoot, '.swarmforge', 'operator', 'telegram-standing-topic-titles.json');
+}
+
+function readStandingTopicTitles(projectRoot: string): Record<string, string> {
+  try {
+    return JSON.parse(fs.readFileSync(standingTopicTitlesPath(projectRoot), 'utf8')) as Record<string, string>;
+  } catch {
+    return {};
+  }
+}
+
+function writeStandingTopicTitles(projectRoot: string, titles: Record<string, string>): void {
+  fs.mkdirSync(path.dirname(standingTopicTitlesPath(projectRoot)), { recursive: true });
+  fs.writeFileSync(standingTopicTitlesPath(projectRoot), JSON.stringify(titles));
+}
+
+async function syncStandingTopicTitleIfNeeded(
+  projectRoot: string,
+  subjectId: string,
+  topicId: number,
+  desiredTitle: string,
+  botToken: string,
+  chatId: string,
+): Promise<void> {
+  const titles = readStandingTopicTitles(projectRoot);
+  if (decideStandingTopicTitleSync(titles[subjectId], desiredTitle) === 'unchanged') {
+    return;
+  }
+  const result = await editForumTopic(botToken, chatId, topicId, { name: desiredTitle });
+  if (!result.success) {
+    process.stderr.write(
+      `syncStandingTopicTitleIfNeeded: failed to rename "${subjectId}" to "${desiredTitle}": ${result.error}\n`
+    );
+    return;
+  }
+  writeStandingTopicTitles(projectRoot, { ...titles, [subjectId]: desiredTitle });
+}
+
 function resolveRoot(argv: string[]): string {
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--project-root') return argv[i + 1] || process.cwd();
@@ -84,13 +124,27 @@ export async function ensureResidentSpyTopicStandalone(
 ): Promise<number | undefined> {
   const topicMap = readTopicMap(projectRoot);
   const decision = decideEnsureResidentSpyTopicAction(topicMap);
-  if (decision.kind === 'reuse') return decision.topicId;
+  if (decision.kind === 'reuse') {
+    await syncStandingTopicTitleIfNeeded(
+      projectRoot,
+      RESIDENT_SPY_SUBJECT_ID,
+      decision.topicId,
+      RESIDENT_SPY_TOPIC_NAME,
+      botToken,
+      chatId
+    );
+    return decision.topicId;
+  }
   const created = await createForumTopic(botToken, chatId, RESIDENT_SPY_TOPIC_NAME);
   if (!created.success || created.messageThreadId === undefined) {
     return undefined;
   }
   topicMap[topicMapKey(created.messageThreadId)] = RESIDENT_SPY_SUBJECT_ID;
   writeTopicMap(projectRoot, topicMap);
+  writeStandingTopicTitles(projectRoot, {
+    ...readStandingTopicTitles(projectRoot),
+    [RESIDENT_SPY_SUBJECT_ID]: RESIDENT_SPY_TOPIC_NAME,
+  });
   return created.messageThreadId;
 }
 
