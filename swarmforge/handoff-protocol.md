@@ -629,6 +629,43 @@ Responsibilities:
   candidate was skipped as already-processed).
 - Refuse ambiguous states, such as multiple in-process files, unless an explicit
   repair is made outside the helper.
+- Before printing a task (resuming an in-process claim or freshly dequeuing
+  one), run the branch/claim mismatch guard (BL-529, see below).
+
+### Branch/claim mismatch guard (BL-529)
+
+`ready_for_next_task.bb` checks the worktree's current git branch against the
+claim it is about to print, via `swarmforge/scripts/branch_claim_guard_lib.bb`:
+
+- **Generic branch** (`swarmforge-<role>`, `<swarm-name>/<role>`, `main`) or a
+  **ticket branch matching the claim**: no conflict, the turn proceeds
+  unchanged.
+- **Ticket branch naming a DIFFERENT ticket than the claim, clean worktree**:
+  the guard auto-checks-out to the role's standard branch — `<swarm-name>/<role>`
+  per BL-106, falling back to the legacy `swarmforge-<role>` name, with the
+  swarm name read from the target root's swarm-identity file — then the turn
+  proceeds.
+- **Ticket branch mismatch, dirty worktree** (any porcelain output, including
+  untracked files — auto-checkout must never carry one ticket's in-flight
+  edits or scratch onto another ticket's branch): the claim is requeued back
+  to `inbox/new/`, the turn is refused, and a `BRANCH_CLAIM_MISMATCH` warning
+  names the branch and the claim.
+- **Checkout failure** (neither standard-branch candidate resolves, or both
+  are checked out in other worktrees so git refuses the switch): treated as
+  uncorrectable — same requeue-and-refuse path as the dirty-worktree case,
+  rather than proceeding on the wrong branch.
+- **Requeue collision**: if a same-named file already sits in `inbox/new/`
+  (the BL-128 stale-copy window), the requeue refuses loudly with a
+  cannot-requeue diagnostic and leaves both copies intact rather than
+  overwriting the redelivered duplicate. A requeued claim's `.nudge` /
+  `.claim-progress.json` sidecars at its vacated `in_process/` location move
+  with it.
+
+This closes the gap where an agent could spend a turn working against the
+wrong ticket's branch relative to its active claim (root-caused by BL-512
+audit BL-FIX-002). See
+`specs/features/BL-529-ticket-branch-mismatch-guard.feature` for the full
+scenario set.
 
 Example success:
 
