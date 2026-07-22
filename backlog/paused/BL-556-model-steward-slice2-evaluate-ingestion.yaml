@@ -33,6 +33,12 @@ priority: 12
 direction: human-requested
 depends_on:
   - BL-547
+promotion_blockers: >
+  Human directive 2026-07-22 (backlog/INTAKE-20260722-compaction-telemetry-priority.md):
+  defer until GH-22 (context telemetry) is at minimum through the forward
+  pipeline — compaction telemetry + dashboard outrank the rest of the
+  Swarm Intelligence Layer queue for now. Coordinator: do not promote
+  ahead of GH-22.
 source: |
   Human directive 2026-07-22 (backlog/INTAKE-20260722-model-steward-continuation.md):
   "Model Steward Slices 2-3 (BL-547 follow-on): Slice 1 is done on main. Drain

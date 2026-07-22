@@ -1,0 +1,72 @@
+id: BL-559
+title: "pipelineBoard property test: prefix-check substring never matches current link-line render format"
+epic: swarmforge-console
+milestone: M8
+type: defect
+priority: 40
+direction: architect-reported
+human_approval: pending
+depends_on: []
+source: |
+  architect note 2026-07-22 ("pipelineBoard.property.test.js fails (seed
+  603136857) - file fix ticket"). Verified by specifier by running
+  `npx vitest run --config vitest.properties.config.mjs test/pipelineBoard.property.test.js`:
+  fails reliably (different seed, same minimal counterexample) with
+  `Counterexample: [1,112]`.
+mutation_cost: low
+
+description: |
+  ## Problem
+
+  `test/pipelineBoard.property.test.js`, the "included links are always an
+  in-order PREFIX of the input, and omittedCount is exact" property, fails
+  reliably (not seed-specific — fast-check always shrinks to the same
+  minimal counterexample `[1,112]`, i.e. a single link with a 112-char
+  budget).
+
+  ## Root cause (diagnosed, not yet fixed — coder confirms and fixes)
+
+  The property asserts `result.html.includes(`${list[i].id}:`)` for each
+  included link id (e.g. checks for the substring `"L0:"`). But
+  `pipelineBoardLinkLine()` (extension/src/concierge/pipelineBoard.ts:765)
+  renders a link as `<a href="...">L0</a>` — there is no colon anywhere
+  near the id; `deriveDisplayTicketId('L0')` returns `'L0'` unchanged
+  (doesn't match `TICKET_ID_PREFIX_PATTERN`), so the rendered line is
+  `<a href="...">L0</a>`, never `L0: ...`. Confirmed by direct call:
+
+    budgetPipelineBoardLinks([{id:'L0', path:'...'}], repoBaseUrl, 112)
+      => { html: 'LINKS:\n<a href="...">L0</a>', omittedCount: 0 }
+
+  The `${id}:` substring check appears to assume an older or different
+  render format than the one `pipelineBoardLinkLine` actually produces
+  today. This looks like a **test-assertion bug** (wrong substring
+  expectation), not a bug in `budgetPipelineBoardLinks`/
+  `trimLinksToBudget` themselves — the trimming/ordering/budget logic those
+  functions implement is not shown to be wrong by this failure. Coder must
+  confirm this diagnosis (e.g. check git history for when the link-line
+  render format last changed vs. when this property test was last edited)
+  before picking a fix, and must not assume the diagnosis is complete.
+
+  ## Fix options (coder picks after confirming root cause)
+
+  1. Fix the test's substring check to match the actual render format
+     (e.g. `>${list[i].id}<` or checking for the id inside an anchor tag),
+     preserving the property's real intent: prefix-order + presence/
+     absence of ids across the cut point.
+  2. If investigation instead finds the render format itself regressed
+     (some other production consumer expects a colon-prefixed line), fix
+     the render function and confirm no other caller depends on the
+     colon-less format.
+
+  Only one of these is the real fix — do not patch both defensively.
+
+acceptance: |
+  `npx vitest run --config vitest.properties.config.mjs test/pipelineBoard.property.test.js`
+  passes all 7 properties, including the one currently failing, across
+  multiple runs (property tests use randomized seeds — run at least twice
+  to catch a narrow fix that only happens to satisfy one seed).
+
+out_of_scope: |
+  - Any change to budgetPipelineBoardLinks/trimLinksToBudget's actual
+    trimming behavior unless investigation proves the render format
+    itself is the regression (see fix option 2).

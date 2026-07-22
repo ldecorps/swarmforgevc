@@ -1,0 +1,88 @@
+id: BL-558
+title: "EPIC — GitHub auto-intake adapter: open issues enter the backlog root on a schedule, not only via a human-applied label; do not promote directly; tracks children"
+milestone: M8
+status: todo
+type: epic
+epic: github-auto-intake
+priority: 00
+depends_on: []
+decomposes_into: [BL-560]
+source: |
+  Drained from backlog/INTAKE-20260722-github-auto-intake-adapter.md.
+  Infrastructure adapters only — the coordinator/specifier LLMs are not
+  assigned GitHub-scanning work; a scheduled Actions workflow does the
+  scanning and writes plain backlog YAML, same shape as the existing
+  label-triggered swarm-intake.yml (BL-114 closes the issue loop
+  afterward, unchanged).
+
+notes: |
+  UMBRELLA / tracking item (type: epic), NOT directly promotable — the
+  coordinator promotes CHILD slices, never this. Children carry
+  `epic: github-auto-intake` and are listed in `decomposes_into`.
+
+  ARCHITECTURE: GitHub Actions writes GH-<n>-<slug>.yaml directly to
+  backlog root on main (no LLM in that loop) -> handoffd nudges the
+  coordinator when undrained root intake sits idle past a cooldown (it
+  never drains/promotes itself) -> the specifier drains root intake into
+  paused/ + APS features (existing rule, unchanged) -> the coordinator
+  promotes + routes -> QA merges and closes the GitHub issue loop (BL-114,
+  unchanged).
+
+  SLICE PLAN (each becomes its own promotable child ticket when the epic
+  advances; only slice 1 is ticketed so far):
+    - Slice 1 — scheduled GitHub scan workflow (TICKETED: BL-560). A
+      cron-scheduled Actions workflow scans open issues, writes
+      backlog/GH-<n>-<slug>.yaml for any without one yet, race-safe
+      pushes (git pull --rebase before push, same bot identity as
+      swarm-intake.yml), and skips issues already intaked/specced. The
+      existing label-triggered swarm-intake.yml path keeps working
+      unchanged alongside it.
+    - Slice 2 — handoffd root-intake nudge sweep (NOT YET TICKETED).
+      Mirrors the existing open-slot-nudge-sweep! shape: pure decision
+      functions in chase_sweep_lib.bb, tests in
+      dispatch_gap_test_runner.bb. Nudges the coordinator on mono-router
+      packs, the specifier on multi-role swarms (branch documented in
+      chase_sweep_lib, not duplicated into role prompts). Cooldown-gated
+      and dedup-gated so it never spams; never moves a file or commits —
+      detection only.
+    - Slice 3 — second-swarm wake-up path extension (NOT YET TICKETED).
+      Extend second-swarm-wakeup.yml's watched `paths:` to include
+      backlog/GH-*.yaml and backlog/INTAKE-*.md so a push that only adds
+      root intake still wakes a remote/second swarm the way an
+      active/paused change already does. Unit-test the path
+      classification (remote_wakeup_lib or equivalent), not just the
+      workflow YAML.
+    - Slice 4 — pipeline board lists YAML root intakes (NOT YET
+      TICKETED). `readRootIntakeFiles()` (telegram-front-desk-bot.ts)
+      today lists markdown INTAKE-*.md at backlog root; extend it to
+      also list backlog/GH-*.yaml / backlog/BL-*.yaml root files (title
+      read from the YAML) in the ROOT INTAKE section, excluding
+      README.md/STEERING.md as it already does for markdown.
+
+  DISCIPLINE ACROSS SLICES (pin at the epic level so no slice ships a
+  dark or silently-duplicated surface):
+    - Slice 1's workflow: no `${{ }}` interpolation inside `run:` bodies
+      (BL-227 posture, constitution guardrail); secrets from GITHUB_TOKEN
+      only; slug/title/body passed through env, not inlined into a
+      script step.
+    - Slice 2 nudges detect and notify only — it never drains, specs, or
+      promotes on its own; that stays the specifier's and coordinator's
+      job per the constitution's Backlog Intake Order.
+    - Coordinator and specifier prompts get, at most, a one-line
+      cross-reference that a daemon root-intake nudge exists once Slice 2
+      lands — do not duplicate the mono-router pack's existing
+      root-intake-drain instructions.
+    - BL-114's issue_specced.sh / issue_done.sh close-the-loop scripts
+      are unchanged by any slice here.
+
+  This epic is a tracker only; it defines no acceptance of its own — each
+  child slice carries its own feature file and acceptance (slice 1 =
+  specs/features/BL-560-github-scheduled-auto-intake-scan.feature). A
+  musical-form epic icon (local-engineering rule 6) still needs assigning
+  against the live icon set — left to the branding/documenter pass to
+  avoid an unvalidated collision.
+
+acceptance:
+  # An epic tracker has no acceptance of its own; acceptance lives on each child slice. Slice 1: BL-560.
+  none: "tracker only — see decomposes_into children for acceptance"
+mutation_cost: high
