@@ -83,26 +83,51 @@ function readRoleEntry(targetPath: string, modelRole: string) {
   return parseRolesTsv(fs.readFileSync(rolesFile, 'utf8')).find((entry) => entry.role === modelRole);
 }
 
+export function extractTicketIdFromHandoffHeaders(headers: Record<string, string>): string | null {
+  const fromTask = headers.task ? extractTicketId(headers.task) : null;
+  if (fromTask) {
+    return fromTask;
+  }
+  return headers.message ? extractTicketId(headers.message) : null;
+}
+
+function readInProcessClaimForRole(
+  targetPath: string,
+  modelRole: string
+): { ticketId: string; claimEnteredAtMs?: number } | undefined {
+  const roleEntry = readRoleEntry(targetPath, modelRole);
+  if (!roleEntry) {
+    return undefined;
+  }
+  const inProcessDir = mailboxDir(roleEntry, 'inbox', 'in_process');
+  let earliest: { ticketId: string; claimEnteredAtMs?: number } | undefined;
+  for (const headers of readHandoffHeaderRecordsWithBatches(inProcessDir)) {
+    const ticketId = extractTicketIdFromHandoffHeaders(headers);
+    if (!ticketId) {
+      continue;
+    }
+    const ms = headers.dequeued_at ? Date.parse(headers.dequeued_at) : NaN;
+    const claimEnteredAtMs = Number.isNaN(ms) ? undefined : ms;
+    if (!earliest) {
+      earliest = { ticketId, claimEnteredAtMs };
+      continue;
+    }
+    if (claimEnteredAtMs !== undefined && (earliest.claimEnteredAtMs === undefined || claimEnteredAtMs < earliest.claimEnteredAtMs)) {
+      earliest = { ticketId, claimEnteredAtMs };
+    }
+  }
+  return earliest;
+}
+
 export function resolveResidentHeldTicketMeta(targetPath: string, modelRole: string): ResidentHeldTicketMeta {
-  const ticketId = readPipelineStages(targetPath).find((stage) => stage.role === modelRole)?.heldTicketIds[0];
+  const claim = readInProcessClaimForRole(targetPath, modelRole);
+  const ticketId =
+    claim?.ticketId ??
+    readPipelineStages(targetPath).find((stage) => stage.role === modelRole)?.heldTicketIds[0];
   if (!ticketId) {
     return {};
   }
-  const roleEntry = readRoleEntry(targetPath, modelRole);
-  let claimEnteredAtMs: number | undefined;
-  if (roleEntry) {
-    const inProcessDir = mailboxDir(roleEntry, 'inbox', 'in_process');
-    for (const headers of readHandoffHeaderRecordsWithBatches(inProcessDir)) {
-      if (!headers.task || extractTicketId(headers.task) !== ticketId || !headers.dequeued_at) {
-        continue;
-      }
-      const ms = Date.parse(headers.dequeued_at);
-      if (!Number.isNaN(ms)) {
-        claimEnteredAtMs = ms;
-        break;
-      }
-    }
-  }
+  const claimEnteredAtMs = claim?.claimEnteredAtMs;
   const item = lookupBacklogItemById(targetPath, ticketId);
   if (item) {
     return {
@@ -112,6 +137,19 @@ export function resolveResidentHeldTicketMeta(targetPath: string, modelRole: str
     };
   }
   return { ticketId, ...(claimEnteredAtMs !== undefined ? { claimEnteredAtMs } : {}) };
+}
+
+export function resolveResidentHeldTicketMetaForRoles(
+  targetPath: string,
+  modelRoles: readonly string[]
+): ResidentHeldTicketMeta {
+  for (const modelRole of modelRoles) {
+    const meta = resolveResidentHeldTicketMeta(targetPath, modelRole);
+    if (meta.ticketId) {
+      return meta;
+    }
+  }
+  return {};
 }
 
 export function readMonoRouterActiveRole(targetPath: string): string | undefined {

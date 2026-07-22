@@ -122,7 +122,13 @@ function hasHandoffFiles(dir: string): boolean {
 function readInProcessTicketIds(entry: Pick<RoleEntry, 'role' | 'worktreeName' | 'worktreePath'>): string[] {
   const dir = mailboxDir(entry, 'inbox', 'in_process');
   const ids = readHandoffHeaderRecordsWithBatches(dir)
-    .map((headers) => (headers.task ? extractTicketId(headers.task) : null))
+    .map((headers) => {
+      const fromTask = headers.task ? extractTicketId(headers.task) : null;
+      if (fromTask) {
+        return fromTask;
+      }
+      return headers.message ? extractTicketId(headers.message) : null;
+    })
     .filter((id): id is string => id !== null);
   return [...new Set(ids)];
 }

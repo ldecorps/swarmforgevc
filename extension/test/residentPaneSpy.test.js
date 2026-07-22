@@ -5,6 +5,7 @@ const {
   inferRoleLabelFromPane,
   resolveResidentRoleIdentity,
   resolveResidentHeldTicketMeta,
+  resolveResidentHeldTicketMetaForRoles,
   formatClaimEnteredAgo,
 } = require('../out/concierge/residentPaneSpy');
 
@@ -133,6 +134,56 @@ test('resolveResidentHeldTicketMeta reads the in_process claim and backlog title
     ticketTitle: 'Pre-turn guard: worktree branch must match claimed ticket',
     claimEnteredAtMs: Date.parse('2026-07-21T10:00:00Z'),
   });
+});
+
+test('resolveResidentHeldTicketMeta reads note-only in_process claims from message header', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const { mkTmpDir } = require('./helpers/tmpDir');
+  const tmp = mkTmpDir('sfvc-resident-held-note-');
+  const worktree = path.join(tmp, 'coder-wt');
+  fs.mkdirSync(path.join(tmp, '.swarmforge'), { recursive: true });
+  fs.mkdirSync(path.join(worktree, '.swarmforge', 'handoffs', 'inbox', 'in_process'), { recursive: true });
+  fs.mkdirSync(path.join(tmp, 'backlog', 'active'), { recursive: true });
+  fs.writeFileSync(
+    path.join(tmp, '.swarmforge', 'roles.tsv'),
+    `coder\tcoder-wt\t${worktree}\tswarmforge-coder\tCoder\tclaude\n`
+  );
+  fs.writeFileSync(
+    path.join(worktree, '.swarmforge', 'handoffs', 'inbox', 'in_process', '50_note.handoff'),
+    'type: note\nmessage: BL-546 kickoff note\ndequeued_at: 2026-07-21T11:00:00Z\n\nbody\n'
+  );
+  fs.writeFileSync(
+    path.join(tmp, 'backlog', 'active', 'BL-546-prompt-engine.yaml'),
+    'id: BL-546\ntitle: "PromptEngine slice 1"\n'
+  );
+  assert.deepEqual(resolveResidentHeldTicketMeta(tmp, 'coder'), {
+    ticketId: 'BL-546',
+    ticketTitle: 'PromptEngine slice 1',
+    claimEnteredAtMs: Date.parse('2026-07-21T11:00:00Z'),
+  });
+});
+
+test('resolveResidentHeldTicketMetaForRoles falls back to the home role mailbox', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const { mkTmpDir } = require('./helpers/tmpDir');
+  const tmp = mkTmpDir('sfvc-resident-held-fallback-');
+  const worktree = path.join(tmp, 'coder-wt');
+  fs.mkdirSync(path.join(tmp, '.swarmforge'), { recursive: true });
+  fs.mkdirSync(path.join(worktree, '.swarmforge', 'handoffs', 'inbox', 'in_process'), { recursive: true });
+  fs.writeFileSync(
+    path.join(tmp, '.swarmforge', 'roles.tsv'),
+    `coder\tcoder-wt\t${worktree}\tswarmforge-coder\tCoder\tclaude\n`
+  );
+  fs.writeFileSync(
+    path.join(worktree, '.swarmforge', 'handoffs', 'inbox', 'in_process', '00_test.handoff'),
+    'task: BL-529-ticket-branch-mismatch-guard\ndequeued_at: 2026-07-21T10:00:00Z\n\nbody\n'
+  );
+  assert.equal(
+    resolveResidentHeldTicketMetaForRoles(tmp, ['hardender', 'architect', 'coder']).ticketId,
+    'BL-529'
+  );
 });
 
 test('renderResidentPaneSpyBody puts header above pane text', () => {

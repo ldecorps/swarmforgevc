@@ -14,7 +14,7 @@ import {
   RESIDENT_PANE_SPY_ROLE_SEARCH_LINES,
   readMonoRouterActiveRole,
   resolveResidentRoleIdentity,
-  resolveResidentHeldTicketMeta,
+  resolveResidentHeldTicketMetaForRoles,
   formatResidentSpyHeader,
   formatClaimEnteredAgo,
 } from '../concierge/residentPaneSpy';
@@ -96,7 +96,11 @@ function tryCaptureRolePane(
   const roleSearchText = stripAnsi(roleSearchCaptured.stdout ?? paneText);
   const identity = resolveResidentRoleIdentity(roleSearchText, roleEntry, roles, monoRouterActiveRole);
   const modelId = readRoleModelId(targetPath, identity.modelRole);
-  const heldTicket = resolveResidentHeldTicketMeta(targetPath, identity.modelRole);
+  const heldTicket = resolveResidentHeldTicketMetaForRoles(targetPath, [
+    monoRouterActiveRole,
+    identity.modelRole,
+    roleEntry.role,
+  ].filter((role, index, rolesToTry): role is string => !!role && rolesToTry.indexOf(role) === index));
   return {
     available: true,
     roleLabel: identity.roleLabel,

@@ -162,6 +162,7 @@ test('captureMonoRouterLiveScreen returns resident and coordinator panes', () =>
     assert.match(screen.resident.header ?? '', /^Resident:/);
     assert.doesNotMatch(screen.resident.header ?? '', /swarmforge-coder/);
     assert.ok(screen.resident.claimEnteredAgo?.startsWith('entered '));
+    assert.ok(screen.resident.claimEnteredAtMs);
     assert.equal(typeof screen.coordinator.available, 'boolean');
     assert.ok(screen.coordinator);
   } finally {
