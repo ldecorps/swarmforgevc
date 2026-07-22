@@ -1,15 +1,18 @@
 const assert = require('node:assert/strict');
 const fc = require('fast-check');
-const { buildOriginCostTrendSeries, chooseCostTrendAxisScale } = require('../out/metrics/llmCostTrendSeries');
+const { buildOriginCostTrendSeries, chooseCostTrendAxisScale } = require('../out/metrics/llmCostLedger');
 
-// BL-551: architect-added property coverage for the newly-split
-// llmCostTrendSeries submodule. Two pure, mathematically-invariant
-// functions - bucketed cost conservation and scale-invariant axis choice -
-// undercovered by the example-based unit/acceptance tests, which each pin
-// only a handful of hand-picked scenarios. Runs ONLY via
-// `npm run test:properties` (vitest.properties.config.mjs) - never the
-// normal unit/coverage/mutation run (vitest.config.mjs excludes
-// **/*.property.test.js).
+// BL-525: restores property coverage lost when the BL-525 bounce/restore
+// chain rolled the origin-cost-trend code back past the commit that had
+// split it into llmCostTrendSeries.ts and added this coverage (ceebdffb2).
+// The functions now live in llmCostLedger.ts instead, so this file replaces
+// the deleted extension/test/llmCostTrendSeries.property.test.js in place.
+// Two pure, mathematically-invariant functions - bucketed cost conservation
+// and scale-invariant axis choice - undercovered by the example-based
+// unit/acceptance tests, which each pin only a handful of hand-picked
+// scenarios. Runs ONLY via `npm run test:properties`
+// (vitest.properties.config.mjs) - never the normal unit/coverage/mutation
+// run (vitest.config.mjs excludes **/*.property.test.js).
 
 const NOW_MS = Date.parse('2026-07-22T18:00:00Z');
 const WINDOW_MS = 7 * 24 * 60 * 60 * 1000;

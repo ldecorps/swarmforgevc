@@ -59,6 +59,7 @@ test('paused-pager JSON feed: orders paused tickets by priority ascending, then 
     for (const item of body.items) {
       assert.equal(typeof item.yaml, 'string');
       assert.ok(item.canExpedite);
+      assert.equal(typeof item.canApprove, 'boolean');
     }
   });
 });
@@ -75,6 +76,10 @@ test('paused-pager Mini App shell is served without auth and includes basic UI m
     assert.match(body, /Set highest priority, expedite/);
     assert.match(body, /paused-pager-state/);
     assert.match(body, /paused-pager\/expedite/);
+    assert.match(body, /paused-pager\/approve/);
+    assert.match(body, /font-controls/);
+    assert.match(body, /id="font-dec"/);
+    assert.match(body, /id="font-inc"/);
   });
 });
 
@@ -91,6 +96,105 @@ test('paused-pager JSON feed accepts query-token auth for a plain browser naviga
     const html = await fetch(`http://127.0.0.1:${handle.port}/paused-pager`);
     assert.equal(html.status, 200);
     assert.match(html.headers.get('content-type'), /text\/html/);
+  });
+});
+
+test('paused-pager JSON feed: canApprove is true only for human_approval pending tickets', async () => {
+  const target = mkTmp();
+  writeBacklogTicket(
+    target,
+    'paused',
+    'BL-040',
+    'id: BL-040\ntitle: needs approval\nstatus: paused\nhuman_approval: pending\n'
+  );
+  writeBacklogTicket(
+    target,
+    'paused',
+    'BL-041',
+    'id: BL-041\ntitle: already approved\nstatus: paused\nhuman_approval: approved\n'
+  );
+
+  await withBridge(target, {}, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/paused-pager-state?token=${TOKEN}`);
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    const byId = Object.fromEntries(body.items.map((item) => [item.id, item]));
+    assert.equal(byId['BL-040'].canApprove, true);
+    assert.equal(byId['BL-041'].canApprove, false);
+  });
+});
+
+test('paused-pager Approve route requires control auth (bearer + x-control-token)', async () => {
+  const target = mkTmp();
+  writeBacklogTicket(
+    target,
+    'paused',
+    'BL-050',
+    'id: BL-050\ntitle: pending approval\nstatus: paused\nhuman_approval: pending\n'
+  );
+
+  await withBridge(target, {}, async (handle) => {
+    const bearerOnlyRes = await fetch(`http://127.0.0.1:${handle.port}/paused-pager/approve`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${TOKEN}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ id: 'BL-050' }),
+    });
+    assert.equal(bearerOnlyRes.status, 403);
+
+    const okRes = await fetch(`http://127.0.0.1:${handle.port}/paused-pager/approve`, {
+      method: 'POST',
+      headers: { ...controlAuthHeaders(), 'content-type': 'application/json' },
+      body: JSON.stringify({ id: 'BL-050' }),
+    });
+    assert.equal(okRes.status, 200);
+    const body = await okRes.json();
+    assert.deepEqual(body, { success: true, id: 'BL-050' });
+  });
+});
+
+test('paused-pager Approve route flips human_approval to approved without moving folders', async () => {
+  const target = mkTmp();
+  writeBacklogTicket(
+    target,
+    'paused',
+    'BL-060',
+    'id: BL-060\ntitle: pending approval\nstatus: paused\nhuman_approval: pending\n'
+  );
+
+  await withBridge(target, {}, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/paused-pager/approve`, {
+      method: 'POST',
+      headers: { ...controlAuthHeaders(), 'content-type': 'application/json' },
+      body: JSON.stringify({ id: 'BL-060' }),
+    });
+    assert.equal(res.status, 200);
+
+    const pausedPath = path.join(target, 'backlog', 'paused', 'BL-060.yaml');
+    assert.equal(fs.existsSync(pausedPath), true);
+    const yaml = fs.readFileSync(pausedPath, 'utf8');
+    assert.match(yaml, /^human_approval: approved$/m);
+  });
+});
+
+test('paused-pager Approve route is a no-op for tickets not pending approval', async () => {
+  const target = mkTmp();
+  writeBacklogTicket(
+    target,
+    'paused',
+    'BL-061',
+    'id: BL-061\ntitle: already approved\nstatus: paused\nhuman_approval: approved\n'
+  );
+
+  await withBridge(target, {}, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/paused-pager/approve`, {
+      method: 'POST',
+      headers: { ...controlAuthHeaders(), 'content-type': 'application/json' },
+      body: JSON.stringify({ id: 'BL-061' }),
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.success, false);
+    assert.equal(body.reason, 'not pending approval');
   });
 });
 
