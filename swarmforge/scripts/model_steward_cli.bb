@@ -73,6 +73,16 @@
 (defn has-flag? [args k]
   (boolean (some #(= k %) args)))
 
+(defn print-entry-or-die
+  "Shared shape behind show/capability/adapter: print `entry` via `render`
+   when found, else report `missing-label` for provider/model to stderr and
+   exit 1."
+  [entry render missing-label provider model]
+  (if entry
+    (println (render entry))
+    (do (binding [*out* *err*] (println (str "no " missing-label " for " provider "/" model)))
+        (System/exit 1))))
+
 (defn usage []
   (println "Usage: model_steward_cli.bb <command> [args...]")
   (println "Commands:")
@@ -95,19 +105,13 @@
   (when (empty? rest-args) (usage))
   (let [[provider model] (parse-provider-model (first rest-args))
         entry (model-steward-lib/model-entry (load-registry) provider model)]
-    (if entry
-      (println (json/generate-string entry))
-      (do (binding [*out* *err*] (println (str "no registry entry for " provider "/" model)))
-          (System/exit 1)))))
+    (print-entry-or-die entry json/generate-string "registry entry" provider model)))
 
 (defn run-capability [rest-args]
   (when (empty? rest-args) (usage))
   (let [[provider model] (parse-provider-model (first rest-args))
         entry (model-steward-lib/capability-entry (load-registry) provider model)]
-    (if entry
-      (println (json/generate-string entry))
-      (do (binding [*out* *err*] (println (str "no capability entry for " provider "/" model)))
-          (System/exit 1)))))
+    (print-entry-or-die entry json/generate-string "capability entry" provider model)))
 
 (defn run-register [rest-args]
   (when (empty? rest-args) (usage))
@@ -171,11 +175,9 @@
 (defn run-adapter [rest-args]
   (when (empty? rest-args) (usage))
   (let [[provider model] (parse-provider-model (first rest-args))
-        adapter (model-steward-lib/adapter-for (load-registry) provider model)]
-    (if adapter
-      (println (str (:adapter_id adapter) " production_default=" (boolean (:production_default adapter))))
-      (do (binding [*out* *err*] (println (str "no adapter entry for " provider "/" model)))
-          (System/exit 1)))))
+        adapter (model-steward-lib/adapter-for (load-registry) provider model)
+        render #(str (:adapter_id %) " production_default=" (boolean (:production_default %)))]
+    (print-entry-or-die adapter render "adapter entry" provider model)))
 
 (defn run-eligible [rest-args]
   (when (empty? rest-args) (usage))
