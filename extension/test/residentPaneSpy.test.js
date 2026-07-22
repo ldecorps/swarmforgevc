@@ -136,6 +136,34 @@ test('resolveResidentHeldTicketMeta reads the in_process claim and backlog title
   });
 });
 
+test('resolveResidentHeldTicketMeta reads ticket id from coordinator Work BL-### note prose', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const { mkTmpDir } = require('./helpers/tmpDir');
+  const tmp = mkTmpDir('sfvc-resident-held-work-note-');
+  const worktree = path.join(tmp, 'coder-wt');
+  fs.mkdirSync(path.join(tmp, '.swarmforge'), { recursive: true });
+  fs.mkdirSync(path.join(worktree, '.swarmforge', 'handoffs', 'inbox', 'in_process'), { recursive: true });
+  fs.mkdirSync(path.join(tmp, 'backlog', 'active'), { recursive: true });
+  fs.writeFileSync(
+    path.join(tmp, '.swarmforge', 'roles.tsv'),
+    `coder\tcoder-wt\t${worktree}\tswarmforge-coder\tCoder\tclaude\n`
+  );
+  fs.writeFileSync(
+    path.join(worktree, '.swarmforge', 'handoffs', 'inbox', 'in_process', '10_note.handoff'),
+    'type: note\nmessage: Work BL-551-llm-invocation-cost-ledger: read file in backlog/active\ndequeued_at: 2026-07-22T12:30:11Z\n\nbody\n'
+  );
+  fs.writeFileSync(
+    path.join(tmp, 'backlog', 'active', 'BL-551-llm-invocation-cost-ledger.yaml'),
+    'id: BL-551\ntitle: "LLM invocation cost ledger"\n'
+  );
+  assert.deepEqual(resolveResidentHeldTicketMeta(tmp, 'coder'), {
+    ticketId: 'BL-551',
+    ticketTitle: 'LLM invocation cost ledger',
+    claimEnteredAtMs: Date.parse('2026-07-22T12:30:11Z'),
+  });
+});
+
 test('resolveResidentHeldTicketMeta reads note-only in_process claims from message header', () => {
   const fs = require('node:fs');
   const path = require('node:path');

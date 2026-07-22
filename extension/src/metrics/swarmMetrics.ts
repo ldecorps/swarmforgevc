@@ -359,9 +359,16 @@ export interface RetryCounts {
 // always canonicalized to upper-case hyphenated form regardless of the
 // input's case/hyphenation, so downstream keys/joins agree on one shape.
 const TICKET_ID_PATTERN = /^(BL|GH)-?(\d+)/i;
+const TICKET_ID_ANYWHERE_PATTERN = /\b(BL|GH)-?(\d+)/i;
 
 export function extractTicketId(task: string): string | null {
   const match = task.match(TICKET_ID_PATTERN);
+  return match ? `${match[1].toUpperCase()}-${match[2]}` : null;
+}
+
+/** Like extractTicketId but matches BL/GH ids anywhere in prose (e.g. coordinator notes). */
+export function findTicketIdInText(text: string): string | null {
+  const match = text.match(TICKET_ID_ANYWHERE_PATTERN);
   return match ? `${match[1].toUpperCase()}-${match[2]}` : null;
 }
 

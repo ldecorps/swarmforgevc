@@ -13,6 +13,8 @@
 ;;   BABYSITTER_OBSERVE_INTERVAL_MS  default 1200000 (20 min)
 ;;   BABYSITTER_POLL_MS              wake-queue poll cadence (default 5000)
 ;;   BABYSITTER_DEBOUNCE_MS          min gap between fires (default 30000)
+;;   BABYSITTER_ASSESS_INTERVAL_MS   claim-progress scan cadence (default 60000)
+;;   BABYSITTER_CLAIM_ALERT_COOLDOWN_MS per-role claim alert debounce (default 600000)
 
 (ns babysitter-runtime
   (:require [babashka.fs :as fs]
@@ -22,6 +24,7 @@
 
 (def script-dir (str (fs/parent (fs/canonicalize *file*))))
 (load-file (str (fs/path script-dir "babysitter_lib.bb")))
+(load-file (str (fs/path script-dir "babysitter_assess_lib.bb")))
 
 (defn usage []
   (binding [*out* *err*]
@@ -53,6 +56,14 @@
 (def debounce-ms
   (or (some-> (System/getenv "BABYSITTER_DEBOUNCE_MS") parse-long)
       babysitter-lib/default-debounce-ms))
+
+(def assess-interval-ms
+  (or (some-> (System/getenv "BABYSITTER_ASSESS_INTERVAL_MS") parse-long)
+      60000))
+
+(def claim-alert-cooldown-ms
+  (or (some-> (System/getenv "BABYSITTER_CLAIM_ALERT_COOLDOWN_MS") parse-long)
+      600000))
 
 (defn now-ms [] (System/currentTimeMillis))
 
@@ -127,29 +138,74 @@
       (do (log! "wake-failed" (name reason))
           false))))
 
+(defn append-queue-events! [events]
+  (when (seq events)
+    (fs/create-dirs state-dir)
+    (spit (str wake-queue)
+          (->> events
+               (map #(json/generate-string %))
+               (str/join "\n")
+               (#(str % "\n")))
+          :append true)))
+
+(defn claim-alert-cooldown-ok? [st role severity now-ms]
+  (let [key (str role ":" severity)
+        last-ms (get-in st [:claim-alert-last-ms key] 0)]
+    (>= (- now-ms last-ms) claim-alert-cooldown-ms)))
+
+(defn record-claim-alerts! [st assessments now-ms]
+  (reduce (fn [s a]
+            (assoc-in s [:claim-alert-last-ms (str (:role a) ":" (:severity a))] now-ms))
+          st
+          assessments))
+
+(defn scan-and-enqueue-claim-risks! [st now-ms]
+  (let [risks (babysitter-assess-lib/scan-claim-risks project-root {:now-ms now-ms})
+        fresh (->> risks
+                   (filter #(claim-alert-cooldown-ok? st (:role %) (:severity %) now-ms))
+                   (map babysitter-assess-lib/claim-progress-wake-event)
+                   vec)]
+    (when (seq fresh)
+      (append-queue-events! fresh)
+      (log! "claim-risk-enqueued" (count fresh) (->> fresh (map :role) (str/join ","))))
+    (if (seq fresh)
+      (record-claim-alerts! st fresh now-ms)
+      st)))
+
+(defn assess-due? [st now-ms]
+  (let [last (:last-assess-ms st 0)]
+    (or (zero? last) (>= (- now-ms last) assess-interval-ms))))
+
 (defn tick! []
   (if-not (fs/exists? enabled-file)
     (do (log! "disabled (no enabled file)") false)
-    (let [st (read-state)
+    (let [st0 (read-state)
           now (now-ms)
+          assess? (assess-due? st0 now)
+          st1 (cond-> (if assess?
+                        (scan-and-enqueue-claim-risks! st0 now)
+                        st0)
+                assess? (assoc :last-assess-ms now))
           events (read-queue)
           fire? (babysitter-lib/should-fire-observe?
                  {:now-ms now
-                  :last-observe-ms (:last-observe-ms st)
-                  :last-fire-ms (:last-fire-ms st)
+                  :last-observe-ms (:last-observe-ms st1)
+                  :last-fire-ms (:last-fire-ms st1)
                   :interval-ms observe-interval-ms
                   :debounce-ms debounce-ms
                   :pending-count (count events)})
           timer-due? (babysitter-lib/next-observe-due?
-                      now (:last-observe-ms st) observe-interval-ms)
+                      now (:last-observe-ms st1) observe-interval-ms)
           reason (babysitter-lib/classify-wake-reason events timer-due?)]
       (when fire?
         (when (fire-observe! events reason)
           (clear-queue!)
-          (write-state! (assoc st
+          (write-state! (assoc st1
                                :last-observe-ms now
                                :last-fire-ms now
                                :last-reason (name reason)))))
+      (when (and assess? (not fire?))
+        (write-state! st1))
       fire?)))
 
 (defn claim-pid! []

@@ -37,7 +37,8 @@
 ;; process that already owns delivery now also owns liveness, so the
 ;; extension host becomes a pure observer instead of running its own
 ;; setInterval sweep.
-(def chase-sweep-every-cycles 5)
+;; Chase + BL-528 claim-progress sweeps run every N handoffd poll cycles (1s each).
+(def chase-sweep-every-cycles 10)
 (def chase-sweep-config
   {:chaseIntervalSeconds 5
    :chaseTimeoutSeconds 30
@@ -45,7 +46,12 @@
    :stuckInProcessTimeoutSeconds 60
    :respawnCooldownSeconds 300
    :chaseBackoffBaseSeconds 30
-   :chaseBackoffMaxSeconds 300})
+   :chaseBackoffMaxSeconds 300
+   ;; BL-528: claim-without-progress (git HEAD unchanged since claim).
+   :claim-idle-timeout-ms (* 20 60 1000)
+   :nudge-threshold 1
+   :bounce-threshold 6
+   :halt-threshold 10})
 
 ;; Endless NO_TASK-spin circuit breaker: pane activity hashing alone cannot
 ;; see a busy-loop that keeps changing the pane with the same idle ritual.
@@ -296,11 +302,31 @@
                                           :log-fn (fn [tag sess detail] (log! tag sess detail))
                                           :text text)))
 
+(defn recipient-pane-busy?
+  "BL-135 parity on the delivery path: mail lands in inbox/new either way;
+   do not inject wake spam while the recipient is mid-turn."
+  [socket roles role]
+  (when-let [ri (get roles role)]
+    (let [pane (try (capture-pane-text socket (:session ri)) (catch Exception _ ""))]
+      (chase-sweep-lib/actively-processing? pane))))
+
 (defn maybe-notify!
-  "Tmux wake after mailbox delivery. Skipped when SWARMFORGE_MAILBOX_ONLY=1."
-  [socket session role recipient-path agent]
-  (if (tmux-inject-disabled?)
+  "Tmux wake after mailbox delivery. Skipped when SWARMFORGE_MAILBOX_ONLY=1,
+   the inbox file already existed (duplicate delivery), or the recipient pane
+   is actively working a turn (BL-135 / mono-router resident mid-task)."
+  [socket roles session role recipient-path agent & {:keys [new-delivery?]
+                                                     :or {new-delivery? true}}]
+  (cond
+    (not new-delivery?)
+    (log! "deliver-notify-skip-duplicate" role (str recipient-path))
+
+    (tmux-inject-disabled?)
     (log! "delivered-mailbox-only" role (str recipient-path))
+
+    (recipient-pane-busy? socket roles role)
+    (log! "deliver-notify-skip-busy" role (str recipient-path))
+
+    :else
     (notify! socket session agent)))
 
 (defn move-with-collision
@@ -345,26 +371,31 @@
         (spit (str path ".error") (str reason "\n"))))))
 
 
-;; Babysitter hawk (outside chain): after a successful handoff delivery,
-;; enqueue a wake so the idle babysitter observes. No-op unless
+;; Babysitter hawk (outside chain): enqueue structured wake events. No-op unless
 ;; .swarmforge/babysitter/enabled exists (babysit.sh creates it).
-(defn enqueue-babysitter-wake!
-  [sender-role recipients path headers]
+(defn enqueue-babysitter-event!
+  [event]
   (let [enabled (fs/path state-dir "babysitter" "enabled")
         queue (fs/path state-dir "babysitter" "wake-queue.jsonl")]
     (when (fs/exists? enabled)
       (try
         (fs/create-dirs (fs/parent queue))
-        (let [event {:type "handoff"
-                     :from (str sender-role)
-                     :to (str/join "," recipients)
-                     :path (str path)
-                     :task (or (get headers "task") "")
-                     :at (str (java.time.Instant/now))}]
-          (spit (str queue) (str (json/generate-string event) "\n") :append true)
-          (log! "babysitter-wake-enqueued" (str path)))
+        (spit (str queue)
+              (str (json/generate-string (assoc event :at (str (java.time.Instant/now)))) "\n")
+              :append true)
+        (log! "babysitter-wake-enqueued" (or (:type event) "event")
+              (or (:role event) (:path event) ""))
         (catch Exception e
           (log! "babysitter-wake-error" (.getMessage e)))))))
+
+(defn enqueue-babysitter-wake!
+  [sender-role recipients path headers]
+  (enqueue-babysitter-event!
+   {:type "handoff"
+    :from (str sender-role)
+    :to (str/join "," recipients)
+    :path (str path)
+    :task (or (get headers "task") "")}))
 
 (defn deliver! [roles socket sender-role path]
   (let [filename (fs/file-name path)]
@@ -388,9 +419,10 @@
                 (when-not role-info
                   (throw (ex-info (str "unknown recipient " recipient) {:recipient recipient})))
                 (let [target (target-path role-info filename recipient)
-                      delivered (add-delivery-headers message recipient)]
+                      delivered (add-delivery-headers message recipient)
+                      new-delivery? (not (fs/exists? target))]
                   (fs/create-dirs (fs/parent target))
-                  (when-not (fs/exists? target)
+                  (when new-delivery?
                     ;; BL-365: durable write - the recipient's inbox copy is
                     ;; a SEPARATE file from the sender's own outbox/sent
                     ;; copy, and carries the identical crash-durability gap
@@ -407,7 +439,8 @@
                       {:recipient recipient :headers headers} (now)))
                     (catch Exception e
                       (log! "llm-cost-ledger-append-error" recipient (.getMessage e))))
-                  (maybe-notify! socket (:session role-info) recipient (str target) (:agent role-info)))))
+                  (maybe-notify! socket roles (:session role-info) recipient (str target)
+                                 (:agent role-info) :new-delivery? new-delivery?))))
             (when (= "rule_proposal" (get headers "type"))
               (append-rule-proposal! headers))
             (move-with-collision path (sent-dir (get roles sender-role)))
@@ -452,12 +485,14 @@
 (defn startup-notify-pending! [roles socket]
   (when-not (tmux-inject-disabled?)
     (doseq [[_ role-info] roles
-            :when (seq (inbox-new-files role-info))]
-      (log! "startup-notify" (:role role-info))
+            :let [role (:role role-info)]
+            :when (and (seq (inbox-new-files role-info))
+                       (not (recipient-pane-busy? socket roles role)))]
+      (log! "startup-notify" role)
       (try
         (notify! socket (:session role-info) (:agent role-info))
         (catch Exception e
-          (log! "startup-notify-error" (:role role-info) (.getMessage e)))))))
+          (log! "startup-notify-error" role (.getMessage e)))))))
 
 (defn poll-once! []
   (let [roles (load-roles)
@@ -1070,9 +1105,17 @@
                   :get-role-head-commit
                   (fn [role] (worktree-head-commit-10 (load-roles) role))
                   :on-claim-idle-bounce!
-                  (fn [role _fp progress]
+                  (fn [role fp progress]
                     (log! "claim-progress-bounce" role
-                          (claim-progress-lib/format-bounce-log role (:reclaims progress))))
+                          (claim-progress-lib/format-bounce-log role (:reclaims progress)))
+                    (enqueue-babysitter-event!
+                     {:type "claim-progress"
+                      :from "handoffd"
+                      :role role
+                      :severity "critical"
+                      :reclaims (:reclaims progress)
+                      :handoff (str fp)
+                      :hint "BL-528 bounce — archive stale claim or nudge commit before halt."}))
                   :on-claim-idle-halt!
                   (fn [role _fp progress]
                     (halt-for-claim-progress! role progress))}]

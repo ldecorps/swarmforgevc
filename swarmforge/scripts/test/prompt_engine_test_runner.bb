@@ -144,6 +144,17 @@
          (prompt-engine-lib/stable-bootstrap-prefix)
          (:stable-prefix (prompt-engine-lib/compose "coder" claude-ctx)))
 
+;; ── engineering split: reference/ is on-demand, not inlined at boot ─────────
+(assert-true "reference engineering-detailed body is not in the stable prefix"
+             (not (str/includes? (prompt-engine-lib/stable-prefix-text)
+                                 "acquire-events-lock!")))
+(assert-true "slim engineering.prompt still inlined"
+             (str/includes? (prompt-engine-lib/stable-prefix-text) "# Engineering Rules"))
+(let [stable-len (count (prompt-engine-lib/stable-prefix-text))]
+  (assert-true "stable prefix under 60KB after engineering split (< 61440 chars)"
+               (< stable-len 61440))
+  (println (str "stable-prefix chars: " stable-len)))
+
 ;; ── report ──────────────────────────────────────────────────────────────────
 (if (empty? @failures)
   (println "ALL PASS")

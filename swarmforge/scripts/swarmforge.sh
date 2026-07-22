@@ -191,7 +191,7 @@ detect_tmux_base_indexes() {
   local probe_session=""
 
   mkdir -p "$TMUX_SOCKET_DIR"
-  if ! tmux -S "$TMUX_SOCKET" info >/dev/null 2>&1; then
+  if ! tmux -S "$TMUX_SOCKET" list-sessions >/dev/null 2>&1; then
     probe_session="swarmforge-probe-$$"
     tmux -S "$TMUX_SOCKET" new-session -d -s "$probe_session" "sleep 60" >/dev/null
   fi

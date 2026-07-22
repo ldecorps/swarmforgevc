@@ -8,6 +8,8 @@
 (load-file (str (fs/path (fs/parent *file*) "handoff_lib.bb")))
 (load-file (str (fs/path (fs/parent *file*) "branch_claim_guard_lib.bb")))
 (load-file (str (fs/path (fs/parent *file*) "swarm_identity_lib.bb")))
+(load-file (str (fs/path (fs/parent *file*) "backlog_depth_lib.bb")))
+(load-file (str (fs/path (fs/parent *file*) "mono_router_lib.bb")))
 
 (def idle-boundary?
   "Set only when invoked from done_with_current_task.bb, right after it
@@ -19,6 +21,31 @@
   (when (and idle-boundary?
              (handoff-lib/idle-clear-enabled? (handoff-lib/current-role)))
     (handoff-lib/respawn-self! (handoff-lib/current-role))))
+
+;; ── BL-550: non-home resident strands after a merge-up note ───────────────
+;; Pure decision lives in mono-router-lib/rotate-home?; this reads conf text
+;; and prints ROTATE_HOME (instead of NO_TASK) so ready_for_next.sh can hand
+;; off to rotate_to_role.sh. Never fires outside mono-router, never diverts
+;; the home role itself, and never fires while real work is dequeueable.
+
+(defn- mono-router-conf-text []
+  (try (slurp (str (backlog-depth-lib/conf-file-path (handoff-lib/target-root))))
+       (catch Exception _ nil)))
+
+(defn report-no-task-or-rotate! []
+  (let [conf-text (mono-router-conf-text)
+        home-role (mono-router-lib/parse-rotation-home conf-text)]
+    (if (mono-router-lib/rotate-home?
+         {:rotation-router? (mono-router-lib/conf-rotation-router? conf-text)
+          :role (handoff-lib/current-role)
+          :home-role home-role
+          :mailbox-empty? true})
+      (do
+        (println "ROTATE_HOME")
+        (println (str "HOME_ROLE: " home-role)))
+      (do
+        (println "NO_TASK")
+        (maybe-clear-at-idle-boundary!)))))
 
 ;; ── BL-529 pre-turn branch/claim guard ────────────────────────────────────
 ;; Pure decisions live in branch_claim_guard_lib.bb; this is the git/fs IO
@@ -160,9 +187,7 @@
                 ;; next genuinely-dequeueable file.
                 dequeueable          (handoff-lib/resolve-dequeueable-candidates new-files completed-basenames abandoned-basenames)]
             (if (empty? dequeueable)
-              (do
-                (println "NO_TASK")
-                (maybe-clear-at-idle-boundary!))
+              (report-no-task-or-rotate!)
               (let [source-file (first dequeueable)
                     target-file (fs/path in-process-dir (fs/file-name source-file))]
                 (when (fs/exists? target-file)

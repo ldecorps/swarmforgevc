@@ -41,7 +41,9 @@
 
 (let [base-ms 0
       timeout-ms (* 5 60 1000)
-      cfg {:claim-idle-timeout-ms timeout-ms}
+      cfg {:claim-idle-timeout-ms timeout-ms
+           :bounce-threshold 3
+           :halt-threshold 5}
       claimed-commit "aaaa000000"
       advanced-commit "bbbb111111"]
 
@@ -112,19 +114,19 @@
            :nudge
            (claim-progress-lib/decide-claim-idle-action 2 cfg))
 
-  (assert= "decide: reclaims=3 (at bounce-threshold=3) → :bounce"
-           :bounce
-           (claim-progress-lib/decide-claim-idle-action 3 cfg))
-
-  (assert= "decide: reclaims=4 → :bounce"
-           :bounce
-           (claim-progress-lib/decide-claim-idle-action 4 cfg))
-
-  (assert= "decide: reclaims=5 (at halt-threshold=5) → :halt"
-           :halt
+  (assert= "decide: reclaims=5 → :nudge (below bounce)"
+           :nudge
            (claim-progress-lib/decide-claim-idle-action 5 cfg))
 
-  (assert= "decide: reclaims=10 → :halt"
+  (assert= "decide: reclaims=6 (at bounce-threshold=6) → :bounce"
+           :bounce
+           (claim-progress-lib/decide-claim-idle-action 6 cfg))
+
+  (assert= "decide: reclaims=9 → :bounce"
+           :bounce
+           (claim-progress-lib/decide-claim-idle-action 9 cfg))
+
+  (assert= "decide: reclaims=10 (at halt-threshold=10) → :halt"
            :halt
            (claim-progress-lib/decide-claim-idle-action 10 cfg)))
 
@@ -162,8 +164,10 @@
 (let [claim-ms 0
       timeout-ms (* 5 60 1000)
       commit "aaaa000000"
-      cfg (merge claim-progress-lib/default-config
-                 {:claim-idle-timeout-ms timeout-ms})
+      cfg {:claim-idle-timeout-ms timeout-ms
+           :nudge-threshold 1
+           :bounce-threshold 3
+           :halt-threshold 5}
       p0 (claim-progress-lib/make-claim-progress commit claim-ms)
 
       ;; Three consecutive idle reclaim observations
