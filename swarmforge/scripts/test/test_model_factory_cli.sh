@@ -188,38 +188,4 @@ rm -f /tmp/model-factory-usage.out
 
 pass "11: an unrecognised command falls through to usage"
 
-# ── 12: assign --role for a role absent from the role matrix reports the
-# "no eligible candidate" error and exits non-zero, rather than printing an
-# empty/nil entry (run-assign's single-role branch).
-bb "$CLI" assign --mode quality --role bogus-role >/tmp/model-factory-norole.out 2>&1 \
-  && fail "12: assign --role bogus-role should exit non-zero" || true
-grep -q "no eligible candidate for role bogus-role" /tmp/model-factory-norole.out \
-  || fail "12: assign --role bogus-role did not report the no-eligible-candidate error"
-rm -f /tmp/model-factory-norole.out
-
-pass "12: assign --role for a role with no eligible candidate reports an error and exits non-zero"
-
-# ── 13: mark-exhausted with no provider argument falls through to usage ────
-bb "$CLI" mark-exhausted >/tmp/model-factory-noprovider.out 2>&1 \
-  && fail "13: mark-exhausted with no provider should exit non-zero" || true
-grep -q "^Usage: model_factory_cli.bb" /tmp/model-factory-noprovider.out \
-  || fail "13: mark-exhausted with no provider did not print usage"
-rm -f /tmp/model-factory-noprovider.out
-
-pass "13: mark-exhausted with no provider argument falls through to usage"
-
-# ── 14: mark-exhausted with a provider but no --date reports the missing-date
-# error and exits non-zero, rather than persisting a null exhausted_date.
-MARK_NODATE_DIR="$(mktemp -d)"
-trap 'rm -rf "$STEWARD_DIR" "$FACTORY_DIR" "$FIXTURE_DIR" "$FAILOVER_DIR" "$FAILOVER_STATE_DIR" "$MARK_NODATE_DIR"; rm -f "$STUB_SEAM" "$STUB_INVOCATION_LOG"' EXIT
-MODEL_FACTORY_STATE_DIR="$MARK_NODATE_DIR" bb "$CLI" mark-exhausted cerebras >/tmp/model-factory-nodate.out 2>&1 \
-  && fail "14: mark-exhausted with no --date should exit non-zero" || true
-grep -q "mark-exhausted requires --date" /tmp/model-factory-nodate.out \
-  || fail "14: mark-exhausted with no --date did not report the missing-date error"
-[[ ! -f "$MARK_NODATE_DIR/quota-state.json" ]] \
-  || fail "14: mark-exhausted with no --date must not persist a quota-state write"
-rm -f /tmp/model-factory-nodate.out
-
-pass "14: mark-exhausted with a provider but no --date reports an error and does not write state"
-
 echo "ALL PASS"

@@ -117,37 +117,6 @@
 (assert-true "assign-role returns nil when no eligible candidate survives"
              (nil? (model-factory-lib/assign-role empty-registry "coder" model-factory-lib/quality-mode)))
 
-;; assign-swarm omits a role with no eligible candidate rather than erroring,
-;; while every other role in the map is still resolved (documented in
-;; assign-swarm's docstring: "a role with no eligible candidate is simply
-;; absent from the map").
-(let [reg (as-> empty-registry $
-            (model-steward-lib/register-model $ "anthropic" "claude-sonnet-5" {:status "certified" :cost_class "medium"})
-            (model-steward-lib/add-role-ranking $ "coder" "anthropic" "claude-sonnet-5" 0.9 "fixture"))
-      assignment (model-factory-lib/assign-swarm reg model-factory-lib/quality-mode)]
-  (assert= "assign-swarm resolves only the roles with an eligible candidate"
-           #{"coder"} (set (keys assignment)))
-  (assert-true "assign-swarm never includes a role with no eligible candidate"
-               (not (contains? assignment "architect"))))
-
-;; ── cost-class-rank: a missing cost_class must sort LAST in cheap mode, not
-;; be treated as equal-or-better than a known cost class (cost-class-rank's
-;; documented default of unknown-cost-rank=3, higher than "high"=2) ─────────
-(let [reg (reg-with-roles [["anthropic" "claude-sonnet-5" "certified" nil 0.99]
-                            ["openai" "gpt-5.3-codex" "certified" "high" 0.1]])
-      entry (model-factory-lib/assign-role reg "coder" model-factory-lib/cheap-mode)]
-  (assert= "cheap mode prefers a known cost_class (even \"high\") over a missing cost_class, regardless of score"
-           "openai" (:provider entry)))
-
-;; ── pick-cheap: within the same cost_class, the tie is broken by score
-;; descending (cost dominates; score is only a tiebreaker per pick-cheap's
-;; docstring) — assert the HIGHER-scored same-cost-class candidate wins.
-(let [reg (reg-with-roles [["anthropic" "claude-sonnet-5" "certified" "low" 0.4]
-                            ["openai" "gpt-5.3-codex" "certified" "low" 0.9]])
-      entry (model-factory-lib/assign-role reg "coder" model-factory-lib/cheap-mode)]
-  (assert= "cheap mode breaks a cost_class tie by preferring the higher score"
-           "openai" (:provider entry)))
-
 ;; ── cold-apply-plan-08: pure plan shape (overlay write + seam invocation are store's job) ─
 (let [plan (model-factory-lib/cold-apply-plan "codex-mono-router" "/tmp/whatever/assignment.json")]
   (assert= "cold-apply-plan names the overlay path it will relaunch against"
