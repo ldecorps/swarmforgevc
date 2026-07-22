@@ -28,6 +28,9 @@
   "You have new handoff mail. If idle, run ready_for_next.sh.")
 
 (def in-process-resume-chat-message
+  "You already have in_process work. Continue the current TASK; do not run ready_for_next.sh again.")
+
+(def in-process-resume-shell-message
   "STOP. You already have in_process handoff work. Do NOT run ready_for_next.sh again.
 Open the TASK already shown (or re-read inbox/in_process), execute the PAYLOAD with your tools, implement the TASK_NAME from backlog/active, commit, and git_handoff onward.
 USE YOUR TOOLS NOW. Re-printing the task or chatting without edits is failure.")
@@ -113,10 +116,12 @@ USE YOUR TOOLS NOW. Re-printing the task or chatting without edits is failure.")
 (defn in-process-resume-steps
   "Stuck-nudge for work already in in_process. Always a chat order — never
    re-run ready_for_next (that just reprints the same TASK and feeds the
-   aider 'Added N lines' loop)."
+   aider 'Added N lines' loop). Chat-style agents get a short reminder;
+   shell-run-script agents (aider) keep the explicit STOP wording."
   [agent]
   (let [text (case (:wake-style (capabilities agent))
                :mock "MOCK_RESUME_IN_PROCESS"
+               :shell-run-script in-process-resume-shell-message
                in-process-resume-chat-message)]
     [{:op :send-literal :text text}
      {:op :submit}]))

@@ -167,7 +167,15 @@ You are the coordinator.
 When QA passes a parcel (`git_handoff` or `note` to you with the approved commit
 and task/backlog id), QA itself lands that commit on `main` and pushes origin
 (see QA.prompt). Your job is backlog bookkeeping ONLY — you run NO git merge and
-NO push:
+NO push.
+
+**Close gate (enforced in code):** `commit_integrity_cli.bb` refuses an
+`active/` → `done/` move unless your mailbox already contains a **QA** `git_handoff`
+or `note` referencing that ticket id. A coder or architect "bookkeeping stale"
+`note` does **not** authorize close — wait for QA's approval handoff. On a
+successful close, the CLI also abandons every role's pending `new/` and
+`in_process/` handoffs for that ticket so the pipeline cannot keep routing
+closed work.
 0. **Make the merged code actually RUN, before anything else** (BL-328):
    `bb swarmforge/scripts/build_freshness_cli.bb <project-root> sync`
    A merge does NOT restart anything. Every long-lived process (bridge, bot,
