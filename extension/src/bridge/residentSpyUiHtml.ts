@@ -10,12 +10,20 @@ export function getResidentSpyUiHtml(): string {
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
+<meta name="mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+<meta name="theme-color" content="#0d1117"/>
 <title>${MONO_ROUTER_LIVE_SCREEN_NAME}</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
   :root {
     color-scheme: dark;
     --app-height: 100dvh;
+    --safe-top: env(safe-area-inset-top, 0px);
+    --safe-right: env(safe-area-inset-right, 0px);
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
+    --safe-left: env(safe-area-inset-left, 0px);
   }
   * { box-sizing: border-box; }
   html, body {
@@ -176,11 +184,16 @@ export function getResidentSpyUiHtml(): string {
     flex-direction: column;
     background: var(--tg-theme-bg-color, #0d1117);
     color: var(--tg-theme-text-color, #e6edf3);
-    padding:
-      max(0px, env(safe-area-inset-top))
-      max(0px, env(safe-area-inset-right))
-      max(0px, env(safe-area-inset-bottom))
-      max(0px, env(safe-area-inset-left));
+    height: var(--app-height);
+    max-height: var(--app-height);
+    padding: var(--safe-top) var(--safe-right) var(--safe-bottom) var(--safe-left);
+  }
+  .pane-fullscreen:fullscreen,
+  .pane-fullscreen:-webkit-full-screen {
+    width: 100%;
+    height: 100%;
+    max-height: none;
+    padding: var(--safe-top) var(--safe-right) var(--safe-bottom) var(--safe-left);
   }
   body.pane-fullscreen-active .pane-fullscreen {
     display: flex;
@@ -257,35 +270,108 @@ export function getResidentSpyUiHtml(): string {
   var fsTitleBase = '';
   var lastPanes = [];
 
+  function inTelegram() {
+    return !!(tg && tg.initData);
+  }
+
+  function isBrowserFullscreen() {
+    return !!(document.fullscreenElement || document.webkitFullscreenElement);
+  }
+
+  function applySafeAreas() {
+    if (!tg || !tg.safeAreaInset) return;
+    var inset = tg.safeAreaInset;
+    if (inset.top) document.documentElement.style.setProperty('--safe-top', inset.top + 'px');
+    if (inset.right) document.documentElement.style.setProperty('--safe-right', inset.right + 'px');
+    if (inset.bottom) document.documentElement.style.setProperty('--safe-bottom', inset.bottom + 'px');
+    if (inset.left) document.documentElement.style.setProperty('--safe-left', inset.left + 'px');
+  }
+
   function applyViewportHeight() {
-    if (!tg) return;
-    var h = tg.viewportStableHeight || tg.viewportHeight;
-    if (h && h > 0) {
+    var h = 0;
+    if (window.visualViewport && window.visualViewport.height > 0) {
+      h = Math.round(window.visualViewport.height);
+    } else if (tg) {
+      h = tg.viewportStableHeight || tg.viewportHeight || 0;
+    }
+    if (!h) h = window.innerHeight;
+    if (h > 0) {
       document.documentElement.style.setProperty('--app-height', h + 'px');
     }
+    applySafeAreas();
   }
 
   if (tg && typeof tg.onEvent === 'function') {
     tg.onEvent('viewportChanged', applyViewportHeight);
-    if (typeof tg.on === 'function') tg.on('viewportChanged', applyViewportHeight);
+    tg.onEvent('safeAreaChanged', applySafeAreas);
+    tg.onEvent('fullscreenChanged', applyViewportHeight);
+    if (typeof tg.on === 'function') {
+      tg.on('viewportChanged', applyViewportHeight);
+      tg.on('safeAreaChanged', applySafeAreas);
+      tg.on('fullscreenChanged', applyViewportHeight);
+    }
   }
+  window.addEventListener('resize', applyViewportHeight);
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', applyViewportHeight);
+  }
+  document.addEventListener('fullscreenchange', applyViewportHeight);
+  document.addEventListener('webkitfullscreenchange', applyViewportHeight);
   applyViewportHeight();
 
-  function enterTelegramFullscreen() {
-    if (!tg) return;
-    tg.expand();
+  function requestBrowserFullscreen() {
+    if (isBrowserFullscreen()) return;
+    var target = paneFullscreenEl;
+    var req =
+      target.requestFullscreen ||
+      target.webkitRequestFullscreen ||
+      document.documentElement.requestFullscreen ||
+      document.documentElement.webkitRequestFullscreen;
+    if (!req) return;
+    try {
+      var p = req.call(target);
+      if (p && typeof p.catch === 'function') p.catch(function () {});
+    } catch (e) {}
+  }
+
+  function exitBrowserFullscreen() {
+    if (!isBrowserFullscreen()) return;
+    var exit = document.exitFullscreen || document.webkitExitFullscreen;
+    if (!exit) return;
+    try {
+      var p = exit.call(document);
+      if (p && typeof p.catch === 'function') p.catch(function () {});
+    } catch (e) {}
+  }
+
+  function enterImmersiveFullscreen() {
     applyViewportHeight();
-    if (typeof tg.requestFullscreen === 'function') {
-      tg.requestFullscreen();
+    if (inTelegram()) {
+      tg.expand();
+      if (typeof tg.setHeaderColor === 'function') {
+        tg.setHeaderColor('bg_color');
+      }
+      if (typeof tg.requestFullscreen === 'function') {
+        try {
+          tg.requestFullscreen();
+        } catch (e) {}
+      }
+    } else {
+      requestBrowserFullscreen();
     }
   }
 
-  function exitTelegramFullscreen() {
-    if (!tg) return;
-    if (typeof tg.exitFullscreen === 'function' && tg.isFullscreen) {
-      tg.exitFullscreen();
+  function exitImmersiveFullscreen() {
+    if (inTelegram()) {
+      if (typeof tg.exitFullscreen === 'function' && tg.isFullscreen) {
+        try {
+          tg.exitFullscreen();
+        } catch (e) {}
+      }
+      tg.expand();
+    } else {
+      exitBrowserFullscreen();
     }
-    tg.expand();
     applyViewportHeight();
   }
 
@@ -339,15 +425,25 @@ export function getResidentSpyUiHtml(): string {
     return html;
   }
 
+  function buildFullscreenHeadHtml(pane, label, paneId, showClaimEntered) {
+    if (!pane || pane.available === false) {
+      return buildPaneHeadHtml(null, label, paneId, false);
+    }
+    if (pane.ticketId) {
+      return buildTicketBlockHtml(pane) + '<div class="pane-kind">' + escapeHtml(label) + '</div>';
+    }
+    return buildPaneHeadHtml(pane, label, paneId, showClaimEntered);
+  }
+
   function applyFullscreenMode() {
     var active = !!focusPane;
     document.body.classList.toggle('pane-fullscreen-active', active);
     paneFullscreenEl.hidden = !active;
     if (active) {
-      enterTelegramFullscreen();
       syncFullscreenContent();
+      enterImmersiveFullscreen();
     } else {
-      exitTelegramFullscreen();
+      exitImmersiveFullscreen();
     }
   }
 
@@ -357,12 +453,10 @@ export function getResidentSpyUiHtml(): string {
     if (!entry) return;
     var pane = entry.pane;
     var showClaim = entry.id === 'resident' || entry.id === 'coder';
-    var ticketHtml = buildTicketBlockHtml(pane);
-    fsHeadEl.innerHTML = ticketHtml + buildPaneHeadHtml(pane, entry.label, entry.id, showClaim);
+    fsHeadEl.innerHTML = buildFullscreenHeadHtml(pane, entry.label, entry.id, showClaim);
     if (pane && pane.claimEnteredAtMs) {
       fsClaimEnteredAtMs = pane.claimEnteredAtMs;
-      var titleEl = fsHeadEl.querySelector('[data-pane-title="' + entry.id + '"]');
-      fsTitleBase = titleEl ? titleEl.textContent.replace(/ · entered .*$/, '') : '';
+      fsTitleBase = '';
     } else {
       fsClaimEnteredAtMs = null;
       fsTitleBase = '';
@@ -577,10 +671,11 @@ export function getResidentSpyUiHtml(): string {
           titleEl.textContent = base + ' · ' + formatClaimEnteredAgo(claimEnteredByPaneId[paneId]);
         }
       }
-      if (focusPane === paneId && fsTitleBase) {
-        var fsTitleEl = fsHeadEl.querySelector('[data-pane-title="' + paneId + '"]');
-        if (fsTitleEl) {
-          fsTitleEl.textContent = fsTitleBase + ' · ' + formatClaimEnteredAgo(claimEnteredByPaneId[paneId]);
+      if (focusPane === paneId && fsClaimEnteredAtMs) {
+        var fsMetaEl = fsHeadEl.querySelector('.ticket-strip-meta');
+        if (fsMetaEl) {
+          var fsMetaBase = fsMetaEl.textContent.replace(/ · entered .*$/, '');
+          fsMetaEl.textContent = fsMetaBase + ' · ' + formatClaimEnteredAgo(claimEnteredByPaneId[paneId]);
         }
       }
     }
@@ -588,6 +683,13 @@ export function getResidentSpyUiHtml(): string {
       ticketStripMetaEl.textContent = ticketStripMetaBase
         ? ticketStripMetaBase + ' · ' + formatClaimEnteredAgo(ticketStripClaimEnteredAtMs)
         : formatClaimEnteredAgo(ticketStripClaimEnteredAtMs);
+    }
+    if (fsClaimEnteredAtMs && !paneFullscreenEl.hidden) {
+      var fsMetaEl = fsHeadEl.querySelector('.ticket-strip-meta');
+      if (fsMetaEl) {
+        var fsMetaBase = fsMetaEl.textContent.replace(/ · entered .*$/, '');
+        fsMetaEl.textContent = fsMetaBase + ' · ' + formatClaimEnteredAgo(fsClaimEnteredAtMs);
+      }
     }
   }, 1000);
 })();
