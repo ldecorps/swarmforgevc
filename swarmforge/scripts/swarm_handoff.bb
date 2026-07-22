@@ -8,6 +8,8 @@
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "handoff_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "handoff_inject_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "backlog_depth_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "pipeline_stage_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "ticket_close_guard_lib.bb")))
 
 (def usage-text
   (str "Usage: swarm_handoff.sh <draft-file>\n\n"
@@ -251,7 +253,12 @@
                              (str/blank? task-name)
                              (conj "Missing required header 'task' for git_handoff.")
                              (> (count (or task-name "")) 80)
-                             (conj (format "Header 'task' must be no longer than 80 characters; got %d." (count task-name)))))
+                             (conj (format "Header 'task' must be no longer than 80 characters; got %d." (count task-name)))
+                             (and (not (str/blank? task-name))
+                                  (ticket-close-guard-lib/git-handoff-blocked-for-task?
+                                   (project-root) task-name))
+                             (conj (format "Cannot send git_handoff for closed ticket %s (backlog/done/)."
+                                           (pipeline-stage-lib/extract-ticket-id task-name)))))
                      (and (not= "git_handoff" type) (not (str/blank? commit)))
                      (conj "Header 'commit' is only allowed for git_handoff.")
                      (and (not= "git_handoff" type) (not (str/blank? task-name)))
