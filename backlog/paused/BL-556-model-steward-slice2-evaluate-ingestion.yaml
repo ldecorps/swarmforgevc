@@ -2,9 +2,9 @@ id: BL-556
 title: "Model Steward Slice 2 — `evaluate` ingests captured recruiter/bakeoff artifacts into the capability registry + certification report"
 milestone: M5
 type: feature
-status: needs_design
+status: todo
 epic: swarm-intelligence-layer
-human_approval: pending
+human_approval: approved
 approval_context: |
   Drains BL-547 Slice 2 out of specs/features/BL-547-model-steward-slices-2-3.feature.draft
   into its own ticket + live feature file. Two design forks the human ruled on

@@ -2,9 +2,9 @@ id: BL-557
 title: "Model Steward Slice 3 — graduate role prompt to coordinator-assignable, generate compatibility docs from the registry (no standing pane)"
 milestone: M5
 type: feature
-status: needs_design
+status: todo
 epic: swarm-intelligence-layer
-human_approval: pending
+human_approval: approved
 approval_context: |
   Drains BL-547 Slice 3 out of specs/features/BL-547-model-steward-slices-2-3.feature.draft
   into its own ticket + live feature file. Human ruling 2026-07-22 (via Cursor
