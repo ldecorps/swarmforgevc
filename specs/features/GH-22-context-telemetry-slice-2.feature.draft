@@ -1,0 +1,22 @@
+Feature: Context telemetry — live capture wiring (Slice 2, parked)
+
+  # GH-22 Slice 2 — NOT built yet, NOT executed by the acceptance runner
+  # (BL-233 slice scoping: this is a `.feature.draft`, not a live `.feature`).
+  # Wires context_telemetry_lib.bb's record path into real agent-invocation
+  # call sites (mono-router respawn / launch wrapper / provider response
+  # handling) so events populate from live sessions instead of fixtures.
+  # Move these scenarios into GH-22-context-telemetry-capture.feature only
+  # once Slice 2 is actually implemented.
+
+  # GH-22 live-invocation-emits-event-06
+  Scenario: a real agent invocation emits a telemetry event automatically
+    Given a live agent pane completes one provider invocation
+    When the invocation wiring records the event
+    Then the telemetry log for that agent/session gains exactly one new event
+    And the event's token fields match the provider response actually seen
+
+  # GH-22 live-compaction-detected-07
+  Scenario: a live compaction is detected and recorded without manual input
+    Given a live agent session triggers a context compaction
+    When the invocation wiring observes the compaction
+    Then the next recorded event for that session is marked as a compaction
