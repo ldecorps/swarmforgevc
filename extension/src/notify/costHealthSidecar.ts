@@ -8,6 +8,8 @@ import { RoleWorktree, readChaserTelemetryEvents, ChaserTelemetryEvent } from '.
 import { runGitLog, deriveTicketLifecycles, TicketLifecycleEvent } from '../metrics/gitHistoryAdapter';
 import { computeSuiteDurationTrend, SuiteDurationTrendResult } from '../metrics/deliveryMetrics';
 import { computeCostPerTicketSeries, CostPerTicketSeriesResult, COST_PER_TICKET_BASIS } from '../metrics/costPerTicket';
+import { LLM_COST_HORIZONS_MS, LlmCostHorizon, LlmCostRollupGroup, rollupLlmInvocationsByOrigin } from '../metrics/llmCostLedger';
+import { readLlmInvocationRecords } from '../metrics/llmCostLedgerStore';
 
 // BL-213: the daily cost & health sidecar - a deterministic, committed
 // carrier (docs/briefings/<date>.json) for BL-100's producers, never
@@ -105,6 +107,12 @@ export interface CostHealthSidecar {
   // carries no such field, same "purely additive, schemaVersion unchanged"
   // posture as suiteDurationTrend above.
   costPerTicket?: CostPerTicketSummary;
+  // BL-551 (sidecar-09): additive, optional - top expensive LLM-invocation
+  // origins (rolled up by role+trigger) per named horizon, folded in from
+  // the unified cost ledger. Same "purely additive, schemaVersion
+  // unchanged" posture as every other optional field here; absent when no
+  // ledger records exist yet for a given main worktree.
+  topExpensiveOriginsByHorizon?: Record<LlmCostHorizon, LlmCostRollupGroup[]>;
 }
 
 // ── daily bucketing (pure) ───────────────────────────────────────────────
@@ -292,7 +300,8 @@ export function buildCostHealthSidecar(
   closedSeries: TrendSeriesPoint[],
   topN: number = DEFAULT_TOP_EXPENSIVE_TICKETS,
   suiteDurationTrend?: SuiteDurationTrendResult,
-  costPerTicketSeries?: CostPerTicketSeriesResult
+  costPerTicketSeries?: CostPerTicketSeriesResult,
+  topExpensiveOriginsByHorizon?: Record<LlmCostHorizon, LlmCostRollupGroup[]>
 ): CostHealthSidecar {
   const sidecar: CostHealthSidecar = {
     schemaVersion: COST_HEALTH_SIDECAR_SCHEMA_VERSION,
@@ -324,6 +333,9 @@ export function buildCostHealthSidecar(
       series: costPerTicketSeries.series,
       basis: COST_PER_TICKET_BASIS,
     };
+  }
+  if (topExpensiveOriginsByHorizon) {
+    sidecar.topExpensiveOriginsByHorizon = topExpensiveOriginsByHorizon;
   }
   return sidecar;
 }
@@ -379,6 +391,32 @@ function renderCostPerTicketLines(costPerTicket: CostPerTicketSummary | undefine
   ];
 }
 
+// Absent (a sidecar predating BL-551, or a main worktree with no ledger
+// records yet) renders nothing - same "hidden, not fabricated" posture as
+// renderCostPerTicketLines above. Renders one line per horizon, each
+// listing its rolled-up groups (already summed-cost descending from
+// rollupLlmInvocationsByOrigin) with unknown-cost origins noted rather than
+// silently folded into the total.
+function renderTopExpensiveOriginsLines(byHorizon: Record<LlmCostHorizon, LlmCostRollupGroup[]> | undefined): string[] {
+  if (!byHorizon) {
+    return [];
+  }
+  const lines: string[] = ['', '**Top expensive origins:**'];
+  for (const horizon of Object.keys(LLM_COST_HORIZONS_MS) as LlmCostHorizon[]) {
+    const groups = byHorizon[horizon];
+    if (!groups || groups.length === 0) {
+      continue;
+    }
+    lines.push(`- ${horizon}:`);
+    for (const group of groups) {
+      const label = Object.values(group.key).filter((v) => v !== null).join('/') || 'unknown origin';
+      const unknownNote = group.unknownCostCount > 0 ? ` (${group.unknownCostCount} unpriced)` : '';
+      lines.push(`  - ${label}: $${group.costUsd.toFixed(2)}${unknownNote}`);
+    }
+  }
+  return lines.length > 2 ? lines : [];
+}
+
 function renderFlowBalanceLine(flow: CostHealthSidecar['flowBalance']): string {
   return (
     `**Flow balance:** specced ${flow.speccedPerDay.value}/day ${trendArrow(flow.speccedPerDay.trend)}, ` +
@@ -432,6 +470,7 @@ export function renderCostHealthSection(sidecar: CostHealthSidecar | null): stri
     ...renderAgentLines(sidecar.agents),
     ...renderExpensiveTicketLines(sidecar.topExpensiveTickets),
     ...renderCostPerTicketLines(sidecar.costPerTicket),
+    ...renderTopExpensiveOriginsLines(sidecar.topExpensiveOriginsByHorizon),
     '',
     renderFlowBalanceLine(sidecar.flowBalance),
     '',
@@ -439,6 +478,27 @@ export function renderCostHealthSection(sidecar: CostHealthSidecar | null): stri
     ...renderAnomalyLines(sidecar.resourceAnomalies, sidecar.resourceSamplesObserved === true),
   ];
   return lines.join('\n');
+}
+
+const DEFAULT_TOP_EXPENSIVE_ORIGINS = 5;
+
+// BL-551 (sidecar-09): reads the durable ledger and rolls it up by
+// role+trigger for each named horizon, top-N by summed cost. A main
+// worktree with no ledger yet (readLlmInvocationRecords degrades to [])
+// yields empty groups per horizon, which renderTopExpensiveOriginsLines
+// then omits entirely rather than rendering an empty section.
+function computeTopExpensiveOriginsByHorizon(targetPath: string, nowMs: number): Record<LlmCostHorizon, LlmCostRollupGroup[]> {
+  const records = readLlmInvocationRecords(targetPath);
+  const result = {} as Record<LlmCostHorizon, LlmCostRollupGroup[]>;
+  for (const horizon of Object.keys(LLM_COST_HORIZONS_MS) as LlmCostHorizon[]) {
+    const groups = rollupLlmInvocationsByOrigin(records, {
+      horizonMs: LLM_COST_HORIZONS_MS[horizon],
+      nowMs,
+      groupBy: ['role', 'trigger'],
+    });
+    result[horizon] = groups.slice(0, DEFAULT_TOP_EXPENSIVE_ORIGINS);
+  }
+  return result;
 }
 
 // ── impure orchestrator ──────────────────────────────────────────────────
@@ -457,6 +517,7 @@ export function computeCostHealthSidecar(
   const { speccedSeries, closedSeries } = bucketDailyFlowBalance(lifecycles, nowMs);
   const suiteDurationTrend = computeSuiteDurationTrend(targetPath, roles, nowMs);
   const costPerTicketSeries = computeCostPerTicketSeries(lifecycles, costTelemetryByRole);
+  const topExpensiveOriginsByHorizon = computeTopExpensiveOriginsByHorizon(targetPath, nowMs);
 
   return buildCostHealthSidecar(
     dateIso,
@@ -467,7 +528,8 @@ export function computeCostHealthSidecar(
     closedSeries,
     DEFAULT_TOP_EXPENSIVE_TICKETS,
     suiteDurationTrend,
-    costPerTicketSeries
+    costPerTicketSeries,
+    topExpensiveOriginsByHorizon
   );
 }
 

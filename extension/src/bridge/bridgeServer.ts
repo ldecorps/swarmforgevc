@@ -25,6 +25,14 @@ import { capturePipelineGridLive } from './pipelineGridLive';
 import { answerCapturedGateLive } from './gateAnswerLive';
 import { computeRoleGateStatesLive, filterPendingGates } from './gateSnapshot';
 import { readSwarmRoles } from '../swarm/tmuxClient';
+import {
+  isKnownLlmCostHorizon,
+  LLM_COST_HORIZONS_MS,
+  LlmInvocationOriginDimension,
+  rankLlmInvocations,
+  rollupLlmInvocationsByOrigin,
+} from '../metrics/llmCostLedger';
+import { readLlmInvocationRecords } from '../metrics/llmCostLedgerStore';
 import { readThread, writeThread, appendMessage, messageForUpdateId, withEventQueued, SupportThread, ThreadMessage } from './supportThreadStore';
 import { appendOperatorEvent, readNewReplyOutboxEntries } from './operatorEventQueue';
 import { readPersistedCursor, writePersistedCursor, advanceCursorOnAck } from './replyRelayCursor';
@@ -188,6 +196,12 @@ function isPausedPagerPath(url: string): boolean {
 // BL-538: JSON state for the paused-ticket pager Mini App.
 function isPausedPagerStatePath(url: string): boolean {
   return url === '/paused-pager-state' || url.startsWith('/paused-pager-state?');
+}
+
+// BL-551 (bridge-08): JSON top-expensive-invocations/rollup feed over the
+// unified LLM cost ledger.
+function isCostRankPath(url: string): boolean {
+  return url === '/cost-rank' || url.startsWith('/cost-rank?');
 }
 
 const MINIAPP_CSP =
@@ -569,6 +583,40 @@ function computePausedPagerState(targetPath: string): unknown {
   return { items, index: 0, total: items.length };
 }
 
+const KNOWN_ORIGIN_DIMENSIONS: LlmInvocationOriginDimension[] = [
+  'subsystem', 'role', 'stage', 'trigger', 'ticketId', 'script', 'pack', 'model', 'provider',
+];
+
+function isKnownOriginDimension(value: string): value is LlmInvocationOriginDimension {
+  return (KNOWN_ORIGIN_DIMENSIONS as string[]).includes(value);
+}
+
+function queryParams(url: string): URLSearchParams {
+  const queryIndex = url.indexOf('?');
+  return new URLSearchParams(queryIndex === -1 ? '' : url.slice(queryIndex + 1));
+}
+
+// BL-551 (bridge-08): same ranking/rollup logic the swarm-cost-rank CLI
+// exposes, over HTTP. An unknown/missing horizon degrades to '24h' rather
+// than erroring - this table has no notion of a 400 response, every route
+// here always computes SOMETHING (BL-096/BL-100 precedent).
+function buildCostRankState(targetPath: string, url: string, nowMs?: number): unknown {
+  const params = queryParams(url);
+  const horizonParam = params.get('horizon') ?? '';
+  const horizon = isKnownLlmCostHorizon(horizonParam) ? horizonParam : '24h';
+  const topParam = params.get('top');
+  const topN = topParam ? Number.parseInt(topParam, 10) : undefined;
+  const groupBy = (params.get('groupBy') ?? '').split(',').filter(isKnownOriginDimension);
+  const records = readLlmInvocationRecords(targetPath);
+  const horizonMs = LLM_COST_HORIZONS_MS[horizon];
+  const effectiveNowMs = nowMs ?? Date.now();
+
+  if (groupBy.length > 0) {
+    return { horizon, groups: rollupLlmInvocationsByOrigin(records, { horizonMs, nowMs: effectiveNowMs, groupBy }) };
+  }
+  return { horizon, ...rankLlmInvocations(records, { horizonMs, nowMs: effectiveNowMs, topN: Number.isFinite(topN) && topN! > 0 ? topN : undefined }) };
+}
+
 // Every route below except /events (and the root HTML shell, a different
 // content-type entirely) follows the same "match, compute JSON, respond
 // 200" shape. A data-driven table instead of one `if` per route keeps the
@@ -605,6 +653,10 @@ function buildJsonRoutes(targetPath: string, runLogPath: string, nowMs?: number)
     {
       matches: (url) => url === '/burn-rate',
       compute: () => buildBurnRateState(targetPath, nowMs),
+    },
+    {
+      matches: isCostRankPath,
+      compute: (url) => buildCostRankState(targetPath, url, nowMs),
     },
     {
       matches: isResidentPanePath,
