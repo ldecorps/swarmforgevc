@@ -1,0 +1,89 @@
+id: BL-560
+title: "Scheduled GitHub Actions scan auto-intakes open issues without a human-applied swarm-intake label"
+epic: github-auto-intake
+milestone: M8
+type: feature
+priority: 20
+status: todo
+human_approval: pending
+direction: human-requested
+depends_on: []
+mutation_cost: medium
+source: |
+  Slice 1 of epic BL-558, drained from
+  backlog/INTAKE-20260722-github-auto-intake-adapter.md. Complements the
+  existing label-triggered .github/workflows/swarm-intake.yml — this adds
+  a scheduled scan so an issue enters the backlog root even when no human
+  remembers to apply the swarm-intake label.
+
+description: |
+  ## Problem
+
+  Today an open GitHub issue only enters the backlog root
+  (`backlog/GH-<n>-<slug>.yaml`) when a human manually applies the
+  `swarm-intake` label, which triggers `.github/workflows/swarm-intake.yml`.
+  An issue opened and left unlabeled never reaches the swarm.
+
+  ## Wanted behavior
+
+  A new, separate, cron-scheduled GitHub Actions workflow that:
+    1. Lists open issues without a `swarm-intake` or `swarm-specced` label.
+    2. For each, checks whether a `backlog/GH-<n>-*.yaml` file already
+       exists on `main` (by issue number, not by title/slug — a human may
+       have renamed the file).
+    3. For any issue with no existing file, writes
+       `backlog/GH-<n>-<slug>.yaml` in the SAME shape
+       `swarm-intake.yml` already writes (id, title, source = issue URL,
+       body captured into `description:`), commits it to `main`, comments
+       on the issue naming the committed path, and applies the
+       `swarm-intake` label (so a later scan run treats it as already
+       intaked and neither workflow double-processes it).
+    4. Handles two scan runs racing on `main` without a failed push —
+       `git pull --rebase` (or an equivalent conflict-retry) before push,
+       using the same bot identity `swarm-intake.yml` already commits as.
+
+  ## Pins for the coder
+
+  1. This is a NEW workflow file, not a rewrite of `swarm-intake.yml` —
+     the label-triggered path must keep working unchanged (scan-05).
+  2. Reuse whatever slug/title/body-extraction logic `swarm-intake.yml`
+     already has (factor into a shared script/action if duplicating it
+     verbatim would be non-trivial; do not invent a second YAML shape).
+  3. No `${{ }}` interpolation inside a `run:` step body — pass issue
+     title/body/number through `env:` and reference the env var inside
+     the script (constitution guardrail, BL-227 posture).
+  4. Secrets: `GITHUB_TOKEN` only (repo-scoped Actions token); no new PAT
+     or external secret.
+  5. Dedup key is the issue NUMBER embedded in the filename glob
+     `backlog/GH-<n>-*.yaml`, not the title-derived slug — a human may
+     have renamed the file after intake.
+  6. Applying the `swarm-intake` label after writing the file is the
+     dedup guard against the NEXT scheduled run re-processing the same
+     issue while `swarm-specced` hasn't been applied yet (that label
+     comes later, from `issue_specced.sh`, once the specifier drains it).
+
+  QA end-to-end:
+    1. Open a throwaway test issue with no label; manually trigger the
+       new workflow (`workflow_dispatch` if added, or wait for the
+       schedule in a fork); confirm `backlog/GH-<n>-*.yaml` lands on
+       `main`, the issue gets a comment + the `swarm-intake` label.
+    2. Re-run the workflow; confirm no duplicate file and no error.
+    3. Confirm the existing label-triggered path (apply `swarm-intake` to
+       a fresh issue by hand) still produces the identical YAML shape.
+
+acceptance: specs/features/BL-560-github-scheduled-auto-intake-scan.feature
+
+qa_e2e_procedure: |
+  See "QA end-to-end" above. Requires a real GitHub Actions run (fork or
+  a throwaway issue on this repo) — cannot be fully verified by unit
+  tests alone; unit-test the slug/dedup/shape-parity logic, then confirm
+  the workflow YAML itself against a live or forked run.
+
+out_of_scope: |
+  - Slice 2 (handoffd root-intake nudge sweep), Slice 3 (second-swarm
+    wake-up path extension), Slice 4 (pipeline board root-intake list) —
+    tracked as remaining slices on epic BL-558, not this ticket.
+  - Any change to BL-114's issue_specced.sh / issue_done.sh closing
+    scripts.
+  - Any LLM/coordinator/specifier involvement in the scanning decision —
+    this ticket is a plain scripted Actions workflow.
