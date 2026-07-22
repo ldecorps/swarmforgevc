@@ -228,6 +228,15 @@ export function getResidentSpyUiHtml(): string {
   body.pane-fullscreen-active .pane-fullscreen {
     display: flex;
   }
+  .pane-fullscreen:fullscreen,
+  .pane-fullscreen:-webkit-full-screen {
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    max-width: none;
+    max-height: none;
+  }
   .fs-top {
     flex: 0 0 auto;
     padding: 8px 10px 6px;
@@ -302,6 +311,10 @@ export function getResidentSpyUiHtml(): string {
     return !!(tg && tg.initData);
   }
 
+  function isBrowserFullscreen() {
+    return !!(document.fullscreenElement || document.webkitFullscreenElement);
+  }
+
   function applySafeAreas() {
     if (!tg || !tg.safeAreaInset) return;
     var inset = tg.safeAreaInset;
@@ -371,12 +384,45 @@ export function getResidentSpyUiHtml(): string {
     window.visualViewport.addEventListener('resize', applyViewportHeight);
     window.visualViewport.addEventListener('scroll', applyViewportHeight);
   }
+  function onFullscreenChange() {
+    applyViewportHeight();
+    if (focusPane && !inTelegram() && !isBrowserFullscreen()) {
+      exitFullscreen();
+    }
+  }
+  document.addEventListener('fullscreenchange', onFullscreenChange);
+  document.addEventListener('webkitfullscreenchange', onFullscreenChange);
   applyViewportHeight();
 
-  // CSS overlay fills the visual viewport (see .pane-fullscreen). In Telegram
-  // also call tg.requestFullscreen() — it expands the Mini App chrome without
-  // the browser's "drag to exit" banner. Never use document.requestFullscreen()
-  // (that banner appears on phone browsers, e.g. Cloudflare tunnel).
+  function requestBrowserFullscreen() {
+    if (isBrowserFullscreen()) return;
+    var target = paneFullscreenEl;
+    var req =
+      target.requestFullscreen ||
+      target.webkitRequestFullscreen ||
+      document.documentElement.requestFullscreen ||
+      document.documentElement.webkitRequestFullscreen;
+    if (!req) return;
+    try {
+      var p = req.call(target);
+      if (p && typeof p.catch === 'function') p.catch(function () {});
+    } catch (e) {}
+  }
+
+  function exitBrowserFullscreen() {
+    if (!isBrowserFullscreen()) return;
+    var exit = document.exitFullscreen || document.webkitExitFullscreen;
+    if (!exit) return;
+    try {
+      var p = exit.call(document);
+      if (p && typeof p.catch === 'function') p.catch(function () {});
+    } catch (e) {}
+  }
+
+  // Telegram: tg.requestFullscreen(). Browser (Cloudflare tunnel): native
+  // requestFullscreen on the pane overlay — shows the system exit banner but
+  // fills the real display. CSS overlay + visualViewport sizing is fallback
+  // when the API is unavailable.
   function enterImmersiveFullscreen() {
     applyViewportHeight();
     if (inTelegram()) {
@@ -389,6 +435,8 @@ export function getResidentSpyUiHtml(): string {
           tg.requestFullscreen();
         } catch (e) {}
       }
+    } else {
+      requestBrowserFullscreen();
     }
   }
 
@@ -400,6 +448,8 @@ export function getResidentSpyUiHtml(): string {
         } catch (e) {}
       }
       tg.expand();
+    } else {
+      exitBrowserFullscreen();
     }
     applyViewportHeight();
   }

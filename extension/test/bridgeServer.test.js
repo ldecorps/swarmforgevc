@@ -1039,10 +1039,9 @@ test('serves /resident-spy HTML without a prior bearer/query token', async () =>
     assert.match(body, /ticket-strip/);
     assert.match(body, /pane-fullscreen/);
     assert.match(body, /Both panes/);
-    assert.match(body, /CSS overlay fills the visual viewport/);
+    assert.match(body, /requestBrowserFullscreen/);
     assert.match(body, /tg\.requestFullscreen/);
-    assert.doesNotMatch(body, /document\.documentElement\.requestFullscreen/);
-    assert.doesNotMatch(body, /webkitRequestFullscreen/);
+    assert.match(body, /webkitRequestFullscreen/);
     assert.match(body, /pane-offline/);
     assert.match(body, /shouldPinViewportHeight/);
     assert.match(body, /removeProperty\('--app-height'\)/);
