@@ -1,4 +1,4 @@
-/// BL-094/BL-241/BL-522/BL-526/BL-538 bridge server: HTTP entrypoint for
+/// BL-094/BL-241/BL-522/BL-526/BL-538/BL-545 bridge server: HTTP entrypoint for
 /// SwarmForge's read JSON routes, SSE feed, Mini App shells, and a handful
 /// of control-scoped POST routes (gate answers, Telegram inbound, reply
 /// ack, paused-pager expedite).
@@ -42,6 +42,9 @@ import { readBacklogFolders, BacklogItem } from '../panel/backlogReader';
 import { promoteToActive, findBacklogFilePath } from '../panel/backlogWriter';
 import { atomicWrite } from '../util/atomicWrite';
 import { getPausedPagerUiHtml } from './pausedPagerUiHtml';
+import { getCatchUpUiHtml } from './catchUpUiHtml';
+import { computeCatchUpStateLive } from './catchUpLive';
+import { markMessageRead, readCatchUpReadState } from './catchUpReadState';
 
 const DEFAULT_POLL_INTERVAL_MS = 1000;
 const LOCALHOST = '127.0.0.1';
@@ -59,6 +62,8 @@ const TELEGRAM_INBOUND_MAX_BODY_BYTES = 16 * 1024;
 const REPLY_ACK_MAX_BODY_BYTES = 4 * 1024;
 // BL-538: Expedite body ({id}) from the /paused-pager Mini App.
 const PAUSED_PAGER_EXPEDITE_MAX_BODY_BYTES = 4 * 1024;
+// BL-545: mark-read body ({topicId, seq}) from the /catch-up Mini App.
+const CATCH_UP_MARK_READ_MAX_BODY_BYTES = 4 * 1024;
 
 export interface BridgeHandle {
   port: number;
@@ -188,6 +193,16 @@ function isPausedPagerPath(url: string): boolean {
 // BL-538: JSON state for the paused-ticket pager Mini App.
 function isPausedPagerStatePath(url: string): boolean {
   return url === '/paused-pager-state' || url.startsWith('/paused-pager-state?');
+}
+
+// BL-545: catch-up pager Mini App shell.
+function isCatchUpPath(url: string): boolean {
+  return url === '/catch-up' || url.startsWith('/catch-up?');
+}
+
+// BL-545: JSON state for the catch-up pager Mini App.
+function isCatchUpStatePath(url: string): boolean {
+  return url === '/catch-up-state' || url.startsWith('/catch-up-state?');
 }
 
 const MINIAPP_CSP =
@@ -463,6 +478,51 @@ function handlePausedPagerExpediteRoute(
   });
 }
 
+// BL-545: Catch-up mark-read request shape and route.
+function isCatchUpMarkReadRoute(req: http.IncomingMessage, url: string): boolean {
+  return req.method === 'POST' && (url === '/catch-up/mark-read' || url.startsWith('/catch-up/mark-read?'));
+}
+
+function isCatchUpMarkReadRequestShape(value: unknown): value is { topicId: string; seq: number } {
+  return (
+    !!value &&
+    typeof value === 'object' &&
+    typeof (value as Record<string, unknown>).topicId === 'string' &&
+    typeof (value as Record<string, unknown>).seq === 'number'
+  );
+}
+
+function handleCatchUpMarkReadRoute(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  targetPath: string,
+  registry: DeviceRegistry
+): void {
+  if (!requireControlAuth(req, res, registry)) {
+    return;
+  }
+  readValidatedBody(
+    req,
+    res,
+    CATCH_UP_MARK_READ_MAX_BODY_BYTES,
+    isCatchUpMarkReadRequestShape,
+    'expected a JSON body of {topicId, seq}'
+  ).then((value) => {
+    if (!value) {
+      return;
+    }
+    try {
+      markMessageRead(targetPath, value.topicId, value.seq);
+      respondJson(res, 200, { success: true, topicId: value.topicId, seq: value.seq });
+    } catch (err) {
+      respondJson(res, 500, {
+        success: false,
+        reason: err instanceof Error ? err.message : 'unknown error',
+      });
+    }
+  });
+}
+
 interface WriteRoute {
   matches: (req: http.IncomingMessage, url: string) => boolean;
   handle: (req: http.IncomingMessage, res: http.ServerResponse, targetPath: string, registry: DeviceRegistry) => void;
@@ -477,6 +537,8 @@ const writeRoutes: WriteRoute[] = [
   { matches: isReplyAckRoute, handle: handleReplyAckRoute },
   // BL-538: paused-pager Expedite route, control-scoped.
   { matches: isPausedPagerExpediteRoute, handle: handlePausedPagerExpediteRoute },
+  // BL-545: catch-up mark-read route, control-scoped.
+  { matches: isCatchUpMarkReadRoute, handle: handleCatchUpMarkReadRoute },
 ];
 
 function requestPath(req: http.IncomingMessage): string {
@@ -505,7 +567,7 @@ function isAuthorizedForRead(authHeader: string | undefined, url: string, regist
   // Root HTML uses query token client-side; Mini App JSON polls
   // (/resident-pane, /pipeline-board, /paused-pager-state) also accept it because those fetches
   // cannot set an Authorization header.
-  return (isRootPath(url) || isResidentPanePath(url) || isPipelineBoardPath(url) || isPausedPagerStatePath(url))
+  return (isRootPath(url) || isResidentPanePath(url) || isPipelineBoardPath(url) || isPausedPagerStatePath(url) || isCatchUpStatePath(url))
     && isAuthorizedByQueryToken(queryToken(url), primaryTokenOf(registry));
 }
 
@@ -622,6 +684,11 @@ function buildJsonRoutes(targetPath: string, runLogPath: string, nowMs?: number)
       matches: isPausedPagerStatePath,
       compute: () => computePausedPagerState(targetPath),
     },
+    {
+      // BL-545: catch-up pager JSON feed for the Mini App.
+      matches: isCatchUpStatePath,
+      compute: () => computeCatchUpStateLive(targetPath, readCatchUpReadState(targetPath), nowMs),
+    },
   ];
 }
 
@@ -666,6 +733,10 @@ export function startBridge(
       }
       if (isPausedPagerPath(url)) {
         serveMiniAppHtml(res, getPausedPagerUiHtml());
+        return;
+      }
+      if (isCatchUpPath(url)) {
+        serveMiniAppHtml(res, getCatchUpUiHtml());
         return;
       }
 
