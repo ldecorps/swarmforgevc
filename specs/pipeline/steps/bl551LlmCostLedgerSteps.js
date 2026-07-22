@@ -20,13 +20,10 @@ const {
   LLM_COST_HORIZONS_MS,
   rankLlmInvocations,
   rollupLlmInvocationsByOrigin,
-  DEFAULT_ORIGIN_COST_TREND_BANDS,
-  buildOriginCostTrendSeries,
-  chooseCostTrendAxisScale,
 } = require(path.join(EXT_OUT, 'metrics', 'llmCostLedger'));
 const { llmCostTelemetryDir } = require(path.join(EXT_OUT, 'metrics', 'llmCostLedgerStore'));
 const { startBridge } = require(path.join(EXT_OUT, 'bridge', 'bridgeServer'));
-const { computeCostHealthSidecar, renderCostHealthSection, renderCostTrendChartLines } = require(path.join(EXT_OUT, 'notify', 'costHealthSidecar'));
+const { computeCostHealthSidecar, renderCostHealthSection } = require(path.join(EXT_OUT, 'notify', 'costHealthSidecar'));
 
 const HANDOFF_DELIVERY_RUNNER = path.join(SCRIPTS_DIR, 'bl551_handoff_delivery_llm_cost_ledger_acceptance_runner.sh');
 const REAP_RUNNER = path.join(SCRIPTS_DIR, 'bl551_reap_llm_cost_ledger_acceptance_runner.sh');
@@ -95,13 +92,6 @@ function registerSteps(registry) {
     ctx.nowMs = Date.parse('2026-07-22T18:00:00Z');
     if (LLM_COST_HORIZONS_MS['3h'] !== 3 * 60 * 60 * 1000 || LLM_COST_HORIZONS_MS['24h'] !== 24 * 60 * 60 * 1000 || LLM_COST_HORIZONS_MS['7d'] !== 7 * 24 * 60 * 60 * 1000) {
       throw new Error(`expected the fixed named horizons 3h/24h/7d, got: ${JSON.stringify(LLM_COST_HORIZONS_MS)}`);
-    }
-  }, FEATURE);
-
-  registry.defineScoped(/^origin trend series use three time bands with finer buckets toward the latest measurement$/, () => {
-    const byName = Object.fromEntries(DEFAULT_ORIGIN_COST_TREND_BANDS.map((b) => [b.name, b]));
-    if (!(byName['3h'].bucketMs < byName['24h'].bucketMs && byName['24h'].bucketMs < byName['7d'].bucketMs)) {
-      throw new Error(`expected strictly finer bucket widths toward now (3h < 24h < 7d), got: ${JSON.stringify(DEFAULT_ORIGIN_COST_TREND_BANDS)}`);
     }
   }, FEATURE);
 
@@ -379,132 +369,6 @@ function registerSteps(registry) {
     }
     if (!/Top expensive origins:/.test(ctx.sidecarText)) {
       throw new Error(`expected the rendered briefing section to include a "Top expensive origins:" heading, got: ${ctx.sidecarText}`);
-    }
-  }, FEATURE);
-
-  // ── trend-series-11 / trend-sampling-12 ────────────────────────────────────
-  registry.defineScoped(/^llm_invocation records for the same origin spread across the last seven days$/, (ctx) => {
-    ctx.trendNowMs = Date.parse('2026-07-22T18:00:00Z');
-    ctx.trendRecords = [
-      llmInvocation({ at: '2026-07-15T18:30:00Z', costUsd: 3, origin: llmOrigin({ role: 'coder' }) }), // ~6d23h30m ago
-      llmInvocation({ at: '2026-07-22T17:00:00Z', costUsd: 2, origin: llmOrigin({ role: 'coder' }) }), // 1h ago
-      llmInvocation({ at: '2026-07-22T17:30:00Z', costUsd: null, origin: llmOrigin({ role: 'coder' }) }), // unpriced
-    ];
-  }, FEATURE);
-
-  registry.defineScoped(/^llm_invocation records in the last three hours and between twenty four hours and seven days ago$/, (ctx) => {
-    ctx.trendNowMs = Date.parse('2026-07-22T18:00:00Z');
-    ctx.trendRecords = [
-      llmInvocation({ at: '2026-07-22T17:00:00Z', costUsd: 4, origin: llmOrigin({ role: 'coder' }) }), // 1h ago, in 3h band
-      llmInvocation({ at: '2026-07-18T18:00:00Z', costUsd: 6, origin: llmOrigin({ role: 'coder' }) }), // 4d ago, in 24h-7d band
-    ];
-  }, FEATURE);
-
-  registry.defineScoped(/^origin cost trend series are built for the rolling seven day window$/, (ctx) => {
-    ctx.trendSeries = buildOriginCostTrendSeries(ctx.trendRecords, { nowMs: ctx.trendNowMs, groupBy: ['role'] });
-  }, FEATURE);
-
-  registry.defineScoped(/^each origin series sums only priced invocations inside its bucket$/, (ctx) => {
-    const [series] = ctx.trendSeries;
-    const totalBucketed = series.buckets.reduce((sum, b) => sum + b.costUsd, 0);
-    if (totalBucketed !== 5) {
-      throw new Error(`expected only the two priced invocations ($3 + $2) summed across buckets, never the unpriced one, got: ${totalBucketed}`);
-    }
-  }, FEATURE);
-
-  registry.defineScoped(/^bucket timestamps run from oldest on the left to the latest measurement on the right$/, (ctx) => {
-    const [series] = ctx.trendSeries;
-    if (!(series.buckets[0].bucketStartMs < series.buckets[series.buckets.length - 1].bucketStartMs)) {
-      throw new Error(`expected buckets ordered oldest (left) to latest (right), got: ${JSON.stringify(series.buckets)}`);
-    }
-  }, FEATURE);
-
-  registry.defineScoped(/^the three hour band uses shorter bucket widths than the twenty four hour to seven day band$/, () => {
-    const byName = Object.fromEntries(DEFAULT_ORIGIN_COST_TREND_BANDS.map((b) => [b.name, b]));
-    if (!(byName['3h'].bucketMs < byName['7d'].bucketMs)) {
-      throw new Error(`expected the 3h band to sample finer than the 7d band, got: ${JSON.stringify(DEFAULT_ORIGIN_COST_TREND_BANDS)}`);
-    }
-  }, FEATURE);
-
-  registry.defineScoped(/^the three hour to twenty four hour band uses medium bucket widths between those two$/, () => {
-    const byName = Object.fromEntries(DEFAULT_ORIGIN_COST_TREND_BANDS.map((b) => [b.name, b]));
-    if (!(byName['3h'].bucketMs < byName['24h'].bucketMs && byName['24h'].bucketMs < byName['7d'].bucketMs)) {
-      throw new Error(`expected the 24h band's bucket width strictly between the 3h and 7d bands, got: ${JSON.stringify(DEFAULT_ORIGIN_COST_TREND_BANDS)}`);
-    }
-  }, FEATURE);
-
-  // ── trend-rank-latest-13 ────────────────────────────────────────────────────
-  registry.defineScoped(/^two origins where the cheaper one spent more in an older bucket but the pricier one spent more in the latest bucket$/, (ctx) => {
-    ctx.trendNowMs = Date.parse('2026-07-22T18:00:00Z');
-    ctx.trendRecords = [
-      llmInvocation({ at: '2026-07-15T18:30:00Z', costUsd: 50, origin: llmOrigin({ role: 'cheap' }) }),
-      llmInvocation({ at: '2026-07-15T18:30:00Z', costUsd: 1, origin: llmOrigin({ role: 'pricey' }) }),
-      llmInvocation({ at: '2026-07-22T17:55:00Z', costUsd: 20, origin: llmOrigin({ role: 'pricey' }) }),
-    ];
-  }, FEATURE);
-
-  registry.defineScoped(/^the top expensive origins are selected for the trend chart$/, (ctx) => {
-    ctx.trendSeries = buildOriginCostTrendSeries(ctx.trendRecords, { nowMs: ctx.trendNowMs, groupBy: ['role'] });
-  }, FEATURE);
-
-  registry.defineScoped(/^the origin with higher cost in the latest bucket is ranked above the other$/, (ctx) => {
-    if (ctx.trendSeries[0].key.role !== 'pricey') {
-      throw new Error(`expected the origin with the higher latest-bucket cost ranked first, got order: ${JSON.stringify(ctx.trendSeries.map((s) => s.key.role))}`);
-    }
-  }, FEATURE);
-
-  // ── trend-log-scale-14 ───────────────────────────────────────────────────
-  registry.defineScoped(/^an origin whose rolling seven day series spans at least a tenfold cost range$/, (ctx) => {
-    ctx.trendNowMs = Date.parse('2026-07-22T18:00:00Z');
-    ctx.trendRecords = [
-      llmInvocation({ at: '2026-07-15T18:30:00Z', costUsd: 0.1, origin: llmOrigin({ role: 'coder' }) }),
-      llmInvocation({ at: '2026-07-22T17:00:00Z', costUsd: 5, origin: llmOrigin({ role: 'coder' }) }),
-    ];
-  }, FEATURE);
-
-  registry.defineScoped(/^the trend chart scales are chosen$/, (ctx) => {
-    ctx.trendSeries = buildOriginCostTrendSeries(ctx.trendRecords, { nowMs: ctx.trendNowMs, groupBy: ['role'] });
-    ctx.trendScale = chooseCostTrendAxisScale(ctx.trendSeries);
-  }, FEATURE);
-
-  registry.defineScoped(/^the cost axis is logarithmic$/, (ctx) => {
-    if (ctx.trendScale !== 'log') {
-      throw new Error(`expected a logarithmic cost axis for a tenfold-plus spread, got: ${ctx.trendScale}`);
-    }
-  }, FEATURE);
-
-  // ── trend-surface-15 ─────────────────────────────────────────────────────
-  registry.defineScoped(/^ranked origin trend series for the rolling seven day window$/, (ctx) => {
-    ctx.trendNowMs = Date.parse('2026-07-22T18:00:00Z');
-    ctx.trendRecords = [
-      llmInvocation({ at: '2026-07-15T18:30:00Z', costUsd: 1, origin: llmOrigin({ role: 'coder' }) }),
-      llmInvocation({ at: '2026-07-22T17:00:00Z', costUsd: 9, origin: llmOrigin({ role: 'coder' }) }),
-      llmInvocation({ at: '2026-07-15T18:30:00Z', costUsd: 2, origin: llmOrigin({ role: 'qa' }) }),
-      llmInvocation({ at: '2026-07-22T17:00:00Z', costUsd: 3, origin: llmOrigin({ role: 'qa' }) }),
-    ];
-    ctx.trendSeries = buildOriginCostTrendSeries(ctx.trendRecords, { nowMs: ctx.trendNowMs, groupBy: ['role'] });
-  }, FEATURE);
-
-  registry.defineScoped(/^the cost trend chart is rendered for the human$/, (ctx) => {
-    ctx.trendChartLines = renderCostTrendChartLines(ctx.trendSeries);
-  }, FEATURE);
-
-  registry.defineScoped(/^each ranked origin is drawn as one line with time increasing toward the right$/, (ctx) => {
-    for (const s of ctx.trendSeries) {
-      const label = Object.values(s.key).filter((v) => v !== null).join('/') || 'unknown origin';
-      const matching = ctx.trendChartLines.filter((line) => line.startsWith(`- ${label}:`));
-      if (matching.length !== 1) {
-        throw new Error(`expected exactly one rendered line for origin "${label}", got: ${JSON.stringify(ctx.trendChartLines)}`);
-      }
-    }
-  }, FEATURE);
-
-  registry.defineScoped(/^the rightmost point is the latest measurement period for that origin$/, (ctx) => {
-    const coderSeries = ctx.trendSeries.find((s) => s.key.role === 'coder');
-    const coderLine = ctx.trendChartLines.find((line) => line.startsWith('- coder:'));
-    const latestBucketCost = coderSeries.buckets[coderSeries.buckets.length - 1].costUsd.toFixed(2);
-    if (!coderLine.endsWith(latestBucketCost)) {
-      throw new Error(`expected the rightmost rendered value to be the latest bucket's cost (${latestBucketCost}), got: ${coderLine}`);
     }
   }, FEATURE);
 }

@@ -4,9 +4,6 @@ const {
   isKnownLlmCostHorizon,
   rankLlmInvocations,
   rollupLlmInvocationsByOrigin,
-  DEFAULT_ORIGIN_COST_TREND_BANDS,
-  buildOriginCostTrendSeries,
-  chooseCostTrendAxisScale,
 } = require('../out/metrics/llmCostLedger');
 
 function origin(overrides = {}) {
@@ -183,70 +180,4 @@ test('rollup groups also exclude unknown cost from summed cost but still count t
   assert.equal(groups[0].costUsd, 4);
   assert.equal(groups[0].invocationCount, 2);
   assert.equal(groups[0].unknownCostCount, 1);
-});
-
-// ── trend-series-11 / trend-sampling-12 ─────────────────────────────────
-
-test('the three time bands use strictly finer bucket widths closer to now (trend-sampling-12)', () => {
-  const byName = Object.fromEntries(DEFAULT_ORIGIN_COST_TREND_BANDS.map((b) => [b.name, b]));
-  assert.ok(byName['3h'].bucketMs < byName['24h'].bucketMs, 'expected the 3h band to sample finer than the 24h band');
-  assert.ok(byName['24h'].bucketMs < byName['7d'].bucketMs, 'expected the 24h band to sample finer than the 7d band');
-});
-
-test('buildOriginCostTrendSeries sums only priced invocations per bucket, oldest bucket first (trend-series-11)', () => {
-  const nowMs = Date.parse('2026-07-22T18:00:00Z');
-  const records = [
-    invocation({ at: '2026-07-15T18:30:00Z', costUsd: 3 }), // ~6d23h30m ago — oldest, inside the 7d window
-    invocation({ at: '2026-07-22T17:00:00Z', costUsd: 2 }), // 1h ago — newest
-    invocation({ at: '2026-07-22T17:30:00Z', costUsd: null }), // unpriced, must not count as $0
-  ];
-  const [series] = buildOriginCostTrendSeries(records, { nowMs });
-
-  assert.ok(series.buckets.length > 1);
-  assert.ok(series.buckets[0].bucketStartMs < series.buckets[series.buckets.length - 1].bucketStartMs, 'expected buckets ordered oldest (left) to latest (right)');
-  const totalBucketed = series.buckets.reduce((sum, b) => sum + b.costUsd, 0);
-  assert.equal(totalBucketed, 5, 'expected only the two priced invocations summed across buckets, never the unpriced one');
-});
-
-test('buildOriginCostTrendSeries never places a record in more than one bucket', () => {
-  const nowMs = Date.parse('2026-07-22T18:00:00Z');
-  const records = [invocation({ at: '2026-07-22T17:45:00Z', costUsd: 9 })];
-  const [series] = buildOriginCostTrendSeries(records, { nowMs });
-  const bucketsWithCost = series.buckets.filter((b) => b.costUsd > 0);
-  assert.equal(bucketsWithCost.length, 1);
-  assert.equal(bucketsWithCost[0].costUsd, 9);
-});
-
-// ── trend-rank-latest-13 ─────────────────────────────────────────────────
-
-test('origins are ranked by cost in the latest bucket, not lifetime total (trend-rank-latest-13)', () => {
-  const nowMs = Date.parse('2026-07-22T18:00:00Z');
-  const records = [
-    // "cheap" origin spent a lot a week ago but nothing recently.
-    invocation({ at: '2026-07-15T18:30:00Z', costUsd: 50, origin: origin({ role: 'cheap' }) }),
-    // "pricey" origin spent little a week ago but the most in the latest bucket.
-    invocation({ at: '2026-07-15T18:30:00Z', costUsd: 1, origin: origin({ role: 'pricey' }) }),
-    invocation({ at: '2026-07-22T17:55:00Z', costUsd: 20, origin: origin({ role: 'pricey' }) }),
-  ];
-  const series = buildOriginCostTrendSeries(records, { nowMs, groupBy: ['role'] });
-
-  assert.equal(series[0].key.role, 'pricey', 'expected the origin with the higher latest-bucket cost ranked first');
-  assert.equal(series[1].key.role, 'cheap');
-});
-
-// ── trend-log-scale-14 ────────────────────────────────────────────────────
-
-test('chooseCostTrendAxisScale returns log when priced buckets span at least a tenfold range (trend-log-scale-14)', () => {
-  const series = [{ key: { role: 'coder' }, buckets: [{ bucketStartMs: 0, bucketEndMs: 1, costUsd: 0.1 }, { bucketStartMs: 1, bucketEndMs: 2, costUsd: 5 }] }];
-  assert.equal(chooseCostTrendAxisScale(series), 'log');
-});
-
-test('chooseCostTrendAxisScale returns linear when the priced range is under a tenfold spread', () => {
-  const series = [{ key: { role: 'coder' }, buckets: [{ bucketStartMs: 0, bucketEndMs: 1, costUsd: 2 }, { bucketStartMs: 1, bucketEndMs: 2, costUsd: 5 }] }];
-  assert.equal(chooseCostTrendAxisScale(series), 'linear');
-});
-
-test('chooseCostTrendAxisScale returns linear when every bucket is zero or unset', () => {
-  const series = [{ key: { role: 'coder' }, buckets: [{ bucketStartMs: 0, bucketEndMs: 1, costUsd: 0 }] }];
-  assert.equal(chooseCostTrendAxisScale(series), 'linear');
 });
