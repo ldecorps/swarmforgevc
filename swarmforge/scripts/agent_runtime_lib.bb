@@ -1,30 +1,28 @@
 #!/usr/bin/env bb
 ;; Agent runtime facade — pure strategy (no tmux). Callers use the same
 ;; operations; agent-specific syntax lives here only.
+;;
+;; BL-546: prompt COMPOSITION (bootstrap text, stable prefix, the BL-206
+;; provider capability model that picks the wording) now lives in
+;; prompt_engine_lib.bb — PromptEngine is the single authority for it. This
+;; namespace keeps its tmux/lifecycle verbs (wake/bootstrap steps, pane-text
+;; parsing, error taxonomy) and DELEGATES the composition surface below so
+;; pre-BL-546 callers (cache_warm_lib, the CLI, remote_wakeup_nudge,
+;; handoffd, swarm_ensure) keep working unchanged during the migration.
 (ns agent-runtime-lib
   (:require [babashka.fs :as fs]
             [clojure.string :as str]))
 
-;; ── BL-519: repo-relative file resolution ──────────────────────────────────
-;; Resolved from this file's own location (never cwd) so bootstrap-text works
-;; the same regardless of the caller's working directory.
-(def ^:private lib-dir (fs/parent (fs/canonicalize *file*)))
-(def ^:private repo-root (fs/parent (fs/parent lib-dir)))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "prompt_engine_lib.bb")))
 
-(defn- repo-file [rel-path]
-  (str (fs/path repo-root rel-path)))
+(def constitution-articles-dir-rel prompt-engine-lib/constitution-articles-dir-rel)
 
-(defn- slurp-repo [rel-path]
-  (slurp (repo-file rel-path)))
-
-(def constitution-articles-dir-rel "swarmforge/constitution/articles")
-
-(def supported-agents #{"claude" "aider" "grok" "codex" "copilot" "vibe" "gemini" "mock"})
+(def supported-agents prompt-engine-lib/supported-agents)
 
 
-(def handoff-draft-rel-path "swarmforge/runtime/handoff-draft.txt")
+(def handoff-draft-rel-path prompt-engine-lib/handoff-draft-rel-path)
 
-(def ready-script-rel-path "swarmforge/scripts/ready_for_next.sh")
+(def ready-script-rel-path prompt-engine-lib/ready-script-rel-path)
 
 (def default-wake-chat-message
   "You have new handoff mail. If idle, run ready_for_next.sh.")
@@ -38,59 +36,22 @@ USE YOUR TOOLS NOW. Re-printing the task or chatting without edits is failure.")
 (defn normalize-agent
   "Unknown agents fall back to claude chat-style wake."
   [agent]
-  (let [a (some-> agent str/lower-case str/trim)]
-    (if (contains? supported-agents a) a "claude")))
+  (prompt-engine-lib/normalize-agent agent))
 
 ;; ── BL-206: provider capability model ─────────────────────────────────────
-;; Every orchestration decision below reads a capability flag off this map,
-;; never branches on the raw provider name via case/cond
-;; (capability-branching-01). One entry per supported-agents member.
-;; Adding a provider is adding one entry here - no existing function's own
-;; logic changes (new-provider-is-capabilities-02); only a provider whose
-;; wording is genuinely novel (like aider's) also needs a new text-builder
-;; registered in bootstrap-text-builders below, since capability flags
-;; alone can route to prose, not invent it.
-(def provider-capabilities
-  {"claude"  {:wake-style :chat-message
-              :bootstrap-style :embedded
-              :bootstrap-text-style :generic}
-   "codex"   {:wake-style :chat-message
-              :bootstrap-style :embedded
-              :bootstrap-text-style :generic}
-   "copilot" {:wake-style :chat-message
-              :bootstrap-style :embedded
-              :bootstrap-text-style :generic}
-   "grok"    {:wake-style :chat-message
-              :bootstrap-style :paste-prompt-file
-              :bootstrap-text-style :generic
-              :startup-delay-ms 3000}
-   "aider"   {:wake-style :shell-run-script
-              :bootstrap-style :add-files-then-paste
-              :bootstrap-text-style :aider
-              :startup-delay-ms 5000}
-   ;; Mistral Vibe: a CLI coding agent with bash tools, so it takes the SAME
-   ;; shape as claude/copilot — the role prompt is embedded in the launch
-   ;; command (positional PROMPT) and it is woken by chatting at it. Do NOT
-   ;; model it on aider: aider shares Mistral as a MODEL but is a file editor
-   ;; that cannot execute, and that difference is what makes aider unusable as
-   ;; a swarm role. Capability entries describe the AGENT, not the model.
-   "vibe"    {:wake-style :chat-message
-              :bootstrap-style :embedded
-              :bootstrap-text-style :generic
-              :startup-delay-ms 3000}
-   ;; Google Gemini CLI (`gemini`): interactive coding agent with YOLO mode
-   ;; (-y). Same wake/bootstrap shape as vibe/codex — prompt path in the
-   ;; first message; woken by chatting. Auth via GEMINI_API_KEY (tmux -e).
-   "gemini"  {:wake-style :chat-message
-              :bootstrap-style :embedded
-              :bootstrap-text-style :generic
-              :startup-delay-ms 3000}
-   "mock"    {:wake-style :mock
-              :bootstrap-style :mock
-              :bootstrap-text-style :mock}})
+;; Canonical home is now prompt_engine_lib.bb (BL-546 — PromptEngine owns
+;; which agent gets which prompt wording); the vars below are compatibility
+;; aliases. The discipline is unchanged: every orchestration decision reads a
+;; capability flag off the map, never branches on the raw provider name via
+;; case/cond (capability-branching-01), and adding a provider is adding one
+;; entry there - no existing function's own logic changes
+;; (new-provider-is-capabilities-02). NOTE for tests: rebind
+;; prompt-engine-lib/provider-capabilities, not this alias — a plain def
+;; aliases the VALUE, so with-redefs here does not reach the canonical var.
+(def provider-capabilities prompt-engine-lib/provider-capabilities)
 
 (defn capabilities [agent]
-  (get provider-capabilities (normalize-agent agent)))
+  (prompt-engine-lib/capabilities agent))
 
 (defn context-files
   [role & {:keys [two-pack? overlay-prompt]}]
@@ -187,121 +148,40 @@ USE YOUR TOOLS NOW. Re-printing the task or chatting without edits is failure.")
       [])))
 
 (defn mock-bootstrap-text [role]
-  (str "MOCK_BOOTSTRAP_TEXT role=" role))
+  (prompt-engine-lib/mock-bootstrap-text role))
 
-;; ── BL-519: inline the constitution + PIPELINE as a cacheable, ────────────
-;; stable-first prefix instead of runtime "Read ..." instructions. Every
-;; respawn used to pay full input-token price re-reading these files via
-;; tool calls; inlining them into the appended system prompt lets Anthropic
-;; prompt caching serve repeat respawns from a ~0.1x cache read instead.
-;; The prefix takes NO role/pack arguments, so it is byte-identical across
-;; every role and every pack built from this same code path (BL-519
-;; stable-prefix-byte-identical-across-packs-04) - do not thread role or
-;; overlay info into it; that content belongs strictly after it.
-(defn- inline-repo-file-or-note
-  "Inlines rel-path's content, or a visible placeholder if it does not
-   exist. Every external file this namespace inlines (constitution,
-   PIPELINE, role prompt, overlay/pack prompt) goes through this same
-   degrade-not-crash seam: a real launch always has every file, but a test
-   fixture built for an unrelated concern (provider selection, conf
-   parsing, ...) often stubs only what ITS OWN assertions touch, and must
-   not be forced to maintain a full mirror of unrelated content just
-   because bootstrap-text now reads real files instead of emitting inert
-   path strings."
-  [rel-path]
-  (if (fs/exists? (repo-file rel-path))
-    (slurp-repo rel-path)
-    (str "[[missing file: " rel-path "]]")))
+;; ── BL-519 stable-prefix surface (delegates to PromptEngine) ──────────────
+;; The BL-519 contract (constitution+PIPELINE inlined as a cacheable,
+;; stable-first prefix, byte-identical across roles and packs) is PromptEngine
+;; property now; these delegates keep this namespace's pre-BL-546 API intact
+;; for cache_warm_lib, the CLI, and tests while callers migrate.
+(defn constitution-text [] (prompt-engine-lib/constitution-text))
 
-(defn constitution-text
-  "swarmforge/constitution.prompt plus every article/prompt file it refers
-   to under swarmforge/constitution/articles/, in deterministic
-   sorted-filename order (numbered articles, then the unnumbered
-   project-wide prompts) - the constitution's own recursive expansion."
-  []
-  (let [articles-dir (repo-file constitution-articles-dir-rel)
-        article-paths (if (fs/exists? articles-dir)
-                         (->> (fs/list-dir articles-dir) (map str) sort)
-                         [])]
-    (str/join "\n"
-              (into [(inline-repo-file-or-note "swarmforge/constitution.prompt")]
-                    (map slurp article-paths)))))
+(defn pipeline-text [] (prompt-engine-lib/pipeline-text))
 
-(defn pipeline-text []
-  (inline-repo-file-or-note "swarmforge/PIPELINE.md"))
+(defn stable-prefix-text [] (prompt-engine-lib/stable-prefix-text))
 
-(defn stable-prefix-text
-  "The cacheable, stable-shared chunk: constitution (recursively expanded)
-   then PIPELINE, in that order, ahead of any role-specific content."
-  []
-  (str (constitution-text) "\n" (pipeline-text)))
+(defn stable-bootstrap-prefix [] (prompt-engine-lib/stable-bootstrap-prefix))
 
-(defn stable-bootstrap-prefix
-  "The full byte-identical prefix generic-bootstrap-text emits before any
-   role-specific content: a constant framing sentence, then stable-prefix-
-   text, then the constant framing sentence that introduces the role
-   section. Takes no role/pack arguments - every generic-style bootstrap-
-   text call (any role, any pack) starts with exactly this text, which is
-   what makes it a valid Anthropic prompt-caching prefix."
-  []
-  (str "The following is your constitution and pipeline. Obey it exactly, as if you had just read it.\n\n"
-       (stable-prefix-text)
-       "\n\n"
-       "The following is your role. Follow it exactly, as if you had just read it.\n\n"))
-
-;; BL-206: bootstrap-text's own dispatch (below) reads only
+;; BL-206: compose's own dispatch (in PromptEngine) reads only
 ;; :bootstrap-text-style, never the provider name - registering a new
 ;; provider under :bootstrap-text-style :generic needs no new text-builder
 ;; at all; only wording as genuinely novel as aider's needs one of these.
 (defn aider-bootstrap-text [role draft coord-note]
-  (if (= role "coordinator")
-    (str "You are the SwarmForge coordinator in aider." coord-note
-         " You are an ORCHESTRATOR ONLY — read swarmforge/roles/coordinator.prompt and obey it. "
-         "Your job: inspect .swarmforge/ and backlog/, route parcels with swarm_handoff.sh, chase stalls, control intake. "
-         "NEVER edit production code, tests, or swarmforge/scripts; NEVER commit domain or infrastructure changes yourself — that is coder/cleaner work. "
-         "Do not rewrite ready_for_next.sh, handoffd, or other pipeline machinery unless a human explicitly ordered it. "
-         "You may read any file; do not use aider to apply edits. "
-         "Handoff drafts go in " draft " (never repo-root tmp/ or .swarmforge/ — aider skips gitignored paths). "
-         "Then run `" ready-script-rel-path "` once and wait for wake-ups. "
-         "No self-scheduled polling (/loop, cron, or \"check again in N minutes\").")
-    (str "You are the SwarmForge " role " agent running in aider with full repository read and write access. "
-         "Never claim you cannot read or edit files — that is what aider does. "
-         "The files just added are your constitution, pipeline, and role instructions. Read each one completely. "
-         "For constitution.prompt and swarmforge/roles/" role ".prompt, also read every file they reference recursively, and obey all instructions. "
-         "Handoff drafts: " draft ". "
-         "Then run `" ready-script-rel-path "` once and wait for work. "
-         "Do not self-schedule polling (/loop, cron, or \"check again in N minutes\").")))
+  (prompt-engine-lib/aider-bootstrap-text role draft coord-note))
 
 (defn generic-bootstrap-text [role draft two-pack? overlay? overlay-prompt]
-  (str (stable-bootstrap-prefix)
-       (inline-repo-file-or-note (str "swarmforge/roles/" role ".prompt"))
-       "\n"
-       (when two-pack?
-         (str "\nThe following swarm-pack overlay applies to your role. Follow it for this pack.\n\n"
-              (inline-repo-file-or-note "swarmforge/packs/two-pack.prompt")
-              "\n"
-              "Handoff drafts: write to " draft " then run swarmforge/scripts/swarm_handoff.sh on that file. Never use repo-root tmp/ for drafts (gitignored).\n"))
-       (when overlay?
-         (str "\nThe following swarm-profile overlay applies to your role. Follow it for this swarm profile.\n\n"
-              (inline-repo-file-or-note overlay-prompt)
-              "\n"
-              (when (not two-pack?)
-                (str "Handoff drafts: write to " draft " then run swarmforge/scripts/swarm_handoff.sh on that file. Never use repo-root tmp/ for drafts (gitignored).\n"))))
-       (when (and (= role "coordinator") (or two-pack? overlay?))
-         "\nTo route the top active backlog item to coder mechanically: swarmforge/scripts/route_backlog_to_coder.sh\n")))
+  (prompt-engine-lib/generic-bootstrap-text role draft two-pack? overlay? overlay-prompt))
 
 (defn bootstrap-text
+  "Pre-BL-546 entry point, now a thin delegate: PromptEngine compose owns
+   the assembly. New callers should use prompt-engine-lib/compose (or the
+   prompt_engine_cli.bb CLI) directly."
   [agent role & {:keys [two-pack? overlay-prompt coordinator-two-pack-note]}]
-  (let [draft (handoff-draft-path agent)
-        two-pack? (boolean two-pack?)
-        overlay? (not (str/blank? overlay-prompt))
-        coord-note (or coordinator-two-pack-note
-                       (when two-pack?
-                         " This pack has no specifier: promote items from backlog/paused into backlog/active (respect active_backlog_max_depth), then send task handoffs directly to coder."))]
-    (case (:bootstrap-text-style (capabilities agent))
-      :aider (aider-bootstrap-text role draft coord-note)
-      :mock (mock-bootstrap-text role)
-      (generic-bootstrap-text role draft two-pack? overlay? overlay-prompt))))
+  (:system-prompt (prompt-engine-lib/compose role {:agent agent
+                                                   :two-pack? two-pack?
+                                                   :overlay-prompt overlay-prompt
+                                                   :coordinator-two-pack-note coordinator-two-pack-note})))
 
 (defn needs-tmux-bootstrap?
   [agent]
