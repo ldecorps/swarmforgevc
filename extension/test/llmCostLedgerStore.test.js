@@ -98,6 +98,27 @@ test('readLlmInvocationRecords: a record missing the origin block is skipped', (
   assert.equal(readLlmInvocationRecords(root).length, 0);
 });
 
+test('readLlmInvocationRecords: a record whose origin has a non-string subsystem is skipped', () => {
+  const root = mkRoot();
+  writeLedgerFile(root, '2026-07', [invocation({ origin: origin({ subsystem: 42 }) })]);
+  assert.equal(readLlmInvocationRecords(root).length, 0);
+});
+
+test('readLlmInvocationRecords: a record whose origin is missing the handoffType key entirely is skipped', () => {
+  const root = mkRoot();
+  const { handoffType: _dropped, ...originWithoutHandoffType } = origin();
+  writeLedgerFile(root, '2026-07', [invocation({ origin: originWithoutHandoffType })]);
+  assert.equal(readLlmInvocationRecords(root).length, 0);
+});
+
+test('readLlmInvocationRecords: an unreadable ledger file (a directory sharing its name) contributes no records', () => {
+  const root = mkRoot();
+  const dir = llmCostTelemetryDir(root);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.mkdirSync(path.join(dir, 'llm-cost-2026-08.jsonl'));
+  assert.deepEqual(readLlmInvocationRecords(root), []);
+});
+
 // null model/provider/cost are VALID (honest-null) - present and well-formed, must be
 // ACCEPTED, mirroring readBridgeCostRecords' null-total_cost_usd acceptance test.
 test('readLlmInvocationRecords: a record with null model, provider, and costUsd (all honest-null) is accepted', () => {

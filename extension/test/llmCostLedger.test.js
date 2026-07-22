@@ -88,6 +88,29 @@ test('unknown-cost records rank after every priced row regardless of magnitude (
   assert.equal(result.records[1].costUsd, null);
 });
 
+test('a record with an unparseable timestamp is excluded from the window, never treated as always-in-range (rank-single-04)', () => {
+  const nowMs = Date.parse('2026-07-22T12:00:00Z');
+  const records = [
+    invocation({ at: 'not-a-timestamp', costUsd: 100 }),
+    invocation({ at: '2026-07-22T11:30:00Z', costUsd: 1 }),
+  ];
+  const result = rankLlmInvocations(records, { horizonMs: LLM_COST_HORIZONS_MS['3h'], nowMs });
+
+  assert.equal(result.records.length, 1);
+  assert.equal(result.records[0].costUsd, 1);
+});
+
+test('two unknown-cost records within the same window tie-break by timestamp descending, most recent first (rank-single-04)', () => {
+  const nowMs = Date.parse('2026-07-22T12:00:00Z');
+  const records = [
+    invocation({ at: '2026-07-22T10:00:00Z', costUsd: null }),
+    invocation({ at: '2026-07-22T11:00:00Z', costUsd: null }),
+  ];
+  const result = rankLlmInvocations(records, { horizonMs: LLM_COST_HORIZONS_MS['3h'], nowMs });
+
+  assert.deepEqual(result.records.map((r) => r.at), ['2026-07-22T11:00:00Z', '2026-07-22T10:00:00Z']);
+});
+
 // ── rank-horizons-05 ─────────────────────────────────────────────────────
 
 for (const horizon of ['3h', '24h', '7d']) {

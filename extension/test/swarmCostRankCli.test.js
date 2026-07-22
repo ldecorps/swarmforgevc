@@ -122,6 +122,32 @@ async function runCliRaw(root, argv) {
   return writes.join('');
 }
 
+test('main: a bad horizon writes usage to stderr and sets exitCode 1, in-process', () => {
+  const root = mkRepo();
+  const originalCwd = process.cwd;
+  const originalArgv = process.argv;
+  const originalExitCode = process.exitCode;
+  const errWrites = [];
+  const originalErrWrite = process.stderr.write;
+  process.stderr.write = (chunk) => {
+    errWrites.push(chunk);
+    return true;
+  };
+  try {
+    process.cwd = () => root;
+    process.argv = ['node', 'swarm-cost-rank.js', '30m'];
+    process.exitCode = undefined;
+    main();
+    assert.equal(process.exitCode, 1);
+    assert.match(errWrites.join(''), /Usage: swarm-cost-rank\.js/);
+  } finally {
+    process.stderr.write = originalErrWrite;
+    process.cwd = originalCwd;
+    process.argv = originalArgv;
+    process.exitCode = originalExitCode;
+  }
+});
+
 test('main: prints an empty ranked result when no ledger exists yet', async () => {
   const root = mkRepo();
   const output = await runCliRaw(root, ['24h']);
