@@ -31,6 +31,24 @@ After `swarm_handoff.sh <draft>` (or terminal QA action):
    (new model + prompt).
 3. On wake, `RESUME-ON-START` → `ready_for_next.sh` first.
 
+## Non-home roles: rotate home after any note, including merge-up (BL-550)
+
+QA's merge-up note broadcasts to all 5 pipeline roles at once. On the full
+7-pack each role is its own process and idles independently; on this pack
+there is ONE resident, and it strands in whichever non-home role processed
+the LAST merge-up note unless it rotates itself back out.
+
+As a **non-home role** (cleaner, architect, hardender, documenter), after
+`done_with_current.sh` completes any note — including a merge-up note — if
+your inbox is then empty, call `rotate_to_role.sh coder` yourself. Do not
+wait for a coordinator chase.
+
+`ready_for_next.sh` also codes this at the tool level as a backstop: as a
+non-home role with an empty mailbox it prints `ROTATE_HOME` (never
+`NO_TASK`) and rotates you to the home role on its own. Treat that as a
+safety net, not a substitute — rotate proactively after a note rather than
+relying on the next `ready_for_next.sh` call to catch it.
+
 ## After a parcel finishes (QA done) — home vs intake drain
 
 When the parcel ends (QA approved; coordinator does bookkeeping — you do not

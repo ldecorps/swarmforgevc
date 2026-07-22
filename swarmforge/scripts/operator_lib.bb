@@ -1037,5 +1037,94 @@
       (str "Filed for the swarm: " rel-path " — " permalink)
       (str "Filed for the swarm: " rel-path))))
 
+;; ── BL-551: unified LLM cost ledger record builders (pure) ────────────────
+;; Every writer (handoffd.bb's deliver!, operator_runtime.bb's front-desk
+;; reap) builds its record here, then a thin IO append
+;; (llm_cost_ledger_lib.bb) writes it - keeping the origin-attribution shape
+;; in ONE pure place shared by every caller, the same split
+;; front-desk-cost-record above already uses for bridge-cost.jsonl.
+
+(defn llm-invocation-origin
+  "Every origin field the ledger's schema-01 scenario requires, defaulting
+   an unset field to nil (honest-null) rather than omitting it - the reader
+   (extension/src/metrics/llmCostLedgerStore.ts's isValidOrigin) requires
+   every field to be PRESENT (string or null), never absent."
+  [{:keys [subsystem role stage trigger ticket-id handoff-id handoff-type script pack model provider]}]
+  {:subsystem subsystem
+   :role role
+   :stage stage
+   :trigger trigger
+   :ticketId ticket-id
+   :handoffId handoff-id
+   :handoffType handoff-type
+   :script script
+   :pack pack
+   :model model
+   :provider provider})
+
+(defn llm-invocation-record
+  "The full ledger record (schema-01): type/at plus the origin block above.
+   model/tokens/costUsd default to nil (honest-null) - callers pass only
+   what they actually know at write time."
+  [{:keys [at model tokens cost-usd origin]}]
+  {:type "llm_invocation"
+   :at at
+   :model model
+   :tokens tokens
+   :costUsd cost-usd
+   :origin origin})
+
+;; BL-551 writer-handoff-02: a handoff delivery stamps a correlation record
+;; BEFORE the recipient role is woken - model/provider are unknown at this
+;; point (the woken process has not even started), so both stay nil per the
+;; ledger's honest-null discipline, the SAME discipline costUsd/model
+;; already use elsewhere in this file (front-desk-cost-record above).
+(defn handoff-delivery-llm-invocation-record
+  [{:keys [recipient headers]} now-iso-str]
+  (llm-invocation-record
+   {:at now-iso-str
+    :model nil
+    :tokens nil
+    :cost-usd nil
+    :origin (llm-invocation-origin
+             {:subsystem "pipeline"
+              :role recipient
+              :stage recipient
+              :trigger "handoff"
+              :ticket-id (get headers "task")
+              :handoff-id (get headers "id")
+              :handoff-type (get headers "type")
+              :script nil
+              :pack nil
+              :model nil
+              :provider nil})}))
+
+;; BL-551 writer-reap-03: the front-desk headless `claude -p --output-format
+;; json` reap already captures total_cost_usd/model exactly (BL-511); this
+;; folds that SAME result into the unified ledger's shape (in addition to,
+;; never instead of, front-desk-cost-record's own bridge-cost.jsonl record -
+;; the two files serve different readers and neither ticket retires the
+;; other). origin.script names the reaping script per the ticket's own
+;; scenario text ("the record origin includes the reaping script name").
+(defn front-desk-reap-llm-invocation-record
+  [{:keys [total_cost_usd model]} now-iso-str]
+  (llm-invocation-record
+   {:at now-iso-str
+    :model model
+    :tokens nil
+    :cost-usd total_cost_usd
+    :origin (llm-invocation-origin
+             {:subsystem "front_desk"
+              :role "front-desk-operator"
+              :stage nil
+              :trigger "reap"
+              :ticket-id nil
+              :handoff-id nil
+              :handoff-type nil
+              :script "launch_front_desk_operator.sh"
+              :pack nil
+              :model model
+              :provider nil})}))
+
 ;; Allow `bb operator_lib.bb` to be a no-op load (it is a library).
 (when (= *file* (System/getProperty "babashka.file")) nil)

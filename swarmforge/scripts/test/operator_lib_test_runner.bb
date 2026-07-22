@@ -818,6 +818,63 @@
          (operator-lib/front-desk-cost-record
           {:total_cost_usd nil :model "some-unpriced-model"} "2026-07-18T00:00:00Z"))
 
+;; ── BL-551: the unified LLM cost ledger's pure record builders ────────────
+(assert= "llm-invocation-origin: carries every field through verbatim, camelCased for JSON"
+         {:subsystem "pipeline" :role "coder" :stage "coder" :trigger "handoff"
+          :ticketId "BL-551" :handoffId "h-1" :handoffType "git_handoff"
+          :script nil :pack nil :model nil :provider nil}
+         (operator-lib/llm-invocation-origin
+          {:subsystem "pipeline" :role "coder" :stage "coder" :trigger "handoff"
+           :ticket-id "BL-551" :handoff-id "h-1" :handoff-type "git_handoff"
+           :script nil :pack nil :model nil :provider nil}))
+(assert= "llm-invocation-origin: unknown fields stay nil, never fabricated"
+         {:subsystem "front_desk" :role "front-desk-operator" :stage nil :trigger "reap"
+          :ticketId nil :handoffId nil :handoffType nil
+          :script "launch_front_desk_operator.sh" :pack nil :model nil :provider nil}
+         (operator-lib/llm-invocation-origin
+          {:subsystem "front_desk" :role "front-desk-operator" :stage nil :trigger "reap"
+           :ticket-id nil :handoff-id nil :handoff-type nil
+           :script "launch_front_desk_operator.sh" :pack nil :model nil :provider nil}))
+
+(assert= "llm-invocation-record: assembles type/at/model/tokens/costUsd/origin"
+         {:type "llm_invocation" :at "2026-07-22T00:00:00Z" :model "claude-sonnet-5"
+          :tokens nil :costUsd 0.05 :origin {:subsystem "pipeline"}}
+         (operator-lib/llm-invocation-record
+          {:at "2026-07-22T00:00:00Z" :model "claude-sonnet-5" :tokens nil
+           :cost-usd 0.05 :origin {:subsystem "pipeline"}}))
+
+(assert= "handoff-delivery-llm-invocation-record: trigger handoff, ticket/handoff ids from headers, cost/model/tokens honest-null"
+         {:type "llm_invocation" :at "2026-07-22T00:00:00Z" :model nil :tokens nil :costUsd nil
+          :origin {:subsystem "pipeline" :role "coder" :stage "coder" :trigger "handoff"
+                    :ticketId "BL-551" :handoffId "h-1" :handoffType "git_handoff"
+                    :script nil :pack nil :model nil :provider nil}}
+         (operator-lib/handoff-delivery-llm-invocation-record
+          {:recipient "coder" :headers {"task" "BL-551" "id" "h-1" "type" "git_handoff"}}
+          "2026-07-22T00:00:00Z"))
+(assert= "handoff-delivery-llm-invocation-record: missing headers stay nil, never fabricated"
+         {:type "llm_invocation" :at "2026-07-22T00:00:00Z" :model nil :tokens nil :costUsd nil
+          :origin {:subsystem "pipeline" :role "cleaner" :stage "cleaner" :trigger "handoff"
+                    :ticketId nil :handoffId nil :handoffType nil
+                    :script nil :pack nil :model nil :provider nil}}
+         (operator-lib/handoff-delivery-llm-invocation-record
+          {:recipient "cleaner" :headers {}}
+          "2026-07-22T00:00:00Z"))
+
+(assert= "front-desk-reap-llm-invocation-record: carries the exact reported cost and model, origin names the reaping script"
+         {:type "llm_invocation" :at "2026-07-22T00:00:00Z" :model "claude-opus-4-8" :tokens nil :costUsd 0.0123
+          :origin {:subsystem "front_desk" :role "front-desk-operator" :stage nil :trigger "reap"
+                    :ticketId nil :handoffId nil :handoffType nil
+                    :script "launch_front_desk_operator.sh" :pack nil :model "claude-opus-4-8" :provider nil}}
+         (operator-lib/front-desk-reap-llm-invocation-record
+          {:total_cost_usd 0.0123 :model "claude-opus-4-8"} "2026-07-22T00:00:00Z"))
+(assert= "front-desk-reap-llm-invocation-record: an unpriced/unknown cost stays nil, never coerced to 0"
+         {:type "llm_invocation" :at "2026-07-22T00:00:00Z" :model nil :tokens nil :costUsd nil
+          :origin {:subsystem "front_desk" :role "front-desk-operator" :stage nil :trigger "reap"
+                    :ticketId nil :handoffId nil :handoffType nil
+                    :script "launch_front_desk_operator.sh" :pack nil :model nil :provider nil}}
+         (operator-lib/front-desk-reap-llm-invocation-record
+          {:total_cost_usd nil :model nil} "2026-07-22T00:00:00Z"))
+
 ;; ── BL-334: the self-contained prompt text for the restricted Operator -
 ;;    it has no Read tool, so everything it needs must be inlined here ─────
 (let [prompt (operator-lib/front-desk-reply-prompt

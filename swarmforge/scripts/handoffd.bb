@@ -21,6 +21,7 @@
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "briefing_generation_schedule_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "banked_briefing_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "operator_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "llm_cost_ledger_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "closing_context_clear_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "standing_rule_violations_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "standing_rule_violations_files.bb")))
@@ -427,6 +428,17 @@
                     ;; copy, and carries the identical crash-durability gap
                     ;; if written with a bare spit.
                     (handoff-lib/atomic-write! target (render-message (:headers delivered) (:body delivered))))
+                  ;; BL-551 writer-handoff-02: stamp an llm_invocation
+                  ;; correlation record BEFORE the recipient is woken -
+                  ;; try/catch'd so a telemetry write failure never blocks
+                  ;; the real delivery/wake below it.
+                  (try
+                    (llm-cost-ledger-lib/append-llm-invocation-record!
+                     (str state-dir)
+                     (operator-lib/handoff-delivery-llm-invocation-record
+                      {:recipient recipient :headers headers} (now)))
+                    (catch Exception e
+                      (log! "llm-cost-ledger-append-error" recipient (.getMessage e))))
                   (maybe-notify! socket roles (:session role-info) recipient (str target)
                                  (:agent role-info) :new-delivery? new-delivery?))))
             (when (= "rule_proposal" (get headers "type"))

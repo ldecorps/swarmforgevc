@@ -15,6 +15,7 @@ const {
   commitCostHealthSidecar,
   computeCostHealthSidecar,
 } = require('../out/notify/costHealthSidecar');
+const { llmCostTelemetryDir } = require('../out/metrics/llmCostLedgerStore');
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -489,4 +490,119 @@ test('BL-338: computeCostHealthSidecar accepts an injectable claudeProjectsDir, 
 
   const sidecar = computeCostHealthSidecar(target, [{ role: 'coder', worktreePath: target }], Date.parse('2026-07-09T18:00:00Z'), claudeProjectsDir);
   assert.equal(sidecar.agents[0].costUsd.value, 3, 'expected the injected 1M priced input tokens ($3/Mtok) to reach the sidecar via the injected claudeProjectsDir');
+});
+
+// ── BL-551 (sidecar-09): top expensive LLM-invocation origins per horizon ─
+
+function llmOrigin(overrides = {}) {
+  return {
+    subsystem: 'pipeline',
+    role: 'coder',
+    stage: 'coder',
+    trigger: 'handoff',
+    ticketId: 'BL-551',
+    handoffId: 'h1',
+    handoffType: 'git_handoff',
+    script: null,
+    pack: null,
+    model: 'claude-sonnet-5',
+    provider: 'claude',
+    ...overrides,
+  };
+}
+
+function llmInvocation(overrides = {}) {
+  return {
+    type: 'llm_invocation',
+    at: '2026-07-09T12:00:00Z',
+    model: 'claude-sonnet-5',
+    tokens: null,
+    costUsd: 1,
+    origin: llmOrigin(),
+    ...overrides,
+  };
+}
+
+function writeLlmLedger(target, records) {
+  const dir = llmCostTelemetryDir(target);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'llm-cost-2026-07.jsonl'), records.map((r) => JSON.stringify(r)).join('\n') + '\n');
+}
+
+test('BL-551: buildCostHealthSidecar carries the given topExpensiveOriginsByHorizon verbatim', () => {
+  const byHorizon = { '3h': [], '24h': [{ key: { role: 'coder' }, costUsd: 4, invocationCount: 2, unknownCostCount: 0 }], '7d': [] };
+  const sidecar = buildCostHealthSidecar(
+    '2026-07-09', {}, {}, emptyReliabilitySeries('2026-07-09T00:00:00Z'), [], [],
+    undefined, undefined, undefined, byHorizon
+  );
+  assert.deepEqual(sidecar.topExpensiveOriginsByHorizon, byHorizon);
+});
+
+test('BL-551: topExpensiveOriginsByHorizon is omitted entirely (not null) when none is given, matching the sidecar\'s own additive-optional convention', () => {
+  const sidecar = buildCostHealthSidecar('2026-07-09', {}, {}, emptyReliabilitySeries('2026-07-09T00:00:00Z'), [], []);
+  assert.equal(Object.prototype.hasOwnProperty.call(sidecar, 'topExpensiveOriginsByHorizon'), false);
+});
+
+test('BL-551: the rendered briefing section lists rolled-up origins with their summed cost, per horizon', () => {
+  const byHorizon = {
+    '3h': [],
+    '24h': [{ key: { role: 'coder', trigger: 'handoff' }, costUsd: 4, invocationCount: 2, unknownCostCount: 0 }],
+    '7d': [],
+  };
+  const sidecar = buildCostHealthSidecar(
+    '2026-07-09', {}, {}, emptyReliabilitySeries('2026-07-09T00:00:00Z'), [], [],
+    undefined, undefined, undefined, byHorizon
+  );
+  const text = renderCostHealthSection(sidecar);
+  assert.match(text, /Top expensive origins:/);
+  assert.match(text, /24h:/);
+  assert.match(text, /coder\/handoff: \$4\.00/);
+});
+
+test('BL-551: an origin group with unpriced invocations notes the unpriced count, never folding it into the total', () => {
+  const byHorizon = { '3h': [], '24h': [{ key: { role: 'coder' }, costUsd: 4, invocationCount: 2, unknownCostCount: 1 }], '7d': [] };
+  const sidecar = buildCostHealthSidecar(
+    '2026-07-09', {}, {}, emptyReliabilitySeries('2026-07-09T00:00:00Z'), [], [],
+    undefined, undefined, undefined, byHorizon
+  );
+  const text = renderCostHealthSection(sidecar);
+  assert.match(text, /coder: \$4\.00 \(1 unpriced\)/);
+});
+
+test('BL-551: the rendered section omits "Top expensive origins" entirely when every horizon is empty', () => {
+  const byHorizon = { '3h': [], '24h': [], '7d': [] };
+  const sidecar = buildCostHealthSidecar(
+    '2026-07-09', {}, {}, emptyReliabilitySeries('2026-07-09T00:00:00Z'), [], [],
+    undefined, undefined, undefined, byHorizon
+  );
+  const text = renderCostHealthSection(sidecar);
+  assert.doesNotMatch(text, /Top expensive origins/);
+});
+
+test('BL-551: computeCostHealthSidecar folds in real ledger rollups without throwing on an empty target', () => {
+  const target = mkTmp();
+  git(target, ['init', '-q']);
+  git(target, ['config', 'user.email', 't@t']);
+  git(target, ['config', 'user.name', 't']);
+  git(target, ['commit', '-q', '-m', 'init', '--allow-empty']);
+
+  const sidecar = computeCostHealthSidecar(target, [{ role: 'coder', worktreePath: target }]);
+  assert.deepEqual(sidecar.topExpensiveOriginsByHorizon, { '3h': [], '24h': [], '7d': [] }, 'no ledger exists in this empty fixture, so every horizon must be an empty rollup, never fabricated');
+});
+
+test('BL-551: computeCostHealthSidecar rolls up real ledger records for the horizon they fall inside', () => {
+  const target = mkTmp();
+  git(target, ['init', '-q']);
+  git(target, ['config', 'user.email', 't@t']);
+  git(target, ['config', 'user.name', 't']);
+  git(target, ['commit', '-q', '-m', 'init', '--allow-empty']);
+  const nowMs = Date.parse('2026-07-09T18:00:00Z');
+  writeLlmLedger(target, [
+    llmInvocation({ at: '2026-07-09T17:00:00Z', costUsd: 5, origin: llmOrigin({ role: 'coder', trigger: 'handoff' }) }),
+  ]);
+
+  const sidecar = computeCostHealthSidecar(target, [{ role: 'coder', worktreePath: target }], nowMs);
+  assert.equal(sidecar.topExpensiveOriginsByHorizon['3h'].length, 1);
+  assert.equal(sidecar.topExpensiveOriginsByHorizon['3h'][0].costUsd, 5);
+  assert.deepEqual(sidecar.topExpensiveOriginsByHorizon['3h'][0].key, { role: 'coder', trigger: 'handoff' });
 });
