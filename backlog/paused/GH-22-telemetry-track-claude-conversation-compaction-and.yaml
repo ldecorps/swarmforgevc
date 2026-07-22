@@ -1,0 +1,126 @@
+id: GH-22
+title: "Context Telemetry: capture invocation events (compactions, token/context utilisation) — recorder + query CLI"
+epic: swarmforge-console
+milestone: M8
+type: feature
+priority: 03
+direction: human-requested
+human_approval: pending
+depends_on: []
+source: https://github.com/ldecorps/swarmforgevc/issues/22
+mutation_cost: medium
+
+description: |
+  Specifier drains this GitHub-seeded intake into paused/ with a proper APS
+  feature + notes, per human directive
+  `backlog/INTAKE-20260722-compaction-telemetry-priority.md` (promote right
+  after BL-525 clears active/, ahead of GH-23).
+
+  ## Problem
+
+  Resident agents appear to compact conversations frequently, making it
+  difficult to understand the root cause and optimise context usage.
+
+  ## Goal
+
+  Add telemetry to measure context growth and compaction events, so GH-23's
+  console dashboard has real data to render.
+
+  ## Slice 1 — recorder + schema + query CLI (this ticket, coder implements now)
+
+  A pure, testable event log + aggregator. No live capture wiring yet — that
+  is Slice 2 (below), a separate follow-on once Slice 1 ships (per this
+  project's epic-runtime-wiring-slice rule: a consumer of a store needs a
+  confirmed writer before it can show real data; GH-23 depends on this
+  ticket precisely because nothing populates the store until Slice 2 lands).
+
+  Observable:
+    1. A CLI can record one invocation event (agent, role, session id,
+       timestamp, input/output/tool-output/prompt-engine/system-prompt/
+       history token counts, context utilisation %, whether a compaction
+       occurred, provider, model, optional estimated cost) into an
+       append-only per-project log.
+    2. A CLI can query a summary for one agent/session: compaction count,
+       time to first compaction, average context utilisation.
+    3. Malformed input is rejected with a clear error and never corrupts
+       the log (partial/invalid records must not be appended).
+
+  Non-goals for Slice 1: no live capture at real invocation call sites, no
+  cost computation/pricing tables, no dashboard UI (GH-23), no timeline/
+  contributor breakdown (stretch goals below).
+
+  ## Slice 2 — live capture wiring (follow-on ticket, not this one)
+
+  Wire actual recording calls into the real agent-invocation path (mono-
+  router respawn / launch wrapper / provider response handling) so events
+  populate from live sessions rather than fixtures. Until Slice 2 ships,
+  GH-23's dashboard can only show fixture- or manually-recorded data — call
+  this out explicitly when GH-23 is drained so its own Slice 1 scope does
+  not silently assume live data. Scenarios for Slice 2 are parked in
+  specs/features/GH-22-context-telemetry-slice-2.feature.draft (not
+  executed by the acceptance runner — BL-233 slice scoping).
+
+  ## Stretch goals (not this ticket; track as remaining_slices under the
+  swarmforge-console epic when someone picks them up)
+
+  - Visual timeline of context growth (GH-23 visualisation).
+  - Identify largest contributors to context consumption.
+  - Correlate compactions with specific tools (git diff, tests, logs, etc.).
+  - Compare providers/models for compaction-frequency differences.
+  - Cost estimation per invocation (needs a pricing table — separate slice).
+
+  ## Success criteria
+
+  The telemetry should allow determining whether frequent compaction is
+  primarily caused by Prompt Engine size, resident conversation length,
+  tool output volume, repeated context injection, or provider behaviour —
+  Slice 1 only needs to make the raw numbers queryable; the causal analysis
+  is a human/GH-23 concern, not this ticket's.
+
+specifier_pins_20260722: |
+  1. MODULE BOUNDARY — Babashka lib + thin CLI, mirroring Model Steward:
+     swarmforge/scripts/context_telemetry_lib.bb (pure record-validate,
+     append, and summary/query functions — no wall-clock reads; callers
+     inject "now") + swarmforge/scripts/context_telemetry_cli.bb (thin
+     main: `record` and `summary` subcommands, per engineering.prompt's
+     CLI thin-wrapper rule).
+  2. STORAGE — append-only JSONL, one event object per line, at
+     .swarmforge/telemetry/context-events.jsonl (gitignored runtime state,
+     mirrors .swarmforge/model-factory/ posture). Commit a schema reference
+     under swarmforge/telemetry/schema/context-event.schema.json (informal
+     structural reference, like model-steward's schema/ dir — the lib is
+     the executable source of truth, not a JSON Schema validator).
+  3. EVENT SCHEMA (Slice 1 fields; cost/provider-compare stays optional/
+     nullable, no computation logic here): agent, role, session_id,
+     timestamp, input_tokens, output_tokens, tool_output_tokens,
+     prompt_engine_tokens, system_prompt_tokens, history_tokens,
+     context_utilization_pct, compaction (bool), provider, model,
+     estimated_cost_usd (nullable, caller-supplied only — no pricing logic
+     in Slice 1).
+  4. VALIDATION — record is rejected (non-zero exit, stderr message, log
+     untouched) when a numeric field is non-numeric or a required field is
+     missing; never partially append.
+  5. QUERY — summary is a pure function over an in-memory list of parsed
+     events (fixture/test-friendly); the CLI's only I/O job is reading the
+     JSONL file and injecting the real clock — mirrors BL-525's exhaustion-
+     detector pin (pure predicate, injected signals, no wall-clock in the
+     lib).
+
+acceptance: specs/features/GH-22-context-telemetry-capture.feature
+
+qa_e2e_procedure: |
+  Fixture-level (no live agent capture needed — Slice 2 not built yet):
+    bb swarmforge/scripts/context_telemetry_cli.bb record --agent coder ...
+      → asserts one line appended to .swarmforge/telemetry/context-events.jsonl
+    bb swarmforge/scripts/context_telemetry_cli.bb summary --agent coder
+      → asserts compaction count + avg utilisation match the recorded fixture events
+    Attempt a record with a non-numeric token count → non-zero exit, log
+    line count unchanged.
+
+out_of_scope: |
+  - Live capture wiring at real agent-invocation call sites (Slice 2,
+    follow-on ticket).
+  - Cost computation / pricing tables (estimated_cost_usd is caller-
+    supplied only).
+  - Dashboard UI / visualisation (GH-23).
+  - Tool/provider correlation analysis (stretch goal, unticketed).
