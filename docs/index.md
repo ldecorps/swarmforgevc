@@ -33,6 +33,7 @@ here.
 - [Using the Operator Telegram Console](how-to/BL-516-operator-telegram-console.md)
 - [Answering the Swarm Offline](how-to/BL-441-answering-offline-runbook.md)
 - [Bringing Up the FES Second Swarm (mono-rotate, own Telegram identity)](how-to/BL-439-fes-second-swarm-bringup.md)
+- [Model Steward: Onboarding, Certification, and Role Recommendations](how-to/BL-547-model-steward-overview.md)
 - [Reviewing Paused Tickets in the Mini App Console](how-to/BL-538-console-paused-ticket-pager.md)
 - [Launching the Perplexity mono-router pack](how-to/perplexity-mono-router-launch.md)
 

@@ -17,7 +17,7 @@ severity: medium
 priority: 10
 direction: human-requested
 depends_on: []
-assigned_to: specifier
+assigned_to: coder
 source: |
   Human intake 2026-07-21 via Cursor chat — "Introduce PromptEngine: Model-Aware
   Prompt Composition Engine". Part of the Swarm Intelligence Layer epic (BL-545).
