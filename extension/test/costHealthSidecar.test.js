@@ -569,6 +569,16 @@ test('BL-551: an origin group with unpriced invocations notes the unpriced count
   assert.match(text, /coder: \$4\.00 \(1 unpriced\)/);
 });
 
+test('BL-551: an origin group whose every key value is null falls back to the "unknown origin" label', () => {
+  const byHorizon = { '3h': [], '24h': [{ key: { role: null, trigger: null }, costUsd: 4, invocationCount: 1, unknownCostCount: 0 }], '7d': [] };
+  const sidecar = buildCostHealthSidecar(
+    '2026-07-09', {}, {}, emptyReliabilitySeries('2026-07-09T00:00:00Z'), [], [],
+    undefined, undefined, undefined, byHorizon
+  );
+  const text = renderCostHealthSection(sidecar);
+  assert.match(text, /unknown origin: \$4\.00/);
+});
+
 test('BL-551: the rendered section omits "Top expensive origins" entirely when every horizon is empty', () => {
   const byHorizon = { '3h': [], '24h': [], '7d': [] };
   const sidecar = buildCostHealthSidecar(
