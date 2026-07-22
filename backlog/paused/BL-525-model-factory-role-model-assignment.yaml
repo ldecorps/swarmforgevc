@@ -138,13 +138,87 @@ description: |
      per-hop in a later slice — call out as out_of_scope if deferred).
 
 acceptance: |
-  Specifier produces paused APS feature + draining notes covering both
-  slices. Coder implements Slice 1 with tests (factory assign + cold
-  apply helper). Slice 2 builds on Slice 1 + BL-235 respawn path with
-  tests. Documenter adds runbook: how to request cheap vs quality, how
-  daily-cap failover is detected, cold vs hot apply. QA verifies
-  fixture-friendly signals for dry providers and recruiter-backed picks
-  (live caps/fixtures where forced exhaustion is impossible).
+  See specs/features/BL-525-model-factory-role-model-assignment.feature for the
+  executable Slice-1 acceptance scenarios (assign returns a role map; cheap vs
+  quality steering; certification gate + uncertified override; daily-cap failover
+  and next-day reset; cold-apply overlay + stop/relaunch plan). Slice 2 (hot-swap)
+  is parked in specs/features/BL-525-model-factory-slice-2.feature.draft and is
+  NOT executed by the acceptance runner until Slice 2 is built (BL-233 slice
+  scoping) — move those scenarios into the live feature file when Slice 2 lands.
+
+  Coder implements Slice 1 with tests (factory assign() + cold-apply helper).
+  Documenter adds a runbook: how to request cheap vs quality, how daily-cap
+  failover is detected, cold vs hot apply. QA verifies fixture-friendly signals
+  for dry providers and recruiter/steward-backed picks (fixtures where forcing a
+  live cap is impossible).
+
+specifier_pins_20260722: |
+  Resolved against SHIPPED code (BL-547 Model Steward is done), not invented:
+
+  1. MODULE BOUNDARY — Babashka lib + thin CLI, mirroring the Steward:
+     swarmforge/scripts/model_factory_lib.bb (pure decision fns) +
+     model_factory_cli.bb (thin main, per engineering.prompt CLI rule).
+     It CONSUMES the Steward read API in swarmforge/scripts/model_steward_lib.bb:
+       - role-recommendations   (ranked certified models per role; already
+                                  excludes uncertified unless :include-uncertified?)
+       - assignment-eligible?    (the certification gate; :override-uncertified?)
+       - certified? / model-status
+     loaded via model_steward_store.bb read-registry! (seeds from
+     swarmforge/model-steward/seed/models.seed.json; runtime at
+     .swarmforge/model-steward/registry.json). NO recruiter/steward re-impl.
+     An extension read-only mirror for UI is a later slice, not Slice 1.
+
+  2. ASSIGNMENT ARTIFACT — generated, gitignored overlay
+     .swarmforge/model-factory/assignment.json:
+       { "<role>": {agent, provider, model, reason, policy}, ... }
+     Committed schema + seed under swarmforge/model-factory/ mirroring
+     swarmforge/model-steward/ (schema/assignment.schema.json + seed). Slice-1
+     cold apply selects/writes an effective launch input FROM this overlay —
+     prefer the generated overlay over editing swarmforge.conf or committing a
+     pack (per ticket's own "prefer generated gitignored overlay").
+
+  3. EXHAUSTION DETECTOR — Slice 1 keeps it a PURE predicate over an injected
+     signal map so acceptance never depends on a live cap (QA can force
+     exhausted/reset in a fixture). Runtime backing is a local state file
+     .swarmforge/model-factory/quota-state.json (per-provider last-exhausted
+     date + reset boundary); the live populate path is HTTP-429 taxonomy via
+     provider_compat_lib.bb provider-auth-error-text?, wired in a LATER slice.
+     "Reset today" = the recorded exhausted date is before the current local
+     calendar day (injected clock in tests — no wall-clock read in pure fns).
+
+  4. rotate_to_role INTERACTION (Slice 1) — factory is called ONLY on policy
+     events + explicit operator/coordinator request. Per-hop factory call on
+     every mono-router rotate is OUT OF SCOPE for Slice 1 (see out_of_scope);
+     deferred to a later slice with an explicit cost model.
+
+  5. COLD APPLY reference path — reuse failover_to_gpt.sh's proven sequence
+     (kill_all_swarm.sh + ./swarm --pack <resolved>). The executable scenario
+     (cold-apply-plan-08) asserts the overlay WRITE + the stop/relaunch PLAN via
+     an injected launch seam; the live-pane match (coder + coordinator on
+     mono-router reflect the factory map) is QA's manual e2e below, because live
+     tmux/PTY is this project's untestable boundary (engineering.prompt).
+
+  6. SECRETS — BL-130 preserved: the overlay/assignment descriptor names
+     provider+model only; API keys arrive via pane -e / host store, never
+     written into the overlay, packs, or launch scripts.
+
+qa_e2e_procedure: |
+  Fixture-level (no live cap needed):
+    bb swarmforge/scripts/model_factory_cli.bb assign --mode quality
+      → asserts a full role map, each entry certified (or override-flagged).
+    Force a fixture registry where coder's cheapest eligible model is a
+    "candidate" → cheap-mode assign must fall through to a certified model;
+    add --override-uncertified → the candidate is assigned with the reason
+    recorded (certification-gate-holds-04 / uncertified-override-05).
+    Inject quota-state marking cerebras exhausted "today" → cheap-mode coder
+    must be openai, not cerebras/openrouter/claude (daily-cap-failover-06);
+    roll the injected clock forward a day → cerebras preferred again
+    (daily-cap-resets-next-day-07).
+  Live cold-apply (manual, mono-router):
+    From a running cerebras-mono-router, run the cold-apply helper (or its
+    reference failover_to_gpt.sh) → after relaunch, spot-check that the coder
+    and coordinator panes run the agent/model named in
+    .swarmforge/model-factory/assignment.json.
 
 out_of_scope: |
   - Recruiter re-implementation (BL-233 stays scout/recommend; factory
