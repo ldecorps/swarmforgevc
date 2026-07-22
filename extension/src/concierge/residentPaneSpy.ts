@@ -7,7 +7,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { formatUpdatedAtLabel } from './pipelineBoard';
 import { lookupBacklogItemById } from '../panel/backlogReader';
-import { extractTicketId, readHandoffHeaderRecordsWithBatches } from '../metrics/swarmMetrics';
+import { extractTicketId, findTicketIdInText, readHandoffHeaderRecordsWithBatches } from '../metrics/swarmMetrics';
 import { mailboxDir, parseRolesTsv, readPipelineStages } from '../swarm/swarmState';
 
 export const RESIDENT_PANE_SPY_MESSAGE_MAX_LENGTH = 4000;
@@ -88,7 +88,7 @@ export function extractTicketIdFromHandoffHeaders(headers: Record<string, string
   if (fromTask) {
     return fromTask;
   }
-  return headers.message ? extractTicketId(headers.message) : null;
+  return headers.message ? findTicketIdInText(headers.message) : null;
 }
 
 function readInProcessClaimForRole(
