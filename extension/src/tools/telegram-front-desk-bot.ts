@@ -806,6 +806,15 @@ export async function ensureResidentSpyTopic(targetPath: string, botToken: strin
   const topicMap = readTopicMap(targetPath);
   const decision = decideEnsureResidentSpyTopicAction(topicMap);
   if (decision.kind === 'reuse') {
+    await syncStandingTopicTitleIfNeeded(
+      targetPath,
+      RESIDENT_SPY_SUBJECT_ID,
+      decision.topicId,
+      RESIDENT_SPY_TOPIC_NAME,
+      botToken,
+      chatId,
+      postFn
+    );
     return decision.topicId;
   }
   const created = await createForumTopic(botToken, chatId, RESIDENT_SPY_TOPIC_NAME, postFn);
@@ -815,6 +824,10 @@ export async function ensureResidentSpyTopic(targetPath: string, botToken: strin
   }
   topicMap[topicMapKey(created.messageThreadId)] = RESIDENT_SPY_SUBJECT_ID;
   writeTopicMap(targetPath, topicMap);
+  writeStandingTopicTitles(targetPath, {
+    ...readStandingTopicTitles(targetPath),
+    [RESIDENT_SPY_SUBJECT_ID]: RESIDENT_SPY_TOPIC_NAME,
+  });
   return created.messageThreadId;
 }
 
