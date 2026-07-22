@@ -45,9 +45,8 @@
   [event]
   (if-let [missing (first (remove #(present? event %) required-fields))]
     {:valid? false :error (str "missing required field: " (name missing))}
-    (if-let [bad (first (remove (fn [k] (or (not (present? event k))
-                                             (some? (parse-number (get event k)))))
-                                 numeric-fields))]
+    (if-let [bad (some (fn [k] (when (and (present? event k) (nil? (parse-number (get event k)))) k))
+                       numeric-fields)]
       {:valid? false :error (str "non-numeric value for field: " (name bad))}
       {:valid? true})))
 
