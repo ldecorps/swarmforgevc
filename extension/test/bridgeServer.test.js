@@ -1036,6 +1036,8 @@ test('serves /resident-spy HTML without a prior bearer/query token', async () =>
     assert.match(body, /resident-pane\?token=/);
     assert.match(body, /pane-split/);
     assert.match(body, /All panes/);
+    assert.match(body, /ticket-strip/);
+    assert.match(body, /pane-focused/);
     assert.doesNotMatch(body, /<header>/);
   });
 });
