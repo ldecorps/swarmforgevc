@@ -167,6 +167,26 @@
              (str/starts-with? (agent-runtime-lib/bootstrap-text "claude" "coder")
                                 (agent-runtime-lib/stable-bootstrap-prefix)))
 
+;; ── BL-546: the legacy surface is a byte-exact delegate of PromptEngine ───
+;; compose owns the assembly now; bootstrap-text / the stable-prefix fns must
+;; return identical bytes to the PromptEngine equivalents so the migration is
+;; behavior-preserving for every pre-existing caller.
+(assert= "bootstrap-text is byte-identical to PromptEngine compose :system-prompt"
+         (agent-runtime-lib/bootstrap-text "claude" "coder" :two-pack? true :overlay-prompt "swarmforge/packs/mono-router.prompt")
+         (:system-prompt (prompt-engine-lib/compose "coder" {:agent "claude"
+                                                             :two-pack? true
+                                                             :overlay-prompt "swarmforge/packs/mono-router.prompt"})))
+
+(assert= "bootstrap-text for aider is byte-identical to PromptEngine compose :system-prompt"
+         (agent-runtime-lib/bootstrap-text "aider" "coordinator" :two-pack? true)
+         (:system-prompt (prompt-engine-lib/compose "coordinator" {:agent "aider" :two-pack? true})))
+
+(assert= "stable-prefix-text is byte-identical to PromptEngine's"
+         (agent-runtime-lib/stable-prefix-text) (prompt-engine-lib/stable-prefix-text))
+
+(assert= "stable-bootstrap-prefix is byte-identical to PromptEngine's"
+         (agent-runtime-lib/stable-bootstrap-prefix) (prompt-engine-lib/stable-bootstrap-prefix))
+
 (assert-true "needs-tmux-bootstrap distinguishes agents"
              (and (agent-runtime-lib/needs-tmux-bootstrap? "aider")
                   (not (agent-runtime-lib/needs-tmux-bootstrap? "claude"))))
@@ -189,20 +209,20 @@
 (assert=
  "a provider with the same capability flags as claude gets the same wake steps as claude, decided purely from data"
  (agent-runtime-lib/wake-steps "claude")
- (with-redefs [agent-runtime-lib/provider-capabilities
-               (assoc agent-runtime-lib/provider-capabilities "codex" (get agent-runtime-lib/provider-capabilities "claude"))]
+ (with-redefs [prompt-engine-lib/provider-capabilities
+               (assoc prompt-engine-lib/provider-capabilities "codex" (get prompt-engine-lib/provider-capabilities "claude"))]
    (agent-runtime-lib/wake-steps "codex")))
 
 ;; ── BL-206 new-provider-is-capabilities-02: adding a provider is adding ───
 ;; one capability-map entry, no existing function's logic changes. Proven
 ;; by rebinding provider-capabilities with a wholly synthetic provider and
 ;; confirming the SAME shared functions (unedited) already handle it.
-(let [synthetic-caps (assoc agent-runtime-lib/provider-capabilities
+(let [synthetic-caps (assoc prompt-engine-lib/provider-capabilities
                              "synthetic-provider" {:wake-style :chat-message
                                                     :bootstrap-style :embedded
                                                     :bootstrap-text-style :generic})]
-  (with-redefs [agent-runtime-lib/provider-capabilities synthetic-caps
-                agent-runtime-lib/supported-agents (conj agent-runtime-lib/supported-agents "synthetic-provider")]
+  (with-redefs [prompt-engine-lib/provider-capabilities synthetic-caps
+                prompt-engine-lib/supported-agents (conj prompt-engine-lib/supported-agents "synthetic-provider")]
     (assert= "a synthetic provider declared with only capability flags gets uniform chat-style wake steps"
              [{:op :send-literal :text agent-runtime-lib/default-wake-chat-message}
               {:op :submit}]

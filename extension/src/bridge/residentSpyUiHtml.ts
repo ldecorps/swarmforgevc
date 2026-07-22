@@ -53,19 +53,34 @@ export function getResidentSpyUiHtml(): string {
   .pane-col:last-child { border-right: none; }
   .pane-head {
     flex: 0 0 auto;
-    padding: 8px 10px;
-    font-size: 11px;
-    line-height: 1.35;
-    font-weight: 600;
+    padding: 10px 12px;
     border-bottom: 1px solid color-mix(in srgb, var(--tg-theme-hint-color, #8b949e) 20%, transparent);
     word-break: break-word;
   }
-  .pane-session {
-    display: block;
-    margin-top: 2px;
+  .pane-kind {
     font-size: 10px;
-    font-weight: 400;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
     color: var(--tg-theme-hint-color, #8b949e);
+    margin-bottom: 4px;
+  }
+  .pane-title {
+    font-size: 13px;
+    line-height: 1.35;
+    font-weight: 700;
+    color: var(--tg-theme-text-color, #e6edf3);
+  }
+  .pane-ticket {
+    margin-top: 6px;
+    font-size: 11px;
+    line-height: 1.4;
+    font-weight: 500;
+    color: color-mix(in srgb, var(--tg-theme-text-color, #e6edf3) 88%, var(--tg-theme-hint-color, #8b949e));
+  }
+  .pane-ticket-id {
+    font-weight: 700;
+    color: var(--tg-theme-text-color, #e6edf3);
   }
   pre {
     flex: 1 1 auto;
@@ -108,6 +123,7 @@ export function getResidentSpyUiHtml(): string {
   var ageEl = document.getElementById('age');
   var dotEl = document.getElementById('dot');
   var lastOk = 0;
+  var lastResidentClaimEnteredAtMs = 0;
 
   function setStatus(kind, text) {
     dotEl.className = 'dot' + (kind === 'ok' ? '' : ' ' + kind);
@@ -120,21 +136,47 @@ export function getResidentSpyUiHtml(): string {
     setStatus(s > 5 ? 'stale' : 'ok', 'updated ' + s + 's ago');
   }
 
-  function renderPane(pane, headEl, paneEl, fallbackLabel) {
+  function formatClaimEnteredAgo(claimEnteredAtMs) {
+    var elapsedSec = Math.max(0, Math.floor((Date.now() - claimEnteredAtMs) / 1000));
+    if (elapsedSec < 60) return 'entered ' + elapsedSec + 's ago';
+    var elapsedMin = Math.floor(elapsedSec / 60);
+    if (elapsedMin < 60) return 'entered ' + elapsedMin + 'm ago';
+    var elapsedHr = Math.floor(elapsedMin / 60);
+    if (elapsedHr < 48) return 'entered ' + elapsedHr + 'h ago';
+    return 'entered ' + Math.floor(elapsedHr / 24) + 'd ago';
+  }
+
+  function renderPane(pane, headEl, paneEl, fallbackLabel, showClaimEntered) {
     if (!pane || pane.available === false) {
       headEl.textContent = fallbackLabel + ' (unavailable)';
       paneEl.textContent = '(pane not reachable)';
       return;
     }
-    headEl.innerHTML = '';
-    headEl.appendChild(document.createTextNode(pane.header || (fallbackLabel + ': ' + (pane.roleLabel || 'unknown'))));
-    if (pane.sessionTarget) {
-      var sessionSpan = document.createElement('span');
-      sessionSpan.className = 'pane-session';
-      sessionSpan.textContent = pane.sessionTarget;
-      headEl.appendChild(sessionSpan);
+    var title = pane.roleLabel || 'unknown';
+    if (pane.modelLabel) {
+      title += ' on ' + pane.modelLabel;
     }
+    if (showClaimEntered && pane.claimEnteredAtMs) {
+      title += ' · ' + formatClaimEnteredAgo(pane.claimEnteredAtMs);
+    }
+    var html = '<div class="pane-kind">' + fallbackLabel + '</div>';
+    html += '<div class="pane-title">' + escapeHtml(title) + '</div>';
+    if (pane.ticketId) {
+      html += '<div class="pane-ticket"><span class="pane-ticket-id">' + escapeHtml(pane.ticketId) + '</span>';
+      if (pane.ticketTitle) {
+        html += ' — ' + escapeHtml(pane.ticketTitle);
+      }
+      html += '</div>';
+    }
+    headEl.innerHTML = html;
     paneEl.textContent = pane.paneText || '(empty)';
+  }
+
+  function escapeHtml(text) {
+    return String(text)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
   }
 
   function refresh() {
@@ -148,8 +190,9 @@ export function getResidentSpyUiHtml(): string {
           setStatus('err', 'no data');
           return;
         }
-        renderPane(data.resident, residentHeadEl, residentPaneEl, 'Resident');
-        renderPane(data.coordinator, coordinatorHeadEl, coordinatorPaneEl, 'Coordinator');
+        renderPane(data.resident, residentHeadEl, residentPaneEl, 'Resident', true);
+        renderPane(data.coordinator, coordinatorHeadEl, coordinatorPaneEl, 'Coordinator', false);
+        lastResidentClaimEnteredAtMs = data.resident && data.resident.claimEnteredAtMs ? data.resident.claimEnteredAtMs : 0;
         if (!data.available) {
           setStatus('err', 'resident unavailable');
         } else {
@@ -165,6 +208,13 @@ export function getResidentSpyUiHtml(): string {
   refresh();
   setInterval(refresh, 1500);
   setInterval(tickAge, 500);
+  setInterval(function () {
+    if (!lastResidentClaimEnteredAtMs) return;
+    var titleEl = residentHeadEl.querySelector('.pane-title');
+    if (!titleEl) return;
+    var base = titleEl.textContent.replace(/ · entered .*$/, '');
+    titleEl.textContent = base + ' · ' + formatClaimEnteredAgo(lastResidentClaimEnteredAtMs);
+  }, 1000);
 })();
 </script>
 </body>

@@ -110,6 +110,36 @@
              (not (mono-router-lib/should-send-stuck-escalation-email?
                    {:escalated? true :session-exists? false})))
 
+(assert-true "in_process mail is actionable"
+             (mono-router-lib/actionable-mail? {:in-process-count 1 :git-handoff-count 0}))
+(assert-true "git_handoff in new is actionable"
+             (mono-router-lib/actionable-mail? {:in-process-count 0 :git-handoff-count 1}))
+(assert-true "empty mailbox is not actionable"
+             (not (mono-router-lib/actionable-mail? {:in-process-count 0 :git-handoff-count 0})))
+
+(assert= "newest actionable role wins"
+         "architect"
+         (mono-router-lib/preferred-rotate-target
+          [{:role "coder" :newest-created-at "2026-07-22T01:00:00Z" :actionable? false}
+           {:role "cleaner" :newest-created-at "2026-07-22T02:00:00Z" :actionable? true}
+           {:role "architect" :newest-created-at "2026-07-22T03:00:00Z" :actionable? true}]))
+
+(assert= "busy resident blocks rotate"
+         :busy
+         (mono-router-lib/should-rotate-resident?
+          {:active-role "coder" :target-role "cleaner" :resident-busy? true
+           :last-rotate-at-ms 0 :now-ms 100000 :cooldown-ms 30000}))
+(assert= "cooldown blocks rotate"
+         :cooldown
+         (mono-router-lib/should-rotate-resident?
+          {:active-role "coder" :target-role "cleaner" :resident-busy? false
+           :last-rotate-at-ms 90000 :now-ms 100000 :cooldown-ms 30000}))
+(assert= "ready to rotate"
+         :rotate
+         (mono-router-lib/should-rotate-resident?
+          {:active-role "coder" :target-role "cleaner" :resident-busy? false
+           :last-rotate-at-ms 0 :now-ms 100000 :cooldown-ms 30000}))
+
 (when (seq @failures)
   (binding [*out* *err*]
     (doseq [f @failures] (println f)))
