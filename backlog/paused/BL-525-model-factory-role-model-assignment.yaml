@@ -6,10 +6,13 @@ status: todo
 epic: swarm-intelligence-layer
 human_approval: approved
 severity: medium
-priority: 02
+priority: 15
 direction: human-requested
 depends_on: [BL-546]
-assigned_to: coder
+assigned_to: specifier
+promotion_blockers: >
+  Human directive 2026-07-22 (INTAKE-20260722-compaction-telemetry-priority.md):
+  park until GH-22/GH-23 are specced and at least GH-22 is in the forward pipeline.
 source: |
   human (ldecorps) via Cursor chat 2026-07-18 — first as daily free-cap
   Cerebras→GPT failover intake; then expanded: "beef up the next ticket about
