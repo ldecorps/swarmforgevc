@@ -20,6 +20,7 @@ const {
   ensureAgentQuestionsTopic,
   ensureBacklogTopic,
   ensureControlTopic,
+  ensureResidentSpyTopic,
   ensureBoardTopicAdapter,
   emitPipelineBoardFailureAlert,
   controlDrainTimeoutMs,
@@ -970,6 +971,45 @@ test('BL-423: an already-bound Control topic returns its existing topicId, witho
   writeTopicMapFixture(root, { '42': 'CONTROL' });
   const { postFn, calls } = fakeCreateOk(999);
   const topicId = await ensureControlTopic(root, 'fake-token', 'fake-chat', postFn);
+  assert.equal(topicId, 42);
+  assert.equal(calls.length, 0);
+});
+
+// ── ensureResidentSpyTopic (BL-522, rename-on-reuse like BL-453 Concierge) ──
+
+test('ensureResidentSpyTopic: creates the Swarm Live Screen topic and binds RESIDENT_SPY when unbound', async () => {
+  const root = mkTmpRoot();
+  const { postFn, calls } = fakeCreateOk(42);
+  await ensureResidentSpyTopic(root, 'fake-token', 'fake-chat', postFn);
+  assert.equal(calls.length, 1);
+  assert.match(calls[0].body, /"name":"Swarm Live Screen"/);
+  assert.equal(readTopicMapFixture(root)['42'], 'RESIDENT_SPY');
+  assert.equal(readStandingTopicTitlesFixture(root).RESIDENT_SPY, 'Swarm Live Screen');
+});
+
+test('ensureResidentSpyTopic: renames a stale Mono Router Live Screen title on reuse', async () => {
+  const root = mkTmpRoot();
+  writeTopicMapFixture(root, { '42': 'RESIDENT_SPY' });
+  writeStandingTopicTitlesFixture(root, { RESIDENT_SPY: 'Mono Router Live Screen' });
+  const calls = [];
+  const postFn = async (url, body) => {
+    calls.push({ url, body });
+    return { ok: true, status: 200, json: { ok: true, result: {} } };
+  };
+  const topicId = await ensureResidentSpyTopic(root, 'fake-token', 'fake-chat', postFn);
+  assert.equal(topicId, 42);
+  assert.equal(calls.length, 1);
+  assert.match(calls[0].url, /editForumTopic$/);
+  assert.match(calls[0].body, /"name":"Swarm Live Screen"/);
+  assert.equal(readStandingTopicTitlesFixture(root).RESIDENT_SPY, 'Swarm Live Screen');
+});
+
+test('ensureResidentSpyTopic: an already-correct title never fires a redundant rename', async () => {
+  const root = mkTmpRoot();
+  writeTopicMapFixture(root, { '42': 'RESIDENT_SPY' });
+  writeStandingTopicTitlesFixture(root, { RESIDENT_SPY: 'Swarm Live Screen' });
+  const { postFn, calls } = fakeCreateOk(999);
+  const topicId = await ensureResidentSpyTopic(root, 'fake-token', 'fake-chat', postFn);
   assert.equal(topicId, 42);
   assert.equal(calls.length, 0);
 });
