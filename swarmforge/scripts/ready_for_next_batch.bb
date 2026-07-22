@@ -5,6 +5,8 @@
             [clojure.string :as str]))
 
 (load-file (str (fs/path (fs/parent *file*) "handoff_lib.bb")))
+(load-file (str (fs/path (fs/parent *file*) "backlog_depth_lib.bb")))
+(load-file (str (fs/path (fs/parent *file*) "mono_router_lib.bb")))
 
 (def idle-boundary?
   "Set only when invoked from done_with_current_batch.bb, right after it
@@ -16,6 +18,29 @@
   (when (and idle-boundary?
              (handoff-lib/idle-clear-enabled? (handoff-lib/current-role)))
     (handoff-lib/respawn-self! (handoff-lib/current-role))))
+
+;; ── BL-550: non-home resident strands after a merge-up note (batch mode) ──
+;; The cleaner/hardender run in batch mode and strand the same way as a
+;; task-mode role - same decision as ready_for_next_task.bb.
+
+(defn- mono-router-conf-text []
+  (try (slurp (str (backlog-depth-lib/conf-file-path (handoff-lib/target-root))))
+       (catch Exception _ nil)))
+
+(defn report-no-task-or-rotate! []
+  (let [conf-text (mono-router-conf-text)
+        home-role (mono-router-lib/parse-rotation-home conf-text)]
+    (if (mono-router-lib/rotate-home?
+         {:rotation-router? (mono-router-lib/conf-rotation-router? conf-text)
+          :role (handoff-lib/current-role)
+          :home-role home-role
+          :mailbox-empty? true})
+      (do
+        (println "ROTATE_HOME")
+        (println (str "HOME_ROLE: " home-role)))
+      (do
+        (println "NO_TASK")
+        (maybe-clear-at-idle-boundary!)))))
 
 (defn print-batch [batch-dir]
   (let [files (handoff-lib/handoff-files batch-dir)]
@@ -68,9 +93,7 @@
                 ;; never be promoted into a batch as work.
                 dequeueable          (handoff-lib/resolve-dequeueable-candidates new-files completed-basenames abandoned-basenames)]
             (if (empty? dequeueable)
-              (do
-                (println "NO_TASK")
-                (maybe-clear-at-idle-boundary!))
+              (report-no-task-or-rotate!)
               (let [batch-priority (handoff-lib/header-value (first dequeueable) "priority" "50")
                     batch-dir      (new-batch-dir in-process-dir)
                     selected-files (filter #(= batch-priority (handoff-lib/header-value % "priority" "50")) dequeueable)]

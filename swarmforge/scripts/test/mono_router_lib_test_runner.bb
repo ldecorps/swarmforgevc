@@ -140,6 +140,39 @@
           {:active-role "coder" :target-role "cleaner" :resident-busy? false
            :last-rotate-at-ms 0 :now-ms 100000 :cooldown-ms 30000}))
 
+;; ── BL-550: parse-rotation-home / rotate-home? ────────────────────────────
+(assert= "reads config rotation_home"
+         "documenter"
+         (mono-router-lib/parse-rotation-home
+          "config rotation router\nconfig rotation_home documenter\n"))
+(assert= "defaults to coder when the line is absent"
+         "coder"
+         (mono-router-lib/parse-rotation-home "config rotation router\n"))
+(assert= "defaults to coder on nil conf text"
+         "coder"
+         (mono-router-lib/parse-rotation-home nil))
+
+(assert-true "non-home role, empty mailbox, mono-router -> rotate home"
+             (mono-router-lib/rotate-home?
+              {:rotation-router? true :role "documenter" :home-role "coder"
+               :mailbox-empty? true}))
+(assert-true "home role never rotates to itself"
+             (not (mono-router-lib/rotate-home?
+                   {:rotation-router? true :role "coder" :home-role "coder"
+                    :mailbox-empty? true})))
+(assert-true "non-home role with mail stays put"
+             (not (mono-router-lib/rotate-home?
+                   {:rotation-router? true :role "cleaner" :home-role "coder"
+                    :mailbox-empty? false})))
+(assert-true "outside mono-router, no rotation at all"
+             (not (mono-router-lib/rotate-home?
+                   {:rotation-router? false :role "documenter" :home-role "coder"
+                    :mailbox-empty? true})))
+(assert-true "a different home role is honored, not hard-coded"
+             (mono-router-lib/rotate-home?
+              {:rotation-router? true :role "cleaner" :home-role "documenter"
+               :mailbox-empty? true}))
+
 (when (seq @failures)
   (binding [*out* *err*]
     (doseq [f @failures] (println f)))
