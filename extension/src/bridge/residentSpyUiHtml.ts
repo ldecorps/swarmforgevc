@@ -53,18 +53,39 @@ export function getResidentSpyUiHtml(): string {
   .pane-col:last-child { border-right: none; }
   .pane-head {
     flex: 0 0 auto;
-    padding: 8px 10px;
-    font-size: 11px;
-    line-height: 1.35;
-    font-weight: 600;
+    padding: 10px 12px;
     border-bottom: 1px solid color-mix(in srgb, var(--tg-theme-hint-color, #8b949e) 20%, transparent);
     word-break: break-word;
   }
-  .pane-session {
-    display: block;
-    margin-top: 2px;
+  .pane-kind {
     font-size: 10px;
-    font-weight: 400;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--tg-theme-hint-color, #8b949e);
+    margin-bottom: 4px;
+  }
+  .pane-title {
+    font-size: 13px;
+    line-height: 1.35;
+    font-weight: 700;
+    color: var(--tg-theme-text-color, #e6edf3);
+  }
+  .pane-ticket {
+    margin-top: 6px;
+    font-size: 11px;
+    line-height: 1.4;
+    font-weight: 500;
+    color: color-mix(in srgb, var(--tg-theme-text-color, #e6edf3) 88%, var(--tg-theme-hint-color, #8b949e));
+  }
+  .pane-ticket-id {
+    font-weight: 700;
+    color: var(--tg-theme-text-color, #e6edf3);
+  }
+  .pane-entered {
+    margin-top: 6px;
+    font-size: 10px;
+    font-weight: 500;
     color: var(--tg-theme-hint-color, #8b949e);
   }
   pre {
@@ -120,21 +141,37 @@ export function getResidentSpyUiHtml(): string {
     setStatus(s > 5 ? 'stale' : 'ok', 'updated ' + s + 's ago');
   }
 
-  function renderPane(pane, headEl, paneEl, fallbackLabel) {
+  function renderPane(pane, headEl, paneEl, fallbackLabel, showClaimEntered) {
     if (!pane || pane.available === false) {
       headEl.textContent = fallbackLabel + ' (unavailable)';
       paneEl.textContent = '(pane not reachable)';
       return;
     }
-    headEl.innerHTML = '';
-    headEl.appendChild(document.createTextNode(pane.header || (fallbackLabel + ': ' + (pane.roleLabel || 'unknown'))));
-    if (pane.sessionTarget) {
-      var sessionSpan = document.createElement('span');
-      sessionSpan.className = 'pane-session';
-      sessionSpan.textContent = pane.sessionTarget;
-      headEl.appendChild(sessionSpan);
+    var title = pane.roleLabel || 'unknown';
+    if (pane.modelLabel) {
+      title += ' on ' + pane.modelLabel;
     }
+    var html = '<div class="pane-kind">' + fallbackLabel + '</div>';
+    html += '<div class="pane-title">' + escapeHtml(title) + '</div>';
+    if (pane.ticketId) {
+      html += '<div class="pane-ticket"><span class="pane-ticket-id">' + escapeHtml(pane.ticketId) + '</span>';
+      if (pane.ticketTitle) {
+        html += ' — ' + escapeHtml(pane.ticketTitle);
+      }
+      html += '</div>';
+    }
+    if (showClaimEntered && pane.claimEnteredAgo) {
+      html += '<div class="pane-entered">' + escapeHtml(pane.claimEnteredAgo) + '</div>';
+    }
+    headEl.innerHTML = html;
     paneEl.textContent = pane.paneText || '(empty)';
+  }
+
+  function escapeHtml(text) {
+    return String(text)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
   }
 
   function refresh() {
@@ -148,8 +185,8 @@ export function getResidentSpyUiHtml(): string {
           setStatus('err', 'no data');
           return;
         }
-        renderPane(data.resident, residentHeadEl, residentPaneEl, 'Resident');
-        renderPane(data.coordinator, coordinatorHeadEl, coordinatorPaneEl, 'Coordinator');
+        renderPane(data.resident, residentHeadEl, residentPaneEl, 'Resident', true);
+        renderPane(data.coordinator, coordinatorHeadEl, coordinatorPaneEl, 'Coordinator', false);
         if (!data.available) {
           setStatus('err', 'resident unavailable');
         } else {

@@ -7,7 +7,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { formatUpdatedAtLabel } from './pipelineBoard';
 import { lookupBacklogItemById } from '../panel/backlogReader';
-import { readPipelineStages } from '../swarm/swarmState';
+import { extractTicketId, readHandoffHeaderRecordsWithBatches } from '../metrics/swarmMetrics';
+import { mailboxDir, parseRolesTsv, readPipelineStages } from '../swarm/swarmState';
 
 export const RESIDENT_PANE_SPY_MESSAGE_MAX_LENGTH = 4000;
 export const MONO_ROUTER_LIVE_SCREEN_NAME = 'Mono Router Live Screen';
@@ -32,31 +33,85 @@ export interface ResidentPaneSpySnapshot {
   modelLabel?: string;
   ticketId?: string;
   ticketTitle?: string;
+  claimEnteredAtMs?: number;
+  claimEnteredAgo?: string;
+}
+
+export function formatClaimEnteredAgo(claimEnteredAtMs: number, nowMs: number = Date.now()): string {
+  const elapsedSec = Math.max(0, Math.floor((nowMs - claimEnteredAtMs) / 1000));
+  if (elapsedSec < 60) {
+    return `entered ${elapsedSec}s ago`;
+  }
+  const elapsedMin = Math.floor(elapsedSec / 60);
+  if (elapsedMin < 60) {
+    return `entered ${elapsedMin}m ago`;
+  }
+  const elapsedHr = Math.floor(elapsedMin / 60);
+  if (elapsedHr < 48) {
+    return `entered ${elapsedHr}h ago`;
+  }
+  const elapsedDay = Math.floor(elapsedHr / 24);
+  return `entered ${elapsedDay}d ago`;
 }
 
 export function formatResidentSpyHeader(
   snap: Pick<ResidentPaneSpySnapshot, 'roleLabel' | 'modelLabel' | 'sessionTarget' | 'ticketId' | 'ticketTitle'>,
-  prefix: 'Resident' | 'Coordinator' = 'Resident'
+  prefix: 'Resident' | 'Coordinator' = 'Resident',
+  options: { includeSession?: boolean } = {}
 ): string {
   const model = snap.modelLabel ? ` on ${snap.modelLabel}` : '';
   const ticket =
     snap.ticketId !== undefined
       ? ` - ${snap.ticketId}${snap.ticketTitle ? ` - ${snap.ticketTitle}` : ''}`
       : '';
-  const session = snap.sessionTarget ? ` (${snap.sessionTarget})` : '';
+  const includeSession = options.includeSession ?? true;
+  const session = includeSession && snap.sessionTarget ? ` (${snap.sessionTarget})` : '';
   return `${prefix}: ${snap.roleLabel}${model}${ticket}${session}`;
 }
 
-export function resolveResidentHeldTicketMeta(
-  targetPath: string,
-  modelRole: string
-): Pick<ResidentPaneSpySnapshot, 'ticketId' | 'ticketTitle'> {
+export interface ResidentHeldTicketMeta {
+  ticketId?: string;
+  ticketTitle?: string;
+  claimEnteredAtMs?: number;
+}
+
+function readRoleEntry(targetPath: string, modelRole: string) {
+  const rolesFile = path.join(targetPath, '.swarmforge', 'roles.tsv');
+  if (!fs.existsSync(rolesFile)) {
+    return undefined;
+  }
+  return parseRolesTsv(fs.readFileSync(rolesFile, 'utf8')).find((entry) => entry.role === modelRole);
+}
+
+export function resolveResidentHeldTicketMeta(targetPath: string, modelRole: string): ResidentHeldTicketMeta {
   const ticketId = readPipelineStages(targetPath).find((stage) => stage.role === modelRole)?.heldTicketIds[0];
   if (!ticketId) {
     return {};
   }
+  const roleEntry = readRoleEntry(targetPath, modelRole);
+  let claimEnteredAtMs: number | undefined;
+  if (roleEntry) {
+    const inProcessDir = mailboxDir(roleEntry, 'inbox', 'in_process');
+    for (const headers of readHandoffHeaderRecordsWithBatches(inProcessDir)) {
+      if (!headers.task || extractTicketId(headers.task) !== ticketId || !headers.dequeued_at) {
+        continue;
+      }
+      const ms = Date.parse(headers.dequeued_at);
+      if (!Number.isNaN(ms)) {
+        claimEnteredAtMs = ms;
+        break;
+      }
+    }
+  }
   const item = lookupBacklogItemById(targetPath, ticketId);
-  return item ? { ticketId: item.id, ticketTitle: item.title } : { ticketId };
+  if (item) {
+    return {
+      ticketId: item.id,
+      ticketTitle: item.title,
+      ...(claimEnteredAtMs !== undefined ? { claimEnteredAtMs } : {}),
+    };
+  }
+  return { ticketId, ...(claimEnteredAtMs !== undefined ? { claimEnteredAtMs } : {}) };
 }
 
 export function readMonoRouterActiveRole(targetPath: string): string | undefined {
