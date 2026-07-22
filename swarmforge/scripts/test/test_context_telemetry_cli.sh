@@ -78,32 +78,32 @@ pass "06: summary scopes strictly to the requested --agent"
 LINES_BEFORE="$(wc -l < "$STATE_DIR/context-events.jsonl")"
 bb "$CLI" record --agent coder --role coder --session-id sess-1 --timestamp 2026-01-01T00:00:06Z \
   --input-tokens not-a-number --output-tokens 400 --context-utilization-pct 42 --provider anthropic --model claude-sonnet-5 \
-  >/tmp/context-telemetry-malformed.out 2>&1 && fail "07: record should exit non-zero for a non-numeric input-tokens" || true
-grep -q "non-numeric value for field: input_tokens" /tmp/context-telemetry-malformed.out \
+  >$STATE_DIR/malformed.out 2>&1 && fail "07: record should exit non-zero for a non-numeric input-tokens" || true
+grep -q "non-numeric value for field: input_tokens" $STATE_DIR/malformed.out \
   || fail "07: record did not report the non-numeric field by name"
 LINES_AFTER="$(wc -l < "$STATE_DIR/context-events.jsonl")"
 [[ "$LINES_AFTER" -eq "$LINES_BEFORE" ]] || fail "07: log line count changed after a rejected record"
-rm -f /tmp/context-telemetry-malformed.out
+rm -f $STATE_DIR/malformed.out
 
 pass "07: a non-numeric field is rejected without touching the log"
 
 # ── 8: a missing required field is rejected and the log is untouched ───────
 bb "$CLI" record --agent coder --role coder --session-id sess-1 \
   --input-tokens 100 --output-tokens 400 --context-utilization-pct 42 --provider anthropic --model claude-sonnet-5 \
-  >/tmp/context-telemetry-missing.out 2>&1 && fail "08: record should exit non-zero when --timestamp is missing" || true
-grep -q "missing required field: timestamp" /tmp/context-telemetry-missing.out \
+  >$STATE_DIR/missing.out 2>&1 && fail "08: record should exit non-zero when --timestamp is missing" || true
+grep -q "missing required field: timestamp" $STATE_DIR/missing.out \
   || fail "08: record did not report the missing field by name"
 LINES_AFTER_2="$(wc -l < "$STATE_DIR/context-events.jsonl")"
 [[ "$LINES_AFTER_2" -eq "$LINES_BEFORE" ]] || fail "08: log line count changed after a rejected record"
-rm -f /tmp/context-telemetry-missing.out
+rm -f $STATE_DIR/missing.out
 
 pass "08: a missing required field is rejected without touching the log"
 
 # ── 9: an unrecognised command falls through to usage and exits non-zero ───
-bb "$CLI" bogus-command >/tmp/context-telemetry-usage.out 2>&1 && fail "09: an unrecognised command should exit non-zero" || true
-grep -q "^Usage: context_telemetry_cli.bb" /tmp/context-telemetry-usage.out \
+bb "$CLI" bogus-command >$STATE_DIR/usage.out 2>&1 && fail "09: an unrecognised command should exit non-zero" || true
+grep -q "^Usage: context_telemetry_cli.bb" $STATE_DIR/usage.out \
   || fail "09: unrecognised command did not print usage"
-rm -f /tmp/context-telemetry-usage.out
+rm -f $STATE_DIR/usage.out
 
 pass "09: an unrecognised command falls through to usage"
 
