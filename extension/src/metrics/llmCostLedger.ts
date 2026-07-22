@@ -19,10 +19,6 @@
 // silently vanishes either (the caller can still see the record itself and
 // count it separately).
 
-import { LLM_COST_HORIZONS_MS, LlmCostHorizon } from './llmCostTrendSeries';
-
-export { OriginCostTrendBand, DEFAULT_ORIGIN_COST_TREND_BANDS, OriginCostTrendBucket, OriginCostTrendSeries, BuildOriginCostTrendSeriesOptions, buildOriginCostTrendSeries, chooseCostTrendAxisScale, LlmCostHorizon, LLM_COST_HORIZONS_MS } from './llmCostTrendSeries';
-
 export type LlmInvocationSubsystem = 'pipeline' | 'operator' | 'front_desk' | 'daemon' | 'extension';
 
 export type LlmInvocationTrigger =
@@ -78,6 +74,17 @@ export interface LlmInvocationRecord {
   costUsd: number | null;
   origin: LlmInvocationOrigin;
 }
+
+// Named, fixed horizons (notes: "Horizons (fixed, named)"). Kept as data so
+// every reader/surface (CLI, bridge endpoint, sidecar) shares one source of
+// truth for what "24h" means in milliseconds.
+export const LLM_COST_HORIZONS_MS: Record<string, number> = {
+  '3h': 3 * 60 * 60 * 1000,
+  '24h': 24 * 60 * 60 * 1000,
+  '7d': 7 * 24 * 60 * 60 * 1000,
+};
+
+export type LlmCostHorizon = '3h' | '24h' | '7d';
 
 export function isKnownLlmCostHorizon(horizon: string): horizon is LlmCostHorizon {
   return Object.prototype.hasOwnProperty.call(LLM_COST_HORIZONS_MS, horizon);
@@ -200,4 +207,3 @@ export function rollupLlmInvocationsByOrigin(records: LlmInvocationRecord[], opt
   }
   return Array.from(groups.values()).sort((a, b) => b.costUsd - a.costUsd);
 }
-

@@ -408,6 +408,42 @@ test('an unknown groupBy dimension is dropped rather than erroring', async () =>
   });
 });
 
+test('a non-numeric top query param is ignored, returning every ranked record', async () => {
+  const target = mkTmp();
+  const FIXED_NOW_MS = Date.parse('2026-07-22T13:00:00.000Z');
+  writeLlmLedger(target, [
+    llmInvocation({ at: '2026-07-22T12:59:00Z', costUsd: 1 }),
+    llmInvocation({ at: '2026-07-22T12:58:00Z', costUsd: 5 }),
+  ]);
+  await withBridge(target, { nowMs: FIXED_NOW_MS }, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/cost-rank?horizon=3h&top=abc`, {
+      headers: { authorization: `Bearer ${TOKEN}` },
+    });
+    const body = await res.json();
+    assert.equal(body.records.length, 2);
+  });
+});
+
+test('a non-positive top query param (0 or negative) is ignored, returning every ranked record', async () => {
+  const target = mkTmp();
+  const FIXED_NOW_MS = Date.parse('2026-07-22T13:00:00.000Z');
+  writeLlmLedger(target, [
+    llmInvocation({ at: '2026-07-22T12:59:00Z', costUsd: 1 }),
+    llmInvocation({ at: '2026-07-22T12:58:00Z', costUsd: 5 }),
+  ]);
+  await withBridge(target, { nowMs: FIXED_NOW_MS }, async (handle) => {
+    const zeroRes = await fetch(`http://127.0.0.1:${handle.port}/cost-rank?horizon=3h&top=0`, {
+      headers: { authorization: `Bearer ${TOKEN}` },
+    });
+    assert.equal((await zeroRes.json()).records.length, 2);
+
+    const negRes = await fetch(`http://127.0.0.1:${handle.port}/cost-rank?horizon=3h&top=-1`, {
+      headers: { authorization: `Bearer ${TOKEN}` },
+    });
+    assert.equal((await negRes.json()).records.length, 2);
+  });
+});
+
 // --- BL-281: POST /telegram-inbound, the Front Desk Bot's write route ---
 
 function postTelegramInbound(port, headers, body) {
