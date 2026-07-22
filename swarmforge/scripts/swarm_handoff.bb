@@ -330,14 +330,15 @@
       (finally
         (fs/delete lock-dir)))))
 
-(defn body [type sender canonical-commit note-message scope proposal-body rationale]
-  (case type
-    "awake" "awake"
-    "git_handoff" (str "Re-read your role and constitution.\n\nmerge_and_process " sender " " canonical-commit)
-    "note" (str "Re-read your role and constitution.\n\n" note-message)
-    "rule_proposal" (str "Re-read your role and constitution.\n\n"
-                         "Rule proposal (" scope ") from " sender ": " proposal-body
-                         "\nRationale: " rationale)))
+(defn body [type sender canonical-commit note-message scope proposal-body rationale recipients]
+  (let [lead (handoff-lib/handoff-body-lead recipients)]
+    (case type
+      "awake" "awake"
+      "git_handoff" (str lead "merge_and_process " sender " " canonical-commit)
+      "note" (str lead note-message)
+      "rule_proposal" (str lead
+                           "Rule proposal (" scope ") from " sender ": " proposal-body
+                           "\nRationale: " rationale))))
 
 (defn write-handoff! [{:keys [headers recipients canonical-commit sender]}]
   (let [timestamp-id (id-timestamp)
@@ -351,7 +352,8 @@
         outbox-dir (fs/path (state-dir) "outbox")
         outbox-file (fs/path outbox-dir filename)
         handoff-body (body type sender canonical-commit (get headers "message")
-                           (get headers "scope") (get headers "body") (get headers "rationale"))
+                           (get headers "scope") (get headers "body") (get headers "rationale")
+                           recipients)
         lines (cond-> [(str "id: " id)
                        (str "from: " sender)
                        (str "to: " (str/join "," recipients))
