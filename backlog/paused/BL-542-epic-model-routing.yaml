@@ -3,19 +3,25 @@ title: "EPIC — Model routing / ModelFactory: assign agent models to roles; do 
 milestone: M8
 status: todo
 type: epic
-epic: model-routing
+epic: swarm-intelligence-layer
 priority: 00
-depends_on: []
+depends_on: [BL-545]
 decomposes_into: [BL-525]
-source: "Human hygiene 2026-07-19: every ticket must have an epic; every epic must have a milestone. Tracker created during open-backlog cleanup."
+source: "Human hygiene 2026-07-19: every ticket must have an epic; every epic must have a milestone. Tracker created during open-backlog cleanup. 2026-07-21: nested under BL-545 Swarm Intelligence Layer umbrella."
 
 notes: |
+  SUB-TRACKER for model-routing / ModelFactory only. The umbrella epic is BL-545
+  (Swarm Intelligence Layer), which also tracks BL-546 PromptEngine and BL-547
+  Model Steward. This ticket remains the model-routing sub-epic for BL-525.
+
   UMBRELLA / tracking item (type: epic), NOT directly promotable — the coordinator
-  promotes CHILD slices, never this. Children carry `epic: model-routing` and are
-  listed in `decomposes_into`.
+  promotes CHILD slices, never this. Children carry `epic: swarm-intelligence-layer`
+  and are listed in `decomposes_into`.
 
   VISION: recruiter-backed role→model assignment (ModelFactory) so packs stop
-  hard-coding model lines as the only routing surface.
+  hard-coding model lines as the only routing surface. ModelFactory consumes Model
+  Steward (BL-547) certification and role matrix; PromptEngine (BL-546) supplies
+  model-aware prompts for assigned models.
 
 acceptance:
   none: "tracker only — see decomposes_into children for acceptance"

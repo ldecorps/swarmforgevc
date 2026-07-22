@@ -292,7 +292,8 @@ const DOMAINS = [
   require('./gherkinLintGateWrappedStepRejectionSteps'),
   require('./bl519InlineConstitutionCacheSteps'),
   require('./bl520RewrapLegacyWrappedSteps'),
-  require('./bl526MiniappConsoleMenuSteps')
+  require('./bl526MiniappConsoleMenuSteps'),
+  require('./bl529TicketBranchMismatchGuardSteps')
 ];
 
 function registerSteps(registry) {

@@ -118,7 +118,7 @@
 ;; queued handoff. Once the handoff itself completes/moves, an orphaned
 ;; sidecar can remain - these are the ONLY file kinds completion may ever
 ;; delete on its own; anything else still aborts with a clear error.
-(def sidecar-suffixes [".nudge" ".chase.json"])
+(def sidecar-suffixes [".nudge" ".chase.json" ".claim-progress.json"])
 
 (defn sidecar-file? [path]
   (let [filename (fs/file-name path)]

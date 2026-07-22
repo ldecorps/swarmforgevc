@@ -39,40 +39,40 @@
         dir))))
 
 (defn -main []
-  (let [new-dir (handoff-lib/my-mailbox-dir :new)
+  (let [new-dir        (handoff-lib/my-mailbox-dir :new)
         in-process-dir (handoff-lib/my-mailbox-dir :in_process)
-        completed-dir (handoff-lib/my-mailbox-dir :completed)
-        abandoned-dir (handoff-lib/my-mailbox-dir :abandoned)]
+        completed-dir  (handoff-lib/my-mailbox-dir :completed)
+        abandoned-dir  (handoff-lib/my-mailbox-dir :abandoned)]
     (doseq [dir [new-dir in-process-dir completed-dir abandoned-dir]]
       (fs/create-dirs dir))
     (let [in-process-batches (handoff-lib/batch-dirs in-process-dir)
-          in-process-files (handoff-lib/handoff-files in-process-dir)]
+          in-process-files   (handoff-lib/handoff-files in-process-dir)]
       (when (seq in-process-files)
         (handoff-lib/fail! 2
-               "TASK_IN_PROCESS_IS_SINGLE: use ready_for_next.sh or done_with_current.sh."
-               (str/join "\n" (map #(str "- " %) in-process-files))))
+                           "TASK_IN_PROCESS_IS_SINGLE: use ready_for_next.sh or done_with_current.sh."
+                           (str/join "\n" (map #(str "- " %) in-process-files))))
       (when (> (count in-process-batches) 1)
         (handoff-lib/fail! 2
-               "AMBIGUOUS_TASK_STATE: multiple batches are already in process."
-               (str/join "\n" (map #(str "- " %) in-process-batches))))
+                           "AMBIGUOUS_TASK_STATE: multiple batches are already in process."
+                           (str/join "\n" (map #(str "- " %) in-process-batches))))
       (if (= 1 (count in-process-batches))
         (print-batch (first in-process-batches))
         (if (handoff-lib/draining?)
           (println "DRAINING")
-          (let [new-files (handoff-lib/handoff-files new-dir)
-                completed-basenames (handoff-lib/terminal-basenames completed-dir)
-                abandoned-basenames (handoff-lib/terminal-basenames abandoned-dir)
+          (let [new-files            (handoff-lib/handoff-files new-dir)
+                completed-basenames  (handoff-lib/terminal-basenames completed-dir)
+                abandoned-basenames  (handoff-lib/terminal-basenames abandoned-dir)
                 ;; BL-365: same corrupt-candidate quarantine-and-skip as
                 ;; ready_for_next_task.bb (shared via
                 ;; resolve-dequeueable-candidates) - a corrupt file must
                 ;; never be promoted into a batch as work.
-                dequeueable (handoff-lib/resolve-dequeueable-candidates new-files completed-basenames abandoned-basenames)]
+                dequeueable          (handoff-lib/resolve-dequeueable-candidates new-files completed-basenames abandoned-basenames)]
             (if (empty? dequeueable)
               (do
                 (println "NO_TASK")
                 (maybe-clear-at-idle-boundary!))
               (let [batch-priority (handoff-lib/header-value (first dequeueable) "priority" "50")
-                    batch-dir (new-batch-dir in-process-dir)
+                    batch-dir      (new-batch-dir in-process-dir)
                     selected-files (filter #(= batch-priority (handoff-lib/header-value % "priority" "50")) dequeueable)]
                 (fs/create-dir batch-dir)
                 (doseq [source-file selected-files]
