@@ -9,7 +9,7 @@ severity: medium
 priority: 02
 direction: human-requested
 depends_on: [BL-546]
-assigned_to: specifier
+assigned_to: coder
 source: |
   human (ldecorps) via Cursor chat 2026-07-18 — first as daily free-cap
   Cerebras→GPT failover intake; then expanded: "beef up the next ticket about
