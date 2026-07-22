@@ -233,7 +233,6 @@ echo "Starting ancillaries (operator, front desk, babysitter, tunnels) ..."
 bash "$START_ANCILLARY" "$TARGET"
 
 echo "Running ./swarm ensure ..."
-touch "$TARGET/.swarmforge/headless-swarm"
 if ! "$TARGET/swarm" ensure "$TARGET"; then
   echo "WARN: ./swarm ensure reported failures — check output above." >&2
 fi

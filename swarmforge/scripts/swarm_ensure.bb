@@ -44,7 +44,6 @@
 (def state-dir (fs/path project-root ".swarmforge"))
 (def roles-file (fs/path state-dir "roles.tsv"))
 (def socket-file (fs/path state-dir "tmux-socket"))
-(def headless-marker-file (fs/path state-dir "headless-swarm"))
 (def extension-dir (fs/path script-dir ".." ".." "extension"))
 
 ;; Real commands, overridable so tests can substitute lightweight fakes for
@@ -268,11 +267,8 @@
 
 (defn -main []
   (let [socket (tmux-socket)
-        extension-result (if (fs/exists? headless-marker-file)
-                           {:component "extension" :status :healthy
-                            :action "skipped bounce (headless swarm owns tmux)"}
-                           (ensure-component! "extension" extension-healthy? bounce-extension!
-                                              "bounced the extension dev host"))
+        extension-result (ensure-component! "extension" extension-healthy? bounce-extension!
+                                             "bounced the extension dev host")
         role-results (if socket
                        (mapv (fn [{:keys [role session]}]
                                (ensure-component! (str "agent:" role)

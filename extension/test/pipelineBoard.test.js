@@ -20,8 +20,6 @@ const {
   PIPELINE_BOARD_PAUSED_MAX,
   PIPELINE_BOARD_NOT_STARTED_COLUMN,
   PIPELINE_BOARD_MESSAGE_MAX_LENGTH,
-  isEpicTrackerPausedItem,
-  formatCollapsedEpicLine,
 } = require('../out/concierge/pipelineBoard');
 
 // BL-452/BL-455 pipeline-board-01/02: a ticket held by a role becomes a row
@@ -196,7 +194,6 @@ test('computePipelineBoard: no active or paused tickets renders an empty board',
   assert.deepEqual(computePipelineBoard({}, [], {}), {
     rows: [],
     parked: [],
-    collapsedEpics: [],
     rootIntake: [],
     recentlyClosed: [],
     links: [],
@@ -1071,15 +1068,8 @@ test('composePipelineBoardHtml: ticket numbers in below-grid lists are GitHub <a
     {
       rows: [{ id: 'BL-528', column: 'coder', slug: 'auto-heal', epic: 'swarm-reliability' }],
       parked: [
+        { id: 'BL-543', slug: 'epic-fleet', status: 'parked' },
         { id: 'BL-525', slug: 'modelfactory-assign', status: 'awaiting-approval' },
-      ],
-      collapsedEpics: [
-        {
-          epicSlug: 'fleet-topology',
-          trackerId: 'BL-543',
-          pausedChildCount: 0,
-          activeChildCount: 0,
-        },
       ],
       rootIntake: [],
       recentlyClosed: [{ id: 'BL-513', slug: 'pipeline-board' }],
@@ -1093,10 +1083,10 @@ test('composePipelineBoardHtml: ticket numbers in below-grid lists are GitHub <a
     Date.UTC(2026, 6, 19, 22, 54),
     IN_BOARD_REPO
   );
-  assert.ok(html.includes('<a href="https://github.com/ldecorps/swarmforgevc/blob/main/backlog/paused/BL-543-epic-fleet.yaml">fleet-topology</a>'), html);
+  assert.ok(html.includes('<a href="https://github.com/ldecorps/swarmforgevc/blob/main/backlog/paused/BL-543-epic-fleet.yaml">543</a>'), html);
   assert.ok(html.includes('<a href="https://github.com/ldecorps/swarmforgevc/blob/main/backlog/paused/BL-525-modelfactory-assign.yaml">525</a>'), html);
   assert.ok(html.includes('<a href="https://github.com/ldecorps/swarmforgevc/blob/main/backlog/done/BL-513-pipeline-board.yaml">513</a>'), html);
-  assert.ok(html.includes('fleet-topology'), html);
+  assert.ok(html.includes('epic-fleet'), html);
   assert.ok(html.includes('modelfactory-assign'), html);
 });
 
@@ -1138,15 +1128,7 @@ test('composePipelineBoardHtml: status grid stays inside one <pre>; <a> tags nev
   const { html } = composePipelineBoardHtml(
     {
       rows: [{ id: 'BL-528', column: 'coder', slug: 'auto-heal', epic: 'swarm-reliability' }],
-      parked: [],
-      collapsedEpics: [
-        {
-          epicSlug: 'fleet-topology',
-          trackerId: 'BL-543',
-          pausedChildCount: 0,
-          activeChildCount: 0,
-        },
-      ],
+      parked: [{ id: 'BL-543', slug: 'epic-fleet', status: 'parked' }],
       links: [
         { id: 'BL-528', path: 'backlog/active/BL-528-auto-heal.yaml' },
         { id: 'BL-543', path: 'backlog/paused/BL-543-epic-fleet.yaml' },
@@ -1170,109 +1152,13 @@ test('composePipelineBoardHtml: without repoBaseUrl, board still renders but tic
   const { html } = composePipelineBoardHtml(
     {
       rows: [],
-      parked: [],
-      collapsedEpics: [
-        {
-          epicSlug: 'fleet-topology',
-          trackerId: 'BL-543',
-          pausedChildCount: 0,
-          activeChildCount: 0,
-        },
-      ],
+      parked: [{ id: 'BL-543', slug: 'epic-fleet', status: 'parked' }],
       links: [{ id: 'BL-543', path: 'backlog/paused/BL-543-epic-fleet.yaml' }],
     },
     Date.UTC(2026, 6, 19, 22, 54),
     undefined
   );
   assert.ok(!html.includes('<a href'), html);
-  assert.ok(html.includes('fleet-topology'), html);
-  assert.ok(!html.includes('543'), html);
+  assert.ok(html.includes('543'), html);
   assert.ok(html.includes('PARKED:'), html);
-});
-
-// ── BL-559: collapsed epic trackers in PARKED ─────────────────────────────
-
-test('isEpicTrackerPausedItem: only type epic is an epic tracker', () => {
-  assert.equal(isEpicTrackerPausedItem({ id: 'BL-543', type: 'epic' }), true);
-  assert.equal(isEpicTrackerPausedItem({ id: 'BL-528', type: 'defect' }), false);
-  assert.equal(isEpicTrackerPausedItem({ id: 'BL-528' }), false);
-});
-
-test('computePipelineBoard: paused type epic collapses to epic slug with child counts', () => {
-  const { parked, collapsedEpics } = computePipelineBoard(
-    {},
-    [
-      { id: 'BL-539', type: 'epic', epic: 'swarm-reliability', priority: 1 },
-      { id: 'BL-528', type: 'defect', epic: 'swarm-reliability', priority: 5 },
-      { id: 'BL-530', type: 'defect', epic: 'swarm-reliability', priority: 6 },
-    ],
-    {
-      'BL-539': { type: 'epic', epic: 'swarm-reliability', title: 'EPIC — Swarm reliability', location: 'paused' },
-      'BL-528': { type: 'defect', epic: 'swarm-reliability', title: 'Auto heal', location: 'paused' },
-      'BL-530': { type: 'defect', epic: 'swarm-reliability', title: 'Launch config heal', location: 'paused' },
-      'BL-551': { type: 'feature', epic: 'swarm-reliability', title: 'Cost ledger', location: 'active' },
-    },
-    { activeIds: ['BL-551'] }
-  );
-  assert.equal(parked.filter((p) => p.status === 'parked').length, 2);
-  assert.deepEqual(parked.filter((p) => p.status === 'parked').map((p) => p.id), ['BL-528', 'BL-530']);
-  assert.equal(collapsedEpics.length, 1);
-  assert.equal(collapsedEpics[0].epicSlug, 'swarm-reliability');
-  assert.equal(collapsedEpics[0].pausedChildCount, 2);
-  assert.equal(collapsedEpics[0].activeChildCount, 1);
-});
-
-test('computePipelineBoard: epic tracker awaiting approval stays in awaiting-approval, not collapsed', () => {
-  const { parked, collapsedEpics } = computePipelineBoard(
-    {},
-    [{ id: 'BL-554', type: 'epic', epic: 'root-capability-commands', humanApproval: 'pending' }],
-    { 'BL-554': { type: 'epic', epic: 'root-capability-commands', title: 'Root capability epic', location: 'paused' } }
-  );
-  assert.equal(collapsedEpics.length, 0);
-  assert.deepEqual(
-    parked.filter((p) => p.status === 'awaiting-approval').map((p) => p.id),
-    ['BL-554']
-  );
-});
-
-test('renderPipelineBoardBody: collapsed epics render before plain parked slices', () => {
-  const text = renderPipelineBoardBody({
-    rows: [],
-    parked: [{ id: 'BL-528', slug: 'auto-heal', status: 'parked' }],
-    collapsedEpics: [
-      {
-        epicSlug: 'swarm-reliability',
-        trackerId: 'BL-539',
-        pausedChildCount: 2,
-        activeChildCount: 1,
-      },
-    ],
-  });
-  const epicLineIndex = text.indexOf('swarm-reliability (1 active, 2 paused)');
-  const sliceLineIndex = text.indexOf('528 auto-heal');
-  assert.ok(epicLineIndex > 0, text);
-  assert.ok(sliceLineIndex > epicLineIndex, text);
-  assert.ok(!text.includes('539'), text);
-});
-
-test('formatCollapsedEpicLine: omits zero-count buckets', () => {
-  assert.equal(
-    formatCollapsedEpicLine({
-      epicSlug: 'fleet-topology',
-      trackerId: 'BL-543',
-      pausedChildCount: 0,
-      activeChildCount: 0,
-    }),
-    '  fleet-topology'
-  );
-});
-
-test('computePipelineBoard: epic trackers do not consume the plain parked cap', () => {
-  const paused = [{ id: 'BL-539', type: 'epic', epic: 'swarm-reliability', priority: 1 }];
-  for (let i = 0; i < PIPELINE_BOARD_PAUSED_MAX + 2; i++) {
-    paused.push({ id: `BL-${1000 + i}`, type: 'feature', priority: 10 + i });
-  }
-  const { parkedOmittedCount, collapsedEpics } = computePipelineBoard({}, paused, {});
-  assert.equal(collapsedEpics.length, 1);
-  assert.equal(parkedOmittedCount, 2);
 });

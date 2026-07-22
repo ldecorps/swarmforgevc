@@ -8,8 +8,19 @@ import { RoleWorktree, readChaserTelemetryEvents, ChaserTelemetryEvent } from '.
 import { runGitLog, deriveTicketLifecycles, TicketLifecycleEvent } from '../metrics/gitHistoryAdapter';
 import { computeSuiteDurationTrend, SuiteDurationTrendResult } from '../metrics/deliveryMetrics';
 import { computeCostPerTicketSeries, CostPerTicketSeriesResult, COST_PER_TICKET_BASIS } from '../metrics/costPerTicket';
-import { LLM_COST_HORIZONS_MS, LlmCostHorizon, LlmCostRollupGroup, rollupLlmInvocationsByOrigin } from '../metrics/llmCostLedger';
+import {
+  LLM_COST_HORIZONS_MS,
+  LlmCostHorizon,
+  LlmCostRollupGroup,
+  rollupLlmInvocationsByOrigin,
+} from '../metrics/llmCostLedger';
+import {
+  buildOriginCostTrendSeries,
+  chooseCostTrendAxisScale,
+  OriginCostTrendSeries,
+} from '../metrics/llmCostTrendSeries';
 import { readLlmInvocationRecords } from '../metrics/llmCostLedgerStore';
+import { renderCostHealthSection, renderCostTrendChartLines } from './costHealthSidecarRenderer';
 
 // BL-213: the daily cost & health sidecar - a deterministic, committed
 // carrier (docs/briefings/<date>.json) for BL-100's producers, never
@@ -113,6 +124,11 @@ export interface CostHealthSidecar {
   // unchanged" posture as every other optional field here; absent when no
   // ledger records exist yet for a given main worktree.
   topExpensiveOriginsByHorizon?: Record<LlmCostHorizon, LlmCostRollupGroup[]>;
+  // BL-551 (trend-series-11 .. trend-surface-15): additive, optional -
+  // ranked rolling 7-day per-origin trend series for the multi-line chart.
+  // Same "purely additive, schemaVersion unchanged" posture as every other
+  // optional field here; absent when no ledger records exist yet.
+  originCostTrendSeries?: OriginCostTrendSeries[];
 }
 
 // ── daily bucketing (pure) ───────────────────────────────────────────────
@@ -301,7 +317,8 @@ export function buildCostHealthSidecar(
   topN: number = DEFAULT_TOP_EXPENSIVE_TICKETS,
   suiteDurationTrend?: SuiteDurationTrendResult,
   costPerTicketSeries?: CostPerTicketSeriesResult,
-  topExpensiveOriginsByHorizon?: Record<LlmCostHorizon, LlmCostRollupGroup[]>
+  topExpensiveOriginsByHorizon?: Record<LlmCostHorizon, LlmCostRollupGroup[]>,
+  originCostTrendSeries?: OriginCostTrendSeries[]
 ): CostHealthSidecar {
   const sidecar: CostHealthSidecar = {
     schemaVersion: COST_HEALTH_SIDECAR_SCHEMA_VERSION,
@@ -337,148 +354,12 @@ export function buildCostHealthSidecar(
   if (topExpensiveOriginsByHorizon) {
     sidecar.topExpensiveOriginsByHorizon = topExpensiveOriginsByHorizon;
   }
+  if (originCostTrendSeries) {
+    sidecar.originCostTrendSeries = originCostTrendSeries;
+  }
   return sidecar;
 }
 
-// ── markdown renderer (pure, cost-05b/05c) ──────────────────────────────
-
-function trendArrow(trend: TrendResult): string {
-  if (trend.direction === 'up') {
-    return '↑';
-  }
-  if (trend.direction === 'down') {
-    return '↓';
-  }
-  if (trend.direction === 'flat') {
-    return '→';
-  }
-  return '';
-}
-
-// Each renderXLines helper below returns the lines for one section (or []
-// when that section has nothing to show), so renderCostHealthSection
-// itself is just concatenation - split out so every function stays under
-// the CRAP<=6 gate.
-function renderAgentLines(agents: AgentDailyCost[]): string[] {
-  return agents.map((agent) => {
-    const costText = agent.costUsd !== null ? `$${agent.costUsd.value.toFixed(2)} ${trendArrow(agent.costUsd.trend)}` : 'no priced usage';
-    return `- ${agent.role}: ${agent.tokens.value} tokens ${trendArrow(agent.tokens.trend)}, ${costText}`;
-  });
-}
-
-function renderExpensiveTicketLines(tickets: ExpensiveTicket[]): string[] {
-  if (tickets.length === 0) {
-    return [];
-  }
-  return ['', '**Top expensive tickets to date:**', ...tickets.map((t) => `- ${t.ticketId}: $${t.costUsd.toFixed(2)}`)];
-}
-
-// Absent (a sidecar predating BL-338) or no delivered ticket has a priced
-// cost yet renders nothing - same "hidden, not fabricated" posture as
-// renderExpensiveTicketLines above. The basis line always accompanies the
-// figure so the accounting statement travels with the number on every
-// surface that shows it (cost-per-ticket-diagram-04).
-function renderCostPerTicketLines(costPerTicket: CostPerTicketSummary | undefined): string[] {
-  if (!costPerTicket || costPerTicket.average === null) {
-    return [];
-  }
-  const excludedNote = costPerTicket.excludedCount > 0 ? `, ${costPerTicket.excludedCount} delivered ticket(s) excluded (no priced usage)` : '';
-  return [
-    '',
-    `**Average cost/ticket:** $${costPerTicket.average.value.toFixed(2)} ${trendArrow(costPerTicket.average.trend)} ` +
-      `(over ${costPerTicket.sampleCount} delivered ticket(s)${excludedNote})`,
-    `_${costPerTicket.basis}_`,
-  ];
-}
-
-// Absent (a sidecar predating BL-551, or a main worktree with no ledger
-// records yet) renders nothing - same "hidden, not fabricated" posture as
-// renderCostPerTicketLines above. Renders one line per horizon, each
-// listing its rolled-up groups (already summed-cost descending from
-// rollupLlmInvocationsByOrigin) with unknown-cost origins noted rather than
-// silently folded into the total.
-function renderTopExpensiveOriginsLines(byHorizon: Record<LlmCostHorizon, LlmCostRollupGroup[]> | undefined): string[] {
-  if (!byHorizon) {
-    return [];
-  }
-  const lines: string[] = ['', '**Top expensive origins:**'];
-  for (const horizon of Object.keys(LLM_COST_HORIZONS_MS) as LlmCostHorizon[]) {
-    const groups = byHorizon[horizon];
-    if (!groups || groups.length === 0) {
-      continue;
-    }
-    lines.push(`- ${horizon}:`);
-    for (const group of groups) {
-      const label = Object.values(group.key).filter((v) => v !== null).join('/') || 'unknown origin';
-      const unknownNote = group.unknownCostCount > 0 ? ` (${group.unknownCostCount} unpriced)` : '';
-      lines.push(`  - ${label}: $${group.costUsd.toFixed(2)}${unknownNote}`);
-    }
-  }
-  return lines.length > 2 ? lines : [];
-}
-
-function renderFlowBalanceLine(flow: CostHealthSidecar['flowBalance']): string {
-  return (
-    `**Flow balance:** specced ${flow.speccedPerDay.value}/day ${trendArrow(flow.speccedPerDay.trend)}, ` +
-    `closed ${flow.closedPerDay.value}/day ${trendArrow(flow.closedPerDay.trend)}`
-  );
-}
-
-function renderReliabilityLine(rel: ReliabilityCounts): string {
-  return (
-    `**Reliability:** ${rel.chases.value} chases ${trendArrow(rel.chases.trend)}, ` +
-    `${rel.nudges.value} nudges ${trendArrow(rel.nudges.trend)}, ` +
-    `${rel.respawns.value} respawns ${trendArrow(rel.respawns.trend)}, ` +
-    `${rel.failedDeliveries.value} failed deliveries ${trendArrow(rel.failedDeliveries.trend)}`
-  );
-}
-
-// BL-350: a quiet day (samplesObserved true, no anomalies) now renders an
-// explicit "none found" line instead of the same silent omission a broken,
-// never-sampled sampler produces (samplesObserved false/absent) - that
-// distinction is the entire point of the ticket (see resourceSamplesObserved
-// above).
-function renderAnomalyLines(anomalies: ResourceAnomaly[], samplesObserved: boolean): string[] {
-  if (anomalies.length > 0) {
-    return [
-      '',
-      '**Resource anomalies:**',
-      ...anomalies.map((a) => {
-        const mb = Math.round(a.rssBytes / (1024 * 1024));
-        return `- ${a.role}: ${mb}MB ${trendArrow(a.rssTrend)}, ${a.cpuPercent.toFixed(1)}% cpu ${trendArrow(a.cpuTrend)}`;
-      }),
-    ];
-  }
-  if (samplesObserved) {
-    return ['', '**Resource anomalies:** none found.'];
-  }
-  return [];
-}
-
-// Pure: renders the briefing's "Cost & Health" section directly from the
-// sidecar - every figure traces to a sidecar field, nothing invented
-// (cost-05b). A null sidecar (no day's telemetry available) renders an
-// empty string so the section is cleanly omitted, not an error (cost-05c).
-export function renderCostHealthSection(sidecar: CostHealthSidecar | null): string {
-  if (!sidecar) {
-    return '';
-  }
-  const lines: string[] = [
-    '## Cost & Health',
-    '',
-    '**Per-agent tokens/cost today:**',
-    ...renderAgentLines(sidecar.agents),
-    ...renderExpensiveTicketLines(sidecar.topExpensiveTickets),
-    ...renderCostPerTicketLines(sidecar.costPerTicket),
-    ...renderTopExpensiveOriginsLines(sidecar.topExpensiveOriginsByHorizon),
-    '',
-    renderFlowBalanceLine(sidecar.flowBalance),
-    '',
-    renderReliabilityLine(sidecar.reliability),
-    ...renderAnomalyLines(sidecar.resourceAnomalies, sidecar.resourceSamplesObserved === true),
-  ];
-  return lines.join('\n');
-}
 
 const DEFAULT_TOP_EXPENSIVE_ORIGINS = 5;
 
@@ -501,6 +382,15 @@ function computeTopExpensiveOriginsByHorizon(targetPath: string, nowMs: number):
   return result;
 }
 
+// BL-551 (trend-series-11 .. trend-surface-15): reads the durable ledger and
+// builds the ranked rolling 7-day per-origin trend series. A main worktree
+// with no ledger yet yields [] (readLlmInvocationRecords degrades to []),
+// which renderCostTrendChartLines then omits entirely.
+function computeOriginCostTrendSeries(targetPath: string, nowMs: number): OriginCostTrendSeries[] {
+  const records = readLlmInvocationRecords(targetPath);
+  return buildOriginCostTrendSeries(records, { nowMs });
+}
+
 // ── impure orchestrator ──────────────────────────────────────────────────
 
 export function computeCostHealthSidecar(
@@ -518,6 +408,7 @@ export function computeCostHealthSidecar(
   const suiteDurationTrend = computeSuiteDurationTrend(targetPath, roles, nowMs);
   const costPerTicketSeries = computeCostPerTicketSeries(lifecycles, costTelemetryByRole);
   const topExpensiveOriginsByHorizon = computeTopExpensiveOriginsByHorizon(targetPath, nowMs);
+  const originCostTrendSeries = computeOriginCostTrendSeries(targetPath, nowMs);
 
   return buildCostHealthSidecar(
     dateIso,
@@ -529,7 +420,8 @@ export function computeCostHealthSidecar(
     DEFAULT_TOP_EXPENSIVE_TICKETS,
     suiteDurationTrend,
     costPerTicketSeries,
-    topExpensiveOriginsByHorizon
+    topExpensiveOriginsByHorizon,
+    originCostTrendSeries
   );
 }
 
@@ -554,3 +446,5 @@ export function writeCostHealthSidecar(targetPath: string, sidecar: CostHealthSi
 export function commitCostHealthSidecar(targetPath: string, filePath: string, dateIso: string): boolean {
   return commitScopedFile(targetPath, filePath, `Cost & health sidecar for ${dateIso}\n\nBy coder (BL-213 deterministic emitter).`);
 }
+
+export { renderCostHealthSection, renderCostTrendChartLines } from './costHealthSidecarRenderer';

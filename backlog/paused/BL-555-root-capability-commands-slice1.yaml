@@ -4,7 +4,7 @@ milestone: M8
 type: feature
 status: needs_design
 epic: root-capability-commands
-human_approval: approved
+human_approval: pending
 severity: low
 priority: 35
 direction: human-requested
