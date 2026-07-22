@@ -47,6 +47,26 @@
           {:op :submit}]
          (agent-runtime-lib/wake-steps "mock"))
 
+;; ── in-process-resume-steps ───────────────────────────────────────────────────
+(assert= "claude in-process resume uses short chat reminder"
+         [{:op :send-literal :text agent-runtime-lib/in-process-resume-chat-message}
+          {:op :submit}]
+         (agent-runtime-lib/in-process-resume-steps "claude"))
+
+(assert= "aider in-process resume uses explicit STOP shell wording"
+         [{:op :send-literal :text agent-runtime-lib/in-process-resume-shell-message}
+          {:op :submit}]
+         (agent-runtime-lib/in-process-resume-steps "aider"))
+
+(assert-true "claude in-process resume is shorter than aider shell wording"
+             (< (count agent-runtime-lib/in-process-resume-chat-message)
+                (count agent-runtime-lib/in-process-resume-shell-message)))
+
+(assert= "mock in-process resume uses deterministic text"
+         [{:op :send-literal :text "MOCK_RESUME_IN_PROCESS"}
+          {:op :submit}]
+         (agent-runtime-lib/in-process-resume-steps "mock"))
+
 (assert= "mock bootstrap steps"
          [{:op :send-literal :text "MOCK_BOOTSTRAP"}
           {:op :submit}]

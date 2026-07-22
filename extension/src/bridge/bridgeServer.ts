@@ -1,7 +1,7 @@
 /// BL-094/BL-241/BL-522/BL-526/BL-538 bridge server: HTTP entrypoint for
 /// SwarmForge's read JSON routes, SSE feed, Mini App shells, and a handful
 /// of control-scoped POST routes (gate answers, Telegram inbound, reply
-/// ack, paused-pager expedite).
+/// ack, paused-pager expedite/approve).
 
 import * as http from 'http';
 import * as fs from 'fs';
@@ -50,6 +50,7 @@ import { readBacklogFolders, BacklogItem } from '../panel/backlogReader';
 import { promoteToActive, findBacklogFilePath } from '../panel/backlogWriter';
 import { atomicWrite } from '../util/atomicWrite';
 import { getPausedPagerUiHtml } from './pausedPagerUiHtml';
+import { recordApprovalReply } from '../concierge/pendingApprovalReply';
 
 const DEFAULT_POLL_INTERVAL_MS = 1000;
 const LOCALHOST = '127.0.0.1';
@@ -65,8 +66,8 @@ const TELEGRAM_INBOUND_MAX_BODY_BYTES = 16 * 1024;
 // BL-320: a reply-ack body ({id}) is a single idempotency-key string -
 // same small-body posture as the gate-answer/telegram-inbound bodies above.
 const REPLY_ACK_MAX_BODY_BYTES = 4 * 1024;
-// BL-538: Expedite body ({id}) from the /paused-pager Mini App.
-const PAUSED_PAGER_EXPEDITE_MAX_BODY_BYTES = 4 * 1024;
+// BL-538: Expedite/approve body ({id}) from the /paused-pager Mini App.
+const PAUSED_PAGER_CONTROL_MAX_BODY_BYTES = 4 * 1024;
 
 export interface BridgeHandle {
   port: number;
@@ -420,12 +421,16 @@ function handleReplyAckRoute(req: http.IncomingMessage, res: http.ServerResponse
   });
 }
 
-// BL-538: Paused-pager Expedite request shape and route.
+// BL-538: Paused-pager control POST routes (expedite, approve).
 function isPausedPagerExpediteRoute(req: http.IncomingMessage, url: string): boolean {
   return req.method === 'POST' && (url === '/paused-pager/expedite' || url.startsWith('/paused-pager/expedite?'));
 }
 
-function isPausedPagerExpediteRequestShape(value: unknown): value is { id: string } {
+function isPausedPagerApproveRoute(req: http.IncomingMessage, url: string): boolean {
+  return req.method === 'POST' && (url === '/paused-pager/approve' || url.startsWith('/paused-pager/approve?'));
+}
+
+function isPausedPagerIdRequestShape(value: unknown): value is { id: string } {
   return !!value && typeof value === 'object' && typeof (value as Record<string, unknown>).id === 'string';
 }
 
@@ -441,8 +446,8 @@ function handlePausedPagerExpediteRoute(
   readValidatedBody(
     req,
     res,
-    PAUSED_PAGER_EXPEDITE_MAX_BODY_BYTES,
-    isPausedPagerExpediteRequestShape,
+    PAUSED_PAGER_CONTROL_MAX_BODY_BYTES,
+    isPausedPagerIdRequestShape,
     'expected a JSON body of {id}'
   ).then((value) => {
     if (!value) {
@@ -479,6 +484,46 @@ function handlePausedPagerExpediteRoute(
   });
 }
 
+function handlePausedPagerApproveRoute(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  targetPath: string,
+  registry: DeviceRegistry
+): void {
+  if (!requireControlAuth(req, res, registry)) {
+    return;
+  }
+  readValidatedBody(
+    req,
+    res,
+    PAUSED_PAGER_CONTROL_MAX_BODY_BYTES,
+    isPausedPagerIdRequestShape,
+    'expected a JSON body of {id}'
+  ).then((value) => {
+    if (!value) {
+      return;
+    }
+    const backlogId = value.id;
+    try {
+      if (!findBacklogFilePath(targetPath, backlogId)) {
+        respondJson(res, 404, { success: false, reason: 'ticket not found in active/paused' });
+        return;
+      }
+      const changed = recordApprovalReply(targetPath, backlogId);
+      if (!changed) {
+        respondJson(res, 200, { success: false, id: backlogId, reason: 'not pending approval' });
+        return;
+      }
+      respondJson(res, 200, { success: true, id: backlogId });
+    } catch (err) {
+      respondJson(res, 500, {
+        success: false,
+        reason: err instanceof Error ? err.message : 'unknown error',
+      });
+    }
+  });
+}
+
 interface WriteRoute {
   matches: (req: http.IncomingMessage, url: string) => boolean;
   handle: (req: http.IncomingMessage, res: http.ServerResponse, targetPath: string, registry: DeviceRegistry) => void;
@@ -491,8 +536,9 @@ const writeRoutes: WriteRoute[] = [
   { matches: isGateAnswerRoute, handle: handleGateAnswerRoute },
   { matches: isTelegramInboundRoute, handle: handleTelegramInboundRoute },
   { matches: isReplyAckRoute, handle: handleReplyAckRoute },
-  // BL-538: paused-pager Expedite route, control-scoped.
+  // BL-538: paused-pager control routes, control-scoped.
   { matches: isPausedPagerExpediteRoute, handle: handlePausedPagerExpediteRoute },
+  { matches: isPausedPagerApproveRoute, handle: handlePausedPagerApproveRoute },
 ];
 
 function requestPath(req: http.IncomingMessage): string {
@@ -579,6 +625,7 @@ function computePausedPagerState(targetPath: string): unknown {
       title: item.title,
       yaml: yamlText,
       canExpedite: true,
+      canApprove: item.humanApproval === 'pending',
     };
   });
 

@@ -13,13 +13,15 @@ approval_context: >
   report only — no auto-promote. Firm: experiments must use SWARMFORGE_PROMPT_EXPERIMENT
   isolation; production compose path unchanged unless promoted.
 severity: medium
-priority: 03
+priority: 05
 direction: human-requested
 depends_on: [BL-546, BL-547]
 promotion_blockers: >
-  Slice 1 needs BL-546 Slice 2 (adapters + experiment mode) AND BL-547 Slice 2
-  (model-steward evaluate) on main — not merely those tickets done at Slice 1.
-  Coordinator: verify both Slice 2 parcels landed before promoting this ticket.
+  Human directive 2026-07-22: promote only after GH-22/GH-23 forward pipeline work
+  (BL-525 done, then GH-22/GH-23 implemented). Slice 1 still needs BL-546 Slice 2
+  (adapters + experiment mode) AND BL-547 Slice 2 (model-steward evaluate) on main —
+  not merely those tickets done at Slice 1. Coordinator: verify both Slice 2 parcels
+  landed before promoting this ticket.
 assigned_to: specifier
 source: |
   Human intake 2026-07-21 via Cursor chat — follow-up to Swarm Intelligence Layer

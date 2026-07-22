@@ -53,6 +53,10 @@
    :bounce-threshold 6
    :halt-threshold 10})
 
+;; Pane churn within this window suppresses BL-528 idle reclaims (shell runs,
+;; mutation passes, explore subagents — no esc-to-interrupt footer required).
+(def claim-recent-activity-ms (* 5 60 1000))
+
 ;; Endless NO_TASK-spin circuit breaker: pane activity hashing alone cannot
 ;; see a busy-loop that keeps changing the pane with the same idle ritual.
 ;; Per-role strike state lives in this process only; a daemon restart that
@@ -1024,6 +1028,42 @@
         (if (zero? (:exit result)) (str/trim (:out result)) ""))
       (catch Exception _ ""))))
 
+(defn- role-worktree-dirty?
+  "True when a role's worktree has staged/modified/untracked files."
+  [roles role]
+  (let [ri  (get roles role)
+        dir (or (:worktree-path ri) (str project-root))]
+    (try
+      (let [result (process/sh ["git" "status" "--porcelain"] {:dir dir})]
+        (when (zero? (:exit result))
+          (claim-progress-lib/worktree-dirty? (:out result))))
+      (catch Exception _ false))))
+
+(defn rotation-router-mode?
+  "True when this project is running (or last launched as) rotation router.
+   Same resolution as swarm_ensure.bb: swarm-identity rotation key, else the
+   persisted active pack conf path, else swarmforge/swarmforge.conf."
+  []
+  (let [identity-path (fs/path state-dir "swarm-identity")
+        identity-text (when (fs/exists? identity-path) (slurp (str identity-path)))
+        conf-path (or (get (mono-router-lib/parse-identity-map (or identity-text ""))
+                           "active_backlog_max_depth_conf_path")
+                      (str conf-file))
+        conf-text (when (and conf-path (fs/exists? conf-path))
+                    (slurp conf-path))]
+    (boolean
+     (or (mono-router-lib/rotation-router-from-identity? identity-text)
+         (mono-router-lib/conf-rotation-router? conf-text)))))
+
+(defn- claim-idle-context [socket roles role now-ms]
+  (let [active (handoff-lib/read-mono-router-active-role)
+        activity-role (or active role)]
+    {:resident-busy? (resident-pane-busy? socket)
+     :resident-recently-active? (chase-sweep-lib/pane-recently-active?
+                                  activity-role now-ms claim-recent-activity-ms)
+     :active-role active
+     :rotation-router? (rotation-router-mode?)}))
+
 (defn chase-sweep! [roles socket]
   (let [now-ms (System/currentTimeMillis)
         adapters {:get-liveness get-liveness
@@ -1103,7 +1143,26 @@
                   (fn [role until-ms] (chase-sweep-lib/mark-rate-limit-cooldown-woken! (str state-dir) role until-ms))
                   ;; BL-528: claim-without-progress adapters.
                   :get-role-head-commit
-                  (fn [role] (worktree-head-commit-10 (load-roles) role))
+                  (fn [role] (worktree-head-commit-10 roles role))
+                  :role-agent-busy?
+                  (fn [role] (boolean (recipient-pane-busy? socket roles role)))
+                  :role-worktree-dirty?
+                  (fn [role] (boolean (role-worktree-dirty? roles role)))
+                  :claim-idle-context
+                  (fn [role] (claim-idle-context socket roles role now-ms))
+                  :send-claim-idle-probe!
+                  (fn [role message]
+                    (when-not (tmux-inject-disabled?)
+                      (try
+                        (if (resident-pane-busy? socket)
+                          (log! "claim-idle-probe-skip-busy" role)
+                          (when-let [ri (get roles role)]
+                            (let [session (handoff-lib/wake-session socket (:session ri))]
+                              (agent-runtime-inject/notify-agent!
+                               socket session (or (:agent ri) "claude")
+                               :log-fn (fn [tag sess detail] (log! tag sess detail))
+                               :text message))))
+                        (catch Exception e (log! "claim-idle-probe-error" role (.getMessage e))))))
                   :on-claim-idle-bounce!
                   (fn [role fp progress]
                     (log! "claim-progress-bounce" role
@@ -1886,22 +1945,6 @@
 (defn record-role-context-clear! [role-name entry-id]
   (spit (str role-context-clear-marker-file)
         (json/generate-string (assoc (read-role-context-clear-marker) (keyword role-name) entry-id))))
-
-(defn rotation-router-mode?
-  "True when this project is running (or last launched as) rotation router.
-   Same resolution as swarm_ensure.bb: swarm-identity rotation key, else the
-   persisted active pack conf path, else swarmforge/swarmforge.conf."
-  []
-  (let [identity-path (fs/path state-dir "swarm-identity")
-        identity-text (when (fs/exists? identity-path) (slurp (str identity-path)))
-        conf-path (or (get (mono-router-lib/parse-identity-map (or identity-text ""))
-                           "active_backlog_max_depth_conf_path")
-                      (str conf-file))
-        conf-text (when (and conf-path (fs/exists? conf-path))
-                    (slurp conf-path))]
-    (boolean
-     (or (mono-router-lib/rotation-router-from-identity? identity-text)
-         (mono-router-lib/conf-rotation-router? conf-text)))))
 
 (defn role-context-clear-sweep! [roles socket]
   (cond

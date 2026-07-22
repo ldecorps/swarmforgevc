@@ -8,6 +8,8 @@
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "handoff_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "handoff_inject_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "backlog_depth_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "pipeline_stage_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "ticket_close_guard_lib.bb")))
 
 (def usage-text
   (str "Usage: swarm_handoff.sh <draft-file>\n\n"
@@ -251,7 +253,12 @@
                              (str/blank? task-name)
                              (conj "Missing required header 'task' for git_handoff.")
                              (> (count (or task-name "")) 80)
-                             (conj (format "Header 'task' must be no longer than 80 characters; got %d." (count task-name)))))
+                             (conj (format "Header 'task' must be no longer than 80 characters; got %d." (count task-name)))
+                             (and (not (str/blank? task-name))
+                                  (ticket-close-guard-lib/git-handoff-blocked-for-task?
+                                   (project-root) task-name))
+                             (conj (format "Cannot send git_handoff for closed ticket %s (backlog/done/)."
+                                           (pipeline-stage-lib/extract-ticket-id task-name)))))
                      (and (not= "git_handoff" type) (not (str/blank? commit)))
                      (conj "Header 'commit' is only allowed for git_handoff.")
                      (and (not= "git_handoff" type) (not (str/blank? task-name)))
@@ -323,14 +330,15 @@
       (finally
         (fs/delete lock-dir)))))
 
-(defn body [type sender canonical-commit note-message scope proposal-body rationale]
-  (case type
-    "awake" "awake"
-    "git_handoff" (str "Re-read your role and constitution.\n\nmerge_and_process " sender " " canonical-commit)
-    "note" (str "Re-read your role and constitution.\n\n" note-message)
-    "rule_proposal" (str "Re-read your role and constitution.\n\n"
-                         "Rule proposal (" scope ") from " sender ": " proposal-body
-                         "\nRationale: " rationale)))
+(defn body [type sender canonical-commit note-message scope proposal-body rationale recipients]
+  (let [lead (handoff-lib/handoff-body-lead recipients)]
+    (case type
+      "awake" "awake"
+      "git_handoff" (str lead "merge_and_process " sender " " canonical-commit)
+      "note" (str lead note-message)
+      "rule_proposal" (str lead
+                           "Rule proposal (" scope ") from " sender ": " proposal-body
+                           "\nRationale: " rationale))))
 
 (defn write-handoff! [{:keys [headers recipients canonical-commit sender]}]
   (let [timestamp-id (id-timestamp)
@@ -344,7 +352,8 @@
         outbox-dir (fs/path (state-dir) "outbox")
         outbox-file (fs/path outbox-dir filename)
         handoff-body (body type sender canonical-commit (get headers "message")
-                           (get headers "scope") (get headers "body") (get headers "rationale"))
+                           (get headers "scope") (get headers "body") (get headers "rationale")
+                           recipients)
         lines (cond-> [(str "id: " id)
                        (str "from: " sender)
                        (str "to: " (str/join "," recipients))
