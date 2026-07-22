@@ -54,7 +54,7 @@ export function getResidentSpyUiHtml(): string {
   .dot.stale { background: #d29922; }
   .dot.err { background: #f85149; }
   .split-view {
-    flex: 1 1 auto;
+    flex: 1 1 0;
     min-height: 0;
     display: flex;
     flex-direction: column;
@@ -89,7 +89,7 @@ export function getResidentSpyUiHtml(): string {
     color: var(--tg-theme-hint-color, #8b949e);
   }
   .split {
-    flex: 1 0 0;
+    flex: 1 1 0;
     display: flex;
     flex-direction: row;
     flex-wrap: wrap;
@@ -113,8 +113,7 @@ export function getResidentSpyUiHtml(): string {
     border-bottom: 1px solid color-mix(in srgb, var(--tg-theme-hint-color, #8b949e) 25%, transparent);
   }
   .split.pane-count-2 .pane-col {
-    flex: 1 1 50%;
-    max-height: 100%;
+    flex: 1 1 0;
   }
   .split.pane-count-3 .pane-col,
   .split.pane-count-4 .pane-col { flex-basis: 33.33%; }
@@ -256,10 +255,6 @@ export function getResidentSpyUiHtml(): string {
 <script>
 (function () {
   var tg = window.Telegram && window.Telegram.WebApp;
-  if (tg) {
-    tg.ready();
-    tg.expand();
-  }
   var params = new URLSearchParams(location.search);
   var token = params.get('token') || '';
   var splitEl = document.getElementById('pane-split');
@@ -300,7 +295,15 @@ export function getResidentSpyUiHtml(): string {
     if (inset.left) document.documentElement.style.setProperty('--safe-left', inset.left + 'px');
   }
 
+  function shouldPinViewportHeight() {
+    return inTelegram() || !!focusPane;
+  }
+
   function applyViewportHeight() {
+    if (!shouldPinViewportHeight()) {
+      document.documentElement.style.removeProperty('--app-height');
+      return;
+    }
     var h = 0;
     if (window.visualViewport && window.visualViewport.height > 0) {
       h = Math.round(window.visualViewport.height);
@@ -314,7 +317,13 @@ export function getResidentSpyUiHtml(): string {
     applySafeAreas();
   }
 
-  if (tg && typeof tg.onEvent === 'function') {
+  if (inTelegram()) {
+    tg.ready();
+    tg.expand();
+    applySafeAreas();
+  }
+
+  if (inTelegram() && tg && typeof tg.onEvent === 'function') {
     tg.onEvent('viewportChanged', applyViewportHeight);
     tg.onEvent('safeAreaChanged', applySafeAreas);
     tg.onEvent('fullscreenChanged', applyViewportHeight);

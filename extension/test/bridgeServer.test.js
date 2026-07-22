@@ -1041,6 +1041,8 @@ test('serves /resident-spy HTML without a prior bearer/query token', async () =>
     assert.match(body, /Both panes/);
     assert.match(body, /requestFullscreen/);
     assert.match(body, /webkitRequestFullscreen/);
+    assert.match(body, /shouldPinViewportHeight/);
+    assert.match(body, /removeProperty\('--app-height'\)/);
     assert.match(body, /mobile-web-app-capable/);
     assert.doesNotMatch(body, /<header>/);
   });
