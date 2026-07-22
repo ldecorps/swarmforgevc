@@ -4,6 +4,7 @@ const path = require('node:path');
 const { startBridge } = require('../out/bridge/bridgeServer');
 const { installInProcessTmux } = require('./helpers/fakeTmux');
 const { mkTmpDir } = require('./helpers/tmpDir');
+const { llmCostTelemetryDir } = require('../out/metrics/llmCostLedgerStore');
 
 const TOKEN = 'test-token-123';
 
@@ -261,6 +262,149 @@ test('serves the burn-rate endpoint with a zero rate for an idle role that has n
     assert.equal(res.status, 200);
     const body = await res.json();
     assert.deepEqual(body, { coder: 0 });
+  });
+});
+
+// BL-551 (bridge-08): GET /cost-rank serves the same ranking/rollup logic as
+// the swarm-cost-rank CLI over HTTP - token-gated like every other route,
+// and degrades to an empty ranked result (never errors) when no ledger
+// exists yet.
+
+function llmOrigin(overrides = {}) {
+  return {
+    subsystem: 'pipeline',
+    role: 'coder',
+    stage: 'coder',
+    trigger: 'handoff',
+    ticketId: 'BL-551',
+    handoffId: 'h1',
+    handoffType: 'git_handoff',
+    script: null,
+    pack: 'openrouter-anthropic-mono-router',
+    model: 'claude-sonnet-5',
+    provider: 'claude',
+    ...overrides,
+  };
+}
+
+function llmInvocation(overrides = {}) {
+  return {
+    type: 'llm_invocation',
+    at: '2026-07-22T12:00:00Z',
+    model: 'claude-sonnet-5',
+    tokens: null,
+    costUsd: 1,
+    origin: llmOrigin(),
+    ...overrides,
+  };
+}
+
+function writeLlmLedger(targetPath, records) {
+  const dir = llmCostTelemetryDir(targetPath);
+  mkdirp(dir);
+  fs.writeFileSync(path.join(dir, 'llm-cost-2026-07.jsonl'), records.map((r) => JSON.stringify(r)).join('\n') + '\n');
+}
+
+test('rejects an unauthorized request to the cost-rank endpoint', async () => {
+  const target = mkTmp();
+  await withBridge(target, {}, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/cost-rank`);
+    assert.equal(res.status, 401);
+  });
+});
+
+test('serves the cost-rank endpoint with an empty ranked result and a default 24h horizon when no ledger exists', async () => {
+  const target = mkTmp();
+  await withBridge(target, {}, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/cost-rank`, {
+      headers: { authorization: `Bearer ${TOKEN}` },
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.horizon, '24h');
+    assert.deepEqual(body.records, []);
+    assert.equal(body.totalCostUsd, 0);
+    assert.equal(body.unknownCostCount, 0);
+  });
+});
+
+test('serves the cost-rank endpoint ranked by cost descending for the requested horizon', async () => {
+  const target = mkTmp();
+  const FIXED_NOW_MS = Date.parse('2026-07-22T13:00:00.000Z');
+  writeLlmLedger(target, [
+    llmInvocation({ at: '2026-07-22T12:59:00Z', costUsd: 1 }),
+    llmInvocation({ at: '2026-07-22T12:58:00Z', costUsd: 5 }),
+  ]);
+  await withBridge(target, { nowMs: FIXED_NOW_MS }, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/cost-rank?horizon=3h`, {
+      headers: { authorization: `Bearer ${TOKEN}` },
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.horizon, '3h');
+    assert.deepEqual(body.records.map((r) => r.costUsd), [5, 1]);
+  });
+});
+
+test('an unknown horizon query param falls back to 24h rather than erroring', async () => {
+  const target = mkTmp();
+  await withBridge(target, {}, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/cost-rank?horizon=30m`, {
+      headers: { authorization: `Bearer ${TOKEN}` },
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.horizon, '24h');
+  });
+});
+
+test('a top query param caps the number of ranked records returned', async () => {
+  const target = mkTmp();
+  const FIXED_NOW_MS = Date.parse('2026-07-22T13:00:00.000Z');
+  writeLlmLedger(target, [
+    llmInvocation({ at: '2026-07-22T12:59:00Z', costUsd: 1 }),
+    llmInvocation({ at: '2026-07-22T12:58:00Z', costUsd: 5 }),
+    llmInvocation({ at: '2026-07-22T12:57:00Z', costUsd: 3 }),
+  ]);
+  await withBridge(target, { nowMs: FIXED_NOW_MS }, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/cost-rank?horizon=3h&top=1`, {
+      headers: { authorization: `Bearer ${TOKEN}` },
+    });
+    const body = await res.json();
+    assert.deepEqual(body.records.map((r) => r.costUsd), [5]);
+  });
+});
+
+test('a groupBy query param returns rollup groups instead of individual records', async () => {
+  const target = mkTmp();
+  const FIXED_NOW_MS = Date.parse('2026-07-22T13:00:00.000Z');
+  writeLlmLedger(target, [
+    llmInvocation({ at: '2026-07-22T12:59:00Z', costUsd: 1, origin: llmOrigin({ role: 'coder' }) }),
+    llmInvocation({ at: '2026-07-22T12:58:00Z', costUsd: 2, origin: llmOrigin({ role: 'coder' }) }),
+    llmInvocation({ at: '2026-07-22T12:57:00Z', costUsd: 10, origin: llmOrigin({ role: 'qa' }) }),
+  ]);
+  await withBridge(target, { nowMs: FIXED_NOW_MS }, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/cost-rank?horizon=3h&groupBy=role`, {
+      headers: { authorization: `Bearer ${TOKEN}` },
+    });
+    const body = await res.json();
+    assert.equal(body.horizon, '3h');
+    assert.equal(body.groups.length, 2);
+    assert.deepEqual(body.groups[0].key, { role: 'qa' });
+    assert.equal(body.groups[0].costUsd, 10);
+  });
+});
+
+test('an unknown groupBy dimension is dropped rather than erroring', async () => {
+  const target = mkTmp();
+  writeLlmLedger(target, [llmInvocation({ costUsd: 1 })]);
+  await withBridge(target, {}, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/cost-rank?groupBy=bogus`, {
+      headers: { authorization: `Bearer ${TOKEN}` },
+    });
+    const body = await res.json();
+    // no valid groupBy dimensions survive -> falls back to individual-record ranking
+    assert.ok(Array.isArray(body.records));
   });
 });
 
