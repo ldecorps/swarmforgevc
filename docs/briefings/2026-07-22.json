@@ -5,7 +5,7 @@
     {
       "role": "coder",
       "tokens": {
-        "value": 169742,
+        "value": 173945,
         "trend": {
           "series": [
             {
@@ -58,12 +58,12 @@
             },
             {
               "periodStart": "2026-07-22T00:00:00.000Z",
-              "value": 169742
+              "value": 173945
             }
           ],
-          "currentValue": 169742,
+          "currentValue": 173945,
           "priorValue": 473332,
-          "delta": -303590,
+          "delta": -299387,
           "direction": "down"
         }
       },
@@ -134,7 +134,7 @@
     {
       "role": "coordinator+specifier",
       "tokens": {
-        "value": 34912,
+        "value": 36217,
         "trend": {
           "series": [
             {
@@ -191,12 +191,12 @@
             },
             {
               "periodStart": "2026-07-22T00:00:00.000Z",
-              "value": 34912
+              "value": 36217
             }
           ],
-          "currentValue": 34912,
+          "currentValue": 36217,
           "priorValue": 88346,
-          "delta": -53434,
+          "delta": -52129,
           "direction": "down"
         }
       },
@@ -1122,7 +1122,7 @@
   },
   "reliability": {
     "chases": {
-      "value": 450,
+      "value": 453,
       "trend": {
         "series": [
           {
@@ -1179,12 +1179,12 @@
           },
           {
             "periodStart": "2026-07-22T00:00:00.000Z",
-            "value": 450
+            "value": 453
           }
         ],
-        "currentValue": 450,
+        "currentValue": 453,
         "priorValue": 20300,
-        "delta": -19850,
+        "delta": -19847,
         "direction": "down"
       }
     },
