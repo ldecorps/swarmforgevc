@@ -86,6 +86,12 @@
   (assert-true "production-adapter-for refuses an uncertified candidate model"
                (nil? (model-steward-lib/production-adapter-for reg "cerebras" "llama-3.3-70b"))))
 
+(let [reg (-> empty-registry
+              (model-steward-lib/register-model "anthropic" "claude-sonnet-5" {:status "certified" :context_window 200000 :cost_class "medium"})
+              (model-steward-lib/set-adapter-entry "anthropic" "claude-sonnet-5" {:adapter_id "generic" :production_default false}))]
+  (assert-true "production-adapter-for refuses a certified model whose adapter entry is not a production default"
+               (nil? (model-steward-lib/production-adapter-for reg "anthropic" "claude-sonnet-5"))))
+
 ;; ── certification-gate-05: non-certified excluded from production unless override ─
 (let [reg (model-steward-lib/register-model empty-registry "cerebras" "llama-3.3-70b" {:status "candidate" :context_window 32000 :cost_class "low"})]
   (assert-true "a candidate model is not assignment-eligible in production mode"
