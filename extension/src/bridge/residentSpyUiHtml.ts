@@ -38,6 +38,7 @@ export function getResidentSpyUiHtml(): string {
     color: var(--tg-theme-text-color, #e6edf3);
     display: flex;
     flex-direction: column;
+    min-height: 0;
   }
   .dot {
     position: fixed;
@@ -88,13 +89,17 @@ export function getResidentSpyUiHtml(): string {
     color: var(--tg-theme-hint-color, #8b949e);
   }
   .split {
-    flex: 1 1 auto;
+    flex: 1 0 0;
     display: flex;
     flex-direction: row;
     flex-wrap: wrap;
+    align-items: stretch;
     align-content: stretch;
     min-height: 0;
     overflow: hidden;
+  }
+  .split.pane-count-2 {
+    flex-wrap: nowrap;
   }
   .pane-col {
     flex: 1 1 50%;
@@ -102,8 +107,14 @@ export function getResidentSpyUiHtml(): string {
     min-height: 0;
     display: flex;
     flex-direction: column;
+    overflow: hidden;
+    align-self: stretch;
     border-right: 1px solid color-mix(in srgb, var(--tg-theme-hint-color, #8b949e) 25%, transparent);
     border-bottom: 1px solid color-mix(in srgb, var(--tg-theme-hint-color, #8b949e) 25%, transparent);
+  }
+  .split.pane-count-2 .pane-col {
+    flex: 1 1 50%;
+    max-height: 100%;
   }
   .split.pane-count-3 .pane-col,
   .split.pane-count-4 .pane-col { flex-basis: 33.33%; }
@@ -165,16 +176,19 @@ export function getResidentSpyUiHtml(): string {
     color: var(--tg-theme-text-color, #e6edf3);
   }
   pre {
-    flex: 1 1 auto;
+    flex: 1 1 0;
     margin: 0;
     padding: 8px;
-    overflow: auto;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
     white-space: pre-wrap;
     word-break: break-word;
     font-size: 11px;
     line-height: 1.35;
     min-height: 0;
     -webkit-overflow-scrolling: touch;
+    touch-action: pan-y;
   }
   .pane-fullscreen {
     display: none;
@@ -245,7 +259,6 @@ export function getResidentSpyUiHtml(): string {
   if (tg) {
     tg.ready();
     tg.expand();
-    if (typeof tg.disableVerticalSwipes === 'function') tg.disableVerticalSwipes();
   }
   var params = new URLSearchParams(location.search);
   var token = params.get('token') || '';
@@ -442,8 +455,11 @@ export function getResidentSpyUiHtml(): string {
     if (active) {
       syncFullscreenContent();
       enterImmersiveFullscreen();
+      if (tg && typeof tg.disableVerticalSwipes === 'function') tg.disableVerticalSwipes();
     } else {
       exitImmersiveFullscreen();
+      applyViewportHeight();
+      if (tg && typeof tg.enableVerticalSwipes === 'function') tg.enableVerticalSwipes();
     }
   }
 
@@ -606,7 +622,12 @@ export function getResidentSpyUiHtml(): string {
       return;
     }
     headEl.innerHTML = '<div class="pane-head-main">' + buildPaneHeadHtml(pane, label, paneId, showClaimEntered) + '</div><span class="pane-expand-hint">Expand</span>';
-    paneEl.textContent = pane.paneText || '(empty)';
+    var text = pane.paneText || '(empty)';
+    if (paneEl.textContent !== text) {
+      var atBottom = paneEl.scrollHeight - paneEl.scrollTop - paneEl.clientHeight < 24;
+      paneEl.textContent = text;
+      if (atBottom) paneEl.scrollTop = paneEl.scrollHeight;
+    }
   }
 
   function renderAllPanes(panes) {
