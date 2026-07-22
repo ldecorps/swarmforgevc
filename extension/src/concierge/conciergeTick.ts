@@ -58,6 +58,8 @@ export interface BacklogFolderItem {
   // filename derivation (which could 404-link a ticket whose title-derived
   // guess drifts from its real on-disk slug).
   filename?: string;
+  // Paused-pager ordering: lower number = higher urgency (backlogReader.ts).
+  priority?: number;
 }
 
 export interface BacklogFoldersSnapshot {
