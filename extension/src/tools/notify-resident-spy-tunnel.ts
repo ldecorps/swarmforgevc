@@ -11,6 +11,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import {
   RESIDENT_SPY_SUBJECT_ID,
+  RESIDENT_SPY_TOPIC_NAME,
   decideEnsureResidentSpyTopicAction,
   topicForSubject,
 } from './telegramFrontDeskBotCore';
@@ -82,7 +83,7 @@ export async function ensureResidentSpyTopicStandalone(
   const topicMap = readTopicMap(projectRoot);
   const decision = decideEnsureResidentSpyTopicAction(topicMap);
   if (decision.kind === 'reuse') return decision.topicId;
-  const created = await createForumTopic(botToken, chatId, 'Resident Spy');
+  const created = await createForumTopic(botToken, chatId, RESIDENT_SPY_TOPIC_NAME);
   if (!created.success || created.messageThreadId === undefined) {
     return undefined;
   }

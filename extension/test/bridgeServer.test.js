@@ -888,7 +888,7 @@ test('serves /resident-spy HTML without a prior bearer/query token', async () =>
     assert.equal(res.status, 200);
     assert.match(res.headers.get('content-type'), /text\/html/);
     const body = await res.text();
-    assert.match(body, /Resident Spy/);
+    assert.match(body, /Mono Router Live Screen/);
     assert.match(body, /resident-pane\?token=/);
   });
 });
@@ -910,6 +910,8 @@ test('serves /resident-pane JSON given a valid query-string token', async () => 
     const body = await res.json();
     // No live tmux pane in the fixture → unavailable sentinel (not 401/404).
     assert.equal(body.available, false);
+    assert.equal(body.resident.available, false);
+    assert.equal(body.coordinator.available, false);
   });
 });
 

@@ -55,7 +55,9 @@ function registerSteps(registry) {
   registry.define(/^a live feed of the mono-router RESIDENT is shown$/, (ctx) => {
     assert.ok(ctx.residentSpyHtml, 'expected resident-spy shell');
     assert.match(ctx.residentSpyHtml, /resident-pane\?token=/);
-    assert.match(ctx.residentSpyHtml, /Resident Spy/);
+    assert.match(ctx.residentSpyHtml, /Mono Router Live Screen/);
+    assert.match(ctx.residentSpyHtml, /coordinator-pane/);
+    assert.match(ctx.residentSpyHtml, /resident-pane/);
   });
 
   registry.define(/^neither destination requires horizontal scroll at a typical phone portrait width$/, (ctx) => {

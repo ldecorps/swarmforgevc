@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { installInProcessTmux } = require('./helpers/fakeTmux');
-const { captureResidentPaneLive } = require('../out/bridge/residentPaneLive');
+const { captureResidentPaneLive, captureCoordinatorPaneLive, captureMonoRouterLiveScreen } = require('../out/bridge/residentPaneLive');
 
 function seedResidentPaneFixture(tmp, { role = 'coder', paneText, model = 'claude-sonnet-5' } = {}) {
   const stateDir = path.join(tmp, '.swarmforge');
@@ -121,6 +121,26 @@ test('captureResidentPaneLive includes held ticket metadata when the role has an
     assert.ok(snap);
     assert.equal(snap.ticketId, 'BL-529');
     assert.equal(snap.ticketTitle, 'Pre-turn guard: worktree branch must match claimed ticket');
+  } finally {
+    fake.restore();
+  }
+});
+
+test('captureMonoRouterLiveScreen returns resident and coordinator panes', () => {
+  const tmp = mkTmpDir('sfvc-mono-live-screen-');
+  const paneText = seedResidentPaneFixture(tmp, { role: 'coder', model: 'claude-sonnet-5' });
+  const fake = installInProcessTmux([
+    { subcommand: 'show-window-options', exitCode: 0, stdout: '0\n' },
+    { subcommand: 'list-windows', exitCode: 0, stdout: '0\n' },
+    { subcommand: 'capture-pane', exitCode: 0, stdout: paneText },
+  ]);
+  try {
+    const screen = captureMonoRouterLiveScreen(tmp);
+    assert.equal(screen.available, true);
+    assert.equal(screen.resident.available, true);
+    assert.match(screen.resident.header ?? '', /^Resident:/);
+    assert.equal(typeof screen.coordinator.available, 'boolean');
+    assert.ok(screen.coordinator);
   } finally {
     fake.restore();
   }

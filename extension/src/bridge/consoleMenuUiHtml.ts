@@ -67,7 +67,7 @@ export function getConsoleMenuUiHtml(): string {
   <h1>SwarmForge Console</h1>
   <p class="sub">Portrait menu — pick a view</p>
   <a class="btn" id="pipeline-grid" data-testid="pipeline-grid" href="#">Pipeline grid</a>
-  <a class="btn secondary" id="mono-feed" data-testid="mono-router-feed" href="#">Mono-router feed</a>
+  <a class="btn secondary" id="mono-feed" data-testid="mono-router-feed" href="#">Mono Router Live Screen</a>
   <a class="btn secondary" id="paused-pager" data-testid="paused-ticket-pager" href="#">Paused tickets</a>
 </main>
 <script>
