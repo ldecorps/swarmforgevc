@@ -56,7 +56,38 @@ export function getResidentSpyUiHtml(): string {
     padding: 10px 12px;
     border-bottom: 1px solid color-mix(in srgb, var(--tg-theme-hint-color, #8b949e) 20%, transparent);
     word-break: break-word;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 8px;
+    cursor: pointer;
+    user-select: none;
   }
+  .pane-head-main { flex: 1 1 auto; min-width: 0; }
+  .pane-expand-hint {
+    flex: 0 0 auto;
+    font-size: 10px;
+    line-height: 1.2;
+    padding: 3px 6px;
+    border-radius: 4px;
+    color: var(--tg-theme-hint-color, #8b949e);
+    border: 1px solid color-mix(in srgb, var(--tg-theme-hint-color, #8b949e) 35%, transparent);
+    white-space: nowrap;
+  }
+  .split-btn {
+    font: inherit;
+    font-size: 11px;
+    padding: 4px 8px;
+    border-radius: 6px;
+    cursor: pointer;
+    color: var(--tg-theme-button-text-color, #fff);
+    background: var(--tg-theme-button-color, #2ea043);
+    border: none;
+  }
+  .split.focus-resident #coordinator-col { display: none; }
+  .split.focus-resident #resident-col { flex: 1 1 100%; border-right: none; }
+  .split.focus-coordinator #resident-col { display: none; }
+  .split.focus-coordinator #coordinator-col { flex: 1 1 100%; }
   .pane-kind {
     font-size: 10px;
     font-weight: 600;
@@ -99,6 +130,7 @@ export function getResidentSpyUiHtml(): string {
   <span id="dot" class="dot"></span>
   <h1>${MONO_ROUTER_LIVE_SCREEN_NAME}</h1>
   <span class="meta" id="age">connecting…</span>
+  <button type="button" class="split-btn" id="split-btn" hidden>Both panes</button>
 </header>
 <div class="split">
   <section class="pane-col" id="resident-col">
@@ -122,8 +154,39 @@ export function getResidentSpyUiHtml(): string {
   var coordinatorPaneEl = document.getElementById('coordinator-pane');
   var ageEl = document.getElementById('age');
   var dotEl = document.getElementById('dot');
+  var splitEl = document.querySelector('.split');
+  var splitBtn = document.getElementById('split-btn');
+  var focusPane = null;
   var lastOk = 0;
   var lastResidentClaimEnteredAtMs = 0;
+
+  function applyFocus() {
+    splitEl.classList.remove('focus-resident', 'focus-coordinator');
+    if (focusPane === 'resident') splitEl.classList.add('focus-resident');
+    if (focusPane === 'coordinator') splitEl.classList.add('focus-coordinator');
+    splitBtn.hidden = !focusPane;
+    var hints = document.querySelectorAll('.pane-expand-hint');
+    for (var i = 0; i < hints.length; i++) {
+      var pane = hints[i].getAttribute('data-pane');
+      hints[i].textContent = focusPane === pane ? 'Restore' : 'Expand';
+    }
+  }
+
+  splitEl.addEventListener('click', function (e) {
+    if (e.target.closest('.split-btn')) return;
+    var col = e.target.closest('.pane-col');
+    if (!col) return;
+    var pane = col.id === 'resident-col' ? 'resident' : col.id === 'coordinator-col' ? 'coordinator' : null;
+    if (!pane) return;
+    focusPane = focusPane === pane ? null : pane;
+    applyFocus();
+  });
+
+  splitBtn.addEventListener('click', function (e) {
+    e.stopPropagation();
+    focusPane = null;
+    applyFocus();
+  });
 
   function setStatus(kind, text) {
     dotEl.className = 'dot' + (kind === 'ok' ? '' : ' ' + kind);
@@ -159,7 +222,8 @@ export function getResidentSpyUiHtml(): string {
     if (showClaimEntered && pane.claimEnteredAtMs) {
       title += ' · ' + formatClaimEnteredAgo(pane.claimEnteredAtMs);
     }
-    var html = '<div class="pane-kind">' + fallbackLabel + '</div>';
+    var html = '<div class="pane-head-main">';
+    html += '<div class="pane-kind">' + fallbackLabel + '</div>';
     html += '<div class="pane-title">' + escapeHtml(title) + '</div>';
     if (pane.ticketId) {
       html += '<div class="pane-ticket"><span class="pane-ticket-id">' + escapeHtml(pane.ticketId) + '</span>';
@@ -168,6 +232,8 @@ export function getResidentSpyUiHtml(): string {
       }
       html += '</div>';
     }
+    html += '</div>';
+    html += '<span class="pane-expand-hint" data-pane="' + (fallbackLabel === 'Resident' ? 'resident' : 'coordinator') + '">Expand</span>';
     headEl.innerHTML = html;
     paneEl.textContent = pane.paneText || '(empty)';
   }

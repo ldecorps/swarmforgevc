@@ -890,6 +890,8 @@ test('serves /resident-spy HTML without a prior bearer/query token', async () =>
     const body = await res.text();
     assert.match(body, /Mono Router Live Screen/);
     assert.match(body, /resident-pane\?token=/);
+    assert.match(body, /focus-resident/);
+    assert.match(body, /Both panes/);
   });
 });
 
