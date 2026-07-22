@@ -1034,8 +1034,8 @@ test('serves /resident-spy HTML without a prior bearer/query token', async () =>
     const body = await res.text();
     assert.match(body, /Mono Router Live Screen/);
     assert.match(body, /resident-pane\?token=/);
-    assert.match(body, /focus-resident/);
-    assert.match(body, /Both panes/);
+    assert.match(body, /pane-split/);
+    assert.match(body, /All panes/);
   });
 });
 
@@ -1058,6 +1058,7 @@ test('serves /resident-pane JSON given a valid query-string token', async () => 
     assert.equal(body.available, false);
     assert.equal(body.resident.available, false);
     assert.equal(body.coordinator.available, false);
+    assert.ok(Array.isArray(body.panes));
   });
 });
 

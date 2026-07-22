@@ -1,6 +1,6 @@
-// BL-522: Telegram Mini App shell for the Mono Router Live Screen.
-// Self-contained except for the official telegram-web-app.js (required by
-// Telegram). Polls GET /resident-pane?token=... on the same origin.
+// BL-522: Telegram Mini App shell for the swarm live screen (mono-router or
+// full stack). Self-contained except telegram-web-app.js. Polls GET
+// /resident-pane?token=... on the same origin.
 
 import { MONO_ROUTER_LIVE_SCREEN_NAME } from '../concierge/residentPaneSpy';
 
@@ -40,20 +40,32 @@ export function getResidentSpyUiHtml(): string {
     flex: 1 1 auto;
     display: flex;
     flex-direction: row;
+    flex-wrap: wrap;
+    align-content: stretch;
     min-height: 0;
     overflow: hidden;
   }
   .pane-col {
     flex: 1 1 50%;
     min-width: 0;
+    min-height: 120px;
+    max-height: 50vh;
     display: flex;
     flex-direction: column;
     border-right: 1px solid color-mix(in srgb, var(--tg-theme-hint-color, #8b949e) 25%, transparent);
+    border-bottom: 1px solid color-mix(in srgb, var(--tg-theme-hint-color, #8b949e) 25%, transparent);
   }
-  .pane-col:last-child { border-right: none; }
+  .split.pane-count-3 .pane-col,
+  .split.pane-count-4 .pane-col { flex-basis: 33.33%; }
+  .split.pane-count-5 .pane-col,
+  .split.pane-count-6 .pane-col { flex-basis: 33.33%; min-height: 100px; }
+  .split.pane-count-7 .pane-col,
+  .split.pane-count-8 .pane-col { flex-basis: 25%; min-height: 90px; }
+  .split.pane-count-7 pre,
+  .split.pane-count-8 pre { font-size: 9px; padding: 6px; }
   .pane-head {
     flex: 0 0 auto;
-    padding: 10px 12px;
+    padding: 8px 10px;
     border-bottom: 1px solid color-mix(in srgb, var(--tg-theme-hint-color, #8b949e) 20%, transparent);
     word-break: break-word;
     display: flex;
@@ -84,10 +96,6 @@ export function getResidentSpyUiHtml(): string {
     background: var(--tg-theme-button-color, #2ea043);
     border: none;
   }
-  .split.focus-resident #coordinator-col { display: none; }
-  .split.focus-resident #resident-col { flex: 1 1 100%; border-right: none; }
-  .split.focus-coordinator #resident-col { display: none; }
-  .split.focus-coordinator #coordinator-col { flex: 1 1 100%; }
   .pane-kind {
     font-size: 10px;
     font-weight: 600;
@@ -97,15 +105,17 @@ export function getResidentSpyUiHtml(): string {
     margin-bottom: 4px;
   }
   .pane-title {
-    font-size: 13px;
+    font-size: 12px;
     line-height: 1.35;
     font-weight: 700;
     color: var(--tg-theme-text-color, #e6edf3);
   }
+  .split.pane-count-7 .pane-title,
+  .split.pane-count-8 .pane-title { font-size: 11px; }
   .pane-ticket {
-    margin-top: 6px;
-    font-size: 11px;
-    line-height: 1.4;
+    margin-top: 4px;
+    font-size: 10px;
+    line-height: 1.35;
     font-weight: 500;
     color: color-mix(in srgb, var(--tg-theme-text-color, #e6edf3) 88%, var(--tg-theme-hint-color, #8b949e));
   }
@@ -116,12 +126,12 @@ export function getResidentSpyUiHtml(): string {
   pre {
     flex: 1 1 auto;
     margin: 0;
-    padding: 10px;
+    padding: 8px;
     overflow: auto;
     white-space: pre-wrap;
     word-break: break-word;
     font-size: 11px;
-    line-height: 1.4;
+    line-height: 1.35;
   }
 </style>
 </head>
@@ -130,45 +140,50 @@ export function getResidentSpyUiHtml(): string {
   <span id="dot" class="dot"></span>
   <h1>${MONO_ROUTER_LIVE_SCREEN_NAME}</h1>
   <span class="meta" id="age">connecting…</span>
-  <button type="button" class="split-btn" id="split-btn" hidden>Both panes</button>
+  <button type="button" class="split-btn" id="split-btn" hidden>All panes</button>
 </header>
-<div class="split">
-  <section class="pane-col" id="resident-col">
-    <div class="pane-head" id="resident-head">Resident: …</div>
-    <pre id="resident-pane">Loading…</pre>
-  </section>
-  <section class="pane-col" id="coordinator-col">
-    <div class="pane-head" id="coordinator-head">Coordinator: …</div>
-    <pre id="coordinator-pane">Loading…</pre>
-  </section>
-</div>
+<div class="split" id="pane-split"></div>
 <script>
 (function () {
   var tg = window.Telegram && window.Telegram.WebApp;
   if (tg) { tg.ready(); tg.expand(); }
   var params = new URLSearchParams(location.search);
   var token = params.get('token') || '';
-  var residentHeadEl = document.getElementById('resident-head');
-  var residentPaneEl = document.getElementById('resident-pane');
-  var coordinatorHeadEl = document.getElementById('coordinator-head');
-  var coordinatorPaneEl = document.getElementById('coordinator-pane');
+  var splitEl = document.getElementById('pane-split');
   var ageEl = document.getElementById('age');
   var dotEl = document.getElementById('dot');
-  var splitEl = document.querySelector('.split');
   var splitBtn = document.getElementById('split-btn');
   var focusPane = null;
   var lastOk = 0;
-  var lastResidentClaimEnteredAtMs = 0;
+  var paneCount = 0;
+  var claimEnteredByPaneId = {};
 
   function applyFocus() {
-    splitEl.classList.remove('focus-resident', 'focus-coordinator');
-    if (focusPane === 'resident') splitEl.classList.add('focus-resident');
-    if (focusPane === 'coordinator') splitEl.classList.add('focus-coordinator');
     splitBtn.hidden = !focusPane;
-    var hints = document.querySelectorAll('.pane-expand-hint');
-    for (var i = 0; i < hints.length; i++) {
-      var pane = hints[i].getAttribute('data-pane');
-      hints[i].textContent = focusPane === pane ? 'Restore' : 'Expand';
+    var cols = splitEl.querySelectorAll('.pane-col');
+    for (var i = 0; i < cols.length; i++) {
+      var col = cols[i];
+      var id = col.getAttribute('data-pane-id');
+      if (focusPane) {
+        if (id === focusPane) {
+          col.style.display = 'flex';
+          col.style.flex = '1 1 100%';
+          col.style.maxHeight = 'none';
+          col.style.minHeight = '0';
+        } else {
+          col.style.display = 'none';
+        }
+      } else {
+        col.style.display = '';
+        col.style.flex = '';
+        col.style.maxHeight = '';
+        col.style.minHeight = '';
+      }
+    }
+    var hints = splitEl.querySelectorAll('.pane-expand-hint');
+    for (var j = 0; j < hints.length; j++) {
+      var paneId = hints[j].getAttribute('data-pane');
+      hints[j].textContent = focusPane === paneId ? 'Restore' : 'Expand';
     }
   }
 
@@ -176,7 +191,7 @@ export function getResidentSpyUiHtml(): string {
     if (e.target.closest('.split-btn')) return;
     var col = e.target.closest('.pane-col');
     if (!col) return;
-    var pane = col.id === 'resident-col' ? 'resident' : col.id === 'coordinator-col' ? 'coordinator' : null;
+    var pane = col.getAttribute('data-pane-id');
     if (!pane) return;
     focusPane = focusPane === pane ? null : pane;
     applyFocus();
@@ -209,9 +224,52 @@ export function getResidentSpyUiHtml(): string {
     return 'entered ' + Math.floor(elapsedHr / 24) + 'd ago';
   }
 
-  function renderPane(pane, headEl, paneEl, fallbackLabel, showClaimEntered) {
+  function escapeHtml(text) {
+    return String(text)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+  }
+
+  function normalizePanes(data) {
+    if (data.panes && data.panes.length) {
+      return data.panes;
+    }
+    return [
+      { id: 'resident', label: 'Resident', pane: data.resident },
+      { id: 'coordinator', label: 'Coordinator', pane: data.coordinator }
+    ];
+  }
+
+  function ensurePaneColumns(panes) {
+    var ids = panes.map(function (p) { return p.id; }).join(',');
+    if (splitEl.getAttribute('data-pane-ids') === ids) {
+      return;
+    }
+    splitEl.setAttribute('data-pane-ids', ids);
+    splitEl.className = 'split pane-count-' + panes.length;
+    splitEl.innerHTML = '';
+    paneCount = panes.length;
+    splitBtn.textContent = paneCount > 2 ? 'All panes' : 'Both panes';
+    focusPane = null;
+    for (var i = 0; i < panes.length; i++) {
+      var entry = panes[i];
+      var col = document.createElement('section');
+      col.className = 'pane-col';
+      col.setAttribute('data-pane-id', entry.id);
+      var head = document.createElement('div');
+      head.className = 'pane-head';
+      var pre = document.createElement('pre');
+      col.appendChild(head);
+      col.appendChild(pre);
+      splitEl.appendChild(col);
+    }
+    applyFocus();
+  }
+
+  function renderPane(pane, headEl, paneEl, label, paneId, showClaimEntered) {
     if (!pane || pane.available === false) {
-      headEl.textContent = fallbackLabel + ' (unavailable)';
+      headEl.textContent = label + ' (unavailable)';
       paneEl.textContent = '(pane not reachable)';
       return;
     }
@@ -221,9 +279,12 @@ export function getResidentSpyUiHtml(): string {
     }
     if (showClaimEntered && pane.claimEnteredAtMs) {
       title += ' · ' + formatClaimEnteredAgo(pane.claimEnteredAtMs);
+      claimEnteredByPaneId[paneId] = pane.claimEnteredAtMs;
+    } else {
+      delete claimEnteredByPaneId[paneId];
     }
     var html = '<div class="pane-head-main">';
-    html += '<div class="pane-kind">' + fallbackLabel + '</div>';
+    html += '<div class="pane-kind">' + escapeHtml(label) + '</div>';
     html += '<div class="pane-title">' + escapeHtml(title) + '</div>';
     if (pane.ticketId) {
       html += '<div class="pane-ticket"><span class="pane-ticket-id">' + escapeHtml(pane.ticketId) + '</span>';
@@ -233,16 +294,27 @@ export function getResidentSpyUiHtml(): string {
       html += '</div>';
     }
     html += '</div>';
-    html += '<span class="pane-expand-hint" data-pane="' + (fallbackLabel === 'Resident' ? 'resident' : 'coordinator') + '">Expand</span>';
+    html += '<span class="pane-expand-hint" data-pane="' + escapeHtml(paneId) + '">Expand</span>';
     headEl.innerHTML = html;
     paneEl.textContent = pane.paneText || '(empty)';
   }
 
-  function escapeHtml(text) {
-    return String(text)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;');
+  function renderAllPanes(panes) {
+    ensurePaneColumns(panes);
+    var cols = splitEl.querySelectorAll('.pane-col');
+    for (var i = 0; i < panes.length; i++) {
+      var col = cols[i];
+      if (!col) continue;
+      var showClaim = panes[i].id === 'resident' || panes[i].id === 'coder';
+      renderPane(
+        panes[i].pane,
+        col.querySelector('.pane-head'),
+        col.querySelector('pre'),
+        panes[i].label,
+        panes[i].id,
+        showClaim
+      );
+    }
   }
 
   function refresh() {
@@ -256,11 +328,10 @@ export function getResidentSpyUiHtml(): string {
           setStatus('err', 'no data');
           return;
         }
-        renderPane(data.resident, residentHeadEl, residentPaneEl, 'Resident', true);
-        renderPane(data.coordinator, coordinatorHeadEl, coordinatorPaneEl, 'Coordinator', false);
-        lastResidentClaimEnteredAtMs = data.resident && data.resident.claimEnteredAtMs ? data.resident.claimEnteredAtMs : 0;
+        var panes = normalizePanes(data);
+        renderAllPanes(panes);
         if (!data.available) {
-          setStatus('err', 'resident unavailable');
+          setStatus('err', 'no live panes');
         } else {
           lastOk = Date.now();
           setStatus('ok', 'updated 0s ago');
@@ -275,11 +346,15 @@ export function getResidentSpyUiHtml(): string {
   setInterval(refresh, 1500);
   setInterval(tickAge, 500);
   setInterval(function () {
-    if (!lastResidentClaimEnteredAtMs) return;
-    var titleEl = residentHeadEl.querySelector('.pane-title');
-    if (!titleEl) return;
-    var base = titleEl.textContent.replace(/ · entered .*$/, '');
-    titleEl.textContent = base + ' · ' + formatClaimEnteredAgo(lastResidentClaimEnteredAtMs);
+    for (var paneId in claimEnteredByPaneId) {
+      if (!Object.prototype.hasOwnProperty.call(claimEnteredByPaneId, paneId)) continue;
+      var col = splitEl.querySelector('.pane-col[data-pane-id="' + paneId + '"]');
+      if (!col) continue;
+      var titleEl = col.querySelector('.pane-title');
+      if (!titleEl) continue;
+      var base = titleEl.textContent.replace(/ · entered .*$/, '');
+      titleEl.textContent = base + ' · ' + formatClaimEnteredAgo(claimEnteredByPaneId[paneId]);
+    }
   }, 1000);
 })();
 </script>
