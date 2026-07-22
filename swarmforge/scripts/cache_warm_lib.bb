@@ -15,7 +15,11 @@
             [cheshire.core :as json])
   (:import [java.security MessageDigest]))
 
-(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "agent_runtime_lib.bb")))
+;; BL-546: the stable prefix is composed by PromptEngine (the single
+;; authority) - cache warm keys on ITS output directly, not on a parallel
+;; assembly. agent_runtime_lib delegates to the same function either way;
+;; loading prompt_engine_lib here makes the dependency direct.
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "prompt_engine_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "handoff_lib.bb")))
 
 (defn sha256-hex [s]
@@ -24,7 +28,7 @@
     (apply str (map #(format "%02x" %) digest))))
 
 (defn stable-prefix-content-hash
-  "Content hash of the assembled stable prefix: agent-runtime-lib's
+  "Content hash of the assembled stable prefix: PromptEngine's
    constitution+PIPELINE text (or stable-text, an injectable override),
    plus model-routing-text (raw text describing per-role model/effort
    assignment - typically a pack's .conf file content) so a routing
@@ -37,7 +41,7 @@
    boundary in one making the concatenation collide with a different
    split of the same bytes."
   [& {:keys [model-routing-text stable-text]}]
-  (sha256-hex (str (or stable-text (agent-runtime-lib/stable-prefix-text)) " " (or model-routing-text ""))))
+  (sha256-hex (str (or stable-text (prompt-engine-lib/stable-prefix-text)) " " (or model-routing-text ""))))
 
 (defn warm-decision
   "Pure decision: :reuse-cache when the current hash matches the prior

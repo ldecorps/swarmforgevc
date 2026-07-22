@@ -115,3 +115,31 @@
    (escalated?=false) always proceeds so recovery can disarm state."
   [{:keys [escalated? session-exists?]}]
   (or (not escalated?) (boolean session-exists?)))
+
+(def default-rotate-cooldown-ms 30000)
+
+(defn actionable-mail?
+  "True when a role holds in_process work or new git_handoff mail (notes never qualify)."
+  [{:keys [in-process-count git-handoff-count]}]
+  (or (pos? (or in-process-count 0))
+      (pos? (or git-handoff-count 0))))
+
+(defn preferred-rotate-target
+  "Among mailbox score rows, the role with the newest actionable mail."
+  [rows]
+  (some->> rows
+           (filter :actionable?)
+           (sort-by :newest-created-at)
+           last
+           :role))
+
+(defn should-rotate-resident?
+  "Gate resident rotation during chase — avoid mid-turn thrash and burst rotates."
+  [{:keys [active-role target-role resident-busy? last-rotate-at-ms now-ms cooldown-ms]}]
+  (let [cooldown (or cooldown-ms default-rotate-cooldown-ms)]
+    (cond
+      resident-busy? :busy
+      (and active-role target-role (= (str active-role) (str target-role))) :already-active
+      (and last-rotate-at-ms (pos? last-rotate-at-ms)
+           (< (- now-ms last-rotate-at-ms) cooldown)) :cooldown
+      :else :rotate)))

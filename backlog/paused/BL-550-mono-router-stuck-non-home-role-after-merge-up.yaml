@@ -1,0 +1,82 @@
+id: BL-550
+title: "mono-router resident strands in non-home role after QA merge-up broadcast"
+milestone: M8
+type: defect
+status: todo
+epic: swarm-reliability
+priority: 2
+mutation_cost: low
+direction: human-requested
+depends_on: []
+human_approval: approved
+assigned_to: coder
+source: "Coordinator observation 2026-07-22: resident stuck as documenter after BL-529 merge-up; same pattern as post-BL-528 hardener stall. Human requested urgent fix."
+
+description: |
+  ## Root Cause
+
+  QA broadcasts a merge-up `note` to all 5 pipeline roles simultaneously
+  (coder, cleaner, architect, hardender, documenter). On the full 7-pack each
+  role is a separate persistent process — they all merge and idle independently.
+  On a mono-router pack (`config rotation router`) there is ONE resident. It
+  rotates through roles to consume each note, ending up stranded in whichever
+  non-home role processed the last merge-up note.
+
+  When the next wake arrives (e.g. a new ticket's coder handoff), the resident
+  runs `ready_for_next.sh` as that non-home role, gets `NO_TASK`, and idles —
+  the coder mail is never seen without a coordinator nudge.
+
+  ## Where the gap lives
+
+  The pack prompt covers the coder's post-merge-up rotation ("if root empty →
+  rotate_to_role.sh coder") but gives NO instruction to non-home roles
+  (cleaner, architect, hardender, documenter) about what to do after their
+  merge-up note. They call `done_with_current.sh` and stay in that role.
+
+  This has occurred twice in the same session: hardender stall during BL-529
+  (coordinator had to chase back to hardender), then documenter stall after
+  QA approval (coordinator twice had to nudge back to coder).
+
+  ## Fix shape
+
+  Two-part — code change drives it; pack prompt documents it.
+
+  **Part 1 — `ready_for_next_task.bb` (and `ready_for_next_batch.bb`):**
+  When running on a mono-router pack (`config rotation router`) AND
+  `$SWARMFORGE_ROLE` is not the configured home role (default: `coder`) AND
+  both `inbox/new/` and `inbox/in_process/` are empty → print `ROTATE_HOME`
+  (instead of `NO_TASK`) and exit. The `.sh` wrapper script (`ready_for_next.sh`)
+  detects `ROTATE_HOME` and calls `rotate_to_role.sh coder`.
+
+  The home role is read from `config rotation_home` in swarmforge.conf (add
+  with default `coder`). This makes the mechanism pack-agnostic: a future pack
+  with a different home role just sets `config rotation_home <role>`.
+
+  **Part 2 — `openrouter-kimi-sonnet-mono-router.prompt` (and the shared
+  PIPELINE.md mono-router section):**
+  Add an explicit rule: "As a non-home role, after `done_with_current.sh`
+  completes any note (including merge-up notes), if your inbox is empty,
+  call `rotate_to_role.sh coder`." This documents the intent so the LLM
+  respects code output even if partially loaded.
+
+  ## Scope
+  - `swarmforge/scripts/ready_for_next_task.bb`
+  - `swarmforge/scripts/ready_for_next_batch.bb`
+  - `swarmforge/scripts/ready_for_next.sh`
+  - `swarmforge/packs/openrouter-kimi-sonnet-mono-router.conf` (add
+    `config rotation_home coder`)
+  - `swarmforge/packs/openrouter-kimi-sonnet-mono-router.prompt`
+
+acceptance: specs/features/BL-550-mono-router-stuck-after-merge-up-note.feature
+
+notes: |
+  Do not hard-code `coder` as the home role in the Babashka scripts —
+  read from `config rotation_home` so other mono-router packs can differ.
+
+  The `ready_for_next_batch.bb` path also needs the fix: the cleaner and
+  hardender run in batch mode; a batch-mode non-home role strands the same
+  way as a task-mode one.
+
+  Unit tests: `specs/pipeline/steps/` step handler for the four scenarios in
+  the feature file; real-git fixture is not needed — fake inbox dirs suffice.
+  Use the existing `branch_claim_guard_lib.bb` test fixture pattern.

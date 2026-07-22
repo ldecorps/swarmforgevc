@@ -958,6 +958,25 @@
               (log! "chase-rotate-error" role (str (:reason result))))
             result))))))
 
+(defn- head-commit-10
+  "Exactly 10 hex chars for swarm_handoff.bb's git_handoff commit contract."
+  []
+  (let [result (process/sh ["git" "rev-parse" "--short=10" "HEAD"] {:dir (str project-root)})]
+    (when (zero? (:exit result))
+      (str/trim (:out result)))))
+
+(defn- worktree-head-commit-10
+  "BL-528: 10-char HEAD of a role's worktree, or \"\" on error.
+   Uses the worktree-path from loaded roles so each role's own branch is
+   read, not the master checkout."
+  [roles role]
+  (let [ri  (get roles role)
+        dir (or (:worktree-path ri) (str project-root))]
+    (try
+      (let [result (process/sh ["git" "rev-parse" "--short=10" "HEAD"] {:dir dir})]
+        (if (zero? (:exit result)) (str/trim (:out result)) ""))
+      (catch Exception _ ""))))
+
 (defn chase-sweep! [roles socket]
   (let [now-ms (System/currentTimeMillis)
         adapters {:get-liveness get-liveness
@@ -1078,24 +1097,7 @@
 ;; hand-writing an inbox file, per the ticket's "must go through the normal
 ;; outbound handoff path" constraint - reuses its full existing validation,
 ;; sequencing, and atomic outbox write, plus its own sync-delivery attempt.
-(defn- head-commit-10
-  "Exactly 10 hex chars for swarm_handoff.bb's git_handoff commit contract."
-  []
-  (let [result (process/sh ["git" "rev-parse" "--short=10" "HEAD"] {:dir (str project-root)})]
-    (when (zero? (:exit result))
-      (str/trim (:out result)))))
 
-(defn- worktree-head-commit-10
-  "BL-528: 10-char HEAD of a role's worktree, or \"\" on error.
-   Uses the worktree-path from loaded roles so each role's own branch is
-   read, not the master checkout."
-  [roles role]
-  (let [ri  (get roles role)
-        dir (or (:worktree-path ri) (str project-root))]
-    (try
-      (let [result (process/sh ["git" "rev-parse" "--short=10" "HEAD"] {:dir dir})]
-        (if (zero? (:exit result)) (str/trim (:out result)) ""))
-      (catch Exception _ ""))))
 
 (defn auto-route! [item]
   (let [commit (or (head-commit-10) "")

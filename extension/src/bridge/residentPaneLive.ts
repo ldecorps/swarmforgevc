@@ -14,8 +14,9 @@ import {
   RESIDENT_PANE_SPY_ROLE_SEARCH_LINES,
   readMonoRouterActiveRole,
   resolveResidentRoleIdentity,
-  resolveResidentHeldTicketMeta,
+  resolveResidentHeldTicketMetaForRoles,
   formatResidentSpyHeader,
+  formatClaimEnteredAgo,
 } from '../concierge/residentPaneSpy';
 import { readRoleModelId } from '../swarm/backendSwitch';
 import { formatModelDisplayName } from '../swarm/modelDisplayName';
@@ -28,6 +29,8 @@ export interface PaneLiveSnapshot {
   modelLabel?: string;
   ticketId?: string;
   ticketTitle?: string;
+  claimEnteredAtMs?: number;
+  claimEnteredAgo?: string;
   header?: string;
 }
 
@@ -44,21 +47,30 @@ function unavailablePane(): PaneLiveSnapshot {
   return { available: false };
 }
 
-function withHeader(snap: PaneLiveSnapshot, prefix: 'Resident' | 'Coordinator'): PaneLiveSnapshot {
+function withHeader(
+  snap: PaneLiveSnapshot,
+  prefix: 'Resident' | 'Coordinator',
+  options: { includeClaimEnteredAgo?: boolean } = {}
+): PaneLiveSnapshot {
   if (!snap.available || !snap.roleLabel) {
     return snap;
   }
+  const claimEnteredAgo =
+    options.includeClaimEnteredAgo && snap.claimEnteredAtMs !== undefined
+      ? formatClaimEnteredAgo(snap.claimEnteredAtMs)
+      : undefined;
   return {
     ...snap,
+    claimEnteredAgo,
     header: formatResidentSpyHeader(
       {
         roleLabel: snap.roleLabel,
         modelLabel: snap.modelLabel,
-        sessionTarget: snap.sessionTarget,
         ticketId: snap.ticketId,
         ticketTitle: snap.ticketTitle,
       },
-      prefix
+      prefix,
+      { includeSession: false }
     ),
   };
 }
@@ -84,7 +96,11 @@ function tryCaptureRolePane(
   const roleSearchText = stripAnsi(roleSearchCaptured.stdout ?? paneText);
   const identity = resolveResidentRoleIdentity(roleSearchText, roleEntry, roles, monoRouterActiveRole);
   const modelId = readRoleModelId(targetPath, identity.modelRole);
-  const heldTicket = resolveResidentHeldTicketMeta(targetPath, identity.modelRole);
+  const heldTicket = resolveResidentHeldTicketMetaForRoles(targetPath, [
+    monoRouterActiveRole,
+    identity.modelRole,
+    roleEntry.role,
+  ].filter((role, index, rolesToTry): role is string => !!role && rolesToTry.indexOf(role) === index));
   return {
     available: true,
     roleLabel: identity.roleLabel,
@@ -136,7 +152,9 @@ export function captureCoordinatorPaneLive(targetPath: string): PaneLiveSnapshot
 export function captureMonoRouterLiveScreen(targetPath: string): MonoRouterLiveScreenSnapshot {
   const residentRaw = captureResidentPaneLive(targetPath);
   const coordinatorRaw = captureCoordinatorPaneLive(targetPath);
-  const resident = withHeader(residentRaw ? { ...residentRaw, available: true } : unavailablePane(), 'Resident');
+  const resident = withHeader(residentRaw ? { ...residentRaw, available: true } : unavailablePane(), 'Resident', {
+    includeClaimEnteredAgo: true,
+  });
   const coordinator = withHeader(
     coordinatorRaw ? { ...coordinatorRaw, available: true } : unavailablePane(),
     'Coordinator'

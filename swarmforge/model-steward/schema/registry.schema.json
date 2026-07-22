@@ -1,0 +1,46 @@
+{
+  "_comment": "BL-547 Slice 1 — informal structural reference for Model Steward's registry shape. Not a JSON Schema validator; model_steward_lib.bb is the executable source of truth. Runtime state lives at .swarmforge/model-steward/registry.json, seeded from seed/models.seed.json on first read.",
+
+  "model_registry_entry": {
+    "provider": "string, e.g. \"anthropic\"",
+    "model": "string, e.g. \"claude-sonnet-5\"",
+    "status": "one of: candidate | certified | deprecated",
+    "context_window": "integer, tokens",
+    "cost_class": "string, one of: low | medium | high",
+    "certification_report_path": "string relative to the state dir (e.g. \"certification-reports/anthropic__claude-sonnet-5__<ts>.json\"), or null if never certified",
+    "last_regression_reason": "string, present only after a decertify; describes the regression that triggered it"
+  },
+
+  "capability_registry_entry": {
+    "_key": "provider/model composite string, e.g. \"anthropic/claude-sonnet-5\"",
+    "coding_quality": { "score": "0.0-1.0 or null" },
+    "protocol_compliance": { "score": "0.0-1.0 or null" },
+    "tool_usage": { "score": "0.0-1.0 or null" },
+    "autonomy": { "score": "0.0-1.0 or null" },
+    "cost_latency": { "score": "0.0-1.0 or null" }
+  },
+
+  "role_matrix_entry": {
+    "_key": "role name, e.g. \"coder\" (must match one of: architect, coder, cleaner, QA, hardender, documenter, specifier)",
+    "provider": "string",
+    "model": "string",
+    "score": "number, higher ranks first; role_recommendations excludes non-certified models unless include-uncertified? is set",
+    "evidence": "string pointer, e.g. \"recruiter-scorecard:<id>\" or \"bakeoff-run:<id>\""
+  },
+
+  "adapter_catalogue_entry": {
+    "_key": "provider/model composite string, e.g. \"anthropic/claude-sonnet-5\"",
+    "adapter_id": "string, a PromptEngine (BL-546) adapter id",
+    "production_default": "boolean — true only for a certified model's default adapter; a candidate model may list an adapter here for evaluation without this being true"
+  },
+
+  "certification_report": {
+    "provider": "string",
+    "model": "string",
+    "timestamp": "ISO-8601 string",
+    "result": "one of: certified | regressed",
+    "gates": "array (Slice 1: empty — no automated benchmark ingestion yet; Slice 2's evaluate populates this)",
+    "reason": "string, present only on a regressed report",
+    "prior_report": "the certification_report this one regressed from, present only on a regressed report"
+  }
+}

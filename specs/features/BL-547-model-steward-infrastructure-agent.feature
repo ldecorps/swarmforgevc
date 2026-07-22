@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=2cca17fe99742c451b7a24a2a71229e3d546e209872363496ddde7cfca340013
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-07-22T12:02:24.708031490Z","feature_name":"Model Steward owns model lifecycle knowledge and certification for the swarm","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-547-model-steward-infrastructure-agent.feature","background_hash":"f5922519f9247fc7a49f7ffc14cb9dd8e23384f8165f37ae5011b44b33feffec","implementation_hash":"unknown","scenarios":[{"index":0,"name":"every supported model has a registry entry with lifecycle status","scenario_hash":"06d4fd90e79ea4af65102f52da8a9522bdf20b6d5dd02934eaf320d6d65a703c","mutation_count":9,"result":{"Total":9,"Killed":9,"Survived":0,"Errors":0},"tested_at":"2026-07-22T12:02:24.708031490Z"},{"index":2,"name":"the role recommendation matrix ranks certified models per swarm role","scenario_hash":"3d9e19194f8aa361cda1ec4b9272586a8e2606c7cea9063af773e56b5c4d7bd4","mutation_count":7,"result":{"Total":7,"Killed":7,"Survived":0,"Errors":0},"tested_at":"2026-07-22T12:02:24.708031490Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: Model Steward owns model lifecycle knowledge and certification for the swarm
 
   # BL-547 (human intake 2026-07-21): model knowledge is scattered across pack
