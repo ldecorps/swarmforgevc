@@ -4,7 +4,7 @@
 import { EditInPlaceMessageState } from './editInPlaceMessageSync';
 import { InlineKeyboardButton } from '../notify/telegramClient';
 
-export const RESIDENT_SPY_TUNNEL_NOTIFY_FORMAT_VERSION = 2;
+export const RESIDENT_SPY_TUNNEL_NOTIFY_FORMAT_VERSION = 3;
 
 export function buildResidentSpyMiniAppUrl(baseUrl: string, token: string): string {
   const base = baseUrl.replace(/\/$/, '');
@@ -34,11 +34,25 @@ export function buildResidentSpyTunnelUrls(baseUrl: string, token: string): Resi
   };
 }
 
-export function formatResidentSpyTunnelTopicMessage(): string {
-  return 'SwarmForge phone console — tap a button below to open inside Telegram.';
+export function formatResidentSpyTunnelTopicMessage(botUsername?: string): string {
+  const botHint = botUsername ? `@${botUsername}` : 'the front-desk bot';
+  return [
+    'SwarmForge phone console',
+    '',
+    `In Telegram (recommended): open a private chat with ${botHint}, then tap the menu button (☰) next to the message field.`,
+    'That opens inside Telegram with fullscreen support.',
+    '',
+    'Browser fallback: tap the button below.',
+  ].join('\n');
 }
 
-export function buildResidentSpyTunnelWebAppButtons(urls: ResidentSpyTunnelUrls): InlineKeyboardButton[][] {
+/** Group/forum topics cannot use web_app buttons — url opens the system browser. */
+export function buildResidentSpyTunnelTopicButtons(urls: ResidentSpyTunnelUrls): InlineKeyboardButton[][] {
+  return [[{ text: 'Open in browser', url: urls.consoleUrl }]];
+}
+
+/** web_app buttons work only in a private chat with the bot. */
+export function buildResidentSpyTunnelPrivateWebAppButtons(urls: ResidentSpyTunnelUrls): InlineKeyboardButton[][] {
   return [
     [{ text: 'Open console', webAppUrl: urls.consoleUrl }],
     [{ text: 'Live screen', webAppUrl: urls.liveUrl }],
@@ -69,6 +83,7 @@ export interface ResidentSpyTunnelNotifyAdapters {
   ensureTopic: () => Promise<number | undefined>;
   postMessage: (topicId: number, text: string, buttons: InlineKeyboardButton[][]) => Promise<number | undefined>;
   editMessage: (topicId: number, messageId: number, text: string, buttons: InlineKeyboardButton[][]) => Promise<boolean>;
+  deleteMessage?: (messageId: number) => Promise<boolean>;
 }
 
 export type ResidentSpyTunnelNotifyState = EditInPlaceMessageState & {
@@ -88,7 +103,8 @@ export type ResidentSpyTunnelNotifyOutcome =
 export async function syncResidentSpyTunnelUrl(
   liveUrl: string,
   prevState: ResidentSpyTunnelNotifyState | undefined,
-  adapters: ResidentSpyTunnelNotifyAdapters
+  adapters: ResidentSpyTunnelNotifyAdapters,
+  options: { botUsername?: string } = {}
 ): Promise<{ state: ResidentSpyTunnelNotifyState; outcome: ResidentSpyTunnelNotifyOutcome }> {
   const consoleUrl = consoleUrlFromLiveUrl(liveUrl);
   const urls: ResidentSpyTunnelUrls = { liveUrl, consoleUrl };
@@ -101,8 +117,8 @@ export async function syncResidentSpyTunnelUrl(
     return { state: prevState ?? {}, outcome: 'failed-no-topic' };
   }
 
-  const text = formatResidentSpyTunnelTopicMessage();
-  const buttons = buildResidentSpyTunnelWebAppButtons(urls);
+  const text = formatResidentSpyTunnelTopicMessage(options.botUsername);
+  const buttons = buildResidentSpyTunnelTopicButtons(urls);
   const reminted = prevState?.topicId !== undefined && prevState.topicId !== topicId;
   const nextStateBase = {
     topicId,
@@ -122,7 +138,14 @@ export async function syncResidentSpyTunnelUrl(
 
   const ok = await adapters.editMessage(topicId, prevState.messageId, text, buttons);
   if (!ok) {
-    return { state: prevState, outcome: 'failed-edit' };
+    const messageId = await adapters.postMessage(topicId, text, buttons);
+    if (messageId === undefined) {
+      return { state: prevState, outcome: 'failed-edit' };
+    }
+    if (adapters.deleteMessage) {
+      await adapters.deleteMessage(prevState.messageId);
+    }
+    return { state: { ...nextStateBase, messageId }, outcome: 'posted' };
   }
   return { state: { ...prevState, ...nextStateBase, messageId: prevState.messageId }, outcome: 'edited' };
 }
