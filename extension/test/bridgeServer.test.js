@@ -1032,8 +1032,15 @@ test('serves /resident-spy HTML without a prior bearer/query token', async () =>
     assert.equal(res.status, 200);
     assert.match(res.headers.get('content-type'), /text\/html/);
     const body = await res.text();
-    assert.match(body, /Mono Router Live Screen/);
+    assert.match(body, /<title>Mono Router Live Screen<\/title>/);
     assert.match(body, /resident-pane\?token=/);
+    assert.match(body, /pane-split/);
+    assert.match(body, /All panes/);
+    assert.match(body, /ticket-strip/);
+    assert.match(body, /pane-fullscreen/);
+    assert.match(body, /Both panes/);
+    assert.match(body, /requestFullscreen/);
+    assert.doesNotMatch(body, /<header>/);
   });
 });
 
@@ -1056,6 +1063,7 @@ test('serves /resident-pane JSON given a valid query-string token', async () => 
     assert.equal(body.available, false);
     assert.equal(body.resident.available, false);
     assert.equal(body.coordinator.available, false);
+    assert.ok(Array.isArray(body.panes));
   });
 });
 

@@ -18,8 +18,9 @@ alongside the numbered articles: `engineering.prompt`, `workflow.prompt`,
 
 Long-form incident-backed elaborations live under
 `swarmforge/constitution/articles/reference/` (for example
-`engineering-detailed.prompt`). Those files are **not** inlined into the boot
-system prompt — read them on demand when a task touches that domain.
+`engineering-detailed.prompt`, `workflow-detailed.prompt`). Those files are
+**not** inlined into the boot system prompt — read them on demand when a task
+touches that domain.
 
 ## Key Rules
 1. **Pipeline Flow**: Parcels move through the chain `specifier → coder → cleaner → architect → hardener → documenter → QA (integrate) → coordinator (bookkeep)`.

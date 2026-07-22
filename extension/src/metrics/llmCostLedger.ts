@@ -157,6 +157,14 @@ export function rankLlmInvocations(records: LlmInvocationRecord[], options: Rank
 
 export type LlmInvocationOriginDimension = 'subsystem' | 'role' | 'stage' | 'trigger' | 'ticketId' | 'script' | 'pack' | 'model' | 'provider';
 
+export const KNOWN_ORIGIN_DIMENSIONS: LlmInvocationOriginDimension[] = [
+  'subsystem', 'role', 'stage', 'trigger', 'ticketId', 'script', 'pack', 'model', 'provider',
+];
+
+export function isKnownOriginDimension(value: string): value is LlmInvocationOriginDimension {
+  return (KNOWN_ORIGIN_DIMENSIONS as string[]).includes(value);
+}
+
 export interface LlmCostRollupGroup {
   key: Record<string, string | null>;
   costUsd: number;

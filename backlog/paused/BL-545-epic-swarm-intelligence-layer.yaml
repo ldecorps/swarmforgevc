@@ -26,8 +26,8 @@ promotion_order:
 remaining_slices:
   - "PromptEngine Slice 2: fragment registry + per-model adapters"
   - "PromptEngine Slice 3: versioning, validation, inspect CLI"
-  - "Model Steward Slice 2: recruiter/bakeoff evaluate ingestion"
-  - "Model Steward Slice 3: steward infrastructure role + compatibility docs"
+  - "Model Steward Slice 2: recruiter/bakeoff evaluate ingestion (drained -> BL-556, paused)"
+  - "Model Steward Slice 3: steward role coordinator-assignable + compatibility docs (drained -> BL-557, paused)"
   - "Prompt calibration Slice 2: rank variants + operator report (BL-548)"
   - "Prompt calibration Slice 3: promote/rollback with human approval (BL-548)"
   - "ModelFactory Slice 2: hot-swap apply path (BL-525)"

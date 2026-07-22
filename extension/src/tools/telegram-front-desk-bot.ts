@@ -2078,6 +2078,7 @@ export function toFoldersSnapshot(targetPath: string): BacklogFoldersSnapshot {
       type: item.type,
       remainingSlices: item.remainingSlices,
       filename: item.filename,
+      priority: item.priority,
     }));
   return { active: pick(folders.active), paused: pick(folders.paused), done: pick(folders.done) };
 }

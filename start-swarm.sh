@@ -65,6 +65,11 @@ done
 TARGET="${TARGET:-$SCRIPT_DIR}"
 TARGET="$(cd "$TARGET" && pwd)"
 
+if [[ -f "$TARGET/.swarmforge/swarm.env" ]]; then
+  # shellcheck disable=SC1090
+  source "$TARGET/.swarmforge/swarm.env"
+fi
+
 # shellcheck disable=SC1090
 source "$HOME/.zshenv" 2>/dev/null || true
 export PATH="$HOME/.npm-global/bin:$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
@@ -126,6 +131,12 @@ resolve_launch_pack() {
   fi
   local identity="$TARGET/.swarmforge/swarm-identity"
   if [[ -f "$identity" ]]; then
+    local launch_pack
+    launch_pack="$(awk -F'\t' '$1=="launch_pack"{print $2; exit}' "$identity")"
+    if [[ -n "$launch_pack" ]]; then
+      printf '%s\n' "$launch_pack"
+      return
+    fi
     local conf_path
     conf_path="$(awk -F'\t' '$1=="active_backlog_max_depth_conf_path"{print $2; exit}' "$identity")"
     if [[ -n "$conf_path" && -f "$conf_path" ]]; then

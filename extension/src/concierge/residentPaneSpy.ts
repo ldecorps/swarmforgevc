@@ -56,7 +56,7 @@ export function formatClaimEnteredAgo(claimEnteredAtMs: number, nowMs: number = 
 
 export function formatResidentSpyHeader(
   snap: Pick<ResidentPaneSpySnapshot, 'roleLabel' | 'modelLabel' | 'sessionTarget' | 'ticketId' | 'ticketTitle'>,
-  prefix: 'Resident' | 'Coordinator' = 'Resident',
+  prefix: string = 'Resident',
   options: { includeSession?: boolean } = {}
 ): string {
   const model = snap.modelLabel ? ` on ${snap.modelLabel}` : '';

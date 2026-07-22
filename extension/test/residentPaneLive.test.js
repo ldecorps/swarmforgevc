@@ -3,7 +3,14 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { installInProcessTmux } = require('./helpers/fakeTmux');
-const { captureResidentPaneLive, captureMonoRouterLiveScreen } = require('../out/bridge/residentPaneLive');
+const {
+  captureResidentPaneLive,
+  captureMonoRouterLiveScreen,
+  captureLiveScreenPanes,
+  orderLiveScreenRoles,
+  liveScreenPaneId,
+  liveScreenPaneLabel,
+} = require('../out/bridge/residentPaneLive');
 
 function seedResidentPaneFixture(tmp, { role = 'coder', paneText, model = 'claude-sonnet-5' } = {}) {
   const stateDir = path.join(tmp, '.swarmforge');
@@ -165,9 +172,34 @@ test('captureMonoRouterLiveScreen returns resident and coordinator panes', () =>
     assert.ok(screen.resident.claimEnteredAtMs);
     assert.equal(typeof screen.coordinator.available, 'boolean');
     assert.ok(screen.coordinator);
+    assert.ok(Array.isArray(screen.panes));
+    assert.ok(screen.panes.length >= 1);
+    assert.equal(screen.panes[0].id, 'resident');
+    assert.equal(screen.panes[0].label, 'Resident');
   } finally {
     fake.restore();
   }
+});
+
+test('orderLiveScreenRoles sorts coordinator first then pipeline chain', () => {
+  const roles = orderLiveScreenRoles([
+    { role: 'QA', session: 's', displayName: 'QA', index: 1, agent: 'claude' },
+    { role: 'coder', session: 's', displayName: 'Coder', index: 2, agent: 'claude' },
+    { role: 'coordinator', session: 's', displayName: 'Coordinator', index: 3, agent: 'claude' },
+    { role: 'specifier', session: 's', displayName: 'Specifier', index: 4, agent: 'claude' },
+  ]);
+  assert.deepEqual(
+    roles.map((r) => r.role),
+    ['coordinator', 'specifier', 'coder', 'QA']
+  );
+});
+
+test('liveScreenPaneId labels mono-router coder pane as resident', () => {
+  const coder = { role: 'coder', session: 's', displayName: 'Coder', index: 1, agent: 'claude' };
+  assert.equal(liveScreenPaneId(coder, true), 'resident');
+  assert.equal(liveScreenPaneLabel(coder, true), 'Resident');
+  assert.equal(liveScreenPaneId(coder, false), 'coder');
+  assert.equal(liveScreenPaneLabel(coder, false), 'Coder');
 });
 
 test('captureResidentPaneLive omits modelLabel when settings file is absent', () => {

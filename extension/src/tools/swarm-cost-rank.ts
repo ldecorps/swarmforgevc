@@ -15,17 +15,10 @@ import {
   LlmInvocationOriginDimension,
   rankLlmInvocations,
   rollupLlmInvocationsByOrigin,
+  isKnownOriginDimension,
 } from '../metrics/llmCostLedger';
 import { readLlmInvocationRecords } from '../metrics/llmCostLedgerStore';
 import { printJsonToStdout, resolveCliMainWorktreeContext, runCliMain } from './swarm-metrics';
-
-const KNOWN_ORIGIN_DIMENSIONS: LlmInvocationOriginDimension[] = [
-  'subsystem', 'role', 'stage', 'trigger', 'ticketId', 'script', 'pack', 'model', 'provider',
-];
-
-function isKnownOriginDimension(value: string): value is LlmInvocationOriginDimension {
-  return (KNOWN_ORIGIN_DIMENSIONS as string[]).includes(value);
-}
 
 export interface SwarmCostRankArgs {
   horizon: '3h' | '24h' | '7d';

@@ -46,8 +46,9 @@
    :maxChases (long (env-num "MAX_CHASES" 3))
    :stuckInProcessTimeoutSeconds (env-num "STUCK_TIMEOUT_SECONDS" 60)
    :respawnCooldownSeconds (env-num "RESPAWN_COOLDOWN_SECONDS" 300)
-   ;; BL-528: claim-progress config (inherit claim_progress_lib.bb defaults unless overridden)
+   ;; BL-528 tunables:
    :claim-idle-timeout-ms (long (env-num "CLAIM_IDLE_TIMEOUT_MS" (* 20 60 1000)))
+   :probe-grace-ms (long (env-num "CLAIM_PROBE_GRACE_MS" (* 10 60 1000)))
    :nudge-threshold (long (env-num "CLAIM_NUDGE_THRESHOLD" 1))
    :bounce-threshold (long (env-num "CLAIM_BOUNCE_THRESHOLD" 6))
    :halt-threshold (long (env-num "CLAIM_HALT_THRESHOLD" 10))})
@@ -82,6 +83,21 @@
    :get-role-head-commit
    (when-let [h (System/getenv "CLAIM_HEAD_COMMIT")]
      (fn [_role] h))
+   :role-agent-busy?
+   (when (= "1" (System/getenv "CLAIM_AGENT_BUSY"))
+     (fn [_role] true))
+   :role-worktree-dirty?
+   (when (= "1" (System/getenv "CLAIM_WORKTREE_DIRTY"))
+     (fn [_role] true))
+   :claim-idle-context
+   (fn [_role]
+     (cond-> {}
+       (= "1" (System/getenv "CLAIM_RESIDENT_BUSY")) (assoc :resident-busy? true)
+       (= "1" (System/getenv "CLAIM_ROTATION_ROUTER")) (assoc :rotation-router? true)
+       (System/getenv "CLAIM_ACTIVE_ROLE") (assoc :active-role (System/getenv "CLAIM_ACTIVE_ROLE"))))
+   :send-claim-idle-probe!
+   (fn [role message]
+     (log-call! "claim-idle-probe" role (subs message 0 (min 40 (count message)))))
    :on-claim-idle-bounce!
    (fn [role _fp progress]
      (log-call! "claim-bounce" role (str (:reclaims progress))))
