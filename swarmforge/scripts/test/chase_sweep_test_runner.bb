@@ -11,7 +11,7 @@
 ;;   RESPAWN_COOLDOWN_SECONDS
 ;;
 ;; BL-528 tunables:
-;;   CLAIM_IDLE_TIMEOUT_MS    — default 300000 (5 min)
+;;   CLAIM_IDLE_TIMEOUT_MS    — default 1200000 (20 min)
 ;;   CLAIM_HEAD_COMMIT        — fake HEAD commit for :get-role-head-commit
 ;;                              (omit to disable BL-528 check, as before)
 
@@ -47,7 +47,10 @@
    :stuckInProcessTimeoutSeconds (env-num "STUCK_TIMEOUT_SECONDS" 60)
    :respawnCooldownSeconds (env-num "RESPAWN_COOLDOWN_SECONDS" 300)
    ;; BL-528: claim-progress config (inherit claim_progress_lib.bb defaults unless overridden)
-   :claim-idle-timeout-ms (long (env-num "CLAIM_IDLE_TIMEOUT_MS" (* 5 60 1000)))})
+   :claim-idle-timeout-ms (long (env-num "CLAIM_IDLE_TIMEOUT_MS" (* 20 60 1000)))
+   :nudge-threshold (long (env-num "CLAIM_NUDGE_THRESHOLD" 1))
+   :bounce-threshold (long (env-num "CLAIM_BOUNCE_THRESHOLD" 6))
+   :halt-threshold (long (env-num "CLAIM_HALT_THRESHOLD" 10))})
 
 (defn log-call! [& parts]
   (spit calls-log (str (str/join " " parts) "\n") :append true))

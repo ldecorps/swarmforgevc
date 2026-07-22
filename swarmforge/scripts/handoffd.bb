@@ -36,7 +36,8 @@
 ;; process that already owns delivery now also owns liveness, so the
 ;; extension host becomes a pure observer instead of running its own
 ;; setInterval sweep.
-(def chase-sweep-every-cycles 5)
+;; Chase + BL-528 claim-progress sweeps run every N handoffd poll cycles (1s each).
+(def chase-sweep-every-cycles 10)
 (def chase-sweep-config
   {:chaseIntervalSeconds 5
    :chaseTimeoutSeconds 30
@@ -44,7 +45,12 @@
    :stuckInProcessTimeoutSeconds 60
    :respawnCooldownSeconds 300
    :chaseBackoffBaseSeconds 30
-   :chaseBackoffMaxSeconds 300})
+   :chaseBackoffMaxSeconds 300
+   ;; BL-528: claim-without-progress (git HEAD unchanged since claim).
+   :claim-idle-timeout-ms (* 20 60 1000)
+   :nudge-threshold 1
+   :bounce-threshold 6
+   :halt-threshold 10})
 
 ;; Endless NO_TASK-spin circuit breaker: pane activity hashing alone cannot
 ;; see a busy-loop that keeps changing the pane with the same idle ritual.
