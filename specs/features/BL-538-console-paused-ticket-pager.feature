@@ -79,17 +79,3 @@ Feature: paused-ticket pager on the SwarmForge Telegram Mini App console
     Then that ticket's priority becomes 0
     And the ticket is expedited onto the swarm's next-work path using the BL-490 promote/dispatch effect
     And the pager advances to another paused ticket or the empty state
-
-  # BL-538 paused-pager-approve-07
-  Scenario: Approve is shown only for paused tickets awaiting human approval
-    Given a paused ticket with human_approval pending is shown on the pager
-    Then I see an Approve control
-    And I do not see Approve on paused tickets that are not pending approval
-
-  # BL-538 paused-pager-approve-08
-  Scenario: confirmed Approve records human_approval without promoting
-    Given a paused ticket with human_approval pending is shown on the pager
-    When I confirm Approve
-    Then that ticket's human_approval becomes approved
-    And the ticket remains under backlog/paused/
-    And the pager refreshes to show the updated YAML

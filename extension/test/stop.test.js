@@ -173,24 +173,6 @@ test('stopSwarmOnExtensionShutdown is a no-op when target path is missing', () =
   assert.equal(stopSwarmOnExtensionShutdown(''), null);
 });
 
-test('stopSwarmOnExtensionShutdown is a no-op for headless swarms', () => {
-  const tmp = mkTmp();
-  mkdirp(path.join(tmp, '.swarmforge'));
-  fs.writeFileSync(path.join(tmp, '.swarmforge', 'tmux-socket'), '/fake/swarm.sock');
-  fs.writeFileSync(path.join(tmp, '.swarmforge', 'headless-swarm'), '');
-
-  const fake = installInProcessTmux([
-    { subcommand: 'kill-session', exitCode: 0 },
-    { subcommand: 'kill-server', exitCode: 0 },
-  ]);
-  try {
-    assert.equal(stopSwarmOnExtensionShutdown(tmp), null);
-    assert.equal(fs.existsSync(path.join(tmp, '.swarmforge', 'tmux-socket')), true);
-  } finally {
-    fake.restore();
-  }
-});
-
 test('stopSwarmOnExtensionShutdown tears down a live swarm like stopSwarm', () => {
   const tmp = mkTmp();
   mkdirp(path.join(tmp, '.swarmforge'));

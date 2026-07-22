@@ -5,9 +5,8 @@ Feature: LLM invocation cost ledger ranks expensive calls by origin over 3h, 24h
   # calls. Rank the most expensive invocations and show where they originated from.
   #
   # Builds on BL-100 (transcript + per-role/ticket rollups) and BL-511 (exact $ capture
-  # at front-desk reap). This ticket adds a unified append-only ledger, multi-horizon
-  # ranking (3h, 24h, 7d), and a 7-day per-origin trend chart (log time bands, log $
-  # axis when warranted).
+  # at front-desk reap). This ticket adds a unified append-only ledger and multi-horizon
+  # ranking (3h, 24h, 7d).
   #
   # Durable store: `.swarmforge/telemetry/llm-cost-YYYY-MM.jsonl` — one JSON object per
   # line, `type: llm_invocation`. Machine-local; never committed to git.
@@ -18,7 +17,6 @@ Feature: LLM invocation cost ledger ranks expensive calls by origin over 3h, 24h
   Background:
     Given the LLM cost ledger stores llm_invocation records with timestamp, model, token counts, cost in dollars, and an origin block
     And ranking is evaluated at a fixed injected instant with named horizons of 3 hours, 24 hours, and 7 days
-    And origin trend series use three time bands with finer buckets toward the latest measurement
 
   # BL-551 schema-01
   Scenario: every llm_invocation record carries origin attribution for where the spend came from
@@ -82,57 +80,3 @@ Feature: LLM invocation cost ledger ranks expensive calls by origin over 3h, 24h
     Given llm_invocation records across the last week
     When the cost health sidecar is emitted for the day
     Then it includes top expensive origins for the 3 hour, 24 hour, and 7 day horizons
-
-  # BL-551 trend-graph-10 — operator ruling 2026-07-22: the human asked for a TREND,
-  # not three disconnected horizon totals. Each top expensive origin gets a rolling
-  # 7-day spend line: time runs left (oldest) → right (latest measurement). Origins
-  # are ORDERED by cost in the rightmost bucket (most expensive at the last period
-  # appear highest / first). "Same method" = the same origin fingerprint the rollups
-  # already use (default role + trigger + script; extend groupBy only when surfaced).
-  #
-  # TIME AXIS — three logarithmic bands (shorter sampling as you approach now):
-  #   Band A  (now-3h,  now]     finest buckets
-  #   Band B  (now-24h, now-3h]  medium buckets
-  #   Band C  (now-7d,  now-24h] coarsest buckets
-  # Bucket widths within each band are NOT pinned here — specifier/coder choose
-  # them; the contract is only relative (A finest, B between, C coarsest) and
-  # that bands share equal visual width (log-compressed calendar time).
-  #
-  # Y-AXIS — logarithmic when the priced range across the series spans at least one
-  # order of magnitude; otherwise linear. Unknown-cost invocations stay out of $ sums.
-  #
-  # SURFACES: PWA cost card renders the multi-line chart; briefing/sidecar carry the
-  # same series payload (or a compact sparkline) so the phone view matches the board.
-
-  # BL-551 trend-series-11
-  Scenario: each top expensive origin gets a rolling seven day cost series
-    Given llm_invocation records for the same origin spread across the last seven days
-    When origin cost trend series are built for the rolling seven day window
-    Then each origin series sums only priced invocations inside its bucket
-    And bucket timestamps run from oldest on the left to the latest measurement on the right
-
-  # BL-551 trend-sampling-12
-  Scenario: trend buckets use finer sampling in the three hour band than in the seven day band
-    Given llm_invocation records in the last three hours and between twenty four hours and seven days ago
-    When origin cost trend series are built for the rolling seven day window
-    Then the three hour band uses shorter bucket widths than the twenty four hour to seven day band
-    And the three hour to twenty four hour band uses medium bucket widths between those two
-
-  # BL-551 trend-rank-latest-13
-  Scenario: top origins for the chart are ordered by cost in the latest bucket
-    Given two origins where the cheaper one spent more in an older bucket but the pricier one spent more in the latest bucket
-    When the top expensive origins are selected for the trend chart
-    Then the origin with higher cost in the latest bucket is ranked above the other
-
-  # BL-551 trend-log-scale-14
-  Scenario: the chart uses a logarithmic cost axis when spend spans orders of magnitude
-    Given an origin whose rolling seven day series spans at least a tenfold cost range
-    When the trend chart scales are chosen
-    Then the cost axis is logarithmic
-
-  # BL-551 trend-surface-15
-  Scenario: the cost surface shows one line per top origin across the rolling seven day window
-    Given ranked origin trend series for the rolling seven day window
-    When the cost trend chart is rendered for the human
-    Then each ranked origin is drawn as one line with time increasing toward the right
-    And the rightmost point is the latest measurement period for that origin

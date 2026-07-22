@@ -23,7 +23,6 @@ export function capturePipelineGridLive(targetPath: string, nowMs: number = Date
   for (const item of folders.active) {
     ticketMeta[item.id] = {
       epic: item.epic,
-      type: item.type,
       title: item.title,
       filename: item.filename,
       location: 'active',
@@ -32,7 +31,6 @@ export function capturePipelineGridLive(targetPath: string, nowMs: number = Date
   for (const item of folders.paused) {
     ticketMeta[item.id] = {
       epic: item.epic,
-      type: item.type,
       title: item.title,
       filename: item.filename,
       location: 'paused',
@@ -43,9 +41,6 @@ export function capturePipelineGridLive(targetPath: string, nowMs: number = Date
     humanApproval: item.humanApproval === 'pending' || item.humanApproval === 'approved'
       ? item.humanApproval
       : undefined,
-    priority: item.priority,
-    type: item.type,
-    epic: item.epic,
   }));
   const roleHeld = invertTicketStageToRoleHeldTickets(readTicketStageMap(targetPath));
   const data = computePipelineBoard(roleHeld, paused, ticketMeta, {

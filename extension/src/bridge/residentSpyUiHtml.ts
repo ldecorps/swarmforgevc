@@ -2,7 +2,7 @@
 // full stack). Self-contained except telegram-web-app.js. Polls GET
 // /resident-pane?token=... on the same origin.
 
-import { SWARM_LIVE_SCREEN_NAME } from '../concierge/residentPaneSpy';
+import { MONO_ROUTER_LIVE_SCREEN_NAME } from '../concierge/residentPaneSpy';
 
 export function getResidentSpyUiHtml(): string {
   return `<!DOCTYPE html>
@@ -10,37 +10,18 @@ export function getResidentSpyUiHtml(): string {
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
-<meta name="mobile-web-app-capable" content="yes"/>
-<meta name="apple-mobile-web-app-capable" content="yes"/>
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
-<meta name="theme-color" content="#0d1117"/>
-<title>${SWARM_LIVE_SCREEN_NAME}</title>
+<title>${MONO_ROUTER_LIVE_SCREEN_NAME}</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
   :root {
     color-scheme: dark;
     --app-height: 100dvh;
-    --app-width: 100vw;
-    --vv-offset-top: 0px;
-    --vv-offset-left: 0px;
-    --safe-top: env(safe-area-inset-top, 0px);
-    --safe-right: env(safe-area-inset-right, 0px);
-    --safe-bottom: env(safe-area-inset-bottom, 0px);
-    --safe-left: env(safe-area-inset-left, 0px);
   }
   * { box-sizing: border-box; }
   html, body {
     margin: 0;
-    width: 100%;
     height: var(--app-height);
     max-height: var(--app-height);
-    overflow: hidden;
-  }
-  body.pane-fullscreen-active {
-    position: fixed;
-    inset: 0;
-    width: 100%;
-    height: 100%;
     overflow: hidden;
   }
   body {
@@ -49,7 +30,6 @@ export function getResidentSpyUiHtml(): string {
     color: var(--tg-theme-text-color, #e6edf3);
     display: flex;
     flex-direction: column;
-    min-height: 0;
   }
   .dot {
     position: fixed;
@@ -99,44 +79,23 @@ export function getResidentSpyUiHtml(): string {
     font-size: 10px;
     color: var(--tg-theme-hint-color, #8b949e);
   }
-  .pane-offline {
-    flex: 0 0 auto;
-    margin: 10px;
-    padding: 10px 12px;
-    border-radius: 8px;
-    font-size: 12px;
-    line-height: 1.4;
-    color: #f85149;
-    background: color-mix(in srgb, #f85149 12%, var(--tg-theme-bg-color, #0d1117));
-    border: 1px solid color-mix(in srgb, #f85149 35%, transparent);
-  }
   .split {
     flex: 1 1 auto;
     display: flex;
     flex-direction: row;
     flex-wrap: wrap;
-    align-items: stretch;
     align-content: stretch;
     min-height: 0;
     overflow: hidden;
   }
-  .split.pane-count-2 {
-    flex-wrap: nowrap;
-  }
   .pane-col {
     flex: 1 1 50%;
     min-width: 0;
-    min-height: 80px;
+    min-height: 0;
     display: flex;
     flex-direction: column;
-    overflow: hidden;
-    align-self: stretch;
     border-right: 1px solid color-mix(in srgb, var(--tg-theme-hint-color, #8b949e) 25%, transparent);
     border-bottom: 1px solid color-mix(in srgb, var(--tg-theme-hint-color, #8b949e) 25%, transparent);
-  }
-  .split.pane-count-2 .pane-col {
-    flex: 1 1 50%;
-    min-height: 0;
   }
   .split.pane-count-3 .pane-col,
   .split.pane-count-4 .pane-col { flex-basis: 33.33%; }
@@ -198,44 +157,33 @@ export function getResidentSpyUiHtml(): string {
     color: var(--tg-theme-text-color, #e6edf3);
   }
   pre {
-    flex: 1 1 0;
+    flex: 1 1 auto;
     margin: 0;
     padding: 8px;
-    overflow-x: hidden;
-    overflow-y: auto;
-    overscroll-behavior: contain;
+    overflow: auto;
     white-space: pre-wrap;
     word-break: break-word;
     font-size: 11px;
     line-height: 1.35;
     min-height: 0;
     -webkit-overflow-scrolling: touch;
-    touch-action: pan-y;
   }
   .pane-fullscreen {
     display: none;
     position: fixed;
-    top: var(--vv-offset-top);
-    left: var(--vv-offset-left);
-    width: var(--app-width);
-    height: var(--app-height);
+    inset: 0;
     z-index: 30;
     flex-direction: column;
     background: var(--tg-theme-bg-color, #0d1117);
     color: var(--tg-theme-text-color, #e6edf3);
-    padding: var(--safe-top) var(--safe-right) var(--safe-bottom) var(--safe-left);
+    padding:
+      max(0px, env(safe-area-inset-top))
+      max(0px, env(safe-area-inset-right))
+      max(0px, env(safe-area-inset-bottom))
+      max(0px, env(safe-area-inset-left));
   }
   body.pane-fullscreen-active .pane-fullscreen {
     display: flex;
-  }
-  .pane-fullscreen:fullscreen,
-  .pane-fullscreen:-webkit-full-screen {
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    max-width: none;
-    max-height: none;
   }
   .fs-top {
     flex: 0 0 auto;
@@ -269,7 +217,6 @@ export function getResidentSpyUiHtml(): string {
     <div class="ticket-strip-title" id="ticket-strip-title"></div>
     <div class="ticket-strip-meta" id="ticket-strip-meta"></div>
   </div>
-  <div id="pane-offline" class="pane-offline" hidden>Live panes unavailable — swarm agents may be down.</div>
   <div class="split" id="pane-split"></div>
 </div>
 <div id="pane-fullscreen" class="pane-fullscreen" hidden>
@@ -282,6 +229,11 @@ export function getResidentSpyUiHtml(): string {
 <script>
 (function () {
   var tg = window.Telegram && window.Telegram.WebApp;
+  if (tg) {
+    tg.ready();
+    tg.expand();
+    if (typeof tg.disableVerticalSwipes === 'function') tg.disableVerticalSwipes();
+  }
   var params = new URLSearchParams(location.search);
   var token = params.get('token') || '';
   var splitEl = document.getElementById('pane-split');
@@ -290,7 +242,6 @@ export function getResidentSpyUiHtml(): string {
   var ticketStripIdEl = document.getElementById('ticket-strip-id');
   var ticketStripTitleEl = document.getElementById('ticket-strip-title');
   var ticketStripMetaEl = document.getElementById('ticket-strip-meta');
-  var paneOfflineEl = document.getElementById('pane-offline');
   var paneFullscreenEl = document.getElementById('pane-fullscreen');
   var fsTopEl = document.getElementById('fs-top');
   var fsHeadEl = document.getElementById('fs-head');
@@ -305,152 +256,36 @@ export function getResidentSpyUiHtml(): string {
   var fsClaimEnteredAtMs = null;
   var fsTitleBase = '';
   var lastPanes = [];
-  var lastFetchAvailable = false;
-
-  function inTelegram() {
-    return !!(tg && tg.initData);
-  }
-
-  function isBrowserFullscreen() {
-    return !!(document.fullscreenElement || document.webkitFullscreenElement);
-  }
-
-  function applySafeAreas() {
-    if (!tg || !tg.safeAreaInset) return;
-    var inset = tg.safeAreaInset;
-    if (inset.top) document.documentElement.style.setProperty('--safe-top', inset.top + 'px');
-    if (inset.right) document.documentElement.style.setProperty('--safe-right', inset.right + 'px');
-    if (inset.bottom) document.documentElement.style.setProperty('--safe-bottom', inset.bottom + 'px');
-    if (inset.left) document.documentElement.style.setProperty('--safe-left', inset.left + 'px');
-  }
-
-  function shouldPinViewportHeight() {
-    return inTelegram() || !!focusPane;
-  }
 
   function applyViewportHeight() {
-    if (!shouldPinViewportHeight()) {
-      document.documentElement.style.removeProperty('--app-height');
-      document.documentElement.style.removeProperty('--app-width');
-      document.documentElement.style.removeProperty('--vv-offset-top');
-      document.documentElement.style.removeProperty('--vv-offset-left');
-      return;
-    }
-    var w = window.innerWidth;
-    var h = window.innerHeight;
-    if (window.visualViewport) {
-      if (window.visualViewport.width > 0) {
-        w = Math.round(window.visualViewport.width);
-      }
-      if (window.visualViewport.height > 0) {
-        h = Math.round(window.visualViewport.height);
-      }
-      document.documentElement.style.setProperty('--vv-offset-top', Math.round(window.visualViewport.offsetTop) + 'px');
-      document.documentElement.style.setProperty('--vv-offset-left', Math.round(window.visualViewport.offsetLeft) + 'px');
-    } else {
-      document.documentElement.style.setProperty('--vv-offset-top', '0px');
-      document.documentElement.style.setProperty('--vv-offset-left', '0px');
-    }
-    if (tg && !focusPane) {
-      h = tg.viewportStableHeight || tg.viewportHeight || h;
-    }
-    if (w > 0) {
-      document.documentElement.style.setProperty('--app-width', w + 'px');
-    }
-    if (h > 0) {
+    if (!tg) return;
+    var h = tg.viewportStableHeight || tg.viewportHeight;
+    if (h && h > 0) {
       document.documentElement.style.setProperty('--app-height', h + 'px');
     }
-    applySafeAreas();
   }
 
-  if (inTelegram()) {
-    tg.ready();
-    tg.expand();
-    applySafeAreas();
-  }
-
-  if (inTelegram() && tg && typeof tg.onEvent === 'function') {
+  if (tg && typeof tg.onEvent === 'function') {
     tg.onEvent('viewportChanged', applyViewportHeight);
-    tg.onEvent('safeAreaChanged', applySafeAreas);
-    tg.onEvent('fullscreenChanged', applyViewportHeight);
-    if (typeof tg.on === 'function') {
-      tg.on('viewportChanged', applyViewportHeight);
-      tg.on('safeAreaChanged', applySafeAreas);
-      tg.on('fullscreenChanged', applyViewportHeight);
-    }
+    if (typeof tg.on === 'function') tg.on('viewportChanged', applyViewportHeight);
   }
-  window.addEventListener('resize', applyViewportHeight);
-  if (window.visualViewport) {
-    window.visualViewport.addEventListener('resize', applyViewportHeight);
-    window.visualViewport.addEventListener('scroll', applyViewportHeight);
-  }
-  function onFullscreenChange() {
-    applyViewportHeight();
-    if (focusPane && !inTelegram() && !isBrowserFullscreen()) {
-      exitFullscreen();
-    }
-  }
-  document.addEventListener('fullscreenchange', onFullscreenChange);
-  document.addEventListener('webkitfullscreenchange', onFullscreenChange);
   applyViewportHeight();
 
-  function requestBrowserFullscreen() {
-    if (isBrowserFullscreen()) return;
-    var target = paneFullscreenEl;
-    var req =
-      target.requestFullscreen ||
-      target.webkitRequestFullscreen ||
-      document.documentElement.requestFullscreen ||
-      document.documentElement.webkitRequestFullscreen;
-    if (!req) return;
-    try {
-      var p = req.call(target);
-      if (p && typeof p.catch === 'function') p.catch(function () {});
-    } catch (e) {}
-  }
-
-  function exitBrowserFullscreen() {
-    if (!isBrowserFullscreen()) return;
-    var exit = document.exitFullscreen || document.webkitExitFullscreen;
-    if (!exit) return;
-    try {
-      var p = exit.call(document);
-      if (p && typeof p.catch === 'function') p.catch(function () {});
-    } catch (e) {}
-  }
-
-  // Telegram: tg.requestFullscreen(). Browser (Cloudflare tunnel): native
-  // requestFullscreen on the pane overlay — shows the system exit banner but
-  // fills the real display. CSS overlay + visualViewport sizing is fallback
-  // when the API is unavailable.
-  function enterImmersiveFullscreen() {
+  function enterTelegramFullscreen() {
+    if (!tg) return;
+    tg.expand();
     applyViewportHeight();
-    if (inTelegram()) {
-      tg.expand();
-      if (typeof tg.setHeaderColor === 'function') {
-        tg.setHeaderColor('bg_color');
-      }
-      if (typeof tg.requestFullscreen === 'function') {
-        try {
-          tg.requestFullscreen();
-        } catch (e) {}
-      }
-    } else {
-      requestBrowserFullscreen();
+    if (typeof tg.requestFullscreen === 'function') {
+      tg.requestFullscreen();
     }
   }
 
-  function exitImmersiveFullscreen() {
-    if (inTelegram()) {
-      if (typeof tg.exitFullscreen === 'function' && tg.isFullscreen) {
-        try {
-          tg.exitFullscreen();
-        } catch (e) {}
-      }
-      tg.expand();
-    } else {
-      exitBrowserFullscreen();
+  function exitTelegramFullscreen() {
+    if (!tg) return;
+    if (typeof tg.exitFullscreen === 'function' && tg.isFullscreen) {
+      tg.exitFullscreen();
     }
+    tg.expand();
     applyViewportHeight();
   }
 
@@ -504,28 +339,15 @@ export function getResidentSpyUiHtml(): string {
     return html;
   }
 
-  function buildFullscreenHeadHtml(pane, label, paneId, showClaimEntered) {
-    if (!pane || pane.available === false) {
-      return buildPaneHeadHtml(null, label, paneId, false);
-    }
-    if (pane.ticketId) {
-      return buildTicketBlockHtml(pane) + '<div class="pane-kind">' + escapeHtml(label) + '</div>';
-    }
-    return buildPaneHeadHtml(pane, label, paneId, showClaimEntered);
-  }
-
   function applyFullscreenMode() {
     var active = !!focusPane;
     document.body.classList.toggle('pane-fullscreen-active', active);
     paneFullscreenEl.hidden = !active;
     if (active) {
+      enterTelegramFullscreen();
       syncFullscreenContent();
-      enterImmersiveFullscreen();
-      applyViewportHeight();
-      if (tg && typeof tg.disableVerticalSwipes === 'function') tg.disableVerticalSwipes();
     } else {
-      exitImmersiveFullscreen();
-      if (tg && typeof tg.enableVerticalSwipes === 'function') tg.enableVerticalSwipes();
+      exitTelegramFullscreen();
     }
   }
 
@@ -535,10 +357,12 @@ export function getResidentSpyUiHtml(): string {
     if (!entry) return;
     var pane = entry.pane;
     var showClaim = entry.id === 'resident' || entry.id === 'coder';
-    fsHeadEl.innerHTML = buildFullscreenHeadHtml(pane, entry.label, entry.id, showClaim);
+    var ticketHtml = buildTicketBlockHtml(pane);
+    fsHeadEl.innerHTML = ticketHtml + buildPaneHeadHtml(pane, entry.label, entry.id, showClaim);
     if (pane && pane.claimEnteredAtMs) {
       fsClaimEnteredAtMs = pane.claimEnteredAtMs;
-      fsTitleBase = '';
+      var titleEl = fsHeadEl.querySelector('[data-pane-title="' + entry.id + '"]');
+      fsTitleBase = titleEl ? titleEl.textContent.replace(/ · entered .*$/, '') : '';
     } else {
       fsClaimEnteredAtMs = null;
       fsTitleBase = '';
@@ -610,20 +434,9 @@ export function getResidentSpyUiHtml(): string {
       return data.panes;
     }
     return [
-      { id: 'resident', label: 'Resident', pane: data.resident || { available: false } },
-      { id: 'coordinator', label: 'Coordinator', pane: data.coordinator || { available: false } }
+      { id: 'resident', label: 'Resident', pane: data.resident },
+      { id: 'coordinator', label: 'Coordinator', pane: data.coordinator }
     ];
-  }
-
-  function updateOfflineBanner(panes, available) {
-    if (focusPane) {
-      paneOfflineEl.hidden = true;
-      return;
-    }
-    var anyLive = !!available && panes.some(function (entry) {
-      return entry.pane && entry.pane.available !== false;
-    });
-    paneOfflineEl.hidden = anyLive;
   }
 
   function pickTicketPane(panes) {
@@ -699,12 +512,7 @@ export function getResidentSpyUiHtml(): string {
       return;
     }
     headEl.innerHTML = '<div class="pane-head-main">' + buildPaneHeadHtml(pane, label, paneId, showClaimEntered) + '</div><span class="pane-expand-hint">Expand</span>';
-    var text = pane.paneText || '(empty)';
-    if (paneEl.textContent !== text) {
-      var atBottom = paneEl.scrollHeight - paneEl.scrollTop - paneEl.clientHeight < 24;
-      paneEl.textContent = text;
-      if (atBottom) paneEl.scrollTop = paneEl.scrollHeight;
-    }
+    paneEl.textContent = pane.paneText || '(empty)';
   }
 
   function renderAllPanes(panes) {
@@ -724,7 +532,6 @@ export function getResidentSpyUiHtml(): string {
       );
     }
     updateTicketStrip(panes);
-    updateOfflineBanner(panes, lastFetchAvailable);
     if (focusPane) {
       syncFullscreenContent();
     }
@@ -743,7 +550,6 @@ export function getResidentSpyUiHtml(): string {
         }
         var panes = normalizePanes(data);
         lastPanes = panes;
-        lastFetchAvailable = !!data.available;
         renderAllPanes(panes);
         if (!data.available) {
           setStatus('err');
@@ -771,11 +577,10 @@ export function getResidentSpyUiHtml(): string {
           titleEl.textContent = base + ' · ' + formatClaimEnteredAgo(claimEnteredByPaneId[paneId]);
         }
       }
-      if (focusPane === paneId && fsClaimEnteredAtMs) {
-        var fsMetaEl = fsHeadEl.querySelector('.ticket-strip-meta');
-        if (fsMetaEl) {
-          var fsMetaBase = fsMetaEl.textContent.replace(/ · entered .*$/, '');
-          fsMetaEl.textContent = fsMetaBase + ' · ' + formatClaimEnteredAgo(claimEnteredByPaneId[paneId]);
+      if (focusPane === paneId && fsTitleBase) {
+        var fsTitleEl = fsHeadEl.querySelector('[data-pane-title="' + paneId + '"]');
+        if (fsTitleEl) {
+          fsTitleEl.textContent = fsTitleBase + ' · ' + formatClaimEnteredAgo(claimEnteredByPaneId[paneId]);
         }
       }
     }
@@ -783,13 +588,6 @@ export function getResidentSpyUiHtml(): string {
       ticketStripMetaEl.textContent = ticketStripMetaBase
         ? ticketStripMetaBase + ' · ' + formatClaimEnteredAgo(ticketStripClaimEnteredAtMs)
         : formatClaimEnteredAgo(ticketStripClaimEnteredAtMs);
-    }
-    if (fsClaimEnteredAtMs && !paneFullscreenEl.hidden) {
-      var fsMetaEl = fsHeadEl.querySelector('.ticket-strip-meta');
-      if (fsMetaEl) {
-        var fsMetaBase = fsMetaEl.textContent.replace(/ · entered .*$/, '');
-        fsMetaEl.textContent = fsMetaBase + ' · ' + formatClaimEnteredAgo(fsClaimEnteredAtMs);
-      }
     }
   }, 1000);
 })();

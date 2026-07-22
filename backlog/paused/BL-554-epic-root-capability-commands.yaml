@@ -7,7 +7,7 @@ epic: root-capability-commands
 priority: 30
 depends_on: []
 decomposes_into: [BL-555]
-human_approval: approved
+human_approval: pending
 source: "Backlog root intake 004-root-capability-commands.md, drained by specifier 2026-07-22."
 
 approval_context: |

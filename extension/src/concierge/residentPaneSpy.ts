@@ -11,11 +11,9 @@ import { extractTicketId, findTicketIdInText, readHandoffHeaderRecordsWithBatche
 import { mailboxDir, parseRolesTsv, readPipelineStages } from '../swarm/swarmState';
 
 export const RESIDENT_PANE_SPY_MESSAGE_MAX_LENGTH = 4000;
-export const SWARM_LIVE_SCREEN_NAME = 'Swarm Live Screen';
-/** @deprecated Use SWARM_LIVE_SCREEN_NAME */
-export const MONO_ROUTER_LIVE_SCREEN_NAME = SWARM_LIVE_SCREEN_NAME;
-/** @deprecated Use SWARM_LIVE_SCREEN_NAME */
-export const RESIDENT_PANE_SPY_TOPIC_NAME = SWARM_LIVE_SCREEN_NAME;
+export const MONO_ROUTER_LIVE_SCREEN_NAME = 'Mono Router Live Screen';
+/** @deprecated Use MONO_ROUTER_LIVE_SCREEN_NAME */
+export const RESIDENT_PANE_SPY_TOPIC_NAME = MONO_ROUTER_LIVE_SCREEN_NAME;
 export const RESIDENT_PANE_SPY_DEFAULT_LINES = 40;
 // Wider scrollback for role banner search — the SwarmForge title scrolls off
 // the default tail while the agent is mid-tool-run.

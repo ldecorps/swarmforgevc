@@ -548,23 +548,13 @@
 ;; ── busy-vs-wedged respawn precheck (BL-137/BL-147 parity) ──────────────────
 ;; The daemon's own respawn action must never regress the exact incident
 ;; that motivated BL-147: typing into a pane that is genuinely mid-turn.
-;; Primary signal: "esc to interrupt" (Claude Code's busy footer). Subagent
-;; explore turns and long Whirlpooling runs often omit that footer while still
-;; mid-turn — match those high-confidence activity markers too.
+;; "esc to interrupt" is Claude Code's own busy footer (case-insensitive),
+;; the same signal extension/src/panel/agentPaneState.ts checks.
 
-(def busy-activity-patterns
-  [#"(?i)esc to interrupt"
-   ;; Claude Code status spinners (e.g. "· Whirlpooling… (6m · ↓ 14k tokens)")
-   #"(?i)(?:whirlpooling|vibing|perambulating|swirling|marinating|incubating|pondering|noodling|dilly-dallying)[…\.]"
-   ;; Active explore/bash subagent chrome in the footer or body
-   #"[◯●]\s+Explore"
-   #"(?i)Explore\("
-   ;; Subagent shell commands in flight (line ends with Running…)
-   #"(?m)^\s*Running…\s*$"])
+(def busy-footer-pattern #"(?i)esc to interrupt")
 
 (defn actively-processing? [pane-text]
-  (let [t (or pane-text "")]
-    (boolean (some #(re-find % t) busy-activity-patterns))))
+  (boolean (re-find busy-footer-pattern (or pane-text ""))))
 
 ;; ── durable needs-human escalation state (crosses the daemon/extension-host
 ;; process boundary now that the daemon, not the extension host, decides it) ─

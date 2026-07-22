@@ -419,16 +419,16 @@ function buildTicketMetaLookup(
 ): Record<string, PipelineBoardTicketMeta> {
   const lookup: Record<string, PipelineBoardTicketMeta> = {};
   for (const item of folders.active) {
-    lookup[item.id] = { epic: item.epic, type: item.type, title: item.title, filename: item.filename, location: 'active' };
+    lookup[item.id] = { epic: item.epic, title: item.title, filename: item.filename, location: 'active' };
   }
   for (const item of folders.paused) {
     if (lookup[item.id] === undefined) {
-      lookup[item.id] = { epic: item.epic, type: item.type, title: item.title, filename: item.filename, location: 'paused' };
+      lookup[item.id] = { epic: item.epic, title: item.title, filename: item.filename, location: 'paused' };
     }
   }
   for (const item of folders.done) {
     if (lookup[item.id] === undefined) {
-      lookup[item.id] = { epic: item.epic, type: item.type, title: item.title, filename: item.filename, location: 'done' };
+      lookup[item.id] = { epic: item.epic, title: item.title, filename: item.filename, location: 'done' };
     }
   }
   for (const item of rootIntake ?? []) {

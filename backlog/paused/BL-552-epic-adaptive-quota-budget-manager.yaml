@@ -7,7 +7,7 @@ epic: quota-budget-manager
 priority: 20
 depends_on: [BL-545]
 decomposes_into: [BL-553]
-human_approval: approved
+human_approval: pending
 source: "Backlog root intake 003-adaptive-quota-budget-manager.md, drained by specifier 2026-07-22."
 
 approval_context: |
