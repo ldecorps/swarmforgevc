@@ -8,7 +8,15 @@ import { RoleWorktree, readChaserTelemetryEvents, ChaserTelemetryEvent } from '.
 import { runGitLog, deriveTicketLifecycles, TicketLifecycleEvent } from '../metrics/gitHistoryAdapter';
 import { computeSuiteDurationTrend, SuiteDurationTrendResult } from '../metrics/deliveryMetrics';
 import { computeCostPerTicketSeries, CostPerTicketSeriesResult, COST_PER_TICKET_BASIS } from '../metrics/costPerTicket';
-import { LLM_COST_HORIZONS_MS, LlmCostHorizon, LlmCostRollupGroup, rollupLlmInvocationsByOrigin } from '../metrics/llmCostLedger';
+import {
+  LLM_COST_HORIZONS_MS,
+  LlmCostHorizon,
+  LlmCostRollupGroup,
+  rollupLlmInvocationsByOrigin,
+  buildOriginCostTrendSeries,
+  chooseCostTrendAxisScale,
+  OriginCostTrendSeries,
+} from '../metrics/llmCostLedger';
 import { readLlmInvocationRecords } from '../metrics/llmCostLedgerStore';
 
 // BL-213: the daily cost & health sidecar - a deterministic, committed
@@ -113,6 +121,11 @@ export interface CostHealthSidecar {
   // unchanged" posture as every other optional field here; absent when no
   // ledger records exist yet for a given main worktree.
   topExpensiveOriginsByHorizon?: Record<LlmCostHorizon, LlmCostRollupGroup[]>;
+  // BL-551 (trend-series-11 .. trend-surface-15): additive, optional -
+  // ranked rolling 7-day per-origin trend series for the multi-line chart.
+  // Same "purely additive, schemaVersion unchanged" posture as every other
+  // optional field here; absent when no ledger records exist yet.
+  originCostTrendSeries?: OriginCostTrendSeries[];
 }
 
 // ── daily bucketing (pure) ───────────────────────────────────────────────
@@ -301,7 +314,8 @@ export function buildCostHealthSidecar(
   topN: number = DEFAULT_TOP_EXPENSIVE_TICKETS,
   suiteDurationTrend?: SuiteDurationTrendResult,
   costPerTicketSeries?: CostPerTicketSeriesResult,
-  topExpensiveOriginsByHorizon?: Record<LlmCostHorizon, LlmCostRollupGroup[]>
+  topExpensiveOriginsByHorizon?: Record<LlmCostHorizon, LlmCostRollupGroup[]>,
+  originCostTrendSeries?: OriginCostTrendSeries[]
 ): CostHealthSidecar {
   const sidecar: CostHealthSidecar = {
     schemaVersion: COST_HEALTH_SIDECAR_SCHEMA_VERSION,
@@ -337,6 +351,9 @@ export function buildCostHealthSidecar(
   if (topExpensiveOriginsByHorizon) {
     sidecar.topExpensiveOriginsByHorizon = topExpensiveOriginsByHorizon;
   }
+  if (originCostTrendSeries) {
+    sidecar.originCostTrendSeries = originCostTrendSeries;
+  }
   return sidecar;
 }
 
@@ -359,6 +376,11 @@ function trendArrow(trend: TrendResult): string {
 // when that section has nothing to show), so renderCostHealthSection
 // itself is just concatenation - split out so every function stays under
 // the CRAP<=6 gate.
+
+function originLabel(keyRecord: Record<string, string | null>): string {
+  return Object.values(keyRecord).filter((v) => v !== null).join('/') || 'unknown origin';
+}
+
 function renderAgentLines(agents: AgentDailyCost[]): string[] {
   return agents.map((agent) => {
     const costText = agent.costUsd !== null ? `$${agent.costUsd.value.toFixed(2)} ${trendArrow(agent.costUsd.trend)}` : 'no priced usage';
@@ -409,12 +431,31 @@ function renderTopExpensiveOriginsLines(byHorizon: Record<LlmCostHorizon, LlmCos
     }
     lines.push(`- ${horizon}:`);
     for (const group of groups) {
-      const label = Object.values(group.key).filter((v) => v !== null).join('/') || 'unknown origin';
+      const label = originLabel(group.key);
       const unknownNote = group.unknownCostCount > 0 ? ` (${group.unknownCostCount} unpriced)` : '';
       lines.push(`  - ${label}: $${group.costUsd.toFixed(2)}${unknownNote}`);
     }
   }
   return lines.length > 2 ? lines : [];
+}
+
+// BL-551 (trend-surface-15): absent (no series given) renders nothing - same
+// "hidden, not fabricated" posture as the other optional sections. One line
+// per ranked origin (already ordered by latest-bucket cost descending by
+// buildOriginCostTrendSeries), bucket costs left (oldest) to right (latest)
+// so the rightmost figure is always the newest measurement.
+export function renderCostTrendChartLines(series: OriginCostTrendSeries[]): string[] {
+  if (series.length === 0) {
+    return [];
+  }
+  const scale = chooseCostTrendAxisScale(series);
+  const lines: string[] = ['', `**Cost trend (7d, ${scale} scale):**`];
+  for (const s of series) {
+    const label = originLabel(s.key);
+    const points = s.buckets.map((b) => b.costUsd.toFixed(2)).join(' -> ');
+    lines.push(`- ${label}: ${points}`);
+  }
+  return lines;
 }
 
 function renderFlowBalanceLine(flow: CostHealthSidecar['flowBalance']): string {
@@ -471,6 +512,7 @@ export function renderCostHealthSection(sidecar: CostHealthSidecar | null): stri
     ...renderExpensiveTicketLines(sidecar.topExpensiveTickets),
     ...renderCostPerTicketLines(sidecar.costPerTicket),
     ...renderTopExpensiveOriginsLines(sidecar.topExpensiveOriginsByHorizon),
+    ...renderCostTrendChartLines(sidecar.originCostTrendSeries ?? []),
     '',
     renderFlowBalanceLine(sidecar.flowBalance),
     '',
@@ -501,6 +543,15 @@ function computeTopExpensiveOriginsByHorizon(targetPath: string, nowMs: number):
   return result;
 }
 
+// BL-551 (trend-series-11 .. trend-surface-15): reads the durable ledger and
+// builds the ranked rolling 7-day per-origin trend series. A main worktree
+// with no ledger yet yields [] (readLlmInvocationRecords degrades to []),
+// which renderCostTrendChartLines then omits entirely.
+function computeOriginCostTrendSeries(targetPath: string, nowMs: number): OriginCostTrendSeries[] {
+  const records = readLlmInvocationRecords(targetPath);
+  return buildOriginCostTrendSeries(records, { nowMs });
+}
+
 // ── impure orchestrator ──────────────────────────────────────────────────
 
 export function computeCostHealthSidecar(
@@ -518,6 +569,7 @@ export function computeCostHealthSidecar(
   const suiteDurationTrend = computeSuiteDurationTrend(targetPath, roles, nowMs);
   const costPerTicketSeries = computeCostPerTicketSeries(lifecycles, costTelemetryByRole);
   const topExpensiveOriginsByHorizon = computeTopExpensiveOriginsByHorizon(targetPath, nowMs);
+  const originCostTrendSeries = computeOriginCostTrendSeries(targetPath, nowMs);
 
   return buildCostHealthSidecar(
     dateIso,
@@ -529,7 +581,8 @@ export function computeCostHealthSidecar(
     DEFAULT_TOP_EXPENSIVE_TICKETS,
     suiteDurationTrend,
     costPerTicketSeries,
-    topExpensiveOriginsByHorizon
+    topExpensiveOriginsByHorizon,
+    originCostTrendSeries
   );
 }
 

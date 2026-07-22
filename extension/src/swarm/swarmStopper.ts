@@ -43,6 +43,7 @@ export function clearSwarmStateFiles(targetPath: string): void {
   for (const rel of [
     path.join('.swarmforge', 'tmux-socket'),
     path.join('.swarmforge', 'sessions.tsv'),
+    path.join('.swarmforge', 'headless-swarm'),
   ]) {
     const file = path.join(targetPath, rel);
     try {
@@ -142,6 +143,10 @@ export function stopSwarmOnExtensionShutdown(
   targetPath: string | null | undefined
 ): StopResult | null {
   if (!targetPath) {
+    return null;
+  }
+  const headlessMarker = path.join(targetPath, '.swarmforge', 'headless-swarm');
+  if (fs.existsSync(headlessMarker)) {
     return null;
   }
   try {

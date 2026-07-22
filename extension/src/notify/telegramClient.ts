@@ -130,9 +130,26 @@ export interface SendMessageResult {
 // callback_query update a tap generates (Telegram's own wire field is
 // callback_data; camelCased here to match this project's own naming, and
 // translated at the one call site that builds the request body below).
+// webAppUrl opens a Telegram Mini App in the in-app webview (not Chrome).
 export interface InlineKeyboardButton {
   text: string;
-  callbackData: string;
+  callbackData?: string;
+  webAppUrl?: string;
+  url?: string;
+}
+
+function inlineKeyboardButtonToWire(button: InlineKeyboardButton): Record<string, unknown> {
+  if (button.webAppUrl) {
+    return { text: button.text, web_app: { url: button.webAppUrl } };
+  }
+  if (button.url) {
+    return { text: button.text, url: button.url };
+  }
+  return { text: button.text, callback_data: button.callbackData ?? '' };
+}
+
+function inlineKeyboardToWire(buttons: InlineKeyboardButton[][]): { inline_keyboard: Record<string, unknown>[][] } {
+  return { inline_keyboard: buttons.map((row) => row.map(inlineKeyboardButtonToWire)) };
 }
 
 function extractDescription(json: unknown): string | undefined {
@@ -199,9 +216,7 @@ export async function sendTelegramMessage(
     text,
     ...(replyToMessageId !== undefined ? { reply_to_message_id: replyToMessageId } : {}),
     ...(messageThreadId !== undefined ? { message_thread_id: messageThreadId } : {}),
-    ...(buttons
-      ? { reply_markup: { inline_keyboard: buttons.map((row) => row.map((b) => ({ text: b.text, callback_data: b.callbackData }))) } }
-      : {}),
+    ...(buttons ? { reply_markup: inlineKeyboardToWire(buttons) } : {}),
     ...(parseMode !== undefined ? { parse_mode: parseMode } : {}),
   });
 
@@ -341,7 +356,7 @@ export async function editMessageText(
     text,
     ...(parseMode !== undefined ? { parse_mode: parseMode } : {}),
     ...(buttons !== undefined
-      ? { reply_markup: { inline_keyboard: (buttons ?? []).map((row) => row.map((b) => ({ text: b.text, callback_data: b.callbackData }))) } }
+      ? { reply_markup: inlineKeyboardToWire(buttons ?? []) }
       : {}),
   });
   const result = await callTelegramApi(token, 'editMessageText', body, postFn);
@@ -369,6 +384,40 @@ export async function deleteMessage(token: string, chatId: string, messageId: nu
     return { success: false, error: result.error };
   }
   return { success: true };
+}
+
+export interface SetChatMenuButtonResult {
+  success: boolean;
+  error?: string;
+}
+
+export async function setChatMenuButton(
+  token: string,
+  menuButton: { type: 'web_app'; text: string; webAppUrl: string } | { type: 'default' },
+  chatId?: string,
+  postFn: TelegramPostFn = defaultPost
+): Promise<SetChatMenuButtonResult> {
+  const body = JSON.stringify({
+    ...(chatId !== undefined ? { chat_id: chatId } : {}),
+    menu_button:
+      menuButton.type === 'default'
+        ? { type: 'default' }
+        : { type: 'web_app', text: menuButton.text, web_app: { url: menuButton.webAppUrl } },
+  });
+  const result = await callTelegramApi(token, 'setChatMenuButton', body, postFn);
+  if (!result.success) {
+    return { success: false, error: result.error };
+  }
+  return { success: true };
+}
+
+export async function getBotUsername(token: string, postFn: TelegramPostFn = defaultPost): Promise<string | undefined> {
+  const result = await callTelegramApi(token, 'getMe', '{}', postFn);
+  if (!result.success) {
+    return undefined;
+  }
+  const username = extractResultObject(result.json)?.username;
+  return typeof username === 'string' ? username : undefined;
 }
 
 // BL-467: three thin wrappers for the pipeline-board-only-pin enforcement -

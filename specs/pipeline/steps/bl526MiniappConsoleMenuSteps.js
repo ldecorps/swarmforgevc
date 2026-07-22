@@ -55,7 +55,7 @@ function registerSteps(registry) {
   registry.define(/^a live feed of the mono-router RESIDENT is shown$/, (ctx) => {
     assert.ok(ctx.residentSpyHtml, 'expected resident-spy shell');
     assert.match(ctx.residentSpyHtml, /resident-pane\?token=/);
-    assert.match(ctx.residentSpyHtml, /Mono Router Live Screen/);
+    assert.match(ctx.residentSpyHtml, /Swarm Live Screen/);
     assert.match(ctx.residentSpyHtml, /coordinator-pane/);
     assert.match(ctx.residentSpyHtml, /resident-pane/);
   });
