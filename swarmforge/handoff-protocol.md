@@ -128,8 +128,6 @@ commit: a1b2c3d9
 created_at: 2026-06-15T14:05:31Z
 enqueued_at: 2026-06-15T14:05:32Z
 
-Re-read your role and constitution.
-
 merge_and_process coder a1b2c3d9
 ```
 
@@ -139,6 +137,27 @@ identifies the specific recipient copy.
 ## Message Types
 
 Agents may request only four message types.
+
+### Generated body preamble (BL-519)
+
+`swarm_handoff.sh` prepends a short reminder only when **every** recipient's
+`roles.tsv` agent column is **not** `claude` (today: aider, grok, and other
+agents that still bootstrap via tmux file injection):
+
+```text
+Re-read your role and constitution.
+
+```
+
+For **Claude** recipients — the default for pipeline roles, including the
+mono-router resident — there is **no** preamble. Constitution, PIPELINE, and
+role are already inlined into `--append-system-prompt-file` at launch and on
+every `rotate_to_role.sh` / respawn (BL-519). The generated body is only the
+actionable payload (`merge_and_process …`, the note text, or the rule-proposal
+block). A mixed broadcast (one Claude + one aider recipient) keeps the legacy
+preamble for all copies.
+
+The examples below show the Claude (no-preamble) form unless noted.
 
 ### `awake`
 
@@ -177,8 +196,6 @@ commit: a1b2c3d9e8
 Generated body:
 
 ```text
-Re-read your role and constitution.
-
 merge_and_process coder a1b2c3d9
 ```
 
@@ -225,8 +242,6 @@ message: Waiting on QA result before merging cleanup branch.
 Generated body:
 
 ```text
-Re-read your role and constitution.
-
 Waiting on QA result before merging cleanup branch.
 ```
 
@@ -287,8 +302,6 @@ rationale: BL-075 — a hardener batch completed its step but never forwarded a 
 Generated body:
 
 ```text
-Re-read your role and constitution.
-
 Rule proposal (constitution) from cleaner: Batch roles must forward every parcel in a batch, not just their own step.
 Rationale: BL-075 — a hardener batch completed its step but never forwarded a docs-only parcel.
 ```
@@ -676,8 +689,6 @@ TYPE: git_handoff
 PRIORITY: 00
 TASK_NAME: task-1-cave-setup
 PAYLOAD:
-Re-read your role and constitution.
-
 merge_and_process architect a1b2c3d9
 ```
 
@@ -745,8 +756,6 @@ FROM: cleaner
 TYPE: note
 PRIORITY: 50
 PAYLOAD:
-Re-read your role and constitution.
-
 Waiting on QA result before merging cleanup branch.
 ```
 

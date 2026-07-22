@@ -22,6 +22,7 @@
 
 (def script-dir (str (fs/parent (fs/canonicalize *file*))))
 (load-file (str (fs/path script-dir "commit_integrity_lib.bb")))
+(load-file (str (fs/path script-dir "ticket_close_guard_lib.bb")))
 
 (defn usage []
   (binding [*out* *err*]
@@ -48,16 +49,38 @@
     (cond-> {:project-root project-root :paths paths :message message}
       max-retries (assoc :max-retries max-retries))))
 
+(defn close-guard-failure-message [{:keys [reason ticket-id]}]
+  (case reason
+    :missing-qa-approval
+    (str "commit_integrity_cli: CLOSE BLOCKED for " ticket-id
+         " — no QA git_handoff or note to coordinator referencing this ticket. "
+         "Coder/architect bookkeeping notes do not authorize close; wait for QA approval.")
+    (str "commit_integrity_cli: CLOSE BLOCKED for " ticket-id " (" (name reason) ").")))
+
 (defn -main [args]
   (let [project-root (first args)
         _ (when (str/blank? project-root) (usage))
         request (build-request project-root (rest args))
-        result (commit-integrity-lib/commit-with-integrity! request)]
-    (println (json/generate-string result))
-    (when-not (:success result)
+        close-check (ticket-close-guard-lib/validate-close-allowed project-root (:paths request))]
+    (when-not (:allowed close-check)
       (binding [*out* *err*]
-        (println (str "commit_integrity_cli: FAILED (" (name (:reason result))
-                       ") after " (:attempts result) " attempt(s)")))
-      (System/exit 1))))
+        (println (close-guard-failure-message close-check)))
+      (System/exit 1))
+    (let [result (commit-integrity-lib/commit-with-integrity! request)
+          abandoned (when (and (:success result) (:ticket-id close-check))
+                      (ticket-close-guard-lib/abandon-inflight-for-ticket!
+                       project-root (:ticket-id close-check)))]
+      (when (seq abandoned)
+        (binding [*out* *err*]
+          (println (str "commit_integrity_cli: abandoned " (count abandoned)
+                        " in-flight handoff(s) for " (:ticket-id close-check)))))
+      (println (json/generate-string (cond-> result
+                                       (seq abandoned)
+                                       (assoc :abandoned-handoffs (count abandoned)))))
+      (when-not (:success result)
+        (binding [*out* *err*]
+          (println (str "commit_integrity_cli: FAILED (" (name (:reason result))
+                         ") after " (:attempts result) " attempt(s)")))
+        (System/exit 1)))))
 
 (-main *command-line-args*)

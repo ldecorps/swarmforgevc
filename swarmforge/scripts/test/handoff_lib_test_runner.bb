@@ -143,6 +143,24 @@
     (assert-true "the empty file is quarantined as *.handoff.dead" (fs/exists? (fs/path dir "50_b_from_coder_to_cleaner.handoff.dead")))
     (assert-true "the truncated file is quarantined as *.handoff.dead" (fs/exists? (fs/path dir "50_c_from_coder_to_cleaner.handoff.dead")))))
 
+;; ── handoff-body-lead (BL-519 / mono-router resident) ───────────────────
+
+(let [dir (mk-tmp-dir)
+      swarm-dir (fs/path dir ".swarmforge")]
+  (fs/create-dirs swarm-dir)
+  (spit (str (fs/path swarm-dir "roles.tsv"))
+        (str "coder\tcoder\t" dir "\tswarmforge-coder\tCoder\tclaude\ttask\n"
+             "cleaner\tcleaner\t" dir "\tswarmforge-cleaner\tCleaner\tclaude\ttask\n"
+             "coordinator\tmaster\t" dir "\tswarmforge-coordinator\tCoordinator\taider\ttask\n"))
+  (assert= "claude recipients omit the legacy re-read preamble"
+           "" (handoff-lib/handoff-body-lead ["cleaner"] dir))
+  (assert= "aider recipients keep the legacy re-read preamble"
+           "Re-read your role and constitution.\n\n"
+           (handoff-lib/handoff-body-lead ["coordinator"] dir))
+  (assert= "mixed claude+aider broadcast keeps the legacy preamble"
+           "Re-read your role and constitution.\n\n"
+           (handoff-lib/handoff-body-lead ["coder" "coordinator"] dir)))
+
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (empty? @failures)
   (println "handoff_lib (BL-365): ALL TESTS PASSED")
