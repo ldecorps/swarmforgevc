@@ -13,8 +13,11 @@ const {
   deriveListEntryText,
   deriveDisplayTicketId,
   compareLinksMostRecentFirst,
+  selectPausedForBoard,
+  pipelineBoardLinkLine,
   PIPELINE_BOARD_COLUMN_ORDER,
   PIPELINE_BOARD_RECENTLY_CLOSED_MAX,
+  PIPELINE_BOARD_PAUSED_MAX,
   PIPELINE_BOARD_NOT_STARTED_COLUMN,
   PIPELINE_BOARD_MESSAGE_MAX_LENGTH,
 } = require('../out/concierge/pipelineBoard');
@@ -130,12 +133,49 @@ test('computePipelineBoard: a paused ticket awaiting human approval is "awaiting
   assert.deepEqual(parked, [{ id: 'BL-449', slug: '', status: 'awaiting-approval' }]);
 });
 
-test('computePipelineBoard: the parked list is sorted by id, deterministic regardless of input order', () => {
-  const { parked } = computePipelineBoard({}, [{ id: 'BL-9' }, { id: 'BL-2' }], {});
+test('computePipelineBoard: the parked list is sorted by priority ascending, then id', () => {
+  const { parked } = computePipelineBoard(
+    {},
+    [
+      { id: 'BL-9', priority: 5 },
+      { id: 'BL-2', priority: 1 },
+      { id: 'BL-5', priority: 1 },
+    ],
+    {}
+  );
   assert.deepEqual(
     parked.map((p) => p.id),
-    ['BL-2', 'BL-9']
+    ['BL-2', 'BL-5', 'BL-9']
   );
+});
+
+test('computePipelineBoard: plain parked tickets are capped at PIPELINE_BOARD_PAUSED_MAX by priority', () => {
+  const paused = Array.from({ length: 15 }, (_, i) => ({ id: `BL-${100 + i}`, priority: i }));
+  const { parked, parkedOmittedCount } = computePipelineBoard({}, paused, {});
+  const plainParked = parked.filter((p) => p.status === 'parked');
+  assert.equal(plainParked.length, PIPELINE_BOARD_PAUSED_MAX);
+  assert.equal(parkedOmittedCount, 5);
+  assert.deepEqual(
+    plainParked.map((p) => p.id),
+    ['BL-100', 'BL-101', 'BL-102', 'BL-103', 'BL-104', 'BL-105', 'BL-106', 'BL-107', 'BL-108', 'BL-109']
+  );
+});
+
+test('computePipelineBoard: awaiting-approval tickets are never capped by the parked limit', () => {
+  const paused = [
+    ...Array.from({ length: 12 }, (_, i) => ({ id: `BL-${i}`, priority: i })),
+    { id: 'BL-999', humanApproval: 'pending', priority: 99 },
+  ];
+  const { parked } = computePipelineBoard({}, paused, {});
+  assert.ok(parked.some((p) => p.id === 'BL-999' && p.status === 'awaiting-approval'));
+  assert.equal(parked.filter((p) => p.status === 'parked').length, PIPELINE_BOARD_PAUSED_MAX);
+});
+
+test('renderPipelineBoardBody: shows a visible +N more parked line when plain parked tickets are omitted', () => {
+  const paused = Array.from({ length: 12 }, (_, i) => ({ id: `BL-${i}`, priority: i }));
+  const data = computePipelineBoard({}, paused, {});
+  const text = renderPipelineBoardBody(data);
+  assert.match(text, /\+2 more parked/);
 });
 
 test('computePipelineBoard: every ticket lands in exactly one place - role-held in rows, paused in parked, never both', () => {
@@ -151,7 +191,14 @@ test('computePipelineBoard: every ticket lands in exactly one place - role-held 
 });
 
 test('computePipelineBoard: no active or paused tickets renders an empty board', () => {
-  assert.deepEqual(computePipelineBoard({}, [], {}), { rows: [], parked: [], rootIntake: [], recentlyClosed: [], links: [] });
+  assert.deepEqual(computePipelineBoard({}, [], {}), {
+    rows: [],
+    parked: [],
+    rootIntake: [],
+    recentlyClosed: [],
+    links: [],
+    parkedOmittedCount: 0,
+  });
 });
 
 // ── BL-473: extras.activeIds (physical backlog/active/ membership) is the
@@ -876,10 +923,9 @@ test('renderPipelineBoardLinks: empty when repoBaseUrl is not resolvable, even w
   assert.equal(renderPipelineBoardLinks([{ id: 'BL-1', path: 'backlog/active/BL-1-foo.yaml' }], undefined), '');
 });
 
-test('renderPipelineBoardLinks: renders a real <a href> tag per link, pointing at the GitHub blob URL', () => {
+test('renderPipelineBoardLinks: renders a compact <a href> tag per link (ticket number only, not the full path)', () => {
   const html = renderPipelineBoardLinks([{ id: 'BL-1', path: 'backlog/active/BL-1-foo.yaml' }], 'https://github.com/ldecorps/swarmforgevc');
-  assert.ok(html.includes('<a href="https://github.com/ldecorps/swarmforgevc/blob/main/backlog/active/BL-1-foo.yaml">'));
-  assert.ok(html.includes('BL-1'));
+  assert.equal(html, 'LINKS:\n<a href="https://github.com/ldecorps/swarmforgevc/blob/main/backlog/active/BL-1-foo.yaml">1</a>');
 });
 
 test('wrapPipelineBoardHtml: with no linksHtml, wraps exactly as before BL-465 (byte-for-byte)', () => {
@@ -904,6 +950,11 @@ test('wrapPipelineBoardHtml: with linksHtml, appends it AFTER the closing </pre>
 // "+N more" indicator when trimmed - never a silent cap.
 
 const REPO_BASE_URL = 'https://github.com/ldecorps/swarmforgevc';
+
+test('pipelineBoardLinkLine: uses the display ticket number as the anchor text', () => {
+  const line = pipelineBoardLinkLine({ id: 'BL-551', path: 'backlog/paused/BL-551-long-slug.yaml' }, REPO_BASE_URL);
+  assert.equal(line, '<a href="https://github.com/ldecorps/swarmforgevc/blob/main/backlog/paused/BL-551-long-slug.yaml">551</a>');
+});
 
 function manyLinks(count) {
   return Array.from({ length: count }, (_, i) => ({ id: `BL-${i}`, path: `backlog/active/BL-${i}-a-fine-feature-with-a-longish-slug.yaml` }));
@@ -940,7 +991,7 @@ test('budgetPipelineBoardLinks: an oversized link list is trimmed to fit, with a
   // silent reordering or arbitrary subset.
   const includedIds = links.slice(0, links.length - result.omittedCount).map((l) => l.id);
   for (const id of includedIds) {
-    assert.ok(result.html.includes(`${id}:`), `expected included link ${id} present in the trimmed html`);
+    assert.ok(result.html.includes(`>${deriveDisplayTicketId(id)}</a>`), `expected included link ${id} present in the trimmed html`);
   }
 });
 

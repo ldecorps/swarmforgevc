@@ -5,7 +5,7 @@ type: defect
 status: paused
 epic: swarm-reliability
 assigned_to:
-priority: 2
+priority: 1
 mutation_cost: medium
 direction: human-requested
 depends_on: []
@@ -48,6 +48,17 @@ notes: |
   count alone — a role with a growing diff is not "no progress" even if it keeps
   re-running ready_for_next.sh. See .swarmforge/daemon/handoffd-failure-20260722T135303Z.log
   and backlog/evidence/BL-528-false-positive-halt-20260722.md for full evidence.
+
+  PRIORITY BUMP 2→1 (babysitter, 2026-07-22T14:24Z): 4th same-day occurrence
+  (14:18:59Z, role=coder, same BL-551 handoff again) revealed the halt is
+  self-perpetuating: the .claim-progress.json sidecar is never cleared by a swarm
+  restart, so handoffd_supervisor's first health check after relaunch re-reads the
+  same reclaims>=threshold value and re-halts within ~40s — two consecutive ./swarm
+  relaunches were auto-killed before the coder pane could even boot. Only manually
+  archiving the stuck in_process handoff + sidecars to inbox/done/ broke the loop.
+  FIX must also clear/reset the claim-progress sidecar on relaunch (or as part of the
+  halt itself), not just gate future increments on activity. Full detail in the "4th
+  occurrence" section of backlog/evidence/BL-528-false-positive-halt-20260722.md.
 
 acceptance: |
   # Specifier replaces this with specs/features/BL-528-*.feature

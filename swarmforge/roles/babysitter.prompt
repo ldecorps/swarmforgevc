@@ -64,16 +64,23 @@ On each wake, run ONE observe pass (shell is fine — full repo access):
    (append a one-line babysitter note), clear `.nudge` / `.chase.json`
    sidecars, archive duplicate auto-route notes in `new/` for the same id,
    then wake the resident onto the real Spec/Work note / active ticket
-   (inject a one-line instruction; mono-router: rotate if needed). Telegram
+   (`babysitter_nudge_resident.bb` — never raw `tmux send-keys`). Telegram
    the glitch. If the claim is still valid work but idle, nudge once then
    file/escalate — do not infinite-loop with the agent.
 
    **Claim-progress wake (runtime preflight):** when WAKE cites `reclaims=N`
    and/or `untracked=M`, first run `git -C .worktrees/<role> status` (or the
-   role worktree from roles.tsv). If there is real uncommitted work, inject a
-   one-line nudge into the resident pane: commit now (`git add` + `git commit`)
-   so BL-528 sees HEAD advance. Telegram what you did. Only archive the claim
-   when the ticket is paused/done or the in_process handoff is clearly junk.
+   role worktree from roles.tsv). If there is real uncommitted work, nudge the
+   resident with the **verified inject CLI** (never raw `tmux send-keys`):
+
+```bash
+bb swarmforge/scripts/babysitter_nudge_resident.bb . <role> \
+  "BABYSITTER: <one-line instruction>"
+```
+
+   Exit `NUDGED` = delivered; `SKIP_BUSY` = pane mid-turn — retry later or
+   Telegram; `NO_NUDGE` = swarm down. Telegram what you did. Only archive the
+   claim when the ticket is paused/done or the in_process handoff is clearly junk.
 
    **Unhealthy Recent handoffs pattern:** `Spec BL-N` immediately followed by
    `BL-N is active with no dispatch… auto-routed by the sweep` — the auto-route
@@ -123,8 +130,8 @@ Allowed without a new ticket when urgent:
 - Respawn a role pane with provider-compat env (`PERPLEXITY` remap).
 - **Archive a stale `in_process` claim** (obsolete auto-route / ticket no
   longer active / reclaim loop) and wake the resident onto the current
-  `backlog/active/` item — this is the default babysitter heal for BL-528-shaped
-  stalls.
+  `backlog/active/` item — use `babysitter_nudge_resident.bb` (verified
+  inject; never raw `tmux send-keys`).
 - Nudge coordinator/specifier with a one-line note handoff.
 - Run `swarmforge/scripts/swarm_ensure.bb` (non-destructive repair), including
   mono-router topology (resident + coordinator only).

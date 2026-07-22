@@ -30,6 +30,11 @@ if [[ ! -d "$ROOT/swarmforge" && -d "$SCRIPT_DIR/swarmforge" ]]; then
   ROOT="$SCRIPT_DIR"
 fi
 
+if [[ -f "$ROOT/.swarmforge/swarm.env" ]]; then
+  # shellcheck disable=SC1090
+  source "$ROOT/.swarmforge/swarm.env"
+fi
+
 BB_DIR="$ROOT/.swarmforge/babysitter"
 SOCK="$BB_DIR/babysitter-tmux.sock"
 START="$ROOT/swarmforge/scripts/start_babysitter.sh"
@@ -90,5 +95,11 @@ case "$CMD" in
     exit 0
     ;;
 esac
+
+if [[ "${SWARMFORGE_SKIP_BABYSITTER:-}" == "1" ]]; then
+  echo "babysitter: disabled for this project (SWARMFORGE_SKIP_BABYSITTER=1 in .swarmforge/swarm.env)" >&2
+  echo "Remove that line or delete swarm.env to re-enable." >&2
+  exit 1
+fi
 
 exec bash "$START" "$ROOT"

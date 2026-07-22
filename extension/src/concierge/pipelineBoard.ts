@@ -48,11 +48,16 @@ export interface PipelineBoardData {
   rootIntake: PipelineBoardListEntry[];
   recentlyClosed: PipelineBoardListEntry[];
   links: PipelineBoardLinkEntry[];
+  // Plain parked tickets omitted by PIPELINE_BOARD_PAUSED_MAX (awaiting-
+  // approval tickets are never capped). Rendered as "+N more parked" under
+  // the PARKED section — never a silent cap.
+  parkedOmittedCount?: number;
 }
 
 export interface PipelineBoardPausedItem {
   id: string;
   humanApproval?: 'pending' | 'approved';
+  priority?: number;
 }
 
 // BL-455: the join key a caller (conciergeTick.ts's syncBoardIfWired) feeds
@@ -156,6 +161,14 @@ const LINKS_SECTION_HEADER = 'LINKS:';
 // closed window" note), not a promotion gate. The caller (conciergeTick.ts)
 // decides WHICH items count as "recent"; this only bounds the list length.
 export const PIPELINE_BOARD_RECENTLY_CLOSED_MAX = 5;
+
+// Below-grid PARKED section (not awaiting-approval): show only the top N
+// paused tickets by priority (lower number = higher urgency), same ordering
+// as the paused-pager bridge route. Awaiting-approval tickets are always
+// shown in full regardless of this cap.
+export const PIPELINE_BOARD_PAUSED_MAX = 10;
+
+const PAUSED_PRIORITY_FALLBACK = Number.MAX_SAFE_INTEGER;
 
 // BL-502: Telegram's own sendMessage text limit is 4096 chars; a small
 // safety margin below it absorbs the HTML entity expansion escapeHtml adds
@@ -334,21 +347,45 @@ function buildGridRows(
   return [...rowsById.values()].sort((a, b) => epicSortKey(a.epic).localeCompare(epicSortKey(b.epic)));
 }
 
+function comparePausedByPriority(a: PipelineBoardPausedItem, b: PipelineBoardPausedItem): number {
+  const pa = a.priority ?? PAUSED_PRIORITY_FALLBACK;
+  const pb = b.priority ?? PAUSED_PRIORITY_FALLBACK;
+  if (pa !== pb) {
+    return pa - pb;
+  }
+  return a.id.localeCompare(b.id);
+}
+
+// Awaiting-approval tickets are always shown. Plain parked tickets are
+// capped to PIPELINE_BOARD_PAUSED_MAX by priority (then id).
+export function selectPausedForBoard(paused: PipelineBoardPausedItem[]): {
+  selected: PipelineBoardPausedItem[];
+  parkedOmittedCount: number;
+} {
+  const awaiting = paused.filter((item) => item.humanApproval === 'pending').sort(comparePausedByPriority);
+  const plainParked = paused.filter((item) => item.humanApproval !== 'pending').sort(comparePausedByPriority);
+  const shownParked = plainParked.slice(0, PIPELINE_BOARD_PAUSED_MAX);
+  return {
+    selected: [...awaiting, ...shownParked],
+    parkedOmittedCount: Math.max(0, plainParked.length - shownParked.length),
+  };
+}
+
 // Split out of computePipelineBoard below for the same CRAP-budget reason
 // as buildGridRows above.
 function buildParkedEntries(
   paused: PipelineBoardPausedItem[],
   ticketMeta: Record<string, PipelineBoardTicketMeta>
-): PipelineBoardParkedEntry[] {
-  return [...paused]
-    .map(
-      (item): PipelineBoardParkedEntry => ({
-        id: item.id,
-        slug: deriveListEntryText(ticketMeta[item.id]?.title),
-        status: item.humanApproval === 'pending' ? 'awaiting-approval' : 'parked',
-      })
-    )
-    .sort((a, b) => a.id.localeCompare(b.id));
+): { parked: PipelineBoardParkedEntry[]; parkedOmittedCount: number } {
+  const { selected, parkedOmittedCount } = selectPausedForBoard(paused);
+  const parked = selected.map(
+    (item): PipelineBoardParkedEntry => ({
+      id: item.id,
+      slug: deriveListEntryText(ticketMeta[item.id]?.title),
+      status: item.humanApproval === 'pending' ? 'awaiting-approval' : 'parked',
+    })
+  );
+  return { parked, parkedOmittedCount };
 }
 
 // The four link SOURCES below each mirror one of the board's own sections
@@ -445,7 +482,7 @@ export function computePipelineBoard(
   extras: PipelineBoardExtras = {}
 ): PipelineBoardData {
   const rows = buildGridRows(roleHeldTickets, ticketMeta, extras.activeIds);
-  const parked = buildParkedEntries(paused, ticketMeta);
+  const { parked, parkedOmittedCount } = buildParkedEntries(paused, ticketMeta);
   const rootIntake = [...(extras.rootIntake ?? [])].map(listEntryFor).sort((a, b) => a.id.localeCompare(b.id));
   // BL-465 bounce (architect review): unlike rootIntake/parked above,
   // recently-closed order IS the whole point of the section - re-sorting
@@ -458,7 +495,7 @@ export function computePipelineBoard(
   const recentlyClosed = [...(extras.recentlyClosed ?? [])].slice(0, PIPELINE_BOARD_RECENTLY_CLOSED_MAX).map(listEntryFor);
   const links = extras.repoBaseUrl ? buildLinks(rows, parked, extras, ticketMeta) : [];
 
-  return { rows, parked, rootIntake, recentlyClosed, links };
+  return { rows, parked, rootIntake, recentlyClosed, links, parkedOmittedCount };
 }
 
 // Every stage line is "<2-char label> <mark>". Pad the ticket id to the mark
@@ -502,19 +539,26 @@ function renderGridLines(rows: PipelineBoardRow[]): string[] {
   return lines;
 }
 
+function pipelineBoardParkedOverflowLine(omittedCount: number): string {
+  return `+${omittedCount} more parked`;
+}
+
 // BL-465: renders one below-grid section (parked/awaiting-approval/root-
 // intake/recently-closed) - omitted entirely when empty (BL-455's own
 // "every active ticket lands in exactly one place" convention, extended
 // here to every below-grid list: an empty section is a normal steady
 // state, not worth rendering). No per-line status label anymore (drops
 // BL-452's PK/AA glyphs) - the SECTION HEADER itself is the label now.
-function renderListSection(header: string, entries: PipelineBoardListEntry[]): string[] {
-  if (entries.length === 0) {
+function renderListSection(header: string, entries: PipelineBoardListEntry[], overflowLine?: string): string[] {
+  if (entries.length === 0 && (overflowLine === undefined || overflowLine === '')) {
     return [];
   }
   const lines: string[] = ['', header];
   for (const entry of entries) {
     lines.push(`  ${deriveDisplayTicketId(entry.id)} ${entry.slug}`.trimEnd());
+  }
+  if (overflowLine) {
+    lines.push(`  ${overflowLine}`);
   }
   return lines;
 }
@@ -533,11 +577,14 @@ function renderGridOnlySections(data: PipelineBoardData): string[] {
 // rather than every one of those fixtures needing a mechanical update.
 function renderBodySections(data: PipelineBoardData): string[] {
   const parked = data.parked ?? [];
+  const parkedOverflow =
+    (data.parkedOmittedCount ?? 0) > 0 ? pipelineBoardParkedOverflowLine(data.parkedOmittedCount ?? 0) : undefined;
   return [
     ...renderGridOnlySections(data),
     ...renderListSection(
       PARKED_SECTION_HEADER,
-      parked.filter((p) => p.status === 'parked')
+      parked.filter((p) => p.status === 'parked'),
+      parkedOverflow
     ),
     ...renderListSection(
       AWAITING_APPROVAL_SECTION_HEADER,
@@ -605,8 +652,9 @@ function pipelineBoardBlobUrl(repoBaseUrl: string, path: string): string {
   return `${repoBaseUrl}/blob/main/${path}`;
 }
 
-function pipelineBoardLinkLine(link: PipelineBoardLinkEntry, repoBaseUrl: string): string {
-  return `${link.id}: <a href="${pipelineBoardBlobUrl(repoBaseUrl, link.path)}">${link.path}</a>`;
+export function pipelineBoardLinkLine(link: PipelineBoardLinkEntry, repoBaseUrl: string): string {
+  const label = escapeHtml(deriveDisplayTicketId(link.id));
+  return `<a href="${pipelineBoardBlobUrl(repoBaseUrl, link.path)}">${label}</a>`;
 }
 
 function pathByIdFromLinks(links: PipelineBoardLinkEntry[]): Map<string, string> {
@@ -656,9 +704,10 @@ function renderListSectionHtml(
   entries: PipelineBoardListEntry[],
   pathById: Map<string, string>,
   repoBaseUrl: string | undefined,
-  linkedIds: Set<string> | undefined
+  linkedIds: Set<string> | undefined,
+  overflowLine?: string
 ): string[] {
-  if (entries.length === 0) {
+  if (entries.length === 0 && (overflowLine === undefined || overflowLine === '')) {
     return [];
   }
   const lines: string[] = ['', escapeHtml(header)];
@@ -666,6 +715,9 @@ function renderListSectionHtml(
     const path =
       linkedIds !== undefined && !linkedIds.has(entry.id) ? undefined : pathById.get(entry.id);
     lines.push(formatBoardListLineHtml(entry.id, entry.slug, path, repoBaseUrl));
+  }
+  if (overflowLine) {
+    lines.push(`  ${escapeHtml(overflowLine)}`);
   }
   return lines;
 }
@@ -707,6 +759,8 @@ function buildPipelineBoardHtml(
   const gridText = renderGridOnlySections(data).join('\n');
   const pre = `<pre>${escapeHtml(gridText)}</pre>`;
   const parked = data.parked ?? [];
+  const parkedOverflow =
+    (data.parkedOmittedCount ?? 0) > 0 ? pipelineBoardParkedOverflowLine(data.parkedOmittedCount ?? 0) : undefined;
   const afterPre = [
     ...renderGridTapLinesHtml(data, pathById, repoBaseUrl, linkedIds),
     ...renderListSectionHtml(
@@ -714,7 +768,8 @@ function buildPipelineBoardHtml(
       parked.filter((p) => p.status === 'parked'),
       pathById,
       repoBaseUrl,
-      linkedIds
+      linkedIds,
+      parkedOverflow
     ),
     ...renderListSectionHtml(
       AWAITING_APPROVAL_SECTION_HEADER,

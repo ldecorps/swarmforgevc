@@ -71,3 +71,64 @@ A role whose worktree diff is growing is not "no progress," even if it keeps cal
 3. Relaunched with `./swarm .` per the halt message's own instruction ("Fix the idle
    claim path, then relaunch with ./swarm").
 4. Appended this evidence to `backlog/paused/BL-528-auto-heal-claim-without-progress.yaml`.
+
+## 4th occurrence — 2026-07-22T14:18:59Z — CRITICAL: halt becomes unrecoverable via normal relaunch
+
+Same handoff (`10_20260722T122929Z_000646_from_coordinator_to_coder_for_coder.handoff`,
+BL-551) halted the swarm again at reclaims=10. Uncommitted worktree work (`babysitter_assess.bb`,
+`babysitter_assess_lib.bb`, test runners, `node_modules/`) was again real and intact — same
+false-positive pattern as above.
+
+**New finding, worse than previously documented:** the `.claim-progress.json` sidecar is a
+plain file beside the in_process handoff and is *never reset by a swarm restart*. Every
+relaunch attempt in this incident was itself killed within ~40s by a fresh
+`claim-progress-halt`, because `handoffd_supervisor`'s first health-check tick after boot
+re-reads the same stale `reclaims=10+` sidecar and re-halts before the newly-spawned coder
+pane could even finish booting:
+
+```
+14:18:59Z kill_all_swarm (original halt)
+14:21:30Z kill_all_swarm (killed agents from relaunch #1, ~30s after start)
+14:22:09Z kill_all_swarm (killed agents from relaunch #2, ~40s after start)
+```
+
+Two consecutive `./swarm` relaunches were destroyed automatically before a human or the
+babysitter could intervene — this makes the false-positive halt **self-perpetuating**, not
+a one-time blip. `swarm_ensure.bb` cannot fix this either (it only respawns panes/daemons
+against existing state; it does not touch the stuck claim).
+
+**Remediation that actually broke the loop:** archived the in_process handoff + its
+`.claim-progress.json` + `.nudge` sidecars to `inbox/done/` (with a babysitter note,
+per the existing archival convention) *before* relaunching a 3rd time. That relaunch
+stayed up (verified 33s+ uptime, no further `kill_all_swarm` entries in
+`.swarmforge/daemon/kill-all-audit.log`).
+
+**Recommendation:** the BL-528 fix must include clearing/resetting the claim-progress
+sidecar as part of (or a precondition for) any swarm relaunch — otherwise every future
+false-positive halt will re-trigger itself on the very next restart attempt, indefinitely,
+until someone manually deletes the sidecar. Escalating priority 2 → 1 given this is now a
+4th same-day recurrence and the newly-discovered self-perpetuating restart-kill behavior.
+
+## 5th/6th occurrence — 2026-07-22T15:20:49Z — same pattern, now hitting TWO roles at once
+
+Halted again ~1h after the 4th-occurrence fix, this time flagging **two** roles
+simultaneously: `coder` (reclaims=9→10, active on BL-550, "Implementing BL-550…" 16m+,
+xhigh effort, real tool use — files `babysitter_nudge_lib.bb`, `babysitter_nudge_resident.bb`,
+`openrouter_claude_env.sh` + test runners uncommitted but real) and `hardender`
+(reclaims=6, batch handoff `00_20260722T145906Z_000464_from_architect_to_hardender`).
+`kill_all_swarm` halts the *whole* swarm on any single role's threshold breach, so
+hardender's claim was orphaned by coder's halt regardless of hardender's own state.
+
+Babysitter nudged coder to commit (queued — Claude Code defers input while the agent is
+mid-generation, so it likely didn't land before the halt fired; same timing gap as the
+13:51Z incident). Applied the now-standard remediation immediately: verified both
+worktrees' uncommitted work was intact, archived **both** stuck in_process claims
+(coder's `000663` handoff and hardender's batch item `000464`) to their respective
+`inbox/done/` with babysitter notes, then relaunched once. That single relaunch held
+(all 8 agents + handoffd up, no further `kill_all_swarm` entries).
+
+This confirms the false-positive/self-perpetuating-restart pattern is not coder-specific —
+any role holding a claim near/at the reclaim threshold at the moment of a kill_all_swarm
+event will independently need its claim archived before a relaunch survives. Still no
+code fix landed for BL-528; this is the 3rd time the manual archive-then-relaunch
+procedure was required today (4th, 5th/6th occurrences).

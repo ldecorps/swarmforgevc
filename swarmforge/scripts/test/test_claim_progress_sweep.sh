@@ -30,6 +30,7 @@ run_sweep() {
   # claim-progress check fires independently through the "skipped" branch.
   env -u SWARMFORGE_CONFIG \
     CLAIM_IDLE_TIMEOUT_MS=1000 \
+    CLAIM_PROBE_GRACE_MS=0 \
     "${@:5}" \
     bb "${RUNNER}" "${fixture}" "${now_ms}" "${liveness}" "${activity_ms}"
 }
@@ -51,10 +52,16 @@ EOF
 }
 
 write_claim_sidecar() {
-  local dir="$1" name="$2" commit="$3" claim_ms="$4" reclaims="$5"
-  printf '{"claimCommit":"%s","claimAtMs":%s,"reclaims":%s}' \
-    "${commit}" "${claim_ms}" "${reclaims}" \
-    > "${dir}/inbox/in_process/${name}.claim-progress.json"
+  local dir="$1" name="$2" commit="$3" claim_ms="$4" reclaims="$5" probe_ms="${6:-}"
+  if [[ -n "${probe_ms}" ]]; then
+    printf '{"claimCommit":"%s","claimAtMs":%s,"reclaims":%s,"idleProbeAtMs":%s}' \
+      "${commit}" "${claim_ms}" "${reclaims}" "${probe_ms}" \
+      > "${dir}/inbox/in_process/${name}.claim-progress.json"
+  else
+    printf '{"claimCommit":"%s","claimAtMs":%s,"reclaims":%s}' \
+      "${commit}" "${claim_ms}" "${reclaims}" \
+      > "${dir}/inbox/in_process/${name}.claim-progress.json"
+  fi
 }
 
 # ── Test 1: fresh claim (under timeout) — no claim-idle action ────────────────
@@ -93,18 +100,39 @@ else
 fi
 rm -rf "${T}"
 
-# ── Test 3: same commit past timeout → first idle reclaim → :nudge ────────────
+# ── Test 3: same commit past timeout → probe agent before first reclaim ───────
 T=$(mktemp -d)
 make_handoff "${T}" "test.handoff" "aaaa000000"
 CLAIM_MS=0
 write_claim_sidecar "${T}" "test.handoff" "aaaa000000" "${CLAIM_MS}" 0
 NOW=$((CLAIM_MS + 2000))  # > CLAIM_IDLE_TIMEOUT_MS=1000
 run_sweep "${T}" "${NOW}" alive "${NOW}" CLAIM_HEAD_COMMIT=aaaa000000
+if grep -q "claim-idle-probe coder" "${T}/calls.log" 2>/dev/null; then
+  pass "test3: idle probe sent before first reclaim"
+else
+  fail "test3: expected claim-idle-probe; calls.log=$(cat ${T}/calls.log 2>/dev/null)"
+fi
+RECLAIMS=$(python3 -c "import json; print(json.load(open('${T}/inbox/in_process/test.handoff.claim-progress.json'))['reclaims'])" 2>/dev/null || echo "0")
+if [[ "${RECLAIMS}" == "0" ]]; then
+  pass "test3: reclaims not incremented until after probe grace"
+else
+  fail "test3: reclaims incremented before probe grace; reclaims=${RECLAIMS}"
+fi
+rm -rf "${T}"
+
+# ── Test 3b: after probe grace → first reclaim → :nudge ─────────────────────
+T=$(mktemp -d)
+make_handoff "${T}" "test.handoff" "aaaa000000"
+CLAIM_MS=0
+PROBE_MS=1000
+write_claim_sidecar "${T}" "test.handoff" "aaaa000000" "${CLAIM_MS}" 0 "${PROBE_MS}"
+NOW=$((CLAIM_MS + 2000))
+run_sweep "${T}" "${NOW}" alive "${NOW}" CLAIM_HEAD_COMMIT=aaaa000000
 if grep -q "wake-up coder\|send-in-process-resume coder" "${T}/calls.log" 2>/dev/null || \
    python3 -c "import json,sys; d=json.load(open('${T}/inbox/in_process/test.handoff.claim-progress.json')); assert d['reclaims']==1" 2>/dev/null; then
-  pass "test3: nudge fired or reclaims incremented on first idle reclaim"
+  pass "test3b: nudge fired or reclaims incremented after probe grace"
 else
-  fail "test3: expected nudge/reclaim increment; calls.log=$(cat ${T}/calls.log 2>/dev/null)"
+  fail "test3b: expected nudge/reclaim after probe; calls.log=$(cat ${T}/calls.log 2>/dev/null)"
 fi
 rm -rf "${T}"
 
@@ -167,6 +195,22 @@ if grep -q "claim-halt\|claim-bounce" "${T}/calls.log" 2>/dev/null; then
   fail "test7: claim check ran without CLAIM_HEAD_COMMIT"
 else
   pass "test7: no claim check when adapter not wired"
+fi
+rm -rf "${T}"
+
+# ── Test 8: mono-router stale coder claim while hardender active → paused ───
+T=$(mktemp -d)
+make_handoff "${T}" "test.handoff" "aaaa000000"
+CLAIM_MS=0
+write_claim_sidecar "${T}" "test.handoff" "aaaa000000" "${CLAIM_MS}" 9
+NOW=$((CLAIM_MS + 2000))
+run_sweep "${T}" "${NOW}" alive "${NOW}" CLAIM_HEAD_COMMIT=aaaa000000 \
+  CLAIM_ROTATION_ROUTER=1 CLAIM_ACTIVE_ROLE=hardender
+RECLAIMS=$(python3 -c "import json; print(json.load(open('${T}/inbox/in_process/test.handoff.claim-progress.json'))['reclaims'])" 2>/dev/null || echo "x")
+if [[ "${RECLAIMS}" == "0" ]] && ! grep -q "claim-halt" "${T}/calls.log" 2>/dev/null; then
+  pass "test8: stale dormant coder claim paused, no halt while hardender active"
+else
+  fail "test8: expected pause reset; reclaims=${RECLAIMS} calls=$(cat ${T}/calls.log 2>/dev/null)"
 fi
 rm -rf "${T}"
 
