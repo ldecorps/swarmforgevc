@@ -65,7 +65,7 @@
         reclaims (long (or (:reclaims progress) 0))
         claim-at (long (or (:claimAtMs progress) 0))
         elapsed-ms (max 0 (- now-ms claim-at))
-        idle-ms (:claim-idle-timeout-ms cfg)
+        idle-ms (claim-progress-lib/resolve-claim-idle-timeout-ms role cfg)
         head (worktree-head-commit-10 worktree-path)
         claim-commit (or (:claimCommit progress) "")
         head-unchanged? (and (not (str/blank? head))

@@ -59,6 +59,9 @@ if [[ "${1:-}" == "ensure" ]]; then
   shift
   ENSURE_WORKING_DIR="${1:-$PWD}"
   ENSURE_WORKING_DIR="$(cd "$ENSURE_WORKING_DIR" && pwd)"
+  if [[ -f "$ENSURE_WORKING_DIR/.swarmforge/swarm.env" ]]; then
+    source "$ENSURE_WORKING_DIR/.swarmforge/swarm.env"
+  fi
   exec bb "$SCRIPT_DIR/swarm_ensure.bb" "$ENSURE_WORKING_DIR"
 fi
 
@@ -71,12 +74,14 @@ WORKING_DIR="${1:-$PWD}"
 WORKING_DIR="$(cd "$WORKING_DIR" && pwd)"
 SWARM_FORGE_DIR="$WORKING_DIR/swarmforge"
 CONFIG_FILE="${SWARMFORGE_CONFIG:-$SWARM_FORGE_DIR/swarmforge.conf}"
+EXPLICIT_PACK_CLI=0
 for (( idx = 2; idx <= $#; idx++ )); do
   # BL-518: zsh indirect expansion is ${(P)var}; ${!var} is a bashism that
   # errors "bad substitution" under this script's zsh shebang, so --pack had
   # never actually worked here (every launch fell through to the default
   # swarmforge.conf). Fixed so packs/<name>.conf can be selected.
   if [[ "${(P)idx}" == "--pack" ]]; then
+    EXPLICIT_PACK_CLI=1
     next=$((idx + 1))
     if [[ $next -le $# ]]; then
       CONFIG_FILE="$SWARM_FORGE_DIR/packs/${(P)next}.conf"
@@ -84,6 +89,13 @@ for (( idx = 2; idx <= $#; idx++ )); do
     break
   fi
 done
+
+check_launch_pack_guard() {
+  bb "$SCRIPT_DIR/swarm_launch_pack_guard.bb" check \
+      "$WORKING_DIR" "$CONFIG_FILE" \
+      "${SWARMFORGE_PACK:-}" "${SWARMFORGE_CONFIG:-}" "$EXPLICIT_PACK_CLI" \
+      "${SWARMFORGE_ALLOW_FULL_PACK:-}" || exit 1
+}
 WORKTREES_DIR="$WORKING_DIR/.worktrees"
 ROLES_DIR="$SWARM_FORGE_DIR/roles"
 CONSTITUTION_FILE="$SWARM_FORGE_DIR/constitution.prompt"
@@ -754,8 +766,12 @@ write_swarm_identity_file() {
   if [[ "$ROTATION_MODE" == "router" || "$ROTATION_MODE" == "sequential" ]]; then
     rotation_value="$ROTATION_MODE"
   fi
-  printf 'swarm_name\t%s\nswarm_mode\t%s\nswarm_mode_primary\t%s\nactive_backlog_max_depth\t%s\nactive_backlog_max_depth_conf_path\t%s\nrotation\t%s\n' \
-    "$SWARM_NAME" "$SWARM_MODE" "$SWARM_MODE_PRIMARY" "$EFFECTIVE_MAX_DEPTH" "$(absolute_config_file)" "$rotation_value" > "$STATE_DIR/swarm-identity"
+  local launch_pack=""
+  if [[ "$CONFIG_FILE" == *"/packs/"* ]]; then
+    launch_pack="$(basename "$CONFIG_FILE" .conf)"
+  fi
+  printf 'swarm_name\t%s\nswarm_mode\t%s\nswarm_mode_primary\t%s\nactive_backlog_max_depth\t%s\nactive_backlog_max_depth_conf_path\t%s\nrotation\t%s\nlaunch_pack\t%s\n' \
+    "$SWARM_NAME" "$SWARM_MODE" "$SWARM_MODE_PRIMARY" "$EFFECTIVE_MAX_DEPTH" "$(absolute_config_file)" "$rotation_value" "$launch_pack" > "$STATE_DIR/swarm-identity"
 }
 
 write_sessions_file() {
@@ -1574,6 +1590,7 @@ detect_tmux_base_indexes
 initialize_git_repo
 ensure_runtime_git_excludes
 ensure_commit_size_guard
+check_launch_pack_guard
 parse_config
 check_primacy
 check_backend_dependencies

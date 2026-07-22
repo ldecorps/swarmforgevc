@@ -17,6 +17,11 @@ set -euo pipefail
 ROOT="$(cd "${1:-.}" && pwd)"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+if [[ -f "$ROOT/.swarmforge/swarm.env" ]]; then
+  # shellcheck disable=SC1090
+  source "$ROOT/.swarmforge/swarm.env"
+fi
+
 # shellcheck disable=SC1090
 source "$HOME/.zshenv" 2>/dev/null || true
 for env_file in \
