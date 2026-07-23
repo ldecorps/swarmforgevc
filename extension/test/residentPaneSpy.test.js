@@ -52,8 +52,8 @@ test('resolveResidentRoleIdentity falls back to the home role when the banner sc
 
 test('formatResidentSpyHeader includes model when present', () => {
   assert.equal(
-    formatResidentSpyHeader({ roleLabel: 'coder', modelLabel: 'Sonnet 4.6' }),
-    'Resident: coder on Sonnet 4.6'
+    formatResidentSpyHeader({ roleLabel: 'coder', modelLabel: 'Sonnet 5' }),
+    'Resident: coder on Sonnet 5'
   );
 });
 
@@ -76,11 +76,11 @@ test('formatResidentSpyHeader includes held ticket id and title after the model'
   assert.equal(
     formatResidentSpyHeader({
       roleLabel: 'Architect',
-      modelLabel: 'Sonnet 4.6',
+      modelLabel: 'Sonnet 5',
       ticketId: 'BL-529',
       ticketTitle: 'Pre-turn guard: worktree branch must match claimed ticket',
     }),
-    'Resident: Architect on Sonnet 4.6 - BL-529 - Pre-turn guard: worktree branch must match claimed ticket'
+    'Resident: Architect on Sonnet 5 - BL-529 - Pre-turn guard: worktree branch must match claimed ticket'
   );
 });
 
@@ -217,8 +217,8 @@ test('resolveResidentHeldTicketMetaForRoles falls back to the home role mailbox'
 test('renderResidentPaneSpyBody puts header above pane text', () => {
   const body = renderResidentPaneSpyBody({
     roleLabel: 'coder',
-    modelLabel: 'Sonnet 4.6',
+    modelLabel: 'Sonnet 5',
     paneText: 'hello',
   });
-  assert.match(body, /^Resident: coder on Sonnet 4\.6\n\nhello$/);
+  assert.match(body, /^Resident: coder on Sonnet 5\n\nhello$/);
 });
