@@ -1,0 +1,213 @@
+id: BL-584
+title: "Stale approval-ask email escalation — an unanswered Approvals-topic ask emails the human a digest with a Telegram deep link to that exact message"
+milestone: M8
+type: feature
+status: todo
+epic: swarm-reliability
+human_approval: pending
+priority: 30
+direction: human-requested
+depends_on: [BL-582]
+mutation_cost: medium
+source: |
+  Human directive, 2026-07-23, via backlog/INTAKE-20260723-stale-approval-email-notifier.md
+  (drained by the specifier; raw intake removed from the backlog root in the
+  same commit). "An email sent when an approval-ask has stayed unanswered past
+  a threshold, with a link straight to the Telegram Approvals topic in the
+  email body so I can act on it from the email itself."
+
+approval_context: |
+  Nothing about the mechanism is novel — the intake named the pieces to reuse and
+  they all exist. What needs your sign-off is the five judgement calls I made on
+  the questions the intake left open, and the one place I departed from what the
+  intake assumed:
+
+  1. THRESHOLD 2 hours, COOLDOWN 4 hours (both conf-tunable). 2h is long enough
+     that an ask you are actually looking at gets answered by Telegram first;
+     4h means at most ~2-3 nudges over a working day, and one overnight. Note
+     this WILL email you at 03:00 for an ask posted at 01:00 — email, not a
+     push, so I judged that acceptable. Say if you want a quiet-hours window.
+  2. DIGEST, not one email per ticket. One email listing every stale ask,
+     oldest first, each with its own deep link. The Approvals topic already
+     bundles them; N separate emails for one absence is the failure mode.
+  3. `amending` ESCALATES, same as `pending`. An Amend you tapped and that
+     nothing came back from is exactly the silent block this exists to catch.
+  4. ONLY INBOUND (human) messages reset an ask's clock — the swarm's own posts
+     into the topic never do. Otherwise any routine repaint would silently
+     suppress the escalation forever.
+  5. DEPARTURE FROM THE INTAKE: the intake said the age source is the ask's own
+     recorded post time from blTopicStore/ticketMessageMapStore. I checked —
+     `StoredApprovalAskMessage` (telegram-approval-ask-messages.json) carries
+     `{topicId, messageId, text}` and NO timestamp, so it cannot be the clock.
+     blTopicStore CAN: it already stamps every message with `ts` and is durable
+     and git-tracked. So the clock reads backlog/topics/<id>.json and the
+     message store is used only for the deep link's messageId. No schema change
+     and no migration gap.
+
+  Also flagging the sequencing: this depends on BL-582. While the Approve tap
+  is broken, a ticket you approved stays `pending` on disk, so this feature
+  would email you about asks you already decided — the fastest way to get an
+  escalation channel muted. BL-582 first.
+
+description: |
+  ## Problem
+
+  An `ApprovalRequested` ask posts into the standing Approvals topic
+  (`topicRouter.routeApprovalRequestedEvent` -> `sendApprovalAskAndRecord`) and
+  then waits forever. If the human misses the Telegram notification there is no
+  second channel and no upper bound: the ticket keeps `human_approval: pending`
+  and silently blocks whatever depends on it.
+
+  ## The behavior
+
+  A sweep inside the front-desk bot's concierge tick finds every ticket in
+  `backlog/active/` or `backlog/paused/` still awaiting a human decision whose
+  ask nobody has engaged with for longer than a threshold, and emails ONE digest
+  naming each of them. Every line carries a Telegram deep link that opens that
+  exact ask message, so the escalation is actionable from the email itself.
+
+  ## Decisions (the intake's open questions, resolved)
+
+  1. THRESHOLD default 2 hours (`approval_ask_stale_after_ms` 7200000).
+     COOLDOWN default 4 hours (`approval_ask_email_cooldown_ms` 14400000).
+     Both discoverable as COMMENTED lines in `swarmforge/swarmforge.conf`
+     documenting the default — a live duplicate of the constant would drift
+     (BL-576's precedent).
+  2. DIGEST, not per-ticket. One email per send, listing every currently-stale
+     ask oldest-first, each with its own deep link. The cooldown is therefore
+     global to the digest, not per ticket: a ticket that goes stale during a
+     cooldown window is picked up by the next digest.
+  3. STATES THAT ESCALATE: `pending` and `amending`. Everything else
+     (`approved`, `rejected`, field absent) is not awaiting a decision and is
+     excluded outright.
+  4. CLOCK: an ask's age is `now - max(ask post ts, newest INBOUND message ts)`
+     in that ticket's `backlog/topics/<id>.json` record. Only human activity —
+     or a re-minted ask — resets it; the swarm's own outbound posts never do.
+     Never file mtime (worktree hot-sync touches files).
+  5. FAIL CLOSED on the clock: no topic record, or no ask message in it, means
+     the ticket is NOT stale and nothing is sent. Never guess a post time.
+     The LINK degrades instead of failing: a missing messageId falls back to a
+     topic-level link, an unusable chat id to no link at all — a missing link
+     must never suppress an escalation the human needs.
+
+  ## Where it lives, and why not where the intake assumed
+
+  It runs in the FRONT-DESK BOT process (`extension/src/tools/telegram-front-desk-bot.ts`,
+  wired into `runOneConciergeTick`, ~30s cadence), NOT the VS Code extension host
+  where the two existing `NeedsHumanEmailNotifier` instances live. The bot is the
+  process that runs headless alongside the swarm, already reads the approval-ask
+  stores, and already holds `TELEGRAM_CHAT_ID`. The extension host is not
+  running in a headless swarm at all.
+
+  That has one hard consequence: the sweep must NOT import
+  `extension/src/notify/secrets.ts` (it imports `vscode`, which cannot load in a
+  plain node process). Read `process.env.RESEND_API_KEY` directly — the same
+  posture `swarmforge/scripts/daemon_alarm_lib.bb` already takes for the daemon
+  alarm email. The key reaches the bot by ordinary env inheritance from the
+  launching shell (`babashka.process` `:extra-env` MERGES onto the inherited
+  environment, so `front_desk_supervisor.bb`'s allowlist does not need touching
+  and must not be).
+
+  ## Config resolution
+
+  `swarmforgeConfig.ts` today reads only the TRACKED `swarmforge/swarmforge.conf`.
+  Per BL-216/BL-313 a timing key must resolve from the EFFECTIVE config the pack
+  recorded at launch. But `notify_email_to`/`notify_email_from` live ONLY in the
+  tracked conf (the pack confs do not carry them, and handoffd reads them from
+  the tracked file by design).
+
+  So add ONE helper — `readEffectiveConfigValue(targetPath, key)` — that tries the
+  path in `.swarmforge/swarm-identity`'s `active_backlog_max_depth_conf_path`
+  first and FALLS BACK to the tracked conf. Both classes of key then resolve
+  correctly through one reader: a pack-overridden threshold from the pack, a
+  daemon-level email key from the tracked conf. Used for all four keys.
+
+  ## Shape
+
+  - `swarmforgeConfig.ts` — `parseSwarmIdentityConfPath` (pure, over the
+    identity file's text) and `readEffectiveConfigValue` as above. `readConfigValue`
+    is untouched; existing callers keep their current behavior.
+  - `topicRouter.ts` — export `APPROVAL_ASK_LOCATOR = 'needs your approval'` and
+    compose `frozenApprovalAskLine` FROM it, so the ask text and the reader that
+    finds it can never drift. This substring is already a frozen contract (five
+    acceptance step files locate the posted ask by it); this gives it one
+    definition instead of six copies.
+  - NEW `extension/src/notify/staleApprovalEscalation.ts`, all pure and injected:
+    - `approvalAskPostedAtMs(record)` — ts of the LATEST outbound message carrying
+      the locator; undefined when none (the fail-closed signal). Latest, not
+      earliest: a re-minted ask restarts the clock.
+    - `lastHumanActivityMs(record)` — ts of the newest INBOUND message, undefined
+      when none.
+    - `selectStaleApprovalAsks(candidates, nowMs, thresholdMs)` — the stale set,
+      oldest-first, applying decisions 3-5 above.
+    - `buildTelegramDeepLink(chatId, topicId, messageId?)` — strips a leading
+      `-100`; returns undefined when what remains is not all digits, or when the
+      topic id is unknown. Message-level when messageId is known, topic-level
+      otherwise.
+    - `buildStaleApprovalDigest(entries, nowMs)` — `{subject, text}`; each line
+      names the ticket id, its state, how long it has waited, and its link.
+    - the sweep itself, reusing `needsHumanEmailNotifier.decideNotifyAction`
+      VERBATIM — `needsHumanSinceMs` = the OLDEST stale ask's clock,
+      `graceSeconds` = threshold/1000, `cooldownSeconds` = cooldown/1000. Record
+      the cooldown BEFORE the request settles, exactly as `sweep()` already does,
+      so a slow or failed Resend call can never become a retry storm. Conf keys
+      are ms; the seconds conversion happens at this one boundary.
+  - `telegram-front-desk-bot.ts` — adapter-injected wiring into
+    `runOneConciergeTick` (clock, config reader, ticket scan, topic-record reader,
+    `readApprovalAskMessages`, `sendResendEmail`), mirroring
+    `reconcileDecidedApprovalAskCloses`'s existing shape.
+  - NOT SILENTLY DISABLED: a configured `notify_email_to` with no
+    `RESEND_API_KEY` in the environment writes a warning to stderr (once, not per
+    tick), mirroring `daemon_alarm_lib.bb`'s own `:missing-api-key` warning. No
+    recipient configured at all is an ordinary disabled state and warns nothing.
+
+acceptance: |
+  specs/features/BL-584-stale-approval-ask-email-escalation.feature
+
+  Gates: unit + acceptance + coverage + mutation (Stryker `--mutate` scoped to
+  the compiled `out/**/*.js`, never `src/**/*.ts`) + CRAP <= 6, as usual. The
+  wiring test must prove the disk reads and the send are load-bearing — a sweep
+  that is fully green over fakes while nothing calls it in the bot is the
+  failure mode this codebase has hit repeatedly (epic runtime-wiring-slice rule).
+
+  QA end-to-end procedure (live swarm, real Telegram, real Resend):
+  1. Confirm `RESEND_API_KEY` is exported in the shell that launched the swarm
+     and that `notify_email_to` is set in `swarmforge/swarmforge.conf`.
+  2. Shorten the wait: set `config approval_ask_stale_after_ms 120000` and
+     `config approval_ask_email_cooldown_ms 300000` in the conf the running pack
+     actually resolved (`.swarmforge/swarm-identity` names it), and restart the
+     front desk so the bot re-reads it.
+  3. Put a ticket into `human_approval: pending` and let the concierge tick post
+     its ask into the Approvals topic. Confirm the ask id landed in
+     `.swarmforge/operator/telegram-approval-ask-messages.json` and that
+     `backlog/topics/<id>.json` has an outbound message carrying "needs your
+     approval".
+  4. Do nothing for >2 minutes. Confirm exactly ONE email arrives, that the
+     ticket is listed with its wait time, and that TAPPING THE LINK IN THE EMAIL
+     opens that exact ask message in the Approvals topic on the phone.
+  5. Wait through another tick inside the cooldown: no second email.
+  6. Reply in the Approvals topic (any text). Confirm the clock resets and no
+     further email arrives after the cooldown expires.
+  7. Decide the ticket (approve). Confirm it drops out of the digest entirely.
+  8. Negative: unset `RESEND_API_KEY` and restart the front desk. Confirm the
+     stderr warning appears once and the tick keeps running normally.
+
+docs: |
+  documenter: a docs/how-to runbook entry for the two new conf keys
+  (`approval_ask_stale_after_ms`, `approval_ask_email_cooldown_ms` — what they
+  do, the chosen defaults and why, how to shorten them for an investigation),
+  plus the escalation's own paragraph wherever the front desk's Approvals-topic
+  flow is already documented. Note explicitly that the key comes from the
+  operator's environment and that the feature is a no-op without it.
+
+out_of_scope: |
+  - Fixing the Approve tap itself — that is BL-582, which this depends on.
+  - Any change to how an ask is POSTED, repainted, or closed.
+  - Escalating anything other than approval asks (stuck roles already have
+    their own notifier, BL-148).
+  - A quiet-hours / do-not-disturb window. If the human wants one it is a
+    follow-up ticket, not a silent addition here.
+  - Telegram-side re-nudges (re-pinging the topic). Email is deliberately the
+    SECOND channel — a second Telegram message would land in the same place the
+    human already missed.
+  - Moving `notify_email_to`/`notify_email_from` into the pack confs.

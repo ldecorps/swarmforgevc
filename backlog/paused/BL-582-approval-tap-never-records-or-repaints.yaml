@@ -1,0 +1,143 @@
+id: BL-582
+title: "Approve tap in the Approvals topic neither records the verdict nor repaints the ask - the human gets no feedback at all"
+milestone: M8
+type: defect
+status: todo
+epic: swarm-reliability
+human_approval: approved
+severity: high
+priority: 15
+direction: human-requested
+depends_on: []
+assigned_to: specifier
+mutation_cost: medium
+source: |
+  Human, 2026-07-23 ~14:55Z: tapped Approve on BL-579/BL-580/BL-581 in the
+  Approvals topic (1785). "i approved but messages are not repainting
+  confirming approved." Screenshot shows all three asks still carrying their
+  full Approve/Amend/Reject/Expedite/More button rows minutes later.
+
+description: |
+  ## Symptom
+
+  Tapping Approve produces NO observable effect: the ask keeps its buttons,
+  no verdict text appears, and the ticket's `human_approval:` stays `pending`.
+  The human cannot tell whether the tap was received, rejected, or lost - the
+  same class of silent-failure defect as BL-566 (steering) and BL-562 (depth
+  warning).
+
+  ## What was ruled OUT during triage (do not re-investigate)
+
+  Each of these was checked live at 2026-07-23T14:05Z and is NOT the cause:
+
+  - **Bot not polling.** `.swarmforge/operator/front-desk-poll-heartbeat.json`
+    was 16s fresh. The bot is alive and polling.
+  - **Token/webhook problem.** `getMe` ok; `getWebhookInfo` returns an empty
+    url (a set webhook would make getUpdates fail with 409).
+  - **Competing pollers.** Two stray bots exist under `/tmp/tmp.*` from an old
+    test run, but they carry FIXTURE tokens (`fes-real-tok…`,
+    `env-primary-…`), not the real one. Only pid 2972976 holds the real token.
+    (The token is exported in the shell profile, so every VS Code/Cursor node
+    process inherits it - those are not bots. Reap the /tmp husks anyway.)
+  - **Chat/principal misconfiguration.** `TELEGRAM_CHAT_ID=-1004415865297`
+    matches `getChat`; `TELEGRAM_PRINCIPAL_USER_ID=8831669386` is the same
+    principal whose ordinary messages DO work - SUP-11 round-tripped twice
+    the same afternoon.
+  - **Ask not tracked.** `.swarmforge/operator/telegram-approval-ask-messages.json`
+    has all three: BL-579 -> msg 6719, BL-580 -> 6723, BL-581 -> 6724, topic
+    1785.
+  - **Ticket file not findable.** `forEachLiveTicketFile` covers `active` AND
+    `paused` (`extension/src/util/liveTicketFiles.ts`), and all three tickets
+    are in `paused/`.
+  - **Update stuck in Telegram's queue.** `getUpdates?offset=-1` returned an
+    empty result and `pending_update_count` is 0 - the updates were consumed
+    and the offset advanced past them.
+
+  So: the callback WAS consumed by the bot and then produced no effect.
+
+  ## Where to look
+
+  1. `decideCallbackQueryAction` (telegramFrontDeskBotCore.ts) drops on
+     `not-my-chat` / `not-principal` / `unrecognized-data`. All three drops
+     are SILENT - no log line, nothing posted back. First fix regardless of
+     root cause: make every drop reason observable, at minimum on stderr,
+     ideally as an ephemeral `answerCallbackQuery` toast so the human sees
+     "not recognised" instead of nothing.
+  2. Confirm what the buttons' `callback_data` actually contains against
+     `CALLBACK_DATA_PATTERN` (`^(approve|reject|amend|expedite|more):(.+)$`)
+     and `ASK_CALLBACK_DATA_PATTERN`. An ask rendered by an older build could
+     carry data the current parser classifies `unrecognized-data`.
+  3. There is a pre-existing repaint failure in the same log
+     (`failed to close the approval ask for BL-491 … BL-493 … BL-494
+     (message edit failed or not wired)`). It is NOT this defect - see the
+     15:12 evidence below - but it is a real second failure mode worth
+     fixing while in this code.
+
+  ## Second observation, 2026-07-23 ~15:12 local - CORRECTS the above
+
+  Two facts from a follow-up screenshot, both of which narrow this:
+
+  1. **The repaint half WORKS, driven by the recorded verdict, not by the
+     tap.** BL-581's ask now reads "-- Approved 2026-07-23 14:10 UTC" with
+     its buttons stripped. 14:10 UTC is when the operator COMMITTED
+     `human_approval: approved` by hand into the yaml. So the reconcile
+     sweep closes an ask correctly once a verdict exists on disk. The
+     earlier framing of "two independent failures" was WRONG for this path:
+     there is one broken half (tap -> record) and one working half
+     (verdict -> repaint).
+
+  2. **The "old message" hypothesis in item 3 of the original list is
+     DISPROVEN.** BL-582's own ask (msg 6736) was posted at 14:10 UTC and
+     tapped roughly two minutes later, and it ALSO failed to record - this
+     defect reproducing on its own ticket. A two-minute-old message is not
+     one where Telegram omits `callback_query.message`. Do not spend time
+     there.
+
+  What remains: the callback is consumed and then either dropped by
+  `decideCallbackQueryAction` (leaving `not-principal` or
+  `unrecognized-data` as the live candidates, since chat id is confirmed
+  correct) or lost inside `dispatchRecognizedCallbackDecision` before
+  `recordApprovalReply` writes.
+
+  A cheap human-observable discriminator, not yet collected: when the human
+  taps, does the button's spinner clear immediately or hang for ~30s?
+  `dispatchRecognizedCallbackDecision` calls `answerCallbackQuery` for every
+  RECOGNIZED callback, and a drop returns before it. An instant clear means
+  the callback was recognized and the failure is downstream of the decision;
+  a hang means it was dropped by the guards. Collect this first - it halves
+  the search space at zero cost.
+
+  Note also that `recordApprovalReply` writes the yaml WITHOUT committing
+  (BL-490). This checkout demonstrably loses uncommitted work to `git
+  restore` run by other roles - it happened twice on 2026-07-23. So even a
+  successful write is not durable. Whether the approval write should commit
+  itself (the way `operator_file_question.bb` does, loudly failing if the
+  commit fails) belongs in this ticket's design.
+
+acceptance: |
+  Specifier writes the scenarios. Minimum:
+
+  1. A principal's Approve tap on a tracked ask records `human_approval:
+     approved` in the ticket yaml wherever it lives (`active/` or `paused/`).
+  2. The same tap repaints the ask: buttons stripped, verdict shown.
+  3. Record and repaint are INDEPENDENTLY observable - a repaint failure
+     after a successful record is reported, never silently swallowed, and
+     leaves the recorded verdict intact.
+  4. Every callback drop path (`not-my-chat`, `not-principal`,
+     `unrecognized-data`) emits a distinguishable diagnostic; the human-facing
+     ones surface as a callback toast rather than silence.
+  5. A tap on a ticket whose verdict is ALREADY recorded stays idempotent
+     (the BL-484 stale-tap guard) and says so rather than doing nothing.
+
+  QA: reproduce by hand against the live bot - post an ask, tap Approve, and
+  confirm both the yaml write and the repaint. A fixture-only pass is not
+  sufficient here: every unit-level guard already passes today while the live
+  path does nothing (BL-454's lesson).
+
+out_of_scope: |
+  - The paused -> active promotion mover (BL-490); this ticket ends at
+    recording the verdict and repainting the ask.
+  - Reaping the stray /tmp test bots - real hygiene, but unrelated to this
+    defect and not its cause.
+  - The typed-reply approval path ("approve BL-579" as text) unless
+    investigation shows it shares the broken code path.

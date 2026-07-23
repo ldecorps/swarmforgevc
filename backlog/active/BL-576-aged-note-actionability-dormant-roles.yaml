@@ -9,7 +9,7 @@ severity: high
 priority: 05
 direction: human-requested
 depends_on: []
-assigned_to: coder
+assigned_to: specifier
 mutation_cost: medium
 source: |
   Human, 2026-07-23, after asking "how does the specifier get a turn?" and

@@ -1,0 +1,93 @@
+id: BL-581
+title: "Documenter owns diagram currency: every maintained diagram is registered with its own change-trigger"
+milestone: M8
+type: feature
+status: todo
+epic: swarm-reliability
+human_approval: approved
+severity: medium
+priority: 30
+direction: human-requested
+depends_on: [BL-579, BL-580]
+assigned_to: specifier
+mutation_cost: low
+source: |
+  Human, 2026-07-23, filing BL-579/BL-580: "make sure the documenter keep
+  these up to date."
+
+description: |
+  ## Problem
+
+  Adding diagrams without an owner produces confidently wrong documentation -
+  worse than none, because a stale diagram is emailed to the human every
+  morning with the same authority as a correct one.
+
+  Two concrete holes today:
+
+  1. **`01_roles.md` section 1.7 Documenter** lists its responsibilities as
+     "Updates documentation (READMEs, comments, changelogs)." Diagrams are not
+     mentioned at all, so no role owns them.
+
+  2. **`local-engineering.prompt` section "Diagrams (this project)"** lists
+     two diagrams, and only ONE of them carries a change-trigger. The
+     swarm-workflow entry ends "When the pipeline topology or backlog flow
+     changes, this diagram changes in the same parcel." The architecture entry
+     has no such clause, and the section closes "Both live under
+     `docs/diagrams/`" - wording that silently breaks once there are more
+     than two.
+
+  The swarm-workflow clause is the pattern that works and should be
+  generalised, not reinvented.
+
+  ## Change
+
+  Constitution/prompt edits only - the specifier's own remit, no code.
+
+  1. `01_roles.md` 1.7: add diagram currency to the documenter's
+     responsibilities - when a parcel changes a mechanism that a registered
+     diagram depicts, updating that diagram is part of the SAME parcel, not a
+     follow-up ticket. The documenter is the role that verifies this before
+     forwarding to QA.
+
+  2. `local-engineering.prompt` "Diagrams (this project)": list all four
+     diagrams (architecture, swarm-flow, handoff-flow, front-desk-flow), give
+     EACH one an explicit change-trigger sentence naming what kind of change
+     obliges an update, and replace "Both live under" with wording that does
+     not encode a count.
+
+  3. State the registry rule once, plainly: any `.mmd` in
+     `render-briefing-diagrams.ts`'s DIAGRAM_FILES allowlist MUST have an
+     entry here with its own change-trigger. That makes the allowlist and the
+     constitution mutually checkable - a diagram in one and not the other is
+     a visible defect rather than a silent drift.
+
+  ## Why a change-trigger per diagram, not one blanket rule
+
+  "Keep the diagrams up to date" is unenforceable and unfalsifiable. A named
+  trigger per diagram ("when the pipeline topology changes", "when the handoff
+  file lifecycle or its gates change", "when the front-desk routing or the
+  operator's restrictions change") gives the documenter something it can
+  actually check against the parcel in front of it, and gives QA something it
+  can bounce on.
+
+acceptance: |
+  Specifier writes the scenarios. This ticket's output is prose in two
+  governance files, so acceptance is mostly structural:
+
+  1. `01_roles.md` 1.7 names diagram currency as a documenter responsibility,
+     and says the update belongs in the same parcel as the change.
+  2. `local-engineering.prompt`'s Diagrams section lists every diagram present
+     in DIAGRAM_FILES, each with a distinct change-trigger sentence.
+  3. No wording in that section encodes a diagram COUNT (the "Both live
+     under" trap).
+  4. A check - script or documented manual step - can compare DIAGRAM_FILES
+     against the constitution list and report a mismatch. A cheap executable
+     guard is preferred over a prose instruction, since prose drift is the
+     exact failure being fixed; the specifier decides whether that is in this
+     slice or a follow-on.
+
+out_of_scope: |
+  - Authoring or editing the diagrams themselves (BL-579, BL-580 own their
+    own content).
+  - Any change to the briefing render/attach pipeline.
+  - Broadening the documenter's remit beyond diagrams.
