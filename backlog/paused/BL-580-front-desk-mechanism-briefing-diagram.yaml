@@ -1,0 +1,99 @@
+id: BL-580
+title: "Morning briefing carries a front-desk MECHANISM activity diagram (Telegram in, answer out)"
+milestone: M8
+type: feature
+status: todo
+epic: swarm-reliability
+human_approval: pending
+severity: low
+priority: 35
+direction: human-requested
+depends_on: [BL-579]
+assigned_to: specifier
+mutation_cost: low
+source: |
+  Human, 2026-07-23, on being offered it alongside BL-579: "yup, add it".
+
+description: |
+  ## Gap
+
+  Nothing documents how a human message in Telegram reaches the swarm, or how
+  an answer gets back. The path crosses five processes and two auth guards,
+  and the single most surprising fact about it is invisible from outside: the
+  agent that answers you is the RESTRICTED front-desk Operator, spawned as
+  `claude -p --tools ""`, which has the contract, the thread transcript and
+  operator memory but NO ability to read the repo. Every question about
+  "why didn't it know about X" traces back to that, and it is currently only
+  discoverable by reading `run_ancillary_front_desk.sh` line by line.
+
+  Companion to BL-579 (handoff mechanism). Same machinery, same small shape:
+  one `.mmd` plus one entry in `render-briefing-diagrams.ts`'s DIAGRAM_FILES
+  allowlist. Depends on BL-579 only to fix the landing order, so BL-581's
+  registry edit has a stable list to describe - there is no code dependency.
+
+  ## Diagram content (drafted and render-verified, coder may refine)
+
+  A draft was written and rendered successfully through the repo's own
+  `renderMermaidToPng` at intake, so the source is known to parse. It is a
+  STARTING POINT the coder verifies against the code - where it disagrees
+  with the scripts, the SCRIPTS win and the diagram gets corrected.
+
+  Inbound, in the order the bot actually decides:
+    - poll getUpdates; drop anything not from the principal in the bound chat
+    - one of the eight ROLE topics -> steering redirect into that role's pane
+      as a verified nudge, plus the BL-566 delivery receipt. Note topic scope
+      is checked BEFORE auth in the steering path
+    - a RESERVED topic (Approvals / Recert / Agent Questions / Control) ->
+      that topic's own handler, never ordinary routing
+    - a voice note in the Concierge topic -> whisper-1 transcription (voice is
+      scoped to that topic only)
+    - otherwise resolve the subject: a bound topic posts to its existing
+      SUP-###; an unmapped topic or a DM MINTS a fresh SUP-### and records the
+      binding
+    - POST to the bridge's authed /telegram-inbound (fire-and-forget, never
+      RPC), which appends an operator event to events.jsonl
+
+  Operator side:
+    - operator_runtime.bb reads events, claims ONE subject's worth, writes the
+      inflight + dispatch-context files
+    - composes a FULL self-contained prompt (contract.yaml + thread transcript
+      + long-term memory) precisely because the restricted operator holds no
+      Read tool to fall back on
+    - spawns the `--tools ""` restricted run on its own tmux socket
+    - it then does exactly ONE of two things: operator_reply.bb to answer, or
+      operator_file_question.bb to write AND COMMIT backlog/INTAKE-<slug>.md
+      and reply in the same call. The specifier drains the backlog root before
+      all other work, which is why filing needs no routing decision
+
+  Outbound:
+    - reply appended to telegram-reply-outbox.jsonl + the thread transcript
+    - the bot picks it up over the bridge SSE stream and posts it into the
+      mapped topic; a voice-originated turn comes back as a synthesized opus
+      voice note instead of text
+
+acceptance: |
+  See specs/features/BL-580-front-desk-mechanism-briefing-diagram.feature
+  (specifier writes it). Minimum:
+
+  1. `renderBriefingDiagrams` returns FOUR entries once both this and BL-579
+     have landed, each with non-empty base64, and the email's cid references
+     match its attachments 1:1 (the BL-286 contract).
+  2. An unparseable front-desk-flow.mmd degrades exactly as BL-260 pins -
+     plaintext email plus the no-diagram note, non-zero exit, no crash.
+  3. The diagram source parses and renders to a PNG.
+
+  Documenter: the diagram must not be the only copy of this knowledge - fold
+  a prose "how the front desk works" section into the front-desk docs that
+  states the restricted-operator constraint explicitly.
+
+  QA: run a real briefing generation and confirm the images arrive inline in
+  the actual email, not only in fixtures (BL-454's lesson).
+
+out_of_scope: |
+  - Changing any front-desk behaviour. This is documentation of the CURRENT
+    path; if the draft and the code disagree, the diagram is corrected, never
+    the code.
+  - Diagramming the approval/recert/agent-question sub-flows in detail. They
+    appear as single "that topic's own handler" nodes; expanding any of them
+    is a separate diagram.
+  - Turning DIAGRAM_FILES into a directory scan (see BL-579).
