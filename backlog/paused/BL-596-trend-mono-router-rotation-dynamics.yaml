@@ -1,0 +1,55 @@
+id: BL-596
+title: "Trend: mono-router rotation dynamics — per-persona resident dwell, rotations/day, thrash, time stranded off-home"
+milestone: M8
+type: feature
+status: todo
+epic: swarm-behaviour-trends
+human_approval: approved
+severity: medium
+priority: 20
+direction: human-requested
+depends_on: []
+assigned_to: specifier
+mutation_cost: medium
+source: |
+  Human, 2026-07-23, epic BL-594. The mono-router runs ONE resident rotating
+  through personas; today you cannot see how it spends its time. stageDwell
+  measures the classic per-stage pipeline and cannot represent a single pane
+  that is coder now and cleaner in ten minutes.
+description: |
+  Add a rotation-behaviour series specific to the single-resident model, so
+  the human can see whether the resident is healthily cycling or pathological
+  (stuck as one persona, thrashing between two, or stranded off its home role -
+  the exact BL-550 failure mode).
+
+  Metrics, all derived from rotation events already implied by the runtime
+  (rotate_to_role / respawn-as!, mono_router_lib decisions):
+
+    - per-persona DWELL: cumulative + share of wall-clock the resident spent
+      as each role (coder/cleaner/architect/…). "80% coder, 3% cleaner" is the
+      health readout.
+    - rotations per day, and rotation THRASH: rotations that flip back within a
+      short window (a proxy for the burst-rotate the should-rotate-resident?
+      cooldown guards against).
+    - time STRANDED off-home: cumulative time the resident sat in a non-home
+      role with an empty mailbox before rotating back — BL-550's stranding,
+      made visible as a trend rather than a one-off incident.
+
+  Emit a rotation event (from-role, to-role, reason, ts) to
+  `.swarmforge/telemetry/rotation-<YYYY-MM>.jsonl`; the dwell/thrash/stranding
+  aggregation is a pure function over that event stream, plotted via trend.ts.
+
+  Classic multi-pack packs have no single rotating resident — the series is
+  simply empty/NA there (guard, do not crash), the same
+  fires-only-under-mono-router posture mono_router_lib already uses.
+acceptance: |
+  Specifier writes scenarios. Minimum:
+  1. Each rotation emits one {from, to, reason, ts} event.
+  2. A pure aggregator produces per-persona dwell shares, rotations/day, and
+     time-stranded-off-home over a window — unit-tested, no fs.
+  3. Thrash (rotate-back-within-window) is counted distinctly from ordinary
+     rotation.
+  4. On a non-mono-router pack the series is empty/NA, never an error.
+out_of_scope: |
+  - Changing rotation behaviour (mono_router_lib owns it). Observability only.
+  - Per-stage classic-pipeline dwell (stageDwell already owns that).

@@ -1,0 +1,102 @@
+id: BL-594
+title: "EPIC — Swarm behaviour trends: eight new telemetry series (human-loop, rotation, self-heal, false-alarm, intake balance, decision latency, compaction, handoff latency); do not promote directly; tracks children"
+milestone: M8
+status: todo
+type: epic
+epic: swarm-behaviour-trends
+priority: 00
+human_approval: approved
+depends_on: []
+decomposes_into: [BL-595, BL-596, BL-597, BL-598, BL-599, BL-600, BL-601, BL-602, BL-603, BL-604, BL-605]
+direction: human-requested
+source: |
+  Human, 2026-07-23: "I want as many trends possible to analyse the swarm
+  behaviour" -> shown the eight genuine gaps (existing telemetry already
+  covers cost, flow, rework, resource, claims) -> "all these, go." Then two
+  cross-cutting requirements: "these trends have to get published on the mini
+  app. And an analysis of the trend has to be published as part of the morning
+  briefing." Then one more series: "how about a simple global tokens
+  consumption."
+
+notes: |
+  UMBRELLA / tracking item (type: epic), NOT directly promotable — the
+  coordinator promotes CHILD slices, never this.
+
+  ## Why these eight, and not more
+
+  The swarm ALREADY has strong telemetry: cost (costTelemetry / costPerTicket /
+  llmCostLedger / burnRate / telegramBridgeCost), flow (deliveryMetrics =
+  velocity/burndown/cycle-time/forecasts, stageDwell, ticketHoldingWindows),
+  quality (reworkObservatory / reworkDiagnosis / qaBounceStore /
+  failureModeInventory), and resource/claim health. These eight are the
+  GAPS - each a question that could not be answered this session, most of them
+  the exact blind spots that cost hours (silent approval taps, invisible
+  rotation, uncounted self-heals).
+
+  ## Shared leverage - every child reuses, none rebuilds
+
+  - `extension/src/metrics/trend.ts` is the ONE shared trend framework (BL-096)
+    every existing series already plots through. Every new series here plots
+    through it too - the child adds a SERIES, not a plotting engine.
+  - The durable-log precedent is `.swarmforge/telemetry/*.jsonl`, append-only,
+    gitignored, machine-local (context-events.jsonl, chaser, llm-cost). Every
+    child that needs raw events appends one there; none commits telemetry or
+    treats it as checkout-durable.
+  - The pure/impure split (a pure record/aggregate builder + a thin impure
+    fs/emit wrapper) that costTelemetry / mutationProgress already use is the
+    house style; every child follows it so the aggregation is unit-testable
+    without fs.
+
+  ## Children (each its own slice)
+
+    BL-595 Human-loop reliability — approval-tap / steering-delivery success
+           and poll-degraded(409) frequency. The blind spot that hid BL-582.
+    BL-596 Mono-router rotation dynamics — per-persona resident dwell,
+           rotations/day, thrash, time-stranded-off-home. The health metric
+           the single-resident model has none of today.
+    BL-597 Self-heal event trend — stale-build recompiles, respawns,
+           kill_all, rotation respawns. Uncounted today.
+    BL-598 False-alarm rate — AGENT_EXITED false positives (100+/session),
+           depth warnings (BL-562). Quantifies observability noise.
+    BL-599 Intake balance — filed/day vs done/day; is the backlog net-growing?
+    BL-600 Human-decision latency — ApprovalRequested -> verdict; which gates
+           wait on the human vs the swarm.
+    BL-601 Compaction cadence — per-role auto-compaction frequency + token
+           level; a proxy for context pressure.
+    BL-602 Handoff latency — git_handoff written -> dequeued; the
+           "handoff vanished" fear, quantified (rotation-gated on mono-router).
+    BL-605 Global token consumption — whole-swarm total tokens over time, one
+           headline line (a rollup of existing per-role token data).
+
+  ## Two mandatory CONSUMER slices — every series must reach the human
+
+  A series nobody looks at is dead telemetry. Both cross-cutting requirements
+  are their own slices, each depending on the producers:
+
+    BL-603 PUBLISH ON THE MINI APP — a Trends screen on the LIVE holistic
+           console (same surface as BL-572/592), plotting every landed series
+           via trend.ts, served over the bridge. A series whose producer has
+           not landed shows "no data yet", never crashes.
+    BL-604 BRIEFING ANALYSIS — a trend-ANALYSIS section in the morning briefing
+           (not just charts): per series a direction + magnitude + one-line "so
+           what", ranked by significance, driven by trend.ts's own slope. A
+           series with too little data is OMITTED, never reported as "flat".
+
+  Every producer slice (595-602, 605) is only DONE in the epic's sense once its
+  series is both surfaced (603) and analysed (604) — the producers can land
+  first, but the epic does not close with dark series.
+
+  ## Sequencing recommendation (coordinator's call, not fixed here)
+
+  BL-595 and BL-596 first — both are active blind spots that bit this session.
+  The other producers (597-602, 605) are additive and independent. The two
+  consumers (603, 604) come after enough producers exist to be worth a screen /
+  a section, but each is written to degrade gracefully on a not-yet-landed
+  series, so they need not wait for ALL producers. They share the trend.ts
+  plumbing so building the cluster near-together is cheaper than scattering it.
+
+  ## Relationship to BL-591
+
+  BL-591 (per-epic ETA) and BL-593 (mutation-run duration) are sibling
+  observability work, not children here. BL-599's intake/drain rate and any
+  per-run cost feed BL-591's estimate; note the overlap, do not duplicate.

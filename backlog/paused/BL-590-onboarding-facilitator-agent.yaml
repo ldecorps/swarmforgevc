@@ -4,13 +4,46 @@ milestone: M8
 type: feature
 status: needs_design
 epic: swarm-intelligence-layer
-human_approval: pending
+human_approval: approved
 severity: medium
 priority: 10
 direction: human-requested
 depends_on: [BL-262, BL-269, BL-344, BL-380, BL-381]
 assigned_to: specifier
 mutation_cost: high
+human_ruling: |
+  RULED by the human 2026-07-23 (relayed via the operator tunnel, recorded
+  directly - Telegram tap path unreliable, see BL-582). Two decisions:
+
+  1. BUILD THE ONBOARDER, do not hand-run a one-off runbook. The human
+     explicitly chose repeatability: "I'd rather have this done by the
+     onboarder (so that it's repeatable)." The onboarding of the old Mac is
+     therefore the FIRST LIVE TARGET that drives this ticket's acceptance,
+     not a fixture - a real target beats a fixture (BL-454's lesson).
+
+  2. THE FACILITATOR RUNS ON THE PRIMARY LINUX BOX AND ONBOARDS FROM GITHUB
+     BY URL. It is a standing ancillary service on this box, pointed at a
+     target REPO URL. It clones that repo itself, surveys the clone,
+     negotiates the contract with the human over Telegram, and commits the
+     agreed contract + proposed prompts back to the target repo on GitHub.
+     The target HOST (the old Mac) is only where the swarm eventually RUNS:
+     the human pulls the committed contract/prompts on the Mac and launches
+     `./swarm <path> --pack mono-router` there.
+
+     Consequences the specifier must build to:
+       - The facilitator never needs the target host reachable as a local
+         path. It uses THIS box's own GitHub access to clone/commit. (The
+         Mac's own GitHub access is still a prerequisite the human sets up on
+         the Mac before it can pull and run - that stays guide-and-verify.)
+       - The whole prerequisites phase for the Mac is guide-and-verify: the
+         facilitator cannot touch the Mac, so it walks the human through
+         toolchain / GitHub-auth / token setup and confirms each via a pasted
+         verification, advancing only on a pass.
+       - "Onboard a new project" reduces to "give the onboarder a repo URL",
+         which is the repeatable shape decision 1 asked for.
+
+     This CLOSES the ticket's "where does the facilitator run" design fork -
+     the specifier does not re-open it.
 source: |
   Human, 2026-07-23. Wants to onboard a new project (e.g. a mono-router on an
   old Mac). Asked whether an onboarder role / a ready facilitator agent exists.
@@ -144,23 +177,25 @@ description: |
   negotiation engine - BL-381's comment is explicit that runObject/runApprove
   is the ONE real writer of negotiation state.
 
-  ### Cross-host reality (call out, do not paper over)
-  The human's example target is a DIFFERENT machine (an old Mac), and this is
-  what makes the two-step-kinds distinction above load-bearing rather than
-  academic. If the facilitator runs on THIS box, the ENTIRE prerequisites phase
-  (host toolchain, GitHub access, clone, token) is guide-and-verify - it cannot
-  touch the Mac - and only the survey/propose/negotiate/gate steps are
-  do-for-you, and even those only once the Mac repo is reachable as a path
-  (shared mount, or a clone the facilitator can see). If instead the facilitator
-  is meant to run ON the Mac, more of the prerequisites become do-for-you but
-  the agent has to be brought up on the Mac first, which is itself a
-  prerequisite. WHERE the facilitator runs relative to the target host is the
-  FIRST thing the specifier must pin with the human, because it changes which
-  steps are do-for-you vs guide-and-verify across the whole flow. Either way the
-  facilitator's remit ends at "ready to launch"; the actual `./swarm <path>
-  --pack mono-router` on the target is the human's, and the facilitator must
-  state the exact command rather than pretend it launched a swarm it cannot
-  reach.
+  ### Cross-host reality (RULED - see human_ruling decision 2)
+  The where-does-it-run fork is CLOSED: the facilitator runs on the primary
+  Linux box and onboards from a GitHub URL, cloning the target itself with this
+  box's own GitHub access. It therefore never needs the target host (the Mac)
+  reachable as a local path - the earlier "shared mount / local clone" option is
+  retired. Consequences that follow directly:
+
+    - The survey/propose/negotiate/gate steps are do-for-you, run against the
+      facilitator's own clone of the GitHub repo. The agreed contract and
+      proposed prompts are committed back to that repo on GitHub.
+    - The ENTIRE prerequisites phase for the Mac is guide-and-verify - the
+      facilitator cannot touch the Mac. It walks the human through the Mac's
+      toolchain, its OWN GitHub access (so the Mac can pull and the swarm can
+      push/PR from there), and the target bot token, confirming each via a
+      pasted verification.
+    - The facilitator's remit ends at "contract agreed + prompts committed +
+      prerequisites verified". The human then, ON THE MAC, pulls and runs
+      `./swarm <path> --pack mono-router`. The facilitator states that exact
+      command; it never claims to have launched a swarm it cannot reach.
 
 acceptance: |
   Specifier writes the scenarios and slices this - it is mutation_cost high and

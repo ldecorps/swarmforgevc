@@ -1,0 +1,44 @@
+id: BL-600
+title: "Trend: human-decision latency — time from ApprovalRequested to the human's verdict, per gate"
+milestone: M8
+type: feature
+status: todo
+epic: swarm-behaviour-trends
+human_approval: approved
+severity: low
+priority: 30
+direction: human-requested
+depends_on: []
+assigned_to: specifier
+mutation_cost: low
+source: |
+  Human, 2026-07-23, epic BL-594. Some tickets wait on the swarm; some wait on
+  the human. Nothing distinguishes them, so "why is this epic slow" cannot tell
+  a velocity problem from an approval-queue problem.
+description: |
+  Measure how long tickets sit waiting on a HUMAN decision: from the moment an
+  approval ask is emitted (ApprovalRequested / the ask posted to Telegram) to
+  the moment a verdict is recorded (human_approval flips to approved/rejected,
+  or a ruling is recorded). Plot the distribution and trend via trend.ts.
+
+  Both timestamps are already knowable: the ask-message store
+  (telegram-approval-ask-messages.json) records when an ask was posted; the
+  verdict's commit / the yaml change records when it was decided. The pure
+  aggregator pairs them per ticket and produces a decision-latency series
+  (median + outliers, the same outlier-honesty stageDwell already applies).
+
+  Value: separates the two bottlenecks cleanly. A 3-day median approval latency
+  is a human-attention problem no amount of swarm speed fixes, and it is
+  exactly the kind of thing BL-591's ETA must account for (a blocked-on-human
+  ticket has no velocity ETA - BL-591 already says so; this quantifies the
+  human side).
+acceptance: |
+  Specifier writes scenarios. Minimum:
+  1. Each decided ticket yields one latency = verdict_ts - ask_ts.
+  2. A pure aggregator produces a median + outlier decision-latency series over
+     a window, unit-tested with fixtures.
+  3. A still-pending ask contributes an OPEN age (currently-waiting), not a
+     fabricated completion — never counted as a fast decision.
+out_of_scope: |
+  - Nudging the human to decide faster. Measurement only.
+  - Swarm-side stage latency (stageDwell owns that).
