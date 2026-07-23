@@ -406,4 +406,33 @@ pass "06: SWARMFORGE_SKIP_OPERATOR=1 omits the operator component"
 
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# 08: an ensure repair for a dead agent pane passes provider auth through
+# (BL-130 passthrough, lost when 7e2498634 stripped provider-respawn-env-args)
+# ---------------------------------------------------------------------------
+make_fixture
+echo "1" > "$ROOT/pane_dead"
+RESPAWN_ARGS_LOG="$ROOT/respawn-args"
+cat > "$FAKE_BIN/tmux" <<EOF
+#!/usr/bin/env bash
+if [[ "\$3" == "list-panes" ]]; then
+  cat "$ROOT/pane_dead"
+  exit 0
+fi
+if [[ "\$3" == "respawn-pane" ]]; then
+  echo "\$@" > "$RESPAWN_ARGS_LOG"
+  echo "0" > "$ROOT/pane_dead"
+  exit 0
+fi
+exit 0
+EOF
+chmod +x "$FAKE_BIN/tmux"
+if OUT="$(OPENROUTER_API_KEY="test-router-key" run_ensure)"; then RC=0; else RC=$?; fi
+echo "$OUT" | grep -q "^agent:coder: FIXED (respawned pane from its persisted launch script)$" \
+  || fail "08: dead pane repair not reported as FIXED; got: $OUT"
+grep -q -- "-e OPENROUTER_API_KEY=test-router-key" "$RESPAWN_ARGS_LOG" \
+  || fail "08: ensure repair did not pass OPENROUTER_API_KEY through to the respawned pane; got: $(cat "$RESPAWN_ARGS_LOG")"
+cleanup_daemon
+pass "08: an ensure repair for a dead agent pane passes OPENROUTER_API_KEY through (BL-130)"
+
 echo "ALL PASS"
