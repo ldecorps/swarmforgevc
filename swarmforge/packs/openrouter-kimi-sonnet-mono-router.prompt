@@ -12,10 +12,10 @@ stage respawns onto a model tailored to that role.
 | coder | `moonshotai/kimi-k3` | Long-horizon implementation, repo navigation, debugging |
 | architect | `moonshotai/kimi-k3` | Deep code reasoning across modules and boundaries |
 | hardender | `moonshotai/kimi-k3` | Mutation/coverage work is code-heavy |
-| specifier | `anthropic/claude-sonnet-4.6` | Crisp structured specs and acceptance criteria |
-| cleaner / documenter | `anthropic/claude-sonnet-4.6` | Mechanical refactor and docs |
-| QA | `anthropic/claude-sonnet-4.6` | Verification gate — run suites, bounce with evidence |
-| coordinator | `anthropic/claude-sonnet-4.6` | Bookkeeping — promote, route, close (separate process) |
+| specifier | `anthropic/claude-sonnet-5` | Crisp structured specs and acceptance criteria |
+| cleaner / documenter | `anthropic/claude-sonnet-5` | Mechanical refactor and docs |
+| QA | `anthropic/claude-sonnet-5` | Verification gate — run suites, bounce with evidence |
+| coordinator | `anthropic/claude-sonnet-5` | Bookkeeping — promote, route, close (separate process) |
 
 ## Pipeline shape
 
