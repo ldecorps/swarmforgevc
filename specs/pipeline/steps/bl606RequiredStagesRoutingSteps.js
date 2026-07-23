@@ -261,9 +261,15 @@ function registerSteps(registry) {
     if (!line) {
       throw new Error(`expected a routing_skipped header, got:\n${ctx.skipHandoff.content}`);
     }
+    // Assert against the parsed skipped= field specifically, not a substring
+    // check over the whole line - the line's `from`/`reasons=` tokens can
+    // otherwise satisfy a bare .includes(stage) even when `skipped=` itself
+    // omits the stage (architect BL-606 bounce #2 secondary defect).
+    const skippedMatch = line.match(/ skipped=([^\s]*)/);
+    const skippedField = skippedMatch ? skippedMatch[1].split(',').filter(Boolean) : [];
     for (const stage of ['cleaner', 'architect', 'hardender', 'documenter']) {
-      if (!line.includes(stage)) {
-        throw new Error(`expected routing_skipped to name ${stage}, got: ${line}`);
+      if (!skippedField.includes(stage)) {
+        throw new Error(`expected routing_skipped's skipped= to name ${stage}, got: ${line}`);
       }
     }
     const jsonlPath = path.join(ctx.targetPath, '.swarmforge', 'routing-skips.jsonl');
@@ -271,6 +277,9 @@ function registerSteps(registry) {
     const entry = jsonl.find((e) => e['ticket-id'] === ctx.ticketId);
     if (!entry) throw new Error(`expected a routing-skips.jsonl entry for ${ctx.ticketId}`);
     for (const stage of ['cleaner', 'architect', 'hardender', 'documenter']) {
+      if (!Array.isArray(entry.skipped) || !entry.skipped.includes(stage)) {
+        throw new Error(`expected ${stage} in entry.skipped, got: ${JSON.stringify(entry.skipped)}`);
+      }
       if (entry.reasons[stage] === undefined) {
         throw new Error(`expected a stated reason for ${stage}, got: ${JSON.stringify(entry.reasons)}`);
       }

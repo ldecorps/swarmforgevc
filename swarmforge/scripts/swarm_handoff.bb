@@ -435,7 +435,14 @@
                            :routing-skipped {:ticket-id ticket-id
                                              :from literal-to
                                              :to next-stage
-                                             :skipped (required-stages-lib/hop-skipped-stages literal-to next-stage)
+                                             ;; literal-to is by construction always a skipped
+                                             ;; stage (this branch is only reached when it is
+                                             ;; NOT a member of `effective`), so it must be
+                                             ;; included in the report - hop-skipped-stages'
+                                             ;; strictly-between semantics alone would drop it
+                                             ;; (architect BL-606 bounce #2, guardrail #2/#6).
+                                             :skipped (vec (cons literal-to
+                                                                  (required-stages-lib/hop-skipped-stages literal-to next-stage)))
                                              :reasons (required-stages-lib/read-stage-skip-reasons content)}})))))))))))))
 
 (defn- format-routing-skipped [{:keys [ticket-id from to skipped reasons]}]
