@@ -57,6 +57,10 @@
 ;; mutation passes, explore subagents — no esc-to-interrupt footer required).
 (def claim-recent-activity-ms (* 5 60 1000))
 
+;; Mono-router: defer chase wakes when the resident pane changed recently even
+;; if the busy footer is momentarily absent between spinner refreshes.
+(def chase-resident-recent-activity-ms 15000)
+
 ;; Endless NO_TASK-spin circuit breaker: pane activity hashing alone cannot
 ;; see a busy-loop that keeps changing the pane with the same idle ritual.
 ;; Per-role strike state lives in this process only; a daemon restart that
@@ -308,30 +312,41 @@
 
 (defn recipient-pane-busy?
   "BL-135 parity on the delivery path: mail lands in inbox/new either way;
-   do not inject wake spam while the recipient is mid-turn."
+   do not inject wake spam while the recipient is mid-turn. Under mono-router
+   the configured session may be dormant — always capture the wake target pane
+   (same session notify! will inject into)."
   [socket roles role]
   (when-let [ri (get roles role)]
-    (let [pane (try (capture-pane-text socket (:session ri)) (catch Exception _ ""))]
+    (let [session (handoff-lib/wake-session socket (:session ri))
+          pane (try (capture-pane-text socket session) (catch Exception _ ""))]
       (chase-sweep-lib/actively-processing? pane))))
 
 (defn maybe-notify!
   "Tmux wake after mailbox delivery. Skipped when SWARMFORGE_MAILBOX_ONLY=1,
-   the inbox file already existed (duplicate delivery), or the recipient pane
-   is actively working a turn (BL-135 / mono-router resident mid-task)."
-  [socket roles session role recipient-path agent & {:keys [new-delivery?]
-                                                     :or {new-delivery? true}}]
-  (cond
-    (not new-delivery?)
-    (log! "deliver-notify-skip-duplicate" role (str recipient-path))
+   the inbox file already existed (duplicate delivery), the recipient pane
+   is actively working a turn (BL-135 / mono-router resident mid-task), or
+   this parcel already woke the same tmux session for another recipient
+   (broadcast merge-up notes)."
+  [socket roles session role recipient-path agent & {:keys [new-delivery? notified-sessions]
+                                                     :or {new-delivery? true
+                                                          notified-sessions (atom #{})}}]
+  (let [wake-sess (handoff-lib/wake-session socket session)]
+    (cond
+      (not new-delivery?)
+      (log! "deliver-notify-skip-duplicate" role (str recipient-path))
 
-    (tmux-inject-disabled?)
-    (log! "delivered-mailbox-only" role (str recipient-path))
+      (tmux-inject-disabled?)
+      (log! "delivered-mailbox-only" role (str recipient-path))
 
-    (recipient-pane-busy? socket roles role)
-    (log! "deliver-notify-skip-busy" role (str recipient-path))
+      (contains? @notified-sessions wake-sess)
+      (log! "deliver-notify-skip-dedup" role wake-sess)
 
-    :else
-    (notify! socket session agent)))
+      (recipient-pane-busy? socket roles role)
+      (log! "deliver-notify-skip-busy" role (str recipient-path))
+
+      :else
+      (do (swap! notified-sessions conj wake-sess)
+          (notify! socket session agent)))))
 
 (defn move-with-collision
   "Moves source into target-dir, uniquifying on a name collision. Returns
@@ -417,8 +432,9 @@
             recipients (some-> (get headers "to") (str/split #",") seq)]
         (if-not recipients
           (fail! path "missing to header")
-          (do
-            (doseq [recipient recipients]
+          (let [notified-sessions (atom #{})]
+            (do
+              (doseq [recipient recipients]
               (let [role-info (get roles recipient)]
                 (when-not role-info
                   (throw (ex-info (str "unknown recipient " recipient) {:recipient recipient})))
@@ -444,12 +460,13 @@
                     (catch Exception e
                       (log! "llm-cost-ledger-append-error" recipient (.getMessage e))))
                   (maybe-notify! socket roles (:session role-info) recipient (str target)
-                                 (:agent role-info) :new-delivery? new-delivery?))))
+                                 (:agent role-info) :new-delivery? new-delivery?
+                                 :notified-sessions notified-sessions))))
             (when (= "rule_proposal" (get headers "type"))
               (append-rule-proposal! headers))
             (move-with-collision path (sent-dir (get roles sender-role)))
             (log! "delivered" (str path))
-            (enqueue-babysitter-wake! sender-role recipients path headers)))))))
+            (enqueue-babysitter-wake! sender-role recipients path headers))))))))
 
 (defn inbox-new-files [role-info]
   (let [new-dir (handoff-lib/mailbox-dir role-info :new)]
@@ -978,6 +995,16 @@
       (chase-sweep-lib/actively-processing? pane))
     false))
 
+(defn resident-recently-active?
+  "Very recent resident pane churn (spinner gaps between busy-footer frames)."
+  [now-ms]
+  (let [activity-role (or (handoff-lib/read-mono-router-active-role)
+                          (handoff-lib/mono-router-home-role))]
+    (boolean
+     (and activity-role
+          (chase-sweep-lib/pane-recently-active?
+           activity-role now-ms chase-resident-recent-activity-ms)))))
+
 (defn chase-rotate-to! [socket roles role]
   (let [preferred (preferred-mono-rotate-role roles)
         row (role-mail-row role (get roles role))]
@@ -1008,6 +1035,48 @@
             (when-not (:ok result)
               (log! "chase-rotate-error" role (str (:reason result))))
             result))))))
+
+(defn chase-poke-and-notify!
+  "Shared chase wake/resume path. Gating is scoped to the pane the poke
+   will actually land on (mono-router-lib/chase-poke-plan): pokes at the
+   shared resident pane defer on busy/recent churn and share one inject
+   per sweep; pokes at a role's own standing pane (classic packs) are
+   gated only by that pane's own busy state. The per-sweep resident budget
+   is consumed ONLY when a wake or rotate actually lands — a refused
+   rotate (broadcast/not-preferred/cooldown) leaves the budget for the
+   next role in the same sweep (architect starvation, 2026-07-23).
+   Returns true only when a wake or successful rotate was performed."
+  [socket roles role resident-wake-suppressed? notify-fn!]
+  (let [action (chase-poke-action roles socket role)
+        ri (get roles role)
+        wake-sess (handoff-lib/wake-session socket (:session ri))
+        resident-target? (mono-router-lib/resident-poke-target?
+                          {:action action
+                           :wake-session wake-sess
+                           :resident-session (handoff-lib/mono-router-resident-session)})
+        plan (mono-router-lib/chase-poke-plan
+              {:action action
+               :resident-target? resident-target?
+               :target-pane-busy?
+               (when-not resident-target?
+                 (let [pane (try (capture-pane-text socket wake-sess)
+                                 (catch Exception _ ""))]
+                   (chase-sweep-lib/actively-processing? pane)))
+               :resident-busy? (when resident-target? (resident-pane-busy? socket))
+               :resident-recently-active?
+               (when resident-target?
+                 (resident-recently-active? (System/currentTimeMillis)))
+               :resident-woken-this-sweep? @resident-wake-suppressed?})]
+    (case (:mode plan)
+      :skip (do (log! (str "chase-wake-skip-" (name (:skip-reason plan))) role)
+                false)
+      :rotate (let [performed (boolean (:ok (chase-rotate-to! socket roles role)))]
+                (when performed (reset! resident-wake-suppressed? true))
+                performed)
+      :wake (do (when (:resident-budget? plan)
+                  (reset! resident-wake-suppressed? true))
+                (notify-fn! socket (:session ri) (:agent ri))
+                true))))
 
 (defn- head-commit-10
   "Exactly 10 hex chars for swarm_handoff.bb's git_handoff commit contract."
@@ -1066,44 +1135,51 @@
 
 (defn chase-sweep! [roles socket]
   (let [now-ms (System/currentTimeMillis)
+        resident-wake-suppressed? (atom false)
         adapters {:get-liveness get-liveness
                   :send-wake-up! (fn [role]
-                                    (when-not (tmux-inject-disabled?)
+                                    (if (tmux-inject-disabled?)
+                                      false
                                       (try
-                                        ;; Busy resident: never inject "new mail" / never rotate.
-                                        (if (resident-pane-busy? socket)
-                                          (log! "chase-wake-skip-busy" role)
-                                          (let [action (chase-poke-action roles socket role)
-                                                ri (get roles role)]
-                                            (case action
-                                              :rotate (chase-rotate-to! socket roles role)
-                                              (notify! socket (:session ri) (:agent ri)))))
-                                        (catch Exception e (log! "chase-wake-error" role (.getMessage e))))))
+                                        (chase-poke-and-notify!
+                                         socket roles role resident-wake-suppressed?
+                                         (fn [s sess agent] (notify! s sess agent)))
+                                        (catch Exception e
+                                          (log! "chase-wake-error" role (.getMessage e))
+                                          false))))
                   :send-in-process-resume! (fn [role]
-                                              (when-not (tmux-inject-disabled?)
+                                              (if (tmux-inject-disabled?)
+                                                false
                                                 (try
-                                                  (if (resident-pane-busy? socket)
-                                                    (log! "chase-in-process-resume-skip-busy" role)
-                                                    (let [action (chase-poke-action roles socket role)
-                                                          ri (get roles role)]
-                                                      (case action
-                                                        :rotate (chase-rotate-to! socket roles role)
-                                                        (notify-in-process-resume!
-                                                         socket
-                                                         (:session ri)
-                                                         (:agent ri)))))
+                                                  (chase-poke-and-notify!
+                                                   socket roles role resident-wake-suppressed?
+                                                   (fn [s sess agent]
+                                                     (notify-in-process-resume! s sess agent)))
                                                   (catch Exception e
-                                                    (log! "chase-in-process-resume-error" role (.getMessage e))))))
+                                                    (log! "chase-in-process-resume-error" role (.getMessage e))
+                                                    false))))
                   :trigger-respawn! (fn [role]
                                        (try
-                                         (if (resident-pane-busy? socket)
-                                           (log! "chase-respawn-skip-busy" role)
-                                           (let [action (chase-poke-action roles socket role)
-                                                 ri (get roles role)]
-                                             (case action
-                                               :rotate (chase-rotate-to! socket roles role)
-                                               :wake-resident (chase-rotate-to! socket roles role)
-                                               (do-respawn! ri socket))))
+                                         ;; Busy gating is scoped like chase-poke-and-notify!:
+                                         ;; only pokes landing on the shared resident pane defer
+                                         ;; on its busy state. A classic-pack role's own respawn
+                                         ;; (liveness-driven, own dead pane) must not be blocked
+                                         ;; by an unrelated busy resident/coder pane.
+                                         (let [action (chase-poke-action roles socket role)
+                                               ri (get roles role)
+                                               resident-target?
+                                               (mono-router-lib/resident-poke-target?
+                                                {:action action
+                                                 :wake-session (handoff-lib/wake-session socket (:session ri))
+                                                 :resident-session (handoff-lib/mono-router-resident-session)})]
+                                           (cond
+                                             (and resident-target? (resident-pane-busy? socket))
+                                             (log! "chase-respawn-skip-busy" role)
+
+                                             (contains? #{:rotate :wake-resident} action)
+                                             (chase-rotate-to! socket roles role)
+
+                                             :else (do-respawn! ri socket)))
                                          (catch Exception e (log! "chase-respawn-error" role (.getMessage e)))))
                   :log-dead-letter! (fn [role path] (log! "dead-letter" role (fs/file-name path)))
                   :get-last-activity-ms (fn [role] (get-last-activity-ms (get roles role) socket now-ms))

@@ -51,6 +51,7 @@ import { promoteToActive, findBacklogFilePath } from '../panel/backlogWriter';
 import { atomicWrite } from '../util/atomicWrite';
 import { getPausedPagerUiHtml } from './pausedPagerUiHtml';
 import { recordApprovalReply } from '../concierge/pendingApprovalReply';
+import { requestConciergeTick } from '../concierge/conciergeTickRequest';
 import { getContextBudgetUiHtml } from './contextBudgetUiHtml';
 import { listTelemetryAgents, summarizeTelemetryForAgent } from './contextTelemetryGate';
 
@@ -526,6 +527,7 @@ function handlePausedPagerApproveRoute(
         respondJson(res, 200, { success: false, id: backlogId, reason: 'not pending approval' });
         return;
       }
+      requestConciergeTick(targetPath);
       respondJson(res, 200, { success: true, id: backlogId });
     } catch (err) {
       respondJson(res, 500, {

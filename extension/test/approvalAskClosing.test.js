@@ -1,5 +1,5 @@
 const assert = require('node:assert/strict');
-const { decisionLineFor, composeDecidedAskText, alreadyDecidedToastText } = require('../out/concierge/approvalAskClosing');
+const { decisionLineFor, composeDecidedAskText, alreadyDecidedToastText, approvalAskTextShowsDecidedVerdict } = require('../out/concierge/approvalAskClosing');
 
 // BL-484: a decided approval ask must close itself - this is the PURE core
 // (verdict + instant -> decision line / edited text / stale-tap toast). No
@@ -79,4 +79,12 @@ test('composeDecidedAskText: an amending verdict appends the Amending line below
   const nowMs = Date.UTC(2026, 6, 17, 3, 7);
   const text = composeDecidedAskText(original, { kind: 'amending' }, nowMs);
   assert.equal(text, `${original}\n-- Amending 2026-07-17 03:07 UTC`);
+});
+
+test('approvalAskTextShowsDecidedVerdict: recognizes each decided footer shape', () => {
+  assert.equal(approvalAskTextShowsDecidedVerdict('ask\n-- Approved 2026-07-17 03:07 UTC'), true);
+  assert.equal(approvalAskTextShowsDecidedVerdict('ask\n-- Rejected: bad scope'), true);
+  assert.equal(approvalAskTextShowsDecidedVerdict('ask\n-- Expedited 2026-07-17 03:07 UTC'), true);
+  assert.equal(approvalAskTextShowsDecidedVerdict('ask\n-- Amending 2026-07-17 03:07 UTC'), true);
+  assert.equal(approvalAskTextShowsDecidedVerdict('ask still open'), false);
 });

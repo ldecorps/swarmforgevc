@@ -302,6 +302,96 @@ unset TELEGRAM_BOT_TOKEN
 cleanup_daemon
 pass "05e: partial Telegram env (only one of three vars set) does not count as configured"
 
+# ── 07a: launch-contract HEALTHY when no swarm-identity file exists at all ─
+make_fixture
+if OUT="$(run_ensure)"; then RC=0; else RC=$?; fi
+echo "$OUT" | grep -q "^launch-contract: HEALTHY$" \
+  || fail "07a: launch-contract not reported HEALTHY with no swarm-identity file; got: $OUT"
+cleanup_daemon
+pass "07a: launch-contract reports HEALTHY when no swarm-identity file exists"
+
+# ── 07b: launch-contract FAILED when the effective pack conf names a
+#         non-default coordinator_agent but omits coordinator_model/rotation
+#         (BL-530 / BL-512 audit rank 3 - the cerebras-mono-router.conf bug) ─
+make_fixture
+cat > "$ROOT/broken-pack.conf" <<'EOF'
+config rotation router
+config coordinator_agent aider
+EOF
+printf 'active_backlog_max_depth_conf_path\t%s\n' "$ROOT/broken-pack.conf" >> "$ROOT/.swarmforge/swarm-identity"
+if OUT="$(run_ensure)"; then RC=0; else RC=$?; fi
+echo "$OUT" | grep -q "^launch-contract: FAILED (coordinator_agent is 'aider' but coordinator_model is unset" \
+  || fail "07b: launch-contract did not report the missing coordinator_model; got: $OUT"
+[[ "$RC" -ne 0 ]] || fail "07b: exit status was 0, expected non-zero with a broken launch contract"
+cleanup_daemon
+pass "07b: launch-contract reports FAILED naming the missing coordinator_model, non-zero exit"
+
+# ── 07c: launch-contract HEALTHY when the effective pack conf declares its
+#         full contract (coordinator_model AND rotation both set) ──────────
+make_fixture
+cat > "$ROOT/compliant-pack.conf" <<'EOF'
+config rotation router
+config coordinator_agent aider
+config coordinator_model openai/gpt-oss-120b
+EOF
+printf 'active_backlog_max_depth_conf_path\t%s\n' "$ROOT/compliant-pack.conf" >> "$ROOT/.swarmforge/swarm-identity"
+if OUT="$(run_ensure)"; then RC=0; else RC=$?; fi
+echo "$OUT" | grep -q "^launch-contract: HEALTHY$" \
+  || fail "07c: launch-contract not reported HEALTHY for a fully-declared pack; got: $OUT"
+[[ "$RC" -eq 0 ]] || fail "07c: exit status was $RC, expected 0 for a fully-declared pack"
+cleanup_daemon
+pass "07c: launch-contract reports HEALTHY when the effective pack declares its full contract"
+
+# ── 07d: a broken launch contract refuses to respawn a dead agent pane
+#         instead of repairing it onto the same broken argv (BL-530 architect
+#         bounce, defect 1) ─────────────────────────────────────────────────
+make_fixture
+echo "1" > "$ROOT/pane_dead"
+cat > "$ROOT/broken-pack.conf" <<'EOF'
+config rotation router
+config coordinator_agent aider
+EOF
+printf 'active_backlog_max_depth_conf_path\t%s\n' "$ROOT/broken-pack.conf" >> "$ROOT/.swarmforge/swarm-identity"
+if OUT="$(run_ensure)"; then RC=0; else RC=$?; fi
+echo "$OUT" | grep -q "^agent:coder: FAILED (respawn refused: launch contract broken - fix the pack conf, then rerun ensure)$" \
+  || fail "07d: dead pane under a broken contract was not reported as respawn-refused; got: $OUT"
+[[ "$(cat "$ROOT/pane_dead")" == "1" ]] \
+  || fail "07d: dead pane was respawned despite a broken launch contract"
+[[ "$RC" -ne 0 ]] || fail "07d: exit status was 0, expected non-zero"
+cleanup_daemon
+pass "07d: a broken launch contract refuses to respawn a dead agent pane"
+
+# ── 07e: a broken launch contract leaves an already-healthy pane alone
+#         (no refusal message, no respawn attempt either) ──────────────────
+make_fixture
+cat > "$ROOT/broken-pack.conf" <<'EOF'
+config rotation router
+config coordinator_agent aider
+EOF
+printf 'active_backlog_max_depth_conf_path\t%s\n' "$ROOT/broken-pack.conf" >> "$ROOT/.swarmforge/swarm-identity"
+if OUT="$(run_ensure)"; then RC=0; else RC=$?; fi
+echo "$OUT" | grep -q "^agent:coder: HEALTHY$" \
+  || fail "07e: an already-healthy pane was disturbed by a broken launch contract; got: $OUT"
+cleanup_daemon
+pass "07e: a broken launch contract leaves an already-healthy agent pane untouched"
+
+# ── 07f: a stale/unreadable persisted conf path falls back to the tracked
+#         default conf rather than silently reporting HEALTHY (BL-530
+#         architect bounce, defect 2) ────────────────────────────────────────
+make_fixture
+mkdir -p "$ROOT/swarmforge"
+cat > "$ROOT/swarmforge/swarmforge.conf" <<'EOF'
+config rotation router
+config coordinator_agent aider
+EOF
+printf 'active_backlog_max_depth_conf_path\t%s\n' "$ROOT/no-longer-exists.conf" >> "$ROOT/.swarmforge/swarm-identity"
+if OUT="$(run_ensure)"; then RC=0; else RC=$?; fi
+echo "$OUT" | grep -q "^launch-contract: FAILED (coordinator_agent is 'aider' but coordinator_model is unset" \
+  || fail "07f: a stale persisted conf path did not fall back to the tracked default conf; got: $OUT"
+[[ "$RC" -ne 0 ]] || fail "07f: exit status was 0, expected non-zero"
+cleanup_daemon
+pass "07f: a stale persisted conf path falls back to the tracked default conf instead of reading HEALTHY"
+
 # ── 06: SWARMFORGE_SKIP_OPERATOR omits the operator check entirely ─────────
 make_fixture
 echo "999999" > "$ROOT/.swarmforge/operator/runtime.pid"
@@ -321,6 +411,9 @@ make_fixture
 printf 'coder\tcoder\t%s\tswarmforge-coder\tCoder\tclaude\ttask\n' "$ROOT/.worktrees/coder" > "$ROOT/.swarmforge/roles.tsv"
 printf 'specifier\tspecifier\t%s\tswarmforge-specifier\tSpecifier\tclaude\ttask\n' "$ROOT/.worktrees/coder" >> "$ROOT/.swarmforge/roles.tsv"
 printf 'coordinator\tmaster\t%s\tswarmforge-coordinator\tCoordinator\tclaude\ttask\n' "$ROOT" >> "$ROOT/.swarmforge/roles.tsv"
+# BL-530 architect bounce (round 3): mono-router-ness must come from a
+# declared signal, not an inferred live shape — declare it explicitly.
+printf 'rotation\trouter\n' > "$ROOT/.swarmforge/swarm-identity"
 RESPAWN_LOG="$ROOT/respawns"
 : > "$RESPAWN_LOG"
 cat > "$FAKE_BIN/tmux" <<TMUXFAKE
@@ -354,5 +447,88 @@ echo "$OUTPUT" | grep -q 'agent:specifier: DORMANT' || fail "expected specifier 
 echo "$OUTPUT" | grep -q 'agent:coder: HEALTHY' || fail "expected coder HEALTHY"
 if [[ -s "$RESPAWN_LOG" ]]; then fail "dormant role should not be respawned"; fi
 pass "mono-router dormant roles report DORMANT without respawn"
+
+# ---------------------------------------------------------------------------
+# Extra: a classic pack with one half-launched session must NOT be classified
+# as mono-router — the live-shape fallback (some sessions standing, some
+# absent) that BL-530 round 3 removed was equally the fingerprint of a
+# half-launch/partial-crash, which ensure must repair, not tear down.
+# ---------------------------------------------------------------------------
+make_fixture
+printf 'coordinator\tmaster\t%s\tswarmforge-coordinator\tCoordinator\tclaude\ttask\n' "$ROOT" > "$ROOT/.swarmforge/roles.tsv"
+printf 'coder\tcoder\t%s\tswarmforge-coder\tCoder\tclaude\ttask\n' "$ROOT/.worktrees/coder" >> "$ROOT/.swarmforge/roles.tsv"
+printf 'cleaner\tcleaner\t%s\tswarmforge-cleaner\tCleaner\tclaude\ttask\n' "$ROOT/.worktrees/coder" >> "$ROOT/.swarmforge/roles.tsv"
+printf 'architect\tarchitect\t%s\tswarmforge-architect\tArchitect\tclaude\ttask\n' "$ROOT/.worktrees/coder" >> "$ROOT/.swarmforge/roles.tsv"
+printf 'QA\tQA\t%s\tswarmforge-QA\tQA\tclaude\ttask\n' "$ROOT/.worktrees/coder" >> "$ROOT/.swarmforge/roles.tsv"
+# Deliberately no `rotation router` conf and no swarm-identity file: this is
+# a classic pack, not mono-router.
+KILL_LOG="$ROOT/kills"
+: > "$KILL_LOG"
+cat > "$FAKE_BIN/tmux" <<TMUXFAKE
+#!/usr/bin/env bash
+sock_cmd="\$3"
+if [[ "\$sock_cmd" == "has-session" ]]; then
+  target="\$5"
+  [[ "\$target" == "swarmforge-architect" ]] && exit 1
+  exit 0
+fi
+if [[ "\$sock_cmd" == "list-panes" ]]; then
+  target="\$5"
+  if [[ "\$target" == "swarmforge-architect" ]]; then
+    exit 1
+  fi
+  echo "0"
+  exit 0
+fi
+if [[ "\$sock_cmd" == "kill-session" ]]; then
+  echo "KILL \$5" >> "$KILL_LOG"
+  exit 0
+fi
+if [[ "\$sock_cmd" == "respawn-pane" ]]; then
+  exit 0
+fi
+exit 0
+TMUXFAKE
+chmod +x "$FAKE_BIN/tmux"
+OUTPUT=$(PATH="$FAKE_BIN:$PATH" \
+  SWARMFORGE_ENSURE_EXTENSION_CHECK="$FAKE_BIN/fake_ext_check.sh" \
+  SWARMFORGE_ENSURE_EXTENSION_BOUNCE="$FAKE_BIN/fake_ext_bounce.sh" \
+  SWARMFORGE_ENSURE_SUPERVISOR="$FAKE_BIN/fake_supervisor.bb" \
+  SWARMFORGE_SKIP_OPERATOR=1 SWARMFORGE_SKIP_FRONT_DESK=1 \
+  bb "$ENSURE" "$ROOT" 2>&1) || true
+echo "$OUTPUT" | grep -q 'DORMANT' && fail "classic pack must not classify any role as DORMANT, got: $OUTPUT"
+if [[ -s "$KILL_LOG" ]]; then fail "classic half-launch must not kill any healthy session, got: $(cat "$KILL_LOG")"; fi
+echo "$OUTPUT" | grep -q '^agent:coordinator: HEALTHY$' || fail "expected coordinator HEALTHY, got: $OUTPUT"
+echo "$OUTPUT" | grep -q '^agent:cleaner: HEALTHY$' || fail "expected cleaner HEALTHY, got: $OUTPUT"
+pass "classic pack with one half-launched session is not treated as mono-router (no kills, no DORMANT)"
+
+# ---------------------------------------------------------------------------
+# 08: an ensure repair for a dead agent pane passes provider auth through
+# (BL-130 passthrough, lost when 7e2498634 stripped provider-respawn-env-args)
+# ---------------------------------------------------------------------------
+make_fixture
+echo "1" > "$ROOT/pane_dead"
+RESPAWN_ARGS_LOG="$ROOT/respawn-args"
+cat > "$FAKE_BIN/tmux" <<EOF
+#!/usr/bin/env bash
+if [[ "\$3" == "list-panes" ]]; then
+  cat "$ROOT/pane_dead"
+  exit 0
+fi
+if [[ "\$3" == "respawn-pane" ]]; then
+  echo "\$@" > "$RESPAWN_ARGS_LOG"
+  echo "0" > "$ROOT/pane_dead"
+  exit 0
+fi
+exit 0
+EOF
+chmod +x "$FAKE_BIN/tmux"
+if OUT="$(OPENROUTER_API_KEY="test-router-key" run_ensure)"; then RC=0; else RC=$?; fi
+echo "$OUT" | grep -q "^agent:coder: FIXED (respawned pane from its persisted launch script)$" \
+  || fail "08: dead pane repair not reported as FIXED; got: $OUT"
+grep -q -- "-e OPENROUTER_API_KEY=test-router-key" "$RESPAWN_ARGS_LOG" \
+  || fail "08: ensure repair did not pass OPENROUTER_API_KEY through to the respawned pane; got: $(cat "$RESPAWN_ARGS_LOG")"
+cleanup_daemon
+pass "08: an ensure repair for a dead agent pane passes OPENROUTER_API_KEY through (BL-130)"
 
 echo "ALL PASS"

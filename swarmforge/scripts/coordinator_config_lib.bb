@@ -34,6 +34,24 @@
    usable here with no second allow-list to keep in sync."
   "claude")
 
+(defn raw-config-value
+  "Pure: the raw, non-blank value of a `config <key> <value...>` line from
+   conf-text, or nil when the line is absent or its value is
+   blank/whitespace-only. Split out of parse-config-value (below) so a
+   caller that needs to tell 'explicitly set' apart from 'fell back to a
+   default' - e.g. launch_contract_lib.bb's BL-530 pack-contract checks -
+   has a presence check to call instead of re-deriving nil-vs-default from
+   a value that's indistinguishable from a pack that just happens to name
+   the same value as the default."
+  [conf-text key]
+  (some->> (str/split-lines (or conf-text ""))
+           (filter #(str/starts-with? % (str "config " key)))
+           first
+           (re-find (re-pattern (str "^config\\s+" key "\\s+(.*)$")))
+           second
+           str/trim
+           not-empty))
+
 (defn parse-config-value
   "Pure: the value of a `config <key> <value...>` line from conf-text's own
    text, or default when the line is absent or its value is
@@ -42,14 +60,7 @@
    <value>` directive, so a coordinator_model/coordinator_effort line is
    read exactly the same way active_backlog_max_depth already is."
   [conf-text key default]
-  (or (some->> (str/split-lines (or conf-text ""))
-               (filter #(str/starts-with? % (str "config " key)))
-               first
-               (re-find (re-pattern (str "^config\\s+" key "\\s+(.*)$")))
-               second
-               str/trim
-               not-empty)
-      default))
+  (or (raw-config-value conf-text key) default))
 
 (defn coordinator-model [conf-text]
   (parse-config-value conf-text "coordinator_model" default-coordinator-model))
