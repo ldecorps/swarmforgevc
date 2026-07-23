@@ -97,6 +97,53 @@
     (= (str active-role) (str target-role)) :wake-resident
     :else :rotate))
 
+(defn resident-poke-target?
+  "True when a chase poke for this role lands on the shared mono-router
+   resident pane: :rotate/:wake-resident by definition, :wake-own-session
+   only when the resolved wake session IS the resident session (the home
+   role, whose roles.tsv session name doubles as the resident pane).
+   Classic-pack roles resolve to their own standing panes and must never
+   be throttled by the resident pane's busy state or wake budget."
+  [{:keys [action wake-session resident-session]}]
+  (boolean
+   (or (contains? #{:rotate :wake-resident} action)
+       (and (not (str/blank? (str resident-session)))
+            (= (str wake-session) (str resident-session))))))
+
+(defn chase-poke-plan
+  "Pure gate for one chase poke (wake / in-process resume).
+
+   Two pane regimes:
+   - resident-target? false — the role's own standing pane (classic packs,
+     or the mono-router degrade path when no resident pane exists). Only
+     THAT pane's busy state gates the poke; the shared resident budget and
+     the resident pane's busy/recent state are irrelevant (incident
+     2026-07-23: a busy coder pane must not block chasing cleaner's own
+     pane on a classic 7-pack).
+   - resident-target? true — the shared rotating pane. Busy footer, recent
+     churn, and the one-inject-per-sweep budget all gate.
+
+   :resident-budget? tells the caller whether a PERFORMED poke consumes the
+   per-sweep resident budget. Starvation regression guard (2026-07-23,
+   architect starved behind specifier's refused broadcast rotate): the
+   caller must only consume the budget when the wake/rotate actually lands,
+   never merely for attempting one.
+
+   Returns {:mode :skip|:wake|:rotate, :skip-reason :busy|:dedup|:recent,
+            :resident-budget? bool}."
+  [{:keys [action resident-target? target-pane-busy?
+           resident-busy? resident-recently-active? resident-woken-this-sweep?]}]
+  (if-not resident-target?
+    (if target-pane-busy?
+      {:mode :skip :skip-reason :busy :resident-budget? false}
+      {:mode :wake :resident-budget? false})
+    (cond
+      resident-busy? {:mode :skip :skip-reason :busy :resident-budget? true}
+      resident-woken-this-sweep? {:mode :skip :skip-reason :dedup :resident-budget? true}
+      resident-recently-active? {:mode :skip :skip-reason :recent :resident-budget? true}
+      (= action :rotate) {:mode :rotate :resident-budget? true}
+      :else {:mode :wake :resident-budget? true})))
+
 (defn resident-launch-role
   "Under mono-router the standing tmux session keeps the home role's session
    name (usually coder), but after rotate_to_role the pane runs a different

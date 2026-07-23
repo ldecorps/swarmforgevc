@@ -995,14 +995,15 @@
       (chase-sweep-lib/actively-processing? pane))
     false))
 
-(defn resident-should-defer-chase-wake?
-  "Busy footer, very recent pane churn, or already woken this sweep."
-  [socket activity-role now-ms resident-wake-suppressed?]
-  (or (resident-pane-busy? socket)
-      (and activity-role
-           (chase-sweep-lib/pane-recently-active?
-            activity-role now-ms chase-resident-recent-activity-ms))
-      @resident-wake-suppressed?))
+(defn resident-recently-active?
+  "Very recent resident pane churn (spinner gaps between busy-footer frames)."
+  [now-ms]
+  (let [activity-role (or (handoff-lib/read-mono-router-active-role)
+                          (handoff-lib/mono-router-home-role))]
+    (boolean
+     (and activity-role
+          (chase-sweep-lib/pane-recently-active?
+           activity-role now-ms chase-resident-recent-activity-ms)))))
 
 (defn chase-rotate-to! [socket roles role]
   (let [preferred (preferred-mono-rotate-role roles)
@@ -1036,28 +1037,46 @@
             result))))))
 
 (defn chase-poke-and-notify!
-  "Shared chase wake/resume path: mono-router poke decision, at most one
-   resident-pane inject per chase sweep. Returns true only when a wake or
-   successful rotate was performed."
+  "Shared chase wake/resume path. Gating is scoped to the pane the poke
+   will actually land on (mono-router-lib/chase-poke-plan): pokes at the
+   shared resident pane defer on busy/recent churn and share one inject
+   per sweep; pokes at a role's own standing pane (classic packs) are
+   gated only by that pane's own busy state. The per-sweep resident budget
+   is consumed ONLY when a wake or rotate actually lands — a refused
+   rotate (broadcast/not-preferred/cooldown) leaves the budget for the
+   next role in the same sweep (architect starvation, 2026-07-23).
+   Returns true only when a wake or successful rotate was performed."
   [socket roles role resident-wake-suppressed? notify-fn!]
-  (if (resident-should-defer-chase-wake?
-       socket (or (handoff-lib/read-mono-router-active-role)
-                  (handoff-lib/mono-router-home-role))
-       (System/currentTimeMillis)
-       resident-wake-suppressed?)
-    (do (log! (cond
-                 (resident-pane-busy? socket) "chase-wake-skip-busy"
-                 @resident-wake-suppressed? "chase-wake-skip-dedup"
-                 :else "chase-wake-skip-recent")
-               role)
-        false)
-    (let [action (chase-poke-action roles socket role)
-          ri (get roles role)]
-      (reset! resident-wake-suppressed? true)
-      (case action
-        :rotate (boolean (:ok (chase-rotate-to! socket roles role)))
-        (do (notify-fn! socket (:session ri) (:agent ri))
-            true)))))
+  (let [action (chase-poke-action roles socket role)
+        ri (get roles role)
+        wake-sess (handoff-lib/wake-session socket (:session ri))
+        resident-target? (mono-router-lib/resident-poke-target?
+                          {:action action
+                           :wake-session wake-sess
+                           :resident-session (handoff-lib/mono-router-resident-session)})
+        plan (mono-router-lib/chase-poke-plan
+              {:action action
+               :resident-target? resident-target?
+               :target-pane-busy?
+               (when-not resident-target?
+                 (let [pane (try (capture-pane-text socket wake-sess)
+                                 (catch Exception _ ""))]
+                   (chase-sweep-lib/actively-processing? pane)))
+               :resident-busy? (when resident-target? (resident-pane-busy? socket))
+               :resident-recently-active?
+               (when resident-target?
+                 (resident-recently-active? (System/currentTimeMillis)))
+               :resident-woken-this-sweep? @resident-wake-suppressed?})]
+    (case (:mode plan)
+      :skip (do (log! (str "chase-wake-skip-" (name (:skip-reason plan))) role)
+                false)
+      :rotate (let [performed (boolean (:ok (chase-rotate-to! socket roles role)))]
+                (when performed (reset! resident-wake-suppressed? true))
+                performed)
+      :wake (do (when (:resident-budget? plan)
+                  (reset! resident-wake-suppressed? true))
+                (notify-fn! socket (:session ri) (:agent ri))
+                true))))
 
 (defn- head-commit-10
   "Exactly 10 hex chars for swarm_handoff.bb's git_handoff commit contract."
@@ -1141,14 +1160,26 @@
                                                     false))))
                   :trigger-respawn! (fn [role]
                                        (try
-                                         (if (resident-pane-busy? socket)
-                                           (log! "chase-respawn-skip-busy" role)
-                                           (let [action (chase-poke-action roles socket role)
-                                                 ri (get roles role)]
-                                             (case action
-                                               :rotate (chase-rotate-to! socket roles role)
-                                               :wake-resident (chase-rotate-to! socket roles role)
-                                               (do-respawn! ri socket))))
+                                         ;; Busy gating is scoped like chase-poke-and-notify!:
+                                         ;; only pokes landing on the shared resident pane defer
+                                         ;; on its busy state. A classic-pack role's own respawn
+                                         ;; (liveness-driven, own dead pane) must not be blocked
+                                         ;; by an unrelated busy resident/coder pane.
+                                         (let [action (chase-poke-action roles socket role)
+                                               ri (get roles role)
+                                               resident-target?
+                                               (mono-router-lib/resident-poke-target?
+                                                {:action action
+                                                 :wake-session (handoff-lib/wake-session socket (:session ri))
+                                                 :resident-session (handoff-lib/mono-router-resident-session)})]
+                                           (cond
+                                             (and resident-target? (resident-pane-busy? socket))
+                                             (log! "chase-respawn-skip-busy" role)
+
+                                             (contains? #{:rotate :wake-resident} action)
+                                             (chase-rotate-to! socket roles role)
+
+                                             :else (do-respawn! ri socket)))
                                          (catch Exception e (log! "chase-respawn-error" role (.getMessage e)))))
                   :log-dead-letter! (fn [role path] (log! "dead-letter" role (fs/file-name path)))
                   :get-last-activity-ms (fn [role] (get-last-activity-ms (get roles role) socket now-ms))

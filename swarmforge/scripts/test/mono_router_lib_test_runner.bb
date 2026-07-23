@@ -177,6 +177,75 @@
                    {:rotation-router? true :role nil :home-role "coder"
                     :mailbox-empty? true})))
 
+;; ── resident-poke-target? — which pane a chase poke lands on ────────────────
+
+(assert-true "rotate always targets the resident pane"
+             (mono-router-lib/resident-poke-target?
+              {:action :rotate :wake-session "swarmforge-cleaner"
+               :resident-session "swarmforge-coder"}))
+(assert-true "wake-resident always targets the resident pane"
+             (mono-router-lib/resident-poke-target?
+              {:action :wake-resident :wake-session "swarmforge-coder"
+               :resident-session "swarmforge-coder"}))
+(assert-true "mono-router home role's own session IS the resident pane"
+             (mono-router-lib/resident-poke-target?
+              {:action :wake-own-session :wake-session "swarmforge-coder"
+               :resident-session "swarmforge-coder"}))
+(assert-true "classic-pack role's own standing pane is NOT the resident"
+             (not (mono-router-lib/resident-poke-target?
+                   {:action :wake-own-session :wake-session "swarmforge-cleaner"
+                    :resident-session "swarmforge-coder"})))
+(assert-true "no resident session at all -> own-session poke is not resident"
+             (not (mono-router-lib/resident-poke-target?
+                   {:action :wake-own-session :wake-session "swarmforge-cleaner"
+                    :resident-session nil})))
+
+;; ── chase-poke-plan — pane-scoped gating + per-sweep budget ─────────────────
+;; Incident 2026-07-23: specifier's refused broadcast rotate consumed the
+;; per-sweep resident budget every sweep, so architect's actionable
+;; git_handoff sat unclaimed behind chase-wake-skip-dedup for hours.
+
+(assert= "classic pane idle -> wake, and never touches the resident budget"
+         {:mode :wake :resident-budget? false}
+         (mono-router-lib/chase-poke-plan
+          {:action :wake-own-session :resident-target? false
+           :target-pane-busy? false}))
+(assert= "classic pane busy -> skip on ITS OWN busy state only"
+         {:mode :skip :skip-reason :busy :resident-budget? false}
+         (mono-router-lib/chase-poke-plan
+          {:action :wake-own-session :resident-target? false
+           :target-pane-busy? true}))
+(assert= "classic pane wake proceeds even while the resident is busy/spent"
+         {:mode :wake :resident-budget? false}
+         (mono-router-lib/chase-poke-plan
+          {:action :wake-own-session :resident-target? false
+           :target-pane-busy? false
+           :resident-busy? true :resident-woken-this-sweep? true}))
+(assert= "resident busy -> skip busy"
+         {:mode :skip :skip-reason :busy :resident-budget? true}
+         (mono-router-lib/chase-poke-plan
+          {:action :rotate :resident-target? true :resident-busy? true}))
+(assert= "resident already woken this sweep -> skip dedup"
+         {:mode :skip :skip-reason :dedup :resident-budget? true}
+         (mono-router-lib/chase-poke-plan
+          {:action :rotate :resident-target? true :resident-busy? false
+           :resident-woken-this-sweep? true}))
+(assert= "resident recently active -> skip recent"
+         {:mode :skip :skip-reason :recent :resident-budget? true}
+         (mono-router-lib/chase-poke-plan
+          {:action :wake-resident :resident-target? true :resident-busy? false
+           :resident-recently-active? true :resident-woken-this-sweep? false}))
+(assert= "idle resident, rotate action -> rotate (budget consumed on success only)"
+         {:mode :rotate :resident-budget? true}
+         (mono-router-lib/chase-poke-plan
+          {:action :rotate :resident-target? true :resident-busy? false
+           :resident-recently-active? false :resident-woken-this-sweep? false}))
+(assert= "idle resident, wake action -> wake consuming the budget"
+         {:mode :wake :resident-budget? true}
+         (mono-router-lib/chase-poke-plan
+          {:action :wake-resident :resident-target? true :resident-busy? false
+           :resident-recently-active? false :resident-woken-this-sweep? false}))
+
 (when (seq @failures)
   (binding [*out* *err*]
     (doseq [f @failures] (println f)))
