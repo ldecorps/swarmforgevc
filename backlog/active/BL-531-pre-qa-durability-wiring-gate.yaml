@@ -15,6 +15,9 @@ source: "BL-512 audit BL-FIX-004 (docs/reference/recurring-failure-mode-audit.md
 required_wiring:
   - "swarmforge/scripts/swarm_handoff.bb::pre_qa_gate_lib::the refusal must run on the live send path, not merely exist as a standalone script"
 
+abandoned_commits:
+  - "aca611925c"  # merge coder work for BL-531 — benign merge with no real code changes
+
 description: |
   ## What / why
 
