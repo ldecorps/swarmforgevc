@@ -262,4 +262,14 @@ run_sweep "alive" "$NOW_MS"
 [[ -f "$ROOT/inbox/new/00_item.handoff.chase.json" ]] && fail "13: expected no orphaned .chase.json sidecar left behind after the reap"
 pass "13 (BL-499 chase-sweep-terminal-dup-04): reaping a terminal duplicate leaves no orphaned chase sidecar behind"
 
+# ── 14: a skipped wake (busy/deferred adapter) does not bump chaseCount or telemetry ─
+make_fixture
+write_handoff "$ROOT/inbox/new/00_item.handoff"
+set_mtime "$ROOT/inbox/new/00_item.handoff" $(( (NOW_MS / 1000) - CHASE_TIMEOUT_S - 5 ))
+CHASE_WAKE_SKIP=1 run_sweep "alive" $(( NOW_MS - (STUCK_TIMEOUT_S + 100) * 1000 ))
+
+grep -qE "^(wake-up|telemetry chase)" "$ROOT/calls.log" 2>/dev/null && fail "14: skipped wake must not log wake-up or chase telemetry; got: $(cat "$ROOT/calls.log")"
+[[ -f "$ROOT/inbox/new/00_item.handoff.chase.json" ]] && fail "14: skipped wake must not write chase sidecar"
+pass "14: a deferred/skipped chase wake does not increment chaseCount or emit telemetry"
+
 echo "ALL PASS"

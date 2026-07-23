@@ -55,7 +55,7 @@
       _ (fs/create-dirs (fs/path dir "in_process"))
       path (str (fs/path dir "in_process" "00_item.handoff"))
       escalations (atom [])
-      adapters {:send-wake-up! (fn [_])
+      adapters {:send-wake-up! (fn [_] true)
                 :log-telemetry! (fn [_ _])
                 :on-stuck-escalation! (fn [role escalated?]
                                         (swap! escalations conj {:role role :escalated? escalated?}))

@@ -38,6 +38,22 @@
              (chase-sweep-lib/actively-processing?
               "  Bash(git status)\n     Running…\n"))
 
+(assert-true "Generating spinner is busy"
+             (chase-sweep-lib/actively-processing?
+              "· Generating… (5m 49s · ↓ 9.6k tokens)"))
+
+(assert-true "running shell command chrome is busy"
+             (chase-sweep-lib/actively-processing?
+              "● Running 1 shell command · 1m 20s…"))
+
+(assert-true "Tinkering spinner is busy"
+             (chase-sweep-lib/actively-processing?
+              "✽ Tinkering… (6m 57s · ↓ 24.5k tokens)"))
+
+(assert-true "token counter in status line is busy"
+             (chase-sweep-lib/actively-processing?
+              "· Whirlpooling… (6m 10s · ↓ 14.4k tokens)"))
+
 (assert-false "idle prompt with only permission chrome is not busy"
              (chase-sweep-lib/actively-processing?
               (str "❯ \n"

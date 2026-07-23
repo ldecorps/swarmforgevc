@@ -9,6 +9,7 @@
 (load-file (str (fs/path scripts-dir "handoff_lib.bb")))
 (load-file (str (fs/path scripts-dir "agent_runtime_lib.bb")))
 (load-file (str (fs/path scripts-dir "agent_runtime_inject.bb")))
+(load-file (str (fs/path scripts-dir "chase_sweep_lib.bb")))
 
 (def wake-message agent-runtime-lib/default-wake-chat-message)
 
@@ -164,6 +165,14 @@
         (fs/move source target {:replace-existing false})
         target))))
 
+(defn recipient-pane-busy?
+  "BL-135 parity: skip wake while the target pane is mid-turn. Capture the
+   wake-session target (mono-router dormant roles remap to the resident)."
+  [socket session]
+  (let [wake-sess (handoff-lib/wake-session socket session)
+        pane (try (capture-pane-text socket wake-sess) (catch Exception _ ""))]
+    (chase-sweep-lib/actively-processing? pane)))
+
 (defn deliver-parcel!
   "Moves outbox parcel to each recipient inbox/new and wakes the pane."
   [project-root outbox-path sender-role & {:keys [log-fn]}]
@@ -176,7 +185,8 @@
         filename (fs/file-name outbox-path)
         message (parse-message outbox-path)
         headers (:headers message)
-        recipients (some-> (get headers "to") (str/split #",") seq)]
+        recipients (some-> (get headers "to") (str/split #",") seq)
+        notified-sessions (atom #{})]
     (when-not socket
       (throw (ex-info "tmux socket file missing" {:path (str socket-file)})))
     (when-not recipients
@@ -186,15 +196,26 @@
         (when-not role-info
           (throw (ex-info (str "unknown recipient " recipient) {:recipient recipient})))
         (let [target (target-path role-info filename recipient)
-              delivered (add-delivery-headers message recipient)]
+              delivered (add-delivery-headers message recipient)
+              session (:session role-info)
+              wake-sess (handoff-lib/wake-session socket session)]
           (fs/create-dirs (fs/parent target))
           (when-not (fs/exists? target)
             (spit (str target) (render-message (:headers delivered) (:body delivered))))
-          (notify! socket (:session role-info)
-                   :log-fn log-fn
-                   :agent (:agent role-info)
-                   :traffic {:project-root project-root
-                             :source "sync-deliver"
-                             :role recipient
-                             :parcel filename}))))
+          (cond
+            (contains? @notified-sessions wake-sess)
+            (when log-fn (log-fn "deliver-notify-skip-dedup" recipient wake-sess))
+
+            (recipient-pane-busy? socket session)
+            (when log-fn (log-fn "deliver-notify-skip-busy" recipient wake-sess))
+
+            :else
+            (do (swap! notified-sessions conj wake-sess)
+                (notify! socket session
+                         :log-fn log-fn
+                         :agent (:agent role-info)
+                         :traffic {:project-root project-root
+                                    :source "sync-deliver"
+                                    :role recipient
+                                    :parcel filename}))))))
     (move-with-collision outbox-path (sent-dir (get roles sender-role)))))
