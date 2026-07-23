@@ -52,6 +52,22 @@ export interface MeanTicketTime {
   sampleCount: number;
 }
 
+export interface StageDwellSummary {
+  role: string;
+  parcelsProcessed: number;
+  processingMs: {
+    median: number | null;
+    max: number | null;
+  };
+}
+
+export interface StageDwellReport {
+  windowMs: number;
+  windowStartIso: string;
+  windowEndIso: string;
+  stages: StageDwellSummary[];
+}
+
 // The forward pipeline chain (PIPELINE.md). The coordinator sits outside it
 // and is never a retry participant.
 // BL-102: exported so stageDwell.ts's per-stage report iterates the same
@@ -273,6 +289,95 @@ function sumCompletedIntervalsMs(completedDir: string): number {
     totalMs += intervalMs(start, end);
   }
   return totalMs;
+}
+
+function medianMs(values: number[]): number | null {
+  if (values.length === 0) {
+    return null;
+  }
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
+}
+
+function readCompletedHandoffPaths(completedDir: string): string[] {
+  let entries: string[];
+  try {
+    entries = fs.readdirSync(completedDir);
+  } catch {
+    return [];
+  }
+
+  return entries.flatMap((entry) => collectHandoffFilesAt(path.join(completedDir, entry), entry));
+}
+
+function readHandoffHeaders(filePath: string): Record<string, string> | null {
+  try {
+    return parseHandoffHeaders(fs.readFileSync(filePath, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+function headerDateMs(headers: Record<string, string>, field: string): number {
+  return headers[field] ? Date.parse(headers[field]) : NaN;
+}
+
+function completedInsideWindow(endMs: number, windowStartMs: number, nowMs: number): boolean {
+  return !Number.isNaN(endMs) && endMs >= windowStartMs && endMs <= nowMs;
+}
+
+function readProcessingDurationInWindow(filePath: string, windowStartMs: number, nowMs: number): number | null {
+  const headers = readHandoffHeaders(filePath);
+  if (!headers) {
+    return null;
+  }
+  const start = headerDateMs(headers, 'dequeued_at');
+  const end = headerDateMs(headers, 'completed_at');
+  if (!completedInsideWindow(end, windowStartMs, nowMs)) {
+    return null;
+  }
+  const duration = intervalMs(start, end);
+  return duration > 0 ? duration : null;
+}
+
+function completedProcessingDurationsMs(completedDir: string, windowStartMs: number, nowMs: number): number[] {
+  const durations: number[] = [];
+  for (const filePath of readCompletedHandoffPaths(completedDir)) {
+    const duration = readProcessingDurationInWindow(filePath, windowStartMs, nowMs);
+    if (duration !== null) {
+      durations.push(duration);
+    }
+  }
+  return durations;
+}
+
+export function computeStageDwellReport(
+  _targetPath: string,
+  roles: RoleWorktree[],
+  windowMs: number,
+  nowMs: number = Date.now()
+): StageDwellReport {
+  const windowStartMs = nowMs - windowMs;
+  const stages = roles.map((role) => {
+    const completedDir = path.join(role.worktreePath, '.swarmforge', 'handoffs', 'inbox', 'completed');
+    const durations = completedProcessingDurationsMs(completedDir, windowStartMs, nowMs);
+    return {
+      role: role.role,
+      parcelsProcessed: durations.length,
+      processingMs: {
+        median: medianMs(durations),
+        max: durations.length > 0 ? Math.max(...durations) : null,
+      },
+    };
+  });
+
+  return {
+    windowMs,
+    windowStartIso: new Date(windowStartMs).toISOString(),
+    windowEndIso: new Date(nowMs).toISOString(),
+    stages,
+  };
 }
 
 function findEarliestDequeueInFile(filePath: string, current: number | null): number | null {

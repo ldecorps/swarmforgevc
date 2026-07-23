@@ -101,6 +101,43 @@ test('serves the pipeline endpoint matching on-disk state for an authorized requ
   });
 });
 
+test('serves the resident-spy miniapp over a query token for browser clients', async () => {
+  const target = mkTmp();
+  const coderWt = mkTmp();
+  writeRolesTsv(target, [{ role: 'coder', worktreePath: coderWt, displayName: 'Coder' }]);
+  dropHandoff(coderWt, '00_test.handoff', 'from: specifier\nto: coder\ntask: bl-999\ncommit: abc\n');
+
+  await withBridge(target, {}, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/resident-spy?view=pipeline&token=${encodeURIComponent(TOKEN)}`);
+    assert.equal(res.status, 200);
+    assert.match(res.headers.get('content-type'), /^text\/html/);
+    const html = await res.text();
+    assert.match(html, /data-testid="pipeline-status-grid"/);
+    assert.match(html, /Coder/);
+    assert.doesNotMatch(html, /below-grid-links/);
+  });
+});
+
+test('serves bridge events over a query token for EventSource clients', async () => {
+  const target = mkTmp();
+
+  await withBridge(target, {}, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/events?token=${encodeURIComponent(TOKEN)}`);
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get('content-type'), 'text/event-stream');
+    res.body.cancel();
+  });
+});
+
+test('rejects resident-spy miniapp requests without a valid token', async () => {
+  const target = mkTmp();
+
+  await withBridge(target, {}, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/resident-spy?token=wrong`);
+    assert.equal(res.status, 401);
+  });
+});
+
 test('serves the agents, backlog, and runlog endpoints', async () => {
   const target = mkTmp();
   await withBridge(target, {}, async (handle) => {
