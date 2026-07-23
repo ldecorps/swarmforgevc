@@ -38,11 +38,21 @@
        (git-ok? (run-git project-root ["merge-base" "--is-ancestor" sha ref]))))
 
 ;; ── condition 5: does a candidate carry dropped work? ────────────────────
-;; A merge commit (2+ parents) whose diff against its first parent is empty,
-;; or a commit whose tree is identical to the cited commit, carries no unique
-;; content and must not survive as an ancestry finding (architect rule_proposal,
-;; b7dd7276d) - see aca611925c ("merge coder work for BL-531", empty
-;; functional diff) for the false positive this excludes.
+;; A merge commit (2+ parents) that introduces no content beyond the union
+;; of its parents, or a non-merge commit whose tree is identical to the
+;; cited commit, carries no unique content and must not survive as an
+;; ancestry finding (architect rule_proposal, b7dd7276d; widened by
+;; architect send-back 4da499ea3b) - see aca611925c ("merge coder work for
+;; BL-531", empty functional diff) and 3a57a807fe (an ordinary role
+;; ticket-naming merge - e.g. an architect's own review-merge of the cited
+;; commit into a branch tip that carries unrelated prior content, whose
+;; first-parent diff is the WHOLE incoming parcel and whose tree is NOT
+;; identical to the cited commit's) for the two false positives this
+;; excludes. A literal empty first-parent diff is the degenerate case of the
+;; same underlying test: a merge introduces nothing of its own exactly when
+;; its combined diff against every parent (`git diff-tree -m --cc`) is
+;; empty - if the first-parent diff is empty, that combined diff is
+;; necessarily empty too, so the general check subsumes it.
 
 (defn- commit-parents
   "Full-length parent shas of full-sha, oldest-first-parent-first, or nil if
@@ -58,22 +68,32 @@
   (let [res (run-git project-root ["rev-parse" (str ref "^{tree}")])]
     (when (git-ok? res) (str/trim (:out res)))))
 
-(defn- empty-diff-against-first-parent?
-  [project-root full-sha first-parent]
-  (git-ok? (run-git project-root ["diff" "--quiet" first-parent full-sha])))
+(defn- merge-introduces-nothing-unique?
+  "True when full-sha is a merge whose combined diff against ALL of its
+   parents (`git diff-tree -m --cc`, which prunes any hunk that matches at
+   least one parent) is empty - i.e. every line of its tree already exists
+   in some parent, so the merge itself resolved no conflicts and added no
+   content of its own. This is the general form of \"empty diff against the
+   first parent\": a trivial/clean merge, whichever parent(s) it agrees
+   with. Fails closed to false when the git invocation itself fails (an
+   unreadable commit still gets full ancestry scrutiny)."
+  [project-root full-sha]
+  (let [res (run-git project-root ["diff-tree" "-m" "--cc" "--no-commit-id" full-sha])]
+    (and (git-ok? res) (str/blank? (str/trim (:out res))))))
 
 (defn no-dropped-work?
   "True when full-sha carries no content the cited commit does not already
-   have: a merge (2+ parents) with an empty diff against its first parent,
-   or a tree identical to the cited commit's tree. Fails closed to false (a
-   candidate whose parents/tree cannot be read is NOT excluded - an
-   unreadable commit still gets full ancestry scrutiny)."
+   have: a merge (2+ parents) that introduces nothing beyond the union of
+   its parents, or a non-merge commit whose tree is identical to the cited
+   commit's tree. Fails closed to false (a candidate whose parents/tree
+   cannot be read, or a merge diff-tree cannot compute, is NOT excluded -
+   an unreadable commit still gets full ancestry scrutiny)."
   [project-root full-sha cited-commit]
   (let [parents (commit-parents project-root full-sha)]
     (boolean
      (or (and parents
               (>= (count parents) 2)
-              (empty-diff-against-first-parent? project-root full-sha (first parents)))
+              (merge-introduces-nothing-unique? project-root full-sha))
          (let [candidate-tree (tree-of project-root full-sha)
                cited-tree (tree-of project-root cited-commit)]
            (and candidate-tree cited-tree (= candidate-tree cited-tree)))))))

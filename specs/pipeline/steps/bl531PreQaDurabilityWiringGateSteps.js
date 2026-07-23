@@ -197,10 +197,11 @@ function registerSteps(registry) {
 
   // ── BL-531 empty-diff-or-merge-commit-is-not-a-finding-11 ───────────────
   // Rewrites the stray commit the shared Given above just made into one of
-  // the two "carries no dropped work" shapes, so ctx.strandedCommit ends up
+  // the three "carries no dropped work" shapes, so ctx.strandedCommit ends up
   // referring to a commit that must NOT survive as an ancestry finding
-  // (condition 5, architect rule_proposal b7dd7276d).
-  registry.define(/^that commit (is a merge commit whose diff against its first parent is empty|has a tree identical to the commit cited in the draft)$/, (ctx, prop) => {
+  // (condition 5, architect rule_proposal b7dd7276d; widened by architect
+  // send-back 4da499ea3b to also cover an ordinary reviewer's merge).
+  registry.define(/^that commit (is a merge commit whose diff against its first parent is empty|has a tree identical to the commit cited in the draft|is a merge of the cited commit into a branch with unrelated prior content)$/, (ctx, prop) => {
     const branch = gitOut(ctx.coderWt, ['rev-parse', '--abbrev-ref', 'HEAD']);
     const strandedParent = gitOut(ctx.coderWt, ['rev-parse', `${ctx.strandedCommit}^`]);
     git(ctx.coderWt, ['reset', '-q', '--hard', strandedParent]);
@@ -231,6 +232,21 @@ function registerSteps(registry) {
         '-m', `${TICKET_ID}: tree identical to cited commit`,
       ]);
       git(ctx.coderWt, ['reset', '-q', '--hard', newSha]);
+    } else if (prop === 'is a merge of the cited commit into a branch with unrelated prior content') {
+      // Simulates architect send-back 4da499ea3b's real false positive
+      // (3a57a807fe): a reviewer merges the cited commit into their OWN
+      // branch tip, which carries unrelated prior content. The merge's
+      // first-parent diff is the whole incoming parcel (non-empty) and its
+      // tree is NOT identical to the cited commit's (it also carries the
+      // unrelated file) - neither of the other two shapes catches this one,
+      // yet it is a clean automatic merge that resolves no conflicts and
+      // adds nothing beyond the union of its parents.
+      git(ctx.coderWt, ['checkout', '-q', '-b', 'bl531-other-content-side', strandedParent]);
+      fs.writeFileSync(path.join(ctx.coderWt, 'other-role-evidence.txt'), 'unrelated prior content\n');
+      git(ctx.coderWt, ['-c', 'user.email=t@t', '-c', 'user.name=t', 'add', 'other-role-evidence.txt']);
+      git(ctx.coderWt, ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '-m', 'unrelated prior content']);
+      git(ctx.coderWt, ['-c', 'user.email=t@t', '-c', 'user.name=t', 'merge', '-q', '--no-ff', ctx.citedCommit,
+        '-m', `${TICKET_ID}: merge cited commit into branch with unrelated content`]);
     } else {
       throw new Error(`unrecognized dropped-work property: "${prop}"`);
     }
