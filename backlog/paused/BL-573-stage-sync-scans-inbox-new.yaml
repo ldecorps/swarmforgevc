@@ -1,0 +1,118 @@
+id: BL-573
+title: "Pipeline board stage sync scans inbox/in_process only — a ticket queued at a dormant role shows at its previous stage"
+milestone: M8
+type: defect
+status: todo
+epic: pipeline-board
+severity: medium
+priority: 15
+direction: swarm-surfaced
+depends_on: []
+assigned_to: specifier
+mutation_cost: low
+source: |
+  Coordinator note to specifier, 2026-07-23T08:18Z: "pipeline_stage sync
+  ignores inbox/new; misses dormant-stage tickets."
+
+  Verified on `main` before speccing:
+    - swarmforge/scripts/pipeline_stage_cli.bb:93 — `role-ticket-pairs-for`
+      builds its file list from `(handoff-lib/mailbox-dir role-info :in_process)`
+      and nothing else; `grep -n 'in_process\|inbox\|new'` over that file
+      returns only that one scan site plus a comment.
+    - swarmforge/scripts/pipeline_stage_lib.bb:1-12 — the header states the
+      design as scraping "each role's inbox/in_process".
+
+description: |
+  ## The defect
+
+  A parcel that handoffd has DELIVERED to a role's `inbox/new/` but that the
+  role has not yet dequeued into `in_process/` is invisible to the stage sync.
+  The board therefore keeps showing the ticket at its previous stage — or as
+  not-started — for the whole time it waits.
+
+  On a mono-router pack this is the normal case, not an edge case. Only the
+  resident and the coordinator hold standing sessions; the other five pipeline
+  roles are dormant, and a parcel forwarded to one of them sits in `inbox/new/`
+  until the resident rotates into that role. So the board is wrong for exactly
+  the interval an operator is most likely to be looking at it to find out where
+  the work is.
+
+  It is the same "durable false not-started" class that BL-488 closed for
+  prefixed ticket ids, reached by a different route: there the id failed to
+  extract, here the file is never read at all.
+
+  ## The fix, and why it needs no new precedence rule
+
+  Include each role's `inbox/new/` alongside `inbox/in_process/` when building
+  the role/ticket pairs, then feed both into the SAME
+  `pipeline-stage-lib/reconcile-stage-map` that already runs.
+
+  That reconciliation resolves a ticket observed at more than one role by
+  `role-order` rank — the role later in the pipeline (more downstream, more
+  current) wins. Applied to queued parcels this gives the right answer for
+  free:
+
+  - Downstream `new/` vs upstream `in_process/` → downstream wins, which is
+    correct: the parcel has ADVANCED to that role, it is merely not dequeued
+    yet.
+  - Same role in both `new/` and `in_process/` (a batch role mid-drain) → equal
+    rank, collapses to one row, so the double-row defect the reconciliation was
+    built to prevent does not reappear through the new source.
+
+  So this is a scan-widening, not a redesign. Resist adding a `new`-vs-
+  `in_process` tiebreak; if one seems necessary, that is a signal the
+  reconciliation is being bypassed rather than reused.
+
+  ## Constraints
+
+  - Keep the decision logic in `pipeline_stage_lib.bb`, which is deliberately
+    side-effect-free and unit-tested with no filesystem; the CLI stays the IO
+    edge. Do not push any new branching into the CLI's scan.
+  - `filter-active` must still apply — a queued parcel for a ticket that is not
+    in `backlog/active/` must not appear on the board (scenario 04).
+  - The ticket-id extraction path is unchanged: the same
+    `ticket-id-from-headers` over `task:` and `message:` headers, so a
+    note-only kickoff in `new/` resolves exactly as it does in `in_process/`.
+    Do not widen the `known-ticket-prefixes` allowlist as part of this.
+  - Batch handoff files are already handled by
+    `list-handoff-files-with-batches`; the `new/` scan must use the same
+    helper, not a plain directory listing.
+
+acceptance: specs/features/BL-573-stage-sync-scans-inbox-new.feature
+
+qa_e2e_procedure: |
+  Fixture-driven, no live swarm needed:
+  1. Run the pipeline-stage unit suite → green.
+  2. Build a fixture with an active ticket whose only parcel sits in the
+     documenter's `inbox/new/`; run `pipeline_stage_cli.bb sync`; confirm
+     `.swarmforge/board/ticket-stage-map.json` places it at documenter.
+  3. Non-vacuity: revert the scan to `in_process` only and re-run (2) — the
+     ticket must vanish from the stage map. Restore.
+  4. Two-role fixture (QA `new/` + coder `in_process/`) → exactly one entry,
+     at QA.
+  5. Same-role fixture (cleaner `new/` + cleaner `in_process/`) → exactly one
+     entry, at cleaner.
+  6. Confirm a queued parcel whose ticket is not in `backlog/active/` produces
+     no entry.
+
+notes: |
+  IR-DRY adjudication (specifier, 2026-07-23). First pass had the role name as
+  a bare literal in the step text, so each role was its own step — 9 handler
+  patterns for what is one behavior parameterized by role. Fixed: the role is
+  now a quoted parameter, leaving 3 patterns (queued at, held in process at,
+  stage is). That also removed the two genuinely confusable cross-pairs where
+  a `new` step and an `in_process` step for the SAME role differed only by the
+  word "also".
+
+  The 10 findings that remain are all "same pattern, different quoted role" —
+  the checker compares raw text and does not normalize quoted literals the way
+  it normalizes <placeholders>. Reviewed, deliberately left.
+
+  Since role is a captured value, each handler must resolve the role from its
+  argument rather than hard-coding one; a handler that ignores it would still
+  pass scenario 01 while testing nothing in 02-04.
+
+  Related but distinct: the `/pipeline` endpoint reports only per-role
+  busy/idle and has no per-ticket stage at all (BL-452). This ticket is about
+  the board's stage map, which is a different and already-existing source; it
+  does not close the BL-452 gap.
