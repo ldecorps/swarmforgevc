@@ -554,6 +554,36 @@ export function decideSteeringAction(
   return { kind: 'redirect', role, text };
 }
 
+// The outcome of a REDIRECT actually reaching (or failing to reach) the
+// role's pane. A discriminated union rather than a bare boolean for the
+// same reason SttResult/TtsResult below are: "no pane exists for this role"
+// and "a pane exists but the verified send did not land" are different
+// facts the human needs told apart - on a mono-router the first is the
+// EXPECTED state for the six dormant rotation targets, and reporting it as
+// a generic failure would train the human to ignore a message that
+// sometimes means a real delivery fault.
+export type SteerDeliveryResult =
+  | { kind: 'delivered' }
+  | { kind: 'no-pane' }
+  | { kind: 'undelivered'; reason: string };
+
+// Pure: the receipt posted back into the role topic after a steer. Before
+// this, redirectToRole swallowed BOTH failure modes into a stderr line the
+// human never sees (the adapter's own "never throws out of the poll cycle"
+// convention), so steering a dormant role looked identical to steering a
+// live one - the message simply vanished. The receipt is the only signal
+// the human has, so it names the role explicitly: a reply arriving in the
+// wrong topic is itself a symptom worth being able to spot.
+export function formatSteerReceipt(role: string, result: SteerDeliveryResult): string {
+  if (result.kind === 'delivered') {
+    return `✓ steered ${role}`;
+  }
+  if (result.kind === 'no-pane') {
+    return `⚠ ${role} has no live pane - not delivered`;
+  }
+  return `⚠ not delivered to ${role}: ${result.reason}`;
+}
+
 // BL-426 slice 1: coordinator-Operator-topic voice-note round trip. STT/TTS
 // results are a discriminated union, never a bare boolean - a TRANSIENT
 // provider failure (retryable) and a STRUCTURALLY un-processable file
@@ -890,7 +920,13 @@ export interface PollAdapters {
   // caching), same "a mapping just written is visible to the very next
   // poll" posture as subjectForTopic/backlogForTopic.
   readRoleTopicMap?: () => Record<string, number>;
-  redirectToRole?: (role: string, text: string) => Promise<void>;
+  redirectToRole?: (role: string, text: string) => Promise<SteerDeliveryResult>;
+  // The steer's delivery receipt, posted back into the role topic the steer
+  // came from (formatSteerReceipt above). Optional and independent of the
+  // pair above: missing means steering still works exactly as it did, just
+  // silently - so a deployment that wires steering but not this one is not
+  // a broken half-state.
+  notifyRoleTopic?: (topicId: number | undefined, text: string) => Promise<boolean>;
   // BL-426 slice 1: transcribes a coordinator Operator-topic voice note's
   // audio (already-resolved fileId) to text. Optional so every PollAdapters
   // fixture written before BL-426 keeps working unchanged - missing means
@@ -1841,7 +1877,8 @@ async function processSteeringUpdate(
   principalUserId: string,
   chatId: string,
   roleTopicMap: Record<string, number>,
-  redirectToRole: (role: string, text: string) => Promise<void>
+  redirectToRole: (role: string, text: string) => Promise<SteerDeliveryResult>,
+  notifyRoleTopic?: (topicId: number | undefined, text: string) => Promise<boolean>
 ): Promise<UpdateDeliveryOutcome | undefined> {
   const decision = decideSteeringAction(update, principalUserId, chatId, roleTopicMap);
   if (decision.kind === 'ignore') {
@@ -1850,7 +1887,15 @@ async function processSteeringUpdate(
   if (decision.kind === 'refuse') {
     return 'dropped';
   }
-  await redirectToRole(decision.role, decision.text);
+  const result = await redirectToRole(decision.role, decision.text);
+  // Optional adapter: absent means no receipt, the exact pre-receipt
+  // behavior - the same "a new capability degrades to prior behavior"
+  // posture every other optional adapter in this file uses. The outcome
+  // stays 'posted' either way: the steer's own delivery is what that
+  // reports, never whether the receipt about it landed.
+  if (notifyRoleTopic) {
+    await notifyRoleTopic(topicIdOf(update), formatSteerReceipt(decision.role, result));
+  }
   return 'posted';
 }
 
@@ -1870,7 +1915,14 @@ async function attemptSteeringDelivery(
   if (!adapters.readRoleTopicMap || !adapters.redirectToRole) {
     return undefined;
   }
-  return processSteeringUpdate(update, principalUserId, adapters.chatId, adapters.readRoleTopicMap(), adapters.redirectToRole);
+  return processSteeringUpdate(
+    update,
+    principalUserId,
+    adapters.chatId,
+    adapters.readRoleTopicMap(),
+    adapters.redirectToRole,
+    adapters.notifyRoleTopic
+  );
 }
 
 // Pure: which topic id (if any) an 'open-default'/'open-for-topic' decision
