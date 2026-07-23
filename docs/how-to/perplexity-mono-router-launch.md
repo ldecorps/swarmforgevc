@@ -54,6 +54,12 @@ Packs that set `config coordinator_agent aider` must also set
 claude and codex. Without that, the coordinator starts as bare `aider` and
 cannot talk to Perplexity.
 
+As of BL-530, the `./swarm ensure` command validates that all required launch
+contract fields are present before starting agents. If `coordinator_model` or
+`rotation` are missing on a pack that requires them, ensure will fail with a
+clear error message and refuse to respawn agents onto a misconfigured pane. Fix
+the pack configuration in `swarmforge/packs/*.conf` and re-run ensure.
+
 ## Idle / open-slot behavior
 
 See `swarmforge/PIPELINE.md` (“Mono-router idle and open slots”) and
