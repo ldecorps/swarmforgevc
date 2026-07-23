@@ -35,6 +35,7 @@ here.
 - [Bringing Up the FES Second Swarm (mono-rotate, own Telegram identity)](how-to/BL-439-fes-second-swarm-bringup.md)
 - [Model Steward: Onboarding, Certification, and Role Recommendations](how-to/BL-547-model-steward-overview.md)
 - [ModelFactory: Assigning and Applying Agent Models](how-to/BL-525-model-factory-assign-and-apply.md)
+- [Context Telemetry: Recording and Querying Agent Invocations](how-to/GH-22-context-telemetry-recorder-and-query-cli.md)
 - [Reviewing Paused Tickets in the Mini App Console](how-to/BL-538-console-paused-ticket-pager.md)
 - [Launching the Perplexity mono-router pack](how-to/perplexity-mono-router-launch.md)
 
