@@ -1,0 +1,114 @@
+id: BL-574
+title: "PromptEngine Slice 2 — fragment registry, content-hash fragment cache, and per-model adapter plugins"
+milestone: M5
+type: feature
+status: todo
+epic: swarm-intelligence-layer
+human_approval: pending
+severity: medium
+priority: 14
+direction: swarm-surfaced
+depends_on: [BL-546]
+assigned_to: specifier
+mutation_cost: medium
+source: |
+  Coordinator note to specifier, 2026-07-23: "Spec BL-546 Slice 2 from parked
+  draft as its own ticket (like BL-556/BL-547)." BL-546 Slice 1 shipped and is
+  in `backlog/done/`; its Slices 2-3 were parked up-front in
+  `specs/features/BL-546-prompt-engine-slices-2-3.feature.draft` under the
+  slice-scoping rule (BL-233), which keeps unbuilt scenarios out of the
+  acceptance runner. This ticket materializes Slice 2 only.
+
+  Same shape as BL-556, which carried BL-547's Slice 2 as its own ticket.
+  Difference: `acceptance:` here is a PATH to a feature file, per BL-111 —
+  BL-556's inline `acceptance: |` predates that convention and is not copied.
+
+description: |
+  ## What this slice adds
+
+  Slice 1 composes a prompt. This slice makes the inputs addressable and the
+  model-specific wording pluggable:
+
+  - A fragment registry: `constitution`, `pipeline`, `role`, `pack-overlay`,
+    `tool-instructions` become named units composed BY REFERENCE, so editing a
+    fragment file changes the composed prompt with no edit to compose logic.
+  - Per-model adapter plugins keyed off model/provider, adjusting wording,
+    tool-instruction shape, and context ordering WITHOUT forking the
+    constitution. Model Steward (BL-547) owns adapter metadata; PromptEngine
+    loads adapters by model/provider key.
+  - A fragment cache keyed by content hash, so an unchanged fragment is not
+    re-read on the next compose.
+
+  ## Scenario coverage against BL-546's stated Observables
+
+  BL-546's Slice 2 lists four Observables; the parked draft only had scenarios
+  for the first two. All four are covered here:
+
+  1. Fragments addressable and composed by reference — scenarios 01 and 05
+     (05 proves the reference is live: a changed fragment reaches the output).
+  2. Adapter selection keyed off model/provider, not scattered case
+     branches — scenario 02.
+  3. Adding an adapter does not edit core compose logic (BL-206 discipline) —
+     scenario 03, an adapter registered after startup is selected.
+  4. Fragment cache keyed by content hash, cache hit skips re-read —
+     scenarios 04 and 05.
+
+  Scenario 05 is deliberately the invalidation half of the cache: a cache that
+  never invalidates passes scenario 04 while being badly wrong, so the pair
+  must land together.
+
+  ## Constraints
+
+  - Module boundary is BL-546's specifier pin 1: the primary implementation is
+    `swarmforge/scripts/prompt_engine_lib.bb` (+ its CLI). Any TypeScript
+    mirror in `extension/src/swarm/promptEngine.ts` is for UI preview only and
+    must NOT duplicate composition logic.
+  - Adapter lookup must be registry-driven. A `case`/`cond` over provider names
+    inside the compose path fails Observable 3 even if every scenario passes —
+    scenario 03 exists to make that observable, so do not satisfy it by adding
+    another branch.
+  - The constitution fragment is never rewritten by an adapter. Adapters adjust
+    surrounding wording, tool-instruction shape, and ordering; scenario 02 pins
+    the constitution content as unchanged.
+  - Cache key is the fragment CONTENT hash, not mtime or path — mtime is not
+    stable across the worktree hot-sync that rewrites script files (BL-373).
+  - Keep the decision logic pure and unit-testable with no filesystem, the way
+    the sibling `.bb` libs already separate decisions from IO; the CLI is the
+    edge that reads fragment files.
+
+  ## Out of scope — Slice 3 stays parked
+
+  Prompt versioning, schema validation, and the `prompt-engine inspect <role>`
+  operator surface remain in
+  `specs/features/BL-546-prompt-engine-slices-2-3.feature.draft`. Do not
+  materialize them here; per BL-233 a feature file whose scenarios outrun the
+  built code hard-fails the acceptance runner.
+
+acceptance: specs/features/BL-574-prompt-engine-slice2-fragments-adapters.feature
+
+qa_e2e_procedure: |
+  1. Run the prompt-engine unit suite → green, including the new fragment
+     registry, adapter registry, and cache tests.
+  2. Compose a prompt for role "coder"; confirm the output contains content
+     traceable to each named fragment.
+  3. Edit the `role` fragment on disk; recompose; confirm the new content
+     appears AND that the fragment was re-read (cache invalidated).
+  4. Recompose with nothing changed; confirm no fragment file read occurs.
+  5. Register an adapter for a provider name that appears nowhere in the
+     compose path's source; confirm it is selected — and confirm by grep that
+     adding it required no edit to the compose function.
+  6. Compose for provider "claude" and provider "aider"; diff the two outputs
+     and confirm the constitution fragment bytes are identical in both.
+
+notes: |
+  When this slice lands, the two Slice-2 scenarios in
+  `BL-546-prompt-engine-slices-2-3.feature.draft` are superseded by this
+  ticket's feature file — the draft is trimmed to Slice 3 only in the same
+  parcel, so the design is not carried in two places. That trimming is part of
+  this ticket, not a follow-up: a `.draft` left shadowing a materialized slice
+  is the BL-441 failure mode.
+
+  BL-546's own `acceptance:` feature file
+  (`specs/features/BL-546-prompt-engine-model-aware-prompt-composition.feature`)
+  covers Slice 1 and is not modified here; this slice gets its own file so the
+  ticket owns its contract.
