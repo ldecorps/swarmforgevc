@@ -37,6 +37,47 @@
   (and (ref-exists? project-root ref)
        (git-ok? (run-git project-root ["merge-base" "--is-ancestor" sha ref]))))
 
+;; ── condition 5: does a candidate carry dropped work? ────────────────────
+;; A merge commit (2+ parents) whose diff against its first parent is empty,
+;; or a commit whose tree is identical to the cited commit, carries no unique
+;; content and must not survive as an ancestry finding (architect rule_proposal,
+;; b7dd7276d) - see aca611925c ("merge coder work for BL-531", empty
+;; functional diff) for the false positive this excludes.
+
+(defn- commit-parents
+  "Full-length parent shas of full-sha, oldest-first-parent-first, or nil if
+   the commit cannot be read."
+  [project-root full-sha]
+  (let [res (run-git project-root ["show" "-s" "--format=%P" full-sha])]
+    (when (git-ok? res)
+      (remove str/blank? (str/split (str/trim (:out res)) #"\s+")))))
+
+(defn- tree-of
+  "The tree sha ref^{tree} resolves to, or nil when the ref cannot be read."
+  [project-root ref]
+  (let [res (run-git project-root ["rev-parse" (str ref "^{tree}")])]
+    (when (git-ok? res) (str/trim (:out res)))))
+
+(defn- empty-diff-against-first-parent?
+  [project-root full-sha first-parent]
+  (git-ok? (run-git project-root ["diff" "--quiet" first-parent full-sha])))
+
+(defn no-dropped-work?
+  "True when full-sha carries no content the cited commit does not already
+   have: a merge (2+ parents) with an empty diff against its first parent,
+   or a tree identical to the cited commit's tree. Fails closed to false (a
+   candidate whose parents/tree cannot be read is NOT excluded - an
+   unreadable commit still gets full ancestry scrutiny)."
+  [project-root full-sha cited-commit]
+  (let [parents (commit-parents project-root full-sha)]
+    (boolean
+     (or (and parents
+              (>= (count parents) 2)
+              (empty-diff-against-first-parent? project-root full-sha (first parents)))
+         (let [candidate-tree (tree-of project-root full-sha)
+               cited-tree (tree-of project-root cited-commit)]
+           (and candidate-tree cited-tree (= candidate-tree cited-tree)))))))
+
 (defn branch-of-worktree
   "The branch currently checked out at worktree-path, or nil (never throws)
    when the path is missing or not a readable git worktree."
@@ -115,10 +156,14 @@
                                        candidates))
         cited-ancestors-set (set (keep (fn [{:keys [sha full-sha]}]
                                           (when (ancestor-of? project-root full-sha cited-commit) sha))
+                                        candidates))
+        no-dropped-work-set (set (keep (fn [{:keys [sha full-sha]}]
+                                          (when (no-dropped-work? project-root full-sha cited-commit) sha))
                                         candidates))]
     {:role-branch-commits (:role-branch-commits gathered)
      :main-reachable-set main-reachable-set
      :cited-ancestors-set cited-ancestors-set
+     :no-dropped-work-set no-dropped-work-set
      :warnings (:warnings gathered)}))
 
 ;; ── ticket YAML + wiring-target fact-gathering ───────────────────────────
@@ -194,6 +239,7 @@
                        :role-branch-commits (:role-branch-commits ancestry)
                        :main-reachable-set (:main-reachable-set ancestry)
                        :cited-ancestors-set (:cited-ancestors-set ancestry)
+                       :no-dropped-work-set (:no-dropped-work-set ancestry)
                        :wiring-entries wiring-entries
                        :file-contents file-contents
                        :abandoned-commits abandoned-commits})]
