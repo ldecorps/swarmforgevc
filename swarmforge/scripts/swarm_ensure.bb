@@ -428,6 +428,27 @@
     (when (fs/exists? p)
       (str/trim (slurp (str p))))))
 
+(defn rotate-target-launch-script [role]
+  (fs/path state-dir "launch" (str role ".sh")))
+
+(defn dormant-rotate-viable?
+  "BL-537: a dormant rotate target must never blanket-report DORMANT without
+   confirming rotate_to_role would actually succeed for it right now -
+   mirroring rotate-resident-to!'s own two failure modes (no-resident-session,
+   no-launch-script). SRE 2026-07-19: a session torn down alongside its
+   resident left both silently unusable while ensure kept reporting DORMANT
+   (indistinguishable from the healthy, by-design case)."
+  [socket resident-session role]
+  (cond
+    (not (and resident-session (pane-alive? socket resident-session)))
+    {:viable? false :reason "no live resident session to rotate from"}
+
+    (not (fs/exists? (rotate-target-launch-script role)))
+    {:viable? false :reason "missing launch script for role"}
+
+    :else
+    {:viable? true}))
+
 (defn ensure-mono-router-role!
   "BL-518 topology repair for one role under rotation router, merged with the
    BL-530 launch-contract refusal (ensure-role! above): a dormant rotate
@@ -435,7 +456,7 @@
    only gates the branches that would actually attempt a respawn (:ok's
    dead-pane case and :ensure-standing), never the dormant or teardown-
    illicit decisions."
-  [socket ordered-roles {:keys [role session]} contract-broken?]
+  [socket ordered-roles {:keys [role session]} contract-broken? resident-session]
   (let [alive (session-exists? socket session)
         action (mono-router-lib/topology-action ordered-roles role alive)
         class (mono-router-lib/classify-role ordered-roles role)
@@ -466,8 +487,12 @@
                                     (str " as " launch-role))))))
 
       :dormant-ok
-      {:component component :status :dormant
-       :action "mono-router rotate target; no standing session"}
+      (let [{:keys [viable? reason]} (dormant-rotate-viable? socket resident-session role)]
+        (if viable?
+          {:component component :status :dormant
+           :action "mono-router rotate target; no standing session"}
+          {:component component :status :failed
+           :action (str "rotate_to_role would fail: " reason)}))
 
       :teardown-illicit
       (do
@@ -522,10 +547,17 @@
         ;; condition ensure exists to repair — so mono-router-ness is decided
         ;; ONLY by the declared conf/identity signal, never inferred from shape.
         router? (rotation-router-mode?)
+        ;; BL-537: the resident's session name, looked up once so every
+        ;; dormant role's rotate-viability check can confirm a live resident
+        ;; to rotate onto exists - resident rows are processed first (roles.tsv
+        ;; invariant: resident is the first non-coordinator entry), so by the
+        ;; time a dormant role's turn comes any resident repair has already run.
+        resident-role-name (first (remove #(= "coordinator" %) ordered))
+        resident-session (some #(when (= (:role %) resident-role-name) (:session %)) rows)
         role-results (if socket
                        (mapv (fn [{:keys [role session] :as row}]
                                (if router?
-                                 (ensure-mono-router-role! socket ordered row contract-broken?)
+                                 (ensure-mono-router-role! socket ordered row contract-broken? resident-session)
                                  (ensure-role! (str "agent:" role)
                                                #(pane-alive? socket session)
                                                #(respawn-role! socket role session)

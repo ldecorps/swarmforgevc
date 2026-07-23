@@ -1,0 +1,151 @@
+id: BL-570
+title: "Property-suite drift guard: the shared pre-commit hook runs `npm run test:properties` when staged changes can invalidate a property"
+milestone: M8
+type: feature
+status: todo
+epic: code-quality-gates
+human_approval: approved
+severity: medium
+priority: 20
+direction: agent-proposed
+depends_on: []
+assigned_to: specifier
+mutation_cost: low
+source: |
+  Architect note to specifier, 2026-07-23 (detail:
+  .worktrees/architect/tmp/DF-pipelineboard-property.md). The architect found
+  `npm run test:properties` RED on main during a BL-549 review and asked,
+  separately from the defect itself, "whether d63e80320-style commits — landing
+  functional changes on main co-authored outside the swarm pipeline — should be
+  required to run `npm run test:properties`, since the normal unit/mutation/CRAP
+  gates deliberately exclude it and therefore cannot catch this class of drift."
+
+  The RED suite the architect reported is NOT this ticket and needs no ticket:
+  it was fixed out-of-band by 9b211456a ("test: realign pipelineBoard
+  prefix-property oracle with shortened link HTML", 2026-07-23 10:39), an hour
+  after the note was written. Specifier verified green on main HEAD b0e3cb508:
+  9 files / 27 tests pass. BL-564's `source:` already records that same fix
+  ("one property-test conflict already fixed inline"). The stale action item in
+  backlog/evidence/BL-525-pipelineBoard-property-defect-20260723.md asking the
+  specifier to file a defect ticket is therefore closed, not carried here.
+
+  What survives is only the architect's second question: the PREVENTION gap.
+
+description: |
+  ## The gap
+
+  `npm run test:properties` is a real verification gate that nothing runs
+  automatically:
+
+  - BL-479 deliberately excluded properties from the normal unit, coverage,
+    mutation and CRAP runs, giving them their own
+    `vitest.properties.config.mjs`.
+  - Its only enforcement is prose in three role prompts (architect.prompt,
+    hardender.prompt, QA.prompt) — i.e. it binds work that rides the pipeline.
+  - No `.github/workflows/*` runs any test suite at all (the four workflows are
+    intake and dashboard jobs).
+
+  So a commit that does not ride the pipeline can leave a property red for as
+  long as it takes someone to run the suite by hand. That is not hypothetical:
+  d63e80320 changed `pipelineBoardLinkLine`'s rendered shape without updating
+  the property that pins it, and the red suite was found a day later by an
+  architect mid-review of an unrelated ticket. BL-564 exists precisely because
+  125 such out-of-band commits have landed since 2026-07-15.
+
+  ## What is wanted
+
+  Close the gap at the one checkpoint out-of-band commits actually pass
+  through: the repo-wide pre-commit hook. BL-105 already established the
+  pattern — `swarmforge/git-hooks/pre-commit` is installed once via
+  `core.hooksPath` (so every worktree shares it) and delegates to a standalone
+  script, `swarmforge/scripts/check_commit_size.sh`, which keeps the guard
+  logic testable on its own. Mirror that exactly: a second standalone guard
+  script the hook also calls.
+
+  ## Constraints
+
+  - **Scope the trigger.** `test:properties` compiles the whole extension
+    before running, so firing it on every commit would tax doc-only and
+    backlog-only commits for nothing. Run it only when the staged set contains
+    a path that could invalidate a property.
+  - **Fail open, never wedge.** The hook is shared by every worktree, including
+    checkouts where `node_modules` may be absent. If the suite cannot be run,
+    the guard warns and exits 0. It hard-fails ONLY on a genuine property
+    regression — an unavailable toolchain must never block commits repo-wide.
+  - **Provide an override.** A recovery commit must be able to bypass the
+    guard via an explicit env seam, with a warning. Without this, a broken
+    property could block the very commit that fixes it — and BL-567's expeditor
+    (recovery when swarm machinery is broken) needs the escape hatch by design.
+  - **Keep the suite runner injectable.** The acceptance scenarios drive the
+    guard with a green suite, a red suite, and an unavailable toolchain, so the
+    command the guard shells out to must be substitutable in tests the way
+    `check_commit_size.sh` takes its threshold as an argument. No
+    `*_FORCE_RESULT` env bypasses in production paths.
+  - Do not add a CI workflow for this; the target is specifically the
+    out-of-band local commit path.
+
+  ## Out of scope
+
+  - Re-fixing the pipelineBoard property (already green — see `source:`).
+  - Any change to which tests belong to the property suite, or to the
+    architect/hardener/QA prompt wording from BL-479.
+
+approval_context: >
+  Needs a human ruling before this is promotable, because it changes commit
+  ergonomics for EVERY commit in the repo — including the human's own Cursor
+  and direct-Claude-Code sessions, which is exactly the traffic it is meant to
+  catch. Three things to sign off: (1) whether a pre-commit property gate is
+  wanted at all, versus accepting that out-of-band drift is caught later by
+  BL-564-style realignment sweeps; (2) the trigger rule — the proposed rule is
+  "staged set touches extension/src/** or any *.property.test.js", which is
+  what the acceptance table encodes, and a wider or narrower rule is a
+  one-line change to that table; (3) confirmation that fail-open and an
+  explicit override are the right defaults (recommended: yes — a shared hook
+  that can wedge every worktree is worse than the drift it prevents). If the
+  ruling is "not wanted", reject and this ticket is dropped; the defect that
+  prompted it is already fixed either way.
+
+acceptance: specs/features/BL-570-property-suite-drift-guard.feature
+
+qa_e2e_procedure: |
+  With the guard installed, in a scratch branch:
+  1. `cd extension && npm run test:properties` → confirm green baseline.
+  2. Stage a docs-only change; commit → succeeds without a compile pause.
+  3. Break a property invariant in extension/src (e.g. reverse the link
+     ordering in budgetPipelineBoardLinks), stage it, commit → REJECTED, and
+     the message names extension/test/pipelineBoard.property.test.js.
+  4. Repeat step 3 with the override env var set → commit succeeds, warning
+     printed.
+  5. Temporarily move extension/node_modules aside, stage a src change,
+     commit → succeeds with a "property check skipped" warning (fail-open).
+     Restore node_modules.
+  6. Restore the invariant; confirm the suite is green again.
+
+notes: |
+  IR-DRY adjudication (specifier, 2026-07-23). First pass flagged a genuine
+  overload: "the property suite is <x>" was doing duty BOTH as the precondition
+  (green/red) and as the outcome (run/skipped). Fixed — the outcome step is now
+  "the guard <suite_action> the property suite". The remaining 8 findings are
+  all 0.5-confidence artifacts of the checker not normalizing QUOTED literals
+  the way it normalizes <placeholders>: "green"/"red"/"unavailable" are one step
+  pattern with a captured argument, and so are the "skipped"/"overridden"
+  warnings, but the checker compares raw text and pairwise-flags each variant.
+  Reviewed, not accidental drift, deliberately left as-is.
+
+  Because those are single patterns with a captured value, the step handlers
+  MUST assert on the captured argument rather than hard-coding the common case
+  — this feature is exactly the shape that has produced shared-cell mutation
+  survivors five times in this repo (a handler that ignores its parameter and
+  always asserts the default still passes most rows).
+
+  Mechanism precedent to follow: swarmforge/git-hooks/pre-commit +
+  swarmforge/scripts/check_commit_size.sh (BL-105). The hook is a single
+  `exec` today, so calling a second guard means the hook itself changes shape
+  — keep both guards standalone and independently testable rather than
+  merging their logic.
+
+  Related but distinct: BL-564 (reconciles drift AFTER it lands), BL-567
+  (expeditor — a manual offline pipeline so recovery work still produces
+  spec/tests/review/docs/QA stamp), BL-566 (`landed_out_of_band` retro-capture
+  field). This ticket is the only one that tries to catch the drift AT commit
+  time. None of them subsumes it, and it subsumes none of them.
