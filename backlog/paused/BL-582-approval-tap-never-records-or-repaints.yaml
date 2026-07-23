@@ -67,22 +67,45 @@ description: |
      `CALLBACK_DATA_PATTERN` (`^(approve|reject|amend|expedite|more):(.+)$`)
      and `ASK_CALLBACK_DATA_PATTERN`. An ask rendered by an older build could
      carry data the current parser classifies `unrecognized-data`.
-  3. `isCallbackFromMyChat` reads `callback_query.message?.chat?.id`.
-     Telegram omits `message` on callbacks for sufficiently old messages;
-     that path yields `not-my-chat` and would look exactly like this.
-  4. There is a PRE-EXISTING related failure in the same log:
-     `front-desk bot: failed to close the approval ask for BL-491 (message
-     edit failed or not wired)` - also for BL-493 and BL-494. That is the
-     REPAINT half failing on its own, independently of the record half. Both
-     halves need to work; do not fix one and declare victory.
+  3. There is a pre-existing repaint failure in the same log
+     (`failed to close the approval ask for BL-491 … BL-493 … BL-494
+     (message edit failed or not wired)`). It is NOT this defect - see the
+     15:12 evidence below - but it is a real second failure mode worth
+     fixing while in this code.
 
-  ## Two independent failures, both worth fixing
+  ## Second observation, 2026-07-23 ~15:12 local - CORRECTS the above
 
-  - **Record**: the verdict never reached `recordApprovalReply`, so
-    `human_approval:` stayed `pending`.
-  - **Repaint**: `closeApprovalAskForBacklogId` has failed before with
-    "message edit failed or not wired" for other tickets, so even a recorded
-    verdict can leave the ask looking untouched.
+  Two facts from a follow-up screenshot, both of which narrow this:
+
+  1. **The repaint half WORKS, driven by the recorded verdict, not by the
+     tap.** BL-581's ask now reads "-- Approved 2026-07-23 14:10 UTC" with
+     its buttons stripped. 14:10 UTC is when the operator COMMITTED
+     `human_approval: approved` by hand into the yaml. So the reconcile
+     sweep closes an ask correctly once a verdict exists on disk. The
+     earlier framing of "two independent failures" was WRONG for this path:
+     there is one broken half (tap -> record) and one working half
+     (verdict -> repaint).
+
+  2. **The "old message" hypothesis in item 3 of the original list is
+     DISPROVEN.** BL-582's own ask (msg 6736) was posted at 14:10 UTC and
+     tapped roughly two minutes later, and it ALSO failed to record - this
+     defect reproducing on its own ticket. A two-minute-old message is not
+     one where Telegram omits `callback_query.message`. Do not spend time
+     there.
+
+  What remains: the callback is consumed and then either dropped by
+  `decideCallbackQueryAction` (leaving `not-principal` or
+  `unrecognized-data` as the live candidates, since chat id is confirmed
+  correct) or lost inside `dispatchRecognizedCallbackDecision` before
+  `recordApprovalReply` writes.
+
+  A cheap human-observable discriminator, not yet collected: when the human
+  taps, does the button's spinner clear immediately or hang for ~30s?
+  `dispatchRecognizedCallbackDecision` calls `answerCallbackQuery` for every
+  RECOGNIZED callback, and a drop returns before it. An instant clear means
+  the callback was recognized and the failure is downstream of the decision;
+  a hang means it was dropped by the guards. Collect this first - it halves
+  the search space at zero cost.
 
   Note also that `recordApprovalReply` writes the yaml WITHOUT committing
   (BL-490). This checkout demonstrably loses uncommitted work to `git
