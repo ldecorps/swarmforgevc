@@ -1,0 +1,109 @@
+id: BL-568
+title: "Menu-blocked pane questions auto-surface as mapped Telegram polls in the role's steering topic; poll answers drive the menu"
+milestone: M8
+type: feature
+status: needs_design
+epic: swarm-reliability
+human_approval: approved
+severity: medium
+priority: 15
+direction: human-requested
+depends_on: [BL-425, BL-466, BL-566]
+assigned_to: specifier
+mutation_cost: medium
+source: |
+  Live incident 2026-07-23: the human steered the coordinator via its
+  Telegram topic (1602), the coordinator raised an AskUserQuestion
+  clarification menu in its pane, and the human could not see or answer it
+  from Telegram. The operator session had to ferry BOTH directions by hand:
+  capture the pane, extract the menu, post it to the topic as text with a
+  warning NOT to reply in-topic (a steer would have typed blindly into the
+  blocked menu), and offer to drive the menu manually. The human named this
+  the exact gap: BL-466 polls route to the operator-ask flow only; Claude
+  Code MENUS are answerable only by pane keystrokes or the RC session.
+
+description: |
+  ## The loop to close
+
+  When a role pane is blocked on a Claude Code interactive menu
+  (AskUserQuestion and kin), the front desk should automatically:
+
+  1. DETECT the menu. Pane-capture classification alongside
+     chase_sweep_lib's existing busy-footer patterns: the menu footer
+     ("Enter to select . Tab/Arrow keys to navigate . Esc to cancel"),
+     checkbox glyphs, numbered options, wizard tab strip. A menu-blocked
+     pane is BLOCKED, not idle (standing supervision rule) — today that
+     state is only discovered by a human reading the pane.
+
+  2. EXTRACT question + options faithfully: question text, numbered
+     options with their one-line descriptions, multi-select vs single,
+     pre-selected defaults, and wizard position (e.g. "Screen scope" then
+     "Surface" — surface only the CURRENT question; repeat per step).
+
+  3. SURFACE as a native poll in that role's steering topic
+     (role-topic-map.json), via the existing BL-466 sendPoll +
+     recordPollMapping plumbing extended with a new mapping kind
+     (menu-answer: role, pane/session identity, option order, menu
+     fingerprint). is_anonymous false (poll_answer is the only learnable
+     signal); allows_multiple_answers mirrors the menu. Telegram limits
+     (question <=300 chars, <=10 options, option <=100 chars) force
+     truncation rules the spec must pin. Free-text menu entries ("Type
+     something") cannot ride a poll option — represent as an option whose
+     election converts the flow to "reply in topic with your text after
+     this poll", not as a fake choice.
+
+  4. DRIVE the menu from the poll_answer: map option_ids back through the
+     mapping, then keystroke the pane (option digits / arrows + Enter,
+     advance wizard steps). Before ANY injection, re-capture and verify
+     the menu is still present and IDENTICAL to the fingerprint taken at
+     surface time (repaint/staleness lesson: records vs live pane) — if it
+     changed or cleared, drop the answer with a receipt explaining why,
+     never type blind.
+
+  5. SUPPRESS ordinary steers while menu-blocked. A normal topic message
+     aimed at a menu-blocked pane must NOT be injected (it would type into
+     the menu); instead it gets a BL-566 delivery receipt stating the pane
+     is menu-blocked and pointing at the live poll. This extends BL-566's
+     receipt outcomes with a menu_blocked case.
+
+  ## Constitutional guardrail carried over
+
+  The automation never ANSWERS a menu itself — it transports the human's
+  choice. The standing supervision rule (menu = BLOCKED; ask, don't pick)
+  stays intact; this ticket merely makes the asking reach the human where
+  they are.
+
+  ## Out-of-band note
+
+  NOT landed out of band: today's incident was handled by one-off manual
+  ferrying (message 6639 in topic 1602) with no code change. This ticket is
+  the properly-captured version, per the no-OOB working agreement.
+
+acceptance: |
+  Specifier writes executable scenarios; minimum the design must make
+  testable:
+  1. A pane entering an AskUserQuestion menu yields, within one sweep
+     cadence, a non-anonymous poll in that role's steering topic whose
+     options mirror the menu (multi-select mirrored; >10-option or
+     over-length menus degrade to a text fallback naming the RC session).
+  2. A poll_answer maps to keystrokes that select exactly the voted
+     options and advance the menu; a multi-step wizard repeats the cycle
+     for the next question.
+  3. If the menu changed or cleared between surfacing and the vote, no
+     keystrokes are injected and the topic receives an explanatory receipt.
+  4. A plain steer message sent while the pane is menu-blocked is NOT
+     injected; it receives a menu_blocked receipt referencing the poll.
+  5. A menu with a free-text option elected via the poll converts to a
+     guarded text hand-off (the follow-up topic message is injected only
+     after the menu reaches its text-entry state).
+  6. The pane's menu is never auto-answered absent a human vote (timeout
+     leaves the menu untouched and re-notifies once).
+
+out_of_scope: |
+  - Answering menus for any principal other than the authorised human
+    (TELEGRAM_PRINCIPAL_USER_ID gating as per BL-425).
+  - Non-menu question flows (operator_ask / awaiting-answer.json) — already
+    covered by BL-306/BL-466.
+  - RC-session deep links in the poll message (nice-to-have slice if the
+    RC URL becomes durably discoverable; today only the session NAME is).
+  - Menus raised by tools other than Claude Code's interactive prompts.
