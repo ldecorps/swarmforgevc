@@ -1,0 +1,118 @@
+id: BL-576
+title: "Aged-note actionability — a note sitting in a dormant role's inbox past a threshold rotates the mono-router resident; note-only mailboxes stop starving"
+milestone: M8
+type: defect
+status: needs_design
+epic: swarm-reliability
+human_approval: approved
+severity: high
+priority: 05
+direction: human-requested
+depends_on: []
+assigned_to: specifier
+mutation_cost: medium
+source: |
+  Human, 2026-07-23, after asking "how does the specifier get a turn?" and
+  being shown that under mono-router it effectively does not: the standard
+  kickoff vehicle for design work is a `type: note`, and
+  `mono_router_lib.bb/actionable-mail?` deliberately counts only in-process
+  work and git_handoffs — so the chase tries to rotate to the note-holding
+  role EVERY sweep and is refused EVERY sweep (the all-morning
+  `chase-rotate-skip-broadcast specifier` log spam), while the delivery
+  wake remaps to the resident pane, which runs ready_for_next as its
+  CURRENT role, finds its own inbox empty, and NO_TASKs (observed live
+  09:15Z, coder burning a multi-minute turn on a wake meant for dormant
+  mail). Evidence: four specifier-bound notes unread since 2026-07-22
+  23:00Z. The human chose the cleanest of three options presented:
+  (a) aged-note actionability [CHOSEN], (b) change kickoffs to
+  git_handoffs (misrepresents parcels carrying no commit, touches
+  conventions everywhere), (c) teach the dispatch sweep about note-holding
+  dormant roles (more machinery on the already-subtle chase path).
+
+description: |
+  ## The rule change (small and pure)
+
+  `actionable-mail?` gains one clause: a `type: note` parcel sitting in a
+  DORMANT role's inbox/new for longer than a threshold counts as
+  actionable. Fresh notes stay non-actionable — the broadcast-thrash
+  protection that motivated the current rule is preserved; age is what
+  distinguishes "broadcast noise the resident need not chase" from
+  "work nobody will ever see".
+
+  - Threshold: conf-tunable (`config note_actionable_after_ms` or
+    equivalent), sensible default in the tens-of-minutes range —
+    specifier picks; the constant lives next to the other chase timing
+    constants and follows the BL-216 effective-config resolution.
+  - Age source: the parcel's enqueued_at/created_at header (already
+    parsed by role-mail-row's handoff-header-field), never file mtime
+    (worktree syncs touch files).
+  - `role-mail-row` carries an aged-note count alongside the git_handoff
+    count; `preferred-rotate-target`'s newest-actionable ordering is
+    unchanged. Pure-lib change, testable in
+    mono_router_lib_test_runner.bb exactly like the 2026-07-23
+    chase-poke-plan additions.
+
+  ## What must NOT change
+
+  - Fresh notes (< threshold) never rotate the resident — scenario-pinned.
+  - Rotation gates stay intact: never mid-turn (busy footer), rotate
+    cooldown honored, per-sweep wake budget consumed only on performed
+    rotations (85a8f2c76 semantics).
+  - Full-pack / standing-session roles are untouched: actionability only
+    feeds the mono-router rotate decision; delivery wakes to live panes
+    behave as today.
+  - Once rotated in, ready_for_next already drains notes — no changes on
+    the drain side.
+
+  ## Emergent behavior to spec deliberately
+
+  A 5-role broadcast (QA merge-up) becomes eventually-actionable in all
+  five dormant mailboxes: the resident, when idle, will rotate through
+  them one at a time (newest-actionable ordering, cooldown-paced) and
+  drain each. That is CORRECT — it closes the BL-550-adjacent "notes are
+  dead letters" hole and the drift-survey finding — but the specifier
+  should pin the pacing (cooldown between rotations, home-role return
+  between drains or chained draining) so a broadcast does not look like
+  rotation thrash in the logs.
+
+  ## Optional sub-slice (specifier decides: here or split)
+
+  Suppress the wasted delivery wake: when a note is delivered to a
+  dormant NON-home role under mono-router, skip the resident wake
+  injection (the aged-note chase now guarantees eventual pickup) — this
+  removes the observed NO_TASK-turn burn without weakening anything.
+
+  ## Bootstrap note (do not lose)
+
+  This ticket's own kickoff is subject to the very gap it fixes: a
+  promotion note to the specifier will sit unread. Until BL-576 lands,
+  kicking off specifier work needs either a manual
+  `rotate_to_role.sh specifier` after dispatch, or a BL-567 expedite run.
+  The coordinator should be told this in the promotion note itself.
+
+acceptance: |
+  Specifier writes executable scenarios; minimum the design must make
+  testable (lib-level, mono_router_lib_test_runner.bb style):
+  1. A note in a dormant role's inbox older than the threshold makes the
+     role actionable; the chase's rotate path selects it and the resident
+     rotates in within a sweep of the resident going idle.
+  2. A note younger than the threshold does not — chase logs the
+     broadcast skip exactly as today.
+  3. Age is computed from the parcel header, not file mtime (fixture with
+     old header + fresh mtime rotates; fresh header + old mtime does not).
+  4. A git_handoff still outranks nothing-and-nobody differently than
+     today: preferred-rotate-target ordering among actionable rows is
+     unchanged and covered.
+  5. Five dormant roles holding aged broadcast copies drain sequentially,
+     each rotation honoring the cooldown, resident never rotated
+     mid-turn; all five inboxes empty without manual intervention.
+  6. Threshold honors effective-config resolution with a sane default
+     when absent/malformed (BL-216 pattern).
+  7. The 2026-07-23 starved fixture (note-only specifier mailbox, notes
+     aged >> threshold) drains end-to-end with no human action.
+
+out_of_scope: |
+  - Full-pack wake/delivery behavior (standing sessions unchanged).
+  - Changing any kickoff parcel types (option (b) rejected).
+  - Dispatch-sweep extensions (option (c) rejected).
+  - The BL-568 menu-poll surface and BL-566 receipts (separate tickets).
