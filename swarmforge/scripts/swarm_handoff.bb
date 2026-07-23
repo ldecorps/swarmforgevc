@@ -2,6 +2,7 @@
 
 (ns swarm-handoff
   (:require [babashka.fs :as fs]
+            [cheshire.core :as json]
             [clojure.java.shell :refer [sh]]
             [clojure.string :as str]))
 
@@ -12,6 +13,8 @@
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "ticket_close_guard_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "pre_qa_gate_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "pre_qa_gate_gather_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "coordinator_config_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "required_stages_lib.bb")))
 
 (def usage-text
   (str "Usage: swarm_handoff.sh <draft-file>\n\n"
@@ -35,7 +38,7 @@
        "body: <proposed rule text, max 200 chars>\n"
        "rationale: <why the rule is needed, max 200 chars>"))
 
-(def reserved-fields #{"id" "from" "role" "recipient" "created_at" "enqueued_at" "dequeued_at" "completed_at"})
+(def reserved-fields #{"id" "from" "role" "recipient" "created_at" "enqueued_at" "dequeued_at" "completed_at" "routing_skipped"})
 (def allowed-fields #{"type" "to" "priority" "task" "commit" "message" "rejection_reason" "reroute_reason" "scope" "body" "rationale"})
 (def allowed-types #{"awake" "git_handoff" "note" "rule_proposal"})
 (def valid-scope-pattern #"constitution|engineering|project|role:[a-zA-Z][a-zA-Z0-9]*")
@@ -357,6 +360,95 @@
       (finally
         (fs/delete lock-dir)))))
 
+;; ── BL-606: specifier-declared required_stages routing ──────────────────
+;; Wired at this ONE seam - the send path, for type: git_handoff only - per
+;; the ticket's own "WIRING POINT" decision. Every guard below degrades to
+;; leaving `recipients` byte-identical to the literal `to:` header: the
+;; kill-switch off, a non-git_handoff type, more than one recipient, no
+;; resolvable ticket id, no readable active ticket yaml, or an absent/
+;; invalid/empty required_stages declaration (default-full) all fall through
+;; to today's behavior with zero rewrite - DEFAULT-FULL and NO OUT-OF-BAND
+;; STAGE INJECTION (BL-606 guardrails #1/#4) are both satisfied by having
+;; every non-declared/non-actionable case return the identity recipients.
+
+(defn- required-stages-routing-enabled? [conf-text]
+  (or (= "1" (System/getenv "SWARMFORGE_REQUIRED_STAGES_ROUTING"))
+      (= "true" (coordinator-config-lib/parse-config-value
+                 conf-text "required_stages_routing_enabled" "false"))))
+
+(defn- yaml-id-field [content]
+  (some (fn [line] (when (str/starts-with? line "id: ") (str/trim (subs line 4))))
+        (str/split-lines (or content ""))))
+
+(defn- active-ticket-yaml-content
+  "Reads the active ticket whose OWN `id:` field equals ticket-id exactly -
+   never a filename-prefix glob, which would wrongly match e.g. BL-9005's
+   file when looking up BL-900 (the same false-collision failure mode
+   ticket_status_lib.bb's own contains-ticket? already guards against)."
+  [root ticket-id]
+  (when ticket-id
+    (let [active-dir (fs/path root "backlog" "active")]
+      (when (fs/exists? active-dir)
+        (some (fn [f]
+                (let [content (try (slurp (str f)) (catch Exception _ nil))]
+                  (when (= ticket-id (yaml-id-field content)) content)))
+              (fs/glob active-dir "**.yaml"))))))
+
+(defn route-required-stages
+  "{:recipients [...] :routing-skipped nil-or-map}. recipients is the
+   already-validated literal `to:` list; routing-skipped, when present,
+   is the runtime-trail record for whichever stage(s) got skipped this hop -
+   {:ticket-id :from :to :skipped :reasons}.
+
+   A `rejection_reason` (reviewer bounce) or `reroute_reason` (operator
+   redo_from/reroute detour) on the draft names a deliberately-chosen,
+   out-of-forward-order destination - routing only ever short-circuits the
+   forward chain, never a backward rejection or an explicit detour, so
+   either header present returns the literal recipients untouched
+   (architect BL-606 bounce defect 2)."
+  [{:keys [type task recipients root headers]}]
+  (let [identity-result {:recipients recipients :routing-skipped nil}]
+    (if-not (and (= "git_handoff" type)
+                 (= 1 (count recipients))
+                 (nil? (get headers "rejection_reason"))
+                 (nil? (get headers "reroute_reason")))
+      identity-result
+      (let [conf-text (try (slurp (str (backlog-depth-lib/conf-file-path root))) (catch Exception _ nil))]
+        (if-not (required-stages-routing-enabled? conf-text)
+          identity-result
+          (let [ticket-id (pipeline-stage-lib/extract-ticket-id task)
+                content (active-ticket-yaml-content root ticket-id)]
+            (if (nil? content)
+              identity-result
+              (let [decision (required-stages-lib/resolve-effective
+                               (required-stages-lib/read-required-stages content))]
+                (if (= :default-full (:source decision))
+                  identity-result
+                  (let [literal-to (first recipients)
+                        effective (:effective decision)]
+                    (if (contains? effective literal-to)
+                      identity-result
+                      (let [next-stage (required-stages-lib/next-required-stage effective literal-to)]
+                        (if (nil? next-stage)
+                          identity-result
+                          {:recipients [next-stage]
+                           :routing-skipped {:ticket-id ticket-id
+                                             :from literal-to
+                                             :to next-stage
+                                             :skipped (required-stages-lib/hop-skipped-stages literal-to next-stage)
+                                             :reasons (required-stages-lib/read-stage-skip-reasons content)}})))))))))))))
+
+(defn- format-routing-skipped [{:keys [ticket-id from to skipped reasons]}]
+  (str ticket-id " " from "->" to
+       " skipped=" (str/join "," skipped)
+       (when (seq reasons)
+         (str " reasons=" (str/join ";" (map (fn [[k v]] (str k ":" v)) reasons))))))
+
+(defn- log-routing-skip! [root entry]
+  (let [path (fs/path root ".swarmforge" "routing-skips.jsonl")]
+    (fs/create-dirs (fs/parent path))
+    (spit (str path) (str (json/generate-string entry) "\n") :append true)))
+
 (defn body [type sender canonical-commit note-message scope proposal-body rationale recipients]
   (let [lead (handoff-lib/handoff-body-lead recipients)]
     (case type
@@ -367,7 +459,7 @@
                            "Rule proposal (" scope ") from " sender ": " proposal-body
                            "\nRationale: " rationale))))
 
-(defn write-handoff! [{:keys [headers recipients canonical-commit sender]}]
+(defn write-handoff! [{:keys [headers recipients canonical-commit sender routing-skipped]}]
   (let [timestamp-id (id-timestamp)
         created-at (timestamp)
         sequence (next-sequence)
@@ -400,6 +492,8 @@
                 (conj (str "rejection_reason: " (get headers "rejection_reason")))
                 (get headers "reroute_reason")
                 (conj (str "reroute_reason: " (get headers "reroute_reason")))
+                routing-skipped
+                (conj (str "routing_skipped: " (format-routing-skipped routing-skipped)))
                 true
                 (conj (str "created_at: " created-at)
                       ""
@@ -467,10 +561,18 @@
         (when (seq all-errors)
           (error-report draft all-errors)
           (System/exit 2))
-        (let [outbox-file (write-handoff! {:headers headers
-                                           :recipients (:recipients validation)
+        (let [routed (route-required-stages {:type (get headers "type")
+                                             :task (get headers "task")
+                                             :recipients (:recipients validation)
+                                             :root (project-root)
+                                             :headers headers})
+              outbox-file (write-handoff! {:headers headers
+                                           :recipients (:recipients routed)
                                            :canonical-commit (:canonical-commit validation)
-                                           :sender sender})
+                                           :sender sender
+                                           :routing-skipped (:routing-skipped routed)})
+              _ (when-let [skip (:routing-skipped routed)]
+                  (log-routing-skip! (project-root) (assoc skip :sender sender :created_at (timestamp))))
               sync-result (if (skip-sync-inject?)
                             :skipped
                             (try-sync-deliver! outbox-file sender))]
