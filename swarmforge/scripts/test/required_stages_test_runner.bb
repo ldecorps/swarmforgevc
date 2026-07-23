@@ -34,6 +34,30 @@
          {:present? false :raw nil}
          (required-stages-lib/read-required-stages nil))
 
+;; architect BL-606 bounce defect 1: an INDENTED `required_stages:` mention
+;; inside a prose `description: |` block is not a real top-level declaration
+;; and must read as absent, never picked up as :present? true - the original
+;; bug trimmed the line before testing the prefix, so any indented occurrence
+;; (including the one inside this ticket's own description text) matched.
+(assert= "an indented required_stages mention inside description: prose is not a declaration"
+         {:present? false :raw nil}
+         (required-stages-lib/read-required-stages
+          (str "id: BL-999\n"
+               "description: |\n"
+               "  We should consider whether a ticket like this one could declare\n"
+               "  required_stages: [coder, QA]\n"
+               "  but this is prose in a description block, NOT a declaration.\n"
+               "status: todo\n")))
+
+(assert= "a real top-level declaration is still read when a description block ALSO mentions the field"
+         {:present? true :raw "[coder, cleaner]"}
+         (required-stages-lib/read-required-stages
+          (str "id: BL-999\n"
+               "required_stages: [coder, cleaner]\n"
+               "description: |\n"
+               "  Some prose that happens to mention required_stages: [coder, QA] too.\n"
+               "status: todo\n")))
+
 ;; ── normalize-token ────────────────────────────────────────────────────────
 
 (assert= "lower-case token normalizes to its canonical casing" "QA" (required-stages-lib/normalize-token "qa"))
@@ -136,6 +160,31 @@
 (assert= "skipped-stages of an empty set is the full canonical order"
          required-stages-lib/canonical-order
          (required-stages-lib/skipped-stages #{}))
+
+;; ── hop-skipped-stages (architect BL-606 bounce defect 3) ──────────────────
+;; canonical-order stages strictly between `current` and `next`, exclusive on
+;; both ends - THIS hop's skips, distinct from skipped-stages' ticket-level
+;; aggregate (the whole complement of the effective set regardless of hop).
+
+(assert= "hop-skipped-stages-01: a single-stage jump skips only the one stage between"
+         ["cleaner"]
+         (required-stages-lib/hop-skipped-stages "coder" "architect"))
+
+(assert= "hop-skipped-stages-02: a multi-stage jump skips every stage strictly between"
+         ["cleaner" "architect" "hardender" "documenter"]
+         (required-stages-lib/hop-skipped-stages "coder" "QA"))
+
+(assert= "hop-skipped-stages-03: adjacent stages skip nothing"
+         []
+         (required-stages-lib/hop-skipped-stages "coder" "cleaner"))
+
+(assert= "hop-skipped-stages-04: an unrecognized current degrades to no skips"
+         []
+         (required-stages-lib/hop-skipped-stages "specifier" "QA"))
+
+(assert= "hop-skipped-stages-05: next not strictly after current degrades to no skips"
+         []
+         (required-stages-lib/hop-skipped-stages "QA" "coder"))
 
 ;; ── read-stage-skip-reasons ────────────────────────────────────────────────
 
