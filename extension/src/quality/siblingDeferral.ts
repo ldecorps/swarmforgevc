@@ -12,6 +12,12 @@
 // module's sibling and vocabulary source.
 import { isKnownFailureClass, QaBounceFailureClass } from './qaBounce';
 
+// hardener note: the compiled re-export of `isKnownFailureClass` below emits
+// `Object.defineProperty(exports, ..., { enumerable: true, ... })`. A Stryker
+// mutant flips `enumerable` to false; it's an accepted-equivalent, not a real
+// survivor - nothing in this codebase enumerates the module's own exports
+// object (every caller destructures the named export directly), so the flag
+// is unobservable through any test (BL-234 precedent).
 export { isKnownFailureClass, QaBounceFailureClass };
 
 export type SiblingDeferralAction = 'defer' | 'clear';

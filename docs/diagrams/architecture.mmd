@@ -51,6 +51,8 @@ flowchart TB
     ROLESTSV["roles.tsv, sessions.tsv"]
     HANDOFFS["handoffs/{inbox,outbox,sent,failed}/"]
     DAEMONDIR["daemon/ (handoffd pid, heartbeat, log)"]
+    QABOUNCES["qa_bounces/ (BL-454: bounce records, *.jsonl)"]
+    QADEFER["qa_deferrals/ (BL-532: deferral records, *.jsonl)"]
     BACKLOGDIR["../backlog/{root,paused,active,done}/"]
   end
 
@@ -92,7 +94,7 @@ flowchart TB
   TRANSPORTHEALTH -->|reads| HANDOFFS
   TRANSPORTHEALTH -->|reads| DAEMONDIR
   CANARY -->|writes canary-queue/pending,\nreads canary-queue/completed| DAEMONDIR
-  BOUNCE -->|reads/writes| HANDOFFS
+  BOUNCE -->|reads/writes bounce records| QABOUNCES
   BACKLOGRW -->|reads/writes\n(atomicWrite)| BACKLOGDIR
 
   PANES -->|read/write| HANDOFFS
