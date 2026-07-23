@@ -50,6 +50,15 @@ export function composeDecidedAskText(originalText: string, verdict: ApprovalDec
   return `${originalText}\n${decisionLineFor(verdict, nowMs)}`;
 }
 
+// True when the stored ask text already carries a BL-484 decision footer —
+// used by the decided-ask close reconcile sweep to skip asks Telegram already
+// closed (or that were persisted after a successful edit).
+export const DECIDED_ASK_LINE_PATTERN = /^-- (Approved |Rejected:|Expedited |Amending )/m;
+
+export function approvalAskTextShowsDecidedVerdict(text: string): boolean {
+  return DECIDED_ASK_LINE_PATTERN.test(text);
+}
+
 // The stale-tap guard's own toast text - a tap on an ask whose ticket is no
 // longer pending gets this instead of any decision side effect.
 export function alreadyDecidedToastText(verdict: 'approved' | 'rejected'): string {
