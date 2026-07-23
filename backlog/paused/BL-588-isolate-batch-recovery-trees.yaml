@@ -2,9 +2,9 @@ id: BL-588
 title: "Isolate batch recovery trees so one ticket's defect cannot block its clean siblings from landing"
 milestone: M8
 type: feature
-status: needs_design
+status: todo
 epic: swarm-reliability
-human_approval: pending
+human_approval: approved
 priority: 6
 mutation_cost: high
 direction: human-requested
@@ -64,10 +64,57 @@ description: |
   A scheme that lets un-verified work reach `main`. Every gate in Article 4.1
   still applies to every ticket that lands, whatever tree it lands from.
 
+human_ruling: |
+  RULED by the human 2026-07-23 (relayed via the operator tunnel, recorded
+  directly because the Telegram tap path is unreliable - see BL-582). This
+  answers all three questions the approval_context posed, and is what
+  `status: needs_design` was held open for; the status moved to `todo` on the
+  strength of this ruling and nothing else.
+
+  1. APPROACH 3 - recovery on an isolated branch. The bounced ticket is
+     reworked on a branch cut from the last clean ancestor, and the clean
+     siblings' parcel is re-forwarded UNCHANGED so it is re-verified as a whole
+     tree before landing.
+
+     Not 2: a cherry-picked subset is a tree nobody verified whole, which the
+     ticket's own "must NOT become" clause forbids outright - it is excluded by
+     constraint, not merely judged risky.
+
+     Not 1: split-per-ticket commits are structurally the stronger fix (they
+     delete the shared-tree failure class outright rather than recovering from
+     it) and the human was offered that reading explicitly under a
+     "most robust / future-proof" framing. Ruled AGAINST on cost: it changes
+     what batch roles DO, not just what happens after a bounce, and would
+     rework cleaner and hardender both. If this ticket's mechanism later proves
+     to compound - several bounces in one batch each forking the lineage again
+     - approach 1 is the escalation, and that is the trigger to re-open this
+     ruling rather than to bolt more lineage bookkeeping onto approach 3.
+
+  2. QA MAY NOT REWRITE HISTORY. Landing on `main` is always a merge of a tree
+     that was verified whole. No cherry-pick, no rebase-to-land, no exceptions
+     for a "obviously clean" subset. This is the invariant that rules out
+     approach 2, and it holds independently of which approach is built.
+
+  3. THE LATENCY MEASUREMENT GATES THE BUILD. Do not build approach 3 until
+     BL-532's deferral records show the wait is long enough to be worth the
+     complexity. BL-532 is active now and produces exactly that data: per
+     ticket, which blocker it waited on and which check proved it.
+
+     If the measured latency turns out to be small, approach 4 (do nothing
+     beyond BL-532) is the correct outcome and this ticket closes unbuilt -
+     that is a legitimate result, not a failure. The gate is what keeps "3
+     later" honest rather than an indefinite deferral, and it is the reason
+     ruling 3 does not commit the swarm to building it.
+
 specifier_decisions: |
-  Held open pending the human ruling above. The specifier's own reading is that
-  approach 3 is the smallest change and approach 2 is the most dangerous, but
-  this ticket does not commit to either.
+  Resolved by human_ruling above (2026-07-23): approach 3, no history
+  rewriting, build gated on BL-532's latency data. The specifier's prior
+  reading - that approach 3 is the smallest change and approach 2 the most
+  dangerous - agreed with the ruling on both points.
+
+  FIRST ACTION is not design: it is to check whether BL-532's deferral records
+  yet contain enough measurements to open the gate. If they do not, this ticket
+  waits on data, not on a specifier turn.
 
 acceptance: |
   Not yet written — deliberately.
