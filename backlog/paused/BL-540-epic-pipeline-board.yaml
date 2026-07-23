@@ -6,7 +6,7 @@ type: epic
 epic: pipeline-board
 priority: 00
 depends_on: []
-decomposes_into: [BL-508, BL-513]
+decomposes_into: [BL-508, BL-513, BL-585]
 source: "Human hygiene 2026-07-19: every ticket must have an epic; every epic must have a milestone. Tracker created during open-backlog cleanup."
 
 notes: |
