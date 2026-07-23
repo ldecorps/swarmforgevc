@@ -69,6 +69,7 @@ export function getConsoleMenuUiHtml(): string {
   <a class="btn" id="pipeline-grid" data-testid="pipeline-grid" href="#">Pipeline grid</a>
   <a class="btn secondary" id="mono-feed" data-testid="mono-router-feed" href="#">Swarm Live Screen</a>
   <a class="btn secondary" id="paused-pager" data-testid="paused-ticket-pager" href="#">Paused tickets</a>
+  <a class="btn secondary" id="context-budget" data-testid="context-budget" href="#">Context budget</a>
 </main>
 <script>
 (function () {
@@ -79,6 +80,7 @@ export function getConsoleMenuUiHtml(): string {
   document.getElementById('pipeline-grid').href = '/pipeline-grid' + q;
   document.getElementById('mono-feed').href = '/resident-spy' + q;
   document.getElementById('paused-pager').href = '/paused-pager' + q;
+  document.getElementById('context-budget').href = '/context-budget' + q;
 })();
 </script>
 </body>

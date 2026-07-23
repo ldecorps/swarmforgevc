@@ -119,4 +119,11 @@ rm -f $STATE_DIR/usage.out
 
 pass "09: an unrecognised command falls through to usage"
 
+# ── 10: agents lists the distinct, sorted agents with recorded telemetry ───
+AGENTS_OUT="$(bb "$CLI" agents)"
+[[ "$AGENTS_OUT" == '{"agents":["coder","hardener"]}' ]] \
+  || fail "10: agents should list coder and hardener sorted, got: $AGENTS_OUT"
+
+pass "10: agents lists the distinct, sorted agents with recorded telemetry"
+
 echo "ALL PASS"

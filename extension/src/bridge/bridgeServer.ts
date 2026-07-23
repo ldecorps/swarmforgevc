@@ -51,6 +51,8 @@ import { promoteToActive, findBacklogFilePath } from '../panel/backlogWriter';
 import { atomicWrite } from '../util/atomicWrite';
 import { getPausedPagerUiHtml } from './pausedPagerUiHtml';
 import { recordApprovalReply } from '../concierge/pendingApprovalReply';
+import { getContextBudgetUiHtml } from './contextBudgetUiHtml';
+import { listTelemetryAgents, summarizeTelemetryForAgent } from './contextTelemetryGate';
 
 const DEFAULT_POLL_INTERVAL_MS = 1000;
 const LOCALHOST = '127.0.0.1';
@@ -197,6 +199,16 @@ function isPausedPagerPath(url: string): boolean {
 // BL-538: JSON state for the paused-ticket pager Mini App.
 function isPausedPagerStatePath(url: string): boolean {
   return url === '/paused-pager-state' || url.startsWith('/paused-pager-state?');
+}
+
+// GH-23: Context Budget dashboard Mini App shell.
+function isContextBudgetPath(url: string): boolean {
+  return url === '/context-budget' || url.startsWith('/context-budget?');
+}
+
+// GH-23: JSON state polled by the Context Budget Mini App with ?token=&agent=.
+function isContextBudgetStatePath(url: string): boolean {
+  return url === '/context-budget-state' || url.startsWith('/context-budget-state?');
 }
 
 // BL-551 (bridge-08): JSON top-expensive-invocations/rollup feed over the
@@ -565,10 +577,15 @@ function isAuthorizedForRead(authHeader: string | undefined, url: string, regist
     return true;
   }
   // Root HTML uses query token client-side; Mini App JSON polls
-  // (/resident-pane, /pipeline-board, /paused-pager-state) also accept it because those fetches
-  // cannot set an Authorization header.
-  return (isRootPath(url) || isResidentPanePath(url) || isPipelineBoardPath(url) || isPausedPagerStatePath(url))
-    && isAuthorizedByQueryToken(queryToken(url), primaryTokenOf(registry));
+  // (/resident-pane, /pipeline-board, /paused-pager-state, /context-budget-state)
+  // also accept it because those fetches cannot set an Authorization header.
+  return (
+    isRootPath(url) ||
+    isResidentPanePath(url) ||
+    isPipelineBoardPath(url) ||
+    isPausedPagerStatePath(url) ||
+    isContextBudgetStatePath(url)
+  ) && isAuthorizedByQueryToken(queryToken(url), primaryTokenOf(registry));
 }
 
 // BL-241 control-requires-step-up-04: control actions require a SEPARATE
@@ -635,6 +652,22 @@ function computePausedPagerState(targetPath: string): unknown {
 function queryParams(url: string): URLSearchParams {
   const queryIndex = url.indexOf('?');
   return new URLSearchParams(queryIndex === -1 ? '' : url.slice(queryIndex + 1));
+}
+
+// GH-23: compute Context Budget JSON state. The picked agent is the one
+// named by ?agent=, or (when absent) the first of GH-22's distinct-agents
+// list - never re-derived here, always context_telemetry_cli.bb's own
+// `agents`/`summary` output. An explicitly-named agent is honored even if it
+// has zero recorded events (the CLI's summary still returns a valid
+// all-null shape for it) so the required "no telemetry for this agent yet"
+// empty state is reachable by name, not just via the picker.
+function buildContextBudgetState(targetPath: string, url: string): unknown {
+  const params = queryParams(url);
+  const agents = listTelemetryAgents(targetPath);
+  const requested = params.get('agent');
+  const agent = requested || agents[0] || null;
+  const summary = agent ? summarizeTelemetryForAgent(targetPath, agent) : null;
+  return { agents, agent, summary };
 }
 
 // BL-551 (bridge-08): same ranking/rollup logic the swarm-cost-rank CLI
@@ -712,6 +745,11 @@ function buildJsonRoutes(targetPath: string, runLogPath: string, nowMs?: number)
       matches: isPausedPagerStatePath,
       compute: () => computePausedPagerState(targetPath),
     },
+    {
+      // GH-23: Context Budget dashboard JSON feed for the Mini App.
+      matches: isContextBudgetStatePath,
+      compute: (url) => buildContextBudgetState(targetPath, url),
+    },
   ];
 }
 
@@ -756,6 +794,10 @@ export function startBridge(
       }
       if (isPausedPagerPath(url)) {
         serveMiniAppHtml(res, getPausedPagerUiHtml());
+        return;
+      }
+      if (isContextBudgetPath(url)) {
+        serveMiniAppHtml(res, getContextBudgetUiHtml());
         return;
       }
 
