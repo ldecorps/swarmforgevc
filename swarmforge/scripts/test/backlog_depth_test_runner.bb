@@ -1,0 +1,378 @@
+#!/usr/bin/env bb
+;; TDD runner for backlog_depth_lib.bb (BL-216) - pure assertions over
+;; provided conf text/counts, plus fixture-based tests for the impure
+;; read-max-depth (real fs I/O against a temp dir, no live swarm).
+(ns backlog-depth-test-runner
+  (:require [babashka.fs :as fs]
+            [cheshire.core :as json]))
+
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) ".." "backlog_depth_lib.bb")))
+
+(def failures (atom []))
+
+(defn assert= [msg expected actual]
+  (when (not= expected actual)
+    (swap! failures conj (str "FAIL: " msg "\n  expected: " (pr-str expected) "\n  actual:   " (pr-str actual)))))
+
+;; ── parse-max-depth (pure) ─────────────────────────────────────────────────
+
+(assert= "parses a positive cap"
+         3
+         (backlog-depth-lib/parse-max-depth "config active_backlog_max_depth 3"))
+
+(assert= "depth-fix-02: parses the -1 no-limit sentinel as -1, not 1 (the old unsigned-regex bug)"
+         -1
+         (backlog-depth-lib/parse-max-depth "config active_backlog_max_depth -1"))
+
+(assert= "ignores surrounding comment/blank lines and other config keys"
+         3
+         (backlog-depth-lib/parse-max-depth "# a comment\n\nconfig mutation_cooldown_days 3\nconfig active_backlog_max_depth 3\n"))
+
+(assert= "falls back to the default when the config line is absent"
+         backlog-depth-lib/default-max-depth
+         (backlog-depth-lib/parse-max-depth "config mutation_cooldown_days 3"))
+
+(assert= "falls back to the default for nil conf text"
+         backlog-depth-lib/default-max-depth
+         (backlog-depth-lib/parse-max-depth nil))
+
+(assert= "falls back to the default for empty conf text"
+         backlog-depth-lib/default-max-depth
+         (backlog-depth-lib/parse-max-depth ""))
+
+;; ── no-limit? / depth-exceeded? / under-depth-cap? (pure) ─────────────────
+
+(assert= "no-limit? is true for any negative value" true (backlog-depth-lib/no-limit? -1))
+(assert= "no-limit? is false for zero" false (backlog-depth-lib/no-limit? 0))
+(assert= "no-limit? is false for a positive value" false (backlog-depth-lib/no-limit? 3))
+
+(assert= "depth-01a: no-limit (-1) never warns, however deep active/ is"
+         false
+         (backlog-depth-lib/depth-exceeded? 5 -1))
+
+(assert= "depth-01b: a positive cap the active count exceeds warns"
+         true
+         (backlog-depth-lib/depth-exceeded? 5 3))
+
+(assert= "depth-01c: a positive cap the active count does not exceed does not warn"
+         false
+         (backlog-depth-lib/depth-exceeded? 2 3))
+
+(assert= "an active count exactly AT the cap does not warn - only strictly over triggers it"
+         false
+         (backlog-depth-lib/depth-exceeded? 3 3))
+
+(assert= "depth-02: no-limit (-1) always leaves promotion ungated, however deep active/ is"
+         true
+         (backlog-depth-lib/under-depth-cap? 5 -1))
+
+(assert= "a positive cap still gates promotion normally when active count is at/over it"
+         false
+         (backlog-depth-lib/under-depth-cap? 3 3))
+
+(assert= "a positive cap still allows promotion when active count is under it"
+         true
+         (backlog-depth-lib/under-depth-cap? 1 3))
+
+;; ── read-max-depth (fixture-based fs I/O, no live swarm) ──────────────────
+
+(def created-temp-dirs (atom []))
+;; BL-459: every temp dir this runner creates is tracked here and removed by
+;; a JVM shutdown hook, registered ONCE below - fires on both a clean run
+;; and an uncaught assertion/exception propagating out of this script
+;; (verified empirically: Runtime/addShutdownHook runs on System/exit and on
+;; an uncaught throwable unwinding to the top level), never on SIGKILL/OOM
+;; (BL-413's periodic /tmp sweep is the backstop for that - out of scope
+;; here).
+(.addShutdownHook (Runtime/getRuntime)
+                   (Thread. (fn [] (doseq [d @created-temp-dirs] (try (fs/delete-tree d) (catch Exception _ nil))))))
+
+(defn mk-tmp []
+  (let [d (str (fs/create-temp-dir {:prefix "backlog-depth-test-"}))]
+    (swap! created-temp-dirs conj d)
+    d))
+
+(let [root (mk-tmp)]
+  (fs/create-dirs (fs/path root "swarmforge"))
+  (spit (str (fs/path root "swarmforge" "swarmforge.conf")) "config active_backlog_max_depth -1\n")
+  (assert= "depth-03: read-max-depth reads the REAL tracked swarmforge/swarmforge.conf, not a silent default"
+           -1
+           (backlog-depth-lib/read-max-depth root)))
+
+(let [root (mk-tmp)]
+  ;; Deliberately no swarmforge/swarmforge.conf at all - the previous bug's
+  ;; wrong path (.swarmforge/swarmforge.conf) made EVERY call fall through
+  ;; to the exception handler regardless of what the real file said.
+  (assert= "depth-04: an absent config degrades to the default, not a crash"
+           backlog-depth-lib/default-max-depth
+           (backlog-depth-lib/read-max-depth root)))
+
+(let [root (mk-tmp)]
+  (fs/create-dirs (fs/path root "swarmforge"))
+  (spit (str (fs/path root "swarmforge" "swarmforge.conf")) "config active_backlog_max_depth 3\n")
+  (assert= "read-max-depth reads a positive cap correctly too"
+           3
+           (backlog-depth-lib/read-max-depth root)))
+
+;; ── conf-file-path / read-max-depth honor a persisted launch override (BL-313) ──
+
+(defn write-identity! [root kvs]
+  (fs/create-dirs (fs/path root ".swarmforge"))
+  (spit (str (fs/path root ".swarmforge" "swarm-identity"))
+        (apply str (for [[k v] kvs] (str k "\t" v "\n")))))
+
+(let [root (mk-tmp)
+      pack-conf (str (fs/path root "elsewhere" "pack.conf"))]
+  (fs/create-dirs (fs/path root "swarmforge"))
+  (spit (str (fs/path root "swarmforge" "swarmforge.conf")) "config active_backlog_max_depth -1\n")
+  (fs/create-dirs (fs/path root "elsewhere"))
+  (spit pack-conf "config active_backlog_max_depth 1\n")
+  (write-identity! root {"swarm_name" "primary" "active_backlog_max_depth_conf_path" pack-conf})
+  (assert= "depth-cap-override-01: a persisted pack override is enforced, not the default file's own cap"
+           1
+           (backlog-depth-lib/read-max-depth root)))
+
+(let [root (mk-tmp)]
+  ;; No swarm-identity persisted at all - a bare launch, or a fixture (like
+  ;; test_backlog_depth_conf.sh's own) that writes a conf directly and never
+  ;; runs swarmforge.sh. Must fall back to the default file exactly as
+  ;; before BL-313.
+  (fs/create-dirs (fs/path root "swarmforge"))
+  (spit (str (fs/path root "swarmforge" "swarmforge.conf")) "config active_backlog_max_depth -1\n")
+  (assert= "depth-cap-override-02: no persisted override -> the default tracked config is enforced, unchanged"
+           -1
+           (backlog-depth-lib/read-max-depth root)))
+
+(let [root (mk-tmp)]
+  ;; A swarm-identity file exists (e.g. swarm_name/swarm_mode from an older
+  ;; pre-BL-313 launch) but carries no active_backlog_max_depth_conf_path
+  ;; key at all - must still fall back to the default file, not crash or
+  ;; misread an empty path.
+  (fs/create-dirs (fs/path root "swarmforge"))
+  (spit (str (fs/path root "swarmforge" "swarmforge.conf")) "config active_backlog_max_depth 3\n")
+  (write-identity! root {"swarm_name" "primary" "swarm_mode" "autonomous"})
+  (assert= "depth-cap-override-02b: a pre-BL-313 identity file with no persisted conf path falls back to the default"
+           3
+           (backlog-depth-lib/read-max-depth root)))
+
+;; ── effective-max-depth (pure, BL-432) ──────────────────────────────────
+
+(assert= "no recommendation leaves the configured cap completely untouched"
+         3
+         (backlog-depth-lib/effective-max-depth 3 nil))
+
+(assert= "a degraded recommendation (1) lowers a higher configured cap"
+         1
+         (backlog-depth-lib/effective-max-depth 3 1))
+
+(assert= "a severe recommendation (0) lowers a higher configured cap"
+         0
+         (backlog-depth-lib/effective-max-depth 3 0))
+
+(assert= "acceptance-04: a recommendation ABOVE the configured cap never raises it - min() alone already guarantees this"
+         2
+         (backlog-depth-lib/effective-max-depth 2 5))
+
+(assert= "an unlimited (-1) configured cap resolves straight to the recommendation - a bare min would wrongly keep -1 forever"
+         1
+         (backlog-depth-lib/effective-max-depth -1 1))
+
+(assert= "an unlimited configured cap with NO recommendation stays unlimited"
+         -1
+         (backlog-depth-lib/effective-max-depth -1 nil))
+
+(assert= "a recommendation exactly equal to the configured cap is a no-op either way"
+         3
+         (backlog-depth-lib/effective-max-depth 3 3))
+
+;; ── effective-max-depth 3-arity / pause-active? (pure, BL-423) ────────────
+
+(assert= "the 2-arity overload is unaffected - byte-for-byte the pre-BL-423 function"
+         1
+         (backlog-depth-lib/effective-max-depth 3 1))
+
+(assert= "a live pause wins outright over a configured cap with no recommendation"
+         0
+         (backlog-depth-lib/effective-max-depth 3 nil true))
+
+(assert= "a live pause wins outright even over an unlimited (-1) configured cap"
+         0
+         (backlog-depth-lib/effective-max-depth -1 nil true))
+
+(assert= "a live pause wins outright even over a throttle recommendation already in effect"
+         0
+         (backlog-depth-lib/effective-max-depth 3 1 true))
+
+(assert= "paused? false is identical to the 2-arity overload"
+         1
+         (backlog-depth-lib/effective-max-depth 3 1 false))
+
+(assert= "pause-active?: an inactive marker is never active"
+         false
+         (backlog-depth-lib/pause-active? {:active false} 1000))
+
+(assert= "pause-active?: an 'until I resume' pause (until-ms nil) is active with no expiry, however large now-ms grows"
+         true
+         (backlog-depth-lib/pause-active? {:active true :until-ms nil} 999999999))
+
+(assert= "pause-active?: a timed pause is active strictly before its own until-ms"
+         true
+         (backlog-depth-lib/pause-active? {:active true :until-ms 2000} 1000))
+
+(assert= "pause-active?: a timed pause is no longer active once now-ms reaches its until-ms - auto-resume, never waits on the sweep's own tick"
+         false
+         (backlog-depth-lib/pause-active? {:active true :until-ms 2000} 2000))
+
+(assert= "pause-active?: a timed pause well past its until-ms is not active"
+         false
+         (backlog-depth-lib/pause-active? {:active true :until-ms 2000} 5000))
+
+;; ── read-pause-state (fixture-based fs I/O) ───────────────────────────────
+
+(defn write-pause-marker! [root marker]
+  (fs/create-dirs (fs/path root ".swarmforge" "operator"))
+  (spit (str (backlog-depth-lib/pause-marker-path root)) (json/generate-string marker)))
+
+(let [root (mk-tmp)]
+  (assert= "read-pause-state degrades to inactive when no marker has ever been written (never a crash)"
+           {:active false}
+           (backlog-depth-lib/read-pause-state root)))
+
+(let [root (mk-tmp)]
+  (fs/create-dirs (fs/path root ".swarmforge" "operator"))
+  (spit (str (backlog-depth-lib/pause-marker-path root)) "not json")
+  (assert= "read-pause-state degrades to inactive for a malformed/corrupt marker file"
+           {:active false}
+           (backlog-depth-lib/read-pause-state root)))
+
+(let [root (mk-tmp)]
+  (write-pause-marker! root {:active true :untilMs 1784300000000})
+  (assert= "read-pause-state reads a real persisted timed pause"
+           {:active true :until-ms 1784300000000}
+           (backlog-depth-lib/read-pause-state root)))
+
+(let [root (mk-tmp)]
+  (write-pause-marker! root {:active true})
+  (assert= "read-pause-state reads an 'until I resume' pause (no untilMs field) as until-ms nil"
+           {:active true :until-ms nil}
+           (backlog-depth-lib/read-pause-state root)))
+
+(let [root (mk-tmp)]
+  (write-pause-marker! root {:active false})
+  (assert= "read-pause-state reads an explicit inactive marker (post-resume) as inactive"
+           {:active false}
+           (backlog-depth-lib/read-pause-state root)))
+
+;; ── read-recommended-cap / read-effective-max-depth (fixture-based fs I/O) ──
+
+(defn write-throttle-recommendation! [root recommended-cap]
+  (fs/create-dirs (fs/path root ".swarmforge" "coordinator"))
+  (spit (str (backlog-depth-lib/throttle-recommendation-path root))
+        (json/generate-string {:recommendedCap recommended-cap :severity (when recommended-cap "degraded")})))
+
+(let [root (mk-tmp)]
+  (assert= "read-recommended-cap degrades to nil when no recommendation file has ever been written (never a crash)"
+           nil
+           (backlog-depth-lib/read-recommended-cap root)))
+
+(let [root (mk-tmp)]
+  (write-throttle-recommendation! root 1)
+  (assert= "read-recommended-cap reads a real persisted recommendation"
+           1
+           (backlog-depth-lib/read-recommended-cap root)))
+
+(let [root (mk-tmp)]
+  (write-throttle-recommendation! root 0)
+  (assert= "read-recommended-cap reads a severe (zero) recommendation"
+           0
+           (backlog-depth-lib/read-recommended-cap root)))
+
+(let [root (mk-tmp)]
+  (write-throttle-recommendation! root nil)
+  (assert= "read-recommended-cap reads an explicit null recommendedCap as nil (no throttle), never a crash on JSON null"
+           nil
+           (backlog-depth-lib/read-recommended-cap root)))
+
+(let [root (mk-tmp)]
+  (fs/create-dirs (fs/path root ".swarmforge" "coordinator"))
+  (spit (str (backlog-depth-lib/throttle-recommendation-path root)) "not json")
+  (assert= "read-recommended-cap degrades to nil for a malformed/corrupt recommendation file"
+           nil
+           (backlog-depth-lib/read-recommended-cap root)))
+
+;; Present-but-malformed, distinct from absent/unparseable above: valid JSON,
+;; present recommendedCap field, but the WRONG TYPE (a future field-shape
+;; drift on the writer side) - must degrade to nil like every other
+;; malformed case, never propagate a non-numeric value into the promotion
+;; gate's min() arithmetic. (int? cap) is the guard this proves is
+;; load-bearing.
+(let [root (mk-tmp)]
+  (fs/create-dirs (fs/path root ".swarmforge" "coordinator"))
+  (spit (str (backlog-depth-lib/throttle-recommendation-path root))
+        (json/generate-string {:recommendedCap "one"}))
+  (assert= "read-recommended-cap degrades to nil for a present-but-wrong-type recommendedCap (string, not int)"
+           nil
+           (backlog-depth-lib/read-recommended-cap root)))
+
+;; Break-then-fix (the wiring-test-with-a-new-on-disk-input rule): prove the
+;; end-to-end read is genuinely load-bearing, not just a default that
+;; happens to match with no fixture at all.
+(let [root (mk-tmp)]
+  (fs/create-dirs (fs/path root "swarmforge"))
+  (spit (str (fs/path root "swarmforge" "swarmforge.conf")) "config active_backlog_max_depth 3\n")
+  (assert= "read-effective-max-depth-01: BEFORE any recommendation exists, the effective cap is just the configured one"
+           3
+           (backlog-depth-lib/read-effective-max-depth root))
+  (write-throttle-recommendation! root 1)
+  (assert= "read-effective-max-depth-02: AFTER a degraded recommendation is written, the effective cap drops to it - the read is load-bearing"
+           1
+           (backlog-depth-lib/read-effective-max-depth root))
+  (write-throttle-recommendation! root nil)
+  (assert= "read-effective-max-depth-03: once the recommendation clears, the effective cap restores to the configured value"
+           3
+           (backlog-depth-lib/read-effective-max-depth root)))
+
+;; PAUSE WIRING PROOF (BL-423, break-then-fix): places a LIVE pause marker
+;; in the fixture and proves the freeze is load-bearing - present -> the
+;; effective depth reads 0 (promotion frozen); removed -> it restores to
+;; the configured value (promotion resumes). Exercises the REAL end-to-end
+;; read (read-effective-max-depth), not just the pure effective-max-depth
+;; unit above, so this is the actual on-disk wiring test the ticket's own
+;; testability section calls for.
+(let [root (mk-tmp)]
+  (fs/create-dirs (fs/path root "swarmforge"))
+  (spit (str (fs/path root "swarmforge" "swarmforge.conf")) "config active_backlog_max_depth 3\n")
+  (assert= "pause-wiring-01: BEFORE any pause marker exists, the effective cap is just the configured one"
+           3
+           (backlog-depth-lib/read-effective-max-depth root))
+  (write-pause-marker! root {:active true})
+  (assert= "pause-wiring-02: WITH a live 'until I resume' pause marker present, the effective cap freezes to 0 - the read is load-bearing"
+           0
+           (backlog-depth-lib/read-effective-max-depth root))
+  (write-pause-marker! root {:active false})
+  (assert= "pause-wiring-03: once the marker is cleared (resume-now), the effective cap restores to the configured value"
+           3
+           (backlog-depth-lib/read-effective-max-depth root)))
+
+;; Same proof, but for a TIMED pause's own natural expiry (rather than an
+;; explicit resume clearing the marker) - the effective-depth read must
+;; unfreeze on its own once the marker's untilMs is in the past, even
+;; though the marker FILE itself still says active:true (the auto-resume
+;; sweep has not run its own tick to physically clear it yet). This is
+;; exactly pause-active?'s own "never waits on the sweep's cadence"
+;; contract, proven here through the real end-to-end read.
+(let [root (mk-tmp)]
+  (fs/create-dirs (fs/path root "swarmforge"))
+  (spit (str (fs/path root "swarmforge" "swarmforge.conf")) "config active_backlog_max_depth 3\n")
+  (write-pause-marker! root {:active true :untilMs (- (System/currentTimeMillis) 1000)})
+  (assert= "pause-wiring-04: an EXPIRED timed pause no longer freezes the effective cap, even before the sweep clears the marker file"
+           3
+           (backlog-depth-lib/read-effective-max-depth root)))
+
+;; ── report ────────────────────────────────────────────────────────────────
+(if (seq @failures)
+  (do
+    (doseq [f @failures] (binding [*out* *err*] (println f)))
+    (println (str "\n" (count @failures) " failure(s)"))
+    (System/exit 1))
+  (println "ALL PASS: backlog_depth_lib.bb"))

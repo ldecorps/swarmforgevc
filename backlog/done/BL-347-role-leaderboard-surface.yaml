@@ -1,0 +1,105 @@
+id: BL-347
+title: "Role benchmarking, slice 2: the Role Leaderboard reaches the human on the backlog dashboard"
+milestone: M8
+type: feature
+status: todo
+severity: medium
+priority: 6
+direction: human-requested
+epic: role-benchmarking
+depends_on: [BL-340]
+source: "backlog/INTAKE-role-leaderboard-presentation-surface.md — the human asked to 'think of the presentation layer' 2026-07-13T06:48Z; the Operator asked which of three readings he meant rather than guessing, and he replied 'A' at 09:29Z: the benchmark results only, i.e. the Role Leaderboard. The SURFACE was a separate open question, answered by the human 2026-07-13: the static backlog-dashboard PWA."
+
+notes: |
+  SCOPE IS (a) AND ONLY (a). The human was offered three readings — (a) benchmark results only,
+  (b) all efficiency numbers as one story (cost/ticket + burn rate + leaderboard), (c) the
+  presentation layer generally. He picked (a). Do NOT quietly widen this into (b) or (c). BL-338
+  (cost-per-ticket diagram) and BL-273 (burn-rate meter) are deliberately NOT merged in here.
+
+  THE SURFACE WAS A SEPARATE DECISION, AND IT HAS NOW BEEN MADE. His "A" pinned the scope, not the
+  destination — the intake explicitly forbade fabricating it. Put to him 2026-07-13 with a
+  rationale; he chose THE STATIC PWA. Rationale as put to him: the leaderboard is reference data
+  that changes only when a benchmark runs, so it wants an always-available home rather than a
+  daily re-send that would become noise in the briefing email.
+
+  THE CONSTITUTIONAL CONSTRAINT THAT SHAPES THE WHOLE TICKET. local-engineering.prompt rule 5:
+  the static PWA (`pwa/index.html` -> `pwa/app.js`) is a pure renderer over `./backlog.json` — a
+  git-SHA-reproducible PROJECTION with NO bridge/host connectivity, NO auth, NO write path. ONLY
+  data derivable from git state at a SHA may ride it. A benchmark run is inherently machine-local
+  and live (API calls, real cost, real latency), so it CANNOT be read directly. The one sanctioned
+  way across that boundary already exists and must be copied, not reinvented:
+
+    THE COST-HEALTH SIDECAR PATTERN. `readLatestCostHealthSidecar`
+    (extension/src/metrics/backlogDashboard.ts:244) reads the latest COMMITTED
+    `docs/briefings/<date>.json` and folds it into the dashboard verbatim; the producer
+    (extension/src/notify/costHealthSidecar.ts) writes it with `atomicWrite` and commits it with
+    `commitScopedFile` (which touches ONLY that file, never a broad `git add`). backlogDashboard's
+    own comment spells the posture out: backlog.json at a SHA carries only what was committed at
+    or before that SHA — never a live read.
+
+  THE DATA DEPENDENCY IS REAL, AND ITS WRITER IS NAMED (per the BL-298 rule — never assume "a
+  sibling slice writes it"). BL-340 as originally written produced a report but said nothing about
+  COMMITTING one, so this ticket would have had nothing to read and would have shipped dark. BL-340
+  is paused and not yet in flight, so it has been AMENDED IN THE SAME PASS as this spec to emit a
+  committed benchmark report artifact (`docs/benchmarks/<date>.json`, sidecar-style: atomicWrite +
+  commitScopedFile). BL-340 owns PRODUCING that artifact; this ticket owns PRESENTING it. Read
+  BL-340's amended scope item 7 before starting — and if its report schema has moved, this ticket
+  follows it rather than inventing a second one.
+
+  WHAT THE INTEGRATION LOOKS LIKE (verified in code 2026-07-13):
+    - GENERATOR: `buildBacklogDashboard` (backlogDashboard.ts:190, the pure assembler) and
+      `computeBacklogDashboard` (:267, the one impure entry point). Add the leaderboard the way
+      `costHealth` is added — an OPTIONAL field, null when no report has been committed.
+    - SCHEMA: `BACKLOG_DASHBOARD_SCHEMA_VERSION` is 1 and `docs/backlog-dashboard-schema.md` says
+      additive evolution within v1 is allowed — a new OPTIONAL field needs no version bump, but
+      the schema doc MUST be updated in the same parcel.
+    - PWA SECTION: sections are declared in `pwa/index.html` as
+      `<section><h2 data-i18n="...">…</h2><div id="..."></div></section>` and auto-upgraded by
+      `initCollapsibleSections()` (pwa/app.js:1470) — the `data-i18n` value IS the collapse-state
+      persistence key. Render from `renderAll` (app.js:842), and copy `renderCostHealth`'s
+      hidden-when-absent contract (app.js:747-757): the card is hidden ENTIRELY, never rendered
+      empty. Add strings to BOTH `en` and `fr` in `pwa/locales.js`.
+    - THIS IS THE PWA'S FIRST TABLE. There is no `<table>` anywhere in `pwa/` today and no table
+      CSS — every other section is a list or an inline SVG chart. Tables exist only on the LIVE
+      holistic UI. So this adds table markup AND table CSS to `pwa/index.html`, which changes the
+      service-worker shell hash (`pwa/sw.js`) — expect that, do not fight it.
+    - NO webview storage (constitution: no localStorage/sessionStorage); the PWA persists collapse
+      state via Cache Storage already — reuse it, do not add a new mechanism.
+    - STRYKER SANDBOX: `SIBLING_NAMES` in extension/scripts/ensureStrykerSandboxSiblings.js is
+      already `['pwa', 'swarmforge', '.github', 'docs']`, so a test reading `pwa/` or a committed
+      report under `docs/` is already covered. NO change needed — but verify against the sandbox
+      rather than assuming, per the standing rule.
+
+  SCOPE:
+    1. Read the latest COMMITTED benchmark report artifact in the dashboard generator, mirroring
+       `readLatestCostHealthSidecar` (null on missing/malformed — never throw).
+    2. Carry it as a new OPTIONAL field on backlog.json; update docs/backlog-dashboard-schema.md.
+    3. Render a "Role Leaderboard" collapsible PWA section: per role, BEST / BEST VALUE /
+       CHEAPEST ACCEPTABLE, plus the stated quality threshold, the run's date, and the reported
+       variance — so a reader can tell a real difference from noise and can see how old the
+       numbers are.
+    4. Hidden entirely when no report has been committed (the state on the day this ships).
+    5. OUT OF SCOPE: producing the numbers (BL-340); the briefing email; cost-per-ticket (BL-338);
+       burn rate (BL-273); any live/host read.
+
+  E2E QA PROCEDURE: commit a benchmark report artifact, regenerate backlog.json, and assert the
+  leaderboard section renders the three answers per role with threshold, date and variance. Then
+  regenerate from a checkout with NO committed report and assert the section is absent, not empty.
+  Finally, confirm the ONLY input is the committed artifact: with the report present on disk but
+  UNCOMMITTED, the generated backlog.json at that SHA must not show it — that is the constitutional
+  invariant this ticket most easily breaks.
+
+acceptance:
+  feature: specs/features/BL-347-role-leaderboard-surface.feature
+  steps:
+    - "The leaderboard names a best, a best value, and a cheapest acceptable model per role"
+    - "The quality threshold for cheapest acceptable is stated, not implied"
+    - "The reader can tell how old the numbers are"
+    - "A difference between models can be told from noise"
+    - "The leaderboard is hidden entirely when no benchmark has been run"
+    - "The leaderboard rides only committed data"
+    - "The human can collapse the leaderboard and find it collapsed next time"
+
+human_approval: pending
+
+mutation_cost: medium

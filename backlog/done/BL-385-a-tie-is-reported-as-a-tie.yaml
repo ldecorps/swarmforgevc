@@ -1,0 +1,83 @@
+id: BL-385
+title: "The leaderboard names a best coder model that the benchmark never measured — a 3-way tie broken by array order"
+milestone: M8
+type: bug
+status: todo
+severity: high
+epic: role-benchmarking
+priority: 2
+direction: human-requested
+depends_on: []
+source: "backlog/INTAKE-benchmark-scoring-cannot-discriminate.md (critique 1 + the unreported maxBy bug) — the human, 2026-07-14 in SUP-3. Slice 1 of BL-384; ships first because a shipped surface is presenting a false claim RIGHT NOW."
+
+notes: |
+  THIS IS AN INTEGRITY BUG ON A LIVE SURFACE, WHICH IS WHY IT IS SLICE 1. BL-340 (harness) and
+  BL-347 (leaderboard) are both already in `backlog/done/`, so the degenerate result below is
+  already being presented to the human on the backlog dashboard as fact.
+
+  THE DEFECT — THREE FACTS, ALL VERIFIED.
+  (a) `docs/benchmarks/2026-07-13.json` (the real committed run) records haiku, sonnet AND opus at
+      `meanQuality: 1`, `qualityStdDev: 0`. A perfect three-way tie.
+  (b) `maxBy` (`extension/src/benchmark/rank.ts:8`) is
+      `candidates.reduce((best, c) => (score(c) > score(best) ? c : best))` — a STRICT `>`, so an
+      N-way tie silently keeps the FIRST element. The published `bestByQuality: "claude-haiku"` is
+      therefore decided by the config array's ORDERING. It is not a finding. This bug is not
+      mentioned anywhere in the report.
+  (c) `bestByValueOf` computes `maxBy(meanQuality / meanCostUsd)`; with quality identically 1.0
+      that reduces to `argmin(cost)`. So `bestByValue` is literally "cheapest", and
+      `cheapestAcceptable` (threshold 0.8, everything at 1.0) is cheapest too. All three published
+      verdicts say `claude-haiku` and none of them measured quality.
+
+  WHAT "FIXED" MEANS HERE. A tie is the honest result — the benchmark's inability to discriminate
+  is itself the finding, and it must be reported as one, never resolved into a confident winner.
+  Name no best-by-quality model when the top scores tie; say plainly that the benchmark could not
+  discriminate; and surface that on the leaderboard INSTEAD of a best model (scenario 04).
+
+  BEST-VALUE IS A SUBTLER CALL — READ THIS BEFORE "FIXING" IT. When quality genuinely ties, the
+  cheapest model IS the best value; that answer is defensible. What is NOT defensible is presenting
+  it as a quality-value judgement when quality did nothing. So do not suppress best-value on a tie
+  — LABEL it: report it as a ranking on cost alone (scenario 03). The human's word for the defect
+  was "silently"; the fix is to stop it being silent, not to withhold the number.
+
+  DO NOT SWALLOW A REAL WINNER (scenario 02). The tie path must not capture the discriminating
+  case. A model that genuinely scores higher is still named, and the could-not-discriminate result
+  must NOT be reported then. Both branches must be driven; per the engineering article, a new
+  branch beside an existing one needs a test that proves which wins.
+
+  SCENARIO 05 IS THE MUTATION-RESISTANT ONE. Ranking the same tied models in a DIFFERENT array
+  order must produce the SAME reported result. That is the array-order bug stated as a property,
+  and it is the assertion a `>` -> `>=` mutant (or a re-sort) cannot survive. A per-branch test
+  alone would not catch a restoration of this bug.
+
+  STEP REGISTRY — THE ANTONYM PAIRS MUST BE DISTINCT HANDLERS. This feature deliberately asserts
+  both a thing and its negation, and IR-DRY flags every pair (that is expected, not a defect):
+  "the benchmark reports that it could not discriminate" / "...does NOT report..."; and "that model
+  is named best by quality" / "NO model is named best by quality". One is the tie path, the other is
+  the neighbour guard — the whole point is that they cannot both hold. Register them as separate,
+  EXACTLY-matched handlers. A substring or loose regex match would let the positive handler also
+  satisfy the negative step, and both scenarios would pass while asserting nothing.
+
+  SCOPE. `extension/src/benchmark/rank.ts` (the tie detection + the labelled best-value result) and
+  its `types.ts` ranking shape; the leaderboard surface shipped by BL-347 (consumes the ranking).
+  Both are pure and testable with no live models and no network — a benchmark run must NEVER be
+  needed to test this. The existing committed report makes an excellent fixture: it is a real,
+  three-way-tied run.
+
+  E2E QA PROCEDURE: rank the models from the ACTUAL committed `docs/benchmarks/2026-07-13.json` and
+  assert no best-by-quality winner is named and the could-not-discriminate result is reported.
+  Assert the leaderboard renders that instead of "Best: Claude Haiku". Shuffle the model array and
+  assert the reported result is unchanged. Then feed a fixture in which one model genuinely scores
+  higher, and assert it IS named and no could-not-discriminate result appears.
+
+acceptance:
+  feature: specs/features/BL-385-a-tie-is-reported-as-a-tie.feature
+  steps:
+    - "Models that all score the same are reported as a tie"
+    - "A model that genuinely scores higher is still named"
+    - "When quality cannot discriminate, best value is reported as a ranking on cost alone"
+    - "The leaderboard says the benchmark could not discriminate"
+    - "The reported result does not depend on the order the models were listed in"
+
+human_approval: approved
+
+mutation_cost: low

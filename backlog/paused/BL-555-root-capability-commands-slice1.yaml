@@ -1,0 +1,94 @@
+id: BL-555
+title: "Root capability commands Slice 1 — `doctor` and `status` as engine-level commands usable with or without a running swarm"
+milestone: M8
+type: feature
+status: needs_design
+epic: root-capability-commands
+human_approval: approved
+severity: low
+priority: 35
+direction: human-requested
+depends_on: [BL-554]
+assigned_to: specifier
+source: "Backlog root intake 004-root-capability-commands.md, drained by specifier 2026-07-22."
+
+approval_context: |
+  Held pending BL-554's ruling (reading (a) vs (b) — see that epic's
+  approval_context). Drafted here ONLY against reading (a): standalone means
+  "no persistent multi-role pipeline required," tmux/swarmforge machinery
+  stays the substrate. No acceptance feature file yet — this ticket stays
+  needs_design/assigned_to specifier until the human rules, matching the
+  BL-525 pattern for a not-yet-pinned multi-slice ticket.
+
+description: |
+  ## Problem
+
+  Of the eleven proposed commands (specify, implement, qa, document,
+  assimilate, review, harden, status, resume, stop, doctor), `status` and
+  `doctor` are the two with no meaningful "swarm vs standalone" branching
+  risk: `status` already has a live-swarm-only implementation (read
+  `.swarmforge/` state, mirrors what the extension's pipeline-awareness item
+  does); `doctor` is inherently environment/preflight-only (tmux present?
+  git repo clean? provider keys reachable? swarmforge/ vendored deps
+  present?) and arguably has NO swarm-required path at all. Picking these two
+  first proves the "one root command, dispatch by availability" shape
+  without touching the higher-risk commands (`implement`, `harden`, `qa`)
+  that would actually need to spin up a one-shot agent.
+
+  ## Wanted behavior (Slice 1, reading (a) only)
+
+  A root-level `doctor` command:
+    1. Runs regardless of whether a swarm is currently running.
+    2. Reports, capability by capability: tmux present and reachable, target
+       repo git-clean-enough, swarmforge/ vendored deps present (APS tools at
+       their pinned SHA), provider credentials reachable for at least one
+       configured provider.
+    3. Never spawns an agent process itself — pure environment inspection.
+
+  A root-level `status` command:
+    1. When a swarm IS running (a live tmux-socket + `.swarmforge/` state
+       dir exists per the existing swarm-liveness check): reports which
+       pipeline stage holds the active ticket(s), mirroring the existing
+       pipeline-awareness status line.
+    2. When NO swarm is running: reports that plainly (not an error) —
+       "no swarm running against <target>" — rather than failing or hanging.
+    3. Same command, same flags, in both cases — the caller does not choose
+       a mode.
+
+  ## Specifier must still pin (before this can leave needs_design)
+
+  1. The human's ruling on BL-554's reading (a) vs (b).
+  2. Whether these commands live in swarmforge/scripts/ (engine-level,
+     usable outside the VS Code extension entirely) or as an
+     extension/src/tools/ CLI that shells into swarmforge/ — engine-level is
+     the more literal reading of the intake ("SwarmForge capabilities...
+     root-level commands"), but confirm against local-engineering's
+     extension-host-owns-I/O rule if any VS Code-side plumbing turns out to
+     be involved.
+  3. Exact swarm-liveness detection reused (memory:
+     [[swarm-liveness-check-socket-path]] — the real socket path, not a
+     `/tmp` glob) so `status`/`doctor` don't false-report a live swarm dead.
+  4. Once pinned, write the Gherkin feature file for these two commands only;
+     park `implement`/`harden`/`qa`/`review`/`assimilate` (the commands that
+     would need a real one-shot-agent execution engine, not just inspection)
+     as a `.feature.draft` future slice — those need their own design pass on
+     what a one-shot, non-persistent-pipeline agent invocation looks like.
+
+acceptance: |
+  Not yet drafted as a feature file — blocked on the "specifier must pin"
+  list above, principally the human ruling on BL-554. Once ruled and pinned,
+  specifier returns to write specs/features/BL-555-*.feature covering
+  `doctor`'s capability checks and `status`'s swarm-present/absent branches,
+  then re-routes to the coordinator for promotion.
+
+out_of_scope: |
+  - `implement`, `harden`, `qa`, `review`, `assimilate`, `document`,
+    `specify`, `resume`, `stop` as standalone-capable commands — these need a
+    one-shot agent execution design, deferred to a future slice under
+    BL-554.
+  - Any reading-(b) (no-tmux, direct process spawn) implementation.
+  - Remote/cloud-hosted execution engines (explicitly "Future Enhancements"
+    in the original intake, and out of scope per project.prompt's "no remote
+    access" Milestone 1 exclusion for the extension side).
+
+mutation_cost: low

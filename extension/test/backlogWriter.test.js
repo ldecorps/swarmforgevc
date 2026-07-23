@@ -1,12 +1,13 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { setAssignedTo, markDone } = require('../out/panel/backlogWriter');
+const { setAssignedTo, markDone, promoteToActive, findBacklogFilePath } = require('../out/panel/backlogWriter');
 const { readBacklog } = require('../out/panel/backlogReader');
 
 function mkTmp() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-backlog-writer-'));
+  return mkTmpDir('sfvc-backlog-writer-');
 }
 
 function mkdirp(dir) {
@@ -157,4 +158,112 @@ test('markDone returns moved false when the item id does not exist in backlog/ac
   const result = markDone(target, 'BL-404');
 
   assert.equal(result.moved, false);
+});
+
+// --- promoteToActive (BL-490: the Expedite verb's force-promote step) ---
+
+function writePausedItem(targetPath, filename, yaml) {
+  const dir = path.join(targetPath, 'backlog', 'paused');
+  mkdirp(dir);
+  const filePath = path.join(dir, filename);
+  fs.writeFileSync(filePath, yaml);
+  return filePath;
+}
+
+test('promoteToActive moves a paused item into flat backlog/active/', () => {
+  const target = mkTmp();
+  writePausedItem(target, 'BL-200-paused-item.yaml', 'id: BL-200\ntitle: t\nhuman_approval: pending\n');
+
+  const result = promoteToActive(target, 'BL-200');
+
+  assert.equal(result.moved, true);
+  assert.equal(result.destination, path.join(target, 'backlog', 'active', 'BL-200-paused-item.yaml'));
+  assert.equal(fs.existsSync(path.join(target, 'backlog', 'paused', 'BL-200-paused-item.yaml')), false);
+  assert.equal(fs.existsSync(result.destination), true);
+});
+
+test('promoteToActive does not rewrite the YAML content - only the file moves', () => {
+  const target = mkTmp();
+  const yaml = 'id: BL-201\ntitle: t\nhuman_approval: pending\n';
+  writePausedItem(target, 'BL-201-content-check.yaml', yaml);
+
+  const result = promoteToActive(target, 'BL-201');
+
+  assert.equal(fs.readFileSync(result.destination, 'utf8'), yaml);
+});
+
+test('promoteToActive result is visible as active when the backlog is re-read', () => {
+  const target = mkTmp();
+  writePausedItem(target, 'BL-202-visible.yaml', 'id: BL-202\ntitle: t\nhuman_approval: pending\n');
+
+  promoteToActive(target, 'BL-202');
+
+  const items = readBacklog(target);
+  const item = items.find((i) => i.id === 'BL-202');
+  assert.equal(item.status, 'active');
+});
+
+test('promoteToActive returns moved false when the item id does not exist in backlog/paused', () => {
+  const target = mkTmp();
+  mkdirp(path.join(target, 'backlog', 'paused'));
+
+  const result = promoteToActive(target, 'BL-404');
+
+  assert.equal(result.moved, false);
+});
+
+test('promoteToActive returns moved false without throwing when backlog/paused does not exist', () => {
+  const target = mkTmp();
+
+  const result = promoteToActive(target, 'BL-404');
+
+  assert.equal(result.moved, false);
+});
+
+test('promoteToActive skips promotion when the item is already active (scenario 05: no redundant promotion)', () => {
+  const target = mkTmp();
+  writeActiveItem(target, 'BL-203-already-active.yaml', 'id: BL-203\ntitle: t\nstatus: active\n');
+
+  const result = promoteToActive(target, 'BL-203');
+
+  assert.equal(result.moved, false);
+  assert.equal(fs.existsSync(path.join(target, 'backlog', 'active', 'BL-203-already-active.yaml')), true);
+});
+
+// --- findBacklogFilePath (BL-490-VIOLATION: locates a ticket's CURRENT file
+// regardless of which live folder it sits in, so a durable-commit caller can
+// resolve the right repo-relative path after a promote/approve write) ---
+
+test('findBacklogFilePath finds an item in backlog/active', () => {
+  const target = mkTmp();
+  const filePath = writeActiveItem(target, 'BL-300-active.yaml', 'id: BL-300\ntitle: t\n');
+
+  assert.equal(findBacklogFilePath(target, 'BL-300'), filePath);
+});
+
+test('findBacklogFilePath finds an item in backlog/paused when not in active', () => {
+  const target = mkTmp();
+  const dir = path.join(target, 'backlog', 'paused');
+  mkdirp(dir);
+  const filePath = path.join(dir, 'BL-301-paused.yaml');
+  fs.writeFileSync(filePath, 'id: BL-301\ntitle: t\n');
+
+  assert.equal(findBacklogFilePath(target, 'BL-301'), filePath);
+});
+
+test('findBacklogFilePath prefers active over paused when (implausibly) both exist', () => {
+  const target = mkTmp();
+  const activePath = writeActiveItem(target, 'BL-302-both.yaml', 'id: BL-302\ntitle: active copy\n');
+  const pausedDir = path.join(target, 'backlog', 'paused');
+  mkdirp(pausedDir);
+  fs.writeFileSync(path.join(pausedDir, 'BL-302-both.yaml'), 'id: BL-302\ntitle: paused copy\n');
+
+  assert.equal(findBacklogFilePath(target, 'BL-302'), activePath);
+});
+
+test('findBacklogFilePath returns null when the item exists in neither folder', () => {
+  const target = mkTmp();
+  mkdirp(path.join(target, 'backlog', 'active'));
+
+  assert.equal(findBacklogFilePath(target, 'BL-404'), null);
 });

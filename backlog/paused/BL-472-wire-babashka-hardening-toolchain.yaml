@@ -1,0 +1,88 @@
+id: BL-472
+title: "Pin + install + wire the Babashka mutation/CRAP/DRY hardening toolchain (clj-mutate/crap4clj/dry4clj) so .bb swarm scripts get a real hardener gate — deferred future item"
+milestone: M8
+type: chore
+severity: low
+status: todo
+epic: code-quality-gates
+priority: 5
+direction: swarm-proposed
+depends_on: []
+source: "hardener rule_proposal (scope engineering, 2026-07-16, id 20260716T231815Z_000346) raised during BL-433 hardening: swarmforge.lock.json has NO Babashka tool pins, so every .bb hardening pass silently runs the degraded no-tooling fallback while the tool table implied real coverage. Specifier disposition 2026-07-16 (human ldecorps chose 'document as not-wired' over 'pin+install'): correct engineering.prompt to state the gap plainly NOW (done, same pass), and FILE this deferred tracker so 'tracked future item' is a real reference, not a dangling claim."
+
+notes: |
+  WHY THIS IS A DEFERRED TRACKER, NOT ACTIVE WORK:
+    - The human explicitly chose the LIGHT disposition (document the gap honestly)
+      over building the toolchain now. This ticket is the durable home for the
+      deferred build so engineering.prompt's "tracked future item (BL-472)" points
+      at something real. It is a PROPOSAL — the coordinator does not activate it
+      until the human/coordinator decides the .bb hardening investment is worth it.
+    - The .bb swarm scripts run the whole handoff transport and have caused real
+      live incidents (BL-355 zero-byte handoff, BL-367 socket-glob swarm-kill,
+      BL-389 offset-park redelivery loop), so a genuine mutation/CRAP/DRY gate on
+      them has real value — but it is a substantial fork-scope investment, not a
+      Milestone-1 requirement, hence deferred rather than rejected.
+
+  THE GAP THIS TICKET WOULD CLOSE (verified 2026-07-16):
+    - swarmforge.lock.json pins `aps` and `secondary_host_substrate` (the babashka
+      RUNTIME, node, claude_cli, actions-runner) but has NO entry for the three
+      hardening tools clj-mutate / crap4clj / dry4clj.
+    - Those three names appear ONLY in engineering.prompt's tool table — no install
+      script, no .bb hardening invocation references them anywhere. `.bb` hardening
+      therefore has no real mutation/CRAP/DRY gate today.
+
+  WHAT ACTIVATING THIS TICKET WOULD REQUIRE (design still OPEN — settle at pickup):
+    1. PIN: add clj-mutate / crap4clj / dry4clj to swarmforge.lock.json at exact
+       upstream SHAs (github.com/unclebob/{clj-mutate,crap4clj,dry4clj}), following
+       the existing "never resolve latest; bumping a pin is a human commit" posture.
+    2. INSTALL: a pinned-by-SHA install script (sibling to install_aps_tools.sh)
+       that builds/installs the three tools from those SHAs, idempotently.
+    3. WIRE: invoke them from the hardener's .bb pass (hardender.prompt +
+       whatever compliance/hardening entrypoint drives .bb quality) so changed .bb
+       files get a real mutation-kill / CRAP<=6 / DRY gate, sequenced with the same
+       office-hours / host-load / cooldown guards the TS Stryker pass already uses.
+    4. FIRST-PASS COST: the existing .bb corpus (swarmforge/scripts/*.bb) must then
+       actually SURVIVE the new gate — expect a decrap/coverage backlog, so scope
+       the rollout incrementally (on-touch or module slices, per BL-428), never a
+       big-bang gate flip that blocks every .bb-touching ticket at once.
+
+  OPEN QUESTIONS FOR THE PICKUP SPEC (do NOT guess now):
+    - Do clj-mutate/crap4clj/dry4clj build+run in THIS environment (babashka, not
+      full Clojure/JVM)? Confirm before pinning — if they are JVM-only the wiring
+      story changes (and may argue for keeping .bb on unit-tests-only permanently).
+    - Whether the gate applies to ALL .bb or only swarmforge/scripts/*.bb.
+    - Whether to gate at hardener parity (100% cov, no survivors, CRAP<=6) or a
+      lower bar for fork/substrate scripts initially.
+
+acceptance: |
+  No net-new product behavior of its own; this is a fork-tooling infra item. When
+  actually taken up, the acceptance signal is: (1) swarmforge.lock.json carries a
+  pinned SHA for each of clj-mutate, crap4clj, dry4clj; (2) the new install script,
+  run from a clean environment, installs all three at those exact SHAs and is
+  idempotent on re-run; (3) the hardener's .bb pass invokes them on changed .bb
+  files and FAILS on a surviving mutant / CRAP>6 / DRY duplication in that changed
+  code (proven by a deliberately-planted survivor that the gate catches); and (4)
+  engineering.prompt's Startup Tools Babashka bullet is restored to describe a REAL
+  wired toolchain (reversing the 'not currently wired' text this ticket's filing
+  pass added). A concrete Gherkin feature file is written at pickup time, once the
+  open questions above are resolved — this deferred tracker deliberately does not
+  carry one (design is not settled; a feature file whose scenarios outrun an
+  undesigned build would be premature).
+
+qa_e2e: |
+  Per the eventual pickup spec: from a clean checkout, run the install script and
+  confirm all three tools resolve to their pinned SHAs; plant a surviving mutant in
+  a changed .bb file and confirm the hardener's .bb pass fails on it; confirm a
+  clean .bb change passes; confirm engineering.prompt no longer claims the tooling
+  is unwired. Verify against the real hardening path, not a fixture.
+
+human_approval: approved
+approval_context: >
+  Not required to FILE — this is a deferred, low-priority swarm-proposed tracker
+  created so engineering.prompt's honest 'not currently wired / tracked future
+  item (BL-472)' correction has a real referent. The DECISION to actually build it
+  (pin+install+wire) is the human's, made at activation time; the human chose the
+  document-as-not-wired disposition on 2026-07-16 and deferred the build. Any
+  actively-scoped work drawn from this tracker follows the normal spec +
+  human-review flow (including a new feature file) at that time.
+mutation_cost: low

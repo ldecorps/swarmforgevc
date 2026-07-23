@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -9,7 +10,7 @@ const {
 } = require('../out/devActivationMarker');
 
 function mkTmp() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-marker-'));
+  return mkTmpDir('sfvc-marker-');
 }
 
 // --- BL-058 robust-bounce-05: marker written only in development mode ---

@@ -1,0 +1,60 @@
+id: BL-554
+title: "EPIC — Root capability commands: specify/implement/qa/document/etc. as engine-level commands that work with or without a running swarm; do not promote directly; tracks children"
+milestone: M8
+status: todo
+type: epic
+epic: root-capability-commands
+priority: 30
+depends_on: []
+decomposes_into: [BL-555]
+human_approval: approved
+source: "Backlog root intake 004-root-capability-commands.md, drained by specifier 2026-07-22."
+
+approval_context: |
+  This intake asks for root-level commands (specify, implement, qa, document,
+  assimilate, review, harden, status, resume, stop, doctor) that "automatically
+  determine the most appropriate execution strategy: swarm execution when the
+  swarm is available, standalone execution when it is not" and states "the
+  swarm is an optimisation, never a prerequisite."
+
+  This needs a human ruling BEFORE any slice is promoted, because it brushes
+  against a standing architectural constraint recorded from a prior review
+  ([[spec-md-standalone-orchestrator-contradiction]]): Specification.MD has
+  long-dormant "standalone orchestrator, no tmux" language that directly
+  contradicts local-engineering.prompt's two-layer rule (tmux is the process
+  SUBSTRATE; the VS Code extension host must never spawn agent processes
+  directly to bypass tmux) and project.prompt's "this extension does NOT
+  replace SwarmForge... a window onto what SwarmForge already does, not a
+  reimplementation of it."
+
+  Two readings of "standalone" are possible and they are NOT
+  interchangeable:
+    (a) COMPATIBLE reading: "standalone" means no PERSISTENT multi-role swarm
+        pipeline is required — a command like `specify` or `harden` can still
+        shell into swarmforge/'s own scripts and spin up one ephemeral
+        agent/tmux pane for a single capability, without the full
+        specifier->coder->...->QA chain or a coordinator. Tmux remains the
+        substrate; only the *persistent pipeline* is optional.
+    (b) CONFLICTING reading: "standalone" means no tmux, no `./swarm`
+        wrapper, agent processes spawned directly by whatever invokes the
+        command (matching the exact language the prior review flagged as
+        contradicting the constitution). This reading requires a constitution
+        amendment (Article 5) before any ticket may be specced against it,
+        not a feature ticket alone.
+
+  Recommend ruling for reading (a) — it delivers the same user-visible value
+  (one command per capability, works without a human babysitting a live
+  pipeline) without reopening the tmux-substrate question. BL-555 below is
+  drafted against reading (a) only; it is NOT feature-file-complete pending
+  this ruling, matching the pattern used for BL-525 (prose + "specifier must
+  pin" list, no acceptance feature file yet, held at human_approval: pending).
+
+notes: |
+  SUB-TRACKER, do not promote directly — coordinator promotes child slices.
+  If the human rules for reading (b), this epic's children must be
+  re-specced from scratch as a constitution amendment (Article 5 process)
+  before any implementation ticket, not amended in place.
+
+acceptance:
+  none: "tracker only — see decomposes_into children for acceptance"
+mutation_cost: high

@@ -1,7 +1,7 @@
 id: BL-077
 title: color-code ticket badges by pipeline stage — see where each parcel is at a glance
 milestone: M3
-status: todo
+status: done
 priority: 07
 assigned_to: coder
 

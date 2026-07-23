@@ -1,0 +1,79 @@
+id: BL-305
+title: "Bug HIGH: operator false-freezes on a stale or unreadable usage-limit cooldown (nil-reset cooldown never elapses; stale pane banner renews a ~24h reset) — make cooldown evaluation fail-OPEN"
+milestone: M8
+status: todo
+type: bug
+priority: 5
+depends_on: []
+source: "Coordinator bug report 2026-07-11 (note 000252, HIGH): 'operator false-freezes on stale/mis-parsed cooldown; spec fix.' Ties to [[swarm-token-cooldown-handling]]. Specifier traced the exact freeze paths before scoping."
+
+notes: |
+  A false-freeze = the operator sits in :cooldown (won't launch the disposable LLM) when
+  it should be :available -> the Operator silently does nothing (health checks, nudges,
+  recovery all stop). HIGH because the Operator is the swarm's recovery delegate.
+
+  TWO ROOT-CAUSE FREEZE MODES (verified 2026-07-11):
+    1. MIS-PARSED / no reset time -> INDEFINITE freeze. scan-provider-state
+       (operator_runtime.bb ~L320-326): when a pane matches `usage-limited?` but the text
+       has NO readable "resets HH:MM", `parse-reset-clock` returns nil, so reset-ms is nil
+       and it still returns {:state :cooldown :reset-ms nil}. `cooldown-elapsed? (nil now)`
+       is FALSE (operator_lib.bb ~L158, `(and reset-ms ...)`), so a nil-reset cooldown
+       NEVER elapses -> the operator is frozen for as long as that banner text is matched,
+       with no reset instant to ever wait out.
+    2. STALE pane banner -> renewing ~24h freeze. The `limited-text` branch (~L322) takes
+       PRIORITY over the recorded cooldown and RE-DERIVES a fresh reset from pane
+       scrollback every tick. An hours-old "usage limit... resets 7:50pm" banner still
+       visible in a pane re-parses, and `reset-epoch-ms`'s next-occurrence roll
+       (operator_lib.bb ~L137-138) resolves it to TOMORROW 7:50pm -> a ~24h freeze that
+       keeps renewing off stale text, long after tokens actually reset.
+
+  FIX DIRECTION = FAIL-OPEN (the coordinator named false-FREEZE as the defect; bias toward
+  :available on stale/unreadable input, never an unbounded freeze). Balance against
+  [[swarm-token-cooldown-handling]] ("don't thrash Claude against a real limit"): resume
+  via a BOUNDED short wait, not an immediate hot retry.
+
+  SCOPE (put the policy in the PURE, CLEAN operator_lib.bb — mirrors its existing "pure
+  detectors" design; scan-provider-state stays a thin caller. Injected clock, no real
+  timers — de0991e):
+    1. A usage-limit signal with NO parseable reset (or an IMPLAUSIBLY far-off one) must
+       NOT produce an unbounded cooldown: cap it to a BOUNDED fallback window (a short,
+       configurable default) after which the provider returns to :available and is
+       re-evaluated — never a nil-reset cooldown that can never elapse.
+    2. SANITY-BOUND the resolved reset instant: a reset more than a plausible-max ahead
+       (e.g. a few hours) is treated as mis-parsed (fall back to the bounded window), not
+       honored as a ~day-long freeze — kills the next-occurrence 24h artifact.
+    3. Do NOT let a STALE banner renew/extend an already-recorded cooldown: once the
+       recorded reset has elapsed, go :available even if the old banner still lingers in a
+       pane; require FRESH evidence (a not-yet-elapsed reset) to (re-)enter cooldown, so
+       scrollback alone can't perpetually re-freeze.
+    4. Preserve the genuine path: a readable, not-yet-elapsed reset STILL freezes until it
+       elapses (no regression — real limits are still respected).
+
+  ARCHITECT-REVIEW ITEMS (defaults, not product forks): the bounded-fallback window length
+  and the plausible-max reset horizon (both configurable, sensible defaults). Fail-open is
+  the mandated direction, not a fork.
+
+  CONTAMINATION FLAG (pipeline): `operator_runtime.bb` is dirty in the worktree (ticket-less
+  operator_tunnel work, [[operator-tunnel-contamination-blocks-merge]]). Keep this fix's
+  operator_runtime.bb edit MINIMAL (thin call into operator_lib.bb, likely a different
+  region than the tunnel-status code), and stash --include-untracked -> land -> pop at
+  merge time. operator_lib.bb itself is clean.
+
+  E2E QA PROCEDURE (injected clock): (a) banner "usage limit... resets 7:50pm", now 6pm ->
+  frozen until 7:50pm (genuine). (b) banner "usage limit reached" with NO reset -> frozen
+  at most the bounded window, then available (not forever). (c) recorded cooldown reset in
+  the PAST + the old banner still present in a pane -> available, not re-frozen. (d) a
+  resolved reset > plausible-max ahead -> treated as bounded, not a ~24h freeze.
+
+  OUT OF SCOPE: the LLM-launch gate itself (should-launch-operator? unchanged beyond
+  consuming the corrected provider-state); real provider-API cooldown headers (this path is
+  pane-banner based); operator_tunnel work.
+
+acceptance:
+  feature: specs/features/BL-305-operator-cooldown-false-freeze.feature
+  steps:
+    - "A usage-limit banner with a readable, not-yet-elapsed reset keeps the operator frozen until that reset (genuine cooldown respected, no regression)"
+    - "A usage-limit banner with a missing or implausibly far-off reset freezes only for a bounded fallback window and then resumes (never an unbounded/nil-reset freeze)"
+    - "Once a recorded cooldown's reset has elapsed, the operator resumes even if a stale limit banner still lingers in a pane (stale text alone never re-freezes)"
+
+mutation_cost: medium

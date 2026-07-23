@@ -1,0 +1,79 @@
+id: BL-415
+title: "Filed-intake Telegram confirmation links to the file's GitHub permalink"
+milestone: M8
+type: feature
+status: todo
+severity: low
+priority: 6
+direction: human-requested
+depends_on: []
+source: "backlog/INTAKE-operator-question-1784107562233.md — operator-relayed Telegram request 2026-07-15T09:26Z ('reformat the intake md links on Telegram so they point to their GitHub location so I can click and see the file'). Human chose (specifier Q, 2026-07-15) a commit-SHA permalink over blob/main."
+
+notes: |
+  WHAT: today operator_file_question.bb replies to the human with
+  reply-text = "Filed for the swarm: backlog/INTAKE-<slug>.md" (line ~32) — a
+  plain repo-relative path the human cannot click. Make it a clickable GitHub
+  permalink to the file at the commit that just filed it.
+
+  CONFIRMED INTEGRATION POINT: swarmforge/scripts/operator_file_question.bb.
+  write-and-commit-intake! commits the file, so the FILING COMMIT SHA is known
+  at reply time — use that exact sha for a permalink:
+    https://github.com/<owner>/<repo>/blob/<sha>/<rel-path>
+  A commit-SHA permalink is the right choice here precisely because the intake
+  file is short-lived: the specifier DRAINS it (git rm from the backlog root)
+  as soon as it is specced, so a blob/main link would 404 within the hour, while
+  the permalink keeps resolving to the file as filed.
+
+  DERIVE owner/repo from `git -C <project-root> remote get-url origin`, handling
+  BOTH forms (git@github.com:ldecorps/swarmforgevc.git and
+  https://github.com/ldecorps/swarmforgevc.git) -> normalize to
+  https://github.com/ldecorps/swarmforgevc (strip trailing .git). Put the URL
+  derivation in a small pure, unit-tested helper (both remote forms + the
+  missing/non-GitHub fallback are the load-bearing cases).
+
+  CLICKABILITY: Telegram auto-links a bare https:// URL in a plain-text message,
+  so emitting the raw permalink is enough and needs no parse-mode change to the
+  existing operator_reply.bb path. Keep the human-readable rel-path too, e.g.
+  "Filed for the swarm: backlog/INTAKE-<slug>.md — <permalink>".
+
+  FALLBACK (must not break filing): if origin is absent or not a GitHub URL,
+  fall back to the current plain-path text. Composing the confirmation must
+  NEVER fail or block the (critical, already loudly-committed) filing — a link
+  is a convenience layered on top of a durable commit.
+
+  DRY: if any OTHER outbound Telegram message renders an intake/backlog file
+  path the human is meant to click, route it through the SAME permalink helper
+  rather than cloning the URL construction. The operator_file_question reply is
+  the one the human explicitly named and the only confirmed case; do not go
+  hunting for speculative call sites, but reuse the helper if an obvious sibling
+  exists.
+
+  Scope: swarmforge/scripts/operator_file_question.bb (the reply text) + a small
+  shared URL-permalink helper (in operator_lib.bb or a sibling) with unit tests.
+
+  OUT OF SCOPE: rewriting email/briefing/PWA/holistic-UI file references (this is
+  the Telegram intake-confirmation the human named); adding parse-mode/HTML
+  formatting to the reply path.
+
+acceptance:
+  feature: specs/features/BL-415-intake-reply-github-permalink.feature
+  steps:
+    - "The filed-intake confirmation contains a github.com blob permalink at the filing commit's SHA for the intake's path"
+    - "The GitHub base is derived from either the SSH or HTTPS origin remote form (trailing .git stripped)"
+    - "A missing or non-GitHub origin falls back to the plain repo-relative path without failing the confirmation"
+
+qa_e2e: |
+  1. Unit: the URL helper over both remote forms yields the same normalized
+     https base; a non-GitHub/absent remote yields the plain-path fallback. The
+     permalink composer yields blob/<sha>/<rel-path> for a given sha+path.
+  2. Wiring: run operator_file_question.bb --check against a fixture repo with a
+     github origin; assert the reply text carries the permalink at the just-made
+     commit's sha, and that filing still succeeds (loud non-zero only on a real
+     commit failure, never on a link-derivation miss).
+  3. Live: file a throwaway question via the real Operator path and click the
+     link in Telegram — it opens the filed intake at that commit; confirm it
+     still resolves AFTER the specifier drains (git rm's) the intake.
+
+human_approval: approved  # human via Operator relay (OPERATOR thread), 2026-07-15T12:43Z: "Approved all" to the 5-ticket list (BL-411 413 414 415 418)
+
+mutation_cost: low

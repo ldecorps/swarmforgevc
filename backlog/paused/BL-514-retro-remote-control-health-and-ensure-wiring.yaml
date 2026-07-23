@@ -1,0 +1,105 @@
+id: BL-514
+title: "Retro-ticket the remote-control health/respawn operator tooling (landed un-ticketed via 7dd4d14e; KEEP, already tested) and wire the RC health check into `./swarm ensure`"
+milestone: M8
+type: chore
+severity: low
+status: todo
+epic: fleet-topology
+priority: 20
+direction: swarm-proposed
+depends_on: []
+source: "Coordinator directive 2026-07-17 (note 00_20260717T232701Z_000575 to specifier): 'Retro-ticket 7dd4d14e (keep, tested) - spec swarm_ensure.bb wiring too.' Carries out the constitution's An-Approval-Authorizes-Only-Its-Ticket's-Work rule (workflow.prompt / BL-506): commit 7dd4d14e added 514 lines of remote_control_health*.bb / remote_control_respawn.bb operator tooling with NO backlog ticket, riding onto main as an ancestor of BL-506's QA-approved commit. That rule requires such already-landed ticket-less work to be 'retroactively ticketed or reverted'; the coordinator chose KEEP (the tooling is real, tested, and useful), so this ticket is its ticket of record plus the one wiring slice that was designed but never landed."
+
+notes: |
+  SCOPE NOTE — this is FORK / OPERATOR-SUBSTRATE tooling, not Milestone-1 extension product. It lives
+  under swarmforge/scripts/ (the maintained fork) and supervises the swarm's remote-control
+  (claude.ai/code) sessions; project.prompt keeps watchdog/heartbeat OUT of the EXTENSION MVP, but
+  this is substrate-side operator tooling (same category as BL-472's fork toolchain), already in use.
+  The KEEP-vs-revert decision is the human's/coordinator's — see approval_context.
+
+  ALREADY LANDED (retro-documented, KEEP — do NOT rebuild, it is tested):
+    - swarmforge/scripts/remote_control_health_lib.bb — shared RC predicate. Trustworthy RC signal is
+      the pane's live `claude` process still carrying its `--remote-control <name>` flag (NOT pane
+      scrollback, which scrolls the session banner out and false-negatives). Pure decisions:
+      classify(expected, actual, alive?) -> :off (RC disabled) / :down (no live agent) / :healthy /
+      :degraded (live agent lost its flag); actionable? (only :degraded is repairable);
+      wait-outcome(busy?, remaining) -> :idle/:timeout/:keep-waiting; session-url-in-capture.
+    - swarmforge/scripts/remote_control_health.bb <root> [--fix] — report; --fix respawns ONLY
+      :degraded panes from their persisted launch script (restoring the flag); never touches
+      :healthy; leaves :down to pane-liveness. Exit 1 if any role still :degraded.
+    - swarmforge/scripts/remote_control_respawn.bb <root> [--role N] [--wait-seconds N] [--dry-run] —
+      graceful full respawn to refresh session URLs; respawns a pane only while idle (Claude's
+      `esc to interrupt` busy footer, same signal as chase_sweep_lib), waits a busy agent up to the
+      budget then SKIPS it (never kills mid-turn); RESUME-ON-START recovers any claimed parcel.
+    - Landed via 7dd4d14e (the hardener's dedupe/extract/test pass) + 4b73b846 (exec bits). COVERAGE
+      OF RECORD: swarmforge/scripts/test/test_remote_control_health.sh — this is the .bb gate
+      (engineering.prompt: .bb scripts are covered by their shell unit-test suite only). No new tests
+      are owed for the shipped scripts; this ticket does not re-verify them beyond confirming the
+      suite passes.
+
+  NEW WORK (the wiring slice — designed but never landed):
+    - Fold an `rc:<role>` component into swarm_ensure.bb's -main so `./swarm ensure` verifies RC as
+      part of its BAU "are the agents up" sweep. For each configured role, AFTER the existing
+      agent:<role> pane check, call remote-control-health/check-role and:
+        * :healthy / :off  -> HEALTHY (report; do nothing).
+        * :degraded        -> repair by respawning the pane from its launch script
+                              (remote-control-health/respawn-role-pane!), then reclassify -> FIXED /
+                              FAILED, exactly like ensure's other components' classify(before, after).
+        * :down            -> do NOT act here; leave it to the existing agent:<role> pane check, which
+                              respawns the crashed pane and thereby restores RC (use
+                              remote-control-health/actionable?, which is true only for :degraded, so
+                              the RC check never double-respawns a pane the agent-pane check just
+                              revived).
+    - Reuse the existing seams: load remote_control_health_lib.bb the way swarm_ensure already
+      load-files agent_runtime_lib.bb; drive check-role through its injectable cmdline-fn (the 5-arg
+      arity) so the test supplies a fake probe with no live agent — mirroring test_swarm_ensure.sh's
+      existing classify fake-probe tests. The rc:<role> lines join the same never-abort, exit-nonzero-
+      on-any-FAILED report ensure already emits.
+
+  VERIFY THE LIVE PATH AT BUILD (grep first): swarm_ensure.bb's -main is the ensure orchestrator; the
+  RC lib is remote_control_health_lib.bb (namespace remote-control-health). Confirm neither moved.
+
+acceptance: |
+  Two parts. (A) RETRO / already-met (KEEP, no rebuild): the three remote_control_*.bb scripts remain
+  on main and swarmforge/scripts/test/test_remote_control_health.sh passes — that shell suite is the
+  acceptance of record for the shipped RC health/respawn behaviour (classify's four statuses;
+  --fix repairs only :degraded and never a :healthy/:down/:off pane; respawn is idle-gated and skips
+  a busy agent rather than killing it; wait-outcome and session-url extraction). No net-new behaviour
+  is owed for this half; the ticket exists to give the landed code a ticket of record per the
+  approval-authorizes-only-its-ticket rule.
+  (B) NEW wiring — the acceptance signal is: `./swarm ensure` now emits an `rc:<role>` line for every
+  configured role, and (proven by extending swarmforge/scripts/test/test_swarm_ensure.sh with
+  fake-probe scenarios, mirroring its existing classify tests) the rc component reports HEALTHY for a
+  :healthy/:off role and takes NO repair action; reports FIXED for a :degraded role AFTER respawning
+  its pane and reclassifying healthy; reports FAILED if the respawn does not restore the flag; and
+  takes NO rc-level action for a :down role (that pane is the agent:<role> check's job) so a crashed
+  pane is never double-respawned. ensure never aborts on one rc FAILED and its exit status is
+  non-zero iff any component (rc included) is FAILED.
+
+qa_e2e: |
+  Against the live swarm (or a fixtured tmux session):
+  1. Run `bb swarmforge/scripts/remote_control_health.bb <root>` — confirm one line per role with a
+     truthful HEALTHY/DEGRADED/DOWN/off status read from the live `--remote-control` flag, exit 0 when
+     none degraded.
+  2. Induce a :degraded pane (a live agent started without the flag) and run the same with `--fix` —
+     confirm ONLY that pane is respawned and it comes back HEALTHY; confirm a :healthy pane is untouched.
+  3. Run `bb swarmforge/scripts/remote_control_respawn.bb <root> --dry-run` — confirm it reports each
+     role's idle/busy state and respawns nothing; confirm a busy agent is reported as would-wait-then-skip.
+  4. Run `./swarm ensure` — confirm `rc:<role>` lines appear alongside the extension/agent/daemon/
+     operator/front-desk lines, that a :degraded role shows FIXED (respawned) while :down is handled by
+     its agent:<role> line (not double-respawned), and the overall exit status reflects any FAILED.
+  Verify against the real ensure path, not a fixture-only assertion.
+
+human_approval: approved
+approval_context: >
+  Retro-ticketing the remote-control health/respawn tooling that landed on main WITHOUT a ticket
+  (commit 7dd4d14e, an ancestor of BL-506's approved commit) — the constitution requires such
+  un-ticketed work to be retroactively ticketed or reverted, and the coordinator directed KEEP
+  because it is real, tested operator tooling. Confirm two things: (a) KEEP the shipped RC
+  health/respawn scripts as-is (the alternative the rule allows is REVERT them off main — say the word
+  if you'd rather they came out); and (b) you want the small new slice that folds the RC check into
+  `./swarm ensure` so a routine `./swarm ensure` also verifies/repairs remote-control health (it acts
+  only on a live-but-flagless agent, and never touches a healthy one or double-respawns a crashed one).
+  This is fork/operator-substrate tooling, not Milestone-1 extension product.
+
+mutation_cost: low

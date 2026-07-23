@@ -1,0 +1,3 @@
+# BL-520 drained the temporary BL-515 legacy wrap allowlist.
+# Keep this file as an audit marker only; it must contain no feature-file
+# entries, and gherkin_lint_gate_cli.bb no longer reads it.

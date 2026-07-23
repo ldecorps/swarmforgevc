@@ -1,0 +1,54 @@
+# PARKED — BL-265 slice 2 (the holistic-UI gate list + ANSWER view). NOT built in
+# slice 1 and NOT wired into the live acceptance runner (a .feature.draft is picked
+# up by no *.feature glob and no runner, per BL-233), so the up-front design is
+# preserved without failing the hardener's gate. Promote these scenarios into the
+# live BL-265-holistic-gate-answer-view.feature only when this slice is built.
+#
+# Slice 1 ships the host GET /gates read route. Slice 2 adds the pending-gate list +
+# answer view to the holistic UI (holisticUiHtml.ts) — the surface already
+# authenticated to the live bridge. Listing uses slice 1's GET /gates (read auth);
+# answering reuses the EXISTING POST /gate-answer (BL-240) with the BL-241 control
+# step-up (a separate X-Control-Token beyond the read bearer). The static PWA
+# (pwa/app.js) stays read-only and is untouched — it has no live bridge connection.
+# The gate list + answer-form logic is a PURE, fixture-tested function separate from
+# the DOM render. Localization (BL-229/230) + a11y (BL-238) apply to the new UI.
+
+Feature: answer a pending to-human gate from the holistic bridge UI
+
+  Background:
+    Given the holistic bridge UI is open and authenticated with a valid read token
+
+  # BL-265 gate-view-lists-pending-05
+  Scenario: the page shows the currently-pending gates awaiting an answer
+    Given one or more roles are blocked on a captured to-human gate
+    When the gate view renders
+    Then it lists each pending gate with the gated role and its question snippet
+
+  # BL-265 gate-view-empty-state-06
+  Scenario: with no pending gate the view shows a localized empty state
+    Given no role is blocked on a captured to-human gate
+    When the gate view renders
+    Then it shows a localized empty state in the active locale rather than an error or blank
+
+  # BL-265 gate-answer-unblocks-07
+  Scenario: answering a gate with the control step-up unblocks the waiting agent
+    Given a role blocked on a captured to-human gate
+    And the session has supplied the control step-up credential
+    When the operator submits an answer to that gate
+    Then the answer is sent through the authenticated bridge write path
+    And the blocked agent proceeds
+
+  # BL-265 gate-answer-requires-control-stepup-08
+  Scenario: a read-only session can view gates but cannot answer without the step-up
+    Given a role blocked on a captured to-human gate
+    And the session holds only the read token and no control step-up credential
+    When the operator attempts to submit an answer
+    Then the answer is refused for lacking control authorization
+    And the pending-gate list remains viewable
+
+  # BL-265 gate-answer-stale-rejected-09
+  Scenario: answering an already-answered or stale gate is rejected cleanly
+    Given a gate that is no longer pending because it was already answered
+    And the session has supplied the control step-up credential
+    When the operator submits an answer to that gate
+    Then the answer is rejected cleanly and the rejection is surfaced to the operator

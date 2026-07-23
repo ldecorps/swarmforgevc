@@ -1,13 +1,84 @@
 #!/usr/bin/env bash
-# Reset role worktrees after a swarm run: drop sync drift, finish junk deletions,
-# remove agent litter (node_modules, copied profiles). Does not touch main checkout.
+# Reset role worktrees after a swarm run.
 #
-# Usage: reset_worktrees.sh [repo-root]
+# Default (soft): drop sync drift, finish junk deletions, remove agent litter.
+# Does not move branch tips.
+#
+# --align-main (hard): for every role worktree, keep the current agent branch
+# name but reset its tip onto main (origin/main if available) and git clean -fd
+# so every role starts aligned with main. Does not force-push remotes.
+#
+# Usage:
+#   reset_worktrees.sh [repo-root]
+#   reset_worktrees.sh --align-main [repo-root]
 set -euo pipefail
 
-ROOT="$(cd "${1:-.}" && pwd)"
+ALIGN_MAIN=0
+ROOT=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --align-main)
+      ALIGN_MAIN=1
+      shift
+      ;;
+    -h|--help)
+      sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'
+      exit 0
+      ;;
+    -*)
+      echo "ERROR: unknown option: $1" >&2
+      echo "Usage: reset_worktrees.sh [--align-main] [repo-root]" >&2
+      exit 2
+      ;;
+    *)
+      if [[ -n "$ROOT" ]]; then
+        echo "ERROR: unexpected extra argument: $1" >&2
+        exit 2
+      fi
+      ROOT="$1"
+      shift
+      ;;
+  esac
+done
 
-reset_one() {
+ROOT="$(cd "${ROOT:-.}" && pwd)"
+
+resolve_main_ref() {
+  # Prefer a freshly fetched origin/main; fall back to local main.
+  if git -C "$ROOT" rev-parse --verify -q origin/main >/dev/null 2>&1; then
+    git -C "$ROOT" fetch --quiet origin main 2>/dev/null || true
+    if git -C "$ROOT" rev-parse --verify -q origin/main >/dev/null 2>&1; then
+      git -C "$ROOT" rev-parse origin/main
+      return
+    fi
+  fi
+  git -C "$ROOT" rev-parse main
+}
+
+align_one() {
+  local wt="$1"
+  local main_ref="$2"
+  local name
+  name="$(basename "$wt")"
+  [[ -e "$wt/.git" ]] || return 0
+  [[ "$name" == "completed" ]] && return 0
+
+  cd "$wt"
+  git merge --abort >/dev/null 2>&1 || true
+  git rebase --abort >/dev/null 2>&1 || true
+  git cherry-pick --abort >/dev/null 2>&1 || true
+
+  # Keep the role's branch name; move its tip onto main.
+  git reset --hard "$main_ref"
+  git clean -fd
+
+  local br head
+  br="$(git branch --show-current 2>/dev/null || echo '?')"
+  head="$(git rev-parse --short HEAD)"
+  echo "$name: aligned $br -> $head (main)"
+}
+
+reset_one_soft() {
   local wt="$1"
   local name
   name="$(basename "$wt")"
@@ -47,9 +118,17 @@ reset_one() {
 }
 
 shopt -s nullglob
-for wt in "$ROOT/.worktrees"/*; do
-  reset_one "$wt"
-done
+if [[ "$ALIGN_MAIN" -eq 1 ]]; then
+  MAIN_REF="$(resolve_main_ref)"
+  echo "Aligning role worktrees onto $(git -C "$ROOT" rev-parse --short "$MAIN_REF") ..."
+  for wt in "$ROOT/.worktrees"/*; do
+    align_one "$wt" "$MAIN_REF"
+  done
+  echo "Worktree align-to-main complete."
+else
+  for wt in "$ROOT/.worktrees"/*; do
+    reset_one_soft "$wt"
+  done
+  echo "Worktree reset complete."
+fi
 shopt -u nullglob
-
-echo "Worktree reset complete."

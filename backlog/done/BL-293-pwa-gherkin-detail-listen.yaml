@@ -1,0 +1,82 @@
+id: BL-293
+title: "PWA: add a Listen (read-aloud) control to the Gherkin ticket full-detail view, reusing the BL-266/BL-271 TTS control"
+milestone: M8
+status: todo
+priority: 20
+direction: aligned
+assigned_to: coder
+depends_on: []
+source: ".swarmforge/operator/INTAKE-pwa-gherkin-detail-listen.md — human command via operator -> coordinator 2026-07-11 (attended RC): clicking a Gherkin opens the full detail; add a Listen button so the full spec is read aloud. Specifier confirmed the reuse seam + ticket shape."
+
+description: |
+  On the static backlog-dashboard PWA docs/Gherkin explorer: clicking a ticket opens a
+  READ-ONLY full-detail view (renderDocsTicket, pwa/app.js ~L1011: description + its
+  acceptance scenarios). The human wants a Listen control there so the FULL spec
+  (description + all scenarios) is read aloud on-device.
+
+  This is EXTEND, not net-new — BL-266/BL-271 already shipped the whole Listen (TTS)
+  control; it is just not wired into the docs-explorer ticket detail (only the recert/
+  approval detail today). Verified reuse seams in pwa/app.js:
+    - renderListenControl(container, ticket) (~L492): the Listen/Stop toggle button.
+      Already handles the toggle, the on-device window.speechSynthesis speak/cancel, the
+      graceful listenUnavailable fallback (speechAvailable ~L489), and the aria-label
+      state tracking (BL-238/BL-266). Reuse it AS-IS.
+    - assembleSpokenText(ticket) (~L464, PURE): returns ticket.description + every
+      ticket.scenarios[].text joined in order — exactly "the full gherkin spec" spoken.
+    - i18n keys startListening / stopListening / listenUnavailable already exist (tr()).
+  SHAPE CONFIRMED (the intake's ask): renderDocsTicket's ticket comes from
+  findTicket(docsView.ticketId) and carries .description + .scenarios[].text — precisely
+  what assembleSpokenText expects. So the change is: call renderListenControl(container,
+  ticket) from renderDocsTicket, feeding the same ticket object the detail view already
+  has. No new spoken-text assembly, no second control.
+
+  DECISION (the intake's alternative): default to the in-page reuse above, NOT the
+  "pop a Chrome window / read the page" alternative. In-page keeps the static-PWA
+  on-device / no-network posture, reuses shipped code, and avoids a second window
+  surface. The separate-page approach is not needed.
+
+  Scope: the Listen control on the TICKET full-detail (renderDocsTicket) reads the full
+  spec (description + all scenarios). Per-single-scenario Listen (renderDocsScenario,
+  one scenario) is NOT in scope — the human asked for the "full gherkin spec", which is
+  the ticket level; a per-scenario control would need a different spoken-text and can be
+  a later addition if wanted.
+
+  Wanted behavior (see the feature file):
+    - The Gherkin full-detail (ticket) view shows a Listen control; activating it reads
+      the description and every scenario aloud on-device; activating again stops.
+    - Where speech synthesis is unavailable, the listen-unavailable note shows in place
+      of the control (never a crash) — the existing speechAvailable fallback.
+    - The control is keyboard-operable with an aria-label that tracks Listen/Stop state.
+
+  Constraints / testability:
+    - Static PWA only (pwa/app.js), git-SHA projection — NO host/live data, NO network
+      fetch; on-device window.speechSynthesis only (the reused control already is).
+    - NO persistence needed (Listen has no persisted state). If any pref were ever added,
+      it must use PREFERENCES_CACHE_NAME, never localStorage/sessionStorage (BL-259 gate
+      fails the build on either global) — but this ticket adds none.
+    - Reuse renderListenControl / assembleSpokenText AS-IS — do not fork a second TTS
+      control or a second spoken-text assembler. The wiring (renderDocsTicket calls the
+      control) is unit-testable in jsdom the way BL-266/BL-271's approval-detail Listen is
+      (extension/test/pwaApprovalDetail.test.js / a docs-explorer test): assert the
+      control appears on the ticket detail, that activating it speaks assembleSpokenText's
+      output (fake speechSynthesis), the unavailable fallback note, and the aria-label
+      state tracking. Never seed a fixture timestamp from the real clock while the code
+      reads its own clock (de0991e) — not expected to apply here.
+
+  COORDINATOR SERIALIZATION NOTE: this edits pwa/app.js, the SAME file as the in-flight
+  BL-291 (collapsible sections). Per the orthogonality rule (a coder task cannot be
+  preempted; serialize same-file PWA tickets), hold this until BL-291 has cleared
+  pwa/app.js, then promote. Not a functional dependency — purely a same-file merge-order
+  serialization.
+
+  QA e2e procedure (jsdom; fake speechSynthesis):
+    - Open a ticket full-detail with a description + scenarios; assert a Listen control
+      renders; activate it and assert the spoken text equals assembleSpokenText(ticket)
+      (description + all scenarios); activate again and assert speech is cancelled.
+    - Render with speechSynthesis unavailable; assert the listen-unavailable note shows,
+      no control, no crash.
+    - Assert the control is a real focusable button, keyboard-operable, with aria-label
+      flipping between the Listen and Stop labels on toggle.
+
+acceptance: specs/features/BL-293-pwa-gherkin-detail-listen.feature
+mutation_cost: low

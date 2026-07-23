@@ -1,0 +1,61 @@
+id: BL-239
+title: "Telegram chat adapter: per-run thread narrates events; relays human gate replies (human-only)"
+direction: feature
+milestone: M6
+priority: 50
+mutation_cost: high
+depends_on: [BL-240]
+source: "coordinator roadmap-gap-scan 2026-07-10; gap #3. Operator picked Telegram. Spec.MD 1386-1408."
+
+description: |
+  Roadmap gap #3. A Telegram bot becomes the human's remote channel: the platform
+  already solved delivery, identity, encryption, and a UI on your phone — no push
+  infra or custom app to build. Operator picked Telegram (easiest bot API, free,
+  unprompted messages fine); other platforms could follow the same adapter shape.
+
+  HARD BOUNDARY (Spec.MD): the chat app is a human-facing projection ONLY, never
+  the agent coordination bus. Agents keep talking exclusively through the on-disk
+  message store (append-only log, leases, sequencing, chase, dead-letter). The
+  adapter holds no state — it projects store events outward (via the bridge) and
+  turns a human reply into a gate answer.
+
+  Wanted behavior (observable):
+    - Each run gets ONE Telegram thread; the bot narrates stage transitions,
+      gates, dead-letters, and the final PR link into it.
+    - A human's reply to a posted gate prompt is relayed as an answer to that gate
+      and the pipeline unblocks (via BL-240's write path).
+    - The adapter only projects store events outward and relays human replies
+      inward; no agent-to-agent handoff is ever routed through Telegram.
+    - Inbound is limited to answering captured gates (per the operator's BL-240
+      scope); stop/respawn/arbitrary commands are NOT executed here.
+
+  Constraints:
+    - depends_on BL-240 for the inbound gate-answer write path; the outbound
+      narration slice can land first. Rides the bridge (BL-065).
+    - Telegram bot token is a secret: host-side/secret-store only, never in the
+      working tree or a commit (local-engineering secret rule).
+    - Bounded/safe network handling (bounded retry -> escalate) per the
+      engineering bounded-retry rule; the adapter is optional (Tier 2).
+    - Testable boundary: the Telegram API sits behind an injectable seam (faked in
+      tests) — no real network in unit tests.
+
+  Scope: extension host — a bridge-fed Telegram adapter: outbound event->message
+  projection into a per-run thread, inbound reply->gate-answer relay (via BL-240),
+  bot auth of the human, and the human-only boundary enforcement.
+
+acceptance: specs/features/BL-239-telegram-chat-adapter.feature
+
+qa_e2e_procedure: |
+  End-to-end procedure QA runs (Telegram API + transport seams faked):
+  1. Drive a run's events; assert stage transitions, a gate, a dead-letter, and
+     the PR link are each posted to one per-run thread.
+  2. Post a gate prompt; send a human reply; assert it becomes a gate answer via
+     BL-240 and the item unblocks.
+  3. Assert no agent-to-agent handoff is ever emitted to Telegram (only human
+     projection + gate replies cross the adapter).
+  4. Send a stop/respawn/arbitrary command as a human; assert it is not executed.
+  5. Assert the bot token is read from the secret store and never appears in the
+     working tree or a commit.
+
+# HUMAN APPROVAL: feature file specs/features/BL-239-...feature is a new draft
+# authored by the specifier and is pending human review.

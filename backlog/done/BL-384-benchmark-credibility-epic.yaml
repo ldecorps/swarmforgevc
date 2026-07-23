@@ -1,0 +1,75 @@
+id: BL-384
+title: "EPIC — The role benchmark must measure what SURVIVES the pipeline, not the first diff; tracks children, do not promote directly"
+milestone: M8
+status: todo
+type: epic
+epic: role-benchmarking
+priority: 20
+depends_on: []
+decomposes_into: [BL-385, BL-386, BL-387, BL-388]
+source: "backlog/INTAKE-benchmark-scoring-cannot-discriminate.md — the human, 2026-07-14 in SUP-3 (Benchmarking topic). Three critiques, all three CONFIRMED against the shipped code and the committed report. Shape settled with the human 2026-07-14 (AskUserQuestion): ONE epic with the tie-fix as slice 1; oracle runs the FULL pipeline in the loop; harder tasks scored with rework cost."
+
+notes: |
+  UMBRELLA / tracking item, not directly promotable. The `role-benchmarking` epic already shipped
+  two slices — BL-340 (the harness) and BL-347 (the leaderboard surface), both in `backlog/done/` —
+  but never had a parent ticket. This is that parent, and it exists because those two slices, taken
+  together, are currently publishing a false claim to the human.
+
+  THE FINDING (verified in code + in the committed artifact, not hypothetical).
+  `docs/benchmarks/2026-07-13.json` records haiku, sonnet AND opus at `meanQuality: 1`,
+  `qualityStdDev: 0` — a perfect three-way tie, because the sole battery task is trivially easy.
+  Three consequences, each independently confirmed:
+    1. `maxBy` (`extension/src/benchmark/rank.ts:8`) reduces with a strict `>`, so an N-way tie
+       silently keeps the FIRST array element. The published `bestByQuality: "claude-haiku"` is
+       therefore the config array's ORDERING, not a measurement. This is an unreported bug.
+    2. `bestByValueOf` computes `maxBy(meanQuality / meanCostUsd)`. With quality identically 1.0
+       that expression reduces to `argmin(cost)` — "best value" IS "cheapest", exactly as the human
+       predicted. `cheapestAcceptable` likewise passes everything (threshold 0.8, all at 1.0).
+    3. All three published verdicts read `claude-haiku`, and NOT ONE of them is a finding.
+  The benchmark did not measure that Haiku is the best coder. It measured that Haiku is cheapest,
+  and then reported it three different ways as if it had.
+
+  THE ROOT CAUSE IS THE TASK CEILING, NOT THE METRIC. Quality is already fractional
+  (`testsPassed / testsTotal`, `nodeTestQualityEvaluator.ts`) — it does not need to be made graded,
+  it needs something to grade. The single battery item (`coder-task-01-word-frequency`) is one
+  exported function in ONE file against a provided test file, one-shot by every model in ~20s. It
+  holds no unstated invariant and spans no files, so it cannot probe the weak spots that separate
+  models. A metric that saturates is not a metric.
+
+  AND THE ORACLE IS BLIND TO REWORK. `runTrial`/`runBenchmark` execute the provider CLI once
+  against a fresh fixture and score the resulting diff immediately. Nothing routes it through
+  cleaner -> architect -> hardener -> QA. The human's framing is the correct one and it is now the
+  epic's thesis: a coder's value is not its first diff, it is the diff that SURVIVES. With a ~58%
+  bounce rate already noted on BL-338, rework is plausibly where the real cost difference between
+  models actually lives — and the harness is structurally unable to see it.
+
+  SLICES.
+    BL-385  [SHIPPED] A tie is reported AS a tie, and the leaderboard says so. Shipped FIRST — it was
+            the integrity fix, and until it landed a shipped surface kept telling the human something
+            untrue. Also killed the array-order bug.
+    BL-386  [SHIPPED] A battery with a real difficulty ceiling: several tasks, cross-file, holding
+            invariants the tests never state. Also makes the report per-task (previously it carried a
+            single top-level `taskId` — the harness ran exactly ONE task).
+    BL-387  [ACTIVE — in flight] The oracle runs each trial's diff through the REAL pipeline and
+            scores what survives, counting each bounce as rework.
+    BL-388  [PAUSED — mandatory wiring slice] THE WIRING SLICE — the scoring function, the report and
+            the leaderboard actually CONSUME survival + rework cost. depends_on [BL-385, BL-387].
+
+  SLICE STATUS (as of 2026-07-15).
+    BL-385  DONE — backlog/done/, QA-approved aa2438a8bf, closed 8da3cff1.
+    BL-386  DONE — backlog/done/, QA-approved 052e86dd7b, merged 67e615e7.
+    BL-387  ACTIVE — backlog/active/, promoted after BL-386 closed (1a139379); the survival/rework
+            oracle is the in-flight slice.
+    BL-388  PAUSED — the epic's mandatory wiring slice; still gates epic completion (see below).
+    Two of four slices have landed; the epic is HALF DARK. The leaderboard already reports ties
+    honestly (BL-385) over a battery that can separate models (BL-386), but it still ranks on
+    first-pass survival-blind counts until BL-388 consumes the oracle's survival + rework output.
+    Do NOT close this epic on BL-385/386 having shipped, nor on BL-387 landing green.
+
+  BL-388 IS THE EPIC'S MANDATORY WIRING SLICE, AND IT IS NAMED HERE ON PURPOSE. Per the engineering
+  article: an emit -> route -> consume epic whose slices are pure modules stays DARK until a slice
+  CALLS them on a real trigger and persists their result. BL-386 and BL-387 can both land, fully
+  green, while the leaderboard still ranks on first-pass test counts — the epic is NOT complete
+  until BL-388 lands. Do not close this epic on the strength of its foundation slices.
+
+mutation_cost: medium

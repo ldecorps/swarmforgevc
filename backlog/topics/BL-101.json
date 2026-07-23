@@ -1,0 +1,1 @@
+{"id":"BL-101","messages":[{"seq":0,"ts":1784010715582,"author":"swarm","type":"outbound","text":"What it is: headless secondary swarms on small Linux hosts — Raspberry Pi and VPS bring-up (systemd, headless auth, throughput-aware assignment)"}]}

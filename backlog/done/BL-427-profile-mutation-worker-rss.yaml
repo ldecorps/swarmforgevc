@@ -1,0 +1,107 @@
+id: BL-427
+title: "Profile peak RSS per Stryker worker during a mutation run and recommend a free-RAM-headroom concurrency formula (measure first; the adaptive-sizing implementation is a named follow-up)"
+milestone: M8
+type: chore
+severity: medium
+priority: 3
+direction: human-requested
+depends_on: []
+source: "backlog/INTAKE-operator-question-1784127990945.md — human question via Telegram (SUP-2), filed by the Operator 2026-07-15: 'can mutation tests use more/adaptive cores depending on overall usage, and can this be profiled'. The ask: size Stryker/test parallelism from available RAM headroom rather than a fixed core count, because the real bottleneck is RAM not cores (orphaned vitest workers have OOM-thrashed this swarm before). Adjacent to the SHIPPED BL-422 (which capped the UNIT suite's forked pool/heap); this is the mutation-run equivalent and adaptive rather than a fixed cap. Drained 2026-07-15 (AskUserQuestion, specifier session): scope = PROFILE FIRST, BUILD LATER — measure and recommend now; the adaptive-sizing implementation is a separate follow-up ticket informed by the findings."
+
+notes: |
+  WHAT / WHY (verified against live config, not memory):
+    - extension/stryker.config.json today sets a FIXED "concurrency": 4 — a static
+      number, RAM-blind. Each unit of Stryker concurrency is a separate worker
+      PROCESS running its own Vitest instance; Stryker's vitest-runner hardcodes
+      pool:'threads'+maxThreads:1 (engineering.prompt worker-thread rule), so a
+      mutation run's RAM is ~concurrency * (one Vitest thread + Node heap) per
+      worker. On a 15GB box, 4 heavy workers can approach the same OOM-spiral BL-422
+      fixed for the unit suite — but BL-422 EXPLICITLY did not touch mutation
+      (vitest.config.mjs caps only the DEFAULT forked pool; the Stryker runner
+      overrides both settings). So the mutation run is still fixed-4 and RAM-blind.
+    - The human's question is two parts: (a) CAN peak RSS per worker be profiled —
+      yes; (b) SHOULD concurrency be sized from free-RAM headroom instead of a fixed
+      number — yes. This ticket answers (a) with a measured report and delivers the
+      PURE recommendation FUNCTION for (b); the follow-up wires it.
+
+  THIS TICKET DELIVERS (measure + recommend, testable):
+    1. A profiling harness (thin CLI over exported pure helpers) that runs — or
+       wraps — a real Stryker mutation run and samples per-worker RSS over its
+       lifetime, recording each worker's PEAK (max) RSS, not an instantaneous read.
+       The sampling/parse core is pure and unit-tested; the "run it for real" step
+       is a QA/human-run measurement (see qa_e2e), not a unit test.
+    2. A PURE, unit-tested recommendation function
+       recommendMutationConcurrency({ freeRamBytes, peakRssPerWorkerBytes,
+       coreCount, reserveBytes }) -> integer, computing
+       clamp(floor((freeRamBytes - reserveBytes) / peakRssPerWorkerBytes), 1,
+       coreCount). Floor at 1 (never zero workers), cap at coreCount (RAM can't buy
+       more parallelism than cores), reserve a headroom margin so the box never runs
+       to zero-free.
+    3. A committed measurement REPORT (docs/) recording peak RSS per worker on the
+       reference host, the resulting recommended concurrency vs today's fixed 4, and
+       the chosen reserve margin — the evidence the follow-up's default is built on.
+
+  NAMED FOLLOW-UP (do NOT fold in — the human chose profile-first): a separate
+  ticket wires recommendMutationConcurrency into Stryker config generation so the
+  mutation run's concurrency is chosen adaptively at launch from live free-RAM
+  headroom (reading /proc/meminfo or os.freemem()), replacing the static 4. That
+  ticket is the runtime-wiring slice for this pure function (multi-slice-wiring
+  rule): until it lands, this function is a correct-but-dark module and the mutation
+  run still uses fixed 4. Recorded here so it is a tracked slice, not an implicit
+  gap. The specifier writes that follow-up once this ticket's report exists.
+
+  TESTABILITY:
+    - recommendMutationConcurrency is a pure arithmetic function — exhaustive
+      boundary unit tests (headroom below one worker -> 1; headroom between k and
+      k+1 workers -> k; headroom for more than coreCount -> coreCount; exact
+      multiples). Because it is ordered clamping, a test must drive the floor and cap
+      boundaries so a clause-swap mutant can't survive (engineering adjacent-branch
+      rule): assert the k-vs-(k+1) boundary AND the cap boundary explicitly.
+    - The RSS sample parser (raw ps/proc samples -> per-worker peak map) is pure and
+      unit-tested over fixture sample streams; peak = max over the lifetime.
+    - Any CLI keeps main() a thin wrapper over exported pure helpers, called
+      IN-PROCESS by a test (thin-wrapper + in-process-main). Reach any cwd/HOME via
+      STUBBING process.cwd/os.homedir, never chdir/env overlay (worker-thread rule).
+
+  OUT OF SCOPE: actually changing stryker.config.json's concurrency to adaptive
+  (that is the named follow-up); the unit suite's pool/heap (shipped in BL-422);
+  a RAM-aware health/orphan watchdog (explicitly NOT selected in BL-422's draining).
+
+  DEPENDENCY POSTURE: no depends_on. Uses the existing Stryker/Vitest setup on main.
+  Profiling a real mutation run is RAM-heavy by nature — schedule the live
+  measurement overnight (mutation-heavy scheduling, article 3.4), not in office
+  hours.
+
+acceptance:
+  feature: specs/features/BL-427-profile-mutation-worker-rss.feature
+  steps:
+    - "recommendMutationConcurrency floors division of free-RAM headroom by peak per-worker RSS"
+    - "recommendMutationConcurrency never returns fewer than one worker"
+    - "recommendMutationConcurrency never returns more workers than cores"
+    - "recommendMutationConcurrency subtracts the reserve margin before dividing"
+    - "the RSS sample parser records each worker's peak (max) RSS over its lifetime"
+
+qa_e2e: |
+  1. Unit (pure, no real mutation run): drive recommendMutationConcurrency over
+     boundary fixtures — headroom below one worker's peak -> 1; headroom exactly at
+     k workers and just under k+1 -> k; headroom exceeding coreCount workers ->
+     coreCount; verify the reserve margin is subtracted before the division. Drive
+     the peak boundary AND the cap boundary in the same suite so an ordered-clause
+     swap cannot survive. Drive the RSS parser over a fixture sample stream and
+     assert per-worker PEAK (max), not last/instantaneous.
+  2. Live measurement (overnight, reference host): run the profiling harness over a
+     real scoped mutation run, capture peak RSS per worker, and confirm the report
+     records peak-per-worker, the recommended concurrency from
+     recommendMutationConcurrency(live freeRam, measured peak, cores, reserve), and
+     how it compares to today's fixed 4. This report is the artifact the named
+     follow-up's adaptive default is built on.
+
+human_approval: >
+  approved 2026-07-15 (coordinator session, AskUserQuestion confirmation). Scope
+  (profile-first, build-later) was confirmed by the human via AskUserQuestion in the
+  specifier session 2026-07-15; the human then approved promotion as-is in the
+  coordinator session the same day, accepting the recommendation formula's exact
+  reserve margin be resolved during build rather than blocking promotion. The
+  specifier materializes the live .feature at promotion, with the coder wiring step
+  handlers in the same parcel (BL-233).
+mutation_cost: medium

@@ -134,11 +134,13 @@ export interface IdleClearMonitorConfig extends IdleClearConfig {
 
 export function startIdleClearMonitor(
   config: IdleClearMonitorConfig,
-  adapters: IdleClearAdapters
+  adapters: IdleClearAdapters,
+  scheduleTick: (fn: () => void, ms: number) => NodeJS.Timeout = setInterval,
+  getNowMs: () => number = Date.now
 ): NodeJS.Timeout {
   const tracker = new IdleClearTracker();
-  const intervalId = setInterval(() => {
-    const nowMs = Date.now();
+  const intervalId = scheduleTick(() => {
+    const nowMs = getNowMs();
     for (const status of adapters.getRoleStatuses()) {
       const decision = tracker.evaluate(status, nowMs, config);
       if (decision === 'clear') {
@@ -154,8 +156,11 @@ export function startIdleClearMonitor(
   return intervalId;
 }
 
-export function stopIdleClearMonitor(intervalId: NodeJS.Timeout | null): void {
+export function stopIdleClearMonitor(
+  intervalId: NodeJS.Timeout | null,
+  clearTick: (handle: NodeJS.Timeout) => void = clearInterval
+): void {
   if (intervalId) {
-    clearInterval(intervalId);
+    clearTick(intervalId);
   }
 }

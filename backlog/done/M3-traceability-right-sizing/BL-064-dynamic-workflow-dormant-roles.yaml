@@ -1,7 +1,7 @@
 id: BL-064
 title: Dynamic workflow — per-item role packs with dormant roles; QA always gates
 milestone: M3
-status: todo
+status: done
 priority: 12
 assigned_to: coder
 

@@ -1,0 +1,56 @@
+id: BL-438
+title: "needs-human becomes an on-disk field the swarm owns, folded into status.json — closing the isBlocked-always-false gap in the fleet console"
+milestone: M8
+type: feature
+status: todo
+severity: medium
+epic: fleet-second-swarm
+priority: 36
+direction: human-requested
+depends_on: [BL-437]
+source: "INTAKE-fleet-beefup-second-swarm-fes-guinea-pig.md (epic BL-435, suggested slice 3; settled decision 5's needs-human half). The side-effect win: closes the isBlocked always-false gap in fleet-console.ts / compositeNode.ts."
+
+notes: |
+  PARKED behind BL-437 (needs status.json to exist to fold into). Scenarios live in
+  specs/features/BL-438-needs-human-on-disk-signal.feature.draft until BL-437 lands and this is promoted.
+
+  WHAT IT CLOSES. Today `isBlocked` is effectively always-false in `extension/src/tools/fleet-console.ts`
+  / `extension/src/swarm/compositeNode.ts` — the console can only guess whether a swarm is blocked by
+  sniffing pane text. Make needs-human a FIELD the swarm OWNS.
+
+  DESIGN (settled with the human, 2026-07-15). The coordinator / needs-human reconciler is the only thing
+  that knows "I'm waiting on a human"; it writes an on-disk needs-human signal. handoffd (BL-437's
+  author) folds that signal into the swarm's `status.json`. The fleet console reads `isBlocked` from that
+  field instead of sniffing pane text. When the human answers / unblocks, the signal clears and status
+  reflects not-blocked. This is decision 5's needs-human contribution: handoffd writes the derivable
+  rollup, the reconciler contributes the one semantic handoffd can't derive.
+
+  INTEGRATION POINT — VERIFY THE LIVE PATH (specifier rule). Confirm at build time which component is the
+  real "needs-human reconciler" (the coordinator's blocked/awaiting-answer state; see BL-306 ask+await
+  and the awaiting-answer.json state) and where a durable "waiting on a human" marker already exists —
+  fold the EXISTING signal in rather than inventing a parallel one. The signal must CLEAR on resolution
+  so a stale block never pins the swarm as blocked forever.
+
+  Scope (verify at build time): the coordinator/needs-human reconciler (write the on-disk signal),
+  `swarmforge/scripts/handoffd.bb` (fold needs-human into status.json), `fleet-console.ts` +
+  `compositeNode.ts` (read isBlocked from the field).
+
+  E2E QA PROCEDURE: block the FES coordinator on a human answer, assert an on-disk needs-human signal is
+  written, handoffd folds it into status.json, and the fleet console renders FES blocked from the field.
+  Answer/unblock and assert the signal clears and the console renders FES not-blocked.
+
+acceptance:
+  feature: specs/features/BL-438-needs-human-on-disk-signal.feature
+  steps:
+    - "When the coordinator is waiting on a human, an on-disk needs-human signal is written"
+    - "handoffd folds the needs-human signal into the swarm's status.json"
+    - "The fleet console reads isBlocked from the status field, not from pane text"
+    - "When the human answers, the needs-human signal clears and status reflects not-blocked"
+
+human_approval: >
+  approved 2026-07-15 (coordinator session, full-batch confirmation via Operator relay). Design settled
+  with the human 2026-07-15 (recorded in the intake); the human then approved promotion as-is. Still held
+  on depends_on: [BL-437] until status.json publishing lands. The live needs-human reconciler and
+  existing durable blocked-marker must be re-verified at build time.
+
+mutation_cost: low

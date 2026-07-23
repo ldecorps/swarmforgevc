@@ -1,7 +1,7 @@
 id: BL-080
 title: BUG — forge does not re-attach the live swarm on startup
 milestone: M2
-status: todo
+status: done
 priority: 01
 assigned_to: coder
 

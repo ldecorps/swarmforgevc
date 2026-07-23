@@ -1,0 +1,79 @@
+id: BL-356
+title: "The swarm does not push main, so hours of shipped work stay invisible and a live swarm looks dead from outside"
+milestone: M8
+type: defect
+status: todo
+severity: high
+priority: 3
+direction: expedite
+depends_on: []
+source: "backlog/INTAKE-swarm-must-push-its-work.md — the human (ldecorps), 2026-07-13, relayed via the recovery session at his request."
+
+notes: |
+  OBSERVED TWICE IN ONE DAY.
+    1. OVERNIGHT: the swarm worked until ~04:00 and accumulated 6 commits on local `main` that never
+       reached origin. From outside — GitHub, a remote session, the human's phone — the swarm
+       appeared to have died at 04:01. Reconciling it required a manual divergent-branch merge the
+       next morning.
+    2. AFTERNOON: between 11:51 and at least 15:02 the swarm closed BL-336, specced and promoted
+       BL-346 and BL-349..353, and kept committing — while `origin/main` sat frozen at 11:51. Three
+       hours of work invisible, again indistinguishable from a dead swarm.
+  Both times a human (or an external agent acting for one) had to notice, pull and push by hand.
+
+  WHY IT HAPPENS. There is NO push machinery anywhere in the swarm: `grep -rn "git push"` across
+  `swarmforge/scripts/` and `extension/src/` returns nothing. QA is supposed to push origin when it
+  lands an approved commit (BL-247), and the coordinator's bookkeeping commits go nowhere at all. So
+  publication depends entirely on an LLM role REMEMBERING to run a command — which is exactly the
+  class of guarantee that fails silently and did, twice.
+
+  THE ASK / THE INVARIANT. After bookkeeping commits land on local `main` (ticket close, promote,
+  handoff merges), the swarm pushes `main` to origin — promptly, with bounded retry and backoff for
+  transient network failures, and with a loud, visible alarm if pushes keep failing rather than
+  silently accumulating divergence. The invariant: `origin/main` must NEVER silently lag local `main`
+  by more than one bookkeeping cycle while the swarm is running.
+
+  THIS IS THE SAME FAMILY AS BL-335 ("shipped but invisible to the human") — BL-335's fix covered
+  BUILD freshness, not PUSH cadence.
+
+  SCOPE / WHERE IT MUST LIVE. Do not scope this to a role prompt: "the coordinator should remember
+  to push" is what we have today, and it is the defect. It belongs in the always-running substrate —
+  `swarmforge/scripts/handoffd.bb` already runs a periodic sweep against the master checkout on its
+  own cadence (`chase-sweep-every-cycles`), which is the live home for a publish sweep. Two rules
+  from the engineering article bind this ticket HARD, and both have already been violated once each
+  in this codebase:
+    - THE RETRY MUST BE BOUNDED with backoff, and must escalate on exhaustion — never an unbounded
+      retry loop.
+    - THE ALARM MUST BE ARMED ON CONFIRMED DELIVERY, NEVER ON THE ATTEMPT. Reuse
+      `daemon_alarm_lib.bb`'s `send-configured-email!`, and CONSULT its `{:success :reason}` result:
+      a transient failure must NOT arm the "already alarmed" flag (retry it, bounded, then arm and
+      log the undelivered alarm loudly); a terminal misconfiguration (`:disabled`,
+      `:missing-api-key`) can never succeed on retry, so warn once and arm. This is the exact defect
+      BL-345 exists to fix — do not reintroduce it in a new alarm.
+
+  DIVERGENCE IS NOT HYPOTHETICAL and is part of this ticket: that morning's manual reconciliation was
+  needed precisely because outside work (the human's approvals via GitHub) landed on origin while the
+  swarm's work stayed local. A non-fast-forward push must NEVER be forced — surface the divergence to
+  the human and leave it for a human/coordinator merge.
+
+  OUT OF SCOPE: role worktree branches. This is about `main`, the branch outsiders watch.
+
+  E2E QA PROCEDURE: against a live swarm with a reachable origin, commit on local `main` and assert
+  `origin/main` advances to it within one sweep without any agent action. Point the remote at an
+  unreachable URL and assert the push is retried a BOUNDED number of times with backoff, then raises
+  the alarm — and assert the alarm's "already alarmed" flag is NOT set when the alarm's own delivery
+  fails. Restore the remote and assert the backlog of commits pushes and the alarm clears. Finally,
+  put a commit on origin that local `main` does not have, and assert nothing is force-pushed and the
+  divergence is reported to the human.
+
+acceptance:
+  feature: specs/features/BL-356-swarm-pushes-main-to-origin.feature
+  steps:
+    - "Committed work on main reaches origin without a human"
+    - "A transient push failure is retried, not abandoned"
+    - "Pushes that keep failing raise a loud alarm rather than silently accumulating"
+    - "Work that diverged from origin is surfaced, never force-pushed over"
+    - "An already-published main is left alone"
+
+human_approval: pending
+
+mutation_cost: medium

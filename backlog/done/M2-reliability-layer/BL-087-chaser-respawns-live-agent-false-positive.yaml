@@ -1,7 +1,7 @@
 id: BL-087
 title: BUG — chaser respawns a live, actively-working agent (liveness false positive)
 milestone: M2
-status: todo
+status: done
 priority: 01
 source: backlog root intake respawn-runs-launch-script-in-host-freezes-extension.md (operator diagnosis, 2026-07-03)
 

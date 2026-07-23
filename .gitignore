@@ -2,6 +2,7 @@
 .env
 .claude/
 .swarmforge/
+swarmforge/scripts/.bin/
 .worktrees/
 /tmp/
 extension/tmp/
@@ -12,6 +13,8 @@ extension/.stryker-tmp/
 extension/reports/
 extension/.dev-activation.json
 extension/.test-durations.jsonl
+extension/.vitest-report.json
 *.code-workspace
 extension/stryker-incremental.json
 .aider*
+specs/pipeline/generated/

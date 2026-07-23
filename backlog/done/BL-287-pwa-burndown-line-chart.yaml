@@ -1,0 +1,89 @@
+id: BL-287
+title: "PWA burndown restyle: classic sprint line chart (date X, remaining-tickets Y, solid Remaining + dotted Ideal, legend)"
+milestone: M8
+status: todo
+priority: 30
+direction: aligned
+assigned_to: coder
+depends_on: []
+source: ".swarmforge/operator/INTAKE-pwa-burndown-style.md — human command via operator -> coordinator 2026-07-11 (attended RC): make the PWA burndown look like a classic sprint burndown line chart (reference image pwa-burndown-reference.png). Specifier assessed the current chart + scoped the delta."
+
+description: |
+  The human wants the static PWA's burndown to LOOK like a classic sprint burndown:
+  a line chart with date on X, remaining ticket count on Y, a solid actual
+  "Remaining" line trending down, a dotted diagonal "Ideal" line, a legend, and light
+  gridlines (see .swarmforge/operator/pwa-burndown-reference.png).
+
+  ASSESSMENT (verified 2026-07-11): this is a PRESENTATION-ONLY change in the static
+  PWA — the data already exists and is fully git-derivable, so no projection change is
+  needed.
+    - pwa/app.js `renderBurndown` (~L574) currently draws each milestone's series with
+      `barChart(m.dailySeries, 300, 60)` — a BAR chart. That is the only thing to
+      replace.
+    - Each milestone already carries `dailySeries` = TrendSeriesPoint[] of
+      {periodStart: ISO-date, value: remaining-count} (extension/src/metrics/
+      deliveryMetrics.ts burndownForMilestone, one point per day from the milestone's
+      earliest spec date through now) plus `currentRemaining`. So X = periodStart
+      (date) and Y = value (remaining tickets) are already present — exactly the axes
+      the human asked for. It reaches the PWA via computeBacklogDashboard ->
+      backlog.json (the git projection). Two-surface rule: STATIC PWA, git-derivable
+      only — satisfied, no live/host data.
+
+  Delta to build (all in pwa/app.js, dependency-free SVG like the existing barChart —
+  no charting library, no CDN, per dashboard-03):
+    - Add a `lineChart` that plots dailySeries as ONE connected polyline (the solid
+      actual "Remaining" line): X positioned by date, Y by remaining count.
+    - Add the dotted "Ideal" diagonal: a straight line from the FIRST point
+      (dailySeries[0].periodStart, dailySeries[0].value = starting remaining) down to
+      (last point's date, 0). Endpoints are taken from the series itself — nothing new
+      to compute or fetch.
+    - Axes: date ticks/labels along the bottom, remaining-count labels up the side;
+      light gridlines.
+    - A legend distinguishing the solid "Remaining" line from the dotted "Ideal" line.
+    - Use it in renderBurndown in place of the burndown barChart. Leave the VELOCITY
+      chart (renderVelocity's barChart) unchanged — the human asked only about the
+      burndown.
+
+  IDEAL-LINE CAVEAT (flagged per the intake): the git projection has NO milestone
+  deadline / target end date. So the ideal line reaches 0 at the LAST OBSERVED date
+  (now), treating the observed window (earliest spec date -> now) as the span. That is
+  fully git-derivable and a reasonable rolling ideal. If the human instead wants the
+  ideal to target a FUTURE sprint-end date, that date is NOT derivable from git state
+  at a SHA and would be new input beyond this surface — out of scope here; raise it
+  separately if wanted.
+
+  Wanted behavior (see the feature file):
+    - The burndown shows the remaining counts as one connected line across the dates
+      (a line chart, not bars), with date on the horizontal axis and remaining ticket
+      count on the vertical axis.
+    - A dotted ideal line runs straight from the starting remaining count down to zero
+      across the same date span.
+    - A legend distinguishes the solid remaining line from the dotted ideal line.
+    - With no milestone data, the existing no-milestones message shows and no chart is
+      drawn (unchanged empty behavior).
+
+  Constraints / testability:
+    - Dependency-free SVG only (self-contained page, no CDN) — extend the same
+      svgEl/barChart approach already in pwa/app.js.
+    - lineChart is a pure DOM/SVG builder over the series; testable in jsdom like the
+      existing pwa/app.js rendering (extension/test/pwaDashboard.test.js is the
+      pattern) — assert the actual polyline, the dashed ideal line, the axis labels,
+      and the legend from a fixture dailySeries. No network, no live data.
+    - No change to deliveryMetrics.ts / backlogDashboard.ts / backlog.json — data is
+      already sufficient. If the coder finds a genuine data gap, STOP and flag it
+      rather than adding a live/host data source to the static PWA.
+    - Keep localized labels going through the existing tr()/locale catalog (pwa/
+      locales.js) rather than hardcoding new user-visible strings (BL-229/BL-261
+      posture): "Remaining", "Ideal", and any axis titles get catalog entries.
+
+  QA e2e procedure (jsdom; fixture dashboard data):
+    - Render the dashboard from a fixture with a milestone whose dailySeries steps down
+      over several dates; assert the burndown SVG has one actual polyline through those
+      points (not <rect> bars) and a separate dashed ideal line from the first value to
+      0.
+    - Assert the axes show dates along X and remaining counts up Y, and a legend labels
+      both lines.
+    - Render with no burndown milestones; assert the no-milestones message and no chart.
+
+acceptance: specs/features/BL-287-pwa-burndown-line-chart.feature
+mutation_cost: medium

@@ -1,7 +1,7 @@
 id: BL-083
 title: BUG — handoffd archive step not idempotent; leaves .error stubs for already-archived outbox files
 milestone: M2
-status: todo
+status: done
 priority: 10
 assigned_to: coder
 

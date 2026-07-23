@@ -1,0 +1,1 @@
+{"id":"BL-057","messages":[{"seq":0,"ts":1784303814418,"author":"swarm","type":"outbound","text":"BL-057 ✅ done — BUG — per-recipient inbox delivery collides when roles share an inbox dir"},{"seq":1,"ts":1784519635848,"author":"swarm","type":"outbound","text":"BL-057 ✅ done — BUG — per-recipient inbox delivery collides when roles share an inbox dir"}]}

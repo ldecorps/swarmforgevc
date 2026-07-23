@@ -1,0 +1,105 @@
+id: BL-545
+title: "EPIC — Swarm Intelligence Layer: PromptEngine + Model Steward + ModelFactory; do not promote directly; tracks children"
+milestone: M5
+status: todo
+type: epic
+epic: swarm-intelligence-layer
+priority: 00
+depends_on: []
+decomposes_into: [BL-525, BL-546, BL-547, BL-548]
+promotion_order:
+  - id: BL-546
+    when: "PROMOTE FIRST — no upstream deps"
+    slice: "Slice 1 only on first promotion; Slice 2/3 stay in parcel until Slice 1 QA-lands"
+  - id: BL-547
+    when: "PROMOTE IN PARALLEL with BL-546 if active cap allows; else queue immediately after BL-546"
+    slice: "Slice 1 only on first promotion"
+  - id: BL-525
+    when: "PROMOTE after BL-546 Slice 1 is on main (depends_on BL-546)"
+    slice: "Slice 1 (cold swap) before Slice 2 (hot swap)"
+  - id: BL-548
+    when: "PROMOTE LAST — after BL-546 Slice 2 AND BL-547 Slice 2 are on main"
+    slice: "Slice 1 harness only; do not promote until evaluate ingestion exists"
+    block_until:
+      - "BL-546 Slice 2 merged (adapters + experiment mode)"
+      - "BL-547 Slice 2 merged (model-steward evaluate)"
+remaining_slices:
+  - "PromptEngine Slice 2: fragment registry + per-model adapters"
+  - "PromptEngine Slice 3: versioning, validation, inspect CLI"
+  - "Model Steward Slice 2: recruiter/bakeoff evaluate ingestion (drained -> BL-556, paused)"
+  - "Model Steward Slice 3: steward role coordinator-assignable + compatibility docs (drained -> BL-557, paused)"
+  - "Prompt calibration Slice 2: rank variants + operator report (BL-548)"
+  - "Prompt calibration Slice 3: promote/rollback with human approval (BL-548)"
+  - "ModelFactory Slice 2: hot-swap apply path (BL-525)"
+source: |
+  Human intake 2026-07-21 via Cursor chat — two foundational write-ups (PromptEngine,
+  Model Steward) plus the existing ModelFactory intake (BL-525). The human framed
+  three clean separation-of-concerns pillars:
+    PromptEngine  = How should we talk to this model?
+    Model Steward = What do we know about this model?
+    ModelFactory  = Given the current task, which model should we choose?
+
+notes: |
+  UMBRELLA / tracking item (type: epic), NOT directly promotable — the coordinator
+  promotes CHILD slices, never this. Children carry `epic: swarm-intelligence-layer`
+  and are listed in `decomposes_into`.
+
+  VISION: SwarmForge currently embeds prompt construction across agent launch scripts
+  and constitutions, and model knowledge is scattered across packs, recruiter artifacts,
+  and operator folklore. The Swarm Intelligence Layer makes prompt composition and model
+  knowledge first-class architectural capabilities so the swarm can scale to many
+  providers without duplicating policy in every launch path.
+
+  PILLARS (each is its own promotable child):
+    - BL-546 PromptEngine — single authority for every prompt the swarm generates.
+      Assembles reusable fragments, applies model-specific adapters, injects project
+      and task context, and exposes inspection/caching/versioning. No swarm agent
+      constructs prompts directly.
+    - BL-547 Model Steward — permanent infrastructure role owning the complete lifecycle
+      of model integration: onboarding, benchmarking, certification, capability
+      matrices, and continuous improvement of PromptEngine adapters. Produces the
+      evidence ModelFactory consumes.
+    - BL-525 ModelFactory — recruiter-backed role→model assignment with cheap/quality
+      steering and cold-then-hot swap apply paths. Consumes Model Steward artifacts
+      and recruiter ranks; does not invent models or prompts.
+    - BL-548 Prompt calibration loop — test experimental adapter variants against a
+      real model via Model Steward evaluate; promote winners to the adapter catalogue
+      with human approval and regression guard.
+
+  RELATIONSHIPS:
+    PromptEngine produces prompts.
+    Model Steward improves PromptEngine (adapters, metadata, certification).
+    Prompt calibration closes the loop: compose variants → evaluate on model → promote.
+    ModelFactory uses Model Steward knowledge to select the most appropriate model.
+    Recruiter (BL-233, done) remains recommend-only scout; Model Steward certifies
+    and ModelFactory assigns.
+
+  SLICE DISCIPLINE:
+    Each child ships in slices (Slice 1 = minimal vertical, later slices add adapters,
+    hot-swap, certification automation, etc.). Cross-child dependencies are explicit in
+    each child's `depends_on` — e.g. ModelFactory Slice 1 may ship before Model
+    Steward certification automation, but must not hard-code prompt text that bypasses
+    PromptEngine once BL-546 Slice 1 lands.
+
+  COORDINATOR PROMOTION ORDER (human-approved 2026-07-21; follow strictly):
+    1. BL-546 PromptEngine — PROMOTE FIRST. Foundation; extract compose API from
+       agent_runtime_lib.bb. Coder ships Slice 1 before Slice 2/3 in the same ticket.
+    2. BL-547 Model Steward — PROMOTE IN PARALLEL with BL-546 when active cap allows.
+       Registries are independent; do not wait for BL-546 unless at depth cap.
+    3. BL-525 ModelFactory — PROMOTE only after BL-546 Slice 1 is on main (depends_on).
+       Factory must not ship while launch scripts still assemble prompts directly.
+    4. BL-548 Prompt calibration — PROMOTE LAST. Do NOT promote until BOTH:
+         (a) BL-546 Slice 2 is on main (adapters + SWARMFORGE_PROMPT_EXPERIMENT), AND
+         (b) BL-547 Slice 2 is on main (model-steward evaluate ingestion).
+       Ticket-level depends_on [BL-546, BL-547] means those tickets reach done/ — but
+       BL-548 Slice 1 additionally needs their Slice 2 code. Verify before promoting.
+    Never promote BL-545 itself (epic tracker). Never promote BL-548 before its
+    block_until conditions are met even if depends_on tickets are merely active.
+
+  SUPERSEDES: BL-542 remains as the model-routing sub-tracker for BL-525 only; BL-545
+  is the umbrella epic for the full intelligence layer. New children use
+  `epic: swarm-intelligence-layer`.
+
+acceptance:
+  none: "tracker only — see decomposes_into children for acceptance"
+mutation_cost: high

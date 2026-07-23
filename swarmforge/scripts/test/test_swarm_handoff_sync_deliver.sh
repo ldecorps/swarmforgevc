@@ -25,7 +25,9 @@ echo "$SOCK" > "$ROOT/.swarmforge/tmux-socket"
 
 MASTER_WT="$ROOT"
 CODER_WT="$ROOT/.worktrees/coder"
-mkdir -p "$CODER_WT/.swarmforge/handoffs/"{outbox/tmp,sent,inbox/new}
+# BL-128: coordinator is master-resident, so it gets its own <role> mailbox
+# subdirectory rather than the old flat shared one.
+mkdir -p "$MASTER_WT/.swarmforge/handoffs/coordinator/"{outbox/tmp,sent} "$CODER_WT/.swarmforge/handoffs/inbox/new"
 printf 'coordinator\tmaster\t%s\tswarmforge-coordinator\tCoordinator\tclaude\ttask\n' "$MASTER_WT" > "$ROOT/.swarmforge/roles.tsv"
 printf 'coder\tcoder\t%s\tswarmforge-coder\tCoder\tclaude\ttask\n' "$CODER_WT" >> "$ROOT/.swarmforge/roles.tsv"
 
@@ -75,11 +77,11 @@ echo '❯ ' > "$AFTER_STDOUT_FILE"
 ) | tee "$ROOT/out.txt"
 
 grep -q "HANDOFF DELIVERED:" "$ROOT/out.txt" || fail "expected HANDOFF DELIVERED output"
-outbox_count="$(find "$ROOT/.swarmforge/handoffs/outbox" -maxdepth 1 -name '*.handoff' 2>/dev/null | wc -l | tr -d ' ')"
+outbox_count="$(find "$MASTER_WT/.swarmforge/handoffs/coordinator/outbox" -maxdepth 1 -name '*.handoff' 2>/dev/null | wc -l | tr -d ' ')"
 [[ "$outbox_count" == "0" ]] || fail "outbox must be empty after sync deliver"
 find "$CODER_WT/.swarmforge/handoffs/inbox/new" -name '*_for_coder.handoff' -print -quit | grep -q . \
   || fail "parcel missing from coder inbox/new"
-find "$MASTER_WT/.swarmforge/handoffs/sent" -name '*.handoff' -print -quit | grep -q . \
+find "$MASTER_WT/.swarmforge/handoffs/coordinator/sent" -name '*.handoff' -print -quit | grep -q . \
   || fail "parcel not archived to sender sent/"
 grep -q -- '-l' "$CALL_LOG" || fail "expected literal send-keys wake"
 ! pgrep -f "handoffd.bb.*$ROOT" >/dev/null 2>&1 || fail "handoffd must not be running"

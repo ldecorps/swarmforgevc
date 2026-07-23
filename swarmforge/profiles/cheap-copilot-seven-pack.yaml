@@ -1,5 +1,5 @@
 # Swarm profile: cheap Copilot on the full seven-pack pipeline.
-# A profile = pack topology + backend + per-role model/effort tier (see docs/Specification.MD §Cost-aware backend selection).
+# A profile = pack topology + backend + per-role model/effort tier (see docs/reference/Specification.MD §Cost-aware backend selection).
 id: cheap-copilot-seven-pack
 name: Cheap Copilot (7-pack)
 description: >

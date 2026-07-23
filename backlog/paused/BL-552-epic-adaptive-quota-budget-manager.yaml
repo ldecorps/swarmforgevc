@@ -1,0 +1,50 @@
+id: BL-552
+title: "EPIC — Adaptive Quota & Budget Manager: unify per-provider rate/quota/budget state behind one queryable QuotaManager; do not promote directly; tracks children"
+milestone: M8
+status: todo
+type: epic
+epic: quota-budget-manager
+priority: 20
+depends_on: [BL-545]
+decomposes_into: [BL-553]
+human_approval: approved
+source: "Backlog root intake 003-adaptive-quota-budget-manager.md, drained by specifier 2026-07-22."
+
+approval_context: |
+  This vision proposes a QuotaManager that owns quotas/budgets/cooldowns
+  "independently of the ModelFactory" and a Scheduler that asks it for
+  eligible models. That overlaps three things already in the
+  swarm-intelligence-layer family (BL-545 umbrella, operator-ordered
+  2026-07-22):
+    - BL-525 ModelFactory's own notes already list "provider dry/quota
+      signals" as a factory input.
+    - BL-551 (active) is already building a cost/spend ledger.
+    - BL-082/BL-209 (done) already built + wired a per-role rate-limit
+      cooldown scheduler (extension/src/swarm/cooldownScheduler.ts +
+      chase_sweep_lib.bb's rate-limit gate) and a separate
+      respawn-cooldown.json backoff.
+  Scope decision needed before promotion: should QuotaManager be a NEW
+  standalone component the ModelFactory calls (this ticket's framing), or
+  should "quota awareness" instead be built as a slice INSIDE BL-525
+  ModelFactory / BL-547 Model Steward, reusing BL-551's ledger and the
+  existing cooldown files rather than introducing a third state store?
+  Recommend the latter to avoid a fourth place providers' state lives, but
+  filing the epic here first so a human can rule on nesting. Also confirm
+  this does not jump the operator's fixed BL-545 promotion order
+  (BL-546 -> BL-551 -> BL-547 -> BL-525 -> BL-548) — this epic's child stays
+  paused until explicitly promoted, never ahead of that order.
+
+notes: |
+  SUB-TRACKER nested under BL-545 Swarm Intelligence Layer. UMBRELLA / tracking
+  item (type: epic), NOT directly promotable — the coordinator promotes CHILD
+  slices, never this. Slice 1 (BL-553) is scoped narrow: a read-only
+  availability check that reuses existing cooldown/ledger state rather than
+  building new quota-tracking state. Everything else in the original intake
+  (learned/telemetry-derived quotas, forecast exhaustion, dashboard,
+  auto-failover, cost-aware scheduling, operator rebalancing) is future work,
+  intentionally not decomposed into children yet — add slices only once
+  BL-553 lands and the ModelFactory/QuotaManager integration point is proven.
+
+acceptance:
+  none: "tracker only — see decomposes_into children for acceptance"
+mutation_cost: high

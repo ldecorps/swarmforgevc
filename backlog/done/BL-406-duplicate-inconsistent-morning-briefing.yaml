@@ -1,0 +1,56 @@
+id: BL-406
+title: "Morning briefing sent 3-4x with inconsistent language and diagram attachments"
+milestone: M8
+type: bug
+status: todo
+severity: high
+priority: 2
+direction: human-requested
+depends_on: []
+source: "backlog/INTAKE-operator-question-1784092305092.md — Operator-relayed Telegram question (in French), 2026-07-15T05:11Z: human received 3-4 daily briefings the morning of 2026-07-15, some in French, some in English, some with architecture diagrams attached, some without. Drained with the human 2026-07-15: spec as one combined investigation ticket, since the three symptoms plausibly share a root cause (e.g. multiple independent send paths/triggers)."
+
+notes: |
+  Investigate the briefing send path as a whole rather than each symptom in
+  isolation, on the theory that several sends firing that morning (duplicate
+  guard failure) is also why they look inconsistent with each other — each
+  invocation may independently resolve language/diagram-attachment state,
+  so N sends produce N different renderings rather than N copies of the same
+  one.
+
+  Areas to check:
+  - Duplicate-send guard: whatever normally prevents the daily briefing
+    running more than once per day (a `.sent.json`-style marker, per
+    docs/briefings/.sent.json in this session's git status) — why did it not
+    prevent 3-4 sends this morning.
+  - Language selection: why the same daily briefing resolved to French for
+    some sends and English for others on the same morning.
+  - Diagram-attachment logic: why some sends included the architecture
+    diagram(s) and others did not.
+
+  Do not assume a single fix covers all three — if the investigation finds
+  independent causes, this ticket's acceptance should still confirm each
+  symptom is fixed (one investigation, potentially several small fixes
+  landed together), per the human's instruction to combine the ticket
+  rather than the fix.
+
+acceptance:
+  feature: specs/features/BL-406-duplicate-inconsistent-morning-briefing.feature
+  steps:
+    - "The daily briefing sends at most once per day"
+    - "A given day's briefing is sent in one consistent language"
+    - "A given day's briefing consistently includes or omits its diagrams"
+
+human_approval: approved  # human via Operator relay to coordinator, 2026-07-15: "Human OK'd, promote: BL-403 404 406 409 395 405 407 410"
+
+mutation_cost: low
+# --- evidence appended 2026-07-15 (Claude Code session, human-reported flood) ---
+# ROOT CAUSE FOUND: the briefing is not sent "3-4x by one sender" — there were
+# SEVEN handoffd.bb daemons alive at send time: the legitimate project-rooted
+# one plus SIX leaked from stale /tmp acceptance sandboxes (pids 349563,
+# 368054, 384333, 2198971, 2221090, 2239471, all `handoffd.bb /tmp/tmp.*`,
+# alive 9-11h, unsupervised). Each fired its own briefing -> inbox flood
+# (screenshots show duplicate "SwarmForge briefing" threads, 12:15).
+# FIX SHAPE: (a) acceptance runners must tear down the daemons they start
+# (trap on exit), and (b) handoffd.bb should refuse to run with a /tmp-rooted
+# project unless an explicit test flag is set — defense in depth so a leaked
+# test daemon can never email the human.

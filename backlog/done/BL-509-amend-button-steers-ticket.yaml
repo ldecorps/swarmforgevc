@@ -1,0 +1,122 @@
+id: BL-509
+title: "Approval Amend button lets the human steer the ticket: prompt for the change, mark it human_approval: amending, route the steer to the specifier, who revises and re-presents it (EPIC, 3 slices)"
+milestone: M8
+type: epic
+severity: medium
+epic: "amend-steers-ticket"
+priority: 20
+depends_on: []
+source: "Direct human request to the specifier 2026-07-17 ('when asked to approve a ticket, the amend button should enable me to steer the ticket'). Specifier investigated the live Amend flow + the operator-event consumer path (both read-only) and asked the human three clarifying questions 2026-07-17: (1) what Amend should DO -> route the steer to the specifier, who revises and re-presents (closed loop); (2) prompt on tap -> yes; (3) status while amending -> a distinct 'amending' state. All three answered before speccing."
+
+notes: |
+  WHAT AMEND DOES TODAY (verified read-only 2026-07-17, two investigations):
+    - Tapping Amend (topicRouter.ts approvalRequestedButtons; callback amend:<id>) silently stashes a
+      pending-button marker in .swarmforge/operator/telegram-pending-button-actions.json and sends the
+      human NO prompt (despite BL-410's title claiming "prompts for a note").
+    - The next free-text reply is captured (classifyWithPendingButton -> {kind:'amend', note}) and written
+      to .swarmforge/operator/events.jsonl as a TELEGRAM_BL_TOPIC_MESSAGE and to backlog/topics/<id>.json.
+      human_approval is LEFT 'pending'; the approval ask is NOT closed. (Approve -> 'approved'; Reject ->
+      'rejected # reason'; only Amend has no effect on the ticket.)
+    - The ONE live consumer of that event — operator_runtime.bb bl-topic-approval-sweep! ->
+      `node operator-decide.js <id> approve <text>` — interprets the text as an APPROVAL ANSWER and echoes
+      a reply back into the same Telegram topic via telegram-reply-outbox.jsonl. It never writes to
+      .swarmforge/handoffs/specifier/, never issues a note/git_handoff. THE STEER NEVER REACHES THE
+      SPECIFIER. (The bot's only wired swarm_handoff path, BL-490's route_backlog_to_coder.sh, targets the
+      CODER, fires only on expedite, and carries no free text — not usable here.)
+  So "steer the ticket" is a GAP: nothing revises the ticket from the human's amend text.
+
+  DESIRED CLOSED LOOP (human's three decisions 2026-07-17):
+    tap Amend -> bot PROMPTS "what would you like to change?" -> human replies -> ticket goes
+    human_approval: 'amending' (distinct state), ask closes -> the steer is routed to the SPECIFIER ->
+    specifier revises the spec + feature per the steer, flips 'amending' -> 'pending' -> the ticket
+    re-appears on the Approvals topic for a fresh decision.
+
+  SLICES (build in order; each its own parcel; the epic is NOT done until all three land — slice 1 alone
+  leaves a ticket stuck in 'amending' with nothing acting on it, the epic-runtime-wiring-slice trap):
+    - SLICE 1 (this ticket's LIVE feature, specs/features/BL-509-amend-button-steers-ticket.feature) —
+      BOT + SCHEMA: prompt on tap; write human_approval: 'amending' (new recordAmendReply) + close the ask;
+      record the note on the topic record; emit a DISTINCT amend-steer directive (new event type or
+      kind:'amend' marker) so slice 2 can route it instead of operator-decide consuming it as an approval
+      answer. Add 'amending' to the human_approval enum in swarmforge/backlog-schema.md (LITERAL value
+      only). CRITICAL: writing 'amending' must RESET the approval-ask emitted-state for the ticket, so that
+      slice 3's flip back to 'pending' re-fires the ApprovalRequested ask on the not-pending -> pending
+      transition (schema BL-357; the emittedKeys/repaint concern, BL-496) — verify this at build.
+    - SLICE 2 (parked in BL-509-amend-button-steers-ticket.slices-2-3-wiring-loop.feature.draft) — DAEMON
+      WIRING: operator_runtime.bb sweep branch that, for an amend-steer directive, injects a `note` to the
+      SPECIFIER (swarm_handoff.sh / inject_note_to_role.sh) carrying the id + the human's text, instead of
+      the operator-decide approve path. Long steer text exceeds the 80-char note cap -> write to a file +
+      short pointer note (note-handoff cap rule). The daemon co-runs with the swarm, so swarm_handoff works
+      there (the headless bot cannot rely on it).
+    - SLICE 3 (parked in the same .feature.draft) — SPECIFIER LOOP: a new "Amend-steer intake" section in
+      swarmforge/roles/specifier.prompt: on an inbound amend-steer note, revise the paused ticket's spec +
+      feature per the text, flip human_approval 'amending' -> 'pending', commit to main, notify the
+      coordinator; the existing pending-transition detector re-presents it (no new mechanism).
+
+  SUPERSEDES the current Amend contract — REVISE IN THE SLICE-1 PARCEL (BL-233; a feature edit on main
+  without its matching step/unit change breaks the acceptance runner for every role mid-flight). Known
+  contradicting sites (grep to confirm the full set — the tool knows every site, you do not):
+    - specs/features/BL-410-approval-inline-keyboard-buttons.feature (~L24-29): "tapping Amend prompts for
+      a note and records it WITHOUT changing approval state" — now Amend DOES change state to 'amending'
+      and DOES prompt for real. Revise the scenario + specs/pipeline/steps/
+      bl410ApprovalInlineKeyboardButtonsSteps.js.
+    - specs/features/BL-409-approve-reject-amend-verbs-from-telegram.feature (~L13-18): a typed
+      `amend <note>` "posts the note as operator context without changing the approval state" — reconcile
+      with the amending-verdict + specifier-route contract; revise bl409ApproveRejectAmendSteps.js.
+    - extension/test/telegramFrontDeskBotCore.test.js (~L1146 amend posts only the note; ~L1664/1823 tap
+      resolves/stashes; ~L2942/2981/3021 bare-reply-as-note) and pendingApprovalReply.test.js (amend
+      classification) — update to the new contract.
+    Per "superseded scenario: retire, don't reword", prefer retiring a stale scenario over contorting it.
+
+  SCOPE (verify the live path at build — grep the real callers, do not assume):
+    - SLICE 1: extension/src/tools/telegramFrontDeskBotCore.ts (Amend tap prompt;
+      deliverOperatorContext amend branch -> amending verdict + close ask + distinct directive emit);
+      extension/src/concierge/pendingApprovalReply.ts (recordAmendReply);
+      extension/src/tools/telegram-front-desk-bot.ts + extension/src/bridge/operatorEventQueue.ts (emit
+      the distinct amend-steer directive); swarmforge/backlog-schema.md ('amending' value); the BL-409/410
+      features + steps + the tests above.
+    - SLICE 2: swarmforge/scripts/operator_runtime.bb (+ operator_lib.bb partition), inject_note_to_role.sh
+      or a small new injector.
+    - SLICE 3: swarmforge/roles/specifier.prompt.
+
+  ORTHOGONALITY: independent of the paused board-tweak queue (BL-505/506/507/508). Slice 1 touches the
+  Telegram bot core / approval reply modules (shared with the front-desk/approval cluster — serialize
+  against any in-flight approval-flow ticket, e.g. BL-490's expedite branch, since both edit
+  telegramFrontDeskBotCore.ts / telegram-front-desk-bot.ts). Slices 2/3 touch the daemon and the role
+  prompt respectively — no overlap with slice 1's files.
+
+acceptance:
+  # Observable contract (SLICE 1 only; slices 2-3 acceptance is parked in the .feature.draft companion
+  # and moves into a live feature when built): tapping Amend on a pending ticket prompts the human for the
+  # change and leaves the verdict unchanged; the human's reply marks the ticket human_approval: amending,
+  # closes the approval ask, records the steer on the ticket's topic record, and queues a distinct
+  # amend-steer directive (id + text) for delivery to the specifier — not an approval answer.
+  feature: specs/features/BL-509-amend-button-steers-ticket.feature
+
+# QA end-to-end procedure (SLICE 1; verify the scenarios hold in the live swarm):
+#   1. Build the extension (npm run compile in extension/, or npm test which compiles first).
+#   2. On the real Telegram ticket/Approvals topic, tap Amend on a ticket whose human_approval is pending;
+#      confirm the bot ASKS what to change (a real prompt, not silence) and the verdict is still pending.
+#   3. Reply with steering text; confirm the ticket's backlog YAML human_approval flips to 'amending', the
+#      approval card is closed, the steer is recorded on backlog/topics/<id>.json, and events.jsonl carries
+#      a DISTINCT amend-steer directive (id + text) — not consumed as an approval answer.
+#   4. Confirm the full acceptance + unit suite passes (revised BL-409/410 scenarios + tests green; no
+#      stale "amend does not change approval state" assertion left behind).
+#   (Slices 2/3 add: the specifier mailbox receives the steer note; the specifier revises + re-presents.)
+
+human_approval: approved
+approval_context: >
+  Your ask 2026-07-17: "the amend button should enable me to steer the ticket." I investigated and found
+  Amend today does almost nothing useful — it silently files your note to an operator queue, leaves the
+  ticket 'pending', and the note is consumed as an approval answer that never reaches the specifier. So
+  this is an EPIC (three slices), not a one-line tweak. What needs your sign-off is the shape of the loop
+  and the slicing: SLICE 1 (this ticket's live feature) makes Amend PROMPT you for the change, mark the
+  ticket with a new 'amending' status, close the approval card, and QUEUE your steer for the specifier;
+  SLICE 2 wires the daemon to actually deliver that steer to the specifier's mailbox; SLICE 3 has the
+  specifier revise the ticket per your steer and re-present it to you for approval. All three reflect your
+  three answers (route-to-specifier, prompt-on-tap, distinct amending state). FIRM: the closed loop and
+  the 'amending' state. Please confirm the slicing is right, or tell me if you'd want slice 1 to also do
+  something visible on its own before the wiring lands. NOTE: this touches the swarm's OWN tooling (the
+  Telegram bot, the operator daemon, the specifier role prompt), so it is heavier than the board tweaks —
+  worth a deliberate look before promotion.
+
+mutation_cost: medium

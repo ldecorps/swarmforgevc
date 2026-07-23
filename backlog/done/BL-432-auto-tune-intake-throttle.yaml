@@ -1,0 +1,71 @@
+id: BL-432
+title: "ACT — MANDATORY WIRING SLICE: close the loop on the one safe knob — the coordinator's promotion path applies an effective cap = min(configured, recommended), auto-throttling intake on a rework diagnosis and restoring on recovery, logging every change"
+milestone: M8
+type: feature
+status: todo
+severity: medium
+epic: swarm-self-optimization
+priority: 44
+direction: human-requested
+depends_on: [BL-430, BL-431]
+source: "Slice 3 of BL-429, and the slice that makes the epic real. The human, 2026-07-15 (Q1): the swarm should auto-tune the safe knobs. Article 3.5 already sanctions the coordinator lowering active_backlog_max_depth on health spikes; this slice automates it against the rework diagnosis."
+
+notes: |
+  THIS IS THE EPIC'S MANDATORY WIRING SLICE (engineering article). BL-430 (observe) and BL-431 (diagnose)
+  can BOTH land, fully green, while the coordinator still promotes at full depth into a pipeline BL-431
+  has just diagnosed as thrashing — observe + diagnose with no act is a report, not a loop. Do NOT close
+  BL-429 until this slice lands.
+
+  WHAT IT WIRES. Constitution Article 3.5 ("Circuit Breaker") already authorises the coordinator to lower
+  active_backlog_max_depth to 1 (degraded) or 0 (severe) when health signals spike, and to restore it on
+  recovery — but grep confirms (2026-07-15) NO code automates it; it is a behavioural rule executed by a
+  coordinator LLM turn today. This slice turns BL-431's degraded/severe rework verdict into a persisted
+  throttle recommendation, and makes the coordinator's promotion path apply it as an EFFECTIVE cap =
+  min(configured cap, recommended cap). It only ever LOWERS the effective depth; it never raises intake
+  above the human-configured value. When the verdict clears, the recommendation lifts and the effective
+  cap returns to the configured value. Every change (engage, deepen, restore) is logged.
+
+  INTEGRATION POINT — VERIFY THE LIVE PATH (specifier rule). The coordinator's cap check runs through
+  `backlog-depth-lib/under-depth-cap?` (`swarmforge/scripts/backlog_depth_lib.bb`); the effective cap is
+  resolved from `swarmforge.conf` via `parse-max-depth` AND persisted into the launch identity at launch
+  time (BL-313, `active_backlog_max_depth` + `active_backlog_max_depth_conf_path`). The writer of the
+  recommendation must reach the value the promotion path ACTUALLY consumes at promotion time — do not
+  merely rewrite `swarmforge.conf` and assume the running coordinator re-reads it. Confirm the live
+  reader before wiring; scope this to the promotion decision, not a config-file edit in isolation.
+
+  SAFETY CONTRACT (BL-429). This slice may move ONLY the intake throttle — the single constitutionally
+  sanctioned knob. It does NOT self-generate tickets (BL-318 stays intact: throttling intake is the
+  opposite of inventing work), does NOT respawn, reroute, or change code. Those remain BL-431's
+  escalate-only recommendations. A cap of -1 (disabled) is respected as "no configured ceiling", but the
+  recommendation can still impose a temporary finite effective ceiling during a severe diagnosis — and
+  must lift it on recovery so a disabled cap does not silently become permanently throttled.
+
+  DO NOT LET AUTO-THROTTLE STARVE THE PIPELINE FOREVER. The recovery path (restore on clear) is as much
+  the contract as the engage path; scenario 03 pins it. A throttle that engages on a spike and never
+  lifts is its own suboptimality.
+
+  SCOPE (verify at build time): `swarmforge/scripts/backlog_depth_lib.bb` (effective-cap resolution),
+  the coordinator promotion decision that calls it, the throttle-recommendation file BL-431 writes, and
+  the change log. All the cap-arithmetic is pure and fixture-testable; only the end-to-end promotion
+  gate needs the coordinator path.
+
+  PARKED until BL-430 + BL-431 land. Scenarios live in the .feature.draft companion until promotion.
+
+acceptance:
+  feature: specs/features/BL-432-auto-tune-intake-throttle.feature
+  steps:
+    - "A degraded rework diagnosis lowers the effective active-depth cap to one"
+    - "A severe rework diagnosis lowers the effective active-depth cap to zero"
+    - "When the diagnosis clears, the effective cap returns to the configured value"
+    - "The recommendation only ever lowers the cap, never raises it above the configured value"
+    - "Every change to the effective cap is logged"
+
+human_approval: >
+  approved 2026-07-15 (coordinator session, AskUserQuestion confirmation). Shape (auto-tune only the
+  Article 3.5 throttle; min(configured, recommended); restore on recovery) was confirmed by the human
+  via AskUserQuestion 2026-07-15; the human then approved promotion as-is in the coordinator session
+  the same day, accepting the degraded/severe thresholds and exact write target be resolved during
+  build rather than blocking promotion (the live integration point must still be re-verified at build
+  time). Still held on its own depends_on: [BL-430, BL-431] until both ship.
+
+mutation_cost: medium

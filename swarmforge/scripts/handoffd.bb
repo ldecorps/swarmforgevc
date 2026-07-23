@@ -10,9 +10,24 @@
             [clojure.java.io :as io]
             [clojure.string :as str]))
 
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "handoff_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "chase_sweep_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "mono_router_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "backlog_depth_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "agent_runtime_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "agent_runtime_inject.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "daemon_alarm_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "briefing_email_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "briefing_generation_schedule_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "banked_briefing_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "operator_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "llm_cost_ledger_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "closing_context_clear_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "standing_rule_violations_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "standing_rule_violations_files.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "stuck_escalation_email_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "loop_detect_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "push_sweep_lib.bb")))
 
 (def poll-ms 1000)
 (def wake-message agent-runtime-lib/default-wake-chat-message)
@@ -22,7 +37,8 @@
 ;; process that already owns delivery now also owns liveness, so the
 ;; extension host becomes a pure observer instead of running its own
 ;; setInterval sweep.
-(def chase-sweep-every-cycles 5)
+;; Chase + BL-528 claim-progress sweeps run every N handoffd poll cycles (1s each).
+(def chase-sweep-every-cycles 10)
 (def chase-sweep-config
   {:chaseIntervalSeconds 5
    :chaseTimeoutSeconds 30
@@ -30,7 +46,23 @@
    :stuckInProcessTimeoutSeconds 60
    :respawnCooldownSeconds 300
    :chaseBackoffBaseSeconds 30
-   :chaseBackoffMaxSeconds 300})
+   :chaseBackoffMaxSeconds 300
+   ;; BL-528: claim-without-progress (git HEAD unchanged since claim).
+   :claim-idle-timeout-ms (* 20 60 1000)
+   :nudge-threshold 1
+   :bounce-threshold 6
+   :halt-threshold 10})
+
+;; Pane churn within this window suppresses BL-528 idle reclaims (shell runs,
+;; mutation passes, explore subagents — no esc-to-interrupt footer required).
+(def claim-recent-activity-ms (* 5 60 1000))
+
+;; Endless NO_TASK-spin circuit breaker: pane activity hashing alone cannot
+;; see a busy-loop that keeps changing the pane with the same idle ritual.
+;; Per-role strike state lives in this process only; a daemon restart that
+;; loses strikes is safe (the spin re-arms within two chase observations).
+(def loop-detect-states (atom {}))
+(def loop-halt-triggered? (atom false))
 
 (defn usage []
   (binding [*out* *err*]
@@ -40,10 +72,59 @@
 (def project-root
   (or (first *command-line-args*) (usage)))
 
+;; BL-406: refuse to run at all against a throwaway test/temp project root
+;; unless the caller explicitly opts in - checked here, before this daemon
+;; claims a pid file, loads roles, or starts a single sweep, so a leaked
+;; test daemon can never come alive to leak in the first place (root cause:
+;; six /tmp acceptance-sandbox daemons orphaned by a killed test, alive
+;; 9-11h, each independently sweeping and sending real briefing email -
+;; test-fixture-root?'s send-path suppression in daemon_alarm_lib.bb is a
+;; second, narrower layer, not a substitute for this one). Every wiring
+;; test that intentionally runs a real daemon under a temp root sets this
+;; env var; a leaked/mistaken invocation without it exits immediately
+;; instead of running unsupervised for hours.
+(def allow-tmp-daemon-env-var "SWARMFORGE_ALLOW_TMP_DAEMON")
+
+(defn refuse-tmp-root! [root]
+  (binding [*out* *err*]
+    (println (str "handoffd.bb: refusing to start against a throwaway test/temp project root (" root ") "
+                   "without " allow-tmp-daemon-env-var "=1 set (BL-406). If this is an intentional "
+                   "test fixture, export " allow-tmp-daemon-env-var "=1 before starting the daemon.")))
+  (System/exit 1))
+
+(when (daemon-alarm-lib/refuse-tmp-daemon-start? project-root (System/getenv allow-tmp-daemon-env-var))
+  (refuse-tmp-root! project-root))
+
+(def script-dir (str (fs/parent (fs/canonicalize *file*))))
 (def state-dir (fs/path project-root ".swarmforge"))
 (def daemon-dir (fs/path state-dir "daemon"))
 (def roles-file (fs/path state-dir "roles.tsv"))
 (def socket-file (fs/path state-dir "tmux-socket"))
+;; BL-214: same conf handoffd_supervisor.bb's BL-144 alarm already reads -
+;; notify_email_to/notify_email_from live here, RESEND_API_KEY in the
+;; daemon's own process env, same as that alarm path.
+(def conf-file (fs/path script-dir ".." "swarmforge.conf"))
+(def briefings-dir (fs/path project-root "docs" "briefings"))
+;; BL-308: read-only reuse of BL-307's hibernation-state signal (READ ONLY -
+;; this ticket does not touch operator_runtime.bb, which owns writing it).
+;; Same path/shape operator_runtime.bb's write-hibernation-state! produces:
+;; {"hibernated": true, "hibernated_at_ms": ..., "config_path": ...}.
+(def hibernation-state-file (fs/path state-dir "operator" "hibernation.json"))
+(def backlog-active-dir (fs/path project-root "backlog" "active"))
+(def backlog-paused-dir (fs/path project-root "backlog" "paused"))
+(def backlog-done-dir (fs/path project-root "backlog" "done"))
+;; BL-309: durable "which bookkeeping close was last cleared for" marker -
+;; same small-JSON-under-.swarmforge/ posture as operator_runtime.bb's own
+;; hibernation-state-file, so a daemon restart never replays a clear for a
+;; close already handled.
+(def context-clear-marker-file (fs/path state-dir "coordinator-context-clear.json"))
+;; BL-316: the generalized per-role counterpart - one JSON map keyed by
+;; role-name -> last-cleared inbox/completed/ entry id, so a daemon restart
+;; never replays a clear for any non-coordinator role's completion already
+;; handled. Deliberately a SEPARATE file from context-clear-marker-file
+;; above: the coordinator keeps its own dedicated mechanism/marker
+;; untouched, and this file must never gain a "coordinator" key.
+(def role-context-clear-marker-file (fs/path state-dir "role-context-clear.json"))
 (def pid-file (fs/path daemon-dir "handoffd.pid"))
 (def pid-lock-dir (fs/path daemon-dir "pid.lock"))
 (def stop-file (fs/path daemon-dir "stop"))
@@ -90,16 +171,8 @@
                  :receive-mode (or receive-mode "task")}])))
 
 (defn parse-message [path]
-  (let [content (slurp (str path))
-        [header body] (str/split content #"\n\n" 2)
-        headers (into {}
-                      (for [line (str/split-lines header)
-                            :let [[k v] (str/split line #": " 2)]
-                            :when (and k v)]
-                        [k v]))]
-    {:headers headers
-     :body (or body "")
-     :content content}))
+  (let [content (slurp (str path))]
+    (assoc (handoff-lib/parse-envelope content) :content content)))
 
 (defn render-message [headers body]
   (let [preferred ["id" "from" "to" "recipient" "priority" "type" "role" "commit"
@@ -155,8 +228,7 @@
   (str/replace filename #"\.handoff$" (str "_for_" recipient ".handoff")))
 
 (defn target-path [role-info filename recipient]
-  (fs/path (:worktree-path role-info)
-           ".swarmforge" "handoffs" "inbox" "new"
+  (fs/path (handoff-lib/mailbox-dir role-info :new)
            (delivered-filename filename recipient)))
 
 (defn tmux! [& args]
@@ -219,15 +291,46 @@
 
 (defn notify!
   [socket session agent]
-  (agent-runtime-inject/notify-agent! socket session (or agent "claude")
-                                        :log-fn (fn [tag sess detail] (log! tag sess detail))
-                                        :script-rel-path agent-runtime-lib/ready-script-rel-path))
+  (let [session (handoff-lib/wake-session socket session)]
+    (agent-runtime-inject/notify-agent! socket session (or agent "claude")
+                                          :log-fn (fn [tag sess detail] (log! tag sess detail))
+                                          :script-rel-path agent-runtime-lib/ready-script-rel-path)))
+
+(defn notify-in-process-resume!
+  "Stuck nudge for work already sitting in in_process — chat order, never
+   another ready_for_next shell wake (that reprints the same TASK)."
+  [socket session agent]
+  (let [session (handoff-lib/wake-session socket session)
+        text (:text (first (agent-runtime-lib/in-process-resume-steps (or agent "claude"))))]
+    (agent-runtime-inject/notify-agent! socket session (or agent "claude")
+                                          :log-fn (fn [tag sess detail] (log! tag sess detail))
+                                          :text text)))
+
+(defn recipient-pane-busy?
+  "BL-135 parity on the delivery path: mail lands in inbox/new either way;
+   do not inject wake spam while the recipient is mid-turn."
+  [socket roles role]
+  (when-let [ri (get roles role)]
+    (let [pane (try (capture-pane-text socket (:session ri)) (catch Exception _ ""))]
+      (chase-sweep-lib/actively-processing? pane))))
 
 (defn maybe-notify!
-  "Tmux wake after mailbox delivery. Skipped when SWARMFORGE_MAILBOX_ONLY=1."
-  [socket session role recipient-path agent]
-  (if (tmux-inject-disabled?)
+  "Tmux wake after mailbox delivery. Skipped when SWARMFORGE_MAILBOX_ONLY=1,
+   the inbox file already existed (duplicate delivery), or the recipient pane
+   is actively working a turn (BL-135 / mono-router resident mid-task)."
+  [socket roles session role recipient-path agent & {:keys [new-delivery?]
+                                                     :or {new-delivery? true}}]
+  (cond
+    (not new-delivery?)
+    (log! "deliver-notify-skip-duplicate" role (str recipient-path))
+
+    (tmux-inject-disabled?)
     (log! "delivered-mailbox-only" role (str recipient-path))
+
+    (recipient-pane-busy? socket roles role)
+    (log! "deliver-notify-skip-busy" role (str recipient-path))
+
+    :else
     (notify! socket session agent)))
 
 (defn move-with-collision
@@ -248,7 +351,7 @@
         target))))
 
 (defn sent-dir [role-info]
-  (fs/path (:worktree-path role-info) ".swarmforge" "handoffs" "sent"))
+  (handoff-lib/mailbox-dir role-info :sent))
 
 (defn already-archived?
   "True when a file of this name already sits in the sender's sent/ dir -
@@ -271,31 +374,85 @@
         (log! "failed-to-archive" (str path) (.getMessage move-ex))
         (spit (str path ".error") (str reason "\n"))))))
 
+
+;; Babysitter hawk (outside chain): enqueue structured wake events. No-op unless
+;; .swarmforge/babysitter/enabled exists (babysit.sh creates it).
+(defn enqueue-babysitter-event!
+  [event]
+  (let [enabled (fs/path state-dir "babysitter" "enabled")
+        queue (fs/path state-dir "babysitter" "wake-queue.jsonl")]
+    (when (fs/exists? enabled)
+      (try
+        (fs/create-dirs (fs/parent queue))
+        (spit (str queue)
+              (str (json/generate-string (assoc event :at (str (java.time.Instant/now)))) "\n")
+              :append true)
+        (log! "babysitter-wake-enqueued" (or (:type event) "event")
+              (or (:role event) (:path event) ""))
+        (catch Exception e
+          (log! "babysitter-wake-error" (.getMessage e)))))))
+
+(defn enqueue-babysitter-wake!
+  [sender-role recipients path headers]
+  (enqueue-babysitter-event!
+   {:type "handoff"
+    :from (str sender-role)
+    :to (str/join "," recipients)
+    :path (str path)
+    :task (or (get headers "task") "")}))
+
 (defn deliver! [roles socket sender-role path]
-  (let [filename (fs/file-name path)
-        message (parse-message path)
-        headers (:headers message)
-        recipients (some-> (get headers "to") (str/split #",") seq)]
-    (if-not recipients
-      (fail! path "missing to header")
-      (do
-        (doseq [recipient recipients]
-          (let [role-info (get roles recipient)]
-            (when-not role-info
-              (throw (ex-info (str "unknown recipient " recipient) {:recipient recipient})))
-            (let [target (target-path role-info filename recipient)
-                  delivered (add-delivery-headers message recipient)]
-              (fs/create-dirs (fs/parent target))
-              (when-not (fs/exists? target)
-                (spit (str target) (render-message (:headers delivered) (:body delivered))))
-              (maybe-notify! socket (:session role-info) recipient (str target) (:agent role-info)))))
-        (when (= "rule_proposal" (get headers "type"))
-          (append-rule-proposal! headers))
-        (move-with-collision path (sent-dir (get roles sender-role)))
-        (log! "delivered" (str path))))))
+  (let [filename (fs/file-name path)]
+    ;; BL-365: a corrupt outbox file (empty, truncated mid-header, or
+    ;; headers with no body) must be quarantined here, at the delivery hop,
+    ;; rather than copied onward into a recipient's inbox as if it were real
+    ;; work - the protocol already asks the daemon for exactly this cheap
+    ;; structural check ("move malformed or undeliverable files to failed/
+    ;; with useful diagnostics"), distinct from the semantic re-validation
+    ;; the daemon deliberately declines.
+    (if (handoff-lib/corrupt-handoff? (slurp (str path)))
+      (fail! path "corrupt handoff (empty, truncated, or missing required envelope headers)")
+      (let [message (parse-message path)
+            headers (:headers message)
+            recipients (some-> (get headers "to") (str/split #",") seq)]
+        (if-not recipients
+          (fail! path "missing to header")
+          (do
+            (doseq [recipient recipients]
+              (let [role-info (get roles recipient)]
+                (when-not role-info
+                  (throw (ex-info (str "unknown recipient " recipient) {:recipient recipient})))
+                (let [target (target-path role-info filename recipient)
+                      delivered (add-delivery-headers message recipient)
+                      new-delivery? (not (fs/exists? target))]
+                  (fs/create-dirs (fs/parent target))
+                  (when new-delivery?
+                    ;; BL-365: durable write - the recipient's inbox copy is
+                    ;; a SEPARATE file from the sender's own outbox/sent
+                    ;; copy, and carries the identical crash-durability gap
+                    ;; if written with a bare spit.
+                    (handoff-lib/atomic-write! target (render-message (:headers delivered) (:body delivered))))
+                  ;; BL-551 writer-handoff-02: stamp an llm_invocation
+                  ;; correlation record BEFORE the recipient is woken -
+                  ;; try/catch'd so a telemetry write failure never blocks
+                  ;; the real delivery/wake below it.
+                  (try
+                    (llm-cost-ledger-lib/append-llm-invocation-record!
+                     (str state-dir)
+                     (operator-lib/handoff-delivery-llm-invocation-record
+                      {:recipient recipient :headers headers} (now)))
+                    (catch Exception e
+                      (log! "llm-cost-ledger-append-error" recipient (.getMessage e))))
+                  (maybe-notify! socket roles (:session role-info) recipient (str target)
+                                 (:agent role-info) :new-delivery? new-delivery?))))
+            (when (= "rule_proposal" (get headers "type"))
+              (append-rule-proposal! headers))
+            (move-with-collision path (sent-dir (get roles sender-role)))
+            (log! "delivered" (str path))
+            (enqueue-babysitter-wake! sender-role recipients path headers)))))))
 
 (defn inbox-new-files [role-info]
-  (let [new-dir (fs/path (:worktree-path role-info) ".swarmforge" "handoffs" "inbox" "new")]
+  (let [new-dir (handoff-lib/mailbox-dir role-info :new)]
     (when (fs/exists? new-dir)
       (->> (fs/list-dir new-dir)
            (filter #(and (fs/regular-file? %)
@@ -303,7 +460,7 @@
            seq))))
 
 (defn outbox-files [role-info]
-  (let [outbox (fs/path (:worktree-path role-info) ".swarmforge" "handoffs" "outbox")]
+  (let [outbox (handoff-lib/mailbox-dir role-info :outbox)]
     (when (fs/exists? outbox)
       (->> (fs/list-dir outbox)
            (filter #(and (fs/regular-file? %)
@@ -311,7 +468,7 @@
            (sort-by #(fs/file-name %))))))
 
 (defn outbox-error-stubs [role-info]
-  (let [outbox (fs/path (:worktree-path role-info) ".swarmforge" "handoffs" "outbox")]
+  (let [outbox (handoff-lib/mailbox-dir role-info :outbox)]
     (when (fs/exists? outbox)
       (->> (fs/list-dir outbox)
            (filter #(and (fs/regular-file? %)
@@ -332,12 +489,14 @@
 (defn startup-notify-pending! [roles socket]
   (when-not (tmux-inject-disabled?)
     (doseq [[_ role-info] roles
-            :when (seq (inbox-new-files role-info))]
-      (log! "startup-notify" (:role role-info))
+            :let [role (:role role-info)]
+            :when (and (seq (inbox-new-files role-info))
+                       (not (recipient-pane-busy? socket roles role)))]
+      (log! "startup-notify" role)
       (try
         (notify! socket (:session role-info) (:agent role-info))
         (catch Exception e
-          (log! "startup-notify-error" (:role role-info) (.getMessage e)))))))
+          (log! "startup-notify-error" role (.getMessage e)))))))
 
 (defn poll-once! []
   (let [roles (load-roles)
@@ -358,6 +517,31 @@
                 (move-with-collision path (sent-dir role-info))
                 (catch Exception _ignored nil)))
             (fail! path (.getMessage e))))))))
+
+;; ── BL-121: canary sweep - completes synthetic canary round-trips ──────────
+;; The extension's canaryInjector.ts writes a pending marker under
+;; canary-queue/pending/ on a schedule and later checks canary-queue/completed/
+;; for a match (transportHealth.ts reads the resulting canary-status.json).
+;; Moving pending -> completed here, inside THIS process's own poll loop,
+;; means a canary only completes if the daemon is actually still iterating -
+;; not just alive as an OS process. A wedged-but-running daemon lets pending
+;; canaries pile up and eventually miss budget, which is exactly the
+;; delivery-level signal BL-121 needs (never touches any role's real inbox,
+;; so a canary can never appear as a work item - BL-121 canary-isolation-04).
+(defn canary-pending-dir [] (fs/path daemon-dir "canary-queue" "pending"))
+(defn canary-completed-dir [] (fs/path daemon-dir "canary-queue" "completed"))
+
+(defn canary-sweep! []
+  (let [pending-dir (canary-pending-dir)]
+    (when (fs/exists? pending-dir)
+      (doseq [f (->> (fs/list-dir pending-dir)
+                     (filter #(and (fs/regular-file? %)
+                                   (str/ends-with? (fs/file-name %) ".handoff"))))]
+        (try
+          (move-with-collision f (canary-completed-dir))
+          (log! "canary-completed" (fs/file-name f))
+          (catch Exception e
+            (log! "canary-sweep-error" (str f) (.getMessage e))))))))
 
 ;; The JVM only waits for registered shutdown-hook THREADS to finish before
 ;; halting - it does not wait for arbitrary other threads. A hook that only
@@ -498,27 +682,54 @@
   (:out (tmux! "-S" socket "capture-pane" "-p" "-t" session "-S" (str "-" n))))
 
 (defn get-last-activity-ms [role-info socket now-ms]
+  ;; Loop detection is NOT done here: bb/SCI cannot forward-reference
+  ;; observe-pane-loop! (defined later). Standing sessions are observed from
+  ;; chase-sweep! → observe-standing-role-loops! instead, which also covers
+  ;; the empty-mailbox NO_TASK spin that in_process-gated activity misses.
   (let [pane (try (capture-pane-lines socket (:session role-info) 50) (catch Exception _ ""))
-        outbox-dir (fs/path (:worktree-path role-info) ".swarmforge" "handoffs" "outbox")
-        sent-dir* (fs/path (:worktree-path role-info) ".swarmforge" "handoffs" "sent")
+        outbox-dir (handoff-lib/mailbox-dir role-info :outbox)
+        sent-dir* (handoff-lib/mailbox-dir role-info :sent)
         outbox-activity-ms (apply max 0
                                    (for [d [outbox-dir sent-dir*] :when (fs/exists? d)]
                                      (.toMillis (fs/last-modified-time d))))]
     (chase-sweep-lib/track-pane-activity! (:role role-info) pane outbox-activity-ms now-ms)))
 
+(defn openrouter-respawn-env-args
+  "BL-130: OPENROUTER_API_KEY must reach the pane via ephemeral tmux -e, never
+   a launch-script export. launch_role in swarmforge.sh already does this on
+   first start; chase/ensure respawns historically omitted -e, so an
+   OpenRouter-backed pane came back with an empty ANTHROPIC_AUTH_TOKEN and
+   then failed every turn (malformed/empty HTTP 200). Pass the key (and the
+   optional max-output cap) whenever they are present in the daemon env."
+  []
+  (cond-> []
+    (not (str/blank? (System/getenv "OPENROUTER_API_KEY")))
+    (concat ["-e" (str "OPENROUTER_API_KEY=" (System/getenv "OPENROUTER_API_KEY"))])
+    (not (str/blank? (System/getenv "CLAUDE_CODE_MAX_OUTPUT_TOKENS")))
+    (concat ["-e" (str "CLAUDE_CODE_MAX_OUTPUT_TOKENS=" (System/getenv "CLAUDE_CODE_MAX_OUTPUT_TOKENS"))])))
+
 (defn do-respawn!
   "Busy-vs-wedged precheck (BL-137/BL-147 parity): never types/respawns into
    a pane showing Claude Code's busy footer. Otherwise force-relaunches the
    role's persisted launch script in place, the same tmux respawn-pane -k
-   invocation launch_role/swarm_ensure.bb already use."
+   invocation launch_role/swarm_ensure.bb already use.
+
+   Launch script is always the canonical project-root
+   .swarmforge/launch/<role>.sh (same as swarm_ensure.bb/respawn-role!) —
+   never a worktree-local copy, which can drift or be missing and which once
+   left the coordinator session running the coder script after a bad repair."
   [role-info socket]
   (let [session (:session role-info)
+        role (:role role-info)
         pane (try (capture-pane-text socket session) (catch Exception _ ""))]
     (if (chase-sweep-lib/actively-processing? pane)
-      (log! "chase-respawn-skip-busy" (:role role-info))
-      (let [launch-script (fs/path (:worktree-path role-info) ".swarmforge" "launch" (str (:role role-info) ".sh"))]
-        (log! "chase-respawn" (:role role-info))
-        (tmux! "-S" socket "respawn-pane" "-k" "-t" session (str "zsh '" launch-script "'"))))))
+      (log! "chase-respawn-skip-busy" role)
+      (let [launch-script (fs/path state-dir "launch" (str role ".sh"))
+            env-args (openrouter-respawn-env-args)]
+        (log! "chase-respawn" role (str launch-script))
+        (apply tmux! (concat ["-S" socket "respawn-pane" "-k"]
+                             env-args
+                             ["-t" session (str "zsh '" launch-script "'")]))))))
 
 (defn write-chase-status! [now-ms]
   (fs/create-dirs daemon-dir)
@@ -529,27 +740,1235 @@
                        :chase {:last_sweep_at (now)})]
     (spit (str duties-file) (json/generate-string updated))))
 
+;; BL-499: completed-dir/abandoned-dir added so chase-sweep-lib/run-sweep!
+;; can reap a new/ duplicate whose basename is already terminal there -
+;; the SAME two directories ready_for_next_task.bb's own dequeue-time
+;; dedup already reads (BL-218), never a second lookup.
 (defn role-inboxes-for-chase [roles]
   (for [[role role-info] roles]
     {:role role
-     :inbox-new-dir (str (fs/path (:worktree-path role-info) ".swarmforge" "handoffs" "inbox" "new"))
-     :in-process-dir (str (fs/path (:worktree-path role-info) ".swarmforge" "handoffs" "inbox" "in_process"))}))
+     :inbox-new-dir (str (handoff-lib/mailbox-dir role-info :new))
+     :in-process-dir (str (handoff-lib/mailbox-dir role-info :in_process))
+     :completed-dir (str (handoff-lib/mailbox-dir role-info :completed))
+     :abandoned-dir (str (handoff-lib/mailbox-dir role-info :abandoned))}))
+
+;; BL-098: durable per-role chase/nudge/dead-letter/respawn telemetry. The
+;; existing .chase.json/.nudge sidecars are ephemeral (abandoned once an
+;; item completes), so nothing durable could answer "how many nudges did a
+;; role need this week?" One JSON line per event, keyed by month like
+;; rule-proposals-file above; a `type` field keeps the schema additive so a
+;; later stage-transition event (BL-097 dwell/bounce) can share this log.
+(defn chaser-telemetry-file [at-ms]
+  (fs/path state-dir "telemetry"
+           (str "chaser-"
+                (.format (java.time.format.DateTimeFormatter/ofPattern "yyyy-MM")
+                         (.atZone (java.time.Instant/ofEpochMilli at-ms) java.time.ZoneOffset/UTC))
+                ".jsonl")))
+
+(defn log-chaser-telemetry! [event at-ms]
+  (let [file (chaser-telemetry-file at-ms)
+        line (json/generate-string
+              (assoc event :at
+                     (.format (java.time.format.DateTimeFormatter/ISO_INSTANT)
+                              (java.time.Instant/ofEpochMilli at-ms))))]
+    (fs/create-dirs (fs/parent file))
+    (spit (str file) (str line "\n") :append true)))
+
+;; ── BL-349: stuck-escalation email - the daemon's missing leg ───────────
+;; write-escalation! (chase_sweep_lib.bb) only ever wrote a file; the only
+;; code that EMAILED it lived in the VS Code extension host
+;; (NeedsHumanEmailNotifier), so on a headless box the human was never
+;; told. Reuses daemon_alarm_lib.bb's send-configured-email! exactly as
+;; send-configured-briefing-email! above does, so there is still only ONE
+;; Resend client in the whole swarm. stuck_escalation_email_lib.bb owns
+;; the pure delivery-based arming (BL-345's shape, reapplied per-role) and
+;; the durable per-role state; this is the thin, environment-specific
+;; wiring.
+(defn env-ms [name default]
+  (or (some-> (System/getenv name) parse-long) default))
+
+(def escalation-alarm-retry-config
+  {:max-attempts (env-ms "ESCALATION_ALARM_MAX_ATTEMPTS" 5)
+   :backoff-base-ms (env-ms "ESCALATION_ALARM_BACKOFF_BASE_MS" 60000)
+   :backoff-max-ms (env-ms "ESCALATION_ALARM_BACKOFF_MAX_MS" 1800000)})
+
+;; One-shot per process, same rationale as briefing-missing-key-warned?/
+;; starvation-email-key-warned? - a separate atom because this is a
+;; separate signal (and, for the daemon-vs-runtime split, a separate
+;; process).
+(def escalation-email-missing-key-warned? (atom false))
+
+;; BL-349 E2E test seam, mirroring operator_runtime.bb's own BL-345
+;; OPERATOR_ALARM_FORCE_RESULT convention exactly: when set, short-circuits
+;; the real send entirely and returns this JSON-decoded result instead -
+;; lets the acceptance suite drive the REAL sweep/arming logic (retry
+;; counting, backoff, give-up logging) against a scripted transient-
+;; failure/success sequence without ever reaching daemon-alarm-lib or the
+;; network. Never set in production.
+(defn send-escalation-alarm-email! [subject text]
+  (if-let [forced (System/getenv "ESCALATION_ALARM_FORCE_RESULT")]
+    (json/parse-string forced true)
+    (daemon-alarm-lib/send-configured-email!
+     project-root conf-file subject text
+     {:already-warned?! (fn [] @escalation-email-missing-key-warned?)
+      :log-warning! (fn [msg] (log! "email-misconfigured" msg))
+      :mark-warned! (fn [] (reset! escalation-email-missing-key-warned? true))})))
+
+(defn halt-for-endless-loop!
+  "Hard-stop the swarm when a role is burning tokens on a NO_TASK spin.
+   Alerts first (Telegram Operator topic + email), then touches the supervisor
+   stop file and runs kill_all_swarm.sh. compare-and-set so concurrent chase
+   observations only halt once. Alert order is intentional: outbox + email
+   land on disk/network before tmux/daemon teardown."
+  [role state]
+  (when (compare-and-set! loop-halt-triggered? false true)
+    (let [reason (loop-detect-lib/format-halt-reason role state)
+          subject (loop-detect-lib/format-email-subject role)
+          tg-text (loop-detect-lib/format-telegram-alert role state)
+          reply-outbox (fs/path state-dir "operator" "telegram-reply-outbox.jsonl")]
+      (log! "endless-loop-halt" role reason)
+      ;; Telegram: same OPERATOR-topic outbox disk-space / idle-nudge use
+      ;; (bridge polls telegram-reply-outbox.jsonl). Durable before kill.
+      (try
+        (fs/create-dirs (fs/parent reply-outbox))
+        (spit (str reply-outbox)
+              (str (json/generate-string {"threadId" "OPERATOR" "text" tg-text}) "\n")
+              :append true)
+        (log! "endless-loop-telegram" role)
+        (catch Exception e (log! "endless-loop-telegram-error" (.getMessage e))))
+      (try
+        (daemon-alarm-lib/send-configured-email!
+         project-root conf-file subject reason
+         {:already-warned?! (fn [] @escalation-email-missing-key-warned?)
+          :log-warning! (fn [msg] (log! "email-misconfigured" msg))
+          :mark-warned! (fn [] (reset! escalation-email-missing-key-warned? true))})
+        (log! "endless-loop-email" role)
+        (catch Exception e (log! "endless-loop-email-error" (.getMessage e))))
+      (try
+        (fs/create-dirs daemon-dir)
+        (spit (str stop-file) "")
+        (catch Exception e (log! "endless-loop-stop-file-error" (.getMessage e))))
+      (try
+        (process/sh ["bash" (str (fs/path script-dir "kill_all_swarm.sh")) (str project-root)])
+        (catch Exception e (log! "endless-loop-kill-error" (.getMessage e)))))))
+
+;; BL-528: claim-without-progress halt (separate atom so a claim-idle halt
+;; does not suppress an in-flight NO_TASK halt and vice-versa).
+(def claim-progress-halt-triggered? (atom false))
+
+(defn halt-for-claim-progress! [role progress]
+  (when (compare-and-set! claim-progress-halt-triggered? false true)
+    (let [reclaims (or (:reclaims progress) 0)
+          reason   (claim-progress-lib/format-halt-reason role reclaims)
+          subject  (claim-progress-lib/format-email-subject role)
+          tg-text  (claim-progress-lib/format-telegram-alert role reclaims)
+          reply-outbox (fs/path state-dir "operator" "telegram-reply-outbox.jsonl")]
+      (log! "claim-progress-halt" role reason)
+      (try
+        (fs/create-dirs (fs/parent reply-outbox))
+        (spit (str reply-outbox)
+              (str (json/generate-string {"threadId" "OPERATOR" "text" tg-text}) "\n")
+              :append true)
+        (log! "claim-progress-telegram" role)
+        (catch Exception e (log! "claim-progress-telegram-error" (.getMessage e))))
+      (try
+        (daemon-alarm-lib/send-configured-email!
+         project-root conf-file subject reason
+         {:already-warned?! (fn [] @escalation-email-missing-key-warned?)
+          :log-warning! (fn [msg] (log! "email-misconfigured" msg))
+          :mark-warned! (fn [] (reset! escalation-email-missing-key-warned? true))})
+        (log! "claim-progress-email" role)
+        (catch Exception e (log! "claim-progress-email-error" (.getMessage e))))
+      (try
+        (fs/create-dirs daemon-dir)
+        (spit (str stop-file) "")
+        (catch Exception e (log! "claim-progress-stop-file-error" (.getMessage e))))
+      (try
+        (process/sh ["bash" (str (fs/path script-dir "kill_all_swarm.sh")) (str project-root)])
+        (catch Exception e (log! "claim-progress-kill-error" (.getMessage e)))))))
+
+(defn observe-pane-loop!
+  "Feed one pane snapshot into loop_detect_lib; halt the swarm on :halt."
+  [role pane]
+  (when-not @loop-halt-triggered?
+    (let [prev (get @loop-detect-states role)
+          decision (loop-detect-lib/decide-loop-action prev pane)]
+      (swap! loop-detect-states assoc role (:state decision))
+      (when (= :halt (:action decision))
+        (halt-for-endless-loop! role (:state decision))))))
+
+
+(defn stuck-escalation-email-sweep! [role escalated? now-ms]
+  (try
+    (stuck-escalation-email-lib/sweep!
+     role escalated? now-ms (str daemon-dir) escalation-alarm-retry-config
+     {:send-email! send-escalation-alarm-email!
+      :log! (fn [& parts] (apply log! parts))})
+    (catch Exception e
+      (log! "stuck-escalation-email-error" role (.getMessage e)))))
+
+
+(defn observe-standing-role-loops!
+  "Walk every role that still has a live tmux session and feed its pane into
+   the endless-loop detector. Must not depend on in_process mail — the classic
+   token-burn failure is an empty mailbox with ready_for_next → NO_TASK spinning."
+  [roles socket]
+  (doseq [[role role-info] roles]
+    (let [session (:session role-info)]
+      (when (and session (handoff-lib/session-exists? socket session))
+        ;; Last 20 lines only — older scrollback from a prior spin must not
+        ;; false-positive a healthy idle prompt after relaunch.
+        (let [pane (try (capture-pane-lines socket session 20) (catch Exception _ ""))]
+          (observe-pane-loop! role pane))))))
+
+(defn chase-poke-action
+  "Decide how to poke `role` under mono-router (pure wrapper around
+   mono-router-lib/dormant-mailbox-chase-action with live tmux probes)."
+  [roles socket role]
+  (let [session (:session (get roles role))
+        resident (handoff-lib/mono-router-resident-session)]
+    (mono-router-lib/dormant-mailbox-chase-action
+     {:target-session-exists? (boolean (and session (handoff-lib/session-exists? socket session)))
+      :resident-session-exists? (boolean (and resident (handoff-lib/session-exists? socket resident)))
+      :active-role (handoff-lib/read-mono-router-active-role)
+      :target-role role})))
+
+(def last-chase-rotate-at-ms (atom 0))
+
+(defn- handoff-header-field [file-path field]
+  (try
+    (let [header (first (str/split (slurp file-path) #"\n\n" 2))
+          prefix (str field ": ")]
+      (some (fn [line] (when (str/starts-with? line prefix) (subs line (count prefix))))
+            (str/split-lines (or header ""))))
+    (catch Exception _ nil)))
+
+(defn- role-mail-row
+  "Score one role's mailbox for mono-router rotate preference."
+  [role role-info]
+  (let [new-dir (str (handoff-lib/mailbox-dir role-info :new))
+        ip-dir (str (handoff-lib/mailbox-dir role-info :in_process))
+        held (chase-sweep-lib/scan-in-process ip-dir)
+        news (chase-sweep-lib/scan-inbox-new new-dir)
+        git-hfs (filterv #(= "git_handoff" (handoff-header-field (:filePath %) "type")) news)
+        newest (or (->> (concat held git-hfs)
+                        (keep #(handoff-header-field (:filePath %) "created_at"))
+                        sort
+                        last)
+                   "")]
+    {:role role
+     :newest-created-at newest
+     :actionable? (mono-router-lib/actionable-mail?
+                   {:in-process-count (count held)
+                    :git-handoff-count (count git-hfs)})}))
+
+(defn preferred-mono-rotate-role
+  "At most one dormant role may rotate the resident per decision — the one
+   with the newest actionable mail. Broadcast notes never qualify."
+  [roles]
+  (mono-router-lib/preferred-rotate-target
+   (map (fn [[role ri]] (role-mail-row role ri)) roles)))
+
+(defn resident-pane-busy?
+  "True when the mono-router resident pane shows a busy footer — do not
+   rotate or inject wake spam mid-turn (chase thrash incident 2026-07-19)."
+  [socket]
+  (if-let [sess (handoff-lib/mono-router-resident-session)]
+    (let [pane (try (capture-pane-text socket sess) (catch Exception _ ""))]
+      (chase-sweep-lib/actively-processing? pane))
+    false))
+
+(defn chase-rotate-to! [socket roles role]
+  (let [preferred (preferred-mono-rotate-role roles)
+        row (role-mail-row role (get roles role))]
+    (cond
+      (not (:actionable? row))
+      (do (log! "chase-rotate-skip-broadcast" role)
+          {:ok false :reason "broadcast"})
+
+      (and preferred (not= preferred role))
+      (do (log! "chase-rotate-skip-not-preferred" role preferred)
+          {:ok false :reason "not-preferred"})
+
+      :else
+      (let [gate (mono-router-lib/should-rotate-resident?
+                  {:active-role (handoff-lib/read-mono-router-active-role)
+                   :target-role role
+                   :resident-busy? (resident-pane-busy? socket)
+                   :last-rotate-at-ms @last-chase-rotate-at-ms
+                   :now-ms (System/currentTimeMillis)
+                   :cooldown-ms mono-router-lib/default-rotate-cooldown-ms})]
+        (if (not= gate :rotate)
+          (do (log! (str "chase-rotate-" (name gate)) role)
+              {:ok false :reason (name gate)})
+          (let [result (handoff-lib/rotate-resident-to! role)]
+            (when (:ok result)
+              (reset! last-chase-rotate-at-ms (System/currentTimeMillis))
+              (log! "chase-rotate" role))
+            (when-not (:ok result)
+              (log! "chase-rotate-error" role (str (:reason result))))
+            result))))))
+
+(defn- head-commit-10
+  "Exactly 10 hex chars for swarm_handoff.bb's git_handoff commit contract."
+  []
+  (let [result (process/sh ["git" "rev-parse" "--short=10" "HEAD"] {:dir (str project-root)})]
+    (when (zero? (:exit result))
+      (str/trim (:out result)))))
+
+(defn- worktree-head-commit-10
+  "BL-528: 10-char HEAD of a role's worktree, or \"\" on error.
+   Uses the worktree-path from loaded roles so each role's own branch is
+   read, not the master checkout."
+  [roles role]
+  (let [ri  (get roles role)
+        dir (or (:worktree-path ri) (str project-root))]
+    (try
+      (let [result (process/sh ["git" "rev-parse" "--short=10" "HEAD"] {:dir dir})]
+        (if (zero? (:exit result)) (str/trim (:out result)) ""))
+      (catch Exception _ ""))))
+
+(defn- role-worktree-dirty?
+  "True when a role's worktree has staged/modified/untracked files."
+  [roles role]
+  (let [ri  (get roles role)
+        dir (or (:worktree-path ri) (str project-root))]
+    (try
+      (let [result (process/sh ["git" "status" "--porcelain"] {:dir dir})]
+        (when (zero? (:exit result))
+          (claim-progress-lib/worktree-dirty? (:out result))))
+      (catch Exception _ false))))
+
+(defn rotation-router-mode?
+  "True when this project is running (or last launched as) rotation router.
+   Same resolution as swarm_ensure.bb: swarm-identity rotation key, else the
+   persisted active pack conf path, else swarmforge/swarmforge.conf."
+  []
+  (let [identity-path (fs/path state-dir "swarm-identity")
+        identity-text (when (fs/exists? identity-path) (slurp (str identity-path)))
+        conf-path (or (get (mono-router-lib/parse-identity-map (or identity-text ""))
+                           "active_backlog_max_depth_conf_path")
+                      (str conf-file))
+        conf-text (when (and conf-path (fs/exists? conf-path))
+                    (slurp conf-path))]
+    (boolean
+     (or (mono-router-lib/rotation-router-from-identity? identity-text)
+         (mono-router-lib/conf-rotation-router? conf-text)))))
+
+(defn- claim-idle-context [socket roles role now-ms]
+  (let [active (handoff-lib/read-mono-router-active-role)
+        activity-role (or active role)]
+    {:resident-busy? (resident-pane-busy? socket)
+     :resident-recently-active? (chase-sweep-lib/pane-recently-active?
+                                  activity-role now-ms claim-recent-activity-ms)
+     :active-role active
+     :rotation-router? (rotation-router-mode?)}))
 
 (defn chase-sweep! [roles socket]
   (let [now-ms (System/currentTimeMillis)
         adapters {:get-liveness get-liveness
                   :send-wake-up! (fn [role]
                                     (when-not (tmux-inject-disabled?)
-                                      (try (notify! socket (:session (get roles role)) (:agent (get roles role)))
-                                           (catch Exception e (log! "chase-wake-error" role (.getMessage e))))))
+                                      (try
+                                        ;; Busy resident: never inject "new mail" / never rotate.
+                                        (if (resident-pane-busy? socket)
+                                          (log! "chase-wake-skip-busy" role)
+                                          (let [action (chase-poke-action roles socket role)
+                                                ri (get roles role)]
+                                            (case action
+                                              :rotate (chase-rotate-to! socket roles role)
+                                              (notify! socket (:session ri) (:agent ri)))))
+                                        (catch Exception e (log! "chase-wake-error" role (.getMessage e))))))
+                  :send-in-process-resume! (fn [role]
+                                              (when-not (tmux-inject-disabled?)
+                                                (try
+                                                  (if (resident-pane-busy? socket)
+                                                    (log! "chase-in-process-resume-skip-busy" role)
+                                                    (let [action (chase-poke-action roles socket role)
+                                                          ri (get roles role)]
+                                                      (case action
+                                                        :rotate (chase-rotate-to! socket roles role)
+                                                        (notify-in-process-resume!
+                                                         socket
+                                                         (:session ri)
+                                                         (:agent ri)))))
+                                                  (catch Exception e
+                                                    (log! "chase-in-process-resume-error" role (.getMessage e))))))
                   :trigger-respawn! (fn [role]
-                                       (try (do-respawn! (get roles role) socket)
-                                            (catch Exception e (log! "chase-respawn-error" role (.getMessage e)))))
+                                       (try
+                                         (if (resident-pane-busy? socket)
+                                           (log! "chase-respawn-skip-busy" role)
+                                           (let [action (chase-poke-action roles socket role)
+                                                 ri (get roles role)]
+                                             (case action
+                                               :rotate (chase-rotate-to! socket roles role)
+                                               :wake-resident (chase-rotate-to! socket roles role)
+                                               (do-respawn! ri socket))))
+                                         (catch Exception e (log! "chase-respawn-error" role (.getMessage e)))))
                   :log-dead-letter! (fn [role path] (log! "dead-letter" role (fs/file-name path)))
                   :get-last-activity-ms (fn [role] (get-last-activity-ms (get roles role) socket now-ms))
-                  :on-stuck-escalation! (fn [role escalated?] (chase-sweep-lib/write-escalation! (str daemon-dir) role escalated?))}]
+                  :on-stuck-escalation! (fn [role escalated?]
+                                          (chase-sweep-lib/write-escalation! (str daemon-dir) role escalated?)
+                                          ;; Mono-router dormant roles keep roles.tsv session names
+                                          ;; with no standing pane. Emailing "specifier is stuck"
+                                          ;; for a mailbox-only rotate target floods the human and
+                                          ;; cannot be fixed by attaching that session. Still record
+                                          ;; chase-escalations.json for consoles; skip the email.
+                                          (let [session (:session (get roles role))]
+                                            (when (mono-router-lib/should-send-stuck-escalation-email?
+                                                   {:escalated? escalated?
+                                                    :session-exists? (boolean
+                                                                     (and session
+                                                                          (handoff-lib/session-exists? socket session)))})
+                                              (stuck-escalation-email-sweep! role escalated? now-ms))))
+                  ;; BL-208: :provider is the one common, brand-name field
+                  ;; every telemetry event now carries (chase_sweep_lib.bb
+                  ;; itself stays agent-agnostic - this is the only place
+                  ;; that knows which agent a role runs, same lookup
+                  ;; :send-wake-up! above already does) so a reader can
+                  ;; compare providers without a per-role branch.
+                  :log-telemetry! (fn [event at-ms]
+                                     (try (log-chaser-telemetry!
+                                           (assoc event :provider (:agent (get roles (:role event))))
+                                           at-ms)
+                                          (catch Exception e (log! "telemetry-error" (:type event) (.getMessage e)))))
+                  ;; BL-209: the shared rate-limit cooldown file the
+                  ;; extension writes to (one file, every role - state-dir
+                  ;; is the one directory every role's worktree shares).
+                  :get-rate-limit-cooldown-until-ms
+                  (fn [role] (chase-sweep-lib/read-rate-limit-cooldown-until-ms (str state-dir) role))
+                  :get-rate-limit-cooldown-woken-marker
+                  (fn [role] (chase-sweep-lib/read-rate-limit-cooldown-woken-marker (str state-dir) role))
+                  :mark-rate-limit-cooldown-woken!
+                  (fn [role until-ms] (chase-sweep-lib/mark-rate-limit-cooldown-woken! (str state-dir) role until-ms))
+                  ;; BL-528: claim-without-progress adapters.
+                  :get-role-head-commit
+                  (fn [role] (worktree-head-commit-10 roles role))
+                  :role-agent-busy?
+                  (fn [role] (boolean (recipient-pane-busy? socket roles role)))
+                  :role-worktree-dirty?
+                  (fn [role] (boolean (role-worktree-dirty? roles role)))
+                  :claim-idle-context
+                  (fn [role] (claim-idle-context socket roles role now-ms))
+                  :send-claim-idle-probe!
+                  (fn [role message]
+                    (when-not (tmux-inject-disabled?)
+                      (try
+                        (if (resident-pane-busy? socket)
+                          (log! "claim-idle-probe-skip-busy" role)
+                          (when-let [ri (get roles role)]
+                            (let [session (handoff-lib/wake-session socket (:session ri))]
+                              (agent-runtime-inject/notify-agent!
+                               socket session (or (:agent ri) "claude")
+                               :log-fn (fn [tag sess detail] (log! tag sess detail))
+                               :text message))))
+                        (catch Exception e (log! "claim-idle-probe-error" role (.getMessage e))))))
+                  :on-claim-idle-bounce!
+                  (fn [role fp progress]
+                    (log! "claim-progress-bounce" role
+                          (claim-progress-lib/format-bounce-log role (:reclaims progress)))
+                    (enqueue-babysitter-event!
+                     {:type "claim-progress"
+                      :from "handoffd"
+                      :role role
+                      :severity "critical"
+                      :reclaims (:reclaims progress)
+                      :handoff (str fp)
+                      :hint "BL-528 bounce — archive stale claim or nudge commit before halt."}))
+                  :on-claim-idle-halt!
+                  (fn [role _fp progress]
+                    (halt-for-claim-progress! role progress))}]
     (chase-sweep-lib/run-sweep! (role-inboxes-for-chase roles) now-ms chase-sweep-config adapters)
+    (observe-standing-role-loops! roles socket)
     (write-chase-status! now-ms)))
+
+;; ── BL-222: dispatch-gap sweep - the daemon's third duty ────────────────────
+;; Runs on the SAME cadence as chase-sweep! above (no separate timeout, per
+;; the ticket) since it's the daemon (never coordinator self-polling) that
+;; already runs unattended. chase_sweep_lib.bb owns the pure decision plus
+;; the fixture-testable scanning; everything below is the thin, environment-
+;; specific wiring (project paths, the actual subprocess send) that mirrors
+;; how chase-sweep!'s adapters wire pure decisions to real tmux/heartbeat.
+
+(defn active-backlog-dir [] (fs/path project-root "backlog" "active"))
+
+(defn dispatch-gap-scan-dirs [roles]
+  (vec (for [[_ role-info] roles
+             state [:new :in_process :completed :sent :outbox]]
+         (str (handoff-lib/mailbox-dir role-info state)))))
+
+(defn write-scratch-draft! [lines]
+  (let [tmp-dir (fs/path daemon-dir "dispatch-gap-drafts")]
+    (fs/create-dirs tmp-dir)
+    (let [draft (fs/path tmp-dir (str "draft-" (System/nanoTime) ".txt"))]
+      (spit (str draft) (str (str/join "\n" lines) "\n"))
+      draft)))
+
+(defn swarm-handoff-script []
+  (str (fs/path (fs/parent (fs/canonicalize *file*)) "swarm_handoff.bb")))
+
+;; Shells to swarm_handoff.bb (SWARMFORGE_ROLE=coordinator) rather than
+;; hand-writing an inbox file, per the ticket's "must go through the normal
+;; outbound handoff path" constraint - reuses its full existing validation,
+;; sequencing, and atomic outbox write, plus its own sync-delivery attempt.
+
+
+(defn auto-route! [item]
+  (let [commit (or (head-commit-10) "")
+        draft (write-scratch-draft! (chase-sweep-lib/dispatch-gap-draft-lines item commit))
+        env (merge (into {} (System/getenv)) {"SWARMFORGE_ROLE" "coordinator"})
+        ;; process/sh's varargs form (cmd arg1 arg2 opts-map) silently drops
+        ;; :dir/:env overrides - only the [cmd & args] vector form applies
+        ;; them (confirmed empirically). Must use the vector form here:
+        ;; auto-route! only works at all if SWARMFORGE_ROLE actually
+        ;; resolves to "coordinator" inside the subprocess.
+        result (process/sh ["bb" (swarm-handoff-script) (str draft)] {:dir (str project-root) :env env})]
+    (if (zero? (:exit result))
+      (log! "dispatch-gap-autoroute" (:id item) (:assigned-to item)
+            (if (str/blank? commit) "note-fallback" "git_handoff"))
+      (log! "dispatch-gap-autoroute-error" (:id item) (:assigned-to item) (str (:err result))))))
+
+(defn dispatch-gap-sweep! [roles]
+  (doseq [item (chase-sweep-lib/dispatch-gap-items (active-backlog-dir) (dispatch-gap-scan-dirs roles))]
+    (try
+      (auto-route! item)
+      (catch Exception e
+        (log! "dispatch-gap-autoroute-error" (:id item) (:assigned-to item) (.getMessage e))))))
+
+
+;; ── Unassigned-active coordinator nudge (sibling of BL-222) ────────────────
+;; Does NOT set assigned_to. Drops a note on the coordinator so it assigns
+;; and routes. Same SWARMFORGE_ROLE=coordinator outbound path as auto-route!.
+
+(defn nudge-coordinator-unassigned! [item]
+  (let [draft (write-scratch-draft! (chase-sweep-lib/unassigned-active-draft-lines item))
+        env (merge (into {} (System/getenv)) {"SWARMFORGE_ROLE" "coordinator"})
+        result (process/sh ["bb" (swarm-handoff-script) (str draft)] {:dir (str project-root) :env env})]
+    (if (zero? (:exit result))
+      (log! "unassigned-active-nudge" (:id item))
+      (log! "unassigned-active-nudge-error" (:id item) (str (:err result))))))
+
+(defn unassigned-active-nudge-sweep! [roles]
+  (doseq [item (chase-sweep-lib/unassigned-active-items (active-backlog-dir) (dispatch-gap-scan-dirs roles))]
+    (try
+      (nudge-coordinator-unassigned! item)
+      (catch Exception e
+        (log! "unassigned-active-nudge-error" (:id item) (.getMessage e))))))
+
+
+;; ── Open-slot coordinator nudge (sibling of unassigned-active) ──────────────
+;; Does NOT promote. Drops a note on the coordinator when active count is
+;; under the configured cap and paused/ has eligible work. Pending note in
+;; coordinator new/in_process + a short cooldown file prevent spam.
+
+(defn open-slot-cooldown-path []
+  (fs/path daemon-dir "open-slot-nudge-cooldown.json"))
+
+(defn read-open-slot-last-sent-ms []
+  (let [data (try
+               (json/parse-string (slurp (str (open-slot-cooldown-path))) true)
+               (catch Exception _ nil))]
+    (when (number? (:lastSentMs data)) (:lastSentMs data))))
+
+(defn write-open-slot-last-sent! [now-ms]
+  (fs/create-dirs daemon-dir)
+  (spit (str (open-slot-cooldown-path))
+        (json/generate-string {:lastSentMs now-ms})))
+
+(defn coordinator-pending-dirs [roles]
+  (when-let [coord (get roles "coordinator")]
+    [(str (handoff-lib/mailbox-dir coord :new))
+     (str (handoff-lib/mailbox-dir coord :in_process))]))
+
+(defn nudge-coordinator-open-slot! []
+  (let [draft (write-scratch-draft! (chase-sweep-lib/open-slot-nudge-draft-lines))
+        env (merge (into {} (System/getenv)) {"SWARMFORGE_ROLE" "coordinator"})
+        result (process/sh ["bb" (swarm-handoff-script) (str draft)] {:dir (str project-root) :env env})]
+    (if (zero? (:exit result))
+      (do
+        (write-open-slot-last-sent! (System/currentTimeMillis))
+        (log! "open-slot-nudge"))
+      (log! "open-slot-nudge-error" (str (:err result))))))
+
+(defn open-slot-nudge-sweep! [roles]
+  (try
+    (let [active-count (chase-sweep-lib/count-backlog-yaml backlog-active-dir)
+          paused-count (chase-sweep-lib/count-backlog-yaml backlog-paused-dir)
+          cap (backlog-depth-lib/read-max-depth project-root)
+          pending-dirs (or (coordinator-pending-dirs roles) [])
+          pending? (chase-sweep-lib/open-slot-nudge-pending? pending-dirs)
+          now-ms (System/currentTimeMillis)
+          cool? (chase-sweep-lib/within-open-slot-cooldown?
+                 (read-open-slot-last-sent-ms) now-ms
+                 chase-sweep-lib/open-slot-nudge-cooldown-ms)]
+      (when (chase-sweep-lib/decide-open-slot-nudge?
+             active-count cap paused-count
+             {:pending-nudge? pending? :within-cooldown? cool?})
+        (nudge-coordinator-open-slot!)))
+    (catch Exception e
+      (log! "open-slot-nudge-sweep-error" (.getMessage e)))))
+
+
+;; ── BL-214: briefing-email sweep - the daemon's fourth duty ─────────────────
+;; Runs on the SAME cadence as chase-sweep!/dispatch-gap-sweep! above (no
+;; separate timeout) since this daemon already runs unattended regardless of
+;; whether the VS Code host is open. briefing_email_lib.bb owns the pure
+;; scanning/marker/subject logic (fixture-tested); this is the thin,
+;; environment-specific wiring - reusing daemon_alarm_lib.bb's
+;; send-configured-email! exactly as handoffd_supervisor.bb's BL-144 alarm
+;; does, so there is still only ONE Resend client in the whole swarm, and a
+;; configured-but-keyless setup warns loudly here too (BL-215), not just for
+;; the death alarm.
+
+;; One-shot per process, same rationale as handoffd_supervisor.bb's own
+;; missing-key-warned? - a separate atom because this is a separate process.
+(def briefing-missing-key-warned? (atom false))
+
+;; BL-260: the 3-arg form threads an optional html body (the rendered-
+;; diagrams section) through to send-configured-email!'s new 5-arg form; the
+;; 2-arg form is unchanged (html nil), matching daemon-alarm-lib's own
+;; additive, backward-compatible arity pattern.
+;;
+;; BL-286: the 4-arg form additionally threads an optional attachments seq
+;; (the diagram section's cid inline attachments) through to
+;; send-configured-email!'s new 6-arg form; the 3-arg form delegates to it
+;; with attachments nil, so every pre-BL-286 caller keeps its exact prior
+;; behavior.
+(defn send-configured-briefing-email!
+  ([subject text] (send-configured-briefing-email! subject text nil))
+  ([subject text html] (send-configured-briefing-email! subject text html nil))
+  ([subject text html attachments]
+   (daemon-alarm-lib/send-configured-email!
+    project-root conf-file subject text html attachments
+    {:already-warned?! (fn [] @briefing-missing-key-warned?)
+     :log-warning! (fn [msg] (log! "email-misconfigured" msg))
+     :mark-warned! (fn [] (reset! briefing-missing-key-warned? true))})))
+
+;; BL-252: shells to the compiled suite-duration-line.js CLI (Babashka has
+;; no way to import compiled TS) - reuses computeSuiteDurationTrend/
+;; computeSuiteDuration unchanged, the SAME functions already feeding the
+;; bridge's /metrics route the holistic UI reads, so the briefing can never
+;; disagree with the live UI about what "regressing" means. Must use the
+;; [cmd & args] + opts-map form of process/sh, not flat varargs - the
+;; latter silently drops :dir (see auto-route!'s own comment above). Any
+;; failure (CLI not yet compiled on this checkout, etc.) degrades to
+;; omitting the line entirely - never crashes the sweep, never a fabricated
+;; value.
+(defn suite-duration-briefing-line []
+  (try
+    (let [cli-path (str (fs/path project-root "extension" "out" "tools" "suite-duration-line.js"))
+          {:keys [exit out]} (process/sh ["node" cli-path] {:dir (str project-root)})]
+      (when (zero? exit) (str/trim out)))
+    (catch Exception _ nil)))
+
+;; BL-251: same shell-out pattern as suite-duration-briefing-line above -
+;; reuses computeBacklogDashboard's own needsApproval field unchanged, the
+;; SAME field backlog.json/the PWA already carry, so the briefing can never
+;; disagree with the PWA about what's pending. Any failure degrades to
+;; omitting the section entirely - never crashes the sweep.
+(defn needs-approval-briefing-section []
+  (try
+    (let [cli-path (str (fs/path project-root "extension" "out" "tools" "needs-approval-line.js"))
+          {:keys [exit out]} (process/sh ["node" cli-path] {:dir (str project-root)})]
+      (when (zero? exit) (str/trim out)))
+    (catch Exception _ nil)))
+
+;; BL-256: same shell-out pattern as suite-duration-briefing-line/
+;; needs-approval-briefing-section above - each CLI reuses existing
+;; telemetry unchanged (gitHistoryAdapter.ts + ticketHoldingWindows.ts,
+;; stageDwell.ts's own already-shipped stage-dwell-report.js CLI as-is, and
+;; swarmMetrics.ts's chaser telemetry), so the briefing can never disagree
+;; with the live UI/CLI about what these numbers are. Any failure degrades
+;; to omitting the section entirely - never crashes the sweep.
+(defn merged-blocked-digest-briefing-section []
+  (try
+    (let [cli-path (str (fs/path project-root "extension" "out" "tools" "briefing-digest-line.js"))
+          {:keys [exit out]} (process/sh ["node" cli-path] {:dir (str project-root)})]
+      (when (zero? exit) (str/trim out)))
+    (catch Exception _ nil)))
+
+;; Reuses BL-102's own stage-dwell-report.js CLI directly (no new wrapper
+;; needed - its default text output is already briefing-ready).
+(defn stage-dwell-briefing-section []
+  (try
+    (let [cli-path (str (fs/path project-root "extension" "out" "tools" "stage-dwell-report.js"))
+          {:keys [exit out]} (process/sh ["node" cli-path] {:dir (str project-root)})]
+      (when (zero? exit) (str/trim out)))
+    (catch Exception _ nil)))
+
+(defn chase-trend-briefing-section []
+  (try
+    (let [cli-path (str (fs/path project-root "extension" "out" "tools" "chase-trend-line.js"))
+          {:keys [exit out]} (process/sh ["node" cli-path] {:dir (str project-root)})]
+      (when (zero? exit) (str/trim out)))
+    (catch Exception _ nil)))
+
+;; BL-263: same shell-out pattern as needs-approval-briefing-section above -
+;; reuses computeBacklogDashboard's own notDoneCount field unchanged, the
+;; SAME field backlog.json/the PWA already carry, so the briefing can never
+;; disagree with the PWA about the not-done total. Any failure degrades to
+;; omitting the line entirely - never crashes the sweep.
+(defn not-done-count-briefing-line []
+  (try
+    (let [cli-path (str (fs/path project-root "extension" "out" "tools" "not-done-count-line.js"))
+          {:keys [exit out]} (process/sh ["node" cli-path] {:dir (str project-root)})]
+      (when (zero? exit) (str/trim out)))
+    (catch Exception _ nil)))
+
+;; BL-337: pure Babashka text-parsing, no compiled TS needed - unlike the
+;; *-briefing-line fns above, this reads standing_rule_violations_lib.bb's
+;; own scan directly (constitution articles + role prompts), never
+;; shelling to node. Any failure (a file unreadable, an unexpected repo
+;; layout) degrades to omitting the line entirely - never crashes the
+;; sweep, never fabricates a count. File discovery itself is shared with
+;; standing_rule_violations_cli.bb via standing_rule_violations_files.bb -
+;; both used to carry their own copy of this filter, with the same bug.
+;; BL-431: shells to the compiled suboptimality-verdict-line.js CLI (same
+;; shell-out pattern as the *-briefing-line fns above) - reuses BL-430's
+;; persisted rework-rate signal and reworkDiagnosis.ts's pure verdict logic
+;; unchanged. The CLI itself already prints nothing (empty stdout) when
+;; there is no signal yet or the rate is at/below baseline, so `str/trim
+;; out` naturally degrades to a blank block (no briefing noise) in that
+;; case, same as every sibling section here; any other failure (CLI not
+;; yet compiled, etc.) degrades identically - never crashes the sweep.
+(defn suboptimality-verdict-briefing-line []
+  (try
+    (let [cli-path (str (fs/path project-root "extension" "out" "tools" "suboptimality-verdict-line.js"))
+          {:keys [exit out]} (process/sh ["node" cli-path] {:dir (str project-root)})]
+      (when (zero? exit) (str/trim out)))
+    (catch Exception _ nil)))
+
+;; BL-454: shells to the compiled qa-bounce-line.js CLI, same shell-out
+;; pattern as the *-briefing-line fns above - reuses computeQaBounceTally
+;; unchanged, fed by the SAME durable qa_bounces log record-qa-bounce.js
+;; (the go-forward writer) and backfill-qa-bounces.js (the one-time seed
+;; from the evidence corpus) both write, so the briefing can never disagree
+;; with either. The CLI itself prints nothing (empty stdout) when there are
+;; no recorded bounces yet, so `str/trim out` naturally degrades to a blank
+;; block (no briefing noise) in that case, same as every sibling section
+;; here; any other failure (CLI not yet compiled, etc.) degrades identically
+;; - never crashes the sweep.
+(defn qa-bounce-briefing-line []
+  (try
+    (let [cli-path (str (fs/path project-root "extension" "out" "tools" "qa-bounce-line.js"))
+          {:keys [exit out]} (process/sh ["node" cli-path] {:dir (str project-root)})]
+      (when (zero? exit) (str/trim out)))
+    (catch Exception _ nil)))
+
+;; BL-511: shells to the compiled telegram-bridge-cost-line.js CLI, same
+;; shell-out pattern as the *-briefing-line fns above - reuses
+;; computeTelegramBridgeCostForDay/formatTelegramBridgeCostLine unchanged,
+;; fed by the durable bridge-cost log operator_lib.bb's
+;; front-desk-cost-record appends at reap time (operator_runtime.bb). The
+;; CLI itself prints nothing (empty stdout) when the day has no records at
+;; all, so `str/trim out` naturally degrades to a blank block (no briefing
+;; noise) in that case, same as every sibling section here; any other
+;; failure (CLI not yet compiled, etc.) degrades identically - never
+;; crashes the sweep. No day-key arg is passed - the CLI defaults to real
+;; UTC-today in production (a test fixes it via an explicit arg instead).
+(defn telegram-bridge-cost-briefing-line []
+  (try
+    (let [cli-path (str (fs/path project-root "extension" "out" "tools" "telegram-bridge-cost-line.js"))
+          {:keys [exit out]} (process/sh ["node" cli-path] {:dir (str project-root)})]
+      (when (zero? exit) (str/trim out)))
+    (catch Exception _ nil)))
+
+(defn standing-rule-violations-briefing-line []
+  (try
+    (let [files (for [f (standing-rule-violations-files/rule-source-files project-root)]
+                  {:path (str (fs/relativize (fs/path project-root) f)) :content (slurp (str f))})
+          violations (standing-rule-violations-lib/scan-violations files)
+          total (standing-rule-violations-lib/total-citation-count violations)]
+      (when (pos? total)
+        (str "Standing-rule violations: " total " cited recurrence(s) across "
+             (count violations) " rule(s) since they landed (top: "
+             (str/join ", " (map (fn [{:keys [rule count]}] (str "\"" rule "\" x" count))
+                                  (take 3 violations)))
+             ").")))
+    (catch Exception _ nil)))
+
+;; BL-260: same shell-out pattern as the *-briefing-section fns above, but
+;; the CLI's stdout is JSON ([{:name :base64}...] - the rendered diagrams),
+;; not a single text line, so this parses it instead of trimming it. Any
+;; failure (renderer dependency missing, an .mmd parse error, the CLI not
+;; yet compiled on this checkout) degrades to nil, same as every sibling
+;; CLI here - never crashes the sweep.
+(defn briefing-diagrams-json []
+  (try
+    (let [cli-path (str (fs/path project-root "extension" "out" "tools" "render-briefing-diagrams.js"))
+          {:keys [exit out]} (process/sh ["node" cli-path] {:dir (str project-root)})]
+      (when (zero? exit) (json/parse-string out true)))
+    (catch Exception _ nil)))
+
+;; Wraps briefing-diagrams-json with briefing_email_lib.bb's pure
+;; build-diagram-section - the ONLY :diagram-section adapter shape
+;; send-unsent-briefings! expects (BL-260 render-unavailable-degradation-04:
+;; nil diagrams still produce a clear no-diagram note, never a crash).
+(defn briefing-diagram-section []
+  (briefing-email-lib/build-diagram-section (briefing-diagrams-json)))
+
+(defn briefing-email-sweep! []
+  (briefing-email-lib/send-unsent-briefings!
+   (str briefings-dir)
+   {:read-briefing-content (fn [file-name] (slurp (str (fs/path briefings-dir file-name))))
+    :send-email! send-configured-briefing-email!
+    :diagram-section briefing-diagram-section
+    :suite-duration-line suite-duration-briefing-line
+    :needs-approval-section needs-approval-briefing-section
+    :merged-blocked-digest merged-blocked-digest-briefing-section
+    :stage-dwell-section stage-dwell-briefing-section
+    :chase-trend-section chase-trend-briefing-section
+    :not-done-count-line not-done-count-briefing-line
+    :standing-rule-violations-line standing-rule-violations-briefing-line
+    :suboptimality-verdict-line suboptimality-verdict-briefing-line
+    :qa-bounce-line qa-bounce-briefing-line
+    :telegram-bridge-cost-line telegram-bridge-cost-briefing-line
+    :log! (fn [& parts] (apply log! parts))}))
+
+;; BL-353: shells to the compiled notify-dead-letters.js CLI, same posture
+;; as the other *-sweep! adapters below - ports the retired legacy narrator's
+;; "dead-letter" signal (telegramNarrator.ts:diffNewDeadLetters) onto the
+;; headless front desk, into BL-346's reserved Operator topic (a dead
+;; letter is not reliably ticket-scoped, unlike a NeedsApproval gate). The
+;; CLI itself owns the growing-set announced state and delivery-based
+;; arming; this adapter only owns invoking it.
+(defn dead-letter-notify-sweep! []
+  (try
+    (let [cli-path (str (fs/path project-root "extension" "out" "tools" "notify-dead-letters.js"))
+          {:keys [exit out]} (process/sh ["node" cli-path] {:dir (str project-root)})]
+      (when (zero? exit)
+        (log! "dead-letter-notify" (str/trim out))))
+    (catch Exception e
+      (log! "dead-letter-notify-sweep-error" (.getMessage e)))))
+
+;; BL-350 (BL-336 finding H1): shells to the compiled sample-resources.js
+;; CLI, same posture as dead-letter-notify-sweep! above - reuses BL-264's
+;; startResourceSampler pid-resolution/append path
+;; unchanged, so a swarm running headless (no editor attached) finally
+;; produces the resource_sample telemetry the cost-health sidecar's
+;; resourceAnomalies field has depended on since BL-213 and never received.
+;; The CLI itself owns the "is a sample already due" gate
+;; (shouldSampleThisInterval against the shared telemetry file) - firing
+;; this sweep every cycle like its siblings is safe, since most invocations
+;; no-op until the interval elapses, and an editor's own host-side sampler
+;; recording a sample makes THIS sweep's own next tick no-op too (shared
+;; gate, not two independently-tuned timers).
+(defn resource-sample-sweep! []
+  (try
+    (let [cli-path (str (fs/path project-root "extension" "out" "tools" "sample-resources.js"))
+          {:keys [exit out]} (process/sh ["node" cli-path] {:dir (str project-root)})]
+      (when (zero? exit)
+        (log! "resource-sample" (str/trim out))))
+    (catch Exception e
+      (log! "resource-sample-sweep-error" (.getMessage e)))))
+
+;; BL-356: twice in one day local `main` accumulated hours of committed work
+;; that never reached origin, indistinguishable from a dead swarm from
+;; outside - nothing in the swarm ever pushed; publication depended
+;; entirely on an LLM role remembering to run `git push`. Runs on the same
+;; cadence as the sweeps above (no separate timeout). push_sweep_lib.bb
+;; owns the pure decision/state logic (ahead/behind classification,
+;; bounded push-retry backoff, delivery-based alarm arming); this is the
+;; thin git/network-specific wiring, mirroring stuck-escalation-email-
+;; sweep!'s own posture and reusing the SAME daemon_alarm_lib.bb sender.
+(def push-sweep-retry-config
+  {:max-push-attempts (env-ms "PUSH_SWEEP_MAX_PUSH_ATTEMPTS" 5)
+   :max-alarm-attempts (env-ms "PUSH_SWEEP_MAX_ALARM_ATTEMPTS" 3)
+   :backoff-base-ms (env-ms "PUSH_SWEEP_BACKOFF_BASE_MS" 30000)
+   :backoff-max-ms (env-ms "PUSH_SWEEP_BACKOFF_MAX_MS" 300000)})
+
+;; One-shot per process, same rationale as escalation-email-missing-key-
+;; warned?/briefing-missing-key-warned? above - a separate atom because
+;; this is a separate signal.
+(def push-alarm-email-missing-key-warned? (atom false))
+
+;; BL-356 E2E test seam, mirroring send-escalation-alarm-email!'s own
+;; ESCALATION_ALARM_FORCE_RESULT convention exactly: when set, short-
+;; circuits the real send entirely and returns this JSON-decoded result
+;; instead. Never set in production.
+(defn send-push-alarm-email! [subject text]
+  (if-let [forced (System/getenv "PUSH_ALARM_FORCE_RESULT")]
+    (json/parse-string forced true)
+    (daemon-alarm-lib/send-configured-email!
+     project-root conf-file subject text
+     {:already-warned?! (fn [] @push-alarm-email-missing-key-warned?)
+      :log-warning! (fn [msg] (log! "email-misconfigured" msg))
+      :mark-warned! (fn [] (reset! push-alarm-email-missing-key-warned? true))})))
+
+(defn- git-fetch-origin-main! []
+  (try
+    (process/sh ["git" "fetch" "origin" "main"] {:dir (str project-root)})
+    (catch Exception e
+      (log! "push-sweep-fetch-error" (.getMessage e)))))
+
+;; A fetch failure is logged and swallowed, not treated as "up to date" -
+;; the rev-list below still runs against whatever origin/main ref is
+;; already cached locally (from a prior successful fetch), so `ahead`
+;; (local's own unpublished work) stays accurate even when THIS tick's
+;; fetch failed; a stale view of `behind` self-corrects on the next
+;; successful fetch, and in the meantime a plain push against a truly
+;; advanced origin simply fails and is retried like any other transient
+;; failure - it is never force-pushed.
+(defn push-sweep-rev-counts! []
+  (git-fetch-origin-main!)
+  (let [{:keys [exit out]} (process/sh ["git" "rev-list" "--left-right" "--count" "origin/main...main"]
+                                        {:dir (str project-root)})]
+    (if (zero? exit)
+      (let [[behind ahead] (map parse-long (str/split (str/trim out) #"\s+"))]
+        {:ahead (or ahead 0) :behind (or behind 0)})
+      (do
+        (log! "push-sweep-revcount-error" (str/trim out))
+        {:ahead 0 :behind 0}))))
+
+;; Never --force: a rejected (non-fast-forward) push surfaces as a plain
+;; failed exit here, which push_sweep_lib.bb's own bounded retry treats
+;; like any other transient failure - true divergence is caught BEFORE a
+;; push is ever attempted, by push-sweep-rev-counts! above.
+(defn push-sweep-push! []
+  (let [{:keys [exit err]} (process/sh ["git" "push" "origin" "main"] {:dir (str project-root)})]
+    (if (zero? exit)
+      {:success true}
+      {:success false :error (str/trim (or err ""))})))
+
+(defn push-sweep! []
+  (try
+    (push-sweep-lib/sweep!
+     (System/currentTimeMillis) (str daemon-dir) push-sweep-retry-config
+     {:rev-counts! push-sweep-rev-counts!
+      :push! push-sweep-push!
+      :send-push-alarm!
+      (fn [attempts]
+        (send-push-alarm-email!
+         "SwarmForge: main is not reaching origin"
+         (str "Local `main` has failed to push to origin " attempts " times in a row. "
+              "The swarm's committed work is not reaching origin - check network/auth "
+              "and push by hand if needed.\n")))
+      :send-divergence-alarm!
+      (fn [ahead behind]
+        (send-push-alarm-email!
+         "SwarmForge: main has diverged from origin"
+         (str "Local `main` is " ahead " commit(s) ahead and " behind " commit(s) behind "
+              "origin/main - a plain push would be rejected (non-fast-forward) and was "
+              "NOT attempted. A human needs to reconcile this by hand (fetch, then merge "
+              "or rebase, then push).\n")))
+      :log! (fn [& parts] (apply log! parts))})
+    (catch Exception e
+      (log! "push-sweep-error" (.getMessage e)))))
+
+;; BL-437: shells to the compiled emit-fleet-status.js CLI (Babashka has no
+;; way to import compiled TS) - reuses createSwarmNode/rollupStatus
+;; unchanged, the exact same rollup fleet-console.ts used to reconstruct for
+;; a single swarm before this ticket, so a published doc can never disagree
+;; with what a live in-process reconstruction would say. Publishes THIS
+;; swarm's own rolled-up status.json into the fleet rendezvous dir under
+;; the operator host's $HOME, flipping BL-246's backwards coupling back to
+;; BL-242's own principle: the swarm rolls up its own pack, the fleet
+;; console just merges. Shares the chase-sweep cadence (no separate
+;; timeout), same rationale as every other *-sweep! sharing it above. Any
+;; failure (CLI not yet compiled, etc.) degrades to a logged skip - never
+;; crashes the sweep; a status.json that simply stops updating is exactly
+;; what fleet-console.ts is designed to notice and report as "stopped
+;; (coordinator lost)".
+(defn fleet-status-sweep! []
+  (try
+    (let [cli-path (str (fs/path project-root "extension" "out" "tools" "emit-fleet-status.js"))
+          {:keys [exit err]} (process/sh ["node" cli-path (str project-root)] {:dir (str project-root)})]
+      (when-not (zero? exit)
+        (log! "fleet-status-sweep-error" (str "exit=" exit " " (str/trim (or err ""))))))
+    (catch Exception e
+      (log! "fleet-status-sweep-error" (.getMessage e)))))
+
+;; BL-440: shells to the compiled drain-answer-files.js CLI (Babashka has no
+;; way to import compiled TS) - reuses drainAnswerFiles unchanged, the exact
+;; gate+route+archive orchestration drainAnswerFilesCli.test.js already
+;; proves. This is the runtime-wiring slice the architect bounced back for:
+;; a grep of the whole tree found nothing calling drainAnswerFiles but its
+;; own CLI entry point and its own tests, so a human's committed
+;; ANSWER-*.md never got drained unless someone ran the CLI by hand - the
+;; same "pure module, zero production callers, dark feature" gap the
+;; epic-runtime-wiring-slice rule in the engineering article exists to
+;; close. Shares the chase-sweep cadence (no separate timeout), same
+;; rationale as every other *-sweep! sharing it above. The CLI already
+;; commits both of its own side effects (the BL-topic record append and the
+;; archive move), so there is nothing left for this sweep to commit - it
+;; only needs to fire the CLI and surface its result. Any failure (CLI not
+;; yet compiled, etc.) degrades to a logged error - never crashes the sweep.
+(defn answer-file-drain-sweep! []
+  (try
+    (let [cli-path (str (fs/path project-root "extension" "out" "tools" "drain-answer-files.js"))
+          {:keys [exit out err]} (process/sh ["node" cli-path (str project-root)] {:dir (str project-root)})]
+      (if (zero? exit)
+        (log! "answer-file-drain" (str/trim out))
+        (log! "answer-file-drain-sweep-error" (str "exit=" exit " " (str/trim (or err ""))))))
+    (catch Exception e
+      (log! "answer-file-drain-sweep-error" (.getMessage e)))))
+
+;; BL-423: shells to the compiled resume-expired-pauses.js CLI, same
+;; posture as dead-letter-notify-sweep! above - the
+;; ticket's own "ride the daemon's existing sweep cadence" instruction for
+;; the timed-pause auto-resume + its Control-topic announcement. The CLI
+;; itself owns the pause-expiry decision (decidePauseAutoResume, an
+;; injected-clock pure function) and the marker clear/announce; this
+;; adapter only owns invoking it.
+(defn pause-auto-resume-sweep! []
+  (try
+    (let [cli-path (str (fs/path project-root "extension" "out" "tools" "resume-expired-pauses.js"))
+          {:keys [exit out err]} (process/sh ["node" cli-path] {:dir (str project-root)})]
+      (if (zero? exit)
+        (log! "pause-auto-resume" (str/trim out))
+        (log! "pause-auto-resume-sweep-error" (str "exit=" exit " " (str/trim (or err ""))))))
+    (catch Exception e
+      (log! "pause-auto-resume-sweep-error" (.getMessage e)))))
+
+;; BL-258: headless, host-independent morning trigger for briefing
+;; GENERATION (complements briefing-email-sweep! above, which only handles
+;; the SEND of an already-committed file). Reads the configured morning
+;; time the same way send-configured-briefing-email! reads notify_email_to
+;; above - daemon_alarm_lib.bb's shared parse-conf, one convention for every
+;; daemon-level swarmforge.conf key.
+(defn configured-morning-time []
+  (let [conf (daemon-alarm-lib/parse-conf (when (fs/exists? conf-file) (slurp (str conf-file))))]
+    (briefing-generation-schedule-lib/parse-morning-time (get conf "briefing_morning_time_utc"))))
+
+;; BL-272: headless entrypoint for BL-213's deterministic cost & health
+;; sidecar emitter (extension/src/tools/emit-cost-health-sidecar.ts,
+;; compiled to out/tools/emit-cost-health-sidecar.js) - the same
+;; compute -> write -> commit path extension.ts's onBriefingDue calls
+;; in-process from a VS Code host. A non-zero exit is surfaced as a thrown
+;; exception so generate-briefing-if-due!'s own try/catch around
+;; :emit-sidecar! stays the single place that makes this best-effort;
+;; this adapter does not need its own try/catch.
+(defn emit-cost-health-sidecar! []
+  (let [cli-path (str (fs/path project-root "extension" "out" "tools" "emit-cost-health-sidecar.js"))
+        {:keys [exit out err]} (process/sh ["node" cli-path] {:dir (str project-root)})]
+    (if (zero? exit)
+      (log! "cost-health-sidecar-emitted" (str/trim out))
+      (throw (ex-info "emit-cost-health-sidecar.js failed" {:exit exit :err err})))))
+
+;; ── BL-308: headless, no-agent briefing composer for banked (hibernated) mode ─
+;; The pure content composer is banked_briefing_lib.bb; everything below is
+;; the impure gathering of the "cheap headless signals" that ticket asks
+;; for, following the exact same shell-out-and-degrade-to-nil/empty pattern
+;; as suite-duration-briefing-line/needs-approval-briefing-section above -
+;; a gathering failure degrades quietly, it never crashes the sweep.
+
+(defn read-hibernation-state []
+  (when (fs/exists? hibernation-state-file)
+    (try (json/parse-string (slurp (str hibernation-state-file)) true) (catch Exception _ nil))))
+
+(defn swarm-hibernated? []
+  (boolean (:hibernated (read-hibernation-state))))
+
+(defn- count-yaml-files [dir]
+  (if (fs/exists? dir)
+    (count (filter #(str/ends-with? (fs/file-name %) ".yaml") (fs/list-dir dir)))
+    0))
+
+(defn banked-backlog-counts []
+  {:active (count-yaml-files backlog-active-dir)
+   :paused (count-yaml-files backlog-paused-dir)
+   :done (count-yaml-files backlog-done-dir)})
+
+;; git log since the prior UTC day-key, oneline - degrades to [] on any
+;; failure (not yet a git repo in some fixture, git not on PATH, etc.).
+(defn recent-git-activity-lines [day-key]
+  (try
+    (let [since (str (banked-briefing-lib/prior-day-key day-key) "T00:00:00Z")
+          {:keys [exit out]} (process/sh ["git" "log" "--oneline" (str "--since=" since)]
+                                          {:dir (str project-root)})]
+      (if (zero? exit)
+        (vec (remove str/blank? (str/split-lines out)))
+        []))
+    (catch Exception _ [])))
+
+;; Reuses BL-272's own committed docs/briefings/<day>.json sidecar (already
+;; emitted by :emit-sidecar! just before this runs, same day-key) rather
+;; than computing daemon health a second way - degrades to [] when the
+;; sidecar is missing/unreadable/has no reliability data this run.
+(defn banked-daemon-health-lines [day-key]
+  (try
+    (let [sidecar-path (fs/path briefings-dir (str day-key ".json"))]
+      (if (fs/exists? sidecar-path)
+        (let [{:keys [reliability]} (json/parse-string (slurp (str sidecar-path)) true)]
+          (if reliability
+            [(str "chases=" (get-in reliability [:chases :value] 0)
+                  " nudges=" (get-in reliability [:nudges :value] 0)
+                  " respawns=" (get-in reliability [:respawns :value] 0)
+                  " failedDeliveries=" (get-in reliability [:failedDeliveries :value] 0))]
+            []))
+        []))
+    (catch Exception _ [])))
+
+(defn compose-and-write-banked-briefing! [day-key]
+  (let [state (read-hibernation-state)
+        content (banked-briefing-lib/compose-banked-briefing
+                 {:day-key day-key
+                  :profile-name (banked-briefing-lib/profile-name-from-config-path (:config_path state))
+                  :hibernated-at-ms (:hibernated_at_ms state)
+                  :backlog-counts (banked-backlog-counts)
+                  :git-activity-lines (recent-git-activity-lines day-key)
+                  :daemon-health-lines (banked-daemon-health-lines day-key)})]
+    (spit (str (fs/path briefings-dir (str day-key ".md"))) content)))
+
+(defn briefing-generation-sweep! [roles socket]
+  (let [[hour minute] (configured-morning-time)]
+    (briefing-generation-schedule-lib/generate-briefing-if-due!
+     (System/currentTimeMillis) hour minute (str briefings-dir) (swarm-hibernated?)
+     {:notify! (fn [instruction-text]
+                 (if (tmux-inject-disabled?)
+                   (log! "briefing-generation-skip-mailbox-only")
+                   (when-let [coordinator (get roles "coordinator")]
+                     (agent-runtime-inject/notify-agent!
+                      socket (:session coordinator) (or (:agent coordinator) "claude")
+                      :log-fn (fn [tag sess detail] (log! tag sess detail))
+                      :text instruction-text))))
+      :compose-headless! compose-and-write-banked-briefing!
+      :emit-sidecar! emit-cost-health-sidecar!
+      :log! (fn [& parts] (apply log! parts))})))
+
+;; ── BL-309: coordinator context-clear at the safe idle boundary after a
+;;    ticket's bookkeeping close ────────────────────────────────────────────
+;; The pure decision is closing_context_clear_lib.bb; everything below is
+;; the impure gathering/adapter side, following the exact same
+;; degrade-quietly-never-crash-the-sweep posture as every other sweep here.
+
+;; The most recently closed ticket id: backlog/done/'s own newest-mtime
+;; entry, per the ticket's own wording ("a ticket file present in
+;; backlog/done/ that was not there at the last check") - cheap, no new
+;; state needed to detect it. nil when backlog/done/ is empty/absent.
+(defn latest-done-ticket-id []
+  (when (fs/exists? backlog-done-dir)
+    (let [entries (filter #(str/ends-with? (fs/file-name %) ".yaml") (fs/list-dir backlog-done-dir))]
+      (when (seq entries)
+        (-> (apply max-key #(.toMillis (fs/last-modified-time %)) entries)
+            fs/file-name
+            (str/replace #"\.yaml$" ""))))))
+
+(defn read-last-cleared-ticket-id []
+  (when (fs/exists? context-clear-marker-file)
+    (try
+      (:last_cleared_ticket_id (json/parse-string (slurp (str context-clear-marker-file)) true))
+      (catch Exception _ nil))))
+
+(defn record-context-clear! [ticket-id]
+  (spit (str context-clear-marker-file)
+        (json/generate-string {:last_cleared_ticket_id ticket-id
+                                :cleared_at_ms (System/currentTimeMillis)})))
+
+;; role-idle? mirrors operator_lib.bb's BL-307 shape exactly (reused, not
+;; reimplemented); the counts themselves reuse chase_sweep_lib.bb's own
+;; scan-inbox-new/scan-in-process (already loaded here for the chase sweep)
+;; rather than a third copy of that directory-walking logic. Generic over
+;; role-info (BL-316): the coordinator sweep below and the generalized
+;; per-role sweep further down both call this same fn.
+(defn role-mailbox-idle? [role-info]
+  (operator-lib/role-idle?
+   {:inbox-new-count (count (chase-sweep-lib/scan-inbox-new (handoff-lib/mailbox-dir role-info :new)))
+    :in-process-count (count (chase-sweep-lib/scan-in-process (handoff-lib/mailbox-dir role-info :in_process)))}))
+
+;; Shared by every context-clear sweep below (coordinator and per-role,
+;; BL-316): both inject via the same agent-runtime-inject/notify-agent!
+;; call, differing only in which role-info/socket they target - only
+;; :record-clear! differs per sweep, so that stays sweep-local.
+(defn context-clear-injectors [socket role-info]
+  (let [session (handoff-lib/wake-session socket (:session role-info))]
+    {:inject-clear! (fn []
+                       (agent-runtime-inject/notify-agent!
+                        socket session (or (:agent role-info) "claude")
+                        :log-fn (fn [tag sess detail] (log! tag sess detail))
+                        :text "/clear"))
+     :inject-startup-reread! (fn [instruction-text]
+                                (agent-runtime-inject/notify-agent!
+                                 socket session (or (:agent role-info) "claude")
+                                 :log-fn (fn [tag sess detail] (log! tag sess detail))
+                                 :text instruction-text))}))
+
+(defn closing-context-clear-sweep! [roles socket]
+  ;; BL-309 bounce fix: :record-clear! durably poisons closed-ticket-id
+  ;; against ever being re-cleared (new-close?'s whole point). Skip the
+  ;; WHOLE sweep - never even evaluate the decision - while tmux injection
+  ;; is disabled (SWARMFORGE_MAILBOX_ONLY / SWARMFORGE_SKIP_TMUX_INJECT),
+  ;; so a mailbox-only session can never mark a close cleared when nothing
+  ;; was actually injected into the coordinator's pane. Mirrors
+  ;; briefing-generation-sweep!'s own :notify! skip, which never writes any
+  ;; persistent "already notified" marker either.
+  (if (tmux-inject-disabled?)
+    (log! "closing-context-clear-skip-mailbox-only")
+    (when-let [coordinator (get roles "coordinator")]
+      (closing-context-clear-lib/evaluate-closing-context-clear!
+       {:idle? (role-mailbox-idle? coordinator)
+        :closed-ticket-id (latest-done-ticket-id)
+        :last-cleared-ticket-id (read-last-cleared-ticket-id)
+        :role-name "coordinator"}
+       (merge (context-clear-injectors socket coordinator)
+              {:record-clear! (fn [ticket-id]
+                                 (record-context-clear! ticket-id)
+                                 (log! "closing-context-clear-fired" ticket-id))})))))
+
+;; ── BL-316: generalized per-role context-clear at the safe idle boundary
+;;    after a role's OWN inbox/completed/ gains a fresh entry ─────────────
+;; Same pure decision (closing_context_clear_lib.bb), same
+;; degrade-quietly-never-crash-the-sweep posture as every sweep in this
+;; file - only the "what just finished" signal differs from the
+;; coordinator's own bookkeeping-close signal above: here it is a fresh
+;; entry in the role's own inbox/completed/ (a single .handoff file for a
+;; task role, or a whole batch_* directory landing at once for a batch
+;; role). The coordinator is deliberately excluded - it keeps its own
+;; dedicated mechanism/marker above, untouched.
+
+(defn latest-completed-entry-id
+  "The most recently modified top-level entry in role-info's own
+   inbox/completed/ - a .handoff file for a task role, or a batch_*
+   directory (as a single unit, not its individual members) for a batch
+   role. nil when the directory is empty/absent."
+  [role-info]
+  (let [dir (handoff-lib/mailbox-dir role-info :completed)]
+    (when (fs/exists? dir)
+      (let [entries (->> (fs/list-dir dir)
+                          (filter (fn [p]
+                                    (or (and (fs/regular-file? p) (str/ends-with? (fs/file-name p) ".handoff"))
+                                        (and (fs/directory? p) (str/starts-with? (fs/file-name p) "batch_")))))
+                          vec)]
+        (when (seq entries)
+          (-> (apply max-key #(.toMillis (fs/last-modified-time %)) entries)
+              fs/file-name))))))
+
+(defn read-role-context-clear-marker []
+  (if (fs/exists? role-context-clear-marker-file)
+    (try (json/parse-string (slurp (str role-context-clear-marker-file)) true)
+         (catch Exception _ {}))
+    {}))
+
+(defn read-role-last-cleared [role-name]
+  (get (read-role-context-clear-marker) (keyword role-name)))
+
+(defn record-role-context-clear! [role-name entry-id]
+  (spit (str role-context-clear-marker-file)
+        (json/generate-string (assoc (read-role-context-clear-marker) (keyword role-name) entry-id))))
+
+(defn role-context-clear-sweep! [roles socket]
+  (cond
+    (tmux-inject-disabled?)
+    (log! "role-context-clear-skip-mailbox-only")
+
+    (rotation-router-mode?)
+    (log! "role-context-clear-skip-rotation-router")
+
+    :else
+    (doseq [[role-name role-info] roles
+            :when (not= role-name "coordinator")]
+      (try
+        (closing-context-clear-lib/evaluate-closing-context-clear!
+         {:idle? (role-mailbox-idle? role-info)
+          :closed-ticket-id (latest-completed-entry-id role-info)
+          :last-cleared-ticket-id (read-role-last-cleared role-name)
+          :role-name role-name}
+         (merge (context-clear-injectors socket role-info)
+                {:record-clear! (fn [entry-id]
+                                   (record-role-context-clear! role-name entry-id)
+                                   (log! "role-context-clear-fired" role-name entry-id))}))
+        (catch Exception e
+          (log! "role-context-clear-role-error" role-name (.getMessage e)))))))
 
 (defn -main []
   (let [roles  (load-roles)
@@ -559,6 +1978,7 @@
       poll-once-only?
       (do
         (poll-once!)
+        (canary-sweep!)
         (log! "poll-once done"))
 
       startup-notify-only?
@@ -587,6 +2007,10 @@
               (loop [cycle 0]
                 (when (and (not @stopping?) (not (fs/exists? stop-file)))
                   (poll-once!)
+                  (try
+                    (canary-sweep!)
+                    (catch Exception e
+                      (log! "canary-sweep-error" (.getMessage e))))
                   ;; BL-146: chase/nudge sweep runs on its own cadence,
                   ;; sharing this single process/thread with delivery -
                   ;; exactly one process now owns both duties.
@@ -594,7 +2018,98 @@
                     (try
                       (chase-sweep! (load-roles) socket)
                       (catch Exception e
-                        (log! "chase-sweep-error" (.getMessage e)))))
+                        (log! "chase-sweep-error" (.getMessage e))))
+                    ;; BL-222: dispatch-gap sweep shares the same cadence -
+                    ;; no separate timeout, reusing the existing chase
+                    ;; interval per the ticket.
+                    (try
+                      (dispatch-gap-sweep! (load-roles))
+                      (catch Exception e
+                        (log! "dispatch-gap-sweep-error" (.getMessage e))))
+                    (try
+                      (unassigned-active-nudge-sweep! (load-roles))
+                      (catch Exception e
+                        (log! "unassigned-active-nudge-sweep-error" (.getMessage e))))
+                    (try
+                      (open-slot-nudge-sweep! (load-roles))
+                      (catch Exception e
+                        (log! "open-slot-nudge-sweep-error" (.getMessage e))))
+                    ;; BL-214: briefing-email sweep shares the same cadence -
+                    ;; no separate timeout, same rationale as BL-222 above.
+                    (try
+                      (briefing-email-sweep!)
+                      (catch Exception e
+                        (log! "briefing-email-sweep-error" (.getMessage e))))
+                    ;; BL-258: briefing-generation sweep shares the same
+                    ;; cadence - no separate timeout, same rationale as
+                    ;; BL-222/BL-214 above.
+                    (try
+                      (briefing-generation-sweep! (load-roles) socket)
+                      (catch Exception e
+                        (log! "briefing-generation-sweep-error" (.getMessage e))))
+                    ;; BL-309: closing-context-clear sweep shares the same
+                    ;; cadence - no separate timeout, same rationale as
+                    ;; BL-222/BL-214/BL-258 above.
+                    (try
+                      (closing-context-clear-sweep! (load-roles) socket)
+                      (catch Exception e
+                        (log! "closing-context-clear-sweep-error" (.getMessage e))))
+                    ;; BL-316: generalized per-role context-clear sweep
+                    ;; shares the same cadence - no separate timeout, same
+                    ;; rationale as BL-222/BL-214/BL-258/BL-309 above.
+                    (try
+                      (role-context-clear-sweep! (load-roles) socket)
+                      (catch Exception e
+                        (log! "role-context-clear-sweep-error" (.getMessage e))))
+                    ;; BL-353: dead-letter-notify sweep shares the same
+                    ;; cadence - no separate timeout, same rationale as
+                    ;; BL-222/BL-214/BL-258/BL-309/BL-316 above.
+                    (try
+                      (dead-letter-notify-sweep!)
+                      (catch Exception e
+                        (log! "dead-letter-notify-sweep-error" (.getMessage e))))
+                    ;; BL-350: resource-sample sweep shares the same cadence -
+                    ;; no separate timeout, same rationale as BL-222/BL-214/
+                    ;; BL-258/BL-309/BL-316/BL-339/BL-353 above.
+                    (try
+                      (resource-sample-sweep!)
+                      (catch Exception e
+                        (log! "resource-sample-sweep-error" (.getMessage e))))
+                    ;; BL-356: push sweep shares the same cadence - no
+                    ;; separate timeout, same rationale as BL-222/BL-214/
+                    ;; BL-258/BL-309/BL-316/BL-339/BL-353/BL-350 above.
+                    (try
+                      (push-sweep!)
+                      (catch Exception e
+                        (log! "push-sweep-error" (.getMessage e))))
+                    ;; BL-437: fleet-status sweep shares the same cadence -
+                    ;; no separate timeout, same rationale as BL-222/BL-214/
+                    ;; BL-258/BL-309/BL-316/BL-339/BL-353/BL-350/BL-356
+                    ;; above. fleet-status-sweep! already carries its own
+                    ;; try/catch (mirroring the shell-out CLIs' own
+                    ;; degrade-never-crash posture), but wrapped again here
+                    ;; for the same belt-and-suspenders reason every sibling
+                    ;; sweep in this cadence block is.
+                    (try
+                      (fleet-status-sweep!)
+                      (catch Exception e
+                        (log! "fleet-status-sweep-error" (.getMessage e))))
+                    ;; BL-440: answer-file-drain sweep shares the same
+                    ;; cadence - no separate timeout, same rationale as
+                    ;; BL-222/BL-214/BL-258/BL-309/BL-316/BL-339/BL-353/
+                    ;; BL-350/BL-356/BL-437 above.
+                    (try
+                      (answer-file-drain-sweep!)
+                      (catch Exception e
+                        (log! "answer-file-drain-sweep-error" (.getMessage e))))
+                    ;; BL-423: pause-auto-resume sweep shares the same
+                    ;; cadence - no separate timeout, same rationale as
+                    ;; BL-222/BL-214/BL-258/BL-309/BL-316/BL-339/BL-353/
+                    ;; BL-350/BL-356/BL-437/BL-440 above.
+                    (try
+                      (pause-auto-resume-sweep!)
+                      (catch Exception e
+                        (log! "pause-auto-resume-sweep-error" (.getMessage e)))))
                   (spit (str heartbeat-file) (str (now) "\n"))
                   (when (zero? (mod cycle heartbeat-log-every-cycles))
                     (log! "heartbeat" (str "cycle=" cycle)))

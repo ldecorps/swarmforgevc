@@ -28,6 +28,13 @@ fi
 
 # Estimate mutation_cost for paused backlog items if not set
 if [[ -d "$SCRIPT_DIR/backlog/paused" ]]; then
+  # BL-224: with nullglob off (bash's default), a non-matching glob leaves the
+  # literal pattern string as the loop variable instead of the loop running
+  # zero times - grep then fails on that nonexistent path ("No such file or
+  # directory" noise) and the else branch appends to it, CREATING a real file
+  # literally named "*.yaml" in backlog/paused/. Scoping nullglob around just
+  # this loop makes an empty paused/ iterate zero times, as intended.
+  shopt -s nullglob
   for item in "$SCRIPT_DIR/backlog/paused"/*.yaml; do
     if ! grep -q "mutation_cost:" "$item"; then
       if grep -qiE "auth|login|payment|migration|refactor|large|complex" "$item"; then
@@ -39,6 +46,7 @@ if [[ -d "$SCRIPT_DIR/backlog/paused" ]]; then
       fi
     fi
   done
+  shopt -u nullglob
 fi
 
 exec "$SCRIPT_DIR/swarmforge/scripts/swarmforge.sh" "$@"

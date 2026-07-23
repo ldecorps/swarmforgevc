@@ -39,4 +39,18 @@ grep -q -- '-l MOCK_BOOTSTRAP' "$CALL_LOG" || fail "expected mock bootstrap lite
 grep -c -- 'C-m' "$CALL_LOG" | grep -qE '^[2-9]' || fail "expected submit keys for wake and bootstrap"
 
 pass "mock agent inject uses facade steps through tmux"
+
+# BL-258: an optional :text override sends the caller-supplied literal
+# instead of the agent's default wake message, through the SAME
+# capture/submit/retry machinery (no separate send path to duplicate).
+: > "$CALL_LOG"
+PATH="$FAKE_BIN:$PATH" bb -e "
+(load-file \"$INJECT\")
+(agent-runtime-inject/notify-agent! \"$SOCK\" \"$SESSION\" \"mock\" :text \"Daily briefing due: compose today's briefing per your role and commit it to docs/briefings/2026-07-10.md.\")
+"
+
+grep -q -- '-l MOCK_WAKE' "$CALL_LOG" && fail "expected the :text override to replace the default mock wake literal, not send it too"
+grep -q -- "Daily briefing due" "$CALL_LOG" || fail "expected the :text override literal to be sent via tmux send-keys"
+
+pass ":text override replaces the default wake message through the same tmux machinery"
 echo "ALL PASS"

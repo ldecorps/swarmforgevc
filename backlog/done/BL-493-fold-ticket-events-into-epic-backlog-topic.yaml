@@ -1,0 +1,89 @@
+id: BL-493
+title: "Route a ticket's swarm events into its epic's topic (or the standing Backlog topic) as an edit-in-place status message; stop minting per-ticket topics and drop the icon-only approval path"
+milestone: M8
+type: feature
+severity: medium
+epic: topic-consolidation
+priority: 6
+direction: human-requested
+depends_on: [BL-492]
+source: "Child of BL-491 (topic-consolidation epic), from Operator intake INTAKE-operator-question-1784277729691.md. THE wiring slice: it eliminates per-ticket topics by folding each ticket's events into its epic/Backlog topic as a single edit-in-place status message."
+
+acceptance:
+  feature: specs/features/BL-493-fold-ticket-events-into-epic-backlog-topic.feature
+  steps:
+    - "An epic-bound ticket event posts a status message into its epic's topic, prefixed with the ticket id"
+    - "An epic-less ticket event posts a status message into the standing Backlog topic, prefixed with the ticket id"
+    - "A later lifecycle transition edits the same ticket's status message in place"
+    - "No per-ticket topic is created for any ticket event"
+    - "An ApprovalRequested surfaces awaiting-approval via the Approvals topic only"
+
+notes: |
+  THE WIRING SLICE of the BL-491 epic (engineering.prompt runtime-wiring rule: this is where the pure
+  target-resolver and status-text builder are CALLED on a real event and their per-ticket message-id
+  state is persisted, so the epic actually fires live). depends_on BL-492 (needs the standing Backlog
+  topic to target epic-less tickets).
+
+  BEHAVIOUR CHANGE (verified live 2026-07-17):
+    - Today `routeTaggedOrUntaggedEvent` (topicRouter.ts:425) → `decideTopicAction` (topicRouter.ts:237)
+      builds a per-ticket topic name `topicNameForItem(id, title)` = "BL-### - Title" and creates a
+      brand-new forum topic per ticket. REPLACE that: for a ticket event, resolve the TARGET topic —
+        * ticket's `epic:` field is a NON-EMPTY id  → that epic's topic (the epic-topic-map.json id
+          the existing per-epic path already ensures/reuses via `decideEpicTopicAction` /
+          `postEpicAction`, conciergeTick.ts:733); create the epic topic if absent, reusing that path.
+        * ticket's `epic:` is "" (epic-less)         → the standing Backlog topic from BL-492.
+      `BacklogItem.epic` (backlogReader.ts, read at conciergeTick.ts:402/405/618) is the authority —
+      never infer epic membership from prose.
+    - RENDER each ticket event as ONE status message per ticket, EDITED IN PLACE on each transition
+      (human decision D1), reusing `syncEditInPlaceMessage` (editInPlaceMessageSync.ts:
+      posted/edited/skipped-unchanged/failed-* outcomes) — do NOT reinvent edit-in-place. The message
+      carries a status prefix: the ticket id + its current lifecycle state + the title, e.g.
+      "BL-### 🎵 in progress — Title" → edited to "BL-### ✅ done — Title". Carry over the existing
+      lifecycle glyphs from topicIcon.ts ICON_EMOJI (done ✅ / defect 🦠 / feature 🎵 / paused 🔍) as
+      the in-message status glyph now that there is no topic icon to carry state.
+    - PERSIST per-ticket message identity so a later transition edits the SAME message: a new
+      machine-local store `.swarmforge/operator/ticket-message-map.json` keyed ticket-id → {topicId,
+      messageId}, modeled on epicTopicMapStore.ts / backlogTopicMapStore.ts (read → reuse messageId to
+      edit, else post-new and record). Gitignored under .swarmforge/ like the other operator maps.
+    - REMOVE the per-ticket-topic machinery for the common path: `ensurePerTicketTopicForIcon`
+      (topicRouter.ts:386/390) and its ApprovalRequested icon-only caller are DELETED (human decision
+      D3) — awaiting-approval already renders in the standing Approvals topic (BL-424), so no throwaway
+      per-ticket topic is minted just to hang a 👀 icon, and no awaiting indicator is added to the
+      epic/Backlog topic. `topicNameForItem` becomes dead for the create path; the cleaner removes it
+      only after grepping every live .feature for its steps (engineering.prompt step-registry rule).
+
+  TESTABLE SEAMS (engineering.prompt boundary + thin-main rules): the TARGET resolver (event + ticket
+  epic + topic maps → which topic) and the STATUS-TEXT builder (event + ticket → "BL-### <glyph>
+  <state> — <title>") are pure, directly unit-testable functions; only createForumTopic / send / edit
+  Telegram I/O stays in the thin client. The wiring test that adds the new on-disk ticket-message-map
+  input must PLACE it in its fixture and prove the read is load-bearing by break-then-fix
+  (engineering.prompt new-disk-input rule).
+
+  DELETION SAFETY (engineering.prompt shared-registry + call-site-sweep rules): grep every live
+  .feature for any step of a handler tied to the removed per-ticket-topic path before the cleaner
+  deletes it, and `grep -rl` every caller of the removed helpers/`createTopic` per-ticket path across
+  src and test trees before handing off, reconciling the returned list against what was touched.
+
+  OUT OF SCOPE: closing the LEGACY per-ticket topics already in the group (BL-494); the recreation
+  repair path (BL-495); any change to the 8 STEERING topics or other standing topics.
+
+  E2E QA PROCEDURE: with the front desk live, drive a lifecycle event for an EPIC-BOUND test ticket:
+  a status message "BL-### <glyph> <state> — Title" appears in that epic's topic and NO per-ticket
+  topic is created. Drive an event for an EPIC-LESS ticket: the status message appears in the standing
+  Backlog topic. Drive a SECOND transition on the same ticket: the SAME message is edited in place
+  (its messageId unchanged in ticket-message-map.json), not a new message. Flip a ticket to
+  ApprovalRequested: the ask renders in the standing Approvals topic and NO per-ticket topic is minted.
+
+human_approval: approved
+approval_context: >
+  Core wiring slice of the BL-491 epic. Implements your three decisions: D1 edit-in-place status
+  message per ticket (one message, status prefix edited each transition — reuses editInPlaceMessageSync),
+  D3 awaiting-approval via the Approvals topic only (the icon-only per-ticket-topic path is deleted).
+  FIRM: epic-bound → epic topic, epic-less → Backlog topic, ticket-id prefix, edit-in-place, no
+  per-ticket topics minted, no icon-only path. OPEN for your call: the exact status-prefix WORDING and
+  glyph set (I carried over the existing ICON_EMOJI glyphs — ✅/🦠/🎵/🔍 — into the message text; say
+  if you want different glyphs or a plain-text status). This is the largest slice; it touches the hot
+  shared files topicRouter.ts / conciergeTick.ts, so the coordinator sequences it against the
+  BL-434/450/452/424/449 cluster.
+
+mutation_cost: high

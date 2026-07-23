@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -24,9 +25,10 @@ paneHistory.accumulatePaneHistory = (previousContentLines, history, rawCaptureTe
 
 const tmuxClient = require('../out/swarm/tmuxClient');
 const originalReadSwarmRoles = tmuxClient.readSwarmRoles;
+const originalReadLiveSwarmRoles = tmuxClient.readLiveSwarmRoles;
 
 let faultRolesRead = false;
-tmuxClient.readSwarmRoles = (targetPath) => {
+tmuxClient.readLiveSwarmRoles = (targetPath) => {
   if (faultRolesRead) {
     throw new Error('simulated state-file race');
   }
@@ -43,7 +45,7 @@ const capture = { coder: '', qa: '' };
 const originals = {
   capturePane: tmuxClient.capturePane,
   sessionExists: tmuxClient.sessionExists,
-  getPaneCommand: tmuxClient.getPaneCommand,
+  getPanePidAndCommand: tmuxClient.getPanePidAndCommand,
   getPaneBaseIndex: tmuxClient.getPaneBaseIndex,
   resizeWindow: tmuxClient.resizeWindow,
   setHistoryLimit: tmuxClient.setHistoryLimit,
@@ -56,7 +58,7 @@ tmuxClient.capturePane = (_sock, target) => ({
   stderr: '',
 });
 tmuxClient.sessionExists = () => true;
-tmuxClient.getPaneCommand = () => 'claude';
+tmuxClient.getPanePidAndCommand = () => ({ pid: '1', command: 'claude' });
 tmuxClient.getPaneBaseIndex = () => 0;
 tmuxClient.resizeWindow = () => {};
 tmuxClient.setHistoryLimit = () => {};
@@ -73,11 +75,12 @@ const { PaneTailer } = require('../out/panel/paneTailer');
 afterAll(() => {
   paneHistory.accumulatePaneHistory = originalAccumulate;
   tmuxClient.readSwarmRoles = originalReadSwarmRoles;
+  tmuxClient.readLiveSwarmRoles = originalReadLiveSwarmRoles;
   Object.assign(tmuxClient, originals);
 });
 
 function mkTmp() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-panetailer-poll-resilience-'));
+  return mkTmpDir('sfvc-panetailer-poll-resilience-');
 }
 
 function writeState(targetPath, roleLines) {

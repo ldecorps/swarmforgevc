@@ -1,0 +1,194 @@
+'use strict';
+
+const { test } = require('node:test');
+const assert = require('node:assert/strict');
+const { runScenario, substitute, scenarioSteps } = require('../runtime');
+const { createStepRegistry } = require('../stepRegistry');
+
+function step(keyword, text) {
+  return { keyword, text };
+}
+
+test('substitute leaves text unchanged when no example row is given', () => {
+  assert.equal(substitute('a role "<role>" is dead', undefined), 'a role "<role>" is dead');
+});
+
+test('substitute replaces <param> tokens from the example row', () => {
+  assert.equal(substitute('a role "<role>" is dead', { role: 'coder' }), 'a role "coder" is dead');
+});
+
+test('substitute leaves an unmatched token untouched', () => {
+  assert.equal(substitute('a role "<role>" is dead', { other: 'x' }), 'a role "<role>" is dead');
+});
+
+// BL-259: a real Scenario Outline Examples column name with a space (e.g.
+// "forbidden edge", "what is checked") was silently never substituted -
+// the placeholder regex only matched [A-Za-z0-9_]+, so <forbidden edge>
+// passed through literally, and every step handler saw the raw "<...>"
+// text instead of the real per-example value.
+test('substitute replaces a multi-word <param with spaces> token from the example row', () => {
+  assert.equal(
+    substitute('a dependency edge where "<forbidden edge>"', { 'forbidden edge': 'a policy module imports fs' }),
+    'a dependency edge where "a policy module imports fs"'
+  );
+});
+
+test('substitute replaces multiple distinct multi-word tokens in the same step text', () => {
+  assert.equal(
+    substitute('given "<what is checked>" and "<forbidden edge>"', { 'what is checked': 'the whole repository', 'forbidden edge': 'a cycle' }),
+    'given "the whole repository" and "a cycle"'
+  );
+});
+
+test('scenarioSteps concatenates background steps before scenario steps', () => {
+  const feature = { background: [step('Given', 'setup')] };
+  const scenario = { steps: [step('When', 'action'), step('Then', 'result')] };
+  assert.deepEqual(scenarioSteps(feature, scenario), [
+    step('Given', 'setup'),
+    step('When', 'action'),
+    step('Then', 'result'),
+  ]);
+});
+
+test('scenarioSteps works with no background', () => {
+  const feature = {};
+  const scenario = { steps: [step('When', 'action')] };
+  assert.deepEqual(scenarioSteps(feature, scenario), [step('When', 'action')]);
+});
+
+test('runScenario calls each resolved handler with a context first, then its captured args, in step order', async () => {
+  const calls = [];
+  const registry = createStepRegistry();
+  registry.define(/^setup$/, () => calls.push('setup'));
+  registry.define(/^role "([^"]+)" acts$/, (ctx, role) => calls.push(`act:${role}`));
+  const feature = { background: [step('Given', 'setup')] };
+  const scenario = { name: 'demo', steps: [step('When', 'role "coder" acts')] };
+
+  await runScenario(registry, feature, scenario);
+
+  assert.deepEqual(calls, ['setup', 'act:coder']);
+});
+
+test('runScenario substitutes example-row params before resolving a step', async () => {
+  const seen = [];
+  const registry = createStepRegistry();
+  registry.define(/^role "([^"]+)" acts$/, (ctx, role) => seen.push(role));
+  const feature = {};
+  const scenario = { name: 'demo', steps: [step('When', 'role "<role>" acts')] };
+
+  await runScenario(registry, feature, scenario, { role: 'cleaner' });
+
+  assert.deepEqual(seen, ['cleaner']);
+});
+
+test('runScenario shares one context object across every step of the same scenario run', async () => {
+  const registry = createStepRegistry();
+  registry.define(/^it is set up$/, (ctx) => {
+    ctx.value = 'from-given';
+  });
+  registry.define(/^it is checked$/, (ctx) => {
+    assert.equal(ctx.value, 'from-given');
+  });
+  const feature = {};
+  const scenario = { name: 'context-demo', steps: [step('Given', 'it is set up'), step('Then', 'it is checked')] };
+
+  await runScenario(registry, feature, scenario);
+});
+
+test('runScenario gives each run of the same scenario a fresh context', async () => {
+  const registry = createStepRegistry();
+  const seenAtStart = [];
+  registry.define(/^it starts$/, (ctx) => {
+    seenAtStart.push(ctx.value);
+    ctx.value = 'touched';
+  });
+  const feature = {};
+  const scenario = { name: 'fresh-context-demo', steps: [step('Given', 'it starts')] };
+
+  await runScenario(registry, feature, scenario);
+  await runScenario(registry, feature, scenario);
+
+  assert.deepEqual(seenAtStart, [undefined, undefined]);
+});
+
+test('runScenario throws an error naming the scenario and the unmatched step when no handler resolves', async () => {
+  const registry = createStepRegistry();
+  const feature = {};
+  const scenario = { name: 'unmatched-demo', steps: [step('Then', 'nothing matches this')] };
+
+  await assert.rejects(
+    () => runScenario(registry, feature, scenario),
+    (err) => {
+      assert.match(err.message, /unmatched-demo/);
+      assert.match(err.message, /nothing matches this/);
+      return true;
+    }
+  );
+});
+
+test('runScenario throws an error naming the scenario and failing step when a handler throws', async () => {
+  const registry = createStepRegistry();
+  registry.define(/^it fails$/, () => {
+    throw new Error('boom');
+  });
+  const feature = {};
+  const scenario = { name: 'failing-demo', steps: [step('Then', 'it fails')] };
+
+  await assert.rejects(
+    () => runScenario(registry, feature, scenario),
+    (err) => {
+      assert.match(err.message, /failing-demo/);
+      assert.match(err.message, /it fails/);
+      assert.match(err.message, /boom/);
+      return true;
+    }
+  );
+});
+
+// BL-425: runScenario already has `feature` in scope - it passes
+// feature.name through to registry.resolve as the scope, so a
+// registry.defineScoped registration pinned to THIS feature's own name is
+// preferred over an unrelated, earlier-registered generic handler that
+// happens to share the exact same step text (see stepRegistry.test.js's own
+// BL-425 tests for the resolution rule itself).
+test("runScenario resolves a step using the feature's own name as scope, preferring a same-feature scoped handler", async () => {
+  const calls = [];
+  const registry = createStepRegistry();
+  registry.define(/^ambiguous step$/, () => calls.push('generic'));
+  registry.defineScoped(/^ambiguous step$/, () => calls.push('scoped-for-this-feature'), 'My Feature');
+  const feature = { name: 'My Feature' };
+  const scenario = { name: 'demo', steps: [step('When', 'ambiguous step')] };
+
+  await runScenario(registry, feature, scenario);
+
+  assert.deepEqual(calls, ['scoped-for-this-feature']);
+});
+
+test('runScenario falls back to the generic handler when the scoped registration belongs to a DIFFERENT feature', async () => {
+  const calls = [];
+  const registry = createStepRegistry();
+  registry.define(/^ambiguous step$/, () => calls.push('generic'));
+  registry.defineScoped(/^ambiguous step$/, () => calls.push('scoped-for-other-feature'), 'Other Feature');
+  const feature = { name: 'My Feature' };
+  const scenario = { name: 'demo', steps: [step('When', 'ambiguous step')] };
+
+  await runScenario(registry, feature, scenario);
+
+  assert.deepEqual(calls, ['generic']);
+});
+
+test('runScenario awaits async handlers before moving to the next step', async () => {
+  const order = [];
+  const registry = createStepRegistry();
+  registry.define(/^first$/, async () => {
+    await Promise.resolve();
+    order.push('first');
+  });
+  registry.define(/^second$/, () => order.push('second'));
+  const feature = {};
+  const scenario = { name: 'async-demo', steps: [step('Given', 'first'), step('Then', 'second')] };
+
+  await runScenario(registry, feature, scenario);
+
+  assert.deepEqual(order, ['first', 'second']);
+});

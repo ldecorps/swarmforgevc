@@ -1,7 +1,7 @@
 id: BL-034
 title: backlog sync — two-way field-level sync between panel and YAML files
 milestone: M4
-status: todo
+status: done
 priority: 34
 assigned_to: coder
 

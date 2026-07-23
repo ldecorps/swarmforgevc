@@ -1,6 +1,8 @@
 // Thin wrapper around the Resend REST API (BL-073). The extension host owns
 // this I/O; postFn is injectable so tests never make a real network call and
 // never need a real API key.
+import { authenticatedPost } from '../util/authenticatedPost';
+
 const RESEND_API_URL = 'https://api.resend.com/emails';
 
 export interface EmailMessage {
@@ -23,14 +25,7 @@ export interface PostResponse {
 export type PostFn = (url: string, body: string, apiKey: string) => Promise<PostResponse>;
 
 async function defaultPost(url: string, body: string, apiKey: string): Promise<PostResponse> {
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body,
-  });
+  const res = await authenticatedPost(url, body, `Bearer ${apiKey}`);
   return { ok: res.ok, status: res.status };
 }
 

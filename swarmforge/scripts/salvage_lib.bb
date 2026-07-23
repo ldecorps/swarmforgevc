@@ -15,6 +15,8 @@
             [cheshire.core :as json]
             [clojure.string :as str]))
 
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "handoff_lib.bb")))
+
 (def stage->role
   {"coder" "coder"
    "cleaner" "cleaner"
@@ -49,13 +51,6 @@
           candidate
           (exit! 1 "Cannot find SwarmForge project root"))))))
 
-(defn worktree-paths [root]
-  (->> (str/split-lines (slurp (str (fs/path root ".swarmforge" "roles.tsv"))))
-       (remove str/blank?)
-       (map #(get (str/split % #"\t") 2))
-       (remove nil?)
-       distinct))
-
 (defn header-field [file field]
   (let [prefix (str field ": ")]
     (some (fn [line]
@@ -77,26 +72,27 @@
 
 (defn abandon-stale! [root item-id]
   (vec
-   (for [wt (worktree-paths root)
-         state ["new" "in_process"]
-         :let [inbox (fs/path wt ".swarmforge" "handoffs" "inbox")]
-         file (handoff-files (fs/path inbox state))
+   (for [role-info (handoff-lib/load-all-roles root)
+         state [:new :in_process]
+         file (handoff-files (handoff-lib/mailbox-dir role-info state))
          :when (item-handoff? file item-id)]
-     (let [abandoned-dir (fs/path inbox "abandoned")
+     (let [abandoned-dir (handoff-lib/mailbox-dir role-info :abandoned)
            target (fs/path abandoned-dir (fs/file-name file))]
        (fs/create-dirs abandoned-dir)
        (fs/move file target {:replace-existing false})
        target))))
 
 (defn latest-item-handoffs
-  "The item's handoffs across every worktree's completed/ and abandoned/
-   dirs, newest first (filenames embed timestamp+sequence)."
+  "The item's handoffs across every ROLE's own completed/ and abandoned/
+   mailbox dirs, newest first (filenames embed timestamp+sequence).
+   Iterating per role (not deduped worktree path) is what visits
+   master-resident roles' now-distinct per-role subdirectories instead of
+   scanning their one shared worktree path just once (BL-128)."
   [root item-id]
-  (->> (worktree-paths root)
-       (mapcat (fn [wt]
-                 (let [inbox (fs/path wt ".swarmforge" "handoffs" "inbox")]
-                   (concat (handoff-files (fs/path inbox "completed"))
-                           (handoff-files (fs/path inbox "abandoned"))))))
+  (->> (handoff-lib/load-all-roles root)
+       (mapcat (fn [role-info]
+                 (concat (handoff-files (handoff-lib/mailbox-dir role-info :completed))
+                         (handoff-files (handoff-lib/mailbox-dir role-info :abandoned)))))
        (filter #(item-handoff? % item-id))
        (sort-by #(fs/file-name %))
        reverse))

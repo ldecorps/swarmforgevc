@@ -1,0 +1,158 @@
+# mono-router overlay (BL-518): one resident agent, a model tailored to each stage
+
+Read this when your swarm was launched with the `mono-router` pack. It applies
+to you no matter which role you are currently playing — you are always the one
+resident process.
+
+## Pipeline shape
+
+- Full chain, same as `swarmforge/PIPELINE.md`: **coder → cleaner → architect
+  → hardender → documenter → QA**. Under this pack **coder is your "home"
+  identity** — the only role with a standing, remote-controlled session, and
+  the stage where already-specced work in `backlog/active/` enters the
+  pipeline. specifier is a rotation target too (Opus, for real speccing) but
+  you only become it when a downstream stage BOUNCES a spec defect to it; a
+  brand-new UNSPECCED intake will not cold-wake this swarm (spec it elsewhere,
+  or the coordinator hands it straight to coder).
+- Every gate the full pack runs still runs, unabridged: acceptance, coverage,
+  mutation / no-surviving-mutants, CRAP ≤ 6, QA's final pass. The saving is
+  ONLY that one process serves every role in turn, on a model tailored to each
+  stage — never that a gate is skipped or made lighter.
+
+## Your model changes at each stage — and that is the point
+
+Unlike `mono-rotate` (one model for the whole chain), each stage here runs on
+its own model and effort, set in that role's
+`.swarmforge/launch/<role>.claude-settings.json`:
+
+| Stage | Model | Why |
+|---|---|---|
+| specifier, architect | Opus 4.8 / xhigh | genuine design + correctness reasoning |
+| coder, hardender, QA | Sonnet 5 / high | bulk build, mutation, verification |
+| cleaner, documenter | Haiku 4.5 / medium | mechanical |
+
+A running `claude` process cannot change its own model, so **rotation is a
+respawn**: to become the next role on its own model, your pane is re-executed
+with that role's launch script. In-process role-switching (export + cd) would
+leave you on the wrong model — do not do it under this pack.
+
+## How you rotate (do this instead of going idle after a handoff)
+
+Once you have sent your `git_handoff` (`swarm_handoff.sh <draft>`) — or, at the
+terminal QA stage, once your parcel-ending action is done — you do NOT run
+`ready_for_next.sh` as your current self and you do NOT export a new role by
+hand. Instead:
+
+1. Note the role you just handed the parcel to (the `to:` of the handoff you
+   just sent — forward or bounce; you wrote it, you know it).
+2. Run: **`rotate_to_role.sh <that-role>`**
+   - It waits until handoffd has actually delivered the parcel to that role's
+     inbox (the resident pane is the only pokeable session, so a role must not
+     boot to an empty inbox), then respawns your pane running that role's own
+     launch script — new model, new effort, new `SWARMFORGE_ROLE`, new worktree
+     cd, fresh prompt bootstrap.
+3. You come back up AS that role, on that role's model. Your launch tells you
+   `RESUME-ON-START`: run `ready_for_next.sh` as your very first action and
+   follow it to pick up the parcel now sitting in your inbox.
+
+When a parcel finishes (QA approves; the coordinator, a separate process,
+handles the merge/bookkeeping — you do not), rotate **home**: run
+`rotate_to_role.sh coder`. Idling as coder is safe — it is the one role
+handoffd can always poke when the next specced item is dispatched.
+
+## The independence caveat — read before treating a bounce as passed
+
+SwarmForge's quality rests on role INDEPENDENCE: a downstream role bounces the
+upstream role's work with fresh eyes. Under mono-router you are both sides of
+every one of those reviews. That is a real, load-bearing reduction in
+independence, not a formality:
+
+- The respawn between stages helps — you come back as a fresh process, on a
+  different model, having re-read the new role's own prompt and the ticket from
+  scratch. Use that. Re-derive from the ticket and the code, not from what you
+  remember deciding as the previous role a moment ago.
+- Do not wave a gate through because you personally just wrote the thing it is
+  checking. If you would bounce this work coming from a stranger, bounce it now.
+
+## Bursting a subfleet for genuinely parallel work (opt-in, off by default)
+
+This pack is strictly serial — one parcel through one process — and that is
+correct most of the time, because active tickets so often share files (skip /
+hold overlapping scope; see the coordinator's Concurrent Work Orthogonality
+rule). Serialization is a feature here, not a limitation.
+
+Only when the coordinator finds **≥ 2 active tickets whose file scopes are
+genuinely disjoint** is a burst worth it. A burst is NOT automatic: it is the
+operator (or coordinator, on the operator's standing go-ahead) launching a
+SHORT-LIVED extra pack on the disjoint subset — e.g. `./swarm <target> --pack
+two-pack` in parallel — and tearing it down once that slice lands. Keep the
+resident mono-router as the default builder; treat a burst as a deliberate,
+scoped exception, never the steady state.
+
+## Coordinator & handoffs
+
+- Coordinator: unchanged. Orchestrate only (intake, handoffs, chase, post-QA
+  bookkeeping). Reserved infrastructure, never part of the rotation, always its
+  own separate session.
+- **Coordinator, do NOT mistake single-process serialization for "no work to
+  do."** The resident agent only ever ACTS on work you (or the dispatch-gap
+  sweep) route to it. Any specced item in `backlog/active/` with no in-flight
+  parcel MUST still be dispatched to **coder** (the resident's home), exactly
+  as in any other pack — one at a time is correct here, but "one at a time" is
+  not "zero." Only the roles' SESSIONS are collapsed onto one pane; the
+  dispatch duty is unchanged. A `chase-wake-error` for a dormant role
+  (cleaner/architect/hardender/documenter/QA/specifier has no standing session)
+  is EXPECTED under this pack and is not a health failure — do not let it
+  throttle promotion or read as rework.
+- Handoffs: same as every pack — `swarm_handoff.sh <draft-file>`, never write
+  into `inbox/new/` directly. See `swarmforge/handoff-protocol.md`.
+
+## After a parcel finishes (QA done) — home vs intake drain
+
+When the parcel ends (QA approved; coordinator does bookkeeping — you do not
+merge), do **not** always rotate straight home to coder.
+
+1. **Scan the backlog root** (`backlog/*.yaml` and `backlog/*.yml` sitting
+   directly under `backlog/`, not in `active/`/`paused/`/`done/`). Those are
+   raw human intakes.
+2. If **any root intake exists**, rotate to specifier and drain them first:
+   `rotate_to_role.sh specifier`
+   On wake as specifier: run `ready_for_next.sh` if a parcel is waiting; else
+   drain the root per constitution / specifier.prompt (write proper specs into
+   `backlog/paused/`, remove the raw root files, note the coordinator). Root
+   intake beats promoting or picking up already-paused work.
+3. If the root is **empty**, rotate **home**: `rotate_to_role.sh coder`.
+   The coordinator — woken by QA's close/bookkeeping handoff — must in the
+   **same turn**: Close → Promote next eligible paused → **Route Work to coder**
+   (see coordinator.prompt QA bookkeeping step 3 / `route_backlog_to_coder.sh`).
+   There is **no** coordinator self-loop; if you land as coder and get
+   `NO_TASK` with an open slot and paused work, send **one** note asking the
+   coordinator to promote+route, then idle for wake. Then run
+   `ready_for_next.sh` for the Work parcel.
+
+
+## Idle at home (coder) with no parcel
+
+If you are **coder**, `ready_for_next.sh` returns `NO_TASK`, and the backlog
+root still has intake files — do not stay conversationally idle. Rotate to
+specifier and drain (`rotate_to_role.sh specifier`). Specifier is not only for
+downstream spec bounces; on this pack it also owns cold root-intake drain when
+the pipeline is otherwise empty.
+
+## Idle at home — STOP after NO_TASK (mono-router anti-loop)
+
+When you are the home resident (**coder**) and `ready_for_next.sh` returns
+`NO_TASK`:
+
+1. **Do not re-run** `ready_for_next.sh` / do not self-poll / do not invent a
+   `/loop`. Exit the turn and wait for a tmux/operator/daemon wake.
+2. If backlog **root** still has `backlog/*.yaml` intakes → `rotate_to_role.sh specifier`.
+3. Else if `backlog/active/` is empty (or under cap with an open slot) and
+   `backlog/paused/` has eligible work → send **one** `note` to coordinator
+   (`swarm_handoff.sh`) asking it to **promote + route** the next eligible
+   paused ticket to coder, then idle for wake.
+4. Coordinator: same anti-loop. On a QA-close wake or this note, with open
+   capacity under `active_backlog_max_depth`, Close (if needed) → Promote →
+   Route Work to coder in one turn — do not wait for a human chat.
+5. If you ignore (1) and keep re-polling, the **handoff daemon will hard-stop
+   the entire swarm** (endless-loop circuit breaker) to stop token burn.

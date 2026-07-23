@@ -1,0 +1,93 @@
+id: BL-551
+title: "LLM invocation cost ledger — rank expensive calls by origin (3h / 24h / 7d)"
+milestone: M8
+type: feature
+status: todo
+epic: cost-intelligence
+assigned_to: coder
+priority: 2
+mutation_cost: medium
+direction: human-requested
+depends_on:
+  - BL-100
+  - BL-511
+source: |
+  Operator request 2026-07-22: cost optimisation — know which areas of the swarm
+  burn the most tokens. Instrument at LLM invocation boundaries (not internal
+  method calls) with durable origin attribution and rank top expensive calls over
+  last 3 hours, last 24 hours, and last week.
+
+  Operator ruling 2026-07-22: prioritize BL-551 BEFORE Model Steward (BL-547)
+  and ModelFactory (BL-525 / BL-542 / BL-545 children). Cost visibility must
+  land first so model-routing work is informed by real spend data.
+
+notes: |
+  PROBLEM: BL-100 gives per-role / per-ticket rollups from Claude transcript JSONL.
+  BL-511 gives exact $ for front-desk `claude -p` reaps only. There is no unified
+  ledger that answers: "what were the most expensive individual LLM invocations in
+  the last 3h / 24h / 7d, and what triggered them?"
+
+  Non-Claude runtimes (aider, OpenRouter slugs, Perplexity) and pipeline wakes
+  (handoff deliver, chase nudge, open-slot nudge, operator tick) are largely
+  invisible or unpriced today.
+
+  APPROACH: append-only `.swarmforge/telemetry/llm-cost-YYYY-MM.jsonl` with one
+  `llm_invocation` record per spend event. Prefer provider-reported `cost_usd`
+  (`total_cost_usd` from `claude -p` JSON) when present; else estimate from
+  tokens + `pricingTable.ts` (extend for OpenRouter slugs used by packs). Never
+  invent $0 for unknown cost.
+
+  ORIGIN block (required on every record):
+    subsystem   pipeline | operator | front_desk | daemon | extension
+    role        coder | coordinator | … | null for non-role scripts
+    stage       pipeline stage (= role for mono-router) | null
+    trigger     handoff | chase_nudge | open_slot_nudge | operator_cmd |
+                babysit_tick | rotation_wake | human_chat | reap | other
+    ticket_id   BL-### | null
+    handoff_id  handoff filename stem | null
+    handoff_type note | git_handoff | null
+    script      route_backlog_to_coder.sh | emit-cost-health-sidecar | … | null
+    pack        swarmforge pack name from swarm-identity | null
+    model       provider model slug
+    provider    claude | openrouter | perplexity | aider | …
+
+  WRITERS (thin append only — logic in TS pure readers):
+    1. handoffd deliver! — stamp correlation before tmux wake; finalize after
+       transcript scrape or on next sidecar pass with handoff_id join
+    2. operator_runtime reap — generalize BL-511 bridge-cost pattern to ALL
+       `claude -p --output-format json` reaps (support, briefing, etc.)
+    3. agent_runtime_inject wake — record trigger + role when injecting
+    4. Optional: transcriptUsage backfill reader joins timestamp → active
+       correlation file for pipeline roles without headless reap
+
+  READERS / SURFACES:
+    - Pure `rankLlmInvocations(records, { horizonMs, nowMs, topN, groupBy? })`
+    - Pure `buildOriginCostTrendSeries(records, { nowMs, windowMs: 7d, bands })`
+      rolling 7d per-origin spend series with three log-compressed time bands
+      (3h / 24h / 7d): finer buckets toward the latest measurement (exact widths
+      left to specifier/coder); rank chart lines by cost in the rightmost bucket;
+      log Y when spread ≥10×.
+    - Horizons (fixed, named): `3h` (10_800_000 ms), `24h` (86_400_000 ms),
+      `7d` (604_800_000 ms). Evaluated at injected `nowMs` in tests.
+    - CLI: `extension/out/tools/swarm-cost-rank.js` (or bb wrapper) — prints
+      top-N invocations AND optional rollups by origin dimension per horizon
+    - Bridge: `GET /cost-rank?horizon=24h&top=20&groupBy=trigger,role`
+      plus `GET /cost-trend?window=7d&top=5` for multi-line chart payload
+    - Cost-health sidecar: fold top-5 expensive origins per horizon into
+      `docs/briefings/<date>.json` (additive fields, honest nulls) AND carry
+      `originCostTrendSeries` for the 7d multi-line chart / sparkline
+    - PWA cost card: 7d trend chart (one line per top origin, time → right);
+      horizon tabs keep the existing 3h/24h/7d rollup table as secondary detail
+
+  RANKING: default sort `cost_usd DESC NULLS LAST`, tie-break `at DESC`.
+  Grouped rollups sum `cost_usd` and `token totals` per composite origin key.
+
+  OUT OF SCOPE (follow-ups): OpenRouter dashboard polling; interactive Operator
+  remote-control session cost (same honest-null posture as BL-511 Operator
+  share); BL-539 QuotaManager scheduling — this ticket only produces the ledger
+  and ranking surfaces QuotaManager can read later.
+
+  Specifier: APS feature under specs/features/BL-551-*.feature before coder work.
+  Cite BL-100, BL-511, backlog/003-adaptive-quota-budget-manager.md vision.
+
+acceptance: specs/features/BL-551-llm-invocation-cost-ledger.feature

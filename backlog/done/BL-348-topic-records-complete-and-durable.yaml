@@ -1,0 +1,114 @@
+id: BL-348
+title: "BL topic records are neither complete nor durable — 26 have no opening summary, 31 of 34 were never committed"
+milestone: M8
+type: defect
+status: todo
+severity: high
+priority: 4
+direction: expedite
+depends_on: []
+source: ".swarmforge/operator/INTAKE-new-topics-still-open-without-a-summary.md — the human via the Telegram front desk (SUP-2), 2026-07-13 07:53: 'New topics still.are created without a summary, please fix'. Investigation redirected the ticket (below); the human confirmed this disposition 2026-07-13."
+
+notes: |
+  THE REPORT'S PREMISE IS WRONG, AND THE TRUTH UNDERNEATH IT IS WORSE. The human reported that new
+  topics are still opening without a summary. They are not: BL-322's opening summary works, and has
+  worked for every topic opened since the record store went live. Verified on disk — BL-334, 335,
+  336, 337, 339, 343, 344, 345 all open with "What it is: / What it solves: / How it works:". Do
+  NOT go looking for a bug in the live open path; it isn't there. The dividing line is not
+  before/after BL-322 shipped, it is before/after BL-329 wired `recordMessage`.
+
+  What IS broken is the durable record itself, in two independent ways.
+
+  DEFECT 1 — 26 RECORDS HAVE NO OPENING SUMMARY. `backlog/topics/BL-305.json` .. `BL-329.json`
+  plus `BL-333.json` each have exactly ONE message and it is the ticket's COMPLETION
+  ("BL-3xx - <title> is complete."). Their record files were BORN AT CLOSE TIME: BL-330's
+  reconciliation sweep ran on the first tick after the store existed and posted the (late)
+  completion for every already-done ticket, and `appendMessage` created the file at that moment.
+  So seq 0 is a completion. The Telegram topics themselves opened normally — the topic map and the
+  tick's `emittedKeys` both confirm TaskStarted fired and posted. It is only the REPOSITORY-side
+  record that never saw an opener.
+
+  DEFECT 2 — THE RECORD IS NOT ACTUALLY DURABLE. 31 of the 34 record files are UNTRACKED in git.
+  Only BL-329, BL-335 and BL-345 were ever committed. Nothing gitignores `backlog/topics/`
+  (`git check-ignore` confirms). The suspected seam: `commitTopicRecord` (blTopicStore.ts:61) calls
+  `commitScopedFile`, which by design "fails open (returns false, never throws) on any git error" —
+  so a failed commit is INVISIBLE and the record silently stays a local file. Root-cause it rather
+  than assuming; but the FACT (3 of 34 tracked) is verified and is the headline. BL-329's entire
+  thesis was "serialise a BL topic's content INTO THE REPO", and it is not reaching the repo.
+
+  WHY THIS MATTERS, AND WHY IT IS EXPEDITE. Today an opener-less record breaks nothing at runtime —
+  the one live reader (`isAlreadyReconciled`, telegram-front-desk-bot.ts:505) matches on message
+  TEXT, never on seq. The harm is entirely PROSPECTIVE and it is aimed squarely at BL-332
+  (recreate-topic-from-record, paused): its whole job is to replay a record's messages IN ORDER to
+  rebuild a topic, and its own notes say a rebuilt topic "must not read as if work is starting from
+  zero". Replay one of these 26 records and you rebuild a topic whose first message announces the
+  ticket is COMPLETE and which never says what the ticket was. Replay an untracked one and you
+  replay nothing at all, because a fresh checkout does not have it. Both defects must be fixed
+  BEFORE BL-332 is built, not after.
+
+  THE OPENER IS FULLY REGENERABLE — THIS IS NOT LOST DATA. `taskStartedText` (topicRouter.ts:72)
+  derives the summary from exactly three ticket-YAML fields: `title` -> "What it is",
+  the FIRST PARAGRAPH of `notes` -> "What it solves", and `acceptance.steps[0]` ->
+  "How it works". Every one of the 26 tickets is in `backlog/done/` with those fields intact, and
+  `readBacklogFolders` already parses `done/` fully (`toFoldersSnapshot` even maps notes and
+  firstAcceptanceStep for the done bucket already — the data is right there, just never fed to
+  `ticketSummariesFor`, which restricts itself to `active`). Regenerate through the EXPORTED
+  `messageTextForEvent` (topicRouter.ts:104) so the restored text is byte-identical to what the
+  live path would have written — do not hand-roll a second formatter.
+
+  THREE THINGS THAT WILL BITE, ALL VERIFIED:
+    - THE STORE IS APPEND-ONLY. `appendMessage` sets `seq = record.messages.length`; there is NO
+      insert/prepend API. A seq-0 opener means renumbering the existing messages. That is safe
+      against every CURRENT consumer (nothing keys off `seq` — the only reads match on text/type/
+      author), but the renumbering must stay contiguous from 0 or the next live append will collide
+      with an existing seq.
+    - THE TIMESTAMP IS NOT RECOVERABLE. No TaskStarted timestamp is persisted anywhere. Do not
+      fabricate a precise one. The restored opener needs a ts that ORDERS BEFORE the completion and
+      is honest about being reconstructed; pick one deliberately and say so in the code.
+    - FORMATTING DIFF TRAP. `appendMessage` writes `JSON.stringify(record)` with no indent, but the
+      files on disk today are pretty-printed. A repair that rewrites them with bare `JSON.stringify`
+      will collapse 26 files to one line each and produce a diff that hides the real change. Match
+      the existing on-disk formatting.
+
+  REUSE, DO NOT REBUILD: `extension/src/tools/backfill-bl-topic-store.ts` is the existing precedent —
+  a backfill CLI that is idempotent BY CONTENT (not by cursor) and whose `main()` is already a thin
+  wrapper over exported helpers. Follow it exactly, including the thin-main rule.
+
+  SCOPE:
+    1. Restore the missing opening summary to every record whose history starts at a completion,
+       regenerated from the ticket's own YAML via the existing exported formatter, ordered before
+       the completion.
+    2. Idempotent by content: repairing twice adds no second opener; a record that already opens
+       correctly is untouched.
+    3. Make the record durable: a record written during normal operation must actually reach git,
+       and a commit that CANNOT be made must be surfaced, never silently swallowed. Get the 31
+       untracked records committed.
+    4. OUT OF SCOPE: recovering the INTERVENING messages (progress, approvals, human replies) that
+       these 26 records also lack — the inbound-only backfill tool covers part of that from a
+       gitignored log that may have rotated. Say plainly in the repair output that a repaired record
+       has an opener and a completion, NOT a full transcript, so "backfilled" is never mistaken for
+       "complete". Also out: BL-332's replay itself.
+
+  E2E QA PROCEDURE: run the repair against the real `backlog/topics/`. Assert all 26 offenders open
+  with a summary matching what the live path would have written for that ticket, ordered before the
+  completion. Run it a SECOND time and assert no record changes at all (idempotence). Assert the
+  8 already-correct records are byte-identical afterwards. Then `git status` and assert ZERO
+  untracked files under `backlog/topics/` — and clone/checkout the repo fresh into a temp dir and
+  assert all 34 records are present with their openers. Finally, force a commit failure on the live
+  write path and assert it is reported rather than silently dropped.
+
+acceptance:
+  feature: specs/features/BL-348-topic-records-complete-and-durable.feature
+  steps:
+    - "A record whose history starts at completion gains its missing opening summary"
+    - "The restored opening summary is regenerated from the ticket's own spec"
+    - "The restored summary is ordered before the completion it was missing from"
+    - "Repairing twice does not duplicate the summary"
+    - "A record that already opens correctly is left untouched"
+    - "A repaired record survives a fresh checkout"
+    - "A record written during normal operation reaches the repository"
+    - "A record that cannot be committed is reported, never silently dropped"
+
+human_approval: pending
+
+mutation_cost: medium

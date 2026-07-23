@@ -1,7 +1,7 @@
 id: BL-105
 title: repo hygiene — strip the oversized mutation-cache blob from role-branch history and guard against >100MB files forever
 milestone: M2
-status: todo
+status: done
 priority: 01
 source: push failure 2026-07-05 — BL-093 lineage carries a 113.69 MB stryker-incremental.json, over GitHub's 100 MB hard limit
 

@@ -35,6 +35,7 @@
             [cheshire.core :as json]
             [clojure.string :as str]))
 
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "handoff_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "daemon_alarm_lib.bb")))
 
 (defn usage []
@@ -44,6 +45,20 @@
 
 (def project-root
   (or (first *command-line-args*) (usage)))
+
+;; BL-321: path-boundary matching for the orphan reaper below - resolves
+;; symlinks and trailing slashes so two DIFFERENT on-disk paths that
+;; happen to normalize to the same real location are correctly treated as
+;; the same root, and so a root's own string form (with/without a
+;; trailing slash) always compares consistently. fs/canonicalize does not
+;; require the path to exist (unlike Path.toRealPath's default), so a
+;; daemon whose root has since been removed still gets a stable, if
+;; unresolved-past-that-point, string rather than throwing out of the
+;; reap sweep.
+(defn canonical-path [p]
+  (try (str (fs/canonicalize p)) (catch Exception _ p)))
+
+(def canonical-project-root (canonical-path project-root))
 
 (def check-once? (some #{"--check-once"} *command-line-args*))
 
@@ -109,9 +124,9 @@
     []))
 
 (defn oldest-pending-outbox-age-ms []
-  (->> (worktree-paths)
-       (mapcat (fn [wt]
-                 (let [outbox (fs/path wt ".swarmforge" "handoffs" "outbox")]
+  (->> (handoff-lib/load-all-roles project-root)
+       (mapcat (fn [role-info]
+                 (let [outbox (handoff-lib/mailbox-dir role-info :outbox)]
                    (when (fs/exists? outbox)
                      (filter #(and (fs/regular-file? %)
                                    (str/ends-with? (fs/file-name %) ".handoff"))
@@ -184,14 +199,35 @@
   "Discovers every live handoffd.bb process for this project root by
    scanning the process table, not just the pid the pid file names - the
    only way to find an orphan left behind by a prior supervisor or launcher
-   (BL-081). Never matches handoffd_supervisor.bb itself or another
-   project's daemon."
+   (BL-081). Never matches handoffd_supervisor.bb itself, never matches
+   another project's daemon - not a NESTED root beneath this one (e.g.
+   `<this-root>/tmp/fixture`) and not a SIBLING root whose path merely
+   extends this one as a text prefix (e.g. `<this-root>-2`).
+
+   Matches on the LAST whitespace-separated token of the command line (the
+   actual <project-root> argument handoffd.bb was invoked with -
+   start_handoff_daemon.sh always launches it as `bb handoffd.bb
+   <project-root>`), canonicalized (symlinks resolved, trailing slash
+   normalized) and compared by PATH EQUALITY against this supervisor's own
+   canonicalized root - never a raw substring search over the whole
+   command line, and never a bare string compare of two un-normalized
+   paths that could differ only cosmetically. A substring search
+   false-positive-matched a worktree's own nested copy of handoffd.bb
+   (e.g. .worktrees/coder/swarmforge/scripts/handoffd.bb is textually
+   NESTED under this project's own root path) even when it was actually
+   launched against a wholly different <project-root> argument, and
+   equally false-positive-matched a sibling project whose path happens to
+   extend this root as a prefix - and reaped both. Confirmed live: this
+   supervisor SIGTERM'd a handoffd.bb test fixture running against a /tmp
+   root from a coder-worktree test script, every ~10s poll, purely because
+   the worktree's own script path happened to start with this root's path
+   (coder session, 2026-07-12; BL-321)."
   []
   (->> (all-pid-commands)
        (filter (fn [[_ cmd]]
                  (and (str/includes? cmd "handoffd.bb")
                       (not (str/includes? cmd "handoffd_supervisor.bb"))
-                      (str/includes? cmd project-root))))
+                      (= canonical-project-root (canonical-path (last (str/split (str/trim cmd) #"\s+")))))))
        (map first)
        distinct))
 
@@ -278,13 +314,7 @@
     []))
 
 (defn roles-with-worktrees []
-  (if (fs/exists? roles-file)
-    (->> (str/split-lines (slurp (str roles-file)))
-         (remove str/blank?)
-         (map #(let [fields (str/split % #"\t")]
-                 {:role (nth fields 0 nil) :worktree-path (nth fields 2 nil)}))
-         (remove #(nil? (:worktree-path %))))
-    []))
+  (remove #(nil? (:worktree-path %)) (handoff-lib/load-all-roles project-root)))
 
 (defn count-handoff-files [dir]
   (if (fs/exists? dir)
@@ -293,10 +323,10 @@
     0))
 
 (defn snapshot-role-counts []
-  (vec (for [{:keys [role worktree-path]} (roles-with-worktrees)]
-         {:role role
-          :inbox-new (count-handoff-files (fs/path worktree-path ".swarmforge" "handoffs" "inbox" "new"))
-          :outbox (count-handoff-files (fs/path worktree-path ".swarmforge" "handoffs" "outbox"))})))
+  (vec (for [role-info (roles-with-worktrees)]
+         {:role (:role role-info)
+          :inbox-new (count-handoff-files (handoff-lib/mailbox-dir role-info :new))
+          :outbox (count-handoff-files (handoff-lib/mailbox-dir role-info :outbox))})))
 
 (defn write-failure-log-file! [content]
   (fs/create-dirs daemon-dir)
@@ -306,12 +336,17 @@
     (spit (str path) content)
     (str path)))
 
+;; BL-215: one-shot per process - the daemon's launch environment does not
+;; change mid-process, so a repeated warning across polls/sweeps would just
+;; be spam once the operator has already been told once.
+(def missing-key-warned? (atom false))
+
 (defn send-configured-alarm-email! [subject text]
-  (let [conf (daemon-alarm-lib/parse-conf (when (fs/exists? conf-file) (slurp (str conf-file))))
-        to (get conf "notify_email_to")
-        from (or (get conf "notify_email_from") "onboarding@resend.dev")
-        api-key (System/getenv "RESEND_API_KEY")]
-    (daemon-alarm-lib/send-alarm-email! api-key to from subject text)))
+  (daemon-alarm-lib/send-configured-email!
+   project-root conf-file subject text
+   {:already-warned?! (fn [] @missing-key-warned?)
+    :log-warning! (fn [msg] (log! "email-misconfigured" msg))
+    :mark-warned! (fn [] (reset! missing-key-warned? true))}))
 
 (defn distinct-sessions []
   (if (fs/exists? roles-file)

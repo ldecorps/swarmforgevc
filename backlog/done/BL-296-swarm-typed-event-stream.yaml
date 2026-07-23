@@ -1,0 +1,88 @@
+id: BL-296
+title: "Concierge slice 1: swarm emits a typed, Telegram-agnostic, BL-###-tagged event stream (the swarm<->Concierge contract)"
+milestone: M8
+status: todo
+priority: 25
+direction: non-aligned
+assigned_to: coder
+depends_on: []
+parent_epic: BL-295
+source: "BL-295 Concierge refinement (.swarmforge/operator/INTAKE-telegram-concierge-bl-topics.md), foundation slice. Human authoritative prompt: 'the swarm emits events (TaskStarted, PRCreated, TestsPassed, NeedsApproval, TaskCompleted, ...); the Concierge translates them into Telegram — the swarm never knows Telegram exists.' Specced by specifier 2026-07-11."
+
+description: |
+  Foundation slice of the BL-295 Concierge refinement: the swarm↔Concierge CONTRACT.
+  The swarm emits a stream of TYPED, Telegram-AGNOSTIC events, each tagged with the
+  BL-### it concerns. The Concierge (a later slice) is solely responsible for turning
+  these into Telegram messages in the right topic — so THE SWARM NEVER KNOWS TELEGRAM
+  EXISTS.
+
+  Why this is the foundation: everything else (BL-297 topic routing, BL-298 reply
+  context, BL-299 completion) consumes this event stream. Getting the typed, per-BL-###,
+  Telegram-free contract right first keeps the swarm decoupled.
+
+  Live layer verified 2026-07-11 (derive events from EXISTING signals; the vocabulary is
+  net-new but the sources exist):
+    - BL-239 telegramNarrator.ts diffNarrationEvents already emits typed diff events
+      (stage-transition / gate / pr-link / dead-letter) — but per-ROLE and
+      Telegram-COUPLED (it lives in notify/telegram* and formats Telegram text). GENERALIZE
+      that diff pattern into a Telegram-AGNOSTIC, per-BL-### typed event with NO Telegram
+      formatting/notion in it.
+    - Signal -> event mapping (start with the cleanly BL-###-scoped ones; the set is
+      extensible per the human's "etc."):
+        * TaskStarted    <- a backlog item entering active/started work (backlog folder
+          transition to active; ticket lifecycle specDateIso/active state).
+        * NeedsApproval  <- a to-human gate captured for that item (needsHumanDetection.ts
+          / gateSnapshot.ts computeRoleGateStatesLive, mapped to the gated role's BL-###).
+        * TaskCompleted  <- the item closing to done (ticket lifecycle closeDateIso /
+          backlog/done transition).
+        * PRCreated      <- the existing pr-link signal (telegramNarrator pr-link), tagged
+          to the BL-###.
+      TestsPassed and further types are EXTENSIBLE — add when a clean swarm signal backs
+      them; do NOT invent an event with no real source.
+    - BL-### tagging: each event MUST carry the backlog item it concerns. Per-role signals
+      (stage/gate) map to the role's active BL-### (the parcel/handoff task -> BL-###);
+      backlog-folder transitions carry the BL-### directly. Derive the tag; never emit an
+      untagged event.
+
+  Wanted behavior (see the feature file):
+    - Starting work on a BL-### emits a TaskStarted event tagged with that BL-###; a
+      captured to-human gate emits NeedsApproval; completing a BL-### emits TaskCompleted
+      (Scenario Outline over trigger -> eventType).
+    - Every emitted event names its TYPE and its BL-### and NOTHING about Telegram or
+      topics (Telegram-agnostic — the swarm↔Concierge contract has no Telegram in it).
+    - The stream is idempotent: an already-emitted event is not emitted again on a
+      re-derivation with no new change (no duplicate spam downstream).
+
+  Scope boundary: this slice ONLY produces the typed event stream. Mapping events to a
+  BL-### Telegram topic + posting them is BL-297; reply routing is BL-298; completion
+  summary/close is BL-299. This slice adds NO Telegram code and NO topic notion.
+
+  Constraints / testability:
+    - The event derivation is a PURE function over provided inputs (fixture backlog
+      state / gate view / prior-emitted set) -> the typed events — unit-tested with
+      fixtures, NO Telegram, NO network, NO live swarm. Mirror telegramNarrator's
+      diffNarrationEvents test shape (a prev/curr snapshot diff), but with NO Telegram
+      formatting in the output. Never seed a fixture timestamp from the real clock while
+      the code reads its own clock (de0991e).
+    - Telegram-agnostic is a HARD contract: a test asserts the emitted event objects
+      contain no Telegram/topic/message_thread_id field and no Telegram-formatted text —
+      only {type, backlogId, payload}. The swarm module emitting these must not import any
+      notify/telegram* code.
+    - Idempotency: emitting from an unchanged state twice yields the event once (dedup on
+      a stable event identity), tested with a fixed prior-emitted set.
+    - Every event is BL-###-tagged: a test asserts no event is emitted without a resolved
+      backlogId (an unresolvable signal is dropped/logged, never emitted untagged).
+    - Any CLI keeps main()/dispatch a THIN wrapper over exported pure helpers, with a
+      subprocess test in ADDITION (engineering "CLI main() must be a thin wrapper").
+
+  QA e2e procedure (fixtures; no Telegram/live swarm):
+    - Feed a backlog state where a BL-### just went active; assert a TaskStarted event
+      tagged with it. Feed a captured gate for a BL-###; assert NeedsApproval. Feed a
+      BL-### closed to done; assert TaskCompleted.
+    - Inspect emitted events; assert each has {type, backlogId} and NO Telegram/topic
+      field or formatted text; assert the emitting module imports no notify/telegram*.
+    - Derive twice from the same state with the same prior-emitted set; assert no
+      duplicate event.
+
+acceptance: specs/features/BL-296-swarm-typed-event-stream.feature
+mutation_cost: medium

@@ -1,0 +1,63 @@
+id: BL-243
+title: "Baton: coordinator is provisioned infrastructure, not a configured role (out of conf)"
+direction: infrastructure
+milestone: M7
+type: bug
+priority: 10
+mutation_cost: medium
+depends_on: []
+source: "Baton epic BL-242 child; operator ruling 2026-07-10: spec the change (coordinator out of conf)."
+
+description: |
+  Foundational Baton slice. TODAY the coordinator is a `window` line in
+  swarmforge.conf (line 54: `window coordinator claude master ...`) and ./swarm
+  does not special-case it. TARGET: the conf declares the PACK ONLY; ./swarm ALWAYS
+  provisions the coordinator, so a conf without a coordinator is the NORMAL launch
+  path — not an edge case. The coordinator becomes the swarm's always-on addressable
+  identity (the endpoint the fleet console subscribes to) and is never counted in
+  pack size.
+
+  Wanted behavior (observable):
+    - A conf that omits coordinator still brings a coordinator up automatically;
+      every configured role pane comes up live; handoffd delivers local handoffs.
+    - The coordinator is excluded from pack-size counting (a 2-pack reports size 2).
+    - The coordinator owns no dedicated worktree and no integration branch of its
+      own (SEE reconciliation note below).
+    - Naming coordinator in the conf is rejected as reserved infrastructure, and the
+      coordinator is still provisioned exactly once.
+    - identity() for the swarm returns its name; the coordinator is the console's
+      subscribe endpoint.
+
+  Constraints / flags:
+    - CHANGES THE MAINTAINED FORK'S LAUNCH PATH (./swarm + conf parsing). Per
+      local-engineering, fork changes go through the drift-watch review
+      (upstream-watch.json, docs/upstream-deviations.md); this is a deliberate
+      local modification, not an upstream pull.
+    - Scenario 03 ("no integration branch") is RESOLVED by the operator ruling
+      2026-07-10: the coordinator sheds the integration role (bookkeeping only) and
+      QA lands approved work on main. That mechanism is sibling BL-247; scenario 03
+      stands as written.
+    - Swarm NAMING: no swarm_name field exists today; how a swarm gets its name is
+      part of the deferred publish-format brainstorm (BL-242 notes). Treated as a
+      given here.
+
+  Scope: the swarm launch path (./swarm) and swarmforge.conf parsing — provision
+  coordinator unconditionally, reject a coordinator window as reserved, exclude it
+  from pack-size counting, expose it as the swarm's addressable identity.
+
+acceptance: specs/features/BL-243-coordinator-is-provisioned-infrastructure.feature
+
+qa_e2e_procedure: |
+  1. Launch with a conf omitting coordinator; assert all role panes live + a
+     coordinator pane provisioned + handoffd delivering.
+  2. Launch a conf 2-pack (coder, cleaner); assert reported pack size 2, coordinator
+     not counted.
+  3. Assert the coordinator pane has no dedicated worktree (per the reconciled
+     integration decision).
+  4. Launch a conf that names coordinator; assert it reports "coordinator is
+     reserved infrastructure" and provisions the coordinator exactly once.
+  5. Assert identity() for the swarm returns its name and the coordinator is the
+     console subscribe endpoint.
+
+# HUMAN APPROVAL: new specifier draft feature file, pending human review. (The
+# scenario-03 integration-role question is resolved by sibling BL-247.)

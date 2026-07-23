@@ -1,0 +1,68 @@
+id: BL-468
+title: "Pipeline board: post the new message BEFORE deleting the old one, so there is always at least one board to look at"
+milestone: M8
+type: feature
+severity: low
+status: todo
+epic: ""
+priority: 1
+direction: human-requested
+depends_on: []
+source: "human (ldecorps) directly 2026-07-16: 'when updating the pipeline board, can you first add the new one, then remove the old one, so there is at least always 1 to look at.' Refines BL-462's delete-then-repost mechanism. Pipeline-board cluster (BL-462/464/465/467)."
+
+description: |
+  Today (BL-462) the pipeline board reposts on a content change by DELETING the old message FIRST, then
+  POSTING a fresh one (extension/src/concierge/pipelineBoardSync.ts, postBoardMessage). That opens a
+  window with ZERO board messages in the topic; worse, if the fresh post then fails, the old is already
+  gone and state.messageId points at a now-deleted message. The human wants the order reversed: POST the
+  new message first, then delete the old — and if the post fails, KEEP the old so there is always at
+  least one board message to look at.
+
+  Scope (grep-confirm live path at build; verified 2026-07-16):
+    - extension/src/concierge/pipelineBoardSync.ts, postBoardMessage: reorder to post-new THEN
+      delete-old. On a successful post, delete the prior message best-effort AFTER the new one exists
+      (unchanged best-effort posture — a failed/already-gone delete never blocks). On a FAILED post, do
+      NOT delete the prior message; return outcome failed-post with the prior messageId still in state,
+      so the existing board stays visible and tracked.
+    - No renderer, change-gate, or adapter-interface change: the deleteMessage/postMessage adapters and
+      the content-signature edge-trigger are unchanged. Only the call ORDER inside postBoardMessage and
+      the failed-post branch change.
+
+  Constraints:
+    - INHERITED and unchanged (BL-462): an unchanged tick is a complete no-op (no post, no delete); the
+      board stays the LATEST message in its topic (new post lands at the bottom, old removed after);
+      READ-ONLY / side-effect-free; best-effort delete.
+    - Do NOT touch editInPlaceMessageSync.ts (shared with the roster) — this is board-only.
+
+  Interaction: with post-then-delete, two board messages briefly coexist. That is fine with BL-467's pin
+  sync (pins the current/new board, continuously unpins the old) and with BL-465's render. All touch the
+  board files — serialize this against them; it changes only the repost ORDER, so it is otherwise
+  independent.
+
+  Sequencing: touches pipelineBoardSync.ts, shared with BL-464/BL-465/BL-467. Serialize; do NOT run
+  concurrently with them. Small, self-contained ordering change.
+
+  E2E QA PROCEDURE: on the real Telegram board, force a content change and confirm a NEW board message
+  appears at the bottom while the old is still present, then the old disappears — never a moment with no
+  board message in the topic. Simulate/observe a post failure path if feasible (or unit-verify): confirm
+  the old board message remains when the new post fails. Verify against the real surface, not a fixture
+  (BL-335).
+
+acceptance:
+  feature: specs/features/BL-468-pipeline-board-post-before-delete.feature
+  steps:
+    - "On a content change the new message is posted before the old one is deleted"
+    - "A failed post leaves the old message in place"
+    - "The first board post has no prior message to delete"
+
+human_approval: >
+  Human-requested directly 2026-07-16: "first add the new one, then remove the old one, so there is at
+  least always 1 to look at." FIRM contract: on a board content change, POST the new message before
+  DELETING the old; on a failed post, keep the old (do not delete) so a board is always visible; outcome
+  and state semantics otherwise unchanged from BL-462. Build-time details NOT gating: log wording, exact
+  branch structure. Board-only (no editInPlaceMessageSync change). Serialize on the board files against
+  BL-464/BL-465/BL-467. NEW feature file specs/features/BL-468-pipeline-board-post-before-delete.feature
+  — APPROVED as-specced by the human (ldecorps) directly 2026-07-16; feature file reviewed, no changes
+  requested. Ready for promotion.
+
+mutation_cost: low

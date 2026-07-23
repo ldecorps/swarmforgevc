@@ -50,7 +50,16 @@ done
 
 ITEM="BL-900"
 TASK="BL-900-demo-item"
-OUTBOX="$ROOT/.swarmforge/handoffs/outbox"
+# BL-128: state-dir (and so the outbox) is now resolved per-SENDER role, not
+# just per-invocation cwd - coder/cleaner/architect each have their own
+# dedicated worktree (not master-resident), so each keeps its own flat,
+# unprefixed outbox at its own worktree path. Every reroute/resume call
+# below runs as a specific SWARMFORGE_ROLE, so the outbox to check depends
+# on which role issued that particular call.
+CODER_OUTBOX="$CODER_WT/.swarmforge/handoffs/outbox"
+CLEANER_OUTBOX="$CLEANER_WT/.swarmforge/handoffs/outbox"
+ARCHITECT_OUTBOX="$ARCHITECT_WT/.swarmforge/handoffs/outbox"
+OUTBOX="$CODER_OUTBOX"
 
 # Seed a completed handoff so task-name/last-good-commit resolve (mirrors
 # test_redo_from.sh's fixture pattern).
@@ -110,7 +119,8 @@ pass "05: reroute abandons stale in-flight handoffs the same way redo_from does 
 OUT="$(cd "$ARCHITECT_WT" && SWARMFORGE_ROLE=architect bb "$RESUME" "$ITEM" "review done")"
 grep -q "^REROUTE RESUME: $ITEM resumes at cleaner" <<< "$OUT" || fail "02: unexpected resume output: $OUT"
 
-QUEUED="$(ls -t "$OUTBOX"/*.handoff | head -1)"
+# resume ran as architect, so the fresh handoff lands in architect's own outbox
+QUEUED="$(ls -t "$ARCHITECT_OUTBOX"/*.handoff | head -1)"
 grep -q "^to: cleaner$" "$QUEUED" || fail "02: resume did not re-enter the chain at the interrupted stage (cleaner)"
 grep -q "^reroute_reason: review done$" "$QUEUED" || fail "02: resume reason note missing"
 

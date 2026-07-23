@@ -1,7 +1,7 @@
 id: BL-061
 title: BUG — handoffd dies silently and the whole swarm stalls; supervise, auto-restart, surface loudly
 milestone: M4
-status: todo
+status: done
 priority: 02
 assigned_to: coder
 

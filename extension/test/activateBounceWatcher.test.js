@@ -1,72 +1,116 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
 
-const { startBounceWatcher } = require('../out/swarm/bounceWatcher');
+const { startBounceWatcher, handleWatchEvent } = require('../out/swarm/bounceWatcher');
 
-test('startBounceWatcher creates watcher and detects bounce files', async () => {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-watcher-'));
-  try {
-    const swarmforgeDir = path.join(tmpDir, '.swarmforge');
-    let bounceDetected = null;
-    const watcher = startBounceWatcher(
-      tmpDir,
-      (bounceType) => {
-        bounceDetected = bounceType;
+// BL-131: captures the debounce callback instead of scheduling it for real -
+// fire() simulates the 50ms settle delay elapsing synchronously.
+function fakeScheduler() {
+  let tick = null;
+  return {
+    scheduleTick: (fn) => {
+      tick = fn;
+    },
+    fire: () => {
+      if (tick) {
+        tick();
       }
-    );
+    },
+  };
+}
 
-    assert.ok(watcher);
-    fs.writeFileSync(path.join(swarmforgeDir, 'bounce'), 'swarm\n');
-    await new Promise((resolve, reject) => {
-      const deadline = Date.now() + 2000;
-      const check = () => {
-        if (bounceDetected === 'swarm') {
-          resolve();
-          return;
-        }
-        if (Date.now() >= deadline) {
-          reject(new Error('waitUntil timed out'));
-          return;
-        }
-        setTimeout(check, 10);
-      };
-      check();
-    });
-    watcher.close();
-  } finally {
-    fs.rmSync(tmpDir, { recursive: true });
-  }
-});
-
-test('startBounceWatcher ignores non-bounce file changes', () => new Promise((resolve, reject) => {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-watcher-'));
+// Test for startBounceWatcher with .swarmforge directory
+test('startBounceWatcher creates watcher when .swarmforge exists', () => {
+  const tmpDir = mkTmpDir('sfvc-watcher-');
   const swarmforgeDir = path.join(tmpDir, '.swarmforge');
   fs.mkdirSync(swarmforgeDir);
 
-  let bounceDetected = false;
+  let bounceDetected = null;
   const watcher = startBounceWatcher(
     tmpDir,
-    () => {
-      bounceDetected = true;
+    (bounceType) => {
+      bounceDetected = bounceType;
     }
   );
 
-  // Create a non-bounce file
-  setTimeout(() => {
-    const otherFile = path.join(swarmforgeDir, 'other-file');
-    fs.writeFileSync(otherFile, 'content\n');
+  assert.ok(watcher !== null);
+  watcher.close();
 
-    // Wait a bit and verify bounce was not detected
-    setTimeout(() => {
-      let err = null;
-      try { assert.equal(bounceDetected, false); } catch (e) { err = e; }
-      watcher.close();
+  // Cleanup
+  fs.rmSync(tmpDir, { recursive: true });
+});
 
-      // Cleanup
-      fs.rmSync(tmpDir, { recursive: true });
-      err ? reject(err) : resolve();
-    }, 200);
-  }, 100);
-}));
+test('startBounceWatcher returns null when .swarmforge does not exist', () => {
+  const tmpDir = mkTmpDir('sfvc-watcher-');
+
+  const watcher = startBounceWatcher(
+    tmpDir,
+    () => {}
+  );
+
+  assert.equal(watcher, null);
+
+  // Cleanup
+  fs.rmSync(tmpDir, { recursive: true });
+});
+
+// BL-131: fs.watch's own event delivery is the only genuinely OS-async part
+// here - it can't be faked without replacing fs.watch itself, so this awaits
+// a promise that an injected scheduleTick resolves the instant the real
+// watch event arrives (event-driven, not a real-clock wait), then fires the
+// debounce synchronously. No fixed-ms setTimeout anywhere.
+test('startBounceWatcher detects bounce file creation', async () => {
+  const tmpDir = mkTmpDir('sfvc-watcher-');
+  const swarmforgeDir = path.join(tmpDir, '.swarmforge');
+  fs.mkdirSync(swarmforgeDir);
+
+  let bounceDetected = null;
+  let capturedTick = null;
+  let resolveCaptured;
+  const captured = new Promise((resolve) => {
+    resolveCaptured = resolve;
+  });
+  const scheduleTick = (fn) => {
+    capturedTick = fn;
+    resolveCaptured();
+  };
+  const watcher = startBounceWatcher(
+    tmpDir,
+    (bounceType) => {
+      bounceDetected = bounceType;
+    },
+    undefined,
+    scheduleTick
+  );
+
+  const bounceFile = path.join(swarmforgeDir, 'bounce');
+  fs.writeFileSync(bounceFile, 'swarm\n');
+  await captured;
+  capturedTick();
+  assert.equal(bounceDetected, 'swarm');
+  watcher.close();
+
+  fs.rmSync(tmpDir, { recursive: true });
+});
+
+// BL-131: no real fs.watch event needed at all - the guard that ignores
+// non-bounce filenames is exercised directly, synchronously.
+test('handleWatchEvent ignores non-bounce file changes', () => {
+  const tmpDir = mkTmpDir('sfvc-watcher-');
+  const swarmforgeDir = path.join(tmpDir, '.swarmforge');
+  fs.mkdirSync(swarmforgeDir);
+  const bounceFilePath = path.join(swarmforgeDir, 'bounce');
+
+  let bounceDetected = false;
+  const { scheduleTick, fire } = fakeScheduler();
+  handleWatchEvent('other-file', bounceFilePath, () => {
+    bounceDetected = true;
+  }, undefined, scheduleTick);
+  fire();
+  assert.equal(bounceDetected, false);
+
+  fs.rmSync(tmpDir, { recursive: true });
+});

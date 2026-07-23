@@ -1,0 +1,70 @@
+id: BL-528
+title: "Auto-heal claim-without-progress (idle TASK reclaim loop)"
+milestone: M8
+type: defect
+status: paused
+epic: swarm-reliability
+assigned_to:
+priority: 1
+mutation_cost: medium
+direction: human-requested
+depends_on: []
+source: "BL-512 recurring failure-mode audit (docs/reference/recurring-failure-mode-audit.md) proposed fix BL-FIX-001. Human confirmed 2026-07-19: file the FIX slate; swarm should auto-heal."
+
+notes: |
+  WHAT / WHY: A role can hold an active TASK, re-run ready_for_next / reclaim the same
+  ticket, and sit idle at a prompt while dashboards stay green. Loop halt today covers
+  pure :no-task-spin only (handoffd), not claimed-but-no-progress. Live example: coder
+  reclaiming BL-512 without executing; related green-but-halted forensics in
+  backlog/evidence/BL-109-BL-121-BL-122-handoff-halt-20260706.md. Chaser nudge:coder
+  also fired on 2026-07-19.
+
+  ROOT CAUSE: claim/inbox liveness treats "task assigned" as healthy.
+
+  OUTCOME: detect idle reclaim of the same task (no commits / no tool use / repeated
+  reclaim); escalate nudge → reassign/bounce claim → halt+Telegram/email (same alert
+  path as endless-loop halt).
+
+  Specifier: write APS feature under specs/features/BL-528-*.feature before coder work.
+  Cite BL-512 audit Rank 1.
+
+  FALSE-POSITIVE EVIDENCE (babysitter, 2026-07-22T13:51Z): the nudge/bounce/halt path
+  in this note's OUTCOME is already live in handoffd (chase_sweep / claim-progress-bounce
+  + claim-progress-halt), but the detector counts raw reclaim attempts only — it does
+  NOT check git diff / tool activity as a progress signal. This halted the swarm on
+  role 'coder' at reclaims=10 while coder held ~14 real changed/untracked files
+  (extension/src/metrics/llmCostLedgerStore.ts, swarm-cost-rank.ts,
+  swarmforge/scripts/llm_cost_ledger_lib.bb + test runner, bridgeServer.ts,
+  costHealthSidecar.ts, operator_lib/runtime.bb — hundreds of real lines) and was
+  actively "Billowing" (mid-generation, running its own test suite) at the moment of
+  halt. Pane scrollback shows coder reflexively calling ready_for_next.sh between real
+  work steps; each call incremented the reclaim counter even though genuine progress
+  was happening between calls. This is the 3rd occurrence today: 09:16:54 role=cleaner
+  reclaims=5, 12:45:10 role=coder reclaims=5, 13:51:31 role=coder reclaims=10 (this one).
+  Babysitter nudged coder to commit twice before the halt fired; nudges did not reach
+  in time because the counter doesn't reset/pause on evidence of activity.
+  PROPOSED FIX: gate the reclaim counter (or the bounce/halt thresholds) on git-diff /
+  tool-use evidence in the claimed worktree since the last reclaim, not on reclaim
+  count alone — a role with a growing diff is not "no progress" even if it keeps
+  re-running ready_for_next.sh. See .swarmforge/daemon/handoffd-failure-20260722T135303Z.log
+  and backlog/evidence/BL-528-false-positive-halt-20260722.md for full evidence.
+
+  PRIORITY BUMP 2→1 (babysitter, 2026-07-22T14:24Z): 4th same-day occurrence
+  (14:18:59Z, role=coder, same BL-551 handoff again) revealed the halt is
+  self-perpetuating: the .claim-progress.json sidecar is never cleared by a swarm
+  restart, so handoffd_supervisor's first health check after relaunch re-reads the
+  same reclaims>=threshold value and re-halts within ~40s — two consecutive ./swarm
+  relaunches were auto-killed before the coder pane could even boot. Only manually
+  archiving the stuck in_process handoff + sidecars to inbox/done/ broke the loop.
+  FIX must also clear/reset the claim-progress sidecar on relaunch (or as part of the
+  halt itself), not just gate future increments on activity. Full detail in the "4th
+  occurrence" section of backlog/evidence/BL-528-false-positive-halt-20260722.md.
+
+acceptance: |
+  # Specifier replaces this with specs/features/BL-528-*.feature
+  Feature: claim-without-progress is auto-healed
+    Scenario: repeated idle reclaim of the same task triggers heal then escalate
+      Given a standing role that has claimed a task and made no durable progress
+      When the same task is reclaimed idle beyond the configured threshold
+      Then the swarm nudges, then reassigns or releases the claim
+      And if still stuck it halts with Telegram and email operator alerts

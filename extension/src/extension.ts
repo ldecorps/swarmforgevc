@@ -13,19 +13,23 @@ import { startBridge } from './bridge/bridgeServer';
 import type { BridgeHandle } from './bridge/bridgeServer';
 import { generateBridgeToken } from './bridge/bridgeToken';
 import { getCurrentBranch, openPullRequest } from './swarm/prCreator';
-import { launchSwarm, waitForSwarmReady, chooseReattachTimeoutMs, isSwarmReady, runningSwarmMatchesConfig, resolveSwarmConfigPath } from './swarm/swarmLauncher';
+import { launchSwarm, waitForSwarmReady, chooseReattachTimeoutMs, isSwarmReady, runningSwarmMatchesConfig, resolveSwarmConfigPath, buildLaunchEnv, augmentPath, primeLoginShellPathProbe } from './swarm/swarmLauncher';
 import { reapAllTrackedJobs, reapStaleTrackedJobs } from './swarm/childJobRegistry';
 import { writeStateDump, startPeriodicStateDump, ExtensionStateSnapshot } from './swarm/stateDump';
+import { orchestrateFullLaunch } from './swarm/swarmOrchestrator';
 import { hasPriorRunState, shouldOfferResumePrompt } from './swarm/swarmDiscovery';
-import { stopSwarm, stopSwarmOnExtensionShutdown } from './swarm/swarmStopper';
+import { stopSwarm, stopSwarmOnExtensionShutdown, stopSwarmCompletely } from './swarm/swarmStopper';
 import { bounceSwarm, buildBounceExtensionCommand } from './swarm/bouncer';
 import { listTmuxSessions } from './swarm/tmuxClient';
-import { resolveRunName } from './run/resolveRunName';
-import { startBounceWatcher, BounceType, type BounceWatcher } from './swarm/bounceWatcher';
+import { resolveRunName, generateDefaultRunName } from './run/resolveRunName';
+import { startResilientBounceWatcher, BounceType, ResilientWatcherHandle } from './swarm/bounceWatcher';
 import { writeBounceAck, clearBounceAck, BouncePhase } from './swarm/bounceAck';
 import { startChaserMonitor, stopChaserMonitor, buildRoleInboxes } from './watchdog/chaserMonitor';
 import type { ChaserMonitorConfig, ChaserCallbacks } from './watchdog/chaserMonitor';
-import { readTmuxSocket, paneTarget, getPaneBaseIndex, sendKeys, capturePane, readSwarmRoles, sleepSync, respawnAgent } from './swarm/tmuxClient';
+import { readTmuxSocket, paneTarget, getPaneBaseIndex, sendKeys, capturePane, readSwarmRoles, respawnAgent } from './swarm/tmuxClient';
+import { sleepSync } from './swarm/sleepSync';
+import { startResourceSampler, stopResourceSampler } from './metrics/resourceTelemetry';
+import { buildSampledRoles } from './swarm/resourceSamplerActivation';
 import { sendInstructionVerified, sendHandoffWakeUp } from './swarm/verifiedInject';
 import { trackPaneActivity, outboxNewestMtimeMs } from './watchdog/paneActivity';
 import { setStuckEscalation, escalatedStuckRoles } from './watchdog/stuckEscalations';
@@ -60,10 +64,25 @@ import {
   describeClearResult,
   resolveResendApiKey,
   resolveMistralApiKey,
+  resolveTelegramBotToken,
+  resolveTelegramChatId,
+  TELEGRAM_BOT_TOKEN_SECRET_KEY,
+  TELEGRAM_CHAT_ID_SECRET_KEY,
 } from './notify/secrets';
 import { startBriefingScheduler } from './notify/briefingScheduler';
-import { startBriefingEmailWatcher } from './notify/briefingEmailWatcher';
+import { computeCostHealthSidecar, writeCostHealthSidecar, commitCostHealthSidecar } from './notify/costHealthSidecar';
+import { parseRolesTsv } from './swarm/swarmState';
 import { sendResendEmail } from './notify/resendClient';
+import {
+  NeedsHumanEmailNotifier,
+  EmailNotifyConfig,
+  EmailNotifierAdapters,
+} from './notify/needsHumanEmailNotifier';
+import { getSessionUrl } from './notify/sessionUrlCapture';
+import { buildBadgeMap } from './panel/badgeSummary';
+import { sendTelegramMessage } from './notify/telegramClient';
+import { readTopicMap } from './tools/telegram-front-desk-bot';
+import { topicForSubject, OPERATOR_SUBJECT_ID } from './tools/telegramFrontDeskBotCore';
 
 const NO_TARGET_MESSAGE = 'Set a target project first (SwarmForge: Set Target Project).';
 const STOP_SWARM_BUTTON = 'Stop Swarm';
@@ -117,11 +136,12 @@ const DEACTIVATE_REAP_GRACE_MS = 5_000;
 
 type RunMode = 'one-shot' | 'drain';
 
-let currentBounceWatcher: BounceWatcher | null = null;
+let currentBounceWatcher: ResilientWatcherHandle | null = null;
 let currentChaserMonitor: NodeJS.Timeout | null = null;
 let currentBounceDrainWatcher: NodeJS.Timeout | null = null;
 let currentGracefulBounceFileWatcher: fs.FSWatcher | null = null;
 let currentIdleClearMonitor: NodeJS.Timeout | null = null;
+let currentResourceSampler: NodeJS.Timeout | null = null;
 let idleClearOutputChannel: vscode.OutputChannel | undefined;
 let bounceOutputChannel: vscode.OutputChannel | undefined;
 let chaserOutputChannel: vscode.OutputChannel | undefined;
@@ -138,14 +158,16 @@ let stopPeriodicStateDump: (() => void) | null = null;
 const STATE_DUMP_INTERVAL_MS = 60_000;
 
 // BL-099: the coder's slice of the daily briefing - scheduling the once-a-
-// day "briefing due" nudge and sending each committed briefing exactly once.
-// Composing the briefing's content is the coordinator role prompt's job
-// (specifier-owned), not this extension code.
+// day "briefing due" nudge. Composing the briefing's content is the
+// coordinator role prompt's job (specifier-owned), not this extension code.
+// BL-214: emailing each committed briefing moved to the headless daemon
+// (swarmforge/scripts/briefing_email_lib.bb via handoffd.bb) so delivery no
+// longer depends on the VS Code host being open - this extension no longer
+// sends that email itself (retired, not just disabled, to guarantee no
+// double-send when the host happens to be open alongside the daemon).
 let stopBriefingScheduler: (() => void) | null = null;
-let stopBriefingEmailWatcher: (() => void) | null = null;
 const BRIEFING_HOUR_UTC = 8;
 const BRIEFING_SCHEDULE_CHECK_INTERVAL_MS = 5 * 60_000;
-const BRIEFING_EMAIL_CHECK_INTERVAL_MS = 2 * 60_000;
 
 function buildExtensionStateSnapshot(targetPath: string | null, reason: string | null): ExtensionStateSnapshot {
   const roles = targetPath ? readSwarmRoles(targetPath) : [];
@@ -166,16 +188,6 @@ function isPidAlive(pid: number): boolean {
   } catch {
     return false;
   }
-}
-
-function generateDefaultRunName(): string {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, '0');
-  const day = String(now.getDate()).padStart(2, '0');
-  const hour = String(now.getHours()).padStart(2, '0');
-  const minute = String(now.getMinutes()).padStart(2, '0');
-  return `run-${year}${month}${day}-${hour}${minute}`;
 }
 
 function shouldAutoLaunchOnActivation(context: vscode.ExtensionContext): boolean {
@@ -214,6 +226,7 @@ async function autoLaunchSwarmOnActivation(
   startOrRestartChaserMonitor(targetPath, context);
   startOrRestartDailyBriefing(targetPath, context);
   startOrRestartIdleClearMonitor(targetPath, context);
+  startOrRestartResourceSampler(targetPath);
 }
 
 function startOrRestartBounceWatcher(
@@ -222,13 +235,9 @@ function startOrRestartBounceWatcher(
 ): void {
   // Dispose old watcher if it exists
   if (currentBounceWatcher) {
-    currentBounceWatcher.dispose();
+    currentBounceWatcher.close();
     currentBounceWatcher = null;
   }
-
-  // Ensure .swarmforge exists before watching so fresh targets are covered
-  const swarmforgeDir = path.join(targetPath, '.swarmforge');
-  fs.mkdirSync(swarmforgeDir, { recursive: true });
 
   // Create handler that dispatches to appropriate command
   const handleBounce = (bounceType: BounceType) => {
@@ -249,26 +258,38 @@ function startOrRestartBounceWatcher(
     vscode.window.showWarningMessage(`Bounce watcher error: ${error}`);
   };
 
-  // Start the watcher
-  currentBounceWatcher = startBounceWatcher(targetPath, handleBounce, handleError);
+  // BL-115: an unexpected error/close (e.g. .swarmforge/ removed and
+  // recreated out from under the watched inode) re-establishes the watch -
+  // bounded and backed off (engineering.prompt's retry/auto-restart cap
+  // rule), never an immediate unconditional restart loop (a persistent
+  // failure like inotify ENOSPC would otherwise spin forever). A deliberate
+  // close (target switch, deactivation, or this very function's own cleanup
+  // above) never reaches onLost/onExhausted - see
+  // createResilientWatcherSupervisor's intentional-close handling.
+  currentBounceWatcher = startResilientBounceWatcher(targetPath, handleBounce, {
+    onError: handleError,
+    onLost: (reason) => vscode.window.showWarningMessage(`Bounce watcher error: ${reason}`),
+    onExhausted: (reason) =>
+      vscode.window.showErrorMessage(
+        `Bounce watcher gave up re-establishing after repeated failures (${reason}). ` +
+          'The bounce sentinel is no longer being watched - reload the window or bounce the swarm to retry.'
+      ),
+  });
 
-  // Add to subscriptions for cleanup
-  if (currentBounceWatcher) {
-    context.subscriptions.push({
-      dispose: () => {
-        if (currentBounceWatcher) {
-          currentBounceWatcher.dispose();
-          currentBounceWatcher = null;
-        }
-      },
-    });
-  }
+  context.subscriptions.push({
+    dispose: () => {
+      if (currentBounceWatcher) {
+        currentBounceWatcher.close();
+        currentBounceWatcher = null;
+      }
+    },
+  });
 }
 
 function startOrRestartChaserMonitor(targetPath: string, context: vscode.ExtensionContext): void {
   // Stop old chaser if it exists
   if (currentChaserMonitor) {
-    stopChaserMonitor(currentChaserMonitor);
+    stopChaserMonitor(currentChaserMonitor, clearInterval);
     currentChaserMonitor = null;
   }
 
@@ -313,6 +334,52 @@ function startOrRestartChaserMonitor(targetPath: string, context: vscode.Extensi
     chaseBackoffBaseSeconds: CHASER_BACKOFF_BASE_SECONDS,
     chaseBackoffMaxSeconds: CHASER_BACKOFF_MAX_SECONDS,
   };
+
+  // BL-148: a genuine BL-067 stuck-in-process wedge must raise a needs-human
+  // email even when the tile panel webview is closed - SwarmPanel's own
+  // NeedsHumanEmailNotifier only ever sweeps from its own poll loop, which
+  // stops the moment the webview is disposed (BL-148 root cause). This is a
+  // SEPARATE instance, rebuilt fresh on every (re)start of this monitor -
+  // same lifecycle as chaserConfig/callbacks above, so it can never hold a
+  // stale targetPath closure across a target switch - driven by this
+  // function's own panel-independent interval. It only ever receives
+  // stuck-escalation deltas, so it can never double-send with the panel's
+  // instance, which keeps owning question-detection deltas exclusively.
+  const emailConfig = vscode.workspace.getConfiguration('swarmforge');
+  const notifyTo = emailConfig.get<string>('notify.email.to', '');
+  const notifyFrom = emailConfig.get<string>('notify.email.from', 'onboarding@resend.dev');
+  const notifyGraceSeconds = emailConfig.get<number>('notify.email.graceSeconds', 60);
+  const notifyCooldownSeconds = emailConfig.get<number>('notify.email.cooldownSeconds', 600);
+  const stuckEscalationNotifyConfig: EmailNotifyConfig = {
+    enabled: false,
+    graceSeconds: notifyGraceSeconds,
+    cooldownSeconds: notifyCooldownSeconds,
+    to: notifyTo,
+    from: notifyFrom,
+  };
+  let stuckEscalationResendApiKey: string | undefined;
+  const stuckEscalationNotifier = new NeedsHumanEmailNotifier(stuckEscalationNotifyConfig, {
+    getSessionUrl: (role) => getSessionUrl(role),
+    getTicketBadge: (role) => {
+      const badge = buildBadgeMap(readBacklog(targetPath), targetPath)[role];
+      return badge ? { id: badge.id, summary: badge.summary } : null;
+    },
+    sendEmail: (message) => {
+      if (!stuckEscalationResendApiKey) {
+        return Promise.resolve({ success: false, error: 'Resend API key not configured' });
+      }
+      return sendResendEmail(stuckEscalationResendApiKey, message);
+    },
+    onSendResult: (role, result) => {
+      if (!result.success) {
+        outputChannel.appendLine(`Needs-human email for ${role} (stuck escalation) failed: ${result.error}`);
+      }
+    },
+  });
+  resolveResendApiKey(context.secrets).then((key) => {
+    stuckEscalationResendApiKey = key;
+    stuckEscalationNotifyConfig.enabled = Boolean(key && notifyTo);
+  });
 
   // Implement adapters for the chaser
   const callbacks: ChaserCallbacks = {
@@ -390,18 +457,23 @@ function startOrRestartChaserMonitor(targetPath: string, context: vscode.Extensi
 
     onStuckEscalation: (role: string, escalated: boolean): void => {
       setStuckEscalation(role, escalated);
+      // BL-148: feed and sweep the panel-independent notifier on this SAME
+      // chaser-interval tick, so a genuine wedge alerts whether or not the
+      // tile panel webview is open.
+      stuckEscalationNotifier.recordUpdates([{ role, needsHuman: escalated }], Date.now());
+      stuckEscalationNotifier.sweep(Date.now());
     },
   };
 
   // Start the chaser monitor
-  currentChaserMonitor = startChaserMonitor(chaserConfig, callbacks);
+  currentChaserMonitor = startChaserMonitor(chaserConfig, callbacks, setInterval);
 
   // Add to subscriptions for cleanup
   if (currentChaserMonitor) {
     context.subscriptions.push({
       dispose: () => {
         if (currentChaserMonitor) {
-          stopChaserMonitor(currentChaserMonitor);
+          stopChaserMonitor(currentChaserMonitor, clearInterval);
           currentChaserMonitor = null;
         }
       },
@@ -411,18 +483,13 @@ function startOrRestartChaserMonitor(targetPath: string, context: vscode.Extensi
 
 // BL-099: daily briefing - once-a-day nudge into the coordinator's pane
 // (the coordinator's own role prompt composes and commits the briefing
-// content, per the ticket's role-prompt-owned scope) plus a watcher that
-// emails each committed docs/briefings/<date>.md exactly once. Reuses the
-// existing BL-073 Resend client and secret storage; this extension code
-// never holds the API key beyond the single resolveResendApiKey() call.
+// content, per the ticket's role-prompt-owned scope). BL-214: emailing each
+// committed briefing is now the headless daemon's job, not this host's -
+// see briefing_email_lib.bb.
 function startOrRestartDailyBriefing(targetPath: string, context: vscode.ExtensionContext): void {
   if (stopBriefingScheduler) {
     stopBriefingScheduler();
     stopBriefingScheduler = null;
-  }
-  if (stopBriefingEmailWatcher) {
-    stopBriefingEmailWatcher();
-    stopBriefingEmailWatcher = null;
   }
 
   const swarmforgeDir = path.join(targetPath, '.swarmforge');
@@ -431,7 +498,6 @@ function startOrRestartDailyBriefing(targetPath: string, context: vscode.Extensi
   }
 
   const socketPath = readTmuxSocket(targetPath);
-  const briefingsDir = path.join(targetPath, 'docs', 'briefings');
 
   stopBriefingScheduler = startBriefingScheduler(
     {
@@ -441,6 +507,20 @@ function startOrRestartDailyBriefing(targetPath: string, context: vscode.Extensi
     {
       getNowMs: () => Date.now(),
       onBriefingDue: (): void => {
+        // BL-213: emit + commit the deterministic cost/health sidecar before
+        // the nudge below - it's a best-effort addition to the briefing
+        // flow, so a failure here must never block the nudge that actually
+        // gets the human-authored briefing written.
+        try {
+          const rolesTsvPath = path.join(swarmforgeDir, 'roles.tsv');
+          const roles = fs.existsSync(rolesTsvPath) ? parseRolesTsv(fs.readFileSync(rolesTsvPath, 'utf8')) : [];
+          const sidecar = computeCostHealthSidecar(targetPath, roles.map((r) => ({ role: r.role, worktreePath: r.worktreePath })));
+          const sidecarFilePath = writeCostHealthSidecar(targetPath, sidecar);
+          commitCostHealthSidecar(targetPath, sidecarFilePath, sidecar.dateIso);
+        } catch {
+          // best-effort - see comment above
+        }
+
         if (!socketPath) return;
         const roleEntry = readSwarmRoles(targetPath).find((r) => r.role === 'coordinator');
         if (!roleEntry) return;
@@ -466,38 +546,11 @@ function startOrRestartDailyBriefing(targetPath: string, context: vscode.Extensi
     clearInterval
   );
 
-  let resendApiKey: string | undefined;
-  resolveResendApiKey(context.secrets).then((key) => {
-    resendApiKey = key ?? undefined;
-  });
-  const config = vscode.workspace.getConfiguration('swarmforge');
-  const to = config.get<string>('notify.email.to', '');
-  const from = config.get<string>('notify.email.from', 'onboarding@resend.dev');
-
-  stopBriefingEmailWatcher = startBriefingEmailWatcher(
-    briefingsDir,
-    {
-      readBriefingContent: (fileName: string) => fs.readFileSync(path.join(briefingsDir, fileName), 'utf-8'),
-      sendEmail: async (subject: string, text: string) => {
-        if (!resendApiKey || !to) return false;
-        const result = await sendResendEmail(resendApiKey, { to, from, subject, text });
-        return result.success;
-      },
-    },
-    BRIEFING_EMAIL_CHECK_INTERVAL_MS,
-    setInterval,
-    clearInterval
-  );
-
   context.subscriptions.push({
     dispose: () => {
       if (stopBriefingScheduler) {
         stopBriefingScheduler();
         stopBriefingScheduler = null;
-      }
-      if (stopBriefingEmailWatcher) {
-        stopBriefingEmailWatcher();
-        stopBriefingEmailWatcher = null;
       }
     },
   });
@@ -540,10 +593,15 @@ function handleBounceResult(
   if (panel) {
     panel.updateTarget(targetPath);
   }
+  // BL-115: re-establish the bounce watcher after every successful
+  // launch/bounce, same as every sibling per-target monitor below - covers
+  // a target re-init that swapped out .swarmforge/ out from under the
+  // watcher's old inode, and leaves it ready for the next bounce sentinel.
   startOrRestartBounceWatcher(context, targetPath);
   startOrRestartChaserMonitor(targetPath, context);
   startOrRestartDailyBriefing(targetPath, context);
   startOrRestartIdleClearMonitor(targetPath, context);
+  startOrRestartResourceSampler(targetPath);
   return true;
 }
 
@@ -551,6 +609,33 @@ function handleBounceResult(
 // drain that just reached all-idle, or for a human-forced immediate bounce
 // that skips the rest of the drain. Always stops the drain watcher and
 // clears the sentinel first so neither path can double-fire.
+// BL-353: ports the retired legacy narrator's "PR-link" signal onto the
+// front desk. openPR is the ONLY producer of a PR url anywhere in this
+// codebase, headless or not (confirmed by a repo-wide grep for `gh pr
+// create` outside prCreator.ts itself) - there is nothing to poll for
+// headlessly, so the notification is sent directly here, synchronously,
+// the moment the PR is actually created, rather than through a
+// separately-polled sweep. Reuses BL-346's reserved Operator topic (a PR
+// is not reliably scoped to a single ticket, unlike a NeedsApproval gate)
+// - degrades silently (never throws) if Telegram is not configured or the
+// Operator topic does not exist yet, matching this codebase's own
+// "notification failures never block the underlying action" convention.
+async function announcePrLinkOnTelegram(targetPath: string, prUrl: string, secrets: vscode.SecretStorage): Promise<void> {
+  try {
+    const [token, chatId] = await Promise.all([resolveTelegramBotToken(secrets), resolveTelegramChatId(secrets)]);
+    if (!token || !chatId) {
+      return;
+    }
+    const topicId = topicForSubject(readTopicMap(targetPath), OPERATOR_SUBJECT_ID);
+    if (topicId === undefined) {
+      return;
+    }
+    await sendTelegramMessage(token, chatId, `PR ready: ${prUrl}`, undefined, undefined, topicId);
+  } catch {
+    // best-effort - opening the PR itself must never fail over this
+  }
+}
+
 async function performGracefulBounceNow(
   targetPath: string,
   bounceType: BounceType,
@@ -855,6 +940,29 @@ function startOrRestartIdleClearMonitor(targetPath: string, context: vscode.Exte
   });
 }
 
+// BL-264 (gap #7): resourceTelemetry.ts's startResourceSampler/
+// stopResourceSampler were built and tested but never called from anywhere
+// - so no RSS/CPU samples were ever produced, and every reader (cost
+// sidecar, bridge, swarm-metrics CLI) showed "no samples yet." WIRING
+// ONLY: reuses the sampler and buildSampledRoles's tmux-discovery pid
+// resolution exactly as built, same start/restart/no-op-when-not-up shape
+// as startOrRestartChaserMonitor/startOrRestartIdleClearMonitor above.
+function startOrRestartResourceSampler(targetPath: string): void {
+  if (currentResourceSampler) {
+    stopResourceSampler(currentResourceSampler);
+    currentResourceSampler = null;
+  }
+
+  const swarmforgeDir = path.join(targetPath, '.swarmforge');
+  if (!fs.existsSync(swarmforgeDir)) {
+    return;
+  }
+
+  const roles = readSwarmRoles(targetPath);
+  const sampledRoles = buildSampledRoles(targetPath, roles);
+  currentResourceSampler = startResourceSampler(targetPath, sampledRoles);
+}
+
 async function resolveTargetPath(context: vscode.ExtensionContext): Promise<string | undefined> {
   let targetPath = getTargetPath();
   if (!targetPath) {
@@ -890,6 +998,13 @@ export function activate(context: vscode.ExtensionContext): void {
     context.extensionMode === vscode.ExtensionMode.Development,
     context.extensionPath
   );
+
+  // BL-116: kick off the login-shell PATH probe as early as possible in
+  // activation (fire-and-forget, never awaited here) so it has the best
+  // chance of having resolved by the time the user actually triggers a
+  // launch. Runs at most once per activation; buildLaunchEnv reads
+  // whatever has resolved so far, synchronously, whenever a launch happens.
+  primeLoginShellPathProbe();
 
   const runLogPath = path.join(os.homedir(), '.swarmforge', 'runs.jsonl');
 
@@ -932,6 +1047,7 @@ export function activate(context: vscode.ExtensionContext): void {
     startOrRestartDailyBriefing(targetPath, context);
     startOrRestartGracefulBounceFileWatcher(targetPath, context);
     startOrRestartIdleClearMonitor(targetPath, context);
+      startOrRestartResourceSampler(targetPath);
 
     // BL-066: a live swarm runs under tmux, independent of the extension
     // host — an editor reload never touches it. Skip when a deliberate
@@ -1035,11 +1151,11 @@ export function activate(context: vscode.ExtensionContext): void {
             context.secrets
           );
           panel.updateTarget(targetPath);
-          // Start bounce/chaser monitors after swarm is launched
-          startOrRestartBounceWatcher(context, targetPath);
+          // Start chaser monitor after swarm is launched
           startOrRestartChaserMonitor(targetPath, context);
           startOrRestartDailyBriefing(targetPath, context);
           startOrRestartIdleClearMonitor(targetPath, context);
+                  startOrRestartResourceSampler(targetPath);
         } else {
           vscode.window.showErrorMessage(result.message);
         }
@@ -1076,6 +1192,7 @@ export function activate(context: vscode.ExtensionContext): void {
         startOrRestartDailyBriefing(newTargetPath, context);
         startOrRestartGracefulBounceFileWatcher(newTargetPath, context);
         startOrRestartIdleClearMonitor(newTargetPath, context);
+        startOrRestartResourceSampler(newTargetPath);
       }
     }),
 
@@ -1137,19 +1254,41 @@ export function activate(context: vscode.ExtensionContext): void {
           cancellable: false,
         },
         async () => {
-          const result = await launchSwarm(targetPath!, runName, 120_000, context.secrets);
+          console.log(`[Launch] Starting SwarmForge launch for run: ${runName}`);
+          console.log(`[Launch] Target: ${targetPath}`);
+
+          // Prepare launch environment with API keys
+          const launchEnv = buildLaunchEnv(runName, resolveSwarmConfigPath());
+          console.log(`[Launch] Environment prepared with run name and config`);
+
+          const enrichedEnv = await import('./notify/secrets').then(async (m) => {
+            const e = { ...launchEnv };
+            const mistral = await m.resolveMistralApiKey(context.secrets);
+            if (mistral) {
+              e['MISTRAL_API_KEY'] = mistral;
+              console.log(`[Launch] Mistral API key loaded`);
+            }
+            const openai = await m.resolveOpenAIApiKey(context.secrets);
+            if (openai) {
+              e['OPENAI_API_KEY'] = openai;
+              console.log(`[Launch] OpenAI API key loaded`);
+            }
+            return e;
+          });
+
+          // Orchestrate full launch: Phase 1: agents → Phase 2: daemon → Phase 3: verify ready
+          console.log(`[Launch] Orchestrating full launch sequence...`);
+          const launchStart = Date.now();
+          const result = await orchestrateFullLaunch(targetPath!, enrichedEnv, 120_000);
+          const launchDuration = Date.now() - launchStart;
+
           if (!result.success) {
+            console.error(`[Launch] FAILED after ${launchDuration}ms: ${result.message}`);
             vscode.window.showErrorMessage(result.message);
             return;
           }
 
-          const ready = await waitForSwarmReady(targetPath!);
-          if (!ready) {
-            vscode.window.showWarningMessage(
-              'Swarm process finished but state files were not detected yet.'
-            );
-          }
-
+          console.log(`[Launch] SUCCESS in ${launchDuration}ms - agents: ${result.agentStarted}, daemon: ${result.daemonStarted}, skipDaemon: ${result.skipDaemon}`);
           vscode.window.showInformationMessage(result.message);
           const panel = SwarmPanel.createOrShow(
             context.extensionUri,
@@ -1164,6 +1303,7 @@ export function activate(context: vscode.ExtensionContext): void {
           startOrRestartChaserMonitor(targetPath!, context);
           startOrRestartDailyBriefing(targetPath!, context);
           startOrRestartIdleClearMonitor(targetPath!, context);
+          startOrRestartResourceSampler(targetPath!);
         }
       );
     }),
@@ -1192,7 +1332,7 @@ export function activate(context: vscode.ExtensionContext): void {
       }
 
       const confirmed = await vscode.window.showWarningMessage(
-        'Stop the SwarmForge swarm? This will kill all agent sessions.',
+        'Stop the SwarmForge swarm? This will kill all agent sessions, daemon processes, and clear all state.',
         { modal: true },
         STOP_SWARM_BUTTON
       );
@@ -1200,13 +1340,20 @@ export function activate(context: vscode.ExtensionContext): void {
         return;
       }
 
-      const result = stopSwarm(targetPath);
+      // Complete stop: tmux sessions → daemons → state cleanup → verify stopped
+      const result = stopSwarmCompletely(targetPath);
       if (result.success) {
         vscode.window.showInformationMessage(result.message);
+        console.log(`SwarmForge stop completed: ${result.phases.map((p) => `${p.name}(${p.success ? 'ok' : 'err'})`).join(' → ')}`);
         // Stop chaser monitor when swarm is stopped
         if (currentChaserMonitor) {
-          stopChaserMonitor(currentChaserMonitor);
+          stopChaserMonitor(currentChaserMonitor, clearInterval);
           currentChaserMonitor = null;
+        }
+        // BL-264: no leaked sampler interval past teardown.
+        if (currentResourceSampler) {
+          stopResourceSampler(currentResourceSampler);
+          currentResourceSampler = null;
         }
       } else {
         vscode.window.showWarningMessage(result.message);
@@ -1225,11 +1372,25 @@ export function activate(context: vscode.ExtensionContext): void {
       }
 
       // The token lives only in this extension host process and is shown
-      // once to the user; it is never written into the target repo.
+      // once to the user; it is never written into the target repo. This
+      // bootstrap call still passes a plain string (backward-compatible
+      // with startBridge's pre-BL-241 signature - see
+      // bridgeServer.ts's normalizeToRegistry) rather than building a
+      // device out of the box; per-device registration/rotation/
+      // revocation is a host-side module surface (bridgeServer.ts's
+      // BridgeHandle methods) for now, not yet exposed as its own command.
       const token = generateBridgeToken();
       currentBridge = await startBridge(targetPath, runLogPath, token);
+      // BL-094: the holistic dev-state UI lives at the bridge root; a plain
+      // browser navigation can't set an Authorization header, so the token
+      // is offered as a query param here for convenience (bridgeAuth.ts
+      // restricts that fallback to the root route only). BL-241: that same
+      // token also still works as a Bearer header for every read route,
+      // but a control action (e.g. answering a gate) additionally needs it
+      // repeated as an X-Control-Token header - the step-up this bootstrap
+      // token satisfies by presenting itself twice.
       vscode.window.showInformationMessage(
-        `SwarmForge bridge listening on http://127.0.0.1:${currentBridge.port} — token: ${token}`
+        `SwarmForge bridge listening — open http://127.0.0.1:${currentBridge.port}/?token=${token} for the dev-state UI, or use token: ${token} as a Bearer header (also as X-Control-Token for control actions like answering a gate).`
       );
     }),
 
@@ -1368,6 +1529,9 @@ export function activate(context: vscode.ExtensionContext): void {
           prUrl: result.url,
           completedAt: new Date().toISOString(),
         });
+        if (result.url) {
+          void announcePrLinkOnTelegram(targetPath, result.url, context.secrets);
+        }
         const open = 'Open in Browser';
         const choice = await vscode.window.showInformationMessage(result.message, open);
         if (choice === open && result.url) {
@@ -1510,6 +1674,57 @@ export function activate(context: vscode.ExtensionContext): void {
       vscode.window.showInformationMessage(
         `Mistral API key cleared from SecretStorage.${Boolean(process.env.MISTRAL_API_KEY) ? ' Note: MISTRAL_API_KEY env var is still set.' : ''}`
       );
+    }),
+
+    // BL-353: the bot token + authorized chat id are no longer consumed by
+    // a polling adapter (retired) - they are still resolved directly by
+    // announcePrLinkOnTelegram (openPR) and by the headless front-desk bot
+    // process's own env vars, so the credential commands themselves stay.
+    vscode.commands.registerCommand('swarmforge.setTelegramBotToken', async () => {
+      const input = await vscode.window.showInputBox({
+        title: 'SwarmForge: Set Telegram Bot Token',
+        prompt: 'Enter the Telegram bot token (from @BotFather) to store in SecretStorage',
+        password: true,
+        ignoreFocusOut: true,
+      });
+      const token = trimmedResendKeyInput(input);
+      if (!token) {
+        return;
+      }
+      await context.secrets.store(TELEGRAM_BOT_TOKEN_SECRET_KEY, token);
+      vscode.window.showInformationMessage(
+        `Telegram bot token stored in SecretStorage.${Boolean(process.env.TELEGRAM_BOT_TOKEN) ? ' Note: TELEGRAM_BOT_TOKEN env var takes precedence until unset.' : ''}`
+      );
+    }),
+
+    vscode.commands.registerCommand('swarmforge.clearTelegramBotToken', async () => {
+      await context.secrets.delete(TELEGRAM_BOT_TOKEN_SECRET_KEY);
+      vscode.window.showInformationMessage(
+        `Telegram bot token cleared from SecretStorage.${Boolean(process.env.TELEGRAM_BOT_TOKEN) ? ' Note: TELEGRAM_BOT_TOKEN env var is still set.' : ''}`
+      );
+    }),
+
+    vscode.commands.registerCommand('swarmforge.setTelegramChatId', async () => {
+      const input = await vscode.window.showInputBox({
+        title: 'SwarmForge: Set Telegram Chat Id',
+        prompt: 'Enter the one Telegram chat id authorized to receive narration and answer gates',
+        ignoreFocusOut: true,
+      });
+      const chatId = trimmedResendKeyInput(input);
+      if (!chatId) {
+        return;
+      }
+      await context.secrets.store(TELEGRAM_CHAT_ID_SECRET_KEY, chatId);
+      vscode.window.showInformationMessage(
+        `Telegram chat id stored in SecretStorage.${Boolean(process.env.TELEGRAM_CHAT_ID) ? ' Note: TELEGRAM_CHAT_ID env var takes precedence until unset.' : ''}`
+      );
+    }),
+
+    vscode.commands.registerCommand('swarmforge.clearTelegramChatId', async () => {
+      await context.secrets.delete(TELEGRAM_CHAT_ID_SECRET_KEY);
+      vscode.window.showInformationMessage(
+        `Telegram chat id cleared from SecretStorage.${Boolean(process.env.TELEGRAM_CHAT_ID) ? ' Note: TELEGRAM_CHAT_ID env var is still set.' : ''}`
+      );
     })
   );
 }
@@ -1517,7 +1732,7 @@ export function activate(context: vscode.ExtensionContext): void {
 export function deactivate(): void {
   SwarmPanel.currentPanel?.dispose();
   if (currentBounceWatcher) {
-    currentBounceWatcher.dispose();
+    currentBounceWatcher.close();
     currentBounceWatcher = null;
   }
   if (currentBridge) {
@@ -1527,6 +1742,11 @@ export function deactivate(): void {
   // Stopping the extension host must tear down live tmux agents too — not
   // only the extension-spawned ./swarm bootstrap child below.
   stopSwarmOnExtensionShutdown(currentTargetPath);
+  // BL-264: no leaked sampler interval past extension shutdown.
+  if (currentResourceSampler) {
+    stopResourceSampler(currentResourceSampler);
+    currentResourceSampler = null;
+  }
   // BL-108 deactivate-reap-02: a normal "stop the extension" must not leak
   // any process group this host spawned and tracked. Best-effort - a
   // partially-torn-down group must not block the rest of deactivate().

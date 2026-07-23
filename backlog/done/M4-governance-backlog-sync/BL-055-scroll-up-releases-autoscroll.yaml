@@ -1,7 +1,7 @@
 id: BL-055
 title: scroll-up must release autoscroll — output updates must not snap the view back down
 milestone: M4
-status: todo
+status: done
 priority: 05
 assigned_to: coder
 

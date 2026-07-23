@@ -2,10 +2,13 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { SwarmRole, respawnAgent } from '../swarm/tmuxClient';
+import { AVAILABLE_CLAUDE_MODELS, readCurrentModel, switchRoleModel } from '../swarm/backendSwitch';
+import { EFFORT_LEVELS, hasEffortSetting, readCurrentEffort, suggestRoleEffort, switchRoleEffort } from '../swarm/effortDial';
 import { PaneTailer } from './paneTailer';
 import { currentStageLabel, readPipelineStages, findLiveHolder, parseRolesTsv } from '../swarm/swarmState';
 import { computeSwarmMetrics, DEFAULT_SUITE_WARN_SECONDS } from '../metrics/swarmMetrics';
-import { computeLiveTransportHealth } from '../swarm/transportHealth';
+import { computeLiveTransportHealth, TRANSPORT_CANARY_BUDGET_SECONDS } from '../swarm/transportHealth';
+import { runCanaryCycle, canaryQueueCompletedDir } from '../swarm/canaryInjector';
 import { computeDaemonProcessStatus } from '../swarm/daemonHealth';
 import { escalatedStuckRoles } from '../watchdog/stuckEscalations';
 import { loadRuns } from '../runs/runLog';
@@ -17,6 +20,7 @@ import { NeedsHumanReconciler } from './needsHumanReconciler';
 import { extractQuestionSnippet } from './needsHumanDetection';
 import { NeedsHumanEvent } from './paneTailer';
 import { recordSessionUrl, getSessionUrl } from '../notify/sessionUrlCapture';
+import { recordRateLimitCooldownIfPresent } from '../swarm/rateLimitCooldownDetector';
 import {
   NeedsHumanEmailNotifier,
   EmailNotifyConfig,
@@ -28,6 +32,7 @@ import { resolveResendApiKey } from '../notify/secrets';
 import { readBounceDrainState } from '../swarm/bounceDrain';
 import { buildRoleInboxes } from '../watchdog/chaserMonitor';
 import { scanInProcess } from '../swarm/inboxChaser';
+import { handleCoordinatorDeadEvent } from '../swarm/coordinatorLossTrigger';
 
 const STAGE_POLL_INTERVAL_MS = 2000;
 const OUTPUT_CHANNEL_NAME = 'SwarmForge';
@@ -36,7 +41,6 @@ const OUTPUT_CHANNEL_NAME = 'SwarmForge';
 // which governs agent-inactivity chasing at a much shorter horizon — this is
 // the coarser "is anything actually moving" alarm for the panel).
 const TRANSPORT_STALL_THRESHOLD_SECONDS = 1800;
-const TRANSPORT_CANARY_BUDGET_SECONDS = 600;
 
 export class SwarmPanel {
   public static currentPanel: SwarmPanel | undefined;
@@ -88,6 +92,20 @@ export class SwarmPanel {
             break;
           case 'restartAgent': {
             const result = respawnAgent(this.targetPath, message.role);
+            if (!result.success) {
+              vscode.window.showErrorMessage(result.message);
+            }
+            break;
+          }
+          case 'switchModel': {
+            const result = switchRoleModel(this.targetPath, message.role, message.model);
+            if (!result.success) {
+              vscode.window.showErrorMessage(result.message);
+            }
+            break;
+          }
+          case 'switchEffort': {
+            const result = switchRoleEffort(this.targetPath, message.role, message.effort);
             if (!result.success) {
               vscode.window.showErrorMessage(result.message);
             }
@@ -205,6 +223,7 @@ export class SwarmPanel {
         for (const update of updates) {
           this.latestPaneText.set(update.role, update.text);
           recordSessionUrl(update.role, update.text);
+          recordRateLimitCooldownIfPresent(this.targetPath, update.role, update.text, Date.now());
         }
       },
       (events) => {
@@ -212,6 +231,11 @@ export class SwarmPanel {
       },
       (events) => {
         this.panel.webview.postMessage({ type: 'dead', events });
+        // BL-245: an unexpected coordinator pane death triggers bounded
+        // respawn, then quiesce-and-teardown on exhaustion - fire-and-forget
+        // (the recovery engine itself owns its own timeouts/backoff; this
+        // callback must not block delivering the 'dead' event to the webview).
+        void handleCoordinatorDeadEvent(this.targetPath, events);
       },
       (message) => {
         this.outputChannel.appendLine(message);
@@ -233,6 +257,9 @@ export class SwarmPanel {
       },
       (events) => {
         this.panel.webview.postMessage({ type: 'activity', events });
+      },
+      (events) => {
+        this.panel.webview.postMessage({ type: 'decisionStatus', events });
       }
     );
     this.tailer.start();
@@ -332,6 +359,15 @@ export class SwarmPanel {
       this.panel.webview.postMessage({ type: 'badgeUpdate', badges: buildBadgeMap(backlogItems, this.targetPath) });
       const transportRoles = this.tailer?.getRoles() ?? [];
       const transportRoleInboxes = buildRoleInboxes(this.targetPath, transportRoles.map((r) => r.role));
+      // BL-121: drives the canary on this same poll tick - inject when due,
+      // reconcile any round trip handoffd.bb's canary-sweep! completed since
+      // the last tick - before reading transport health below.
+      runCanaryCycle(
+        this.targetPath,
+        canaryQueueCompletedDir(this.targetPath),
+        Date.now(),
+        TRANSPORT_CANARY_BUDGET_SECONDS
+      );
       const transportHealth = computeLiveTransportHealth(this.targetPath, transportRoleInboxes, Date.now(), {
         stallThresholdSeconds: TRANSPORT_STALL_THRESHOLD_SECONDS,
         canaryBudgetSeconds: TRANSPORT_CANARY_BUDGET_SECONDS,
@@ -382,22 +418,29 @@ export class SwarmPanel {
   // detector uses. Routed through needsHumanReconciler so this source's
   // "false" never clears a tile the question detector still holds true (and
   // vice versa) — see needsHumanReconciler.ts (BL-067).
+  //
+  // BL-148: this used to ALSO feed this.emailNotifier directly (both here
+  // and, redundantly, again via recordEmailUpdates below) - but that made
+  // the stuck-escalation email depend on this panel's own poll loop, which
+  // stops the moment the webview is closed (the root cause of a confirmed
+  // wedge never alerting a human). Stuck-escalation emailing now lives at
+  // the extension-host level, driven by chaserMonitor's own
+  // panel-independent interval (see extension.ts's
+  // ensureStuckEscalationNotifier) - this method only owns the webview
+  // badge now.
   private postStuckEscalations(): void {
     const deltas = this.needsHumanReconciler.applyStuckRoles(escalatedStuckRoles());
     if (deltas.length > 0) {
       this.panel.webview.postMessage({ type: 'needsHuman', events: deltas });
-      this.emailNotifier?.recordUpdates(deltas, Date.now());
     }
-    this.recordEmailUpdates(deltas);
   }
 
-  // Feeds the BL-073 email notifier from the RECONCILED needs-human deltas
-  // (the same ones posted to the webview), not from either raw source
-  // directly. Both the question detector and the stuck-in-process chaser
-  // reach this: a stuck-escalated role now emails too (the silent-overnight
-  // -stall case BL-067/BL-073 both exist for), and — same reasoning as the
-  // webview reconciler — one source's "false" can never prematurely clear
-  // the grace-period clock while the other source still holds true.
+  // Feeds the BL-073 email notifier from question-detection deltas (BL-045)
+  // only now (BL-148 moved stuck-escalation emailing off this panel-scoped
+  // instance, see postStuckEscalations above) - a role asking a question in
+  // its pane, PaneTailer's exclusive signal, needs the panel open to read it
+  // by construction, so this remaining panel-dependency is unavoidable and
+  // correctly scoped, unlike the stuck-escalation path.
   private recordEmailUpdates(deltas: NeedsHumanEvent[]): void {
     if (!this.emailNotifier || deltas.length === 0) {
       return;
@@ -446,6 +489,29 @@ export class SwarmPanel {
         role: r.role,
         displayName: r.displayName,
         agent: r.agent,
+        // BL-235: only claude-backed roles get a model dropdown (the
+        // narrow-slice scope) - currentModel/availableModels are omitted
+        // for every other agent rather than sent as empty/misleading data.
+        ...(r.agent === 'claude'
+          ? { currentModel: readCurrentModel(this.targetPath, r.role), availableModels: AVAILABLE_CLAUDE_MODELS }
+          : {}),
+        // BL-236: same claude-only gate for the effort dial - a non-claude
+        // role gets no effort fields at all, so the webview shows it
+        // unavailable rather than sending an unsupported argument
+        // (effort-unsupported-04). suggestedEffort/rationale are advisory
+        // only (suggestRoleEffort has no side effects); nothing changes
+        // until the operator explicitly picks a value.
+        ...(hasEffortSetting(r.agent)
+          ? (() => {
+              const suggestion = suggestRoleEffort(r.role);
+              return {
+                currentEffort: readCurrentEffort(this.targetPath, r.role),
+                availableEfforts: EFFORT_LEVELS,
+                suggestedEffort: suggestion.suggestedEffort,
+                effortRationale: suggestion.rationale,
+              };
+            })()
+          : {}),
       })),
     });
   }

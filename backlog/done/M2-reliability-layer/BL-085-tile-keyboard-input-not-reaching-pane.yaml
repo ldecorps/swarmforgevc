@@ -1,7 +1,7 @@
 id: BL-085
 title: BUG — typing into an agent tile no longer reaches the tmux pane (all tiles)
 milestone: M2
-status: todo
+status: done
 priority: 01
 assigned_to: unassigned
 

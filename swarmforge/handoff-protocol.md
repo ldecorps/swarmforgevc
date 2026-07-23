@@ -35,11 +35,25 @@ Each agent worktree owns this structure:
     new/
     in_process/
     completed/
+    abandoned/
 ```
 
 The daemon consumes `outbox/`. Agents consume `inbox/new/` through helper
 scripts. The `sent`, `failed`, `in_process`, and `completed` directories provide
 the audit trail and restart state.
+
+**Master-resident roles get their own mailbox subdirectory.** Any role whose
+`swarmforge.conf` window line uses worktree name `master` (typically
+`coordinator` and `specifier`) shares one physical checkout with every other
+master-resident role, so it does not get the physical separation a dedicated
+`.worktrees/<role>` checkout provides. For those roles only, the layout above
+lives one level deeper, under `.swarmforge/handoffs/<role>/` — e.g.
+`.swarmforge/handoffs/coordinator/inbox/new/`. Every role with its own
+dedicated worktree keeps the flat layout shown above unchanged. All mailbox
+paths are resolved through one shared function (`mailbox-dir`/
+`mailbox-base-dir` in `handoff_lib.bb`, callable from shell via
+`mailbox_dir.bb`; mirrored in the extension's `swarmState.ts`) — no script
+constructs a mailbox path by hand.
 
 ## Role Receive Mode
 
@@ -114,8 +128,6 @@ commit: a1b2c3d9
 created_at: 2026-06-15T14:05:31Z
 enqueued_at: 2026-06-15T14:05:32Z
 
-Re-read your role and constitution.
-
 merge_and_process coder a1b2c3d9
 ```
 
@@ -125,6 +137,27 @@ identifies the specific recipient copy.
 ## Message Types
 
 Agents may request only four message types.
+
+### Generated body preamble (BL-519)
+
+`swarm_handoff.sh` prepends a short reminder only when **every** recipient's
+`roles.tsv` agent column is **not** `claude` (today: aider, grok, and other
+agents that still bootstrap via tmux file injection):
+
+```text
+Re-read your role and constitution.
+
+```
+
+For **Claude** recipients — the default for pipeline roles, including the
+mono-router resident — there is **no** preamble. Constitution, PIPELINE, and
+role are already inlined into `--append-system-prompt-file` at launch and on
+every `rotate_to_role.sh` / respawn (BL-519). The generated body is only the
+actionable payload (`merge_and_process …`, the note text, or the rule-proposal
+block). A mixed broadcast (one Claude + one aider recipient) keeps the legacy
+preamble for all copies.
+
+The examples below show the Claude (no-preamble) form unless noted.
 
 ### `awake`
 
@@ -163,8 +196,6 @@ commit: a1b2c3d9e8
 Generated body:
 
 ```text
-Re-read your role and constitution.
-
 merge_and_process coder a1b2c3d9
 ```
 
@@ -211,8 +242,6 @@ message: Waiting on QA result before merging cleanup branch.
 Generated body:
 
 ```text
-Re-read your role and constitution.
-
 Waiting on QA result before merging cleanup branch.
 ```
 
@@ -222,20 +251,25 @@ The `message` value must be a single line no longer than 80 characters.
 
 After the final QA gate passes on a parcel:
 
-1. **QA → coordinator:** `git_handoff` or `note` with priority `00`, the
-   QA-approved commit (10-char abbrev), and stable task/backlog id.
-2. **QA → worktree roles:** `note` broadcast to
+1. **QA → worktree roles:** `note` broadcast to
    `coder,cleaner,architect,hardender,documenter` with priority `00`, instructing
    each recipient to merge its own worktree branch up to QA's approved commit
    (not to `main`). Example message:
    `BL-042 QA-approved a1b2c3d4e5 — merge your branch up to QA's`.
-3. **Worktree roles:** on receiving the merge-up `note`, run
+2. **QA lands `main`:** QA's approved commit is the verified, integrated result,
+   so QA merges/fast-forwards `main` to it and pushes origin (same session; never
+   force-push), and closes the GitHub issue for a `GH-`-seeded ticket
+   (`issue_done.sh`). QA is the integration point (BL-247).
+3. **QA → coordinator:** `git_handoff` or `note` with priority `00`, the
+   QA-approved commit (10-char abbrev), and stable task/backlog id, so the
+   coordinator does the backlog bookkeeping.
+4. **Worktree roles:** on receiving the merge-up `note`, run
    `git merge <qa-commit>` (or `--no-ff`) in your worktree, resolve conflicts
    if any, then `done_with_current.sh`. Do not forward the parcel — QA already
    closed the pipeline chain.
-4. **Coordinator:** on receiving QA approval, merge the approved commit into
-   `main`, move the ticket from `backlog/active/` to `backlog/done/`, promote
-   the next paused item if below `active_backlog_max_depth`, and push `main`.
+5. **Coordinator:** on receiving QA approval, move the ticket from
+   `backlog/active/` to `backlog/done/` and promote the next paused item if below
+   `active_backlog_max_depth`. The coordinator runs NO git merge or push (BL-247).
 
 The **specifier** is excluded from the merge-up broadcast and does not perform
 integration merges — it specifies only.
@@ -268,8 +302,6 @@ rationale: BL-075 — a hardener batch completed its step but never forwarded a 
 Generated body:
 
 ```text
-Re-read your role and constitution.
-
 Rule proposal (constitution) from cleaner: Batch roles must forward every parcel in a batch, not just their own step.
 Rationale: BL-075 — a hardener batch completed its step but never forwarded a docs-only parcel.
 ```
@@ -325,6 +357,51 @@ Atomic outbound write sequence:
 
 The daemon should ignore `outbox/tmp/` and process only final `.handoff` files
 that appear directly under `outbox/`.
+
+### Durable install and corrupt-handoff quarantine (BL-365)
+
+A plain `write` + `rename` is atomic in *ordering* only, not *durability*: the
+rename can land on disk while the file's own contents have not yet been
+flushed, so a crash or restart in that window can leave a correctly-named,
+zero-byte "atomically installed" handoff. This happened once in production
+(a coder→cleaner `git_handoff` was dispatched as a contentless task,
+silently losing the parcel — the stuck/chase sweeps never fired because the
+mail moved perfectly).
+
+The install path is now `write` → `fsync` → `rename` (`atomic-write!` in
+`handoff_lib.bb`), used by both `swarm_handoff.bb`'s outbox install and
+`handoffd.bb`'s recipient-inbox copy.
+
+On top of the durability fix, every hop that can observe a corrupt handoff
+file (empty, missing a required envelope header, or headers with no body —
+`corrupt-handoff?` in `handoff_lib.bb`) now refuses to pass it on as work:
+
+- `swarm_handoff.bb` re-reads what actually landed on disk after installing
+  and deletes it if corrupt, so a failed write never leaves a file in
+  `outbox/` for anything downstream to pick up.
+- `handoffd.bb`'s `deliver!` checks for a corrupt outbox file before parsing
+  recipients, and if corrupt routes it to the existing `fail!` path — moved
+  to `failed/` with a diagnostic `.error` stub — instead of copying it into
+  a recipient's inbox. This is the same "move malformed or undeliverable
+  files to `failed/`" behavior the protocol already asked for above; the
+  corrupt-handoff check just makes it actually catch a zero-byte file.
+- `ready_for_next_task.bb` / `ready_for_next_batch.bb` (via the shared
+  `resolve-dequeueable-candidates` in `handoff_lib.bb`) quarantine a corrupt
+  `inbox/new/` candidate before it can be promoted into `in_process/`,
+  falling through to the next genuinely-dequeueable file. If every queued
+  candidate is corrupt, the result is a clean `NO_TASK`/empty batch rather
+  than a promoted contentless task. This quarantine reuses the existing
+  dead-letter mechanism rather than inventing a new one: the corrupt file is
+  renamed in place to the same `<name>.handoff.dead` suffix
+  `chase_sweep_lib.bb` already uses for stuck mail, so it is picked up by
+  the same `notify-dead-letters.js` sweep that already alerts a human over
+  Telegram for any `*.handoff.dead` file — a quarantined parcel is surfaced,
+  never just silently moved aside.
+
+This is a cheap structural check — "does this parse into a real handoff
+envelope at all?" — not the semantic re-validation of header values the
+protocol deliberately declines to repeat in the daemon; that stays the
+sender's job.
 
 Reserved headers:
 
@@ -412,6 +489,112 @@ Example tmux wake-up (from the shared constant):
 You have new handoff mail. If idle, run ready_for_next.sh.
 ```
 
+### OpenRouter provider for claude-harness roles (BL-523)
+
+Set `SWARMFORGE_OPENROUTER_ROLES` to a space-separated list of role names
+(for example via `.swarmforge/openrouter.env`). Listed claude-harness roles
+point Claude Code at OpenRouter's Anthropic-compatible endpoint
+(`ANTHROPIC_BASE_URL=https://openrouter.ai/api`) and authenticate with
+`OPENROUTER_API_KEY` (injected ephemerally via `tmux respawn-pane -e`, never
+written into launch scripts — BL-130). Unlisted or empty list → unchanged
+first-party subscription auth (`unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN`).
+The role's `--model` still comes from the pack `window` line / settings JSON.
+
+Pack example: `swarmforge/packs/openrouter-cheap-mono-router.conf`. Check the
+API key's **monthly spend limit** in the OpenRouter dashboard — account
+credits alone are not enough when the key cap is exhausted.
+
+Acceptance shell coverage: `swarmforge/scripts/test/test_openrouter_provider_support.sh`.
+
+### OpenRouter pane env on respawn
+
+`launch_role` injects `OPENROUTER_API_KEY` (and optional
+`CLAUDE_CODE_MAX_OUTPUT_TOKENS`) via ephemeral `tmux respawn-pane -e` so the
+launch script can point Claude Code at OpenRouter without writing secrets to
+disk (BL-130). Chase and `./swarm ensure` respawns must pass the same `-e`
+flags; omitting them leaves `ANTHROPIC_AUTH_TOKEN` empty and every turn fails
+(empty/malformed HTTP 200). Respawn always uses the canonical
+`.swarmforge/launch/<role>.sh` at the project root — never a worktree-local
+copy — so a repair cannot relaunch the wrong role's script into a session.
+
+### Mono-router panel live feed
+
+Under `config rotation router`, only the resident pipeline pane and the
+coordinator session stand. The VS Code/Cursor panel must treat
+`sessions.tsv` ∩ live tmux sessions as the tile set (`readLiveSwarmRoles`):
+`isSwarmReady` is true when resident + coordinator are up (not when every
+pack role has a pane), and `runningSwarmMatchesConfig` compares pack
+`window` lines to non-coordinator `sessions.tsv` rows so coordinator
+provisioning does not falsely mark a mismatch.
+
+### Mono-router rotate targets resident session
+
+`rotate_to_role.sh` must respawn the standing pipeline pane (home role
+session from `roles.tsv`, usually `swarmforge-coder`), not whatever
+`tmux display-message` returns without `-t`. Headless agent shells often
+resolve the wrong pane, so rotation can print success while the resident
+stays on the old role. The same OpenRouter `-e` injection as chase/ensure
+applies on rotate and idle-clear respawn.
+
+
+### Dispatch-gap sweep
+
+The daemon's existing chase/nudge sweep only watches inbox mail (queued or
+in-process handoffs), so a `backlog/active/` item that never received a
+routing handoff at all — no inbox mail ever existed for it — was invisible
+to that sweep and could sit indefinitely with no alert (BL-217 sat this way
+roughly 3 hours before being noticed manually).
+
+On the same sweep cadence, the daemon also scans every active backlog item
+against every role's outbox/sent/completed/in_process/new handoff trail (by
+ticket id, read from a `git_handoff`'s `task` header or a `note`'s leading
+ticket id). Two complementary closes run from that scan, both via the normal
+`swarm_handoff.bb` outbound path (never a hand-written inbox file), attributed
+`from: coordinator`:
+
+1. **Assigned, never dispatched (BL-222).** An active item that already has
+   `assigned_to` but **no** trail anywhere is auto-routed: the daemon sends a
+   `note` **to that assignee** so the living role picks the work up. A gap
+   already covered by an in-flight auto-routed note is not re-routed on the
+   next sweep.
+
+2. **Active but unassigned.** An active item with an `id` and a missing/blank
+   `assigned_to` is invisible to (1) — there is nowhere to auto-route — and the
+   coordinator often idles on mailbox `NO_TASK` because it must not self-poll.
+   The daemon therefore sends a `note` **to the coordinator only**
+   (`"<id> active unassigned - assign_to and route it."`). The sweep never
+   writes `assigned_to` itself; intake and routing remain the coordinator's
+   exclusive duty. Once that nudge note exists as a trail, the item is not
+   re-nudged.
+
+### Push sweep
+
+Nothing in the swarm otherwise runs `git push`: publication of local `main`
+to `origin/main` depended entirely on an agent role remembering to run it,
+which twice in one day silently didn't happen — hours of committed,
+QA-approved work sat local while `origin/main` stayed frozen, indistinguishable
+from outside (GitHub, a phone, a remote session) from a dead swarm (BL-356).
+
+On the same sweep cadence, the daemon also runs a push sweep (`push_sweep_lib.bb`)
+against the master checkout's `main` branch:
+
+- **Local ahead, origin not ahead:** push `main` to `origin`, with a bounded,
+  backed-off retry budget. Only once that budget is exhausted does the daemon
+  raise a push-failure alarm.
+- **Origin ahead of (or diverged from) local:** never force-push. Raise a
+  divergence alarm and leave reconciliation to a human or the coordinator.
+- **Origin already has every local commit:** clear all persisted sweep state
+  (backoff, both alarms) — a later failure episode of either kind always
+  starts fresh and alarms again.
+
+Both alarms are delivered via the shared `daemon_alarm_lib.bb` email sender
+and follow the project's delivery-based arming rule: a transient send failure
+never arms the "already alarmed" flag (it retries, bounded), while a terminal
+misconfiguration warns once and arms. The push-failure and divergence alarms
+also clear each other's stale armed flag on transition between the
+`:should-push` and `:diverged` branches, so a resolved episode of one kind
+can never suppress a later, unrelated episode of the other kind.
+
 ## Queue Helper Scripts
 
 Agents should not manually move inbox files. Helper scripts should own queue
@@ -446,13 +629,56 @@ Responsibilities:
 - If an in-process file exists, report that it must be resumed or completed
   before accepting new work.
 - If no in-process file exists, select the first file in `inbox/new/` by sorted
-  filename order.
+  filename order, skipping any candidate whose basename already exists in
+  `inbox/completed/` or `inbox/abandoned/` — a stale duplicate left behind in
+  `new/` (e.g. by a layout migration or interrupted delivery) is logged as
+  `SKIPPED already-processed: <basename>` rather than resurrected as fresh
+  work, and the next genuinely-new candidate behind it is dequeued instead
+  (BL-218).
 - Atomically move that file to `inbox/in_process/`.
 - Add or update `dequeued_at`.
 - Print the accepted task path, sender, message type, priority, and payload.
-- Print `NO_TASK` if no inbox item is available.
+- Print `NO_TASK` if no inbox item is available (including when every `new/`
+  candidate was skipped as already-processed).
 - Refuse ambiguous states, such as multiple in-process files, unless an explicit
   repair is made outside the helper.
+- Before printing a task (resuming an in-process claim or freshly dequeuing
+  one), run the branch/claim mismatch guard (BL-529, see below).
+
+### Branch/claim mismatch guard (BL-529)
+
+`ready_for_next_task.bb` checks the worktree's current git branch against the
+claim it is about to print, via `swarmforge/scripts/branch_claim_guard_lib.bb`:
+
+- **Generic branch** (`swarmforge-<role>`, `<swarm-name>/<role>`, `main`) or a
+  **ticket branch matching the claim**: no conflict, the turn proceeds
+  unchanged.
+- **Ticket branch naming a DIFFERENT ticket than the claim, clean worktree**:
+  the guard auto-checks-out to the role's standard branch — `<swarm-name>/<role>`
+  per BL-106, falling back to the legacy `swarmforge-<role>` name, with the
+  swarm name read from the target root's swarm-identity file — then the turn
+  proceeds.
+- **Ticket branch mismatch, dirty worktree** (any porcelain output, including
+  untracked files — auto-checkout must never carry one ticket's in-flight
+  edits or scratch onto another ticket's branch): the claim is requeued back
+  to `inbox/new/`, the turn is refused, and a `BRANCH_CLAIM_MISMATCH` warning
+  names the branch and the claim.
+- **Checkout failure** (neither standard-branch candidate resolves, or both
+  are checked out in other worktrees so git refuses the switch): treated as
+  uncorrectable — same requeue-and-refuse path as the dirty-worktree case,
+  rather than proceeding on the wrong branch.
+- **Requeue collision**: if a same-named file already sits in `inbox/new/`
+  (the BL-128 stale-copy window), the requeue refuses loudly with a
+  cannot-requeue diagnostic and leaves both copies intact rather than
+  overwriting the redelivered duplicate. A requeued claim's `.nudge` /
+  `.claim-progress.json` sidecars at its vacated `in_process/` location move
+  with it.
+
+This closes the gap where an agent could spend a turn working against the
+wrong ticket's branch relative to its active claim (root-caused by BL-512
+audit BL-FIX-002). See
+`specs/features/BL-529-ticket-branch-mismatch-guard.feature` for the full
+scenario set.
 
 Example success:
 
@@ -463,8 +689,6 @@ TYPE: git_handoff
 PRIORITY: 00
 TASK_NAME: task-1-cave-setup
 PAYLOAD:
-Re-read your role and constitution.
-
 merge_and_process architect a1b2c3d9
 ```
 
@@ -496,7 +720,9 @@ Responsibilities:
 - If an in-process batch exists, print that batch.
 - Refuse to run if a single in-process task exists.
 - If no in-process work exists, select the first file in `inbox/new/` by sorted
-  filename order.
+  filename order, applying the same already-processed skip against
+  `inbox/completed/` and `inbox/abandoned/` as `ready_for_next_task.sh`
+  (BL-218).
 - Select every queued handoff with the same priority as that first file.
 - Move those files into one `inbox/in_process/batch_<timestamp>_<suffix>/`
   directory.
@@ -530,8 +756,6 @@ FROM: cleaner
 TYPE: note
 PRIORITY: 50
 PAYLOAD:
-Re-read your role and constitution.
-
 Waiting on QA result before merging cleanup branch.
 ```
 
@@ -660,3 +884,20 @@ or the removed send/receive/complete/resend wrapper scripts.
 - Helper scripts do not provide recovery modes for ambiguous queue state.
 - The daemon does not perform a second full validation pass on outbox files;
   `swarm_handoff.sh` is the validation boundary.
+
+## Cold pack switch (until BL-525 ModelFactory)
+
+`swarmforge/scripts/failover_to_gpt.sh <root>` — kill + relaunch `--pack codex-mono-router`
+with `OPENAI_API_KEY` from the environment (BL-130). Verifies coder+coordinator
+sessions before exiting 0.
+
+`./swarm ensure <root>` on a mono-router standing shape reports pipeline rotate
+targets as `DORMANT` (not `FAILED`), and respawns standing panes with full
+provider `-e` passthrough (OpenAI / Cerebras map / OpenRouter / Mistral).
+
+## Remote bridge UI (holistic / pipeline board)
+
+Headless bridge listens on port 8765 (`BRIDGE_TOKEN` from
+`.swarmforge/operator/bridge-token`). Open the **root** URL (not `/pipeline`):
+enter the bearer token, or use `/?token=…` once. A bare `/pipeline` URL still
+returns JSON 401 by design.

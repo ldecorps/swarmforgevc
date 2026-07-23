@@ -1,0 +1,103 @@
+id: BL-413
+title: "Sweep stale acceptance-test sandboxes from /tmp (the ENOSPC root cause)"
+milestone: M8
+type: bug
+status: todo
+severity: high
+priority: 2
+direction: human-requested
+depends_on: []
+source: "backlog/INTAKE-disk-space-low-alert.md — the companion cleanup ticket the intake declares 'not optional'. Measured 2026-07-15: /tmp held 879,887 entries / 37 GB of never-swept sandboxes; box had rebooted ~8h earlier, so the accumulation rate is CURRENT."
+
+notes: |
+  WHY: The disk ALERT (BL-412) is defense-in-depth; THIS is the disease. The
+  acceptance/test harness creates per-run sandboxes under /tmp (mktemp -d, named
+  sfvc-* by extension tests and aps-* by the APS tooling, plus bare tmp.*) and
+  never removes them. 880k entries in one directory both consumes space (which
+  inflates the VHDX on C:) and degrades every /tmp operation.
+
+  PRIMARY FIX — a periodic stale-sandbox sweep (this is the real defense; a
+  crash/SIGKILL skips any per-runner trap, and there are hundreds of mktemp
+  sites): on an existing always-alive loop's cadence, remove a /tmp entry ONLY
+  when ALL of these hold:
+    1. its name matches a KNOWN sandbox prefix (sfvc-, aps-; extend the list
+       explicitly, never a broad glob) — an allowlist, not a denylist;
+    2. it is older than a stale threshold (default 24h; make it configurable);
+    3. no live process is rooted in it (no process whose cwd/open files are
+       under it). If liveness cannot be determined cheaply and safely, KEEP it.
+
+  GUARDRAILS (these are the point of the ticket — a careless /tmp sweep can
+  DECAPITATE the running swarm, per the engineering 'LIVE shared runtime path'
+  rule):
+    - NEVER touch /tmp/swarmforge-${UID}/ or any socket/daemon root a running
+      swarm owns — a unix socket cannot be re-linked once unlinked and tmux
+      cannot rebind, so deleting it permanently loses control of a live swarm.
+      Exclude it explicitly, regardless of age.
+    - Match the sandbox allowlist prefixes ONLY; never sweep an unknown entry.
+    - The sweep's temp root MUST be reachable through a redirectable env seam
+      (the ${SWARMFORGE_...:-<default>} convention swarmforge.sh already uses),
+      so the test points it at a test-owned directory and NEVER creates/rms/
+      globs inside the real /tmp. A test that would have to write into the real
+      /tmp is reporting a MISSING SEAM — add the seam in the same parcel, do not
+      ship untested.
+    - Bound any work per sweep so a huge backlog (880k entries) does not stall
+      the host loop's tick — cap entries handled per pass and continue next tick.
+
+  STOCK vs FLOW — THIS SWEEP IS NOT SUFFICIENT ALONE (2026-07-15T11:40Z
+  follow-up finding): the /tmp generator is now measured at ~42 dirs/sec while
+  the suite runs (~1M entries/day), so /tmp regrows to the same inode-count
+  degradation BETWEEN sweeps even after a full sweep. This sweep bounds the
+  STOCK (accumulated + crash-orphaned sandboxes a source-fix can never catch);
+  the FLOW must be stopped at the source by the companion BL-420 (make the
+  extension test helpers clean up their own mkdtemp dirs). Both are required and
+  touch different files, so they can proceed in parallel. (This corrects the
+  earlier "the sweep is what actually bounds growth" note — the sweep bounds the
+  stock; BL-420 bounds the rate.)
+
+  SECONDARY (best-effort hygiene): where a small number of hot NON-unit-test
+  sandbox creators can cheaply add trap-based cleanup on runner exit (e.g.
+  specs/pipeline/scripts/run_gherkin_mutation.sh's mktemp -d work-dir, the
+  recruiter/benchmark sfvc- roots), do so. The ~147 unit-test mkdtemp sites are
+  BL-420's scope (a shared auto-cleanup helper), not this ticket's.
+
+  HOST LOOP: reuse an existing always-alive loop (operator_runtime.bb tick or a
+  daemon sweep already on that cadence); do NOT add a new daemon. The disk
+  monitor (BL-412) can live on the same loop — orthogonal decision, same host.
+
+  TESTABILITY: the decision is a PURE predicate — given (name, age, has-live-
+  process, is-socket-dir), return removable? — unit-tested with fixtures and no
+  real /tmp. The sweep action is a thin wiring slice over the redirectable temp
+  root and an injected 'list entries / stat age / process-rooted?' seam.
+
+  Scope: a new sweep module + its wiring into the chosen always-alive loop, and
+  the env seam for the temp root. Note the mktemp creators live across
+  extension/test/*, specs/pipeline/steps/*, and swarmforge/scripts/* — the
+  sweep must not depend on any of them changing.
+
+  OUT OF SCOPE: the disk alert itself (BL-412); redesigning how tests allocate
+  temp dirs wholesale.
+
+acceptance:
+  feature: specs/features/BL-413-stale-sandbox-sweep.feature
+  steps:
+    - "A /tmp entry is removed only when it matches a known sandbox prefix AND is older than the stale threshold AND has no live process rooted in it"
+    - "The running swarm's socket directory /tmp/swarmforge-<uid> is never removed, regardless of age"
+    - "The sweep operates against a redirectable temp root so tests never touch the real /tmp"
+
+qa_e2e: |
+  1. Unit: drive the removable? predicate over the four fixture combinations
+     (prefix match x stale x live-process) and assert the removal decision; add
+     an explicit case proving the socket-dir exclusion wins over age.
+  2. Wiring: point the sweep's temp-root seam at a fixture dir containing a
+     stale sfvc- sandbox, a fresh sfvc- sandbox, a stale sandbox with a
+     disposable live child process rooted in it, a stale unknown-prefix entry,
+     and a mock /tmp/swarmforge-<uid> socket dir; run one sweep and assert ONLY
+     the stale idle sfvc- sandbox is gone and everything else remains. Never run
+     this against the real /tmp.
+  3. Live: on the host, run one bounded sweep pass and confirm /tmp entry count
+     drops without the live swarm losing its socket (swarm stays controllable);
+     re-measure df to confirm reclaimed space.
+
+human_approval: approved  # human via Operator relay (OPERATOR thread), 2026-07-15T12:43Z: "Approved all" to the 5-ticket list (BL-411 413 414 415 418)
+
+mutation_cost: medium

@@ -1,0 +1,75 @@
+id: BL-418
+title: "Iconize the standing non-ticket topics (support/intake 🎟, Operator 🏛)"
+milestone: M8
+type: feature
+status: todo
+severity: low
+priority: 4
+direction: human-requested
+depends_on: []
+source: "backlog/INTAKE-orchestra-emoji-topic-remap.md — human design session 2026-07-15 (docs/branding/icon-system.md §5a). The 'grows beyond a table edit' half the intake handed to the specifier to scope; split from the ticket-level remap BL-417."
+
+notes: |
+  WHAT: give the standing NON-ticket topics their orchestra icons, within
+  Telegram's free sticker set:
+    - support/intake topic(s): 🎟 (the box office)
+    - standing Operator topic: 🏛 (opera house — human-DECIDED 2026-07-15)
+
+  WHY THIS IS A SEPARATE, LARGER TICKET (specifier decision): BL-342's icon
+  automation fires ONLY on TICKET-level transitions (resolveIconState over
+  folder+type; ICON_EMOJI has only done/defect/feature/paused). Grep confirms
+  NOTHING iconizes support/intake or Operator topics today — so this is NEW
+  wiring (identify the standing topics, resolve their icon against the live set,
+  set it under the ownership rule), not a table edit. Keeping it out of BL-417
+  lets the trivial 🎵 remap ship without waiting on this.
+
+  OWNERSHIP DECISION (the crux): preserve BL-342's rule EXACTLY — never overwrite
+  an icon the swarm did not set (hand-assigned epic icons stay untouched). Extend
+  it to standing topics: the swarm sets 🎟/🏛 only when the topic has no
+  human-customised icon, and records that it owns them (same emittedKey/ownership
+  posture BL-342 uses for ticket topics) so a later human customisation is
+  respected. Do NOT reglyph a standing topic every tick — change-gate it like the
+  ticket-level path.
+
+  IDENTIFYING THE STANDING TOPICS: resolve which topic is support/intake and
+  which is the Operator standing topic from the concierge's existing topic
+  routing/registry (topicRouter / blTopicStore / the standing-Operator-topic
+  record BL-358 established), not by name-matching chat text. Confirm the live
+  wiring at build time — a standing topic id must come from the same store the
+  router already maintains.
+
+  PRESERVE resolve-or-skip: never hardcode custom-emoji ids; skip if 🎟/🏛 are
+  absent from the live getForumTopicIconStickers set (both present 2026-07-15).
+
+  OVERLAP CLUSTER (serialize): topicIcon.ts / topicIconSync.ts / conciergeTick.ts
+  are the known overlap cluster — do not run concurrently with BL-417, BL-414, or
+  other topic-hook tickets. Coordinator serializes.
+
+  Scope: extension/src/concierge/topicIcon.ts (a non-ticket icon mapping),
+  topicIconSync.ts / conciergeTick.ts (fire icon resolution for the standing
+  topics), and the store lookup that yields the standing topic ids. Plus tests
+  and a backfill.
+
+  OUT OF SCOPE: BL-417's ticket-level 🎵 remap; the PWA-only orchestra glyph
+  system (dynamics, freshness fade, role instruments).
+
+acceptance:
+  feature: specs/features/BL-418-standing-topic-icons.feature
+  steps:
+    - "The support/intake standing topic resolves to 🎟 and the Operator standing topic to 🏛"
+    - "A standing-topic icon the swarm did not set (human-customised) is never overwritten"
+    - "A standing-topic icon absent from the live sticker set skips rather than crashing the tick"
+
+qa_e2e: |
+  1. Unit: the standing-topic icon mapping yields 🎟 for support/intake and 🏛
+     for the Operator topic; the ownership check leaves a not-swarm-set icon
+     untouched; a stubbed live set lacking the emoji yields a skip.
+  2. Wiring: a concierge tick over a fixture with a known support-topic id and
+     Operator-topic id calls setTopicIcon once each with the resolved sticker
+     ids, and does NOT re-set on the next tick (change-gated).
+  3. Live: against the real forum group, confirm the standing topics show 🎟/🏛
+     and a hand-set icon on a standing topic is preserved.
+
+human_approval: approved  # human via Operator relay (OPERATOR thread), 2026-07-15T12:43Z: "Approved all" to the 5-ticket list (BL-411 413 414 415 418)
+
+mutation_cost: low

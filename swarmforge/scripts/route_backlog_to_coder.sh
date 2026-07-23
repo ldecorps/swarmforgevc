@@ -54,6 +54,13 @@ if [[ -z "$YAML" || ! -f "$YAML" ]]; then
 fi
 
 BASENAME="$(basename "$YAML" .yaml)"
+# Ensure the active ticket is assigned to coder before the Work note lands.
+if grep -qE '^assigned_to:' "$YAML"; then
+  perl -pi -e 's/^assigned_to:.*/assigned_to: coder/' "$YAML"
+else
+  printf '\nassigned_to: coder\n' >> "$YAML"
+fi
+
 MSG="Work ${BASENAME}: read file in backlog/active"
 if (( ${#MSG} > 80 )); then
   MSG="${MSG:0:80}"
@@ -75,7 +82,7 @@ EOF
 echo "Routing $(basename "$YAML") → coder (message: ${MSG})"
 "$SCRIPT_DIR/swarm_handoff.sh" "$DRAFT"
 
-INBOX="$ROOT/.swarmforge/handoffs/inbox/new"
+INBOX="$(bb "$SCRIPT_DIR/mailbox_dir.bb" "$ROOT" coder new)"
 if compgen -G "${INBOX}"/*"_for_coder.handoff" >/dev/null 2>&1; then
   echo "Coder inbox: $(ls -1t "${INBOX}"/*"_for_coder.handoff" | head -1)"
 else

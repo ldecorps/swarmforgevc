@@ -5,6 +5,8 @@
             [clojure.string :as str]))
 
 (load-file (str (fs/path (fs/parent *file*) "handoff_lib.bb")))
+(load-file (str (fs/path (fs/parent *file*) "backlog_depth_lib.bb")))
+(load-file (str (fs/path (fs/parent *file*) "mono_router_lib.bb")))
 
 (def idle-boundary?
   "Set only when invoked from done_with_current_batch.bb, right after it
@@ -16,6 +18,29 @@
   (when (and idle-boundary?
              (handoff-lib/idle-clear-enabled? (handoff-lib/current-role)))
     (handoff-lib/respawn-self! (handoff-lib/current-role))))
+
+;; ── BL-550: non-home resident strands after a merge-up note (batch mode) ──
+;; The cleaner/hardender run in batch mode and strand the same way as a
+;; task-mode role - same decision as ready_for_next_task.bb.
+
+(defn- mono-router-conf-text []
+  (try (slurp (str (backlog-depth-lib/conf-file-path (handoff-lib/target-root))))
+       (catch Exception _ nil)))
+
+(defn report-no-task-or-rotate! []
+  (let [conf-text (mono-router-conf-text)
+        home-role (mono-router-lib/parse-rotation-home conf-text)]
+    (if (mono-router-lib/rotate-home?
+         {:rotation-router? (mono-router-lib/conf-rotation-router? conf-text)
+          :role (handoff-lib/current-role)
+          :home-role home-role
+          :mailbox-empty? true})
+      (do
+        (println "ROTATE_HOME")
+        (println (str "HOME_ROLE: " home-role)))
+      (do
+        (println "NO_TASK")
+        (maybe-clear-at-idle-boundary!)))))
 
 (defn print-batch [batch-dir]
   (let [files (handoff-lib/handoff-files batch-dir)]
@@ -39,40 +64,47 @@
         dir))))
 
 (defn -main []
-  (let [inbox (handoff-lib/inbox-dir)
-        new-dir (fs/path inbox "new")
-        in-process-dir (fs/path inbox "in_process")
-        completed-dir (fs/path inbox "completed")]
-    (doseq [dir [new-dir in-process-dir completed-dir]]
+  (let [new-dir        (handoff-lib/my-mailbox-dir :new)
+        in-process-dir (handoff-lib/my-mailbox-dir :in_process)
+        completed-dir  (handoff-lib/my-mailbox-dir :completed)
+        abandoned-dir  (handoff-lib/my-mailbox-dir :abandoned)]
+    (doseq [dir [new-dir in-process-dir completed-dir abandoned-dir]]
       (fs/create-dirs dir))
     (let [in-process-batches (handoff-lib/batch-dirs in-process-dir)
-          in-process-files (handoff-lib/handoff-files in-process-dir)]
+          in-process-files   (handoff-lib/handoff-files in-process-dir)]
       (when (seq in-process-files)
         (handoff-lib/fail! 2
-               "TASK_IN_PROCESS_IS_SINGLE: use ready_for_next.sh or done_with_current.sh."
-               (str/join "\n" (map #(str "- " %) in-process-files))))
+                           "TASK_IN_PROCESS_IS_SINGLE: use ready_for_next.sh or done_with_current.sh."
+                           (str/join "\n" (map #(str "- " %) in-process-files))))
       (when (> (count in-process-batches) 1)
         (handoff-lib/fail! 2
-               "AMBIGUOUS_TASK_STATE: multiple batches are already in process."
-               (str/join "\n" (map #(str "- " %) in-process-batches))))
+                           "AMBIGUOUS_TASK_STATE: multiple batches are already in process."
+                           (str/join "\n" (map #(str "- " %) in-process-batches))))
       (if (= 1 (count in-process-batches))
         (print-batch (first in-process-batches))
         (if (handoff-lib/draining?)
           (println "DRAINING")
-          (let [new-files (handoff-lib/handoff-files new-dir)]
-            (if (empty? new-files)
-              (do
-                (println "NO_TASK")
-                (maybe-clear-at-idle-boundary!))
-              (let [batch-priority (handoff-lib/header-value (first new-files) "priority" "50")
-                    batch-dir (new-batch-dir in-process-dir)
-                    selected-files (filter #(= batch-priority (handoff-lib/header-value % "priority" "50")) new-files)]
+          (let [new-files            (handoff-lib/handoff-files new-dir)
+                completed-basenames  (handoff-lib/terminal-basenames completed-dir)
+                abandoned-basenames  (handoff-lib/terminal-basenames abandoned-dir)
+                ;; BL-365: same corrupt-candidate quarantine-and-skip as
+                ;; ready_for_next_task.bb (shared via
+                ;; resolve-dequeueable-candidates) - a corrupt file must
+                ;; never be promoted into a batch as work.
+                dequeueable          (handoff-lib/resolve-dequeueable-candidates new-files completed-basenames abandoned-basenames)]
+            (if (empty? dequeueable)
+              (report-no-task-or-rotate!)
+              (let [batch-priority (handoff-lib/header-value (first dequeueable) "priority" "50")
+                    batch-dir      (new-batch-dir in-process-dir)
+                    selected-files (filter #(= batch-priority (handoff-lib/header-value % "priority" "50")) dequeueable)]
                 (fs/create-dir batch-dir)
                 (doseq [source-file selected-files]
                   (let [target-file (fs/path batch-dir (fs/file-name source-file))]
                     (when (fs/exists? target-file)
                       (handoff-lib/fail! 2 (str "AMBIGUOUS_TASK_STATE: target batch file already exists: " target-file)))
                     (fs/move source-file target-file)
+                    ;; BL-232: same sidecar drop as the task-mode dequeue path.
+                    (handoff-lib/remove-sidecars-of! source-file)
                     (handoff-lib/set-header! target-file "dequeued_at" (handoff-lib/timestamp))))
                 (when (empty? selected-files)
                   (handoff-lib/fail! 2 (str "AMBIGUOUS_TASK_STATE: no tasks selected for batch priority " batch-priority ".")))

@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -12,7 +13,7 @@ const { getWebviewHtml } = require('../out/panel/webviewHtml');
 // daemon process.
 
 function mkTarget(statusJson) {
-  const target = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-daemon-health-'));
+  const target = mkTmpDir('sfvc-daemon-health-');
   if (statusJson !== undefined) {
     const dir = path.join(target, '.swarmforge', 'daemon');
     fs.mkdirSync(dir, { recursive: true });
@@ -74,11 +75,22 @@ test('readDaemonHealth omits detail when a non-healthy state has no incident rea
   assert.deepEqual(readDaemonHealth(target), { state: 'restarting' });
 });
 
-test('computeDaemonProcessStatus reports skipped when daemon is disabled', () => {
+test('computeDaemonProcessStatus reports skipped when daemon is disabled and not running', () => {
   const target = mkTarget(undefined);
   const status = computeDaemonProcessStatus(target, { SWARMFORGE_SKIP_DAEMON: '1' });
   assert.equal(status.phase, 'skipped');
-  assert.match(status.label, /off/);
+  assert.match(status.label, /SKIP_DAEMON/);
+});
+
+test('computeDaemonProcessStatus reports live daemon even when extension env has SKIP_DAEMON', () => {
+  const target = mkTarget('{"state":"healthy"}');
+  fs.writeFileSync(path.join(target, '.swarmforge', 'daemon', 'handoffd.pid'), '4242');
+  const status = computeDaemonProcessStatus(target, { SWARMFORGE_SKIP_DAEMON: '1' }, 20_000, {
+    isPidAlive: () => true,
+    heartbeatAgeMs: 5_000,
+  });
+  assert.equal(status.phase, 'polling');
+  assert.match(status.detail, /extension env expects no daemon/);
 });
 
 test('computeDaemonProcessStatus reports halted from the status file', () => {

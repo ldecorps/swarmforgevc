@@ -1,0 +1,92 @@
+id: BL-367
+title: "The swarm's tmux socket lives in /tmp, where anything can silently and irrecoverably decapitate it"
+milestone: M8
+type: defect
+severity: high
+status: todo
+priority: 3
+direction: expedite
+depends_on: []
+source: "backlog/INTAKE-tmux-socket-in-tmp-decapitates-swarm.md — live incident during a human-attended session, 2026-07-14 ~02:06 UTC+1. Socket path re-verified by the specifier (swarmforge.sh:57)."
+
+notes: |
+  WHAT HAPPENED. The swarm launched at 01:19 on `/tmp/swarmforge-1000/1523266553.sock`. Before 02:06
+  the entire `/tmp/swarmforge-1000/` directory was deleted out from under the running tmux server.
+  Observed: the tmux server (pid 6634) still ALIVE, still owning all 8 role panes; all 8 role `claude`
+  processes ALIVE and working; and the socket path simply gone from disk.
+
+  WHY IT IS UNRECOVERABLE. A unix socket cannot be re-linked once unlinked, and tmux has no command to
+  rebind a running server to a new socket path. So tmux control of that swarm was lost PERMANENTLY,
+  for the life of those 8 processes: no `capture-pane`, no nudges, no stall detection, no dead-pane
+  respawn. The only exit was to kill the orphaned server and all 8 agents and relaunch. (No parcel was
+  lost — BL-323's RESUME-ON-START recovered all 5 in-flight parcels cleanly — but every agent's
+  in-turn context was.)
+
+  THE DEFECT IS THE LOCATION, NOT THE REAPER. `swarmforge/scripts/swarmforge.sh:57` (VERIFIED):
+      TMUX_SOCKET_DIR="/tmp/swarmforge-${UID}"
+  `/tmp` is the one directory on the box that is explicitly EVERYBODY's scratch space and is subject to
+  reaping: `systemd-tmpfiles`, cleanup scripts, test harnesses, an agent tidying up, a human running
+  `rm -rf /tmp/*`. What killed it THIS time was never established, and the intake is emphatic on this
+  point: do NOT close this ticket by finding the culprit. Ruled out by inspection:
+  `systemd-tmpfiles-clean` (the 13-minute-old socket was never age-eligible under `D /tmp 1777 root
+  root 30d`), `kill_all_swarm.sh` (last ran 2026-07-10), any repo code, the BL-340 benchmark, and the
+  agents themselves. Even a correctly-identified one-off reaper leaves the next one free to do it
+  again.
+
+  THE DECIDING EVIDENCE, AND MY CALL ON WHERE IT GOES. The Operator's OWN tmux socket already lives at
+  `.swarmforge/operator/operator-tmux.sock` (`operator_runtime.bb:149`) — and it SURVIVED this
+  incident untouched, while the swarm's `/tmp` socket did not. That asymmetry is the argument, and it
+  is a proven one on this exact host. So: put the swarm's socket under the repo's own gitignored
+  `.swarmforge/` tree, matching the operator's posture.
+    I considered `$XDG_RUNTIME_DIR` (`/run/user/1000`) — the textbook answer, per-user, 0700, cleaned
+    on logout, never touched by `/tmp` reapers — and rejected it as the PRIMARY location for two
+    reasons: (a) the intake's own caveat, that on WSL2 / headless / systemd-less hosts it may be
+    UNSET, so it needs a fallback anyway and the fallback must not be `/tmp`; and (b) it splits swarm
+    runtime state across two homes when `.swarmforge/` already exists, is always present, is already
+    trusted with the operator socket, and is already gitignored. One home, already proven. If a host
+    ever makes `.swarmforge/` unsuitable, `$XDG_RUNTIME_DIR` is the correct fallback — never `/tmp`.
+
+  ⚠ CONSTRAINT THE COMPILER WILL NOT CATCH: THE 108-CHARACTER SOCKET PATH LIMIT. A unix socket path
+  (`sun_path`) is capped at ~108 bytes on Linux (104 on macOS). Moving the socket from a short `/tmp`
+  path into the project tree makes the path a function of WHERE THE PROJECT LIVES, so a deeply-nested
+  checkout can now blow that limit — and the failure mode is an obscure errno at bind time, not a
+  clear message. This is scenario 04, and it is the whole reason `/tmp` is a tempting place to put
+  sockets. Guard it explicitly: detect the overrun and fall back to a short private path (NOT `/tmp`),
+  or shorten deterministically — never let it bind blind. Do not discover this in production.
+
+  RELATED, AND NOT A CONTRADICTION. An earlier fix moved these paths from macOS's `/private/tmp` to
+  `/tmp` so the swarm would launch at all on Linux/WSL. That was correct for portability and is not
+  being reverted — this ticket says `/tmp` is the wrong HOME, not the wrong SPELLING. Check
+  `swarmforge/scripts/kill_all_swarm.sh`'s `SOCKET_GLOB` too: it globs the old location and must
+  follow the socket, or teardown silently stops finding swarms to kill.
+
+  SCOPE. `swarmforge/scripts/swarmforge.sh` (`TMUX_SOCKET_DIR`, :57), `kill_all_swarm.sh`
+  (`SOCKET_GLOB`), and any other reader of the socket path — grep for it rather than assuming these
+  two are the whole set; the extension discovers the socket too (`.swarmforge/tmux-socket`). Out of
+  scope: the control-loss DETECTION half — that is BL-368, and it is deliberately a separate ticket
+  because socket loss is not the only way the control channel can go away.
+
+  IR-DRY REVIEW (done at spec time — do not relitigate). Two residual `possible-synonym` findings,
+  both pairing an ACTION step ("the swarm creates its control socket" / "the swarm is launched with a
+  tmux control socket") against an ASSERTION step ("the swarm's control socket is untouched"). They
+  share the domain noun and nothing else; every scenario in this file is necessarily about the
+  control socket. Deliberate, not drift. The file is final as written.
+
+  E2E QA PROCEDURE: launch a swarm and assert its socket is created outside `/tmp`, private to the
+  user. With the swarm running, delete `/tmp/swarmforge-*` (the OLD location) and assert the swarm is
+  still fully controllable — capture a pane, send a nudge. Then simulate the unset-runtime-dir host
+  (`env -u XDG_RUNTIME_DIR`) and assert the swarm still launches and never falls back to `/tmp`.
+  Finally, launch from a pathologically deep checkout path and assert it either binds successfully or
+  fails with a CLEAR diagnostic naming the path-length limit — never an opaque errno.
+
+acceptance:
+  feature: specs/features/BL-367-swarm-socket-not-in-tmp.feature
+  steps:
+    - "The control socket does not live in shared scratch space"
+    - "The control socket survives a reaper cleaning shared scratch space"
+    - "The swarm launches on a host that offers no per-user runtime directory"
+    - "A deeply-nested project still gets a usable socket"
+
+human_approval: pending
+
+mutation_cost: low

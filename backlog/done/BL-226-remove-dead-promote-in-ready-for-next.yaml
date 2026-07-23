@@ -1,0 +1,60 @@
+id: BL-226
+title: "Remove dead (and misplaced) promote-next-paused-item-if-needed from ready_for_next.bb"
+direction: reliability
+priority: 25
+mutation_cost: low
+source: "coder rule_proposal 2026-07-10 (discovered while fixing BL-216 config-read bug in the same function); rejected as a rule, captured here as a work item by the specifier."
+
+description: |
+  ready_for_next.bb ends with `(promote-next-paused-item-if-needed)` (line 33)
+  AFTER `(dispatch-lib/run-dispatch! ...)` (line 30). run-dispatch! never returns:
+  it either execs the mode's helper via run-helper! -> `process/exec` (which
+  replaces the process image) or exits via exit! -> `System/exit`. Both branches
+  terminate the process, so line 33 is UNREACHABLE dead code and has never run
+  (verified live 2026-07-10; run-dispatch! at swarmforge/scripts/dispatch_lib.bb
+  lines 55-64).
+
+  Beyond being dead, the logic does not belong in a receive helper at all:
+  promoting paused items into backlog/active/ is the coordinator's EXCLUSIVE
+  duty (constitution Articles 1.1 and 3.3), and must respect
+  active_backlog_max_depth and Concurrent Work Orthogonality. A receive helper
+  silently promoting would bypass both — a latent depth-cap-bypass footgun of the
+  same family the coordinator's buggy auto-promote raised (see BL-216 and the
+  pipeline-live-bugs note).
+
+  Wanted behavior:
+    - Delete `promote-next-paused-item-if-needed` (defined line 9) and its call
+      (line 33) from ready_for_next.bb. A grep guard confirms the symbol is gone.
+    - ready_for_next's sole job — dispatching to ready_for_next_task.sh (task) or
+      ready_for_next_batch.sh (batch) per the role's receive mode — is unchanged.
+    - No receive helper promotes; promotion stays coordinator-only.
+
+  Scope (verified live 2026-07-10): swarmforge/scripts/ready_for_next.bb only —
+  the function is private (`defn-`) with a single call site, both in this file;
+  grep found no other caller. Do not touch the coordinator's own promotion path.
+
+  RECONCILE WITH BL-216 (currently ACTIVE): BL-216 edits this SAME function's
+  config read. BL-226 and BL-216 are NOT orthogonal — they touch the same lines
+  and must not run concurrently. If this function is confirmed unreachable, then
+  BL-216's config-read fix within it has no live effect; the coordinator should
+  sequence BL-226 AFTER BL-216 (or reconcile the two scopes — possibly folding
+  the removal into BL-216) rather than promoting them together. Flagging for the
+  coordinator to sequence; this is why the coder routed it as a separate triage
+  item rather than expanding BL-216 unilaterally.
+
+acceptance: specs/features/BL-226-remove-dead-promote-in-ready-for-next.feature
+
+qa_e2e_procedure: |
+  End-to-end procedure QA runs:
+  1. `grep -n promote-next-paused-item-if-needed swarmforge/scripts/ready_for_next.bb`
+     returns nothing (function + call both removed).
+  2. In a fixture with a paused item and active/ below the depth cap, set
+     SWARMFORGE_ROLE and run ready_for_next.sh; assert it dispatches to the
+     mode's helper (task -> ready_for_next_task.sh, batch -> ready_for_next_batch.sh)
+     exactly as before, and that no item moved from backlog/paused/ to
+     backlog/active/.
+  3. Confirm the coordinator's own promotion path is untouched and still promotes.
+
+# HUMAN APPROVAL: feature file specs/features/BL-226-...feature is a new draft
+# authored by the specifier and is pending human review; note the BL-216
+# reconciliation above before promoting.

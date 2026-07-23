@@ -13,13 +13,55 @@ RESET='\033[0m'
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 # BL-145: `./swarm ensure <path>` checks/repairs the extension host, every
-# configured agent pane, and the daemon in one idempotent command, then
-# exits - it never falls into the full (destructive, always-relaunch) launch
-# flow below.
+# configured agent pane, the handoff daemon, the operator runtime, and (when
+# Telegram is configured) the front-desk bridge+bot in one idempotent
+# command, then exits - it never falls into the full (destructive,
+# always-relaunch) launch flow below.
+# Usage / help before path resolution — otherwise `./swarm --help` is treated
+# as WORKING_DIR and fails with `cd: no such file or directory: --help`.
+if [[ "${1:-}" == "--help" || "${1:-}" == "-h" || "${1:-}" == "help" ]]; then
+  cat <<'USAGE'
+SwarmForge launcher
+
+  ./swarm <project-root> [--pack NAME]
+      Launch (or relaunch) the swarm for <project-root>.
+      --pack NAME  → swarmforge/packs/NAME.conf
+
+  ./swarm status [project-root] [--handoffs N]
+      Read-only snapshot: agents, daemons, Telegram bridge (with uptime),
+      and the last N handoffs (ticket, from→to, when).
+
+  ./swarm ensure <project-root>
+      Idempotent repair: extension, standing agent panes, handoffd,
+      operator, Telegram front desk. Mono-router dormant rotate targets
+      report DORMANT (not FAILED).
+
+  ./swarm attach ...
+      Attach helpers (see swarm_attach.sh).
+
+  Pack switch helpers (cold swap until BL-525 ModelFactory):
+      swarmforge/scripts/failover_to_gpt.sh <project-root>
+USAGE
+  exit 0
+fi
+
+if [[ "${1:-}" == "status" ]]; then
+  shift
+  STATUS_ROOT="$PWD"
+  if [[ $# -gt 0 && "${1}" != -* && -d "$1" ]]; then
+    STATUS_ROOT="$(cd "$1" && pwd)"
+    shift
+  fi
+  exec bb "$SCRIPT_DIR/swarm_status.bb" "$STATUS_ROOT" "$@"
+fi
+
 if [[ "${1:-}" == "ensure" ]]; then
   shift
   ENSURE_WORKING_DIR="${1:-$PWD}"
   ENSURE_WORKING_DIR="$(cd "$ENSURE_WORKING_DIR" && pwd)"
+  if [[ -f "$ENSURE_WORKING_DIR/.swarmforge/swarm.env" ]]; then
+    source "$ENSURE_WORKING_DIR/.swarmforge/swarm.env"
+  fi
   exec bb "$SCRIPT_DIR/swarm_ensure.bb" "$ENSURE_WORKING_DIR"
 fi
 
@@ -32,15 +74,28 @@ WORKING_DIR="${1:-$PWD}"
 WORKING_DIR="$(cd "$WORKING_DIR" && pwd)"
 SWARM_FORGE_DIR="$WORKING_DIR/swarmforge"
 CONFIG_FILE="${SWARMFORGE_CONFIG:-$SWARM_FORGE_DIR/swarmforge.conf}"
+EXPLICIT_PACK_CLI=0
 for (( idx = 2; idx <= $#; idx++ )); do
-  if [[ "${!idx}" == "--pack" ]]; then
+  # BL-518: zsh indirect expansion is ${(P)var}; ${!var} is a bashism that
+  # errors "bad substitution" under this script's zsh shebang, so --pack had
+  # never actually worked here (every launch fell through to the default
+  # swarmforge.conf). Fixed so packs/<name>.conf can be selected.
+  if [[ "${(P)idx}" == "--pack" ]]; then
+    EXPLICIT_PACK_CLI=1
     next=$((idx + 1))
     if [[ $next -le $# ]]; then
-      CONFIG_FILE="$SWARM_FORGE_DIR/packs/${!next}.conf"
+      CONFIG_FILE="$SWARM_FORGE_DIR/packs/${(P)next}.conf"
     fi
     break
   fi
 done
+
+check_launch_pack_guard() {
+  bb "$SCRIPT_DIR/swarm_launch_pack_guard.bb" check \
+      "$WORKING_DIR" "$CONFIG_FILE" \
+      "${SWARMFORGE_PACK:-}" "${SWARMFORGE_CONFIG:-}" "$EXPLICIT_PACK_CLI" \
+      "${SWARMFORGE_ALLOW_FULL_PACK:-}" || exit 1
+}
 WORKTREES_DIR="$WORKING_DIR/.worktrees"
 ROLES_DIR="$SWARM_FORGE_DIR/roles"
 CONSTITUTION_FILE="$SWARM_FORGE_DIR/constitution.prompt"
@@ -54,10 +109,26 @@ ROLES_FILE="$STATE_DIR/roles.tsv"
 PROMPTS_DIR="$STATE_DIR/prompts"
 DAEMON_DIR="$STATE_DIR/daemon"
 HANDOFF_DAEMON_LOG="$DAEMON_DIR/handoffd.log"
-TMUX_SOCKET_DIR="/private/tmp/swarmforge-${UID}"
-PROJECT_SOCKET_ID="$(printf '%s' "$WORKING_DIR" | cksum)"
-PROJECT_SOCKET_ID="${PROJECT_SOCKET_ID%% *}"
-TMUX_SOCKET="$TMUX_SOCKET_DIR/$PROJECT_SOCKET_ID.sock"
+source "$SCRIPT_DIR/project_socket_id_lib.sh"
+PROJECT_SOCKET_ID="$(project_socket_id "$WORKING_DIR")"
+# BL-367: the control socket must never live in /tmp - shared scratch space
+# subject to reaping by anything on the box, and a unix socket cannot be
+# re-linked once unlinked. resolve_swarm_socket.bb owns the actual decision
+# (project-private .swarmforge/tmux/, XDG_RUNTIME_DIR fallback only when the
+# primary path overruns the unix-socket path limit, never a blind bind past
+# that limit) - see swarm_socket_lib.bb.
+if ! TMUX_SOCKET="$(bb "$SCRIPT_DIR/resolve_swarm_socket.bb" "$WORKING_DIR" "$PROJECT_SOCKET_ID" 2>&1)"; then
+  echo -e "${RED}Error:${RESET} $TMUX_SOCKET"
+  exit 1
+fi
+TMUX_SOCKET_DIR="$(dirname "$TMUX_SOCKET")"
+# The old /tmp/swarmforge-${UID} directory was, in practice, almost always
+# already present (shared across every project for this uid, created once
+# and reused). The new project-private directory has no such lucky
+# pre-existence, and callers as early as `tmux -S "$TMUX_SOCKET" ...` need
+# it to exist - create it here, at resolution time, rather than leaving it
+# to whichever later function happens to mkdir it first.
+mkdir -p "$TMUX_SOCKET_DIR"
 TMUX_SOCKET_FILE="$STATE_DIR/tmux-socket"
 TMUX_ENV_FILE="$STATE_DIR/tmux-env"
 TERMINAL_BACKEND=""
@@ -78,6 +149,16 @@ SWARM_NAME="primary"
 SWARM_MODE="autonomous"
 SWARM_MODE_PRIMARY=""
 REMOTE_CONTROL_DEFAULT=1
+# BL-448: "" (default, every existing pack) means one tmux session per
+# window line, unchanged. "sequential" means only the FIRST declared
+# window line's role gets a real session/process - every other pipeline
+# role in the conf still gets its own worktree + roles.tsv entry
+# (mailbox resolution is SWARMFORGE_ROLE + roles.tsv driven, never
+# tied to which physical pane asks - see handoff_lib.bb's
+# my-mailbox-base-dir), but no session/pane/claude process of its own.
+# The coordinator (always provisioned separately, BL-243) is never
+# affected by this - see is_sequential_dormant.
+ROTATION_MODE=""
 if [[ "${SWARMFORGE_REMOTE_CONTROL:-}" == "0" ]]; then
   REMOTE_CONTROL_DEFAULT=0
 fi
@@ -122,7 +203,7 @@ detect_tmux_base_indexes() {
   local probe_session=""
 
   mkdir -p "$TMUX_SOCKET_DIR"
-  if ! tmux -S "$TMUX_SOCKET" info >/dev/null 2>&1; then
+  if ! tmux -S "$TMUX_SOCKET" list-sessions >/dev/null 2>&1; then
     probe_session="swarmforge-probe-$$"
     tmux -S "$TMUX_SOCKET" new-session -d -s "$probe_session" "sleep 60" >/dev/null
   fi
@@ -252,6 +333,58 @@ worktree_path_for_name() {
   echo "$WORKTREES_DIR/$1"
 }
 
+# BL-319: the one allow-list check for a role's agent - shared by
+# parse_config's per-window-line loop and provision_coordinator, so the
+# coordinator's own agent (config coordinator_agent, BL-319) fails loudly
+# with the EXACT same message/exit-1 shape a bogus window-line agent
+# already does, rather than a second near-identical case statement drifting
+# out of sync with the first.
+validate_agent() {
+  local agent="$1" role="$2"
+  case "$agent" in
+    claude|codex|copilot|grok|aider|vibe|gemini) ;;
+    *)
+      echo -e "${RED}Error:${RESET} Unsupported agent '$agent' for role '$role'"
+      exit 1
+      ;;
+  esac
+}
+
+
+# OpenRouter: a claude-harness role is OpenRouter-backed when its name appears
+# in the space-separated SWARMFORGE_OPENROUTER_ROLES env list. Env-gated on
+# purpose (NOT a conf schema change): default-empty means every claude role
+# keeps first-party subscription auth exactly as before, and the routing is
+# fully reversible per launch (unset the var / drop the role from it). The
+# role's OpenRouter model slug is carried by its existing --model flag in the
+# conf window line; only the auth target changes here, not the harness.
+role_uses_openrouter() {
+  local role="$1" r
+  for r in ${(s: :)SWARMFORGE_OPENROUTER_ROLES:-}; do
+    [[ "$r" == "$role" ]] && return 0
+  done
+  return 1
+}
+
+# Registers one role into the parallel ROLES/AGENTS/SESSIONS/etc. arrays -
+# shared by parse_config's per-conf-line loop and provision_coordinator
+# (BL-243) so the role model (which array a role occupies a slot in) is a
+# one-place change, not two near-identical 8-line array-push blocks kept
+# in sync by hand.
+register_role() {
+  local role="$1" agent="$2" worktree="$3" receive_mode="$4" idle_clear="$5" extra_cli="$6" worktree_path="$7"
+  ROLE_INDEX[$role]=${#ROLES[@]}
+  ROLES+=("$role")
+  AGENTS+=("$agent")
+  SESSIONS+=("$(session_name_for_role "$role")")
+  DISPLAY_NAMES+=("$(display_name_for_role "$role")")
+  WORKTREE_NAMES+=("$worktree")
+  RECEIVE_MODES+=("$receive_mode")
+  IDLE_CLEAR_FLAGS+=("$idle_clear")
+  EXTRA_CLI_ARGS+=("$extra_cli")
+  WORKTREE_PATHS+=("$worktree_path")
+}
+
 parse_config() {
   if [[ ! -f "$CONFIG_FILE" ]]; then
     echo -e "${RED}Error:${RESET} Config not found at $CONFIG_FILE"
@@ -326,6 +459,26 @@ parse_config() {
               ;;
           esac
           ;;
+        rotation)
+          case "${fields[3]:-}" in
+            sequential)
+              ROTATION_MODE="sequential"
+              ;;
+            router)
+              # BL-518: mono-router - like sequential (ONE resident process)
+              # but the resident pane respawns AS the next role at each
+              # handoff, so each stage runs on its own tailored model/effort
+              # (the model swap in-process 'sequential' rotation cannot do).
+              # Every pipeline role's launch script is pre-generated below so
+              # rotate_to_role.bb can re-exec .swarmforge/launch/<role>.sh.
+              ROTATION_MODE="router"
+              ;;
+            *)
+              echo -e "${RED}Error:${RESET} Invalid config line $line_no: rotation must be 'sequential' or 'router'"
+              exit 1
+              ;;
+          esac
+          ;;
       esac
       continue
     fi
@@ -367,6 +520,17 @@ parse_config() {
       exit 1
     fi
 
+    # BL-243: coordinator is provisioned infrastructure, never a
+    # swarmforge.conf window line - the conf declares the PACK only.
+    # provision_coordinator (below, after this parsing loop) always adds
+    # exactly one, so a conf naming it here would either collide or let an
+    # operator accidentally reconfigure guaranteed-present infrastructure
+    # as if it were a regular pack-configurable role.
+    if [[ "$role" == "coordinator" ]]; then
+      echo -e "${RED}Error:${RESET} coordinator is reserved infrastructure and may not be declared as a window in $CONFIG_FILE (line $line_no) - it is always provisioned automatically."
+      exit 1
+    fi
+
     if [[ -n "${ROLE_INDEX[$role]:-}" ]]; then
       echo -e "${RED}Error:${RESET} Duplicate role '$role' in $CONFIG_FILE"
       exit 1
@@ -382,13 +546,7 @@ parse_config() {
       exit 1
     fi
 
-    case "$agent" in
-      claude|codex|copilot|grok|aider) ;;
-      *)
-        echo -e "${RED}Error:${RESET} Unsupported agent '$agent' for role '$role'"
-        exit 1
-        ;;
-    esac
+    validate_agent "$agent" "$role"
 
     case "$receive_mode" in
       task|batch) ;;
@@ -403,23 +561,21 @@ parse_config() {
       exit 1
     fi
 
-    ROLE_INDEX[$role]=${#ROLES[@]}
     if [[ "$worktree" != "none" && "$worktree" != "master" ]]; then
       WORKTREE_INDEX[$worktree]=${#ROLES[@]}
     fi
-    ROLES+=("$role")
-    AGENTS+=("$agent")
-    SESSIONS+=("$(session_name_for_role "$role")")
-    DISPLAY_NAMES+=("$(display_name_for_role "$role")")
-    WORKTREE_NAMES+=("$worktree")
-    RECEIVE_MODES+=("$receive_mode")
-    IDLE_CLEAR_FLAGS+=("$idle_clear")
-    EXTRA_CLI_ARGS+=("$extra_cli")
+    # zsh gotcha: a bare `local name` (no `=value`) on an iteration where
+    # `name` is already local+set from a PRIOR pass of this same loop
+    # doesn't just redeclare it - zsh treats a valueless, flagless typeset
+    # of an already-set name as a query and prints "name=value" to stdout.
+    # An explicit (even empty) initial value avoids that path entirely.
+    local worktree_path=""
     if [[ "$worktree" == "none" || "$worktree" == "master" ]]; then
-      WORKTREE_PATHS+=("$WORKING_DIR")
+      worktree_path="$WORKING_DIR"
     else
-      WORKTREE_PATHS+=("$(worktree_path_for_name "$worktree")")
+      worktree_path="$(worktree_path_for_name "$worktree")"
     fi
+    register_role "$role" "$agent" "$worktree" "$receive_mode" "$idle_clear" "$extra_cli" "$worktree_path"
   done < "$CONFIG_FILE"
 
   if (( ${#ROLES[@]} == 0 )); then
@@ -427,10 +583,122 @@ parse_config() {
     exit 1
   fi
 
-  if [[ "$SWARM_MODE" == "secondary" && -n "${ROLE_INDEX[coordinator]:-}" ]]; then
-    echo -e "${RED}Error:${RESET} swarm_mode secondary must not declare a coordinator window (role '$SWARM_NAME' would both triage and be enslaved to '$SWARM_MODE_PRIMARY')"
-    exit 1
+  # BL-243: a coordinator window line is rejected inline above (role ==
+  # "coordinator" can never reach this point), so the old swarm_mode
+  # secondary-specific rejection this replaced is now unreachable dead
+  # code - removed rather than left behind. provision_coordinator is the
+  # new, unconditional source of a swarm's coordinator; it already
+  # preserves secondary mode's own "no local coordinator, enslaved to the
+  # primary's triage" behavior unchanged.
+  provision_coordinator
+}
+
+# BL-243 coordinator-infrastructure-01/03: the coordinator is never a
+# swarmforge.conf window line (rejected in parse_config above) - every
+# autonomous swarm gets exactly one, appended here after the conf's own
+# roles are parsed so every existing per-role array (ROLES, AGENTS,
+# write_roles_file, write_sessions_file, etc.) treats it uniformly with
+# zero special-casing downstream. worktree "master" means no dedicated
+# worktree/branch is ever created for it (same existing path every
+# "master"/"none"-worktree role already takes). A secondary swarm has no
+# local coordinator (unchanged from today - it is enslaved to its
+# primary's own triage, never triages itself; this preserves the exact
+# invariant the removed inline check above used to enforce the hard way).
+#
+# BL-314: the model/effort below are now pack-configurable (no window line
+# exists to carry --model/--effort for the coordinator, since BL-243 made
+# it reserved infrastructure) via `config coordinator_model <id>` /
+# `config coordinator_effort <level>` in whichever conf file is EFFECTIVELY
+# in force ($CONFIG_FILE - reusing BL-313's own effective-config
+# resolution, not a second parallel mechanism). Absent/blank/malformed
+# falls back to a SONNET-tier default, not Opus - the coordinator's own
+# work (routing, backlog bookkeeping) does not need the most expensive
+# tier in the swarm; a pack that wants Opus sets coordinator_model
+# explicitly. --dangerously-skip-permissions and --remote-control handling
+# are unchanged.
+#
+# BL-319: a third tab-separated field, coordinator_agent, resolves the
+# coordinator's PROVIDER the same way - absent/blank falls back to claude,
+# preserving every existing pack's exact prior behavior unchanged.
+resolve_coordinator_config() {
+  local resolved rest
+  resolved="$(bb "$SCRIPT_DIR/coordinator_config_cli.bb" "$CONFIG_FILE")"
+  rest="${resolved#*$'\t'}"
+  COORDINATOR_MODEL="${resolved%%$'\t'*}"
+  COORDINATOR_EFFORT="${rest%%$'\t'*}"
+  COORDINATOR_AGENT="${rest#*$'\t'}"
+}
+
+# BL-319: --model/--dangerously-skip-permissions/--effort are Claude-
+# specific (write_role_launch_script's claude branch parses them out of
+# extra_cli into a settings JSON; no other provider's CLI takes the same
+# flags, and COORDINATOR_MODEL's own default is a Claude model id,
+# meaningless to splice verbatim into e.g. copilot's --model). Every other
+# configured provider gets a bare launch (its own launch body already
+# supplies whatever flags it needs, e.g. copilot's --yolo --allow-all-paths)
+# plus --remote-control when enabled, same as any other role.
+provision_coordinator() {
+  if [[ "$SWARM_MODE" == "secondary" ]]; then
+    return
   fi
+
+  resolve_coordinator_config
+  local role="coordinator"
+  validate_agent "$COORDINATOR_AGENT" "$role"
+
+  local extra_cli=""
+  if [[ "$COORDINATOR_AGENT" == "claude" ]]; then
+    extra_cli="--model $COORDINATOR_MODEL --dangerously-skip-permissions --effort $COORDINATOR_EFFORT"
+  elif [[ "$COORDINATOR_AGENT" == "codex" ]]; then
+    # Pack must set coordinator_model to a Codex catalog id (e.g. gpt-5.4-mini);
+    # otherwise the Claude Sonnet default would be meaningless here.
+    extra_cli="--model $COORDINATOR_MODEL"
+  elif [[ "$COORDINATOR_AGENT" == "gemini" ]]; then
+    extra_cli="--model $COORDINATOR_MODEL"
+  elif [[ "$COORDINATOR_AGENT" == "aider" ]]; then
+    # Aider coordinator: pack sets coordinator_model (e.g. openai/sonar). OpenAI-compat
+    # base URL comes from pane env remap (Cerebras/Perplexity guards), not from flags.
+    extra_cli="--model $COORDINATOR_MODEL --no-gitignore --no-show-model-warnings --no-check-update --no-detect-urls"
+  elif [[ "$COORDINATOR_AGENT" == "vibe" ]]; then
+    # Vibe coordinator: coordinator_model is the --max-price cap (dollars).
+    extra_cli="--max-price ${COORDINATOR_MODEL:-2.00}"
+  fi
+  if [[ "$REMOTE_CONTROL_DEFAULT" == 1 ]]; then
+    extra_cli+="${extra_cli:+ }--remote-control $(remote_control_session_name_for_role "$role")"
+  fi
+
+  register_role "$role" "$COORDINATOR_AGENT" "master" "task" "off" "$extra_cli" "$WORKING_DIR"
+}
+
+# BL-243 coordinator-infrastructure-02: the pack is the conf's own
+# work-role windows only - the always-provisioned coordinator (never a
+# conf line) is excluded from this count regardless of how it got here.
+pack_size() {
+  local count=0 role
+  for role in "${ROLES[@]}"; do
+    [[ "$role" == "coordinator" ]] || count=$((count + 1))
+  done
+  echo "$count"
+}
+
+# BL-448: true (0) for a pipeline role index that must NOT get its own
+# session/pane/claude process under `config rotation sequential` - every
+# such role still has a worktree + roles.tsv entry (write_roles_file/
+# prepare_worktrees never gate on this), so its own mailbox resolves
+# correctly the moment the ONE resident agent (index 1, the conf's first
+# window line) exports SWARMFORGE_ROLE and cds into that role's worktree.
+# The coordinator (always the LAST-registered role - provision_coordinator
+# runs after every window line's register_role) is never dormant: it is
+# reserved infrastructure, provisioned exactly as in every other pack.
+is_sequential_dormant() {
+  local i="$1"
+  # BL-518: 'router' shares sequential's single-resident-process topology -
+  # only index 1 (the resident agent) and the last-registered coordinator get
+  # a real session/process; every middle pipeline role stays dormant (worktree
+  # + roles.tsv + a pre-generated launch script only) until the resident agent
+  # respawns its pane AS that role.
+  [[ "$ROTATION_MODE" == "sequential" || "$ROTATION_MODE" == "router" ]] || return 1
+  (( i > 1 && i < ${#ROLES[@]} ))
 }
 
 # BL-090: single-triage invariant. The committed primacy marker
@@ -464,9 +732,46 @@ check_primacy() {
   fi
 }
 
+# BL-313: the effective active_backlog_max_depth for THIS launch -
+# whichever pack/SWARMFORGE_CONFIG override CONFIG_FILE resolved to above,
+# not always the tracked default. Shells out to backlog_depth_cli.bb (the
+# one place that parses active_backlog_max_depth) rather than
+# re-implementing the parse in bash, so this can never drift from what
+# backlog_depth_lib.bb's own read-max-depth actually enforces.
+resolve_effective_backlog_max_depth() {
+  EFFECTIVE_MAX_DEPTH="$(bb "$SCRIPT_DIR/backlog_depth_cli.bb" "$CONFIG_FILE")"
+}
+
+# BL-313 bounce: CONFIG_FILE may be relative - whenever SWARMFORGE_CONFIG
+# itself is exported as a relative path, CONFIG_FILE inherits that exact
+# string. config_overlay_prompt (below) already normalizes it against
+# WORKING_DIR for its own purpose; write_swarm_identity_file needs the
+# IDENTICAL normalization so the persisted active_backlog_max_depth_conf_path
+# resolves from ANY reader's cwd - every pipeline role invokes
+# swarm_handoff.bb/ready_for_next.bb from its own .worktrees/<role>
+# directory, never from WORKING_DIR, so a raw relative path silently
+# resolved to the wrong file (or nothing) everywhere except the original
+# launch cwd.
+absolute_config_file() {
+  if [[ "$CONFIG_FILE" = /* ]]; then
+    echo "$CONFIG_FILE"
+  else
+    echo "$WORKING_DIR/$CONFIG_FILE"
+  fi
+}
+
 write_swarm_identity_file() {
-  printf 'swarm_name\t%s\nswarm_mode\t%s\nswarm_mode_primary\t%s\n' \
-    "$SWARM_NAME" "$SWARM_MODE" "$SWARM_MODE_PRIMARY" > "$STATE_DIR/swarm-identity"
+  resolve_effective_backlog_max_depth
+  local rotation_value=""
+  if [[ "$ROTATION_MODE" == "router" || "$ROTATION_MODE" == "sequential" ]]; then
+    rotation_value="$ROTATION_MODE"
+  fi
+  local launch_pack=""
+  if [[ "$CONFIG_FILE" == *"/packs/"* ]]; then
+    launch_pack="$(basename "$CONFIG_FILE" .conf)"
+  fi
+  printf 'swarm_name\t%s\nswarm_mode\t%s\nswarm_mode_primary\t%s\nactive_backlog_max_depth\t%s\nactive_backlog_max_depth_conf_path\t%s\nrotation\t%s\nlaunch_pack\t%s\n' \
+    "$SWARM_NAME" "$SWARM_MODE" "$SWARM_MODE_PRIMARY" "$EFFECTIVE_MAX_DEPTH" "$(absolute_config_file)" "$rotation_value" "$launch_pack" > "$STATE_DIR/swarm-identity"
 }
 
 write_sessions_file() {
@@ -518,6 +823,11 @@ check_helper_scripts() {
 prepare_workspace() {
   mkdir -p "$STATE_DIR" "$NOTIFY_DIR" "$PROMPTS_DIR" "$WORKTREES_DIR" "$TMUX_SOCKET_DIR" "$DAEMON_DIR" "$STATE_DIR/launch"
   printf '%s\n' "$TMUX_SOCKET" > "$TMUX_SOCKET_FILE"
+  if [[ "${SWARMFORGE_TERMINAL:-}" == "none" || "${TERMINAL_BACKEND:-}" == "none" ]]; then
+    : > "$STATE_DIR/headless-swarm"
+  else
+    rm -f "$STATE_DIR/headless-swarm"
+  fi
   check_helper_scripts
   write_sessions_file
   write_roles_file
@@ -535,7 +845,14 @@ prepare_worktrees() {
   for (( i = 1; i <= ${#ROLES[@]}; i++ )); do
     worktree_name="${WORKTREE_NAMES[$i]}"
     worktree_path="${WORKTREE_PATHS[$i]}"
-    branch_name="swarmforge-${worktree_name}"
+    # BL-106: derived from this swarm's identity (git-idiomatic slash
+    # namespace), not a hardcoded prefix - lets two swarms with different
+    # swarm_names hold worktrees against the same repo with zero branch-ref
+    # collisions. Only reached for a worktree being CREATED for the first
+    # time (guarded below), so this never renames an already-existing,
+    # already-running worktree's branch - that is the separate, deliberate
+    # migrate_branch_names.sh script's job.
+    branch_name="${SWARM_NAME}/${worktree_name}"
 
     if [[ "$worktree_name" == "none" || "$worktree_name" == "master" ]]; then
       continue
@@ -556,16 +873,29 @@ prepare_worktrees() {
 }
 
 prepare_handoff_dirs() {
-  local i worktree_path
+  local i role worktree_name worktree_path mailbox_base
   for (( i = 1; i <= ${#ROLES[@]}; i++ )); do
+    role="${ROLES[$i]}"
+    worktree_name="${WORKTREE_NAMES[$i]}"
     worktree_path="${WORKTREE_PATHS[$i]}"
+    # BL-128: coordinator and specifier share the master worktree, so each
+    # gets its own <role> mailbox subdirectory instead of one shared
+    # .swarmforge/handoffs/ - matching mailbox_dir.bb's mailbox-base-dir.
+    # Every other role's own dedicated worktree already provides physical
+    # separation and keeps the flat layout.
+    if [[ "$worktree_name" == "master" ]]; then
+      mailbox_base="$worktree_path/.swarmforge/handoffs/$role"
+    else
+      mailbox_base="$worktree_path/.swarmforge/handoffs"
+    fi
     mkdir -p \
-      "$worktree_path/.swarmforge/handoffs/outbox/tmp" \
-      "$worktree_path/.swarmforge/handoffs/sent" \
-      "$worktree_path/.swarmforge/handoffs/failed" \
-      "$worktree_path/.swarmforge/handoffs/inbox/new" \
-      "$worktree_path/.swarmforge/handoffs/inbox/in_process" \
-      "$worktree_path/.swarmforge/handoffs/inbox/completed"
+      "$mailbox_base/outbox/tmp" \
+      "$mailbox_base/sent" \
+      "$mailbox_base/failed" \
+      "$mailbox_base/inbox/new" \
+      "$mailbox_base/inbox/in_process" \
+      "$mailbox_base/inbox/completed" \
+      "$mailbox_base/inbox/abandoned"
   done
 }
 
@@ -580,10 +910,17 @@ sync_worktree_scripts() {
     role_scripts_dir="$worktree_path/swarmforge/scripts"
     role_state_dir="$worktree_path/.swarmforge"
     mkdir -p "$role_scripts_dir"
-    cp -R "$SCRIPT_DIR/." "$role_scripts_dir/"
+    # BL-373: never overwrite a path the destination worktree's OWN git
+    # index tracks - that content is git's to deliver (the role's branch
+    # already has it); the copy is only the delivery mechanism for a
+    # target repo that doesn't track swarmforge/ at all. An unconditional
+    # cp -R here silently reverted merged-but-not-yet-on-main script
+    # changes on every relaunch (the "phantom revert", 6 occurrences on
+    # 2026-07-14) - see sync_worktree_scripts_lib.bb.
+    bb "$SCRIPT_DIR/sync_worktree_scripts.bb" "$SCRIPT_DIR" "$role_scripts_dir" "$worktree_path" "swarmforge/scripts"
     if [[ -d "$SWARM_FORGE_DIR/profiles" ]]; then
       mkdir -p "$worktree_path/swarmforge/profiles"
-      cp -R "$SWARM_FORGE_DIR/profiles/." "$worktree_path/swarmforge/profiles/"
+      bb "$SCRIPT_DIR/sync_worktree_scripts.bb" "$SWARM_FORGE_DIR/profiles" "$worktree_path/swarmforge/profiles" "$worktree_path" "swarmforge/profiles"
     fi
     mkdir -p "$role_state_dir/notify"
     cp "$SESSIONS_FILE" "$role_state_dir/sessions.tsv"
@@ -602,13 +939,42 @@ check_backend_dependencies() {
       copilot) check_dependency copilot ;;
       grok) check_dependency grok ;;
       aider) check_dependency aider ;;
+      vibe) check_dependency vibe ;;
+      gemini) check_dependency gemini ;;
     esac
   done
+}
+
+# BL-368 layer 2: refuses to treat "tmux reports nothing here" as proof a
+# role is actually dead. A role's own heartbeat file (extension/src/tools/
+# heartbeat.ts's writeHeartbeat, refreshed by the claude process itself on
+# every tool call - entirely tmux-independent) carries the LAST pid that
+# process reported. If that pid is still alive right now, the role is NOT
+# dead regardless of what the control channel says - creating a fresh
+# session and launching into it would spawn a SECOND agent onto the SAME
+# worktree as the one still running, racing commits on every branch at
+# once (the exact corruption this ticket exists to make unreachable). This
+# guard is unconditional - it holds even when the caller's own diagnosis of
+# "why" is wrong for a reason nobody has thought of yet.
+role_claude_pid_alive() {
+  local role="$1"
+  local heartbeat_file="$WORKING_DIR/.swarmforge/heartbeat/${role}.yaml"
+  [[ -f "$heartbeat_file" ]] || return 1
+  local pid
+  pid="$(grep '^pid:' "$heartbeat_file" 2>/dev/null | awk '{print $2}')"
+  [[ -n "$pid" && "$pid" == <-> ]] || return 1
+  kill -0 "$pid" 2>/dev/null
 }
 
 create_role_session() {
   local session="$1"
   local title="$2"
+  local role="${3:-}"
+
+  if [[ -n "$role" ]] && role_claude_pid_alive "$role"; then
+    echo -e "${YELLOW}Refusing to (re)create a session for ${role}: its previous claude process (pid recorded in its heartbeat) is still alive. Not relaunching - this would spawn a second agent onto the same worktree as the one still running.${RESET}" >&2
+    return 1
+  fi
 
   tmux -S "$TMUX_SOCKET" new-session -d -s "$session" -n "$AGENT_WINDOW"
   tmux -S "$TMUX_SOCKET" rename-window -t "$session:$AGENT_WINDOW" "$title"
@@ -621,11 +987,7 @@ is_two_pack_config() {
 
 config_overlay_prompt() {
   local base prompt
-  if [[ "$CONFIG_FILE" = /* ]]; then
-    base="$CONFIG_FILE"
-  else
-    base="$WORKING_DIR/$CONFIG_FILE"
-  fi
+  base="$(absolute_config_file)"
   base="${base%.conf}"
   prompt="${base}.prompt"
   if [[ -f "$prompt" ]]; then
@@ -660,7 +1022,10 @@ write_agent_instruction_file() {
 
   is_two_pack_config && two_pack_flag=1
   overlay="$(config_overlay_prompt)"
-  bb "$SCRIPT_DIR/agent_runtime_cli.bb" bootstrap-text "$agent" "$role" "$two_pack_flag" "$overlay" > "$prompt_file"
+  # BL-546: PromptEngine is the single authority for prompt composition -
+  # this CLI call is the ONLY way a launch path produces a system-prompt
+  # artifact; no prompt text is assembled in this script.
+  bb "$SCRIPT_DIR/prompt_engine_cli.bb" compose "$agent" "$role" "$two_pack_flag" "$overlay" > "$prompt_file"
 }
 
 agent-runtime-needs-bootstrap() {
@@ -790,6 +1155,37 @@ write_role_launch_script() {
   local prompt_file="$PROMPTS_DIR/${role}.md"
   local extra_cli="${EXTRA_CLI_ARGS[$index]}"
   local launch_script="$STATE_DIR/launch/${role}.sh"
+  # BL-323: RESUME-ON-START. Every tmux respawn of this role's pane -
+  # the initial launch, an idle-boundary respawn-self!, the chase daemon's
+  # do-respawn!, swarm_ensure.bb's respawn-role!, the extension's manual
+  # restart - converges on re-executing THIS generated script, fresh, with
+  # zero LLM cooperation required. That makes it the one place a check can
+  # run on EVERY respawn without depending on tmux injection landing, the
+  # daemon being alive, or an agent choosing on its own initiative to read
+  # nested prompt files and act on them - all three were independently
+  # true and still failed to resume a real orphaned parcel for ~4 hours
+  # (two separate relaunches) before this fix (BL-323's own incident
+  # report). resume_check is spliced into the script's PREAMBLE, before
+  # launch_body runs, so RESUME_NOTE is already set by the time launch_body
+  # embeds it into the agent's own first-message argument (below) - a
+  # role whose in_process queue already holds a parcel gets told about it
+  # explicitly in its very first message, rather than needing to discover
+  # and act on ready_for_next.sh itself. Read-only: this never claims,
+  # moves, or touches the parcel - it only informs the agent, so a parcel
+  # a live agent is legitimately working is never disturbed by a
+  # concurrent respawn of some OTHER role.
+  local resume_check
+  resume_check="$(cat <<RESUMECHECK
+RESUME_NOTE=""
+if in_process_dir="\$(bb '$SCRIPT_DIR/mailbox_dir.bb' '$WORKING_DIR' '$role' in_process 2>/dev/null)" \\
+    && [[ -n "\$in_process_dir" && -d "\$in_process_dir" ]] \\
+    && find "\$in_process_dir" -mindepth 1 -maxdepth 1 \( -name '*.handoff' -o -name 'batch_*' \) -print -quit 2>/dev/null | grep -q .; then
+  RESUME_NOTE='RESUME-ON-START: your inbox/in_process queue already holds a parcel from before this session started (a prior session claimed it and did not finish it). Run ready_for_next.sh as your very first action, before reading or doing anything else, and follow its output to resume it.
+
+'
+fi
+RESUMECHECK
+)"
   local settings_file=""
   local claude_flags=""
   local launch_body=""
@@ -809,23 +1205,72 @@ write_role_launch_script() {
       elif [[ -n "$CLAUDE_SETTINGS_PERMISSION_MODE" ]]; then
         claude_permission_flags=" --permission-mode '$CLAUDE_SETTINGS_PERMISSION_MODE'"
       fi
-      launch_body="claude --settings '$settings_file'${claude_permission_flags}${claude_flags:+ $claude_flags} --append-system-prompt-file '$prompt_file' -n 'SwarmForge ${display}' \"\$(cat '$prompt_file')\""
+      # BL-519: claude is the only agent with a separate --append-system-
+      # prompt-file argument, so (unlike codex/copilot/grok/vibe below, whose
+      # ONLY delivery channel is this first-message cat) it must not ALSO
+      # re-cat the same now-fully-inlined constitution/PIPELINE/role content
+      # into the first user message - that would pay full input-token price
+      # a second time on every single launch for content the system prompt
+      # already carries, defeating the prompt-caching saving this ticket
+      # exists to capture. The system prompt file already carries the full
+      # instructions; the first turn only needs a short kickoff (plus the
+      # resume note, unchanged, when one applies).
+      launch_body="claude --settings '$settings_file'${claude_permission_flags}${claude_flags:+ $claude_flags} --append-system-prompt-file '$prompt_file' -n 'SwarmForge ${display}' \"\${RESUME_NOTE}Your constitution, pipeline, and role are already loaded above via --append-system-prompt-file. Begin your role loop now; if idle, run ready_for_next.sh.\""
       ;;
     codex)
-      launch_body="codex${extra_cli:+ $extra_cli} -C '$role_worktree' \"\$(cat '$prompt_file')\""
+      # Full prompt files exceed Linux MAX_ARG_STRLEN (~128KiB) when $(cat)'d
+      # into argv (coordinator ~135KB). Keep argv short: RESUME_NOTE + path.
+      # OPENAI_API_KEY arrives via tmux -e (BL-130), never written here.
+      # --dangerously-bypass-approvals-and-sandbox is the Codex equivalent of
+      # Claude's --dangerously-skip-permissions / Copilot's --yolo: swarm
+      # agents must run unattended (no per-command approval prompts).
+      launch_body="codex${extra_cli:+ $extra_cli} --dangerously-bypass-approvals-and-sandbox -C '$role_worktree' \"\${RESUME_NOTE}Read and obey every instruction in '$prompt_file' (constitution, pipeline, role, pack). Then begin your role loop; if idle, run ready_for_next.sh.\""
       ;;
     copilot)
       local copilot_dirs=""
       if [[ "$role_worktree" != "$WORKING_DIR" ]]; then
         copilot_dirs=" --add-dir '$WORKING_DIR'"
       fi
-      launch_body="copilot${extra_cli:+ $extra_cli} --yolo --allow-all-paths${copilot_dirs} -C '$role_worktree' --name 'SwarmForge ${display}' -i \"\$(cat '$prompt_file')\""
+      launch_body="copilot${extra_cli:+ $extra_cli} --yolo --allow-all-paths${copilot_dirs} -C '$role_worktree' --name 'SwarmForge ${display}' -i \"\${RESUME_NOTE}\$(cat '$prompt_file')\""
       ;;
     grok)
-      launch_body="grok${extra_cli:+ $extra_cli} --cwd '$role_worktree' --permission-mode acceptEdits --rules \"\$(cat '$prompt_file')\""
+      launch_body="grok${extra_cli:+ $extra_cli} --cwd '$role_worktree' --permission-mode acceptEdits --rules \"\${RESUME_NOTE}\$(cat '$prompt_file')\""
       ;;
     aider)
-      launch_body="aider${extra_cli:+ $extra_cli} --yes-always"
+      # --yes-always auto-confirms aider's "Open URL?" prompts (including
+      # Perplexity/billing links parsed from API exceptions). Never open a
+      # browser from headless swarm panes: noop BROWSER + --no-detect-urls.
+      launch_body=$'export BROWSER="${BROWSER:-/usr/bin/true}"\naider'"${extra_cli:+ $extra_cli}"' --yes-always --no-detect-urls'
+      ;;
+    vibe)
+      # Mistral Vibe (pipx install mistral-vibe): a real CLI coding AGENT with
+      # bash tools, unlike aider, which is a file editor that cannot execute and
+      # therefore SIMULATES ready_for_next.sh instead of running it (see
+      # INTAKE / packs/mistral-lean.conf). Verified: `vibe --yolo -p "run
+      # ./ready_for_next.sh and do what it says"` ran the script and performed
+      # the task.
+      #
+      # --workdir, NOT --worktree: vibe's --worktree would create its OWN git
+      # worktree under $VIBE_HOME on a branch it names, fighting the worktree
+      # SwarmForge already provisioned for this role. --workdir just cd's there.
+      # --trust: a role's worktree is provisioned by us and is not a directory
+      # the human needs to re-confirm per launch (vibe implicitly trusts only
+      # its own --worktree sessions).
+      # MISTRAL_API_KEY is supplied at respawn-pane time via `-e` (BL-130) and
+      # is never written into this launch script.
+      local vibe_dirs=""
+      if [[ "$role_worktree" != "$WORKING_DIR" ]]; then
+        vibe_dirs=" --add-dir '$WORKING_DIR'"
+      fi
+      launch_body="vibe${extra_cli:+ $extra_cli} --yolo --trust --workdir '$role_worktree'${vibe_dirs} \"\${RESUME_NOTE}\$(cat '$prompt_file')\""
+      ;;
+    gemini)
+      # Google Gemini CLI (`npm i -g @google/gemini-cli` or similar). -y/--yolo
+      # auto-approves tools (Claude's --dangerously-skip-permissions equivalent).
+      # GEMINI_API_KEY arrives via tmux -e (BL-130), never written here.
+      # Keep argv short (path to prompt file) — full prompt slurps exceed
+      # MAX_ARG_STRLEN the same way Codex does.
+      launch_body="cd '$role_worktree' && gemini -y${extra_cli:+ $extra_cli} \"\${RESUME_NOTE}Read and obey every instruction in '$prompt_file' (constitution, pipeline, role, pack). Then begin your role loop; if idle, run ready_for_next.sh.\""
       ;;
     *)
       echo -e "${RED}Error:${RESET} Unsupported agent '$agent' for role '$role'"
@@ -835,8 +1280,41 @@ write_role_launch_script() {
 
   local billing_guard=""
   local copilot_guard=""
+  local cerebras_guard=""
+  local perplexity_guard=""
+  local qwen_guard=""
+  # Re-apply CEREBRAS→OPENAI map inside the launch script. Panes often source
+  # ~/.zshenv which re-exports the real OPENAI_API_KEY and would otherwise
+  # override the tmux -e mapping (Wrong API Key against api.cerebras.ai).
+  # Key value is never written — only $CEREBRAS_API_KEY from pane env (BL-130).
+  cerebras_guard=$'if [[ "${SWARMFORGE_USE_CEREBRAS:-}" == "1" && -n "${CEREBRAS_API_KEY:-}" ]]; then\n  export OPENAI_API_KEY="$CEREBRAS_API_KEY"\n  export OPENAI_API_BASE="${OPENAI_API_BASE:-https://api.cerebras.ai/v1}"\n  export OPENAI_BASE_URL="${OPENAI_BASE_URL:-https://api.cerebras.ai/v1}"\nfi\n'
+  # Same posture for Perplexity Sonar OpenAI-compat (no /v1 on the API host).
+  # SRE 2026-07-19: if this role's pack CLI targets api.perplexity.ai, ALWAYS
+  # remap — do not depend solely on SWARMFORGE_USE_PERPLEXITY in the launching
+  # shell (window lines can declare Perplexity while the flag is unset → 401).
+  if [[ "$extra_cli" == *perplexity.ai* ]]; then
+    perplexity_guard=$'if [[ -n "${PERPLEXITY_API_KEY:-}" ]]; then\n  export SWARMFORGE_USE_PERPLEXITY=1\n  export OPENAI_API_KEY="$PERPLEXITY_API_KEY"\n  export OPENAI_API_BASE=https://api.perplexity.ai\n  export OPENAI_BASE_URL=https://api.perplexity.ai\nelse\n  echo "SwarmForge: PERPLEXITY_API_KEY required (launch CLI targets api.perplexity.ai)" >&2\n  exit 1\nfi\n'
+  else
+    perplexity_guard=$'if [[ "${SWARMFORGE_USE_PERPLEXITY:-}" == "1" && -n "${PERPLEXITY_API_KEY:-}" ]]; then\n  export OPENAI_API_KEY="$PERPLEXITY_API_KEY"\n  export OPENAI_API_BASE="${OPENAI_API_BASE:-https://api.perplexity.ai}"\n  export OPENAI_BASE_URL="${OPENAI_BASE_URL:-https://api.perplexity.ai}"\nfi\n'
+  fi
+  # Qwen Token Plan (SEA) — same zshenv-override posture as Cerebras.
+  if [[ "$extra_cli" == *token-plan.ap-southeast-1.maas.aliyuncs.com* || "$extra_cli" == *dashscope.aliyuncs.com* ]]; then
+    qwen_guard=$'if [[ -z "${QWEN_API_KEY:-}" && -n "${BAILIAN_CODING_PLAN_API_KEY:-}" ]]; then\n  export QWEN_API_KEY="$BAILIAN_CODING_PLAN_API_KEY"\nfi\nif [[ -n "${QWEN_API_KEY:-}" ]]; then\n  export SWARMFORGE_USE_QWEN=1\n  export OPENAI_API_KEY="$QWEN_API_KEY"\n  export OPENAI_API_BASE=https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1\n  export OPENAI_BASE_URL=https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1\nelse\n  echo "SwarmForge: QWEN_API_KEY required (launch CLI targets token-plan.ap-southeast-1.maas.aliyuncs.com)" >&2\n  exit 1\nfi\n'
+  else
+    qwen_guard=$'if [[ -z "${QWEN_API_KEY:-}" && -n "${BAILIAN_CODING_PLAN_API_KEY:-}" ]]; then\n  export QWEN_API_KEY="$BAILIAN_CODING_PLAN_API_KEY"\nfi\nif [[ "${SWARMFORGE_USE_QWEN:-}" == "1" && -n "${QWEN_API_KEY:-}" ]]; then\n  export OPENAI_API_KEY="$QWEN_API_KEY"\n  export OPENAI_API_BASE="${OPENAI_API_BASE:-https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1}"\n  export OPENAI_BASE_URL="${OPENAI_BASE_URL:-https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1}"\nfi\n'
+  fi
   if [[ "$agent" == "claude" ]]; then
-    billing_guard=$'unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN\n'
+    if role_uses_openrouter "$role"; then
+      # OpenRouter-backed claude role: do NOT unset the auth token (that unset
+      # is what forces subscription auth for every other claude role). Point the
+      # harness at OpenRouter's Anthropic-compatible endpoint ("Anthropic Skin")
+      # and authenticate with OPENROUTER_API_KEY, which arrives in the pane env
+      # via respawn-pane -e (see launch_role) and is never written into this
+      # file - same BL-130 secrets rule as the MISTRAL/OPENAI provider keys.
+      billing_guard=$'export ANTHROPIC_BASE_URL=\'https://openrouter.ai/api\'\nexport ANTHROPIC_AUTH_TOKEN="$OPENROUTER_API_KEY"\n'
+    else
+      billing_guard=$'unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN\n'
+    fi
   elif [[ "$agent" == "copilot" ]]; then
     copilot_guard=$'export COPILOT_ALLOW_ALL=1\n'
   fi
@@ -856,7 +1334,8 @@ set -euo pipefail
 export SWARMFORGE_ROLE='$role'
 export PATH='$role_script_dir':\$PATH
 cd '$role_worktree'
-${billing_guard}${copilot_guard}${launch_body}
+${resume_check}
+${billing_guard}${copilot_guard}${cerebras_guard}${perplexity_guard}${qwen_guard}${launch_body}
 LAUNCH
 
   # Only wire cleanup when a GUI terminal backend owns windows to close.
@@ -952,11 +1431,83 @@ launch_role() {
   local -a provider_env_flags=()
   if [[ "$agent" != "claude" ]]; then
     local provider_key
-    for provider_key in OPENAI_API_KEY MISTRAL_API_KEY; do
+    local use_cerebras=0
+    local use_perplexity=0
+    local use_qwen=0
+    # Gemini CLI reads GEMINI_API_KEY; allow SWARMFORGE_GEMINI_API_KEY as alias
+    # so operators can keep provider keys under a SwarmForge-prefixed name.
+    if [[ -z "${GEMINI_API_KEY:-}" && -n "${SWARMFORGE_GEMINI_API_KEY:-}" ]]; then
+      export GEMINI_API_KEY="$SWARMFORGE_GEMINI_API_KEY"
+    fi
+    if [[ -z "${QWEN_API_KEY:-}" && -n "${BAILIAN_CODING_PLAN_API_KEY:-}" ]]; then
+      export QWEN_API_KEY="$BAILIAN_CODING_PLAN_API_KEY"
+    fi
+    if [[ "${SWARMFORGE_USE_CEREBRAS:-}" == "1" && -n "${CEREBRAS_API_KEY:-}" ]]; then
+      use_cerebras=1
+    fi
+    if [[ "${SWARMFORGE_USE_PERPLEXITY:-}" == "1" && -n "${PERPLEXITY_API_KEY:-}" ]]; then
+      use_perplexity=1
+    fi
+    if [[ "${SWARMFORGE_USE_QWEN:-}" == "1" && -n "${QWEN_API_KEY:-}" ]]; then
+      use_qwen=1
+    fi
+    # SRE 2026-07-19: pack window --openai-api-base perplexity forces remap
+    # even when the launching shell forgot SWARMFORGE_USE_PERPLEXITY=1.
+    if [[ "${EXTRA_CLI_ARGS[$index]}" == *perplexity.ai* && -n "${PERPLEXITY_API_KEY:-}" ]]; then
+      use_perplexity=1
+    fi
+    if [[ "${EXTRA_CLI_ARGS[$index]}" == *token-plan.ap-southeast-1.maas.aliyuncs.com* && -n "${QWEN_API_KEY:-}" ]]; then
+      use_qwen=1
+    fi
+    if [[ "${EXTRA_CLI_ARGS[$index]}" == *dashscope.aliyuncs.com* && -n "${QWEN_API_KEY:-}" ]]; then
+      use_qwen=1
+    fi
+    for provider_key in OPENAI_API_KEY MISTRAL_API_KEY CEREBRAS_API_KEY PERPLEXITY_API_KEY GEMINI_API_KEY QWEN_API_KEY; do
+      # When Cerebras/Perplexity/Qwen OpenAI-compat mode is on, do NOT forward the host
+      # OPENAI_API_KEY (real OpenAI sk-*). Panes must use the provider→OPENAI map.
+      if [[ ( "$use_cerebras" == "1" || "$use_perplexity" == "1" || "$use_qwen" == "1" ) && "$provider_key" == "OPENAI_API_KEY" ]]; then
+        continue
+      fi
       if [[ -n "${(P)provider_key:-}" ]]; then
         provider_env_flags+=(-e "${provider_key}=${(P)provider_key}")
       fi
     done
+    if [[ "$use_cerebras" == "1" ]]; then
+      # Cerebras OpenAI-compatible API for aider packs: map key → OPENAI_* via -e
+      # (BL-130). Window lines supply non-secret --openai-api-base.
+      # Also set SWARMFORGE_USE_CEREBRAS so launch scripts can re-apply after
+      # ~/.zshenv re-exports the real OPENAI_API_KEY.
+      provider_env_flags+=(-e "SWARMFORGE_USE_CEREBRAS=1")
+      provider_env_flags+=(-e "OPENAI_API_KEY=${CEREBRAS_API_KEY}")
+      provider_env_flags+=(-e "OPENAI_API_BASE=https://api.cerebras.ai/v1")
+      provider_env_flags+=(-e "OPENAI_BASE_URL=https://api.cerebras.ai/v1")
+    fi
+    if [[ "$use_perplexity" == "1" ]]; then
+      # Perplexity Sonar OpenAI-compat (no /v1). Same BL-130 / zshenv re-export posture.
+      provider_env_flags+=(-e "SWARMFORGE_USE_PERPLEXITY=1")
+      provider_env_flags+=(-e "OPENAI_API_KEY=${PERPLEXITY_API_KEY}")
+      provider_env_flags+=(-e "OPENAI_API_BASE=https://api.perplexity.ai")
+      provider_env_flags+=(-e "OPENAI_BASE_URL=https://api.perplexity.ai")
+    fi
+    if [[ "$use_qwen" == "1" ]]; then
+      # Qwen Token Plan (SEA). Same BL-130 / zshenv re-export posture.
+      provider_env_flags+=(-e "SWARMFORGE_USE_QWEN=1")
+      provider_env_flags+=(-e "OPENAI_API_KEY=${QWEN_API_KEY}")
+      provider_env_flags+=(-e "OPENAI_API_BASE=https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1")
+      provider_env_flags+=(-e "OPENAI_BASE_URL=https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1")
+    fi
+  elif role_uses_openrouter "$role"; then
+    # OpenRouter-backed claude role: same ephemeral -e injection - the key
+    # reaches the launch script's `export ANTHROPIC_AUTH_TOKEN="$OPENROUTER_API_KEY"`
+    # via the pane env, never persisted to disk (BL-130).
+    if [[ -n "${OPENROUTER_API_KEY:-}" ]]; then
+      provider_env_flags+=(-e "OPENROUTER_API_KEY=${OPENROUTER_API_KEY}")
+    fi
+    # Cap max output so OpenRouter's pre-reserve against remaining credits
+    # does not 402 expensive models (Gemini) when balance is thin.
+    if [[ -n "${CLAUDE_CODE_MAX_OUTPUT_TOKENS:-}" ]]; then
+      provider_env_flags+=(-e "CLAUDE_CODE_MAX_OUTPUT_TOKENS=${CLAUDE_CODE_MAX_OUTPUT_TOKENS}")
+    fi
   fi
 
   wait_for_session_pane "$session"
@@ -997,16 +1548,36 @@ start_handoff_daemon() {
   if [[ "${SWARMFORGE_MAILBOX_ONLY:-}" == "1" ]]; then
     echo -e "${CYAN}Mailbox-only mode: handoffd delivers files without tmux wake (SWARMFORGE_MAILBOX_ONLY=1).${RESET}"
   fi
-  rm -f "$DAEMON_DIR/stop"
-  # Rotate the previous log aside instead of truncating it, so evidence of a
-  # crash or hang survives the restart (BL-061).
-  if [[ -s "$HANDOFF_DAEMON_LOG" ]]; then
-    mv "$HANDOFF_DAEMON_LOG" "$HANDOFF_DAEMON_LOG.$(date -u +%Y%m%dT%H%M%SZ)"
+  SWARMFORGE_DAEMON_START_CALLER=swarmforge.sh bash "$SCRIPT_DIR/start_handoff_daemon.sh" "$WORKING_DIR"
+}
+
+# Operator runtime + Telegram front desk. Best-effort: a missing secret or
+# a failed ancillary start must never abort an otherwise successful swarm
+# launch. `./swarm ensure` is the idempotent repair path for these same
+# components after launch.
+start_ancillary_services() {
+  if [[ "${SWARMFORGE_SKIP_OPERATOR:-}" == "1" ]]; then
+    echo -e "${YELLOW}Skipping operator runtime (SWARMFORGE_SKIP_OPERATOR=1).${RESET}"
+  else
+    echo -e "${CYAN}Starting operator runtime...${RESET}"
+    if ! bash "$SCRIPT_DIR/start_operator_runtime.sh" "$WORKING_DIR"; then
+      echo -e "${YELLOW}Operator runtime failed to start; run './swarm ensure' after fixing the cause.${RESET}"
+    fi
   fi
-  nohup "$SCRIPT_DIR/handoffd.bb" "$WORKING_DIR" >> "$HANDOFF_DAEMON_LOG" 2>&1 &
-  echo -e "${GREEN}Started handoff daemon.${RESET}"
-  nohup "$SCRIPT_DIR/handoffd_supervisor.bb" "$WORKING_DIR" >> "$DAEMON_DIR/handoffd-supervisor.log" 2>&1 &
-  echo -e "${GREEN}Started handoff daemon supervisor.${RESET}"
+
+  if [[ "${SWARMFORGE_SKIP_FRONT_DESK:-}" == "1" ]]; then
+    echo -e "${YELLOW}Skipping Telegram front desk (SWARMFORGE_SKIP_FRONT_DESK=1).${RESET}"
+    return 0
+  fi
+  if [[ -n "${TELEGRAM_BOT_TOKEN:-}" && -n "${TELEGRAM_CHAT_ID:-}" && -n "${TELEGRAM_PRINCIPAL_USER_ID:-}" ]]; then
+    echo -e "${CYAN}Starting Telegram front desk (bridge + bot)...${RESET}"
+    if ! bash "$SCRIPT_DIR/launch_front_desk.sh" "$WORKING_DIR"; then
+      echo -e "${YELLOW}Front desk failed to start; run './swarm ensure' after fixing the cause.${RESET}"
+    fi
+  else
+    echo -e "${YELLOW}Telegram front desk skipped (set TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, TELEGRAM_PRINCIPAL_USER_ID to enable).${RESET}"
+    echo -e "${YELLOW}Then run: bash swarmforge/scripts/launch_front_desk.sh \"$WORKING_DIR\"  (or './swarm ensure').${RESET}"
+  fi
 }
 
 # BL-089: guarded so a test can `source` this file (e.g. to exercise
@@ -1024,6 +1595,7 @@ detect_tmux_base_indexes
 initialize_git_repo
 ensure_runtime_git_excludes
 ensure_commit_size_guard
+check_launch_pack_guard
 parse_config
 check_primacy
 check_backend_dependencies
@@ -1052,22 +1624,121 @@ echo "  ╚═══════════════════════
 echo -e "${RESET}"
 
 echo -e "${GREEN}Launching SwarmForge tmux sessions...${RESET}"
+echo -e "${CYAN}Pack size: $(pack_size) role(s) (coordinator excluded)${RESET}"
+# BL-313: state the EFFECTIVE cap and which config supplied it, so an
+# uncapped (or unexpectedly capped) pipeline is never entered silently.
+# EFFECTIVE_MAX_DEPTH was already resolved by prepare_workspace's call to
+# write_swarm_identity_file above - reused here, not recomputed.
+echo -e "${CYAN}active_backlog_max_depth: ${EFFECTIVE_MAX_DEPTH} (from ${CONFIG_FILE})${RESET}"
+# BL-368: create_role_session refuses (return 1) a role whose previous
+# claude process is still alive per its own heartbeat pid - track which
+# indices were refused so the launch loop below never respawns into a
+# session that was never (re)created for exactly that role, which would
+# otherwise silently target/kill whatever unrelated pane already sits at
+# that session name.
+typeset -A REFUSED_ROLE_INDICES
 for (( i = 1; i <= ${#ROLES[@]}; i++ )); do
-  create_role_session "${SESSIONS[$i]}" "${DISPLAY_NAMES[$i]}"
+  is_sequential_dormant "$i" && continue
+  if ! create_role_session "${SESSIONS[$i]}" "${DISPLAY_NAMES[$i]}" "${ROLES[$i]}"; then
+    REFUSED_ROLE_INDICES[$i]=1
+  fi
 done
 write_tmux_env_file
 sync_worktree_scripts
 start_handoff_daemon
+start_ancillary_services
 
 copilot_trust_swarm_paths
 
+# BL-519: launch-time cache-warm decision. The stable prefix every claude
+# role's appended system prompt now inlines (constitution+PIPELINE) is a
+# prompt-caching key - a content-hash of that prefix plus this pack's own
+# model/effort routing (CONFIG_FILE's raw text already encodes both) tells
+# us whether THIS launch is re-serving an already-warm cache (:reuse-cache)
+# or must warm a fresh one (:rewarm - first launch of this pack, or the
+# constitution/pack config changed since the last one). Never let this
+# decorating check block a real launch: any failure (missing bb, a stale
+# worktree without cache_warm_cli.bb) degrades to the safe default of
+# "assume warm, no stagger" rather than aborting the swarm.
+CACHE_WARM_DECISION="reuse-cache"
+if command -v bb >/dev/null 2>&1 && [[ -f "$SCRIPT_DIR/cache_warm_cli.bb" ]]; then
+  CACHE_WARM_STATE_DIR="$STATE_DIR/cache-warm"
+  CACHE_WARM_PACK_NAME="$(basename "$CONFIG_FILE")"
+  CACHE_WARM_ROUTING_TEXT="$(cat "$CONFIG_FILE" 2>/dev/null || true)"
+  CACHE_WARM_DECISION="$(bb "$SCRIPT_DIR/cache_warm_cli.bb" decide-and-record-warm \
+    "$CACHE_WARM_STATE_DIR" "$CACHE_WARM_PACK_NAME" "$CACHE_WARM_ROUTING_TEXT" 2>/dev/null \
+    | head -1 || echo "reuse-cache")"
+  [[ "$CACHE_WARM_DECISION" == "rewarm" || "$CACHE_WARM_DECISION" == "reuse-cache" ]] \
+    || CACHE_WARM_DECISION="reuse-cache"
+fi
+echo -e "${CYAN}cache-warm: ${CACHE_WARM_DECISION} (pack=${CACHE_WARM_PACK_NAME:-$(basename "$CONFIG_FILE")})${RESET}"
+
 echo -e "${GREEN}Starting agents...${RESET}"
+# BL-519 fallback warm mechanism: on a :rewarm decision, bring up the FIRST
+# claude role of each distinct model tier, pause briefly, THEN launch the
+# rest of that tier - so the first request per tier has a head start on
+# writing the cache before same-tier siblings would otherwise race it with
+# N parallel cold writes. No stagger at all on :reuse-cache (the common
+# case): the cache is already known-warm, so serializing launches would
+# only slow the swarm down for no benefit.
+typeset -A CACHE_WARM_TIER_SEEN
+CACHE_WARM_STAGGER_SECONDS=4
 for (( i = 1; i <= ${#ROLES[@]}; i++ )); do
+  [[ -n "${REFUSED_ROLE_INDICES[$i]:-}" ]] && continue
+  is_sequential_dormant "$i" && continue
+  is_first_of_tier=0
+  if [[ "$CACHE_WARM_DECISION" == "rewarm" && "${AGENTS[$i]}" == "claude" ]]; then
+    claude_settings_and_flags_from_extra_cli "${EXTRA_CLI_ARGS[$i]}"
+    tier="${CLAUDE_SETTINGS_MODEL:-default}"
+    if [[ -z "${CACHE_WARM_TIER_SEEN[$tier]:-}" ]]; then
+      CACHE_WARM_TIER_SEEN[$tier]=1
+      is_first_of_tier=1
+    fi
+  fi
   launch_role "$i"
+  if [[ "$is_first_of_tier" == 1 ]]; then
+    sleep "$CACHE_WARM_STAGGER_SECONDS"
+  fi
 done
+
+# BL-518: under `rotation router`, every dormant pipeline role needs its own
+# launch script + settings JSON on disk so the ONE resident agent can respawn
+# its pane AS that role (picking up that role's tailored model/effort) at each
+# handoff - rotate_to_role.bb re-execs .swarmforge/launch/<role>.sh. Dormant
+# roles skip launch_role (which is what normally writes these), so generate
+# them here with no session and no process, exactly the two file-writers
+# launch_role would have called.
+if [[ "$ROTATION_MODE" == "router" ]]; then
+  for (( i = 1; i <= ${#ROLES[@]}; i++ )); do
+    is_sequential_dormant "$i" || continue
+    write_agent_instruction_file "${ROLES[$i]}" "$PROMPTS_DIR/${ROLES[$i]}.md" "${AGENTS[$i]}"
+    write_role_launch_script "$i" >/dev/null
+    echo -e "  ${CYAN}[${DISPLAY_NAMES[$i]}]${RESET} launch script pre-generated (dormant, router rotation target)"
+  done
+fi
 
 echo ""
 echo -e "${GREEN}${BOLD}SwarmForge is ready.${RESET}"
+echo -e "${CYAN}Tip: './swarm ensure' repairs agents, handoffd, operator, and Telegram front desk.${RESET}"
+
+# BL-352 (BL-336 finding H5): record this launch into the SAME run history
+# runLog.ts's appendRun already defines (~/.swarmforge/runs.jsonl, the
+# bridge's own /runlog source) - only VS Code commands wrote to it before
+# this, so a swarm launched from the shell (which is how the real swarm
+# actually runs) never appeared there. Skipped when
+# SWARMFORGE_SKIP_SHELL_RUN_RECORD is set - a VS Code-initiated launch
+# already recorded itself before invoking this script (see
+# swarmLauncher.ts's own buildLaunchEnv), and recording it again here
+# would be a second, duplicate entry for the same run. Best-effort: a
+# missing/stale compiled CLI must never block a real launch over a
+# history-recording concern.
+if [[ "${SWARMFORGE_SKIP_SHELL_RUN_RECORD:-}" != "1" ]]; then
+  RECORD_RUN_CLI="$WORKING_DIR/extension/out/tools/record-run.js"
+  if [[ -f "$RECORD_RUN_CLI" ]]; then
+    node "$RECORD_RUN_CLI" start "$WORKING_DIR" >/dev/null 2>&1 || true
+  fi
+fi
+
 echo -e "Working directory: ${WORKING_DIR}"
 echo -e "Sessions:"
 for (( i = 1; i <= ${#ROLES[@]}; i++ )); do
@@ -1086,6 +1757,7 @@ if terminal_backend_can_open_sessions; then
   fi
   previous_window_id=""
   for (( i = 1; i <= ${#ROLES[@]}; i++ )); do
+    is_sequential_dormant "$i" && continue
     window_id="$(terminal_open_session "${SESSIONS[$i]}" "SwarmForge ${DISPLAY_NAMES[$i]}" "$previous_window_id")"
     if terminal_backend_tracks_windows; then
       echo "$window_id" >> "$WINDOW_IDS_FILE"
@@ -1110,6 +1782,7 @@ if terminal_backend_can_open_sessions; then
   fi
 else
   if [[ "$TERMINAL_BACKEND" == "none" ]]; then
+    : > "$STATE_DIR/headless-swarm"
     echo -e "${GREEN}Running headless (SWARMFORGE_TERMINAL=none). Attach manually if needed.${RESET}"
   else
     echo -e "${YELLOW}No terminal backend found; attaching current shell to '${SESSIONS[$CLEANUP_OWNER_INDEX]}' instead.${RESET}"

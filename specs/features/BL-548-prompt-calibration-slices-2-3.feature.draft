@@ -1,0 +1,58 @@
+# BL-548 — SLICES 2 & 3 (parked design; NOT executed by the acceptance runner).
+# Move scenarios into the live BL-548 feature file when each slice is built.
+
+Feature: Prompt calibration ranking, promotion, and rollback
+
+  # SLICE 2 — rank variants and operator review.
+
+  # BL-548 calibration-report-ranks-variants-07
+  Scenario: calibration report ranks variants against the incumbent baseline
+    Given a completed calibration run with variants "v-a" and "v-b" and incumbent "generic"
+    When prompt-calibration report is requested for that run
+    Then variants are ordered by aggregate battery score for the target role
+    And the incumbent is shown as the baseline for comparison
+
+  # BL-548 calibration-report-highlights-eligible-08
+  Scenario: calibration report highlights variants that beat incumbent without floor regression
+    Given a completed calibration run where variant "v-b" beats incumbent on capability
+    And variant "v-b" passes every mandatory certification gate for the role
+    When prompt-calibration report is requested for that run
+    Then variant "v-b" is marked eligible for promotion
+
+  # BL-548 calibration-report-tiebreak-cost-09
+  Scenario: tied variant scores break on cost and latency from the capability registry
+    Given two variants with equal aggregate battery scores
+    And variant "v-a" has lower cost than variant "v-b" in the capability registry
+    When prompt-calibration report is requested for that run
+    Then variant "v-a" ranks above variant "v-b"
+
+  # SLICE 3 — promote winner with regression guard and rollback.
+
+  # BL-548 promote-requires-human-approval-10
+  Scenario: promoting a variant requires human approval
+    Given a completed calibration run with an eligible variant "v-b"
+    And human approval for promotion has not been granted
+    When prompt-calibration promote is requested for variant "v-b"
+    Then promotion is rejected
+    And the production adapter catalogue remains unchanged
+
+  # BL-548 promote-updates-catalogue-11
+  Scenario: an approved promotion updates the production adapter catalogue
+    Given a completed calibration run with an eligible variant "v-b"
+    And human approval for promotion has been granted
+    When prompt-calibration promote is requested for variant "v-b"
+    Then the production Prompt Adapter catalogue maps the target model to adapter "v-b"
+    And the prior adapter id is recorded in promotion history
+
+  # BL-548 promote-rejects-regression-12
+  Scenario: promotion is rejected when the variant regresses below incumbent on a mandatory gate
+    Given a completed calibration run where variant "v-a" fails a mandatory gate the incumbent passes
+    When prompt-calibration promote is requested for variant "v-a"
+    Then promotion is rejected with a regression reason
+    And the production adapter catalogue remains unchanged
+
+  # BL-548 rollback-restores-prior-13
+  Scenario: rollback restores the prior production adapter from promotion history
+    Given variant "v-b" was promoted over incumbent "generic"
+    When prompt-calibration rollback is requested for the target model and role
+    Then the production Prompt Adapter catalogue maps the target model back to adapter "generic"

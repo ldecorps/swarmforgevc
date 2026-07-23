@@ -1,7 +1,7 @@
 id: BL-009
 title: Hardened message bus — append-only event log per message
 milestone: M2
-status: active
+status: done
 priority: 9
 
 description: >

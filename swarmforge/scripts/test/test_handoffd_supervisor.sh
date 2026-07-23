@@ -23,6 +23,22 @@ SUPERVISOR="$SCRIPT_DIR/../handoffd_supervisor.bb"
 # scenarios below.
 HANDOFFD="$(cd "$SCRIPT_DIR/.." && pwd)/handoffd.bb"
 
+# This suite deliberately KILLS daemons to exercise BL-144's alarm-and-halt.
+# Every such case fires a real alarm, which reads notify_email_to from the
+# effective swarmforge.conf (the packs configure a REAL address) and
+# RESEND_API_KEY from the daemon's inherited env - so a plain `npm test` on a
+# developer/agent machine mails a human, once per killed daemon. That happened:
+# 136 failure logs across 253 temp roots, i.e. ~136 real emails to the operator.
+#
+# The BL-215 case below already knew this and guarded ITSELF with `env -u
+# RESEND_API_KEY` - but that guard is per-invocation, so cases 01/02/04 (the
+# ones that actually kill daemons) were never covered by it. Unset it ONCE for
+# the whole suite instead: no case asserts alarm_email==true, so nothing here
+# depends on a mail actually being sent, and the BL-215 case's own `env -u`
+# remains correct and redundant. Same class as BL-315's config leak: real
+# operator env must never reach a test fixture.
+unset RESEND_API_KEY
+
 fail() { echo "FAIL: $*" >&2; exit 1; }
 pass() { echo "PASS: $*"; }
 
@@ -41,6 +57,7 @@ failure_log_path() {
 
 make_fixture() {
   ROOT="$(cd "$(mktemp -d)" && pwd -P)"
+  export SWARMFORGE_ALLOW_TMP_DAEMON=1  # BL-406: opt in - this ROOT is an intentional throwaway test root
   DAEMON_DIR="$ROOT/.swarmforge/daemon"
   CODER_WT="$ROOT/.worktrees/coder"
   mkdir -p "$DAEMON_DIR" "$CODER_WT/.swarmforge/handoffs/outbox" "$CODER_WT/.swarmforge/handoffs/inbox/new"
@@ -130,6 +147,19 @@ wait_for "relaunched daemon heartbeat" test -f "$DAEMON_DIR/handoffd.heartbeat"
 check_once
 [[ "$(status_field state)" == "healthy" ]] || fail "recovered daemon not marked healthy after human relaunch"
 pass "recovered daemon marked healthy in status file once a human clears the halt and relaunches it"
+
+# BL-406: this is a REAL, persistent daemon (line 145, no --poll-once/
+# --check-once) started with no captured PID variable of its own - the only
+# way to reach it is $DAEMON_DIR/handoffd.pid (its own self-written pid
+# file), and the very next make_fixture below REASSIGNS $DAEMON_DIR/$ROOT
+# and replaces the EXIT trap, permanently orphaning it: stop_daemon can
+# then never find it again, and its own $ROOT is never rm -rf'd either.
+# Confirmed leaking (empirically reproduced independent of any BL-406 code
+# change) via the BL-326 acceptance feature's "no daemon outlives the test
+# run" scenario, which drives this file end to end. Stop it and clear its
+# root here, while $DAEMON_DIR/$ROOT still point at it.
+stop_daemon
+rm -rf "$ROOT"
 
 # ── 02: lingering pid with stalled delivery also triggers alarm+halt ────────
 make_fixture
@@ -335,5 +365,33 @@ COUNT="$(handoffd_process_count)"
 [[ "$COUNT" == "1" ]] \
   || fail "04: expected exactly one handoffd process after simultaneous launcher+supervisor starts; found $COUNT"
 pass "04: simultaneous launcher and supervisor starts still yield exactly one handoffd process"
+
+# BL-326: the race's WINNER is still a live daemon at this point (COUNT==1
+# just confirmed it) - every other case transition in this file starts with
+# stop_daemon for exactly this reason, but this one didn't, so the winner
+# was never stopped before make_fixture below overwrote $ROOT/$DAEMON_DIR
+# for a fresh fixture. Nothing thereafter ever referenced its pid again -
+# a real, permanently orphaned /tmp/tmp.* daemon on every single run of
+# this suite, the exact class of stray process BL-326 found 8 of.
+stop_daemon
+
+# ── BL-215: a dead-daemon alarm with a configured recipient but no
+#     RESEND_API_KEY in the daemon's own env warns loudly instead of no-oping
+#     silently. Explicitly unsets RESEND_API_KEY so this never risks a real
+#     network call regardless of the ambient shell's env; conf-file itself
+#     (like every daemon_alarm_lib.bb wiring test here) is the repo's real
+#     swarmforge.conf, which already configures notify_email_to. ──────────
+make_fixture
+trap 'stop_daemon; rm -rf "$ROOT"' EXIT
+echo "999999" > "$DAEMON_DIR/handoffd.pid"
+echo "old log line" > "$DAEMON_DIR/handoffd.log"
+
+env -u RESEND_API_KEY SUPERVISOR_STALL_MS=500 SWARMFORGE_TERMINAL_BACKEND=none PATH="$FAKE_BIN:$PATH" \
+  bb "$SUPERVISOR" "$ROOT" --check-once
+
+[[ "$(status_field alarm_email)" == "False" ]] || fail "BL-215: expected alarm_email=false when RESEND_API_KEY is missing"
+grep -q "RESEND_API_KEY" "$DAEMON_DIR/handoffd-supervisor.log" \
+  || fail "BL-215: expected a loud warning naming RESEND_API_KEY in the supervisor log; got: $(cat "$DAEMON_DIR/handoffd-supervisor.log" 2>/dev/null)"
+pass "BL-215: a configured-but-keyless daemon warns loudly (naming RESEND_API_KEY) instead of a silent no-op"
 
 echo "ALL PASS"

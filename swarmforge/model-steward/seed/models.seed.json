@@ -1,0 +1,63 @@
+{
+  "models": [
+    { "provider": "anthropic", "model": "claude-sonnet-5", "status": "certified", "context_window": 200000, "cost_class": "medium" },
+    { "provider": "openai", "model": "gpt-5.3-codex", "status": "certified", "context_window": 128000, "cost_class": "medium" },
+    { "provider": "cerebras", "model": "llama-3.3-70b", "status": "candidate", "context_window": 32000, "cost_class": "low" }
+  ],
+
+  "capabilities": {
+    "anthropic/claude-sonnet-5": {
+      "coding_quality": { "score": 0.95 },
+      "protocol_compliance": { "score": 0.98 },
+      "tool_usage": { "score": 0.93 },
+      "autonomy": { "score": 0.9 },
+      "cost_latency": { "score": 0.7 }
+    },
+    "openai/gpt-5.3-codex": {
+      "coding_quality": { "score": 0.92 },
+      "protocol_compliance": { "score": 0.9 },
+      "tool_usage": { "score": 0.88 },
+      "autonomy": { "score": 0.85 },
+      "cost_latency": { "score": 0.75 }
+    },
+    "cerebras/llama-3.3-70b": {
+      "coding_quality": { "score": 0.6 },
+      "protocol_compliance": { "score": 0.55 },
+      "tool_usage": { "score": 0.5 },
+      "autonomy": { "score": 0.5 },
+      "cost_latency": { "score": 0.95 }
+    }
+  },
+
+  "role_matrix": {
+    "architect": [
+      { "provider": "anthropic", "model": "claude-sonnet-5", "score": 0.95, "evidence": "recruiter-scorecard:seed-architect-01" },
+      { "provider": "openai", "model": "gpt-5.3-codex", "score": 0.9, "evidence": "recruiter-scorecard:seed-architect-02" }
+    ],
+    "coder": [
+      { "provider": "anthropic", "model": "claude-sonnet-5", "score": 0.95, "evidence": "recruiter-scorecard:seed-coder-01" },
+      { "provider": "openai", "model": "gpt-5.3-codex", "score": 0.92, "evidence": "recruiter-scorecard:seed-coder-02" }
+    ],
+    "cleaner": [
+      { "provider": "anthropic", "model": "claude-sonnet-5", "score": 0.9, "evidence": "recruiter-scorecard:seed-cleaner-01" }
+    ],
+    "QA": [
+      { "provider": "anthropic", "model": "claude-sonnet-5", "score": 0.93, "evidence": "recruiter-scorecard:seed-qa-01" }
+    ],
+    "hardender": [
+      { "provider": "anthropic", "model": "claude-sonnet-5", "score": 0.91, "evidence": "recruiter-scorecard:seed-hardender-01" }
+    ],
+    "documenter": [
+      { "provider": "anthropic", "model": "claude-sonnet-5", "score": 0.85, "evidence": "recruiter-scorecard:seed-documenter-01" }
+    ],
+    "specifier": [
+      { "provider": "anthropic", "model": "claude-sonnet-5", "score": 0.96, "evidence": "recruiter-scorecard:seed-specifier-01" }
+    ]
+  },
+
+  "adapters": {
+    "anthropic/claude-sonnet-5": { "adapter_id": "generic", "production_default": true },
+    "openai/gpt-5.3-codex": { "adapter_id": "generic", "production_default": true },
+    "cerebras/llama-3.3-70b": { "adapter_id": "generic", "production_default": false }
+  }
+}

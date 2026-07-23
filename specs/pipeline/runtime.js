@@ -1,0 +1,35 @@
+'use strict';
+
+// BL-259: a Scenario Outline Examples column name may legitimately contain
+// spaces (e.g. "forbidden edge", "what is checked") - matches ANY
+// non-angle-bracket text between < and >, not just [A-Za-z0-9_]+, so a
+// multi-word placeholder is substituted the same as a single-word one.
+function substitute(text, exampleRow) {
+  if (!exampleRow) {
+    return text;
+  }
+  return text.replace(/<([^<>]+)>/g, (whole, name) => (name in exampleRow ? exampleRow[name] : whole));
+}
+
+function scenarioSteps(feature, scenario) {
+  return [...(feature.background || []), ...scenario.steps];
+}
+
+async function runScenario(registry, feature, scenario, exampleRow) {
+  const context = {};
+  for (const step of scenarioSteps(feature, scenario)) {
+    const text = substitute(step.text, exampleRow);
+    const resolved = registry.resolve(text, feature.name);
+    if (!resolved) {
+      throw new Error(`Scenario "${scenario.name}": no step handler matched "${step.keyword} ${text}"`);
+    }
+    try {
+      await resolved.handler(context, ...resolved.args);
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      throw new Error(`Scenario "${scenario.name}" failed at step "${step.keyword} ${text}": ${reason}`);
+    }
+  }
+}
+
+module.exports = { runScenario, substitute, scenarioSteps };

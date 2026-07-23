@@ -1,0 +1,71 @@
+id: BL-439
+title: "FES second-swarm bring-up runbook + E2E acceptance: a real mono-rotate swarm against free-email-scanner with proven Telegram separation and a distinct fleet identity"
+milestone: M8
+type: feature
+status: todo
+severity: medium
+epic: fleet-second-swarm
+priority: 38
+direction: human-requested
+depends_on: [BL-436, BL-437, BL-448]
+source: "INTAKE-fleet-beefup-second-swarm-fes-guinea-pig.md (epic BL-435, suggested slice 4). This slice IS the epic's real-world end-to-end acceptance — the forcing function that turns 'fleet of one, in theory' into 'fleet of two, for real'."
+
+notes: |
+  PARKED behind BL-436 (per-swarm creds) + BL-437 (fleet status publish) — the separation and the
+  distinct-identity proofs both depend on those. Scenarios live in
+  specs/features/BL-439-fes-second-swarm-bringup.feature.draft until both land and this is promoted.
+
+  WHAT IT DELIVERS. A runbook (under docs/) to stand up a real second swarm against free-email-scanner
+  (local repo `C:\Users\Carillon\source\repos\free-email-scanner`), plus the E2E acceptance that proves
+  the fleet layer carries two swarms. Constraints already decided with the human, 2026-07-15:
+    - mono-rotate pack (SUPERSEDES the 2-pack, human decision 2026-07-16): the host is a 15GB box that
+      OOM-crashed and holds ONE full swarm, so FES runs on the lightest config - one resident pipeline
+      agent rotating through all roles (BL-448), not a 2-pack, not a full pack. FES is mono-rotate's
+      default adopter; depends_on BL-448 (the pack must exist before FES defaults to it). The 2-pack was
+      the 2026-07-15-approved config; the human moved FES to mono-rotate 2026-07-16 given the OOM evidence.
+    - Launched from the Windows-side swarmforge checkout: the target is on /mnt/c, where Linux-side tmux
+      sockets are unreliable.
+    - Its own bot+group (see the live FES channel state in memory: fes-second-swarm-bringup-state —
+      @fes_swarm_bot, supergroup -1003886489685, topic 2; token in ~/.swarmforge/fleet/fes/).
+    - FIRST proof-point = Telegram channel separation: the FES swarm never steals the primary's inbound.
+
+  THE ACCEPTANCE (forcing function). (1) The FES swarm resolves its own bot token from its fleet creds
+  file (BL-436) — even launched from a shell that exported the primary's token. (2) Neither swarm's
+  inbound is consumed by the other (no 409, no message theft). (3) Both swarms appear as distinct
+  identities in the fleet console via their published status.json (BL-437). This bring-up also exercises
+  the full onboarding ceremony end to end (BL-262/344/380/381/382) as its real-world acceptance — and is
+  where BL-442/443/444 (the ceremony defects from the first FES run) get their live re-verification.
+
+  DO NOT CLOSE THE EPIC (BL-435) UNTIL THIS PASSES. Green unit slices for BL-436/437 are not proof the
+  fleet carries two swarms; this live bring-up is.
+
+  Scope (verify at build time): a runbook under docs/ (documenter/coordinator-owned steps), and the E2E
+  acceptance harness that drives the separation + distinct-identity proofs. Much of the acceptance is a
+  live procedure against a real second swarm rather than an in-process unit test — record the exact
+  procedure QA runs, and keep any executable scenarios pinned to the testable seams (creds resolution,
+  status.json enumeration) rather than a live tmux/Telegram round-trip.
+
+  E2E QA PROCEDURE: follow the runbook to launch FES as a mono-rotate swarm (BL-448) from the Windows side; from a shell that
+  exports the primary's TELEGRAM_BOT_TOKEN, confirm FES uses its own token (FES log shows no 409); send a
+  message to each bot and confirm only the owning swarm consumes it; open the fleet console and confirm
+  primary + fes render as two distinct swarms.
+
+acceptance:
+  feature: specs/features/BL-439-fes-second-swarm-bringup.feature
+  steps:
+    - "Following the runbook stands up the FES swarm as a mono-rotate pack (BL-448) with its own swarm_name from the Windows-side checkout"
+    - "The FES swarm resolves its own bot token from its fleet creds file, not the primary's"
+    - "Neither swarm's inbound is consumed by the other"
+    - "Both swarms appear as distinct identities in the fleet console"
+
+human_approval: approved
+approval_context: >
+  approved 2026-07-15 (coordinator session, full-batch confirmation via Operator relay). The bring-up
+  constraints (Windows-side launch, own bot+group, separation-first) were settled with the human
+  2026-07-15 (recorded in the intake); the human then approved promotion as-is. AMENDED 2026-07-16: the
+  human moved FES's pack from the 2-pack to mono-rotate (BL-448) given the OOM evidence - the pack change
+  is human-authorized, but the mono-rotate bring-up specifics ride on BL-448 and should be re-confirmed at
+  promotion. Now held on depends_on: [BL-436, BL-437, BL-448] until all land. How much of the acceptance is
+  executable vs. a recorded live procedure must be settled at build time.
+
+mutation_cost: low

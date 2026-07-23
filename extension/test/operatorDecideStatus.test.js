@@ -1,0 +1,259 @@
+const assert = require('node:assert/strict');
+const {
+  selectGateDecision,
+  handleApprovalDecision,
+  selectGateDecisionForTicket,
+  handleApprovalDecisionForTicket,
+  composeStatusAnswer,
+  handleStatusQuery,
+} = require('../out/bridge/operatorDecideStatus');
+
+// BL-285: the Operator Decide+Status slice's pure decision/composition
+// logic + adapter-injected orchestration, tested with fakes - no real
+// tmux/pane, no real gate-answer write, no real reply outbox, matching the
+// ticket's own "fake answerCapturedGate/sendAnswer + fake reply outbox"
+// testable-boundary constraint.
+
+function fakeApprovalDeps(overrides = {}) {
+  const answerCalls = [];
+  const replies = [];
+  const retractFlags = [];
+  return {
+    answerCalls,
+    replies,
+    retractFlags,
+    deps: {
+      answerGate: (role, answer) => {
+        answerCalls.push({ role, answer });
+        return overrides.answerResult ?? { success: true };
+      },
+      reply: (text, retractsPendingQuestion) => {
+        replies.push(text);
+        retractFlags.push(retractsPendingQuestion);
+      },
+    },
+  };
+}
+
+// ── selectGateDecision (pure) ────────────────────────────────────────────
+
+test('selectGateDecision answers the one pending gate when exactly one is pending', () => {
+  const decision = selectGateDecision([{ role: 'coder', gated: true, snippet: 'Proceed? (y/n)' }]);
+  assert.deepEqual(decision, { action: 'answer', role: 'coder' });
+});
+
+test('selectGateDecision reports nothing to approve when no gate is pending', () => {
+  assert.deepEqual(selectGateDecision([]), { action: 'nothing' });
+});
+
+test('selectGateDecision asks which gate when more than one is pending', () => {
+  const decision = selectGateDecision([
+    { role: 'coder', gated: true },
+    { role: 'cleaner', gated: true },
+  ]);
+  assert.deepEqual(decision, { action: 'ask-which', roles: ['coder', 'cleaner'] });
+});
+
+// ── handleApprovalDecision (adapter-injected) — decide-status-03/04/05 ────
+
+// BL-285 decide-status-03
+test('decide-status-03: exactly one pending gate answers that gate through the gate-answer write path and confirms in the topic', () => {
+  const { deps, answerCalls, replies } = fakeApprovalDeps();
+  const decision = handleApprovalDecision([{ role: 'coder', gated: true }], 'y', deps);
+  assert.deepEqual(decision, { action: 'answer', role: 'coder' });
+  assert.deepEqual(answerCalls, [{ role: 'coder', answer: 'y' }]);
+  assert.equal(replies.length, 1);
+  assert.match(replies[0], /coder/);
+});
+
+// BL-285 decide-status-04
+test('decide-status-04: no pending gate writes no gate answer and replies there is nothing to approve', () => {
+  const { deps, answerCalls, replies } = fakeApprovalDeps();
+  const decision = handleApprovalDecision([], 'y', deps);
+  assert.deepEqual(decision, { action: 'nothing' });
+  assert.deepEqual(answerCalls, []);
+  assert.equal(replies.length, 1);
+  assert.match(replies[0], /nothing to approve/i);
+});
+
+// BL-285 decide-status-05
+test('decide-status-05: several pending gates write no gate answer and ask in the topic which to answer', () => {
+  const { deps, answerCalls, replies } = fakeApprovalDeps();
+  const decision = handleApprovalDecision(
+    [
+      { role: 'coder', gated: true },
+      { role: 'cleaner', gated: true },
+    ],
+    'y',
+    deps
+  );
+  assert.deepEqual(decision, { action: 'ask-which', roles: ['coder', 'cleaner'] });
+  assert.deepEqual(answerCalls, []);
+  assert.equal(replies.length, 1);
+  assert.match(replies[0], /coder/);
+  assert.match(replies[0], /cleaner/);
+});
+
+test('a failed gate-answer write still confirms honestly, never claiming success', () => {
+  const { deps, replies } = fakeApprovalDeps({ answerResult: { success: false, reason: 'gone' } });
+  handleApprovalDecision([{ role: 'coder', gated: true }], 'y', deps);
+  assert.equal(replies.length, 1);
+  assert.doesNotMatch(replies[0], /Answered/);
+});
+
+// BL-440: a successful gate answer is the real production decision point
+// where a ticket's pending question stops being live - the confirmation
+// reply must carry retractsPendingQuestion so it reaches blTopicStore.ts
+// as true, never left for only a hand-built test fixture to set.
+test('BL-440: a successful gate answer marks its confirmation reply as retracting the pending question', () => {
+  const { deps, retractFlags } = fakeApprovalDeps();
+  handleApprovalDecision([{ role: 'coder', gated: true }], 'y', deps);
+  assert.deepEqual(retractFlags, [true]);
+});
+
+test('BL-440: a failed gate answer never marks retraction - the question is still live', () => {
+  const { deps, retractFlags } = fakeApprovalDeps({ answerResult: { success: false, reason: 'gone' } });
+  handleApprovalDecision([{ role: 'coder', gated: true }], 'y', deps);
+  assert.deepEqual(retractFlags, [false]);
+});
+
+test('BL-440: "nothing to approve" and "which gate" replies never claim a retraction', () => {
+  const nothing = fakeApprovalDeps();
+  handleApprovalDecision([], 'y', nothing.deps);
+  assert.deepEqual(nothing.retractFlags, [undefined]);
+
+  const askWhich = fakeApprovalDeps();
+  handleApprovalDecision([{ role: 'coder', gated: true }, { role: 'cleaner', gated: true }], 'y', askWhich.deps);
+  assert.deepEqual(askWhich.retractFlags, [undefined]);
+});
+
+// ── selectGateDecisionForTicket / handleApprovalDecisionForTicket (pure +
+//    adapter-injected) — BL-325 scope 6: an in-topic reply is directed by
+//    the TOPIC'S OWN backlogId, never a count-based guess ─────────────────
+
+test('BL-325: with two gates pending, the ticket-directed selector answers ONLY the role holding the named ticket', () => {
+  const decision = selectGateDecisionForTicket(
+    [
+      { role: 'coder', gated: true },
+      { role: 'cleaner', gated: true },
+    ],
+    { coder: 'BL-100', cleaner: 'BL-200' },
+    'BL-100'
+  );
+  assert.deepEqual(decision, { action: 'answer', role: 'coder' });
+});
+
+test('BL-325: the OTHER gate is never touched by a ticket-directed decision', () => {
+  const decision = selectGateDecisionForTicket(
+    [
+      { role: 'coder', gated: true },
+      { role: 'cleaner', gated: true },
+    ],
+    { coder: 'BL-100', cleaner: 'BL-200' },
+    'BL-200'
+  );
+  assert.deepEqual(decision, { action: 'answer', role: 'cleaner' });
+});
+
+test('BL-325: no targetBacklogId (a SUP thread) falls back to the original count-based selector, unchanged', () => {
+  const decision = selectGateDecisionForTicket(
+    [
+      { role: 'coder', gated: true },
+      { role: 'cleaner', gated: true },
+    ],
+    { coder: 'BL-100', cleaner: 'BL-200' },
+    undefined
+  );
+  assert.deepEqual(decision, { action: 'ask-which', roles: ['coder', 'cleaner'] });
+});
+
+test('BL-325: a targetBacklogId whose own ticket has no pending gate falls back to the count-based selector (genuine fallback)', () => {
+  const decision = selectGateDecisionForTicket([{ role: 'cleaner', gated: true }], { coder: 'BL-100', cleaner: 'BL-200' }, 'BL-100');
+  assert.deepEqual(decision, { action: 'answer', role: 'cleaner' });
+});
+
+test('BL-325: a targetBacklogId held by no role at all falls back to the count-based selector', () => {
+  const decision = selectGateDecisionForTicket([{ role: 'coder', gated: true }], { coder: 'BL-100' }, 'BL-999');
+  assert.deepEqual(decision, { action: 'answer', role: 'coder' });
+});
+
+test('BL-325: handleApprovalDecisionForTicket answers the targeted role and never the other, even with two pending', () => {
+  const { deps, answerCalls, replies } = fakeApprovalDeps();
+  const decision = handleApprovalDecisionForTicket(
+    [
+      { role: 'coder', gated: true },
+      { role: 'cleaner', gated: true },
+    ],
+    { coder: 'BL-100', cleaner: 'BL-200' },
+    'BL-100',
+    'yes, approved',
+    deps
+  );
+  assert.deepEqual(decision, { action: 'answer', role: 'coder' });
+  assert.deepEqual(answerCalls, [{ role: 'coder', answer: 'yes, approved' }]);
+  assert.equal(replies.length, 1);
+  assert.doesNotMatch(replies[0], /which/i);
+});
+
+// ── composeStatusAnswer / handleStatusQuery (pure + adapter-injected) ────
+// decide-status-01/02
+
+function fakeBacklog(tickets) {
+  return { board: { active: tickets.filter((t) => t.status === 'active'), paused: tickets.filter((t) => t.status === 'paused'), doneByMilestone: {} } };
+}
+
+// BL-285 decide-status-02
+test('decide-status-02: a ticket query states that ticket\'s actual projected state', () => {
+  const projections = { backlog: fakeBacklog([{ id: 'BL-100', title: 'cost telemetry', status: 'active', swarm: 'primary' }]) };
+  const answer = composeStatusAnswer({ kind: 'ticket', ticketId: 'BL-100' }, projections);
+  assert.match(answer, /BL-100/);
+  assert.match(answer, /active/);
+});
+
+test('a ticket query about an unknown ticket never fabricates a state', () => {
+  const projections = { backlog: fakeBacklog([{ id: 'BL-100', title: 'cost telemetry', status: 'active', swarm: 'primary' }]) };
+  const answer = composeStatusAnswer({ kind: 'ticket', ticketId: 'BL-999' }, projections);
+  assert.match(answer, /don't know|not.*projection/i);
+  assert.doesNotMatch(answer, /active|paused|done/);
+});
+
+test('a ticket query finds a done ticket nested under doneByMilestone', () => {
+  const projections = {
+    backlog: { board: { active: [], paused: [], doneByMilestone: { M4: [{ id: 'BL-42', title: 'shipped thing', status: 'done', swarm: 'primary' }] } } },
+  };
+  const answer = composeStatusAnswer({ kind: 'ticket', ticketId: 'BL-42' }, projections);
+  assert.match(answer, /BL-42/);
+  assert.match(answer, /done/);
+});
+
+// BL-285 decide-status-01
+test('decide-status-01: a swarm-liveness query is answered from the live operator status projection', () => {
+  const projections = { operatorStatus: { state: 'dispatching', agents_running: 3, pending_events: 1 } };
+  const answer = composeStatusAnswer({ kind: 'swarm-liveness' }, projections);
+  assert.match(answer, /dispatching/);
+  assert.match(answer, /3/);
+});
+
+test('a swarm-liveness query never fabricates when no operator status is available', () => {
+  const answer = composeStatusAnswer({ kind: 'swarm-liveness' }, {});
+  assert.match(answer, /don't know/i);
+});
+
+test('a pending-gates query is answered from the live gate view', () => {
+  const answer = composeStatusAnswer({ kind: 'pending-gates' }, { pendingGates: [{ role: 'coder', gated: true }, { role: 'cleaner', gated: true }] });
+  assert.match(answer, /coder/);
+  assert.match(answer, /cleaner/);
+});
+
+test('a pending-gates query with none pending never fabricates a gate', () => {
+  const answer = composeStatusAnswer({ kind: 'pending-gates' }, { pendingGates: [] });
+  assert.match(answer, /no gates? pending/i);
+});
+
+test('handleStatusQuery replies into the topic with the composed answer', () => {
+  const replies = [];
+  const answer = handleStatusQuery({ kind: 'ticket', ticketId: 'BL-100' }, { backlog: fakeBacklog([{ id: 'BL-100', title: 't', status: 'paused', swarm: 'primary' }]) }, {
+    reply: (text) => replies.push(text),
+  });
+  assert.deepEqual(replies, [answer]);
+});

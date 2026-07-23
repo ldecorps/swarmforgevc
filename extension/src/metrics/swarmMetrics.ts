@@ -9,6 +9,42 @@ import { execFileSync } from 'child_process';
 export interface RoleWorktree {
   role: string;
   worktreePath: string;
+  // BL-208: the configured agent/provider brand (roles.tsv's own agent
+  // column), when the caller has it - lets computeSwarmMetrics derive a
+  // provider roster for computeProviderTelemetry without a second read of
+  // roles.tsv.
+  agent?: string;
+}
+
+// BL-312: a master-resident roster (e.g. coordinator + specifier, both
+// worktreeName "master") collapses to one physical worktreePath - reading
+// or reporting per-role there would read the same transcript directory
+// once per colliding role and double-count it. Groups roles by
+// worktreePath so a caller reads/reports each distinct physical directory
+// exactly once; a lone role keeps its own singleton group. Shared by
+// burnRate.ts and costTelemetry.ts (the two producers the ticket's own
+// root-cause names), rather than each re-deriving the grouping.
+export function groupRolesByWorktreePath(roles: RoleWorktree[]): RoleWorktree[][] {
+  const byPath = new Map<string, RoleWorktree[]>();
+  for (const role of roles) {
+    const group = byPath.get(role.worktreePath);
+    if (group) {
+      group.push(role);
+    } else {
+      byPath.set(role.worktreePath, [role]);
+    }
+  }
+  return [...byPath.values()];
+}
+
+// The reported key for a worktreePath group: the role's own name for a
+// singleton group (unaffected roles report exactly as before), or every
+// colliding role's name joined - sorted so the label is deterministic
+// regardless of roles.tsv's row order - so a combined total is visibly
+// labeled shared/combined rather than silently duplicated under one role's
+// name.
+export function combinedRoleKey(group: RoleWorktree[]): string {
+  return group.length === 1 ? group[0].role : [...group].map((r) => r.role).sort().join('+');
 }
 
 export interface MeanTicketTime {
@@ -34,7 +70,9 @@ export interface StageDwellReport {
 
 // The forward pipeline chain (PIPELINE.md). The coordinator sits outside it
 // and is never a retry participant.
-const PIPELINE_ORDER = ['specifier', 'coder', 'cleaner', 'architect', 'hardender', 'documenter', 'QA'];
+// BL-102: exported so stageDwell.ts's per-stage report iterates the same
+// pipeline roster (and excludes the coordinator) instead of redeclaring it.
+export const PIPELINE_ORDER = ['specifier', 'coder', 'cleaner', 'architect', 'hardender', 'documenter', 'QA'];
 
 function pipelineIndex(role: string): number {
   return PIPELINE_ORDER.indexOf(role);
@@ -155,7 +193,9 @@ export function computeMeanTicketTime(targetPath: string): MeanTicketTime {
   return { meanMs: total / durationsMs.length, sampleCount: durationsMs.length };
 }
 
-function parseHandoffHeaders(content: string): Record<string, string> {
+// BL-100: exported so ticketHoldingWindows.ts's per-ticket attribution join
+// reuses this same header parser instead of re-implementing it.
+export function parseHandoffHeaders(content: string): Record<string, string> {
   const header = content.split('\n\n')[0];
   const headers: Record<string, string> = {};
   for (const line of header.split('\n')) {
@@ -173,6 +213,62 @@ function readHandoffFiles(dir: string): string[] {
   } catch {
     return [];
   }
+}
+
+// BL-102: shared flat (non-recursing) "list + parse every .handoff file
+// directly in this dir" reader - ticketHoldingWindows.ts's completed-dir
+// read and the batch-aware walker below both need this exact leaf
+// operation (jscpd flagged the inline duplication once stageDwell.ts added
+// a second, structurally identical copy).
+export function readHandoffHeaderRecordsFlat(dir: string): Array<Record<string, string>> {
+  const records: Array<Record<string, string>> = [];
+  for (const file of readHandoffFiles(dir)) {
+    try {
+      records.push(parseHandoffHeaders(fs.readFileSync(path.join(dir, file), 'utf8')));
+    } catch {
+      continue;
+    }
+  }
+  return records;
+}
+
+// One entry of a dir being walked with batch support: either a direct
+// .handoff file, or a batch_* subdirectory a batch role's
+// done_with_current_batch.sh moved a whole completed/in_process batch into
+// - never nested deeper than that one level. Split out of
+// readHandoffHeaderRecordsWithBatches so each function stays under the
+// CRAP<=6 gate.
+function readHandoffHeaderRecordAt(fullPath: string, isHandoffFile: boolean): Array<Record<string, string>> {
+  let stat: fs.Stats;
+  try {
+    stat = fs.statSync(fullPath);
+  } catch {
+    return [];
+  }
+  if (stat.isDirectory()) {
+    return readHandoffHeaderRecordsFlat(fullPath);
+  }
+  if (!isHandoffFile) {
+    return [];
+  }
+  try {
+    return [parseHandoffHeaders(fs.readFileSync(fullPath, 'utf8'))];
+  } catch {
+    return [];
+  }
+}
+
+// BL-102: shared by ticketHoldingWindows.ts's in_process read and
+// stageDwell.ts's completed read - both need batch_* subdirectories
+// included, one level deep (see readHandoffHeaderRecordAt above).
+export function readHandoffHeaderRecordsWithBatches(dir: string): Array<Record<string, string>> {
+  let entries: string[];
+  try {
+    entries = fs.readdirSync(dir);
+  } catch {
+    return [];
+  }
+  return entries.flatMap((entry) => readHandoffHeaderRecordAt(path.join(dir, entry), entry.endsWith('.handoff')));
 }
 
 function intervalMs(start: number, end: number): number {
@@ -354,9 +450,31 @@ export interface RetryCounts {
   perTicket: Record<string, number>;
 }
 
-function extractTicketId(task: string): string | null {
-  const match = task.match(/^([A-Za-z]+-\d+)/);
-  return match ? match[1] : null;
+// BL-102: exported so stageDwell.ts's dwell-record derivation and
+// ticketHoldingWindows.ts's window derivation both reuse this same
+// ticket-id extraction instead of keeping their own duplicate copies.
+//
+// BL-504: an ALLOWLIST, never a denylist - mirrors known-ticket-prefixes in
+// pipeline_stage_lib.bb / chase_sweep_lib.bb. The only prefixes this project
+// mints are "BL" and "GH"; an unbounded [A-Za-z]+ prefix cannot be safely
+// disambiguated from a glued one ("ABL-217" would absorb "ABL" as if it were
+// the ticket's own prefix), so this must stay anchored to the allowlist, not
+// widened to a broad letter-run glob. The hyphen between prefix and digits is
+// OPTIONAL ("bl493-..." and "BL-493-..." both resolve), and the result is
+// always canonicalized to upper-case hyphenated form regardless of the
+// input's case/hyphenation, so downstream keys/joins agree on one shape.
+const TICKET_ID_PATTERN = /^(BL|GH)-?(\d+)/i;
+const TICKET_ID_ANYWHERE_PATTERN = /\b(BL|GH)-?(\d+)/i;
+
+export function extractTicketId(task: string): string | null {
+  const match = task.match(TICKET_ID_PATTERN);
+  return match ? `${match[1].toUpperCase()}-${match[2]}` : null;
+}
+
+/** Like extractTicketId but matches BL/GH ids anywhere in prose (e.g. coordinator notes). */
+export function findTicketIdInText(text: string): string | null {
+  const match = text.match(TICKET_ID_ANYWHERE_PATTERN);
+  return match ? `${match[1].toUpperCase()}-${match[2]}` : null;
 }
 
 function isGitHandoff(headers: Record<string, string>): boolean {
@@ -376,52 +494,92 @@ function ticketFromHeaders(headers: Record<string, string>): string | null {
   return headers.task ? extractTicketId(headers.task) : null;
 }
 
-function countBackwardHandoffs(headers: Record<string, string>): Array<{ ticket: string | null }> {
+// BL-430: carries fromRole/createdAtIso alongside ticket - computeRetries
+// itself only needs ticket, but computeReworkEvents below needs the two
+// dimensions (who bounced it, when) computeRetries has always discarded.
+function countBackwardHandoffs(
+  headers: Record<string, string>
+): Array<{ ticket: string | null; fromRole: string; createdAtIso: string | null }> {
   if (!isGitHandoff(headers)) {
     return [];
   }
-  const fromIdx = pipelineIndex(headers.from ?? '');
+  const fromRole = headers.from ?? '';
+  const fromIdx = pipelineIndex(fromRole);
   if (fromIdx === -1) {
     return [];
   }
   const ticket = ticketFromHeaders(headers);
+  const createdAtIso = headers.created_at ?? null;
   return getRecipients(headers.to)
     .filter((recipient) => isBackwardRecipient(fromIdx, recipient))
-    .map(() => ({ ticket }));
+    .map(() => ({ ticket, fromRole, createdAtIso }));
+}
+
+// Walks every role's sent/ (the delivered original, one copy regardless of
+// recipient count, so a broadcast is not double-counted per recipient),
+// parsing each handoff's headers. Shared by computeRetries and
+// computeReworkEvents so both read the exact same backward-handoff scan
+// rather than keeping two independent walks of the same files.
+function forEachSentHandoffHeaders(roles: RoleWorktree[], onHeaders: (headers: Record<string, string>) => void): void {
+  for (const role of roles) {
+    const sentDir = path.join(role.worktreePath, '.swarmforge', 'handoffs', 'sent');
+    for (const file of readHandoffFiles(sentDir)) {
+      let headers: Record<string, string>;
+      try {
+        headers = parseHandoffHeaders(fs.readFileSync(path.join(sentDir, file), 'utf8'));
+      } catch {
+        continue;
+      }
+      onHeaders(headers);
+    }
+  }
 }
 
 // Counts git_handoff files whose sender sits later in the pipeline chain
-// than the recipient. Scans each role's sent/ (the delivered original, one
-// copy regardless of recipient count) rather than inbox/completed copies,
-// so a broadcast is not double-counted per recipient.
-function processSentFile(sentDir: string, file: string, perTicket: Record<string, number>): number {
-  let headers: Record<string, string>;
-  try {
-    headers = parseHandoffHeaders(fs.readFileSync(path.join(sentDir, file), 'utf8'));
-  } catch {
-    return 0;
-  }
-  const backwardHandoffs = countBackwardHandoffs(headers);
-  for (const handoff of backwardHandoffs) {
-    if (handoff.ticket) {
-      perTicket[handoff.ticket] = (perTicket[handoff.ticket] ?? 0) + 1;
-    }
-  }
-  return backwardHandoffs.length;
-}
-
+// than the recipient.
 export function computeRetries(roles: RoleWorktree[]): RetryCounts {
   let total = 0;
   const perTicket: Record<string, number> = {};
 
-  for (const role of roles) {
-    const sentDir = path.join(role.worktreePath, '.swarmforge', 'handoffs', 'sent');
-    for (const file of readHandoffFiles(sentDir)) {
-      total += processSentFile(sentDir, file, perTicket);
+  forEachSentHandoffHeaders(roles, (headers) => {
+    const backwardHandoffs = countBackwardHandoffs(headers);
+    total += backwardHandoffs.length;
+    for (const handoff of backwardHandoffs) {
+      if (handoff.ticket) {
+        perTicket[handoff.ticket] = (perTicket[handoff.ticket] ?? 0) + 1;
+      }
     }
-  }
+  });
 
   return { total, perTicket };
+}
+
+export interface ReworkEvent {
+  ticketId: string;
+  fromRole: string;
+  atMs: number;
+}
+
+// BL-430: reuses the exact same backward-handoff scan computeRetries relies
+// on (rather than re-parsing sent/ a second way), keeping the role and
+// timestamp computeRetries itself discards - the two dimensions the rework
+// observatory attributes rework to. A handoff missing a resolvable ticket
+// id or a parseable created_at contributes no event, never a fabricated one.
+export function computeReworkEvents(roles: RoleWorktree[]): ReworkEvent[] {
+  const events: ReworkEvent[] = [];
+  forEachSentHandoffHeaders(roles, (headers) => {
+    for (const handoff of countBackwardHandoffs(headers)) {
+      if (!handoff.ticket || !handoff.createdAtIso) {
+        continue;
+      }
+      const atMs = Date.parse(handoff.createdAtIso);
+      if (Number.isNaN(atMs)) {
+        continue;
+      }
+      events.push({ ticketId: handoff.ticket, fromRole: handoff.fromRole, atMs });
+    }
+  });
+  return events;
 }
 
 export interface SuiteDurationStats {
@@ -438,6 +596,10 @@ export interface SwarmMetrics {
   retryTotal: number;
   retryByTicket: Record<string, number>;
   suiteDuration: SuiteDurationStats;
+  chaserTelemetry: ChaserTelemetry;
+  // BL-208: the same chaser telemetry, grouped by provider brand instead of
+  // role - empty (no keys) when no role in `roles` carries an `agent`.
+  providerTelemetry: ChaserTelemetry;
 }
 
 export const NO_SAMPLE_PLACEHOLDER = '—';
@@ -461,7 +623,7 @@ export function formatSuiteDurationMs(ms: number): string {
 
 export const DEFAULT_SUITE_WARN_SECONDS = 120;
 
-interface TestDurationRecord {
+export interface TestDurationRecord {
   finishedAtMs: number;
   durationMs: number;
 }
@@ -488,7 +650,10 @@ function parseTestDurationLine(line: string): TestDurationRecord | null {
   return null;
 }
 
-function readTestDurationRecords(worktreePath: string): TestDurationRecord[] {
+// BL-096: exported so deliveryMetrics.ts's suite-duration-trend metric can
+// reuse this same reader (and its "malformed line skipped, never a crash"
+// behavior) instead of re-implementing the .test-durations.jsonl parse.
+export function readTestDurationRecords(worktreePath: string): TestDurationRecord[] {
   let content: string;
   try {
     content = fs.readFileSync(suiteDurationLogPath(worktreePath), 'utf8');
@@ -506,9 +671,18 @@ function readTestDurationRecords(worktreePath: string): TestDurationRecord[] {
   return records;
 }
 
+// Every role worktree runs the test suite in its own checkout, so each has
+// its own .test-durations.jsonl - shared by computeSuiteDuration below and
+// deliveryMetrics.ts's computeSuiteDurationTrend, which both need the same
+// "every worktree's records, deduped by path" aggregation (jscpd flagged
+// the inline duplication once BL-096 added the second caller).
+export function readAllTestDurationRecords(targetPath: string, roles: RoleWorktree[]): TestDurationRecord[] {
+  const worktreePaths = new Set<string>([targetPath, ...roles.map((r) => r.worktreePath)]);
+  return [...worktreePaths].flatMap(readTestDurationRecords);
+}
+
 // Aggregates the test-suite duration log across the main checkout and every
-// role worktree (each role runs the suite in its own checkout, so each has
-// its own log) into one latest/mean/sampleCount view, flagging creep
+// role worktree into one latest/mean/sampleCount view, flagging creep
 // (BL-078). warnThresholdMs is the absolute floor; the 2x-rolling-mean check
 // catches relative creep even under a generous absolute threshold.
 export function computeSuiteDuration(
@@ -517,8 +691,7 @@ export function computeSuiteDuration(
   warnThresholdMs: number = DEFAULT_SUITE_WARN_SECONDS * 1000,
   sampleWindow: number = 20
 ): SuiteDurationStats {
-  const worktreePaths = new Set<string>([targetPath, ...roles.map((r) => r.worktreePath)]);
-  const allRecords = [...worktreePaths].flatMap(readTestDurationRecords);
+  const allRecords = readAllTestDurationRecords(targetPath, roles);
 
   if (allRecords.length === 0) {
     return { latestMs: null, meanMs: null, sampleCount: 0, warn: false };
@@ -546,6 +719,220 @@ export function computeSuiteDuration(
   return { latestMs, meanMs, sampleCount: windowed.length, warn };
 }
 
+// BL-098: durable per-role chase/nudge/dead-letter/respawn counts, read from
+// handoffd.bb's chaser-YYYY-MM.jsonl telemetry log (chase_sweep_lib.bb emits
+// one line per decision). The sidecars that used to hold these counts
+// (.chase.json/.nudge) are abandoned once an item completes; this log is
+// the durable answer to "how many nudges did a role need this week?"
+export interface ChaserTelemetryEvent {
+  type: string;
+  role: string;
+  handoffId?: string;
+  count?: number;
+  at: string;
+  // BL-208: the role's configured agent/provider brand, the one common
+  // field every event carries regardless of role - lets a reader group by
+  // provider instead of role with no per-brand branch.
+  provider?: string;
+}
+
+export interface RoleChaserTelemetry {
+  chases: number;
+  nudges: number;
+  deadLetters: number;
+  respawns: number;
+  /** (chases + nudges) within the recent window, per day. */
+  recentDailyRate: number;
+}
+
+export type ChaserTelemetry = Record<string, RoleChaserTelemetry>;
+
+export const CHASER_TELEMETRY_WINDOW_DAYS = 7;
+
+// BL-100: exported - resourceTelemetry.ts's resource_sample events join this
+// same monthly chaser-*.jsonl family (the reader below already tolerates
+// unknown `type` values), rather than inventing a second file convention.
+export function chaserTelemetryDir(targetPath: string): string {
+  return path.join(targetPath, '.swarmforge', 'telemetry');
+}
+
+// A malformed or unrecognized line is skipped, never a crash - the same
+// forgiving-reader spirit as parseTestDurationLine above. The `type` field
+// is what keeps the schema additive (BL-097 dwell/bounce events can join
+// this same log later); an event whose type this reader does not know is
+// silently ignored rather than rejected outright.
+function parseChaserTelemetryLine(line: string): ChaserTelemetryEvent | null {
+  try {
+    const parsed = JSON.parse(line);
+    if (typeof parsed.type === 'string' && typeof parsed.role === 'string' && typeof parsed.at === 'string') {
+      return parsed;
+    }
+  } catch {
+    // malformed line: skip
+  }
+  return null;
+}
+
+// A single telemetry file's lines, parsed. Split out of
+// readChaserTelemetryEvents so each function stays under the CRAP<=6 gate:
+// an unreadable file (deleted/permission-denied between readdir and read)
+// contributes nothing rather than aborting the whole read.
+function readChaserTelemetryFile(dir: string, file: string): ChaserTelemetryEvent[] {
+  let content: string;
+  try {
+    content = fs.readFileSync(path.join(dir, file), 'utf8');
+  } catch {
+    return [];
+  }
+  const events: ChaserTelemetryEvent[] = [];
+  for (const line of content.split('\n')) {
+    if (!line.trim()) {
+      continue;
+    }
+    const event = parseChaserTelemetryLine(line);
+    if (event) {
+      events.push(event);
+    }
+  }
+  return events;
+}
+
+// BL-100: exported so resourceTelemetry.ts's resource_sample reader reuses
+// this same forgiving JSONL reader instead of re-implementing it.
+export function readChaserTelemetryEvents(targetPath: string): ChaserTelemetryEvent[] {
+  const dir = chaserTelemetryDir(targetPath);
+  let files: string[];
+  try {
+    files = fs.readdirSync(dir).filter((f) => f.startsWith('chaser-') && f.endsWith('.jsonl'));
+  } catch {
+    return [];
+  }
+  return files.flatMap((file) => readChaserTelemetryFile(dir, file));
+}
+
+function emptyRoleTelemetry(): RoleChaserTelemetry {
+  return { chases: 0, nudges: 0, deadLetters: 0, respawns: 0, recentDailyRate: 0 };
+}
+
+type ChaserCountField = 'chases' | 'nudges' | 'deadLetters' | 'respawns';
+
+// Maps a telemetry event's `type` to the bucket field it increments; an
+// unrecognized type has no field, which is how an event whose type this
+// reader does not know is ignored rather than rejected (forward-compatible
+// schema for BL-097's later stage-transition events).
+function chaserCountField(eventType: string): ChaserCountField | null {
+  switch (eventType) {
+    case 'chase':
+      return 'chases';
+    case 'nudge':
+      return 'nudges';
+    case 'dead-letter':
+      return 'deadLetters';
+    case 'respawn':
+      return 'respawns';
+    default:
+      return null;
+  }
+}
+
+// Only chase/nudge events count toward the recent-window daily rate;
+// dead-letters and respawns are lifetime totals only.
+function countsTowardRecentRate(eventType: string): boolean {
+  return eventType === 'chase' || eventType === 'nudge';
+}
+
+// Counts one event's timestamp toward its role's recent-window tally when
+// the timestamp parses and falls inside the window; split out of
+// applyChaserEvent so both functions stay under the CRAP<=6 gate.
+function tallyRecentRate(recentCounts: Record<string, number>, role: string, atIso: string, windowStartMs: number): void {
+  const atMs = Date.parse(atIso);
+  if (!Number.isNaN(atMs) && atMs >= windowStartMs) {
+    recentCounts[role] = (recentCounts[role] ?? 0) + 1;
+  }
+}
+
+// Applies one telemetry event to its role's bucket (lifetime total) and,
+// for chase/nudge events within the window, to the recent-rate tally. Split
+// out of computeChaserTelemetry so each function stays under the CRAP<=6
+// gate.
+function applyChaserEvent(
+  result: ChaserTelemetry,
+  recentCounts: Record<string, number>,
+  event: ChaserTelemetryEvent,
+  windowStartMs: number
+): void {
+  const bucket = result[event.role];
+  const field = chaserCountField(event.type);
+  if (!bucket || !field) {
+    return; // unknown role (not in roles.tsv) or unrecognized event type
+  }
+  bucket[field] += 1;
+  if (countsTowardRecentRate(event.type)) {
+    tallyRecentRate(recentCounts, event.role, event.at, windowStartMs);
+  }
+}
+
+// Shared by computeChaserTelemetry (groups by event.role) and BL-208's
+// computeProviderTelemetry (groups by event.provider) - both need the exact
+// same "pre-seed every known name with an empty bucket, then tally events
+// keyed by some field of the event" shape, differing only in which field
+// keys the grouping. Absent/empty telemetry (no directory yet, or a target
+// with no chases ever logged) reads as all-zero totals for every known
+// name, never an error (telemetry-05/BL-208 empty-reads-zero-03) - a fresh
+// swarm or one whose chaser has never had to intervene is not a fault
+// condition.
+function computeGroupedTelemetry(
+  targetPath: string,
+  groupNames: string[],
+  keyOf: (event: ChaserTelemetryEvent) => string | undefined,
+  nowMs: number,
+  windowDays: number
+): ChaserTelemetry {
+  const result: ChaserTelemetry = {};
+  for (const name of groupNames) {
+    result[name] = emptyRoleTelemetry();
+  }
+
+  const windowStartMs = nowMs - windowDays * 24 * 60 * 60 * 1000;
+  const recentCounts: Record<string, number> = {};
+  for (const event of readChaserTelemetryEvents(targetPath)) {
+    const key = keyOf(event);
+    if (key !== undefined) {
+      applyChaserEvent(result, recentCounts, { ...event, role: key }, windowStartMs);
+    }
+  }
+
+  for (const name of groupNames) {
+    result[name].recentDailyRate = (recentCounts[name] ?? 0) / windowDays;
+  }
+  return result;
+}
+
+export function computeChaserTelemetry(
+  targetPath: string,
+  roleNames: string[],
+  nowMs: number = Date.now(),
+  windowDays: number = CHASER_TELEMETRY_WINDOW_DAYS
+): ChaserTelemetry {
+  return computeGroupedTelemetry(targetPath, roleNames, (event) => event.role, nowMs, windowDays);
+}
+
+// BL-208 brand-agnostic-read-02: the same telemetry log, grouped by the
+// role's configured agent/provider brand instead of role, so an operator
+// reader can compare providers (which brand is slower/failing/idling)
+// using one common field with no per-brand branch. Reuses
+// computeGroupedTelemetry (and the ChaserTelemetry/RoleChaserTelemetry
+// shapes) rather than a parallel implementation, per BL-208's own
+// "reuse existing telemetry surfaces" constraint.
+export function computeProviderTelemetry(
+  targetPath: string,
+  providerNames: string[],
+  nowMs: number = Date.now(),
+  windowDays: number = CHASER_TELEMETRY_WINDOW_DAYS
+): ChaserTelemetry {
+  return computeGroupedTelemetry(targetPath, providerNames, (event) => event.provider, nowMs, windowDays);
+}
+
 export function computeSwarmMetrics(
   targetPath: string,
   roles: RoleWorktree[],
@@ -560,6 +947,13 @@ export function computeSwarmMetrics(
       : Object.fromEntries(roles.map((r) => [r.role, 0]));
   const { total, perTicket } = computeRetries(roles);
   const suiteDuration = computeSuiteDuration(targetPath, roles, suiteWarnSeconds * 1000);
+  const chaserTelemetry = computeChaserTelemetry(
+    targetPath,
+    roles.map((r) => r.role),
+    nowMs
+  );
+  const providerNames = [...new Set(roles.map((r) => r.agent).filter((a): a is string => Boolean(a)))];
+  const providerTelemetry = computeProviderTelemetry(targetPath, providerNames, nowMs);
 
   return {
     meanTicketTimeMs: meanMs,
@@ -568,5 +962,7 @@ export function computeSwarmMetrics(
     retryTotal: total,
     retryByTicket: perTicket,
     suiteDuration,
+    chaserTelemetry,
+    providerTelemetry,
   };
 }

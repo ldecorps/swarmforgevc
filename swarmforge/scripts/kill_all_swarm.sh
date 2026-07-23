@@ -42,7 +42,28 @@ done
 ROOT="$(cd "${1:-.}" && pwd)"
 DAEMON_DIR="$ROOT/.swarmforge/daemon"
 AUDIT="$DAEMON_DIR/kill-all-audit.log"
-SOCKET_GLOB="/private/tmp/swarmforge-"*/*.sock
+# BL-367: the control socket now lives under the target root's own
+# .swarmforge/tmux/ (never /tmp) - scoped to $ROOT by construction, so a
+# fixture root used by a test can never match another project's (or the
+# live swarm's) socket. The old /tmp/swarmforge-<uid>/<hash>.sock path is
+# still checked, but as a SINGLE exact match (the same cksum
+# PROJECT_SOCKET_ID swarmforge.sh computes for this root) - never a broad
+# glob across the whole /tmp/swarmforge-<uid>/ directory, which would match
+# every OTHER project's socket for this uid too. (Postmortem: an earlier,
+# unscoped version of this legacy glob, exercised by an isolated test
+# fixture, matched and killed the live swarm's real socket 5 times in one
+# session - see swarmforge/scripts/test/test_swarm_socket_not_in_tmp.sh.)
+source "$SCRIPT_DIR/project_socket_id_lib.sh"
+SOCKET_GLOB="$ROOT/.swarmforge/tmux/"*.sock
+LEGACY_PROJECT_SOCKET_ID="$(project_socket_id "$ROOT")"
+# Test-only override, matching swarmforge.sh's own SWARMFORGE_CONFIG
+# convention: never read outside a test fixture. Lets the exact-match
+# scoping below be exercised against a private fixture directory without
+# ever creating or touching a file under the real, live
+# /tmp/swarmforge-${UID}/ this very swarm's own control socket may sit in
+# (see test_swarm_socket_not_in_tmp.sh's legacy-scoping scenario).
+LEGACY_SOCKET_DIR="${SWARMFORGE_LEGACY_SOCKET_DIR:-/tmp/swarmforge-${UID}}"
+LEGACY_SOCKET="$LEGACY_SOCKET_DIR/${LEGACY_PROJECT_SOCKET_ID}.sock"
 
 log() {
   printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" | tee -a "$AUDIT"
@@ -68,8 +89,84 @@ kill_tmux_socket() {
   tmux -S "$sock" kill-server 2>/dev/null || true
 }
 
+# BL-423: the orphaned-vitest-worker reap (the exact class behind the
+# BL-422 OOM-spiral - a killed parent leaves reparented `node (vitest N)`
+# workers, since tmux kill-server only SIGHUPs a pane's own direct child,
+# never a detached/double-forked grandchild). Snapshotting the FULL
+# descendant tree of every pane on THIS root's own tracked socket, before
+# any teardown happens, then force-killing whichever of those EXACT pids
+# are still alive afterward, is what keeps this scoped to this root alone -
+# unlike a `pgrep -f vitest` name/pattern match, which cannot tell this
+# worktree's vitest run from a sibling worktree's concurrent one (their own
+# renamed `node (vitest N)` titles are indistinguishable once reparented -
+# the process-table-is-a-shared-global trap this project's engineering
+# rules warn about). A pid list gathered from a controlled, known-good
+# starting point (this root's own pane pids) is exact where a name pattern
+# is only ever a guess.
+collect_descendant_pids() {
+  local pid="$1"
+  local children
+  children="$(pgrep -P "$pid" 2>/dev/null || true)"
+  local child
+  for child in $children; do
+    echo "$child"
+    collect_descendant_pids "$child"
+  done
+}
+
+snapshot_pane_descendants() {
+  [[ -f "$ROOT/.swarmforge/tmux-socket" ]] || return 0
+  local tracked
+  tracked="$(< "$ROOT/.swarmforge/tmux-socket")"
+  [[ -S "$tracked" ]] || return 0
+  local pane_pid
+  while IFS= read -r pane_pid; do
+    [[ "$pane_pid" =~ ^[0-9]+$ ]] || continue
+    collect_descendant_pids "$pane_pid"
+  done < <(tmux -S "$tracked" list-panes -a -F '#{pane_pid}' 2>/dev/null || true)
+}
+
+reap_orphaned_pane_descendants() {
+  local pids="$1"
+  [[ -n "$pids" ]] || { log "no pane descendants recorded - nothing to reap"; return 0; }
+  local pid
+  local reaped=0
+  for pid in $pids; do
+    if kill -0 "$pid" 2>/dev/null; then
+      kill -KILL "$pid" 2>/dev/null && { log "reaped orphaned pane descendant pid=$pid"; reaped=1; }
+    fi
+  done
+  [[ "$reaped" -eq 1 ]] || log "no orphaned pane descendants survived teardown"
+}
+
 mkdir -p "$DAEMON_DIR"
 log "kill_all_swarm begin root=$ROOT sweep_inbox=$SWEEP_INBOX reset_worktrees=$RESET_WORKTREES"
+
+# Captured BEFORE any teardown below - pgrep -P only sees live parent/child
+# links, so this MUST run while the swarm's own process tree is still intact.
+PANE_DESCENDANT_PIDS="$(snapshot_pane_descendants)"
+
+# 0. Graceful agent shutdown FIRST. `tmux kill-server` below sends SIGHUP, which
+# kills each role's `claude` before it can deregister its --remote-control
+# session on the claude.ai backend, leaving ghost entries in the app (a stale
+# "SwarmForge-Coder" alongside the live one on every restart). SIGTERM the agent
+# processes for THIS root and give them a moment to clean up, then let the tmux
+# teardown reap whatever remains.
+graceful_stop_agents() {
+  local pids
+  pids="$(pgrep -f "claude .*$ROOT/.swarmforge/launch/" 2>/dev/null || true)"
+  [[ -n "$pids" ]] || { log "no agent processes to stop gracefully"; return 0; }
+  log "SIGTERM agents: $(printf '%s ' $pids)"
+  # shellcheck disable=SC2086
+  kill -TERM $pids 2>/dev/null || true
+  # Wait up to ~3s for graceful deregistration + exit.
+  for _ in 1 2 3 4 5 6; do
+    pids="$(pgrep -f "claude .*$ROOT/.swarmforge/launch/" 2>/dev/null || true)"
+    [[ -n "$pids" ]] || break
+    sleep 0.5
+  done
+}
+graceful_stop_agents
 
 # 1. Per-role sessions on the tracked socket (best-effort before kill-server).
 if [[ -f "$ROOT/.swarmforge/tmux-socket" ]]; then
@@ -84,11 +181,17 @@ if [[ -f "$ROOT/.swarmforge/tmux-socket" ]]; then
   kill_tmux_socket "$tracked"
 fi
 
-# 2. Every swarmforge tmux socket (stale Jul-8 orphans, etc.).
-for sock in $SOCKET_GLOB; do
+# 2. Every swarmforge tmux socket under this root's own .swarmforge/tmux/
+# (stale orphans, etc.), plus this root's single exact legacy /tmp path.
+for sock in $SOCKET_GLOB "$LEGACY_SOCKET"; do
   [[ -e "$sock" ]] || continue
   kill_tmux_socket "$sock"
 done
+
+# 2.5. Reap whatever pane descendants (vitest workers included) survived
+# the tmux teardown above - the exact orphan class the snapshot at the top
+# of this script recorded before teardown began.
+reap_orphaned_pane_descendants "$PANE_DESCENDANT_PIDS"
 
 # 3. handoffd + supervisor (supervisor first — same order as extension stop).
 signal_pid_file "$DAEMON_DIR/handoffd-supervisor.pid"
@@ -119,6 +222,18 @@ fi
 # 6. Clear swarm state markers so the next launch cannot reattach to ghosts.
 rm -f "$ROOT/.swarmforge/tmux-socket" "$ROOT/.swarmforge/sessions.tsv"
 log "cleared tmux-socket and sessions.tsv"
+
+# 6.5 (BL-352): complete the run this stop just ended, in the SAME run
+# history swarmforge.sh's own launch recording writes into. VS Code's own
+# stopSwarm command has its own separate, direct tmux teardown (never
+# calls this script), so this can never double-complete a run the VS Code
+# path also completed - there is nothing to skip here, unlike the launch
+# side. Best-effort: a missing/stale compiled CLI must never block a real
+# stop over a history-recording concern.
+RECORD_RUN_CLI="$ROOT/extension/out/tools/record-run.js"
+if [[ -f "$RECORD_RUN_CLI" ]]; then
+  node "$RECORD_RUN_CLI" stop "$ROOT" >/dev/null 2>&1 || true
+fi
 
 # 7. Optional inbox sweep + worktree reset.
 if [[ "$SWEEP_INBOX" -eq 1 ]]; then

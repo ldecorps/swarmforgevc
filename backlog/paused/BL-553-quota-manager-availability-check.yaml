@@ -1,0 +1,79 @@
+id: BL-553
+title: "QuotaManager Slice 1 — read-only role/provider availability check over existing rate-limit cooldown + BL-551 cost ledger"
+milestone: M8
+type: feature
+status: todo
+epic: quota-budget-manager
+human_approval: approved
+severity: low
+priority: 25
+direction: human-requested
+depends_on: [BL-552]
+source: "Backlog root intake 003-adaptive-quota-budget-manager.md, drained by specifier 2026-07-22."
+
+approval_context: |
+  See BL-552's approval_context for the nesting question (standalone
+  QuotaManager vs a slice inside BL-525/BL-547). This ticket is scoped small
+  enough to be safe either way: it is a pure read-only query module with no
+  new persisted state and no caller wired in yet, so it can be re-homed
+  without rework if the human rules to fold it into ModelFactory instead.
+  Also confirm: stay paused, do not promote ahead of the operator's fixed
+  BL-545 order (BL-546 -> BL-551 -> BL-547 -> BL-525 -> BL-548).
+
+description: |
+  ## Problem
+
+  Provider "can I use this role/provider right now" state is scattered:
+  rate-limit cooldowns live in one file format read by
+  extension/src/swarm/cooldownScheduler.ts and chase_sweep_lib.bb's
+  rate-limit gate (BL-082/BL-209); a separate respawn-cooldown.json tracks
+  agent-crash backoff; BL-551 (active) is building a per-invocation cost
+  ledger with no consumer that turns spend into an availability decision.
+  Nothing answers one question: "is this role/provider usable right now,
+  and why not if not."
+
+  ## Wanted behavior (Slice 1 only)
+
+  A single pure, testable QuotaManager module exposing one query:
+
+      available?(role-or-provider, now-ms) -> {available bool, reason kw?, until-ms?}
+
+  It REUSES existing inputs, it does not invent new persisted quota state:
+    1. Reads the existing rate-limit cooldown file
+       (extension/src/swarm/cooldownScheduler.ts's CooldownFileState /
+       chase_sweep_lib.bb's mirrored reader) — if now-ms is before the
+       recorded untilMs, unavailable with reason rate_limit_cooldown.
+    2. Reads BL-551's llm-cost ledger and sums today's spend for the
+       provider; if a daily dollar budget ceiling is configured for that
+       provider (new, small config surface — a map in swarmforge.conf or a
+       sibling config file, specifier to pin exact location during coder
+       handoff) and spend meets/exceeds it, unavailable with reason
+       budget_ceiling_reached. Unknown-cost ledger rows are excluded from the
+       sum per BL-551's own honest-null discipline — never counted as $0.
+    3. No configured ceiling for a provider means budget never blocks it.
+    4. Cooldown takes priority over budget when both would otherwise apply
+       (Scenario 07) — cooldown is the more urgent signal (a live 429), so
+       report that reason first.
+    5. No recorded state at all (fresh role/provider) defaults to available.
+
+  Non-goals for Slice 1 (future slices under BL-552, not yet decomposed):
+  RPM/TPM windows, monthly-subscription quotas, telemetry-learned quota
+  discovery (429 header parsing beyond what BL-209 already does), forecast
+  exhaustion, a dashboard, automatic failover, and any Scheduler/ModelFactory
+  wiring that actually CALLS this query in production — this slice ships the
+  query with tests only; it stays dark (per the shared engineering article's
+  epic-runtime-wiring-slice rule) until BL-525 ModelFactory or another real
+  caller is scoped to consume it. Do not add a caller in this ticket.
+
+acceptance: specs/features/BL-553-quota-manager-availability-check.feature
+
+out_of_scope: |
+  - Any new persisted quota/budget state store (this slice reads existing
+    files only).
+  - Wiring a caller (ModelFactory, Scheduler, mono-router rotate, operator).
+  - RPM/TPM, monthly-subscription, and learned-quota types from the original
+    intake — future slices only, once a real caller justifies them.
+  - Dashboard, forecasting, auto-failover, cost-aware scheduling (explicitly
+    "Future enhancements" in the original intake).
+
+mutation_cost: medium

@@ -1,0 +1,101 @@
+id: BL-269
+title: "Onboarding negotiation generates the target repo's project.prompt + engineering.prompt from the survey (BL-262 family child slice)"
+milestone: M2
+status: todo
+priority: 05
+direction: reliability
+assigned_to: coder
+source: "operator direction 2026-07-11 via coordinator (INTAKE-onboarding-generates-local-prompts.md). Specifier confirmed the four open scope questions with the human 2026-07-11: (1) child slice of BL-262; (2) hybrid interview = auto-survey draft + human refines via gate; (3) proposed -> committed on agreement; (4) ask fully captured (no cut-off content)."
+
+description: |
+  Upgrade onboarding so an ARTIFACT of the negotiation is not only the scope
+  contract (BL-262 slice 1, shipped) but ALSO two GENERATED, target-specific
+  prompt files for the target repo: project.prompt and engineering.prompt.
+  Generated (populated from the repo survey), not scaffolded from a generic
+  template — this replaces "Initialize Target"'s generic scaffold with
+  survey-populated content.
+
+  Human-confirmed scope (2026-07-11):
+    - Child slice of the BL-262 onboarding-contract family (NOT standalone).
+    - Interview = HYBRID: auto-survey drafts the content, the human refines it
+      via the gate/answer channel (swarm proposes, human disposes).
+    - Persistence = proposed -> committed to the TARGET repo on agreement
+      (mirror the contract's proposed->agreed lifecycle).
+    - Target artifacts mirror the target-seed PAIR (project.prompt +
+      engineering.prompt, per "Initialize Target"), NOT swarmforge's internal
+      shared+local split — the target is a different repo with no local layer
+      (specifier decision, grounded: there is no local-project.prompt, and the
+      shared/local split is swarmforge-internal per local-engineering.prompt).
+
+  Live integration seams (verified against src 2026-07-11 — build against these,
+  do not reinvent):
+    - extension/src/onboarding/contractSurvey.ts::proposeContractFromSurvey(
+      facts: RepoSurveyFacts): ProposedContract — the PURE survey->proposal
+      mapping. Add a sibling PURE mapping (same file or a new
+      onboarding/promptProposal.ts) that maps the SAME RepoSurveyFacts into the
+      two proposed prompt texts. Testable with a fixture RepoSurveyFacts; the
+      survey itself and any human Q&A stay swarm/agent behavior (QA e2e), never
+      unit I/O — identical boundary to BL-262.
+    - extension/src/onboarding/contractTypes.ts — RepoSurveyFacts,
+      ProposedContract, CONTRACT_AGREEMENT_STATES ('agreed'|'proposed'|'pending'),
+      GateDecision. Extend types here (e.g. a ProposedPrompts shape) rather than
+      a parallel type system.
+    - extension/src/onboarding/buildStartGate.ts + tools/onboarding-contract-gate.ts
+      — the proposed->agreed gate. The generated prompts ride the SAME agreement
+      marker as the contract (one agreement, whole artifact set); only 'agreed'
+      releases them for commit into the target repo. Fail-closed on
+      proposed/pending/missing/malformed, exactly like the contract gate.
+    - extension/src/onboarding/contractView.ts — the CONTRACT.md legible-view
+      generator; follow its pattern for emitting the prompt files' content.
+    - extension/src/config/targetBootstrap.ts — the scaffold seam "Initialize
+      Target" already uses to write project.prompt + engineering.prompt into the
+      target; the generated content replaces its generic template output.
+
+  Slice scoping (BL-233):
+    - THIS slice (buildable now on slice-1's survey + single-agreement gate):
+      the pure survey->proposed-prompts mapping + wiring the two prompts into the
+      proposed->agreed artifact set so they are committed to the target repo on
+      agreement. Slice-1 already supports the single-round hybrid: the proposal
+      is human-editable BEFORE agreement (the gate reads the FINAL agreed
+      artifact, not the swarm's original draft), so "auto-draft then human
+      refines then agree" needs no new loop.
+    - PARKED (rides BL-262 slice 2, the iterative negotiation loop): multi-round
+      request-changes -> revise -> re-propose refinement of the prompts. Put any
+      iterative-refinement Gherkin in a .feature.draft companion; do NOT ship
+      scenarios that outrun the built single-agreement code (the runner throws on
+      steps lacking handlers).
+
+  Wanted behavior:
+  - Onboarding a target generates project.prompt + engineering.prompt whose
+    content is POPULATED from the survey (project.prompt: seed vision + product
+    scope; engineering.prompt: languages + repo layout + surveyed conventions),
+    never a generic placeholder.
+  - The generated prompts are proposal artifacts: withheld from the target repo
+    while the contract is proposed/pending, released for commit only when agreed.
+  - Committed into the TARGET repo (git-tracked, reproducible), alongside the
+    contract, on agreement — same posture as the contract artifact.
+
+  Constraints:
+  - Keep the mapping PURE and testable with fixture RepoSurveyFacts (no live repo
+    scan, no live-swarm call, no real timers in unit/acceptance steps).
+  - For the Scenario Outline agreement-state column, the step handler must
+    validate each value against an explicit KNOWN_VALUES lookup ({proposed,
+    pending, agreed}) — not a passthrough/binary check — so a gherkin-mutator
+    mutation fails the acceptance run (engineering-article Acceptance rule).
+  - Do not push machine-local data into the target's git artifacts; only
+    survey-derivable content belongs in the generated prompts.
+
+  QA e2e procedure (live swarm):
+  - Feed the survey->prompts mapping a fixture RepoSurveyFacts; assert
+    project.prompt reflects the seed vision/product scope and engineering.prompt
+    reflects the languages/layout, and neither is the generic template.
+  - Drive the gate with agreement=proposed (prompts withheld) then agreement=agreed
+    (prompts released), against a scratch git target repo; confirm the two files
+    land in the target repo only after agreement, git-tracked.
+
+acceptance: specs/features/BL-269-onboarding-generates-target-prompts.feature
+mutation_cost: medium
+# Operator gave explicit promotion go-ahead 2026-07-11 ('269 go'); specifier had
+# left human_approval absent after confirming scope with the human. Recorded as
+# approved so the next promotion recheck (on a freed slot) promotes it first.
+human_approval: approved

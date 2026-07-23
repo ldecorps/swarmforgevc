@@ -1,0 +1,58 @@
+id: BL-391
+title: "The human is sent raw ANSI escape codes scraped from an agent's pane — 'can you make these messages more readable?'"
+milestone: M8
+type: bug
+status: todo
+severity: medium
+priority: 3
+direction: human-requested
+depends_on: []
+source: "backlog/INTAKE-front-desk-redelivery-commit-loop.md (suggested scope 3) — Operator, 2026-07-14. The human's own words, in the BL-359 topic: 'Can you make these messages more readable?' Split out of BL-389 at his direction."
+
+notes: |
+  THE HUMAN ASKED FOR THIS DIRECTLY, IN THOSE WORDS. Seq 1 of `backlog/topics/BL-359.json` — the
+  first NeedsApproval message he was sent — reads:
+
+    NeedsApproval: BL-359 - \e[38;5;246m❯ \e[39m \e[38;5;244m─── ⏵⏵ bypass permissions on...
+
+  That is raw ANSI colour codes, box-drawing and status-bar furniture, scraped from an agent's tmux
+  pane and posted to Telegram, where it renders as line noise. His next message in that topic was
+  "Can you make these messages more readable?" — so this defect's front end is the literal thing he
+  complained about, and it is worth fixing on those grounds alone.
+
+  THE UNDERLYING CATEGORY ERROR. A pane capture is a TERMINAL RENDERING, not a message. It carries
+  escape sequences, spinners, prompt chrome and box-drawing that mean something to a terminal and
+  nothing to a human reading Telegram. Somewhere a gate's pane text is being passed through to the
+  human verbatim as if it were prose. Sanitise at the boundary where swarm-internal text becomes a
+  human-facing message — so EVERY path that shows the human pane-derived text is covered, not just
+  the NeedsApproval one that happened to be caught. Do not fix this by special-casing the one
+  message.
+
+  BOTH DESTINATIONS, NOT JUST TELEGRAM (scenario 03). The same text is ALSO written into the ticket's
+  topic record (`backlog/topics/*.json`), which is git-committed and which the human reads. Strip it
+  for the record as well as for the send, or the noise simply moves to the durable copy.
+
+  SCENARIO 04 IS THE NEIGHBOUR GUARD. Ordinary prose — the vast majority of what the swarm says to
+  the human — must pass through completely unchanged. A sanitiser that mangles normal messages to fix
+  an unusual one is a worse bug than the one it fixes. Prove both branches.
+
+  NOT A DUPLICATE OF BL-389/BL-390. BL-389 is why the message was sent 100 times; this is why the
+  message was unreadable the FIRST time. Independent defects that happened to surface in the same
+  incident, and independently fixable — this one needs no part of the redelivery fix.
+
+  E2E QA PROCEDURE: take the ACTUAL seq-1 text from the committed BL-359 record — it is a real,
+  perfect fixture — and assert that what reaches Telegram and what is written to the topic record
+  both carry no escape sequences while preserving the readable content ("NeedsApproval: BL-359 ...").
+  Send an ordinary prose message and assert it is byte-identical on arrival.
+
+acceptance:
+  feature: specs/features/BL-391-the-human-is-never-sent-terminal-chrome.feature
+  steps:
+    - "Terminal escape codes are stripped before the human sees them"
+    - "The message still says what it meant to say"
+    - "The record kept for a ticket is readable too"
+    - "A message that was never terminal output is left alone"
+
+human_approval: approved
+
+mutation_cost: low

@@ -1,0 +1,21 @@
+id: BL-544
+title: "Specifier exit gate: assign epic on slices; set milestone on new epics"
+milestone: M8
+type: feature
+status: todo
+epic: swarm-reliability
+assigned_to: coder
+priority: 7
+mutation_cost: low
+depends_on: []
+source: "Human directive 2026-07-20: when speccing, assign epic if missing; when creating an epic, create/set milestone if missing."
+
+description: |
+  WHAT / WHY: Open-backlog hygiene (backlog-schema.md, backlog_epic_milestone_audit.bb)
+  already requires every non-epic ticket to carry `epic:` and every `type: epic` tracker to
+  carry `milestone:`, but the specifier can still hand off a draft YAML that violates either
+  field and only get caught later. The specifier must assign the epic when speccing a slice
+  and set (or create) a milestone when authoring a new epic tracker — and a per-file gate
+  must fail loud before spec-ready handoff.
+
+acceptance: specs/features/BL-544-specifier-epic-milestone-hygiene.feature

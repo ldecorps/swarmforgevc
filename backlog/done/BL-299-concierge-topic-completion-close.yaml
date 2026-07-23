@@ -1,0 +1,68 @@
+id: BL-299
+title: "Concierge slice 4 — on TaskCompleted, post a completion summary into the item's BL-### topic and close that topic (progress events leave it open; no-topic is a no-op)"
+milestone: M8
+status: todo
+type: feature
+priority: 20
+depends_on: [BL-296, BL-297]
+part_of: BL-295
+source: "BL-295 Concierge epic slice 4 (human Concierge prompt: 'post a final summary in the topic + mark complete, optionally archive/close'); coordinator spec request 2026-07-11 (BL-298 landed 231af24afc). Specifier verified the live outbound layer before scoping."
+
+notes: |
+  SLICE 4 of the BL-295 Concierge epic (ADDITIVE, see [[bl295-concierge-bl-topics-epic]]).
+  When a BL-###'s task completes, its topic should get a clear final summary and then be
+  closed (read-only, history preserved) rather than left as an open progress thread.
+
+  VERIFIED LIVE INTEGRATION LAYER (2026-07-11) before scoping:
+    - extension/src/events/swarmEventStream.ts (BL-296): emits a 'TaskCompleted' SwarmEvent
+      (payload currently {}), idempotently (emitted once). This is the completion trigger.
+    - extension/src/concierge/topicRouter.ts (BL-297): routeEvent already posts a GENERIC
+      "TaskCompleted: BL-###" line via messageTextForEvent; RouteAdapters =
+      {getTopicMap, createTopic, recordTopicId, sendMessage}. This slice ADDS a completion
+      path: a richer summary + a topic CLOSE, distinct from the generic progress line.
+    - extension/src/notify/telegramClient.ts: has createForumTopic but NO close capability
+      -> closing a forum topic is NET-NEW (Telegram Bot API `closeForumTopic`, mirrors
+      createForumTopic's shape).
+
+  DESIGN DECISIONS (no human fork needed — human's authoritative Concierge prompt already
+  specifies this slice):
+    - CLOSE (read-only, preserves the topic + its posted summary), NOT delete — deleting a
+      forum topic would destroy the very summary just posted. deleteForumTopic is REJECTED.
+    - ORDER MATTERS: post the summary FIRST (into the still-open topic), THEN close — you
+      cannot post into a closed topic. The Gherkin bakes this ordering in.
+    - Summary content stays swarm-agnostic + lean: derived from the event + item title (it
+      NAMES the completed item). Richer payload (PR link, metrics) is OUT OF SCOPE — BL-296's
+      event payload is {} and that ticket is closed; enriching it is a separate future item.
+
+  SCOPE (pure routing DECISION over injected adapters/fakes; no live Telegram, no network):
+    1. telegramClient.ts: add closeForumTopic(token, chatId, messageThreadId, postFn) ->
+       result shape mirroring createForumTopic (net-new API wrapper only).
+    2. topicRouter.ts (Concierge layer): a completion-summary text formatter (distinct from
+       messageTextForEvent) that names the item, and a completion routing path so a
+       TaskCompleted event posts the summary into the item's topic then closes it. Add a
+       closeTopic adapter to the RouteAdapters surface (keep NEVER-MAIN-CHAT structural:
+       close/send take a concrete topicId, no main-chat code path).
+    3. A non-completion (progress) event keeps current behavior: posts its line, topic
+       stays OPEN — only TaskCompleted closes.
+    4. A TaskCompleted for an item with NO topic is a no-op: posts nothing, closes nothing,
+       no error (mirrors BL-297's skip-on-no-topic).
+    5. CLI/main() thin-wrapper rule holds: decision logic is a named pure export.
+
+  RUNTIME ACTIVATION depends on BL-300 (per the 2026-07-11 engineering + specifier rules I
+  just accepted): like BL-297, this is a PURE module — the summary/close will not fire live
+  until BL-300 wires deriveSwarmEvents->routeEvent into the Operator-hosted loop and
+  supplies a real close adapter. This slice ships the decision + the client capability;
+  BL-300 makes it fire. NOT a bounce — matches the epic's explicit slice plan.
+
+  OUT OF SCOPE: the runtime loop/adapters that call this (BL-300); richer summary payload
+  enrichment (BL-296 closed, payload {}); deleting/archiving-destructively a topic
+  (rejected); live Telegram wiring (BL-292/294 runtime).
+
+acceptance:
+  feature: specs/features/BL-299-concierge-topic-completion-close.feature
+  steps:
+    - "A completion event for an item with a topic posts a completion summary naming the item, then closes that topic"
+    - "A non-completion (progress) event for an item with a topic posts the event and leaves the topic open"
+    - "A completion event for an item with no topic is a no-op: posts nothing and closes no topic"
+
+mutation_cost: low

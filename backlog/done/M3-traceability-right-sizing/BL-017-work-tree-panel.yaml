@@ -2,7 +2,7 @@ id: BL-017
 title: Work Tree panel — backlog items with completion status in VS Code
 milestone: M3
 priority: 17
-status: active
+status: done
 
 description: >
   Add a "Work Tree" tab to the SwarmForge panel that lists backlog items and

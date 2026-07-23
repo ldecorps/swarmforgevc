@@ -1,0 +1,89 @@
+id: BL-411
+title: "Negotiation relay supervisor must kill a superseded relay child before respawning (BL-403 gap)"
+milestone: M8
+type: bug
+status: todo
+severity: high
+priority: 2
+direction: swarm-proposed
+depends_on: [BL-403]
+source: "cleaner rule_proposal 20260715T103825Z_000276 — BL-403's orphan-pid fix wired kill-pid! only into front_desk_supervisor.bb's check-one! caller; negotiation_relay_supervisor.bb is the OTHER caller of the same shared front_desk_supervisor_lib.bb/check-one! and passes no kill-pid! adapter (verified: negotiation_relay_supervisor.bb:216 calls check-one! with 7 args, defaulting kill-pid! to the no-op; no kill-pid! defined anywhere in the file)."
+
+notes: |
+  Same bug class as BL-403, on a different Telegram poller. Telegram allows
+  exactly one getUpdates long-poller per bot token; a second poller gets HTTP
+  409 and the two fight over the offset, producing unreliable/duplicated/
+  dropped delivery. BL-403 closed this for the front-desk bot; the onboarding
+  negotiation relay's poll-loop child has the identical exposure because its
+  supervisor reuses the shared check-one! state machine but never passes a real
+  kill-pid!.
+
+  ROOT CAUSE (verified against main):
+  - front_desk_supervisor_lib.bb/check-one! (BL-403) added an OPTIONAL 9th param
+    kill-pid! (defaults to a no-op); when present it is called with the old pid
+    at the "waiting"/"stalled" restart clause BEFORE spawning the replacement
+    (line ~137).
+  - front_desk_supervisor.bb:422-423 passes its real kill-pid! (SIGTERM ->
+    bounded grace -> SIGKILL, defined line ~227) as the 9th arg — so the front
+    desk is covered.
+  - negotiation_relay_supervisor.bb:216-217 calls check-one! with only 7 args
+    (entry now pid-alive? spawn-pid! restart-config giveup-config
+    heartbeat-stale?), so kill-pid! stays the no-op and a restart NEVER kills
+    the prior poll-loop child. It has its own pid-alive? but no kill-pid!.
+
+  FIX: give negotiation_relay_supervisor.bb a kill-pid! adapter with the same
+  bounded SIGTERM -> grace -> SIGKILL semantics BL-403 established, and pass it
+  as the 9th arg to check-one! from tick! (line 216), so a restart terminates
+  and confirms-dead the prior relay pid before spawning the replacement, and
+  status.json reconciles to exactly one live relay pid.
+
+  DRY (cleaner will flag otherwise): kill-pid! is currently a private helper in
+  front_desk_supervisor.bb, not the shared lib, even though both supervisors
+  already reuse check-one!/default-entry/poll-heartbeat-stale? from
+  front_desk_supervisor_lib.bb "wholesale". Prefer lifting a single shared
+  kill-pid! (parameterised by its grace-ms) into front_desk_supervisor_lib.bb
+  and using it from both callers over cloning a second copy into the relay
+  supervisor. Behaviour is the acceptance contract; the mechanism is the
+  coder's/cleaner's call, but do not leave two drifting copies of a process-kill
+  routine.
+
+  Scope: swarmforge/scripts/negotiation_relay_supervisor.bb (the tick! call site
+  at line 216 and a kill-pid! adapter), plus optionally lifting kill-pid! into
+  swarmforge/scripts/front_desk_supervisor_lib.bb per the DRY note. check-one!'s
+  own kill-before-spawn logic is BL-403's and is NOT re-opened here — this ticket
+  only wires the missing adapter through the second caller.
+
+  Out of scope: the "gave-up" re-arm re-spawn clause (line ~143) and
+  "not-started" spawn (line ~115) do not kill a prior pid in EITHER supervisor —
+  that matches BL-403's coverage exactly (kill applies to the waiting/stalled
+  restart path only), so this ticket deliberately mirrors BL-403's coverage and
+  does not extend it. Also out of scope: the relay's own inner runContainedLoop
+  transient-retry, and message-delivery/offset semantics (BL-369/389/394).
+
+acceptance:
+  feature: specs/features/BL-411-negotiation-relay-supervisor-kills-superseded-child.feature
+  steps:
+    - "Restarting a stalled/crashed relay child terminates the prior pid (SIGTERM -> bounded grace -> SIGKILL) before spawning the replacement"
+    - "The replacement relay poller is not spawned while the prior pid is confirmed still alive"
+    - "The negotiation relay supervisor's status.json records exactly one live relay pid after a forced restart"
+
+qa_e2e: |
+  Because the shared check-one! kill path already has BL-403's in-lib unit
+  coverage, the NEW behaviour to prove is the WIRING: that
+  negotiation_relay_supervisor.bb passes a real kill-pid! through to check-one!.
+  1. Drive the supervisor's tick! (or its testable seam) over a fixture entry in
+     the "stalled"/"waiting" state with a live prior pid, using injected
+     pid-alive?/spawn!/kill-pid! adapters (same adapter-injection seam BL-403's
+     tests use), and assert kill-pid! is invoked with the prior pid before spawn!
+     is invoked for the replacement — a break-then-fix on the 9th arg (revert to
+     7-arg call) must FAIL this test (proves the wiring is load-bearing, not the
+     shared lib's already-covered default).
+  2. Live check against a real provisioned target: force the relay child stale
+     (stop its poll heartbeat), let the supervisor restart it, and confirm via
+     `ps`/ProcessHandle that the old relay pid is gone and status.json shows one
+     live pid — never two getUpdates pollers on the token (no HTTP 409 in the
+     relay log).
+
+human_approval: approved  # human via Operator relay (OPERATOR thread), 2026-07-15T12:43Z: "Approved all" to the 5-ticket list (BL-411 413 414 415 418)
+
+mutation_cost: low

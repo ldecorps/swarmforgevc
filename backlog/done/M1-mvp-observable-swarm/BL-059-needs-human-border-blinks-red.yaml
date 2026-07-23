@@ -1,7 +1,7 @@
 id: BL-059
 title: Needs-human tile border blinks RED (not blue) when an agent asks the human a question
 milestone: M1
-status: todo
+status: done
 priority: 05
 assigned_to: coder
 

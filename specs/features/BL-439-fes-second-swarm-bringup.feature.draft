@@ -1,0 +1,29 @@
+Feature: FES second-swarm bring-up — live/recorded acceptance (Windows launch, Telegram separation)
+
+# BL-439 (epic BL-435, slice 4). This .feature.draft preserves the two acceptance behaviours that are
+# INHERENTLY LIVE and therefore NOT executable in-process — the runner throws on any scenario lacking a
+# handler, and no in-process handler can stand up a real second swarm or observe live Telegram delivery.
+# They are verified by hand per the ticket's E2E QA PROCEDURE. The two testable-seam behaviours (own creds
+# resolution, fleet status enumeration) are materialized as executable scenarios in the sibling
+# BL-439-fes-second-swarm-bringup.feature.
+#
+# AMENDED 2026-07-16 (human decision): FES runs as a mono-rotate pack (BL-448), NOT a 2-pack — the 15GB
+# host OOM-crashed holding one full swarm, so FES adopts the lightest config: one resident pipeline agent
+# rotating through all roles. Launched from the Windows-side swarmforge checkout (target on /mnt/c, where
+# Linux-side tmux sockets are unreliable), with its own bot+group (@fes_swarm_bot).
+
+Background:
+  Given the primary swarm is running with its own bot and group
+
+# BL-439 fes-second-swarm-bringup-01  (LIVE / recorded QA procedure — not executable)
+Scenario: Following the runbook stands up the FES swarm as a mono-rotate pack with its own swarm_name
+  When the FES bring-up runbook is followed
+  Then a second swarm named "fes" runs as a mono-rotate pack
+  And it is launched from the Windows-side checkout against the /mnt/c target
+
+# BL-439 fes-second-swarm-bringup-03  (LIVE / recorded QA procedure — not executable)
+Scenario: Neither swarm's inbound is consumed by the other
+  Given both the primary and FES swarms are polling their own bots
+  When a message is sent to the primary's bot
+  Then the FES swarm does not consume it
+  And when a message is sent to the FES bot the primary swarm does not consume it

@@ -1,0 +1,1 @@
+{"id":"BL-219","messages":[{"seq":0,"ts":1784301595985,"author":"swarm","type":"outbound","text":"BL-219 ✅ done — 'cannot be spawned' launcher test flakes: chmod 0000 is unenforced under root/WSL"},{"seq":1,"ts":1784505355570,"author":"swarm","type":"outbound","text":"BL-219 ✅ done — 'cannot be spawned' launcher test flakes: chmod 0000 is unenforced under root/WSL"}]}

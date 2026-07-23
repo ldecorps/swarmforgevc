@@ -42,14 +42,25 @@ jobs:
           echo "file=$file" >> "$GITHUB_ENV"
 
       - name: Commit
+        env:
+          NUM: ${{ github.event.issue.number }}
+          URL: ${{ github.event.issue.html_url }}
         run: |
           git config user.name "swarm-intake[bot]"
           git config user.email "swarm-intake@users.noreply.github.com"
           git add "$file"
-          git commit -m "Intake GH-${{ github.event.issue.number }} to backlog root
+          # Concurrent swarm-intake runs (or a local swarm commit) can land on
+          # main between checkout and push; rebase with autostash so parallel
+          # GH-* files compose cleanly instead of failing push.
+          git pull --rebase --autostash origin main
+          if git diff --cached --quiet; then
+            echo "Intake file already on main; skipping commit"
+          else
+            git commit -m "Intake GH-${NUM} to backlog root
 
-          From issue: ${{ github.event.issue.html_url }}"
-          git push
+          From issue: ${URL}"
+            git push origin main
+          fi
 
       - name: Acknowledge on issue
         uses: actions/github-script@v7

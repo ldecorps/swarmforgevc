@@ -115,10 +115,15 @@ find "$ROOT" -path '*/inbox/new/*stale*' 2>/dev/null | grep -q . \
   && fail "04: stale nested file was delivered to an inbox"
 pass "04: stale nested outbox files are untouched and not re-delivered"
 
-# ── 05: the shared master inbox keeps recipient isolation ────────────────────
-MASTER_INBOX="$ROOT/.swarmforge/handoffs/inbox"
-queue_inbox_task "$MASTER_INBOX/new" "for-coordinator" "coordinator"
-queue_inbox_task "$MASTER_INBOX/new" "for-specifier" "specifier"
+# ── 05: coordinator/specifier's own per-role mailboxes (BL-128) keep
+# recipient isolation - each queued straight into its OWN physical
+# subdirectory now, not a shared "master inbox" ──────────────────────────────
+COORDINATOR_INBOX="$ROOT/.swarmforge/handoffs/coordinator/inbox"
+SPECIFIER_INBOX="$ROOT/.swarmforge/handoffs/specifier/inbox"
+queue_inbox_task "$COORDINATOR_INBOX/new" "for-coordinator" "coordinator"
+queue_inbox_task "$SPECIFIER_INBOX/new" "for-specifier" "specifier"
+[[ "$COORDINATOR_INBOX" != "$SPECIFIER_INBOX" ]] \
+  || fail "05: coordinator and specifier resolved to the same mailbox directory"
 OUT="$(cd "$ROOT/subdir" && SWARMFORGE_ROLE=coordinator bb "$READY_TASK")"
 grep -q "for-coordinator" <<< "$OUT" \
   || fail "05: coordinator did not receive its own handoff from subdir; got: $OUT"
@@ -127,6 +132,6 @@ grep -q "for-specifier" <<< "$OUT" \
 OUT="$(cd "$ROOT/subdir" && SWARMFORGE_ROLE=specifier bb "$READY_TASK")"
 grep -q "for-specifier" <<< "$OUT" \
   || fail "05: specifier did not receive its own handoff from subdir; got: $OUT"
-pass "05: shared master inbox keeps recipient isolation from a subdir"
+pass "05: coordinator/specifier's own per-role mailboxes keep recipient isolation from a subdir"
 
 echo "ALL PASS"

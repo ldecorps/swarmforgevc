@@ -78,9 +78,15 @@
     (* notify-retry-delay-ms attempt)))
 
 (defn notify-agent!
-  "Agent-aware wake with verified submit (replaces one-size-fits-all chat wake)."
-  [socket session agent & {:keys [log-fn on-outcome script-rel-path]}]
-  (let [steps (agent-runtime-lib/wake-steps agent :script-rel-path script-rel-path)
+  "Agent-aware wake with verified submit (replaces one-size-fits-all chat
+   wake). An optional :text overrides the agent's default wake message with
+   caller-supplied literal instruction text (BL-258's briefing-due nudge is
+   the first caller), reusing the exact same capture/submit/retry/confirm
+   machinery as the default wake - never a second, duplicated send path."
+  [socket session agent & {:keys [log-fn on-outcome script-rel-path text]}]
+  (let [steps (if text
+                [{:op :send-literal :text text} {:op :submit}]
+                (agent-runtime-lib/wake-steps agent :script-rel-path script-rel-path))
         wake-text (:text (first (filter #(= :send-literal (:op %)) steps)))
         log! (or log-fn (fn [& _] nil))
         report! (or on-outcome (fn [& _] nil))

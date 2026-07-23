@@ -1,0 +1,22 @@
+id: BL-540
+title: "EPIC — Pipeline board: Telegram board freshness, LINKS paths/order; do not promote directly; tracks children"
+milestone: M8
+status: todo
+type: epic
+epic: pipeline-board
+priority: 00
+depends_on: []
+decomposes_into: [BL-508, BL-513]
+source: "Human hygiene 2026-07-19: every ticket must have an epic; every epic must have a milestone. Tracker created during open-backlog cleanup."
+
+notes: |
+  UMBRELLA / tracking item (type: epic), NOT directly promotable — the coordinator
+  promotes CHILD slices, never this. Children carry `epic: pipeline-board` and are
+  listed in `decomposes_into`.
+
+  VISION: the human's Telegram pipeline board stays accurate (timezones, link
+  paths to the ticket's current folder, most-recent-first ordering).
+
+acceptance:
+  none: "tracker only — see decomposes_into children for acceptance"
+mutation_cost: high

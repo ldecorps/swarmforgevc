@@ -5,6 +5,7 @@
 # Usage: sweep_all_inbox.sh [repo-root]
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "${1:-.}" && pwd)"
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 MOVED=0
@@ -34,7 +35,14 @@ archive_inbox() {
   shopt -u nullglob
 }
 
-archive_inbox "$ROOT/.swarmforge/handoffs/inbox"
+# BL-128: each master-resident role now has its own physical mailbox
+# subdirectory - resolved via mailbox_dir.bb, the one shared path resolver.
+if [[ -f "$ROOT/.swarmforge/roles.tsv" ]]; then
+  while IFS= read -r role; do
+    [[ -n "$role" ]] || continue
+    archive_inbox "$(bb "$SCRIPT_DIR/mailbox_dir.bb" "$ROOT" "$role" new | xargs dirname)"
+  done < <(awk -F'\t' '$2 == "master" { print $1 }' "$ROOT/.swarmforge/roles.tsv")
+fi
 
 shopt -s nullglob
 for wt in "$ROOT/.worktrees"/*; do

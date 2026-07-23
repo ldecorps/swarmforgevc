@@ -1,0 +1,90 @@
+id: BL-292
+title: "Enable the Telegram front desk headless: supervised launcher for the bridge + Front Desk Bot (no VS Code host)"
+milestone: M8
+status: todo
+priority: 05
+direction: aligned
+assigned_to: coder
+depends_on: [BL-281]
+source: ".swarmforge/operator/INTAKE-telegram-front-desk-headless-enable.md — human command via operator -> coordinator 2026-07-11 ('telegram var env added, enable asap'). The front-desk CODE is built (BL-274 slices) but nothing RUNS it headless. Specifier scoped it."
+
+description: |
+  The Telegram front desk is fully built but does not RUN in this headless swarm: the
+  bridge (bridgeServer.ts startBridge) is started ONLY by the manual swarmforge.startBridge
+  VS Code command, and the Front Desk Bot poller (telegram-front-desk-bot.js) has no
+  launcher at all. So the human's exported TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID reach
+  nothing. This ticket adds a supervised headless launcher that brings up BOTH.
+
+  Live layer verified 2026-07-11:
+    - Bridge: startBridge(targetPath, runLogPath, tokenOrRegistry, {port}) in
+      bridgeServer.ts (Promise<BridgeHandle>) is headless-capable — it just needs a
+      headless ENTRYPOINT (today only extension.ts:1480 calls it). Add a thin CLI wrapper
+      (mirror the CLI thin-wrapper rule) that resolves targetPath + runLogPath, provisions
+      the token(s), starts the bridge on a FIXED port, and stays alive.
+    - Front Desk Bot: extension/src/tools/telegram-front-desk-bot.js — CLI args
+      `<bridgeUrl> <targetPath>`; env it REQUIRES: TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
+      TELEGRAM_PRINCIPAL_USER_ID, BRIDGE_TOKEN (bearer/read), BRIDGE_CONTROL_TOKEN
+      (X-Control-Token/write). pollLoop polls Telegram forever; main() via runCliMain.
+    - Token provisioning: bridgeToken.ts generateBridgeToken(). The launcher must
+      provision BRIDGE_TOKEN + BRIDGE_CONTROL_TOKEN and give the SAME values to BOTH the
+      bridge (as its accepted token/registry) and the bot (env), so the bot authenticates.
+    - Supervision precedent to mirror: handoffd_supervisor.bb (bounded restart + backoff +
+      pid) and launch_support.sh / launch_operator.sh (pid file, idempotent has-session
+      guard, *_LAUNCH_DRYRUN mode). No unbounded restart loop (engineering.prompt).
+
+  IMPORTANT — NO TUNNEL NEEDED for the front desk: the bot POLLS Telegram (outbound
+  HTTPS from the swarm host) and talks to the bridge on localhost. So the front desk
+  runs headless with no inbound exposure. (The bonus "holistic UI reachable on the
+  PHONE" DOES need a tunnel to reach the bridge externally — that is a SEPARATE follow-on,
+  NOT in this scope. This launcher serves the holistic UI headless as a byproduct; only
+  external phone-reach is deferred.)
+
+  Scope decision (answering the intake): ONE scope = the headless bridge + bot
+  launcher/supervision (the shared enabling infra). Phone-tunnel exposure of the holistic
+  UI is split OUT as its own future ticket.
+
+  Wanted behavior (see the feature file):
+    - A supervised process starts the bridge headless (no VS Code) with a provisioned
+      control token, serving the front-desk ingest/SSE routes (and the holistic UI).
+    - A supervised process runs the Front Desk Bot against that bridge, with the Telegram
+      credentials + the matching bridge tokens in its env.
+    - Both restart on crash with BOUNDED retries + backoff, then give up (no unbounded
+      loop); launching when already running starts no second instance (idempotent).
+    - End-to-end: a principal's message in a subject topic lands as a SUP-### thread and
+      the Operator replies in that topic; startup is loss-free/idempotent on restart.
+
+  Constraints / testability:
+    - Secrets (TELEGRAM_*, BRIDGE_TOKEN, BRIDGE_CONTROL_TOKEN) stay in the launch ENV /
+      a machine-local gitignored token file, NEVER committed — same posture as
+      RESEND_API_KEY. The launcher WRITES no secret into the repo.
+    - The supervision decision (should-restart? backoff interval, bounded cap) is a PURE
+      function over provided inputs (attempt count, elapsed) — unit-tested with fake time,
+      mirroring handoffd_supervisor.bb. NO real timers; never seed a fixture timestamp
+      from the real clock while the code reads its own clock (de0991e). The bridge/bot
+      entrypoints keep main() a THIN wrapper over exported helpers with a subprocess test
+      in ADDITION (engineering "CLI main() must be a thin wrapper").
+    - DRY-RUN SMOKE TEST MUST CHECK FILES EXIST, not just string-match paths: a
+      *_LAUNCH_DRYRUN mode prints the assembled bridge + bot commands, and the test
+      asserts with real `-f` checks that every referenced entrypoint actually exists
+      (the compiled out/tools/telegram-front-desk-bot.js AND the new bridge headless
+      entrypoint's compiled js). This is the exact BL-275 gap — a dry-run that only
+      string-matches a path is not proof the path exists; add the -f checks up front.
+    - Idempotency: a second launch while running must not double-start (guard on a
+      pid/has-session check, like launch_support.sh). Restart must be loss-free (the
+      SUP-### store + reply outbox are durable; no in-memory-only state lost on restart).
+    - Ordering: the bridge must be up (and its token provisioned) BEFORE the bot starts,
+      since the bot authenticates against it.
+
+  QA e2e procedure:
+    - DRYRUN the launcher; assert it prints a bridge command and a bot command, that the
+      bot command carries `<bridgeUrl> <targetPath>` + the required env, and that every
+      referenced entrypoint file EXISTS (real -f checks).
+    - Unit-test the supervision decision: after N failures within the window it restarts
+      with growing backoff, and after the bounded cap it gives up (fake time).
+    - Idempotency: with a live pid/session, a second launch starts no second instance.
+    - Integration (real supergroup, human-run once): post a message in a Topics subject;
+      assert it becomes a SUP-### thread and the Operator replies in-topic; restart the
+      launcher and assert no loss / no duplicate.
+
+acceptance: specs/features/BL-292-telegram-front-desk-headless-launcher.feature
+mutation_cost: medium

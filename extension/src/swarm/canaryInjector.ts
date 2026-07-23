@@ -1,213 +1,257 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import { parseHandoffHeaderField } from './inboxChaser';
 
 /**
- * BL-121: Canary injector — injects periodic synthetic handoffs that make a
- * round-trip through the entire pipeline to prove delivery is working, and
- * records successful round-trip times so transportHealth can detect when
- * delivery is broken.
- *
- * The canary lives as a parcel with task name "canary-<timestamp>" so the
- * pipeline recognizes it as non-work and skips normal accounting, but still
- * delivers it. A missed canary (one that does not arrive back at the
- * coordinator within a budget) is the definitive "transport is broken" signal,
- * independent of process liveness.
+ * BL-121: canary injector — sends periodic synthetic handoffs through the
+ * real delivery pipeline to detect transport-level breakage independent of
+ * process liveness. A canary that completes within its budget signals healthy
+ * delivery; a missed canary (timeout exceeded) signals transport broken.
  */
 
-export interface CanaryRecord {
-  injectedAtMs: number;
-  canaryTaskName: string;
-  recipientTaskName?: string; // what the recipient's completed/ file saw
+export interface CanaryStatus {
+  lastRoundTripMs: number;
 }
 
-export interface CanaryInjectorConfig {
-  /** Interval in seconds between periodic canary injections. */
-  injectionIntervalSeconds: number;
-  /** Maximum age (seconds) a canary can have before considering it missed. */
-  budgetSeconds: number;
+export interface CanaryScheduleDecision {
+  shouldInject: boolean;
+  nextCheckMs: number;
+}
+
+function canaryQueuePendingDir(targetPath: string): string {
+  return path.join(targetPath, '.swarmforge', 'daemon', 'canary-queue', 'pending');
+}
+
+// handoffd.bb's canary-sweep! moves a pending canary here as part of its own
+// poll loop (never into any role's real inbox) — the completion signal for
+// reconcileCanary below. A canary only lands here if the daemon's loop is
+// actually still iterating, not merely alive as an OS process.
+export function canaryQueueCompletedDir(targetPath: string): string {
+  return path.join(targetPath, '.swarmforge', 'daemon', 'canary-queue', 'completed');
+}
+
+/**
+ * Generates a unique canary task name (format: canary-YYYYMMDDTHHMMSSZ,
+ * deterministic per second) and writes it as a pending handoff-style file
+ * under the daemon's own canary queue — a sibling of canary-status.json
+ * under .swarmforge/daemon/, never under .swarmforge/handoffs/, so a canary
+ * can never be picked up by ready_for_next.sh as a work item for any
+ * pipeline role (BL-121 canary-isolation-04).
+ */
+export function sendCanary(targetPath: string, nowMs: number): string {
+  const date = new Date(nowMs);
+  const isoString = date.toISOString();
+  // Take YYYY-MM-DDTHH:MM:SSZ and format as YYYYMMDDTHHMMSSz
+  const timestamp = isoString
+    .substring(0, 19) // "2026-07-05T22:00:00"
+    .replace(/[-:]/g, '') + // "20260705T220000"
+    'Z';
+  const taskName = `canary-${timestamp}`;
+
+  const pendingDir = canaryQueuePendingDir(targetPath);
+  fs.mkdirSync(pendingDir, { recursive: true });
+  const filePath = path.join(pendingDir, `${taskName}.handoff`);
+  fs.writeFileSync(filePath, `task: ${taskName}\nsent_at: ${isoString}\n`, 'utf-8');
+
+  return taskName;
 }
 
 function canaryStatusFile(targetPath: string): string {
   return path.join(targetPath, '.swarmforge', 'daemon', 'canary-status.json');
 }
 
-function trackedCanariesFile(targetPath: string): string {
-  return path.join(targetPath, '.swarmforge', 'daemon', 'canaries.json');
-}
-
-export function generateCanaryTaskName(nowMs: number): string {
-  const utc = new Date(nowMs);
-  const year = utc.getUTCFullYear();
-  const month = String(utc.getUTCMonth() + 1).padStart(2, '0');
-  const day = String(utc.getUTCDate()).padStart(2, '0');
-  const hour = String(utc.getUTCHours()).padStart(2, '0');
-  const minute = String(utc.getUTCMinutes()).padStart(2, '0');
-  const second = String(utc.getUTCSeconds()).padStart(2, '0');
-  return `canary-${year}${month}${day}T${hour}${minute}${second}Z`;
-}
-
-export interface CanaryStatus {
-  lastRoundTripMs: number | null;
-}
-
 /**
- * Reads the last recorded canary round-trip time, or null if no canary has
- * ever completed. Mirrors the pattern of readDaemonHealth: a status file
- * maintained by the injector. Absent or unreadable means no data.
+ * Searches the role's completed inbox for a handoff matching the canary task name.
+ * Returns completion details if found, null otherwise.
  */
-export function readCanaryStatus(targetPath: string): CanaryStatus {
-  try {
-    const raw = JSON.parse(fs.readFileSync(canaryStatusFile(targetPath), 'utf-8'));
-    const lastRoundTripMs = typeof raw.lastRoundTripMs === 'number' ? raw.lastRoundTripMs : null;
-    return { lastRoundTripMs };
-  } catch {
-    return { lastRoundTripMs: null };
-  }
-}
-
-export function writeCanaryStatus(targetPath: string, lastRoundTripMs: number): void {
-  const dir = path.dirname(canaryStatusFile(targetPath));
-  fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(canaryStatusFile(targetPath), JSON.stringify({ lastRoundTripMs }), 'utf-8');
-}
-
-export function readTrackedCanaries(targetPath: string): CanaryRecord[] {
-  try {
-    const raw = JSON.parse(fs.readFileSync(trackedCanariesFile(targetPath), 'utf-8'));
-    return Array.isArray(raw) ? raw : [];
-  } catch {
-    return [];
-  }
-}
-
-function writeTrackedCanaries(targetPath: string, records: CanaryRecord[]): void {
-  const dir = path.dirname(trackedCanariesFile(targetPath));
-  fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(trackedCanariesFile(targetPath), JSON.stringify(records), 'utf-8');
-}
-
-/**
- * Returns true if a canary at the given age is still within its delivery
- * budget (not yet considered missed).
- */
-export function isCanaryWithinBudget(ageSeconds: number, budgetSeconds: number): boolean {
-  return ageSeconds <= budgetSeconds;
-}
-
-/**
- * Generates the canary handoff filename that will appear in outbox/. This is
- * deterministic so the injector can watch for it in completed/ later.
- */
-export function canaryOutboxFilename(taskName: string, recipientCount: number): string {
-  const recipients = Array(recipientCount)
-    .fill('coordinator')
-    .join(',');
-  return `00_${taskName.replace(/[^0-9A-Z]/gi, '')}_from_coordinator_to_${recipients}.handoff`;
-}
-
-/**
- * Generates a canary handoff draft ready for swarm_handoff.sh validation.
- * The canary is sent to every role in the pipeline so it makes the full
- * round-trip and proves end-to-end delivery.
- */
-export function generateCanaryHandoffDraft(taskName: string, roles: string[]): string {
-  return `type: git_handoff
-to: ${roles.join(',')}
-priority: 00
-task: ${taskName}
-commit: 0000000000
-
-Testing delivery: canary handoff round-trip`;
-}
-
-/**
- * Attempts to inject a new canary now, if the last injection was long enough
- * ago. Records it in canaries.json so the detector can watch for its
- * completion. Returns the canary task name if a new one was injected, or null
- * if the injection interval has not elapsed.
- *
- * The actual handoff file creation and delivery to swarm_handoff.sh is the
- * caller's responsibility; this function only manages the state.
- */
-export function tryInjectCanary(
+export function trackCanaryCompletion(
   targetPath: string,
-  nowMs: number,
-  config: CanaryInjectorConfig,
-  pipelineRoles: string[]
-): string | null {
-  const tracked = readTrackedCanaries(targetPath);
-  const lastInjectin = tracked.length > 0 ? tracked[tracked.length - 1].injectedAtMs : null;
-
-  if (lastInjectin !== null) {
-    const ageMs = nowMs - lastInjectin;
-    const ageSeconds = ageMs / 1000;
-    if (ageSeconds < config.injectionIntervalSeconds) {
-      return null;
+  canaryTaskName: string,
+  completedInboxDir: string
+): { found: boolean; completedAtMs: number } | null {
+  if (!fs.existsSync(completedInboxDir)) {
+    return null;
+  }
+  for (const entry of fs.readdirSync(completedInboxDir)) {
+    if (!entry.endsWith('.handoff')) {
+      continue;
+    }
+    const filePath = path.join(completedInboxDir, entry);
+    try {
+      const content = fs.readFileSync(filePath, 'utf-8');
+      const taskField = parseHandoffHeaderField(content, 'task');
+      if (taskField === canaryTaskName) {
+        const stat = fs.statSync(filePath);
+        return { found: true, completedAtMs: stat.mtimeMs };
+      }
+    } catch {
+      // Skip files that can't be read
+      continue;
     }
   }
+  return null;
+}
 
-  const taskName = generateCanaryTaskName(nowMs);
-  const record: CanaryRecord = { injectedAtMs: nowMs, canaryTaskName: taskName };
-  tracked.push(record);
-  writeTrackedCanaries(targetPath, tracked);
+/**
+ * Records a successful canary round-trip by updating canary-status.json.
+ * This file is read by transportHealth to determine if the canary is healthy.
+ */
+export function recordCanaryRoundTrip(targetPath: string, sentAtMs: number, completedAtMs: number): void {
+  const statusPath = canaryStatusFile(targetPath);
+  fs.mkdirSync(path.dirname(statusPath), { recursive: true });
+  fs.writeFileSync(statusPath, JSON.stringify({ lastRoundTripMs: completedAtMs }), 'utf-8');
+}
 
+/**
+ * Reads the canary status file. Returns null if it doesn't exist or can't be parsed.
+ */
+export function readCanaryStatusFile(targetPath: string): CanaryStatus | null {
+  try {
+    const content = fs.readFileSync(canaryStatusFile(targetPath), 'utf-8');
+    const data = JSON.parse(content);
+    if (typeof data.lastRoundTripMs === 'number') {
+      return { lastRoundTripMs: data.lastRoundTripMs };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Writes canary status to the status file.
+ */
+export function writeCanaryStatusFile(targetPath: string, status: CanaryStatus): void {
+  const statusPath = canaryStatusFile(targetPath);
+  fs.mkdirSync(path.dirname(statusPath), { recursive: true });
+  fs.writeFileSync(statusPath, JSON.stringify(status), 'utf-8');
+}
+
+/**
+ * Decides whether a new canary should be injected now, and when to check again.
+ * Strategy: inject on first call (no prior canary), then periodically when the
+ * prior canary is getting old (80% through its budget). This ensures continuous
+ * monitoring while avoiding hammering with constant injections.
+ */
+export function computeCanaryInjectionSchedule(
+  targetPath: string,
+  nowMs: number,
+  canaryBudgetSeconds: number
+): CanaryScheduleDecision {
+  const prior = readCanaryStatusFile(targetPath);
+
+  if (prior === null) {
+    // First injection: no prior canary exists
+    return { shouldInject: true, nextCheckMs: nowMs + 60_000 };
+  }
+
+  const ageMs = nowMs - prior.lastRoundTripMs;
+  const budgetMs = canaryBudgetSeconds * 1000;
+  const stalThresholdMs = budgetMs * 0.8; // Re-inject at 80% of budget
+
+  if (ageMs >= stalThresholdMs) {
+    // Current canary is getting old; inject a new one to overlap
+    return { shouldInject: true, nextCheckMs: nowMs + 60_000 };
+  }
+
+  // Current canary is still fresh; wait a bit longer
+  const remainingMs = stalThresholdMs - ageMs;
+  const checkIntervalMs = Math.min(60_000, remainingMs / 2); // 1 min or half of remaining
+  return { shouldInject: false, nextCheckMs: nowMs + checkIntervalMs };
+}
+
+export interface ReconcileResult {
+  /** Task names whose round trip completed and was recorded this call. */
+  reconciledTaskNames: string[];
+}
+
+/**
+ * Reconciles a single pending canary file against the completed inbox.
+ * Returns its task name once its round trip is recorded and the pending
+ * file is cleared, or null if it has not completed yet (or is malformed).
+ */
+function reconcileOnePendingCanary(
+  targetPath: string,
+  filePath: string,
+  completedInboxDir: string
+): string | null {
+  const content = fs.readFileSync(filePath, 'utf-8');
+  const taskName = parseHandoffHeaderField(content, 'task');
+  if (!taskName) {
+    return null;
+  }
+  const completion = trackCanaryCompletion(targetPath, taskName, completedInboxDir);
+  if (!completion?.found) {
+    return null;
+  }
+  const sentAtField = parseHandoffHeaderField(content, 'sent_at');
+  const sentAtMs = sentAtField ? Date.parse(sentAtField) : fs.statSync(filePath).mtimeMs;
+  recordCanaryRoundTrip(targetPath, sentAtMs, completion.completedAtMs);
+  fs.rmSync(filePath);
   return taskName;
 }
 
 /**
- * Detector: scans the coordinator's completed inbox for canaries and records
- * their round-trip times. For each completed canary, removes it from the
- * tracked list (so old completed canaries don't accumulate) and records the
- * round-trip time in canary-status.json.
- *
- * This is called periodically by the supervisor/extension to update the canary
- * health status.
+ * Checks every canary still sitting in the pending queue against the real
+ * transport's completed inbox. Any that have round-tripped get their
+ * completion recorded via recordCanaryRoundTrip and are cleared from
+ * pending so a later call never re-reconciles the same canary twice; any
+ * that have not yet completed are left in place for the next call.
  */
-export function detectCompletedCanaries(targetPath: string, nowMs: number, coordinatorCompletedDir: string): void {
-  const tracked = readTrackedCanaries(targetPath);
-  const updated: CanaryRecord[] = [];
+export function reconcileCanary(targetPath: string, completedInboxDir: string): ReconcileResult {
+  const pendingDir = canaryQueuePendingDir(targetPath);
+  const reconciledTaskNames: string[] = [];
+  if (!fs.existsSync(pendingDir)) {
+    return { reconciledTaskNames };
+  }
 
-  for (const record of tracked) {
-    const ageMs = nowMs - record.injectedAtMs;
-    const ageSeconds = ageMs / 1000;
-
-    // Look for a completed handoff with this canary's task name. The filename
-    // in completed/ will be named with the canary task and marked _for_coordinator.
-    let found = false;
-    if (fs.existsSync(coordinatorCompletedDir)) {
-      for (const entry of fs.readdirSync(coordinatorCompletedDir)) {
-        // Match handoff files (must be .handoff, not sidecar files)
-        if (!entry.endsWith('.handoff')) {
-          continue;
-        }
-        // Check if this is a matching canary by reading the task field
-        try {
-          const filePath = path.join(coordinatorCompletedDir, entry);
-          const content = fs.readFileSync(filePath, 'utf-8');
-          const taskMatch = content.match(/^task:\s*(.+)$/m);
-          if (taskMatch && taskMatch[1].trim() === record.canaryTaskName) {
-            found = true;
-            record.recipientTaskName = record.canaryTaskName;
-            break;
-          }
-        } catch {
-          // Ignore unreadable files, keep looking
-        }
-      }
+  for (const entry of fs.readdirSync(pendingDir)) {
+    if (!entry.endsWith('.handoff')) {
+      continue;
     }
-
-    if (found) {
-      // Canary completed successfully! Record the round-trip time.
-      writeCanaryStatus(targetPath, ageMs);
-    } else if (ageSeconds > 3600) {
-      // Old canary, assume it's lost. Don't record it, just clean it up.
-      found = true;
-    }
-
-    if (!found) {
-      updated.push(record);
+    const filePath = path.join(pendingDir, entry);
+    const taskName = reconcileOnePendingCanary(targetPath, filePath, completedInboxDir);
+    if (taskName) {
+      reconciledTaskNames.push(taskName);
     }
   }
 
-  writeTrackedCanaries(targetPath, updated);
+  return { reconciledTaskNames };
+}
+
+export interface CanaryCycleResult {
+  /** Whether a new canary was injected this cycle. */
+  injected: boolean;
+  /** Task name of the newly injected canary, or null if none was injected. */
+  taskName: string | null;
+  /** Task names reconciled (completed round trip recorded) this cycle. */
+  reconciled: string[];
+  /** When the caller should invoke this cycle again. */
+  nextCheckMs: number;
+}
+
+/**
+ * One full canary tick: reconcile any pending canaries that have completed
+ * their round trip since the last cycle, then decide (via
+ * computeCanaryInjectionSchedule) whether a new canary is due. Reconciling
+ * first means a canary that completes right on schedule refreshes
+ * canary-status.json before the injection decision is made, so a fresh
+ * round trip does not get immediately followed by a redundant injection.
+ */
+export function runCanaryCycle(
+  targetPath: string,
+  completedInboxDir: string,
+  nowMs: number,
+  canaryBudgetSeconds: number
+): CanaryCycleResult {
+  const { reconciledTaskNames } = reconcileCanary(targetPath, completedInboxDir);
+  const schedule = computeCanaryInjectionSchedule(targetPath, nowMs, canaryBudgetSeconds);
+  const taskName = schedule.shouldInject ? sendCanary(targetPath, nowMs) : null;
+
+  return {
+    injected: schedule.shouldInject,
+    taskName,
+    reconciled: reconciledTaskNames,
+    nextCheckMs: schedule.nextCheckMs,
+  };
 }

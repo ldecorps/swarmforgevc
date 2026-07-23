@@ -1,7 +1,7 @@
 id: BL-036
 title: salvage — redo-from-stage for failed or rejected pipeline runs
 milestone: M4
-status: todo
+status: done
 priority: 36
 assigned_to: coder
 

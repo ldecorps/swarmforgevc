@@ -5,7 +5,11 @@
             [clojure.java.shell :refer [sh]]
             [clojure.string :as str]))
 
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "handoff_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "handoff_inject_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "backlog_depth_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "pipeline_stage_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "ticket_close_guard_lib.bb")))
 
 (def usage-text
   (str "Usage: swarm_handoff.sh <draft-file>\n\n"
@@ -88,8 +92,7 @@
     (exit! 1 "Set SWARMFORGE_ROLE.")))
 
 (defn state-dir []
-  (fs/path (or (git-root) (System/getProperty "user.dir"))
-           ".swarmforge" "handoffs"))
+  (handoff-lib/my-mailbox-base-dir))
 
 (defn timestamp []
   (.format java.time.format.DateTimeFormatter/ISO_INSTANT
@@ -185,19 +188,11 @@
 
 (defn- check-backlog-depth []
   (let [project-root (project-root)
-        conf-file (fs/path project-root ".swarmforge" "swarmforge.conf")
         active-dir (fs/path project-root "backlog" "active")
-        max-depth (try
-                    (->> (slurp (str conf-file))
-                         str/split-lines
-                         (filter #(str/starts-with? % "config active_backlog_max_depth"))
-                         first
-                         (re-find #"\d+")
-                         parse-long)
-                    (catch Exception _ 5))] ; Default to 5 if config is missing
+        max-depth (backlog-depth-lib/read-max-depth project-root)]
     (when (fs/exists? active-dir)
       (let [active-count (count (fs/list-dir active-dir))]
-        (when (> active-count max-depth)
+        (when (backlog-depth-lib/depth-exceeded? active-count max-depth)
           (binding [*out* *err*]
             (println (format "WARNING: Active backlog depth exceeded (active=%d, max=%d). Coordinator should promote paused items." active-count max-depth))))))))
 
@@ -258,7 +253,12 @@
                              (str/blank? task-name)
                              (conj "Missing required header 'task' for git_handoff.")
                              (> (count (or task-name "")) 80)
-                             (conj (format "Header 'task' must be no longer than 80 characters; got %d." (count task-name)))))
+                             (conj (format "Header 'task' must be no longer than 80 characters; got %d." (count task-name)))
+                             (and (not (str/blank? task-name))
+                                  (ticket-close-guard-lib/git-handoff-blocked-for-task?
+                                   (project-root) task-name))
+                             (conj (format "Cannot send git_handoff for closed ticket %s (backlog/done/)."
+                                           (pipeline-stage-lib/extract-ticket-id task-name)))))
                      (and (not= "git_handoff" type) (not (str/blank? commit)))
                      (conj "Header 'commit' is only allowed for git_handoff.")
                      (and (not= "git_handoff" type) (not (str/blank? task-name)))
@@ -330,14 +330,15 @@
       (finally
         (fs/delete lock-dir)))))
 
-(defn body [type sender canonical-commit note-message scope proposal-body rationale]
-  (case type
-    "awake" "awake"
-    "git_handoff" (str "Re-read your role and constitution.\n\nmerge_and_process " sender " " canonical-commit)
-    "note" (str "Re-read your role and constitution.\n\n" note-message)
-    "rule_proposal" (str "Re-read your role and constitution.\n\n"
-                         "Rule proposal (" scope ") from " sender ": " proposal-body
-                         "\nRationale: " rationale)))
+(defn body [type sender canonical-commit note-message scope proposal-body rationale recipients]
+  (let [lead (handoff-lib/handoff-body-lead recipients)]
+    (case type
+      "awake" "awake"
+      "git_handoff" (str lead "merge_and_process " sender " " canonical-commit)
+      "note" (str lead note-message)
+      "rule_proposal" (str lead
+                           "Rule proposal (" scope ") from " sender ": " proposal-body
+                           "\nRationale: " rationale))))
 
 (defn write-handoff! [{:keys [headers recipients canonical-commit sender]}]
   (let [timestamp-id (id-timestamp)
@@ -349,11 +350,10 @@
         type (get headers "type")
         filename (str priority "_" timestamp-id "_" sequence "_from_" sender "_to_" recipient-slug ".handoff")
         outbox-dir (fs/path (state-dir) "outbox")
-        tmp-dir (fs/path outbox-dir "tmp")
-        tmp-file (fs/path tmp-dir (str filename ".tmp"))
         outbox-file (fs/path outbox-dir filename)
         handoff-body (body type sender canonical-commit (get headers "message")
-                           (get headers "scope") (get headers "body") (get headers "rationale"))
+                           (get headers "scope") (get headers "body") (get headers "rationale")
+                           recipients)
         lines (cond-> [(str "id: " id)
                        (str "from: " sender)
                        (str "to: " (str/join "," recipients))
@@ -377,10 +377,14 @@
                 (conj (str "created_at: " created-at)
                       ""
                       handoff-body))]
-    (doseq [dir [tmp-dir outbox-dir (fs/path (state-dir) "sent") (fs/path (state-dir) "failed")]]
+    (doseq [dir [outbox-dir (fs/path (state-dir) "sent") (fs/path (state-dir) "failed")]]
       (fs/create-dirs dir))
-    (spit (str tmp-file) (str (str/join "\n" lines) "\n"))
-    (fs/move tmp-file outbox-file)
+    ;; BL-365: durable install (write -> fsync -> rename) PLUS the sender's
+    ;; own integrity floor (delete-and-reject if what actually landed on
+    ;; disk is corrupt) - never a bare spit + fs/move. See
+    ;; handoff-lib/atomic-write!'s and install-handoff!'s own docstrings.
+    (when-not (handoff-lib/install-handoff! outbox-file (str (str/join "\n" lines) "\n"))
+      (exit! 1 "HANDOFF WRITE FAILED: the installed file was corrupt (empty or missing required envelope headers); no handoff was queued."))
     (check-backlog-depth) ; Add backlog depth check after writing handoff
     outbox-file))
 

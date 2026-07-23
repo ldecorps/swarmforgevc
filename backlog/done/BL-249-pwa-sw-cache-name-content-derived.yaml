@@ -1,0 +1,63 @@
+id: BL-249
+title: "BUG: PWA sw.js CACHE_NAME never bumped — derive it from shell content at deploy so updates reach users"
+direction: bug
+type: bug
+priority: 15
+mutation_cost: low
+source: "coordinator note 2026-07-10: PWA sw.js CACHE_NAME never bumped — shell updates never reach users. Specifier confirmed the live mechanism + deploy path."
+
+description: |
+  pwa/sw.js hardcodes CACHE_NAME = 'swarmforge-dashboard-v2' (sw.js:20) and nobody
+  bumps it. The service worker's activate handler (sw.js:37) already purges caches
+  whose key != CACHE_NAME, and install caches SHELL_ASSETS (index.html, app.js,
+  locales.js, manifest.json, icon.svg) — but the browser only installs a new SW /
+  re-caches / purges when CACHE_NAME (i.e. the served sw.js bytes) CHANGES. Since
+  it is a static constant, returning users keep the stale cached shell forever.
+  Confirmed: BL-117, BL-118, and BL-150 all shipped changes to pwa/ that never
+  reached returning users because CACHE_NAME stayed 'v2' across all of them.
+
+  The PWA is deployed to GitHub Pages by .github/workflows/backlog-dashboard.yml,
+  which assembles _site/ (copies the pwa/ shell + generates backlog.json /
+  docs-tree.json / recert-batch.json). That deploy is the stamp point.
+
+  Wanted behavior (observable):
+    - A deploy that changes any shell asset yields a served sw.js whose CACHE_NAME
+      differs from the previous deploy, so the new SW installs the updated shell and
+      the (already-correct) activate handler purges the old cache — the returning
+      user gets the update.
+    - A deploy with a byte-for-byte-unchanged shell yields the SAME CACHE_NAME, so
+      users are not forced to re-download an identical shell (favor a content hash
+      of SHELL_ASSETS over the raw commit SHA, which churns every commit).
+    - CACHE_NAME is derived automatically at deploy — no hand-edited version string.
+
+  Constraints:
+    - Derive CACHE_NAME from a content hash of the shell assets (SHELL_ASSETS list
+      in sw.js). Stamp it into the SERVED sw.js when the deploy assembles _site/
+      (pwa/sw.js may keep a placeholder that the deploy replaces).
+    - GITHUB ACTIONS SAFETY (engineering rule / BL-092): do NOT interpolate a
+      ${{ }} expression directly inside a run: script body; bind any value to an
+      env: key and reference it as a quoted shell variable. The hash computation
+      runs over files, so this should be file-driven, not expression-interpolated.
+    - Do not change the activate/purge or fetch logic — it already works once
+      CACHE_NAME changes.
+
+  Scope: .github/workflows/backlog-dashboard.yml (stamp CACHE_NAME from a shell
+  content hash when building _site/) and pwa/sw.js (placeholder CACHE_NAME + the
+  SHELL_ASSETS list the hash covers).
+
+acceptance: specs/features/BL-249-pwa-sw-cache-name-content-derived.feature
+
+qa_e2e_procedure: |
+  End-to-end procedure QA runs (stamp step driven over fixture shell assets):
+  1. Run the stamp over a shell asset set; change one shell asset; re-run; assert
+     the resulting CACHE_NAME differs.
+  2. Re-run the stamp over a byte-identical shell; assert CACHE_NAME is unchanged.
+  3. Assert no hand-edited version string is required (the value comes from the
+     shell content).
+  4. Simulate a returning user: with the old cache present and a new CACHE_NAME,
+     assert the new SW installs the updated shell and the activate handler deletes
+     the old cache (updated shell served).
+  5. Assert the workflow computes the hash file-driven, with no ${{ }} expression
+     spliced into a run: body.
+
+# HUMAN APPROVAL: new specifier draft feature file, pending human review.

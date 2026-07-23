@@ -1,7 +1,7 @@
 id: BL-012
 title: Chase and dead-letter escalation — re-notify unresponsive receivers
 milestone: M2
-status: todo
+status: done
 priority: 12
 
 description: >

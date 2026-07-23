@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -8,12 +9,53 @@ const {
   buildTargetBootstrapFiles,
   planTargetBootstrapFiles,
   initializeTargetRepo,
+  buildContractBootstrapFiles,
+  initializeTargetContract,
+  buildGeneratedPromptBootstrapFiles,
+  initializeTargetPrompts,
+  updateTargetContract,
 } = require('../out/config/targetBootstrap');
 const { resolveTargetPath } = require('../out/config/targetPath');
 
-function mkTmpDir() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-bootstrap-'));
+// BL-443 QA bounce: hasGitIdentityConfigured/resolveCommitIdentityOverrides
+// (targetBootstrap.ts) resolve the identity the same way `git commit` itself
+// would - local, then GLOBAL, then SYSTEM config - so a fixture that only
+// omits the LOCAL identity ("no git identity configured") still silently
+// leaks whatever global/system identity the machine running the suite
+// happens to have; that machine having none is incidental, not something
+// the fixture enforces. GIT_CONFIG_GLOBAL/GIT_CONFIG_SYSTEM (real git env
+// vars, honored since git 2.32) redirect git's own global/system config
+// lookup to a path that can never exist, so this holds on every machine -
+// an explicit allowlist restore in `finally`, same posture as this
+// codebase's other env-isolation helpers (notifyDeadLettersCli.test.js).
+const GIT_IDENTITY_ISOLATION_ENV_KEYS = ['GIT_CONFIG_GLOBAL', 'GIT_CONFIG_SYSTEM'];
+async function withNoGitIdentityAnywhere(fn) {
+  const previous = Object.fromEntries(GIT_IDENTITY_ISOLATION_ENV_KEYS.map((k) => [k, process.env[k]]));
+  try {
+    for (const key of GIT_IDENTITY_ISOLATION_ENV_KEYS) {
+      process.env[key] = '/dev/null';
+    }
+    return await fn();
+  } finally {
+    for (const key of GIT_IDENTITY_ISOLATION_ENV_KEYS) {
+      if (previous[key] === undefined) delete process.env[key];
+      else process.env[key] = previous[key];
+    }
+  }
 }
+
+const FIXTURE_CONTRACT = {
+  scope: ['Build the thing.'],
+  outOfScope: ['Rewrite the stack.'],
+  boundaries: ['Respect the README.'],
+  initialBacklogSummary: '3 tickets queued.',
+  agreement: 'proposed',
+};
+
+const FIXTURE_PROMPTS = {
+  projectPrompt: '# Project\nA visual front-end for SwarmForge\n',
+  engineeringPrompt: '# Tech Stack\nTypeScript, Clojure\n',
+};
 
 test('resolveTargetPath prefers configured workspace target', () => {
   const target = resolveTargetPath({
@@ -86,7 +128,7 @@ test('resolveTargetPath returns undefined when path is whitespace only', () => {
 });
 
 test('initializeTargetRepo creates both prompt files in a non-git directory', async () => {
-  const tmp = mkTmpDir();
+  const tmp = mkTmpDir('sfvc-bootstrap-');
   const result = await initializeTargetRepo(tmp);
   assert.deepEqual(result.created.sort(), ['engineering.prompt', 'project.prompt']);
   assert.deepEqual(result.skipped, []);
@@ -96,7 +138,7 @@ test('initializeTargetRepo creates both prompt files in a non-git directory', as
 });
 
 test('initializeTargetRepo skips files that already exist', async () => {
-  const tmp = mkTmpDir();
+  const tmp = mkTmpDir('sfvc-bootstrap-');
   fs.writeFileSync(path.join(tmp, 'project.prompt'), 'existing content');
   const result = await initializeTargetRepo(tmp);
   assert.deepEqual(result.created, ['engineering.prompt']);
@@ -105,7 +147,7 @@ test('initializeTargetRepo skips files that already exist', async () => {
 });
 
 test('initializeTargetRepo skips commit when all files already present', async () => {
-  const tmp = mkTmpDir();
+  const tmp = mkTmpDir('sfvc-bootstrap-');
   fs.writeFileSync(path.join(tmp, 'project.prompt'), 'x');
   fs.writeFileSync(path.join(tmp, 'engineering.prompt'), 'x');
   const result = await initializeTargetRepo(tmp);
@@ -114,8 +156,30 @@ test('initializeTargetRepo skips commit when all files already present', async (
   assert.deepEqual(result.skipped.sort(), ['engineering.prompt', 'project.prompt']);
 });
 
+// Same "nothing to create" case, but inside a real git repository - unlike
+// the non-git case above, writeFilesAndCommit must skip the `git add`/
+// `git commit` calls entirely on an empty file list rather than attempting
+// a no-pathspec `git add` (which git itself errors on). BL-443 defect 4:
+// "already present" in a git repository now means present AND COMMITTED
+// (files merely written to disk, per the test just above this one, are no
+// longer "already present" - see the dedicated BL-443 tests below), so this
+// exercises the empty-pathspec-safe path via a genuine second run instead.
+test('initializeTargetRepo skips commit when all files are already present and committed, in a git repository', async () => {
+  const tmp = mkTmpDir('sfvc-bootstrap-');
+  execSync('git init', { cwd: tmp });
+  execSync('git config user.email "test@test.com"', { cwd: tmp });
+  execSync('git config user.name "Test"', { cwd: tmp });
+  await initializeTargetRepo(tmp);
+
+  const result = await initializeTargetRepo(tmp);
+
+  assert.equal(result.committed, false);
+  assert.deepEqual(result.created, []);
+  assert.deepEqual(result.skipped.sort(), ['engineering.prompt', 'project.prompt']);
+});
+
 test('initializeTargetRepo commits new files in a git repository', async () => {
-  const tmp = mkTmpDir();
+  const tmp = mkTmpDir('sfvc-bootstrap-');
   execSync('git init', { cwd: tmp });
   execSync('git config user.email "test@test.com"', { cwd: tmp });
   execSync('git config user.name "Test"', { cwd: tmp });
@@ -124,4 +188,362 @@ test('initializeTargetRepo commits new files in a git repository', async () => {
   assert.deepEqual(result.created.sort(), ['engineering.prompt', 'project.prompt']);
   const log = execSync('git log --oneline', { cwd: tmp }).toString();
   assert.match(log, /Initialize SwarmForge target prompts/);
+});
+
+// A file absent from the working tree (so the fs.access idempotency check
+// counts it as "to create") but already committed under git with the exact
+// same content it gets rewritten with (e.g. `rm` without `git rm`) restages
+// to no net diff from HEAD - `git commit` genuinely has nothing to commit.
+// Treated as a quiet non-error, not a crash: `committed: false`, still
+// reported as created since it was freshly written to disk.
+test('initializeTargetRepo does not throw when re-creating a file whose content is unchanged from HEAD (nothing to commit)', async () => {
+  const tmp = mkTmpDir('sfvc-bootstrap-');
+  execSync('git init', { cwd: tmp });
+  execSync('git config user.email "test@test.com"', { cwd: tmp });
+  execSync('git config user.name "Test"', { cwd: tmp });
+  await initializeTargetRepo(tmp);
+  fs.unlinkSync(path.join(tmp, 'engineering.prompt'));
+  fs.unlinkSync(path.join(tmp, 'project.prompt'));
+
+  const result = await initializeTargetRepo(tmp);
+
+  assert.equal(result.committed, false);
+  assert.deepEqual(result.created.sort(), ['engineering.prompt', 'project.prompt']);
+  assert.ok(fs.existsSync(path.join(tmp, 'engineering.prompt')), 'the file must still be restored to disk');
+});
+
+// ── BL-262: onboarding contract scaffold (extends the same idempotent seam) ──
+
+test('buildContractBootstrapFiles returns the contract source and its legible view', () => {
+  const files = buildContractBootstrapFiles(FIXTURE_CONTRACT);
+
+  assert.deepEqual(
+    files.map((file) => file.path),
+    [path.join('.swarmforge', 'contract.yaml'), 'CONTRACT.md']
+  );
+  assert.match(files[0].content, /agreement: proposed/);
+  assert.match(files[1].content, /Agreement: proposed/);
+});
+
+test('planTargetBootstrapFiles generalizes over an explicit file list (BL-262: not just the two prompts)', () => {
+  const contractFiles = buildContractBootstrapFiles(FIXTURE_CONTRACT);
+
+  const plan = planTargetBootstrapFiles(new Set([path.join('.swarmforge', 'contract.yaml')]), contractFiles);
+
+  assert.deepEqual(plan.filesToCreate.map((file) => file.path), ['CONTRACT.md']);
+  assert.deepEqual(plan.alreadyPresent, [path.join('.swarmforge', 'contract.yaml')]);
+});
+
+test('initializeTargetContract creates both contract files (including the nested .swarmforge/ dir) in a non-git directory', async () => {
+  const tmp = mkTmpDir('sfvc-bootstrap-');
+  const result = await initializeTargetContract(tmp, FIXTURE_CONTRACT);
+
+  assert.deepEqual(result.created.sort(), ['CONTRACT.md', path.join('.swarmforge', 'contract.yaml')].sort());
+  assert.deepEqual(result.skipped, []);
+  assert.equal(result.committed, false);
+  assert.ok(fs.existsSync(path.join(tmp, '.swarmforge', 'contract.yaml')));
+  assert.ok(fs.existsSync(path.join(tmp, 'CONTRACT.md')));
+});
+
+test('initializeTargetContract skips a contract file that already exists (idempotent scaffold)', async () => {
+  const tmp = mkTmpDir('sfvc-bootstrap-');
+  fs.mkdirSync(path.join(tmp, '.swarmforge'), { recursive: true });
+  fs.writeFileSync(path.join(tmp, '.swarmforge', 'contract.yaml'), 'agreement: agreed\n');
+
+  const result = await initializeTargetContract(tmp, FIXTURE_CONTRACT);
+
+  assert.deepEqual(result.created, ['CONTRACT.md']);
+  assert.deepEqual(result.skipped, [path.join('.swarmforge', 'contract.yaml')]);
+  assert.equal(fs.readFileSync(path.join(tmp, '.swarmforge', 'contract.yaml'), 'utf8'), 'agreement: agreed\n');
+});
+
+test('initializeTargetContract commits new contract files in a git repository with a distinct commit message', async () => {
+  const tmp = mkTmpDir('sfvc-bootstrap-');
+  execSync('git init', { cwd: tmp });
+  execSync('git config user.email "test@test.com"', { cwd: tmp });
+  execSync('git config user.name "Test"', { cwd: tmp });
+
+  const result = await initializeTargetContract(tmp, FIXTURE_CONTRACT);
+
+  assert.equal(result.committed, true);
+  const log = execSync('git log --oneline', { cwd: tmp }).toString();
+  assert.match(log, /Propose SwarmForge onboarding contract/);
+});
+
+test('initializeTargetContract and initializeTargetRepo compose without interfering (both run on the same target)', async () => {
+  const tmp = mkTmpDir('sfvc-bootstrap-');
+
+  const promptResult = await initializeTargetRepo(tmp);
+  const contractResult = await initializeTargetContract(tmp, FIXTURE_CONTRACT);
+
+  assert.deepEqual(promptResult.created.sort(), ['engineering.prompt', 'project.prompt']);
+  assert.deepEqual(contractResult.created.sort(), ['CONTRACT.md', path.join('.swarmforge', 'contract.yaml')].sort());
+  assert.ok(fs.existsSync(path.join(tmp, 'project.prompt')));
+  assert.ok(fs.existsSync(path.join(tmp, 'CONTRACT.md')));
+});
+
+// ── BL-344: unconditional revision write, reusing writeFilesAndCommit ───────
+
+test('updateTargetContract rewrites both contract files unconditionally, even though they already exist', async () => {
+  const tmp = mkTmpDir('sfvc-bootstrap-');
+  await initializeTargetContract(tmp, FIXTURE_CONTRACT);
+  const revised = { ...FIXTURE_CONTRACT, scope: [...FIXTURE_CONTRACT.scope, 'Per operator request: add logging'] };
+
+  const result = await updateTargetContract(tmp, revised, 'Revise contract');
+
+  assert.equal(result.committed, false, 'no git repo here, so nothing to commit');
+  const written = fs.readFileSync(path.join(tmp, '.swarmforge', 'contract.yaml'), 'utf8');
+  assert.match(written, /add logging/);
+});
+
+test('updateTargetContract commits a real content change in a git repository', async () => {
+  const tmp = mkTmpDir('sfvc-bootstrap-');
+  execSync('git init', { cwd: tmp });
+  execSync('git config user.email "test@test.com"', { cwd: tmp });
+  execSync('git config user.name "Test"', { cwd: tmp });
+  await initializeTargetContract(tmp, FIXTURE_CONTRACT);
+  const revised = { ...FIXTURE_CONTRACT, scope: [...FIXTURE_CONTRACT.scope, 'Per operator request: add logging'] };
+
+  const result = await updateTargetContract(tmp, revised, 'Revise contract (round 1)');
+
+  assert.equal(result.committed, true);
+  const log = execSync('git log --oneline', { cwd: tmp }).toString();
+  assert.match(log, /Revise contract \(round 1\)/);
+});
+
+test('updateTargetContract returns committed:false when the content is unchanged from HEAD (nothing to commit)', async () => {
+  const tmp = mkTmpDir('sfvc-bootstrap-');
+  execSync('git init', { cwd: tmp });
+  execSync('git config user.email "test@test.com"', { cwd: tmp });
+  execSync('git config user.name "Test"', { cwd: tmp });
+  await initializeTargetContract(tmp, FIXTURE_CONTRACT);
+
+  const result = await updateTargetContract(tmp, FIXTURE_CONTRACT, 'Revise contract (no-op)');
+
+  assert.equal(result.committed, false);
+});
+
+// A real commit failure is a DIFFERENT error than "nothing to commit" and
+// must propagate, not be silently swallowed by the same catch that
+// tolerates the no-op case above. BL-443 defect 3 made "no git identity
+// configured" itself a recoverable, fallback-identity case (see the
+// dedicated BL-443 test below) - a pre-commit hook rejecting the commit is
+// a real failure that fallback identity cannot paper over, so it stands in
+// here instead.
+test('updateTargetContract propagates a real git commit failure instead of swallowing it', async () => {
+  const tmp = mkTmpDir('sfvc-bootstrap-');
+  execSync('git init', { cwd: tmp });
+  execSync('git config user.email "test@test.com"', { cwd: tmp });
+  execSync('git config user.name "Test"', { cwd: tmp });
+  const hooksDir = path.join(tmp, '.git', 'hooks');
+  fs.writeFileSync(path.join(hooksDir, 'pre-commit'), '#!/bin/sh\nexit 1\n', { mode: 0o755 });
+
+  await assert.rejects(() => updateTargetContract(tmp, FIXTURE_CONTRACT, 'Revise contract'));
+});
+
+// ── BL-269: generated target prompts, gated on the contract's agreement ─────
+
+test('buildGeneratedPromptBootstrapFiles returns project.prompt and engineering.prompt', () => {
+  const files = buildGeneratedPromptBootstrapFiles(FIXTURE_PROMPTS);
+
+  assert.deepEqual(files.map((file) => file.path), ['project.prompt', 'engineering.prompt']);
+  assert.equal(files[0].content, FIXTURE_PROMPTS.projectPrompt);
+  assert.equal(files[1].content, FIXTURE_PROMPTS.engineeringPrompt);
+});
+
+// BL-269 onboarding-generated-prompts-03 (proposed/pending rows)
+test('initializeTargetPrompts withholds the prompts from the target repo when the gate holds (proposed)', async () => {
+  const tmp = mkTmpDir('sfvc-bootstrap-');
+
+  const result = await initializeTargetPrompts(tmp, FIXTURE_PROMPTS, { decision: 'hold', reason: 'proposed: not yet agreed' });
+
+  assert.equal(result.withheld, true);
+  assert.equal(result.committed, false);
+  assert.deepEqual(result.created, []);
+  assert.equal(fs.existsSync(path.join(tmp, 'project.prompt')), false);
+  assert.equal(fs.existsSync(path.join(tmp, 'engineering.prompt')), false);
+});
+
+test('initializeTargetPrompts withholds the prompts from the target repo when the gate holds (pending)', async () => {
+  const tmp = mkTmpDir('sfvc-bootstrap-');
+
+  const result = await initializeTargetPrompts(tmp, FIXTURE_PROMPTS, { decision: 'hold', reason: 'pending: not yet agreed' });
+
+  assert.equal(result.withheld, true);
+  assert.equal(fs.existsSync(path.join(tmp, 'project.prompt')), false);
+});
+
+// BL-269 onboarding-generated-prompts-03 (agreed row)
+test('initializeTargetPrompts releases the prompts for commit to the target repo when the gate allows (agreed)', async () => {
+  const tmp = mkTmpDir('sfvc-bootstrap-');
+  execSync('git init', { cwd: tmp });
+  execSync('git config user.email "test@test.com"', { cwd: tmp });
+  execSync('git config user.name "Test"', { cwd: tmp });
+
+  const result = await initializeTargetPrompts(tmp, FIXTURE_PROMPTS, { decision: 'allow' });
+
+  assert.equal(result.withheld, false);
+  assert.equal(result.committed, true);
+  assert.deepEqual(result.created.sort(), ['engineering.prompt', 'project.prompt']);
+  assert.equal(fs.readFileSync(path.join(tmp, 'project.prompt'), 'utf8'), FIXTURE_PROMPTS.projectPrompt);
+  const log = execSync('git log --oneline', { cwd: tmp }).toString();
+  assert.match(log, /Commit onboarding-generated target prompts/);
+});
+
+test('initializeTargetPrompts is idempotent: re-running with unchanged content commits nothing', async () => {
+  const tmp = mkTmpDir('sfvc-bootstrap-');
+  execSync('git init', { cwd: tmp });
+  execSync('git config user.email "test@test.com"', { cwd: tmp });
+  execSync('git config user.name "Test"', { cwd: tmp });
+
+  await initializeTargetPrompts(tmp, FIXTURE_PROMPTS, { decision: 'allow' });
+  const secondResult = await initializeTargetPrompts(tmp, FIXTURE_PROMPTS, { decision: 'allow' });
+
+  assert.deepEqual(secondResult.created, []);
+  assert.deepEqual(secondResult.skipped, []);
+  assert.equal(secondResult.committed, false, 'identical content is a git no-op, not a fresh commit');
+  assert.equal(fs.readFileSync(path.join(tmp, 'project.prompt'), 'utf8'), FIXTURE_PROMPTS.projectPrompt);
+});
+
+// Regenerating with unchanged content must not THROW just because some
+// OTHER, unrelated path in the target repo happens to be untracked - git
+// phrases "nothing to commit" differently ("nothing added to commit but
+// untracked files present") the moment any other untracked path exists
+// anywhere in the repo, which a real target repo (e.g. an unrelated
+// contract.yaml this same onboarding flow writes but never commits through
+// this path) commonly has.
+test('initializeTargetPrompts re-run with unchanged content does not throw when the repo has an unrelated untracked file', async () => {
+  const tmp = mkTmpDir('sfvc-bootstrap-');
+  execSync('git init', { cwd: tmp });
+  execSync('git config user.email "test@test.com"', { cwd: tmp });
+  execSync('git config user.name "Test"', { cwd: tmp });
+
+  await initializeTargetPrompts(tmp, FIXTURE_PROMPTS, { decision: 'allow' });
+  fs.writeFileSync(path.join(tmp, 'unrelated-untracked.txt'), 'never committed');
+
+  const secondResult = await initializeTargetPrompts(tmp, FIXTURE_PROMPTS, { decision: 'allow' });
+
+  assert.equal(secondResult.committed, false);
+});
+
+// BL-382 2nd bounce (backlog/evidence/BL-382-...-bounce-20260715b.md):
+// re-running after a contract change-of-mind must actually refresh the
+// already-materialized prompt content, not permanently freeze it at its
+// first-ever generation.
+// ── BL-443: the propose-onboarding-contract commit step is robust to a ──────
+//    foreign target's own ignore rule, missing git identity, and a partial
+//    prior failure that left artifacts written but never committed.
+
+test('BL-443 defect 2: the contract commits even when the target ignores .swarmforge/ (force-add past the ignore rule)', async () => {
+  const tmp = mkTmpDir('sfvc-bootstrap-');
+  execSync('git init', { cwd: tmp });
+  execSync('git config user.email "test@test.com"', { cwd: tmp });
+  execSync('git config user.name "Test"', { cwd: tmp });
+  fs.writeFileSync(path.join(tmp, '.gitignore'), '.swarmforge/\n');
+
+  const result = await initializeTargetContract(tmp, FIXTURE_CONTRACT);
+
+  assert.equal(result.committed, true);
+  const tracked = execSync('git ls-files', { cwd: tmp }).toString();
+  assert.match(tracked, /contract\.yaml/);
+  assert.match(tracked, /CONTRACT\.md/);
+});
+
+test('BL-443 defect 3: the commit succeeds with a fallback author identity when the target has no git identity configured', async () => {
+  await withNoGitIdentityAnywhere(async () => {
+    const tmp = mkTmpDir('sfvc-bootstrap-');
+    execSync('git init', { cwd: tmp });
+
+    const result = await initializeTargetContract(tmp, FIXTURE_CONTRACT);
+
+    assert.equal(result.committed, true);
+    const authorLine = execSync("git log -1 --format='%an <%ae>'", { cwd: tmp }).toString().trim();
+    assert.equal(authorLine, 'SwarmForge <noreply@swarmforge>');
+  });
+});
+
+// A break-then-fix proof that GIT_CONFIG_GLOBAL/GIT_CONFIG_SYSTEM above
+// actually redirect what git resolves, rather than the test above passing
+// "by accident" the same way the ORIGINAL bounce did (a box that merely
+// happens to have no identity). With a REAL global identity present at the
+// redirected path, the target (which has no LOCAL identity) resolves to
+// THAT identity, and the fallback path is never engaged - proving the
+// isolation mechanism genuinely controls what git sees, on this box.
+test('BL-443 defect 3 (isolation mechanism check): a real global identity at the redirected path is what git actually resolves, not the fallback', async () => {
+  const fakeGlobalConfig = path.join(mkTmpDir('sfvc-fake-home-'), '.gitconfig');
+  fs.writeFileSync(fakeGlobalConfig, '[user]\n\tname = Developer\n\temail = dev@example.com\n');
+  const previous = { GIT_CONFIG_GLOBAL: process.env.GIT_CONFIG_GLOBAL, GIT_CONFIG_SYSTEM: process.env.GIT_CONFIG_SYSTEM };
+  try {
+    process.env.GIT_CONFIG_GLOBAL = fakeGlobalConfig;
+    process.env.GIT_CONFIG_SYSTEM = '/dev/null';
+    const tmp = mkTmpDir('sfvc-bootstrap-');
+    execSync('git init', { cwd: tmp });
+
+    const result = await initializeTargetContract(tmp, FIXTURE_CONTRACT);
+
+    assert.equal(result.committed, true);
+    const authorLine = execSync("git log -1 --format='%an <%ae>'", { cwd: tmp }).toString().trim();
+    assert.equal(authorLine, 'Developer <dev@example.com>');
+  } finally {
+    for (const key of Object.keys(previous)) {
+      if (previous[key] === undefined) delete process.env[key];
+      else process.env[key] = previous[key];
+    }
+  }
+});
+
+test('BL-443 defect 4: a re-run after a partial failure that left the contract written but uncommitted actually commits it', async () => {
+  const tmp = mkTmpDir('sfvc-bootstrap-');
+  execSync('git init', { cwd: tmp });
+  execSync('git config user.email "test@test.com"', { cwd: tmp });
+  execSync('git config user.name "Test"', { cwd: tmp });
+  // Simulate defects 2/3 having aborted mid-commit: the files are on disk
+  // exactly as writeFilesAndCommit would leave them, but never staged or
+  // committed - existence-only idempotency used to treat this as "done".
+  const files = buildContractBootstrapFiles(FIXTURE_CONTRACT);
+  for (const file of files) {
+    const filePath = path.join(tmp, file.path);
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    fs.writeFileSync(filePath, file.content, 'utf8');
+  }
+
+  const result = await initializeTargetContract(tmp, FIXTURE_CONTRACT);
+
+  assert.equal(result.committed, true);
+  const log = execSync('git log --oneline', { cwd: tmp }).toString();
+  assert.match(log, /Propose SwarmForge onboarding contract/);
+});
+
+test('BL-443 defect 4: a re-run when the contract is already present and committed is a clean no-op (no empty commit)', async () => {
+  const tmp = mkTmpDir('sfvc-bootstrap-');
+  execSync('git init', { cwd: tmp });
+  execSync('git config user.email "test@test.com"', { cwd: tmp });
+  execSync('git config user.name "Test"', { cwd: tmp });
+  await initializeTargetContract(tmp, FIXTURE_CONTRACT);
+
+  const result = await initializeTargetContract(tmp, FIXTURE_CONTRACT);
+
+  assert.equal(result.committed, false);
+  assert.deepEqual(result.created, []);
+  assert.deepEqual(result.skipped.sort(), ['CONTRACT.md', path.join('.swarmforge', 'contract.yaml')].sort());
+});
+
+test('initializeTargetPrompts overwrites already-materialized content when the prompts change (change-of-mind)', async () => {
+  const tmp = mkTmpDir('sfvc-bootstrap-');
+  execSync('git init', { cwd: tmp });
+  execSync('git config user.email "test@test.com"', { cwd: tmp });
+  execSync('git config user.name "Test"', { cwd: tmp });
+
+  await initializeTargetPrompts(tmp, FIXTURE_PROMPTS, { decision: 'allow' });
+  const revisedPrompts = {
+    projectPrompt: '# Project\nBe detailed in your responses and explanations.\n',
+    engineeringPrompt: '# Tech Stack\nBe detailed in your responses and explanations.\n',
+  };
+
+  const secondResult = await initializeTargetPrompts(tmp, revisedPrompts, { decision: 'allow' });
+
+  assert.deepEqual(secondResult.created, [], 'both files already existed - not freshly created');
+  assert.equal(secondResult.committed, true, 'changed content must produce a real commit');
+  assert.equal(fs.readFileSync(path.join(tmp, 'project.prompt'), 'utf8'), revisedPrompts.projectPrompt);
+  assert.equal(fs.readFileSync(path.join(tmp, 'engineering.prompt'), 'utf8'), revisedPrompts.engineeringPrompt);
 });

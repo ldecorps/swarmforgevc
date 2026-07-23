@@ -1,7 +1,7 @@
 id: BL-048
 title: hardener tooling — wire mutation testing (Stryker) + DRY duplication (jscpd)
 milestone: M4
-status: todo
+status: done
 priority: 20
 assigned_to: coder
 

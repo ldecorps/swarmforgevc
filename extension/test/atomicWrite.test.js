@@ -1,3 +1,4 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
 import { strict as assert } from 'node:assert';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -5,7 +6,7 @@ import * as os from 'os';
 import { atomicWrite, atomicAppend } from '../out/util/atomicWrite.js';
 
 function createTempDir() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'atomic-test-'));
+  return mkTmpDir('atomic-test-');
 }
 
 test('atomicWrite creates new file with content', () => {

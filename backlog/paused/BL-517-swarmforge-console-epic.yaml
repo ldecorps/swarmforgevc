@@ -1,0 +1,57 @@
+id: BL-517
+title: "EPIC — SwarmForge Console: a phone-glanceable, allowlisted console over the fleet (Telegram commands now; proactive alerts, repo onboarding, and a mini-app webview later); do not promote directly; tracks children"
+milestone: M8
+status: todo
+type: epic
+epic: swarmforge-console
+priority: 00
+depends_on: []
+decomposes_into: [BL-516, BL-526, BL-538]
+source: "Human directive in-session 2026-07-18: upload 'Spec brief — Operator Telegram console (status slice)' labelled 'epic: swarmforge console', then 'you've got to create a console epic for that'. UMBRELLA/tracking item — not directly promotable; children are promoted individually."
+
+notes: |
+  UMBRELLA / tracking item (type: epic), NOT directly promotable — the coordinator promotes CHILD slices,
+  never this. Children carry `epic: swarmforge-console` and are listed in `decomposes_into`.
+
+  VISION: a single phone-glanceable, tightly-allowlisted console over the whole SwarmForge fleet — read
+  swarm health + the tunnel URL and take a small set of safe control actions from anywhere, with nothing
+  exposed to the network (Telegram long-poll; the eventual webview rides the same allowlisted channel).
+  Supervised by the always-alive operator daemon with the same keep-alive / kill-switch / auth-loss
+  discipline the vscode tunnel already has; a one-time token setup is the only human step. This is the
+  human's async control surface for the fleet, distinct from the front-desk SUPPORT bot (backlog topics /
+  human Q&A) — the console is fleet HEALTH + CONTROL, on its own allowlisted operator bot.
+
+  SLICE PLAN (each becomes its own promotable child ticket when the epic advances; only slice 1 is specced):
+    - Slice 1 — Telegram status console (SPECCED: BL-516). A separate operator bot, tick-supervised like
+      the tunnel: /status /ensure (two-tap + single-flight) /tunnel /help, a telegram_console block in
+      status.json, kill-switch (SWARMFORGE_SKIP_TELEGRAM), clean-disable-when-no-token, self-heal on the
+      tick, and auth_lost + bounded backoff. Builds the reusable sendMessage-to-allowlisted-id primitive.
+    - Slice 2 — Proactive push / alerts (NOT YET TICKETED). QA-bounce / wedged-role / stall alerts pushed
+      to the allowlisted id. Slice 1's sendMessage primitive IS the seam; slice 2 only adds triggers.
+    - Slice 3 — Repo onboarding / a guarded write path (NOT YET TICKETED). e.g. swarm-intake issue
+      creation from the phone. Deliberately deferred — any new write path needs its own spec + review.
+    - Slice 4a — Paused-ticket pager (TICKETED: BL-538). One paused item per page
+      (id+title, YAML, Expedite button); swipe next/prev. Mini-app/webview host.
+    - Slice 4 — Mini-app webview / console UI (NOT YET TICKETED; BL-538 is the first
+      concrete page on this surface). The tiles+Mermaid frontend; when built it
+      becomes the Telegram webview on this same allowlisted channel — do NOT build a second frontend.
+
+  DISCIPLINE ACROSS SLICES (pin at the epic level so no slice ships a dark or unsafe surface):
+    - Operator LOGIC lives in tracked swarmforge/scripts/ (committed through the pipeline); runtime STATE +
+      secrets live in gitignored .swarmforge/operator/ (that is what keeps main clean, not avoiding scripts).
+    - One allowlisted id; no swarm data ever leaves to a non-allowlisted sender; secrets never committed.
+    - Every supervised subprocess mirrors the tunnel: kill-switch env no-op, sentinel-gated start, headless
+      self-heal on the tick, bounded backoff on auth loss (never a crash loop), clean-disable when
+      unconfigured. Per-tick ensure hooks must never slow or break the ~1s tick.
+    - Each control/write action beyond a read is gated (single-flight, confirm) and specced as its own slice
+      — the epic is not "done" until each promised slice is a real, tracked ticket, not an implicit gap.
+
+  This epic is a tracker only; it defines no acceptance of its own — each child slice carries its own
+  feature file and acceptance (slice 1 = specs/features/BL-516-operator-telegram-console.feature). A
+  musical-form epic icon (local-engineering rule 6) still needs assigning against the live icon set — left
+  to the branding/documenter pass to avoid an unvalidated collision.
+
+acceptance:
+  # An epic tracker has no acceptance of its own; acceptance lives on each child slice. Slice 1: BL-516.
+  none: "tracker only — see decomposes_into children for acceptance"
+mutation_cost: high

@@ -1,0 +1,13 @@
+{
+  "name": "SwarmForge Backlog Dashboard",
+  "short_name": "SwarmForge",
+  "description": "Read-only, offline-capable projection of backlog state and delivery metrics.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0b0d10",
+  "theme_color": "#0b0d10",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

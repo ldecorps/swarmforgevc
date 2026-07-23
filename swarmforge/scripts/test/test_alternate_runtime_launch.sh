@@ -14,6 +14,7 @@
 # configuration.
 
 set -euo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/tmp_cleanup.sh"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SWARMFORGE_SH="$SCRIPT_DIR/../swarmforge.sh"
@@ -32,6 +33,7 @@ index_of_role() {
 
 mk_root() {
   local root; root="$(cd "$(mktemp -d)" && pwd -P)"
+  register_tmp_dir "$root"
   mkdir -p "$root/swarmforge/roles" "$root/.swarmforge/launch" "$root/.swarmforge/prompts"
   touch "$root/swarmforge/constitution.prompt"
   for role in specifier coder documenter; do
@@ -58,8 +60,9 @@ grep -q -- "--message-file" "$DOC_SCRIPT" && fail "01: aider must stay in persis
 grep -q "^claude " "$SPEC_SCRIPT" || fail "01: unconfigured role specifier must still default to claude, got: $(cat "$SPEC_SCRIPT")"
 pass "01: agent=aider produces a non-claude launch body; unconfigured roles keep claude"
 
-# ── 2: a set provider API key is NEVER written into the generated launch
-#      script file, for any agent ──────────────────────────────────────────
+# ── 2: a set provider API key VALUE is NEVER written into the generated launch
+#      script file, for any agent (BL-130). Variable *names* like CEREBRAS_API_KEY
+#      may appear in Cerebras/Perplexity remap guards — that is not a secret leak.
 ROOT2="$(mk_root)"
 cat > "$ROOT2/swarmforge/swarmforge.conf" <<'CONF'
 config active_backlog_max_depth -1
@@ -68,11 +71,10 @@ CONF
 MISTRAL_API_KEY=test-secret-do-not-leak zsh -c "source '$SWARMFORGE_SH' '$ROOT2'; parse_config; $index_of_role_snippet write_role_launch_script \"\$(index_of_role documenter)\""
 DOC_SCRIPT2="$ROOT2/.swarmforge/launch/documenter.sh"
 grep -q "test-secret-do-not-leak" "$DOC_SCRIPT2" && fail "02: provider API key value leaked into the launch script file on disk"
-grep -q "API_KEY" "$DOC_SCRIPT2" && fail "02: launch script must not reference a provider API key at all"
 pass "02: a set provider key never lands in the generated launch script file"
 
-# ── 3: with no provider key in the environment, nothing is forwarded and the
-#      launch script has no trace of it ────────────────────────────────────
+# ── 3: with no provider key in the environment, the launch script still has no
+#      secret value (remap guards may mention API_KEY names — that is fine)
 ROOT3="$(mk_root)"
 cat > "$ROOT3/swarmforge/swarmforge.conf" <<'CONF'
 config active_backlog_max_depth -1
@@ -80,8 +82,8 @@ window documenter aider master --model mistral/mistral-large-latest
 CONF
 env -u MISTRAL_API_KEY -u OPENAI_API_KEY zsh -c "source '$SWARMFORGE_SH' '$ROOT3'; parse_config; $index_of_role_snippet write_role_launch_script \"\$(index_of_role documenter)\""
 DOC_SCRIPT3="$ROOT3/.swarmforge/launch/documenter.sh"
-grep -q "API_KEY" "$DOC_SCRIPT3" && fail "03: no provider API key line expected when neither is set, got: $(cat "$DOC_SCRIPT3")"
-pass "03: no provider key set in env means no key line written to the launch script"
+grep -qE "sk-|test-secret|do-not-leak" "$DOC_SCRIPT3" && fail "03: no secret value expected when no provider key is set, got: $(cat "$DOC_SCRIPT3")"
+pass "03: no provider key set in env means no key value written to the launch script"
 
 # ── 4: the provider key instead reaches the pane via an ephemeral
 #      respawn-pane -e flag, never touching disk ───────────────────────────
@@ -92,6 +94,7 @@ window documenter aider master --model mistral/mistral-large-latest
 CONF
 
 FAKE_BIN="$(mktemp -d)"
+register_tmp_dir "$FAKE_BIN"
 TMUX_LOG="$FAKE_BIN/tmux-calls.log"
 cat > "$FAKE_BIN/tmux" <<'FAKETMUX'
 #!/usr/bin/env bash
@@ -109,7 +112,9 @@ exit 0
 FAKETMUX
 chmod +x "$FAKE_BIN/tmux"
 
-MISTRAL_API_KEY=test-secret-do-not-leak PATH="$FAKE_BIN:$PATH" TMUX_LOG="$TMUX_LOG" zsh -c "
+MISTRAL_API_KEY=test-secret-do-not-leak \
+env -u OPENAI_API_KEY -u CEREBRAS_API_KEY -u PERPLEXITY_API_KEY -u GEMINI_API_KEY -u SWARMFORGE_GEMINI_API_KEY \
+PATH="$FAKE_BIN:$PATH" TMUX_LOG="$TMUX_LOG" zsh -f -c "
   source '$SWARMFORGE_SH' '$ROOT4'
   parse_config
   $index_of_role_snippet
@@ -131,6 +136,7 @@ window documenter claude master
 CONF
 
 FAKE_BIN5="$(mktemp -d)"
+register_tmp_dir "$FAKE_BIN5"
 TMUX_LOG5="$FAKE_BIN5/tmux-calls.log"
 cat > "$FAKE_BIN5/tmux" <<'FAKETMUX'
 #!/usr/bin/env bash
@@ -139,7 +145,8 @@ exit 0
 FAKETMUX
 chmod +x "$FAKE_BIN5/tmux"
 
-MISTRAL_API_KEY=test-secret-do-not-leak OPENAI_API_KEY=another-secret PATH="$FAKE_BIN5:$PATH" TMUX_LOG="$TMUX_LOG5" zsh -c "
+MISTRAL_API_KEY=test-secret-do-not-leak OPENAI_API_KEY=another-secret \
+PATH="$FAKE_BIN5:$PATH" TMUX_LOG="$TMUX_LOG5" zsh -f -c "
   source '$SWARMFORGE_SH' '$ROOT5'
   parse_config
   $index_of_role_snippet
@@ -161,8 +168,10 @@ grep -q "^Read swarmforge" "$PROMPT6" \
   && fail "06: aider prompt must not use bare Read-lines that tmux splits into separate turns"
 zsh -c "source '$SWARMFORGE_SH' '$ROOT6'; write_agent_instruction_file coder '$PROMPT6' claude"
 grep -q "^Read swarmforge/constitution.prompt" "$PROMPT6" \
-  || fail "06: claude roles must keep the standard three-line bootstrap"
-pass "06: aider roles get aider-specific bootstrap; claude roles keep Read-lines"
+  && fail "06: claude roles must no longer emit bare Read-lines for the constitution (BL-519: inlined into the appended system prompt instead)"
+grep -q "# SwarmForge Constitution" "$PROMPT6" \
+  || fail "06: claude roles must inline the actual constitution content (BL-519), got: $(cat "$PROMPT6" | head -3)"
+pass "06: aider roles get aider-specific bootstrap; claude roles get the BL-519 inlined constitution/PIPELINE/role content"
 
 # ── 7: aider coordinator bootstrap forbids coding and notes two-pack routing ─
 ROOT7="$(mk_root)"
@@ -185,5 +194,80 @@ grep -q "no specifier" "$PROMPT7" \
 grep -q "swarmforge/runtime/handoff-draft.txt" "$PROMPT7" \
   || fail "07: coordinator prompt must use runtime handoff draft path"
 pass "07: aider coordinator gets orchestration-only two-pack bootstrap"
+
+# ── 8: gemini agent launch body + GEMINI_API_KEY via -e (BL-130), never on disk ─
+ROOT8="$(mk_root)"
+cat > "$ROOT8/swarmforge/swarmforge.conf" <<'CONF'
+config active_backlog_max_depth -1
+window documenter gemini master --model gemini-2.5-pro
+CONF
+
+FAKE_BIN8="$(mktemp -d)"
+register_tmp_dir "$FAKE_BIN8"
+TMUX_LOG8="$FAKE_BIN8/tmux-calls.log"
+cat > "$FAKE_BIN8/tmux" <<'FAKETMUX'
+#!/usr/bin/env bash
+echo "$@" >> "$TMUX_LOG"
+case "$1" in
+  -S)
+    case "$3" in
+      list-panes) exit 0 ;;
+      respawn-pane) exit 0 ;;
+      *) exit 0 ;;
+    esac
+    ;;
+esac
+exit 0
+FAKETMUX
+chmod +x "$FAKE_BIN8/tmux"
+
+GEMINI_API_KEY=gemini-secret-do-not-leak \
+env -u OPENAI_API_KEY -u MISTRAL_API_KEY -u CEREBRAS_API_KEY -u PERPLEXITY_API_KEY -u SWARMFORGE_GEMINI_API_KEY \
+PATH="$FAKE_BIN8:$PATH" TMUX_LOG="$TMUX_LOG8" zsh -f -c "
+  source '$SWARMFORGE_SH' '$ROOT8'
+  parse_config
+  $index_of_role_snippet
+  choose_cleanup_owner
+  launch_role \"\$(index_of_role documenter)\"
+"
+DOC_SCRIPT8="$ROOT8/.swarmforge/launch/documenter.sh"
+[[ -f "$DOC_SCRIPT8" ]] || fail "08: documenter launch script was not written"
+grep -q "gemini -y" "$DOC_SCRIPT8" || fail "08: expected gemini -y launch body, got: $(cat "$DOC_SCRIPT8")"
+grep -q -- "--model gemini-2.5-pro" "$DOC_SCRIPT8" || fail "08: expected --model to reach gemini launch body"
+grep -q "gemini-secret-do-not-leak" "$DOC_SCRIPT8" && fail "08: GEMINI_API_KEY leaked into launch script"
+grep -q -- "-e GEMINI_API_KEY=gemini-secret-do-not-leak" "$TMUX_LOG8" \
+  || fail "08: expected respawn-pane -e GEMINI_API_KEY; got: $(cat "$TMUX_LOG8")"
+pass "08: gemini launch uses -y/--model; GEMINI_API_KEY reaches pane via -e only"
+
+# ── 9: SWARMFORGE_GEMINI_API_KEY maps to GEMINI_API_KEY on the pane ──────────
+ROOT9="$(mk_root)"
+cat > "$ROOT9/swarmforge/swarmforge.conf" <<'CONF'
+config active_backlog_max_depth -1
+window documenter gemini master --model gemini-2.5-flash
+CONF
+
+FAKE_BIN9="$(mktemp -d)"
+register_tmp_dir "$FAKE_BIN9"
+TMUX_LOG9="$FAKE_BIN9/tmux-calls.log"
+cat > "$FAKE_BIN9/tmux" <<'FAKETMUX'
+#!/usr/bin/env bash
+echo "$@" >> "$TMUX_LOG"
+exit 0
+FAKETMUX
+chmod +x "$FAKE_BIN9/tmux"
+
+env -u GEMINI_API_KEY -u OPENAI_API_KEY -u MISTRAL_API_KEY -u CEREBRAS_API_KEY -u PERPLEXITY_API_KEY \
+SWARMFORGE_GEMINI_API_KEY=swarmforge-gemini-alias PATH="$FAKE_BIN9:$PATH" TMUX_LOG="$TMUX_LOG9" zsh -f -c "
+  source '$SWARMFORGE_SH' '$ROOT9'
+  parse_config
+  $index_of_role_snippet
+  choose_cleanup_owner
+  launch_role \"\$(index_of_role documenter)\"
+"
+grep -q -- "-e GEMINI_API_KEY=swarmforge-gemini-alias" "$TMUX_LOG9" \
+  || fail "09: expected SWARMFORGE_GEMINI_API_KEY mapped to -e GEMINI_API_KEY; got: $(cat "$TMUX_LOG9")"
+DOC_SCRIPT9="$ROOT9/.swarmforge/launch/documenter.sh"
+grep -q "swarmforge-gemini-alias" "$DOC_SCRIPT9" && fail "09: alias key leaked into launch script"
+pass "09: SWARMFORGE_GEMINI_API_KEY maps to GEMINI_API_KEY on respawn-pane -e"
 
 echo "ALL PASS"
