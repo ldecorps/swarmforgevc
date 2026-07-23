@@ -87,6 +87,18 @@ rm -f $STATE_DIR/malformed.out
 
 pass "07: a non-numeric field is rejected without touching the log"
 
+# ── 7b: a non-finite numeric string (NaN/Infinity) is rejected too ─────────
+bb "$CLI" record --agent coder --role coder --session-id sess-1 --timestamp 2026-01-01T00:00:07Z \
+  --input-tokens Infinity --output-tokens 400 --context-utilization-pct 42 --provider anthropic --model claude-sonnet-5 \
+  >$STATE_DIR/nonfinite.out 2>&1 && fail "07b: record should exit non-zero for a non-finite input-tokens" || true
+grep -q "non-numeric value for field: input_tokens" $STATE_DIR/nonfinite.out \
+  || fail "07b: record did not report the non-finite field by name"
+LINES_AFTER_NONFINITE="$(wc -l < "$STATE_DIR/context-events.jsonl")"
+[[ "$LINES_AFTER_NONFINITE" -eq "$LINES_BEFORE" ]] || fail "07b: log line count changed after a rejected non-finite record"
+rm -f $STATE_DIR/nonfinite.out
+
+pass "07b: a non-finite numeric string (Infinity) is rejected without touching the log"
+
 # ── 8: a missing required field is rejected and the log is untouched ───────
 bb "$CLI" record --agent coder --role coder --session-id sess-1 \
   --input-tokens 100 --output-tokens 400 --context-utilization-pct 42 --provider anthropic --model claude-sonnet-5 \

@@ -28,14 +28,24 @@
 (defn- present? [event k]
   (some? (get event k)))
 
+(defn- finite? [n]
+  (not (or (Double/isNaN n) (Double/isInfinite n))))
+
 (defn- parse-number
-  "nil on anything that isn't already a number or a numeric string — the
-   sentinel validate-event checks for, never an exception (a CLI argv value
-   like \"not-a-number\" must be REJECTED, not crash the process)."
+  "nil on anything that isn't already a finite number or a numeric string —
+   the sentinel validate-event checks for, never an exception (a CLI argv
+   value like \"not-a-number\" must be REJECTED, not crash the process).
+   Double/parseDouble happily parses \"NaN\"/\"Infinity\"/\"-Infinity\" as
+   valid doubles, so those string forms are rejected explicitly here too —
+   a non-finite token count or utilisation percentage is exactly the kind
+   of malformed input this ticket's success criteria requires rejecting,
+   not silently persisting."
   [v]
   (cond
-    (number? v) v
-    (string? v) (try (Double/parseDouble v) (catch Exception _ nil))
+    (number? v) (when (finite? v) v)
+    (string? v) (try (let [n (Double/parseDouble v)]
+                        (when (finite? n) n))
+                      (catch Exception _ nil))
     :else nil))
 
 (defn validate-event
@@ -45,9 +55,8 @@
   [event]
   (if-let [missing (first (remove #(present? event %) required-fields))]
     {:valid? false :error (str "missing required field: " (name missing))}
-    (if-let [bad (first (remove (fn [k] (or (not (present? event k))
-                                             (some? (parse-number (get event k)))))
-                                 numeric-fields))]
+    (if-let [bad (some (fn [k] (when (and (present? event k) (nil? (parse-number (get event k)))) k))
+                       numeric-fields)]
       {:valid? false :error (str "non-numeric value for field: " (name bad))}
       {:valid? true})))
 
