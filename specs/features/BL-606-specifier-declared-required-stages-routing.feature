@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-07-23T22:18:25.668319111Z","feature_name":"the specifier declares required_stages and the handoff layer routes a ticket only through those stages","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-606-specifier-declared-required-stages-routing.feature","background_hash":"a4f98af41800a9d72cc6386505bd6f7e0b47e62265f9fee74a10dffdadcdff49","implementation_hash":"unknown","scenarios":[{"index":0,"name":"a ticket with no usable required_stages declaration runs the full canonical chain","scenario_hash":"67e252b9845135df62980406e58d91061663cf84fb6fae90b024477bb6300b20","mutation_count":3,"result":{"Total":3,"Killed":3,"Survived":0,"Errors":0},"tested_at":"2026-07-23T22:15:44.680138216Z"},{"index":3,"name":"a present declaration that adds, duplicates, or misnames a stage is rejected to default-full","scenario_hash":"ea21f5d27ed87c7fcbb25d4ccbfd2787a65f7a46f27163374e0fbec33678199a","mutation_count":3,"result":{"Total":3,"Killed":3,"Survived":0,"Errors":0},"tested_at":"2026-07-23T22:15:44.680138216Z"},{"index":4,"name":"QA may be omitted only when coder is also omitted, and the decision is logged","scenario_hash":"b8b42c75c59f79177d01345bfcd0508520a5838a77c6e1a7d949c503f819fb90","mutation_count":4,"result":{"Total":4,"Killed":4,"Survived":0,"Errors":0},"tested_at":"2026-07-23T22:15:44.680138216Z"},{"index":8,"name":"a reviewer's backward bounce is delivered to its literal destination, never rewritten forward","scenario_hash":"4b14374d363eca966ce34ef1aa97164f2b7845645f1ed24d30af000b7c1eae06","mutation_count":6,"result":{"Total":6,"Killed":6,"Survived":0,"Errors":0},"tested_at":"2026-07-23T22:15:44.680138216Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: the specifier declares required_stages and the handoff layer routes a ticket only through those stages
 
   # BL-606: a ticket's spec may declare required_stages — an allowlist over the canonical
@@ -70,6 +74,17 @@ Feature: the specifier declares required_stages and the handoff layer routes a t
       | [coder, cleaner]  | is rejected and runs the full canonical chain with QA  |
 
   # BL-606 next-required-stage-is-a-pure-function-06
+  #
+  # hardener note: Gherkin-mutating a stage token's CASE in this scenario's
+  # "required set" / "current stage" columns (e.g. coder -> coDer) is an
+  # accepted-equivalent, not a real survivor - required_stages_lib.bb's
+  # next-required-stage self-normalizes both arguments through
+  # normalize-token before comparing (see its own docstring: "a caller can
+  # pass raw declared tokens or an already-canonical set/role name with
+  # identical results"), so a case-mutated example produces byte-identical
+  # behavior to the original. No assertion could ever distinguish them
+  # (BL-234 precedent). The manifest correctly omits this scenario per its
+  # own clean-scenarios-only contract (BL-502) - this is expected, not a gap.
   Scenario Outline: next-required-stage resolves purely over the declared set and the current stage
     Given the required_stages set <required set>
     When the next required stage after <current stage> is resolved
@@ -98,3 +113,21 @@ Feature: the specifier declares required_stages and the handoff layer routes a t
     Then the report names coder and QA as run
     And names cleaner, architect, hardender and documenter as skipped-by-routing
     And the answer is derived from the recorded trail, not inferred from the code diff
+
+  # BL-606 reviewer-bounce-is-never-rewritten-onto-the-bouncer-09
+  # architect bounce #3 (repros D and E): a reviewer's plain hand-written bounce
+  # carries no rejection_reason/reroute_reason header - no role prompt or the
+  # handoff protocol ever mentions either one on a review bounce. Direction must
+  # come from the sender's own position in canonical order instead, or the
+  # bounce is rewritten forward onto the bouncer itself and can never reach the
+  # role that owns the fix.
+  Scenario Outline: a reviewer's backward bounce is delivered to its literal destination, never rewritten forward
+    Given an active ticket whose required_stages is <declaration>
+    When <sender> bounces the parcel to <literal to>
+    Then the parcel is delivered to <literal to>
+    And no routing_skipped header is recorded for that bounce
+
+    Examples:
+      | declaration     | sender    | literal to |
+      | [coder, qa]     | QA        | documenter |
+      | [architect, qa] | architect | coder      |
