@@ -2,7 +2,8 @@ id: BL-587
 title: "Active-backlog depth warning counts .gitkeep as a ticket, so every handoff cries wolf"
 milestone: M8
 type: defect
-status: todo
+status: superseded
+superseded_by: BL-562
 epic: swarm-reliability
 priority: 30
 mutation_cost: low

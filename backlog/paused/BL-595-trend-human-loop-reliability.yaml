@@ -1,0 +1,50 @@
+id: BL-595
+title: "Trend: human-loop reliability — approval-tap and steering-delivery success rate, and poll-degraded/409 frequency over time"
+milestone: M8
+type: feature
+status: todo
+epic: swarm-behaviour-trends
+human_approval: approved
+severity: medium
+priority: 20
+direction: human-requested
+depends_on: []
+assigned_to: specifier
+mutation_cost: medium
+source: |
+  Human, 2026-07-23, epic BL-594. The blind spot that hid BL-582 for hours:
+  the human↔swarm Telegram channel has NO reliability telemetry, so a silently
+  failing approval tap is invisible until a human notices a stuck button.
+description: |
+  The whole front-desk surface emits no reliability trend. Add three series,
+  plotted through the shared trend.ts (BL-096) framework:
+
+  1. **Approval-tap outcome** — per tap: recorded / silently-dropped /
+     repaint-failed. `recordApprovalDecisionAndClose` already knows changed
+     true/false; the callback drop paths (decideCallbackQueryAction) already
+     classify not-my-chat / not-principal / unrecognized-data. Emit those
+     outcomes, do not invent new ones.
+  2. **Steering-delivery outcome** — BL-566 already computes delivered /
+     no-pane / undelivered (SteerDeliveryResult). Emit it as a series.
+  3. **Poll health** — count `poll degraded` / 409 events per interval. These
+     already print to the front-desk log; capture them as structured events
+     rather than only prose.
+
+  Append raw events to `.swarmforge/telemetry/human-loop-<YYYY-MM>.jsonl`
+  (append-only, gitignored, the context-events.jsonl posture); the aggregation
+  to a success-rate-over-time series is a pure, unit-tested function.
+
+  Why it matters: a falling tap-success rate or a rising 409 count is the
+  earliest signal of exactly the degradation that took a multi-hour
+  investigation this session. This is the leading indicator BL-582 lacked.
+acceptance: |
+  Specifier writes scenarios. Minimum:
+  1. Every approval tap emits one outcome event (recorded / dropped:<reason> /
+     repaint-failed); every steer emits its SteerDeliveryResult.
+  2. poll-degraded/409 events are captured as structured, countable records.
+  3. A pure aggregator turns the raw log into a success-rate-per-window series
+     plotted through trend.ts — unit-tested with fixtures, no fs.
+  4. The raw log is append-only and gitignored.
+out_of_scope: |
+  - Fixing tap/steer failures (BL-582/BL-566 own those). This only MEASURES.
+  - A dedicated UI; the series joins the existing trend surface.

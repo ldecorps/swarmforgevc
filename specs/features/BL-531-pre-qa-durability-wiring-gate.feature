@@ -101,3 +101,15 @@ Feature: a parcel reaches QA only with durable lineage and declared wiring
       | parcel state                 | exit    | line |
       | satisfies both checks        | zero    | OK   |
       | has a stranded ticket commit | nonzero | FAIL |
+
+  # BL-531 empty-diff-or-merge-commit-is-not-a-finding-11
+  Scenario Outline: a ticket-naming commit that carries no dropped work does not refuse the handoff
+    Given a commit naming that ticket is stranded off the parcel's lineage
+    And that commit <carries no dropped work>
+    When the sender runs swarm_handoff.sh on a git_handoff draft addressed to QA
+    Then the handoff is sent
+
+    Examples:
+      | carries no dropped work                                        |
+      | is a merge commit whose diff against its first parent is empty |
+      | has a tree identical to the commit cited in the draft          |
