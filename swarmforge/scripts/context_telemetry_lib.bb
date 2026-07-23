@@ -67,19 +67,41 @@
 (defn- elapsed-ms [from-ts to-ts]
   (.toMillis (java.time.Duration/between (parse-instant from-ts) (parse-instant to-ts))))
 
+(defn distinct-agents
+  "Sorted, distinct :agent values across a coll of events — GH-23's dashboard
+   picker enumerates agents this way rather than re-deriving the set in
+   TypeScript."
+  [events]
+  (vec (sort (distinct (map :agent events)))))
+
 (defn summarize
   "Pure aggregate over a coll of already-scoped events (agent-scoped, and
    optionally session-scoped — the caller/CLI does that filtering). Sorts by
-   timestamp internally so callers never need to pre-sort."
+   timestamp internally so callers never need to pre-sort. Alongside the
+   whole-history aggregates (event/compaction counts, average utilisation,
+   time to first compaction), reports a `latest_` snapshot of the fields that
+   only make sense as a single point in time (provider, model, token
+   breakdown, estimated cost) taken from the most recent event — GH-23's
+   dashboard display pin."
   [events]
   (let [sorted (sort-by #(.toEpochMilli (parse-instant (:timestamp %))) events)
         n (count sorted)
         compactions (filter :compaction sorted)
         first-ts (:timestamp (first sorted))
-        first-compaction-ts (:timestamp (first compactions))]
+        first-compaction-ts (:timestamp (first compactions))
+        latest (last sorted)]
     {:event_count n
      :compaction_count (count compactions)
      :avg_context_utilization_pct (when (pos? n)
                                      (/ (reduce + (map :context_utilization_pct sorted)) (double n)))
      :time_to_first_compaction_ms (when (and first-ts first-compaction-ts)
-                                     (elapsed-ms first-ts first-compaction-ts))}))
+                                     (elapsed-ms first-ts first-compaction-ts))
+     :provider (:provider latest)
+     :model (:model latest)
+     :latest_input_tokens (:input_tokens latest)
+     :latest_output_tokens (:output_tokens latest)
+     :latest_tool_output_tokens (:tool_output_tokens latest)
+     :latest_prompt_engine_tokens (:prompt_engine_tokens latest)
+     :latest_system_prompt_tokens (:system_prompt_tokens latest)
+     :latest_history_tokens (:history_tokens latest)
+     :latest_estimated_cost_usd (:estimated_cost_usd latest)}))

@@ -111,6 +111,41 @@
   (assert-true "summarize on an empty event collection reports a nil time-to-first-compaction"
                (nil? (:time_to_first_compaction_ms summary))))
 
+;; ── summarize: latest_* snapshot fields (GH-23 dashboard display pin) ───
+(let [events [(valid-event {:timestamp "2026-01-01T00:00:00Z" :provider "anthropic" :model "claude-sonnet-5"
+                             :input_tokens 100 :output_tokens 10 :tool_output_tokens 1
+                             :prompt_engine_tokens 2 :system_prompt_tokens 3 :history_tokens 4
+                             :estimated_cost_usd 0.01})
+              (valid-event {:timestamp "2026-01-01T00:00:10Z" :provider "openrouter" :model "claude-haiku-4.5"
+                             :input_tokens 200 :output_tokens 20 :tool_output_tokens 5
+                             :prompt_engine_tokens 6 :system_prompt_tokens 7 :history_tokens 8
+                             :estimated_cost_usd 0.02})]
+      summary (context-telemetry-lib/summarize events)]
+  (assert= "summarize reports provider from the most recent event" "openrouter" (:provider summary))
+  (assert= "summarize reports model from the most recent event" "claude-haiku-4.5" (:model summary))
+  (assert= "summarize reports latest_input_tokens from the most recent event" 200 (:latest_input_tokens summary))
+  (assert= "summarize reports latest_output_tokens from the most recent event" 20 (:latest_output_tokens summary))
+  (assert= "summarize reports latest_tool_output_tokens from the most recent event" 5 (:latest_tool_output_tokens summary))
+  (assert= "summarize reports latest_prompt_engine_tokens from the most recent event" 6 (:latest_prompt_engine_tokens summary))
+  (assert= "summarize reports latest_system_prompt_tokens from the most recent event" 7 (:latest_system_prompt_tokens summary))
+  (assert= "summarize reports latest_history_tokens from the most recent event" 8 (:latest_history_tokens summary))
+  (assert= "summarize reports latest_estimated_cost_usd from the most recent event" 0.02 (:latest_estimated_cost_usd summary)))
+
+(let [summary (context-telemetry-lib/summarize [])]
+  (assert-true "summarize on an empty event collection reports a nil provider" (nil? (:provider summary)))
+  (assert-true "summarize on an empty event collection reports a nil latest_input_tokens"
+               (nil? (:latest_input_tokens summary))))
+
+;; ── distinct-agents ───────────────────────────────────────────────────────
+(assert= "distinct-agents sorts and dedupes agent names across events"
+         ["coder" "hardener"]
+         (context-telemetry-lib/distinct-agents
+          [(valid-event {:agent "hardener"}) (valid-event {:agent "coder"}) (valid-event {:agent "coder"})]))
+
+(assert= "distinct-agents on an empty event collection returns an empty vector"
+         []
+         (context-telemetry-lib/distinct-agents []))
+
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (empty? @failures)
   (println "ALL PASS")
