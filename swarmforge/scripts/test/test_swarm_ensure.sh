@@ -302,6 +302,46 @@ unset TELEGRAM_BOT_TOKEN
 cleanup_daemon
 pass "05e: partial Telegram env (only one of three vars set) does not count as configured"
 
+# ── 07a: launch-contract HEALTHY when no swarm-identity file exists at all ─
+make_fixture
+if OUT="$(run_ensure)"; then RC=0; else RC=$?; fi
+echo "$OUT" | grep -q "^launch-contract: HEALTHY$" \
+  || fail "07a: launch-contract not reported HEALTHY with no swarm-identity file; got: $OUT"
+cleanup_daemon
+pass "07a: launch-contract reports HEALTHY when no swarm-identity file exists"
+
+# ── 07b: launch-contract FAILED when the effective pack conf names a
+#         non-default coordinator_agent but omits coordinator_model/rotation
+#         (BL-530 / BL-512 audit rank 3 - the cerebras-mono-router.conf bug) ─
+make_fixture
+cat > "$ROOT/broken-pack.conf" <<'EOF'
+config rotation router
+config coordinator_agent aider
+EOF
+printf 'active_backlog_max_depth_conf_path\t%s\n' "$ROOT/broken-pack.conf" >> "$ROOT/.swarmforge/swarm-identity"
+if OUT="$(run_ensure)"; then RC=0; else RC=$?; fi
+echo "$OUT" | grep -q "^launch-contract: FAILED (coordinator_agent is 'aider' but coordinator_model is unset" \
+  || fail "07b: launch-contract did not report the missing coordinator_model; got: $OUT"
+[[ "$RC" -ne 0 ]] || fail "07b: exit status was 0, expected non-zero with a broken launch contract"
+cleanup_daemon
+pass "07b: launch-contract reports FAILED naming the missing coordinator_model, non-zero exit"
+
+# ── 07c: launch-contract HEALTHY when the effective pack conf declares its
+#         full contract (coordinator_model AND rotation both set) ──────────
+make_fixture
+cat > "$ROOT/compliant-pack.conf" <<'EOF'
+config rotation router
+config coordinator_agent aider
+config coordinator_model openai/gpt-oss-120b
+EOF
+printf 'active_backlog_max_depth_conf_path\t%s\n' "$ROOT/compliant-pack.conf" >> "$ROOT/.swarmforge/swarm-identity"
+if OUT="$(run_ensure)"; then RC=0; else RC=$?; fi
+echo "$OUT" | grep -q "^launch-contract: HEALTHY$" \
+  || fail "07c: launch-contract not reported HEALTHY for a fully-declared pack; got: $OUT"
+[[ "$RC" -eq 0 ]] || fail "07c: exit status was $RC, expected 0 for a fully-declared pack"
+cleanup_daemon
+pass "07c: launch-contract reports HEALTHY when the effective pack declares its full contract"
+
 # ── 06: SWARMFORGE_SKIP_OPERATOR omits the operator check entirely ─────────
 make_fixture
 echo "999999" > "$ROOT/.swarmforge/operator/runtime.pid"

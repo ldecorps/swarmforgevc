@@ -31,6 +31,8 @@
             [clojure.string :as str]))
 
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "agent_runtime_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "swarm_identity_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "launch_contract_lib.bb")))
 
 (defn usage []
   (binding [*out* *err*]
@@ -228,6 +230,28 @@
        (or (fs/exists? (babysitter-enabled-file))
            (fs/exists? (babysitter-pid-file)))))
 
+;; ── launch-contract component (BL-530) ──────────────────────────────────────
+;; A pack that names a non-default coordinator_agent (aider, codex, ...) must
+;; also declare its own coordinator_model and rotation, never inherit the
+;; Claude-only defaults (BL-512 audit rank 3: a missing model/rotation reads
+;; as a healthy pane while thrashing weakly). This has no automated repair -
+;; the fix is a human editing the pack file - so it is reported directly as
+;; HEALTHY/FAILED, never routed through ensure-component!'s repair-then-
+;; reclassify cycle (mirroring the "no tmux socket" branch below).
+
+(defn effective-conf-text []
+  (let [path (not-empty (get (swarm-identity-lib/read-swarm-identity project-root)
+                              "active_backlog_max_depth_conf_path"))]
+    (when (and path (fs/exists? path))
+      (slurp (str path)))))
+
+(defn launch-contract-result []
+  (let [violations (launch-contract-lib/launch-contract-violations (effective-conf-text))]
+    (if (empty? violations)
+      {:component "launch-contract" :status :healthy}
+      {:component "launch-contract" :status :failed
+       :action (str/join "; " (map :detail violations))})))
+
 ;; ── orchestration (never aborts on one failed repair) ───────────────────────
 
 (defn ensure-component!
@@ -288,6 +312,7 @@
                              (role-rows)))
         daemon-result (ensure-component! "daemon" daemon-healthy? ensure-daemon!
                                           "restarted the handoff daemon")
+        launch-contract-check (launch-contract-result)
         operator-result (when (operator-enabled?)
                           (ensure-component! "operator" operator-healthy? ensure-operator!
                                               "restarted the operator runtime"))
@@ -297,7 +322,7 @@
         babysitter-result (when (babysitter-enabled?)
                             (ensure-component! "babysitter" babysitter-healthy? ensure-babysitter!
                                                 "restarted the babysitter runtime"))
-        results (concat [extension-result] role-results [daemon-result]
+        results (concat [extension-result] role-results [daemon-result launch-contract-check]
                         (remove nil? [operator-result front-desk-result babysitter-result]))]
     (doseq [r results] (println (report-line r)))
     (System/exit (if (some #(= :failed (:status %)) results) 1 0))))
