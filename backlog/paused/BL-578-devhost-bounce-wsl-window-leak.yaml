@@ -1,0 +1,95 @@
+id: BL-578
+title: "Dev-host bounce leaks a VS Code window per bounce under WSL — 'exactly one dev host' contract silently becomes one more"
+milestone: M8
+type: defect
+status: needs_design
+epic: swarm-reliability
+human_approval: approved
+severity: low
+priority: 30
+direction: human-requested
+depends_on: []
+assigned_to: specifier
+mutation_cost: low
+source: |
+  Human, 2026-07-23, with screenshot evidence: SIX accumulated
+  "[Extension Development Host]" VS Code windows on the Windows taskbar,
+  all in Restricted Mode, all idle, each from a past swarm start. Asked
+  "is this really needed?" — answer established in-session: no; the
+  operational stack is fully headless (BL-146 observer-only extension
+  host, BL-292 headless bridge), the `.swarmforge/headless-swarm` marker
+  exists, and swarm_ensure skips the extension bounce when it does
+  ("skipped bounce (headless swarm owns tmux)"). The windows are leak
+  residue, not live components (zero Linux-side dev-host processes).
+
+description: |
+  ## The contract and where it breaks
+
+  extension/scripts/start-extension-dev.js (BL-058, cross-platform by
+  BL-361) promises: "If a dev host for this extension path is already
+  running, it is terminated first, so a successful run always ends with
+  exactly one dev host." Under WSL, the launch crosses interop to the
+  WINDOWS VS Code client ("WSL: Ubuntu-24.04" remote windows). The
+  kill-old step acts on Linux-side processes only — it cannot see or
+  close the Windows-side Electron window — so every bounce that should
+  REPLACE a host ADDS a window. Observed accumulation: six (each holding
+  an idle .vscode-server connection and Windows RAM).
+
+  Two contributing causes, one already fixed:
+  - FIXED (118ecc79f): start-swarm.sh now touches the headless marker
+    BEFORE running ensure, so headless launches no longer bounce a dev
+    host at all. The six windows predate/bypass that fix.
+  - OPEN (this ticket): when a bounce DOES legitimately run (developer
+    working non-headless on WSL), kill-old must actually terminate the
+    Windows-side window, or the contract is false exactly where the
+    launch is most expensive.
+
+  ## Design directions (specifier picks; both may apply)
+
+  1. Make kill-old interop-aware: enumerate prior hosts for THIS
+     extension path across the boundary (e.g. cmd.exe/taskkill or
+     PowerShell against Code.exe processes whose command line carries
+     the extensionDevelopmentPath, or a durable pidfile/window handle
+     recorded at launch) and terminate them before relaunching. The
+     enumeration/kill-command CONSTRUCTION must be a pure, unit-testable
+     seam (bounceLib.js style) since CI cannot run Windows VS Code —
+     scenario-level tests assert the constructed command set, a manual
+     runbook step covers the live check.
+  2. Self-guard the bouncer: start-extension-dev refuses (exit non-zero,
+     naming the marker) when `.swarmforge/headless-swarm` exists, unless
+     an explicit --force flag is passed — defense in depth so no future
+     caller reintroduces accumulation on headless deployments; today only
+     ensure checks the marker.
+
+  ## Cleanup note
+
+  No retroactive cleanup automation in scope: the human closes the six
+  stale windows by hand; this ticket prevents regrowth. If a window
+  reappears on a headless deployment after this lands, that is a NEW
+  defect (marker bypass), not this one reopened.
+
+acceptance: |
+  Specifier writes executable scenarios; minimum the design must make
+  testable:
+  1. On WSL (platform fixture), the kill-old stage constructs termination
+     commands that target Windows-side dev hosts for this extension path
+     — asserted against the pure seam, incl. the
+     path-with-spaces/quoting cases.
+  2. Two consecutive bounces yield exactly one recorded live host in the
+     bouncer's own accounting (pidfile/marker), never two — asserted via
+     the seam's state, with a runbook step for the live Windows check.
+  3. With `.swarmforge/headless-swarm` present, start-extension-dev exits
+     non-zero naming the marker and launches nothing; --force overrides
+     with a warning.
+  4. Non-WSL platforms (native Linux/macOS) keep today's behavior —
+     scenario pins that the interop path only activates under WSL
+     detection.
+  5. The activation-marker success contract (exit 0 only on fresh
+     activation) is unchanged.
+
+out_of_scope: |
+  - Retroactive closing of already-leaked windows (manual, one-time).
+  - Making headless the global default for `swarm ensure` (already
+    effective via the marker since 118ecc79f).
+  - Any change to the headless bridge/bot/daemon stack (not involved).
+  - Windows-native (non-WSL) VS Code development flows.
