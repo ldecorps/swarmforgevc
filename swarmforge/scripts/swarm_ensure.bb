@@ -145,18 +145,6 @@
   [socket session]
   (zero? (:exit (process/sh {:continue true} "tmux" "-S" socket "has-session" "-t" session))))
 
-(defn mono-router-standing-shape?
-  "Deprecated heuristic — prefer rotation-router-mode? + mono_router_lib.
-   Kept as a fallback for a live topology that already shows the mono-router
-   shape (some role sessions standing, some absent) even when no swarm-
-   identity/conf file names it explicitly: some sessions alive and some
-   absent."
-  [socket rows]
-  (let [alive? (fn [{:keys [session]}] (session-exists? socket session))
-        alive (filter alive? rows)
-        missing (remove alive? rows)]
-    (and (seq alive) (seq missing))))
-
 (defn pane-alive?
   "A configured role's pane is healthy when its session exists and its pane
    has not exited (tmux's own pane_dead bookkeeping). A session that does
@@ -528,12 +516,12 @@
         contract-broken? (= :failed (:status launch-contract-check))
         rows (role-rows)
         ordered (mapv :role rows)
-        ;; BL-518/BL-530 regression restore: prefer the conf/identity-based
-        ;; signal, falling back to the live tmux shape (some role sessions
-        ;; standing, some absent) when no identity/conf file names rotation
-        ;; router explicitly yet.
-        router? (or (rotation-router-mode?)
-                    (and socket (mono-router-standing-shape? socket rows)))
+        ;; BL-530 architect bounce (round 3): a live-shape fallback (some role
+        ;; sessions standing, some absent) is equally the fingerprint of a
+        ;; half-launched or partially-crashed classic pack — the exact
+        ;; condition ensure exists to repair — so mono-router-ness is decided
+        ;; ONLY by the declared conf/identity signal, never inferred from shape.
+        router? (rotation-router-mode?)
         role-results (if socket
                        (mapv (fn [{:keys [role session] :as row}]
                                (if router?
