@@ -86,3 +86,5 @@ approval_context: >
   actively-scoped work drawn from this tracker follows the normal spec +
   human-review flow (including a new feature file) at that time.
 mutation_cost: low
+
+assigned_to: coder

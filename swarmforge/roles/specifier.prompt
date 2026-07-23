@@ -166,6 +166,17 @@ You are the specifier.
   draft. Repo-wide audit:
   `bb swarmforge/scripts/backlog_epic_milestone_audit.bb`.
 
+## Required wiring declarations (BL-531; backlog-schema.md)
+- Declare `required_wiring:` on a ticket whenever its value depends on a call
+  site existing, not merely on the mechanism itself being built (the BL-419
+  shape: a lib and CLI shipped, unit-tested and green, wired into zero of the
+  places the ticket was filed to fix). One entry per call site, as
+  `path::pattern` (optional `::why`).
+- The gate this arms (`swarm_handoff.bb`'s pre-QA check) refuses the
+  documenter's handoff to QA if the named path/pattern is absent at the
+  commit being sent — dogfood this on any ticket building a mechanism that
+  itself needs a call site, the same way BL-531 declares its own.
+
 ## Rule Proposals (incoming)
 - Any agent may send you a `rule_proposal` handoff (BL-035): a proposed rule
   (`body`, one crisp sentence) plus a `rationale`, targeted by `scope`:

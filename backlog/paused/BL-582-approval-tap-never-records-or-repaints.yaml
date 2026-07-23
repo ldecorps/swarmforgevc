@@ -1,5 +1,5 @@
 id: BL-582
-title: "Approve tap in the Approvals topic neither records the verdict nor repaints the ask - the human gets no feedback at all"
+title: "Approve tap can silently no-op: every failed record must be observable and durable (root cause was a stale build; second-poller theory retracted)"
 milestone: M8
 type: defect
 status: todo
@@ -18,7 +18,55 @@ source: |
   full Approve/Amend/Reject/Expedite/More button rows minutes later.
 
 description: |
-  ## Symptom
+  ## RETRACTED: the "second poller" diagnosis was WRONG
+
+  An earlier revision of this ticket (and
+  `.swarmforge/operator/HANDOFF-telegram-409-second-poller.md`) claimed a
+  second Telegram bot instance was stealing updates, on the strength of a 409
+  returned while our front desk was stopped. That is retracted. See
+  `.swarmforge/operator/FINDINGS-telegram-409-no-second-poller.md`, whose test
+  was better controlled and whose search was exhaustive (Windows processes and
+  TCP connections, other WSL distros, containers/netns, systemd system+user,
+  cron, Windows Scheduled Tasks, all four GH workflows - every one negative).
+
+  **Why the 409 appeared with nothing else running.** `POLL_TIMEOUT_SECONDS =
+  25` (`telegram-front-desk-bot.ts:185`), and Telegram keeps a `getUpdates`
+  request alive server-side for its FULL timeout - killing the client process
+  does not release it. A probe issued with `timeout=60` then holds its own
+  60-second poll, so a repeat of the same probe conflicts with itself. Both
+  produce the identical "terminated by other getUpdates request" string, and
+  neither requires a second instance.
+
+  **Correct probe procedure**, for anyone tempted to repeat this: stop the
+  front desk, wait > 40s, then issue exactly ONE short probe (`timeout=3`).
+  Not a 60s poll, and not twice. Done that way it returns `ok:true`.
+
+  Lesson worth keeping: a 409 from this endpoint is NOT proof of a rival
+  poller. It is equally consistent with our own just-killed (or just-issued)
+  long poll still being held server-side.
+
+  ## Current best explanation: a stale build, since self-healed
+
+  Per the operator findings section below (~16:20Z): the taps that failed
+  (~14:05-14:12) were served by the bot started 12:23:53Z running a STALE
+  `out/` build; at 14:46:52Z the supervisor logged `stale-build-detected
+  recompiling before respawn`, and a live tap on BL-585 at ~16:1xZ recorded
+  and repainted correctly on the fresh build.
+
+  ## Open counter-observation - do not close this ticket without addressing it
+
+  The human reported tapping Approve on BL-588 and, when checked at ~17:08Z,
+  it was still `human_approval: pending` with no uncommitted write - i.e. a
+  tap that did not record, roughly two hours AFTER the 14:46:52Z recompile
+  that the stale-build explanation says fixed this. (BL-588 now reads
+  `approved` only because the operator recorded the human's ruling by hand in
+  commit 95ea8be30 - that is NOT evidence of a working tap.)
+
+  Either the human's BL-588 tap did not actually reach Telegram, or the
+  stale-build explanation is incomplete. Resolve this before declaring the
+  root cause settled; the hardening work below is worth doing either way.
+
+  ## Symptom, as originally reported
 
   Tapping Approve produces NO observable effect: the ask keeps its buttons,
   no verdict text appears, and the ticket's `human_approval:` stays `pending`.
@@ -53,51 +101,27 @@ description: |
     empty result and `pending_update_count` is 0 - the updates were consumed
     and the offset advanced past them.
 
-  So: the callback WAS consumed by the bot and then produced no effect.
+  Every one of those was checked BEFORE the 409 was found, and each stands:
+  the local bot is correctly configured throughout. The updates were not
+  "consumed by the bot and dropped" as first concluded - they were consumed by
+  the OTHER instance. Retained so nobody re-treads them.
 
-  ## Where to look
+  ## Also established, and NOT defects
 
-  1. `decideCallbackQueryAction` (telegramFrontDeskBotCore.ts) drops on
-     `not-my-chat` / `not-principal` / `unrecognized-data`. All three drops
-     are SILENT - no log line, nothing posted back. First fix regardless of
-     root cause: make every drop reason observable, at minimum on stderr,
-     ideally as an ephemeral `answerCallbackQuery` toast so the human sees
-     "not recognised" instead of nothing.
-  2. Confirm what the buttons' `callback_data` actually contains against
-     `CALLBACK_DATA_PATTERN` (`^(approve|reject|amend|expedite|more):(.+)$`)
-     and `ASK_CALLBACK_DATA_PATTERN`. An ask rendered by an older build could
-     carry data the current parser classifies `unrecognized-data`.
-  3. There is a pre-existing repaint failure in the same log
-     (`failed to close the approval ask for BL-491 … BL-493 … BL-494
-     (message edit failed or not wired)`). It is NOT this defect - see the
-     15:12 evidence below - but it is a real second failure mode worth
-     fixing while in this code.
-
-  ## Second observation, 2026-07-23 ~15:12 local - CORRECTS the above
-
-  Two facts from a follow-up screenshot, both of which narrow this:
-
-  1. **The repaint half WORKS, driven by the recorded verdict, not by the
-     tap.** BL-581's ask now reads "-- Approved 2026-07-23 14:10 UTC" with
-     its buttons stripped. 14:10 UTC is when the operator COMMITTED
-     `human_approval: approved` by hand into the yaml. So the reconcile
-     sweep closes an ask correctly once a verdict exists on disk. The
-     earlier framing of "two independent failures" was WRONG for this path:
-     there is one broken half (tap -> record) and one working half
-     (verdict -> repaint).
-
-  2. **The "old message" hypothesis in item 3 of the original list is
-     DISPROVEN.** BL-582's own ask (msg 6736) was posted at 14:10 UTC and
-     tapped roughly two minutes later, and it ALSO failed to record - this
-     defect reproducing on its own ticket. A two-minute-old message is not
-     one where Telegram omits `callback_query.message`. Do not spend time
-     there.
-
-  What remains: the callback is consumed and then either dropped by
-  `decideCallbackQueryAction` (leaving `not-principal` or
-  `unrecognized-data` as the live candidates, since chat id is confirmed
-  correct) or lost inside `dispatchRecognizedCallbackDecision` before
-  `recordApprovalReply` writes.
+  - **The repaint half works.** BL-581's ask closed to
+    "-- Approved 2026-07-23 14:10 UTC" with its buttons stripped, at exactly
+    the minute the verdict was committed to the yaml by hand. The reconcile
+    sweep closes an ask correctly once a verdict exists on disk. An earlier
+    revision of this ticket claimed two independent failures; that was wrong.
+  - **The "Telegram omits `callback_query.message` on old messages"
+    hypothesis is disproven.** BL-582's own ask (msg 6736) was tapped ~2
+    minutes after posting and still did not record. Do not spend time there.
+  - **The callback_data is well-formed.** `approve:<backlogId>` matches
+    `CALLBACK_DATA_PATTERN`, and `telegramClient.ts:148` serialises
+    `callbackData` -> `callback_data` correctly.
+  - **BL-561 is not the regression.** It added persistence and a debounced
+    tick around `recordApprovalDecisionAndClose`; it did not touch the
+    callback decision path.
 
   A cheap human-observable discriminator, not yet collected: when the human
   taps, does the button's spinner clear immediately or hang for ~30s?

@@ -10,6 +10,8 @@
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "backlog_depth_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "pipeline_stage_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "ticket_close_guard_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "pre_qa_gate_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "pre_qa_gate_gather_lib.bb")))
 
 (def usage-text
   (str "Usage: swarm_handoff.sh <draft-file>\n\n"
@@ -196,6 +198,29 @@
           (binding [*out* *err*]
             (println (format "WARNING: Active backlog depth exceeded (active=%d, max=%d). Coordinator should promote paused items." active-count max-depth))))))))
 
+(def pre-qa-gate-remedy
+  "Merge the named commit / land the named wiring and re-forward, or record a deliberately dropped commit under abandoned_commits:.")
+
+(defn- pre-qa-gate-errors
+  "BL-531: the QA-edge durability/wiring gate. Arms only for a git_handoff
+   whose recipients include QA; a task name with no extractable ticket id
+   skips it silently (no error, no warning). Infrastructure failures
+   (missing role worktree, unreadable roles.tsv, absent main ref) print a
+   warning and never block the send - only a positive finding does."
+  [type to task-name canonical]
+  (if-not (and (not (str/blank? task-name))
+               canonical
+               (pre-qa-gate-lib/gate-armed? {:type type :to to}))
+    []
+    (let [{:keys [findings warnings]}
+          (pre-qa-gate-gather-lib/findings-for-git-handoff
+           (project-root) {:to to :task-name task-name :cited-commit canonical})]
+      (doseq [w warnings]
+        (binding [*out* *err*] (println (str "PRE_QA_GATE WARNING: " w))))
+      (if (seq findings)
+        (conj (mapv pre-qa-gate-lib/format-finding-line findings) pre-qa-gate-remedy)
+        []))))
+
 (defn validate [headers ordered]
   (let [type (get headers "type")
         to (get headers "to")
@@ -258,7 +283,9 @@
                                   (ticket-close-guard-lib/git-handoff-blocked-for-task?
                                    (project-root) task-name))
                              (conj (format "Cannot send git_handoff for closed ticket %s (backlog/done/)."
-                                           (pipeline-stage-lib/extract-ticket-id task-name)))))
+                                           (pipeline-stage-lib/extract-ticket-id task-name)))
+                             (and (not (str/blank? task-name)) canonical)
+                             (into (pre-qa-gate-errors type to task-name canonical))))
                      (and (not= "git_handoff" type) (not (str/blank? commit)))
                      (conj "Header 'commit' is only allowed for git_handoff.")
                      (and (not= "git_handoff" type) (not (str/blank? task-name)))

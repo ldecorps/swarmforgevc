@@ -131,6 +131,22 @@
 - See **workflow-detailed.prompt** for the BL-490/BL-495 landed-without-review
   incident.
 
+## Never Blind-Forward A Bounce You Cannot Fix (BL-425/BL-576)
+- A bounce is routed to the role that owns the fix (QA.prompt's re-entry rule).
+  When one nevertheless reaches you for a defect OUTSIDE your domain — a docs
+  defect at the coder, a coverage gap at the cleaner — do NOT merge and forward
+  the same commit onward. Forwarding an unfixed, already-diagnosed defect looks
+  like progress and is the failure this rule exists to stop: on BL-425 the coder
+  and then the cleaner each forwarded the identical commit hash unchanged, two
+  full hops, before the architect caught it.
+- Instead: bounce it on to the role that DOES own it, keeping the evidence file
+  and the stable task name, and state in the handoff why you are not the fixer.
+  Send the coordinator a `note` as well when the routing was wrong at the source,
+  so the mis-attribution gets corrected rather than repeated.
+- Owning it yourself is also wrong. Role boundaries (Article 1) are what make a
+  later stage's review independent; a coder editing docs to clear a bounce buys
+  one hop and costs the documenter's gate.
+
 ## A Prior QA Bounce Is Not In Your Worktree — Check It Against `main` (BL-340)
 - Before you PASS, approve, or forward, check whether the ticket was already bounced
   for a defect still unfixed.
