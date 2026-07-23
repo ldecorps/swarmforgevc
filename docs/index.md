@@ -39,6 +39,7 @@ here.
 - [Monitoring Agent Context Budget in the Mini App Console](how-to/GH-23-context-budget-dashboard.md)
 - [Reviewing Paused Tickets in the Mini App Console](how-to/BL-538-console-paused-ticket-pager.md)
 - [Launching the Perplexity mono-router pack](how-to/perplexity-mono-router-launch.md)
+- [GitHub Auto-Intake Scheduler](how-to/github-auto-intake-scheduler.md)
 
 ## Reference
 
