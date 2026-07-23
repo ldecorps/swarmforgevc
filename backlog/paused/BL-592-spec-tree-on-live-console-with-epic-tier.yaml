@@ -1,0 +1,125 @@
+id: BL-592
+title: "Spec navigation tree on the live Mini App console — Milestone -> Epic -> BL item -> Gherkin (ports BL-117's tree, adds the Epic tier)"
+milestone: M8
+type: feature
+status: todo
+epic: swarmforge-console
+human_approval: approved
+severity: medium
+priority: 12
+direction: human-requested
+depends_on: []
+assigned_to: specifier
+mutation_cost: medium
+source: |
+  Human, 2026-07-23: "I want a tree structure to navigate through the spec.
+  From Milestones -> Epic -> BL Item -> gherkins. This subject has been debated
+  at length, there must be a trace of that in the spec, there might even be
+  some ticket already written somewhere."
+
+  There is. BL-117 (done) shipped exactly this drill-down, with
+  operator-confirmed decisions dated 2026-07-05, as
+  `vision -> milestone -> ticket -> Gherkin`. This ticket is NOT a fresh idea;
+  it is two deltas against BL-117, both stated below. Read BL-117 first.
+
+description: |
+  ## What already exists - reuse it, do not rebuild
+
+  BL-117 built a read-only documentation drill-down:
+  `vision -> milestone -> ticket -> Gherkin`. The derivation lives in
+  `extension/src/docs/docsTree.ts` (`computeDocsTree` pure over already-read
+  backlog + gherkin data; `translateDocsTree` for the BL-118 French siblings),
+  published as `docs-tree.json` by
+  `extension/src/tools/generate-docs-tree.ts`. Gherkin extraction is
+  `docs/gherkinScenarios.ts`. All of that is the engine and is REUSED whole.
+
+  The human's request differs from BL-117 in exactly two ways. Everything else
+  - read-only, repo-is-the-API derivation, Gherkin at the leaf - is unchanged.
+
+  ## Delta 1: the LIVE console surface, not the static PWA
+
+  BL-117's tree renders on the static backlog-dashboard PWA (`pwa/app.js`
+  fetches `docs-tree.json`, a git-SHA-reproducible offline artifact). The human
+  asked for "the mini app" - the LIVE holistic console
+  (`extension/src/bridge/holisticUiHtml.ts`, served token-authed by
+  `bridge/bridgeServer.ts`), the same surface BL-572's epic reorder screen
+  targets. Per the project's two-phone-surfaces rule, the static PWA is a
+  read-only reproducible projection and the live console is the connected
+  surface; this tree belongs on the live console alongside the other console
+  screens.
+
+  This is a RENDERING port, not a re-derivation: the live console gets the same
+  tree data (from computeDocsTree, served fresh over the bridge rather than as
+  a committed artifact) and renders it as a drill-down. The specifier decides
+  whether the bridge serves computeDocsTree's output on request or reads a
+  sidecar, mirroring how the other live-console data is served. Being on the
+  live surface, it can be LIVE (reflects the working tree now) rather than
+  pinned to the last published SHA - a real gain over the PWA version, but keep
+  it READ-ONLY: navigating the spec never edits it (BL-117's own non-behavioral
+  gate).
+
+  ## Delta 2: insert the EPIC tier
+
+  BL-117 predates first-class epics (BL-341 / BL-492 / BL-493). Its
+  `MilestoneNode` groups tickets DIRECTLY under a milestone
+  (docsTree.ts:45-55). The human wants a level between them:
+
+      Milestone -> Epic -> BL item -> Gherkin
+
+  So each milestone lists its EPICS, and each epic lists its member tickets
+  (the `epic:` field every ticket already carries), and each ticket opens to
+  its Gherkin. Concretely this means a new grouping tier in the tree schema
+  (an EpicNode between MilestoneNode and TicketNode), keyed by the ticket
+  `epic:` field, with the ticket roll-up moving under it.
+
+  Edge cases the specifier must pin, all real in the current backlog:
+    - A ticket with NO `epic:` field (older tickets, one-offs) - needs an
+      "(no epic)" bucket under its milestone, not to vanish.
+    - An epic tracker ticket itself (`type: epic`) - is it a node header, a
+      child, or both? It carries the epic's own description; likely the
+      Epic node's own detail, not a sibling leaf.
+    - An epic spanning MILESTONES - epics and milestones are not strictly
+      nested today (an epic's children can carry different `milestone:`
+      values). Decide: does an epic appear under each milestone its children
+      touch, or does the tree pick the epic's dominant milestone? This is the
+      one genuinely non-obvious modelling choice - do not let it be made
+      implicitly by whatever the grouping code happens to do.
+
+  ## Schema-version discipline
+
+  `docsTree.ts` carries `DOCS_TREE_SCHEMA_VERSION` and BL-118 established that
+  new fields are ADDITIVE (contentFr etc. added without bumping shape). An
+  Epic tier is a structural change, not an additive field: bump the schema
+  version, and keep the PWA's existing consumer working (either it keeps
+  reading the old shape, or it is migrated in the same parcel - the specifier
+  decides, but a silently broken PWA docs explorer is not acceptable).
+
+acceptance: |
+  Specifier writes the scenarios. Minimum:
+
+  1. The live Mini App console has a read-only spec tree navigable
+     Milestone -> Epic -> BL item -> Gherkin, served over the bridge (not the
+     static PWA artifact).
+  2. Epics group by the ticket `epic:` field; a ticket without one falls into a
+     visible "(no epic)" bucket under its milestone, never dropped.
+  3. Drilling a BL item reaches its Gherkin scenarios via the existing
+     gherkinScenarios extraction - the leaf is unchanged from BL-117.
+  4. The tree is READ-ONLY: no path from it edits a spec, files a ticket, or
+     writes anything back (BL-117's non-behavioral gate, preserved).
+  5. The cross-milestone-epic modelling choice is pinned by an explicit
+     scenario, not left to grouping-code accident.
+  6. The docs-tree schema version is bumped and the existing static-PWA
+     consumer is not silently broken by the new tier.
+
+  The derivation (computeDocsTree / gherkinScenarios) is reused; new work is
+  the Epic grouping tier and the live-console rendering + bridge serving.
+
+out_of_scope: |
+  - Editing specs or filing tickets from the tree. Read-only, full stop.
+  - Removing or changing the static PWA docs explorer beyond the schema
+    migration needed to keep it working.
+  - The vision/top level from BL-117 (Specification.MD, roadmap, diagrams).
+    The human's hierarchy starts at Milestone; whether to also carry BL-117's
+    vision level on the live console is the specifier's call, not required.
+  - Per-epic ETA (BL-591) or reordering (BL-572) - this is navigation only,
+    though it shares the epic surface with both.
