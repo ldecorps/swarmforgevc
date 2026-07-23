@@ -113,3 +113,4 @@ Feature: a parcel reaches QA only with durable lineage and declared wiring
       | carries no dropped work                                        |
       | is a merge commit whose diff against its first parent is empty |
       | has a tree identical to the commit cited in the draft          |
+      | is a merge of the cited commit into a branch with unrelated prior content |
