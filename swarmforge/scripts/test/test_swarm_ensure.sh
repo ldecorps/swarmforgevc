@@ -414,6 +414,11 @@ printf 'coordinator\tmaster\t%s\tswarmforge-coordinator\tCoordinator\tclaude\tta
 # BL-530 architect bounce (round 3): mono-router-ness must come from a
 # declared signal, not an inferred live shape — declare it explicitly.
 printf 'rotation\trouter\n' > "$ROOT/.swarmforge/swarm-identity"
+# BL-537: rotate_to_role specifier needs specifier's own launch script on
+# disk (the router launcher pre-generates one per pipeline role at startup);
+# a live resident to rotate onto is confirmed via the "swarmforge-coder"
+# has-session/list-panes branches below.
+touch "$ROOT/.swarmforge/launch/specifier.sh"
 RESPAWN_LOG="$ROOT/respawns"
 : > "$RESPAWN_LOG"
 cat > "$FAKE_BIN/tmux" <<TMUXFAKE
@@ -447,6 +452,96 @@ echo "$OUTPUT" | grep -q 'agent:specifier: DORMANT' || fail "expected specifier 
 echo "$OUTPUT" | grep -q 'agent:coder: HEALTHY' || fail "expected coder HEALTHY"
 if [[ -s "$RESPAWN_LOG" ]]; then fail "dormant role should not be respawned"; fi
 pass "mono-router dormant roles report DORMANT without respawn"
+
+# ---------------------------------------------------------------------------
+# Extra (BL-537): a dormant rotate target whose own launch script is missing
+# must report FAILED, not DORMANT — rotate_to_role would hit "no-launch-script"
+# even though the resident (coder) is perfectly healthy. Never let "no
+# standing session" (expected/by-design) get confused with "rotate would
+# actually fail if invoked right now".
+# ---------------------------------------------------------------------------
+make_fixture
+printf 'coder\tcoder\t%s\tswarmforge-coder\tCoder\tclaude\ttask\n' "$ROOT/.worktrees/coder" > "$ROOT/.swarmforge/roles.tsv"
+printf 'specifier\tspecifier\t%s\tswarmforge-specifier\tSpecifier\tclaude\ttask\n' "$ROOT/.worktrees/coder" >> "$ROOT/.swarmforge/roles.tsv"
+printf 'coordinator\tmaster\t%s\tswarmforge-coordinator\tCoordinator\tclaude\ttask\n' "$ROOT" >> "$ROOT/.swarmforge/roles.tsv"
+printf 'rotation\trouter\n' > "$ROOT/.swarmforge/swarm-identity"
+# Deliberately no launch/specifier.sh — the launcher failed to pre-generate it.
+cat > "$FAKE_BIN/tmux" <<TMUXFAKE
+#!/usr/bin/env bash
+sock_cmd="\$3"
+if [[ "\$sock_cmd" == "has-session" ]]; then
+  target="\$5"
+  case "\$target" in
+    swarmforge-coder|swarmforge-coordinator) exit 0 ;;
+    *) exit 1 ;;
+  esac
+fi
+if [[ "\$sock_cmd" == "list-panes" ]]; then
+  echo "0"
+  exit 0
+fi
+if [[ "\$sock_cmd" == "respawn-pane" ]]; then
+  exit 0
+fi
+exit 0
+TMUXFAKE
+chmod +x "$FAKE_BIN/tmux"
+OUTPUT=$(PATH="$FAKE_BIN:$PATH" \
+  SWARMFORGE_ENSURE_EXTENSION_CHECK="$FAKE_BIN/fake_ext_check.sh" \
+  SWARMFORGE_ENSURE_EXTENSION_BOUNCE="$FAKE_BIN/fake_ext_bounce.sh" \
+  SWARMFORGE_ENSURE_SUPERVISOR="$FAKE_BIN/fake_supervisor.bb" \
+  SWARMFORGE_SKIP_OPERATOR=1 SWARMFORGE_SKIP_FRONT_DESK=1 \
+  bb "$ENSURE" "$ROOT" 2>&1) || true
+echo "$OUTPUT" | grep -q '^agent:specifier: FAILED (rotate_to_role would fail: missing launch script for role)$' \
+  || fail "expected specifier FAILED for missing launch script, got: $OUTPUT"
+echo "$OUTPUT" | grep -q 'agent:coder: HEALTHY' || fail "expected coder HEALTHY"
+pass "BL-537: mono-router dormant role with no launch script reports FAILED, not DORMANT"
+
+# ---------------------------------------------------------------------------
+# Extra (BL-537): a dormant rotate target reports FAILED when the resident
+# it would rotate onto is dead AND cannot be revived — rotate_to_role would
+# hit "no-resident-session". Mirrors the SRE incident (2026-07-19): killing
+# aider tore down both the coder and specifier sessions; ensure must not
+# keep reporting specifier as a harmless DORMANT rotate target once there is
+# no live resident left for it to ever rotate onto.
+# ---------------------------------------------------------------------------
+make_fixture
+printf 'coder\tcoder\t%s\tswarmforge-coder\tCoder\tclaude\ttask\n' "$ROOT/.worktrees/coder" > "$ROOT/.swarmforge/roles.tsv"
+printf 'specifier\tspecifier\t%s\tswarmforge-specifier\tSpecifier\tclaude\ttask\n' "$ROOT/.worktrees/coder" >> "$ROOT/.swarmforge/roles.tsv"
+printf 'coordinator\tmaster\t%s\tswarmforge-coordinator\tCoordinator\tclaude\ttask\n' "$ROOT" >> "$ROOT/.swarmforge/roles.tsv"
+printf 'rotation\trouter\n' > "$ROOT/.swarmforge/swarm-identity"
+touch "$ROOT/.swarmforge/launch/specifier.sh"
+cat > "$FAKE_BIN/tmux" <<TMUXFAKE
+#!/usr/bin/env bash
+sock_cmd="\$3"
+if [[ "\$sock_cmd" == "has-session" ]]; then
+  target="\$5"
+  [[ "\$target" == "swarmforge-coordinator" ]] && exit 0
+  exit 1
+fi
+if [[ "\$sock_cmd" == "list-panes" ]]; then
+  exit 1
+fi
+if [[ "\$sock_cmd" == "new-session" ]]; then
+  exit 1
+fi
+if [[ "\$sock_cmd" == "respawn-pane" ]]; then
+  exit 0
+fi
+exit 0
+TMUXFAKE
+chmod +x "$FAKE_BIN/tmux"
+OUTPUT=$(PATH="$FAKE_BIN:$PATH" \
+  SWARMFORGE_ENSURE_EXTENSION_CHECK="$FAKE_BIN/fake_ext_check.sh" \
+  SWARMFORGE_ENSURE_EXTENSION_BOUNCE="$FAKE_BIN/fake_ext_bounce.sh" \
+  SWARMFORGE_ENSURE_SUPERVISOR="$FAKE_BIN/fake_supervisor.bb" \
+  SWARMFORGE_SKIP_OPERATOR=1 SWARMFORGE_SKIP_FRONT_DESK=1 \
+  bb "$ENSURE" "$ROOT" 2>&1) || true
+echo "$OUTPUT" | grep -q '^agent:coder: FAILED' \
+  || fail "expected coder (resident) FAILED when its session cannot be recreated, got: $OUTPUT"
+echo "$OUTPUT" | grep -q '^agent:specifier: FAILED (rotate_to_role would fail: no live resident session to rotate from)$' \
+  || fail "expected specifier FAILED for no live resident, got: $OUTPUT"
+pass "BL-537: mono-router dormant role reports FAILED when resident cannot be revived, not silently DORMANT"
 
 # ---------------------------------------------------------------------------
 # Extra: a classic pack with one half-launched session must NOT be classified
