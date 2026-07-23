@@ -36,6 +36,28 @@ full per-file and per-commit detail in `drift-matrix.md`.
 | 4 | **Handoff daemon + mono-router** | handoffd (19), handoff_lib (12), chase_sweep_lib (9), swarm_ensure (11), mono_router_lib (6, SPEC-LESS), dispatch_lib (6, SPEC-LESS), done_with_current_* (6+4, SPEC-LESS), ready_for_next_* (5+5) | mono-router rotation semantics + 2026-07-23 starvation fix largely unspecced (only BL-448 pack feature) |
 | 5 | **Launcher / ops stack** | swarmforge.sh (20 — generic stem, map manually), launch_babysitter (5), failover_to_gpt (4) | needs manual mapping pass |
 | 6 | **Claim liveness/healer/tracker** | metrics/claim* (`feat:` cluster, OOB) | has OOB-authored TESTS but no feature file; relates to BL-528 |
+| 7 | **Swarm Intelligence Layer — shipped-but-dark** (BL-563, filed OOB 2026-07-23) | model_factory_* / model_steward_* / prompt_engine_* + swarmforge.sh:1028-1200 | **inverse drift**: spec + code + tests all exist (BL-525/546/547 landed) but the runtime never calls them — cold-apply seam drops `overlay_path`, nothing invokes `assign`, both state dirs absent (= zero invocations ever), PromptEngine wired but model-blind |
+
+Cluster 7 is the mirror image of cluster 1: there, code is live with no spec;
+here, spec'd code is dark with no wiring. Both are invisible to a green test
+suite — cluster 1 because nothing asserts on the behavior, cluster 7 because
+the tests exercise the toolkit without the launch path. BL-563
+(`backlog/paused/`, needs_design, human_approval pending, depends
+BL-525/546/547) already carries the audit evidence and slice proposal; the
+epic filed here should NOT duplicate it — just sequence around it. Sequencing
+hazard: BL-563 slice 1 rewires `swarmforge.sh`'s per-role settings writer,
+the same file as cluster 5's 20 OOB commits — those two must not run in
+parallel. Its slice-3 trigger question (autonomous cold-apply restarts the
+swarm mid-ticket) is flagged in the ticket as a human ruling, not a swarm
+decision.
+
+## Detection gap this survey exposes
+
+The two blind spots are symmetric and neither is caught by tests: OOB code
+with no spec (69 files) and spec'd code with no runtime wiring (BL-563's
+finding — provable here by an absent state dir, since the stores seed on
+first read). Any recurring drift-watch should check both directions:
+src-without-spec AND spec-without-caller.
 
 ## Recommended next steps
 
