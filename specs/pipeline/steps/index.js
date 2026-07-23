@@ -301,7 +301,8 @@ const DOMAINS = [
   require('./bl525ModelFactorySteps'),
   require('./gh22ContextTelemetrySteps'),
   require('./gh23ContextBudgetDashboardSteps'),
-  require('./coChangeMaxBufferSteps')
+  require('./coChangeMaxBufferSteps'),
+  require('./bl560GithubScheduledAutoIntakeSteps')
 ];
 
 function registerSteps(registry) {

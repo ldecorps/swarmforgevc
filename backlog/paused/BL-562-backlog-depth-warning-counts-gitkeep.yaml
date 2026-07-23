@@ -1,0 +1,142 @@
+id: BL-562
+title: "Backlog-depth WARNING counts .gitkeep as an active ticket, so it fires permanently under any cap of 1"
+milestone: M8
+type: defect
+status: todo
+epic: swarm-reliability
+assigned_to: specifier
+priority: 20
+mutation_cost: low
+direction: swarm-surfaced
+depends_on: []
+source: |
+  Coordinator note 2026-07-23: "every swarm_handoff.sh send I've done today
+  prints WARNING: Active backlog depth exceeded (active=2, max=1), even
+  though backlog/active/ genuinely holds only BL-549. That warning has now
+  recurred three times regardless of what I send — worth someone checking
+  whether the depth check itself is miscounting (possibly conflating
+  pending notes/handoffs with 'active' tickets), since a warning that never
+  matches reality is itself an observability problem of the same shape."
+
+  Operator investigated. The coordinator's own hypothesis (notes/handoffs
+  being conflated with tickets) is WRONG — the counter only ever reads
+  backlog/active/. The real cause is an off-by-one, diagnosed below.
+
+description: |
+  ## Problem
+
+  `check-backlog-depth` in `swarmforge/scripts/swarm_handoff.bb:194` counts
+  active tickets with a raw directory listing:
+
+      (let [active-count (count (fs/list-dir active-dir))]
+
+  `fs/list-dir` returns EVERY directory entry, including the tracked
+  `backlog/active/.gitkeep` placeholder. Verified directly against the live
+  repo root:
+
+      bb -e '(fs/list-dir "backlog/active")'
+      => ("backlog/active/BL-549-....yaml" "backlog/active/.gitkeep")   count 2
+
+  So `active-count` is always `real_ticket_count + 1`.
+
+  The cap side is correct: `.swarmforge/swarm-identity` records
+  `active_backlog_max_depth_conf_path = swarmforge/packs/mono-router.conf`,
+  which sets `config active_backlog_max_depth 1`. One real ticket +
+  `.gitkeep` = 2 > 1, so the warning fires on EVERY handoff send and can
+  never fall silent under this pack — one active ticket is the intended
+  steady state for every mono-router/two-pack/lean pack (all of which ship
+  a cap of 1). The check is therefore pure noise: it cannot distinguish the
+  normal state from a real overflow, which is the alarm-fatigue failure the
+  coordinator flagged.
+
+  ## This is the lone outlier
+
+  Every other active-count call site already filters to `*.yaml`:
+
+  - `swarmforge/scripts/chase_sweep_lib.bb:861` `count-backlog-yaml` — its
+    docstring literally says *"Ignores non-yaml (e.g. .gitkeep)"*; used by
+    handoffd's open-slot nudge (`handoffd.bb:1340`)
+  - `swarmforge/scripts/operator_runtime.bb:947` `active-backlog-count`
+    (via `yaml-files`)
+  - `swarmforge/scripts/handoffd.bb:1813` (via `count-yaml-files`)
+  - `swarmforge/scripts/pipeline_stage_cli.bb:59` (via `fs/glob "**.yaml"`)
+
+  `swarm_handoff.bb` is the only one using a raw `list-dir` count, which
+  means handoffd's open-slot nudge and this warning currently disagree by
+  one about the same directory.
+
+  ## Why the existing tests are blind to it
+
+  `swarmforge/scripts/test/test_backlog_depth_conf.sh`'s `mk_fixture`
+  creates `backlog/active` with `mkdir -p` and writes only `BL-N-demo.yaml`
+  files into it — it never creates a `.gitkeep`. The BL-216 Gherkin steps
+  (`specs/pipeline/steps/backlogDepthSteps.js`, feature
+  `specs/features/BL-216-backlog-depth-reads-wrong-conf-and-breaks-no-limit-sentinel.feature`)
+  build their fixtures the same way. So the whole existing depth suite
+  passes green against a directory shape that never occurs in a real
+  checkout, where `.gitkeep` is tracked and present in main AND in every
+  `.worktrees/<role>/backlog/active/` (confirmed: all six role worktrees
+  carry it).
+
+  ## Fix direction
+
+  Move a yaml-filtering counter into `swarmforge/scripts/backlog_depth_lib.bb`
+  beside `depth-exceeded?`/`under-depth-cap?`, and have both
+  `swarm_handoff.bb:194` and `chase_sweep_lib.bb`'s `count-backlog-yaml`
+  call the ONE shared function. Do not just filter inline at
+  `swarm_handoff.bb:194`: `backlog_depth_lib.bb` exists precisely because
+  BL-216 found this same pair of depth call sites had been copy-pasted and
+  drifted with identical bugs, and its own header comment commits to "ONE
+  shared reader here, used by both call sites, so they cannot diverge
+  again" — the COUNTER was simply left out of that consolidation. This is
+  the same class of defect BL-216 was supposed to have closed.
+
+  ## Secondary, in scope
+
+  The warning compares against `read-max-depth` (the CONFIGURED cap only),
+  while the promotion gate the coordinator actually obeys uses
+  `read-effective-max-depth` (configured folded with the BL-432 throttle
+  recommendation and the BL-423 pause marker). Under an active auto-throttle
+  or pause the warning therefore reports a ceiling that is not the one being
+  enforced. Coder should confirm whether the WARNING was deliberately left on
+  the configured cap; if there is no such rationale in BL-216/BL-313/BL-432
+  ticket text or commit history, switch it to `read-effective-max-depth` so
+  the message the coordinator reads matches the gate the coordinator is held
+  to. If a deliberate rationale IS found, leave the behaviour alone and
+  record the reason in a comment at the call site instead.
+
+acceptance: |
+  1. In a fixture whose `backlog/active/` contains a `.gitkeep` plus
+     exactly ONE `*.yaml` ticket, with `active_backlog_max_depth 1`, a
+     `swarm_handoff.bb` send prints NO "Active backlog depth exceeded"
+     warning on stderr.
+  2. Same fixture with `.gitkeep` plus TWO `*.yaml` tickets and the same
+     cap of 1 still DOES warn, and reports `active=2` (not `active=3`).
+  3. `swarmforge/scripts/test/test_backlog_depth_conf.sh`'s `mk_fixture`
+     is updated to create `backlog/active/.gitkeep` (matching a real
+     checkout) and the whole script still passes — this is the regression
+     guard, without it the fix is untestable by the existing suite.
+  4. The BL-216 acceptance scenarios depth-01..04 continue to pass
+     unchanged, including the `-1` no-limit sentinel path.
+  5. The shared counter has direct unit coverage for: empty dir, dir with
+     only `.gitkeep`, dir with `.gitkeep` + N yaml, a non-yaml sibling
+     (e.g. a stray `.md`), and a missing directory (must return 0, never
+     throw) — matching `count-backlog-yaml`'s existing degrade-never-crash
+     posture.
+  6. A repo sweep confirms no remaining raw `(count (fs/list-dir ...))`
+     over a backlog folder anywhere in `swarmforge/scripts/`.
+  7. Manual end-to-end confirmation against the live repo: with only
+     BL-549 in `backlog/active/`, a real coordinator handoff send prints
+     no depth warning.
+
+out_of_scope: |
+  - Deleting or relocating `backlog/active/.gitkeep`. The placeholder is
+    intentional (it keeps the directory tracked when the backlog is fully
+    drained) and removing it would only hide this bug, not fix the counter
+    that every other backlog folder is also exposed to.
+  - Changing any pack's `active_backlog_max_depth` value.
+  - Whether `ready_for_next.bb` should auto-promote at all — already
+    explicitly scoped out by BL-216 and unchanged here.
+  - Any change to the throttle recommendation (BL-432) or pause marker
+    (BL-423) logic itself; this ticket only decides WHICH already-existing
+    reader the warning consults.

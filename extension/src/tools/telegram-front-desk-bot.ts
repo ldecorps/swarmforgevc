@@ -125,15 +125,19 @@ import {
   TtsResult,
   ReplyRelayAdapters,
   AskOption,
+  closeApprovalAskForBacklogId,
 } from './telegramFrontDeskBotCore';
+import { backlogForTopic } from '../concierge/topicRouter';
+import { recordApprovalReply, recordRejectionReply, recordAmendReply, readRecordedVerdict, readApprovalCloseVerdict } from '../concierge/pendingApprovalReply';
+import { reconcileDecidedApprovalAskCloses } from '../concierge/decidedApprovalAskCloseReconcile';
+import { ConciergeTickScheduler, DEFAULT_CONCIERGE_TICK_DEBOUNCE_MS } from '../concierge/conciergeTickScheduler';
+import { consumeConciergeTickRequest } from '../concierge/conciergeTickRequest';
 import {
   PauseState,
   PendingControlConfirm,
   CONTROL_CALLBACK_DATA,
   decideDrainOutcome,
 } from './telegramControlCore';
-import { backlogForTopic } from '../concierge/topicRouter';
-import { recordApprovalReply, recordRejectionReply, recordAmendReply, readRecordedVerdict } from '../concierge/pendingApprovalReply';
 import { extractScopePaths, findFileCollision, InFlightScope } from '../concierge/expediteSafety';
 import { promoteToActive, findBacklogFilePath } from '../panel/backlogWriter';
 import {
@@ -279,6 +283,16 @@ export function recordApprovalAskMessage(targetPath: string, backlogId: string, 
   const messages = readApprovalAskMessages(targetPath);
   messages[backlogId] = { topicId, messageId, text };
   fs.mkdirSync(path.dirname(approvalAskMessagesPath(targetPath)), { recursive: true });
+  fs.writeFileSync(approvalAskMessagesPath(targetPath), JSON.stringify(messages));
+}
+
+export function updateApprovalAskMessageText(targetPath: string, backlogId: string, text: string): void {
+  const messages = readApprovalAskMessages(targetPath);
+  const existing = messages[backlogId];
+  if (!existing) {
+    return;
+  }
+  messages[backlogId] = { ...existing, text };
   fs.writeFileSync(approvalAskMessagesPath(targetPath), JSON.stringify(messages));
 }
 
@@ -1657,13 +1671,25 @@ export async function commitExpediteWrites(targetPath: string, backlogId: string
   }
 }
 
+function buildApprovalAskCloseAdapterFields(botToken: string, targetPath: string, chatId: string) {
+  return {
+    readApprovalAskMessage: (backlogId: string) => Promise.resolve(readApprovalAskMessages(targetPath)[backlogId]),
+    editApprovalAskMessage: (topicId: number, messageId: number, text: string) =>
+      editMessageText(botToken, chatId, messageId, text, undefined, undefined, null),
+    persistClosedApprovalAskText: async (backlogId: string, text: string) => {
+      updateApprovalAskMessageText(targetPath, backlogId, text);
+    },
+  };
+}
+
 function buildPollAdapters(
   botToken: string,
   targetPath: string,
   bridgeUrl: string,
   controlToken: string,
   chatId: string,
-  openaiApiKey: string | undefined
+  openaiApiKey: string | undefined,
+  scheduleConciergeTick?: () => void
 ): PollAdapters {
   return {
     chatId,
@@ -1689,12 +1715,8 @@ function buildPollAdapters(
     // BL-484: the closing routine's own three adapters - a decided ask
     // strips its buttons and shows the verdict.
     readRecordedApprovalVerdict: (backlogId) => Promise.resolve(readRecordedVerdict(targetPath, backlogId)),
-    readApprovalAskMessage: (backlogId) => Promise.resolve(readApprovalAskMessages(targetPath)[backlogId]),
-    // BL-496: the full {success, error, retryAfterSeconds} result is now
-    // passed straight through (no longer collapsed to a bare boolean) so
-    // closeApprovalAskIfPossible can log the real rejection reason and
-    // honour a 429's told-you-so retry_after with its own bounded retry.
-    editApprovalAskMessage: (topicId, messageId, text) => editMessageText(botToken, chatId, messageId, text, undefined, undefined, null),
+    ...buildApprovalAskCloseAdapterFields(botToken, targetPath, chatId),
+    scheduleConciergeTick,
     notifyApprovalsTopic: (topicId, text) => sendTelegramMessage(botToken, chatId, text, undefined, undefined, topicId).then((r) => r.success),
     loadApprovalMoreText: (backlogId) => Promise.resolve(loadApprovalMoreText(targetPath, backlogId)),
     // BL-450: recertificationStore.ts's own read-check-write functions -
@@ -1838,9 +1860,10 @@ async function pollLoop(
   bridgeUrl: string,
   controlToken: string,
   chatId: string,
-  openaiApiKey: string | undefined
+  openaiApiKey: string | undefined,
+  scheduleConciergeTick: () => void
 ): Promise<void> {
-  const adapters = buildPollAdapters(botToken, targetPath, bridgeUrl, controlToken, chatId, openaiApiKey);
+  const adapters = buildPollAdapters(botToken, targetPath, bridgeUrl, controlToken, chatId, openaiApiKey, scheduleConciergeTick);
   let state: PollLoopState = { offset: 0, consecutiveFailures: 0, stuckAttempts: 0 };
   writeFrontDeskPollHeartbeat(targetPath);
   for (;;) {
@@ -2476,6 +2499,18 @@ function buildConciergeTickAdapters(targetPath: string, botToken: string, chatId
       ensureRecertTopic: () => ensureRecertTopic(targetPath, botToken, chatId),
       ...plainTextEditInPlaceAdapters(botToken, chatId),
     },
+    reconcileDecidedApprovalAskCloses: async (nowMs) => {
+      const closeFields = buildApprovalAskCloseAdapterFields(botToken, targetPath, chatId);
+      await reconcileDecidedApprovalAskCloses(
+        {
+          readApprovalAskMessages: () => readApprovalAskMessages(targetPath),
+          readCloseVerdict: (backlogId) => readApprovalCloseVerdict(targetPath, backlogId),
+          closeApprovalAsk: (backlogId, verdict, tickNowMs) => closeApprovalAskForBacklogId(closeFields, backlogId, verdict, tickNowMs),
+          waitBetweenCloses: (ms) => sleep(ms),
+        },
+        nowMs
+      );
+    },
   };
 }
 
@@ -2570,14 +2605,25 @@ export async function runOneConciergeTick(
   await sweepTopicDeletions(doneTickets, deletionAdapters, nowMs, retentionWindowMs);
 }
 
-async function tickLoop(targetPath: string, botToken: string, chatId: string, intervalMs: number): Promise<void> {
+async function conciergeTickLoopWithScheduler(targetPath: string, scheduler: ConciergeTickScheduler, intervalMs: number): Promise<void> {
+  for (;;) {
+    await scheduler.runNow();
+    await sleep(intervalMs);
+    if (consumeConciergeTickRequest(targetPath)) {
+      await scheduler.runNow();
+    }
+  }
+}
+
+function createConciergeTickScheduler(targetPath: string, botToken: string, chatId: string): ConciergeTickScheduler {
   const adapters = buildConciergeTickAdapters(targetPath, botToken, chatId);
   const reconcileAdapters = buildReconcileAdapters(targetPath, adapters.routeAdapters);
   const deletionAdapters = buildTopicDeletionAdapters(targetPath, botToken, chatId);
-  for (;;) {
-    await runOneConciergeTick(adapters, reconcileAdapters, deletionAdapters);
-    await sleep(intervalMs);
-  }
+  return new ConciergeTickScheduler(() => runOneConciergeTick(adapters, reconcileAdapters, deletionAdapters));
+}
+
+async function tickLoop(targetPath: string, scheduler: ConciergeTickScheduler, intervalMs: number): Promise<void> {
+  await conciergeTickLoopWithScheduler(targetPath, scheduler, intervalMs);
 }
 
 // BL-302: how long runContainedLoop waits before restarting a loop that
@@ -2675,6 +2721,9 @@ export async function main(): Promise<void> {
   // exist and be idempotently reused across restarts like every sibling.
   await ensureBacklogTopic(targetPath, botToken, chatId);
 
+  const conciergeScheduler = createConciergeTickScheduler(targetPath, botToken, chatId);
+  const scheduleConciergeTick = () => conciergeScheduler.scheduleDebounced(DEFAULT_CONCIERGE_TICK_DEBOUNCE_MS);
+
   // BL-302 LOOP ISOLATION: each of the three forever-loops runs inside its
   // own runContainedLoop - a fault (thrown exception) in one is caught,
   // logged, and RESTARTED after a brief delay, without ever rejecting the
@@ -2685,7 +2734,7 @@ export async function main(): Promise<void> {
   await Promise.all([
     runContainedLoop(
       'poll',
-      () => pollLoop(botToken, principalUserId, targetPath, bridgeUrl, controlToken, chatId, openaiApiKey),
+      () => pollLoop(botToken, principalUserId, targetPath, bridgeUrl, controlToken, chatId, openaiApiKey, scheduleConciergeTick),
       sleep,
       LOOP_RESTART_DELAY_MS,
       logLoopFault
@@ -2697,7 +2746,7 @@ export async function main(): Promise<void> {
       LOOP_RESTART_DELAY_MS,
       logLoopFault
     ),
-    runContainedLoop('concierge-tick', () => tickLoop(targetPath, botToken, chatId, conciergeTickIntervalMs()), sleep, LOOP_RESTART_DELAY_MS, logLoopFault),
+    runContainedLoop('concierge-tick', () => tickLoop(targetPath, conciergeScheduler, conciergeTickIntervalMs()), sleep, LOOP_RESTART_DELAY_MS, logLoopFault),
   ]);
 }
 

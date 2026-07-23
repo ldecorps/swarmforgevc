@@ -1,0 +1,161 @@
+id: BL-563
+title: "Swarm Intelligence Layer runtime wiring — launch path applies a ModelFactory assignment; Steward/Factory are dark today"
+milestone: M5
+type: feature
+status: needs_design
+epic: swarm-intelligence-layer
+human_approval: pending
+severity: medium
+priority: 03
+direction: swarm-surfaced
+depends_on: [BL-525, BL-546, BL-547]
+assigned_to: specifier
+mutation_cost: medium
+source: |
+  Human question 2026-07-23 ("are the model steward, prompt engine and related
+  factory plugged in?"). Operator audited all three against the live tree. Answer:
+  one of three is on the launch path, and even that one only partly. Evidence
+  below is reproducible against HEAD as of 2026-07-23.
+
+description: |
+  ## Finding — the epic shipped a toolkit, not a capability
+
+  BL-546 / BL-547 / BL-525 all landed and are tested, but only PromptEngine is
+  reachable from a running swarm. The Steward→Factory→launch chain is an
+  operator-driven CLI sitting beside the runtime rather than inside it. Four
+  concrete gaps, each verified:
+
+  ### 1. The Factory's decision is discarded at apply time
+
+  `model_factory_lib.bb/cold-apply-plan` (line 161) returns a plan carrying
+  BOTH `:overlay_path` (the materialised role→{agent,model,provider} map) and
+  `:pack`. But the production seam reads only the pack:
+
+      # model_factory_default_launch_seam.sh:16
+      PACK="$(bb -e '... (:pack (json/parse-string ...))' -- "$PLAN_JSON")"
+      # :40
+      "$ROOT/swarm" "$ROOT" --pack "$PACK"
+
+  `overlay_path` is never passed to `./swarm` and nothing else reads
+  `assignment.json` — a repo-wide grep for `assignment.json` outside
+  `model_factory_*` hits only test scripts. So a cold-apply relaunches onto an
+  existing pack conf whose per-role models are whatever that pack already
+  hardcodes. The per-role assignment the Factory just computed is written to
+  disk and dropped. This is the single highest-value gap: it makes `assign`
+  advisory even when an operator DOES run it.
+
+  ### 2. Nothing invokes `assign` in the first place
+
+  `swarmforge.sh` contains zero references to `model_factory` or
+  `model_steward`. No daemon, operator sweep, cron, or coordinator path calls
+  either CLI. The only documented entry point is a human typing
+  `bb swarmforge/scripts/model_factory_cli.bb assign --mode quality`
+  (docs/how-to/BL-525-model-factory-assign-and-apply.md).
+
+  ### 3. Neither has ever run in this repo
+
+  `.swarmforge/model-factory/` and `.swarmforge/model-steward/` do not exist.
+  Both stores seed their state from a committed seed on FIRST read
+  (`model_steward_store.bb/read-registry!` ← `swarmforge/model-steward/seed/models.seed.json`),
+  so an absent state dir is positive proof of zero invocations — not merely
+  "no recent activity".
+
+  ### 4. PromptEngine is wired but model-blind
+
+  Wiring is real and load-bearing: `swarmforge.sh:1028`
+  (`write_agent_instruction_file`) calls `prompt_engine_cli.bb compose` and is
+  the only way a launch path produces a system-prompt artifact. But the
+  "model-aware" half of BL-546's own title is not live — `compose`'s `:model`
+  key is metadata only by design in Slice 1 (`prompt_engine_lib.bb:216`), and
+  the launch call site passes `agent`/`role`/`two_pack`/`overlay` with NO model
+  argument at all. Today it is a centralised composer, not a model-aware one.
+
+  ## Why no existing ticket covers this
+
+  BL-545's own `remaining_slices` lists seven follow-ups (PromptEngine S2/S3,
+  Steward S2/S3 → BL-556/BL-557, calibration S2/S3, Factory S2 hot-swap). Every
+  one of them EXTENDS the toolkit. None of them connects it to the swarm. The
+  epic has no wiring slice, which is exactly the failure mode the
+  epic-runtime-wiring-slice rule exists to catch: pure modules stay dark until
+  a slice calls them AND persists the result on a path the runtime reads.
+
+  ## Proposed shape (specifier to firm up and slice)
+
+  ### Slice 1 — apply side (the essential one)
+
+  Make a Factory assignment actually change what launches. Per-role model
+  resolution today flows:
+
+      claude_settings_and_flags_from_extra_cli()   swarmforge.sh:1060
+        parses the pack's `window <role> <agent> ... --model X --effort Y`
+        -> CLAUDE_SETTINGS_MODEL                   swarmforge.sh:1106
+      write_claude_settings_file()                 swarmforge.sh:1113
+        -> .swarmforge/launch/<role>.claude-settings.json   (call site :1200)
+
+  That settings file is the real per-role model lever (confirmed operationally:
+  editing pack conf on a live swarm is inert; the settings file is what a
+  respawn reads). The wiring is therefore: when
+  `.swarmforge/model-factory/assignment.json` is present, its per-role entry
+  overrides the pack-derived model when writing that settings file. The seam
+  must also propagate `overlay_path` through the relaunch so the freshly
+  written overlay is the one consulted.
+
+  A missing, unreadable, or malformed overlay must degrade to EXACTLY today's
+  pack-derived behaviour — same degrade-never-crash posture
+  `backlog_depth_lib.bb`'s own readers (`read-max-depth`,
+  `read-recommended-cap`, `read-pause-state`) already use for their files.
+  Reuse that pattern rather than inventing a new one.
+
+  ### Slice 2 — feed the resolved model to PromptEngine
+
+  Pass the resolved model into `prompt_engine_cli.bb compose` so `:model` stops
+  being inert metadata. NOTE this only becomes observable once BL-546 Slice 2
+  adapters exist; specifier should decide whether it belongs here at all or
+  folds into BL-546 Slice 2, rather than shipping a parameter no adapter reads.
+
+  ### Slice 3 — the trigger (NEEDS A HUMAN RULING, do not decide in-swarm)
+
+  What causes `assign` to run? Genuinely open, with materially different blast
+  radii:
+    (a) human CLI only — status quo, this ticket then only fixes gap 1;
+    (b) operator sweep on a quota-exhaustion signal (`quota-state.json`
+        already exists for exactly this) — automatic, and a cold-apply
+        RESTARTS THE SWARM (`kill_all_swarm.sh` + relaunch), so an autonomous
+        trigger can tear down live agents mid-ticket;
+    (c) a coordinator turn at a safe point (e.g. between dispatches).
+
+  Option (b) is the one worth being careful about: an automated model swap that
+  kills in-flight work is a very different product than an advisory CLI. This
+  fork must go to the human, not be resolved by the swarm.
+
+acceptance: |
+  Specifier writes executable scenarios; these are the minimum the design must
+  make testable:
+
+  1. With `.swarmforge/model-factory/assignment.json` present and naming a
+     model for role R, a launch writes that model into
+     `.swarmforge/launch/R.claude-settings.json`, NOT the pack's `--model`.
+  2. With NO overlay present, every role's settings file is byte-identical to
+     what the same pack produces today (pure regression guard — this is the
+     scenario that proves the wiring is additive).
+  3. A malformed / truncated / empty overlay degrades to pack-derived values
+     and does not abort the launch.
+  4. An overlay naming only SOME roles leaves the unnamed roles on pack values.
+  5. `model_factory_cli.bb cold-apply` produces a plan whose `overlay_path`
+     reaches the relaunched swarm — i.e. the seam no longer drops it. A test
+     seam stub asserting it receives the overlay path is sufficient.
+  6. End-to-end, against a real (throwaway) launch: `assign --mode cheap`
+     followed by cold-apply results in a swarm whose live per-role models match
+     the assignment, verified by reading the settings files after launch.
+
+out_of_scope: |
+  - ModelFactory Slice 2 hot-swap (BL-525 Slice 2) — this ticket is cold path
+    only: an assignment takes effect at the next launch/respawn, never
+    in-place on a running pane.
+  - Model Steward `evaluate` ingestion (BL-556) and role pane (BL-557).
+  - Prompt calibration loop (BL-548) — still blocked by the human directive to
+    promote only after GH-22/GH-23 forward pipeline work.
+  - Authoring new per-model prompt adapters (BL-546 Slice 2). Slice 2 here only
+    PASSES a model; it does not add adapters that consume it.
+  - Changing any pack's committed `--model` values. The overlay layers over
+    packs; it does not rewrite them.

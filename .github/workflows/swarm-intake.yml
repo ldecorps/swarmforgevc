@@ -24,21 +24,16 @@ jobs:
           ref: main
 
       - name: Write backlog root item
+        # BL-560: the write itself is factored into a shared script so the
+        # scheduled auto-intake scan (swarm-intake-scan.yml) writes the
+        # IDENTICAL GH-<n>-<slug>.yaml shape, never a second one.
         env:
           TITLE: ${{ github.event.issue.title }}
           BODY: ${{ github.event.issue.body }}
           NUM: ${{ github.event.issue.number }}
           URL: ${{ github.event.issue.html_url }}
         run: |
-          slug=$(echo "$TITLE" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]\+/-/g; s/^-\|-$//g' | cut -c1-50)
-          file="backlog/GH-${NUM}-${slug}.yaml"
-          {
-            echo "id: GH-${NUM}"
-            echo "title: $(printf '%s' "$TITLE" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')"
-            echo "source: ${URL}"
-            echo "description: |"
-            printf '%s\n' "$BODY" | sed 's/^/  /'
-          } > "$file"
+          file="$(bash swarmforge/scripts/github_intake_write.sh "$NUM" "$TITLE" "$BODY" "$URL")"
           echo "file=$file" >> "$GITHUB_ENV"
 
       - name: Commit

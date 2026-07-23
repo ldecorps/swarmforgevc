@@ -5,7 +5,7 @@ milestone: M8
 type: feature
 priority: 20
 status: todo
-human_approval: pending
+human_approval: approved
 direction: human-requested
 depends_on: []
 mutation_cost: medium
@@ -87,3 +87,5 @@ out_of_scope: |
     scripts.
   - Any LLM/coordinator/specifier involvement in the scanning decision —
     this ticket is a plain scripted Actions workflow.
+
+assigned_to: coder

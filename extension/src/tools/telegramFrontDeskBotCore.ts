@@ -858,6 +858,12 @@ export interface PollAdapters {
   // recording that already happened (the ticket's own "never crashes the
   // tick/bot loop" constraint).
   editApprovalAskMessage?: (topicId: number, messageId: number, text: string) => Promise<EditMessageTextResult>;
+  // BL-561: persists the decided ask text after a successful Telegram edit so
+  // the reconcile sweep can skip already-closed asks.
+  persistClosedApprovalAskText?: (backlogId: string, text: string) => Promise<void>;
+  // BL-561: debounced immediate concierge tick after a human approval decision
+  // (pipeline board / Approvals roster refresh without waiting for the 30s loop).
+  scheduleConciergeTick?: () => void;
   // BL-496: the ask-close retry loop's own injected wait seam - defaults to
   // a real setTimeout wait in production; a test injects one that resolves
   // immediately while recording the requested duration, so the loop's own
@@ -1104,9 +1110,28 @@ async function closeApprovalAskIfPossible(adapters: PollAdapters, backlogId: str
         adapters.waitForAskCloseRetry ?? defaultAskCloseWait
       )
     : { success: false };
-  if (!result.success) {
+  if (result.success) {
+    await adapters.persistClosedApprovalAskText?.(backlogId, newText);
+  } else {
     logAskCloseFailure(backlogId, result);
   }
+}
+
+// BL-561: shared close path for the poll loop and the concierge reconcile sweep.
+export async function closeApprovalAskForBacklogId(
+  adapters: Pick<
+    PollAdapters,
+    'readApprovalAskMessage' | 'editApprovalAskMessage' | 'askCloseRetryBudget' | 'waitForAskCloseRetry' | 'persistClosedApprovalAskText'
+  >,
+  backlogId: string,
+  verdict: ApprovalDecisionVerdict,
+  nowMs: number
+): Promise<void> {
+  await closeApprovalAskIfPossible(adapters as PollAdapters, backlogId, verdict, nowMs);
+}
+
+async function notifyHumanDecisionRecorded(adapters: PollAdapters): Promise<void> {
+  adapters.scheduleConciergeTick?.();
 }
 
 // BL-484: the ONE closing routine serving BOTH decision entry points - a
@@ -1130,6 +1155,7 @@ export async function recordApprovalDecisionAndClose(
     verdict.kind === 'approved' ? await adapters.recordApprovalReply(backlogId) : await adapters.recordRejectionReply(backlogId, verdict.reason);
   if (changed) {
     await closeApprovalAskIfPossible(adapters, backlogId, verdict, nowMs);
+    await notifyHumanDecisionRecorded(adapters);
   }
   return changed;
 }
@@ -1152,6 +1178,7 @@ export async function recordAmendDecisionAndClose(adapters: PollAdapters, backlo
     await adapters.resetApprovalAskEmittedState?.(backlogId);
     await adapters.queueAmendSteerDirective?.(backlogId, note);
     await closeApprovalAskIfPossible(adapters, backlogId, { kind: 'amending' }, nowMs);
+    await notifyHumanDecisionRecorded(adapters);
   }
   return changed;
 }
@@ -1200,6 +1227,7 @@ export async function recordExpediteDecisionAndClose(
     await adapters.dispatchExpediteBuild?.(backlogId);
   }
   await closeApprovalAskIfPossible(adapters, backlogId, { kind: 'expedited' }, nowMs);
+  await notifyHumanDecisionRecorded(adapters);
   return { changed: true, collision };
 }
 

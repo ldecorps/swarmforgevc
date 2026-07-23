@@ -88,4 +88,75 @@ grep -q -- '-l' "$CALL_LOG" || fail "expected literal send-keys wake"
 
 pass "sync deliver moves parcel and wakes pane without daemon"
 
+# ── 02: busy resident pane → parcel lands, wake skipped (BL-135 sync path) ───
+ROOT2="$(mktemp -d)"
+git -C "$ROOT2" init -q
+git -C "$ROOT2" config user.email "test@test"
+git -C "$ROOT2" config user.name "test"
+SOCK2="$ROOT2/fake.sock"
+touch "$SOCK2"
+mkdir -p "$ROOT2/.swarmforge"
+echo "$SOCK2" > "$ROOT2/.swarmforge/tmux-socket"
+MASTER_WT2="$ROOT2"
+CODER_WT2="$ROOT2/.worktrees/coder"
+mkdir -p "$MASTER_WT2/.swarmforge/handoffs/coordinator/"{outbox/tmp,sent} "$CODER_WT2/.swarmforge/handoffs/inbox/new"
+printf 'coordinator\tmaster\t%s\tswarmforge-coordinator\tCoordinator\tclaude\ttask\n' "$MASTER_WT2" > "$ROOT2/.swarmforge/roles.tsv"
+printf 'coder\tcoder\t%s\tswarmforge-coder\tCoder\tclaude\ttask\n' "$CODER_WT2" >> "$ROOT2/.swarmforge/roles.tsv"
+
+CALL_LOG2="$ROOT2/tmux-calls.log"
+BEFORE_STDOUT_FILE2="$ROOT2/before-stdout.txt"
+AFTER_STDOUT_FILE2="$ROOT2/after-stdout.txt"
+CAPTURE_COUNT_FILE2="$ROOT2/capture-count"
+export CALL_LOG="$CALL_LOG2" BEFORE_STDOUT_FILE="$BEFORE_STDOUT_FILE2" AFTER_STDOUT_FILE="$AFTER_STDOUT_FILE2" CAPTURE_COUNT_FILE="$CAPTURE_COUNT_FILE2"
+
+cat > "$FAKE_BIN/tmux" <<'TMUX'
+#!/usr/bin/env bash
+echo "$*" >> "$CALL_LOG"
+for arg in "$@"; do
+  if [[ "$arg" == "capture-pane" ]]; then
+    count="$(cat "$CAPTURE_COUNT_FILE" 2>/dev/null || echo 0)"
+    echo $((count + 1)) > "$CAPTURE_COUNT_FILE"
+    if [[ "$count" == "0" ]]; then
+      cat "$BEFORE_STDOUT_FILE" 2>/dev/null
+    else
+      cat "$AFTER_STDOUT_FILE" 2>/dev/null
+    fi
+    exit 0
+  fi
+done
+exit 0
+TMUX
+chmod +x "$FAKE_BIN/tmux"
+
+DRAFT2="$ROOT2/draft.handoff"
+cat > "$DRAFT2" <<'EOF'
+type: note
+to: coder
+priority: 50
+message: sync deliver busy skip test
+EOF
+
+cat > "$BEFORE_STDOUT_FILE2" <<'EOF'
+● Running 1 shell command · 1m 20s…
+· Generating… (5m 49s · ↓ 9.6k tokens)
+❯ 
+EOF
+echo '❯ ' > "$AFTER_STDOUT_FILE2"
+
+(
+  cd "$ROOT2"
+  export SWARMFORGE_ROLE=coordinator
+  export SWARMFORGE_SKIP_DAEMON=1
+  PATH="$FAKE_BIN:$PATH" bb "$SWARM_HANDOFF" "$DRAFT2"
+) > "$ROOT2/out2.txt"
+
+grep -q "HANDOFF DELIVERED:" "$ROOT2/out2.txt" || fail "02: expected HANDOFF DELIVERED output"
+find "$CODER_WT2/.swarmforge/handoffs/inbox/new" -name '*_for_coder.handoff' -print -quit | grep -q . \
+  || fail "02: parcel missing from coder inbox/new"
+! grep -q -- '-l' "$CALL_LOG2" || fail "02: must not send wake literal while pane is busy"
+
+pass "sync deliver skips tmux wake when resident pane is mid-turn"
+
+rm -rf "$ROOT2"
+
 echo "ALL PASS"
