@@ -130,3 +130,5 @@ operator_notes_20260722: |
   — this slice only makes the role coordinator-assignable and generates docs.
 
 mutation_cost: medium
+
+assigned_to: coder
