@@ -52,6 +52,19 @@ description: |
   dependencies should be minimal and boring: git, the claude CLI
   (non-interactive `claude -p` or equivalent), bash/bb for the driver.
 
+  ## Lineage: a stripped-down mono-router (human's framing, 2026-07-23)
+
+  BL-448's mono-router already proved the premise: one agent rotating
+  through every role hat with all gates preserved. The expeditor keeps that
+  rotation CONCEPT and strips the EVENT LAYER: where the mono-router is
+  event-driven (mail arrives -> chase/rotate decides -> pane respawns as
+  the next role), the expeditor is program-driven (the driver loop already
+  knows the stage order and calls the next stage directly). Same hats, same
+  gates; transport and liveness machinery replaced by plain control flow.
+  Design consequence for the specifier: mirror the mono-router's per-role
+  prompt/model/effort RESOLUTION (the data), never its rotation/wake CODE
+  (the machinery).
+
   ## Shape (specifier to firm up)
 
   `expedite <BL-id>` — a driver that, per pipeline stage, spawns a fresh
