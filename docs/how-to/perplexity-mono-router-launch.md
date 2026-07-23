@@ -46,6 +46,13 @@ Expect `agent:coder` and `agent:coordinator` **HEALTHY**; other pipeline roles
 **DORMANT** (rotation targets). Extension host **FAILED** under
 `SWARMFORGE_TERMINAL=none` is normal.
 
+If a dormant rotation target (specifier, cleaner, architect, hardender,
+documenter, QA) appears as **FAILED** instead of DORMANT, one of two things
+broke: either the resident session died (e.g., coder pane was killed), or the
+role's launch script is missing. BL-537 ensures these failures are detected and
+reported rather than silently allowing a broken rotation path. Check pane status
+with `tmux list-sessions` and restart if needed.
+
 ## Coordinator model
 
 Packs that set `config coordinator_agent aider` must also set
