@@ -81,18 +81,17 @@ export function getResidentSpyUiHtml(): string {
     border-bottom: 1px solid color-mix(in srgb, var(--tg-theme-hint-color, #8b949e) 25%, transparent);
     background: color-mix(in srgb, var(--tg-theme-bg-color, #0d1117) 92%, #000);
   }
-  .ticket-strip-id {
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 0.04em;
-    color: var(--tg-theme-text-color, #e6edf3);
-  }
-  .ticket-strip-title {
-    margin-top: 2px;
+  .ticket-strip-line {
     font-size: 12px;
     line-height: 1.35;
-    font-weight: 600;
     color: var(--tg-theme-text-color, #e6edf3);
+  }
+  .ticket-strip-id {
+    font-weight: 700;
+    letter-spacing: 0.04em;
+  }
+  .ticket-strip-title {
+    font-weight: 600;
   }
   .ticket-strip-meta {
     margin-top: 3px;
@@ -133,6 +132,8 @@ export function getResidentSpyUiHtml(): string {
     align-self: stretch;
     border-right: 1px solid color-mix(in srgb, var(--tg-theme-hint-color, #8b949e) 25%, transparent);
     border-bottom: 1px solid color-mix(in srgb, var(--tg-theme-hint-color, #8b949e) 25%, transparent);
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
   }
   .split.pane-count-2 .pane-col {
     flex: 1 1 50%;
@@ -155,9 +156,7 @@ export function getResidentSpyUiHtml(): string {
     align-items: flex-start;
     justify-content: space-between;
     gap: 8px;
-    cursor: pointer;
     user-select: none;
-    -webkit-tap-highlight-color: transparent;
   }
   .pane-head-main { flex: 1 1 auto; min-width: 0; }
   .pane-expand-hint {
@@ -243,17 +242,6 @@ export function getResidentSpyUiHtml(): string {
     border-bottom: 1px solid color-mix(in srgb, var(--tg-theme-hint-color, #8b949e) 25%, transparent);
     background: color-mix(in srgb, var(--tg-theme-bg-color, #0d1117) 92%, #000);
   }
-  .fs-restore {
-    font: inherit;
-    font-size: 11px;
-    padding: 4px 8px;
-    border-radius: 6px;
-    cursor: pointer;
-    color: var(--tg-theme-button-text-color, #fff);
-    background: var(--tg-theme-button-color, #2ea043);
-    border: none;
-    margin-bottom: 8px;
-  }
   #fs-pre {
     flex: 1 1 auto;
     min-height: 0;
@@ -265,8 +253,7 @@ export function getResidentSpyUiHtml(): string {
 <span id="dot" class="dot" hidden></span>
 <div class="split-view" id="split-view">
   <div id="ticket-strip" class="ticket-strip" hidden>
-    <div class="ticket-strip-id" id="ticket-strip-id"></div>
-    <div class="ticket-strip-title" id="ticket-strip-title"></div>
+    <div class="ticket-strip-line"><span class="ticket-strip-id" id="ticket-strip-id"></span> - <span class="ticket-strip-title" id="ticket-strip-title"></span></div>
     <div class="ticket-strip-meta" id="ticket-strip-meta"></div>
   </div>
   <div id="pane-offline" class="pane-offline" hidden>Live panes unavailable — swarm agents may be down.</div>
@@ -274,7 +261,6 @@ export function getResidentSpyUiHtml(): string {
 </div>
 <div id="pane-fullscreen" class="pane-fullscreen" hidden>
   <div class="fs-top" id="fs-top">
-    <button type="button" class="fs-restore" id="fs-restore">Both panes</button>
     <div id="fs-head"></div>
   </div>
   <pre id="fs-pre"></pre>
@@ -295,10 +281,8 @@ export function getResidentSpyUiHtml(): string {
   var fsTopEl = document.getElementById('fs-top');
   var fsHeadEl = document.getElementById('fs-head');
   var fsPreEl = document.getElementById('fs-pre');
-  var fsRestoreBtn = document.getElementById('fs-restore');
   var focusPane = null;
   var lastOk = 0;
-  var paneCount = 0;
   var claimEnteredByPaneId = {};
   var ticketStripClaimEnteredAtMs = null;
   var ticketStripMetaBase = '';
@@ -489,8 +473,8 @@ export function getResidentSpyUiHtml(): string {
 
   function buildTicketBlockHtml(pane) {
     if (!pane || !pane.ticketId) return '';
-    var html = '<div class="ticket-strip-id">' + escapeHtml(pane.ticketId) + '</div>';
-    html += '<div class="ticket-strip-title">' + escapeHtml(pane.ticketTitle || '(untitled)') + '</div>';
+    var html = '<div class="ticket-strip-line"><span class="ticket-strip-id">' + escapeHtml(pane.ticketId) + '</span> - ';
+    html += '<span class="ticket-strip-title">' + escapeHtml(pane.ticketTitle || '(untitled)') + '</span></div>';
     var meta = pane.roleLabel || '';
     if (pane.modelLabel) {
       meta += (meta ? ' · ' : '') + pane.modelLabel;
@@ -562,17 +546,25 @@ export function getResidentSpyUiHtml(): string {
     updateTicketStrip(lastPanes);
   }
 
+  // A tap ANYWHERE in a tile expands it, not just the head strip - the pane
+  // text is the part you are actually looking at when you decide you want it
+  // bigger, and on a 4-8 tile split the head is a small target. Mirrors the
+  // fullscreen overlay's own tap-to-exit below, selection guard included: a
+  // drag-scroll of the mini pre never fires click, but a long-press text
+  // selection can, and that must not yank you into fullscreen.
   splitEl.addEventListener('click', function (e) {
-    var head = e.target.closest('.pane-head');
-    if (!head) return;
-    var col = head.closest('.pane-col');
+    var selection = window.getSelection && window.getSelection();
+    if (selection && String(selection).length) return;
+    var col = e.target.closest('.pane-col');
     if (!col) return;
     var pane = col.getAttribute('data-pane-id');
     if (!pane) return;
     enterFullscreen(pane);
   });
 
-  fsRestoreBtn.addEventListener('click', function (e) {
+  paneFullscreenEl.addEventListener('click', function (e) {
+    var selection = window.getSelection && window.getSelection();
+    if (selection && String(selection).length) return;
     e.preventDefault();
     exitFullscreen();
   });
@@ -673,8 +665,6 @@ export function getResidentSpyUiHtml(): string {
     splitEl.setAttribute('data-pane-ids', ids);
     splitEl.className = 'split pane-count-' + panes.length;
     splitEl.innerHTML = '';
-    paneCount = panes.length;
-    fsRestoreBtn.textContent = paneCount > 2 ? 'All panes' : 'Both panes';
     focusPane = null;
     paneFullscreenEl.hidden = true;
     document.body.classList.remove('pane-fullscreen-active');

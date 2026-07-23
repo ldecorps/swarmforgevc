@@ -1071,10 +1071,11 @@ test('serves /resident-spy HTML without a prior bearer/query token', async () =>
     assert.match(body, /<title>Swarm Live Screen<\/title>/);
     assert.match(body, /resident-pane\?token=/);
     assert.match(body, /pane-split/);
-    assert.match(body, /All panes/);
-    assert.match(body, /ticket-strip/);
+    assert.match(body, /ticket-strip-line/);
     assert.match(body, /pane-fullscreen/);
-    assert.match(body, /Both panes/);
+    // Tapping anywhere in the fullscreen pane restores the split view — no restore button.
+    assert.match(body, /paneFullscreenEl\.addEventListener\('click'/);
+    assert.doesNotMatch(body, /fs-restore/);
     assert.match(body, /requestBrowserFullscreen/);
     assert.match(body, /tg\.requestFullscreen/);
     assert.match(body, /webkitRequestFullscreen/);
