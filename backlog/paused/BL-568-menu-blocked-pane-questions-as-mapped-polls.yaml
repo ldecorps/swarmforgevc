@@ -104,6 +104,12 @@ out_of_scope: |
     (TELEGRAM_PRINCIPAL_USER_ID gating as per BL-425).
   - Non-menu question flows (operator_ask / awaiting-answer.json) — already
     covered by BL-306/BL-466.
-  - RC-session deep links in the poll message (nice-to-have slice if the
-    RC URL becomes durably discoverable; today only the session NAME is).
+  - RC-session deep links in the poll message — PROVEN FEASIBLE 2026-07-23
+    but its own slice: `tmux capture-pane -e` preserves the OSC 8
+    hyperlink escape each RC pane emits in its footer, carrying the full
+    claude.ai/code/session_... URL (used live to deep-link the
+    coordinator's blocked menu, topic-1602 msg 6677). Corollary defect for
+    the BL-564 cluster-1 retro-spec: the pane MIRROR currently renders
+    that escape as raw garbage text — OSC 8 must be parsed (ideally into
+    an "open RC session" affordance) or stripped, never shown raw.
   - Menus raised by tools other than Claude Code's interactive prompts.
