@@ -41,34 +41,42 @@ function runCli(targetPath: string, args: string[]): unknown {
   }
 }
 
+function emptyContextTelemetrySummary(agent: string): ContextTelemetrySummary {
+  return {
+    agent,
+    session_id: null,
+    event_count: 0,
+    compaction_count: 0,
+    avg_context_utilization_pct: null,
+    time_to_first_compaction_ms: null,
+    provider: null,
+    model: null,
+    latest_input_tokens: null,
+    latest_output_tokens: null,
+    latest_tool_output_tokens: null,
+    latest_prompt_engine_tokens: null,
+    latest_system_prompt_tokens: null,
+    latest_history_tokens: null,
+    latest_estimated_cost_usd: null,
+  };
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
 export function listTelemetryAgents(targetPath: string): string[] {
   const result = runCli(targetPath, ['agents']);
-  if (!result || typeof result !== 'object' || !('agents' in result)) {
+  if (!isPlainObject(result) || !Array.isArray(result.agents)) {
     return [];
   }
-  return (result as { agents: string[] }).agents;
+  return result.agents;
 }
 
 export function summarizeTelemetryForAgent(targetPath: string, agent: string): ContextTelemetrySummary {
   const result = runCli(targetPath, ['summary', '--agent', agent]);
-  if (!result || typeof result !== 'object') {
-    return {
-      agent,
-      session_id: null,
-      event_count: 0,
-      compaction_count: 0,
-      avg_context_utilization_pct: null,
-      time_to_first_compaction_ms: null,
-      provider: null,
-      model: null,
-      latest_input_tokens: null,
-      latest_output_tokens: null,
-      latest_tool_output_tokens: null,
-      latest_prompt_engine_tokens: null,
-      latest_system_prompt_tokens: null,
-      latest_history_tokens: null,
-      latest_estimated_cost_usd: null,
-    };
+  if (!isPlainObject(result)) {
+    return emptyContextTelemetrySummary(agent);
   }
-  return result as ContextTelemetrySummary;
+  return result as unknown as ContextTelemetrySummary;
 }
