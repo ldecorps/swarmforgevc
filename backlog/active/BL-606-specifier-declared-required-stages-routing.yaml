@@ -102,44 +102,119 @@ description: |
   instead of the next literal stage. Specifier decides the exact field
   location on the ticket yaml and how the router resolves "next required".
 
+  ## Specifier design decisions (BL-606) — the calls delegated above, resolved
+
+  Chosen conservatively per the human's "extreme care" caveat. Build to these.
+
+  - FIELD & FORMAT. `required_stages` is a top-level SINGLE-LINE flow list on the
+    ticket yaml, e.g. `required_stages: [coder, cleaner, qa]`. Single-line so the
+    existing line-based reader (chase_sweep_lib/read-yaml-field, ~line 718) parses
+    it without a new multi-line YAML parser. Tokens are lowercase stage names;
+    parsing normalizes case and the alias `hardener` -> `hardender` before
+    validating (a natural mis-spelling must not silently degrade to default-full).
+
+  - CANONICAL ORDER (authoritative). coder -> cleaner -> architect -> hardender ->
+    documenter -> qa (PIPELINE.md / salvage_lib/stage-order). The order in the
+    Problem prose above is GARBLED — ignore it, use this. specifier is always the
+    entry and coordinator always bookkeeps; NEITHER appears in required_stages.
+    required_stages is a SET run in canonical order (declared order is ignored),
+    so "reorder" (acceptance #4) cannot occur — an out-of-set token is what gets
+    rejected.
+
+  - NEW PURE LIB. Add `swarmforge/scripts/required_stages_lib.bb` with pure fns:
+    parse (flow-list -> vector, or :invalid), resolve-effective (default-full +
+    validation + qa-forcing + dedup), next-required-stage(set, current) mirroring
+    extension/src/swarm/rolePack.ts:36 `nextActiveRole`, and skipped-stages(set).
+    NOTE: that BL-064 TS resolver is the DESIGN precedent only — it is dead code
+    with no production caller and is unreachable from the pure-babashka send path;
+    do NOT try to call it. Unit-test in a new
+    swarmforge/scripts/test/required_stages_test_runner.bb (backlog_depth_test_runner.bb
+    is the pattern).
+
+  - KILL-SWITCH (default OFF). `config required_stages_routing_enabled false` in
+    swarmforge/swarmforge.conf, read via coordinator_config_lib/parse-config-value
+    (~line 55, compare to "true"). Env override seam for tests:
+    `SWARMFORGE_REQUIRED_STAGES_ROUTING` read as (= "1" (System/getenv ...)) — the
+    same shape as swarm_handoff.bb skip-daemon? (~line 402). OFF => required_stages
+    ignored, `to:` untouched, behaviour byte-identical to today.
+
+  - WIRING POINT. swarm_handoff.bb send path ONLY, for type: git_handoff with a
+    resolvable task. After validate computes recipients and before write-handoff!
+    serializes `to:` (~line 359; recipients threaded at -main ~line 445): if the
+    flag is ON, extract the ticket id from `task` (pipeline-stage-lib/extract-ticket-id,
+    already used at swarm_handoff.bb ~line 258), read required_stages from
+    backlog/active/<id>*.yaml; if present + valid and the literal `to:` recipient is
+    NOT in the effective set, rewrite `to:` to next-required-stage and record the
+    skip. Absent / invalid => leave `to:` unchanged (default-full).
+
+  - QA/DOCUMENTER DROP RULE (conservative; satisfies #5). A "non-code ticket" is
+    one whose required_stages omits `coder`. `qa` may be omitted ONLY for that
+    class; `qa` omitted while `coder` is present is INVALID -> default-full (with
+    QA). `documenter` may be omitted at the specifier's discretion. Every QA- or
+    documenter-omission decision (accepted OR rejected) is logged loudly. QA is
+    the load-bearing spec-defect gate and this swarm was already burned by an
+    implicit documenter skip — hence erring this conservative.
+
+  - SKIP RECORDING (satisfies #2/#6/#8). Two layers:
+    * Committed / git-greppable: the specifier writes intent in the ticket yaml —
+      `required_stages` plus a `stage_skip_reasons:` block (one line per skipped
+      stage). `git log`/`git grep` on the ticket answers "which were meant to be
+      skipped, and why".
+    * Runtime trail: when the send path rewrites `to:` past a skipped stage it
+      stamps a `routing_skipped:` envelope header (add it to swarm_handoff.bb
+      allowed-fields beside `reroute_reason`, written the same way at ~line 374)
+      AND appends a `.swarmforge/routing-skips.jsonl` event (salvage_lib/log-event!
+      pattern, ~line 167). A small reporter answers #8 (ran vs skipped) from these
+      plus the handoff trail, never from the diff.
+
 acceptance: |
-  Specifier writes the scenarios. Minimum:
+  specs/features/BL-606-specifier-declared-required-stages-routing.feature
 
-  1. A ticket with required_stages omitted (or malformed) runs the FULL
-     canonical pipeline — proven, not assumed. This is the default-safe path.
+  Every scenario needs its step handler wired in this same parcel — the
+  acceptance runner (specs/pipeline/runtime.js) throws on an unhandled scenario
+  (BL-233). Step handlers SHELL OUT to the real .bb scripts (the
+  specs/pipeline/steps/backlogDepthSteps.js pattern: spawnSync bb
+  swarm_handoff.bb; bb -e '(load-file required_stages_lib.bb) ...'), never
+  reimplement the logic in JS. The feature file was linted clean
+  (gherkin_lint_gate.sh) and IR-DRY reviewed; its remaining checker findings are
+  all deliberate — different required_stages fixtures, outline-placeholder vs
+  literal, and opposite flag states — not accidental drift.
 
-  2. A ticket declaring a strict subset (e.g. [coder, cleaner]) is routed
-     ONLY through those stages in canonical order; the unlisted stages never
-     receive a handoff for that ticket.
+  Scenario -> acceptance-item map: 01 default-full when no usable declaration
+  (#1); 02 strict-subset routes only listed stages (#2); 03 every skip recorded
+  in the trail (#3); 04 present-but-invalid rejected to default-full (#4); 05 QA
+  droppable only for a declared non-code ticket (#5); 06 next-required-stage
+  pure function (#6); 07 kill-switch OFF is inert — the ON case is scenario 02
+  (#7); 08 completed-ticket ran-vs-skipped visibility (#8).
 
-  3. Every skipped stage produces an explicit, greppable record in the
-     handoff/commit trail naming the stage and the specifier's reason. A test
-     asserts a skipped-stage lineage is distinguishable from a completed-stage
-     lineage after the fact.
+  Supporting gates the Gherkin does not pin (the real gate for .bb is the unit
+  suite — engineering.prompt tool table):
+  - required_stages_lib.bb has direct .bb unit coverage (new
+    swarmforge/scripts/test/required_stages_test_runner.bb) for: absent / empty /
+    non-list -> default-full; unknown, out-of-set (specifier/coordinator), and
+    duplicate tokens -> rejected; `hardener` alias + case normalization to
+    `hardender`; qa forced when coder present and qa omitted; a non-code ticket
+    (coder omitted) accepts qa omission; next-required-stage over every
+    (set, current) fixture including the last-stage -> nil case; a missing
+    backlog dir degrades to default-full and never throws.
+  - Kill-switch OFF proven at the SEND PATH, not just the pure fn: a real
+    swarm_handoff.bb send with the flag off leaves the delivered `to:`
+    byte-identical to today; with it on, `to:` is rewritten.
+  - Repo build stays green: npm / compile unaffected (change is babashka + conf).
 
-  4. required_stages can only SELECT from the canonical stage set — it cannot
-     add a stage, reorder, duplicate, or name an unknown stage. An unknown or
-     out-of-order entry is rejected (and falls back to default-full per #1),
-     not silently honoured.
-
-  5. A ticket whose required_stages omits QA or documenter is only accepted
-     for a non-code ticket class the specifier defines; the omission is logged
-     loudly. The rule for when QA/documenter are droppable is spelled out in
-     the Gherkin, conservative by default.
-
-  6. The "next required stage" resolution is a PURE function over
-     (required_stages, current_stage) — unit-tested with fixtures, no fs, no
-     live swarm.
-
-  7. GLOBAL KILL-SWITCH proven: with the flag OFF, a ticket carrying a strict
-     required_stages subset STILL runs the full canonical chain (routing is
-     inert) — a direct test, because this is the human's safety valve and it
-     failing silently would be the worst outcome. With the flag ON, the same
-     ticket routes to the subset (per #2).
-
-  8. STAGE VISIBILITY proven: for a completed routed ticket, a test asserts
-     the trail answers "which stages ran, which were skipped" without
-     inferring from the diff.
+  QA end-to-end procedure (live swarm):
+  1. config required_stages_routing_enabled false; send a git_handoff for a
+     ticket carrying required_stages: [coder, qa] from coder -> confirm the
+     delivered envelope `to:` is still `cleaner` (routing inert), full chain
+     intact.
+  2. Set it true; repeat -> the delivered `to:` is rewritten to `QA`, a
+     `routing_skipped:` header naming cleaner/architect/hardender/documenter is
+     present, and a `.swarmforge/routing-skips.jsonl` line was appended.
+  3. Send a ticket with required_stages: [coder, cleaner] (code, no qa) ->
+     it is rejected to default-full (QA still receives the parcel) and the
+     rejection is logged loudly.
+  4. Grep the ticket yaml + routing-skips.jsonl to confirm ran-vs-skipped is
+     answerable without reading the diff.
 
 out_of_scope: |
   - A dispatch-time LLM classifier or per-stage self-declared pass-through.
