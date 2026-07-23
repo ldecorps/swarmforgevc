@@ -1,0 +1,34 @@
+name: Scheduled GitHub issue auto-intake scan
+
+# BL-560 (epic BL-558 slice 1): complements the label-triggered
+# swarm-intake.yml - that workflow only fires when a human remembers to
+# apply the swarm-intake label. This scans on a schedule for any open issue
+# that has neither the swarm-intake nor swarm-specced label and no existing
+# backlog/GH-<n>-*.yaml file on main, and intakes it the same way a human
+# label would (github_intake_scan.sh -> the SAME github_intake_write.sh
+# swarm-intake.yml already uses - one YAML shape, never two).
+#
+# Does not touch or replace the label-triggered path; that keeps working
+# unchanged alongside this one.
+
+on:
+  schedule:
+    - cron: '*/30 * * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Scan open issues and intake any missing ones
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bash swarmforge/scripts/github_intake_scan.sh
