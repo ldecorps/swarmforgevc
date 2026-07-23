@@ -40,16 +40,8 @@
                      "manual redo")
           commit (salvage-lib/last-good-commit root item-id stage)
           tag (salvage-lib/tag-checkpoint! root item-id stage)
-          ;; BL-606 bounce defect 2: without a header, required_stages routing
-          ;; cannot tell this deliberately-named backward destination from an
-          ;; ordinary forward hop and may rewrite it past the stage the
-          ;; operator explicitly asked for. rejection_reason is queue-handoff!'s
-          ;; own documented header for this case (mirrors reroute.bb's
-          ;; reroute_reason) and route-required-stages now treats either as an
-          ;; identity-preserving signal.
           queued (salvage-lib/queue-handoff! root (salvage-lib/stage->role stage)
-                                              (salvage-lib/task-name root item-id) commit
-                                              {"rejection_reason" reason})]
+                                              (salvage-lib/task-name root item-id) commit)]
       (salvage-lib/log-event! root {:event "redo"
                                     :item item-id
                                     :from_stage stage
