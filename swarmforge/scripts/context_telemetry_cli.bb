@@ -11,6 +11,7 @@
 ;;     [--tool-output-tokens N] [--prompt-engine-tokens N] [--system-prompt-tokens N]
 ;;     [--history-tokens N] [--compaction true|false] [--estimated-cost-usd N]
 ;;   context_telemetry_cli.bb summary --agent A [--session-id S]
+;;   context_telemetry_cli.bb agents
 (ns context-telemetry-cli
   (:require [babashka.fs :as fs]
             [cheshire.core :as json]
@@ -80,6 +81,7 @@
   (println "Commands:")
   (println "  record --agent A --role R --session-id S --timestamp T --input-tokens N --output-tokens N --context-utilization-pct N --provider P --model M [--tool-output-tokens N] [--prompt-engine-tokens N] [--system-prompt-tokens N] [--history-tokens N] [--compaction true|false] [--estimated-cost-usd N]")
   (println "  summary --agent A [--session-id S]")
+  (println "  agents")
   (System/exit 1))
 
 (defn run-record [rest-args]
@@ -101,10 +103,15 @@
         summary (context-telemetry-lib/summarize scoped)]
     (println (json/generate-string (assoc summary :agent agent :session_id session-id)))))
 
+(defn run-agents []
+  (let [events (context-telemetry-store/read-events! (state-dir))]
+    (println (json/generate-string {:agents (context-telemetry-lib/distinct-agents events)}))))
+
 (let [args (cli-args)
       cmd (first args)
       rest-args (vec (rest args))]
   (case cmd
     "record" (run-record rest-args)
     "summary" (run-summary rest-args)
+    "agents" (run-agents)
     (usage)))
