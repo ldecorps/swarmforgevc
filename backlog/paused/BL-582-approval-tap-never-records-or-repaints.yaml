@@ -114,6 +114,49 @@ description: |
   itself (the way `operator_file_question.bb` does, loudly failing if the
   commit fails) belongs in this ticket's design.
 
+  ## Operator findings, 2026-07-23 ~16:20Z — root cause narrowed, fix scope set
+
+  Three converging proofs:
+  1. FIXTURE: the compiled decision->record chain on the CURRENT build works
+     end-to-end (decideCallbackQueryAction -> approve;
+     recordApprovalDecisionAndClose -> changed:true; yaml flipped) — driven
+     directly against out/ with a pending fixture ticket.
+  2. LIVE: the human tapped Approve on BL-585 at ~16:1xZ on the current bot
+     (pid 3624675, build a206516bf) — recorded AND repainted correctly.
+  3. TIMELINE: the taps that failed (~14:05-14:12) were served by the bot
+     started 12:23:53Z (pid 2972976) — and at 14:46:52Z the supervisor
+     itself logged `stale-build-detected recompiling before respawn`. The
+     failing taps ran on a STALE out/ build; the supervisor's crash-respawn
+     recompiled, and no tap has failed since. (409/second-poller theory
+     separately retracted in FINDINGS-telegram-409-no-second-poller.md.)
+
+  Ergo: no defect in the CURRENT callback code. What this ticket now owns is
+  the three hardening gaps that let a stale-build failure be silent and
+  non-durable — all verified present in current code:
+
+  a. SILENT changed:false — recordApprovalDecisionAndClose returns false
+     (file not found, or human_approval not literally pending) with zero
+     observable effect: no toast, no log, spinner already cleared by
+     dispatchApproveOrFollowup. Every no-op record MUST become observable
+     (toast naming why + stderr line). This also covers the ticket's
+     original item 1 (decideCallbackQueryAction silent drops).
+  b. NON-DURABLE WRITE — recordApprovalReply writes the yaml uncommitted on
+     the master checkout, which lost uncommitted work to role git churn
+     twice on 2026-07-23. Expedite already solved this in-code: its
+     commitExpediteWrites adapter commits before dispatch (see the
+     BL-490-VIOLATION comment). Approve/reject/amend should write through
+     the same commit-on-decision adapter.
+  c. STALE BUILD CAN SERVE INDEFINITELY — the supervisor detects staleness
+     only on CRASH respawn. A healthy bot on an outdated build runs
+     forever (12:23->14:46 here). Either the supervisor build-freshness
+     check runs on healthy ticks too (restart when stale beyond a grace),
+     or the bot self-reports its BUILD_SHA on a heartbeat surface the
+     watchdog/briefing can compare. Cross-ref BL-328 lineage.
+
+  Bot stdout in the failure window is captured NOWHERE (supervisor log has
+  supervisor lines only) — (a)'s stderr line must land in a file that
+  survives, name it in the spec.
+
 acceptance: |
   Specifier writes the scenarios. Minimum:
 
