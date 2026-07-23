@@ -1,0 +1,151 @@
+id: BL-590
+title: "Onboarding Facilitator: a standalone tooled agent that guides a human through onboarding a new target, step by step, in its own ad-hoc Telegram topic"
+milestone: M8
+type: feature
+status: needs_design
+epic: swarm-intelligence-layer
+human_approval: pending
+severity: medium
+priority: 10
+direction: human-requested
+depends_on: [BL-262, BL-269, BL-344, BL-380, BL-381]
+assigned_to: specifier
+mutation_cost: high
+source: |
+  Human, 2026-07-23. Wants to onboard a new project (e.g. a mono-router on an
+  old Mac). Asked whether an onboarder role / a ready facilitator agent exists.
+  It does not: onboarding today is a set of CLIs (survey -> propose -> negotiate
+  -> provision channel -> prompts -> gate) with NO orchestrator, invoked step by
+  step by an operator turn. Human's ask, verbatim: "a standalone agent which I
+  can access through an ad-hoc onboarding topic, which will guide me step by
+  step."
+
+description: |
+  ## What exists, and the exact gap
+
+  The onboarding TOOLCHAIN is shipped and proven (BL-262/269/344/380/381,
+  end-to-end on a real target in BL-405):
+
+    - survey the target repo (contractSurvey.ts)
+    - propose a scope contract -> .swarmforge/contract.yaml + CONTRACT.md in
+      the TARGET repo (propose-onboarding-contract.js)
+    - iterative negotiate: propose -> object -> revise -> agree
+      (negotiate-onboarding-contract.js, BL-344)
+    - provision the target's OWN Telegram channel
+      (provision-onboarding-telegram-channel.js, BL-380)
+    - relay the negotiation to the phone
+      (relay-onboarding-negotiation-telegram.js + negotiation_relay_supervisor.bb,
+      BL-381)
+    - propose the target's project/engineering prompts
+      (propose-onboarding-prompts.js, BL-269)
+    - fail-closed build-start gate (onboarding-contract-gate.js)
+
+  Two things are missing, and this ticket is BOTH:
+
+  1. **No orchestrator.** Nothing chains those CLIs. `swarmforge.sh` has no
+     `onboard` subcommand. The sequence is run by hand, in order, by whoever
+     remembers it.
+  2. **No facilitator persona.** The human wants to be GUIDED - "where are we,
+     what's next, what do you need from me" - not to run seven commands. The
+     closest existing thing, the BL-381 negotiation relay, only argues the
+     contract (object/approve verbs) over the TARGET's provisioned channel; it
+     does not survey, propose prompts, run the gate, or explain itself.
+
+  ## Why this is a NEW agent, not the front-desk operator
+
+  The restricted front-desk Operator answers Telegram with `claude -p --tools
+  ""` (BL-334) - deliberately NO repo access. A facilitator must READ the
+  target repo (survey), RUN the onboarding CLIs, and WRITE/commit the contract
+  and prompts into the target. It is therefore a TOOLED ancillary agent, closer
+  to the full Operator than to the front-desk one - but conversational and
+  bound to a single topic. It is NOT a ninth pipeline role: it never touches
+  the backlog pipeline, never rotates, and exists only for the duration of an
+  onboarding.
+
+  ## Shape (specifier owns the detail; these are the load-bearing decisions)
+
+  ### The topic
+  An ad-hoc "Onboarding" topic in the PRIMARY swarm's existing group (chat
+  -1004415865297), created on demand, mirroring the reserved-subject
+  ensure-or-reuse pattern every standing topic already uses
+  (decideEnsureOperatorTopicAction and its seven twins in
+  telegramFrontDeskBotCore.ts). Reserve an ONBOARDING subject id + a
+  decideEnsureOnboardingTopicAction alongside them. "Ad-hoc" = created when an
+  onboarding starts, and either closed or reused when the next one does - the
+  specifier decides one-topic-reused vs one-topic-per-target. Inbound there
+  routes to the facilitator, NOT to the front-desk operator's SUP path.
+
+  ### The agent + supervisor
+  Reuse the proven ancillary-service shape, do not invent one:
+  `negotiation_relay_supervisor.bb` already supervises a topic-bound poll-loop
+  with bounded restart, itself modelled on `front_desk_supervisor.bb`. The
+  facilitator is a supervised poll-loop over the Onboarding topic that, unlike
+  the relay, holds tools and drives the whole sequence. `start_ancillary_services.sh`
+  / `stop_ancillary_services.sh` are where it registers.
+
+  ### Step-by-step guidance = an explicit state machine, not vibes
+  The facilitator must know WHERE in onboarding a given target is and what the
+  next action is. The states are already implied by the toolchain:
+  needs-target-path -> surveying -> contract-proposed -> negotiating ->
+  contract-agreed -> prompts-proposed -> gate-open -> done. Persist the state
+  per target (same durable-state-file discipline the rest of .swarmforge/ uses),
+  so a facilitator restart resumes mid-onboarding rather than restarting it.
+  Each state has: what the human sees, what input advances it, which CLI the
+  facilitator runs. The contract-agreed transition is the EXISTING fail-closed
+  gate (onboarding-contract-gate.js) - reuse it, do not re-implement the gate.
+
+  ### The human's controls
+  At minimum, per step: proceed / show me / change this / pause. The "change
+  this" verb during negotiation is the existing object round
+  (negotiate-onboarding-contract.js runObject); do not build a parallel
+  negotiation engine - BL-381's comment is explicit that runObject/runApprove
+  is the ONE real writer of negotiation state.
+
+  ### Cross-host reality (call out, do not paper over)
+  The human's example target is a DIFFERENT machine (an old Mac). The
+  facilitator on THIS box can survey/propose/negotiate against a target repo it
+  can see, but the actual swarm LAUNCH on the Mac (its own bot token, bridge
+  port, host secrets - every prior second-swarm bring-up needed real per-host
+  setup, see the FES notes) happens on the Mac. The facilitator's job ends at
+  "contract agreed + prompts proposed + gate ready"; it must state plainly what
+  the human then runs on the target host, and must NOT pretend it can launch a
+  remote swarm it cannot reach. Whether the facilitator runs on the primary box
+  and treats the Mac repo as a path, or is meant to run ON the Mac, is the
+  first thing the specifier must pin with the human.
+
+acceptance: |
+  Specifier writes the scenarios and slices this - it is mutation_cost high and
+  should NOT ship as one parcel. A sensible slice 1 is: reserve the Onboarding
+  topic + ensure/route it + a facilitator that walks survey -> propose ->
+  agree -> gate for a LOCAL target path, with the negotiation reusing the
+  existing relay/CLI. Prompts (BL-269) and multi-target topic reuse can be
+  later slices.
+
+  Minimum for slice 1:
+  1. An "Onboarding" topic is ensured in the primary group via the same
+     reuse-or-create pattern as the other standing topics, with its own
+     reserved subject id; a message there reaches the facilitator, not the
+     front-desk SUP path.
+  2. The facilitator surveys a given local target repo and posts the proposed
+     contract into the topic, then waits for the human.
+  3. The human can advance (proceed), inspect (show me), and object (change
+     this -> a real negotiate runObject round), all from the topic.
+  4. Build work stays blocked until the contract is agreed - the EXISTING
+     onboarding-contract-gate, not a new gate.
+  5. Onboarding state is persisted per target and survives a facilitator
+     restart (resumes mid-flow, does not restart the survey).
+  6. The facilitator states explicitly what the human must run ON THE TARGET
+     HOST to launch the swarm, and does not claim to have launched a swarm it
+     cannot reach.
+
+out_of_scope: |
+  - A ninth pipeline role. This is an ancillary conversational agent, not part
+    of the backlog pipeline; it never rotates and holds no ticket.
+  - Reimplementing any onboarding CLI. Every step shells to the existing,
+    tested tool. If a tool is missing a capability, that is its own ticket.
+  - A second negotiation engine (BL-381: runObject/runApprove is the one
+    writer).
+  - Remote launch of the target swarm. The facilitator prepares onboarding;
+    the human launches on the target host.
+  - Replacing per-ticket human_approval. The contract sits ABOVE it (BL-262);
+    this ticket does not touch the per-feature gate.
