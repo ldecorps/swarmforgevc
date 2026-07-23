@@ -411,6 +411,9 @@ make_fixture
 printf 'coder\tcoder\t%s\tswarmforge-coder\tCoder\tclaude\ttask\n' "$ROOT/.worktrees/coder" > "$ROOT/.swarmforge/roles.tsv"
 printf 'specifier\tspecifier\t%s\tswarmforge-specifier\tSpecifier\tclaude\ttask\n' "$ROOT/.worktrees/coder" >> "$ROOT/.swarmforge/roles.tsv"
 printf 'coordinator\tmaster\t%s\tswarmforge-coordinator\tCoordinator\tclaude\ttask\n' "$ROOT" >> "$ROOT/.swarmforge/roles.tsv"
+# BL-530 architect bounce (round 3): mono-router-ness must come from a
+# declared signal, not an inferred live shape — declare it explicitly.
+printf 'rotation\trouter\n' > "$ROOT/.swarmforge/swarm-identity"
 RESPAWN_LOG="$ROOT/respawns"
 : > "$RESPAWN_LOG"
 cat > "$FAKE_BIN/tmux" <<TMUXFAKE
@@ -444,6 +447,60 @@ echo "$OUTPUT" | grep -q 'agent:specifier: DORMANT' || fail "expected specifier 
 echo "$OUTPUT" | grep -q 'agent:coder: HEALTHY' || fail "expected coder HEALTHY"
 if [[ -s "$RESPAWN_LOG" ]]; then fail "dormant role should not be respawned"; fi
 pass "mono-router dormant roles report DORMANT without respawn"
+
+# ---------------------------------------------------------------------------
+# Extra: a classic pack with one half-launched session must NOT be classified
+# as mono-router — the live-shape fallback (some sessions standing, some
+# absent) that BL-530 round 3 removed was equally the fingerprint of a
+# half-launch/partial-crash, which ensure must repair, not tear down.
+# ---------------------------------------------------------------------------
+make_fixture
+printf 'coordinator\tmaster\t%s\tswarmforge-coordinator\tCoordinator\tclaude\ttask\n' "$ROOT" > "$ROOT/.swarmforge/roles.tsv"
+printf 'coder\tcoder\t%s\tswarmforge-coder\tCoder\tclaude\ttask\n' "$ROOT/.worktrees/coder" >> "$ROOT/.swarmforge/roles.tsv"
+printf 'cleaner\tcleaner\t%s\tswarmforge-cleaner\tCleaner\tclaude\ttask\n' "$ROOT/.worktrees/coder" >> "$ROOT/.swarmforge/roles.tsv"
+printf 'architect\tarchitect\t%s\tswarmforge-architect\tArchitect\tclaude\ttask\n' "$ROOT/.worktrees/coder" >> "$ROOT/.swarmforge/roles.tsv"
+printf 'QA\tQA\t%s\tswarmforge-QA\tQA\tclaude\ttask\n' "$ROOT/.worktrees/coder" >> "$ROOT/.swarmforge/roles.tsv"
+# Deliberately no `rotation router` conf and no swarm-identity file: this is
+# a classic pack, not mono-router.
+KILL_LOG="$ROOT/kills"
+: > "$KILL_LOG"
+cat > "$FAKE_BIN/tmux" <<TMUXFAKE
+#!/usr/bin/env bash
+sock_cmd="\$3"
+if [[ "\$sock_cmd" == "has-session" ]]; then
+  target="\$5"
+  [[ "\$target" == "swarmforge-architect" ]] && exit 1
+  exit 0
+fi
+if [[ "\$sock_cmd" == "list-panes" ]]; then
+  target="\$5"
+  if [[ "\$target" == "swarmforge-architect" ]]; then
+    exit 1
+  fi
+  echo "0"
+  exit 0
+fi
+if [[ "\$sock_cmd" == "kill-session" ]]; then
+  echo "KILL \$5" >> "$KILL_LOG"
+  exit 0
+fi
+if [[ "\$sock_cmd" == "respawn-pane" ]]; then
+  exit 0
+fi
+exit 0
+TMUXFAKE
+chmod +x "$FAKE_BIN/tmux"
+OUTPUT=$(PATH="$FAKE_BIN:$PATH" \
+  SWARMFORGE_ENSURE_EXTENSION_CHECK="$FAKE_BIN/fake_ext_check.sh" \
+  SWARMFORGE_ENSURE_EXTENSION_BOUNCE="$FAKE_BIN/fake_ext_bounce.sh" \
+  SWARMFORGE_ENSURE_SUPERVISOR="$FAKE_BIN/fake_supervisor.bb" \
+  SWARMFORGE_SKIP_OPERATOR=1 SWARMFORGE_SKIP_FRONT_DESK=1 \
+  bb "$ENSURE" "$ROOT" 2>&1) || true
+echo "$OUTPUT" | grep -q 'DORMANT' && fail "classic pack must not classify any role as DORMANT, got: $OUTPUT"
+if [[ -s "$KILL_LOG" ]]; then fail "classic half-launch must not kill any healthy session, got: $(cat "$KILL_LOG")"; fi
+echo "$OUTPUT" | grep -q '^agent:coordinator: HEALTHY$' || fail "expected coordinator HEALTHY, got: $OUTPUT"
+echo "$OUTPUT" | grep -q '^agent:cleaner: HEALTHY$' || fail "expected cleaner HEALTHY, got: $OUTPUT"
+pass "classic pack with one half-launched session is not treated as mono-router (no kills, no DORMANT)"
 
 # ---------------------------------------------------------------------------
 # 08: an ensure repair for a dead agent pane passes provider auth through
