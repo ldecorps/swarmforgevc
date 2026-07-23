@@ -48,6 +48,23 @@
          :ok
          (mono-router-lib/topology-action roles "coordinator" true))
 
+(assert= "rotate-viable: resident dead"
+         {:viable? false :reason "no live resident session to rotate from"}
+         (mono-router-lib/rotate-viable?
+          {:resident-alive? false :launch-script-present? true}))
+(assert= "rotate-viable: resident alive, script missing"
+         {:viable? false :reason "missing launch script for role"}
+         (mono-router-lib/rotate-viable?
+          {:resident-alive? true :launch-script-present? false}))
+(assert= "rotate-viable: resident alive, script present"
+         {:viable? true}
+         (mono-router-lib/rotate-viable?
+          {:resident-alive? true :launch-script-present? true}))
+(assert= "rotate-viable: resident-first precedence when both broken"
+         {:viable? false :reason "no live resident session to rotate from"}
+         (mono-router-lib/rotate-viable?
+          {:resident-alive? false :launch-script-present? false}))
+
 (let [sum (mono-router-lib/summarize-topology
            roles
            [{:role "coder" :alive? false}
