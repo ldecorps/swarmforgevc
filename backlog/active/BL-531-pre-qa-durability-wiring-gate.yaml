@@ -16,7 +16,7 @@ required_wiring:
   - "swarmforge/scripts/swarm_handoff.bb::pre_qa_gate_lib::the refusal must run on the live send path, not merely exist as a standalone script"
 
 abandoned_commits:
-  - "aca611925c"  # merge coder work for BL-531 — benign merge with no real code changes
+  - "aca611925c"
 
 description: |
   ## What / why
