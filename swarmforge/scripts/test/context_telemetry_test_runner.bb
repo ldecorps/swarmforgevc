@@ -60,6 +60,17 @@
 (assert-true "validate-event accepts numeric-field values passed as numeric strings (CLI argv)"
              (:valid? (context-telemetry-lib/validate-event (valid-event {:input_tokens "500"}))))
 
+;; ── validate-event: non-finite numeric strings are rejected, not silently
+;;    accepted — Double/parseDouble happily parses these as valid doubles,
+;;    which would otherwise corrupt the log with NaN/Infinity token counts.
+(doseq [bad-value ["NaN" "Infinity" "-Infinity"]]
+  (let [event (valid-event {:input_tokens bad-value})
+        {:keys [valid? error]} (context-telemetry-lib/validate-event event)]
+    (assert-true (str "validate-event rejects the non-finite numeric string " (pr-str bad-value))
+                 (not valid?))
+    (assert-true (str "validate-event's error for " (pr-str bad-value) " names the field")
+                 (and error (clojure.string/includes? error "input_tokens")))))
+
 (assert-true "validate-event accepts a nil optional numeric field (estimated_cost_usd)"
              (:valid? (context-telemetry-lib/validate-event (valid-event {:estimated_cost_usd nil}))))
 
