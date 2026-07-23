@@ -123,6 +123,7 @@ import {
   decideEnsureResidentSpyTopicAction,
   SttResult,
   TtsResult,
+  SteerDeliveryResult,
   ReplyRelayAdapters,
   AskOption,
   closeApprovalAskForBacklogId,
@@ -1126,11 +1127,15 @@ export function resolveRolePaneTarget(targetPath: string, role: string): { socke
 // thrown - matching this file's own established "a live-network/pane
 // adapter never throws out of the poll cycle" convention (postToBridge,
 // answerCallbackQueryQuietly above).
-export async function redirectToRole(targetPath: string, role: string, text: string): Promise<void> {
+// Returns the outcome (never throws - the swallow-and-log posture above is
+// unchanged) so processSteeringUpdate can post a receipt back into the role
+// topic. The stderr lines stay: they are the operator-facing record, the
+// receipt is the human-facing one.
+export async function redirectToRole(targetPath: string, role: string, text: string): Promise<SteerDeliveryResult> {
   const resolved = resolveRolePaneTarget(targetPath, role);
   if (!resolved) {
     process.stderr.write(`redirectToRole: no live pane resolved for role "${role}" - is the swarm running?\n`);
-    return;
+    return { kind: 'no-pane' };
   }
   const { socketPath, target } = resolved;
   const result = sendInstructionVerified(
@@ -1149,7 +1154,9 @@ export async function redirectToRole(targetPath: string, role: string, text: str
   );
   if (result.status !== 'delivered') {
     process.stderr.write(`redirectToRole: failed to deliver redirect to "${role}": ${result.reason ?? 'unknown'}\n`);
+    return { kind: 'undelivered', reason: result.reason ?? 'unknown' };
   }
+  return { kind: 'delivered' };
 }
 
 // BL-294: opens the subject, records the topicId(or DM default)->subjectId
@@ -1767,6 +1774,8 @@ function buildPollAdapters(
     answerCallbackQuery: (callbackQueryId, text) => answerCallbackQueryQuietly(botToken, callbackQueryId, text),
     readRoleTopicMap: () => readRoleTopicMap(targetPath),
     redirectToRole: (role, text) => redirectToRole(targetPath, role, text),
+    notifyRoleTopic: (topicId, text) =>
+      sendTelegramMessage(botToken, chatId, text, undefined, undefined, topicId).then((r) => r.success),
     agentQuestionsTopicId: () => ensureAgentQuestionsTopic(targetPath, botToken, chatId),
     getPendingAgentQuestionThread: () => Promise.resolve(readAwaitingAnswer(targetPath)?.threadId),
     resolvePollThread: (pollId) => Promise.resolve(readPollMap(targetPath)[pollId]),

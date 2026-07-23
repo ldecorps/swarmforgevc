@@ -39,7 +39,7 @@ test('captureResidentPaneLive includes modelLabel from the role settings file', 
     const snap = captureResidentPaneLive(tmp);
     assert.ok(snap);
     assert.equal(snap.roleLabel, 'Coder');
-    assert.equal(snap.modelLabel, 'Sonnet 4.6');
+    assert.equal(snap.modelLabel, 'Sonnet 5');
     assert.match(snap.sessionTarget, /^swarmforge-coder:/);
   } finally {
     fake.restore();
@@ -62,7 +62,7 @@ test('captureResidentPaneLive falls back to roster role when pane banner scrolle
     const snap = captureResidentPaneLive(tmp);
     assert.ok(snap);
     assert.equal(snap.roleLabel, 'Coder');
-    assert.equal(snap.modelLabel, 'Sonnet 4.6');
+    assert.equal(snap.modelLabel, 'Sonnet 5');
   } finally {
     fake.restore();
   }
