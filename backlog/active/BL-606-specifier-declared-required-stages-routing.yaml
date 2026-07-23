@@ -11,6 +11,8 @@ direction: human-requested
 depends_on: []
 assigned_to: specifier
 mutation_cost: medium
+abandoned_commits:
+  - "d445f2eb75"
 source: |
   Human, 2026-07-23, after the "auto mode / model" thread: "how about dynamic
   routing? where some agents in the swarm could be bypassed because deemed
