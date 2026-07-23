@@ -27,6 +27,7 @@ const {
   APPROVALS_SUBJECT_ID,
   decideEnsureRecertTopicAction,
   RECERT_SUBJECT_ID,
+  formatSteerReceipt,
   nextUpdateOffset,
   offsetAfterDelivery,
   shouldEscalateStuckDelivery,
@@ -766,10 +767,102 @@ test('BL-425: a role-topic message redirects via redirectToRole, never reaching 
     readRoleTopicMap: () => ({ coder: 42 }),
     redirectToRole: async (role, text) => {
       redirected.push({ role, text });
+      return { kind: 'delivered' };
     },
   });
   assert.deepEqual(redirected, [{ role: 'coder', text: 'focus on the edge case' }]);
   assert.equal(result.posted, 1);
+});
+
+test('steer receipt: a delivered redirect posts a confirmation back into the SAME role topic', async () => {
+  const posted = [];
+  await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 1602, text: 'merge main first' })] }),
+    postToBridge: async () => {
+      throw new Error('postToBridge should not be called for a role-topic redirect');
+    },
+    subjectForTopic: () => undefined,
+    openSubjectAndRecord: stubOpenSubjectAndRecord(),
+    readRoleTopicMap: () => ({ coordinator: 1602 }),
+    redirectToRole: async () => ({ kind: 'delivered' }),
+    notifyRoleTopic: async (topicId, text) => {
+      posted.push({ topicId, text });
+      return true;
+    },
+  });
+  assert.deepEqual(posted, [{ topicId: 1602, text: '✓ steered coordinator' }]);
+});
+
+test('steer receipt: a dormant role (no live pane) reports the failure instead of vanishing', async () => {
+  const posted = [];
+  await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 1595, text: 're-read the spec' })] }),
+    postToBridge: async () => {
+      throw new Error('postToBridge should not be called for a role-topic redirect');
+    },
+    subjectForTopic: () => undefined,
+    openSubjectAndRecord: stubOpenSubjectAndRecord(),
+    readRoleTopicMap: () => ({ specifier: 1595 }),
+    redirectToRole: async () => ({ kind: 'no-pane' }),
+    notifyRoleTopic: async (topicId, text) => {
+      posted.push({ topicId, text });
+      return true;
+    },
+  });
+  assert.deepEqual(posted, [{ topicId: 1595, text: '⚠ specifier has no live pane - not delivered' }]);
+});
+
+test('steer receipt: an unauthorised sender is refused without any receipt being posted', async () => {
+  const posted = [];
+  await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: 'someone-else', topicId: 1602, text: 'do a thing' })] }),
+    postToBridge: async () => {
+      throw new Error('postToBridge should not be called for a refused steer');
+    },
+    subjectForTopic: () => undefined,
+    openSubjectAndRecord: stubOpenSubjectAndRecord(),
+    readRoleTopicMap: () => ({ coordinator: 1602 }),
+    redirectToRole: async () => {
+      throw new Error('redirectToRole must not run for an unauthorised sender');
+    },
+    notifyRoleTopic: async (topicId, text) => {
+      posted.push({ topicId, text });
+      return true;
+    },
+  });
+  assert.deepEqual(posted, [], 'a refused steer must not confirm anything to the unauthorised sender');
+});
+
+test('steer receipt: steering still works, silently, when notifyRoleTopic is not wired', async () => {
+  const redirected = [];
+  const result = await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 1602, text: 'merge main first' })] }),
+    postToBridge: async () => {
+      throw new Error('postToBridge should not be called for a role-topic redirect');
+    },
+    subjectForTopic: () => undefined,
+    openSubjectAndRecord: stubOpenSubjectAndRecord(),
+    readRoleTopicMap: () => ({ coordinator: 1602 }),
+    redirectToRole: async (role, text) => {
+      redirected.push({ role, text });
+      return { kind: 'delivered' };
+    },
+  });
+  assert.deepEqual(redirected, [{ role: 'coordinator', text: 'merge main first' }]);
+  assert.equal(result.posted, 1);
+});
+
+test('formatSteerReceipt names the role in every outcome, and distinguishes no-pane from a send failure', () => {
+  assert.equal(formatSteerReceipt('coordinator', { kind: 'delivered' }), '✓ steered coordinator');
+  assert.equal(formatSteerReceipt('specifier', { kind: 'no-pane' }), '⚠ specifier has no live pane - not delivered');
+  assert.equal(
+    formatSteerReceipt('coder', { kind: 'undelivered', reason: 'pane busy' }),
+    '⚠ not delivered to coder: pane busy'
+  );
 });
 
 test('BL-425: a message in a non-role topic falls through unaffected to the existing routing when readRoleTopicMap/redirectToRole are wired', async () => {

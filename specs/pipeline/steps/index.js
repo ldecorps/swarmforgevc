@@ -302,6 +302,7 @@ const DOMAINS = [
   require('./gh22ContextTelemetrySteps'),
   require('./gh23ContextBudgetDashboardSteps'),
   require('./coChangeMaxBufferSteps'),
+  require('./bl566SteerDeliveryReceiptSteps'),
   require('./bl560GithubScheduledAutoIntakeSteps')
 ];
 
