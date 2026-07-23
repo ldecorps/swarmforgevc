@@ -1,0 +1,142 @@
+id: BL-572
+title: "Epic priority reorder screen on the live Mini App console — move-up/move-down swaps priority in the epic's backlog YAML"
+milestone: M8
+type: feature
+status: todo
+epic: swarmforge-console
+human_approval: approved
+severity: medium
+priority: 10
+direction: human-requested
+depends_on: []
+assigned_to: specifier
+mutation_cost: medium
+source: |
+  Human directive 2026-07-23, drained from the backlog-root intake
+  `backlog/INTAKE-20260723-epic-reprioritization-mini-app.md` ("prioritize
+  next"), relayed by the coordinator. Reordering an epic today means
+  hand-editing `priority:` in its `backlog/paused/BL-*.yaml` and committing
+  directly; the human wants that action on a screen instead.
+
+  The intake had already settled the surface question (live holistic UI, not
+  the static PWA) and delegated three open questions to the specifier: the
+  auth model for a backlog-mutating write, concurrent-writer safety, and
+  whether a reorder renumbers globally or recomputes locally. All three are
+  answered below from existing shipped precedent rather than invented.
+
+description: |
+  ## Surface — live console only
+
+  The screen goes on the LIVE holistic UI (Mini App console), served by
+  `bridge/bridgeServer.ts` and rendered through
+  `extension/src/bridge/holisticUiHtml.ts` — token-authed, control actions
+  allowed. It must NOT go on the static backlog-dashboard PWA
+  (`pwa/index.html` -> `pwa/app.js`): that surface is a git-SHA-reproducible
+  read-only projection with no bridge connectivity and no write path, per the
+  project's two-phone-surfaces architecture rule.
+
+  ## The three delegated questions, answered from precedent
+
+  **1. Auth for a backlog-mutating write — already established, reuse it.**
+  BL-538 shipped exactly this class of action: `/paused-pager/expedite` and
+  `/paused-pager/approve` are POST routes on the same bridge that gate on
+  `requireControlAuth(req, res, registry)` and then mutate ticket YAML. So the
+  bridge's control-scoped auth already covers backlog-mutating actions, not
+  only read/control ones. Gate the new route the same way — do not introduce a
+  second auth notion.
+
+  **2. Concurrent-writer safety — follow the expedite split.**
+  `handlePausedPagerExpediteRoute` mutates the YAML with `atomicWrite` and
+  deliberately does NOT commit; its comment states that
+  `commitExpediteWrites`/dispatch are owned by `telegramFrontDeskBotCore`.
+  Keep that separation: the route performs the atomic YAML edit, and the
+  commit goes through the same owner and the same commit-integrity discipline
+  (`commit_integrity_cli.bb`) used elsewhere — never a raw `git commit` issued
+  from the bridge server, which races the roles committing to `main`.
+  Scenario 06 pins that the write does get committed: an uncommitted mutation
+  is a known live failure mode (BL-490 — the bot's approval write never
+  reached a commit), and this ticket must not reproduce it.
+
+  **3. Renumber vs recompute — SWAP, and neither.**
+  A move exchanges the two adjacent epics' `priority:` values. Exactly two
+  files change; every untouched epic keeps the exact value it already had, so
+  there is no global renumbering and no churn against tickets nobody touched.
+  Repeated swaps compose into any arbitrary order. This also sidesteps the
+  question of how promotion reads `priority:` — the ORDER changes, the value
+  space does not.
+
+  Ties are the one edge case swapping does not handle by itself: two adjacent
+  epics with the same value swap to no observable effect, so the UI would look
+  stuck. Scenario 02 requires the move to still produce a strict ordering.
+
+  ## Scope boundary
+
+  Epic trackers only (`type: epic`). Reordering an epic's own child slices is a
+  separate concern and is explicitly NOT folded in — the intake says so, and
+  the child-slice list lives in `decomposes_into`, a different shape from a
+  flat priority list.
+
+  ## Constraints
+
+  - Follow BL-538's route shape: a validated JSON body, a bounded max body
+    size, `requireControlAuth`, and a JSON response — the paused-pager routes
+    are the working template.
+  - The priority edit must be an atomic write, as expedite's is; a torn write
+    to a backlog YAML corrupts the queue the coordinator promotes from.
+  - Keep the decision logic (which two tickets move, what values they end up
+    with, tie resolution) in a pure, testable module — the bridge server is
+    the IO edge, consistent with how `expediteSafety.ts` holds expedite's pure
+    collision logic outside the route handler.
+  - Do not widen the epic list to non-epic tickets; the paused pager already
+    covers ordinary tickets.
+
+acceptance: specs/features/BL-572-epic-priority-reorder-console.feature
+
+qa_e2e_procedure: |
+  Against the live console with a valid device token:
+  1. Open the epic reorder screen — confirm it lists only `type: epic`
+     tickets, ordered by `priority:` ascending.
+  2. Move a mid-list epic up. Confirm in `git diff` that exactly TWO backlog
+     YAML files changed and their `priority:` values are exchanged.
+  3. Confirm the change reached a commit on `main` (`git log -1 --stat`), and
+     that it went through the commit-integrity path rather than a bare commit.
+  4. Set two adjacent epics to the same `priority:` by hand, reload, move the
+     lower one up — confirm the list order visibly changes and the two values
+     are now distinct.
+  5. Replay the reorder POST with the token stripped — confirm it is refused
+     and `git status` shows no backlog YAML modified.
+  6. Move the first epic up — confirm nothing is written.
+
+notes: |
+  IR-DRY adjudication (specifier, 2026-07-23). One real fix applied: scenario
+  01's assertion read `... has priority 20 in its backlog YAML` while scenario
+  02's precondition read `... has priority 20` — the same subject and value as
+  both precondition and assertion, the overload class that has produced
+  ambiguous step handlers here before. The assertion verb is now "is written
+  with", which a handler can separate cleanly from "has".
+
+  Note for anyone re-running the checker: that edit RAISED the reported score
+  for the pair (0.625 -> 0.833) while lowering the actual ambiguity, because
+  the checker scores lexical token overlap and the previous version differed by
+  a longer four-word suffix. Do not "fix" it back. The remaining findings are
+  the usual artifacts — quoted literals the checker will not normalize
+  ("epic"/"feature", priority 10/20), and the deliberate scope contrast between
+  `no backlog YAML is modified` (nothing at all) and `no other epic's backlog
+  YAML is modified` (nothing besides the two that swapped).
+
+  Working precedent to copy, not re-derive:
+    - route + auth + atomic write: `handlePausedPagerExpediteRoute` in
+      extension/src/bridge/bridgeServer.ts (BL-538)
+    - screen shape for a phone-sized list with per-row actions:
+      extension/src/bridge/pausedPagerUiHtml.ts
+    - pure decision module beside an impure route:
+      extension/src/concierge/expediteSafety.ts
+
+  Expedite sets `priority: 0` outright; that is the right semantic for "jump
+  the queue" and the wrong one for reordering, which is why this ticket swaps
+  instead. The two actions should stay distinct — do not reimplement one in
+  terms of the other.
+
+  Possible slice 2 if the human wants it after using this: drag-to-position
+  rather than move-up/move-down. Deliberately not specced now — move buttons
+  need no drag library, work well on a phone, and compose to the same orders.

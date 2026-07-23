@@ -1,0 +1,109 @@
+id: BL-575
+title: "swarmCostRankCli.test.js is a fixture time bomb — hardcoded record instant ages out of the 24h horizon and fails permanently"
+milestone: M8
+type: defect
+status: todo
+epic: swarm-intelligence-layer
+severity: medium
+priority: 08
+direction: swarm-surfaced
+depends_on: []
+assigned_to: specifier
+mutation_cost: low
+source: |
+  Backlog-root intake `backlog/swarmCostRankCli-broken-on-main.md`, filed by QA
+  on 2026-07-23 during BL-566 verification and drained here. QA correctly
+  established that it is pre-existing, unrelated to BL-566 (zero touched files
+  in the relevant paths), and not test-order flake (reproduces in isolation).
+
+  Specifier re-verified on `main` at 2026-07-23T12:43Z — still red, 3 failed /
+  8 passed in `extension/test/swarmCostRankCli.test.js`.
+
+description: |
+  ## Root cause — a time bomb, not a code regression
+
+  The intake suspected a read-side regression landed under BL-551 and named two
+  revert commits as likely culprits. That is a red herring: the production code
+  did not regress, the FIXTURE aged out.
+
+  - `extension/test/swarmCostRankCli.test.js`'s `invocation()` helper hardcodes
+    `at: '2026-07-22T11:00:00Z'` for every record it writes.
+  - `extension/src/tools/swarm-cost-rank.ts:62` computes the window from
+    `const nowMs = Date.now()` — the real system clock.
+  - `'24h'` is 24*60*60*1000 ms (`llmCostLedger.ts:83`).
+
+  At 2026-07-23T12:43Z the fixture record is ~25h43m old, so it falls outside
+  the 24h window and every assertion that expects records reads back zero. The
+  suite passed on 2026-07-22 when it was written, passed for the following 24
+  hours, and has failed every run since — which is exactly the "pre-existing,
+  reproduces in isolation, not order-dependent" signature QA observed.
+
+  This is the project's known real-clock fixture pattern: pin the fixture AND
+  the code under test to one instant, never let a test straddle a wall-clock
+  boundary.
+
+  ## Wanted
+
+  Make the horizon selection deterministic under test by injecting the clock,
+  then express the three broken assertions against a pinned instant.
+
+  ## Constraints
+
+  - **Inject the clock through a seam, do not stub `Date` globally.** The CLI's
+    `main()` is a thin wrapper over exported helpers (engineering rule); the
+    current time should arrive as an injected value the way other side effects
+    here arrive via `postFn`-style seams. No `*_FORCE_RESULT` env bypass.
+  - Scenario 04 runs the COMPILED CLI as a real subprocess, so the seam must
+    also be reachable out-of-process — an env-var clock override read once at
+    startup is acceptable there, and is the documented pattern for daemon
+    wiring tests. It must not change production behavior when unset.
+  - **Do not "fix" this by widening the horizon or re-dating the fixture to a
+    fresh hardcoded instant.** A newer hardcoded date re-arms the same bomb for
+    24 hours' time. The fixture's timestamps must be expressed relative to the
+    pinned clock.
+  - Keep the existing 8 passing tests passing; they cover `parseSwarmCostRankArgs`
+    and are unaffected.
+  - The horizon-boundary behavior itself is unchanged — this ticket does not
+    redefine what 3h/24h/7d mean (`llmCostLedger.ts:83` remains the single
+    source of truth for that).
+
+  ## Note on the named commits
+
+  `4a051b835`, `78fabf968`, `980b30710`, `b7180e78e`, `beba65655` are named in
+  the intake as suspects. They are not the regression point and do not need
+  reverting; whoever picks this up should not spend time bisecting them.
+
+acceptance: specs/features/BL-575-cost-rank-horizon-pinned-clock.feature
+
+qa_e2e_procedure: |
+  1. `cd extension && npx vitest run test/swarmCostRankCli.test.js` → 11/11
+     green.
+  2. Time-bomb proof — the important one: re-run the suite with the system
+     clock advanced several days (e.g. `faketime`, or by pinning the injected
+     clock forward). It must STILL be green. Before the fix, advancing the
+     clock one day past 2026-07-22 is precisely what broke it.
+  3. Non-vacuity: move a fixture record outside the pinned 24h window and
+     confirm the count assertion FAILS; restore.
+  4. Confirm production behavior is unchanged with no clock override set —
+     run the compiled CLI against a real `.swarmforge` ledger and confirm it
+     still filters against the true current time.
+  5. Full unit suite green, to confirm nothing else depended on the old fixture.
+
+notes: |
+  IR-DRY adjudication (specifier, 2026-07-23): 17 findings, all reviewed. One
+  real fix applied — the groupBy step read `runs for horizon "24h" grouped by
+  role`, which an unanchored handler for `runs for horizon "24h"` would also
+  match; it is now `rolls up horizon "24h" by role`. The two findings scoring
+  1.0 are the same step pattern REUSED across scenarios (the checker counts
+  occurrences, so reuse reads as duplication) — that is DRY working, not drift.
+  The rest are quoted timestamp/role literals and bare cost numbers the checker
+  will not fold into placeholders.
+
+  Pattern to reuse, not re-derive: this repo has hit real-clock fixture
+  breakage before, and the established fix is to pin the fixture and the code
+  under test to ONE instant rather than to make the window more forgiving.
+
+  Worth a grep while in here for other fixtures carrying a hardcoded absolute
+  `at:`/timestamp against a `Date.now()`-derived window — the same bomb may be
+  armed elsewhere in the cost/telemetry tests. Anything found gets its own
+  ticket rather than being folded in here.
