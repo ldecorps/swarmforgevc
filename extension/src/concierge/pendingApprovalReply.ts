@@ -7,6 +7,7 @@
 // (never a filename-prefix guess) - a "flip pending->approved on a real
 // reply" writer, never a blind seed (that stays backfill's job).
 import * as fs from 'fs';
+import type { ApprovalDecisionVerdict } from './approvalAskClosing';
 import { forEachLiveTicketFile } from '../util/liveTicketFiles';
 
 // A simple, deliberate keyword match - not NLP. Mirrors
@@ -205,6 +206,34 @@ export function readRecordedVerdict(targetPath: string, backlogId: string): 'app
   }
   const match = fs.readFileSync(filePath, 'utf8').match(HUMAN_APPROVAL_VERDICT_PATTERN);
   return match ? (match[1] as 'approved' | 'rejected') : undefined;
+}
+
+const HUMAN_APPROVAL_AMENDING_PATTERN = /^human_approval:\s*amending\s*$/m;
+const HUMAN_APPROVAL_APPROVED_PATTERN = /^human_approval:\s*approved\s*$/m;
+const HUMAN_APPROVAL_REJECTED_LINE_PATTERN = /^human_approval:\s*rejected(?:\s+#\s*(.*))?$/m;
+
+// BL-561: read the ticket's current non-pending human_approval verdict for
+// closing a still-open ApprovalRequested ask (decided-ask reconcile sweep).
+export function readApprovalCloseVerdict(targetPath: string, backlogId: string): ApprovalDecisionVerdict | undefined {
+  const filePath = findTicketFilePath(targetPath, backlogId);
+  if (!filePath) {
+    return undefined;
+  }
+  const rawText = fs.readFileSync(filePath, 'utf8');
+  if (HUMAN_APPROVAL_PENDING_PATTERN.test(rawText)) {
+    return undefined;
+  }
+  if (HUMAN_APPROVAL_AMENDING_PATTERN.test(rawText)) {
+    return { kind: 'amending' };
+  }
+  const rejected = rawText.match(HUMAN_APPROVAL_REJECTED_LINE_PATTERN);
+  if (rejected) {
+    return { kind: 'rejected', reason: (rejected[1] ?? '').trim() || 'rejected' };
+  }
+  if (HUMAN_APPROVAL_APPROVED_PATTERN.test(rawText)) {
+    return { kind: 'approved' };
+  }
+  return undefined;
 }
 
 // Impure driver: flips the ticket's human_approval to approved if it is

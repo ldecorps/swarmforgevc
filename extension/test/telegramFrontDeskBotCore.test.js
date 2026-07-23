@@ -2722,6 +2722,7 @@ function closingFixtureAdapters(overrides = {}) {
     // already has.
     waitForAskCloseRetry: overrides.waitForAskCloseRetry,
     askCloseRetryBudget: overrides.askCloseRetryBudget,
+    scheduleConciergeTick: overrides.scheduleConciergeTick,
     editCalls,
   };
 }
@@ -2738,6 +2739,18 @@ test('recordApprovalDecisionAndClose: an approved decision with a stored ask edi
   assert.deepEqual(adapters.editCalls, [
     { topicId: 800, messageId: 999, text: 'BL-484 needs your approval...\n-- Approved 2026-07-17 03:07 UTC' },
   ]);
+});
+
+test('recordApprovalDecisionAndClose: schedules an immediate debounced concierge tick after a real decision', async () => {
+  let scheduled = 0;
+  const adapters = closingFixtureAdapters({
+    readApprovalAskMessage: async (backlogId) => ({ topicId: 800, messageId: 999, text: `${backlogId} needs your approval...` }),
+    scheduleConciergeTick: () => {
+      scheduled += 1;
+    },
+  });
+  await recordApprovalDecisionAndClose(adapters, 'BL-484', { kind: 'approved' }, 0);
+  assert.equal(scheduled, 1);
 });
 
 test('BL-496: a successful ask-close edit never writes anything to stderr', async () => {
