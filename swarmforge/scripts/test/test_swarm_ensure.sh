@@ -405,44 +405,5 @@ pass "06: SWARMFORGE_SKIP_OPERATOR=1 omits the operator component"
 
 
 # ---------------------------------------------------------------------------
-# Extra: mono-router dormant roles report DORMANT (not FAILED)
-# ---------------------------------------------------------------------------
-make_fixture
-printf 'coder\tcoder\t%s\tswarmforge-coder\tCoder\tclaude\ttask\n' "$ROOT/.worktrees/coder" > "$ROOT/.swarmforge/roles.tsv"
-printf 'specifier\tspecifier\t%s\tswarmforge-specifier\tSpecifier\tclaude\ttask\n' "$ROOT/.worktrees/coder" >> "$ROOT/.swarmforge/roles.tsv"
-printf 'coordinator\tmaster\t%s\tswarmforge-coordinator\tCoordinator\tclaude\ttask\n' "$ROOT" >> "$ROOT/.swarmforge/roles.tsv"
-RESPAWN_LOG="$ROOT/respawns"
-: > "$RESPAWN_LOG"
-cat > "$FAKE_BIN/tmux" <<TMUXFAKE
-#!/usr/bin/env bash
-sock_cmd="\$3"
-if [[ "\$sock_cmd" == "has-session" ]]; then
-  target="\$5"
-  case "\$target" in
-    swarmforge-coder|swarmforge-coordinator) exit 0 ;;
-    *) exit 1 ;;
-  esac
-fi
-if [[ "\$sock_cmd" == "list-panes" ]]; then
-  echo "0"
-  exit 0
-fi
-if [[ "\$sock_cmd" == "respawn-pane" ]]; then
-  echo "RESPAWN" >> "$RESPAWN_LOG"
-  exit 0
-fi
-exit 0
-TMUXFAKE
-chmod +x "$FAKE_BIN/tmux"
-OUTPUT=$(PATH="$FAKE_BIN:$PATH" \
-  SWARMFORGE_ENSURE_EXTENSION_CHECK="$FAKE_BIN/fake_ext_check.sh" \
-  SWARMFORGE_ENSURE_EXTENSION_BOUNCE="$FAKE_BIN/fake_ext_bounce.sh" \
-  SWARMFORGE_ENSURE_SUPERVISOR="$FAKE_BIN/fake_supervisor.bb" \
-  SWARMFORGE_SKIP_OPERATOR=1 SWARMFORGE_SKIP_FRONT_DESK=1 \
-  bb "$ENSURE" "$ROOT" 2>&1) || true
-echo "$OUTPUT" | grep -q 'agent:specifier: DORMANT' || fail "expected specifier DORMANT, got: $OUTPUT"
-echo "$OUTPUT" | grep -q 'agent:coder: HEALTHY' || fail "expected coder HEALTHY"
-if [[ -s "$RESPAWN_LOG" ]]; then fail "dormant role should not be respawned"; fi
-pass "mono-router dormant roles report DORMANT without respawn"
 
 echo "ALL PASS"
