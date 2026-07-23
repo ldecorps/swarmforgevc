@@ -3,7 +3,7 @@
 // is the only place display names need updating when Anthropic renames a tier.
 
 export const MODEL_DISPLAY_NAMES: Readonly<Record<string, string>> = {
-  'claude-sonnet-5': 'Sonnet 4.6',
+  'claude-sonnet-5': 'Sonnet 5',
   'claude-opus-4-8': 'Opus 4.8',
   'claude-haiku-4-5-20251001': 'Haiku 4.5',
   'claude-fable-5': 'Fable 5',

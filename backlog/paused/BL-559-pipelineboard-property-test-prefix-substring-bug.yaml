@@ -5,7 +5,7 @@ milestone: M8
 type: defect
 priority: 40
 direction: architect-reported
-human_approval: pending
+human_approval: approved
 depends_on: []
 source: |
   architect note 2026-07-22 ("pipelineBoard.property.test.js fails (seed
