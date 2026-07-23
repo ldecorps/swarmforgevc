@@ -207,6 +207,42 @@
            (filter norm-set)
            first))))
 
+;; ── sender-order guard: only ROUTE a send that already moves forward ─────
+;; (architect BL-606 bounce #3: a reviewer's bounce carries no header this
+;; swarm's roles ever write, so direction must be derived from the sender
+;; itself, not from an optional rejection_reason/reroute_reason marker.)
+
+(defn sender-position
+  "canonical-order index for `sender`, or nil when sender has no position to
+   route from. specifier is always the pipeline entry and is never a member
+   of canonical-order itself, but the ordinary specifier -> coder send must
+   still route - so specifier is special-cased to position -1 (before
+   coder), not treated as unknown. Any other non-canonical sender
+   (coordinator, or anything unrecognized) resolves to nil - the
+   conservative 'no position, do not route' default."
+  [sender]
+  (cond
+    (= sender "specifier") -1
+    :else (when-let [norm (normalize-token sender)]
+            (.indexOf ^java.util.List canonical-order norm))))
+
+(defn routes-forward?
+  "True only when `sender` has a resolvable canonical-order position AND
+   `literal-to` names a canonical stage strictly AFTER that position - i.e.
+   this send moves forward through the chain the way an ordinary
+   git_handoff does. False for a reviewer's bounce (which always targets a
+   stage at or before the sender), false for a non-canonical sender
+   (coordinator/unknown - identity is the conservative default), and false
+   when literal-to is not a recognized stage at all. Only a true result may
+   ever be candidate for required_stages rewriting; every false short-
+   circuits to the literal recipient untouched (architect BL-606 bounce
+   #3)."
+  [sender literal-to]
+  (let [sender-idx (sender-position sender)
+        to-idx (when-let [norm (normalize-token literal-to)]
+                 (.indexOf ^java.util.List canonical-order norm))]
+    (boolean (and sender-idx to-idx (< sender-idx to-idx)))))
+
 ;; ── skipped-stages: canonical-order minus the effective set ──────────────
 
 (defn skipped-stages

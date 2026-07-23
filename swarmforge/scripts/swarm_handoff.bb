@@ -404,14 +404,28 @@
    redo_from/reroute detour) on the draft names a deliberately-chosen,
    out-of-forward-order destination - routing only ever short-circuits the
    forward chain, never a backward rejection or an explicit detour, so
-   either header present returns the literal recipients untouched
-   (architect BL-606 bounce defect 2)."
-  [{:keys [type task recipients root headers]}]
+   either header present returns the literal recipients untouched. Kept
+   because it is correct and cheap for the operator salvage paths
+   (reroute.bb/redo_from.bb) that DO stamp one of these headers (architect
+   BL-606 bounce defect 2).
+
+   No reviewer bounce carries either header, though - every review role
+   bounces by hand-writing a draft with a plain `to:`, so that guard alone
+   is inert on the common bounce path. `sender` (also required, threaded
+   from -main's own sender-role) closes that gap: routing is only ever a
+   CANDIDATE when required-stages-lib/routes-forward? holds, i.e. `to`
+   names a canonical stage strictly after the sender's own position. A
+   bounce always targets an earlier stage relative to its sender, so it
+   falls through to the literal recipients untouched without depending on
+   anything the sender remembered to write (architect BL-606 bounce defect
+   3)."
+  [{:keys [type task recipients root headers sender]}]
   (let [identity-result {:recipients recipients :routing-skipped nil}]
     (if-not (and (= "git_handoff" type)
                  (= 1 (count recipients))
                  (nil? (get headers "rejection_reason"))
-                 (nil? (get headers "reroute_reason")))
+                 (nil? (get headers "reroute_reason"))
+                 (required-stages-lib/routes-forward? sender (first recipients)))
       identity-result
       (let [conf-text (try (slurp (str (backlog-depth-lib/conf-file-path root))) (catch Exception _ nil))]
         (if-not (required-stages-routing-enabled? conf-text)
@@ -572,7 +586,8 @@
                                              :task (get headers "task")
                                              :recipients (:recipients validation)
                                              :root (project-root)
-                                             :headers headers})
+                                             :headers headers
+                                             :sender sender})
               outbox-file (write-handoff! {:headers headers
                                            :recipients (:recipients routed)
                                            :canonical-commit (:canonical-commit validation)

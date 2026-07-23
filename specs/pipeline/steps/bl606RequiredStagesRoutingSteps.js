@@ -39,6 +39,7 @@ const DECLARATION_TO_LINE = {
   'a list containing a duplicate stage': 'required_stages: [coder, coder, qa]',
   '[documenter]': 'required_stages: [documenter]',
   '[coder, cleaner]': 'required_stages: [coder, cleaner]',
+  '[architect, qa]': 'required_stages: [architect, qa]',
 };
 
 function git(root, args) {
@@ -379,6 +380,26 @@ function registerSteps(registry) {
 
   registry.define(/^the answer is derived from the recorded trail, not inferred from the code diff$/, (ctx) => {
     if (!ctx.report) throw new Error('expected a ran/skipped report to have been computed');
+  });
+
+  // ── scenario 09: a reviewer's backward bounce is never rewritten (architect
+  //    BL-606 bounce #3, repros D and E) - a PLAIN hand-written bounce, no
+  //    rejection_reason/reroute_reason header, the same way every review role
+  //    actually sends one per its own prompt.
+  registry.define(/^(.+) bounces the parcel to (.+)$/, (ctx, sender, literalTo) => {
+    ctx.bounceHandoff = sendHandoff(ctx, { from: sender, to: literalTo, task: ctx.ticketId });
+  });
+
+  registry.define(/^the parcel is delivered to (.+)$/, (ctx, expected) => {
+    if (ctx.bounceHandoff.to !== expected) {
+      throw new Error(`expected the bounce to be delivered to ${expected}, got ${ctx.bounceHandoff.to}`);
+    }
+  });
+
+  registry.define(/^no routing_skipped header is recorded for that bounce$/, (ctx) => {
+    if (ctx.bounceHandoff.content.includes('routing_skipped: ')) {
+      throw new Error(`expected no routing_skipped header on a bounce, got:\n${ctx.bounceHandoff.content}`);
+    }
   });
 }
 

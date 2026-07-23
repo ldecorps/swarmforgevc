@@ -98,3 +98,21 @@ Feature: the specifier declares required_stages and the handoff layer routes a t
     Then the report names coder and QA as run
     And names cleaner, architect, hardender and documenter as skipped-by-routing
     And the answer is derived from the recorded trail, not inferred from the code diff
+
+  # BL-606 reviewer-bounce-is-never-rewritten-onto-the-bouncer-09
+  # architect bounce #3 (repros D and E): a reviewer's plain hand-written bounce
+  # carries no rejection_reason/reroute_reason header - no role prompt or the
+  # handoff protocol ever mentions either one on a review bounce. Direction must
+  # come from the sender's own position in canonical order instead, or the
+  # bounce is rewritten forward onto the bouncer itself and can never reach the
+  # role that owns the fix.
+  Scenario Outline: a reviewer's backward bounce is delivered to its literal destination, never rewritten forward
+    Given an active ticket whose required_stages is <declaration>
+    When <sender> bounces the parcel to <literal to>
+    Then the parcel is delivered to <literal to>
+    And no routing_skipped header is recorded for that bounce
+
+    Examples:
+      | declaration     | sender    | literal to |
+      | [coder, qa]     | QA        | documenter |
+      | [architect, qa] | architect | coder      |
