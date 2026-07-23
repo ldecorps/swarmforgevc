@@ -24,7 +24,13 @@ file="backlog/GH-${NUM}-${slug}.yaml"
   echo "id: GH-${NUM}"
   echo "title: $(printf '%s' "$TITLE" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')"
   echo "source: ${URL}"
-  echo "description: |"
+  # BL-560 architect bounce: an explicit indentation indicator (|2) is
+  # required here - a bare `|` takes its indent from the first non-empty
+  # line, so an issue body that starts with an indented line (e.g. a code
+  # block) would set the block's indent past 2 and every following
+  # normally-indented line would fall out of the scalar as a sibling key,
+  # corrupting the generated YAML.
+  echo "description: |2"
   printf '%s\n' "$BODY" | sed 's/^/  /'
 } > "$file"
 
