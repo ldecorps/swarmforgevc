@@ -1,0 +1,53 @@
+id: BL-605
+title: "Trend: simple global token consumption — whole-swarm total tokens over time, cumulative and rate"
+milestone: M8
+type: feature
+status: todo
+epic: swarm-behaviour-trends
+human_approval: approved
+severity: low
+priority: 25
+direction: human-requested
+depends_on: []
+assigned_to: specifier
+mutation_cost: low
+source: |
+  Human, 2026-07-23, epic BL-594: "how about a simple global tokens
+  consumption."
+description: |
+  A single headline series: the WHOLE swarm's token consumption over time -
+  cumulative total and a simple rate (tokens/hour or /day). One line, not a
+  per-role breakdown (burnRate already does per-role tokens/hr; costTelemetry
+  already sums per-role usage). The gap is a plain global rollup surfaced as
+  its own trend the human can watch at a glance.
+
+  Mostly a ROLLUP of data that already exists, not new instrumentation:
+    - transcriptUsage / costTelemetry already read per-role token totals.
+    - the LLM cost ledger (.swarmforge/telemetry/llm-cost-<YYYY-MM>.jsonl,
+      BL-551) already records invocations.
+  Sum across roles per time bucket -> the global series, plotted via trend.ts.
+
+  Data-honesty caveat the specifier must handle: the ledger currently writes
+  some records with `tokens: null` (observed 2026-07-22). A global total is
+  only as complete as its source; the series must either use the transcript-
+  usage totals (which are populated) as the authority, or clearly mark buckets
+  where token data is missing rather than silently under-count. Pin which
+  source is authoritative and do not sum a field that is frequently null.
+
+  Value: the simplest possible "how hard is the swarm working / how much am I
+  spending" glance, and the natural companion to the per-role cost telemetry
+  already shipped. Publishes on the mini app (BL-603) and reads into the
+  briefing analysis (BL-604) like every other BL-594 series.
+acceptance: |
+  Specifier writes scenarios. Minimum:
+  1. A global tokens series: cumulative total and a rate over a window, summed
+     across all roles from an authoritative, populated source (not a
+     frequently-null field).
+  2. Pure aggregator (per-role usage records + window -> global series),
+     unit-tested with fixtures.
+  3. Buckets with missing token data are marked as such, never silently
+     counted as zero.
+out_of_scope: |
+  - Per-role breakdown (burnRate/costTelemetry own that); this is the global
+    rollup only.
+  - Cost in dollars (llmCostLedger owns that); this is tokens.

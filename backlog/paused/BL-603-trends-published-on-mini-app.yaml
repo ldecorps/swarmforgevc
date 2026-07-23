@@ -1,0 +1,50 @@
+id: BL-603
+title: "Publish the behaviour-trend series on the live Mini App console — one trends screen consuming every BL-594 series"
+milestone: M8
+type: feature
+status: todo
+epic: swarm-behaviour-trends
+human_approval: approved
+severity: medium
+priority: 15
+direction: human-requested
+depends_on: [BL-595, BL-596, BL-597, BL-598, BL-599, BL-600, BL-601, BL-602, BL-605]
+assigned_to: specifier
+mutation_cost: medium
+source: |
+  Human, 2026-07-23, epic BL-594: "these trends have to get published on the
+  mini app."
+description: |
+  The BL-594 series (595-602 plus the global-tokens 605) are producers; this is
+  their SURFACE. Add a Trends screen to the LIVE holistic Mini App console
+  (`extension/src/bridge/holisticUiHtml.ts`, bridge-served token-authed) - the
+  same live surface BL-572 (epic reorder) and BL-592 (spec tree) target, NOT
+  the static PWA.
+
+  It renders each series through the existing trend.ts framework, served fresh
+  over the bridge so the screen reflects live data rather than a pinned SHA.
+  Read-only. The specifier decides layout (one scrollable board of small
+  multiples vs a series picker), but every BL-594 series that has landed must
+  have a place here, and a series whose producer has NOT yet landed degrades to
+  "no data yet", never a crash or a fabricated flat line.
+
+  This is a CONSUMER slice: it adds no instrumentation. If a producer emits a
+  series, this screen plots it; the coupling is the series' shape, not its
+  internals.
+
+  Reuse, do not reinvent: trend.ts for the plotting math, the bridge's existing
+  data-serving path (the same one costHealth / pipeline board already use), and
+  the console's existing screen-registration pattern.
+acceptance: |
+  Specifier writes scenarios. Minimum:
+  1. A Trends screen on the live console plots each landed BL-594 series via
+     trend.ts, served over the bridge (not the static PWA).
+  2. A series whose producer has not landed shows "no data yet", never crashes
+     or fakes data.
+  3. Read-only: nothing on the screen mutates state.
+  4. Adding a future series is additive - the screen does not hardcode an
+     exhaustive list that breaks when a ninth series lands.
+out_of_scope: |
+  - The series instrumentation itself (the producer tickets own that).
+  - The static PWA (this is the live console surface).
+  - The morning-briefing analysis (BL-604 owns that consumer).
