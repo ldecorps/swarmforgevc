@@ -22,7 +22,7 @@ promotion_blockers: >
   (adapters + experiment mode) AND BL-547 Slice 2 (model-steward evaluate) on main —
   not merely those tickets done at Slice 1. Coordinator: verify both Slice 2 parcels
   landed before promoting this ticket.
-assigned_to: specifier
+assigned_to: coder
 source: |
   Human intake 2026-07-21 via Cursor chat — follow-up to Swarm Intelligence Layer
   spec session: "Go for it" on speccing automatic PromptEngine calibration that tests
