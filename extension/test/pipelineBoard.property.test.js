@@ -62,11 +62,14 @@ test('property: the included links are always an in-order PREFIX of the input, a
       const result = budgetPipelineBoardLinks(list, REPO_BASE_URL, maxLinksLength);
       const includedCount = list.length - result.omittedCount;
       assert.ok(includedCount >= 0 && includedCount <= list.length, `includedCount=${includedCount} out of range for count=${count}`);
+      // d63e80320 shortened link lines to `<a href="...">label</a>` (no
+      // `id: title` text), so the per-link marker is the anchor's display
+      // label; the `</a>` suffix keeps L1 from matching inside L10.
       for (let i = 0; i < includedCount; i += 1) {
-        assert.ok(result.html.includes(`${list[i].id}:`), `expected prefix link ${list[i].id} present, budget=${maxLinksLength}`);
+        assert.ok(result.html.includes(`>${deriveDisplayTicketId(list[i].id)}</a>`), `expected prefix link ${list[i].id} present, budget=${maxLinksLength}`);
       }
       for (let i = includedCount; i < list.length; i += 1) {
-        assert.ok(!result.html.includes(`${list[i].id}:`), `expected tail link ${list[i].id} absent, budget=${maxLinksLength}`);
+        assert.ok(!result.html.includes(`>${deriveDisplayTicketId(list[i].id)}</a>`), `expected tail link ${list[i].id} absent, budget=${maxLinksLength}`);
       }
     })
   );
