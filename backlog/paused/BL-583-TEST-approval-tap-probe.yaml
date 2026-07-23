@@ -4,7 +4,7 @@ milestone: M8
 type: defect
 status: blocked
 epic: swarm-reliability
-human_approval: pending
+human_approval: approved
 severity: low
 priority: 99
 direction: swarm-surfaced
