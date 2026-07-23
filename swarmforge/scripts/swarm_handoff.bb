@@ -398,10 +398,20 @@
   "{:recipients [...] :routing-skipped nil-or-map}. recipients is the
    already-validated literal `to:` list; routing-skipped, when present,
    is the runtime-trail record for whichever stage(s) got skipped this hop -
-   {:ticket-id :from :to :skipped :reasons}."
-  [{:keys [type task recipients root]}]
+   {:ticket-id :from :to :skipped :reasons}.
+
+   A `rejection_reason` (reviewer bounce) or `reroute_reason` (operator
+   redo_from/reroute detour) on the draft names a deliberately-chosen,
+   out-of-forward-order destination - routing only ever short-circuits the
+   forward chain, never a backward rejection or an explicit detour, so
+   either header present returns the literal recipients untouched
+   (architect BL-606 bounce defect 2)."
+  [{:keys [type task recipients root headers]}]
   (let [identity-result {:recipients recipients :routing-skipped nil}]
-    (if-not (and (= "git_handoff" type) (= 1 (count recipients)))
+    (if-not (and (= "git_handoff" type)
+                 (= 1 (count recipients))
+                 (nil? (get headers "rejection_reason"))
+                 (nil? (get headers "reroute_reason")))
       identity-result
       (let [conf-text (try (slurp (str (backlog-depth-lib/conf-file-path root))) (catch Exception _ nil))]
         (if-not (required-stages-routing-enabled? conf-text)
@@ -425,7 +435,7 @@
                            :routing-skipped {:ticket-id ticket-id
                                              :from literal-to
                                              :to next-stage
-                                             :skipped (required-stages-lib/skipped-stages effective)
+                                             :skipped (required-stages-lib/hop-skipped-stages literal-to next-stage)
                                              :reasons (required-stages-lib/read-stage-skip-reasons content)}})))))))))))))
 
 (defn- format-routing-skipped [{:keys [ticket-id from to skipped reasons]}]
@@ -554,7 +564,8 @@
         (let [routed (route-required-stages {:type (get headers "type")
                                              :task (get headers "task")
                                              :recipients (:recipients validation)
-                                             :root (project-root)})
+                                             :root (project-root)
+                                             :headers headers})
               outbox-file (write-handoff! {:headers headers
                                            :recipients (:recipients routed)
                                            :canonical-commit (:canonical-commit validation)

@@ -49,7 +49,7 @@
    line-based reader suffices - no new multi-line YAML parser)."
   [content]
   (let [prefix "required_stages: "]
-    (if-let [line (some (fn [l] (let [t (str/trim l)] (when (str/starts-with? t prefix) t)))
+    (if-let [line (some (fn [l] (when (str/starts-with? l prefix) l))
                          (str/split-lines (or content "")))]
       {:present? true :raw (str/trim (subs line (count prefix)))}
       {:present? false :raw nil})))
@@ -215,6 +215,22 @@
   [required-set]
   (let [norm-set (set (keep normalize-token required-set))]
     (vec (remove norm-set canonical-order))))
+
+(defn hop-skipped-stages
+  "canonical-order stages strictly between `current` (exclusive) and `next`
+   (exclusive) - the stage(s) THIS hop jumps over, as opposed to
+   skipped-stages above which is the ticket-level aggregate (the whole
+   complement of the effective set, regardless of hop). Self-normalizing the
+   same way next-required-stage/skipped-stages are; [] when either stage is
+   unrecognized or next is not strictly after current."
+  [current next]
+  (let [norm-current (normalize-token current)
+        norm-next (normalize-token next)
+        idx-current (if norm-current (.indexOf ^java.util.List canonical-order norm-current) -1)
+        idx-next (if norm-next (.indexOf ^java.util.List canonical-order norm-next) -1)]
+    (if (and (>= idx-current 0) (>= idx-next 0) (< idx-current idx-next))
+      (vec (subvec (vec canonical-order) (inc idx-current) idx-next))
+      [])))
 
 ;; ── completed-ticket ran-vs-skipped visibility (acceptance scenario 08) ──
 
