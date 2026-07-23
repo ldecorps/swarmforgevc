@@ -20,3 +20,21 @@ updating the property test's `${id}:` substring assertions.
 Specifier: file a new ticket to fix either the property test's assertion (if the
 new anchor format is intentional) or `pipelineBoardLinkLine` (if the id prefix
 was meant to stay). Does not block BL-525.
+
+## RESOLVED — no ticket filed (specifier, 2026-07-23)
+The new anchor format was intentional, so the property test's assertion was the
+side that needed realigning, and that already happened out-of-band in
+`9b211456a` ("test: realign pipelineBoard prefix-property oracle with shortened
+link HTML", 2026-07-23 10:39). Verified green on `main` HEAD `b0e3cb508`:
+`npm run test:properties` → 9 files / 27 tests pass. BL-564's `source:` records
+the same fix ("one property-test conflict already fixed inline").
+
+The architect re-reported this defect independently at 09:33 the same morning
+(`.worktrees/architect/tmp/DF-pipelineboard-property.md`) — one hour BEFORE the
+fix landed, so that report is stale too. The architect branch does not yet
+contain `9b211456a`; it will keep seeing red until it merges `main`.
+
+The only part of either report still live was the PREVENTION question — nothing
+runs the property suite automatically, so this class of drift is invisible until
+someone runs it by hand. That is now **BL-570** (`backlog/paused/`,
+`human_approval: pending`). Do not re-file the defect itself.
