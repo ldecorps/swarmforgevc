@@ -60,15 +60,22 @@ async function runCli(root, args) {
     writes.push(chunk);
     return true;
   };
+  const errWrites = [];
+  const originalErrWrite = process.stderr.write.bind(process.stderr);
+  process.stderr.write = (chunk) => {
+    errWrites.push(chunk);
+    return true;
+  };
   try {
     process.cwd = () => root;
     process.argv = ['node', CLI, ...args];
     process.exitCode = undefined;
     await main();
-    return { exitCode: process.exitCode ?? 0, logs, stdout: writes.join('') };
+    return { exitCode: process.exitCode ?? 0, logs, stdout: writes.join(''), stderr: errWrites.join('') };
   } finally {
     console.log = originalLog;
     process.stdout.write = originalWrite;
+    process.stderr.write = originalErrWrite;
     process.cwd = originalCwd;
     process.argv = previousArgv;
     process.exitCode = previousExitCode;
@@ -126,6 +133,63 @@ test('parseArgs rejects status with no --ticket', () => {
 
 test('parseArgs rejects an unrecognized flag', () => {
   assert.equal(parseArgs(['status', '--bogus', 'BL-477']), null);
+});
+
+test('parseArgs rejects a trailing flag with no following value', () => {
+  // Distinct from the no-flags-at-all case above: this exercises parseFlags'
+  // own `value === undefined` check inside the loop, not the downstream
+  // isValidTicket(undefined) fallback that an empty argv list hits instead.
+  assert.equal(parseArgs(['status', '--ticket']), null);
+});
+
+test('parseArgs rejects an unrecognized flag on a defer invocation', () => {
+  // The unrecognized-flag rejection above only exercises the status command's
+  // own parseFlags call site; defer and clear each call parseFlags too, at a
+  // separate `if (!flags) return null` guard each.
+  assert.equal(parseArgs([...deferArgs(), '--bogus', 'x']), null);
+});
+
+test('parseArgs rejects an unrecognized flag on a clear invocation', () => {
+  assert.equal(parseArgs([...clearArgs(), '--bogus', 'x']), null);
+});
+
+test('parseArgs rejects a status invocation with an extra unrecognized flag even when --ticket itself is valid', () => {
+  // Isolates the unrecognized-flag branch from every downstream field check:
+  // --ticket alone is well-formed, so the ONLY thing that can reject this is
+  // parseFlags itself refusing the trailing --bogus pair.
+  assert.equal(parseArgs(['status', '--ticket', 'BL-477', '--bogus', 'extra']), null);
+});
+
+test('parseArgs rejects a ticket with trailing garbage after the digit sequence (the `$` anchor matters)', () => {
+  assert.equal(parseArgs(['status', '--ticket', 'BL-477X']), null);
+});
+
+test('parseArgs rejects a ticket with leading garbage before "BL-" (the `^` anchor matters)', () => {
+  assert.equal(parseArgs(['status', '--ticket', 'XBL-477']), null);
+});
+
+test('parseArgs rejects a defer with a malformed --ticket even though every other field is valid', () => {
+  assert.equal(parseArgs(deferArgs({ ticket: 'garbage' })), null);
+});
+
+test('parseArgs rejects a defer with a malformed --blocked-by even though every other field is valid', () => {
+  assert.equal(parseArgs(deferArgs({ blockedBy: 'garbage' })), null);
+});
+
+test('parseArgs rejects a clear with a malformed --ticket even though --blocked-by and --commit are valid', () => {
+  assert.equal(parseArgs(clearArgs({ ticket: 'garbage' })), null);
+});
+
+test('parseArgs rejects a clear with a malformed --blocked-by even though --ticket and --commit are valid', () => {
+  assert.equal(parseArgs(clearArgs({ blockedBy: 'garbage' })), null);
+});
+
+test('parseArgs rejects an unknown subcommand even when its arguments would otherwise satisfy a known command shape', () => {
+  // If the dispatch chain's final `command === 'clear'` check were ever
+  // short-circuited to always-true, this exact input - a real clear-args
+  // shape under a bogus command name - would be misrouted into
+  // parseClearArgs and wrongly accepted.
+  assert.equal(parseArgs(['nonsense', ...clearArgs().slice(1)]), null);
 });
 
 // ── status: exit codes ────────────────────────────────────────────────────
@@ -194,12 +258,31 @@ test('recording the same defer twice does not double-count it', async () => {
   assert.equal(readSiblingDeferralRecords(root).length, 1);
 });
 
+test('clear records exactly one line and prints {recorded: true}', async () => {
+  const root = mkRepo();
+  await runCli(root, deferArgs());
+  const result = await runCli(root, clearArgs());
+  assert.equal(JSON.parse(result.stdout).recorded, true);
+  assert.equal(readSiblingDeferralRecords(root).length, 2);
+});
+
 // ── usage errors: exit code 2 ─────────────────────────────────────────────
 
 test('an invalid invocation exits 2 with a usage message, never a raw crash', async () => {
   const root = mkRepo();
   const result = await runCli(root, ['defer', '--ticket', 'BL-477', '--class', 'not-a-real-class']);
   assert.equal(result.exitCode, 2);
+});
+
+test('the usage message on exit 2 names all three subcommands and the --class enum, not an empty string', async () => {
+  const root = mkRepo();
+  const result = await runCli(root, ['bogus']);
+  assert.equal(result.exitCode, 2);
+  const usage = result.stderr;
+  assert.match(usage, /qa-sibling-check\.js status --ticket <id>/);
+  assert.match(usage, /qa-sibling-check\.js defer --ticket <id> --blocked-by <id> --class <failureClass> --check "<command>" --commit <hex>/);
+  assert.match(usage, /qa-sibling-check\.js clear --ticket <id> --blocked-by <id> --commit <hex>/);
+  assert.match(usage, /--class: compile\|unit\|integration\|acceptance\|behavior/);
 });
 
 test('a missing required flag exits 2', async () => {

@@ -45,6 +45,12 @@ function hasSiblingDeferralRecordShape(candidate: Partial<SiblingDeferralRecord>
 // A 'defer' record must carry a known failure class and a non-empty check
 // command (the CLEAR command it hands back to QA on repeat arrival); a
 // 'clear' record carries neither.
+//
+// hardener note: a mutant forcing `typeof candidate.failureClass === 'string'`
+// to `true` is an accepted-equivalent - isKnownFailureClass is a closed-set
+// membership check over string literals, so a non-string value can never pass
+// it regardless of this guard (no coercion, SameValueZero comparison). No
+// input distinguishes the mutant from the original (BL-234 precedent).
 function hasKnownSiblingDeferralValues(candidate: Partial<SiblingDeferralRecord>): boolean {
   if (candidate.action === 'clear') {
     return candidate.failureClass === undefined && candidate.check === undefined;
@@ -52,6 +58,15 @@ function hasKnownSiblingDeferralValues(candidate: Partial<SiblingDeferralRecord>
   return typeof candidate.failureClass === 'string' && isKnownFailureClass(candidate.failureClass) && typeof candidate.check === 'string' && candidate.check.length > 0;
 }
 
+// hardener note: this guard's mutants (forcing the condition false, swapping
+// `||` for `&&`, or emptying the block) are accepted-equivalent given this
+// function's ONE call site below. A non-object primitive (number/string/
+// boolean) falls through harmlessly to hasSiblingDeferralRecordShape, whose
+// property reads on a primitive just yield `undefined` and fail the shape
+// check the same way. A `null` value would throw on that same property read,
+// but parseSiblingDeferralLine's own try/catch (the sole caller) absorbs it
+// and returns null anyway - identical to this guard doing so directly. No
+// input reaches an externally observable difference (BL-234 precedent).
 function isSiblingDeferralRecord(value: unknown): value is SiblingDeferralRecord {
   if (!value || typeof value !== 'object') {
     return false;
@@ -62,6 +77,12 @@ function isSiblingDeferralRecord(value: unknown): value is SiblingDeferralRecord
 
 // A malformed or unrecognized line is skipped, never a crash - same
 // forgiving-reader posture as qaBounceStore.ts.
+//
+// hardener note: a mutant emptying the `catch` block (dropping `return null`
+// for an implicit `return undefined`) is an accepted-equivalent - the only
+// caller (readSiblingDeferralFile below) tests the result with `if (record)`,
+// which treats `null` and `undefined` identically. No test can observe the
+// difference (BL-234 precedent).
 function parseSiblingDeferralLine(line: string): SiblingDeferralRecord | null {
   try {
     const parsed: unknown = JSON.parse(line);
@@ -80,6 +101,13 @@ function readSiblingDeferralFile(dir: string, file: string): SiblingDeferralReco
   }
   const records: SiblingDeferralRecord[] = [];
   for (const line of content.split('\n')) {
+    // hardener note: mutants weakening or removing this blank-line
+    // short-circuit (`.trim()` -> plain truthiness, or dropping the
+    // `continue` entirely) are accepted-equivalent. A whitespace-only line
+    // that reaches parseSiblingDeferralLine fails JSON.parse (whitespace
+    // alone isn't valid JSON) and is caught by that function's own try/catch,
+    // producing the identical "skipped" outcome either way. This check is a
+    // pure fast-path, not a correctness boundary (BL-234 precedent).
     if (!line.trim()) {
       continue;
     }
