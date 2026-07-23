@@ -437,17 +437,12 @@
    mirroring rotate-resident-to!'s own two failure modes (no-resident-session,
    no-launch-script). SRE 2026-07-19: a session torn down alongside its
    resident left both silently unusable while ensure kept reporting DORMANT
-   (indistinguishable from the healthy, by-design case)."
+   (indistinguishable from the healthy, by-design case). Probes (tmux, fs)
+   stay here at the IO edge; the decision itself is mono-router-lib/rotate-viable?."
   [socket resident-session role]
-  (cond
-    (not (and resident-session (pane-alive? socket resident-session)))
-    {:viable? false :reason "no live resident session to rotate from"}
-
-    (not (fs/exists? (rotate-target-launch-script role)))
-    {:viable? false :reason "missing launch script for role"}
-
-    :else
-    {:viable? true}))
+  (mono-router-lib/rotate-viable?
+   {:resident-alive? (boolean (and resident-session (pane-alive? socket resident-session)))
+    :launch-script-present? (fs/exists? (rotate-target-launch-script role))}))
 
 (defn ensure-mono-router-role!
   "BL-518 topology repair for one role under rotation router, merged with the
@@ -552,8 +547,9 @@
         ;; to rotate onto exists - resident rows are processed first (roles.tsv
         ;; invariant: resident is the first non-coordinator entry), so by the
         ;; time a dormant role's turn comes any resident repair has already run.
-        resident-role-name (first (remove #(= "coordinator" %) ordered))
-        resident-session (some #(when (= (:role %) resident-role-name) (:session %)) rows)
+        resident-session (some #(when (= :resident (mono-router-lib/classify-role ordered (:role %)))
+                                   (:session %))
+                                rows)
         role-results (if socket
                        (mapv (fn [{:keys [role session] :as row}]
                                (if router?
