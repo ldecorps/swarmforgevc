@@ -102,6 +102,21 @@ bb swarmforge/scripts/context_telemetry_cli.bb record \
 # Error: validation error: input-tokens must be numeric
 ```
 
+```bash
+# Non-finite numeric values (NaN, Infinity) — rejected
+bb swarmforge/scripts/context_telemetry_cli.bb record \
+  --agent coder \
+  --role coder \
+  --session-id sess-1 \
+  --timestamp 2026-07-23T12:34:56Z \
+  --input-tokens "Infinity" \
+  --output-tokens 1000 \
+  --context-utilization-pct 50 \
+  --provider anthropic \
+  --model claude-sonnet-5
+# Error: validation error: input-tokens must be a finite number (not NaN or Infinity)
+```
+
 ## Querying Telemetry Summary
 
 Retrieve aggregated statistics from the telemetry log:
