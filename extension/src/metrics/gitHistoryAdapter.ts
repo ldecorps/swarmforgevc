@@ -52,33 +52,15 @@ export function parseGitLog(output: string): GitLogEntry[] {
 // existing call site's behavior unchanged). BL-430 passes 'main' explicitly:
 // a role's own worktree branch can lag commits already landed on main
 // (BL-340), so reading THIS worktree's HEAD would undercount.
-//
-// BL-549: execFileSync's default maxBuffer is 1 MiB - this repo's full-history
-// --name-status output already exceeds that, which threw ENOBUFS and the bare
-// catch swallowed it into an empty history (every co-change-report call read
-// as "no co-changers found", indistinguishable from a genuine no-coupling
-// result). maxBuffer follows dependency-gate.ts's precedent for the same
-// failure mode; the catch now also logs a diagnostic to stderr identifying
-// the failure and its cause, so an overflow past even this larger cap fails
-// loudly instead of rendering a plausible-looking empty result.
-export function runGitLog(
-  targetPath: string,
-  pathspec: string,
-  ref: string = 'HEAD',
-  maxBuffer: number = 64 * 1024 * 1024
-): GitLogEntry[] {
+export function runGitLog(targetPath: string, pathspec: string, ref: string = 'HEAD'): GitLogEntry[] {
   let output: string;
   try {
     output = execFileSync(
       'git',
       ['-C', targetPath, 'log', ref, '--format=COMMIT%x09%H%x09%cI', '--name-status', '-M', '--reverse', '--', pathspec],
-      { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], maxBuffer }
+      { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }
     );
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    process.stderr.write(
-      `runGitLog: git log failed for ${targetPath} (pathspec=${pathspec}, ref=${ref}, maxBuffer=${maxBuffer}): ${message}\n`
-    );
+  } catch {
     return [];
   }
   return parseGitLog(output);
