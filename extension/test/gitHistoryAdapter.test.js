@@ -1,8 +1,13 @@
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const { execSync } = require('node:child_process');
+const { mkTmpDir } = require('./helpers/tmpDir');
 const {
   parseGitLog,
   deriveTicketLifecycles,
   parseMergeLog,
+  runGitLog,
 } = require('../out/metrics/gitHistoryAdapter');
 
 // BL-096: parseGitLog is a pure text parser over `git log
@@ -82,6 +87,52 @@ test('parseGitLog ignores a commit with no name-status lines (e.g. an empty merg
 
 test('parseGitLog returns an empty array for empty output', () => {
   assert.deepEqual(parseGitLog(''), []);
+});
+
+// ── runGitLog (impure - shells out to real git) - BL-549 maxBuffer/ENOBUFS ──
+//
+// BL-549: execFileSync's default maxBuffer is 1 MiB, which this repo's own
+// full-history output now exceeds. A real 1 MiB+ repo is impractical to
+// build per-test, so these tests instead inject a deliberately tiny
+// maxBuffer against a real (small) git repo to force the same ENOBUFS
+// overflow deterministically, per the ticket's suggested regression shape.
+
+function initTestRepo() {
+  const dir = mkTmpDir('sfvc-git-history-adapter-');
+  execSync('git init', { cwd: dir, stdio: 'pipe' });
+  execSync('git config user.email "test@test.com"', { cwd: dir, stdio: 'pipe' });
+  execSync('git config user.name "Test"', { cwd: dir, stdio: 'pipe' });
+  fs.writeFileSync(path.join(dir, 'example.txt'), 'hello');
+  execSync('git add example.txt', { cwd: dir, stdio: 'pipe' });
+  execSync('git commit -m "add example.txt"', { cwd: dir, stdio: 'pipe' });
+  return dir;
+}
+
+test('runGitLog returns parsed entries for a real repo within the default maxBuffer', () => {
+  const dir = initTestRepo();
+  const entries = runGitLog(dir, '.');
+  assert.equal(entries.length, 1);
+  assert.deepEqual(entries[0].changes, [{ status: 'A', path: 'example.txt' }]);
+});
+
+test('runGitLog returns [] and logs a diagnostic to stderr when the read overflows an explicit maxBuffer (ENOBUFS), instead of throwing', () => {
+  const dir = initTestRepo();
+  const originalStderrWrite = process.stderr.write.bind(process.stderr);
+  const stderr = [];
+  process.stderr.write = (chunk) => {
+    stderr.push(chunk);
+    return true;
+  };
+
+  let entries;
+  try {
+    entries = runGitLog(dir, '.', 'HEAD', 10);
+  } finally {
+    process.stderr.write = originalStderrWrite;
+  }
+
+  assert.deepEqual(entries, []);
+  assert.match(stderr.join(''), /runGitLog.*failed/i);
 });
 
 // ── deriveTicketLifecycles (pure, over a provided entry list) ───────────
