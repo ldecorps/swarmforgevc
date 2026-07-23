@@ -29,11 +29,6 @@ export interface ContextTelemetrySummary {
   latest_estimated_cost_usd: number | null;
 }
 
-// GH-23 architect bounce: a missing `bb` install or a non-zero/corrupt CLI
-// exit must degrade this one dashboard to its own empty state, not throw
-// inside the bridge server's request handler — see bridgeServer.ts's
-// computePausedPagerState / swarmMetrics.ts's gitFollowHistory for the same
-// guarded-shell-out convention this mirrors.
 function runCli(targetPath: string, args: string[]): unknown {
   try {
     const out = execFileSync('bb', [CLI, ...args], {

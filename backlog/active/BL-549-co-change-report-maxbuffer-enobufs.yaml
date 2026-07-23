@@ -8,7 +8,7 @@ priority: 15
 mutation_cost: low
 direction: architect-found
 depends_on: []
-assigned_to: specifier
+assigned_to: coder
 source: "Architect defect report during BL-529 review, 2026-07-22. Detail: .worktrees/architect/tmp/DF-cochange.md"
 
 description: |
