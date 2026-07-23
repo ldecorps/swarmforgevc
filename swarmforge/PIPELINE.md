@@ -104,6 +104,33 @@ is no separate daemon that fills open slots on its own. handoffd's open-slot
 nudge only wakes the coordinator; `promote_and_route_next.sh` is the
 preferred one-shot for that wake.
 
+### Aged-note rotation (BL-576)
+
+Under `config rotation router`, a solo `type: note` to a dormant role (such as
+a design kickoff to the specifier) stays non-actionable for `note_actionable_after_ms`
+(default 20 minutes) to prevent broadcast thrash when five-role merge-up notes land.
+Once aged past the threshold, the note becomes actionable: the handoff daemon's
+chase sweep will rotate the resident to that dormant role to drain it.
+
+**Key mechanics:**
+
+- **Fresh notes are protected.** A note delivered while the resident is mid-parcel
+  drains on the normal pipeline before it ages in — no rotation.
+- **Age clock is the parcel header** (`enqueued_at` first, then `created_at`),
+  never file mtime (worktree syncs touch files).
+- **Dormant-note delivery wake is suppressed.** When a note lands in a dormant role's
+  mailbox while the resident is elsewhere, no wake is sent to the resident. The chase
+  sweep will rotate when it ages in. This removes wasted `NO_TASK` turns.
+- **Newest actionable mail still wins.** If an aged note and a git_handoff are
+  both actionable, the newest (by created_at) is rotated to first.
+- **One rotation per sweep.** Busy gates, cooldown, and per-sweep resident budget
+  all apply. A five-role broadcast eventually drains one role per sweep with
+  automatic `ROTATE_HOME` return between drains.
+
+**Configuration:** See `docs/how-to/BL-576-aged-note-actionability-mono-router.md`
+for how to tune `note_actionable_after_ms` (default 1200000 ms / 20 minutes) for
+your workflow.
+
 ### Non-home role after QA merge-up (BL-550)
 
 On mono-router packs with `config rotation router`, QA's merge-up `note` is

@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-07-23T15:32:19.167391165Z","feature_name":"Aged notes in a dormant mailbox make a mono-router role worth rotating to","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-576-aged-note-actionability.feature","background_hash":"519186f40dba7fa958f633c97429c9e9d345231c27b126a398e9cf356cf374cf","implementation_hash":"unknown","scenarios":[{"index":0,"name":"a note rotates the resident only once it has aged past the threshold","scenario_hash":"1351fcaf5cf1a754ea96ba87eb3eb2187b949f1148ba9c00cc31f1cfe11e4d05","mutation_count":6,"result":{"Total":6,"Killed":6,"Survived":0,"Errors":0},"tested_at":"2026-07-23T15:31:27.254739412Z"},{"index":2,"name":"the newest actionable mail still wins, and an aged note now competes","scenario_hash":"57800c9a05ae06a0e60d2570bc4df41cf96f4351a2dcb7d232f4c7812be6576a","mutation_count":20,"result":{"Total":20,"Killed":20,"Survived":0,"Errors":0},"tested_at":"2026-07-23T15:31:27.254739412Z"},{"index":6,"name":"a wasted resident wake is suppressed only for a note to a dormant role","scenario_hash":"c2108c929c55bddfa0234b13c5e7e52fcc86ef3f87f8e97267738cb6222f90f0","mutation_count":20,"result":{"Total":20,"Killed":20,"Survived":0,"Errors":0},"tested_at":"2026-07-23T15:31:27.254739412Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: Aged notes in a dormant mailbox make a mono-router role worth rotating to
 
   Under `config rotation router` one resident process plays every pipeline role in

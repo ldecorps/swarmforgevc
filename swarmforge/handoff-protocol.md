@@ -536,6 +536,40 @@ resolve the wrong pane, so rotation can print success while the resident
 stays on the old role. The same OpenRouter `-e` injection as chase/ensure
 applies on rotate and idle-clear respawn.
 
+### Mono-router aged-note actionability (BL-576)
+
+Under `config rotation router`, the handoff daemon's chase sweep decides which
+dormant mailboxes are worth rotating the resident for. By default, it counts
+only in-process work and git_handoffs to prevent broadcast thrash when five-role
+merge-up notes land.
+
+**Aged-note actionability** extends the rotation decision: a `type: note` to a
+dormant role (such as a design kickoff to the specifier) stays non-actionable
+for `note_actionable_after_ms` (default 1200000 ms / 20 minutes). Once aged past
+the threshold, the note becomes actionable and the chase sweep will rotate the
+resident to that dormant role to drain it.
+
+**Key mechanics:**
+
+- **Fresh notes are protected.** A note delivered while the resident is mid-parcel
+  drains on the normal pipeline before it ages in — no rotation, no broadcast
+  thrash.
+- **Age measured from parcel header** (`enqueued_at` first, then `created_at`),
+  never file mtime (worktree syncs touch files).
+- **Dormant-note delivery wake suppressed.** When a note lands in a dormant role's
+  mailbox while the resident is elsewhere, no wake is sent. The chase sweep will
+  rotate when it ages in, removing wasted `NO_TASK` turns.
+- **Newest actionable mail still wins.** If an aged note and a git_handoff are
+  both actionable in different dormant roles, the newest (by created_at) rotates
+  first.
+- **One rotation per sweep.** Busy gates, cooldown, and per-sweep resident budget
+  all apply unchanged. Home-role return (`ROTATE_HOME`) is automatic.
+
+**Configuration:** `note_actionable_after_ms` (positive integer, milliseconds).
+Read at daemon startup via the effective config (BL-216); absent, malformed,
+zero, or negative values degrade to default. Cannot be disabled (zero/negative
+would reinstate broadcast thrash). For tuning and live investigation, see
+`docs/how-to/BL-576-aged-note-actionability-mono-router.md`.
 
 ### Dispatch-gap sweep
 

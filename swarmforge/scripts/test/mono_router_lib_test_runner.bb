@@ -313,6 +313,16 @@
   (assert-true "well short of the threshold is not aged"
                (not (mono-router-lib/note-aged?
                      {:enqueued-at "2026-07-23T11:59:00Z" :created-at "2026-07-23T11:59:00Z"
+                      :now-ms now-ms :threshold-ms threshold})))
+  ;; BL-576 F2 (architect finding): note-aged? had no assertion at exactly
+  ;; threshold-ms - a >= -> > mutant survived. Pin both sides of the boundary.
+  (assert-true "exactly at the threshold counts as aged (>= boundary)"
+               (mono-router-lib/note-aged?
+                {:enqueued-at "2026-07-23T11:40:00Z" :created-at "2026-07-23T11:40:00Z"
+                 :now-ms now-ms :threshold-ms threshold}))
+  (assert-true "one second short of the threshold is not aged"
+               (not (mono-router-lib/note-aged?
+                     {:enqueued-at "2026-07-23T11:40:01Z" :created-at "2026-07-23T11:40:01Z"
                       :now-ms now-ms :threshold-ms threshold}))))
 
 (assert-true "aged note alone makes a role actionable"

@@ -1010,7 +1010,9 @@
 
 (defn preferred-mono-rotate-role
   "At most one dormant role may rotate the resident per decision — the one
-   with the newest actionable mail. Broadcast notes never qualify."
+   with the newest actionable mail. A note aged past
+   `note_actionable_after_ms` now qualifies; fresh broadcast notes still
+   don't (BL-576)."
   [roles]
   (mono-router-lib/preferred-rotate-target
    (map (fn [[role ri]] (role-mail-row role ri)) roles)))
