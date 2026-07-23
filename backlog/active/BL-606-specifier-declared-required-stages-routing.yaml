@@ -1,0 +1,154 @@
+id: BL-606
+title: "Specifier declares required_stages per ticket so the pipeline can skip agents deemed unnecessary — an allowlist, never a bypass, with every skip recorded in the handoff trail"
+milestone: M8
+type: feature
+status: todo
+epic: swarm-reliability
+human_approval: approved
+severity: low
+priority: 4
+direction: human-requested
+depends_on: []
+assigned_to: specifier
+mutation_cost: medium
+source: |
+  Human, 2026-07-23, after the "auto mode / model" thread: "how about dynamic
+  routing? where some agents in the swarm could be bypassed because deemed
+  unnecessary." Agreed to draft the specifier-declared version (not a
+  dispatch-time LLM classifier, not per-stage self-declared pass-through).
+
+  EXPEDITE, 2026-07-23: human asked to run this as the NEXT ticket — "the
+  swarm should hopefully run quicker when this lands" — WITH the explicit
+  caveat "extreme care with this as it will make the workflow less
+  predictive." Priority raised to pull first; the reversibility + visibility
+  guardrails below (global kill-switch, per-ticket stage record) exist
+  specifically to answer that caveat: dynamic routing must stay one flag away
+  from the old fully-predictable behaviour.
+
+description: |
+  ## Problem
+
+  Every ticket currently walks the full chain — specifier -> architect ->
+  coder -> QA -> hardener -> cleaner -> documenter — regardless of scope. A
+  doc-only copy change, a one-line config tweak, or a pure refactor with
+  existing coverage pays for architect, hardener, and sometimes QA that have
+  nothing to do. That is latency and token cost with no return on the
+  low-scope tail, which is the bulk of tickets.
+
+  ## Shape — an allowlist declared IN the spec, computed ONCE
+
+  The specifier, as part of writing the spec, declares an explicit set of
+  stages the ticket REQUIRES:
+
+    required_stages: [architect, coder, qa, hardener, cleaner, documenter]
+
+  Stages NOT listed are skipped. This is deliberately an allowlist of what is
+  needed, NOT a `bypass: [...]` flag — the classification is itself reviewed
+  spec content, produced by the one role whose job is to reason about scope,
+  and it is fixed at spec time rather than guessed per-stage or by a
+  dispatch-time router. (Those two alternatives were considered and rejected:
+  a title-classifier router is an LLM guessing scope; per-stage
+  self-declaration still wakes every agent, saving latency but not the
+  decision.)
+
+  ## Non-negotiable guardrails — a skip is invisible unless we make it visible
+
+  This swarm has ALREADY been burned by an implicit stage skip: the logged
+  "shipped without a documenter pass" defect. The whole point of this ticket
+  is to make skips first-class and auditable, so that class of bug cannot
+  recur.
+
+  1. DEFAULT-FULL. Absent or unparseable `required_stages` => the ticket runs
+     the FULL pipeline. Skipping is an opt-in optimization; the safe failure
+     mode is running a stage that was not strictly needed, never dropping one.
+
+  2. SKIPS ARE RECORDED IN THE HANDOFF TRAIL. When a stage is skipped, the
+     handoff/commit lineage must carry an explicit, greppable record — which
+     stage, and the specifier's stated reason — so `git log` still shows a
+     COMPLETE lineage and a genuine pass is distinguishable after the fact
+     from a skip. A silent gap in the trail is the failure mode, not the goal.
+
+  3. QA AND DOCUMENTER ARE GATED HARD. QA in this swarm catches SPEC defects,
+     not just code defects — it is the load-bearing gate. QA and documenter
+     may only be omitted from required_stages for genuinely non-code tickets,
+     and even then the skip is logged loudly. The specifier writes the rule
+     for exactly when each is droppable; err conservative.
+
+  4. NO OUT-OF-BAND STAGE INJECTION. required_stages constrains DOWN from the
+     full chain only. It cannot add stages, reorder them, or run a stage
+     twice — it is a subset selector over the canonical order.
+
+  5. GLOBAL KILL-SWITCH — the escape hatch for "less predictable". A single
+     global flag (config / env, specifier picks the exact lever) disables
+     routing entirely: when off, required_stages is IGNORED and every ticket
+     runs the full canonical chain, identical to today's behaviour. This is
+     the human's stated safety valve — the whole feature must stay ONE flag
+     away from the old fully-predictable pipeline, so a misfire in the field
+     is a one-line revert of behaviour, not a code rollback. Default posture
+     for the flag (on vs off at first launch) is the specifier's call; erring
+     OFF-by-default and opting individual tickets in is the conservative read
+     of "extreme care".
+
+  6. PER-TICKET STAGE VISIBILITY. For any completed ticket it must be
+     answerable, without reconstructing intent, WHICH stages actually ran and
+     which were skipped-by-routing. The recorded skips (#2) plus the ran-stage
+     lineage are that answer. The point of the whole ticket is to make the
+     pipeline dynamic WITHOUT making it opaque.
+
+  ## Where it lives
+
+  The dispatch/handoff layer that advances a ticket between roles reads
+  required_stages and, at each git_handoff, routes to the NEXT required stage
+  instead of the next literal stage. Specifier decides the exact field
+  location on the ticket yaml and how the router resolves "next required".
+
+acceptance: |
+  Specifier writes the scenarios. Minimum:
+
+  1. A ticket with required_stages omitted (or malformed) runs the FULL
+     canonical pipeline — proven, not assumed. This is the default-safe path.
+
+  2. A ticket declaring a strict subset (e.g. [coder, cleaner]) is routed
+     ONLY through those stages in canonical order; the unlisted stages never
+     receive a handoff for that ticket.
+
+  3. Every skipped stage produces an explicit, greppable record in the
+     handoff/commit trail naming the stage and the specifier's reason. A test
+     asserts a skipped-stage lineage is distinguishable from a completed-stage
+     lineage after the fact.
+
+  4. required_stages can only SELECT from the canonical stage set — it cannot
+     add a stage, reorder, duplicate, or name an unknown stage. An unknown or
+     out-of-order entry is rejected (and falls back to default-full per #1),
+     not silently honoured.
+
+  5. A ticket whose required_stages omits QA or documenter is only accepted
+     for a non-code ticket class the specifier defines; the omission is logged
+     loudly. The rule for when QA/documenter are droppable is spelled out in
+     the Gherkin, conservative by default.
+
+  6. The "next required stage" resolution is a PURE function over
+     (required_stages, current_stage) — unit-tested with fixtures, no fs, no
+     live swarm.
+
+  7. GLOBAL KILL-SWITCH proven: with the flag OFF, a ticket carrying a strict
+     required_stages subset STILL runs the full canonical chain (routing is
+     inert) — a direct test, because this is the human's safety valve and it
+     failing silently would be the worst outcome. With the flag ON, the same
+     ticket routes to the subset (per #2).
+
+  8. STAGE VISIBILITY proven: for a completed routed ticket, a test asserts
+     the trail answers "which stages ran, which were skipped" without
+     inferring from the diff.
+
+out_of_scope: |
+  - A dispatch-time LLM classifier or per-stage self-declared pass-through.
+    Explicitly rejected in favour of specifier-declared. Either could be its
+    own later ticket.
+  - Changing the canonical stage ORDER or introducing new roles. This only
+    ever selects a subset of the existing chain.
+  - Auto-suggesting required_stages to the specifier from the ticket text.
+    The specifier declares it by hand here; a suggestion helper is a separate
+    ticket if wanted.
+  - Retro-tagging existing in-flight tickets. New field applies to tickets
+    specced after this lands; untagged tickets run full per the default.
