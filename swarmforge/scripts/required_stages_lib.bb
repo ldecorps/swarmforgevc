@@ -229,7 +229,7 @@
         idx-current (if norm-current (.indexOf ^java.util.List canonical-order norm-current) -1)
         idx-next (if norm-next (.indexOf ^java.util.List canonical-order norm-next) -1)]
     (if (and (>= idx-current 0) (>= idx-next 0) (< idx-current idx-next))
-      (vec (subvec (vec canonical-order) (inc idx-current) idx-next))
+      (vec (subvec canonical-order (inc idx-current) idx-next))
       [])))
 
 ;; ── completed-ticket ran-vs-skipped visibility (acceptance scenario 08) ──
