@@ -55,6 +55,19 @@ agent-questions topic, and have the answer come back into the specifier's own
 inbox/session so it can resume drafting with a real decision instead of a
 guess.
 
+**Hard requirement, confirmed already load-bearing in BL-483 and must not be
+lost in whatever this ticket builds:** the human must be able to answer with
+free text when none of the offered options fit, exactly like today's
+`operator_ask.bb` polls (`composeAskMessageBody`'s "Or reply with your own
+answer." — `extension/src/tools/telegramFrontDeskBotCore.ts:2712-2720` —
+and the dedicated scenario at
+`specs/features/BL-483-multi-option-ask-buttons.feature` scenario
+`multi-option-ask-buttons-03`, both button-tap and typed free-text answers
+riding the SAME `postToBridge` answer-effect path). If the design ends up
+building a distinct/simpler tool rather than reusing `operator_ask.bb`
+directly (see open question below), this free-text fallback must be
+reproduced explicitly — it is not something to silently drop for simplicity.
+
 ## Open questions for whoever specs this (note: likely NOT the specifier alone,
 given the point of this ticket — see below)
 
