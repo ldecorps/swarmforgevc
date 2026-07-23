@@ -1,0 +1,124 @@
+id: BL-589
+title: "An approval ask that poses a multiple-choice ruling surfaces its options as tappable choices, and records which was chosen"
+milestone: M8
+type: feature
+status: todo
+epic: swarm-reliability
+human_approval: pending
+severity: medium
+priority: 20
+direction: human-requested
+depends_on: [BL-582]
+assigned_to: specifier
+mutation_cost: medium
+source: |
+  Human, 2026-07-23, on being asked to rule between BL-588's four approaches
+  from a bare Approve/Reject ask: "can the approval surface in telegram as a
+  poll then? so I can pick the relevant option?"
+
+description: |
+  ## Problem
+
+  An `ApprovalRequested` ask always renders the SAME five buttons -
+  Approve / Amend / Reject / Expedite / More - built by
+  `approvalRequestedButtons(backlogId)` in `extension/src/concierge/topicRouter.ts:207`.
+  The button set is a function of nothing but the ticket id.
+
+  That is fine for a yes/no gate and wrong for a ticket whose whole reason for
+  needing a human is a CHOICE. BL-588 is the live example: its
+  `approval_context` names four approaches, asks two further sub-questions,
+  and states that one option ("do nothing") is something "no agent should
+  choose unilaterally". Tapping Approve on it records `human_approval:
+  approved` and answers none of that - the specifier is then free to pick any
+  of the four, including the one the ticket itself calls most dangerous.
+
+  So today the human either types free prose into the topic (unstructured, and
+  nothing parses it into the ticket) or the ruling is recorded out-of-band by
+  an operator editing the yaml. Both lose the audit trail the approval gate
+  exists to produce.
+
+  ## The machinery already exists - on the WRONG path
+
+  Nothing here needs inventing. Two option-rendering mechanisms already ship,
+  both driven by `operator_ask.bb --options` and both scoped to a SUP support
+  thread (the Agent Questions path), never to an approval ask:
+
+  - **BL-466, native Telegram poll.** `operator_lib.bb/poll-options` builds a
+    real poll when there are 2+ discrete options; a `poll_answer` update is
+    resolved back to its thread via the pollMap (`resolvePollThread`), since
+    Telegram's `poll_answer` object carries no thread/topic information at all.
+    Falls back to a plain message below 2 options rather than emitting a
+    1-option poll Telegram would reject.
+  - **BL-483, inline-keyboard options.** `AskOption {label, description?}`
+    rendered as buttons whose `callback_data` is `ask:<threadId>:<index>` -
+    an INDEX, not the label, because callback_data is capped at 64 bytes and a
+    label is unbounded. Parsed by `ASK_CALLBACK_DATA_PATTERN`, dispatched via
+    `deliverAskAnswer`, with `answerIfAskAlreadyClosed` guarding a stale tap.
+    A single usable option is kept here (unlike the poll's 2+ minimum).
+
+  The gap is purely that an approval ask has no way to CARRY options, and no
+  field to record the answer into.
+
+  ## Shape (specifier decides the details)
+
+  1. **Ticket side.** A ticket declares its choices - e.g. a `ruling_options:`
+     list beside `approval_context:`. The ask renderer reads it; a ticket
+     without one keeps today's exact five-button behaviour, unchanged.
+  2. **Render side.** `approvalRequestedButtons` stops being a pure function of
+     the id and gains the ticket's options. Whether that is inline buttons
+     (BL-483 shape, reusing the index-not-label constraint) or a native poll
+     (BL-466 shape) is a real fork - see below.
+  3. **Record side, the part that matters most.** The chosen option must land
+     IN THE TICKET as a durable, machine-readable ruling - e.g. `human_ruling:`
+     naming the option - not merely flip `human_approval` to `approved`. A
+     ruling that only exists as a Telegram tap is exactly the audit gap this
+     ticket is closing. It should commit, for the durability reason BL-582
+     records.
+  4. **Multi-question asks.** BL-588 needs THREE rulings (which approach, may
+     QA rewrite history, should latency gate the build). Decide whether that is
+     one ask with several option groups, several sequential asks, or out of
+     scope for slice 1. Do not silently support only the first question.
+
+  ## Fork for the specifier: poll vs buttons
+
+  Native polls are the human's own words ("as a poll"), and Telegram renders
+  them attractively with vote counts. But `poll_answer` carries no
+  thread/topic, so it needs the pollMap indirection, and a poll is a poor fit
+  for a decision that must be auditable and singular (polls model votes, not
+  rulings; they are also editable/retractable by the voter).
+
+  Inline buttons carry the backlog id directly in `callback_data`, reuse the
+  approval path's existing stale-tap and idempotency guards, and repaint the
+  ask in place the way a decided approval already does.
+
+  Recommend buttons for the mechanics and say so to the human, since they
+  asked for "a poll" meaning "let me pick an option" rather than "let me vote".
+  The specifier should confirm that reading rather than assume it.
+
+acceptance: |
+  Specifier writes the scenarios. Minimum:
+
+  1. A ticket declaring ruling options renders one tappable choice per option
+     in its approval ask, alongside (or replacing) the default verbs.
+  2. Tapping a choice records the chosen option into the ticket durably and
+     machine-readably, and the ask repaints showing WHICH option was chosen -
+     not merely "approved".
+  3. A ticket with NO ruling options renders exactly today's five buttons and
+     behaves byte-identically - the regression guard proving this is additive.
+  4. An option label too long for the 64-byte callback_data budget is handled
+     by index indirection, never truncated into an ambiguous id.
+  5. A stale tap on an already-ruled ask is idempotent and says so, matching
+     the existing `answerIfAskAlreadyClosed` / BL-484 posture.
+
+  QA verifies against the live bot, not fixtures only - and note that until
+  BL-582's second-poller cause is resolved, a tap may be consumed by the
+  competing instance, so a failed live test must be attributed carefully.
+
+out_of_scope: |
+  - Fixing the tap-delivery failure itself (BL-582). This ticket assumes taps
+    work; it does not depend on the fix landing first, but its live testing
+    does.
+  - Free-text rulings. This is discrete options only; prose rulings stay a
+    typed reply.
+  - Changing the Amend/Reject/Expedite verbs or the More expansion.
+  - Retrofitting existing tickets with ruling options.
