@@ -1,0 +1,149 @@
+id: BL-571
+title: "`rotation sequential` packs are invisible to ensure's declared signal — mono-rotate respawns five middle roles the launcher deliberately left dormant"
+milestone: M8
+type: defect
+status: todo
+epic: swarm-reliability
+severity: medium
+priority: 12
+direction: swarm-surfaced
+depends_on: [BL-537]
+assigned_to: specifier
+mutation_cost: medium
+source: |
+  Architect round-4 review of BL-530/BL-560 (2026-07-23,
+  backlog/evidence/BL-530-architect-approval.md), recorded there as an explicit
+  "Finding (separate ticket, NOT a send-back)" with the shape left as the
+  specifier's call. It is pre-existing at `main` AND at the pre-clobber
+  original, so it was correctly not folded into BL-530's parcel — the architect
+  reproduced it at four separate commits (`tmp/repro_sequential_respawn.sh` in
+  the architect worktree) and confirmed BL-530 neither introduces nor worsens it.
+
+  Specifier verified the mismatch directly on `main` before speccing:
+    - swarmforge/scripts/swarmforge.sh:700 (is_sequential_dormant) —
+      `[[ "$ROTATION_MODE" == "sequential" || "$ROTATION_MODE" == "router" ]]`
+    - swarmforge/scripts/mono_router_lib.bb:14 (conf-rotation-router?) —
+      regex `(?m)^(?:config\s+)?rotation\s+router\b`, router only
+    - swarmforge/scripts/swarm_ensure.bb:119 (rotation-router-mode?) — ORs the
+      two router-only predicates
+    - swarmforge/packs/mono-rotate.conf is the one shipped pack declaring
+      `config rotation sequential`
+  No existing backlog item covers it (grepped paused/active/hold).
+
+description: |
+  ## The defect
+
+  The launcher and ensure disagree about what `rotation sequential` means.
+
+  `swarmforge.sh`'s `is_sequential_dormant` treats **both** rotation values as
+  the same single-resident topology (its BL-518 comment says so explicitly):
+  only the resident agent and the coordinator get a real session/process, and
+  every middle pipeline role stays dormant — worktree + roles.tsv + a
+  pre-generated launch script only — until the resident respawns its own pane
+  as that role.
+
+  Ensure's declared signal matches the literal `router` alone. So on a
+  `mono-rotate` pack the launcher deliberately creates no middle-role sessions,
+  and then `./swarm ensure` classifies those same roles as broken panes and
+  drives them into repair.
+
+  ## Why it matters
+
+  A single `./swarm ensure` on a mono-rotate swarm starts five extra agent
+  processes — on precisely the memory-constrained host mono-rotate exists to
+  serve (its own conf names the FES 15GB box, which has already OOM-crashed
+  under a full swarm). It is silent: the ensure report shows repairs, not a
+  warning, so the operator sees "healed" rather than "over-provisioned".
+
+  No effect on the swarm running today, which declares `rotation router`.
+
+  ## Wanted
+
+  Give ensure a predicate that recognises the single-resident topology by ALL
+  the values the launcher already accepts, so the two agree.
+
+  ## Constraints
+
+  - **Do not widen `conf-rotation-router?` in place.** `ready_for_next_task.bb`
+    and `ready_for_next_batch.bb` consume that exact predicate for the
+    ROTATE_HOME backstop. Widening it there changes when a non-home role gets
+    sent home — a behavior change that needs its own spec and tests, and is NOT
+    in this ticket. Scenario 03 pins that path unchanged.
+  - **Add the new predicate to the pure module.** `mono_router_lib.bb` is pure
+    (text/data in, decisions out) and is where the architect's review says this
+    belongs; all tmux/conf IO stays at the edge in `swarm_ensure.bb`. Suggested
+    name from the review: `single-resident-rotation?` matching `router|sequential`.
+  - **Do not re-widen dormant to classic packs.** BL-530 round 3 was bounced for
+    exactly that: a shape heuristic classified classic-pack roles as DORMANT and
+    tore down healthy standing sessions. Scenario 02 is that regression guard and
+    must stay green.
+  - Fixture-driven regression test with an empty respawn log, per the two tests
+    BL-530 landed in `swarmforge/scripts/test/test_swarm_ensure.sh`.
+    `tmp/repro_sequential_respawn.sh` in the architect worktree is a working
+    starting point.
+
+  ## Sequencing — must NOT run concurrently with BL-537
+
+  BL-537 (active) edits the same dormant-classification decision in
+  `swarm_ensure.bb`, from the opposite direction: it asks when a dormant
+  classification should instead be a *heal*. Two tickets rewriting the same
+  branch concurrently is the overlap the coordinator's orthogonality rule
+  forbids. `depends_on: [BL-537]` — promote this only after BL-537 lands, and
+  re-read this ticket against the code BL-537 leaves behind, since the shape of
+  `ensure-role!` may have moved.
+
+  ## Out of scope (noted, deliberately not scoped here)
+
+  The identity-or-conf predicate pair is duplicated in four places —
+  `swarm_ensure.bb:119`, `swarm_status.bb:122`, `handoffd.bb:1124`, plus direct
+  `conf-rotation-router?` use in both `ready_for_next_*.bb`. That duplication is
+  what makes this gap systemic rather than local, and one shared predicate would
+  fix status, chase and rotate-home together. It is not folded in here because
+  the rotate-home half is a behavior change (above) and because a four-call-site
+  refactor riding a defect fix is the scope-creep the constitution's
+  "An Approval Authorizes Only Its Ticket's Work" forbids. Worth its own ticket
+  once this lands and BL-537 has settled the area.
+
+acceptance: specs/features/BL-571-sequential-rotation-dormant-parity.feature
+
+qa_e2e_procedure: |
+  No live mono-rotate swarm is required — this is fixture-driven.
+  1. `bash swarmforge/scripts/test/test_swarm_ensure.sh` → ALL PASS, including
+     the new sequential-dormant case and the existing classic half-launch case.
+  2. `bb swarmforge/scripts/test/mono_router_lib_test_runner.bb` → ok.
+  3. Non-vacuity: revert the predicate in `swarm_ensure.bb` to router-only and
+     re-run (1) — the new sequential case must FAIL, naming the respawned middle
+     roles. Restore.
+  4. Non-vacuity the other way: widen the predicate to match any rotation value
+     and re-run (1) — the classic-pack case must FAIL. Restore.
+  5. Confirm `grep -rn 'conf-rotation-router?' swarmforge/scripts/ready_for_next_*.bb`
+     is unchanged from `main` — the ROTATE_HOME path must not have moved.
+
+notes: |
+  IR-DRY adjudication (specifier, 2026-07-23): 5 findings, all reviewed and
+  deliberately left. `a pack declaring rotation "<rotation>"` vs
+  `... "sequential"` is one handler pattern with a captured argument (the
+  checker normalizes <placeholders> but not quoted literals). `a pack declaring
+  no rotation mode` is NOT the same step reworded — a classic pack has no
+  rotation line at all, so folding it into a `"none"` value would misdescribe
+  the fixture. The DORMANT positive/negative pair across scenarios 01 and 02 is
+  the regression guard itself and must stay two distinct assertions.
+
+  Because scenario 01's Given is one pattern with a captured value, its handler
+  must assert on the captured rotation rather than hard-coding the common case —
+  a handler that ignores the argument passes both rows while testing neither,
+  which is the shared-cell mutation survivor this repo has hit five times.
+
+  The architect's reproduction across four commits, worth keeping because it is
+  what proves this is pre-existing rather than parcel-introduced:
+
+    at 7524bd3ada (BL-530 parcel):  cleaner/architect/QA -> respawned (3 calls)
+    at 4353ec1344 (main):           cleaner/architect/QA -> respawned (3 calls)
+    at 7e2498634^ (pre-clobber):    rotation-router-mode? identical, router-only
+    at c7a7491f30 (round-3 code):   DORMANT, 0 respawns — but only via the
+                                    shape heuristic that was rightly deleted
+
+  The deleted round-3 heuristic covered `sequential` only incidentally, and it
+  could not be kept: it was also tearing down healthy classic-pack sessions.
+  The fix must come from the DECLARED signal, never from inferring topology by
+  observing which sessions happen to exist.
