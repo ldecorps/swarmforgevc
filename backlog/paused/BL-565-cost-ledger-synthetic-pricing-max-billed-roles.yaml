@@ -1,0 +1,80 @@
+id: BL-565
+title: "Cost ledger synthetic pricing — capture tokens and list-price dollar equivalents for Max-billed swarm roles"
+milestone: M8
+type: feature
+status: todo
+epic: cost-intelligence
+human_approval: approved
+severity: low
+priority: 10
+direction: human-requested
+depends_on: [BL-551]
+assigned_to: specifier
+mutation_cost: medium
+source: |
+  Human request 2026-07-23, from reviewing the live BL-551 ledger output:
+  every swarm-role row in `.swarmforge/telemetry/llm-cost-2026-07.jsonl` has
+  `tokens: null, costUsd: null` (7d rollup: coder 11/11 unknown-cost,
+  architect 11/11, hardener 9/9, cleaner 7/7). Only OpenRouter-billed calls
+  (front-desk-operator, $0.74/7d) carry real dollars, because the pipeline
+  panes run on a Claude Max subscription with no per-call API price. The
+  ledger therefore ranks Max-billed roles by invocation count only — it
+  cannot answer "what would the documenter→Sonnet-5 upgrade or a Fable-5
+  specifier trial cost," which is exactly what it was promoted for (op
+  ruling 2026-07-22: cost visibility before model-routing work).
+
+description: |
+  Two gaps, in dependency order:
+
+  ## 1. Token capture at record time
+
+  The ledger writers (handoffd.bb delivery path, agent_runtime_inject.bb,
+  operator_runtime.bb) append `llm_invocation` records with `tokens: null`
+  for pipeline roles — the handoff-triggered records know the origin but
+  never read usage. Design question for specifier: where is per-turn token
+  usage observable for a Claude Code pane? Candidates include Claude Code
+  session/transcript JSONL usage fields and the GH-22 context-telemetry
+  recorder (which already captures per-agent token telemetry — prefer
+  reusing that over a new collector; see docs/how-to/
+  GH-22-context-telemetry-recorder-and-query-cli.md). The record schema
+  already has the fields — this is population, not schema change.
+
+  ## 2. Synthetic dollar equivalents
+
+  For records with tokens but no billed cost, compute
+  `syntheticCostUsd = tokens × list price` for the record's model, kept
+  DISTINCT from `costUsd` (real billed dollars must never mix with
+  estimates in rollups — rank and display them as separate columns).
+  List prices live in a small committed table (per-MTok input/output/
+  cache-read rates per model id); prices change, so the table carries an
+  `as_of` date and the rollup output labels synthetic values as estimates.
+  Sonnet 5 intro pricing (through 2026-08-31) is a worked example of why
+  the table needs effective-date awareness.
+
+  Surfaces to extend, not fork: llm_cost_ledger_lib.bb (record shape),
+  llmCostLedger.ts + llmCostLedgerStore.ts (ranking), swarm-cost-rank.ts
+  (CLI columns), bridge /cost-rank (JSON fields), cost & health sidecar +
+  BL-511 briefing (labelled estimate line).
+
+acceptance: |
+  Specifier writes executable scenarios; minimum the design must make
+  testable:
+  1. A pipeline-role invocation recorded after this ships carries non-null
+     tokens (input/output at minimum) when usage was observable, and the
+     record degrades to today's null-token shape (never blocks delivery)
+     when it was not.
+  2. A record with tokens and a model in the price table gains
+     syntheticCostUsd; costUsd stays null unless really billed.
+  3. Rollups (CLI, /cost-rank, sidecar) show billed and synthetic totals as
+     separate labelled values — never summed together silently.
+  4. A model missing from the price table yields syntheticCostUsd null plus
+     a counted unknown-price bucket, not a crash or a zero that reads as
+     "free".
+  5. The 7d role rollup that motivated this ticket, re-run on new data,
+     ranks Max-billed roles by synthetic dollars, not just invocation count.
+
+out_of_scope: |
+  - Changing any model assignment (that is a decision the data informs).
+  - Live billing reconciliation against Anthropic/OpenRouter invoices.
+  - Backfilling tokens for historical records already written with nulls.
+  - GH-22 recorder changes beyond reading what it already captures.
