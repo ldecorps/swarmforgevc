@@ -1,0 +1,48 @@
+id: BL-597
+title: "Trend: self-heal events — stale-build recompiles, respawns, kill_all, rotation respawns over time"
+milestone: M8
+type: feature
+status: todo
+epic: swarm-behaviour-trends
+human_approval: approved
+severity: low
+priority: 30
+direction: human-requested
+depends_on: []
+assigned_to: specifier
+mutation_cost: low
+source: |
+  Human, 2026-07-23, epic BL-594. The swarm heals itself constantly and counts
+  none of it. The 14:46 stale-build-detected recompile that (per current best
+  theory) fixed the approval taps was invisible until grepped for by hand —
+  a self-heal trend would have surfaced it immediately during BL-582.
+description: |
+  Count the swarm's automatic recovery actions as a durable, plottable series,
+  so a spike in self-healing is a visible signal rather than buried in logs.
+
+  Events, all already emitted as log lines today (front-desk supervisor,
+  handoffd, ensure, launcher):
+    - stale-build-detected recompiles (front_desk_supervisor + any build-
+      freshness respawn)
+    - bridge / bot / supervisor respawns (bounded-restart supervisors)
+    - kill_all_swarm invocations
+    - rotation respawns (mono-router persona swaps that are a respawn)
+    - claim-heal / resume-orphaned-in-process actions (claimHealer already
+      knows these)
+
+  Capture each as a structured event {type, subject, reason, ts} in
+  `.swarmforge/telemetry/self-heal-<YYYY-MM>.jsonl` rather than only prose, and
+  aggregate to a per-type count-over-time series via trend.ts.
+
+  Value: a healthy swarm self-heals rarely; a rising respawn or recompile rate
+  is an early warning of instability (a flapping provider, a memory spiral, a
+  bad build) BEFORE it becomes a visible outage.
+acceptance: |
+  Specifier writes scenarios. Minimum:
+  1. Each self-heal action emits one structured event; the existing prose log
+     lines are the source, not a new detection path.
+  2. A pure aggregator yields per-type counts over a window via trend.ts.
+  3. Append-only, gitignored log.
+out_of_scope: |
+  - Changing any recovery behaviour. Counting only.
+  - Alerting/escalation on a spike (a possible follow-on, its own ticket).

@@ -1,0 +1,58 @@
+id: BL-604
+title: "Morning briefing carries a trend ANALYSIS section — narrative read of the behaviour trends, not just charts"
+milestone: M8
+type: feature
+status: todo
+epic: swarm-behaviour-trends
+human_approval: approved
+severity: medium
+priority: 15
+direction: human-requested
+depends_on: [BL-595, BL-596, BL-597, BL-598, BL-599, BL-600, BL-601, BL-602, BL-605]
+assigned_to: specifier
+mutation_cost: medium
+source: |
+  Human, 2026-07-23, epic BL-594: "an analysis of the trend has to be published
+  as part of the morning briefing."
+description: |
+  The morning briefing already ships (BL-214/258) with enrichment sections
+  (briefingEnrichment / briefingDigest) and inline rendered diagrams
+  (BL-260/402, CID-attached per BL-286). Add a TREND ANALYSIS section that reads
+  the BL-594 series and produces a short NARRATIVE - not merely re-plots the
+  charts.
+
+  "Analysis, not charts" is the load-bearing word. The section states what
+  CHANGED and whether it matters, e.g.:
+    - "Approval-tap success fell from 98% to 82% this week" (BL-595)
+    - "The resident spent 71% of its time as coder; cleaner starved to 2%" (596)
+    - "Self-heal respawns up 3x - a flapping provider is the likely cause" (597)
+    - "Backlog grew net +9 this week; drain is not keeping up" (599)
+    - "Median approval latency 6h, one ticket open 3 days" (600)
+  Direction + magnitude + a one-line "so what", per series, driven by the SAME
+  trend.ts direction/slope the charts use - the narrative is a rendering of the
+  computed trend, never a second, hand-tuned judgement.
+
+  The analysis-builder is a PURE function over the series (series in, ranked
+  narrative bullets out), unit-tested with fixtures - the same pure/impure split
+  the rest of the briefing enrichment uses. Rank by significance so the briefing
+  leads with the trend that moved most, and stays SHORT (the briefing is a
+  phone read, BL-392's bounded-subject discipline applies to the body too).
+
+  A series with no producer landed, or too few points to trend, is omitted from
+  the narrative rather than reported as "flat/no change" - absence of data is
+  not a finding.
+acceptance: |
+  Specifier writes scenarios. Minimum:
+  1. The briefing body gains a trend-analysis section: per landed series, a
+     direction + magnitude + one-line significance, derived from trend.ts's own
+     slope, not a separate judgement.
+  2. Bullets are ranked by significance; the section is bounded in length.
+  3. A series with insufficient data is OMITTED, never reported as a spurious
+     "no change".
+  4. The analysis builder is pure and unit-tested; a render failure degrades
+     the briefing gracefully (BL-260 posture), never crashes the send.
+out_of_scope: |
+  - The charts themselves on the mini app (BL-603 owns that surface).
+  - New instrumentation (producer tickets own the series).
+  - Emailing anything the briefing does not already email; this is a section
+    in the existing morning briefing, not a new message.
