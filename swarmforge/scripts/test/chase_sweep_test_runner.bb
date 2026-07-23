@@ -65,7 +65,10 @@
 
 (def adapters
   {:get-liveness (fn [_role] liveness)
-   :send-wake-up! (fn [role] (log-call! "wake-up" role))
+   :send-wake-up! (fn [role]
+                    (when-not (= "1" (System/getenv "CHASE_WAKE_SKIP"))
+                      (log-call! "wake-up" role))
+                    (not= "1" (System/getenv "CHASE_WAKE_SKIP")))
    :trigger-respawn! (fn [role] (log-call! "respawn" role))
    :log-dead-letter! (fn [role path] (log-call! "dead-letter" role (fs/file-name path)))
    :get-last-activity-ms (fn [_role] last-activity-ms)

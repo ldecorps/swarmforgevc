@@ -232,6 +232,9 @@ export interface ConciergeTickAdapters {
   // optional (defaults to no recert posting), same posture as
   // rosterAdapters above.
   recertPostingAdapters?: RecertPostingAdapters;
+  // BL-561: retries closing ApprovalRequested asks whose ticket is already
+  // decided on disk but whose Telegram edit failed during a burst approve.
+  reconcileDecidedApprovalAskCloses?: (nowMs: number) => Promise<void>;
 }
 
 export interface TickResult {
@@ -1104,6 +1107,7 @@ async function processConciergeEvent(
 // absent, so existing callers/tests that never touch title-age sync are
 // completely unaffected by this default.
 export async function runConciergeTick(adapters: ConciergeTickAdapters, nowMs: number = Date.now()): Promise<TickResult> {
+  await adapters.reconcileDecidedApprovalAskCloses?.(nowMs);
   const folders = adapters.readFolders();
   const curr = toEventStreamSnapshot(folders, adapters.readGates(), adapters.readRoleTicket());
   const epicDefinitions = epicDefinitionsFor(folders);
