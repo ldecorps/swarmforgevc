@@ -147,6 +147,32 @@
          nil
          (required-stages-lib/next-required-stage #{} "coder"))
 
+;; ── sender-position / routes-forward? (architect BL-606 bounce #3) ────────
+
+(assert= "specifier is special-cased to position -1 (before coder)" -1 (required-stages-lib/sender-position "specifier"))
+(assert= "coder resolves to its canonical-order index" 0 (required-stages-lib/sender-position "coder"))
+(assert= "QA resolves to its canonical-order index (case already canonical)" 5 (required-stages-lib/sender-position "QA"))
+(assert= "sender casing is normalized like every other token" 5 (required-stages-lib/sender-position "qa"))
+(assert= "the hardener alias normalizes for sender-position too" 3 (required-stages-lib/sender-position "hardener"))
+(assert= "coordinator has no canonical-order position" nil (required-stages-lib/sender-position "coordinator"))
+(assert= "an unrecognized sender has no position" nil (required-stages-lib/sender-position "mystery-role"))
+(assert= "nil sender has no position" nil (required-stages-lib/sender-position nil))
+
+(assert= "routes-forward?-01: an ordinary forward send routes" true (required-stages-lib/routes-forward? "coder" "cleaner"))
+(assert= "routes-forward?-02: the specifier's entry send to coder routes" true (required-stages-lib/routes-forward? "specifier" "coder"))
+(assert= "routes-forward?-03 (repro E): the architect's own bounce to coder does not route"
+         false (required-stages-lib/routes-forward? "architect" "coder"))
+(assert= "routes-forward?-04 (repro D): QA's bounce to documenter does not route"
+         false (required-stages-lib/routes-forward? "QA" "documenter"))
+(assert= "routes-forward?-05: a bounce to the sender's own stage does not route"
+         false (required-stages-lib/routes-forward? "cleaner" "cleaner"))
+(assert= "routes-forward?-06: a non-canonical sender (coordinator) never routes"
+         false (required-stages-lib/routes-forward? "coordinator" "coder"))
+(assert= "routes-forward?-07: an unrecognized sender never routes"
+         false (required-stages-lib/routes-forward? "mystery-role" "coder"))
+(assert= "routes-forward?-08: an unrecognized literal-to never routes"
+         false (required-stages-lib/routes-forward? "coder" "deploy"))
+
 ;; ── skipped-stages ─────────────────────────────────────────────────────────
 
 (assert= "skipped-stages is canonical-order minus the required set, in order"
