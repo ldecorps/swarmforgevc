@@ -1,0 +1,164 @@
+id: BL-585
+title: "Pipeline board: one matrix with ticket COLUMNS and shared role rows, epic as a per-ticket caption, plus the grid's first width budget"
+milestone: M8
+type: feature
+status: todo
+epic: pipeline-board
+human_approval: pending
+priority: 35
+direction: human-requested
+depends_on: [BL-559]
+mutation_cost: medium
+source: |
+  Human directive, 2026-07-23, via backlog/INTAKE-20260723-pipeline-board-ticket-columns.md
+  (drained by the specifier; raw intake removed from the backlog root in the
+  same commit). "One column per active ticket, one row per role — shared role
+  rows, ticket numbers as column headers — so N tickets add columns, not
+  repeated blocks. The epic name moves to a small note/caption per
+  ticket-column."
+
+approval_context: |
+  The layout change itself is exactly what you asked for and needs no sign-off.
+  Four things do:
+
+  1. THE WIDTH BUDGET IS 30 CHARACTERS, which fits 7 ticket columns at today's
+     3-digit ids (2 for the role label + 4 per column). Past that the matrix
+     drops the tail and prints "+N more active". This is the load-bearing
+     constraint — ticket-columns grow SIDEWAYS and Telegram's <pre> does not
+     wrap, so without a cap the board eventually needs horizontal scrolling on
+     a phone, which is precisely what the earlier narrowing work avoided.
+     If 30 is wrong for your phone, say so — it is one constant.
+  2. WHICH COLUMNS GET DROPPED: the tail of the existing epic-grouped order. I
+     deliberately did NOT invent a second ordering rule (e.g. in-flight before
+     not-started) — dropped tickets still appear in full in the LINKS list
+     below the board, so the cap costs reach, not information.
+  3. THE EMPTY-BOARD PLACEHOLDER loses its dashes: "(no active tickets)", not
+     "-- (no active tickets) --". The dashes were the epic-heading decoration,
+     and epic headings are what this ticket removes.
+  4. THE CAPTION IS EPIC-ONLY ("537 swarm-reliability"), one line per visible
+     column, no slug. The grid never showed a slug and lines are scarce on a
+     phone.
+
+  Sequencing: BL-559 (already filed) fixes a failing property test in
+  `pipelineBoard.property.test.js`; this ticket rewrites structural invariants
+  in that same file. Land BL-559 first — it is small, and two tickets editing
+  one test file concurrently is exactly what the orthogonality rule forbids.
+
+description: |
+  ## Problem
+
+  `renderGridLines` emits a full 8-line stage block per ticket
+  (`renderPivotedTicketBlock`), preceded by a `-- <epic> --` heading whenever the
+  epic changes. N active tickets cost 8N lines to carry N marks, and the epic
+  heading is what forces the repeat-per-group structure.
+
+  ## The behavior
+
+  One matrix. Rows are the 8 pipeline stages (`NS SP CO CL AR HD DC QA`, the
+  existing `COLUMN_LABEL` glyphs over `PIPELINE_BOARD_COLUMN_ORDER`), shared
+  across every ticket. Columns are active tickets, headed by their bare display
+  ids. An extra ticket adds a column, not a block. The epic prints as a caption
+  line per visible column below the matrix; `renderEpicHeading` and
+  epic-as-section-header go away.
+
+  ## Layout, pinned
+
+  - Cell width `W = max(3, longest display id across ALL rows)` — computed over
+    every candidate row, not just the visible ones, so it never depends
+    circularly on how many columns fit.
+  - Header line: a 2-character label gutter, then per column a separator plus
+    the display id RIGHT-ALIGNED in `W`.
+  - Role line: the 2-character role label, then per column a separator plus the
+    mark right-aligned in `W` — so a column's marks line up under the last
+    character of its id. Marks are unchanged: `X` for the holding stage, `.`
+    otherwise, and a coordinator-held ticket still remaps to the `QA` row
+    (BL-507).
+  - EVERY gap inside the matrix is a NON-BREAKING SPACE. This is not cosmetic:
+    the existing `PIVOTED_MARK_COLUMN_PADDING` comment records that Telegram
+    collapses plain spaces inside `<pre>`, which would left-flush the whole
+    grid. Caption and overflow lines are ordinary text and may use plain spaces.
+  - Then a blank line, then one caption per visible column in left-to-right
+    order: `<display id> <epic>`, with `NO_EPIC_LABEL` for an epic-less ticket.
+  - Then, only when columns were dropped, `+<N> more active`.
+  - Empty board: the single line `(no active tickets)`.
+
+  ## Width budget (the real design gap — the grid has never had one)
+
+  `PIPELINE_BOARD_GRID_MAX_WIDTH = 30` characters. The visible column count is
+  DERIVED from it, never hardcoded: the largest N with `2 + N * (1 + W) <= 30`
+  (7 columns at `W = 3`; automatically fewer if ids get wider). Dropped columns
+  are the tail of the existing epic-grouped row order — no new ordering rule.
+
+  This mirrors, for the grid, what `PIPELINE_BOARD_MESSAGE_MAX_LENGTH` already
+  does for the link list: an explicit budget constant with derived truncation and
+  a visible "+N more" line. Never a silent cap.
+
+  Link building is untouched and still runs over ALL rows, so a ticket dropped
+  from the matrix stays present in the LINKS list — pinned by its own scenario,
+  because that is what makes the cap acceptable.
+
+  ## Both entry points, one renderer
+
+  The captions and the overflow line belong to the GRID section, so
+  `renderGridOnlySections` carries them and both consumers —
+  `renderPipelineBoardBody`/`renderPipelineBoard` (Telegram pin) and
+  `renderPipelineBoardGridOnly` (BL-526 phone miniapp) — get the new layout from
+  one function. No second layout path.
+
+  ## Tests are rewritten, not patched
+
+  `extension/test/pipelineBoard.test.js` asserts the OLD format throughout
+  ("a pivoted ticket block lists every stage column vertically", "each ticket id
+  renders on its own line in the pivoted grid", "rows sharing an epic render
+  under one heading", "a no-epic row renders under its own heading", "pivoted
+  ticket ids align with the mark column", and the `-- (no active tickets) --`
+  placeholder). Those assertions describe behavior this ticket deliberately
+  removes: replace them with the matrix's own, do not bend them.
+  `extension/test/pipelineBoard.property.test.js` likewise for any invariant
+  over the old grid shape.
+
+acceptance: |
+  specs/features/BL-585-pipeline-board-ticket-column-matrix.feature
+
+  Gates: unit + acceptance + coverage + mutation (Stryker `--mutate` scoped to
+  the compiled `out/**/*.js`, never `src/**/*.ts`) + CRAP <= 6, as usual.
+  Width/alignment assertions must compare against the real rendered string,
+  including the non-breaking spaces — an assertion that normalizes whitespace
+  away would pass while the phone render is broken.
+
+  QA end-to-end procedure (live swarm, real Telegram):
+  1. With 2-3 tickets in `backlog/active/` across at least two different epics,
+     let the concierge tick repaint the pinned Pipeline Board message.
+  2. On a PHONE in portrait, confirm the board shows ONE matrix — a header row
+     of ticket numbers, eight role rows — with no horizontal scrolling and no
+     `-- epic --` headings.
+  3. Confirm each ticket's `X` sits in its own column on the row of the role
+     currently holding it, and that the epic captions below the matrix name the
+     right epic for each column.
+  4. Open the same board in the phone miniapp grid-only view and confirm it
+     shows the identical matrix.
+  5. Width case: temporarily promote enough tickets to exceed the budget (or
+     stage the same count in a fixture run). Confirm the matrix caps at the
+     budgeted number of columns, prints "+N more active", still does not scroll
+     horizontally, and that EVERY active ticket — including the dropped ones —
+     is still present in the LINKS list.
+  6. Empty case: with `backlog/active/` empty, confirm the grid renders the bare
+     `(no active tickets)` line with no dashes.
+
+docs: |
+  documenter: update whatever documents the pipeline board's layout to describe
+  the matrix (roles down, tickets across), the epic caption, and the new
+  `PIPELINE_BOARD_GRID_MAX_WIDTH` budget with its "+N more active" overflow —
+  including the note that dropped columns remain in the LINKS list. If an
+  existing diagram or doc shows the old per-ticket block, it changes in this
+  same parcel (documenter owns diagram currency).
+
+out_of_scope: |
+  - The below-grid sections (PARKED / AWAITING APPROVAL / ROOT INTAKE /
+    RECENTLY CLOSED) and their own caps — unchanged.
+  - The LINKS list, its ordering, and `PIPELINE_BOARD_MESSAGE_MAX_LENGTH`.
+  - Any change to WHICH tickets are on the board, or to the epic-grouped row
+    ordering itself.
+  - BL-559's property-test prefix bug — separate ticket, land it first.
+  - Pagination or a scrollable/interactive grid. The cap plus "+N more active"
+    plus the LINKS list is the whole overflow strategy for this ticket.
