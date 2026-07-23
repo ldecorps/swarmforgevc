@@ -1,0 +1,60 @@
+id: BL-583
+title: "TEST PROBE - do not implement - approval tap diagnostic for BL-582"
+milestone: M8
+type: defect
+status: blocked
+epic: swarm-reliability
+human_approval: pending
+severity: low
+priority: 99
+direction: swarm-surfaced
+depends_on: [BL-582]
+assigned_to: specifier
+mutation_cost: low
+promotion_blockers: >
+  NEVER PROMOTE. This is a disposable diagnostic probe created 2026-07-23 to
+  surface one approval ask in the Telegram Approvals topic so the BL-582 tap
+  failure can be reproduced under observation. It describes no real work.
+  The operator deletes it as soon as the probe is done. If you are a
+  coordinator or specifier reading this: take no action, do not promote, do
+  not spec, do not route.
+source: |
+  Operator, 2026-07-23, at the human's request ("let's do a test, surface a
+  dummy approval") while triaging BL-582.
+
+description: |
+  ## Not a real ticket
+
+  This exists ONLY to make the concierge tick post an approval ask into the
+  Approvals topic (1785), because any item in active/ or paused/ carrying
+  `human_approval: pending` is surfaced by `pendingApprovalFor`
+  (conciergeTick.ts:274) on the next 30s tick.
+
+  The human then taps Approve on THIS ask while the operator watches, so the
+  BL-582 failure is observed live on a message of known age and known
+  provenance rather than reconstructed after the fact.
+
+  ## What is being measured
+
+  1. Does the button spinner clear immediately or hang? `answerCallbackQuery`
+     runs only for a callback that `decideCallbackQueryAction` RECOGNIZED, so
+     an instant clear puts the failure downstream of the decision and a hang
+     puts it in the guards.
+  2. Does `human_approval:` in this file flip to `approved`?
+  3. Does anything at all appear in the bot's stderr at tap time?
+  4. Does the ask repaint on the following tick?
+
+  ## Cleanup
+
+  Delete this file once the probe is done. Per the operator's own standing
+  note, do NOT delete it BEFORE the tap: the approval writer resolves the
+  ticket by scanning live backlog folders for a matching `id:`, so removing
+  the backing file first turns the tap into a guaranteed no-op and would
+  measure nothing.
+
+acceptance: |
+  None. This ticket is never implemented, specced or promoted. Its only
+  acceptance is that it gets deleted after the probe.
+
+out_of_scope: |
+  Everything. See promotion_blockers above.
