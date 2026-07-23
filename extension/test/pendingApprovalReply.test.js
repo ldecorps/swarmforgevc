@@ -15,6 +15,7 @@ const {
   isTicketPendingApproval,
   classifyApprovalsTopicReply,
   readRecordedVerdict,
+  readApprovalCloseVerdict,
 } = require('../out/concierge/pendingApprovalReply');
 
 // BL-357: the human's reply in a ticket's own topic RECORDS the approval
@@ -498,4 +499,30 @@ test('an amending ticket reports no recorded verdict (amending is not a stale-ta
 test('a backlog id with no matching ticket file reports no recorded verdict, never a crash', () => {
   const targetPath = mkTmp();
   assert.equal(readRecordedVerdict(targetPath, 'BL-999'), undefined);
+});
+
+// ── readApprovalCloseVerdict (read-only, real fs) - BL-561 ────────────────
+
+test('readApprovalCloseVerdict: approved ticket yields approved verdict', () => {
+  const targetPath = mkTmp();
+  writeTicket(path.join(targetPath, 'backlog', 'paused'), 'BL-950.yaml', 'id: BL-950\ntitle: t\nhuman_approval: approved\n');
+  assert.deepEqual(readApprovalCloseVerdict(targetPath, 'BL-950'), { kind: 'approved' });
+});
+
+test('readApprovalCloseVerdict: rejected ticket yields rejected verdict with reason', () => {
+  const targetPath = mkTmp();
+  writeTicket(path.join(targetPath, 'backlog', 'paused'), 'BL-951.yaml', 'id: BL-951\ntitle: t\nhuman_approval: rejected # bad scope\n');
+  assert.deepEqual(readApprovalCloseVerdict(targetPath, 'BL-951'), { kind: 'rejected', reason: 'bad scope' });
+});
+
+test('readApprovalCloseVerdict: amending ticket yields amending verdict', () => {
+  const targetPath = mkTmp();
+  writeTicket(path.join(targetPath, 'backlog', 'paused'), 'BL-952.yaml', 'id: BL-952\ntitle: t\nhuman_approval: amending\n');
+  assert.deepEqual(readApprovalCloseVerdict(targetPath, 'BL-952'), { kind: 'amending' });
+});
+
+test('readApprovalCloseVerdict: still-pending ticket yields undefined', () => {
+  const targetPath = mkTmp();
+  writeTicket(path.join(targetPath, 'backlog', 'paused'), 'BL-953.yaml', 'id: BL-953\ntitle: t\nhuman_approval: pending\n');
+  assert.equal(readApprovalCloseVerdict(targetPath, 'BL-953'), undefined);
 });

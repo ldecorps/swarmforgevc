@@ -240,6 +240,8 @@
 ;; ── impure sweep application (adapters map, mirrors ChaserAdapters) ─────────
 ;; adapters keys: :get-liveness :send-wake-up! :trigger-respawn! :log-dead-letter!
 ;;                :get-last-activity-ms :on-stuck-escalation! :log-telemetry!
+;; :send-wake-up! and :send-in-process-resume! return truthy only when a pane
+;; wake was actually delivered (skipped-busy/dedup/recent/failed => false).
 ;;                :get-role-head-commit   — BL-528: returns current 10-char HEAD
 ;;                                          for a role's worktree, or "" on error
 ;;                :on-claim-idle-bounce!  — BL-528: called when reclaims reach bounce threshold
@@ -254,16 +256,20 @@
 (defn- handoff-id [file-path]
   (fs/file-name file-path))
 
+(defn- wake-role-delivered? [adapters role]
+  (boolean
+   (if-let [resume! (:send-in-process-resume! adapters)]
+     (resume! role)
+     ((:send-wake-up! adapters) role))))
+
 (defn- apply-stuck-nudge! [role held adapters now-ms]
   ;; Prefer an in-process resume wake when the adapter provides one — re-running
   ;; ready_for_next on aider just reprints the same TASK and loops.
-  (if-let [resume! (:send-in-process-resume! adapters)]
-    (resume! role)
-    ((:send-wake-up! adapters) role))
-  (doseq [item held]
-    (let [count (inc (:nudgeCount item))]
-      (write-nudge-count! (:filePath item) count)
-      ((:log-telemetry! adapters) {:type "nudge" :role role :handoffId (handoff-id (:filePath item)) :count count} now-ms)))
+  (when (wake-role-delivered? adapters role)
+    (doseq [item held]
+      (let [count (inc (:nudgeCount item))]
+        (write-nudge-count! (:filePath item) count)
+        ((:log-telemetry! adapters) {:type "nudge" :role role :handoffId (handoff-id (:filePath item)) :count count} now-ms))))
   ;; Do NOT call on-stuck-escalation! false here. Nudge is still inside a stuck
   ;; episode; clearing the escalation edge re-arms the stuck email on the next
   ;; alert and floods the human (especially under mono-router, where a dormant
@@ -336,10 +342,8 @@
                now-ms)
               (case action
                 :nudge
-                (do (if-let [resume! (:send-in-process-resume! adapters)]
-                      (resume! role)
-                      ((:send-wake-up! adapters) role))
-                    (write-nudge-count! fp (inc (:nudgeCount item))))
+                (when (wake-role-delivered? adapters role)
+                  (write-nudge-count! fp (inc (:nudgeCount item))))
 
                 :bounce
                 ((:on-claim-idle-bounce! adapters) role fp p')
@@ -375,10 +379,10 @@
 
 (defn- apply-inbox-item-action! [role item action adapters now-ms]
   (case action
-    "chased" (let [count (inc (:chaseCount item))]
-               ((:send-wake-up! adapters) role)
-               (write-chase-count! (:filePath item) count now-ms)
-               ((:log-telemetry! adapters) {:type "chase" :role role :handoffId (handoff-id (:filePath item)) :count count} now-ms))
+    "chased" (when ((:send-wake-up! adapters) role)
+               (let [count (inc (:chaseCount item))]
+                 (write-chase-count! (:filePath item) count now-ms)
+                 ((:log-telemetry! adapters) {:type "chase" :role role :handoffId (handoff-id (:filePath item)) :count count} now-ms)))
     "respawned" (do ((:trigger-respawn! adapters) role)
                      ((:log-telemetry! adapters) {:type "respawn" :role role :handoffId (handoff-id (:filePath item)) :count (:chaseCount item)} now-ms))
     "dead-lettered" (let [dead (dead-letter-path (:filePath item))
@@ -521,8 +525,8 @@
             (json/generate-string (update state role-kw assoc :wokenForUntilMs until-ms))))))
 
 (defn- apply-rate-limit-expiry-wake! [role adapters cooldown-until-ms]
-  ((:send-wake-up! adapters) role)
-  ((:mark-rate-limit-cooldown-woken! adapters) role cooldown-until-ms))
+  (when ((:send-wake-up! adapters) role)
+    ((:mark-rate-limit-cooldown-woken! adapters) role cooldown-until-ms)))
 
 (defn- sweep-role! [role inbox-new-dir in-process-dir completed-dir abandoned-dir now-ms config adapters]
   (sweep-in-process! role in-process-dir now-ms config adapters)
@@ -555,11 +559,15 @@
 (def busy-activity-patterns
   [#"(?i)esc to interrupt"
    ;; Claude Code status spinners (e.g. "· Whirlpooling… (6m · ↓ 14k tokens)")
-   #"(?i)(?:whirlpooling|vibing|perambulating|swirling|marinating|incubating|pondering|noodling|dilly-dallying)[…\.]"
+   #"(?i)(?:whirlpooling|vibing|perambulating|swirling|marinating|incubating|pondering|noodling|dilly-dallying|tinkering|generating)[…\.]"
+   ;; Token counter in the status line — high-confidence mid-turn signal
+   #"(?i)↓\s*[\d.]+\s*k?\s*tokens"
+   #"(?i)Generating[…\.]"
+   #"(?i)●\s*Running\s+\d+\s+shell command"
    ;; Long context compaction (omits "esc to interrupt" but is still mid-turn)
    #"(?i)compacting conversation"
    ;; Active explore/bash subagent chrome in the footer or body
-   #"[◯●]\s+Explore"
+   #"[◯●✽]\s+Explore"
    #"(?i)Explore\("
    ;; Subagent shell commands in flight (line ends with Running…)
    #"(?m)^\s*Running…\s*$"])
