@@ -342,6 +342,56 @@ echo "$OUT" | grep -q "^launch-contract: HEALTHY$" \
 cleanup_daemon
 pass "07c: launch-contract reports HEALTHY when the effective pack declares its full contract"
 
+# ── 07d: a broken launch contract refuses to respawn a dead agent pane
+#         instead of repairing it onto the same broken argv (BL-530 architect
+#         bounce, defect 1) ─────────────────────────────────────────────────
+make_fixture
+echo "1" > "$ROOT/pane_dead"
+cat > "$ROOT/broken-pack.conf" <<'EOF'
+config rotation router
+config coordinator_agent aider
+EOF
+printf 'active_backlog_max_depth_conf_path\t%s\n' "$ROOT/broken-pack.conf" >> "$ROOT/.swarmforge/swarm-identity"
+if OUT="$(run_ensure)"; then RC=0; else RC=$?; fi
+echo "$OUT" | grep -q "^agent:coder: FAILED (respawn refused: launch contract broken - fix the pack conf, then rerun ensure)$" \
+  || fail "07d: dead pane under a broken contract was not reported as respawn-refused; got: $OUT"
+[[ "$(cat "$ROOT/pane_dead")" == "1" ]] \
+  || fail "07d: dead pane was respawned despite a broken launch contract"
+[[ "$RC" -ne 0 ]] || fail "07d: exit status was 0, expected non-zero"
+cleanup_daemon
+pass "07d: a broken launch contract refuses to respawn a dead agent pane"
+
+# ── 07e: a broken launch contract leaves an already-healthy pane alone
+#         (no refusal message, no respawn attempt either) ──────────────────
+make_fixture
+cat > "$ROOT/broken-pack.conf" <<'EOF'
+config rotation router
+config coordinator_agent aider
+EOF
+printf 'active_backlog_max_depth_conf_path\t%s\n' "$ROOT/broken-pack.conf" >> "$ROOT/.swarmforge/swarm-identity"
+if OUT="$(run_ensure)"; then RC=0; else RC=$?; fi
+echo "$OUT" | grep -q "^agent:coder: HEALTHY$" \
+  || fail "07e: an already-healthy pane was disturbed by a broken launch contract; got: $OUT"
+cleanup_daemon
+pass "07e: a broken launch contract leaves an already-healthy agent pane untouched"
+
+# ── 07f: a stale/unreadable persisted conf path falls back to the tracked
+#         default conf rather than silently reporting HEALTHY (BL-530
+#         architect bounce, defect 2) ────────────────────────────────────────
+make_fixture
+mkdir -p "$ROOT/swarmforge"
+cat > "$ROOT/swarmforge/swarmforge.conf" <<'EOF'
+config rotation router
+config coordinator_agent aider
+EOF
+printf 'active_backlog_max_depth_conf_path\t%s\n' "$ROOT/no-longer-exists.conf" >> "$ROOT/.swarmforge/swarm-identity"
+if OUT="$(run_ensure)"; then RC=0; else RC=$?; fi
+echo "$OUT" | grep -q "^launch-contract: FAILED (coordinator_agent is 'aider' but coordinator_model is unset" \
+  || fail "07f: a stale persisted conf path did not fall back to the tracked default conf; got: $OUT"
+[[ "$RC" -ne 0 ]] || fail "07f: exit status was 0, expected non-zero"
+cleanup_daemon
+pass "07f: a stale persisted conf path falls back to the tracked default conf instead of reading HEALTHY"
+
 # ── 06: SWARMFORGE_SKIP_OPERATOR omits the operator check entirely ─────────
 make_fixture
 echo "999999" > "$ROOT/.swarmforge/operator/runtime.pid"

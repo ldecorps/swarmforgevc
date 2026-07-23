@@ -33,6 +33,7 @@
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "agent_runtime_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "swarm_identity_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "launch_contract_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "backlog_depth_lib.bb")))
 
 (defn usage []
   (binding [*out* *err*]
@@ -240,10 +241,23 @@
 ;; reclassify cycle (mirroring the "no tmux socket" branch below).
 
 (defn effective-conf-text []
-  (let [path (not-empty (get (swarm-identity-lib/read-swarm-identity project-root)
-                              "active_backlog_max_depth_conf_path"))]
-    (when (and path (fs/exists? path))
-      (slurp (str path)))))
+  "BL-530 architect bounce, defect 2: an unreadable conf must never read as
+   HEALTHY (nil conf-text -> launch-contract-violations returns [] ->
+   'HEALTHY' is indistinguishable from 'I could not read the conf'). Reuses
+   backlog-depth-lib/conf-file-path for the persisted-path resolution
+   (project-root, not the caller's own cwd - the identical problem that
+   sibling already solved). Unlike that sibling, which is content to degrade
+   a genuinely absent config to a single numeric default, a broken-but-
+   present persisted path here still falls through to the tracked default
+   conf explicitly - the check must always evaluate something real rather
+   than go silent, which a bare reuse of conf-file-path would not do for a
+   persisted key that no longer resolves (it returns that same broken path,
+   not the default)."
+  (let [primary (backlog-depth-lib/conf-file-path project-root)
+        fallback (apply fs/path project-root backlog-depth-lib/default-conf-relpath)]
+    (or (try (slurp (str primary)) (catch Exception _ nil))
+        (when (not= (str primary) (str fallback))
+          (try (slurp (str fallback)) (catch Exception _ nil))))))
 
 (defn launch-contract-result []
   (let [violations (launch-contract-lib/launch-contract-violations (effective-conf-text))]
@@ -278,6 +292,24 @@
         {:component name :status :failed :action detail
          :category (:category (agent-runtime-lib/classify-provider-error detail))}))))
 
+(defn ensure-role!
+  "BL-530 architect bounce, defect 1: wraps ensure-component! for one
+   agent pane with a deliberate exception to ensure's usual 'never abort on
+   one failed repair' orchestration. When the swarm's launch contract is
+   broken (missing coordinator_model/rotation for a pack that requires
+   them - see launch-contract-result), respawning a dead pane would just
+   restart it onto the same broken argv - the exact busy-idle thrash BL-512
+   rank 3 describes, now reported as FIXED. Refusing the respawn is the
+   point of this ticket, so a broken contract skips repair entirely for any
+   pane that is not already alive; an already-healthy pane is left alone
+   either way, since ensure never touches a pane that is already up."
+  [name healthy?-fn respawn!-fn contract-broken?]
+  (if (and contract-broken? (not (healthy?-fn)))
+    {:component name :status :failed
+     :action "respawn refused: launch contract broken - fix the pack conf, then rerun ensure"}
+    (ensure-component! name healthy?-fn respawn!-fn
+                        "respawned pane from its persisted launch script")))
+
 (defn report-line [{:keys [component status action category]}]
   (case status
     :healthy (str component ": HEALTHY")
@@ -297,12 +329,18 @@
                             :action "skipped bounce (headless swarm owns tmux)"}
                            (ensure-component! "extension" extension-healthy? bounce-extension!
                                               "bounced the extension dev host"))
+        ;; BL-530 architect bounce, defect 1: the launch-contract check must
+        ;; be evaluated BEFORE any pane is respawned, not after, or a
+        ;; broken contract only gets reported once ensure has already
+        ;; respawned agents onto it.
+        launch-contract-check (launch-contract-result)
+        contract-broken? (= :failed (:status launch-contract-check))
         role-results (if socket
                        (mapv (fn [{:keys [role session]}]
-                               (ensure-component! (str "agent:" role)
-                                                   #(pane-alive? socket session)
-                                                   #(respawn-role! socket role session)
-                                                   "respawned pane from its persisted launch script"))
+                               (ensure-role! (str "agent:" role)
+                                             #(pane-alive? socket session)
+                                             #(respawn-role! socket role session)
+                                             contract-broken?))
                              (role-rows))
                        (mapv (fn [{:keys [role]}]
                                (let [detail "no tmux socket found for this project root"]
@@ -312,7 +350,6 @@
                              (role-rows)))
         daemon-result (ensure-component! "daemon" daemon-healthy? ensure-daemon!
                                           "restarted the handoff daemon")
-        launch-contract-check (launch-contract-result)
         operator-result (when (operator-enabled?)
                           (ensure-component! "operator" operator-healthy? ensure-operator!
                                               "restarted the operator runtime"))
