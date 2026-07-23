@@ -1,0 +1,114 @@
+id: BL-588
+title: "Isolate batch recovery trees so one ticket's defect cannot block its clean siblings from landing"
+milestone: M8
+type: feature
+status: needs_design
+epic: swarm-reliability
+human_approval: pending
+priority: 6
+mutation_cost: high
+direction: human-requested
+depends_on: [BL-532]
+assigned_to: specifier
+source: "Second half of BL-532's OUTCOME line ('isolate bounce recovery trees'), split out because it changes how batch roles commit and forward. Evidence: backlog/evidence/BL-477-upstream-drift-watch-mechanism-bounce-20260717-b.md; backlog/evidence/BL-465-recently-closed-not-sorted-by-recency-bounce-20260717-b.md."
+
+description: |
+  ## What / why
+
+  BL-532 stops a clean sibling being RE-QUEUED for rework it does not need, and
+  stops the same bounce being paid twice. It does not let that clean sibling
+  LAND. BL-477, BL-475 and BL-465 were each verified clean on 2026-07-17 and
+  still sat behind BL-469's icon collision, because all four rode one commit and
+  QA can only approve or refuse the tree it is handed.
+
+  So the waste BL-532 removes is QA's and the producing role's. The waste this
+  ticket would remove is the clean tickets' latency: work that passed every gate
+  waits on an unrelated ticket's rework, and the longer it waits the more likely
+  it is to need a rebase or collect a second contaminant.
+
+  ## Why this is not folded into BL-532
+
+  Article 2.6 deliberately allows one commit to satisfy several tickets — that
+  is what a batch role IS, and 2.6 already carries the per-ticket forward
+  discipline that goes with it. Any isolation scheme changes how batch roles
+  commit, how QA approves, or both. That is a pipeline-topology change with a
+  real chance of introducing a worse failure than the one it fixes, so it needs
+  a human ruling on the approach before a line is written.
+
+  ## Approaches (the human picks; do not build before then)
+
+  1. **Split the batch commit per ticket.** The batch role commits each ticket's
+     changes separately and forwards each on its own commit, so a bounce lands
+     on one ticket's commit only. Cleanest conceptually. Costs: the batch role
+     must be able to attribute every hunk to a ticket, which is exactly what it
+     cannot do when a single refactor legitimately serves two tickets.
+  2. **QA lands the clean subset by cherry-pick.** The tree stays shared; on a
+     partial failure QA cherry-picks the clean tickets' commits onto `main` and
+     bounces only the defective one. Costs: QA gains a rewriting operation, and
+     a cherry-picked subset is a tree nobody verified as a whole — the exact
+     class of hazard the merge-up broadcast exists to avoid.
+  3. **Recovery on an isolated branch.** The bounced ticket is reworked on a
+     branch cut from the last clean ancestor rather than from the contaminated
+     tip, and the clean siblings' parcel is re-forwarded unchanged. Smallest
+     change to who does what. Costs: two live lineages for one batch, and the
+     merge-up broadcast has to be taught which one it is merging up to.
+  4. **Do nothing beyond BL-532.** Accept the latency; the deferral marker at
+     least makes the wait visible and cheap. A legitimate answer if the measured
+     latency is small.
+
+  Whichever is chosen, BL-532's deferral records are the input: they already
+  name, per ticket, which blocker it is waiting on and which check proved it.
+
+  ## What this ticket must NOT become
+
+  A scheme that lets un-verified work reach `main`. Every gate in Article 4.1
+  still applies to every ticket that lands, whatever tree it lands from.
+
+specifier_decisions: |
+  Held open pending the human ruling above. The specifier's own reading is that
+  approach 3 is the smallest change and approach 2 is the most dangerous, but
+  this ticket does not commit to either.
+
+acceptance: |
+  Not yet written — deliberately.
+
+  The acceptance feature file (`specs/features/BL-588-*.feature`) is written
+  only AFTER the human picks an approach, because each approach has a different
+  observable contract and a feature file pinning an unchosen one would be a
+  false contract. This ticket stays `needs_design` / `assigned_to: specifier`
+  until then; it must not be promoted to `backlog/active/` before the specifier
+  has replaced this field with a feature-file path (BL-233: a promoted ticket
+  whose scenarios outrun its handlers hard-fails the acceptance runner).
+
+  Measurement to take BEFORE building, whichever approach is chosen: how long,
+  across the 2026-07-17 batch and any later one, a clean ticket waited behind a
+  sibling's rework. If that number is small, approach 4 is the answer and this
+  ticket closes without code.
+
+docs: |
+  documenter (once an approach is chosen):
+  - `swarmforge/constitution/articles/02_handoffs.md` §2.6 if the batch
+    commit/forward contract changes.
+  - `docs/diagrams/` swarm workflow flow diagram if the parcel topology changes
+    — this is exactly the "pipeline topology changes in the same parcel" case
+    the local engineering article names.
+
+out_of_scope: |
+  - Everything BL-532 owns: the deferral record, its store, the CLI, and QA's
+    disposition step. This ticket consumes those records; it does not redefine
+    them.
+  - Removing batching. Batch roles stay batch roles (Article 2.6); this is about
+    what happens to the tree on a partial failure, not about whether batches
+    exist.
+
+approval_context: |
+  Needs a human ruling on WHICH approach before any code, because all four
+  change pipeline topology or QA's authority over `main`, and one of them
+  (approach 4) is "do nothing", which no agent should choose unilaterally.
+
+  Please rule on:
+  - Which of the four approaches above, or a fifth.
+  - Whether QA may rewrite history (cherry-pick) to land a clean subset, or
+    whether landing must always be a merge of a tree that was verified whole.
+  - Whether the latency measurement should gate the build — i.e. build only if
+    clean tickets are demonstrably waiting long enough to matter.
