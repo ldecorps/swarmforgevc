@@ -597,6 +597,96 @@ The one deliberate exception to "fail open" is a malformed `required_wiring`
 entry: the author is present and the fix is a one-line edit, so that fails
 closed (manifest class).
 
+## Dynamic Routing via Specifier-Declared required_stages (BL-606)
+
+When the `required_stages_routing_enabled` config flag is true (default false),
+the handoff send path can skip pipeline stages dynamically. The specifier
+declares which stages a ticket actually needs, and routing automatically skips
+the rest — shaving latency and token cost for low-scope work (docs-only
+changes, config tweaks, pure refactors with existing coverage).
+
+### How it Works
+
+1. **Specifier declares scope** — when writing the spec, the specifier sets:
+   ```yaml
+   required_stages: [coder, qa]
+   stage_skip_reasons:
+     cleaner: "style-only, no code logic"
+     architect: "configuration change"
+     hardender: "no new code paths"
+     documenter: "no user-facing docs change"
+   ```
+
+2. **Routing rewrites the recipient** — when `swarm_handoff.sh` sends a
+   `git_handoff` with a task name, it:
+   - Extracts the ticket ID from the task
+   - Reads the ticket's `required_stages` from `backlog/active/<id>*.yaml`
+   - If the flag is ON and required_stages is valid, computes the next required
+     stage after the current one
+   - Rewrites the handoff `to:` field to skip directly to that stage
+   - Records the skipped stages in the handoff envelope and in a durable log
+
+3. **Skipped stages are visible** — the handoff trail shows:
+   - `routing_skipped: cleaner,architect,hardender,documenter` envelope header
+   - A line appended to `.swarmforge/routing-skips.jsonl` with the skip event
+   - `stage_skip_reasons` committed to the ticket YAML for git audit
+
+### Safety Guardrails
+
+**Default OFF** — `required_stages_routing_enabled false` in `swarmforge.conf`
+means required_stages is ignored and every ticket runs the full chain, identical
+to legacy behavior. Opting in to routing is an explicit configuration decision.
+
+**Invalid declarations default to full chain** — if `required_stages` is missing,
+unparseable, or contains unknown stages, the ticket runs all stages as though
+routing were disabled. Silently skipping a stage is not the failure mode.
+
+**QA and documenter are conservative** — QA may be omitted **only** for tickets
+that omit `coder` (non-code changes). Documenter may be omitted at the
+specifier's discretion. A declaration that tries to skip QA while keeping `coder`
+is rejected and defaults to full-chain. Loudly. This ticket's design learned from
+a prior incident (BL-463: "shipped without a documenter pass") — the skip must
+never be silent.
+
+**Per-ticket visibility** — for any completed ticket, `git log` + the routing-skips
+log answer which stages actually ran. Skip recording is not a nice-to-have; it is
+load-bearing for post-hoc audit and debugging.
+
+### Kill-Switch Recovery
+
+If a misfire with routing occurs in the field (a ticket that should have been QA'd
+slips through, etc.), one-line fix:
+
+```bash
+# swarmforge.conf
+config required_stages_routing_enabled false
+```
+
+Push this change, kill the swarm, and relaunch. All tickets revert to full-chain
+behavior instantly. Routing is designed to stay one configuration flag away from
+the old predictable pipeline.
+
+### Reading the Routing Log
+
+`.swarmforge/routing-skips.jsonl` (one JSON event per line) records every skip:
+
+```json
+{"ticket":"BL-042","commit":"a1b2c3d9e8","at":"2026-07-23T14:30:15Z","skipped":["cleaner","architect","hardender","documenter"],"reason":"doc-only copy change"}
+```
+
+To check what stages actually ran for a completed ticket:
+
+```bash
+# Grep the ticket in routing-skips.jsonl
+grep '"ticket":"BL-042"' .swarmforge/routing-skips.jsonl
+
+# For each found line, see which stages were skipped
+# The stages NOT in the skip list are the ones that ran
+
+# Cross-check against git log to confirm the lineage
+git log --oneline <ticket-branch> | head -<stage-count>
+```
+
 ## Handoff Daemon
 
 The daemon should be implemented in Babashka.
