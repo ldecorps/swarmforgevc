@@ -4,7 +4,7 @@ milestone: M8
 type: feature
 status: todo
 epic: swarm-reliability
-human_approval: pending
+human_approval: approved
 priority: 5
 mutation_cost: high
 direction: human-requested
