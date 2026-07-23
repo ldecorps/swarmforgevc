@@ -256,6 +256,65 @@
            ["f6f6f6f6f6"]
            (mapv :sha (:findings result))))
 
+;; ── evaluate: condition 5 - dropped-work exclusion ──────────────────────
+;; architect rule_proposal (b7dd7276d): a merge commit whose diff against its
+;; first parent is empty, or a commit whose tree matches the cited commit,
+;; carries no unique content and must not survive as an ancestry finding -
+;; the false positive aca611925c ("merge coder work for BL-531", empty
+;; functional diff) would otherwise trip.
+
+(assert= "a merge commit with an empty first-parent diff is excluded (condition 5)"
+         []
+         (:findings (pre-qa-gate-lib/evaluate
+                     {:type "git_handoff" :to "QA" :ticket-id "BL-531" :cited-commit "cccccccccc"
+                      :role-branch-commits {"swarmforge-coder" [{:sha "e5e5e5e5e5" :message "merge coder work for BL-531"}]}
+                      :main-reachable-set #{}
+                      :cited-ancestors-set #{}
+                      :no-dropped-work-set #{"e5e5e5e5e5"}
+                      :wiring-entries [] :file-contents {} :abandoned-commits []})))
+
+(assert= "a commit whose tree matches the cited commit is excluded (condition 5)"
+         []
+         (:findings (pre-qa-gate-lib/evaluate
+                     {:type "git_handoff" :to "QA" :ticket-id "BL-531" :cited-commit "cccccccccc"
+                      :role-branch-commits {"swarmforge-coder" [{:sha "t3t3t3t3t3" :message "Fix BL-531 tree-identical"}]}
+                      :main-reachable-set #{}
+                      :cited-ancestors-set #{}
+                      :no-dropped-work-set #{"t3t3t3t3t3"}
+                      :wiring-entries [] :file-contents {} :abandoned-commits []})))
+
+(assert= "a genuine single-parent stranded fix with unique content still IS a finding (condition 5 does not over-exclude)"
+         [{:class :ancestry :ticket-id "BL-531" :sha "f6f6f6f6f6" :branch "swarmforge-coder"}]
+         (mapv #(select-keys % [:class :ticket-id :sha :branch])
+               (:findings (pre-qa-gate-lib/evaluate
+                           {:type "git_handoff" :to "QA" :ticket-id "BL-531" :cited-commit "cccccccccc"
+                            :role-branch-commits {"swarmforge-coder" [{:sha "f6f6f6f6f6" :message "Fix BL-531 real fix"}]}
+                            :main-reachable-set #{}
+                            :cited-ancestors-set #{}
+                            :no-dropped-work-set #{}
+                            :wiring-entries [] :file-contents {} :abandoned-commits []}))))
+
+(let [result (pre-qa-gate-lib/evaluate
+              {:type "git_handoff" :to "QA" :ticket-id "BL-531" :cited-commit "cccccccccc"
+               :role-branch-commits {"swarmforge-coder" [{:sha "e5e5e5e5e5" :message "merge coder work for BL-531 empty diff"}
+                                                          {:sha "f6f6f6f6f6" :message "Fix BL-531 real fix"}]}
+               :main-reachable-set #{}
+               :cited-ancestors-set #{}
+               :no-dropped-work-set #{"e5e5e5e5e5"}
+               :wiring-entries [] :file-contents {} :abandoned-commits []})]
+  (assert= "with one empty-diff merge and one real fix stranded, only the real fix survives"
+           ["f6f6f6f6f6"]
+           (mapv :sha (:findings result))))
+
+(assert= "no-dropped-work-set defaults to empty when absent - omitting it never silently excludes a real finding"
+         1
+         (count (:findings (pre-qa-gate-lib/evaluate
+                             {:type "git_handoff" :to "QA" :ticket-id "BL-531" :cited-commit "cccccccccc"
+                              :role-branch-commits {"swarmforge-coder" [{:sha "f6f6f6f6f6" :message "Fix BL-531 real fix"}]}
+                              :main-reachable-set #{}
+                              :cited-ancestors-set #{}
+                              :wiring-entries [] :file-contents {} :abandoned-commits []}))))
+
 ;; ── evaluate: wiring findings ──────────────────────────────────────────
 
 (assert= "missing path at cited commit is a wiring finding"
