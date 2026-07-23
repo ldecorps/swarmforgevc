@@ -321,13 +321,28 @@
           pane (try (capture-pane-text socket session) (catch Exception _ ""))]
       (chase-sweep-lib/actively-processing? pane))))
 
+(defn chase-poke-action
+  "Decide how to poke `role` under mono-router (pure wrapper around
+   mono-router-lib/dormant-mailbox-chase-action with live tmux probes)."
+  [roles socket role]
+  (let [session (:session (get roles role))
+        resident (handoff-lib/mono-router-resident-session)]
+    (mono-router-lib/dormant-mailbox-chase-action
+     {:target-session-exists? (boolean (and session (handoff-lib/session-exists? socket session)))
+      :resident-session-exists? (boolean (and resident (handoff-lib/session-exists? socket resident)))
+      :active-role (handoff-lib/read-mono-router-active-role)
+      :target-role role})))
+
 (defn maybe-notify!
   "Tmux wake after mailbox delivery. Skipped when SWARMFORGE_MAILBOX_ONLY=1,
    the inbox file already existed (duplicate delivery), the recipient pane
-   is actively working a turn (BL-135 / mono-router resident mid-task), or
-   this parcel already woke the same tmux session for another recipient
-   (broadcast merge-up notes)."
-  [socket roles session role recipient-path agent & {:keys [new-delivery? notified-sessions]
+   is actively working a turn (BL-135 / mono-router resident mid-task), this
+   parcel already woke the same tmux session for another recipient
+   (broadcast merge-up notes), or (BL-576) the parcel is a note landing in a
+   dormant mailbox while the resident is live as a DIFFERENT role — the
+   aged-note chase now guarantees eventual pickup, so the wake that would
+   only re-run ready_for_next as the wrong identity and NO_TASK is skipped."
+  [socket roles session role recipient-path agent & {:keys [new-delivery? notified-sessions parcel-type]
                                                      :or {new-delivery? true
                                                           notified-sessions (atom #{})}}]
   (let [wake-sess (handoff-lib/wake-session socket session)]
@@ -340,6 +355,12 @@
 
       (contains? @notified-sessions wake-sess)
       (log! "deliver-notify-skip-dedup" role wake-sess)
+
+      (and (= "note" parcel-type)
+           (mono-router-lib/suppress-dormant-note-delivery-wake?
+            {:parcel-type parcel-type
+             :chase-action (chase-poke-action roles socket role)}))
+      (log! "deliver-notify-skip-dormant-note" role (str recipient-path))
 
       (recipient-pane-busy? socket roles role)
       (log! "deliver-notify-skip-busy" role (str recipient-path))
@@ -461,7 +482,8 @@
                       (log! "llm-cost-ledger-append-error" recipient (.getMessage e))))
                   (maybe-notify! socket roles (:session role-info) recipient (str target)
                                  (:agent role-info) :new-delivery? new-delivery?
-                                 :notified-sessions notified-sessions))))
+                                 :notified-sessions notified-sessions
+                                 :parcel-type (get headers "type")))))
             (when (= "rule_proposal" (get headers "type"))
               (append-rule-proposal! headers))
             (move-with-collision path (sent-dir (get roles sender-role)))
@@ -938,18 +960,6 @@
         (let [pane (try (capture-pane-lines socket session 20) (catch Exception _ ""))]
           (observe-pane-loop! role pane))))))
 
-(defn chase-poke-action
-  "Decide how to poke `role` under mono-router (pure wrapper around
-   mono-router-lib/dormant-mailbox-chase-action with live tmux probes)."
-  [roles socket role]
-  (let [session (:session (get roles role))
-        resident (handoff-lib/mono-router-resident-session)]
-    (mono-router-lib/dormant-mailbox-chase-action
-     {:target-session-exists? (boolean (and session (handoff-lib/session-exists? socket session)))
-      :resident-session-exists? (boolean (and resident (handoff-lib/session-exists? socket resident)))
-      :active-role (handoff-lib/read-mono-router-active-role)
-      :target-role role})))
-
 (def last-chase-rotate-at-ms (atom 0))
 
 (defn- handoff-header-field [file-path field]
@@ -960,6 +970,15 @@
             (str/split-lines (or header ""))))
     (catch Exception _ nil)))
 
+(defn- note-actionable-after-ms
+  "BL-576: the effective config's note_actionable_after_ms — resolved via
+   backlog-depth-lib/conf-file-path (whatever pack swarm-identity recorded
+   at launch), never the tracked default file directly."
+  []
+  (mono-router-lib/parse-note-actionable-after-ms
+   (try (slurp (str (backlog-depth-lib/conf-file-path project-root)))
+        (catch Exception _ nil))))
+
 (defn- role-mail-row
   "Score one role's mailbox for mono-router rotate preference."
   [role role-info]
@@ -968,7 +987,16 @@
         held (chase-sweep-lib/scan-in-process ip-dir)
         news (chase-sweep-lib/scan-inbox-new new-dir)
         git-hfs (filterv #(= "git_handoff" (handoff-header-field (:filePath %) "type")) news)
-        newest (or (->> (concat held git-hfs)
+        note-fs (filterv #(= "note" (handoff-header-field (:filePath %) "type")) news)
+        now-ms (System/currentTimeMillis)
+        threshold-ms (note-actionable-after-ms)
+        aged-notes (filterv #(mono-router-lib/note-aged?
+                              {:enqueued-at (handoff-header-field (:filePath %) "enqueued_at")
+                               :created-at (handoff-header-field (:filePath %) "created_at")
+                               :now-ms now-ms
+                               :threshold-ms threshold-ms})
+                            note-fs)
+        newest (or (->> (concat held git-hfs aged-notes)
                         (keep #(handoff-header-field (:filePath %) "created_at"))
                         sort
                         last)
@@ -977,7 +1005,8 @@
      :newest-created-at newest
      :actionable? (mono-router-lib/actionable-mail?
                    {:in-process-count (count held)
-                    :git-handoff-count (count git-hfs)})}))
+                    :git-handoff-count (count git-hfs)
+                    :aged-note-count (count aged-notes)})}))
 
 (defn preferred-mono-rotate-role
   "At most one dormant role may rotate the resident per decision — the one
