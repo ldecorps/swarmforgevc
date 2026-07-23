@@ -1,0 +1,147 @@
+id: BL-567
+title: "Expeditor — drive one ticket through every pipeline gate with the swarm STOPPED, independent of all swarm runtime machinery"
+milestone: M8
+type: feature
+status: needs_design
+epic: swarm-reliability
+human_approval: approved
+severity: medium
+priority: 08
+direction: human-requested
+depends_on: []
+assigned_to: specifier
+mutation_cost: medium
+source: |
+  Human, 2026-07-23: wants a role/mode (working name: expeditor; earlier
+  recalled as "accepter"/"fast-tracker") that takes ONE named ticket and runs
+  it start-to-finish through all the swarm gates — spec written, implemented,
+  architect-reviewed, hardened, documented, QA-stamped — while the swarm is
+  down, in a degraded/offline mode. Follow-up sharpened the KEY use case:
+  "fix a broken swarm workflow ... ideally it has to be oblivious of the
+  swarmtools." I.e. this is the RECOVERY path: when the swarm's own machinery
+  is the thing that is broken, the fix ticket cannot ride the pipeline it is
+  fixing — the expeditor must not depend on any of it.
+
+  Precedent from the same day: the chase wake-budget starvation fix
+  (85a8f2c76) was diagnosed, fixed, tested, and deployed by hand outside the
+  swarm because the defect was in the dispatch machinery itself. The
+  expeditor formalizes that hand-run so it still produces spec, tests,
+  review, docs, and a QA stamp instead of an out-of-band commit
+  (cf. BL-566's landed_out_of_band retro-capture — the failure mode this
+  prevents).
+
+description: |
+  ## The hard requirement: oblivious to swarm machinery
+
+  The expeditor is a bootstrap/recovery tool. It MUST function when
+  handoffd, the mailboxes, tmux sessions, rotation, chase, the coordinator,
+  and the front desk are broken, wedged, or deliberately stopped. Therefore
+  it may not invoke, require, or assume ANY of:
+
+    - handoffd / handoffd_supervisor / sync-deliver / swarm_handoff.bb
+    - .swarmforge/handoffs/ mailboxes (read or write)
+    - tmux sessions, panes, sockets, wake injection
+    - rotate_to_role / mono-router active-role marker / ready_for_next
+    - the coordinator, chase sweeps, babysitter, operator runtime
+
+  It MAY consume durable DATA artifacts that are plain files under git:
+  backlog/*.yaml, specs/features/, .swarmforge/prompts/<role>.md, the pack
+  conf's per-role model/effort table, and git worktrees/branches. The
+  design must draw this data-vs-machinery line explicitly — anything on the
+  machinery side of it is out of reach even when convenient. Runtime
+  dependencies should be minimal and boring: git, the claude CLI
+  (non-interactive `claude -p` or equivalent), bash/bb for the driver.
+
+  ## Lineage: a stripped-down mono-router (human's framing, 2026-07-23)
+
+  BL-448's mono-router already proved the premise: one agent rotating
+  through every role hat with all gates preserved. The expeditor keeps that
+  rotation CONCEPT and strips the EVENT LAYER: where the mono-router is
+  event-driven (mail arrives -> chase/rotate decides -> pane respawns as
+  the next role), the expeditor is program-driven (the driver loop already
+  knows the stage order and calls the next stage directly). Same hats, same
+  gates; transport and liveness machinery replaced by plain control flow.
+  Design consequence for the specifier: mirror the mono-router's per-role
+  prompt/model/effort RESOLUTION (the data), never its rotation/wake CODE
+  (the machinery).
+
+  ## Shape (specifier to firm up)
+
+  `expedite <BL-id>` — a driver that, per pipeline stage, spawns a fresh
+  non-interactive agent session with that role's prompt
+  (.swarmforge/prompts/<role>.md), model, and effort (from the pack table),
+  working in the right checkout; carries the stage product forward itself
+  (in-process state or a scratch dir — NOT the swarm mailboxes); honors
+  bounces (an architect/QA bounce loops back to the producing stage, with a
+  bounded retry count that ends in a loud stop, never an infinite loop);
+  and exits when the ticket is done or a gate has failed terminally.
+
+  ## Gates are preserved, not simulated
+
+  Every stage produces the same evidence the online pipeline requires:
+  Gherkin spec (lint-gated), implementation with tests, architect review
+  verdict, mutation-hardening pass, documentation, QA stamp against the
+  scenarios. Done means done to the same standard — the yaml moves to
+  done/ with the same bookkeeping. Commits carry an expedited marker
+  (e.g. an Expedited-By trailer) so lineage is auditable as offline-run,
+  while meeting the identical evidence bar.
+
+  ## Safety interlocks
+
+  - Refuses to start if the swarm is live (real socket check per
+    .swarmforge/tmux/*.sock + handoffd pid) unless given an explicit
+    override flag — one ticket, one writer; no worktree contention.
+  - Refuses to start on a dirty main checkout it did not create.
+  - Every stage's session transcript is preserved on disk for audit.
+
+  ## Use cases, in priority order
+
+  1. Broken-swarm recovery: the fix for a swarm-machinery defect goes
+     through all gates without touching the broken machinery.
+  2. Degraded/offline operation: quota cooldowns, laptop-offline, hosts
+     without the full stack.
+  3. Expedite one urgent ticket without waking the fleet.
+  4. CI smoke: "can a ticket still traverse every gate" as a runnable check.
+
+  ## Design questions for the specifier
+
+  - Fresh `claude -p` per stage vs one session re-prompted per stage
+    (fresh-per-stage is the recommendation: matches the online pipeline's
+    context isolation and the role prompts' assumptions).
+  - Where stage state lives (scratch dir layout) and how a bounce rewinds it.
+  - Branch/worktree strategy while the swarm's worktrees exist but are
+    unattended — likely dedicated expeditor branches off main, merged at QA.
+  - Whether coordinator-stage bookkeeping (topic records, done/ move,
+    briefing hooks) is executed inline by the driver or deferred to the
+    swarm's next boot; inline is required for the offline use case, but the
+    machinery-independence rule means reimplementing the minimal
+    bookkeeping, not calling coordinator code.
+  - Interaction with SWARMFORGE_SKIP_DAEMON sync-delivery: explicitly NOT
+    used (it still writes swarm mailboxes); note why in the runbook so
+    future maintainers don't "simplify" back onto swarm transport.
+
+acceptance: |
+  Specifier writes executable scenarios; minimum the design must make
+  testable:
+  1. With handoffd dead, no tmux sockets, and no coordinator, `expedite
+     <ticket>` takes a small fixture ticket from todo to done producing
+     spec, code+tests, review verdict, hardening evidence, docs, and a QA
+     stamp — and never reads or writes .swarmforge/handoffs/ nor spawns
+     tmux (asserted by instrumentation, not inspection).
+  2. A seeded scenario failure at QA loops the ticket back to the coder
+     stage, and a bounded bounce count exhausting ends in a non-zero exit
+     naming the failed gate — never an infinite loop.
+  3. Refuses to start while a live swarm socket exists, with a clear
+     message; the override flag bypasses with a warning.
+  4. Commits from an expedited run carry the expedited marker and pass the
+     same lint/test/mutation gates the online pipeline enforces.
+  5. The driver's dependency set is asserted (test runs it in an
+     environment where the forbidden tools are absent/stubbed to fail).
+
+out_of_scope: |
+  - Multi-ticket batch expediting (one ticket per invocation).
+  - Replacing the swarm for normal operation — this is the recovery/
+    degraded path, priority-ordered behind normal pipeline throughput.
+  - Parallelism within the run (stages are sequential by design).
+  - Front-desk/Telegram surfaces for the expeditor (a later slice may add
+    a progress topic; the offline core must not require it).
