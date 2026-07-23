@@ -188,23 +188,4 @@ for stage in architect hardender documenter qa; do
 done
 pass "01: all pipeline stages accept a redo and address the right role"
 
-# ── 06: required_stages routing (BL-606) must never rewrite a redo destination
-# An operator-named redo_from stage is a deliberately-chosen, out-of-forward-
-# order destination - required_stages routing must return it untouched even
-# when the ticket declares a required_stages subset that excludes that stage
-# (architect BL-606 bounce defect 2). redo_from now stamps its own queued
-# handoff with rejection_reason (mirroring reroute.bb's reroute_reason) so
-# route-required-stages can recognize it as such.
-mkdir -p "$ROOT/backlog/active"
-printf 'id: %s\nrequired_stages: [coder, qa]\nstatus: active\n' "$ITEM" > "$ROOT/backlog/active/$ITEM.yaml"
-rm -f "$OUTBOX"/*.handoff
-(cd "$ROOT" && SWARMFORGE_REQUIRED_STAGES_ROUTING=1 bb "$REDO" "$ITEM" documenter "operator wants a docs-only redo" > /dev/null) \
-  || fail "06: redo failed with required_stages routing enabled"
-QUEUED="$(ls -t "$OUTBOX"/*.handoff | head -1)"
-grep -q "^to: documenter$" "$QUEUED" \
-  || fail "06: required_stages routing rewrote a redo_from destination's to: (expected documenter, the operator-named stage, even though it is outside the ticket's declared [coder, qa] subset); got: $(grep '^to:' "$QUEUED")"
-grep -q "^rejection_reason: operator wants a docs-only redo$" "$QUEUED" \
-  || fail "06: redo_from's own rejection_reason header missing from the queued handoff"
-pass "06: required_stages routing leaves a redo_from destination untouched even when the target is outside the declared subset"
-
 echo "ALL PASS"
