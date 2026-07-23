@@ -6,7 +6,7 @@ type: epic
 epic: swarm-intelligence-layer
 priority: 00
 depends_on: []
-decomposes_into: [BL-525, BL-546, BL-547, BL-548]
+decomposes_into: [BL-525, BL-546, BL-547, BL-548, BL-563]
 promotion_order:
   - id: BL-546
     when: "PROMOTE FIRST — no upstream deps"
@@ -31,6 +31,13 @@ remaining_slices:
   - "Prompt calibration Slice 2: rank variants + operator report (BL-548)"
   - "Prompt calibration Slice 3: promote/rollback with human approval (BL-548)"
   - "ModelFactory Slice 2: hot-swap apply path (BL-525)"
+  - "RUNTIME WIRING: launch path applies a Factory assignment (-> BL-563, paused,
+     needs_design). Audit 2026-07-23 found every slice above EXTENDS the toolkit
+     and none CONNECTS it: the cold-apply seam drops the plan's overlay_path and
+     relaunches on pack models alone, nothing invokes assign, and neither store
+     has ever been written. No promotion_order position ruled for BL-563 — its
+     trigger fork (human CLI vs quota-driven vs coordinator-timed) needs a human
+     decision first, since an autonomous trigger restarts the swarm mid-ticket."
 source: |
   Human intake 2026-07-21 via Cursor chat — two foundational write-ups (PromptEngine,
   Model Steward) plus the existing ModelFactory intake (BL-525). The human framed
