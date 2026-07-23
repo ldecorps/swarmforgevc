@@ -44,6 +44,12 @@ description: |
      to split view, shipped 562e4e479) collides with tap-to-arm — the
      spec must resolve the gesture design (e.g. dedicated arm button in
      the fs-top strip, long-press, or arm-first-then-tap-restores).
+     HARD CONSTRAINT (human, 2026-07-23): the explicit pane header —
+     ticket id + title, role, model, entered-ago, RESIDENT/role badge —
+     is REQUIRED and must stay visible in the fullscreen view; the armed
+     keyboard strip may not displace or cover it. The same constraint
+     binds the BL-564 cluster-1 retro-spec, which should pin the header
+     as a Gherkin scenario so no future UI change drops it silently.
 
   3. Focus-follows-input refresh — while armed, tighten the pane poll
      cadence so the human sees a keystroke land before sending the next;
