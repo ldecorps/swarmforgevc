@@ -1,3 +1,6 @@
 {
-  "swarmforge.targetPath": "/Users/ldecorps/projects/swarmforgevc"
+  "swarmforge.targetPath": "/Users/ldecorps/projects/swarmforgevc",
+//  "window.zoomLevel": 1,
+//  "editor.fontSize": 16,
+//  "terminal.integrated.fontSize": 14
 }

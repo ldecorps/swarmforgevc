@@ -56,6 +56,17 @@ const CLEAR_FLAGS = ['--ticket', '--blocked-by', '--commit'] as const;
 
 // Pure - parses `--flag value` pairs (any order) into a lookup, or null on
 // any unrecognized flag / a flag with no following value.
+//
+// hardener note: a mutant forcing `value === undefined` to `false` (so a
+// trailing flag with no value is silently accepted rather than refused here)
+// is an accepted-equivalent for every caller in this file. A dangling flag
+// only arises as the argv's final, odd-length pair, so its `value` is
+// undefined for exactly one recognized flag key; that key is always one of
+// this module's own required fields (ticket/blockedBy/class/check/commit),
+// and every parse*Args function already rejects an undefined/falsy value for
+// each of its required fields downstream. Removing this short-circuit just
+// moves the rejection one call deeper - it never lets a malformed invocation
+// through (BL-234 precedent).
 function parseFlags(argv: string[], allowed: readonly string[]): Record<string, string> | null {
   const flags: Record<string, string> = {};
   for (let i = 0; i < argv.length; i += 2) {
@@ -77,13 +88,22 @@ function parseStatusArgs(rest: string[]): StatusArgs | null {
   return { command: 'status', ticket: flags['--ticket'].toUpperCase() };
 }
 
+// Split out of parseDeferArgs for the same CRAP-budget reason
+// siblingDeferralStore.ts's own hasSiblingDeferralRecordShape /
+// hasKnownSiblingDeferralValues split documents - a single six-term `||`
+// chain inline pushed parseDeferArgs's cyclomatic complexity (and thus CRAP,
+// which collapses to complexity at 100% coverage) past the <= 6 threshold.
+function hasValidDeferFields(ticket: string, blockedBy: string, failureClass: string, check: string, commit: string): failureClass is QaBounceFailureClass {
+  return isValidTicket(ticket) && isValidTicket(blockedBy) && !!failureClass && isKnownFailureClass(failureClass) && !!check && !!commit;
+}
+
 function parseDeferArgs(rest: string[]): DeferArgs | null {
   const flags = parseFlags(rest, DEFER_FLAGS);
   if (!flags) {
     return null;
   }
   const { '--ticket': ticket, '--blocked-by': blockedBy, '--class': failureClass, '--check': check, '--commit': commit } = flags;
-  if (!isValidTicket(ticket) || !isValidTicket(blockedBy) || !failureClass || !isKnownFailureClass(failureClass) || !check || !commit) {
+  if (!hasValidDeferFields(ticket, blockedBy, failureClass, check, commit)) {
     return null;
   }
   return { command: 'defer', ticket: ticket.toUpperCase(), blockedBy: blockedBy.toUpperCase(), failureClass, check, commit };
@@ -133,6 +153,13 @@ function runStatus(mainWorktreePath: string, args: StatusArgs): void {
   // decideDisposition is only ever called here with no observed failure, so
   // it can only return 'verify' (handled above) or 'defer' - 'bounce' needs
   // an observedFailure, which status never supplies.
+  //
+  // hardener note: a mutant forcing this condition to `true` is an accepted-
+  // equivalent - 'verify' already returned above, and decideDisposition
+  // cannot produce 'bounce' without an observedFailure (see its own
+  // `if (!observedFailure) return { kind: 'defer', ... }` branch), so by this
+  // line `disposition.kind` is already 'defer' on every reachable path. No
+  // input reaches an externally observable difference (BL-234 precedent).
   if (disposition.kind === 'defer') {
     for (const blocker of disposition.blockers) {
       console.log(`DEFERRED ${args.ticket} BLOCKED_BY ${blocker.blockedBy} CHECK ${blocker.check}`);
