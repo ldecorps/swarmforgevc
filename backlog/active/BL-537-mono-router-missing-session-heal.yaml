@@ -4,7 +4,7 @@ milestone: M8
 type: defect
 status: todo
 epic: swarm-reliability
-assigned_to: specifier
+assigned_to: coder
 priority: 3
 mutation_cost: medium
 direction: swarm-surfaced
