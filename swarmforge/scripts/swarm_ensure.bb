@@ -34,6 +34,8 @@
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "swarm_identity_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "launch_contract_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "backlog_depth_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "provider_compat_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "mono_router_lib.bb")))
 
 (defn usage []
   (binding [*out* *err*]
@@ -114,6 +116,20 @@
          (remove #(str/blank? (:session %))))
     []))
 
+(defn rotation-router-mode?
+  "True when this project is running (or last launched as) rotation router."
+  []
+  (let [identity-path (fs/path state-dir "swarm-identity")
+        identity-text (when (fs/exists? identity-path) (slurp (str identity-path)))
+        conf-path (or (get (mono-router-lib/parse-identity-map (or identity-text ""))
+                           "active_backlog_max_depth_conf_path")
+                      (str (fs/path project-root "swarmforge" "swarmforge.conf")))
+        conf-text (when (and conf-path (fs/exists? conf-path))
+                    (slurp conf-path))]
+    (boolean
+     (or (mono-router-lib/rotation-router-from-identity? identity-text)
+         (mono-router-lib/conf-rotation-router? conf-text)))))
+
 ;; ── extension component ──────────────────────────────────────────────────────
 
 (defn extension-healthy? []
@@ -123,6 +139,23 @@
   (sh! extension-bounce-cmd))
 
 ;; ── agent-pane component ─────────────────────────────────────────────────────
+
+(defn session-exists?
+  "True when tmux has a session of this name on the project socket."
+  [socket session]
+  (zero? (:exit (process/sh {:continue true} "tmux" "-S" socket "has-session" "-t" session))))
+
+(defn mono-router-standing-shape?
+  "Deprecated heuristic — prefer rotation-router-mode? + mono_router_lib.
+   Kept as a fallback for a live topology that already shows the mono-router
+   shape (some role sessions standing, some absent) even when no swarm-
+   identity/conf file names it explicitly: some sessions alive and some
+   absent."
+  [socket rows]
+  (let [alive? (fn [{:keys [session]}] (session-exists? socket session))
+        alive (filter alive? rows)
+        missing (remove alive? rows)]
+    (and (seq alive) (seq missing))))
 
 (defn pane-alive?
   "A configured role's pane is healthy when its session exists and its pane
@@ -137,10 +170,100 @@
     (and (zero? (:exit result))
          (not (str/includes? (:out result) "1")))))
 
+(defn provider-respawn-env-args
+  "BL-130 pane -e passthrough for ensure repairs — same keys rotate/chase need
+   so a repair never strips OpenRouter/OpenAI/Mistral/Cerebras/Perplexity/Gemini/Qwen
+   auth from a live alternate-runtime pane.
+
+   SRE 2026-07-19: when role's launch script CLI targets api.perplexity.ai,
+   Perplexity wins for OPENAI_* even if SWARMFORGE_USE_PERPLEXITY was unset
+   in the ensure process (provider_compat_lib/must-remap-to-perplexity?).
+   Gemini: GEMINI_API_KEY, or SWARMFORGE_GEMINI_API_KEY mapped to GEMINI_API_KEY.
+   Qwen: QWEN_API_KEY, or BAILIAN_CODING_PLAN_API_KEY mapped to QWEN_API_KEY."
+  ([] (provider-respawn-env-args nil))
+  ([role]
+   (let [launch-cli (when role
+                      (let [p (fs/path state-dir "launch" (str role ".sh"))]
+                        (when (fs/exists? p) (slurp (str p)))))
+         use-cerebras (= "1" (System/getenv "SWARMFORGE_USE_CEREBRAS"))
+         use-perplexity (= "1" (System/getenv "SWARMFORGE_USE_PERPLEXITY"))
+         use-qwen (= "1" (System/getenv "SWARMFORGE_USE_QWEN"))
+         cerebras (System/getenv "CEREBRAS_API_KEY")
+         perplexity (System/getenv "PERPLEXITY_API_KEY")
+         qwen (let [q (System/getenv "QWEN_API_KEY")]
+                (if (str/blank? q)
+                  (System/getenv "BAILIAN_CODING_PLAN_API_KEY")
+                  q))
+         gemini (let [g (System/getenv "GEMINI_API_KEY")]
+                  (if (str/blank? g)
+                    (System/getenv "SWARMFORGE_GEMINI_API_KEY")
+                    g))
+         resolved (provider-compat-lib/resolve-openai-compat
+                   {:use-cerebras use-cerebras
+                    :use-perplexity use-perplexity
+                    :use-qwen use-qwen
+                    :cerebras-api-key cerebras
+                    :perplexity-api-key perplexity
+                    :qwen-api-key qwen
+                    :openai-api-key (System/getenv "OPENAI_API_KEY")
+                    :launch-cli launch-cli})
+         openai (:openai-api-key resolved)
+         openai-base (:openai-api-base resolved)
+         openai-base-url (:openai-base-url resolved)
+         force-perplexity (= :perplexity (:provider resolved))
+         force-cerebras (= :cerebras (:provider resolved))
+         force-qwen (= :qwen (:provider resolved))]
+     (cond-> []
+       (not (str/blank? (System/getenv "OPENROUTER_API_KEY")))
+       (concat ["-e" (str "OPENROUTER_API_KEY=" (System/getenv "OPENROUTER_API_KEY"))])
+       (not (str/blank? (System/getenv "CLAUDE_CODE_MAX_OUTPUT_TOKENS")))
+       (concat ["-e" (str "CLAUDE_CODE_MAX_OUTPUT_TOKENS=" (System/getenv "CLAUDE_CODE_MAX_OUTPUT_TOKENS"))])
+       (not (str/blank? (System/getenv "MISTRAL_API_KEY")))
+       (concat ["-e" (str "MISTRAL_API_KEY=" (System/getenv "MISTRAL_API_KEY"))])
+       (not (str/blank? cerebras))
+       (concat ["-e" (str "CEREBRAS_API_KEY=" cerebras)])
+       (not (str/blank? perplexity))
+       (concat ["-e" (str "PERPLEXITY_API_KEY=" perplexity)])
+       (not (str/blank? qwen))
+       (concat ["-e" (str "QWEN_API_KEY=" qwen)])
+       (not (str/blank? gemini))
+       (concat ["-e" (str "GEMINI_API_KEY=" gemini)])
+       (or use-cerebras force-cerebras)
+       (concat ["-e" "SWARMFORGE_USE_CEREBRAS=1"])
+       (or use-perplexity force-perplexity)
+       (concat ["-e" "SWARMFORGE_USE_PERPLEXITY=1"])
+       (or use-qwen force-qwen)
+       (concat ["-e" "SWARMFORGE_USE_QWEN=1"])
+       (not (str/blank? openai))
+       (concat ["-e" (str "OPENAI_API_KEY=" openai)])
+       (not (str/blank? openai-base))
+       (concat ["-e" (str "OPENAI_API_BASE=" openai-base)])
+       (not (str/blank? openai-base-url))
+       (concat ["-e" (str "OPENAI_BASE_URL=" openai-base-url)])))))
+
 (defn respawn-role! [socket role session]
-  (let [launch-script (fs/path state-dir "launch" (str role ".sh"))]
-    (process/sh {:continue true} "tmux" "-S" socket "respawn-pane" "-k" "-t" session
-                (str "zsh '" launch-script "'"))))
+  (let [launch-script (fs/path state-dir "launch" (str role ".sh"))
+        env-args (provider-respawn-env-args role)
+        cmd (concat ["tmux" "-S" socket "respawn-pane" "-k"]
+                    env-args
+                    ["-t" session (str "zsh '" launch-script "'")])]
+    (apply process/sh {:continue true} cmd)))
+
+(defn create-session! [socket session]
+  (process/sh {:continue true}
+              "tmux" "-S" socket "new-session" "-d" "-s" session "-n" "swarm"))
+
+(defn kill-session! [socket session]
+  (process/sh {:continue true}
+              "tmux" "-S" socket "kill-session" "-t" session))
+
+(defn ensure-standing-role!
+  "Create the session if missing, then respawn the launch script into it."
+  [socket role session]
+  (when-not (session-exists? socket session)
+    (create-session! socket session)
+    (Thread/sleep 250))
+  (respawn-role! socket role session))
 
 ;; ── daemon component ─────────────────────────────────────────────────────────
 
@@ -310,9 +433,77 @@
     (ensure-component! name healthy?-fn respawn!-fn
                         "respawned pane from its persisted launch script")))
 
+(defn read-mono-router-active-role-marker
+  "Contents of .swarmforge/mono-router-active-role, or nil."
+  []
+  (let [p (fs/path state-dir "mono-router-active-role")]
+    (when (fs/exists? p)
+      (str/trim (slurp (str p))))))
+
+(defn ensure-mono-router-role!
+  "BL-518 topology repair for one role under rotation router, merged with the
+   BL-530 launch-contract refusal (ensure-role! above): a dormant rotate
+   target is never respawned and never 'respawn refused' - contract-broken?
+   only gates the branches that would actually attempt a respawn (:ok's
+   dead-pane case and :ensure-standing), never the dormant or teardown-
+   illicit decisions."
+  [socket ordered-roles {:keys [role session]} contract-broken?]
+  (let [alive (session-exists? socket session)
+        action (mono-router-lib/topology-action ordered-roles role alive)
+        class (mono-router-lib/classify-role ordered-roles role)
+        class-name (name class)
+        ;; Resident session name stays home (coder), but launch script follows
+        ;; the durable active-role marker after rotate_to_role.
+        launch-role (if (= class :resident)
+                      (mono-router-lib/resident-launch-role
+                       role (read-mono-router-active-role-marker))
+                      role)
+        component (str "agent:" role)
+        refused {:component component :status :failed
+                 :action "respawn refused: launch contract broken - fix the pack conf, then rerun ensure"}]
+    (case action
+      :ok
+      (if (pane-alive? socket session)
+        {:component component :status :healthy
+         :action (str "mono-router " class-name
+                      (when (and (= class :resident) (not= launch-role role))
+                        (str " as " launch-role)))}
+        (if contract-broken?
+          refused
+          (ensure-component! component
+                             #(pane-alive? socket session)
+                             #(ensure-standing-role! socket launch-role session)
+                             (str "respawned dead mono-router " class-name " pane"
+                                  (when (not= launch-role role)
+                                    (str " as " launch-role))))))
+
+      :dormant-ok
+      {:component component :status :dormant
+       :action "mono-router rotate target; no standing session"}
+
+      :teardown-illicit
+      (do
+        (kill-session! socket session)
+        (if (session-exists? socket session)
+          {:component component :status :failed
+           :action "could not tear down illicit standing session"}
+          {:component component :status :fixed
+           :action "tore down illicit standing session (mono-router dormant target)"}))
+
+      :ensure-standing
+      (if contract-broken?
+        refused
+        (ensure-component! component
+                           #(pane-alive? socket session)
+                           #(ensure-standing-role! socket launch-role session)
+                           (str "restored mono-router " class-name " pane"
+                                (when (not= launch-role role)
+                                  (str " as " launch-role))))))))
+
 (defn report-line [{:keys [component status action category]}]
   (case status
     :healthy (str component ": HEALTHY")
+    :dormant (str component ": DORMANT" (when action (str " (" action ")")))
     :fixed (str component ": FIXED (" action ")")
     ;; BL-207: names the stable Forge error category alongside the raw
     ;; detail (never discarded) when one was classified, so an operator
@@ -335,19 +526,29 @@
         ;; respawned agents onto it.
         launch-contract-check (launch-contract-result)
         contract-broken? (= :failed (:status launch-contract-check))
+        rows (role-rows)
+        ordered (mapv :role rows)
+        ;; BL-518/BL-530 regression restore: prefer the conf/identity-based
+        ;; signal, falling back to the live tmux shape (some role sessions
+        ;; standing, some absent) when no identity/conf file names rotation
+        ;; router explicitly yet.
+        router? (or (rotation-router-mode?)
+                    (and socket (mono-router-standing-shape? socket rows)))
         role-results (if socket
-                       (mapv (fn [{:keys [role session]}]
-                               (ensure-role! (str "agent:" role)
-                                             #(pane-alive? socket session)
-                                             #(respawn-role! socket role session)
-                                             contract-broken?))
-                             (role-rows))
+                       (mapv (fn [{:keys [role session] :as row}]
+                               (if router?
+                                 (ensure-mono-router-role! socket ordered row contract-broken?)
+                                 (ensure-role! (str "agent:" role)
+                                               #(pane-alive? socket session)
+                                               #(respawn-role! socket role session)
+                                               contract-broken?)))
+                             rows)
                        (mapv (fn [{:keys [role]}]
                                (let [detail "no tmux socket found for this project root"]
                                  {:component (str "agent:" role) :status :failed
                                   :action detail
                                   :category (:category (agent-runtime-lib/classify-provider-error detail))}))
-                             (role-rows)))
+                             rows))
         daemon-result (ensure-component! "daemon" daemon-healthy? ensure-daemon!
                                           "restarted the handoff daemon")
         operator-result (when (operator-enabled?)
