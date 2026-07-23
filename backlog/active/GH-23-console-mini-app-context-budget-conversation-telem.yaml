@@ -104,3 +104,5 @@ out_of_scope: |
     Slice 2 wiring landing first).
   - Cost computation (estimated_cost_usd stays whatever GH-22 recorded, or
     null).
+
+assigned_to: coder
