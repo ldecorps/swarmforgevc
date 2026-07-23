@@ -66,12 +66,22 @@ function emptyContextTelemetrySummary(agent: string): ContextTelemetrySummary {
   };
 }
 
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
 export function listTelemetryAgents(targetPath: string): string[] {
-  const result = runCli(targetPath, ['agents']) as { agents: string[] } | null;
-  return result?.agents ?? [];
+  const result = runCli(targetPath, ['agents']);
+  if (!isPlainObject(result) || !Array.isArray(result.agents)) {
+    return [];
+  }
+  return result.agents;
 }
 
 export function summarizeTelemetryForAgent(targetPath: string, agent: string): ContextTelemetrySummary {
-  const result = runCli(targetPath, ['summary', '--agent', agent]) as ContextTelemetrySummary | null;
-  return result ?? emptyContextTelemetrySummary(agent);
+  const result = runCli(targetPath, ['summary', '--agent', agent]);
+  if (!isPlainObject(result)) {
+    return emptyContextTelemetrySummary(agent);
+  }
+  return result as unknown as ContextTelemetrySummary;
 }

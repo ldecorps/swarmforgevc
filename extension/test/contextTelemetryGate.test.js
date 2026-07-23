@@ -116,6 +116,18 @@ function withFakeBbOnPath(scriptContent, fn) {
   }
 }
 
+// GH-23 architect bounce: `bb` missing from PATH entirely (ENOENT) must
+// degrade this dashboard to its own empty state the same as a non-zero exit.
+function withPath(overridePath, fn) {
+  const originalPath = process.env.PATH;
+  process.env.PATH = overridePath;
+  try {
+    return fn();
+  } finally {
+    process.env.PATH = originalPath;
+  }
+}
+
 test('listTelemetryAgents returns [] (not a throw) when the bb CLI exits non-zero', () => {
   const targetPath = mkTargetDir();
   withFakeBbOnPath('#!/bin/sh\nexit 1\n', () => {
@@ -174,5 +186,39 @@ test('summarizeTelemetryForAgent falls back when the bb CLI returns a JSON value
     const summary = summarizeTelemetryForAgent(targetPath, 'coder');
     assert.equal(summary.event_count, 0);
     assert.equal(summary.agent, 'coder');
+  });
+});
+
+test('listTelemetryAgents returns an empty list when bb is missing from PATH entirely (ENOENT)', () => {
+  const targetPath = mkTargetDir();
+  const emptyBinDir = mkTmpDir('sfvc-context-telemetry-emptybin-');
+
+  const result = withPath(emptyBinDir, () => listTelemetryAgents(targetPath));
+
+  assert.deepEqual(result, []);
+});
+
+test('summarizeTelemetryForAgent returns the empty-state shape when bb is missing from PATH entirely (ENOENT)', () => {
+  const targetPath = mkTargetDir();
+  const emptyBinDir = mkTmpDir('sfvc-context-telemetry-emptybin-');
+
+  const result = withPath(emptyBinDir, () => summarizeTelemetryForAgent(targetPath, 'coder'));
+
+  assert.deepEqual(result, {
+    agent: 'coder',
+    session_id: null,
+    event_count: 0,
+    compaction_count: 0,
+    avg_context_utilization_pct: null,
+    time_to_first_compaction_ms: null,
+    provider: null,
+    model: null,
+    latest_input_tokens: null,
+    latest_output_tokens: null,
+    latest_tool_output_tokens: null,
+    latest_prompt_engine_tokens: null,
+    latest_system_prompt_tokens: null,
+    latest_history_tokens: null,
+    latest_estimated_cost_usd: null,
   });
 });
