@@ -57,12 +57,20 @@ description: |
      `.worktrees/<role>` recorded in `.swarmforge/roles.tsv` (master-resident
      rows resolve to the shared checkout and contribute nothing); **and**
   3. are NOT reachable from `main` or `origin/main`; **and**
-  4. are NOT an ancestor of the commit cited in the draft.
+  4. are NOT an ancestor of the commit cited in the draft; **and**
+  5. carry dropped work the cited commit does not already have — a merge commit
+     (2+ parents) whose diff against its first parent is empty, or a commit whose
+     tree is identical to the cited commit, carries no unique content and is
+     EXCLUDED. Without this, a deliberately-isolated off-main ticket-naming batch
+     merge — e.g. `aca611925c` "merge coder work for BL-531", empty functional
+     diff — survives conditions 1–4 and false-positives the gate (architect, 2026-07-23).
 
   Conditions 2 and 3 are what make this precise rather than noisy: bookkeeping
   commits that name a ticket (promotion, BL-topic records, human-approval
-  flips) live on `main` and are excluded, while a dropped parcel fix — which by
-  definition never landed — is exactly what survives all four conditions.
+  flips) live on `main` and are excluded; condition 5 excludes benign merges and
+  empty-diff commits; while a dropped parcel fix — which by definition never
+  landed and carries unique content — is exactly what survives all five
+  conditions.
 
   ### Check B — ticket-declared wiring
 
@@ -186,7 +194,10 @@ acceptance: |
   arms; ticket-id token matching (`BL-49` does not match `BL-490`,
   `BL-490-VIOLATION` does); a `::` inside the optional `why` segment parses;
   `abandoned_commits` matches by sha prefix; findings are emitted in a stable
-  order.
+  order; a merge commit (2+ parents) with an empty first-parent diff AND a commit
+  whose tree matches the cited commit are both excluded from ancestry findings,
+  while a genuine single-parent stranded fix with unique content still IS a
+  finding (Check A condition 5).
 
   QA end-to-end procedure (live swarm, from a role worktree):
 
@@ -216,6 +227,12 @@ acceptance: |
   8. **This ticket's own dogfood.** Confirm the documenter's handoff to QA was
      itself subject to this ticket's `required_wiring` entry — i.e. that
      `swarm_handoff.bb` at the delivered commit references `pre_qa_gate_lib`.
+  9. **Merge-commit false positive (Check A cond. 5).** Create a 2-parent merge
+     naming a live active ticket with an empty functional diff (mirroring
+     `aca611925c`), leave it off-main and not an ancestor of the cited commit,
+     and attempt a QA-bound `git_handoff`; confirm it is NOT flagged (no
+     `PRE_QA_GATE_FAIL ancestry`), while a genuine single-parent stranded fix for
+     the same ticket still IS refused.
 
 docs: |
   documenter:
