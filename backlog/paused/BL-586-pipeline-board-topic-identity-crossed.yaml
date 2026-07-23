@@ -1,0 +1,102 @@
+id: BL-586
+title: "Pipeline board topic identity is fragile — crossed onto a support thread, minted zombie topics, and survived file-level repair via in-memory state"
+milestone: M8
+type: defect
+status: needs_design
+epic: pipeline-board
+human_approval: approved
+severity: high
+priority: 12
+direction: human-requested
+depends_on: []
+assigned_to: specifier
+mutation_cost: medium
+source: |
+  Human, 2026-07-23 ~15:45Z, with screenshot: two topics both named
+  "Pipeline Board" in the group sidebar, repeated "Concierge pinned"
+  service messages, and the pinned message text starting with the board's
+  epic header. Operator investigation found
+  TickState.pipelineBoard.topicId = 1634 — which telegram-topic-map.json
+  records as SUP-7, a support thread. The live board (and its only-pin
+  enforcement) had been posting into the human's support topic. Repaired
+  live: state cleared WITH THE STACK DOWN (a running bridge rewrote the
+  crossed id from memory over a file-only repair), topic 6795 minted and
+  seeded, board now posted (6796) + pinned there; stray board posts
+  deleted from SUP-7 (6788 deleted; 6785 already gone). The two zombie
+  "Pipeline Board" topics' ids were never recorded anywhere and must be
+  deleted by hand from the Telegram UI.
+
+description: |
+  ## Defects, in causal order
+
+  1. NO REUSE-OR-CREATE, NO COLLISION GUARD. ensureBoardTopicAdapter is a
+     bare createForumTopic call (documented as such: "no separate
+     topic-map file/reuse-lookup is needed"). When TickState resets, a NEW
+     topic is minted and the previous one becomes an untracked zombie
+     (two observed). Worse, nothing validates a topicId against
+     telegram-topic-map.json — the map KNEW 1634 was SUP-7; a one-line
+     cross-check would have refused to post the board there.
+
+  2. SINGLE COPY OF IDENTITY, MULTI-WRITER WINDOW. The topic id lives only
+     in concierge-tick-state.json's pipelineBoard block. During the
+     2026-07-23 dual-investigation window two front-desk stacks ran
+     concurrently and both wrote that file; the surviving value (1634) was
+     a support thread. Root mechanism unproven (writes interleaved, no
+     audit trail) but the vulnerability is structural: last-writer-wins
+     JSON with no writer identity, no validation on read-back.
+
+  3. IN-MEMORY STATE DEFEATS REPAIR. The tick holds pipelineBoard state in
+     memory across ticks and persists it back wholesale — an operator
+     clearing the file while the stack runs gets overwritten within a
+     tick. Repair REQUIRES stack-down editing, which nothing documents.
+
+  ## Design directions (specifier firms up)
+
+  - Durable reuse-or-create for the board topic, symmetric with
+    ensureOperatorTopic/ensureApprovalsTopic: record the id in the
+    standing-topic store (telegram-standing-topic-ids.json,
+    PIPELINE_BOARD key) AND cross-validate against telegram-topic-map on
+    every resolve — an id mapped to any OTHER purpose (SUP-*, role
+    topics, standing topics) is treated as corrupt: refuse, alert, and
+    re-ensure rather than post.
+  - Topic creation records the minted id durably BEFORE first use, so a
+    crash between create and first post cannot zombie it.
+  - Tick state re-reads (or merge-writes) pipelineBoard identity per tick
+    so an operator file repair takes effect without a restart; or an
+    explicit reset command surface. Cover the multi-writer case: writes
+    carry a stack identity (pid+start) and a mismatched overwrite logs
+    loudly.
+  - Runbook: zombie-topic cleanup procedure (ids are not enumerable via
+    Bot API — creation-time recording above is the real fix) and the
+    stack-down repair sequence used live today.
+
+  ## Adjacent observation (fold in or split)
+
+  The board message renders a large GitHub link-preview card (screenshot:
+  BL-576 yaml preview swallowing half a screen). The board send path
+  should disable link previews (sendMessage
+  disable_web_page_preview/link_preview_options) — check the
+  sendTelegramMessage call's unused parameter slot in
+  buildConciergeTickAdapters.
+
+acceptance: |
+  Specifier writes executable scenarios; minimum:
+  1. Board resolve with a topicId that telegram-topic-map maps to any
+     non-board purpose refuses to post, alerts the Operator topic, and
+     re-ensures; the support thread receives nothing.
+  2. State reset with a recorded PIPELINE_BOARD standing id reuses that
+     topic — no new topic minted (zombie regression guard).
+  3. Freshly minted topic id is durably recorded before the first board
+     post (crash-between fixture).
+  4. Operator file repair while the stack runs takes effect within one
+     tick (no restart) — or the documented reset surface exists and works.
+  5. Two concurrent writers produce a loud log naming both identities, and
+     the board never posts into a topic the surviving state cannot
+     validate.
+  6. Board messages send with link previews disabled.
+
+out_of_scope: |
+  - Deleting existing zombie topics (manual, runbook only).
+  - The board's rendering/matrix redesign (BL-585) and every-in-flight
+    scope (BL-564 cluster 2) — identity plumbing only here.
+  - Support-thread (SUP-*) machinery.
