@@ -299,7 +299,8 @@ const DOMAINS = [
   require('./bl547ModelStewardSteps'),
   require('./bl551LlmCostLedgerSteps'),
   require('./bl525ModelFactorySteps'),
-  require('./gh22ContextTelemetrySteps')
+  require('./gh22ContextTelemetrySteps'),
+  require('./gh23ContextBudgetDashboardSteps')
 ];
 
 function registerSteps(registry) {
