@@ -9,6 +9,7 @@ priority: 20
 mutation_cost: low
 direction: swarm-surfaced
 depends_on: []
+supersedes: BL-587
 source: |
   Coordinator note 2026-07-23: "every swarm_handoff.sh send I've done today
   prints WARNING: Active backlog depth exceeded (active=2, max=1), even
@@ -106,12 +107,23 @@ description: |
   record the reason in a comment at the call site instead.
 
 acceptance: |
-  1. In a fixture whose `backlog/active/` contains a `.gitkeep` plus
-     exactly ONE `*.yaml` ticket, with `active_backlog_max_depth 1`, a
-     `swarm_handoff.bb` send prints NO "Active backlog depth exceeded"
-     warning on stderr.
-  2. Same fixture with `.gitkeep` plus TWO `*.yaml` tickets and the same
-     cap of 1 still DOES warn, and reports `active=2` (not `active=3`).
+  specs/features/BL-562-backlog-depth-warning-counts-gitkeep.feature
+
+  Every scenario needs its step handler in this same parcel — the acceptance
+  runner throws on an unhandled scenario (BL-233). The feature file was linted
+  clean (`gherkin_lint_gate.sh`) and IR-DRY reviewed; its two remaining checker
+  findings are a warning/no-warning pair and a one-ticket/two-ticket pair —
+  deliberate opposites, not drift.
+
+  Scenario 01 is the headline fix, generalised: ANY non-ticket entry
+  (`.gitkeep`, a stray `.md`) must go uncounted, not merely the placeholder that
+  happened to be observed. Scenario 02 pins the other direction — a genuine
+  overflow must still warn, and must report `active=2`, not `active=3`.
+  Scenario 03 pins the degrade-never-crash posture also required at unit level
+  by item 5.
+
+  Supporting gates the Gherkin does not pin:
+
   3. `swarmforge/scripts/test/test_backlog_depth_conf.sh`'s `mk_fixture`
      is updated to create `backlog/active/.gitkeep` (matching a real
      checkout) and the whole script still passes — this is the regression
@@ -125,9 +137,9 @@ acceptance: |
      posture.
   6. A repo sweep confirms no remaining raw `(count (fs/list-dir ...))`
      over a backlog folder anywhere in `swarmforge/scripts/`.
-  7. Manual end-to-end confirmation against the live repo: with only
-     BL-549 in `backlog/active/`, a real coordinator handoff send prints
-     no depth warning.
+  7. Manual end-to-end confirmation against the live repo: with exactly one
+     ticket yaml in `backlog/active/` (plus its `.gitkeep`) and the pack's
+     cap of 1, a real handoff send prints no depth warning.
 
 out_of_scope: |
   - Deleting or relocating `backlog/active/.gitkeep`. The placeholder is

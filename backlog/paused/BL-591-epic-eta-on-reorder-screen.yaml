@@ -1,0 +1,122 @@
+id: BL-591
+title: "Epic reorder screen shows a velocity-based ETA per epic — honestly ranged, pack-aware, and never a confident number for blocked work"
+milestone: M8
+type: feature
+status: todo
+epic: swarmforge-console
+human_approval: approved
+severity: medium
+priority: 12
+direction: human-requested
+depends_on: [BL-572]
+assigned_to: specifier
+mutation_cost: medium
+source: |
+  Human, 2026-07-23, after asking for the intelligence layer's ETA and being
+  given a velocity-grounded range: "can we have, as a new mini app screen, an
+  estimated ETA for all the upcoming Epics? ... In this screen [the epic
+  reorder screen], can I see the best estimate (based on current velocity) for
+  each of the epics?"
+
+  Folded onto BL-572's epic reorder screen rather than a separate screen, per
+  the human's own "In this screen" - one epic surface, tiles that both reorder
+  AND forecast.
+
+description: |
+  ## What it adds
+
+  BL-572 renders one tile per epic in priority order and lets the human
+  reorder them. This ticket adds, to each tile, a best-estimate ETA for that
+  epic based on the swarm's recent completion velocity - so the reorder
+  decision is made against "how long is each of these", not just their names.
+
+  It is display-and-estimate only. It changes no scheduling, promotes nothing,
+  and does not gate any build. The number informs the human; it does not steer
+  the swarm.
+
+  ## Why a naive "velocity x remaining" number would LIE - the hard part
+
+  The operator computed this by hand on 2026-07-23 and the honest answer needed
+  four corrections that a naive estimate omits. The screen must not omit them.
+
+  1. **Pack dependence is the dominant term.** Measured throughput was 16-54
+     tickets/day on the full 7-pack (Jul 12-17) and 3-4/day on the mono-router
+     (Jul 18-23) - a ~5x swing from the pack alone, dwarfing every other
+     factor. An ETA that does not name which pack it assumes is close to
+     meaningless. The tile must state the assumption (e.g. "~3 wks at current
+     mono-router pace") and ideally show how it shifts under the faster pack.
+
+  2. **Blocked / design-gated children have NO throughput ETA.** Some children
+     are `status: hold`, `needs_design`, or carry `promotion_blockers` /
+     `block_until` (e.g. BL-548 is human-blocked until GH-22/23 land). Their
+     completion is not velocity-limited and no velocity number describes it.
+     These MUST render as a distinct state ("blocked", "needs ruling",
+     "designing") - never folded into a duration, which would forecast work
+     that cannot start.
+
+  3. **Remaining work is child SLICES, not the epic tracker.** An epic's
+     remaining size is the sum over its open children (active + paused + hold),
+     weighted by `mutation_cost` (low/medium/high are materially different
+     durations), NOT a count of tickets and NOT the umbrella tracker itself
+     (which is `type: epic`, never built directly). A done child contributes 0;
+     a high-cost open child contributes far more than a low-cost one.
+
+  4. **Velocity is noisy - a point estimate is false precision.** The daily
+     rate ranged 3-54 over two weeks. Show a RANGE or a confidence band, not a
+     single date. "~2-4 weeks" is honest; "ready Aug 14" is not.
+
+  ## Data source (a real dependency, name it)
+
+  There is no `completed_at` field on a done ticket. Completion velocity has to
+  come from the git history of when each `backlog/done/BL-*.yaml` was ADDED
+  (the same `git log --diff-filter=A` the operator used by hand), over a
+  trailing window. `burnRate.ts` does NOT provide this - it measures TOKEN
+  burn, a different quantity. So this needs either:
+    - a small new velocity estimator (completions/day over a trailing window,
+      from git), plus a per-epic remaining-cost roll-up, OR
+    - a precomputed sidecar the bridge reads (like the cost/health sidecar),
+      if running git log from the live bridge per request is too heavy.
+  The specifier picks; the estimator itself is a PURE function (completions +
+  remaining-cost + window -> ranged ETA) that is unit-testable without git or a
+  bridge, mirroring how burnRate/costTelemetry already split pure-from-impure.
+
+  ## Confidence must be visible
+
+  Each epic's ETA carries a confidence that the tile shows, driven by: how
+  blocked its children are, how noisy recent velocity is, and how much of its
+  remaining weight is high-cost or not-yet-designed. An all-ready epic on
+  steady velocity is high confidence; an epic that is mostly needs_design or
+  human-blocked is low, and the tile should say why in a word, not fake a date.
+
+acceptance: |
+  Specifier writes the scenarios. Minimum:
+
+  1. Each epic tile shows an ETA as a RANGE (or band), never a single date, and
+     names the pace assumption it rests on.
+  2. An epic whose open children are all done shows "complete"/0, not a
+     spurious future estimate.
+  3. An epic with a blocked / needs_design / human-blocked child renders that
+     child's state distinctly and does NOT fold it into the duration; the tile
+     communicates "X weeks of buildable work + N blocked" rather than one
+     number that hides the block.
+  4. Remaining size is a mutation_cost-weighted roll-up over OPEN children
+     (active+paused+hold), excluding done children and the epic tracker itself.
+  5. The velocity estimator is a pure, unit-tested function over
+     (completion events, remaining weighted cost, window) - provable with
+     fixtures, no git and no live bridge in the test.
+  6. Confidence is shown per epic and degrades visibly as blocked/undesigned/
+     high-cost weight rises.
+
+  QA sanity-checks the live number against a hand count for at least one epic
+  (the swarm-intelligence-layer figures the operator produced 2026-07-23 are a
+  usable reference), since a plausible-but-wrong ETA is worse than none.
+
+out_of_scope: |
+  - The reorder interaction itself (BL-572 owns it; this only adds a readout
+    to its tiles).
+  - Any change to promotion order or scheduling from the ETA. It is advisory.
+  - Per-TICKET ETAs. This is per-epic; ticket-level estimation is a separate
+    concern if ever wanted.
+  - Predicting the human-gated unblock dates (e.g. when GH-22/23 will land).
+    A blocked child is shown as blocked, full stop - the screen does not
+    forecast when a human will act.

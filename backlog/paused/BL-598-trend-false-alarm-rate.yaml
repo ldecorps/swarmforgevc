@@ -1,0 +1,46 @@
+id: BL-598
+title: "Trend: false-alarm rate — AGENT_EXITED false positives, depth warnings, and other self-cancelling alerts over time"
+milestone: M8
+type: feature
+status: todo
+epic: swarm-behaviour-trends
+human_approval: approved
+severity: low
+priority: 30
+direction: human-requested
+depends_on: []
+assigned_to: specifier
+mutation_cost: low
+source: |
+  Human, 2026-07-23, epic BL-594. The 6x AGENT_EXITED false positive fired
+  100+ times this session; the depth warning fires on every send (BL-562).
+  "The logs are noisy" is unmeasured folklore; a false-alarm rate turns it into
+  a number to drive down.
+description: |
+  Count alerts that fire and then prove to be non-actionable, as a trend, so
+  observability NOISE is itself observable. A high false-alarm rate is a
+  liability - it trains the human (and the operator) to ignore signals, which
+  is exactly how a REAL one gets missed.
+
+  Sources, all already emitted:
+    - AGENT_EXITED events that resolve to "sessions exist by design"
+      (mono-router 2-pack false positive - the operator NO-OPs these)
+    - active-backlog-depth warnings that fire under a cap-of-1 steady state
+      (BL-562)
+    - any other alert the operator/handoffd emits and then self-cancels as
+      NO-OP within the same sweep
+
+  Emit {alert-type, fired, verdict:false-positive|actionable, ts} to
+  `.swarmforge/telemetry/alerts-<YYYY-MM>.jsonl`; aggregate to a
+  false-positive-rate-per-type series via trend.ts. The verdict is available:
+  the operator already reasons "false positive / NO-OP" vs "acted" per sweep -
+  capture that classification structurally.
+acceptance: |
+  Specifier writes scenarios. Minimum:
+  1. Each emitted alert is logged with a verdict (false-positive vs actionable)
+     derived from the existing NO-OP-vs-acted reasoning, not a new judge.
+  2. A pure aggregator yields per-type false-positive rate over a window.
+  3. Append-only, gitignored log.
+out_of_scope: |
+  - Suppressing the alerts themselves (BL-562 and its kin fix specific ones).
+    This measures the aggregate so the worst offenders are visible.

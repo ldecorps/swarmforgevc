@@ -1,0 +1,44 @@
+id: BL-599
+title: "Trend: intake balance — tickets filed/day vs closed/day, and net backlog growth"
+milestone: M8
+type: feature
+status: todo
+epic: swarm-behaviour-trends
+human_approval: approved
+severity: low
+priority: 30
+direction: human-requested
+depends_on: []
+assigned_to: specifier
+mutation_cost: low
+source: |
+  Human, 2026-07-23, epic BL-594. ~15 tickets were filed in one session; is
+  the swarm shipping faster than it is being fed? deliveryMetrics tracks
+  velocity (closes) but not intake, so net backlog trajectory is unmeasured.
+description: |
+  Add an intake-vs-drain series: per day, tickets ADDED to the backlog
+  (new BL-*.yaml appearing in active/paused, or the backlog root INTAKE-*.md)
+  vs tickets CLOSED (moved to done/), and the running net (backlog growing or
+  shrinking).
+
+  Data source is the same git-history-of-backlog-moves deliveryMetrics /
+  gitHistoryAdapter already read for velocity - this ADDS the intake side of
+  the ledger, it does not build a second history reader. A file first
+  appearing under backlog/ is an intake event; a file moving to backlog/done/
+  is a close event; the net is their difference over a window, plotted through
+  trend.ts.
+
+  Value: answers "are we keeping up" directly, and feeds BL-591's ETA - a
+  backlog that grows faster than it drains means every epic's ETA is receding,
+  which a velocity-only view hides.
+acceptance: |
+  Specifier writes scenarios. Minimum:
+  1. Per-window filed count, closed count, and net, derived from backlog git
+     history via the EXISTING adapter (no second reader).
+  2. A pure aggregator over (add events, close events, window) -> the series,
+     unit-tested with fixtures.
+  3. Intake counts both real tickets and backlog-root INTAKE-*.md items;
+     the epic tracker (type: epic) is not counted as buildable intake.
+out_of_scope: |
+  - Velocity/burndown of closes (deliveryMetrics owns those); this adds the
+    intake counterpart and the net.
