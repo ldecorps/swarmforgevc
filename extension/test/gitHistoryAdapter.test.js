@@ -92,10 +92,15 @@ test('parseGitLog returns an empty array for empty output', () => {
 // ── runGitLog (impure - shells out to real git) - BL-549 maxBuffer/ENOBUFS ──
 //
 // BL-549: execFileSync's default maxBuffer is 1 MiB, which this repo's own
-// full-history output now exceeds. A real 1 MiB+ repo is impractical to
-// build per-test, so these tests instead inject a deliberately tiny
-// maxBuffer against a real (small) git repo to force the same ENOBUFS
-// overflow deterministically, per the ticket's suggested regression shape.
+// full-history output now exceeds. The regression this ticket guards against
+// is specifically the *default* maxBuffer= parameter on runGitLog (no
+// explicit override) handling output over the OLD 1 MiB cap - so
+// buildOversizedTestRepo below genuinely builds a repo whose full-history
+// name-status output exceeds 1 MiB (one commit, many long-named files - a
+// few hundred ms, no need for a real multi-year repo) and asserts against
+// its actual byte length rather than assumed math. A second test still
+// forces overflow via an explicit tiny maxBuffer, to cover the
+// diagnostic-logging path deterministically.
 
 function initTestRepo() {
   const dir = mkTmpDir('sfvc-git-history-adapter-');
@@ -108,11 +113,45 @@ function initTestRepo() {
   return dir;
 }
 
+const ONE_MIB = 1024 * 1024;
+
+function buildOversizedTestRepo() {
+  const dir = mkTmpDir('sfvc-git-history-adapter-oversized-');
+  execSync('git init', { cwd: dir, stdio: 'pipe' });
+  execSync('git config user.email "test@test.com"', { cwd: dir, stdio: 'pipe' });
+  execSync('git config user.name "Test"', { cwd: dir, stdio: 'pipe' });
+  const subdir = 'd'.repeat(200);
+  fs.mkdirSync(path.join(dir, subdir));
+  for (let i = 0; i < 3000; i++) {
+    const name = String(i).padStart(6, '0') + 'x'.repeat(190);
+    fs.writeFileSync(path.join(dir, subdir, name), '1');
+  }
+  execSync('git add -A', { cwd: dir, stdio: 'pipe' });
+  execSync('git commit -q -m "bulk"', { cwd: dir, stdio: 'pipe' });
+  return dir;
+}
+
 test('runGitLog returns parsed entries for a real repo within the default maxBuffer', () => {
   const dir = initTestRepo();
   const entries = runGitLog(dir, '.');
   assert.equal(entries.length, 1);
   assert.deepEqual(entries[0].changes, [{ status: 'A', path: 'example.txt' }]);
+});
+
+test('runGitLog, called with only its default maxBuffer (no explicit override), still returns parsed entries once full-history name-status output genuinely exceeds the old 1 MiB execFileSync default', () => {
+  const dir = buildOversizedTestRepo();
+  const rawOutput = execSync(
+    'git log HEAD --format=COMMIT%x09%H%x09%cI --name-status -M --reverse -- .',
+    { cwd: dir, maxBuffer: 64 * 1024 * 1024 }
+  );
+  assert.ok(
+    Buffer.byteLength(rawOutput) > ONE_MIB,
+    `test repo fixture must itself exceed 1 MiB to guard the real boundary; was ${Buffer.byteLength(rawOutput)} bytes`
+  );
+
+  const entries = runGitLog(dir, '.');
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0].changes.length, 3000);
 });
 
 test('runGitLog returns [] and logs a diagnostic to stderr when the read overflows an explicit maxBuffer (ENOBUFS), instead of throwing', () => {
