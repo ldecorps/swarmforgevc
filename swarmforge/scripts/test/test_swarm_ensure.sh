@@ -531,4 +531,168 @@ grep -q -- "-e OPENROUTER_API_KEY=test-router-key" "$RESPAWN_ARGS_LOG" \
 cleanup_daemon
 pass "08: an ensure repair for a dead agent pane passes OPENROUTER_API_KEY through (BL-130)"
 
+# ---------------------------------------------------------------------------
+# 09: mono-router :teardown-illicit wiring — a dormant role with an illicit
+#     standing session is torn down via kill-session!, and the post-kill
+#     has-session recheck decides FIXED vs FAILED. mono_router_lib_test_runner.bb
+#     already proves topology-action returns :teardown-illicit for this shape;
+#     this proves ensure_mono_router_role!'s OWN wiring — the kill-session!
+#     call and the FIXED/FAILED reclassify — since that wiring is new in this
+#     parcel and untouched by any existing test_swarm_ensure.sh scenario.
+# ---------------------------------------------------------------------------
+make_fixture
+printf 'coder\tcoder\t%s\tswarmforge-coder\tCoder\tclaude\ttask\n' "$ROOT/.worktrees/coder" > "$ROOT/.swarmforge/roles.tsv"
+printf 'specifier\tspecifier\t%s\tswarmforge-specifier\tSpecifier\tclaude\ttask\n' "$ROOT/.worktrees/coder" >> "$ROOT/.swarmforge/roles.tsv"
+printf 'coordinator\tmaster\t%s\tswarmforge-coordinator\tCoordinator\tclaude\ttask\n' "$ROOT" >> "$ROOT/.swarmforge/roles.tsv"
+printf 'rotation\trouter\n' > "$ROOT/.swarmforge/swarm-identity"
+KILL_LOG="$ROOT/kills-09"
+KILLED_FLAG="$ROOT/specifier-killed"
+: > "$KILL_LOG"
+rm -f "$KILLED_FLAG"
+cat > "$FAKE_BIN/tmux" <<TMUXFAKE
+#!/usr/bin/env bash
+sock_cmd="\$3"
+if [[ "\$sock_cmd" == "has-session" ]]; then
+  target="\$5"
+  case "\$target" in
+    swarmforge-coder|swarmforge-coordinator) exit 0 ;;
+    swarmforge-specifier) [[ -f "$KILLED_FLAG" ]] && exit 1 || exit 0 ;;
+    *) exit 1 ;;
+  esac
+fi
+if [[ "\$sock_cmd" == "list-panes" ]]; then
+  echo "0"
+  exit 0
+fi
+if [[ "\$sock_cmd" == "kill-session" ]]; then
+  target="\$5"
+  echo "KILL \$target" >> "$KILL_LOG"
+  [[ "\$target" == "swarmforge-specifier" ]] && touch "$KILLED_FLAG"
+  exit 0
+fi
+exit 0
+TMUXFAKE
+chmod +x "$FAKE_BIN/tmux"
+OUTPUT=$(PATH="$FAKE_BIN:$PATH" \
+  SWARMFORGE_ENSURE_EXTENSION_CHECK="$FAKE_BIN/fake_ext_check.sh" \
+  SWARMFORGE_ENSURE_EXTENSION_BOUNCE="$FAKE_BIN/fake_ext_bounce.sh" \
+  SWARMFORGE_ENSURE_SUPERVISOR="$FAKE_BIN/fake_supervisor.bb" \
+  SWARMFORGE_SKIP_OPERATOR=1 SWARMFORGE_SKIP_FRONT_DESK=1 \
+  bb "$ENSURE" "$ROOT" 2>&1) || true
+grep -q "^KILL swarmforge-specifier$" "$KILL_LOG" \
+  || fail "09a: illicit standing session for a dormant role was never torn down; kill log: $(cat "$KILL_LOG")"
+echo "$OUTPUT" | grep -q "^agent:specifier: FIXED (tore down illicit standing session (mono-router dormant target))$" \
+  || fail "09a: illicit dormant session teardown not reported as FIXED; got: $OUTPUT"
+pass "09a: mono-router illicit standing session for a dormant role is torn down and reported FIXED"
+
+# 09b: kill-session! that does not actually remove the session reports FAILED,
+#      never a silent HEALTHY/FIXED that would hide a stuck teardown.
+make_fixture
+printf 'coder\tcoder\t%s\tswarmforge-coder\tCoder\tclaude\ttask\n' "$ROOT/.worktrees/coder" > "$ROOT/.swarmforge/roles.tsv"
+printf 'specifier\tspecifier\t%s\tswarmforge-specifier\tSpecifier\tclaude\ttask\n' "$ROOT/.worktrees/coder" >> "$ROOT/.swarmforge/roles.tsv"
+printf 'coordinator\tmaster\t%s\tswarmforge-coordinator\tCoordinator\tclaude\ttask\n' "$ROOT" >> "$ROOT/.swarmforge/roles.tsv"
+printf 'rotation\trouter\n' > "$ROOT/.swarmforge/swarm-identity"
+KILL_LOG="$ROOT/kills-09b"
+: > "$KILL_LOG"
+cat > "$FAKE_BIN/tmux" <<TMUXFAKE
+#!/usr/bin/env bash
+sock_cmd="\$3"
+if [[ "\$sock_cmd" == "has-session" ]]; then
+  target="\$5"
+  case "\$target" in
+    swarmforge-coder|swarmforge-coordinator|swarmforge-specifier) exit 0 ;;
+    *) exit 1 ;;
+  esac
+fi
+if [[ "\$sock_cmd" == "list-panes" ]]; then
+  echo "0"
+  exit 0
+fi
+if [[ "\$sock_cmd" == "kill-session" ]]; then
+  target="\$5"
+  echo "KILL \$target" >> "$KILL_LOG"
+  exit 0
+fi
+exit 0
+TMUXFAKE
+chmod +x "$FAKE_BIN/tmux"
+OUTPUT=$(PATH="$FAKE_BIN:$PATH" \
+  SWARMFORGE_ENSURE_EXTENSION_CHECK="$FAKE_BIN/fake_ext_check.sh" \
+  SWARMFORGE_ENSURE_EXTENSION_BOUNCE="$FAKE_BIN/fake_ext_bounce.sh" \
+  SWARMFORGE_ENSURE_SUPERVISOR="$FAKE_BIN/fake_supervisor.bb" \
+  SWARMFORGE_SKIP_OPERATOR=1 SWARMFORGE_SKIP_FRONT_DESK=1 \
+  bb "$ENSURE" "$ROOT" 2>&1) || true
+RC=$?
+grep -q "^KILL swarmforge-specifier$" "$KILL_LOG" \
+  || fail "09b: kill-session was never attempted; kill log: $(cat "$KILL_LOG")"
+echo "$OUTPUT" | grep -q "^agent:specifier: FAILED (could not tear down illicit standing session)$" \
+  || fail "09b: a kill-session that leaves the session standing must report FAILED; got: $OUTPUT"
+pass "09b: mono-router illicit session that survives kill-session! is reported FAILED, not silently accepted"
+
+# ---------------------------------------------------------------------------
+# 10: mono-router :ensure-standing wiring — the resident role's tmux session
+#     has vanished entirely (not merely pane-dead), so ensure must create a
+#     fresh session (create-session!) before respawning into it
+#     (ensure-standing-role!), then report FIXED. Distinct from test 08's
+#     dead-pane repair, where the session already exists and only the pane
+#     needs respawning; this is the "session itself is gone" repair the
+#     mono-router path adds and no existing test exercised.
+# ---------------------------------------------------------------------------
+make_fixture
+printf 'coder\tcoder\t%s\tswarmforge-coder\tCoder\tclaude\ttask\n' "$ROOT/.worktrees/coder" > "$ROOT/.swarmforge/roles.tsv"
+printf 'specifier\tspecifier\t%s\tswarmforge-specifier\tSpecifier\tclaude\ttask\n' "$ROOT/.worktrees/coder" >> "$ROOT/.swarmforge/roles.tsv"
+printf 'coordinator\tmaster\t%s\tswarmforge-coordinator\tCoordinator\tclaude\ttask\n' "$ROOT" >> "$ROOT/.swarmforge/roles.tsv"
+printf 'rotation\trouter\n' > "$ROOT/.swarmforge/swarm-identity"
+CODER_CREATED="$ROOT/coder-created"
+CREATE_LOG="$ROOT/creates-10"
+RESPAWN_LOG_10="$ROOT/respawns-10"
+rm -f "$CODER_CREATED"
+: > "$CREATE_LOG"
+: > "$RESPAWN_LOG_10"
+cat > "$FAKE_BIN/tmux" <<TMUXFAKE
+#!/usr/bin/env bash
+sock_cmd="\$3"
+if [[ "\$sock_cmd" == "has-session" ]]; then
+  target="\$5"
+  case "\$target" in
+    swarmforge-coder) [[ -f "$CODER_CREATED" ]] && exit 0 || exit 1 ;;
+    swarmforge-coordinator) exit 0 ;;
+    *) exit 1 ;;
+  esac
+fi
+if [[ "\$sock_cmd" == "list-panes" ]]; then
+  target="\$5"
+  if [[ "\$target" == "swarmforge-coder" && ! -f "$CODER_CREATED" ]]; then
+    exit 1
+  fi
+  echo "0"
+  exit 0
+fi
+if [[ "\$sock_cmd" == "new-session" ]]; then
+  target="\$6"
+  echo "CREATE \$target" >> "$CREATE_LOG"
+  [[ "\$target" == "swarmforge-coder" ]] && touch "$CODER_CREATED"
+  exit 0
+fi
+if [[ "\$sock_cmd" == "respawn-pane" ]]; then
+  echo "RESPAWN" >> "$RESPAWN_LOG_10"
+  exit 0
+fi
+exit 0
+TMUXFAKE
+chmod +x "$FAKE_BIN/tmux"
+OUTPUT=$(PATH="$FAKE_BIN:$PATH" \
+  SWARMFORGE_ENSURE_EXTENSION_CHECK="$FAKE_BIN/fake_ext_check.sh" \
+  SWARMFORGE_ENSURE_EXTENSION_BOUNCE="$FAKE_BIN/fake_ext_bounce.sh" \
+  SWARMFORGE_ENSURE_SUPERVISOR="$FAKE_BIN/fake_supervisor.bb" \
+  SWARMFORGE_SKIP_OPERATOR=1 SWARMFORGE_SKIP_FRONT_DESK=1 \
+  bb "$ENSURE" "$ROOT" 2>&1) || true
+grep -q "^CREATE swarmforge-coder$" "$CREATE_LOG" \
+  || fail "10: a fully-vanished resident session was never recreated; create log: $(cat "$CREATE_LOG")"
+[[ -s "$RESPAWN_LOG_10" ]] \
+  || fail "10: the recreated resident session was never respawned into"
+echo "$OUTPUT" | grep -q "^agent:coder: FIXED (restored mono-router resident pane)$" \
+  || fail "10: a recreated resident session was not reported FIXED; got: $OUTPUT"
+pass "10: mono-router resident session that has vanished entirely is recreated and respawned, reported FIXED"
+
 echo "ALL PASS"
