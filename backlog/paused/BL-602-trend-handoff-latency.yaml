@@ -1,0 +1,47 @@
+id: BL-602
+title: "Trend: handoff latency — time from a git_handoff being written to the recipient dequeuing it"
+milestone: M8
+type: feature
+status: todo
+epic: swarm-behaviour-trends
+human_approval: approved
+severity: low
+priority: 30
+direction: human-requested
+depends_on: []
+assigned_to: specifier
+mutation_cost: low
+source: |
+  Human, 2026-07-23, epic BL-594. The "handoff vanished" fear (a parcel sitting
+  in a dormant role's inbox/new looking identical to one never sent) has no
+  metric. On mono-router this wait is rotation-gated and genuinely variable.
+description: |
+  Measure how long each handoff waits between being SENT and being PICKED UP:
+  from the enqueued_at the handoff file already carries, to the dequeued_at
+  ready_for_next stamps when it moves new/ -> in_process/. Trend the
+  distribution per recipient role via trend.ts.
+
+  Both timestamps already exist on the handoff itself:
+    - enqueued_at — written by swarm_handoff.bb on send
+    - dequeued_at — stamped by ready_for_next_task.bb on claim
+  So the raw data is on disk already; this reads the pair per handoff (from the
+  completed/ handoffs, worktree mailboxes included per the search-must-cover-
+  worktree-mailboxes rule) and aggregates latency per recipient.
+
+  Value: on mono-router, a handoff to a dormant role waits until the resident
+  next rotates INTO that role — so a spike in handoff latency for one role is a
+  direct signal that role is being starved (pairs with BL-596's stranding
+  metric). A parcel stuck for hours shows as a latency outlier instead of a
+  silent "did it vanish?".
+acceptance: |
+  Specifier writes scenarios. Minimum:
+  1. Each processed handoff yields latency = dequeued_at - enqueued_at, per
+     recipient role, from the timestamps already on the handoff file.
+  2. A pure aggregator produces a median + outlier latency series per role over
+     a window, unit-tested with fixtures.
+  3. A still-queued handoff contributes an OPEN wait (currently-waiting), never
+     a fabricated completion.
+  4. The read covers worktree mailboxes, not only master's (the known
+   false-negative if master's mailbox is read alone).
+out_of_scope: |
+  - Changing dispatch/rotation. Measurement only.

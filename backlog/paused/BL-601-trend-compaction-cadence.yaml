@@ -1,0 +1,50 @@
+id: BL-601
+title: "Trend: context-compaction cadence — per-role auto-compaction frequency and the token level it triggers at"
+milestone: M8
+type: feature
+status: todo
+epic: swarm-behaviour-trends
+human_approval: approved
+severity: low
+priority: 35
+direction: human-requested
+depends_on: []
+assigned_to: specifier
+mutation_cost: medium
+source: |
+  Human, 2026-07-23, epic BL-594. The "13 min, no compaction yet" moment showed
+  compaction is watched by eye but never recorded. Compaction frequency is a
+  clean proxy for which roles are under context pressure.
+description: |
+  Record each auto-compaction the resident/roles perform, and trend the
+  frequency and the token level it fires at, per role. A role compacting every
+  few minutes is under heavy context load; the token-at-compaction level shows
+  whether the trigger threshold is well-tuned for that role's model.
+
+  Detection source: the pane already shows compaction ("auto-compact NN%",
+  "Compacting"), and transcript/token telemetry (transcriptUsage) already
+  tracks per-role token totals over time. Pair a compaction event with the
+  token level at that moment. The specifier confirms the most reliable signal -
+  a pane-text marker, a transcript boundary, or a token-drop discontinuity -
+  and captures {role, model, tokens-at-compaction, ts} to
+  `.swarmforge/telemetry/compaction-<YYYY-MM>.jsonl`.
+
+  Trend via trend.ts: compactions-per-hour per role, and the distribution of
+  token-at-compaction. Cross-reads naturally with BL-596 (a persona that
+  compacts constantly is a rotation-cost signal too).
+
+  Note honestly: this is the one child whose detection signal is not already a
+  clean structured event - the specifier must pin a RELIABLE trigger rather
+  than scrape a spinner string that changes between CLI versions. If no robust
+  signal exists, say so and scope to what is detectable rather than emit noisy
+  data.
+acceptance: |
+  Specifier writes scenarios. Minimum:
+  1. Each detected compaction emits {role, model, tokens-at-compaction, ts}
+     from a signal the specifier has justified as reliable.
+  2. A pure aggregator yields compactions/hr per role and the
+     token-at-compaction distribution over a window.
+  3. If a role's compaction cannot be reliably detected, it reads NA, never a
+     fabricated zero.
+out_of_scope: |
+  - Tuning the compaction threshold. Measurement only.

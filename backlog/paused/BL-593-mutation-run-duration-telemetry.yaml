@@ -1,0 +1,112 @@
+id: BL-593
+title: "Mutation runs append a durable duration record — scope, mutant count, wall-clock, kill stats — so run cost is answerable after the fact"
+milestone: M8
+type: feature
+status: todo
+epic: swarm-reliability
+human_approval: approved
+severity: low
+priority: 30
+direction: human-requested
+depends_on: []
+assigned_to: specifier
+mutation_cost: low
+source: |
+  Human, 2026-07-23, after asking "how long did the last few mutation testings
+  last" and being told it is not recorded cleanly: "yes file this extra bit of
+  telemetry, can't get enough of them."
+
+description: |
+  ## Problem
+
+  There is no way to answer "how long did recent mutation runs take". Two
+  reasons, both confirmed 2026-07-23:
+
+  1. Stryker's own `reports/mutation/mutation.json` carries mutant STATUS
+     counts but NO timing at all - the mutation-testing-report-schema has no
+     wall-clock field.
+  2. The one place elapsed time IS computed - the MutationProgressReporter
+     plugin (extension/src/mutation/) - writes a SINGLE overwritten snapshot to
+     `.swarmforge/mutation-progress/<role>.json`. Each run clobbers the last,
+     most snapshots are left frozen mid-run (`status: running`, the process
+     moved on before writing completion), and the percentages are corrupted by
+     scope changes (observed 168%, 8317% where `total` was reset under a scoped
+     run). So there is no history and the last snapshot is often a partial.
+
+  Net: the operator could only hand-wave "~20s-2min for a scoped per-ticket
+  run, ~5min for a full incremental sweep" from unreliable partials.
+
+  ## The machinery is 90% there - reuse it
+
+  `extension/src/mutation/mutationProgress.ts` already computes everything
+  needed: `initMutationProgressState(total, startedAtMs)` captures the start,
+  `buildProgressRecord` computes `elapsed_s` from `nowMs - startedAtMs`, and it
+  already knows tested/killed/survived/timedOut/total. The reporter
+  (mutationProgressReporter.ts) already fires on run completion. The ONLY gap
+  is that completion overwrites a snapshot instead of ALSO appending a durable
+  record.
+
+  ## Shape
+
+  On run COMPLETION (not per-mutant - that stays the live snapshot), append one
+  line to a durable, append-only log, mirroring the exact precedent
+  `context_telemetry_store.bb` set for `.swarmforge/telemetry/context-events.jsonl`
+  (gitignored, machine-local runtime log, no committed seed). Proposed
+  `.swarmforge/telemetry/mutation-runs.jsonl`, one JSON object per completed
+  run:
+
+    - started_at / ended_at (ISO), and elapsed_s (already computed)
+    - role / worktree (which agent ran it)
+    - scope: the mutate glob or file set actually run, AND a mutant count -
+      the single most important field, because a "mutation run" is TWO
+      different things: a per-ticket scoped run (tens of mutants) vs a
+      full-space sweep (~27k). A duration is meaningless without knowing which.
+    - incremental?: whether Stryker's incremental cache was in play - a cached
+      run's elapsed reflects only the changed delta, not the full space, and
+      conflating the two is exactly the trap that made the hand estimate fuzzy.
+    - concurrency: the effective worker count (config is 8 today) - so a
+      duration can be normalised if that ever changes.
+    - kill stats: killed / survived / no-coverage / timed-out / ignored /
+      total - already on the state.
+    - build_sha: HEAD at run time, for correlating a slow run to a code state.
+
+  ## Why the fields matter (do not drop them to "just log elapsed")
+
+  The reason the hand answer was unreliable was NOT missing elapsed - it was
+  missing SCOPE and INCREMENTAL. A bare `elapsed_s` history would reproduce the
+  same ambiguity. scope+mutant-count+incremental are what make the number
+  interpretable; they are load-bearing, not nice-to-have.
+
+acceptance: |
+  Specifier writes the scenarios. Minimum:
+
+  1. A completed mutation run appends exactly one record to
+     `.swarmforge/telemetry/mutation-runs.jsonl`; the live per-mutant snapshot
+     behaviour is unchanged.
+  2. The record carries at minimum: started_at, ended_at, elapsed_s, role,
+     scope (glob/files) + mutant total, incremental flag, effective
+     concurrency, the kill-status breakdown, and build_sha.
+  3. A run that is KILLED/aborted mid-way does not append a misleading
+     "completed" record - either it appends nothing, or it appends with an
+     explicit `aborted: true` and the partial counts, but never a clean record
+     that reads as a finished full run (the exact failure the current
+     overwritten-snapshot design has).
+  4. The record-building is a PURE function over (state, start/end, scope
+     meta) - unit-tested with fixtures, no fs and no Stryker, mirroring
+     mutationProgress.ts's own already-pure buildProgressRecord split.
+  5. The log is append-only and gitignored (machine-local runtime data), the
+     same posture as context-events.jsonl - never committed, never a source of
+     truth that must survive a fresh checkout.
+
+  Optional follow-on (specifier decides in or out): a tiny reader that prints
+  the last N runs' scope+elapsed, so "how long did the last few take" is one
+  command. Even without it, the jsonl is grep-able.
+
+out_of_scope: |
+  - Changing what gets mutated, the concurrency, or the incremental cache
+    behaviour. This is pure observability.
+  - A dashboard/mini-app surface for it. If wanted later that is its own
+    ticket; note it would feed BL-591's per-epic ETA with real per-run cost
+    instead of a git-history proxy.
+  - Retroactively reconstructing durations for past runs - there is no data;
+    telemetry starts when this lands.
