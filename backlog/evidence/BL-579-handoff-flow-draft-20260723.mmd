@@ -1,0 +1,68 @@
+%% Handoff MECHANISM (activity): how one parcel physically travels between
+%% roles. swarm-flow.mmd covers WHO hands to WHOM; this covers HOW - the
+%% file lifecycle new/ -> in_process/ -> completed/, the validation and
+%% branch-claim gates that can refuse a claim, and the daemon sweeps that
+%% wake a role which is not looking at its own mailbox.
+flowchart TD
+  START(["sender role finishes work\nand commits"])
+  DRAFT["writes a handoff draft\n(field: value headers, not JSON)"]
+  VALIDATE{"swarm_handoff.bb validates:\ntype / to / priority present,\ncommit resolves to exactly\nONE commit object"}
+  REJECT(["rejected: nothing is written,\nsender fixes the draft"])
+  WRITE["writes NN_<ts>_<seq>_from_X_to_Y.handoff\ninto recipient inbox/new/\n(NN = priority prefix, 00 = highest)"]
+  SENT["copy retained in sender sent/"]
+  DEPTH["prints active-backlog-depth\nWARNING if over cap"]
+
+  DAEMON["handoffd sweeps:\nreplicates into each role's own\n.worktrees/<role> mailbox"]
+  CHASE{"recipient idle\nwith pending mail?"}
+  WAKE["chase sweep wakes it\n(mono-router: rotate resident\ninto that role - respawn)"]
+  WAIT(["stays queued in new/\nuntil the role next looks"])
+
+  READY["recipient runs ready_for_next.sh"]
+  PICK{"any dequeueable\nfile in new/ ?"}
+  NOTASK(["NO_TASK\n(mono-router non-home role:\nROTATE_HOME instead)"])
+  CLAIM["move new/ -> in_process/\nstamp dequeued_at,\nwrite .claim-progress.json"]
+
+  GUARD{"branch-claim guard:\nworktree branch matches\nthe claimed ticket?"}
+  AUTOFIX["clean but wrong branch:\nauto-checkout the standard branch,\nturn proceeds"]
+  REQUEUE["dirty or uncorrectable:\nrequeue-and-refuse -\nfile moves BACK to new/"]
+
+  WORK["agent executes the task\nand commits"]
+  FORWARD["sends the next git_handoff\n(10-char commit hex)"]
+  DONE["done_with_current.sh:\nin_process/ -> completed/"]
+  STALE(["skipping this leaves a stale claim\nthat re-shows on the next wake"])
+
+  START --> DRAFT --> VALIDATE
+  VALIDATE -->|invalid| REJECT
+  VALIDATE -->|valid| WRITE
+  WRITE --> SENT
+  WRITE --> DEPTH
+  WRITE --> DAEMON
+  DAEMON --> CHASE
+  CHASE -->|yes| WAKE
+  CHASE -->|no - busy mid-turn| WAIT
+  WAKE --> READY
+  WAIT --> READY
+  READY --> PICK
+  PICK -->|none| NOTASK
+  PICK -->|lowest priority prefix wins| CLAIM
+  CLAIM --> GUARD
+  GUARD -->|pass| WORK
+  GUARD -->|clean, wrong branch| AUTOFIX
+  AUTOFIX --> WORK
+  GUARD -->|dirty| REQUEUE
+  REQUEUE --> WAIT
+  WORK --> FORWARD
+  FORWARD --> DONE
+  DONE -.->|omitted| STALE
+  FORWARD -.->|recipient repeats\nthis whole cycle| START
+
+  classDef gate fill:#9a6700,color:#fff,stroke:#5c4200;
+  classDef bad fill:#cf222e,color:#fff,stroke:#82071e;
+  classDef store fill:#57606a,color:#fff,stroke:#32383f;
+  classDef act fill:#1f6feb,color:#fff,stroke:#0b3d91;
+  classDef daemon fill:#8250df,color:#fff,stroke:#4c2889;
+  class VALIDATE,CHASE,PICK,GUARD gate;
+  class REJECT,REQUEUE,STALE bad;
+  class WRITE,SENT,CLAIM,DONE,WAIT store;
+  class DRAFT,READY,WORK,FORWARD,AUTOFIX,DEPTH act;
+  class DAEMON,WAKE daemon;

@@ -263,6 +263,80 @@
           {:action :wake-resident :resident-target? true :resident-busy? false
            :resident-recently-active? false :resident-woken-this-sweep? false}))
 
+;; ── BL-576: aged-note actionability ──────────────────────────────────────
+
+(assert= "note_actionable_after_ms parses a positive value"
+         600000
+         (mono-router-lib/parse-note-actionable-after-ms
+          "config note_actionable_after_ms 600000\n"))
+(assert= "absent line degrades to default"
+         mono-router-lib/default-note-actionable-after-ms
+         (mono-router-lib/parse-note-actionable-after-ms "config rotation router\n"))
+(assert= "malformed value degrades to default"
+         mono-router-lib/default-note-actionable-after-ms
+         (mono-router-lib/parse-note-actionable-after-ms
+          "config note_actionable_after_ms abc\n"))
+(assert= "zero degrades to default (would reinstate broadcast thrash)"
+         mono-router-lib/default-note-actionable-after-ms
+         (mono-router-lib/parse-note-actionable-after-ms
+          "config note_actionable_after_ms 0\n"))
+(assert= "negative degrades to default"
+         mono-router-lib/default-note-actionable-after-ms
+         (mono-router-lib/parse-note-actionable-after-ms
+          "config note_actionable_after_ms -1\n"))
+(assert= "default is 20 minutes"
+         1200000
+         mono-router-lib/default-note-actionable-after-ms)
+
+(let [now-ms (.toEpochMilli (java.time.Instant/parse "2026-07-23T12:00:00Z"))
+      threshold mono-router-lib/default-note-actionable-after-ms]
+  (assert-true "enqueued_at 45 minutes ago is aged"
+               (mono-router-lib/note-aged?
+                {:enqueued-at "2026-07-23T11:15:00Z" :created-at "2026-07-23T11:15:00Z"
+                 :now-ms now-ms :threshold-ms threshold}))
+  (assert-true "fresh enqueued_at wins over a stale created_at (redelivery is fresh here)"
+               (not (mono-router-lib/note-aged?
+                     {:enqueued-at "2026-07-23T11:58:00Z" :created-at "2026-07-23T02:00:00Z"
+                      :now-ms now-ms :threshold-ms threshold})))
+  (assert-true "absent enqueued_at falls back to created_at"
+               (mono-router-lib/note-aged?
+                {:enqueued-at nil :created-at "2026-07-23T11:15:00Z"
+                 :now-ms now-ms :threshold-ms threshold}))
+  (assert-true "unparseable enqueued_at falls back to created_at"
+               (mono-router-lib/note-aged?
+                {:enqueued-at "not-a-timestamp" :created-at "2026-07-23T11:15:00Z"
+                 :now-ms now-ms :threshold-ms threshold}))
+  (assert-true "neither header parses -> fail closed, never aged"
+               (not (mono-router-lib/note-aged?
+                     {:enqueued-at nil :created-at nil
+                      :now-ms now-ms :threshold-ms threshold})))
+  (assert-true "well short of the threshold is not aged"
+               (not (mono-router-lib/note-aged?
+                     {:enqueued-at "2026-07-23T11:59:00Z" :created-at "2026-07-23T11:59:00Z"
+                      :now-ms now-ms :threshold-ms threshold}))))
+
+(assert-true "aged note alone makes a role actionable"
+             (mono-router-lib/actionable-mail?
+              {:in-process-count 0 :git-handoff-count 0 :aged-note-count 1}))
+(assert-true "no aged notes, empty otherwise -> not actionable"
+             (not (mono-router-lib/actionable-mail?
+                   {:in-process-count 0 :git-handoff-count 0 :aged-note-count 0})))
+(assert-true "aged-note-count absent behaves exactly as before (no regression)"
+             (not (mono-router-lib/actionable-mail? {:in-process-count 0 :git-handoff-count 0})))
+
+(assert-true "note delivered to a dormant role while resident is elsewhere -> suppressed"
+             (mono-router-lib/suppress-dormant-note-delivery-wake?
+              {:parcel-type "note" :chase-action :rotate}))
+(assert-true "git_handoff to a dormant role is never suppressed"
+             (not (mono-router-lib/suppress-dormant-note-delivery-wake?
+                   {:parcel-type "git_handoff" :chase-action :rotate})))
+(assert-true "note to a role the resident already IS is not suppressed"
+             (not (mono-router-lib/suppress-dormant-note-delivery-wake?
+                   {:parcel-type "note" :chase-action :wake-resident})))
+(assert-true "note to a role with its own standing pane is not suppressed"
+             (not (mono-router-lib/suppress-dormant-note-delivery-wake?
+                   {:parcel-type "note" :chase-action :wake-own-session})))
+
 (when (seq @failures)
   (binding [*out* *err*]
     (doseq [f @failures] (println f)))

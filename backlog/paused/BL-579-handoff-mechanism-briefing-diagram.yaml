@@ -1,0 +1,124 @@
+id: BL-579
+title: "Morning briefing carries a handoff-MECHANISM activity diagram alongside architecture and swarm-flow"
+milestone: M8
+type: feature
+status: todo
+epic: swarm-reliability
+human_approval: approved
+severity: low
+priority: 35
+direction: human-requested
+depends_on: []
+assigned_to: specifier
+mutation_cost: low
+source: |
+  Human, 2026-07-23: "can an activity diagram be produced, and added, to morning
+  briefing, documenting how the handoff mechanism works?"
+
+description: |
+  ## Gap
+
+  `docs/diagrams/swarm-flow.mmd` documents WHO hands off to WHOM - the role
+  chain specifier -> coder -> cleaner -> architect -> hardender -> documenter
+  -> QA, plus the coordinator's bookkeeping position and QA's merge-up
+  broadcast. Nothing documents HOW a handoff physically travels: the file
+  lifecycle, the two gates that can refuse a claim, and the daemon sweeps that
+  wake a role which is not looking at its own mailbox.
+
+  That mechanism is currently only legible by reading `swarm_handoff.bb`,
+  `ready_for_next_task.bb`, `handoff_lib.bb`, `chase_sweep_lib.bb` and
+  `handoffd.bb` together. It is also the single most common source of
+  "the handoff vanished" confusion - a queued-but-unread parcel in a dormant
+  role's `inbox/new/` looks identical to one that was never sent.
+
+  ## The machinery already exists
+
+  This is deliberately a SMALL slice. `extension/src/tools/render-briefing-diagrams.ts`
+  renders each entry of a fixed allowlist to PNG:
+
+      const DIAGRAM_FILES = [
+        { name: 'architecture', file: 'architecture.mmd' },
+        { name: 'swarm-flow',   file: 'swarm-flow.mmd' },
+      ];
+
+  and `briefing_email_lib.bb/build-diagram-section` embeds each as a CID
+  attachment (BL-286 - NOT a data URI, which Gmail renders blank). BL-260
+  already pins the graceful-degrade contract: a render failure sends the
+  email plaintext-only with a no-diagram note, never a crash.
+
+  So the whole change is:
+    1. add `docs/diagrams/handoff-flow.mmd`
+    2. add ONE entry to `DIAGRAM_FILES`
+
+  Note the allowlist is intentional, not a directory scan, so a stray
+  experimental `.mmd` is never silently emailed out - keep it that way.
+
+  ## Diagram content (drafted and render-verified, coder may refine)
+
+  A draft was written and rendered successfully through the repo's own
+  `renderMermaidToPng` during intake, so the source below is known to parse
+  and produce a PNG. It is a STARTING POINT the coder verifies against the
+  code, not a specification of truth - if any step below disagrees with the
+  scripts, the SCRIPTS win and the diagram gets corrected.
+
+  Steps it depicts, each traceable to a real call site:
+
+    - sender writes a draft (field:value headers, not JSON) and runs
+      swarm_handoff.sh
+    - swarm_handoff.bb validates type/to/priority and that `commit` resolves
+      to exactly ONE commit object; an invalid draft writes nothing
+    - a valid send writes NN_<ts>_<seq>_from_X_to_Y.handoff into the
+      recipient's inbox/new/ (NN = priority prefix, 00 highest), keeps a copy
+      in the sender's sent/, and prints the active-backlog-depth warning
+    - handoffd replicates into each role's own .worktrees/<role> mailbox
+    - the chase sweep wakes an idle recipient that has pending mail; on a
+      mono-router that means ROTATING the single resident into that role,
+      which is a respawn, and is skipped while the resident is busy
+    - ready_for_next.sh -> ready_for_next_task.bb picks the lowest
+      priority-prefix dequeueable file, moves new/ -> in_process/, stamps
+      dequeued_at and writes .claim-progress.json
+    - the BL-529 branch-claim guard then either passes, auto-checks-out the
+      standard branch when the worktree is clean but on the wrong one, or
+      requeue-and-refuses (file moves BACK to new/) when it is dirty
+    - the agent works, commits, sends the next git_handoff (10-char hex),
+      and calls done_with_current.sh to move in_process/ -> completed/
+    - omitting done_with_current.sh leaves a stale claim that re-shows on the
+      next wake
+
+  Source drafted at intake is attached to this ticket's evidence rather than
+  inlined here; regenerate from the bullet list above if it is missing.
+
+acceptance: |
+  See specs/features/BL-579-handoff-mechanism-briefing-diagram.feature
+  (specifier writes it). Minimum the design must make testable:
+
+  1. `renderBriefingDiagrams` returns THREE entries - architecture,
+     swarm-flow and the new handoff diagram - each with non-empty base64.
+  2. The briefing email's diagram section references the new diagram by its
+     own cid, matching its attachment 1:1 (the BL-286 contract), and the
+     attachment list length matches the diagram count.
+  3. A deliberately unparseable handoff-flow.mmd still degrades exactly as
+     BL-260 pins - plaintext email with the no-diagram note, non-zero exit
+     from the render tool, no crash - and does NOT take the other two
+     diagrams down silently in a way that reads as success.
+  4. The diagram source parses: rendering it produces a PNG (this is the
+     regression guard against a malformed .mmd landing).
+
+  Documenter: fold a short "how a handoff travels" section into the handoff
+  docs referencing the new diagram, so the diagram is not the only copy of
+  this knowledge.
+
+  QA: run the real briefing generation once and confirm three images arrive
+  inline in the email, not just in fixtures - BL-454's lesson that a
+  fixture-only acceptance can pass while the real path is broken.
+
+out_of_scope: |
+  - Changing swarm-flow.mmd or architecture.mmd. This ADDS a third diagram;
+    the existing two keep their current content and position.
+  - Turning DIAGRAM_FILES into a directory scan. The allowlist is a
+    deliberate guard against emailing out a stray .mmd.
+  - Any change to the CID attachment mechanism (BL-286) or the
+    render-unavailable degradation (BL-260).
+  - Diagramming the OPERATOR/front-desk path (Telegram -> bridge -> operator
+    -> reply). Related, genuinely undocumented, but a separate diagram and a
+    separate ticket if wanted.
