@@ -210,6 +210,22 @@ boot — only the condensed `engineering.prompt` is in the system prompt.
   Proposed by the hardender 2026-07-15 scoped `role:hardender`; accepted into the
   shared article instead — the coder writes the tests, so this binds every test
   author, not just the role that catches it late.)
+- **A shell test that backgrounds a long-lived process inside a function must
+  redirect that process's stdout AND stderr to a file, or never capture the
+  function with `X="$(fn)"`.** Command substitution reads the pipe until EOF,
+  and a `&`-backgrounded child INHERITS the pipe's write end — so `$(...)` does
+  not return when the function returns; it blocks until the last fd holder, i.e.
+  the daemon itself, exits. The symptom is a test that hangs with no output and
+  no failing assertion, which reads as "the daemon is broken / too slow" and
+  sends you debugging perfectly healthy production code. `start_daemon >>"$LOG"
+  2>&1 &` fixes it; so does dropping the capture and having the function write
+  its result to a file the caller reads. This is the shell sibling of the
+  never-wait-on-real-time rule above: both turn a correct system into an
+  apparently hung one. (BL-576, 2026-07-23: `test_handoffd_aged_note_rotate_
+  wiring.sh` hung ~30 minutes while the daemon under test was in fact performing
+  its chase-rotate in under a second. Proposed by the hardender scoped
+  `role:hardener`; accepted into the shared article instead — the coder writes
+  these wiring tests too, so this binds every test author.)
 - **Never target the test's own process from code under test.** Never pass a
   test's own `process.pid` (or the test runner's PID) to `kill()`-style code
   under test; spawn a disposable child process and target that instead, so a

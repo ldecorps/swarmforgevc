@@ -1,0 +1,66 @@
+id: BL-587
+title: "Active-backlog depth warning counts .gitkeep as a ticket, so every handoff cries wolf"
+milestone: M8
+type: defect
+status: superseded
+superseded_by: BL-562
+epic: swarm-reliability
+priority: 30
+mutation_cost: low
+direction: swarm-proposed
+depends_on: []
+severity: low
+source: "Observed by the specifier 2026-07-23: every swarm_handoff.sh send printed 'WARNING: Active backlog depth exceeded (active=2, max=1)' while backlog/active/ held exactly one ticket plus .gitkeep."
+
+description: |
+  `check-backlog-depth` in `swarmforge/scripts/swarm_handoff.bb` counts active
+  items with `(count (fs/list-dir active-dir))` — raw directory entries. The
+  tracked `.gitkeep` placeholder is one of them, so the count is always one
+  higher than the number of tickets and the warning fires one item early. With
+  `active_backlog_max_depth 1` and a single active ticket, EVERY handoff any role
+  sends prints "Active backlog depth exceeded (active=2, max=1). Coordinator
+  should promote paused items."
+
+  The fix already exists and is already the convention elsewhere:
+  `chase_sweep_lib/count-backlog-yaml` counts `*.yaml` regular files and its
+  docstring says so in as many words — "Ignores non-yaml (e.g. .gitkeep)".
+  `handoffd.bb`'s `open-slot-nudge-sweep!` uses it for exactly this question.
+  The send path was simply never migrated.
+
+  Why it is worth a ticket rather than a shrug: this warning is the swarm's
+  signal that intake is backing up, and right now it is indistinguishable from
+  noise on every single send. A signal that fires when nothing is wrong trains
+  every role and every human reading a pane to ignore it, so the one time the
+  backlog really is over cap, nobody looks.
+
+  Confirmed NOT affected: promotion decisions. `handoffd.bb` already uses
+  `count-backlog-yaml`, and `compliance_battery_lib`'s coordinator-gate check
+  goes through `backlog-depth-lib/under-depth-cap?` on a caller-supplied count.
+  This is the warning path only — which is why it is low severity and a small,
+  self-contained parcel.
+
+  Scope: `swarmforge/scripts/swarm_handoff.bb` (one call site), plus the test
+  covering it. Take the opportunity to check the other direction too: the
+  warning should still fire when the backlog genuinely is over cap, which is
+  what scenario 02 pins.
+
+acceptance: |
+  specs/features/BL-587-depth-warning-counts-tickets.feature
+
+  Unit gate (the real gate for `.bb` swarm scripts — engineering.prompt's tool
+  table): extend the existing depth coverage in
+  `swarmforge/scripts/test/backlog_depth_test_runner.bb` (or the swarm_handoff
+  test alongside it) so a fixture `backlog/active/` containing `.gitkeep` plus N
+  tickets counts N. The whole `.bb` suite stays green.
+
+  QA end-to-end: with one ticket in `backlog/active/` and
+  `active_backlog_max_depth 1`, send any handoff and confirm no depth warning on
+  stderr; add a second ticket yaml and confirm the warning returns and names
+  `active=2`.
+
+out_of_scope: |
+  - The promotion path and the open-slot nudge (both already correct).
+  - Changing `active_backlog_max_depth` itself, or the warning's wording beyond
+    the corrected count.
+  - Auditing every other `fs/list-dir` in the codebase for the same shape. If a
+    sweep is wanted it gets its own ticket; this one fixes the observed site.

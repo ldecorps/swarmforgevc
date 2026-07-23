@@ -452,6 +452,151 @@ Rules:
 
 This prevents agents from sending corrupted or ambiguous SHA abbreviations.
 
+## QA-Edge Durability Gate (BL-531)
+
+When `swarm_handoff.sh` sends a `git_handoff` to QA, it runs a durability gate
+to ensure the parcel satisfies two machine-checkable criteria before allowing
+the send. This gate sits at the final quality chokepoint where parcels are most
+expensive to bounce and where the work is complete by contract. A refusal
+prevents the parcel from reaching QA, so the author can remedy the issue
+immediately (merge a dropped commit or land a required wiring) and re-send.
+
+### Gate Scope
+
+The gate is **armed only** when:
+- The handoff `type` is `git_handoff` **and**
+- QA is a recipient (in the comma-separated `to:` list — arming is membership,
+  not equality, so `to: QA,documenter` arms the gate).
+
+Other handoff types and non-QA forwards skip this gate entirely. A `note` to QA
+or a `git_handoff` to cleaner, architect, or any other role does not trigger
+the gate.
+
+### Check A — Dropped Commit Ancestry
+
+A ticket may declare commits on an agent's worktree branch that have never been
+merged into the parcel's lineage. This surfaces as a work defect: the coder
+fixed an issue, committed it on `swarmforge-coder`, and never forwarded it —
+cleaner, architect, hardender, and documenter all continued from the broken
+ancestor, so the handoff to QA proves the fix was dropped.
+
+The gate detects such stranded commits by examining every branch whose
+`.worktrees/<role>` path is recorded in `.swarmforge/roles.tsv`:
+
+1. Find all commits on each role branch that:
+   - Name the ticket ID in their message (whole-token match: `BL-49` does NOT
+     match `BL-490`, and `BL-490-VIOLATION` does match),
+   - Are not reachable from either `main` or `origin/main` (local main lags
+     origin routinely; excluding both catches bookkeeping commits on either),
+   - Are NOT ancestors of the commit cited in the `git_handoff` (if the commit
+     is already in the parcel's ancestry, it was not dropped), **and**
+   - Carry unique content — a merge commit (2+ parents) whose diff against its
+     first parent is empty, or any commit whose tree matches the cited commit's,
+     are EXCLUDED. These are benign merge-only and empty-diff commits; a
+     legitimate dropped fix has unique content and is exactly what this filter
+     eliminates (condition from engineering.prompt).
+
+2. If any commits survive all four conditions, they are findings: the parcel is
+   missing work the ticket demanded.
+
+The gate stops the send and prints each finding as:
+```
+PRE_QA_GATE_FAIL ancestry <ticket-id> <sha> on <branch-name>
+  remedy: merge commit <sha> into your branch and re-send, or
+  remedy: list the sha in this ticket's `abandoned_commits:` field if dropped deliberately
+```
+
+Example: The coder committed fix `e57a237b` on `swarmforge-coder`, never
+forwarded it, and now attempts a QA-bound handoff for the same ticket from
+`a1d89aee` (which does not contain the fix). The gate finds `e57a237b` as a
+stranded commit and refuses.
+
+### Check B — Wiring Never Landed (BL-419 Pattern)
+
+A ticket may build a helper mechanism and declare required call sites. If the
+mechanism code is present but the call sites are bare, the work is incomplete.
+The gate enforces that each declared wiring path actually contains its declared
+pattern at the parcel commit.
+
+The ticket's optional `required_wiring:` field lists call sites:
+```yaml
+required_wiring:
+  - "swarmforge/scripts/swarm_handoff.bb::pre_qa_gate_lib::wired into the handoff validation path"
+  - "swarmforge/roles/QA.prompt::pre_qa_gate_lib::called by the QA role on outbound handoffs"
+```
+
+Each entry is `path::pattern` (or `path::pattern::why` with an optional
+explanation), split on the first two `::` so a `why` may contain `::`. The
+gate reads each `path` **at the commit cited in the handoff** (via `git show
+<commit>:<path>`), never the working tree (the working tree may be dirty or
+ahead), and verifies a fixed-string occurrence of `pattern`. Missing paths,
+missing patterns, and malformed entries (unparseable field shapes) are all
+findings.
+
+The gate stops the send and prints each finding as:
+```
+PRE_QA_GATE_FAIL wiring <ticket-id> <path> pattern not found "<pattern>"
+  remedy: land the wiring in <path> and re-send, or  
+  remedy: remove this entry from the ticket if it is no longer required
+```
+
+Example: A ticket's `required_wiring:` entry says `commit_integrity_cli.bb`
+must appear in `swarmforge/roles/coordinator.prompt`. The parcel commit has
+built `commit_integrity_cli.bb` but never called it in coordinator.prompt.
+The gate finds the pattern missing and refuses. The author adds the call site
+and re-sends.
+
+### Check C — Manifest Parsing Error
+
+An unparseable `required_wiring` entry is a typo that must fail loud, never
+silently pass. The gate parses the entire `required_wiring:` list before
+accepting any wire. A malformed entry (missing separators, too many separators,
+non-string value) is a finding of class `manifest`.
+
+```
+PRE_QA_GATE_FAIL manifest <ticket-id> malformed required_wiring entry: ...
+  remedy: fix the entry in the ticket and re-send
+```
+
+### Refusal Contract
+
+Every refusal is machine-greppable and stable:
+```
+PRE_QA_GATE_FAIL <class> <ticket-id> <detail>
+```
+
+where `<class>` is one of `ancestry`, `wiring`, or `manifest`. A gate failure
+prints one line per finding, with details and remedies. The parcel is NOT
+written to QA's inbox, so it must be re-sent after fixing.
+
+The two remedies for ancestry findings are:
+1. Merge the stranded commit into your branch and re-send.
+2. Declare the dropped commit under the ticket's `abandoned_commits:` field
+   (documented in backlog-schema.md) and re-send.
+
+The two remedies for wiring findings are:
+1. Land the required call site in the specified path and re-send.
+2. Remove the `required_wiring:` entry if the requirement no longer applies.
+
+### Fail-Open on Infrastructure, Fail-Closed on Findings
+
+A gate wired into the single chokepoint every handoff passes can jam the whole
+swarm. The gate therefore:
+
+- **Fails open** on any infrastructure error: `.swarmforge/roles.tsv`
+  unreadable, a recorded worktree path missing, a git invocation failing, or a
+  `main` ref absent. It prints a warning naming the check that could not run
+  and allows the send.
+- **Fails closed** on a positive finding: a discovered stranded commit, a
+  missing wiring pattern, or a malformed `required_wiring` entry. The parcel is
+  refused.
+- **Skips silently** for task names without extractable ticket IDs (tracer
+  bullets, ad-hoc tasks).
+
+The one deliberate exception to "fail open" is a malformed `required_wiring`
+entry: the author is present and the fix is a one-line edit, so that fails
+closed (manifest class).
+
 ## Handoff Daemon
 
 The daemon should be implemented in Babashka.

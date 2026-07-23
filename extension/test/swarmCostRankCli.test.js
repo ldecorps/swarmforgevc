@@ -59,7 +59,11 @@ function origin(overrides = {}) {
 function invocation(overrides = {}) {
   return {
     type: 'llm_invocation',
-    at: '2026-07-22T11:00:00Z',
+    // Relative to the real clock, not a fixed calendar date: every test
+    // below exercises the '24h' horizon, and a hardcoded absolute timestamp
+    // silently ages out of that window and starts failing on a later run
+    // with no code change at all (the real-clock fixture flake pattern).
+    at: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
     model: 'claude-sonnet-5',
     tokens: null,
     costUsd: 1,

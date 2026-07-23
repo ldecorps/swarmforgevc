@@ -1,0 +1,283 @@
+id: BL-531
+title: "Pre-QA durability and wiring gate — swarm_handoff.sh refuses a QA-bound parcel whose lineage drops a ticket commit or whose ticket-declared wiring never landed"
+milestone: M8
+type: feature
+status: todo
+epic: swarm-reliability
+human_approval: approved
+priority: 5
+mutation_cost: high
+direction: human-requested
+depends_on: []
+assigned_to: coder
+source: "BL-512 audit BL-FIX-004 (docs/reference/recurring-failure-mode-audit.md rank 4). Evidence: qa_bounce:behavior:coder count=31; backlog/evidence/BL-419-shared-checkout-commit-integrity-bounce-20260717.md; backlog/evidence/BL-490-expedite-approval-button-bounce-20260717.md."
+
+required_wiring:
+  - "swarmforge/scripts/swarm_handoff.bb::pre_qa_gate_lib::the refusal must run on the live send path, not merely exist as a standalone script"
+
+abandoned_commits:
+  - "aca611925c"
+
+description: |
+  ## What / why
+
+  `qa_bounce:behavior:coder` (31) is the largest non-chaser failure mode in the
+  BL-512 inventory. It is not one bug — it is heterogeneous product defects
+  sharing one meta-cause: parcels reach QA without the durability and wiring
+  proofs the tickets themselves asked for. Two of those are decidable by
+  machine, at send time, from the sender's own checkout:
+
+  - **Dropped lineage (BL-490).** The coder committed the architect-bounce fix
+    `e57a237b` on `swarmforge-coder` and never forwarded it. Cleaner, architect,
+    hardender and documenter all continued from the pre-fix `a1d89aee`, so the
+    commit handed to QA provably did not contain the fix the architect had
+    already demanded once. `git merge-base --is-ancestor` answers this in
+    milliseconds; nobody ran it.
+  - **Wiring never landed (BL-419).** `commit_integrity_lib.bb` /
+    `commit_integrity_cli.bb` were built, unit-tested and green — and wired at
+    zero of the call sites the ticket was filed to fix. `grep -n
+    "commit_integrity" swarmforge/roles/coordinator.prompt` exited 1 at the
+    commit handed to QA. The ticket had named that call site in its own scope.
+
+  Both cost QA a full verification pass, a bounce write-up, and a rebuild.
+  Both are one shell command each.
+
+  ## The gate
+
+  A pure decision lib consulted from `swarm_handoff.bb`'s existing `validate`,
+  exactly where `ticket-close-guard-lib/git-handoff-blocked-for-task?` already
+  refuses a `git_handoff` for a closed ticket. It arms **only** when the draft
+  is `type: git_handoff` **and** `QA` is among the comma-separated recipients.
+  A positive finding refuses the send, so the parcel never reaches QA.
+
+  ### Check A — ticket-commit ancestry
+
+  Findings are commits that:
+
+  1. name the ticket id in their message (whole-token match, so `BL-49` does not
+     match `BL-490` and `BL-490-VIOLATION` does); **and**
+  2. are reachable from a pipeline role branch — the branch checked out in each
+     `.worktrees/<role>` recorded in `.swarmforge/roles.tsv` (master-resident
+     rows resolve to the shared checkout and contribute nothing); **and**
+  3. are NOT reachable from `main` or `origin/main`; **and**
+  4. are NOT an ancestor of the commit cited in the draft; **and**
+  5. carry dropped work the cited commit does not already have — a merge commit
+     (2+ parents) whose diff against its first parent is empty, or a commit whose
+     tree is identical to the cited commit, carries no unique content and is
+     EXCLUDED. Without this, a deliberately-isolated off-main ticket-naming batch
+     merge — e.g. `aca611925c` "merge coder work for BL-531", empty functional
+     diff — survives conditions 1–4 and false-positives the gate (architect, 2026-07-23).
+
+  Conditions 2 and 3 are what make this precise rather than noisy: bookkeeping
+  commits that name a ticket (promotion, BL-topic records, human-approval
+  flips) live on `main` and are excluded; condition 5 excludes benign merges and
+  empty-diff commits; while a dropped parcel fix — which by definition never
+  landed and carries unique content — is exactly what survives all five
+  conditions.
+
+  ### Check B — ticket-declared wiring
+
+  New optional ticket field `required_wiring:`, a YAML list of strings read in
+  either flow or block style (same reader shape as `roles:` in
+  `routing_manifest_lib.bb`). Each entry is `path::pattern` with an optional
+  third `::why` segment, split on the first two `::` occurrences, so a `::` may
+  appear in the `why` but not in the `path` or the `pattern`.
+
+  For each entry the gate reads `path` **at the cited commit** (`git show
+  <commit>:<path>`), never the working tree, and requires a fixed-string
+  (non-regex) occurrence of `pattern`. A missing path and a present path
+  without the pattern are both findings. An entry that does not parse is a
+  finding of its own class — a typo must fail loud, never silently pass.
+
+  This is the machine-checkable form of engineering.prompt's epic-runtime-wiring
+  rule: a ticket that builds a mechanism declares where it must be called, and
+  the parcel cannot reach QA claiming the mechanism when the call site is bare.
+
+  ### Refusal contract
+
+  Refusal lines are machine-greppable and stable, one per finding:
+
+      PRE_QA_GATE_FAIL <class> <ticket-id> <detail>
+
+  with `<class>` one of `ancestry`, `wiring`, `manifest`. An `ancestry` detail
+  names the stranded sha and the branch it sits on; a `wiring` detail names the
+  path, the pattern, and the `why` when the entry carried one. Every refusal
+  ends with the two remedies — merge the named commit / land the named wiring
+  and re-forward, or record a deliberately dropped commit under
+  `abandoned_commits:`.
+
+  ### Fail-open on infrastructure, fail-closed on findings
+
+  A gate wired into the one chokepoint every handoff passes through can jam the
+  whole swarm. It therefore refuses **only** on a positive finding. Anything
+  that prevents a check from running — `roles.tsv` unreadable, a recorded
+  worktree path missing, a git invocation failing, a `main` ref absent — prints
+  a warning naming the check that could not run and **allows** the send. A task
+  name with no extractable ticket id (tracer bullets, ad-hoc tasks) skips the
+  gate silently. The one deliberate exception is a malformed `required_wiring`
+  entry: the author is present and the fix is a one-line edit, so that fails
+  closed.
+
+  ## Shape
+
+  - `swarmforge/scripts/pre_qa_gate_lib.bb` — pure decisions: parse a
+    `required_wiring` entry, decide arming from `{type, recipients}`, and turn
+    `{ticket-id, cited-commit, role-branch commits, main-reachable set,
+    wiring entries, file contents, abandoned_commits}` into an ordered finding
+    list. All git and fs access is injected, so the whole decision surface is
+    unit-testable without a repository.
+  - `swarmforge/scripts/pre_qa_gate_cli.bb` + `swarmforge/scripts/pre_qa_gate.sh`
+    — the standalone self-check any role can run before sending:
+    `pre_qa_gate.sh <task-name> <commit> [repo-root]`, exit 0 with an `OK` line
+    or nonzero with the same `PRE_QA_GATE_FAIL` lines. `main` stays a thin
+    wrapper over exported helpers (engineering.prompt CLI rule).
+  - `swarmforge/scripts/swarm_handoff.bb` — `validate` gains the QA-edge call,
+    contributing its refusal strings to the existing error list so the existing
+    `error-report` path prints them and exits nonzero. No new exit path.
+  - `swarmforge/backlog-schema.md` — `required_wiring` and `abandoned_commits`
+    documented as optional fields.
+  - `swarmforge/roles/specifier.prompt` — declare `required_wiring:` whenever a
+    ticket's value depends on a call site existing (the BL-419 shape).
+
+  ## Dogfood
+
+  This ticket declares its own `required_wiring` (above): the documenter's
+  handoff to QA is refused unless `swarm_handoff.bb` at that commit references
+  `pre_qa_gate_lib`. A build that ships the lib without wiring it — precisely
+  the BL-419 failure — cannot reach QA. If the gate itself misfires and blocks a
+  legitimate send, delete that one line from this ticket and file a defect;
+  never disable the gate globally to unblock a parcel.
+
+specifier_decisions: |
+  The calls this ticket delegates nothing on. A human may overturn any of them;
+  none reopens the ticket's premise.
+
+  1. **QA edge only, not every hop.** Arming at each forward would catch a
+     dropped commit four stages earlier, but a ticket's wiring legitimately does
+     not exist yet at the coder's own first forward, and an over-eager gate on
+     the chokepoint is a swarm outage. The QA edge is where the expensive bounce
+     happens and where the parcel is complete by contract. Earlier-hop ancestry
+     checking is a candidate follow-up, deliberately not this ticket.
+
+  2. **Fixed-string wiring patterns, not regex.** A regex in a YAML field is a
+     quoting and escaping hazard whose failure mode is a silently-passing gate.
+     Fixed-string matching is deterministic and reviewable; a caller who needs
+     alternation declares two entries.
+
+  3. **Read wiring from the cited commit, never the worktree.** The commit is
+     what QA will test; the sender's tree may be dirty, ahead, or mid-rebase.
+     Scenario 04 pins this — a working tree that has since deleted the path must
+     still pass when the commit contains it.
+
+  4. **`main` exclusion uses both `main` and `origin/main`.** Local `main` lags
+     origin routinely in this repo; excluding only one would flag a bookkeeping
+     commit that landed on the other. A missing `origin/main` is not an error.
+
+  5. **`abandoned_commits:` as the escape hatch, not an env bypass.** A refusing
+     gate needs a documented override or it becomes the thing people work around
+     at 3am. Putting it in the ticket YAML makes each override reviewable, in
+     git, attached to the ticket it concerns — unlike a `*_FORCE_RESULT` env
+     var, which engineering.prompt forbids. Matching is by sha prefix so a
+     10-char abbreviation is enough.
+
+  6. **Multi-recipient arming.** `to: QA,documenter` arms the gate — membership,
+     not equality. Pinned by unit test rather than a Gherkin scenario; the
+     `.bb` unit suite is the real gate for swarm scripts per engineering.prompt.
+
+acceptance: |
+  specs/features/BL-531-pre-qa-durability-wiring-gate.feature
+
+  Every scenario needs its step handler in this same parcel — the acceptance
+  runner throws on an unhandled scenario (BL-233).
+
+  Unit gate (the real gate for `.bb` swarm scripts — engineering.prompt's tool
+  table): a new `swarmforge/scripts/test/pre_qa_gate_lib_test_runner.bb` covering
+  the pure decision surface, plus the whole `.bb` suite staying green. Cases the
+  Gherkin does not pin and the unit suite must: multi-recipient `to: QA,cleaner`
+  arms; ticket-id token matching (`BL-49` does not match `BL-490`,
+  `BL-490-VIOLATION` does); a `::` inside the optional `why` segment parses;
+  `abandoned_commits` matches by sha prefix; findings are emitted in a stable
+  order; a merge commit (2+ parents) with an empty first-parent diff AND a commit
+  whose tree matches the cited commit are both excluded from ancestry findings,
+  while a genuine single-parent stranded fix with unique content still IS a
+  finding (Check A condition 5).
+
+  QA end-to-end procedure (live swarm, from a role worktree):
+
+  1. **Ancestry refusal.** On a scratch branch, commit a no-op change whose
+     message names a live active ticket, leave it unmerged, then attempt a
+     `git_handoff` to QA for that ticket from a commit that does not contain it.
+     Confirm the send is refused, that the refusal line is
+     `PRE_QA_GATE_FAIL ancestry <ticket> <sha> ...`, and that nothing was
+     written to QA's `inbox/new/`.
+  2. **Ancestry pass.** Merge that commit into the sender's branch, re-send,
+     confirm the handoff goes through.
+  3. **Bookkeeping is not a finding.** Confirm the coordinator's own
+     `Promote <ticket>: paused -> active` commit on `main` — which names the
+     ticket — never appears as a finding. This is the false-positive that would
+     make the gate unusable.
+  4. **Wiring refusal.** Add a `required_wiring:` entry to a live ticket naming a
+     path and a pattern absent at the parcel commit; confirm refusal with class
+     `wiring` and that the message names path, pattern and why. Land the wiring,
+     re-send, confirm it passes.
+  5. **Scope.** With a stranded commit present, confirm a `git_handoff` to
+     `cleaner` and a `note` to QA both still send.
+  6. **Fail-open.** Temporarily point a `roles.tsv` worktree path at a
+     nonexistent directory; confirm a QA-bound handoff still sends and prints a
+     warning naming the skipped check. Restore `roles.tsv`.
+  7. **Self-check CLI.** Run `pre_qa_gate.sh <task> <commit>` for both a clean
+     and a stranded parcel; confirm exit 0 / `OK` and nonzero / `FAIL`.
+  8. **This ticket's own dogfood.** Confirm the documenter's handoff to QA was
+     itself subject to this ticket's `required_wiring` entry — i.e. that
+     `swarm_handoff.bb` at the delivered commit references `pre_qa_gate_lib`.
+  9. **Merge-commit false positive (Check A cond. 5).** Create a 2-parent merge
+     naming a live active ticket with an empty functional diff (mirroring
+     `aca611925c`), leave it off-main and not an ancestor of the cited commit,
+     and attempt a QA-bound `git_handoff`; confirm it is NOT flagged (no
+     `PRE_QA_GATE_FAIL ancestry`), while a genuine single-parent stranded fix for
+     the same ticket still IS refused.
+
+docs: |
+  documenter:
+  - `swarmforge/handoff-protocol.md` — the QA-edge gate as part of send-time
+    validation, the three failure classes, and the two remedies.
+  - `swarmforge/backlog-schema.md` — `required_wiring` and `abandoned_commits`
+    entries (this ticket writes the field definitions; the documenter reviews
+    them for accuracy against what shipped).
+  - A `docs/how-to` runbook entry: what to do when a handoff is refused,
+    including the "delete the wiring line and file a defect" escape for a
+    misfiring gate.
+
+out_of_scope: |
+  - **BL-533** (paused) covers the specifier-side "claimed paths are committed"
+    exit gate and the epic-level runtime-wiring checklist. Boundary: BL-531 owns
+    the send-time mechanism and the `required_wiring` field; when BL-533 is
+    specced its wiring half must CONSUME this field rather than invent a second
+    declaration format. Do not build any part of BL-533 here.
+  - Arming the gate at hops other than the QA edge (decision 1).
+  - Any change to how QA records or classifies an actual bounce
+    (`.swarmforge/qa_bounces/*.jsonl`, `record-qa-bounce.js`). This gate refuses
+    a send; it never writes a bounce record.
+  - Auto-merging a stranded commit, auto-landing wiring, or any repair action.
+    The gate reports and refuses; a human or the sending role fixes.
+  - Regex or glob patterns in `required_wiring` (decision 2), and any
+    retroactive backfill of `required_wiring` onto existing tickets.
+  - Changes to `validate`'s other rules, the draft grammar, or the reserved
+    header set.
+
+approval_context: |
+  Needs sign-off before the coder starts, because this wires a REFUSAL into
+  `swarm_handoff.sh` — the single chokepoint every handoff in the swarm passes
+  through. A false positive stops the pipeline, not just one parcel.
+
+  Specifically firm, please confirm or overturn:
+  - Arming at the QA edge only, not every hop (specifier_decisions 1).
+  - Fail-open on any infrastructure error; refuse only on a positive finding.
+    The one fail-closed case is a malformed `required_wiring` entry.
+  - `abandoned_commits:` in the ticket YAML as the only override — no env bypass.
+  - Two new optional schema fields (`required_wiring`, `abandoned_commits`) and
+    the `path::pattern::why` string form rather than a list of maps, chosen
+    because the `.bb` scripts read YAML with hand-rolled field readers and have
+    no map-list parser.
+  - This ticket dogfooding its own `required_wiring` entry, which means a build
+    that ships the lib unwired cannot reach QA.
