@@ -1769,7 +1769,8 @@ test('BL-425: redirectToRole injects the text into the addressed role\'s pane as
     { subcommand: 'send-keys', exitCode: 0, stdout: '' },
   ]);
   try {
-    await redirectToRole(root, 'coder', 'focus on the edge case first');
+    const outcome = await redirectToRole(root, 'coder', 'focus on the edge case first');
+    assert.deepEqual(outcome, { kind: 'delivered' }, 'a landed nudge must report delivered so the receipt can say so');
     const sendCalls = fake.calls().filter((args) => args.includes('send-keys'));
     assert.ok(sendCalls.length > 0, 'expected at least one send-keys call');
     assert.ok(
@@ -1788,6 +1789,11 @@ test('BL-425: redirectToRole injects the text into the addressed role\'s pane as
 test('BL-425: redirectToRole degrades quietly (no throw) when the role has no live pane to resolve', async () => {
   const root = mkTmpRoot();
   await assert.doesNotReject(() => redirectToRole(root, 'coder', 'anything'));
+});
+
+test('redirectToRole reports no-pane rather than swallowing it, so a dormant role produces a visible receipt', async () => {
+  const root = mkTmpRoot();
+  assert.deepEqual(await redirectToRole(root, 'coder', 'anything'), { kind: 'no-pane' });
 });
 
 // ── toFoldersSnapshot (thin fs adapter) ───────────────────────────────────
