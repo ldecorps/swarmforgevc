@@ -110,6 +110,15 @@
          (pre-qa-gate-lib/read-required-wiring
           "id: BL-1\nnotes: |\n  e.g. required_wiring: [a::b]\nstatus: todo\n"))
 
+;; hardener: a block-style list where not EVERY following line is a `- item`
+;; (a stray non-dash line breaks the block before the next real field) must
+;; read as present-but-unparseable, same as the flow-style malformed case -
+;; a caller-visible parse failure, never silently truncated to a partial list.
+(assert= "a malformed block-style list (a non-dash line mixed in) reads items nil, not a truncated list"
+         {:present? true :items nil}
+         (pre-qa-gate-lib/read-required-wiring
+          "id: BL-1\nrequired_wiring:\n  - \"a/b.bb::fn\"\n  oops not a dash line\n  - \"c/d.bb::fn2\"\nstatus: todo\n"))
+
 ;; ── read-abandoned-commits (flow / block style) ──────────────────────────
 
 (assert= "absent field reads as not present"
@@ -213,6 +222,99 @@
                       :cited-ancestors-set #{}
                       :wiring-entries [] :file-contents {} :abandoned-commits []})))
 
+;; hardener: with 2+ candidate branches, both stranded, findings must
+;; aggregate across ALL of them, sorted by branch name - a single-branch
+;; test can't tell "iterates every branch" from "handles the first one and
+;; stops", nor prove the stable branch-name ordering the CLI's multi-line
+;; output depends on.
+(let [result (pre-qa-gate-lib/evaluate
+              {:type "git_handoff" :to "QA" :ticket-id "BL-490" :cited-commit "cccccccccc"
+               :role-branch-commits {"swarmforge-hardener" [{:sha "z9z9z9z9z9" :message "Fix BL-490 in hardener"}]
+                                      "swarmforge-coder" [{:sha "a1b2c3d4e5" :message "Fix BL-490 lineage"}]}
+               :main-reachable-set #{}
+               :cited-ancestors-set #{}
+               :wiring-entries [] :file-contents {} :abandoned-commits []})]
+  (assert= "two stranded branches each contribute their own finding"
+           2
+           (count (:findings result)))
+  (assert= "findings are ordered by branch name (coder before hardener), not insertion order"
+           ["swarmforge-coder" "swarmforge-hardener"]
+           (mapv :branch (:findings result))))
+
+;; hardener: with 2+ stranded commits, only the NON-abandoned one must
+;; survive - a single-candidate test can't distinguish "filters correctly"
+;; from "coincidentally the only candidate happened to be exempt/findable".
+(let [result (pre-qa-gate-lib/evaluate
+              {:type "git_handoff" :to "QA" :ticket-id "BL-490" :cited-commit "cccccccccc"
+               :role-branch-commits {"swarmforge-coder" [{:sha "a1b2c3d4e5" :message "Fix BL-490 abandoned half"}
+                                                          {:sha "f6f6f6f6f6" :message "Fix BL-490 real fix"}]}
+               :main-reachable-set #{}
+               :cited-ancestors-set #{}
+               :wiring-entries [] :file-contents {}
+               :abandoned-commits ["a1b2c3d4e5"]})]
+  (assert= "only the non-abandoned stranded commit survives as a finding"
+           ["f6f6f6f6f6"]
+           (mapv :sha (:findings result))))
+
+;; ── evaluate: condition 5 - dropped-work exclusion ──────────────────────
+;; architect rule_proposal (b7dd7276d): a merge commit whose diff against its
+;; first parent is empty, or a commit whose tree matches the cited commit,
+;; carries no unique content and must not survive as an ancestry finding -
+;; the false positive aca611925c ("merge coder work for BL-531", empty
+;; functional diff) would otherwise trip.
+
+(assert= "a merge commit with an empty first-parent diff is excluded (condition 5)"
+         []
+         (:findings (pre-qa-gate-lib/evaluate
+                     {:type "git_handoff" :to "QA" :ticket-id "BL-531" :cited-commit "cccccccccc"
+                      :role-branch-commits {"swarmforge-coder" [{:sha "e5e5e5e5e5" :message "merge coder work for BL-531"}]}
+                      :main-reachable-set #{}
+                      :cited-ancestors-set #{}
+                      :no-dropped-work-set #{"e5e5e5e5e5"}
+                      :wiring-entries [] :file-contents {} :abandoned-commits []})))
+
+(assert= "a commit whose tree matches the cited commit is excluded (condition 5)"
+         []
+         (:findings (pre-qa-gate-lib/evaluate
+                     {:type "git_handoff" :to "QA" :ticket-id "BL-531" :cited-commit "cccccccccc"
+                      :role-branch-commits {"swarmforge-coder" [{:sha "t3t3t3t3t3" :message "Fix BL-531 tree-identical"}]}
+                      :main-reachable-set #{}
+                      :cited-ancestors-set #{}
+                      :no-dropped-work-set #{"t3t3t3t3t3"}
+                      :wiring-entries [] :file-contents {} :abandoned-commits []})))
+
+(assert= "a genuine single-parent stranded fix with unique content still IS a finding (condition 5 does not over-exclude)"
+         [{:class :ancestry :ticket-id "BL-531" :sha "f6f6f6f6f6" :branch "swarmforge-coder"}]
+         (mapv #(select-keys % [:class :ticket-id :sha :branch])
+               (:findings (pre-qa-gate-lib/evaluate
+                           {:type "git_handoff" :to "QA" :ticket-id "BL-531" :cited-commit "cccccccccc"
+                            :role-branch-commits {"swarmforge-coder" [{:sha "f6f6f6f6f6" :message "Fix BL-531 real fix"}]}
+                            :main-reachable-set #{}
+                            :cited-ancestors-set #{}
+                            :no-dropped-work-set #{}
+                            :wiring-entries [] :file-contents {} :abandoned-commits []}))))
+
+(let [result (pre-qa-gate-lib/evaluate
+              {:type "git_handoff" :to "QA" :ticket-id "BL-531" :cited-commit "cccccccccc"
+               :role-branch-commits {"swarmforge-coder" [{:sha "e5e5e5e5e5" :message "merge coder work for BL-531 empty diff"}
+                                                          {:sha "f6f6f6f6f6" :message "Fix BL-531 real fix"}]}
+               :main-reachable-set #{}
+               :cited-ancestors-set #{}
+               :no-dropped-work-set #{"e5e5e5e5e5"}
+               :wiring-entries [] :file-contents {} :abandoned-commits []})]
+  (assert= "with one empty-diff merge and one real fix stranded, only the real fix survives"
+           ["f6f6f6f6f6"]
+           (mapv :sha (:findings result))))
+
+(assert= "no-dropped-work-set defaults to empty when absent - omitting it never silently excludes a real finding"
+         1
+         (count (:findings (pre-qa-gate-lib/evaluate
+                             {:type "git_handoff" :to "QA" :ticket-id "BL-531" :cited-commit "cccccccccc"
+                              :role-branch-commits {"swarmforge-coder" [{:sha "f6f6f6f6f6" :message "Fix BL-531 real fix"}]}
+                              :main-reachable-set #{}
+                              :cited-ancestors-set #{}
+                              :wiring-entries [] :file-contents {} :abandoned-commits []}))))
+
 ;; ── evaluate: wiring findings ──────────────────────────────────────────
 
 (assert= "missing path at cited commit is a wiring finding"
@@ -244,6 +346,21 @@
                       :role-branch-commits {} :main-reachable-set #{} :cited-ancestors-set #{}
                       :wiring-entries ["swarmforge/roles/coordinator.prompt::commit_integrity"]
                       :file-contents {"swarmforge/roles/coordinator.prompt" "calls commit_integrity here"}
+                      :abandoned-commits []})))
+
+;; hardener: with 2+ wiring entries, only the failing one should produce a
+;; finding - a single-entry test can't distinguish "checks every entry" from
+;; "checks the first/only entry and stops", nor prove a passing entry never
+;; leaks a false-positive finding when interleaved with a failing one.
+(assert= "with two wiring entries, only the failing one is a finding - the clean one is silent"
+         [{:class :wiring :ticket-id "BL-419" :path "b/missing.bb"
+           :pattern "some-fn" :why nil
+           :detail "b/missing.bb not found at cited commit (expected to contain \"some-fn\")"}]
+         (:findings (pre-qa-gate-lib/evaluate
+                     {:type "git_handoff" :to "QA" :ticket-id "BL-419" :cited-commit "cccccccccc"
+                      :role-branch-commits {} :main-reachable-set #{} :cited-ancestors-set #{}
+                      :wiring-entries ["a/clean.bb::some-fn" "b/missing.bb::some-fn"]
+                      :file-contents {"a/clean.bb" "calls some-fn right here"}
                       :abandoned-commits []})))
 
 (assert= "the working tree is irrelevant - file-contents is read at the cited commit only"

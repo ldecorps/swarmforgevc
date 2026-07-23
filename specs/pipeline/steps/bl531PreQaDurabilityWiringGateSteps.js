@@ -195,6 +195,49 @@ function registerSteps(registry) {
     ctx.citedCommit = gitOut(ctx.root, ['rev-parse', '--short=10', 'HEAD']);
   });
 
+  // ── BL-531 empty-diff-or-merge-commit-is-not-a-finding-11 ───────────────
+  // Rewrites the stray commit the shared Given above just made into one of
+  // the two "carries no dropped work" shapes, so ctx.strandedCommit ends up
+  // referring to a commit that must NOT survive as an ancestry finding
+  // (condition 5, architect rule_proposal b7dd7276d).
+  registry.define(/^that commit (is a merge commit whose diff against its first parent is empty|has a tree identical to the commit cited in the draft)$/, (ctx, prop) => {
+    const branch = gitOut(ctx.coderWt, ['rev-parse', '--abbrev-ref', 'HEAD']);
+    const strandedParent = gitOut(ctx.coderWt, ['rev-parse', `${ctx.strandedCommit}^`]);
+    git(ctx.coderWt, ['reset', '-q', '--hard', strandedParent]);
+
+    if (prop === 'is a merge commit whose diff against its first parent is empty') {
+      // A side branch that adds then reverts a file lands back on the exact
+      // same tree as strandedParent, so merging it in (even --no-ff, which
+      // forces a real merge commit despite being fast-forwardable) produces
+      // a merge whose diff against its first parent (strandedParent) is empty.
+      git(ctx.coderWt, ['checkout', '-q', '-b', 'bl531-empty-diff-side']);
+      fs.writeFileSync(path.join(ctx.coderWt, 'scratch.txt'), 'temp\n');
+      git(ctx.coderWt, ['-c', 'user.email=t@t', '-c', 'user.name=t', 'add', 'scratch.txt']);
+      git(ctx.coderWt, ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '-m', 'scratch add']);
+      fs.rmSync(path.join(ctx.coderWt, 'scratch.txt'));
+      git(ctx.coderWt, ['add', '-A']);
+      git(ctx.coderWt, ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '-m', 'scratch revert']);
+      git(ctx.coderWt, ['checkout', '-q', branch]);
+      git(ctx.coderWt, ['-c', 'user.email=t@t', '-c', 'user.name=t', 'merge', '-q', '--no-ff', 'bl531-empty-diff-side', '-m', `${TICKET_ID}: merge side (empty diff against first parent)`]);
+    } else if (prop === 'has a tree identical to the commit cited in the draft') {
+      // git commit-tree pins the new commit's tree to citedCommit's tree
+      // exactly (root and coderWt share one object store, so any commit-ish
+      // in the repo is resolvable from either worktree), regardless of
+      // coderWt's own file layout - the only reliable way to guarantee tree
+      // identity across two branches with different history shapes.
+      const newSha = gitOut(ctx.coderWt, [
+        '-c', 'user.email=t@t', '-c', 'user.name=t',
+        'commit-tree', `${ctx.citedCommit}^{tree}`, '-p', strandedParent,
+        '-m', `${TICKET_ID}: tree identical to cited commit`,
+      ]);
+      git(ctx.coderWt, ['reset', '-q', '--hard', newSha]);
+    } else {
+      throw new Error(`unrecognized dropped-work property: "${prop}"`);
+    }
+
+    ctx.strandedCommit = gitOut(ctx.coderWt, ['rev-parse', '--short=10', 'HEAD']);
+  });
+
   // ── BL-531 infrastructure-error-fails-open-08 ────────────────────────────
   registry.define(/^a pipeline role worktree recorded in roles\.tsv is missing$/, (ctx) => {
     ctx.architectWtPath = path.join(ctx.root, 'no-such-architect-worktree');

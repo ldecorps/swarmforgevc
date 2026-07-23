@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=fe2abac5bc531b1050b41e44b3e856969414a3fcfd6884ae756d310f7b2bb06b
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-07-23T21:56:58.001700061Z","feature_name":"a sibling's defect does not re-queue a clean parcel","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-532-sibling-bounce-isolation.feature","background_hash":"c5c5a82cf91dc5a76e9363ad7b3aa994b1f10356fd17215913da90eff40393cb","implementation_hash":"unknown","scenarios":[{"index":4,"name":"an open deferral suppresses only the blocker's own failure signature","scenario_hash":"ad0605e9aee902c08be641d24c8b5118249c37f3f172770dd814b577e83bbf91","mutation_count":4,"result":{"Total":4,"Killed":4,"Survived":0,"Errors":0},"tested_at":"2026-07-23T19:17:11.894685447Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: a sibling's defect does not re-queue a clean parcel
 
   # BL-532 (BL-512 audit BL-FIX-005): a batch role legitimately produces one commit that
