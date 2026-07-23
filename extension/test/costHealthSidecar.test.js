@@ -10,6 +10,7 @@ const {
   bucketDailyReliabilityEvents,
   buildCostHealthSidecar,
   renderCostHealthSection,
+  renderCostTrendChartLines,
   sidecarPath,
   writeCostHealthSidecar,
   commitCostHealthSidecar,
@@ -569,6 +570,16 @@ test('BL-551: an origin group with unpriced invocations notes the unpriced count
   assert.match(text, /coder: \$4\.00 \(1 unpriced\)/);
 });
 
+test('BL-551: an origin group whose every key value is null falls back to the "unknown origin" label', () => {
+  const byHorizon = { '3h': [], '24h': [{ key: { role: null, trigger: null }, costUsd: 4, invocationCount: 1, unknownCostCount: 0 }], '7d': [] };
+  const sidecar = buildCostHealthSidecar(
+    '2026-07-09', {}, {}, emptyReliabilitySeries('2026-07-09T00:00:00Z'), [], [],
+    undefined, undefined, undefined, byHorizon
+  );
+  const text = renderCostHealthSection(sidecar);
+  assert.match(text, /unknown origin: \$4\.00/);
+});
+
 test('BL-551: the rendered section omits "Top expensive origins" entirely when every horizon is empty', () => {
   const byHorizon = { '3h': [], '24h': [], '7d': [] };
   const sidecar = buildCostHealthSidecar(
@@ -605,4 +616,73 @@ test('BL-551: computeCostHealthSidecar rolls up real ledger records for the hori
   assert.equal(sidecar.topExpensiveOriginsByHorizon['3h'].length, 1);
   assert.equal(sidecar.topExpensiveOriginsByHorizon['3h'][0].costUsd, 5);
   assert.deepEqual(sidecar.topExpensiveOriginsByHorizon['3h'][0].key, { role: 'coder', trigger: 'handoff' });
+});
+
+// ── BL-551 trend-series-11..trend-surface-15 (sidecar wiring) ────────────
+
+test('BL-551: buildCostHealthSidecar carries the given originCostTrendSeries verbatim', () => {
+  const series = [{ key: { role: 'coder' }, buckets: [{ bucketStartMs: 0, bucketEndMs: 1, costUsd: 4 }] }];
+  const sidecar = buildCostHealthSidecar(
+    '2026-07-09', {}, {}, emptyReliabilitySeries('2026-07-09T00:00:00Z'), [], [],
+    undefined, undefined, undefined, undefined, series
+  );
+  assert.deepEqual(sidecar.originCostTrendSeries, series);
+});
+
+test('BL-551: originCostTrendSeries is omitted entirely (not null) when none is given', () => {
+  const sidecar = buildCostHealthSidecar('2026-07-09', {}, {}, emptyReliabilitySeries('2026-07-09T00:00:00Z'), [], []);
+  assert.equal(Object.prototype.hasOwnProperty.call(sidecar, 'originCostTrendSeries'), false);
+});
+
+test('BL-551: the rendered briefing section includes one line per ranked origin trend series', () => {
+  const series = [
+    { key: { role: 'coder' }, buckets: [{ bucketStartMs: 0, bucketEndMs: 1, costUsd: 1 }, { bucketStartMs: 1, bucketEndMs: 2, costUsd: 9 }] },
+  ];
+  const sidecar = buildCostHealthSidecar(
+    '2026-07-09', {}, {}, emptyReliabilitySeries('2026-07-09T00:00:00Z'), [], [],
+    undefined, undefined, undefined, undefined, series
+  );
+  const text = renderCostHealthSection(sidecar);
+  assert.match(text, /Cost trend/);
+  assert.match(text, /coder:/);
+});
+
+test('BL-551: the rendered section omits the cost trend block when no series is given', () => {
+  const sidecar = buildCostHealthSidecar('2026-07-09', {}, {}, emptyReliabilitySeries('2026-07-09T00:00:00Z'), [], []);
+  const text = renderCostHealthSection(sidecar);
+  assert.doesNotMatch(text, /Cost trend/);
+});
+
+test('renderCostTrendChartLines draws each ranked origin as one line, latest measurement rightmost (trend-surface-15)', () => {
+  const series = [
+    { key: { role: 'coder' }, buckets: [{ bucketStartMs: 0, bucketEndMs: 1, costUsd: 1 }, { bucketStartMs: 1, bucketEndMs: 2, costUsd: 9 }] },
+    { key: { role: 'qa' }, buckets: [{ bucketStartMs: 0, bucketEndMs: 1, costUsd: 2 }, { bucketStartMs: 1, bucketEndMs: 2, costUsd: 3 }] },
+  ];
+  const lines = renderCostTrendChartLines(series);
+  const coderLine = lines.find((l) => l.includes('coder:'));
+  const qaLine = lines.find((l) => l.includes('qa:'));
+  assert.ok(coderLine, 'expected one line for the coder origin');
+  assert.ok(qaLine, 'expected one line for the qa origin');
+  assert.ok(coderLine.indexOf('9.00') > coderLine.indexOf('1.00'), 'expected the latest (rightmost) bucket value to appear after the oldest');
+});
+
+test('renderCostTrendChartLines returns no lines when there is no series to draw', () => {
+  assert.deepEqual(renderCostTrendChartLines([]), []);
+});
+
+test('BL-551: computeCostHealthSidecar wires real ledger records into a rolling origin trend series', () => {
+  const target = mkTmp();
+  git(target, ['init', '-q']);
+  git(target, ['config', 'user.email', 't@t']);
+  git(target, ['config', 'user.name', 't']);
+  git(target, ['commit', '-q', '-m', 'init', '--allow-empty']);
+  const nowMs = Date.parse('2026-07-09T18:00:00Z');
+  writeLlmLedger(target, [
+    llmInvocation({ at: '2026-07-09T17:00:00Z', costUsd: 5, origin: llmOrigin({ role: 'coder', trigger: 'handoff' }) }),
+  ]);
+
+  const sidecar = computeCostHealthSidecar(target, [{ role: 'coder', worktreePath: target }], nowMs);
+  assert.ok(Array.isArray(sidecar.originCostTrendSeries));
+  assert.equal(sidecar.originCostTrendSeries.length, 1);
+  assert.deepEqual(sidecar.originCostTrendSeries[0].key, { role: 'coder', trigger: 'handoff', script: null });
 });

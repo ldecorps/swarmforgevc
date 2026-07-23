@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=510fe04865435c4c6565947b9b78ab86dd0ce0a7d31ebee72cecb684fdfd9a27
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-07-22T18:17:22.651559944Z","feature_name":"LLM invocation cost ledger ranks expensive calls by origin over 3h, 24h, and 7d","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-551-llm-invocation-cost-ledger.feature","background_hash":"3e1868f2641fc8433b3e4bd6b9b49e8908a57c22e97bba08f0466b127176e63a","implementation_hash":"unknown","scenarios":[{"index":4,"name":"each named horizon ranks independently","scenario_hash":"e59185bcea51a29b1ec3cae7b9ce775f582588fb771a188ff3011c3c060ae6f2","mutation_count":3,"result":{"Total":3,"Killed":3,"Survived":0,"Errors":0},"tested_at":"2026-07-22T18:17:22.651559944Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: LLM invocation cost ledger ranks expensive calls by origin over 3h, 24h, and 7d
 
   # Operator INTAKE (2026-07-22): cost optimisation — which swarm areas burn the most
