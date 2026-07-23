@@ -63,6 +63,22 @@
       (and (not standing?) alive?) :teardown-illicit
       :else :dormant-ok)))
 
+(defn rotate-viable?
+  "BL-537: pure - could rotate_to_role place work on this dormant target
+   right now? Mirrors rotate-resident-to!'s two failure modes, in its
+   precedence order (resident-first, then launch script). Callers own all
+   IO (pane-alive?, fs/exists?) and pass in only the booleans."
+  [{:keys [resident-alive? launch-script-present?]}]
+  (cond
+    (not resident-alive?)
+    {:viable? false :reason "no live resident session to rotate from"}
+
+    (not launch-script-present?)
+    {:viable? false :reason "missing launch script for role"}
+
+    :else
+    {:viable? true}))
+
 (defn summarize-topology
   "For reporting: count actions across roles with {:role :alive?}."
   [ordered-roles role-alive-rows]

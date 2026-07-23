@@ -1,0 +1,117 @@
+id: BL-569
+title: "Live screen interactive pane input — steer the actual agent pane from the Resident Spy Mini App (principal-gated remote keyboard)"
+milestone: M8
+type: feature
+status: needs_design
+epic: swarm-reliability
+human_approval: approved
+severity: medium
+priority: 16
+direction: human-requested
+depends_on: [BL-425, BL-522]
+assigned_to: specifier
+mutation_cost: medium
+source: |
+  Human, 2026-07-23, during the coordinator menu-block incident (see
+  BL-568's source): "would it be possible for the live screen to expose
+  the actual agent pane, so I could go and steer directly on it?" The
+  Resident Spy Mini App (BL-522) is today a one-way mirror; this makes it
+  two-way. Positioning agreed in-session: RC sessions remain the best-UX
+  path for conversational steering; this is the TERMINAL-LEVEL manual
+  override for when RC is broken (multiple RC-health incidents on record),
+  the pane is stuck in something RC cannot reach (shell prompt, TUI,
+  wedged menu), or the human is already looking at the pane and just needs
+  to type. Third member of the degraded-mode family: BL-567 (expeditor),
+  BL-568 (menu polls, automated common case), BL-569 (universal manual
+  override).
+
+description: |
+  ## Three pieces
+
+  1. Bridge input route — POST /pane-keys {pane, keys | text} mapping to
+     tmux send-keys on the target session/pane. Reuses the same socket and
+     capture identity the /resident-pane read path already resolves; the
+     injection primitive already exists daemon-side (wake injection), here
+     it is human-driven and verbatim.
+
+  2. Mini App keyboard strip — in the fullscreen pane view, a tap arms an
+     input bar: free-text field plus the special keys that matter for pane
+     work (Enter, Esc, Tab, arrow keys, digits — precisely the set that
+     answers a Claude Code AskUserQuestion menu). Visible ARMED state
+     (e.g. red border/badge) so a pocket tap cannot type into a pane;
+     input disarms on blur, on split-view restore, and after an idle
+     timeout. NOTE: today's tap-to-restore gesture (fullscreen tap exits
+     to split view, shipped 562e4e479) collides with tap-to-arm — the
+     spec must resolve the gesture design (e.g. dedicated arm button in
+     the fs-top strip, long-press, or arm-first-then-tap-restores).
+     HARD CONSTRAINT (human, 2026-07-23): the explicit pane header —
+     ticket id + title, role, model, entered-ago, RESIDENT/role badge —
+     is REQUIRED and must stay visible in the fullscreen view; the armed
+     keyboard strip may not displace or cover it. The same constraint
+     binds the BL-564 cluster-1 retro-spec, which should pin the header
+     as a Gherkin scenario so no future UI change drops it silently.
+
+  3. Focus-follows-input refresh — while armed, tighten the pane poll
+     cadence so the human sees a keystroke land before sending the next;
+     restore the normal cadence on disarm.
+
+  ## The security bar (the real design work)
+
+  This is remote keyboard access to panes running
+  --dangerously-skip-permissions — functionally a remote shell. The read
+  path's query token is DELIBERATELY weak and scoped (BL-522 pins by test
+  that ?token= unlocks no other route); the write path must not ride it:
+
+  - Validate Telegram Mini App initData server-side (HMAC with the bot
+    token per Telegram's spec) and require user.id ==
+    TELEGRAM_PRINCIPAL_USER_ID — the same principal the steering topics
+    trust (BL-425), but verified cryptographically per request, not by
+    chat membership.
+  - Explicit enable: a conf flag (default OFF) and/or per-boot arming, so
+    the capability does not exist on deployments that never opted in.
+  - Append-only audit log of every injection: at, pane, keys/text,
+    initData user id. The BL-551 ledger's origin conventions are the
+    house style for attribution records.
+  - Rate/size limits per request (a pane keyboard, not a paste firehose);
+    reject when the target session does not exist rather than falling
+    back to another pane (wake-session remap is for wakes, NOT for raw
+    human keys — a remap here would type into the wrong agent).
+
+  ## Interaction with BL-568
+
+  Complementary, not competing: BL-568 automates the structured-menu case
+  end-to-end via polls; BL-569 is the universal manual path. If BL-568's
+  menu detection ships first, the armed input bar should surface its menu
+  state ("menu open — digits select options") as a hint. BL-568's
+  fingerprint-staleness lesson applies here in soft form: the UI must
+  make it obvious WHAT the pane showed when you typed (tight refresh +
+  armed indicator), but a human driving live keys accepts live-pane risk
+  in a way the automated poll path must not.
+
+acceptance: |
+  Specifier writes executable scenarios; minimum the design must make
+  testable:
+  1. With the feature enabled and valid principal initData, keys sent from
+     the Mini App arrive verbatim in the target pane (Enter/Esc/arrows/
+     digits and free text), and the pane view reflects the effect at the
+     armed refresh cadence.
+  2. A /pane-keys request with missing/invalid initData, a non-principal
+     user id, or only the read query token is rejected and logged; the
+     read path is unchanged.
+  3. With the conf flag off, the route does not exist (404, not 403) and
+     the Mini App shows no input affordance.
+  4. Every accepted injection appears in the audit log with actor, pane,
+     and payload; the log is append-only across bridge restarts.
+  5. A request naming a session that does not exist is rejected — no
+     wake-session remap, no fallback pane.
+  6. Disarm on blur/restore/idle-timeout is enforced client-side AND the
+     server rejects requests older than a short initData freshness window.
+
+out_of_scope: |
+  - Any actor other than the single authorised principal (no multi-user
+    ACLs; that is a later governance ticket if ever).
+  - Full terminal emulation (mouse, scroll regions, copy-mode) — this is
+    a keyboard strip over the existing text mirror, not a web terminal.
+  - Automating answers (BL-568 owns the automated menu path).
+  - Exposing panes of non-swarm tmux sessions (target resolution stays
+    within the roles.tsv/resident set the spy already serves).
