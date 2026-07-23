@@ -2,14 +2,14 @@ id: BL-576
 title: "Aged-note actionability — a note sitting in a dormant role's inbox past a threshold rotates the mono-router resident; note-only mailboxes stop starving"
 milestone: M8
 type: defect
-status: needs_design
+status: todo
 epic: swarm-reliability
 human_approval: approved
 severity: high
 priority: 05
 direction: human-requested
 depends_on: []
-assigned_to: specifier
+assigned_to: coder
 mutation_cost: medium
 source: |
   Human, 2026-07-23, after asking "how does the specifier get a turn?" and
@@ -90,29 +90,124 @@ description: |
   `rotate_to_role.sh specifier` after dispatch, or a BL-567 expedite run.
   The coordinator should be told this in the promotion note itself.
 
+specifier_decisions: |
+  The three choices the ticket delegated, resolved 2026-07-23. The human
+  may override any of them; nothing below reopens the chosen option (a).
+
+  1. THRESHOLD DEFAULT = 20 minutes (`default-note-actionable-after-ms`
+     1200000). Long enough that a QA merge-up broadcast landing while the
+     resident is mid-parcel is drained by the ordinary pipeline before it
+     ever ages in (no thrash on the normal path); short enough that a
+     starved mailbox is picked up within one coffee break instead of the
+     observed ten hours. Conf key `note_actionable_after_ms`, discoverable
+     as a COMMENTED line in swarmforge/swarmforge.conf documenting the
+     default — a live duplicate of the constant would drift.
+
+  2. AGE CLOCK = first PARSEABLE of `enqueued_at`, then `created_at`;
+     when neither parses, the note is NOT aged (fail closed — never rotate
+     the resident on a guess; BL-577's flow watchdog is the safety net for
+     a header-less parcel). `enqueued_at` leads because it answers the
+     actual question, "how long has this sat in THIS mailbox" — a
+     redelivered parcel is fresh here even when created long ago. File
+     mtime is never consulted: worktree hot-sync touches files.
+
+  3. THE OPTIONAL SUB-SLICE IS IN, not split. It touches the same dormant/
+     resident predicate on the same two files; splitting it would create a
+     second ticket with fully overlapping scope that the orthogonality rule
+     would serialise behind this one anyway.
+
+  ## Shape
+
+  - `mono-router-lib/default-note-actionable-after-ms` — 1200000.
+  - `mono-router-lib/parse-note-actionable-after-ms` [conf-text] — honors a
+    POSITIVE integer only; absent, malformed, zero and negative all degrade
+    to the default. Unlike BL-216's max-depth there is no negative sentinel:
+    a zero/negative threshold would make every note instantly actionable and
+    reinstate exactly the broadcast thrash the rule exists to prevent.
+    Resolution goes through the effective config path (BL-216/BL-313:
+    whatever pack swarm-identity recorded at launch), never the tracked
+    default file directly.
+  - `mono-router-lib/note-aged?` — pure, injected clock and threshold,
+    implements decision 2 above.
+  - `mono-router-lib/actionable-mail?` — gains `:aged-note-count`; the
+    existing in-process and git_handoff clauses are untouched.
+  - `handoffd/role-mail-row` — counts aged notes, and feeds their
+    `created_at` into `:newest-created-at` alongside in-process work and
+    git_handoffs. Fresh notes contribute to NEITHER count NOR the ordering
+    key. Note the two fields are deliberately different questions: the
+    ORDERING key stays `created_at` (newest mail wins, unchanged rule); the
+    AGE test uses `enqueued_at`-then-`created_at` (how long it sat here).
+    Omitting aged notes from the ordering key is the silent regression to
+    avoid: a note-only mailbox would score an empty timestamp and lose
+    every comparison, so the fix would appear to work in the unit test and
+    still starve in production — feature scenario 03 row 2 pins it.
+  - `mono-router-lib/suppress-dormant-note-delivery-wake?` — the sub-slice:
+    true only when the parcel is a `note` AND the delivery's resolved chase
+    action is `:rotate` (dormant recipient, live resident on a different
+    identity). Reuses `dormant-mailbox-chase-action`, so a role with its own
+    pane, a resident already running that role, and the no-resident degrade
+    path all keep waking exactly as today. Logs a distinct
+    `deliver-notify-skip-dormant-note` tag — a suppressed wake must be
+    visible in the daemon log, not silent.
+  - Implementation note: `handoff-header-field` is currently a private defn
+    declared BELOW `maybe-notify!` in handoffd.bb; the delivery path needs
+    the parcel's type, so hoist it (or an equivalent shared reader) above
+    both call sites rather than duplicating the parse.
+
+  ## Pacing (the emergent-behavior question, answered)
+
+  A five-role aged broadcast drains as rotate -> drain -> home -> cooldown
+  -> rotate, one role per sweep. No chained draining and no new pacing
+  machinery: BL-550's ROTATE_HOME backstop already returns the resident to
+  coder the moment a non-home mailbox goes empty, and the existing
+  30s `default-rotate-cooldown-ms` plus the one-inject-per-sweep resident
+  budget space the rotations out on their own. Scenario 05 pins that shape
+  so a later change cannot quietly turn it into a burst.
+
 acceptance: |
-  Specifier writes executable scenarios; minimum the design must make
-  testable (lib-level, mono_router_lib_test_runner.bb style):
-  1. A note in a dormant role's inbox older than the threshold makes the
-     role actionable; the chase's rotate path selects it and the resident
-     rotates in within a sweep of the resident going idle.
-  2. A note younger than the threshold does not — chase logs the
-     broadcast skip exactly as today.
-  3. Age is computed from the parcel header, not file mtime (fixture with
-     old header + fresh mtime rotates; fresh header + old mtime does not).
-  4. A git_handoff still outranks nothing-and-nobody differently than
-     today: preferred-rotate-target ordering among actionable rows is
-     unchanged and covered.
-  5. Five dormant roles holding aged broadcast copies drain sequentially,
-     each rotation honoring the cooldown, resident never rotated
-     mid-turn; all five inboxes empty without manual intervention.
-  6. Threshold honors effective-config resolution with a sane default
-     when absent/malformed (BL-216 pattern).
-  7. The 2026-07-23 starved fixture (note-only specifier mailbox, notes
-     aged >> threshold) drains end-to-end with no human action.
+  specs/features/BL-576-aged-note-actionability.feature
+
+  Unit gate (the real gate for .bb swarm scripts — engineering.prompt's
+  tool table): swarmforge/scripts/test/mono_router_lib_test_runner.bb
+  covers the new pure functions, and the whole bb suite stays green.
+
+  QA end-to-end procedure (live swarm, mono-router pack):
+  1. With the resident idle at coder, send a `note` to a dormant role
+     (`swarm_handoff.sh` with `to: documenter`). Confirm it lands in that
+     role's inbox/new and that handoffd logs
+     `deliver-notify-skip-dormant-note` rather than injecting a resident
+     wake — the coder pane must NOT burn a NO_TASK turn.
+  2. Watch the daemon log for ~20 minutes (or set
+     `config note_actionable_after_ms 60000` in the running pack's conf and
+     restart handoffd to shorten the wait). Before the threshold the log
+     shows `chase-rotate-skip-broadcast documenter`; after it, a single
+     `chase-rotate documenter`.
+  3. Confirm the resident respawns as documenter, `ready_for_next.sh`
+     hands it the note, and the mailbox empties with no human action.
+  4. Confirm the resident returns to coder afterwards (ROTATE_HOME), and
+     that a fresh note sent immediately after does NOT rotate it again.
+  5. Regression: dispatch a normal git_handoff to coder during step 2 and
+     confirm it is picked up ahead of the aged note (newest actionable
+     wins) with no change in dispatch latency.
+
+docs: |
+  documenter: docs/how-to runbook entry for the new conf key
+  (`note_actionable_after_ms` — what it does, why 20 minutes, how to
+  shorten it for a live investigation), and the mono-router rotation
+  description wherever `rotation_home` is already documented
+  (swarmforge/handoff-protocol.md, swarmforge/PIPELINE.md) gains the
+  aged-note rotate trigger.
 
 out_of_scope: |
   - Full-pack wake/delivery behavior (standing sessions unchanged).
   - Changing any kickoff parcel types (option (b) rejected).
   - Dispatch-sweep extensions (option (c) rejected).
   - The BL-568 menu-poll surface and BL-566 receipts (separate tickets).
+  - The chase sweep's OWN staleness/backoff/dead-letter decisions
+    (chase_sweep_lib/decide-item-action, which reads file mtime by
+    design). This ticket changes only whether a chased role is worth
+    ROTATING to. A note dead-lettered before it ages in is a separate
+    defect; BL-577's flow watchdog is the intended detector.
+  - Suppressing the delivery wake for a git_handoff to a dormant role.
+    It is equally wasted, but dispatch latency is load-bearing there and
+    changing it needs its own spec.
