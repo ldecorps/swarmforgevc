@@ -68,7 +68,9 @@
   runtime paths). Redirect live paths through env seams; missing seam = add one
   in the same parcel.
 - Pin fixture clocks when production code reads wall time. Daemon wiring tests:
-  override hardcoded timeouts via env seams; tear down on observable exit signals.
+  override hardcoded timeouts via env seams; tear down on observable exit signals;
+  redirect a backgrounded daemon's stdout AND stderr to a file, or a `$(...)`
+  capture of the function that started it blocks until the daemon exits.
 - See **engineering-detailed.prompt** for the full incident-backed elaboration.
 
 ## Acceptance Pipeline
