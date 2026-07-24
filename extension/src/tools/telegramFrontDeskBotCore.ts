@@ -927,6 +927,24 @@ export interface PollAdapters {
   // silently - so a deployment that wires steering but not this one is not
   // a broken half-state.
   notifyRoleTopic?: (topicId: number | undefined, text: string) => Promise<boolean>;
+  // BL-607: the per-role clarifying-question pending guard + the dormant-
+  // pane answer leg. getRolePendingQuestion gates whether a reply in a
+  // role's own topic is treated as THE ANSWER (clear the marker, queue a
+  // note if the pane is dormant) rather than an ordinary steer; both
+  // optional so every PollAdapters fixture written before BL-607 keeps
+  // working unchanged - missing means "role questions not wired", the
+  // exact pre-BL-607 behavior (every role-topic reply stays a plain
+  // steer). Read/cleared fresh on every update, same no-caching posture as
+  // readRoleTopicMap.
+  getRolePendingQuestion?: (role: string) => Promise<boolean>;
+  clearRolePendingQuestion?: (role: string) => Promise<void>;
+  // The dormant-pane leg itself: enqueues text as a `type: note` handoff
+  // into role's OWN inbox so ready_for_next.sh returns it on that role's
+  // next rotation - the piece that does not exist anywhere before this
+  // ticket (redirectToRole's own 'no-pane' result previously just reported
+  // "not delivered" and dropped the text). Returns whether the note was
+  // successfully queued; a failure is logged by the adapter, never thrown.
+  enqueueRoleAnswerNote?: (role: string, text: string) => Promise<boolean>;
   // BL-426 slice 1: transcribes a coordinator Operator-topic voice note's
   // audio (already-resolved fileId) to text. Optional so every PollAdapters
   // fixture written before BL-426 keeps working unchanged - missing means
@@ -1657,6 +1675,23 @@ async function deliverAskAnswer(
   if (answerLabel === undefined) {
     return 'dropped';
   }
+  // BL-607: a tap on a role question's own buttons (roleAskThreadId,
+  // deliverRoleQuestion) answers through the SAME live-pane-or-queued-note
+  // effect processSteeringUpdate's free-text path uses - never
+  // postToBridge, which is meaningless for a role question (there is no
+  // SUP-### thread/subject on the other end). role is undefined for every
+  // ordinary (Operator SUP-thread) ask, which falls through to the
+  // existing postToBridge path completely unchanged.
+  const role = roleFromAskThreadId(decision.threadId);
+  if (role !== undefined) {
+    const result = adapters.redirectToRole ? await adapters.redirectToRole(role, answerLabel) : ({ kind: 'no-pane' } as SteerDeliveryResult);
+    if (result.kind !== 'delivered') {
+      await adapters.enqueueRoleAnswerNote?.(role, answerLabel);
+    }
+    await adapters.clearRolePendingQuestion?.(role);
+    await editAskMessageIfKnown(decision.threadId, (originalText) => composeAskAnsweredText(originalText, answerLabel), adapters);
+    return 'posted';
+  }
   const ok = await adapters.postToBridge(decision.threadId, answerLabel, updateId);
   if (ok) {
     await editAskMessageIfKnown(decision.threadId, (originalText) => composeAskAnsweredText(originalText, answerLabel), adapters);
@@ -1878,7 +1913,10 @@ async function processSteeringUpdate(
   chatId: string,
   roleTopicMap: Record<string, number>,
   redirectToRole: (role: string, text: string) => Promise<SteerDeliveryResult>,
-  notifyRoleTopic?: (topicId: number | undefined, text: string) => Promise<boolean>
+  notifyRoleTopic?: (topicId: number | undefined, text: string) => Promise<boolean>,
+  getRolePendingQuestion?: (role: string) => Promise<boolean>,
+  clearRolePendingQuestion?: (role: string) => Promise<void>,
+  enqueueRoleAnswerNote?: (role: string, text: string) => Promise<boolean>
 ): Promise<UpdateDeliveryOutcome | undefined> {
   const decision = decideSteeringAction(update, principalUserId, chatId, roleTopicMap);
   if (decision.kind === 'ignore') {
@@ -1888,6 +1926,20 @@ async function processSteeringUpdate(
     return 'dropped';
   }
   const result = await redirectToRole(decision.role, decision.text);
+  // BL-607: when this role has a clarifying question pending, this reply
+  // IS the answer (Leg 1 reuses redirectToRole exactly as above - the
+  // ticket's own "reuse it verbatim" for the live-pane case). A dormant
+  // pane must not silently drop it the way a plain steer already does
+  // (redirectToRole's 'no-pane' result, unchanged for every OTHER
+  // role-topic message) - it is queued as a note into the role's own
+  // inbox instead (Leg 2). The pending marker clears either way
+  // (delivered or queued) so the role is free to ask its next question.
+  if (getRolePendingQuestion && (await getRolePendingQuestion(decision.role))) {
+    if (result.kind !== 'delivered') {
+      await enqueueRoleAnswerNote?.(decision.role, decision.text);
+    }
+    await clearRolePendingQuestion?.(decision.role);
+  }
   // Optional adapter: absent means no receipt, the exact pre-receipt
   // behavior - the same "a new capability degrades to prior behavior"
   // posture every other optional adapter in this file uses. The outcome
@@ -1921,7 +1973,10 @@ async function attemptSteeringDelivery(
     adapters.chatId,
     adapters.readRoleTopicMap(),
     adapters.redirectToRole,
-    adapters.notifyRoleTopic
+    adapters.notifyRoleTopic,
+    adapters.getRolePendingQuestion,
+    adapters.clearRolePendingQuestion,
+    adapters.enqueueRoleAnswerNote
   );
 }
 
@@ -2637,6 +2692,14 @@ export interface ReplyRelayAdapters {
   // (see deliverAgentQuestion's own comment for why the ordinary per-subject
   // topic resolution does not apply to an agent's question).
   agentQuestionsTopicId?: () => Promise<number | undefined>;
+  // BL-607: resolves a role's OWN steering topic id (role-topic-map.json,
+  // the same BL-425 map readRoleTopicMap already reads) - a roleQuestion
+  // record's delivery target, entirely distinct from agentQuestionsTopicId
+  // above. Optional so every ReplyRelayAdapters fixture written before
+  // BL-607 keeps working unchanged; undefined (role absent from the map,
+  // or the map itself missing/unparseable) degrades to dropping the
+  // question rather than crashing the relay - see deliverRoleQuestion.
+  roleTopicIdFor?: (role: string) => Promise<number | undefined>;
 }
 
 // BL-426 slice 1: when the delivery's threadId is marked voice-originated,
@@ -2727,6 +2790,29 @@ export function composeAskButtons(threadId: string, options: AskOption[]): Inlin
   return options.map((option, index) => [{ text: option.label, callbackData: `ask:${threadId}:${index}` }]);
 }
 
+// BL-607: role_ask.bb's own synthetic threadId for a role-targeted
+// clarifying question - reuses every threadId-keyed ask store
+// (resolveAskOptions/readAskMessage/recordAskMessage/editAskMessage) as-is
+// rather than building a second storage schema, the same "reuse both
+// shipped halves" instruction the ticket names for the answer side.
+// Colon-free by construction (role names never contain one) so it
+// round-trips through ASK_CALLBACK_DATA_PATTERN's `[^:]+` capture intact -
+// a colon in the middle would silently break that regex (see role_ask.bb's
+// own comment on this exact hazard).
+export const ROLE_ASK_THREAD_PREFIX = 'role-ask-';
+
+export function roleAskThreadId(role: string): string {
+  return `${ROLE_ASK_THREAD_PREFIX}${role}`;
+}
+
+// undefined for any threadId not carrying the prefix - in particular a
+// real SUP-### Operator ask, which must keep resolving through the
+// existing global awaiting-answer.json path untouched (scenario 06's own
+// regression guard).
+export function roleFromAskThreadId(threadId: string): string | undefined {
+  return threadId.startsWith(ROLE_ASK_THREAD_PREFIX) ? threadId.slice(ROLE_ASK_THREAD_PREFIX.length) : undefined;
+}
+
 // BL-466/BL-483: an agent's clarifying question is delivered to the
 // dedicated Agent Questions topic instead of adapters.resolveDelivery's own
 // per-subject resolution - the routing exception the ticket calls for
@@ -2740,6 +2826,33 @@ export function composeAskButtons(threadId: string, options: AskOption[]): Inlin
 // ticket (scenario 5's own byte-identical contract).
 async function deliverAgentQuestion(threadId: string, text: string, options: AskOption[] | undefined, adapters: ReplyRelayAdapters): Promise<void> {
   const topicId = await adapters.agentQuestionsTopicId?.();
+  if (options && options.length > 0 && adapters.sendAskButtons) {
+    const body = composeAskMessageBody(text, options);
+    const buttons = composeAskButtons(threadId, options);
+    const sent = await adapters.sendAskButtons(topicId, body, buttons);
+    if (sent.messageId !== undefined) {
+      await adapters.recordAskMessage?.(threadId, topicId, sent.messageId, body);
+    }
+    return;
+  }
+  await adapters.sendReply(topicId, text);
+}
+
+// BL-607: a role's own clarifying question is delivered to ITS OWN
+// steering topic (roleTopicIdFor) instead of deliverAgentQuestion's shared
+// Agent Questions topic - the routing exception this ticket calls for,
+// mirroring deliverAgentQuestion's own shape exactly (same button
+// rendering / free-text-fallback plain-message degrade), keyed by
+// roleAskThreadId(role) rather than a real SUP-### threadId. A role absent
+// from role-topic-map.json (roleTopicIdFor resolves undefined - unknown
+// role, or the map itself missing/unparseable) degrades to dropping the
+// question rather than posting to nowhere or crashing the relay.
+async function deliverRoleQuestion(role: string, text: string, options: AskOption[] | undefined, adapters: ReplyRelayAdapters): Promise<void> {
+  const topicId = await adapters.roleTopicIdFor?.(role);
+  if (topicId === undefined) {
+    return;
+  }
+  const threadId = roleAskThreadId(role);
   if (options && options.length > 0 && adapters.sendAskButtons) {
     const body = composeAskMessageBody(text, options);
     const buttons = composeAskButtons(threadId, options);
@@ -2768,7 +2881,7 @@ async function relayOneRecord(record: SseRecord, adapters: ReplyRelayAdapters, s
   if (record.event !== 'telegram-reply' || !record.data) {
     return;
   }
-  const { id, threadId, text, retractsPendingQuestion, agentQuestion, options } = JSON.parse(record.data) as {
+  const { id, threadId, text, retractsPendingQuestion, agentQuestion, roleQuestion, options } = JSON.parse(record.data) as {
     id: string;
     threadId: string;
     text: string;
@@ -2777,12 +2890,19 @@ async function relayOneRecord(record: SseRecord, adapters: ReplyRelayAdapters, s
     // deliverAgentQuestion's own comment) - every other, ordinary reply
     // record omits it and is completely unaffected.
     agentQuestion?: boolean;
+    // BL-607: set by role_ask.bb to the asking role's own name (see
+    // deliverRoleQuestion's own comment) - mutually exclusive with
+    // agentQuestion; every other, ordinary reply record omits it and is
+    // completely unaffected.
+    roleQuestion?: string;
     // BL-483: {label, description?}[] - operator_ask.bb's own --options
     // normalizer (operator-lib/ask-options) emits this exact shape.
     options?: AskOption[];
   };
   if (!seenIds.has(id)) {
-    if (agentQuestion) {
+    if (roleQuestion) {
+      await deliverRoleQuestion(roleQuestion, text, options, adapters);
+    } else if (agentQuestion) {
       await deliverAgentQuestion(threadId, text, options, adapters);
     } else {
       await deliverReply(threadId, adapters.resolveDelivery(threadId), text, adapters, retractsPendingQuestion);

@@ -109,6 +109,12 @@ description: |
      instruction (rotate_to_role.sh <role> / "Rotate to <role>"), older than a
      grace period (10 min), whose target != `.swarmforge/mono-router-active-role`
      => CRIT naming the parcel, expected vs actual persona, and the remediation.
+     SUPPRESSION RULE (live-validated fix, 2026-07-24 02:59Z): fire ONLY when
+     the note is NEWER than the active-role file's mtime — if the persona
+     changed after the note completed, the note was honored or overtaken and
+     comparing it to the CURRENT persona is a false positive (observed: an
+     honored QA note re-alarming for 1h while the swarm legitimately rotated
+     through architect/hardender; one spurious coordinator nudge sent 02:30Z).
      LIVE-VALIDATED 2026-07-24: caught starvation #2 (parcel 000741 dequeued and
      marked completed, rotate never executed) on the sweep after the original
      8 checks read all-green through it; the nudge landed and the coordinator
