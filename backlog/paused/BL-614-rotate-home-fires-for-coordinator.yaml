@@ -12,7 +12,7 @@ assigned_to:
 mutation_cost: low
 required_stages: [coder, qa]
 stage_skip_reasons: { cleaner: "single guard clause plus unit tests in existing suites; no refactor surface", architect: "implements the already-documented pack contract (mono-router overlay: coordinator is reserved infrastructure, never part of the rotation); no new design surface", hardender: "Babashka scripts have no wired mutation/CRAP toolchain (BL-472 deferred); the swarm-script unit suite is the actual gate and the guard's tests land in the coder parcel", documenter: "docs already state the correct behavior (pack overlay and coordinator prompt); no diagram depicts rotate-home internals" }
-human_approval: approved
+human_approval: pending
 approval_context: >
   Two things to sign off. (1) This is the first ticket specced with
   required_stages under the now-ON routing flag: it declares [coder, qa] and

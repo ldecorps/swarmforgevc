@@ -1,0 +1,111 @@
+id: BL-577
+title: "Flow watchdog — no parcel sits unprocessed beyond a threshold, any mailbox, any type; alarm path is unsuppressable by design"
+milestone: M8
+type: feature
+status: needs_design
+epic: swarm-self-optimization-loop
+human_approval: approved
+severity: high
+priority: 06
+direction: human-requested
+depends_on: []
+assigned_to: specifier
+mutation_cost: medium
+source: |
+  Human, 2026-07-23, after reviewing why NO existing self-heal layer caught
+  either of the day's flow gaps: "isn't there a self heal functionality to
+  pick up on these swarm process gaps?" — answer mapped in-session: every
+  healer (chase/nudge/respawn, swarm ensure, BL-530 config self-heal,
+  BL-537 session heal, babysitter, supervisors) measures LIVENESS, not
+  FLOW. All signals read green while (a) the architect's git_handoff
+  starved 60+ min behind the chase wake-budget bug (fixed 85a8f2c76),
+  (b) specifier notes sat dead-lettered 10h (BL-576 filed), and (c) BL-549
+  stalled unforwarded at cleaner for hours — noticed only by the DAILY
+  briefing. Sharpest finding: the one alarm that would have fired —
+  stuck-escalation email — is deliberately suppressed for dormant roles
+  (should-send-stuck-escalation-email?, anti-flood), and its fallback
+  record (chase-escalations.json) is read by nothing proactively. The
+  flood-protection silenced the detector instead of fixing its
+  destination.
+
+description: |
+  ## The invariant (one rule, catches the class)
+
+  Every parcel in any .swarmforge/handoffs mailbox (inbox/new AND
+  inbox/in_process, every role incl. master-resident coordinator/specifier
+  paths and worktree mailboxes — the handoff-search-must-cover-worktrees
+  lesson) must progress within a threshold, measured from the parcel's own
+  enqueued_at/created_at header (never mtime). A parcel over threshold is
+  a FLOW-STALL finding regardless of type (git_handoff, note, broadcast),
+  role dormancy, or what any liveness signal says. Root-cause-agnostic by
+  design: BL-576 fixes one known cause; this catches the class including
+  causes not yet met.
+
+  ## Alarm path — unsuppressable by design
+
+  The email-flood lesson is: fix destination + dedup, never existence.
+  - Destination: Telegram (operator/standing topic per BL-434 conventions),
+    not email — dormant roles cannot be "attached" but CAN be rotated or
+    expedited (BL-567), so the alarm is actionable.
+  - Dedup/pacing: one alarm per parcel per escalation tier (e.g. warn at
+    T, escalate at 4T), re-alarm only on tier change — never a 12s spam
+    loop, never silence. No role-based, type-based, or dormancy-based
+    suppression clause may exist in the alarm predicate; per-parcel
+    snooze (human ack) is the only mute, and it is visible state.
+  - Payload: parcel id, from->to, type, age, holding mailbox, plus the
+    prescribed unblock verb (rotate / expedite / investigate) so the
+    human or operator can act without archaeology.
+
+  ## Where it runs
+
+  Specifier decides: simplest is a handoffd sweep sibling (cadence
+  already exists) reading headers role-mail-row already parses — but the
+  watchdog's VALUE is independence from the machinery it watches; a
+  handoffd-hosted watchdog dies with handoffd. Options: (a) in handoffd
+  + covered by the existing daemon-death alarm chain (supervisor emails
+  when handoffd dies — acceptable composite), (b) front-desk supervisor
+  tick (separate process, already supervised, has Telegram creds),
+  (c) both, cheap. Design must state which failure modes remain blind
+  (e.g. watchdog host dead AND its supervisor alarm broken).
+
+  ## Relations
+
+  - Child of the BL-429 observe->diagnose->act epic (the observe leg for
+    flow). Complements BL-537 (session heal) and BL-576 (aged-note
+    actionability): those FIX causes; this DETECTS the class.
+  - chase-escalations.json stays as-is; the watchdog supersedes it as the
+    proactive surface (a slice may fold its state in).
+  - The daily briefing keeps its stall narrative; the watchdog is the
+    real-time layer beneath it.
+
+acceptance: |
+  Specifier writes executable scenarios; minimum the design must make
+  testable:
+  1. A parcel (each type: git_handoff, note, broadcast copy) aged past
+     the warn threshold in a dormant role's inbox yields exactly one
+     Telegram alarm naming parcel, age, holder, and unblock verb —
+     with every liveness signal healthy (fixture proves the healers see
+     green while the watchdog fires).
+  2. Crossing the escalate tier re-alarms once; a parcel that progresses
+     (claimed, completed, or reaped) alarms never again; no repeat spam
+     within a tier.
+  3. There is no code path that suppresses the alarm by role, type, or
+     dormancy — asserted structurally (predicate has no such clause) and
+     behaviorally (dormant-role fixture alarms).
+  4. Age from header, not mtime (old-header/fresh-mtime fires;
+     fresh-header/old-mtime does not).
+  5. Coverage includes worktree mailboxes and master-resident role paths
+     (fixture in each location fires).
+  6. The three 2026-07-23 incidents, replayed as fixtures (starved
+     git_handoff; 10h note; unforwarded cleaner parcel), each produce an
+     alarm within one sweep of crossing threshold.
+  7. Thresholds are conf-tunable with sane defaults via the effective-
+     config pattern (BL-216); malformed conf falls back, never disables.
+
+out_of_scope: |
+  - Fixing any specific stall cause (BL-576, BL-537 et al own fixes).
+  - Auto-remediation (auto-rotate/auto-expedite on alarm) — a later
+    BL-429-family slice once detection has soaked; this ticket detects
+    and prescribes, a human/operator acts.
+  - Replacing chase escalation state or the daily briefing.
+  - Email as an alarm channel.

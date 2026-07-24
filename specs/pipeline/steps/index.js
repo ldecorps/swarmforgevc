@@ -313,8 +313,7 @@ const DOMAINS = [
   require('./bl563ModelFactoryRuntimeWiringSteps'),
   require('./bl617NightlyCooldownWindowSteps'),
   require('./bl618StablePrefixCapSteps'),
-  require('./bl610UnresolvableCommitQuarantinedSteps'),
-  require('./bl577FlowWatchdogParcelAgeInvariantSteps')
+  require('./bl610UnresolvableCommitQuarantinedSteps')
 ];
 
 function registerSteps(registry) {

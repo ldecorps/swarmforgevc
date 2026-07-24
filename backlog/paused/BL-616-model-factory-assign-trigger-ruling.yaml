@@ -10,7 +10,7 @@ direction: swarm-surfaced
 depends_on: [BL-563]
 assigned_to: specifier
 mutation_cost: low
-human_approval: approved
+human_approval: pending
 approval_context: >
   BL-563 wires a Factory assignment into the launch path but deliberately
   leaves the trigger as-is: a human running the CLI. This ticket is the parked
