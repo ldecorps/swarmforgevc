@@ -9,7 +9,9 @@
 #   3. Same commit past timeout — :nudge fired
 #   4. Same commit past timeout, reclaims=2 — :nudge still
 #   5. Same commit past timeout, reclaims=5 — :bounce fired
-#   6. Same commit past timeout, reclaims=9 — :halt fired
+#   6. Same commit past timeout, reclaims=9 — :halt fired; sidecar cleared
+#   6b. Relaunch (second sweep, sidecar cleared by the halt) does not re-halt
+#       on the first post-relaunch sweep
 #
 # Env vars the runner uses:
 #   CLAIM_HEAD_COMMIT     — which HEAD to report for :get-role-head-commit
@@ -174,11 +176,48 @@ CLAIM_MS=0
 write_claim_sidecar "${T}" "test.handoff" "aaaa000000" "${CLAIM_MS}" 9
 NOW=$((CLAIM_MS + 2000))
 run_sweep "${T}" "${NOW}" alive "${NOW}" CLAIM_HEAD_COMMIT=aaaa000000
-RECLAIMS=$(python3 -c "import json,sys; print(json.load(open('${T}/inbox/in_process/test.handoff.claim-progress.json'))['reclaims'])" 2>/dev/null || echo "0")
-if [[ "${RECLAIMS}" == "10" ]] && grep -q "claim-halt coder 10" "${T}/calls.log" 2>/dev/null; then
+SIDECAR="${T}/inbox/in_process/test.handoff.claim-progress.json"
+if grep -q "claim-halt coder 10" "${T}/calls.log" 2>/dev/null; then
   pass "test6: halt fired at reclaims=10"
 else
-  fail "test6: expected halt at reclaims=10; reclaims=${RECLAIMS} calls=$(cat ${T}/calls.log 2>/dev/null)"
+  fail "test6: expected halt at reclaims=10; calls=$(cat ${T}/calls.log 2>/dev/null)"
+fi
+# BL-528 priority bump: the sidecar must be CLEARED as part of the halt
+# itself, or a relaunch re-reads reclaims=10 and re-halts on the first sweep.
+if [[ ! -f "${SIDECAR}" ]]; then
+  pass "test6: claim-progress sidecar cleared on halt"
+else
+  fail "test6: sidecar NOT cleared on halt; contents=$(cat "${SIDECAR}" 2>/dev/null)"
+fi
+rm -rf "${T}"
+
+# ── Test 6b: relaunch after halt does NOT re-halt on the first sweep ─────────
+# Reproduces the priority-bump incident: same in_process item still sitting
+# there post-halt (halt kills the swarm, it does not move the handoff), same
+# commit still unchanged. A fresh handoffd process's first sweep must not
+# read a stale reclaims>=halt-threshold value off disk and immediately halt
+# again — that skipped the whole nudge->bounce ladder in the 4th occurrence.
+T=$(mktemp -d)
+make_handoff "${T}" "test.handoff" "aaaa000000"
+CLAIM_MS=0
+write_claim_sidecar "${T}" "test.handoff" "aaaa000000" "${CLAIM_MS}" 9
+NOW=$((CLAIM_MS + 2000))
+run_sweep "${T}" "${NOW}" alive "${NOW}" CLAIM_HEAD_COMMIT=aaaa000000
+HALTS_AFTER_FIRST=$(grep -c "claim-halt" "${T}/calls.log" 2>/dev/null || echo 0)
+# Simulate the relaunch: same worktree HEAD (no commit landed), a moment later.
+NOW2=$((NOW + 1))
+run_sweep "${T}" "${NOW2}" alive "${NOW2}" CLAIM_HEAD_COMMIT=aaaa000000
+HALTS_AFTER_RELAUNCH=$(grep -c "claim-halt" "${T}/calls.log" 2>/dev/null || echo 0)
+if [[ "${HALTS_AFTER_FIRST}" == "1" && "${HALTS_AFTER_RELAUNCH}" == "1" ]]; then
+  pass "test6b: relaunch sweep does not re-halt immediately"
+else
+  fail "test6b: expected exactly 1 halt total (pre-relaunch=1, post-relaunch=1); got pre=${HALTS_AFTER_FIRST} post=${HALTS_AFTER_RELAUNCH} calls=$(cat "${T}/calls.log" 2>/dev/null)"
+fi
+RECLAIMS_AFTER_RELAUNCH=$(python3 -c "import json; print(json.load(open('${T}/inbox/in_process/test.handoff.claim-progress.json'))['reclaims'])" 2>/dev/null || echo "x")
+if [[ "${RECLAIMS_AFTER_RELAUNCH}" == "0" ]]; then
+  pass "test6b: relaunch sweep re-initialises the sidecar at reclaims=0"
+else
+  fail "test6b: expected fresh reclaims=0 after relaunch; got ${RECLAIMS_AFTER_RELAUNCH}"
 fi
 rm -rf "${T}"
 

@@ -237,6 +237,17 @@
   (spit (claim-progress-lib/claim-progress-sidecar-path in-process-file-path)
         (json/generate-string progress)))
 
+(defn clear-claim-progress!
+  "BL-528 priority bump: delete the .claim-progress.json sidecar as part of
+   the halt itself. Without this, a relaunch after a claim-progress halt
+   re-reads reclaims already at :halt-threshold on the daemon's first sweep -
+   the probe branch requires (zero? reclaims), so the very first ungated idle
+   observation re-halts immediately, skipping the whole nudge->bounce ladder.
+   Deleting here means the next sweep re-initialises a fresh sidecar via
+   apply-claim-progress-check!'s (or (read-claim-progress fp) (make-claim-progress ...))."
+  [in-process-file-path]
+  (fs/delete-if-exists (claim-progress-lib/claim-progress-sidecar-path in-process-file-path)))
+
 ;; ── impure sweep application (adapters map, mirrors ChaserAdapters) ─────────
 ;; adapters keys: :get-liveness :send-wake-up! :trigger-respawn! :log-dead-letter!
 ;;                :get-last-activity-ms :on-stuck-escalation! :log-telemetry!
@@ -354,7 +365,8 @@
                    {:type "claim-idle-halt-refused" :role role :handoffId (handoff-id fp)
                     :reason "resident-active-or-dormant-stale"}
                    now-ms)
-                  (do ((:on-claim-idle-halt! adapters) role fp p')
+                  (do (clear-claim-progress! fp)
+                      ((:on-claim-idle-halt! adapters) role fp p')
                       (reset! halt-triggered true)))))
 
             :not-yet-overdue
