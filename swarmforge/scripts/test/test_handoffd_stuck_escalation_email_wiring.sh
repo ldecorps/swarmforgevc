@@ -84,19 +84,6 @@ exit 0
 TMUX
 chmod +x "$FAKE_BIN/tmux"
 
-# Stub the compiled Node tools the daemon invokes - proves the real path/cwd
-# without needing the full extension build.
-mkdir -p "$ROOT/extension/out/tools"
-cat > "$ROOT/extension/out/tools/emit-fleet-status.js" <<'EOF'
-console.log(JSON.stringify({ lastUpdate: new Date().toISOString() }));
-EOF
-cat > "$ROOT/extension/out/tools/drain-answer-files.js" <<'EOF'
-console.log(JSON.stringify({ drained: 0 }));
-EOF
-cat > "$ROOT/extension/out/tools/resume-expired-pauses.js" <<'EOF'
-console.log(JSON.stringify({ resumed: false, reason: 'not-due' }));
-EOF
-
 LOG_FILE="$ROOT/.swarmforge/daemon/handoffd.log"
 FORCE_SUCCESS='{"success": true, "status": 200}'
 
