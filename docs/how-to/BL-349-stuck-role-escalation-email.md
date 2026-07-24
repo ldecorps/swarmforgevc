@@ -8,22 +8,21 @@ This runbook explains what triggers the alarm and what to do when you receive it
 
 You will receive an email with the subject line:
 ```
-SwarmForge: role <ROLE> stuck, needs intervention
+SwarmForge: <role> is stuck and needs attention
 ```
 
-The email contains:
-- The **role name** that stopped responding (e.g., `coder`, `architect`, `hardener`)
-- The **ticket id** the role was working on when it got stuck
-- A **reference to the escalation log** — a file under `.swarmforge/daemon/` with timing details
-- The **recommended recovery action** — usually to respawn the stuck role
+For example: `SwarmForge: coder is stuck and needs attention`.
 
-Example email:
+The email body is fixed text about that one role — it does **not** carry a
+ticket id, an escalation-log path, or a recommended command; the sender only
+ever passes the role name in:
+
 ```
-The coder role has not responded for 90 seconds while working on BL-528.
-No progress has been detected.
+The role "coder" has been stuck (holding an in-process task with no forward progress) past its escalation threshold.
 
-Escalation log: /path/to/target/.swarmforge/daemon/chase-escalations.json
-Recommended action: respawn the coder role via swarmforge ensure /path/to/target
+This is unattended - nobody has been notified until this email. Check the role's pane/log and, if needed, respawn or intervene by hand.
+
+This clears on its own once the role becomes unstuck; a NEW stuck episode after recovery will email again.
 ```
 
 ## What Happened
@@ -33,12 +32,12 @@ The SwarmForge daemon (handoffd) monitors the heartbeat of every agent role. It 
 - The last time the role sent/received a message
 - How long the role has been idle without completing work
 
-If a role is idle **past an escalation threshold** (currently 90 seconds):
+If a role is idle **past an escalation threshold** (currently 60 seconds):
 
 1. **A timer starts** — the daemon notes the role as potentially stuck.
 2. **Progress is checked** — if the role hasn't advanced the parcel (no commits, no handoff) in that time, it's genuinely stuck, not just slow.
 3. **An email is sent** — the escalation alarm fires, notifying you that human intervention may be needed.
-4. **The ticket is noted** — the escalation log records which ticket the role was holding when it got stuck.
+4. **The role is recorded as escalated** — `chase-escalations.json` marks that role `true` until it recovers (see below); the email itself carries no ticket id.
 
 Unlike the daemon-death alarm, the stuck-role alarm does **not automatically halt the swarm** — the other roles keep working. But the stuck role is now unresponsive and the parcel it holds is stalled.
 
@@ -52,34 +51,27 @@ Stuck roles are a sign of one of these conditions:
 - **Infinite loop** — The role is in a code path that repeats forever (rare, but caught by mutation testing).
 - **Waiting on input** — The role has a question pending and is blocking until answered (expected, not alarming).
 
-The threshold is conservative (90 seconds for the default pack) to avoid false alarms on slow work, but a stuck role left unaddressed will eventually trigger a broader failure.
+The threshold is conservative (60 seconds for the default pack) to avoid false alarms on slow work, but a stuck role left unaddressed will eventually trigger a broader failure.
 
 ## Escalation Log Contents
 
-The escalation log (`.swarmforge/daemon/chase-escalations.json`) records:
+The escalation log (`.swarmforge/daemon/chase-escalations.json`) is a flat
+role-name-to-`true` map of roles **currently** escalated — nothing more:
 
 ```json
-{
-  "escalations": [
-    {
-      "role": "coder",
-      "escalated_at": "2026-07-24T14:30:00Z",
-      "idle_seconds": 92,
-      "ticket_id": "BL-528",
-      "status": "email-sent",
-      "reason": "no-progress-past-threshold"
-    }
-  ]
-}
+{ "coder": true }
 ```
 
-This tells you:
-- **role** — which role got stuck
-- **escalated_at** — exactly when the alarm fired
-- **idle_seconds** — how long the role had been idle before escalation
-- **ticket_id** — what work the role was holding
-- **status** — `email-sent` means the email was delivered successfully
-- **reason** — why the role was flagged (always `no-progress-past-threshold` for now)
+A role with no entry (or an empty `{}` file) is not currently escalated. There
+is no array, no timestamp, no ticket id, and no per-escalation record: the
+entry for a role is removed entirely once that role recovers, so a later
+re-escalation starts fresh.
+
+The delivery/retry state for the email itself (whether it has already been
+sent for the current escalation, and backoff bookkeeping if a send attempt
+fails) lives in a **separate** file,
+`.swarmforge/daemon/chase-escalation-email-state.json` — not in
+`chase-escalations.json`.
 
 ## Recovery Steps
 
@@ -118,30 +110,15 @@ If the role has already forwarded the parcel to the next stage, the alarm was be
    - Check the failure log for hints: `cat .swarmforge/daemon/daemon_failure_*.txt`
    - Fix the underlying issue, then restart: `swarmforge /path/to/target` (or use the extension to launch again)
 
-## How to Tune the Threshold
+## About the Threshold
 
-The escalation threshold is configured per pack in `swarmforge.conf`:
+**The 60-second threshold is currently hardcoded** in `swarmforge/scripts/handoffd.bb` (line 46, `stuckInProcessTimeoutSeconds`). Tuning via `swarmforge.conf` is not yet supported.
 
-```bash
-config stuck_escalation_threshold_seconds 90
-```
+To modify the threshold:
+1. Edit `swarmforge/scripts/handoffd.bb` and change `:stuckInProcessTimeoutSeconds 60` to your desired value (in seconds).
+2. Restart the swarm for the change to take effect.
 
-**Increase it** if your infrastructure is slow (e.g., slow LLM provider, high network latency):
-```bash
-config stuck_escalation_threshold_seconds 180
-```
-
-**Decrease it** if you want earlier alerts (e.g., you run on fast hardware and 90 seconds always means something is wrong):
-```bash
-config stuck_escalation_threshold_seconds 60
-```
-
-**Disable it** (not recommended) if you want no escalation emails:
-```bash
-config stuck_escalation_threshold_seconds -1
-```
-
-Changes to `swarmforge.conf` take effect on the next `swarmforge ensure` or new `swarmforge launch`.
+Making the threshold configurable is a planned improvement (tracked separately) but not yet implemented.
 
 ## See Also
 
