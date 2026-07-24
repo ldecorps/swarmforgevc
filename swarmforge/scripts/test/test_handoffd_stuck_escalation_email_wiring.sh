@@ -84,23 +84,6 @@ exit 0
 TMUX
 chmod +x "$FAKE_BIN/tmux"
 
-# Stub the compiled Node tools the daemon invokes - keeps the daemon log free
-# of MODULE_NOT_FOUND noise from unrelated sweeps so a future failure's
-# $(cat "$LOG_FILE") dump surfaces this test's own signal, not 58 lines of
-# fleet-status/answer-drain/pause-resume stack traces (BL-613 architect
-# review: removal was verified not to affect the current PASS, but degrades
-# diagnosability on the next failure).
-mkdir -p "$ROOT/extension/out/tools"
-cat > "$ROOT/extension/out/tools/emit-fleet-status.js" <<'EOF'
-console.log(JSON.stringify({ lastUpdate: new Date().toISOString() }));
-EOF
-cat > "$ROOT/extension/out/tools/drain-answer-files.js" <<'EOF'
-console.log(JSON.stringify({ drained: 0 }));
-EOF
-cat > "$ROOT/extension/out/tools/resume-expired-pauses.js" <<'EOF'
-console.log(JSON.stringify({ resumed: false, reason: 'not-due' }));
-EOF
-
 LOG_FILE="$ROOT/.swarmforge/daemon/handoffd.log"
 FORCE_SUCCESS='{"success": true, "status": 200}'
 
