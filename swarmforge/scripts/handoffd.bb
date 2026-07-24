@@ -525,8 +525,23 @@
     (fs/delete stub)
     (log! "stale-stub-cleanup" (str stub) "original-in-sent" original-name)))
 
+;; BL-617: while ANY pause is active (human-applied or the nightly
+;; cooldown - both converge on the same control-pause.json, so ONE gate
+;; covers both), outbound wakes are frozen: no inbox delivery, no chase
+;; nudges, no rotate/open-slot wakes, no startup notify. Enqueue always
+;; succeeds (parcels still land in outbox/); the freeze point is between
+;; enqueue and delivery, and nothing is ever killed - an agent mid-turn
+;; simply is not woken again. pause-auto-resume-sweep! and cooldown-sweep!
+;; are the two sweeps that decide whether to CHANGE pause state - they are
+;; wired directly into the cadence block, never gated by this check, or the
+;; swarm could never thaw.
+(defn outbound-wakes-suppressed? []
+  (backlog-depth-lib/pause-active?
+   (backlog-depth-lib/read-pause-state (str project-root))
+   (System/currentTimeMillis)))
+
 (defn startup-notify-pending! [roles socket]
-  (when-not (tmux-inject-disabled?)
+  (when-not (or (tmux-inject-disabled?) (outbound-wakes-suppressed?))
     (doseq [[_ role-info] roles
             :let [role (:role role-info)]
             :when (and (seq (inbox-new-files role-info))
@@ -538,24 +553,26 @@
           (log! "startup-notify-error" role (.getMessage e)))))))
 
 (defn poll-once! []
-  (let [roles (load-roles)
-        socket (str/trim (slurp (str socket-file)))]
-    (doseq [[role role-info] roles
-            path (or (outbox-files role-info) [])]
-      (try
-        (deliver! roles socket role path)
-        (catch Exception e
-          (log! "error" (str path) (.getMessage e))
-          (if (already-archived? role-info (fs/file-name path))
-            (do
-              (log! "already-archived" (str path))
-              ;; The duplicate outbox copy is confirmed delivered (its
-              ;; twin already landed in sent/); archive it too instead of
-              ;; leaving it to be reprocessed and re-fail every poll cycle.
-              (try
-                (move-with-collision path (sent-dir role-info))
-                (catch Exception _ignored nil)))
-            (fail! path (.getMessage e))))))))
+  (if (outbound-wakes-suppressed?)
+    (log! "poll-skip-paused" "delivery frozen while a pause is active")
+    (let [roles (load-roles)
+          socket (str/trim (slurp (str socket-file)))]
+      (doseq [[role role-info] roles
+              path (or (outbox-files role-info) [])]
+        (try
+          (deliver! roles socket role path)
+          (catch Exception e
+            (log! "error" (str path) (.getMessage e))
+            (if (already-archived? role-info (fs/file-name path))
+              (do
+                (log! "already-archived" (str path))
+                ;; The duplicate outbox copy is confirmed delivered (its
+                ;; twin already landed in sent/); archive it too instead of
+                ;; leaving it to be reprocessed and re-fail every poll cycle.
+                (try
+                  (move-with-collision path (sent-dir role-info))
+                  (catch Exception _ignored nil)))
+              (fail! path (.getMessage e)))))))))
 
 ;; ── BL-121: canary sweep - completes synthetic canary round-trips ──────────
 ;; The extension's canaryInjector.ts writes a pending marker under
@@ -1827,6 +1844,26 @@
     (catch Exception e
       (log! "pause-auto-resume-sweep-error" (.getMessage e)))))
 
+;; BL-617: shells to the compiled apply-cooldown-pause.js CLI, same posture
+;; as pause-auto-resume-sweep! above - a scheduler over the existing
+;; timed-pause machinery, riding the daemon's existing sweep cadence per the
+;; ticket's own instruction. The CLI owns the cooldown decision
+;; (decideCooldownWindow, an injected-clock pure function), the once-per-
+;; window marker, and the Control-topic announcement; this adapter only
+;; owns invoking it. Must keep running even while a pause (human or
+;; cooldown) is already active - it is one of the two sweeps that decide
+;; whether to CHANGE pause state, never suppressed by outbound-wake
+;; suppression below (which only ever gates delivery/nudge/chase wakes).
+(defn cooldown-sweep! []
+  (try
+    (let [cli-path (str (fs/path project-root "extension" "out" "tools" "apply-cooldown-pause.js"))
+          {:keys [exit out err]} (process/sh ["node" cli-path] {:dir (str project-root)})]
+      (if (zero? exit)
+        (log! "cooldown-sweep" (str/trim out))
+        (log! "cooldown-sweep-error" (str "exit=" exit " " (str/trim (or err ""))))))
+    (catch Exception e
+      (log! "cooldown-sweep-error" (.getMessage e)))))
+
 ;; BL-258: headless, host-independent morning trigger for briefing
 ;; GENERATION (complements briefing-email-sweep! above, which only handles
 ;; the SEND of an already-committed file). Reads the configured morning
@@ -2122,25 +2159,36 @@
                   ;; sharing this single process/thread with delivery -
                   ;; exactly one process now owns both duties.
                   (when (zero? (mod cycle chase-sweep-every-cycles))
-                    (try
-                      (chase-sweep! (load-roles) socket)
-                      (catch Exception e
-                        (log! "chase-sweep-error" (.getMessage e))))
-                    ;; BL-222: dispatch-gap sweep shares the same cadence -
-                    ;; no separate timeout, reusing the existing chase
-                    ;; interval per the ticket.
-                    (try
-                      (dispatch-gap-sweep! (load-roles))
-                      (catch Exception e
-                        (log! "dispatch-gap-sweep-error" (.getMessage e))))
-                    (try
-                      (unassigned-active-nudge-sweep! (load-roles))
-                      (catch Exception e
-                        (log! "unassigned-active-nudge-sweep-error" (.getMessage e))))
-                    (try
-                      (open-slot-nudge-sweep! (load-roles))
-                      (catch Exception e
-                        (log! "open-slot-nudge-sweep-error" (.getMessage e))))
+                    ;; BL-617: chase/dispatch-gap/unassigned-active/open-slot
+                    ;; all send WAKES (tmux pokes, rotate/respawn, or notes
+                    ;; that would themselves wake the coordinator) - every one
+                    ;; suppressed while any pause is active, same freeze as
+                    ;; poll-once!'s delivery gate above. Sibling sweeps below
+                    ;; this block (briefing/context-clear/dead-letter/
+                    ;; resource/push/fleet-status/answer-drain) are out of
+                    ;; this ticket's scope (BL-617 notes: "load-bearing scope
+                    ;; - verified gap" names only delivery/chase/dispatch/
+                    ;; open-slot) and keep running unconditionally.
+                    (when-not (outbound-wakes-suppressed?)
+                      (try
+                        (chase-sweep! (load-roles) socket)
+                        (catch Exception e
+                          (log! "chase-sweep-error" (.getMessage e))))
+                      ;; BL-222: dispatch-gap sweep shares the same cadence -
+                      ;; no separate timeout, reusing the existing chase
+                      ;; interval per the ticket.
+                      (try
+                        (dispatch-gap-sweep! (load-roles))
+                        (catch Exception e
+                          (log! "dispatch-gap-sweep-error" (.getMessage e))))
+                      (try
+                        (unassigned-active-nudge-sweep! (load-roles))
+                        (catch Exception e
+                          (log! "unassigned-active-nudge-sweep-error" (.getMessage e))))
+                      (try
+                        (open-slot-nudge-sweep! (load-roles))
+                        (catch Exception e
+                          (log! "open-slot-nudge-sweep-error" (.getMessage e)))))
                     ;; BL-214: briefing-email sweep shares the same cadence -
                     ;; no separate timeout, same rationale as BL-222 above.
                     (try
@@ -2216,7 +2264,15 @@
                     (try
                       (pause-auto-resume-sweep!)
                       (catch Exception e
-                        (log! "pause-auto-resume-sweep-error" (.getMessage e)))))
+                        (log! "pause-auto-resume-sweep-error" (.getMessage e))))
+                    ;; BL-617: cooldown sweep shares the same cadence - no
+                    ;; separate timeout, same rationale as BL-222/BL-214/
+                    ;; BL-258/BL-309/BL-316/BL-339/BL-353/BL-350/BL-356/
+                    ;; BL-437/BL-440/BL-423 above.
+                    (try
+                      (cooldown-sweep!)
+                      (catch Exception e
+                        (log! "cooldown-sweep-error" (.getMessage e)))))
                   (spit (str heartbeat-file) (str (now) "\n"))
                   (when (zero? (mod cycle heartbeat-log-every-cycles))
                     (log! "heartbeat" (str "cycle=" cycle)))

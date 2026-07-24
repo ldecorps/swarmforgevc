@@ -309,7 +309,9 @@ const DOMAINS = [
   require('./bl531PreQaDurabilityWiringGateSteps'),
   require('./bl606RequiredStagesRoutingSteps'),
   require('./bl607RoleClarifyingPollSteps'),
-  require('./bl608BounceHistoryOnTicketSteps')
+  require('./bl608BounceHistoryOnTicketSteps'),
+  require('./bl563ModelFactoryRuntimeWiringSteps'),
+  require('./bl617NightlyCooldownWindowSteps')
 ];
 
 function registerSteps(registry) {

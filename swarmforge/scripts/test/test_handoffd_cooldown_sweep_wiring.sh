@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
-# BL-350 (BL-336 finding H1): handoffd.bb's consolidated poll loop now also
-# sweeps for headless resource sampling, sharing the same cadence as every
-# other *-sweep! (BL-222/BL-214/BL-258/BL-309/BL-316/BL-339/BL-353 above it).
-# The SAMPLING logic itself (pid resolution, append, interval gating) is
-# exhaustively covered by resourceTelemetry.test.js/sampleResourcesCli.test.js
-# (unit + real-subprocess-with-fake-tmux fixtures, unchanged); this test only
-# proves the real daemon reaches and fires resource-sample-sweep! against the
-# compiled CLI's own path, with the right cwd, each poll cycle - same
+# BL-617: handoffd.bb's consolidated poll loop now also sweeps for the
+# nightly cooldown window, sharing the same cadence as pause-auto-resume-
+# sweep! and every other *-sweep! (BL-222/BL-214/BL-258/BL-309/BL-316/
+# BL-339/BL-353/BL-350/BL-356/BL-437/BL-440/BL-423 above). The cooldown
+# decision itself is exhaustively covered by cooldownWindowCore.test.js and
+# applyCooldownPauseCli.test.js (unit tests against a real fixture); this
+# test only proves the real daemon reaches and fires cooldown-sweep! against
+# the compiled CLI's own path, with the right cwd, each poll cycle - same
 # "stub the compiled JS entry point under the fixture root" technique
-# test_handoffd_dead_letter_notify_wiring.sh already uses, so no real tmux
-# pane/pid resolution is ever needed.
+# test_handoffd_pause_auto_resume_wiring.sh already uses, so no real
+# swarmforge.conf/pause-marker/Telegram fixture is ever needed here.
 
 set -euo pipefail
 
@@ -53,22 +53,19 @@ TSV
 # today means morning-trigger-due? is false).
 printf 'Headline: unrelated\n' > "$ROOT/docs/briefings/${TODAY_DAY_KEY}.md"
 
-# Stub the compiled CLI resource-sample-sweep! shells to - proves the real
-# path/cwd/invocation, never real tmux pid resolution.
+# Stub the compiled CLI pause-auto-resume-sweep! shells to, so it stays a
+# clean not-due no-op and never competes with this test's own assertions.
 mkdir -p "$ROOT/extension/out/tools"
-cat > "$ROOT/extension/out/tools/sample-resources.js" <<'EOF'
-const fs = require('fs');
-const path = require('path');
-fs.appendFileSync(path.join(process.cwd(), 'sample-resources-calls.log'), process.cwd() + '\n');
-console.log('SAMPLED 0 role(s)');
+cat > "$ROOT/extension/out/tools/resume-expired-pauses.js" <<'EOF'
+console.log(JSON.stringify({ resumed: false, reason: 'not-due' }));
 EOF
 
-# BL-617: also stub the sibling cooldown-sweep!'s CLI as a clean no-op -
-# this test proves resource-sample-sweep! wiring only; without this stub
-# the shared cadence block's new sweep call fails with a Node
-# MODULE_NOT_FOUND error every cycle, adding enough per-cycle overhead to
-# threaten this test's own cadence-timing assertions below.
+# Stub the compiled CLI cooldown-sweep! shells to - proves the real
+# path/cwd/invocation, never a real swarmforge.conf/pause-marker fixture.
 cat > "$ROOT/extension/out/tools/apply-cooldown-pause.js" <<'EOF'
+const fs = require('fs');
+const path = require('path');
+fs.appendFileSync(path.join(process.cwd(), 'apply-cooldown-pause-calls.log'), process.cwd() + '\n');
 console.log(JSON.stringify({ decision: 'none' }));
 EOF
 
@@ -95,28 +92,28 @@ wait_for_log() {
   return 1
 }
 
-wait_for_log "resource-sample " 30 \
-  || fail "the resource-sample sweep never logged within 30s; log: $(cat "$LOG_FILE" 2>/dev/null)"
+wait_for_log "cooldown-sweep " 30 \
+  || fail "the cooldown sweep never logged within 30s; log: $(cat "$LOG_FILE" 2>/dev/null)"
 
 # ── the sweep reached the CLI with the daemon's own project-root as cwd ──
-[[ -f "$ROOT/sample-resources-calls.log" ]] || fail "expected the stub CLI to have been invoked at all"
-grep -qF "$ROOT" "$ROOT/sample-resources-calls.log" \
-  || fail "expected the CLI to run with cwd=project-root, got: $(cat "$ROOT/sample-resources-calls.log")"
-pass "resource-sample-sweep! shells to the compiled sample-resources.js CLI with cwd=project-root"
+[[ -f "$ROOT/apply-cooldown-pause-calls.log" ]] || fail "expected the stub CLI to have been invoked at all"
+grep -qF "$ROOT" "$ROOT/apply-cooldown-pause-calls.log" \
+  || fail "expected the CLI to run with cwd=project-root, got: $(cat "$ROOT/apply-cooldown-pause-calls.log")"
+pass "cooldown-sweep! shells to the compiled apply-cooldown-pause.js CLI with cwd=project-root"
 
 # ── the CLI's own stdout is surfaced into the daemon log verbatim ────────
-grep -q 'resource-sample.*SAMPLED 0 role(s)' "$LOG_FILE" \
+grep -q 'cooldown-sweep {"decision":"none"}' "$LOG_FILE" \
   || fail "expected the CLI's stdout surfaced in the daemon log; got: $(cat "$LOG_FILE")"
-pass "the CLI's own result line is logged verbatim by the sweep"
+pass "the CLI's own result is logged verbatim by the sweep"
 
 # ── the sweep repeats on the shared chase-sweep cadence, not just once ────
 sleep 11
-CALL_COUNT="$(wc -l < "$ROOT/sample-resources-calls.log")"
+CALL_COUNT="$(wc -l < "$ROOT/apply-cooldown-pause-calls.log")"
 [[ "$CALL_COUNT" -ge 2 ]] || fail "expected the sweep to fire on more than one poll cycle, got $CALL_COUNT calls"
-pass "the resource-sample sweep shares the daemon's chase-sweep cadence, not a one-shot"
+pass "the cooldown sweep shares the daemon's chase-sweep cadence, not a one-shot"
 
 # ── the sweep never threw ──────────────────────────────────────────────────
-grep -q "resource-sample-sweep-error" "$LOG_FILE" && fail "the resource-sample sweep threw an exception; got: $(cat "$LOG_FILE")"
-pass "the resource-sample sweep ran without throwing"
+grep -q "cooldown-sweep-error" "$LOG_FILE" && fail "the cooldown sweep threw an exception; got: $(cat "$LOG_FILE")"
+pass "the cooldown sweep ran without throwing"
 
 echo "ALL PASS"
