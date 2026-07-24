@@ -1,0 +1,138 @@
+id: BL-611
+title: "Productize babysitterd — the deterministic health-sweep daemon replaces the LLM babysitter hawk, managed by start/stop-swarm like the other daemons, nudging the coordinator with CRIT findings"
+milestone: M8
+type: feature
+status: todo
+epic: swarm-reliability
+human_approval: approved
+severity: medium
+priority: 10
+direction: human-requested
+depends_on: []
+assigned_to: specifier
+mutation_cost: medium
+source: |
+  Human, 2026-07-24 (operator rc session): "can you write a script that performs
+  a routine health check. make that script be called periodically (use an
+  existing daemon? or create a new one). and have that script nudge the
+  coordinator with its finding. that's the behaviour I was trying to get the
+  babysitter role to do but never managed to get it right." Then, after the
+  operator built and started a live prototype: "yes. babysitterd should be
+  managed by the start and stop swarm scripts, like the other daemons. but yes
+  this has to be documented and otherwise digested by the swarm."
+
+  A WORKING PROTOTYPE EXISTS and is running on the Linux box right now:
+  `.swarmforge/operator/babysitter_check.sh` + `.swarmforge/operator/babysitterd.sh`
+  (gitignored operator layer — see the operator memory note
+  babysitter-daemon-deterministic-health-sweeps). This ticket ports that
+  prototype into the repo properly: tests, lifecycle wiring, runbook.
+
+description: |
+  ## Problem
+
+  The existing babysitter (`swarmforge/scripts/start_babysitter.sh` — Telegram
+  topic + LLM + wake runtime) is an LLM agent asked to do deterministic work.
+  The human's verdict after multiple attempts: it never behaved right. Health
+  checking is not judgment work — every check it should perform is a mechanical
+  predicate over processes, files, and pane state. An LLM adds cost, latency,
+  and nondeterminism to a job a shell script does reliably.
+
+  Meanwhile the operator layer has independently accumulated exactly those
+  predicates as hard-won memory lessons (futex-hang, pane_current_command lies,
+  menu blocks, OOM spirals, dead-letters). The prototype encodes them.
+
+  ## Shape — port the prototype, don't reinvent it
+
+  A deterministic sweep script + a small loop daemon, in swarmforge/scripts/,
+  managed by the SAME lifecycle as the other daemons:
+
+  - `start_ancillary_services.sh` starts babysitterd where it currently starts
+    the LLM babysitter (the `SWARMFORGE_SKIP_BABYSITTER=1` env skip carries
+    over unchanged); `stop_ancillary_services.sh` / `stop-swarm.sh` stop it;
+    `kill_all_swarm.sh` includes it in the nuclear path (pidfile signal, same
+    pattern as handoffd's `signal_pid_file`). `./swarm ensure` gains a
+    `babysitter` component that verifies pid-alive and restarts if not
+    (same posture as the rc:<role> component).
+
+  - THE OLD LLM BABYSITTER IS RETIRED by this ticket — recommendation, human
+    quote above supports it: the deterministic daemon takes the babysitter
+    name and the ancillary slot. Specifier decides whether the LLM hawk's
+    launch path is deleted or left behind an explicit opt-in flag, but the
+    default swarm launch must start the deterministic one.
+
+  ## Sweep checks (from the running prototype — keep all eight)
+
+  1. tmux session + live claude process per role pane (via `ps --ppid`, never
+     `pane_current_command` — it lies with a live child)
+  2. `--remote-control` flag present on each live process (RC health signal)
+  3. handoffd + supervisor alive AND handoffd.log fresh (< 5 min) — catches the
+     futex-hang where the process is alive but the ensure loop is dead
+  4. `.swarmforge/handoffs/failed/` dead-letter box non-empty
+  5. stuck `inbox/in_process/` parcels > 30 min — INCLUDING worktree mailboxes
+     (`.worktrees/*/.swarmforge/handoffs/`), master's alone is a false negative
+  6. pane blocked on an interactive menu/dialog — REPORT ONLY, never pick an
+     option (standing playbook rule)
+  7. busy-but-frozen pane: busy footer present but spinner-stripped content
+     hash unchanged across 3 consecutive sweeps
+  8. available-memory floor (orphaned vitest/stryker OOM lesson)
+
+  ## Nudge contract (the part the LLM version got wrong — pin it in Gherkin)
+
+  - Only CRIT findings nudge the coordinator; WARN/OK stay in the log.
+  - Nudge = a typed message + Enter into the coordinator pane (typed messages
+    submit; remote-app draft overlays do not — verified 2026-07-24).
+  - Deduped per finding-key with a cooldown (default 30 min) so a persistent
+    condition nudges once, not every sweep.
+  - If the coordinator pane/process is down, log NUDGE-SKIP — never nudge into
+    a dead pane, never fall back to acting on the swarm itself.
+  - The babysitter NEVER fixes anything: no respawns, no menu picks, no parcel
+    moves. It observes and reports. Judgment stays with the coordinator/human.
+
+  ## Engineering shape (testability boundary)
+
+  Finding assembly is a PURE function: given a snapshot struct (sessions,
+  processes, file listings/ages, pane captures, meminfo) it returns the
+  findings list (key, severity, message) and the nudge decision (which
+  findings, given dedup state + now). Unit tests drive that pure core with
+  fixtures — no tmux, no fs, no sleep. The gathering layer (tmux/ps/find) and
+  the loop daemon are thin I/O wrappers per the CLI thin-wrapper rule.
+
+  ## Documentation ("digested by the swarm")
+
+  - Runbook: what babysitterd checks, what a nudge looks like, how to
+    start/stop/ensure it, where the log and state live, and the env skip.
+  - The coordinator's prompt/constitution articles get one line so the
+    coordinator KNOWS what a "babysitter health sweep:" message is and that it
+    is a trusted deterministic report, not a hallucination to re-verify from
+    scratch.
+  - Note in the operator docs that the operator-layer prototype is superseded
+    once this lands (the operator stops its private copy).
+
+acceptance: |
+  Specifier writes the scenarios. Minimum:
+
+  1. `start-swarm.sh` brings up babysitterd (absent `SWARMFORGE_SKIP_BABYSITTER=1`);
+     `stop-swarm.sh` and `kill_all_swarm.sh` terminate it and clean the pidfile;
+     double-start is refused while the pidfile is live.
+  2. `./swarm ensure` restarts a dead babysitterd and leaves a live one alone.
+  3. The pure finding-assembly core is unit-tested with fixtures covering each
+     of the eight checks firing and staying quiet (green snapshot -> zero
+     findings; each degraded snapshot -> exactly its finding).
+  4. Nudge contract proven pure-side: CRIT-only, dedup within cooldown,
+     re-nudge after cooldown expiry, NUDGE-SKIP when coordinator absent.
+  5. A menu-blocked pane produces a report finding and NO keystrokes toward
+     the menu (the sweep is observably read-only apart from the coordinator
+     nudge line).
+  6. Default launch no longer starts the LLM babysitter hawk; the deterministic
+     daemon owns the ancillary slot.
+  7. Runbook exists and the coordinator-facing doc line about
+     "babysitter health sweep:" messages is in place.
+
+out_of_scope: |
+  - Any auto-remediation (respawns, parcel moves, menu picks). Observation and
+    coordinator nudges only — by design, per the human's division of labour.
+  - Telegram/topic surfaces for findings (the old hawk's notify path). If
+    wanted later, separate ticket.
+  - The operator rc's semantic pane-analysis loop (reading what agents SAY,
+    lost-rotation forensics) — that stays LLM/operator work, not this daemon.
+  - Windows/mac portability beyond the current Linux swarm host.
