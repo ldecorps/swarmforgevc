@@ -121,9 +121,11 @@
 ;; ── ancestry findings ─────────────────────────────────────────────────
 
 (defn- ancestry-findings
-  [{:keys [ticket-id role-branch-commits main-reachable-set cited-ancestors-set abandoned-commits]}]
+  [{:keys [ticket-id role-branch-commits main-reachable-set cited-ancestors-set
+           abandoned-commits no-dropped-work-set]}]
   (let [main-reachable-set (or main-reachable-set #{})
         cited-ancestors-set (or cited-ancestors-set #{})
+        no-dropped-work-set (or no-dropped-work-set #{})
         abandoned (remove str/blank? (or abandoned-commits []))
         branches (sort (keys (or role-branch-commits {})))]
     (vec
@@ -134,7 +136,8 @@
                        (and (message-references-ticket? message ticket-id)
                             (not (contains? main-reachable-set sha))
                             (not (contains? cited-ancestors-set sha))
-                            (not (some #(str/starts-with? sha %) abandoned)))))
+                            (not (some #(str/starts-with? sha %) abandoned))
+                            (not (contains? no-dropped-work-set sha)))))
              (map (fn [{:keys [sha]}]
                     {:class :ancestry
                      :ticket-id ticket-id
@@ -175,11 +178,15 @@
 (defn evaluate
   "opts: {:type :to :ticket-id :cited-commit :role-branch-commits
    :main-reachable-set :cited-ancestors-set :wiring-entries :file-contents
-   :abandoned-commits}. Returns {:armed? bool :findings [...]} - unarmed
-   drafts (not a QA-bound git_handoff) are never evaluated at all, matching
-   the fail-open-on-scope contract. Ancestry findings precede wiring
-   findings; each group's own order is otherwise stable (branches sorted,
-   entries in declared order)."
+   :abandoned-commits :no-dropped-work-set}. Returns {:armed? bool :findings
+   [...]} - unarmed drafts (not a QA-bound git_handoff) are never evaluated at
+   all, matching the fail-open-on-scope contract. Ancestry findings precede
+   wiring findings; each group's own order is otherwise stable (branches
+   sorted, entries in declared order). :no-dropped-work-set (condition 5) is
+   a set of candidate shas already known to carry no unique content - a merge
+   commit whose diff against its first parent is empty, or a commit whose
+   tree matches the cited commit - excluded from ancestry findings same as
+   an abandoned or already-landed commit."
   [{:keys [type to] :as opts}]
   (if-not (gate-armed? {:type type :to to})
     {:armed? false :findings []}

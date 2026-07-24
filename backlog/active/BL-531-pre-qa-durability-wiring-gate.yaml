@@ -62,11 +62,20 @@ description: |
   3. are NOT reachable from `main` or `origin/main`; **and**
   4. are NOT an ancestor of the commit cited in the draft; **and**
   5. carry dropped work the cited commit does not already have — a merge commit
-     (2+ parents) whose diff against its first parent is empty, or a commit whose
-     tree is identical to the cited commit, carries no unique content and is
-     EXCLUDED. Without this, a deliberately-isolated off-main ticket-naming batch
-     merge — e.g. `aca611925c` "merge coder work for BL-531", empty functional
-     diff — survives conditions 1–4 and false-positives the gate (architect, 2026-07-23).
+     (2+ parents) that introduces no content beyond the union of its parents
+     (its combined diff against every parent is empty — a literal empty diff
+     against the first parent is the degenerate case of this, but an ordinary
+     role ticket-naming merge whose first-parent diff is the whole incoming
+     parcel and whose tree also carries the branch's own prior content is
+     excluded the same way, since it resolves no conflicts and adds nothing of
+     its own), or a non-merge commit whose tree is identical to the cited
+     commit, carries no unique content and is EXCLUDED. Without this, a
+     deliberately-isolated off-main ticket-naming batch merge — e.g.
+     `aca611925c` "merge coder work for BL-531", empty functional diff — or an
+     ordinary reviewer's merge of the parcel into their own branch tip — e.g.
+     `3a57a807fe`, an architect review-merge whose second parent IS the cited
+     commit — survives conditions 1–4 and false-positives the gate (architect,
+     2026-07-23; widened by architect send-back 2026-07-24, commit 4da499ea3b).
 
   Conditions 2 and 3 are what make this precise rather than noisy: bookkeeping
   commits that name a ticket (promotion, BL-topic records, human-approval
@@ -200,7 +209,12 @@ acceptance: |
   order; a merge commit (2+ parents) with an empty first-parent diff AND a commit
   whose tree matches the cited commit are both excluded from ancestry findings,
   while a genuine single-parent stranded fix with unique content still IS a
-  finding (Check A condition 5).
+  finding (Check A condition 5). The git-facing merge-shape check itself
+  (`no-dropped-work?` in `pre_qa_gate_gather_lib.bb`) is exercised end to end
+  through the Gherkin fixture (real git repos), same as the other two condition
+  5 shapes — there is no separate scratch-git-repo `.bb` runner for it, matching
+  this codebase's existing split between the pure lib's own unit runner and the
+  git-facing gather layer's acceptance coverage.
 
   QA end-to-end procedure (live swarm, from a role worktree):
 
@@ -235,7 +249,11 @@ acceptance: |
      `aca611925c`), leave it off-main and not an ancestor of the cited commit,
      and attempt a QA-bound `git_handoff`; confirm it is NOT flagged (no
      `PRE_QA_GATE_FAIL ancestry`), while a genuine single-parent stranded fix for
-     the same ticket still IS refused.
+     the same ticket still IS refused. Also create the second merge shape
+     (mirroring `3a57a807fe`): merge the cited commit into a branch tip that
+     carries unrelated prior content, so the first-parent diff is the whole
+     parcel (non-empty) and the tree is not identical to the cited commit's;
+     confirm this is ALSO not flagged.
 
 docs: |
   documenter:
