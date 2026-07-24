@@ -1794,6 +1794,21 @@ test('BL-607: composeRoleAnswerNoteMessage stays within the 80-char cap for ever
   }
 });
 
+// BL-607 architect bounce 2: a multi-line answer that is itself <= 80 chars
+// used to inline verbatim, embedding a raw newline into swarm_handoff.bb's
+// single-line `message:` header - the exact defect that silently drops a
+// dormant-pane answer (Line N: expected 'field: value', draft rejected).
+// A newline (or any other control char) must route through the same
+// pointer-file fallback a too-long answer already takes, never inline.
+test('BL-607: composeRoleAnswerNoteMessage falls back to a file pointer for a short answer that contains a newline (never inlines it verbatim)', () => {
+  const multiline = 'use option A\nbut rename the flag';
+  assert.ok(multiline.length <= 80, 'fixture must reproduce the "fits under the cap" case');
+  const message = composeRoleAnswerNoteMessage('specifier', multiline);
+  assert.doesNotMatch(message, /\n/, 'the queued note message must never contain a raw newline');
+  assert.match(message, /answer ready:/);
+  assert.match(message, /specifier/);
+});
+
 test('BL-607: roleAnswerFilePointerPath is a stable, role-scoped relative path', () => {
   assert.equal(roleAnswerFilePointerPath('specifier'), path.join('.swarmforge', 'operator', 'role-answers', 'specifier.json'));
 });
@@ -1862,6 +1877,28 @@ test('BL-607: enqueueRoleAnswerNote returns false, never throws, when the target
   const ok = await enqueueRoleAnswerNote(root, 'specifier', 'use staging');
 
   assert.equal(ok, false);
+});
+
+// BL-607 architect bounce 2: reproduces the actual end-to-end failure - a
+// short (<= 80 char) multi-line answer used to be inlined verbatim into the
+// draft's `message:` field, which swarm_handoff.bb rejects outright because
+// the 2nd line reads as a bogus header. The fix must route it through the
+// pointer file instead, exactly like an over-long answer, so the queued
+// note stays a single valid line AND the full multi-line text is still
+// recoverable by the role.
+test('BL-607: enqueueRoleAnswerNote falls back to a file pointer for a short multi-line answer, so the queued note validates and the full answer is recoverable', async () => {
+  const root = swarmHandoffFixture();
+  const multilineAnswer = 'use option A\nbut rename the flag';
+  assert.ok(multilineAnswer.length <= 80, 'fixture must reproduce the "fits under the cap" case');
+
+  const ok = await enqueueRoleAnswerNote(root, 'specifier', multilineAnswer);
+
+  assert.equal(ok, true);
+  const content = readQueuedOutboxNote(root);
+  assert.match(content, /^message: answer ready: .*specifier\.json$/m);
+  assert.doesNotMatch(content, /\n\S*rename/, 'the 2nd line of the answer must never leak into the queued draft as a bogus header');
+  const stored = JSON.parse(fs.readFileSync(path.join(root, roleAnswerFilePointerPath('specifier')), 'utf8'));
+  assert.equal(stored.text, multilineAnswer);
 });
 
 // ── ensureRoleTopics (BL-425 slice 1 provision-role-topics-01) ───────────

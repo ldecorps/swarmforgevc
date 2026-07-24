@@ -1213,21 +1213,28 @@ export async function redirectToRole(targetPath: string, role: string, text: str
 }
 
 // BL-607: swarm_handoff.bb's own `message:` header caps at 80 characters
-// (HANDOFF-PROTOCOL.md) - an answer that fits inlines verbatim; one that
-// does not falls back to a short pointer at the full text, written
-// alongside by writeRoleAnswerFileIfNeeded below. Pure/testable: no I/O.
+// AND is a single line (HANDOFF-PROTOCOL.md) - an answer that fits inlines
+// verbatim; one that does not (too long, OR contains a newline/control char
+// that would corrupt the draft's single-line header - architect bounce 2)
+// falls back to a short pointer at the full text, written alongside by
+// writeRoleAnswerFileIfNeeded below. Pure/testable: no I/O.
 const ROLE_ANSWER_NOTE_MAX_LEN = 80;
+
+function fitsInlineInRoleAnswerNote(text: string): boolean {
+  // eslint-disable-next-line no-control-regex
+  return text.length <= ROLE_ANSWER_NOTE_MAX_LEN && !/[\x00-\x1f\x7f]/.test(text);
+}
 
 export function roleAnswerFilePointerPath(role: string): string {
   return path.join('.swarmforge', 'operator', 'role-answers', `${role}.json`);
 }
 
 export function composeRoleAnswerNoteMessage(role: string, text: string): string {
-  return text.length <= ROLE_ANSWER_NOTE_MAX_LEN ? text : `answer ready: ${roleAnswerFilePointerPath(role)}`;
+  return fitsInlineInRoleAnswerNote(text) ? text : `answer ready: ${roleAnswerFilePointerPath(role)}`;
 }
 
 function writeRoleAnswerFileIfNeeded(targetPath: string, role: string, text: string): void {
-  if (text.length <= ROLE_ANSWER_NOTE_MAX_LEN) {
+  if (fitsInlineInRoleAnswerNote(text)) {
     return;
   }
   const abs = path.join(targetPath, roleAnswerFilePointerPath(role));

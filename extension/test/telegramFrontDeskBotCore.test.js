@@ -979,6 +979,38 @@ test('BL-607: a reply in a role topic while a question is pending, DORMANT pane,
   assert.deepEqual(cleared, ['specifier']);
 });
 
+// BL-607 architect bounce 2 (secondary, recommended): enqueueRoleAnswerNote's
+// boolean result was previously discarded - the pending marker cleared
+// unconditionally even when the answer was captured by NEITHER leg (no live
+// pane AND the queue attempt itself failed), silently losing the answer
+// while looking like it landed. The marker must stay set so a future retry
+// (or a human noticing) is still possible.
+test('BL-607: a reply in a role topic, DORMANT pane, queue attempt itself FAILS - the pending marker is NOT cleared (answer not silently lost)', async () => {
+  const queued = [];
+  const cleared = [];
+  await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 1595, text: 'use staging' })] }),
+    postToBridge: async () => {
+      throw new Error('postToBridge should not be called for a role-topic reply');
+    },
+    subjectForTopic: () => undefined,
+    openSubjectAndRecord: stubOpenSubjectAndRecord(),
+    readRoleTopicMap: () => ({ specifier: 1595 }),
+    redirectToRole: async () => ({ kind: 'no-pane' }),
+    getRolePendingQuestion: async () => true,
+    clearRolePendingQuestion: async (role) => {
+      cleared.push(role);
+    },
+    enqueueRoleAnswerNote: async (role, text) => {
+      queued.push({ role, text });
+      return false;
+    },
+  });
+  assert.deepEqual(queued, [{ role: 'specifier', text: 'use staging' }]);
+  assert.deepEqual(cleared, [], 'neither leg captured the answer - the pending marker must survive');
+});
+
 test('BL-607: a reply in a role topic with NOTHING pending stays a plain steer - never queues a note or clears any marker', async () => {
   const redirected = [];
   const queued = [];
@@ -2547,6 +2579,32 @@ test('BL-607: a tap on a role question with a DORMANT pane queues the answer as 
   );
   assert.deepEqual(queued, [{ role: 'specifier', text: 'staging' }]);
   assert.deepEqual(cleared, ['specifier']);
+});
+
+// BL-607 architect bounce 2 (secondary): the SAME "do not clear on a failed
+// queue" contract for the button-tap path (deliverAskAnswer), mirroring the
+// free-text path's test above.
+test('BL-607: a tap on a role question with a DORMANT pane, queue attempt itself FAILS - the pending marker is NOT cleared', async () => {
+  const queued = [];
+  const cleared = [];
+  await pollAndForward(
+    0,
+    PRINCIPAL_ID,
+    callbackFixtureAdapters({
+      data: 'ask:role-ask-specifier:0',
+      resolveAskOptions: async () => [{ label: 'staging' }, { label: 'prod' }],
+      redirectToRole: async () => ({ kind: 'no-pane' }),
+      enqueueRoleAnswerNote: async (role, text) => {
+        queued.push({ role, text });
+        return false;
+      },
+      clearRolePendingQuestion: async (role) => {
+        cleared.push(role);
+      },
+    })
+  );
+  assert.deepEqual(queued, [{ role: 'specifier', text: 'staging' }]);
+  assert.deepEqual(cleared, [], 'neither leg captured the answer - the pending marker must survive');
 });
 
 test('BL-607: a tap on a role question edits the ask message to show it was answered, same as an ordinary ask', async () => {
