@@ -1149,6 +1149,20 @@ resolve_claude_model_for_index() {
   printf '%s' "$resolved_model"
 }
 
+# BL-518/BL-563: the two file-writers a dormant router-rotation role needs
+# (launch script + settings/prompt artifacts), lifted out of the top-level
+# `rotation router` loop below so it is (a) a real function scope for
+# `dormant_resolved_model` - not a top-level `local`, which zsh's typeset
+# semantics turn into stray stdout on every iteration after the first - and
+# (b) directly callable by tests without a live tmux launch.
+generate_dormant_role_launch_artifacts() {
+  local index="$1"
+  local dormant_resolved_model
+  dormant_resolved_model="$(resolve_claude_model_for_index "$index")"
+  write_agent_instruction_file "${ROLES[$index]}" "$PROMPTS_DIR/${ROLES[$index]}.md" "${AGENTS[$index]}" "$dormant_resolved_model"
+  write_role_launch_script "$index" >/dev/null
+}
+
 write_claude_settings_file() {
   local role="$1"
   local settings_file="$STATE_DIR/launch/${role}.claude-settings.json"
@@ -1760,10 +1774,7 @@ done
 if [[ "$ROTATION_MODE" == "router" ]]; then
   for (( i = 1; i <= ${#ROLES[@]}; i++ )); do
     is_sequential_dormant "$i" || continue
-    local dormant_resolved_model
-    dormant_resolved_model="$(resolve_claude_model_for_index "$i")"
-    write_agent_instruction_file "${ROLES[$i]}" "$PROMPTS_DIR/${ROLES[$i]}.md" "${AGENTS[$i]}" "$dormant_resolved_model"
-    write_role_launch_script "$i" >/dev/null
+    generate_dormant_role_launch_artifacts "$i"
     echo -e "  ${CYAN}[${DISPLAY_NAMES[$i]}]${RESET} launch script pre-generated (dormant, router rotation target)"
   done
 fi

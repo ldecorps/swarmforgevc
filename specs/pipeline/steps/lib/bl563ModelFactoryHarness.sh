@@ -39,11 +39,7 @@ case "$MODE" in
     ;;
   compose)
     agent="${AGENTS[$idx]}"
-    resolved_model=""
-    if [[ "$agent" == claude ]]; then
-      claude_settings_and_flags_from_extra_cli "${EXTRA_CLI_ARGS[$idx]}"
-      resolved_model="$(resolve_role_model "$ROLE" "$CLAUDE_SETTINGS_MODEL")"
-    fi
+    resolved_model="$(resolve_claude_model_for_index "$idx")"
     write_agent_instruction_file "$ROLE" "$PROMPTS_DIR/${ROLE}.md" "$agent" "$resolved_model"
     ;;
   *)
