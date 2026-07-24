@@ -6,7 +6,7 @@ type: epic
 epic: swarm-reliability
 priority: 00
 depends_on: []
-decomposes_into: [BL-528, BL-529, BL-530, BL-531, BL-532, BL-533, BL-534, BL-535, BL-536, BL-537, BL-584]
+decomposes_into: [BL-528, BL-529, BL-530, BL-531, BL-532, BL-533, BL-534, BL-535, BL-536, BL-537, BL-584, BL-612, BL-613]
 source: "Human hygiene 2026-07-19: every ticket must have an epic; every epic must have a milestone. Tracker created during open-backlog cleanup."
 
 notes: |

@@ -124,6 +124,12 @@ description: |
      parcels across master + worktree mailboxes, and NO pane showing a busy
      footer, sustained for 2 consecutive sweeps (streak state; single-sweep
      idle never fires — orchestration pauses are normal) => CRIT.
+     SUPPRESSOR RULE (live-validated fix, 2026-07-24 06:20Z): "pending" counts
+     ONLY recent parcels (<=120 min) and NEVER abandoned/ (terminal, like
+     failed/). Observed: five abandoned/stale strays (one from six days prior
+     in a worktree inbox/new/) held pend>0 permanently, suppressing the check
+     through a real 1-hour starvation the sweep read as all-green. Fixture:
+     a starved snapshot plus only stale/abandoned parcels MUST still fire.
 
   The claim-progress risk scan salvaged from babysitter_assess_lib.bb becomes
   check #11.
