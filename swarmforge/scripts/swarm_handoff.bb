@@ -176,21 +176,11 @@
            errors))])))
 
 (defn canonical-commit [commit]
-  (let [matches (->> (command "." "git" "rev-parse" (str "--disambiguate=" commit))
-                    :out
-                    str/split-lines
-                    (remove str/blank?)
-                    vec)]
-    (cond
-      (not= 1 (count matches))
-      [nil (format "Header 'commit' must resolve to exactly one Git object; '%s' matched %d." commit (count matches))]
-
-      :else
-      (let [object (first matches)
-            object-type (str/trim (:out (command "." "git" "cat-file" "-t" object)))]
-        (if (= "commit" object-type)
-          [(str/trim (:out (command "." "git" "rev-parse" "--short=10" object))) nil]
-          [nil (format "Header 'commit' must resolve to a commit; '%s' resolves to '%s'." commit object-type)])))))
+  (handoff-lib/resolve-canonical-commit
+   commit
+   (:out (command "." "git" "rev-parse" (str "--disambiguate=" commit)))
+   (fn [object] (str/trim (:out (command "." "git" "cat-file" "-t" object))))
+   (fn [object] (str/trim (:out (command "." "git" "rev-parse" "--short=10" object))))))
 
 (defn- check-backlog-depth []
   (let [project-root (project-root)
