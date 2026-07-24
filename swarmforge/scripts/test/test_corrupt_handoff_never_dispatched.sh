@@ -22,9 +22,12 @@ fail() { echo "FAIL: $*" >&2; exit 1; }
 pass() { echo "PASS: $*"; }
 
 valid_handoff_body() {
+  # BL-610: the commit header must resolve to a real object now that dequeue
+  # re-checks it - $COMMIT (set below, once ROOT exists) is ROOT's own init
+  # commit, not a placeholder.
   local id="$1" recipient="$2" priority="${3:-50}"
-  printf 'id: %s\nfrom: specifier\nto: %s\nrecipient: %s\npriority: %s\ntype: git_handoff\ntask: BL-365-test\ncommit: 0000000000\n\npayload\n' \
-    "$id" "$recipient" "$recipient" "$priority"
+  printf 'id: %s\nfrom: specifier\nto: %s\nrecipient: %s\npriority: %s\ntype: git_handoff\ntask: BL-365-test\ncommit: %s\n\npayload\n' \
+    "$id" "$recipient" "$recipient" "$priority" "$COMMIT"
 }
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -38,6 +41,7 @@ trap 'rm -rf "$ROOT"' EXIT
 
 git -C "$ROOT" init -q
 git -C "$ROOT" -c user.email=test@test -c user.name=test commit -q --allow-empty -m init
+COMMIT="$(git -C "$ROOT" rev-parse --short=10 HEAD)"
 CODER_WT="$ROOT/.worktrees/coder"
 git -C "$ROOT" worktree add -q -b coder "$CODER_WT"
 mkdir -p "$ROOT/.swarmforge" "$CODER_WT/.swarmforge"
