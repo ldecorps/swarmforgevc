@@ -7,8 +7,8 @@ const { main, parseArgs } = require('../out/tools/record-qa-bounce');
 const { readQaBounceRecords } = require('../out/metrics/qaBounceStore');
 
 // BL-454: the go-forward writer CLI QA runs at bounce time. Flag contract
-// (--ticket/--role/--type/--class/--commit) matches swarmforge/roles/
-// QA.prompt's own caller exactly (specifier commit dc056df79c).
+// (--ticket/--role/--type/--class/--commit, plus BL-608's --by/--evidence)
+// matches swarmforge/roles/QA.prompt's own caller exactly.
 
 const CLI = path.join(__dirname, '..', 'out', 'tools', 'record-qa-bounce.js');
 
@@ -248,12 +248,14 @@ test('BL-454: recording the same bounce twice does not double-count it', async (
   assert.equal(readQaBounceRecords(root).length, 1);
 });
 
-// BL-608: the live QA.prompt caller still passes only the original five
-// flags until the documenter lands the --by/--evidence addition there -
-// that invocation must keep recording the JSONL entry exactly as before,
-// with no usage-error regression, even against a ticket that HAS a
-// backlog/active/ fixture (the ticket record is simply left untouched).
-test('BL-608: the original five-flag invocation (no --by/--evidence) still records the bounce and leaves the ticket record untouched', async () => {
+// BL-608: --by/--evidence stay optional at the CLI level as a best-effort
+// degrade path for any caller that omits them (the live QA.prompt caller
+// itself now always passes both - see the flagArgs()-based tests below and
+// swarmforge/roles/QA.prompt). A five-flag-only invocation must still
+// record the JSONL entry exactly as before, with no usage-error regression,
+// even against a ticket that HAS a backlog/active/ fixture (the ticket
+// record is simply left untouched, never attempted).
+test('BL-608: a caller that omits --by/--evidence still records the bounce and leaves the ticket record untouched (best-effort degrade path)', async () => {
   const root = mkRepo();
   const ticketPath = writeTicketYaml(root, 'BL-340');
   const before = fs.readFileSync(ticketPath, 'utf8');
@@ -334,17 +336,17 @@ test('BL-608: the durable aggregate log is still written alongside the ticket re
 test('BL-608: an unwritable ticket record does not block the bounce from being recorded', async () => {
   const root = mkRepo();
   const ticketPath = writeTicketYaml(root, 'BL-340');
-  fs.chmodSync(ticketPath, 0o444);
-  fs.chmodSync(path.dirname(ticketPath), 0o555);
-  try {
-    const result = await runCli(root, flagArgs());
-    assert.equal(result.recorded, true);
-    assert.equal(readQaBounceRecords(root).length, 1);
-    assert.equal(result.ticketRecordUpdated, false);
-  } finally {
-    fs.chmodSync(path.dirname(ticketPath), 0o755);
-    fs.chmodSync(ticketPath, 0o644);
-  }
+  // A directory in place of the ticket file fails deterministically for ANY
+  // user, including UID 0 in a root CI container - unlike chmod mode bits,
+  // which do not restrict root (prohibited: engineering.prompt Test Speed
+  // And Isolation, "never use chmod for failure simulation"). readFileSync/
+  // writeFileSync both throw EISDIR on a directory regardless of permissions.
+  fs.rmSync(ticketPath, { force: true });
+  fs.mkdirSync(ticketPath);
+  const result = await runCli(root, flagArgs());
+  assert.equal(result.recorded, true);
+  assert.equal(readQaBounceRecords(root).length, 1);
+  assert.equal(result.ticketRecordUpdated, false);
 });
 
 // ── BL-608: bounce-history-on-ticket-06 ──────────────────────────────────
@@ -390,4 +392,23 @@ test('the compiled CLI runs standalone as a subprocess and produces the same res
   const result = runCliSubprocess(root, flagArgs());
   assert.equal(result.recorded, true);
   assert.equal(readQaBounceRecords(root).length, 1);
+});
+
+// ── BL-608: QA.prompt live-caller pinning (architect send-back #1, defect 1) ──
+// --by/--evidence being merely accepted is not enough - BL-608's whole point
+// (bounce_count/bounce_history reachable in production) depends on the ONE
+// wired live caller, swarmforge/roles/QA.prompt, actually passing them. Pin
+// its literal text so a future edit cannot silently regress to the original
+// five-flag documentation, using the same "read the real role-prompt file and
+// assert on its content" pattern qaIntegratesCoordinatorBookkeepsSteps.js
+// already established for BL-247.
+test('BL-608: QA.prompt documents the live record-qa-bounce.js invocation with --by/--evidence', () => {
+  const qaPromptPath = path.join(__dirname, '..', '..', 'swarmforge', 'roles', 'QA.prompt');
+  const text = fs.readFileSync(qaPromptPath, 'utf8').replace(/\s+/g, ' ');
+  assert.ok(
+    text.includes(
+      '--commit <10-hex bounce commit> --by QA --evidence <path to the evidence file you just committed>'
+    ),
+    'expected QA.prompt to document the record-qa-bounce.js invocation with --by QA and --evidence flags, so updateTicketBounceHistory() is reachable from the live caller'
+  );
 });
