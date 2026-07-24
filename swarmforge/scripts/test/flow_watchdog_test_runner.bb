@@ -504,6 +504,77 @@
            1
            (count @alarms)))
 
+;; acceptance-13 (BL-577 bounce fix): an unconfirmed emit-alarm! (returns
+;; falsy, e.g. the Telegram outbox write failed) must NOT be recorded as
+;; alarmed - the next sweep retries rather than silently suppressing.
+(let [root (mk-sweep-fixture!)
+      daemon-dir (fs/path root ".swarmforge" "daemon")
+      new-dir (fs/path root "cleaner" "inbox" "new")
+      now-ms (* 1784900000 1000)
+      attempts (atom 0)
+      inboxes [{:role "cleaner" :new-dir new-dir :in-process-dir (fs/path root "cleaner" "inbox" "in_process")}]
+      failing-adapters {:live-session? (fn [_role] false)
+                         :emit-alarm! (fn [_text] (swap! attempts inc) false)}]
+  (write-handoff! (str (fs/path new-dir "p13.handoff"))
+                   [["id" "p13"] ["from" "specifier"] ["to" "cleaner"] ["type" "note"]
+                    ["enqueued_at" (iso (- (quot now-ms 1000) 90))]])
+  (flow-watchdog-lib/run-sweep! inboxes now-ms (str root) daemon-dir failing-adapters)
+  (assert= "acceptance-13: an unconfirmed emit-alarm! attempt is made"
+           1
+           @attempts)
+  (assert= "acceptance-13: an unconfirmed write is NOT recorded as alarmed in durable state"
+           nil
+           (:tier (get (flow-watchdog-lib/read-state daemon-dir) :p13)))
+  (flow-watchdog-lib/run-sweep! inboxes (+ now-ms 1000) (str root) daemon-dir failing-adapters)
+  (assert= "acceptance-13: a still-unconfirmed alarm is RE-ATTEMPTED next sweep, never suppressed"
+           2
+           @attempts))
+
+;; acceptance-13b: emit-alarm! throwing is treated the same as a falsy
+;; return - never crashes the sweep, never recorded as alarmed.
+(let [root (mk-sweep-fixture!)
+      daemon-dir (fs/path root ".swarmforge" "daemon")
+      new-dir (fs/path root "cleaner" "inbox" "new")
+      now-ms (* 1784900000 1000)
+      inboxes [{:role "cleaner" :new-dir new-dir :in-process-dir (fs/path root "cleaner" "inbox" "in_process")}]
+      throwing-adapters {:live-session? (fn [_role] false)
+                          :emit-alarm! (fn [_text] (throw (ex-info "outbox write failed" {})))}]
+  (write-handoff! (str (fs/path new-dir "p13c.handoff"))
+                   [["id" "p13c"] ["from" "specifier"] ["to" "cleaner"] ["type" "note"]
+                    ["enqueued_at" (iso (- (quot now-ms 1000) 90))]])
+  (flow-watchdog-lib/run-sweep! inboxes now-ms (str root) daemon-dir throwing-adapters)
+  (assert= "acceptance-13b: a throwing emit-alarm! does not crash the sweep and is not recorded as alarmed"
+           nil
+           (:tier (get (flow-watchdog-lib/read-state daemon-dir) :p13c))))
+
+;; acceptance-13c: once emit-alarm! starts confirming, the retried alarm is
+;; finally recorded and stops re-firing.
+(let [root (mk-sweep-fixture!)
+      daemon-dir (fs/path root ".swarmforge" "daemon")
+      new-dir (fs/path root "cleaner" "inbox" "new")
+      now-ms (* 1784900000 1000)
+      confirm? (atom false)
+      alarms (atom [])
+      inboxes [{:role "cleaner" :new-dir new-dir :in-process-dir (fs/path root "cleaner" "inbox" "in_process")}]
+      flaky-adapters {:live-session? (fn [_role] false)
+                       :emit-alarm! (fn [text] (swap! alarms conj text) @confirm?)}]
+  (write-handoff! (str (fs/path new-dir "p13d.handoff"))
+                   [["id" "p13d"] ["from" "specifier"] ["to" "cleaner"] ["type" "note"]
+                    ["enqueued_at" (iso (- (quot now-ms 1000) 90))]])
+  (flow-watchdog-lib/run-sweep! inboxes now-ms (str root) daemon-dir flaky-adapters)
+  (reset! confirm? true)
+  (flow-watchdog-lib/run-sweep! inboxes (+ now-ms 1000) (str root) daemon-dir flaky-adapters)
+  (assert= "acceptance-13c: exactly two attempts before the write confirms"
+           2
+           (count @alarms))
+  (assert= "acceptance-13c: once confirmed, the tier is finally recorded"
+           "warn"
+           (:tier (get (flow-watchdog-lib/read-state daemon-dir) :p13d)))
+  (flow-watchdog-lib/run-sweep! inboxes (+ now-ms 2000) (str root) daemon-dir flaky-adapters)
+  (assert= "acceptance-13c: no further re-attempt once confirmed and tier unchanged"
+           2
+           (count @alarms)))
+
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (seq @failures)
   (do

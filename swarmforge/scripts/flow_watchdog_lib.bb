@@ -256,14 +256,26 @@
     :snoozed? (snoozed? state parcel-id)}))
 
 ;; ── impure sweep application ─────────────────────────────────────────────────
-;; adapters keys: :live-session? (fn [role] bool), :emit-alarm! (fn [text]).
+;; adapters keys: :live-session? (fn [role] bool), :emit-alarm! (fn [text] ->
+;; truthy on a CONFIRMED write, falsy or throw on a failed/uncertain one - see
+;; run-sweep!'s docstring for why the return value gates durable state.
 
 (defn run-sweep!
   "role-inboxes: seq of {:role :new-dir :in-process-dir}. Reads the effective
    config thresholds, scans every role's new/in_process mailboxes, alarms
    (via adapters' :emit-alarm!) on every parcel whose tier just changed, and
    persists the updated durable state - including pruning entries for
-   parcels that have progressed out of new/in_process entirely."
+   parcels that have progressed out of new/in_process entirely.
+
+   Alarm-recorded-on-CONFIRMED-write only (BL-577 bounce fix): a parcel's
+   tier/alarmedAt is written to durable state ONLY when :emit-alarm! itself
+   reports a confirmed write (truthy return). If :emit-alarm! returns falsy
+   or throws (e.g. the Telegram outbox write failed), state is left exactly
+   as it was for that parcel - so the NEXT sweep re-evaluates the same
+   highest-tier-alarmed and re-attempts the alarm instead of silently
+   treating an unconfirmed attempt as sent. Recording on attempt rather than
+   confirmation would let one failed write permanently suppress a real
+   flow-stall, defeating the ticket's unsuppressable-by-design invariant."
   [role-inboxes now-ms project-root daemon-dir adapters]
   (let [{:keys [warn-ms escalate-ms]} (read-thresholds project-root)
         state (read-state daemon-dir)
@@ -288,11 +300,15 @@
                  acc-state
                  (let [live? (boolean ((:live-session? adapters) (:role parcel)))
                        verb (decide-verb {:mailbox (:mailbox parcel) :live-session? live?})
-                       text (format-alarm-text (assoc parcel :age-ms age-ms :verb verb :tier tier))]
-                   ((:emit-alarm! adapters) text)
-                   (assoc acc-state (keyword (:id parcel))
-                          (assoc (get acc-state (keyword (:id parcel)) {})
-                                 :tier (name tier) :alarmedAt now-ms)))))))
+                       text (format-alarm-text (assoc parcel :age-ms age-ms :verb verb :tier tier))
+                       confirmed? (try
+                                    (boolean ((:emit-alarm! adapters) text))
+                                    (catch Exception _ false))]
+                   (if confirmed?
+                     (assoc acc-state (keyword (:id parcel))
+                            (assoc (get acc-state (keyword (:id parcel)) {})
+                                   :tier (name tier) :alarmedAt now-ms))
+                     acc-state))))))
          pruned-state
          parcels)]
     (write-state! daemon-dir final-state)))
