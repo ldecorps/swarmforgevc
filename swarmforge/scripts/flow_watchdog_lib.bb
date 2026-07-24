@@ -152,7 +152,7 @@
   (try (json/parse-string (slurp path) true) (catch Exception _ nil)))
 
 (defn read-state
-  "Keyed by parcel id -> {:tier :alarmedAt :snoozed?}. Absent/malformed file
+  "Keyed by parcel id -> {:tier :alarmedAt :snoozed}. Absent/malformed file
    degrades to {} - never a crash."
   [daemon-dir]
   (or (read-json (state-file-path daemon-dir)) {}))
