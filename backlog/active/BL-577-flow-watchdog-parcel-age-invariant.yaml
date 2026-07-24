@@ -2,14 +2,14 @@ id: BL-577
 title: "Flow watchdog — no parcel sits unprocessed beyond a threshold, any mailbox, any type; alarm path is unsuppressable by design"
 milestone: M8
 type: feature
-status: needs_design
+status: todo
 epic: swarm-self-optimization-loop
 human_approval: approved
 severity: high
 priority: 06
 direction: human-requested
 depends_on: []
-assigned_to: specifier
+assigned_to: coder
 mutation_cost: medium
 source: |
   Human, 2026-07-23, after reviewing why NO existing self-heal layer caught
@@ -47,26 +47,70 @@ description: |
   - Destination: Telegram (operator/standing topic per BL-434 conventions),
     not email — dormant roles cannot be "attached" but CAN be rotated or
     expedited (BL-567), so the alarm is actionable.
-  - Dedup/pacing: one alarm per parcel per escalation tier (e.g. warn at
-    T, escalate at 4T), re-alarm only on tier change — never a 12s spam
-    loop, never silence. No role-based, type-based, or dormancy-based
-    suppression clause may exist in the alarm predicate; per-parcel
-    snooze (human ack) is the only mute, and it is visible state.
+  - Dedup/pacing: one alarm per parcel per escalation tier (warn at
+    flow_watchdog_warn_ms, escalate at flow_watchdog_escalate_ms),
+    re-alarm only on tier change — never a 12s spam loop, never silence.
+    No role-based, type-based, or dormancy-based suppression clause may
+    exist in the alarm predicate; per-parcel snooze (human ack) is the
+    only mute, and it is visible state.
   - Payload: parcel id, from->to, type, age, holding mailbox, plus the
     prescribed unblock verb (rotate / expedite / investigate) so the
     human or operator can act without archaeology.
 
-  ## Where it runs
+  ## Design (specifier, 2026-07-24) — where it runs and how
 
-  Specifier decides: simplest is a handoffd sweep sibling (cadence
-  already exists) reading headers role-mail-row already parses — but the
-  watchdog's VALUE is independence from the machinery it watches; a
-  handoffd-hosted watchdog dies with handoffd. Options: (a) in handoffd
-  + covered by the existing daemon-death alarm chain (supervisor emails
-  when handoffd dies — acceptable composite), (b) front-desk supervisor
-  tick (separate process, already supervised, has Telegram creds),
-  (c) both, cheap. Design must state which failure modes remain blind
-  (e.g. watchdog host dead AND its supervisor alarm broken).
+  HOST: a handoffd sweep sibling on the existing chase cadence — the
+  ticket's option (a), the "acceptable composite". Rationale: handoffd
+  already owns the three hard parts — role enumeration via the ONE shared
+  mailbox resolver (roles.tsv -> handoff-lib/load-role-info ->
+  handoff-lib/mailbox-dir, BL-128), which transparently covers
+  master-resident AND worktree mailboxes; parcel-header parsing
+  (handoff-header-field already reads enqueued_at/created_at in
+  role-mail-row); and the durable Telegram OPERATOR-topic outbox
+  (.swarmforge/operator/telegram-reply-outbox.jsonl — the exact
+  endless-loop-halt / disk-space alarm path, bridge polls and posts).
+  All three 2026-07-23 incidents happened with handoffd ALIVE, so a
+  handoffd-hosted watchdog catches the incident class; whole-daemon death
+  is covered by the existing handoffd_supervisor death-alarm chain.
+
+  SHAPE: pure decision core in a new swarmforge/scripts/flow_watchdog_lib.bb
+  (unit-tested like chase_sweep_lib), driven from handoffd's sweep loop.
+  - Sweep domain: for every roles.tsv role, the :new and :in_process dirs
+    from mailbox-dir. Scan with the existing scan-inbox-new /
+    scan-in-process helpers.
+  - Age: enqueued_at header, falling back to created_at — never mtime
+    (same precedence as mono_router_lib's note-aged?, BL-576).
+  - Decision core: pure fn over {age-ms, warn-ms, escalate-ms,
+    highest-tier-alarmed, snoozed?} -> :none | :warn | :escalate.
+    STRUCTURAL no-suppression guarantee: the input map carries no role,
+    type, or dormancy key — a unit test asserts the allowed-key set
+    (acceptance 3's structural leg).
+  - Durable state: .swarmforge/daemon/flow-watchdog-state.json keyed by
+    parcel id -> {tier, alarmed-at, snoozed?}. Entry cleared when the
+    parcel leaves new/in_process (claimed to completion, abandoned, or
+    reaped) — a progressed parcel never re-alarms. Snooze is READ-side
+    only in this ticket; the human-ack writer flow is a later slice.
+  - Alarm emit: append {"threadId": "OPERATOR", "text": ...} to
+    telegram-reply-outbox.jsonl; text carries parcel id, from->to, type,
+    humanized age, holding mailbox (role + new|in_process), verb.
+  - Verb table (pure, outside the suppression-free tier decision):
+    holder role has no live session -> rotate; in_process with live
+    session -> investigate; inbox/new with live session -> expedite
+    (BL-567).
+  - Conf: `config flow_watchdog_warn_ms 900000` and
+    `config flow_watchdog_escalate_ms 3600000` in the effective conf via
+    backlog-depth-lib/conf-file-path (BL-216/BL-313 pattern); absent or
+    malformed values fall back to those defaults, never disable.
+
+  REMAINING BLIND MODES (stated per ticket):
+  1. handoffd dead AND handoffd_supervisor's alarm chain broken
+     simultaneously — nothing in this ticket watches the watcher's watcher.
+  2. Telegram bridge/front-desk dead or parked: alarms are durably queued
+     in the outbox but undelivered until it drains. Mitigation: every
+     alarm is also written to handoffd's log and the state file; the
+     daily briefing stays the backstop narrative layer.
+  3. Work never enqueued as a parcel at all (dispatch gap) is out of this
+     watchdog's domain — BL-222's dispatch-gap sweep owns that.
 
   ## Relations
 
@@ -78,29 +122,37 @@ description: |
   - The daily briefing keeps its stall narrative; the watchdog is the
     real-time layer beneath it.
 
-acceptance: |
-  Specifier writes executable scenarios; minimum the design must make
-  testable:
-  1. A parcel (each type: git_handoff, note, broadcast copy) aged past
-     the warn threshold in a dormant role's inbox yields exactly one
-     Telegram alarm naming parcel, age, holder, and unblock verb —
-     with every liveness signal healthy (fixture proves the healers see
-     green while the watchdog fires).
-  2. Crossing the escalate tier re-alarms once; a parcel that progresses
-     (claimed, completed, or reaped) alarms never again; no repeat spam
-     within a tier.
-  3. There is no code path that suppresses the alarm by role, type, or
-     dormancy — asserted structurally (predicate has no such clause) and
-     behaviorally (dormant-role fixture alarms).
-  4. Age from header, not mtime (old-header/fresh-mtime fires;
-     fresh-header/old-mtime does not).
-  5. Coverage includes worktree mailboxes and master-resident role paths
-     (fixture in each location fires).
-  6. The three 2026-07-23 incidents, replayed as fixtures (starved
-     git_handoff; 10h note; unforwarded cleaner parcel), each produce an
-     alarm within one sweep of crossing threshold.
-  7. Thresholds are conf-tunable with sane defaults via the effective-
-     config pattern (BL-216); malformed conf falls back, never disables.
+acceptance: specs/features/BL-577-flow-watchdog-parcel-age-invariant.feature.draft
+
+notes: |
+  MATERIALIZE THE DRAFT (BL-441 guard): the acceptance scenarios live in
+  specs/features/BL-577-flow-watchdog-parcel-age-invariant.feature.draft
+  because a live .feature with unhandled scenarios hard-fails the
+  acceptance runner (BL-233). The coder MUST, in the implementation
+  parcel: rename the .feature.draft to .feature, wire its step handlers,
+  and update this acceptance: path — all in the same commit. Do not leave
+  the draft shadowing an implemented feature.
+
+  QA e2e procedure (live-swarm verification after the pipeline gates):
+  1. In the effective conf, set flow_watchdog_warn_ms 60000 and
+     flow_watchdog_escalate_ms 240000; restart handoffd via
+     start_handoff_daemon.sh so the sweep reads them.
+  2. Send a real note via swarm_handoff.sh to a dormant role (e.g.
+     documenter) and let it sit. Within one sweep after 60s, verify
+     EXACTLY ONE alarm line in
+     .swarmforge/operator/telegram-reply-outbox.jsonl (and the OPERATOR
+     Telegram topic) naming the parcel id, from->to, type note, age,
+     holder mailbox, and verb rotate. Verify chase/liveness surfaces
+     still read green throughout.
+  3. Wait past 240s: verify exactly one escalate re-alarm, and no other
+     repeats between tiers.
+  4. Have the role process the parcel (rotate + ready_for_next.sh);
+     verify no further alarms and the parcel's entry clears from
+     .swarmforge/daemon/flow-watchdog-state.json.
+  5. Corrupt the two conf lines (e.g. flow_watchdog_warn_ms banana),
+     restart handoffd, re-send a note: verify the watchdog still alarms
+     on the 900000 ms default — degraded, never disabled.
+  6. Restore the conf and restart handoffd.
 
 out_of_scope: |
   - Fixing any specific stall cause (BL-576, BL-537 et al own fixes).
@@ -109,3 +161,5 @@ out_of_scope: |
     and prescribes, a human/operator acts.
   - Replacing chase escalation state or the daily briefing.
   - Email as an alarm channel.
+  - The snooze WRITER (human-ack flow from Telegram) — this ticket only
+    honors snooze state already present in the state file.
