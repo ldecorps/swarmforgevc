@@ -76,12 +76,14 @@ classification: `already-fixed` — disposition is the resolving ticket/commit a
 
 Genuinely open defects or missing automation. Each gets a **root cause** and one **proposed fix ticket**. Ranked below by frequency × impact (auto-heal gaps weighted highest because they burn tokens and stall the whole pack).
 
-#### Rank 1 — Claim-without-progress / TASK reclaim loop
+#### Rank 1 — Claim-without-progress / TASK reclaim loop (RESOLVED 2026-07-24)
 
-- **Signature / evidence:** Live BL-512 session (coder repeatedly `ready_for_next` → same TASK → idle at `>`); related historical green-but-halted swarm in `backlog/evidence/BL-109-BL-121-BL-122-handoff-halt-20260706.md`. Chaser `nudge:coder` ×3 on 2026-07-19.
-- **Root cause:** Inbox/claim layer treats “task assigned” as healthy. Loop detector covers **NO_TASK spin**, not **TASK claimed but no commits / no tool use / same reclaim**.
-- **Why auto-heal matters:** Human should not babysit; handoffd should bounce the claim, re-route, or escalate after N idle reclaim cycles.
-- **proposed fix ticket:** `BL-528` — Auto-heal claim-without-progress (detect idle reclaim of same task; nudge → reassign → halt+alert).
+- **Signature / evidence:** BL-512 session (2026-07-19): coder repeatedly `ready_for_next` → same TASK → idle; related green-but-halted incident in `backlog/evidence/BL-109-BL-121-BL-122-handoff-halt-20260706.md`. Chaser `nudge:coder` ×3.
+- **Root cause:** Inbox/claim layer treated "task assigned" as healthy. Loop detector covered **NO_TASK spin** but not **TASK claimed with no commits/tool-use and repeated reclaims**.
+- **Resolution:** `BL-528` implemented 2026-07-24 with two parts:
+  1. **Detection**: Gate reclaim counter on git-diff/tool-activity evidence in worktree, not reclaim-count alone. Growing diff = progress, even with repeated `ready_for_next.sh` calls.
+  2. **Recovery**: Clear/reset claim-progress sidecar on halt so relaunched swarms don't re-halt on stale counters.
+- **Implementation:** `swarmforge/scripts/handoffd.bb` (halt-for-claim-progress!), `chase_sweep_lib.bb` (detection gates), supervisor startup path (sidecar reset). Extension-side duplicates removed; tests in `swarmforge/scripts/test/test_claim_progress_sweep.sh`.
 
 #### Rank 2 — Worktree / branch ≠ claimed ticket
 
@@ -133,7 +135,7 @@ Not primarily a code bug; needs a **guardrail** or **operator procedure**.
 | High chase/respawn on specifier/QA/cleaner | chaser chase ×7k / respawn ×100–200 | Operational SLO: alert when respawn/hour exceeds threshold; prefer heal over respawn. |
 | Rule proposals accumulate without closure | 19 unique proposals, count=1 each | Procedure: weekly rule-proposal triage (accept → constitution/role file, or reject with reason). Governance ticket already paused (BL-035 family) — reopen or supersede. |
 | Inventory commit-subject noise (`architect review: pass`) | commit signature count 8 | Procedure: evidence commits use stable bounce prefixes; ignore “review: pass” in future scans. |
-| Human expects auto-heal; today many recovers are manual | BL-109 forensics; 2026-07-19 live | Operator procedure until BL-528..BL-530 land: on green-but-stuck, check claim vs branch vs last commit age before relaunch. |
+| Human expects auto-heal; recovery gaps remain | BL-109 forensics; 2026-07-19 live | BL-528 shipped (claim-without-progress halts); BL-529 and BL-530 still open. Operator: check branch/launch-config on green-but-stuck before relaunch. |
 
 classification: `operational` — disposition is guardrail or operator-procedure change.
 
@@ -143,17 +145,21 @@ classification: `operational` — disposition is guardrail or operator-procedure
 
 Priority = occurrence frequency × blast radius (token burn / whole-swarm stall weighted up). **Auto-heal first**, per operator intent.
 
+**Status as of 2026-07-24:**
+- **BL-528 shipped** (2026-07-24): Claim-without-progress auto-heal implemented and tested.
+- **BL-531 shipped** (prior): Pre-QA durability / wiring gate live.
+- **BL-532 shipped** (prior): Sibling-bounce isolation implemented.
+
+Remaining open:
+
 | Rank | proposed fix ticket | Mode | Freq signal | Impact |
 |-----:|---|---|---|---|
-| 1 | **BL-528** | Claim-without-progress auto-heal | Live + nudge:coder×3; related BL-109 | High — burns tokens, blocks pipeline |
 | 2 | **BL-529** | Ticket/branch mismatch guard | Live BL-512/BL-526; BL-490 lineage | High — silent wrong work |
 | 3 | **BL-530** | Launch-config self-heal (model/rotation) | Live ROTATION_MODE / aider --model | High — pack-wide misbehavior |
-| 4 | **BL-531** | Pre-QA durability / wiring gate | qa_bounce:behavior:coder ×31 | High — bounce volume |
-| 5 | **BL-532** | Sibling-bounce isolation | Multi evidence “blocked by BL-469…” | Medium — false rework |
 | 6 | **BL-533** | Spec commit + runtime-wiring exit gates | rule_proposals L8–L9 | Medium |
 | 7 | **BL-534** | Thin-main / CRAP-visible CLI gate | rule_proposals L5–L6 | Medium — quality gate |
 
-Filed 2026-07-19 into `backlog/paused/` as BL-528..BL-534 (was audit placeholders BL-FIX-001..007). Specifier still writes APS features.
+Filed 2026-07-19 into `backlog/paused/` as BL-528..BL-534 (was audit placeholders BL-FIX-001..007).
 
 ---
 
@@ -162,16 +168,15 @@ Filed 2026-07-19 into `backlog/paused/` as BL-528..BL-534 (was audit placeholder
 Today the swarm can:
 
 - detect pure **NO_TASK** busy-loops and **halt + Telegram/email**;
+- detect **claimed task with no progress** (idle reclaim loop) and **halt + Telegram/email** (**BL-528, 2026-07-24**);
 - reap orphans, protect sockets, avoid phantom worktree clobber (**already-fixed**).
 
 It still **cannot** auto-heal:
 
-1. claimed task with no progress,
-2. wrong branch for the claim,
-3. missing launch contract (`--model`, `ROTATION_MODE`).
+1. wrong branch for the claim,
+2. missing launch contract (`--model`, `ROTATION_MODE`).
 
-Those three are why a “healthy” dashboard can still sit useless until a human intervenes. **BL-528..BL-530** are the audit’s primary recommendation.
-
+Those two are why a "healthy" dashboard can still sit useless until a human intervenes. **BL-529..BL-530** remain open.
 ---
 
 ## Reproduce this inventory
