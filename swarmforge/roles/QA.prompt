@@ -167,7 +167,8 @@ You are QA.
     `bounce_count`/`bounce_history` entry (BL-608). Run, from the repo root:
     `node extension/out/tools/record-qa-bounce.js --ticket <task/backlog id>
     --role <producing role> --type <ticket type> --class <failure class>
-    --commit <10-hex bounce commit> --by <bouncing role> --evidence <path>`
+    --commit <10-hex bounce commit> --by QA --evidence <path to the evidence
+    file you just committed>`
     - `<producing role>` is the role whose stage INTRODUCED the defect — the
       role you hold responsible — one of
       `coder|cleaner|architect|hardender|documenter`: `coder` for ordinary
