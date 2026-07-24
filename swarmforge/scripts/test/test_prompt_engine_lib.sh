@@ -56,4 +56,39 @@ PREFIX="$(bb "$ROOT/swarmforge/scripts/prompt_engine_cli.bb" stable-bootstrap-pr
 
 pass "05: CLI stable-prefix commands"
 
+# ── 6: --model reaches compose's metadata via compose-metadata (BL-563 Slice 2) ─
+MD="$(bb "$ROOT/swarmforge/scripts/prompt_engine_cli.bb" compose-metadata claude coder 0 "" --model opus)"
+[[ "$MD" == *'"model":"opus"'* ]] \
+  || fail "06: compose-metadata did not record the passed --model, got: $MD"
+[[ "$MD" == *'"role":"coder"'* ]] \
+  || fail "06: compose-metadata did not record the role, got: $MD"
+
+pass "06: CLI --model flag reaches compose-metadata's :model field"
+
+# ── 7: compose (system-prompt text) is unaffected by --model — the ─────────
+# adapter-consumption half stays BL-574's scope; this slice is metadata-only.
+COMPOSED_NO_MODEL="$(bb "$ROOT/swarmforge/scripts/prompt_engine_cli.bb" compose claude coder 0 "")"
+COMPOSED_WITH_MODEL="$(bb "$ROOT/swarmforge/scripts/prompt_engine_cli.bb" compose claude coder 0 "" --model opus)"
+[[ "$COMPOSED_NO_MODEL" == "$COMPOSED_WITH_MODEL" ]] \
+  || fail "07: --model must not change the composed system-prompt text (metadata-only in this slice)"
+
+pass "07: CLI compose system-prompt text is unchanged by --model (metadata-only)"
+
+# ── 8: --model and --deterministic compose in either order ─────────────────
+MD_ORDER_A="$(bb "$ROOT/swarmforge/scripts/prompt_engine_cli.bb" compose-metadata claude coder 0 "" --model opus --deterministic)"
+MD_ORDER_B="$(bb "$ROOT/swarmforge/scripts/prompt_engine_cli.bb" compose-metadata claude coder 0 "" --deterministic --model opus)"
+[[ "$MD_ORDER_A" == *'"model":"opus"'* && "$MD_ORDER_A" == *'"deterministic?":true'* ]] \
+  || fail "08a: --model before --deterministic did not set both, got: $MD_ORDER_A"
+[[ "$MD_ORDER_B" == *'"model":"opus"'* && "$MD_ORDER_B" == *'"deterministic?":true'* ]] \
+  || fail "08b: --deterministic before --model did not set both, got: $MD_ORDER_B"
+
+pass "08: CLI --model and --deterministic compose in either order"
+
+# ── 9: no --model -> compose-metadata's :model is absent/null (unchanged default) ─
+MD_NO_MODEL="$(bb "$ROOT/swarmforge/scripts/prompt_engine_cli.bb" compose-metadata claude coder 0 "")"
+[[ "$MD_NO_MODEL" == *'"model":null'* ]] \
+  || fail "09: expected null :model with no --model flag, got: $MD_NO_MODEL"
+
+pass "09: CLI compose-metadata :model is null when --model is not passed"
+
 echo "ALL PASS"
