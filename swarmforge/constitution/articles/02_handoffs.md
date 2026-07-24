@@ -96,8 +96,5 @@ diverge from the tool's actual grammar.
   and the coordinator must move ALL of them to `backlog/done/` — not only the one
   task name QA happened to be forwarded under. A ticket whose work merged but
   whose ID never reached the coordinator note stays in `backlog/active/` forever.
-- (BL-417/BL-420, 2026-07-15: a cleaner batch forwarded commit `002a0d5c88` —
-  which bundled BL-420's ~147-file `/tmp`-cleanup migration together with
-  BL-417's one-line icon change — under the single task name BL-417, so
-  bookkeeping would have closed only BL-417 and left BL-420 active
-  indefinitely.)
+- See **workflow-detailed.prompt** for the BL-417/BL-420 collapsed-batch
+  incident.
