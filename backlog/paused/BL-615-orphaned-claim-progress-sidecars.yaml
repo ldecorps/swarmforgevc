@@ -12,7 +12,7 @@ assigned_to:
 mutation_cost: low
 required_stages: [coder, qa]
 stage_skip_reasons: { cleaner: "small targeted fix plus a reap helper; no refactor surface", architect: "extends the existing BL-528 sidecar lifecycle with a cleanup invariant; no new design surface", hardender: "Babashka scripts have no wired mutation/CRAP toolchain (BL-472 deferred); the swarm-script unit suite is the actual gate and tests land in the coder parcel", documenter: "internal mailbox hygiene; no doc or diagram depicts sidecar lifecycle" }
-human_approval: pending
+human_approval: approved
 approval_context: >
   Low-priority cleanup defect from the coordinator's 2026-07-24 bug report
   (tertiary observation). Approve if a leak-diagnosis plus orphan-reap
