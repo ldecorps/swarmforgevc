@@ -1,6 +1,7 @@
 const assert = require('node:assert/strict');
 const {
   isKnownProducingRole,
+  isKnownBouncingRole,
   isKnownTicketType,
   isKnownFailureClass,
   qaBounceNaturalKey,
@@ -35,6 +36,18 @@ test('isKnownProducingRole rejects a value outside the closed set (e.g. the real
   assert.equal(isKnownProducingRole('hardener'), false);
   assert.equal(isKnownProducingRole('QA'), false);
   assert.equal(isKnownProducingRole(''), false);
+});
+
+// BL-608: the bouncing role - who is doing the bouncing, distinct from
+// producingRole (who is blamed). Closed to QA only today.
+test('isKnownBouncingRole accepts QA', () => {
+  assert.equal(isKnownBouncingRole('QA'), true);
+});
+
+test('isKnownBouncingRole rejects a producing role or any other value outside the closed set', () => {
+  assert.equal(isKnownBouncingRole('coder'), false);
+  assert.equal(isKnownBouncingRole('qa'), false);
+  assert.equal(isKnownBouncingRole(''), false);
 });
 
 test('isKnownTicketType accepts every type in the closed set', () => {
