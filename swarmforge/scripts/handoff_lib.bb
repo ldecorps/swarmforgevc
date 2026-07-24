@@ -754,22 +754,131 @@
         (recur (next remaining) corrupt (conj valid f)))
       {:corrupt corrupt :valid valid})))
 
+;; ── BL-610: unresolvable-commit detection + quarantine ──────────────────────
+;; A git_handoff whose commit resolved at send time can still become
+;; unreachable before a role dequeues it (the shared-checkout, multi-worktree,
+;; frequently-reset model this repo runs under makes that a real risk, not a
+;; theoretical one). Structurally the parcel is fine - every required header
+;; is present - so corrupt-handoff? above correctly leaves it alone; the
+;; defect is semantic (the commit VALUE no longer resolves) and only
+;; discoverable with a real git lookup. Kept as its own guard, deliberately
+;; not folded into corrupt-handoff?, per that function's own pure/structural
+;; contract. The git lookup is injectable so the decision logic
+;; (unresolvable-commit? below) stays unit-testable without a real repo.
+(defn git-commit-resolves?
+  "Real default lookup: true when commit resolves to an actual commit object
+   in the current repo. `cat-file -e <rev>^{commit}` fails closed for a
+   nonexistent object AND for one that exists but isn't a commit (a tree or
+   blob), matching the send-time semantics in swarm_handoff.bb's
+   canonical-commit."
+  [commit]
+  (zero? (:exit (sh/sh "git" "cat-file" "-e" (str commit "^{commit}")))))
+
+(defn unresolvable-commit?
+  "True when content is a git_handoff whose 'commit' header no longer
+   resolves to a real commit object. Narrow trigger (BL-610 shape #3): only
+   type: git_handoff carries a commit header at all, so note/awake parcels
+   never reach resolve-fn?. A blank or absent commit header is treated as
+   nothing-to-check (not a failure of ITS OWN) rather than unresolvable -
+   there is no commit value here for this guard to refute."
+  ([content] (unresolvable-commit? content git-commit-resolves?))
+  ([content resolve-fn?]
+   (let [{:keys [headers]} (parse-envelope content)
+         commit (get headers "commit")]
+     (and (= "git_handoff" (get headers "type"))
+          (not (str/blank? commit))
+          (not (resolve-fn? commit))))))
+
+(defn unresolvable-commit-record
+  "The investigable record BL-610 shape #4 asks for: the commit, the task,
+   the sending role, and the send->dequeue timestamps - exactly what nobody
+   could measure on the incident that motivated this ticket, captured here
+   so a recurrence is diagnosable in minutes instead of an hour of forensics."
+  [content]
+  (let [{:keys [headers]} (parse-envelope content)]
+    (format "commit=%s task=%s from=%s created_at=%s enqueued_at=%s dequeued_at=%s"
+            (get headers "commit" "unknown")
+            (get headers "task" "unknown")
+            (get headers "from" "unknown")
+            (get headers "created_at" "unknown")
+            (get headers "enqueued_at" "unknown")
+            (timestamp))))
+
+(defn partition-unresolvable-commit
+  "Splits already-structurally-valid candidate files (i.e. already passed
+   partition-corrupt) into :quarantined ({:file :diagnostic} maps, moved in
+   place as a side effect) and :valid (untouched, still eligible to
+   dequeue). Operating only on partition-corrupt's :valid output is what
+   keeps a doubly-broken parcel (corrupt AND unresolvable) quarantined
+   exactly once - it never reaches this check at all, since partition-corrupt
+   already removed and renamed it."
+  ([candidate-files] (partition-unresolvable-commit candidate-files git-commit-resolves?))
+  ([candidate-files resolve-fn?]
+   (loop [remaining candidate-files quarantined [] valid []]
+     (if-let [f (first remaining)]
+       (let [content (slurp (str f))]
+         (if (unresolvable-commit? content resolve-fn?)
+           (let [diagnostic (unresolvable-commit-record content)]
+             (quarantine-corrupt-handoff! f)
+             (recur (next remaining) (conj quarantined {:file f :diagnostic diagnostic}) valid))
+           (recur (next remaining) quarantined (conj valid f))))
+       {:quarantined quarantined :valid valid}))))
+
 (defn resolve-dequeueable-candidates
   "Shared by ready_for_next_task.bb and ready_for_next_batch.bb: dedups
    new-dir candidates against the completed/abandoned terminal set, then
-   quarantines any corrupt candidate among what's left (BL-365), printing
-   the SKIPPED/QUARANTINED diagnostic for each as a side effect. Returns
-   the final list of files genuinely eligible to dequeue - both receive
-   modes apply the identical corruption guard this way, rather than each
-   re-deriving it."
-  [new-files completed-basenames abandoned-basenames]
-  (let [{:keys [skipped dequeueable]} (dedup-new-candidates new-files completed-basenames abandoned-basenames)
-        {:keys [corrupt valid]} (partition-corrupt dequeueable)]
-    (doseq [f skipped]
-      (println "SKIPPED already-processed:" (fs/file-name f)))
-    (doseq [f corrupt]
-      (println "QUARANTINED corrupt-handoff:" (fs/file-name f)))
-    valid))
+   quarantines any corrupt candidate (BL-365) and any git_handoff whose
+   commit no longer resolves (BL-610) among what's left, printing the
+   SKIPPED/QUARANTINED diagnostic for each as a side effect. Returns the
+   final list of files genuinely eligible to dequeue - both receive modes
+   apply the identical guards this way, rather than each re-deriving them.
+   resolve-fn? (default git-commit-resolves?) is injectable for tests."
+  ([new-files completed-basenames abandoned-basenames]
+   (resolve-dequeueable-candidates new-files completed-basenames abandoned-basenames git-commit-resolves?))
+  ([new-files completed-basenames abandoned-basenames resolve-fn?]
+   (let [{:keys [skipped dequeueable]} (dedup-new-candidates new-files completed-basenames abandoned-basenames)
+         {:keys [corrupt valid]} (partition-corrupt dequeueable)
+         {:keys [quarantined valid]} (partition-unresolvable-commit valid resolve-fn?)]
+     (doseq [f skipped]
+       (println "SKIPPED already-processed:" (fs/file-name f)))
+     (doseq [f corrupt]
+       (println "QUARANTINED corrupt-handoff:" (fs/file-name f)))
+     (doseq [{:keys [file diagnostic]} quarantined]
+       (println (str "QUARANTINED unresolvable-commit: " (fs/file-name file) " " diagnostic)))
+     valid)))
+
+;; BL-610 shape #5: the send-time decision logic behind swarm_handoff.bb's
+;; canonical-commit, extracted here so matched-0/matched-1/matched-many/
+;; resolves-to-non-commit are each unit-testable as a pure value. Extracted
+;; rather than tested in place because swarm_handoff.bb ends in a bare
+;; (apply -main *command-line-args*) that System/exits on load with no args -
+;; load-file-ing it directly from a test runner is not safe. canonical-commit
+;; itself stays in swarm_handoff.bb as a thin wrapper that shells to git and
+;; delegates the decision here (CLI main() thin-wrapper pattern).
+(defn resolve-canonical-commit
+  "disambiguate-out is the raw (possibly multi-line) stdout of
+   `git rev-parse --disambiguate=<commit>`. cat-file-type-fn (object -> type
+   string) and short-rev-fn (object -> short hash string) are injectable so
+   every case runs without a real repo. Returns [canonical-hash-or-nil
+   error-or-nil], matching canonical-commit's own contract exactly. An empty
+   disambiguate-out must count as 0 matches, not 1 (str/split-lines on ''
+   returns [''] - the blank line has to be filtered, or a genuinely
+   no-match commit gets the misleading 'resolves to nil' message one step
+   later instead of an honest 'matched 0' here)."
+  [commit disambiguate-out cat-file-type-fn short-rev-fn]
+  (let [matches (->> (str/split-lines disambiguate-out)
+                      (remove str/blank?)
+                      vec)]
+    (cond
+      (not= 1 (count matches))
+      [nil (format "Header 'commit' must resolve to exactly one Git object; '%s' matched %d." commit (count matches))]
+
+      :else
+      (let [object (first matches)
+            object-type (cat-file-type-fn object)]
+        (if (= "commit" object-type)
+          [(short-rev-fn object) nil]
+          [nil (format "Header 'commit' must resolve to a commit; '%s' resolves to '%s'." commit object-type)])))))
 
 (defn print-task [file]
   (let [task-name (header-field file "task")

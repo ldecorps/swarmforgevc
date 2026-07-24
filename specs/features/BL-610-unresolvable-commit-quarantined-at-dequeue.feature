@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=5938f697bfdf0d18b99bde9b3de0c211a36ffc92a9972055f326df4c4a62bc83
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-07-24T16:09:06.249152679Z","feature_name":"A git handoff whose commit no longer resolves is quarantined at dequeue instead of handed to a role","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-610-unresolvable-commit-quarantined-at-dequeue.feature","background_hash":"f64d411b14c6a66f71893dc8eebc90135f4273a1515fdee035b8837d81b8e822","implementation_hash":"unknown","scenarios":[{"index":3,"name":"A <parcel type> parcel carries no commit and is never commit checked","scenario_hash":"c1cec7a96505907bb44affdc7ce37762c66efe96278a46669e67ac982b6a78d0","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-07-24T16:09:06.249152679Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: A git handoff whose commit no longer resolves is quarantined at dequeue instead of handed to a role
 
   Background:
