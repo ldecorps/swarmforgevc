@@ -97,6 +97,45 @@ function registerSteps(registry) {
       // "only the unsnoozed parcel alarms" below, over ctx.bl577.parcels.
       return;
     }
+    if (ctx.bl577.unconfirmedFixtureRoot) {
+      // Scenario 13: drives the real IMPURE run-sweep! (not the pure
+      // decide-tier direct-call path the other scenarios use) end-to-end,
+      // with a fake emit-alarm! adapter whose confirmation flips mid-run -
+      // this is the only scenario that needs run-sweep!'s own state-write
+      // gating (BL-577 bounce fix), so it is driven in one bb process to
+      // keep the atoms/durable-state sequence coherent across sweeps.
+      const root = ctx.bl577.unconfirmedFixtureRoot;
+      const daemonDir = path.join(root, '.swarmforge', 'daemon');
+      const newDir = path.join(root, 'cleaner', 'inbox', 'new');
+      const inProcessDir = path.join(root, 'cleaner', 'inbox', 'in_process');
+      const code = `
+(load-file "${LIB}")
+(def attempts (atom 0))
+(def confirm? (atom false))
+(def adapters {:live-session? (fn [_role] false)
+               :emit-alarm! (fn [_text] (swap! attempts inc) @confirm?)})
+(def inboxes [{:role "cleaner" :new-dir "${newDir}" :in-process-dir "${inProcessDir}"}])
+(flow-watchdog-lib/run-sweep! inboxes ${NOW_MS} "${root}" "${daemonDir}" adapters)
+(def tier1 (:tier (get (flow-watchdog-lib/read-state "${daemonDir}") :p-13)))
+(def attempts1 @attempts)
+(flow-watchdog-lib/run-sweep! inboxes ${NOW_MS + 1000} "${root}" "${daemonDir}" adapters)
+(def tier2 (:tier (get (flow-watchdog-lib/read-state "${daemonDir}") :p-13)))
+(def attempts2 @attempts)
+(reset! confirm? true)
+(flow-watchdog-lib/run-sweep! inboxes ${NOW_MS + 2000} "${root}" "${daemonDir}" adapters)
+(def tier3 (:tier (get (flow-watchdog-lib/read-state "${daemonDir}") :p-13)))
+(def attempts3 @attempts)
+(flow-watchdog-lib/run-sweep! inboxes ${NOW_MS + 3000} "${root}" "${daemonDir}" adapters)
+(def attempts4 @attempts)
+(println (cheshire.core/generate-string {:tier1 tier1 :attempts1 attempts1 :tier2 tier2 :attempts2 attempts2 :tier3 tier3 :attempts3 attempts3 :attempts4 attempts4}))
+`;
+      const result = spawnSync('bb', ['-e', code], { encoding: 'utf8' });
+      if (result.status !== 0) {
+        throw new Error(`bb eval failed for scenario 13: ${result.stderr}`);
+      }
+      ctx.bl577.unconfirmedResult = JSON.parse(result.stdout.trim());
+      return;
+    }
     const s = ctx.bl577;
     const ageMs = Number(bbEval(`(flow-watchdog-lib/parcel-age-ms ${cljMap({
       'enqueued-at': s.enqueuedAt, 'now-ms': NOW_MS,
@@ -409,6 +448,57 @@ function registerSteps(registry) {
     const stateAfterPrune = bbEval(`(flow-watchdog-lib/prune-progressed-entries (flow-watchdog-lib/read-state "${tmpDir}") #{"p-12b"})`);
     if (!stateAfterPrune.includes(':snoozed true')) {
       throw new Error(`expected the snooze entry to remain readable, got: ${stateAfterPrune}`);
+    }
+  }, FEATURE);
+
+  // ── Scenario 13: an unconfirmed write is retried, never recorded as sent ─
+  registry.defineScoped(/^an over-threshold parcel and an alarm channel whose write fails or is uncertain$/, (ctx) => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'bl577-unconfirmed-'));
+    fs.mkdirSync(path.join(tmpDir, 'swarmforge'), { recursive: true });
+    fs.writeFileSync(
+      path.join(tmpDir, 'swarmforge', 'swarmforge.conf'),
+      'config flow_watchdog_warn_ms 60000\nconfig flow_watchdog_escalate_ms 240000\n'
+    );
+    const newDir = path.join(tmpDir, 'cleaner', 'inbox', 'new');
+    fs.mkdirSync(newDir, { recursive: true });
+    const enqueuedAt = new Date(NOW_MS - 90000).toISOString();
+    fs.writeFileSync(
+      path.join(newDir, 'p13.handoff'),
+      `id: p-13\nfrom: specifier\nto: cleaner\ntype: note\nenqueued_at: ${enqueuedAt}\n\nbody\n`
+    );
+    ctx.bl577 = { ...(ctx.bl577 || {}), unconfirmedFixtureRoot: tmpDir };
+  }, FEATURE);
+
+  registry.defineScoped(/^the parcel's tier is not recorded in the watchdog state file$/, (ctx) => {
+    const r = ctx.bl577.unconfirmedResult;
+    if (r.tier1 !== null) {
+      throw new Error(`expected the tier NOT recorded after an unconfirmed emit-alarm!, got: ${r.tier1}`);
+    }
+    if (r.attempts1 !== 1) {
+      throw new Error(`expected exactly one emit-alarm! attempt on the first sweep, got: ${r.attempts1}`);
+    }
+  }, FEATURE);
+
+  registry.defineScoped(/^a subsequent sweep re-attempts the alarm for that parcel$/, (ctx) => {
+    const r = ctx.bl577.unconfirmedResult;
+    if (r.attempts2 !== 2) {
+      throw new Error(`expected the second sweep to retry the unconfirmed alarm, total attempts: ${r.attempts2}`);
+    }
+    if (r.tier2 !== null) {
+      throw new Error(`expected the tier to still be unrecorded while unconfirmed, got: ${r.tier2}`);
+    }
+  }, FEATURE);
+
+  registry.defineScoped(/^once the alarm channel confirms the write, the tier is recorded and no further re-attempt occurs$/, (ctx) => {
+    const r = ctx.bl577.unconfirmedResult;
+    if (r.tier3 !== 'warn') {
+      throw new Error(`expected the tier recorded once emit-alarm! confirms the write, got: ${r.tier3}`);
+    }
+    if (r.attempts3 !== 3) {
+      throw new Error(`expected the confirming sweep itself to be the third attempt, got: ${r.attempts3}`);
+    }
+    if (r.attempts4 !== 3) {
+      throw new Error(`expected no further attempt once the tier is recorded and unchanged, got: ${r.attempts4}`);
     }
   }, FEATURE);
 }
