@@ -170,18 +170,3 @@
    :pack pack-name
    :stop {:action "stop" :script "kill_all_swarm.sh"}
    :relaunch {:action "relaunch" :script "swarm" :args ["--pack" pack-name]}})
-
-(defn resolve-role-model
-  "BL-563 Slice 1: the pure overlay-over-pack decision applied at
-   write_claude_settings_file/write_agent_instruction_file time. `overlay` is
-   whatever model-factory-store/read-assignment-overlay! returned — a parsed
-   role-keyword -> assignment-entry map for a well-formed overlay, or nil for
-   a missing/unreadable/malformed/truncated/empty one (that reader's own
-   degrade-never-crash contract, mirroring backlog_depth_lib.bb's readers).
-   `pack-model` passes straight through whenever the overlay is not a map,
-   names no entry for `role`, or that entry's :model is blank — the overlay
-   only overrides fields it actually names (ticket's own contract); every
-   other case returns the overlay's named model instead."
-  [overlay role pack-model]
-  (let [overlay-model (when (map? overlay) (:model (get overlay (keyword role))))]
-    (if (clojure.string/blank? overlay-model) pack-model overlay-model)))

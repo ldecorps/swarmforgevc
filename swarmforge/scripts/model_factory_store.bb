@@ -16,8 +16,7 @@
 (ns model-factory-store
   (:require [babashka.fs :as fs]
             [babashka.process :as process]
-            [cheshire.core :as json]
-            [clojure.string :as str]))
+            [cheshire.core :as json]))
 
 (def default-state-dir-rel ".swarmforge/model-factory")
 
@@ -54,21 +53,10 @@
     (atomic-spit! path (json/generate-string assignment))
     (str path)))
 
-(defn read-assignment-overlay!
-  "BL-563 Slice 1: degrade-never-crash, matching backlog_depth_lib.bb's
-   reader posture (read-max-depth/read-recommended-cap/read-pause-state) — a
-   missing, unreadable, malformed, truncated, or empty overlay all resolve to
-   nil (the caller's pack-derived values then pass straight through
-   model-factory-lib/resolve-role-model unchanged) rather than throwing and
-   aborting a launch."
-  [state-dir]
-  (try
-    (let [p (assignment-file state-dir)]
-      (when (fs/exists? p)
-        (let [content (slurp (str p))]
-          (when-not (str/blank? content)
-            (json/parse-string content true)))))
-    (catch Exception _ nil)))
+(defn read-assignment-overlay! [state-dir]
+  (let [p (assignment-file state-dir)]
+    (when (fs/exists? p)
+      (json/parse-string (slurp (str p)) true))))
 
 (defn read-quota-state!
   "Reads the runtime quota-state, initialising it from the committed seed on

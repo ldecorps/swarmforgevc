@@ -1017,24 +1017,15 @@ write_agent_instruction_file() {
   local role="$1"
   local prompt_file="$2"
   local agent="${3:-claude}"
-  local model="${4:-}"
   local two_pack_flag=0
   local overlay=""
-  local -a model_flag=()
 
   is_two_pack_config && two_pack_flag=1
   overlay="$(config_overlay_prompt)"
-  [[ -n "$model" ]] && model_flag=(--model "$model")
   # BL-546: PromptEngine is the single authority for prompt composition -
   # this CLI call is the ONLY way a launch path produces a system-prompt
   # artifact; no prompt text is assembled in this script.
-  bb "$SCRIPT_DIR/prompt_engine_cli.bb" compose "$agent" "$role" "$two_pack_flag" "$overlay" "${model_flag[@]}" > "$prompt_file"
-  # BL-563 Slice 2: a sidecar recording compose's :metadata (:model in
-  # particular) alongside the primary .md artifact - the resolved launch
-  # model is otherwise invisible outside this process, since compose's
-  # system-prompt TEXT is deliberately unchanged by :model (adapter
-  # consumption of it is BL-574's scope, not this one's).
-  bb "$SCRIPT_DIR/prompt_engine_cli.bb" compose-metadata "$agent" "$role" "$two_pack_flag" "$overlay" "${model_flag[@]}" > "$prompt_file.metadata.json" 2>/dev/null || true
+  bb "$SCRIPT_DIR/prompt_engine_cli.bb" compose "$agent" "$role" "$two_pack_flag" "$overlay" > "$prompt_file"
 }
 
 agent-runtime-needs-bootstrap() {
@@ -1119,48 +1110,16 @@ claude_settings_and_flags_from_extra_cli() {
   CLAUDE_REMAINING_FLAGS="${(j: :)cli_flags}"
 }
 
-# BL-563 Slice 1: the thin IO edge over model_factory_lib.bb's pure
-# resolve-role-model decision — degrades to `pack_model` unchanged whenever
-# the bb call itself fails for any reason (bb missing, script error), on top
-# of model_factory_cli.bb's own overlay-read degrade-never-crash contract, so
-# a broken/absent ModelFactory overlay never aborts a launch.
-resolve_role_model() {
-  local role="$1"
-  local pack_model="$2"
-  local resolved
-  if resolved="$(bb "$SCRIPT_DIR/model_factory_cli.bb" resolve-model "$role" "$pack_model" 2>/dev/null)"; then
-    printf '%s' "$resolved"
-  else
-    printf '%s' "$pack_model"
-  fi
-}
-
-# BL-563 helper: resolve the launch model for a role at the given index.
-# For claude agents, parses the extra CLI args and resolves via overlay;
-# for non-claude agents, returns empty string. Both launch_role and the
-# dormant-role generation loop use this to eliminate duplication.
-resolve_claude_model_for_index() {
-  local index="$1"
-  local resolved_model=""
-  if [[ "${AGENTS[$index]}" == "claude" ]]; then
-    claude_settings_and_flags_from_extra_cli "${EXTRA_CLI_ARGS[$index]}"
-    resolved_model="$(resolve_role_model "${ROLES[$index]}" "$CLAUDE_SETTINGS_MODEL")"
-  fi
-  printf '%s' "$resolved_model"
-}
-
 write_claude_settings_file() {
   local role="$1"
   local settings_file="$STATE_DIR/launch/${role}.claude-settings.json"
-  local resolved_model
-  resolved_model="$(resolve_role_model "$role" "$CLAUDE_SETTINGS_MODEL")"
 
   mkdir -p "$STATE_DIR/launch"
 
   if [[ -n "$CLAUDE_SETTINGS_PERMISSION_MODE" ]]; then
     cat > "$settings_file" <<EOF
 {
-  "model": "$resolved_model",
+  "model": "$CLAUDE_SETTINGS_MODEL",
   "effortLevel": "$CLAUDE_SETTINGS_EFFORT",
   "skipDangerousModePermissionPrompt": true,
   "permissions": {
@@ -1168,10 +1127,10 @@ write_claude_settings_file() {
   }
 }
 EOF
-  elif [[ -n "$resolved_model" ]]; then
+  elif [[ -n "$CLAUDE_SETTINGS_MODEL" ]]; then
     cat > "$settings_file" <<EOF
 {
-  "model": "$resolved_model",
+  "model": "$CLAUDE_SETTINGS_MODEL",
   "effortLevel": "$CLAUDE_SETTINGS_EFFORT"
 }
 EOF
@@ -1462,16 +1421,8 @@ launch_role() {
   local session="${SESSIONS[$index]}"
   local display="${DISPLAY_NAMES[$index]}"
   local launch_script=""
-  local resolved_model
 
-  # BL-563 Slice 2: the SAME overlay-or-pack model slice 1 resolves for the
-  # settings file, passed into compose too - write_role_launch_script (below)
-  # runs write_claude_settings_file inside a $(...) subshell, so its own
-  # resolved_model local never escapes back to this scope; recomputing here
-  # via the same pure resolve_role_model call is cheap and side-effect-free,
-  # not fragile cross-subshell state-passing.
-  resolved_model="$(resolve_claude_model_for_index "$index")"
-  write_agent_instruction_file "$role" "$PROMPTS_DIR/${role}.md" "$agent" "$resolved_model"
+  write_agent_instruction_file "$role" "$PROMPTS_DIR/${role}.md" "$agent"
   launch_script="$(write_role_launch_script "$index")"
 
   # BL-130-VIOLATION fix: pass a non-claude role's provider API key as a
@@ -1760,9 +1711,7 @@ done
 if [[ "$ROTATION_MODE" == "router" ]]; then
   for (( i = 1; i <= ${#ROLES[@]}; i++ )); do
     is_sequential_dormant "$i" || continue
-    local dormant_resolved_model
-    dormant_resolved_model="$(resolve_claude_model_for_index "$i")"
-    write_agent_instruction_file "${ROLES[$i]}" "$PROMPTS_DIR/${ROLES[$i]}.md" "${AGENTS[$i]}" "$dormant_resolved_model"
+    write_agent_instruction_file "${ROLES[$i]}" "$PROMPTS_DIR/${ROLES[$i]}.md" "${AGENTS[$i]}"
     write_role_launch_script "$i" >/dev/null
     echo -e "  ${CYAN}[${DISPLAY_NAMES[$i]}]${RESET} launch script pre-generated (dormant, router rotation target)"
   done
