@@ -403,6 +403,41 @@ envelope at all?" — not the semantic re-validation of header values the
 protocol deliberately declines to repeat in the daemon; that stays the
 sender's job.
 
+### Unresolvable-commit quarantine at dequeue (BL-610)
+
+A `git_handoff` is validated at SEND time to ensure the commit exists and is
+unambiguous (see Commit Validation). However, in a multi-worktree repository
+with shared object storage and frequent resets, a commit that exists at send
+time can become unreachable by the time a role dequeues the parcel — an edge
+case, but one that has occurred in production (BL-610 trace: a commit passed
+send-time validation and then vanished from the object store within 52 minutes
+of delivery, leaving a role with structurally unprocessable work).
+
+Send-time validation prevents most failures, but **dequeue-time re-check**
+provides defense in depth: `ready_for_next_task.bb` / `ready_for_next_batch.bb`
+verify the commit still exists before promoting a `git_handoff` candidate into
+`in_process/`. This check is **scoped to `git_handoff` only** — `note` and
+`awake` parcels carry no commit header and incur no git lookup.
+
+If a commit is unresolvable at dequeue:
+
+- The candidate is **quarantined** to `<name>.handoff.dead` (same dead-letter
+  path as `corrupt-handoff?`), renaming it in place.
+- A diagnostic is printed: `QUARANTINED unresolvable-commit: <task-id> sent by
+  <role> with commit <abbrev>, sent <created_at>, dequeued <dequeued_at>`.
+- The send→dequeue time delta is captured in the record for investigating why
+  a valid commit became unreachable.
+- The dead-letter file is picked up by the same `notify-dead-letters.js` Telegram
+  alert sweep as any other quarantined parcel.
+- A role dequeuing a queue containing only unresolvable commits receives
+  `NO_TASK` / empty batch result, not a promoted contentless task.
+
+The check remains **defensive only**: it does not attempt to diagnose WHY a
+commit disappeared (reset, gc, stash loss, or other shared-storage anomaly).
+A human operator sees the quarantined parcel, the captured timing evidence, and
+the task/sending-role context needed to investigate.
+
+
 Reserved headers:
 
 ```text
