@@ -9,8 +9,14 @@ severity: high
 priority: 1
 direction: human-requested
 depends_on: []
-assigned_to: specifier
+assigned_to: coder
 mutation_cost: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "5-hour hard deadline; small additive surface (one pure decision fn + one sweep gate + conf lines) with no refactor debt to clean"
+  architect: "reuses the BL-423 pause architecture unchanged (same state file, same writers, same sweep cadence); no new architectural surface to review"
+  hardender: "deadline cannot absorb a mutation run; the pure decision fn ships with the full fixture matrix required by the acceptance contract; post-deadline hardening pass may be ticketed separately"
+  documenter: "the runbook is an acceptance-gated deliverable of the coder parcel itself (scenario 15), so a separate documentation stage adds latency without adding coverage"
 source: |
   Human, 2026-07-24 ~13:10Z (via operator rc): "can we define cooldown periods
   for the swarm, so it does not burn all the tokens before they replenish. it
@@ -50,12 +56,10 @@ description: |
 
   So the work is: a configured window (start/stop times, defaults 19:00 and
   07:00 LOCAL) and a clock that applies the existing timed pause when the
-  window opens, with untilMs = the next window close. The human said "cronjob
-  sort of thing" — the specifier picks the mechanism, but note handoffd
-  already ticks continuously; a wall-clock check inside its existing sweep
-  cadence needs NO new daemon, no crontab, and survives reboots with the
-  daemon itself. Config lives with the other knobs in swarmforge.conf
-  (e.g. cooldown_window_enabled / cooldown_start_local / cooldown_end_local).
+  window opens, with untilMs = the next window close. handoffd already ticks
+  continuously; a wall-clock check inside its existing sweep cadence needs NO
+  new daemon, no crontab, and survives reboots with the daemon itself. Config
+  lives with the other knobs in swarmforge.conf.
 
   ## Graceful semantics (the human's explicit constraint)
 
@@ -72,45 +76,97 @@ description: |
 
   ## External supervisors must be able to SEE the pause
 
-  The pause state must be readable from a FILE by non-swarm processes (the
-  operator layer's babysitter daemon checks "active tickets + all panes idle
-  = starved" and would false-CRIT all night otherwise). If PauseState is
-  already persisted, document the path in the runbook; if it is in-memory
-  only, persisting it is IN SCOPE. A planned pause and a starvation must be
-  distinguishable by a file read.
+  Pause state is ALREADY persisted at `.swarmforge/operator/control-pause.json`
+  (writeControlPauseState in telegram-front-desk-bot.ts; read by
+  backlog_depth_lib.bb's read-pause-state). No new persistence needed — the
+  runbook (acceptance scenario 15) documents the path so the operator layer's
+  babysitter can distinguish a planned pause from starvation by a file read.
 
   ## Manual override
 
-  The existing Telegram control pause/resume must keep working: a human
-  resume-now DURING the window wins (and the window does not immediately
-  re-pause until the next 19:00 boundary); a human pause outside the window
-  is unaffected. Simplest rule that satisfies both is the specifier's call —
-  state it in the Gherkin explicitly.
+  The existing Telegram control pause/resume must keep working. The rule
+  (stated explicitly in the Gherkin, per this ticket's instruction): the
+  cooldown applies AT MOST ONE automatic pause per window; a human resume-now
+  while inside the window CONSUMES the current window's application, so the
+  swarm stays resumed until the next window open. A human pause is never
+  overridden; if it expires inside a window whose application is not yet
+  consumed, the cooldown then applies.
 
-acceptance: |
-  Specifier writes the scenarios. Minimum:
+acceptance: specs/features/BL-617-nightly-cooldown-window.feature
 
-  1. With the window configured 19:00-07:00 local and enabled, the swarm is
-     PAUSED (no dispatch, no wakes) within one sweep cadence after 19:00, and
-     RESUMED within one sweep cadence after 07:00, using the existing
-     pause/auto-resume machinery — proven with a controllable clock, never
-     sleep-until-7pm in tests.
-  2. Window-open pause never kills a pane: an agent mid-turn at window open
-     completes its turn; its next wake happens after window close.
-  3. The pause decision is a PURE function over (now, config, current
-     PauseState) — unit-tested with fixtures for: window spanning midnight,
-     already-paused-by-human at window open, human resume-now during the
-     window, disabled config, malformed config (=> no pause, log loudly).
-  4. Pause state is readable from a documented file path by external
-     processes; the runbook names it.
-  5. Config defaults are 19:00/07:00 local; changing them requires no code.
-  6. DEADLINE: shipped and live on this box before 2026-07-24T18:00Z.
+notes: |
+  ## Specifier decisions (2026-07-24, specced under the 18:00Z deadline)
 
-  Routing note: the specifier owns the required_stages declaration; given the
-  5-hour deadline this ticket is a strong candidate for a declared subset
-  (it is config + one pure decision + wiring into an existing sweep), but
-  conservative default-full is acceptable if the specifier judges the
-  lifecycle surface too sensitive to skip stages. Specifier's call.
+  MECHANISM (specifier's call per the ticket): mirror the BL-423 posture
+  exactly — a compiled CLI (suggested: extension/out/tools/
+  apply-cooldown-pause.js) owning the pure decision, shelled from a new
+  handoffd sweep on the existing cadence (same shape as
+  pause-auto-resume-sweep! → resume-expired-pauses.js). The pause WRITE
+  reuses writeControlPauseState — never a second writer implementation.
+  The pure decision function takes (now, parsed config, PauseState,
+  window-consumed marker) and returns none | apply-pause{until next window
+  close}; unit fixtures per the acceptance contract: window spanning
+  midnight, already-paused-by-human at window open, human resume-now during
+  window, disabled config, malformed config (=> none + loud log).
+
+  ONCE-PER-WINDOW MARKER: persist which window start was already handled
+  (suggested: .swarmforge/operator/cooldown-window.json,
+  {lastHandledWindowStartMs}). Stamped when (a) the cooldown applies its
+  pause, or (b) a human resume-now lands while inside the window (the
+  front-desk bot's resumeNow path is the single human resume writer). Both
+  writers converge on "this window is consumed".
+
+  SWEEP SUPPRESSION (load-bearing scope — verified gap): today an active
+  pause only zeroes effective promotion depth (BL-423 via
+  backlog_depth_lib.bb). Parcel DELIVERY, chase nudges, and rotate/open-slot
+  wakes still fire, which would wake agents all night and defeat the brake.
+  While ANY pause is active (human or cooldown — one gate, reusing
+  backlog-depth-lib/read-pause-state), handoffd's outbound-wake sweeps are
+  suppressed: no inbox delivery, no chase nudges, no wake pokes. Enqueue
+  always succeeds (the freeze point is between enqueue and delivery). The
+  pause-auto-resume sweep and the cooldown sweep KEEP running — they are the
+  thaw. Scenarios 11-12 pin this.
+
+  CONF (this parcel commits these lines to swarmforge.conf so tonight is
+  live; absent keys degrade to disabled / 19:00 / 07:00, read fresh each
+  sweep, degrade-never-crash like briefing_morning_time_utc):
+    config cooldown_window_enabled true
+    config cooldown_start_local 19:00
+    config cooldown_end_local 07:00
+
+  VERIFIED FACTS (do not re-investigate):
+  - rotate_to_role's respawn-as! delivery-wait is bounded — proceeds after
+    timeout with a loud warning (handoff_lib.bb:604). A rotate during the
+    window respawns to a role that idles on NO_TASK/ROTATE_HOME; the frozen
+    parcel delivers after 07:00 and the chase machinery re-rotates the
+    resident then. No unbounded overnight hang.
+  - Pause file path + schema already externally readable; babysitter
+    adaptation is out of scope (operator side) once the runbook names it.
+  - Morning resume + Control-topic announcement fully exist (BL-423).
+
+  TESTABILITY SEAM: the CLI takes an injected-now flag (e.g.
+  --now <epoch-ms> and/or --dry-run printing the decision without writing)
+  so QA can e2e-verify on the live box without waiting for 19:00. Argument
+  seam, not a *_FORCE_RESULT env bypass.
+
+  ## E2E QA procedure (run on this box, BEFORE 2026-07-24T18:00Z)
+
+  1. npm install && npm run compile; unit + acceptance suites green
+     (all 15 BL-617 scenarios wired — the runner hard-fails on unhandled
+     scenarios).
+  2. Dry-run the decision CLI with injected clocks: an in-window time
+     (expect apply-pause until next 07:00 local), an out-of-window time
+     (expect none), a consumed-window time (expect none).
+  3. Confirm the three swarmforge.conf cooldown lines are committed and
+     live.
+  4. Restart handoffd on the new build via start_handoff_daemon.sh (the
+     running daemon predates the new sweep); confirm the cooldown sweep's
+     log line appears in the daemon log.
+  5. Confirm .swarmforge/operator/control-pause.json currently reads
+     {active:false} (no accidental pre-pause).
+  6. Tonight 19:00 local is the first live run: the operator watches the
+     Control topic for the pause announcement (scenario 13) and tomorrow
+     07:00 for the existing resume announcement.
 
 out_of_scope: |
   - Burn-rate PROJECTION/warning surfaces — that is
@@ -119,5 +175,7 @@ out_of_scope: |
   - Weekend/holiday calendars, multiple windows, per-role windows. One daily
     window is tonight's need; extensions are later tickets.
   - Operator-layer babysitter suppression during planned pause — the operator
-    adapts its own tooling once the pause state file path exists (item 4).
+    adapts its own tooling once the pause state file path is documented.
   - Any change to token/cost accounting itself.
+  - A mutation-hardening pass on the new decision fn (deadline; may be
+    ticketed post-ship — see stage_skip_reasons.hardender).
