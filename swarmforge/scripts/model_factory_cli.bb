@@ -10,14 +10,6 @@
 ;;   model_factory_cli.bb assign --mode cheap|quality [--role <role>] [--override-uncertified] [--today <YYYY-MM-DD>]
 ;;   model_factory_cli.bb cold-apply --mode cheap|quality --pack <name> [--override-uncertified] [--today <YYYY-MM-DD>] [--launch-seam <path>]
 ;;   model_factory_cli.bb mark-exhausted <provider> --date <YYYY-MM-DD>
-;;   model_factory_cli.bb resolve-model <role> <pack-model>
-;;
-;; resolve-model (BL-563 Slice 1) is the thin IO edge write_claude_settings_file
-;; and write_agent_instruction_file (swarmforge.sh) shell out to: reads the
-;; runtime assignment overlay (MODEL_FACTORY_STATE_DIR-overridable, same as
-;; every other command here) via model-factory-store/read-assignment-overlay!'s
-;; degrade-never-crash reader, then applies the pure
-;; model-factory-lib/resolve-role-model decision and prints the winning model.
 (ns model-factory-cli
   (:require [babashka.fs :as fs]
             [cheshire.core :as json]
@@ -86,7 +78,6 @@
   (println "  assign --mode cheap|quality [--role <role>] [--override-uncertified] [--today <YYYY-MM-DD>]")
   (println "  cold-apply --mode cheap|quality --pack <name> [--override-uncertified] [--today <YYYY-MM-DD>] [--launch-seam <path>]")
   (println "  mark-exhausted <provider> --date <YYYY-MM-DD>")
-  (println "  resolve-model <role> <pack-model>")
   (System/exit 1))
 
 (defn run-assign [rest-args]
@@ -120,13 +111,6 @@
       (println (json/generate-string {:assignment assignment :plan plan :seam_exit exit-code}))
       (when-not (zero? exit-code) (System/exit exit-code)))))
 
-(defn run-resolve-model [rest-args]
-  (when (< (count rest-args) 2) (usage))
-  (let [role (first rest-args)
-        pack-model (second rest-args)
-        overlay (model-factory-store/read-assignment-overlay! (factory-state-dir))]
-    (println (model-factory-lib/resolve-role-model overlay role pack-model))))
-
 (defn run-mark-exhausted [rest-args]
   (when (empty? rest-args) (usage))
   (let [provider (first rest-args)
@@ -145,5 +129,4 @@
     "assign" (run-assign rest-args)
     "cold-apply" (run-cold-apply rest-args)
     "mark-exhausted" (run-mark-exhausted rest-args)
-    "resolve-model" (run-resolve-model rest-args)
     (usage)))

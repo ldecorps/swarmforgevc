@@ -112,8 +112,3 @@ notes: |
   (`specs/features/BL-546-prompt-engine-model-aware-prompt-composition.feature`)
   covers Slice 1 and is not modified here; this slice gets its own file so the
   ticket owns its contract.
-
-  BL-563 slice 2 (2026-07-24) makes the launch call site pass the resolved
-  model into `compose`, so by the time this ticket runs the model argument is
-  already flowing. Adapters here CONSUME it; do not re-wire the call site and
-  do not touch `swarmforge.sh` in this parcel.
