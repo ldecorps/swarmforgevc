@@ -1,6 +1,6 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** July 24, 2026 (BL-613 fixed stuck-escalation email wiring test, restoring daemon diagnostics; the stuck-role escalation runbook's subject line, email body, and escalation-log shape now match the shipped code instead of a fabricated ticket-id/recommended-command example); July 24, 2026 (BL-607 pipeline roles can now raise clarifying questions into their own Telegram topics and await answers, closing the gap where roles made unilateral decisions on ambiguous choices — the specifier is the first role wired to use this mechanism, with a role_ask.bb CLI that delivers questions in the role's own topic with optional enumerated options or free-text fallback, and answers routed back either to a live pane or queued as a note when the pane is dormant, one pending question per role maximum); July 23, 2026 (BL-560 scheduled GitHub auto-intake scan: every 30 minutes, open issues without swarm-intake or swarm-specced labels are auto-discovered and queued to the backlog; BL-530 ensure-time validation of launch contracts: packs requiring coordinator_model and rotation are now validated at ensure-time, with clear refusal to respawn agents onto broken configurations); July 22, 2026 (BL-551 /cost-rank bridge endpoint for ranked LLM invocation analysis by origin over 3h/24h/7d horizons); July 19, 2026 (endless-loop hard-stop: handoffd halts swarm on repeated NO_TASK pane spins); July 19, 2026 (perplexity-mono-router pack + OpenAI-compat Perplexity pane remap (SWARMFORGE_USE_PERPLEXITY / PERPLEXITY_API_KEY → OPENAI_* at launch/ensure/rotate, API host https://api.perplexity.ai with no /v1); aider coordinators now receive `--model $COORDINATOR_MODEL` from `config coordinator_model`; all *-mono-router.prompt overlays require STOP after NO_TASK and a one-shot coordinator nudge when active is empty and paused has work); July 18, 2026 (BL-511 daily briefing shows an exact, front-desk-only Telegram bridge cost line (captured from each front-desk claude -p invocation's own total_cost_usd at reap time, unpriced calls excluded not zeroed), amended in flight to drop Operator-side proration since the always-on Operator's interactive session emits no per-wakeup cost to attribute; BL-507 pipeline board grid drops the Coordinator ("CD") column, built from the forward specifier..QA chain instead of all swarm roles, with a coordinator-held ticket now marking QA instead of an orphaned/all-dots row; BL-506 pipeline board LINKS section now lists most-recent tickets first, numeric-aware so BL-1000 sorts above BL-999, unnumbered root-intake ids sorting last; BL-509 slice 1: tapping the Approvals card's Amend button now prompts the human for the change, marks the ticket human_approval: amending, closes the approval ask, and queues a distinct amend-steer directive for the specifier — superseding BL-409/BL-410's old "amend posts a note without changing approval state" contract; BL-505 pipeline board grid/lists narrower for a phone — bare ticket numbers, 2-word slug, kebab-only list lines, not-started column moved first; BL-490-VIOLATION QA-bounce fix: the Expedite verb's approve+promote writes are now durably committed via commit_integrity_cli.bb before any dispatch can fire, plus a CRAP-threshold callback-dispatcher split; BL-495 the topic recreation/repair path now targets a ticket's fold topic — its epic's or the standing Backlog's — never a resurrected per-ticket one, no message replay, just a reconstruction header; BL-494 hand-run reconcile CLI closes every legacy per-ticket Telegram topic (read-only, history preserved) now that epic/Backlog routing replaces them, 429-safe and idempotent; BL-490 a fourth "Expedite" approval-ask button approves + force-promotes + dispatches a ticket to build immediately, bypassing the coordinator's sequencing triage, with an in-flight same-file collision guard; BL-503 both .bb ticket-id extractors make the prefix hyphen optional and canonicalize every match, fixing a live board-drop + spurious dispatch-gap defect on no-hyphen-tasked tickets; BL-504 shared TS metrics extractTicketId adopts the (BL|GH) allowlist + optional hyphen, no more dropped no-hyphen tickets or over-matched non-ticket rows; BL-493 ticket swarm events are folded into their epic's topic (or the standing Backlog topic) as one edit-in-place status message, per-ticket topic minting removed; BL-499 the chase sweep no longer re-chases a `new/` handoff forever once it's already resolved in `completed/` — reaped with an audit log line instead, not dead-lettered; BL-502 pipeline board's tappable link list is now budgeted to Telegram's 4096-char send limit, with a visible "+N more" indicator on overflow, and a "text is too long" post failure is classified distinctly and retains its topic; BL-489 pipeline board active-set id join is now case-symmetric, no more silent drop of a mis-cased held ticket; BL-496 a decided approval ask now survives Telegram rate-limiting, real rejection reason logged + bounded retry_after retry; BL-497 pipeline board self-heals a gone Telegram topic and surfaces its swallowed post error, bounded-retry + one operator alert on a frozen board; BL-498 mutation gate excludes tsc's import-helper preamble, a third boilerplate shape, from EntrypointBoilerplateIgnorer; BL-467 pipeline board is the only pinned Telegram message, continuously enforced every tick; BL-486 auto-reap orphaned SwarmForge agent processes from stale dry-runs, BL-367-safe never-touch-a-live-agent guard; BL-492 standing "Backlog" catch-all Telegram topic ensured once at boot, topic-consolidation epic foundation slice; BL-483 multi-option agent questions render as tappable Telegram buttons with per-option descriptions, superseding the BL-466 poll branch for this case; BL-488 pipeline board + dispatch-gap sweep resolve a held ticket's id from anywhere in the header, not only a leading position, and close a glued-letter-prefix swallow in both extractors; BL-487 pipeline board recomputes role-held stage live every tick from mailboxes instead of trusting the coordinator's sync cache; BL-439 FES second-swarm bring-up runbook + executable creds/fleet-console acceptance; BL-485 cleaner mutation-site size gate: count-only helper against out/-mapped sources, upstream six-pack survey finding adopted; BL-481 Operator reacts out-of-cycle to a fresh inbound Telegram message, cutting reply latency from up to 30s to a short poll window; BL-473 pipeline board shows every active ticket, not-started when unheld, membership is folders.active only; BL-484 a decided approval ask closes itself: buttons stripped, verdict shown; BL-388 leaderboard consumes survival + rework, closing the role-benchmarking epic; BL-451 retire PWA recert view + BL-339 deep-link notify; BL-436 per-swarm Telegram creds; BL-479 architect owns property testing; BL-419 QA bounce: coordinator ticket-close wired through commit-integrity; BL-387 pipeline-review oracle scores what survives, not a model's first diff; BL-480 Approvals-topic ask carries ticket meat; BL-469 per-agent steering-topic icons, 2nd bounce: epic-pool collision remap; BL-465 pipeline-board render round 2; BL-465 bounce: recently-closed recency sort; BL-477 upstream drift-watch mechanism; BL-423 Telegram swarm control verbs; BL-468 pipeline-board post-before-delete; BL-471 pipeline-board ticket-id case robustness)
+**Last Updated:** July 24, 2026 (BL-577 flow watchdog monitors parcel flow through the pipeline, detecting when work stalls in any mailbox beyond a configurable threshold; alarms to Telegram with prescribed action verbs for operators, unsuppressable by design); July 24, 2026 (BL-613 fixed stuck-escalation email wiring test, restoring daemon diagnostics; the stuck-role escalation runbook's subject line, email body, and escalation-log shape now match the shipped code instead of a fabricated ticket-id/recommended-command example); July 24, 2026 (BL-607 pipeline roles can now raise clarifying questions into their own Telegram topics and await answers, closing the gap where roles made unilateral decisions on ambiguous choices — the specifier is the first role wired to use this mechanism, with a role_ask.bb CLI that delivers questions in the role's own topic with optional enumerated options or free-text fallback, and answers routed back either to a live pane or queued as a note when the pane is dormant, one pending question per role maximum); July 23, 2026 (BL-560 scheduled GitHub auto-intake scan: every 30 minutes, open issues without swarm-intake or swarm-specced labels are auto-discovered and queued to the backlog; BL-530 ensure-time validation of launch contracts: packs requiring coordinator_model and rotation are now validated at ensure-time, with clear refusal to respawn agents onto broken configurations); July 22, 2026 (BL-551 /cost-rank bridge endpoint for ranked LLM invocation analysis by origin over 3h/24h/7d horizons); July 19, 2026 (endless-loop hard-stop: handoffd halts swarm on repeated NO_TASK pane spins); July 19, 2026 (perplexity-mono-router pack + OpenAI-compat Perplexity pane remap (SWARMFORGE_USE_PERPLEXITY / PERPLEXITY_API_KEY → OPENAI_* at launch/ensure/rotate, API host https://api.perplexity.ai with no /v1); aider coordinators now receive `--model $COORDINATOR_MODEL` from `config coordinator_model`; all *-mono-router.prompt overlays require STOP after NO_TASK and a one-shot coordinator nudge when active is empty and paused has work); July 18, 2026 (BL-511 daily briefing shows an exact, front-desk-only Telegram bridge cost line (captured from each front-desk claude -p invocation's own total_cost_usd at reap time, unpriced calls excluded not zeroed), amended in flight to drop Operator-side proration since the always-on Operator's interactive session emits no per-wakeup cost to attribute; BL-507 pipeline board grid drops the Coordinator ("CD") column, built from the forward specifier..QA chain instead of all swarm roles, with a coordinator-held ticket now marking QA instead of an orphaned/all-dots row; BL-506 pipeline board LINKS section now lists most-recent tickets first, numeric-aware so BL-1000 sorts above BL-999, unnumbered root-intake ids sorting last; BL-509 slice 1: tapping the Approvals card's Amend button now prompts the human for the change, marks the ticket human_approval: amending, closes the approval ask, and queues a distinct amend-steer directive for the specifier — superseding BL-409/BL-410's old "amend posts a note without changing approval state" contract; BL-505 pipeline board grid/lists narrower for a phone — bare ticket numbers, 2-word slug, kebab-only list lines, not-started column moved first; BL-490-VIOLATION QA-bounce fix: the Expedite verb's approve+promote writes are now durably committed via commit_integrity_cli.bb before any dispatch can fire, plus a CRAP-threshold callback-dispatcher split; BL-495 the topic recreation/repair path now targets a ticket's fold topic — its epic's or the standing Backlog's — never a resurrected per-ticket one, no message replay, just a reconstruction header; BL-494 hand-run reconcile CLI closes every legacy per-ticket Telegram topic (read-only, history preserved) now that epic/Backlog routing replaces them, 429-safe and idempotent; BL-490 a fourth "Expedite" approval-ask button approves + force-promotes + dispatches a ticket to build immediately, bypassing the coordinator's sequencing triage, with an in-flight same-file collision guard; BL-503 both .bb ticket-id extractors make the prefix hyphen optional and canonicalize every match, fixing a live board-drop + spurious dispatch-gap defect on no-hyphen-tasked tickets; BL-504 shared TS metrics extractTicketId adopts the (BL|GH) allowlist + optional hyphen, no more dropped no-hyphen tickets or over-matched non-ticket rows; BL-493 ticket swarm events are folded into their epic's topic (or the standing Backlog topic) as one edit-in-place status message, per-ticket topic minting removed; BL-499 the chase sweep no longer re-chases a `new/` handoff forever once it's already resolved in `completed/` — reaped with an audit log line instead, not dead-lettered; BL-502 pipeline board's tappable link list is now budgeted to Telegram's 4096-char send limit, with a visible "+N more" indicator on overflow, and a "text is too long" post failure is classified distinctly and retains its topic; BL-489 pipeline board active-set id join is now case-symmetric, no more silent drop of a mis-cased held ticket; BL-496 a decided approval ask now survives Telegram rate-limiting, real rejection reason logged + bounded retry_after retry; BL-497 pipeline board self-heals a gone Telegram topic and surfaces its swallowed post error, bounded-retry + one operator alert on a frozen board; BL-498 mutation gate excludes tsc's import-helper preamble, a third boilerplate shape, from EntrypointBoilerplateIgnorer; BL-467 pipeline board is the only pinned Telegram message, continuously enforced every tick; BL-486 auto-reap orphaned SwarmForge agent processes from stale dry-runs, BL-367-safe never-touch-a-live-agent guard; BL-492 standing "Backlog" catch-all Telegram topic ensured once at boot, topic-consolidation epic foundation slice; BL-483 multi-option agent questions render as tappable Telegram buttons with per-option descriptions, superseding the BL-466 poll branch for this case; BL-488 pipeline board + dispatch-gap sweep resolve a held ticket's id from anywhere in the header, not only a leading position, and close a glued-letter-prefix swallow in both extractors; BL-487 pipeline board recomputes role-held stage live every tick from mailboxes instead of trusting the coordinator's sync cache; BL-439 FES second-swarm bring-up runbook + executable creds/fleet-console acceptance; BL-485 cleaner mutation-site size gate: count-only helper against out/-mapped sources, upstream six-pack survey finding adopted; BL-481 Operator reacts out-of-cycle to a fresh inbound Telegram message, cutting reply latency from up to 30s to a short poll window; BL-473 pipeline board shows every active ticket, not-started when unheld, membership is folders.active only; BL-484 a decided approval ask closes itself: buttons stripped, verdict shown; BL-388 leaderboard consumes survival + rework, closing the role-benchmarking epic; BL-451 retire PWA recert view + BL-339 deep-link notify; BL-436 per-swarm Telegram creds; BL-479 architect owns property testing; BL-419 QA bounce: coordinator ticket-close wired through commit-integrity; BL-387 pipeline-review oracle scores what survives, not a model's first diff; BL-480 Approvals-topic ask carries ticket meat; BL-469 per-agent steering-topic icons, 2nd bounce: epic-pool collision remap; BL-465 pipeline-board render round 2; BL-465 bounce: recently-closed recency sort; BL-477 upstream drift-watch mechanism; BL-423 Telegram swarm control verbs; BL-468 pipeline-board post-before-delete; BL-471 pipeline-board ticket-id case robustness)
 
 ## Overview
 
@@ -830,6 +830,101 @@ showed 9/42 unkillable survivors purely from this fixed residue.
   killed — the exclusion did not leak into tested-or-not real code. No
   human-facing command or setting; this is internal mutation-gate tooling
   that only changes what the hardener's own gate reports.
+
+## Flow Watchdog (BL-577)
+
+The flow watchdog detects when a parcel stalls in any mailbox without progressing through the pipeline. Unlike the agent heartbeat (which monitors *liveness*) or message chasing (which monitors *delivery*), the flow watchdog monitors *flow* — whether work is moving through the handoff system.
+
+### What it detects
+
+Every parcel in any `.swarmforge/handoffs/` mailbox (both `new/` and `in_process/` directories, across all roles) must progress within a threshold. A parcel over the threshold — measured from its `enqueued_at` or `created_at` timestamp (never mtime) — triggers a flow-stall alarm regardless of:
+
+- Role dormancy (even an idle role with no session can be rotated)
+- Parcel type (git_handoff, note, broadcast)
+- What any liveness signal says (a role can be "alive" per the agent heartbeat but still holding a stalled parcel)
+
+The watchdog is **root-cause-agnostic**: it catches the class of flow stalls including causes not yet met, complementing focused fixes like BL-576 (aged-note actionability) that target specific root causes.
+
+### Alarm channels
+
+Flow watchdog alarms are **unsuppressable by design** — they go to Telegram (the operator's standing Operator topic) with a prescribed action verb, not to email where they could be muted by role dormancy. The alarm carries:
+
+- **Parcel identity:** id, type, from → to
+- **Age:** humanized elapsed time since enqueued
+- **Location:** role name, `new/` or `in_process/`
+- **Action verb:** what to do
+  - `rotate` — the holding role has no live session; rotate it to process the parcel
+  - `investigate` — the role is live but stalled in `in_process/`; check the pane for unexpected waits or loops
+  - `expedite` — the role is live but the parcel sat in `new/` too long; nudge or wake it
+
+### Configuration
+
+Configure the flow watchdog in `swarmforge.conf`:
+
+```
+config flow_watchdog_warn_ms 900000           # alarm at 15 minutes (default)
+config flow_watchdog_escalate_ms 3600000      # escalate at 1 hour (default)
+```
+
+These are the **thresholds for alarm tiers**, not disables:
+
+- **Warn tier:** first alarm when age exceeds `flow_watchdog_warn_ms`
+- **Escalate tier:** escalate to a higher-priority message when age exceeds `flow_watchdog_escalate_ms`
+- **No suppression:** once a parcel reaches warn-tier age, one alarm fires; once it reaches escalate-tier age, one escalation fires. The same parcel never re-alarms between tiers, and dormancy of the holding role is never a reason to silence the alarm.
+
+Malformed or absent config values fall back to the defaults above — the watchdog never disables itself.
+
+### Durable state and dedup
+
+The watchdog maintains `.swarmforge/daemon/flow-watchdog-state.json` keyed by parcel id:
+
+```json
+{
+  "00_20260724T162845Z_000798_from_QA_to_documenter": {
+    "tier": "warn",
+    "alarmed_at": "2026-07-24T17:00:00Z",
+    "snoozed": false
+  }
+}
+```
+
+**Dedup/pacing:** one alarm per parcel per tier — a parcel progresses (picked up, claimed, or reappears in another role's inbox) and its entry clears; no future re-alarms for that parcel even if it stalls again elsewhere.
+
+**Snooze (read-only in this ticket):** if `snoozed: true`, the watchdog honors that state and does not alarm until the snooze is cleared by human action (a future slice wiring the snooze writer).
+
+### Where it runs
+
+The flow watchdog is a pure decision core (`swarmforge/scripts/flow_watchdog_lib.bb`, unit-tested) driven from the handoff daemon's (`handoffd.bb`) existing sweep loop. It:
+
+1. Enumerates all roles from `roles.tsv`
+2. Scans each role's `:new` and `:in_process` mailbox directories
+3. For each parcel, extracts age and decides: `:none` | `:warn` | `:escalate`
+4. Emits alarms to `.swarmforge/operator/telegram-reply-outbox.jsonl` and logs the state
+
+**Design guarantee:** the decision core's input carries no `role`, `type`, or `dormancy` field — only age and tier state — so the no-suppression contract is structurally enforced and unit-tested: a test asserts that the allowed input keys exclude any that could trigger role/type/dormancy-based exemptions.
+
+### What the watchdog doesn't cover (blind spots)
+
+1. **Handoffd daemon itself is dead AND its supervisor is broken** — the watchdog runs inside handoffd, so a dead daemon detects nothing. A dead handoffd_supervisor breaks the daemon-death alarm chain; this ticket adds no new supervision layer for the supervisor itself.
+
+2. **Telegram bridge or front desk is parked** — alarms are durably queued in the outbox (`.swarmforge/operator/telegram-reply-outbox.jsonl`) but undelivered until the bridge recovers. The daily briefing stays the backstop narrative layer for undelivered alarms.
+
+3. **Work never enqueued as a parcel** — a dispatch gap (work that exists but never became a handoff in any mailbox). The dispatch-gap sweep (BL-222) owns that detection.
+
+### Operator workflow
+
+1. Receive a flow-watchdog alarm in your Operator Telegram topic
+2. Note the action verb and the holding role
+3. **Rotate:** if the role is dormant, rotate it to `ready_for_next.sh` to process the parcel
+4. **Investigate:** if the role is live but in `in_process/`, check the pane — it may be awaiting a question, blocked on a menu, or in a rare internal loop
+5. **Expedite:** if the role is live but the parcel is in `new/`, nudge or wake it (the chase daemon already does this, but an explicit nudge helps)
+6. Once the parcel is claimed and progresses, the watchdog's state entry clears and no further alarms fire for that parcel
+
+### See Also
+
+- **BL-349** — Stuck-Role Escalation Email: agent liveness alarm (different from flow monitoring)
+- **BL-537** — Session heal: auto-recovery for hung sessions (one class of flow-stall cause)
+- **BL-576** — Aged-Note Actionability: fixing a specific flow-stall root cause (prescriptive actions for old notes)
 
 ## Per-Agent Lifecycle Control
 
