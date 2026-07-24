@@ -64,7 +64,7 @@ description: |
   must not wave through any OTHER red. Coordinator: promoting BL-618 right
   after BL-617 clears QA un-reds the suite fastest.
 
-acceptance: specs/features/BL-618-stable-prefix-cap-regression.feature.draft
+acceptance: specs/features/BL-618-stable-prefix-cap-regression.feature
 
 notes: |
   E2E QA procedure: run bb swarmforge/scripts/test/prompt_engine_test_runner.bb
