@@ -1455,10 +1455,13 @@ async function deliverAskAnswer(
   const role = roleFromAskThreadId(decision.threadId);
   if (role !== undefined) {
     const result = adapters.redirectToRole ? await adapters.redirectToRole(role, answerLabel) : ({ kind: 'no-pane' } as SteerDeliveryResult);
-    if (result.kind !== 'delivered') {
-      await adapters.enqueueRoleAnswerNote?.(role, answerLabel);
+    // BL-607 architect bounce 2: neither leg captured the answer (no live
+    // pane AND the queue attempt itself failed) - the pending marker must
+    // NOT clear, or the answer is silently lost with no trace.
+    const captured = result.kind === 'delivered' || (await adapters.enqueueRoleAnswerNote?.(role, answerLabel)) === true;
+    if (captured) {
+      await adapters.clearRolePendingQuestion?.(role);
     }
-    await adapters.clearRolePendingQuestion?.(role);
     await editAskMessageIfKnown(decision.threadId, (originalText) => composeAskAnsweredText(originalText, answerLabel), adapters);
     return 'posted';
   }
@@ -1705,10 +1708,13 @@ async function processSteeringUpdate(
   // inbox instead (Leg 2). The pending marker clears either way
   // (delivered or queued) so the role is free to ask its next question.
   if (getRolePendingQuestion && (await getRolePendingQuestion(decision.role))) {
-    if (result.kind !== 'delivered') {
-      await enqueueRoleAnswerNote?.(decision.role, decision.text);
+    // BL-607 architect bounce 2: neither leg captured the answer (no live
+    // pane AND the queue attempt itself failed) - the pending marker must
+    // NOT clear, or the answer is silently lost with no trace.
+    const captured = result.kind === 'delivered' || (await enqueueRoleAnswerNote?.(decision.role, decision.text)) === true;
+    if (captured) {
+      await clearRolePendingQuestion?.(decision.role);
     }
-    await clearRolePendingQuestion?.(decision.role);
   }
   // Optional adapter: absent means no receipt, the exact pre-receipt
   // behavior - the same "a new capability degrades to prior behavior"
