@@ -243,19 +243,17 @@
 ;; ── per-parcel evaluation (bridges a scanned parcel + state into decide-tier) ─
 
 (defn evaluate-parcel-tier
-  "Assembles decide-tier's structurally-constrained input map from a scanned
-   parcel + durable state + thresholds. Kept separate from decide-tier
-   itself so the acceptance-05 structural guarantee lives on the decision fn
-   alone, never on this convenience wrapper."
-  [parcel now-ms warn-ms escalate-ms state]
+  "Assembles decide-tier's structurally-constrained input map from an age-ms,
+   warn/escalate thresholds, and durable state. Kept separate from
+   decide-tier itself so the acceptance-05 structural guarantee lives on the
+   decision fn alone, never on this convenience wrapper."
+  [age-ms warn-ms escalate-ms state parcel-id]
   (decide-tier
-   {:age-ms (parcel-age-ms {:enqueued-at (:enqueued-at parcel)
-                             :created-at (:created-at parcel)
-                             :now-ms now-ms})
+   {:age-ms age-ms
     :warn-ms warn-ms
     :escalate-ms escalate-ms
-    :highest-tier-alarmed (highest-tier-alarmed state (:id parcel))
-    :snoozed? (snoozed? state (:id parcel))}))
+    :highest-tier-alarmed (highest-tier-alarmed state parcel-id)
+    :snoozed? (snoozed? state parcel-id)}))
 
 ;; ── impure sweep application ─────────────────────────────────────────────────
 ;; adapters keys: :live-session? (fn [role] bool), :emit-alarm! (fn [text]).
@@ -282,14 +280,14 @@
          (fn [acc-state parcel]
            (if (str/blank? (:id parcel))
              acc-state
-             (let [tier (evaluate-parcel-tier parcel now-ms warn-ms escalate-ms acc-state)]
+             (let [age-ms (parcel-age-ms {:enqueued-at (:enqueued-at parcel)
+                                           :created-at (:created-at parcel)
+                                           :now-ms now-ms})
+                   tier (evaluate-parcel-tier age-ms warn-ms escalate-ms acc-state (:id parcel))]
                (if (= tier :none)
                  acc-state
                  (let [live? (boolean ((:live-session? adapters) (:role parcel)))
                        verb (decide-verb {:mailbox (:mailbox parcel) :live-session? live?})
-                       age-ms (parcel-age-ms {:enqueued-at (:enqueued-at parcel)
-                                               :created-at (:created-at parcel)
-                                               :now-ms now-ms})
                        text (format-alarm-text (assoc parcel :age-ms age-ms :verb verb :tier tier))]
                    ((:emit-alarm! adapters) text)
                    (assoc acc-state (keyword (:id parcel))
