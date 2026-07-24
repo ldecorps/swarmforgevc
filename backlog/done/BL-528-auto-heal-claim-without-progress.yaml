@@ -60,11 +60,7 @@ notes: |
   halt itself), not just gate future increments on activity. Full detail in the "4th
   occurrence" section of backlog/evidence/BL-528-false-positive-halt-20260722.md.
 
-acceptance: |
-  # Specifier replaces this with specs/features/BL-528-*.feature
-  Feature: claim-without-progress is auto-healed
-    Scenario: repeated idle reclaim of the same task triggers heal then escalate
-      Given a standing role that has claimed a task and made no durable progress
-      When the same task is reclaimed idle beyond the configured threshold
-      Then the swarm nudges, then reassigns or releases the claim
-      And if still stuck it halts with Telegram and email operator alerts
+acceptance: specs/features/BL-528-claim-without-progress-auto-heal.feature
+# Backfilled 2026-07-24 after this ticket closed: the feature file the notes
+# above asked for was never written before coder work, so the ticket shipped
+# on its placeholder. The contract now exists; BL-612 wires its step handlers.
