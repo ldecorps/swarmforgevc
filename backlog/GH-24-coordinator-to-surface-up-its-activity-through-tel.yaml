@@ -1,7 +1,0 @@
-id: GH-24
-title: "coordinator to surface up its activity through telegram topic"
-source: https://github.com/ldecorps/swarmforgevc/issues/24
-description: |2
-  get the coordinator to surface back up on its telegram topic any action he does for the swarm (so I have a reasonably visible log), sililarly to what the claude console app does (see screenshot)
-  
-  Alternatively, have a script that simply exposes its log file through telegram so as tonsave a few tokens![Screenshot_20260724_115805_Claude.jpg](https://github.com/user-attachments/assets/c83b6409-852e-4fc4-82ff-037f37972d78)
