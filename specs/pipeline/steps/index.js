@@ -312,7 +312,8 @@ const DOMAINS = [
   require('./bl608BounceHistoryOnTicketSteps'),
   require('./bl563ModelFactoryRuntimeWiringSteps'),
   require('./bl617NightlyCooldownWindowSteps'),
-  require('./bl618StablePrefixCapSteps')
+  require('./bl618StablePrefixCapSteps'),
+  require('./bl610UnresolvableCommitQuarantinedSteps')
 ];
 
 function registerSteps(registry) {

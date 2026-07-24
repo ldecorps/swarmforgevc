@@ -16,10 +16,12 @@ fail() { echo "FAIL: $*" >&2; exit 1; }
 pass() { echo "PASS: $*"; }
 
 write_handoff() {
+  # BL-610: commit must resolve to a real object now that dequeue re-checks
+  # it - $COMMIT is the current root's own init commit, not a placeholder.
   local dir="$1" id="$2" priority="${3:-50}" recipient="${4:-coder}"
   mkdir -p "$dir"
-  printf 'id: %s\nfrom: specifier\nto: %s\nrecipient: %s\npriority: %s\ntype: git_handoff\ntask: BL-218-test\ncommit: 0000000000\n\npayload\n' \
-    "$id" "$recipient" "$recipient" "$priority" > "$dir/${priority}_${id}.handoff"
+  printf 'id: %s\nfrom: specifier\nto: %s\nrecipient: %s\npriority: %s\ntype: git_handoff\ntask: BL-218-test\ncommit: %s\n\npayload\n' \
+    "$id" "$recipient" "$recipient" "$priority" "$COMMIT" > "$dir/${priority}_${id}.handoff"
 }
 
 # ── fixture: a project root with a coder git worktree (task mode) ──────────
@@ -28,6 +30,7 @@ trap 'rm -rf "$ROOT"' EXIT
 
 git -C "$ROOT" init -q
 git -C "$ROOT" -c user.email=test@test -c user.name=test commit -q --allow-empty -m init
+COMMIT="$(git -C "$ROOT" rev-parse --short=10 HEAD)"
 
 CODER_WT="$ROOT/.worktrees/coder"
 git -C "$ROOT" worktree add -q -b coder "$CODER_WT"
@@ -108,6 +111,7 @@ rm -rf "$INBOX/in_process"/* "$INBOX/new"/* "$INBOX/completed"/*
 ROOT2="$(cd "$(mktemp -d)" && pwd -P)"
 git -C "$ROOT2" init -q
 git -C "$ROOT2" -c user.email=test@test -c user.name=test commit -q --allow-empty -m init
+COMMIT="$(git -C "$ROOT2" rev-parse --short=10 HEAD)"
 # Deliberately no roles.tsv at all: load-role-info returns nil for
 # "coordinator", forcing my-mailbox-base-dir's flat pre-BL-128 fallback -
 # the exact post-merge/pre-migration window BL-218's root cause describes.
