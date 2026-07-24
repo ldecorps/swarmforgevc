@@ -9,7 +9,7 @@ severity: low
 priority: 4
 direction: human-requested
 depends_on: []
-assigned_to: specifier
+assigned_to: coder
 mutation_cost: medium
 abandoned_commits:
   - "d445f2eb75"
