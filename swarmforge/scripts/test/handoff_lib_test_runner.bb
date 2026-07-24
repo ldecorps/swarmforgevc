@@ -273,6 +273,50 @@
   (let [remaining (handoff-lib/handoff-files dir)]
     (assert= "the quarantined file is no longer a dequeue candidate on a second pass" [] remaining)))
 
+;; ── resolve-canonical-commit (BL-610 shape #5) ───────────────────────────
+;; The send-time decision logic behind swarm_handoff.bb's canonical-commit,
+;; extracted so matched-0/matched-1/matched-many/resolves-to-non-commit are
+;; each a pure-value test - no real repo, no shelling to git, and no need to
+;; load-file swarm_handoff.bb itself (it ends in a bare
+;; (apply -main *command-line-args*) that System/exits on load with no args).
+
+(let [[hash err] (handoff-lib/resolve-canonical-commit
+                   "nothingmatches" "" (fn [_] "commit") (fn [_] "shouldnotrun"))]
+  (assert= "matched-0: an empty disambiguate stdout is nil, never a hash" nil hash)
+  (assert= "matched-0: the message honestly says 'matched 0', not 'resolves to ''"
+           "Header 'commit' must resolve to exactly one Git object; 'nothingmatches' matched 0."
+           err))
+
+(let [[hash err] (handoff-lib/resolve-canonical-commit
+                   "abc1234567" "abc1234567890abc\n"
+                   (fn [_] "commit") (fn [_] "abc1234567"))]
+  (assert= "matched-1, resolves to a commit: canonical short hash is returned" "abc1234567" hash)
+  (assert= "matched-1, resolves to a commit: no error" nil err))
+
+(let [[hash err] (handoff-lib/resolve-canonical-commit
+                   "ambiguousab" "abc1234567890abc\ndef4567890123def\n"
+                   (fn [_] "commit") (fn [_] "shouldnotrun"))]
+  (assert= "matched-many: nil, never a hash" nil hash)
+  (assert= "matched-many: the message states the actual count"
+           "Header 'commit' must resolve to exactly one Git object; 'ambiguousab' matched 2."
+           err))
+
+(let [[hash err] (handoff-lib/resolve-canonical-commit
+                   "atreenotacommit" "abc1234567890abc\n"
+                   (fn [_] "tree") (fn [_] "shouldnotrun"))]
+  (assert= "resolves-to-non-commit (tree): nil, never a hash" nil hash)
+  (assert= "resolves-to-non-commit (tree): the message names the actual object type"
+           "Header 'commit' must resolve to a commit; 'atreenotacommit' resolves to 'tree'."
+           err))
+
+(let [[hash err] (handoff-lib/resolve-canonical-commit
+                   "ablobnotacommit" "abc1234567890abc\n"
+                   (fn [_] "blob") (fn [_] "shouldnotrun"))]
+  (assert= "resolves-to-non-commit (blob): nil, never a hash" nil hash)
+  (assert= "resolves-to-non-commit (blob): the message names the actual object type"
+           "Header 'commit' must resolve to a commit; 'ablobnotacommit' resolves to 'blob'."
+           err))
+
 ;; ── handoff-body-lead (BL-519 / mono-router resident) ───────────────────
 
 (let [dir (mk-tmp-dir)
