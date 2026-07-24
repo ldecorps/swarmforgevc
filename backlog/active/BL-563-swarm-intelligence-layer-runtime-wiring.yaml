@@ -2,20 +2,23 @@ id: BL-563
 title: "Swarm Intelligence Layer runtime wiring — launch path applies a ModelFactory assignment; Steward/Factory are dark today"
 milestone: M5
 type: feature
-status: needs_design
+status: todo
 epic: swarm-intelligence-layer
 human_approval: approved
 severity: medium
 priority: 03
 direction: swarm-surfaced
 depends_on: [BL-525, BL-546, BL-547]
-assigned_to: specifier
+assigned_to: coder
 mutation_cost: medium
 source: |
   Human question 2026-07-23 ("are the model steward, prompt engine and related
   factory plugged in?"). Operator audited all three against the live tree. Answer:
   one of three is on the launch path, and even that one only partly. Evidence
   below is reproducible against HEAD as of 2026-07-23.
+
+  Specifier firmed + sliced 2026-07-24 per the coordinator's promotion note;
+  the original operator audit ("Finding" section) is preserved verbatim.
 
 description: |
   ## Finding — the epic shipped a toolkit, not a capability
@@ -70,92 +73,101 @@ description: |
   the launch call site passes `agent`/`role`/`two_pack`/`overlay` with NO model
   argument at all. Today it is a centralised composer, not a model-aware one.
 
-  ## Why no existing ticket covers this
+  ## Firmed slices (specifier, 2026-07-24)
 
-  BL-545's own `remaining_slices` lists seven follow-ups (PromptEngine S2/S3,
-  Steward S2/S3 → BL-556/BL-557, calibration S2/S3, Factory S2 hot-swap). Every
-  one of them EXTENDS the toolkit. None of them connects it to the swarm. The
-  epic has no wiring slice, which is exactly the failure mode the
-  epic-runtime-wiring-slice rule exists to catch: pure modules stay dark until
-  a slice calls them AND persists the result on a path the runtime reads.
+  Slices 1 and 2 ship together in this ticket's single parcel. Slice 3 is NOT
+  in this ticket — see "Trigger" below.
 
-  ## Proposed shape (specifier to firm up and slice)
+  ### Slice 1 — a Factory assignment changes what launches (gaps 1 + 3)
 
-  ### Slice 1 — apply side (the essential one)
+  Behavior contract (implementation shape is the coder's, constraints below):
 
-  Make a Factory assignment actually change what launches. Per-role model
-  resolution today flows:
+  - When `.swarmforge/model-factory/assignment.json` is present, readable, and
+    well-formed, its per-role model overrides the pack-derived model at the
+    moment `write_claude_settings_file` produces
+    `.swarmforge/launch/<role>.claude-settings.json`. Fields the overlay does
+    not name (effort, provider, roles absent from the overlay) keep their
+    pack-derived values.
+  - A missing, unreadable, malformed, truncated, or empty overlay degrades to
+    EXACTLY today's pack-derived behaviour and never aborts a launch — same
+    degrade-never-crash posture as `backlog_depth_lib.bb`'s readers
+    (`read-max-depth`, `read-recommended-cap`, `read-pause-state`). Reuse that
+    reader pattern; do not invent a new one.
+  - The seam gap closes: the overlay written by
+    `model_factory_cli.bb cold-apply` must be the overlay the relaunched
+    swarm's launcher consults — no dropped `overlay_path`. Whether that is an
+    explicit path handoff into `./swarm` or the seam guaranteeing the overlay
+    sits at the canonical `.swarmforge/model-factory/assignment.json` path
+    before relaunch is the coder's choice; the contract is "the plan's freshly
+    written overlay is the one consulted", provable against a stub launcher.
+  - Model resolution (overlay-over-pack) must live in a pure, unit-testable
+    decision function in a `.bb` lib (per Design And Testability), with
+    `swarmforge.sh` as the thin IO edge calling it. Cover the decision table
+    in the swarm-script unit suite (`swarmforge/scripts/test/`).
 
-      claude_settings_and_flags_from_extra_cli()   swarmforge.sh:1060
-        parses the pack's `window <role> <agent> ... --model X --effort Y`
-        -> CLAUDE_SETTINGS_MODEL                   swarmforge.sh:1106
-      write_claude_settings_file()                 swarmforge.sh:1113
-        -> .swarmforge/launch/<role>.claude-settings.json   (call site :1200)
+  ### Slice 2 — the call site passes the resolved model to compose (gap 4 wiring half)
 
-  That settings file is the real per-role model lever (confirmed operationally:
-  editing pack conf on a live swarm is inert; the settings file is what a
-  respawn reads). The wiring is therefore: when
-  `.swarmforge/model-factory/assignment.json` is present, its per-role entry
-  overrides the pack-derived model when writing that settings file. The seam
-  must also propagate `overlay_path` through the relaunch so the freshly
-  written overlay is the one consulted.
+  `write_agent_instruction_file` (swarmforge.sh:1028) passes the SAME resolved
+  model slice 1 computed (overlay-or-pack) into `prompt_engine_cli.bb compose`.
+  Observable now: the composed artifact's `:model` metadata records the true
+  launch model instead of nothing. Adapter CONSUMPTION of that model is
+  BL-574's scope (PromptEngine Slice 2) — this slice only makes the call site
+  truthful, so BL-574 never has to touch `swarmforge.sh` (orthogonality with
+  launcher-adjacent work). Same file as slice 1's settings writer, hence same
+  parcel.
 
-  A missing, unreadable, or malformed overlay must degrade to EXACTLY today's
-  pack-derived behaviour — same degrade-never-crash posture
-  `backlog_depth_lib.bb`'s own readers (`read-max-depth`,
-  `read-recommended-cap`, `read-pause-state`) already use for their files.
-  Reuse that pattern rather than inventing a new one.
+  ### Trigger — deliberately NOT here (gap 2)
 
-  ### Slice 2 — feed the resolved model to PromptEngine
+  What causes `assign` to run stays exactly as today: a human CLI invocation.
+  The autonomous-trigger fork (operator sweep on quota exhaustion vs
+  coordinator-turn safe point vs status quo) has materially different blast
+  radii — an automated cold-apply RESTARTS THE SWARM and can tear down live
+  agents mid-ticket — and is a HUMAN ruling, filed separately as BL-616
+  (`human_approval: pending` carries the options). Do not build any trigger in
+  this parcel.
 
-  Pass the resolved model into `prompt_engine_cli.bb compose` so `:model` stops
-  being inert metadata. NOTE this only becomes observable once BL-546 Slice 2
-  adapters exist; specifier should decide whether it belongs here at all or
-  folds into BL-546 Slice 2, rather than shipping a parameter no adapter reads.
+  ## Acceptance materialization (BL-233 / BL-441)
 
-  ### Slice 3 — the trigger (NEEDS A HUMAN RULING, do not decide in-swarm)
+  Scenarios are parked in
+  specs/features/BL-563-model-factory-runtime-wiring.feature.draft because the
+  acceptance runner hard-fails on handler-less scenarios. The coder MUST, in
+  the same parcel: rename the draft to `.feature` and wire step handlers for
+  all six scenarios (slices 1 and 2 both land in this parcel, so no scenario
+  outruns built code). Do not close this ticket with the draft unmaterialized.
 
-  What causes `assign` to run? Genuinely open, with materially different blast
-  radii:
-    (a) human CLI only — status quo, this ticket then only fixes gap 1;
-    (b) operator sweep on a quota-exhaustion signal (`quota-state.json`
-        already exists for exactly this) — automatic, and a cold-apply
-        RESTARTS THE SWARM (`kill_all_swarm.sh` + relaunch), so an autonomous
-        trigger can tear down live agents mid-ticket;
-    (c) a coordinator turn at a safe point (e.g. between dispatches).
+  ## Sequencing hazard (coordinator)
 
-  Option (b) is the one worth being careful about: an automated model swap that
-  kills in-flight work is a very different product than an advisory CLI. This
-  fork must go to the human, not be resolved by the swarm.
+  Slice 1 rewires the `swarmforge.sh` settings writer. Do not run this ticket
+  concurrently with any other launcher-touching work (Concurrent Work
+  Orthogonality).
 
-acceptance: |
-  Specifier writes executable scenarios; these are the minimum the design must
-  make testable:
+acceptance: specs/features/BL-563-model-factory-runtime-wiring.feature.draft
 
-  1. With `.swarmforge/model-factory/assignment.json` present and naming a
-     model for role R, a launch writes that model into
-     `.swarmforge/launch/R.claude-settings.json`, NOT the pack's `--model`.
-  2. With NO overlay present, every role's settings file is byte-identical to
-     what the same pack produces today (pure regression guard — this is the
-     scenario that proves the wiring is additive).
-  3. A malformed / truncated / empty overlay degrades to pack-derived values
-     and does not abort the launch.
-  4. An overlay naming only SOME roles leaves the unnamed roles on pack values.
-  5. `model_factory_cli.bb cold-apply` produces a plan whose `overlay_path`
-     reaches the relaunched swarm — i.e. the seam no longer drops it. A test
-     seam stub asserting it receives the overlay path is sufficient.
-  6. End-to-end, against a real (throwaway) launch: `assign --mode cheap`
-     followed by cold-apply results in a swarm whose live per-role models match
-     the assignment, verified by reading the settings files after launch.
+qa_e2e_procedure: |
+  Scenario 6 of the original sketch is deliberately e2e-only (live launch is
+  environmentally unsuitable for the acceptance runner):
+  1. Swarm-script unit suite green, including the new overlay-resolution
+     decision tests.
+  2. Acceptance suite green with the materialized
+     BL-563-model-factory-runtime-wiring.feature.
+  3. Against a real throwaway target: `bb swarmforge/scripts/model_factory_cli.bb
+     assign --mode cheap`, then cold-apply; after relaunch, read every
+     `.swarmforge/launch/<role>.claude-settings.json` and confirm the live
+     per-role models match assignment.json; confirm one composed system-prompt
+     artifact records the same model in its metadata.
+  4. Delete `.swarmforge/model-factory/assignment.json`, relaunch, and confirm
+     settings files are byte-identical to a pre-BL-563 launch of the same pack
+     (regression proof that the wiring is additive).
 
 out_of_scope: |
+  - Any `assign` trigger beyond the human CLI — BL-616 (human ruling pending).
   - ModelFactory Slice 2 hot-swap (BL-525 Slice 2) — this ticket is cold path
     only: an assignment takes effect at the next launch/respawn, never
     in-place on a running pane.
   - Model Steward `evaluate` ingestion (BL-556) and role pane (BL-557).
   - Prompt calibration loop (BL-548) — still blocked by the human directive to
     promote only after GH-22/GH-23 forward pipeline work.
-  - Authoring new per-model prompt adapters (BL-546 Slice 2). Slice 2 here only
-    PASSES a model; it does not add adapters that consume it.
+  - Adapter consumption of the passed model (BL-574 / PromptEngine Slice 2).
+    This ticket only makes the compose call site pass the resolved model.
   - Changing any pack's committed `--model` values. The overlay layers over
     packs; it does not rewrite them.
