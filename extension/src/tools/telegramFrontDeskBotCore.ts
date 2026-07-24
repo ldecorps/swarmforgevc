@@ -1421,6 +1421,28 @@ async function answerIfAskAlreadyClosed(callbackQuery: TelegramCallbackQuery, de
   return true;
 }
 
+// BL-607 architect bounce 2 (shared): captures a role's answer via
+// whichever leg actually landed it - the live-pane delivery already
+// attempted by the caller, or the dormant-pane queue - and clears the
+// per-role pending marker ONLY when one of the two actually captured it.
+// Neither leg capturing (no live pane AND the queue attempt itself
+// failed) must leave the marker set, or the answer is silently lost with
+// no trace. Both the button-tap path (deliverAskAnswer) and the free-text
+// path (processSteeringUpdate) hit this exact same invariant, so it lives
+// here once instead of twice.
+async function captureRoleAnswer(
+  role: string,
+  delivered: boolean,
+  answerText: string,
+  enqueueRoleAnswerNote: ((role: string, text: string) => Promise<boolean>) | undefined,
+  clearRolePendingQuestion: ((role: string) => Promise<void>) | undefined
+): Promise<void> {
+  const captured = delivered || (await enqueueRoleAnswerNote?.(role, answerText)) === true;
+  if (captured) {
+    await clearRolePendingQuestion?.(role);
+  }
+}
+
 // BL-483: the tapped option's label rides back through postToBridge exactly
 // as if the human had typed it - the SAME shared answer effect path
 // processPollAnswer above already established for BL-466's poll answer
@@ -1455,13 +1477,7 @@ async function deliverAskAnswer(
   const role = roleFromAskThreadId(decision.threadId);
   if (role !== undefined) {
     const result = adapters.redirectToRole ? await adapters.redirectToRole(role, answerLabel) : ({ kind: 'no-pane' } as SteerDeliveryResult);
-    // BL-607 architect bounce 2: neither leg captured the answer (no live
-    // pane AND the queue attempt itself failed) - the pending marker must
-    // NOT clear, or the answer is silently lost with no trace.
-    const captured = result.kind === 'delivered' || (await adapters.enqueueRoleAnswerNote?.(role, answerLabel)) === true;
-    if (captured) {
-      await adapters.clearRolePendingQuestion?.(role);
-    }
+    await captureRoleAnswer(role, result.kind === 'delivered', answerLabel, adapters.enqueueRoleAnswerNote, adapters.clearRolePendingQuestion);
     await editAskMessageIfKnown(decision.threadId, (originalText) => composeAskAnsweredText(originalText, answerLabel), adapters);
     return 'posted';
   }
@@ -1707,15 +1723,9 @@ async function processSteeringUpdate(
   // role-topic message) - it is queued as a note into the role's own
   // inbox instead (Leg 2). The pending marker clears once the answer is
   // actually captured (delivered or queued) so the role is free to ask
-  // its next question - see the `captured` check just below.
+  // its next question - see captureRoleAnswer above.
   if (getRolePendingQuestion && (await getRolePendingQuestion(decision.role))) {
-    // BL-607 architect bounce 2: neither leg captured the answer (no live
-    // pane AND the queue attempt itself failed) - the pending marker must
-    // NOT clear, or the answer is silently lost with no trace.
-    const captured = result.kind === 'delivered' || (await enqueueRoleAnswerNote?.(decision.role, decision.text)) === true;
-    if (captured) {
-      await clearRolePendingQuestion?.(decision.role);
-    }
+    await captureRoleAnswer(decision.role, result.kind === 'delivered', decision.text, enqueueRoleAnswerNote, clearRolePendingQuestion);
   }
   // Optional adapter: absent means no receipt, the exact pre-receipt
   // behavior - the same "a new capability degrades to prior behavior"
@@ -2590,6 +2600,23 @@ export function roleFromAskThreadId(threadId: string): string | undefined {
   return threadId.startsWith(ROLE_ASK_THREAD_PREFIX) ? threadId.slice(ROLE_ASK_THREAD_PREFIX.length) : undefined;
 }
 
+// Shared by deliverAgentQuestion and deliverRoleQuestion below - both post
+// an ask to an already-resolved topic, differing only in HOW that topic
+// (and the threadId keying the answer back) was resolved. Extracted so the
+// button-rendering / free-text-fallback shape lives in exactly one place.
+async function deliverAskMessage(topicId: number | undefined, threadId: string, text: string, options: AskOption[] | undefined, adapters: ReplyRelayAdapters): Promise<void> {
+  if (options && options.length > 0 && adapters.sendAskButtons) {
+    const body = composeAskMessageBody(text, options);
+    const buttons = composeAskButtons(threadId, options);
+    const sent = await adapters.sendAskButtons(topicId, body, buttons);
+    if (sent.messageId !== undefined) {
+      await adapters.recordAskMessage?.(threadId, topicId, sent.messageId, body);
+    }
+    return;
+  }
+  await adapters.sendReply(topicId, text);
+}
+
 // BL-466/BL-483: an agent's clarifying question is delivered to the
 // dedicated Agent Questions topic instead of adapters.resolveDelivery's own
 // per-subject resolution - the routing exception the ticket calls for
@@ -2603,16 +2630,7 @@ export function roleFromAskThreadId(threadId: string): string | undefined {
 // ticket (scenario 5's own byte-identical contract).
 async function deliverAgentQuestion(threadId: string, text: string, options: AskOption[] | undefined, adapters: ReplyRelayAdapters): Promise<void> {
   const topicId = await adapters.agentQuestionsTopicId?.();
-  if (options && options.length > 0 && adapters.sendAskButtons) {
-    const body = composeAskMessageBody(text, options);
-    const buttons = composeAskButtons(threadId, options);
-    const sent = await adapters.sendAskButtons(topicId, body, buttons);
-    if (sent.messageId !== undefined) {
-      await adapters.recordAskMessage?.(threadId, topicId, sent.messageId, body);
-    }
-    return;
-  }
-  await adapters.sendReply(topicId, text);
+  await deliverAskMessage(topicId, threadId, text, options, adapters);
 }
 
 // BL-607: a role's own clarifying question is delivered to ITS OWN
@@ -2629,17 +2647,7 @@ async function deliverRoleQuestion(role: string, text: string, options: AskOptio
   if (topicId === undefined) {
     return;
   }
-  const threadId = roleAskThreadId(role);
-  if (options && options.length > 0 && adapters.sendAskButtons) {
-    const body = composeAskMessageBody(text, options);
-    const buttons = composeAskButtons(threadId, options);
-    const sent = await adapters.sendAskButtons(topicId, body, buttons);
-    if (sent.messageId !== undefined) {
-      await adapters.recordAskMessage?.(threadId, topicId, sent.messageId, body);
-    }
-    return;
-  }
-  await adapters.sendReply(topicId, text);
+  await deliverAskMessage(topicId, roleAskThreadId(role), text, options, adapters);
 }
 
 // BL-320: an entry already in seenIds was already successfully posted to
