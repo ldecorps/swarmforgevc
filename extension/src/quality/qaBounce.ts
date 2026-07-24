@@ -11,14 +11,6 @@
 export const KNOWN_PRODUCING_ROLES = ['coder', 'cleaner', 'architect', 'hardender', 'documenter'] as const;
 export type QaBounceProducingRole = (typeof KNOWN_PRODUCING_ROLES)[number];
 
-// BL-608: the role DOING the bouncing, distinct from producingRole (the role
-// held responsible). Only QA runs record-qa-bounce.js today (out of scope:
-// wiring sibling reviewer roles' own bounce rituals to the recorder is a
-// follow-up ticket) - closed to that one value now rather than accepting any
-// string, so the set only grows with a deliberate schema change.
-export const KNOWN_BOUNCING_ROLES = ['QA'] as const;
-export type QaBounceBouncingRole = (typeof KNOWN_BOUNCING_ROLES)[number];
-
 export const KNOWN_TICKET_TYPES = ['feature', 'bug', 'defect', 'chore', 'docs', 'enhancement', 'epic'] as const;
 export type QaBounceTicketType = (typeof KNOWN_TICKET_TYPES)[number];
 
@@ -31,10 +23,6 @@ function isKnownValue<T extends string>(known: readonly T[], value: string): val
 
 export function isKnownProducingRole(value: string): value is QaBounceProducingRole {
   return isKnownValue(KNOWN_PRODUCING_ROLES, value);
-}
-
-export function isKnownBouncingRole(value: string): value is QaBounceBouncingRole {
-  return isKnownValue(KNOWN_BOUNCING_ROLES, value);
 }
 
 export function isKnownTicketType(value: string): value is QaBounceTicketType {
