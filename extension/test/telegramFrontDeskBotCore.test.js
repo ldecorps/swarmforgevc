@@ -52,6 +52,8 @@ const {
   composeAskButtons,
   decideEnsureBacklogTopicAction,
   BACKLOG_SUBJECT_ID,
+  roleAskThreadId,
+  roleFromAskThreadId,
 } = require('../out/tools/telegramFrontDeskBotCore');
 
 const PRINCIPAL_ID = 111;
@@ -911,6 +913,153 @@ test('BL-425: pollAndForward behaves exactly as before when readRoleTopicMap/red
   });
   assert.equal(result.posted, 1);
   assert.equal(posted.length, 0, 'expected the open-for-topic path (no subject mapped), not postToBridge');
+});
+
+// ── pollAndForward wiring — BL-607: a reply in a role's OWN topic, while
+// that role has a clarifying question pending, IS the answer (Leg 1 reuses
+// redirectToRole verbatim for a live pane; Leg 2 queues a note for a
+// dormant one) - never a plain steer. A role-topic reply with NOTHING
+// pending stays a plain steer, completely unaffected (backward-compatible
+// with every BL-425 test above). ─────────────────────────────────────────
+
+test('BL-607: a reply in a role topic while a question is pending, LIVE pane, delivers via redirectToRole and clears the pending marker (never queues a note)', async () => {
+  const redirected = [];
+  const cleared = [];
+  const queued = [];
+  await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 1595, text: 'use staging' })] }),
+    postToBridge: async () => {
+      throw new Error('postToBridge should not be called for a role-topic reply');
+    },
+    subjectForTopic: () => undefined,
+    openSubjectAndRecord: stubOpenSubjectAndRecord(),
+    readRoleTopicMap: () => ({ specifier: 1595 }),
+    redirectToRole: async (role, text) => {
+      redirected.push({ role, text });
+      return { kind: 'delivered' };
+    },
+    getRolePendingQuestion: async (role) => role === 'specifier',
+    clearRolePendingQuestion: async (role) => {
+      cleared.push(role);
+    },
+    enqueueRoleAnswerNote: async (role, text) => {
+      queued.push({ role, text });
+      return true;
+    },
+  });
+  assert.deepEqual(redirected, [{ role: 'specifier', text: 'use staging' }]);
+  assert.deepEqual(cleared, ['specifier']);
+  assert.deepEqual(queued, [], 'a delivered live-pane answer must never also be queued as a note');
+});
+
+test('BL-607: a reply in a role topic while a question is pending, DORMANT pane, queues the answer as a note and clears the pending marker', async () => {
+  const queued = [];
+  const cleared = [];
+  await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 1595, text: 'use staging' })] }),
+    postToBridge: async () => {
+      throw new Error('postToBridge should not be called for a role-topic reply');
+    },
+    subjectForTopic: () => undefined,
+    openSubjectAndRecord: stubOpenSubjectAndRecord(),
+    readRoleTopicMap: () => ({ specifier: 1595 }),
+    redirectToRole: async () => ({ kind: 'no-pane' }),
+    getRolePendingQuestion: async () => true,
+    clearRolePendingQuestion: async (role) => {
+      cleared.push(role);
+    },
+    enqueueRoleAnswerNote: async (role, text) => {
+      queued.push({ role, text });
+      return true;
+    },
+  });
+  assert.deepEqual(queued, [{ role: 'specifier', text: 'use staging' }]);
+  assert.deepEqual(cleared, ['specifier']);
+});
+
+// BL-607 architect bounce 2 (secondary, recommended): enqueueRoleAnswerNote's
+// boolean result was previously discarded - the pending marker cleared
+// unconditionally even when the answer was captured by NEITHER leg (no live
+// pane AND the queue attempt itself failed), silently losing the answer
+// while looking like it landed. The marker must stay set so a future retry
+// (or a human noticing) is still possible.
+test('BL-607: a reply in a role topic, DORMANT pane, queue attempt itself FAILS - the pending marker is NOT cleared (answer not silently lost)', async () => {
+  const queued = [];
+  const cleared = [];
+  await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 1595, text: 'use staging' })] }),
+    postToBridge: async () => {
+      throw new Error('postToBridge should not be called for a role-topic reply');
+    },
+    subjectForTopic: () => undefined,
+    openSubjectAndRecord: stubOpenSubjectAndRecord(),
+    readRoleTopicMap: () => ({ specifier: 1595 }),
+    redirectToRole: async () => ({ kind: 'no-pane' }),
+    getRolePendingQuestion: async () => true,
+    clearRolePendingQuestion: async (role) => {
+      cleared.push(role);
+    },
+    enqueueRoleAnswerNote: async (role, text) => {
+      queued.push({ role, text });
+      return false;
+    },
+  });
+  assert.deepEqual(queued, [{ role: 'specifier', text: 'use staging' }]);
+  assert.deepEqual(cleared, [], 'neither leg captured the answer - the pending marker must survive');
+});
+
+test('BL-607: a reply in a role topic with NOTHING pending stays a plain steer - never queues a note or clears any marker', async () => {
+  const redirected = [];
+  const queued = [];
+  const cleared = [];
+  await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 1595, text: 'go check the logs' })] }),
+    postToBridge: async () => {
+      throw new Error('postToBridge should not be called for a role-topic reply');
+    },
+    subjectForTopic: () => undefined,
+    openSubjectAndRecord: stubOpenSubjectAndRecord(),
+    readRoleTopicMap: () => ({ specifier: 1595 }),
+    redirectToRole: async (role, text) => {
+      redirected.push({ role, text });
+      return { kind: 'no-pane' };
+    },
+    getRolePendingQuestion: async () => false,
+    clearRolePendingQuestion: async (role) => {
+      cleared.push(role);
+    },
+    enqueueRoleAnswerNote: async (role, text) => {
+      queued.push({ role, text });
+      return true;
+    },
+  });
+  assert.deepEqual(redirected, [{ role: 'specifier', text: 'go check the logs' }]);
+  assert.deepEqual(queued, [], 'no pending question - a dormant pane must behave exactly as pre-BL-607 (no queued note)');
+  assert.deepEqual(cleared, [], 'no pending question - nothing to clear');
+});
+
+test('BL-607: getRolePendingQuestion absent (pre-BL-607 fixtures) behaves exactly as before - no queueing/clearing attempted', async () => {
+  const redirected = [];
+  const result = await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 1595, text: 'merge main first' })] }),
+    postToBridge: async () => {
+      throw new Error('postToBridge should not be called for a role-topic reply');
+    },
+    subjectForTopic: () => undefined,
+    openSubjectAndRecord: stubOpenSubjectAndRecord(),
+    readRoleTopicMap: () => ({ specifier: 1595 }),
+    redirectToRole: async (role, text) => {
+      redirected.push({ role, text });
+      return { kind: 'delivered' };
+    },
+  });
+  assert.deepEqual(redirected, [{ role: 'specifier', text: 'merge main first' }]);
+  assert.equal(result.posted, 1);
 });
 
 // ── pollAndForward wiring — BL-426 slice 1 coordinator voice round-trip ──
@@ -2016,6 +2165,26 @@ test('BL-483: composeAskButtons renders one button per option, one option per ro
   ]);
 });
 
+// ── BL-607: roleAskThreadId / roleFromAskThreadId (pure) - the synthetic
+// threadId a role question rides so it reuses every threadId-keyed ask
+// store as-is, plus the round-trip back out of it. ───────────────────────
+
+test('BL-607: roleAskThreadId/roleFromAskThreadId round-trip a role name', () => {
+  assert.equal(roleAskThreadId('specifier'), 'role-ask-specifier');
+  assert.equal(roleFromAskThreadId('role-ask-specifier'), 'specifier');
+});
+
+test('BL-607: roleAskThreadId stays colon-free so it survives ASK_CALLBACK_DATA_PATTERN\'s [^:]+ capture in composeAskButtons', () => {
+  const threadId = roleAskThreadId('coordinator');
+  assert.doesNotMatch(threadId, /:/);
+  const buttons = composeAskButtons(threadId, [{ label: 'yes' }]);
+  assert.equal(buttons[0][0].callbackData, `ask:${threadId}:0`);
+});
+
+test('BL-607: roleFromAskThreadId returns undefined for a real SUP-### Operator ask thread (never misclassified as a role question)', () => {
+  assert.equal(roleFromAskThreadId('SUP-42'), undefined);
+});
+
 // ── pollAndForward: callback_query dispatch (adapter-injected) ───────────
 
 function callbackFixtureAdapters(overrides = {}) {
@@ -2062,6 +2231,12 @@ function callbackFixtureAdapters(overrides = {}) {
     checkExpediteFileCollision: overrides.checkExpediteFileCollision,
     dispatchExpediteBuild: overrides.dispatchExpediteBuild,
     commitExpediteWrites: overrides.commitExpediteWrites,
+    // BL-607: a role-ask tap's own effect adapters - all optional, same
+    // "absent degrades to a no-op/proceeds" posture as every other
+    // optional field above.
+    redirectToRole: overrides.redirectToRole,
+    enqueueRoleAnswerNote: overrides.enqueueRoleAnswerNote,
+    clearRolePendingQuestion: overrides.clearRolePendingQuestion,
   };
 }
 
@@ -2346,6 +2521,111 @@ test('BL-483: resolveAskOptions absent (pre-BL-483 fixtures) never crashes - the
   );
   assert.deepEqual(bridged, [], 'no adapter to resolve the option label from - must never guess or fabricate an answer');
   assert.equal(result.dropped, 1);
+});
+
+// ── BL-607: a tap on a role question's own buttons (roleAskThreadId)
+// answers through redirectToRole (live-pane-or-queued-note), never
+// postToBridge - which is meaningless here (no SUP-### thread on the
+// other end). An ordinary (Operator SUP-thread) ask is entirely
+// unaffected - covered above, still routes through postToBridge. ────────
+
+test('BL-607: a tap on a role question with a LIVE pane delivers via redirectToRole, never postToBridge, and clears the pending marker', async () => {
+  const bridged = [];
+  const redirected = [];
+  const cleared = [];
+  const result = await pollAndForward(
+    0,
+    PRINCIPAL_ID,
+    callbackFixtureAdapters({
+      data: 'ask:role-ask-specifier:1',
+      resolveAskOptions: async (threadId) => (threadId === 'role-ask-specifier' ? [{ label: 'staging' }, { label: 'prod' }] : undefined),
+      postToBridge: async (threadId, text, updateId) => {
+        bridged.push({ threadId, text, updateId });
+        return true;
+      },
+      redirectToRole: async (role, text) => {
+        redirected.push({ role, text });
+        return { kind: 'delivered' };
+      },
+      clearRolePendingQuestion: async (role) => {
+        cleared.push(role);
+      },
+    })
+  );
+  assert.deepEqual(bridged, [], 'a role question must never answer through postToBridge');
+  assert.deepEqual(redirected, [{ role: 'specifier', text: 'prod' }]);
+  assert.deepEqual(cleared, ['specifier']);
+  assert.equal(result.posted, 1);
+});
+
+test('BL-607: a tap on a role question with a DORMANT pane queues the answer as a note, still clears the pending marker', async () => {
+  const queued = [];
+  const cleared = [];
+  await pollAndForward(
+    0,
+    PRINCIPAL_ID,
+    callbackFixtureAdapters({
+      data: 'ask:role-ask-specifier:0',
+      resolveAskOptions: async () => [{ label: 'staging' }, { label: 'prod' }],
+      redirectToRole: async () => ({ kind: 'no-pane' }),
+      enqueueRoleAnswerNote: async (role, text) => {
+        queued.push({ role, text });
+        return true;
+      },
+      clearRolePendingQuestion: async (role) => {
+        cleared.push(role);
+      },
+    })
+  );
+  assert.deepEqual(queued, [{ role: 'specifier', text: 'staging' }]);
+  assert.deepEqual(cleared, ['specifier']);
+});
+
+// BL-607 architect bounce 2 (secondary): the SAME "do not clear on a failed
+// queue" contract for the button-tap path (deliverAskAnswer), mirroring the
+// free-text path's test above.
+test('BL-607: a tap on a role question with a DORMANT pane, queue attempt itself FAILS - the pending marker is NOT cleared', async () => {
+  const queued = [];
+  const cleared = [];
+  await pollAndForward(
+    0,
+    PRINCIPAL_ID,
+    callbackFixtureAdapters({
+      data: 'ask:role-ask-specifier:0',
+      resolveAskOptions: async () => [{ label: 'staging' }, { label: 'prod' }],
+      redirectToRole: async () => ({ kind: 'no-pane' }),
+      enqueueRoleAnswerNote: async (role, text) => {
+        queued.push({ role, text });
+        return false;
+      },
+      clearRolePendingQuestion: async (role) => {
+        cleared.push(role);
+      },
+    })
+  );
+  assert.deepEqual(queued, [{ role: 'specifier', text: 'staging' }]);
+  assert.deepEqual(cleared, [], 'neither leg captured the answer - the pending marker must survive');
+});
+
+test('BL-607: a tap on a role question edits the ask message to show it was answered, same as an ordinary ask', async () => {
+  const edits = [];
+  await pollAndForward(
+    0,
+    PRINCIPAL_ID,
+    callbackFixtureAdapters({
+      data: 'ask:role-ask-specifier:0',
+      resolveAskOptions: async () => [{ label: 'staging' }],
+      redirectToRole: async () => ({ kind: 'delivered' }),
+      readAskMessage: async () => ({ topicId: 1595, messageId: 900, text: 'Which environment?\n\n1. staging' }),
+      editAskMessage: async (topicId, messageId, text) => {
+        edits.push({ topicId, messageId, text });
+        return true;
+      },
+    })
+  );
+  assert.equal(edits.length, 1);
+  assert.match(edits[0].text, /staging/);
+  assert.match(edits[0].text, /answered/i);
 });
 
 // ── BL-483: a tap on a retracted/already-answered ask is stale - answered
@@ -4288,6 +4568,130 @@ test('BL-483: a button send that fails (no messageId returned) records no mappin
     new Set()
   );
   assert.deepEqual(recorded, []);
+});
+
+// ── BL-607: a roleQuestion record is delivered to ITS OWN role topic
+// (roleTopicIdFor) instead of the shared Agent Questions topic
+// (agentQuestionsTopicId) - the routing exception this ticket adds,
+// otherwise identical rendering/degrade rules to an agentQuestion record.
+
+test('BL-607: a roleQuestion record carrying options sends tappable buttons into the ROLE\'s own topic (never the shared Agent Questions topic)', async () => {
+  const posted = [];
+  const recorded = [];
+  const sentReplies = [];
+  await relaySseReplies(
+    '',
+    {
+      readChunk: mkChunkReader([
+        'event: telegram-reply\ndata: {"id":"r1","threadId":"role-ask-specifier","text":"which environment?","roleQuestion":"specifier","options":[{"label":"staging"},{"label":"prod"}]}\n\n',
+      ]),
+      sendReply: async (topicId, text) => {
+        sentReplies.push({ topicId, text });
+      },
+      sendAskButtons: async (topicId, text, buttons) => {
+        posted.push({ topicId, text, buttons });
+        return { success: true, messageId: 555 };
+      },
+      recordAskMessage: async (threadId, topicId, messageId, text) => {
+        recorded.push({ threadId, topicId, messageId, text });
+      },
+      roleTopicIdFor: async (role) => (role === 'specifier' ? 1595 : undefined),
+      agentQuestionsTopicId: async () => {
+        throw new Error('agentQuestionsTopicId should never be consulted for a roleQuestion record');
+      },
+      resolveDelivery: () => {
+        throw new Error('resolveDelivery should never be consulted for a roleQuestion record');
+      },
+      ackReply: async () => {},
+    },
+    new Set()
+  );
+  assert.equal(posted.length, 1);
+  assert.equal(posted[0].topicId, 1595);
+  assert.deepEqual(posted[0].buttons, [
+    [{ text: 'staging', callbackData: 'ask:role-ask-specifier:0' }],
+    [{ text: 'prod', callbackData: 'ask:role-ask-specifier:1' }],
+  ]);
+  assert.deepEqual(recorded, [{ threadId: 'role-ask-specifier', topicId: 1595, messageId: 555, text: posted[0].text }]);
+  assert.deepEqual(sentReplies, []);
+});
+
+test('BL-607: a roleQuestion record with no options falls back to a plain message in the role\'s own topic', async () => {
+  const posted = [];
+  const sentReplies = [];
+  await relaySseReplies(
+    '',
+    {
+      readChunk: mkChunkReader(['event: telegram-reply\ndata: {"id":"r1","threadId":"role-ask-specifier","text":"anything else?","roleQuestion":"specifier"}\n\n']),
+      sendReply: async (topicId, text) => {
+        sentReplies.push({ topicId, text });
+      },
+      sendAskButtons: async (topicId, text, buttons) => {
+        posted.push({ topicId, text, buttons });
+        return { success: true, messageId: 555 };
+      },
+      roleTopicIdFor: async () => 1595,
+      resolveDelivery: () => {
+        throw new Error('resolveDelivery should never be consulted for a roleQuestion record');
+      },
+      ackReply: async () => {},
+    },
+    new Set()
+  );
+  assert.deepEqual(sentReplies, [{ topicId: 1595, text: 'anything else?' }]);
+  assert.deepEqual(posted, []);
+});
+
+test('BL-607: a roleQuestion for a role absent from role-topic-map.json (roleTopicIdFor resolves undefined) degrades to dropping the question, never crashes or posts to nowhere', async () => {
+  const posted = [];
+  const sentReplies = [];
+  await relaySseReplies(
+    '',
+    {
+      readChunk: mkChunkReader([
+        'event: telegram-reply\ndata: {"id":"r1","threadId":"role-ask-nobody","text":"which environment?","roleQuestion":"nobody","options":[{"label":"staging"}]}\n\n',
+      ]),
+      sendReply: async (topicId, text) => sentReplies.push({ topicId, text }),
+      sendAskButtons: async (topicId, text, buttons) => {
+        posted.push({ topicId, text, buttons });
+        return { success: true, messageId: 555 };
+      },
+      roleTopicIdFor: async () => undefined,
+      resolveDelivery: () => ({ kind: 'undeliverable' }),
+      ackReply: async () => {},
+    },
+    new Set()
+  );
+  assert.deepEqual(posted, []);
+  assert.deepEqual(sentReplies, []);
+});
+
+test('BL-607: a roleQuestion record is never delivered through deliverAgentQuestion\'s Agent Questions topic path, even when both adapters are wired', async () => {
+  const posted = [];
+  const agentTopicCalls = [];
+  await relaySseReplies(
+    '',
+    {
+      readChunk: mkChunkReader([
+        'event: telegram-reply\ndata: {"id":"r1","threadId":"role-ask-specifier","text":"which environment?","roleQuestion":"specifier","options":[{"label":"staging"}]}\n\n',
+      ]),
+      sendReply: async () => {},
+      sendAskButtons: async (topicId, text, buttons) => {
+        posted.push({ topicId, text, buttons });
+        return { success: true, messageId: 555 };
+      },
+      roleTopicIdFor: async () => 1595,
+      agentQuestionsTopicId: async () => {
+        agentTopicCalls.push(true);
+        return 42;
+      },
+      resolveDelivery: () => ({ kind: 'undeliverable' }),
+      ackReply: async () => {},
+    },
+    new Set()
+  );
+  assert.equal(posted[0].topicId, 1595, 'must route to the role\'s own topic');
+  assert.deepEqual(agentTopicCalls, [], 'agentQuestionsTopicId must never be consulted for a roleQuestion record');
 });
 
 test('BL-466: an ordinary (non-agentQuestion) record is completely unaffected - still resolved/delivered the pre-BL-466 way', async () => {
