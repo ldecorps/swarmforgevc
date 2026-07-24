@@ -1,6 +1,6 @@
 # ModelFactory: Assigning and Applying Agent Models
 
-Last Updated: 2026-07-23
+Last Updated: 2026-07-24
 
 SwarmForge's **ModelFactory** assigns language models to swarm roles based on steering policies and provider availability. It consumes the Model Steward registry and applies your choice of budget rules: run cheap, run quality, or override with explicit models.
 

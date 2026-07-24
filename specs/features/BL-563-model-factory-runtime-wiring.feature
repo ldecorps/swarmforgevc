@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=2d77b08601fa32b5d26faadf798edc203b1801fa1710880a7c31622423d6f953
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-07-24T14:31:57.560257008Z","feature_name":"model-factory assignment changes what launches","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-563-model-factory-runtime-wiring.feature","background_hash":"1771b50e6c9effb71d91f4a5d46c2cb1c4c102f9b0a4bc99c280411844eea450","implementation_hash":"unknown","scenarios":[{"index":2,"name":"a broken overlay degrades to pack-derived values without aborting the launch","scenario_hash":"76a3f5455176d4ae2c786383ffd7d2a3516bf6fbbd261645a2fec7c29e9f7312","mutation_count":3,"result":{"Total":3,"Killed":3,"Survived":0,"Errors":0},"tested_at":"2026-07-24T14:31:57.560257008Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: model-factory assignment changes what launches
 
   Background:
