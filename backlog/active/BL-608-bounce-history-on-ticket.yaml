@@ -213,3 +213,6 @@ approval_context: >
   Firm, not up for negotiation: the gitignored JSONL aggregate and its metrics
   are untouched; the ticket-record write is best-effort and can never block or
   fail a bounce.
+bounce_count: 1
+bounce_history:
+  - { at: 2026-07-24, by: QA, blamed: documenter, class: unit, commit: b03a93bb70, evidence: backlog/evidence/BL-608-bounce-20260724.md }
