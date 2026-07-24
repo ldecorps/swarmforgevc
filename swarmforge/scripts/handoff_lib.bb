@@ -847,6 +847,39 @@
        (println (str "QUARANTINED unresolvable-commit: " (fs/file-name file) " " diagnostic)))
      valid)))
 
+;; BL-610 shape #5: the send-time decision logic behind swarm_handoff.bb's
+;; canonical-commit, extracted here so matched-0/matched-1/matched-many/
+;; resolves-to-non-commit are each unit-testable as a pure value. Extracted
+;; rather than tested in place because swarm_handoff.bb ends in a bare
+;; (apply -main *command-line-args*) that System/exits on load with no args -
+;; load-file-ing it directly from a test runner is not safe. canonical-commit
+;; itself stays in swarm_handoff.bb as a thin wrapper that shells to git and
+;; delegates the decision here (CLI main() thin-wrapper pattern).
+(defn resolve-canonical-commit
+  "disambiguate-out is the raw (possibly multi-line) stdout of
+   `git rev-parse --disambiguate=<commit>`. cat-file-type-fn (object -> type
+   string) and short-rev-fn (object -> short hash string) are injectable so
+   every case runs without a real repo. Returns [canonical-hash-or-nil
+   error-or-nil], matching canonical-commit's own contract exactly. An empty
+   disambiguate-out must count as 0 matches, not 1 (str/split-lines on ''
+   returns [''] - the blank line has to be filtered, or a genuinely
+   no-match commit gets the misleading 'resolves to nil' message one step
+   later instead of an honest 'matched 0' here)."
+  [commit disambiguate-out cat-file-type-fn short-rev-fn]
+  (let [matches (->> (str/split-lines disambiguate-out)
+                      (remove str/blank?)
+                      vec)]
+    (cond
+      (not= 1 (count matches))
+      [nil (format "Header 'commit' must resolve to exactly one Git object; '%s' matched %d." commit (count matches))]
+
+      :else
+      (let [object (first matches)
+            object-type (cat-file-type-fn object)]
+        (if (= "commit" object-type)
+          [(short-rev-fn object) nil]
+          [nil (format "Header 'commit' must resolve to a commit; '%s' resolves to '%s'." commit object-type)])))))
+
 (defn print-task [file]
   (let [task-name (header-field file "task")
         typ (header-value file "type" "unknown")]
