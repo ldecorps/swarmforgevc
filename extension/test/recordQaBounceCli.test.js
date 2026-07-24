@@ -5,6 +5,7 @@ const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { main, parseArgs } = require('../out/tools/record-qa-bounce');
 const { readQaBounceRecords } = require('../out/metrics/qaBounceStore');
+const { USAGE } = require('../out/tools/recordQaBounceArgs');
 
 // BL-454: the go-forward writer CLI QA runs at bounce time. Flag contract
 // (--ticket/--role/--type/--class/--commit, plus BL-608's --by/--evidence)
@@ -149,6 +150,13 @@ test('parseArgs rejects an evidence path outside backlog/evidence/*.md', () => {
   assert.equal(parseArgs(flagArgs({ evidence: 'somewhere/else.md' })), null);
 });
 
+// The evidence pattern is anchored at both ends - a value that merely
+// CONTAINS a valid-looking path, rather than being one, must be rejected.
+test('parseArgs rejects an evidence path with a valid path buried in a longer string', () => {
+  assert.equal(parseArgs(flagArgs({ evidence: 'xxbacklog/evidence/BL-340-qa-bounce-20260723.md' })), null);
+  assert.equal(parseArgs(flagArgs({ evidence: 'backlog/evidence/BL-340-qa-bounce-20260723.md-extra' })), null);
+});
+
 // BL-608: --by/--evidence are OPTIONAL - the live QA.prompt invocation still
 // calls with only the original five flags until the documenter lands the
 // two-flag addition there, and that must keep working exactly as before.
@@ -196,6 +204,14 @@ test('parseArgs rejects a ticket id with no BL- prefix', () => {
   assert.equal(parseArgs(flagArgs({ ticket: '340' })), null);
 });
 
+// The ticket pattern is anchored at both ends - a value that merely CONTAINS
+// a valid-looking "BL-<digits>" substring, rather than being one, must be
+// rejected (not silently truncated/accepted).
+test('parseArgs rejects a ticket id with valid digits but extra prefix or suffix text', () => {
+  assert.equal(parseArgs(flagArgs({ ticket: 'XBL-340' })), null);
+  assert.equal(parseArgs(flagArgs({ ticket: 'BL-340X' })), null);
+});
+
 test('parseArgs rejects a producingRole outside the closed set', () => {
   assert.equal(parseArgs(flagArgs({ role: 'QA' })), null);
 });
@@ -216,8 +232,28 @@ test('parseArgs rejects an unrecognized flag', () => {
   assert.equal(parseArgs(['--bogus', 'x', '--role', 'coder', '--type', 'feature', '--class', 'behavior', '--commit', 'abc1234567']), null);
 });
 
+// The prior test's invocation is ALSO missing --ticket, so it would return
+// null for that reason alone even if the unrecognized-flag check were a
+// no-op. Isolate the unrecognized-flag rejection specifically by pairing it
+// with an otherwise fully valid invocation.
+test('parseArgs rejects an otherwise fully valid invocation that also carries one unrecognized flag', () => {
+  assert.equal(parseArgs([...flagArgs(), '--bogus', 'x']), null);
+});
+
 test('parseArgs rejects a flag with no following value', () => {
   assert.equal(parseArgs(['--ticket', 'BL-340', '--role']), null);
+});
+
+// A dangling REQUIRED flag with no value is already caught downstream too
+// (its field ends up undefined and fails required-field validation), so the
+// prior test alone cannot isolate the "value === undefined" check from the
+// "unrecognized flag" check. An OPTIONAL flag (--by/--evidence) has no such
+// downstream backstop - undefined is exactly what "absent" looks like to
+// validatedOptionalFields - so a dangling --by must be rejected HERE, not
+// silently treated as though --by were never passed.
+test('parseArgs rejects a dangling --by flag with no following value, rather than silently treating it as absent', () => {
+  const args = ['--ticket', 'BL-340', '--role', 'coder', '--type', 'feature', '--class', 'behavior', '--commit', 'abc1234567', '--by'];
+  assert.equal(parseArgs(args), null);
 });
 
 // ── end-to-end: recording a bounce (qa-bounce-01) ────────────────────────
@@ -264,6 +300,38 @@ test('BL-608: a caller that omits --by/--evidence still records the bounce and l
   assert.equal(readQaBounceRecords(root).length, 1);
   assert.equal(result.ticketRecordUpdated, false);
   assert.equal(result.ticketRecordReason, 'not-attempted');
+  assert.equal(fs.readFileSync(ticketPath, 'utf8'), before);
+});
+
+// The ticket-record merge is gated on BOTH --by AND --evidence being
+// present - either ALONE must degrade exactly like neither being present,
+// never attempt a merge with a placeholder for the missing one.
+test('BL-608: the ticket record merge is attempted only when BOTH --by and --evidence are present, never one alone', async () => {
+  const root = mkRepo();
+  const ticketPath = writeTicketYaml(root, 'BL-340');
+  const before = fs.readFileSync(ticketPath, 'utf8');
+
+  const byOnly = await runCli(root, ['--ticket', 'BL-340', '--role', 'coder', '--type', 'feature', '--class', 'behavior', '--commit', 'abc1234567', '--by', 'QA']);
+  assert.equal(byOnly.ticketRecordUpdated, false);
+  assert.equal(byOnly.ticketRecordReason, 'not-attempted');
+  assert.equal(fs.readFileSync(ticketPath, 'utf8'), before);
+
+  const evidenceOnly = await runCli(root, [
+    '--ticket',
+    'BL-340',
+    '--role',
+    'coder',
+    '--type',
+    'feature',
+    '--class',
+    'compile',
+    '--commit',
+    'deadbeef00',
+    '--evidence',
+    'backlog/evidence/BL-340-qa-bounce-20260724.md',
+  ]);
+  assert.equal(evidenceOnly.ticketRecordUpdated, false);
+  assert.equal(evidenceOnly.ticketRecordReason, 'not-attempted');
   assert.equal(fs.readFileSync(ticketPath, 'utf8'), before);
 });
 
@@ -382,6 +450,21 @@ test('an invalid invocation exits non-zero with a usage message, never a raw cra
   } finally {
     process.exitCode = previousExitCode;
   }
+});
+
+// Pins the exact help text so it stays informative (mentions --by/--evidence
+// as the optional pair) rather than merely non-empty.
+test('USAGE documents all seven flags, including --by/--evidence as optional', () => {
+  assert.equal(
+    USAGE,
+    'Usage: record-qa-bounce.js --ticket <id> --role <producingRole> --type <ticketType> --class <failureClass>\n' +
+      '         --commit <hex> [--by <bouncingRole> --evidence <path>]\n' +
+      '  --role: coder|cleaner|architect|hardender|documenter\n' +
+      '  --type: feature|bug|defect|chore|docs|enhancement|epic\n' +
+      '  --class: compile|unit|integration|acceptance|behavior\n' +
+      '  --by (optional): QA\n' +
+      '  --evidence (optional): backlog/evidence/<file>.md\n'
+  );
 });
 
 // A single subprocess smoke test locks the compiled CLI's own wiring - an
