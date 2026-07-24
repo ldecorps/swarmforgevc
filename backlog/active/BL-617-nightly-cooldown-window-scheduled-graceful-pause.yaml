@@ -1,0 +1,123 @@
+id: BL-617
+title: "Nightly cooldown window: scheduled graceful pause 19:00→07:00 local so the swarm stops burning tokens overnight — MUST BE LIVE BEFORE 19:00 LOCAL TONIGHT (2026-07-24T18:00Z)"
+milestone: M8
+type: feature
+status: todo
+epic: swarm-reliability
+human_approval: approved
+severity: high
+priority: 1
+direction: human-requested
+depends_on: []
+assigned_to: specifier
+mutation_cost: low
+source: |
+  Human, 2026-07-24 ~13:10Z (via operator rc): "can we define cooldown periods
+  for the swarm, so it does not burn all the tokens before they replenish. it
+  appears that we would need to stop it at night (during 7pm and 7am). should
+  define a start time and a stop time, via a cronjob sort of thing? (graceful
+  stop, so resident agent has time to finish its bit). can you expedite that
+  so that the swarm stops tonight? so I guess an urgent ticket to traverse the
+  swarm in the next 5 hours max."
+
+  Companion to INTAKE-20260724-burn-rate-briefing-warning.md (same morning,
+  same root concern: current burn projects token exhaustion before the weekly
+  Thursday-7am reset). That intake is the WARNING; this ticket is the BRAKE.
+
+  HARD DEADLINE: live on this box before 2026-07-24T18:00Z (19:00 local
+  tonight). Operator has a manual-pause fallback armed if this misses the
+  deadline, but the feature is the real fix — tonight is its first run either
+  way.
+
+description: |
+  ## Problem
+
+  The swarm runs 24/7 and burns plan tokens while the human sleeps; at the
+  current rhythm the weekly allowance is projected to exhaust BEFORE the
+  Thursday 07:00 reset. The human wants a standing nightly cooldown:
+  stop at 19:00 local, resume at 07:00 local — graceful, so the resident
+  agent finishes its current bit.
+
+  ## Build on what EXISTS — this is a scheduler, not new pause plumbing
+
+  1. `extension/src/tools/telegramControlCore.ts` already owns a timed-pause
+     state machine: `PauseState { active: true; untilMs } | { active: false }`,
+     `apply-pause` with a duration, drain semantics, explicit resume.
+  2. `handoffd.bb` already runs `pause-auto-resume-sweep!` (BL-423) shelling
+     to `resume-expired-pauses.js` (`decidePauseAutoResume`), including the
+     Control-topic announcement when a pause expires. The MORNING RESUME
+     ALREADY EXISTS.
+
+  So the work is: a configured window (start/stop times, defaults 19:00 and
+  07:00 LOCAL) and a clock that applies the existing timed pause when the
+  window opens, with untilMs = the next window close. The human said "cronjob
+  sort of thing" — the specifier picks the mechanism, but note handoffd
+  already ticks continuously; a wall-clock check inside its existing sweep
+  cadence needs NO new daemon, no crontab, and survives reboots with the
+  daemon itself. Config lives with the other knobs in swarmforge.conf
+  (e.g. cooldown_window_enabled / cooldown_start_local / cooldown_end_local).
+
+  ## Graceful semantics (the human's explicit constraint)
+
+  - Pause = stop DISPATCHING/waking: no new parcels delivered, no chase
+    nudges, no rotate notes, no concierge-tick outbound churn beyond what the
+    pause state machine already suppresses. NEVER kill a pane; an agent
+    mid-turn finishes its current bit naturally and then simply is not woken.
+  - In-flight-at-19:00 work: the current turn completes; the parcel chain
+    freezes where it stands and thaws at 07:00. No abandonment, no reclaim
+    sweep during the window.
+  - RESUME at 07:00 via the existing pause-auto-resume sweep, with its
+    existing Control-topic announcement (the human sees "swarm resumed" on
+    Telegram with their morning coffee).
+
+  ## External supervisors must be able to SEE the pause
+
+  The pause state must be readable from a FILE by non-swarm processes (the
+  operator layer's babysitter daemon checks "active tickets + all panes idle
+  = starved" and would false-CRIT all night otherwise). If PauseState is
+  already persisted, document the path in the runbook; if it is in-memory
+  only, persisting it is IN SCOPE. A planned pause and a starvation must be
+  distinguishable by a file read.
+
+  ## Manual override
+
+  The existing Telegram control pause/resume must keep working: a human
+  resume-now DURING the window wins (and the window does not immediately
+  re-pause until the next 19:00 boundary); a human pause outside the window
+  is unaffected. Simplest rule that satisfies both is the specifier's call —
+  state it in the Gherkin explicitly.
+
+acceptance: |
+  Specifier writes the scenarios. Minimum:
+
+  1. With the window configured 19:00-07:00 local and enabled, the swarm is
+     PAUSED (no dispatch, no wakes) within one sweep cadence after 19:00, and
+     RESUMED within one sweep cadence after 07:00, using the existing
+     pause/auto-resume machinery — proven with a controllable clock, never
+     sleep-until-7pm in tests.
+  2. Window-open pause never kills a pane: an agent mid-turn at window open
+     completes its turn; its next wake happens after window close.
+  3. The pause decision is a PURE function over (now, config, current
+     PauseState) — unit-tested with fixtures for: window spanning midnight,
+     already-paused-by-human at window open, human resume-now during the
+     window, disabled config, malformed config (=> no pause, log loudly).
+  4. Pause state is readable from a documented file path by external
+     processes; the runbook names it.
+  5. Config defaults are 19:00/07:00 local; changing them requires no code.
+  6. DEADLINE: shipped and live on this box before 2026-07-24T18:00Z.
+
+  Routing note: the specifier owns the required_stages declaration; given the
+  5-hour deadline this ticket is a strong candidate for a declared subset
+  (it is config + one pure decision + wiring into an existing sweep), but
+  conservative default-full is acceptable if the specifier judges the
+  lifecycle surface too sensitive to skip stages. Specifier's call.
+
+out_of_scope: |
+  - Burn-rate PROJECTION/warning surfaces — that is
+    INTAKE-20260724-burn-rate-briefing-warning.md (the warning; this is the
+    brake).
+  - Weekend/holiday calendars, multiple windows, per-role windows. One daily
+    window is tonight's need; extensions are later tickets.
+  - Operator-layer babysitter suppression during planned pause — the operator
+    adapts its own tooling once the pause state file path exists (item 4).
+  - Any change to token/cost accounting itself.
