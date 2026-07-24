@@ -1,0 +1,153 @@
+id: BL-609
+title: "Resident Spy live screen: compact +/- font-size control in the header, and a slightly larger default pane text size"
+milestone: M8
+type: feature
+status: todo
+epic: swarmforge-console
+human_approval: pending
+severity: low
+priority: 25
+direction: human-requested
+depends_on: []
+assigned_to: coder
+mutation_cost: low
+source: |
+  backlog/INTAKE-20260723-residentspy-font-size-control.md — human, 2026-07-23,
+  with a screenshot of the live fullscreen pane. Asked for: a +/- font-size
+  control in the header, a default size "a tad bigger" than today, and the
+  buttons themselves rendered very small.
+
+description: |
+  ## Problem
+
+  On the Resident Spy live screen — the Telegram Mini App mirroring a live agent
+  pane (`extension/src/bridge/residentSpyUiHtml.ts`, `getResidentSpyUiHtml()`) —
+  pane output text has one fixed size with no way to adjust it. One global rule
+  sets it (`font-size: 11px; line-height: 1.35`, ~line 205-210) and both the grid
+  split-view tiles and the fullscreen pane (`#fs-pre`, ~line 245) share that same
+  `pre` selector; there is no fullscreen override. There is no JS-driven font
+  size state and no zoom control anywhere in the file — this is net-new.
+
+  ## Shape
+
+  1. DEFAULT BUMPED. Raise the default pane text size from 11px to 13px. Modest,
+     per the human's "a tad bigger" — not a redesign.
+
+  2. ONE CONTROL, BOTH SURFACES. The chosen size drives a single CSS custom
+     property on the root (e.g. `--pane-font-size`), which the shared `pre` rule
+     consumes. One control therefore governs the grid tiles AND the fullscreen
+     pane together, rather than two independent settings that can disagree.
+
+  3. THE CROWDED-GRID OVERRIDE BECOMES RELATIVE. Today
+     `.split.pane-count-7 pre, .split.pane-count-8 pre { font-size: 9px }`
+     (~line 148) is an absolute value that would silently override any user
+     choice. It becomes a relative step below the chosen size
+     (`calc(var(--pane-font-size) - 2px)`), so a crowded grid still packs tighter
+     but the human's choice is still respected. The density override and the
+     control must compose, not fight.
+
+  4. CONTROL PLACEMENT AND SIZE. The control goes in the fullscreen header
+     (`buildFullscreenHeadHtml` -> `#fs-head`, ~line 491), matching the screenshot
+     the human attached. Rendered COMPACT — visibly smaller than the pane text it
+     adjusts — and ADDED WITHOUT displacing any of the header's required
+     elements. Per BL-564's retro-spec the pane header (ticket id + title, role,
+     model, entered-ago, RESIDENT badge) is a REQUIRED, protected element, "never
+     displaced by future UI changes". Scenario 04 is that guard.
+
+  5. CLAMPED RANGE. 9px minimum, 20px maximum, 1px steps. At a bound the
+     corresponding button renders as unavailable rather than silently no-opping.
+
+  6. NO BROWSER STORAGE. Architecture Rule 3 forbids localStorage,
+     sessionStorage, or any browser storage in the webview, and this Mini App
+     served through `bridge/bridgeServer.ts` is inside that boundary. The chosen
+     size is held in memory for the session. Reaching for browser storage as the
+     easy path is the specific failure this constraint exists to prevent.
+
+  ## Scope (verified live paths)
+
+  - `extension/src/bridge/residentSpyUiHtml.ts` only — the `pre` rule (~205),
+    the `.pane-count-7/8` density override (~148), `buildFullscreenHeadHtml`
+    (~491) and `syncFullscreenContent` (~522) which repopulates `#fs-head` on
+    every refresh (so the control must survive that repopulation, or be mounted
+    outside the innerHTML it overwrites — the implementer's call, but the
+    control must not lose its state or vanish on refresh).
+
+acceptance: |
+  specs/features/BL-609-resident-spy-font-size-control.feature
+
+  Every scenario needs its step handler wired in this same parcel — the
+  acceptance runner (specs/pipeline/runtime.js) throws on an unhandled scenario
+  (BL-233). The feature file linted clean (gherkin_lint_gate.sh) and was IR-DRY
+  reviewed; its remaining findings are outline-placeholder vs literal wording
+  (`<control>` vs `increase`/`decrease`), deliberate, not drift.
+
+  Scenario -> shape-item map: 01 larger default (#1); 02 +/- change the size
+  (#4); 03 clamped at both bounds, button shown unavailable (#5); 04 compact
+  control, required header content intact (#4/BL-564); 05 one size governs grid
+  and fullscreen, crowded grid still a fixed step smaller (#2/#3); 06 no browser
+  storage (#6).
+
+  Supporting gates the Gherkin does not pin:
+  - The size-step/clamp logic is a pure exported helper with direct unit
+    coverage (step up, step down, at-min, at-max, and an out-of-range input
+    clamped rather than accepted) — not inline arithmetic in a DOM handler, per
+    the testable-module boundary (the webview itself is the untestable side).
+  - A grep-level assertion that `residentSpyUiHtml.ts` contains no
+    `localStorage`/`sessionStorage` reference (#6), so the constraint is
+    enforced, not merely stated.
+  - The control survives `syncFullscreenContent()` repopulating `#fs-head`:
+    prove the chosen size persists across a pane refresh.
+
+  QA end-to-end procedure (live swarm):
+  1. Open the Resident Spy Mini App on a live pane. Confirm pane text is
+     visibly larger than before and the header still shows ticket id + title,
+     role, model, entered-ago, and the RESIDENT badge.
+  2. Tap + repeatedly to the maximum -> text grows one step at a time, then the
+     + control shows unavailable and text stops growing. Same with - to minimum.
+  3. Confirm the +/- buttons themselves are visibly smaller than the pane text.
+  4. Switch to grid view -> tiles render at the chosen size; with 7-8 panes they
+     render a step smaller, still tracking the chosen size.
+  5. Wait for a pane refresh -> the chosen size and the control are both still
+     there.
+  6. Open dev tools / inspect: no browser storage key is written.
+
+out_of_scope: |
+  - Persisting the chosen size across Mini App reopenings. In-memory for the
+    session only in this slice — persisting needs genuinely new host-side state
+    (see approval_context).
+  - A pinch-to-zoom gesture, a size preset menu, or per-pane independent sizes.
+    One global +/- control.
+  - Any other header content, layout, or styling change; BL-564's required
+    header elements are protected, not restyled.
+  - Line-height, font-family, colour, or theme changes.
+  - The static backlog PWA (`pwa/index.html`) — a different surface entirely
+    (local-engineering rule 5); this is the LIVE Mini App only.
+
+approval_context: >
+  Four calls the intake left to the specifier. Only the last genuinely needs
+  your ruling; the first three are stated so you can veto them cheaply.
+
+  (a) DEFAULT SIZE. Recommendation: 11px -> 13px. Modest, matching "a tad
+  bigger". Say a number if you want a different one.
+
+  (b) SCOPE OF THE CONTROL. Recommendation: one control governs BOTH the grid
+  tiles and the fullscreen pane, via a single CSS variable, rather than
+  fullscreen-only as the screenshot alone would suggest. Two independent
+  settings that can disagree seemed worse than one that always matches.
+
+  (c) RANGE. Recommendation: 9px-20px in 1px steps, buttons shown unavailable at
+  the bounds. The existing crowded-grid override becomes relative
+  (chosen size - 2px) instead of a fixed 9px, so it composes with your choice
+  instead of overriding it.
+
+  (d) PERSISTENCE — the one that actually needs a ruling. Recommendation:
+  in-memory for the session only. Persisting the size across reopenings is
+  genuinely new host-side state (nothing existing tracks it) and CANNOT use
+  browser storage — Architecture Rule 3 forbids it in the webview — so it would
+  mean a new host-persisted marker, roughly doubling this ticket. If you expect
+  the size to stick between sessions, say so and it becomes either a larger
+  ticket or a named follow-up slice.
+
+  Firm, not up for negotiation: no localStorage/sessionStorage (Architecture
+  Rule 3); the required header elements (ticket id + title, role, model,
+  entered-ago, badge) are not displaced or crowded out (BL-564).
