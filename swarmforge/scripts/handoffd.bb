@@ -1457,7 +1457,12 @@
    (when-let [session (:session (get roles role))]
      (handoff-lib/session-exists? socket session))))
 
-(defn flow-watchdog-emit-alarm! [text]
+(defn flow-watchdog-emit-alarm!
+  "Returns true on a CONFIRMED outbox write, false on failure - run-sweep!
+   (BL-577 bounce fix) only persists a parcel's alarmed state on a truthy
+   return, so a failed write here is retried next sweep rather than
+   silently treated as sent."
+  [text]
   (let [reply-outbox (fs/path state-dir "operator" "telegram-reply-outbox.jsonl")]
     (try
       (fs/create-dirs (fs/parent reply-outbox))
@@ -1465,7 +1470,10 @@
             (str (json/generate-string {"threadId" "OPERATOR" "text" text}) "\n")
             :append true)
       (log! "flow-watchdog-alarm" text)
-      (catch Exception e (log! "flow-watchdog-telegram-error" (.getMessage e))))))
+      true
+      (catch Exception e
+        (log! "flow-watchdog-telegram-error" (.getMessage e))
+        false))))
 
 (defn flow-watchdog-sweep! [roles socket]
   (flow-watchdog-lib/run-sweep!

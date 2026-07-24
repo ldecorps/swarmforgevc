@@ -104,3 +104,11 @@ Feature: flow watchdog alarms on any parcel aged past threshold in any mailbox
     When the flow watchdog sweep runs
     Then only the unsnoozed parcel alarms
     And the snooze entry remains readable in the watchdog state file
+
+  # BL-577 flow-watchdog-parcel-age-invariant-13
+  Scenario: an unconfirmed alarm write is retried, never silently recorded as sent
+    Given an over-threshold parcel and an alarm channel whose write fails or is uncertain
+    When the flow watchdog sweep runs
+    Then the parcel's tier is not recorded in the watchdog state file
+    And a subsequent sweep re-attempts the alarm for that parcel
+    But once the alarm channel confirms the write, the tier is recorded and no further re-attempt occurs
