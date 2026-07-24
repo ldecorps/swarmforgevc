@@ -14,6 +14,23 @@
 # idle time crosses the 60s stuck threshold, chase_sweep_lib's own
 # decide-stuck-action returns "alert" directly (skipping the intermediate
 # "nudge" stage) - the minimum real wall-clock cost this proof needs.
+#
+# BL-613: that preseed only survives if idle time ALREADY exceeds 60s the
+# very first time chase-sweep! observes this role - chase_sweep_lib's own
+# sweep-in-process! calls clear-stale-nudge-counts! on every tick that is
+# NOT currently stuck (idle < 60s), which wipes a nonzero nudgeCount back to
+# 0 as stale. handoffd.bb runs its first chase-sweep! tick immediately at
+# daemon start (cycle 0), when idle time is ~0s - so without backdating the
+# fixture's own outbox/sent dirs (the "last activity" baseline
+# get-last-activity-ms falls back to), that very first tick sees idle<60s,
+# clears the preseeded 3 back to 0, and the daemon must then climb the full
+# nudge -> nudge -> nudge -> alert ladder for real (three more 10s sweep
+# ticks on top of the 60s threshold) before ever alerting - ~90-100s wall
+# clock, which is why this test was timing out at its 90s wait. Backdating
+# outbox/sent below makes idle time already exceed 60s on that very first
+# tick, so the preseeded nudgeCount survives and "alert" fires immediately -
+# both restoring the "minimum real wall-clock cost" this test's own header
+# promises and matching what its comment already claimed.
 
 set -euo pipefail
 
@@ -41,6 +58,11 @@ SOCK="$ROOT/fake.sock"
 touch "$SOCK"
 mkdir -p "$ROOT/.swarmforge" "$ROOT/.swarmforge/handoffs/inbox/new" "$ROOT/.swarmforge/handoffs/inbox/in_process" \
   "$ROOT/.swarmforge/handoffs/outbox" "$ROOT/.swarmforge/handoffs/sent"
+# BL-613: backdate past the 60s stuck threshold BEFORE the daemon's first
+# chase-sweep! tick ever observes this role - see the nudgeCount comment
+# below for why this is required, not optional.
+PAST_TIME=$(date -d "90 seconds ago" "+%Y-%m-%d %H:%M:%S")
+touch -d "$PAST_TIME" "$ROOT/.swarmforge/handoffs/outbox" "$ROOT/.swarmforge/handoffs/sent"
 echo "$SOCK" > "$ROOT/.swarmforge/tmux-socket"
 printf 'coder\tcoder\t%s\tswarmforge-coder\tCoder\tclaude\ttask\n' "$ROOT" > "$ROOT/.swarmforge/roles.tsv"
 
@@ -61,6 +83,23 @@ echo "\$*" >> "$TMUX_LOG"
 exit 0
 TMUX
 chmod +x "$FAKE_BIN/tmux"
+
+# Stub the compiled Node tools the daemon invokes - keeps the daemon log free
+# of MODULE_NOT_FOUND noise from unrelated sweeps so a future failure's
+# $(cat "$LOG_FILE") dump surfaces this test's own signal, not 58 lines of
+# fleet-status/answer-drain/pause-resume stack traces (BL-613 architect
+# review: removal was verified not to affect the current PASS, but degrades
+# diagnosability on the next failure).
+mkdir -p "$ROOT/extension/out/tools"
+cat > "$ROOT/extension/out/tools/emit-fleet-status.js" <<'EOF'
+console.log(JSON.stringify({ lastUpdate: new Date().toISOString() }));
+EOF
+cat > "$ROOT/extension/out/tools/drain-answer-files.js" <<'EOF'
+console.log(JSON.stringify({ drained: 0 }));
+EOF
+cat > "$ROOT/extension/out/tools/resume-expired-pauses.js" <<'EOF'
+console.log(JSON.stringify({ resumed: false, reason: 'not-due' }));
+EOF
 
 LOG_FILE="$ROOT/.swarmforge/daemon/handoffd.log"
 FORCE_SUCCESS='{"success": true, "status": 200}'

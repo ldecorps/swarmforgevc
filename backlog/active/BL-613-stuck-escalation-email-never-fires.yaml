@@ -2,9 +2,9 @@ id: BL-613
 title: "DEFECT: the stuck-escalation email never fires in the real daemon — BL-349's wiring test is red on main"
 milestone: M8
 type: defect
-status: paused
+status: todo
 epic: swarm-reliability
-assigned_to:
+assigned_to: coder
 priority: 2
 mutation_cost: medium
 direction: swarm-proposed
