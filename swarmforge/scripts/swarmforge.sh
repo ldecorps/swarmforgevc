@@ -1135,6 +1135,20 @@ resolve_role_model() {
   fi
 }
 
+# BL-563 helper: resolve the launch model for a role at the given index.
+# For claude agents, parses the extra CLI args and resolves via overlay;
+# for non-claude agents, returns empty string. Both launch_role and the
+# dormant-role generation loop use this to eliminate duplication.
+resolve_claude_model_for_index() {
+  local index="$1"
+  local resolved_model=""
+  if [[ "${AGENTS[$index]}" == "claude" ]]; then
+    claude_settings_and_flags_from_extra_cli "${EXTRA_CLI_ARGS[$index]}"
+    resolved_model="$(resolve_role_model "${ROLES[$index]}" "$CLAUDE_SETTINGS_MODEL")"
+  fi
+  printf '%s' "$resolved_model"
+}
+
 write_claude_settings_file() {
   local role="$1"
   local settings_file="$STATE_DIR/launch/${role}.claude-settings.json"
@@ -1448,7 +1462,7 @@ launch_role() {
   local session="${SESSIONS[$index]}"
   local display="${DISPLAY_NAMES[$index]}"
   local launch_script=""
-  local resolved_model=""
+  local resolved_model
 
   # BL-563 Slice 2: the SAME overlay-or-pack model slice 1 resolves for the
   # settings file, passed into compose too - write_role_launch_script (below)
@@ -1456,10 +1470,7 @@ launch_role() {
   # resolved_model local never escapes back to this scope; recomputing here
   # via the same pure resolve_role_model call is cheap and side-effect-free,
   # not fragile cross-subshell state-passing.
-  if [[ "$agent" == "claude" ]]; then
-    claude_settings_and_flags_from_extra_cli "${EXTRA_CLI_ARGS[$index]}"
-    resolved_model="$(resolve_role_model "$role" "$CLAUDE_SETTINGS_MODEL")"
-  fi
+  resolved_model="$(resolve_claude_model_for_index "$index")"
   write_agent_instruction_file "$role" "$PROMPTS_DIR/${role}.md" "$agent" "$resolved_model"
   launch_script="$(write_role_launch_script "$index")"
 
@@ -1749,11 +1760,8 @@ done
 if [[ "$ROTATION_MODE" == "router" ]]; then
   for (( i = 1; i <= ${#ROLES[@]}; i++ )); do
     is_sequential_dormant "$i" || continue
-    dormant_resolved_model=""
-    if [[ "${AGENTS[$i]}" == "claude" ]]; then
-      claude_settings_and_flags_from_extra_cli "${EXTRA_CLI_ARGS[$i]}"
-      dormant_resolved_model="$(resolve_role_model "${ROLES[$i]}" "$CLAUDE_SETTINGS_MODEL")"
-    fi
+    local dormant_resolved_model
+    dormant_resolved_model="$(resolve_claude_model_for_index "$i")"
     write_agent_instruction_file "${ROLES[$i]}" "$PROMPTS_DIR/${ROLES[$i]}.md" "${AGENTS[$i]}" "$dormant_resolved_model"
     write_role_launch_script "$i" >/dev/null
     echo -e "  ${CYAN}[${DISPLAY_NAMES[$i]}]${RESET} launch script pre-generated (dormant, router rotation target)"
