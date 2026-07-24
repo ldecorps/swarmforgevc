@@ -1,0 +1,80 @@
+id: BL-612
+title: "Wire step handlers for BL-528's acceptance feature (claim-without-progress auto-heal)"
+milestone: M8
+type: defect
+status: paused
+epic: swarm-reliability
+assigned_to:
+priority: 30
+mutation_cost: medium
+direction: swarm-proposed
+depends_on: []
+human_approval: pending
+source: "QA follow-up on BL-528 (backlog/evidence/BL-528-qa-followups-20260724.md item 1); architect raised the same as SECONDARY in backlog/evidence/BL-528-architect-bounce.md; coder note to specifier 2026-07-24T02:37Z."
+
+approval_context: >
+  BL-528 shipped and is QA-approved with its behaviour fully covered at the
+  swarm-script unit level (test_claim_progress_sweep.sh test1-test8). This
+  ticket buys only the missing APS acceptance gate, so it is a real cost for a
+  contract-hygiene benefit, not a functional gap. Approve if you want future
+  BL-528-adjacent work (BL-577 flow watchdog, any threshold change) to have an
+  executable acceptance gate; reject and the feature file should be deleted
+  rather than left handler-less.
+
+description: >
+  BL-528's ticket required an APS feature under specs/features/ before coder
+  work; none was written, and the ticket shipped with the placeholder
+  acceptance block still in place. The specifier has now authored the missing
+  contract at specs/features/BL-528-claim-without-progress-auto-heal.feature
+  (lint-clean, IR-DRY reviewed) describing behaviour that is ALREADY BUILT and
+  merged. What is missing is the step-handler module, so the file cannot yet be
+  executed. This ticket wires those handlers and nothing else — it must not
+  change claim-progress behaviour.
+
+notes: |
+  READ FIRST — this is NOT a missing-spec defect: the acceptance path below
+  ALREADY EXISTS on main. The work is the step-handler module behind it, in the
+  same parcel, so run_acceptance.sh on that feature file goes green.
+
+  SCOPE:
+  - Add specs/pipeline/steps/<name>Steps.js covering all 8 scenarios and
+    register it the way the existing daemon-behaviour handlers do — closest
+    precedent is specs/pipeline/steps/sidecarNoOrphanSteps.js (BL-232), which
+    drives real mailbox state rather than the VS Code UI.
+  - Handlers drive the shipped pure functions in
+    swarmforge/scripts/claim_progress_lib.bb — classify-claim-progress,
+    evaluate-claim-idle-signal, decide-claim-idle-action,
+    should-refuse-claim-halt?, format-telegram-alert / format-email-subject —
+    and the clear-claim-progress! leg in chase_sweep_lib.bb's
+    apply-claim-progress-check!. Do NOT reimplement the decision logic in JS:
+    a handler that re-derives the ladder in the test would pass while the
+    daemon regressed.
+  - Scenario Outline handlers validate example values against explicit
+    KNOWN_VALUES (engineering.prompt): "<evidence>", "<action>", "<state>",
+    "<role>", "<age>", "<verdict>" each get an explicit allow-list, never a
+    passthrough or binary check.
+  - Do NOT edit the feature file's scenarios to fit the handlers. If a scenario
+    turns out to assert something the shipped code does not do, that is a
+    finding: bounce to specifier with the mismatch named, do not reword it.
+
+  OUT OF SCOPE: any change to thresholds, probe grace, or the halt path.
+  BL-577 (flow watchdog) will redesign this area later and shares these files —
+  sequence, do not run concurrently with it.
+
+  WHY IT MATTERS: the architect flagged the missing feature file and passed the
+  parcel forward anyway; QA then had nothing to run for its own acceptance gate
+  (run_acceptance.sh needs a feature file). The behaviour is safety-critical —
+  it can halt the entire swarm — and its only executable contract today is a
+  shell suite, which the APS gate does not see.
+
+acceptance: specs/features/BL-528-claim-without-progress-auto-heal.feature
+
+e2e_qa_procedure: |
+  1. From repo root: specs/pipeline/scripts/run_acceptance.sh \
+       specs/features/BL-528-claim-without-progress-auto-heal.feature
+     Expect every scenario to pass, with no "no step handler" throw.
+  2. Confirm the handlers are load-bearing, not stubs: revert one shipped
+     guard (e.g. make evaluate-claim-idle-signal ignore worktree-dirty?) and
+     re-run — scenario 02 must FAIL. Restore afterwards.
+  3. swarmforge/scripts/test/test_claim_progress_sweep.sh still passes
+     unchanged (this ticket must not touch behaviour).
