@@ -1,0 +1,73 @@
+id: BL-613
+title: "DEFECT: the stuck-escalation email never fires in the real daemon — BL-349's wiring test is red on main"
+milestone: M8
+type: defect
+status: todo
+epic: swarm-reliability
+assigned_to: coder
+priority: 2
+mutation_cost: medium
+direction: swarm-proposed
+depends_on: []
+source: "Found during BL-528 hardening; isolated by hardener and independently reproduced by QA. Evidence: backlog/evidence/BL-528-stuck-escalation-email-sweep-not-firing-20260724.md and backlog/evidence/BL-528-qa-followups-20260724.md item 2."
+
+description: >
+  swarmforge/scripts/test/test_handoffd_stuck_escalation_email_wiring.sh —
+  BL-349's real-daemon proof that :on-stuck-escalation! reaches
+  stuck-escalation-email-sweep! — times out after 90s waiting for
+  "stuck-escalation-alarm coder delivered". The daemon starts and its sibling
+  sweeps visibly run every ~10s, but no chase-sweep-error is logged and the
+  alarm never fires. The pure-library contract (BL-349's feature file) still
+  passes over fakes, so the regression is in the live wiring, not the policy.
+  This is the human's only email alarm for a stuck role: it is dark in
+  production and nothing noticed.
+
+notes: |
+  PRE-EXISTING, NOT CAUSED BY BL-528. Reproduced three ways, all FAIL
+  identically: (1) BL-528's hardener commit c376efdcd2; (2) that commit with
+  handoffd.bb, chase_sweep_lib.bb and the test file reset to main's copy;
+  (3) QA's scratch git worktree at clean main HEAD de76ddc36 with no BL-528
+  code at all. Host load 0.17-0.99 throughout — not a flake.
+
+  ROOT-CAUSE THIS, DO NOT GUESS. Two candidate paths were noted at spec time
+  and NEITHER is confirmed — treat both as leads, not conclusions:
+  - handoffd.bb's :on-stuck-escalation! adapter gates the email behind
+    mono_router_lib/should-send-stuck-escalation-email?, which suppresses the
+    send for a role with no live tmux session (anti-flood for dormant
+    mono-router rotate targets). The fixture's fake tmux exits 0 for every
+    call, so session-exists? should read TRUE and the guard should pass —
+    which is why this is a lead, not the answer.
+  - QA reports the daemon log never advances past "started", which points
+    further upstream than the email leg itself (chase-sweep! may never reach
+    sweep-in-process! for this fixture at all).
+
+  THE TEST IS THE CONTRACT, NOT THE SUSPECT. Do not delete, skip, lengthen the
+  timeout past 90s, or weaken this test to green it. If the test's own
+  expectation is genuinely wrong, that is a spec bounce with the reasoning
+  named — not a quiet edit.
+
+  RELATED, SEQUENCE DO NOT PARALLELISE: BL-577 (flow watchdog, needs_design,
+  human-approved) already names this alarm's dormant-role suppression as its
+  sharpest finding and will redesign the same files. This ticket restores the
+  alarm that is supposed to work TODAY; BL-577 decides what replaces it. If
+  BL-577 lands first, fold this in rather than fixing twice.
+
+  BLAST RADIUS: while dark, a role can sit stuck indefinitely with no email —
+  the exact green-but-halted failure mode documented in
+  backlog/evidence/BL-109-BL-121-BL-122-handoff-halt-20260706.md.
+
+acceptance: specs/features/BL-349-stuck-escalation-email-headless.feature
+
+e2e_qa_procedure: |
+  1. swarmforge/scripts/test/test_handoffd_stuck_escalation_email_wiring.sh
+     passes from a clean checkout (it is RED on main today — that flip IS the
+     ticket). Run it from a scratch git worktree outside any live-swarm path
+     with SWARMFORGE_ALLOW_TMP_DAEMON=1, as QA did, so handoffd_supervisor's
+     substring reap cannot confound the result.
+  2. specs/pipeline/scripts/run_acceptance.sh on BL-349's feature file still
+     passes — the policy contract must be unchanged by the wiring fix.
+  3. Live check: with a real swarm up, force one role past its escalation
+     threshold and confirm an actual email arrives AND
+     .swarmforge/daemon/chase-escalations.json records it.
+  4. State the root cause in the commit message. A green test with no named
+     cause is not a fix.

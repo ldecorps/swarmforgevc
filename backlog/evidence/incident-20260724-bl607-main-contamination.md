@@ -52,12 +52,38 @@ real integrity break, not a merge-noise curiosity. The generic, byline-less
 commit message suggests this was accidental (a raw `git merge` typed against
 the wrong ref) rather than a deliberate emergency landing.
 
+## Second, worse instance — already pushed to `origin/main`
+
+`git fetch origin main` at QA landing time shows `origin/main` sitting at
+commit `ae5d3cf62646` (author `swarm-intake[bot]`, 2026-07-24 07:56:05 +0100,
+message `Document BL-607: pipeline roles can raise clarifying questions into
+their own Telegram topics` — the documenter's own commit MESSAGE, but NOT the
+documenter's own commit: its parent is `0a67d83ce` (an ordinary `main` commit,
+"Intakes: burn-rate briefing warning...", itself a descendant of the first
+leak `6da4c2602`), not the documenter branch's real ancestor chain. This is a
+second direct write straight onto `main` — 574-line diff to
+`docs/reference/Specification.MD`, textually identical to documenter's real
+commit `7fa17fecd1` — that landed 46 seconds AFTER `7fa17fecd1` was made on
+the documenter branch (07:56:51) but was committed independently onto `main`
+at 07:56:05 (i.e., cannot be a fast-forward/merge of it; it is a second,
+separate write of the same content). Confirmed neither the architect's 3rd
+pass (`07d7ff3c3`) nor the hardener's CRAP/DRY dedup (`119e8c182`) is an
+ancestor of `ae5d3cf62` — so the version already **pushed to origin and
+publicly visible on GitHub** is the pre-hardening state (duplicated
+capture-answer logic, CRAP-8 functions) plus a copy of the final docs, never
+gated by QA, never pushed by QA. This is no longer a local-repo curiosity —
+it is live on the remote. QA's landing step (below) merges over this with the
+fully-reviewed, hardened, documented commit and re-pushes to correct
+`origin/main`; the fix is mechanical, but the fact this reached `origin`
+un-gated is the escalation-worthy part.
+
 ## Recommendation
 
-Root-cause who/what ran the raw merge on `main` at 05:52 (likely specifier or
-coordinator activity in the shared master checkout — both lack a dedicated
-worktree) and close the gap that let it happen without `swarm_handoff.sh`.
-Suggest a coordinator/operator follow-up ticket; not something QA can fix by
-editing code.
+Root-cause who/what ran the raw merge/commit on `main` at 05:52 and 07:56
+(likely specifier or coordinator activity in the shared master checkout —
+both lack a dedicated worktree) and, given one instance already reached
+`origin`, close the gap that let either happen without `swarm_handoff.sh` and
+without QA's push. Suggest a coordinator/operator follow-up ticket treated as
+urgent given the origin push; not something QA can fix by editing code.
 
 — By QA.
