@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
+const { readCooldownWindowMarker } = require('../out/tools/cooldownWindowState');
 const {
   parseCliArgs,
   conciergeTickIntervalMs,
@@ -1487,6 +1488,49 @@ test('BL-423: resumeNow clears the pause marker and announces it', async () => {
   await resumeNow(root, 'fake-token', 'fake-chat', 900, postFn);
   assert.deepEqual(readControlPauseState(root), { active: false });
   assert.match(JSON.parse(calls[0].body).text, /Resumed/);
+});
+
+// ── BL-617: resumeNow consumes an open cooldown window's application ──────
+
+function writeCooldownConf(root) {
+  fs.mkdirSync(path.join(root, 'swarmforge'), { recursive: true });
+  fs.writeFileSync(
+    path.join(root, 'swarmforge', 'swarmforge.conf'),
+    'config cooldown_window_enabled true\nconfig cooldown_start_local 19:00\nconfig cooldown_end_local 07:00\n'
+  );
+}
+
+// 2026-07-24 19:00 local, fixed baseline so the test is deterministic
+// regardless of which day the suite runs on.
+const WINDOW_OPEN_MS = new Date(2026, 6, 24, 19, 0, 0, 0).getTime();
+const INSIDE_WINDOW_MS = new Date(2026, 6, 24, 22, 0, 0, 0).getTime();
+const OUTSIDE_WINDOW_MS = new Date(2026, 6, 24, 12, 0, 0, 0).getTime();
+
+test('BL-617 human-resume-now-during-window-wins-06: resumeNow inside an open cooldown window stamps the window as consumed', async () => {
+  const root = mkTmpRoot();
+  writeCooldownConf(root);
+  writeControlPauseState(root, { active: true, untilMs: undefined });
+  const { postFn } = fakeSendOk(1);
+  await resumeNow(root, 'fake-token', 'fake-chat', 900, postFn, INSIDE_WINDOW_MS);
+  const marker = readCooldownWindowMarker(root);
+  assert.equal(marker.lastHandledWindowStartMs, WINDOW_OPEN_MS);
+});
+
+test('BL-617: resumeNow outside a cooldown window does not stamp a marker', async () => {
+  const root = mkTmpRoot();
+  writeCooldownConf(root);
+  writeControlPauseState(root, { active: true, untilMs: undefined });
+  const { postFn } = fakeSendOk(1);
+  await resumeNow(root, 'fake-token', 'fake-chat', 900, postFn, OUTSIDE_WINDOW_MS);
+  assert.deepEqual(readCooldownWindowMarker(root), { lastHandledWindowStartMs: undefined });
+});
+
+test('BL-617: resumeNow with no cooldown config configured does not stamp a marker', async () => {
+  const root = mkTmpRoot();
+  writeControlPauseState(root, { active: true, untilMs: undefined });
+  const { postFn } = fakeSendOk(1);
+  await resumeNow(root, 'fake-token', 'fake-chat', 900, postFn, INSIDE_WINDOW_MS);
+  assert.deepEqual(readCooldownWindowMarker(root), { lastHandledWindowStartMs: undefined });
 });
 
 // ── readPollMap / writePollMap (BL-466, the resolvePollThread/recordPollMapping
