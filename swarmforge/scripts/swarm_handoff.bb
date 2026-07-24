@@ -176,9 +176,10 @@
            errors))])))
 
 (defn canonical-commit [commit]
-  (let [matches (-> (command "." "git" "rev-parse" (str "--disambiguate=" commit))
+  (let [matches (->> (command "." "git" "rev-parse" (str "--disambiguate=" commit))
                     :out
                     str/split-lines
+                    (remove str/blank?)
                     vec)]
     (cond
       (not= 1 (count matches))
