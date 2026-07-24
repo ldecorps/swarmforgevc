@@ -70,24 +70,39 @@ is no `.bb` property harness — the same gap engineering.prompt already records
 for `.bb` mutation/CRAP/DRY (BL-472). No property test was written rather than
 manufacture a vacuous one.
 
-## Residual items — non-blocking, NOT reasons to rework
+## Follow-up commit `2ca3e5521c` — remaining bounce items closed
 
-1. `flow_watchdog_lib.bb:155` — `read-state`'s docstring still documents the
-   entry shape as `{:tier :alarmedAt :snoozed?}` while `snoozed?` (line ~174)
-   reads the `:snoozed` key and the unit tests pin `:snoozed` on disk. A later
-   snooze-**writer** slice that follows the docstring would write a key the
-   reader ignores, silently defeating the human ack. **Documenter: please
-   correct the docstring to `:snoozed` in your pass** — one word, no behavior
-   change, so it does not warrant bouncing a correct parcel back through the
-   chain.
-2. `flow-watchdog-emit-alarm!` remains the third verbatim copy of the
+A second cleaner forward arrived mid-review (`2ca3e5521c`, work commit
+`a9bde4d25`, a descendant of `8e646b84e5`) and closes both remaining items
+from the bounce evidence:
+
+- **Remediation item 1**: `(log! "flow-watchdog-alarm" text)` moved OUT of the
+  `try` and BEFORE the outbox write, matching `endless-loop-halt`'s ordering,
+  so the log backstop the ticket promises now exists on the write-fails path
+  too. On a healthy channel the log volume is unchanged (at most one line per
+  successful warn/escalate alarm); on a broken channel the repeated line is
+  the desired evidence, and the write is still retried until confirmed.
+- **Secondary item**: `read-state`'s docstring corrected from
+  `{:tier :alarmedAt :snoozed?}` to `:snoozed`, matching the reader at
+  `snoozed?` and the on-disk key the tests pin — so a later snooze-**writer**
+  slice cannot follow the docstring into a key the reader ignores.
+- Plus an exec bit on `flow_watchdog_test_runner.bb` (cosmetic; sibling
+  runners are mixed).
+
+Re-verified on the merged follow-up: `flow_watchdog_test_runner.bb` →
+`ALL PASS`; `test_handoffd_flow_watchdog_wiring.sh` → both assertions pass.
+No JS changed in the delta, so the dependency-gate result above stands.
+`2ca3e5521c` is the commit forwarded to the hardener; it supersedes the
+earlier architect forward `df1d94cdfc` (same ticket, strict ancestor).
+
+## Residual items — non-blocking, no rework needed
+
+1. `flow-watchdog-emit-alarm!` remains the third verbatim copy of the
    outbox-append block in `handoffd.bb` (lines ~885, ~922, ~1461); folding it
    into `daemon_alarm_lib.bb` stays a worthwhile follow-up, not this ticket's
    work.
-3. On a permanently failing outbox the daemon log gets a
-   `flow-watchdog-telegram-error` line per sweep but never the alarm text
-   itself. Acceptable: the channel breakage is loudly visible and the alarm is
-   delivered in full on recovery.
+2. No `.bb` property-test harness exists (see above) — tracked alongside the
+   `.bb` mutation/CRAP/DRY gap (BL-472).
 
 ## Scope note (BL-506)
 
