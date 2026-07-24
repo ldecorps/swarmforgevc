@@ -8,22 +8,21 @@ This runbook explains what triggers the alarm and what to do when you receive it
 
 You will receive an email with the subject line:
 ```
-SwarmForge: role <ROLE> stuck, needs intervention
+SwarmForge: <role> is stuck and needs attention
 ```
 
-The email contains:
-- The **role name** that stopped responding (e.g., `coder`, `architect`, `hardener`)
-- The **ticket id** the role was working on when it got stuck
-- A **reference to the escalation log** — a file under `.swarmforge/daemon/` with timing details
-- The **recommended recovery action** — usually to respawn the stuck role
+For example: `SwarmForge: coder is stuck and needs attention`.
 
-Example email:
+The email body is fixed text about that one role — it does **not** carry a
+ticket id, an escalation-log path, or a recommended command; the sender only
+ever passes the role name in:
+
 ```
-The coder role has not responded for 60 seconds while working on BL-528.
-No progress has been detected.
+The role "coder" has been stuck (holding an in-process task with no forward progress) past its escalation threshold.
 
-Escalation log: /path/to/target/.swarmforge/daemon/chase-escalations.json
-Recommended action: respawn the coder role via swarmforge ensure /path/to/target
+This is unattended - nobody has been notified until this email. Check the role's pane/log and, if needed, respawn or intervene by hand.
+
+This clears on its own once the role becomes unstuck; a NEW stuck episode after recovery will email again.
 ```
 
 ## What Happened
@@ -38,7 +37,7 @@ If a role is idle **past an escalation threshold** (currently 60 seconds):
 1. **A timer starts** — the daemon notes the role as potentially stuck.
 2. **Progress is checked** — if the role hasn't advanced the parcel (no commits, no handoff) in that time, it's genuinely stuck, not just slow.
 3. **An email is sent** — the escalation alarm fires, notifying you that human intervention may be needed.
-4. **The ticket is noted** — the escalation log records which ticket the role was holding when it got stuck.
+4. **The role is recorded as escalated** — `chase-escalations.json` marks that role `true` until it recovers (see below); the email itself carries no ticket id.
 
 Unlike the daemon-death alarm, the stuck-role alarm does **not automatically halt the swarm** — the other roles keep working. But the stuck role is now unresponsive and the parcel it holds is stalled.
 
@@ -56,30 +55,23 @@ The threshold is conservative (60 seconds for the default pack) to avoid false a
 
 ## Escalation Log Contents
 
-The escalation log (`.swarmforge/daemon/chase-escalations.json`) records:
+The escalation log (`.swarmforge/daemon/chase-escalations.json`) is a flat
+role-name-to-`true` map of roles **currently** escalated — nothing more:
 
 ```json
-{
-  "escalations": [
-    {
-      "role": "coder",
-      "escalated_at": "2026-07-24T14:30:00Z",
-      "idle_seconds": 92,
-      "ticket_id": "BL-528",
-      "status": "email-sent",
-      "reason": "no-progress-past-threshold"
-    }
-  ]
-}
+{ "coder": true }
 ```
 
-This tells you:
-- **role** — which role got stuck
-- **escalated_at** — exactly when the alarm fired
-- **idle_seconds** — how long the role had been idle before escalation
-- **ticket_id** — what work the role was holding
-- **status** — `email-sent` means the email was delivered successfully
-- **reason** — why the role was flagged (always `no-progress-past-threshold` for now)
+A role with no entry (or an empty `{}` file) is not currently escalated. There
+is no array, no timestamp, no ticket id, and no per-escalation record: the
+entry for a role is removed entirely once that role recovers, so a later
+re-escalation starts fresh.
+
+The delivery/retry state for the email itself (whether it has already been
+sent for the current escalation, and backoff bookkeeping if a send attempt
+fails) lives in a **separate** file,
+`.swarmforge/daemon/chase-escalation-email-state.json` — not in
+`chase-escalations.json`.
 
 ## Recovery Steps
 
