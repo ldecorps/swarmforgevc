@@ -66,6 +66,61 @@ import {
   decideEnsureRoleTopicAction,
 } from './telegramTopicDecisions';
 
+// BL-607 architect bounce: telegramFrontDeskBotCore was the public barrel for
+// these symbols before the telegramTopicDecisions extraction; 10 consumer
+// modules still import them from here, so re-export to keep that interface.
+export {
+  nextUpdateOffset,
+  isFromPrincipal,
+  isFromMyChat,
+  topicIdOf,
+  messageTextOf,
+  DEFAULT_SUBJECT_KEY,
+  subjectForTopic,
+  topicForSubject,
+  hasDefaultBinding,
+  resolveReplyTopicId,
+  ReplyDelivery,
+  resolveReplyDelivery,
+  REPLY_POINTER_TEXT,
+  OPERATOR_SUBJECT_ID,
+  OPERATOR_TOPIC_NAME,
+  EnsureOperatorTopicAction,
+  decideEnsureOperatorTopicAction,
+  StandingTopicTitleSyncAction,
+  decideStandingTopicTitleSync,
+  APPROVALS_SUBJECT_ID,
+  APPROVALS_TOPIC_NAME,
+  EnsureApprovalsTopicAction,
+  decideEnsureApprovalsTopicAction,
+  RECERT_SUBJECT_ID,
+  RECERT_TOPIC_NAME,
+  EnsureRecertTopicAction,
+  decideEnsureRecertTopicAction,
+  AGENT_QUESTIONS_SUBJECT_ID,
+  AGENT_QUESTIONS_TOPIC_NAME,
+  EnsureAgentQuestionsTopicAction,
+  decideEnsureAgentQuestionsTopicAction,
+  BACKLOG_SUBJECT_ID,
+  BACKLOG_TOPIC_NAME,
+  EnsureBacklogTopicAction,
+  decideEnsureBacklogTopicAction,
+  CONTROL_SUBJECT_ID,
+  CONTROL_TOPIC_NAME,
+  EnsureControlTopicAction,
+  decideEnsureControlTopicAction,
+  BABYSITTER_SUBJECT_ID,
+  BABYSITTER_TOPIC_NAME,
+  EnsureBabysitterTopicAction,
+  decideEnsureBabysitterTopicAction,
+  RESIDENT_SPY_SUBJECT_ID,
+  RESIDENT_SPY_TOPIC_NAME,
+  EnsureResidentSpyTopicAction,
+  decideEnsureResidentSpyTopicAction,
+  EnsureRoleTopicAction,
+  decideEnsureRoleTopicAction,
+};
+
 export type BotUpdateDecision =
   | { action: 'post-existing'; subjectId: string; text: string }
   | { action: 'operator-context'; backlogId: string; text: string }
