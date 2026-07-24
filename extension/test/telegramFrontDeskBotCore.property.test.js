@@ -1,6 +1,13 @@
 const assert = require('node:assert/strict');
 const fc = require('fast-check');
-const { composeAskButtons, decideCallbackQueryAction, recordApprovalDecisionAndClose } = require('../out/tools/telegramFrontDeskBotCore');
+const {
+  composeAskButtons,
+  decideCallbackQueryAction,
+  recordApprovalDecisionAndClose,
+  roleAskThreadId,
+  roleFromAskThreadId,
+  ROLE_ASK_THREAD_PREFIX,
+} = require('../out/tools/telegramFrontDeskBotCore');
 
 // BL-483: composeAskButtons (encode: option -> callback_data) and
 // decideCallbackQueryAction (decode: callback_data -> {threadId, optionIndex})
@@ -132,5 +139,48 @@ test('property: the ask-close retry loop stops at the first success/terminal out
       }
     }),
     { numRuns: 200 }
+  );
+});
+
+// BL-607 (architect, property support): roleAskThreadId (a role -> the
+// synthetic threadId its clarifying question's ask-message mapping and
+// callback_data are keyed under) and roleFromAskThreadId (the inverse the
+// button-tap / free-text answer path uses to recover WHICH role asked) are
+// one encode/decode pair spanning the bb ask side (role_ask.bb writes the
+// same ROLE_ASK_THREAD_PREFIX) and the TS answer side. The whole role-
+// question mechanism silently MISROUTES an answer if the two ever drift, so
+// the round-trip must hold for EVERY role name, not just the eight the unit
+// examples pin. Runs ONLY via `npm run test:properties`.
+const KNOWN_ROLES = ['coordinator', 'specifier', 'coder', 'cleaner', 'architect', 'hardender', 'documenter', 'QA'];
+// Role names are colon-free by contract (composeAskButtons/
+// ASK_CALLBACK_DATA_PATTERN's `[^:]+` capture - see roleAskThreadId's own
+// comment) - the arbitrary mirrors that, mixing the real roles with
+// arbitrary colon-free names so a future role rename can never regress it.
+const roleArb = fc.oneof(fc.constantFrom(...KNOWN_ROLES), fc.stringMatching(/^[A-Za-z0-9_-]{1,20}$/));
+
+test('property: roleFromAskThreadId inverts roleAskThreadId for every role name', () => {
+  fc.assert(
+    fc.property(roleArb, (role) => {
+      assert.equal(roleFromAskThreadId(roleAskThreadId(role)), role);
+    }),
+    { numRuns: 300 }
+  );
+});
+
+// The other half of the same guard: a threadId that does NOT carry the
+// role-ask prefix - in particular a real Operator SUP-### ask threadId -
+// must NEVER be misread as a role, or scenario 06's "the Operator's
+// SUP-thread ask path stays byte-identical" regression guarantee breaks (a
+// role question and an Operator question would contend for delivery). Any
+// non-prefixed string resolves to undefined, keeping the two ask worlds
+// disjoint. Runs ONLY via `npm run test:properties`.
+const nonRolePrefixedArb = fc.string({ minLength: 1, maxLength: 30 }).filter((s) => !s.startsWith(ROLE_ASK_THREAD_PREFIX));
+
+test('property: a threadId without the role-ask prefix (a real Operator SUP-### ask) never resolves to a role', () => {
+  fc.assert(
+    fc.property(nonRolePrefixedArb, (threadId) => {
+      assert.equal(roleFromAskThreadId(threadId), undefined);
+    }),
+    { numRuns: 300 }
   );
 });
