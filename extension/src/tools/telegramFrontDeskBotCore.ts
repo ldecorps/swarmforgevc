@@ -12,344 +12,114 @@ import { classifyApprovalReplyAction, classifyApprovalsTopicReply } from '../con
 import { ApprovalDecisionVerdict, composeDecidedAskText, alreadyDecidedToastText } from '../concierge/approvalAskClosing';
 import { unsafeDispatchToastText } from '../concierge/expediteSafety';
 import { classifyRecertTopicReply } from '../concierge/recertTopicReply';
-import { SWARM_LIVE_SCREEN_NAME } from '../concierge/residentPaneSpy';
 import { roleForTopic } from '../concierge/roleTopicMapStore';
 import { ControlEvent, ControlDecision, PendingControlConfirm, PauseState, decideControlEventAction } from './telegramControlCore';
+import {
+  nextUpdateOffset,
+  isFromPrincipal,
+  isFromMyChat,
+  topicIdOf,
+  messageTextOf,
+  DEFAULT_SUBJECT_KEY,
+  subjectForTopic,
+  topicForSubject,
+  hasDefaultBinding,
+  resolveReplyTopicId,
+  ReplyDelivery,
+  resolveReplyDelivery,
+  REPLY_POINTER_TEXT,
+  OPERATOR_SUBJECT_ID,
+  OPERATOR_TOPIC_NAME,
+  EnsureOperatorTopicAction,
+  decideEnsureOperatorTopicAction,
+  StandingTopicTitleSyncAction,
+  decideStandingTopicTitleSync,
+  APPROVALS_SUBJECT_ID,
+  APPROVALS_TOPIC_NAME,
+  EnsureApprovalsTopicAction,
+  decideEnsureApprovalsTopicAction,
+  RECERT_SUBJECT_ID,
+  RECERT_TOPIC_NAME,
+  EnsureRecertTopicAction,
+  decideEnsureRecertTopicAction,
+  AGENT_QUESTIONS_SUBJECT_ID,
+  AGENT_QUESTIONS_TOPIC_NAME,
+  EnsureAgentQuestionsTopicAction,
+  decideEnsureAgentQuestionsTopicAction,
+  BACKLOG_SUBJECT_ID,
+  BACKLOG_TOPIC_NAME,
+  EnsureBacklogTopicAction,
+  decideEnsureBacklogTopicAction,
+  CONTROL_SUBJECT_ID,
+  CONTROL_TOPIC_NAME,
+  EnsureControlTopicAction,
+  decideEnsureControlTopicAction,
+  BABYSITTER_SUBJECT_ID,
+  BABYSITTER_TOPIC_NAME,
+  EnsureBabysitterTopicAction,
+  decideEnsureBabysitterTopicAction,
+  RESIDENT_SPY_SUBJECT_ID,
+  RESIDENT_SPY_TOPIC_NAME,
+  EnsureResidentSpyTopicAction,
+  decideEnsureResidentSpyTopicAction,
+  EnsureRoleTopicAction,
+  decideEnsureRoleTopicAction,
+} from './telegramTopicDecisions';
 
-// BL-353: moved from the retired notify/telegramInboundRelay.ts (which
-// also carried the legacy single-chat TelegramInboundRelay class, now
-// deleted) - this is a generic getUpdates-offset utility the REAL
-// front-desk bot's own poll loop needs, unrelated to the relay class that
-// used to sit next to it.
-export function nextUpdateOffset(updates: TelegramUpdate[], currentOffset: number): number {
-  return updates.reduce((max, u) => Math.max(max, u.update_id + 1), currentOffset);
-}
-
-export function isFromPrincipal(update: TelegramUpdate, principalUserId: string): boolean {
-  const fromId = update.message?.from?.id;
-  return fromId !== undefined && String(fromId) === String(principalUserId);
-}
-
-// BL-379: the message's own chat, already parsed and typed
-// (TelegramMessage.chat, telegramClient.ts) - the ONE field
-// decideUpdateAction never consulted before this. Telegram's own
-// getUpdates is scoped to the BOT, not the chat: it returns updates from
-// EVERY chat the bot is in, so filtering on sender alone lets a second
-// project's chat (the bot added to a stray group) silently cross-wire its
-// messages into this project's own support threads via BL-294's
-// auto-adopt - the same loss class as BL-369/370/371.
-export function isFromMyChat(update: TelegramUpdate, chatId: string): boolean {
-  const updateChatId = update.message?.chat?.id;
-  return updateChatId !== undefined && String(updateChatId) === String(chatId);
-}
-
-export function topicIdOf(update: TelegramUpdate): number | undefined {
-  return update.message?.message_thread_id;
-}
-
-export function messageTextOf(update: TelegramUpdate): string | undefined {
-  return update.message?.text;
-}
-
-// BL-294: the reserved topic-map key a private DM (no message_thread_id,
-// topicIdOf undefined) resolves through - the SAME map/lookup mechanism a
-// real topic id uses, just one sentinel key wide, so a DM "degenerates to
-// the single default subject" (the ticket's own wording) without a second
-// map or a second code path.
-export const DEFAULT_SUBJECT_KEY = '__default__';
-
-// Pure lookups over the bot's own persisted {topicId: subjectId} map (read
-// by the caller) - subjectForTopic drives inbound demux (topic-topic-01/
-// -02, auto-open-01/02/03), topicForSubject drives the reply relay
-// (telegram-topic-03): given a reply tagged by SUP-### subject id, which
-// Telegram topic does it go back into.
-export function subjectForTopic(topicMap: Record<string, string>, topicId: number | undefined): string | undefined {
-  return topicMap[topicId === undefined ? DEFAULT_SUBJECT_KEY : String(topicId)];
-}
-
-// A subject opened from a DM (mapped under DEFAULT_SUBJECT_KEY, not a real
-// topic id) has no Telegram topic to reply into - returns undefined rather
-// than Number(DEFAULT_SUBJECT_KEY) (NaN), which relaySseReplies would
-// otherwise treat as "mapped" and forward a corrupt message_thread_id.
-export function topicForSubject(topicMap: Record<string, string>, subjectId: string): number | undefined {
-  const found = Object.entries(topicMap).find(([key, sid]) => sid === subjectId && key !== DEFAULT_SUBJECT_KEY);
-  return found ? Number(found[0]) : undefined;
-}
-
-// BL-355: true when a subject's DM/General-topic origin was ALSO recorded
-// under DEFAULT_SUBJECT_KEY - i.e. General has, at some point, been a live
-// place this subject was discussed from, distinct from whether it ALSO has
-// a real dedicated topic (topicForSubject above).
-export function hasDefaultBinding(topicMap: Record<string, string>, subjectId: string): boolean {
-  return topicMap[DEFAULT_SUBJECT_KEY] === subjectId;
-}
-
-// BL-325: a reply's threadId may name either a SUP-### support subject
-// (topicForSubject's own {topicId: subjectId} map) or a BL-### backlog
-// item (the SEPARATE, forward backlogId->topicId map - no reversal
-// needed). Tries the SUP map first so every existing SUP thread keeps its
-// exact prior resolution/priority; falls back to the backlog map only when
-// the SUP map has no match. The two id spaces never collide (SUP-### vs
-// BL-###), so this is the "extend the egress to accept a BL-### target"
-// half of the loop - the SAME reply-outbox entries operator_reply.bb,
-// operator_notify.bb, and operator-decide.js's approve relay all already
-// write now reach a BL topic through this one resolver, no second egress
-// path.
-export function resolveReplyTopicId(
-  topicMap: Record<string, string>,
-  backlogTopicMap: Record<string, number>,
-  threadId: string
-): number | undefined {
-  const supTopicId = topicForSubject(topicMap, threadId);
-  return supTopicId !== undefined ? supTopicId : backlogTopicMap[threadId];
-}
-
-// BL-355: the reply relay's destination decision, replacing a bare topic id
-// with an explicit outcome so "no real topic bound" and "deliver, but ALSO
-// tell General" are distinguishable instead of collapsing to one undefined.
-//
-// A subject bound to a real topic (SUP or, via the backlog map, BL-###)
-// keeps its existing destination - `resolveReplyTopicId`'s own resolution
-// order is unchanged. A subject whose ONLY binding is DEFAULT_SUBJECT_KEY
-// (every reply to it, prior to this ticket, resolved to `undefined` and was
-// silently dropped by relayOneRecord's `if (topicId !== undefined)` guard)
-// now delivers the full reply with no message_thread_id, which Telegram
-// routes to the chat's General topic - the human's own asking thread in
-// that case. And when a subject has BOTH a real topic AND a default
-// binding (the human's reported symptom: a question asked in General
-// answered only in a dedicated SUP/support topic he cannot see), the full
-// reply keeps going to the real topic - preserving that topic's existing
-// conversation history - but `alsoPointerToDefault` tells the relay to
-// additionally post a short pointer into General, so asking from General
-// is never silence again even when the canonical answer lives elsewhere.
-export type ReplyDelivery =
-  | { kind: 'topic'; topicId: number; alsoPointerToDefault: boolean }
-  | { kind: 'default' }
-  | { kind: 'undeliverable' };
-
-export function resolveReplyDelivery(topicMap: Record<string, string>, backlogTopicMap: Record<string, number>, threadId: string): ReplyDelivery {
-  const backlogTopicId = backlogTopicMap[threadId];
-  if (backlogTopicId !== undefined) {
-    return { kind: 'topic', topicId: backlogTopicId, alsoPointerToDefault: false };
-  }
-  const realTopicId = topicForSubject(topicMap, threadId);
-  if (realTopicId !== undefined) {
-    return { kind: 'topic', topicId: realTopicId, alsoPointerToDefault: hasDefaultBinding(topicMap, threadId) };
-  }
-  if (hasDefaultBinding(topicMap, threadId)) {
-    return { kind: 'default' };
-  }
-  return { kind: 'undeliverable' };
-}
-
-// A short pointer, never the full answer - the real answer stays in its
-// canonical topic (preserving that history); this only ever needs to make
-// silence impossible for a human looking at General.
-export const REPLY_POINTER_TEXT = "This was answered — see the reply in this conversation's other topic.";
-
-// BL-346: the reserved subject a standing "Operator" forum topic is bound
-// to in the SAME {topicId: subjectId} map subjectForTopic/topicForSubject
-// already trust - once bound, an inbound message in that topic resolves
-// through the ORDINARY post-existing branch below like any other SUP-###
-// subject (never allocating a fresh support issue), and a reply tagged
-// with this subject id resolves back through topicForSubject/
-// resolveReplyTopicId exactly like any other reply - no new routing/egress
-// code needed, only the one-time binding itself (decideEnsureOperatorTopicAction).
-// BL-453: OPERATOR_SUBJECT_ID stays UNCHANGED (the durable binding/ownership
-// key - changing it would re-mint or orphan the already-bound topic); only
-// the display name is rebranded, from "Operator" to "Concierge".
-export const OPERATOR_SUBJECT_ID = 'OPERATOR';
-export const OPERATOR_TOPIC_NAME = 'Concierge';
-
-export type EnsureOperatorTopicAction = { kind: 'reuse'; topicId: number } | { kind: 'create' };
-
-// Pure: the reserved-subject twin of topicRouter.ts's decideTopicAction -
-// reuse the topic id already bound to OPERATOR_SUBJECT_ID (topicForSubject,
-// the SAME lookup the reply egress uses), or create if no binding exists
-// yet. Never keyed by the topic's NAME (Telegram topic names are not
-// unique/stable identifiers) - only by the map's own subject-id value.
-export function decideEnsureOperatorTopicAction(topicMap: Record<string, string>): EnsureOperatorTopicAction {
-  const existingTopicId = topicForSubject(topicMap, OPERATOR_SUBJECT_ID);
-  return existingTopicId !== undefined ? { kind: 'reuse', topicId: existingTopicId } : { kind: 'create' };
-}
-
-// BL-453: the front-desk topic already exists and is bound (the Operator ->
-// Concierge rebrand supersedes only its display name/icon, never its
-// binding), so a fresh install's create-time name alone cannot reach it -
-// the live topic's title must also be RENAMED. Pure decision, mirroring
-// topicTitleSync.ts's own "only apply when the recorded value actually
-// differs" change-gate (never re-edit an already-correct topic): undefined
-// (no marker recorded yet, e.g. a pre-BL-453 install) counts as "differs",
-// same as any other stale value.
-export type StandingTopicTitleSyncAction = 'update' | 'unchanged';
-
-export function decideStandingTopicTitleSync(recordedTitle: string | undefined, desiredTitle: string): StandingTopicTitleSyncAction {
-  return recordedTitle === desiredTitle ? 'unchanged' : 'update';
-}
-
-// BL-434: the reserved subject a standing "Approvals" forum topic is bound
-// to - the SAME {topicId: subjectId} map OPERATOR_SUBJECT_ID above shares,
-// so an inbound message there resolves through subjectForTopic exactly like
-// any other bound subject (decideUpdateAction below intercepts it ahead of
-// the ordinary post-existing branch, since a reply here must be PARSED for
-// the ticket id it names, never just forwarded as a subject post).
-export const APPROVALS_SUBJECT_ID = 'APPROVALS';
-export const APPROVALS_TOPIC_NAME = 'Approvals';
-
-// 'rebind': map lost the APPROVALS binding but we still know the live forum
-// topic id (sidecar last-known). Re-attach that id — NEVER createForumTopic
-// again. Telegram permits multiple topics with the same display name, so a
-// blind create after a map remint/wipe mints a duplicate "Approvals" orphan
-// while the human still watches the empty original thread.
-export type EnsureApprovalsTopicAction =
-  | { kind: 'reuse'; topicId: number }
-  | { kind: 'rebind'; topicId: number }
-  | { kind: 'create' };
-
-// Pure: when live forum topics named "Approvals" are known, ALWAYS bind the
-// oldest (lowest thread id = created first) — Telegram permits duplicate
-// display names, so a reminted twin must not displace the original the human
-// watches. Otherwise: reuse map binding, else rebind lastKnownTopicId, else create.
-export function decideEnsureApprovalsTopicAction(
-  topicMap: Record<string, string>,
-  lastKnownTopicId?: number,
-  liveTopicIdsNamedApprovals?: number[]
-): EnsureApprovalsTopicAction {
-  const named = (liveTopicIdsNamedApprovals ?? [])
-    .filter((id) => typeof id === 'number' && Number.isFinite(id))
-    .sort((a, b) => a - b);
-  if (named.length > 0) {
-    const oldest = named[0];
-    const existingTopicId = topicForSubject(topicMap, APPROVALS_SUBJECT_ID);
-    if (existingTopicId === oldest) {
-      return { kind: 'reuse', topicId: oldest };
-    }
-    return { kind: 'rebind', topicId: oldest };
-  }
-  const existingTopicId = topicForSubject(topicMap, APPROVALS_SUBJECT_ID);
-  if (existingTopicId !== undefined) {
-    return { kind: 'reuse', topicId: existingTopicId };
-  }
-  if (lastKnownTopicId !== undefined) {
-    return { kind: 'rebind', topicId: lastKnownTopicId };
-  }
-  return { kind: 'create' };
-}
-
-// BL-450: the reserved subject a standing "Recert" forum topic is bound to -
-// the SAME {topicId: subjectId} map OPERATOR_SUBJECT_ID/APPROVALS_SUBJECT_ID
-// above share, so an inbound message there resolves through subjectForTopic
-// exactly like any other bound subject (decideUpdateAction below intercepts
-// it ahead of the ordinary post-existing branch, since a reply here must be
-// PARSED for the scenario id + verb it names, never just forwarded as a
-// subject post).
-export const RECERT_SUBJECT_ID = 'RECERT';
-export const RECERT_TOPIC_NAME = 'Recert';
-
-export type EnsureRecertTopicAction = { kind: 'reuse'; topicId: number } | { kind: 'create' };
-
-// Pure: the Recert-topic twin of decideEnsureApprovalsTopicAction above -
-// identical reuse-or-create shape, keyed by its own reserved subject id.
-export function decideEnsureRecertTopicAction(topicMap: Record<string, string>): EnsureRecertTopicAction {
-  const existingTopicId = topicForSubject(topicMap, RECERT_SUBJECT_ID);
-  return existingTopicId !== undefined ? { kind: 'reuse', topicId: existingTopicId } : { kind: 'create' };
-}
-
-// BL-466: the reserved subject a standing "Agent Questions" forum topic is
-// bound to - the SAME {topicId: subjectId} map every other reserved subject
-// above shares. Unlike Operator/Approvals/Recert, an inbound reply in THIS
-// topic is never routed through the ordinary subjectForTopic/post-existing
-// path at all (see decideAgentQuestionsReplyAction below) - it exists purely
-// so ensureAgentQuestionsTopic (telegram-front-desk-bot.ts) has the SAME
-// idempotent reuse-or-create mechanism every other standing topic already
-// gets, never a second one invented for this ticket.
-export const AGENT_QUESTIONS_SUBJECT_ID = 'AGENT_QUESTIONS';
-export const AGENT_QUESTIONS_TOPIC_NAME = 'Agent Questions';
-
-export type EnsureAgentQuestionsTopicAction = { kind: 'reuse'; topicId: number } | { kind: 'create' };
-
-// Pure: identical reuse-or-create shape to decideEnsureOperatorTopicAction
-// above, keyed by its own reserved subject id.
-export function decideEnsureAgentQuestionsTopicAction(topicMap: Record<string, string>): EnsureAgentQuestionsTopicAction {
-  const existingTopicId = topicForSubject(topicMap, AGENT_QUESTIONS_SUBJECT_ID);
-  return existingTopicId !== undefined ? { kind: 'reuse', topicId: existingTopicId } : { kind: 'create' };
-}
-
-// BL-492: the reserved subject a standing "Backlog" catch-all forum topic is
-// bound to - the SAME {topicId: subjectId} map every other reserved subject
-// above shares. Foundation slice of the BL-491 topic-consolidation epic:
-// the routing target epic-less tickets post into instead of a per-ticket
-// topic each (BL-493 wires the actual routing; this ticket only ensures the
-// topic itself exists, exactly like every other standing topic's own
-// ensure* helper).
-export const BACKLOG_SUBJECT_ID = 'BACKLOG';
-export const BACKLOG_TOPIC_NAME = 'Backlog';
-
-export type EnsureBacklogTopicAction = { kind: 'reuse'; topicId: number } | { kind: 'create' };
-
-// Pure: identical reuse-or-create shape to decideEnsureApprovalsTopicAction/
-// decideEnsureRecertTopicAction/decideEnsureAgentQuestionsTopicAction above,
-// keyed by its own reserved subject id.
-export function decideEnsureBacklogTopicAction(topicMap: Record<string, string>): EnsureBacklogTopicAction {
-  const existingTopicId = topicForSubject(topicMap, BACKLOG_SUBJECT_ID);
-  return existingTopicId !== undefined ? { kind: 'reuse', topicId: existingTopicId } : { kind: 'create' };
-}
-
-// BL-423: the reserved subject a standing "Control" forum topic is bound
-// to - the SAME {topicId: subjectId} map every other reserved subject
-// above shares. All three swarm-control verbs (/stop, /restart, /pause)
-// and their button taps only ever act when sent/tapped in THIS topic
-// (decideControlEventAction's own guard, telegramControlCore.ts) - an
-// inbound message here otherwise never falls through to the ordinary
-// subjectForTopic/post-existing path, same posture as Agent Questions
-// above.
-export const CONTROL_SUBJECT_ID = 'CONTROL';
-export const CONTROL_TOPIC_NAME = 'Control';
-
-export type EnsureControlTopicAction = { kind: 'reuse'; topicId: number } | { kind: 'create' };
-
-// Pure: identical reuse-or-create shape to decideEnsureAgentQuestionsTopicAction
-// above, keyed by its own reserved subject id.
-export function decideEnsureControlTopicAction(topicMap: Record<string, string>): EnsureControlTopicAction {
-  const existingTopicId = topicForSubject(topicMap, CONTROL_SUBJECT_ID);
-  return existingTopicId !== undefined ? { kind: 'reuse', topicId: existingTopicId } : { kind: 'create' };
-}
-
-// Babysitter standing topic — outside the pipeline chain. Publishes glitches
-// and remediations from the always-on reliability watcher (babysit.sh).
-export const BABYSITTER_SUBJECT_ID = 'BABYSITTER';
-export const BABYSITTER_TOPIC_NAME = 'Babysitter';
-
-export type EnsureBabysitterTopicAction = { kind: 'reuse'; topicId: number } | { kind: 'create' };
-
-export function decideEnsureBabysitterTopicAction(topicMap: Record<string, string>): EnsureBabysitterTopicAction {
-  const existingTopicId = topicForSubject(topicMap, BABYSITTER_SUBJECT_ID);
-  return existingTopicId !== undefined ? { kind: 'reuse', topicId: existingTopicId } : { kind: 'create' };
-}
-
-// BL-522: standing Swarm Live Screen topic — hosts the live Mini App URL (cloudflare
-// quick tunnel + bridge token). Distinct from the pane snapshot body (BL-521).
-export const RESIDENT_SPY_SUBJECT_ID = 'RESIDENT_SPY';
-export const RESIDENT_SPY_TOPIC_NAME = SWARM_LIVE_SCREEN_NAME;
-
-export type EnsureResidentSpyTopicAction = { kind: 'reuse'; topicId: number } | { kind: 'create' };
-
-export function decideEnsureResidentSpyTopicAction(topicMap: Record<string, string>): EnsureResidentSpyTopicAction {
-  const existingTopicId = topicForSubject(topicMap, RESIDENT_SPY_SUBJECT_ID);
-  return existingTopicId !== undefined ? { kind: 'reuse', topicId: existingTopicId } : { kind: 'create' };
-}
-
-
-export type EnsureRoleTopicAction = { kind: 'reuse'; topicId: number } | { kind: 'create' };
-
-// BL-425 slice 1: the per-role twin of decideEnsureOperatorTopicAction
-// above - no reserved-subject indirection needed, since the role->topic map
-// (roleTopicMapStore.ts) is already keyed by role name directly, unlike the
-// Operator's shared {topicId: subjectId} map.
-export function decideEnsureRoleTopicAction(roleTopicMap: Record<string, number>, role: string): EnsureRoleTopicAction {
-  const existingTopicId = roleTopicMap[role];
-  return existingTopicId !== undefined ? { kind: 'reuse', topicId: existingTopicId } : { kind: 'create' };
-}
+// BL-607 architect bounce: telegramFrontDeskBotCore was the public barrel for
+// these symbols before the telegramTopicDecisions extraction; 10 consumer
+// modules still import them from here, so re-export to keep that interface.
+export {
+  nextUpdateOffset,
+  isFromPrincipal,
+  isFromMyChat,
+  topicIdOf,
+  messageTextOf,
+  DEFAULT_SUBJECT_KEY,
+  subjectForTopic,
+  topicForSubject,
+  hasDefaultBinding,
+  resolveReplyTopicId,
+  ReplyDelivery,
+  resolveReplyDelivery,
+  REPLY_POINTER_TEXT,
+  OPERATOR_SUBJECT_ID,
+  OPERATOR_TOPIC_NAME,
+  EnsureOperatorTopicAction,
+  decideEnsureOperatorTopicAction,
+  StandingTopicTitleSyncAction,
+  decideStandingTopicTitleSync,
+  APPROVALS_SUBJECT_ID,
+  APPROVALS_TOPIC_NAME,
+  EnsureApprovalsTopicAction,
+  decideEnsureApprovalsTopicAction,
+  RECERT_SUBJECT_ID,
+  RECERT_TOPIC_NAME,
+  EnsureRecertTopicAction,
+  decideEnsureRecertTopicAction,
+  AGENT_QUESTIONS_SUBJECT_ID,
+  AGENT_QUESTIONS_TOPIC_NAME,
+  EnsureAgentQuestionsTopicAction,
+  decideEnsureAgentQuestionsTopicAction,
+  BACKLOG_SUBJECT_ID,
+  BACKLOG_TOPIC_NAME,
+  EnsureBacklogTopicAction,
+  decideEnsureBacklogTopicAction,
+  CONTROL_SUBJECT_ID,
+  CONTROL_TOPIC_NAME,
+  EnsureControlTopicAction,
+  decideEnsureControlTopicAction,
+  BABYSITTER_SUBJECT_ID,
+  BABYSITTER_TOPIC_NAME,
+  EnsureBabysitterTopicAction,
+  decideEnsureBabysitterTopicAction,
+  RESIDENT_SPY_SUBJECT_ID,
+  RESIDENT_SPY_TOPIC_NAME,
+  EnsureResidentSpyTopicAction,
+  decideEnsureResidentSpyTopicAction,
+  EnsureRoleTopicAction,
+  decideEnsureRoleTopicAction,
+};
 
 export type BotUpdateDecision =
   | { action: 'post-existing'; subjectId: string; text: string }
@@ -927,6 +697,24 @@ export interface PollAdapters {
   // silently - so a deployment that wires steering but not this one is not
   // a broken half-state.
   notifyRoleTopic?: (topicId: number | undefined, text: string) => Promise<boolean>;
+  // BL-607: the per-role clarifying-question pending guard + the dormant-
+  // pane answer leg. getRolePendingQuestion gates whether a reply in a
+  // role's own topic is treated as THE ANSWER (clear the marker, queue a
+  // note if the pane is dormant) rather than an ordinary steer; both
+  // optional so every PollAdapters fixture written before BL-607 keeps
+  // working unchanged - missing means "role questions not wired", the
+  // exact pre-BL-607 behavior (every role-topic reply stays a plain
+  // steer). Read/cleared fresh on every update, same no-caching posture as
+  // readRoleTopicMap.
+  getRolePendingQuestion?: (role: string) => Promise<boolean>;
+  clearRolePendingQuestion?: (role: string) => Promise<void>;
+  // The dormant-pane leg itself: enqueues text as a `type: note` handoff
+  // into role's OWN inbox so ready_for_next.sh returns it on that role's
+  // next rotation - the piece that does not exist anywhere before this
+  // ticket (redirectToRole's own 'no-pane' result previously just reported
+  // "not delivered" and dropped the text). Returns whether the note was
+  // successfully queued; a failure is logged by the adapter, never thrown.
+  enqueueRoleAnswerNote?: (role: string, text: string) => Promise<boolean>;
   // BL-426 slice 1: transcribes a coordinator Operator-topic voice note's
   // audio (already-resolved fileId) to text. Optional so every PollAdapters
   // fixture written before BL-426 keeps working unchanged - missing means
@@ -1633,6 +1421,28 @@ async function answerIfAskAlreadyClosed(callbackQuery: TelegramCallbackQuery, de
   return true;
 }
 
+// BL-607 architect bounce 2 (shared): captures a role's answer via
+// whichever leg actually landed it - the live-pane delivery already
+// attempted by the caller, or the dormant-pane queue - and clears the
+// per-role pending marker ONLY when one of the two actually captured it.
+// Neither leg capturing (no live pane AND the queue attempt itself
+// failed) must leave the marker set, or the answer is silently lost with
+// no trace. Both the button-tap path (deliverAskAnswer) and the free-text
+// path (processSteeringUpdate) hit this exact same invariant, so it lives
+// here once instead of twice.
+async function captureRoleAnswer(
+  role: string,
+  delivered: boolean,
+  answerText: string,
+  enqueueRoleAnswerNote: ((role: string, text: string) => Promise<boolean>) | undefined,
+  clearRolePendingQuestion: ((role: string) => Promise<void>) | undefined
+): Promise<void> {
+  const captured = delivered || (await enqueueRoleAnswerNote?.(role, answerText)) === true;
+  if (captured) {
+    await clearRolePendingQuestion?.(role);
+  }
+}
+
 // BL-483: the tapped option's label rides back through postToBridge exactly
 // as if the human had typed it - the SAME shared answer effect path
 // processPollAnswer above already established for BL-466's poll answer
@@ -1656,6 +1466,20 @@ async function deliverAskAnswer(
   const answerLabel = options?.[decision.optionIndex]?.label;
   if (answerLabel === undefined) {
     return 'dropped';
+  }
+  // BL-607: a tap on a role question's own buttons (roleAskThreadId,
+  // deliverRoleQuestion) answers through the SAME live-pane-or-queued-note
+  // effect processSteeringUpdate's free-text path uses - never
+  // postToBridge, which is meaningless for a role question (there is no
+  // SUP-### thread/subject on the other end). role is undefined for every
+  // ordinary (Operator SUP-thread) ask, which falls through to the
+  // existing postToBridge path completely unchanged.
+  const role = roleFromAskThreadId(decision.threadId);
+  if (role !== undefined) {
+    const result = adapters.redirectToRole ? await adapters.redirectToRole(role, answerLabel) : ({ kind: 'no-pane' } as SteerDeliveryResult);
+    await captureRoleAnswer(role, result.kind === 'delivered', answerLabel, adapters.enqueueRoleAnswerNote, adapters.clearRolePendingQuestion);
+    await editAskMessageIfKnown(decision.threadId, (originalText) => composeAskAnsweredText(originalText, answerLabel), adapters);
+    return 'posted';
   }
   const ok = await adapters.postToBridge(decision.threadId, answerLabel, updateId);
   if (ok) {
@@ -1878,7 +1702,10 @@ async function processSteeringUpdate(
   chatId: string,
   roleTopicMap: Record<string, number>,
   redirectToRole: (role: string, text: string) => Promise<SteerDeliveryResult>,
-  notifyRoleTopic?: (topicId: number | undefined, text: string) => Promise<boolean>
+  notifyRoleTopic?: (topicId: number | undefined, text: string) => Promise<boolean>,
+  getRolePendingQuestion?: (role: string) => Promise<boolean>,
+  clearRolePendingQuestion?: (role: string) => Promise<void>,
+  enqueueRoleAnswerNote?: (role: string, text: string) => Promise<boolean>
 ): Promise<UpdateDeliveryOutcome | undefined> {
   const decision = decideSteeringAction(update, principalUserId, chatId, roleTopicMap);
   if (decision.kind === 'ignore') {
@@ -1888,6 +1715,18 @@ async function processSteeringUpdate(
     return 'dropped';
   }
   const result = await redirectToRole(decision.role, decision.text);
+  // BL-607: when this role has a clarifying question pending, this reply
+  // IS the answer (Leg 1 reuses redirectToRole exactly as above - the
+  // ticket's own "reuse it verbatim" for the live-pane case). A dormant
+  // pane must not silently drop it the way a plain steer already does
+  // (redirectToRole's 'no-pane' result, unchanged for every OTHER
+  // role-topic message) - it is queued as a note into the role's own
+  // inbox instead (Leg 2). The pending marker clears once the answer is
+  // actually captured (delivered or queued) so the role is free to ask
+  // its next question - see captureRoleAnswer above.
+  if (getRolePendingQuestion && (await getRolePendingQuestion(decision.role))) {
+    await captureRoleAnswer(decision.role, result.kind === 'delivered', decision.text, enqueueRoleAnswerNote, clearRolePendingQuestion);
+  }
   // Optional adapter: absent means no receipt, the exact pre-receipt
   // behavior - the same "a new capability degrades to prior behavior"
   // posture every other optional adapter in this file uses. The outcome
@@ -1921,7 +1760,10 @@ async function attemptSteeringDelivery(
     adapters.chatId,
     adapters.readRoleTopicMap(),
     adapters.redirectToRole,
-    adapters.notifyRoleTopic
+    adapters.notifyRoleTopic,
+    adapters.getRolePendingQuestion,
+    adapters.clearRolePendingQuestion,
+    adapters.enqueueRoleAnswerNote
   );
 }
 
@@ -2637,6 +2479,14 @@ export interface ReplyRelayAdapters {
   // (see deliverAgentQuestion's own comment for why the ordinary per-subject
   // topic resolution does not apply to an agent's question).
   agentQuestionsTopicId?: () => Promise<number | undefined>;
+  // BL-607: resolves a role's OWN steering topic id (role-topic-map.json,
+  // the same BL-425 map readRoleTopicMap already reads) - a roleQuestion
+  // record's delivery target, entirely distinct from agentQuestionsTopicId
+  // above. Optional so every ReplyRelayAdapters fixture written before
+  // BL-607 keeps working unchanged; undefined (role absent from the map,
+  // or the map itself missing/unparseable) degrades to dropping the
+  // question rather than crashing the relay - see deliverRoleQuestion.
+  roleTopicIdFor?: (role: string) => Promise<number | undefined>;
 }
 
 // BL-426 slice 1: when the delivery's threadId is marked voice-originated,
@@ -2727,6 +2577,46 @@ export function composeAskButtons(threadId: string, options: AskOption[]): Inlin
   return options.map((option, index) => [{ text: option.label, callbackData: `ask:${threadId}:${index}` }]);
 }
 
+// BL-607: role_ask.bb's own synthetic threadId for a role-targeted
+// clarifying question - reuses every threadId-keyed ask store
+// (resolveAskOptions/readAskMessage/recordAskMessage/editAskMessage) as-is
+// rather than building a second storage schema, the same "reuse both
+// shipped halves" instruction the ticket names for the answer side.
+// Colon-free by construction (role names never contain one) so it
+// round-trips through ASK_CALLBACK_DATA_PATTERN's `[^:]+` capture intact -
+// a colon in the middle would silently break that regex (see role_ask.bb's
+// own comment on this exact hazard).
+export const ROLE_ASK_THREAD_PREFIX = 'role-ask-';
+
+export function roleAskThreadId(role: string): string {
+  return `${ROLE_ASK_THREAD_PREFIX}${role}`;
+}
+
+// undefined for any threadId not carrying the prefix - in particular a
+// real SUP-### Operator ask, which must keep resolving through the
+// existing global awaiting-answer.json path untouched (scenario 06's own
+// regression guard).
+export function roleFromAskThreadId(threadId: string): string | undefined {
+  return threadId.startsWith(ROLE_ASK_THREAD_PREFIX) ? threadId.slice(ROLE_ASK_THREAD_PREFIX.length) : undefined;
+}
+
+// Shared by deliverAgentQuestion and deliverRoleQuestion below - both post
+// an ask to an already-resolved topic, differing only in HOW that topic
+// (and the threadId keying the answer back) was resolved. Extracted so the
+// button-rendering / free-text-fallback shape lives in exactly one place.
+async function deliverAskMessage(topicId: number | undefined, threadId: string, text: string, options: AskOption[] | undefined, adapters: ReplyRelayAdapters): Promise<void> {
+  if (options && options.length > 0 && adapters.sendAskButtons) {
+    const body = composeAskMessageBody(text, options);
+    const buttons = composeAskButtons(threadId, options);
+    const sent = await adapters.sendAskButtons(topicId, body, buttons);
+    if (sent.messageId !== undefined) {
+      await adapters.recordAskMessage?.(threadId, topicId, sent.messageId, body);
+    }
+    return;
+  }
+  await adapters.sendReply(topicId, text);
+}
+
 // BL-466/BL-483: an agent's clarifying question is delivered to the
 // dedicated Agent Questions topic instead of adapters.resolveDelivery's own
 // per-subject resolution - the routing exception the ticket calls for
@@ -2740,16 +2630,24 @@ export function composeAskButtons(threadId: string, options: AskOption[]): Inlin
 // ticket (scenario 5's own byte-identical contract).
 async function deliverAgentQuestion(threadId: string, text: string, options: AskOption[] | undefined, adapters: ReplyRelayAdapters): Promise<void> {
   const topicId = await adapters.agentQuestionsTopicId?.();
-  if (options && options.length > 0 && adapters.sendAskButtons) {
-    const body = composeAskMessageBody(text, options);
-    const buttons = composeAskButtons(threadId, options);
-    const sent = await adapters.sendAskButtons(topicId, body, buttons);
-    if (sent.messageId !== undefined) {
-      await adapters.recordAskMessage?.(threadId, topicId, sent.messageId, body);
-    }
+  await deliverAskMessage(topicId, threadId, text, options, adapters);
+}
+
+// BL-607: a role's own clarifying question is delivered to ITS OWN
+// steering topic (roleTopicIdFor) instead of deliverAgentQuestion's shared
+// Agent Questions topic - the routing exception this ticket calls for,
+// mirroring deliverAgentQuestion's own shape exactly (same button
+// rendering / free-text-fallback plain-message degrade), keyed by
+// roleAskThreadId(role) rather than a real SUP-### threadId. A role absent
+// from role-topic-map.json (roleTopicIdFor resolves undefined - unknown
+// role, or the map itself missing/unparseable) degrades to dropping the
+// question rather than posting to nowhere or crashing the relay.
+async function deliverRoleQuestion(role: string, text: string, options: AskOption[] | undefined, adapters: ReplyRelayAdapters): Promise<void> {
+  const topicId = await adapters.roleTopicIdFor?.(role);
+  if (topicId === undefined) {
     return;
   }
-  await adapters.sendReply(topicId, text);
+  await deliverAskMessage(topicId, roleAskThreadId(role), text, options, adapters);
 }
 
 // BL-320: an entry already in seenIds was already successfully posted to
@@ -2768,7 +2666,7 @@ async function relayOneRecord(record: SseRecord, adapters: ReplyRelayAdapters, s
   if (record.event !== 'telegram-reply' || !record.data) {
     return;
   }
-  const { id, threadId, text, retractsPendingQuestion, agentQuestion, options } = JSON.parse(record.data) as {
+  const { id, threadId, text, retractsPendingQuestion, agentQuestion, roleQuestion, options } = JSON.parse(record.data) as {
     id: string;
     threadId: string;
     text: string;
@@ -2777,12 +2675,19 @@ async function relayOneRecord(record: SseRecord, adapters: ReplyRelayAdapters, s
     // deliverAgentQuestion's own comment) - every other, ordinary reply
     // record omits it and is completely unaffected.
     agentQuestion?: boolean;
+    // BL-607: set by role_ask.bb to the asking role's own name (see
+    // deliverRoleQuestion's own comment) - mutually exclusive with
+    // agentQuestion; every other, ordinary reply record omits it and is
+    // completely unaffected.
+    roleQuestion?: string;
     // BL-483: {label, description?}[] - operator_ask.bb's own --options
     // normalizer (operator-lib/ask-options) emits this exact shape.
     options?: AskOption[];
   };
   if (!seenIds.has(id)) {
-    if (agentQuestion) {
+    if (roleQuestion) {
+      await deliverRoleQuestion(roleQuestion, text, options, adapters);
+    } else if (agentQuestion) {
       await deliverAgentQuestion(threadId, text, options, adapters);
     } else {
       await deliverReply(threadId, adapters.resolveDelivery(threadId), text, adapters, retractsPendingQuestion);
