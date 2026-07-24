@@ -191,6 +191,24 @@ By coder.
 ## Temporary Files
 - Use `./tmp/` in your assigned worktree for temporary files; do not use `/tmp`.
 
+## Clean Up After Yourself — Never Delete What You Did Not Create
+- Before ending your turn, remove the scratch artifacts YOU created this turn
+  that are not part of the parcel: your own `./tmp/` scratch files, throwaway
+  fixtures, generated output you no longer need. Leave your worktree no
+  messier than you found it.
+- NEVER delete, move, or `git clean` a file you did not create. In this repo an
+  untracked file is as likely to be load-bearing as it is to be litter:
+  `.swarmforge/` runtime state, `extension/out/` build output, another role's
+  gitignored drafts, and un-surfaced operator hot-sync edits are all untracked
+  and all matter. A blanket `git clean` in a worktree can take the swarm down.
+- Ticket-less changes you did not make are SURFACED, not swept — report them per
+  "An Approval Authorizes Only Its Ticket's Work" (BL-506): leave them unstaged
+  and say so. Silent tidying is how un-ticketed work disappears with nobody
+  aware it ever existed, and it is indistinguishable from the phantom-revert
+  class of failure this swarm has repeatedly chased.
+- `git stash` is repo-wide across every worktree, not scoped to yours; never
+  reach for it to tidy a single worktree.
+
 ## Failure Conditions
 - If the expected git layout or assigned worktree is missing, stop and report instead of silently working in the wrong place.
 

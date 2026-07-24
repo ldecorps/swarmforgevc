@@ -1,0 +1,215 @@
+id: BL-608
+title: "Persist bounce history (count + reason) on the ticket's own YAML record, so 'how many times did this bounce, and why' is answerable from the ticket alone"
+milestone: M8
+type: feature
+status: todo
+epic: swarm-reliability
+human_approval: approved
+severity: medium
+priority: 5
+direction: human-requested
+depends_on: [BL-606]
+assigned_to: coder
+mutation_cost: medium
+source: |
+  backlog/INTAKE-20260723-bounce-history-on-ticket.md — human, 2026-07-23.
+  General capability, not specific to BL-606; same class of gap BL-606 closes
+  for stage-skipping (make it visible on the ticket record, not just in a diff).
+
+  EXPEDITE + SERIALIZE, 2026-07-24: human approved expediting this ticket
+  (via operator rc session) to land FIRST AFTER BL-606 — priority pinned to 5,
+  `depends_on: [BL-606]` added. Rationale, agreed with the human:
+  (a) do NOT start implementation before BL-606 lands — same-file contention:
+      this ticket's wiring points (record-qa-bounce.ts, the swarm_handoff send
+      path) are the files BL-606 is actively churning through its bounce
+      cycle, and in-flight work cannot be preempted (standing rule);
+  (b) shape precedent: BL-606's `stage_skip_reasons:` and this ticket's
+      `bounce_history:` should be ONE coherent accumulating-list shape, so
+      whichever the specifier finalises first, the other must match, not
+      diverge;
+  (c) motivation: the 2026-07-24 starvation diagnosis took log-archaeology
+      across four evidence files + daemon logs; with this landed it would
+      have been a single grep on the ticket. Dynamic routing (BL-606) makes
+      bounces sharper (likeliest bounce target IS a skipped stage), so this
+      must follow it closely.
+
+description: |
+  ## Problem
+
+  A ticket's bounce history is split across two places, neither of which is the
+  ticket's own record:
+
+  1. Free-form evidence files `backlog/evidence/<TICKET-ID>-*.md`, hand-written
+     per bounce by QA (QA.prompt's BL-140 evidence contract). Naming is
+     inconsistent — sequential (`BL-606-architect-bounce.md`, `-bounce-2.md`)
+     vs dated (`BL-419-...-bounce-20260717.md`) — so finding all of a ticket's
+     bounce files needs a loose glob, not an exact pattern.
+  2. An aggregate, host-local, GITIGNORED JSONL log
+     `.swarmforge/qa_bounces/<YYYY-MM>.jsonl`, written by
+     `extension/src/tools/record-qa-bounce.ts` (BL-454). This feeds swarm-health
+     metrics like `qa_bounce:behavior:coder count=31`
+     (`extension/src/metrics/failureModeInventory.ts` `recordsFromQaBounceJsonl`).
+     It is an aggregate signal, not a per-ticket git-visible record.
+
+  Nothing on `backlog/active/<id>.yaml` records bounce count or reason —
+  confirmed by grep: no `bounce_count`, `bounce_history`, or equivalent field
+  exists anywhere in `backlog/active/*.yaml` or `backlog/done/*.yaml`. Reading a
+  ticket gives no signal that it bounced three times, or why.
+
+  ## Shape
+
+  1. FIELD. Two fields on the ticket YAML: a `bounce_count:` integer for
+     glanceability, and a `bounce_history:` list whose entries are each ONE
+     single-line flow mapping, so the file stays greppable and line-readable the
+     same way `required_stages` is (BL-606's own reasoning):
+
+       bounce_count: 2
+       bounce_history:
+         - { at: 2026-07-23, by: QA, blamed: coder, class: behavior, commit: 1f7987dd4a, evidence: backlog/evidence/BL-606-qa-bounce-20260723.md }
+
+     Ordered oldest first; `bounce_count` always equals the list length. `by:` is
+     the BOUNCING role and `blamed:` is the role held responsible (QA.prompt's
+     existing `<producing role>` attribution) — two different facts that today's
+     JSONL collapses into one. Carrying `by:` now is what lets sibling
+     (non-QA) bounces use the same shape later without a schema change.
+     This is the FIRST true accumulating structured list in the ticket schema;
+     `stage_skip_reasons:` (BL-606) is the design precedent but is itself still
+     unbuilt, so it is cited as precedent, not copied from.
+
+  2. WHO WRITES IT, AND WHERE. `record-qa-bounce.ts` is already the single wired
+     call site where a ticket id plus every bounce field is assembled
+     (QA.prompt's bounce ritual invokes it by name). Extend THAT — do not invent
+     a second bounce-recording path. It writes the ticket YAML in the CURRENT
+     worktree, not the main checkout: the bouncing role commits the YAML edit
+     into the SAME commit as its evidence file, so the edit travels forward with
+     the parcel and lands on `main` through the normal chain. Note this is
+     deliberately NOT `resolveCliMainWorktreeContext()` (which the JSONL write
+     correctly still uses) — writing a git-tracked file into another worktree's
+     checkout mid-flight is exactly the cross-worktree contamination this
+     project has been burned by, and would also be uncommitted and invisible.
+
+  3. NO RACE. One parcel holds one ticket, so two concurrent bounces of the SAME
+     ticket cannot occur; concurrent bounces of DIFFERENT tickets touch different
+     files. The list is append-only and ordered, so the rare merge conflict is
+     trivially resolvable.
+
+  4. IDEMPOTENT. Re-running the recorder for the same bounce must not
+     double-append. Reuse the existing natural key — ticket + date + failure
+     class (`qaBounceNaturalKey`, `extension/src/quality/qaBounce.ts`) — which
+     already gives the JSONL this property.
+
+  5. BOTH, NOT ONE-OR-THE-OTHER. The gitignored JSONL aggregate is unchanged and
+     stays the source for swarm-wide metrics; the YAML field is the git-visible
+     per-ticket record. ONE call writes both. Neither derives from the other at
+     read time.
+
+  6. BEST-EFFORT, NEVER BLOCKING. A missing/unwritable/unparseable ticket YAML
+     must NOT fail the bounce — it reports that the ticket record was not
+     updated and exits successfully, matching the existing posture QA.prompt
+     already states for this CLI ("Never let this step block or gate the bounce
+     itself").
+
+  ## Scope (verified live paths)
+
+  - `extension/src/tools/record-qa-bounce.ts` — the extension point (its
+    `main`, ~line 84); `parseArgs`/`validatedFields` gain the two new fields.
+  - `extension/src/quality/qaBounce.ts` — pure vocabulary + `qaBounceNaturalKey`,
+    reused for idempotency.
+  - `extension/src/metrics/qaBounceStore.ts` — the JSONL writer, unchanged.
+  - A new pure module for rendering/merging the `bounce_history` block, kept
+    testable and separate from the fs write (the pure/impure split this repo
+    already enforces between `quality/` and `metrics/`).
+  - `swarmforge/backlog-schema.md` — document both new optional fields.
+  - `swarmforge/roles/QA.prompt` — the two new flags in the documented invocation.
+
+acceptance: |
+  specs/features/BL-608-bounce-history-on-ticket.feature
+
+  Every scenario needs its step handler wired in this same parcel — the
+  acceptance runner (specs/pipeline/runtime.js) throws on an unhandled scenario
+  (BL-233). Step handlers SHELL OUT to the real compiled CLI
+  (`extension/out/tools/record-qa-bounce.js`) against a temp fixture repo, the
+  `extension/test/recordQaBounceCli.test.js` pattern — never reimplement the
+  merge logic in JS. The feature file linted clean (gherkin_lint_gate.sh) and was
+  IR-DRY reviewed; its remaining findings are numeric-value differences (1 vs 2
+  entries — one parameterized handler covers both) and Given/When tense pairs,
+  not drift.
+
+  Scenario -> shape-item map: 01 structured entry + count written (#1/#2);
+  02 idempotent re-record (#4); 03 append in order, count raised (#1/#3);
+  04 JSONL aggregate still written and still feeds metrics (#5); 05 unwritable
+  ticket record does not block the bounce (#6); 06 the audit question is
+  answerable from the ticket alone (the ticket's whole point).
+
+  Supporting gates the Gherkin does not pin:
+  - The pure render/merge module has direct unit coverage for: an absent
+    bounce_history block; an existing block appended to; an entry whose natural
+    key already exists; a count that disagrees with the list length (recomputed
+    from the list, never trusted); and a YAML that cannot be parsed (degrades,
+    never throws).
+  - CLI thin-wrapper rule: main() stays a thin wrapper over exported helpers,
+    called in-process with stubbed cwd (no process.chdir), per engineering.prompt.
+  - Existing BL-454 behaviour is untouched: recordQaBounceCli.test.js and the
+    failureModeInventory metrics tests pass unchanged.
+
+  QA end-to-end procedure (live swarm):
+  1. In a role worktree, run the real CLI against a ticket in backlog/active/
+     with the two new flags. Confirm the ticket YAML gains bounce_count: 1 and a
+     one-line bounce_history entry naming date, bouncing role, blamed role,
+     failure class, commit, and evidence path.
+  2. Re-run the identical command -> the YAML is byte-identical (no second entry,
+     count still 1).
+  3. Run again with a different failure class -> two entries oldest first,
+     count 2.
+  4. Confirm .swarmforge/qa_bounces/<month>.jsonl gained the matching lines and
+     that `qa-bounce-line.js` / the failure-mode metric still report them.
+  5. Point the CLI at a ticket id with no YAML -> it prints that the ticket
+     record was not updated, exits 0, and the JSONL line is still written.
+  6. Commit the YAML edit with the evidence file and confirm it survives the
+     merge-up chain to main unchanged.
+
+out_of_scope: |
+  - Recording SIBLING (non-QA) bounces — architect/hardener/documenter bouncing
+    upstream. Only QA runs record-qa-bounce.js today, so only QA bounces are
+    captured. The `by:` field is carried now so the shape accommodates them
+    without a schema change; wiring the other reviewer roles' bounce rituals to
+    the recorder is a named follow-up ticket.
+  - Backfilling bounce history onto existing tickets from the evidence corpus or
+    the JSONL. `backfill-qa-bounces.ts` + `qaBounceEvidenceParser.ts` already
+    exist and could drive it; a separate ticket if wanted.
+  - Changing, replacing, or retiring the gitignored JSONL aggregate or any
+    metric that reads it.
+  - Surfacing bounce history on the PWA, the Mini App, or the daily briefing.
+    This ticket only makes the data exist on the ticket record.
+  - Any gate that blocks promotion or QA on a bounce count threshold.
+
+approval_context: >
+  Two calls the intake explicitly left to the specifier, resolved as
+  recommendations — confirm or redirect before this is promoted.
+
+  (a) FIELD SHAPE. Recommendation: BOTH a `bounce_count:` integer and a
+  `bounce_history:` list of one-line flow-mapping entries, rather than the
+  simpler `bounce_count:` + `last_bounce_reason:` pair. The full history is what
+  answers "why did each bounce happen"; the redundant count exists purely for
+  glanceability and is always recomputed from the list. This is the first true
+  accumulating structured list in the ticket schema and will likely set the
+  precedent BL-606's own unbuilt `stage_skip_reasons:` follows, so it is worth
+  your explicit nod. If you would rather keep the schema flat, say so and this
+  drops to the count + last-reason pair.
+
+  (b) WHEN/WHERE THE WRITE LANDS. Recommendation: the bouncing role writes the
+  ticket YAML in its OWN worktree, in the same commit as its evidence file, so
+  the edit rides the normal merge chain to main. The alternative — writing to
+  the canonical copy on main at bounce time — means a cross-worktree write into
+  the coordinator's checkout, which is both uncommitted-and-invisible and the
+  exact contamination pattern this repo has been burned by. The cost of the
+  recommendation: a ticket that bounces and is then ABANDONED never lands its
+  history on main (the JSONL still has it). Confirm that trade is acceptable.
+
+  Also worth an explicit yes/no: this slice captures QA bounces ONLY, since QA
+  is the only role wired to the recorder today. Sibling bounces are named as a
+  follow-up rather than folded in. Say if you want them in this ticket instead.
+
+  Firm, not up for negotiation: the gitignored JSONL aggregate and its metrics
+  are untouched; the ticket-record write is best-effort and can never block or
+  fail a bounce.
