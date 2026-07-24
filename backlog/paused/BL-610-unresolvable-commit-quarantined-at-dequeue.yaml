@@ -1,0 +1,213 @@
+id: BL-610
+title: "A git_handoff whose commit vanished between send and delivery is structurally unprocessable — quarantine it at dequeue with a diagnostic instead of handing a role work it cannot do"
+milestone: M8
+type: defect
+status: todo
+epic: swarm-reliability
+human_approval: pending
+severity: high
+priority: 6
+direction: swarm-surfaced
+depends_on: []
+assigned_to: coder
+mutation_cost: medium
+source: |
+  backlog/INTAKE-20260723-git-handoff-commit-vanished.md — coordinator,
+  surfaced by documenter, 2026-07-23. Filed as a confirmed symptom for
+  investigation; root cause NOT established.
+
+description: |
+  ## What happened (re-verified directly by the specifier, 2026-07-24)
+
+  A `git_handoff` QA -> documenter, task `BL-910`, commit `acbdc07f0e`
+  (`id: 20260723T213022Z_000775_from_QA`), sent 21:30:22Z, delivered by the
+  daemon 21:30:24Z, dequeued by documenter 22:22:12Z ~52 minutes later.
+
+  Independently confirmed at spec time:
+  - `git cat-file -e acbdc07f0e` -> "Not a valid object name", and
+    `git rev-parse --disambiguate=acbdc07f0e` returns NOTHING. The commit is
+    gone from the shared object store.
+  - `BL-910` exists nowhere in `backlog/` and matches no commit; current
+    numbering is ~560-610, so the task name is anomalous on its own.
+  - The parcel went through the real send path — the sent file is present at
+    `.worktrees/QA/.swarmforge/handoffs/sent/00_20260723T213022Z_000775_from_QA_to_documenter.handoff`
+    with `payload: merge_and_process QA acbdc07f0e`.
+
+  `swarm_handoff.bb`'s `canonical-commit` (~line 173) requires the `commit`
+  header to resolve to exactly one object of type `commit` before a send is
+  accepted, so `acbdc07f0e` almost certainly DID exist at 21:30:22Z. Something
+  made it unreachable within the next 52 minutes. **This ticket does not claim
+  to know what.** Given this repo's shared-checkout, multi-worktree,
+  frequently-reset model — hard-reset broadcasts, phantom-revert history, stash
+  contamination all already on record — it is not safe to assume a one-off.
+
+  ## The actual defect being fixed
+
+  Validation is SEND-TIME ONLY. Nothing re-checks the commit at dequeue, so a
+  role can be handed a `git_handoff` it is structurally unable to act on:
+  `merge_and_process <sender> <commit>` is a prose payload instruction
+  (`swarm_handoff.bb:337`), not a script, so a nonexistent commit just fails in
+  the agent's hands with no documented recovery path. Documenter handled this
+  one correctly by judgement — completing it without action and flagging it —
+  but that is an agent improvising, not a mechanism.
+
+  ## Shape
+
+  1. RE-CHECK AT DEQUEUE, QUARANTINE ON FAILURE. `handoff_lib.bb` already has
+     exactly the right seam: `resolve-dequeueable-candidates` (~line 760) splits
+     candidates and calls `partition-corrupt`, which quarantines via
+     `quarantine-corrupt-handoff!` (~line 730) by renaming to `<name>.handoff.dead`
+     — the SAME dead-letter path `notify-dead-letters.js` already scans and
+     alerts a human over Telegram for. Reuse that. Both receive modes
+     (`ready_for_next_task.bb`, `ready_for_next_batch.bb`) go through this one
+     function, so both get the guard from a single change.
+
+  2. KEEP IT SEPARATE FROM `corrupt-handoff?`. That check is deliberately PURE
+     and STRUCTURAL, and its own comment states that semantic validation over
+     header VALUES is declined in the daemon and stays the sender's job. A git
+     object lookup is semantic and impure — folding it into `corrupt-handoff?`
+     would violate a documented design decision and make a pure function
+     untestable without a real repo. Add it as a SEPARATE guard alongside the
+     structural one, with the git lookup behind an injectable seam so the
+     decision logic stays unit-testable without a repo.
+
+  3. NARROW TRIGGER. The guard applies ONLY to `type: git_handoff` — the only
+     type carrying a `commit` header. `note` and `awake` parcels are never
+     subjected to a git lookup (scenario 04), so the common path pays nothing.
+
+  4. DISTINCT, INVESTIGABLE DIAGNOSTIC. Quarantine prints
+     `QUARANTINED unresolvable-commit:` — distinct from the existing
+     `QUARANTINED corrupt-handoff:` — and the record captures the commit, the
+     task, the sending role, `created_at`/`enqueued_at`, and the dequeue time.
+     That send->dequeue gap is precisely what nobody could measure this time;
+     capturing it is how the root cause gets found on the next occurrence
+     rather than re-investigated from scratch.
+
+  5. FIX THE SEND-TIME MESSAGE (verified latent fragility, not the root cause).
+     `canonical-commit` does `(str/split-lines (:out ...))` on `git rev-parse
+     --disambiguate=`. Confirmed empirically at spec time: for a commit matching
+     NOTHING the output is `""`, and `(str/split-lines "")` returns `[""]` —
+     count 1, not 0. So the "must resolve to exactly one object" guard PASSES
+     with an empty string and the send is only rejected one step later by
+     `cat-file -t`, reporting the misleading `resolves to ''` instead of
+     `matched 0`. The send is still correctly rejected — this is a diagnostic
+     defect, not a hole — but it is one line from being an honest message and
+     sits directly in this ticket's blast radius.
+
+  ## Scope (verified live paths)
+
+  - `swarmforge/scripts/handoff_lib.bb` — `resolve-dequeueable-candidates`
+    (~760), `partition-corrupt` (~744), `quarantine-corrupt-handoff!` (~730),
+    `parse-envelope` (~688) for reading `type`/`commit` off the candidate.
+  - `swarmforge/scripts/swarm_handoff.bb` — `canonical-commit` (~173), the
+    empty-match message fix only.
+  - `swarmforge/scripts/test/` — the `.bb` unit suite is the real gate for
+    swarm scripts (engineering.prompt's tool table); a new test runner here.
+
+acceptance: |
+  specs/features/BL-610-unresolvable-commit-quarantined-at-dequeue.feature
+
+  Every scenario needs its step handler wired in this same parcel — the
+  acceptance runner (specs/pipeline/runtime.js) throws on an unhandled scenario
+  (BL-233). Step handlers SHELL OUT to the real .bb scripts against a temp
+  fixture repo (the specs/pipeline/steps/backlogDepthSteps.js pattern), never
+  reimplement the guard in JS. The feature file linted clean
+  (gherkin_lint_gate.sh) and was IR-DRY reviewed; its four remaining findings
+  are all deliberate opposites — handed/not-handed, resolves/no-longer-resolves,
+  draft-send vs delivered-parcel — not drift.
+
+  Scenario -> shape-item map: 01 quarantined not dequeued (#1); 02 the
+  investigable record (#4); 03 a resolvable commit still dequeues, unchanged
+  (regression); 04 note/awake never commit-checked (#3); 05 the structural
+  corruption check still fires independently (#2); 06 honest send-time
+  no-match message (#5).
+
+  Supporting gates the Gherkin does not pin (the real gate for .bb is the unit
+  suite — engineering.prompt tool table):
+  - The new guard has direct .bb unit coverage over: a git_handoff with a
+    resolvable commit; one with an unresolvable commit; one with a BLANK or
+    absent commit header; a note and an awake parcel; and a parcel that is BOTH
+    structurally corrupt and commit-unresolvable (quarantined once, not twice,
+    and never moved after it has already been renamed).
+  - The git lookup is injected, so every case above runs without a real repo;
+    one integration-level test exercises the real lookup.
+  - `canonical-commit` unit coverage for matched-0, matched-1, matched-many,
+    and resolves-to-a-non-commit (e.g. a tree or blob), each with its own
+    distinct message.
+  - Idempotency: quarantining is safe to re-run — `quarantine-corrupt-handoff!`
+    uses `:replace-existing false`, so a second pass over an already-dead file
+    must not throw.
+  - No real timers, no killing the test process, no /tmp — temp fixtures under
+    the worktree's own ./tmp (engineering.prompt).
+
+  QA end-to-end procedure (live swarm):
+  1. Craft a git_handoff in a fixture inbox whose commit header is a
+     well-formed 10-hex string matching no object. Run ready_for_next.sh ->
+     it reports NO_TASK (or the next valid parcel), prints
+     `QUARANTINED unresolvable-commit:`, and the file is renamed
+     `<name>.handoff.dead`.
+  2. Confirm notify-dead-letters.js surfaces that .dead file to Telegram the
+     same way it already does for a stuck parcel — no new alert path.
+  3. Confirm the quarantine record names the commit, task, sending role, send
+     time and dequeue time.
+  4. Send a normal git_handoff with a real commit -> dequeues exactly as today,
+     nothing quarantined, no behaviour change.
+  5. Send a note and an awake parcel -> both dequeue normally with no git
+     lookup performed.
+  6. Attempt a send with a commit matching nothing -> rejected at send time
+     with "matched 0", not "resolves to ''".
+
+out_of_scope: |
+  - Root-causing HOW acbdc07f0e became unreachable. Not established, and this
+    ticket deliberately does not guess. It makes the failure recoverable and
+    captures the evidence needed to diagnose a recurrence. If the mechanism is
+    later identified, that fix is its own ticket.
+  - The `BL-910` anomaly (a task id matching no ticket). Deliberately NOT gated
+    on here — tracer bullets and non-backlog task names are legitimate, so
+    quarantining unknown task ids would break working parcels. The task id is
+    merely CAPTURED in the diagnostic. Whether unknown-ticket task names deserve
+    their own warning is a separate question (see approval_context).
+  - Re-validating a commit at DELIVERY time in handoffd, in addition to dequeue.
+    Dequeue is the last moment before a role acts and is the single chokepoint
+    both receive modes already share; adding a second daemon-side check would
+    duplicate it for a much smaller window.
+  - Any automatic recovery, re-request, or re-send of the vanished work. The
+    parcel is dead-lettered and a human is alerted; resurrection is a judgement
+    call, not an automated one.
+  - Changing `merge_and_process` from a prose payload instruction into a script.
+    Larger protocol change, its own ticket if wanted.
+
+approval_context: >
+  Filed as high severity because a role can be handed structurally
+  unprocessable work with no mechanism to catch it — the recovery this time was
+  the documenter improvising correctly, which is not something to rely on.
+
+  (a) SCOPE OF THE FIX. Recommendation: fix the RECOVERY (quarantine +
+  diagnostic), not the cause — because the cause is genuinely unknown and I
+  would be guessing. Confirm you are content with a ticket that makes the
+  failure safe and investigable rather than one that claims to eliminate it.
+  The captured send->dequeue evidence is what makes the next occurrence
+  diagnosable in minutes instead of an hour of forensics.
+
+  (b) THE BL-910 ANOMALY. A task id matching no ticket, in the ~910 range when
+  numbering is ~560-610, alongside a commit hash that passed send-time
+  validation and then vanished, is a suspicious coincidence — the intake raises
+  (and calls unlikely) the possibility of a QA session inventing both. I have
+  deliberately NOT made unknown task ids a quarantine trigger, since tracer
+  bullets and non-backlog task names are legitimate and a false quarantine
+  would break working parcels. If you would rather have unknown-ticket task
+  names raise a non-blocking WARNING at dequeue, say so and I will add it —
+  it is a small addition to this ticket, but it is a behaviour change to every
+  parcel, so I am not making that call alone.
+
+  (c) One genuine finding worth your awareness regardless of the above: I
+  verified empirically that `canonical-commit`'s "matched exactly one" guard
+  passes with an empty string when nothing matches, because
+  `(str/split-lines "")` returns `[""]`. The send is still correctly rejected a
+  step later, so this is a misleading-error defect rather than a hole — folded
+  in here as a one-line fix since it sits in the same function.
+
+  Firm, not up for negotiation: the existing structural corrupt-handoff check
+  stays pure and unchanged; the new guard reuses the existing dead-letter path
+  rather than inventing a second quarantine mechanism; note/awake parcels pay
+  no git lookup.
