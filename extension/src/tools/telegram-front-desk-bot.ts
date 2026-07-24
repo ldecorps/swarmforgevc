@@ -175,6 +175,8 @@ import { isSwarmReady, defaultRoleBootstrapped } from '../swarm/swarmLauncher';
 import { readBounceAck, BouncePhase } from '../swarm/bounceAck';
 import { buildRoleInboxes } from '../watchdog/chaserMonitor';
 import { scanInboxNew, scanInProcess } from '../swarm/inboxChaser';
+import { isWithinWindow, localMinutesOfDay, currentWindowStartMs } from './cooldownWindowCore';
+import { readCooldownConfigFromDisk, writeCooldownWindowMarker } from './cooldownWindowState';
 
 const execFileAsync = promisify(execFile);
 
@@ -1684,14 +1686,28 @@ export async function applyPause(
   );
 }
 
+// BL-617: a human resume-now INSIDE an open cooldown window consumes that
+// window's single automatic application - the swarm then stays resumed
+// until the next window open, rather than the cooldown sweep immediately
+// re-pausing it on its very next tick. This is the second (and only other)
+// writer of the window-consumed marker, alongside apply-cooldown-pause.ts's
+// own stamp when the cooldown applies its own pause - both converge on the
+// same file/shape. nowMs is an injected-clock seam for testability, same
+// posture as the rest of this ticket's decision functions; defaults to the
+// real clock for every production caller.
 export async function resumeNow(
   targetPath: string,
   botToken: string,
   chatId: string,
   controlTopicId: number | undefined,
-  postFn?: TelegramPostFn
+  postFn?: TelegramPostFn,
+  nowMs: number = Date.now()
 ): Promise<void> {
   writeControlPauseState(targetPath, { active: false });
+  const { config } = readCooldownConfigFromDisk(targetPath);
+  if (config?.enabled && isWithinWindow(localMinutesOfDay(nowMs), config.startLocal, config.endLocal)) {
+    writeCooldownWindowMarker(targetPath, currentWindowStartMs(nowMs, config.startLocal));
+  }
   await postControlMessage(botToken, chatId, controlTopicId, 'Resumed - new work will be promoted again.', undefined, postFn);
 }
 

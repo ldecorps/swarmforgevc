@@ -62,6 +62,15 @@ fs.appendFileSync(path.join(process.cwd(), 'resume-expired-pauses-calls.log'), p
 console.log(JSON.stringify({ resumed: false, reason: 'not-due' }));
 EOF
 
+# BL-617: also stub the sibling cooldown-sweep!'s CLI as a clean no-op -
+# this test proves pause-auto-resume-sweep! wiring only; without this stub
+# the shared cadence block's new sweep call fails with a Node
+# MODULE_NOT_FOUND error every cycle, adding enough per-cycle overhead to
+# threaten this test's own cadence-timing assertions below.
+cat > "$ROOT/extension/out/tools/apply-cooldown-pause.js" <<'EOF'
+console.log(JSON.stringify({ decision: 'none' }));
+EOF
+
 FAKE_BIN="$ROOT/bin"
 mkdir -p "$FAKE_BIN"
 cat > "$FAKE_BIN/tmux" <<TMUX
@@ -100,7 +109,7 @@ grep -q 'pause-auto-resume {"resumed":false,"reason":"not-due"}' "$LOG_FILE" \
 pass "the CLI's own result is logged verbatim by the sweep"
 
 # ── the sweep repeats on the shared chase-sweep cadence, not just once ────
-sleep 6
+sleep 11
 CALL_COUNT="$(wc -l < "$ROOT/resume-expired-pauses-calls.log")"
 [[ "$CALL_COUNT" -ge 2 ]] || fail "expected the sweep to fire on more than one poll cycle, got $CALL_COUNT calls"
 pass "the pause-auto-resume sweep shares the daemon's chase-sweep cadence, not a one-shot"
@@ -139,7 +148,7 @@ grep -q "boom: cannot resolve project root" "$LOG_FILE" \
   || fail "expected the CLI's own stderr surfaced in the logged error; got: $(cat "$LOG_FILE")"
 pass "a failing CLI's exit code and stderr are surfaced via pause-auto-resume-sweep-error, not swallowed"
 
-sleep 6
+sleep 11
 FAIL_CALL_COUNT="$(wc -l < "$ROOT/resume-expired-pauses-calls.log")"
 [[ "$FAIL_CALL_COUNT" -ge 2 ]] || fail "expected the sweep to keep firing on later cycles after a failure, got $FAIL_CALL_COUNT calls"
 pass "the daemon survives a failing sweep and keeps firing it on the shared cadence"

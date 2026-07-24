@@ -310,7 +310,8 @@ const DOMAINS = [
   require('./bl606RequiredStagesRoutingSteps'),
   require('./bl607RoleClarifyingPollSteps'),
   require('./bl608BounceHistoryOnTicketSteps'),
-  require('./bl563ModelFactoryRuntimeWiringSteps')
+  require('./bl563ModelFactoryRuntimeWiringSteps'),
+  require('./bl617NightlyCooldownWindowSteps')
 ];
 
 function registerSteps(registry) {

@@ -1,0 +1,103 @@
+id: GH-24
+title: "Coordinator activity surfaced as a compact live feed on its Telegram topic"
+milestone: M8
+type: feature
+status: todo
+epic: swarmforge-console
+severity: medium
+priority: 15
+direction: human-requested
+depends_on: []
+assigned_to:
+mutation_cost: medium
+human_approval: pending
+approval_context: >
+  Your GH issue offered two shapes; this spec picks the cheaper one and needs
+  your sign-off on three choices. (1) Mechanism: a DETERMINISTIC surfacer
+  derives the feed from the coordinator's durable traces (outbox handoffs +
+  bookkeeping commits) and posts lines with ZERO coordinator LLM tokens —
+  matching your "save a few tokens" hint. The alternative (the coordinator
+  self-reporting each action from its own turn) costs tokens per action and
+  can silently lapse; spec assumes deterministic — say so if you want
+  self-reporting anyway. (2) Format: compact one-line-per-action entries
+  (like the Claude console screenshot) rather than dumping the raw log file
+  into Telegram; a digest cadence (e.g. one message per N minutes) is the
+  middle option if per-action turns out noisy. (3) Destination: the
+  coordinator's own standing topic via the existing standing-topic
+  infrastructure, not the shared Operator topic. Approve as specced, or
+  reply with the option changes; the specifier amends before promotion.
+source: |
+  GitHub issue https://github.com/ldecorps/swarmforgevc/issues/24 (seeded as
+  backlog root intake GH-24, drained by the specifier 2026-07-24). Human ask:
+  "get the coordinator to surface back up on its telegram topic any action he
+  does for the swarm (so I have a reasonably visible log), similarly to what
+  the claude console app does. Alternatively, have a script that simply
+  exposes its log file through telegram so as to save a few tokens".
+description: |
+  ## What
+
+  A live, reasonably complete log of what the coordinator is doing, readable
+  on the phone in Telegram: one compact line per coordinator action, posted
+  to the coordinator's standing topic shortly after the action happens.
+
+  ## Shape (deterministic, zero coordinator tokens)
+
+  The coordinator's actions already leave durable, machine-readable traces;
+  the feed is DERIVED from them by a deterministic surfacer — the coordinator
+  LLM is never asked to narrate itself:
+
+  - Handoffs it sends: its outbox files carry type, recipient, task/message,
+    and timestamps (the audit headers).
+  - Backlog bookkeeping: its commits on main (ticket close/move to done/,
+    promotions into active/).
+
+  A periodic tick (piggybacking an existing daemon/operator sweep cadence —
+  do not invent a new daemon) reads traces newer than a durable cursor,
+  posts one compact line per trace to the coordinator topic, and advances
+  the cursor only after a successful send. Existing standing-topic and
+  Telegram-send infrastructure is reused; rate limiting honors 429
+  retry_after per the engineering guardrails.
+
+  ## Constraints
+
+  - Pure decision logic (trace parsing, line formatting, cursor comparison)
+    lives in a testable `.bb` lib with the Telegram send injected as a seam
+    (postFn discipline); tests never hit live Telegram.
+  - No noise: an idle tick posts nothing; a send failure retries next tick
+    without duplication (drop/deliver/fail three-way gate).
+  - The feed is additive observability. It must not change what the
+    coordinator does, block its turns, or add any duty to the coordinator
+    role prompt.
+  - Multi-swarm: lines belong to THIS swarm's coordinator topic (the shared
+    Telegram group is already known to steal messages across swarms — group
+    separation is out of scope here but do not make it worse).
+
+  ## Acceptance materialization (BL-233 / BL-441)
+
+  Scenarios are parked in
+  specs/features/GH-24-coordinator-activity-telegram-feed.feature.draft
+  because the acceptance runner hard-fails on handler-less scenarios. The
+  coder MUST, in the same parcel, rename the draft to `.feature` and wire
+  its step handlers. Do not close this ticket with the draft unmaterialized.
+
+acceptance: specs/features/GH-24-coordinator-activity-telegram-feed.feature.draft
+
+qa_e2e_procedure: |
+  1. Swarm-script unit suite green, including the new surfacer lib tests.
+  2. Acceptance suite green with the materialized feature file.
+  3. Live: with the swarm running, have the coordinator send one note and
+     complete one bookkeeping close; within one tick cadence, verify the
+     coordinator's Telegram topic shows one compact line for each, and that
+     an idle period adds no messages. Restart the surfacer's host process and
+     verify no lines are re-posted.
+
+out_of_scope: |
+  - Coordinator LLM self-reporting (rejected unless the human overrides in
+    the approval reply).
+  - Surfacing OTHER roles' activity — coordinator only; a later ticket can
+    generalize if the human wants the pattern extended.
+  - handoffd/daemon actions (chases, sweeps) — those are the daemon's acts,
+    not the coordinator's; mixing them in muddies "what did the coordinator
+    do".
+  - Telegram group separation for multi-swarm (known open gap, separate
+    concern).
