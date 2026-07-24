@@ -10,7 +10,7 @@ direction: human-requested
 depends_on: []
 assigned_to:
 mutation_cost: medium
-human_approval: pending
+human_approval: approved
 approval_context: >
   Your GH issue offered two shapes; this spec picks the cheaper one and needs
   your sign-off on three choices. (1) Mechanism: a DETERMINISTIC surfacer

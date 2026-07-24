@@ -28,6 +28,7 @@
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "stuck_escalation_email_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "loop_detect_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "push_sweep_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "flow_watchdog_lib.bb")))
 
 (def poll-ms 1000)
 (def wake-message agent-runtime-lib/default-wake-chat-message)
@@ -1433,6 +1434,59 @@
       (log! "open-slot-nudge-sweep-error" (.getMessage e)))))
 
 
+;; ── BL-577: flow watchdog sweep - every mailbox, any parcel type ────────────
+;; Unsuppressable by design (the ticket's own requirement): this sweep emits
+;; NO tmux wake, only a durable Telegram OPERATOR-topic alarm, so it runs
+;; unconditionally alongside briefing-email-sweep! below - never gated behind
+;; outbound-wakes-suppressed? (that gate exists for wakes/pokes, not for a
+;; read-only flow-stall alarm the human needs regardless of any pause).
+;; flow_watchdog_lib.bb owns the pure tier/verb decisions and durable state
+;; (fixture-tested); this is the thin, environment-specific wiring - role
+;; enumeration via handoff-lib/mailbox-dir (BL-128, covers master-resident
+;; AND worktree mailboxes) and the same telegram-reply-outbox.jsonl the
+;; endless-loop/claim-progress halts above already append to.
+
+(defn role-inboxes-for-flow-watchdog [roles]
+  (vec (for [[role role-info] roles]
+         {:role role
+          :new-dir (handoff-lib/mailbox-dir role-info :new)
+          :in-process-dir (handoff-lib/mailbox-dir role-info :in_process)})))
+
+(defn flow-watchdog-live-session? [roles socket role]
+  (boolean
+   (when-let [session (:session (get roles role))]
+     (handoff-lib/session-exists? socket session))))
+
+(defn flow-watchdog-emit-alarm!
+  "Returns true on a CONFIRMED outbox write, false on failure - run-sweep!
+   (BL-577 bounce fix) only persists a parcel's alarmed state on a truthy
+   return, so a failed write here is retried next sweep rather than
+   silently treated as sent. Logs the alarm BEFORE attempting the outbox
+   write (matching endless-loop-halt's ordering) so a log backstop of the
+   alarm survives even when the write itself fails."
+  [text]
+  (log! "flow-watchdog-alarm" text)
+  (let [reply-outbox (fs/path state-dir "operator" "telegram-reply-outbox.jsonl")]
+    (try
+      (fs/create-dirs (fs/parent reply-outbox))
+      (spit (str reply-outbox)
+            (str (json/generate-string {"threadId" "OPERATOR" "text" text}) "\n")
+            :append true)
+      true
+      (catch Exception e
+        (log! "flow-watchdog-telegram-error" (.getMessage e))
+        false))))
+
+(defn flow-watchdog-sweep! [roles socket]
+  (flow-watchdog-lib/run-sweep!
+   (role-inboxes-for-flow-watchdog roles)
+   (System/currentTimeMillis)
+   (str project-root)
+   daemon-dir
+   {:live-session? (fn [role] (flow-watchdog-live-session? roles socket role))
+    :emit-alarm! flow-watchdog-emit-alarm!}))
+
+
 ;; ── BL-214: briefing-email sweep - the daemon's fourth duty ─────────────────
 ;; Runs on the SAME cadence as chase-sweep!/dispatch-gap-sweep! above (no
 ;; separate timeout) since this daemon already runs unattended regardless of
@@ -2189,6 +2243,16 @@
                         (open-slot-nudge-sweep! (load-roles))
                         (catch Exception e
                           (log! "open-slot-nudge-sweep-error" (.getMessage e)))))
+                    ;; BL-577: flow watchdog sweep shares the same cadence,
+                    ;; but runs UNCONDITIONALLY (outside the
+                    ;; outbound-wakes-suppressed? gate above) - it emits no
+                    ;; tmux wake, only a durable Telegram alarm, and must
+                    ;; alarm precisely when the swarm is stalled/paused, not
+                    ;; go quiet alongside the wake suppression.
+                    (try
+                      (flow-watchdog-sweep! (load-roles) socket)
+                      (catch Exception e
+                        (log! "flow-watchdog-sweep-error" (.getMessage e))))
                     ;; BL-214: briefing-email sweep shares the same cadence -
                     ;; no separate timeout, same rationale as BL-222 above.
                     (try
