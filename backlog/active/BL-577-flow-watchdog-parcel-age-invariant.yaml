@@ -122,7 +122,7 @@ description: |
   - The daily briefing keeps its stall narrative; the watchdog is the
     real-time layer beneath it.
 
-acceptance: specs/features/BL-577-flow-watchdog-parcel-age-invariant.feature.draft
+acceptance: specs/features/BL-577-flow-watchdog-parcel-age-invariant.feature
 
 notes: |
   MATERIALIZE THE DRAFT (BL-441 guard): the acceptance scenarios live in
