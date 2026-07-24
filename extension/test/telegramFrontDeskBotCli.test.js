@@ -74,6 +74,13 @@ const {
   readAskMessages,
   recordAskMessage,
   askMessagesPath,
+  roleAwaitingAnswerPath,
+  readRoleAwaitingAnswer,
+  clearRoleAwaitingAnswer,
+  roleTopicIdFor,
+  roleAnswerFilePointerPath,
+  composeRoleAnswerNoteMessage,
+  enqueueRoleAnswerNote,
   main,
 } = require('../out/tools/telegram-front-desk-bot');
 const { readRecord: readTopicRecord } = require('../out/concierge/blTopicStore');
@@ -1662,6 +1669,236 @@ test('BL-466: readAwaitingAnswer degrades to undefined on a malformed fixture fi
   const root = mkTmpRoot();
   writeAwaitingAnswerFixture(root, 'not json');
   assert.equal(readAwaitingAnswer(root), undefined);
+});
+
+// ── BL-607: readRoleAwaitingAnswer / clearRoleAwaitingAnswer - the per-ROLE
+// pending-question store (role_ask.bb's own write), a SEPARATE file per
+// role rather than the single global awaiting-answer.json above - so a
+// role question and the Operator's own SUP-thread ask never contend for
+// the same "one pending" slot. ────────────────────────────────────────────
+
+function writeRoleAwaitingAnswerFixture(root, role, contents) {
+  const p = roleAwaitingAnswerPath(root, role);
+  fs.mkdirSync(path.dirname(p), { recursive: true });
+  fs.writeFileSync(p, contents);
+}
+
+test('BL-607: readRoleAwaitingAnswer returns undefined when no question is pending for that role (file absent)', () => {
+  const root = mkTmpRoot();
+  assert.equal(readRoleAwaitingAnswer(root, 'specifier'), undefined);
+});
+
+test('BL-607: readRoleAwaitingAnswer resolves the pending question + options from a real fixture file - proves the read is load-bearing', () => {
+  const root = mkTmpRoot();
+  writeRoleAwaitingAnswerFixture(
+    root,
+    'specifier',
+    JSON.stringify({ question: 'which env?', asked_at_ms: 1000, options: [{ label: 'staging' }, { label: 'prod' }] })
+  );
+  assert.deepEqual(readRoleAwaitingAnswer(root, 'specifier'), {
+    question: 'which env?',
+    asked_at_ms: 1000,
+    options: [{ label: 'staging' }, { label: 'prod' }],
+  });
+});
+
+test('BL-607: readRoleAwaitingAnswer is scoped PER ROLE - a different role with nothing pending stays undefined', () => {
+  const root = mkTmpRoot();
+  writeRoleAwaitingAnswerFixture(root, 'specifier', JSON.stringify({ question: 'which env?' }));
+  assert.equal(readRoleAwaitingAnswer(root, 'coder'), undefined);
+});
+
+test('BL-607: readRoleAwaitingAnswer degrades to undefined on a malformed fixture file, never crashes', () => {
+  const root = mkTmpRoot();
+  writeRoleAwaitingAnswerFixture(root, 'specifier', 'not json');
+  assert.equal(readRoleAwaitingAnswer(root, 'specifier'), undefined);
+});
+
+test('BL-607: clearRoleAwaitingAnswer removes the pending marker so a later read flips back to undefined', () => {
+  const root = mkTmpRoot();
+  writeRoleAwaitingAnswerFixture(root, 'specifier', JSON.stringify({ question: 'which env?' }));
+  assert.notEqual(readRoleAwaitingAnswer(root, 'specifier'), undefined, 'sanity: the fixture is read while present');
+  clearRoleAwaitingAnswer(root, 'specifier');
+  assert.equal(readRoleAwaitingAnswer(root, 'specifier'), undefined);
+});
+
+test('BL-607: clearRoleAwaitingAnswer on an already-absent marker never throws', () => {
+  const root = mkTmpRoot();
+  assert.doesNotThrow(() => clearRoleAwaitingAnswer(root, 'specifier'));
+});
+
+// ── BL-607: resolveAskOptions' role branch - a role-ask threadId resolves
+// against the per-role store above; a real SUP-### threadId keeps
+// resolving against the global awaiting-answer.json exactly as before
+// (scenario 06's own byte-identical regression guard). ───────────────────
+
+test('BL-607: resolveAskOptions resolves a role-ask threadId\'s options from the PER-ROLE store, never the global one', () => {
+  const root = mkTmpRoot();
+  writeRoleAwaitingAnswerFixture(root, 'specifier', JSON.stringify({ question: 'which env?', options: [{ label: 'staging' }, { label: 'prod' }] }));
+  assert.deepEqual(resolveAskOptions(root, 'role-ask-specifier'), [{ label: 'staging' }, { label: 'prod' }]);
+});
+
+test('BL-607: resolveAskOptions resolves undefined for a role-ask threadId with nothing pending for that role', () => {
+  const root = mkTmpRoot();
+  assert.equal(resolveAskOptions(root, 'role-ask-specifier'), undefined);
+});
+
+test('BL-607: resolveAskOptions still resolves a real SUP-### thread from the global awaiting-answer.json, unaffected by the per-role store', () => {
+  const root = mkTmpRoot();
+  writeAwaitingAnswerFixture(root, JSON.stringify({ question: 'which env?', thread_id: 'SUP-1', options: [{ label: 'staging' }] }));
+  writeRoleAwaitingAnswerFixture(root, 'specifier', JSON.stringify({ question: 'unrelated role question', options: [{ label: 'prod' }] }));
+  assert.deepEqual(resolveAskOptions(root, 'SUP-1'), [{ label: 'staging' }]);
+});
+
+// ── BL-607: roleTopicIdFor - the forward (role -> topic id) sibling of
+// roleTopicMapStore.ts's own roleForTopic (topic id -> role). ────────────
+
+test('BL-607: roleTopicIdFor resolves a role\'s own topic id from role-topic-map.json', () => {
+  const root = mkTmpRoot();
+  writeRoleTopicMap(root, { specifier: 1595, coder: 42 });
+  assert.equal(roleTopicIdFor(root, 'specifier'), 1595);
+});
+
+test('BL-607: roleTopicIdFor resolves undefined for a role absent from the map (unknown role) - never throws', () => {
+  const root = mkTmpRoot();
+  writeRoleTopicMap(root, { coder: 42 });
+  assert.equal(roleTopicIdFor(root, 'nobody'), undefined);
+});
+
+test('BL-607: roleTopicIdFor resolves undefined when role-topic-map.json itself is missing entirely - never throws', () => {
+  const root = mkTmpRoot();
+  assert.equal(roleTopicIdFor(root, 'specifier'), undefined);
+});
+
+// ── BL-607: composeRoleAnswerNoteMessage / roleAnswerFilePointerPath (pure) -
+// swarm_handoff.bb's own `message:` header caps at 80 chars, so an answer
+// that fits inlines verbatim; one that does not falls back to a short
+// pointer at the full text (written alongside by enqueueRoleAnswerNote). ──
+
+test('BL-607: composeRoleAnswerNoteMessage inlines an answer that fits within the 80-char note cap verbatim', () => {
+  assert.equal(composeRoleAnswerNoteMessage('specifier', 'use staging'), 'use staging');
+});
+
+test('BL-607: composeRoleAnswerNoteMessage falls back to a short file pointer for an answer over the 80-char cap', () => {
+  const longAnswer = 'a'.repeat(200);
+  const message = composeRoleAnswerNoteMessage('specifier', longAnswer);
+  assert.ok(message.length <= 80, `expected the pointer message itself to fit the 80-char cap, got ${message.length}: ${message}`);
+  assert.match(message, /specifier/);
+  assert.doesNotMatch(message, /a{10}/, 'the pointer must never inline the long answer text itself');
+});
+
+test('BL-607: composeRoleAnswerNoteMessage stays within the 80-char cap for every real swarm role (longest role name)', () => {
+  for (const role of ['coder', 'cleaner', 'architect', 'hardener', 'documenter', 'specifier', 'coordinator', 'QA']) {
+    const message = composeRoleAnswerNoteMessage(role, 'x'.repeat(200));
+    assert.ok(message.length <= 80, `expected role "${role}"'s pointer message to fit the 80-char cap, got ${message.length}: ${message}`);
+  }
+});
+
+// BL-607 architect bounce 2: a multi-line answer that is itself <= 80 chars
+// used to inline verbatim, embedding a raw newline into swarm_handoff.bb's
+// single-line `message:` header - the exact defect that silently drops a
+// dormant-pane answer (Line N: expected 'field: value', draft rejected).
+// A newline (or any other control char) must route through the same
+// pointer-file fallback a too-long answer already takes, never inline.
+test('BL-607: composeRoleAnswerNoteMessage falls back to a file pointer for a short answer that contains a newline (never inlines it verbatim)', () => {
+  const multiline = 'use option A\nbut rename the flag';
+  assert.ok(multiline.length <= 80, 'fixture must reproduce the "fits under the cap" case');
+  const message = composeRoleAnswerNoteMessage('specifier', multiline);
+  assert.doesNotMatch(message, /\n/, 'the queued note message must never contain a raw newline');
+  assert.match(message, /answer ready:/);
+  assert.match(message, /specifier/);
+});
+
+test('BL-607: roleAnswerFilePointerPath is a stable, role-scoped relative path', () => {
+  assert.equal(roleAnswerFilePointerPath('specifier'), path.join('.swarmforge', 'operator', 'role-answers', 'specifier.json'));
+});
+
+// ── BL-607: enqueueRoleAnswerNote - the dormant-pane leg 2 itself. Drives
+// the REAL swarm_handoff.bb (constitution: never a hand-written inbox
+// file) against a real git+roles.tsv fixture, mirroring
+// commitExpediteWrites' own "real bb binary, real git repo" discipline
+// above - never a hand-rolled substitute for the CLI it shells to. ───────
+
+function swarmHandoffFixture() {
+  const root = gitFixture();
+  copyCommitIntegrityScripts(root);
+  fs.mkdirSync(path.join(root, '.swarmforge'), { recursive: true });
+  const tsv = [
+    ['specifier', 'session', root, 'swarmforge-specifier', 'specifier', 'claude', 'task'].join('\t'),
+    ['coordinator', 'session', root, 'swarmforge-coordinator', 'coordinator', 'claude', 'task'].join('\t'),
+  ].join('\n');
+  fs.writeFileSync(path.join(root, '.swarmforge', 'roles.tsv'), tsv + '\n');
+  return root;
+}
+
+// The real swarm_handoff.bb attempts a sync tmux inject first and falls
+// back to a durable outbox record when no tmux socket resolves (exactly
+// this fixture's case) - the SAME graceful "queued for daemon backup
+// delivery" production path a genuinely dormant role's answer note takes,
+// never a crash. Reading the outbox record (rather than the delivered
+// inbox file, which only a live daemon actually moves it into) proves the
+// CLI was invoked with the right headers - the load-bearing assertion.
+function readQueuedOutboxNote(root) {
+  const outboxDir = path.join(root, '.swarmforge', 'handoffs', 'outbox');
+  const files = fs.readdirSync(outboxDir);
+  assert.equal(files.length, 1, `expected exactly one queued handoff, got: ${JSON.stringify(files)}`);
+  return fs.readFileSync(path.join(outboxDir, files[0]), 'utf8');
+}
+
+test('BL-607: enqueueRoleAnswerNote queues a real `type: note` handoff into the role\'s own inbox, inlining a short answer verbatim', async () => {
+  const root = swarmHandoffFixture();
+
+  const ok = await enqueueRoleAnswerNote(root, 'specifier', 'use staging please');
+
+  assert.equal(ok, true);
+  const content = readQueuedOutboxNote(root);
+  assert.match(content, /^type: note$/m);
+  assert.match(content, /^to: specifier$/m);
+  assert.match(content, /^message: use staging please$/m);
+});
+
+test('BL-607: enqueueRoleAnswerNote falls back to a file pointer + writes the full answer alongside, for an answer over the 80-char cap', async () => {
+  const root = swarmHandoffFixture();
+  const longAnswer = 'please use the staging environment for this deploy, not production, since we are still validating the migration'.repeat(2);
+
+  const ok = await enqueueRoleAnswerNote(root, 'specifier', longAnswer);
+
+  assert.equal(ok, true);
+  const content = readQueuedOutboxNote(root);
+  assert.match(content, /^message: answer ready: .*specifier\.json$/m);
+  const stored = JSON.parse(fs.readFileSync(path.join(root, roleAnswerFilePointerPath('specifier')), 'utf8'));
+  assert.equal(stored.text, longAnswer);
+});
+
+test('BL-607: enqueueRoleAnswerNote returns false, never throws, when the target has no roles.tsv at all', async () => {
+  const root = gitFixture();
+  copyCommitIntegrityScripts(root);
+
+  const ok = await enqueueRoleAnswerNote(root, 'specifier', 'use staging');
+
+  assert.equal(ok, false);
+});
+
+// BL-607 architect bounce 2: reproduces the actual end-to-end failure - a
+// short (<= 80 char) multi-line answer used to be inlined verbatim into the
+// draft's `message:` field, which swarm_handoff.bb rejects outright because
+// the 2nd line reads as a bogus header. The fix must route it through the
+// pointer file instead, exactly like an over-long answer, so the queued
+// note stays a single valid line AND the full multi-line text is still
+// recoverable by the role.
+test('BL-607: enqueueRoleAnswerNote falls back to a file pointer for a short multi-line answer, so the queued note validates and the full answer is recoverable', async () => {
+  const root = swarmHandoffFixture();
+  const multilineAnswer = 'use option A\nbut rename the flag';
+  assert.ok(multilineAnswer.length <= 80, 'fixture must reproduce the "fits under the cap" case');
+
+  const ok = await enqueueRoleAnswerNote(root, 'specifier', multilineAnswer);
+
+  assert.equal(ok, true);
+  const content = readQueuedOutboxNote(root);
+  assert.match(content, /^message: answer ready: .*specifier\.json$/m);
+  assert.doesNotMatch(content, /\n\S*rename/, 'the 2nd line of the answer must never leak into the queued draft as a bogus header');
+  const stored = JSON.parse(fs.readFileSync(path.join(root, roleAnswerFilePointerPath('specifier')), 'utf8'));
+  assert.equal(stored.text, multilineAnswer);
 });
 
 // ── ensureRoleTopics (BL-425 slice 1 provision-role-topics-01) ───────────

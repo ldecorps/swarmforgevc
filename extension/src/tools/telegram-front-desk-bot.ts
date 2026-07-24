@@ -127,6 +127,7 @@ import {
   ReplyRelayAdapters,
   AskOption,
   closeApprovalAskForBacklogId,
+  roleFromAskThreadId,
 } from './telegramFrontDeskBotCore';
 import { backlogForTopic } from '../concierge/topicRouter';
 import { recordApprovalReply, recordRejectionReply, recordAmendReply, readRecordedVerdict, readApprovalCloseVerdict } from '../concierge/pendingApprovalReply';
@@ -944,13 +945,65 @@ export function readAwaitingAnswer(targetPath: string): { threadId?: string; opt
   }
 }
 
+// BL-607: {question, options?, asked_at_ms?} or undefined (nothing
+// pending) - role_ask.bb's OWN per-role pending-question file, ONE per
+// role (never a single global marker the way operator_ask.bb's
+// awaiting-answer.json is for the Operator's SUP-thread ask - a role
+// question and an Operator question must never contend for the same
+// "one pending" slot). Read-only from this side; role_ask.bb owns writing
+// it exclusively, the same "no cross-process write race" posture
+// readAwaitingAnswer's own comment states for its file.
+export function roleAwaitingAnswerPath(targetPath: string, role: string): string {
+  return path.join(targetPath, '.swarmforge', 'operator', 'role-awaiting', `${role}.json`);
+}
+
+export function readRoleAwaitingAnswer(targetPath: string, role: string): { question?: string; options?: AskOption[] } | undefined {
+  try {
+    return JSON.parse(fs.readFileSync(roleAwaitingAnswerPath(targetPath, role), 'utf8')) as { question?: string; options?: AskOption[] };
+  } catch {
+    return undefined;
+  }
+}
+
+// The ONLY writer that clears this file - fired once an answer has been
+// captured (delivered live or queued as a dormant-pane note), so the role
+// is free to raise its next question. Missing/already-cleared is not an
+// error (the same "never throws" posture as this file's other cleanup
+// writers), never a crash over a marker that is already gone.
+export function clearRoleAwaitingAnswer(targetPath: string, role: string): void {
+  try {
+    fs.unlinkSync(roleAwaitingAnswerPath(targetPath, role));
+  } catch {
+    // already cleared, or never existed - nothing to do.
+  }
+}
+
+// BL-607: role -> Telegram topic id, the forward-direction sibling of
+// roleTopicMapStore.ts's own roleForTopic (topic id -> role) - a plain
+// object-key lookup, so an unknown role or a missing/unparseable map
+// (readRoleTopicMap already degrades to {} on either) both resolve
+// undefined rather than throwing.
+export function roleTopicIdFor(targetPath: string, role: string): number | undefined {
+  return readRoleTopicMap(targetPath)[role];
+}
+
 // BL-483: resolves an options-carrying ask's own options for the CURRENTLY
 // pending question only - undefined for every other threadId (answered,
 // retracted, or superseded by a later question), which
 // telegramFrontDeskBotCore.ts's own PollAdapters.resolveAskOptions doc
 // comment names as the stale-tap signal. Never a second store: reads the
 // SAME awaiting-answer.json readAwaitingAnswer already parses.
+// BL-607: a role-ask threadId (roleAskThreadId, see
+// telegramFrontDeskBotCore.ts) is resolved against the SEPARATE per-role
+// awaiting file instead - the global awaiting-answer.json below is the
+// Operator's own single-pending store and is never consulted for a role
+// question (scenario 06's own "byte-identical" regression guard for the
+// Operator path depends on these two never crossing).
 export function resolveAskOptions(targetPath: string, threadId: string): AskOption[] | undefined {
+  const role = roleFromAskThreadId(threadId);
+  if (role !== undefined) {
+    return readRoleAwaitingAnswer(targetPath, role)?.options;
+  }
   const awaiting = readAwaitingAnswer(targetPath);
   return awaiting?.threadId === threadId ? awaiting.options : undefined;
 }
@@ -1157,6 +1210,66 @@ export async function redirectToRole(targetPath: string, role: string, text: str
     return { kind: 'undelivered', reason: result.reason ?? 'unknown' };
   }
   return { kind: 'delivered' };
+}
+
+// BL-607: swarm_handoff.bb's own `message:` header caps at 80 characters
+// AND is a single line (HANDOFF-PROTOCOL.md) - an answer that fits inlines
+// verbatim; one that does not (too long, OR contains a newline/control char
+// that would corrupt the draft's single-line header - architect bounce 2)
+// falls back to a short pointer at the full text, written alongside by
+// writeRoleAnswerFileIfNeeded below. Pure/testable: no I/O.
+const ROLE_ANSWER_NOTE_MAX_LEN = 80;
+
+function fitsInlineInRoleAnswerNote(text: string): boolean {
+  // eslint-disable-next-line no-control-regex
+  return text.length <= ROLE_ANSWER_NOTE_MAX_LEN && !/[\x00-\x1f\x7f]/.test(text);
+}
+
+export function roleAnswerFilePointerPath(role: string): string {
+  return path.join('.swarmforge', 'operator', 'role-answers', `${role}.json`);
+}
+
+export function composeRoleAnswerNoteMessage(role: string, text: string): string {
+  return fitsInlineInRoleAnswerNote(text) ? text : `answer ready: ${roleAnswerFilePointerPath(role)}`;
+}
+
+function writeRoleAnswerFileIfNeeded(targetPath: string, role: string, text: string): void {
+  if (fitsInlineInRoleAnswerNote(text)) {
+    return;
+  }
+  const abs = path.join(targetPath, roleAnswerFilePointerPath(role));
+  fs.mkdirSync(path.dirname(abs), { recursive: true });
+  fs.writeFileSync(abs, JSON.stringify({ text, recordedAt: new Date().toISOString() }));
+}
+
+// BL-607 dormant-pane leg (leg 2): the role's pane is dormant, so the
+// answer cannot ride redirectToRole's pane inject - it is queued as a
+// `type: note` handoff into that role's OWN inbox instead, so
+// ready_for_next.sh returns it on the role's next rotation (mono-router
+// packs spend most of their time exactly here). Shells to the REAL
+// swarm_handoff.bb (constitution: never a hand-written inbox file),
+// impersonating SWARMFORGE_ROLE=coordinator - the SAME precedent
+// operator_handoff.bb's send-coordinator-note! already established for an
+// automated write originating outside any real pipeline role's own
+// worktree (this bot process holds no role of its own and is not, and
+// must never become, a row in roles.tsv). Never throws - a failed queue
+// is logged and reported false, the same "adapter never throws out of the
+// poll cycle" convention this file uses throughout.
+export async function enqueueRoleAnswerNote(targetPath: string, role: string, text: string): Promise<boolean> {
+  writeRoleAnswerFileIfNeeded(targetPath, role, text);
+  const message = composeRoleAnswerNoteMessage(role, text);
+  const draftDir = path.join(targetPath, 'tmp');
+  fs.mkdirSync(draftDir, { recursive: true });
+  const draftPath = path.join(draftDir, `role-answer-draft-${Date.now()}-${Math.random().toString(36).slice(2)}.txt`);
+  fs.writeFileSync(draftPath, `type: note\nto: ${role}\npriority: 00\nmessage: ${message}\n`);
+  const cli = path.join(targetPath, 'swarmforge', 'scripts', 'swarm_handoff.bb');
+  try {
+    await execFileAsync('bb', [cli, draftPath], { cwd: targetPath, env: { ...process.env, SWARMFORGE_ROLE: 'coordinator' } });
+    return true;
+  } catch (err) {
+    process.stderr.write(`enqueueRoleAnswerNote: failed to queue answer note for "${role}": ${(err as Error).message}\n`);
+    return false;
+  }
 }
 
 // BL-294: opens the subject, records the topicId(or DM default)->subjectId
@@ -1776,6 +1889,14 @@ function buildPollAdapters(
     redirectToRole: (role, text) => redirectToRole(targetPath, role, text),
     notifyRoleTopic: (topicId, text) =>
       sendTelegramMessage(botToken, chatId, text, undefined, undefined, topicId).then((r) => r.success),
+    // BL-607: per-role clarifying-question pending guard + the dormant-
+    // pane answer leg.
+    getRolePendingQuestion: (role) => Promise.resolve(readRoleAwaitingAnswer(targetPath, role) !== undefined),
+    clearRolePendingQuestion: (role) => {
+      clearRoleAwaitingAnswer(targetPath, role);
+      return Promise.resolve();
+    },
+    enqueueRoleAnswerNote: (role, text) => enqueueRoleAnswerNote(targetPath, role, text),
     agentQuestionsTopicId: () => ensureAgentQuestionsTopic(targetPath, botToken, chatId),
     getPendingAgentQuestionThread: () => Promise.resolve(readAwaitingAnswer(targetPath)?.threadId),
     resolvePollThread: (pollId) => Promise.resolve(readPollMap(targetPath)[pollId]),
@@ -2011,6 +2132,10 @@ async function connectAndRelayReplies(
         return Promise.resolve();
       },
       agentQuestionsTopicId: () => ensureAgentQuestionsTopic(targetPath, botToken, chatId),
+      // BL-607: a roleQuestion record's own delivery target (deliverRoleQuestion,
+      // telegramFrontDeskBotCore.ts) - the forward role->topic lookup,
+      // entirely distinct from agentQuestionsTopicId above.
+      roleTopicIdFor: (role) => Promise.resolve(roleTopicIdFor(targetPath, role)),
       ...buildVoiceReplyAdapters(openaiApiKey, botToken, chatId, targetPath),
     },
     seenIds

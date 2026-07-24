@@ -307,7 +307,8 @@ const DOMAINS = [
   require('./bl576AgedNoteActionabilitySteps'),
   require('./bl532SiblingBounceIsolationSteps'),
   require('./bl531PreQaDurabilityWiringGateSteps'),
-  require('./bl606RequiredStagesRoutingSteps')
+  require('./bl606RequiredStagesRoutingSteps'),
+  require('./bl607RoleClarifyingPollSteps')
 ];
 
 function registerSteps(registry) {
