@@ -1705,8 +1705,9 @@ async function processSteeringUpdate(
   // pane must not silently drop it the way a plain steer already does
   // (redirectToRole's 'no-pane' result, unchanged for every OTHER
   // role-topic message) - it is queued as a note into the role's own
-  // inbox instead (Leg 2). The pending marker clears either way
-  // (delivered or queued) so the role is free to ask its next question.
+  // inbox instead (Leg 2). The pending marker clears once the answer is
+  // actually captured (delivered or queued) so the role is free to ask
+  // its next question - see the `captured` check just below.
   if (getRolePendingQuestion && (await getRolePendingQuestion(decision.role))) {
     // BL-607 architect bounce 2: neither leg captured the answer (no live
     // pane AND the queue attempt itself failed) - the pending marker must
