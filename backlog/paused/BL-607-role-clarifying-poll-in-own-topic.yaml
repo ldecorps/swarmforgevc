@@ -1,0 +1,193 @@
+id: BL-607
+title: "A pipeline role can raise a clarifying poll into its OWN topic mid-session and get the answer back into its own session — closing the gap that leaves the specifier making unilateral judgement calls"
+milestone: M8
+type: feature
+status: todo
+epic: swarm-reliability
+human_approval: pending
+severity: high
+priority: 3
+direction: human-requested
+depends_on: []
+assigned_to: coder
+mutation_cost: medium
+source: |
+  backlog/INTAKE-20260723-specifier-clarifying-poll.md — human, 2026-07-23,
+  explicitly marked URGENT. Stated concern, verbatim in intent: "they do not
+  want the specifier making judgment calls alone on ambiguous choices it should
+  be surfacing instead."
+
+description: |
+  ## Problem
+
+  `specifier.prompt` instructs the specifier, in prose, to "ask the human to
+  resolve ambiguity" before speccing. Nothing backs that instruction. This is an
+  infrastructure gap, not a compliance lapse — confirmed by direct grep:
+  `specifier.prompt` contains no reference to `operator_ask.bb`, `SUP-###`, or
+  `awaiting-answer.json`, and no other mechanism exists.
+
+  What exists today, and why neither closes the gap:
+
+  - `swarmforge/scripts/operator_ask.bb` is the ONLY thing that drives the
+    multi-option poll/button rendering (BL-483, shipped — `deliverAgentQuestion`,
+    `extension/src/tools/telegramFrontDeskBotCore.ts:2741`). It is wired
+    Operator-only: bound to a `SUP-###` support thread, enforcing one pending
+    question globally via `.swarmforge/operator/awaiting-answer.json`, and it
+    posts to a single SHARED "agent-questions" topic
+    (`adapters.agentQuestionsTopicId()`) regardless of who asked.
+  - Per-role topics exist and are populated (BL-425, shipped —
+    `.swarmforge/operator/role-topic-map.json` maps all eight roles;
+    `specifier: 1595`), but they are wired ONE WAY: human steers travel INTO a
+    role (`decideSteeringAction` -> `redirectToRole`,
+    `telegramFrontDeskBotCore.ts:537-1900`). Nothing travels OUT of a role.
+
+  So a role has no way to ask, and — critically — no way to be ANSWERED when it
+  is dormant, which on a mono-router pack is most of the time.
+
+  ## Shape
+
+  Reuse both shipped halves rather than building a third question mechanism:
+
+  1. ASK (out). A role-facing one-shot CLI raises a question carrying optional
+     enumerated options, reusing BL-483's existing option normalization and
+     inline-keyboard rendering. Delivery is retargeted to the ASKING ROLE's own
+     topic from `role-topic-map.json`, not the shared agent-questions topic.
+     The Operator's existing SUP-thread path is left byte-identical (scenario 06
+     is the regression guard).
+  2. ANSWER (back in) — TWO legs, both required. Leg 1: the role's pane is live
+     (it just asked, so on a mono-router it usually still is) — the existing
+     BL-425 steering path already delivers a role-topic message into that role's
+     pane; reuse it verbatim. Leg 2: the pane is DORMANT (the resident rotated
+     away before the human answered) — `redirectToRole` reports `no-pane`, and
+     the answer must then be enqueued as a `note` into that role's inbox so
+     `ready_for_next.sh` picks it up on its next rotation. Leg 2 is the piece
+     that does not exist today and is what makes this usable on a mono-router;
+     without it the answer is silently dropped and the human is back to manually
+     ferrying it (the same failure mode BL-568 was filed over, for a different
+     mechanism).
+  3. FREE TEXT IS NON-NEGOTIABLE. The human must be able to answer with typed
+     free text when no offered option fits, exactly as today
+     (`composeAskMessageBody`'s "Or reply with your own answer.",
+     `telegramFrontDeskBotCore.ts:2712`; `BL-483-multi-option-ask-buttons.feature`
+     scenario 03). Both a button tap and a typed reply ride the SAME answer
+     path. If the build ends up as a distinct tool rather than reusing
+     `operator_ask.bb` directly, this fallback is reproduced explicitly — it is
+     not dropped for simplicity.
+  4. NO POLLING. The asking role does NOT spin waiting. It raises the question,
+     records enough context to resume, and ENDS ITS TURN. It resumes on the
+     tmux wake (leg 1) or on `ready_for_next.sh` (leg 2). A self-scheduled wait
+     loop is forbidden by every role prompt and would trip the endless-loop
+     circuit breaker.
+  5. ONE PENDING QUESTION PER ROLE, not one globally. `operator_ask.bb`'s
+     global single-pending guard exists so a second Operator run cannot clobber
+     the first; that reasoning is per-asker, so the guard is keyed per role. A
+     role with a question already pending is refused, and the pending one is
+     left untouched.
+  6. MECHANISM ROLE-GENERIC, PROMPT WIRING SPECIFIER-ONLY. The topic map already
+     carries all eight roles, so building this specifier-only would cost more
+     than building it generic. Build the mechanism for any role; wire the
+     concrete invocation into `specifier.prompt` ONLY in this ticket. Other
+     roles opt in later by a prompt edit, no code change.
+
+  ## Not BL-568
+
+  BL-568 (`backlog/paused/BL-568-menu-blocked-pane-questions-as-mapped-polls.yaml`,
+  `needs_design`) auto-DETECTS a Claude Code `AskUserQuestion` menu already
+  blocking a pane and converts it to a poll driving keystrokes back in. This
+  ticket is a role asking on its OWN initiative, before it is blocked. BL-568's
+  own `out_of_scope` claims non-menu question flows are "already covered by
+  BL-306/BL-466" — that is NOT true for a pipeline role, which is exactly the
+  gap here. Do not conflate or fold these two together.
+
+  ## Scope (verified live paths)
+
+  - `swarmforge/scripts/operator_ask.bb` — existing ask CLI and its option
+    normalization (`operator_lib.bb` `ask-options`); the reuse point.
+  - `extension/src/tools/telegramFrontDeskBotCore.ts` — `deliverAgentQuestion`
+    (rendering), `decideSteeringAction` / `processSteeringUpdate` /
+    `SteerDeliveryResult` (the `no-pane` signal leg 2 keys off).
+  - `extension/src/concierge/roleTopicMapStore.ts` — `roleForTopic`, the map read.
+  - `swarmforge/roles/specifier.prompt` — the concrete invocation, replacing
+    today's unbacked prose instruction.
+
+acceptance: |
+  specs/features/BL-607-specifier-clarifying-poll.feature
+
+  Every scenario needs its step handler wired in this same parcel — the
+  acceptance runner (specs/pipeline/runtime.js) throws on an unhandled scenario
+  (BL-233). The feature file linted clean (gherkin_lint_gate.sh) and was IR-DRY
+  reviewed; its remaining findings are deliberate opposite-state fixtures
+  (pane live vs dormant, posted-to vs not-posted-to the shared topic), not drift.
+
+  Scenario -> shape-item map: 01 delivery retargeted to the asking role's own
+  topic with buttons (#1); 02 answer reaches a LIVE pane (#2 leg 1); 03 typed
+  free text still answers (#3); 04 answer for a DORMANT pane is queued to that
+  role's inbox (#2 leg 2 — the new piece); 05 one pending question per role
+  (#5); 06 the Operator's existing SUP-thread ask is unchanged (regression).
+
+  Supporting gates the Gherkin does not pin:
+  - The role-topic resolution and per-role pending guard have direct unit
+    coverage over: an unknown role, a role absent from role-topic-map.json, and
+    a map file that is missing or unparseable — each degrades without throwing.
+  - `#4 NO POLLING` is a prompt/protocol contract, not a runtime assertion:
+    `specifier.prompt`'s new section must state that the specifier ends its turn
+    after asking. Reviewed by the documenter, not tested.
+  - Repo build stays green: npm run compile, unit suite, existing BL-483 and
+    BL-425 tests all still pass unchanged.
+
+  QA end-to-end procedure (live swarm):
+  1. As the specifier, raise a question with three options and a resume context.
+     Confirm it renders in topic 1595 (the specifier's own), NOT the shared
+     agent-questions topic, with three tappable buttons and the
+     "Or reply with your own answer." line present.
+  2. Tap an option while the specifier pane is live -> the chosen label arrives
+     as keystrokes in the specifier pane; the per-role pending marker clears.
+  3. Repeat, but answer with typed free text instead -> same delivery path.
+  4. Raise a second question while one is pending -> refused, first untouched.
+  5. Raise a question, rotate the resident away (rotate_to_role.sh coder), THEN
+     answer -> the answer appears as a note in the specifier's inbox and is
+     returned by ready_for_next.sh on the next rotation to specifier.
+  6. Run an Operator SUP-thread ask -> still lands in the shared agent-questions
+     topic exactly as before.
+
+out_of_scope: |
+  - BL-568's menu-blocked pane detection and keystroke mapping. Different
+    mechanism, different trigger; explicitly not folded in here.
+  - Wiring the ask into any role prompt other than specifier.prompt. The
+    mechanism is role-generic; other roles opt in later by prompt edit alone.
+  - Concurrent/multiple pending questions per role. One at a time, as today.
+  - Replacing or retiring the shared agent-questions topic or the Operator's
+    SUP-thread ask path. Both stay exactly as they are.
+  - Any timeout / auto-escalation on an unanswered role question (BL-584 covers
+    stale-approval escalation; a role-question equivalent is a later ticket).
+
+approval_context: >
+  Three design calls the intake explicitly flagged as needing human sign-off —
+  and deliberately NOT resolved unilaterally, since "the specifier should not
+  make unilateral judgement calls" is the whole point of this ticket.
+
+  (a) REUSE vs NEW TOOL. Recommendation: extend the existing operator_ask.bb /
+  operator_lib.bb machinery with a role-targeted entry point, rather than build
+  a second parallel question tool. Reuses BL-483's button rendering and the
+  free-text fallback for free; the cost is that operator_ask.bb grows a second
+  caller shape (role topic, no SUP thread). The alternative — a separate,
+  simpler role_ask CLI — is cleaner in isolation but must re-implement the
+  free-text fallback, which the intake names as a hard requirement not to drop.
+
+  (b) THE DORMANT-PANE ANSWER LEG. Recommendation: when redirectToRole reports
+  no-pane, enqueue the answer as a note into that role's inbox so
+  ready_for_next.sh picks it up. This is the piece that does not exist today and
+  is what makes the mechanism work at all on a mono-router pack, where the
+  asking role is dormant most of the time. Confirm this is wanted — it is the
+  largest single piece of new code in the ticket, and dropping it would make the
+  feature usable only while the asker happens to still be resident.
+
+  (c) SPECIFIER-ONLY vs ROLE-GENERIC. Recommendation: build the mechanism
+  role-generic (the topic map already has all eight roles, so generic is not
+  more work) but wire the invocation into specifier.prompt only. Other roles
+  then opt in by a prompt edit with no code change. Confirm you do not want it
+  hard-restricted to the specifier.
+
+  Firm, not up for negotiation: free-text answers must keep working (intake's
+  stated hard requirement); the asking role must not poll or self-schedule a
+  wait; the Operator's existing SUP-thread ask path stays byte-identical.
