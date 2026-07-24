@@ -127,6 +127,29 @@
   (assert= "cold-apply-plan's relaunch step runs swarm against the resolved pack"
            ["--pack" "codex-mono-router"] (get-in plan [:relaunch :args])))
 
+;; ── resolve-role-model (BL-563 Slice 1): overlay-over-pack decision table ──
+(let [overlay {:coder {:role "coder" :model "opus"}}]
+  (assert= "overlay names the role -> overlay model wins"
+           "opus" (model-factory-lib/resolve-role-model overlay "coder" "sonnet")))
+
+(assert= "nil overlay (missing/malformed/empty file) -> pack model passes through"
+         "sonnet" (model-factory-lib/resolve-role-model nil "coder" "sonnet"))
+
+(let [overlay {:coder {:role "coder" :model "opus"}}]
+  (assert= "overlay does not name this role -> pack model passes through"
+           "sonnet" (model-factory-lib/resolve-role-model overlay "cleaner" "sonnet")))
+
+(let [overlay {:coder {:role "coder" :model ""}}]
+  (assert= "overlay names the role but its model is blank -> pack model passes through"
+           "sonnet" (model-factory-lib/resolve-role-model overlay "coder" "sonnet")))
+
+(let [overlay {:coder {:role "coder" :model "opus"}}]
+  (assert= "overlay-named model wins even when the pack supplied no model at all"
+           "opus" (model-factory-lib/resolve-role-model overlay "coder" "")))
+
+(assert= "a non-map overlay (e.g. malformed JSON that parsed to a scalar/array) degrades to pack model"
+         "sonnet" (model-factory-lib/resolve-role-model "not-a-map" "coder" "sonnet"))
+
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (empty? @failures)
   (println "ALL PASS")

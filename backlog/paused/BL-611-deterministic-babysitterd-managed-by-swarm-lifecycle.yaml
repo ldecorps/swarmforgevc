@@ -134,6 +134,16 @@ description: |
   The claim-progress risk scan salvaged from babysitter_assess_lib.bb becomes
   check #11.
 
+  PLANNED-PAUSE AWARENESS (added to prototype 2026-07-24 13:27Z, with BL-617):
+  the sweep reads `.swarmforge/operator/control-pause.json` first. While a
+  pause is ACTIVE (human timed-pause or BL-617 nightly cooldown), the
+  starvation-class checks (9, 10) are SUPPRESSED — planned quiet is not
+  starvation. Conversely, check #12: an active pause whose untilMs expired
+  >15 min ago = CRIT resume-overdue (the auto-resume sweep failed; the swarm
+  would sleep past its window). Both behaviours fixture-tested in the port:
+  paused snapshot => no starved/rotate findings; expired-active snapshot =>
+  resume-overdue fires.
+
   ## Nudge contract (the part the LLM version got wrong — pin it in Gherkin)
 
   - Only CRIT findings nudge the coordinator; WARN/OK stay in the log.
