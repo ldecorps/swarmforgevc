@@ -7,7 +7,8 @@
 ;; cases are constructed fixture content, not a race.
 
 (ns handoff-lib-test-runner
-  (:require [babashka.fs :as fs]))
+  (:require [babashka.fs :as fs]
+            [clojure.string :as str]))
 
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) ".." "handoff_lib.bb")))
 
@@ -142,6 +143,135 @@
     (assert-false "the empty file no longer sits at its original path (quarantined)" (fs/exists? empty-file))
     (assert-true "the empty file is quarantined as *.handoff.dead" (fs/exists? (fs/path dir "50_b_from_coder_to_cleaner.handoff.dead")))
     (assert-true "the truncated file is quarantined as *.handoff.dead" (fs/exists? (fs/path dir "50_c_from_coder_to_cleaner.handoff.dead")))))
+
+;; ── unresolvable-commit? / partition-unresolvable-commit / resolve- ─────
+;;    dequeueable-candidates (BL-610) - all exercised with an injected
+;;    resolve-fn? so the decision logic is provable without a real repo.
+
+(def resolves-yes (constantly true))
+(def resolves-no (constantly false))
+(defn resolves-spy [calls result]
+  (fn [commit] (swap! calls conj commit) result))
+
+(defn git-handoff-content
+  ([commit] (git-handoff-content commit "demo-task"))
+  ([commit task]
+   (str "id: 20260724T000000Z_000001_from_qa\n"
+        "from: qa\n"
+        "to: coder\n"
+        "priority: 50\n"
+        "type: git_handoff\n"
+        "task: " task "\n"
+        (when commit (str "commit: " commit "\n"))
+        "created_at: 2026-07-24T00:00:00Z\n"
+        "enqueued_at: 2026-07-24T00:00:02Z\n"
+        "\n"
+        "merge_and_process qa " (or commit "") "\n")))
+
+(def note-content
+  (str "id: 20260724T000000Z_000002_from_qa\n"
+       "from: qa\nto: coder\npriority: 50\ntype: note\nmessage: hi\n"
+       "\nhi\n"))
+
+(def awake-content
+  (str "id: 20260724T000000Z_000003_from_qa\n"
+       "from: qa\nto: coder\npriority: 50\ntype: awake\n"
+       "\nwake up\n"))
+
+(assert-false "a git_handoff with a resolvable commit is not unresolvable"
+              (handoff-lib/unresolvable-commit? (git-handoff-content "abc1234567") resolves-yes))
+
+(assert-true "a git_handoff with an unresolvable commit is flagged"
+             (handoff-lib/unresolvable-commit? (git-handoff-content "abc1234567") resolves-no))
+
+(assert-false "a git_handoff with a blank/absent commit header is never flagged (nothing to check)"
+              (handoff-lib/unresolvable-commit? (git-handoff-content nil) resolves-no))
+
+(assert-false "a note parcel is never flagged, regardless of resolve-fn?"
+              (handoff-lib/unresolvable-commit? note-content resolves-no))
+
+(assert-false "an awake parcel is never flagged, regardless of resolve-fn?"
+              (handoff-lib/unresolvable-commit? awake-content resolves-no))
+
+(let [calls (atom [])]
+  (handoff-lib/unresolvable-commit? note-content (resolves-spy calls false))
+  (handoff-lib/unresolvable-commit? awake-content (resolves-spy calls false))
+  (assert= "note/awake parcels never invoke the git lookup at all" [] @calls))
+
+(let [record (handoff-lib/unresolvable-commit-record (git-handoff-content "abc1234567" "BL-999"))]
+  (assert-true "the quarantine record names the commit" (str/includes? record "commit=abc1234567"))
+  (assert-true "the quarantine record names the task" (str/includes? record "task=BL-999"))
+  (assert-true "the quarantine record names the sending role" (str/includes? record "from=qa"))
+  (assert-true "the quarantine record names created_at" (str/includes? record "created_at=2026-07-24T00:00:00Z"))
+  (assert-true "the quarantine record names enqueued_at" (str/includes? record "enqueued_at=2026-07-24T00:00:02Z"))
+  (assert-true "the quarantine record names a dequeued_at" (str/includes? record "dequeued_at=")))
+
+(let [dir (mk-tmp-dir)
+      resolvable (fs/path dir "50_a_from_qa_to_coder.handoff")
+      unresolvable (fs/path dir "50_b_from_qa_to_coder.handoff")
+      blank-commit (fs/path dir "50_c_from_qa_to_coder.handoff")
+      a-note (fs/path dir "50_d_from_qa_to_coder.handoff")]
+  (spit (str resolvable) (git-handoff-content "resolvableaa"))
+  (spit (str unresolvable) (git-handoff-content "unresolvable"))
+  (spit (str blank-commit) (git-handoff-content nil))
+  (spit (str a-note) note-content)
+  (let [resolve-fn? (fn [commit] (= commit "resolvableaa"))
+        {:keys [quarantined valid]} (handoff-lib/partition-unresolvable-commit
+                                     [resolvable unresolvable blank-commit a-note] resolve-fn?)]
+    (assert= "partition-unresolvable-commit keeps the resolvable, blank-commit, and note candidates valid"
+             [resolvable blank-commit a-note] valid)
+    (assert= "partition-unresolvable-commit quarantines exactly the unresolvable candidate"
+             [unresolvable] (mapv :file quarantined))
+    (assert-true "the resolvable file is untouched at its original path" (fs/exists? resolvable))
+    (assert-false "the unresolvable file no longer sits at its original path (quarantined)" (fs/exists? unresolvable))
+    (assert-true "the unresolvable file is quarantined as *.handoff.dead"
+                 (fs/exists? (fs/path dir "50_b_from_qa_to_coder.handoff.dead")))))
+
+;; A parcel that is BOTH structurally corrupt AND commit-unresolvable must be
+;; quarantined exactly once, via the corrupt path - resolve-dequeueable-
+;; candidates must never hand it to partition-unresolvable-commit at all.
+(let [dir (mk-tmp-dir)
+      both-broken (fs/path dir "50_broken_from_qa_to_coder.handoff")
+      lookup-calls (atom [])]
+  ;; headers with no body at all: corrupt-handoff? fires on this regardless
+  ;; of the (well-formed-looking) commit header present in it.
+  (spit (str both-broken)
+        (str "id: x\nfrom: qa\nto: coder\npriority: 50\ntype: git_handoff\ncommit: deadbeef00\n"))
+  (let [dequeued (handoff-lib/resolve-dequeueable-candidates
+                  [both-broken] [] [] (resolves-spy lookup-calls false))]
+    (assert= "the doubly-broken parcel is not dequeued" [] dequeued)
+    (assert-true "the doubly-broken parcel is quarantined (moved) exactly once"
+                 (fs/exists? (fs/path dir "50_broken_from_qa_to_coder.handoff.dead")))
+    (assert-false "the doubly-broken parcel no longer sits at its original path"
+                  (fs/exists? both-broken))
+    (assert= "the commit-resolve lookup is never invoked for a structurally corrupt candidate"
+             [] @lookup-calls)))
+
+;; resolve-dequeueable-candidates end-to-end (5-arity, injected resolve-fn?)
+(let [dir (mk-tmp-dir)
+      good (fs/path dir "50_good_from_qa_to_coder.handoff")
+      bad (fs/path dir "50_bad_from_qa_to_coder.handoff")]
+  (spit (str good) (git-handoff-content "goodcommit1"))
+  (spit (str bad) (git-handoff-content "badcommit00"))
+  (let [resolve-fn? (fn [commit] (= commit "goodcommit1"))
+        dequeued (handoff-lib/resolve-dequeueable-candidates [good bad] [] [] resolve-fn?)]
+    (assert= "resolve-dequeueable-candidates dequeues only the resolvable candidate"
+             [good] dequeued)
+    (assert-true "the bad candidate is quarantined as *.handoff.dead"
+                 (fs/exists? (fs/path dir "50_bad_from_qa_to_coder.handoff.dead")))))
+
+;; idempotency: re-running partition-unresolvable-commit over a directory
+;; where the file has already been renamed to .dead must not throw, since
+;; the renamed file is no longer among the candidates handed in (it is not
+;; a *.handoff file any more, so a fresh handoff-files listing would never
+;; re-surface it) - this mirrors quarantine-corrupt-handoff!'s own
+;; :replace-existing false contract.
+(let [dir (mk-tmp-dir)
+      f (fs/path dir "50_again_from_qa_to_coder.handoff")]
+  (spit (str f) (git-handoff-content "willnotresolve"))
+  (handoff-lib/partition-unresolvable-commit [f] resolves-no)
+  (let [remaining (handoff-lib/handoff-files dir)]
+    (assert= "the quarantined file is no longer a dequeue candidate on a second pass" [] remaining)))
 
 ;; ── handoff-body-lead (BL-519 / mono-router resident) ───────────────────
 

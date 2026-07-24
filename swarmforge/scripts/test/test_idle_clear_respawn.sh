@@ -18,6 +18,7 @@ trap 'rm -rf "$ROOT"' EXIT
 
 git -C "$ROOT" init -q
 git -C "$ROOT" -c user.email=test@test -c user.name=test commit -q --allow-empty -m init
+COMMIT="$(git -C "$ROOT" rev-parse --short=10 HEAD)"
 
 ONROLE_WT="$ROOT/.worktrees/onrole"
 OFFROLE_WT="$ROOT/.worktrees/offrole"
@@ -56,10 +57,12 @@ TMUX
 chmod +x "$FAKE_BIN/tmux"
 
 queue_task() {
+  # BL-610: commit must resolve to a real object now that dequeue re-checks
+  # it - $COMMIT is ROOT's own init commit, not a placeholder.
   local dir="$1" name="$2"
   mkdir -p "$dir"
-  printf 'id: %s\nfrom: specifier\nto: %s\npriority: 50\ntype: git_handoff\ntask: BL-089-test\ncommit: abc1234567\n\npayload\n' \
-    "$name" "$(basename "$(dirname "$dir")")" > "$dir/50_${name}.handoff"
+  printf 'id: %s\nfrom: specifier\nto: %s\npriority: 50\ntype: git_handoff\ntask: BL-089-test\ncommit: %s\n\npayload\n' \
+    "$name" "$(basename "$(dirname "$dir")")" "$COMMIT" > "$dir/50_${name}.handoff"
 }
 
 # ── 1: enabled role, no queued work -> clears (respawns) at the idle boundary ──

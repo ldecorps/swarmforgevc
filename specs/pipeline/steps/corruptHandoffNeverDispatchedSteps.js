@@ -36,8 +36,8 @@ const CORRUPT_CONTENT_BY_LABEL = {
   'headers with no body': 'id: x\nfrom: specifier\nto: coder\nrecipient: coder\npriority: 50\ntype: note\n',
 };
 
-function validHandoffContent(id, recipient, priority) {
-  return `id: ${id}\nfrom: specifier\nto: ${recipient}\nrecipient: ${recipient}\npriority: ${priority}\ntype: git_handoff\ntask: BL-365-acceptance\ncommit: 0000000000\n\npayload\n`;
+function validHandoffContent(id, recipient, priority, commit) {
+  return `id: ${id}\nfrom: specifier\nto: ${recipient}\nrecipient: ${recipient}\npriority: ${priority}\ntype: git_handoff\ntask: BL-365-acceptance\ncommit: ${commit}\n\npayload\n`;
 }
 
 function writeRoles(root, lines) {
@@ -49,12 +49,20 @@ function git(cwd, args) {
   execFileSync('git', args, { cwd, stdio: ['ignore', 'pipe', 'pipe'] });
 }
 
+function gitOut(cwd, args) {
+  return execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
+}
+
 function registerSteps(registry) {
   // ── Background ────────────────────────────────────────────────────────
   registry.define(/^roles exchange handoffs through their mailboxes$/, (ctx) => {
     ctx.root = mkTmp('aps-corrupt-handoff-');
     git(ctx.root, ['init', '-q']);
     git(ctx.root, ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'init']);
+    // BL-610: dequeue now re-checks the commit header resolves to a real
+    // git object, so fixture handoffs must carry a real one, not a
+    // placeholder like 0000000000.
+    ctx.commit = gitOut(ctx.root, ['rev-parse', '--short=10', 'HEAD']);
     ctx.coderWt = path.join(ctx.root, '.worktrees', 'coder');
     git(ctx.root, ['worktree', 'add', '-q', '-b', 'coder', ctx.coderWt]);
     const roles = `coordinator\tmaster\t${ctx.root}\tswarmforge-coordinator\tCoordinator\tclaude\ttask\n` +
@@ -77,7 +85,7 @@ function registerSteps(registry) {
     // against a real alternative task, not just an empty inbox.
     fs.writeFileSync(
       path.join(ctx.inbox, 'new', '90_valid_from_specifier_to_coder.handoff'),
-      validHandoffContent('valid', 'coder', 90)
+      validHandoffContent('valid', 'coder', 90, ctx.commit)
     );
   });
 
