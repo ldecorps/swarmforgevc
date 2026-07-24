@@ -68,7 +68,7 @@ description: |
   rewrite):
   - `swarmforge/scripts/babysitter_assess_lib.bb` (+ its test runner) — pure
     BL-528 claim-progress risk scan (role heading for bounce/halt with HEAD
-    unchanged). Fold in as sweep check #9; its wake-enqueue consumer goes away,
+    unchanged). Fold in as sweep check #11; its wake-enqueue consumer goes away,
     the finding routes through the same CRIT/WARN nudge contract as the rest.
   - `swarmforge/scripts/babysitter_nudge_lib.bb` (+ test runner) — reuse
     whatever fits the typed-coordinator-nudge path; drop the LLM-wake parts.
@@ -105,6 +105,22 @@ description: |
   7. busy-but-frozen pane: busy footer present but spinner-stripped content
      hash unchanged across 3 consecutive sweeps
   8. available-memory floor (orphaned vitest/stryker OOM lesson)
+  9. rotate-note-not-honored — newest completed parcel carrying a rotate
+     instruction (rotate_to_role.sh <role> / "Rotate to <role>"), older than a
+     grace period (10 min), whose target != `.swarmforge/mono-router-active-role`
+     => CRIT naming the parcel, expected vs actual persona, and the remediation.
+     LIVE-VALIDATED 2026-07-24: caught starvation #2 (parcel 000741 dequeued and
+     marked completed, rotate never executed) on the sweep after the original
+     8 checks read all-green through it; the nudge landed and the coordinator
+     engaged. This is the dominant real failure class observed — instructions
+     acknowledged but not acted on — and it is fully decidable from disk.
+  10. swarm-starved — active tickets present, zero pending AND zero in_process
+     parcels across master + worktree mailboxes, and NO pane showing a busy
+     footer, sustained for 2 consecutive sweeps (streak state; single-sweep
+     idle never fires — orchestration pauses are normal) => CRIT.
+
+  The claim-progress risk scan salvaged from babysitter_assess_lib.bb becomes
+  check #11.
 
   ## Nudge contract (the part the LLM version got wrong — pin it in Gherkin)
 
@@ -158,8 +174,12 @@ acceptance: |
      daemon, its salvaged pure libs, docs, and history. The deterministic
      daemon owns the ancillary slot and the name.
   6b. The salvaged claim-progress risk scan (babysitter_assess_lib.bb) runs as
-     sweep check #9 with its existing unit tests still green, its findings
+     sweep check #11 with its existing unit tests still green, its findings
      flowing through the same severity/nudge contract.
+  6c. Checks 9 and 10 have fixture coverage for the live-validated incident
+     shapes: a completed rotate parcel + mismatched active-role fires check 9
+     (and stops firing once the role flips); the all-idle-with-active-work
+     snapshot fires check 10 only on the second consecutive sweep.
   7. Runbook exists and the coordinator-facing doc line about
      "babysitter health sweep:" messages is in place.
 
