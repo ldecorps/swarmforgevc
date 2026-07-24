@@ -135,12 +135,14 @@ function registerSteps(registry) {
 
   registry.define(/^the ticket's own record cannot be written$/, (ctx) => {
     const ticketPath = ticketYamlPath(ctx.target);
-    fs.chmodSync(ticketPath, 0o444);
-    fs.chmodSync(path.dirname(ticketPath), 0o555);
-    ctx.cleanupTicketPerms = () => {
-      fs.chmodSync(path.dirname(ticketPath), 0o755);
-      fs.chmodSync(ticketPath, 0o644);
-    };
+    // A directory in place of the ticket file fails deterministically for
+    // ANY user, including UID 0 in a root CI container - unlike chmod mode
+    // bits, which do not restrict root (prohibited: engineering.prompt Test
+    // Speed And Isolation, "never use chmod for failure simulation").
+    // readFileSync/writeFileSync both throw EISDIR on a directory regardless
+    // of permissions.
+    fs.rmSync(ticketPath, { force: true });
+    fs.mkdirSync(ticketPath);
   });
 
   // ── Then / And ────────────────────────────────────────────────────────
@@ -208,9 +210,6 @@ function registerSteps(registry) {
   registry.define(/^the recording reports that the ticket record was not updated$/, (ctx) => {
     if (ctx.result.ticketRecordUpdated !== false) {
       throw new Error(`expected ticketRecordUpdated to be false, got ${JSON.stringify(ctx.result)}`);
-    }
-    if (ctx.cleanupTicketPerms) {
-      ctx.cleanupTicketPerms();
     }
   });
 

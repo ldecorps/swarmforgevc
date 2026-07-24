@@ -12,13 +12,14 @@
  * it rides the normal merge chain to main. This is deliberately best-effort:
  * a missing/unwritable/unparseable ticket record never fails the bounce.
  *
- * `--by`/`--evidence` are OPTIONAL flags, deliberately: the live
- * swarmforge/roles/QA.prompt invocation still calls this CLI with only the
- * original five flags until the documenter lands the two-flag addition
- * there. Omitting either (or both) keeps the original BL-454 behavior
- * exactly (the JSONL append), and simply skips the ticket-record merge -
- * never a usage error, never a functional regression for the existing
- * wired caller.
+ * `--by`/`--evidence` are OPTIONAL flags: the live swarmforge/roles/QA.prompt
+ * invocation now passes both on every bounce (BL-608 architect send-back #1 -
+ * the flags must reach the one wired live caller or updateTicketBounceHistory()
+ * is never exercised in production). They stay optional at the CLI/parseArgs
+ * level purely as a best-effort degrade path for any OTHER caller that omits
+ * them: omitting either (or both) keeps the original BL-454 behavior exactly
+ * (the JSONL append), and simply skips the ticket-record merge - never a usage
+ * error, never a functional regression.
  *
  * Usage: node record-qa-bounce.js --ticket <id> --role <producingRole>
  *          --type <ticketType> --class <failureClass> --commit <hex>

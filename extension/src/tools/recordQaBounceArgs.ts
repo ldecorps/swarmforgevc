@@ -48,15 +48,16 @@ function isValidEvidence(value: string | undefined): value is string {
   return !!value && EVIDENCE_PATTERN.test(value);
 }
 
-function validatedFields(flags: Partial<Record<FlagName, string>>): RecordQaBounceArgs | null {
+type RequiredFields = Omit<RecordQaBounceArgs, 'by' | 'evidence'>;
+type OptionalFields = Pick<RecordQaBounceArgs, 'by' | 'evidence'>;
+
+function validatedRequiredFields(flags: Partial<Record<FlagName, string>>): RequiredFields | null {
   const {
     '--ticket': ticket,
     '--role': producingRole,
     '--type': ticketType,
     '--class': failureClass,
     '--commit': commit,
-    '--by': by,
-    '--evidence': evidence,
   } = flags;
   if (!isValidTicket(ticket)) {
     return null;
@@ -73,14 +74,31 @@ function validatedFields(flags: Partial<Record<FlagName, string>>): RecordQaBoun
   if (!commit) {
     return null;
   }
-  // Optional: present-but-invalid is a usage error; absent is fine.
+  return { ticket: ticket.toUpperCase(), producingRole, ticketType, failureClass, commit };
+}
+
+// Optional: present-but-invalid is a usage error; absent is fine.
+function validatedOptionalFields(flags: Partial<Record<FlagName, string>>): OptionalFields | null {
+  const { '--by': by, '--evidence': evidence } = flags;
   if (by !== undefined && !isValid(by, isKnownBouncingRole)) {
     return null;
   }
   if (evidence !== undefined && !isValidEvidence(evidence)) {
     return null;
   }
-  return { ticket: ticket.toUpperCase(), producingRole, ticketType, failureClass, commit, by, evidence };
+  return { by, evidence };
+}
+
+function validatedFields(flags: Partial<Record<FlagName, string>>): RecordQaBounceArgs | null {
+  const required = validatedRequiredFields(flags);
+  if (!required) {
+    return null;
+  }
+  const optional = validatedOptionalFields(flags);
+  if (!optional) {
+    return null;
+  }
+  return { ...required, ...optional };
 }
 
 export function parseArgs(argv: string[]): RecordQaBounceArgs | null {
