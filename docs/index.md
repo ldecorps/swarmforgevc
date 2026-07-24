@@ -27,7 +27,6 @@ here.
 - [Headless Secondary Swarms on a Raspberry Pi or VPS](how-to/BL-101-pi-vps-secondary-swarm-bringup.md)
 - [Stripping an oversized blob from role-branch history](how-to/BL-105-history-strip.md)
 - [Daemon Death Alarm — Understanding the Alert and Recovery](how-to/BL-144-daemon-death-alarm.md)
-- [Stuck-Role Escalation Email — Understanding the Alert](how-to/BL-349-stuck-role-escalation-email.md)
 - [Verifying the stabilize-two-pack daemon-on workflow](how-to/BL-203-stabilize-two-pack-smoke-check.md)
 - [Wiring the Phone Recert Inbound Address Live](how-to/BL-223-recert-inbound-address-golive.md)
 - [Checking Pipeline Board Ticket Links](how-to/BL-513-pipeline-board-current-folder-links.md)
