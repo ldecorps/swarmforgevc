@@ -54,11 +54,41 @@ description: |
     `babysitter` component that verifies pid-alive and restarts if not
     (same posture as the rc:<role> component).
 
-  - THE OLD LLM BABYSITTER IS RETIRED by this ticket — recommendation, human
-    quote above supports it: the deterministic daemon takes the babysitter
-    name and the ancillary slot. Specifier decides whether the LLM hawk's
-    launch path is deleted or left behind an explicit opt-in flag, but the
-    default swarm launch must start the deterministic one.
+  - THE AGENT-BASED BABYSITTER IS FULLY RECYCLED INTO THIS — not optional,
+    not behind a flag. Human ruling 2026-07-24 (follow-up): "recycle existing
+    babysitter as a swarm role into this daemon based solution, so that there
+    is no confusion. babysitter as an agent based solution was not a good
+    idea." One babysitter exists after this ticket: the daemon. The name
+    "babysitter" refers ONLY to it.
+
+  ## Recycle inventory (surveyed 2026-07-24; the old hawk is already DEAD —
+  ## launcher pid dead, `.swarmforge/babysitter/stop` marker since Jul 22)
+
+  SALVAGE (deterministic parts, already pure + test-covered — reuse, do not
+  rewrite):
+  - `swarmforge/scripts/babysitter_assess_lib.bb` (+ its test runner) — pure
+    BL-528 claim-progress risk scan (role heading for bounce/halt with HEAD
+    unchanged). Fold in as sweep check #9; its wake-enqueue consumer goes away,
+    the finding routes through the same CRIT/WARN nudge contract as the rest.
+  - `swarmforge/scripts/babysitter_nudge_lib.bb` (+ test runner) — reuse
+    whatever fits the typed-coordinator-nudge path; drop the LLM-wake parts.
+
+  REMOVE (the agent layer — the part that "was not a good idea"):
+  - `swarmforge/roles/babysitter.prompt` — the role prompt; no babysitter role
+    exists after this ticket.
+  - `babysit.sh` (repo root) — the hawk on/off wrapper.
+  - `swarmforge/scripts/start_babysitter.sh` — LLM launch (Telegram topic +
+    claude session + wake runtime); superseded by the daemon start.
+  - `swarmforge/scripts/babysitter_enqueue_wake.sh` and the wake-runtime path
+    in `babysitter_lib.bb` — no LLM to wake.
+  - `extension/src/tools/notify-babysitter.ts` — Telegram babysitter-topic
+    notify; out of scope for the daemon (findings go to log + coordinator).
+  - References in `ancillary_provider_lib.sh`, `telegram-front-desk-bot.ts`
+    (+ its core/test), `start-swarm.sh`/`stop-swarm.sh` help text — update to
+    the daemon; front-desk must not offer to launch an agent babysitter.
+  - Runtime state `.swarmforge/babysitter/` — the daemon uses the pidfile/log/
+    state layout from the prototype; specifier picks the final dir name, but
+    stale hawk state must not be mistaken for daemon state.
 
   ## Sweep checks (from the running prototype — keep all eight)
 
@@ -123,8 +153,13 @@ acceptance: |
   5. A menu-blocked pane produces a report finding and NO keystrokes toward
      the menu (the sweep is observably read-only apart from the coordinator
      nudge line).
-  6. Default launch no longer starts the LLM babysitter hawk; the deterministic
-     daemon owns the ancillary slot.
+  6. The agent-based babysitter is GONE: no babysitter.prompt role, no LLM
+     launch path, no wake runtime — a repo grep for babysitter finds only the
+     daemon, its salvaged pure libs, docs, and history. The deterministic
+     daemon owns the ancillary slot and the name.
+  6b. The salvaged claim-progress risk scan (babysitter_assess_lib.bb) runs as
+     sweep check #9 with its existing unit tests still green, its findings
+     flowing through the same severity/nudge contract.
   7. Runbook exists and the coordinator-facing doc line about
      "babysitter health sweep:" messages is in place.
 
