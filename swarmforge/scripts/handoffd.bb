@@ -1461,15 +1461,17 @@
   "Returns true on a CONFIRMED outbox write, false on failure - run-sweep!
    (BL-577 bounce fix) only persists a parcel's alarmed state on a truthy
    return, so a failed write here is retried next sweep rather than
-   silently treated as sent."
+   silently treated as sent. Logs the alarm BEFORE attempting the outbox
+   write (matching endless-loop-halt's ordering) so a log backstop of the
+   alarm survives even when the write itself fails."
   [text]
+  (log! "flow-watchdog-alarm" text)
   (let [reply-outbox (fs/path state-dir "operator" "telegram-reply-outbox.jsonl")]
     (try
       (fs/create-dirs (fs/parent reply-outbox))
       (spit (str reply-outbox)
             (str (json/generate-string {"threadId" "OPERATOR" "text" text}) "\n")
             :append true)
-      (log! "flow-watchdog-alarm" text)
       true
       (catch Exception e
         (log! "flow-watchdog-telegram-error" (.getMessage e))
