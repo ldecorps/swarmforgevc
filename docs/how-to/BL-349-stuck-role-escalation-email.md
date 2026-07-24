@@ -19,7 +19,7 @@ The email contains:
 
 Example email:
 ```
-The coder role has not responded for 90 seconds while working on BL-528.
+The coder role has not responded for 60 seconds while working on BL-528.
 No progress has been detected.
 
 Escalation log: /path/to/target/.swarmforge/daemon/chase-escalations.json
@@ -33,7 +33,7 @@ The SwarmForge daemon (handoffd) monitors the heartbeat of every agent role. It 
 - The last time the role sent/received a message
 - How long the role has been idle without completing work
 
-If a role is idle **past an escalation threshold** (currently 90 seconds):
+If a role is idle **past an escalation threshold** (currently 60 seconds):
 
 1. **A timer starts** — the daemon notes the role as potentially stuck.
 2. **Progress is checked** — if the role hasn't advanced the parcel (no commits, no handoff) in that time, it's genuinely stuck, not just slow.
@@ -52,7 +52,7 @@ Stuck roles are a sign of one of these conditions:
 - **Infinite loop** — The role is in a code path that repeats forever (rare, but caught by mutation testing).
 - **Waiting on input** — The role has a question pending and is blocking until answered (expected, not alarming).
 
-The threshold is conservative (90 seconds for the default pack) to avoid false alarms on slow work, but a stuck role left unaddressed will eventually trigger a broader failure.
+The threshold is conservative (60 seconds for the default pack) to avoid false alarms on slow work, but a stuck role left unaddressed will eventually trigger a broader failure.
 
 ## Escalation Log Contents
 
@@ -118,30 +118,15 @@ If the role has already forwarded the parcel to the next stage, the alarm was be
    - Check the failure log for hints: `cat .swarmforge/daemon/daemon_failure_*.txt`
    - Fix the underlying issue, then restart: `swarmforge /path/to/target` (or use the extension to launch again)
 
-## How to Tune the Threshold
+## About the Threshold
 
-The escalation threshold is configured per pack in `swarmforge.conf`:
+**The 60-second threshold is currently hardcoded** in `swarmforge/scripts/handoffd.bb` (line 46, `stuckInProcessTimeoutSeconds`). Tuning via `swarmforge.conf` is not yet supported.
 
-```bash
-config stuck_escalation_threshold_seconds 90
-```
+To modify the threshold:
+1. Edit `swarmforge/scripts/handoffd.bb` and change `:stuckInProcessTimeoutSeconds 60` to your desired value (in seconds).
+2. Restart the swarm for the change to take effect.
 
-**Increase it** if your infrastructure is slow (e.g., slow LLM provider, high network latency):
-```bash
-config stuck_escalation_threshold_seconds 180
-```
-
-**Decrease it** if you want earlier alerts (e.g., you run on fast hardware and 90 seconds always means something is wrong):
-```bash
-config stuck_escalation_threshold_seconds 60
-```
-
-**Disable it** (not recommended) if you want no escalation emails:
-```bash
-config stuck_escalation_threshold_seconds -1
-```
-
-Changes to `swarmforge.conf` take effect on the next `swarmforge ensure` or new `swarmforge launch`.
+Making the threshold configurable is a planned improvement (tracked separately) but not yet implemented.
 
 ## See Also
 
