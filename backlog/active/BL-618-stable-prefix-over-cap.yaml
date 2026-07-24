@@ -4,7 +4,7 @@ milestone: M8
 type: bug
 status: todo
 epic: swarm-reliability
-human_approval: pending
+human_approval: approved
 approval_context: >
   Sign-off wanted on the APPROACH only: trim the boot-inlined constitution
   articles back under the 51200-char gate by moving elaboration prose into
@@ -16,7 +16,7 @@ severity: high
 priority: 1
 direction: pipeline-reported
 depends_on: []
-assigned_to: ""
+assigned_to: coder
 mutation_cost: low
 required_stages: [coder, qa]
 stage_skip_reasons:
@@ -64,7 +64,7 @@ description: |
   must not wave through any OTHER red. Coordinator: promoting BL-618 right
   after BL-617 clears QA un-reds the suite fastest.
 
-acceptance: specs/features/BL-618-stable-prefix-cap-regression.feature.draft
+acceptance: specs/features/BL-618-stable-prefix-cap-regression.feature
 
 notes: |
   E2E QA procedure: run bb swarmforge/scripts/test/prompt_engine_test_runner.bb
