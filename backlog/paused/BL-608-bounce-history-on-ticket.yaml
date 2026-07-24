@@ -4,17 +4,34 @@ milestone: M8
 type: feature
 status: todo
 epic: swarm-reliability
-human_approval: pending
+human_approval: approved
 severity: medium
-priority: 12
+priority: 5
 direction: human-requested
-depends_on: []
+depends_on: [BL-606]
 assigned_to: coder
 mutation_cost: medium
 source: |
   backlog/INTAKE-20260723-bounce-history-on-ticket.md — human, 2026-07-23.
   General capability, not specific to BL-606; same class of gap BL-606 closes
   for stage-skipping (make it visible on the ticket record, not just in a diff).
+
+  EXPEDITE + SERIALIZE, 2026-07-24: human approved expediting this ticket
+  (via operator rc session) to land FIRST AFTER BL-606 — priority pinned to 5,
+  `depends_on: [BL-606]` added. Rationale, agreed with the human:
+  (a) do NOT start implementation before BL-606 lands — same-file contention:
+      this ticket's wiring points (record-qa-bounce.ts, the swarm_handoff send
+      path) are the files BL-606 is actively churning through its bounce
+      cycle, and in-flight work cannot be preempted (standing rule);
+  (b) shape precedent: BL-606's `stage_skip_reasons:` and this ticket's
+      `bounce_history:` should be ONE coherent accumulating-list shape, so
+      whichever the specifier finalises first, the other must match, not
+      diverge;
+  (c) motivation: the 2026-07-24 starvation diagnosis took log-archaeology
+      across four evidence files + daemon logs; with this landed it would
+      have been a single grep on the ticket. Dynamic routing (BL-606) makes
+      bounces sharper (likeliest bounce target IS a skipped stage), so this
+      must follow it closely.
 
 description: |
   ## Problem
