@@ -6,7 +6,7 @@ status: needs_design
 epic: swarm-intelligence-layer
 human_approval: approved
 severity: medium
-priority: 10
+priority: 02
 direction: human-requested
 depends_on: [BL-262, BL-269, BL-344, BL-380, BL-381]
 assigned_to: specifier
