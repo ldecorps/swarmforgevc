@@ -1,0 +1,117 @@
+id: BL-620
+title: "Front desk reads photo captions (text ?? caption) and logs a one-line reason for every dropped update"
+milestone: M8
+type: defect
+status: todo
+epic: swarm-reliability
+human_approval: pending
+severity: medium
+priority: 8
+direction: operator-reported
+depends_on: []
+assigned_to: coder
+mutation_cost: medium
+source: |
+  backlog/INTAKE-20260724-front-desk-drops-photo-captions.md — operator
+  root-cause 2026-07-24 ~06:50Z after the human's usage screenshot + caption
+  directive got no reply (second silent-drop incident in 12 hours). Proven by
+  replay: photo+caption -> {"action":"drop","reason":"no-text"}; identical
+  words as plain text -> {"action":"open-for-topic"}. The drop-audit half
+  folds in item 3 of INTAKE-20260724-onboarding-telegram-token-separation.md,
+  which named exactly this incident class as its target.
+
+description: |
+  ## Defect
+
+  messageTextOf (extension/src/tools/telegramTopicDecisions.ts:27-29) reads
+  ONLY update.message?.text. Telegram carries the words of a photo/media
+  message in update.message.caption, so any photo+caption from the principal
+  fails checkUpdateEligibility (telegramFrontDeskBotCore.ts:175-178) with
+  "no-text" and is silently dropped: the offset advances (BL-389 semantics),
+  the computed reason is discarded at processMessageUpdate (:2081), the
+  dropped count dies at the runPollCycle boundary — a dropped update produces
+  ZERO log output anywhere. Diagnosis took a live replay session.
+
+  ## Fix shape
+
+  1. messageTextOf returns text ?? caption. One seam; every consumer inherits
+     caption support: main eligibility/routing (checkUpdateEligibility ->
+     decideUpdateAction, including reserved-subject parsing), steering
+     (:320), agent-questions (:426), control delivery (:1942), negotiation
+     relay (negotiationTelegramRouting.ts:70). Type note: TelegramMessage
+     (extension/src/notify/telegramClient.ts:490-510) declares no caption
+     field today — the type change rides along. Unit fixture = the incident
+     shape (photo + caption directive from the principal in a bound topic).
+
+  2. NO VISION, SAID OUT LOUD. The image itself is never read. Caption-only
+     routing, and routed content carries a short annotation that an attached
+     image was not read by the front desk — so no one believes the picture
+     was seen (the human closed the incident message with "I hope you have
+     vision to see the picture"). Media with no caption (or an empty one)
+     gets a distinct drop reason "media-no-caption" — a visible refusal,
+     never a silent vanish. Any image processing is its own future ticket.
+
+  3. DROP AUDIT LINE. Every drop decision from the poll path logs exactly one
+     bounded single line naming the update id and the already-computed reason
+     (not-my-chat / not-principal / no-text / media-no-caption). No message
+     content in the line. Offset semantics unchanged. This is the one-line
+     audit the token-theft intake said would have cut diagnosis from hours to
+     minutes.
+
+  ## Scope (verified live paths)
+
+  extension/src/tools/telegramTopicDecisions.ts (messageTextOf),
+  extension/src/notify/telegramClient.ts (TelegramMessage type),
+  extension/src/tools/telegramFrontDeskBotCore.ts (eligibility, drop
+  outcome logging, media-no-caption reason, routed-content annotation),
+  extension/src/onboarding/negotiationTelegramRouting.ts (inherits via the
+  seam; verify only). NOTE: overlaps telegramFrontDeskBotCore.ts with
+  BL-621 — sequence these two, never run them concurrently
+  (Concurrent Work Orthogonality).
+
+acceptance: |
+  specs/features/BL-620-front-desk-caption-messages-and-drop-audit.feature
+
+  Every scenario needs its step handler wired in this same parcel (BL-233).
+
+  Scenario -> shape map: 01 caption routes like text, incident fixture (#1);
+  02 all five text-reading surfaces inherit via the seam, outline validated
+  against explicit KNOWN_VALUES (#1); 03 captionless/empty-caption media is
+  a visible "media-no-caption" refusal (#2/#3); 04 routed media annotated
+  image-not-read (#2); 05 every drop logs exactly one bounded line per
+  reason (#3); 06 offset semantics unchanged (#3/BL-389).
+
+  Supporting gates:
+  - decideVoiceUpdateAction pre-emption untouched: a voice note still routes
+    to the voice path, never to media-no-caption (regression test).
+  - Empty-string caption and absent caption behave identically.
+  - The audit line writer is injected (postFn-style seam), not a bare
+    console call inside pure decision code.
+
+  QA end-to-end procedure (live swarm):
+  1. From the principal account, send a photo with a caption addressing a
+     bound BL topic: the caption routes exactly as the same text would, and
+     the posted content notes the image was not read.
+  2. Send a photo with no caption: no routing, but the supervisor log shows
+     one media-no-caption line with the update id.
+  3. Send a text message from a non-principal account: one not-principal
+     audit line appears; offset advances; no replay on restart.
+
+out_of_scope: |
+  - Reading/processing image content (no vision in the front desk; future
+    ticket if ever wanted).
+  - Voice-message handling (existing decideVoiceUpdateAction path, untouched).
+  - The degraded-poll cause/escalation half of the same incident cluster —
+    that is BL-621.
+  - Steering/agent-questions silent-ignore vocabularies beyond caption
+    support: their no-text outcomes stay as-is; the audit line covers the
+    main poll drop path only in this slice.
+
+approval_context: >
+  One recommendation to veto cheaply: caption-only routing with an
+  image-not-read annotation (no vision, no image storage), plus a distinct
+  visible drop reason for captionless media. If you want captionless photos
+  to do anything smarter than a logged refusal, say so and it becomes its
+  own ticket. Firm: no media message from the principal may ever vanish
+  silently again — every outcome is either a routed action or a logged
+  one-line refusal.
