@@ -42,10 +42,12 @@ opposite of the intent: everything is expedited, so nothing is.
 Two further facts the incorporating specifier must not gloss over:
 
 - **`bug` and `defect` are BOTH live types** (58 and 77). Nothing in the
-  constitution distinguishes them today. Any rule naming only "bugs" is
-  ambiguous against 77 tickets. **The human must rule on whether these are one
-  class or two** — and if two, what the difference is. Merging them is the
-  cheaper answer, but that is a ruling, not an inference.
+  constitution distinguishes them today, so any rule naming only "bugs" is
+  ambiguous against 77 tickets. **RULED (operator, 2026-07-25): `defect` is the
+  single class; `bug` is retired for new tickets.** `defect` wins on both
+  counts — 77 tickets vs 58, and 72 mentions across `swarmforge/roles/` and
+  `swarmforge/constitution/` vs 15 for `bug`. It is the term the swarm's own
+  vocabulary already runs on.
 - **`severity:` is already populated** on those tickets and is the natural
   discriminator: `high` 57, `medium` 32, `low` 14, `critical` 1, **absent 31**.
 
@@ -53,9 +55,16 @@ Two further facts the incorporating specifier must not gloss over:
 
 Severity-gated, not type-gated. The lane stays narrow enough to mean something:
 
-1. **Eligibility.** A ticket of type `bug` or `defect` whose `severity:` is
-   `critical` or `high` is *expedited*. That is 58 tickets on today's backlog
-   (~18%), not 135.
+1. **Eligibility.** A ticket of type `defect` whose `severity:` is `critical` or
+   `high` is *expedited*. That is ~18% of today's backlog, not 42%.
+
+   ⚠️ **Transition clause — the rule must ALSO match `type: bug` while any
+   remain.** `bug` is retired for new tickets (§2), but 58 already carry it.
+   A rule matching `defect` alone would silently drop those 58 out of the lane —
+   the exact opposite of the amendment's intent. Match `{defect, bug}` and drop
+   `bug` from the predicate only once the count reaches zero. The specifier
+   should confirm that count at incorporation time rather than trusting this
+   number.
 2. **Effect on promotion order.** An expedited ticket is promoted ahead of any
    non-expedited ticket regardless of its `priority:` value. Within the
    expedited set, the existing `priority:` ordering (Article 3.2.2) applies
@@ -99,13 +108,33 @@ traffic and degrade the one channel reserved for genuinely blocking decisions.
   `defect` it writes. Rule 3 is unenforceable if the field keeps being omitted;
   this is the half of the amendment that makes the other half work.
 
-## 6. Open rulings the human owes before incorporation
+## 6. Rulings received (operator, 2026-07-25) — none outstanding
 
-1. **`bug` vs `defect`** — one class or two? (§2)
-2. **Gate at `high`, or `critical` only?** `high`+`critical` is 58 tickets;
-   `critical` alone is 1. The first is a lane, the second is a rounding error.
-3. **Backfill** — do the 31 severity-less `bug`/`defect` tickets get triaged
-   now, or does the rule apply only to newly written tickets?
+1. **One class: `defect`.** `bug` is retired for new tickets. See §2 for the
+   evidence and §3.1 for the transition clause covering the 58 legacy `bug`
+   tickets.
+2. **Threshold: `critical` + `high`.** `critical` alone would have been 1
+   ticket — a rounding error, not a lane.
+3. **Backfill: done.** The headline "31 untriaged tickets" was misleading and is
+   corrected here: **27 of them sit in `backlog/done/`**, where `severity:`
+   cannot affect promotion order, and **1 is in `backlog/hold/`**, which
+   Article 3.1 forbids auto-promoting from. Only **4 were in `paused/`**, and
+   all four have been triaged:
+
+   | ticket | severity | rationale |
+   |---|---|---|
+   | BL-536 provider auth error auto-respawn | `high` | an unhandled provider auth error takes a role down; availability |
+   | BL-562 backlog-depth WARNING counts `.gitkeep` | `high` | fires permanently at cap 1 — the cap actually in use — so it degrades the Article 3.5 circuit-breaker signal itself |
+   | BL-559 pipelineBoard property test prefix-check | `medium` | a vacuous test is real, but scoped to one board with no production impact |
+   | BL-612 claim-progress acceptance step handlers | `medium` | verification gap on already-shipped behaviour, not a live fault |
+
+   All four were already `type: defect`; no `bug` among them. The remaining 27
+   `done/` tickets are deliberately left untriaged — backfilling severity onto
+   shipped work would be bookkeeping with no consumer.
+
+   **This does not make rule 3 (fail-closed on missing severity) redundant.** It
+   clears today's stock; §5's `specifier.prompt` change is what stops it
+   re-accumulating.
 
 ## 7. Explicitly out of scope
 
