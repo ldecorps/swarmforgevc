@@ -4,7 +4,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { main, parseArgs } = require('../out/tools/record-bounce');
-const { readBounceRecords, qaBouncesDir, bouncesDir } = require('../out/metrics/qaBounceStore');
+const { qaBouncesDir } = require('../out/metrics/qaBounceStore');
+const { readBounceRecords, bouncesDir } = require('../out/metrics/bounceStore');
 const { USAGE } = require('../out/tools/recordBounceArgs');
 
 // BL-635: the generalised go-forward writer CLI - every reviewing role runs
@@ -152,6 +153,10 @@ test('parseArgs accepts --by with no --evidence - evidence alone stays optional'
   assert.equal(parseArgs(args).evidence, undefined);
 });
 
+test('parseArgs rejects a ticket id with no BL- prefix, same as the legacy CLI it generalises', () => {
+  assert.equal(parseArgs(flagArgs({ ticket: '590' })), null);
+});
+
 // ── record-bounce-by-role-01: writes `by` to BOTH durable stores ──────────
 
 test('recording a bounce writes `by` to the durable log AND the ticket record', async () => {
@@ -233,6 +238,17 @@ test('a missing ticket record is best-effort - the bounce is still recorded', as
   assert.equal(result.recorded, true);
   assert.equal(result.ticketRecordUpdated, false);
   assert.equal(result.ticketRecordReason, 'not-found');
+});
+
+test('omitting --evidence entirely skips the ticket-record merge without attempting it', async () => {
+  const root = mkRepo();
+  const ticketPath = writeTicketYaml(root, 'BL-590');
+  const args = ['--ticket', 'BL-590', '--role', 'coder', '--type', 'defect', '--class', 'behavior', '--commit', 'abc1234567', '--by', 'architect'];
+  const result = await runCli(root, args);
+  assert.equal(result.recorded, true);
+  assert.equal(result.ticketRecordUpdated, false);
+  assert.equal(result.ticketRecordReason, 'not-attempted');
+  assert.doesNotMatch(fs.readFileSync(ticketPath, 'utf8'), /bounce_count/);
 });
 
 test('the CLI prints usage and exits non-zero when invoked as a real subprocess with no --by', () => {

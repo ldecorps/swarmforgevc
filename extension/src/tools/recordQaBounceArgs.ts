@@ -1,81 +1,20 @@
 /**
  * BL-608: flag parsing and validation for record-qa-bounce CLI.
+ * BL-635 cleanup: the flag grammar and the five core fields
+ * (ticket/role/type/class/commit) are identical to recordBounceArgs.ts's own
+ * contract, so that shared logic now lives once in bounceArgsCore.ts. Only
+ * `by` (optional, QA-only here) and `evidence` stay local, since `by` is the
+ * one field the two CLIs genuinely disagree on.
  */
-import {
-  isKnownBouncingRole,
-  isKnownFailureClass,
-  isKnownProducingRole,
-  isKnownTicketType,
-  QaBounceBouncingRole,
-  QaBounceRecord,
-} from '../quality/qaBounce';
-
-const TICKET_PATTERN = /^BL-\d+$/i;
-const EVIDENCE_PATTERN = /^backlog\/evidence\/[^/]+\.md$/;
-
-const FLAG_NAMES = ['--ticket', '--role', '--type', '--class', '--commit', '--by', '--evidence'] as const;
-type FlagName = (typeof FLAG_NAMES)[number];
+import { isKnownBouncingRole, QaBounceBouncingRole, QaBounceRecord } from '../quality/qaBounce';
+import { FlagName, isValid, isValidEvidence, parseFlags, validatedCoreFields } from './bounceArgsCore';
 
 export interface RecordQaBounceArgs extends Omit<QaBounceRecord, 'at'> {
   by?: QaBounceBouncingRole;
   evidence?: string;
 }
 
-// Pure - parses `--flag value` pairs (any order) into a lookup, or null on
-// any unrecognized flag / a flag with no following value.
-function parseFlags(argv: string[]): Partial<Record<FlagName, string>> | null {
-  const flags: Partial<Record<FlagName, string>> = {};
-  for (let i = 0; i < argv.length; i += 2) {
-    const flag = argv[i];
-    const value = argv[i + 1];
-    if (!FLAG_NAMES.includes(flag as FlagName) || value === undefined) {
-      return null;
-    }
-    flags[flag as FlagName] = value;
-  }
-  return flags;
-}
-
-function isValid<T extends string>(value: string | undefined, predicate: (v: string) => v is T): value is T {
-  return !!value && predicate(value);
-}
-
-function isValidTicket(value: string | undefined): value is string {
-  return !!value && TICKET_PATTERN.test(value);
-}
-
-function isValidEvidence(value: string | undefined): value is string {
-  return !!value && EVIDENCE_PATTERN.test(value);
-}
-
-type RequiredFields = Omit<RecordQaBounceArgs, 'by' | 'evidence'>;
 type OptionalFields = Pick<RecordQaBounceArgs, 'by' | 'evidence'>;
-
-function validatedRequiredFields(flags: Partial<Record<FlagName, string>>): RequiredFields | null {
-  const {
-    '--ticket': ticket,
-    '--role': producingRole,
-    '--type': ticketType,
-    '--class': failureClass,
-    '--commit': commit,
-  } = flags;
-  if (!isValidTicket(ticket)) {
-    return null;
-  }
-  if (!isValid(producingRole, isKnownProducingRole)) {
-    return null;
-  }
-  if (!isValid(ticketType, isKnownTicketType)) {
-    return null;
-  }
-  if (!isValid(failureClass, isKnownFailureClass)) {
-    return null;
-  }
-  if (!commit) {
-    return null;
-  }
-  return { ticket: ticket.toUpperCase(), producingRole, ticketType, failureClass, commit };
-}
 
 // Optional: present-but-invalid is a usage error; absent is fine.
 function validatedOptionalFields(flags: Partial<Record<FlagName, string>>): OptionalFields | null {
@@ -90,7 +29,7 @@ function validatedOptionalFields(flags: Partial<Record<FlagName, string>>): Opti
 }
 
 function validatedFields(flags: Partial<Record<FlagName, string>>): RecordQaBounceArgs | null {
-  const required = validatedRequiredFields(flags);
+  const required = validatedCoreFields(flags);
   if (!required) {
     return null;
   }

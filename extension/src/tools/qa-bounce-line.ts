@@ -21,7 +21,7 @@
  * Usage: node qa-bounce-line.js
  */
 import { computeQaBounceTally, computeBounceTallyByBouncingRole, QaBounceRoleTally, QaBounceTally } from '../quality/qaBounce';
-import { readBounceRecords } from '../metrics/qaBounceStore';
+import { readBounceRecords } from '../metrics/bounceStore';
 import { resolveCliMainWorktreeContext, runCliMain } from './swarm-metrics';
 
 function formatRoleCounts(counts: QaBounceRoleTally[]): string {

@@ -9,7 +9,7 @@
  * before, best-effort, the ticket's own bounce_history. Writes ONLY to the
  * new `.swarmforge/bounces/<YYYY-MM>.jsonl` path (record-bounce-by-role-07);
  * readers merge the legacy qa_bounces/ path forever
- * (qaBounceStore.ts's readBounceRecords).
+ * (bounceStore.ts's readBounceRecords).
  *
  * record-qa-bounce.js (BL-454/BL-608) is left untouched - it is a separate,
  * still-tested CLI. No role prompt invokes it after this ticket (QA.prompt
@@ -21,7 +21,7 @@
  *          --by <bouncingRole> [--evidence <path>]
  */
 import { BounceRecord } from '../quality/qaBounce';
-import { appendBounceRecordIfNew } from '../metrics/qaBounceStore';
+import { appendBounceRecordIfNew } from '../metrics/bounceStore';
 import { makeArgsGuardedMain, printJsonToStdout, resolveCliMainWorktreeContext, runCliMain } from './swarm-metrics';
 import { parseArgs, USAGE, RecordBounceArgs } from './recordBounceArgs';
 import { updateTicketBounceHistory } from './recordQaBounceTicket';

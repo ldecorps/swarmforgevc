@@ -4,7 +4,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { formatBounceLine, main } = require('../out/tools/qa-bounce-line');
-const { appendQaBounceRecordIfNew, appendBounceRecordIfNew, qaBouncesDir } = require('../out/metrics/qaBounceStore');
+const { appendQaBounceRecordIfNew, qaBouncesDir } = require('../out/metrics/qaBounceStore');
+const { appendBounceRecordIfNew } = require('../out/metrics/bounceStore');
 
 // BL-454/BL-635: the daily-briefing bounce line CLI briefing_email_lib.bb
 // shells out to. Generalised (BL-635) from a QA-only tally to report who
@@ -78,6 +79,11 @@ test('a legacy by-less record is shown as unattributed, not silently attributed 
   const line = formatBounceLine([{ role: 'unattributed', count: 1 }], { total: 1, byRole: [{ role: 'coder', count: 1 }], byTicketType: { defect: 1 } });
   assert.match(line, /unattributed x1/);
   assert.doesNotMatch(line, /QA x1/);
+});
+
+test('breaks a tied by-ticket-type count alphabetically', () => {
+  const line = formatBounceLine([], { total: 2, byRole: [], byTicketType: { feature: 1, defect: 1 } });
+  assert.match(line, /by ticket type: defect x1, feature x1/);
 });
 
 // ── end-to-end: process.cwd stubbed, console.log mocked ───────────────────
