@@ -1,11 +1,11 @@
 id: BL-633
 title: "Ticket schema: an `invariants:` section distinct from `acceptance:` — scenarios are examples, and enumerating ten of them did not stop BL-590 bouncing four times on one unstated property"
 milestone: M8
-type: feature
+type: defect
 status: todo
 epic: code-quality-gates
 human_approval: approved
-severity: medium
+severity: high
 priority: 08
 direction: human-requested
 depends_on: []
@@ -96,6 +96,24 @@ description: |
   a scenario-based test is the wrong tool. See
   [[property-test-generator-must-reach-deep-state]] for the recorded trap when
   the generator never reaches the state the property is about.
+
+  ## RETYPED feature -> defect, high (operator directive 2026-07-25: "il faut expediter")
+
+  Recorded so the reclassification can be disputed rather than discovered. The ticket
+  schema has `acceptance:` (Gherkin EXAMPLES) and no way to state a PROPERTY that must
+  hold across every example. That is not a missing convenience — it is a spec artifact
+  unable to express something it must express, and the cost is measured:
+
+    BL-590  four architect send-backs (#1/#4/#5/#6) on ONE unstated invariant
+    BL-606  three send-backs, all on one routing-record property
+
+  Seven rounds of pipeline work on two tickets, each round a full
+  coder→cleaner→architect loop, because a property the scenarios could not express was
+  discovered one violation site at a time.
+
+  `severity: high` on the same reasoning as BL-635: this is the direct cause of the
+  measured 21.8% rework rate, and the expedite lane exists for work the swarm created
+  for itself.
 
 acceptance: |
   Specifier writes the scenarios. Minimum behaviour:

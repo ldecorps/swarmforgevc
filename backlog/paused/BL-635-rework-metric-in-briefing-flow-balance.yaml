@@ -1,11 +1,11 @@
 id: BL-635
 title: "Record ARCHITECT send-backs, not just QA bounces: the durable bounce log covers QA only, and the repeated-bounce pattern lives entirely in the unrecorded class"
 milestone: M8
-type: feature
+type: defect
 status: todo
 epic: swarm-behaviour-trends
 human_approval: approved
-severity: medium
+severity: high
 priority: 07
 direction: human-requested
 depends_on: []
@@ -168,6 +168,23 @@ description: |
   It is the cheapest of the three (`mutation_cost: low` — one metric into an
   existing pipeline) AND it is what makes the other two falsifiable. Land the
   process changes first and there will be no before-picture to compare against.
+
+  ## RETYPED feature -> defect, high (operator directive 2026-07-25: "il faut expediter")
+
+  Not a reclassification of convenience. `record-qa-bounce.js` is invoked from exactly
+  one place, `QA.prompt`, so ARCHITECT send-backs — where repeated bouncing actually
+  happens — are recorded nowhere, and `bounce_count` is present on exactly ONE ticket
+  in the whole backlog: BL-608's own.
+
+  A measurement mechanism that silently covers half its domain while reporting the
+  other half as complete is BROKEN, not missing. Reading the QA log alone concludes
+  "repeat bouncing does not happen here" (1 ticket of ~52 in 15 days) — the exact
+  opposite of the truth for architect send-backs, which reached six on one ticket the
+  day this was filed.
+
+  `severity: high` because this is the INSTRUMENT. Without it there is no way to tell
+  whether BL-633 and BL-634 reduced the 21.8% rework rate, so the whole spec-quality
+  initiative ships on faith. Fixing the ruler comes before trusting the measurements.
 
 acceptance: |
   Specifier writes the scenarios. Minimum behaviour:
