@@ -91,6 +91,17 @@ rm -f "$OP_DIR/front-desk-supervisor.status.json" \
       "$OP_DIR/front-desk-poll-heartbeat.json" 2>/dev/null || true
 rm -f "$OP_DIR/front-desk-supervisor.stop"
 
+# Onboarding facilitator (graceful stop file — the reconcile poll-loop is
+# its supervised child).
+log "stopping onboarding facilitator"
+mkdir -p "$OP_DIR"
+touch "$OP_DIR/onboarding-facilitator-supervisor.stop" 2>/dev/null || true
+sleep 1
+signal_pid_file "$OP_DIR/onboarding-facilitator-supervisor.pid"
+rm -f "$OP_DIR/onboarding-facilitator-supervisor.status.json" \
+      "$OP_DIR/onboarding-facilitator-heartbeat.json" 2>/dev/null || true
+rm -f "$OP_DIR/onboarding-facilitator-supervisor.stop"
+
 # Operator runtime (disposable Operator + supervision loop).
 log "stopping operator runtime"
 touch "$OP_DIR/stop" 2>/dev/null || true
