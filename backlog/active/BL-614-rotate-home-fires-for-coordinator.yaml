@@ -90,7 +90,7 @@ description: |
   - The .gitkeep depth-warning miscount from the same bug report is already
     covered by BL-562.
   - Orphaned .claim-progress.json sidecar cleanup is BL-615.
-acceptance: specs/features/BL-614-rotate-home-coordinator-exclusion.feature.draft
+acceptance: specs/features/BL-614-rotate-home-coordinator-exclusion.feature
 notes: |
   e2e QA procedure: on the live mono-router swarm, with the coordinator's
   inbox empty (new/ and in_process/ hold no .handoff), run
