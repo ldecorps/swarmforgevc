@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=95de787116a3d3450f605ae279d3704643cb5bf7049fdeaa2453581bf3f73330
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-07-25T13:37:46.765300356Z","feature_name":"Expeditor - drive one ticket through every gate with the swarm stopped","feature_path":"/home/carillon/swarmforgevc/.worktrees/expedite-BL-567/specs/features/BL-567-expeditor-offline-single-ticket-pipeline.feature","background_hash":"901ca815f12a789f3e73a9df30dd208e5041e452b1197c1e0f9c914fd9d3cc8e","implementation_hash":"unknown","scenarios":[]}
+# acceptance-mutation-manifest-end
+
 Feature: Expeditor - drive one ticket through every gate with the swarm stopped
 
   # BL-567. The recovery path: when the swarm's own machinery is what is broken,
@@ -12,6 +17,21 @@ Feature: Expeditor - drive one ticket through every gate with the swarm stopped
   # the start path may itself be what is under repair.
   #
   # Epic swarm-reliability. Design: backlog/evidence/BL-567-design-20260725.md
+  #
+  # READ THIS BEFORE TRUSTING THE MUTATION MANIFEST ABOVE. It records
+  # "scenarios":[] and Total 0 / Killed 0 / Survived 0. That is NOT a clean
+  # mutation pass - it means ZERO mutants were generated. The BL-113 Gherkin
+  # mutator mutates Examples-table CELLS only (`discover` in
+  # swarmforge/vendor/aps/bb/src/aps/mutation.clj iterates `(:examples scenario)`),
+  # and this feature deliberately has no Scenario Outlines, so there is nothing
+  # for it to mutate. Left unedited because manifests are the tool's artifact, but
+  # flagged here because the stamp would otherwise make a future run skip as
+  # "already done" on the strength of a run that proved nothing.
+  #
+  # The real mutation gate for this ticket is
+  # swarmforge/scripts/test/expedite_mutation_sweep.sh - 41 mutants over
+  # expedite_lib.bb, all killed. Evidence:
+  # backlog/evidence/BL-567-hardener-pass-20260725.md
 
   Background:
     Given a repo with no live swarm and a fixture ticket in backlog/active/
@@ -89,11 +109,27 @@ Feature: Expeditor - drive one ticket through every gate with the swarm stopped
     And the run did not commit inside any .worktrees role checkout
 
   # BL-567 refuses-a-live-swarm-09
-  Scenario: the expeditor refuses to start while a swarm is genuinely live
+  # CORRECTED at the coder stage. As first written this scenario refused a live
+  # swarm outright, which contradicted the operator's lifecycle ruling that
+  # initiation STOPS the swarm - a gate that refuses immediately never reaches the
+  # teardown it was supposed to perform, and made scenario 14 unreachable. The
+  # ticket's own rationale is "one ticket, one writer; no worktree contention", so
+  # the gate is about contention: stop it, then refuse only if it is still there.
+  Scenario: the expeditor refuses when a live swarm cannot be brought down
     Given a live swarm whose tmux server answers and whose handoffd pid is running
+    And a stop path that cannot bring that swarm down
     When the expeditor is asked to run the fixture ticket
-    Then the expeditor refuses with a message naming the live swarm
+    Then initiation states it will stop the swarm before doing anything else
+    And the expeditor refuses with a message naming what is still alive
     And no stage session was spawned
+
+  # BL-567 initiation-stops-a-live-swarm-and-proceeds-09b
+  Scenario: initiation stops a live swarm and the run proceeds
+    Given a live swarm whose tmux server answers and whose handoffd pid is running
+    And a stop path that does bring that swarm down
+    When the expeditor runs the fixture ticket
+    Then initiation stopped the swarm without being asked to override
+    And the run reaches done
 
   # BL-567 stale-socket-file-is-not-liveness-10
   Scenario: a leftover socket file with no server does not read as a live swarm
