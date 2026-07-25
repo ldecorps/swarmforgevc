@@ -1,0 +1,152 @@
+id: BL-631
+title: "babysitter deterministic sweep must detect pipeline work landing on `main` outside the QA path — the class of agent derailment nothing currently watches for"
+milestone: M8
+type: defect
+status: todo
+epic: swarm-reliability
+human_approval: approved
+severity: high
+priority: 05
+direction: human-requested
+depends_on: []
+assigned_to: specifier
+mutation_cost: medium
+
+approval_context: >
+  Operator ruling 2026-07-25, during the BL-590 post-mortem: "il faut absolument
+  détecter ce genre de sortie de route des agents". BL-629 and BL-630 are gates
+  that refuse to deploy and refuse to publish. Neither TELLS anyone. The
+  incident was found by an architect noticing branch state by eye, hours after
+  the fact. This ticket makes the detection deterministic and prompt.
+
+source: |
+  BL-590 post-mortem, 2026-07-25. Root cause (proven from the role's own
+  transcript, `~/.claude/projects/-home-carillon-swarmforgevc--worktrees-cleaner/
+  ad7326f1-*.jsonl`): the cleaner prefixed `cd /home/carillon/swarmforgevc` to
+  its own git commands, so it ran its entire BL-590 pass in the MASTER checkout,
+  which has `main` checked out.
+
+  ```
+  e18   cd /home/carillon/swarmforgevc && merge_and_process coder 73706d79ed
+  e38   cd /home/carillon/swarmforgevc && git merge 73706d79ed --no-ff   -> f8dc07963 on main
+  e66   Read /home/carillon/swarmforgevc/extension/src/onboarding/...ts  (".worktrees/cleaner/" dropped)
+  e223  cd /home/carillon/swarmforgevc && git add -A && git commit        -> ebd12542d on main
+  ```
+
+  The parcel's own first instruction (`merge_and_process cleaner <sha>`) was
+  executed in the wrong checkout, so `main` became the working branch for the
+  whole pass.
+
+  Two properties make this a DETECTION problem, not only a prevention one:
+
+  1. **Nothing errored.** The wrong-path reads returned plausible content,
+     because `main` already held the coder's code from the cleaner's own bad
+     merge at e38. The agent had no signal it was off the rails.
+  2. **It is a habit, not a slip.** Seven cleaner sessions on 2026-07-25 ran
+     `cd /home/carillon/swarmforgevc && npm run compile|npm test`. Harmless for
+     `npm`, catastrophic for `git`, and nothing distinguishes them. Expect
+     recurrence in any role, not just the cleaner.
+
+  NOTE FOR THE SPECIFIER: BL-629's `description` names the mono-router
+  rotating-worktree lag as the working hypothesis. **That is wrong and is being
+  corrected.** Rotation worked correctly — every role's launch script cds to its
+  own worktree (`.swarmforge/launch/cleaner.sh:5`), each role's transcript sits
+  under its own project dir, and the coder's commits are in `.worktrees/coder`'s
+  own HEAD reflog. Do not build on the lag hypothesis.
+
+description: |
+  ## Where it belongs
+
+  `babysitter_assess_lib.bb` already does exactly the right kind of work: it
+  parses `.swarmforge/roles.tsv` into `{:role :worktree-path}`
+  (`:19 parse-roles-tsv`), shells `git` per worktree (`:37
+  worktree-head-commit-10`, `:44 count-untracked-files`), and returns
+  assessments carrying `:severity` which `babysitter_runtime.bb:162
+  scan-and-enqueue-claim-risks!` turns into wake events for the LLM. A second
+  scan alongside `scan-claim-risks` (`:117`) is the natural shape — same
+  roles.tsv input, same finding record, same enqueue path.
+
+  ## The invariant, and it has been validated against real history
+
+  > A commit reachable from `main` but NOT from `swarmforge-QA` that touches
+  > `extension/src/`, `extension/test/`, or `specs/pipeline/steps/` is a
+  > violation. Article 4.2 / BL-247 make QA the only integration point for code.
+
+  The path filter is what makes this usable rather than noise. `roles.tsv` shows
+  `specifier` and `coordinator` both mapped to the master checkout
+  (`/home/carillon/swarmforgevc`), so those two roles legitimately commit to
+  `main` all day — backlog YAMLs, `specs/features/*.feature` drafts, briefings,
+  `swarmforge/` conf. Only compiled code and step handlers are QA-exclusive.
+
+  Measured over the 59 commits in `swarmforge-QA..main` on 2026-07-25:
+
+  ```
+  bare rule (extension|specs)      -> 12 CRIT, incl. 4 false positives
+                                      (cost sidecars touching
+                                       extension/docs/briefings/*.json,
+                                       specifier drains touching
+                                       specs/features/*.feature)
+  refined (extension/src, extension/test, specs/pipeline/steps)
+                                   -> 8 CRIT, ZERO false positives
+  ```
+
+  All 8 are BL-590 pipeline work. The refined rule would have fired on
+  `4851901ed` — the very first landing, at 09:37 — putting the alarm ~5 hours
+  ahead of the architect who actually found it.
+
+  ## Shape
+
+  Specifier decides the details; the load-bearing parts:
+
+  1. New deterministic scan in `babysitter_assess_lib.bb`, run on the existing
+     5-minute tick, emitting a `critical` finding per offending commit with the
+     sha, subject, and the offending path(s) named.
+  2. Findings enqueue through the existing wake-queue so the LLM babysitter
+     nudges the coordinator, consistent with how claim risks are handled today.
+  3. Idempotent across ticks: a sha already reported must not re-alarm every 5
+     minutes for hours. Reuse whatever dedup `scan-and-enqueue-claim-risks!`
+     already applies to `fresh` findings rather than inventing a second one.
+
+  ## Second signal the specifier should weigh (cheaper, earlier, noisier)
+
+  The invariant above fires once the damage is committed. An earlier signal is
+  available: for each role holding a live claim sidecar, the babysitter already
+  reads that role's worktree HEAD. If a role's own worktree HEAD is UNCHANGED
+  across ticks while the master checkout's HEAD advances with that role's
+  ticket id in the subject, the role is working in the wrong checkout — and
+  that is detectable before it merges anything. Treat as a follow-on if it
+  complicates slice 1.
+
+acceptance: |
+  Specifier writes the scenarios. Minimum behaviour:
+
+  1. A commit on `main` that is not an ancestor of `swarmforge-QA` and touches
+     `extension/src/` produces a `critical` finding naming the sha and path.
+  2. A commit on `main` that is not an ancestor of `swarmforge-QA` and touches
+     only `backlog/`, `docs/`, `swarmforge/`, `specs/features/` produces NO
+     finding. Fixture must include a real-shaped coordinator bookkeeping commit
+     and a specifier `.feature` drain — these are the false positives the
+     refined rule was built to exclude, and a regression here makes the check
+     get ignored.
+  3. The finding reaches the wake queue and is visible to the LLM babysitter in
+     the same shape as a claim-progress finding.
+  4. A sha already reported does not re-alarm on the following tick.
+  5. Regression fixture reproduces the 2026-07-25 set: `4851901ed`, `73706d79e`,
+     `8e76f8f10`, `ebd12542d`, `e05c025d4`, `cce634a6c` all CRIT; the same run's
+     `b03e17429` (spec drain) and `cb85b9e4b` (cost sidecar) both clean.
+
+out_of_scope: |
+  - Preventing the landing. Detection only. Prevention at commit time is the
+    reopened hook question on BL-629; publish-time is BL-630; deploy-time is
+    BL-629's own gate.
+  - Parsing agent transcripts. The post-mortem used them as evidence, but they
+    are not a runtime signal and must not become one — git state is the
+    deterministic source of truth.
+  - Fixing BL-590's own defects. Operator ruled fix-forward 2026-07-25.
+
+notes: |
+  Whatever the specifier settles on, the check must stay DETERMINISTIC — no LLM
+  judgement in the sweep itself. That is the whole point of the babysitter's
+  deterministic layer, and it is what makes the finding trustworthy enough to
+  act on. See [[babysitter-daemon-deterministic-health-sweeps]] context: the
+  daemon runs 5-minute sweeps and CRIT findings nudge the coordinator.
