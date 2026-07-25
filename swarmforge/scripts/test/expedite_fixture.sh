@@ -127,6 +127,17 @@ fi
 SH
 chmod +x stage-runner.sh
 
+# A GENUINELY hung stage runner: never writes a verdict, never exits, and spawns
+# a grandchild. The earlier "slow" runner slept then RETURNED, which is why a
+# report-only timeout passed its scenario while a real hang would have blocked the
+# driver forever. Anything asserting the timeout must use this one.
+cat > stage-runner-hung.sh <<'SH'
+#!/usr/bin/env bash
+sleep 3600 &
+sleep 3600
+SH
+chmod +x stage-runner-hung.sh
+
 git add -A
 git commit -qm "fixture: initial"
 git branch -M main 2>/dev/null || true

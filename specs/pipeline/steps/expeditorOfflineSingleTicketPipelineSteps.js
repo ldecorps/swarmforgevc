@@ -129,6 +129,13 @@ function snapshotMailboxes(root) {
     { encoding: 'utf8' }).trim();
 }
 
+function countHungSleeps() {
+  try {
+    return Number(execFileSync('bash', ['-lc', "ps -eo args= | grep -c '^sleep 3600' || true"],
+      { encoding: 'utf8' }).trim());
+  } catch { return 0; }
+}
+
 function must(cond, msg) {
   if (!cond) throw new Error(msg);
 }
@@ -216,11 +223,13 @@ function registerSteps(registry) {
     writeOnceRunner(ctx);
   });
   registry.define(/^the coder stage is seeded to hang past its configured timeout$/, (ctx) => {
-    const runner = path.join(ctx.root, 'stage-runner-slow.sh');
-    fs.writeFileSync(runner, '#!/usr/bin/env bash\nsleep 2\necho \'{"verdict":"pass"}\' > "$4"\n');
-    fs.chmodSync(runner, 0o755);
-    ctx.stageRunner = runner;
-    ctx.args.push('--stage-timeout-ms', '1');
+    // The fixture's GENUINELY hung runner: never writes a verdict, never exits,
+    // and spawns a grandchild. An earlier runner slept and RETURNED, which let a
+    // report-only timeout pass this scenario while a real hang would have blocked
+    // the driver forever with its own watchdog already killed.
+    ctx.stageRunner = path.join(ctx.root, 'stage-runner-hung.sh');
+    ctx.orphansBefore = countHungSleeps();
+    ctx.args.push('--stage-timeout-ms', '1500');
   });
   registry.define(/^the full-stack start path is seeded to fail$/, (ctx) => {
     ctx.startCmd = './start-swarm-broken.sh';
@@ -498,6 +507,11 @@ function registerSteps(registry) {
   });
   registry.define(/^the driver does not wait indefinitely with no supervisor alive$/, (ctx) => {
     must(ctx.exitCode !== null, 'the driver must terminate on its own - it killed its own watchdog');
+    // And the kill must reach the process GROUP: killing only the direct child
+    // leaves every grandchild running, with kill still reporting success.
+    const after = countHungSleeps();
+    must(after <= ctx.orphansBefore,
+      `${after - ctx.orphansBefore} orphaned grandchild process(es) survived the stage kill`);
   });
 
   // ── Thens: restart ───────────────────────────────────────────────────────

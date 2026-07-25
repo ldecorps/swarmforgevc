@@ -33,6 +33,7 @@
 (ns expedite-cli
   (:require [babashka.fs :as fs]
             [babashka.process :as process]
+            [clojure.java.io :as io]
             [cheshire.core :as json]
             [clojure.string :as str]))
 
@@ -61,6 +62,48 @@
 
 (defn- sh [opts & cmd]
   (apply process/sh (assoc opts :continue true) cmd))
+
+(defn- sh-bounded
+  "Like `sh` but ENFORCES a wall-clock bound: on overrun the child is destroyed
+   forcibly and {:timed-out? true} comes back.
+
+   This exists because the architect pass found the first implementation only
+   REPORTED the overrun — it called blocking `sh` and computed the verdict
+   afterwards, so a genuinely hung stage blocked the driver forever. That is the
+   worst place in this tool for a report-only timeout: by stopping the stack the
+   expeditor has killed the babysitter and the Operator, the two processes that
+   would otherwise notice it wedging. Its own design says it must observe itself,
+   and a post-hoc verdict cannot.
+
+   TWO details that a first fix got wrong and a genuinely-hung fixture exposed:
+
+     1. `.destroyForcibly` kills the direct child ONLY. A stage runner is a shell
+        script, so its own children (a `sleep`, a `claude`) survive and keep
+        running. So the command is wrapped in `setsid`, making it a process-group
+        leader, and the whole GROUP is killed via `kill -KILL -<pgid>`.
+     2. Deref-ing the process after destroying it BLOCKS when a surviving
+        grandchild still holds the stdout pipe open — EOF never arrives. So output
+        goes to FILES rather than :string pipes, and a timed-out process is never
+        deref'd."
+  [opts timeout-ms out-file err-file & cmd]
+  (let [proc (apply process/process
+                    (assoc opts :out (io/file (str out-file)) :err (io/file (str err-file)))
+                    (concat ["setsid"] cmd))
+        pid (.pid (:proc proc))
+        finished? (.waitFor (:proc proc) (long timeout-ms) java.util.concurrent.TimeUnit/MILLISECONDS)]
+    (if finished?
+      {:exit (:exit @proc) :timed-out? false}
+      (do
+        ;; Negative pid = the whole process group. setsid made this pid the
+        ;; group leader, so this reaches the runner AND everything it spawned.
+        ;;
+        ;; The `--` is LOAD-BEARING and its absence is silent: without it
+        ;; `/usr/bin/kill` reads `-<pid>` as an option, exits 0, kills only the
+        ;; leader, and leaves every grandchild running. Measured: two orphaned
+        ;; `sleep` processes survived, with kill reporting success.
+        (sh {} "kill" "-KILL" "--" (str "-" pid))
+        (.destroyForcibly (:proc proc))
+        {:exit nil :timed-out? true}))))
 
 (defn- log! [& parts]
   (println (str "expedite " (str/join " " (map str parts)))))
@@ -287,18 +330,24 @@
                        (str "You are the " role " for " ticket
                             ". Your task is appended to your system prompt."
                             " Write your stage verdict as JSON to " verdict-file ".")]))
-        {:keys [exit out err]} (apply sh {:dir dir
-                                          :extra-env {"ANTHROPIC_API_KEY" "" "ANTHROPIC_AUTH_TOKEN" ""}}
-                                      cmd)
-        _ (spit transcript (str (str out) (str err)))
+        budget (or stage-timeout-ms expedite-lib/default-stage-timeout-ms)
+        err-file (str (fs/path stage-dir "stderr.log"))
+        {:keys [exit timed-out?]}
+        (apply sh-bounded {:dir dir
+                           :extra-env {"ANTHROPIC_API_KEY" "" "ANTHROPIC_AUTH_TOKEN" ""}}
+               budget transcript err-file cmd)
         elapsed (expedite-lib/stage-timeout-verdict {:started-at-ms started
                                                      :now-ms (now-ms)
-                                                     :timeout-ms stage-timeout-ms})
-        parsed (when (fs/exists? verdict-file)
+                                                     :timeout-ms budget})
+        parsed (when (and (not timed-out?) (fs/exists? verdict-file))
                  (try (json/parse-string (slurp verdict-file) true) (catch Exception _ nil)))]
     (cond
-      (:overrun? elapsed)
-      {:verdict :fail :reason :stage-timeout :stage role :elapsed elapsed}
+      ;; ENFORCED, not merely observed: the child is already destroyed by the
+      ;; time we get here. `:overrun?` is kept as a second signal for a stage
+      ;; that returned right on the boundary.
+      (or timed-out? (:overrun? elapsed))
+      {:verdict :fail :reason :stage-timeout :stage role :elapsed elapsed
+       :killed? (boolean timed-out?)}
 
       (nil? parsed)
       {:verdict :fail :reason :no-verdict :stage role :exit exit}

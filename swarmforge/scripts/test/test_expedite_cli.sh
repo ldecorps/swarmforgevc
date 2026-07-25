@@ -151,21 +151,30 @@ contains "18: and promotes nothing" "$RUN9" '"promoted" : [ ]'
 check "18: the parked ticket is still in hold/ after the restart" \
   "$(ls "$R9/backlog/hold/" | tr -d '\n')" "BL-590-fixture.yaml"
 
-# ── 15: a stage that overruns its budget fails loudly ──────────────────────
+# ── 15: a stage that overruns its budget is KILLED, not merely reported ────
 echo "15: stage timeout"
 R10="$(mkfix t10 --active BL-567)"
-cat > "$R10/stage-runner-slow.sh" <<'SH'
-#!/usr/bin/env bash
-sleep 2
-echo '{"verdict":"pass"}' > "$4"
-SH
-chmod +x "$R10/stage-runner-slow.sh"
-OUT10="$(EXPEDITE_STAGE_RUNNER="$R10/stage-runner-slow.sh" EXPEDITE_STOP_CMD=./stop-swarm.sh \
-         EXPEDITE_START_CMD=./start-swarm.sh bb "$CLI" "$R10" BL-567 --no-restart --stage-timeout-ms 1 2>&1)"
+# The fixture's hung runner never returns and spawns a grandchild. A report-only
+# timeout blocks here forever; the first implementation did exactly that and its
+# scenario passed anyway because the old runner slept and RETURNED.
+before_orphans="$(ps -eo args= | grep -c '^sleep 3600' || true)"
+SECONDS=0
+OUT10="$(EXPEDITE_STAGE_RUNNER="$R10/stage-runner-hung.sh" EXPEDITE_STOP_CMD=./stop-swarm.sh \
+         EXPEDITE_START_CMD=./start-swarm.sh timeout 60 bb "$CLI" "$R10" BL-567 --no-restart --stage-timeout-ms 1500 2>&1)"
 EXIT10=$?
-check "15: a stage past its budget exits non-zero" "$EXIT10" "1"
+elapsed=$SECONDS
+check "15: a hung stage exits non-zero" "$EXIT10" "1"
 contains "15: and names the timeout" "$OUT10" "stage-timeout"
 check "15: the ticket did not reach done/" "$(ls "$R10/backlog/done/" | wc -l | tr -d ' ')" "0"
+if [[ "$elapsed" -lt 30 ]]; then pass "15: the driver terminated in ${elapsed}s rather than blocking"; else fail "15: the driver blocked for ${elapsed}s - the timeout is not enforced"; fi
+sleep 1
+after_orphans="$(ps -eo args= | grep -c '^sleep 3600' || true)"
+check "15: no grandchild survived the kill (process GROUP, not just the child)" "$after_orphans" "$before_orphans"
+# Kill leftovers by EXACT argv rather than pkill -f: `pkill -f 'sleep 3600'`
+# matches any shell whose own command line mentions that string, including the
+# one running this suite. Same self-match trap that makes `pgrep -f handoffd`
+# invent phantom survivors.
+ps -eo pid=,args= | awk '$2=="sleep" && $3=="3600" {print $1}' | xargs -r kill -KILL 2>/dev/null || true
 
 # ── report ─────────────────────────────────────────────────────────────────
 echo
