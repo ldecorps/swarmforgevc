@@ -81,7 +81,8 @@ export function parseSwarmCostRankArgs(argv: string[]): SwarmCostRankArgs | null
     }
     topN = parsed;
   }
-  const groupBy = (groupByArg ? groupByArg.split(',') : []).filter(isKnownOriginDimension);
+  const parts = groupByArg ? groupByArg.split(',') : [];
+  const groupBy = parts.filter(isKnownOriginDimension);
   return { horizon: horizonArg, topN, groupBy };
 }
 
