@@ -6,8 +6,17 @@ cd "$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 LIB=swarmforge/scripts/expedite_lib.bb
 RUNNER=swarmforge/scripts/test/expedite_lib_property_runner.bb
 
-restore() { git checkout -q -- "$LIB"; }
-trap restore EXIT
+# Back up the WORKING COPY, not HEAD. `git checkout -- "$LIB"` silently destroys
+# uncommitted work in the lib - it did exactly that twice during QA, wiping a fix
+# and presenting as 37 unrelated failures. A tool that mutates a file must restore
+# what it found, not what git remembers. (Same defect existed in
+# expedite_mutation_sweep.sh; both fixed, because one instance of a bug like this
+# is rarely the only one.)
+BACKUP="$(mktemp)"
+cp "$LIB" "$BACKUP"
+restore() { cp "$BACKUP" "$LIB"; }
+cleanup() { restore; rm -f "$BACKUP"; }
+trap cleanup EXIT
 
 # break <name> <expected-failing-property> <python-replacement>
 attempt() {

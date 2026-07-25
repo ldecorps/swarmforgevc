@@ -26,8 +26,15 @@ LIB=swarmforge/scripts/expedite_lib.bb
 UNIT=swarmforge/scripts/test/expedite_lib_test_runner.bb
 PROP=swarmforge/scripts/test/expedite_lib_property_runner.bb
 
-restore() { git checkout -q -- "$LIB"; }
-trap restore EXIT
+# Back up the WORKING COPY, not HEAD. `git checkout -- "$LIB"` would silently
+# destroy uncommitted work in the lib - which it did once, wiping a fix mid-QA and
+# presenting as 37 unrelated test failures. A tool that mutates a file must restore
+# what it found, not what git remembers.
+BACKUP="$(mktemp)"
+cp "$LIB" "$BACKUP"
+restore() { cp "$BACKUP" "$LIB"; }
+cleanup() { restore; rm -f "$BACKUP"; }
+trap cleanup EXIT
 
 killed=0; survived=0; skipped=0
 declare -a SURVIVORS=()

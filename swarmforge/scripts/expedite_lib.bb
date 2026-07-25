@@ -90,6 +90,42 @@
     (when (and (nat-int? idx) (< -1 idx (dec (count stages))))
       (nth stages (inc idx)))))
 
+;; ── stage verdict vocabulary ───────────────────────────────────────────────
+;; Found by QA exercising the REAL spawn path: the driver's first vocabulary was
+;; `pass` | `bounce` | everything-else-is-failure, and a real documenter session
+;; returned `forward` — its documented no-op outcome for an internal change with
+;; nothing user-facing to document ("forward the received commit unchanged rather
+;; than manufacturing a doc entry"). A legitimate outcome failed the run.
+;;
+;; Invisible to 53 CLI assertions and 21/21 acceptance, because the fixture stage
+;; runner only ever emitted `pass` or `bounce`. The seam encoded the driver
+;; author's assumption about role vocabulary instead of the roles' actual
+;; vocabulary — the exact class of defect a hand-run at QA is supposed to catch.
+;;
+;; Kept as data rather than a `case` in the driver so adding a verdict is one edit
+;; in one place, and so the mapping is testable without spawning an agent.
+
+(def advance-verdicts
+  "Outcomes meaning 'this gate is satisfied, go to the next stage'. `forward` is a
+   real role outcome, not a synonym invented here."
+  #{:pass :forward :approved})
+
+(def bounce-verdicts
+  #{:bounce :send-back :sendback})
+
+(defn classify-verdict
+  "Pure: :advance | :bounce | :fail for a stage's reported verdict.
+
+   Fails CLOSED on anything unrecognised — a typo or a new role outcome must stop
+   the run loudly rather than be guessed into :advance, which would skip a gate."
+  [verdict]
+  (let [v (when-not (str/blank? (str verdict))
+            (-> verdict name str/lower-case keyword))]
+    (cond
+      (contains? advance-verdicts v) :advance
+      (contains? bounce-verdicts v) :bounce
+      :else :fail)))
+
 ;; ── liveness ───────────────────────────────────────────────────────────────
 ;; Scenarios 09/10/14. The interlock the ticket ORIGINALLY specified globbed
 ;; `.swarmforge/tmux/*.sock` — measured 2026-07-25, that reads a fully stopped

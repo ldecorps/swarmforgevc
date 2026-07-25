@@ -115,6 +115,27 @@ check "04: the coder re-ran after each bounce" \
   "$(grep -c '^coder$' "$R4/.swarmforge/expedite-fixture/ran.log")" "4"
 check "05: the ticket did NOT reach done/" "$(ls "$R4/backlog/done/" | wc -l | tr -d ' ')" "0"
 
+# ── QA finding: a `forward` verdict advances (real documenter outcome) ──────
+echo "QA: forward verdict"
+RF="$(mkfix tf --active BL-567)"
+cat > "$RF/.swarmforge/expedite-fixture/documenter.verdict" <<'JSON'
+{"verdict":"forward","reason":"internal change; nothing user-facing to document"}
+JSON
+cat > "$RF/.swarmforge/expedite-fixture/architect.verdict" <<'JSON'
+{"verdict":"approved"}
+JSON
+OUTF="$(run "$RF" BL-567 --no-restart)"; EXITF=$?
+check "QA: a real documenter 'forward' advances rather than failing the run" "$EXITF" "0"
+check "QA: and the ticket reaches done/" "$(ls "$RF/backlog/done/" | tr -d '\n')" "BL-567-fixture.yaml"
+contains "QA: 'approved' also advances" "$OUTF" "ticket done"
+RU="$(mkfix tu --active BL-567)"
+cat > "$RU/.swarmforge/expedite-fixture/cleaner.verdict" <<'JSON'
+{"verdict":"probably-fine"}
+JSON
+OUTU="$(run "$RU" BL-567 --no-restart)"; EXITU=$?
+check "QA: an UNKNOWN verdict fails closed rather than being guessed as advance" "$EXITU" "1"
+check "QA: and that ticket does not reach done/" "$(ls "$RU/backlog/done/" | wc -l | tr -d ' ')" "0"
+
 # ── 05c: a raised bound is explicit and recorded ────────────────────────────
 echo "05c: raised bound"
 R5="$(mkfix t5 --active BL-567)"

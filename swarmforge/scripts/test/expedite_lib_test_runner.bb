@@ -68,6 +68,29 @@
 (assert= "args: value-flags is the single source of truth for both the strip and the reads"
          #{"--bounce-bound" "--stage-timeout-ms"} expedite-lib/value-flags)
 
+;; ── stage verdict vocabulary ──────────────────────────────────────────────
+;; Added by QA after a REAL run: a real documenter session returned `forward` —
+;; its documented no-op outcome — and the driver, which knew only pass/bounce,
+;; failed the whole run on a legitimate verdict. Invisible to 53 CLI assertions
+;; and 21/21 acceptance because the fixture runner only ever emitted pass/bounce:
+;; the seam encoded the driver author's assumption, not the roles' vocabulary.
+
+(assert= "verdict: pass advances" :advance (expedite-lib/classify-verdict "pass"))
+(assert= "verdict: forward advances - the documenter's real no-op outcome"
+         :advance (expedite-lib/classify-verdict "forward"))
+(assert= "verdict: approved advances" :advance (expedite-lib/classify-verdict "approved"))
+(assert= "verdict: bounce bounces" :bounce (expedite-lib/classify-verdict "bounce"))
+(assert= "verdict: send-back bounces" :bounce (expedite-lib/classify-verdict "send-back"))
+(assert= "verdict: case is normalised" :advance (expedite-lib/classify-verdict "FORWARD"))
+(assert= "verdict: a keyword is accepted as well as a string"
+         :advance (expedite-lib/classify-verdict :pass))
+;; Fails CLOSED. An unrecognised verdict must stop the run loudly, never be guessed
+;; into :advance - guessing would silently skip a gate.
+(assert= "verdict: an unknown verdict FAILS rather than being guessed as advance"
+         :fail (expedite-lib/classify-verdict "probably-fine"))
+(assert= "verdict: nil fails" :fail (expedite-lib/classify-verdict nil))
+(assert= "verdict: empty string fails" :fail (expedite-lib/classify-verdict ""))
+
 ;; ── stage chain ───────────────────────────────────────────────────────────
 
 (assert= "stages: absent roles manifest -> full standard chain"

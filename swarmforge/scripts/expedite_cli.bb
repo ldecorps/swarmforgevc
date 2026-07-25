@@ -87,7 +87,12 @@
         deref'd."
   [opts timeout-ms out-file err-file & cmd]
   (let [proc (apply process/process
-                    (assoc opts :out (io/file (str out-file)) :err (io/file (str err-file)))
+                    ;; stdin from /dev/null: the real run logged
+                    ;; "no stdin data received in 3s" on EVERY stage, burning 3s
+                    ;; each time and filling each stderr.log with a warning whose
+                    ;; own text names the fix.
+                    (assoc opts :in (io/file "/dev/null")
+                           :out (io/file (str out-file)) :err (io/file (str err-file)))
                     (concat ["setsid"] cmd))
         pid (.pid (:proc proc))
         finished? (.waitFor (:proc proc) (long timeout-ms) java.util.concurrent.TimeUnit/MILLISECONDS)]
@@ -380,8 +385,8 @@
               res (run-stage! opts worktree stage task stage-dir)]
           (swap! history conj (select-keys res [:stage :verdict :reason :class]))
           (write-json! (fs/path stage-dir "verdict.json") res)
-          (case (:verdict res)
-            :pass (recur (expedite-lib/next-stage stages stage) (inc n))
+          (case (expedite-lib/classify-verdict (:verdict res))
+            :advance (recur (expedite-lib/next-stage stages stage) (inc n))
 
             :bounce
             (let [target (or (:target res) "coder")
@@ -397,8 +402,10 @@
                   {:ticket :failed :reason :bounce-bound-exhausted
                    :exhaustion report :bounces @bounces :history @history :bound bound-info})))
 
+            :fail
             {:ticket :failed :reason (or (:reason res) :stage-failed)
-             :stage stage :bounces @bounces :history @history :bound bound-info}))))))
+             :stage stage :verdict (:verdict res)
+             :bounces @bounces :history @history :bound bound-info}))))))
 
 ;; ── restart (non-blocking) ────────────────────────────────────────────────
 
