@@ -109,7 +109,7 @@ function listOnboardingEnvelopes(swarmRepoRoot: string): OnboardingStateEnvelope
     return [];
   }
   return entries
-    .filter((entry) => entry.endsWith('.json') && entry !== 'last-processed-update.json' && entry !== NO_ACTIVE_UPDATES_FILENAME)
+    .filter((entry) => entry.endsWith('.json') && entry !== 'last-processed-update.json')
     .map((entry) => {
       try {
         const parsed: unknown = JSON.parse(fs.readFileSync(path.join(dir, entry), 'utf8'));
@@ -121,58 +121,15 @@ function listOnboardingEnvelopes(swarmRepoRoot: string): OnboardingStateEnvelope
     .filter((envelope): envelope is OnboardingStateEnvelope => envelope !== undefined);
 }
 
-// BL-590 architect bounce #3 (2026-07-25): a redelivery of an update that
-// produced NO target state (the 'no-active-onboarding' reply) used to go
-// unguarded, on the premise that it just "recomputes the same constant
-// message". False - WHICH branch runs is decided by
-// listOnboardingFacilitatorStates, durable state a LATER update in the same
-// batch can mutate (e.g. a target starting in between), so that branch needs
-// the exact same guard as every per-target one. It has no target to key an
-// envelope by, so its processed-update set lives in this one shared,
-// target-independent file instead - same record-before-send/deliver-on-
-// success discipline, same JSON shape as an envelope's own processedUpdates.
-const NO_ACTIVE_UPDATES_FILENAME = 'no-active-updates.json';
-
-function noActiveUpdatesPath(swarmRepoRoot: string): string {
-  return path.join(onboardingStateDir(swarmRepoRoot), NO_ACTIVE_UPDATES_FILENAME);
-}
-
-function readNoActiveProcessedUpdates(swarmRepoRoot: string): Readonly<Record<string, ProcessedOnboardingUpdate>> {
-  try {
-    const parsed: unknown = JSON.parse(fs.readFileSync(noActiveUpdatesPath(swarmRepoRoot), 'utf8'));
-    return typeof parsed === 'object' && parsed !== null ? (parsed as Record<string, ProcessedOnboardingUpdate>) : {};
-  } catch {
-    return {};
-  }
-}
-
-function writeNoActiveProcessedUpdates(swarmRepoRoot: string, processedUpdates: Readonly<Record<string, ProcessedOnboardingUpdate>>): void {
-  atomicWrite(noActiveUpdatesPath(swarmRepoRoot), JSON.stringify(processedUpdates, null, 2));
-}
-
-// Records an updateId that produced NO target state as processed-but-
-// undelivered, BEFORE the send is attempted - the no-target twin of
-// writeOnboardingStateAndMarkUpdateProcessed, so the state-write-then-send
-// ordering discipline applies here too even though there is no state to write.
-export function recordNoActiveOnboardingUpdateProcessed(swarmRepoRoot: string, updateId: number, message: string): void {
-  const existing = readNoActiveProcessedUpdates(swarmRepoRoot);
-  writeNoActiveProcessedUpdates(swarmRepoRoot, { ...existing, [String(updateId)]: { message, delivered: false } });
-}
-
-// `undefined` means "this updateId produced no target state" - the
-// no-active-onboarding case. A defined targetRepoUrl means the update
-// belongs to that target's own envelope.
 export interface ProcessedOnboardingUpdateLookup {
-  readonly targetRepoUrl: string | undefined;
+  readonly targetRepoUrl: string;
   readonly record: ProcessedOnboardingUpdate;
 }
 
-// Scans every persisted target's processed-update set, THEN the shared
-// no-active set - the guard runs BEFORE handleOnboardingMessage decides which
-// target (if any) a plain-text reply belongs to, so which store (if any) owns
-// a given updateId is not yet known at call time. A single call here is the
-// ONE guard both branches share: a redelivered updateId never re-enters
-// handleOnboardingMessage, regardless of which branch produced it originally.
+// Scans every persisted target's processed-update set - the guard runs
+// BEFORE handleOnboardingMessage decides which target (if any) a plain-text
+// reply belongs to, so which target owns a given updateId is not yet known
+// at call time.
 export function findProcessedOnboardingUpdate(swarmRepoRoot: string, updateId: number): ProcessedOnboardingUpdateLookup | undefined {
   const key = String(updateId);
   for (const envelope of listOnboardingEnvelopes(swarmRepoRoot)) {
@@ -180,10 +137,6 @@ export function findProcessedOnboardingUpdate(swarmRepoRoot: string, updateId: n
     if (record) {
       return { targetRepoUrl: envelope.state.targetRepoUrl, record };
     }
-  }
-  const noActiveRecord = readNoActiveProcessedUpdates(swarmRepoRoot)[key];
-  if (noActiveRecord) {
-    return { targetRepoUrl: undefined, record: noActiveRecord };
   }
   return undefined;
 }
@@ -211,18 +164,8 @@ export function writeOnboardingStateAndMarkUpdateProcessed(
 // Only called once the outbound send actually succeeds - never on a failed
 // send, so a redelivery of a still-undelivered update keeps retrying the
 // send (via findProcessedOnboardingUpdate's stored message) instead of
-// silently counting a lost message as done. `targetRepoUrl: undefined`
-// routes to the shared no-active store (see findProcessedOnboardingUpdate).
-export function markOnboardingUpdateDelivered(swarmRepoRoot: string, targetRepoUrl: string | undefined, updateId: number): void {
-  if (targetRepoUrl === undefined) {
-    const existing = readNoActiveProcessedUpdates(swarmRepoRoot);
-    const record = existing[String(updateId)];
-    if (!record) {
-      return;
-    }
-    writeNoActiveProcessedUpdates(swarmRepoRoot, { ...existing, [String(updateId)]: { ...record, delivered: true } });
-    return;
-  }
+// silently counting a lost message as done.
+export function markOnboardingUpdateDelivered(swarmRepoRoot: string, targetRepoUrl: string, updateId: number): void {
   const existing = readEnvelope(swarmRepoRoot, targetRepoUrl);
   const record = existing?.processedUpdates[String(updateId)];
   if (!existing || !record) {
