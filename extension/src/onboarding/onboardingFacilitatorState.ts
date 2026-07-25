@@ -289,8 +289,24 @@ const NO_ACTIVE_ONBOARDING_MESSAGE =
 
 export type OnboardingMessageOutcome =
   | { kind: 'started'; state: OnboardingFacilitatorState; message: string }
+  | { kind: 'resumed'; state: OnboardingFacilitatorState; message: string }
   | { kind: 'advanced'; state: OnboardingFacilitatorState; message: string }
   | { kind: 'no-active-onboarding'; message: string };
+
+// BL-590 architect bounce (defect 2, 2026-07-25): a repo URL for a target
+// that already has an in-flight (non-prerequisites-ready) state must RESUME
+// that state, never mint a fresh one - onboardingStatePath keys the durable
+// file by a slug of the URL alone, so a fresh createOnboardingState for the
+// same URL silently overwrites the same file and destroys verified
+// progress. The human's reasons to re-paste the URL are ordinary (checking
+// in, scrolling back, resuming after a pause), so this must be the default,
+// not an opt-in.
+function findInFlightStateForTarget(
+  existingStates: readonly OnboardingFacilitatorState[],
+  targetRepoUrl: string
+): OnboardingFacilitatorState | undefined {
+  return existingStates.find((s) => s.targetRepoUrl === targetRepoUrl && s.phase !== 'prerequisites-ready');
+}
 
 // BL-590: the facilitator's whole per-message decision, given every
 // currently-persisted target state plus the incoming text - the ONE function
@@ -303,7 +319,12 @@ export function handleOnboardingMessage(
   now: () => number
 ): OnboardingMessageOutcome {
   if (isLikelyRepoUrl(text)) {
-    const state = createOnboardingState(text.trim(), now);
+    const targetRepoUrl = text.trim();
+    const inFlight = findInFlightStateForTarget(existingStates, targetRepoUrl);
+    if (inFlight) {
+      return { kind: 'resumed', state: inFlight, message: renderStatus(inFlight) };
+    }
+    const state = createOnboardingState(targetRepoUrl, now);
     return { kind: 'started', state, message: renderStatus(state) };
   }
   const active = pickActiveOnboardingState(existingStates);
