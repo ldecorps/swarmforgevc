@@ -89,11 +89,27 @@ Feature: Expeditor - drive one ticket through every gate with the swarm stopped
     And the run did not commit inside any .worktrees role checkout
 
   # BL-567 refuses-a-live-swarm-09
-  Scenario: the expeditor refuses to start while a swarm is genuinely live
+  # CORRECTED at the coder stage. As first written this scenario refused a live
+  # swarm outright, which contradicted the operator's lifecycle ruling that
+  # initiation STOPS the swarm - a gate that refuses immediately never reaches the
+  # teardown it was supposed to perform, and made scenario 14 unreachable. The
+  # ticket's own rationale is "one ticket, one writer; no worktree contention", so
+  # the gate is about contention: stop it, then refuse only if it is still there.
+  Scenario: the expeditor refuses when a live swarm cannot be brought down
     Given a live swarm whose tmux server answers and whose handoffd pid is running
+    And a stop path that cannot bring that swarm down
     When the expeditor is asked to run the fixture ticket
-    Then the expeditor refuses with a message naming the live swarm
+    Then initiation states it will stop the swarm before doing anything else
+    And the expeditor refuses with a message naming what is still alive
     And no stage session was spawned
+
+  # BL-567 initiation-stops-a-live-swarm-and-proceeds-09b
+  Scenario: initiation stops a live swarm and the run proceeds
+    Given a live swarm whose tmux server answers and whose handoffd pid is running
+    And a stop path that does bring that swarm down
+    When the expeditor runs the fixture ticket
+    Then initiation stopped the swarm without being asked to override
+    And the run reaches done
 
   # BL-567 stale-socket-file-is-not-liveness-10
   Scenario: a leftover socket file with no server does not read as a live swarm
