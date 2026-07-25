@@ -2,14 +2,14 @@ id: BL-567
 title: "Expeditor — drive one ticket through every pipeline gate with the swarm STOPPED, independent of all swarm runtime machinery"
 milestone: M8
 type: feature
-status: todo
+status: done
 epic: swarm-reliability
 human_approval: approved
 severity: medium
 priority: 08
 direction: human-requested
 depends_on: []
-assigned_to: specifier
+assigned_to: ""
 mutation_cost: medium
 source: |
   Human, 2026-07-23: wants a role/mode (working name: expeditor; earlier
