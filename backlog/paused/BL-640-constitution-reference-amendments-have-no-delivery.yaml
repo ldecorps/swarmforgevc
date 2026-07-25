@@ -1,0 +1,161 @@
+id: BL-640
+title: "A constitution amendment to `articles/reference/` reaches no role: those files are read from each role's own stale worktree, so an amended rule and its stale elaboration contradict each other"
+milestone: M8
+type: defect
+status: todo
+epic: swarm-reliability
+human_approval: approved
+severity: high
+priority: 06
+direction: human-requested
+depends_on: []
+assigned_to: specifier
+mutation_cost: medium
+
+approval_context: >
+  Operator ruling 2026-07-25, immediately after landing an Article 5.1 amendment
+  (`e3a36855a`) and discovering it had reached exactly zero role worktrees. The
+  amendment fixed a verification step that could never pass; the stale copies in
+  three role branches still instruct reviewers to perform it.
+
+source: |
+  2026-07-25. An Article 5.1 amendment corrected the bounce-revert rule in two
+  places: `articles/workflow.prompt` (the always-loaded article) and
+  `articles/reference/workflow-detailed.prompt` (its on-demand elaboration).
+
+  `prompt_engine_lib.bb:129` states the split plainly:
+
+  ```
+  Subdirectories (e.g. articles/reference/) are on-demand only — not inlined
+  ```
+
+  So the short form travels inside the composed prompt and is delivered by
+  regenerating it. **The detailed form is read from the agent's own worktree at the
+  moment it is needed.** Measured right after the amendment landed on `main`:
+
+  ```
+  .worktrees/architect  amended rule present: NO
+  .worktrees/cleaner    amended rule present: NO
+  .worktrees/coder      amended rule present: NO
+  .worktrees/QA         amended rule present: NO   (fast-forwarded by hand since)
+  ```
+
+  Three of those branches carry live work and cannot simply fast-forward.
+
+  The result is worse than staleness: a reviewer's **inlined** prompt says "verify
+  the CONTENT is gone, never the ancestry", while the **elaboration it is told to
+  read** says "confirm `git merge-base --is-ancestor <bounced> HEAD` is FALSE" — a
+  check that can never pass. The role is instructed to do two contradictory things,
+  and the wrong one is the one with the worked example next to it.
+
+description: |
+  ## The gap
+
+  The repo has a documented delivery rule for in-flight spec amendments
+  (`workflow-detailed.prompt`, "Amending An In-Flight Ticket's Spec"):
+
+  > **The specifier must send a `note` (priority `00`) to whichever role currently
+  > HOLDS the parcel, naming the amendment commit** — a silent `main` commit is not
+  > a handoff. The receiving role must merge `main` before continuing.
+
+  That rule covers **ticket** specs: `backlog/*.yaml` and `specs/features/*.feature`.
+  Nothing covers a change to the constitution's own `reference/` files. Nobody sends
+  a note. No role is told to merge. The change simply sits on `main` while every
+  worktree keeps reading its own copy.
+
+  Top-level `articles/*.prompt` are fine — they are inlined, so regenerating the
+  composed prompts plus a respawn delivers them. The hole is exactly the
+  `reference/` subdirectory, and it is invisible precisely because the top-level
+  half works.
+
+  ## Why this is `high`
+
+  An amendment exists because the current rule is wrong. Leaving the elaboration
+  stale means the roles that most need the correction keep the defect, indefinitely,
+  with no signal. In this instance the stale text told reviewers to run a check that
+  can NEVER pass — so a reviewer either treats a correct revert as broken, or learns
+  to skip verification entirely.
+
+  A constitution that cannot be amended in practice is worse than one with a known
+  defect, because everyone believes the amendment took effect.
+
+  ## Shape — three options, specifier decides
+
+  1. **Freshness check at stage start (recommended).** Before a role acts, compare
+     the sha of each `reference/` file it may read against `main`'s. Stale ->
+     merge `main` first, or refuse and report. Zero cost in the normal case, and it
+     catches ANY drift, not only amendments someone remembered to announce.
+  2. **Inline only what an amendment just changed.** Keep BL-519's cacheable prefix,
+     but have compose inline a `reference/` file when its sha differs from the last
+     composed baseline. Cheap in steady state; the amendment travels with the prompt.
+  3. **Extend the amendment-delivery rule to constitution files.** A `note` per role
+     naming the commit, like a spec amendment. Simplest, but it is a HUMAN habit, not
+     a mechanism — the same class of thing that failed here.
+
+  **Do NOT simply inline all of `reference/`.** Measured: the whole directory is
+  **94,739 B** against a composed prompt of **74,564 B** — it would more than double
+  the prompt, on the stable cache prefix BL-519 created deliberately, to carry
+  elaboration that is read rarely and on demand.
+
+  ## Second defect found while fixing this by hand
+
+  Fast-forwarding `swarmforge-QA` to `main` **failed**, twice, on untracked files:
+
+  ```
+  error: The following untracked working tree files would be overwritten by merge:
+        swarmforge/scripts/expedite.sh
+        swarmforge/scripts/expedite_lib.bb
+        ... 10 more
+  ```
+
+  Those are copies `sync_worktree_scripts()` cp -R'd into every worktree at launch —
+  the same mechanism recorded as the phantom-revert root cause (BL-373). They are
+  byte-identical to `main`'s versions (verified before removal), yet they **block a
+  legitimate merge** until removed by hand, one collision round at a time.
+
+  So the hot-sync actively obstructs the delivery path this ticket is trying to fix.
+  The specifier should decide whether that belongs here or in a sibling: either the
+  sync writes tracked content differently, or the merge path clears its own
+  identical-to-`main` untracked copies.
+
+acceptance: |
+  Specifier writes the scenarios. Minimum behaviour:
+
+  1. A constitution `reference/` file amended on `main` reaches every role before
+     that role next acts on the amended subject — by whichever mechanism is chosen.
+  2. Seeded scenario: amend a `reference/` file, then have a role read it WITHOUT
+     merging `main`. The role must not silently act on the stale text — it either
+     sees the new text or refuses and reports.
+  3. **A role must never hold a stale elaboration that contradicts its own inlined
+     rule.** This is the concrete failure: reproduce the 2026-07-25 pair (inlined says
+     verify content, stale detailed says verify ancestry) and assert it cannot occur.
+  4. No regression in prompt size for the steady state — the composed prompt does not
+     grow when nothing changed. Assert the byte size against a baseline.
+  5. An untracked worktree copy that is byte-identical to `main` does not block a
+     fast-forward, or the failure names every collision at once instead of one round
+     at a time.
+  6. Top-level `articles/*.prompt` delivery is unchanged — it already works.
+
+out_of_scope: |
+  - Inlining all of `articles/reference/`. Measured and rejected in the description.
+  - The bounce-revert amendment itself. Landed `e3a36855a`; this ticket is about the
+    fact that it did not reach anyone.
+  - Changing what `sync_worktree_scripts()` copies, unless the specifier folds the
+    second defect in here rather than a sibling.
+
+notes: |
+  Discovered by asking a question the delivery had already answered wrongly: after
+  landing the amendment, the composed prompts still carried the OLD text until
+  regenerated by hand — and even then only the inlined half moved. The operator's
+  instinct ("peut-être doit-on re-inliner le prompt ?") was right about there being a
+  gap and wrong about the fix, which is why the measurement above is in the ticket.
+
+  Same family as the day's other findings: something reported success while the
+  change had not taken effect. See
+  `docs/explanation/lessons-2026-07-25-green-suites-that-proved-nothing.md`.
+
+  `swarmforge-QA` was fast-forwarded by hand at filing time and now carries the
+  amendment in both forms. `swarmforge-architect`, `-cleaner` and `-coder` carry live
+  BL-590 work and were deliberately left alone — each merges `main` as its first act
+  on the next parcel, so their window closes on its own. That self-closing property is
+  luck, not design, and is exactly what this ticket should replace.

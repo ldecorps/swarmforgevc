@@ -11,6 +11,74 @@ direction: human-requested
 depends_on: [BL-262, BL-269, BL-344, BL-380, BL-381]
 assigned_to: coder
 mutation_cost: high
+park: |
+  PARKED in `hold/` on 2026-07-25 by operator directive, and `hold/` is NOT read by
+  promotion — nothing will pick this up on its own. It comes back only when a human
+  moves the file.
+
+  ## Why it was parked
+
+  Not because the feature is unwanted — it is `human_approval: approved` and
+  human-requested. It was parked because the WORKFLOW was failing on it:
+  **six architect send-backs on slice 1**, four of them circling one unstated
+  property (durable writes must be idempotent under Telegram redelivery), on a slice
+  measured at **1929 insertions across 18 files** — above the p99 of ~2000
+  ticket-bearing commits. The operator's call was to stop feeding a broken pipeline
+  and fix the pipeline first.
+
+  ## Operator intent, 2026-07-25
+
+  > "une fois le process stabilisé, il faudra ressortir 590"
+
+  So this is a DEFERRAL, not a cancellation. Recorded here rather than in a session,
+  because a park decision that lives only in someone's memory is exactly what this
+  repo has lost before.
+
+  ## Unpark condition — checkable, not a feeling
+
+  "Process stabilisé" means the two mechanisms that were missing when this ticket
+  bounced six times are IN FORCE, not merely specified:
+
+  1. **BL-633 shipped** — the `invariants:` field exists in `backlog-schema.md`, the
+     specifier prompt asks for properties before scenarios, and the architect prompt
+     says one bounce per PROPERTY, not one per site.
+  2. **BL-635 shipped** — `record-bounce --by <role>` exists and the ARCHITECT calls
+     it, so a repeat-bouncing ticket is visible while it is happening rather than
+     after a post-mortem.
+
+  Both are `priority: 01` in the expedite lane as of 2026-07-25. Neither is a
+  judgement call — measured on the day of parking, all three read ZERO:
+
+  ```
+  grep -ic invariant       swarmforge/roles/specifier.prompt   ->  0
+  grep -c  record-bounce   swarmforge/roles/architect.prompt   ->  0
+  ls extension/src/tools/record-bounce*                        ->  absent
+  ```
+
+  (`architect.prompt` already says `invariant` 3 times, so grep that one for
+  `record-bounce`, not for `invariant`. `QA.prompt` is the only prompt in the repo
+  that calls the bounce recorder today — 3 hits — which is precisely BL-635's
+  complaint.)
+
+  ## What unparking actually means — read before moving the file
+
+  **Do not re-promote this ticket whole.** Slice 1 is already on `main` and on
+  `origin` — it landed there un-reviewed, which is the incident BL-629/630/631/632
+  exist to prevent. Re-promoting the ticket as written would re-do shipped work.
+
+  On unpark:
+
+  - Re-cut the REMAINING slices only, against what is actually on `main`.
+  - The re-cut carries an `invariants:` section, and its first entry is the property
+    that caused four of the six send-backs: *every durable write is idempotent under
+    redelivery of the same Telegram update.* This ticket is BL-633's worked example;
+    using it here is the whole point.
+  - Size the slices against BL-634's envelope. 1929 insertions is what "slice 1"
+    meant last time.
+
+  Two rule proposals raised during the bounces are still awaiting a human ruling and
+  do NOT block the unpark — settle them at re-cut time.
+
 human_ruling: |
   RULED by the human 2026-07-23 (relayed via the operator tunnel, recorded
   directly - Telegram tap path unreliable, see BL-582). Three decisions -

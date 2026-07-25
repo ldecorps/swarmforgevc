@@ -1,0 +1,183 @@
+id: BL-645
+title: "EPIC — Stereo router: two residents on different providers work the front half in parallel while hardener, documenter and QA stay singleton"
+milestone: M8
+type: epic
+status: todo
+epic: stereo-router
+human_approval: approved
+severity: medium
+priority: 14
+direction: human-requested
+depends_on: []
+assigned_to: specifier
+mutation_cost: high
+
+approval_context: >
+  Operator, 2026-07-25: raise throughput without burning the Anthropic token plan by
+  spawning a second resident on another provider, both fed by the same coordinator
+  from the same backlog. Refined by the operator in the same conversation: not
+  everything needs parallelising — hardener, documenter and QA can stay singleton.
+  That refinement is what makes the epic tractable, and it is measured below.
+
+source: |
+  ## The shape, in the operator's words
+
+  Today's `mono-router` runs ONE resident that rotates through every role hat.
+  "Stereo" adds a second resident on a different provider (OpenRouter, Copilot,
+  …), both dequeued by the same coordinator from the same backlog.
+
+  Then the refinement that makes it work: **the back half stays singleton.**
+
+  ```
+  parallel   specifier → coder → cleaner → architect     x2 residents
+  singleton  hardener → documenter → QA                  x1
+  ```
+
+  ## Measured, not assumed — where the time actually goes
+
+  Per-role dwell derived from every parcel handed off on 2026-07-25 (638 minutes
+  observed), dwell being receive-to-forward per role:
+
+  ```
+  coder        167 min   12 parcels   median 10
+  architect     99 min    9 parcels   median 11
+  cleaner       85 min   13 parcels   median  7
+  specifier     62 min    4 parcels   median 18
+  ─────────────────────────────────── front half   413 min
+  QA            18 min    3 parcels   median  7
+  documenter    11 min    2 parcels   median  7
+  hardender      9 min    2 parcels   median  6
+  ─────────────────────────────────── back half     38 min
+  ```
+
+  **An 11:1 ratio.** Doubling the front half feeds ~76 min of back-half work against
+  ~826 min of front-half work — the singleton back half is nowhere near saturation,
+  so it does not become the bottleneck the shape might suggest.
+
+  **Honest caveat on that data:** the back-half sample is small (2, 2, 3 parcels)
+  precisely BECAUSE most of the day's work bounced and never reached it. That is
+  confirming rather than disqualifying — the back half is starved because the front
+  half loops — but the ratio should be re-measured over a week before anyone sizes
+  hardware on it.
+
+description: |
+  ## Why the singleton back half is a requirement, not a compromise
+
+  Three independent reasons, and only the first is about throughput.
+
+  **1. QA must stay singleton because it is the integration point.** BL-247 makes QA
+  the only role that lands on `main`. Two QAs merging concurrently is precisely the
+  multi-writer hazard that produced the 2026-07-25 pre-QA landing incident. A
+  singleton QA does not mitigate that class — it eliminates it. This alone removes
+  the hardest design question a fully-parallel router would face.
+
+  **2. A singleton hardener is actively better.** It runs the mutation suites, the
+  most memory-hungry stage in the pipeline. Two concurrent Stryker/vitest runs on a
+  15 GiB box, against a recorded history of orphaned-vitest OOM spirals, is an
+  incident waiting for a slow afternoon. Serialising it is a feature.
+
+  **3. The fan-in is already built.** `cleaner` and `hardender` are already
+  `batch` receive-mode in both `mono-router.conf` and the live `roles.tsv` — they
+  consume several parcels at once. Two architects finishing together fill a queue the
+  hardener drains as a batch. Nothing in the current design has to change for the
+  fan-in to work; it was not built for stereo but it accommodates it.
+
+  ## So the only real work is worktree partitioning
+
+  Worktrees belong to ROLES, not residents:
+
+  ```
+  coder → .worktrees/coder      cleaner → .worktrees/cleaner      …
+  ```
+
+  Two residents rotated to `coder` land in the SAME checkout on the SAME branch —
+  the exact mechanism of the 2026-07-25 incident, but by design rather than by
+  accident. Each parallel resident needs its own set for the four front-half roles:
+
+  ```
+  today   7 worktrees          stereo   4x2 parallel + 3 singleton = 11
+  ```
+
+  And `mono-router-resident-session` is a singleton by construction — "the first
+  non-coordinator roles.tsv session". `rotate_to_role` currently cannot address a
+  specific resident. Routing needs a resident identity and an assignment rule
+  (which resident gets this parcel), which is mechanical once worktrees are
+  partitioned.
+
+  ## Provider mixing is NOT part of the hard problem
+
+  Worth stating so the epic is not oversized. Ten `*-mono-router.conf` packs already
+  exist (openrouter, codex, gemini, qwen, perplexity, cerebras, kimi, vibe), and the
+  per-stage `--model` table already routes each role to its own model.
+
+  **If the goal is only cost, no epic is needed** — moving `cleaner`, `documenter`
+  and `hardender` to a cheaper provider is a conf edit today, reversible, with zero
+  architectural change. The epic is for THROUGHPUT. The specifier should say plainly
+  in the design whether the operator wants both, because the cheap half should ship
+  first regardless.
+
+  ## Sequencing — and this is the load-bearing recommendation
+
+  **Do not build this before the guards and the spec-quality work land.**
+
+  The measured rework rate is **21.8%**, and the front half is where rework happens:
+  the coder took 12 parcels for 167 minutes today, mostly rework loops. Doubling the
+  front half doubles the rework, not just the output.
+
+  Worse, the four guards that stop un-reviewed work reaching `main` — BL-629 (in
+  flight), BL-630, BL-631, BL-632 — are not landed. Adding a second resident DOUBLES
+  the writers against a defect that is still open.
+
+  And the constraints meant to cut the rework are specified but **not in force**:
+  BL-633 (`invariants:`) and BL-634 (slice-size envelope) are both `paused/`,
+  `status: todo`, and `specifier.prompt` today contains zero occurrences of
+  `invariant`, `slice size`, `size envelope` or `p90`. The specifier is working
+  exactly as it did before those tickets were written.
+
+  Recommended order: **guards → spec quality → stereo**, so the second resident is
+  added to a pipeline that loops less and cannot leak.
+
+acceptance: |
+  Epic-level. The specifier slices it; the shape below is what the slices must
+  preserve.
+
+  1. Two residents on different providers each carry a ticket through the front half
+     concurrently, with no shared worktree and no shared role branch between them.
+  2. `hardener`, `documenter` and `QA` remain singleton, and exactly one process ever
+     merges to `main`.
+  3. Fan-in works: two front halves completing near-simultaneously both reach the
+     singleton back half without a parcel being dropped or double-consumed.
+  4. `active_backlog_max_depth` follows the resident count rather than being pinned —
+     today's `1` is a CONSEQUENCE of one resident ("serialize the pipeline: one parcel
+     through the whole chain at a time"), not an independent constraint.
+  5. A resident dying does not strand the other's work, and the survivor does not
+     silently pick up the dead one's worktree.
+  6. Rolling back to mono-router is a conf change, not a migration.
+
+remaining_slices: |
+  - Worktree partitioning: a per-resident set for the four front-half roles, and the
+    branch naming that goes with it.
+  - Resident identity + assignment: `rotate_to_role` addressing a specific resident;
+    the coordinator deciding which resident receives a parcel.
+  - Depth coupling: effective depth derived from resident count.
+  - Fan-in verification at the parallel/singleton boundary.
+  - Provider pack for the second resident (largely existing conf work).
+  - Failure modes: one resident dies, one provider rate-limits, one resident wedges.
+
+out_of_scope: |
+  - Cost-only provider mixing. That is a conf edit available today and should not
+    wait for this epic; see the description.
+  - Parallelising hardener, documenter or QA. Deliberately excluded, for the three
+    reasons in the description — this is the decision that makes the epic tractable.
+  - Raising `active_backlog_max_depth` on the CURRENT single-resident pack. Depth 1
+    is correct while there is one resident.
+
+notes: |
+  The operator's refinement is what turned this from a hard epic into a tractable
+  one. A fully-parallel router has to arbitrate two QAs landing on `main`; this shape
+  deletes that question rather than answering it, and keeps the serialisation point
+  exactly where the constitution already puts it — one thing touches `main`.
+
+  Re-measure the 11:1 ratio over a full week before sizing anything on it. 2026-07-25
+  was atypical: one ticket bounced six times, which inflates front-half dwell and
+  starves the back half of samples.
