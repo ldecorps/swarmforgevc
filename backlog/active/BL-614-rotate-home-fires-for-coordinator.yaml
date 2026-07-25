@@ -8,7 +8,7 @@ severity: high
 priority: 10
 direction: swarm-surfaced
 depends_on: []
-assigned_to:
+assigned_to: coder
 mutation_cost: low
 required_stages: [coder, qa]
 stage_skip_reasons: { cleaner: "single guard clause plus unit tests in existing suites; no refactor surface", architect: "implements the already-documented pack contract (mono-router overlay: coordinator is reserved infrastructure, never part of the rotation); no new design surface", hardender: "Babashka scripts have no wired mutation/CRAP toolchain (BL-472 deferred); the swarm-script unit suite is the actual gate and the guard's tests land in the coder parcel", documenter: "docs already state the correct behavior (pack overlay and coordinator prompt); no diagram depicts rotate-home internals" }
