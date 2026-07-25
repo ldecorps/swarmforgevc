@@ -216,7 +216,13 @@ function registerSteps(registry) {
       const stdout = execFileSync('bb', [CLI, ctx.root, 'sync', ...extraArgs], {
         encoding: 'utf8',
         stdio: ['ignore', 'pipe', 'pipe'],
-        env: { ...process.env, PATH: `${ctx.fakeBin}:${process.env.PATH}` },
+        // Explicit allowlist, never `{...process.env}` - sync can reach
+        // restart-front-desk-group! -> launch_front_desk.sh, which accepts
+        // whatever TELEGRAM_* it's handed, and this box exports the real
+        // production bot credentials (self-hosting). See
+        // mergedCodeReachesDaemonsSteps.js's fixtureEnv() for the same
+        // hazard and treatment.
+        env: { PATH: `${ctx.fakeBin}:${process.env.PATH}`, HOME: process.env.HOME },
       });
       return { exitCode: 0, stdout, stderr: '' };
     } catch (err) {

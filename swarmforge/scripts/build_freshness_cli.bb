@@ -22,10 +22,15 @@
 ;;   build_freshness_cli.bb <project-root> report
 ;;     Prints {"processes":[{"name":...,"running_sha":...,"main_sha":...,
 ;;     "stale":true|false}, ...], "qa_approval":{"approved":true|false,
-;;     "offending_shas":[...],"qa_ref_missing":true|false}}. The qa_approval
-;;     block is BL-629: is main's tip on the swarmforge-QA integration
-;;     ancestry, distinct from per-process staleness. Exit 0 always - an
-;;     unresolvable identity just reads as not-stale, never fabricate.
+;;     "offending_shas":[...],"qa_ref_missing":true|false,
+;;     "could_not_determine":true|false}}. The qa_approval block is BL-629:
+;;     is main's tip on the swarmforge-QA integration ancestry, distinct
+;;     from per-process staleness. could_not_determine distinguishes
+;;     "unapproved, and here is why" (false) from "a git command failed
+;;     while gathering drift facts, so this is unknown" (true) - approved
+;;     is false either way (fail-closed), but the reason differs. Exit 0
+;;     always - an unresolvable identity just reads as not-stale, never
+;;     fabricate.
 ;;   build_freshness_cli.bb <project-root> sync [--override]
 ;;     BL-629 gate FIRST: refuses (exit 3, see refusal-exit-code below) when
 ;;     the tip sync would deploy - drift on main since the last QA-landed
@@ -240,7 +245,8 @@
     {:processes report
      :qa_approval {:approved (:approved? tip-approval)
                    :offending_shas (:offending-shas tip-approval)
-                   :qa_ref_missing (not qa-ref-exists?)}}))
+                   :qa_ref_missing (not qa-ref-exists?)
+                   :could_not_determine (boolean (:gather-failed? tip-approval))}}))
 
 ;; ── restart primitives (kill-and-confirm, mirrors handoffd_supervisor.bb's
 ;;    own TERM-then-escalate-to-SIGKILL convention and timing) ────────────
