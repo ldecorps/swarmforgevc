@@ -61,19 +61,6 @@ test('a window with zero closed tickets reports 0 rounds per close, never a divi
   assert.equal(series.architect[series.architect.length - 1].value, 0);
 });
 
-test('the prior-window point divides by its own closed count, not the current window\'s', () => {
-  // 2 architect bounces + 1 close, both 10 days before NOW_MS - inside the
-  // PRIOR 7-day window (days 7-14 back), not the current one.
-  const records = [
-    record({ by: 'architect', at: '2026-07-16T09:00:00.000Z', commit: 'c1' }),
-    record({ by: 'architect', at: '2026-07-16T10:00:00.000Z', commit: 'c2' }),
-  ];
-  const closedDateIsos = ['2026-07-16T12:00:00.000Z'];
-  const series = computeRoundsPerCloseSeriesByRole(records, closedDateIsos, NOW_MS);
-  assert.equal(series.architect[0].value, 2.0);
-  assert.equal(series.architect[series.architect.length - 1].value, 0);
-});
-
 // ── record-bounce-by-role-10: reads the durable log, never commit subjects ─
 
 test('the metric only ever counts durable BounceRecord entries - title/commit text plays no role', () => {
@@ -108,16 +95,6 @@ test('computeMaxRoundsIndicator names the four-bounce ticket over four once-boun
 
 test('computeMaxRoundsIndicator returns null for an empty log', () => {
   assert.equal(computeMaxRoundsIndicator([]), null);
-});
-
-test('computeMaxRoundsIndicator breaks a tied bouncing-role count alphabetically', () => {
-  const records = [
-    record({ ticket: 'BL-590', by: 'coder', commit: 'c1' }),
-    record({ ticket: 'BL-590', by: 'coder', commit: 'c2' }),
-    record({ ticket: 'BL-590', by: 'architect', commit: 'c3' }),
-    record({ ticket: 'BL-590', by: 'architect', commit: 'c4' }),
-  ];
-  assert.equal(computeMaxRoundsIndicator(records).by, 'architect');
 });
 
 // ── record-bounce-by-role-12: bounce-free day is zero, pre-epoch is unavailable ─

@@ -2,8 +2,7 @@ const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { qaBouncesDir } = require('../out/metrics/qaBounceStore');
-const { bouncesDir, readBounceRecords, appendBounceRecordIfNew } = require('../out/metrics/bounceStore');
+const { qaBouncesDir, bouncesDir, readBounceRecords, appendBounceRecordIfNew } = require('../out/metrics/qaBounceStore');
 
 // BL-635: the generalised (by-role) bounce log, additive over the legacy
 // QA-only qa_bounces/ store (qaBounceStore.test.js).

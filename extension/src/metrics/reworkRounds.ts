@@ -4,7 +4,7 @@
 // log says "repeat bouncing doesn't happen here" (1 ticket of ~52 in 15
 // days) - the opposite of the truth for architect send-backs, which is
 // exactly the class the pooled reading hides. Reads only BounceRecord[]
-// (the durable bounce log, bounceStore.ts's readBounceRecords) and
+// (the durable bounce log, qaBounceStore.ts's readBounceRecords) and
 // closed-ticket dates - never commit subjects or briefing prose
 // (record-bounce-by-role-10's discredited-source rule; see BL-635's
 // source section for why both of those are irrecoverably contaminated).
@@ -87,47 +87,35 @@ export function computeRoundsPerCloseSeriesByRole(
   return result;
 }
 
-function groupBounceRecordsByTicket(records: BounceRecord[]): Map<string, BounceRecord[]> {
+// BL-635 (record-bounce-by-role-11): the single ticket with the most
+// bounces across the whole log, so a repeated-bounce ticket (BL-590: 4)
+// stays distinguishable from several once-bounced tickets - an average
+// alone hides exactly this shape (BL-635's own description section). `by`
+// is the role most of THAT ticket's bounces are attributed to (ties broken
+// alphabetically for determinism).
+export function computeMaxRoundsIndicator(records: BounceRecord[]): MaxRoundsIndicator | null {
   const byTicket = new Map<string, BounceRecord[]>();
   for (const record of records) {
     const list = byTicket.get(record.ticket) ?? [];
     list.push(record);
     byTicket.set(record.ticket, list);
   }
-  return byTicket;
-}
-
-function mostBouncedTicket(byTicket: Map<string, BounceRecord[]>): { ticket: string; recs: BounceRecord[] } | null {
   let best: { ticket: string; recs: BounceRecord[] } | null = null;
   for (const [ticket, recs] of byTicket) {
     if (!best || recs.length > best.recs.length) {
       best = { ticket, recs };
     }
   }
-  return best;
-}
-
-// The bouncing role most of a ticket's own bounces are attributed to (ties
-// broken alphabetically for determinism).
-function dominantBouncingRole(recs: BounceRecord[]): string {
-  const roleCounts = new Map<string, number>();
-  for (const r of recs) {
-    const role = bounceAttribution(r);
-    roleCounts.set(role, (roleCounts.get(role) ?? 0) + 1);
-  }
-  return [...roleCounts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0][0];
-}
-
-// BL-635 (record-bounce-by-role-11): the single ticket with the most
-// bounces across the whole log, so a repeated-bounce ticket (BL-590: 4)
-// stays distinguishable from several once-bounced tickets - an average
-// alone hides exactly this shape (BL-635's own description section).
-export function computeMaxRoundsIndicator(records: BounceRecord[]): MaxRoundsIndicator | null {
-  const best = mostBouncedTicket(groupBounceRecordsByTicket(records));
   if (!best) {
     return null;
   }
-  return { ticket: best.ticket, rounds: best.recs.length, by: dominantBouncingRole(best.recs) };
+  const roleCounts = new Map<string, number>();
+  for (const r of best.recs) {
+    const role = bounceAttribution(r);
+    roleCounts.set(role, (roleCounts.get(role) ?? 0) + 1);
+  }
+  const by = [...roleCounts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0][0];
+  return { ticket: best.ticket, rounds: best.recs.length, by };
 }
 
 // BL-635 (record-bounce-by-role-09/12/13): one role's daily bounce count

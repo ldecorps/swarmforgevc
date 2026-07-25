@@ -27,7 +27,7 @@ import {
   DailyReworkPoint,
 } from '../metrics/reworkRounds';
 import { BounceRecord } from '../quality/qaBounce';
-import { readBounceRecords } from '../metrics/bounceStore';
+import { readBounceRecords } from '../metrics/qaBounceStore';
 
 // BL-213: the daily cost & health sidecar - a deterministic, committed
 // carrier (docs/briefings/<date>.json) for BL-100's producers, never
@@ -378,7 +378,19 @@ export function buildCostHealthSidecar(
   if (originCostTrendSeries) {
     sidecar.originCostTrendSeries = originCostTrendSeries;
   }
-  attachFlowBalanceRework(sidecar.flowBalance, reworkInputs);
+  if (reworkInputs) {
+    const { bounceRecords, closedDateIsos, nowMs } = reworkInputs;
+    const roundsSeriesByRole = computeRoundsPerCloseSeriesByRole(bounceRecords, closedDateIsos, nowMs);
+    const roundsPerClose: Record<string, TrendedNumber> = {};
+    for (const [role, series] of Object.entries(roundsSeriesByRole)) {
+      roundsPerClose[role] = trendedFromSeries(series);
+    }
+    sidecar.flowBalance.rework = {
+      roundsPerClose,
+      bouncesPerDay: computeDailyReworkSeriesByRole(bounceRecords, lastNDaysIso(nowMs, 7)),
+      maxRounds: computeMaxRoundsIndicator(bounceRecords),
+    };
+  }
   return sidecar;
 }
 
@@ -469,31 +481,6 @@ function renderTopExpensiveOriginsLines(byHorizon: Record<LlmCostHorizon, LlmCos
 // per ranked origin (already ordered by latest-bucket cost descending by
 // buildOriginCostTrendSeries), bucket costs left (oldest) to right (latest)
 // so the rightmost figure is always the newest measurement.
-// BL-635 cleanup: split out of buildCostHealthSidecar so the optional-rework
-// attach stays a single non-branching call there (mirrors the other optional
-// sidecar sections' one-line `if` pattern) instead of adding a branch on top
-// of an already CRAP-budget-full function. Mutates `flowBalance` in place,
-// same "only set when the input is present" contract the inline version had.
-function attachFlowBalanceRework(
-  flowBalance: CostHealthSidecar['flowBalance'],
-  reworkInputs?: { bounceRecords: BounceRecord[]; closedDateIsos: string[]; nowMs: number }
-): void {
-  if (!reworkInputs) {
-    return;
-  }
-  const { bounceRecords, closedDateIsos, nowMs } = reworkInputs;
-  const roundsSeriesByRole = computeRoundsPerCloseSeriesByRole(bounceRecords, closedDateIsos, nowMs);
-  const roundsPerClose: Record<string, TrendedNumber> = {};
-  for (const [role, series] of Object.entries(roundsSeriesByRole)) {
-    roundsPerClose[role] = trendedFromSeries(series);
-  }
-  flowBalance.rework = {
-    roundsPerClose,
-    bouncesPerDay: computeDailyReworkSeriesByRole(bounceRecords, lastNDaysIso(nowMs, 7)),
-    maxRounds: computeMaxRoundsIndicator(bounceRecords),
-  };
-}
-
 export function renderCostTrendChartLines(series: OriginCostTrendSeries[]): string[] {
   if (series.length === 0) {
     return [];
