@@ -66,9 +66,30 @@ function addBookkeepingCommit(root) {
   return commitAll(root, 'bookkeeping change');
 }
 
+// A routine PIPELINE.md §5 "QA lands the approved commit on main" step: QA's
+// own branch advances with a code-surface commit, that lands on main via an
+// ordinary `--no-ff` merge, then ordinary bookkeeping follows. Models the
+// architect bounce #1 finding 2 regression - the landing merge introduces
+// nothing of its own (it resolves cleanly to the QA side), so it must not
+// read as offending drift.
+function addQaLandingMerge(root) {
+  const wt = mkTmp('aps-bl629-qa-landing-');
+  git(root, ['worktree', 'add', '-q', '-b', '__bl629_qa_landing', wt, 'swarmforge-QA']);
+  writeFile(wt, 'extension/src/placeholder.ts', `export const placeholder = ${Date.now()};\n`);
+  commitAll(wt, 'QA-approved work');
+  git(wt, ['branch', '-f', 'swarmforge-QA', 'HEAD']);
+  git(root, ['worktree', 'remove', '--force', wt]);
+  git(root, ['branch', '-D', '__bl629_qa_landing']);
+  git(root, ['-c', 'user.email=t@t', '-c', 'user.name=t', 'merge', '--no-ff', '-q', '-m', 'Merge QA-approved commit for routine landing', 'swarmforge-QA']);
+}
+
 const DRIFT_KNOWN_VALUES = {
   empty: () => {},
   'bookkeeping-only': (ctx) => {
+    ctx.bookkeepingSha = addBookkeepingCommit(ctx.root);
+  },
+  'qa-landing-merge': (ctx) => {
+    addQaLandingMerge(ctx.root);
     ctx.bookkeepingSha = addBookkeepingCommit(ctx.root);
   },
 };
@@ -105,7 +126,7 @@ function registerSteps(registry) {
   });
 
   // ── 02/09/10: parameterized drift (shared KNOWN_VALUES step) ─────────────
-  registry.define(/^the drift on main since the last QA-landed commit is (empty|bookkeeping-only)$/, (ctx, drift) => {
+  registry.define(/^the drift on main since the last QA-landed commit is (empty|bookkeeping-only|qa-landing-merge)$/, (ctx, drift) => {
     const apply = DRIFT_KNOWN_VALUES[drift];
     if (!apply) {
       throw new Error(`BL-629: unknown drift value "${drift}" - not in DRIFT_KNOWN_VALUES`);
@@ -145,6 +166,21 @@ function registerSteps(registry) {
   // ── 08: missing QA integration branch ────────────────────────────────────
   registry.define(/^the repo has no QA integration branch$/, (ctx) => {
     git(ctx.root, ['branch', '-D', 'swarmforge-QA']);
+  });
+
+  // ── 11: QA and main share no common ancestor (architect bounce #1 finding
+  //    4's own live reproduction: `git merge-base` fails, and the fix must
+  //    read that as "could not determine", not "no drift") ────────────────
+  registry.define(/^the QA integration branch shares no common history with main$/, (ctx) => {
+    const wt = mkTmp('aps-bl629-qa-orphan-');
+    git(ctx.root, ['worktree', 'add', '-q', '--detach', wt]);
+    git(wt, ['checkout', '-q', '--orphan', '__bl629_qa_orphan']);
+    writeFile(wt, 'extension/src/placeholder.ts', 'export const placeholder = "orphan";\n');
+    writeFile(wt, 'backlog/paused/PLACEHOLDER.yaml', 'id: PLACEHOLDER\n');
+    commitAll(wt, 'orphan QA history sharing nothing with main');
+    git(wt, ['branch', '-f', 'swarmforge-QA', 'HEAD']);
+    git(ctx.root, ['worktree', 'remove', '--force', wt]);
+    git(ctx.root, ['branch', '-D', '__bl629_qa_orphan']);
   });
 
   // ── 09/10: uncommitted working-tree modifications ────────────────────────
@@ -281,6 +317,12 @@ function registerSteps(registry) {
   registry.define(/^the refusal names the modified path$/, (ctx) => {
     if (!ctx.syncResult.stderr.includes(ctx.dirtyPath)) {
       throw new Error(`expected the refusal to name ${ctx.dirtyPath}, got: ${ctx.syncResult.stderr}`);
+    }
+  });
+
+  registry.define(/^the refusal states the QA-approval status could not be determined$/, (ctx) => {
+    if (!/could not determine/i.test(ctx.syncResult.stderr)) {
+      throw new Error(`expected the refusal to state the QA-approval status could not be determined, got: ${ctx.syncResult.stderr}`);
     }
   });
 }

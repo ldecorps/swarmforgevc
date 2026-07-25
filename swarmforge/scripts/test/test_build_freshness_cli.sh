@@ -572,4 +572,54 @@ rm -f "$SYNC_ERR_629"
 final_cleanup
 LIVE_ROOTS=()
 
+# ── BL-629 architect bounce #1 finding 2: a routine QA-landing merge (the
+#    ordinary PIPELINE.md §5 "QA lands the approved commit on main" step)
+#    must NOT read as offending drift, or sync would refuse every single
+#    day post-QA - real repo, real `--no-ff` merge, not a fixture library
+#    call ─────────────────────────────────────────────────────────────────
+ROOT="$(mk_git_root)"
+LIVE_ROOTS+=("$ROOT")
+git -C "$ROOT" branch -M main
+git -C "$ROOT" branch swarmforge-QA main
+
+git -C "$ROOT" checkout -q -b qa-work-629 swarmforge-QA
+mkdir -p "$ROOT/extension/src"
+echo "// qa approved" > "$ROOT/extension/src/foo.ts"
+git -C "$ROOT" add -A
+git -C "$ROOT" commit -q -m "QA-approved work"
+git -C "$ROOT" branch -f swarmforge-QA HEAD
+git -C "$ROOT" checkout -q main
+git -C "$ROOT" merge --no-ff -q -m "Merge QA-approved commit for routine landing" swarmforge-QA
+mkdir -p "$ROOT/backlog/paused"
+echo "id: PLACEHOLDER" > "$ROOT/backlog/paused/PLACEHOLDER.yaml"
+git -C "$ROOT" add -A
+git -C "$ROOT" commit -q -m "Close ticket; promote next"
+
+REPORT_LANDING="$(bb "$CLI" "$ROOT" report)"
+check_629_landing_merge_approved() {
+  echo "$REPORT_LANDING" | python3 -c "
+import json, sys
+d = json.load(sys.stdin)
+qa = d['qa_approval']
+assert qa['approved'] is True, 'expected a routine QA-landing merge plus bookkeeping to read as approved, got: ' + json.dumps(qa)
+"
+}
+if check_629_landing_merge_approved; then
+  pass "BL-629 landing-merge gate: a routine QA-landing merge plus bookkeeping reads as approved, not offending drift"
+else
+  fail "BL-629 landing-merge gate: unexpected qa_approval shape: $REPORT_LANDING"
+fi
+
+SYNC_ERR_LANDING="$(mktemp)"
+bb "$CLI" "$ROOT" sync >/dev/null 2>"$SYNC_ERR_LANDING"
+SYNC_EXIT_LANDING=$?
+if [[ "$SYNC_EXIT_LANDING" -eq 0 ]]; then
+  pass "BL-629 landing-merge gate: sync proceeds without refusal after a routine QA landing"
+else
+  fail "BL-629 landing-merge gate: expected sync to proceed (exit 0), got exit=$SYNC_EXIT_LANDING stderr=$(cat "$SYNC_ERR_LANDING")"
+fi
+rm -f "$SYNC_ERR_LANDING"
+final_cleanup
+LIVE_ROOTS=()
+
 echo "build_freshness_cli smoke: ALL CHECKS PASSED"

@@ -105,32 +105,73 @@
   (let [{:keys [exit out]} (process/sh {:continue true :dir project-root} "git" "merge-base" a b)]
     (when (zero? exit) (str/trim out))))
 
+;; BL-629 architect bounce #1 finding 4: {:ok? :shas} instead of a bare list -
+;; a git failure must be distinguishable from "no commits", or the caller
+;; cannot tell "no drift" from "could not tell" and silently reads unknown
+;; as approved (the exact fail-open bug the finding reproduced).
 (defn- commit-shas-since! [project-root base tip]
   (let [{:keys [exit out]} (process/sh {:continue true :dir project-root} "git" "log" "--format=%H" (str base ".." tip))]
-    (if (zero? exit) (remove str/blank? (str/split-lines out)) [])))
+    (if (zero? exit)
+      {:ok? true :shas (remove str/blank? (str/split-lines out))}
+      {:ok? false :shas []})))
 
-;; -m: for a merge commit, diff against EACH parent and union the changed
-;; paths (plain diff-tree shows nothing for a merge unless asked). This is
-;; what correctly flags a merge like the BL-590 incident's own f8dc07963,
-;; which brought extension/src changes onto main via a merge commit, not a
-;; plain one. Single-parent commits are unaffected by -m.
+;; -c (combined diff): for a merge commit, report only the paths whose
+;; content in the merge result differs from EVERY parent - i.e. the merge's
+;; own resolution, not everything either side already changed. A routine
+;; `--no-ff` QA-landing merge resolves cleanly to one side and reports
+;; nothing; an evil merge that resolves a conflict (or otherwise introduces
+;; content neither parent had) still reports those paths. -m (diff against
+;; each parent, union the results) was tried first and rejected: it flags
+;; the routine post-QA landing merge itself as offending drift because that
+;; merge legitimately differs from main's PRIOR tip, which would make sync
+;; refuse every single day (BL-629 architect bounce #1, finding 2) - the
+;; exact daily-friction failure mode the spec forbids. -c still catches a
+;; real evil merge (BL-590's own f8dc07963: its content commit 73706d79e is
+;; still named) while staying silent on QA's own clean landings
+;; (4e9cd883d, f0be69ac8). Single-parent commits are unaffected by either
+;; flag.
+;; BL-629 architect bounce #1 finding 4: {:ok? :paths}, same reasoning as
+;; commit-shas-since! above - a git failure on ONE commit must not silently
+;; read as "this commit touches nothing" (bookkeeping-only), which is what
+;; an empty path list means to touches-deployed-surface?.
 (defn- changed-paths-for-commit! [project-root sha]
   (let [{:keys [exit out]} (process/sh {:continue true :dir project-root}
-                                        "git" "diff-tree" "--no-commit-id" "--name-only" "-r" "-m" sha)]
-    (if (zero? exit) (vec (distinct (remove str/blank? (str/split-lines out)))) [])))
+                                        "git" "diff-tree" "--no-commit-id" "--name-only" "-r" "-c" sha)]
+    (if (zero? exit)
+      {:ok? true :paths (vec (distinct (remove str/blank? (str/split-lines out))))}
+      {:ok? false :paths []})))
 
+;; BL-629 architect bounce #1 finding 4: every gatherer below can fail open
+;; today - a merge-base miss (no common ancestor - reproduced live: two
+;; valid refs, no shared history), a `git log` failure, or a `git diff-tree`
+;; failure per commit all degrade to an empty result, which every consumer
+;; reads as "no drift" = approved. :facts-complete? false is the explicit
+;; "could not determine" state the spec's fail-closed posture (item 4) needs
+;; but never had - sync-gate-decision refuses on it exactly like a missing
+;; ref. An unresolvable commit's own touches-surface? is presumed TRUE (the
+;; conservative default for THAT one commit), independently of the overall
+;; facts-complete? flag - it still counts as an offending sha if the drift
+;; is otherwise approved, so it is not lost even when override is used.
 (defn- drift-facts! [project-root]
   (if-let [qa-sha (qa-ref-sha! project-root)]
     (let [base (merge-base! project-root "main" "swarmforge-QA")]
-      {:qa-ref-exists? true
-       :drift-commits (if base
-                        (mapv (fn [sha]
-                                {:sha sha
-                                 :touches-surface? (build-freshness-lib/touches-deployed-surface?
-                                                     (changed-paths-for-commit! project-root sha))})
-                              (commit-shas-since! project-root base "main"))
-                        [])})
-    {:qa-ref-exists? false :drift-commits []}))
+      (if-not base
+        {:qa-ref-exists? true :drift-commits [] :facts-complete? false}
+        (let [{shas-ok? :ok? shas :shas} (commit-shas-since! project-root base "main")]
+          (if-not shas-ok?
+            {:qa-ref-exists? true :drift-commits [] :facts-complete? false}
+            (let [drift-commits (mapv (fn [sha]
+                                         (let [{paths-ok? :ok? paths :paths} (changed-paths-for-commit! project-root sha)]
+                                           {:sha sha
+                                            :touches-surface? (if paths-ok?
+                                                                 (build-freshness-lib/touches-deployed-surface? paths)
+                                                                 true)
+                                            :ok? paths-ok?}))
+                                       shas)]
+              {:qa-ref-exists? true
+               :drift-commits drift-commits
+               :facts-complete? (every? :ok? drift-commits)})))))
+    {:qa-ref-exists? false :drift-commits [] :facts-complete? true}))
 
 ;; git status --porcelain: first 2 chars are the XY status codes, then a
 ;; space, then the path (renames read "old -> new" - the new path is what
@@ -140,16 +181,19 @@
         arrow (str/index-of raw " -> ")]
     (str/trim (if arrow (subs raw (+ arrow 4)) raw))))
 
+;; BL-629 architect bounce #1 finding 4: {:ok? :paths} - a `git status`
+;; failure must not silently read as "working tree is clean".
 (defn- dirty-surface-paths! [project-root]
   (let [{:keys [exit out]} (process/sh {:continue true :dir project-root} "git" "status" "--porcelain")]
     (if (zero? exit)
-      (->> (str/split-lines out)
-           (remove str/blank?)
-           (map porcelain-path)
-           (filter build-freshness-lib/on-deployed-surface?)
-           distinct
-           vec)
-      [])))
+      {:ok? true
+       :paths (->> (str/split-lines out)
+                   (remove str/blank?)
+                   (map porcelain-path)
+                   (filter build-freshness-lib/on-deployed-surface?)
+                   distinct
+                   vec)}
+      {:ok? false :paths []})))
 
 (defn- override-log-path [project-root]
   (fs/path project-root ".swarmforge" "build-freshness" "sync-overrides.jsonl"))
@@ -176,6 +220,8 @@
     (case (:reason gate)
       :missing-ref
       (str "build_freshness_cli.bb sync: REFUSED - the QA approval reference (swarmforge-QA) is missing\n  " remedy)
+      :gather-failed
+      (str "build_freshness_cli.bb sync: REFUSED - could not determine whether main is QA-approved (a git command failed while gathering drift facts)\n  " remedy)
       :code-drift
       (str "build_freshness_cli.bb sync: REFUSED - main is not QA-approved\n"
            "  offending commit(s): " (str/join " " (:offending-shas gate)) "\n  " remedy)
@@ -187,9 +233,9 @@
   (let [processes (gather-processes project-root)
         main-sha (main-sha! project-root)
         report (build-freshness-lib/freshness-report processes main-sha)
-        {:keys [qa-ref-exists? drift-commits]} (drift-facts! project-root)
+        {:keys [qa-ref-exists? drift-commits facts-complete?]} (drift-facts! project-root)
         tip-approval (if qa-ref-exists?
-                       (build-freshness-lib/tip-approval-status drift-commits)
+                       (build-freshness-lib/tip-approval-status drift-commits facts-complete?)
                        {:approved? false :offending-shas []})]
     {:processes report
      :qa_approval {:approved (:approved? tip-approval)
@@ -340,13 +386,14 @@
 ;; recompile-once/restart-per-group logic below is unchanged from BL-335,
 ;; just moved behind the gate as adapters instead of running inline.
 (defn- run-sync! [project-root override?]
-  (let [{:keys [qa-ref-exists? drift-commits]} (drift-facts! project-root)
-        dirty-surface-paths (dirty-surface-paths! project-root)
+  (let [{:keys [qa-ref-exists? drift-commits facts-complete?]} (drift-facts! project-root)
+        {dirty-ok? :ok? dirty-surface-paths :paths} (dirty-surface-paths! project-root)
         processes (gather-processes project-root)
         main-sha (main-sha! project-root)
         facts {:qa-ref-exists? qa-ref-exists?
                :drift-commits drift-commits
                :dirty-surface-paths dirty-surface-paths
+               :facts-complete? (and facts-complete? dirty-ok?)
                :override? override?
                :processes processes
                :main-sha main-sha}

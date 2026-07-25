@@ -85,10 +85,21 @@
 (defn tip-approval-status
   "report's pure fact: is main's tip QA-approved, and if not, which commits
    are why. report never compiles or restarts, so - unlike sync-gate-decision
-   below - the working tree and override never enter into this."
-  [drift-commits]
-  (let [offending (code-drift-shas drift-commits)]
-    {:approved? (empty? offending) :offending-shas offending}))
+   below - the working tree and override never enter into this.
+   facts-complete? (default true) is BL-629 architect bounce #1 finding 4: a
+   git failure while gathering drift (no common ancestor, a `git log`/`diff-
+   tree` failure) is UNKNOWN, not empty - reporting it as approved would be
+   fabricating a clean answer from a gap. Unknown reads as NOT approved,
+   with a distinct :gather-failed? marker so callers can tell 'unapproved'
+   from 'could not tell'. The success-path shape is left untouched (still
+   exactly {:approved? :offending-shas}) so existing callers/tests are
+   unaffected."
+  ([drift-commits] (tip-approval-status drift-commits true))
+  ([drift-commits facts-complete?]
+   (if facts-complete?
+     (let [offending (code-drift-shas drift-commits)]
+       {:approved? (empty? offending) :offending-shas offending})
+     {:approved? false :offending-shas [] :gather-failed? true})))
 
 (defn sync-gate-decision
   "Pure decision for whether `sync` may proceed. facts:
@@ -99,16 +110,28 @@
                            what drift-commits happens to hold)
      :dirty-surface-paths seq of uncommitted-modification paths already
                            filtered to the deployed surface by the CLI
+     :facts-complete?     bool, default true - BL-629 architect bounce #1
+                           finding 4: false when the CLI could not fully
+                           gather the facts above (a merge-base/git-log/
+                           diff-tree/git-status failure) - refuses just like
+                           a missing ref, because an unknown answer is not a
+                           clean one. Overridable via the same :override?
+                           mechanism as every other refusal reason - it is
+                           not a special case, just another reason.
      :override?           bool - explicit, one-shot override for THIS call
                            only (this function is pure/stateless, so an
                            override can never outlive its own invocation)
-   Returns {:refuse? :reason (:missing-ref/:code-drift/:dirty-surface/nil)
-            :offending-shas :offending-paths :override-used?}."
-  [{:keys [qa-ref-exists? drift-commits dirty-surface-paths override?]}]
-  (let [offending-shas (if qa-ref-exists? (code-drift-shas drift-commits) [])
+   Returns {:refuse? :reason (:missing-ref/:gather-failed/:code-drift/
+            :dirty-surface/nil) :offending-shas :offending-paths
+            :override-used?}."
+  [{:keys [qa-ref-exists? drift-commits dirty-surface-paths override?]
+    :as facts}]
+  (let [facts-complete? (get facts :facts-complete? true)
+        offending-shas (if qa-ref-exists? (code-drift-shas drift-commits) [])
         offending-paths (vec dirty-surface-paths)
         reason (cond
                  (not qa-ref-exists?) :missing-ref
+                 (not facts-complete?) :gather-failed
                  (seq offending-shas) :code-drift
                  (seq offending-paths) :dirty-surface
                  :else nil)

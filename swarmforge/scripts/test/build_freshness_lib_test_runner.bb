@@ -113,6 +113,18 @@
          (build-freshness-lib/tip-approval-status [{:sha "code1" :touches-surface? true}
                                                      {:sha "bk1" :touches-surface? false}]))
 
+;; ── BL-629 architect bounce #1 finding 4: fail closed when facts could not
+;;    be gathered, never fabricate "approved" from a gap ──────────────────
+(assert= "tip-approval-status: facts-complete? explicit true is the same as the 1-arity call (regression safety)"
+         (build-freshness-lib/tip-approval-status [{:sha "code1" :touches-surface? true}])
+         (build-freshness-lib/tip-approval-status [{:sha "code1" :touches-surface? true}] true))
+(assert= "tip-approval-status: incomplete facts read as NOT approved, never as empty-drift-so-approved"
+         {:approved? false :offending-shas [] :gather-failed? true}
+         (build-freshness-lib/tip-approval-status [] false))
+(assert= "tip-approval-status: incomplete facts override whatever drift-commits happens to hold"
+         {:approved? false :offending-shas [] :gather-failed? true}
+         (build-freshness-lib/tip-approval-status [{:sha "bk1" :touches-surface? false}] false))
+
 ;; ── sync-gate-decision ──────────────────────────────────────────────────
 (assert= "sync-gate-decision: empty drift, no dirty surface, ref present -> proceeds"
          {:refuse? false :reason nil :offending-shas [] :offending-paths [] :override-used? false}
@@ -164,6 +176,29 @@
          {:refuse? false :reason nil :offending-shas [] :offending-paths [] :override-used? false}
          (build-freshness-lib/sync-gate-decision
           {:qa-ref-exists? true :drift-commits [] :dirty-surface-paths [] :override? true}))
+
+;; ── BL-629 architect bounce #1 finding 4: :facts-complete? false refuses
+;;    exactly like a missing ref - fail closed on every way the answer can
+;;    be unknown, not just a missing swarmforge-QA ref ────────────────────
+(assert= "sync-gate-decision: absent :facts-complete? key defaults to true (regression safety - every test above omits it)"
+         {:refuse? false :reason nil :offending-shas [] :offending-paths [] :override-used? false}
+         (build-freshness-lib/sync-gate-decision
+          {:qa-ref-exists? true :drift-commits [] :dirty-surface-paths [] :override? false}))
+
+(assert= "sync-gate-decision: incomplete facts refuse even with empty drift-commits and no dirty paths"
+         {:refuse? true :reason :gather-failed :offending-shas [] :offending-paths [] :override-used? false}
+         (build-freshness-lib/sync-gate-decision
+          {:qa-ref-exists? true :drift-commits [] :dirty-surface-paths [] :facts-complete? false :override? false}))
+
+(assert= "sync-gate-decision: a missing ref still wins over an incomplete-facts reason (ref check comes first)"
+         {:refuse? true :reason :missing-ref :offending-shas [] :offending-paths [] :override-used? false}
+         (build-freshness-lib/sync-gate-decision
+          {:qa-ref-exists? false :drift-commits [] :dirty-surface-paths [] :facts-complete? false :override? false}))
+
+(assert= "sync-gate-decision: incomplete facts are overridable exactly like every other refusal reason"
+         {:refuse? false :reason :gather-failed :offending-shas [] :offending-paths [] :override-used? true}
+         (build-freshness-lib/sync-gate-decision
+          {:qa-ref-exists? true :drift-commits [] :dirty-surface-paths [] :facts-complete? false :override? true}))
 
 ;; ── execute-sync! (adapter-injected, refusal ordering) ────────────────────
 ;; Mirrors role_lifecycle_lib_test_runner.bb's own spy-adapters convention -
