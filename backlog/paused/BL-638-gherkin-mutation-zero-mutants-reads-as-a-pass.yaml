@@ -1,0 +1,158 @@
+id: BL-638
+title: "Gherkin acceptance mutation reports `Total 0` as a pass for any feature without a Scenario Outline — and stamps the file so later runs skip it"
+milestone: M8
+type: defect
+status: todo
+epic: code-quality-gates
+human_approval: approved
+severity: high
+priority: 05
+direction: human-requested
+depends_on: []
+assigned_to: specifier
+mutation_cost: medium
+
+approval_context: >
+  Operator ruling 2026-07-25, handed forward by BL-567's hardener and QA stages.
+  Found while running the gate against a real feature; the hardener could not
+  satisfy it and built a substitute rather than declare it passed. 60% of the
+  feature corpus is exposed.
+
+source: |
+  BL-567 hardener pass, 2026-07-25. Ran the BL-113 Gherkin acceptance mutation gate
+  against `specs/features/BL-567-expeditor-offline-single-ticket-pipeline.feature`
+  exactly as the hardener role prescribes:
+
+  ```
+  specs/pipeline/scripts/run_gherkin_mutation.sh <feature> <work-dir> <steps> full
+  ->  rc=0
+      Total 0 | Killed 0 | Survived 0 | Errors 0
+      manifest: {"scenarios":[], "implementation_hash":"unknown"}
+  ```
+
+  **Zero mutants were generated, and the run exits 0.** `discover` in
+  `swarmforge/vendor/aps/bb/src/aps/mutation.clj` iterates
+  `(:examples scenario)` — it mutates **Examples-table cells only**. A feature with
+  no `Scenario Outline:` gives it nothing to work with.
+
+  Measured exposure across the corpus (structural match on `^\s*Scenario Outline:`,
+  not a prose mention):
+
+  ```
+  total feature files                356
+  with NO real Scenario Outline      216   (60%)
+  already carrying a mutation-stamp   71
+  stamped AND outline-free             1
+  ```
+
+  So 60% of features cannot be mutation-tested by this gate at all, and the gate
+  says nothing about it.
+
+description: |
+  ## Two defects, and the second is worse
+
+  **1. `Total 0` is indistinguishable from a clean sweep.** `rc=0`, no survivors, no
+  errors. A hardener following the role prompt gets a green result and moves on. This
+  is the same shape as the recorded repo-wide Stryker 0-kill, where a gate reported
+  success while testing nothing.
+
+  **2. It writes a `# mutation-stamp` into the feature file, so the next run SKIPS.**
+  From `hardender.prompt`: a completed run re-run immediately is a no-op while the
+  `# mutation-stamp` hash still matches, and a genuine re-mutation happens only with
+  `hard`/`full` or after the stamp changes.
+
+  A zero-mutant run therefore **suppresses future runs on the strength of having
+  proved nothing**. Adding a Scenario Outline later does not help while the stamp
+  still matches. That is the load-bearing half: defect 1 misleads a human once,
+  defect 2 makes the gate permanently silent for that file.
+
+  The manifest compounds it — BL-502 says the manifest records only CLEAN scenarios
+  (zero survivors AND zero errors). With zero mutants, `scenarios: []` is written,
+  and `implementation_hash` is literally `"unknown"`. A manifest asserting nothing,
+  in a shape that looks like a record of a completed run.
+
+  ## Not a BL-567 problem
+
+  BL-567 avoided Scenario Outlines deliberately: they are what produce the
+  unreferenced-`Examples`-column lint finding and the shared-cell mutation survivor
+  that has recurred five times in this repo. Avoiding a known trap should not
+  silently disable a quality gate.
+
+  ## Shape
+
+  Specifier decides; the load-bearing parts:
+
+  1. **A zero-mutant run must not read as a pass.** Distinguish "nothing to mutate"
+     from "everything mutated and killed" in the exit status, the summary line, and
+     the manifest. `Errors 0` with `Total 0` should be its own outcome — call it
+     `inapplicable` or similar — never a silent success.
+  2. **A zero-mutant run must not write a suppressing stamp.** Either no stamp, or a
+     stamp that records `inapplicable` so a later run with outlines present is NOT
+     skipped. The specifier should confirm the stamp-comparison path treats it
+     correctly rather than assume.
+  3. **Widen what the mutator can mutate, or say plainly that it cannot.** The
+     vendored APS parser/mutator is PINNED and `engineering.prompt` forbids modifying
+     or reimplementing it, so this is deliberately NOT "make the mutator handle plain
+     scenarios". Options for the specifier: mutate step ARGUMENTS outside Examples
+     tables in our own wrapper; or accept the limit and make the hardener's duty
+     explicit about what to do instead.
+  4. **The hardener needs a stated fallback.** BL-567's hardener built
+     `swarmforge/scripts/test/expedite_mutation_sweep.sh` (41 mutants, hand-authored,
+     all killed) because the standard gates could not see babashka code. That worked,
+     but it was invented under pressure. The role prompt should say what a hardener
+     does when a gate is inapplicable — the current prompt has no branch for it.
+
+  ## Also unaddressed by any gate, and worth the specifier's ruling
+
+  Stryker mutates `extension/out/` — JavaScript. Every `.bb` script in
+  `swarmforge/scripts/` (the daemons, the router, the handoff libs, the expeditor) has
+  **no mutation coverage at all**, and no CRAP tooling either. That is a much larger
+  hole than this ticket, and the specifier should say whether it belongs here, in a
+  sibling, or in an epic.
+
+acceptance: |
+  Specifier writes the scenarios. Minimum behaviour:
+
+  1. A feature with no `Scenario Outline:` produces an outcome distinguishable from a
+     clean sweep — in the exit status AND in the printed summary. A caller cannot
+     mistake it for a pass.
+  2. That run does not write a stamp that suppresses a later run. Regression:
+     mutate a zero-mutant feature, then ADD a Scenario Outline, then re-run at the
+     default level — the mutants must actually be generated.
+  3. A feature WITH outlines behaves exactly as today. No new friction on the path
+     that works.
+  4. The manifest never records a completed-looking run for zero mutants;
+     `implementation_hash: "unknown"` with `scenarios: []` must not be the shape of a
+     success.
+  5. `hardender.prompt` states what to do when a mutation gate is inapplicable to the
+     parcel's code, so the next hardener does not have to invent it.
+  6. Fixture uses a real corpus feature, not a synthetic one — 216 of 356 are
+     available.
+
+out_of_scope: |
+  - Modifying or reimplementing the vendored APS parser/mutator. PINNED, and
+    `engineering.prompt` forbids it. Any widening happens in our own wrapper.
+  - Retro-running mutation over the 216 outline-free features. Fix the gate first;
+    a backfill sweep is its own ticket once the gate can report honestly.
+  - Removing the stamp mechanism. It is a legitimate cost control for expensive runs;
+    the defect is that a zero-mutant run participates in it.
+  - Mutation coverage for `.bb` code. Named in the description as a bigger hole for
+    the specifier to place, not silently folded in here.
+
+notes: |
+  Priced `severity: high` despite nothing being broken at runtime: this is a **quality
+  gate reporting success while testing nothing**, on 60% of the corpus, and it
+  suppresses its own future runs. A gate that cannot fail is worse than an absent one,
+  because the absent one does not stop anyone looking.
+
+  Precedent for the failure mode, same repo: `bl446-stryker-zero-kill-repo-wide` —
+  Stryker reporting zero kills repo-wide, which also recurs via a stale incremental
+  cache. Two gates, same shape: silence read as health.
+
+  Working substitute to copy from if useful:
+  `swarmforge/scripts/test/expedite_mutation_sweep.sh` — 41 surgical mutants, each a
+  single edit a correct suite must reject, with survivors reported as test gaps. Note
+  it deliberately includes mutants nobody wrote a test for; a sweep that only
+  re-checks existing assertions is a non-vacuity proof, not hardening. It found two
+  real gaps on its first run, one of which was a test that had been green for hours
+  while proving nothing.
