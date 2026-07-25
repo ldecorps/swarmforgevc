@@ -87,7 +87,7 @@ REPORT="$(bb "$CLI" "$ROOT" report)"
 check_01_06() {
   echo "$REPORT" | python3 -c "
 import json, sys
-r = json.load(sys.stdin)['processes']
+r = json.load(sys.stdin)
 by_name = {x['name']: x for x in r}
 assert by_name['bridge']['stale'] is True, 'bridge (compiled, stale) should be flagged stale'
 assert by_name['bridge']['running_sha'] == '$OLD_SHA', 'bridge running_sha should name the build it is running'
@@ -132,10 +132,6 @@ git -C "$ROOT" add -A
 git -C "$ROOT" commit -q -m "merge: fix bridge"
 git -C "$ROOT" branch -f main
 NEW_SHA="$(git -C "$ROOT" rev-parse HEAD)"
-# BL-629: sync now gate-checks main against swarmforge-QA first - this
-# fixture is about staleness/restart, not the QA gate, so point swarmforge-QA
-# at main itself (zero drift, never refuses).
-git -C "$ROOT" branch swarmforge-QA main
 
 REPORT_BEFORE="$(bb "$CLI" "$ROOT" report)"
 FAKE_BIN="$(mktemp -d)"
@@ -157,13 +153,13 @@ check_02_03() {
   [[ "$SYNC_EXIT" -eq 0 ]] || return 1
   echo "$REPORT_BEFORE" | python3 -c "
 import json, sys
-r = json.load(sys.stdin)['processes']
+r = json.load(sys.stdin)
 by_name = {x['name']: x for x in r}
 assert by_name['bridge']['stale'] is True, 'bridge should be reported stale before sync (03-compiled)'
 " || return 1
   echo "$REPORT_AFTER" | python3 -c "
 import json, sys
-r = json.load(sys.stdin)['processes']
+r = json.load(sys.stdin)
 by_name = {x['name']: x for x in r}
 assert by_name['bridge']['stale'] is False, 'bridge should be running the merged code after sync, within the configured interval'
 assert by_name['bridge']['running_sha'] == '$NEW_SHA', 'bridge should be running the exact merged sha'
@@ -322,7 +318,7 @@ REPORT="$(bb "$CLI" "$ROOT" report)"
 check_03_interpreted() {
   echo "$REPORT" | python3 -c "
 import json, sys
-r = json.load(sys.stdin)['processes']
+r = json.load(sys.stdin)
 by_name = {x['name']: x for x in r}
 assert by_name['handoffd']['stale'] is True
 assert by_name['handoffd_supervisor']['stale'] is True
@@ -352,9 +348,6 @@ OLD_SHA="$(git -C "$ROOT" rev-parse HEAD)"
 git -C "$ROOT" commit -q --allow-empty -m init2
 NEW_SHA="$(git -C "$ROOT" rev-parse HEAD)"
 git -C "$ROOT" branch main
-# BL-629: point swarmforge-QA at main (zero drift) - this fixture is about
-# the npm-recompile decision, not the QA gate.
-git -C "$ROOT" branch swarmforge-QA main
 mkdir -p "$ROOT/.swarmforge/operator" "$ROOT/.swarmforge/daemon" \
          "$ROOT/.swarmforge/handoffs/inbox/new" "$ROOT/.swarmforge/handoffs/inbox/in_process" "$ROOT/.swarmforge/handoffs/inbox/completed" \
          "$ROOT/extension/out/tools"
@@ -411,9 +404,6 @@ wait_for 5 test -f "$ROOT/.swarmforge/operator/runtime.pid" || fail "operator-re
 
 git -C "$ROOT" commit -q --allow-empty -m "merge: some fix"
 git -C "$ROOT" branch -f main
-# BL-629: point swarmforge-QA at main (zero drift) - this fixture is about
-# the operator restart race, not the QA gate.
-git -C "$ROOT" branch swarmforge-QA main
 NEW_SHA="$(git -C "$ROOT" rev-parse main)"
 
 # operator_runtime being genuinely stale triggers the (correct) recompile
@@ -451,7 +441,7 @@ assert by_name['operator_runtime']['running_sha'] == '$NEW_SHA'
 " || return 1
   echo "$REPORT_AFTER" | python3 -c "
 import json, sys
-r = json.load(sys.stdin)['processes']
+r = json.load(sys.stdin)
 by_name = {x['name']: x for x in r}
 assert by_name['operator_runtime']['stale'] is False, 'a SEPARATE report run immediately after must ALSO show fresh - no second sync pass needed'
 assert by_name['operator_runtime']['running_sha'] == '$NEW_SHA'
@@ -476,9 +466,6 @@ wait_for 10 test -f "$ROOT/.swarmforge/operator/status.json" || fail "operator-r
 
 git -C "$ROOT" commit -q --allow-empty -m "merge: another fix"
 git -C "$ROOT" branch -f main
-# BL-629: point swarmforge-QA at main (zero drift) - this fixture is about
-# the settle-timeout failure path, not the QA gate.
-git -C "$ROOT" branch swarmforge-QA main
 
 FAKE_BIN_OP4="$(mktemp -d)"
 cat > "$FAKE_BIN_OP4/npm" <<'NPMEOF'
@@ -512,113 +499,6 @@ if check_operator_restart_race_04; then
 else
   fail "operator-restart-race-04: expected a bounded, loud sync failure. exit=$SYNC_EXIT_04 stderr=$SYNC_ERR_04"
 fi
-final_cleanup
-LIVE_ROOTS=()
-
-# ── BL-629 sync-refuses-non-qa-approved-main: the real CLI against a real
-#    git repo, end to end - complements the Gherkin acceptance (which never
-#    has stale processes to restart) by proving the gate wired into the
-#    SAME run-sync!/run-report! call sites the earlier blocks above exercise,
-#    not a second parallel decision path ─────────────────────────────────
-ROOT="$(mk_git_root)"
-LIVE_ROOTS+=("$ROOT")
-git -C "$ROOT" branch -M main
-git -C "$ROOT" branch swarmforge-QA main
-mkdir -p "$ROOT/extension/src"
-echo "// surface" > "$ROOT/extension/src/foo.ts"
-git -C "$ROOT" add -A
-git -C "$ROOT" commit -q -m "code drift not on swarmforge-QA"
-CODE_SHA="$(git -C "$ROOT" rev-parse HEAD)"
-
-REPORT_GATE="$(bb "$CLI" "$ROOT" report)"
-check_629_report_gate() {
-  echo "$REPORT_GATE" | python3 -c "
-import json, sys
-d = json.load(sys.stdin)
-qa = d['qa_approval']
-assert qa['approved'] is False, 'expected the tip to read as not QA-approved'
-assert '$CODE_SHA' in qa['offending_shas'], 'expected the offending sha to be named'
-assert qa['qa_ref_missing'] is False
-"
-}
-if check_629_report_gate; then
-  pass "BL-629 report gate: report distinguishes a QA-unapproved tip and names the offending sha, still exits 0"
-else
-  fail "BL-629 report gate: unexpected qa_approval shape: $REPORT_GATE"
-fi
-
-FAKE_BIN_629="$(mktemp -d)"
-cat > "$FAKE_BIN_629/npm" <<EOF
-#!/usr/bin/env bash
-touch "$ROOT/.recompiled-marker-629"
-exit 0
-EOF
-chmod +x "$FAKE_BIN_629/npm"
-SYNC_ERR_629="$(mktemp)"
-PATH="$FAKE_BIN_629:$PATH" bb "$CLI" "$ROOT" sync >/dev/null 2>"$SYNC_ERR_629"
-SYNC_EXIT_629=$?
-rm -rf "$FAKE_BIN_629"
-check_629_sync_refuses() {
-  [[ "$SYNC_EXIT_629" -eq 3 ]] || return 1
-  grep -q "$CODE_SHA" "$SYNC_ERR_629" || return 1
-  [[ ! -f "$ROOT/.recompiled-marker-629" ]]
-}
-if check_629_sync_refuses; then
-  pass "BL-629 sync gate: sync refuses (exit 3) naming the offending sha and never recompiles"
-else
-  fail "BL-629 sync gate: expected refusal exit 3 naming $CODE_SHA, no recompile. exit=$SYNC_EXIT_629 stderr=$(cat "$SYNC_ERR_629")"
-fi
-rm -f "$SYNC_ERR_629"
-final_cleanup
-LIVE_ROOTS=()
-
-# ── BL-629 architect bounce #1 finding 2: a routine QA-landing merge (the
-#    ordinary PIPELINE.md §5 "QA lands the approved commit on main" step)
-#    must NOT read as offending drift, or sync would refuse every single
-#    day post-QA - real repo, real `--no-ff` merge, not a fixture library
-#    call ─────────────────────────────────────────────────────────────────
-ROOT="$(mk_git_root)"
-LIVE_ROOTS+=("$ROOT")
-git -C "$ROOT" branch -M main
-git -C "$ROOT" branch swarmforge-QA main
-
-git -C "$ROOT" checkout -q -b qa-work-629 swarmforge-QA
-mkdir -p "$ROOT/extension/src"
-echo "// qa approved" > "$ROOT/extension/src/foo.ts"
-git -C "$ROOT" add -A
-git -C "$ROOT" commit -q -m "QA-approved work"
-git -C "$ROOT" branch -f swarmforge-QA HEAD
-git -C "$ROOT" checkout -q main
-git -C "$ROOT" merge --no-ff -q -m "Merge QA-approved commit for routine landing" swarmforge-QA
-mkdir -p "$ROOT/backlog/paused"
-echo "id: PLACEHOLDER" > "$ROOT/backlog/paused/PLACEHOLDER.yaml"
-git -C "$ROOT" add -A
-git -C "$ROOT" commit -q -m "Close ticket; promote next"
-
-REPORT_LANDING="$(bb "$CLI" "$ROOT" report)"
-check_629_landing_merge_approved() {
-  echo "$REPORT_LANDING" | python3 -c "
-import json, sys
-d = json.load(sys.stdin)
-qa = d['qa_approval']
-assert qa['approved'] is True, 'expected a routine QA-landing merge plus bookkeeping to read as approved, got: ' + json.dumps(qa)
-"
-}
-if check_629_landing_merge_approved; then
-  pass "BL-629 landing-merge gate: a routine QA-landing merge plus bookkeeping reads as approved, not offending drift"
-else
-  fail "BL-629 landing-merge gate: unexpected qa_approval shape: $REPORT_LANDING"
-fi
-
-SYNC_ERR_LANDING="$(mktemp)"
-bb "$CLI" "$ROOT" sync >/dev/null 2>"$SYNC_ERR_LANDING"
-SYNC_EXIT_LANDING=$?
-if [[ "$SYNC_EXIT_LANDING" -eq 0 ]]; then
-  pass "BL-629 landing-merge gate: sync proceeds without refusal after a routine QA landing"
-else
-  fail "BL-629 landing-merge gate: expected sync to proceed (exit 0), got exit=$SYNC_EXIT_LANDING stderr=$(cat "$SYNC_ERR_LANDING")"
-fi
-rm -f "$SYNC_ERR_LANDING"
 final_cleanup
 LIVE_ROOTS=()
 
