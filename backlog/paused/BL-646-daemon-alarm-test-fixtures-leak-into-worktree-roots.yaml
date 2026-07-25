@@ -90,6 +90,23 @@ description: |
   1. The deterministic health daemon (BL-611) gains a check: untracked, non-ignored
      files in a worktree ROOT that match known test-fixture names. It already sweeps
      every worktree and already reports rather than acts.
+
+     **AND IT ALREADY COUNTS THEM — pointing the wrong way.** `count-untracked-files`
+     exists at `swarmforge/scripts/babysitter_assess_lib.bb:44` (a `git status
+     --porcelain` `??` count), but it is only consulted when the role's HEAD has NOT
+     moved (`:74`), i.e. purely as a stalled-role signal. Its hint (`:88-90`) reads:
+
+     ```
+     "HEAD still <sha> but N untracked file(s)
+      — nudge role to git add/commit before BL-528 halt."
+     ```
+
+     Against these four fixture files that advice is **actively harmful**: a role that
+     obeys it commits the debris. That is the same shape as the 2026-07-25 incident
+     where a `git add -A` swept the operator's uncommitted work into a cleaner commit.
+     So the detector must distinguish "role has real work it hasn't committed" from
+     "tool droppings in the worktree root" and give the OPPOSITE advice for the second.
+     Reuse the probe; do not reuse its verdict.
   2. `.gitignore` the fixture names, so they stop being "non-ignored debris" at all.
      Cheapest, but it hides the leak rather than fixing it, and a future real file of
      the same name would vanish silently. Prefer it only alongside item 1 of the shape
@@ -123,6 +140,9 @@ acceptance: |
      the answer.
   5. If `.gitignore` is used, it does not mask a future file of the same name in a
      directory where such a file would be real.
+  6. If the babysitter check is folded in: a worktree holding ONLY tool droppings does
+     not produce a "nudge role to git add/commit" hint. Fixture: the four known fixture
+     names in a worktree root with an unmoved HEAD must not advise committing them.
 
 out_of_scope: |
   - Relaxing the never-delete rule. Its reasoning is sound and today's incident
