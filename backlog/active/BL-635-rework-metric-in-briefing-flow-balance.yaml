@@ -282,3 +282,6 @@ notes: |
   answer may well be that BL-590 was an outlier and BL-633/BL-634 were solving a
   rare problem; that is a legitimate finding and the metric must be able to
   deliver it.
+bounce_count: 1
+bounce_history:
+  - { at: 2026-07-25, by: architect, blamed: coder, class: behavior, commit: 73419cd0e1, evidence: backlog/evidence/BL-635-rework-metric-in-briefing-flow-balance-bounce-20260726.md }

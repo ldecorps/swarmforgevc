@@ -80,6 +80,24 @@ entirely from the pre-epoch zero at site 1. `.toFixed(1)` has no unavailable
 path, so the markdown briefing (the surface a human actually reads) states a
 trend the data cannot support.
 
+**Site 5 — the epoch boundary is evaluated in UTC against a locally-chosen date,
+and swallows real data.** `REWORK_ATTRIBUTION_EPOCH_ISO = '2026-07-26'` is
+documented as "this ticket's own ship date", but `dayStartMs` compares in UTC
+(`T00:00:00.000Z`). Recording this very send-back demonstrated the consequence
+live — the first architect bounce ever recorded, the exact record this ticket
+exists to capture:
+
+```
+record written by record-bounce.js: at = 2026-07-25T23:51:59.370Z
+                                    (local wall clock: 2026-07-26 00:51 BST)
+computeDailyReworkSeries ->  2026-07-25: null   <-- real data, rendered "unavailable"
+                             2026-07-26: 0
+```
+
+Any bounce recorded in the hours between local midnight and UTC midnight on ship
+day is silently discarded as pre-epoch. The same invariant, failing in the
+opposite direction: recorded data rendered as absent.
+
 ## Remediation
 
 1. Give `computeRoundsPerCloseSeriesByRole` the same `epochIso` treatment its
@@ -92,9 +110,15 @@ trend the data cannot support.
 3. `renderReworkSuffix` must render the word `unavailable` (never `0.0`, never a
    bare arrow) for a role whose window is unavailable — matching
    `renderDailyReworkMarkdownLine`, which already gets this right.
-4. Cover it: the existing suite is green *with* the defect present, so the fix
-   needs a test that fails without it — pre-epoch window on `roundsPerClose`, and
-   the zero-closes window, on both the sidecar field and the rendered line.
+4. Fix the epoch boundary (site 5): state explicitly which clock the epoch is in
+   and set it so it cannot swallow records written on ship day. Either pin the
+   constant to the UTC instant the recorder actually stamps, or move it back one
+   day — the honest failure direction here is counting a real bounce, never
+   discarding one.
+5. Cover it: the existing suite is green *with* the defect present, so the fix
+   needs tests that fail without it — pre-epoch window on `roundsPerClose`, the
+   zero-closes window, and the ship-day boundary record, on both the sidecar
+   field and the rendered line.
 
 Note for the specifier (no action needed from the coder): acceptance scenario 12
 covers the epoch rule for the daily series only. A scenario pinning the same rule
