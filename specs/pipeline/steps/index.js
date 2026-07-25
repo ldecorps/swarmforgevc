@@ -315,7 +315,8 @@ const DOMAINS = [
   require('./bl617NightlyCooldownWindowSteps'),
   require('./bl618StablePrefixCapSteps'),
   require('./bl610UnresolvableCommitQuarantinedSteps'),
-  require('./bl577FlowWatchdogParcelAgeInvariantSteps')
+  require('./bl577FlowWatchdogParcelAgeInvariantSteps'),
+  require('./bl575CostRankHorizonPinnedClockSteps')
 ];
 
 function registerSteps(registry) {
