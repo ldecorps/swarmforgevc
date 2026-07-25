@@ -1,0 +1,123 @@
+id: BL-654
+title: "Every declared invariant gets a CODER-authored executable property test — the architect verifies existence and non-vacuity instead of being the first to execute the property in its head"
+milestone: M8
+type: feature
+status: todo
+epic: code-quality-gates
+human_approval: approved
+severity: medium
+priority: 04
+direction: human-requested
+depends_on: []
+assigned_to: specifier
+mutation_cost: medium
+
+approval_context: >
+  Operator, 2026-07-26 00:55, watching BL-635's first architect send-back and
+  asking "why is it him doing the property test and not the roles before him?
+  is property testing an architectural matter?" — then "file le TOUT DE
+  SUITE". Answer encoded here: stating a property is design work; ENCODING it
+  as an executable test is implementation and belongs to the coder, where
+  satisfying it is cheapest.
+
+source: |
+  ## The missing leg of BL-633, exposed on its first live night
+
+  BL-633 shipped 2026-07-25 ~23:00 and WORKED within two hours: BL-635's
+  architect send-back #1 is one bounce, on a DECLARED invariant
+  (`invariants[2]`: pre-epoch absence renders unavailable, never zero), whole
+  class swept, violating site named (`roundsPerClose` fabricates a pre-epoch
+  `0` into a trend arrow), bounce recorded with the very tool the ticket
+  builds. Compare BL-590: four bounces for one unstated property.
+
+  But the chain BL-633 built has a hole in the middle, measured:
+
+  ```
+  grep -ic invariant swarmforge/roles/specifier.prompt  -> 6   (BL-633 ✓)
+  grep -ic invariant swarmforge/roles/architect.prompt  -> 11  (BL-633 ✓)
+  grep -ic invariant swarmforge/roles/coder.prompt      -> 0   (nobody told him)
+  ```
+
+  BL-633's own description names the coder as "the second consumer: an
+  invariant is a design constraint before it is a review criterion, which is
+  where it is cheapest to satisfy" — but its acceptance had no coder item, so
+  the specifier scoped it out and shipped to spec. Nothing is broken; the
+  mechanism is half-plumbed. (Hence `feature`, not `defect`, and NOT expedite-
+  typed — same taxonomy honesty as BL-649/BL-651.)
+
+  ## The consequence, visible tonight
+
+  The invariant exists as ticket text; the coder implements scenarios and unit
+  tests (137 green); the FIRST EXECUTABLE CHECK of the property happens in the
+  architect's review sweep. So the architect looks like the property-testing
+  role — historically literally true: BL-590's P5/P6 property tests were
+  architect-authored during bounces, because nobody upstream held the property
+  in hand. With this ticket, tonight's bounce would not have happened: writing
+  the property test for invariants[2] would have surfaced roundsPerClose at
+  the coder's desk, before any round-trip.
+
+description: |
+  ## Division of labour being pinned
+
+  ```
+  specifier   STATES the property        (invariants:, BL-633, shipped)
+  coder       ENCODES it as an executable property test   <- THIS TICKET
+  architect   VERIFIES existence + non-vacuity + coverage; never first author
+  hardener    STRESSES it (mutation kills vacuous property tests)
+  ```
+
+  "Is property testing an architectural matter?" — the STATEMENT is
+  design-level (cross-cutting by nature); the EXECUTION is test code and
+  belongs where the constraint is cheapest to satisfy. The architect inherited
+  authorship only through the upstream vacuum BL-633 half-filled.
+
+  ## Shape
+
+  1. `coder.prompt`: for EACH `invariants:` entry on the ticket, the parcel
+     carries an executable property test asserting it. A slice with no
+     invariants changes nothing — the common path stays untouched.
+  2. The generator-reach rule is part of the contract, not a footnote:
+     [[property-test-generator-must-reach-deep-state]] records a generator
+     that passed 400 runs against a live defect because it never reached the
+     interesting state. The coder's test must demonstrably reach the states
+     the invariant quantifies over (asserted coverage floor, the
+     BL-567-established pattern).
+  3. `architect.prompt` (small amendment): on a ticket WITH invariants, the
+     review's first question becomes "does an executable property test exist
+     for each, and is it non-vacuous?" — a missing or vacuous one is the
+     send-back, BEFORE any hand-verification of the property itself.
+  4. Wiring with BL-608/BL-635 recording: a bounce for "missing property
+     test" is recorded like any other, so BL-635's metric can distinguish
+     "property violated" from "property never encoded".
+
+acceptance: |
+  Specifier writes the scenarios. Minimum behaviour:
+
+  1. A ticket with one `invariants:` entry whose parcel lacks a property test
+     is bounced by the architect naming the missing test — fixture mirrors
+     BL-635 invariants[2].
+  2. A parcel WITH the property test where the test's generator provably
+     reaches the quantified states (asserted coverage, not hoped) passes that
+     gate.
+  3. Non-vacuity: seed a property test that deletes its own assertion (or
+     never reaches the deep state) — the gate (architect check or mutation
+     sweep) catches it.
+  4. A ticket with NO invariants: zero new obligations, byte-identical flow.
+  5. `coder.prompt` gains the rule; `grep -ic invariant coder.prompt` goes
+     from 0 to nonzero, and the wording names the generator-reach requirement.
+  6. Retro-fixture: BL-635's invariants[2] encoded as the worked example —
+     the property test that would have caught roundsPerClose pre-review.
+
+out_of_scope: |
+  - Retro-fitting property tests onto shipped tickets.
+  - The mutation tooling itself (Stryker scope, APS) — existing gates are the
+    enforcement backstop, not this ticket's deliverable.
+  - Auto-generating property tests from invariant text. The coder writes
+    them; judgement about state-space and generators is the job.
+
+notes: |
+  Completes the BL-633 chain end to end: state -> encode -> verify -> stress.
+  Filed within two hours of the mechanism's first live use, from its first
+  live gap — which is exactly the cadence the operator asked the swarm to
+  sustain: the reviewer's discovery becomes the builder's obligation while
+  the evidence is still warm.
