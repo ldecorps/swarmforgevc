@@ -1,0 +1,81 @@
+id: BL-625
+title: "Onboarding facilitator slice 3: prompts via the existing CLI, ready-to-launch handoff, done state, topic reuse across targets"
+milestone: M8
+type: feature
+status: todo
+epic: swarm-intelligence-layer
+human_approval: pending
+severity: medium
+priority: 6
+direction: human-requested
+depends_on: [BL-624]
+assigned_to: coder
+mutation_cost: medium
+source: |
+  BL-590 slice 3, split out by the specifier 2026-07-25. Human ruling on
+  BL-590 applies unchanged: the facilitator's remit ends at contract agreed
+  + prompts committed + prerequisites verified; the human launches on the
+  target host.
+
+description: |
+  Closes the onboarding state machine: contract-agreed -> prompts-proposed
+  -> gate-open -> ready-to-launch -> done.
+
+  1. PROMPTS. Proceed from contract-agreed runs the existing BL-269 CLI
+     (propose-onboarding-prompts.js) against the facilitator's clone; the
+     proposed project/engineering prompts are committed and pushed to the
+     target repo (they travel with the repo, per the project's own
+     Initialize Target pattern).
+  2. LAUNCH HANDOFF. At gate-open the facilitator posts the exact command
+     the human runs ON THE TARGET HOST (./swarm <path> --pack mono-router,
+     with the real path) and states plainly that the human runs it there.
+     It NEVER claims to have launched or observed a swarm it cannot reach —
+     asked "is it running", it says it cannot know and restates the
+     command.
+  3. DONE + REUSE. The human's confirmation moves the target to done with a
+     completion summary. The single Onboarding topic is REUSED for the next
+     target: a new repo URL opens its own per-target state; replies always
+     name which target they concern, so concurrent or successive
+     onboardings never blur (BL-590 design decision: one topic, per-target
+     state).
+
+acceptance: |
+  specs/features/BL-625-onboarding-facilitator-prompts-and-launch-handoff.feature
+
+  Every scenario needs its step handler wired in this same parcel (BL-233).
+
+  Scenario map: 01 prompts via the existing tool, committed + pushed ->
+  prompts-proposed; 02 ready-to-launch names the exact target-host command;
+  03 never claims remote launch; 04 confirmation -> done + summary; 05 next
+  target reuses the topic with separate per-target state, replies name
+  their target.
+
+  Supporting gates:
+  - Same pure/impure split as slices 1-2; prompts CLI behind an injected
+    seam; no real timers.
+  - The launch-command text is derived from the persisted target state
+    (path/pack), not hardcoded.
+
+  QA end-to-end procedure (live swarm — the old-Mac onboarding is the
+  first live target per the BL-590 ruling):
+  1. From a real contract-agreed target, proceed: prompt files land on the
+     target repo on GitHub; topic shows the commit reference.
+  2. The launch handoff message names the exact command and the target
+     host; asking "did you launch it?" gets the cannot-reach answer plus
+     the command again.
+  3. Confirm launch: done + summary. Post a second repo URL: the same
+     topic serves it with fresh state and target-named replies.
+
+out_of_scope: |
+  - Any change to what the prompts CLI generates (BL-269 owns content).
+  - Remote launch or remote observation of the target swarm.
+  - Closing/archiving the Onboarding topic (it is reused, not closed).
+  - Multi-swarm fleet wiring after launch (BL-543 family, incl. BL-622
+    token separation — enforced there, guided in slice 1).
+
+approval_context: >
+  Slice split of the already-approved BL-590; no new design forks. One
+  reusable decision surfaced for a cheap veto: ONE Onboarding topic reused
+  across targets (per-target state keeps them distinct) rather than one
+  topic per target — matches the ad-hoc ensure-or-reuse pattern of every
+  other standing topic and avoids unbounded topic growth.

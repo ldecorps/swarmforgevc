@@ -1,0 +1,86 @@
+id: BL-624
+title: "Onboarding facilitator slice 2: survey -> propose -> negotiate -> agreed contract through the existing gate, on the facilitator's own GitHub clone"
+milestone: M8
+type: feature
+status: todo
+epic: swarm-intelligence-layer
+human_approval: pending
+severity: medium
+priority: 4
+direction: human-requested
+depends_on: [BL-590]
+assigned_to: coder
+mutation_cost: high
+source: |
+  BL-590 slice 2, split out by the specifier 2026-07-25 per BL-590's own
+  slicing instruction (mutation_cost high, must not ship as one parcel).
+  Human ruling on BL-590 applies unchanged: the facilitator runs on the
+  primary Linux box and onboards from a GitHub URL, cloning the target
+  itself with this box's own GitHub access.
+
+description: |
+  The do-for-you phase of the onboarding state machine:
+  prerequisites-ready -> surveying -> contract-proposed -> negotiating ->
+  contract-agreed. The facilitator clones the target GitHub repo itself,
+  then chains the EXISTING, shipped CLIs against its own clone — never
+  reimplementing one (BL-590 out_of_scope): contractSurvey /
+  propose-onboarding-contract.js to propose,
+  negotiate-onboarding-contract.js runObject (change-this) and runApprove
+  (proceed) as the ONE writer of negotiation state (BL-381), and
+  onboarding-contract-gate.js as the ONE fail-closed contract-agreed proof.
+  The proposed contract and every revision are posted into the Onboarding
+  topic; the agreed contract files are committed and pushed back to the
+  target repo on GitHub with the commit reference posted to the topic.
+  Failures (clone, survey, push) hold the state with a visible reason and
+  a retry instruction — never a silent stall.
+
+  Controls this slice adds to the topic vocabulary: show-me (post the
+  current contract, no state change) and change-this (a real object
+  round). GitHub access is this box's own (verified as a BL-590 slice-1
+  prerequisite); secrets stay in the host environment, never committed to
+  the target (Architecture rule 4).
+
+acceptance: |
+  specs/features/BL-624-onboarding-facilitator-survey-to-gate.feature
+
+  Every scenario needs its step handler wired in this same parcel (BL-233).
+
+  Scenario map: 01 proceed clones + surveys + posts contract ->
+  contract-proposed; 02 show-me inspects without state change; 03
+  change-this runs a real object round -> negotiating; 04 proceed agrees
+  via the existing approve round -> contract-agreed; 05 the gate check
+  shells to the existing onboarding contract gate, failing gate = visible
+  block; 06 agreed contract committed + pushed to the target repo, commit
+  reference posted; 07 clone/survey failure holds with a visible reason.
+
+  Supporting gates:
+  - Phase decisions are pure exported functions; CLI invocations go through
+    injected seams (no *_FORCE_RESULT env bypasses); clone/push effects
+    faked in unit tests, real in the live QA pass.
+  - No parallel negotiation state: grep-level assertion that only
+    runObject/runApprove write negotiation state (BL-381 comment contract).
+
+  QA end-to-end procedure (live swarm, real target repo):
+  1. From prerequisites-ready, post proceed: the facilitator clones the
+     real repo, posts the proposed contract in the topic.
+  2. Post change-this with an objection: a revised contract appears and
+     the negotiation files in the clone show a real object round.
+  3. Post proceed: agreement recorded; onboarding-contract-gate.js exits
+     open; the contract commit appears on the target repo on GitHub and
+     its reference is posted in the topic.
+  4. Break the clone path (bad URL) on a scratch target: the failure and
+     retry instruction are posted; state holds.
+
+out_of_scope: |
+  - Prompts proposal and the launch handoff (BL-625).
+  - The prerequisites phase and topic plumbing (BL-590 slice 1).
+  - Reimplementing any onboarding CLI; missing capability = its own ticket.
+  - A second negotiation engine (BL-381 invariant).
+  - Remote launch of the target swarm.
+
+approval_context: >
+  Slice split of the already-approved BL-590; no new design forks opened —
+  the ruled decisions (runs on primary box, clones by URL, existing CLIs
+  only, existing gate) are carried through. Approve is a rubber stamp
+  unless the slice boundary (survey through gate here; prompts/launch in
+  BL-625) looks wrong to you.
