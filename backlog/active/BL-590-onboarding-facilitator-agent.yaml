@@ -13,7 +13,8 @@ assigned_to: coder
 mutation_cost: high
 human_ruling: |
   RULED by the human 2026-07-23 (relayed via the operator tunnel, recorded
-  directly - Telegram tap path unreliable, see BL-582). Two decisions:
+  directly - Telegram tap path unreliable, see BL-582). Three decisions -
+  the first two ruled 2026-07-23, the third 2026-07-25:
 
   1. BUILD THE ONBOARDER, do not hand-run a one-off runbook. The human
      explicitly chose repeatability: "I'd rather have this done by the
@@ -44,6 +45,31 @@ human_ruling: |
 
      This CLOSES the ticket's "where does the facilitator run" design fork -
      the specifier does not re-open it.
+
+  3. CONVERSATIONAL FIRST, BY DESIGN - AND HERE IS WHEN TO STOP.
+     RULED 2026-07-25. The facilitator is a conversational, topic-bound agent
+     rather than a REST/bridge API or a scripted flow because the onboarding
+     PROCEDURE IS NOT YET KNOWN. The conversation is what discovers it: it
+     forces every step to be articulated out loud, and every failure to be
+     handled in the open where a human can see it. For this workflow the
+     conversational phase IS the spec-discovery phase.
+
+     EXIT CONDITION: once the same sequence of steps repeats across several
+     targets without novel branching, the procedure has stabilised and the
+     flow becomes a candidate for formalisation - a bridge route, an
+     automated sequence, a gate. The Mac (this ticket's first live target) is
+     milestone one of that sample, not the whole of it.
+
+     Consequences for whoever picks this up:
+       - Do NOT propose or build a REST/bridge API for the facilitator as an
+         improvement. It is not an oversight, it is the chosen stage. That
+         exact suggestion was made and corrected on 2026-07-25: the previous
+         version of this ticket said the agent IS conversational (see the
+         description and out_of_scope) but never said WHY, and that was not
+         enough to prevent it.
+       - Equally, do NOT let it stay conversational by default forever. The
+         exit condition above has to be checked deliberately - nothing in the
+         pipeline will surface it on its own.
 source: |
   Human, 2026-07-23. Wants to onboard a new project (e.g. a mono-router on an
   old Mac). Asked whether an onboarder role / a ready facilitator agent exists.
