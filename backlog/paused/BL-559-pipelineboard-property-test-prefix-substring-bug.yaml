@@ -3,6 +3,7 @@ title: "pipelineBoard property test: prefix-check substring never matches curren
 epic: swarmforge-console
 milestone: M8
 type: defect
+severity: medium
 priority: 40
 direction: architect-reported
 human_approval: approved

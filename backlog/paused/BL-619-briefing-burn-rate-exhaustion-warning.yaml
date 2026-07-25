@@ -1,0 +1,149 @@
+id: BL-619
+title: "Morning briefing leads with a warning when projected token burn outruns the weekly reset"
+milestone: M8
+type: feature
+status: todo
+epic: quota-budget-manager
+human_approval: approved
+severity: medium
+priority: 5
+direction: human-requested
+depends_on: []
+assigned_to: coder
+mutation_cost: medium
+source: |
+  backlog/INTAKE-20260724-burn-rate-briefing-warning.md — human directive via
+  Concierge topic 06:39Z 2026-07-24, re-filed verbatim by the operator because
+  the original photo-caption message was silently dropped (that defect is
+  BL-620). Near-verbatim: "Add a warning (in morning briefing at least) if
+  projected burn rate is too high... At that rhythm, we will run out of tokens
+  before Thu 7am. So human has to stop using tokens, or swarm has to slow
+  down." The warning fires on the PROJECTION, not on crossing a static
+  threshold.
+
+description: |
+  ## The open question, answered (spec-time verification 2026-07-25)
+
+  Can the swarm read the account usage percentages programmatically? NO.
+  Nothing in this repo reads Anthropic account-level usage (exhaustive greps
+  for usage/limits endpoints found only prose and signup-URL fixtures), and no
+  supported API for claude.ai subscription weekly limits is known. The nearest
+  existing signals are (a) per-message token counts from Claude CLI transcripts
+  (extension/src/metrics/transcriptUsage.ts — populated and authoritative
+  locally) and (b) pane-scraped limit banners (operator_lib.bb
+  usage-limit-patterns — binary hit/reset-clock only, no percentage). Local
+  telemetry also only sees THIS host's swarm usage, not the human's own app
+  usage, so a locally derived projection is a lower bound. The design below is
+  the nearest honest proxy, and the section must say what it is projecting
+  from.
+
+  ## Shape
+
+  1. ANCHORS. A human-recorded checkpoint of the app-side account percentage:
+     a small CLI (node extension/out/tools/usage-anchor.js record <pct>)
+     appends {atMs, pct, scope} to .swarmforge/operator/usage-anchors.jsonl
+     (machine-local runtime state, gitignored — correct surface). Scope
+     defaults to all-models (the binding limit in the incident screenshot);
+     values validated to 0..100. Recording an anchor is the human/operator
+     transcribing the number they can already see on their phone.
+
+  2. PROJECTION (pure function). Inputs: anchors in the current weekly
+     window, local transcript usage, reset schedule config, pinned now.
+     Rate: latest anchor pair when >=2 anchors in the window; single anchor
+     falls back to the average since the window start (window opens at the
+     reset at 0%). Projected exhaustion instant = when the anchored
+     percentage reaches 100 at that rate. Decision: warn iff projected
+     exhaustion falls BEFORE the next reset. Local transcript burn
+     (tokens/hr, reusing extension/src/metrics/burnRate.ts) is reported
+     alongside as corroborating rate context.
+
+  3. SURFACING. A computed briefing section following the established
+     3-step pattern (compiled TS CLI in extension/out/tools + handoffd.bb
+     adapter + briefing_email_lib.bb key; see
+     constitution/articles/reference/engineering-detailed.prompt on briefing
+     sections). Two deviations from the existing appended sections, because
+     the directive says the briefing LEADS with the warning:
+       - an active warning is PREPENDED above the coordinator-authored body
+         (new leading-section slot in briefing_email_lib.bb), and
+       - the email subject gains a token-burn warning marker.
+     The ok-path is one appended status line. No-anchor path reports local
+     burn only and names the anchor command — it never fabricates a
+     percentage. Failures degrade to sending the briefing without the
+     section (BL-260 posture).
+
+  4. WARNING CONTENT. Projected run-out time plus the implied choice, naming
+     the real levers: human pauses usage, or the swarm throttles via the
+     existing pause file (.swarmforge/operator/control-pause.json), the
+     nightly cooldown window (BL-617), or a lowered active_backlog_max_depth
+     (constitution Art 3.5 circuit breaker).
+
+  5. CONFIG. Weekly reset schedule in swarmforge.conf:
+     config usage_week_reset_day thu / config usage_week_reset_local 07:00
+     (defaults matching the incident screenshot). Malformed config degrades
+     to local-burn-only with a loud log line — never crashes the send.
+
+  Reuse, not duplication: transcriptUsage/burnRate are the token sources
+  (the BL-551 ledger is mostly tokens:null by design — a correlation log,
+  not the authority; BL-605's data-honesty note). The BL-594 trend series
+  are charts/analysis; this is an operational quota warning and lives in
+  epic quota-budget-manager (BL-552 already names forecast-exhaustion as
+  future work). It builds no QuotaManager state and does not jump the
+  BL-545 promotion order.
+
+acceptance: |
+  specs/features/BL-619-briefing-burn-rate-exhaustion-warning.feature
+
+  Every scenario needs its step handler wired in this same parcel — the
+  acceptance runner throws on unhandled scenarios (BL-233).
+
+  Scenario -> shape map: 01 warning leads briefing + levers named (#3/#4);
+  02 projection decision table (#2); 03 ok-path one-line status (#3);
+  04/05 rate derivation two-anchor / single-anchor (#2); 06 no-anchor
+  never fabricates + names anchor command (#1/#3); 07 anchor validation
+  (#1); 08 malformed reset config loud degrade (#5); 09 section failure
+  never blocks send (#3).
+
+  Supporting gates the Gherkin does not pin:
+  - Projection and rate derivation are pure exported functions with a pinned
+    clock in every test (real-clock fixture flake trap); no wall-time reads.
+  - The handoffd.bb adapter's CLI-failure branch is tested (established
+    briefing-section contract).
+  - The anchor CLI main() stays a thin wrapper over exported helpers.
+
+  QA end-to-end procedure (live swarm):
+  1. Record an anchor: node extension/out/tools/usage-anchor.js record 23.
+  2. Force a projection fixture that exhausts before Thursday 07:00 (either
+     a second higher anchor or a config override), delete today's briefing
+     .sent entry, let the email sweep run.
+  3. Received email: warning section ABOVE the coordinator body, subject
+     carries the marker, run-out time and the three throttle levers named.
+  4. Re-run with a low-rate fixture: no subject marker, one status line
+     among the appended sections.
+  5. Remove all anchors: section reports local tokens/hr, states the
+     account projection is unavailable, names the anchor command.
+
+out_of_scope: |
+  - Any claim of reading account usage programmatically (none exists; if an
+    API appears later that is a new ticket).
+  - An immediate/real-time alert channel outside the briefing (Telegram
+    push when the projection flips mid-day) — named follow-up candidate,
+    approval question (b).
+  - A Telegram command to record anchors (CLI only in this slice).
+  - Automatic throttling: the warning NAMES the levers; nothing pulls them.
+  - Per-model (Fable-only) projection; all-models scope only in this slice.
+  - The BL-594 trend charts and BL-604 narrative (separate approved tickets).
+
+approval_context: >
+  Two calls to sanity-check, one genuine ruling. (a) The anchor design:
+  since the account percentage is not programmatically readable, the
+  projection anchors on a number you transcribe from the app via one CLI
+  line; stale/no anchor degrades to local-burn-only rather than guessing.
+  Cheapest honest option — veto if you expected pure local estimation with
+  no manual step. (b) RULING NEEDED: briefing-only for now (recommended;
+  the directive said "at least" briefing), or also an immediate Telegram
+  warning when the projection first flips to exhaustion-before-reset? The
+  immediate channel roughly doubles the slice (new alert path + dedup
+  state), so it is scoped out and would be a follow-up ticket. (c) Firm:
+  the section never fabricates a percentage without an anchor, and the
+  warning fires on projection, not a static threshold — that is the
+  directive's own wording.

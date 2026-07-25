@@ -90,9 +90,34 @@ or coordinator promotion orthogonality — not on every boot.
   same step as sending the send-back `note`. The commit to revert is the review-merge
   you just made, and it is a MERGE — a plain `git revert` fails (`commit is a merge but
   no -m option was given`). Use `git revert -m 1 <your-review-merge>` (first parent =
-  your branch's prior tip; this undoes the merged-in content and keeps your own work),
-  then confirm the content is gone:
-  `git merge-base --is-ancestor <bounced-commit> HEAD` must now be FALSE.
+  your branch's prior tip; this undoes the merged-in content and keeps your own work).
+- **Verify the CONTENT is gone, not the ancestry.** After the revert, confirm the
+  bounced paths are absent from the tree (`git diff --name-only <your-prior-tip> HEAD`
+  shows none of them; the files it introduced are gone). Do NOT check
+  `git merge-base --is-ancestor <bounced-commit> HEAD` — that check **can never be
+  FALSE** and asking for it was a defect in this rule until 2026-07-25. `git revert`
+  ADDS a commit undoing content; it does not rewrite history, so the bounced commit
+  stays an ancestor forever. Ancestry is topological; revert only removes content.
+  A reviewer who checked ancestry saw a correct revert report as failed.
+- **EXCEPTION — if the bounced commit is already an ancestor of `main`, do NOT revert
+  it.** Record why in the bounce evidence and report the breach to the coordinator
+  instead. Reverting content that is already on `main` writes a negative delta into
+  your branch; the next merge from `main` can resolve it in the revert's favour and
+  silently strip `main`'s own code out of the review tree. (2026-07-25: a BL-590
+  bounce revert was on course to remove the operator's BL-629..635 ticket filings and
+  needed an explicit exclusion commit `90d0d79f2` to stop it.) This does not weaken
+  the rule above: the harm it prevents — un-reviewed content becoming an ancestor of a
+  later approved commit — has ALREADY happened once the content is on `main`, so
+  reverting cannot undo it and can only cause new damage.
+  The exception is NARROW and carries obligations. It applies only when
+  `git merge-base --is-ancestor <bounced-commit> main` is TRUE — not when reverting
+  merely looks risky or the merge looks messy. You MUST record the reason in the
+  bounce evidence, and you MUST report the breach to the coordinator: un-reviewed
+  content on `main` is an incident in its own right, separate from this bounce.
+  Skipping either obligation turns this into "I did not revert because it was
+  awkward", which is what it must never become. If this exception starts firing
+  routinely, read it as a signal that the guards keeping un-reviewed work off `main`
+  are not holding.
 - The bounced content is latent in EVERY branch that already merged it, not only the
   final reviewer's — the coder and cleaner branches that produced and forwarded it
   still carry it. If the bounce is a REWORK (the coder fixes the SAME ticket and it
@@ -108,6 +133,11 @@ or coordinator promotion orthogonality — not on every boot.
   `main` although no reviewer ever passed it. Proposed by the architect scoped
   `constitution`; this is the bounce-hygiene sibling of "Forwarded Commits Carry Their
   Lineage" above and "A Prior QA Bounce Is Not In Your Worktree" below.)
+- (AMENDED 2026-07-25, Article 5.1, operator ruling on two architect `rule_proposal`
+  parcels raised from BL-590's bounces #2 and #5: the ancestry verification was
+  unsatisfiable and is replaced by a content check, and the already-on-`main` exception
+  is added. Adoption record and the reproduction that proved the old check impossible:
+  `articles/reference/bounce-revert-verification-amendment-2026-07-25.md`.)
 
 ## A Prior QA Bounce — BL-340 Incident (2026-07-14)
 - Before you PASS, approve, or forward a parcel, check whether the ticket has

@@ -159,3 +159,29 @@ daemon **halts the whole swarm** after three consecutive chase observations (~15
 that pattern — alerting on **Telegram** (standing Operator topic) **and email**, then running `kill_all_swarm.sh`. This is
 deliberate: burning tokens on an idle loop has no upside. Fix the idle path,
 then relaunch with `./swarm`.
+
+
+## Same gates, no machinery: the expeditor (BL-567)
+
+Everything above assumes the swarm is running — handoffd delivering parcels, the
+resident rotating, the coordinator bookkeeping. When the defect is IN that
+machinery, the fix cannot ride the pipeline it is repairing.
+
+`swarmforge/scripts/expedite.sh <BL-id>` walks ONE ticket through this exact chain
+with the whole stack stopped. Same role hats, same gates, same evidence bar; the
+transport and liveness layers are replaced by plain control flow. It reads only
+durable data under git and never touches handoffd, the mailboxes, tmux, rotation or
+the coordinator — though it does stop and restart them, which is the opposite of
+depending on them.
+
+Two consequences worth knowing before you reach for it:
+
+- **Initiation blocks.** It parks whatever is in `backlog/active/` to
+  `backlog/hold/` (never `paused/`, which would auto-promote it back), stops the
+  full stack, then verifies rather than trusting the stop's exit code.
+- **The restart does not block.** The ticket is done when QA stamps it and the yaml
+  moves; a failed restart is reported loudly but never retracts that verdict —
+  because the start path may itself be what was under repair.
+
+How-to: `docs/how-to/BL-567-expedite-one-ticket-with-the-swarm-stopped.md`.
+Rationale: `docs/explanation/BL-567-why-the-expeditor-commands-the-stack-but-never-depends-on-it.md`.

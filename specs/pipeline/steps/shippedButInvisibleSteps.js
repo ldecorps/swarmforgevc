@@ -87,7 +87,10 @@ function registerSteps(registry) {
   });
   registry.define(/^the feature is checked on the surface the human actually looks at$/, (ctx) => {
     const report = runFreshnessReport(ctx);
-    if (!Array.isArray(report) || report.length === 0) {
+    // BL-629: report's shape gained a qa_approval block alongside the
+    // per-process list, so the process entries live under `.processes` now
+    // instead of the top-level being the bare array.
+    if (!Array.isArray(report.processes) || report.processes.length === 0) {
       throw new Error('expected build_freshness_cli.bb report to return real process entries');
     }
     const text = readEvidence(ctx);

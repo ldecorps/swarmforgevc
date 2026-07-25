@@ -1,0 +1,83 @@
+// PARKED by the architect for BL-590 bounce #5. This is P5, to be APPENDED to
+// extension/test/onboardingFacilitator.property.test.js by the rework (it is
+// parked here, not in extension/test/, so the architect branch stays green
+// while the bounced merge is reverted out - same handling as bounce #4's P1-P4).
+//
+// P5 FAILS on the bounced commit 3fe9a0c203 with the shrunk counterexample
+//   ["https://github.com/a/a-a-a", "https://github.com/a-a/a-a"]
+// and PASSES once slugifyTargetRepoUrl is made injective on the normalized URL.
+//
+// It needs one extra import at the top of the property file:
+//   const crypto = require('node:crypto');   // only if the fix uses a digest
+// and slugifyTargetRepoUrl, which the file already imports for P2.
+
+// ── P5: distinct targets never share one durable state file ────────────────
+
+// The aliasing slugifyTargetRepoUrl deliberately performs: scheme, a trailing
+// ".git" and trailing slashes all name the SAME repo and must keep collapsing
+// onto one file. P5 asserts injectivity modulo exactly this normalization -
+// never more, so the fix is not pushed into splitting legitimate aliases.
+const normalizeTargetRepoUrl = (url) =>
+  url.replace(/^[a-z]+:\/\//i, '').replace(/\.git$/i, '').replace(/\/+$/, '');
+
+// A uniform draw over (org, repo) essentially NEVER produces the boundary
+// shift that collides - "acme"/"tools-ci" against "acme-tools"/"ci" - so this
+// generator builds it by construction: ONE shared token stream, split into
+// org/repo at two different points. Both sides are ordinary, valid URLs of
+// two genuinely different repositories. (An earlier uniform version of this
+// generator passed 4000 runs against the live defect; see the bounce #5
+// evidence, and the same trap in P4's own comment.)
+const collidingTargetPairArb = fc
+  .tuple(
+    fc.array(fc.stringMatching(/^[a-z][a-z0-9]{0,6}$/), { minLength: 3, maxLength: 5 }),
+    fc.constantFrom('https://github.com/', 'git@github.com:', 'https://git.example.com/')
+  )
+  .chain(([tokens, prefix]) =>
+    fc
+      .tuple(fc.integer({ min: 1, max: tokens.length - 1 }), fc.integer({ min: 1, max: tokens.length - 1 }))
+      .map(([i, j]) => {
+        const at = (k) => `${prefix}${tokens.slice(0, k).join('-')}/${tokens.slice(k).join('-')}`;
+        return [at(i), at(j)];
+      })
+  );
+
+test('P5: two distinct target repos never share one durable state file', () => {
+  fc.assert(
+    fc.property(collidingTargetPairArb, ([a, b]) => {
+      fc.pre(normalizeTargetRepoUrl(a) !== normalizeTargetRepoUrl(b));
+      assert.notEqual(
+        slugifyTargetRepoUrl(a),
+        slugifyTargetRepoUrl(b),
+        `distinct targets collapse onto ONE state file - onboarding either one destroys the other's verified prerequisites:\n  ${a}\n  ${b}`
+      );
+    }),
+    { numRuns: 2000 }
+  );
+});
+
+// The bare "host/org/repo" core of one repository, from which every alias
+// form below is built. Kept separate from collidingTargetPairArb because the
+// scp-style "git@host:org/repo" form is NOT an alias of "https://host/org/repo"
+// under this normalization (the scheme strip only removes "<scheme>://"), so
+// mixing it in here would assert a collapse the fix is not asked to perform.
+const repoCoreArb = fc
+  .tuple(
+    fc.constantFrom('github.com', 'git.example.com'),
+    fc.stringMatching(/^[a-z][a-z0-9-]{0,8}$/),
+    fc.stringMatching(/^[a-z][a-z0-9-]{0,8}$/)
+  )
+  .map(([host, org, repo]) => `${host}/${org}/${repo}`);
+
+test('P5b: the aliases slugify deliberately collapses still collapse', () => {
+  fc.assert(
+    fc.property(repoCoreArb, (core) => {
+      // Same repo written four ways -> must stay ONE state file, or a human
+      // who pastes the .git form after the plain form starts a second,
+      // unrelated onboarding of the repo they are already onboarding.
+      const forms = [core, `https://${core}`, `https://${core}.git`, `https://${core}/`];
+      const slugs = new Set(forms.map(slugifyTargetRepoUrl));
+      assert.equal(slugs.size, 1, `aliases of one repo split across ${slugs.size} state files: ${[...slugs]}`);
+    }),
+    { numRuns: 500 }
+  );
+});

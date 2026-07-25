@@ -1,0 +1,118 @@
+id: BL-621
+title: "Front-desk degraded warnings carry the underlying error; sustained poll/relay outages escalate to the human"
+milestone: M8
+type: defect
+status: todo
+epic: swarm-reliability
+human_approval: approved
+severity: medium
+priority: 12
+direction: operator-reported
+depends_on: []
+assigned_to: coder
+mutation_cost: medium
+source: |
+  backlog/INTAKE-20260724-onboarding-telegram-token-separation.md item 2
+  (degraded-poll observability) plus the "related live observation" in
+  backlog/INTAKE-20260724-front-desk-drops-photo-captions.md (reply-relay
+  degraded recurs in the current bot generation). During the 2026-07-24
+  token-theft incident, 9 hours of "poll degraded - 5 consecutive failures,
+  still retrying" hid a 409 Conflict that names a rival poller in one line.
+
+description: |
+  ## Two defects, one theme: sustained degradation is silent
+
+  1. THE POLL WARNING DISCARDS ITS CAUSE. getUpdates already returns a fully
+     formatted error (telegramClient.ts formatApiFailureError), but
+     pollAndForward (telegramFrontDeskBotCore.ts:2130-2133) throws it away;
+     PollResult/PollCycleResult never carry it; the degraded warning at
+     applyPollCycleResult (:2303-2305) prints only a count. The reply-relay
+     twin applyReplyRelayCycleResult (:2345-2355) DOES interpolate its
+     errorMessage — the poll path is the asymmetric one. Fix: thread the
+     last error through to the warning line. A 409 then names a rival
+     poller immediately.
+
+  2. NOTHING ESCALATES A SUSTAINED OUTAGE. The poll heartbeat deliberately
+     stamps on failed cycles (BL-370 "handled failure counts as liveness"),
+     so the supervisor reads a permanently failing loop as healthy. The
+     reply-relay retries forever at a 60s cap (bare for(;;) at
+     telegram-front-desk-bot.ts:2211-2227) with one stderr line per streak,
+     no escalate arm, no heartbeat — BL-320 stated "retry forever, capped
+     backoff, escalate - never silently" in prose but shipped no
+     escalation, and BL-302 explicitly excluded the SSE loop. Verified
+     2026-07-25: no existing ticket covers reconnect-exhaustion escalation;
+     this is the hole the caption intake asked the specifier to check.
+
+  ## Fix shape
+
+  - Sustained-degraded episodes: when EITHER loop (poll getUpdates, relay
+    reconnect) has failed continuously past a configurable threshold
+    (default 30 minutes), escalate ONCE per episode via the existing
+    stuck-delivery direct-send channel (escalateStuckDelivery pattern,
+    telegram-front-desk-bot.ts:1988-1995 — a direct Telegram send, which
+    still works during a getUpdates 409 because sending does not poll).
+    The escalation names the loop, the outage duration, and the last error.
+    Recovery closes the episode; a later outage may escalate again.
+  - Relay symmetry: give ReplyRelayCycleResult an escalate field and
+    applyReplyRelayCycleResult an escalate adapter, mirroring the poll
+    pair. Retry-forever + capped backoff stays; only silence goes.
+  - Degrade posture: a failed escalation send is logged and never crashes
+    either loop. Heartbeat semantics unchanged (guard scenario 06 —
+    escalation is the new signal, not heartbeat starvation).
+  - Pure decision functions (episode state in, decision out) with a
+    controllable clock; no wall-time in tests.
+
+  ## Scope
+
+  extension/src/tools/telegramFrontDeskBotCore.ts (cycle results, decision
+  fns, apply fns), extension/src/tools/telegram-front-desk-bot.ts (wiring,
+  config), conf key for the sustained threshold. NOTE: overlaps
+  telegramFrontDeskBotCore.ts with BL-620 — sequence, never concurrent.
+
+acceptance: |
+  specs/features/BL-621-front-desk-degraded-cause-and-sustained-escalation.feature
+
+  Every scenario needs its step handler wired in this same parcel (BL-233).
+
+  Scenario map: 01 warning names the 409 text (fix 1, incident fixture);
+  02 once-per-streak cadence unchanged; 03 sustained poll outage escalates
+  once per episode; 04 recovery closes the episode; 05 relay sustained
+  reconnect failure escalates, retry continues; 06 heartbeat still stamps
+  on failed cycles (BL-370 guard); 07 escalation-send failure tolerated.
+
+  Supporting gates:
+  - Episode/threshold decisions are pure exported functions with fixture
+    clocks (real-clock flake trap); backoff/threshold config injected.
+  - The direct-send escalation is proven reachable while getUpdates fails
+    (fixture: getUpdates 409, sendMessage ok).
+  - No real timers in tests (fake timers only).
+
+  QA end-to-end procedure (live swarm):
+  1. Point a scratch bot config at an invalid/conflicted token (or run a
+     second poller against a scratch token): within one streak the
+     supervisor log shows the degraded line WITH the 409/error text.
+  2. Leave it failing past the sustained threshold (lower the conf key for
+     the test): exactly one direct Telegram escalation arrives naming the
+     loop, duration, and error; it does not repeat while the outage holds.
+  3. Restore the token: polling recovers; re-break it; a new escalation
+     arrives for the new episode.
+
+out_of_scope: |
+  - The caption/drop-audit half of the incident cluster (BL-620).
+  - Token separation / rival-poller prevention (BL-622) — this ticket makes
+    the symptom diagnosable, BL-622 removes the cause.
+  - A relay heartbeat file / supervisor stall detection for the relay loop
+    (escalation covers the observable outcome; a heartbeat is a follow-up
+    if ever needed).
+  - Changing BL-370 heartbeat semantics or BL-389 offset semantics.
+  - Email-channel escalation (supervisor gave-up email exists; this reuses
+    the direct Telegram channel like stuck-delivery does).
+
+approval_context: >
+  One recommendation to veto cheaply: the sustained-outage escalation
+  reuses the stuck-delivery direct Telegram send (works during a getUpdates
+  409) with a default 30-minute continuous-failure threshold, once per
+  episode. If you would rather have email (like the supervisor's gave-up
+  path) or a different threshold, say so. Firm: the degraded warning line
+  carries the underlying error text from now on — 9 anonymous hours is the
+  incident this closes.

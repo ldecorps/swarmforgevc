@@ -64,6 +64,197 @@
          (build-freshness-lib/stale-process-names
           [{:name "bridge" :running_sha "z" :main_sha "z" :stale false}]))
 
+;; ── BL-629: on-deployed-surface? / touches-deployed-surface? ──────────────
+(assert-true "on-deployed-surface?: extension/src files are the deployed surface"
+             (build-freshness-lib/on-deployed-surface? "extension/src/foo.ts"))
+(assert-true "on-deployed-surface?: extension/package.json is the deployed surface"
+             (build-freshness-lib/on-deployed-surface? "extension/package.json"))
+(assert-true "on-deployed-surface?: extension/package-lock.json is the deployed surface"
+             (build-freshness-lib/on-deployed-surface? "extension/package-lock.json"))
+(assert-true "on-deployed-surface?: extension/tsconfig* is the deployed surface"
+             (build-freshness-lib/on-deployed-surface? "extension/tsconfig.build.json"))
+(assert-true "on-deployed-surface?: swarmforge/scripts/ (excluding test/) is the deployed surface"
+             (build-freshness-lib/on-deployed-surface? "swarmforge/scripts/build_freshness_cli.bb"))
+(assert-false "on-deployed-surface?: swarmforge/scripts/test/ is excluded from the deployed surface"
+              (build-freshness-lib/on-deployed-surface? "swarmforge/scripts/test/test_build_freshness_cli.sh"))
+(assert-false "on-deployed-surface?: extension/out/ (compiled output) is not the deployed surface"
+              (build-freshness-lib/on-deployed-surface? "extension/out/tools/start-bridge-headless.js"))
+(assert-false "on-deployed-surface?: bookkeeping paths are not the deployed surface"
+              (build-freshness-lib/on-deployed-surface? "backlog/paused/BL-1.yaml"))
+(assert-false "touches-deployed-surface?: no changed path on the surface -> false"
+              (build-freshness-lib/touches-deployed-surface? ["backlog/paused/BL-1.yaml" "docs/index.md"]))
+(assert-true "touches-deployed-surface?: any ONE changed path on the surface -> true"
+             (build-freshness-lib/touches-deployed-surface? ["docs/index.md" "extension/src/foo.ts"]))
+
+;; ── code-drift-shas / tip-approval-status ──────────────────────────────────
+(assert= "code-drift-shas: empty drift names nothing"
+         []
+         (build-freshness-lib/code-drift-shas []))
+(assert= "code-drift-shas: a bookkeeping-only commit is never named"
+         []
+         (build-freshness-lib/code-drift-shas [{:sha "bookkeeping1" :touches-surface? false}]))
+(assert= "code-drift-shas: a code commit is named, a bookkeeping commit alongside it is not"
+         ["code1"]
+         (build-freshness-lib/code-drift-shas [{:sha "code1" :touches-surface? true}
+                                                {:sha "bookkeeping1" :touches-surface? false}]))
+(assert= "code-drift-shas: a merge commit in the drift is named exactly like any other code commit"
+         ["merge1"]
+         (build-freshness-lib/code-drift-shas [{:sha "merge1" :touches-surface? true}
+                                                {:sha "side1" :touches-surface? false}]))
+
+(assert= "tip-approval-status: no offending commits reads approved"
+         {:approved? true :offending-shas []}
+         (build-freshness-lib/tip-approval-status []))
+(assert= "tip-approval-status: a bookkeeping-only commit still reads approved"
+         {:approved? true :offending-shas []}
+         (build-freshness-lib/tip-approval-status [{:sha "bk1" :touches-surface? false}]))
+(assert= "tip-approval-status: a code commit reads not-approved and is named"
+         {:approved? false :offending-shas ["code1"]}
+         (build-freshness-lib/tip-approval-status [{:sha "code1" :touches-surface? true}
+                                                     {:sha "bk1" :touches-surface? false}]))
+
+;; ── BL-629 architect bounce #1 finding 4: fail closed when facts could not
+;;    be gathered, never fabricate "approved" from a gap ──────────────────
+(assert= "tip-approval-status: facts-complete? explicit true is the same as the 1-arity call (regression safety)"
+         (build-freshness-lib/tip-approval-status [{:sha "code1" :touches-surface? true}])
+         (build-freshness-lib/tip-approval-status [{:sha "code1" :touches-surface? true}] true))
+(assert= "tip-approval-status: incomplete facts read as NOT approved, never as empty-drift-so-approved"
+         {:approved? false :offending-shas [] :gather-failed? true}
+         (build-freshness-lib/tip-approval-status [] false))
+(assert= "tip-approval-status: incomplete facts override whatever drift-commits happens to hold"
+         {:approved? false :offending-shas [] :gather-failed? true}
+         (build-freshness-lib/tip-approval-status [{:sha "bk1" :touches-surface? false}] false))
+
+;; ── sync-gate-decision ──────────────────────────────────────────────────
+(assert= "sync-gate-decision: empty drift, no dirty surface, ref present -> proceeds"
+         {:refuse? false :reason nil :offending-shas [] :offending-paths [] :override-used? false}
+         (build-freshness-lib/sync-gate-decision
+          {:qa-ref-exists? true :drift-commits [] :dirty-surface-paths [] :override? false}))
+
+(assert= "sync-gate-decision: bookkeeping-only drift proceeds"
+         {:refuse? false :reason nil :offending-shas [] :offending-paths [] :override-used? false}
+         (build-freshness-lib/sync-gate-decision
+          {:qa-ref-exists? true :drift-commits [{:sha "bk1" :touches-surface? false}]
+           :dirty-surface-paths [] :override? false}))
+
+(assert= "sync-gate-decision: code drift refuses and names only the offending sha"
+         {:refuse? true :reason :code-drift :offending-shas ["code1"] :offending-paths [] :override-used? false}
+         (build-freshness-lib/sync-gate-decision
+          {:qa-ref-exists? true
+           :drift-commits [{:sha "code1" :touches-surface? true} {:sha "bk1" :touches-surface? false}]
+           :dirty-surface-paths [] :override? false}))
+
+(assert= "sync-gate-decision: a merge commit that touches the surface refuses just like any other code commit"
+         {:refuse? true :reason :code-drift :offending-shas ["merge1"] :offending-paths [] :override-used? false}
+         (build-freshness-lib/sync-gate-decision
+          {:qa-ref-exists? true
+           :drift-commits [{:sha "merge1" :touches-surface? true} {:sha "side1" :touches-surface? false}]
+           :dirty-surface-paths [] :override? false}))
+
+(assert= "sync-gate-decision: missing ref fails closed even with empty drift"
+         {:refuse? true :reason :missing-ref :offending-shas [] :offending-paths [] :override-used? false}
+         (build-freshness-lib/sync-gate-decision
+          {:qa-ref-exists? false :drift-commits [] :dirty-surface-paths [] :override? false}))
+
+(assert= "sync-gate-decision: a dirty path under the surface refuses and names the path"
+         {:refuse? true :reason :dirty-surface :offending-shas [] :offending-paths ["extension/src/foo.ts"] :override-used? false}
+         (build-freshness-lib/sync-gate-decision
+          {:qa-ref-exists? true :drift-commits [] :dirty-surface-paths ["extension/src/foo.ts"] :override? false}))
+
+(assert= "sync-gate-decision: no dirty-surface paths (bookkeeping dirt was already filtered out by the CLI) never refuses"
+         {:refuse? false :reason nil :offending-shas [] :offending-paths [] :override-used? false}
+         (build-freshness-lib/sync-gate-decision
+          {:qa-ref-exists? true :drift-commits [] :dirty-surface-paths [] :override? false}))
+
+(assert= "sync-gate-decision: override proceeds despite code drift and is reported as used"
+         {:refuse? false :reason :code-drift :offending-shas ["code1"] :offending-paths [] :override-used? true}
+         (build-freshness-lib/sync-gate-decision
+          {:qa-ref-exists? true :drift-commits [{:sha "code1" :touches-surface? true}]
+           :dirty-surface-paths [] :override? true}))
+
+(assert= "sync-gate-decision: override is never reported as used when nothing would have refused"
+         {:refuse? false :reason nil :offending-shas [] :offending-paths [] :override-used? false}
+         (build-freshness-lib/sync-gate-decision
+          {:qa-ref-exists? true :drift-commits [] :dirty-surface-paths [] :override? true}))
+
+;; ── BL-629 architect bounce #1 finding 4: :facts-complete? false refuses
+;;    exactly like a missing ref - fail closed on every way the answer can
+;;    be unknown, not just a missing swarmforge-QA ref ────────────────────
+(assert= "sync-gate-decision: absent :facts-complete? key defaults to true (regression safety - every test above omits it)"
+         {:refuse? false :reason nil :offending-shas [] :offending-paths [] :override-used? false}
+         (build-freshness-lib/sync-gate-decision
+          {:qa-ref-exists? true :drift-commits [] :dirty-surface-paths [] :override? false}))
+
+(assert= "sync-gate-decision: incomplete facts refuse even with empty drift-commits and no dirty paths"
+         {:refuse? true :reason :gather-failed :offending-shas [] :offending-paths [] :override-used? false}
+         (build-freshness-lib/sync-gate-decision
+          {:qa-ref-exists? true :drift-commits [] :dirty-surface-paths [] :facts-complete? false :override? false}))
+
+(assert= "sync-gate-decision: a missing ref still wins over an incomplete-facts reason (ref check comes first)"
+         {:refuse? true :reason :missing-ref :offending-shas [] :offending-paths [] :override-used? false}
+         (build-freshness-lib/sync-gate-decision
+          {:qa-ref-exists? false :drift-commits [] :dirty-surface-paths [] :facts-complete? false :override? false}))
+
+(assert= "sync-gate-decision: incomplete facts are overridable exactly like every other refusal reason"
+         {:refuse? false :reason :gather-failed :offending-shas [] :offending-paths [] :override-used? true}
+         (build-freshness-lib/sync-gate-decision
+          {:qa-ref-exists? true :drift-commits [] :dirty-surface-paths [] :facts-complete? false :override? true}))
+
+;; ── execute-sync! (adapter-injected, refusal ordering) ────────────────────
+;; Mirrors role_lifecycle_lib_test_runner.bb's own spy-adapters convention -
+;; this is the ONLY place refusal ordering is proven non-vacuously: a real
+;; fixture repo has no stale processes, so "nothing was restarted" there is
+;; true whether or not the gate is what suppressed it.
+(defn spy-sync-adapters []
+  (let [calls (atom [])]
+    {:calls calls
+     :adapters {:recompile! (fn [] (swap! calls conj [:recompile!]))
+                :restart-group! (fn [group] (swap! calls conj [:restart-group! group]))
+                :record-override! (fn [gate] (swap! calls conj [:record-override! (:offending-shas gate)]))
+                :gather-settled-report (fn [] (swap! calls conj [:gather-settled-report]) [])}}))
+
+(let [{:keys [calls adapters]} (spy-sync-adapters)
+      result (build-freshness-lib/execute-sync!
+              {:qa-ref-exists? true
+               :drift-commits [{:sha "code1" :touches-surface? true}]
+               :dirty-surface-paths []
+               :override? false
+               :processes [{:name "bridge" :group :front-desk :running-sha "old"}]
+               :main-sha "new"}
+              adapters)]
+  (assert-true "execute-sync!: a refusing gate is reported as refused" (:refused result))
+  (assert= "execute-sync!: a refusing gate NEVER invokes recompile!/restart-group!/gather-settled-report"
+           []
+           @calls))
+
+(let [{:keys [calls adapters]} (spy-sync-adapters)
+      result (build-freshness-lib/execute-sync!
+              {:qa-ref-exists? true
+               :drift-commits []
+               :dirty-surface-paths []
+               :override? false
+               :processes [{:name "bridge" :group :front-desk :running-sha "old"}]
+               :main-sha "new"}
+              adapters)]
+  (assert-false "execute-sync!: a non-refusing gate is reported as not refused" (:refused result))
+  (assert= "execute-sync!: a non-refusing gate with a stale process recompiles, restarts its group, then gathers the settled report - in that order"
+           [[:recompile!] [:restart-group! :front-desk] [:gather-settled-report]]
+           @calls))
+
+(let [{:keys [calls adapters]} (spy-sync-adapters)
+      result (build-freshness-lib/execute-sync!
+              {:qa-ref-exists? true
+               :drift-commits [{:sha "code1" :touches-surface? true}]
+               :dirty-surface-paths []
+               :override? true
+               :processes []
+               :main-sha "new"}
+              adapters)]
+  (assert-false "execute-sync!: an overridden refusal proceeds" (:refused result))
+  (assert= "execute-sync!: an overridden refusal records the override BEFORE proceeding, even with nothing stale to restart"
+           [[:record-override! ["code1"]] [:gather-settled-report]]
+           @calls))
+
 (if (seq @failures)
   (do (doseq [f @failures] (println f))
       (println (str (count @failures) " FAILURE(S)"))

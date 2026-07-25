@@ -69,6 +69,7 @@ function mkGitRoot() {
   execFileSync('git', ['config', 'user.name', 't'], { cwd: root });
   execFileSync('git', ['commit', '-q', '--allow-empty', '-m', 'init'], { cwd: root });
   execFileSync('git', ['branch', 'main'], { cwd: root });
+  execFileSync('git', ['branch', 'swarmforge-QA', 'main'], { cwd: root });
   return root;
 }
 

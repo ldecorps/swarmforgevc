@@ -121,6 +121,9 @@ import {
   RESIDENT_SPY_SUBJECT_ID,
   RESIDENT_SPY_TOPIC_NAME,
   decideEnsureResidentSpyTopicAction,
+  decideEnsureOnboardingTopicAction,
+  ONBOARDING_TOPIC_NAME,
+  ONBOARDING_SUBJECT_ID,
   SttResult,
   TtsResult,
   SteerDeliveryResult,
@@ -171,6 +174,13 @@ import { sendInstructionVerified } from '../swarm/verifiedInject';
 import { sleepSync } from '../swarm/sleepSync';
 import { runCliMain } from './swarm-metrics';
 import { atomicWrite } from '../util/atomicWrite';
+import { handleOnboardingMessage } from '../onboarding/onboardingFacilitatorState';
+import {
+  listOnboardingFacilitatorStates,
+  findProcessedOnboardingUpdate,
+  writeOnboardingStateAndMarkUpdateProcessed,
+  markOnboardingUpdateDelivered,
+} from '../onboarding/onboardingFacilitatorStateStore';
 import { isSwarmReady, defaultRoleBootstrapped } from '../swarm/swarmLauncher';
 import { readBounceAck, BouncePhase } from '../swarm/bounceAck';
 import { buildRoleInboxes } from '../watchdog/chaserMonitor';
@@ -754,6 +764,84 @@ export async function ensureAgentQuestionsTopic(targetPath: string, botToken: st
   topicMap[topicMapKey(created.messageThreadId)] = AGENT_QUESTIONS_SUBJECT_ID;
   writeTopicMap(targetPath, topicMap);
   return created.messageThreadId;
+}
+
+// BL-590: the Onboarding-topic twin of ensureAgentQuestionsTopic above -
+// identical reuse-or-create/idempotent-across-restarts shape, sharing the
+// SAME {topicId: subjectId} map. ONE topic, reused across every target
+// onboarded through it (the specifier's design note) - per-target identity
+// lives in onboardingFacilitatorStateStore.ts's own state files, never a
+// second topic minted per target.
+export async function ensureOnboardingTopic(targetPath: string, botToken: string, chatId: string, postFn?: TelegramPostFn): Promise<number | undefined> {
+  const topicMap = readTopicMap(targetPath);
+  const decision = decideEnsureOnboardingTopicAction(topicMap);
+  if (decision.kind === 'reuse') {
+    return decision.topicId;
+  }
+  const created = await createForumTopic(botToken, chatId, ONBOARDING_TOPIC_NAME, postFn);
+  if (!created.success || created.messageThreadId === undefined) {
+    process.stderr.write(`ensureOnboardingTopic: failed to create the Onboarding topic: ${created.error ?? 'no messageThreadId returned'}\n`);
+    return undefined;
+  }
+  topicMap[topicMapKey(created.messageThreadId)] = ONBOARDING_SUBJECT_ID;
+  writeTopicMap(targetPath, topicMap);
+  return created.messageThreadId;
+}
+
+// BL-590: the facilitator's whole turn once a message is confirmed to
+// belong to the Onboarding topic (decideOnboardingReplyAction, the pure
+// routing guard) - loads every persisted per-target state, applies the pure
+// state-machine decision (handleOnboardingMessage), persists the result,
+// and sends the resulting message back into the same topic. The only
+// branching on message CONTENT lives in handleOnboardingMessage itself
+// (pure, unit-tested); this function is I/O only.
+// BL-590 architect bounce #2 (defect 1 residual, 2026-07-25): the guard is a
+// per-target SET keyed by updateId (findProcessedOnboardingUpdate), not a
+// single last-processed scalar, so ANY already-processed id short-circuits
+// here - not just the newest one - which is what a stuck head-of-line
+// delivery in the same getUpdates batch requires (offsetAfterDelivery parks
+// the offset there, redelivering every already-processed id after it too).
+// A redelivered id that was applied but never successfully SENT retries
+// ONLY the send, with the message computed on the first attempt - never
+// re-runs handleOnboardingMessage, which would misapply that (possibly
+// stale) text against whatever step the state has since moved to.
+export async function handleOnboardingFacilitatorMessage(
+  targetPath: string,
+  botToken: string,
+  chatId: string,
+  topicId: number,
+  text: string,
+  updateId: number,
+  postFn?: TelegramPostFn
+): Promise<boolean> {
+  const already = findProcessedOnboardingUpdate(targetPath, updateId);
+  if (already) {
+    if (already.record.delivered) {
+      return true;
+    }
+    const retry = await sendTelegramMessage(botToken, chatId, already.record.message, undefined, postFn, topicId);
+    if (retry.success) {
+      markOnboardingUpdateDelivered(targetPath, already.targetRepoUrl, updateId);
+    }
+    return retry.success;
+  }
+
+  const states = listOnboardingFacilitatorStates(targetPath);
+  const outcome = handleOnboardingMessage(states, text, Date.now);
+  if (outcome.kind === 'no-active-onboarding') {
+    // No target, therefore nothing durable to guard - a redelivery here
+    // recomputes the exact same constant message with no state mutation,
+    // so at worst it is a harmless duplicate send, never a wrong-step
+    // misapplication.
+    const result = await sendTelegramMessage(botToken, chatId, outcome.message, undefined, postFn, topicId);
+    return result.success;
+  }
+  writeOnboardingStateAndMarkUpdateProcessed(targetPath, outcome.state, updateId, outcome.message);
+  const result = await sendTelegramMessage(botToken, chatId, outcome.message, undefined, postFn, topicId);
+  if (result.success) {
+    markOnboardingUpdateDelivered(targetPath, outcome.state.targetRepoUrl, updateId);
+  }
+  return result.success;
 }
 
 // BL-492: the Backlog-topic twin of ensureAgentQuestionsTopic above -
@@ -1966,6 +2054,9 @@ function buildPollAdapters(
       const controlTopicId = await ensureControlTopic(targetPath, botToken, chatId);
       await resumeNow(targetPath, botToken, chatId, controlTopicId);
     },
+    // ── BL-590: Onboarding Facilitator topic ────────────────────────────
+    onboardingTopicId: () => ensureOnboardingTopic(targetPath, botToken, chatId),
+    handleOnboardingFacilitatorMessage: (topicId, text, updateId) => handleOnboardingFacilitatorMessage(targetPath, botToken, chatId, topicId, text, updateId),
   };
 }
 
@@ -2870,6 +2961,12 @@ export async function main(): Promise<void> {
   // nothing routes INTO it yet (that is BL-493), but the topic itself must
   // exist and be idempotently reused across restarts like every sibling.
   await ensureBacklogTopic(targetPath, botToken, chatId);
+
+  // BL-590: bind the standing Onboarding topic BEFORE any loop starts
+  // polling too - same ordering rationale as every other standing topic
+  // above (an unbound Onboarding topic must never be reachable by an
+  // inbound repo URL or reply).
+  await ensureOnboardingTopic(targetPath, botToken, chatId);
 
   const conciergeScheduler = createConciergeTickScheduler(targetPath, botToken, chatId);
   const scheduleConciergeTick = () => conciergeScheduler.scheduleDebounced(DEFAULT_CONCIERGE_TICK_DEBOUNCE_MS);
