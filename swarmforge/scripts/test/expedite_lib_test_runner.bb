@@ -48,7 +48,15 @@
 (assert-true "args: --no-restart is read" (:no-restart? (expedite-lib/parse-args ["/r" "BL-1" "--no-restart"])))
 (assert-true "args: --dry-run is read" (:dry-run? (expedite-lib/parse-args ["/r" "BL-1" "--dry-run"])))
 (assert-false "args: absent booleans are false" (:override? (expedite-lib/parse-args ["/r" "BL-1"])))
-(assert= "args: a missing value does not swallow the next FLAG as its value"
+;; Asserted on flag-value DIRECTLY, not on :bounce-bound. The mutation sweep
+;; caught the earlier version as vacuous: it asserted :bounce-bound was nil, but
+;; the nil came from `parse-long "--dry-run"`, not from the guard. Deleting the
+;; guard changed nothing observable, so the test could not fail.
+(assert= "args: flag-value refuses a following FLAG as a value (the guard itself)"
+         nil (expedite-lib/flag-value ["/r" "BL-1" "--bounce-bound" "--dry-run"] "--bounce-bound"))
+(assert= "args: flag-value returns a real value when there is one"
+         "7" (expedite-lib/flag-value ["/r" "BL-1" "--bounce-bound" "7"] "--bounce-bound"))
+(assert= "args: and the parsed bound is nil in the missing-value case"
          nil (:bounce-bound (expedite-lib/parse-args ["/r" "BL-1" "--bounce-bound" "--dry-run"])))
 (assert-true "args: and that next flag is still honoured"
              (:dry-run? (expedite-lib/parse-args ["/r" "BL-1" "--bounce-bound" "--dry-run"])))
@@ -178,6 +186,15 @@
          nil (expedite-lib/repeated-class [{:class "a"} {:class "b"} {:class "c"}]))
 (assert= "repeated-class: classless bounces repeat nothing"
          nil (expedite-lib/repeated-class [{} {} {}]))
+;; Added after the mutation sweep: nothing pinned WHICH repeated class is named
+;; when two classes both repeat, so flipping the sort to pick the RAREST survived.
+;; Naming the less frequent class would point the specifier at the wrong concern.
+(assert= "repeated-class: names the MOST frequent repeat, not merely a repeat"
+         "b" (expedite-lib/repeated-class
+              [{:class "a"} {:class "a"} {:class "b"} {:class "b"} {:class "b"}]))
+(assert= "repeated-class: order of appearance does not override frequency"
+         "b" (expedite-lib/repeated-class
+              [{:class "b"} {:class "a"} {:class "b"} {:class "a"} {:class "b"}]))
 
 ;; Scenario 05b. Three rounds on one concern is BL-633's signature, so this is a
 ;; SPEC defect routed to the specifier — and explicitly NOT the coder's fault.

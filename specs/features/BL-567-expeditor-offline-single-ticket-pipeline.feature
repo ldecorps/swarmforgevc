@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=95de787116a3d3450f605ae279d3704643cb5bf7049fdeaa2453581bf3f73330
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-07-25T13:37:46.765300356Z","feature_name":"Expeditor - drive one ticket through every gate with the swarm stopped","feature_path":"/home/carillon/swarmforgevc/.worktrees/expedite-BL-567/specs/features/BL-567-expeditor-offline-single-ticket-pipeline.feature","background_hash":"901ca815f12a789f3e73a9df30dd208e5041e452b1197c1e0f9c914fd9d3cc8e","implementation_hash":"unknown","scenarios":[]}
+# acceptance-mutation-manifest-end
+
 Feature: Expeditor - drive one ticket through every gate with the swarm stopped
 
   # BL-567. The recovery path: when the swarm's own machinery is what is broken,
@@ -12,6 +17,21 @@ Feature: Expeditor - drive one ticket through every gate with the swarm stopped
   # the start path may itself be what is under repair.
   #
   # Epic swarm-reliability. Design: backlog/evidence/BL-567-design-20260725.md
+  #
+  # READ THIS BEFORE TRUSTING THE MUTATION MANIFEST ABOVE. It records
+  # "scenarios":[] and Total 0 / Killed 0 / Survived 0. That is NOT a clean
+  # mutation pass - it means ZERO mutants were generated. The BL-113 Gherkin
+  # mutator mutates Examples-table CELLS only (`discover` in
+  # swarmforge/vendor/aps/bb/src/aps/mutation.clj iterates `(:examples scenario)`),
+  # and this feature deliberately has no Scenario Outlines, so there is nothing
+  # for it to mutate. Left unedited because manifests are the tool's artifact, but
+  # flagged here because the stamp would otherwise make a future run skip as
+  # "already done" on the strength of a run that proved nothing.
+  #
+  # The real mutation gate for this ticket is
+  # swarmforge/scripts/test/expedite_mutation_sweep.sh - 41 mutants over
+  # expedite_lib.bb, all killed. Evidence:
+  # backlog/evidence/BL-567-hardener-pass-20260725.md
 
   Background:
     Given a repo with no live swarm and a fixture ticket in backlog/active/
