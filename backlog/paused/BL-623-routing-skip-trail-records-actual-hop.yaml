@@ -1,0 +1,123 @@
+id: BL-623
+title: "Routing skip trail records what the hop actually skipped — sender pre-routed direct sends included, not only router rewrites"
+milestone: M8
+type: defect
+status: todo
+epic: swarm-reliability
+human_approval: pending
+severity: medium
+priority: 10
+direction: operator-reported
+depends_on: []
+assigned_to: coder
+mutation_cost: low
+source: |
+  backlog/INTAKE-20260724-skip-trail-bypassed-when-sender-preroutes.md —
+  operator hawk-watch on the FIRST production required_stages hop
+  (2026-07-24 14:10Z): BL-617's coder sent parcel 000627 directly to QA on a
+  [coder, qa] ticket. Flow correct; trail EMPTY — no routing_skipped header,
+  and .swarmforge/routing-skips.jsonl does not exist anywhere. This is the
+  exact "silent skip" class the human flagged as their predictability fear
+  when approving BL-606.
+
+description: |
+  ## Root cause (verified 2026-07-25)
+
+  route-required-stages (swarmforge/scripts/swarm_handoff.bb:388-451) builds
+  the :routing-skipped record — the routing_skipped envelope header
+  (format-routing-skipped :453-457, appended in write-handoff! :507-508) and
+  the .swarmforge/routing-skips.jsonl line (log-routing-skip! :459-462,
+  called only from -main :587-588) — ONLY on the rewrite branch (:439-451),
+  i.e. when the literal to: names a stage NOT in the effective required set.
+  When the sender has read the ticket and pre-routes to a stage already in
+  the required set, :434-435 returns identity with :routing-skipped nil:
+  correct delivery, zero trail. BL-606's guarantee (description guardrails
+  #2 "skips are recorded in the handoff trail" and #6 "per-ticket stage
+  visibility"; scenarios 03/08) therefore holds only for naive senders —
+  and the first real sender was not naive. No test covers this path.
+
+  ## Fix shape
+
+  Derive the record from WHAT THE HOP ACTUALLY SKIPPED, not from whether the
+  router rewrote it: at send time, for a git_handoff on a ticket with a
+  valid required_stages declaration (same guards: forward hop, single
+  recipient, no rejection/reroute reason, kill-switch on), compute
+  skipped = required_stages_lib.bb hop-skipped-stages(sender, DELIVERED
+  recipient) — the existing pure helper, canonical stages strictly between
+  the two — plus, on the rewrite branch only, the rewritten-away literal
+  recipient (the existing cons at :449-450). Emit the header + jsonl record
+  whenever that set is non-empty, regardless of who chose the destination.
+  The rewrite branch becomes one producer of the same record.
+
+  Record contract (pinned): queryable by ticket id; carries the skipped set,
+  the ticket's declared stage_skip_reasons where present, sender, delivered
+  recipient, created_at. A skipped stage with NO declared reason (e.g. a
+  sender jumping over a required stage — delivery is unchanged in this
+  ticket, see out_of_scope) appears in the skipped set with no reasons
+  entry: a greppable anomaly. Keep the keys the BL-606 acceptance steps
+  already parse (ticket-id / skipped / reasons per
+  specs/pipeline/steps/bl606RequiredStagesRoutingSteps.js:276-288).
+
+  ## Doc drift folded in (found during verification)
+
+  swarmforge/handoff-protocol.md:706-716 documents a jsonl shape
+  {"ticket","commit","at","skipped","reason"} whose grep example can never
+  match the emitted "ticket-id" key, and :665 documents a bare comma-list
+  header instead of the emitted grammar. The documenter pass aligns the
+  protocol doc with what the code actually emits (scenario 07).
+
+acceptance: |
+  specs/features/BL-623-routing-skip-trail-records-actual-hop.feature
+
+  Every scenario needs its step handler wired in this same parcel (BL-233).
+
+  Scenario map: 01 pre-routed direct send records (the incident fixture:
+  coder -> to: QA on [coder, qa] => record names
+  cleaner,architect,hardender,documenter with declared reasons); 02 rewrite
+  branch still records, same shape (BL-606 scenario 03 regression); 03
+  adjacent hop records nothing; 04 skipped REQUIRED stage visible with no
+  declared reason, delivery unchanged; 05 kill-switch off inert; 06
+  backward bounces never record; 07 handoff-protocol.md documents the
+  emitted shapes and its grep example matches a real line.
+
+  Supporting gates:
+  - The hop-record derivation is a pure function covered in the .bb unit
+    suite (swarmforge/scripts/test/required_stages_test_runner.bb pattern —
+    the ACTUAL gate for .bb code; no Babashka mutation toolchain, BL-472).
+  - The BL-606 acceptance steps still pass unmodified (key compatibility).
+  - Existing quarantine/validation paths untouched: a record-write failure
+    must not block the send (trail is best-effort, delivery is not).
+
+  QA end-to-end procedure (live swarm):
+  1. On a scratch ticket declaring required_stages [coder, qa] with
+     stage_skip_reasons, send a git_handoff as coder addressed directly to
+     QA (routing flag on): the delivered parcel carries routing_skipped
+     naming the four stages, and .swarmforge/routing-skips.jsonl gains one
+     line for the ticket with the declared reasons.
+  2. Repeat addressed to cleaner: parcel delivers to QA, record equivalent.
+  3. grep the jsonl by ticket id using the (updated) handoff-protocol.md
+     example verbatim — it matches.
+
+out_of_scope: |
+  - ENFORCEMENT of required stages on pre-routed sends: today a sender
+    addressing a LATER required stage (e.g. coder -> QA on
+    [coder, cleaner, qa]) delivers as addressed, silently bypassing
+    cleaner. This ticket makes that VISIBLE (scenario 04); whether the
+    router should instead rewrite to the next required stage is a separate
+    ruling — flagged in approval_context, not changed here.
+  - Any change to effective-set resolution, kill-switch, bounce handling,
+    or delivery targets.
+  - Backfilling trail records for hops already sent (BL-617's own gap
+    stands; the ticket yaml's declared reasons remain its record).
+
+approval_context: >
+  One recommendation and one flag. Recommendation: recording-only — every
+  skipping hop leaves the header + jsonl record regardless of who chose the
+  destination; delivery behaviour is untouched. Flag for a separate ruling
+  (not in this ticket): the same verified code path also lets a sender skip
+  a REQUIRED stage by pre-addressing a later required stage — after this
+  ticket that becomes visible in the trail as a skipped stage with no
+  declared reason, but it still delivers. Say the word and enforcement
+  (rewrite to the next required stage) becomes its own ticket. Firm: the
+  BL-606 acceptance steps keep passing — the record keys they parse are
+  compatibility constraints.
