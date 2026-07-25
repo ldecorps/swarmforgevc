@@ -63,9 +63,10 @@
 - Prefer an ORTHOGONAL concurrently-active set — different files/modules/areas;
   never run two items that edit the same file or tightly coupled area at once.
 - If the next item by priority would overlap something in flight, skip to the
-  next orthogonal candidate (bugs-first among candidates); if none exists,
-  leave the slot empty until the overlapping item finishes. This never
-  overrides `active_backlog_max_depth` or bugs-first ordering.
+  next orthogonal candidate (expedited defects first among candidates, per
+  Article 3.2.4); if none exists, leave the slot empty until the overlapping
+  item finishes. This never overrides `active_backlog_max_depth` or the
+  Article 3.2.4 expedited-defects ordering.
 
 ## Worktree Discipline
 - At startup, discover and remember the branch or worktree assigned to your

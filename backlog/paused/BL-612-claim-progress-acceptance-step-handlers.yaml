@@ -5,6 +5,7 @@ type: defect
 status: paused
 epic: swarm-reliability
 assigned_to:
+severity: medium
 priority: 30
 mutation_cost: medium
 direction: swarm-proposed
