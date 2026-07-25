@@ -93,6 +93,34 @@ description: |
   stop exists at all. Both must be configurable, and the ticket should say where
   the numbers came from so a future reader can re-derive them.
 
+  ## NOT retyped to `defect` — and the reason is sequencing, not importance
+
+  Operator directive 2026-07-25 was to expedite BL-633/634/635. BL-633 and BL-635 were
+  retyped `defect` (a schema that cannot express a needed property; a measurement
+  instrument covering half its domain). **This one stays `feature`, deliberately.**
+
+  The line is admittedly thin — "no size gate exists" is close to BL-633's "no
+  invariants field exists". But two things separate it:
+
+  1. It is genuinely NEW capability. A promotion gate that has never existed is not
+     broken.
+  2. **It cannot be calibrated yet.** This ticket's own design says a gate on a
+     self-declared estimate is theatre without the QA-time calibration loop — and
+     that loop needs recorded ACTUALS, which is BL-635. Shipping the envelope before
+     the measurement means picking a threshold from one day's numbers and calling it
+     policy.
+
+  So the honest order within the initiative is **BL-635 (measure) → BL-633 (state the
+  property) → BL-634 (cap the size)**, and this ticket riding behind the other two is
+  correct rather than unfortunate.
+
+  Structural note for the operator, raised rather than acted on: Article 3.2.4 says an
+  expedited defect is promoted ahead of every non-expedited ticket "regardless of its
+  ticket `priority:` value". That is absolute — so work that REDUCES defect production
+  can never outrank work that FIXES defects, no matter how it is prioritised. It is
+  why raising this ticket's `priority:` would do nothing. Whether that absoluteness is
+  right is a genuine question about the lane, not about this ticket.
+
 acceptance: |
   Specifier writes the scenarios. Minimum behaviour:
 

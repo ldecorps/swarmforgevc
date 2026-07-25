@@ -1,0 +1,158 @@
+id: BL-643
+title: "Document the non-pipeline agents as a class — starting with the Onboarder and the Expeditor — and rule on Facilitator vs Onboarder before more surface bakes the name in"
+milestone: M8
+type: feature
+status: todo
+epic: swarm-intelligence-layer
+human_approval: approved
+severity: medium
+priority: 09
+direction: human-requested
+depends_on: []
+assigned_to: specifier
+mutation_cost: low
+
+approval_context: >
+  Operator, 2026-07-25: document at length how the special agents work — the
+  Onboarder ("or is it Facilitator? I think it is Facilitator, but Onboarder is
+  better") and the Expeditor. The naming question is folded in because the answer
+  gets more expensive every day the current name spreads.
+
+source: |
+  The swarm has EIGHT agents that are not pipeline roles, and no document says so,
+  names them as a set, or explains what makes them different. Launchers under
+  `swarmforge/scripts/`:
+
+  ```
+  babysitter            front_desk            front_desk_operator
+  negotiation_relay     onboarding_facilitator   operator
+  resident_spy_tunnel   support
+  ```
+
+  Plus the **Expeditor**, which is not a launched agent at all but a driver that
+  wears every pipeline hat in turn — a third category again.
+
+  Documentation coverage is uneven and nobody planned the unevenness. Counting
+  non-briefing, non-archive files under `docs/`:
+
+  ```
+  operator 21 · support 9 · onboard 6 · expeditor 5 · front desk 5 · babysitter 5
+  model steward 3 · negotiation 2 · facilitator 1 · resident spy 0
+  ```
+
+  Four of the eight have no role prompt either (`onboarding_facilitator`,
+  `negotiation_relay`, `front_desk_operator`, `resident_spy_tunnel`), so for those
+  there is no authored description of their behaviour anywhere.
+
+  ## The naming question, with the evidence
+
+  "Onboarder" appears in exactly TWO tracked files, and both are BL-590's own —
+  quoting the operator in its `source:`:
+
+  > "BUILD THE ONBOARDER, do not hand-run a one-off runbook."
+  > "give the onboarder a repo URL"
+
+  **"Onboarder" was the human's word first.** "Facilitator" entered at
+  implementation and now carries **36 files**: the ticket, its feature file, the
+  launcher, the supervisor, the state machine, the store, the reconcile CLI, the step
+  handlers, the Telegram topic subject.
+
+  So this is not bikeshedding — it is a documented drift from the word the person who
+  asked for it used, into vocabulary invented while building it.
+
+description: |
+  ## Rule on the name FIRST
+
+  Whatever is written now hardens the name. The specifier should put the question to
+  the operator as a decision with its cost, not a preference:
+
+  - **Keep `Facilitator`.** Zero work. Cost: the operator keeps saying "onboarder"
+    and reading "facilitator", forever.
+  - **Rename to `Onboarder`.** 36 files, including a live Telegram topic subject and
+    a state machine whose phases are user-visible in that topic. Cheapest NOW, while
+    BL-590 is parked in `hold/` and slices 2 and 3 (BL-624, BL-625) are unbuilt —
+    every week of building makes it worse.
+  - **Split them.** "Onboarder" as the human-facing name in Telegram and docs;
+    `facilitator` as the internal module vocabulary. Honest and common, but it means
+    two names for one thing and a reader must learn the mapping.
+
+  Recommend deciding before writing prose, because the docs are the thing that will
+  cement whichever word wins.
+
+  ## Then document the CLASS, not just two members
+
+  The operator asked about two agents, but the missing thing is the category. A
+  reader cannot currently answer: what is a non-pipeline agent, what may it do that a
+  role may not, how is it started and stopped, who supervises it, and where do its
+  logs go?
+
+  Suggested Divio placement (specifier's call):
+
+  - **explanation/** — what makes an agent non-pipeline. They hold no ticket, appear
+    in no `roles.tsv` chain, and are not bounded by the pipeline's gates. Some are
+    conversational (Onboarder, Support), some are supervisory (Operator, babysitter),
+    some are transport (front desk, negotiation relay, resident spy tunnel), and the
+    Expeditor is none of these — it is a driver that *wears* the pipeline hats. That
+    taxonomy is the document's spine.
+  - **reference/** — one table: every non-pipeline agent, its launcher, its stop
+    path, whether it has a role prompt, where its log lives, and whether
+    `start_ancillary_services.sh` manages it. That table would have made BL-637 and
+    BL-611 obvious months earlier.
+  - **how-to/** — the Onboarder's operational guide, once its name is ruled and its
+    slices are built.
+
+  ## What is already written, and must not be duplicated
+
+  The **Expeditor is done**: `docs/how-to/BL-567-…`,
+  `docs/explanation/BL-567-why-the-expeditor-commands-the-stack…`, and the full
+  `docs/reference/BL-567-expeditor-manual.md`. This ticket should LINK those from the
+  class document, not restate them. Restating is how two descriptions drift apart.
+
+  ## Honest constraint on the Onboarder half
+
+  **BL-590 is parked in `hold/` at architect bounce #6, and slices 2 and 3 are
+  unbuilt.** Documenting it "at length" now would document something in flux — the
+  exact failure mode of writing docs ahead of behaviour.
+
+  So scope the Onboarder documentation to **what slice 1 actually shipped** (its own
+  Telegram topic, the prerequisites state machine, per-target state, restart
+  resume), state plainly that survey/gate/prompts/launch-handoff are not built, and
+  say which ticket owns each. A doc that describes unbuilt behaviour is worse than a
+  missing one, because a reader cannot tell which half is real.
+
+acceptance: |
+  Specifier writes the scenarios. Minimum:
+
+  1. The name is RULED and recorded before any prose is written. If the ruling is
+     `Onboarder`, the rename lands as its own parcel first — docs must not describe a
+     name the code does not use.
+  2. A reader who has never seen the repo can name every non-pipeline agent, say what
+     category it belongs to, and find its launcher and stop path from one table.
+  3. Every documented agent's launcher/stop path in that table is verified against the
+     repo, not recalled — a wrong stop path is the BL-637 defect in a new place.
+  4. The Onboarder document covers only shipped behaviour and names the ticket owning
+     each unshipped phase.
+  5. The Expeditor is LINKED, not restated.
+  6. Everything new is linked from `docs/index.md` in the same commit.
+  7. The four agents with no role prompt are identified as such rather than silently
+     described from their code — a reader should know when a description was
+     reverse-engineered.
+
+out_of_scope: |
+  - Building anything. This is documentation plus a naming ruling.
+  - Finishing BL-590. It is parked; see `backlog/evidence/BL-590-parked-20260725.md`.
+  - Retiring the babysitter agent — BL-611 owns that; this ticket documents whatever
+    state it is in when written.
+  - Writing role prompts for the four agents that lack them. Worth its own ticket if
+    the specifier thinks they need one.
+
+notes: |
+  The naming half is time-sensitive in a way documentation usually is not: BL-624 and
+  BL-625 will add more `facilitator` surface, and the Telegram topic subject is
+  user-visible, so a later rename touches something the human already reads. Cheapest
+  moment to decide is while the ticket is parked.
+
+  Worth stating in the explanation doc, because it is the thing a newcomer gets wrong:
+  a non-pipeline agent is NOT a lesser role. The Operator supervises the swarm from
+  outside it; the Expeditor can drive the entire pipeline with the swarm stopped.
+  "Non-pipeline" describes where they sit, not how much authority they have.

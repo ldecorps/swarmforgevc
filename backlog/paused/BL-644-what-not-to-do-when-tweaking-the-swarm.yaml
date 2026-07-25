@@ -1,0 +1,155 @@
+id: BL-644
+title: "A \"what NOT to do when tweaking the swarm\" guide — eighteen anti-patterns, each one observed causing real damage on 2026-07-25"
+milestone: M8
+type: feature
+status: todo
+epic: code-quality-gates
+human_approval: approved
+severity: medium
+priority: 08
+direction: human-requested
+depends_on: []
+assigned_to: documenter
+mutation_cost: low
+
+approval_context: >
+  Operator, 2026-07-25: beef up the documentation with today's lessons on what NOT
+  to do when tweaking the swarm. Assigned straight to the documenter — the content
+  is enumerated below so it does not have to be re-derived from a day of git
+  history, which is the part nobody can reconstruct later.
+
+source: |
+  One session produced eighteen distinct ways to damage the swarm while changing it.
+  Every entry below was OBSERVED, not imagined, and most cost real time before the
+  cause was found.
+
+  An `explanation/` doc already exists —
+  `docs/explanation/lessons-2026-07-25-green-suites-that-proved-nothing.md` — but it
+  is organised around ONE theme (a passing check that proved nothing). This asks for
+  the operational companion: the prohibitions themselves, for someone about to modify
+  the swarm.
+
+  **Extend or link — do not restate.** Two documents describing the same incidents in
+  different words drift, and then a reader cannot tell which is current.
+
+description: |
+  ## Placement
+
+  Divio mode is the documenter's call, but the natural home is **how-to**
+  (task-oriented: "you are about to change the swarm — avoid these"), linking the
+  existing `explanation/` doc for the reasoning. One doc, one mode.
+
+  ## The eighteen, grouped by what they break
+
+  ### Where your edit actually lands
+
+  1. **Never run `git` from the master checkout while wearing a role hat.** A cleaner
+     prefixed `cd /home/carillon/swarmforgevc` to its git commands and ran its whole
+     pass on `main`. Nothing errored, because `main` already held the code from its
+     own bad merge. Seven sessions do `cd <root> && npm run compile|npm test` —
+     harmless for `npm`, catastrophic for `git`, and nothing in the environment
+     distinguishes them.
+  2. **Never `git add -A` in a shared checkout.** It swept the operator's uncommitted
+     approval edits into a commit titled "By cleaner." Stage explicit paths.
+  3. **Park to `hold/`, never `paused/`.** `paused/` IS the promotion queue: an
+     approved ticket parked there is promoted straight back on the next boot and
+     un-parks itself, silently. The difference only appears on the reboot AFTER the
+     decision.
+  4. **A source edit does not reach the agents.** `.swarmforge/prompts/<role>.md` are
+     BUILD OUTPUTS; role worktrees hold their own copies of everything under
+     `articles/reference/`. An amendment landed on `main` reached zero agents until
+     the prompts were regenerated and the worktrees merged.
+
+  ### Tools that report success they did not achieve
+
+  5. **Never trust a teardown's exit code.** `./stop-swarm.sh` printed
+     `SUCCESS — clean slate` with `babysitterd` and the Operator agent still running.
+     Probe afterwards.
+  6. **`kill -KILL -<pgid>` needs `--`.** Without it `/usr/bin/kill` reads `-<pgid>`
+     as an option, exits 0, kills only the group leader, and leaves every grandchild
+     alive. Silent.
+  7. **`.destroyForcibly` kills the direct child only** — a shell script's own
+     children survive. And deref-ing a destroyed process BLOCKS while a surviving
+     grandchild holds the stdout pipe, because EOF never arrives.
+  8. **A zero-mutant mutation run reads as a clean sweep.** `Total 0 / Killed 0 /
+     Survived 0`, exit 0 — and it stamps the feature so later runs skip. (BL-638.)
+  9. **`push-sweep` logs `up-to-date` while local `main` is BEHIND** — `ahead = 0`
+     short-circuits regardless of `behind`.
+
+  ### Measuring and auditing
+
+  10. **`pgrep -f` and `grep -c` match the auditing process itself.** Hit three times
+      in one day; once `pkill -f 'sleep 3600'` killed the shell running the test
+      harness and presented as an unexplained suite failure. Parse `ps` and compare
+      argv exactly.
+  11. **Never count anything by grepping commit subjects.** Two independent
+      contamination modes: ticket TITLES containing the word (a ticket named
+      `…-bounce-watcher-resilience` ranked top with 26 "bounces" and was never bounced
+      once), and PROPAGATION (one bounce yields 5-6 commits as its fix travels the
+      chain).
+  12. **Measure structure, not prose.** A count of features "with Scenario Outlines"
+      was wrong because a comment MENTIONED the phrase. Match on
+      `^\s*Scenario Outline:`.
+
+  ### Tests that cannot fail
+
+  13. **Assert on the function holding the invariant, not a downstream value.** A test
+      asserted a `nil` that came from `parse-long`, not from the guard it claimed to
+      cover — deleting the guard changed nothing observable, so the test could not
+      fail. Green for hours, proving nothing.
+  14. **A fixture you control cannot validate your model of something you do not.**
+      A driver knew `pass`/`bounce`; a real agent returned `forward`, a documented
+      role outcome, and the run failed. 53 assertions and 21/21 acceptance were
+      measuring agreement between two things the same author wrote. **Exercise the
+      real path at least once.**
+  15. **Measure your generator's reach.** A property suite ran 8 properties x 500 runs
+      green while reaching its interesting state TWICE in 500. Assert coverage.
+  16. **Name what the fixture actually does.** A timeout scenario passed because the
+      "slow" stage slept and RETURNED. It was never hung, so the report-only timeout
+      it was meant to catch survived.
+
+  ### Changing rules and tooling
+
+  17. **Never calibrate a limit to the worst observed case** — it ratifies it. A
+      bounce bound of 8, derived from a ticket that took 6 send-backs, declares 6
+      acceptable. Calibrate to the target.
+  18. **Tooling that mutates a file must restore what it FOUND, not HEAD.** Two
+      mutation scripts used `git checkout -- <file>` and silently destroyed
+      uncommitted work — twice, each time presenting as ~37 unrelated test failures.
+
+  ### And the meta-rule, which earned its place twice
+
+  **One instance of a bug of this shape is rarely the only one.** The impossible
+  ancestry check lived in two files and the first fix caught one. The
+  `git checkout --` defect lived in two scripts and the first fix caught one. Both
+  second instances cost a full re-run to find. **Grep for the sibling before declaring
+  it fixed.**
+
+acceptance: |
+  Documenter's judgement on shape; minimum:
+
+  1. Every entry carries the concrete evidence — the command, the measurement, or the
+     ticket id. A prohibition without evidence reads as taste and gets ignored.
+  2. The existing `explanation/` lessons doc is LINKED, not restated, and the two say
+     which is which: prohibitions here, reasoning there.
+  3. Linked from `docs/index.md` in the same commit.
+  4. Grouped by what breaks, not chronologically — the grouping is what makes it
+     usable by someone mid-change.
+  5. Every command or path quoted is verified against the repo at writing time. A
+     guide about not trusting things must not itself be stale.
+
+out_of_scope: |
+  - Fixing any of the eighteen. Each already has a ticket where one is warranted
+    (BL-629..632, BL-635..643); this is the written record so the next person does not
+    rediscover them.
+  - The Onboarder/Expeditor documentation — BL-643.
+
+notes: |
+  The value here is that the evidence is perishable. In a month the git history still
+  holds the commits, but not which of them cost an hour and why. Entries 13, 14 and 18
+  in particular were each found only because something ELSE broke first.
+
+  Worth a sentence in the doc's own opening, because it is the through-line: in almost
+  every one of these, the failing thing REPORTED SUCCESS. The swarm is largely
+  self-observing, so the dangerous defects are not the loud ones — they are the ones
+  that make a green light.

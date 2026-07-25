@@ -1,7 +1,7 @@
 id: BL-611
 title: "Productize babysitterd — the deterministic health-sweep daemon replaces the LLM babysitter hawk, managed by start/stop-swarm like the other daemons, nudging the coordinator with CRIT findings"
 milestone: M8
-type: feature
+type: defect
 status: todo
 epic: swarm-reliability
 human_approval: approved
@@ -255,7 +255,58 @@ description: |
   `extension/src/tools/notify-babysitter.ts`. Both may serve the deterministic daemon
   just as well as the agent. Specifier's call.
 
+  ## OPERATOR RULING 2026-07-25 (second): "il faut eradiquer l'agent babysitter -
+  ## c'est maintenant un demon"
+
+  This settles the design question this ticket left open, and it settles it in favour
+  of **one sweep, not two**.
+
+  `babysitter_runtime.bb` exists to WAKE THE LLM — its `scan-claim-risks!` produces
+  wake events, and at `:126-128` it logs `llm-down relaunching` and respawns the
+  agent. With the agent gone, its consumer is gone. The operator's phrasing — the
+  babysitter IS now a daemon — means option (a): **retire the runtime too, folding its
+  BL-528 claim-risk scan into the ported deterministic check.** Do not keep a second
+  sweep alive whose only original purpose was feeding something that no longer exists.
+
+  What must NOT be lost in that fold: the claim-risk scan itself is real, tested
+  behaviour (reclaim counts, HEAD-unchanged detection, untracked-file counts) and its
+  test runners must keep passing against whatever absorbs it.
+
+  ## RETYPED `feature` -> `defect`, and the reasoning is auditable
+
+  Found while checking whether the operator's priority ruling would actually take
+  effect: it would NOT have. The Article 3.2.4 expedite lane selects
+  `type: defect` with critical/high severity. As a `feature` at `priority: 05`, this
+  ticket sat outside the lane entirely despite being repriced `high` — the ruling
+  would have been silently inert.
+
+  Retyped because the defect is genuine, not to game the lane:
+
+  - The only working health sweep **does not survive a reboot** and must be restarted
+    from a line that exists in operator memory notes, not in the repo.
+  - `./swarm status` reports `babysitter-runtime DOWN` for the deliberately-retired
+    LLM agent while reporting **nothing** about the deterministic daemon actually
+    doing the work. A health signal that names the absent thing and hides the live one
+    is broken, not merely incomplete.
+
+  Both were demonstrated by the 2026-07-25 restart. The productization is the FIX for
+  that defect; it is not new scope wearing a defect label. Stated here so a reader can
+  disagree with the reclassification rather than discover it.
+
+  ## Not urgent, and that matters for sequencing
+
+  The agent is ALREADY inert — `.swarmforge/swarm.env` sets
+  `SWARMFORGE_SKIP_BABYSITTER=1`, so every launch skips it. Eradication is hygiene
+  with a real health-signal defect attached, not an incident. It rides the pipeline
+  properly rather than being hand-applied.
+
 acceptance: |
+  F. `babysitter_runtime.bb` is retired, and every check it performed still runs
+     somewhere - its existing test runners pass against whatever absorbs the
+     claim-risk scan. A fold that quietly drops a check is a regression, not a
+     simplification.
+  G. No process remains whose purpose was waking or relaunching an LLM babysitter.
+
   ADDED 2026-07-25 (operator amendment):
 
   A. The five agent-side files are gone, and no caller references a missing path -
