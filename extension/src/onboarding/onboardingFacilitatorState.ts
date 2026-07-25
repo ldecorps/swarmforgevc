@@ -1,0 +1,295 @@
+// BL-590 slice 1: the Onboarding Facilitator's own prerequisites state
+// machine. Pure, clock-injected, no I/O - persistence is
+// onboardingFacilitatorStateStore.ts's job, Telegram/tmux wiring is the
+// poll-loop's job (testable-module boundary, engineering.prompt). Slice 1
+// covers needs-target -> checking-prerequisites -> prerequisites-ready only;
+// survey and everything after is BL-624/BL-625's own state.
+
+export const PREREQUISITE_STEP_IDS = ['toolchain', 'github-access', 'fork-clone', 'target-repo', 'bot-token'] as const;
+export type PrerequisiteStepId = (typeof PREREQUISITE_STEP_IDS)[number];
+
+export const PREREQUISITE_STEP_ORDER: readonly PrerequisiteStepId[] = PREREQUISITE_STEP_IDS;
+
+export type OnboardingPhase = 'checking-prerequisites' | 'prerequisites-ready';
+
+export interface OnboardingFacilitatorState {
+  readonly targetRepoUrl: string;
+  readonly phase: OnboardingPhase;
+  readonly stepIndex: number;
+  readonly verifiedSteps: readonly PrerequisiteStepId[];
+  readonly paused: boolean;
+  readonly updatedAtMs: number;
+}
+
+interface StepVerificationSpec {
+  readonly requiredMarkers: readonly string[];
+  readonly failureMarkers: readonly string[];
+}
+
+export interface PrerequisiteStepGuidance {
+  readonly id: PrerequisiteStepId;
+  readonly instruction: string;
+  readonly verificationName: string;
+  readonly verification: StepVerificationSpec;
+}
+
+// BL-590 description: checklist content mined from
+// docs/how-to/BL-091-wsl2-second-swarm-bringup.md (toolchain check command)
+// and BL-439's own "two pollers, one token" 409 warning (bot-token step) -
+// not invented. Each guidance carries the EXACT command to paste and NAMES
+// the verification the principal must paste back (scenario 06).
+export const PREREQUISITE_STEPS: Readonly<Record<PrerequisiteStepId, PrerequisiteStepGuidance>> = {
+  toolchain: {
+    id: 'toolchain',
+    instruction:
+      'On the target host, run:\n' +
+      '  git --version && node --version && tmux -V && bb --version && claude --version\n' +
+      'Paste the full output here.',
+    verificationName: 'toolchain version-check output',
+    verification: {
+      requiredMarkers: ['git version', 'tmux', 'babashka', 'claude'],
+      failureMarkers: ['not found', 'command not found'],
+    },
+  },
+  'github-access': {
+    id: 'github-access',
+    instruction:
+      'On the target host, run:\n' +
+      '  ssh -T git@github.com\n' +
+      'Paste the full output here (a working key prints a "successfully authenticated" message).',
+    verificationName: 'GitHub SSH access check output',
+    verification: {
+      requiredMarkers: ['successfully authenticated'],
+      failureMarkers: ['permission denied', 'could not resolve hostname'],
+    },
+  },
+  'fork-clone': {
+    id: 'fork-clone',
+    instruction:
+      'On the target host, run:\n' +
+      '  git clone git@github.com:unclebob/swarm-forge.git && cd swarm-forge && git rev-parse --short HEAD\n' +
+      'Paste the full output here.',
+    verificationName: 'swarmforge fork clone output',
+    verification: {
+      requiredMarkers: ['cloning into'],
+      failureMarkers: ['fatal:', 'repository not found'],
+    },
+  },
+  'target-repo': {
+    id: 'target-repo',
+    instruction:
+      'On the target host, run:\n' +
+      '  git clone <the target repo URL you gave me> && cd <the cloned directory> && git remote -v\n' +
+      'Paste the full output here.',
+    verificationName: 'target repo clone output',
+    verification: {
+      requiredMarkers: ['cloning into', 'origin'],
+      failureMarkers: ['fatal:', 'repository not found'],
+    },
+  },
+  'bot-token': {
+    id: 'bot-token',
+    instruction:
+      'Create a NEW, DEDICATED Telegram bot for this target via @BotFather - do NOT reuse the ' +
+      "primary swarm's bot token (two pollers sharing one token collide with a 409 Conflict, " +
+      'see BL-622/BL-439). Paste the new bot username and confirmation that the token was saved here.',
+    verificationName: 'dedicated bot token confirmation',
+    verification: {
+      requiredMarkers: ['new bot', 'token'],
+      failureMarkers: ['reused the primary', "primary's token"],
+    },
+  },
+};
+
+export type PrerequisiteVerdict = { passed: true } | { passed: false; reason: string };
+
+function containsMarker(haystack: string, marker: string): boolean {
+  return haystack.toLowerCase().includes(marker.toLowerCase());
+}
+
+export function verifyPrerequisiteStep(stepId: PrerequisiteStepId, pastedOutput: string): PrerequisiteVerdict {
+  const spec = PREREQUISITE_STEPS[stepId].verification;
+  const lower = pastedOutput;
+  const failedMarker = spec.failureMarkers.find((marker) => containsMarker(lower, marker));
+  if (failedMarker) {
+    return { passed: false, reason: `output contains "${failedMarker}"` };
+  }
+  const missingMarker = spec.requiredMarkers.find((marker) => !containsMarker(lower, marker));
+  if (missingMarker) {
+    return { passed: false, reason: `output is missing "${missingMarker}"` };
+  }
+  return { passed: true };
+}
+
+// A bare claim of completion ("done", "it's done", "yes") carries no
+// evidence at all and must never advance a step (scenario 04) - narrow and
+// whole-message-anchored so a real verification paste that happens to START
+// with "done" (unlikely, but never trusted on a substring) is not swept in.
+const BARE_DONE_PATTERN = /^\s*(it'?s\s+)?(done|finished|complete[d]?|ready|yes|ok|okay)[.!]?\s*$/i;
+
+export function isBareDoneClaim(text: string): boolean {
+  return BARE_DONE_PATTERN.test(text);
+}
+
+export type OnboardingControl = 'pause' | 'proceed';
+
+const CONTROL_PATTERN: Readonly<Record<OnboardingControl, RegExp>> = {
+  pause: /^\s*pause\s*$/i,
+  proceed: /^\s*proceed\s*$/i,
+};
+
+export function classifyControl(text: string): OnboardingControl | null {
+  if (CONTROL_PATTERN.pause.test(text)) {
+    return 'pause';
+  }
+  if (CONTROL_PATTERN.proceed.test(text)) {
+    return 'proceed';
+  }
+  return null;
+}
+
+export function currentPrerequisiteStep(state: OnboardingFacilitatorState): PrerequisiteStepId | null {
+  if (state.phase === 'prerequisites-ready') {
+    return null;
+  }
+  return PREREQUISITE_STEP_ORDER[state.stepIndex] ?? null;
+}
+
+export function renderStepInstruction(stepId: PrerequisiteStepId): string {
+  const spec = PREREQUISITE_STEPS[stepId];
+  return `${spec.instruction}\n\nPaste the ${spec.verificationName} here when ready.`;
+}
+
+const PREREQUISITES_READY_MESSAGE =
+  'All prerequisites verified - prerequisites are ready. Next comes the survey phase: I will survey your ' +
+  'target repo and propose an onboarding contract.';
+
+export function renderStatus(state: OnboardingFacilitatorState): string {
+  const step = currentPrerequisiteStep(state);
+  if (!step) {
+    return PREREQUISITES_READY_MESSAGE;
+  }
+  return `Onboarding ${state.targetRepoUrl}: prerequisites phase, step "${step}".\n\n${renderStepInstruction(step)}`;
+}
+
+export function createOnboardingState(targetRepoUrl: string, now: () => number): OnboardingFacilitatorState {
+  return {
+    targetRepoUrl,
+    phase: 'checking-prerequisites',
+    stepIndex: 0,
+    verifiedSteps: [],
+    paused: false,
+    updatedAtMs: now(),
+  };
+}
+
+export interface FacilitatorTurn {
+  readonly state: OnboardingFacilitatorState;
+  readonly message: string;
+}
+
+// BL-590 new-onboarding-starts-at-prerequisites-02: a plain "http(s)://..."
+// or "git@host:..." message in the Onboarding topic opens a fresh per-target
+// onboarding - deliberately narrow (whole-message anchored, only the two
+// real git remote URL shapes) so an ordinary sentence mentioning a URL never
+// misfires into starting an onboarding.
+const REPO_URL_PATTERN = /^\s*(https?:\/\/\S+|git@\S+:\S+)\s*$/i;
+
+export function isLikelyRepoUrl(text: string): boolean {
+  return REPO_URL_PATTERN.test(text);
+}
+
+// BL-590: the Onboarding topic is ONE topic reused across targets (the
+// specifier's design note), so a plain reply (not a fresh repo URL) must be
+// routed to whichever onboarding it belongs to. Slice 1 keeps this simple -
+// concurrent-onboarding disambiguation by content is BL-625/slice 3's job -
+// "the one still in flight, most recently touched" is enough for the single-
+// onboarding-at-a-time flow slice 1's own QA procedure walks. A target that
+// already reached prerequisites-ready is done with THIS topic's job (survey
+// is BL-624's own topic turn), so it is never picked back up here.
+export function pickActiveOnboardingState(states: readonly OnboardingFacilitatorState[]): OnboardingFacilitatorState | undefined {
+  const inFlight = states.filter((s) => s.phase !== 'prerequisites-ready');
+  if (inFlight.length === 0) {
+    return undefined;
+  }
+  return inFlight.reduce((latest, candidate) => (candidate.updatedAtMs > latest.updatedAtMs ? candidate : latest));
+}
+
+const PAUSED_MESSAGE = 'Onboarding is paused. Post "proceed" to resume.';
+
+function advanceStep(state: OnboardingFacilitatorState, stepId: PrerequisiteStepId, now: () => number): OnboardingFacilitatorState {
+  const verifiedSteps = [...state.verifiedSteps, stepId];
+  const nextIndex = state.stepIndex + 1;
+  const phase: OnboardingPhase = nextIndex >= PREREQUISITE_STEP_ORDER.length ? 'prerequisites-ready' : 'checking-prerequisites';
+  return { ...state, verifiedSteps, stepIndex: nextIndex, phase, updatedAtMs: now() };
+}
+
+// The whole per-reply transition (scenarios 03/04/05/09/10). Pause/proceed
+// are checked before verification so a control word is never misread as a
+// (failing) verification paste.
+export function applyPrincipalReply(state: OnboardingFacilitatorState, text: string, now: () => number): FacilitatorTurn {
+  const control = classifyControl(text);
+  if (state.paused) {
+    if (control === 'proceed') {
+      const resumed = { ...state, paused: false, updatedAtMs: now() };
+      return { state: resumed, message: renderStatus(resumed) };
+    }
+    return { state, message: PAUSED_MESSAGE };
+  }
+  if (control === 'pause') {
+    const paused = { ...state, paused: true, updatedAtMs: now() };
+    return { state: paused, message: `Onboarding paused at the current step. ${PAUSED_MESSAGE}` };
+  }
+  if (control === 'proceed') {
+    return { state, message: renderStatus(state) };
+  }
+  const step = currentPrerequisiteStep(state);
+  if (!step) {
+    return { state, message: renderStatus(state) };
+  }
+  if (isBareDoneClaim(text)) {
+    return {
+      state,
+      message: `That's not a verification output, so this step is not recorded as verified yet.\n\n${renderStepInstruction(step)}`,
+    };
+  }
+  const verdict = verifyPrerequisiteStep(step, text);
+  if (!verdict.passed) {
+    return {
+      state,
+      message: `The "${step}" verification failed: ${verdict.reason}.\n\n${renderStepInstruction(step)}`,
+    };
+  }
+  const advanced = advanceStep(state, step, now);
+  return { state: advanced, message: renderStatus(advanced) };
+}
+
+const NO_ACTIVE_ONBOARDING_MESSAGE =
+  'No onboarding is currently in progress in this topic. Post a target GitHub repo URL to start one.';
+
+export type OnboardingMessageOutcome =
+  | { kind: 'started'; state: OnboardingFacilitatorState; message: string }
+  | { kind: 'advanced'; state: OnboardingFacilitatorState; message: string }
+  | { kind: 'no-active-onboarding'; message: string };
+
+// BL-590: the facilitator's whole per-message decision, given every
+// currently-persisted target state plus the incoming text - the ONE function
+// the real (untested-shell) wiring calls between "read every state" and
+// "persist the result and send its message", so that shell never itself
+// contains a branch on message content (testable-module boundary).
+export function handleOnboardingMessage(
+  existingStates: readonly OnboardingFacilitatorState[],
+  text: string,
+  now: () => number
+): OnboardingMessageOutcome {
+  if (isLikelyRepoUrl(text)) {
+    const state = createOnboardingState(text.trim(), now);
+    return { kind: 'started', state, message: renderStatus(state) };
+  }
+  const active = pickActiveOnboardingState(existingStates);
+  if (!active) {
+    return { kind: 'no-active-onboarding', message: NO_ACTIVE_ONBOARDING_MESSAGE };
+  }
+  const turn = applyPrincipalReply(active, text, now);
+  return { kind: 'advanced', state: turn.state, message: turn.message };
+}
