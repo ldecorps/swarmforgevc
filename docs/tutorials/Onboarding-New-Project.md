@@ -295,6 +295,11 @@ machine-executable:
   specs/features/<ticket-id>-<slug>.feature`), not inline Gherkin. This is
   the link between "what was asked for" (the ticket) and "what must remain
   true" (the feature file).
+- Since BL-633, a ticket may also carry an optional `invariants:` list — at
+  most three short properties that must hold across the *whole* slice
+  (e.g. "every durable write is idempotent under redelivery"), distinct
+  from `acceptance:`'s concrete example scenarios. Most tickets have none;
+  see `swarmforge/backlog-schema.md` for the full field and its rationale.
 - **QA gates on it.** The final pipeline stage runs the acceptance suite and
   requires every scenario in the ticket's referenced feature file to pass
   (N/N) before the work is approved. The contract isn't aspirational — it's
