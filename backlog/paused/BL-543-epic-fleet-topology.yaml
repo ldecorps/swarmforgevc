@@ -6,7 +6,7 @@ type: epic
 epic: fleet-topology
 priority: 00
 depends_on: []
-decomposes_into: [BL-101, BL-514, BL-622]
+decomposes_into: [BL-101, BL-514]
 source: "Human hygiene 2026-07-19: every ticket must have an epic; every epic must have a milestone. Tracker created during open-backlog cleanup."
 
 notes: |

@@ -54,9 +54,6 @@ const {
   BACKLOG_SUBJECT_ID,
   roleAskThreadId,
   roleFromAskThreadId,
-  decideEnsureOnboardingTopicAction,
-  ONBOARDING_SUBJECT_ID,
-  decideOnboardingReplyAction,
 } = require('../out/tools/telegramFrontDeskBotCore');
 
 const PRINCIPAL_ID = 111;
@@ -5300,100 +5297,4 @@ test('applyPollCycleResult calls recordHeartbeat on every completed cycle, succe
 test('applyPollCycleResult defaults recordHeartbeat to a no-op when the caller does not supply one (back-compat)', async () => {
   const cycle = { state: { offset: 0, consecutiveFailures: 0, stuckAttempts: 0 }, delayMs: 0, degradedWarning: false, escalateStuckDelivery: false };
   await assert.doesNotReject(() => applyPollCycleResult(cycle, () => {}, async () => {}));
-});
-
-// ── decideEnsureOnboardingTopicAction (pure) — BL-590 ─────────────────────
-
-test('BL-590: decideEnsureOnboardingTopicAction creates when no topic is bound to the reserved subject yet', () => {
-  assert.deepEqual(decideEnsureOnboardingTopicAction({}), { kind: 'create' });
-  assert.deepEqual(decideEnsureOnboardingTopicAction({ '7': 'SUP-1' }), { kind: 'create' });
-});
-
-test('BL-590: decideEnsureOnboardingTopicAction reuses the topic already bound to ONBOARDING_SUBJECT_ID', () => {
-  assert.deepEqual(decideEnsureOnboardingTopicAction({ '7': 'SUP-1', '42': ONBOARDING_SUBJECT_ID }), { kind: 'reuse', topicId: 42 });
-});
-
-test('BL-590: decideEnsureOnboardingTopicAction is reserved-subject-specific - another reserved subject\'s binding never counts', () => {
-  assert.deepEqual(decideEnsureOnboardingTopicAction({ '42': OPERATOR_SUBJECT_ID }), { kind: 'create' });
-});
-
-// ── decideOnboardingReplyAction (pure) — BL-590 onboarding-topic-ensured-and-routed-01 ──
-
-test('BL-590: decideOnboardingReplyAction is not-applicable when the topic id is not the Onboarding topic', () => {
-  const update = mkUpdate({ fromId: PRINCIPAL_ID, topicId: 5, text: 'https://github.com/acme/widget' });
-  assert.deepEqual(decideOnboardingReplyAction(update, PRINCIPAL_ID, '1', 42), { kind: 'not-applicable' });
-});
-
-test('BL-590: decideOnboardingReplyAction is not-applicable when no Onboarding topic is bound at all - never mistaken for the SUP path', () => {
-  const update = mkUpdate({ fromId: PRINCIPAL_ID, topicId: 42, text: 'https://github.com/acme/widget' });
-  assert.deepEqual(decideOnboardingReplyAction(update, PRINCIPAL_ID, '1', undefined), { kind: 'not-applicable' });
-});
-
-test('BL-590: decideOnboardingReplyAction refuses a reply from a foreign chat or a non-principal', () => {
-  const foreignChat = mkUpdate({ fromId: PRINCIPAL_ID, topicId: 42, text: 'hi', chatId: 2 });
-  assert.deepEqual(decideOnboardingReplyAction(foreignChat, PRINCIPAL_ID, '1', 42), { kind: 'refuse' });
-  const stranger = mkUpdate({ fromId: 999, topicId: 42, text: 'hi' });
-  assert.deepEqual(decideOnboardingReplyAction(stranger, PRINCIPAL_ID, '1', 42), { kind: 'refuse' });
-});
-
-test('BL-590: decideOnboardingReplyAction refuses a text-less message in the Onboarding topic', () => {
-  const update = mkUpdate({ fromId: PRINCIPAL_ID, topicId: 42 });
-  assert.deepEqual(decideOnboardingReplyAction(update, PRINCIPAL_ID, '1', 42), { kind: 'refuse' });
-});
-
-test('BL-590: decideOnboardingReplyAction delivers the principal\'s message text in the Onboarding topic', () => {
-  const update = mkUpdate({ fromId: PRINCIPAL_ID, topicId: 42, text: 'https://github.com/acme/widget' });
-  assert.deepEqual(decideOnboardingReplyAction(update, PRINCIPAL_ID, '1', 42), { kind: 'deliver', text: 'https://github.com/acme/widget' });
-});
-
-// ── pollAndForward: Onboarding topic side channel — BL-590 onboarding-topic-ensured-and-routed-01 ──
-
-function onboardingPollAdapters(overrides = {}) {
-  return {
-    chatId: '1',
-    onboardingTopicId: overrides.onboardingTopicId ?? (async () => 42),
-    handleOnboardingFacilitatorMessage: overrides.handleOnboardingFacilitatorMessage ?? (async () => true),
-    postToBridge: overrides.postToBridge ?? (async () => true),
-    subjectForTopic: () => undefined,
-    backlogForTopic: () => undefined,
-    openSubjectAndRecord: async () => {
-      throw new Error('openSubjectAndRecord should never open a fresh subject for the reserved Onboarding topic');
-    },
-    postOperatorContext: async () => {
-      throw new Error('postOperatorContext should not be called for an Onboarding topic reply');
-    },
-    ...overrides,
-  };
-}
-
-test('BL-590: a principal message in the Onboarding topic reaches the facilitator and never falls through to the SUP path', async () => {
-  const handled = [];
-  const result = await pollAndForward(
-    0,
-    PRINCIPAL_ID,
-    onboardingPollAdapters({
-      getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 42, text: 'https://github.com/acme/widget' })] }),
-      handleOnboardingFacilitatorMessage: async (topicId, text, updateId) => {
-        handled.push({ topicId, text, updateId });
-        return true;
-      },
-    })
-  );
-  assert.deepEqual(handled, [{ topicId: 42, text: 'https://github.com/acme/widget', updateId: 1 }]);
-  assert.equal(result.posted, 1);
-});
-
-test('BL-590: a message in an unrelated topic is unaffected by the Onboarding side channel and still opens the ordinary SUP path', async () => {
-  const result = await pollAndForward(
-    0,
-    PRINCIPAL_ID,
-    onboardingPollAdapters({
-      getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: undefined, text: 'hello' })] }),
-      handleOnboardingFacilitatorMessage: async () => {
-        throw new Error('must not be called for a non-Onboarding-topic message');
-      },
-      openSubjectAndRecord: async () => 'SUP-9',
-    })
-  );
-  assert.equal(result.posted, 1);
 });

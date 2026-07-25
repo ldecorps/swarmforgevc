@@ -186,22 +186,6 @@ export function decideEnsureResidentSpyTopicAction(topicMap: Record<string, stri
   return existingTopicId !== undefined ? { kind: 'reuse', topicId: existingTopicId } : { kind: 'create' };
 }
 
-// BL-590 slice 1: the Onboarding Facilitator's own reserved topic - an
-// ad-hoc topic in the PRIMARY swarm's existing group, ensured-or-reused the
-// same way as every standing topic above (never a second mechanism). One
-// topic REUSED across targets (the specifier's design note); per-target
-// identity lives in onboardingFacilitatorStateStore.ts's own state files,
-// not in the topic itself.
-export const ONBOARDING_SUBJECT_ID = 'ONBOARDING';
-export const ONBOARDING_TOPIC_NAME = 'Onboarding';
-
-export type EnsureOnboardingTopicAction = { kind: 'reuse'; topicId: number } | { kind: 'create' };
-
-export function decideEnsureOnboardingTopicAction(topicMap: Record<string, string>): EnsureOnboardingTopicAction {
-  const existingTopicId = topicForSubject(topicMap, ONBOARDING_SUBJECT_ID);
-  return existingTopicId !== undefined ? { kind: 'reuse', topicId: existingTopicId } : { kind: 'create' };
-}
-
 export type EnsureRoleTopicAction = { kind: 'reuse'; topicId: number } | { kind: 'create' };
 
 export function decideEnsureRoleTopicAction(roleTopicMap: Record<string, number>, role: string): EnsureRoleTopicAction {

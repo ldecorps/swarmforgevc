@@ -20,7 +20,6 @@ const {
   ensureRecertTopic,
   ensureAgentQuestionsTopic,
   ensureBacklogTopic,
-  ensureOnboardingTopic,
   ensureControlTopic,
   ensureResidentSpyTopic,
   ensureBoardTopicAdapter,
@@ -929,71 +928,6 @@ test('BL-492: an already-bound Backlog topic returns its existing topicId, witho
   writeTopicMapFixture(root, { '42': 'BACKLOG' });
   const { postFn, calls } = fakeCreateOk(999);
   const topicId = await ensureBacklogTopic(root, 'fake-token', 'fake-chat', postFn);
-  assert.equal(topicId, 42);
-  assert.equal(calls.length, 0);
-});
-
-// ── ensureOnboardingTopic (BL-590, mirrors ensureAgentQuestionsTopic above) ──
-
-test('BL-590: creates the Onboarding topic and binds it to the reserved subject when the map has no binding yet', async () => {
-  const root = mkTmpRoot();
-  const { postFn, calls } = fakeCreateOk(42);
-  await ensureOnboardingTopic(root, 'fake-token', 'fake-chat', postFn);
-  assert.equal(calls.length, 1);
-  const map = readTopicMapFixture(root);
-  assert.equal(map['42'], 'ONBOARDING');
-});
-
-test('BL-590: the create call names the topic "Onboarding"', async () => {
-  const root = mkTmpRoot();
-  const { postFn, calls } = fakeCreateOk(7);
-  await ensureOnboardingTopic(root, 'fake-token', 'fake-chat', postFn);
-  assert.match(calls[0].url, /createForumTopic$/);
-  assert.match(calls[0].body, /"name":"Onboarding"/);
-});
-
-test('BL-590 onboarding-topic-ensured-and-routed-01: a later start reuses the same topic instead of creating another', async () => {
-  const root = mkTmpRoot();
-  writeTopicMapFixture(root, { '42': 'ONBOARDING' });
-  const { postFn, calls } = fakeCreateOk(999);
-  await ensureOnboardingTopic(root, 'fake-token', 'fake-chat', postFn);
-  assert.equal(calls.length, 0);
-  assert.deepEqual(readTopicMapFixture(root), { '42': 'ONBOARDING' });
-});
-
-test('BL-590: the Onboarding topic and the other standing topics bind independently in the SAME map, never colliding or disturbing them', async () => {
-  const root = mkTmpRoot();
-  writeTopicMapFixture(root, {
-    '10': 'OPERATOR',
-    '11': 'APPROVALS',
-    '12': 'RECERT',
-    '13': 'AGENT_QUESTIONS',
-    '14': 'CONTROL',
-    '15': 'BACKLOG',
-  });
-  const { postFn, calls } = fakeCreateOk(55);
-  const topicId = await ensureOnboardingTopic(root, 'fake-token', 'fake-chat', postFn);
-  assert.equal(calls.length, 1);
-  assert.equal(topicId, 55);
-  const map = readTopicMapFixture(root);
-  assert.equal(map['55'], 'ONBOARDING');
-  assert.equal(map['10'], 'OPERATOR');
-  assert.equal(map['15'], 'BACKLOG');
-});
-
-test('BL-590: a failed create degrades quietly - never throws, never writes a partial binding', async () => {
-  const root = mkTmpRoot();
-  const postFn = async () => ({ ok: false, status: 500, json: { description: 'simulated failure' } });
-  const topicId = await ensureOnboardingTopic(root, 'fake-token', 'fake-chat', postFn);
-  assert.equal(topicId, undefined);
-  assert.equal(fs.existsSync(topicMapPath(root)), false);
-});
-
-test('BL-590: an already-bound Onboarding topic returns its existing topicId, without calling create', async () => {
-  const root = mkTmpRoot();
-  writeTopicMapFixture(root, { '42': 'ONBOARDING' });
-  const { postFn, calls } = fakeCreateOk(999);
-  const topicId = await ensureOnboardingTopic(root, 'fake-token', 'fake-chat', postFn);
   assert.equal(topicId, 42);
   assert.equal(calls.length, 0);
 });

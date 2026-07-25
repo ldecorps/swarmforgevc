@@ -2,14 +2,14 @@ id: BL-590
 title: "Onboarding Facilitator: a standalone tooled agent that guides a human through onboarding a new target, step by step, in its own ad-hoc Telegram topic"
 milestone: M8
 type: feature
-status: todo
+status: needs_design
 epic: swarm-intelligence-layer
 human_approval: approved
 severity: medium
-priority: 02
+priority: 10
 direction: human-requested
 depends_on: [BL-262, BL-269, BL-344, BL-380, BL-381]
-assigned_to: coder
+assigned_to: specifier
 mutation_cost: high
 human_ruling: |
   RULED by the human 2026-07-23 (relayed via the operator tunnel, recorded
@@ -197,84 +197,41 @@ description: |
       `./swarm <path> --pack mono-router`. The facilitator states that exact
       command; it never claims to have launched a swarm it cannot reach.
 
-design: |
-  SPECIFIER DESIGN (2026-07-25). Three slices; THIS ticket is slice 1, per
-  the ordering note below (prerequisites first — it is what actually blocks
-  a fresh Mac and is pure guide-and-verify):
-
-  - Slice 1 = BL-590 (this parcel): reserved Onboarding topic
-    (ensure-or-reuse, own subject id, inbound routed to the facilitator and
-    never the front-desk SUP path) + supervised facilitator poll-loop
-    (negotiation_relay_supervisor.bb shape, registered in
-    start/stop_ancillary_services.sh) + persistent per-target state machine
-    + the PREREQUISITES phase (toolchain, github-access, fork-clone,
-    target-repo, bot-token) as guide-and-verify steps. Slice ends at
-    prerequisites-ready.
-  - Slice 2 = BL-624 (paused): survey -> propose -> negotiate ->
-    contract-agreed via the EXISTING gate, do-for-you against the
-    facilitator's own GitHub clone; contract committed back to the target
-    repo.
-  - Slice 3 = BL-625 (paused): prompts via the existing BL-269 CLI,
-    ready-to-launch handoff (exact command, never claims remote launch),
-    done state, topic REUSE across targets.
-
-  Decisions taken (the yaml left them to the specifier):
-  - ONE Onboarding topic REUSED across targets; state is per-target so
-    concurrent onboardings stay distinct (slice 3 scenario 05).
-  - The bot-token prerequisite instructs a DEDICATED new token and forbids
-    reusing the primary's — the BL-622 one-token-one-poller invariant at
-    guidance level (slice 1 scenario 07); BL-622 enforces it at the
-    launch/resolve layer independently.
-  - Controls in slice 1: proceed / show-me / pause. change-this exists only
-    from slice 2 (it IS the runObject round; nothing to object to before a
-    contract exists).
-  - The prerequisites checklist content is mined from
-    docs/how-to/BL-439-fes-second-swarm-bringup.md and the onboarding
-    tutorial, not invented; each step's guidance carries the exact command
-    plus the verification the human pastes back.
-
 acceptance: |
-  specs/features/BL-590-onboarding-facilitator-slice1-topic-prereqs.feature
+  Specifier writes the scenarios and slices this - it is mutation_cost high and
+  should NOT ship as one parcel. A sensible slice 1 is: reserve the Onboarding
+  topic + ensure/route it + a facilitator that walks survey -> propose ->
+  agree -> gate for a LOCAL target path, with the negotiation reusing the
+  existing relay/CLI. Prompts (BL-269) and multi-target topic reuse can be
+  later slices.
 
-  Every scenario needs its step handler wired in this same parcel — the
-  acceptance runner throws on unhandled scenarios (BL-233). Slices 2/3 have
-  their own feature files on their own tickets (BL-624/BL-625) and gate
-  their own parcels.
+  Slice ordering note: the prerequisites/access phase and the survey->gate
+  phase are separable and can be DIFFERENT slices. The specifier decides which
+  is slice 1; a defensible choice is to ship the prerequisites checklist +
+  verify loop FIRST (it is what actually blocks a fresh Mac today and is pure
+  guide-and-verify, no target-repo access needed), with survey->gate as slice 2.
+  Do not let "slice 1 = survey" quietly drop the prerequisites phase the human
+  explicitly asked for.
 
-  Scenario map: 01 topic ensured+routed (reserved subject, reuse-or-create,
-  never SUP); 02 repo URL opens per-target state at checking-prerequisites;
-  03 passing verification advances; 04 bare "done" never advances; 05
-  failing verification explains and re-issues; 06 checklist coverage
-  outline (toolchain/github-access/fork-clone/target-repo/bot-token, exact
-  command + named verification each — outline handlers validate step names
-  against explicit KNOWN_VALUES); 07 dedicated-token instruction (BL-622);
-  08 restart resumes persisted state; 09 pause/proceed; 10
-  prerequisites-ready announces the survey phase.
-
-  Supporting gates:
-  - State machine, step verification checks, and topic-routing decisions are
-    pure exported functions unit-tested with fixtures; the poll loop and
-    Telegram/tmux surfaces stay thin untestable shells (testable-module
-    boundary).
-  - The ensure-topic decision follows decideEnsureOperatorTopicAction's
-    existing pattern and its tests.
-  - No real timers; controllable clock everywhere.
-  - Supervisor registration in start/stop_ancillary_services.sh with bounded
-    restart; facilitator restart proves state resume (scenario 08).
-
-  QA end-to-end procedure (live swarm — the first live target IS the
-  acceptance, per the human ruling):
-  1. Start ancillary services; the Onboarding topic appears once in the
-     primary group; restarting does not duplicate it.
-  2. Post a real GitHub repo URL in the topic; the facilitator answers with
-     where-we-are and the toolchain instruction.
-  3. Reply "done" with no output — it re-asks for the verification. Paste a
-     failing output — it explains and re-issues. Paste the passing output —
-     it advances and posts the next step.
-  4. Kill and restart the facilitator mid-checklist — it resumes at the same
-     step with verified steps intact.
-  5. Walk all five steps to prerequisites-ready — it announces the survey
-     phase (slice 2) comes next.
+  Minimum for a slice that includes the topic + prerequisites:
+  1. An "Onboarding" topic is ensured in the primary group via the same
+     reuse-or-create pattern as the other standing topics, with its own
+     reserved subject id; a message there reaches the facilitator, not the
+     front-desk SUP path.
+  2. The facilitator walks the prerequisites phase (toolchain, GitHub access,
+     clone, token) as guide-and-verify steps, advancing ONLY on a passing
+     verification, never on a bare "done".
+  3. For the survey->gate slice: the facilitator surveys a reachable target
+     repo, posts the proposed contract into the topic, and waits.
+  4. The human can advance (proceed), inspect (show me), and object (change
+     this -> a real negotiate runObject round), all from the topic.
+  5. Build work stays blocked until the contract is agreed - the EXISTING
+     onboarding-contract-gate, not a new gate.
+  5. Onboarding state is persisted per target and survives a facilitator
+     restart (resumes mid-flow, does not restart the survey).
+  6. The facilitator states explicitly what the human must run ON THE TARGET
+     HOST to launch the swarm, and does not claim to have launched a swarm it
+     cannot reach.
 
 out_of_scope: |
   - A ninth pipeline role. This is an ancillary conversational agent, not part

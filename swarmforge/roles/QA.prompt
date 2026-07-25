@@ -207,16 +207,6 @@ You are QA.
       not clear-cut → `coder` (the default; unchanged, and still the common case)
     - defect entirely in docs, comments, docstrings, or the ticket's own `docs:`
       deliverables → `documenter`
-    - a stage's pass is MISSING ENTIRELY — its handoff forwarded another
-      stage's commit with zero changes of its own where its deliverable was
-      due (e.g. no documenter doc/changelog update for the ticket anywhere in
-      history; no hardening commit) → THAT stage. The absence of a stage's
-      output is that stage's own defect. Failure CLASS never drives routing —
-      ownership does; class is the metric label. `behavior` was the honest
-      class for BL-575's missing documenter pass and the owner was still
-      `documenter` (BL-575, 2026-07-25: classed `behavior`, defaulted to
-      `coder`, and coder + cleaner blind-forwarded the unfixed parcel again —
-      the third routing miss this rule exists to stop).
     - surviving mutants, coverage or CRAP gap, missing test → `hardender`
     - design/layering violation with no code fix below it → `architect`
     - code AND docs both defective → `coder` (the earlier of the two)
