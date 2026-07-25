@@ -6,7 +6,7 @@ status: todo
 epic: swarm-behaviour-trends
 human_approval: approved
 severity: high
-priority: 07
+priority: 01
 direction: human-requested
 depends_on: []
 assigned_to: specifier
@@ -18,6 +18,20 @@ approval_context: >
   operator then flagged that `bounce_count` is itself very new and asked whether
   what the documenter relied on beforehand was ever persistent. It was not.
   This ticket closes that hole so the question becomes answerable.
+
+priority_history: |
+  07 -> 01, operator directive 2026-07-25 18:10, alongside [[BL-633]] — see that
+  ticket's priority_history for the full argument.
+
+  Rides at the same priority as BL-633 deliberately: BL-633 is the relief, this is
+  the instrument that says whether the relief worked. Ship them together or the
+  relief ships on faith.
+
+  Sharpened by the same day's evidence: BL-629 took its THIRD architect send-back
+  and `bounce_count` on its ticket is still ABSENT — nothing recorded a single one
+  of the three. The operator's own standing bound is "3 barely, 8 no way", and today
+  a ticket hit that bound with no counter anywhere in the system able to notice.
+  A bound that nothing can measure is not a bound.
 
 source: |
   BL-590 post-mortem, 2026-07-25.
