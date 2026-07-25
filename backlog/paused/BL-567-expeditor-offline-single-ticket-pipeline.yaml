@@ -2,7 +2,7 @@ id: BL-567
 title: "Expeditor — drive one ticket through every pipeline gate with the swarm STOPPED, independent of all swarm runtime machinery"
 milestone: M8
 type: feature
-status: needs_design
+status: todo
 epic: swarm-reliability
 human_approval: approved
 severity: medium
@@ -119,6 +119,92 @@ description: |
   - Interaction with SWARMFORGE_SKIP_DAEMON sync-delivery: explicitly NOT
     used (it still writes swarm mailboxes); note why in the runbook so
     future maintainers don't "simplify" back onto swarm transport.
+
+design: |
+  ANSWERED 2026-07-25 (operator as specifier, swarm stopped — stage 1 of this
+  ticket's own hand-run). Full reasoning and the measurements behind each call:
+  `backlog/evidence/BL-567-design-20260725.md`. Decisions:
+
+  **Three findings that correct the shape above, before any answer.**
+
+  1. Do NOT read `.swarmforge/prompts/<role>.md` as the shape section says. It is
+     a build output (62 KB, mtime = last launch, absent on a bare host), and
+     **BL-546 landed a rule against assembling prompts outside PromptEngine**.
+     Compose fresh via `prompt_engine_lib.bb` — it reads only constitution
+     articles, PIPELINE.md, the role prompt and pack overlays, all plain git
+     files, and resolves paths from its own location, never cwd. Strictly on the
+     data side of this ticket's own line.
+  2. `compose`'s `:task-injection` is the parcel replacement — task text appended
+     AFTER all role/overlay content, never inside the stable chunk, so the prompt
+     cache hits across stages and bounces. It is **lib-only**; the driver
+     `load-file`s the lib rather than growing a CLI flag.
+  3. Model/effort are NOT read from the pack conf at run time — they live in
+     `.swarmforge/launch/<role>.claude-settings.json` (`model`, `effortLevel`).
+     Pass `--settings` at that path exactly as the launch scripts do; compose one
+     from the pack table only when the file is absent (bare host).
+
+  **Q1 fresh session per stage.** Confirmed. Differences from the launch-script
+  invocation: `-p` instead of interactive, drop `-n`/`--remote-control` (session
+  and RC-registration machinery), and no RESUME-ON-START mailbox probe. KEEP
+  `unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN` — not incidental, it decides
+  which account is billed. Beyond context isolation: an architect that just wrote
+  the code is not an independent reviewer, and on a bounce a reused session
+  remembers the defect it is being asked to find.
+
+  **Q2 git is the state.** Stage products stay commits, as online — that is what
+  makes the evidence bar identical rather than simulated.
+  `.swarmforge/expedite/<BL-id>/` holds only `run.json` (stage order, current
+  stage, bounce counts, shas) plus per-stage `prompt.md` / `task.txt` /
+  `transcript.jsonl` / `verdict.json` for audit. **A bounce does not rewind git**
+  — it records the verdict and re-enters the target stage with the reason in the
+  next task-injection. The revert-on-bounce pattern is the documented cause of
+  real damage (BL-629/BL-632, and two open architect `rule_proposal`s); the
+  expeditor must not adopt it, and the runbook must say why. Bounce bound per
+  (stage, ticket), default 8, loud on exhaustion — BL-590 took six legitimate
+  send-backs, so a tight bound would abort real convergence.
+
+  **Q3 dedicated branch `expedite/<BL-id>` in a worktree the driver creates and
+  owns.** Never `main` (this morning's incident was a role working in the master
+  checkout because `main` was out there); never the swarm's role worktrees (live
+  branches, uncommitted work, stray claim sidecars). QA stage merges to `main`
+  exactly as online, preserving BL-247 and staying compatible with BL-632's
+  commit-time guard — an expeditor exempted from that guard is how guards die.
+  **Do not push:** `push-sweep!` is dead while stopped and BL-630 wants publishing
+  QA-gated; publishing is the operator's call on next boot.
+
+  **Q4 bookkeeping inline but minimal.** Inline: the yaml move and its
+  `status`/`assigned_to` fields — the ticket's own durable record, a `git mv` plus
+  two edits. Deferred: BL topic record (front-desk machinery), briefing hooks,
+  `pipeline_stage_cli.bb sync` (board state for a live swarm). NEVER: promoting a
+  next ticket — one ticket, one run, and the expeditor has no queue. Deferred
+  items are listed in `run.json` as `deferred: [...]` so the next boot sees what
+  was skipped instead of inferring it.
+
+  **Q5 `SWARMFORGE_SKIP_DAEMON` excluded**, with the reason in the runbook: it
+  removes handoffd but still reads and writes `.swarmforge/handoffs/`, and the
+  mailboxes may themselves be the broken thing — wedged parcels, stale claim
+  sidecars and a starved queue were all observed on 2026-07-25. Routing recovery
+  work through the artefact under repair is how a recovery tool inherits the
+  outage it exists to escape.
+
+  **Interlock #1 as written would refuse to run — measured.** After a verified
+  full-stack stop, `tmux list-sessions` reported "no server running" while
+  `ls .swarmforge/tmux/*.sock` still returned 1: `kill_all_swarm.sh` deliberately
+  leaves the socket FILE. A glob-based check therefore reads a clean slate as LIVE
+  and refuses on exactly the state the expeditor exists for — after which the
+  override flag becomes routine and the interlock becomes decoration. Liveness
+  must PROBE: `tmux -S <sock> list-sessions` exiting zero, plus a live handoffd
+  pid. And the pid check is too narrow: the same teardown left
+  `.swarmforge/operator/babysitterd.sh` (5-minute sweeps that nudge agents) and
+  the Operator agent (whose job is to recover a swarm it finds down) alive — see
+  BL-637. The interlock must cover both regardless of whether BL-637 ships first.
+
+  **Still owed by the hand-run, and easy to fake:** acceptance item 1 wants
+  machinery-avoidance "asserted by instrumentation, not inspection". A hand-run
+  can avoid the machinery by care and look complete while asserting nothing —
+  the recorded dry-run-smoke-test trap. Decide the mechanism during the run.
+  And record honestly that run #1 was human-driven, so a green result is never
+  read as proof the driver works.
 
 acceptance: |
   Specifier writes executable scenarios; minimum the design must make
