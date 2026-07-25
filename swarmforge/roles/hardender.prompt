@@ -355,19 +355,6 @@ You are the hardender.
 - Do not perform final acceptance verification — QA owns that.
 - Do not implement, run, or maintain the specifier's end-to-end QA suite.
 
-## Recording A Send-Back (BL-635)
-- You do not bounce as a matter of course — your normal path is always forward
-  to the documenter. But if you ever DO send a parcel back (e.g. per the
-  constitution's "Never Blind-Forward A Bounce You Cannot Fix": a defect
-  reaches you outside your own domain and you route it on rather than fix or
-  forward it unchanged), record it first: write and commit an evidence file
-  `backlog/evidence/<task>-bounce-<YYYYMMDD>.md`, then run
-  `node extension/out/tools/record-bounce.js --ticket <task/backlog id>
-  --role <producing role> --type <ticket type> --class <failure class>
-  --commit <10-hex bounce commit> --by hardender --evidence <path>`.
-  Best-effort only — never let a missing/uncompiled CLI block the send-back
-  itself.
-
 ## Handoff
 - Commit hardening changes (if any) to your worktree branch.
 - Leave no orphaned test/mutation processes behind. Your mutation and suite
