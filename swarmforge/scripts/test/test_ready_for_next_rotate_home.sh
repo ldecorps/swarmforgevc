@@ -32,7 +32,11 @@ trap 'rm -rf "$ROOT"' EXIT
 git -C "$ROOT" init -q
 git -C "$ROOT" -c user.email=test@test -c user.name=test commit -q --allow-empty -m init
 
-mkdir -p "$ROOT/.swarmforge" "$ROOT/swarmforge/packs" "$ROOT/backlog/active"
+mkdir -p "$ROOT/.swarmforge" "$ROOT/swarmforge/packs" "$ROOT/backlog/active" \
+         "$ROOT/.swarmforge/handoffs/inbox/new" \
+         "$ROOT/.swarmforge/handoffs/inbox/in_process" \
+         "$ROOT/.swarmforge/handoffs/inbox/completed" \
+         "$ROOT/.swarmforge/handoffs/inbox/abandoned"
 cat > "$ROOT/swarmforge/swarmforge.conf" <<'EOF'
 config rotation router
 config rotation_home coder
@@ -145,5 +149,25 @@ OUT="$(cd "$CLEAN2_WT" && SWARMFORGE_ROTATE_TO_ROLE="$FAKE_BIN/rotate_to_role.sh
 echo "$OUT" | head -n1 | grep -q '^ROTATE_HOME$' || fail "07: batch wrapper expected ROTATE_HOME, got: $OUT"
 grep -q 'rotate coder' "$ROTATE_LOG" || fail "07: batch wrapper must call rotate_to_role.sh coder, log=$(cat "$ROTATE_LOG")"
 pass "07: ready_for_next.sh hands off a batch role's ROTATE_HOME to rotate_to_role.sh"
+
+# 08: coordinator, empty mailbox -> NO_TASK, never ROTATE_HOME (BL-614).
+# The coordinator is reserved infrastructure - not part of the rotation at
+# all - so an empty mailbox must never be read as "safe to divert the
+# resident", regardless of role != home-role being satisfied.
+OUT="$(cd "$ROOT" && SWARMFORGE_ROLE=coordinator bb "$READY_TASK")"
+echo "$OUT" | grep -q '^NO_TASK$' || fail "08: expected NO_TASK for coordinator, got: $OUT"
+echo "$OUT" | grep -q '^ROTATE_HOME$' && fail "08: coordinator must never ROTATE_HOME"
+pass "08: coordinator with empty mailbox prints NO_TASK, never rotates"
+
+# 09: coordinator whose in_process holds only an orphaned .claim-progress.json
+# sidecar (no matching .handoff file) still reads as an empty mailbox ->
+# NO_TASK, not ROTATE_HOME. Sidecar cleanup itself is BL-615 (out of scope
+# here); this only guards that the BL-614 fix doesn't get undermined by a
+# sidecar file being miscounted as real in-process work.
+echo '{}' > "$ROOT/.swarmforge/handoffs/inbox/in_process/orphan.claim-progress.json"
+OUT="$(cd "$ROOT" && SWARMFORGE_ROLE=coordinator bb "$READY_TASK")"
+echo "$OUT" | grep -q '^NO_TASK$' || fail "09: expected NO_TASK for coordinator with only an orphaned sidecar, got: $OUT"
+echo "$OUT" | grep -q '^ROTATE_HOME$' && fail "09: coordinator must never ROTATE_HOME, even with a sidecar-only in_process"
+pass "09: coordinator with only an orphaned claim-progress sidecar prints NO_TASK, never rotates"
 
 echo "test_ready_for_next_rotate_home: ALL CHECKS PASSED"
