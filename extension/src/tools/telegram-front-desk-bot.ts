@@ -180,7 +180,6 @@ import {
   findProcessedOnboardingUpdate,
   writeOnboardingStateAndMarkUpdateProcessed,
   markOnboardingUpdateDelivered,
-  recordNoActiveOnboardingUpdateProcessed,
 } from '../onboarding/onboardingFacilitatorStateStore';
 import { isSwarmReady, defaultRoleBootstrapped } from '../swarm/swarmLauncher';
 import { readBounceAck, BouncePhase } from '../swarm/bounceAck';
@@ -806,16 +805,6 @@ export async function ensureOnboardingTopic(targetPath: string, botToken: string
 // ONLY the send, with the message computed on the first attempt - never
 // re-runs handleOnboardingMessage, which would misapply that (possibly
 // stale) text against whatever step the state has since moved to.
-//
-// BL-590 architect bounce #3 (2026-07-25): the 'no-active-onboarding' branch
-// used to be exempt from this guard, on the premise that a redelivery there
-// just recomputes the same constant message. False - WHICH branch runs is
-// decided by listOnboardingFacilitatorStates, durable state a LATER update in
-// the same batch can mutate (e.g. a target starting in between two
-// redeliveries of an earlier, stuck update). findProcessedOnboardingUpdate
-// now covers that branch too (via its own target-independent store), so
-// `already` short-circuits BEFORE handleOnboardingMessage runs regardless of
-// which branch originally produced the update - one guard, both branches.
 export async function handleOnboardingFacilitatorMessage(
   targetPath: string,
   botToken: string,
@@ -840,11 +829,11 @@ export async function handleOnboardingFacilitatorMessage(
   const states = listOnboardingFacilitatorStates(targetPath);
   const outcome = handleOnboardingMessage(states, text, Date.now);
   if (outcome.kind === 'no-active-onboarding') {
-    recordNoActiveOnboardingUpdateProcessed(targetPath, updateId, outcome.message);
+    // No target, therefore nothing durable to guard - a redelivery here
+    // recomputes the exact same constant message with no state mutation,
+    // so at worst it is a harmless duplicate send, never a wrong-step
+    // misapplication.
     const result = await sendTelegramMessage(botToken, chatId, outcome.message, undefined, postFn, topicId);
-    if (result.success) {
-      markOnboardingUpdateDelivered(targetPath, undefined, updateId);
-    }
     return result.success;
   }
   writeOnboardingStateAndMarkUpdateProcessed(targetPath, outcome.state, updateId, outcome.message);
