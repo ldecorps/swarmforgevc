@@ -2,7 +2,7 @@ id: BL-633
 title: "Ticket schema: an `invariants:` section distinct from `acceptance:` — scenarios are examples, and enumerating ten of them did not stop BL-590 bouncing four times on one unstated property"
 milestone: M8
 type: defect
-status: active
+status: todo
 epic: code-quality-gates
 human_approval: approved
 severity: high
