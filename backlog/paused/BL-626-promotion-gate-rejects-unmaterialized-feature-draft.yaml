@@ -1,0 +1,123 @@
+id: BL-626
+title: "Promotion gate: refuse to promote a ticket whose `acceptance:` points at a feature file that does not exist (typically still a `.feature.draft`)"
+milestone: M8
+type: defect
+status: todo
+epic: code-quality-gates
+human_approval: approved
+severity: medium
+priority: 10
+direction: human-requested
+depends_on: []
+assigned_to: specifier
+mutation_cost: medium
+
+approval_context: >
+  Operator asked for this ticket directly on 2026-07-25, in the same turn as the
+  coder effort bump: "file un bug pour un gate qui refuse la promotion d'un
+  ticket dont l'acceptance: pointe un .feature.draft non matérialisé."
+
+source: |
+  Operator request, 2026-07-25, during a bounce-rate investigation.
+
+  ORIGIN INCIDENT: BL-441. Its acceptance feature was parked as a
+  `.feature.draft` and was never materialised at promotion time. The ticket was
+  promoted and worked anyway, against an acceptance pointer that resolved to
+  nothing. Nothing in the promotion path noticed. This was recorded at the time
+  as SYSTEMIC ("check other `.draft`-shadowed tickets"), not as a one-off.
+
+  CURRENT EXPOSURE: `specs/features/` holds 352 materialised `.feature` files
+  and 13 BL-prefixed `.feature.draft` files. Any ticket whose `acceptance:`
+  resolves to one of those 13 can today be promoted with a dangling pointer.
+
+description: |
+  ## The hole
+
+  `coder.prompt` (lines 16-23) instructs the coder: when the ticket's
+  `acceptance:` field points at a feature file in `specs/features/`, generate and
+  run its acceptance entry points via `specs/pipeline/scripts/run_acceptance.sh`.
+  QA then owns running the acceptance gate independently as the final check
+  before merge.
+
+  Both of those presuppose the file EXISTS. When `acceptance:` names a feature
+  that only exists as `<name>.feature.draft`, the pointer dangles:
+
+    - the coder has no runnable acceptance to execute,
+    - QA's independent acceptance gate has nothing to gate on,
+    - and the ticket can still reach `done/`.
+
+  The failure is SILENT. A dangling acceptance pointer does not error — it
+  simply means the ticket's stated acceptance criteria were never executed by
+  anyone. That is the defect: the promotion path advertises an acceptance
+  contract it does not verify exists.
+
+  ## Shape (specifier owns the detail)
+
+  Fail-closed check at PROMOTION time, mirroring the existing
+  `onboarding-contract-gate.js` posture (BL-262) — reuse that gate's
+  fail-closed shape rather than inventing a new one:
+
+    - Read the candidate ticket's `acceptance:` field.
+    - If it names a path under `specs/features/`, resolve it.
+    - If the resolved `.feature` does not exist — especially when a sibling
+      `.feature.draft` DOES — refuse the promotion and say which file is
+      missing and which draft shadows it.
+    - If `acceptance:` is prose (no file pointer), the gate does not apply.
+      Many chores and docs tickets legitimately have no feature file; this gate
+      must NOT force one on them.
+
+  The refusal must name the offending path. A gate that says only "blocked"
+  reproduces the silence it is meant to remove.
+
+  ## ⚠️ Rationale correction — do NOT justify this ticket with bounce data
+
+  This ticket was first proposed with the claim that it would "attack the 73%
+  of `behavior`-class coder defects at the root". **That claim was tested
+  against the bounce ledger on 2026-07-25 and REFUTED.** Recorded here so the
+  hypothesis is not silently resurrected downstream:
+
+    - `.swarmforge/qa_bounces/2026-07.jsonl`, 300 tickets closed since 07-10.
+    - Bounce rate for tickets WITH a materialised feature file: 14.8% (n=277).
+    - Bounce rate for tickets WITHOUT one: 4.3% (n=23).
+
+  Tickets with feature files bounce MORE, not less. The most likely reading is
+  detectability, not defect rate: without a runnable acceptance, QA has nothing
+  to reject against, so defects pass silently rather than being caught. That
+  reading ARGUES FOR this gate — but on correctness grounds, not on any promise
+  of a lower bounce count.
+
+  **Do not scope this ticket to "reduce bounces", and do not accept a bounce-rate
+  improvement as its acceptance criterion.** The deliverable is that a ticket
+  can no longer be promoted with an acceptance pointer to a file that does not
+  exist. Expect the measured bounce rate to go UP if anything, as previously
+  invisible defects become detectable.
+
+acceptance: |
+  Specifier writes the scenarios. Minimum behaviour:
+
+  1. A ticket whose `acceptance:` names `specs/features/<x>.feature`, where only
+     `specs/features/<x>.feature.draft` exists, is REFUSED at promotion, and the
+     refusal names both the missing `.feature` and the shadowing `.draft`.
+  2. A ticket whose `acceptance:` names a feature file that exists is promoted
+     normally — no new friction on the happy path.
+  3. A ticket whose `acceptance:` is prose with no `specs/features/` pointer is
+     promoted normally; the gate does not apply and does not demand a feature
+     file.
+  4. The gate is fail-closed: an unreadable/unresolvable `acceptance:` pointer
+     refuses rather than passes.
+  5. A backfill audit lists every ticket currently in `paused/` and `active/`
+     whose `acceptance:` resolves to a non-existent feature file, so the
+     existing 13-draft exposure is enumerated rather than discovered ticket by
+     ticket.
+
+out_of_scope: |
+  - Materialising the 13 existing drafts. This ticket ADDS THE GATE and
+    enumerates the exposure (acceptance item 5); converting each draft is
+    separate work, per-ticket, and may legitimately conclude that a given draft
+    should be retired rather than materialised.
+  - Any change to how the coder or QA RUN acceptance. `run_acceptance.sh` and
+    QA's independent gate are unchanged; this ticket only refuses to promote a
+    ticket whose acceptance target is absent.
+  - Reducing bounce counts. See the rationale correction above — that is
+    explicitly NOT this ticket's goal or its measure of success.
+  - Forcing a feature file onto tickets that legitimately have none.
