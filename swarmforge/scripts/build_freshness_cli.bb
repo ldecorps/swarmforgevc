@@ -20,15 +20,26 @@
 ;;
 ;; Usage:
 ;;   build_freshness_cli.bb <project-root> report
-;;     Prints a JSON array, one entry per tracked process:
-;;     {"name":..., "running_sha":..., "main_sha":..., "stale":true|false}.
-;;     Exit 0 always - an unresolvable identity just reads as not-stale
-;;     (never fabricate an answer).
-;;   build_freshness_cli.bb <project-root> sync
-;;     Recompiles extension/ (once, if any Node-backed process is stale),
-;;     then restarts every stale process's own GROUP via its existing
-;;     mechanism. Prints {"report":[...], "restarted":[...]}. Exit 0 on
-;;     success, exit 2 if any restart step failed.
+;;     Prints {"processes":[{"name":...,"running_sha":...,"main_sha":...,
+;;     "stale":true|false}, ...], "qa_approval":{"approved":true|false,
+;;     "offending_shas":[...],"qa_ref_missing":true|false}}. The qa_approval
+;;     block is BL-629: is main's tip on the swarmforge-QA integration
+;;     ancestry, distinct from per-process staleness. Exit 0 always - an
+;;     unresolvable identity just reads as not-stale, never fabricate.
+;;   build_freshness_cli.bb <project-root> sync [--override]
+;;     BL-629 gate FIRST: refuses (exit 3, see refusal-exit-code below) when
+;;     the tip sync would deploy - drift on main since the last QA-landed
+;;     commit (git merge-base main swarmforge-QA), OR an uncommitted
+;;     modification under the deployed code surface - is not QA-approved,
+;;     or when the swarmforge-QA ref itself is missing (fails closed). On
+;;     refusal, NOTHING else runs: no recompile, no restart. --override
+;;     proceeds anyway and leaves a durable, one-shot record (never sticky)
+;;     under .swarmforge/build-freshness/sync-overrides.jsonl.
+;;     Once the gate lets it through: recompiles extension/ (once, if any
+;;     Node-backed process is stale), then restarts every stale process's
+;;     own GROUP via its existing mechanism. Prints {"report":[...],
+;;     "restarted":[...]}. Exit 0 on success, exit 2 if a restart step
+;;     failed, exit 3 on gate refusal.
 
 (ns build-freshness-cli
   (:require [babashka.fs :as fs]
@@ -42,8 +53,13 @@
 
 (defn usage []
   (binding [*out* *err*]
-    (println "Usage: build_freshness_cli.bb <project-root> report | sync"))
+    (println "Usage: build_freshness_cli.bb <project-root> report | sync [--override]"))
   (System/exit 2))
+
+;; BL-629: the sync refusal exit status - distinct from 0 (success) and 2
+;; (usage/operational failure) so callers can tell "gate refused" from
+;; "restart broke".
+(def refusal-exit-code 3)
 
 ;; ── real state gathering ────────────────────────────────────────────────
 
@@ -78,10 +94,107 @@
      {:name "handoffd_supervisor" :group :handoffd :running-sha (:build_sha hb)}
      {:name "operator_runtime" :group :operator :running-sha (:build_sha op)}]))
 
+;; ── BL-629: gathered facts for the QA-approval gate (report and sync both
+;;    consult these - no git/fs lives in build_freshness_lib.bb itself) ────
+
+(defn- qa-ref-sha! [project-root]
+  (let [{:keys [exit out]} (process/sh {:continue true :dir project-root} "git" "rev-parse" "--verify" "swarmforge-QA")]
+    (when (zero? exit) (str/trim out))))
+
+(defn- merge-base! [project-root a b]
+  (let [{:keys [exit out]} (process/sh {:continue true :dir project-root} "git" "merge-base" a b)]
+    (when (zero? exit) (str/trim out))))
+
+(defn- commit-shas-since! [project-root base tip]
+  (let [{:keys [exit out]} (process/sh {:continue true :dir project-root} "git" "log" "--format=%H" (str base ".." tip))]
+    (if (zero? exit) (remove str/blank? (str/split-lines out)) [])))
+
+;; -m: for a merge commit, diff against EACH parent and union the changed
+;; paths (plain diff-tree shows nothing for a merge unless asked). This is
+;; what correctly flags a merge like the BL-590 incident's own f8dc07963,
+;; which brought extension/src changes onto main via a merge commit, not a
+;; plain one. Single-parent commits are unaffected by -m.
+(defn- changed-paths-for-commit! [project-root sha]
+  (let [{:keys [exit out]} (process/sh {:continue true :dir project-root}
+                                        "git" "diff-tree" "--no-commit-id" "--name-only" "-r" "-m" sha)]
+    (if (zero? exit) (vec (distinct (remove str/blank? (str/split-lines out)))) [])))
+
+(defn- drift-facts! [project-root]
+  (if-let [qa-sha (qa-ref-sha! project-root)]
+    (let [base (merge-base! project-root "main" "swarmforge-QA")]
+      {:qa-ref-exists? true
+       :drift-commits (if base
+                        (mapv (fn [sha]
+                                {:sha sha
+                                 :touches-surface? (build-freshness-lib/touches-deployed-surface?
+                                                     (changed-paths-for-commit! project-root sha))})
+                              (commit-shas-since! project-root base "main"))
+                        [])})
+    {:qa-ref-exists? false :drift-commits []}))
+
+;; git status --porcelain: first 2 chars are the XY status codes, then a
+;; space, then the path (renames read "old -> new" - the new path is what
+;; matters for "does this land under the surface").
+(defn- porcelain-path [line]
+  (let [raw (subs line (min 3 (count line)))
+        arrow (str/index-of raw " -> ")]
+    (str/trim (if arrow (subs raw (+ arrow 4)) raw))))
+
+(defn- dirty-surface-paths! [project-root]
+  (let [{:keys [exit out]} (process/sh {:continue true :dir project-root} "git" "status" "--porcelain")]
+    (if (zero? exit)
+      (->> (str/split-lines out)
+           (remove str/blank?)
+           (map porcelain-path)
+           (filter build-freshness-lib/on-deployed-surface?)
+           distinct
+           vec)
+      [])))
+
+(defn- override-log-path [project-root]
+  (fs/path project-root ".swarmforge" "build-freshness" "sync-overrides.jsonl"))
+
+(defn- now-iso []
+  (.format (java.time.format.DateTimeFormatter/ISO_INSTANT) (java.time.Instant/now)))
+
+;; Durable, append-only, one line per override - "never sticky" (BL-629
+;; scenario 05) means the CLI never READS this file to decide anything; it
+;; exists purely as the audit trail spec resolution item 4 requires.
+(defn- append-override-record! [project-root gate]
+  (let [f (override-log-path project-root)]
+    (fs/create-dirs (fs/parent f))
+    (spit (str f)
+          (str (json/generate-string {:at (now-iso)
+                                       :reason (some-> (:reason gate) name)
+                                       :offending_shas (:offending-shas gate)
+                                       :offending_paths (:offending-paths gate)})
+                "\n")
+          :append true)))
+
+(defn- refusal-message [gate]
+  (let [remedy "remedy: land the change through QA, or rerun with --override (logged, one-shot)"]
+    (case (:reason gate)
+      :missing-ref
+      (str "build_freshness_cli.bb sync: REFUSED - the QA approval reference (swarmforge-QA) is missing\n  " remedy)
+      :code-drift
+      (str "build_freshness_cli.bb sync: REFUSED - main is not QA-approved\n"
+           "  offending commit(s): " (str/join " " (:offending-shas gate)) "\n  " remedy)
+      :dirty-surface
+      (str "build_freshness_cli.bb sync: REFUSED - uncommitted changes under the deployed code surface\n"
+           "  modified path(s): " (str/join " " (:offending-paths gate)) "\n  " remedy))))
+
 (defn- run-report! [project-root]
   (let [processes (gather-processes project-root)
-        main-sha (main-sha! project-root)]
-    (build-freshness-lib/freshness-report processes main-sha)))
+        main-sha (main-sha! project-root)
+        report (build-freshness-lib/freshness-report processes main-sha)
+        {:keys [qa-ref-exists? drift-commits]} (drift-facts! project-root)
+        tip-approval (if qa-ref-exists?
+                       (build-freshness-lib/tip-approval-status drift-commits)
+                       {:approved? false :offending-shas []})]
+    {:processes report
+     :qa_approval {:approved (:approved? tip-approval)
+                   :offending_shas (:offending-shas tip-approval)
+                   :qa_ref_missing (not qa-ref-exists?)}}))
 
 ;; ── restart primitives (kill-and-confirm, mirrors handoffd_supervisor.bb's
 ;;    own TERM-then-escalate-to-SIGKILL convention and timing) ────────────
@@ -222,50 +335,48 @@
    :handoffd (fn [project-root _main-sha] (restart-handoffd-group! project-root))
    :operator restart-operator-group!})
 
-(defn- run-sync! [project-root]
-  (let [processes (gather-processes project-root)
+;; BL-629: gate-checked-first now - build-freshness-lib/execute-sync! is the
+;; single dispatch point (pure decision, adapter-injected side effects); the
+;; recompile-once/restart-per-group logic below is unchanged from BL-335,
+;; just moved behind the gate as adapters instead of running inline.
+(defn- run-sync! [project-root override?]
+  (let [{:keys [qa-ref-exists? drift-commits]} (drift-facts! project-root)
+        dirty-surface-paths (dirty-surface-paths! project-root)
+        processes (gather-processes project-root)
         main-sha (main-sha! project-root)
-        report (build-freshness-lib/freshness-report processes main-sha)
-        stale-names (set (build-freshness-lib/stale-process-names report))
-        stale-groups (->> processes (filter #(contains? stale-names (:name %))) (map :group) distinct)
-        ;; BL-335: extension/out/ is a SINGLE shared compiled directory, and
-        ;; it is not just the :front-desk group (bridge/bot) that depends on
-        ;; it - handoffd shells out to several of its own
-        ;; extension/out/tools/*.js CLIs (render-briefing-diagrams.js,
-        ;; suite-duration-line.js, emit-cost-health-sidecar.js, ...) and
-        ;; operator_runtime.bb shells to operator-decide.js, so a
-        ;; :handoffd- or :operator-only staleness can equally mean a
-        ;; Node-shelled tool is stale. Scoping the recompile decision to
-        ;; :front-desk alone (the original BL-328 shape) left exactly this
-        ;; gap: restart-handoffd-group!/restart-operator-group! only
-        ;; restart the BABASHKA process, never recompile, so a stale
-        ;; compiled CLI stayed stale forever behind a "successful" sync.
-        ;; Any staleness at all now triggers the one recompile - cheap when
-        ;; unnecessary, and the only way to never silently miss a case.
-        node-stale? (seq stale-names)]
-    (when node-stale?
-      (recompile-extension! project-root))
-    (doseq [group stale-groups]
-      ((get restart-group! group) project-root main-sha))
-    ;; BL-433: a restarted operator group has ALREADY settled by this point
-    ;; (restart-operator-group! blocked on it, or threw) - re-gathering here
-    ;; (rather than returning the pre-restart `report` snapshot above) is
-    ;; what makes the returned report reflect reality post-restart, so a
-    ;; second sync/report pass is never needed to see it fresh.
-    (let [settled-processes (gather-processes project-root)
-          settled-report (build-freshness-lib/freshness-report settled-processes main-sha)]
-      {:report settled-report :restarted (mapv name stale-groups)})))
+        facts {:qa-ref-exists? qa-ref-exists?
+               :drift-commits drift-commits
+               :dirty-surface-paths dirty-surface-paths
+               :override? override?
+               :processes processes
+               :main-sha main-sha}
+        adapters {:recompile! (fn [] (recompile-extension! project-root))
+                  :restart-group! (fn [group] ((get restart-group! group) project-root main-sha))
+                  :record-override! (fn [gate] (append-override-record! project-root gate))
+                  ;; BL-433: a restarted operator group has ALREADY settled by
+                  ;; this point - re-gathering here is what makes the returned
+                  ;; report reflect reality post-restart, so a second
+                  ;; sync/report pass is never needed to see it fresh.
+                  :gather-settled-report (fn []
+                                           (build-freshness-lib/freshness-report
+                                            (gather-processes project-root) main-sha))}]
+    (build-freshness-lib/execute-sync! facts adapters)))
 
 (defn -main [& args]
-  (let [[project-root subcommand] args]
+  (let [[project-root subcommand & rest-args] args
+        override? (boolean (some #{"--override"} rest-args))]
     (when (or (str/blank? project-root) (not (#{"report" "sync"} subcommand)))
       (usage))
     (try
-      (let [result (case subcommand
-                     "report" (run-report! project-root)
-                     "sync" (run-sync! project-root))]
-        (println (json/generate-string result))
-        (System/exit 0))
+      (case subcommand
+        "report" (do (println (json/generate-string (run-report! project-root)))
+                     (System/exit 0))
+        "sync" (let [{:keys [refused gate report restarted]} (run-sync! project-root override?)]
+                 (if refused
+                   (do (binding [*out* *err*] (println (refusal-message gate)))
+                       (System/exit refusal-exit-code))
+                   (do (println (json/generate-string {:report report :restarted restarted}))
+                       (System/exit 0)))))
       (catch Exception e
         (binding [*out* *err*] (println (str "error: " (.getMessage e))))
         (System/exit 2)))))

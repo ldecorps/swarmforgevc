@@ -318,7 +318,8 @@ const DOMAINS = [
   require('./bl577FlowWatchdogParcelAgeInvariantSteps'),
   require('./bl575CostRankHorizonPinnedClockSteps'),
   require('./bl590OnboardingFacilitatorSteps'),
-  require('./expeditorOfflineSingleTicketPipelineSteps')
+  require('./expeditorOfflineSingleTicketPipelineSteps'),
+  require('./bl629SyncQaApprovalGateSteps')
 ];
 
 function registerSteps(registry) {
