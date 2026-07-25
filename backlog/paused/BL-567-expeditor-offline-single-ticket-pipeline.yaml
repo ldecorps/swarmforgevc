@@ -199,6 +199,77 @@ design: |
   the Operator agent (whose job is to recover a swarm it finds down) alive — see
   BL-637. The interlock must cover both regardless of whether BL-637 ships first.
 
+  ## Lifecycle is IN SCOPE — operator ruling 2026-07-25, with one asymmetry
+
+  The full park-and-stop procedure becomes the expeditor's **initiation**, and it
+  must know how to bring everything back at the end.
+
+  This does not contradict "oblivious to swarm machinery". That requirement is
+  about **dependence**, not **command**: the expeditor must not need the machinery
+  to do its work. Commanding its lifecycle is the opposite of depending on it. But
+  the two directions are NOT symmetric and must be built differently.
+
+  **Teardown — part of initiation, BLOCKING.**
+
+  1. Park whatever sits in `backlog/active/` to **`hold/`, never `paused/`**.
+     `paused/` is the promotion queue: a ticket with `human_approval: approved`
+     would be auto-promoted straight back on restart, silently un-parking itself.
+     `hold/` is a recognised live state promotion does not read.
+  2. Write a park record naming the held work — branch tips per role, any claimed
+     in-flight parcel, bounce state. Without it the resume has to re-derive where
+     the work stood, which is how a resumed ticket loses a stage.
+  3. `./stop-swarm.sh` — the real full stop — with **no flags**. Never
+     `--sweep-inbox`: it archives pending handoffs, i.e. exactly the parcels the
+     parked ticket needs in order to resume. Never `--reset-worktrees`.
+     Note `./swarm-kill` is NOT the full stop and `kill_all_swarm.sh` is the
+     innermost layer despite its name (BL-637).
+  4. **VERIFY; do not trust the exit code.** Measured 2026-07-25: the stop printed
+     `kill_all_swarm SUCCESS — clean slate` while `babysitterd.sh` (up 1d08h,
+     5-minute sweeps that nudge agents) and the Operator agent (up 2d06h, whose
+     job is to recover a swarm it finds down) were both still running. Probe:
+     `tmux -S <sock> list-sessions` must fail, no `bb`/`babashka` daemon, no role
+     `claude`, no babysitterd, no Operator. Count by parsing `ps` output — `pgrep
+     -f` and `grep -c` match the auditing shell's own command line and invent
+     phantom survivors.
+  5. Failure to reach a verified clean slate must degrade to **refuse to start**,
+     never to "proceed anyway". This is interlock #1 with teeth, and it works
+     precisely because the expeditor probes rather than trusting the teardown.
+
+  **Restart — a final phase, explicitly NON-BLOCKING.**
+
+  This is the asymmetry, and getting it wrong would re-introduce the dependency the
+  whole ticket forbids. Use case 1 is fixing a broken swarm workflow — so the thing
+  being repaired may BE the start path. If the ticket's verdict depended on a
+  successful restart, the expeditor would report failure on work it had completed
+  correctly, and a repo-wide start-path defect would make the recovery tool
+  unusable exactly when it is needed.
+
+  So: **the ticket is DONE when QA stamps it and the yaml moves.** The restart runs
+  after that, reports its own outcome as a separate result, and its failure is
+  loud but never retracts the verdict.
+
+  - `./start-swarm.sh` — the real start_all (pipeline + operator runtime, front
+    desk, babysitter, onboarding facilitator, tunnels). NOT `./swarm`, which is
+    pipeline-only; the names do not say so (BL-637).
+  - Verify with `./swarm status` (`swarm_status.bb`) against the expected live set,
+    and report the delta rather than asserting health. `./swarm ensure` is the
+    repair path if it comes up short.
+  - **Un-parking is a decision, not an automatism.** The parked ticket may now be
+    stale against what the expeditor changed. Report what is in `hold/` and what
+    it was holding; let a human or the coordinator promote it deliberately.
+
+  A property worth stating as a feature, not a footnote: when the expeditor is
+  fixing the start path, this final phase IS the validation of the fix — the first
+  real user of the thing it just repaired, run automatically, with the expected
+  live set as the assertion.
+
+  **Consequence the design must not miss:** by stopping the stack the expeditor
+  kills the babysitter and the Operator — the two processes that would otherwise
+  notice if the expeditor itself wedged. **It has deliberately killed its own
+  watchdog.** So it needs its own bounded per-stage timeout and a loud terminal
+  failure; a hung stage must not sit silent forever with nothing left alive to
+  observe it.
+
   **Still owed by the hand-run, and easy to fake:** acceptance item 1 wants
   machinery-avoidance "asserted by instrumentation, not inspection". A hand-run
   can avoid the machinery by care and look complete while asserting nothing —
@@ -207,8 +278,30 @@ design: |
   read as proof the driver works.
 
 acceptance: |
-  Specifier writes executable scenarios; minimum the design must make
-  testable:
+  ADDED 2026-07-25 (operator ruling — lifecycle in scope):
+
+  6. Initiation parks a ticket sitting in `backlog/active/` to `hold/` (asserted:
+     NOT to `paused/`) and writes a park record naming the held branch tips and
+     any claimed in-flight parcel.
+  7. Initiation stops the full stack and then VERIFIES a clean slate
+     independently. Seeded scenario: a stop that exits 0 while a babysitter or
+     Operator process survives must make the expeditor REFUSE to start, not
+     proceed. This is the observed 2026-07-25 failure and the one an
+     exit-code-trusting implementation passes by accident.
+  8. Initiation never passes `--sweep-inbox` or `--reset-worktrees`; pending
+     parcels and role worktrees survive a park/restart cycle intact.
+  9. The final restart phase is non-blocking: a seeded restart FAILURE leaves the
+     ticket's `done` verdict standing, exits non-zero on the restart result only,
+     and says which of the two happened. A ticket that passed QA is never reported
+     as failed because the swarm would not come back up.
+  10. Restart calls the full-stack start path, not the pipeline-only one, and
+      reports the live-set delta from `./swarm status` rather than asserting
+      health. Parked tickets are reported, never silently re-promoted.
+  11. Each stage has a bounded timeout ending in a loud terminal failure — the
+      expeditor has killed the babysitter and Operator that would otherwise notice
+      it wedging, so it must observe itself.
+
+  Original minimum the design must make testable:
   1. With handoffd dead, no tmux sockets, and no coordinator, `expedite
      <ticket>` takes a small fixture ticket from todo to done producing
      spec, code+tests, review verdict, hardening evidence, docs, and a QA
