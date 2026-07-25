@@ -70,3 +70,29 @@ export function listOnboardingFacilitatorStates(swarmRepoRoot: string): Onboardi
     })
     .filter((state): state is OnboardingFacilitatorState => state !== undefined);
 }
+
+// BL-590 architect bounce (defect 1, 2026-07-25): a redelivered Telegram
+// update (the offset only advances after processing, so a crash between the
+// facilitator's state write and the offset commit makes Telegram re-serve
+// the same update) must be a total no-op - no second durable write, no
+// second outbound send. Only the single most-recently-processed updateId
+// can ever be redelivered (Telegram redelivers from the last uncommitted
+// offset, never an arbitrary older one), so - unlike openSubjectAndRecord's
+// per-subject `update:<id>` map (BL-389), which must remember every id it
+// has ever minted a subject for - one last-processed marker is enough here.
+function lastProcessedUpdatePath(swarmRepoRoot: string): string {
+  return path.join(onboardingStateDir(swarmRepoRoot), 'last-processed-update.json');
+}
+
+export function hasProcessedOnboardingUpdateId(swarmRepoRoot: string, updateId: number): boolean {
+  try {
+    const parsed: unknown = JSON.parse(fs.readFileSync(lastProcessedUpdatePath(swarmRepoRoot), 'utf8'));
+    return typeof parsed === 'object' && parsed !== null && (parsed as { updateId?: unknown }).updateId === updateId;
+  } catch {
+    return false;
+  }
+}
+
+export function recordProcessedOnboardingUpdateId(swarmRepoRoot: string, updateId: number): void {
+  atomicWrite(lastProcessedUpdatePath(swarmRepoRoot), JSON.stringify({ updateId }, null, 2));
+}

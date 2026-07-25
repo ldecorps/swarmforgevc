@@ -175,3 +175,36 @@ test('BL-590: handleOnboardingMessage with no active onboarding and no repo URL 
   assert.equal(outcome.kind, 'no-active-onboarding');
   assert.match(outcome.message, /repo url/i);
 });
+
+// ── architect bounce (defect 2, 2026-07-25): re-posting an in-flight
+// target's URL must RESUME, never overwrite (backlog/evidence/BL-590-
+// onboarding-facilitator-slice1-architect-bounce-20260725.md) ─────────────
+
+test('BL-590 architect bounce defect 2: re-posting the URL of an in-flight onboarding resumes it, preserving verifiedSteps', () => {
+  let state = createOnboardingState('https://github.com/acme/widget', fixedNow);
+  state = applyPrincipalReply(state, 'git version 2.43.0\nv20\ntmux 3.4\nBabashka 1.3\nclaude 1.2', fixedNow).state;
+  state = applyPrincipalReply(state, 'ssh: successfully authenticated', fixedNow).state;
+  assert.deepEqual(state.verifiedSteps, ['toolchain', 'github-access']);
+
+  const outcome = handleOnboardingMessage([state], 'https://github.com/acme/widget', fixedNow);
+  assert.equal(outcome.kind, 'resumed');
+  assert.deepEqual(outcome.state.verifiedSteps, ['toolchain', 'github-access']);
+  assert.equal(outcome.state.stepIndex, state.stepIndex);
+  assert.equal(currentPrerequisiteStep(outcome.state), 'fork-clone');
+  assert.match(outcome.message, /fork-clone/);
+});
+
+test('BL-590 architect bounce defect 2: a URL for a DIFFERENT target still opens its own fresh state, never resumes the wrong one', () => {
+  const widget = createOnboardingState('https://github.com/acme/widget', fixedNow);
+  const outcome = handleOnboardingMessage([widget], 'https://github.com/acme/gadget', fixedNow);
+  assert.equal(outcome.kind, 'started');
+  assert.equal(outcome.state.targetRepoUrl, 'https://github.com/acme/gadget');
+  assert.deepEqual(outcome.state.verifiedSteps, []);
+});
+
+test('BL-590 architect bounce defect 2: re-posting the URL of a FINISHED (prerequisites-ready) onboarding opens a fresh one, never resumes a done flow', () => {
+  const finished = { ...createOnboardingState('https://github.com/acme/widget', fixedNow), phase: 'prerequisites-ready', stepIndex: 5, verifiedSteps: ['toolchain', 'github-access', 'fork-clone', 'target-repo', 'bot-token'] };
+  const outcome = handleOnboardingMessage([finished], 'https://github.com/acme/widget', fixedNow);
+  assert.equal(outcome.kind, 'started');
+  assert.deepEqual(outcome.state.verifiedSteps, []);
+});
