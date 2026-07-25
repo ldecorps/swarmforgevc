@@ -175,7 +175,12 @@ import { sleepSync } from '../swarm/sleepSync';
 import { runCliMain } from './swarm-metrics';
 import { atomicWrite } from '../util/atomicWrite';
 import { handleOnboardingMessage } from '../onboarding/onboardingFacilitatorState';
-import { listOnboardingFacilitatorStates, writeOnboardingFacilitatorState } from '../onboarding/onboardingFacilitatorStateStore';
+import {
+  listOnboardingFacilitatorStates,
+  writeOnboardingFacilitatorState,
+  hasProcessedOnboardingUpdateId,
+  recordProcessedOnboardingUpdateId,
+} from '../onboarding/onboardingFacilitatorStateStore';
 import { isSwarmReady, defaultRoleBootstrapped } from '../swarm/swarmLauncher';
 import { readBounceAck, BouncePhase } from '../swarm/bounceAck';
 import { buildRoleInboxes } from '../watchdog/chaserMonitor';
@@ -790,13 +795,31 @@ export async function ensureOnboardingTopic(targetPath: string, botToken: string
 // and sends the resulting message back into the same topic. The only
 // branching on message CONTENT lives in handleOnboardingMessage itself
 // (pure, unit-tested); this function is I/O only.
-async function handleOnboardingFacilitatorMessage(targetPath: string, botToken: string, chatId: string, topicId: number, text: string): Promise<boolean> {
+// BL-590 architect bounce (defect 1, 2026-07-25): gated on
+// hasProcessedOnboardingUpdateId FIRST, mirroring openSubjectAndRecord's
+// (BL-389) updateOpenKey guard and postOperatorContext's hasUpdateId guard -
+// a redelivered updateId short-circuits before EITHER the durable state
+// write or the outbound send, so redelivery is a true no-op rather than a
+// spurious verification-failure message for the wrong step.
+export async function handleOnboardingFacilitatorMessage(
+  targetPath: string,
+  botToken: string,
+  chatId: string,
+  topicId: number,
+  text: string,
+  updateId: number,
+  postFn?: TelegramPostFn
+): Promise<boolean> {
+  if (hasProcessedOnboardingUpdateId(targetPath, updateId)) {
+    return true;
+  }
   const states = listOnboardingFacilitatorStates(targetPath);
   const outcome = handleOnboardingMessage(states, text, Date.now);
   if (outcome.kind !== 'no-active-onboarding') {
     writeOnboardingFacilitatorState(targetPath, outcome.state);
   }
-  const result = await sendTelegramMessage(botToken, chatId, outcome.message, undefined, undefined, topicId);
+  const result = await sendTelegramMessage(botToken, chatId, outcome.message, undefined, postFn, topicId);
+  recordProcessedOnboardingUpdateId(targetPath, updateId);
   return result.success;
 }
 
@@ -2012,7 +2035,7 @@ function buildPollAdapters(
     },
     // ── BL-590: Onboarding Facilitator topic ────────────────────────────
     onboardingTopicId: () => ensureOnboardingTopic(targetPath, botToken, chatId),
-    handleOnboardingFacilitatorMessage: (topicId, text) => handleOnboardingFacilitatorMessage(targetPath, botToken, chatId, topicId, text),
+    handleOnboardingFacilitatorMessage: (topicId, text, updateId) => handleOnboardingFacilitatorMessage(targetPath, botToken, chatId, topicId, text, updateId),
   };
 }
 

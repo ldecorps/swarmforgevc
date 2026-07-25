@@ -6,10 +6,10 @@ status: todo
 epic: swarmforge-console
 human_approval: approved
 severity: medium
-priority: 10
+priority: 02
 direction: human-requested
 depends_on: []
-assigned_to: specifier
+assigned_to: coder
 mutation_cost: medium
 source: |
   Human directive 2026-07-23, drained from the backlog-root intake

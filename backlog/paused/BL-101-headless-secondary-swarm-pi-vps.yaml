@@ -21,8 +21,9 @@ blocked_notes: |
   (actual Pi 5 / VPS bring-up) that QA cannot execute itself (same
   precedent as BL-091's feature file).
   OPERATOR ACTION NEEDED: run the manual verification checklist in
-  docs/runbooks/BL-101-pi-vps-secondary-swarm-bringup.md against real
-  hardware, then move this ticket to done/ (no further pipeline routing
+  docs/how-to/BL-101-pi-vps-secondary-swarm-bringup.md — section 10,
+  "Verification checklist (before calling a box's bring-up done)" — against
+  real hardware, then move this ticket to done/ (no further pipeline routing
   needed — do not re-promote/re-route through coder/cleaner/etc., there
   is nothing left for any role to do on it).
 priority: 05

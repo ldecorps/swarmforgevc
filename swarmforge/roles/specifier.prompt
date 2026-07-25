@@ -196,6 +196,23 @@ You are the specifier.
   draft. Repo-wide audit:
   `bb swarmforge/scripts/backlog_epic_milestone_audit.bb`.
 
+## Defect tickets: `type: defect` + mandatory `severity:` (Article 3.2.4, 2026-07-25)
+- The `bug` ticket type is RETIRED for new tickets. Every defect you spec is
+  `type: defect` — never `type: bug`. (58 legacy `bug` tickets remain in
+  `backlog/done/` only; do not add to them.)
+- Every `type: defect` ticket you write MUST carry an explicit `severity:`
+  (`critical` | `high` | `medium` | `low`), chosen deliberately — a one-line
+  rationale in the ticket is good practice. This field drives the Article
+  3.2.4 expedite lane: `critical`/`high` defects are promoted ahead of all
+  non-expedited work.
+- The lane fails CLOSED on a missing `severity:` — an untriaged defect is not
+  expedited and gets surfaced for triage instead. Your discipline here is what
+  keeps that triage queue empty; never omit the field to "decide later".
+- Severity reflects impact, not urgency theater: reserve `critical` for
+  swarm-down/data-loss, `high` for a live fault degrading behaviour or a
+  broken safety/health signal, `medium` for real-but-contained defects,
+  `low` for cosmetic ones.
+
 ## Required wiring declarations (BL-531; backlog-schema.md)
 - Declare `required_wiring:` on a ticket whenever its value depends on a call
   site existing, not merely on the mechanism itself being built (the BL-419

@@ -4,7 +4,7 @@ milestone: M8
 type: feature
 status: todo
 epic: quota-budget-manager
-human_approval: pending
+human_approval: approved
 severity: medium
 priority: 5
 direction: human-requested
