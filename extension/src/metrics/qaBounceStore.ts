@@ -17,10 +17,25 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { atomicAppend } from '../util/atomicWrite';
-import { hasQaBounceRecord, isKnownFailureClass, isKnownProducingRole, isKnownTicketType, QaBounceRecord } from '../quality/qaBounce';
+import {
+  BounceRecord,
+  hasBounceRecord,
+  hasQaBounceRecord,
+  isKnownBounceRole,
+  isKnownFailureClass,
+  isKnownProducingRole,
+  isKnownTicketType,
+  QaBounceRecord,
+} from '../quality/qaBounce';
 
 export function qaBouncesDir(targetPath: string): string {
   return path.join(targetPath, '.swarmforge', 'qa_bounces');
+}
+
+// BL-635: the generalised, go-forward log path - written by record-bounce.js
+// (any reviewing role), never the legacy QA-only qa_bounces/ path above.
+export function bouncesDir(targetPath: string): string {
+  return path.join(targetPath, '.swarmforge', 'bounces');
 }
 
 function monthOf(isoDate: string): string {
@@ -120,5 +135,93 @@ export function appendQaBounceRecordIfNew(targetPath: string, record: QaBounceRe
     return false;
   }
   atomicAppend(qaBounceFilePath(targetPath, record.at), JSON.stringify(record) + '\n');
+  return true;
+}
+
+// ── BL-635: generalised (by-role) log, additive over the QA-only log above ─
+
+function bounceFilePath(targetPath: string, isoDate: string): string {
+  return path.join(bouncesDir(targetPath), `${monthOf(isoDate)}.jsonl`);
+}
+
+// `by` is optional even on a well-formed line (legacy qa_bounces/ records
+// predate the field entirely); present-but-not-a-known-role is still
+// rejected, same forgiving-but-not-trusting-raw posture as every other field.
+function hasBounceRecordShape(candidate: Partial<BounceRecord>): boolean {
+  return hasQaBounceRecordShape(candidate) && (candidate.by === undefined || typeof candidate.by === 'string');
+}
+
+function hasKnownBounceValues(candidate: Partial<BounceRecord>): boolean {
+  return hasKnownQaBounceValues(candidate) && (candidate.by === undefined || isKnownBounceRole(candidate.by as string));
+}
+
+function isBounceRecord(value: unknown): value is BounceRecord {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+  const candidate = value as Partial<BounceRecord>;
+  return hasBounceRecordShape(candidate) && hasKnownBounceValues(candidate);
+}
+
+function parseBounceLine(line: string): BounceRecord | null {
+  try {
+    const parsed: unknown = JSON.parse(line);
+    return isBounceRecord(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function readBounceFile(dir: string, file: string): BounceRecord[] {
+  let content: string;
+  try {
+    content = fs.readFileSync(path.join(dir, file), 'utf8');
+  } catch {
+    return [];
+  }
+  const records: BounceRecord[] = [];
+  for (const line of content.split('\n')) {
+    if (!line.trim()) {
+      continue;
+    }
+    const record = parseBounceLine(line);
+    if (record) {
+      records.push(record);
+    }
+  }
+  return records;
+}
+
+function readBounceRecordsFromDir(dir: string): BounceRecord[] {
+  let files: string[];
+  try {
+    files = fs.readdirSync(dir).filter((f) => f.endsWith('.jsonl'));
+  } catch {
+    return [];
+  }
+  return files.flatMap((file) => readBounceFile(dir, file));
+}
+
+// BL-635 (record-bounce-by-role-06): merges the NEW generalised log with the
+// LEGACY QA-only log - the 53 records already there (and
+// backfill-qa-bounces.js's one-time seed from the evidence corpus) predate
+// `by` entirely and read back as unattributed (bounceAttribution), never
+// silently folded into QA or dropped. Legacy-dir records are read
+// read-only forever; nothing ever writes there again.
+export function readBounceRecords(targetPath: string): BounceRecord[] {
+  return [...readBounceRecordsFromDir(qaBouncesDir(targetPath)), ...readBounceRecordsFromDir(bouncesDir(targetPath))];
+}
+
+// BL-635 (record-bounce-by-role-07): writes ONLY to the new generalised
+// path - the legacy qa_bounces/ log is never written again. Dedups against
+// the FULL merged history (both dirs) on the generalised natural key
+// (ticket+date+class+commit+by, bounceNaturalKey), so a re-run can never
+// double-count against either log.
+export function appendBounceRecordIfNew(targetPath: string, record: BounceRecord): boolean {
+  const existing = readBounceRecords(targetPath);
+  if (hasBounceRecord(existing, record)) {
+    return false;
+  }
+  atomicAppend(bounceFilePath(targetPath, record.at), JSON.stringify(record) + '\n');
   return true;
 }

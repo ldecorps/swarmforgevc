@@ -18,6 +18,16 @@ import {
   OriginCostTrendSeries,
 } from '../metrics/llmCostLedger';
 import { readLlmInvocationRecords } from '../metrics/llmCostLedgerStore';
+import {
+  computeRoundsPerCloseSeriesByRole,
+  computeDailyReworkSeriesByRole,
+  computeMaxRoundsIndicator,
+  lastNDaysIso,
+  MaxRoundsIndicator,
+  DailyReworkPoint,
+} from '../metrics/reworkRounds';
+import { BounceRecord } from '../quality/qaBounce';
+import { readBounceRecords } from '../metrics/qaBounceStore';
 
 // BL-213: the daily cost & health sidecar - a deterministic, committed
 // carrier (docs/briefings/<date>.json) for BL-100's producers, never
@@ -88,12 +98,25 @@ export interface ResourceAnomaly {
   cpuTrend: TrendResult;
 }
 
+// BL-635: the rework metric, split by BOUNCING role and never pooled - see
+// reworkRounds.ts for why pooling would hide exactly the shape this ticket
+// exists to surface. Optional: absent on a sidecar that predates this
+// ticket, or when the durable bounce log has no records for any role yet
+// (rolesPresent's own "role that never bounced is absent, not zero-padded"
+// posture, carried through to this field too).
+export interface FlowBalanceRework {
+  // field name is load-bearing - BL-635's required_wiring greps it.
+  roundsPerClose: Record<string, TrendedNumber>;
+  bouncesPerDay: Record<string, DailyReworkPoint[]>;
+  maxRounds: MaxRoundsIndicator | null;
+}
+
 export interface CostHealthSidecar {
   schemaVersion: number;
   dateIso: string;
   agents: AgentDailyCost[];
   topExpensiveTickets: ExpensiveTicket[];
-  flowBalance: { speccedPerDay: TrendedNumber; closedPerDay: TrendedNumber };
+  flowBalance: { speccedPerDay: TrendedNumber; closedPerDay: TrendedNumber; rework?: FlowBalanceRework };
   reliability: ReliabilityCounts;
   resourceAnomalies: ResourceAnomaly[];
   // BL-350: distinguishes "sampled, found nothing anomalous" from "never
@@ -315,7 +338,8 @@ export function buildCostHealthSidecar(
   suiteDurationTrend?: SuiteDurationTrendResult,
   costPerTicketSeries?: CostPerTicketSeriesResult,
   topExpensiveOriginsByHorizon?: Record<LlmCostHorizon, LlmCostRollupGroup[]>,
-  originCostTrendSeries?: OriginCostTrendSeries[]
+  originCostTrendSeries?: OriginCostTrendSeries[],
+  reworkInputs?: { bounceRecords: BounceRecord[]; closedDateIsos: string[]; nowMs: number }
 ): CostHealthSidecar {
   const sidecar: CostHealthSidecar = {
     schemaVersion: COST_HEALTH_SIDECAR_SCHEMA_VERSION,
@@ -353,6 +377,19 @@ export function buildCostHealthSidecar(
   }
   if (originCostTrendSeries) {
     sidecar.originCostTrendSeries = originCostTrendSeries;
+  }
+  if (reworkInputs) {
+    const { bounceRecords, closedDateIsos, nowMs } = reworkInputs;
+    const roundsSeriesByRole = computeRoundsPerCloseSeriesByRole(bounceRecords, closedDateIsos, nowMs);
+    const roundsPerClose: Record<string, TrendedNumber> = {};
+    for (const [role, series] of Object.entries(roundsSeriesByRole)) {
+      roundsPerClose[role] = trendedFromSeries(series);
+    }
+    sidecar.flowBalance.rework = {
+      roundsPerClose,
+      bouncesPerDay: computeDailyReworkSeriesByRole(bounceRecords, lastNDaysIso(nowMs, 7)),
+      maxRounds: computeMaxRoundsIndicator(bounceRecords),
+    };
   }
   return sidecar;
 }
@@ -458,10 +495,26 @@ export function renderCostTrendChartLines(series: OriginCostTrendSeries[]): stri
   return lines;
 }
 
+// BL-635 (record-bounce-by-role-09): the rework figure, split by bouncing
+// role, appended to the same line specced/closed already render on -
+// absent (no bounce data recorded for any role yet) renders nothing, same
+// "hidden, not fabricated" posture as every other optional sidecar section.
+function renderReworkSuffix(rework: FlowBalanceRework | undefined): string {
+  const roles = Object.keys(rework?.roundsPerClose ?? {}).sort();
+  if (!rework || roles.length === 0) {
+    return '';
+  }
+  const perRole = roles
+    .map((role) => `${role} ${rework.roundsPerClose[role].value.toFixed(1)} ${trendArrow(rework.roundsPerClose[role].trend)}`)
+    .join(', ');
+  return `, rework ${perRole} rounds/close`;
+}
+
 function renderFlowBalanceLine(flow: CostHealthSidecar['flowBalance']): string {
   return (
     `**Flow balance:** specced ${flow.speccedPerDay.value}/day ${trendArrow(flow.speccedPerDay.trend)}, ` +
-    `closed ${flow.closedPerDay.value}/day ${trendArrow(flow.closedPerDay.trend)}`
+    `closed ${flow.closedPerDay.value}/day ${trendArrow(flow.closedPerDay.trend)}` +
+    renderReworkSuffix(flow.rework)
   );
 }
 
@@ -570,6 +623,8 @@ export function computeCostHealthSidecar(
   const costPerTicketSeries = computeCostPerTicketSeries(lifecycles, costTelemetryByRole);
   const topExpensiveOriginsByHorizon = computeTopExpensiveOriginsByHorizon(targetPath, nowMs);
   const originCostTrendSeries = computeOriginCostTrendSeries(targetPath, nowMs);
+  const bounceRecords = readBounceRecords(targetPath);
+  const closedDateIsos = lifecycles.map((l) => l.closeDateIso).filter((d): d is string => d !== null);
 
   return buildCostHealthSidecar(
     dateIso,
@@ -582,7 +637,8 @@ export function computeCostHealthSidecar(
     suiteDurationTrend,
     costPerTicketSeries,
     topExpensiveOriginsByHorizon,
-    originCostTrendSeries
+    originCostTrendSeries,
+    { bounceRecords, closedDateIsos, nowMs }
   );
 }
 

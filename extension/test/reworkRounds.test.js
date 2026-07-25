@@ -1,0 +1,155 @@
+const assert = require('node:assert/strict');
+const {
+  computeRoundsPerCloseSeriesByRole,
+  computeMaxRoundsIndicator,
+  computeDailyReworkSeries,
+  computeDailyReworkSeriesByRole,
+  lastNDaysIso,
+  renderDailyReworkMarkdownLine,
+  REWORK_ATTRIBUTION_EPOCH_ISO,
+} = require('../out/metrics/reworkRounds');
+
+// BL-635: the pure rework-rounds metric - mean rework rounds per closed
+// ticket, split by bouncing role, never pooled.
+
+function record(overrides = {}) {
+  return {
+    ticket: 'BL-590',
+    producingRole: 'coder',
+    ticketType: 'defect',
+    failureClass: 'behavior',
+    commit: 'abc1234567',
+    at: '2026-07-25T10:00:00.000Z',
+    by: 'architect',
+    ...overrides,
+  };
+}
+
+const NOW_MS = Date.parse('2026-07-26T12:00:00.000Z');
+
+// ── record-bounce-by-role-08: rounds per close, split by role, never pooled ─
+
+test('roundsPerClose is 2.0 for architect and 1.0 for QA given 4 architect + 2 QA bounces over 2 closes', () => {
+  const records = [
+    record({ by: 'architect', at: '2026-07-25T09:00:00.000Z', commit: 'c1' }),
+    record({ by: 'architect', at: '2026-07-25T10:00:00.000Z', commit: 'c2' }),
+    record({ by: 'architect', at: '2026-07-26T08:00:00.000Z', commit: 'c3' }),
+    record({ by: 'architect', at: '2026-07-26T09:00:00.000Z', commit: 'c4' }),
+    record({ by: 'QA', at: '2026-07-25T11:00:00.000Z', commit: 'c5' }),
+    record({ by: 'QA', at: '2026-07-26T10:00:00.000Z', commit: 'c6' }),
+  ];
+  const closedDateIsos = ['2026-07-25T12:00:00.000Z', '2026-07-26T11:00:00.000Z'];
+  const series = computeRoundsPerCloseSeriesByRole(records, closedDateIsos, NOW_MS);
+
+  // current window (last point) = the trailing 7 days ending at NOW_MS,
+  // which covers both closes and all 6 bounces above.
+  const architectCurrent = series.architect[series.architect.length - 1];
+  const qaCurrent = series.QA[series.QA.length - 1];
+  assert.equal(architectCurrent.value, 2.0);
+  assert.equal(qaCurrent.value, 1.0);
+});
+
+test('no flow balance figure pools architect and QA bounces into one number - each role gets its own series', () => {
+  const records = [record({ by: 'architect' }), record({ by: 'QA', ticket: 'BL-606' })];
+  const series = computeRoundsPerCloseSeriesByRole(records, ['2026-07-25T12:00:00.000Z'], NOW_MS);
+  assert.deepEqual(Object.keys(series).sort(), ['QA', 'architect']);
+});
+
+test('a window with zero closed tickets reports 0 rounds per close, never a division-by-zero crash', () => {
+  const records = [record({ by: 'architect' })];
+  const series = computeRoundsPerCloseSeriesByRole(records, [], NOW_MS);
+  assert.equal(series.architect[series.architect.length - 1].value, 0);
+});
+
+// ── record-bounce-by-role-10: reads the durable log, never commit subjects ─
+
+test('the metric only ever counts durable BounceRecord entries - title/commit text plays no role', () => {
+  // A ticket "titled with the word bounce" or whose fix produced several
+  // merge commits mentioning "bounce" simply never appears here at all -
+  // this module has no title or commit-message field to read in the first
+  // place, so contamination from either source is structurally impossible.
+  const records = [record({ ticket: 'BL-999-bounce-watcher-resilience', by: undefined })];
+  const closedDateIsos = ['2026-07-25T12:00:00.000Z'];
+  const series = computeRoundsPerCloseSeriesByRole(records, closedDateIsos, NOW_MS);
+  // unattributed (no `by`) still counts as its own role, never silently
+  // dropped or folded into a named role.
+  assert.equal(Object.keys(series).length, 1);
+  assert.equal(series.unattributed[series.unattributed.length - 1].value, 1);
+});
+
+// ── record-bounce-by-role-11: max-rounds indicator ─────────────────────────
+
+test('computeMaxRoundsIndicator names the four-bounce ticket over four once-bounced tickets', () => {
+  const records = [
+    record({ ticket: 'BL-590', by: 'architect', commit: 'c1' }),
+    record({ ticket: 'BL-590', by: 'architect', commit: 'c2' }),
+    record({ ticket: 'BL-590', by: 'architect', commit: 'c3' }),
+    record({ ticket: 'BL-590', by: 'architect', commit: 'c4' }),
+    record({ ticket: 'BL-001', by: 'QA', commit: 'c5' }),
+    record({ ticket: 'BL-002', by: 'QA', commit: 'c6' }),
+    record({ ticket: 'BL-003', by: 'QA', commit: 'c7' }),
+    record({ ticket: 'BL-004', by: 'QA', commit: 'c8' }),
+  ];
+  assert.deepEqual(computeMaxRoundsIndicator(records), { ticket: 'BL-590', rounds: 4, by: 'architect' });
+});
+
+test('computeMaxRoundsIndicator returns null for an empty log', () => {
+  assert.equal(computeMaxRoundsIndicator([]), null);
+});
+
+// ── record-bounce-by-role-12: bounce-free day is zero, pre-epoch is unavailable ─
+
+test('a bounce-free day at/after the epoch reports zero; every day before the epoch reports unavailable', () => {
+  const days = lastNDaysIso(dayMs('2026-07-27'), 3); // 2026-07-25, 26, 27
+  const series = computeDailyReworkSeries([], 'architect', days, '2026-07-26');
+  assert.deepEqual(series, [
+    { periodStart: '2026-07-25', value: null },
+    { periodStart: '2026-07-26', value: 0 },
+    { periodStart: '2026-07-27', value: 0 },
+  ]);
+});
+
+// ── record-bounce-by-role-13: known fixtures land on their own day ─────────
+
+test('BL-590 (4 architect bounces on 2026-07-25) and BL-606 (3 on 2026-07-23) land on their own days', () => {
+  const records = [
+    ...Array.from({ length: 4 }, (_, i) => record({ ticket: 'BL-590', at: `2026-07-25T0${i}:00:00.000Z`, commit: `bl590-${i}` })),
+    ...Array.from({ length: 3 }, (_, i) => record({ ticket: 'BL-606', at: `2026-07-23T0${i}:00:00.000Z`, commit: `bl606-${i}` })),
+  ];
+  const days = ['2026-07-23', '2026-07-24', '2026-07-25'];
+  const series = computeDailyReworkSeries(records, 'architect', days, '2026-07-01');
+  assert.deepEqual(series, [
+    { periodStart: '2026-07-23', value: 3 },
+    { periodStart: '2026-07-24', value: 0 },
+    { periodStart: '2026-07-25', value: 4 },
+  ]);
+});
+
+test('computeDailyReworkSeriesByRole reports one series per role present in the log', () => {
+  const records = [record({ by: 'architect', at: '2026-07-26T01:00:00.000Z' }), record({ by: 'QA', at: '2026-07-26T02:00:00.000Z', ticket: 'BL-1' })];
+  const byRole = computeDailyReworkSeriesByRole(records, ['2026-07-26'], '2026-07-01');
+  assert.deepEqual(byRole.architect, [{ periodStart: '2026-07-26', value: 1 }]);
+  assert.deepEqual(byRole.QA, [{ periodStart: '2026-07-26', value: 1 }]);
+});
+
+test('lastNDaysIso returns n consecutive days, oldest first, ending on the day of nowMs', () => {
+  assert.deepEqual(lastNDaysIso(dayMs('2026-07-26'), 3), ['2026-07-24', '2026-07-25', '2026-07-26']);
+});
+
+test('REWORK_ATTRIBUTION_EPOCH_ISO is a real, parseable calendar date', () => {
+  assert.ok(!Number.isNaN(Date.parse(REWORK_ATTRIBUTION_EPOCH_ISO)));
+});
+
+test('renderDailyReworkMarkdownLine renders "unavailable", never the digit 0, for a null point', () => {
+  const points = [
+    { periodStart: '2026-07-25', value: null },
+    { periodStart: '2026-07-26', value: 0 },
+  ];
+  const line = renderDailyReworkMarkdownLine('architect', points);
+  assert.equal(line, 'architect: 2026-07-25: unavailable, 2026-07-26: 0');
+  assert.doesNotMatch(line, /2026-07-25: 0/);
+});
+
+function dayMs(iso) {
+  return Date.parse(`${iso}T12:00:00.000Z`);
+}
