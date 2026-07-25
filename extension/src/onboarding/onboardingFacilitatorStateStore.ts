@@ -10,7 +10,6 @@
 // target, so there is no target-repo .swarmforge/ to write into yet. One
 // file per target (keyed by a slug of its repo URL) so concurrent
 // onboardings (slice 3) stay distinct.
-import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import { atomicWrite } from '../util/atomicWrite';
@@ -20,24 +19,14 @@ function onboardingStateDir(swarmRepoRoot: string): string {
   return path.join(swarmRepoRoot, '.swarmforge', 'onboarding');
 }
 
-// A filesystem-safe, human-recognizable key for a target repo URL. The
-// readable part alone is NOT injective - both '/' and any other punctuation
-// collapse to the same '-', so e.g. github.com/acme/tools-ci and
-// github.com/acme-tools/ci would otherwise key the same file and silently
-// destroy each other's durable state (BL-590 architect bounce #5). Appending
-// a digest of the normalized (unmangled) URL restores injectivity while
-// keeping the prefix legible for operator debugging. The normalization
-// (scheme / trailing ".git" / trailing slash) is deliberately the set of
-// forms that name the SAME repo, so those aliases still collapse onto one
-// file - only genuinely distinct URLs are guaranteed to diverge.
+// A filesystem-safe, human-recognizable key for a target repo URL - strips
+// the scheme and replaces anything that isn't alphanumeric/-/. with '-', so
+// two distinct URLs never collide and the resulting filename stays legible
+// for operator debugging (e.g. github.com/org/repo).
 export function slugifyTargetRepoUrl(targetRepoUrl: string): string {
-  const normalized = targetRepoUrl
-    .replace(/^[a-z]+:\/\//i, '')
-    .replace(/\.git$/i, '')
-    .replace(/\/+$/, '');
-  const readable = normalized.replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || 'target';
-  const digest = crypto.createHash('sha1').update(normalized).digest('hex').slice(0, 8);
-  return `${readable}-${digest}`;
+  const withoutScheme = targetRepoUrl.replace(/^[a-z]+:\/\//i, '').replace(/\.git$/i, '');
+  const slug = withoutScheme.replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/^-+|-+$/g, '');
+  return slug.length > 0 ? slug : 'target';
 }
 
 function onboardingStatePath(swarmRepoRoot: string, targetRepoUrl: string): string {
@@ -72,21 +61,6 @@ interface OnboardingStateEnvelope {
 
 function isEnvelope(parsed: unknown): parsed is OnboardingStateEnvelope {
   return typeof parsed === 'object' && parsed !== null && 'state' in parsed && 'processedUpdates' in parsed;
-}
-
-// Shape check for a bare (pre-envelope) state, so a plausible but unrelated
-// .json file dropped into the onboarding directory (BL-590 architect bounce
-// #5, D2) is never cast into a fake state via `as`. Checked structurally,
-// not by filename - a deny-list of known non-state filenames has already had
-// to grow once (bounce #3's no-active-updates.json) and slices 2/3 add more
-// siblings to the same directory.
-function isFacilitatorState(parsed: unknown): parsed is OnboardingFacilitatorState {
-  return (
-    typeof parsed === 'object' &&
-    parsed !== null &&
-    typeof (parsed as OnboardingFacilitatorState).targetRepoUrl === 'string' &&
-    typeof (parsed as OnboardingFacilitatorState).phase === 'string'
-  );
 }
 
 function readEnvelope(swarmRepoRoot: string, targetRepoUrl: string): OnboardingStateEnvelope | undefined {
@@ -139,14 +113,7 @@ function listOnboardingEnvelopes(swarmRepoRoot: string): OnboardingStateEnvelope
     .map((entry) => {
       try {
         const parsed: unknown = JSON.parse(fs.readFileSync(path.join(dir, entry), 'utf8'));
-        if (isEnvelope(parsed)) {
-          return parsed;
-        }
-        // The legacy pre-envelope shape: a bare state, actually validated
-        // now rather than assumed - anything else (an unrelated .json this
-        // directory's own filename filter didn't happen to name) is dropped
-        // instead of being cast into a fake state.
-        return isFacilitatorState(parsed) ? { state: parsed, processedUpdates: {} } : undefined;
+        return isEnvelope(parsed) ? parsed : { state: parsed as OnboardingFacilitatorState, processedUpdates: {} };
       } catch {
         return undefined;
       }
