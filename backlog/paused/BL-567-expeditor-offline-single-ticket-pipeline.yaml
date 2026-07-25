@@ -159,9 +159,38 @@ design: |
   — it records the verdict and re-enters the target stage with the reason in the
   next task-injection. The revert-on-bounce pattern is the documented cause of
   real damage (BL-629/BL-632, and two open architect `rule_proposal`s); the
-  expeditor must not adopt it, and the runbook must say why. Bounce bound per
-  (stage, ticket), default 8, loud on exhaustion — BL-590 took six legitimate
-  send-backs, so a tight bound would abort real convergence.
+  expeditor must not adopt it, and the runbook must say why.
+
+  **Bounce bound: 3 per (stage, ticket). Operator ruling 2026-07-25** — and the
+  ruling corrected a real error in this design. The first draft proposed 8,
+  derived from BL-590 having taken six architect send-backs the same day. That
+  calibrates the limit to the **pathology** and institutionalises it: if six
+  rounds is unacceptable, a bound of eight declares it acceptable. Operator:
+  "6 bounces is unacceptable, 3 barely." Effort has already been spent on making
+  the specifier cut more concise stories (BL-633 `invariants:`, BL-634 slice-size
+  envelope); the bound must be calibrated to that target, not to the state those
+  tickets exist to fix.
+
+  This changes what exhaustion MEANS, and the driver must reflect it. At 8 the
+  bound was a runaway-loop backstop — an operational guard. At 3 it is a
+  **quality signal**: three rounds against one gate says the ticket is probably
+  mis-specified, not that the coder is failing. Three rounds circling one
+  concern is precisely BL-633's signature — BL-590's #1/#4/#5/#6 were four
+  instances of a single unstated invariant, and BL-606's three send-backs were
+  all one routing-record property.
+
+  So on exhaustion the expeditor must not merely exit non-zero. It names the
+  gate, names the repeated defect class across the rounds, and records a
+  **probable spec defect** for the specifier — the offline equivalent of the
+  recorded "QA bounce that is really a spec defect" disposition, which routes to
+  the specifier rather than looping the coder.
+
+  Worth stating plainly: under this bound BL-590 would have stopped after round
+  three and escalated. That is the bound working, not the bound being too tight.
+
+  Configurable, but the DEFAULT is the ruling — a default of 3 that everyone
+  raises to 8 in practice would restore exactly the behaviour being rejected, so
+  any raise must be explicit and recorded in the run record.
 
   **Q3 dedicated branch `expedite/<BL-id>` in a worktree the driver creates and
   owns.** Never `main` (this morning's incident was a role working in the master
@@ -280,7 +309,7 @@ design: |
 acceptance: |
   specs/features/BL-567-expeditor-offline-single-ticket-pipeline.feature
 
-  18 scenarios, written 2026-07-25 (specifier stage of this ticket's own
+  20 scenarios, written 2026-07-25 (specifier stage of this ticket's own
   hand-run) and passing `gherkin_lint_gate.sh`. Materialised as a real `.feature`,
   NOT a `.feature.draft`: this ticket is being driven to done in one hand-run so
   its handlers land in the same pass, and the draft convention is what BL-441
@@ -292,10 +321,11 @@ acceptance: |
   the same parcel — the runner throws on unhandled scenarios (BL-233).
 
   Scenario coverage of the criteria below: 01-03 machinery independence and its
-  instrumentation, 04-06 bounce behaviour including no-revert, 07-08 marker and
-  branch discipline, 09-11 the live-swarm interlock including the stale-socket
-  false positive, 12-14 initiation park/preserve/refuse, 15 stage timeout,
-  16-18 the non-blocking restart.
+  instrumentation, 04-06 bounce behaviour including no-revert and the bound of 3,
+  05b-05c exhaustion reporting a probable SPEC defect and any raised bound being
+  explicit, 07-08 marker and branch discipline, 09-11 the live-swarm interlock
+  including the stale-socket false positive, 12-14 initiation
+  park/preserve/refuse, 15 stage timeout, 16-18 the non-blocking restart.
 
   ADDED 2026-07-25 (operator ruling — lifecycle in scope):
 

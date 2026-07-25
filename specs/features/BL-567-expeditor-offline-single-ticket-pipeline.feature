@@ -49,9 +49,24 @@ Feature: Expeditor - drive one ticket through every gate with the swarm stopped
   Scenario: exhausting the bounce bound exits non-zero naming the failed gate
     Given the fixture ticket's architect gate is seeded to fail every time
     When the expeditor runs the fixture ticket
-    Then the driver stops after the configured bounce bound is reached
+    Then the driver stops after three bounces against that gate
     And the exit status is non-zero and the message names the architect gate
     And the driver never loops without bound
+
+  # BL-567 exhaustion-reports-a-probable-spec-defect-05b
+  Scenario: exhausting the bound reports a probable spec defect rather than a coder failure
+    Given the fixture ticket's architect gate is seeded to fail every time on one concern
+    When the expeditor runs the fixture ticket
+    Then the run record names the repeated defect class across the three rounds
+    And the run record marks the ticket as a probable spec defect for the specifier
+    And the report does not attribute the failure to the coder stage
+
+  # BL-567 raised-bound-is-explicit-and-recorded-05c
+  Scenario: raising the bounce bound above the default is explicit and recorded
+    Given the expeditor is invoked with a bounce bound above the default
+    When the expeditor runs the fixture ticket
+    Then the run record states the bound in force and that it was raised explicitly
+    And the default bound remains three when no bound is given
 
   # BL-567 bounce-never-reverts-the-branch-06
   Scenario: a bounce records a verdict and does not revert the working branch
