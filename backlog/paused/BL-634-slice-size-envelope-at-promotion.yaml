@@ -1,0 +1,127 @@
+id: BL-634
+title: "Promotion gate: a slice whose declared size envelope exceeds the p90 must be split or justified — BL-590 'slice 1' shipped 1929 insertions against a 65-insertion median"
+milestone: M8
+type: feature
+status: todo
+epic: code-quality-gates
+human_approval: approved
+severity: medium
+priority: 09
+direction: human-requested
+depends_on: []
+assigned_to: specifier
+mutation_cost: medium
+
+approval_context: >
+  Operator ruling 2026-07-25. The operator's read — "it seems to me the
+  specifier cut too big a ticket" — was tested against the repo and confirmed
+  quantitatively. This ticket puts a check where the decision is still cheap:
+  at promotion, before a coder starts.
+
+source: |
+  BL-590 post-mortem, 2026-07-25. `4851901ed` — the commit titled
+  "BL-590 **slice 1**" — is **1929 insertions across 18 files**.
+
+  Measured over the 2060 ticket-bearing commits since 2026-05-01
+  (`git log --all --no-merges`, excluding send-back/topic-record/promote/close/
+  file/ruled/evidence subjects):
+
+  ```
+  median    65 insertions
+  p90      514
+  p99     1502
+  BL-590  1929      <- above p99
+  ```
+
+  The only larger commits in the sample are not feature slices: a
+  `chore: sync extension tree` (94 830), a merge-reapply, and two tooling
+  migrations (Vitest, Stryker/jscpd). Among genuine implementation slices,
+  BL-590 slice 1 is at or near the top of ~2000 commits.
+
+  For an artefact whose own title says "slice 1", that is a decomposition
+  failure, and it is measurable rather than a matter of taste.
+
+  Causal honesty: size did NOT cause BL-590's four bounces — an unstated
+  invariant did, which is BL-633. Size is the **aggravator**: a bigger surface
+  means more sites where an unstated property can be violated, and a longer
+  feedback loop on each round. Both tickets are needed; neither substitutes for
+  the other.
+
+description: |
+  ## Why this goes at promotion
+
+  `mutation_cost` (`low|medium|high`) is already a REQUIRED field in
+  `swarmforge/backlog-schema.md:13`, and the coordinator already uses it to
+  sequence promotion. So the schema and the decision point both exist; what is
+  missing is a size signal and anything that acts on it.
+
+  Promotion is the last moment where splitting is cheap. After promotion a coder
+  is in flight and a same-file ticket cannot be preempted
+  ([[inflight-coder-task-cannot-be-preempted]]).
+
+  BL-626 already gates promotion on a different condition (an `acceptance:` path
+  pointing at a non-existent feature file). Share its gate rather than adding a
+  second independent one.
+
+  ## The honest difficulty, and the specifier must resolve it
+
+  **You cannot measure a slice before it is built.** A gate on actual insertions
+  is a post-hoc metric, useless at promotion. So the check has to be on a
+  *declared estimate*, which means it is only as good as the specifier's
+  judgement — the very thing under review. Do not paper over this.
+
+  Proposed three-part shape; the specifier decides whether all three are in
+  scope:
+
+  1. **Declared envelope.** The specifier states an expected size band on the
+     ticket (reuse `mutation_cost`'s vocabulary or add a sibling field —
+     specifier's call). A band, not a number: false precision invites gaming.
+  2. **Promotion check.** A slice declared in the top band is not silently
+     promoted: it is flagged for an explicit split-or-justify decision recorded
+     on the ticket. Refusal vs. flag-and-proceed is the specifier's call — note
+     that a hard refusal on an estimate the specifier itself wrote is close to
+     self-certification and may be theatre.
+  3. **Calibration loop, the part that makes it real.** At QA time, record the
+     slice's ACTUAL insertions/files on the ticket. Without this, estimates
+     never improve and the gate decays into a rubber stamp within weeks. This is
+     also the input BL-635 needs to report estimate-vs-actual drift.
+
+  ## Thresholds
+
+  Start from the measured distribution above rather than a round number: p90
+  (~500 insertions) as the flag threshold, p99 (~1500) as a hard stop if a hard
+  stop exists at all. Both must be configurable, and the ticket should say where
+  the numbers came from so a future reader can re-derive them.
+
+acceptance: |
+  Specifier writes the scenarios. Minimum behaviour:
+
+  1. A ticket declaring a top-band envelope is not promoted without a recorded
+     split-or-justify decision.
+  2. A ticket in the normal band promotes exactly as it does today — no added
+     friction on the common path, which runs many times a day.
+  3. The threshold values are configurable, not hard-coded, and the default
+     traces back to the measured distribution.
+  4. Actual size (insertions, files) is recorded on the ticket at QA time.
+  5. Regression fixture: BL-590's slice 1 shape (1929 insertions / 18 files)
+     trips the gate; a median-shaped slice (~65 insertions) does not.
+  6. Shares BL-626's promotion gate rather than introducing a parallel one.
+
+out_of_scope: |
+  - Blocking a HUMAN-requested oversized slice. A human who wants it big gets it
+    big; the gate makes the size visible and the decision explicit, it does not
+    overrule the operator.
+  - Splitting BL-590 retroactively. Operator ruled fix-forward 2026-07-25.
+  - Any automatic slicing proposal. Deciding where to cut is design work and
+    belongs to the specifier, not to a gate.
+
+notes: |
+  A gate on a self-declared estimate can become a ritual. The calibration loop
+  (item 3) is the only thing that keeps it honest — if the specifier drops it to
+  reduce scope, say so explicitly in the design rather than shipping items 1-2
+  and calling the problem solved.
+
+  Part two of a three-ticket initiative from the 2026-07-25 BL-590 post-mortem:
+  BL-633 states the property, this caps the surface, BL-635 measures whether
+  either worked. Not priced above BL-629/630/631/632 (`severity: high` broken
+  safety gates).

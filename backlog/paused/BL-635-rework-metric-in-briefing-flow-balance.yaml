@@ -1,0 +1,136 @@
+id: BL-635
+title: "Briefing must carry a rework metric: `bounce_count` is persisted per ticket since BL-608 but aggregated nowhere, so \"does this happen often?\" is currently unanswerable"
+milestone: M8
+type: feature
+status: todo
+epic: swarm-behaviour-trends
+human_approval: approved
+severity: medium
+priority: 07
+direction: human-requested
+depends_on: []
+assigned_to: specifier
+mutation_cost: low
+
+approval_context: >
+  Operator ruling 2026-07-25. Asked directly whether repeated-bounce tickets are
+  a frequent pattern, the honest answer was "the data cannot tell you." The
+  operator then flagged that `bounce_count` is itself very new and asked whether
+  what the documenter relied on beforehand was ever persistent. It was not.
+  This ticket closes that hole so the question becomes answerable.
+
+source: |
+  BL-590 post-mortem, 2026-07-25. The post-mortem could establish WHAT went
+  wrong on BL-590 and BL-606 but could not establish HOW OFTEN, because no
+  rework signal has ever been persisted as data.
+
+  What was checked, and what each source turned out to be worth:
+
+  - **`bounce_count` / `bounce_history` on the ticket YAML** — real and correct
+    (`extension/src/quality/bounceHistory.ts`, `extension/src/tools/record-qa-bounce.ts`),
+    but shipped with BL-608 days ago and **aggregated nowhere**. Per-ticket only.
+  - **Commit subjects** — the `SEND BACK #N` convention starts **2026-07-23**.
+    Three days of clean data. Worse, a naive count is contaminated: tickets whose
+    TITLES contain the word (`BL-115-bounce-watcher-resilience`, BL-025/026/027
+    "bounce commands") inflate it badly. A first pass ranked BL-115 top with 26
+    "bounces"; it was never bounced once. Any future consumer of this data must
+    not repeat that mistake.
+  - **Briefing JSON sidecars** — 31 files back to 2026-07-09 with genuine daily
+    trend series, and the series are exactly the wrong ones:
+
+    ```
+    flowBalance  -> speccedPerDay, closedPerDay
+    reliability  -> chases, nudges, respawns, failedDeliveries, daemonRestarts
+    ```
+
+    No rework, no bounce, no rounds-per-ticket.
+  - **Briefing markdown** — the documenter DOES discuss bounces, at length and
+    well. But it is prose, written from live state at briefing time and never
+    reduced to a number. Readable by a human, not aggregatable.
+
+  So the swarm measures how much work it takes IN and how much it puts OUT, and
+  nothing about how many times work goes round the loop.
+
+description: |
+  ## Shape
+
+  `flowBalance` already exists end to end and is the natural home:
+  `extension/src/notify/costHealthSidecar.ts:96` (type), `:325-327`
+  (construction from daily series), `:461 renderFlowBalanceLine` (markdown).
+  It already renders as `specced N/day, closed N/day` with trend arrows. Add a
+  rework term beside them, sourced from the `bounce_count` the tickets already
+  carry.
+
+  Specifier picks the metric; the two obvious candidates, and they answer
+  different questions:
+
+  - **bounces/day** — cheap, matches the existing per-day shape, but rises with
+    throughput and so cannot distinguish "busier" from "worse".
+  - **mean rounds per closed ticket** — the one that actually answers the
+    operator's question, and normalised so it does not move with volume.
+
+  Recommend the second as the headline with the first as a supporting count.
+  Whatever is chosen, a `bounce_count: 4` ticket like BL-590 must be
+  distinguishable from four separate once-bounced tickets — the repeated-bounce
+  shape is the signal, and an average alone hides it. A max or a
+  count-above-threshold alongside the mean covers that.
+
+  ## Data honesty — do not backfill
+
+  The series necessarily **starts empty and fills forward.** `bounce_count` did
+  not exist before BL-608, so there is no history to recover.
+
+  The 31 briefing markdown files DO discuss past bounces in prose, and it will be
+  tempting to mine them for a retro series. **Do not.** A number reconstructed
+  from narrative is a fabricated measurement that will be indistinguishable from
+  a measured one once it is in the JSON. If any pre-BL-608 figure is shown at
+  all, it must be explicitly labelled as absent, not estimated. A gap in a chart
+  is honest; an invented point is not.
+
+  ## Why this is priced above BL-633 and BL-634
+
+  It is the cheapest of the three (`mutation_cost: low` — one metric into an
+  existing pipeline) AND it is what makes the other two falsifiable. Land the
+  process changes first and there will be no before-picture to compare against.
+
+acceptance: |
+  Specifier writes the scenarios. Minimum behaviour:
+
+  1. The briefing JSON sidecar carries a rework metric under `flowBalance`,
+     following the existing `TrendedNumber` + daily-series shape so it trends
+     like its siblings.
+  2. The markdown briefing renders it on the flow-balance line with a trend
+     arrow, consistent with `speccedPerDay`/`closedPerDay`.
+  3. It is sourced from the tickets' own `bounce_count`, NOT from commit-subject
+     text matching. Cover the contamination case explicitly: a ticket whose
+     TITLE contains "bounce" and whose `bounce_count` is 0 contributes 0.
+  4. A repeated-bounce ticket is distinguishable from several once-bounced ones
+     (max, or a count above threshold, alongside any mean).
+  5. A day with no bounces reports zero, not a missing key.
+  6. Pre-BL-608 periods are absent or explicitly labelled unavailable — never
+     estimated, never inferred from briefing prose.
+  7. Fixture: BL-590 (`bounce_count: 4`) and BL-606 (3 architect send-backs)
+     both appear in the metric for their day.
+
+out_of_scope: |
+  - Reconstructing history from briefing markdown. See the data-honesty section;
+    this is a hard no, not a scope trim.
+  - Attributing a bounce to a cause (missing invariant vs. merge damage vs.
+    pipeline mechanics). The 2026-07-25 post-mortem showed these are genuinely
+    distinct classes, and classifying them is LLM judgement, not a metric. Worth
+    its own ticket later, once there is a series to classify.
+  - Changing how bounces are recorded. BL-608 shipped that and it works.
+  - Alerting or thresholds on the new metric. Report first; act once there is
+    enough series to know what normal looks like.
+
+notes: |
+  Part three of a three-ticket initiative from the 2026-07-25 BL-590
+  post-mortem — BL-633 (state the invariant), BL-634 (cap the slice size), this
+  one (measure whether either helped). It is the measurement arm: without it the
+  other two ship on faith.
+
+  Once ~2 weeks of series exist, the operator's original question — "has that
+  happened often?" — becomes a query instead of an investigation. Note the
+  answer may well be that BL-590 was an outlier and BL-633/BL-634 were solving a
+  rare problem; that is a legitimate finding and the metric must be able to
+  deliver it.
