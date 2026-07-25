@@ -64,6 +64,10 @@ import {
   decideEnsureResidentSpyTopicAction,
   EnsureRoleTopicAction,
   decideEnsureRoleTopicAction,
+  ONBOARDING_SUBJECT_ID,
+  ONBOARDING_TOPIC_NAME,
+  EnsureOnboardingTopicAction,
+  decideEnsureOnboardingTopicAction,
 } from './telegramTopicDecisions';
 
 // BL-607 architect bounce: telegramFrontDeskBotCore was the public barrel for
@@ -119,6 +123,10 @@ export {
   decideEnsureResidentSpyTopicAction,
   EnsureRoleTopicAction,
   decideEnsureRoleTopicAction,
+  ONBOARDING_SUBJECT_ID,
+  ONBOARDING_TOPIC_NAME,
+  EnsureOnboardingTopicAction,
+  decideEnsureOnboardingTopicAction,
 };
 
 export type BotUpdateDecision =
@@ -418,6 +426,34 @@ export function decideAgentQuestionsReplyAction(
   agentQuestionsTopicId: number | undefined
 ): AgentQuestionsReplyDecision {
   if (agentQuestionsTopicId === undefined || topicIdOf(update) !== agentQuestionsTopicId) {
+    return { kind: 'not-applicable' };
+  }
+  if (!isFromMyChat(update, chatId) || !isFromPrincipal(update, principalUserId)) {
+    return { kind: 'refuse' };
+  }
+  const text = messageTextOf(update);
+  if (!text) {
+    return { kind: 'refuse' };
+  }
+  return { kind: 'deliver', text };
+}
+
+// BL-590: the Onboarding Facilitator's own reserved topic - the AGENT_
+// QUESTIONS twin above, same shape (a message in the topic is ALWAYS either
+// delivered to the facilitator or refused, never opened as a fresh SUP-###
+// the way an ordinary unmapped topic would). What the facilitator DOES with
+// the text (state-machine advancement, persistence, its own reply) is
+// onboardingFacilitatorState.ts's job - this module only decides whether a
+// given update belongs to it at all.
+export type OnboardingReplyDecision = { kind: 'deliver'; text: string } | { kind: 'refuse' } | { kind: 'not-applicable' };
+
+export function decideOnboardingReplyAction(
+  update: TelegramUpdate,
+  principalUserId: string,
+  chatId: string,
+  onboardingTopicId: number | undefined
+): OnboardingReplyDecision {
+  if (onboardingTopicId === undefined || topicIdOf(update) !== onboardingTopicId) {
     return { kind: 'not-applicable' };
   }
   if (!isFromMyChat(update, chatId) || !isFromPrincipal(update, principalUserId)) {
@@ -803,6 +839,19 @@ export interface PollAdapters {
   // BL-423: durationMs undefined means "Until I resume" (no timer).
   applyPause?: (durationMs: number | undefined) => Promise<void>;
   resumeNow?: () => Promise<void>;
+  // BL-590: the standing Onboarding topic's own id (ensureOnboardingTopic,
+  // telegram-front-desk-bot.ts) - optional so every PollAdapters fixture
+  // written before BL-590 keeps working unchanged, same posture as
+  // agentQuestionsTopicId above; missing means "onboarding facilitator not
+  // wired", never a crash.
+  onboardingTopicId?: () => Promise<number | undefined>;
+  // BL-590: the facilitator's own whole turn - loads/creates the per-target
+  // state, applies the principal's reply (onboardingFacilitatorState.ts),
+  // persists it, and sends the resulting message back into the SAME topic.
+  // A single adapter (unlike agent-questions' postToBridge+pending-thread
+  // pair) because there is no separate pending-thread indirection here: the
+  // facilitator always replies in the topic it was addressed in.
+  handleOnboardingFacilitatorMessage?: (topicId: number, text: string, updateId: number) => Promise<boolean>;
 }
 
 // BL-389: the keystone fix. A DROP is a DECISION (the code looked at the
@@ -2023,6 +2072,37 @@ async function attemptAgentQuestionsTopicDelivery(
   return deliveryOutcome(ok);
 }
 
+// BL-590: the Onboarding topic's own side channel - optional adapter
+// (onboardingTopicId), defaults to "not wired" so every PollAdapters fixture
+// written before BL-590 keeps working unchanged, same convention as
+// attemptAgentQuestionsTopicDelivery above. A message in that topic never
+// falls through to the ordinary decideUpdateAction routing below (see
+// decideOnboardingReplyAction's own comment) - 'refuse' (wrong chat/
+// principal/no text) drops here too, never opens a fresh SUP-### the way an
+// ordinary unmapped topic would.
+async function attemptOnboardingTopicDelivery(
+  update: TelegramUpdate,
+  principalUserId: string,
+  adapters: PollAdapters
+): Promise<UpdateDeliveryOutcome | undefined> {
+  if (!adapters.onboardingTopicId) {
+    return undefined;
+  }
+  const topicId = await adapters.onboardingTopicId();
+  const decision = decideOnboardingReplyAction(update, principalUserId, adapters.chatId, topicId);
+  if (decision.kind === 'not-applicable') {
+    return undefined;
+  }
+  if (decision.kind === 'refuse') {
+    return 'dropped';
+  }
+  if (!adapters.handleOnboardingFacilitatorMessage || topicId === undefined) {
+    return 'dropped';
+  }
+  const ok = await adapters.handleOnboardingFacilitatorMessage(topicId, decision.text, update.update_id);
+  return deliveryOutcome(ok);
+}
+
 // Split out of processMessageUpdate below for the same CRAP-budget reason as
 // attemptSteeringDelivery's own comment documents - composing the steering
 // and voice side-channel attempts here (rather than as two separate ifs in
@@ -2034,6 +2114,9 @@ async function attemptAgentQuestionsTopicDelivery(
 // never overlaps in practice (a role-steering topic, the coordinator's
 // Operator topic, and the Agent Questions topic are three different bound
 // topics), so this is a plain composition, never a priority decision.
+// BL-590: the Onboarding topic side channel is attempted last of all, for
+// the same reason - it is its own distinct bound topic and never overlaps
+// any of the others.
 async function attemptSideChannelDelivery(
   update: TelegramUpdate,
   principalUserId: string,
@@ -2051,7 +2134,11 @@ async function attemptSideChannelDelivery(
   if (controlOutcome) {
     return controlOutcome;
   }
-  return attemptAgentQuestionsTopicDelivery(update, principalUserId, adapters);
+  const agentQuestionsOutcome = await attemptAgentQuestionsTopicDelivery(update, principalUserId, adapters);
+  if (agentQuestionsOutcome) {
+    return agentQuestionsOutcome;
+  }
+  return attemptOnboardingTopicDelivery(update, principalUserId, adapters);
 }
 
 async function processMessageUpdate(update: TelegramUpdate, principalUserId: string, adapters: PollAdapters): Promise<UpdateDeliveryOutcome> {
