@@ -278,6 +278,25 @@ design: |
   read as proof the driver works.
 
 acceptance: |
+  specs/features/BL-567-expeditor-offline-single-ticket-pipeline.feature
+
+  18 scenarios, written 2026-07-25 (specifier stage of this ticket's own
+  hand-run) and passing `gherkin_lint_gate.sh`. Materialised as a real `.feature`,
+  NOT a `.feature.draft`: this ticket is being driven to done in one hand-run so
+  its handlers land in the same pass, and the draft convention is what BL-441
+  and BL-626 exist to clean up after. The runner is per-file
+  (`specs/pipeline/scripts/run_acceptance.sh <feature-file>`), so a feature whose
+  handlers do not exist yet cannot break any global suite.
+
+  Step handlers go in `specs/pipeline/steps/` (307 modules today) and MUST land in
+  the same parcel — the runner throws on unhandled scenarios (BL-233).
+
+  Scenario coverage of the criteria below: 01-03 machinery independence and its
+  instrumentation, 04-06 bounce behaviour including no-revert, 07-08 marker and
+  branch discipline, 09-11 the live-swarm interlock including the stale-socket
+  false positive, 12-14 initiation park/preserve/refuse, 15 stage timeout,
+  16-18 the non-blocking restart.
+
   ADDED 2026-07-25 (operator ruling — lifecycle in scope):
 
   6. Initiation parks a ticket sitting in `backlog/active/` to `hold/` (asserted:
