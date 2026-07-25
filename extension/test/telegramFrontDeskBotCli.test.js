@@ -1074,6 +1074,16 @@ test('BL-590 architect bounce defect 1: hasProcessedOnboardingUpdateId reflects 
   assert.equal(hasProcessedOnboardingUpdateId(root, 901), false);
 });
 
+test('BL-590 slice 1: when no onboarding is in progress, the facilitator tells the user to start one with a repo URL', async () => {
+  const root = mkTmpRoot();
+  const { postFn, calls } = fakeSendOk(1);
+  const result = await handleOnboardingFacilitatorMessage(root, 'fake-token', 'fake-chat', 42, 'hello', 500, postFn);
+  assert.equal(result, true, 'the message should be sent successfully');
+  assert.equal(calls.length, 1);
+  assert.match(calls[0].body, /No onboarding is currently in progress/);
+  assert.match(calls[0].body, /Post a target GitHub repo URL to start one/);
+});
+
 // ── ensureControlTopic (BL-423, mirrors ensureAgentQuestionsTopic above) ──
 
 test('BL-423: creates the Control topic and binds it to the reserved subject when the map has no binding yet', async () => {
