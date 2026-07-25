@@ -5,8 +5,8 @@ type: feature
 status: todo
 epic: swarm-reliability
 human_approval: approved
-severity: medium
-priority: 10
+severity: high
+priority: 05
 direction: human-requested
 depends_on: []
 assigned_to: specifier
@@ -176,7 +176,99 @@ description: |
   - Note in the operator docs that the operator-layer prototype is superseded
     once this lands (the operator stops its private copy).
 
+  ## AMENDED 2026-07-25 (operator): remove the LLM babysitter AGENT outright
+
+  Operator: *"il faut virer les traces de l'ancien babysitter as an agent."*
+
+  Context that makes this urgent rather than tidy. Restarting the stack on
+  2026-07-25 showed `./swarm status` reporting `babysitter-runtime DOWN` — for the
+  RETIRED LLM hawk, which `.swarmforge/swarm.env` deliberately skips
+  (`SWARMFORGE_SKIP_BABYSITTER=1`, comment: "cost > value for this project"). The
+  daemon that actually works, the deterministic script, is wired into no start path
+  at all and had to be relaunched by hand from a line that exists only in the
+  operator's memory notes.
+
+  So the status line reports DOWN for something deliberately absent, and reports
+  nothing about the one that is doing the work. That is a broken health signal, which
+  is why this is repriced `severity: high` / `priority: 05` — same family as BL-637.
+
+  ### Removal set — verified by inspection, five files
+
+  ```
+  babysit.sh                                       root entry point: "always-on hawk", the LLM
+  swarmforge/scripts/start_babysitter.sh           wrapper -> launch_babysitter.sh
+  swarmforge/scripts/launch_babysitter.sh          spawns the claude session (14 agent refs)
+  swarmforge/scripts/babysitter.claude-settings.json   its model/effort
+  swarmforge/roles/babysitter.prompt               its role prompt
+  ```
+
+  Not a pipeline role in any pack — `grep babysitter swarmforge/packs/*.conf` is
+  empty, so no pack conf changes and no roles.tsv row.
+
+  ### Callers that must be updated in the same parcel
+
+  ```
+  swarmforge/scripts/start_ancillary_services.sh:72-78   the SKIP gate + start call
+  swarmforge/scripts/stop_ancillary_services.sh          references start_babysitter.sh
+  swarmforge/scripts/swarm_ensure.bb:~341                gates ensure on SKIP_BABYSITTER
+  swarmforge/scripts/babysitter_runtime.bb:126-128       "llm-down relaunching" -> dead path
+  ```
+
+  ### KEEP — this is where the specifier must not over-delete
+
+  These are DETERMINISTIC and are what this ticket builds on. Zero agent references
+  by inspection:
+
+  ```
+  babysitter_assess_lib.bb + babysitter_assess.bb    pure claim-risk scan (BL-528)
+  babysitter_lib.bb, babysitter_nudge_lib.bb
+  babysitter_nudge_resident.bb, babysitter_enqueue_wake.sh
+  4 test runners under swarmforge/scripts/test/
+  ```
+
+  ### The load-bearing design question
+
+  `babysitter_runtime.bb` exists TO WAKE THE LLM — its `scan-claim-risks!` produces
+  wake events, and at `:126-128` it relaunches the agent when the LLM is down. With
+  no agent, that consumer disappears. The specifier must decide, not assume:
+
+  - **(a)** retire the runtime too, folding its BL-528 claim-risk scan into the
+    ported deterministic check, so there is ONE sweep; or
+  - **(b)** keep the runtime and repoint its findings at the coordinator nudge path
+    directly, so there are two sweeps with distinct duties.
+
+  (a) is simpler and matches "one deterministic sweep"; (b) preserves tested code.
+  Either is defensible — what is not defensible is deleting the agent and leaving a
+  runtime whose only purpose was to feed it.
+
+  ### `SWARMFORGE_SKIP_BABYSITTER` semantics must flip with the port
+
+  Today it means "skip the expensive LLM hawk", and `.swarmforge/swarm.env` sets it
+  with the reason "cost > value". After the port it would mean "skip the free
+  deterministic sweep" — so an operator inheriting that `swarm.env` silently disables
+  the new daemon too. The parcel must either rename the slot or state the new meaning
+  and flag the stale `swarm.env` line in the runbook.
+
+  ### Also needs classifying, not silently deleted
+
+  `backlog/topics/BABYSITTER.json` (a durable Telegram topic record) and
+  `extension/src/tools/notify-babysitter.ts`. Both may serve the deterministic daemon
+  just as well as the agent. Specifier's call.
+
 acceptance: |
+  ADDED 2026-07-25 (operator amendment):
+
+  A. The five agent-side files are gone, and no caller references a missing path -
+     `./start-swarm.sh`, `./stop-swarm.sh` and `./swarm ensure` all still run clean.
+  B. `./swarm status` no longer reports a row for the retired agent, and DOES report
+     the deterministic daemon it actually runs.
+  C. Every KEEP-listed deterministic file still exists and its test runner passes -
+     a regression here means the removal over-reached.
+  D. The runtime question (a or b) is answered in the design, with a scenario for
+     whichever was chosen.
+  E. The skip-slot semantics are stated, and the stale `.swarmforge/swarm.env` line
+     is called out in the runbook.
+
   Specifier writes the scenarios. Minimum:
 
   1. `start-swarm.sh` brings up babysitterd (absent `SWARMFORGE_SKIP_BABYSITTER=1`);

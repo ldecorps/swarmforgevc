@@ -1,0 +1,143 @@
+id: BL-639
+title: "Parcel age counts deliberate downtime, so every in-flight parcel escalates on restart — three red alarms fired for parcels 1 and 4 minutes old"
+milestone: M8
+type: defect
+status: todo
+epic: swarm-reliability
+human_approval: approved
+severity: medium
+priority: 07
+direction: human-requested
+depends_on: []
+assigned_to: specifier
+mutation_cost: low
+
+approval_context: >
+  Operator, 2026-07-25, after a planned stop-and-restart produced three ESCALATE
+  flow-stall alarms on their phone within one second of the daemon coming back —
+  for parcels that had barely stalled at all. Alarm fatigue by construction, on the
+  channel the operator relies on.
+
+source: |
+  Measured, 2026-07-25. The swarm was stopped deliberately at **12:06:02Z** and
+  restarted at **14:09:25Z** (a 2h03m planned outage, for offline work). `handoffd`
+  came back, swept, and fired three ESCALATE flow-stalls in the same second:
+
+  ```
+                                   reported age   actually stalled while LIVE
+  architect -> specifier (rule_proposal)  2h43m            40 min
+  coder -> cleaner (git_handoff)          2h07m             4 min
+  coordinator -> self (note)              2h04m             1 min
+  ```
+
+  Two of the three were **created minutes before the stop** and had never stalled.
+  All three reported ages that are essentially the outage length.
+
+  Only the first is a genuine stall — and it is already ticketed as BL-636
+  (rotation preference ignores parcel priority), so the alarm that mattered arrived
+  buried between two that did not.
+
+description: |
+  ## Cause, and it is one line
+
+  `flow_watchdog_lib.bb:89 parcel-age-ms`:
+
+  ```clojure
+  (- now-ms age-source)     ; age-source = enqueued_at, else created_at
+  ```
+
+  Pure wall-clock. The watchdog has no notion of whether anything was *running*
+  during that span, so a planned outage counts fully against every parcel in flight.
+
+  `decide-tier` then behaves exactly as designed: past `escalate-ms`, escalate. The
+  defect is in the age, not the decision — worth stating because `decide-tier` is
+  deliberately structurally suppression-free (its own `tier-decision-input-keys` set
+  documents that guarantee) and **must not** grow a branch for this.
+
+  ## Why it matters more than the noise
+
+  The escalation channel is the operator's phone. After any planned stop, every
+  in-flight parcel alarms at once, and the alarms are indistinguishable from real
+  ones. This session's storm buried the one genuine finding between two parcels
+  aged one and four minutes.
+
+  That trains the operator to ignore the channel — which is the actual damage. A
+  watchdog whose alarms are usually noise is worse than no watchdog, because the
+  absent one does not consume attention or teach dismissal.
+
+  ## Shape — and there is a trap in the obvious fix
+
+  **Obvious fix:** clamp the age to daemon uptime, `min(wall-clock age, now - daemon-start)`.
+
+  **Why that is wrong on its own:** it credits *every* restart, including a crash.
+  A handoffd that crash-loops would reset every parcel's age on each restart and
+  **mask a genuine stall indefinitely** — turning a noise defect into a silence
+  defect, which is strictly worse. That trade must not be made accidentally.
+
+  **Recommended shape: credit only RECORDED CLEAN downtime.** A clean stop already
+  leaves a durable, timestamped record:
+
+  ```
+  .swarmforge/daemon/kill-all-audit.log
+    2026-07-25T12:06:08Z kill_all_swarm SUCCESS — clean slate
+  .swarmforge/daemon/postmortem-20260725T120608Z.log
+  ```
+
+  A crash writes neither. So on boot, `handoffd` can read the last
+  `kill_all_swarm SUCCESS` timestamp and, when it postdates the last recorded tick,
+  treat `[stop, boot]` as credited downtime subtracted from every parcel's age.
+  A crash gets **no** credit and still alarms — which is correct, because a crash IS
+  an outage worth alarming about.
+
+  Note `handoffd.status.json` currently carries only `{state, updated_at}` and is
+  rewritten each tick, so there is no start time to read. The specifier will need
+  either a `started_at` there or the audit-log read above; the audit log is
+  preferable because it distinguishes clean from crashed, which uptime alone cannot.
+
+  ## Explicitly not the answer
+
+  - **`snoozed?`** already exists as the one visible mute in the durable state file.
+    It is per-parcel and requires an action per parcel; it does not address a
+    restart-wide storm, and reaching for it here would make snoozing routine.
+  - **Raising `escalate-ms`.** Hides real stalls to quiet a bookkeeping artefact.
+  - **Suppressing alarms for N minutes after boot.** A blanket post-boot mute would
+    hide a parcel that genuinely stalled for hours before the stop — exactly the one
+    case in this incident that deserved the alarm.
+
+acceptance: |
+  Specifier writes the scenarios. Minimum behaviour:
+
+  1. A parcel enqueued 4 minutes before a clean stop, with a 2h outage, does NOT
+     escalate on restart. Reproduce this session's numbers directly.
+  2. A parcel that genuinely stalled 40 minutes while the swarm was LIVE, across the
+     same outage, still alarms — the credit must not swallow real pre-stop stall
+     time.
+  3. A parcel stalled past `escalate-ms` entirely while live alarms exactly as today.
+     No regression on the path that works.
+  4. **A CRASH grants no credit.** Seeded scenario: the daemon dies without a
+     `kill_all_swarm SUCCESS` record, restarts, and every parcel's age is unchanged.
+     This is the scenario an implementation passes by accident if it clamps to
+     uptime, and getting it wrong converts noise into silence.
+  5. `decide-tier` is unchanged and its `tier-decision-input-keys` set still holds —
+     the fix belongs in the age, never in the tier decision, whose
+     suppression-freedom is a stated structural guarantee.
+  6. The credited window is visible: the log line or state file says how much
+     downtime was credited, so a human can tell a quiet watchdog from a broken one.
+
+out_of_scope: |
+  - The genuine stall this storm buried. That is BL-636 (rotation preference ignores
+    parcel priority).
+  - Changing `warn-ms` / `escalate-ms` defaults.
+  - The `snoozed?` mechanism.
+  - Making the teardown's own reporting honest — BL-637.
+
+notes: |
+  Priced `severity: medium`: nothing is broken and no work is lost. The harm is
+  attention, and it compounds — the operator who learns to swipe past ESCALATE will
+  swipe past a real one. Filed the same day as BL-637 and BL-638, which are the same
+  family: a signal that is technically correct and practically misleading.
+
+  Cheapest honest partial, if the specifier wants to slice: report the credited
+  downtime in the alarm text itself ("aged 2h43m, of which 2h03m planned downtime").
+  That fixes the human-facing half immediately without touching the tier decision,
+  and leaves the age arithmetic for a second slice.

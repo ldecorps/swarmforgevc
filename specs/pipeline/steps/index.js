@@ -317,7 +317,8 @@ const DOMAINS = [
   require('./bl610UnresolvableCommitQuarantinedSteps'),
   require('./bl577FlowWatchdogParcelAgeInvariantSteps'),
   require('./bl575CostRankHorizonPinnedClockSteps'),
-  require('./bl590OnboardingFacilitatorSteps')
+  require('./bl590OnboardingFacilitatorSteps'),
+  require('./expeditorOfflineSingleTicketPipelineSteps')
 ];
 
 function registerSteps(registry) {

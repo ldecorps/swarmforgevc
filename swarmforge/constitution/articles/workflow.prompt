@@ -114,7 +114,16 @@
 - The moment you bounce, revert the bounced content from your own branch in the
   same step as the send-back `note`. For a MERGE commit use
   `git revert -m 1 <your-review-merge>` (first parent = your branch's prior tip),
-  then confirm `git merge-base --is-ancestor <bounced-commit> HEAD` is now FALSE.
+  then confirm the **CONTENT** is gone — the bounced paths absent from the tree.
+- **Never verify by ancestry.** `git merge-base --is-ancestor <bounced-commit> HEAD`
+  can never be FALSE after a revert: `git revert` adds a commit undoing content, it
+  does not rewrite history. Asking for it was a defect in this rule until 2026-07-25.
+- **EXCEPTION: if the bounced commit is already an ancestor of `main`, do NOT revert.**
+  Record why in the bounce evidence and report the breach to the coordinator. A revert
+  of on-`main` content writes a negative delta your next `main` merge can resolve in
+  the revert's favour, silently stripping `main`'s own code from your tree. Narrow and
+  obligatory: only when `is-ancestor <bounced-commit> main` is TRUE, and BOTH the
+  evidence note and the coordinator report are required.
 - If a bounced parcel is ABANDONED (not reworked), every branch that merged it
   must revert it — not only the final reviewer.
 - See **workflow-detailed.prompt** for the BL-490/BL-495 landed-without-review

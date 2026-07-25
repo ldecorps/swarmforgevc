@@ -100,3 +100,4 @@ notes: |
   BL-591 (per-epic ETA) and BL-593 (mutation-run duration) are sibling
   observability work, not children here. BL-599's intake/drain rate and any
   per-run cost feed BL-591's estimate; note the overlap, do not duplicate.
+mutation_cost: low
