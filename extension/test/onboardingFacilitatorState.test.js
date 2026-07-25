@@ -202,12 +202,9 @@ test('BL-590 architect bounce defect 2: a URL for a DIFFERENT target still opens
   assert.deepEqual(outcome.state.verifiedSteps, []);
 });
 
-test('BL-590 architect bounce #4: re-posting the URL of a FINISHED (prerequisites-ready) onboarding resumes it, preserving all five verifiedSteps', () => {
+test('BL-590 architect bounce defect 2: re-posting the URL of a FINISHED (prerequisites-ready) onboarding opens a fresh one, never resumes a done flow', () => {
   const finished = { ...createOnboardingState('https://github.com/acme/widget', fixedNow), phase: 'prerequisites-ready', stepIndex: 5, verifiedSteps: ['toolchain', 'github-access', 'fork-clone', 'target-repo', 'bot-token'] };
   const outcome = handleOnboardingMessage([finished], 'https://github.com/acme/widget', fixedNow);
-  assert.equal(outcome.kind, 'resumed');
-  assert.equal(outcome.state.phase, 'prerequisites-ready');
-  assert.equal(outcome.state.stepIndex, 5);
-  assert.deepEqual(outcome.state.verifiedSteps, ['toolchain', 'github-access', 'fork-clone', 'target-repo', 'bot-token']);
-  assert.match(outcome.message, /survey/);
+  assert.equal(outcome.kind, 'started');
+  assert.deepEqual(outcome.state.verifiedSteps, []);
 });

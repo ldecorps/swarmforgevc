@@ -293,24 +293,19 @@ export type OnboardingMessageOutcome =
   | { kind: 'advanced'; state: OnboardingFacilitatorState; message: string }
   | { kind: 'no-active-onboarding'; message: string };
 
-// BL-590 architect bounce #4 (2026-07-25): a repo URL for a target that
-// already has ANY existing state - including prerequisites-ready - must
-// RESUME that state, never mint a fresh one. onboardingStatePath keys the
-// durable file by a slug of the URL alone, so a fresh createOnboardingState
-// for the same URL silently overwrites the same file and destroys verified
-// progress. Bounce #1 fixed this for in-flight states but exempted
-// prerequisites-ready; that exemption was the bug (bounce #4) - a re-paste
-// once the checklist is complete fell through to createOnboardingState and
-// wiped all five verified prerequisites. The human's reasons to re-paste the
-// URL are ordinary (checking in, scrolling back, resuming after a pause) at
-// every phase, so resuming must be the default, not an opt-in. renderStatus
-// already renders the correct message for a prerequisites-ready state, so
-// resuming it is a harmless status re-statement.
-function findStateForTarget(
+// BL-590 architect bounce (defect 2, 2026-07-25): a repo URL for a target
+// that already has an in-flight (non-prerequisites-ready) state must RESUME
+// that state, never mint a fresh one - onboardingStatePath keys the durable
+// file by a slug of the URL alone, so a fresh createOnboardingState for the
+// same URL silently overwrites the same file and destroys verified
+// progress. The human's reasons to re-paste the URL are ordinary (checking
+// in, scrolling back, resuming after a pause), so this must be the default,
+// not an opt-in.
+function findInFlightStateForTarget(
   existingStates: readonly OnboardingFacilitatorState[],
   targetRepoUrl: string
 ): OnboardingFacilitatorState | undefined {
-  return existingStates.find((s) => s.targetRepoUrl === targetRepoUrl);
+  return existingStates.find((s) => s.targetRepoUrl === targetRepoUrl && s.phase !== 'prerequisites-ready');
 }
 
 // BL-590: the facilitator's whole per-message decision, given every
@@ -325,9 +320,9 @@ export function handleOnboardingMessage(
 ): OnboardingMessageOutcome {
   if (isLikelyRepoUrl(text)) {
     const targetRepoUrl = text.trim();
-    const existing = findStateForTarget(existingStates, targetRepoUrl);
-    if (existing) {
-      return { kind: 'resumed', state: existing, message: renderStatus(existing) };
+    const inFlight = findInFlightStateForTarget(existingStates, targetRepoUrl);
+    if (inFlight) {
+      return { kind: 'resumed', state: inFlight, message: renderStatus(inFlight) };
     }
     const state = createOnboardingState(targetRepoUrl, now);
     return { kind: 'started', state, message: renderStatus(state) };
