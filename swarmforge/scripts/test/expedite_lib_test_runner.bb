@@ -22,6 +22,44 @@
 (defn assert-true [msg actual] (assert= msg true (boolean actual)))
 (defn assert-false [msg actual] (assert= msg false (boolean actual)))
 
+;; ── argument parsing ──────────────────────────────────────────────────────
+;; Moved here from the CLI by the cleaner pass. The latent defect these cover:
+;; a value-taking flag whose value gets read as a positional.
+
+(assert= "args: root and ticket are the two positionals"
+         {:project-root "/repo" :ticket "BL-567"}
+         (select-keys (expedite-lib/parse-args ["/repo" "BL-567"]) [:project-root :ticket]))
+(assert= "args: a value-taking flag's VALUE is never a positional"
+         {:project-root "/repo" :ticket "BL-567"}
+         (select-keys (expedite-lib/parse-args ["--bounce-bound" "5" "/repo" "BL-567"])
+                      [:project-root :ticket]))
+(assert= "args: and its value is read"
+         5 (:bounce-bound (expedite-lib/parse-args ["/repo" "BL-567" "--bounce-bound" "5"])))
+(assert= "args: two value-taking flags interleaved with positionals"
+         {:project-root "/repo" :ticket "BL-567" :bounce-bound 4 :stage-timeout-ms 900}
+         (select-keys (expedite-lib/parse-args
+                       ["--stage-timeout-ms" "900" "/repo" "--bounce-bound" "4" "BL-567"])
+                      [:project-root :ticket :bounce-bound :stage-timeout-ms]))
+(assert= "args: boolean flags are never positionals"
+         {:project-root "/repo" :ticket "BL-567"}
+         (select-keys (expedite-lib/parse-args ["--dry-run" "/repo" "--override" "BL-567" "--no-restart"])
+                      [:project-root :ticket]))
+(assert-true "args: --override is read" (:override? (expedite-lib/parse-args ["/r" "BL-1" "--override"])))
+(assert-true "args: --no-restart is read" (:no-restart? (expedite-lib/parse-args ["/r" "BL-1" "--no-restart"])))
+(assert-true "args: --dry-run is read" (:dry-run? (expedite-lib/parse-args ["/r" "BL-1" "--dry-run"])))
+(assert-false "args: absent booleans are false" (:override? (expedite-lib/parse-args ["/r" "BL-1"])))
+(assert= "args: a missing value does not swallow the next FLAG as its value"
+         nil (:bounce-bound (expedite-lib/parse-args ["/r" "BL-1" "--bounce-bound" "--dry-run"])))
+(assert-true "args: and that next flag is still honoured"
+             (:dry-run? (expedite-lib/parse-args ["/r" "BL-1" "--bounce-bound" "--dry-run"])))
+(assert= "args: a non-numeric value parses to nil rather than throwing"
+         nil (:bounce-bound (expedite-lib/parse-args ["/r" "BL-1" "--bounce-bound" "abc"])))
+(assert= "args: no argv at all yields nil positionals, never an exception"
+         {:project-root nil :ticket nil}
+         (select-keys (expedite-lib/parse-args []) [:project-root :ticket]))
+(assert= "args: value-flags is the single source of truth for both the strip and the reads"
+         #{"--bounce-bound" "--stage-timeout-ms"} expedite-lib/value-flags)
+
 ;; ── stage chain ───────────────────────────────────────────────────────────
 
 (assert= "stages: absent roles manifest -> full standard chain"

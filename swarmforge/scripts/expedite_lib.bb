@@ -20,6 +20,49 @@
 (ns expedite-lib
   (:require [clojure.string :as str]))
 
+;; ── argument parsing ───────────────────────────────────────────────────────
+;; Pure, so it lives here and is tested. `value-flags` is the SINGLE source of
+;; truth for which flags consume the next argv element: it drives both the strip
+;; that finds the positionals and the reads below. Two copies of that knowledge
+;; is a latent defect - add a value-taking flag, forget one copy, and its value
+;; is silently parsed as the project root.
+
+(def value-flags #{"--bounce-bound" "--stage-timeout-ms"})
+
+(def boolean-flags #{"--override" "--no-restart" "--dry-run"})
+
+(defn flag-value
+  "The element after `flag`, or nil. Returns nil rather than the next flag when
+   a value is missing, so `--bounce-bound --dry-run` cannot read as bound
+   \"--dry-run\"."
+  [args flag]
+  (let [v (second (drop-while #(not= flag %) args))]
+    (when (and v (not (str/starts-with? (str v) "--"))) v)))
+
+(defn positionals
+  "argv minus every flag and minus every value-flag's value, in order."
+  [args]
+  (loop [in (seq args) out []]
+    (if (empty? in)
+      out
+      (let [a (str (first in))
+            rest' (rest in)]
+        (cond
+          (contains? value-flags a) (recur (drop 1 rest') out)
+          (str/starts-with? a "--") (recur rest' out)
+          :else (recur rest' (conj out a)))))))
+
+(defn parse-args [argv]
+  (let [args (vec (map str argv))
+        pos (positionals args)]
+    {:project-root (first pos)
+     :ticket (second pos)
+     :override? (boolean (some #{"--override"} args))
+     :no-restart? (boolean (some #{"--no-restart"} args))
+     :dry-run? (boolean (some #{"--dry-run"} args))
+     :bounce-bound (some-> (flag-value args "--bounce-bound") parse-long)
+     :stage-timeout-ms (some-> (flag-value args "--stage-timeout-ms") parse-long)}))
+
 ;; ── stage order ────────────────────────────────────────────────────────────
 ;; Mirrors swarmforge/PIPELINE.md's chain. specifier is included because a
 ;; bounced spec defect routes there; coordinator is NOT a chain stage (BL-317:

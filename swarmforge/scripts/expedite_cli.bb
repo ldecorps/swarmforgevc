@@ -42,25 +42,11 @@
 
 ;; ── args ──────────────────────────────────────────────────────────────────
 
-(defn- flag-value [args flag]
-  (second (drop-while #(not= flag %) args)))
-
-(defn parse-args [argv]
-  (let [args (vec argv)
-        positional (vec (remove #(str/starts-with? (str %) "--")
-                                (loop [in args out []]
-                                  (if (empty? in) out
-                                      (let [[a & rest] in]
-                                        (if (#{"--bounce-bound" "--stage-timeout-ms"} a)
-                                          (recur (drop 1 rest) out)
-                                          (recur rest (conj out a))))))))]
-    {:project-root (first positional)
-     :ticket (second positional)
-     :override? (boolean (some #{"--override"} args))
-     :no-restart? (boolean (some #{"--no-restart"} args))
-     :dry-run? (boolean (some #{"--dry-run"} args))
-     :bounce-bound (some-> (flag-value args "--bounce-bound") parse-long)
-     :stage-timeout-ms (some-> (flag-value args "--stage-timeout-ms") parse-long)}))
+;; parse-args, flag-value and positionals moved to expedite_lib.bb by the cleaner
+;; pass: they are pure decisions, they were untested here, and the set of
+;; value-taking flags was duplicated between the positional strip and the reads -
+;; a latent defect where a forgotten entry makes a flag's value parse as the
+;; project root.
 
 (defn usage! []
   (binding [*out* *err*]
@@ -400,7 +386,7 @@
 ;; ── main ──────────────────────────────────────────────────────────────────
 
 (defn -main [& argv]
-  (let [{:keys [project-root ticket] :as opts} (parse-args argv)]
+  (let [{:keys [project-root ticket] :as opts} (expedite-lib/parse-args argv)]
     (when (or (str/blank? (str project-root)) (str/blank? (str ticket))) (usage!))
     (let [root (str (fs/canonicalize project-root))
           opts (assoc opts :project-root root)

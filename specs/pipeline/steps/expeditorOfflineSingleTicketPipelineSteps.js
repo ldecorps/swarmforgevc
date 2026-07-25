@@ -103,6 +103,24 @@ function runExpeditor(ctx, extraArgs = []) {
   return ctx.out;
 }
 
+function writeOnceRunner(ctx) {
+  // A stage runner that fires a seeded verdict ONCE and passes thereafter, so a
+  // scenario can bounce a gate a single time and still reach done. Extracted by
+  // the cleaner pass: two handlers wrote this same script inline.
+  const runner = path.join(ctx.root, 'stage-runner-once.sh');
+  fs.writeFileSync(runner, `#!/usr/bin/env bash
+set -euo pipefail
+ROLE="$1"; VERDICT="$4"; TRANSCRIPT="$5"
+ROOT="${ctx.root}"
+echo "$ROLE" >> "$ROOT/.swarmforge/expedite-fixture/ran.log"
+echo "stage $ROLE" > "$TRANSCRIPT"
+D="$ROOT/.swarmforge/expedite-fixture/$ROLE.verdict"
+if [[ -f "$D" ]]; then cat "$D" > "$VERDICT"; rm -f "$D"; else echo '{"verdict":"pass"}' > "$VERDICT"; fi
+`);
+  fs.chmodSync(runner, 0o755);
+  ctx.stageRunner = runner;
+}
+
 function snapshotMailboxes(root) {
   const p = path.join(root, '.swarmforge', 'handoffs');
   if (!fs.existsSync(p) || !fs.statSync(p).isDirectory()) return 'NOT-A-DIR';
@@ -185,18 +203,7 @@ function registerSteps(registry) {
   registry.define(/^the fixture ticket's QA gate is seeded to fail once$/, (ctx) => {
     seedVerdict(ctx, 'QA', { verdict: 'bounce', target: 'coder', reason: 'seeded QA failure', class: 'unit', once: true });
     // A one-shot: the runner deletes the directive after firing, so the rework passes.
-    const runner = path.join(ctx.root, 'stage-runner-once.sh');
-    fs.writeFileSync(runner, `#!/usr/bin/env bash
-set -euo pipefail
-ROLE="$1"; VERDICT="$4"; TRANSCRIPT="$5"
-ROOT="${ctx.root}"
-echo "$ROLE" >> "$ROOT/.swarmforge/expedite-fixture/ran.log"
-echo "stage $ROLE" > "$TRANSCRIPT"
-D="$ROOT/.swarmforge/expedite-fixture/$ROLE.verdict"
-if [[ -f "$D" ]]; then cat "$D" > "$VERDICT"; rm -f "$D"; else echo '{"verdict":"pass"}' > "$VERDICT"; fi
-`);
-    fs.chmodSync(runner, 0o755);
-    ctx.stageRunner = runner;
+    writeOnceRunner(ctx);
   });
   registry.define(/^the fixture ticket's architect gate is seeded to fail every time$/, (ctx) => {
     seedVerdict(ctx, 'architect', { verdict: 'bounce', target: 'coder', reason: 'seeded architect failure', class: 'guard' });
@@ -206,18 +213,7 @@ if [[ -f "$D" ]]; then cat "$D" > "$VERDICT"; rm -f "$D"; else echo '{"verdict":
   });
   registry.define(/^the fixture ticket's architect gate is seeded to fail once$/, (ctx) => {
     seedVerdict(ctx, 'architect', { verdict: 'bounce', target: 'coder', reason: 'one-off', class: 'guard', once: true });
-    const runner = path.join(ctx.root, 'stage-runner-once.sh');
-    fs.writeFileSync(runner, `#!/usr/bin/env bash
-set -euo pipefail
-ROLE="$1"; VERDICT="$4"; TRANSCRIPT="$5"
-ROOT="${ctx.root}"
-echo "$ROLE" >> "$ROOT/.swarmforge/expedite-fixture/ran.log"
-echo "stage $ROLE" > "$TRANSCRIPT"
-D="$ROOT/.swarmforge/expedite-fixture/$ROLE.verdict"
-if [[ -f "$D" ]]; then cat "$D" > "$VERDICT"; rm -f "$D"; else echo '{"verdict":"pass"}' > "$VERDICT"; fi
-`);
-    fs.chmodSync(runner, 0o755);
-    ctx.stageRunner = runner;
+    writeOnceRunner(ctx);
   });
   registry.define(/^the coder stage is seeded to hang past its configured timeout$/, (ctx) => {
     const runner = path.join(ctx.root, 'stage-runner-slow.sh');
