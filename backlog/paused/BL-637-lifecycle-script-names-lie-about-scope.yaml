@@ -135,6 +135,41 @@ out_of_scope: |
   - The `/tmp/tmp.*` front-desk bot/bridge husks visible in `ps` during this
     investigation. Separate, already-recorded proliferation issue.
 
+  ## Measured teardown gap, 2026-07-25 13:06 BST — `./stop-swarm.sh` reported
+  ## "SUCCESS — clean slate" with two processes still running
+
+  This was not inferred; it was observed while stopping the stack for offline
+  work. The full-stack stop ran cleanly and logged every step, then:
+
+  1. **`stopping babysitter` succeeded and the running babysitter survived.**
+     There are TWO babysitters and the stop path knows only one:
+     - `.swarmforge/babysitter/` + `start_babysitter.sh` — what
+       `stop_ancillary_services.sh` targets. Its log's mtime was **Jul 22 16:43**;
+       it had been dead for three days.
+     - `./.swarmforge/operator/babysitterd.sh` — PID 2073141, **up 1d08h**, the
+       one actually performing 5-minute deterministic sweeps that nudge the
+       coordinator. Operator-launched, unknown to the stop path, survived.
+  2. **`stopping operator runtime` succeeded and the Operator AGENT survived** —
+     PID 1149684, elapsed **2d06h**, `--remote-control Operator`, with 6
+     unprocessed events in `events.inflight.jsonl`. An Operator whose job is to
+     health-check and recover the swarm, left alive next to a deliberately
+     stopped swarm, can restart what was just stopped.
+
+  Both had to be SIGTERMed by hand. So the scope problem is not only in the names:
+  `stop_ancillary_services.sh` genuinely does not cover everything the ancillary
+  start path (and the operator, by hand) brings up. Whatever the specifier decides
+  about naming, add a scenario for each of these two.
+
+  Suggested and cheap: have the stop path VERIFY rather than assume, and refuse to
+  print "clean slate" while a known-supervised process is still alive. A teardown
+  that reports success while two daemons run is worse than one that reports a
+  partial stop, because the operator stops checking.
+
+  Note the self-match trap when auditing this by hand: `ps -eo args | grep -c
+  babysitterd` and `pgrep -f handoffd.bb` both match the auditing shell's OWN
+  command line and report phantom survivors. Count by parsing `ps` output, or the
+  audit invents processes that do not exist.
+
 notes: |
   Priced `severity: medium`: nothing is broken at runtime, but the failure mode is
   a human confidently believing the stack is down when it is not — during exactly
