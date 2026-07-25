@@ -124,8 +124,8 @@ description: |
   `SWARMFORGE_ROLE` — refuse a commit on `main` from any role but QA, with
   `specifier`/`coordinator` allowed the bookkeeping paths — is now viable and
   would have blocked all four commits at source. It is still not in THIS
-  ticket's scope (the deploy gate is), but the specifier should say whether it
-  wants it as its own ticket rather than treat it as settled-rejected.
+  ticket's scope (the deploy gate is): the operator ruled it out to its own
+  ticket, **BL-632**, filed 2026-07-25.
 
 acceptance: |
   Specifier writes the scenarios. Minimum behaviour:
