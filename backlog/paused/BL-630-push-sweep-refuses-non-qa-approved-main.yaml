@@ -1,0 +1,123 @@
+id: BL-630
+title: "`handoffd`'s `push-sweep!` must refuse to publish a `main` tip that is not QA-approved — the path that made the BL-590 landing irreversible"
+milestone: M8
+type: defect
+status: todo
+epic: swarm-reliability
+human_approval: approved
+severity: high
+priority: 04
+direction: human-requested
+depends_on: []
+assigned_to: specifier
+mutation_cost: medium
+
+approval_context: >
+  Operator ruling 2026-07-25, during the BL-590 post-mortem. BL-629 gates the
+  DEPLOY step (`build_freshness_cli.bb sync`) but says nothing about the PUBLISH
+  step. The post-mortem established that publish, not deploy, is what made the
+  incident unrecoverable — so the same gate is needed one layer earlier.
+
+source: |
+  BL-590 post-mortem, 2026-07-25. BL-629 correctly gates `sync`, but the harm
+  was already done before any deploy: every non-QA-approved commit was on
+  GitHub within 15-140 seconds of being made.
+
+  `handoffd`'s `push-sweep!` (`swarmforge/scripts/handoffd.bb:1805`, called from
+  the main tick at `:2301`) runs `git push origin main` on every daemon tick
+  whenever local `main` is ahead of `origin/main`. It has **no QA-ancestry
+  check** of any kind.
+
+  Verified from `.git/logs/refs/remotes/origin/main` — each bad commit and the
+  push that published it:
+
+  ```
+  f8dc07963  merge of coder WIP   committed 10:23:16  ->  pushed 10:23:20
+  ebd12542d  cleaner on main      committed 10:26:35  ->  pushed 10:26:37
+  f69abdc23  merge of coder WIP   committed 11:04:54  ->  pushed 11:05:09
+  cce634a6c  cleaner on main      committed 11:09:55  ->  pushed 11:10:04
+  ```
+
+  This is why the incident could not be undone. The cleaner detected its own
+  error and self-repaired with `git reset --hard` at 11:11:24 — 80 seconds too
+  late. `cce634a6c` was already on origin, so the reset only rolled back the
+  local branch and left `main` behind `origin/main`; a human had to
+  fast-forward it back by hand to unjam the sweep.
+
+description: |
+  ## The gap
+
+  `push-sweep!` publishes whatever local `main` points at. Its decision function
+  (`push_sweep_lib.bb:52` `push-decision`) branches on `ahead`/`behind` counts
+  only — it has no notion of "this tip contains work that never passed QA,
+  refuse to publish it".
+
+  Three layers were supposed to protect `main`, and all three were absent:
+
+  | layer | what it does | status |
+  |---|---|---|
+  | commit-time | stop a role committing on `main` | none (see BL-629 out_of_scope, now reopened) |
+  | **publish-time** | **stop a bad `main` reaching origin** | **none — this ticket** |
+  | deploy-time | stop a bad `main` reaching the daemons | none (BL-629) |
+
+  Publish-time is the load-bearing one, because it is the only irreversible
+  step: a local mistake is a `git reset`, a published mistake needs a
+  force-push over a shared remote and is ruled out by policy.
+
+  ## Shape
+
+  Mirror BL-629's gate at the publish boundary. Before pushing, `push-sweep!`
+  checks whether the tip it would publish is an ancestor of `swarmforge-QA`:
+
+  ```
+  git merge-base --is-ancestor <main-tip> swarmforge-QA
+  ```
+
+  On failure: do not push, log the offending sha(s), and treat it as its own
+  alarm class — NOT as a transient push failure. The existing bounded-retry and
+  divergence state machines in `push_sweep_lib.bb` must not absorb it, because
+  retrying will never fix it and the existing "main is not reaching origin"
+  email would actively mislead a human into pushing by hand.
+
+  The specifier decides whether the refusal is total or whether the
+  bookkeeping-only allowlist established in BL-631 (a tip whose non-QA commits
+  touch only `backlog/`, `docs/`, `swarmforge/`) may still publish. Note the
+  cost of a total refusal: the coordinator's routine backlog bookkeeping stops
+  reaching origin for as long as any pipeline work sits un-QA'd on `main`, which
+  on this swarm is most of the day. Recommend the allowlist.
+
+acceptance: |
+  Specifier writes the scenarios. Minimum behaviour:
+
+  1. `push-sweep!` does not push when the tip it would publish contains a commit
+     that is not an ancestor of `swarmforge-QA` (subject to whatever allowlist
+     the specifier settles on).
+  2. The refusal is logged with the offending sha(s) named, and is
+     distinguishable in `handoffd.log` from `up-to-date`, `diverged` and a
+     failed push.
+  3. The existing push-failure retry/backoff and divergence alarms do NOT fire
+     for this case — a QA refusal is a distinct, non-transient condition and
+     must not produce the "check network/auth and push by hand" email.
+  4. A normal QA-approved tip publishes exactly as it does today, with no added
+     latency on the common path.
+  5. Regression test: a `main` containing a non-QA-ancestor commit that touches
+     `extension/src/` is not pushed.
+
+out_of_scope: |
+  - The deploy-time gate on `build_freshness_cli.bb sync` — that is BL-629.
+  - Detection and alerting on a bad `main` — that is BL-631.
+  - Force-pushing or otherwise rewriting the four commits already on
+    `origin/main`. Operator ruled fix-forward 2026-07-25.
+
+notes: |
+  Related post-mortem finding, worth a scenario even though it is pre-existing
+  behaviour: `push-decision` (`push_sweep_lib.bb:52-59`) returns
+  `:nothing-to-push` whenever `ahead = 0`, regardless of `behind`. That is
+  deliberate and documented at `:49-51` (the sweep pushes, it never pulls) — but
+  it means a local `main` that is BEHIND origin logs `up-to-date` indefinitely
+  and nothing surfaces it. That is exactly the state the cleaner's self-repair
+  left the repo in on 2026-07-25, and it stayed invisible until a human ran
+  `git rev-list --left-right --count` by hand. The next commit on local `main`
+  would have flipped it to ahead=1/behind=1 and jammed the sweep into
+  `:diverged`. Consider surfacing "behind with nothing to push" as a distinct
+  log line at minimum.

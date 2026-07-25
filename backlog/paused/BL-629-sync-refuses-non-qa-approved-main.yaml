@@ -61,14 +61,46 @@ description: |
   operational freeze agreed for this incident is carried by nothing more
   durable than a human remembering.
 
-  ## Root cause to confirm (specifier owns this)
+  ## Root cause — ESTABLISHED 2026-07-25, supersedes the original hypothesis
 
-  The working hypothesis, from the incident notes: under the mono-router pack
-  a single resident rotates through roles, and its worktree/branch can lag, so
-  a role's commit lands on whatever branch the master checkout happened to
-  have out. See the recorded rotate/worktree-lag failure mode. The specifier
-  should confirm this rather than assume it — a guard aimed at the wrong cause
-  is worse than none, because it reads as protection.
+  This section originally named the mono-router rotating-worktree lag as the
+  working hypothesis and asked the specifier to confirm it. **A post-mortem the
+  same day disproved it.** Rotation worked correctly: every role's launch script
+  cds to its own worktree (`.swarmforge/launch/cleaner.sh:5`), each role's
+  transcript sits under its own project dir, and the coder's commits are in
+  `.worktrees/coder`'s own HEAD reflog. Do not build on the lag hypothesis.
+
+  **Actual cause: the cleaner prefixed `cd /home/carillon/swarmforgevc` to its
+  own git commands, so it ran its entire BL-590 pass in the MASTER checkout,
+  which has `main` checked out.** From the role's own transcript
+  (`~/.claude/projects/-home-carillon-swarmforgevc--worktrees-cleaner/ad7326f1-*.jsonl`):
+
+  ```
+  e18   cd /home/carillon/swarmforgevc && merge_and_process coder 73706d79ed
+  e38   cd /home/carillon/swarmforgevc && git merge 73706d79ed --no-ff   -> f8dc07963 on main
+  e66   Read /home/carillon/swarmforgevc/extension/src/onboarding/...ts  (".worktrees/cleaner/" dropped)
+  e223  cd /home/carillon/swarmforgevc && git add -A && git commit        -> ebd12542d on main
+  ```
+
+  The parcel's own first instruction (`merge_and_process cleaner <sha>`) ran in
+  the wrong checkout, so `main` became the working branch for the whole pass.
+  Nothing errored: `main` already held the coder's code from the cleaner's own
+  bad merge at e38, so the wrong-path reads returned plausible content.
+
+  Two aggravating findings, both with their own tickets:
+
+  - `git add -A` in a shared checkout swept the operator's uncommitted morning
+    edits (`human_approval: pending -> approved` on BL-619..BL-625,
+    `docs/briefings/.sent.json`) into a commit titled "By cleaner."
+  - `handoffd`'s `push-sweep!` published every bad commit to `origin/main`
+    within 15-140 seconds, with no QA check. **BL-630.**
+  - Nothing detected any of it; an architect found it by eye hours later.
+    **BL-631.**
+
+  The mono-router is relevant in one way only: `mono-router.conf` has
+  `window specifier claude master`, so a pipeline role living in the master
+  checkout on `main` is a NORMAL state in this pack. That makes the slip
+  invisible — it does not cause it.
 
   ## Shape
 
@@ -85,9 +117,15 @@ description: |
      to spot it. Cheaper than preventing the landing, and it shortens the
      window.
 
-  Preventing the landing itself (a pre-commit or branch-protection style
-  control) is deliberately NOT proposed here — it fights the mono-router's
-  rotating-worktree design, and the deploy-time gate already stops the harm.
+  Preventing the landing itself was originally rejected here on the grounds
+  that it "fights the mono-router's rotating-worktree design". **That reasoning
+  died with the hypothesis it rested on** (see the root cause section). A
+  `pre-commit`/`pre-merge-commit` hook in the master checkout, keyed on
+  `SWARMFORGE_ROLE` — refuse a commit on `main` from any role but QA, with
+  `specifier`/`coordinator` allowed the bookkeeping paths — is now viable and
+  would have blocked all four commits at source. It is still not in THIS
+  ticket's scope (the deploy gate is), but the specifier should say whether it
+  wants it as its own ticket rather than treat it as settled-rejected.
 
 acceptance: |
   Specifier writes the scenarios. Minimum behaviour:
