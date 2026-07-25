@@ -2,7 +2,7 @@ id: BL-616
 title: "What triggers ModelFactory `assign`? — human ruling on autonomous cold-apply (restarts the swarm)"
 milestone: M5
 type: feature
-status: needs_design
+status: done
 epic: swarm-intelligence-layer
 severity: medium
 priority: 30
@@ -28,6 +28,44 @@ approval_context: >
   guardrail requirements for b/c); the specifier then writes the executable
   spec for that option as this ticket's scope. Firm: no autonomous trigger
   ships before this ruling — BL-563 explicitly excludes it.
+human_ruling: |
+  RULED by the human 2026-07-25: **OPTION (a) — human CLI only — but STAGED,
+  not permanent.** No autonomous trigger ships. `model_factory_cli.bb assign`
+  and `cold-apply` stay operator-invoked acts.
+
+  THE REASON MATTERS, because it carries an expiry. The trigger question is
+  PREMATURE while `cold-apply` is the only apply path. Verified at ruling time:
+  `model_factory_cli.bb` exposes exactly `assign`, `cold-apply`,
+  `mark-exhausted`, `resolve-model` — there is no warm/hot apply, and
+  `cold-apply` runs `model_factory_default_launch_seam.sh`
+  (`kill_all_swarm.sh` + relaunch). So EVERY option in the fork, including the
+  bounded option (c), currently means tearing down and relaunching the whole
+  swarm.
+
+  That is not an acceptable thing to automate on this host. The relaunch path
+  has repeatedly half-failed here: SWARM_CONTROL_LOST half-launches, 8x
+  AGENT_EXITED storms, a relaunch issued from the Operator window getting
+  reaped, supervisor futex-hangs. Option (b) is the worst pairing available —
+  its quota-exhaustion signal fires precisely when the swarm is BUSY, and it
+  would fire unattended.
+
+  Designing guardrails now (only-at-idle, coordinator ack, dry-run gate) would
+  mean engineering around a restart that hot-swap simply removes.
+
+  **REOPEN CONDITION — this fork is dormant, not closed on the merits.** When
+  **BL-525 slice 2 (hot swap)** lands, a warm apply makes the blast radius
+  negligible and options (b) and (c) become cheap. At that point re-open this
+  question as a new ticket; do NOT let slice 2 ship an autonomous trigger by
+  default just because the risk dropped — the ruling to automate is still a
+  human one.
+
+  BL-525 sits in `backlog/done/` having shipped slice 1 (cold swap) only;
+  slice 2 needs a re-promotion, which is the natural moment to check this.
+
+  Same shape as the operator's standing "conversational first, formalize
+  later" rule: stay manual until the mechanism is mature enough that
+  formalising it is cheap.
+
 source: |
   Split out of BL-563 by the specifier 2026-07-24 while firming its slices.
   BL-563's original "Slice 3" text and the operator-session audit
@@ -47,7 +85,11 @@ description: |
   this ticket (or closes it as "status quo confirmed" if option (a) wins).
 
 acceptance: |
-  Not executable yet by design — this is a needs_design ruling ticket. After
-  the human ruling: if option (a), close with the ruling recorded here; if
-  (b) or (c), the specifier replaces this field with a path to a feature file
-  specced for the chosen option (with its guardrails) before any promotion.
+  SATISFIED 2026-07-25 by the ruling itself — option (a) was chosen, and this
+  ticket's own acceptance clause says that case closes with the ruling
+  recorded here (see `human_ruling`). No feature file, no buildable scope, no
+  promotion: the deliverable was the decision.
+
+  Nothing in the codebase changes as a result. `assign` and `cold-apply` were
+  already human-invoked; this ruling confirms that is intentional and states
+  the condition under which it stops being.

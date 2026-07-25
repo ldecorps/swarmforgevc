@@ -1,0 +1,118 @@
+id: BL-628
+title: "Bare-host bootstrap for an AUTONOMOUS swarm on a remote box — the two existing provisioners cover the halves but do not compose"
+milestone: M8
+type: feature
+status: todo
+epic: fleet-topology
+human_approval: approved
+severity: medium
+priority: 08
+direction: human-requested
+depends_on: []
+assigned_to: specifier
+mutation_cost: medium
+
+approval_context: >
+  Operator asked on 2026-07-25 how to onboard a new project AND deploy the
+  swarm that will work it onto a VPS. Investigation showed the automation
+  covers neither end of that combination; the operator asked for the gap to be
+  ticketed.
+
+source: |
+  Operator, 2026-07-25: wants to start a new project and run its swarm on an
+  idle VPS (a Mac is the alternative target). Both halves of the mechanism
+  exist and are proven; neither composes into that use case.
+
+description: |
+  ## The gap, precisely
+
+  Two provisioners exist in `swarmforge/deploy/`, and each has exactly half of
+  what a new-project-on-a-remote-box needs:
+
+  | script | bare-host bootstrap (packages, pinned substrate, clone, headless auth) | swarm shape it produces |
+  |---|---|---|
+  | `provision_secondary_host.sh` (BL-101) | **yes, complete** | **secondary only** |
+  | `provision_primary_host.sh` (BL-359) | **no** — assumes the host is already set up | primary, but installs only the operator + front-desk units |
+
+  `provision_secondary_host.sh` hardcodes the secondary shape: it calls
+  `generate_secondary_conf.sh`, which substitutes a `swarm_name` into
+  `packs/second-swarm.conf`. That template is
+  `config swarm_mode secondary primary` — a swarm that works only tickets the
+  PRIMARY coordinator assigned to its `swarm_name`, never promotes, never
+  assigns, and **is refused a coordinator window at launch** (BL-090
+  multi-swarm-06). It is a throughput brick for the EXISTING backlog.
+
+  A new project needs the opposite: a full autonomous swarm with its own
+  coordinator, its own backlog, its own target repo, and its own Telegram
+  channel. That shape is **proven** — BL-439 brought up FES exactly so — but it
+  was done BY HAND from a desktop checkout, with none of BL-101's headless
+  machinery (systemd units, pinned substrate, `DISABLE_AUTOUPDATER`, reboot
+  resilience, headless `claude` auth).
+
+  So today the operator must hybridise: run the secondary provisioner for its
+  substrate work, then discard the conf and units it generated and enabled,
+  hand-place a full pack, and run `provision_primary_host.sh` over the result.
+  That is error-prone precisely on an unattended internet-facing box, which is
+  the case BL-101's own security posture section takes most seriously.
+
+  ## Shape (specifier owns the detail)
+
+  The likely smallest change is to lift the shape decision out of
+  `provision_secondary_host.sh` rather than write a third provisioner: its
+  steps 1-4 (packages, pinned substrate from `swarmforge.lock.json`,
+  `DISABLE_AUTOUPDATER`, clone) are shape-agnostic already. Only steps 5-6
+  (conf generation + which systemd units get enabled) branch.
+
+  The specifier should decide between a flag on the existing script and a
+  shared library both provisioners call, and must NOT duplicate
+  `generate_systemd_units.sh`'s unit-content logic — BL-359's own comment is
+  explicit that reusing that generator, never re-implementing it, is the rule.
+
+  Whatever the split, the acceptance must cover the fact that an autonomous
+  swarm needs the **front-desk unit** too (its own Telegram channel), which
+  `provision_secondary_host.sh` today never installs — BL-359 called that
+  omission out as "exactly as dark as no unit at all".
+
+acceptance: |
+  Specifier writes the scenarios. Minimum behaviour:
+
+  1. A single documented path takes a bare Linux box to a running AUTONOMOUS
+     swarm — own coordinator, own backlog, own target repo — with the same
+     headless guarantees BL-101 already gives the secondary shape: pinned
+     substrate, `DISABLE_AUTOUPDATER=1`, systemd units enabled, survives a
+     reboot with no human action.
+  2. The autonomous path installs the front-desk unit as well as the operator
+     and swarm units. A swarm with its own Telegram channel and no front-desk
+     unit is not a completed bring-up.
+  3. The secondary path (BL-101) still works unchanged — this ticket must not
+     regress the throughput-brick use case, which is a different and still
+     valid shape.
+  4. `swarm_name` collision is still rejected (BL-090 multi-swarm-06) on the
+     autonomous path.
+  5. A dry-run mode exists on the autonomous path, mirroring
+     `PROVISION_PRIMARY_DRYRUN=1`, so the operator can inspect what would be
+     installed on an internet-facing box before it happens.
+  6. The runbook states explicitly where the onboarding ceremony happens: on
+     the PRIMARY box against a GitHub URL (BL-590 ruling 2), producing a
+     committed contract and prompts that the remote box then pulls. The remote
+     box is never where the contract is negotiated.
+
+out_of_scope: |
+  - The onboarding ceremony itself. Survey/propose/negotiate/gate are shipped
+    (BL-262/269/344/380/381, proven end-to-end in BL-405) and run on the
+    primary box. This ticket only covers standing the swarm up afterwards.
+  - Telegram token separation. That is BL-622 (`severity: high`, expedited),
+    and it is a PREREQUISITE for this ticket being safe to use: a second swarm
+    that inherits the primary's token steals its messages. Do not fold it in;
+    do not ship this without it.
+  - Changing the secondary shape or `packs/second-swarm.conf`.
+  - Any Windows/Mac host automation. `deploy/windows/` exists separately; this
+    ticket is the Linux remote-host path (VPS, Pi).
+
+notes: |
+  Verified at filing time (2026-07-25): `model` of the gap is not theoretical —
+  the operator has an idle VPS and a new project ready. BL-101 itself is code
+  complete and merged (cb2b0632c6), blocked only on operator hardware
+  verification via `docs/how-to/BL-101-pi-vps-secondary-swarm-bringup.md`
+  section 10. Doing that verification first would de-risk this ticket, since it
+  exercises steps 1-4 — the shape-agnostic half this ticket wants to reuse.
