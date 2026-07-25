@@ -285,7 +285,10 @@
    failed restart as a failed ticket."
   [{:keys [ticket restart]}]
   (let [ticket-ok? (= :done ticket)
-        restart-ok? (or (nil? restart) (= :ok restart))]
+        ;; :degraded (start command fine, swarm came up short) is NOT ok — it
+        ;; must be loud — but it is reported as its own outcome so nobody
+        ;; debugs the start path when the start path worked.
+        restart-ok? (boolean (or (nil? restart) (#{:ok :not-attempted} restart)))]
     {:ticket ticket
      :ticket-ok? ticket-ok?
      :restart (or restart :not-attempted)
