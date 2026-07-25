@@ -1,0 +1,156 @@
+id: BL-647
+title: "`dead-agent-events` is blind to the rotation router: under the DEFAULT mono-router pack it emits 6 permanent AGENT_EXITED, and the LLM Operator has woken on that same false positive 525 times"
+milestone: M8
+type: defect
+status: todo
+epic: swarm-behaviour-trends
+human_approval: approved
+severity: high
+priority: 02
+direction: human-requested
+depends_on: []
+assigned_to: specifier
+mutation_cost: low
+
+approval_context: >
+  Operator, 2026-07-25: "je trouve curieux que l'operator se réveille très souvent
+  sur un faux positif" — then, once measured, "encore un defect à corriger asap".
+  The instinct was right and the measurement is worse than "souvent": the same six
+  events have fired 525 times across four days.
+
+source: |
+  ## Measured
+
+  ```
+  grep -c "SWEEP: 6x AGENT_EXITED" .swarmforge/operator/operator.log   ->  525
+  first  2026-07-18T03:09:35Z      last  2026-07-25T15:28:01Z
+  days   07-18, 07-22, 07-23, 07-25
+  ```
+
+  The Operator's own log narrates the loop it is trapped in:
+
+  > `SWEEP: 6x AGENT_EXITED(specifier,cleaner,architect,hardender,documenter,QA)
+  > = recurring mono-router 2-pack FALSE-POSITIVE (43rd+ sweep this session …)
+  > Only swarmforge-coder + swarmforge-coordinator windows exist BY DESIGN
+  > (both dead=0); agents_running:2 matches status.json`
+
+  Every one of those 525 wakes is a full LLM launch that reaches the correct
+  conclusion — "nothing is wrong" — and changes nothing, because the next tick
+  produces the identical six events.
+
+  ## Root cause — a one-line input, never wired
+
+  `swarmforge/scripts/operator_lib.bb:598`
+
+  ```clojure
+  (defn dead-agent-events [expected-roles live-sessions]
+    (->> expected-roles
+         (remove #(contains? (set live-sessions) (:session %)))
+         (map (fn [{:keys [role session]}]
+                {:type "AGENT_EXITED" :subject role ...}))))
+  ```
+
+  `expected-roles` is every row of `roles.tsv` — all EIGHT:
+
+  ```
+  coder specifier cleaner architect hardender documenter QA coordinator
+  ```
+
+  Under a `rotation router` pack exactly TWO tmux sessions exist by design: the
+  coordinator, and the single resident currently rotated to one role. The other six
+  roles have no session **because that is what a mono-router is**. So the producer
+  reports six dead agents, correctly by its own definition, permanently.
+
+  `operator_runtime.bb` contains the word `rotation` exactly twice — `:1020`
+  (`swarm-identity-lib/conf-rotation-mode`, in relaunch) and `:1056`. Neither is
+  anywhere near the liveness producer at `:1616`. **The rotation mode is already
+  resolved elsewhere in the same file; it was simply never handed to the producer.**
+
+description: |
+  ## The real harm is not the tokens — it is desensitisation
+
+  BL-368 went to considerable lengths to keep two facts apart, and the code says so
+  at length (`operator_lib.bb:591-597`, `operator_runtime.bb:1602-1607`): "agents
+  dead" and "control lost" are DIFFERENT FACTS and must never collapse into the
+  same `N x AGENT_EXITED` shape.
+
+  That care is spent for nothing if, under the default pack, `AGENT_EXITED` is
+  **100% noise**. A signal that has cried wolf 525 times cannot carry an alarm. The
+  day the resident genuinely dies, the event is a seventh line in a batch of six
+  that every previous sweep correctly dismissed — and the Operator's own reasoning
+  is now primed, by 525 precedents and by its own memory notes, to dismiss it.
+
+  This is also why it is filed `severity: high` while being a "false alarm": the
+  defect does not break the swarm, it disarms the thing that watches the swarm.
+
+  ## Cost, secondary but real
+
+  Each wake launches the Operator on `claude-opus-4-8`
+  (`swarmforge/scripts/operator.claude-settings.json:2`), reads the full swarm
+  state, cross-checks live processes and windows, writes a paragraph of findings,
+  and exits. 525 times, to conclude nothing is wrong.
+
+  ## Shape
+
+  The producer must be told what the pack IS before it decides which roles are
+  expected to hold a session.
+
+  1. **Feed `conf-rotation-mode` to the liveness sweep.** It is already resolved in
+     the same file (`operator_runtime.bb:1020`). Under `rotation router`, the
+     expected-session set is `{coordinator} ∪ {the active resident}` — read from
+     `.swarmforge/mono-router-active-role`, which is already maintained and already
+     the file the memory notes tell a human to check.
+  2. **A dormant role is not an absent role.** It needs its own vocabulary in the
+     runtime, so the distinction is in the code and not only in an operator's head.
+  3. **Non-rotation packs are untouched.** Under full-forge every expected-but-absent
+     role must still fire exactly as today.
+
+  ## Do NOT fix it by inferring the pack from the session count
+
+  "Two sessions therefore mono-router" would silently reclassify a real 8-pack that
+  has just lost six agents — the exact storm shape BL-372 documents
+  (`swarm_detach_lib.bb:7-14`, twice on 2026-07-14) — as normal. Read the conf.
+  This ticket makes a loud signal quiet; the one thing it must never do is make a
+  genuine storm quiet.
+
+acceptance: |
+  Specifier writes the scenarios. Minimum behaviour:
+
+  1. Rotation-router pack, coordinator + one resident live, six roles dormant:
+     `dead-agent-events` returns `[]`. Fixture from the live system —
+     `roles.tsv`'s 8 rows, live-sessions `{swarmforge-coder, swarmforge-coordinator}`,
+     active-role `coder`.
+  2. **Non-vacuity, load-bearing:** kill the ACTIVE resident under the same pack and
+     exactly one `AGENT_EXITED` fires, naming the active role. A fix that returns `[]`
+     unconditionally passes item 1 and is worthless; item 2 is what proves it is not
+     that fix.
+  3. Coordinator dies under a rotation pack: one `AGENT_EXITED`. The coordinator is
+     never a rotation target and is always expected.
+  4. Non-rotation pack (full-forge 7/8): behaviour byte-identical to today — every
+     expected-but-absent role fires.
+  5. Rotation mode comes from the conf, never inferred from how many sessions are
+     live. Fixture: a full-forge pack showing only 2 live sessions still emits 6.
+  6. Mid-rotation window (the resident's old session gone, the new one not yet up)
+     does not emit a spurious event. This is the race the fix is most likely to
+     introduce; state explicitly how it is handled.
+
+out_of_scope: |
+  - Draining the currently-stale `events.inflight.jsonl`. Operational, and it refills
+    on the next tick anyway until this lands — which is the point of the ticket.
+  - Migrating the Operator's seat off `claude-opus-4-8` to Opus 5. Real, separate,
+    and tracked under the ancillary-seat migration.
+  - `SWARM_CONTROL_LOST` and BL-368's distinction. Untouched; this ticket protects
+    it rather than modifying it.
+  - The Operator's per-wake reasoning. It is behaving correctly — it verifies against
+    live processes before acting, every time. The producer is what is wrong.
+
+notes: |
+  The interesting shape, and it is the same one as BL-646 filed an hour earlier:
+  **every agent involved behaved correctly and the outcome was still bad.** The
+  Operator verified rather than reacted, 525 times. Its memory notes are accurate.
+  Its conclusions were right. The defect is upstream of all of it — a producer that
+  was written before the rotation router existed and never learned about it.
+
+  Worth recording for whoever picks this up: the operator's own log line is the best
+  specification of the desired behaviour that exists. It already knows exactly which
+  two sessions should be live and why. That knowledge belongs in the runtime.

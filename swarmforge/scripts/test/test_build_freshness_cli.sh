@@ -622,4 +622,43 @@ rm -f "$SYNC_ERR_LANDING"
 final_cleanup
 LIVE_ROOTS=()
 
+# ── BL-629 architect-pass finding 1: could_not_determine is asserted on the
+#    CLI's OWN JSON output, not just the pure tip-approval-status unit path.
+#    A real `git merge-base` failure - main and swarmforge-QA sharing no
+#    common ancestor (orphan branches), reproduced live, not a stubbed git -
+#    must surface as could_not_determine:true / approved:false in `report`,
+#    distinct from qa_ref_missing (the ref resolves fine here; the DIFF
+#    between the two refs is what cannot be determined) ────────────────────
+ROOT="$(mk_git_root)"
+LIVE_ROOTS+=("$ROOT")
+git -C "$ROOT" branch -M main
+git -C "$ROOT" checkout -q --orphan qa-orphan-629
+git -C "$ROOT" commit -q --allow-empty -m "orphan qa-approved history"
+git -C "$ROOT" branch -f swarmforge-QA qa-orphan-629
+git -C "$ROOT" checkout -q main
+
+git -C "$ROOT" merge-base main swarmforge-QA >/dev/null 2>&1
+MERGE_BASE_EXIT=$?
+[[ "$MERGE_BASE_EXIT" -ne 0 ]] || fail "629 gather-failed setup: expected main and swarmforge-QA to share no common ancestor"
+
+REPORT_GATHER_FAILED="$(bb "$CLI" "$ROOT" report)"
+check_629_could_not_determine() {
+  echo "$REPORT_GATHER_FAILED" | python3 -c "
+import json, sys
+d = json.load(sys.stdin)
+qa = d['qa_approval']
+assert qa['approved'] is False, 'a gather failure must never read as approved'
+assert qa['qa_ref_missing'] is False, 'the ref itself resolves fine - only the diff between the two refs fails'
+assert qa['could_not_determine'] is True, 'a real merge-base failure must surface as could_not_determine, not silently as offending_shas: []'
+assert qa['offending_shas'] == [], 'no shas can be named when the drift itself could not be gathered'
+"
+}
+if check_629_could_not_determine; then
+  pass "BL-629 could_not_determine: a real merge-base failure (no common ancestor) surfaces as could_not_determine:true / approved:false on the CLI's actual report JSON, distinct from qa_ref_missing"
+else
+  fail "BL-629 could_not_determine: unexpected qa_approval shape: $REPORT_GATHER_FAILED"
+fi
+final_cleanup
+LIVE_ROOTS=()
+
 echo "build_freshness_cli smoke: ALL CHECKS PASSED"

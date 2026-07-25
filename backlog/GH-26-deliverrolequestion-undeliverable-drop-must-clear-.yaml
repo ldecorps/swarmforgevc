@@ -1,0 +1,7 @@
+id: GH-26
+title: "deliverRoleQuestion undeliverable drop must clear the awaiting marker"
+source: https://github.com/ldecorps/swarmforgevc/issues/26
+description: |2
+  telegramFrontDeskBotCore.ts deliverRoleQuestion silently drops a role question when the role is absent from role-topic-map.json (or the map is unreadable), but role_ask.bb's role-awaiting/<role>.json marker is never cleared. The role is then wedged in already-pending forever and stops asking - observed: specifier no longer requests ticket clarification; today's QA bounces are the downstream symptom.
+  
+  Fix: on undeliverable, clear the marker (or rewrite it with state: undeliverable) AND surface it in status.json, same pattern as tunnel.state: auth_lost. Never a silent drop que wedges the guard

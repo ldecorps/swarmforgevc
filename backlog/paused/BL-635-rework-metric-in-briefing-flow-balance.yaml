@@ -1,12 +1,12 @@
 id: BL-635
 title: "Record ARCHITECT send-backs, not just QA bounces: the durable bounce log covers QA only, and the repeated-bounce pattern lives entirely in the unrecorded class"
 milestone: M8
-type: feature
+type: defect
 status: todo
 epic: swarm-behaviour-trends
 human_approval: approved
-severity: medium
-priority: 07
+severity: high
+priority: 01
 direction: human-requested
 depends_on: []
 assigned_to: specifier
@@ -18,6 +18,20 @@ approval_context: >
   operator then flagged that `bounce_count` is itself very new and asked whether
   what the documenter relied on beforehand was ever persistent. It was not.
   This ticket closes that hole so the question becomes answerable.
+
+priority_history: |
+  07 -> 01, operator directive 2026-07-25 18:10, alongside [[BL-633]] — see that
+  ticket's priority_history for the full argument.
+
+  Rides at the same priority as BL-633 deliberately: BL-633 is the relief, this is
+  the instrument that says whether the relief worked. Ship them together or the
+  relief ships on faith.
+
+  Sharpened by the same day's evidence: BL-629 took its THIRD architect send-back
+  and `bounce_count` on its ticket is still ABSENT — nothing recorded a single one
+  of the three. The operator's own standing bound is "3 barely, 8 no way", and today
+  a ticket hit that bound with no counter anywhere in the system able to notice.
+  A bound that nothing can measure is not a bound.
 
 source: |
   BL-590 post-mortem, 2026-07-25.
@@ -168,6 +182,23 @@ description: |
   It is the cheapest of the three (`mutation_cost: low` — one metric into an
   existing pipeline) AND it is what makes the other two falsifiable. Land the
   process changes first and there will be no before-picture to compare against.
+
+  ## RETYPED feature -> defect, high (operator directive 2026-07-25: "il faut expediter")
+
+  Not a reclassification of convenience. `record-qa-bounce.js` is invoked from exactly
+  one place, `QA.prompt`, so ARCHITECT send-backs — where repeated bouncing actually
+  happens — are recorded nowhere, and `bounce_count` is present on exactly ONE ticket
+  in the whole backlog: BL-608's own.
+
+  A measurement mechanism that silently covers half its domain while reporting the
+  other half as complete is BROKEN, not missing. Reading the QA log alone concludes
+  "repeat bouncing does not happen here" (1 ticket of ~52 in 15 days) — the exact
+  opposite of the truth for architect send-backs, which reached six on one ticket the
+  day this was filed.
+
+  `severity: high` because this is the INSTRUMENT. Without it there is no way to tell
+  whether BL-633 and BL-634 reduced the 21.8% rework rate, so the whole spec-quality
+  initiative ships on faith. Fixing the ruler comes before trusting the measurements.
 
 acceptance: |
   Specifier writes the scenarios. Minimum behaviour:
