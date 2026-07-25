@@ -177,9 +177,9 @@ import { atomicWrite } from '../util/atomicWrite';
 import { handleOnboardingMessage } from '../onboarding/onboardingFacilitatorState';
 import {
   listOnboardingFacilitatorStates,
-  writeOnboardingFacilitatorState,
-  hasProcessedOnboardingUpdateId,
-  recordProcessedOnboardingUpdateId,
+  findProcessedOnboardingUpdate,
+  writeOnboardingStateAndMarkUpdateProcessed,
+  markOnboardingUpdateDelivered,
 } from '../onboarding/onboardingFacilitatorStateStore';
 import { isSwarmReady, defaultRoleBootstrapped } from '../swarm/swarmLauncher';
 import { readBounceAck, BouncePhase } from '../swarm/bounceAck';
@@ -795,12 +795,16 @@ export async function ensureOnboardingTopic(targetPath: string, botToken: string
 // and sends the resulting message back into the same topic. The only
 // branching on message CONTENT lives in handleOnboardingMessage itself
 // (pure, unit-tested); this function is I/O only.
-// BL-590 architect bounce (defect 1, 2026-07-25): gated on
-// hasProcessedOnboardingUpdateId FIRST, mirroring openSubjectAndRecord's
-// (BL-389) updateOpenKey guard and postOperatorContext's hasUpdateId guard -
-// a redelivered updateId short-circuits before EITHER the durable state
-// write or the outbound send, so redelivery is a true no-op rather than a
-// spurious verification-failure message for the wrong step.
+// BL-590 architect bounce #2 (defect 1 residual, 2026-07-25): the guard is a
+// per-target SET keyed by updateId (findProcessedOnboardingUpdate), not a
+// single last-processed scalar, so ANY already-processed id short-circuits
+// here - not just the newest one - which is what a stuck head-of-line
+// delivery in the same getUpdates batch requires (offsetAfterDelivery parks
+// the offset there, redelivering every already-processed id after it too).
+// A redelivered id that was applied but never successfully SENT retries
+// ONLY the send, with the message computed on the first attempt - never
+// re-runs handleOnboardingMessage, which would misapply that (possibly
+// stale) text against whatever step the state has since moved to.
 export async function handleOnboardingFacilitatorMessage(
   targetPath: string,
   botToken: string,
@@ -810,16 +814,33 @@ export async function handleOnboardingFacilitatorMessage(
   updateId: number,
   postFn?: TelegramPostFn
 ): Promise<boolean> {
-  if (hasProcessedOnboardingUpdateId(targetPath, updateId)) {
-    return true;
+  const already = findProcessedOnboardingUpdate(targetPath, updateId);
+  if (already) {
+    if (already.record.delivered) {
+      return true;
+    }
+    const retry = await sendTelegramMessage(botToken, chatId, already.record.message, undefined, postFn, topicId);
+    if (retry.success) {
+      markOnboardingUpdateDelivered(targetPath, already.targetRepoUrl, updateId);
+    }
+    return retry.success;
   }
+
   const states = listOnboardingFacilitatorStates(targetPath);
   const outcome = handleOnboardingMessage(states, text, Date.now);
-  if (outcome.kind !== 'no-active-onboarding') {
-    writeOnboardingFacilitatorState(targetPath, outcome.state);
+  if (outcome.kind === 'no-active-onboarding') {
+    // No target, therefore nothing durable to guard - a redelivery here
+    // recomputes the exact same constant message with no state mutation,
+    // so at worst it is a harmless duplicate send, never a wrong-step
+    // misapplication.
+    const result = await sendTelegramMessage(botToken, chatId, outcome.message, undefined, postFn, topicId);
+    return result.success;
   }
+  writeOnboardingStateAndMarkUpdateProcessed(targetPath, outcome.state, updateId, outcome.message);
   const result = await sendTelegramMessage(botToken, chatId, outcome.message, undefined, postFn, topicId);
-  recordProcessedOnboardingUpdateId(targetPath, updateId);
+  if (result.success) {
+    markOnboardingUpdateDelivered(targetPath, outcome.state.targetRepoUrl, updateId);
+  }
   return result.success;
 }
 
