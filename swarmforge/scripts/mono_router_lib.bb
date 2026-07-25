@@ -227,12 +227,18 @@
   "True when the current role should rotate back to home instead of
    reporting NO_TASK: mono-router is active, this role is NOT home, and its
    mailbox (in_process + dequeueable new/) is empty. The home role itself
-   never rotates to itself, and a role holding real work is never diverted."
+   never rotates to itself, and a role holding real work is never diverted.
+
+   The coordinator is reserved infrastructure, never part of the rotation
+   (BL-614) - it never rotates regardless of mailbox state, rotation mode,
+   or home role, even in the degenerate case where home-role is somehow
+   \"coordinator\"."
   [{:keys [rotation-router? role home-role mailbox-empty?]}]
   (boolean
    (and rotation-router?
         mailbox-empty?
         role
+        (not= (str role) "coordinator")
         (not= (str role) (str home-role)))))
 
 (defn should-rotate-resident?

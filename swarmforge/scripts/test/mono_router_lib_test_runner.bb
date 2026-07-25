@@ -194,6 +194,24 @@
                    {:rotation-router? true :role nil :home-role "coder"
                     :mailbox-empty? true})))
 
+;; ── BL-614: coordinator is reserved infrastructure, never rotates ────────
+(assert-true "coordinator never rotates, even with an empty mailbox and a non-coordinator home"
+             (not (mono-router-lib/rotate-home?
+                   {:rotation-router? true :role "coordinator" :home-role "coder"
+                    :mailbox-empty? true})))
+(assert-true "coordinator never rotates regardless of home-role identity"
+             (not (mono-router-lib/rotate-home?
+                   {:rotation-router? true :role "coordinator" :home-role "documenter"
+                    :mailbox-empty? true})))
+(assert-true "coordinator never rotates even in the degenerate case home-role is itself \"coordinator\""
+             (not (mono-router-lib/rotate-home?
+                   {:rotation-router? true :role "coordinator" :home-role "coordinator"
+                    :mailbox-empty? true})))
+(assert-true "coordinator never rotates with a non-empty mailbox either (belt and suspenders)"
+             (not (mono-router-lib/rotate-home?
+                   {:rotation-router? true :role "coordinator" :home-role "coder"
+                    :mailbox-empty? false})))
+
 ;; ── resident-poke-target? — which pane a chase poke lands on ────────────────
 
 (assert-true "rotate always targets the resident pane"
