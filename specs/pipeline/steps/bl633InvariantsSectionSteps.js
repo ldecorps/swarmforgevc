@@ -14,6 +14,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
 const { spawnSync } = require('node:child_process');
+const { after } = require('node:test');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const SCHEMA_DOC_PATH = path.join(REPO_ROOT, 'swarmforge', 'backlog-schema.md');
@@ -22,6 +23,19 @@ const ARCHITECT_PROMPT_PATH = path.join(REPO_ROOT, 'swarmforge', 'roles', 'archi
 const AUDIT_SCRIPT_PATH = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'backlog_epic_milestone_audit.bb');
 const HYGIENE_LIB_PATH = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'backlog_hygiene_lib.bb');
 const BL590_TICKET_PATH = path.join(REPO_ROOT, 'backlog', 'hold', 'BL-590-onboarding-facilitator-agent.yaml');
+
+// BL-633 hardening: scenario 04's fixture root was previously removed only in
+// the scenario's last step, so a throw in an earlier step (e.g. "the audit
+// exits zero" failing) left the mkdtemp directory behind. Track every root
+// created by this file and sweep them all once, after every test in the
+// generated entry point has run, regardless of which step failed.
+const pendingFixtureRoots = new Set();
+after(() => {
+  for (const root of pendingFixtureRoots) {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+  pendingFixtureRoots.clear();
+});
 
 // Collapses markdown line-wrapping into single spaces so a substring check
 // doesn't depend on exactly where a paragraph happens to wrap (same
@@ -37,7 +51,10 @@ function requireIncludes(text, fragment, label) {
 }
 
 function bbField(text, name) {
-  const code = `(load-file "${HYGIENE_LIB_PATH}") (println (pr-str (backlog-hygiene-lib/field ${JSON.stringify(text)} ${JSON.stringify(name)})))`;
+  // JSON.stringify escaping is a safe superset of what a Clojure string
+  // literal needs for a plain filesystem path (quotes/backslashes), so this
+  // never breaks even if REPO_ROOT ever contains one.
+  const code = `(load-file ${JSON.stringify(HYGIENE_LIB_PATH)}) (println (pr-str (backlog-hygiene-lib/field ${JSON.stringify(text)} ${JSON.stringify(name)})))`;
   const result = spawnSync('bb', ['-e', code], { encoding: 'utf8' });
   if (result.status !== 0) {
     throw new Error(`bb eval failed reading field "${name}": ${result.stderr}`);
@@ -74,7 +91,7 @@ function registerSteps(registry) {
   // Shared step text (scenarios 01 and 02) - checks whichever doc the
   // scenario's own Given step loaded into ctx.bl633Text.
   registry.define(/^it states that an absent or empty invariants list is a legitimate outcome$/, (ctx) => {
-    requireIncludes(ctx.bl633Text, 'legitimate outcome', 'the loaded document');
+    requireIncludes(ctx.bl633Text, 'is a legitimate outcome, not a failure', 'the loaded document');
   });
 
   // ── Scenario 02: the specifier role prompt ──────────────────────────────
@@ -111,6 +128,7 @@ function registerSteps(registry) {
   // ── Scenario 04: an existing ticket reader tolerates the new field ──────
   registry.define(/^a hygienic backlog fixture with two tickets identical except one declares an invariants list$/, (ctx) => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bl633-hygiene-'));
+    pendingFixtureRoots.add(root);
     const activeDir = path.join(root, 'backlog', 'active');
     fs.mkdirSync(activeDir, { recursive: true });
     const shared = 'title: "hygienic fixture ticket"\ntype: feature\nepic: test-epic\nmilestone: M8\npriority: 5\nmutation_cost: low\n';
@@ -133,16 +151,15 @@ function registerSteps(registry) {
   });
 
   registry.define(/^the fields the audit already reads parse identically for both tickets$/, (ctx) => {
-    try {
-      for (const name of ['type', 'epic', 'milestone']) {
-        const a = bbField(ctx.bl633Fixture.ticketAText, name);
-        const b = bbField(ctx.bl633Fixture.ticketBText, name);
-        if (a !== b) {
-          throw new Error(`field "${name}" parsed differently between the two fixture tickets: ${a} vs ${b}`);
-        }
+    // Cleanup for ctx.bl633Fixture.root lives in the module-level `after`
+    // hook above, not here - this step must stay pass/fail on the field
+    // comparison alone so an earlier-step failure still gets swept.
+    for (const name of ['type', 'epic', 'milestone']) {
+      const a = bbField(ctx.bl633Fixture.ticketAText, name);
+      const b = bbField(ctx.bl633Fixture.ticketBText, name);
+      if (a !== b) {
+        throw new Error(`field "${name}" parsed differently between the two fixture tickets: ${a} vs ${b}`);
       }
-    } finally {
-      fs.rmSync(ctx.bl633Fixture.root, { recursive: true, force: true });
     }
   });
 
