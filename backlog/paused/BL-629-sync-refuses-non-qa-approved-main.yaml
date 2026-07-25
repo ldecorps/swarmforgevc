@@ -1,0 +1,125 @@
+id: BL-629
+title: "`build_freshness_cli.bb sync` must refuse a `main` tip that is not QA-approved — the guard that would have contained the BL-590 pre-QA landing"
+milestone: M8
+type: defect
+status: todo
+epic: swarm-reliability
+human_approval: approved
+severity: high
+priority: 04
+direction: human-requested
+depends_on: []
+assigned_to: specifier
+mutation_cost: medium
+
+approval_context: >
+  Operator ruling 2026-07-25 on the BL-590 incident: fix forward rather than
+  revert, with the sync frozen until BL-590 clears QA, plus this
+  recurrence-guard ticket. The freeze itself is today an unenforced human
+  discipline — that is the defect.
+
+source: |
+  INCIDENT, 2026-07-25. All of BL-590 slice 1 — coder work, the rework for the
+  architect's first bounce, and the cleaner pass — reached `main` AND was
+  pushed to `origin/main` having passed neither architect (bounced twice),
+  hardener, documenter, nor QA. Article 4.2 / BL-247 make QA the only
+  integration point; the entire back half of the pipeline was bypassed.
+
+  Commits, verified still outside `swarmforge-QA` at filing time:
+    - 73706d79e  BL-590 coder rework            (not an ancestor of swarmforge-QA)
+    - f8dc07963  Merge commit '73706d79ed'      (not an ancestor)
+    - ebd12542d  BL-590 cleaner DRY pass        (not an ancestor)
+
+  `f8dc07963` merged the coder's rework straight into `main` mid-flight;
+  `ebd12542d` was committed onto `main` directly instead of onto
+  `swarmforge-cleaner`.
+
+description: |
+  ## What contained it, and what did not
+
+  Nothing contained it by design. It was caught by an architect pass noticing
+  the branch state, and the damage stayed out of production only because the
+  long-lived daemons happened not to have synced: `build_freshness_cli.bb
+  report` showed bridge, bot, front_desk_supervisor, handoffd,
+  handoffd_supervisor and operator_runtime all still on the prior QA-approved
+  sha `4e9cd883d`, correctly flagged `stale` against the compromised tip.
+
+  **That is luck, not a control.** The single action that would have deployed
+  three known-live defects to every daemon is the ordinary, routine post-QA
+  step: `build_freshness_cli.bb sync`. Any role or human running it during
+  this window ships them.
+
+  ## The gap
+
+  `build_freshness_cli.bb` has **no `freeze`, no `hold`, and no gate** —
+  confirmed by inspection at filing time. `sync` will happily deploy whatever
+  `main` currently points at. There is no notion of "this tip is not
+  QA-approved, refuse".
+
+  There is also no park-marker convention in place for this (the
+  `front-desk-PARKED.md` pattern used elsewhere is not present here), so the
+  operational freeze agreed for this incident is carried by nothing more
+  durable than a human remembering.
+
+  ## Root cause to confirm (specifier owns this)
+
+  The working hypothesis, from the incident notes: under the mono-router pack
+  a single resident rotates through roles, and its worktree/branch can lag, so
+  a role's commit lands on whatever branch the master checkout happened to
+  have out. See the recorded rotate/worktree-lag failure mode. The specifier
+  should confirm this rather than assume it — a guard aimed at the wrong cause
+  is worse than none, because it reads as protection.
+
+  ## Shape
+
+  Two independent layers; the specifier decides whether both are in scope or
+  whether the second is a follow-on:
+
+  1. **Deploy-time gate (the load-bearing one).** `sync` refuses when the tip
+     it would deploy is not an ancestor of `swarmforge-QA`, naming the
+     offending commits. This is deterministic, needs no new state, and is
+     exactly the check that was run by hand to diagnose the incident:
+     `git merge-base --is-ancestor <sha> swarmforge-QA`.
+  2. **Land-time detection.** Something notices a commit reaching `main`
+     outside the QA path and raises it, rather than waiting for an architect
+     to spot it. Cheaper than preventing the landing, and it shortens the
+     window.
+
+  Preventing the landing itself (a pre-commit or branch-protection style
+  control) is deliberately NOT proposed here — it fights the mono-router's
+  rotating-worktree design, and the deploy-time gate already stops the harm.
+
+acceptance: |
+  Specifier writes the scenarios. Minimum behaviour:
+
+  1. `sync` refuses, with a non-zero exit and the offending sha(s) named, when
+     the tip it would deploy is not an ancestor of `swarmforge-QA`.
+  2. `sync` proceeds unchanged when the tip IS QA-approved — no new friction on
+     the normal post-QA path, which runs many times a day.
+  3. The refusal message states the remedy (land through QA, or explicitly
+     override), and an override, if one exists at all, is explicit and logged —
+     never a silent env var that becomes the default way to run it.
+  4. `report` distinguishes "daemons are stale" from "daemons are stale AND the
+     tip is not QA-approved". Today those look identical, which is why the
+     incident's `stale` reading was reassuring rather than alarming.
+  5. A regression test covers a main tip containing a non-QA-ancestor commit.
+
+out_of_scope: |
+  - Fixing BL-590's three redelivery defects. Those go through the pipeline as
+    BL-590's own rework (operator ruled fix-forward, 2026-07-25).
+  - Reverting anything on `main`. Explicitly rejected: `f8dc07963` is a merge
+    commit, and reverting it would trigger the recorded revert-of-merge trap on
+    code that is not running anyway.
+  - Branch protection or pre-commit hooks. See the shape section.
+
+notes: |
+  OPERATIONAL FREEZE IN EFFECT UNTIL BL-590 IS QA-APPROVED: do not run
+  `build_freshness_cli.bb sync`. Doing so deploys three known-live defects in
+  the Telegram redelivery path — a redelivered older update is re-applied, a
+  stale redelivered `pause` re-pauses after the human resumed, and marking an
+  update processed after a failed outbound send consumes the retry so the
+  human never receives a reply. Detail in
+  `backlog/evidence/BL-590-facilitator-slice1-architect-bounce2-20260725.md`.
+
+  This ticket existing is what makes that freeze durable. Until it ships, the
+  freeze is carried by human memory alone.
