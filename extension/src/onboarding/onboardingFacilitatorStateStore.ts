@@ -33,17 +33,62 @@ function onboardingStatePath(swarmRepoRoot: string, targetRepoUrl: string): stri
   return path.join(onboardingStateDir(swarmRepoRoot), `${slugifyTargetRepoUrl(targetRepoUrl)}.json`);
 }
 
-export function readOnboardingFacilitatorState(swarmRepoRoot: string, targetRepoUrl: string): OnboardingFacilitatorState | undefined {
+// BL-590 architect bounce #2 (defect 1 residual, 2026-07-25): the guard used
+// to be a single last-processed-updateId scalar, on the false premise that
+// only the newest id can ever be redelivered - offsetAfterDelivery falsifies
+// that (a stuck head-of-line delivery parks the offset while later, already-
+// processed updates in the same batch stay unconfirmed, so THEY are what get
+// redelivered). The guard is now a per-target SET, one entry per processed
+// updateId, wide enough to recognise any of them - not just the latest.
+//
+// Each entry also records the message that was computed AND whether it was
+// actually delivered. This lets a redelivered update that was already
+// APPLIED to the state machine but never successfully SENT (a transient
+// send failure) retry just the send - never re-run the state machine
+// against text that no longer matches the step the state has since moved
+// past. Mirrors openSubjectAndRecord's (BL-389) "store the resultant value,
+// short-circuit on it" shape, adapted with a delivered flag since this
+// guard's resultant value is an outbound send, not a return value.
+export interface ProcessedOnboardingUpdate {
+  readonly message: string;
+  readonly delivered: boolean;
+}
+
+interface OnboardingStateEnvelope {
+  readonly state: OnboardingFacilitatorState;
+  readonly processedUpdates: Readonly<Record<string, ProcessedOnboardingUpdate>>;
+}
+
+function isEnvelope(parsed: unknown): parsed is OnboardingStateEnvelope {
+  return typeof parsed === 'object' && parsed !== null && 'state' in parsed && 'processedUpdates' in parsed;
+}
+
+function readEnvelope(swarmRepoRoot: string, targetRepoUrl: string): OnboardingStateEnvelope | undefined {
   try {
     const parsed: unknown = JSON.parse(fs.readFileSync(onboardingStatePath(swarmRepoRoot, targetRepoUrl), 'utf8'));
-    return parsed as OnboardingFacilitatorState;
+    if (isEnvelope(parsed)) {
+      return parsed;
+    }
+    // A state file written before this envelope existed (a bare
+    // OnboardingFacilitatorState) - keep its progress, start its
+    // processed-update history empty rather than fail to read it at all.
+    return { state: parsed as OnboardingFacilitatorState, processedUpdates: {} };
   } catch {
     return undefined;
   }
 }
 
+function writeEnvelope(swarmRepoRoot: string, envelope: OnboardingStateEnvelope): void {
+  atomicWrite(onboardingStatePath(swarmRepoRoot, envelope.state.targetRepoUrl), JSON.stringify(envelope, null, 2));
+}
+
+export function readOnboardingFacilitatorState(swarmRepoRoot: string, targetRepoUrl: string): OnboardingFacilitatorState | undefined {
+  return readEnvelope(swarmRepoRoot, targetRepoUrl)?.state;
+}
+
 export function writeOnboardingFacilitatorState(swarmRepoRoot: string, state: OnboardingFacilitatorState): void {
-  atomicWrite(onboardingStatePath(swarmRepoRoot, state.targetRepoUrl), JSON.stringify(state, null, 2));
+  const existing = readEnvelope(swarmRepoRoot, state.targetRepoUrl);
+  writeEnvelope(swarmRepoRoot, { state, processedUpdates: existing?.processedUpdates ?? {} });
 }
 
 // Every per-target state file currently on disk - the routing layer uses
@@ -52,6 +97,10 @@ export function writeOnboardingFacilitatorState(swarmRepoRoot: string, state: On
 // specifier's design note) means the topic itself carries no target
 // identity of its own.
 export function listOnboardingFacilitatorStates(swarmRepoRoot: string): OnboardingFacilitatorState[] {
+  return listOnboardingEnvelopes(swarmRepoRoot).map((envelope) => envelope.state);
+}
+
+function listOnboardingEnvelopes(swarmRepoRoot: string): OnboardingStateEnvelope[] {
   const dir = onboardingStateDir(swarmRepoRoot);
   let entries: string[];
   try {
@@ -60,39 +109,70 @@ export function listOnboardingFacilitatorStates(swarmRepoRoot: string): Onboardi
     return [];
   }
   return entries
-    .filter((entry) => entry.endsWith('.json'))
+    .filter((entry) => entry.endsWith('.json') && entry !== 'last-processed-update.json')
     .map((entry) => {
       try {
-        return JSON.parse(fs.readFileSync(path.join(dir, entry), 'utf8')) as OnboardingFacilitatorState;
+        const parsed: unknown = JSON.parse(fs.readFileSync(path.join(dir, entry), 'utf8'));
+        return isEnvelope(parsed) ? parsed : { state: parsed as OnboardingFacilitatorState, processedUpdates: {} };
       } catch {
         return undefined;
       }
     })
-    .filter((state): state is OnboardingFacilitatorState => state !== undefined);
+    .filter((envelope): envelope is OnboardingStateEnvelope => envelope !== undefined);
 }
 
-// BL-590 architect bounce (defect 1, 2026-07-25): a redelivered Telegram
-// update (the offset only advances after processing, so a crash between the
-// facilitator's state write and the offset commit makes Telegram re-serve
-// the same update) must be a total no-op - no second durable write, no
-// second outbound send. Only the single most-recently-processed updateId
-// can ever be redelivered (Telegram redelivers from the last uncommitted
-// offset, never an arbitrary older one), so - unlike openSubjectAndRecord's
-// per-subject `update:<id>` map (BL-389), which must remember every id it
-// has ever minted a subject for - one last-processed marker is enough here.
-function lastProcessedUpdatePath(swarmRepoRoot: string): string {
-  return path.join(onboardingStateDir(swarmRepoRoot), 'last-processed-update.json');
+export interface ProcessedOnboardingUpdateLookup {
+  readonly targetRepoUrl: string;
+  readonly record: ProcessedOnboardingUpdate;
+}
+
+// Scans every persisted target's processed-update set - the guard runs
+// BEFORE handleOnboardingMessage decides which target (if any) a plain-text
+// reply belongs to, so which target owns a given updateId is not yet known
+// at call time.
+export function findProcessedOnboardingUpdate(swarmRepoRoot: string, updateId: number): ProcessedOnboardingUpdateLookup | undefined {
+  const key = String(updateId);
+  for (const envelope of listOnboardingEnvelopes(swarmRepoRoot)) {
+    const record = envelope.processedUpdates[key];
+    if (record) {
+      return { targetRepoUrl: envelope.state.targetRepoUrl, record };
+    }
+  }
+  return undefined;
 }
 
 export function hasProcessedOnboardingUpdateId(swarmRepoRoot: string, updateId: number): boolean {
-  try {
-    const parsed: unknown = JSON.parse(fs.readFileSync(lastProcessedUpdatePath(swarmRepoRoot), 'utf8'));
-    return typeof parsed === 'object' && parsed !== null && (parsed as { updateId?: unknown }).updateId === updateId;
-  } catch {
-    return false;
-  }
+  return findProcessedOnboardingUpdate(swarmRepoRoot, updateId) !== undefined;
 }
 
-export function recordProcessedOnboardingUpdateId(swarmRepoRoot: string, updateId: number): void {
-  atomicWrite(lastProcessedUpdatePath(swarmRepoRoot), JSON.stringify({ updateId }, null, 2));
+// Arms the guard atomically WITH the state write (one atomicWrite, one
+// file) - not after the send - so the state advance and the processed-id
+// marker can never come apart. Recorded with delivered:false; the send is
+// attempted only after this returns, and is retried (never the state
+// machine) on every redelivery until it is marked delivered.
+export function writeOnboardingStateAndMarkUpdateProcessed(
+  swarmRepoRoot: string,
+  state: OnboardingFacilitatorState,
+  updateId: number,
+  message: string
+): void {
+  const existing = readEnvelope(swarmRepoRoot, state.targetRepoUrl);
+  const processedUpdates = { ...(existing?.processedUpdates ?? {}), [String(updateId)]: { message, delivered: false } };
+  writeEnvelope(swarmRepoRoot, { state, processedUpdates });
+}
+
+// Only called once the outbound send actually succeeds - never on a failed
+// send, so a redelivery of a still-undelivered update keeps retrying the
+// send (via findProcessedOnboardingUpdate's stored message) instead of
+// silently counting a lost message as done.
+export function markOnboardingUpdateDelivered(swarmRepoRoot: string, targetRepoUrl: string, updateId: number): void {
+  const existing = readEnvelope(swarmRepoRoot, targetRepoUrl);
+  const record = existing?.processedUpdates[String(updateId)];
+  if (!existing || !record) {
+    return;
+  }
+  writeEnvelope(swarmRepoRoot, {
+    state: existing.state,
+    processedUpdates: { ...existing.processedUpdates, [String(updateId)]: { ...record, delivered: true } },
+  });
 }
