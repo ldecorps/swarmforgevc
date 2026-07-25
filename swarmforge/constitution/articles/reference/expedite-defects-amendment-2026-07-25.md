@@ -1,10 +1,18 @@
-# PROPOSED AMENDMENT: Expedite defects through the pipeline
+# AMENDMENT (INCORPORATED): Expedite defects through the pipeline
 
-> **Status: PROPOSAL — not in force.** Filed under Article 5.1 step 1. Routes to
-> the **specifier** at priority `00`, who incorporates the agreed form into
-> Article 3 (Backlog Management) and into `coordinator.prompt` /
-> `specifier.prompt`. Do not treat any text below as binding until that has
-> happened and QA has landed it on `main`.
+> **Status: INCORPORATED, 2026-07-25** (Article 5.1 step 2, by the specifier).
+> The binding form now lives in **Article 3.2 rule 4** (constitution
+> `articles/03_backlog.md`), **`coordinator.prompt`** ("Expedited Defects At
+> Promotion Time"), and **`specifier.prompt`** ("Defect tickets: `type:
+> defect` + mandatory `severity:`"), with the informal "bugs-first" wording in
+> `workflow.prompt` / `coordinator.prompt` aligned to it. This file is the
+> adoption record and rationale — read the articles, not this file, for the
+> rule in force.
+>
+> Verified at incorporation: zero `type: bug` tickets remain in `paused/`,
+> `active/`, or `hold/` — all 58 sit in `backlog/done/`. The transition
+> predicate still matches `{defect, bug}` because a `done/` ticket can be
+> re-promoted; drop `bug` only when no ticket carries it.
 >
 > **Origin:** operator directive, 2026-07-25 — "les bugs doivent passer en
 > accéléré (expedite) à travers la swarm; persiste cette règle dans la
