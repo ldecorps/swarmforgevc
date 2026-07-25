@@ -24,19 +24,24 @@ const { handleOnboardingFacilitatorMessage } = require('../out/tools/telegram-fr
 //   P1  a bare claim of completion never advances a step (scenario 04's
 //       promise is "never on a claim", for every phrasing that IS a claim,
 //       not the four the example test happens to name);
-//   P2  slugifyTargetRepoUrl is deterministic, filesystem-safe and stable
-//       under re-slugging - it is the key the durable per-target state file
-//       is named by, so an unstable slug loses a target's whole record;
+//   P2  slugifyTargetRepoUrl is deterministic, non-empty and filesystem-safe
+//       - it is the key the durable per-target state file is named by, so a
+//       malformed slug loses a target's whole record;
 //   P3  the redelivery guard: across ANY interleaving of updates and send
 //       failures, a redelivered updateId re-sends the message computed the
-//       FIRST time and never re-enters the state machine.
+//       FIRST time and never re-enters the state machine;
+//   P5  distinct target repos never share one durable state file (plus P5b:
+//       the aliases slugifyTargetRepoUrl deliberately collapses still do).
 //
 // P3 is the one that matters most here. This parcel bounced three times on
 // three instances of that single invariant (evidence:
 // backlog/evidence/BL-590-*architect-bounce*.md) - each fix was correct for
 // the branch it was aimed at and left another branch uncovered. An example
 // test can only pin the branch someone thought of; the property pins the
-// invariant itself.
+// invariant itself. P5 caught a fourth, separate invariant break on the SAME
+// module bounce #4 fixed (P2 no longer asserts re-slugging stability,
+// removed in bounce #5 - a digest-suffixed slug cannot be idempotent, and P5
+// is the property that actually matters: injectivity).
 //
 // Runs ONLY via `npm run test:properties` (vitest.properties.config.mjs);
 // excluded from the unit/coverage/mutation run per engineering.prompt's
@@ -126,11 +131,11 @@ test('P2: slugifyTargetRepoUrl is deterministic, non-empty, filesystem-safe and 
       assert.doesNotMatch(slug, /[/\\]/, 'a path separator would escape the onboarding state directory');
       assert.doesNotMatch(slug, /^[.]{1,2}$/, '"." / ".." would not be a file at all');
       assert.doesNotMatch(slug, /\s/, 'whitespace in a state filename is a shell hazard downstream');
-      // Stability under re-slugging: the slug of a slug is the slug itself.
-      // Without this, any code path that re-keys an already-slugged value
-      // (a reconcile pass, an operator debugging by filename) silently
-      // addresses a DIFFERENT file than the one the state lives in.
-      assert.equal(slugifyTargetRepoUrl(slug), slug, 'slugify must be stable on its own output');
+      // No stability-under-re-slugging assertion here (removed BL-590 bounce
+      // #5, D1): a digest-suffixed slug cannot be idempotent by construction,
+      // and injectivity (P5 below) is the load-bearing property that
+      // replaces it - nothing in the codebase re-keys an already-slugged
+      // value, so there is no re-slugging path left to protect.
     }),
     { numRuns: 500 }
   );
@@ -286,5 +291,76 @@ test('P4: verified prerequisite progress never regresses for a target', () => {
       }
     }),
     { numRuns: 400 }
+  );
+});
+
+// ── P5: distinct targets never share one durable state file ────────────────
+
+// The aliasing slugifyTargetRepoUrl deliberately performs: scheme, a trailing
+// ".git" and trailing slashes all name the SAME repo and must keep collapsing
+// onto one file. P5 asserts injectivity modulo exactly this normalization -
+// never more, so the fix is not pushed into splitting legitimate aliases.
+const normalizeTargetRepoUrl = (url) =>
+  url.replace(/^[a-z]+:\/\//i, '').replace(/\.git$/i, '').replace(/\/+$/, '');
+
+// A uniform draw over (org, repo) essentially NEVER produces the boundary
+// shift that collides - "acme"/"tools-ci" against "acme-tools"/"ci" - so this
+// generator builds it by construction: ONE shared token stream, split into
+// org/repo at two different points. Both sides are ordinary, valid URLs of
+// two genuinely different repositories. (An earlier uniform version of this
+// generator passed 4000 runs against the live defect; see the bounce #5
+// evidence, and the same trap in P4's own comment.)
+const collidingTargetPairArb = fc
+  .tuple(
+    fc.array(fc.stringMatching(/^[a-z][a-z0-9]{0,6}$/), { minLength: 3, maxLength: 5 }),
+    fc.constantFrom('https://github.com/', 'git@github.com:', 'https://git.example.com/')
+  )
+  .chain(([tokens, prefix]) =>
+    fc
+      .tuple(fc.integer({ min: 1, max: tokens.length - 1 }), fc.integer({ min: 1, max: tokens.length - 1 }))
+      .map(([i, j]) => {
+        const at = (k) => `${prefix}${tokens.slice(0, k).join('-')}/${tokens.slice(k).join('-')}`;
+        return [at(i), at(j)];
+      })
+  );
+
+test('P5: two distinct target repos never share one durable state file', () => {
+  fc.assert(
+    fc.property(collidingTargetPairArb, ([a, b]) => {
+      fc.pre(normalizeTargetRepoUrl(a) !== normalizeTargetRepoUrl(b));
+      assert.notEqual(
+        slugifyTargetRepoUrl(a),
+        slugifyTargetRepoUrl(b),
+        `distinct targets collapse onto ONE state file - onboarding either one destroys the other's verified prerequisites:\n  ${a}\n  ${b}`
+      );
+    }),
+    { numRuns: 2000 }
+  );
+});
+
+// The bare "host/org/repo" core of one repository, from which every alias
+// form below is built. Kept separate from collidingTargetPairArb because the
+// scp-style "git@host:org/repo" form is NOT an alias of "https://host/org/repo"
+// under this normalization (the scheme strip only removes "<scheme>://"), so
+// mixing it in here would assert a collapse the fix is not asked to perform.
+const repoCoreArb = fc
+  .tuple(
+    fc.constantFrom('github.com', 'git.example.com'),
+    fc.stringMatching(/^[a-z][a-z0-9-]{0,8}$/),
+    fc.stringMatching(/^[a-z][a-z0-9-]{0,8}$/)
+  )
+  .map(([host, org, repo]) => `${host}/${org}/${repo}`);
+
+test('P5b: the aliases slugify deliberately collapses still collapse', () => {
+  fc.assert(
+    fc.property(repoCoreArb, (core) => {
+      // Same repo written four ways -> must stay ONE state file, or a human
+      // who pastes the .git form after the plain form starts a second,
+      // unrelated onboarding of the repo they are already onboarding.
+      const forms = [core, `https://${core}`, `https://${core}.git`, `https://${core}/`];
+      const slugs = new Set(forms.map(slugifyTargetRepoUrl));
+      assert.equal(slugs.size, 1, `aliases of one repo split across ${slugs.size} state files: ${[...slugs]}`);
+    }),
+    { numRuns: 500 }
   );
 });
