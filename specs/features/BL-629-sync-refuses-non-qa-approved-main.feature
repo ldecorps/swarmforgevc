@@ -28,9 +28,10 @@ Feature: sync refuses to deploy a main tip whose code is not QA-approved
     Then the sync proceeds without refusal
 
     Examples:
-      | drift            |
-      | empty            |
-      | bookkeeping-only |
+      | drift             |
+      | empty             |
+      | bookkeeping-only  |
+      | qa-landing-merge  |
 
   # BL-629 sync-refuses-non-qa-approved-main-03
   Scenario: A QA branch mid-review does not refuse a deployable main
@@ -91,3 +92,10 @@ Feature: sync refuses to deploy a main tip whose code is not QA-approved
     And an uncommitted modification exists outside the deployed code surface
     When a sync is requested
     Then the sync proceeds without refusal
+
+  # BL-629 sync-refuses-non-qa-approved-main-11
+  Scenario: A QA branch with no shared history with main fails closed, not open
+    Given the QA integration branch shares no common history with main
+    When a sync is requested
+    Then the sync is refused with the documented refusal exit status
+    And the refusal states the QA-approval status could not be determined
