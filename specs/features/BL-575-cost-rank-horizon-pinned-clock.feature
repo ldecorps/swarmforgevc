@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-07-25T06:34:15.232630169Z","feature_name":"swarm-cost-rank selects records by horizon against a pinned clock","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-575-cost-rank-horizon-pinned-clock.feature","background_hash":"190f0846b7ba4b3e0c5f51d763062fbf8fefa9d9f8dd2b3f43aa1eb5b325f4ca","implementation_hash":"unknown","scenarios":[]}
+# acceptance-mutation-manifest-end
+
 Feature: swarm-cost-rank selects records by horizon against a pinned clock
 
   The ranked-cost CLI filters ledger records to a horizon (3h/24h/7d) computed

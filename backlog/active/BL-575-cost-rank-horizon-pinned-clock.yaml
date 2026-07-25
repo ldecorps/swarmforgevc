@@ -8,7 +8,7 @@ severity: medium
 priority: 08
 direction: swarm-surfaced
 depends_on: []
-assigned_to: specifier
+assigned_to: coder
 mutation_cost: low
 source: |
   Backlog-root intake `backlog/swarmCostRankCli-broken-on-main.md`, filed by QA
