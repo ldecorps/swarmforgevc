@@ -417,15 +417,12 @@ export function decideVoiceUpdateAction(
 // between), or - no question pending at all - a drop, never a fresh
 // SUP-### opened the way an ordinary unmapped topic would (this topic is
 // reserved, not an ordinary conversation starter).
-export type AgentQuestionsReplyDecision = { kind: 'deliver'; text: string } | { kind: 'refuse' } | { kind: 'not-applicable' };
+type TopicReplyDecision = { kind: 'deliver'; text: string } | { kind: 'refuse' } | { kind: 'not-applicable' };
 
-export function decideAgentQuestionsReplyAction(
-  update: TelegramUpdate,
-  principalUserId: string,
-  chatId: string,
-  agentQuestionsTopicId: number | undefined
-): AgentQuestionsReplyDecision {
-  if (agentQuestionsTopicId === undefined || topicIdOf(update) !== agentQuestionsTopicId) {
+// Generic helper for topic-bound reply routing: given a topic ID, check if an
+// update belongs to it, is from the principal, and carries text.
+function decideTopicReplyAction(update: TelegramUpdate, principalUserId: string, chatId: string, topicId: number | undefined): TopicReplyDecision {
+  if (topicId === undefined || topicIdOf(update) !== topicId) {
     return { kind: 'not-applicable' };
   }
   if (!isFromMyChat(update, chatId) || !isFromPrincipal(update, principalUserId)) {
@@ -438,14 +435,25 @@ export function decideAgentQuestionsReplyAction(
   return { kind: 'deliver', text };
 }
 
-// BL-590: the Onboarding Facilitator's own reserved topic - the AGENT_
-// QUESTIONS twin above, same shape (a message in the topic is ALWAYS either
+export type AgentQuestionsReplyDecision = TopicReplyDecision;
+
+export function decideAgentQuestionsReplyAction(
+  update: TelegramUpdate,
+  principalUserId: string,
+  chatId: string,
+  agentQuestionsTopicId: number | undefined
+): AgentQuestionsReplyDecision {
+  return decideTopicReplyAction(update, principalUserId, chatId, agentQuestionsTopicId);
+}
+
+// BL-590: the Onboarding Facilitator's own reserved topic - same shape as
+// the AGENT_QUESTIONS topic above. A message in this topic is ALWAYS either
 // delivered to the facilitator or refused, never opened as a fresh SUP-###
-// the way an ordinary unmapped topic would). What the facilitator DOES with
+// the way an ordinary unmapped topic would. What the facilitator DOES with
 // the text (state-machine advancement, persistence, its own reply) is
 // onboardingFacilitatorState.ts's job - this module only decides whether a
 // given update belongs to it at all.
-export type OnboardingReplyDecision = { kind: 'deliver'; text: string } | { kind: 'refuse' } | { kind: 'not-applicable' };
+export type OnboardingReplyDecision = TopicReplyDecision;
 
 export function decideOnboardingReplyAction(
   update: TelegramUpdate,
@@ -453,17 +461,7 @@ export function decideOnboardingReplyAction(
   chatId: string,
   onboardingTopicId: number | undefined
 ): OnboardingReplyDecision {
-  if (onboardingTopicId === undefined || topicIdOf(update) !== onboardingTopicId) {
-    return { kind: 'not-applicable' };
-  }
-  if (!isFromMyChat(update, chatId) || !isFromPrincipal(update, principalUserId)) {
-    return { kind: 'refuse' };
-  }
-  const text = messageTextOf(update);
-  if (!text) {
-    return { kind: 'refuse' };
-  }
-  return { kind: 'deliver', text };
+  return decideTopicReplyAction(update, principalUserId, chatId, onboardingTopicId);
 }
 
 // BL-466: a vote on a native poll carries no chat/topic/thread info at all
