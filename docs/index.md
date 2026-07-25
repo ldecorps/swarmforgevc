@@ -28,6 +28,7 @@ here.
 - [Stripping an oversized blob from role-branch history](how-to/BL-105-history-strip.md)
 - [Daemon Death Alarm — Understanding the Alert and Recovery](how-to/BL-144-daemon-death-alarm.md)
 - [Stuck-Role Escalation Email — Understanding the Alert](how-to/BL-349-stuck-role-escalation-email.md)
+- [Driving one ticket through every gate with the swarm stopped (the expeditor)](how-to/BL-567-expedite-one-ticket-with-the-swarm-stopped.md)
 - [Verifying the stabilize-two-pack daemon-on workflow](how-to/BL-203-stabilize-two-pack-smoke-check.md)
 - [Wiring the Phone Recert Inbound Address Live](how-to/BL-223-recert-inbound-address-golive.md)
 - [Checking Pipeline Board Ticket Links](how-to/BL-513-pipeline-board-current-folder-links.md)
@@ -60,6 +61,7 @@ here.
 - [BL-011 Spec: Watchdog](reference/specs/BL-011-spec.md)
 - [BL-012 Spec: Chase and Dead-Letter Escalation](reference/specs/BL-012-spec.md)
 - [M2 Specification — Reliability Layer](reference/specs/m2-spec.md)
+- [Expeditor — complete reference](reference/BL-567-expeditor-manual.md) — every flag, exit code, artifact, verdict and refusal of the stack-stopped driver.
 - Architecture and swarm-flow diagrams: [architecture.mmd](diagrams/architecture.mmd), [swarm-flow.mmd](diagrams/swarm-flow.mmd) (Mermaid sources)
 
 ## Explanation
@@ -69,3 +71,5 @@ here.
 - [SwarmForge VS Code Extension — Milestone Roadmap](explanation/Milestone%20Roadmap.MD)
 - [Headless swarm + extension reattach (operator doctrine)](explanation/headless-reattach-doctrine.md)
 - [Handoff dual-path delivery (tmux primary, mailbox backup)](explanation/handoff-dual-path.md)
+- [Why the expeditor commands the stack but never depends on it](explanation/BL-567-why-the-expeditor-commands-the-stack-but-never-depends-on-it.md)
+- [Lessons from 2026-07-25: green suites that proved nothing](explanation/lessons-2026-07-25-green-suites-that-proved-nothing.md) — six ways a passing test proved nothing, tools that lie about their own success, and what good diagnosis looked like.

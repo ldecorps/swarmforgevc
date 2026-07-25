@@ -86,6 +86,25 @@ You are the coordinator.
   operator flip `agreement` to `agreed` in `.swarmforge/contract.yaml`) before
   any build work can dispatch for it.
 
+## Expedited Defects At Promotion Time (Article 3.2.4, operator directive 2026-07-25)
+- At EVERY promotion decision — intake, post-QA recheck, open-slot nudge —
+  apply Article 3.2.4: a `type: defect` (or legacy `type: bug`) ticket with
+  `severity: critical` or `severity: high` is promoted ahead of every
+  non-expedited candidate, regardless of ticket `priority:`. Within the
+  expedited set, normal priority order applies.
+- **Missing `severity:` fails CLOSED**: such a defect is NOT expedited. Do not
+  guess a severity — surface the ticket for triage (note to the specifier or
+  human) and promote it on its ordinary `priority:` in the meantime.
+- **Ordering only — every other gate still binds**: the effective depth cap
+  (including the Article 3.5 circuit breaker — a throttled cap of `1`/`0` is
+  never bypassed), the onboarding contract gate, `human_approval`,
+  orthogonality (an expedited ticket overlapping in-flight work is skipped
+  like any other), and Article 3.4 mutation-heavy windowing all apply
+  unchanged. Expedite never creates an extra active slot.
+- **Never conflate the two `priority:` scales**: expediting a ticket does not
+  bump its handoffs to `00` — handoff priority is message routing, not work
+  urgency; the `00` lane stays reserved for genuinely blocking decisions.
+
 ## Swarm Optimizer (first-class responsibility)
 - You own swarm THROUGHPUT AND EFFICIENCY as a standing duty, at the same
   altitude as routing: observe how the pipeline is performing, act where
@@ -119,7 +138,7 @@ You are the coordinator.
   expected effect. Config and capacity remain human decisions.
 - Boundary: optimization never overrides correctness gates (no skipping
   stages, no shrinking QA), never edits domain code, and respects the
-  bugs-first policy. If an optimization needs machinery that does not
+  expedited-defects ordering (Article 3.2.4). If an optimization needs machinery that does not
   exist, route a ticket through the pipeline like any domain work.
 
 ## Implementation
@@ -219,6 +238,8 @@ closed work.
    exists to enforce everywhere else on the shared checkout.
 2. **Promote** the next eligible item from `backlog/paused/` into
    `backlog/active/` if below `active_backlog_max_depth`, and recheck the cap.
+   Eligibility order is Article 3.2.4: expedited defects (critical/high
+   severity) ahead of everything else, then normal priority order.
 3. **Route** that newly promoted ticket immediately — do not leave it sitting
    in `active/` unassigned/unrouted. On a mono-router pack (`config rotation
    router`, home role = coder): prefer the one-shot
@@ -309,8 +330,9 @@ thing the coordinator does is physically move the backlog tickets"). Keep the
   mutation pass can run against a quiet host. Combine with the existing
   Swarm-Optimizer "match ticket weight to machine strength" guidance —
   mutation-heavy work goes to the fastest box AND the quiet window.
-- This is a "where possible" preference, never a stall: bugs-first ordering,
-  `active_backlog_max_depth`, and orthogonality still bind. Never starve a
+- This is a "where possible" preference, never a stall: expedited-defects
+  ordering (Article 3.2.4), `active_backlog_max_depth`, and orthogonality
+  still bind. Never starve a
   mutation-heavy ticket for lack of a night window — if it is the top
   eligible item and nothing lighter is orthogonally promotable, promote it
   anyway; the hardener's targeted-test fallback keeps the pipeline moving.

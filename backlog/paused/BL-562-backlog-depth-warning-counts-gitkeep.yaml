@@ -5,6 +5,7 @@ type: defect
 status: todo
 epic: swarm-reliability
 assigned_to: specifier
+severity: high
 priority: 20
 mutation_cost: low
 direction: swarm-surfaced
