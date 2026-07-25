@@ -33,6 +33,24 @@ You are the specifier.
 - Cover one scenario per distinct observable behavior or edge case; a sharp
   handful beats an exhaustive list.
 
+## Invariants — state the property the scenarios cannot express (BL-633)
+- BEFORE writing a ticket's scenarios, ask: what must hold across ALL of them —
+  including the scenarios nobody wrote down? State each such property as one
+  line in the ticket YAML's `invariants:` list (see backlog-schema.md), phrased
+  so a violation is checkable.
+- Scenarios are EXAMPLES; an invariant is a PROPERTY over the whole surface.
+  Ten enumerated scenarios cannot express "every durable write is idempotent
+  under redelivery" — BL-590 took four architect send-backs, one violating site
+  at a time, because that one line was never stated anywhere in a 315-line spec.
+- **An empty `invariants:` list is a legitimate outcome, not a failure.** Most
+  small slices genuinely have none; never manufacture one to fill the field.
+- Cap: at most 3. Needing more is a signal the slice is too big — split the
+  slice, not the list.
+- Consumers: the architect reviews the slice against each declared invariant as
+  a distinct pass (one bounce per property, not per site); the coder treats each
+  as a design constraint up front. A declared invariant is also a strong hint
+  that a property-based test fits better than more example scenarios.
+
 ## APS Phases (BL-111: feature files are now the durable contract)
 - Feature files under `specs/features/` are the durable acceptance contract —
   they outlive the backlog item. Each item's YAML `acceptance:` field is a
