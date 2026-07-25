@@ -1,0 +1,134 @@
+id: BL-648
+title: "Relaunch resume gap: start-swarm boots the resident at its HOME role, never reading `mono-router-active-role`, and a parcel claimed by the dead session is invisible to everyone — the swarm restarts straight into starvation"
+milestone: M8
+type: defect
+status: todo
+epic: swarm-reliability
+human_approval: approved
+severity: high
+priority: 03
+direction: human-requested
+depends_on: []
+assigned_to: specifier
+mutation_cost: medium
+
+approval_context: >
+  Operator, 2026-07-25 evening: "file in ce defect", after watching the
+  freshly-relaunched swarm starve for 11 minutes with a healthy parcel one
+  stage from integration. Reproduced live, root-caused the same hour.
+
+source: |
+  ## The incident, timestamped (2026-07-25)
+
+  ```
+  19:08  clean full stop. QA had CLAIMED its BL-629 parcel
+         (inbox/in_process/00_..._000426_from_documenter_to_QA + .nudge)
+         but not finished integrating.
+         .swarmforge/mono-router-active-role == "QA"  <- correct, durable
+  21:08  ./start-swarm.sh relaunches the stack. The resident comes up via
+         .swarmforge/launch/coder.sh - the HOME role.
+  21:1x  resident-as-coder inspects its own inbox: empty. Reports
+         "Nothing further for coder to do" and idles. Correctly.
+  21:19  operator notices zero handoffs since relaunch, diagnoses, runs
+         rotate_to_role.sh QA by hand. QA resumes its own claim, integrates,
+         BL-629 lands on main at ea048e56e9. Total stall: ~11 minutes,
+         WITH a human actively watching. Unattended: until some sweep
+         happens to fire, if any does.
+  ```
+
+  ## Two halves, both required for the starvation
+
+  **1. The launcher never reads the recorded role.** Measured:
+
+  ```
+  grep -c "mono-router-active-role" start-swarm.sh                 -> 0
+  grep -c "mono-router-active-role" swarmforge/scripts/swarmforge.sh -> 0
+  ```
+
+  The file is WRITTEN by four scripts (`swarm_attach.sh`, `swarm_identity_lib.bb`,
+  `handoff_lib.bb`, `handoffd.bb`) and read by rotation and by humans following
+  the memory notes - but the one moment that decides where the resident wakes up
+  reads nothing. The record of "where was I" exists, is accurate, and is ignored
+  exactly when it matters.
+
+  **2. A claim whose owner died is invisible.** The parcel sat in QA's
+  `in_process/`, so dispatch will not re-deliver it; the claiming session no
+  longer exists, so nobody will finish it; a `.nudge` file was ALREADY present
+  (the nudge machinery had fired before the stop) and nudging a dead session is
+  a no-op. BL-528's claim-idle auto-heal may eventually reclaim it, but its
+  per-role idle thresholds are tuned for a WEDGED session, not a restart - and
+  "the swarm self-heals in tens of minutes" is not an acceptable relaunch
+  behaviour when the launcher knew, at boot, both which role was active and
+  that its claim had no living owner.
+
+  ## Same family as the afternoon's starvation - do not fix one and not the other
+
+  The same day's earlier episode (16:28-16:50) was a BATCH-mode claim
+  (cleaner) that wrote NO claim-progress sidecar, so a healthy in-flight parcel
+  was indistinguishable from a lost one, and the coordinator nearly re-forwarded
+  a duplicate. Tonight's is the mirror: a TASK-mode claim whose sidecar story is
+  irrelevant because the owner is dead. Both reduce to: **a parcel in
+  `in_process/` is invisible to every observer, and nothing verifies its owner
+  is alive.** If the specifier folds the batch-sidecar gap into this ticket,
+  say so; if not, it needs its own.
+
+description: |
+  ## Shape
+
+  1. **Relaunch resumes the recorded role.** At boot, if the pack is
+     `rotation router` and `mono-router-active-role` names a role, the resident
+     comes up AS THAT ROLE, not as home. A missing/blank file keeps today's
+     home-role default. The file is already maintained by rotation; this is a
+     read, not a new mechanism.
+  2. **Launch-time orphan-claim sweep.** At boot (or handoffd's first tick),
+     every worktree's `inbox/in_process/` is checked: a claim whose owning
+     session is not alive is either re-delivered to `new/` or explicitly
+     surfaced - never left silently claimed. The stop path already writes a
+     clean postmortem; the start path should refuse to believe a dead session's
+     claims.
+  3. **The two must compose.** Tonight, item 1 alone would have fixed it (QA
+     resumes, finds its own claim, continues - which is exactly what the manual
+     `rotate_to_role.sh QA` did). But item 1 without item 2 still starves when
+     the stop was a crash that lost the role file, and item 2 without item 1
+     wastes a full re-delivery when the owner could simply have resumed.
+
+  ## What NOT to do
+
+  - Do not make the stop path "release" claims. A clean stop mid-integration is
+    legitimate and the claim is the truthful record of where work stood.
+    Ownership must be verified at START, where the facts are checkable.
+  - Do not infer the active role from which worktree looks busiest. Read the
+    recorded file; it exists precisely for this.
+
+acceptance: |
+  Specifier writes the scenarios. Minimum behaviour:
+
+  1. Stop the swarm while the resident is rotated to role R with a claimed
+     parcel; relaunch; the resident comes up as R and the parcel completes
+     WITHOUT human intervention. Fixture mirrors 2026-07-25: R=QA, parcel one
+     stage from integration.
+  2. `mono-router-active-role` missing or blank at boot: resident comes up at
+     home role, exactly today's behaviour.
+  3. A claim in any worktree's `in_process/` whose owning session is dead at
+     boot is re-delivered or loudly surfaced within one launch cycle - never
+     still silently claimed N minutes after relaunch.
+  4. A claim whose owner IS alive is untouched by the sweep (the afternoon's
+     lesson: an in-flight batch parcel being worked is healthy - re-delivering
+     it creates the duplicate the coordinator nearly sent at 16:47).
+  5. Non-rotation packs: item 1 is a no-op; item 3 still applies.
+
+out_of_scope: |
+  - The batch-claims-write-no-sidecar gap, UNLESS the specifier explicitly
+    folds it in (see source). Related, not identical.
+  - BL-528's idle thresholds. They are tuned for wedged sessions and stay so;
+    launch-time is a distinct, cheaper, certain check.
+  - kill_all coverage gaps (stop scripts reporting "clean slate" over live
+    survivors - observed twice tonight). Separate defect, separate mechanism.
+
+notes: |
+  Third "everyone behaved correctly, outcome still bad" of the day, and the
+  cleanest of the three: the stop was clean, the launcher followed its own
+  documented default, the coder truthfully reported an empty inbox, the nudge
+  machinery had already fired. The failure lives entirely between components -
+  a record nobody reads, and a claim nobody audits. The 11-minute stall was
+  bounded only because a human happened to be staring at the handoff log.
