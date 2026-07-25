@@ -68,20 +68,31 @@ export function runSwarmCostRank(
 // (missing/unknown horizon, non-positive topN) so makeArgsGuardedMain's
 // shared usage-and-exit-1 wrapper handles all of them identically - there
 // is no separate error path to test beyond "returns null".
+// Returns undefined for "no topN argument given", null for "given but
+// invalid" - split out of parseSwarmCostRankArgs to keep that function's
+// CRAP under the hardening threshold.
+function parseTopN(topNArg: string | undefined): number | undefined | null {
+  if (topNArg === undefined) {
+    return undefined;
+  }
+  const parsed = Number.parseInt(topNArg, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return null;
+  }
+  return parsed;
+}
+
 export function parseSwarmCostRankArgs(argv: string[]): SwarmCostRankArgs | null {
   const [horizonArg, topNArg, groupByArg] = argv;
   if (!horizonArg || !isKnownLlmCostHorizon(horizonArg)) {
     return null;
   }
-  let topN: number | undefined;
-  if (topNArg !== undefined) {
-    const parsed = Number.parseInt(topNArg, 10);
-    if (!Number.isFinite(parsed) || parsed <= 0) {
-      return null;
-    }
-    topN = parsed;
+  const topN = parseTopN(topNArg);
+  if (topN === null) {
+    return null;
   }
-  const groupBy = (groupByArg ? groupByArg.split(',') : []).filter(isKnownOriginDimension);
+  const parts = groupByArg ? groupByArg.split(',') : [];
+  const groupBy = parts.filter(isKnownOriginDimension);
   return { horizon: horizonArg, topN, groupBy };
 }
 
