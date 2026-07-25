@@ -1,0 +1,156 @@
+id: BL-636
+title: "mono-router rotation preference ignores parcel priority: a `00` incident note starved 2h40 behind `50` rule_proposals because the only ordering key is newest-first"
+milestone: M8
+type: defect
+status: todo
+epic: swarm-reliability
+human_approval: approved
+severity: medium
+priority: 05
+direction: human-requested
+depends_on: []
+assigned_to: specifier
+mutation_cost: low
+
+approval_context: >
+  Operator ruling 2026-07-25, from live concierge escalations. Operator was
+  explicit on the required ordering: priority decides first, and **at equal
+  priority the most recent must still win** — newest-first is correct as a
+  tie-break, wrong as the only key.
+
+source: |
+  Live incident, 2026-07-25. The concierge escalated twice within two minutes:
+
+  ```
+  11:50 ESCALATE flow-stall: 20260725T095008Z_000540_from_architect
+        (architect->specifier, rule_proposal) aged 1h0m in specifier new
+  11:52 ESCALATE flow-stall: 20260725T095155Z_000783_from_coordinator
+        (coordinator->specifier, note) aged 1h0m in specifier new
+  ```
+
+  State at 12:30, 2h40 after the oldest parcel was enqueued:
+
+  ```
+  specifier inbox/new         3 parcels (a 3rd arrived 12:25)
+  specifier inbox/in_process  EMPTY  - never claimed one
+  ```
+
+  The starved parcel `000783` is **priority `00`** — the highest the protocol
+  defines. It lost to two **priority `50`** rule_proposals, and to every parcel
+  produced by BL-590's hot coder<->architect rework loop, which generated fresh
+  mail continuously all morning (5 architect send-backs between 10:12 and 12:23).
+
+description: |
+  ## The defect
+
+  `swarmforge/scripts/mono_router_lib.bb:193`:
+
+  ```clojure
+  (defn preferred-rotate-target
+    "Among mailbox score rows, the role with the newest actionable mail."
+    [rows]
+    (some->> rows (filter :actionable?)
+             (sort-by :newest-created-at) last :role))
+  ```
+
+  **Newest wins, unconditionally.** Priority is not a tie-break that loses — it
+  is never consulted at all. Confirmed by inspection: `priority` appears nowhere
+  in `handoffd.bb`'s chase/rotate path except an unrelated field-ordering list at
+  `:183`.
+
+  And the priority is not even available to consult. `role-mail-row`
+  (`handoffd.bb`, immediately above the call site at `:1035`) builds rows with
+  exactly three keys:
+
+  ```clojure
+  {:role role :newest-created-at newest :actionable? (...)}
+  ```
+
+  So this is a two-file change: carry the priority, then order by it.
+
+  Meanwhile `swarmforge/handoff-protocol.md:89-90` is unambiguous — "Lower
+  priority numbers are processed first", two digits `00` through `99`. The
+  protocol has a priority scale; the mono-router router does not implement it.
+
+  ## Required ordering (operator, explicit)
+
+  1. **Priority first**, ascending — `00` beats `50`.
+  2. **Newest-first as the tie-break**, within equal priority. This is the
+     current behaviour and must be preserved, not replaced.
+
+  Implementation note worth having: Clojure's `sort-by` is **stable**, so this
+  needs no comparator — sort by `:newest-created-at` descending, then stable
+  `sort-by` the priority ascending, and take `first`. The newest-first order
+  survives inside each priority band for free.
+
+  ## Scope: this bites the mono-router only
+
+  On `full-forge` every role is its own standing process, so a role's queue
+  drains regardless of what any other role's mail looks like — there is no
+  shared resident to allocate and nothing to starve. The bug is specific to packs
+  with `config rotation router`, where ONE resident must be allocated among all
+  roles. Any fix must not change full-forge behaviour.
+
+  ## Open question the specifier must rule on, not assume
+
+  `actionable-mail?` gates a `note` behind `note_actionable_after_ms` (default
+  1200000 ms / 20 min, BL-576) so that fresh broadcast notes do not thrash the
+  rotation. That gate is upstream of any ordering: **a brand-new priority-`00`
+  note is not actionable at all for 20 minutes**, no matter how it is ordered.
+
+  Is that correct? An argument each way:
+
+  - **Keep it:** BL-576 exists because fresh broadcast notes caused real
+    rotation thrash. QA's merge-up broadcasts at priority `00` to five roles at
+    once — exactly the case the gate was built for. Exempting `00` would
+    reintroduce it.
+  - **Change it:** an incident note is also priority `00`, and 20 minutes of
+    deliberate blindness to an incident is the wrong default.
+
+  The distinguishing signal may be `type` rather than `priority` (a broadcast
+  `note` vs a directed one), not addressed here. Do not silently exempt `00`
+  without deciding this.
+
+acceptance: |
+  Specifier writes the scenarios. Minimum behaviour:
+
+  1. Given actionable mail in two roles, one at priority `00` and one at `50`,
+     the `00` role is the rotation target regardless of which is newer.
+  2. Given two roles whose best actionable mail is at the SAME priority, the one
+     with the newest mail wins — current behaviour, explicitly regression-tested.
+  3. A role's row carries the best (lowest) priority among its actionable mail,
+     not the priority of its newest parcel — a role holding `00` and `70` is
+     ranked as `00`.
+  4. Unparseable or absent priority fails to a defined default and is documented;
+     it must not silently rank as `00` and jump the queue.
+  5. `full-forge` / non-router packs are unaffected.
+  6. Regression fixture reproduces 2026-07-25: specifier holding `00` (aged note)
+     + `50` + `50` against an architect/coder loop producing newer `50` mail —
+     specifier is selected.
+  7. Whatever is decided on the aged-note question above is covered by a scenario
+     stating the chosen behaviour, so a future reader sees it was a decision.
+
+out_of_scope: |
+  - The resident-busy gate. `chase-wake-skip-busy` is correct: not rotating
+    mid-turn is deliberate (chase thrash incident 2026-07-19). This ticket is
+    about who wins once the resident IS free.
+  - Draining the three parcels currently stalled. `000783` was abandoned by the
+    operator 2026-07-25 as obsolete (its request — file a defect for the BL-590
+    pre-QA landing — is already discharged by BL-629/630/631/632). The two
+    architect `rule_proposal`s are live and awaiting an Article 5.1 ruling.
+  - Making the flow-watchdog quieter. Its escalations were correct and are the
+    only reason this was found.
+  - Multi-parcel-per-rotation batching. One rotation per sweep is deliberate.
+
+notes: |
+  Stray sidecars seen while diagnosing, NOT this ticket's problem but worth a
+  cleanup item: `.worktrees/architect/.swarmforge/handoffs/inbox/in_process/`
+  holds five `.claim-progress.json` files (2026-07-23, 07-24 x2, 07-25) with no
+  matching `.handoff`, plus two `.nudge` files. Same residue described in
+  `backlog/evidence/BL-614-coordinator-rotate-home-bug-report.md`, which called
+  it "a separate, smaller cleanup item". It makes an empty mailbox read as
+  non-empty to anything counting files rather than parsing parcels.
+
+  Priced `severity: medium`, not high: the harm ceiling is delay, and it
+  self-resolves when the hot loop quiets. Deliberately NOT expedited ahead of
+  BL-629/630/631/632, which are broken safety gates.
