@@ -71,6 +71,14 @@ function requireEnv(name: string): string {
   return value;
 }
 
+async function handleReconcileMode(targetPath: string, botToken: string, chatId: string): Promise<void> {
+  const topicId = await reconcileOnce(targetPath, botToken, chatId);
+  console.log(JSON.stringify({ ok: topicId !== undefined, topicId }));
+  if (topicId === undefined) {
+    process.exit(1);
+  }
+}
+
 export async function main(argv: string[] = process.argv.slice(2)): Promise<void> {
   const [targetPath, mode] = argv;
   if (!targetPath || (mode !== 'reconcile-once' && mode !== 'poll-loop')) {
@@ -84,11 +92,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<void
     await pollLoop(targetPath, botToken, chatId);
     return;
   }
-  const topicId = await reconcileOnce(targetPath, botToken, chatId);
-  console.log(JSON.stringify({ ok: topicId !== undefined, topicId }));
-  if (topicId === undefined) {
-    process.exit(1);
-  }
+  await handleReconcileMode(targetPath, botToken, chatId);
 }
 
 if (require.main === module) {

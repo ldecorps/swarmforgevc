@@ -224,18 +224,18 @@ function advanceStep(state: OnboardingFacilitatorState, stepId: PrerequisiteStep
   return { ...state, verifiedSteps, stepIndex: nextIndex, phase, updatedAtMs: now() };
 }
 
-// The whole per-reply transition (scenarios 03/04/05/09/10). Pause/proceed
-// are checked before verification so a control word is never misread as a
-// (failing) verification paste.
-export function applyPrincipalReply(state: OnboardingFacilitatorState, text: string, now: () => number): FacilitatorTurn {
-  const control = classifyControl(text);
-  if (state.paused) {
-    if (control === 'proceed') {
-      const resumed = { ...state, paused: false, updatedAtMs: now() };
-      return { state: resumed, message: renderStatus(resumed) };
-    }
-    return { state, message: PAUSED_MESSAGE };
+function handlePausedState(state: OnboardingFacilitatorState, control: OnboardingControl | null, now: () => number): FacilitatorTurn | null {
+  if (!state.paused) {
+    return null;
   }
+  if (control === 'proceed') {
+    const resumed = { ...state, paused: false, updatedAtMs: now() };
+    return { state: resumed, message: renderStatus(resumed) };
+  }
+  return { state, message: PAUSED_MESSAGE };
+}
+
+function handleControlCommands(state: OnboardingFacilitatorState, control: OnboardingControl | null, now: () => number): FacilitatorTurn | null {
   if (control === 'pause') {
     const paused = { ...state, paused: true, updatedAtMs: now() };
     return { state: paused, message: `Onboarding paused at the current step. ${PAUSED_MESSAGE}` };
@@ -243,10 +243,10 @@ export function applyPrincipalReply(state: OnboardingFacilitatorState, text: str
   if (control === 'proceed') {
     return { state, message: renderStatus(state) };
   }
-  const step = currentPrerequisiteStep(state);
-  if (!step) {
-    return { state, message: renderStatus(state) };
-  }
+  return null;
+}
+
+function handleVerificationInput(state: OnboardingFacilitatorState, step: PrerequisiteStepId, text: string, now: () => number): FacilitatorTurn {
   if (isBareDoneClaim(text)) {
     return {
       state,
@@ -262,6 +262,26 @@ export function applyPrincipalReply(state: OnboardingFacilitatorState, text: str
   }
   const advanced = advanceStep(state, step, now);
   return { state: advanced, message: renderStatus(advanced) };
+}
+
+// The whole per-reply transition (scenarios 03/04/05/09/10). Pause/proceed
+// are checked before verification so a control word is never misread as a
+// (failing) verification paste.
+export function applyPrincipalReply(state: OnboardingFacilitatorState, text: string, now: () => number): FacilitatorTurn {
+  const control = classifyControl(text);
+  const pausedResult = handlePausedState(state, control, now);
+  if (pausedResult) {
+    return pausedResult;
+  }
+  const controlResult = handleControlCommands(state, control, now);
+  if (controlResult) {
+    return controlResult;
+  }
+  const step = currentPrerequisiteStep(state);
+  if (!step) {
+    return { state, message: renderStatus(state) };
+  }
+  return handleVerificationInput(state, step, text, now);
 }
 
 const NO_ACTIVE_ONBOARDING_MESSAGE =
