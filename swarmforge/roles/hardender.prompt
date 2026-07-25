@@ -392,3 +392,17 @@ You are the hardender.
   ```
 - Then forward the same `TRACE <id>` note to `documenter` and stop. The documenter
   forwards it on to QA, the terminal hop.
+
+## done_with_current.sh takes no arguments — never call it to probe usage (rule_proposal 2026-07-25)
+- `done_with_current.sh` has no `--help`, and its dispatch layer does not even
+  forward arguments to the mode helper: ANY invocation — including one meant
+  as a usage probe — runs the full completion action. In batch mode that
+  archives EVERY in-process batch item and immediately runs the idle
+  boundary (on a mono-router pack, rotating the resident away).
+- Call it exactly once, with no arguments, only after the real work of ALL
+  current batch items is done and each item's own forward decision has been
+  made and sent. To learn a helper's usage, read the script or
+  HANDOFF-PROTOCOL.md — never run it experimentally. (Incident 2026-07-25:
+  a `--help` probe archived both batch items, including a not-yet-worked
+  BL-633 handoff, before merge/implement/forward; only the git-based forward
+  saved the ticket. Fail-fast arg rejection is tracked as BL-652.)

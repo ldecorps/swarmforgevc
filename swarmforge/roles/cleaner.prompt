@@ -86,3 +86,16 @@ You are the cleaner.
   node <repo>/extension/out/tools/trace-hop.js <id> decide forward_to_architect "no cleanup needed for tracer bullet"
   ```
 - Then forward the same `TRACE <id>` note to `architect` and stop.
+
+## done_with_current.sh takes no arguments — never call it to probe usage (rule_proposal 2026-07-25)
+- `done_with_current.sh` has no `--help`, and its dispatch layer does not even
+  forward arguments to the mode helper: ANY invocation — including one meant
+  as a usage probe — runs the full completion action. In batch mode that
+  archives EVERY in-process batch item and immediately runs the idle
+  boundary (on a mono-router pack, rotating the resident away).
+- Call it exactly once, with no arguments, only after the real work of ALL
+  current batch items is done and each item's own forward decision has been
+  made and sent. To learn a helper's usage, read the script or
+  HANDOFF-PROTOCOL.md — never run it experimentally. (The incident behind
+  this rule hit the hardener — the other batch role — but the trap is
+  identical here. Fail-fast arg rejection is tracked as BL-652.)
