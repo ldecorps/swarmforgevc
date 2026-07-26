@@ -227,6 +227,16 @@ description: |
     floor) the cue shows "insufficient history", never a number — the
     BL-635 data-honesty invariant (absence renders as absence) applied to
     the future instead of the past.
+  - **Display rule — humanized ranges, precision matched to uncertainty
+    (operator, 2026-07-26)**: never "between Monday 5 Sept 2028 6:03am and
+    Tuesday 29 Oct 2028 5:03pm" — say **"5 weeks to 3 months"**. A BL says
+    **"2 to 3 days"**. The p50/p85 computation keeps full precision
+    internally; the SURFACE rounds to at most two significant duration
+    units, unit chosen by horizon (hours → days → weeks → months), and a
+    range whose ends round to the same value collapses to one ("~2 days").
+    Timestamps of that false-precision kind are a rendering DEFECT, not a
+    style choice — fixture: any rendered ETA matching a
+    weekday/date/minute pattern fails.
 
   ## Honesty requirements
 
