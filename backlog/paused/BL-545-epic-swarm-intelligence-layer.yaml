@@ -6,7 +6,7 @@ type: epic
 epic: swarm-intelligence-layer
 priority: 00
 depends_on: []
-decomposes_into: [BL-525, BL-546, BL-547, BL-548, BL-563]
+decomposes_into: [BL-525, BL-546, BL-547, BL-548, BL-563, BL-682]
 promotion_order:
   - id: BL-546
     when: "PROMOTE FIRST — no upstream deps"

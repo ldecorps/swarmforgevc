@@ -1,0 +1,60 @@
+Feature: Mistral Vibe is reachable through the Intelligence Layer
+
+  Everything Vibe needs to RUN already exists in this repo and is verified
+  live: a `"vibe"` entry in the prompt engine's provider-capabilities with the
+  correct real-agent shape, two production packs, and a dedicated launcher.
+  What is missing is one layer up — the Intelligence Layer cannot ROUTE to it.
+  `model_factory_lib.bb`'s `provider->agent` map has no `"mistral"` key, and
+  the Model Steward's registry has no Mistral model at all, so no role
+  recommendation can ever name one.
+
+  This slice is those two registrations and nothing else. It does not touch
+  the packs, the launcher, or the agent shape — all three already work.
+
+  One thing it must NOT do is invent a model id. The other registry entries
+  are real model strings (`anthropic/claude-sonnet-5`,
+  `cerebras/llama-3.3-70b`, `openai/gpt-5.3-codex`), but the vibe packs carry
+  no model at all — their per-role column is `--max-price`, a hard
+  per-session dollar cap, and Vibe selects its own model. The id has to be
+  read from the live tool, and when it cannot be, the entry is registered at
+  agent granularity and says so.
+
+  # BL-682 vibe-routing-01
+  Scenario: the provider-to-agent map routes mistral to vibe
+    Given the model factory's provider-to-agent map
+    Then the mistral provider resolves to the vibe agent
+
+  # BL-682 vibe-routing-02
+  Scenario Outline: the existing provider mappings are unchanged
+    Given the model factory's provider-to-agent map
+    Then the <provider> provider resolves to the <agent> agent
+
+    Examples:
+      | provider  | agent  |
+      | anthropic | claude |
+      | openai    | codex  |
+      | cerebras  | aider  |
+
+  # BL-682 vibe-routing-03
+  Scenario: an unknown provider still falls through to itself
+    Given the model factory's provider-to-agent map
+    When a provider with no mapping is resolved
+    Then it resolves to its own name
+
+  # BL-682 vibe-routing-04
+  Scenario: the Model Steward carries a registered Mistral model
+    Given the Model Steward registry
+    Then it lists a model whose provider is mistral
+    And that model carries a cost class
+
+  # BL-682 vibe-routing-05
+  Scenario: the registered model id is read from the tool, never invented
+    Given the Model Steward registry
+    Then the registered Mistral model id is traceable to the live tool's own report
+    And an id the tool could not supply is registered at agent granularity with that reason recorded
+
+  # BL-682 vibe-routing-06
+  Scenario: registering Mistral leaves the other registry entries untouched
+    Given the Model Steward registry before this slice
+    When the Mistral model is registered
+    Then every previously registered model keeps its status, context window and cost class
