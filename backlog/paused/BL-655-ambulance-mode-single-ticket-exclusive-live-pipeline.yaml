@@ -136,7 +136,7 @@ description: |
   watchdog, the operator. Staying observable is the whole point versus the
   Expeditor.
 
-acceptance: specs/features/BL-655-ambulance-mode-hold.feature
+acceptance: specs/features/BL-655-ambulance-mode-hold.feature.draft
 
 out_of_scope: |
   - The perimeter — flow-watchdog quiet for held parcels, the coordinator
@@ -180,6 +180,14 @@ notes: |
   per held parcel. Noisy, not wrong, and bounded (the watchdog re-alarms only
   on a tier change). Accepted knowingly rather than pulling BL-679's watchdog
   work forward into an already-six-surface parcel.
+
+  ## The feature file is parked as a draft (BL-233)
+
+  `specs/features/BL-655-ambulance-mode-hold.feature.draft` — the coder
+  promotes it to `.feature` and wires its step handlers in the same commit.
+  A live `.feature` with no handlers makes `specs/pipeline/runtime.js` throw
+  ("no step handler matched"), which fails the acceptance gate for every OTHER
+  parcel in flight, not just this one.
 
   ## IR-DRY disposition (do not re-litigate)
 
