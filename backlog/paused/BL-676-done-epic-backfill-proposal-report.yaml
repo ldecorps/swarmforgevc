@@ -4,7 +4,7 @@ milestone: M8
 type: feature
 status: todo
 epic: swarmforge-console
-human_approval: pending
+human_approval: approved
 priority: 20
 direction: human-requested
 depends_on: []
