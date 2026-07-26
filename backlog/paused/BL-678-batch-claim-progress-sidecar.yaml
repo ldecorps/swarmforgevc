@@ -1,0 +1,69 @@
+id: BL-678
+title: "Batch-mode claims write no progress sidecar — a healthy in-flight parcel is indistinguishable from a lost one, and the coordinator nearly re-forwarded a duplicate"
+milestone: M8
+type: defect
+status: todo
+epic: swarm-reliability
+human_approval: approved
+severity: medium
+priority: 06
+direction: human-requested
+depends_on: []
+assigned_to: coder
+mutation_cost: medium
+invariants:
+  - "Every batch-mode claim has a sidecar naming its owner and last-progress instant from the moment of the claim until completion."
+  - "No observer re-forwards or re-delivers a parcel whose sidecar shows progress fresher than its staleness threshold."
+acceptance: specs/features/BL-678-batch-claim-progress-sidecar.feature.draft
+
+approval_context: >
+  Split out of BL-648's source at spec time (its 2026-07-25 16:28-16:50
+  sibling incident): a cleaner BATCH claim wrote no claim-progress record,
+  so the coordinator, chasing an apparently-stalled parcel, nearly
+  forwarded a duplicate at 16:47 — stopped only by a human. BL-648 fixes
+  the dead-owner half at launch; this fixes the live-owner half mid-run.
+  Severity medium: contained (near-miss, human-caught), but duplicate
+  forwards corrupt pipeline lineage when they land. Decision to sign off:
+  scope is batch-mode claims plus making chase-side observers consult the
+  sidecar before any re-forward decision; task-mode claim machinery
+  (BL-528 thresholds) is untouched.
+
+source: |
+  BL-648's source, "same family" section, 2026-07-25 afternoon episode: a
+  batch-mode claim (cleaner) wrote NO claim-progress sidecar, so a healthy
+  in-flight parcel was indistinguishable from a lost one, and the
+  coordinator nearly re-forwarded a duplicate at 16:47. Both episodes
+  reduce to: a parcel in in_process/ is invisible to every observer, and
+  nothing verifies its owner is alive (BL-648) or making progress (this).
+
+description: |
+  ## Shape
+
+  1. **Batch claims write a sidecar.** When a batch role claims parcels,
+     each claim gets a sidecar record (owner role, parcel id, claim
+     instant, last-progress instant) refreshed as the batch progresses —
+     cheap, durable, next to the claim itself.
+  2. **Chase-side observers consult it.** The chase/nudge sweep and any
+     re-forward decision path read the sidecar first: fresh progress means
+     healthy — no re-forward, no duplicate; stale progress means the
+     parcel is surfaced to the coordinator as suspect, named, with its
+     age — surfacing, not silent re-delivery, is the mid-run action
+     (re-delivery past a LIVE owner is exactly the duplicate hazard).
+
+  ## What NOT to do
+
+  - Do not touch BL-528's idle thresholds or task-mode claim handling.
+  - Do not let the sidecar become a liveness oracle for dead owners —
+    that is BL-648's launch-time sweep; this mechanism assumes a live
+    owner and answers "is it progressing", not "is it alive".
+
+  Coder materializes the .feature.draft to .feature and wires step
+  handlers in the same parcel (BL-441/BL-233).
+
+  ## e2e QA procedure
+
+  On a live batch (cleaner with two parcels): verify sidecars appear at
+  claim and refresh during work; trigger a chase sweep mid-batch and
+  verify no re-forward happens and no duplicate lands; freeze the batch
+  role past the staleness threshold and verify the coordinator gets a
+  named suspect surface line, and the parcel is still not re-delivered.
