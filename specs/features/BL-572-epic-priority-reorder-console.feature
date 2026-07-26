@@ -6,10 +6,15 @@ Feature: Reorder epic priority from the Mini App console
   backlog-dashboard PWA — that surface is a read-only git-SHA projection with
   no bridge connectivity and no write path.
 
-  Reordering is expressed as SWAP, not renumber: moving an epic up exchanges
-  its priority value with its neighbour's, so exactly two files change and
-  every untouched epic keeps the value it already had. Repeated moves compose
-  into any order without ever renumbering the list.
+  Reordering is expressed as SWAP where values allow: with distinct adjacent
+  values, moving an epic up exchanges its priority value with its neighbour's,
+  so exactly two files change and every untouched epic keeps the value it
+  already had. When the move lands inside a run of tied values a swap cannot
+  express the transposition; the move instead rewrites values so the same
+  one-position change happens anyway — never writing an epic listed above the
+  moved pair, never writing a negative value, and leaving every other epic in
+  its relative position. A move is never silently refused: either the order
+  visibly changes or the console states why it did not.
 
   Background:
     Given the epic reorder screen is open on the live Mini App console
@@ -30,13 +35,14 @@ Feature: Reorder epic priority from the Mini App console
     And the epic above it has priority 20
     When the human moves the selected epic up
     Then the selected epic ends with a lower priority value than the epic above it
-    And no other epic's backlog YAML is modified
+    And every epic outside the moved pair keeps its relative position in the list
 
   # BL-572 epic-reorder-03
   Scenario: moving the highest-priority epic up changes nothing
     Given the selected epic is first in the list
     When the human moves the selected epic up
     Then no backlog YAML is modified
+    And the console states that the selected epic is already first
 
   # BL-572 epic-reorder-04
   Scenario: the screen lists epic trackers only
@@ -56,3 +62,12 @@ Feature: Reorder epic priority from the Mini App console
   Scenario: a completed reorder is committed to main
     When the human moves the selected epic up
     Then both changed backlog YAML files are committed to main
+
+  # BL-572 epic-reorder-07
+  Scenario: a move inside a run tied at priority 0 still reorders
+    Given the selected epic is third in a run of four epics tied at priority 0
+    When the human moves the selected epic up
+    Then the selected epic is listed one position higher than before
+    And every epic outside the moved pair keeps its relative position in the list
+    And no epic is written with a negative priority
+    And no epic listed above the moved pair is written
