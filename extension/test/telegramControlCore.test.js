@@ -243,6 +243,21 @@ test('BL-655: an unauthorised sender engaging the ambulance is refused, never ig
   assert.deepEqual(decision, { action: 'refuse' });
 });
 
+test('BL-655: "ambulance" as a word inside other text does not engage - the verb must start the message', () => {
+  const decision = decideControlEventAction(textEvent('notambulance BL-654'), PRINCIPAL_ID, CONTROL_TOPIC_ID, undefined, NOT_PAUSED);
+  assert.deepEqual(decision, { action: 'ignore' });
+});
+
+test('BL-655: trailing text after the ticket id does not engage - the ticket id must end the message', () => {
+  const decision = decideControlEventAction(textEvent('ambulance BL-654 please'), PRINCIPAL_ID, CONTROL_TOPIC_ID, undefined, NOT_PAUSED);
+  assert.deepEqual(decision, { action: 'ignore' });
+});
+
+test('BL-655: more than one space between "ambulance" and the ticket id still engages', () => {
+  const decision = decideControlEventAction(textEvent('ambulance   BL-654'), PRINCIPAL_ID, CONTROL_TOPIC_ID, undefined, NOT_PAUSED);
+  assert.deepEqual(decision, { action: 'engage-ambulance', ticket: 'BL-654' });
+});
+
 // ── ordinary text (never a recognized verb) ──────────────────────────────
 
 test('BL-423: ordinary chatter in the control topic (not a recognized verb) is ignored', () => {
