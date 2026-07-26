@@ -13,6 +13,7 @@ assigned_to: specifier
 mutation_cost: medium
 invariants:
   - "No relaunch strands a claimed parcel: if any role holds in_process work, the resident resumes that role or surfaces the claim before idling at home."
+  - "The orphan sweep never touches a claim whose owner is alive or being resumed — a healthy in-flight parcel is never re-delivered into a duplicate."
 
 approval_context: >
   Operator, 2026-07-25 evening: "file in ce defect", after watching the
@@ -102,22 +103,7 @@ description: |
   - Do not infer the active role from which worktree looks busiest. Read the
     recorded file; it exists precisely for this.
 
-acceptance: |
-  Specifier writes the scenarios. Minimum behaviour:
-
-  1. Stop the swarm while the resident is rotated to role R with a claimed
-     parcel; relaunch; the resident comes up as R and the parcel completes
-     WITHOUT human intervention. Fixture mirrors 2026-07-25: R=QA, parcel one
-     stage from integration.
-  2. `mono-router-active-role` missing or blank at boot: resident comes up at
-     home role, exactly today's behaviour.
-  3. A claim in any worktree's `in_process/` whose owning session is dead at
-     boot is re-delivered or loudly surfaced within one launch cycle - never
-     still silently claimed N minutes after relaunch.
-  4. A claim whose owner IS alive is untouched by the sweep (the afternoon's
-     lesson: an in-flight batch parcel being worked is healthy - re-delivering
-     it creates the duplicate the coordinator nearly sent at 16:47).
-  5. Non-rotation packs: item 1 is a no-op; item 3 still applies.
+acceptance: specs/features/BL-648-relaunch-resume-orphan-claims.feature.draft
 
 out_of_scope: |
   - The batch-claims-write-no-sidecar gap, UNLESS the specifier explicitly
@@ -128,6 +114,34 @@ out_of_scope: |
     survivors - observed twice tonight). Separate defect, separate mechanism.
 
 notes: |
+  ## Spec-stage decisions (specifier, 2026-07-26)
+
+  - The batch-claims-write-no-sidecar gap is NOT folded in: different
+    mechanism (progress sidecars for a live owner) and different observer
+    (mid-run chase) than this launch-time check. Filed as its own defect,
+    BL-678 (backlog/paused/).
+  - "Re-delivered or explicitly surfaced" is made deterministic: an
+    orphaned claim (owner session not alive, role not the one the resident
+    is resuming) is MOVED BACK to that role's inbox/new/ with its original
+    priority and a loud reclaim line in the launch/daemon log. The role
+    being resumed keeps its claim untouched — ready_for_next checks
+    in_process first and resumes it. A recorded role file naming an
+    unknown role falls back to home with a loud line, never a crashed
+    launch.
+  - Coder materializes the .feature.draft to .feature and wires step
+    handlers in the same parcel (BL-441/BL-233).
+
+  ## e2e QA procedure
+
+  Replay the 19:08 incident: rotate the live resident to QA with a staged
+  claimed parcel in QA's in_process, clean stop, verify
+  mono-router-active-role says QA, relaunch. Pass: resident boots as QA
+  and completes the parcel with zero human input, and a dead-owner claim
+  staged in cleaner's in_process during the same relaunch is back in
+  cleaner's inbox/new/ with a reclaim line in the log within one launch
+  cycle. Then verify a non-rotation pack relaunch leaves a live role's
+  claim untouched.
+
   Third "everyone behaved correctly, outcome still bad" of the day, and the
   cleanest of the three: the stop was clean, the launcher followed its own
   documented default, the coder truthfully reported an empty inbox, the nudge
