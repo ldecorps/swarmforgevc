@@ -64,6 +64,28 @@ description: |
      fine; the acceptance pins the property so a future 2-shift-off
      composition cannot silently break it.
 
+  ## Outage credit — the shift delivers its EFFECTIVE hours (operator,
+  ## 2026-07-26: "tu étends l'horaire de fermeture du temps d'outage...
+  ## pour garder un quart de 8h")
+
+  Provider-outage intervals (BL-650's signature-backed clock — the
+  2026-07-26 "Elevated errors for Opus 5" window is the founding record in
+  provider-outages.jsonl) EXTEND the shift's closing time, so a shift aims
+  at 8 EFFECTIVE hours, not 8 wall hours. Bounded, or it becomes a new
+  hazard:
+
+  - **Cap**: extension never exceeds a configured maximum (suggest 2h) AND
+    never crosses the next shift boundary minus a safety margin — a night
+    shift may run to 11:00 at most, never into a configured day shift.
+  - **Backstop unchanged**: the cron hard deadline moves WITH the credit
+    but its unconditional nature stays — a hung ceremony is still killed.
+  - **Only signature-backed outages credit** (BL-650's rule): an unproven
+    slow hour extends nothing. Swarm-caused downtime (its own crashes,
+    restarts) NEVER credits — the credit is for external theft only,
+    otherwise it rewards the swarm's own failures with overtime.
+  - **Announce it**: an extended close is posted (Operator topic) with the
+    credited interval and the new close time — never a silent overtime.
+
   ## Edges the specifier must pin
 
   - Shift CHANGE while stopped (edit conf during the day): next cron fire
