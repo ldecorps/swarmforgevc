@@ -1580,6 +1580,12 @@
         agents-running (count (remove #{operator-session} live-sessions))
         roles (operator-lib/parse-roles-tsv
                (when (fs/exists? roles-file) (slurp (str roles-file))))
+        ;; BL-647: resolved from the conf, never inferred from live-sessions'
+        ;; size — dead-agent-events trusts these unchanged.
+        rotation-mode (swarm-identity-lib/conf-rotation-mode (active-launch-config-path))
+        rotation-opts {:rotation-mode rotation-mode
+                       :active-role (handoff-lib/read-mono-router-active-role)
+                       :resident-session (handoff-lib/mono-router-resident-session)}
         prov (scan-provider-state now)
         provider-state (:state prov)]
 
@@ -1613,7 +1619,7 @@
       ;; durable, human-checkable audit trail (log! above).
       (log! "SWARM_CONTROL_LOST" "tmux control channel unreachable - NOT agent death, human attention needed"))
     (let [observed (cond-> (if (:reachable? control)
-                              (operator-lib/dead-agent-events roles live-sessions)
+                              (operator-lib/dead-agent-events roles live-sessions rotation-opts)
                               [(operator-lib/control-lost-event)])
                      (operator-lib/timer-due? (last-swarm-check-ms) now swarm-check-ms)
                      (conj {:type "SWARM_CHECK_TIMER"})

@@ -594,14 +594,41 @@
    control-lost-event below instead, never this function with whatever
    stale/empty session list it has lying around - the two are DIFFERENT
    FACTS about the world (agents dead vs. control lost) and must never
-   collapse to the same N x AGENT_EXITED shape."
-  [expected-roles live-sessions]
-  (let [live (set live-sessions)]
+   collapse to the same N x AGENT_EXITED shape.
+
+   BL-647: under `rotation-mode` \"router\" exactly TWO tmux sessions exist
+   by design — the coordinator, and the ONE resident pane currently rotated
+   to `active-role`. The other roles in roles.tsv are dormant: they were
+   never expected to hold a session this tick, which is a different fact
+   from a role that had one and lost it, so a dormant role never produces an
+   event here. `rotation-mode` must be resolved by the caller from the conf
+   (never inferred from how many sessions happen to be live — that would
+   silently reclassify a real multi-agent-pack storm as normal) and passed
+   through unchanged. `resident-session` (roles.tsv's first non-coordinator
+   row — see handoff-lib/mono-router-resident-session) is what actually gets
+   checked for the active role: `respawn-pane -k` re-execs the pane in place
+   on every rotation and never renames the tmux session, so the active
+   role's OWN roles.tsv session name would read \"not live\" the moment it
+   isn't the home role. The coordinator is never a rotation target and is
+   always checked against its own session, rotation-mode or not. Omitting
+   the options map (or any non-\"router\" rotation-mode) reproduces the
+   pre-BL-647 behaviour exactly, for every role including the coordinator."
+  [expected-roles live-sessions
+   & [{:keys [rotation-mode active-role resident-session]}]]
+  (let [live (set live-sessions)
+        router? (= rotation-mode "router")
+        dormant? (fn [role] (and router? (not= role "coordinator") (not= role active-role)))
+        expected-session (fn [{:keys [role session]}]
+                            (if (and router? (not= role "coordinator"))
+                              resident-session
+                              session))]
     (->> expected-roles
-         (remove #(contains? live (:session %)))
-         (map (fn [{:keys [role session]}]
+         (remove (fn [{:keys [role] :as r}]
+                   (or (dormant? role)
+                       (contains? live (expected-session r)))))
+         (map (fn [{:keys [role] :as r}]
                 {:type "AGENT_EXITED" :subject role
-                 :detail (str "tmux session " session " not live")}))
+                 :detail (str "tmux session " (expected-session r) " not live")}))
          vec)))
 
 ;; BL-368: the single loud signal for "the control channel itself did not

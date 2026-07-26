@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=24aeba9e0ccfa8b7e2abd2b75414131f4a299d2297eba39604c726340f807f0e
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-07-26T10:16:26.258888973Z","feature_name":"rotation-router liveness never blames dormant roles","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-647-rotation-router-liveness.feature","background_hash":"2de48d8cd03a4aa33633b82cb6da818e11f4928edf329977f0f10e18b5ae7720","implementation_hash":"unknown","scenarios":[{"index":1,"name":"a dead resident fires exactly one event naming the active role","scenario_hash":"a5e9e2c3708c9fb7cbad40296f5e0b7679847b30d72aeae48d09f77de215687a","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-07-26T10:16:26.258888973Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: rotation-router liveness never blames dormant roles
 
   Under a `config rotation router` pack exactly two tmux sessions exist by
