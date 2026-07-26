@@ -1,0 +1,89 @@
+id: BL-656
+title: "Expeditor posts stage progress to the Telegram Operator topic — the phone-visible ride log for a mode whose stages are headless `claude -p` and can never carry a remote-control"
+milestone: M8
+type: feature
+status: todo
+epic: swarm-reliability
+human_approval: approved
+severity: low
+priority: 12
+direction: human-requested
+depends_on: []
+assigned_to: specifier
+mutation_cost: low
+
+approval_context: >
+  Operator, 2026-07-26 ~01:30, watching the BL-654 expedition from a terminal
+  relay and asking whether the Expeditor can have a /remote-control. It cannot
+  — stages are `claude -p` print-mode runs with no session to attach, and the
+  timeout/group-kill robustness DEPENDS on that mode. The right cut: post the
+  ride's milestones to Telegram deterministically. "ok oui fais ça".
+
+source: |
+  ## Why not remote-control (settled, do not reopen)
+
+  Each Expeditor stage is `claude -p --settings <role settings>
+  --append-system-prompt-file <fresh PromptEngine prompt>` under `setsid`,
+  output to files, killed as a process group on timeout
+  (`expedite_cli.bb:80-94`). A remote-control needs a live interactive
+  session; -p has none, and converting stages to interactive panes would
+  sacrifice exactly the anti-hang machinery BL-567 was built around.
+  Observability therefore comes from EMISSION, not attachment.
+
+  ## What exists to build on
+
+  - The Expeditor already logs every milestone line to stdout/its log
+    (`expedite liveness/park/teardown/worktree/stage/verdict/restart …`).
+  - Deterministic Telegram send paths already exist and are the pattern to
+    reuse, not duplicate: `notify-babysitter.ts` / `notify-dead-letters.ts`
+    (operator-side one-shot sends) and handoffd's
+    `flow-watchdog-emit-alarm!` (`handoffd.bb:1460`). The standing Operator
+    topic (BL-346) is the destination.
+
+description: |
+  ## Shape
+
+  1. An `--announce` seam in `expedite_cli.bb` (same posture as its other
+     seams: EXPEDITE_ANNOUNCE_CMD overridable for tests): each MILESTONE —
+     initiation verdict (incl. a REFUSE and its named survivors), park, stage
+     entered, stage verdict (advance/bounce #N with one-line reason), final
+     verdict, restart result — is passed to the announcer.
+  2. Default announcer posts one compact line per milestone to the Operator
+     topic. One message per milestone, NOT an edited roster: the ride is a
+     timeline and each step should notify (the BL-649 lesson — edits don't
+     ping).
+  3. Failure of the announcer NEVER fails the expedition (the swarm may be
+     stopped, the bot may be down — the Expeditor must stay
+     zero-dependency). Fire-and-forget with a logged warning; the log file
+     remains the source of truth.
+  4. Message shape mirrors the log line + BL-id, e.g.:
+     "🚑 BL-654 architect: SEND BACK #1 — invariant 3 fabricates zero".
+
+acceptance: |
+  Specifier writes the scenarios. Minimum behaviour:
+
+  1. A full expedition posts: initiation, each stage entry, each verdict,
+     final verdict, restart — and the sequence read on the phone
+     reconstructs the ride without the log.
+  2. A REFUSE (unclean teardown) posts, naming the survivors — the operator
+     learns from the phone why nothing started (tonight's babysitterd case
+     as fixture).
+  3. Announcer unavailable (no bot, no network): expedition completes
+     byte-identically, warning logged; a seeded announcer crash mid-ride
+     changes no gate outcome.
+  4. Test seam: EXPEDITE_ANNOUNCE_CMD captures messages in acceptance runs;
+     no real Telegram in CI.
+  5. No message exceeds the note-length discipline; a long reason truncates
+     with the evidence file path as the pointer.
+
+out_of_scope: |
+  - Remote-control on stages (settled above).
+  - Two-way control (pause/abort from Telegram). The Expeditor is supervised
+    at a terminal by design; the phone gets the ride log, not the wheel.
+  - Announcing to any topic other than the standing Operator topic.
+
+notes: |
+  Smallest ticket of the 2026-07-25/26 series, deliberately: one seam, one
+  default announcer, reusing shipped send machinery. Named the "ride log"
+  after BL-655's ambulance framing — lane, ambulance, expeditor: whichever
+  rung carries the urgent ticket, the human's phone should hear the siren.
