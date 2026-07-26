@@ -196,6 +196,36 @@ test('epic-reorder move route: moving a mid-list epic up swaps exactly two backl
   assert.match(log, /BL-701/);
 });
 
+// Every other move test in this file drives 'up' - the UI's own "Move down"
+// button (epicReorderUiHtml.ts) and computeEpicReorder's own 'down' handling
+// (epicReorderSafety.test.js) are both real, but nothing exercised 'down'
+// through the ACTUAL route before this, leaving isEpicReorderMoveRequestShape's
+// own `v.direction === 'down'` acceptance branch untested at the HTTP layer.
+test('epic-reorder move route: moving a mid-list epic down swaps its priority with its neighbour below', async () => {
+  const target = mkGitTarget();
+  writeEpic(target, 'BL-703', 10);
+  writeEpic(target, 'BL-704', 20);
+  writeEpic(target, 'BL-705', 30);
+  execFileSync('git', ['add', '-A'], { cwd: target });
+  execFileSync('git', ['commit', '-q', '-m', 'seed epics'], { cwd: target });
+
+  await withBridge(target, {}, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/epic-reorder/move`, {
+      method: 'POST',
+      headers: controlAuthHeaders(),
+      body: JSON.stringify({ id: 'BL-704', direction: 'down' }),
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.success, true);
+    assert.equal(body.changed, true);
+  });
+
+  assert.equal(readPriority(target, 'BL-703'), 10);
+  assert.equal(readPriority(target, 'BL-704'), 30);
+  assert.equal(readPriority(target, 'BL-705'), 20);
+});
+
 test('epic-reorder move route: adjacent epics sharing one priority value still reorder strictly and preserve everyone else\'s relative position (scenario 02)', async () => {
   const target = mkGitTarget();
   writeEpic(target, 'BL-708', 5);
@@ -337,6 +367,43 @@ test('epic-reorder move route: rejects a malformed body without mutating any bac
   assert.equal(fs.readFileSync(path.join(target, 'backlog', 'paused', 'BL-751.yaml'), 'utf8'), before);
 });
 
+// isEpicReorderMoveRequestShape's own `!value || typeof value !== 'object'`
+// guard is what stops a non-object JSON body reaching `v.id`/`v.direction`
+// property access a few lines down - a body of {id: 'X'} (missing direction,
+// the case above) never exercises this guard at all, since it's already a
+// well-formed object. A body that parses to `null` or a primitive is the
+// only way to drive it, and without the guard the route would throw inside
+// readValidatedBody's isShape call instead of cleanly responding 400.
+test('epic-reorder move route: a JSON body that parses to null is rejected with 400, not a crash', async () => {
+  const target = mkTmp();
+  writeEpic(target, 'BL-760', 10);
+  writeEpic(target, 'BL-761', 20);
+
+  await withBridge(target, {}, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/epic-reorder/move`, {
+      method: 'POST',
+      headers: controlAuthHeaders(),
+      body: 'null',
+    });
+    assert.equal(res.status, 400);
+  });
+});
+
+test('epic-reorder move route: a JSON body that parses to a non-object primitive is rejected with 400, not a crash', async () => {
+  const target = mkTmp();
+  writeEpic(target, 'BL-770', 10);
+  writeEpic(target, 'BL-771', 20);
+
+  await withBridge(target, {}, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/epic-reorder/move`, {
+      method: 'POST',
+      headers: controlAuthHeaders(),
+      body: '"just a string"',
+    });
+    assert.equal(res.status, 400);
+  });
+});
+
 // Architect bounce #3 (secondary finding): a tie-run cascade can touch 3+
 // files, and the write loop must resolve every one of their paths BEFORE
 // writing any of them - otherwise a file missing partway through the cascade
@@ -397,6 +464,11 @@ test('epic-reorder move route: a file vanishing partway through a tie-run cascad
       assert.equal(res.status, 500);
       const body = await res.json();
       assert.equal(body.success, false);
+      assert.equal(
+        body.reason,
+        'epic file missing during write',
+        'must take the dedicated missing-file 500 path, not fall through to the generic catch-all'
+      );
     });
   } finally {
     backlogWriter.findBacklogFilePath = originalFind;
@@ -433,4 +505,36 @@ test('epic-reorder move route: write succeeds but the commit fails - reports the
 
   assert.equal(readPriority(target, 'BL-800'), 20, 'the write itself must have landed despite the commit failure');
   assert.equal(readPriority(target, 'BL-801'), 10);
+});
+
+// replacePriorityLine's PRIORITY_LINE regex is anchored with `^` specifically
+// so it only ever matches a true `priority:` FIELD line, never a `priority:`
+// mention inside a prose field - a real shape, not a hypothetical: this
+// ticket's own YAML (backlog/active/BL-572-*.yaml) has the literal field once
+// and the bare word "priority:" inside backtick-quoted prose seven more times
+// in its `description`/`notes` blocks. Without the anchor, `.replace()`
+// (single match) would rewrite whichever line the regex hits FIRST, which
+// could be prose above the real field rather than the field itself.
+test('epic-reorder move route: a prose mention of "priority:" ABOVE the real field is left untouched; only the real field line changes', async () => {
+  const target = mkGitTarget();
+  const dir = path.join(target, 'backlog', 'paused');
+  mkdirp(dir);
+  const decoyLine = 'notes: hand-editing `priority:` in its YAML is what this ticket replaces';
+  fs.writeFileSync(path.join(dir, 'BL-900.yaml'), `id: BL-900\ntitle: BL-900 title\n${decoyLine}\ntype: epic\npriority: 10\n`);
+  writeEpic(target, 'BL-901', 20);
+  execFileSync('git', ['add', '-A'], { cwd: target });
+  execFileSync('git', ['commit', '-q', '-m', 'seed decoy epic'], { cwd: target });
+
+  await withBridge(target, {}, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/epic-reorder/move`, {
+      method: 'POST',
+      headers: controlAuthHeaders(),
+      body: JSON.stringify({ id: 'BL-901', direction: 'up' }),
+    });
+    assert.equal(res.status, 200);
+  });
+
+  const content = fs.readFileSync(path.join(dir, 'BL-900.yaml'), 'utf8');
+  assert.ok(content.includes(decoyLine), 'the prose line mentioning "priority:" must be left byte-identical');
+  assert.equal(readPriority(target, 'BL-900'), 20, 'the real priority field, not the decoy prose line, must carry the new value');
 });
