@@ -320,6 +320,139 @@ test('computeEpicReorder: a tie-run rewrite never writes an epic above the moved
   assert.ok(result.writes.length >= 2, `expected the cascade to extend beyond the pair, got ${JSON.stringify(result.writes)}`);
 });
 
+// --- Mutation hardening: each case below pins an EXACT value/text this
+// project's CRAP<=6 decomposition (slotFloor/slotCeiling/computeSwapTargets/
+// cascadeWrites) computes internally, not just an aggregate property, since
+// Stryker's mutation pass found several branch flips whose effect on
+// aggregate properties (position shift, relative order, floor) was masked by
+// the specific values the property-style tests above happened to use.
+
+test('computeEpicReorder: boundary reason text is direction-specific, not just non-empty', () => {
+  const epics = [
+    { id: 'BL-001', priority: 10 },
+    { id: 'BL-002', priority: 20 },
+  ];
+  const upReason = computeEpicReorder(epics, 'BL-001', 'up').reason;
+  const downReason = computeEpicReorder(epics, 'BL-002', 'down').reason;
+  assert.equal(upReason, 'Already first in the list — nothing above it to move past.');
+  assert.equal(downReason, 'Already last in the list — nothing below it to move past.');
+});
+
+test('computeEpicReorder: a tie at the low slot that already sorts correctly by id needs no bump (ordersAfter tie-break true)', () => {
+  // X/Y tied at 10 completes a plain swap (Y:10); Z is tied with X's NEW
+  // value (20) but 'BL-300' already sorts after X's id ('BL-100'), so the
+  // tie-break must accept it as-is - Z gets NO write. A mutant that flips
+  // the `===` in ordersAfter's tie-break clause (or forces it false) instead
+  // bumps Z to 21.
+  const epics = [
+    { id: 'BL-100', priority: 10 },
+    { id: 'BL-200', priority: 20 },
+    { id: 'BL-300', priority: 20 },
+  ];
+  const result = computeEpicReorder(epics, 'BL-200', 'up');
+  assert.deepEqual(
+    result.writes.slice().sort((a, b) => a.id.localeCompare(b.id)),
+    [
+      { id: 'BL-100', priority: 20 },
+      { id: 'BL-200', priority: 10 },
+    ]
+  );
+});
+
+test('computeEpicReorder: a tie at the low slot that sorts WRONG by id must bump, not fall through as ordered (ordersAfter tie-break false)', () => {
+  // A/B tied at 0 swap to a no-op (both stay 0); the mover's id ('BL-100')
+  // sorts BEFORE the epic it displaces into ('BL-200'), so simply keeping
+  // value 0 would put it in the wrong relative order - it must bump to 1.
+  // A mutant that forces ordersAfter's tie-break true here would leave it
+  // unbumped and miss the write entirely.
+  const epics = [
+    { id: 'BL-100', priority: 0 },
+    { id: 'BL-200', priority: 0 },
+    { id: 'BL-300', priority: 5 },
+    { id: 'BL-400', priority: 5 },
+  ];
+  const result = computeEpicReorder(epics, 'BL-200', 'up');
+  assert.deepEqual(result.writes, [{ id: 'BL-100', priority: 1 }]);
+});
+
+test('computeEpicReorder: the high slot target clamps to ceiling when the plain-swap value would not fit under it', () => {
+  // afterEpic ties with highEpic's value (10) and sorts before lowEpic's id,
+  // so slotCeiling takes its "-1" branch: ceiling=9, one below the plain
+  // swap target (10) - the clamp must actually apply, not just compute a
+  // ceiling and ignore it.
+  const epics = [
+    { id: 'BL-999', priority: 10 },
+    { id: 'BL-100', priority: 20 },
+    { id: 'BL-050', priority: 20 },
+  ];
+  const result = computeEpicReorder(epics, 'BL-100', 'up');
+  assert.deepEqual(
+    result.writes.slice().sort((a, b) => a.id.localeCompare(b.id)),
+    [
+      { id: 'BL-100', priority: 10 },
+      { id: 'BL-999', priority: 19 },
+    ]
+  );
+});
+
+test('computeEpicReorder: floor from a tied epic before the pair takes its +1, not its raw value', () => {
+  // beforeEpic and lowEpic tie at 5, but beforeEpic's id sorts AFTER
+  // highEpic's - slotFloor must take the "+1" branch (floor=6) so the low
+  // slot's new occupant (6) still sorts after beforeEpic, not the raw tied
+  // value (5) that a collapsed ternary would produce.
+  const epics = [
+    { id: 'BL-020', priority: 5 },
+    { id: 'BL-999', priority: 5 },
+    { id: 'BL-010', priority: 20 },
+  ];
+  const result = computeEpicReorder(epics, 'BL-010', 'up');
+  assert.deepEqual(
+    result.writes.slice().sort((a, b) => a.id.localeCompare(b.id)),
+    [
+      { id: 'BL-010', priority: 6 },
+      { id: 'BL-999', priority: 20 },
+    ]
+  );
+});
+
+test('computeEpicReorder: floor from a tied epic before the pair takes its raw value, not +1, when its id already sorts first', () => {
+  // The mirror of the "+1" case above: beforeEpic and lowEpic tie at 5, and
+  // this time beforeEpic's id sorts BEFORE highEpic's, so slotFloor must
+  // take the plain `beforeEpic.priority` branch (floor=5) - a collapsed
+  // ternary that always takes the "+1" branch would instead compute 6.
+  const epics = [
+    { id: 'BL-010', priority: 5 },
+    { id: 'BL-999', priority: 5 },
+    { id: 'BL-500', priority: 20 },
+  ];
+  const result = computeEpicReorder(epics, 'BL-500', 'up');
+  assert.deepEqual(
+    result.writes.slice().sort((a, b) => a.id.localeCompare(b.id)),
+    [
+      { id: 'BL-500', priority: 5 },
+      { id: 'BL-999', priority: 20 },
+    ]
+  );
+});
+
+test('computeEpicReorder: the cascade must stop at the first settled position and never touch a later one it never reaches', () => {
+  // A deliberately adversarial tail: BL-999 sits after a position the
+  // cascade correctly determines is already settled (assigned equals its
+  // own original value) and would need its own rewrite if the walk kept
+  // going past that stop. The documented invariant is that nothing past a
+  // settled position can need touching - proving BL-999 is untouched here
+  // pins that the early-stop guard actually executes, not merely that
+  // continuing happens to be harmless (BL-999's own value shows it is not).
+  const epics = [
+    { id: 'BL-100', priority: 0 },
+    { id: 'BL-200', priority: 0 },
+    { id: 'BL-300', priority: 5 },
+    { id: 'BL-999', priority: 3 },
+  ];
+  const result = computeEpicReorder(epics, 'BL-200', 'up');
+  assert.deepEqual(result.writes, [{ id: 'BL-100', priority: 1 }]);
+});
+
 test('computeEpicReorder: a squeeze against the epic before the pair (id sorts unsafely) still finds room without refusing', () => {
   // 'BL-999' ties with the low-slot epic at the SAME value the mover would
   // naturally take, and its id sorts AFTER the mover's - an unsafe tie the

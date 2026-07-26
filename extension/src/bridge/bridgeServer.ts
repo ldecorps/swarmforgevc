@@ -6,8 +6,6 @@
 import * as http from 'http';
 import * as fs from 'fs';
 import * as path from 'path';
-import { execFile } from 'child_process';
-import { promisify } from 'util';
 import {
   buildBridgeState,
   buildDeliveryMetricsState,
@@ -58,8 +56,7 @@ import { recordApprovalReply } from '../concierge/pendingApprovalReply';
 import { requestConciergeTick } from '../concierge/conciergeTickRequest';
 import { getContextBudgetUiHtml } from './contextBudgetUiHtml';
 import { listTelemetryAgents, summarizeTelemetryForAgent } from './contextTelemetryGate';
-
-const execFileAsync = promisify(execFile);
+import { runCommitIntegrity } from '../util/commitIntegrityRunner';
 
 const DEFAULT_POLL_INTERVAL_MS = 1000;
 const LOCALHOST = '127.0.0.1';
@@ -590,29 +587,12 @@ function computeEpicReorderState(targetPath: string): unknown {
 // tick, BL-490/BL-538), a plain console screen action has no such external
 // owner to defer to, so this commits synchronously in the same request -
 // still exclusively through the CLI, never a hand-rolled git command.
-// Degrades to false (never throws) on a missing bb/CLI or a non-zero exit,
-// mirroring commitExpediteWrites' own shape. Accepts every id whose file
-// changed, not just two - a tie-run rewrite (BL-572 amendment) can touch
-// more than the moved pair.
-async function commitEpicReorderWrites(targetPath: string, relPaths: string[], ids: string[]): Promise<boolean> {
-  try {
-    const args = [
-      commitIntegrityCliPath(targetPath),
-      targetPath,
-      '--message',
-      `Epic reorder ${ids.join(', ')}: rewrite priority\n\nBy coder.`,
-      ...relPaths.flatMap((relPath) => ['--path', relPath]),
-    ];
-    const { stdout } = await execFileAsync('bb', args);
-    const result = JSON.parse(stdout.trim().split('\n').pop() ?? '{}') as { success?: boolean };
-    return result.success === true;
-  } catch {
-    return false;
-  }
-}
-
-function commitIntegrityCliPath(targetPath: string): string {
-  return path.join(targetPath, 'swarmforge', 'scripts', 'commit_integrity_cli.bb');
+// Accepts every id whose file changed, not just two - a tie-run rewrite
+// (BL-572 amendment) can touch more than the moved pair. The exec + parse
+// is shared with telegram-front-desk-bot.ts's own commitExpediteWrites via
+// runCommitIntegrity (util/commitIntegrityRunner.ts).
+function commitEpicReorderWrites(targetPath: string, relPaths: string[], ids: string[]): Promise<boolean> {
+  return runCommitIntegrity(targetPath, relPaths, `Epic reorder ${ids.join(', ')}: rewrite priority\n\nBy coder.`);
 }
 
 function isEpicReorderMoveRoute(req: http.IncomingMessage, url: string): boolean {
