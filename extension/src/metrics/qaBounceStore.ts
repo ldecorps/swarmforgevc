@@ -14,6 +14,14 @@
 // this file's real fs reads/writes are exactly what the rule exists to keep
 // out of it. The pure policy module it depends on (qaBounce.ts: the closed-
 // set vocabulary, record shape, and tally aggregator) stays in quality/.
+//
+// BL-635 cleanup: the GENERALISED (by-role) store that reads/writes
+// .swarmforge/bounces/ moved out to bounceStore.ts (BL-485 mutation-site
+// budget - this file plus the new store together were pushing one module
+// past a tractable size) - it imports the shared JSONL-walking helpers and
+// shape-check building blocks exported below and reads this file's legacy
+// log read-only, same "additive over the QA-only log" relationship the code
+// always had, just across two files now instead of one.
 import * as fs from 'fs';
 import * as path from 'path';
 import { atomicAppend } from '../util/atomicWrite';
@@ -23,7 +31,7 @@ export function qaBouncesDir(targetPath: string): string {
   return path.join(targetPath, '.swarmforge', 'qa_bounces');
 }
 
-function monthOf(isoDate: string): string {
+export function monthOf(isoDate: string): string {
   return isoDate.slice(0, 7); // yyyy-MM
 }
 
@@ -38,7 +46,9 @@ function qaBounceFilePath(targetPath: string, isoDate: string): string {
 // (rather than interleaved per-field) is behavior-preserving: every predicate
 // here is a pure, side-effect-free check over independent fields, so `&&`
 // commutativity guarantees the same final boolean for every input.
-function hasQaBounceRecordShape(candidate: Partial<QaBounceRecord>): boolean {
+// Exported: bounceStore.ts's own type guard extends this shape check rather
+// than duplicating it (BL-635).
+export function hasQaBounceRecordShape(candidate: Partial<QaBounceRecord>): boolean {
   return (
     typeof candidate.ticket === 'string' &&
     typeof candidate.producingRole === 'string' &&
@@ -50,8 +60,9 @@ function hasQaBounceRecordShape(candidate: Partial<QaBounceRecord>): boolean {
 }
 
 // Only called once hasQaBounceRecordShape has confirmed every field below is
-// a string, so the casts are safe.
-function hasKnownQaBounceValues(candidate: Partial<QaBounceRecord>): boolean {
+// a string, so the casts are safe. Exported for the same reason as
+// hasQaBounceRecordShape above.
+export function hasKnownQaBounceValues(candidate: Partial<QaBounceRecord>): boolean {
   return (
     isKnownProducingRole(candidate.producingRole as string) &&
     isKnownTicketType(candidate.ticketType as string) &&
@@ -69,28 +80,32 @@ function isQaBounceRecord(value: unknown): value is QaBounceRecord {
 
 // A malformed or unrecognized line is skipped, never a crash - same
 // forgiving-reader posture as swarmMetrics.ts's chaser telemetry reader.
-function parseQaBounceLine(line: string): QaBounceRecord | null {
+// Generic over the record shape so both this file's QA-only log and
+// bounceStore.ts's generalised log share one JSONL-walking implementation -
+// each supplies its own type-guard rather than its own copy of this
+// traversal.
+function parseJsonlLine<T>(line: string, isRecord: (value: unknown) => value is T): T | null {
   try {
     const parsed: unknown = JSON.parse(line);
-    return isQaBounceRecord(parsed) ? parsed : null;
+    return isRecord(parsed) ? parsed : null;
   } catch {
     return null;
   }
 }
 
-function readQaBounceFile(dir: string, file: string): QaBounceRecord[] {
+function readJsonlRecordsFromFile<T>(dir: string, file: string, isRecord: (value: unknown) => value is T): T[] {
   let content: string;
   try {
     content = fs.readFileSync(path.join(dir, file), 'utf8');
   } catch {
     return [];
   }
-  const records: QaBounceRecord[] = [];
+  const records: T[] = [];
   for (const line of content.split('\n')) {
     if (!line.trim()) {
       continue;
     }
-    const record = parseQaBounceLine(line);
+    const record = parseJsonlLine(line, isRecord);
     if (record) {
       records.push(record);
     }
@@ -98,15 +113,20 @@ function readQaBounceFile(dir: string, file: string): QaBounceRecord[] {
   return records;
 }
 
-export function readQaBounceRecords(targetPath: string): QaBounceRecord[] {
-  const dir = qaBouncesDir(targetPath);
+// Exported: bounceStore.ts reuses this directory-walking traversal for the
+// generalised log rather than re-implementing it (BL-635).
+export function readJsonlRecordsFromDir<T>(dir: string, isRecord: (value: unknown) => value is T): T[] {
   let files: string[];
   try {
     files = fs.readdirSync(dir).filter((f) => f.endsWith('.jsonl'));
   } catch {
     return [];
   }
-  return files.flatMap((file) => readQaBounceFile(dir, file));
+  return files.flatMap((file) => readJsonlRecordsFromFile(dir, file, isRecord));
+}
+
+export function readQaBounceRecords(targetPath: string): QaBounceRecord[] {
+  return readJsonlRecordsFromDir(qaBouncesDir(targetPath), isQaBounceRecord);
 }
 
 // Idempotent append: dedupes against every record ALREADY in the log (across

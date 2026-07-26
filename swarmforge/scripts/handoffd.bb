@@ -1617,15 +1617,15 @@
     (catch Exception _ nil)))
 
 ;; BL-454: shells to the compiled qa-bounce-line.js CLI, same shell-out
-;; pattern as the *-briefing-line fns above - reuses computeQaBounceTally
-;; unchanged, fed by the SAME durable qa_bounces log record-qa-bounce.js
-;; (the go-forward writer) and backfill-qa-bounces.js (the one-time seed
-;; from the evidence corpus) both write, so the briefing can never disagree
-;; with either. The CLI itself prints nothing (empty stdout) when there are
-;; no recorded bounces yet, so `str/trim out` naturally degrades to a blank
-;; block (no briefing noise) in that case, same as every sibling section
-;; here; any other failure (CLI not yet compiled, etc.) degrades identically
-;; - never crashes the sweep.
+;; pattern as the *-briefing-line fns above, fed by the durable bounce log
+;; record-bounce.js (the go-forward writer, BL-635 - any reviewing role, not
+;; only QA) and backfill-qa-bounces.js (the one-time seed from the evidence
+;; corpus) write, so the briefing can never disagree with either. The CLI
+;; itself prints nothing (empty stdout) when there are no recorded bounces
+;; yet, so `str/trim out` naturally degrades to a blank block (no briefing
+;; noise) in that case, same as every sibling section here; any other
+;; failure (CLI not yet compiled, etc.) degrades identically - never crashes
+;; the sweep.
 (defn qa-bounce-briefing-line []
   (try
     (let [cli-path (str (fs/path project-root "extension" "out" "tools" "qa-bounce-line.js"))
