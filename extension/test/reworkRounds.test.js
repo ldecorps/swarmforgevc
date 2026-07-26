@@ -55,6 +55,16 @@ test('no flow balance figure pools architect and QA bounces into one number - ea
   assert.deepEqual(Object.keys(series).sort(), ['QA', 'architect']);
 });
 
+// The roles present in the result are sorted for deterministic iteration
+// order, independent of which role's bounce was recorded first - a record
+// insertion order of architect-then-QA must still come back alphabetically
+// (QA before architect, since uppercase sorts before lowercase).
+test('the roles present in the series come back sorted, not in record-insertion order', () => {
+  const records = [record({ by: 'architect', commit: 'c1' }), record({ by: 'QA', ticket: 'BL-606', commit: 'c2' })];
+  const series = computeRoundsPerCloseSeriesByRole(records, [], NOW_MS);
+  assert.deepEqual(Object.keys(series), ['QA', 'architect']);
+});
+
 test('a window with zero closed tickets reports unavailable, never a fabricated 0 (BL-635 SEND BACK #1 site 2)', () => {
   const records = [record({ by: 'architect' })];
   const series = computeRoundsPerCloseSeriesByRole(records, [], NOW_MS);
@@ -220,6 +230,41 @@ test('computeMaxRoundsIndicator breaks a tied bouncing-role count alphabetically
     record({ ticket: 'BL-590', by: 'architect', commit: 'c4' }),
   ];
   assert.equal(computeMaxRoundsIndicator(records).by, 'architect');
+});
+
+// dominantBouncingRole must pick the role with the STRICTLY higher count -
+// never fall back to an alphabetical/arbitrary choice when the counts
+// genuinely differ.
+test('computeMaxRoundsIndicator names the role with the higher bounce count, not the alphabetically-first one', () => {
+  const records = [
+    record({ ticket: 'BL-590', by: 'QA', commit: 'c1' }),
+    record({ ticket: 'BL-590', by: 'QA', commit: 'c2' }),
+    record({ ticket: 'BL-590', by: 'QA', commit: 'c3' }),
+    record({ ticket: 'BL-590', by: 'architect', commit: 'c4' }),
+  ];
+  assert.equal(computeMaxRoundsIndicator(records).by, 'QA');
+});
+
+// mostBouncedTicket must replace its running max only on a STRICTLY greater
+// count - the FIRST ticket to reach a given count is the one reported on a
+// tie, never a later ticket that merely equals it.
+test('computeMaxRoundsIndicator replaces the running max when a later ticket has strictly more bounces', () => {
+  const records = [
+    record({ ticket: 'BL-100', commit: 'c1' }),
+    record({ ticket: 'BL-200', commit: 'c2' }),
+    record({ ticket: 'BL-200', commit: 'c3' }),
+  ];
+  assert.equal(computeMaxRoundsIndicator(records).ticket, 'BL-200');
+});
+
+test('computeMaxRoundsIndicator keeps the FIRST ticket encountered when a later ticket only ties its count', () => {
+  const records = [
+    record({ ticket: 'BL-100', commit: 'c1' }),
+    record({ ticket: 'BL-100', commit: 'c2' }),
+    record({ ticket: 'BL-200', commit: 'c3' }),
+    record({ ticket: 'BL-200', commit: 'c4' }),
+  ];
+  assert.equal(computeMaxRoundsIndicator(records).ticket, 'BL-100');
 });
 
 // ── record-bounce-by-role-12: bounce-free day is zero, pre-epoch is unavailable ─

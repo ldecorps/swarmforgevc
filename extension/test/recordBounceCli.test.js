@@ -127,6 +127,17 @@ test('USAGE names the required --by flag', () => {
   assert.match(USAGE, /required/);
 });
 
+test('USAGE opens with the CLI name and its required core flags', () => {
+  assert.match(USAGE, /^Usage: record-bounce\.js --ticket <id> --role <producingRole> --type <ticketType> --class <failureClass>/);
+});
+
+test('USAGE documents the --role, --type, --class and --evidence field values', () => {
+  assert.match(USAGE, /--role: coder\|cleaner\|architect\|hardender\|documenter/);
+  assert.match(USAGE, /--type: feature\|bug\|defect\|chore\|docs\|enhancement\|epic/);
+  assert.match(USAGE, /--class: compile\|unit\|integration\|acceptance\|behavior/);
+  assert.match(USAGE, /--evidence \(optional\): backlog\/evidence\/<file>\.md/);
+});
+
 // record-bounce-by-role-03: an unknown/misspelt bouncing role is rejected,
 // naming the valid set (canonical spelling is "hardender", not "hardener").
 
@@ -238,6 +249,18 @@ test('a missing ticket record is best-effort - the bounce is still recorded', as
   assert.equal(result.recorded, true);
   assert.equal(result.ticketRecordUpdated, false);
   assert.equal(result.ticketRecordReason, 'not-found');
+});
+
+// bounceHistory.ts's ticket-record entry format is date-only (yyyy-mm-dd) -
+// the CLI must slice the full ISO timestamp down before merging it, never
+// write the full timestamp (with its time-of-day and `T`) into the yaml.
+test('the ticket bounce_history entry records a date-only `at`, never a full ISO timestamp', async () => {
+  const root = mkRepo();
+  const ticketPath = writeTicketYaml(root, 'BL-590');
+  await runCli(root, flagArgs());
+  const yamlText = fs.readFileSync(ticketPath, 'utf8');
+  assert.match(yamlText, /- \{ at: \d{4}-\d{2}-\d{2}, by: architect/);
+  assert.doesNotMatch(yamlText, /- \{ at: \d{4}-\d{2}-\d{2}T/);
 });
 
 test('omitting --evidence entirely skips the ticket-record merge without attempting it', async () => {

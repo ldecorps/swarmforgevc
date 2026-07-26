@@ -96,3 +96,23 @@ test('a line whose `by` is outside the closed set is skipped, never trusted raw'
   fs.writeFileSync(path.join(bouncesDir(target), '2026-07.jsonl'), JSON.stringify(record({ by: 'hardener' })) + '\n');
   assert.deepEqual(readBounceRecords(target), []);
 });
+
+test('a line whose `by` is present but not a string (e.g. a number) is skipped, never coerced', () => {
+  const target = mkTmp();
+  fs.mkdirSync(bouncesDir(target), { recursive: true });
+  fs.writeFileSync(path.join(bouncesDir(target), '2026-07.jsonl'), JSON.stringify(record({ by: 42 })) + '\n');
+  assert.deepEqual(readBounceRecords(target), []);
+});
+
+// The shape check on the base QA fields (ticket/producingRole/.../at) is
+// AND-ed with the `by` shape check - a line missing a core field entirely
+// must be rejected regardless of `by` being well-formed (or absent), never
+// let a valid-looking `by` paper over a malformed base record.
+test('a line missing a required base field entirely is rejected even when `by` is well-formed', () => {
+  const target = mkTmp();
+  fs.mkdirSync(bouncesDir(target), { recursive: true });
+  const malformed = record();
+  delete malformed.ticket;
+  fs.writeFileSync(path.join(bouncesDir(target), '2026-07.jsonl'), JSON.stringify(malformed) + '\n');
+  assert.deepEqual(readBounceRecords(target), []);
+});

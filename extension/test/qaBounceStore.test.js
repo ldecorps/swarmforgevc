@@ -86,3 +86,17 @@ for (const field of ['ticketType', 'failureClass']) {
     assert.deepEqual(readQaBounceRecords(target), []);
   });
 }
+
+// readJsonlRecordsFromDir (BL-635: shared with bounceStore.ts's generalised
+// log) only ever reads *.jsonl files - a stray non-jsonl file sitting in the
+// same directory must never be opened and parsed, even if its content would
+// otherwise look like a valid record.
+test('a non-.jsonl file in the qa_bounces dir is never read, even if it contains a well-formed record', () => {
+  const target = mkTmp();
+  fs.mkdirSync(qaBouncesDir(target), { recursive: true });
+  fs.writeFileSync(path.join(qaBouncesDir(target), '2026-07.jsonl'), JSON.stringify(record()) + '\n');
+  fs.writeFileSync(path.join(qaBouncesDir(target), 'notes.txt'), JSON.stringify(record({ ticket: 'BL-999' })) + '\n');
+  const records = readQaBounceRecords(target);
+  assert.equal(records.length, 1);
+  assert.equal(records[0].ticket, 'BL-340');
+});
