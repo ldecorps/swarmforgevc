@@ -113,10 +113,10 @@ function blockedReason(blockingIds: string[]): string {
   );
 }
 
-function alreadyBestReason(boundId: string | null): string {
+function alreadyBestReason(boundId: string | null, dominationLabel: string): string {
   return boundId
     ? `Already positioned immediately after its live dependency '${boundId}' - nothing more is permitted while that dependency remains live.`
-    : 'Already the unique top of the live backlog.';
+    : `Already the unique top of ${dominationLabel}.`;
 }
 
 // A successful move that lands the target somewhere other than the absolute
@@ -170,14 +170,29 @@ function walkToIndex<T extends MakeTopItem>(sortedItems: T[], targetId: string, 
 }
 
 // sortedLiveItems must already be sorted (sortEpicsByPriority) over the full
-// domination set - every live (paused + hold) epic AND topic, never
+// GLOBAL live set - every live (paused + hold) epic AND topic, never
 // filtered by type (BL-672 approval_context #3) and never including active/
-// or done/ items. resolveNonLiveDependency classifies any depends_on id NOT
-// present in sortedLiveItems.
+// or done/ items. Dependency resolution (traversal, refusal, the bound) is
+// ALWAYS computed against this full global set - a live dependency can sit
+// outside whatever narrower domination set is passed below (BL-673: a
+// cross-epic dependency still bounds or refuses a within-epic move).
+// resolveNonLiveDependency classifies any depends_on id NOT present here.
+//
+// dominationSet (default: sortedLiveItems itself, i.e. BL-672's own
+// whole-backlog behavior, unchanged) is the narrower set the target must
+// rank strictly above WHEN NO DEPENDENCY BOUNDS IT - BL-673 passes just the
+// target's own epic's live topics, so "make top" means "top of my epic",
+// not "top of the whole backlog". A dependency bound, when one exists,
+// fully determines placement regardless of dominationSet (mirroring BL-672:
+// a bounded target does not also have to out-rank its domination peers -
+// landing immediately after the bound is the whole answer). dominationLabel
+// only affects the human-readable "already best" wording.
 export function computeMakeTopPriority<T extends MakeTopItem>(
   sortedLiveItems: T[],
   targetId: string,
-  resolveNonLiveDependency: (id: string) => DependencyResolution
+  resolveNonLiveDependency: (id: string) => DependencyResolution,
+  dominationSet: T[] = sortedLiveItems,
+  dominationLabel = 'the live backlog'
 ): MakeTopResult | null {
   const targetIndex = sortedLiveItems.findIndex((item) => item.id === targetId);
   if (targetIndex === -1) {
@@ -205,10 +220,29 @@ export function computeMakeTopPriority<T extends MakeTopItem>(
     betterDeps.length > 0
       ? betterDeps.reduce((worst, id) => (positionOf(id) > positionOf(worst) ? id : worst))
       : null;
-  const desiredIndex = boundId ? positionOf(boundId) + 1 : 0;
+
+  let desiredIndex: number;
+  if (boundId) {
+    desiredIndex = positionOf(boundId) + 1;
+  } else {
+    // Only a peer CURRENTLY ranked better than target constrains anything -
+    // a peer already ranked worse (regardless of some unrelated foreign
+    // item sitting between them) is already dominated, full stop, and must
+    // never trigger a move on its account (that was a real bug: an earlier
+    // "reduced array" formulation miscounted exactly this case). Since a
+    // better-ranked peer is by definition positioned BEFORE target, its
+    // position is unaffected by target's own removal, so no reduced-array
+    // reasoning is needed at all here - target simply walks up to occupy
+    // the best (closest to top) such peer's current slot.
+    const betterPeers = dominationSet.filter((item) => item.id !== targetId && positionOf(item.id) < targetIndex);
+    desiredIndex =
+      betterPeers.length > 0
+        ? Math.min(...betterPeers.map((peer) => positionOf(peer.id)))
+        : targetIndex;
+  }
 
   if (desiredIndex === targetIndex) {
-    return { writes: [], changed: false, reason: alreadyBestReason(boundId) };
+    return { writes: [], changed: false, reason: alreadyBestReason(boundId, dominationLabel) };
   }
 
   const writes = walkToIndex(sortedLiveItems, targetId, desiredIndex);
