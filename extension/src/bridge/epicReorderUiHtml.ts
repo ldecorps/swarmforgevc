@@ -125,6 +125,10 @@ export function getEpicReorderUiHtml(): string {
     moveStatusEl.classList.toggle('no-change', !!noChange);
   }
 
+  function reasonOrFallback(payload, fallback) {
+    return (payload && payload.reason) ? String(payload.reason) : fallback;
+  }
+
   function renderEmpty() {
     contentEl.innerHTML = '<p class="empty">No epics to reorder.</p>';
   }
@@ -181,21 +185,21 @@ export function getEpicReorderUiHtml(): string {
         // itself already landed on disk (commit-failed path) the list must
         // stop showing the stale pre-move order.
         return r.json().catch(function () { return {}; }).then(function (payload) {
-          setMoveStatus((payload && payload.reason) ? String(payload.reason) : ('Move failed (HTTP ' + r.status + ')'), true);
+          setMoveStatus(reasonOrFallback(payload, 'Move failed (HTTP ' + r.status + ')'), true);
           setStatus('Move failed');
           if (payload && payload.changed) { refresh(); }
         });
       }
       return r.json().then(function (payload) {
         if (!payload || !payload.success) {
-          setMoveStatus((payload && payload.reason) ? String(payload.reason) : 'Move failed', true);
+          setMoveStatus(reasonOrFallback(payload, 'Move failed'), true);
           setStatus('Move failed');
           return;
         }
         if (payload.changed === false) {
           // A legal no-op (list boundary) - the human gets a stated reason,
           // never a refresh that looks identical to a successful move.
-          setMoveStatus(payload.reason ? String(payload.reason) : 'No change.', true);
+          setMoveStatus(reasonOrFallback(payload, 'No change.'), true);
           return;
         }
         setMoveStatus('');

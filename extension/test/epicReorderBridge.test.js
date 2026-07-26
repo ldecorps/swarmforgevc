@@ -406,3 +406,31 @@ test('epic-reorder move route: a file vanishing partway through a tie-run cascad
   assert.equal(fs.readFileSync(path.join(target, 'backlog', 'paused', 'BL-961.yaml'), 'utf8'), before961);
   assert.equal(fs.readFileSync(path.join(target, 'backlog', 'paused', 'BL-962.yaml'), 'utf8'), before962, 'BL-962 must not be written either, even though it resolves fine and comes before the missing file');
 });
+
+test('epic-reorder move route: write succeeds but the commit fails - reports the BL-490 reason and leaves the write on disk (architect bounce #3)', async () => {
+  // mkTmp() (no git repo, no commit_integrity_cli.bb) makes runCommitIntegrity
+  // fail deterministically after the priority files are already rewritten -
+  // exactly the "write succeeded but commit failed" shape that motivated
+  // epicReorderUiHtml.ts's move()'s reason-swallowing fix (bounce #3). This
+  // is the only test that drives that response out of the real route instead
+  // of asserting on a hand-built payload.
+  const target = mkTmp();
+  writeEpic(target, 'BL-800', 10);
+  writeEpic(target, 'BL-801', 20);
+
+  await withBridge(target, {}, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/epic-reorder/move`, {
+      method: 'POST',
+      headers: controlAuthHeaders(),
+      body: JSON.stringify({ id: 'BL-801', direction: 'up' }),
+    });
+    assert.equal(res.status, 500);
+    const body = await res.json();
+    assert.equal(body.success, false);
+    assert.equal(body.changed, true);
+    assert.equal(body.reason, 'write succeeded but commit failed');
+  });
+
+  assert.equal(readPriority(target, 'BL-800'), 20, 'the write itself must have landed despite the commit failure');
+  assert.equal(readPriority(target, 'BL-801'), 10);
+});
