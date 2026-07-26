@@ -211,6 +211,23 @@ description: |
   - Epic-type tickets with `remaining_slices` additionally show
     slices-shipped / slices-total when the field is parseable.
 
+  **+ ETA beside every percentage (operator, 2026-07-26: "+ eta")** — always
+  as a PERCENTILE RANGE, never a single promised date (the FLOW root's
+  Kanban ruling applied to forecasting):
+
+  - **Milestone ETA**: BL-228's shipped p50 projection, reused as-is (one
+    forecaster, two surfaces that cannot disagree).
+  - **Epic ETA**: the same BL-228 forecaster scoped to the epic's remaining
+    tickets — new scope, not a new method.
+  - **BL ETA**: from the FLOW root's cycle-time percentiles by ticket type —
+    in-flight: "p50 ~Xh / p85 ~Yh from promotion, Z stages remaining";
+    paused: lane position + measured throughput ("~Nth in lane; starts est.
+    p50 <date>"). Both wear the same as-of-build banner.
+  - **No fabricated ETAs**: below a minimum sample (specifier sets the
+    floor) the cue shows "insufficient history", never a number — the
+    BL-635 data-honesty invariant (absence renders as absence) applied to
+    the future instead of the past.
+
   ## Honesty requirements
 
   - The snapshot is AS-OF-BUILD: a permanent banner states the build commit
