@@ -121,6 +121,13 @@ acceptance: |
      and the default derivation is stated in the conf comment.
   7. Alarm text states the age it used ("aged 9m active (15m wall)") so a
      human reading history can tell which clock spoke.
+  8. Third recorded false shape (2026-07-26 10:03): an in_process claim whose
+     single-resident claimant is on a LEGITIMATE detour (rotated to another
+     stage to satisfy the parcel's own prerequisite — here the coder detouring
+     to specifier to author BL-647's missing .feature, back 7 min later with
+     the contract written). The clock/thresholds must not read a mono-router
+     prerequisite detour as a stall; an in_process claim whose owner never
+     returns MUST still alarm (the orphan case stays loud — non-vacuity).
 
 out_of_scope: |
   - Muting alarms during a pause. Deliberately the opposite of this ticket:
