@@ -12,6 +12,16 @@ depends_on: []
 assigned_to: specifier
 mutation_cost: low
 
+invariants:
+  - "Every bounce-metric consumer sources from the durable bounce log or ticket bounce_history only — commit subjects and briefing prose are never read as bounce data"
+  - "A bounce record lacking `by` aggregates as unattributed — never silently attributed to QA or any other role"
+  - "Absence of recorded data (a pre-epoch period) renders as unavailable on every surface — never as zero"
+
+required_wiring:
+  - "swarmforge/roles/architect.prompt::--by architect::the unrecorded send-back class this defect exists to record (acceptance 2)"
+  - "swarmforge/roles/QA.prompt::record-bounce.js::QA's live invocation migrates to the generalised CLI (acceptance 1)"
+  - "extension/src/notify/costHealthSidecar.ts::roundsPerClose::flowBalance carries the by-split rework metric (acceptance 5)"
+
 approval_context: >
   Operator ruling 2026-07-25. Asked directly whether repeated-bounce tickets are
   a frequent pattern, the honest answer was "the data cannot tell you." The
@@ -200,40 +210,55 @@ description: |
   whether BL-633 and BL-634 reduced the 21.8% rework rate, so the whole spec-quality
   initiative ships on faith. Fixing the ruler comes before trusting the measurements.
 
-acceptance: |
-  Specifier writes the scenarios. Minimum behaviour:
+acceptance: specs/features/BL-635-record-bounce-by-role-and-rework-metric.feature
 
-  Recording (the load-bearing half):
+spec_notes: |
+  Specced 2026-07-25 by specifier. The feature file translates the approved
+  minimum-behaviour list 1:1; `human_approval` stays `approved` because the
+  operator approved that list verbatim and directed expedition ("il faut
+  expediter") — a second review round on a faithful translation would block
+  the expedite lane. Criterion -> scenario map (record-bounce-by-role-NN):
+  1 -> 01, 2 -> 04+05, 3 -> 02 (+03 unknown-role, same fail-closed intent),
+  4 -> 06, 5 -> 08, 6 -> 09, 7 -> 10, 8 -> 11, 9 -> 12, 10 -> 13;
+  generalised write path -> 07; bounce-line consumer copy -> 14.
 
-  1. A `record-bounce` CLI takes the bouncing role as a REQUIRED parameter and
-     writes it as `by` on both the durable log record and the ticket's
-     `bounce_history` entry. `blamed` stays the producing role, unchanged.
-  2. The architect's send-back procedure calls it. A ticket bounced N times by
-     the architect ends with `bounce_count: N` — BL-590 would read 4, where today
-     it reads absent.
-  3. Invoking it without `--by` fails loudly rather than writing a record with no
-     bouncer, which is what produced 53 `by`-less records.
-  4. The 53 existing records under `.swarmforge/qa_bounces/` remain readable after
-     any rename, and `backfill-qa-bounces.js`'s seed is not orphaned. A record
-     with no `by` is reported as unattributed, never silently attributed to QA.
+  Decisions delegated to the specifier, resolved:
+  - Headline metric: mean rework rounds per closed ticket, defined as
+    by-attributed bounce records in the window / tickets closed in the same
+    window; bounces/day supporting; both split by `by`; a max-rounds
+    indicator { ticket, rounds, by } beside the mean (acceptance 8).
+  - Generalised CLI name `record-bounce`; new records write to
+    `.swarmforge/bounces/<YYYY-MM>.jsonl`; readers merge the legacy
+    `.swarmforge/qa_bounces/` path read-only forever (53 records + the
+    backfill seed stay live).
+  - The JSONL record itself gains the `by` field — today QA passes `--by`
+    but only the ticket-YAML merge receives it; the log record must too.
+  - Sidecar contract: `flowBalance.rework.roundsPerClose` (field name is
+    load-bearing — required_wiring greps it), plus `bouncesPerDay` and
+    `maxRounds`.
+  - Valid `by` set: specifier|coder|cleaner|architect|hardender|documenter|QA
+    (canonical repo spelling `hardender`); an unknown value fails loudly —
+    a typo'd bouncer would silently fragment the split.
+  - Recording epoch for the by-attributed series: a declared constant date
+    set at implementation time; pre-epoch renders unavailable, never 0.
+  - `--evidence` stays optional at the CLI (BL-608's best-effort ticket
+    merge is unchanged and out of scope); every prompt invocation passes it.
 
-  Reporting:
-
-  5. The briefing JSON sidecar carries the metric under `flowBalance` in the
-     existing `TrendedNumber` + daily-series shape, **split by `by`** so architect
-     send-backs and QA bounces are never pooled.
-  6. The markdown briefing renders it on the flow-balance line with a trend arrow,
-     consistent with `speccedPerDay`/`closedPerDay`.
-  7. Sourced from the durable log / `bounce_count`, NEVER from commit-subject text.
-     Cover both contamination modes explicitly: a ticket whose TITLE contains
-     "bounce" with zero recorded bounces contributes 0; a single bounce whose fix
-     produces six merge commits contributes 1.
-  8. A repeated-bounce ticket is distinguishable from several once-bounced ones
-     (max, or count-above-threshold, alongside any mean).
-  9. A day with no bounces reports zero. A period BEFORE architect recording
-     existed is not zero — it renders as unavailable.
-  10. Fixture: BL-590 (4 architect send-backs, 2026-07-25) and BL-606 (3, 2026-07-23)
-      both appear, attributed to the architect, in their respective days.
+  e2e QA procedure (live verification, no pollution of the real log):
+  1. In a scratch dir with a `.swarmforge/` skeleton and one active-ticket
+     fixture, run the real compiled CLI: `node extension/out/tools/
+     record-bounce.js --ticket <id> --role coder --type defect --class
+     behavior --commit <10-hex> --by architect --evidence <path>`; confirm
+     the record (with `by`) lands in `.swarmforge/bounces/<month>.jsonl` and
+     the fixture YAML gains `bounce_history` + `bounce_count: 1`.
+  2. Re-run without `--by`: usage error, nothing written anywhere.
+  3. Point the reader at a COPY of the real `.swarmforge/qa_bounces/
+     2026-07.jsonl`: all 53 legacy records read and tally as unattributed.
+  4. Generate the sidecar + markdown briefing over that data: flow-balance
+     line shows the rework figure with a trend arrow, split by role, and the
+     pre-epoch architect period renders unavailable, not zero.
+  5. `grep -- '--by architect' swarmforge/roles/architect.prompt` and
+     `grep record-bounce.js swarmforge/roles/QA.prompt` both hit.
 
 out_of_scope: |
   - Reconstructing history from briefing markdown. See the data-honesty section;
@@ -257,3 +282,7 @@ notes: |
   answer may well be that BL-590 was an outlier and BL-633/BL-634 were solving a
   rare problem; that is a legitimate finding and the metric must be able to
   deliver it.
+bounce_count: 2
+bounce_history:
+  - { at: 2026-07-25, by: architect, blamed: coder, class: behavior, commit: 73419cd0e1, evidence: backlog/evidence/BL-635-rework-metric-in-briefing-flow-balance-bounce-20260726.md }
+  - { at: 2026-07-26, by: architect, blamed: coder, class: behavior, commit: 3543b2b019, evidence: backlog/evidence/BL-635-rework-metric-in-briefing-flow-balance-bounce2-20260726.md }
