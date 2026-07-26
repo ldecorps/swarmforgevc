@@ -73,11 +73,24 @@ description: |
   ## Shape
 
   1. **Active-time clock.** Effective age = wall age minus intervals in which
-     the swarm could not process: control/cooldown pauses and stop-to-start
-     gaps. The sources are already durable — `control-pause.json` transitions
-     are timestamped, stops/starts are in the kill-all audit and launch logs.
-     If interval reconstruction is unreliable for a period, fail toward wall
-     clock (over-alarming is the safe direction) but say so in the alarm text.
+     the swarm could not process: control/cooldown pauses, stop-to-start
+     gaps, AND **provider outages independent of the swarm** (operator
+     ruling 2026-07-26, after a 529 storm hit the architect mid-review:
+     "il faut tenir compte des outages indépendants de la swarm dans les
+     calculs de temps effectifs"). The sources are already durable —
+     `control-pause.json` transitions are timestamped, stops/starts are in
+     the kill-all audit and launch logs, and provider outages derive from
+     SIGNATURE-BACKED evidence only: timestamped retry/error lines in role
+     transcripts and pane scrollback ("529 Overloaded · attempt N/M",
+     "temporarily unavailable"), the classify-provider-error machinery, and
+     PROVIDER_LIMIT/AVAILABLE cooldown records. Track outage intervals PER
+     PROVIDER and as their OWN interval class, never merged into swarm
+     downtime — the swarm's chosen sleep and Anthropic's bad hour are
+     different facts, and FLOW/COST reporting must be able to show "swarm
+     availability" and "provider availability" separately. If interval
+     reconstruction is unreliable for a period, fail toward wall clock —
+     an unproven gap counts AGAINST the swarm (over-alarming is the safe
+     direction) but say so in the alarm text.
   2. **Rotation-aware thresholds, NOT a dormancy mute.** Under a `rotation
      router` pack the warn/escalate defaults must reflect that a parcel waits
      its rotation turn — pack-aware threshold RESOLUTION (config in,
@@ -120,7 +133,15 @@ acceptance: |
      (all roles resident) still does. Threshold resolution is config-driven
      and the default derivation is stated in the conf comment.
   7. Alarm text states the age it used ("aged 9m active (15m wall)") so a
-     human reading history can tell which clock spoke.
+     human reading history can tell which clock spoke — and names any
+     provider-outage interval it subtracted ("−6m provider-529").
+  7b. Provider-outage fixture (2026-07-26 ~10:45): a 529 retry storm during
+     the architect's BL-647 review — the retry window subtracts from every
+     in-flight parcel's effective age, backed by the transcript's timestamped
+     attempt lines; an interval with NO signature evidence subtracts nothing.
+     Downstream consumers (BL-659 cycle-time percentiles/ETAs) must be able
+     to FLAG outage-tainted samples so one bad provider hour cannot silently
+     inflate a p85 service expectation.
   8. Third recorded false shape (2026-07-26 10:03): an in_process claim whose
      single-resident claimant is on a LEGITIMATE detour (rotated to another
      stage to satisfy the parcel's own prerequisite — here the coder detouring
