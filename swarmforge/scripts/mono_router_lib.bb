@@ -169,6 +169,41 @@
   (let [active (some-> active-role str str/trim not-empty)]
     (or active home-role)))
 
+;; ── BL-648: relaunch boots the resident AS the recorded active role ────────
+;; Distinct from resident-launch-role above (which `./swarm ensure` uses to
+;; restore an ALREADY-alive resident's script - the pane exists, ensure only
+;; decides which script belongs on it). This is the boot-time decision, made
+;; before any pane exists at all, so it also validates the recorded value
+;; against the actual role roster: a marker naming a role that no longer
+;; exists must fall back to home LOUDLY rather than crash the launch
+;; (BL-648 scenario 03), and only `rotation router` reads the marker at all -
+;; every other rotation mode boots exactly as before, marker untouched
+;; (BL-648 scenario 06).
+(defn resolve-boot-role
+  "Args (map): :home-role - this pack's resident/home role (roles.tsv row 1).
+   :recorded-role - the RAW mono-router-active-role marker content, or
+   nil/blank when the marker is missing - callers must not pre-default this
+   to home themselves, or the :blank vs :unknown-role distinction is lost.
+   :known-roles - every role name in this pack's roles.tsv (a coll or set).
+   :rotation-mode - \"router\", \"sequential\", or nil/anything else.
+
+   Returns {:role :fallback? :reason :recorded}. :reason is one of nil (a
+   real recorded role was used), :not-router, :blank, :unknown-role."
+  [{:keys [home-role recorded-role known-roles rotation-mode]}]
+  (let [recorded (some-> recorded-role str str/trim not-empty)]
+    (cond
+      (not= rotation-mode "router")
+      {:role home-role :fallback? false :reason :not-router :recorded recorded}
+
+      (nil? recorded)
+      {:role home-role :fallback? false :reason :blank :recorded recorded}
+
+      (contains? (set known-roles) recorded)
+      {:role recorded :fallback? false :reason nil :recorded recorded}
+
+      :else
+      {:role home-role :fallback? true :reason :unknown-role :recorded recorded})))
+
 (defn should-send-stuck-escalation-email?
   "Whether handoffd should email the human for a stuck-escalation edge.
    Mono-router dormant roles keep roles.tsv session names with no standing
