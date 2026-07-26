@@ -1,0 +1,1 @@
+{"id":"BL-647","messages":[{"seq":0,"ts":1785054691106,"author":"swarm","type":"outbound","text":"BL-647 🎵 in progress — `dead-agent-events` is blind to the rotation router: under the DEFAULT mono-router pack it emits 6 permanent AGENT_EXITED, and the LLM Operator has woken on that same false positive 525 times"}]}
