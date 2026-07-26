@@ -237,6 +237,12 @@ description: |
     Timestamps of that false-precision kind are a rendering DEFECT, not a
     style choice — fixture: any rendered ETA matching a
     weekday/date/minute pattern fails.
+  - **Effective-to-wall conversion (operator follow-through, 2026-07-26)**:
+    percentiles are COMPUTED on effective time (BL-650's clock, outage
+    intervals excluded) then mapped through the ACTIVE SHIFT CALENDAR
+    (BL-660) back to wall language for display — 16 effective hours under a
+    night shift is two nights, rendered "2 to 3 days", never "16 hours".
+    Without this mapping every displayed ETA is wrong by the sleep ratio.
 
   ## Honesty requirements
 
