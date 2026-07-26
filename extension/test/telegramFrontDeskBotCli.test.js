@@ -49,6 +49,9 @@ const {
   executeRestart,
   applyPause,
   resumeNow,
+  controlAmbulanceStatePath,
+  engageAmbulance,
+  releaseAmbulance,
   readPollMap,
   writePollMap,
   pollMapPath,
@@ -1772,6 +1775,62 @@ test('BL-617: resumeNow with no cooldown config configured does not stamp a mark
   const { postFn } = fakeSendOk(1);
   await resumeNow(root, 'fake-token', 'fake-chat', 900, postFn, INSIDE_WINDOW_MS);
   assert.deepEqual(readCooldownWindowMarker(root), { lastHandledWindowStartMs: undefined });
+});
+
+// ── engageAmbulance / releaseAmbulance (BL-655) ────────────────────────────
+// Mirrors ambulance_lib.bb's own shape/idempotency contract on the Babashka
+// side - this bot is the marker's OTHER writer (ambulance_cli.bb, human-only,
+// is the first), and both must honor the SAME "repeated engage of the same
+// ticket / release with no mode set changes nothing" invariant.
+
+function readAmbulanceMarker(root) {
+  try {
+    return JSON.parse(fs.readFileSync(controlAmbulanceStatePath(root), 'utf8'));
+  } catch {
+    return undefined;
+  }
+}
+
+test('BL-655: engageAmbulance writes an active marker naming the ticket and announces it', async () => {
+  const root = mkTmpRoot();
+  const { postFn, calls } = fakeSendOk(1);
+  await engageAmbulance(root, 'fake-token', 'fake-chat', 900, 'BL-654', postFn, 1000);
+  assert.deepEqual(readAmbulanceMarker(root), { active: true, ticket: 'BL-654', engagedAtMs: 1000, by: 'telegram' });
+  const body = JSON.parse(calls[0].body);
+  assert.match(body.text, /Ambulance engaged for BL-654/);
+});
+
+test('BL-655: a repeated engage of the SAME ticket is a true no-op - engagedAtMs is not bumped', async () => {
+  const root = mkTmpRoot();
+  const { postFn } = fakeSendOk(2);
+  await engageAmbulance(root, 'fake-token', 'fake-chat', 900, 'BL-654', postFn, 1000);
+  await engageAmbulance(root, 'fake-token', 'fake-chat', 900, 'BL-654', postFn, 2000);
+  assert.deepEqual(readAmbulanceMarker(root), { active: true, ticket: 'BL-654', engagedAtMs: 1000, by: 'telegram' });
+});
+
+test('BL-655: engaging a DIFFERENT ticket replaces the marker outright', async () => {
+  const root = mkTmpRoot();
+  const { postFn } = fakeSendOk(2);
+  await engageAmbulance(root, 'fake-token', 'fake-chat', 900, 'BL-654', postFn, 1000);
+  await engageAmbulance(root, 'fake-token', 'fake-chat', 900, 'BL-660', postFn, 2000);
+  assert.deepEqual(readAmbulanceMarker(root), { active: true, ticket: 'BL-660', engagedAtMs: 2000, by: 'telegram' });
+});
+
+test('BL-655: releaseAmbulance clears an active marker and announces it', async () => {
+  const root = mkTmpRoot();
+  const { postFn: engagePost } = fakeSendOk(1);
+  await engageAmbulance(root, 'fake-token', 'fake-chat', 900, 'BL-654', engagePost, 1000);
+  const { postFn, calls } = fakeSendOk(1);
+  await releaseAmbulance(root, 'fake-token', 'fake-chat', 900, postFn);
+  assert.deepEqual(readAmbulanceMarker(root), { active: false });
+  assert.match(JSON.parse(calls[0].body).text, /Ambulance released/);
+});
+
+test('BL-655: releasing with no mode set is a true no-op - no marker file is created', async () => {
+  const root = mkTmpRoot();
+  const { postFn } = fakeSendOk(1);
+  await releaseAmbulance(root, 'fake-token', 'fake-chat', 900, postFn);
+  assert.equal(fs.existsSync(controlAmbulanceStatePath(root)), false);
 });
 
 // ── readPollMap / writePollMap (BL-466, the resolvePollThread/recordPollMapping
