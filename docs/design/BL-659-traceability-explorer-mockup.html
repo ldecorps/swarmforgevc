@@ -1,0 +1,274 @@
+<title>SwarmForge Traceability Explorer — maquette</title>
+<style>
+  :root{
+    --bg:#faf8f5; --panel:#ffffff; --ink:#23201b; --muted:#7a7266; --line:#e6e1d8;
+    --accent:#b45309; --accent-soft:#f6e8d8; --pass:#15803d; --fail:#b91c1c; --hold:#6d28d9;
+    --sel:#f3ead9; --mono:ui-monospace,"Cascadia Code",Menlo,monospace;
+  }
+  @media (prefers-color-scheme:dark){:root{
+    --bg:#161412; --panel:#1e1b18; --ink:#eae6df; --muted:#9a917f; --line:#2e2a24;
+    --accent:#f59e0b; --accent-soft:#3a2c14; --pass:#4ade80; --fail:#f87171; --hold:#c4b5fd; --sel:#2e2718;}}
+  :root[data-theme="dark"]{
+    --bg:#161412; --panel:#1e1b18; --ink:#eae6df; --muted:#9a917f; --line:#2e2a24;
+    --accent:#f59e0b; --accent-soft:#3a2c14; --pass:#4ade80; --fail:#f87171; --hold:#c4b5fd; --sel:#2e2718;}
+  :root[data-theme="light"]{
+    --bg:#faf8f5; --panel:#ffffff; --ink:#23201b; --muted:#7a7266; --line:#e6e1d8;
+    --accent:#b45309; --accent-soft:#f6e8d8; --pass:#15803d; --fail:#b91c1c; --hold:#6d28d9; --sel:#f3ead9;}
+  *{box-sizing:border-box}
+  body{background:var(--bg);color:var(--ink);font:14px/1.5 system-ui,sans-serif;margin:0;height:100vh;display:flex;flex-direction:column}
+  header{display:flex;align-items:center;gap:1rem;padding:.6rem 1rem;border-bottom:1px solid var(--line);background:var(--panel)}
+  header h1{font-size:.95rem;margin:0;white-space:nowrap;letter-spacing:.02em}
+  header h1 b{color:var(--accent)}
+  #crumb{flex:1;display:flex;gap:.35rem;align-items:center;font-size:.82rem;color:var(--muted);overflow-x:auto;white-space:nowrap}
+  #crumb a{color:var(--ink);text-decoration:none;padding:.15rem .45rem;border-radius:5px;cursor:pointer}
+  #crumb a:hover{background:var(--sel)}
+  #crumb .sep{color:var(--muted)}
+  #searchbox{position:relative}
+  #searchbox input{background:var(--bg);border:1px solid var(--line);color:var(--ink);border-radius:7px;padding:.4rem .7rem .4rem 1.9rem;width:240px;font:inherit}
+  #searchbox::before{content:"🔍";position:absolute;left:.5rem;top:.35rem;font-size:.85rem;opacity:.7}
+  #searchbox kbd{position:absolute;right:.5rem;top:.45rem;font:.68rem var(--mono);color:var(--muted);border:1px solid var(--line);border-radius:4px;padding:0 .3rem}
+  main{flex:1;display:grid;grid-template-columns:150px 205px 250px 1fr;min-height:0}
+  .col{border-right:1px solid var(--line);overflow-y:auto;padding:.5rem 0}
+  .col h2{font-size:.68rem;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);margin:.2rem 0 .4rem;padding:0 .9rem;font-weight:600}
+  .item{padding:.34rem .9rem;cursor:pointer;display:flex;align-items:center;gap:.45rem;font-size:.85rem;border-left:3px solid transparent}
+  .item:hover{background:var(--sel)}
+  .item.sel{background:var(--sel);border-left-color:var(--accent);font-weight:600}
+  .item .id{font-family:var(--mono);font-size:.8rem}
+  .item .cnt{margin-left:auto;font-size:.7rem;color:var(--muted);font-variant-numeric:tabular-nums}
+  .st{font-size:.78rem;width:1.05em;text-align:center;flex:none}
+  .st.done{color:var(--pass)} .st.paused{color:var(--muted)} .st.hold{color:var(--hold)} .st.active{color:var(--accent)}
+  .bar{height:4px;background:var(--line);border-radius:3px;margin:.25rem .9rem .5rem;overflow:hidden}
+  .bar i{display:block;height:100%;background:var(--pass)}
+  .indent{padding-left:1.9rem;font-size:.82rem}
+  /* details */
+  #details{overflow-y:auto;padding:1rem 1.3rem}
+  #details h3{margin:.1rem 0 .2rem;font-size:1.02rem;text-wrap:balance}
+  .chips{display:flex;gap:.4rem;flex-wrap:wrap;margin:.5rem 0 .9rem}
+  .chip{font-size:.72rem;border:1px solid var(--line);border-radius:99px;padding:.12rem .6rem;color:var(--muted)}
+  .chip.pass{color:var(--pass);border-color:var(--pass)}
+  .chip.accent{color:var(--accent);border-color:var(--accent)}
+  .gwt{margin:.7rem 0}
+  .gwt .kw{font:600 .72rem var(--mono);text-transform:uppercase;letter-spacing:.1em;color:var(--accent);margin-bottom:.15rem}
+  .gwt p{margin:.1rem 0 .1rem .9rem;font-size:.86rem;border-left:2px solid var(--line);padding-left:.6rem}
+  .sect{font-size:.68rem;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);margin:1.1rem 0 .3rem;font-weight:600;border-top:1px solid var(--line);padding-top:.8rem}
+  .files{font:.78rem var(--mono)} .files div{padding:.1rem 0;color:var(--ink)}
+  .rel a{display:inline-block;font:.8rem var(--mono);background:var(--accent-soft);color:var(--accent);border-radius:5px;padding:.1rem .5rem;margin:.1rem .25rem .1rem 0;text-decoration:none;cursor:pointer}
+  /* feature map */
+  .fmap{display:flex;flex-direction:column;align-items:flex-start;margin:.6rem 0;padding-left:.4rem}
+  .fmap .node{display:flex;align-items:center;gap:.5rem;cursor:pointer;padding:.18rem .5rem;border-radius:6px;font-size:.85rem}
+  .fmap .node:hover{background:var(--sel)}
+  .fmap .dot{width:.62rem;height:.62rem;border-radius:50%;border:2px solid var(--accent);flex:none}
+  .fmap .dot.pass{background:var(--pass);border-color:var(--pass)}
+  .fmap .pipe{width:2px;height:.7rem;background:var(--line);margin-left:calc(.31rem + .5rem - 1px + .5px)}
+  .fstats{display:flex;gap:1.2rem;margin-top:.7rem;font-variant-numeric:tabular-nums}
+  .fstats b{display:block;font-size:1.15rem} .fstats span{font-size:.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:.07em}
+  /* minimap */
+  #minimap{position:fixed;right:.9rem;bottom:.9rem;background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:.55rem .8rem;font-size:.66rem;box-shadow:0 3px 14px rgba(0,0,0,.12)}
+  #minimap div{display:flex;align-items:center;gap:.4rem;color:var(--muted);padding:.08rem 0;cursor:pointer}
+  #minimap div.on{color:var(--accent);font-weight:700}
+  #minimap div::before{content:"○";font-size:.6rem} #minimap div.on::before{content:"●"}
+  /* search overlay */
+  #ovl{display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:20;padding-top:9vh}
+  #ovl.open{display:block}
+  #pal{max-width:520px;margin:0 auto;background:var(--panel);border:1px solid var(--line);border-radius:11px;overflow:hidden;box-shadow:0 12px 40px rgba(0,0,0,.3)}
+  #pal input{width:100%;border:0;border-bottom:1px solid var(--line);background:transparent;color:var(--ink);padding:.75rem 1rem;font:1rem system-ui}
+  #pal input:focus{outline:none}
+  #results{max-height:46vh;overflow-y:auto;padding:.4rem 0}
+  #results .grp{font-size:.65rem;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);padding:.45rem 1rem .15rem}
+  #results .hit{padding:.3rem 1rem;cursor:pointer;display:flex;gap:.6rem;align-items:baseline;font-size:.85rem}
+  #results .hit:hover,#results .hit.k{background:var(--sel)}
+  #results .hit .id{font-family:var(--mono);color:var(--accent);flex:none}
+  #results .hit .ctx{color:var(--muted);font-size:.75rem;margin-left:auto;flex:none}
+  .note{font-size:.72rem;color:var(--muted);padding:.4rem .9rem;font-style:italic}
+  @media (max-width:900px){ main{grid-template-columns:1fr}.col{display:none}.col.mob{display:block}#minimap{position:static;margin:.5rem}}
+</style>
+
+<header>
+  <h1>🧭 SwarmForge <b>Traceability Explorer</b> <span style="font-size:.68rem;color:var(--muted)">maquette · données réelles du dépôt</span></h1>
+  <nav id="crumb"></nav>
+  <div id="searchbox" onclick="openPal()"><input placeholder="Search…" readonly><kbd>Ctrl P</kbd></div>
+</header>
+
+<main>
+  <section class="col" id="cMs"><h2>Milestones</h2></section>
+  <section class="col" id="cTk"><h2>Tickets</h2><div class="note">Sélectionne un milestone</div></section>
+  <section class="col" id="cGh"><h2>Gherkin</h2><div class="note">Sélectionne un ticket</div></section>
+  <section id="details"><div class="note" style="padding-top:2rem">Le panneau Détails suit ta sélection — milestone, feature ou scénario.<br><br>Essaie : <b>M8 → BL-629 → Feature → scénario 4</b>, ou <b>Ctrl-P</b> puis « override ».</div></section>
+</main>
+
+<div id="minimap"></div>
+
+<div id="ovl" onclick="if(event.target===this)closePal()">
+  <div id="pal">
+    <input id="q" placeholder="phase map, override, BL-629…" oninput="doSearch(this.value)">
+    <div id="results"></div>
+  </div>
+</div>
+
+<script>
+/* ── données réelles (moissonnées du dépôt le 26/07) ─────────────────── */
+const DATA = {
+  milestones: [
+    {id:"M8", name:"Swarm hardening", total:356, done:279},
+    {id:"M2", name:"CLI", total:25, done:25},
+    {id:"M5", name:"Telegram ops", total:23, done:22},
+    {id:"M6", name:"Onboarding", total:16, done:13},
+    {id:"M3", name:"Traceability", total:7, done:6},
+    {id:"M7", name:"Console", total:6, done:2},
+  ],
+  tickets: { M8: [
+    {id:"BL-629", st:"done",   t:"sync refuse un tip main non QA-approuvé", feat:"F629"},
+    {id:"BL-633", st:"done",   t:"invariants: distinct d'acceptance:", feat:null},
+    {id:"BL-635", st:"done",   t:"record-bounce --by <role> + métrique rework", feat:null},
+    {id:"BL-654", st:"done",   t:"test de propriété par invariant, écrit par le coder", feat:"F654"},
+    {id:"BL-647", st:"paused", t:"dead-agent-events aveugle au rotation router", feat:null},
+    {id:"BL-648", st:"paused", t:"relaunch ignore le rôle actif enregistré", feat:null},
+    {id:"BL-590", st:"hold",   t:"Onboarding Facilitator (parké — conditions vertes)", feat:null},
+  ]},
+  features: { F629: {
+    name:"sync refuses to deploy a main tip whose code is not QA-approved",
+    file:"specs/features/BL-629-sync-refuses-non-qa-approved-main.feature",
+    given:14, when:11, then:19,
+    scenarios:[
+      {n:1, id:"…-01", name:"Unapproved code drift refuses the sync naming only the offending commit", st:"pass",
+       g:["main carries a code-surface commit that is NOT an ancestor of the QA branch","main also carries a bookkeeping-only commit"],
+       w:["a sync is requested"],
+       t:["the sync is refused with the documented exit status","the refusal names the sha of the CODE commit only","no process restarted, no recompile","the remedy names QA or the explicit override"],
+       tags:["deploy-gate","fail-closed"], rel:["BL-630","BL-632","BL-590"]},
+      {n:2, id:"…-02", name:"Deployable drift keeps the routine sync friction free", st:"pass",
+       g:["the drift on main since the last QA-landed commit is <empty | bookkeeping-only | qa-landing-merge>"],
+       w:["a sync is requested"], t:["the sync proceeds without refusal"],
+       tags:["outline","friction-free"], rel:["BL-328"]},
+      {n:3, id:"…-03", name:"A QA branch mid-review does not refuse a deployable main", st:"pass",
+       g:["the QA branch carries review work not on main","main drift is bookkeeping-only"],
+       w:["a sync is requested"], t:["the sync proceeds without refusal"], tags:["mid-review"], rel:[]},
+      {n:4, id:"…-04", name:"The explicit override deploys anyway and leaves a durable record", st:"pass",
+       g:["main carries an unapproved code-surface commit"],
+       w:["a sync is requested WITH the explicit override"],
+       t:["the sync proceeds","a durable override record names the offending sha and when it ran"],
+       tags:["override","audit-trail"], rel:["BL-631"]},
+      {n:5, id:"…-05", name:"An override never outlives the invocation that carried it", st:"pass",
+       g:["an unapproved commit on main","a PRIOR sync ran with the override"],
+       w:["a sync is requested WITHOUT the override"],
+       t:["the sync is refused — the override was one-shot"], tags:["override","one-shot"], rel:[]},
+      {n:6, id:"…-06", name:"report distinguishes stale from stale-behind-an-unapproved-tip", st:"pass",
+       g:["a tracked process is stale against main","main carries an unapproved code commit"],
+       w:["a report is requested"],
+       t:["the staleness is flagged as NOT deployable — the reading that looked reassuring on 07-25 now alarms"],
+       tags:["report","observability"], rel:["BL-335"]},
+    ]}},
+};
+DATA.features.F654 = {name:"declared invariants get coder-authored property tests", file:"specs/features/BL-654-invariant-property-test-coder-authored.feature", given:9, when:6, then:11, scenarios:[
+  {n:1,id:"…-01",name:"A ticket with a declared invariant and no property test is bounced naming the missing test",st:"pass",g:["a ticket declares one invariants: entry","the parcel carries no property test for it"],w:["the architect reviews the parcel"],t:["SEND BACK naming the missing property test — before any hand-verification"],tags:["invariants","gate"],rel:["BL-633","BL-635"]},
+  {n:2,id:"…-02",name:"The generator provably reaches the states the invariant quantifies over",st:"pass",g:["a property test with an asserted coverage floor"],w:["the suite runs 500 seeded cases"],t:["the floor holds or the test FAILS as reachability, distinct from violation"],tags:["generator-reach"],rel:["BL-590"]},
+]};
+
+/* ── état + rendu ────────────────────────────────────────────────────── */
+let S = {ms:null, tk:null, sc:null, level:"Milestone"};
+const $=id=>document.getElementById(id);
+const stIcon = s => ({done:"✔",active:"▶",paused:"⏸",hold:"◆"}[s]||"·");
+
+function render(){
+  renderCol($("cMs"),"Milestones",DATA.milestones.map(m=>({key:m.id,sel:S.ms===m.id,
+    html:`<span class="id">${m.id}</span> ${m.name}<span class="cnt">${m.done}/${m.total}</span>`,
+    extra: S.ms===m.id?`<div class="bar"><i style="width:${Math.round(100*m.done/m.total)}%"></i></div>`:"",
+    on:()=>{S={ms:m.id,tk:null,sc:null,level:"Ticket"};render();}})));
+  const tks = DATA.tickets[S.ms]||[];
+  renderCol($("cTk"),"Tickets", tks.length? tks.map(t=>({key:t.id,sel:S.tk===t.id,
+    html:`<span class="st ${t.st}">${stIcon(t.st)}</span><span class="id">${t.id}</span>`,
+    title:t.t,
+    on:()=>{S.tk=t.id;S.sc=null;S.level="Feature";render();}}))
+    : null, S.ms? (S.ms==="M8"?null:"maquette : seul M8 est peuplé"):"Sélectionne un milestone");
+  const tk = tks.find(t=>t.id===S.tk); const F = tk&&tk.feat? DATA.features[tk.feat]:null;
+  renderCol($("cGh"),"Gherkin", F? [
+    {key:"sum",sel:false,html:`📄 Summary`,on:()=>{}},
+    {key:"acc",sel:false,html:`📋 Acceptance`,on:()=>{}},
+    {key:"feat",sel:S.sc===null&&S.level==="Feature",html:`🥒 <b>Feature</b>`,on:()=>{S.sc=null;S.level="Feature";render();}},
+    ...F.scenarios.map(sc=>({key:sc.n,sel:S.sc===sc.n,cls:"indent",
+      html:`<span class="st ${sc.st==='pass'?'done':'paused'}">${sc.st==='pass'?'✔':'○'}</span> ${sc.n}. ${sc.name.slice(0,30)}…`,
+      on:()=>{S.sc=sc.n;S.level="Scenario";render();}}))
+  ] : null, S.tk? (F?null:"pas de feature liée (acceptance ancienne génération)"):"Sélectionne un ticket");
+  renderDetails(tk,F); renderCrumb(tk,F); renderMap();
+}
+function renderCol(el,title,items,note){
+  el.innerHTML=`<h2>${title}</h2>`;
+  if(!items){ if(note)el.innerHTML+=`<div class="note">${note}</div>`; return;}
+  items.forEach(it=>{const d=document.createElement("div");d.className="item "+(it.sel?"sel ":"")+(it.cls||"");
+    d.innerHTML=it.html; if(it.title)d.title=it.title; d.onclick=it.on; el.appendChild(d);
+    if(it.extra){const x=document.createElement("div");x.innerHTML=it.extra;el.appendChild(x);}});
+  if(note)el.innerHTML+=`<div class="note">${note}</div>`;
+}
+function renderDetails(tk,F){
+  const el=$("details");
+  if(S.sc!=null&&F){ const sc=F.scenarios.find(s=>s.n===S.sc);
+    el.innerHTML=`<h3>${sc.st==='pass'?'✓':'○'} ${sc.name}</h3>
+    <div class="chips"><span class="chip pass">Passed</span><span class="chip">id ${sc.id}</span><span class="chip accent">last run: last night</span></div>
+    ${gwt("Given",sc.g)}${gwt("When",sc.w)}${gwt("Then",sc.t)}
+    <div class="sect">Tags</div><div class="chips">${sc.tags.map(t=>`<span class="chip">${t}</span>`).join("")}</div>
+    <div class="sect">Referenced by</div><div class="rel">${sc.rel.map(r=>`<a onclick="jumpTicket('${r}')">${r}</a>`).join("")||'<span class="note">—</span>'}</div>
+    <div class="sect">Files</div><div class="files"><div>${F.file}</div><div>backlog/done/${S.tk}-….yaml</div></div>
+    <div class="sect">History</div><div style="font-size:.8rem;color:var(--muted)">created 2026-07-25 · modified 2026-07-25 · last verified last night (APS run)</div>`;
+  } else if(F && S.level==="Feature"){
+    el.innerHTML=`<h3>🥒 ${F.name}</h3>
+    <div class="fmap">${F.scenarios.map((sc,i)=>
+      `${i?'<div class="pipe"></div>':''}<div class="node" onclick="S.sc=${sc.n};S.level='Scenario';render()"><span class="dot ${sc.st==='pass'?'pass':''}"></span> ${sc.n}. ${sc.name}</div>`).join("")}</div>
+    <div class="fstats"><div><b>${F.scenarios.length}</b><span>scénarios</span></div><div><b>${F.given}</b><span>Given</span></div><div><b>${F.when}</b><span>When</span></div><div><b>${F.then}</b><span>Then</span></div></div>`;
+  } else if(tk){
+    el.innerHTML=`<h3>${tk.id} — ${tk.t}</h3><div class="chips"><span class="chip">${tk.st}</span></div>
+    <div class="note" style="padding:0">${tk.feat?"Clique 🥒 Feature pour la carte des scénarios.":"Ticket sans feature APS liée dans la maquette."}</div>`;
+  } else if(S.ms){
+    const m=DATA.milestones.find(x=>x.id===S.ms);
+    el.innerHTML=`<h3>${m.id} — ${m.name}</h3><div class="fstats"><div><b>${m.total}</b><span>tickets</span></div><div><b>${m.done}</b><span>done</span></div><div><b>${Math.round(100*m.done/m.total)}%</b><span>progress</span></div></div>`;
+  }
+}
+function gwt(kw,items){return `<div class="gwt"><div class="kw">${kw}</div>${items.map(x=>`<p>${x}</p>`).join("")}</div>`;}
+function renderCrumb(tk,F){
+  const parts=[["🏠 Home",()=>{S={ms:null,tk:null,sc:null,level:"Milestone"};render();}]];
+  if(S.ms)parts.push([S.ms,()=>{S.tk=null;S.sc=null;S.level="Ticket";render();}]);
+  if(S.tk)parts.push([S.tk,()=>{S.sc=null;S.level="Feature";render();}]);
+  if(S.tk&&F)parts.push(["Feature",()=>{S.sc=null;S.level="Feature";render();}]);
+  if(S.sc!=null)parts.push(["Scenario "+S.sc,()=>{}]);
+  $("crumb").innerHTML=parts.map((p,i)=>`${i?'<span class="sep">›</span>':''}<a>${p[0]}</a>`).join("");
+  [...$("crumb").querySelectorAll("a")].forEach((a,i)=>a.onclick=parts[i][1]);
+}
+function renderMap(){
+  const lv=["Milestone","Ticket","Feature","Scenario","Given / When / Then"];
+  const cur=S.sc!=null?"Scenario":S.level;
+  $("minimap").innerHTML=lv.map(l=>`<div class="${l===cur?'on':''}">${l}</div>`).join("");
+}
+function jumpTicket(id){
+  for(const[ms,tks]of Object.entries(DATA.tickets)){const t=tks.find(x=>x.id===id);
+    if(t){S={ms,tk:id,sc:null,level:"Feature"};render();return;}}
+  S={ms:"M8",tk:null,sc:null,level:"Ticket"};render();
+}
+/* ── recherche Ctrl-P ────────────────────────────────────────────────── */
+function openPal(){$("ovl").classList.add("open");$("q").value="";$("results").innerHTML="";$("q").focus();}
+function closePal(){$("ovl").classList.remove("open");}
+function doSearch(q){
+  q=q.toLowerCase(); const R=$("results"); if(!q){R.innerHTML="";return;}
+  let out="";
+  const ms=DATA.milestones.filter(m=>(m.id+" "+m.name).toLowerCase().includes(q));
+  if(ms.length)out+=`<div class="grp">Milestones</div>`+ms.map(m=>hit(m.id,m.name,"",`go('ms','${m.id}')`)).join("");
+  const tks=Object.values(DATA.tickets).flat().filter(t=>(t.id+" "+t.t).toLowerCase().includes(q));
+  if(tks.length)out+=`<div class="grp">Tickets</div>`+tks.map(t=>hit(t.id,t.t.slice(0,44),"M8",`go('tk','${t.id}')`)).join("");
+  for(const[fid,F]of Object.entries(DATA.features)){
+    const scs=F.scenarios.filter(s=>(s.name+" "+s.g.join(" ")+" "+s.t.join(" ")).toLowerCase().includes(q));
+    if(F.name.toLowerCase().includes(q)) out+=`<div class="grp">Features</div>`+hit("🥒",F.name.slice(0,46),fid==="F629"?"BL-629":"BL-654",`go('ft','${fid}')`);
+    if(scs.length) out+=`<div class="grp">Scenarios</div>`+scs.map(s=>hit("✔",s.name.slice(0,46),(fid==="F629"?"BL-629":"BL-654"),`go('sc','${fid}:${s.n}')`)).join("");
+  }
+  R.innerHTML=out||`<div class="note" style="padding:1rem">aucun résultat</div>`;
+}
+function hit(id,txt,ctx,call){return `<div class="hit" onclick="${call};closePal()"><span class="id">${id}</span> ${txt} <span class="ctx">${ctx}</span></div>`;}
+function go(kind,key){
+  if(kind==="ms"){S={ms:key,tk:null,sc:null,level:"Ticket"};}
+  if(kind==="tk"){jumpTicket(key);return;}
+  if(kind==="ft"){const tk=key==="F629"?"BL-629":"BL-654";S={ms:"M8",tk,sc:null,level:"Feature"};}
+  if(kind==="sc"){const[f,n]=key.split(":");const tk=f==="F629"?"BL-629":"BL-654";S={ms:"M8",tk,sc:+n,level:"Scenario"};}
+  render();
+}
+document.addEventListener("keydown",e=>{
+  if((e.ctrlKey||e.metaKey)&&e.key==="p"){e.preventDefault();openPal();}
+  if(e.key==="Escape")closePal();
+});
+render();
+</script>

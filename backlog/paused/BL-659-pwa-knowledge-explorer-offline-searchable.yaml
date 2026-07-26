@@ -1,0 +1,135 @@
+id: BL-659
+title: "EPIC — PWA Knowledge Explorer: milestones→tickets→Gherkin AND docs, constitution, briefings, evidence — the whole understand-the-swarm corpus, offline, searchable, on the phone, at zero token cost"
+milestone: M8
+type: epic
+status: todo
+epic: pwa-knowledge-explorer
+human_approval: approved
+severity: medium
+priority: 06
+direction: human-requested
+depends_on: []
+assigned_to: specifier
+mutation_cost: high
+
+approval_context: >
+  Operator design session, 2026-07-26 morning. Started as a spec-browsing
+  rethink ("un explorateur de code, mais pour les exigences — en moins de
+  deux clics, d'un milestone à un scénario Gherkin, et retour"), then widened
+  deliberately: "il faudrait ajouter le rendering de la doc également. yamls /
+  features / docs. en réalité tout ce qui peut m'aider à comprendre comment
+  fonctionne la swarm." Requirements stated verbatim: "availability offline,
+  searchable, usable sur le téléphone." Surface ruled: the PWA, not the Mini
+  App — the nightly schedule kills the Mini App's backend exactly when the
+  human browses (daytime), and Telegram webviews cannot be offline.
+
+source: |
+  ## The corpus, measured 2026-07-26
+
+  ```
+  backlog yaml            468 files (8.2M raw)     specs/features  360 .feature
+  docs/how-to              24     docs/reference     6     docs/explanation  4
+  docs/briefings           18     backlog/evidence 194
+  roles/*.prompt           12     constitution articles 4   root md ~5
+  ─────────────────────────────────────────────────────────────────────────
+  ~1,100 documents · 8.6 MB text · ~2-3 MB as compressed JSON
+  ```
+
+  The whole understand-the-swarm corpus FITS in a phone's offline cache. The
+  operator's "tout" is implementable literally, not approximately.
+
+  ## Interface intent — WORKING MOCKUP IN-REPO
+
+  `docs/design/BL-659-traceability-explorer-mockup.html` — open it in a
+  browser. Miller columns (Milestones→Tickets→Gherkin→Details), permanent
+  breadcrumb, Ctrl-P palette with grouped results, per-level minimap, feature
+  map (scenario flow + Given/When/Then counts), scenario detail panel — built
+  with REAL repo data (M8, BL-629's actual feature). The mockup is the
+  interface intent; the specifier slices from it, not from prose.
+
+  ## The two design rulings already made (do not reopen)
+
+  1. **PWA, not Mini App.** Offline is structural: service worker + cached
+     snapshot vs a Telegram webview needing a live host through a tunnel —
+     whose backend now sleeps 06:00-00:00, and whose frozen ghost page was
+     photographed on 2026-07-25 22:17. The Mini App keeps the LIVE duties
+     (panes, pipeline board) and gains a "open in explorer" deep link.
+  2. **Zero tokens, forever.** Build-time snapshot by a deterministic node
+     tool (posture of emit-cost-health-sidecar.js): yaml + APS parser +
+     markdown pre-rendered at build. No LLM anywhere in build or browse. The
+     day someone proposes "an LLM to summarize scenarios on the fly" is the
+     day this epic's bill is born — refuse it here.
+
+description: |
+  ## Information architecture — five roots, one explorer
+
+  ```
+  SPECS         Milestones → Tickets → Feature → Scenarios (the mockup)
+  DOCS          how-to / reference / explanation (Diátaxis as-is)
+  CONSTITUTION  roles/*.prompt + articles — HOW THE SWARM WORKS is
+                literally these 16 files; first-class, not an annex
+  BRIEFINGS     the daily series, newest first (incl. the 07-26 gap-fill)
+  EVIDENCE      194 bounce/QA/incident records — reached mostly VIA tickets
+  ```
+
+  Cross-linking is derived, never declared: every `BL-\d+` in any document
+  becomes a link; feature<->ticket via the acceptance path; evidence<->ticket
+  via filename convention. (The week's lesson: declared links lie —
+  `depends_on: []` between coupled tickets; derived links do not.)
+
+  ## The three requirements as acceptance anchors (operator's words)
+
+  1. **Offline**: airplane-mode test — full navigation and search with the
+     network OFF after one online visit. Service worker + snapshot cache.
+  2. **Searchable**: one palette across all five roots, grouped results
+     (the mockup's Ctrl-P), <100ms on-device on the full corpus.
+  3. **Phone**: installable (manifest), columns collapse to drill-down on
+     narrow screens, thumb-reachable breadcrumb.
+
+  ## Honesty requirements
+
+  - The snapshot is AS-OF-BUILD: a permanent banner states the build commit
+    and time. Regenerated on the same trigger family as the sidecar (post-QA
+    landing / briefing build), never pretending to be live.
+  - Scenario status comes from REAL APS runner output, or reads "never run".
+    A gate-looking checkmark that no run produced is this week's central
+    anti-pattern; the explorer must not mint them.
+  - `Referenced by` is computed at build (grep), not hand-maintained.
+
+  ## Slicing hint (specifier's call)
+
+  Slice 1: snapshot builder (yaml+features→JSON) + SPECS root = the mockup,
+  live data. Slice 2: offline (SW + manifest) + search palette. Slice 3:
+  DOCS/CONSTITUTION/BRIEFINGS roots + markdown pre-render + cross-links.
+  Each slice ships usable; sizes bounded by BL-634's envelope discipline.
+
+acceptance: |
+  Epic-level; the specifier slices. The shape every slice preserves:
+
+  1. Two clicks or fewer between any milestone and any of its scenarios, and
+     back — the operator's founding sentence, testable as a click count.
+  2. Airplane mode after one visit: full browse + search of all five roots.
+  3. Zero LLM calls in build and browse — asserted on the build script's
+     dependency surface, not on good intentions.
+  4. Search palette covers all five roots with grouped results on-device.
+  5. Build banner: commit + timestamp always visible.
+  6. Existing #ticket= deep links (BL-256) keep working and now resolve into
+     the explorer.
+  7. Scenario status sourced from real runner output or shown "never run".
+
+out_of_scope: |
+  - Any LLM-generated content at build or browse time (summaries, Q&A).
+    Structural refusal, see design ruling 2.
+  - Live state (pane views, pipeline board) — the Mini App keeps those; one
+    deep link each way is the whole integration.
+  - Editing from the explorer. Read-only by design; rulings flow through
+    the existing approval channels.
+  - The operator's private memory corpus (~/.claude) — not repo content.
+
+notes: |
+  The mockup at docs/design/BL-659-traceability-explorer-mockup.html is the
+  contract of intent: keep its bones (columns, breadcrumb, palette, minimap,
+  feature map) unless a slice records why it deviates. Token-cost analysis
+  and the PWA-vs-MiniApp ruling live in the operator session of 2026-07-26;
+  the one-line version: the corpus is 8.6 MB of text, the phone can carry
+  all of it, and nothing about reading it should ever cost a token.
