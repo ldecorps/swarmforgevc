@@ -6,6 +6,8 @@
 import * as http from 'http';
 import * as fs from 'fs';
 import * as path from 'path';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 import {
   buildBridgeState,
   buildDeliveryMetricsState,
@@ -50,10 +52,14 @@ import { readBacklogFolders, BacklogItem } from '../panel/backlogReader';
 import { promoteToActive, findBacklogFilePath } from '../panel/backlogWriter';
 import { atomicWrite } from '../util/atomicWrite';
 import { getPausedPagerUiHtml } from './pausedPagerUiHtml';
+import { getEpicReorderUiHtml } from './epicReorderUiHtml';
+import { sortEpicsByPriority, computeEpicReorder, EpicPriorityItem, ReorderDirection } from './epicReorderSafety';
 import { recordApprovalReply } from '../concierge/pendingApprovalReply';
 import { requestConciergeTick } from '../concierge/conciergeTickRequest';
 import { getContextBudgetUiHtml } from './contextBudgetUiHtml';
 import { listTelemetryAgents, summarizeTelemetryForAgent } from './contextTelemetryGate';
+
+const execFileAsync = promisify(execFile);
 
 const DEFAULT_POLL_INTERVAL_MS = 1000;
 const LOCALHOST = '127.0.0.1';
@@ -71,6 +77,8 @@ const TELEGRAM_INBOUND_MAX_BODY_BYTES = 16 * 1024;
 const REPLY_ACK_MAX_BODY_BYTES = 4 * 1024;
 // BL-538: Expedite/approve body ({id}) from the /paused-pager Mini App.
 const PAUSED_PAGER_CONTROL_MAX_BODY_BYTES = 4 * 1024;
+// BL-572: move body ({id, direction}) from the /epic-reorder Mini App.
+const EPIC_REORDER_MOVE_MAX_BODY_BYTES = 4 * 1024;
 
 export interface BridgeHandle {
   port: number;
@@ -200,6 +208,16 @@ function isPausedPagerPath(url: string): boolean {
 // BL-538: JSON state for the paused-ticket pager Mini App.
 function isPausedPagerStatePath(url: string): boolean {
   return url === '/paused-pager-state' || url.startsWith('/paused-pager-state?');
+}
+
+// BL-572: epic priority reorder Mini App shell.
+function isEpicReorderPath(url: string): boolean {
+  return url === '/epic-reorder' || url.startsWith('/epic-reorder?');
+}
+
+// BL-572: JSON state for the epic reorder Mini App.
+function isEpicReorderStatePath(url: string): boolean {
+  return url === '/epic-reorder-state' || url.startsWith('/epic-reorder-state?');
 }
 
 // GH-23: Context Budget dashboard Mini App shell.
@@ -447,6 +465,18 @@ function isPausedPagerIdRequestShape(value: unknown): value is { id: string } {
   return !!value && typeof value === 'object' && typeof (value as Record<string, unknown>).id === 'string';
 }
 
+// Shared by the expedite route (priority always -> 0) and BL-572's epic
+// reorder move route (priority -> a computed swap value): replaces an
+// existing `priority:` line in place, or appends one if the ticket had
+// none, leaving every other line byte-identical.
+const PRIORITY_LINE = /^priority:\s*.+$/m;
+function replacePriorityLine(content: string, priority: number): string {
+  if (PRIORITY_LINE.test(content)) {
+    return content.replace(PRIORITY_LINE, `priority: ${priority}`);
+  }
+  return content.trimEnd() + `\npriority: ${priority}\n`;
+}
+
 function handlePausedPagerExpediteRoute(
   req: http.IncomingMessage,
   res: http.ServerResponse,
@@ -479,14 +509,7 @@ function handlePausedPagerExpediteRoute(
         return;
       }
       const content = fs.readFileSync(filePath, 'utf8');
-      const PRIORITY_LINE = /^priority:\s*.+$/m;
-      let updated: string;
-      if (PRIORITY_LINE.test(content)) {
-        updated = content.replace(PRIORITY_LINE, 'priority: 0');
-      } else {
-        updated = content.trimEnd() + '\npriority: 0\n';
-      }
-      atomicWrite(filePath, updated);
+      atomicWrite(filePath, replacePriorityLine(content, 0));
       respondJson(res, 200, { success: true, id: backlogId });
     } catch (err) {
       respondJson(res, 500, {
@@ -538,6 +561,136 @@ function handlePausedPagerApproveRoute(
   });
 }
 
+// BL-572: paused `type: epic` tickets, normalized to a required numeric
+// priority and sorted the same way the screen displays them - the one
+// place both the read (state) and write (move) routes derive "current
+// order" from, so they can never disagree about who a mover's on-screen
+// neighbour is.
+function readPausedEpics(targetPath: string): (BacklogItem & EpicPriorityItem)[] {
+  const MAX_PRIORITY = Number.MAX_SAFE_INTEGER;
+  const epics = readBacklogFolders(targetPath)
+    .paused.filter((item) => item.type === 'epic')
+    .map((item) => ({ ...item, priority: item.priority ?? MAX_PRIORITY }));
+  return sortEpicsByPriority(epics);
+}
+
+function computeEpicReorderState(targetPath: string): unknown {
+  const epics = readPausedEpics(targetPath);
+  return {
+    items: epics.map((epic) => ({ id: epic.id, title: epic.title, priority: epic.priority })),
+    total: epics.length,
+  };
+}
+
+function commitIntegrityCliPath(targetPath: string): string {
+  return path.join(targetPath, 'swarmforge', 'scripts', 'commit_integrity_cli.bb');
+}
+
+// BL-572: durably commits the reorder's swap writes through the same
+// shared, locked commit-integrity helper (commit_integrity_cli.bb, BL-419)
+// the paused-pager Expedite verb uses - never a raw git commit issued from
+// the bridge server, which would race the roles committing to main.
+// Unlike Expedite (whose commit is deferred to telegramFrontDeskBotCore's
+// own poll tick, BL-490/BL-538), a plain console screen action has no such
+// external owner to defer to, so this commits synchronously in the same
+// request - still exclusively through the CLI, never a hand-rolled git
+// command. Degrades to false (never throws) on a missing bb/CLI or a
+// non-zero exit, mirroring commitExpediteWrites' own shape.
+async function commitEpicReorderWrites(targetPath: string, relPaths: string[], ids: string[]): Promise<boolean> {
+  try {
+    const args = [
+      commitIntegrityCliPath(targetPath),
+      targetPath,
+      '--message',
+      `Epic reorder ${ids.join(', ')}: swap priority\n\nBy coder.`,
+      ...relPaths.flatMap((relPath) => ['--path', relPath]),
+    ];
+    const { stdout } = await execFileAsync('bb', args);
+    const result = JSON.parse(stdout.trim().split('\n').pop() ?? '{}') as { success?: boolean };
+    return result.success === true;
+  } catch {
+    return false;
+  }
+}
+
+function isEpicReorderMoveRoute(req: http.IncomingMessage, url: string): boolean {
+  return req.method === 'POST' && (url === '/epic-reorder/move' || url.startsWith('/epic-reorder/move?'));
+}
+
+function isEpicReorderMoveRequestShape(value: unknown): value is { id: string; direction: ReorderDirection } {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+  const v = value as Record<string, unknown>;
+  return typeof v.id === 'string' && (v.direction === 'up' || v.direction === 'down');
+}
+
+// BL-572: the epic reorder screen's write route. Reads paused epics fresh
+// (same order the screen itself was built from), asks the pure decision
+// core which files change, applies those as atomic writes, then commits
+// them - scenario 06's "committed to main" is not a separate step, it is
+// part of what a successful move means (see commitEpicReorderWrites' own
+// comment on why this differs from Expedite's deferred commit).
+function handleEpicReorderMoveRoute(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  targetPath: string,
+  registry: DeviceRegistry
+): void {
+  if (!requireControlAuth(req, res, registry)) {
+    return;
+  }
+  readValidatedBody(
+    req,
+    res,
+    EPIC_REORDER_MOVE_MAX_BODY_BYTES,
+    isEpicReorderMoveRequestShape,
+    'expected a JSON body of {id, direction}'
+  ).then(async (value) => {
+    if (!value) {
+      return;
+    }
+    const epics = readPausedEpics(targetPath);
+    if (!epics.some((epic) => epic.id === value.id)) {
+      respondJson(res, 404, { success: false, reason: 'epic not found in paused' });
+      return;
+    }
+    const result = computeEpicReorder(epics, value.id, value.direction);
+    if (!result || result.writes.length === 0) {
+      respondJson(res, 200, { success: true, changed: false });
+      return;
+    }
+    try {
+      const relPaths: string[] = [];
+      for (const write of result.writes) {
+        const filePath = findBacklogFilePath(targetPath, write.id);
+        if (!filePath) {
+          respondJson(res, 500, { success: false, reason: 'epic file missing during write' });
+          return;
+        }
+        const content = fs.readFileSync(filePath, 'utf8');
+        atomicWrite(filePath, replacePriorityLine(content, write.priority));
+        relPaths.push(path.relative(targetPath, filePath));
+      }
+      const committed = await commitEpicReorderWrites(
+        targetPath,
+        relPaths,
+        result.writes.map((write) => write.id)
+      );
+      if (!committed) {
+        respondJson(res, 500, { success: false, changed: true, reason: 'write succeeded but commit failed' });
+        return;
+      }
+      respondJson(res, 200, { success: true, changed: true });
+    } catch (err) {
+      respondJson(res, 500, {
+        success: false,
+        reason: err instanceof Error ? err.message : 'unknown error',
+      });
+    }
+  });
+}
+
 interface WriteRoute {
   matches: (req: http.IncomingMessage, url: string) => boolean;
   handle: (req: http.IncomingMessage, res: http.ServerResponse, targetPath: string, registry: DeviceRegistry) => void;
@@ -553,6 +706,8 @@ const writeRoutes: WriteRoute[] = [
   // BL-538: paused-pager control routes, control-scoped.
   { matches: isPausedPagerExpediteRoute, handle: handlePausedPagerExpediteRoute },
   { matches: isPausedPagerApproveRoute, handle: handlePausedPagerApproveRoute },
+  // BL-572: epic reorder move route, control-scoped.
+  { matches: isEpicReorderMoveRoute, handle: handleEpicReorderMoveRoute },
 ];
 
 function requestPath(req: http.IncomingMessage): string {
@@ -579,13 +734,15 @@ function isAuthorizedForRead(authHeader: string | undefined, url: string, regist
     return true;
   }
   // Root HTML uses query token client-side; Mini App JSON polls
-  // (/resident-pane, /pipeline-board, /paused-pager-state, /context-budget-state)
-  // also accept it because those fetches cannot set an Authorization header.
+  // (/resident-pane, /pipeline-board, /paused-pager-state, /epic-reorder-state,
+  // /context-budget-state) also accept it because those fetches cannot set an
+  // Authorization header.
   return (
     isRootPath(url) ||
     isResidentPanePath(url) ||
     isPipelineBoardPath(url) ||
     isPausedPagerStatePath(url) ||
+    isEpicReorderStatePath(url) ||
     isContextBudgetStatePath(url)
   ) && isAuthorizedByQueryToken(queryToken(url), primaryTokenOf(registry));
 }
@@ -748,6 +905,11 @@ function buildJsonRoutes(targetPath: string, runLogPath: string, nowMs?: number)
       compute: () => computePausedPagerState(targetPath),
     },
     {
+      // BL-572: epic priority reorder JSON feed for the Mini App.
+      matches: isEpicReorderStatePath,
+      compute: () => computeEpicReorderState(targetPath),
+    },
+    {
       // GH-23: Context Budget dashboard JSON feed for the Mini App.
       matches: isContextBudgetStatePath,
       compute: (url) => buildContextBudgetState(targetPath, url),
@@ -796,6 +958,10 @@ export function startBridge(
       }
       if (isPausedPagerPath(url)) {
         serveMiniAppHtml(res, getPausedPagerUiHtml());
+        return;
+      }
+      if (isEpicReorderPath(url)) {
+        serveMiniAppHtml(res, getEpicReorderUiHtml());
         return;
       }
       if (isContextBudgetPath(url)) {
