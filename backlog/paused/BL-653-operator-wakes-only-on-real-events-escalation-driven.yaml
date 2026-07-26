@@ -1,0 +1,128 @@
+id: BL-653
+title: "Escalation-driven operator: the LLM Operator wakes ONLY on an inbound human message or a deterministic-layer escalation — the runtime stops fabricating liveness pseudo-events every tick"
+milestone: M8
+type: feature
+status: todo
+epic: swarm-reliability
+human_approval: approved
+severity: medium
+priority: 07
+direction: human-requested
+depends_on: []
+assigned_to: specifier
+mutation_cost: high
+
+approval_context: >
+  Operator, 2026-07-25 23:55, designing the unattended-nights wake model:
+  "il ne devrait démarrer que s'il y a un message telegram qui est arrivé,
+  ou si le babysitter le réveille, non?" — confirmed as the target
+  architecture. BL-647 is the tactical patch that lands first; this is the
+  structural version that makes the whole class impossible.
+
+source: |
+  ## The drift this corrects
+
+  The operator's own design memory says "disposable event-driven LLM". In
+  practice `operator_runtime.bb`'s tick loop MANUFACTURES events from its own
+  liveness sweep: `dead-agent-events` compares roles.tsv to live tmux sessions
+  every tick and enqueues AGENT_EXITED for every absent role. Under the
+  default rotation pack six roles are dormant by design, so the queue refills
+  forever — measured 2026-07-25: 525 wakes over four days, then ~1 Opus
+  launch/min after the evening relaunch, every one concluding "nothing is
+  wrong". The night schedule (00:00-06:00 unattended) made this the single
+  most expensive line of the nightly bill, currently suppressed by a
+  self-disarming pid-hold in night-start.sh — a tourniquet, not a fix.
+
+  ## The operator's proposed model (2026-07-25)
+
+  The LLM Operator is summoned; it never patrols. Legitimate wake sources:
+
+  1. **Inbound human traffic** — TELEGRAM_TOPIC_MESSAGE /
+     TELEGRAM_BL_TOPIC_MESSAGE / HUMAN_COMMAND. (The front-desk restricted
+     operator keeps its own separate lifecycle, BL-334, untouched.)
+  2. **Deterministic-layer escalation** — the babysitter (or another
+     deterministic observer) detected something outside its remit and
+     explicitly summons LLM judgement.
+  3. **SWARM_CONTROL_LOST** — already produced deterministically and loudly
+     (BL-368); a genuine catastrophic fact, stays a direct wake.
+
+  Everything else the runtime currently wakes on is either deterministic
+  work that handoffd/babysitterd already own (TASK_ARRIVED dispatch,
+  SWARM_CHECK_TIMER patrols, PROVIDER_AVAILABLE cooldown clears) or a
+  fabricated observation (the AGENT_EXITED liveness diff).
+
+description: |
+  ## The one missing piece of plumbing
+
+  babysitter_check.sh today nudges the COORDINATOR pane (`:205 send-keys`) —
+  it has no path to the operator at all. The bridge is small and must stay
+  deterministic: a babysitter finding classified "needs judgement" writes ONE
+  event (shape: BABYSITTER_ESCALATION with the finding text) into the
+  operator queue instead of / in addition to the coordinator nudge. The
+  babysitter decides WHEN mechanically; the operator decides WHAT — the
+  existing division of labour, now with a wire between them.
+
+  ## What retires
+
+  - `dead-agent-events` as a per-tick wake source. Agent-death detection
+    becomes the babysitter's job — it already cross-checks live PROCESSES
+    (the discipline the 2026-07-25 memory notes prescribe) and is already
+    rotation-aware, so a dormant role never reads as dead. It escalates only
+    a REAL death. This deletes the BL-647 class architecturally.
+  - SWARM_CHECK_TIMER as an LLM patrol. Periodic health is deterministic
+    (babysitterd owns it); an LLM re-reading a healthy swarm every N minutes
+    is the pattern 525 wakes proved worthless.
+  - The night-start.sh pid-hold tourniquet, once this lands.
+
+  ## Relation to BL-647 — both, in order
+
+  BL-647 (prio 02, expedite lane) fixes the producer NOW and is still
+  correct under this model (whatever produces liveness facts must know the
+  pack shape — the babysitter needs that same knowledge). This ticket then
+  moves the produce-and-wake decision out of the runtime tick entirely.
+  BL-647 first (small, in lane); this one behind it — do NOT let this epic-
+  shaped redesign preempt the one-line tactical fix.
+
+  Event-type model tiering ([[operator-model-event-type-tiering]]) survives
+  intact: fewer wake classes, same per-class model choice.
+
+acceptance: |
+  Specifier writes the scenarios. Minimum behaviour:
+
+  1. A healthy swarm, no inbound traffic, no babysitter finding: ZERO
+     operator LLM launches over a full simulated night. This is the headline
+     scenario and must be asserted on launch COUNT, not on log absence.
+  2. A Telegram topic message wakes exactly one operator run carrying that
+     event; its reply path is unchanged.
+  3. A babysitter escalation wakes exactly one run whose inflight batch
+     contains the finding text; the coordinator nudge path still works for
+     findings below the escalation bar (the babysitter chooses per finding).
+  4. A REAL resident death (kill the active resident) reaches the operator —
+     via the babysitter's escalation — within one sweep period, and a
+     dormant role under the rotation pack NEVER does. (Non-vacuity pair.)
+  5. SWARM_CONTROL_LOST still wakes directly, unchanged from BL-368.
+  6. The front-desk restricted operator lifecycle (BL-334) is byte-identical.
+  7. With this landed, night-start.sh's conditional pid-hold block is
+     REMOVED (it must not silently fight the new model), and an unattended
+     night's operator cost is proportional to real events only.
+
+out_of_scope: |
+  - BL-647's fix. It lands first and stays valid: liveness producers must be
+    pack-aware whoever hosts them.
+  - The babysitter's check catalogue (BL-611 productization owns that). This
+    ticket only adds the escalation wire and the wake-model change.
+  - Telegram delivery guarantees while stopped (24h getUpdates window) —
+    separate concern, noted in the night-schedule memory.
+  - Retiring PROVIDER_LIMIT_REACHED/CONFIG_CHANGED as event types: the
+    specifier decides which become deterministic actions vs escalations, but
+    the DEFAULT for anything ambiguous is "deterministic first, escalate on
+    doubt" — that is the whole thesis.
+
+notes: |
+  Sixth and final rotation-related finding of 2026-07-25, and the only one
+  that is a DESIGN correction rather than a patch: 646/647/648/650/651 each
+  fixed one blind observer or one blind decision; this one relocates the
+  authority so observers that cannot be blind (deterministic, pack-aware,
+  free) do the watching, and the expensive judgement layer is summoned, never
+  scheduled. The operator's one-line framing is the spec: "il ne devrait
+  démarrer que s'il y a un message telegram, ou si le babysitter le réveille."

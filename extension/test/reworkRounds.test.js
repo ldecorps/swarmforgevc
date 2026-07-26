@@ -125,6 +125,57 @@ test('a window whose CURRENT point ends exactly at the epoch reports unavailable
   assert.equal(series.architect[series.architect.length - 1].value, null);
 });
 
+// ── BL-635 SEND BACK #2 (evidence sites 1/2): straddling-window clamp and ──
+//    per-role epoch exemption for the legacy `unattributed` corpus ─────────
+
+test('a straddling window computes its ratio over the measured (post-epoch) sub-period only, never blending in a pre-epoch close (SEND BACK #2 site 1)', () => {
+  const nowMs = Date.parse('2026-07-27T00:00:00.000Z'); // currentStart 2026-07-20T00:00Z, spans the 2026-07-25 epoch
+  const records = [record({ by: 'architect', at: '2026-07-26T00:00:00.000Z', commit: 'c1' })];
+  const closedDateIsos = [
+    '2026-07-21T00:00:00.000Z', // pre-epoch close - must NOT inflate the denominator
+    '2026-07-26T00:00:00.000Z', // post-epoch close - the only one that may count
+  ];
+  const series = computeRoundsPerCloseSeriesByRole(records, closedDateIsos, nowMs);
+  // Clamped to the measured sub-period [epoch, windowEnd): 1 bounce / 1 close
+  // = 1.0. The unclamped, pre-fix computation would have counted both
+  // closes (1 bounce / 2 closes = 0.5), understating the real rate.
+  assert.equal(series.architect[series.architect.length - 1].value, 1.0);
+});
+
+test('a window entirely before the declared epoch is still unavailable for a real by-attributed role', () => {
+  const nowMs = Date.parse('2026-07-15T00:00:00.000Z'); // currentStart 2026-07-08T00:00Z, entirely pre-epoch
+  const records = [record({ by: 'architect', at: '2026-07-12T00:00:00.000Z', commit: 'c1' })];
+  const closedDateIsos = ['2026-07-13T00:00:00.000Z'];
+  const series = computeRoundsPerCloseSeriesByRole(records, closedDateIsos, nowMs);
+  assert.equal(series.architect[series.architect.length - 1].value, null);
+});
+
+test('the SAME entirely-pre-declared-epoch window is available for `unattributed` - the legacy corpus is exempt from the by-attribution epoch (SEND BACK #2 site 2)', () => {
+  const nowMs = Date.parse('2026-07-15T00:00:00.000Z'); // currentStart 2026-07-08T00:00Z, entirely pre-epoch
+  const records = [record({ by: undefined, at: '2026-07-12T00:00:00.000Z', commit: 'c1' })];
+  const closedDateIsos = ['2026-07-13T00:00:00.000Z'];
+  const series = computeRoundsPerCloseSeriesByRole(records, closedDateIsos, nowMs);
+  // Same dates as the architect test above, which reads null - unattributed
+  // reads a real figure because its history genuinely predates the epoch.
+  assert.equal(series.unattributed[series.unattributed.length - 1].value, 1.0);
+});
+
+test('computeDailyReworkSeries reports a real count for `unattributed` on a day before the declared epoch, never unavailable (SEND BACK #2 site 2)', () => {
+  const records = [record({ by: undefined, at: '2026-07-12T05:00:00.000Z', commit: 'c1' })];
+  const series = computeDailyReworkSeries(records, 'unattributed', ['2026-07-12'], REWORK_ATTRIBUTION_EPOCH_ISO);
+  assert.deepEqual(series, [{ periodStart: '2026-07-12', value: 1 }]);
+});
+
+test('computeDailyReworkSeriesByRole shows the legacy corpus and a real by-attributed role diverge on the same pre-epoch day', () => {
+  const records = [
+    record({ by: undefined, at: '2026-07-12T05:00:00.000Z', ticket: 'BL-1', commit: 'c1' }),
+    record({ by: 'architect', at: '2026-07-12T06:00:00.000Z', ticket: 'BL-2', commit: 'c2' }),
+  ];
+  const byRole = computeDailyReworkSeriesByRole(records, ['2026-07-12'], REWORK_ATTRIBUTION_EPOCH_ISO);
+  assert.deepEqual(byRole.unattributed, [{ periodStart: '2026-07-12', value: 1 }]);
+  assert.deepEqual(byRole.architect, [{ periodStart: '2026-07-12', value: null }]);
+});
+
 // ── record-bounce-by-role-10: reads the durable log, never commit subjects ─
 
 test('the metric only ever counts durable BounceRecord entries - title/commit text plays no role', () => {
