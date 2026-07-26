@@ -10,6 +10,13 @@
 const OPERATOR_RUNTIME_BB_FILES = [
   'operator_lib.bb',
   'operator_runtime.bb',
+  // BL-647: operator_runtime.bb load-files both of these directly (lines
+  // 50 and 77) - added 2026-07-22 (dc917a1e6) after this list was last
+  // deduped (2026-07-17, 2c0e98bcf), so every existing consumer's fixture
+  // was silently missing them until the rotation-router liveness wiring
+  // needed swarm_identity_lib.bb and this fix closed the gap.
+  'llm_cost_ledger_lib.bb',
+  'swarm_identity_lib.bb',
   'telegram_topic_lib.bb',
   'support_lib.bb',
   'support_thread_store.bb',
