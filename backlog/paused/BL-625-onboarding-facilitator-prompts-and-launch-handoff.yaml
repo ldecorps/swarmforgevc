@@ -11,6 +11,12 @@ direction: human-requested
 depends_on: [BL-624]
 assigned_to: coder
 mutation_cost: medium
+invariants:
+  - "Every durable write is idempotent under redelivery of the same Telegram update."
+  - "One target's answers never land in another target's state: with a single topic reused across targets, every read and write is keyed by the target it belongs to, and an unattributable reply is refused rather than applied to whichever target was last active."
+# ^ Added 2026-07-26 per BL-590's park instruction (see BL-624). The second entry is
+#   this slice's own hazard: slice 1's design reuses ONE topic for all targets, so
+#   target attribution is a property, not a scenario.
 source: |
   BL-590 slice 3, split out by the specifier 2026-07-25. Human ruling on
   BL-590 applies unchanged: the facilitator's remit ends at contract agreed
