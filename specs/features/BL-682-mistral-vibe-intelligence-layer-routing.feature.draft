@@ -11,13 +11,12 @@ Feature: Mistral Vibe is reachable through the Intelligence Layer
   This slice is those two registrations and nothing else. It does not touch
   the packs, the launcher, or the agent shape — all three already work.
 
-  One thing it must NOT do is invent a model id. The other registry entries
-  are real model strings (`anthropic/claude-sonnet-5`,
-  `cerebras/llama-3.3-70b`, `openai/gpt-5.3-codex`), but the vibe packs carry
-  no model at all — their per-role column is `--max-price`, a hard
-  per-session dollar cap, and Vibe selects its own model. The id has to be
-  read from the live tool, and when it cannot be, the entry is registered at
-  agent granularity and says so.
+  One thing it must NOT do is invent a model id. The vibe packs carry no model
+  at all — their per-role column is `--max-price`, a hard per-session dollar
+  cap. The id, the context window and the real token rates all come from
+  Vibe's own config instead, and the id registered is the stable alias rather
+  than the rolling "latest" pointer it aliases, so the registry cannot drift
+  to describing a different model than the one running.
 
   # BL-682 vibe-routing-01
   Scenario: the provider-to-agent map routes mistral to vibe
@@ -50,8 +49,22 @@ Feature: Mistral Vibe is reachable through the Intelligence Layer
   # BL-682 vibe-routing-05
   Scenario: the registered model id is read from the tool, never invented
     Given the Model Steward registry
-    Then the registered Mistral model id is traceable to the live tool's own report
+    Then the registered Mistral model id is traceable to the vibe config's active model
     And an id the tool could not supply is registered at agent granularity with that reason recorded
+
+  # BL-682 vibe-routing-07
+  Scenario: the stable alias is registered rather than the rolling latest pointer
+    Given a vibe config whose active model is an alias of a model named latest
+    When the Mistral model is registered
+    Then the registered id is the alias
+    And the underlying model name is recorded on the entry
+
+  # BL-682 vibe-routing-08
+  Scenario: the context window and cost class come from the config's own numbers
+    Given a vibe config declaring a compaction threshold and token prices
+    When the Mistral model is registered
+    Then its context window is the declared compaction threshold
+    And its cost class is derived from the declared token prices rather than the session spend cap
 
   # BL-682 vibe-routing-06
   Scenario: registering Mistral leaves the other registry entries untouched
