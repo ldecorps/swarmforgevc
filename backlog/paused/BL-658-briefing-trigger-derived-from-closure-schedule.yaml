@@ -1,0 +1,83 @@
+id: BL-658
+title: "The briefing trigger derives from the swarm's closure schedule — 'just before close' as ONE clock, not a sibling constant that lies the day the window moves"
+milestone: M8
+type: feature
+status: todo
+epic: swarm-reliability
+human_approval: approved
+severity: medium
+priority: 08
+direction: human-requested
+depends_on: []
+assigned_to: specifier
+mutation_cost: low
+
+approval_context: >
+  Operator, 2026-07-26 morning, after the first scheduled night produced NO
+  briefing email: "il faut changer l'heure où il doit être produit: juste
+  avant la fermeture de la swarm". The operational patch (a constant moved to
+  04:30Z) is in force; this ticket makes the intent structural.
+
+source: |
+  ## The incident
+
+  2026-07-26, first night of the 00:00-06:00 schedule: `briefing_morning_time_utc
+  07:00` fired two hours after the 06:00 cron stop. Generation is coordinator-LLM
+  work on a handoffd nudge, and both were dead — so the briefing silently never
+  existed. The operator gap-filled by hand (sidecar via the real tool, prose
+  attributed) and moved the constant to 04:45Z, then 04:30Z for LLM-generation
+  margin.
+
+  ## The defect in the patch itself
+
+  `briefing_morning_time_utc 04:30` and the night window (cron 00:00-06:00 +
+  BL-617 inverted pause 06:00->00:00) are now TWO clocks that must agree,
+  maintained separately. Change the window, forget the constant, and the
+  mailman dies again — silently, the same way. 2026-07-25/26 produced five
+  tickets in this exact class (an observer/constant nobody told about a
+  schedule change); do not add a sixth by leaving this as prose.
+
+description: |
+  ## Shape (specifier refines)
+
+  1. A single closure-schedule source readable by handoffd (the BL-617 window
+     config is the natural one: its start IS the daytime pause = the swarm's
+     working-day close). The briefing due-time becomes
+     `closure - margin` (margin configurable, default ~90 LLM-minutes... the
+     specifier sizes it from measured generation times, not a guess).
+  2. `briefing_morning_time_utc` stays honored when the closure schedule is
+     absent/disabled (24/7 swarms keep today's behaviour exactly).
+  3. A safety net at the close itself: the night-stop path checks "was
+     today's briefing generated AND sent?" — if not, it says so LOUDLY
+     (log + alarm channel), never silently closes over a missing briefing.
+     Whether it may DELAY the stop to finish sending is the specifier's call;
+     silence is the only forbidden outcome.
+
+acceptance: |
+  Specifier writes the scenarios. Minimum behaviour:
+
+  1. Window 00:00-06:00: briefing generated and SENT before the close, with
+     the derived margin — no constant edited anywhere.
+  2. Operator changes the window (e.g. to 01:00-07:00): the briefing follows
+     with NO other config change. This is the scenario the ticket exists for.
+  3. No closure schedule configured: byte-identical to today's fixed-time
+     behaviour.
+  4. Briefing not sent by close time: the stop path surfaces it loudly;
+     fixture mirrors 2026-07-26 (trigger after close -> today that is
+     silence, after this ticket it is an alarm).
+  5. The 2026-07-26 gap-fill briefing (operator-authored, marked sent) is
+     not double-sent by anything this ticket adds.
+
+out_of_scope: |
+  - Moving generation off the coordinator LLM. Who writes is unchanged;
+    only WHEN is derived.
+  - The sidecar needsApproval[] reading empty while BL-612/BL-651 are
+    pending (observed 2026-07-26, noted in that day's briefing) — separate
+    backlogDashboard defect, file on sight if confirmed.
+
+notes: |
+  Sixth member of the schedule-blindness family from 2026-07-25/26 (647
+  producer, 650 watchdog clock, 648 relaunch, 657 launcher, the briefing
+  trigger itself) — and the cheapest: one derivation plus one loud check.
+  The operator's sentence is the spec: "juste avant la fermeture de la
+  swarm" — before, derived, and never silent.
