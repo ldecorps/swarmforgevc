@@ -61,7 +61,7 @@ source: |
      day this epic's bill is born — refuse it here.
 
 description: |
-  ## Information architecture — five roots, one explorer
+  ## Information architecture — six roots, one explorer
 
   ```
   SPECS         Milestones → Tickets → Feature → Scenarios (the mockup)
@@ -70,7 +70,40 @@ description: |
                 literally these 16 files; first-class, not an annex
   BRIEFINGS     the daily series, newest first (incl. the 07-26 gap-fill)
   EVIDENCE      194 bounce/QA/incident records — reached mostly VIA tickets
+  FLOW          Kanban analytics (below) — the swarm IS Kanban, chart it as one
   ```
+
+  ## FLOW root — Kanban analytics (operator ruling, 2026-07-26)
+
+  The swarm is strict Kanban by construction: pull-based promotion, WIP
+  limit (`active_backlog_max_depth` — the breaker at 1 IS a WIP limit),
+  per-role mailbox queues, an expedite class of service (Article 3.2.4),
+  a blocked lane (`hold/`), measured rework loops (BL-635). What it does
+  NOT have is iterations — so iteration charts lie here (see out_of_scope).
+
+  Charts, in the operator-ratified priority order, every one derivable at
+  build time from timestamped handoffs + backlog folders, zero tokens:
+
+  1. **CFD** (cumulative flow) — stacked bands paused / active /
+     per-role-stage / done over time. Band width = queued WIP; horizontal
+     distance = cycle time; diverging bands = the bottleneck, visible
+     before it hurts. The per-ROLE resolution is this repo's rare asset
+     (handoffs are all timestamped) — the 2026-07-25 cleaner starvation
+     would read as a swelling band hours before any alarm.
+  2. **Cycle-time scatterplot + p50/p85/p95** (promotion→done, dot per
+     ticket, colored by type) — replaces date promises with a service-level
+     expectation: "a promoted defect lands within X h in 85% of cases".
+  3. **Aging WIP** — each in-flight item's age in its CURRENT stage vs that
+     stage's historical percentiles; above-p85 = the hawk-watch as a chart.
+     Ages in ACTIVE time (BL-650's clock), never wall clock.
+  4. **Throughput run chart** — speccedPerDay vs closedPerDay OVERLAID
+     (both already in the sidecar; the overlay is what's missing —
+     specced durably above closed = the backlog is swelling).
+  5. **Flow efficiency** — touch time vs wait time per ticket; the
+     hand-measured 11:1 front/back ratio of 2026-07-25 (which justified the
+     stereo-router epic), industrialised and continuous.
+  6. **Rework** — roundsPerClose by bouncing role; ALREADY SHIPPED
+     (BL-635, in the sidecar since 2026-07-26); FLOW renders it.
 
   Cross-linking is derived, never declared: every `BL-\d+` in any document
   becomes a link; feature<->ticket via the acceptance path; evidence<->ticket
@@ -105,7 +138,7 @@ description: |
 
   1. **Offline**: airplane-mode test — full navigation and search with the
      network OFF after one online visit. Service worker + snapshot cache.
-  2. **Searchable**: one palette across all five roots, grouped results
+  2. **Searchable**: one palette across all six roots, grouped results
      (the mockup's Ctrl-P), <100ms on-device on the full corpus.
   3. **Phone**: installable (manifest), columns collapse to drill-down on
      narrow screens, thumb-reachable breadcrumb.
@@ -132,10 +165,10 @@ acceptance: |
 
   1. Two clicks or fewer between any milestone and any of its scenarios, and
      back — the operator's founding sentence, testable as a click count.
-  2. Airplane mode after one visit: full browse + search of all five roots.
+  2. Airplane mode after one visit: full browse + search of all six roots.
   3. Zero LLM calls in build and browse — asserted on the build script's
      dependency surface, not on good intentions.
-  4. Search palette covers all five roots with grouped results on-device.
+  4. Search palette covers all six roots with grouped results on-device.
   5. Build banner: commit + timestamp always visible.
   6. Existing #ticket= deep links (BL-256) keep working and now resolve into
      the explorer.
@@ -146,6 +179,12 @@ acceptance: |
      expedite queue exactly as the promotion lane computes it.
 
 out_of_scope: |
+  - BURNDOWN charts, explicitly and permanently. Operator ruling 2026-07-26:
+    "les burndowns: super idée, mais sur l'état de milestones cela ne sert à
+    rien" — milestones here are labels on a continuously growing scope (M8:
+    356 and climbing), not iterations with a committed perimeter; a burndown
+    on a growing scope burns UP and lies. The FLOW root's Kanban charts are
+    the replacement, not a complement.
   - Any LLM-generated content at build or browse time (summaries, Q&A).
     Structural refusal, see design ruling 2.
   - Live state (pane views, pipeline board) — the Mini App keeps those; one
