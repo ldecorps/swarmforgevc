@@ -222,9 +222,12 @@ function registerSteps(registry) {
   });
 
   registry.define(/^it reports exactly one AGENT_EXITED event$/, (ctx) => {
-    if (ctx.bl647Events.length !== 1) {
+    try {
+      if (ctx.bl647Events.length !== 1) {
+        throw new Error(`expected exactly one AGENT_EXITED event, got: ${JSON.stringify(ctx.bl647Events)}`);
+      }
+    } finally {
       cleanup(ctx);
-      throw new Error(`expected exactly one AGENT_EXITED event, got: ${JSON.stringify(ctx.bl647Events)}`);
     }
   });
 
