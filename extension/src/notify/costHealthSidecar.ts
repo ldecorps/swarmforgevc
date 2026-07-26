@@ -106,7 +106,12 @@ export interface ResourceAnomaly {
 // posture, carried through to this field too).
 export interface FlowBalanceRework {
   // field name is load-bearing - BL-635's required_wiring greps it.
-  roundsPerClose: Record<string, TrendedNumber>;
+  // BL-635 SEND BACK #1 (evidence site 3): `null` per role carries
+  // "unavailable" end to end - a role whose current window is entirely
+  // pre-epoch or closed zero tickets has no honest figure to report, and
+  // TrendedNumber alone had no way to say that other than fabricating a
+  // value. Never render a trend arrow for a null entry.
+  roundsPerClose: Record<string, TrendedNumber | null>;
   bouncesPerDay: Record<string, DailyReworkPoint[]>;
   maxRounds: MaxRoundsIndicator | null;
 }
@@ -474,6 +479,27 @@ function renderTopExpensiveOriginsLines(byHorizon: Record<LlmCostHorizon, LlmCos
 // sidecar sections' one-line `if` pattern) instead of adding a branch on top
 // of an already CRAP-budget-full function. Mutates `flowBalance` in place,
 // same "only set when the input is present" contract the inline version had.
+// BL-635 SEND BACK #1 (evidence sites 1-3): collapses one role's two-point
+// [prior, current] window series into a TrendedNumber, or `null` when the
+// CURRENT point is unavailable (pre-epoch window or zero closed tickets) -
+// there is no honest figure to report at all in that case. When only the
+// PRIOR point is unavailable, the current value still renders but with no
+// trend baseline to compare against (computeTrend on a single-point series
+// yields direction 'unknown', which trendArrow renders as no arrow) -
+// never a trend computed against a fabricated or missing baseline.
+function trendedRoundsPerClose(points: DailyReworkPoint[]): TrendedNumber | null {
+  if (points.length === 0 || points[points.length - 1].value === null) {
+    return null;
+  }
+  const series: TrendSeriesPoint[] = [];
+  for (const p of points) {
+    if (p.value !== null) {
+      series.push({ periodStart: p.periodStart, value: p.value });
+    }
+  }
+  return trendedFromSeries(series);
+}
+
 function attachFlowBalanceRework(
   flowBalance: CostHealthSidecar['flowBalance'],
   reworkInputs?: { bounceRecords: BounceRecord[]; closedDateIsos: string[]; nowMs: number }
@@ -483,9 +509,9 @@ function attachFlowBalanceRework(
   }
   const { bounceRecords, closedDateIsos, nowMs } = reworkInputs;
   const roundsSeriesByRole = computeRoundsPerCloseSeriesByRole(bounceRecords, closedDateIsos, nowMs);
-  const roundsPerClose: Record<string, TrendedNumber> = {};
-  for (const [role, series] of Object.entries(roundsSeriesByRole)) {
-    roundsPerClose[role] = trendedFromSeries(series);
+  const roundsPerClose: Record<string, TrendedNumber | null> = {};
+  for (const [role, points] of Object.entries(roundsSeriesByRole)) {
+    roundsPerClose[role] = trendedRoundsPerClose(points);
   }
   flowBalance.rework = {
     roundsPerClose,
@@ -512,13 +538,20 @@ export function renderCostTrendChartLines(series: OriginCostTrendSeries[]): stri
 // role, appended to the same line specced/closed already render on -
 // absent (no bounce data recorded for any role yet) renders nothing, same
 // "hidden, not fabricated" posture as every other optional sidecar section.
+// BL-635 SEND BACK #1 (evidence site 4): a role whose window is unavailable
+// renders the literal word "unavailable" - never `0.0`, never a bare arrow
+// with no figure behind it - matching renderDailyReworkMarkdownLine, which
+// already gets this right for the daily series.
 function renderReworkSuffix(rework: FlowBalanceRework | undefined): string {
   const roles = Object.keys(rework?.roundsPerClose ?? {}).sort();
   if (!rework || roles.length === 0) {
     return '';
   }
   const perRole = roles
-    .map((role) => `${role} ${rework.roundsPerClose[role].value.toFixed(1)} ${trendArrow(rework.roundsPerClose[role].trend)}`)
+    .map((role) => {
+      const trended = rework.roundsPerClose[role];
+      return trended === null ? `${role} unavailable` : `${role} ${trended.value.toFixed(1)} ${trendArrow(trended.trend)}`;
+    })
     .join(', ');
   return `, rework ${perRole} rounds/close`;
 }
