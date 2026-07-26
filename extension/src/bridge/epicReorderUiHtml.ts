@@ -153,6 +153,7 @@ export function getEpicReorderUiHtml(): string {
       html += '<div class="row-actions">';
       html += '<button class="move-up" data-id="' + item.id + '"' + (disableUp ? ' disabled' : '') + '>Move up</button>';
       html += '<button class="move-down" data-id="' + item.id + '"' + (disableDown ? ' disabled' : '') + '>Move down</button>';
+      html += '<button class="make-top" data-id="' + item.id + '"' + (disableUp ? ' disabled' : '') + '>Make top</button>';
       html += '</div>';
       html += '</div>';
     });
@@ -164,41 +165,37 @@ export function getEpicReorderUiHtml(): string {
     Array.prototype.forEach.call(contentEl.querySelectorAll('.move-down'), function (btn) {
       btn.onclick = function () { move(btn.getAttribute('data-id'), 'down'); };
     });
+    Array.prototype.forEach.call(contentEl.querySelectorAll('.make-top'), function (btn) {
+      btn.onclick = function () { makeTop(btn.getAttribute('data-id')); };
+    });
 
     setStatus(total + (total === 1 ? ' epic' : ' epics'));
   }
 
-  function move(id, direction) {
-    if (loading) return;
-    loading = true;
-    setMoveStatus('');
-    setStatus('Moving ' + id + '…');
-    fetch('/epic-reorder/move' + q, {
-      method: 'POST',
-      headers: controlAuthHeaders(),
-      body: JSON.stringify({ id: id, direction: direction }),
-    }).then(function (r) {
+  // Shared by move() and makeTop(): the server's reason is written
+  // specifically to be shown - a raw HTTP status is not a reason (architect
+  // bounce #3). When the write itself already landed on disk (commit-failed
+  // path) the list must stop showing the stale pre-action order. A legal
+  // no-op (list boundary, already-best-position, or a refused dependency
+  // bound) gets its own stated reason, never a refresh indistinguishable
+  // from success.
+  function handleActionResponse(fetchPromise, failedLabel) {
+    return fetchPromise.then(function (r) {
       loading = false;
       if (!r.ok) {
-        // The server's reason is written specifically to be shown - a raw
-        // HTTP status is not a reason (architect bounce #3). When the write
-        // itself already landed on disk (commit-failed path) the list must
-        // stop showing the stale pre-move order.
         return r.json().catch(function () { return {}; }).then(function (payload) {
-          setMoveStatus(reasonOrFallback(payload, 'Move failed (HTTP ' + r.status + ')'), true);
-          setStatus('Move failed');
+          setMoveStatus(reasonOrFallback(payload, failedLabel + ' (HTTP ' + r.status + ')'), true);
+          setStatus(failedLabel);
           if (payload && payload.changed) { refresh(); }
         });
       }
       return r.json().then(function (payload) {
         if (!payload || !payload.success) {
-          setMoveStatus(reasonOrFallback(payload, 'Move failed'), true);
-          setStatus('Move failed');
+          setMoveStatus(reasonOrFallback(payload, failedLabel), true);
+          setStatus(failedLabel);
           return;
         }
         if (payload.changed === false) {
-          // A legal no-op (list boundary) - the human gets a stated reason,
-          // never a refresh that looks identical to a successful move.
           setMoveStatus(reasonOrFallback(payload, 'No change.'), true);
           return;
         }
@@ -207,8 +204,32 @@ export function getEpicReorderUiHtml(): string {
       });
     }).catch(function (err) {
       loading = false;
-      setStatus('Move error: ' + String(err && err.message || err));
+      setStatus(failedLabel + ': ' + String(err && err.message || err));
     });
+  }
+
+  function move(id, direction) {
+    if (loading) return;
+    loading = true;
+    setMoveStatus('');
+    setStatus('Moving ' + id + '…');
+    handleActionResponse(fetch('/epic-reorder/move' + q, {
+      method: 'POST',
+      headers: controlAuthHeaders(),
+      body: JSON.stringify({ id: id, direction: direction }),
+    }), 'Move failed');
+  }
+
+  function makeTop(id) {
+    if (loading) return;
+    loading = true;
+    setMoveStatus('');
+    setStatus('Making ' + id + ' top…');
+    handleActionResponse(fetch('/epic-reorder/make-top' + q, {
+      method: 'POST',
+      headers: controlAuthHeaders(),
+      body: JSON.stringify({ id: id }),
+    }), 'Make top failed');
   }
 
   function refresh() {

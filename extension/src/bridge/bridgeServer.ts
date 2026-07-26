@@ -52,6 +52,7 @@ import { atomicWrite } from '../util/atomicWrite';
 import { getPausedPagerUiHtml } from './pausedPagerUiHtml';
 import { getEpicReorderUiHtml } from './epicReorderUiHtml';
 import { sortEpicsByPriority, computeEpicReorder, EpicPriorityItem, ReorderDirection, PriorityWrite } from './epicReorderSafety';
+import { computeMakeTopPriority, MakeTopItem, DependencyResolution } from './makeTopPrioritySafety';
 import { recordApprovalReply } from '../concierge/pendingApprovalReply';
 import { requestConciergeTick } from '../concierge/conciergeTickRequest';
 import { getContextBudgetUiHtml } from './contextBudgetUiHtml';
@@ -76,6 +77,8 @@ const REPLY_ACK_MAX_BODY_BYTES = 4 * 1024;
 const PAUSED_PAGER_CONTROL_MAX_BODY_BYTES = 4 * 1024;
 // BL-572: move body ({id, direction}) from the /epic-reorder Mini App.
 const EPIC_REORDER_MOVE_MAX_BODY_BYTES = 4 * 1024;
+// BL-672: make-top body ({id}) from the same Mini App.
+const EPIC_MAKE_TOP_MAX_BODY_BYTES = 4 * 1024;
 
 export interface BridgeHandle {
   port: number;
@@ -703,6 +706,115 @@ function handleEpicReorderMoveRoute(
   });
 }
 
+// BL-672: the full domination set for "make top priority" - every live
+// (paused + hold) backlog item, epic AND non-epic topic alike (unlike
+// readPausedEpics's epics-only, paused-only scope, approval_context #3) -
+// active/ is excluded (already promoted; rewriting an in-flight ticket's
+// YAML risks worktree staleness for zero scheduling effect) and done/ is
+// never read or written here.
+function readLiveBacklogItems(targetPath: string): (BacklogItem & MakeTopItem)[] {
+  const MAX_PRIORITY = Number.MAX_SAFE_INTEGER;
+  const folders = readBacklogFolders(targetPath);
+  const live = [...folders.paused, ...folders.hold].map((item) => ({
+    ...item,
+    priority: item.priority ?? MAX_PRIORITY,
+    dependsOn: item.dependsOn ?? [],
+  }));
+  return sortEpicsByPriority(live);
+}
+
+// BL-672: classifies a depends_on id NOT present in the live domination set
+// - done/active are satisfied/ignored terminal nodes for ordering purposes
+// (the coordinator's promotion gate owns active's own completion); anything
+// else is a dangling reference and computeMakeTopPriority refuses on it.
+function buildResolveNonLiveDependency(folders: ReturnType<typeof readBacklogFolders>): (id: string) => DependencyResolution {
+  const activeIds = new Set(folders.active.map((item) => item.id));
+  const doneIds = new Set(folders.done.map((item) => item.id));
+  return (id: string): DependencyResolution => (activeIds.has(id) ? 'active' : doneIds.has(id) ? 'done' : 'unknown');
+}
+
+function commitMakeTopPriorityWrites(targetPath: string, relPaths: string[], targetId: string): Promise<boolean> {
+  return runCommitIntegrity(targetPath, relPaths, `Epic make-top-priority ${targetId}: rewrite priority\n\nBy coder.`);
+}
+
+function isEpicMakeTopRoute(req: http.IncomingMessage, url: string): boolean {
+  return req.method === 'POST' && (url === '/epic-reorder/make-top' || url.startsWith('/epic-reorder/make-top?'));
+}
+
+function isEpicMakeTopRequestShape(value: unknown): value is { id: string } {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+  return typeof (value as Record<string, unknown>).id === 'string';
+}
+
+// BL-672: the make-top-priority screen verb. Reads the full live domination
+// set fresh (paused + hold, epics AND topics), asks the pure decision core
+// which files change (dependency-bounded), applies those as atomic writes,
+// then commits through the same commit-integrity path the move route uses -
+// never a bare git command from the bridge. A refusal (cycle, dangling
+// dependency, a live dependency ranked worse than the target, or already in
+// the best permitted position) answers changed:false with a stated reason -
+// same response-contract lesson as the move route (BL-572 architect bounce
+// #2/#3: a tap that did nothing must say so, and the reason must actually
+// reach the screen, not just the response body).
+function handleEpicMakeTopRoute(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  targetPath: string,
+  registry: DeviceRegistry
+): void {
+  if (!requireControlAuth(req, res, registry)) {
+    return;
+  }
+  readValidatedBody(
+    req,
+    res,
+    EPIC_MAKE_TOP_MAX_BODY_BYTES,
+    isEpicMakeTopRequestShape,
+    'expected a JSON body of {id}'
+  ).then(async (value) => {
+    if (!value) {
+      return;
+    }
+    const folders = readBacklogFolders(targetPath);
+    const liveItems = readLiveBacklogItems(targetPath);
+    const result = computeMakeTopPriority(liveItems, value.id, buildResolveNonLiveDependency(folders));
+    if (!result) {
+      respondJson(res, 404, { success: false, reason: 'ticket not found in paused or hold' });
+      return;
+    }
+    if (!result.changed) {
+      respondJson(res, 200, { success: true, changed: false, reason: result.reason });
+      return;
+    }
+    try {
+      const resolved = resolveEpicWritePaths(targetPath, result.writes);
+      if (!resolved) {
+        respondJson(res, 500, { success: false, reason: 'backlog file missing during write' });
+        return;
+      }
+      const relPaths: string[] = [];
+      for (const { write, filePath } of resolved) {
+        const content = fs.readFileSync(filePath, 'utf8');
+        atomicWrite(filePath, replacePriorityLine(content, write.priority));
+        relPaths.push(path.relative(targetPath, filePath));
+      }
+      const committed = await commitMakeTopPriorityWrites(targetPath, relPaths, value.id);
+      if (!committed) {
+        respondJson(res, 500, { success: false, changed: true, reason: 'write succeeded but commit failed' });
+        return;
+      }
+      respondJson(res, 200, { success: true, changed: true, reason: result.reason });
+    } catch (err) {
+      respondJson(res, 500, {
+        success: false,
+        reason: err instanceof Error ? err.message : 'unknown error',
+      });
+    }
+  });
+}
+
 interface WriteRoute {
   matches: (req: http.IncomingMessage, url: string) => boolean;
   handle: (req: http.IncomingMessage, res: http.ServerResponse, targetPath: string, registry: DeviceRegistry) => void;
@@ -720,6 +832,8 @@ const writeRoutes: WriteRoute[] = [
   { matches: isPausedPagerApproveRoute, handle: handlePausedPagerApproveRoute },
   // BL-572: epic reorder move route, control-scoped.
   { matches: isEpicReorderMoveRoute, handle: handleEpicReorderMoveRoute },
+  // BL-672: epic make-top-priority route, control-scoped.
+  { matches: isEpicMakeTopRoute, handle: handleEpicMakeTopRoute },
 ];
 
 function requestPath(req: http.IncomingMessage): string {
