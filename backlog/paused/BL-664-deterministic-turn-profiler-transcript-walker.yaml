@@ -1,0 +1,61 @@
+id: BL-664
+title: "Deterministic turn profiler: a read-only transcript walker classifies every role turn (mechanical git / tests / thinking / turn-overhead / provider-outage) into a trended series — the measurement that sizes every transit optimization"
+milestone: M8
+type: feature
+status: todo
+epic: swarm-behaviour-trends
+severity: medium
+priority: 06
+direction: human-requested
+depends_on: []
+assigned_to: specifier
+mutation_cost: medium
+invariants:
+  - "The profiler is read-only on transcripts — they are forensic evidence; no walker output path writes, moves, or truncates a transcript."
+  - "Absent data renders as absent: the profiler states its coverage window and never extrapolates outside it (BL-635's honesty rule)."
+
+source: |
+  .swarmforge/operator/INTAKE-deterministic-git-choreography-assist.md
+  (operator session 2026-07-26, on the human's ask "si tu n'as pas assez de
+  data, profile les agents pour optimiser cet aspect"; archived on drain).
+  The operator's 30-minute prototype on the coder's 22MB transcript (9.2h,
+  6,698 events) already INVERTED the naive framing: raw git commands are
+  ~4% of coder seat time; the real tax is TURN OVERHEAD wrapping trivial
+  mechanical turns (a 2-second merge costs a 10-minute turn; a 15-min,
+  57k-token cleaner boot processed an EMPTY stale batch). Addendum 2: 529
+  retry storms must be their own category or a provider bad hour reads as
+  "the architect got slow" downstream.
+
+description: |
+  ## What
+
+  A deterministic walker over role transcripts
+  (~/.claude/projects/*--worktrees-<role>/*.jsonl and master-resident
+  equivalents) that classifies each tool-call interval — git-mechanical /
+  test-run / file-read / thinking-writing / TURN OVERHEAD (boot to first
+  productive action) / PROVIDER-OUTAGE retry windows (signature-backed,
+  per-provider, feeding BL-650's effective-time definition) — and
+  attributes per turn, per stage, per ticket via the handoff trail.
+  Retroactive: weeks of history are measurable before any assist ships.
+
+  Output: a `turnProfile` series (TrendedNumber shape, briefing sidecar) —
+  mechanical share and turn-overhead share per stage, trended. Feeds the
+  BL-659 flow-efficiency chart (mechanical split), the COST experiment log
+  (before/after for BL-667's assists), and is the shared substrate the
+  context-telemetry producer (BL-665) and shift governor's burn meter
+  (BL-666) reuse — ONE walker lib, several outputs; do not build three
+  parsers.
+
+  ## Sequencing (the point of this ticket)
+
+  Profile FIRST, cheap and retrospective; let measured mechanical share and
+  turn-overhead size the BL-667 transit-assist slices — the falsifiability
+  discipline BL-635 established, applied to an optimization. The prototype
+  suggests the yield model is TURNS ELIMINATED x (boot+read overhead), not
+  seconds shaved off commands; the real profiler must measure that
+  boot-to-first-productive-action split the prototype could not see.
+
+  Caveats to engineer around, from the prototype: transcripts
+  rotate/compact (state the coverage window); single-seat data so far
+  (transit-heavy roles will differ); regex-level extraction needs replacing
+  with real JSONL parsing.

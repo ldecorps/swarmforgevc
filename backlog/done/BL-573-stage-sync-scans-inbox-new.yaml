@@ -2,7 +2,8 @@ id: BL-573
 title: "Pipeline board stage sync scans inbox/in_process only — a ticket queued at a dormant role shows at its previous stage"
 milestone: M8
 type: defect
-status: todo
+status: superseded
+superseded_by: BL-670
 epic: pipeline-board
 severity: medium
 priority: 15
