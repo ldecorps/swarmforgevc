@@ -162,7 +162,13 @@ export function getEpicReorderUiHtml(): string {
       html += '<div class="row-actions">';
       html += '<button class="move-up" data-id="' + item.id + '"' + (disableUp ? ' disabled' : '') + '>Move up</button>';
       html += '<button class="move-down" data-id="' + item.id + '"' + (disableDown ? ' disabled' : '') + '>Move down</button>';
-      html += '<button class="make-top" data-id="' + item.id + '"' + (disableUp ? ' disabled' : '') + '>Make top</button>';
+      // BL-672 bounce #1: make-top's domination set is readLiveBacklogItems
+      // (paused+hold, epics AND topics), not the epics-only list disableUp is
+      // computed over - index 0 here does not mean "already live top", so
+      // this button is never client-side disabled. Matches BL-673's topic
+      // make-top (below): the route already answers changed:false + a reason
+      // for the true no-op case, which the screen displays.
+      html += '<button class="make-top" data-id="' + item.id + '">Make top</button>';
       html += '<button class="drill" data-id="' + item.id + '">Topics</button>';
       html += '</div>';
       html += '</div>';
