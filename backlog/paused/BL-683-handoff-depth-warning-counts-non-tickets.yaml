@@ -1,0 +1,78 @@
+id: BL-683
+title: "swarm_handoff.bb's depth warning counts directory entries, not tickets: .gitkeep is reported as an active ticket, so every handoff in the swarm overstates the active count by one"
+milestone: M8
+type: defect
+severity: low
+status: todo
+epic: swarm-reliability
+human_approval: approved
+priority: 40
+direction: swarm-proposed
+depends_on: []
+assigned_to: specifier
+mutation_cost: low
+
+invariants:
+  - "Every counter that reports the size of a backlog folder counts ticket YAML files only, and all of them agree on the same folder."
+
+approval_context: >
+  Found by the specifier 2026-07-26 while draining intakes: every
+  swarm_handoff.sh send printed "active=5, max=1" against a backlog/active/
+  holding four tickets. Low severity — cosmetic, no decision reads it — so it
+  is filed at the back of the queue rather than expedited. Reject if the
+  warning's over-count is considered harmless enough not to spend a parcel on.
+
+source: |
+  ## The three counters, one of which disagrees
+
+  - `swarmforge/scripts/handoffd.bb:1420` — the open-slot promotion gate:
+    `(chase-sweep-lib/count-backlog-yaml backlog-active-dir)`. YAML only.
+    **Correct.**
+  - `swarmforge/scripts/handoffd.bb:1966` — the status snapshot:
+    `(count-yaml-files backlog-active-dir)`. YAML only. **Correct.**
+  - `swarmforge/scripts/swarm_handoff.bb:190` — the warning printed on every
+    send: `(count (fs/list-dir active-dir))`. **Every directory entry**,
+    including the permanent `.gitkeep`. **Wrong by one, always.**
+
+  ## Observed
+
+  ```
+  WARNING: Active backlog depth exceeded (active=5, max=1).
+  ```
+
+  against a `backlog/active/` containing `.gitkeep` plus exactly four
+  tickets (BL-648, BL-672, BL-673, BL-674).
+
+description: |
+  Change `check-backlog-depth`'s count to the same YAML-only counter the other
+  two sites already use, rather than adding a third bespoke count.
+
+  ## Why this is low severity, stated plainly
+
+  No decision reads this number. The coordinator's promotion gate uses the
+  correct counter, so nothing is mis-promoted or wrongly blocked. The cost is
+  that the single most frequently printed depth figure in the swarm — it goes
+  out on every handoff — is wrong, and disagrees with the two figures that are
+  right. That is a slow tax on every human and agent who reads it while
+  diagnosing a stall, which is exactly when an off-by-one in a depth reading
+  is most expensive to reason about.
+
+  ## The generalisable bit
+
+  The bug is a third bespoke count where two shared ones already existed. The
+  fix should reuse, not re-implement — and the invariant is stated so a fourth
+  site cannot quietly reintroduce it.
+
+acceptance: specs/features/BL-683-handoff-depth-warning-counts-non-tickets.feature.draft
+
+out_of_scope: |
+  - The depth cap itself, the throttle, and the promotion gate. All correct;
+    this slice only fixes what the warning REPORTS.
+  - Removing `.gitkeep`. It is what keeps the empty directory in git; the
+    counter is what is wrong, not the file.
+  - Auditing every other folder counter in the repo for the same shape. If the
+    invariant's sweep turns one up, that is its own finding.
+
+notes: |
+  Gherkin parked as `.feature.draft` per BL-233; the coder promotes it and
+  wires handlers in the same commit.
