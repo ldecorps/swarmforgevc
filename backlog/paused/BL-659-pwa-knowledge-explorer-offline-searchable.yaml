@@ -185,6 +185,32 @@ description: |
   3. **Phone**: installable (manifest), columns collapse to drill-down on
      narrow screens, thumb-reachable breadcrumb.
 
+  ## Completion cues at every level (operator, 2026-07-26: "un visual clue
+  ## qui me dise le pct de completion d'un milestone, d'un epic, d'un BL")
+
+  A progress visual (bar or ring, tabular numerals, value visible on tap) on
+  every node, each with a DERIVED definition — no hand-maintained number:
+
+  - **Milestone**: done / total tickets carrying the milestone (the mockup's
+    existing bar; the operator's own founding sketch already had "Progress
+    83%" under M3). Accompanied by BL-228's shipped ETA (p50 projected
+    completion) where the burndown series exists — reuse
+    `metrics.burndown`, never recompute differently from the briefing.
+  - **Epic**: done / total among tickets sharing the `epic:` field —
+    derivable today from yaml alone; shown on the epic's own ticket node
+    AND on the epic facet chip ("stereo-router (0/6)").
+  - **BL ticket**: pipeline-stage progress — stages completed / stages
+    required (the ticket's `required_stages` or the canonical 7-chain),
+    derived at build from the durable trail (handoffs sent/completed,
+    evidence, done/ location). A done ticket reads 100%; a paused one 0%;
+    an in-flight one "architect · 4/7" with a partial ring. KNOWN GAP,
+    stated not papered: /pipeline exposes no per-ticket stage (the BL-452
+    memo), so stage attribution comes from the snapshot's own derivation
+    and is AS-OF-BUILD like everything else — the ring must never imply
+    live tracking.
+  - Epic-type tickets with `remaining_slices` additionally show
+    slices-shipped / slices-total when the field is parseable.
+
   ## Honesty requirements
 
   - The snapshot is AS-OF-BUILD: a permanent banner states the build commit
