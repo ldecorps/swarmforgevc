@@ -10,6 +10,8 @@ direction: swarm-surfaced
 depends_on: [BL-537]
 assigned_to: specifier
 mutation_cost: medium
+invariants:
+  - "Under every rotation value that means single-resident, ensure never respawns a role the launcher deliberately left dormant."
 source: |
   Architect round-4 review of BL-530/BL-560 (2026-07-23,
   backlog/evidence/BL-530-architect-approval.md), recorded there as an explicit

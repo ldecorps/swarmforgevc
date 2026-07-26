@@ -11,6 +11,8 @@ direction: human-requested
 depends_on: []
 assigned_to: specifier
 mutation_cost: low
+invariants:
+  - "Parcel age counts only time the swarm was live; deliberate downtime never advances any stall or escalation clock."
 
 approval_context: >
   Operator, 2026-07-25, after a planned stop-and-restart produced three ESCALATE

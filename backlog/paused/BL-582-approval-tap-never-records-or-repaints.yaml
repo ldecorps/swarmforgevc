@@ -11,6 +11,8 @@ direction: human-requested
 depends_on: []
 assigned_to: specifier
 mutation_cost: medium
+invariants:
+  - "Every approval tap produces an observable, durable outcome — a recorded decision or a durable failure record; no code path silently no-ops."
 source: |
   Human, 2026-07-23 ~14:55Z: tapped Approve on BL-579/BL-580/BL-581 in the
   Approvals topic (1785). "i approved but messages are not repainting

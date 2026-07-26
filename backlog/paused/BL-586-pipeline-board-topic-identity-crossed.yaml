@@ -11,6 +11,9 @@ direction: human-requested
 depends_on: []
 assigned_to: specifier
 mutation_cost: medium
+invariants:
+  - "The board never posts into a topic the topic map attributes to another purpose — validated before every post, not only at mint time."
+  - "Re-establishing board identity is reuse-or-create: no state reset mints a new topic while the previous board topic is still durably known."
 source: |
   Human, 2026-07-23 ~15:45Z, with screenshot: two topics both named
   "Pipeline Board" in the group sidebar, repeated "Concierge pinned"

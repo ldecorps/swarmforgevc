@@ -1,0 +1,47 @@
+id: BL-671
+title: "9 of 10 test_operator_runtime_*.sh fixtures sandbox-copy operator_runtime.bb without llm_cost_ledger_lib.bb, which it load-files — every one breaks at require time in its sandbox"
+milestone: M8
+type: defect
+status: todo
+epic: swarm-reliability
+severity: medium
+priority: 20
+direction: swarm-surfaced
+depends_on: []
+assigned_to: specifier
+mutation_cost: low
+
+source: |
+  .swarmforge/operator/INTAKE-test-operator-runtime-fixtures-miss-llm-cost-ledger-lib.md
+  (coordinator relay of a cleaner side-finding during BL-647, 2026-07-26;
+  archived on drain). The intake asked the specifier to confirm what "miss"
+  means before writing acceptance criteria. CONFIRMED on main by the
+  specifier, 2026-07-26: `operator_runtime.bb:50` load-files
+  `llm_cost_ledger_lib.bb` from its own directory; the fixtures build a
+  sandbox by explicitly cp-ing scripts; 10 test_operator_runtime_*.sh
+  exist; only test_operator_runtime_bl647_rotation_liveness.sh (line 31)
+  copies the ledger lib; the other 9 all copy operator_runtime.bb and all
+  omit the lib — so operator_runtime.bb cannot load in their sandboxes.
+
+description: |
+  ## Defect
+
+  Sandbox-copy lists are hand-maintained per fixture, so a new load-file in
+  operator_runtime.bb breaks every existing fixture that copies the runtime
+  — exactly the missed-consumer-sweep shape
+  (consumer-sweep-must-be-exhaustive-not-sampled; BL-629 bounced 3x on it):
+  whichever parcel added the ledger load-file updated zero of the nine
+  pre-existing fixtures (the tenth, BL-647's, was written after and copies
+  it). Attribution of the introducing parcel is discoverable via
+  `git log -S llm_cost_ledger_lib -- swarmforge/scripts/operator_runtime.bb`
+  — confirm during the fix rather than trusting the intake's BL-486 guess.
+
+  ## Fix shape (coder's call between two)
+
+  Preferred: a shared fixture helper that copies operator_runtime.bb
+  TOGETHER with the libs it load-files (one list, one owner), so the next
+  added lib breaks one place, not nine. Minimal alternative: add the lib to
+  all nine cp lists. Either way: run all ten fixtures and confirm each
+  passes end-to-end — the acceptance is the suite green, not the cp lines
+  present. If any of the nine turns out to fail for an unrelated
+  pre-existing reason, surface it in the parcel rather than widening scope.

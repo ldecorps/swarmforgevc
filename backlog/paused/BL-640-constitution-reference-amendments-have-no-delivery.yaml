@@ -11,6 +11,8 @@ direction: human-requested
 depends_on: []
 assigned_to: specifier
 mutation_cost: medium
+invariants:
+  - "No amendment to articles/reference/ can leave any role reading a stale elaboration that contradicts the amended rule on `main`."
 
 approval_context: >
   Operator ruling 2026-07-25, immediately after landing an Article 5.1 amendment

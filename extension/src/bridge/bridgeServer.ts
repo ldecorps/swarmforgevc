@@ -741,22 +741,29 @@ function queryToken(url: string): string | undefined {
 // unchanged from BL-065's original "one token, full read access" model,
 // just generalized to a roster. The stronger control-only check lives in
 // isAuthorizedForControl below.
+// Root HTML uses query token client-side; Mini App JSON polls (/resident-pane,
+// /pipeline-board, /paused-pager-state, /epic-reorder-state, /context-budget-
+// state) also accept it because those fetches cannot set an Authorization
+// header. Table-driven (BL-572), same reason buildJsonRoutes/writeRoutes are:
+// each new query-token-eligible path is another row here, never another `||`
+// growing isAuthorizedForRead's own branch count past the CRAP<=6 gate.
+const QUERY_TOKEN_ELIGIBLE_PATHS: Array<(url: string) => boolean> = [
+  isRootPath,
+  isResidentPanePath,
+  isPipelineBoardPath,
+  isPausedPagerStatePath,
+  isEpicReorderStatePath,
+  isContextBudgetStatePath,
+];
+
 function isAuthorizedForRead(authHeader: string | undefined, url: string, registry: DeviceRegistry): boolean {
   if (findDeviceByToken(registry, extractBearerToken(authHeader))) {
     return true;
   }
-  // Root HTML uses query token client-side; Mini App JSON polls
-  // (/resident-pane, /pipeline-board, /paused-pager-state, /epic-reorder-state,
-  // /context-budget-state) also accept it because those fetches cannot set an
-  // Authorization header.
   return (
-    isRootPath(url) ||
-    isResidentPanePath(url) ||
-    isPipelineBoardPath(url) ||
-    isPausedPagerStatePath(url) ||
-    isEpicReorderStatePath(url) ||
-    isContextBudgetStatePath(url)
-  ) && isAuthorizedByQueryToken(queryToken(url), primaryTokenOf(registry));
+    QUERY_TOKEN_ELIGIBLE_PATHS.some((matches) => matches(url)) &&
+    isAuthorizedByQueryToken(queryToken(url), primaryTokenOf(registry))
+  );
 }
 
 // BL-241 control-requires-step-up-04: control actions require a SEPARATE

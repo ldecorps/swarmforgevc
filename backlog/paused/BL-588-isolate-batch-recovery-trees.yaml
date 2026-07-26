@@ -7,6 +7,8 @@ epic: swarm-reliability
 human_approval: approved
 priority: 6
 mutation_cost: high
+invariants:
+  - "Under whatever isolation approach is chosen, a ticket verified clean is never blocked from landing by a sibling ticket's rework."
 direction: human-requested
 depends_on: [BL-532]
 assigned_to: specifier
