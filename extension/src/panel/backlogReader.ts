@@ -432,9 +432,11 @@ export function readBacklogFolders(targetPath: string): BacklogFolders {
   };
 }
 
-/** Case-insensitive lookup across active, paused, and done backlog folders. */
+/** Case-insensitive lookup across active, paused, hold, and done backlog folders. */
 export function lookupBacklogItemById(targetPath: string, backlogId: string): BacklogItem | undefined {
   const folders = readBacklogFolders(targetPath);
   const needle = backlogId.toUpperCase();
-  return [...folders.active, ...folders.paused, ...folders.done].find((item) => item.id.toUpperCase() === needle);
+  return [...folders.active, ...folders.paused, ...folders.hold, ...folders.done].find(
+    (item) => item.id.toUpperCase() === needle
+  );
 }

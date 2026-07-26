@@ -297,3 +297,91 @@ test('make-top route: write succeeds but the commit fails - reports the BL-490 r
 
   assert.ok(readPriority(target, 'paused', 'E2') < readPriority(target, 'paused', 'E1'), 'the write itself must have landed despite the commit failure');
 });
+
+test('make-top route: a write target file goes missing mid-cascade - dedicated 500, nothing written', async () => {
+  // Mirrors epicReorderBridge.test.js's BL-960..963 concurrent-modification
+  // coverage for the shared move route: applyMakeTopPriorityResult must
+  // take the SAME dedicated resolveEpicWritePaths-returned-null branch, not
+  // fall through to the generic catch-all, when a make-top cascade touches
+  // a file that vanished between decision and write.
+  const target = mkTmp();
+  writeEpic(target, 'paused', 'E1', 0);
+  writeEpic(target, 'paused', 'E2', 1);
+  writeEpic(target, 'paused', 'E3', 2);
+  const before1 = fs.readFileSync(path.join(target, 'backlog', 'paused', 'E1.yaml'), 'utf8');
+  const before2 = fs.readFileSync(path.join(target, 'backlog', 'paused', 'E2.yaml'), 'utf8');
+
+  const backlogWriter = require('../out/panel/backlogWriter');
+  const originalFind = backlogWriter.findBacklogFilePath;
+  backlogWriter.findBacklogFilePath = function (targetPathArg, id) {
+    return id === 'E2' ? null : originalFind(targetPathArg, id);
+  };
+
+  try {
+    await withBridge(target, {}, async (handle) => {
+      const { status, body } = await makeTop(handle, 'E3');
+      assert.equal(status, 500);
+      assert.equal(body.success, false);
+      assert.equal(
+        body.reason,
+        'backlog file missing during write',
+        'must take the dedicated missing-file 500 path, not fall through to the generic catch-all'
+      );
+    });
+  } finally {
+    backlogWriter.findBacklogFilePath = originalFind;
+  }
+
+  assert.equal(fs.readFileSync(path.join(target, 'backlog', 'paused', 'E1.yaml'), 'utf8'), before1, 'nothing writes when a later cascade member is missing');
+  assert.equal(fs.readFileSync(path.join(target, 'backlog', 'paused', 'E2.yaml'), 'utf8'), before2);
+});
+
+test('make-top route: an unexpected write-time error is caught and reported, not thrown through the handler', async () => {
+  const target = mkTmp();
+  writeEpic(target, 'paused', 'E1', 0);
+  writeEpic(target, 'paused', 'E2', 5);
+  const before1 = fs.readFileSync(path.join(target, 'backlog', 'paused', 'E1.yaml'), 'utf8');
+
+  const atomicWriteModule = require('../out/util/atomicWrite');
+  const originalAtomicWrite = atomicWriteModule.atomicWrite;
+  atomicWriteModule.atomicWrite = function () {
+    throw new Error('simulated disk failure');
+  };
+
+  try {
+    await withBridge(target, {}, async (handle) => {
+      const { status, body } = await makeTop(handle, 'E2');
+      assert.equal(status, 500);
+      assert.equal(body.success, false);
+      assert.equal(body.reason, 'simulated disk failure');
+    });
+  } finally {
+    atomicWriteModule.atomicWrite = originalAtomicWrite;
+  }
+
+  assert.equal(fs.readFileSync(path.join(target, 'backlog', 'paused', 'E1.yaml'), 'utf8'), before1, 'nothing else must be left rewritten when the write itself throws');
+});
+
+test('make-top route: a non-Error thrown value still reports a reason, not a crash', async () => {
+  const target = mkTmp();
+  writeEpic(target, 'paused', 'E1', 0);
+  writeEpic(target, 'paused', 'E2', 5);
+
+  const atomicWriteModule = require('../out/util/atomicWrite');
+  const originalAtomicWrite = atomicWriteModule.atomicWrite;
+  atomicWriteModule.atomicWrite = function () {
+    // eslint-disable-next-line no-throw-literal
+    throw 'a plain string, not an Error instance';
+  };
+
+  try {
+    await withBridge(target, {}, async (handle) => {
+      const { status, body } = await makeTop(handle, 'E2');
+      assert.equal(status, 500);
+      assert.equal(body.success, false);
+      assert.equal(body.reason, 'unknown error');
+    });
+  } finally {
+    atomicWriteModule.atomicWrite = originalAtomicWrite;
+  }
+});

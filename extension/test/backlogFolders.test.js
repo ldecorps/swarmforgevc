@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { readBacklogFolders } = require('../out/panel/backlogReader');
+const { readBacklogFolders, lookupBacklogItemById } = require('../out/panel/backlogReader');
 
 function mkTmp() {
   return mkTmpDir('sfvc-backlog-folders-');
@@ -111,4 +111,30 @@ test('BL-234 none-dropped-05: no parseable ticket is silently dropped from its f
     folders.paused.map((i) => i.id).sort(),
     ['BL-108', 'BL-109', 'BL-110']
   );
+});
+
+// ── BL-672: lookupBacklogItemById is a direct consumer of readBacklogFolders'
+// hold field - a shared reader gaining a bucket is worthless if its own
+// consumers keep spreading the old set. ────────────────────────────────────
+
+test('lookupBacklogItemById finds a ticket that lives only in backlog/hold', () => {
+  const target = mkTmp();
+  writeYaml(path.join(target, 'backlog', 'hold'), 'BL-200.yaml', 'id: BL-200\ntitle: human-held one\nstatus: todo\n');
+
+  const found = lookupBacklogItemById(target, 'BL-200');
+
+  assert.equal(found && found.title, 'human-held one');
+});
+
+test('lookupBacklogItemById is case-insensitive and picks the right item among several candidates', () => {
+  const target = mkTmp();
+  writeYaml(path.join(target, 'backlog', 'active'), 'BL-201.yaml', 'id: BL-201\ntitle: active one\nstatus: todo\n');
+  writeYaml(path.join(target, 'backlog', 'paused'), 'BL-202.yaml', 'id: BL-202\ntitle: paused one\nstatus: todo\n');
+  writeYaml(path.join(target, 'backlog', 'hold'), 'BL-203.yaml', 'id: BL-203\ntitle: held one\nstatus: todo\n');
+  writeYaml(path.join(target, 'backlog', 'done'), 'BL-204.yaml', 'id: BL-204\ntitle: done one\nstatus: done\n');
+
+  assert.equal(lookupBacklogItemById(target, 'bl-203').title, 'held one');
+  assert.equal(lookupBacklogItemById(target, 'BL-201').title, 'active one');
+  assert.equal(lookupBacklogItemById(target, 'BL-204').title, 'done one');
+  assert.equal(lookupBacklogItemById(target, 'BL-999'), undefined);
 });

@@ -53,11 +53,13 @@ test('BL-672-03: re-applying to an already-top epic is a no-op with a reason', (
   const before = backgroundItems();
   const first = computeMakeTopPriority(before, 'E3', neverResolves);
   const top = apply(before, first.writes);
+  // Called with the default dominationSet/dominationLabel (no 3rd/4th arg) -
+  // the reason must fall back to the real default label text, not an empty
+  // or placeholder string.
   const second = computeMakeTopPriority(top, 'E3', neverResolves);
   assert.equal(second.changed, false);
   assert.deepEqual(second.writes, []);
-  assert.equal(typeof second.reason, 'string');
-  assert.ok(second.reason.length > 0);
+  assert.equal(second.reason, 'Already the unique top of the live backlog.');
 });
 
 test('BL-672-04: a live better-ranked dependency bounds the move instead of being outranked', () => {
@@ -80,7 +82,77 @@ test('BL-672-05a: a live dependency ranked worse than the target refuses fail-cl
   const result = computeMakeTopPriority(before, 'E3', neverResolves);
   assert.equal(result.changed, false);
   assert.deepEqual(result.writes, []);
-  assert.match(result.reason, /T2/);
+  assert.equal(
+    result.reason,
+    "Cannot make top: live dependency T2 currently ranks worse than the target - " +
+      'promoting it would deepen an existing dependency violation instead of resolving it.'
+  );
+});
+
+test('BL-672: two worse-ranked live dependencies are named together, sorted and pluralized', () => {
+  // dependsOn lists Z1 before A1 - insertion/traversal order is reversed
+  // from alphabetical, so the reason text can only read "A1, Z1" if the
+  // blocking-id list is actually sorted before joining, not merely
+  // reported in whatever order the traversal happened to visit them.
+  const before = sortEpicsByPriority([
+    { id: 'E3', priority: 0, dependsOn: ['Z1', 'A1'] },
+    { id: 'Z1', priority: 5, dependsOn: [] },
+    { id: 'A1', priority: 6, dependsOn: [] },
+  ]);
+  const result = computeMakeTopPriority(before, 'E3', neverResolves);
+  assert.equal(result.changed, false);
+  assert.deepEqual(result.writes, []);
+  assert.equal(
+    result.reason,
+    'Cannot make top: live dependencies A1, Z1 currently rank worse than the target - ' +
+      'promoting it would deepen an existing dependency violation instead of resolving it.'
+  );
+});
+
+test('BL-672: a dangling id is the FIRST one visited, never overwritten by a later sibling once dangling is set', () => {
+  // Both GHOST-1 and GHOST-2 are dangling. If the traversal's own
+  // short-circuit (stop visiting siblings once dangling/cycle is set)
+  // did not fire, GHOST-2 would overwrite GHOST-1 as the reported id.
+  const before = sortEpicsByPriority([{ id: 'E3', priority: 0, dependsOn: ['GHOST-1', 'GHOST-2'] }]);
+  const result = computeMakeTopPriority(before, 'E3', neverResolves);
+  assert.equal(result.changed, false);
+  assert.match(result.reason, /GHOST-1/);
+  assert.ok(!result.reason.includes('GHOST-2'), `expected only the first-visited dangling id, got: ${result.reason}`);
+});
+
+test('BL-672: a cyclic depends_on chain reports the actual cycle path, not the whole walk prefix', () => {
+  // E5 -> E3 -> E4 -> E3: an acyclic prefix (E5) leads into a cycle
+  // strictly between E3 and E4. The reported chain must be exactly the
+  // cyclic segment (E3 -> E4 -> E3), never the full walk stack (which
+  // would also carry E5) and never an empty/placeholder chain.
+  const before = sortEpicsByPriority([
+    { id: 'E5', priority: 0, dependsOn: ['E3'] },
+    { id: 'E3', priority: 1, dependsOn: ['E4'] },
+    { id: 'E4', priority: 2, dependsOn: ['E3'] },
+  ]);
+  const result = computeMakeTopPriority(before, 'E5', neverResolves);
+  assert.equal(result.changed, false);
+  assert.equal(result.reason, 'Cannot make top: depends_on forms a cycle (E3 -> E4 -> E3).');
+});
+
+test('BL-672: the worst-ranked live dependency is picked correctly even when it is NOT the first one traversed', () => {
+  // E3 directly depends on both E1 (better-ranked, visited first) and E2
+  // (also better-ranked but closer to E3, i.e. the true worst of the two).
+  // A reduce that never advances past its first element would wrongly
+  // keep E1 as the bound.
+  const before = sortEpicsByPriority([
+    { id: 'E1', priority: 0, dependsOn: [] },
+    { id: 'E2', priority: 1, dependsOn: [] },
+    { id: 'E3', priority: 2, dependsOn: ['E1', 'E2'] },
+  ]);
+  const result = computeMakeTopPriority(before, 'E3', neverResolves);
+  // E3 already sits immediately after E2 (its true worst-ranked live
+  // dependency) - correct behavior is a no-op naming E2. A reduce that
+  // stuck on E1 would instead attempt (and succeed at) an actual move.
+  assert.equal(result.changed, false);
+  assert.deepEqual(result.writes, []);
+  assert.match(result.reason, /E2/);
+  assert.ok(!result.reason.includes('E1'), `expected the bound to name E2 (the true worst), got: ${result.reason}`);
 });
 
 test('BL-672-05b: a cyclic depends_on chain back to itself refuses fail-closed', () => {

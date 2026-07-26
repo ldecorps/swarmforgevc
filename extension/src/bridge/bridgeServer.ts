@@ -761,6 +761,27 @@ function commitMakeTopPriorityWrites(targetPath: string, relPaths: string[], tar
   return runCommitIntegrity(targetPath, relPaths, `Epic make-top-priority ${targetId}: rewrite priority\n\nBy coder.`);
 }
 
+// Resolves every write's on-disk path (all-or-nothing, same contract as
+// resolveEpicWritePaths' own caller in handleEpicReorderMoveRoute) and
+// applies them atomically, returning the committed relPaths - or null when
+// any target file went missing between decision and write, so the caller
+// can answer the dedicated 500 rather than a generic one. Split out of
+// applyMakeTopPriorityResult purely to keep that function's own branching
+// under the article 4.1 CRAP threshold - no behavior change.
+function writeMakeTopPriorityFiles(targetPath: string, writes: PriorityWrite[]): string[] | null {
+  const resolved = resolveEpicWritePaths(targetPath, writes);
+  if (!resolved) {
+    return null;
+  }
+  const relPaths: string[] = [];
+  for (const { write, filePath } of resolved) {
+    const content = fs.readFileSync(filePath, 'utf8');
+    atomicWrite(filePath, replacePriorityLine(content, write.priority));
+    relPaths.push(path.relative(targetPath, filePath));
+  }
+  return relPaths;
+}
+
 // Shared response tail for both make-top routes (BL-672 epic-level, BL-673
 // topic-level): apply a computed MakeTopResult's writes atomically, commit
 // through the same commit-integrity path the move route uses, and answer
@@ -777,16 +798,10 @@ async function applyMakeTopPriorityResult(
     return;
   }
   try {
-    const resolved = resolveEpicWritePaths(targetPath, result.writes);
-    if (!resolved) {
+    const relPaths = writeMakeTopPriorityFiles(targetPath, result.writes);
+    if (!relPaths) {
       respondJson(res, 500, { success: false, reason: 'backlog file missing during write' });
       return;
-    }
-    const relPaths: string[] = [];
-    for (const { write, filePath } of resolved) {
-      const content = fs.readFileSync(filePath, 'utf8');
-      atomicWrite(filePath, replacePriorityLine(content, write.priority));
-      relPaths.push(path.relative(targetPath, filePath));
     }
     const committed = await commitWrites(relPaths);
     if (!committed) {

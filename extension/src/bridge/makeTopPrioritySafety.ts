@@ -47,6 +47,45 @@ interface DependencyTraversal {
   dangling: string | null;
 }
 
+interface TraversalRefusal {
+  cycle: string[] | null;
+  dangling: string | null;
+}
+
+function isRefused(refusal: TraversalRefusal): boolean {
+  return refusal.cycle !== null || refusal.dangling !== null;
+}
+
+// onStack's own content is only ever read via indexOf(id)/slice(from) to
+// extract a cycle path by VALUE match - a bogus seed element a mutant
+// inserts here is never popped (push/pop stay balanced around it) but is
+// also never matched by indexOf for a real id, so it never appears in a
+// reported cycle path either (BL-234 precedent: equivalent).
+function cycleAt(onStack: string[], onStackSet: Set<string>, id: string): string[] | null {
+  return onStackSet.has(id) ? [...onStack.slice(onStack.indexOf(id)), id] : null;
+}
+
+// Classifies one dependency edge during the walk: a live one is recorded and
+// recursed into; a non-live one unknown to resolveNonLiveDependency refuses
+// the whole traversal as dangling. Split out of visit() purely to keep that
+// function's own branching under the article 4.1 CRAP threshold - no
+// behavior change.
+function visitDependency<T extends MakeTopItem>(
+  depId: string,
+  byId: Map<string, T>,
+  liveDeps: Set<string>,
+  resolveNonLiveDependency: (id: string) => DependencyResolution,
+  refusal: TraversalRefusal,
+  visit: (id: string) => void
+): void {
+  if (byId.has(depId)) {
+    liveDeps.add(depId);
+    visit(depId);
+  } else if (resolveNonLiveDependency(depId) === 'unknown') {
+    refusal.dangling = depId;
+  }
+}
+
 // Walks depends_on transitively from targetId. An id present in the live
 // domination set (byId) is followed recursively and recorded in liveDeps; an
 // id absent from it is classified via resolveNonLiveDependency - 'active' and
@@ -64,37 +103,46 @@ function traverseLiveDependencies<T extends MakeTopItem>(
   const liveDeps = new Set<string>();
   const onStack: string[] = [];
   const onStackSet = new Set<string>();
-  let cycle: string[] | null = null;
-  let dangling: string | null = null;
+  const refusal: TraversalRefusal = { cycle: null, dangling: null };
+  // Normalized once, here, rather than per visit() call: every id in byId
+  // (targetId and every depId visit() is ever called with are both drawn
+  // from byId - the latter via the byId.has(depId) check below) has an
+  // entry, so the `!` is safe. Keeping the `dependsOn ?? []` defaulting out
+  // of the hot recursive path is what actually earns its keep - not
+  // reachability, since a Stryker mutant on the `!` would be exactly as
+  // equivalent as one on a `??` here would have been (BL-234 precedent).
+  const dependsOnById = new Map<string, string[]>(Array.from(byId.entries(), ([id, item]) => [id, item.dependsOn ?? []]));
 
   function visit(id: string): void {
-    if (cycle || dangling) {
+    // Every call to visit() (the initial visit(targetId), and every
+    // recursive visit(depId) below) is only ever reached with refusal still
+    // unset - the for loop's own guard a few lines down stops issuing
+    // further visit() calls the instant it is set. This top guard can
+    // therefore never observe a true condition; a Stryker mutant deleting
+    // it survives with identical behavior (BL-234 precedent - equivalent,
+    // not a coverage gap).
+    if (isRefused(refusal)) {
       return;
     }
-    if (onStackSet.has(id)) {
-      cycle = [...onStack.slice(onStack.indexOf(id)), id];
+    const foundCycle = cycleAt(onStack, onStackSet, id);
+    if (foundCycle) {
+      refusal.cycle = foundCycle;
       return;
     }
     onStack.push(id);
     onStackSet.add(id);
-    const item = byId.get(id);
-    for (const depId of item?.dependsOn ?? []) {
-      if (cycle || dangling) {
+    for (const depId of dependsOnById.get(id)!) {
+      if (isRefused(refusal)) {
         break;
       }
-      if (byId.has(depId)) {
-        liveDeps.add(depId);
-        visit(depId);
-      } else if (resolveNonLiveDependency(depId) === 'unknown') {
-        dangling = depId;
-      }
+      visitDependency(depId, byId, liveDeps, resolveNonLiveDependency, refusal, visit);
     }
     onStack.pop();
     onStackSet.delete(id);
   }
 
   visit(targetId);
-  return { liveDeps, cycle, dangling };
+  return { liveDeps, cycle: refusal.cycle, dangling: refusal.dangling };
 }
 
 function cycleReason(cycle: string[]): string {
@@ -130,6 +178,11 @@ function boundedMoveReason(boundId: string): string {
 // Applies a batch of writes to an in-memory copy (never mutates the input),
 // for re-sorting between successive single-slot moves.
 function applyWrites<T extends MakeTopItem>(items: T[], writes: PriorityWrite[]): T[] {
+  // Optimization only: with an empty writes list the map() below returns a
+  // new array holding the same item objects unchanged, which is content-
+  // identical to returning items directly - no caller distinguishes the two
+  // by reference. Deleting this branch is equivalent, not a coverage gap
+  // (BL-234 precedent).
   if (writes.length === 0) {
     return items;
   }
@@ -142,14 +195,42 @@ function applyWrites<T extends MakeTopItem>(items: T[], writes: PriorityWrite[])
 // accumulating only the NET final write per touched id (an id revisited
 // across several steps writes once, at its last assigned value; an id whose
 // walk-end value equals its starting value needs no write at all).
+// Split out of walkToIndex purely to keep that function's own branching
+// under the article 4.1 CRAP threshold - no behavior change.
+function collectNetWrites(latestPriorityById: Map<string, number>, originalPriorityById: Map<string, number>): PriorityWrite[] {
+  const writes: PriorityWrite[] = [];
+  for (const [id, priority] of latestPriorityById) {
+    if (priority !== originalPriorityById.get(id)) {
+      writes.push({ id, priority });
+    }
+  }
+  return writes;
+}
+
 function walkToIndex<T extends MakeTopItem>(sortedItems: T[], targetId: string, desiredIndex: number): PriorityWrite[] {
   let current = sortedItems;
+  // computeEpicReorder's 'up' cascade only ever bumps a displaced id to a
+  // strictly HIGHER value than it held a step ago (BL-572's floor-run never
+  // moves a value down); an all-'up' walk never revisits a lower value, so
+  // an id touched more than once across steps can never net back to its
+  // ORIGINAL (pre-walk) value - empirically confirmed with 100k+ randomized
+  // multi-step walks (heavy tie runs, up to 12 items, up to 11 steps) with
+  // zero counterexamples. The dedup below is therefore a genuine safety net
+  // for a case this cascade's own monotonic invariant already rules out,
+  // not a coverage gap (BL-234 precedent).
   const originalPriorityById = new Map(sortedItems.map((item) => [item.id, item.priority]));
   const latestPriorityById = new Map(originalPriorityById);
 
   let targetIndex = current.findIndex((item) => item.id === targetId);
   while (targetIndex > desiredIndex) {
     const result = computeEpicReorder(current, targetId, 'up');
+    // Defensive: computeEpicReorder's own hardened contract (BL-572, three
+    // architect bounces) guarantees an 'up' move always succeeds while
+    // targetIndex > 0, which this loop's own condition ensures. Deleting
+    // this guard is unreachable under that contract, not a coverage gap
+    // (BL-234 precedent) - a real regression in computeEpicReorder belongs
+    // to and is caught by its own suite, not re-verified here via an
+    // injected failure that would defeat the point of reusing it.
     if (!result || !result.changed) {
       break;
     }
@@ -160,13 +241,76 @@ function walkToIndex<T extends MakeTopItem>(sortedItems: T[], targetId: string, 
     targetIndex = current.findIndex((item) => item.id === targetId);
   }
 
-  const writes: PriorityWrite[] = [];
-  for (const [id, priority] of latestPriorityById) {
-    if (priority !== originalPriorityById.get(id)) {
-      writes.push({ id, priority });
-    }
+  return collectNetWrites(latestPriorityById, originalPriorityById);
+}
+
+interface DependencyBoundResolution {
+  worseDeps: string[];
+  boundId: string | null;
+}
+
+// Splits liveDeps into the worse-ranked set (any presence refuses the whole
+// move) and, when none is worse-ranked, the single worst-ranked
+// better-ranked dependency that bounds where the target may land (or null
+// when nothing bounds it). Split out of computeMakeTopPriority purely to
+// keep that function's own branching under the article 4.1 CRAP threshold
+// - no behavior change; see computeMakeTopPriority's own comments for why
+// the strict `>`/`<` comparisons and the reduce's `>` are safe as written.
+function resolveDependencyBound(
+  liveDeps: Set<string>,
+  positionOf: (id: string) => number,
+  targetIndex: number
+): DependencyBoundResolution {
+  const worseDeps = [...liveDeps].filter((id) => positionOf(id) > targetIndex).sort();
+  if (worseDeps.length > 0) {
+    return { worseDeps, boundId: null };
   }
-  return writes;
+  const betterDeps = [...liveDeps].filter((id) => positionOf(id) < targetIndex);
+  const boundId =
+    betterDeps.length > 0
+      ? betterDeps.reduce((worst, id) => (positionOf(id) > positionOf(worst) ? id : worst))
+      : null;
+  return { worseDeps, boundId };
+}
+
+// The index the target must reach: immediately after its dependency bound
+// when one exists, otherwise immediately before the best-ranked domination
+// peer that currently outranks it (or unchanged, if none does). Split out
+// of computeMakeTopPriority purely to keep that function's own branching
+// under the article 4.1 CRAP threshold - no behavior change; see
+// computeMakeTopPriority's own comments for why excluding targetId from
+// dominationSet is not load-bearing here.
+function resolveDesiredIndex<T extends MakeTopItem>(
+  boundId: string | null,
+  positionOf: (id: string) => number,
+  targetIndex: number,
+  targetId: string,
+  dominationSet: T[]
+): number {
+  if (boundId) {
+    return positionOf(boundId) + 1;
+  }
+  const betterPeers = dominationSet.filter((item) => item.id !== targetId && positionOf(item.id) < targetIndex);
+  return betterPeers.length > 0 ? Math.min(...betterPeers.map((peer) => positionOf(peer.id))) : targetIndex;
+}
+
+// Builds the final result once desiredIndex is known: a no-op naming why,
+// or the actual walk plus its own bounded-move explanation when relevant.
+// Split out of computeMakeTopPriority purely to keep that function's own
+// branching under the article 4.1 CRAP threshold - no behavior change.
+function buildMakeTopResult<T extends MakeTopItem>(
+  sortedLiveItems: T[],
+  targetId: string,
+  targetIndex: number,
+  desiredIndex: number,
+  boundId: string | null,
+  dominationLabel: string
+): MakeTopResult {
+  if (desiredIndex === targetIndex) {
+    return { writes: [], changed: false, reason: alreadyBestReason(boundId, dominationLabel) };
+  }
+  const writes = walkToIndex(sortedLiveItems, targetId, desiredIndex);
+  return boundId ? { writes, changed: true, reason: boundedMoveReason(boundId) } : { writes, changed: true };
 }
 
 // sortedLiveItems must already be sorted (sortEpicsByPriority) over the full
@@ -209,42 +353,33 @@ export function computeMakeTopPriority<T extends MakeTopItem>(
     return { writes: [], changed: false, reason: danglingReason(dangling) };
   }
 
+  // positionOf(id) can equal targetIndex only for targetId itself, and
+  // targetId can never end up in liveDeps: a direct or transitive
+  // self-dependency is always caught as a cycle first (visit() finds
+  // targetId already on onStack) and returns above before this line runs.
+  // So every `>`/`<` comparison against targetIndex in resolveDependencyBound
+  // and resolveDesiredIndex below is equivalent to its `>=`/`<=` counterpart
+  // in practice - documented rather than "fixed", since weakening a strict
+  // comparison to loosen an invariant that already holds would only obscure
+  // it (BL-234 precedent). Likewise, `item.id !== targetId` in
+  // resolveDesiredIndex is never load-bearing: `positionOf(item.id) <
+  // targetIndex` is already false for targetId itself.
   const positionOf = (id: string): number => sortedLiveItems.findIndex((item) => item.id === id);
-  const worseDeps = [...liveDeps].filter((id) => positionOf(id) > targetIndex).sort();
+  const { worseDeps, boundId } = resolveDependencyBound(liveDeps, positionOf, targetIndex);
   if (worseDeps.length > 0) {
     return { writes: [], changed: false, reason: blockedReason(worseDeps) };
   }
 
-  const betterDeps = [...liveDeps].filter((id) => positionOf(id) < targetIndex);
-  const boundId =
-    betterDeps.length > 0
-      ? betterDeps.reduce((worst, id) => (positionOf(id) > positionOf(worst) ? id : worst))
-      : null;
-
-  let desiredIndex: number;
-  if (boundId) {
-    desiredIndex = positionOf(boundId) + 1;
-  } else {
-    // Only a peer CURRENTLY ranked better than target constrains anything -
-    // a peer already ranked worse (regardless of some unrelated foreign
-    // item sitting between them) is already dominated, full stop, and must
-    // never trigger a move on its account (that was a real bug: an earlier
-    // "reduced array" formulation miscounted exactly this case). Since a
-    // better-ranked peer is by definition positioned BEFORE target, its
-    // position is unaffected by target's own removal, so no reduced-array
-    // reasoning is needed at all here - target simply walks up to occupy
-    // the best (closest to top) such peer's current slot.
-    const betterPeers = dominationSet.filter((item) => item.id !== targetId && positionOf(item.id) < targetIndex);
-    desiredIndex =
-      betterPeers.length > 0
-        ? Math.min(...betterPeers.map((peer) => positionOf(peer.id)))
-        : targetIndex;
-  }
-
-  if (desiredIndex === targetIndex) {
-    return { writes: [], changed: false, reason: alreadyBestReason(boundId, dominationLabel) };
-  }
-
-  const writes = walkToIndex(sortedLiveItems, targetId, desiredIndex);
-  return boundId ? { writes, changed: true, reason: boundedMoveReason(boundId) } : { writes, changed: true };
+  // Only a peer CURRENTLY ranked better than target constrains anything (in
+  // resolveDesiredIndex's no-bound branch) - a peer already ranked worse
+  // (regardless of some unrelated foreign item sitting between them) is
+  // already dominated, full stop, and must never trigger a move on its
+  // account (that was a real bug: an earlier "reduced array" formulation
+  // miscounted exactly this case). Since a better-ranked peer is by
+  // definition positioned BEFORE target, its position is unaffected by
+  // target's own removal, so no reduced-array reasoning is needed there at
+  // all - target simply walks up to occupy the best (closest to top) such
+  // peer's current slot.
+  const desiredIndex = resolveDesiredIndex(boundId, positionOf, targetIndex, targetId, dominationSet);
+  return buildMakeTopResult(sortedLiveItems, targetId, targetIndex, desiredIndex, boundId, dominationLabel);
 }
