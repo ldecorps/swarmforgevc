@@ -31,6 +31,17 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 // one.
 export const REWORK_ATTRIBUTION_EPOCH_ISO = '2026-07-25';
 
+// BL-635 SEND BACK #2 (evidence site 2): the by-attribution epoch is a
+// property of the BY-ATTRIBUTED series only - a role that never had a `by`
+// value recorded, i.e. `unattributed` (bounceAttribution's own fallback),
+// is the pre-existing 53-record legacy QA corpus running back to
+// 2026-07-10. Gating it behind the by-attribution epoch renders that whole,
+// genuinely-measured corpus "unavailable" - exactly the failure this
+// ticket's invariant 3 forbids, reached by a different route than the
+// rename the ticket's source section already warned against. `unattributed`
+// is exempt from the epoch entirely; every real by-attributed role keeps it.
+const UNATTRIBUTED_ROLE = 'unattributed';
+
 export interface MaxRoundsIndicator {
   ticket: string;
   rounds: number;
@@ -70,17 +81,38 @@ function countClosed(closedDateIsos: string[], startMs: number, endMs: number): 
   return closedDateIsos.filter((d) => inRange(d, startMs, endMs)).length;
 }
 
-// BL-635 SEND BACK #1 (evidence sites 1/2): a single window's value, or
-// `null` (unavailable) when either (a) the window's entire span lies before
-// the by-attribution epoch - nothing was ever measured there, a fabricated
-// 0 would claim otherwise - or (b) the window closed zero tickets, so there
-// is no denominator a real rounds-per-close figure could honestly report.
-// Both are absence-of-data, never a healthy 0 (the invariant this whole
-// ticket exists to protect).
-function windowPoint(periodStart: string, bounces: number, closed: number, windowEndMs: number, epochStartMs: number): DailyReworkPoint {
-  if (windowEndMs <= epochStartMs || closed === 0) {
+// BL-635 SEND BACK #1 (evidence sites 1/2) + SEND BACK #2 (evidence site 1):
+// a single window's value, or `null` (unavailable) when there is no
+// honestly-measurable sub-period to report over. A window that STRADDLES
+// the epoch (starts before, ends after) is clamped to its measured
+// sub-period - [epoch, windowEnd) - rather than either (a) rejected
+// wholesale, which would discard real post-epoch data, or (b) computed over
+// the full span, which blends pre-epoch days into the denominator while
+// they are structurally incapable of contributing to the numerator, quietly
+// deflating the figure and manufacturing trend arrows out of nothing
+// (SEND BACK #2 site 1). Only when the clamped sub-period is empty (the
+// window lies entirely before the epoch) or closes zero tickets is there no
+// denominator a real figure could honestly report - both absence-of-data,
+// never a healthy 0.
+function windowPoint(
+  periodStart: string,
+  records: BounceRecord[],
+  role: string,
+  closedDateIsos: string[],
+  windowStartMs: number,
+  windowEndMs: number,
+  epochStartMs: number
+): DailyReworkPoint {
+  const roleEpochStartMs = role === UNATTRIBUTED_ROLE ? -Infinity : epochStartMs;
+  const measuredStartMs = Math.max(windowStartMs, roleEpochStartMs);
+  if (measuredStartMs >= windowEndMs) {
     return { periodStart, value: null };
   }
+  const closed = countClosed(closedDateIsos, measuredStartMs, windowEndMs);
+  if (closed === 0) {
+    return { periodStart, value: null };
+  }
+  const bounces = countBounces(records, role, measuredStartMs, windowEndMs);
   return { periodStart, value: bounces / closed };
 }
 
@@ -100,15 +132,11 @@ export function computeRoundsPerCloseSeriesByRole(
   const epochStartMs = dayStartMs(epochIso);
   const currentStart = nowMs - windowMs;
   const priorStart = nowMs - 2 * windowMs;
-  const closedCurrent = countClosed(closedDateIsos, currentStart, nowMs);
-  const closedPrior = countClosed(closedDateIsos, priorStart, currentStart);
   const result: Record<string, DailyReworkPoint[]> = {};
   for (const role of rolesPresent(records)) {
-    const curBounces = countBounces(records, role, currentStart, nowMs);
-    const priorBounces = countBounces(records, role, priorStart, currentStart);
     result[role] = [
-      windowPoint(dayIso(priorStart), priorBounces, closedPrior, currentStart, epochStartMs),
-      windowPoint(dayIso(currentStart), curBounces, closedCurrent, nowMs, epochStartMs),
+      windowPoint(dayIso(priorStart), records, role, closedDateIsos, priorStart, currentStart, epochStartMs),
+      windowPoint(dayIso(currentStart), records, role, closedDateIsos, currentStart, nowMs, epochStartMs),
     ];
   }
   return result;
@@ -164,13 +192,18 @@ export function computeMaxRoundsIndicator(records: BounceRecord[]): MaxRoundsInd
 // included. The day list is caller-supplied (never inferred from the
 // data) so "day after the epoch with zero records" and "day before the
 // epoch" are independently controllable and honestly distinguishable.
+//
+// BL-635 SEND BACK #2 (evidence site 2): `unattributed` is exempt from the
+// epoch here too (see UNATTRIBUTED_ROLE above) - the 53-record legacy
+// corpus has genuine history back to 2026-07-10 and must stay readable on
+// the daily series exactly as it must on the rounds-per-close series.
 export function computeDailyReworkSeries(
   records: BounceRecord[],
   role: string,
   dayIsos: string[],
   epochIso: string = REWORK_ATTRIBUTION_EPOCH_ISO
 ): DailyReworkPoint[] {
-  const epochStartMs = dayStartMs(epochIso);
+  const epochStartMs = role === UNATTRIBUTED_ROLE ? -Infinity : dayStartMs(epochIso);
   return dayIsos.map((iso) => {
     const start = dayStartMs(iso);
     if (start < epochStartMs) {
