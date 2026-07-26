@@ -79,8 +79,6 @@ const PAUSED_PAGER_CONTROL_MAX_BODY_BYTES = 4 * 1024;
 const EPIC_REORDER_MOVE_MAX_BODY_BYTES = 4 * 1024;
 // BL-672: make-top body ({id}) from the same Mini App.
 const EPIC_MAKE_TOP_MAX_BODY_BYTES = 4 * 1024;
-// BL-673: topic make-top body ({epicId, topicId}).
-const EPIC_TOPIC_MAKE_TOP_MAX_BODY_BYTES = 4 * 1024;
 
 export interface BridgeHandle {
   port: number;
@@ -817,103 +815,6 @@ function handleEpicMakeTopRoute(
   });
 }
 
-function commitTopicMakeTopPriorityWrites(targetPath: string, relPaths: string[], topicId: string): Promise<boolean> {
-  return runCommitIntegrity(targetPath, relPaths, `Topic make-top-priority ${topicId}: rewrite priority\n\nBy coder.`);
-}
-
-function isEpicReorderTopicMakeTopRoute(req: http.IncomingMessage, url: string): boolean {
-  return (
-    req.method === 'POST' &&
-    (url === '/epic-reorder/topic-make-top' || url.startsWith('/epic-reorder/topic-make-top?'))
-  );
-}
-
-function isEpicReorderTopicMakeTopRequestShape(value: unknown): value is { epicId: string; topicId: string } {
-  if (!value || typeof value !== 'object') {
-    return false;
-  }
-  const v = value as Record<string, unknown>;
-  return typeof v.epicId === 'string' && typeof v.topicId === 'string';
-}
-
-// BL-673: topic-level make-top-priority, scoped to one epic - "same
-// primitive one level down" from BL-672's epic-level verb. The peer set
-// (who the target must rank strictly above, absent a bound) is narrowed to
-// the OTHER live topics carrying the SAME epic; dependency resolution stays
-// GLOBAL (a live dependency in any other epic still bounds or refuses the
-// move, approval_context #1) via computeMakeTopPriority's own
-// dominationSet parameter. The named epic and the target topic's own
-// `epic:` field must agree - a mismatch is a 404-class refusal (scenario
-// 07), never a silent move scoped to the wrong epic or the whole backlog.
-function handleEpicReorderTopicMakeTopRoute(
-  req: http.IncomingMessage,
-  res: http.ServerResponse,
-  targetPath: string,
-  registry: DeviceRegistry
-): void {
-  if (!requireControlAuth(req, res, registry)) {
-    return;
-  }
-  readValidatedBody(
-    req,
-    res,
-    EPIC_TOPIC_MAKE_TOP_MAX_BODY_BYTES,
-    isEpicReorderTopicMakeTopRequestShape,
-    'expected a JSON body of {epicId, topicId}'
-  ).then(async (value) => {
-    if (!value) {
-      return;
-    }
-    const folders = readBacklogFolders(targetPath);
-    const liveItems = readLiveBacklogItems(targetPath);
-    const target = liveItems.find((item) => item.id === value.topicId);
-    if (!target || target.epic !== value.epicId) {
-      respondJson(res, 404, { success: false, reason: `topic not found among epic '${value.epicId}'s live topics` });
-      return;
-    }
-    const peers = liveItems.filter((item) => item.epic === value.epicId && item.id !== value.topicId);
-    const result = computeMakeTopPriority(
-      liveItems,
-      value.topicId,
-      buildResolveNonLiveDependency(folders),
-      peers,
-      `epic ${value.epicId}'s live topics`
-    );
-    if (!result) {
-      respondJson(res, 404, { success: false, reason: `topic not found among epic '${value.epicId}'s live topics` });
-      return;
-    }
-    if (!result.changed) {
-      respondJson(res, 200, { success: true, changed: false, reason: result.reason });
-      return;
-    }
-    try {
-      const resolved = resolveEpicWritePaths(targetPath, result.writes);
-      if (!resolved) {
-        respondJson(res, 500, { success: false, reason: 'backlog file missing during write' });
-        return;
-      }
-      const relPaths: string[] = [];
-      for (const { write, filePath } of resolved) {
-        const content = fs.readFileSync(filePath, 'utf8');
-        atomicWrite(filePath, replacePriorityLine(content, write.priority));
-        relPaths.push(path.relative(targetPath, filePath));
-      }
-      const committed = await commitTopicMakeTopPriorityWrites(targetPath, relPaths, value.topicId);
-      if (!committed) {
-        respondJson(res, 500, { success: false, changed: true, reason: 'write succeeded but commit failed' });
-        return;
-      }
-      respondJson(res, 200, { success: true, changed: true, reason: result.reason });
-    } catch (err) {
-      respondJson(res, 500, {
-        success: false,
-        reason: err instanceof Error ? err.message : 'unknown error',
-      });
-    }
-  });
-}
-
 interface WriteRoute {
   matches: (req: http.IncomingMessage, url: string) => boolean;
   handle: (req: http.IncomingMessage, res: http.ServerResponse, targetPath: string, registry: DeviceRegistry) => void;
@@ -933,8 +834,6 @@ const writeRoutes: WriteRoute[] = [
   { matches: isEpicReorderMoveRoute, handle: handleEpicReorderMoveRoute },
   // BL-672: epic make-top-priority route, control-scoped.
   { matches: isEpicMakeTopRoute, handle: handleEpicMakeTopRoute },
-  // BL-673: topic make-top-priority route (scoped to one epic), control-scoped.
-  { matches: isEpicReorderTopicMakeTopRoute, handle: handleEpicReorderTopicMakeTopRoute },
 ];
 
 function requestPath(req: http.IncomingMessage): string {
