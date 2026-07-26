@@ -1,0 +1,244 @@
+id: BL-659
+title: "EPIC — PWA Knowledge Explorer: milestones→tickets→Gherkin AND docs, constitution, briefings, evidence — the whole understand-the-swarm corpus, offline, searchable, on the phone, at zero token cost"
+milestone: M8
+type: epic
+status: todo
+epic: pwa-knowledge-explorer
+human_approval: approved
+severity: medium
+priority: 06
+direction: human-requested
+depends_on: []
+assigned_to: specifier
+mutation_cost: high
+
+approval_context: >
+  Operator design session, 2026-07-26 morning. Started as a spec-browsing
+  rethink ("un explorateur de code, mais pour les exigences — en moins de
+  deux clics, d'un milestone à un scénario Gherkin, et retour"), then widened
+  deliberately: "il faudrait ajouter le rendering de la doc également. yamls /
+  features / docs. en réalité tout ce qui peut m'aider à comprendre comment
+  fonctionne la swarm." Requirements stated verbatim: "availability offline,
+  searchable, usable sur le téléphone." Surface ruled: the PWA, not the Mini
+  App — the nightly schedule kills the Mini App's backend exactly when the
+  human browses (daytime), and Telegram webviews cannot be offline.
+
+source: |
+  ## The corpus, measured 2026-07-26
+
+  ```
+  backlog yaml            468 files (8.2M raw)     specs/features  360 .feature
+  docs/how-to              24     docs/reference     6     docs/explanation  4
+  docs/briefings           18     backlog/evidence 194
+  roles/*.prompt           12     constitution articles 4   root md ~5
+  ─────────────────────────────────────────────────────────────────────────
+  ~1,100 documents · 8.6 MB text · ~2-3 MB as compressed JSON
+  ```
+
+  The whole understand-the-swarm corpus FITS in a phone's offline cache. The
+  operator's "tout" is implementable literally, not approximately.
+
+  ## Interface intent — WORKING MOCKUP IN-REPO
+
+  `docs/design/BL-659-traceability-explorer-mockup.html` — open it in a
+  browser. Miller columns (Milestones→Tickets→Gherkin→Details), permanent
+  breadcrumb, Ctrl-P palette with grouped results, per-level minimap, feature
+  map (scenario flow + Given/When/Then counts), scenario detail panel — built
+  with REAL repo data (M8, BL-629's actual feature). The mockup is the
+  interface intent; the specifier slices from it, not from prose.
+
+  ## The two design rulings already made (do not reopen)
+
+  1. **PWA, not Mini App.** Offline is structural: service worker + cached
+     snapshot vs a Telegram webview needing a live host through a tunnel —
+     whose backend now sleeps 06:00-00:00, and whose frozen ghost page was
+     photographed on 2026-07-25 22:17. The Mini App keeps the LIVE duties
+     (panes, pipeline board) and gains a "open in explorer" deep link.
+  2. **Zero tokens, forever.** Build-time snapshot by a deterministic node
+     tool (posture of emit-cost-health-sidecar.js): yaml + APS parser +
+     markdown pre-rendered at build. No LLM anywhere in build or browse. The
+     day someone proposes "an LLM to summarize scenarios on the fly" is the
+     day this epic's bill is born — refuse it here.
+
+description: |
+  ## Information architecture — seven roots, one explorer
+
+  ```
+  SPECS         Milestones → Tickets → Feature → Scenarios (the mockup)
+  DOCS          how-to / reference / explanation (Diátaxis as-is)
+  CONSTITUTION  roles/*.prompt + articles — HOW THE SWARM WORKS is
+                literally these 16 files; first-class, not an annex
+  BRIEFINGS     the daily series, newest first (incl. the 07-26 gap-fill)
+  EVIDENCE      194 bounce/QA/incident records — reached mostly VIA tickets
+  FLOW          Kanban analytics (below) — the swarm IS Kanban, chart it as one
+  COST          spend trends as an EXPERIMENT LOG (below) — efficiency decisions
+                need a before/after, and the operator keeps making them blind
+  ```
+
+  ## FLOW root — Kanban analytics (operator ruling, 2026-07-26)
+
+  The swarm is strict Kanban by construction: pull-based promotion, WIP
+  limit (`active_backlog_max_depth` — the breaker at 1 IS a WIP limit),
+  per-role mailbox queues, an expedite class of service (Article 3.2.4),
+  a blocked lane (`hold/`), measured rework loops (BL-635). What it does
+  NOT have is iterations — so iteration charts lie here (see out_of_scope).
+
+  Charts, in the operator-ratified priority order, every one derivable at
+  build time from timestamped handoffs + backlog folders, zero tokens:
+
+  1. **CFD** (cumulative flow) — stacked bands paused / active /
+     per-role-stage / done over time. Band width = queued WIP; horizontal
+     distance = cycle time; diverging bands = the bottleneck, visible
+     before it hurts. The per-ROLE resolution is this repo's rare asset
+     (handoffs are all timestamped) — the 2026-07-25 cleaner starvation
+     would read as a swelling band hours before any alarm.
+  2. **Cycle-time scatterplot + p50/p85/p95** (promotion→done, dot per
+     ticket, colored by type) — replaces date promises with a service-level
+     expectation: "a promoted defect lands within X h in 85% of cases".
+  3. **Aging WIP** — each in-flight item's age in its CURRENT stage vs that
+     stage's historical percentiles; above-p85 = the hawk-watch as a chart.
+     Ages in ACTIVE time (BL-650's clock), never wall clock.
+  4. **Throughput run chart** — speccedPerDay vs closedPerDay OVERLAID
+     (both already in the sidecar; the overlay is what's missing —
+     specced durably above closed = the backlog is swelling).
+  5. **Flow efficiency** — touch time vs wait time per ticket; the
+     hand-measured 11:1 front/back ratio of 2026-07-25 (which justified the
+     stereo-router epic), industrialised and continuous.
+  6. **Rework** — roundsPerClose by bouncing role; ALREADY SHIPPED
+     (BL-635, in the sidecar since 2026-07-26); FLOW renders it.
+
+  ## COST root — the efficiency screen (operator, 2026-07-26: "un cost trend
+  ## pour rendre la swarm plus efficace")
+
+  **Data honesty FIRST, charts second.** The measured substrate is partly
+  broken and the screen must say so on its face, not paper over it:
+  pricing table overstates Opus 3x and Fable 1.5x with no claude-opus-5
+  entry (BL-627, ticketed), 0/106 ledger records carry model/tokens, and
+  the resident Operator emits NO per-call cost. Rule: every chart carries a
+  coverage badge ("N% of spend measured, rest estimated at flagged rates");
+  a number from the broken table renders as ESTIMATE, visually distinct.
+  BL-627 is this root's enabler — sequence it first or ship the root with
+  the badges saying so. Substrate that EXISTS to build on: BL-551 cost
+  ledger, sidecar keys costPerTicket / topExpensiveTickets /
+  topExpensiveOriginsByHorizon / originCostTrendSeries (live today).
+
+  The screen's organising idea — **an experiment log, not a bill**: every
+  operator-made change (seat swaps, effort dials, pack changes, schedule
+  changes) becomes a vertical annotation on the timeline, so each chart
+  reads as before/after evidence. 2026-07-25/26 alone provides the seed
+  annotations: cleaner Haiku→Sonnet, documenter Haiku→Sonnet, coder effort
+  high→xhigh, night schedule 00:00-06:00, operator pid-hold.
+
+  Charts, in priority order:
+
+  1. **Cost per closed ticket, trended** — total spend / throughput, the
+     one efficiency headline; falling = the swarm is getting cheaper per
+     unit of work, whatever the absolute bill does.
+  2. **Spend by seat/role, stacked, with annotations** — answers "did the
+     cleaner's Sonnet upgrade pay for itself?" the only honest way: seat
+     cost up vs bounce/rework cost down, on one timeline.
+  3. **Rework tax** — the money view of BL-635's roundsPerClose: spend on
+     bounce rounds as % of total; the number the invariants initiative
+     (BL-633/654) exists to push down, finally falsifiable in currency.
+  4. **Pipeline vs overhead split** — production stages vs supervision
+     (operator wakes, briefings, ancillaries). The BL-647 false-positive
+     loop (~60 Opus wakes/h when unheld) would have been a visibly
+     swelling overhead band for WEEKS; this chart is its tombstone.
+  5. **Night-window ROI** — spend per night vs tickets landed per night,
+     the new schedule's own report card.
+
+  Cross-linking is derived, never declared: every `BL-\d+` in any document
+  becomes a link; feature<->ticket via the acceptance path; evidence<->ticket
+  via filename convention. (The week's lesson: declared links lie —
+  `depends_on: []` between coupled tickets; derived links do not.)
+
+  ## Faceted filtering (operator, 2026-07-26, looking at the CURRENT PWA:
+  ## "le filtre est pas [bon]. il faudrait retenir ça: pouvoir filtrer les
+  ## yamls par status, milestone, etc")
+
+  The ticket YAML's own fields ARE the facets — nothing invented:
+
+  ```
+  status (folder: done/active/paused/hold) · milestone · type
+  (defect/feature/epic) · severity · epic · human_approval · direction
+  ```
+
+  - Facet chips above the ticket column; multi-select within a facet, AND
+    across facets ("paused + defect + high" = tonight's expedite queue, in
+    two taps — that query alone justifies the feature).
+  - Counts on every chip value BEFORE selecting (the sidecar already
+    computes most), so a filter never dead-ends into an unexplained empty
+    list.
+  - Filters compose with the Ctrl-P palette (search WITHIN a filtered set)
+    and survive in the URL hash — a filtered view is a shareable deep link,
+    extending BL-256's #ticket= convention.
+  - The current PWA's filter weakness is the motivating defect; the
+    explorer's ticket column REPLACES it rather than adding a second
+    filter UI to maintain.
+
+  ## The three requirements as acceptance anchors (operator's words)
+
+  1. **Offline**: airplane-mode test — full navigation and search with the
+     network OFF after one online visit. Service worker + snapshot cache.
+  2. **Searchable**: one palette across all seven roots, grouped results
+     (the mockup's Ctrl-P), <100ms on-device on the full corpus.
+  3. **Phone**: installable (manifest), columns collapse to drill-down on
+     narrow screens, thumb-reachable breadcrumb.
+
+  ## Honesty requirements
+
+  - The snapshot is AS-OF-BUILD: a permanent banner states the build commit
+    and time. Regenerated on the same trigger family as the sidecar (post-QA
+    landing / briefing build), never pretending to be live.
+  - Scenario status comes from REAL APS runner output, or reads "never run".
+    A gate-looking checkmark that no run produced is this week's central
+    anti-pattern; the explorer must not mint them.
+  - `Referenced by` is computed at build (grep), not hand-maintained.
+
+  ## Slicing hint (specifier's call)
+
+  Slice 1: snapshot builder (yaml+features→JSON) + SPECS root = the mockup,
+  live data. Slice 2: offline (SW + manifest) + search palette. Slice 3:
+  DOCS/CONSTITUTION/BRIEFINGS roots + markdown pre-render + cross-links.
+  Each slice ships usable; sizes bounded by BL-634's envelope discipline.
+
+acceptance: |
+  Epic-level; the specifier slices. The shape every slice preserves:
+
+  1. Two clicks or fewer between any milestone and any of its scenarios, and
+     back — the operator's founding sentence, testable as a click count.
+  2. Airplane mode after one visit: full browse + search of all seven roots.
+  3. Zero LLM calls in build and browse — asserted on the build script's
+     dependency surface, not on good intentions.
+  4. Search palette covers all seven roots with grouped results on-device.
+  5. Build banner: commit + timestamp always visible.
+  6. Existing #ticket= deep links (BL-256) keep working and now resolve into
+     the explorer.
+  7. Scenario status sourced from real runner output or shown "never run".
+  8. Ticket facets: filter by status, milestone, type, severity (multi-select,
+     AND across facets), value counts visible pre-selection, filter state in
+     the URL hash. Fixture: "paused + defect + severity high" reproduces the
+     expedite queue exactly as the promotion lane computes it.
+
+out_of_scope: |
+  - BURNDOWN charts, explicitly and permanently. Operator ruling 2026-07-26:
+    "les burndowns: super idée, mais sur l'état de milestones cela ne sert à
+    rien" — milestones here are labels on a continuously growing scope (M8:
+    356 and climbing), not iterations with a committed perimeter; a burndown
+    on a growing scope burns UP and lies. The FLOW root's Kanban charts are
+    the replacement, not a complement.
+  - Any LLM-generated content at build or browse time (summaries, Q&A).
+    Structural refusal, see design ruling 2.
+  - Live state (pane views, pipeline board) — the Mini App keeps those; one
+    deep link each way is the whole integration.
+  - Editing from the explorer. Read-only by design; rulings flow through
+    the existing approval channels.
+  - The operator's private memory corpus (~/.claude) — not repo content.
+
+notes: |
+  The mockup at docs/design/BL-659-traceability-explorer-mockup.html is the
+  contract of intent: keep its bones (columns, breadcrumb, palette, minimap,
+  feature map) unless a slice records why it deviates. Token-cost analysis
+  and the PWA-vs-MiniApp ruling live in the operator session of 2026-07-26;
+  the one-line version: the corpus is 8.6 MB of text, the phone can carry
+  all of it, and nothing about reading it should ever cost a token.

@@ -1,0 +1,315 @@
+<title>SwarmForge Knowledge Explorer — maquette 5 racines</title>
+<style>
+  :root{
+    --bg:#faf8f5; --panel:#ffffff; --ink:#23201b; --muted:#7a7266; --line:#e6e1d8;
+    --accent:#b45309; --accent-soft:#f6e8d8; --pass:#15803d; --fail:#b91c1c; --hold:#6d28d9; --sel:#f3ead9;
+    --mono:ui-monospace,"Cascadia Code",Menlo,monospace;
+  }
+  @media (prefers-color-scheme:dark){:root{
+    --bg:#161412; --panel:#1e1b18; --ink:#eae6df; --muted:#9a917f; --line:#2e2a24;
+    --accent:#f59e0b; --accent-soft:#3a2c14; --pass:#4ade80; --fail:#f87171; --hold:#c4b5fd; --sel:#2e2718;}}
+  :root[data-theme="dark"]{
+    --bg:#161412; --panel:#1e1b18; --ink:#eae6df; --muted:#9a917f; --line:#2e2a24;
+    --accent:#f59e0b; --accent-soft:#3a2c14; --pass:#4ade80; --fail:#f87171; --hold:#c4b5fd; --sel:#2e2718;}
+  :root[data-theme="light"]{
+    --bg:#faf8f5; --panel:#ffffff; --ink:#23201b; --muted:#7a7266; --line:#e6e1d8;
+    --accent:#b45309; --accent-soft:#f6e8d8; --pass:#15803d; --fail:#b91c1c; --hold:#6d28d9; --sel:#f3ead9;}
+  *{box-sizing:border-box}
+  body{background:var(--bg);color:var(--ink);font:14px/1.5 system-ui,sans-serif;margin:0;height:100vh;display:flex;flex-direction:column}
+  header{display:flex;align-items:center;gap:1rem;padding:.55rem 1rem;border-bottom:1px solid var(--line);background:var(--panel)}
+  header h1{font-size:.95rem;margin:0;white-space:nowrap}
+  header h1 b{color:var(--accent)}
+  #crumb{flex:1;display:flex;gap:.35rem;align-items:center;font-size:.82rem;color:var(--muted);overflow-x:auto;white-space:nowrap}
+  #crumb a{color:var(--ink);text-decoration:none;padding:.15rem .45rem;border-radius:5px;cursor:pointer}
+  #crumb a:hover{background:var(--sel)}
+  #searchbox{position:relative;cursor:pointer}
+  #searchbox input{background:var(--bg);border:1px solid var(--line);color:var(--ink);border-radius:7px;padding:.4rem .7rem .4rem 1.9rem;width:220px;font:inherit;pointer-events:none}
+  #searchbox::before{content:"🔍";position:absolute;left:.5rem;top:.35rem;font-size:.85rem;opacity:.7}
+  #searchbox kbd{position:absolute;right:.5rem;top:.45rem;font:.68rem var(--mono);color:var(--muted);border:1px solid var(--line);border-radius:4px;padding:0 .3rem}
+  #buildbar{display:flex;gap:1rem;align-items:center;font:.7rem var(--mono);color:var(--muted);background:var(--accent-soft);padding:.25rem 1rem;border-bottom:1px solid var(--line)}
+  #buildbar .off{color:var(--pass);font-weight:700}
+  main{flex:1;display:grid;grid-template-columns:52px 190px 235px 1fr;min-height:0}
+  /* rail des racines */
+  #rail{border-right:1px solid var(--line);background:var(--panel);display:flex;flex-direction:column;align-items:center;padding-top:.5rem;gap:.15rem}
+  #rail button{background:none;border:0;border-left:3px solid transparent;width:100%;padding:.5rem 0;font-size:1.15rem;cursor:pointer;opacity:.55;color:var(--ink)}
+  #rail button.on{opacity:1;border-left-color:var(--accent);background:var(--sel)}
+  #rail button span{display:block;font-size:.5rem;letter-spacing:.03em;color:var(--muted);margin-top:.1rem}
+  .col{border-right:1px solid var(--line);overflow-y:auto;padding:.5rem 0}
+  .col h2{font-size:.68rem;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);margin:.2rem 0 .4rem;padding:0 .9rem;font-weight:600}
+  .item{padding:.34rem .9rem;cursor:pointer;display:flex;align-items:center;gap:.45rem;font-size:.84rem;border-left:3px solid transparent}
+  .item:hover{background:var(--sel)}
+  .item.sel{background:var(--sel);border-left-color:var(--accent);font-weight:600}
+  .item .id{font-family:var(--mono);font-size:.78rem}
+  .item .cnt{margin-left:auto;font-size:.7rem;color:var(--muted);font-variant-numeric:tabular-nums}
+  .st{font-size:.78rem;width:1.05em;text-align:center;flex:none}
+  .st.done{color:var(--pass)} .st.paused{color:var(--muted)} .st.hold{color:var(--hold)}
+  .bar{height:4px;background:var(--line);border-radius:3px;margin:.25rem .9rem .5rem;overflow:hidden}
+  .bar i{display:block;height:100%;background:var(--pass)}
+  .indent{padding-left:1.9rem;font-size:.82rem}
+  .note{font-size:.72rem;color:var(--muted);padding:.4rem .9rem;font-style:italic}
+  /* détails / markdown */
+  #details{overflow-y:auto;padding:1rem 1.4rem;max-width:58rem}
+  #details h3{margin:.1rem 0 .3rem;font-size:1.05rem;text-wrap:balance}
+  .chips{display:flex;gap:.4rem;flex-wrap:wrap;margin:.4rem 0 .8rem}
+  .chip{font-size:.72rem;border:1px solid var(--line);border-radius:99px;padding:.12rem .6rem;color:var(--muted)}
+  .chip.pass{color:var(--pass);border-color:var(--pass)} .chip.accent{color:var(--accent);border-color:var(--accent)}
+  .md h4{font-size:.95rem;margin:1rem 0 .3rem;color:var(--accent)}
+  .md p{margin:.35rem 0;font-size:.88rem;max-width:46rem}
+  .md li{font-size:.88rem;margin:.2rem 0}
+  .md code, .md .bl{font:.82rem var(--mono);background:var(--sel);border-radius:4px;padding:.05rem .35rem}
+  .md .bl{color:var(--accent);cursor:pointer}
+  .md blockquote{border-left:3px solid var(--accent);margin:.6rem 0;padding:.2rem .8rem;color:var(--muted);font-style:italic}
+  .md pre{background:var(--sel);border-radius:8px;padding:.7rem .9rem;overflow-x:auto;font:.78rem var(--mono)}
+  .gwt{margin:.7rem 0}
+  .gwt .kw{font:600 .72rem var(--mono);text-transform:uppercase;letter-spacing:.1em;color:var(--accent);margin-bottom:.15rem}
+  .gwt p{margin:.1rem 0 .1rem .9rem;font-size:.86rem;border-left:2px solid var(--line);padding-left:.6rem}
+  .sect{font-size:.68rem;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);margin:1.1rem 0 .3rem;font-weight:600;border-top:1px solid var(--line);padding-top:.8rem}
+  .rel a{display:inline-block;font:.8rem var(--mono);background:var(--accent-soft);color:var(--accent);border-radius:5px;padding:.1rem .5rem;margin:.1rem .25rem .1rem 0;cursor:pointer}
+  .fmap{display:flex;flex-direction:column;align-items:flex-start;margin:.6rem 0}
+  .fmap .node{display:flex;align-items:center;gap:.5rem;cursor:pointer;padding:.18rem .5rem;border-radius:6px;font-size:.85rem}
+  .fmap .node:hover{background:var(--sel)}
+  .fmap .dot{width:.6rem;height:.6rem;border-radius:50%;border:2px solid var(--accent);flex:none}
+  .fmap .dot.pass{background:var(--pass);border-color:var(--pass)}
+  .fmap .pipe{width:2px;height:.65rem;background:var(--line);margin-left:calc(.3rem + .5rem)}
+  .fstats{display:flex;gap:1.2rem;margin-top:.7rem;font-variant-numeric:tabular-nums}
+  .fstats b{display:block;font-size:1.15rem} .fstats span{font-size:.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:.07em}
+  #minimap{position:fixed;right:.9rem;bottom:.9rem;background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:.5rem .8rem;font-size:.65rem;box-shadow:0 3px 14px rgba(0,0,0,.12)}
+  #minimap div{display:flex;align-items:center;gap:.4rem;color:var(--muted);padding:.07rem 0}
+  #minimap div.on{color:var(--accent);font-weight:700}
+  #minimap div::before{content:"○";font-size:.6rem} #minimap div.on::before{content:"●"}
+  #ovl{display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:20;padding-top:9vh}
+  #ovl.open{display:block}
+  #pal{max-width:540px;margin:0 auto;background:var(--panel);border:1px solid var(--line);border-radius:11px;overflow:hidden;box-shadow:0 12px 40px rgba(0,0,0,.3)}
+  #pal input{width:100%;border:0;border-bottom:1px solid var(--line);background:transparent;color:var(--ink);padding:.75rem 1rem;font:1rem system-ui}
+  #pal input:focus{outline:none}
+  #results{max-height:46vh;overflow-y:auto;padding:.4rem 0}
+  #results .grp{font-size:.65rem;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);padding:.45rem 1rem .15rem}
+  #results .hit{padding:.3rem 1rem;cursor:pointer;display:flex;gap:.6rem;align-items:baseline;font-size:.85rem}
+  #results .hit:hover{background:var(--sel)}
+  #results .hit .id{font-family:var(--mono);color:var(--accent);flex:none}
+  #results .hit .ctx{color:var(--muted);font-size:.72rem;margin-left:auto;flex:none}
+  @media (max-width:900px){main{grid-template-columns:52px 1fr}.col{display:none}#details{padding:.8rem}}
+</style>
+
+<header>
+  <h1>🧭 SwarmForge <b>Knowledge Explorer</b></h1>
+  <nav id="crumb"></nav>
+  <div id="searchbox" onclick="openPal()"><input placeholder="Search everything…" readonly><kbd>Ctrl P</kbd></div>
+</header>
+<div id="buildbar"><span class="off">⬤ offline ready</span><span>snapshot 8348a3821 · 2026-07-26 09:52 · 1 100 docs · 2.4 MB cached</span><span style="margin-left:auto">specs 468+360 · docs 34 · constitution 16 · briefings 18 · evidence 194</span></div>
+
+<main>
+  <nav id="rail"></nav>
+  <section class="col" id="c1"></section>
+  <section class="col" id="c2"></section>
+  <section id="details"></section>
+</main>
+<div id="minimap"></div>
+<div id="ovl" onclick="if(event.target===this)closePal()"><div id="pal">
+  <input id="q" placeholder="override, invariant, expeditor, redelivery…" oninput="doSearch(this.value)">
+  <div id="results"></div>
+</div></div>
+
+<script>
+/* ─── données réelles (moisson du 26/07) ──────────────────────────────── */
+const bl = id=>`<span class="bl" onclick="jumpTicket('${id}')">${id}</span>`;
+const DATA = {
+ roots:[
+  {k:"specs", icon:"🎯", label:"SPECS"},
+  {k:"docs",  icon:"📚", label:"DOCS"},
+  {k:"consti",icon:"⚖️", label:"CONSTI"},
+  {k:"brief", icon:"📰", label:"BRIEF"},
+  {k:"evid",  icon:"🔎", label:"EVID"},
+ ],
+ milestones:[
+  {id:"M8",name:"Swarm hardening",total:356,done:279},{id:"M2",name:"CLI",total:25,done:25},
+  {id:"M5",name:"Telegram ops",total:23,done:22},{id:"M6",name:"Onboarding",total:16,done:13},
+  {id:"M3",name:"Traceability",total:7,done:6},{id:"M7",name:"Console",total:6,done:2}],
+ tickets:{M8:[
+  {id:"BL-629",st:"done",t:"sync refuse un tip main non QA-approuvé",feat:"F629"},
+  {id:"BL-633",st:"done",t:"invariants: distinct d'acceptance:"},
+  {id:"BL-635",st:"done",t:"record-bounce --by <role> + métrique rework"},
+  {id:"BL-654",st:"done",t:"test de propriété par invariant (coder)"},
+  {id:"BL-647",st:"paused",t:"dead-agent-events aveugle au rotation router"},
+  {id:"BL-648",st:"paused",t:"relaunch ignore le rôle actif"},
+  {id:"BL-590",st:"hold",t:"Onboarding Facilitator (conditions d'unpark vertes)"}]},
+ features:{F629:{name:"sync refuses to deploy a main tip whose code is not QA-approved",
+  file:"specs/features/BL-629-sync-refuses-non-qa-approved-main.feature",given:14,when:11,then:19,
+  scenarios:[
+   {n:1,name:"Unapproved code drift refuses the sync naming only the offending commit",st:"pass",
+    g:["main carries a code-surface commit NOT ancestor of the QA branch","main also carries a bookkeeping-only commit"],
+    w:["a sync is requested"],
+    t:["refused with the documented exit status","the refusal names the CODE commit's sha only","no restart, no recompile","remedy: land through QA, or the explicit override"],
+    tags:["deploy-gate","fail-closed"],rel:["BL-630","BL-632","BL-590"]},
+   {n:4,name:"The explicit override deploys anyway and leaves a durable record",st:"pass",
+    g:["an unapproved code-surface commit on main"],w:["a sync is requested WITH the explicit override"],
+    t:["the sync proceeds","a durable override record names the offending sha and when it ran"],
+    tags:["override","audit-trail"],rel:["BL-631"]},
+   {n:5,name:"An override never outlives the invocation that carried it",st:"pass",
+    g:["an unapproved commit on main","a PRIOR sync ran with the override"],w:["a sync WITHOUT the override"],
+    t:["refused — the override was one-shot"],tags:["override","one-shot"],rel:[]},
+  ]}},
+ docs:{
+  "how-to (24)":[
+   {f:"BL-091-wsl2-second-swarm-bringup.md",d:"Monter une seconde swarm sous WSL2"},
+   {f:"BL-144-daemon-death-alarm.md",d:"L'alarme de mort du démon"},
+   {f:"BL-567-expedite-one-ticket-with-the-swarm-stopped.md",d:"Expédier un ticket, swarm éteinte",body:"HOWTO567"}],
+  "reference (6)":[
+   {f:"BL-567-expeditor-manual.md",d:"Manuel de l'Expéditeur",body:"REF567"},
+   {f:"BL-629-build-freshness-qa-approval-gate.md",d:"Le gate QA du déploiement"},
+   {f:"backlog-dashboard-schema.md",d:"Schéma du dashboard backlog"}],
+  "explanation (4)":[
+   {f:"lessons-2026-07-25-green-suites-that-proved-nothing.md",d:"Six suites vertes qui ne prouvaient rien",body:"LESSONS"},
+   {f:"BL-567-why-the-expeditor-commands-the-stack….md",d:"Pourquoi l'Expéditeur commande la pile sans en dépendre"},
+   {f:"handoff-dual-path.md",d:"Les deux chemins du handoff"}]},
+ consti:{
+  "rôles (12)":[
+   {f:"coder.prompt",d:"le coder — TDD, invariants, parcels",body:"CODER"},
+   {f:"architect.prompt",d:"l'architecte — review, un bounce par propriété"},
+   {f:"QA.prompt",d:"QA — seul point d'intégration (BL-247)"},
+   {f:"documenter.prompt",d:"le documenter — docs + briefing"}],
+  "articles (4)":[
+   {f:"workflow.prompt",d:"le workflow — bounces, nettoyage, ancestry",body:"WORKFLOW"},
+   {f:"engineering.prompt",d:"l'ingénierie — tests, CRAP, propriétés"}]},
+ brief:[
+  {f:"2026-07-26.md",d:"gap-fill opérateur · nuit 00-06 · métrique rework née",body:"B26"},
+  {f:"2026-07-25.md",d:"documenter · la journée de l'incident BL-590"},
+  {f:"2026-07-24.md",d:"documenter"}],
+ evid:[
+  {f:"BL-629-architect-bounce3-20260725.md",d:"SEND BACK #3 — le 3e consommateur manqué",body:"EV629"},
+  {f:"BL-635-…-bounce-20260726.md",d:"SEND BACK #1 — invariant 3 fabrique un zéro"},
+  {f:"BL-590-facilitator-slice1-architect-bounce2….md",d:"l'idempotence sous redélivrance"}],
+ bodies:{
+  CODER:`<h4>swarmforge/roles/coder.prompt — extrait réel (né cette nuit, ${'BL-654'})</h4>
+   <h4 style="font-size:.85rem">## Invariants (BL-654)</h4>
+   <ul><li>If the ticket YAML declares <code>invariants:</code> entries, <b>first authorship of each declared invariant's property test rests with the coder</b> — in every path this ticket writes, including bounce rework, no path leaves the architect authoring it.</li>
+   <li>For EACH declared invariant, the parcel you hand off carries a coder-authored executable property test encoding it, in the same parcel as the behavior change.</li>
+   <li>A ticket with no declared invariants creates no property-test obligation — the common path stays untouched.</li></ul>
+   <div class="sect">Referenced by</div><div class="rel">REL:BL-654,BL-633,BL-590</div>`,
+  WORKFLOW:`<h4>constitution/articles/workflow.prompt — extrait réel</h4>
+   <h4 style="font-size:.85rem">## Clean Up After Yourself — Never Delete What You Did Not Create</h4>
+   <ul><li>Before ending your turn, remove scratch artifacts YOU created this turn. Leave your worktree no messier than you found it.</li>
+   <li>NEVER delete, move, or <code>git clean</code> a file you did not create — an untracked file here is as likely load-bearing as it is litter.</li>
+   <li>Ticket-less changes you did not make are SURFACED, not swept.</li></ul>
+   <blockquote>La règle du scout, avec une limite de périmètre — voir REL_ONE:BL-646 pour le cas où « surfacer » n'a pas de destinataire.</blockquote>
+   <div class="sect">Referenced by</div><div class="rel">REL:BL-646,BL-629</div>`,
+  B26:`<h4>Daily Briefing — 2026-07-26 (gap-fill opérateur)</h4>
+   <blockquote>Written by the OPERATOR session, not the documenter: the nightly schedule stopped the swarm before the 07:00Z trigger.</blockquote>
+   <p><b>Executive Summary</b> — First scheduled night shipped two tickets: REL_ONE:BL-654 expedited (7/7 stages, zero bounces) and REL_ONE:BL-635 through the LIVE pipeline — both architect send-backs recorded <i>by the very tool it was building</i>.</p>
+   <p><b>NEW — rework metric, first morning alive:</b> roundsPerClose architect <code>0.375</code>, unattributed <code>0.238</code>; pre-epoch days render <code>null</code>, never zero.</p>`,
+  EV629:`<h4>backlog/evidence/BL-629-architect-bounce3-20260725.md</h4>
+   <p><b>Verdict: SEND BACK to the coder</b> — one blocking finding, reproduced against the real acceptance runner.</p>
+   <pre>$ bb swarmforge/scripts/build_freshness_cli.bb $ROOT sync
+build_freshness_cli.bb sync: REFUSED - the QA approval
+reference (swarmforge-QA) is missing   EXIT=3</pre>
+   <p>The fixture repo built by <code>mkGitRoot()</code> creates <b>main only</b> — no QA branch — so the new fail-closed gate fires inside BL-328's acceptance suite: a third live consumer the parcel missed.</p>
+   <div class="sect">Referenced by</div><div class="rel">REL:BL-629,BL-654</div>`,
+  REF567:`<h4>docs/reference/BL-567-expeditor-manual.md</h4>
+   <p>L'Expéditeur fait traverser les sept gates à UN ticket, swarm éteinte : sonde → arrêt vérifié (refus si un survivant ment) → worktree dédié → stages <code>claude -p</code> par rôle → redémarrage.</p>
+   <pre>expedite.sh &lt;root&gt; BL-xxx [--bounce-bound N] [--dry-run]</pre>
+   <p>Borne de rebond : 3 par défaut. Première course réelle : REL_ONE:BL-654, 2026-07-26, 7/7 pass.</p>`,
+  HOWTO567:`<h4>docs/how-to/BL-567 — expédier un ticket, swarm éteinte</h4><p>Le pas-à-pas opérateur : parkage propre du travail en vol, arrêt total vérifié, course, reprise. Voir le manuel en référence.</p>`,
+  LESSONS:`<h4>docs/explanation/lessons-2026-07-25 — six suites vertes qui ne prouvaient rien</h4>
+   <ul><li>L'outillage de mutation qui dévore le travail non commité (deux fois).</li>
+   <li><code>kill -KILL -PGID</code> sort 0 en laissant deux survivants — il fallait <code>--</code>.</li>
+   <li>Le <code>pkill</code> qui se suicide en matchant sa propre ligne.</li>
+   <li>« clean slate » annoncé avec deux démons vivants.</li></ul>
+   <blockquote>A green suite is not evidence.</blockquote>`,
+ }
+};
+/* ─── état ────────────────────────────────────────────────────────────── */
+let S={root:"specs",ms:"M8",tk:null,sc:null,cat:null,doc:null};
+const $=id=>document.getElementById(id);
+const stI=s=>({done:"✔",paused:"⏸",hold:"◆"}[s]||"·");
+function esc(h){return h.replaceAll(/REL_ONE:(BL-\d+)/g,(m,i)=>bl(i)).replaceAll(/REL:([A-Z0-9,-]+)/g,(m,l)=>l.split(",").map(bl).join(""));}
+
+function render(){
+  $("rail").innerHTML=DATA.roots.map(r=>`<button class="${S.root===r.k?'on':''}" onclick='S={root:"${r.k}",ms:"M8",tk:null,sc:null,cat:null,doc:null};render()'>${r.icon}<span>${r.label}</span></button>`).join("");
+  if(S.root==="specs")renderSpecs(); else renderCorpus();
+  renderMap();
+}
+/* SPECS = la maquette v1 condensée */
+function renderSpecs(){
+  col($("c1"),"Milestones",DATA.milestones.map(m=>({sel:S.ms===m.id,
+    html:`<span class="id">${m.id}</span> ${m.name}<span class="cnt">${m.done}/${m.total}</span>`,
+    extra:S.ms===m.id?`<div class="bar"><i style="width:${Math.round(100*m.done/m.total)}%"></i></div>`:"",
+    on:()=>{S.ms=m.id;S.tk=null;S.sc=null;render();}})));
+  const tks=DATA.tickets[S.ms]||[];
+  const F=(tks.find(t=>t.id===S.tk)||{}).feat?DATA.features[tks.find(t=>t.id===S.tk).feat]:null;
+  col($("c2"),"Tickets → Gherkin",[
+    ...tks.map(t=>({sel:S.tk===t.id&&S.sc===null,html:`<span class="st ${t.st}">${stI(t.st)}</span><span class="id">${t.id}</span>`,title:t.t,on:()=>{S.tk=t.id;S.sc=null;render();}})),
+    ...(F?F.scenarios.map(sc=>({sel:S.sc===sc.n,cls:"indent",html:`<span class="st done">✔</span> ${sc.n}. ${sc.name.slice(0,26)}…`,on:()=>{S.sc=sc.n;render();}})):[])
+  ], tks.length?null:"maquette : M8 peuplé");
+  const el=$("details");
+  if(S.sc&&F){const sc=F.scenarios.find(x=>x.n===S.sc);
+    el.innerHTML=`<h3>✓ ${sc.name}</h3>
+    <div class="chips"><span class="chip pass">Passed — last night (APS run)</span><span class="chip">${F.file.split("/").pop()}</span></div>
+    ${gwt("Given",sc.g)}${gwt("When",sc.w)}${gwt("Then",sc.t)}
+    <div class="sect">Tags</div><div class="chips">${sc.tags.map(t=>`<span class="chip">${t}</span>`).join("")}</div>
+    <div class="sect">Referenced by</div><div class="rel">${sc.rel.map(bl).join("")||"—"}</div>`;
+  } else if(S.tk&&F){
+    el.innerHTML=`<h3>🥒 ${F.name}</h3>
+    <div class="fmap">${F.scenarios.map((sc,i)=>`${i?'<div class="pipe"></div>':''}<div class="node" onclick="S.sc=${sc.n};render()"><span class="dot pass"></span> ${sc.n}. ${sc.name}</div>`).join("")}</div>
+    <div class="fstats"><div><b>${F.scenarios.length}<span style="font-size:.8rem;color:var(--muted)">/11</span></b><span>scénarios (maquette)</span></div><div><b>${F.given}</b><span>Given</span></div><div><b>${F.when}</b><span>When</span></div><div><b>${F.then}</b><span>Then</span></div></div>`;
+  } else if(S.tk){const t=tks.find(x=>x.id===S.tk);
+    el.innerHTML=`<h3>${t.id} — ${t.t}</h3><div class="chips"><span class="chip">${t.st}</span></div><div class="note" style="padding:0">Pas de feature APS liée dans la maquette.</div>`;
+  } else {const m=DATA.milestones.find(x=>x.id===S.ms);
+    el.innerHTML=`<h3>${m.id} — ${m.name}</h3><div class="fstats"><div><b>${m.total}</b><span>tickets</span></div><div><b>${m.done}</b><span>done</span></div><div><b>${Math.round(100*m.done/m.total)}%</b><span>progress</span></div></div>`;}
+  crumb([["🏠",()=>{S={root:"specs",ms:"M8",tk:null,sc:null};render();}],[S.ms],(S.tk?[S.tk,()=>{S.sc=null;render();}]:null),(S.sc?["Scenario "+S.sc]:null)]);
+}
+/* DOCS / CONSTI / BRIEF / EVID = corpus markdown */
+function renderCorpus(){
+  const src=S.root==="docs"?DATA.docs:S.root==="consti"?DATA.consti:null;
+  const flat=S.root==="brief"?DATA.brief:S.root==="evid"?DATA.evid:null;
+  if(src){
+    const cats=Object.keys(src); if(!S.cat)S.cat=cats[0];
+    col($("c1"),S.root==="docs"?"Docs — Diátaxis":"Constitution",cats.map(c=>({sel:S.cat===c,html:c,on:()=>{S.cat=c;S.doc=null;render();}})));
+    col($("c2"),"Fichiers",src[S.cat].map(d=>({sel:S.doc===d.f,html:`<span class="id" style="font-size:.72rem">${d.f.length>26?d.f.slice(0,25)+"…":d.f}</span>`,title:d.d,on:()=>{S.doc=d.f;render();}})));
+    const d=src[S.cat].find(x=>x.f===S.doc);
+    $("details").innerHTML=d? (d.body?`<div class="md">${esc(DATA.bodies[d.body])}</div>`:`<h3>${d.f}</h3><p class="note" style="padding:0">${d.d} — (corps non embarqué dans la maquette ; au build réel, le markdown est pré-rendu ici, liens BL-xxx cliquables.)</p>`)
+      : `<div class="note" style="padding-top:1.5rem">Choisis un fichier — essaie <b>coder.prompt</b> (constitution) ou <b>lessons-2026-07-25</b> (explanation).</div>`;
+    crumb([["🏠",()=>{S={root:"specs",ms:"M8"};render();}],[S.root.toUpperCase()],[S.cat],(S.doc?[S.doc.slice(0,18)+"…"]:null)]);
+  } else {
+    col($("c1"),S.root==="brief"?"Briefings":"Evidence",flat.map(d=>({sel:S.doc===d.f,html:`<span class="id" style="font-size:.74rem">${d.f.slice(0,24)}${d.f.length>24?"…":""}</span>`,title:d.d,on:()=>{S.doc=d.f;render();}})));
+    col($("c2"),"",[],""); $("c2").innerHTML="";
+    const d=flat.find(x=>x.f===S.doc);
+    $("details").innerHTML=d?(d.body?`<div class="md">${esc(DATA.bodies[d.body])}</div>`:`<h3>${d.f}</h3><p class="note" style="padding:0">${d.d}</p>`)
+      :`<div class="note" style="padding-top:1.5rem">${S.root==="brief"?"La série des matins — essaie 2026-07-26 (le gap-fill).":"Les 194 récits d'incidents — essaie le bounce #3 de BL-629."}</div>`;
+    crumb([["🏠",()=>{S={root:"specs",ms:"M8"};render();}],[S.root.toUpperCase()],(S.doc?[S.doc.slice(0,22)+"…"]:null)]);
+  }
+}
+function col(el,title,items,note){
+  el.innerHTML=title?`<h2>${title}</h2>`:"";
+  (items||[]).forEach(it=>{const d=document.createElement("div");d.className="item "+(it.sel?"sel ":"")+(it.cls||"");d.innerHTML=it.html;if(it.title)d.title=it.title;d.onclick=it.on;el.appendChild(d);
+    if(it.extra){const x=document.createElement("div");x.innerHTML=it.extra;el.appendChild(x);}});
+  if(note)el.innerHTML+=`<div class="note">${note}</div>`;
+}
+function gwt(k,i){return `<div class="gwt"><div class="kw">${k}</div>${i.map(x=>`<p>${x}</p>`).join("")}</div>`;}
+function crumb(parts){parts=parts.filter(Boolean);
+  $("crumb").innerHTML=parts.map((p,i)=>`${i?'<span class="sep">›</span>':''}<a>${p[0]}</a>`).join("");
+  [...$("crumb").querySelectorAll("a")].forEach((a,i)=>{if(parts[i][1])a.onclick=parts[i][1];});}
+function renderMap(){
+  const levels={specs:["Milestone","Ticket","Feature","Scenario"],docs:["Racine","Catégorie","Document"],consti:["Racine","Catégorie","Document"],brief:["Racine","Jour"],evid:["Racine","Récit"]}[S.root];
+  const depth=S.root==="specs"?(S.sc?3:S.tk?2:1):(S.doc?levels.length-1:S.cat?1:0);
+  $("minimap").innerHTML=levels.map((l,i)=>`<div class="${i===depth?'on':''}">${l}</div>`).join("");}
+function jumpTicket(id){S={root:"specs",ms:"M8",tk:id,sc:null};render();}
+/* recherche transverse */
+function openPal(){$("ovl").classList.add("open");$("q").value="";$("results").innerHTML="";$("q").focus();}
+function closePal(){$("ovl").classList.remove("open");}
+function doSearch(q){q=q.toLowerCase();const R=$("results");if(!q){R.innerHTML="";return;}let out="";
+  const tks=Object.values(DATA.tickets).flat().filter(t=>(t.id+" "+t.t).toLowerCase().includes(q));
+  if(tks.length)out+=g("Tickets")+tks.map(t=>hit(t.id,t.t.slice(0,40),"specs",`jumpTicket('${t.id}')`)).join("");
+  for(const F of Object.values(DATA.features)){const scs=F.scenarios.filter(s=>(s.name+s.g.join()+s.t.join()).toLowerCase().includes(q));
+    if(scs.length)out+=g("Scenarios")+scs.map(s=>hit("✔",s.name.slice(0,42),"BL-629",`S={root:'specs',ms:'M8',tk:'BL-629',sc:${s.n}};render()`)).join("");}
+  [["docs",DATA.docs],["consti",DATA.consti]].forEach(([root,src])=>{for(const[cat,list]of Object.entries(src)){
+    const ds=list.filter(d=>(d.f+" "+d.d).toLowerCase().includes(q));
+    if(ds.length)out+=g(root==="docs"?"Docs":"Constitution")+ds.map(d=>hit("📄",d.d.slice(0,40),cat.split(" ")[0],`S={root:'${root}',cat:'${cat}',doc:'${d.f}'};render()`)).join("");}});
+  [["brief",DATA.brief,"Briefings","📰"],["evid",DATA.evid,"Evidence","🔎"]].forEach(([root,list,label,ic])=>{
+    const ds=list.filter(d=>(d.f+" "+d.d).toLowerCase().includes(q));
+    if(ds.length)out+=g(label)+ds.map(d=>hit(ic,d.d.slice(0,40),d.f.slice(0,12),`S={root:'${root}',doc:'${d.f}'};render()`)).join("");});
+  R.innerHTML=out||`<div class="note" style="padding:1rem">aucun résultat — essaie « override », « invariant », « expeditor »</div>`;}
+function g(t){return `<div class="grp">${t}</div>`;}
+function hit(id,txt,ctx,call){return `<div class="hit" onclick="${call};closePal()"><span class="id">${id}</span> ${txt} <span class="ctx">${ctx}</span></div>`;}
+document.addEventListener("keydown",e=>{if((e.ctrlKey||e.metaKey)&&e.key==="p"){e.preventDefault();openPal();}if(e.key==="Escape")closePal();});
+render();
+</script>

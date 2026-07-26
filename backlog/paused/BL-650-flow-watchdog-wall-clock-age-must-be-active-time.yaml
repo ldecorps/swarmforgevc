@@ -11,6 +11,8 @@ direction: human-requested
 depends_on: []
 assigned_to: specifier
 mutation_cost: medium
+required_stages: [coder, architect, qa]
+stage_skip_reasons: { cleaner: "bounded single-lib bb change (flow_watchdog_lib + config resolution)", hardender: "bb code sits outside the Stryker mutate scope; the clock property tests run in the unit gate", documenter: "alarm-text change is specified in-ticket; no runbook surface" }
 
 approval_context: >
   Operator, 2026-07-25 ~22:00, after a WARN flow-stall reached their Telegram

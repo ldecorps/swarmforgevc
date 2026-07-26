@@ -1,0 +1,119 @@
+id: BL-658
+title: "Closing ceremony: at closure time the coordinator drains the in-flight parcel, rotates the resident to the DOCUMENTER for the morning briefing as the night's last act, then everything stops"
+milestone: M8
+type: feature
+status: todo
+epic: swarm-reliability
+human_approval: approved
+severity: medium
+priority: 08
+direction: human-requested
+depends_on: []
+assigned_to: specifier
+mutation_cost: medium
+
+approval_context: >
+  Operator, 2026-07-26 morning, refining their own earlier ruling ("juste
+  avant la fermeture") into a full closing routine: "à l'heure dite, le
+  coordinateur attend que la parcelle en cours se termine. si par hasard elle
+  est avec le documenter, happy days, il enchaîne avec la production du
+  briefing. sinon le coordinateur le rotate vers le documenter et lui demande
+  la production du morning briefing. et ensuite tout s'arrête." That sequence
+  IS the spec; this file pins its edges.
+
+source: |
+  ## Why a ceremony and not a trigger time
+
+  First scheduled night (2026-07-26): the briefing constant (07:00Z) fired
+  two hours after the 06:00 stop — no email, silent. The first patch was a
+  moved constant (04:30Z, in force as the INTERIM until this ships), which
+  created a sibling-clock hazard: change the night window, forget the
+  constant, the mailman dies again. The operator's routine dissolves both
+  problems: the briefing is not AT a time, it is THE LAST ACT of closing —
+  it always covers the whole night, and it can never fire against a stopped
+  swarm because it is what precedes the stop.
+
+  Bonus it buys for free: the 06:00 hard cut was the main producer of
+  orphaned claims at scheduled stops (BL-648's live case, twice on 07-25/26).
+  A drained parcel is a real boundary; the orphan class shrinks to crashes,
+  which BL-648 owns.
+
+description: |
+  ## The sequence (operator's design, edges pinned)
+
+  ```
+  H_close-begin (DERIVED from the closure schedule, not a sibling constant)
+    1. closing marker set: promotion FREEZES (reuse pause machinery);
+       new parcels stop being delivered; queues hold in place
+    2. the resident FINISHES its in-flight parcel — bounded by a drain
+       deadline; a parcel exceeding it is parked CLEANLY (claim intact,
+       surfaced loudly; BL-648's resume owns the morning after), never
+       killed mid-write
+    3. happy-days branch: if the drained parcel ended AT the documenter,
+       it chains straight into briefing production, no rotation
+       otherwise: coordinator rotates the resident to documenter with the
+       briefing instruction
+    4. briefing written, committed, EMAIL SENT — verified, not assumed
+    5. full stop (the night-stop sequence: ancillaries, babysitterd,
+       swarm, survivor audit)
+  cron hard deadline (unchanged, e.g. 06:00): the unconditional backstop —
+    if the ceremony hangs at any step, night-stop kills anyway. The ceremony
+    makes the backstop RARE; it never replaces it.
+  ```
+
+  ## Edges the specifier must pin
+
+  1. **Drain deadline sizing** — from measured parcel dwell (median front-
+     half stage ~7-11 min; p90 matters more), so the ceremony begin-time =
+     closure − (drain budget + briefing budget). Both derived, one source.
+  2. **The briefing instruction is explicit** — the documenter gets "produce
+     the morning briefing for <date>" as its parcel, not an ambient hope; a
+     documenter that bounces or wedges on it hits the same drain deadline
+     and the backstop, with the missing briefing surfaced LOUDLY (the one
+     forbidden outcome stays silence).
+  3. **Send verification** — step 4 is done when the email sweep confirms
+     the send (`.sent.json`), not when the file exists. The 2026-07-26
+     gap-fill (operator-authored, marked sent) must not be double-sent.
+  4. **Watchdog/metrics** — ceremony time counts as could-not-process for
+     held parcels (BL-650's active-time clock); the frozen promotion is not
+     a starvation signal.
+  5. **Interim retirement** — `briefing_morning_time_utc 04:30` (the
+     constant patch) is RETIRED by this ticket on the closure-scheduled
+     path; kept as the trigger for 24/7 swarms with no closure schedule
+     (byte-identical behaviour for them).
+
+acceptance: |
+  Specifier writes the scenarios. Minimum behaviour:
+
+  1. Nominal night: parcel in flight at ceremony start finishes; resident
+     rotates to documenter; briefing written+sent; stop runs; ZERO claims
+     left in in_process across all mailboxes (the boundary invariant —
+     assert on porcelain state, not absence of complaints).
+  2. Happy-days branch: parcel drains AT the documenter stage — briefing
+     chains without a rotation; same end state.
+  3. Slow parcel: exceeds the drain deadline — parked cleanly (claim
+     intact, loud surface), briefing still produced and sent, stop still on
+     time. The morning-after resume is BL-648's fixture, referenced not
+     duplicated.
+  4. Documenter wedges on the briefing: backstop stop fires at the hard
+     deadline, the missing briefing is surfaced loudly — never a silent
+     morning. Fixture mirrors 2026-07-26.
+  5. Window moved (e.g. 01:00→07:00): ceremony follows with no other config
+     edit — the single-clock scenario this ticket exists for.
+  6. 24/7 swarm (no closure schedule): fixed-time trigger behaviour
+     byte-identical to today.
+
+out_of_scope: |
+  - Crash-path resume (BL-648 owns it; the ceremony only shrinks the class).
+  - Moving briefing AUTHORSHIP off the documenter. The routine hands it the
+    pen at the right moment; who writes is unchanged.
+  - The sidecar needsApproval[] emptiness observed 2026-07-26 — separate
+    backlogDashboard defect.
+
+notes: |
+  Supersedes this ticket's own first draft (trigger derived from closure —
+  a better constant). The operator's second pass made it a sequence instead
+  of a time, which is strictly stronger: whole-night coverage, orphan-free
+  scheduled stops, and the mailman structurally incapable of missing the
+  swarm. Seventh member of the week's schedule-blindness family, and the
+  first that removes a class instead of patching an instance.
