@@ -76,6 +76,35 @@ Like a move, a successful **Make top** commits through the same
 commit-integrity helper as every other write on this screen, and a refusal
 or no-op always shows its reason rather than a bare status code.
 
+## Make a Topic Top Priority Within Its Epic
+
+Drilling into an epic (see below) lists that epic's own live topics, each
+with its own **Make top** control. Tapping it is the same primitive as the
+epic-level **Make top**, one level down: the topic is made the strict top of
+*that epic's own live topics* — never the whole backlog, and never another
+epic's topics.
+
+The same rules apply, narrowed to that one epic's topic list:
+
+- Other epics' topics, and the target topic's own epic siblings it doesn't
+  depend on, keep their relative order.
+- A live dependency is resolved globally, not just within the epic — a
+  topic in a different epic entirely can still bound or refuse the move, the
+  same way an in-epic dependency would.
+- A broken dependency graph (a cycle, or a `depends_on` id that resolves to
+  nothing) refuses the move outright, naming the offending id(s); nothing is
+  written or committed.
+- Re-tapping **Make top** on a topic already in the best position it's
+  allowed to reach is a no-op with a stated reason.
+- Applying it to a topic that doesn't actually belong to the epic you're
+  viewing is refused as not-found, without writing anything — this can only
+  happen if the screen's own data is stale, since the drill-down only ever
+  shows a topic under its own epic.
+
+Like the epic-level move and **Make top**, a successful topic **Make top**
+commits through the shared commit-integrity helper, and every refusal or
+no-op shows its stated reason.
+
 ## If a Move Fails
 
 The screen always shows the server's stated reason for a failed or refused
@@ -86,5 +115,6 @@ its own.
 
 ## Scope
 
-The screen only reorders `type: epic` tickets. Reordering an epic's own
-child slices is a separate concern and is not part of this screen.
+The epic tiles only reorder `type: epic` tickets. Reordering one epic's own
+topics is a narrower, separate action — scoped to a single epic's drill-down
+(**Make top** within an epic), not a general topic reorder screen.
