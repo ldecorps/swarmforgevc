@@ -45,7 +45,7 @@ test('readBacklogFolders returns empty arrays for folders that do not exist', ()
 
   const folders = readBacklogFolders(target);
 
-  assert.deepEqual(folders, { active: [], paused: [], done: [], hold: [] });
+  assert.deepEqual(folders, { active: [], paused: [], done: [] });
 });
 
 // ── BL-234: the folder is authoritative for the bucket - status is never a

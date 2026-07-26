@@ -414,21 +414,16 @@ export interface BacklogFolders {
   active: BacklogItem[];
   paused: BacklogItem[];
   done: BacklogItem[];
-  // BL-672: backlog/hold/ - human-held items (constitution Article 3.1).
-  // Never auto-promoted, but still a LIVE bucket for ordering purposes (the
-  // epic/topic make-top-priority domination set is paused + hold).
-  hold: BacklogItem[];
 }
 
 // Unlike readBacklog (which normalizes for the panel's own display), this
-// projects the backlog folders as-is for consumers, such as the read
+// projects the three backlog folders as-is for consumers, such as the read
 // bridge, that need to know which folder a ticket currently sits in.
 export function readBacklogFolders(targetPath: string): BacklogFolders {
   return {
     active: readYamlFiles(path.join(targetPath, 'backlog', 'active')),
     paused: readYamlFiles(path.join(targetPath, 'backlog', 'paused')),
     done: readDoneItems(path.join(targetPath, 'backlog', 'done')),
-    hold: readYamlFiles(path.join(targetPath, 'backlog', 'hold')),
   };
 }
 
