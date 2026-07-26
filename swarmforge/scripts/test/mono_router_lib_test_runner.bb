@@ -117,6 +117,47 @@
          "coder"
          (mono-router-lib/resident-launch-role "coder" nil))
 
+;; ── BL-648: resolve-boot-role (boot-time, distinct from resident-launch-role
+;;    above which only ever runs against an already-alive pane) ────────────
+
+(def bl648-known-roles ["coder" "specifier" "cleaner" "architect" "hardender" "documenter" "QA" "coordinator"])
+
+(assert= "BL-648-01: recorded QA boots the resident as QA"
+         {:role "QA" :fallback? false :reason nil :recorded "QA"}
+         (mono-router-lib/resolve-boot-role
+          {:home-role "coder" :recorded-role "QA"
+           :known-roles bl648-known-roles :rotation-mode "router"}))
+
+(assert= "BL-648-02: missing marker boots home"
+         {:role "coder" :fallback? false :reason :blank :recorded nil}
+         (mono-router-lib/resolve-boot-role
+          {:home-role "coder" :recorded-role nil
+           :known-roles bl648-known-roles :rotation-mode "router"}))
+
+(assert= "BL-648-02: blank marker boots home"
+         {:role "coder" :fallback? false :reason :blank :recorded nil}
+         (mono-router-lib/resolve-boot-role
+          {:home-role "coder" :recorded-role "   "
+           :known-roles bl648-known-roles :rotation-mode "router"}))
+
+(assert= "BL-648-03: unknown recorded role falls back to home, loudly (fallback? true)"
+         {:role "coder" :fallback? true :reason :unknown-role :recorded "not-a-role"}
+         (mono-router-lib/resolve-boot-role
+          {:home-role "coder" :recorded-role "not-a-role"
+           :known-roles bl648-known-roles :rotation-mode "router"}))
+
+(assert= "BL-648-06: non-router pack ignores the marker entirely, even a valid one"
+         {:role "coder" :fallback? false :reason :not-router :recorded "QA"}
+         (mono-router-lib/resolve-boot-role
+          {:home-role "coder" :recorded-role "QA"
+           :known-roles bl648-known-roles :rotation-mode nil}))
+
+(assert= "BL-648: sequential rotation also ignores the marker (router-only read)"
+         {:role "coder" :fallback? false :reason :not-router :recorded "QA"}
+         (mono-router-lib/resolve-boot-role
+          {:home-role "coder" :recorded-role "QA"
+           :known-roles bl648-known-roles :rotation-mode "sequential"}))
+
 (assert-true "clearing stuck email always ok"
              (mono-router-lib/should-send-stuck-escalation-email?
               {:escalated? false :session-exists? false}))
