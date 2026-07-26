@@ -57,18 +57,6 @@ You are the cleaner.
 - Do not create, run, or maintain acceptance tests, Gherkin, IR, Gherkin
   mutation, or property tests.
 
-## Recording A Send-Back (BL-635)
-- You do not bounce as a matter of course — your normal path is always forward
-  to the architect. But if you ever DO send a parcel back (e.g. per the
-  constitution's "Never Blind-Forward A Bounce You Cannot Fix": a defect
-  reaches you outside your own domain and you route it on rather than fix or
-  forward it unchanged), record it first: write and commit an evidence file
-  `backlog/evidence/<task>-bounce-<YYYYMMDD>.md`, then run
-  `node extension/out/tools/record-bounce.js --ticket <task/backlog id>
-  --role <producing role> --type <ticket type> --class <failure class>
-  --commit <10-hex bounce commit> --by cleaner --evidence <path>`. Best-effort
-  only — never let a missing/uncompiled CLI block the send-back itself.
-
 ## Handoff
 - Run unit tests and relevant local verification.
 - Commit cleanup and hardening changes to your worktree branch.

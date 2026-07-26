@@ -7,11 +7,6 @@ const {
   qaBounceNaturalKey,
   hasQaBounceRecord,
   computeQaBounceTally,
-  isKnownBounceRole,
-  bounceAttribution,
-  bounceNaturalKey,
-  hasBounceRecord,
-  computeBounceTallyByBouncingRole,
 } = require('../out/quality/qaBounce');
 
 // BL-454: the pure QA-bounce core - closed-set validators, the idempotency
@@ -137,64 +132,4 @@ test('ties in bounce count break alphabetically by role, for a deterministic ran
 test('an empty record set produces an empty tally, never a crash', () => {
   const tally = computeQaBounceTally([]);
   assert.deepEqual(tally, { byRole: [], byTicketType: {}, total: 0 });
-});
-
-// ── BL-635: generalised (by-role) vocabulary and dedup key ────────────────
-
-test('isKnownBounceRole accepts every reviewing role, not just QA', () => {
-  for (const role of ['specifier', 'coder', 'cleaner', 'architect', 'hardender', 'documenter', 'QA']) {
-    assert.equal(isKnownBounceRole(role), true, role);
-  }
-});
-
-test('isKnownBounceRole rejects the misspelt "hardener"', () => {
-  assert.equal(isKnownBounceRole('hardener'), false);
-});
-
-test('bounceAttribution returns the `by` role when present', () => {
-  assert.equal(bounceAttribution(record({ by: 'architect' })), 'architect');
-});
-
-test('bounceAttribution returns unattributed for a legacy by-less record', () => {
-  assert.equal(bounceAttribution(record()), 'unattributed');
-});
-
-test('bounceNaturalKey differs across commit even for the same ticket/date/class/by', () => {
-  const a = bounceNaturalKey(record({ by: 'architect', commit: 'aaaa111111' }));
-  const b = bounceNaturalKey(record({ by: 'architect', commit: 'bbbb222222' }));
-  assert.notEqual(a, b);
-});
-
-test('bounceNaturalKey differs across `by` even for the same ticket/date/class/commit', () => {
-  const a = bounceNaturalKey(record({ by: 'architect' }));
-  const b = bounceNaturalKey(record({ by: 'QA' }));
-  assert.notEqual(a, b);
-});
-
-test('hasBounceRecord finds a match on the finer (ticket+date+class+commit+by) key', () => {
-  const existing = [record({ by: 'architect', commit: 'abc1234567' })];
-  assert.equal(hasBounceRecord(existing, record({ by: 'architect', commit: 'abc1234567' })), true);
-  assert.equal(hasBounceRecord(existing, record({ by: 'architect', commit: 'deadbeef00' })), false);
-});
-
-test('computeBounceTallyByBouncingRole ranks bouncing roles by count, unattributed included', () => {
-  const records = [
-    record({ ticket: 'BL-1', by: 'architect' }),
-    record({ ticket: 'BL-2', by: 'architect' }),
-    record({ ticket: 'BL-3', by: 'QA' }),
-    record({ ticket: 'BL-4' }), // no `by` - legacy record
-  ];
-  assert.deepEqual(computeBounceTallyByBouncingRole(records), [
-    { role: 'architect', count: 2 },
-    { role: 'QA', count: 1 },
-    { role: 'unattributed', count: 1 },
-  ]);
-});
-
-test('computeBounceTallyByBouncingRole breaks ties alphabetically', () => {
-  const records = [record({ ticket: 'BL-1', by: 'documenter' }), record({ ticket: 'BL-2', by: 'architect' })];
-  assert.deepEqual(computeBounceTallyByBouncingRole(records), [
-    { role: 'architect', count: 1 },
-    { role: 'documenter', count: 1 },
-  ]);
 });
