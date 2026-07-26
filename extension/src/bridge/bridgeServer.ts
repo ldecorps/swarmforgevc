@@ -52,7 +52,7 @@ import { atomicWrite } from '../util/atomicWrite';
 import { getPausedPagerUiHtml } from './pausedPagerUiHtml';
 import { getEpicReorderUiHtml } from './epicReorderUiHtml';
 import { sortEpicsByPriority, computeEpicReorder, EpicPriorityItem, ReorderDirection, PriorityWrite } from './epicReorderSafety';
-import { computeMakeTopPriority, MakeTopItem, DependencyResolution } from './makeTopPrioritySafety';
+import { computeMakeTopPriority, MakeTopItem, MakeTopResult, DependencyResolution } from './makeTopPrioritySafety';
 import { recordApprovalReply } from '../concierge/pendingApprovalReply';
 import { requestConciergeTick } from '../concierge/conciergeTickRequest';
 import { getContextBudgetUiHtml } from './contextBudgetUiHtml';
@@ -761,6 +761,47 @@ function commitMakeTopPriorityWrites(targetPath: string, relPaths: string[], tar
   return runCommitIntegrity(targetPath, relPaths, `Epic make-top-priority ${targetId}: rewrite priority\n\nBy coder.`);
 }
 
+// Shared response tail for both make-top routes (BL-672 epic-level, BL-673
+// topic-level): apply a computed MakeTopResult's writes atomically, commit
+// through the same commit-integrity path the move route uses, and answer
+// with the same success/changed/reason contract either way - a refusal
+// (result.changed === false) already carries its own stated reason.
+async function applyMakeTopPriorityResult(
+  targetPath: string,
+  result: MakeTopResult,
+  res: http.ServerResponse,
+  commitWrites: (relPaths: string[]) => Promise<boolean>
+): Promise<void> {
+  if (!result.changed) {
+    respondJson(res, 200, { success: true, changed: false, reason: result.reason });
+    return;
+  }
+  try {
+    const resolved = resolveEpicWritePaths(targetPath, result.writes);
+    if (!resolved) {
+      respondJson(res, 500, { success: false, reason: 'backlog file missing during write' });
+      return;
+    }
+    const relPaths: string[] = [];
+    for (const { write, filePath } of resolved) {
+      const content = fs.readFileSync(filePath, 'utf8');
+      atomicWrite(filePath, replacePriorityLine(content, write.priority));
+      relPaths.push(path.relative(targetPath, filePath));
+    }
+    const committed = await commitWrites(relPaths);
+    if (!committed) {
+      respondJson(res, 500, { success: false, changed: true, reason: 'write succeeded but commit failed' });
+      return;
+    }
+    respondJson(res, 200, { success: true, changed: true, reason: result.reason });
+  } catch (err) {
+    respondJson(res, 500, {
+      success: false,
+      reason: err instanceof Error ? err.message : 'unknown error',
+    });
+  }
+}
+
 function isEpicMakeTopRoute(req: http.IncomingMessage, url: string): boolean {
   return req.method === 'POST' && (url === '/epic-reorder/make-top' || url.startsWith('/epic-reorder/make-top?'));
 }
@@ -808,34 +849,9 @@ function handleEpicMakeTopRoute(
       respondJson(res, 404, { success: false, reason: 'ticket not found in paused or hold' });
       return;
     }
-    if (!result.changed) {
-      respondJson(res, 200, { success: true, changed: false, reason: result.reason });
-      return;
-    }
-    try {
-      const resolved = resolveEpicWritePaths(targetPath, result.writes);
-      if (!resolved) {
-        respondJson(res, 500, { success: false, reason: 'backlog file missing during write' });
-        return;
-      }
-      const relPaths: string[] = [];
-      for (const { write, filePath } of resolved) {
-        const content = fs.readFileSync(filePath, 'utf8');
-        atomicWrite(filePath, replacePriorityLine(content, write.priority));
-        relPaths.push(path.relative(targetPath, filePath));
-      }
-      const committed = await commitMakeTopPriorityWrites(targetPath, relPaths, value.id);
-      if (!committed) {
-        respondJson(res, 500, { success: false, changed: true, reason: 'write succeeded but commit failed' });
-        return;
-      }
-      respondJson(res, 200, { success: true, changed: true, reason: result.reason });
-    } catch (err) {
-      respondJson(res, 500, {
-        success: false,
-        reason: err instanceof Error ? err.message : 'unknown error',
-      });
-    }
+    await applyMakeTopPriorityResult(targetPath, result, res, (relPaths) =>
+      commitMakeTopPriorityWrites(targetPath, relPaths, value.id)
+    );
   });
 }
 
@@ -905,34 +921,9 @@ function handleEpicReorderTopicMakeTopRoute(
       respondJson(res, 404, { success: false, reason: `topic not found among epic '${value.epicId}'s live topics` });
       return;
     }
-    if (!result.changed) {
-      respondJson(res, 200, { success: true, changed: false, reason: result.reason });
-      return;
-    }
-    try {
-      const resolved = resolveEpicWritePaths(targetPath, result.writes);
-      if (!resolved) {
-        respondJson(res, 500, { success: false, reason: 'backlog file missing during write' });
-        return;
-      }
-      const relPaths: string[] = [];
-      for (const { write, filePath } of resolved) {
-        const content = fs.readFileSync(filePath, 'utf8');
-        atomicWrite(filePath, replacePriorityLine(content, write.priority));
-        relPaths.push(path.relative(targetPath, filePath));
-      }
-      const committed = await commitTopicMakeTopPriorityWrites(targetPath, relPaths, value.topicId);
-      if (!committed) {
-        respondJson(res, 500, { success: false, changed: true, reason: 'write succeeded but commit failed' });
-        return;
-      }
-      respondJson(res, 200, { success: true, changed: true, reason: result.reason });
-    } catch (err) {
-      respondJson(res, 500, {
-        success: false,
-        reason: err instanceof Error ? err.message : 'unknown error',
-      });
-    }
+    await applyMakeTopPriorityResult(targetPath, result, res, (relPaths) =>
+      commitTopicMakeTopPriorityWrites(targetPath, relPaths, value.topicId)
+    );
   });
 }
 
