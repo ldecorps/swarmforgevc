@@ -1,0 +1,1 @@
+{"id":"BL-648","messages":[{"seq":0,"ts":1785077803028,"author":"swarm","type":"outbound","text":"BL-648 🎵 in progress — Relaunch resume gap: start-swarm boots the resident at its HOME role, never reading `mono-router-active-role`, and a parcel claimed by the dead session is invisible to everyone — the swarm restarts straight into starvation"}]}

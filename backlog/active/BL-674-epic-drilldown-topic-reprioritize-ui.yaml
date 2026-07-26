@@ -1,0 +1,61 @@
+id: BL-674
+title: "Epic drill-down on the reorder screen — live topic list with per-topic make-top-priority button"
+milestone: M8
+type: feature
+status: todo
+epic: swarmforge-console
+human_approval: approved
+priority: 05
+direction: human-requested
+depends_on: [BL-673]
+assigned_to: coder
+mutation_cost: low
+invariants: []
+required_wiring:
+  - "extension/src/bridge/epicReorderUiHtml.ts::epic-reorder/topic-make-top::the drill-down's per-topic button must call BL-673's live route"
+acceptance: specs/features/BL-674-epic-drilldown-ui.feature.draft
+
+approval_context: >
+  UI half of the drill-down ask: tapping an epic tile on the BL-572 reorder
+  screen opens that epic's live topic list (paused/ + hold/, priority
+  order), each row with a make-top button calling BL-673's route. Decisions
+  to sign off: refusals and bounds render the backend's reason verbatim in
+  the screen (BL-572's changed:false contract); rows show a marker when a
+  topic has live depends_on entries so a bound or refusal is not a
+  surprise; back navigation returns to the epic tiles; the Mini App pane
+  header stays in place on the drill-down screen (standing operator rule).
+
+source: |
+  Operator (human) 2026-07-26, same intake as BL-672/BL-673:
+  .swarmforge/operator/INTAKE-epic-make-top-priority-button.md ("a
+  drill-down INTO a given epic, showing its topics, where the same make top
+  priority action can be applied to a topic").
+
+description: |
+  ## What
+
+  Extend the epic reorder screen (epicReorderUiHtml.ts, served by
+  bridgeServer.ts) with a drill-down view per epic: its live topics in
+  displayed order (priority asc, id asc), one make-top button per row wired
+  to BL-673's route, refusal/bound reasons displayed, dependency markers on
+  rows that carry live depends_on, and back navigation. Read model comes
+  from the extension host / bridge (fresh at render, like the tiles);
+  the webview stays presentation-only — no browser storage, no direct
+  filesystem access (webview boundary rules).
+
+  This is the untestable-edge slice: all decision logic already lives in
+  BL-672/BL-673's pure core. Keep any new logic in the HTML module thin;
+  anything decision-shaped belongs in the testable modules, not here.
+
+  Coder materializes the .feature.draft to .feature and wires step handlers
+  in the same parcel (BL-441/BL-233). Documenter: the BL-572 screen's
+  how-to and the console architecture diagram gain the drill-down.
+
+  ## e2e QA procedure
+
+  On the phone Mini App: open the reorder screen, drill into an epic with
+  >=2 live topics, verify order matches the backlog YAML, tap make-top on
+  a dependency-free topic and see the list re-render with it on top; tap a
+  topic whose live dependency ranks worse and see the refusal reason with
+  the blocker id; verify the pane header is present throughout and back
+  returns to the tiles.
