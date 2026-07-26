@@ -77,6 +77,30 @@ description: |
   via filename convention. (The week's lesson: declared links lie —
   `depends_on: []` between coupled tickets; derived links do not.)
 
+  ## Faceted filtering (operator, 2026-07-26, looking at the CURRENT PWA:
+  ## "le filtre est pas [bon]. il faudrait retenir ça: pouvoir filtrer les
+  ## yamls par status, milestone, etc")
+
+  The ticket YAML's own fields ARE the facets — nothing invented:
+
+  ```
+  status (folder: done/active/paused/hold) · milestone · type
+  (defect/feature/epic) · severity · epic · human_approval · direction
+  ```
+
+  - Facet chips above the ticket column; multi-select within a facet, AND
+    across facets ("paused + defect + high" = tonight's expedite queue, in
+    two taps — that query alone justifies the feature).
+  - Counts on every chip value BEFORE selecting (the sidecar already
+    computes most), so a filter never dead-ends into an unexplained empty
+    list.
+  - Filters compose with the Ctrl-P palette (search WITHIN a filtered set)
+    and survive in the URL hash — a filtered view is a shareable deep link,
+    extending BL-256's #ticket= convention.
+  - The current PWA's filter weakness is the motivating defect; the
+    explorer's ticket column REPLACES it rather than adding a second
+    filter UI to maintain.
+
   ## The three requirements as acceptance anchors (operator's words)
 
   1. **Offline**: airplane-mode test — full navigation and search with the
@@ -116,6 +140,10 @@ acceptance: |
   6. Existing #ticket= deep links (BL-256) keep working and now resolve into
      the explorer.
   7. Scenario status sourced from real runner output or shown "never run".
+  8. Ticket facets: filter by status, milestone, type, severity (multi-select,
+     AND across facets), value counts visible pre-selection, filter state in
+     the URL hash. Fixture: "paused + defect + severity high" reproduces the
+     expedite queue exactly as the promotion lane computes it.
 
 out_of_scope: |
   - Any LLM-generated content at build or browse time (summaries, Q&A).
