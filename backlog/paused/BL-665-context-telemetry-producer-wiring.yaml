@@ -1,0 +1,53 @@
+id: BL-665
+title: "Context Budget is permanently empty: GH-22/23 shipped store, CLI and dashboard but NO producer ever calls `record` — wire the producer off the BL-664 transcript walker"
+milestone: M8
+type: defect
+status: todo
+epic: swarm-behaviour-trends
+severity: medium
+priority: 10
+direction: human-requested
+depends_on: [BL-664]
+assigned_to: specifier
+mutation_cost: medium
+invariants:
+  - "Producing is idempotent over the same transcripts: re-running the walker over an already-ingested window never duplicates a context-telemetry record."
+
+source: |
+  .swarmforge/operator/INTAKE-context-telemetry-has-no-producer.md
+  (operator session 2026-07-26, from the human's screenshot "No telemetry
+  recorded yet for (no agent)"; archived on drain). Verified chain:
+  `.swarmforge/telemetry/context-events.jsonl` DOES NOT EXIST (empty since
+  GH-22 shipped 2026-07-22); `context_telemetry_cli.bb record|summary|
+  agents` shipped and works; GH-23's contextTelemetryGate.ts dashboard is
+  read-only; grep across scripts, launch settings (no `hooks` key in any
+  role's claude-settings), bridge and daemons finds ZERO `record` call
+  sites.
+
+description: |
+  ## The class
+
+  This is the recorded SYSTEMIC class (epic runtime-wiring-slice rule,
+  BL-298/BL-419 shape): the capture epic shipped every layer except the one
+  that PRODUCES. The dashboard has honestly displayed an empty store for
+  four days.
+
+  ## The fix
+
+  Wire the producer as a deterministic transcript walker pass — the BL-664
+  lib, not a new parser: role transcripts already carry per-invocation
+  token counts, model, and timestamps. The producer walks the transcripts
+  on a schedule (handoffd tick or an ancillary timer — coder's call, but it
+  must run unattended), derives context-usage events per agent, and calls
+  the existing `context_telemetry_cli.bb record` path (or its lib function
+  directly) so the GH-22 store fills through its own shipped write path.
+
+  Backfill on first run is in scope (the walker is retroactive); the
+  idempotence invariant above is what makes backfill + steady-state safe to
+  run from any point. Dashboard (GH-23) needs no change — it starts showing
+  data the moment the store fills.
+
+  Acceptance signal: after one producer run on this host, `summary`/`agents`
+  return non-empty output naming real roles, and the dashboard's "No
+  telemetry recorded yet" state is gone; running the producer twice over
+  the same window leaves the record count unchanged.

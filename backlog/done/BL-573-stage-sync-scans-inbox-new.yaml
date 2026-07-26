@@ -2,7 +2,8 @@ id: BL-573
 title: "Pipeline board stage sync scans inbox/in_process only — a ticket queued at a dormant role shows at its previous stage"
 milestone: M8
 type: defect
-status: todo
+status: superseded
+superseded_by: BL-670
 epic: pipeline-board
 severity: medium
 priority: 15
@@ -10,6 +11,8 @@ direction: swarm-surfaced
 depends_on: []
 assigned_to: specifier
 mutation_cost: low
+invariants:
+  - "The board's stage for a ticket reflects its furthest delivered hop — a parcel sitting in a role's inbox/new is never invisible to stage sync."
 source: |
   Coordinator note to specifier, 2026-07-23T08:18Z: "pipeline_stage sync
   ignores inbox/new; misses dormant-stage tickets."

@@ -11,6 +11,8 @@ direction: human-requested
 depends_on: []
 assigned_to: specifier
 mutation_cost: medium
+invariants:
+  - "No promotion path activates a ticket whose `acceptance:` does not resolve to an existing feature file at that moment."
 
 approval_context: >
   Operator asked for this ticket directly on 2026-07-25, in the same turn as the

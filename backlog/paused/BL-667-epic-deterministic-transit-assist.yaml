@@ -1,0 +1,52 @@
+id: BL-667
+title: "EPIC — Deterministic transit assist: script the mechanical git choreography between stages (post-QA branch sweep, delivery-time pre-merge, handoff tail command), sized by BL-664's measured turn profile; do not promote directly; tracks children"
+milestone: M8
+type: epic
+status: todo
+epic: deterministic-transit-assist
+priority: 08
+direction: human-requested
+depends_on: []
+decomposes_into: [BL-668]
+remaining_slices: |
+  - BL-668 (filed): post-QA deterministic branch sweep — fast-forward every
+    clean role branch to main after a landing; kills the trickle-all-night
+    merge-up broadcast turns (5 turns per landed ticket).
+  - Delivery-time pre-merge (unfiled — size with BL-664 data first):
+    handoffd delivery attempts the merge in the RECIPIENT's worktree
+    (computed from roles.tsv, never a cd habit) + compile/unit smoke;
+    parcel arrives annotated "pre-merged <sha>, suite green" or "conflict
+    in <files>" with the merge unapplied. Guards non-negotiable: the
+    merge-drops-fix trap means pre-merge NEVER absolves re-running tests
+    on bounce merges; refuses dirty worktrees; git-only state moves.
+  - Handoff tail command (unfiled — smallest): one script does
+    commit --only <declared paths> + draft template + swarm_handoff.sh; the
+    LLM supplies message and paths only.
+
+source: |
+  .swarmforge/operator/INTAKE-deterministic-git-choreography-assist.md
+  (operator session 2026-07-26, from the human: "agents take forever to
+  1: merge main when qa lands, 2: merge up with the previous agent's
+  branch, 3: commit and hand off. could not a script help?"; archived on
+  drain). Measured: merge_and_process is NOT a script — it is an
+  instruction the receiving LLM hand-types every parcel; the post-QA
+  merge-up broadcast after BL-629 took five turns trickling from 22:07 to
+  04:34, each a rotation whose payload was one nearly-always-clean merge.
+
+description: |
+  Deterministic assist, LLM keeps the judgement: scripts do the transit
+  steps that are pure choreography; anything needing judgement (conflicts,
+  red suites, bounce merges) surfaces to the role annotated, unapplied.
+
+  The operator's transcript prototype (see BL-664's source) shows raw git
+  is ~4% of seat time — the yield is ELIMINATED TURNS (each wrapped in
+  boot+read overhead), not seconds saved per command. Sequencing is
+  therefore: BL-664 profiler first; its measured turn-overhead and
+  mechanical share size and order the remaining slices before they are
+  specced. Before/after rides the COST experiment log.
+
+  Shared guards for every slice (the week's scars): worktree state moves
+  via GIT ONLY, never cp -R (BL-373); refuse dirty worktrees
+  (operator-tunnel/QA-live-work contamination); never stash-pop; target
+  worktrees computed from roles.tsv — structurally eliminating the cd-habit
+  class behind the BL-590 main contamination.

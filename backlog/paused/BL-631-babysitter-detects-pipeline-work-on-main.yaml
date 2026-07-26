@@ -11,6 +11,8 @@ direction: human-requested
 depends_on: []
 assigned_to: specifier
 mutation_cost: medium
+invariants:
+  - "Every landing of pipeline work on `main` outside QA's integration path raises a CRIT finding — no role, path, or timing is exempt from the sweep."
 
 approval_context: >
   Operator ruling 2026-07-25, during the BL-590 post-mortem: "il faut absolument

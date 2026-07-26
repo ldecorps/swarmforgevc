@@ -11,6 +11,8 @@ direction: human-requested
 depends_on: []
 assigned_to: specifier
 mutation_cost: medium
+invariants:
+  - "No relaunch strands a claimed parcel: if any role holds in_process work, the resident resumes that role or surfaces the claim before idling at home."
 
 approval_context: >
   Operator, 2026-07-25 evening: "file in ce defect", after watching the

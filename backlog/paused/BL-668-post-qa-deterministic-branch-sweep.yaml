@@ -1,0 +1,54 @@
+id: BL-668
+title: "Post-QA deterministic branch sweep: after QA lands on main, fast-forward every CLEAN role branch — zero LLM merge-up turns; only a dirty worktree or non-ff branch surfaces to its role"
+milestone: M8
+type: feature
+status: todo
+epic: deterministic-transit-assist
+severity: medium
+priority: 08
+direction: human-requested
+depends_on: []
+assigned_to: specifier
+mutation_cost: medium
+invariants:
+  - "The sweep fast-forwards only: a branch that cannot fast-forward, or a worktree that is dirty or holds in_process work, is surfaced to its role untouched — the sweep never merges, resets, rebases, or stashes."
+  - "All worktree state moves via git in the worktree's own checkout resolved from roles.tsv — never file copies, never a cd into a hardcoded path."
+
+source: |
+  .swarmforge/operator/INTAKE-deterministic-git-choreography-assist.md,
+  proposal 2 (operator session 2026-07-26; archived on drain). Evidence:
+  BL-629 landed 2026-07-25 21:29; the five role merge-ups trickled in at
+  22:07, 22:56, 01:48, 04:34 — each a rotation + full LLM turn whose
+  payload was one `git merge <sha>` that is almost always a clean
+  fast-forward. Turn-overhead measurement (BL-664 prototype): a 2-second
+  merge costs a ~10-minute turn; this slice kills ~5 such turns per landed
+  ticket.
+
+description: |
+  ## What
+
+  After QA lands an approved commit on `main`, a deterministic sweep (a
+  natural handoffd or post-land hook — coder locates the single chokepoint)
+  visits every pipeline role branch and fast-forwards the clean ones to the
+  landed commit. The QA merge-up BROADCAST then only needs to reach roles
+  the sweep could NOT settle: dirty worktree, in_process work present, or a
+  genuinely divergent (non-ff) branch — those roles get their note exactly
+  as today and resolve as the receiver, per the constitution's merge-up
+  protocol. The pipeline chain, lineage rules, and QA's integration role
+  are unchanged; this automates only the mechanical receiver side of the
+  broadcast where no judgement exists to apply.
+
+  ## Constraints
+
+  - Skip conditions are checked per worktree immediately before acting; a
+    role whose state changes mid-sweep fails safe to "surface, don't touch".
+  - Every sweep action and every skip (with its reason) is logged to the
+    handoff/audit trail so the merge-up story stays reconstructable.
+  - Constitution/prompt text describing the merge-up protocol is updated in
+    the same parcel (documenter pass) so the described flow matches the
+    built one — the swarm-workflow diagram included if it depicts the
+    broadcast.
+
+  Acceptance signal: on a fixture repo with five role branches — three
+  clean/ff-able, one dirty, one divergent — the sweep settles exactly the
+  three, logs two surfaced skips with reasons, and a re-run is a no-op.

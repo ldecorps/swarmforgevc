@@ -11,6 +11,8 @@ direction: human-requested
 depends_on: []
 assigned_to: specifier
 mutation_cost: high
+invariants:
+  - "The operator LLM wakes only for an inbound human message or a deterministic-layer escalation; the runtime never manufactures a wake from its own sweep."
 
 approval_context: >
   Operator, 2026-07-25 23:55, designing the unattended-nights wake model:

@@ -1,0 +1,65 @@
+id: BL-669
+title: "Outage-driven seat failover: a sustained provider outage makes the coordinator consult the Model Steward for a certified substitute, applied at an idle boundary and auto-reverted when the outage record closes"
+milestone: M8
+type: feature
+status: todo
+epic: swarm-intelligence-layer
+severity: medium
+priority: 08
+direction: human-requested
+depends_on: []
+assigned_to: specifier
+mutation_cost: medium
+human_approval: approved
+approval_context: >
+  Your proposal 2026-07-26 during the live "Elevated errors for Opus 5"
+  incident: "en cas d'outage, le coordinateur pourrait demander au model
+  steward un modèle de remplacement? si opus 5 est out, le model steward
+  pourrait proposer opus 4.8?". Needing your sign-off on the governance
+  split the operator session pinned: AUTO-APPLY only during unattended
+  shifts and only to certified-eligible substitutes, always announced on
+  the Operator topic (seat, from->to, incident, revert condition);
+  attended hours it PROPOSES and you confirm. Reject the auto-apply half
+  if you want propose-only everywhere.
+invariants:
+  - "Only steward-certified-eligible substitutes are ever applied; the certification gate is never bypassed on this path (--override-uncertified is forbidden here)."
+  - "A swap happens only after sustained signature evidence and only at an idle/turn boundary — never a respawn into a live turn; and it always auto-reverts to the pack's canonical model when the outage record closes."
+  - "Every swap and revert is announced and logged as a COST experiment-log annotation — never a silent seat drift."
+
+source: |
+  .swarmforge/operator/INTAKE-outage-driven-seat-failover-via-steward.md
+  (operator session 2026-07-26, filed DURING the Opus 5 elevated-errors
+  incident, status.claude.com 09:17Z, the architect's seat weathering 529
+  retries; archived on drain). Four fifths already shipped: BL-650
+  signature-backed outage records (provider-outages.jsonl, per-model,
+  affectedSeats — first record is this incident), Model Steward
+  role-matrix/eligible (BL-547), ModelFactory assign/cold-apply (BL-525),
+  BL-563 launch-path wiring, plus the documented mono-router live
+  model-change (patch launch settings + respawn).
+
+description: |
+  ## The missing piece is one wire and one registry row
+
+  1. THE WIRE: outage record crosses a duration threshold (~20-30 min
+     sustained — hysteresis, not reflex; today's 529 storm was absorbed by
+     in-turn CLI retries and a mid-review respawn would have destroyed a
+     working turn) -> coordinator consults the steward
+     (`eligible <provider>/<model> --role <seat>`) -> certified substitute
+     applied to the affected seat via the ModelFactory path at the next
+     idle boundary -> reverted automatically when the outage `endedAtUtc`
+     closes. Nobody calls anybody today.
+  2. THE REGISTRY ROW: anthropic/claude-opus-4-8 is NOT in the steward's
+     registry, so the steward literally cannot propose the human's example.
+     First act: register + certify opus-4-8 as the designated same-provider
+     fallback — certification by incumbency (it held the architect seat for
+     weeks; its record IS the evidence).
+
+  Model-scoped incidents take the same-provider rung (opus-5 -> opus-4.8);
+  a provider-wide outage takes the cross-provider rung (gpt-5.3-codex is
+  already certified) — the steward's eligible gate covers both once the
+  registry is populated.
+
+  This is the intelligence layer's first autonomous duty under fire —
+  bounded, certified, announced, reversible — and the filing-day incident
+  provides the complete acceptance fixture: detection record, affected
+  seat, candidate substitute, and the reversion trigger.

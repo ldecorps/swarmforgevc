@@ -11,6 +11,8 @@ direction: human-requested
 depends_on: []
 assigned_to: specifier
 mutation_cost: low
+invariants:
+  - "Rotation target ordering is priority-first everywhere: an actionable lower-priority-value parcel is never starved by newer higher-value mail; recency decides only among equal priorities."
 
 approval_context: >
   Operator ruling 2026-07-25, from live concierge escalations. Operator was

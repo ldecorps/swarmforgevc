@@ -11,6 +11,8 @@ direction: operator-reported
 depends_on: []
 assigned_to: coder
 mutation_cost: medium
+invariants:
+  - "Ambient-env Telegram creds resolve only for the one recorded primary root; any other swarm without per-swarm creds keeps its front desk DOWN with one loud line — no path brings up a second poller on the same token."
 source: |
   backlog/INTAKE-20260724-onboarding-telegram-token-separation.md — human-
   confirmed incident 2026-07-24: an onboarding attempt (possibly from the old

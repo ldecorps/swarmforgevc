@@ -11,6 +11,8 @@ direction: human-requested
 depends_on: []
 assigned_to: specifier
 mutation_cost: medium
+invariants:
+  - "Every schedule-derived clock reads the single active shift definition — no start/stop/window/briefing constant exists outside it to drift."
 
 approval_context: >
   Operator, 2026-07-26 midday: "ce serait bien d'avoir une swarm basée sur
