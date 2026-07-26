@@ -57,17 +57,28 @@ description: |
   is a known live failure mode (BL-490 — the bot's approval write never
   reached a commit), and this ticket must not reproduce it.
 
-  **3. Renumber vs recompute — SWAP, and neither.**
-  A move exchanges the two adjacent epics' `priority:` values. Exactly two
-  files change; every untouched epic keeps the exact value it already had, so
-  there is no global renumbering and no churn against tickets nobody touched.
-  Repeated swaps compose into any arbitrary order. This also sidesteps the
-  question of how promotion reads `priority:` — the ORDER changes, the value
-  space does not.
+  **3. Renumber vs recompute — SWAP where values allow, positional rewrite
+  for ties.** (Amended 2026-07-26, architect bounce #2 — see notes.)
+  With distinct adjacent values, a move exchanges the two epics' `priority:`
+  values: exactly two files change and every untouched epic keeps the exact
+  value it already had. This remains the common case and scenario 01 pins it.
 
-  Ties are the one edge case swapping does not handle by itself: two adjacent
-  epics with the same value swap to no observable effect, so the UI would look
-  stuck. Scenario 02 requires the move to still produce a strict ordering.
+  Ties cannot be expressed as a two-file swap: with the floor at 0, integer
+  priorities, and only two files writable, transposing adjacent epics inside
+  a run tied at 0 has NO solution (architect bounce #2 proved this against
+  the live backlog — 9 epics tied at 00, 14 of 24 moves silently refused).
+  So a tie-case move REWRITES values instead: the write set may extend to
+  epics at or after the moved pair — as few as the target order needs — and
+  the move must still deliver the one-position change. An epic listed above
+  the moved pair is never written, no value ever goes negative (a raise-only
+  rewrite always has an integer solution, so refusal is never forced), and
+  every epic outside the moved pair keeps its relative position. Scenarios
+  02 and 07 pin the tie behavior; the declared invariants quantify it over
+  every backlog shape.
+
+  A move is never silently refused. The only legal no-ops are the list
+  boundaries (first epic up, last epic down) and they must say so on screen
+  (scenario 03).
 
   ## Scope boundary
 
@@ -89,8 +100,18 @@ description: |
     collision logic outside the route handler.
   - Do not widen the epic list to non-epic tickets; the paused pager already
     covers ordinary tickets.
+  - A move that writes nothing must answer with an explicit no-change signal
+    carrying a human-readable reason, and the screen must display that reason
+    — never a response indistinguishable from success. (Architect bounce #2's
+    second finding: `{success: true, changed: false}` with a silent screen is
+    the wrong contract even where a no-op is legal.)
 
 acceptance: specs/features/BL-572-epic-priority-reorder-console.feature
+
+invariants:
+  - "After any accepted move, the mover's displayed position changes by exactly one and every other pair of epics keeps its relative display order."
+  - "No move ever writes a negative priority value, and no move ever writes the YAML of an epic listed above the moved pair."
+  - "Every move tap yields an observable outcome: the displayed order changes, or the console states the reason it did not."
 
 qa_e2e_procedure: |
   Against the live console with a valid device token:
@@ -100,12 +121,15 @@ qa_e2e_procedure: |
      YAML files changed and their `priority:` values are exchanged.
   3. Confirm the change reached a commit on `main` (`git log -1 --stat`), and
      that it went through the commit-integrity path rather than a bare commit.
-  4. Set two adjacent epics to the same `priority:` by hand, reload, move the
-     lower one up — confirm the list order visibly changes and the two values
-     are now distinct.
+  4. Use the live tied run (today: 9 epics at `00`; or set three adjacent
+     epics to the same `priority:` by hand and reload). Move a MID-RUN epic
+     up — confirm the list order visibly changes by one position, `git diff`
+     shows no negative value and no write to any epic listed above the moved
+     pair, and every epic outside the pair kept its relative position.
   5. Replay the reorder POST with the token stripped — confirm it is refused
      and `git status` shows no backlog YAML modified.
-  6. Move the first epic up — confirm nothing is written.
+  6. Move the first epic up — confirm nothing is written AND the screen
+     states why nothing changed.
 
 notes: |
   IR-DRY adjudication (specifier, 2026-07-23). One real fix applied: scenario
@@ -140,7 +164,42 @@ notes: |
   Possible slice 2 if the human wants it after using this: drag-to-position
   rather than move-up/move-down. Deliberately not specced now — move buttons
   need no drag library, work well on a phone, and compose to the same orders.
-bounce_count: 2
+
+  Specifier disposition of architect bounce #2 (2026-07-26). The bounce
+  proved scenario 02's old "no other epic's backlog YAML is modified" clause
+  unsatisfiable for tied runs at the floor (evidence:
+  backlog/evidence/BL-572-architect-bounce2-20260726.md). Amendment made
+  under the intake's explicit delegation of the renumber-vs-recompute
+  question to the specifier — no fresh human approval round needed.
+
+  What changed and why the shape differs slightly from the architect's
+  suggested remedy: the evidence proposed normalizing to DISTINCT ascending
+  values confined to the tied run. That is still unsatisfiable on today's
+  backlog — 9 distinct values do not fit between the floor and the next
+  distinct value (5). The satisfiable relaxation is positional: the write
+  set may extend to epics at or after the moved pair (a raise-only rewrite
+  always has an integer solution at floor 0, leaning on the id-ascending
+  tie-break for unmoved runs), while an epic above the pair is never
+  written. The spec pins the observable properties (invariants + scenarios
+  02/07), not the algorithm.
+
+  Rework directives for the coder (BL-233 — same parcel, or the acceptance
+  runner hard-fails):
+    - Amended scenario 02 (new final step), amended scenario 03 (new
+      stated-reason step), and NEW scenario 07 need step handlers wired in
+      this parcel. Scenario 01 is untouched; bounce #1's fixed positional
+      machinery stays as-is.
+    - Each declared invariant needs a coder-authored executable property
+      test in this parcel (backlog-schema.md `invariants`, BL-654) — this
+      formalizes the property test the architect already committed to
+      expect over `computeEpicReorder`.
+    - Fix the response contract per the constraint above: a no-op answer
+      must carry a reason and the UI must render it.
+    - Optional, architect's non-blocking note: while touching
+      `readPausedEpics`, close the `Number.MAX_SAFE_INTEGER` sort-sentinel
+      leak to disk for schema-invalid tickets missing `priority:`.
+bounce_count: 3
 bounce_history:
   - { at: 2026-07-26, by: architect, blamed: coder, class: behavior, commit: d3ab0409f4, evidence: backlog/evidence/BL-572-architect-bounce1-20260726.md }
   - { at: 2026-07-26, by: architect, blamed: specifier, class: spec, commit: c02ca6277c, evidence: backlog/evidence/BL-572-architect-bounce2-20260726.md }
+  - { at: 2026-07-26, by: architect, blamed: coder, class: behavior, commit: 711263bfae, evidence: backlog/evidence/BL-572-architect-bounce3-20260726.md }
