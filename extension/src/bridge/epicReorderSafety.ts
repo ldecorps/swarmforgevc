@@ -38,6 +38,27 @@ export function sortEpicsByPriority<T extends EpicPriorityItem>(epics: T[]): T[]
   return [...epics].sort((a, b) => a.priority - b.priority || a.id.localeCompare(b.id));
 }
 
+function findNeighborIndex(length: number, index: number, direction: ReorderDirection): number | null {
+  const neighborIndex = direction === 'up' ? index - 1 : index + 1;
+  return neighborIndex >= 0 && neighborIndex < length ? neighborIndex : null;
+}
+
+// The tie-break nudge (see file header): equal priorities swap to a no-op,
+// so the mover's priority is pushed one step past its neighbour's instead,
+// leaving the neighbour untouched.
+function computeSwappedPriorities(
+  selectedPriority: number,
+  neighborPriority: number,
+  direction: ReorderDirection
+): { selected: number; neighbor: number } {
+  if (selectedPriority !== neighborPriority) {
+    return { selected: neighborPriority, neighbor: selectedPriority };
+  }
+  return direction === 'up'
+    ? { selected: neighborPriority - 1, neighbor: neighborPriority }
+    : { selected: neighborPriority + 1, neighbor: neighborPriority };
+}
+
 export function computeEpicReorder(
   sortedEpics: EpicPriorityItem[],
   selectedId: string,
@@ -47,33 +68,21 @@ export function computeEpicReorder(
   if (index === -1) {
     return null;
   }
-  const neighborIndex = direction === 'up' ? index - 1 : index + 1;
-  if (neighborIndex < 0 || neighborIndex >= sortedEpics.length) {
+  const neighborIndex = findNeighborIndex(sortedEpics.length, index, direction);
+  if (neighborIndex === null) {
     return null;
   }
 
   const selected = sortedEpics[index];
   const neighbor = sortedEpics[neighborIndex];
-
-  let newSelectedPriority: number;
-  let newNeighborPriority: number;
-  if (selected.priority !== neighbor.priority) {
-    newSelectedPriority = neighbor.priority;
-    newNeighborPriority = selected.priority;
-  } else if (direction === 'up') {
-    newSelectedPriority = neighbor.priority - 1;
-    newNeighborPriority = neighbor.priority;
-  } else {
-    newSelectedPriority = neighbor.priority + 1;
-    newNeighborPriority = neighbor.priority;
-  }
+  const next = computeSwappedPriorities(selected.priority, neighbor.priority, direction);
 
   const writes: EpicPriorityWrite[] = [];
-  if (newSelectedPriority !== selected.priority) {
-    writes.push({ id: selected.id, priority: newSelectedPriority });
+  if (next.selected !== selected.priority) {
+    writes.push({ id: selected.id, priority: next.selected });
   }
-  if (newNeighborPriority !== neighbor.priority) {
-    writes.push({ id: neighbor.id, priority: newNeighborPriority });
+  if (next.neighbor !== neighbor.priority) {
+    writes.push({ id: neighbor.id, priority: next.neighbor });
   }
   return { writes };
 }
