@@ -109,6 +109,22 @@ test('a window straddling the epoch is available - only an ENTIRELY pre-epoch wi
   assert.equal(series.architect[series.architect.length - 1].value, 1.0);
 });
 
+test('a window whose CURRENT point ends exactly at the epoch reports unavailable even with real closes and bounces', () => {
+  // windowEndMs === epochStartMs (both midnight UTC on the epoch date) is
+  // the boundary itself, not "after" it - nothing can have been measured
+  // in a window that only touches the epoch at its closing instant. A
+  // strict `<` in place of `<=` would let this exact instant slip through
+  // as "available".
+  const nowMs = Date.parse(`${REWORK_ATTRIBUTION_EPOCH_ISO}T00:00:00.000Z`);
+  const records = [record({ by: 'architect', at: '2026-07-20T09:00:00.000Z', commit: 'c1' })];
+  const closedDateIsos = ['2026-07-20T12:00:00.000Z'];
+  const series = computeRoundsPerCloseSeriesByRole(records, closedDateIsos, nowMs);
+  // real bounce + real close in this window (would compute to 1.0 if the
+  // boundary were treated as "available") but windowEndMs === epochStartMs
+  // is the boundary itself, so it must still read unavailable.
+  assert.equal(series.architect[series.architect.length - 1].value, null);
+});
+
 // ── record-bounce-by-role-10: reads the durable log, never commit subjects ─
 
 test('the metric only ever counts durable BounceRecord entries - title/commit text plays no role', () => {
