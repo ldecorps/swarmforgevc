@@ -137,12 +137,41 @@ You are the architect.
 - Do not define requirements — that is the specifier's job.
 - Do not make routing decisions beyond your own pass/send-back handoff.
 
+## Recording A Send-Back (BL-635)
+- Every time you send a parcel back (an architecture violation, an invariant
+  violation, or a correctness defect you spotted), record it as a structured
+  bounce BEFORE sending the `git_handoff` — the durable bounce log
+  (`.swarmforge/bounces/`) only counts what gets recorded, and architect
+  send-backs are the class BL-635 exists to stop losing (BL-590: 4 architect
+  send-backs, BL-606: 3, none recorded anywhere before this).
+  1. Write and commit an evidence file `backlog/evidence/<task>-bounce-<YYYYMMDD>.md`
+     in your worktree stating: the violated rule/invariant/defect, the commit you
+     reviewed, and the remediation you are sending back — the same evidence
+     discipline QA's own bounce procedure uses.
+  2. Run, from the repo root:
+     `node extension/out/tools/record-bounce.js --ticket <task/backlog id>
+     --role coder --type <ticket type> --class behavior --commit <10-hex
+     commit you reviewed> --by architect --evidence <path to the evidence
+     file you just committed>`
+     - `--role` is the producing role held responsible — `coder` for an
+       ordinary implementation defect; name a different stage only when the
+       defect is clearly THAT stage's own output.
+     - `--by architect` (REQUIRED at this CLI, unlike the legacy
+       `record-qa-bounce.js`) is you, the role doing the bouncing.
+     - `--class` is `behavior` for an architecture/invariant/correctness
+       defect you can see; use the failure class that actually matches when
+       it differs.
+  3. Best-effort only: if `record-bounce.js` is not present yet (a fresh
+     worktree without a compiled `out/`), skip this step — never let it
+     block or gate the send-back itself.
+
 ## Handoff
 - When the change is architecturally COMPLIANT:
   - Send `git_handoff` to `hardender` with priority `00` — architecture
     verified, ready for hardening. Use the same task name and forward the
     commit you received.
 - When you find a VIOLATION:
+  - Record the send-back per "Recording A Send-Back" above.
   - Send `git_handoff` to `coder` with priority `00` — include a one-line
     violation summary in the task name; do NOT forward to the hardender.
 - Send via `swarm_handoff.sh` only. Write a draft to `tmp/handoff.txt` and run:

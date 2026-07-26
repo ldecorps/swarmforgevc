@@ -18,6 +18,16 @@ import {
   OriginCostTrendSeries,
 } from '../metrics/llmCostLedger';
 import { readLlmInvocationRecords } from '../metrics/llmCostLedgerStore';
+import {
+  computeRoundsPerCloseSeriesByRole,
+  computeDailyReworkSeriesByRole,
+  computeMaxRoundsIndicator,
+  lastNDaysIso,
+  MaxRoundsIndicator,
+  DailyReworkPoint,
+} from '../metrics/reworkRounds';
+import { BounceRecord } from '../quality/qaBounce';
+import { readBounceRecords } from '../metrics/bounceStore';
 
 // BL-213: the daily cost & health sidecar - a deterministic, committed
 // carrier (docs/briefings/<date>.json) for BL-100's producers, never
@@ -88,12 +98,30 @@ export interface ResourceAnomaly {
   cpuTrend: TrendResult;
 }
 
+// BL-635: the rework metric, split by BOUNCING role and never pooled - see
+// reworkRounds.ts for why pooling would hide exactly the shape this ticket
+// exists to surface. Optional: absent on a sidecar that predates this
+// ticket, or when the durable bounce log has no records for any role yet
+// (rolesPresent's own "role that never bounced is absent, not zero-padded"
+// posture, carried through to this field too).
+export interface FlowBalanceRework {
+  // field name is load-bearing - BL-635's required_wiring greps it.
+  // BL-635 SEND BACK #1 (evidence site 3): `null` per role carries
+  // "unavailable" end to end - a role whose current window is entirely
+  // pre-epoch or closed zero tickets has no honest figure to report, and
+  // TrendedNumber alone had no way to say that other than fabricating a
+  // value. Never render a trend arrow for a null entry.
+  roundsPerClose: Record<string, TrendedNumber | null>;
+  bouncesPerDay: Record<string, DailyReworkPoint[]>;
+  maxRounds: MaxRoundsIndicator | null;
+}
+
 export interface CostHealthSidecar {
   schemaVersion: number;
   dateIso: string;
   agents: AgentDailyCost[];
   topExpensiveTickets: ExpensiveTicket[];
-  flowBalance: { speccedPerDay: TrendedNumber; closedPerDay: TrendedNumber };
+  flowBalance: { speccedPerDay: TrendedNumber; closedPerDay: TrendedNumber; rework?: FlowBalanceRework };
   reliability: ReliabilityCounts;
   resourceAnomalies: ResourceAnomaly[];
   // BL-350: distinguishes "sampled, found nothing anomalous" from "never
@@ -315,7 +343,8 @@ export function buildCostHealthSidecar(
   suiteDurationTrend?: SuiteDurationTrendResult,
   costPerTicketSeries?: CostPerTicketSeriesResult,
   topExpensiveOriginsByHorizon?: Record<LlmCostHorizon, LlmCostRollupGroup[]>,
-  originCostTrendSeries?: OriginCostTrendSeries[]
+  originCostTrendSeries?: OriginCostTrendSeries[],
+  reworkInputs?: { bounceRecords: BounceRecord[]; closedDateIsos: string[]; nowMs: number }
 ): CostHealthSidecar {
   const sidecar: CostHealthSidecar = {
     schemaVersion: COST_HEALTH_SIDECAR_SCHEMA_VERSION,
@@ -354,6 +383,7 @@ export function buildCostHealthSidecar(
   if (originCostTrendSeries) {
     sidecar.originCostTrendSeries = originCostTrendSeries;
   }
+  attachFlowBalanceRework(sidecar.flowBalance, reworkInputs);
   return sidecar;
 }
 
@@ -444,6 +474,52 @@ function renderTopExpensiveOriginsLines(byHorizon: Record<LlmCostHorizon, LlmCos
 // per ranked origin (already ordered by latest-bucket cost descending by
 // buildOriginCostTrendSeries), bucket costs left (oldest) to right (latest)
 // so the rightmost figure is always the newest measurement.
+// BL-635 cleanup: split out of buildCostHealthSidecar so the optional-rework
+// attach stays a single non-branching call there (mirrors the other optional
+// sidecar sections' one-line `if` pattern) instead of adding a branch on top
+// of an already CRAP-budget-full function. Mutates `flowBalance` in place,
+// same "only set when the input is present" contract the inline version had.
+// BL-635 SEND BACK #1 (evidence sites 1-3): collapses one role's two-point
+// [prior, current] window series into a TrendedNumber, or `null` when the
+// CURRENT point is unavailable (pre-epoch window or zero closed tickets) -
+// there is no honest figure to report at all in that case. When only the
+// PRIOR point is unavailable, the current value still renders but with no
+// trend baseline to compare against (computeTrend on a single-point series
+// yields direction 'unknown', which trendArrow renders as no arrow) -
+// never a trend computed against a fabricated or missing baseline.
+function trendedRoundsPerClose(points: DailyReworkPoint[]): TrendedNumber | null {
+  if (points.length === 0 || points[points.length - 1].value === null) {
+    return null;
+  }
+  const series: TrendSeriesPoint[] = [];
+  for (const p of points) {
+    if (p.value !== null) {
+      series.push({ periodStart: p.periodStart, value: p.value });
+    }
+  }
+  return trendedFromSeries(series);
+}
+
+function attachFlowBalanceRework(
+  flowBalance: CostHealthSidecar['flowBalance'],
+  reworkInputs?: { bounceRecords: BounceRecord[]; closedDateIsos: string[]; nowMs: number }
+): void {
+  if (!reworkInputs) {
+    return;
+  }
+  const { bounceRecords, closedDateIsos, nowMs } = reworkInputs;
+  const roundsSeriesByRole = computeRoundsPerCloseSeriesByRole(bounceRecords, closedDateIsos, nowMs);
+  const roundsPerClose: Record<string, TrendedNumber | null> = {};
+  for (const [role, points] of Object.entries(roundsSeriesByRole)) {
+    roundsPerClose[role] = trendedRoundsPerClose(points);
+  }
+  flowBalance.rework = {
+    roundsPerClose,
+    bouncesPerDay: computeDailyReworkSeriesByRole(bounceRecords, lastNDaysIso(nowMs, 7)),
+    maxRounds: computeMaxRoundsIndicator(bounceRecords),
+  };
+}
+
 export function renderCostTrendChartLines(series: OriginCostTrendSeries[]): string[] {
   if (series.length === 0) {
     return [];
@@ -458,10 +534,33 @@ export function renderCostTrendChartLines(series: OriginCostTrendSeries[]): stri
   return lines;
 }
 
+// BL-635 (record-bounce-by-role-09): the rework figure, split by bouncing
+// role, appended to the same line specced/closed already render on -
+// absent (no bounce data recorded for any role yet) renders nothing, same
+// "hidden, not fabricated" posture as every other optional sidecar section.
+// BL-635 SEND BACK #1 (evidence site 4): a role whose window is unavailable
+// renders the literal word "unavailable" - never `0.0`, never a bare arrow
+// with no figure behind it - matching renderDailyReworkMarkdownLine, which
+// already gets this right for the daily series.
+function renderReworkSuffix(rework: FlowBalanceRework | undefined): string {
+  const roles = Object.keys(rework?.roundsPerClose ?? {}).sort();
+  if (!rework || roles.length === 0) {
+    return '';
+  }
+  const perRole = roles
+    .map((role) => {
+      const trended = rework.roundsPerClose[role];
+      return trended === null ? `${role} unavailable` : `${role} ${trended.value.toFixed(1)} ${trendArrow(trended.trend)}`;
+    })
+    .join(', ');
+  return `, rework ${perRole} rounds/close`;
+}
+
 function renderFlowBalanceLine(flow: CostHealthSidecar['flowBalance']): string {
   return (
     `**Flow balance:** specced ${flow.speccedPerDay.value}/day ${trendArrow(flow.speccedPerDay.trend)}, ` +
-    `closed ${flow.closedPerDay.value}/day ${trendArrow(flow.closedPerDay.trend)}`
+    `closed ${flow.closedPerDay.value}/day ${trendArrow(flow.closedPerDay.trend)}` +
+    renderReworkSuffix(flow.rework)
   );
 }
 
@@ -570,6 +669,8 @@ export function computeCostHealthSidecar(
   const costPerTicketSeries = computeCostPerTicketSeries(lifecycles, costTelemetryByRole);
   const topExpensiveOriginsByHorizon = computeTopExpensiveOriginsByHorizon(targetPath, nowMs);
   const originCostTrendSeries = computeOriginCostTrendSeries(targetPath, nowMs);
+  const bounceRecords = readBounceRecords(targetPath);
+  const closedDateIsos = lifecycles.map((l) => l.closeDateIso).filter((d): d is string => d !== null);
 
   return buildCostHealthSidecar(
     dateIso,
@@ -582,7 +683,8 @@ export function computeCostHealthSidecar(
     suiteDurationTrend,
     costPerTicketSeries,
     topExpensiveOriginsByHorizon,
-    originCostTrendSeries
+    originCostTrendSeries,
+    { bounceRecords, closedDateIsos, nowMs }
   );
 }
 

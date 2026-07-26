@@ -125,10 +125,13 @@
 ;; BL-431: :suboptimality-verdict-line - the swarm's own diagnosis of where
 ;; it is suboptimal (BL-430's rework signal, read only when meaningfully
 ;; above baseline), so a human sees it without opening a metrics file.
-;; BL-454: :qa-bounce-line - which role's work bounces most from QA, and the
-;; per-ticket-type breakdown, derived from the durable qa_bounces log
-;; (record-qa-bounce.js's go-forward writes plus backfill-qa-bounces.js's
-;; one-time seed from the evidence corpus).
+;; BL-454: :qa-bounce-line - which role bounced, whose work bounced, and the
+;; per-ticket-type breakdown, derived from the durable bounce log
+;; (record-bounce.js's go-forward writes plus backfill-qa-bounces.js's
+;; one-time seed from the evidence corpus; BL-635 generalised the recorder
+;; and reader from QA-only to every reviewing role - the section key stays
+;; :qa-bounce-line for the CLI path it shells to, but the line itself no
+;; longer frames every bounce as a QA bounce).
 ;; BL-511: :telegram-bridge-cost-line - the day's estimated Telegram
 ;; front-desk bridge cost (the exact total_cost_usd each front-desk
 ;; invocation already reports, captured before it was otherwise thrown away
