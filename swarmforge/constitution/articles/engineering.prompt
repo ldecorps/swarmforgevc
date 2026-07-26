@@ -120,4 +120,7 @@
 - Strip/escape external text embedded in structured files (YAML comments, etc.).
 - Rate-limited external syncs: honor 429 `retry_after` on first-tick backfills.
 - Optional JSON CLI flags: catch parse errors and degrade to documented fallback.
+- A console screen must display the server's failure reason whenever one is
+  sent; a bare HTTP status code is not a reason. (Architect rule_proposal
+  2026-07-26 from BL-572 bounce #3; surviving site ticketed BL-662.)
 - See **engineering-detailed.prompt** for full incident narratives on each rule.
