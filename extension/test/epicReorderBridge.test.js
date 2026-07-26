@@ -73,7 +73,7 @@ test('epic-reorder JSON feed: empty state when there are no paused epics', async
     const res = await fetch(`http://127.0.0.1:${handle.port}/epic-reorder-state?token=${TOKEN}`);
     assert.equal(res.status, 200);
     const body = await res.json();
-    assert.deepEqual(body, { items: [], total: 0 });
+    assert.deepEqual(body, { items: [], total: 0, topics: [] });
   });
 });
 
@@ -88,6 +88,28 @@ test('epic-reorder JSON feed: lists only type: epic paused tickets, excluding ot
     const body = await res.json();
     assert.deepEqual(body.items.map((i) => i.id), ['BL-500']);
     assert.equal(body.total, 1);
+  });
+});
+
+test('BL-674: epic-reorder JSON feed lists every live (paused+hold) topic tagged with its epic, ordered by priority/id, with a live-dependency marker', async () => {
+  const target = mkTmp();
+  writeTicket(target, 'paused', 'A1', ['type: feature', 'epic: EA', 'priority: 1']);
+  writeTicket(target, 'paused', 'A3', ['type: feature', 'epic: EA', 'priority: 6', 'depends_on: [A1]']);
+  writeTicket(target, 'hold', 'B1', ['type: feature', 'epic: EB', 'priority: 2']);
+  // An epic-less ticket (no epic: field) must never appear in topics.
+  writeTicket(target, 'paused', 'BL-999', ['type: feature', 'priority: 0']);
+
+  await withBridge(target, {}, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/epic-reorder-state?token=${TOKEN}`);
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    const byId = new Map(body.topics.map((t) => [t.id, t]));
+    assert.deepEqual(body.topics.map((t) => t.id), ['A1', 'B1', 'A3']);
+    assert.equal(byId.get('A1').epic, 'EA');
+    assert.equal(byId.get('B1').epic, 'EB');
+    assert.equal(byId.get('A1').hasLiveDependency, false);
+    assert.equal(byId.get('A3').hasLiveDependency, true, 'A3 depends on live topic A1');
+    assert.ok(!byId.has('BL-999'), 'an epic-less ticket must never appear in topics');
   });
 });
 
