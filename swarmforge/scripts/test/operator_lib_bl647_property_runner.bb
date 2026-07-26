@@ -263,12 +263,80 @@
                (let [r ((inv2-pred defective-always-router) input)]
                  (if (true? r) (str "expected a violation, defective impl passed for " (pr-str input)) true)))))
 
+;; ── P3 (architect property pass, BL-647): router mode fires EXACTLY the
+;;    expected-and-absent set ───────────────────────────────────────────────
+;;
+;; INV1's own encoding above (inv1-pred) is one-directional: it asserts no
+;; DORMANT role fires, so an implementation that returned [] for every
+;; router-mode input would satisfy it. INV2 does not close that gap either -
+;; it constrains non-router inputs only. The six example cases pin the
+;; positive direction at named inputs, but nothing quantified did.
+;;
+;; That missing direction is the ticket's stated red line - "the one thing it
+;; must never do is make a genuine storm quiet". A regression that
+;; over-suppresses under router mode (the failure mode a fix like this one
+;; naturally drifts toward) would re-disarm the alarm BL-647 exists to
+;; rearm, and would pass both declared-invariant properties on the way out.
+;; So this pins the equality, including the session each event names: the
+;; coordinator against its OWN session, the active role against
+;; resident-session.
+(defn- router-oracle
+  "Full expected output under router mode, re-derived from the ticket's
+   prose: coordinator checked against its own session, the active role
+   against resident-session, every other role dormant. Roster order, which
+   is the order the producer's remove/map pipeline preserves."
+  [{:keys [roster active resident live]}]
+  (vec (keep (fn [{:keys [role session]}]
+               (let [checked (if (= role "coordinator") session resident)]
+                 (when (and (or (= role "coordinator") (= role active))
+                            (not (contains? live checked)))
+                   {:type "AGENT_EXITED" :subject role
+                    :detail (str "tmux session " checked " not live")})))
+             roster)))
+
+(defn- p3-pred [impl-fn]
+  (fn [{:keys [roster mode active resident live] :as input}]
+    (if-not (= mode "router")
+      true
+      (let [oracle (router-oracle input)
+            actual (impl-fn roster live {:rotation-mode mode :active-role active :resident-session resident})]
+        (if (= oracle actual)
+          true
+          (str "router-mode output " (pr-str actual) " != oracle " (pr-str oracle)))))))
+
+(check-all "P3 (real impl): router mode fires exactly the expected-and-absent set"
+           gen-case (p3-pred operator-lib/dead-agent-events))
+
+;; Permanent non-vacuity, same discipline as the two above: a variant that
+;; goes silent under router mode must fail P3. Gated on the input actually
+;; having something to lose - when the oracle is already empty (coordinator
+;; and resident both live) silence is the correct answer and the check
+;; would prove nothing.
+(defn- defective-router-silent
+  "Suppresses everything under router mode - the over-suppression drift P3
+   exists to rule out. Satisfies INV1 (nothing fires, so nothing dormant
+   fires) and INV2 (untouched for non-router), which is precisely why P3 is
+   needed."
+  [expected-roles live-sessions & [{:keys [rotation-mode] :as opts}]]
+  (if (= rotation-mode "router")
+    []
+    (operator-lib/dead-agent-events expected-roles live-sessions opts)))
+
+(check-all "P3 NON-VACUITY: defective-router-silent must violate P3"
+           gen-case
+           (fn [input]
+             (if (or (not= (:mode input) "router") (empty? (router-oracle input)))
+               true
+               (let [r ((p3-pred defective-router-silent) input)]
+                 (if (true? r) (str "expected a violation, silent impl passed for " (pr-str input)) true)))))
+
 ;; ── generator coverage, asserted rather than assumed ─────────────────────
 
-(let [[router-n live-empty-n live-all-n reach-off-roster-n absent-dormant-n inv2-nonvacuity-eligible-n]
-      (loop [i 0 s 42 rn 0 le 0 la 0 ro 0 ad 0 ie 0]
+(let [[router-n live-empty-n live-all-n reach-off-roster-n absent-dormant-n inv2-nonvacuity-eligible-n
+       p3-nonvacuity-eligible-n]
+      (loop [i 0 s 42 rn 0 le 0 la 0 ro 0 ad 0 ie 0 pe 0]
         (if (= i runs)
-          [rn le la ro ad ie]
+          [rn le la ro ad ie pe]
           (let [[{:keys [mode live roster resident] :as input} s'] (gen-case s)]
             (recur (inc i) s'
                    (if (= mode "router") (inc rn) rn)
@@ -276,16 +344,19 @@
                    (if (= live (set (map :session roster))) (inc la) la)
                    (if (= resident "swarmforge-resident-off-roster") (inc ro) ro)
                    (if (has-absent-dormant? input) (inc ad) ad)
-                   (if (has-suppressible-dormant? input) (inc ie) ie)))))
+                   (if (has-suppressible-dormant? input) (inc ie) ie)
+                   (if (and (= mode "router") (seq (router-oracle input))) (inc pe) pe)))))
       floor (quot runs 20)]
   (println (str "  generator coverage: router-mode=" router-n " live-empty=" live-empty-n
                 " live-all=" live-all-n " resident-off-roster=" reach-off-roster-n
                 " absent-dormant(INV1 non-vacuity)=" absent-dormant-n
-                " inv2-nonvacuity-eligible=" inv2-nonvacuity-eligible-n " (runs=" runs ")"))
+                " inv2-nonvacuity-eligible=" inv2-nonvacuity-eligible-n
+                " p3-nonvacuity-eligible=" p3-nonvacuity-eligible-n " (runs=" runs ")"))
   (doseq [[label n] [["router-mode" router-n] ["live-empty" live-empty-n]
                      ["live-all" live-all-n] ["resident-off-roster" reach-off-roster-n]
                      ["absent-dormant(INV1 non-vacuity)" absent-dormant-n]
-                     ["inv2-nonvacuity-eligible" inv2-nonvacuity-eligible-n]]]
+                     ["inv2-nonvacuity-eligible" inv2-nonvacuity-eligible-n]
+                     ["p3-nonvacuity-eligible" p3-nonvacuity-eligible-n]]]
     (when (< n floor)
       (report! (str "COVERAGE " label) 42 {:count n :floor floor}
                (str label " is barely exercised (" n "/" runs ") - the generator is skewed")))))
@@ -293,7 +364,7 @@
 ;; ── report ────────────────────────────────────────────────────────────────
 (println (str "operator_lib BL-647 invariant properties: " runs " runs each"))
 (if (empty? @failures)
-  (println "ALL PROPERTIES HOLD (real impl passes; both defective variants correctly fail)")
+  (println "ALL PROPERTIES HOLD (real impl passes; all three defective variants correctly fail)")
   (do (println (str (count @failures) " PROPERTY FAILURE(S):"))
       (doseq [f (take 20 @failures)] (println f))
       (System/exit 1)))
