@@ -6,7 +6,10 @@ type: epic
 epic: swarm-intelligence-layer
 priority: 00
 depends_on: []
-decomposes_into: [BL-525, BL-546, BL-547, BL-548, BL-563, BL-682, BL-624, BL-625, BL-643]
+decomposes_into: [BL-525, BL-546, BL-547, BL-548, BL-563, BL-682, BL-590, BL-624, BL-625, BL-643, BL-684]
+# ^ BL-590 and BL-684 added 2026-07-26: both carry `epic: swarm-intelligence-layer`
+#   but were absent from this list, so the epic under-reported its own orbit — the
+#   Onboarder half of it entirely, including the slice already on `main`.
 promotion_order:
   - id: BL-546
     when: "PROMOTE FIRST — no upstream deps"
@@ -31,6 +34,12 @@ remaining_slices:
   - "Prompt calibration Slice 2: rank variants + operator report (BL-548)"
   - "Prompt calibration Slice 3: promote/rollback with human approval (BL-548)"
   - "ModelFactory Slice 2: hot-swap apply path (BL-525)"
+  - "Onboarder operational how-to (docs/how-to/): the step-by-step guide to running
+     an onboarding end to end. Deliberately NOT ticketed yet — it cannot be written
+     until BL-625 ships, and BL-643's own text defers it (\"once its name is ruled
+     and its slices are built\"). BL-643 covers the CLASS document and the reference
+     table now, with the Onboarder scoped to shipped behaviour only. Ticket this
+     once BL-625 lands; a ticket filed now would sit blocked behind four others."
   - "RUNTIME WIRING: launch path applies a Factory assignment (-> BL-563, paused,
      needs_design). Audit 2026-07-23 found every slice above EXTENDS the toolkit
      and none CONNECTS it: the cold-apply seam drops the plan's overlay_path and
@@ -50,6 +59,25 @@ notes: |
   UMBRELLA / tracking item (type: epic), NOT directly promotable — the coordinator
   promotes CHILD slices, never this. Children carry `epic: swarm-intelligence-layer`
   and are listed in `decomposes_into`.
+
+  ## Onboarder-orbit reshape, 2026-07-26 (BL-680 authority, coordinator-invited)
+
+  Reviewed BL-590/624/625/643 for merge or split. One split done, two refused, and
+  the refusals are recorded so nobody re-litigates them:
+
+  - **SPLIT (done): BL-684 carved out of BL-643.** BL-643's acceptance criterion 1
+    required the ruled rename to land as its own parcel first, and no such parcel
+    existed — the criterion was unsatisfiable. BL-643 now `depends_on: [BL-684]`.
+  - **REFUSED: merging BL-624 into BL-625.** BL-624 is `mutation_cost: high` on its
+    own; BL-590's park instruction says to size the re-cut against BL-634's envelope,
+    and slice 1 at 1929 insertions is what ignoring that looked like.
+  - **REFUSED: splitting the Onboarder how-to out of BL-643 as a ticket.** It is
+    real deferred work, but it cannot start until BL-625 ships. Recorded in
+    `remaining_slices:` instead — the field exists for exactly this, and a ticket
+    filed now would sit blocked behind four others while reading as ready.
+  - **Order:** BL-684 -> BL-590 (review-only) -> BL-624 -> BL-625, with BL-643's
+    prose any time after BL-684. The ordering is encoded in each ticket's
+    `depends_on`, not just here.
 
   VISION: SwarmForge currently embeds prompt construction across agent launch scripts
   and constitutions, and model knowledge is scattered across packs, recruiter artifacts,
