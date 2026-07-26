@@ -14,9 +14,9 @@ feed and the move route require the console token.
 
 The screen lists every `backlog/paused/` ticket of `type: epic`, ordered by
 `priority:` ascending, one row per epic with its id, title, and current
-priority. Each row has **Move up**, **Move down**, and **Make top**
-controls. When there are no paused epics, the screen shows an empty state
-and no rows.
+priority. Each row has **Move up**, **Move down**, **Make top**, and
+**Topics** controls. When there are no paused epics, the screen shows an
+empty state and no rows.
 
 ## Move an Epic
 
@@ -76,13 +76,25 @@ Like a move, a successful **Make top** commits through the same
 commit-integrity helper as every other write on this screen, and a refusal
 or no-op always shows its reason rather than a bare status code.
 
+## Open an Epic's Topics
+
+Tap **Topics** on an epic row to drill into that epic's own live topics —
+every `backlog/paused/` and `backlog/hold/` item carrying that epic, listed
+in the same priority-ascending, id-ascending order as everywhere else on
+this screen. The pane header stays put across the drill-down, same as the
+tile view. A topic that depends on another live topic shows a small
+dependency marker next to its id, so a bound or refused move is never a
+surprise before you tap anything. An epic with no live topics shows its own
+empty state instead of a blank list.
+
+Tap **&larr; Back** to return to the epic tiles.
+
 ## Make a Topic Top Priority Within Its Epic
 
-Drilling into an epic (see below) lists that epic's own live topics, each
-with its own **Make top** control. Tapping it is the same primitive as the
-epic-level **Make top**, one level down: the topic is made the strict top of
-*that epic's own live topics* — never the whole backlog, and never another
-epic's topics.
+From an epic's drill-down, each topic row has its own **Make top** control.
+Tapping it is the same primitive as the epic-level **Make top**, one level
+down: the topic is made the strict top of *that epic's own live topics* —
+never the whole backlog, and never another epic's topics.
 
 The same rules apply, narrowed to that one epic's topic list:
 
