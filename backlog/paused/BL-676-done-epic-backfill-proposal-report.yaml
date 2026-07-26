@@ -1,0 +1,81 @@
+id: BL-676
+title: "Epic backfill over backlog/done/, slice 1 — deterministic proposal report (read-only): milestone map + roster keyword match, needs-judgment tail, never a forced fit"
+milestone: M8
+type: feature
+status: todo
+epic: swarmforge-console
+human_approval: pending
+priority: 20
+direction: human-requested
+depends_on: []
+assigned_to: coder
+mutation_cost: low
+invariants:
+  - "The proposal pass is read-only over backlog/ — it writes only its own report file."
+acceptance: specs/features/BL-676-epic-backfill-proposals.feature.draft
+
+approval_context: >
+  Operator ask 2026-07-26 (INTAKE-backfill-epic-on-done-tickets.md): 427 of
+  497 closed tickets lack epic:, blinding epic-grouped history views
+  (BL-592's tree). Decisions to sign off: (1) the classifier is
+  DETERMINISTIC product code (milestone-to-epic mapping where clean, plus
+  title/source keyword match against the live epic roster) — no LLM pass in
+  the pipeline; low-confidence tickets land in a needs-judgment report
+  section for the human (or an operator session outside the pipeline) to
+  fill, rather than forcing a fit; (2) tickets that genuinely predate any
+  epic get the documented sentinel epic value pre-epic-era (added to
+  backlog-schema.md in this parcel), not a fabricated tracker; (3) the epic
+  vocabulary is exactly the type: epic roster found in backlog/ — never a
+  novel string; (4) applying anything is slice 2 (BL-677), gated on the
+  human-approved report.
+
+source: |
+  Operator (human) 2026-07-26 via coordinator session:
+  .swarmforge/operator/INTAKE-backfill-epic-on-done-tickets.md (archived to
+  operator/archive/ on drain). Live paused/active are already 100%
+  epic-tagged; this is purely retroactive over closed history. Stated
+  motivation: browsing the spec grouped by epic (BL-592 spec tree and any
+  future backlog-browsing surface) undercounts most of what shipped.
+
+description: |
+  ## What
+
+  A bb script (swarm-script tier, unit-test suite gate) that enumerates
+  backlog/done/ RECURSIVELY (done items nest in milestone subfolders),
+  selects tickets with a missing or empty epic:, and emits one report file
+  (markdown table or CSV) proposing an epic for each, with per-row
+  evidence and a confidence tier:
+
+  - milestone-map: where an existing milestone cleanly maps onto one epic,
+    propose it (the map itself is data in the report header, derived from
+    the live epic trackers' own milestone: fields — surfaced so the human
+    can veto a bad mapping wholesale).
+  - roster-match: title/source keyword match against the type: epic roster
+    enumerated from backlog/ (id, title, and decomposes_into children as
+    match signals). Evidence column shows what matched.
+  - needs-judgment: no signal clears the confidence bar — the row carries
+    ticket id, title, milestone, and an EMPTY proposal cell for a human to
+    fill. Never guess into this column.
+  - pre-epic-era: propose the sentinel only when the ticket predates the
+    epic system and matches nothing (evidence: its milestone predates the
+    earliest epic's).
+
+  Already-tagged done tickets are excluded. The report is the sole output;
+  no backlog file is modified (invariant). BL-677 consumes the
+  human-amended, human-approved report.
+
+  ## Constraints
+
+  - Deterministic given the repo state: same inputs, same report. No
+    network, no LLM calls, no wall-clock content in rows (stable diffs).
+  - Testable module per engineering rules: fixture backlog trees, injected
+    paths; keep main() a thin wrapper.
+  - Coder materializes the .feature.draft to .feature and wires step
+    handlers in the same parcel (BL-441/BL-233).
+
+  ## e2e QA procedure
+
+  Run against the real repo: verify the report covers every untagged done
+  ticket exactly once, spot-check ten milestone-map rows and ten
+  roster-match rows for sane evidence, and confirm git status shows only
+  the report file.
