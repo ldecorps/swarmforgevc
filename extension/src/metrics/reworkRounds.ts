@@ -8,7 +8,6 @@
 // closed-ticket dates - never commit subjects or briefing prose
 // (record-bounce-by-role-10's discredited-source rule; see BL-635's
 // source section for why both of those are irrecoverably contaminated).
-import { TrendSeriesPoint } from './trend';
 import { BounceRecord, bounceAttribution } from '../quality/qaBounce';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -18,7 +17,19 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 // ever recorded before this shipped, so every day before it is genuinely
 // UNAVAILABLE (nothing was measured), never a fabricated healthy zero
 // (record-bounce-by-role-12).
-export const REWORK_ATTRIBUTION_EPOCH_ISO = '2026-07-26';
+//
+// BL-635 SEND BACK #1 (evidence site 5): dayStartMs below compares in UTC,
+// but a "ship day" is a LOCAL concept - record-bounce.js stamps `at` off the
+// real UTC wall clock, so a record written in the last local hour of ship
+// day (e.g. 2026-07-26 00:51 BST = 2026-07-25 23:51 UTC) falls on the PRIOR
+// UTC calendar day. Pinning this constant to the nominal ship date
+// (2026-07-26) let that boundary swallow a real, just-recorded bounce as
+// pre-epoch - discarding measured data, the opposite failure direction from
+// the one this whole ticket exists to prevent. Pinned one UTC day earlier
+// than the nominal ship date so a ship-day record can never be swallowed:
+// the safe failure direction is counting a real bounce, never discarding
+// one.
+export const REWORK_ATTRIBUTION_EPOCH_ISO = '2026-07-25';
 
 export interface MaxRoundsIndicator {
   ticket: string;
@@ -59,29 +70,45 @@ function countClosed(closedDateIsos: string[], startMs: number, endMs: number): 
   return closedDateIsos.filter((d) => inRange(d, startMs, endMs)).length;
 }
 
+// BL-635 SEND BACK #1 (evidence sites 1/2): a single window's value, or
+// `null` (unavailable) when either (a) the window's entire span lies before
+// the by-attribution epoch - nothing was ever measured there, a fabricated
+// 0 would claim otherwise - or (b) the window closed zero tickets, so there
+// is no denominator a real rounds-per-close figure could honestly report.
+// Both are absence-of-data, never a healthy 0 (the invariant this whole
+// ticket exists to protect).
+function windowPoint(periodStart: string, bounces: number, closed: number, windowEndMs: number, epochStartMs: number): DailyReworkPoint {
+  if (windowEndMs <= epochStartMs || closed === 0) {
+    return { periodStart, value: null };
+  }
+  return { periodStart, value: bounces / closed };
+}
+
 // BL-635 (record-bounce-by-role-08/09): mean rework rounds per closed
 // ticket, split by bouncing role, as a two-point [priorWindow,
-// currentWindow] series - so costHealthSidecar's own trendedFromSeries
-// gives it a trend arrow exactly like specced/closed already get. A window
-// with zero closes reports 0: there is nothing to divide by, and no rework
-// can be meaningfully attributed to zero closed tickets either.
+// currentWindow] series - costHealthSidecar collapses this into a
+// TrendedNumber (or null, when the current point is unavailable) exactly
+// like specced/closed already get, but never computes a trend arrow off an
+// unavailable baseline.
 export function computeRoundsPerCloseSeriesByRole(
   records: BounceRecord[],
   closedDateIsos: string[],
   nowMs: number,
-  windowMs: number = 7 * DAY_MS
-): Record<string, TrendSeriesPoint[]> {
+  windowMs: number = 7 * DAY_MS,
+  epochIso: string = REWORK_ATTRIBUTION_EPOCH_ISO
+): Record<string, DailyReworkPoint[]> {
+  const epochStartMs = dayStartMs(epochIso);
   const currentStart = nowMs - windowMs;
   const priorStart = nowMs - 2 * windowMs;
   const closedCurrent = countClosed(closedDateIsos, currentStart, nowMs);
   const closedPrior = countClosed(closedDateIsos, priorStart, currentStart);
-  const result: Record<string, TrendSeriesPoint[]> = {};
+  const result: Record<string, DailyReworkPoint[]> = {};
   for (const role of rolesPresent(records)) {
     const curBounces = countBounces(records, role, currentStart, nowMs);
     const priorBounces = countBounces(records, role, priorStart, currentStart);
     result[role] = [
-      { periodStart: dayIso(priorStart), value: closedPrior > 0 ? priorBounces / closedPrior : 0 },
-      { periodStart: dayIso(currentStart), value: closedCurrent > 0 ? curBounces / closedCurrent : 0 },
+      windowPoint(dayIso(priorStart), priorBounces, closedPrior, currentStart, epochStartMs),
+      windowPoint(dayIso(currentStart), curBounces, closedCurrent, nowMs, epochStartMs),
     ];
   }
   return result;

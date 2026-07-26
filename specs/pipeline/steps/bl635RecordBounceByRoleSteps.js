@@ -15,7 +15,13 @@ const { execFileSync } = require('node:child_process');
 const EXT_DIR = path.join(__dirname, '..', '..', '..', 'extension');
 const SWARMFORGE_DIR = path.join(__dirname, '..', '..', '..', 'swarmforge');
 const CLI = path.join(EXT_DIR, 'out', 'tools', 'record-bounce.js');
-const { readBounceRecords, appendBounceRecordIfNew, qaBouncesDir, bouncesDir } = require(path.join(EXT_DIR, 'out', 'metrics', 'qaBounceStore'));
+// BL-635 SEND BACK #1: readBounceRecords/appendBounceRecordIfNew/bouncesDir
+// moved to bounceStore.ts in the cleaner's BL-485 DRY split (73419cd0e);
+// this step handler's require was never updated to follow them, so every
+// scenario touching the generalised (by-role) log failed with "is not a
+// function". qaBouncesDir alone stayed behind in qaBounceStore.ts.
+const { qaBouncesDir } = require(path.join(EXT_DIR, 'out', 'metrics', 'qaBounceStore'));
+const { readBounceRecords, appendBounceRecordIfNew, bouncesDir } = require(path.join(EXT_DIR, 'out', 'metrics', 'bounceStore'));
 const { computeQaBounceTally, computeBounceTallyByBouncingRole } = require(path.join(EXT_DIR, 'out', 'quality', 'qaBounce'));
 const {
   computeRoundsPerCloseSeriesByRole,
@@ -409,21 +415,36 @@ function registerSteps(registry) {
 
   // ── record-bounce-by-role-09: markdown flow balance line ────────────────
   step(/^a computed sidecar whose flow balance carries the rework metric$/, (ctx) => {
-    ctx.nowMs = Date.parse('2026-07-26T12:00:00.000Z');
-    ctx.bounceRecords = [record({ by: 'architect', commit: 'c1' }), record({ by: 'QA', commit: 'c2' })];
+    // BL-635 SEND BACK #1 (evidence site 1): both the prior and current
+    // 7-day windows must sit fully after the 2026-07-25 by-attribution
+    // epoch for a genuine, non-fabricated two-point trend - "now" here is
+    // 16 days past epoch so priorStart (nowMs-14d) clears it too. A window
+    // straddling or preceding the epoch has no real baseline to render an
+    // honest arrow from.
+    ctx.nowMs = Date.parse('2026-08-10T12:00:00.000Z');
+    ctx.bounceRecords = [
+      record({ by: 'architect', commit: 'c1', at: '2026-07-30T09:00:00.000Z' }),
+      record({ by: 'QA', commit: 'c2', at: '2026-07-29T09:00:00.000Z' }),
+      record({ by: 'architect', commit: 'c3', at: '2026-08-05T09:00:00.000Z' }),
+      record({ by: 'QA', commit: 'c4', at: '2026-08-06T09:00:00.000Z' }),
+    ];
     ctx.sidecar = buildCostHealthSidecar(
-      '2026-07-26',
+      '2026-08-10',
       {},
       {},
-      emptyReliabilitySeries('2026-07-26T00:00:00Z'),
-      [{ periodStart: '2026-07-26T00:00:00Z', value: 3 }],
-      [{ periodStart: '2026-07-26T00:00:00Z', value: 2 }],
+      emptyReliabilitySeries('2026-08-10T00:00:00Z'),
+      [{ periodStart: '2026-08-10T00:00:00Z', value: 3 }],
+      [{ periodStart: '2026-08-10T00:00:00Z', value: 2 }],
       undefined,
       undefined,
       undefined,
       undefined,
       undefined,
-      { bounceRecords: ctx.bounceRecords, closedDateIsos: ['2026-07-26T10:00:00.000Z'], nowMs: ctx.nowMs }
+      {
+        bounceRecords: ctx.bounceRecords,
+        closedDateIsos: ['2026-07-28T10:00:00.000Z', '2026-08-04T10:00:00.000Z'],
+        nowMs: ctx.nowMs,
+      }
     );
   });
 
