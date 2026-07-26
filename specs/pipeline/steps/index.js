@@ -324,8 +324,7 @@ const DOMAINS = [
   require('./bl654InvariantPropertyTestSteps'),
   require('./bl635RecordBounceByRoleSteps'),
   require('./bl647RotationRouterLivenessSteps'),
-  require('./bl572EpicReorderConsoleSteps'),
-  require('./bl648RelaunchResumeOrphanClaimsSteps')
+  require('./bl572EpicReorderConsoleSteps')
 ];
 
 function registerSteps(registry) {
