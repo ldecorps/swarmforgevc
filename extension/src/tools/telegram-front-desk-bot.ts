@@ -187,7 +187,6 @@ import { buildRoleInboxes } from '../watchdog/chaserMonitor';
 import { scanInboxNew, scanInProcess } from '../swarm/inboxChaser';
 import { isWithinWindow, localMinutesOfDay, currentWindowStartMs } from './cooldownWindowCore';
 import { readCooldownConfigFromDisk, writeCooldownWindowMarker } from './cooldownWindowState';
-import { runCommitIntegrity } from '../util/commitIntegrityRunner';
 
 const execFileAsync = promisify(execFile);
 
@@ -1853,6 +1852,10 @@ export async function runExpediteDispatch(targetPath: string, backlogId: string)
   }
 }
 
+export function commitIntegrityCliPath(targetPath: string): string {
+  return path.join(targetPath, 'swarmforge', 'scripts', 'commit_integrity_cli.bb');
+}
+
 // BL-490-VIOLATION (architect bounce): durably commits the Expedite verb's
 // approve+promote writes through the shared, LOCKED commit-integrity helper
 // (commit_integrity_cli.bb, BL-419) - never a hand-typed git add/commit on
@@ -1865,16 +1868,31 @@ export async function runExpediteDispatch(targetPath: string, backlogId: string)
 // ticket file, a missing bb/CLI, or a non-zero exit - mirrors
 // runExpediteDispatch's own try/catch -> boolean shape above, so a failed
 // commit never crashes the poll tick (the mutation still landed on disk;
-// only its durability guarantee is weaker until a later retry). The actual
-// exec + trailing-JSON-line parse is shared with BL-572's
-// commitEpicReorderWrites via runCommitIntegrity (util/commitIntegrityRunner.ts).
+// only its durability guarantee is weaker until a later retry).
 export async function commitExpediteWrites(targetPath: string, backlogId: string): Promise<boolean> {
   const filePath = findBacklogFilePath(targetPath, backlogId);
   if (!filePath) {
     return false;
   }
   const relPath = path.relative(targetPath, filePath);
-  return runCommitIntegrity(targetPath, [relPath], `Expedite ${backlogId}: record approval + promotion\n\nBy coder.`);
+  try {
+    const { stdout } = await execFileAsync('bb', [
+      commitIntegrityCliPath(targetPath),
+      targetPath,
+      '--message',
+      `Expedite ${backlogId}: record approval + promotion\n\nBy coder.`,
+      '--path',
+      relPath,
+    ]);
+    // `?? '{}'` satisfies Array.prototype.pop()'s general `T | undefined` return type - unreachable
+    // here since String.prototype.split always returns a non-empty array (even '' splits to ['']),
+    // so .pop() on it always returns a defined string. A malformed/empty last line still reaches
+    // JSON.parse and throws, caught by this function's own try/catch below - never this fallback.
+    const result = JSON.parse(stdout.trim().split('\n').pop() ?? '{}') as { success?: boolean };
+    return result.success === true;
+  } catch {
+    return false;
+  }
 }
 
 function buildApprovalAskCloseAdapterFields(botToken: string, targetPath: string, chatId: string) {
