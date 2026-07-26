@@ -11,6 +11,12 @@ direction: human-requested
 depends_on: [BL-684]
 assigned_to: documenter
 mutation_cost: low
+required_stages: [documenter, qa]
+stage_skip_reasons:
+  coder: "No code ships: an explanation document, a reference table and index links. The one code-shaped criterion — that every path in the table resolves — is a verification, not an implementation."
+  cleaner: "Nothing to refactor; prose and a table."
+  architect: "The document DESCRIBES existing architecture, it does not change any. The taxonomy is the documenter's editorial call, reviewed by QA against the repo."
+  hardender: "No test, coverage or mutation surface. Invariant 1 is checked by resolving each path against the repo, which is QA's pass."
 invariants:
   - "Every path in the reference table — launcher, stop path, role prompt, log — resolves in the repo at the commit that ships the table. A path in this document is checked, never recalled; a wrong stop path here is the BL-637 defect in a new place."
   - "No agent's behaviour is described as authored when it was reverse-engineered from code: an agent with no role prompt is marked as such wherever it is described."

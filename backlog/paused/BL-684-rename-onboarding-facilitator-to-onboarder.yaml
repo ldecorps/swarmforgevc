@@ -11,6 +11,11 @@ direction: human-requested
 depends_on: []
 assigned_to: coder
 mutation_cost: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+# ^ Certified 2026-07-26 (BL-606): FULL chain, nothing skipped. A rename that
+#   "renamed some places and not others" IS a cleaner sweep; invariant 2 (no
+#   double-launch, no stale heartbeat read as live) is an architect pass; the
+#   behaviour-unchanged claim is the hardener's; doc surface says facilitator too.
 invariants:
   - "After the rename, every start, stop, supervise and reconcile path in tracked live surface resolves: no caller anywhere names a script, entrypoint, identifier or state file that does not exist. A rename that silently turns a launch or stop into a no-op is the BL-637 defect in a new place."
   - "The rename can never produce two live supervisors nor a stale heartbeat read as live: with a pre-rename supervisor still holding its old-named pid file, the new launcher declines to start, and the stop path clears the agent's artifacts under BOTH the old and the new names."

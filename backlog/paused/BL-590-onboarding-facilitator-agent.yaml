@@ -11,6 +11,9 @@ direction: human-requested
 depends_on: [BL-262, BL-269, BL-344, BL-380, BL-381, BL-684]
 assigned_to: cleaner
 mutation_cost: high
+required_stages: [cleaner, architect, hardender, documenter, qa]
+stage_skip_reasons:
+  coder: "Slice 1's 1929 insertions are ALREADY on main and origin — this parcel finishes REVIEWING them, it does not rebuild them. Re-entering at coder would re-do shipped work, which is what the park block forbade; with routing enabled the router now rewrites a coder-destined handoff to the cleaner, so the ruling is enforced rather than merely written down. See `unparked:`."
 invariants:
   - "Every durable write is idempotent under redelivery of the same Telegram update"
 # ^ BL-633 retro-fixture: the one property all four of slice 1's architect

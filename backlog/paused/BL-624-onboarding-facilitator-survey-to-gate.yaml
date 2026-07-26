@@ -11,6 +11,11 @@ direction: human-requested
 depends_on: [BL-590]
 assigned_to: coder
 mutation_cost: high
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+# ^ Re-certified 2026-07-26 (BL-606): FULL chain, nothing skipped. A build slice
+#   with an invariants: section needs the architect's invariants pass and the
+#   hardener's property-test verification; stage_skip_reasons is therefore absent
+#   by design, not forgotten.
 invariants:
   - "Every durable write is idempotent under redelivery of the same Telegram update."
   - "Nothing is pushed to the target repo before the human has agreed the contract: a proposal, a revision and an agreement are distinguishable states, and only the third writes."
