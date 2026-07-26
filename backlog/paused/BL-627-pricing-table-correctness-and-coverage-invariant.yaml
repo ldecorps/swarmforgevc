@@ -11,6 +11,8 @@ direction: human-requested
 depends_on: []
 assigned_to: specifier
 mutation_cost: low
+invariants:
+  - "Every model the swarm actually runs has a pricing entry; costing an unpriced model fails loud, never silently as zero."
 
 approval_context: >
   Operator asked for this ticket on 2026-07-25 after the wrong rates surfaced

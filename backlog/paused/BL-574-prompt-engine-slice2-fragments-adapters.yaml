@@ -11,6 +11,8 @@ direction: swarm-surfaced
 depends_on: [BL-546]
 assigned_to: specifier
 mutation_cost: medium
+invariants:
+  - "Composed prompt output is byte-identical with the fragment cache cold, warm, or invalidated — caching may change latency, never content."
 source: |
   Coordinator note to specifier, 2026-07-23: "Spec BL-546 Slice 2 from parked
   draft as its own ticket (like BL-556/BL-547)." BL-546 Slice 1 shipped and is

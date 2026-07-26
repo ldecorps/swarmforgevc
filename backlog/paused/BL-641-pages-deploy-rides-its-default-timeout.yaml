@@ -11,6 +11,8 @@ direction: human-requested
 depends_on: []
 assigned_to: specifier
 mutation_cost: low
+required_stages: [coder, documenter, qa]
+stage_skip_reasons: { cleaner: "GitHub Actions config inputs and version bumps only — nothing to refactor", architect: "CI config only, no architecture surface", hardender: "workflow YAML has no local test or mutation surface" }
 
 approval_context: >
   Operator, 2026-07-25, after run 30162790875 failed. Diagnosed as a marginal

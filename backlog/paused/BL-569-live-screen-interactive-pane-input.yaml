@@ -11,6 +11,8 @@ direction: human-requested
 depends_on: [BL-425, BL-522]
 assigned_to: specifier
 mutation_cost: medium
+invariants:
+  - "Only the authenticated principal's input can reach tmux send-keys; no unauthenticated or non-principal request injects anything into any pane."
 source: |
   Human, 2026-07-23, during the coordinator menu-block incident (see
   BL-568's source): "would it be possible for the live screen to expose

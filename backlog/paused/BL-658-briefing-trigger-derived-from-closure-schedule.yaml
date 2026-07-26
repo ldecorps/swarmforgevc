@@ -11,6 +11,8 @@ direction: human-requested
 depends_on: []
 assigned_to: specifier
 mutation_cost: medium
+invariants:
+  - "The morning briefing is produced only as the closing sequence's last act — no independent clock can fire it against a stopped swarm or separate it from the stop."
 
 approval_context: >
   Operator, 2026-07-26 morning, refining their own earlier ruling ("juste

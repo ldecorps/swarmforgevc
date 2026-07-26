@@ -10,6 +10,8 @@ direction: swarm-surfaced
 depends_on: []
 assigned_to: specifier
 mutation_cost: low
+invariants:
+  - "The board's stage for a ticket reflects its furthest delivered hop — a parcel sitting in a role's inbox/new is never invisible to stage sync."
 source: |
   Coordinator note to specifier, 2026-07-23T08:18Z: "pipeline_stage sync
   ignores inbox/new; misses dormant-stage tickets."

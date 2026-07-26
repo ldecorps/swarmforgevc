@@ -11,6 +11,8 @@ direction: human-requested
 depends_on: []
 assigned_to: specifier
 mutation_cost: medium
+invariants:
+  - "No handoffd tick ever pushes a `main` tip that lacks QA approval; every refusal to publish is loud, never silent."
 
 approval_context: >
   Operator ruling 2026-07-25, during the BL-590 post-mortem. BL-629 gates the
