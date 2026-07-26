@@ -6,10 +6,10 @@ status: todo
 epic: swarm-behaviour-trends
 human_approval: approved
 severity: high
-priority: 02
+priority: 01
 direction: human-requested
 depends_on: []
-assigned_to: specifier
+assigned_to: coder
 mutation_cost: low
 
 approval_context: >
