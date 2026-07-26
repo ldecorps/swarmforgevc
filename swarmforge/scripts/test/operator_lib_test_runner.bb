@@ -230,6 +230,92 @@
           [{:role "coder" :session "swarmforge-coder"}]
           ["swarmforge-coder" "swarmforge-QA"]))
 
+;; ── BL-647: rotation-router liveness must not blame six dormant roles ──────
+;; Under `config rotation router` exactly TWO tmux sessions exist by design
+;; (coordinator + the one resident pane). The other six roles never held a
+;; session to begin with — that is what dormancy IS — so treating their
+;; absence as AGENT_EXITED fired the same six false positives on every tick
+;; (525 times against the real operator log). Fixture below mirrors the real
+;; roles.tsv: 8 roles, coordinator plus 7 pipeline roles each with their own
+;; (never-live-under-rotation) session name.
+(def router-roles
+  (operator-lib/parse-roles-tsv
+   (str "coder\tcoder\t/w/coder\tswarmforge-coder\tCoder\tclaude\ttask\toff\n"
+        "specifier\tmaster\t/w\tswarmforge-specifier\tSpecifier\tclaude\ttask\toff\n"
+        "cleaner\tcleaner\t/w/cleaner\tswarmforge-cleaner\tCleaner\tclaude\tbatch\toff\n"
+        "architect\tarchitect\t/w/architect\tswarmforge-architect\tArchitect\tclaude\ttask\toff\n"
+        "hardender\thardender\t/w/hardender\tswarmforge-hardender\tHardender\tclaude\tbatch\toff\n"
+        "documenter\tdocumenter\t/w/documenter\tswarmforge-documenter\tDocumenter\tclaude\ttask\toff\n"
+        "QA\tQA\t/w/QA\tswarmforge-QA\tQa\tclaude\ttask\toff\n"
+        "coordinator\tmaster\t/w\tswarmforge-coordinator\tCoordinator\tclaude\ttask\toff")))
+
+;; Scenario 1: coordinator + resident (coder) live, six roles dormant → [].
+(assert= "BL-647-01: rotation-router with coordinator+resident live and six dormant roles reports no dead agents"
+         []
+         (operator-lib/dead-agent-events
+          router-roles
+          ["swarmforge-coder" "swarmforge-coordinator"]
+          {:rotation-mode "router" :active-role "coder" :resident-session "swarmforge-coder"}))
+
+;; Scenario 2 (non-vacuity): kill the ACTIVE resident session (now "cleaner")
+;; — exactly one AGENT_EXITED fires, naming the active role, NOT "coder" (the
+;; row the resident session happens to be named after) and NOT any of the
+;; five other dormant roles. Proves the fix isn't "always return []".
+(assert= "BL-647-02: killing the active resident's session fires exactly one AGENT_EXITED naming the active role"
+         [{:type "AGENT_EXITED" :subject "cleaner" :detail "tmux session swarmforge-coder not live"}]
+         (operator-lib/dead-agent-events
+          router-roles
+          ["swarmforge-coordinator"]
+          {:rotation-mode "router" :active-role "cleaner" :resident-session "swarmforge-coder"}))
+
+;; Scenario 3: the coordinator dies under a rotation pack — one event, the
+;; coordinator is never a rotation target and is always checked directly.
+(assert= "BL-647-03: coordinator death under rotation-router fires exactly one AGENT_EXITED for coordinator"
+         [{:type "AGENT_EXITED" :subject "coordinator" :detail "tmux session swarmforge-coordinator not live"}]
+         (operator-lib/dead-agent-events
+          router-roles
+          ["swarmforge-coder"]
+          {:rotation-mode "router" :active-role "coder" :resident-session "swarmforge-coder"}))
+
+;; Scenario 4: non-rotation (full-forge) pack is byte-identical to today —
+;; every expected-but-absent role still fires, rotation options are simply
+;; ignored when rotation-mode isn't "router".
+(assert= "BL-647-04: full-forge (no rotation-mode) behaviour is untouched — every absent role still fires"
+         (set (map :subject (operator-lib/dead-agent-events router-roles ["swarmforge-coder" "swarmforge-coordinator"])))
+         (set (map :subject (operator-lib/dead-agent-events
+                              router-roles
+                              ["swarmforge-coder" "swarmforge-coordinator"]
+                              {:rotation-mode nil :active-role "coder" :resident-session "swarmforge-coder"}))))
+(assert= "BL-647-04b: full-forge concretely still fires all six absent pipeline roles plus none dormant-suppressed"
+         #{"specifier" "cleaner" "architect" "hardender" "documenter" "QA"}
+         (set (map :subject (operator-lib/dead-agent-events router-roles ["swarmforge-coder" "swarmforge-coordinator"]))))
+
+;; Scenario 5: rotation mode must come from the conf (passed in), never
+;; inferred from how many sessions are live. A full-forge pack that happens
+;; to show only 2 live sessions (e.g. a bad tick) must still emit all 6 —
+;; proven by NOT passing rotation-mode "router" even though live-sessions
+;; looks identical to the router fixture in scenario 1.
+(assert= "BL-647-05: two live sessions alone never implies router mode — omitting rotation-mode still fires all absent roles"
+         #{"specifier" "cleaner" "architect" "hardender" "documenter" "QA"}
+         (set (map :subject (operator-lib/dead-agent-events
+                              router-roles
+                              ["swarmforge-coder" "swarmforge-coordinator"]))))
+
+;; Scenario 6: mid-rotation window. The active-role marker can momentarily
+;; lag the pane's real identity (write-mono-router-active-role! runs AFTER
+;; the respawn call), but `respawn-pane -k` never tears down the resident
+;; tmux session itself — only the process inside it changes — so the
+;; resident session name is continuously live across a clean rotation. A
+;; liveness sweep during that exact gap must therefore see the resident
+;; session live regardless of which role name the marker currently holds,
+;; and must NOT emit a spurious event for either the old or the new role.
+(assert= "BL-647-06: resident session staying live across a stale active-role marker emits nothing, old or new role"
+         []
+         (operator-lib/dead-agent-events
+          router-roles
+          ["swarmforge-coder" "swarmforge-coordinator"]
+          {:rotation-mode "router" :active-role "architect" :resident-session "swarmforge-coder"}))
+
 ;; ── status doc ────────────────────────────────────────────────────────────
 (assert= "render-status matches the v2 schema"
          {:state "waiting_for_provider" :llm_running false :provider "claude"

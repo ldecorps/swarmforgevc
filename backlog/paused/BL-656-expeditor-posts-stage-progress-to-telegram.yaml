@@ -11,6 +11,8 @@ direction: human-requested
 depends_on: []
 assigned_to: specifier
 mutation_cost: low
+required_stages: [coder, qa]
+stage_skip_reasons: { cleaner: "small additive seam", architect: "design settled in-ticket: announce seam, fire-and-forget, log stays source of truth", hardender: "bb outside mutate scope; EXPEDITE_ANNOUNCE_CMD seam gives deterministic fixtures", documenter: "the expeditor manual already documents the ride; announce lines are self-describing" }
 
 approval_context: >
   Operator, 2026-07-26 ~01:30, watching the BL-654 expedition from a terminal
