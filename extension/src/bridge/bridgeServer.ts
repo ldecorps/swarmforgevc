@@ -576,33 +576,11 @@ function readPausedEpics(targetPath: string): (BacklogItem & EpicPriorityItem)[]
   return sortEpicsByPriority(epics);
 }
 
-// BL-674: whether a live item carries at least one depends_on id that
-// itself resolves to another LIVE item - the one bit of decision logic the
-// drill-down's dependency marker needs, kept here (testable) rather than
-// inline in epicReorderUiHtml.ts's script (untestable-edge boundary, per
-// the ticket's own "keep new logic thin" guidance).
-function hasLiveDependency(item: MakeTopItem, liveIds: Set<string>): boolean {
-  return (item.dependsOn ?? []).some((depId) => liveIds.has(depId));
-}
-
 function computeEpicReorderState(targetPath: string): unknown {
   const epics = readPausedEpics(targetPath);
-  const liveItems = readLiveBacklogItems(targetPath);
-  const liveIds = new Set(liveItems.map((item) => item.id));
-  const topics = liveItems.filter((item) => item.epic);
   return {
     items: epics.map((epic) => ({ id: epic.id, title: epic.title, priority: epic.priority })),
     total: epics.length,
-    // BL-674: every live topic, tagged with its own epic - the drill-down
-    // groups these client-side per epic (presentation-only filtering, no
-    // new decision logic in the webview).
-    topics: topics.map((topic) => ({
-      id: topic.id,
-      title: topic.title,
-      priority: topic.priority,
-      epic: topic.epic,
-      hasLiveDependency: hasLiveDependency(topic, liveIds),
-    })),
   };
 }
 

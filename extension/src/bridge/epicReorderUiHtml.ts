@@ -75,8 +75,6 @@ export function getEpicReorderUiHtml(): string {
   }
   button[disabled] { opacity: 0.35; cursor: default; }
   .empty { font-size: 15px; color: var(--tg-theme-hint-color, #8b949e); }
-  .dep-marker { font-size: 11px; }
-  button.back-to-tiles { margin-bottom: 10px; }
 </style>
 </head>
 <body>
@@ -103,13 +101,6 @@ export function getEpicReorderUiHtml(): string {
   var moveStatusEl = document.getElementById('move-status');
   var contentEl = document.getElementById('content');
   var loading = false;
-  // BL-674: 'tiles' (the epic list) or 'drilldown' (one epic's live
-  // topics). The pane header above is never touched by either render -
-  // only #content swaps - so it stays present across both (standing
-  // operator rule).
-  var view = 'tiles';
-  var drilldownEpicId = null;
-  var lastData = null;
 
   function controlAuthHeaders() {
     if (!token) {
@@ -142,7 +133,7 @@ export function getEpicReorderUiHtml(): string {
     contentEl.innerHTML = '<p class="empty">No epics to reorder.</p>';
   }
 
-  function renderTiles(data) {
+  function renderList(data) {
     if (!data || !data.items || data.items.length === 0) {
       renderEmpty();
       setStatus('No epics');
@@ -163,7 +154,6 @@ export function getEpicReorderUiHtml(): string {
       html += '<button class="move-up" data-id="' + item.id + '"' + (disableUp ? ' disabled' : '') + '>Move up</button>';
       html += '<button class="move-down" data-id="' + item.id + '"' + (disableDown ? ' disabled' : '') + '>Move down</button>';
       html += '<button class="make-top" data-id="' + item.id + '"' + (disableUp ? ' disabled' : '') + '>Make top</button>';
-      html += '<button class="drill" data-id="' + item.id + '">Topics</button>';
       html += '</div>';
       html += '</div>';
     });
@@ -178,69 +168,8 @@ export function getEpicReorderUiHtml(): string {
     Array.prototype.forEach.call(contentEl.querySelectorAll('.make-top'), function (btn) {
       btn.onclick = function () { makeTop(btn.getAttribute('data-id')); };
     });
-    Array.prototype.forEach.call(contentEl.querySelectorAll('.drill'), function (btn) {
-      btn.onclick = function () { drillInto(btn.getAttribute('data-id')); };
-    });
 
     setStatus(total + (total === 1 ? ' epic' : ' epics'));
-  }
-
-  // BL-674: the drill-down list for one epic's live topics - already
-  // ordered by the server (priority asc, id asc), same source of truth as
-  // the tiles above. A topic carrying at least one live depends_on gets a
-  // marker so a bound/refusal is never a surprise (approval_context).
-  function renderDrilldown(epicId) {
-    var topics = ((lastData && lastData.topics) || []).filter(function (t) { return t.epic === epicId; });
-    var html = '<button class="back-to-tiles" id="back-to-tiles">&larr; Back</button>';
-    if (topics.length === 0) {
-      html += '<p class="empty">No live topics in this epic.</p>';
-    } else {
-      topics.forEach(function (t) {
-        var marker = t.hasLiveDependency ? ' <span class="dep-marker" title="Has a live dependency">&#9939;</span>' : '';
-        html += '<div class="row" data-id="' + t.id + '">';
-        html += '<div class="row-text">';
-        html += '<div class="row-id">' + t.id + marker + '</div>';
-        html += '<div class="row-title">' + (t.title || '(untitled)') + '</div>';
-        html += '<div class="row-priority">priority ' + t.priority + '</div>';
-        html += '</div>';
-        html += '<div class="row-actions">';
-        html += '<button class="topic-make-top" data-epic="' + epicId + '" data-id="' + t.id + '">Make top</button>';
-        html += '</div>';
-        html += '</div>';
-      });
-    }
-    contentEl.innerHTML = html;
-
-    document.getElementById('back-to-tiles').onclick = function () {
-      view = 'tiles';
-      drilldownEpicId = null;
-      setMoveStatus('');
-      render();
-    };
-    Array.prototype.forEach.call(contentEl.querySelectorAll('.topic-make-top'), function (btn) {
-      btn.onclick = function () { makeTopicTop(btn.getAttribute('data-epic'), btn.getAttribute('data-id')); };
-    });
-
-    setStatus('Epic ' + epicId + ': ' + topics.length + (topics.length === 1 ? ' topic' : ' topics'));
-  }
-
-  function drillInto(epicId) {
-    view = 'drilldown';
-    drilldownEpicId = epicId;
-    setMoveStatus('');
-    refresh(); // fresh at render, not the tile-load-time snapshot (approval_context)
-  }
-
-  // Renders whichever view is current against the LAST fetched state -
-  // called both after the initial load and after every refresh(), so a
-  // successful topic make-top re-renders the drill-down (not the tiles)
-  // when that is where the human is.
-  function render() {
-    if (view === 'drilldown' && drilldownEpicId) {
-      renderDrilldown(drilldownEpicId);
-    } else {
-      renderTiles(lastData);
-    }
   }
 
   // Shared by move() and makeTop(): the server's reason is written
@@ -303,18 +232,6 @@ export function getEpicReorderUiHtml(): string {
     }), 'Make top failed');
   }
 
-  function makeTopicTop(epicId, topicId) {
-    if (loading) return;
-    loading = true;
-    setMoveStatus('');
-    setStatus('Making ' + topicId + ' top…');
-    handleActionResponse(fetch('/epic-reorder/topic-make-top' + q, {
-      method: 'POST',
-      headers: controlAuthHeaders(),
-      body: JSON.stringify({ epicId: epicId, topicId: topicId }),
-    }), 'Make top failed');
-  }
-
   function refresh() {
     fetch('/epic-reorder-state' + q, { cache: 'no-store' })
       .then(function (r) {
@@ -322,8 +239,7 @@ export function getEpicReorderUiHtml(): string {
         return r.json();
       })
       .then(function (data) {
-        lastData = data;
-        render();
+        renderList(data);
       })
       .catch(function (err) {
         setStatus('Load error: ' + String(err && err.message || err));
