@@ -20,7 +20,7 @@ Unlike a **bounce**, which sends work back for rework, a deferral acknowledges t
 | **Evidence file** | Yes, recorded | No, not recorded |
 | **Bounce tally** | Counted | Not counted |
 | **Rework needed** | Yes | No |
-| **Location** | `.swarmforge/qa_bounces/` | `.swarmforge/qa_deferrals/` |
+| **Location** | `.swarmforge/bounces/` (go-forward, any role; `.swarmforge/qa_bounces/` holds pre-BL-635 QA-only history, read-only) | `.swarmforge/qa_deferrals/` |
 
 ## Reading a Deferral
 
@@ -146,9 +146,9 @@ If a deferred ticket fails a **different check** than the blocker's, it is that 
 
 ### Bounce Indicators
 - **Output**: Evidence file written to `.swarmforge/evidence/`
-- **Location**: `.swarmforge/qa_bounces/` for records
+- **Location**: `.swarmforge/bounces/` for records (BL-635: any reviewing role, not just QA; `.swarmforge/qa_bounces/` is the legacy QA-only log, read-only)
 - **Effect**: `git_handoff` sent back to the appropriate role
-- **Tally**: Counted in QA-bounce metrics
+- **Tally**: Counted in the bounce/rework metrics, split by bouncing role
 - **Next action**: Role reworks and re-sends
 
 ## Checking Deferral Status
