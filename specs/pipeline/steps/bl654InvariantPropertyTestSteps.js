@@ -239,6 +239,14 @@ function registerSteps(registry) {
       throw new Error('expected the property test to fail against the defective variant, but it passed');
     }
     const text = errorText(ctx.bl654Error);
+    // The reachability-floor message also contains "pre-epoch" (see
+    // bl654PreEpochInvariant.js), so this must rule that failure mode out
+    // explicitly to prove the INVARIANT fired - not merely that some
+    // assertion in the property threw. Scenario 10 exercises the
+    // reachability-floor failure on its own.
+    if (/reachability floor/i.test(text)) {
+      throw new Error(`expected an invariant failure, not a reachability-floor failure, got: ${text}`);
+    }
     if (!/pre-epoch/i.test(text)) {
       throw new Error(`expected the failure to name the pre-epoch invariant, got: ${text}`);
     }

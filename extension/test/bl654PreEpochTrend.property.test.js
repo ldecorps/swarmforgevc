@@ -29,5 +29,17 @@ test('property: pre-epoch days render unavailable, never a fabricated 0 (BL-635 
 test('non-vacuity: the property fails against the defective variant that fabricates 0 for pre-epoch days', () => {
   const verdict = assertNonVacuous(checkPreEpochInvariant, renderDailyTrendDefective);
   assert.equal(verdict.vacuous, false, 'expected the property to fail against the defective implementation');
-  assert.match(errorText(verdict.error), /pre-epoch/i, 'expected the failure to name the pre-epoch invariant');
+  const text = errorText(verdict.error);
+  // Both failure modes this property can raise mention "pre-epoch" (the
+  // invariant assertion AND the reachability-floor message below it), so a
+  // bare /pre-epoch/i match cannot tell "the invariant caught the defect"
+  // apart from "the generator failed its own reachability floor". Rule the
+  // latter out explicitly - this non-vacuity check must prove the invariant
+  // itself fired, not merely that *some* assertion in the property threw.
+  assert.doesNotMatch(
+    text,
+    /reachability floor/i,
+    `expected an invariant failure, not a reachability-floor failure (generator under-reached pre-epoch windows): ${text}`
+  );
+  assert.match(text, /pre-epoch/i, 'expected the failure to name the pre-epoch invariant');
 });
