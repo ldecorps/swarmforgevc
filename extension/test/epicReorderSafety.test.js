@@ -268,3 +268,136 @@ test('computeEpicReorder: never produces a negative priority', () => {
   const after = applyWrites(sorted, result.writes);
   assert.ok(after.every((e) => e.priority >= 0));
 });
+
+// --- Exact-value pins for the internal boundary helpers --------------------
+// The tests above assert on the position/ordering invariant, which several
+// boundary comparisons inside lowerLimit/upperLimit/resolveOverlappingSlots
+// can get wrong while still landing on a position-equivalent outcome (e.g.
+// swapping in 6 instead of 5 still sorts in the same slot). These pin the
+// exact `writes` values computeEpicReorder returns for hand-picked windows
+// that make each boundary comparison load-bearing, so a flipped or
+// off-by-one comparison shows up as a wrong number, not just a possibly-
+// coincidentally-still-correct order.
+
+test('lowerLimit: the low-slot resident may tie with a lower-id predecessor', () => {
+  // beforeEpic (BL-100) ties in priority with lowEpic; beforeEpic's id
+  // sorts first, so highEpic is allowed to land on that same value without
+  // displacing beforeEpic. A floor of priority+1 here (the wrong branch)
+  // would land highEpic one higher than expected.
+  const epics = [
+    { id: 'BL-100', priority: 5 },
+    { id: 'BL-101', priority: 5 },
+    { id: 'BL-999', priority: 10 },
+  ];
+  const result = computeEpicReorder(epics, 'BL-999', 'up');
+  const writesById = Object.fromEntries(result.writes.map((w) => [w.id, w.priority]));
+  assert.deepEqual(writesById, { 'BL-999': 5, 'BL-101': 10 });
+});
+
+test('upperLimit: the high-slot resident may tie with a higher-id successor', () => {
+  // afterEpic (BL-030) ties in priority with highEpic; lowEpic's id sorts
+  // before afterEpic's, so lowEpic is allowed to land on that same value.
+  const epics = [
+    { id: 'BL-010', priority: 5 },
+    { id: 'BL-020', priority: 10 },
+    { id: 'BL-030', priority: 10 },
+  ];
+  const result = computeEpicReorder(epics, 'BL-020', 'up');
+  const writesById = Object.fromEntries(result.writes.map((w) => [w.id, w.priority]));
+  assert.deepEqual(writesById, { 'BL-020': 5, 'BL-010': 10 });
+});
+
+test('upperLimit: a higher-id low-slot resident must stay strictly below its successor', () => {
+  // Same shape, but lowEpic's id now sorts AFTER afterEpic's: a tie would
+  // put lowEpic ahead of afterEpic on the id tie-break, so lowEpic must
+  // land one below afterEpic's value instead of tying with it.
+  const epics = [
+    { id: 'BL-999', priority: 5 },
+    { id: 'BL-005', priority: 10 },
+    { id: 'BL-010', priority: 10 },
+  ];
+  const result = computeEpicReorder(epics, 'BL-005', 'up');
+  const writesById = Object.fromEntries(result.writes.map((w) => [w.id, w.priority]));
+  assert.deepEqual(writesById, { 'BL-005': 5, 'BL-999': 9 });
+});
+
+test('computeSlotValues: a generous ceiling still only bumps the low slot up by one', () => {
+  // ceiling sits well above the tied pair's value: the swap collapses to a
+  // tie (low === high), so the resolver must free room on the high side by
+  // exactly one rather than jumping all the way to the ceiling.
+  const epics = [
+    { id: 'BL-100', priority: 10 },
+    { id: 'BL-200', priority: 10 },
+    { id: 'BL-999', priority: 15 },
+  ];
+  const result = computeEpicReorder(epics, 'BL-200', 'up');
+  const writesById = Object.fromEntries(result.writes.map((w) => [w.id, w.priority]));
+  assert.deepEqual(writesById, { 'BL-100': 11 });
+});
+
+test('computeSlotValues: a ceiling exactly one above the tied pair still resolves inside it', () => {
+  // ceiling == low + 1 exactly: the boundary comparison must be inclusive
+  // (<=), not strict (<), or this collapses to the floor-side fallback.
+  const epics = [
+    { id: 'BL-100', priority: 10 },
+    { id: 'BL-200', priority: 10 },
+    { id: 'BL-999', priority: 11 },
+  ];
+  const result = computeEpicReorder(epics, 'BL-200', 'up');
+  const writesById = Object.fromEntries(result.writes.map((w) => [w.id, w.priority]));
+  assert.deepEqual(writesById, { 'BL-100': 11 });
+});
+
+test('computeSlotValues: a ceiling flush with the tied pair falls back to the high side', () => {
+  // ceiling == low exactly (no room above): the resolver must fall back to
+  // freeing room below high instead of wrongly reporting room above.
+  const epics = [
+    { id: 'BL-100', priority: 10 },
+    { id: 'BL-200', priority: 10 },
+    { id: 'BL-999', priority: 10 },
+  ];
+  const result = computeEpicReorder(epics, 'BL-200', 'up');
+  const writesById = Object.fromEntries(result.writes.map((w) => [w.id, w.priority]));
+  assert.deepEqual(writesById, { 'BL-200': 9 });
+});
+
+test('resolveOverlappingSlots: a beforeEpic close to the tied pair still lands one below it, not at the tied pair itself', () => {
+  // beforeEpic pins floor to 19, one below the tied pair's own value (20),
+  // with no ceiling room: the high-side fallback must land at high - 1
+  // (19), not at high itself or at some other off-by-one value.
+  const epics = [
+    { id: 'BL-050', priority: 19 },
+    { id: 'BL-100', priority: 20 },
+    { id: 'BL-200', priority: 20 },
+    { id: 'BL-300', priority: 20 },
+  ];
+  const result = computeEpicReorder(epics, 'BL-200', 'up');
+  const writesById = Object.fromEntries(result.writes.map((w) => [w.id, w.priority]));
+  assert.deepEqual(writesById, { 'BL-200': 19 });
+});
+
+test('findMoveWindow: an unknown selected id going down does not fall through to the neighbour guard', () => {
+  // 'up' on an unknown id happens to also fail the neighbour-index guard,
+  // which can mask a broken not-found check. 'down' does not: neighborIndex
+  // lands in range, so only the not-found guard itself can catch it.
+  const epics = [
+    { id: 'BL-001', priority: 10 },
+    { id: 'BL-002', priority: 20 },
+  ];
+  assert.equal(computeEpicReorder(epics, 'BL-999', 'down'), null);
+});
+
+test('buildSwapWrites: the low-slot resident is omitted when its resolved value already matches', () => {
+  // Same three-way-tie shape as the floor-fallback case above, read from the
+  // other side: the high-slot resident's resolved value (5) already equals
+  // its own prior priority, so it must be omitted from writes entirely -
+  // not merely written with an unchanged value.
+  const epics = [
+    { id: 'BL-100', priority: 5 },
+    { id: 'BL-200', priority: 5 },
+    { id: 'BL-300', priority: 5 },
+  ];
+  const result = computeEpicReorder(epics, 'BL-200', 'up');
+  const writesById = Object.fromEntries(result.writes.map((w) => [w.id, w.priority]));
+  assert.deepEqual(writesById, { 'BL-200': 4 });
+});
