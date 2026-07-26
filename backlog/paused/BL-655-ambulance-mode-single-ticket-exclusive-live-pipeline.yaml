@@ -1,0 +1,126 @@
+id: BL-655
+title: "Ambulance mode: the swarm runs NORMALLY but the resident may only work ONE designated ticket — the middle rung between the expedite lane and the last-resort offline Expeditor"
+milestone: M8
+type: feature
+status: todo
+epic: swarm-reliability
+human_approval: approved
+severity: medium
+priority: 05
+direction: human-requested
+depends_on: []
+assigned_to: specifier
+mutation_cost: high
+
+approval_context: >
+  Operator, 2026-07-26 ~01:15, mid-expedition of BL-654: "expeditor est un
+  dernier recours. ne devrait-il pas aussi y avoir un mode où la swarm tourne
+  normalement, sauf que le resident n'est autorisé qu'à travailler sur un
+  unique ticket. en mode ambulance". The name is the spec.
+
+source: |
+  ## The gap, demonstrated the night this was filed
+
+  BL-654 was ultra-urgent ("le resident ne doit rien faire d'autre"). The only
+  exclusive mode available was the Expeditor (BL-567) — so the WHOLE swarm was
+  stopped and the ticket driven through an OFFLINE pipeline, even though the
+  live pipeline was perfectly healthy (it had just shipped BL-633 in 95 min
+  with zero send-backs). The Expeditor was built for a sick pipeline (its
+  birth: fixing the workflow while the workflow was broken); using it on a
+  healthy one throws away the real transport, the real gates and the real
+  telemetry, and freezes everything the stop orphans.
+
+  ## The escalation ladder this completes
+
+  ```
+  1. expedite lane (Art 3.2.4)  priority at PROMOTION - but side-work still
+                                 interleaves during transit (broadcasts,
+                                 merge-ups, intake drains, home-queue bias)
+  2. AMBULANCE (this ticket)     live pipeline, all daemons up, ONE ticket
+                                 moves; everything else queues in place
+  3. Expeditor (BL-567)          swarm STOPPED, offline stages - last resort,
+                                 for when the pipeline itself is the casualty
+  ```
+
+  Rung 1 exists, rung 3 exists and now has one live run behind it; rung 2 is
+  where "ultra urgent but the swarm is healthy" actually belongs.
+
+description: |
+  ## Shape
+
+  A durable marker (posture of `control-pause.json`: read fresh each sweep,
+  degrade-never-crash, absent = mode off) naming ONE ticket id. While set:
+
+  1. **Dispatch filter**: handoffd delivers/claims only parcels whose task is
+     the ambulance ticket or its lineage (bounce parcels, evidence, its QA
+     merge broadcast). Everything else stays QUEUED IN PLACE — never dropped,
+     never abandoned, mailboxes untouched.
+  2. **Rotation override**: the resident's idle decision always chooses the
+     ambulance parcel's role next — the absolute version of BL-651's aged-work
+     rule (and it must compose with BL-651, not fork it).
+  3. **Coordinator scope**: promotion/bookkeeping only for the ambulance
+     ticket. No new promotions while the mode is set.
+  4. **Everything else runs**: daemons, babysitterd, Telegram, watchdog,
+     operator. The swarm is healthy and stays observable — that is the whole
+     point versus the Expeditor.
+
+  ## Entry / exit
+
+  - Entry: human command — Telegram verb alongside BL-423's pause verbs
+    ("ambulance BL-654"), or a CLI writing the marker. Human-only; the swarm
+    never self-declares an ambulance.
+  - Exit: AUTOMATIC when the ticket reaches done/ (announce it), or explicit
+    human "ambulance off". A bounced-out/parked ambulance ticket must NOT
+    deadlock the swarm: if the ticket leaves the pipeline for a human ruling,
+    the mode surfaces that loudly and exits rather than starving forever.
+
+  ## Interactions the specifier must pin
+
+  - **Flow-watchdog**: parcels deliberately held by ambulance mode must not
+    fire stall alarms — BL-650's active-time clock is the natural hook
+    (ambulance intervals count as could-not-process time for OTHER parcels).
+    An ambulance that itself stalls MUST still alarm.
+  - **Expedite lane**: an expedited defect arriving DURING an ambulance
+    queues like everything else — the human chose the ambulance knowingly;
+    only a human lifts it. State this explicitly; it is the one place the
+    mode outranks Article 3.2.4.
+  - **Depth breaker**: depth stays whatever it is; ambulance is a dispatch
+    filter, not a depth change.
+  - **Batch roles**: a batch containing ambulance + non-ambulance parcels
+    delivers ONLY the ambulance ones; the rest stay queued (no partial-batch
+    loss — the BL-590 idempotency lesson applies to the re-delivery later).
+
+acceptance: |
+  Specifier writes the scenarios. Minimum behaviour:
+
+  1. Mode set on ticket X, mixed queues everywhere: only X's parcels move;
+     after "ambulance off", every queued parcel is delivered intact (count
+     and content identical to a no-ambulance run — the non-loss invariant).
+  2. X completes -> mode exits by itself, announces, and the queues drain in
+     normal order.
+  3. X bounces within bounds: the bounce lineage flows (coder rework etc.)
+     without the mode releasing. X leaves the pipeline (parked / human
+     ruling): loud surface + exit, no deadlock.
+  4. An expedited critical defect filed mid-ambulance: queued, visible,
+     untouched until the mode lifts — and the lift announcement names it
+     first.
+  5. Watchdog: held parcels do not alarm during the mode; a stalled ambulance
+     parcel alarms exactly as today.
+  6. Marker absent/blank/malformed = mode off, byte-identical behaviour to
+     today (degrade-never-crash).
+  7. Non-vacuity: with the mode set, seed a tempting non-ambulance parcel
+     (priority 00 note) and assert the resident never touches it.
+
+out_of_scope: |
+  - Retiring or modifying the Expeditor. It stays the last resort for a
+    broken pipeline; this mode assumes a HEALTHY one.
+  - Multi-ticket ambulances or ambulance queues. One patient per ride, by
+    design; a second emergency is a human re-decision.
+  - Auto-triggering from severity/type. Human-only entry, deliberately.
+
+notes: |
+  Invariant to keep front of mind, from the operator's naming: an ambulance
+  clears the road WITHOUT stopping the city. The Expeditor evacuates the city.
+  Rung 2 should make rung 3 rare — if the Expeditor's log shows it being used
+  on healthy pipelines after this ships, something is wrong with this mode's
+  ergonomics, and that is a finding worth a ticket.
