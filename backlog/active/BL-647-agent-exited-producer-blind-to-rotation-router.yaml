@@ -113,26 +113,24 @@ description: |
   This ticket makes a loud signal quiet; the one thing it must never do is make a
   genuine storm quiet.
 
-acceptance: |
-  Specifier writes the scenarios. Minimum behaviour:
+acceptance: specs/features/BL-647-rotation-router-liveness.feature
 
-  1. Rotation-router pack, coordinator + one resident live, six roles dormant:
-     `dead-agent-events` returns `[]`. Fixture from the live system —
-     `roles.tsv`'s 8 rows, live-sessions `{swarmforge-coder, swarmforge-coordinator}`,
-     active-role `coder`.
-  2. **Non-vacuity, load-bearing:** kill the ACTIVE resident under the same pack and
-     exactly one `AGENT_EXITED` fires, naming the active role. A fix that returns `[]`
-     unconditionally passes item 1 and is worthless; item 2 is what proves it is not
-     that fix.
-  3. Coordinator dies under a rotation pack: one `AGENT_EXITED`. The coordinator is
-     never a rotation target and is always expected.
-  4. Non-rotation pack (full-forge 7/8): behaviour byte-identical to today — every
-     expected-but-absent role fires.
-  5. Rotation mode comes from the conf, never inferred from how many sessions are
-     live. Fixture: a full-forge pack showing only 2 live sessions still emits 6.
-  6. Mid-rotation window (the resident's old session gone, the new one not yet up)
-     does not emit a spurious event. This is the race the fix is most likely to
-     introduce; state explicitly how it is handled.
+invariants:
+  - "Whether a role is expected or dormant is a function of the conf-resolved rotation mode, roles.tsv, and the active-role marker alone — the observed live-session set may decide only which expected roles are absent, never which roles count as expected."
+  - "With the rotation options omitted, or under any non-router rotation mode, dead-agent-events output equals the pre-BL-647 oracle — every role whose own roles.tsv session is not live fires — for every input."
+
+qa_e2e_procedure: |
+  1. Run the wiring test end-to-end (real tmux sessions, real rotation-router
+     pack conf, isolated fixtures):
+     `swarmforge/scripts/test/test_operator_runtime_bl647_rotation_liveness.sh`.
+  2. Run the bb unit suite (`swarmforge/scripts/test/operator_lib_test_runner.bb`)
+     and confirm the BL-647-01..06 assertions pass.
+  3. On the LIVE mono-router swarm (coordinator + resident up), trigger one
+     operator tick and confirm zero AGENT_EXITED events — and that no new
+     `SWEEP: 6x AGENT_EXITED` line lands in `.swarmforge/operator/operator.log`
+     afterward (the measured 525x signature this ticket kills).
+  4. The full-forge regression cases (scenarios 04/05) are fixture-only — do
+     NOT kill live agents to reproduce them.
 
 out_of_scope: |
   - Draining the currently-stale `events.inflight.jsonl`. Operational, and it refills
@@ -154,3 +152,14 @@ notes: |
   Worth recording for whoever picks this up: the operator's own log line is the best
   specification of the desired behaviour that exists. It already knows exactly which
   two sessions should be live and why. That knowledge belongs in the runtime.
+
+  Specifier pass 2026-07-26 (mid-flight, after the coder's build — the ticket's
+  own acceptance field deferred scenario-writing to the specifier): scenarios
+  rotation-router-liveness-01..06 transcribe approved minimum behaviours 1..6
+  one-to-one; no new behaviour was added. Item 6's demanded race statement: the
+  mid-rotation window is closed by construction — rotation re-execs the resident
+  pane in place so its tmux session never dies during a rotation, and every
+  non-coordinator role is checked against that same resident session, so a stale
+  active-role marker can change only which subject a real death would name.
+  Step handlers for the six scenarios plus BL-654 property tests for the two
+  declared invariants must land in the coder's same parcel (BL-233).

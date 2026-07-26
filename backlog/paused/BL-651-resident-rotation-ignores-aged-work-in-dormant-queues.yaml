@@ -11,6 +11,8 @@ direction: swarm-proposed
 depends_on: []
 assigned_to: specifier
 mutation_cost: medium
+required_stages: [coder, architect, qa]
+stage_skip_reasons: { cleaner: "bounded rotation-decision change in dispatch bb code", hardender: "bb outside the Stryker mutate scope; thrash/non-vacuity fixtures run in the acceptance gate", documenter: "behaviour documented in-ticket; no human-facing doc surface" }
 
 approval_context: >
   Proposed by the COORDINATOR, 2026-07-25 ~22:00, answering the operator's

@@ -1,0 +1,119 @@
+id: BL-660
+title: "Les 3×8 — three named shift packs (day 09-17, evening 17-01, night 01-09), ONE activated in conf, and every schedule-derived clock (cron start/stop, BL-617 window, closing ceremony, briefing) follows the shift"
+milestone: M8
+type: feature
+status: todo
+epic: swarm-reliability
+human_approval: approved
+severity: medium
+priority: 07
+direction: human-requested
+depends_on: []
+assigned_to: specifier
+mutation_cost: medium
+
+approval_context: >
+  Operator, 2026-07-26 midday: "ce serait bien d'avoir une swarm basée sur
+  les 3 huits: 9am-5pm day, 5pm-1am evening, 1am-9am night. et comme ça dans
+  la conf on peut activer l'un des 3." Exactly one shift active at a time.
+
+source: |
+  ## Why this is the right generalisation, not a convenience
+
+  The 2026-07-25/26 sessions produced EIGHT members of one defect family:
+  observers and constants that nobody told about a schedule change (BL-647
+  producer, BL-650 watchdog clock, BL-648 relaunch, BL-657 launcher, the
+  briefing trigger, the briefing-series coverage hole, the Mini App's
+  daytime death, the cooldown/cron sibling clocks). Root cause each time:
+  THE SCHEDULE HAS NO NAME — it lives as a cron line here, a window pair
+  there, a constant elsewhere. This ticket gives it a name:
+
+  ```
+  config swarm_shift day       # 09:00 - 17:00 local
+  config swarm_shift evening   # 17:00 - 01:00 local (spans midnight)
+  config swarm_shift night     # 01:00 - 09:00 local
+  # absent/blank -> no shift scheduling: 24/7 behaviour, exactly today's
+  # semantics when the window is disabled
+  ```
+
+  The CURRENT hand-built 00:00-06:00 (cron night-start/stop, operator-side)
+  is superseded by `night` on adoption — note it is a 6h window today and
+  8h under the shift; the operator has ruled the 3x8 boundaries and they
+  win.
+
+description: |
+  ## The one rule: the shift is the ONLY schedule source
+
+  Everything that today reads its own clock derives from the active shift:
+
+  1. **Start/stop**: shift start/end drive the scheduled launch and the
+     closing sequence. Cron remains the waker (nothing else is alive when
+     stopped), but the crontab lines are RENDERED from the conf by a
+     deterministic applier — never hand-maintained next to it. The applier
+     is idempotent and diffs before writing (a human-edited crontab line it
+     did not render is surfaced, not clobbered).
+  2. **BL-617 window**: becomes the INVERSE of the shift automatically
+     (pause outside working hours) — the pair of values disappears as an
+     independently-edited thing.
+  3. **Closing ceremony (BL-658)**: its "closure time" IS the shift end.
+     One derivation already specced there; this ticket supplies the source.
+  4. **Briefing**: via the ceremony (last act), or shift-end minus margin
+     until BL-658 lands.
+  5. **Telegram 24h getUpdates cliff**: the day gap must stay under 24h for
+     approvals queued while stopped — all three shifts leave a 16h gap,
+     fine; the acceptance pins the property so a future 2-shift-off
+     composition cannot silently break it.
+
+  ## Edges the specifier must pin
+
+  - Shift CHANGE while stopped (edit conf during the day): next cron fire
+    uses the new shift — the applier reconciles crontab at apply time, and
+    a stale cron line from the old shift must not double-fire (the
+    lastHandledWindow marker family covers the window; the applier covers
+    cron).
+  - Shift change while RUNNING: takes effect at the next boundary; never
+    kills a working swarm mid-shift.
+  - Manual out-of-shift starts (the operator's "démarre pour dépiler" this
+    very midday) stay legal and unmanaged: scheduled machinery must not
+    fight a human start — the daytime pause neutralisation the operator
+    performs by hand today (consume the window marker) becomes part of the
+    manual-start path or a flag on the applier.
+  - DST: boundaries are LOCAL wall-clock (cron semantics) — state it,
+    with the known one-hour anomaly twice a year accepted rather than
+    engineered around.
+
+acceptance: |
+  Specifier writes the scenarios. Minimum behaviour:
+
+  1. `swarm_shift night` active: swarm starts at 01:00, ceremony/stop at
+     09:00, BL-617 pause covers 09:00->01:00 — from ONE conf line, nothing
+     else edited.
+  2. Switching day->evening in conf: next scheduled cycle runs 17:00-01:00;
+     no stale start/stop from the old shift fires.
+  3. `swarm_shift` absent: 24/7 semantics byte-identical to the disabled-
+     window behaviour of today.
+  4. The spans-midnight shift (evening) starts and stops on the correct
+     calendar days — the classic off-by-one-day cron trap, pinned.
+  5. A human manual start outside the shift is not paused, not killed, and
+     not re-scheduled by the machinery; the next scheduled boundary applies
+     normally afterwards.
+  6. The offline-approvals property: with any single shift active, the
+     stopped gap stays < 24h (Telegram getUpdates retention), asserted.
+  7. The applier is idempotent and never clobbers a crontab line it did not
+     render (surfaced instead).
+
+out_of_scope: |
+  - Running TWO shifts (16h) or shift composition/rotation calendars. One
+    of three, per the operator's sentence; composition is a later ticket
+    with its own 24h-cliff analysis.
+  - Per-shift packs/model tiers (a cheaper night crew is a tempting future
+    — it belongs to the ModelFactory lane, not here).
+  - BL-658's ceremony internals. This ticket feeds it the source; the
+    ceremony spec stays where it is.
+
+notes: |
+  Ninth member of the schedule family and the one that dissolves it: once
+  the shift is the single named source, "nobody told the observer about the
+  schedule" stops being a possible bug class for every clock that derives.
+  The operator's current artisanal 00:00-06:00 has run two nights and
+  midwifed five defect tickets; the 3x8 conf is its industrialisation.

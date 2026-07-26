@@ -11,6 +11,8 @@ direction: human-requested
 depends_on: []
 assigned_to: specifier
 mutation_cost: low
+required_stages: [coder, cleaner, architect, qa]
+stage_skip_reasons: { hardender: "test-suite hygiene parcel; Stryker mutate scope (out/) untouched and the seeded-leak guard IS a test-of-tests", documenter: "no human-facing doc surface" }
 
 approval_context: >
   Operator, 2026-07-25, from a coder turn report that correctly flagged untracked
