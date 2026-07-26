@@ -42,6 +42,7 @@ here.
 - [Context Telemetry: Recording and Querying Agent Invocations](how-to/GH-22-context-telemetry-recorder-and-query-cli.md)
 - [Monitoring Agent Context Budget in the Mini App Console](how-to/GH-23-context-budget-dashboard.md)
 - [Reviewing Paused Tickets in the Mini App Console](how-to/BL-538-console-paused-ticket-pager.md)
+- [Reordering Epic Priority in the Mini App Console](how-to/BL-572-console-epic-priority-reorder.md)
 - [Launching the Perplexity mono-router pack](how-to/perplexity-mono-router-launch.md)
 - [Aged-note Actionability in Mono-router: Draining Dormant Mailboxes](how-to/BL-576-aged-note-actionability-mono-router.md)
 - [GitHub Auto-Intake Scheduler](how-to/github-auto-intake-scheduler.md)
