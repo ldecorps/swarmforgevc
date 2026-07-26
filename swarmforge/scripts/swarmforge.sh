@@ -1163,6 +1163,60 @@ generate_dormant_role_launch_artifacts() {
   write_role_launch_script "$index" >/dev/null
 }
 
+# BL-648: the resident (always index 1, session pinned to home per BL-518)
+# may need to boot AS a different, already-claimed role instead of home -
+# resolve_and_sweep_relaunch_resume (run once, top-level, before the launch
+# loop) already decided that in MONO_ROUTER_BOOT_ROLE. Given the script
+# launch_role would otherwise use (home's own, already freshly written by
+# the time launch_role calls this), returns the launch script path to
+# actually exec: home's own script unchanged for every index other than the
+# resident, or whenever MONO_ROUTER_BOOT_ROLE is unset/equal to home - the
+# resolved role's own script (generating its launch artifacts first, since a
+# dormant middle role's script is normally only generated AFTER every
+# session is up) when the resident must boot as something else. Lifted out
+# of launch_role itself (same rationale as generate_dormant_role_launch_
+# artifacts above) so this decision is directly testable without a live
+# tmux session.
+resolve_launch_script_for_role() {
+  local index="$1" role="$2" default_script="$3"
+  if [[ "$index" -eq 1 && "$ROTATION_MODE" == "router" \
+        && -n "${MONO_ROUTER_BOOT_ROLE:-}" && "$MONO_ROUTER_BOOT_ROLE" != "$role" ]]; then
+    local boot_index
+    for (( boot_index = 1; boot_index <= ${#ROLES[@]}; boot_index++ )); do
+      if [[ "${ROLES[$boot_index]}" == "$MONO_ROUTER_BOOT_ROLE" ]]; then
+        generate_dormant_role_launch_artifacts "$boot_index"
+        echo "$STATE_DIR/launch/${MONO_ROUTER_BOOT_ROLE}.sh"
+        return
+      fi
+    done
+  fi
+  echo "$default_script"
+}
+
+# BL-648: resolves which role the mono-router resident should boot as (the
+# recorded mono-router-active-role marker, when rotation is router and it
+# names a known role; home otherwise - relaunch_resume_cli.bb's
+# resolve-boot-role) and runs the pack-agnostic orphan-claim sweep (its
+# sweep subcommand): every role's in_process claim whose owning session is
+# confirmed dead is re-delivered to inbox/new rather than left invisible.
+# Called AFTER the existing-session kill loop below (every previous session
+# is now confirmed dead) and BEFORE this launch creates any of its own, so
+# "session alive" unambiguously means "a genuinely live survivor", never
+# this same launch's not-yet-created sessions. Sets the global
+# MONO_ROUTER_BOOT_ROLE that launch_role reads for index 1. Never aborts the
+# launch: relaunch_resume_cli.bb itself never raises past a missing/
+# unreadable marker or an empty roles.tsv.
+resolve_and_sweep_relaunch_resume() {
+  MONO_ROUTER_BOOT_ROLE=""
+  if [[ "$ROTATION_MODE" == "router" ]]; then
+    MONO_ROUTER_BOOT_ROLE="$(bb "$SCRIPT_DIR/relaunch_resume_cli.bb" resolve-boot-role "$WORKING_DIR")"
+    mkdir -p "$STATE_DIR"
+    printf '%s\n' "$MONO_ROUTER_BOOT_ROLE" > "$STATE_DIR/mono-router-active-role"
+  fi
+  echo -e "${CYAN}Orphan-claim sweep (BL-648)...${RESET}"
+  bb "$SCRIPT_DIR/relaunch_resume_cli.bb" sweep "$WORKING_DIR" "$MONO_ROUTER_BOOT_ROLE"
+}
+
 write_claude_settings_file() {
   local role="$1"
   local settings_file="$STATE_DIR/launch/${role}.claude-settings.json"
@@ -1487,6 +1541,7 @@ launch_role() {
   resolved_model="$(resolve_claude_model_for_index "$index")"
   write_agent_instruction_file "$role" "$PROMPTS_DIR/${role}.md" "$agent" "$resolved_model"
   launch_script="$(write_role_launch_script "$index")"
+  launch_script="$(resolve_launch_script_for_role "$index" "$role" "$launch_script")"
 
   # BL-130-VIOLATION fix: pass a non-claude role's provider API key as a
   # respawn-pane `-e` flag - ephemeral to this tmux invocation - rather than
@@ -1678,6 +1733,13 @@ for local_session in "${SESSIONS[@]}"; do
     tmux -S "$TMUX_SOCKET" kill-session -t "$local_session"
   fi
 done
+
+# BL-648: every session this pack knows about is now confirmed dead (either
+# killed just above, or already dead from an earlier start-swarm.sh
+# stop_existing) and none of THIS launch's own sessions exist yet - the one
+# unambiguous moment to decide which role the resident should resume and to
+# reclaim any other role's now-ownerless in_process claim.
+resolve_and_sweep_relaunch_resume
 
 echo -e "${CYAN}${BOLD}"
 echo "  ╔═══════════════════════════════════════════════╗"

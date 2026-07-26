@@ -103,7 +103,7 @@ description: |
   - Do not infer the active role from which worktree looks busiest. Read the
     recorded file; it exists precisely for this.
 
-acceptance: specs/features/BL-648-relaunch-resume-orphan-claims.feature.draft
+acceptance: specs/features/BL-648-relaunch-resume-orphan-claims.feature
 
 out_of_scope: |
   - The batch-claims-write-no-sidecar gap, UNLESS the specifier explicitly
