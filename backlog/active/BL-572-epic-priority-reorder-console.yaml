@@ -140,6 +140,7 @@ notes: |
   Possible slice 2 if the human wants it after using this: drag-to-position
   rather than move-up/move-down. Deliberately not specced now — move buttons
   need no drag library, work well on a phone, and compose to the same orders.
-bounce_count: 1
+bounce_count: 2
 bounce_history:
   - { at: 2026-07-26, by: architect, blamed: coder, class: behavior, commit: d3ab0409f4, evidence: backlog/evidence/BL-572-architect-bounce1-20260726.md }
+  - { at: 2026-07-26, by: architect, blamed: specifier, class: spec, commit: c02ca6277c, evidence: backlog/evidence/BL-572-architect-bounce2-20260726.md }
