@@ -198,7 +198,8 @@ notes: |
     - Optional, architect's non-blocking note: while touching
       `readPausedEpics`, close the `Number.MAX_SAFE_INTEGER` sort-sentinel
       leak to disk for schema-invalid tickets missing `priority:`.
-bounce_count: 2
+bounce_count: 3
 bounce_history:
   - { at: 2026-07-26, by: architect, blamed: coder, class: behavior, commit: d3ab0409f4, evidence: backlog/evidence/BL-572-architect-bounce1-20260726.md }
   - { at: 2026-07-26, by: architect, blamed: specifier, class: spec, commit: c02ca6277c, evidence: backlog/evidence/BL-572-architect-bounce2-20260726.md }
+  - { at: 2026-07-26, by: architect, blamed: coder, class: behavior, commit: 711263bfae, evidence: backlog/evidence/BL-572-architect-bounce3-20260726.md }
