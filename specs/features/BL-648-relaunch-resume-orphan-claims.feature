@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=8583ea5370c7fbebc65522f4aca6800f5f6e93ce33b51dea2b34d8e72b098154
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-07-26T21:32:51.592983917Z","feature_name":"Relaunch resumes the recorded role and reclaims orphaned claims","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-648-relaunch-resume-orphan-claims.feature","background_hash":"0a4456ad255650cd4e7d8bef1d011b008fb00cbf798b04e2ac725acf86694e6f","implementation_hash":"unknown","scenarios":[{"index":1,"name":"A missing or blank recorded role boots the resident at home","scenario_hash":"8a12ee81a5dedf3fe0e17a6e480a8e989267b24dbdaf3137fb0ddf65eb8b423b","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-07-26T21:32:51.592983917Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: Relaunch resumes the recorded role and reclaims orphaned claims
 
   Background:

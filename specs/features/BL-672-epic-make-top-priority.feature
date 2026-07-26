@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=dd9a944f089641abc91c52b16c59eaccd716eae40e4298c7d953a8600facf6ed
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-07-26T21:32:57.473944299Z","feature_name":"Epic make-top-priority button","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-672-epic-make-top-priority.feature","background_hash":"e59a0b8b0c4dcb30eb8a4bce32132ec5286dd12e4667b50166fb4de5b34f344b","implementation_hash":"unknown","scenarios":[{"index":4,"name":"Unresolvable dependencies refuse fail-closed with named blockers","scenario_hash":"d763081aad2beda5eecc77fc53372e1489284ee3aa56928aa5d27ed34e990e39","mutation_count":3,"result":{"Total":3,"Killed":3,"Survived":0,"Errors":0},"tested_at":"2026-07-26T21:32:57.473944299Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: Epic make-top-priority button
 
   Background:

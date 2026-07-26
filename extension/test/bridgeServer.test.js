@@ -111,7 +111,7 @@ test('serves the agents, backlog, and runlog endpoints', async () => {
       fetch(`http://127.0.0.1:${handle.port}/runlog`, { headers: auth }).then((r) => r.json()),
     ]);
     assert.deepEqual(agents, []);
-    assert.deepEqual(backlog, { active: [], paused: [], done: [] });
+    assert.deepEqual(backlog, { active: [], paused: [], done: [], hold: [] });
     assert.deepEqual(runlog, []);
   });
 });

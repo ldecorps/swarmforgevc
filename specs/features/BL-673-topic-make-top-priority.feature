@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=498b584d55ceb5553802533402370ea8e4ee2440ecfdfb9bf21431f5f1fae773
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-07-26T21:33:01.882625529Z","feature_name":"Topic make-top-priority within an epic","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-673-topic-make-top-priority.feature","background_hash":"6e1505547dd26b341193c820f81f9d1d84bdc5c25ca92f3d25b81b0be0f9f80b","implementation_hash":"unknown","scenarios":[{"index":4,"name":"Unresolvable dependency graphs refuse fail-closed","scenario_hash":"865d0f810842a69b6437d0eceeeb69563f7b692d22c9f3cd18e3431a1b3e40f8","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-07-26T21:33:01.882625529Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: Topic make-top-priority within an epic
 
   Background:

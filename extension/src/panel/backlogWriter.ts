@@ -20,7 +20,7 @@ function findMatchingBacklogFile(dir: string, itemId: string): string | null {
   return null;
 }
 
-function findBacklogFilePathIn(targetPath: string, folder: 'active' | 'paused', itemId: string): string | null {
+function findBacklogFilePathIn(targetPath: string, folder: 'active' | 'paused' | 'hold', itemId: string): string | null {
   const dir = path.join(targetPath, 'backlog', folder);
   try {
     return findMatchingBacklogFile(dir, itemId);
@@ -94,10 +94,15 @@ export function promoteToActive(targetPath: string, itemId: string): BacklogMove
 
 // BL-490-VIOLATION: locates a ticket's CURRENT file regardless of which live
 // folder it sits in - active checked first (the common case, and where a
-// just-promoted ticket now lives), paused second. Exists so a caller that
-// just wrote/moved a ticket (e.g. the Expedite verb's durable-commit step)
-// can resolve the right repo-relative path to commit without duplicating
-// findBacklogFilePathIn's own active/paused scan logic.
+// just-promoted ticket now lives), paused second, hold third (BL-672: a
+// human-held item is still a legal write target for the make-top-priority
+// verb). Exists so a caller that just wrote/moved a ticket (e.g. the
+// Expedite verb's durable-commit step) can resolve the right repo-relative
+// path to commit without duplicating findBacklogFilePathIn's own scan logic.
 export function findBacklogFilePath(targetPath: string, itemId: string): string | null {
-  return findBacklogFilePathIn(targetPath, 'active', itemId) ?? findBacklogFilePathIn(targetPath, 'paused', itemId);
+  return (
+    findBacklogFilePathIn(targetPath, 'active', itemId) ??
+    findBacklogFilePathIn(targetPath, 'paused', itemId) ??
+    findBacklogFilePathIn(targetPath, 'hold', itemId)
+  );
 }
