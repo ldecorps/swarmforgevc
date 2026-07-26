@@ -11,6 +11,8 @@ direction: human-requested
 depends_on: []
 assigned_to: specifier
 mutation_cost: high
+invariants:
+  - "While ambulance mode is engaged the resident advances exactly one ticket — the designated one; every other parcel and duty queues in place, untouched and unlost."
 
 approval_context: >
   Operator, 2026-07-26 ~01:15, mid-expedition of BL-654: "expeditor est un

@@ -9,6 +9,8 @@ priority: 30
 direction: human-requested
 depends_on: [BL-582]
 mutation_cost: medium
+invariants:
+  - "An ask's staleness clock resets only on human activity or a re-minted ask — never on swarm outbound posts or file mtime; missing evidence fails closed to not-stale."
 source: |
   Human directive, 2026-07-23, via backlog/INTAKE-20260723-stale-approval-email-notifier.md
   (drained by the specifier; raw intake removed from the backlog root in the

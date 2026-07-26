@@ -1,0 +1,62 @@
+id: BL-666
+title: "Budget-aware shift governor: anchor-calibrated burn projection decides each shift's verdict (full / short / cheap / skip) so the token tank reaches the weekly replenish"
+milestone: M8
+type: feature
+status: todo
+epic: quota-budget-manager
+severity: medium
+priority: 12
+direction: human-requested
+depends_on: [BL-660, BL-664]
+assigned_to: specifier
+mutation_cost: high
+human_approval: approved
+approval_context: >
+  Your ask 2026-07-26 ("can the swarm be aware of my token usage? and adapt
+  the cadence of 3x8 it can afford to keep going to the next replenish"),
+  shaped by the operator session. Firm: no programmatic plan-usage API
+  exists, so calibration needs you to relay the Usage % occasionally (one
+  Telegram line like "budget 71% reset thu-07:00"); burn between anchors is
+  self-measured from transcripts (BL-664 walker). Needing your sign-off:
+  the verdict ladder full -> SHORT shift -> CHEAP shift (ModelFactory
+  certified cheap assignment) -> SKIP, decided at each shift boundary and
+  always announced with its arithmetic. Reject if you'd rather the swarm
+  only WARN (BL-619 already leads the briefing with the burn warning) and
+  leave cadence decisions to you.
+invariants:
+  - "The governor never spends paid credits without an explicit human opt-in — the prepaid plan and credits are different substances."
+  - "Every verdict is announced with its arithmetic (remaining% / days-to-reset vs measured burn/shift) — never silent."
+  - "The PROVIDER_LIMIT/cooldown machinery remains the hard floor when pacing miscalculates — the governor never weakens the BL-305 fail-open backstop."
+
+source: |
+  .swarmforge/operator/INTAKE-budget-aware-shift-governor.md (operator
+  session 2026-07-26, from the human's Usage screenshot: weekly ALL MODELS
+  71% used at ~2.2 days into the week => ~32%/day burn vs ~6%/day
+  affordable — the tank empties ~Sunday night without pacing; archived on
+  drain).
+
+description: |
+  ## Shape (three pieces + unchanged backstop)
+
+  1. ANCHOR: the human occasionally relays the Usage numbers (operator
+     command or Telegram verb). Two anchors + transcript-measured burn
+     between them self-calibrate %-per-token; thereafter the swarm projects
+     its own gauge between anchors. A stale anchor (>N days) means degraded
+     mode, labelled as such — never a confident number.
+  2. BURN METER: transcript-derived tokens per shift per seat, from the
+     BL-664 walker — including the OPERATOR SESSION itself (a governor that
+     ignores its own supervisor lies).
+  3. GOVERNOR: runs at each shift boundary (BL-660's shift applier is the
+     natural host). remaining% / time-to-reset vs measured burn/shift gives
+     the verdict, in order of preference: full shift -> SHORT shift (trim
+     hours) -> CHEAP shift (ModelFactory `assign --mode cheap`, certified
+     seats only — the verb exists, BL-525) -> SKIP (announce; approvals and
+     Telegram still drain at the next start).
+
+  The founding fixture is the filing-day arithmetic above (71% at 2.2 days,
+  5x over budget) — the governor's acceptance must reproduce its verdict.
+
+  Relations: BL-660 (shift source — the governor is its budget twin),
+  BL-619 (briefing warning — the governor is the acting counterpart of that
+  read-only warning), BL-551 ledger (fed by the same walker), COST
+  experiment log (verdicts are annotations).

@@ -11,6 +11,8 @@ direction: human-requested
 depends_on: []
 assigned_to:
 mutation_cost: low
+invariants:
+  - "No undeliverable role question leaves its role wedged: after any drop, the awaiting-marker state permits asking again immediately, and the drop is surfaced in status.json."
 
 approval_context: >
   Your GH issue #26, specced faithfully. Firm: no silent drop that wedges

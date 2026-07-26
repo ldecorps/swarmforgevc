@@ -11,6 +11,8 @@ direction: human-requested
 depends_on: []
 assigned_to: specifier
 mutation_cost: medium
+invariants:
+  - "A mutation run that generated zero mutants never reports a pass and never stamps the feature as covered — for any feature shape."
 
 approval_context: >
   Operator ruling 2026-07-25, handed forward by BL-567's hardener and QA stages.

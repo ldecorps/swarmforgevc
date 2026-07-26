@@ -11,6 +11,8 @@ direction: operator-reported
 depends_on: []
 assigned_to: coder
 mutation_cost: medium
+invariants:
+  - "Every dropped inbound update logs exactly one line naming the drop reason — no drop path, current or future, is silent."
 source: |
   backlog/INTAKE-20260724-front-desk-drops-photo-captions.md — operator
   root-cause 2026-07-24 ~06:50Z after the human's usage screenshot + caption

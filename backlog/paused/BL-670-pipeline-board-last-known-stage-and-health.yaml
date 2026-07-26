@@ -1,0 +1,74 @@
+id: BL-670
+title: "Pipeline board shows LAST-KNOWN stage — claimed-only derivation renders in-transit tickets as not-started; plus the human's layout rulings (one grid, health dots, aligned columns, slug row, detail/gherkin links)"
+milestone: M8
+type: defect
+status: todo
+epic: pipeline-board
+severity: high
+priority: 07
+direction: human-requested
+depends_on: []
+assigned_to: specifier
+mutation_cost: medium
+supersedes: BL-573
+invariants:
+  - "A ticket any stage has touched never renders as not-started: it always shows its last-known stage with status (claimed | in-transit-to | last-known) and age."
+  - "Grid alignment is a rendering invariant with a fixture: every cell is padded to its column's widest cell — marks like X(34m) never shear the grid."
+
+source: |
+  .swarmforge/operator/INTAKE-pipeline-board-last-known-stage.md (operator
+  session 2026-07-26, from the human's screenshots + live forensics;
+  archived on drain). Observed: board showed BL-647 as not-started while it
+  had traversed specifier (09:52), coder (d6e5f2568, 10:11) and sat at the
+  cleaner. Verified root cause: `.swarmforge/board/ticket-stage-map.json`
+  (BL-464 authoritative source) read {} and a manual
+  `pipeline_stage_cli.bb sync` ALSO produced {} — the derivation maps a
+  ticket only while a task-bearing parcel is CLAIMED (in_process); a parcel
+  in `new/` (in transit) derives nothing, and in-transit is a large
+  fraction of a ticket's life under depth-1 rotation. Aggravator: a stale
+  orphaned night-batch claim with no derivable ticket id. The human's
+  verbatim requirement: "chaque ticket dans sa colonne, avec l'agent en
+  cours, OU LE DERNIER CONNU."
+
+description: |
+  ## Semantics (the defect half)
+
+  The map becomes {ticket -> {stage, status, asOf}}, status one of
+  claimed | in-transit-to | last-known. Derivations: claimed from
+  in_process (as today); in-transit from the parcel in `new/` (recipient =
+  next stage); last-known from the durable handoff trail (sent/ headers) —
+  the same trail BL-659's completion ring will read: ONE derivation, two
+  consumers, they can never disagree. Sync triggers close the gap where
+  only promote_and_route_next calls sync today: either handoffd's sweeps
+  call it or the board derives at render time from the trail (coder's
+  call). Fixture: the filing-morning state (parcel in cleaner new/ + stale
+  night batch in in_process) must render "647 · cleaner (in transit) · as
+  of 10:11", never NS.
+
+  ## Layout + health (the human's addenda, verbatim intent)
+
+  - ONE grid, stage axis rendered once as rows, active tickets as
+    side-by-side columns — epic grouping is a column-header annotation,
+    never a second copy of the stage axis (the 11:08 screenshot with two
+    stacked private boards is the anti-fixture).
+  - Health dot per ticket column from the yaml bounce fields (BL-635
+    recorder, live): green no bounces, yellow 1-2, red 3+ ("3 barely, 8 no
+    way" — red IS the bound speaking). Time-with-current-agent beside the
+    stage mark ("AR X(34m)"), BL-650 active time once available, wall time
+    labelled until then.
+  - Mini-slug row under the id row inside the code block, truncated to
+    column width. Telegram renders no links inside code blocks, so a
+    per-ticket legend line follows OUTSIDE it: detail deep-link to the
+    ticket's own BL topic (BL-295/BL-329 — no new surface), gherkin
+    deep-link into the BL-659 Knowledge Explorer, degrading gracefully
+    (raw feature file on GitHub, or omitted) until that epic ships — the
+    board never waits on it.
+  - Compactness: readable in a phone-width Telegram code block;
+    two-significant-unit durations; ids without the BL- prefix.
+
+  ## Supersedes BL-573
+
+  BL-573 (stage sync scans in_process only) named the narrow inbox/new
+  half of the same derivation gap; its fix is strictly contained in the
+  semantics above, so it retires to done/ as superseded (BL-587/BL-562
+  precedent) rather than riding as a duplicate.

@@ -11,6 +11,8 @@ direction: swarm-proposed
 depends_on: []
 assigned_to:
 mutation_cost: low
+invariants:
+  - "Any argument to the done_with_current family fails fast with zero completion side effects, in every receive mode."
 
 approval_context: >
   Filed from an accepted hardener rule_proposal (2026-07-25): a "--help"
