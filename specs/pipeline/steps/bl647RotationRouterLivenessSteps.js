@@ -33,6 +33,28 @@ const ROSTER = [
 ];
 const NON_COORDINATOR_ROLES = ROSTER.map((r) => r[0]).filter((r) => r !== 'coordinator');
 
+// The BL-647-02 outline's only two Examples values (see the "active-role
+// marker" step below) plus "coordinator", the one other literal subject the
+// feature ever asserts (rotation-router-liveness-03). Anything else reaching
+// either the marker-setting Given or the subject-checking Then is an
+// example-value mutant, not real feature data - fail loudly.
+const KNOWN_ACTIVE_ROLES = { coder: true, architect: true };
+const KNOWN_EVENT_SUBJECTS = { coder: true, architect: true, coordinator: true };
+
+function knownActiveRole(role) {
+  if (!Object.prototype.hasOwnProperty.call(KNOWN_ACTIVE_ROLES, role)) {
+    throw new Error(`BL-647: unrecognized <role> example value "${role}" - not in KNOWN_ACTIVE_ROLES`);
+  }
+  return role;
+}
+
+function knownEventSubject(role) {
+  if (!Object.prototype.hasOwnProperty.call(KNOWN_EVENT_SUBJECTS, role)) {
+    throw new Error(`BL-647: unrecognized event-subject value "${role}" - not in KNOWN_EVENT_SUBJECTS`);
+  }
+  return role;
+}
+
 function mkTmp(prefix) {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
 }
@@ -190,8 +212,20 @@ function registerSteps(registry) {
   });
 
   // ── active-role marker ───────────────────────────────────────────────
+  // BL-647-02 is a Scenario Outline over <role> = {coder, architect}: coder
+  // is the roster's home role, architect is deliberately non-home - the
+  // whole point of the second example (a non-home active role is checked
+  // against resident-session, never its own roles.tsv row). This step (the
+  // Given half of the outline) and "that event names ... as its subject"
+  // (the Then half) both consumed <role> as a bare passthrough - the same
+  // mutated string flows unchecked from Given to Then, so a gherkin-mutator
+  // mutant of the Examples value is self-consistent and never fails
+  // (engineering.prompt's Scenario Outline rule: validate against an
+  // explicit KNOWN_VALUES set, never passthrough). Rejecting anything
+  // outside the outline's declared role set here fails the mutant loudly
+  // at the Given step, before the tautological echo has a chance to hide it.
   registry.define(/^the active role marker names (\S+)$/, (ctx, role) => {
-    writeActiveRole(ctx.bl647Target, role);
+    writeActiveRole(ctx.bl647Target, knownActiveRole(role));
   });
 
   // The mid-rotation race: the resident tmux session (swarmforge-coder)
@@ -222,14 +256,18 @@ function registerSteps(registry) {
   });
 
   registry.define(/^it reports exactly one AGENT_EXITED event$/, (ctx) => {
-    if (ctx.bl647Events.length !== 1) {
+    try {
+      if (ctx.bl647Events.length !== 1) {
+        throw new Error(`expected exactly one AGENT_EXITED event, got: ${JSON.stringify(ctx.bl647Events)}`);
+      }
+    } finally {
       cleanup(ctx);
-      throw new Error(`expected exactly one AGENT_EXITED event, got: ${JSON.stringify(ctx.bl647Events)}`);
     }
   });
 
-  registry.define(/^that event names (\S+) as its subject$/, (ctx, role) => {
+  registry.define(/^that event names (\S+) as its subject$/, (ctx, rawRole) => {
     try {
+      const role = knownEventSubject(rawRole);
       const subject = ctx.bl647Events[0] && ctx.bl647Events[0].subject;
       if (subject !== role) {
         throw new Error(`expected the event's subject to be "${role}", got: ${JSON.stringify(ctx.bl647Events)}`);

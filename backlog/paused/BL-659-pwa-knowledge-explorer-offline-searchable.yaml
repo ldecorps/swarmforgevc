@@ -185,6 +185,65 @@ description: |
   3. **Phone**: installable (manifest), columns collapse to drill-down on
      narrow screens, thumb-reachable breadcrumb.
 
+  ## Completion cues at every level (operator, 2026-07-26: "un visual clue
+  ## qui me dise le pct de completion d'un milestone, d'un epic, d'un BL")
+
+  A progress visual (bar or ring, tabular numerals, value visible on tap) on
+  every node, each with a DERIVED definition — no hand-maintained number:
+
+  - **Milestone**: done / total tickets carrying the milestone (the mockup's
+    existing bar; the operator's own founding sketch already had "Progress
+    83%" under M3). Accompanied by BL-228's shipped ETA (p50 projected
+    completion) where the burndown series exists — reuse
+    `metrics.burndown`, never recompute differently from the briefing.
+  - **Epic**: done / total among tickets sharing the `epic:` field —
+    derivable today from yaml alone; shown on the epic's own ticket node
+    AND on the epic facet chip ("stereo-router (0/6)").
+  - **BL ticket**: pipeline-stage progress — stages completed / stages
+    required (the ticket's `required_stages` or the canonical 7-chain),
+    derived at build from the durable trail (handoffs sent/completed,
+    evidence, done/ location). A done ticket reads 100%; a paused one 0%;
+    an in-flight one "architect · 4/7" with a partial ring. KNOWN GAP,
+    stated not papered: /pipeline exposes no per-ticket stage (the BL-452
+    memo), so stage attribution comes from the snapshot's own derivation
+    and is AS-OF-BUILD like everything else — the ring must never imply
+    live tracking.
+  - Epic-type tickets with `remaining_slices` additionally show
+    slices-shipped / slices-total when the field is parseable.
+
+  **+ ETA beside every percentage (operator, 2026-07-26: "+ eta")** — always
+  as a PERCENTILE RANGE, never a single promised date (the FLOW root's
+  Kanban ruling applied to forecasting):
+
+  - **Milestone ETA**: BL-228's shipped p50 projection, reused as-is (one
+    forecaster, two surfaces that cannot disagree).
+  - **Epic ETA**: the same BL-228 forecaster scoped to the epic's remaining
+    tickets — new scope, not a new method.
+  - **BL ETA**: from the FLOW root's cycle-time percentiles by ticket type —
+    in-flight: "p50 ~Xh / p85 ~Yh from promotion, Z stages remaining";
+    paused: lane position + measured throughput ("~Nth in lane; starts est.
+    p50 <date>"). Both wear the same as-of-build banner.
+  - **No fabricated ETAs**: below a minimum sample (specifier sets the
+    floor) the cue shows "insufficient history", never a number — the
+    BL-635 data-honesty invariant (absence renders as absence) applied to
+    the future instead of the past.
+  - **Display rule — humanized ranges, precision matched to uncertainty
+    (operator, 2026-07-26)**: never "between Monday 5 Sept 2028 6:03am and
+    Tuesday 29 Oct 2028 5:03pm" — say **"5 weeks to 3 months"**. A BL says
+    **"2 to 3 days"**. The p50/p85 computation keeps full precision
+    internally; the SURFACE rounds to at most two significant duration
+    units, unit chosen by horizon (hours → days → weeks → months), and a
+    range whose ends round to the same value collapses to one ("~2 days").
+    Timestamps of that false-precision kind are a rendering DEFECT, not a
+    style choice — fixture: any rendered ETA matching a
+    weekday/date/minute pattern fails.
+  - **Effective-to-wall conversion (operator follow-through, 2026-07-26)**:
+    percentiles are COMPUTED on effective time (BL-650's clock, outage
+    intervals excluded) then mapped through the ACTIVE SHIFT CALENDAR
+    (BL-660) back to wall language for display — 16 effective hours under a
+    night shift is two nights, rendered "2 to 3 days", never "16 hours".
+    Without this mapping every displayed ETA is wrong by the sleep ratio.
+
   ## Honesty requirements
 
   - The snapshot is AS-OF-BUILD: a permanent banner states the build commit
