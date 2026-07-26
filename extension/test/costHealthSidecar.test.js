@@ -162,6 +162,105 @@ test('flow balance reports today\'s specced/closed counts with a trend', () => {
   assert.equal(sidecar.flowBalance.closedPerDay.trend.direction, 'down');
 });
 
+// ── BL-635: flowBalance.rework - by-role, never pooled ──────────────────
+
+function bounceRecord(overrides = {}) {
+  return {
+    ticket: 'BL-590',
+    producingRole: 'coder',
+    ticketType: 'defect',
+    failureClass: 'behavior',
+    commit: 'abc1234567',
+    at: '2026-07-09T10:00:00.000Z',
+    by: 'architect',
+    ...overrides,
+  };
+}
+
+test('flowBalance.rework is omitted entirely (not null) when no reworkInputs are given, matching the additive-optional convention', () => {
+  const sidecar = buildCostHealthSidecar('2026-07-09', {}, {}, emptyReliabilitySeries('2026-07-09T00:00:00Z'), [], []);
+  assert.equal(Object.prototype.hasOwnProperty.call(sidecar.flowBalance, 'rework'), false);
+});
+
+test('flowBalance.rework.roundsPerClose carries a trended number per bouncing role, split apart', () => {
+  // Dated well after the 2026-07-25 by-attribution epoch so the current
+  // window is available (BL-635 SEND BACK #1 site 1) - see the pre-epoch
+  // and zero-closes tests below for the unavailable cases.
+  const nowMs = Date.parse('2026-08-08T12:00:00.000Z');
+  const bounceRecords = [
+    bounceRecord({ by: 'architect', commit: 'c1', at: '2026-08-08T10:00:00.000Z' }),
+    bounceRecord({ by: 'architect', commit: 'c2', at: '2026-08-08T10:00:00.000Z' }),
+    bounceRecord({ by: 'architect', commit: 'c3', at: '2026-08-08T10:00:00.000Z' }),
+    bounceRecord({ by: 'architect', commit: 'c4', at: '2026-08-08T10:00:00.000Z' }),
+    bounceRecord({ by: 'QA', commit: 'c5', at: '2026-08-08T10:00:00.000Z' }),
+    bounceRecord({ by: 'QA', commit: 'c6', at: '2026-08-08T10:00:00.000Z' }),
+  ];
+  const closedDateIsos = ['2026-08-07T10:00:00.000Z', '2026-08-08T10:00:00.000Z'];
+  const sidecar = buildCostHealthSidecar(
+    '2026-08-08',
+    {},
+    {},
+    emptyReliabilitySeries('2026-08-08T00:00:00Z'),
+    [],
+    [],
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    { bounceRecords, closedDateIsos, nowMs }
+  );
+  assert.equal(sidecar.flowBalance.rework.roundsPerClose.architect.value, 2);
+  assert.equal(sidecar.flowBalance.rework.roundsPerClose.QA.value, 1);
+  // "trended number" shape - a trend object rides alongside the value,
+  // exactly like specced/closed already carry.
+  assert.ok('direction' in sidecar.flowBalance.rework.roundsPerClose.architect.trend);
+});
+
+test('flowBalance.rework.maxRounds names the ticket with the most bounces', () => {
+  const nowMs = Date.parse('2026-07-09T12:00:00.000Z');
+  const bounceRecords = [bounceRecord({ commit: 'c1' }), bounceRecord({ commit: 'c2' }), bounceRecord({ ticket: 'BL-1', by: 'QA', commit: 'c3' })];
+  const sidecar = buildCostHealthSidecar(
+    '2026-07-09',
+    {},
+    {},
+    emptyReliabilitySeries('2026-07-09T00:00:00Z'),
+    [],
+    [],
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    { bounceRecords, closedDateIsos: [], nowMs }
+  );
+  assert.deepEqual(sidecar.flowBalance.rework.maxRounds, { ticket: 'BL-590', rounds: 2, by: 'architect' });
+});
+
+test('flowBalance.rework.bouncesPerDay renders unavailable (null) before the epoch, never a fabricated zero', () => {
+  const nowMs = Date.parse('2026-07-26T12:00:00.000Z');
+  const bounceRecords = [bounceRecord({ by: 'architect', at: '2026-07-26T09:00:00.000Z' })];
+  const sidecar = buildCostHealthSidecar(
+    '2026-07-26',
+    {},
+    {},
+    emptyReliabilitySeries('2026-07-26T00:00:00Z'),
+    [],
+    [],
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    { bounceRecords, closedDateIsos: [], nowMs }
+  );
+  const series = sidecar.flowBalance.rework.bouncesPerDay.architect;
+  const beforeEpoch = series.find((p) => p.periodStart < '2026-07-26');
+  const onEpoch = series.find((p) => p.periodStart === '2026-07-26');
+  assert.equal(beforeEpoch.value, null);
+  assert.equal(onEpoch.value, 1);
+});
+
 test('reliability counts carry a trend per field, and daemonRestarts is always zero (no telemetry source exists yet)', () => {
   const reliability = {
     chases: [{ periodStart: '2026-07-08T00:00:00Z', value: 1 }, { periodStart: '2026-07-09T00:00:00Z', value: 4 }],
@@ -242,6 +341,111 @@ test('the rendered section shows exactly the sidecar figures, nothing invented (
   assert.match(text, /BL-100: \$4\.50/);
   assert.match(text, /specced 3\/day/);
   assert.match(text, /closed 2\/day/);
+});
+
+// ── BL-635 (record-bounce-by-role-09/14): the rework figure on the flow
+//    balance line, split by bouncing role, with a trend arrow ────────────
+
+test('a sidecar with no bounce data renders the flow balance line with no rework suffix', () => {
+  const sidecar = buildCostHealthSidecar('2026-07-09', {}, {}, emptyReliabilitySeries('2026-07-09T00:00:00Z'), [], []);
+  const text = renderCostHealthSection(sidecar);
+  assert.doesNotMatch(text, /rework/);
+});
+
+test('the flow balance line includes the rework figure, split by role, with a trend arrow', () => {
+  // Dated well after the 2026-07-25 by-attribution epoch (see the sibling
+  // pre-epoch test below) so the current window is available.
+  const nowMs = Date.parse('2026-08-08T12:00:00.000Z');
+  const bounceRecords = [
+    bounceRecord({ by: 'architect', commit: 'c1', at: '2026-08-08T10:00:00.000Z' }),
+    bounceRecord({ by: 'architect', commit: 'c2', at: '2026-08-08T10:00:00.000Z' }),
+    bounceRecord({ by: 'QA', commit: 'c3', at: '2026-08-08T10:00:00.000Z' }),
+  ];
+  const sidecar = buildCostHealthSidecar(
+    '2026-08-08',
+    {},
+    {},
+    emptyReliabilitySeries('2026-08-08T00:00:00Z'),
+    [{ periodStart: '2026-08-08T00:00:00Z', value: 3 }],
+    [{ periodStart: '2026-08-08T00:00:00Z', value: 2 }],
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    { bounceRecords, closedDateIsos: ['2026-08-08T10:00:00.000Z', '2026-08-07T10:00:00.000Z'], nowMs }
+  );
+  const text = renderCostHealthSection(sidecar);
+  assert.match(text, /\*\*Flow balance:\*\* specced 3\/day.*closed 2\/day.*rework/);
+  assert.match(text, /architect 1\.0/);
+  assert.match(text, /QA 0\.5/);
+});
+
+// ── BL-635 SEND BACK #1 (evidence sites 1-4): unavailable renders as the ──
+//    word "unavailable" end to end, never a fabricated 0 or bare arrow ────
+
+test('flowBalance.rework.roundsPerClose is null for a role whose current window is entirely pre-epoch, even with real bounces and closes', () => {
+  const nowMs = Date.parse('2026-07-20T12:00:00.000Z'); // current window ends 07-20, entirely before the 2026-07-25 epoch
+  const bounceRecords = [bounceRecord({ by: 'architect', commit: 'c1', at: '2026-07-15T09:00:00.000Z' })];
+  const sidecar = buildCostHealthSidecar(
+    '2026-07-20',
+    {},
+    {},
+    emptyReliabilitySeries('2026-07-20T00:00:00Z'),
+    [],
+    [],
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    { bounceRecords, closedDateIsos: ['2026-07-15T12:00:00.000Z'], nowMs }
+  );
+  // 1 bounce / 1 close would compute to a healthy-looking 1.0 if fabricated -
+  // the whole window is pre-epoch, so it must read unavailable instead.
+  assert.equal(sidecar.flowBalance.rework.roundsPerClose.architect, null);
+});
+
+test('flowBalance.rework.roundsPerClose is null for a role whose current window closed zero tickets', () => {
+  const nowMs = Date.parse('2026-08-08T12:00:00.000Z');
+  const bounceRecords = [bounceRecord({ by: 'architect', commit: 'c1', at: '2026-08-08T10:00:00.000Z' })];
+  const sidecar = buildCostHealthSidecar(
+    '2026-08-08',
+    {},
+    {},
+    emptyReliabilitySeries('2026-08-08T00:00:00Z'),
+    [],
+    [],
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    { bounceRecords, closedDateIsos: [], nowMs }
+  );
+  assert.equal(sidecar.flowBalance.rework.roundsPerClose.architect, null);
+});
+
+test('the flow balance line renders "unavailable" for a role with no honest figure - never 0.0, never a bare arrow', () => {
+  const nowMs = Date.parse('2026-07-20T12:00:00.000Z'); // current window entirely pre-epoch, as above
+  const bounceRecords = [bounceRecord({ by: 'architect', commit: 'c1', at: '2026-07-15T09:00:00.000Z' })];
+  const sidecar = buildCostHealthSidecar(
+    '2026-07-20',
+    {},
+    {},
+    emptyReliabilitySeries('2026-07-20T00:00:00Z'),
+    [],
+    [],
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    { bounceRecords, closedDateIsos: ['2026-07-15T12:00:00.000Z'], nowMs }
+  );
+  const text = renderCostHealthSection(sidecar);
+  assert.match(text, /rework architect unavailable rounds\/close/);
+  assert.doesNotMatch(text, /architect 0\.0/);
 });
 
 // BL-350 headless-resource-sampling-03: a quiet period (samples exist, none
@@ -370,6 +574,27 @@ test('computeCostHealthSidecar wires real BL-100/BL-096 producers together witho
   const sidecar = computeCostHealthSidecar(target, [{ role: 'coder', worktreePath: target }]);
   assert.equal(sidecar.schemaVersion, COST_HEALTH_SIDECAR_SCHEMA_VERSION);
   assert.deepEqual(sidecar.topExpensiveTickets, []);
+});
+
+// ── BL-635: computeCostHealthSidecar reads the real durable bounce log ──
+
+test('computeCostHealthSidecar folds real .swarmforge/bounces/ records into flowBalance.rework', () => {
+  const target = mkTmp();
+  git(target, ['init', '-q']);
+  git(target, ['config', 'user.email', 't@t']);
+  git(target, ['config', 'user.name', 't']);
+  git(target, ['commit', '-q', '-m', 'init', '--allow-empty']);
+
+  const nowMs = Date.parse('2026-07-26T12:00:00.000Z');
+  fs.mkdirSync(path.join(target, '.swarmforge', 'bounces'), { recursive: true });
+  fs.writeFileSync(path.join(target, '.swarmforge', 'bounces', '2026-07.jsonl'), JSON.stringify(bounceRecord({ at: '2026-07-26T09:00:00.000Z' })) + '\n');
+
+  const sidecar = computeCostHealthSidecar(target, [{ role: 'coder', worktreePath: target }], nowMs);
+  // this fixture repo closes no tickets, so the role's current-window value
+  // is legitimately unavailable (null) - the KEY existing is the proof the
+  // real bounce log was read and folded in, not a truthy value.
+  assert.ok(Object.prototype.hasOwnProperty.call(sidecar.flowBalance.rework.roundsPerClose, 'architect'));
+  assert.deepEqual(sidecar.flowBalance.rework.maxRounds, { ticket: 'BL-590', rounds: 1, by: 'architect' });
 });
 
 // ── BL-312: master-resident worktreePath collision reaches the sidecar too ──

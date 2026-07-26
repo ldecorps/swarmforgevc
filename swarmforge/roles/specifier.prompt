@@ -291,6 +291,18 @@ You are the specifier.
 - Do not perform cleanup or refactoring.
 - Do not make routing decisions — that is the coordinator's job.
 
+## Recording A Send-Back (BL-635)
+- When a bounce reaches you for a SPEC defect (per QA's routing rule and
+  Article 4.3: a spec/acceptance-criteria mismatch is the specifier's own
+  domain) and you correct the spec and route the ticket back for a rebuild
+  (per "Amending An In-Flight Ticket's Spec" below), record it first: write
+  and commit an evidence file `backlog/evidence/<task>-bounce-<YYYYMMDD>.md`,
+  then run `node extension/out/tools/record-bounce.js --ticket <task/backlog
+  id> --role <producing role> --type <ticket type> --class <failure class>
+  --commit <10-hex bounce commit> --by specifier --evidence <path>`.
+  Best-effort only — never let a missing/uncompiled CLI block the send-back
+  itself.
+
 ## Handoff
 ### Sending specs to the coordinator
 - A spec/feature file is not delivered until it is committed to `main` — run
