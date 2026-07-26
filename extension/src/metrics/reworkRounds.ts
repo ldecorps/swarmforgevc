@@ -90,10 +90,13 @@ function countClosed(closedDateIsos: string[], startMs: number, endMs: number): 
 // the full span, which blends pre-epoch days into the denominator while
 // they are structurally incapable of contributing to the numerator, quietly
 // deflating the figure and manufacturing trend arrows out of nothing
-// (SEND BACK #2 site 1). Only when the clamped sub-period is empty (the
-// window lies entirely before the epoch) or closes zero tickets is there no
-// denominator a real figure could honestly report - both absence-of-data,
-// never a healthy 0.
+// (SEND BACK #2 site 1). When the clamped sub-period is empty (the window
+// lies entirely before the epoch), `countClosed` below finds nothing in an
+// inverted/empty range and reports 0 on its own, so an explicit early-exit
+// for that case would be redundant with the `closed === 0` guard - the
+// window-lies-entirely-before-epoch case and the closes-zero-tickets case
+// are the same absence-of-data outcome through the same check, never a
+// healthy 0.
 function windowPoint(
   periodStart: string,
   records: BounceRecord[],
@@ -105,9 +108,6 @@ function windowPoint(
 ): DailyReworkPoint {
   const roleEpochStartMs = role === UNATTRIBUTED_ROLE ? -Infinity : epochStartMs;
   const measuredStartMs = Math.max(windowStartMs, roleEpochStartMs);
-  if (measuredStartMs >= windowEndMs) {
-    return { periodStart, value: null };
-  }
   const closed = countClosed(closedDateIsos, measuredStartMs, windowEndMs);
   if (closed === 0) {
     return { periodStart, value: null };
