@@ -16,6 +16,17 @@ invariants:
 # ^ BL-633 retro-fixture: the one property all four of slice 1's architect
 #   send-backs (#1/#4/#5/#6) circled, never stated in the 315-line spec.
 #   Declared here as the schema's worked example (backlog-schema.md `invariants`).
+unparked: |
+  UNPARKED 2026-07-26 (coordinator session, human directive) — moved `hold/` ->
+  `paused/`. Both unpark conditions below were checked live and are satisfied:
+  BL-633 and BL-635 are both in `backlog/done/`; `grep -ic invariant
+  swarmforge/roles/specifier.prompt` = 6 (was 0 at parking); `grep -c
+  record-bounce swarmforge/roles/architect.prompt` = 2 (was 0 at parking).
+  Sequencing note: BL-643's naming ruling (2026-07-26, same session) is "Onboarder"
+  — full rename, landing as its own parcel BEFORE this ticket resumes further, per
+  BL-643's own acceptance criterion 1. Do not resume BL-590 work ahead of that
+  rename parcel.
+
 park: |
   PARKED in `hold/` on 2026-07-25 by operator directive, and `hold/` is NOT read by
   promotion — nothing will pick this up on its own. It comes back only when a human
