@@ -129,39 +129,64 @@ function nowMsForCategory(category) {
 
 const windowOffsetArb = fc.integer({ min: 0, max: WINDOW_MS - 1 });
 
-test('property: the current-window rounds-per-close figure is unavailable exactly when the window is entirely pre-epoch or closed zero tickets, and a real ratio otherwise', () => {
+// BL-635 SEND BACK #2 (evidence site 3): the original version of this
+// property placed bounce offsets ANYWHERE in the window, including before
+// the epoch - a state that cannot physically occur (nothing recorded a
+// bounce until the recorder shipped) - and then asserted the NAIVE
+// full-window ratio as correct for the straddling case, which pinned the
+// defect (a straddling window blending unmeasured pre-epoch days into the
+// denominator) as the expected behaviour. Corrected: bounce timestamps are
+// clamped up into the measured sub-window - [epoch, windowEnd) intersected
+// with the window - so a "before the recorder existed" bounce is never
+// generated; closed-ticket dates are left unclamped, since closing a ticket
+// was never epoch-gated and real pre-epoch closes exist (the legacy
+// corpus). The expected value is computed over that same measured
+// sub-window, matching windowPoint's clamp-to-measured-period fix.
+test('property: the current-window rounds-per-close figure is unavailable whenever its measured sub-period is empty or closes zero tickets, and a real ratio over that measured sub-period otherwise', () => {
   fc.assert(
     fc.property(
       nowCategoryArb,
-      fc.array(windowOffsetArb, { minLength: 1, maxLength: 5 }), // bounce offsets within the current window
-      fc.array(windowOffsetArb, { minLength: 0, maxLength: 3 }), // closed-ticket offsets within the current window
+      fc.array(windowOffsetArb, { minLength: 1, maxLength: 5 }), // bounce offsets, clamped below to at-or-after the epoch
+      fc.array(windowOffsetArb, { minLength: 0, maxLength: 3 }), // closed-ticket offsets - never epoch-gated
       (category, bounceOffsets, closedOffsets) => {
         const nowMs = nowMsForCategory(category);
         const currentStart = nowMs - WINDOW_MS;
-        const records = bounceOffsets.map((offset, i) => ({
-          ticket: 'BL-1',
-          producingRole: 'coder',
-          ticketType: 'defect',
-          failureClass: 'behavior',
-          commit: i.toString(16).padStart(10, '0'),
-          at: new Date(currentStart + offset).toISOString(),
-          by: 'architect',
-        }));
+        const measuredStart = Math.max(currentStart, EPOCH_MS);
+
+        const records = bounceOffsets.map((offset, i) => {
+          const ms = Math.max(currentStart + offset, measuredStart);
+          return {
+            ticket: 'BL-1',
+            producingRole: 'coder',
+            ticketType: 'defect',
+            failureClass: 'behavior',
+            commit: i.toString(16).padStart(10, '0'),
+            at: new Date(ms).toISOString(),
+            by: 'architect',
+          };
+        });
         const closedDateIsos = closedOffsets.map((offset) => new Date(currentStart + offset).toISOString());
 
         const series = computeRoundsPerCloseSeriesByRole(records, closedDateIsos, nowMs);
         const currentPoint = series.architect[series.architect.length - 1];
 
-        const entirelyPreEpoch = nowMs <= EPOCH_MS;
-        const zeroClosed = closedDateIsos.length === 0;
-        if (entirelyPreEpoch || zeroClosed) {
+        const measuredIsEmpty = measuredStart >= nowMs;
+        const closedInMeasuredWindow = closedDateIsos.filter((iso) => {
+          const ms = Date.parse(iso);
+          return ms >= measuredStart && ms < nowMs;
+        }).length;
+
+        if (measuredIsEmpty || closedInMeasuredWindow === 0) {
           // real bounces and closes may both be present (this is exactly
           // the reproduced defect: fabricating a healthy-looking ratio out
           // of data that predates measurement, or dividing by zero closes)
           // - it must still read unavailable, never a number.
           assert.equal(currentPoint.value, null);
         } else {
-          assert.equal(currentPoint.value, records.length / closedDateIsos.length);
+          // every generated bounce record was clamped into
+          // [measuredStart, nowMs) by construction, so records.length IS
+          // the measured-sub-period bounce count.
+          assert.equal(currentPoint.value, records.length / closedInMeasuredWindow);
         }
       }
     )
