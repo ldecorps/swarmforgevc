@@ -9,8 +9,18 @@ severity: medium
 priority: 04
 direction: human-requested
 depends_on: []
-assigned_to: specifier
+assigned_to: coder
 mutation_cost: medium
+
+invariants:
+  - "A ticket with no declared invariants incurs zero new obligations from this rule at any stage — the common path reads unchanged for it"
+  - "First authorship of a declared invariant's property test rests with the coder in every path this ticket writes, including bounce rework — no path leaves the architect authoring it"
+  - "A declared invariant is never silently unencoded: every path carries either an executable property test with asserted reach or a parcel-recorded reason — absence of both is always a send-back"
+
+required_wiring:
+  - "swarmforge/roles/coder.prompt::executable property test::the authorship rule this ticket exists to add (acceptance 5, scenario 01)"
+  - "swarmforge/roles/coder.prompt::demonstrably reach::the generator-reach contract, part of the rule not a footnote (acceptance 5, scenario 02)"
+  - "swarmforge/roles/architect.prompt::invariant-unencoded::the failure class that lets BL-635's metric split property-never-encoded from property-violated (scenario 05)"
 
 approval_context: >
   Operator, 2026-07-26 00:55, watching BL-635's first architect send-back and
@@ -90,23 +100,81 @@ description: |
      test" is recorded like any other, so BL-635's metric can distinguish
      "property violated" from "property never encoded".
 
-acceptance: |
-  Specifier writes the scenarios. Minimum behaviour:
+acceptance: specs/features/BL-654-invariant-property-test-coder-authored.feature
 
-  1. A ticket with one `invariants:` entry whose parcel lacks a property test
-     is bounced by the architect naming the missing test — fixture mirrors
-     BL-635 invariants[2].
-  2. A parcel WITH the property test where the test's generator provably
-     reaches the quantified states (asserted coverage, not hoped) passes that
-     gate.
-  3. Non-vacuity: seed a property test that deletes its own assertion (or
-     never reaches the deep state) — the gate (architect check or mutation
-     sweep) catches it.
-  4. A ticket with NO invariants: zero new obligations, byte-identical flow.
-  5. `coder.prompt` gains the rule; `grep -ic invariant coder.prompt` goes
-     from 0 to nonzero, and the wording names the generator-reach requirement.
-  6. Retro-fixture: BL-635's invariants[2] encoded as the worked example —
-     the property test that would have caught roundsPerClose pre-review.
+spec_notes: |
+  Specced 2026-07-26 by specifier (expedited run, swarm stopped). The feature
+  file translates the approved minimum-behaviour list 1:1; `human_approval`
+  stays `approved` because the operator approved that list and directed
+  immediate filing ("file le TOUT DE SUITE") — same faithful-translation
+  posture as BL-635. Criterion -> scenario map (invariant-property-test-NN):
+  1 -> 04+08, 2 -> 07, 3 -> 09+10, 4 -> 06, 5 -> 01+02+03, 6 -> 07+08;
+  description shape item 4 (recording wiring) -> 05.
+
+  Decisions resolved by the specifier:
+  - ENFORCEMENT IS PROMPT RULES + EXISTING GATES, no new gate tool
+    (out_of_scope confirms). Acceptance items about "the architect bounces"
+    are pinned as the prompt text that governs that judgement (scenarios
+    01-06) plus an executable demonstration on the worked example that the
+    checks actually catch both failure modes (scenarios 07-10).
+  - CODER.PROMPT CONFLICT: the current Does-Not-Own exclusion says property
+    tests "stay with the specifier/hardener" — stale twice over (BL-479 gave
+    the architect the property pass; this ticket gives the coder declared-
+    invariant authorship). The amendment must rescope that exclusion in the
+    same edit (scenario 03), or the new rule contradicts standing text. The
+    architect keeps the BL-479 property-coverage pass for UNDECLARED
+    properties on touched modules; declared-invariant first authorship moves
+    to the coder.
+  - NON-ENCODABILITY HATCH: some invariants quantify over prose/process, not
+    a pure module (BL-635 invariants[0] is grep-sweepable, not fast-check-
+    able; BL-654's own invariants are prompt-text properties). For those the
+    parcel carries a stated reason instead of a test — SILENCE about a
+    declared invariant is never acceptable; absent both, it is a send-back.
+    The architect reviews the stated reason as part of the existence check.
+  - GENERATOR-REACH is part of the contract (scenario 02): the test asserts
+    its own generator reached the quantified states (a counted reachability
+    floor, not hope), weights progress ops for multi-step folds, and
+    CONSTRUCTS colliding pairs rather than drawing them independently — the
+    two 2026-07-25 failure shapes (a property green 400/4000 runs against a
+    live defect). Non-vacuity (break-then-restore) and reachability are TWO
+    separate failure modes; scenarios 09 and 10 pin one each.
+  - RECORDING (scenario 05): the missing-encoding send-back records with
+    failure class `invariant-unencoded` (vs `behavior` for a violated
+    property). Worded independent of the CLI name so it composes with
+    BL-635 in flight (parked for this expedite): BL-654 states the class in
+    architect.prompt; BL-635's `record-bounce --by architect` invocation
+    carries it when that lands. No recording machinery is built here.
+  - WORKED EXAMPLE (scenarios 07-10): BL-635 invariants[2] ("pre-epoch
+    absence renders unavailable, never zero") as a SELF-CONTAINED fixture —
+    a trend renderer over a daily series with a recording epoch, correct
+    variant renders pre-epoch unavailable, defective variant fabricates 0
+    (the roundsPerClose shape). The live sidecar module is NOT targeted:
+    BL-635 is parked mid-flight and its roundsPerClose is not on main.
+    Coder-authored property test lives in extension/test/
+    *.property.test.js, runnable only via `npm run test:properties`
+    (vitest.properties.config.mjs), excluded from unit/coverage/mutation
+    per the standing separation rule. Step handlers drive the fixture
+    variants in-process (fast-check 4.9.0, already pinned).
+  - IR-DRY: two medium possible-synonym findings, both resolved as
+    genuinely distinct steps (coder vs architect prompt Givens; the real
+    test vs its shallow variant) — no unification, it would change what the
+    scenarios assert.
+
+  e2e QA procedure (live verification):
+  1. `grep -ic invariant swarmforge/roles/coder.prompt` returns nonzero
+     (was 0); `grep -c 'demonstrably reach' swarmforge/roles/coder.prompt`
+     and `grep -c invariant-unencoded swarmforge/roles/architect.prompt`
+     both nonzero.
+  2. `npm run test:properties` green, including the new worked-example
+     property test; its output shows the reachability floor assertion ran.
+  3. Flip the fixture to the defective variant in a scratch copy: the
+     property test FAILS with a counterexample naming a pre-epoch window;
+     restore, green again (non-vacuity ritual on the worked example).
+  4. `specs/pipeline/scripts/run_acceptance.sh specs/features/
+     BL-654-invariant-property-test-coder-authored.feature` green.
+  5. Confirm the architect.prompt Invariants Review section reads
+     existence-first: the BL-633 hand-verification pass now explicitly
+     follows the existence/non-vacuity check.
 
 out_of_scope: |
   - Retro-fitting property tests onto shipped tickets.

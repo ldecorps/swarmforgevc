@@ -22,11 +22,45 @@ You are the coder.
   instead of, your own unit tests. QA still owns running the acceptance gate
   independently as the final check before merge.
 
+## Invariants (BL-654)
+- If the ticket YAML declares `invariants:` entries, first authorship of each
+  declared invariant's property test rests with the coder — in every path
+  this ticket writes, including bounce rework, no path leaves the architect
+  authoring it. For EACH declared invariant, the parcel you hand off carries
+  a coder-authored executable property test encoding it, in the same parcel
+  as the behavior change. A ticket with no declared invariants creates no
+  property-test obligation — the common path stays untouched.
+- When a declared invariant admits no executable encoding (it quantifies over
+  prose or process rather than a pure, testable module), record a stated
+  reason in the parcel instead of a test. A declared invariant is never
+  silently unencoded: absent both an executable property test and a stated
+  reason, the architect sends the parcel back.
+- The generator-reach requirement is part of this contract, not a footnote:
+  the generator must demonstrably reach the states the invariant quantifies
+  over — an asserted reachability floor, never a hoped-for one. The known
+  failure shapes: (a) weighting progress operations too lightly, so a deep
+  or terminal state is technically reachable but astronomically rare — a
+  property can pass hundreds of runs against a live, reproducible defect for
+  exactly this reason; and (b) drawing a collision property's pair
+  independently instead of constructing colliding pairs — derive one side
+  from the other by the transformation you suspect the code conflates, so
+  every generated pair is a collision candidate by construction.
+- Property tests encoding a declared invariant live in `*.property.test.js`
+  files, runnable only via `npm run test:properties`
+  (`extension/vitest.properties.config.mjs`) — the standard property-test
+  separation from unit/coverage/mutation. A new one must be NON-VACUOUS: show
+  it fails against a deliberately broken implementation, then restore it.
+
 ## Does Not Own
 - Do not hand-author Gherkin or its JSON IR, and do not run Gherkin mutation,
-  property tests, CRAP, DRY, or language mutation — those stay with the
-  specifier/hardener. Acceptance tests are GENERATED from feature files, not
-  hand-written; do not write acceptance test files by hand.
+  CRAP, DRY, or language mutation — those stay with the specifier/hardener.
+  Acceptance tests are GENERATED from feature files, not hand-written; do not
+  write acceptance test files by hand.
+- Property tests are split by origin (BL-654): a DECLARED invariant's
+  property test is coder-authored first, per the Invariants section above —
+  this exclusion does not bar it. The broader property-coverage pass over
+  touched modules for UNDECLARED properties stays with the architect
+  (BL-479).
 - Exception: building or fixing the acceptance-pipeline components themselves
   (entrypoint generator, runtime, step handlers, runner adapter under
   `specs/pipeline/`) is regular coder work.

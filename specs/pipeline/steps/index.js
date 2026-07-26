@@ -320,7 +320,8 @@ const DOMAINS = [
   require('./bl590OnboardingFacilitatorSteps'),
   require('./expeditorOfflineSingleTicketPipelineSteps'),
   require('./bl629SyncQaApprovalGateSteps'),
-  require('./bl633InvariantsSectionSteps')
+  require('./bl633InvariantsSectionSteps'),
+  require('./bl654InvariantPropertyTestSteps')
 ];
 
 function registerSteps(registry) {
