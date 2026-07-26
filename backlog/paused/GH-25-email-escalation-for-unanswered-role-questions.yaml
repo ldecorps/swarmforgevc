@@ -1,0 +1,88 @@
+id: GH-25
+title: "Email escalation for unanswered role questions (role_ask): unanswered past a threshold alerts the human via GitHub mention"
+milestone: M8
+type: feature
+status: todo
+epic: swarm-reliability
+human_approval: pending
+severity: medium
+priority: 20
+direction: human-requested
+depends_on: []
+assigned_to:
+mutation_cost: medium
+
+approval_context: >
+  Your GH issue #25, specced faithfully: operator_runtime.bb tick scans
+  .swarmforge/operator/role-awaiting/*.json; past-threshold un-escalated
+  markers escalate once (escalated_at_ms stamped, no per-tick spam);
+  threshold SWARMFORGE_ASK_ESCALATION_MINUTES default 30; transport is a
+  GitHub mention comment on a dedicated ops issue via api.github.com with
+  the cached creds (GitHub sends the email, zero new secrets); fires even
+  for never-delivered questions; state surfaced in status.json. My choices
+  needing sign-off: (1) the dedicated ops issue number comes from config
+  (SWARMFORGE_ASK_ESCALATION_ISSUE or swarmforge.conf) and a missing/bad
+  value degrades to a status.json + operator-log warning, never a crash;
+  (2) SMTP fallback is NOT specced now, per your "only as fallback variant
+  if this is rejected" — reply if you want it included as a variant.
+
+source: |
+  GitHub issue https://github.com/ldecorps/swarmforgevc/issues/25, seeded as
+  backlog root intake GH-25, drained by the specifier 2026-07-25. Human ask
+  (verbatim shape): tick scan of role-awaiting markers; threshold env
+  SWARMFORGE_ASK_ESCALATION_MINUTES default 30; one-shot escalated_at_ms
+  stamp; GitHub mention transport (@ldecorps on a dedicated ops issue) so
+  GitHub sends the email with zero new secrets; must fire even if the
+  question never reached Telegram — the escalation doubles as a detector
+  for silently dropped questions; surface pending/escalated state in
+  status.json.
+
+description: |
+  ## What
+
+  A role question raised via role_ask.bb that stays unanswered past a
+  threshold must reach the human by email. The operator runtime's tick
+  scans `.swarmforge/operator/role-awaiting/*.json` (written by
+  `swarmforge/scripts/role_ask.bb`); any marker whose age since
+  `asked_at_ms` exceeds the threshold and which carries no
+  `escalated_at_ms` is escalated exactly once, then stamped with
+  `escalated_at_ms` in the marker so subsequent ticks skip it.
+
+  ## Behavior
+
+  - Threshold: `SWARMFORGE_ASK_ESCALATION_MINUTES`, default 30.
+  - Transport: a comment mentioning @ldecorps on a dedicated ops issue via
+    api.github.com using the already-cached GitHub creds — GitHub delivers
+    the email. No new secrets. (Plain SMTP was offered by the human only as
+    a fallback variant and is out of scope until requested.)
+  - Delivery-independent: the marker ages regardless of whether the
+    question ever reached Telegram, so the escalation doubles as a detector
+    for silently dropped questions (see sibling defect GH-26 — this ticket
+    is the safety net ABOVE that fix, not a substitute for it).
+  - Visibility: pending and escalated question state is surfaced in
+    status.json each tick.
+
+  ## Integration points (verified live 2026-07-25)
+
+  - `swarmforge/scripts/operator_runtime.bb` `tick!` (~:1575) and its
+    status.json publisher (`status-file`, ~:135).
+  - `swarmforge/scripts/role_ask.bb` marker shape
+    (`.swarmforge/operator/role-awaiting/<role>.json`, `asked_at_ms`).
+
+out_of_scope: |
+  - Plain SMTP transport (fallback variant only if GitHub mention is
+    rejected by the human).
+  - Fixing the undeliverable-drop wedge itself — that is defect GH-26.
+  - Re-escalation / reminder cadence after the one-shot escalation; the
+    single stamp is the contract.
+
+acceptance: specs/features/GH-25-role-ask-email-escalation.feature.draft
+
+notes: |
+  QA e2e procedure: with the operator runtime live, write a synthetic
+  role-awaiting marker back-dated past the threshold (no escalated_at_ms);
+  observe within one tick a GitHub comment mentioning the human on the ops
+  issue, escalated_at_ms stamped into the marker, and status.json showing
+  the question as escalated; confirm the next tick posts nothing further.
+  Then verify a fresh under-threshold marker escalates nothing and shows
+  as pending in status.json.

@@ -1,0 +1,139 @@
+id: BL-650
+title: "flow-watchdog measures parcel age in WALL-CLOCK time: every swarm stop, cooldown night and rotation wait counts as delay, so tomorrow's 07:00 cooldown lift fires an ESCALATE storm over parcels with zero active-time age"
+milestone: M8
+type: defect
+status: todo
+epic: swarm-reliability
+human_approval: approved
+severity: high
+priority: 08
+direction: human-requested
+depends_on: []
+assigned_to: specifier
+mutation_cost: medium
+
+approval_context: >
+  Operator, 2026-07-25 ~22:00, after a WARN flow-stall reached their Telegram
+  for a parcel that was queued behind a single-resident rotation with the
+  swarm having been STOPPED for 6 of the 15 counted minutes. Asked "il ne
+  décompte pas le temps en temps actif ?" — measured answer: no — then
+  "go for it".
+
+source: |
+  ## The live alarm that exposed it (2026-07-25 21:44)
+
+  ```
+  ⚠️ WARN flow-stall: parcel 20260725T202729Z_000808_from_QA
+     (QA->coder,cleaner,architect,hardender,documenter, note)
+     aged 15m in cleaner new - rotate.
+  ```
+
+  Reality behind those 15 minutes:
+  - parcel created 21:29, swarm STOPPED 21:30-21:36 (operator-ruled window
+    boundary) — 6 of the 15 minutes were swarm-down;
+  - after restart, the single mono-router resident was legitimately working
+    specifier-then-coder; `cleaner` is DORMANT BY DESIGN under rotation. A
+    5-recipient broadcast necessarily waits in 4 inboxes while the resident
+    serialises. Nothing was stalled; the pipeline was doing exactly its job.
+
+  ## Where the clock is wrong, precisely
+
+  `swarmforge/scripts/flow_watchdog_lib.bb`:
+
+  - `:89-97 parcel-age-ms` — age = `now-ms − (enqueued_at || created_at)`.
+    Pure wall clock. No subtraction of stop intervals or pauses.
+  - `:40-42` — `default-warn-ms` 15 min (`flow_watchdog_warn_ms 900000`),
+    calibrated for a PARALLEL pack where 15 min in `new/` means dispatch is
+    broken. Under depth-1 rotation, 15 min is a NOMINAL rotation wait.
+  - `:113-127 decide-tier` — by deliberate structural constraint, `snoozed?`
+    is the ONLY mute: "never a role/type/dormancy branch". The dormancy
+    knowledge it does have (`:live-session?`) only picks the VERB
+    (rotate vs nudge), never the tier.
+
+  ## The half-insight already in the code — build on it, it names the principle
+
+  `parcel-age-ms` PREFERS `enqueued_at` over `created_at`, precisely so a
+  redelivered parcel reads fresh in its new mailbox: the author understood
+  "aged" must mean "aged HERE". The missing second step is "aged here WHILE
+  SOMEONE COULD PROCESS IT". This ticket is that second step.
+
+  ## The predictable storm this is racing
+
+  The nightly cooldown pauses the swarm 19:00-07:00. Any parcel resting in a
+  mailbox overnight accrues ~11-12h of wall age against a 15m warn and an
+  escalate threshold. **At the 07:00 auto-resume, the watchdog's first sweep
+  fires ESCALATE on all of them at once** — maximum-severity alarms, on the
+  human's Telegram, about parcels whose ACTIVE age is zero seconds. The same
+  desensitisation argument as BL-647: a channel that opens every morning with
+  false 🚨 cannot carry a real one.
+
+description: |
+  ## Shape
+
+  1. **Active-time clock.** Effective age = wall age minus intervals in which
+     the swarm could not process: control/cooldown pauses and stop-to-start
+     gaps. The sources are already durable — `control-pause.json` transitions
+     are timestamped, stops/starts are in the kill-all audit and launch logs.
+     If interval reconstruction is unreliable for a period, fail toward wall
+     clock (over-alarming is the safe direction) but say so in the alarm text.
+  2. **Rotation-aware thresholds, NOT a dormancy mute.** Under a `rotation
+     router` pack the warn/escalate defaults must reflect that a parcel waits
+     its rotation turn — pack-aware threshold RESOLUTION (config in,
+     `decide-tier` untouched) preserves the deliberate structural guarantee
+     that `decide-tier` never grows a role/type/dormancy branch. `snoozed?`
+     stays the only mute.
+  3. **The unsuppressable invariant is preserved.** This ticket changes what
+     the clock measures, never whether the alarm may speak. A parcel genuinely
+     ignored while the swarm is ACTIVE alarms exactly as loudly as today.
+
+  ## Relation to BL-647 — same family, deliberately separate
+
+  Same root class: an observer written before the rotation router existed and
+  never told about it. Different mechanism — BL-647 fixes an event PRODUCER
+  (dead-agent-events), this fixes an alarm CLOCK and its thresholds. Kept as
+  two parcels because today's post-mortem measured what oversized parcels
+  cost; a reviewer should hold one property per parcel, and each carries its
+  own non-vacuity fixture.
+
+acceptance: |
+  Specifier writes the scenarios. Minimum behaviour:
+
+  1. Tonight's fixture: parcel enqueued 1 min before a stop, swarm down 6 min,
+     then active 8 min — effective age 9 min, NO warn at the 15-min wall mark.
+     Warn fires only once ACTIVE time crosses the threshold.
+  2. The morning storm: parcel enqueued at cooldown start, swarm paused all
+     night — at the 07:00 resume its effective age is ~0 and NOTHING fires;
+     escalate requires the escalate threshold of ACTIVE time after resume.
+  3. Non-vacuity, load-bearing: a parcel ignored for the full warn threshold
+     while the swarm is ACTIVE and unpaused still fires WARN, and ESCALATE at
+     the escalate threshold — proving the fix is a better clock, not a mute.
+  4. `decide-tier`'s structural guarantee is intact: `snoozed?` remains the
+     only mute; no role/type/dormancy branch is added to it. Assert on the
+     function's inputs, not by code inspection.
+  5. Pause/stop intervals come from the durable records, never inferred from
+     process liveness at sweep time. An unreconstructable interval degrades to
+     wall clock, flagged in the alarm text.
+  6. Rotation pack thresholds: under `rotation router`, a broadcast waiting a
+     nominal rotation turn does not warn; the same wait under a parallel pack
+     (all roles resident) still does. Threshold resolution is config-driven
+     and the default derivation is stated in the conf comment.
+  7. Alarm text states the age it used ("aged 9m active (15m wall)") so a
+     human reading history can tell which clock spoke.
+
+out_of_scope: |
+  - Muting alarms during a pause. Deliberately the opposite of this ticket:
+    the alarm may always speak; only its clock changes. The unsuppressable
+    posture (`flow_watchdog_lib.bb:278`) is a shipped invariant.
+  - BL-647's dead-agent-events producer. Same family, separate mechanism,
+    separate parcel — see description.
+  - Redesigning enqueued_at/created_at semantics. The existing preference is
+    correct and is this ticket's own foundation.
+
+notes: |
+  Fourth rotation-blindness finding of 2026-07-25, and the day's recurring
+  shape once more: the watchdog is well-built (fails closed on unparseable
+  headers, re-alarms only on tier change, durable state, deliberate
+  structural constraints) and still wrong, because one input — what time
+  actually counts — was never questioned when the rotation pack became the
+  default. The enqueued_at preference shows the author was one step from the
+  right abstraction; this ticket takes the step.

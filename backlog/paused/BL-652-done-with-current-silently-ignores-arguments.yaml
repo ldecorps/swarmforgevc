@@ -1,0 +1,80 @@
+id: BL-652
+title: "done_with_current.sh silently ignores every argument and completes anyway: a usage probe (--help) archives the whole in-process batch"
+milestone: M8
+type: defect
+status: todo
+epic: swarm-reliability
+human_approval: pending
+severity: medium
+priority: 40
+direction: swarm-proposed
+depends_on: []
+assigned_to:
+mutation_cost: low
+
+approval_context: >
+  Filed from an accepted hardener rule_proposal (2026-07-25): a "--help"
+  probe archived both in-process batch items, including a not-yet-worked
+  BL-633 handoff, before merge/implement/forward — only the git-based
+  forward saved the ticket. The prompt-rule mitigation is already landed in
+  hardender.prompt and cleaner.prompt; this ticket is the tooling half.
+  Firm: any argument must fail fast with NO completion side effect. My
+  choices needing sign-off: --help also fails non-zero but prints the usage
+  text (no special exit-0 help mode, keeping the contract "this script takes
+  no arguments"); scope is the done_with_current family only,
+  ready_for_next's internal --idle-boundary contract untouched.
+
+source: |
+  rule_proposal handoff from hardender, 2026-07-25 (scope role:hardender):
+  "done_with_current.sh has no --help. Any arg in batch mode archives ALL
+  current batch items and rotates home immediately. Never call it to probe
+  usage; only once all batch items' real work is done."
+  Rationale: "Ran --help for usage; it archived both batch items incl. an
+  unworked BL-633 handoff before merge/implement/forward. Git-based forward
+  saved it, but could stall a ticket silently."
+
+description: |
+  ## Defect
+
+  `done_with_current.sh` execs `done_with_current.bb`, whose dispatch layer
+  (`swarmforge/scripts/dispatch_lib.bb` `run-helper!`) execs the configured
+  mode helper WITHOUT forwarding argv at all, and neither
+  `done_with_current_batch.bb` nor `done_with_current_task.bb` reads
+  `*command-line-args*`. So an invocation with any argument — typically a
+  `--help` usage probe — silently discards the argument and performs the
+  full, destructive completion action: in batch mode it archives EVERY
+  in-process batch item (stamping `completed_at`) and then runs
+  `ready_for_next_batch.sh --idle-boundary`, which on a mono-router pack
+  rotates the resident away. A destructive script that fail-opens on
+  unrecognized input is the defect; the incident above nearly stalled a
+  ticket silently.
+
+  ## Fix shape (behavioral, not prescriptive)
+
+  Invoking `done_with_current.sh` with ANY argument must fail fast: non-zero
+  exit, usage text stating the no-argument contract, and NO completion side
+  effect (nothing moved, no completed_at stamped, no ready_for_next /
+  idle-boundary chained, no rotation). The guard must hold in both task and
+  batch receive modes. `--help` is just an argument: same fail-fast path,
+  with the usage text serving as the help output.
+
+out_of_scope: |
+  - ready_for_next.sh / ready_for_next_batch.sh argument handling: the
+    internal `--idle-boundary` contract is used by the completion helpers
+    themselves and is untouched here.
+  - Any change to what an argumentless completion does. The archive +
+    idle-boundary behavior is correct when invoked deliberately.
+  - Other swarm scripts' arg hygiene: a broader sweep is a separate ticket
+    if wanted; this one fixes the script whose fail-open is destructive.
+
+acceptance: specs/features/BL-652-done-with-current-arg-rejection.feature.draft
+
+notes: |
+  QA e2e procedure: in a scratch role mailbox with a two-item in_process
+  batch, run `done_with_current.sh --help` — expect non-zero exit, usage
+  text, both items still in in_process, no completed batch dir, and no
+  ready_for_next output; then run `done_with_current.sh` with no arguments
+  and confirm the batch archives normally. Repeat the argument case in task
+  mode with a single in_process handoff.
+  Prompt-rule mitigation landed with this spec commit (hardender.prompt,
+  cleaner.prompt) — the ticket is the tooling fix, not the discipline.
