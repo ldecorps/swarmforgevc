@@ -1,0 +1,144 @@
+id: BL-690
+title: "`./swarm ensure` cannot restart handoffd: its daemon repair runs the health PROBE, which alarms and halts the swarm instead of starting the daemon"
+milestone: M8
+type: defect
+severity: high
+status: todo
+epic: swarm-reliability
+human_approval: pending
+priority: 02
+direction: human-requested
+mutation_cost: medium
+depends_on: []
+invariants:
+  - "Ensure's daemon repair can never halt the swarm: for every daemon state (absent, empty, stale, live, already-halted) and whether the repair succeeds or fails, ensure kills no tmux session, writes no `daemon/stop` marker, and records no halt."
+  - "Ensure stays idempotent from any daemon state: a second consecutive run reports OK and leaves exactly one live handoffd — never a second one."
+acceptance: specs/features/BL-690-ensure-daemon-repair-starts-not-halts.feature
+
+approval_context: >
+  The operator's intake recommends Option A (point `ensure-daemon!` at the same
+  lifecycle script the launch paths already use) over Option B (teach
+  `handoffd_supervisor.bb --check-once` a `--repair` flag). This ticket specifies
+  Option A, because Option B would put a start path inside the halt-authority
+  script and split startup logic across two owners. Confirm that choice. Also
+  confirm the stronger-than-asked scenario 06: scenario 01 and 06 must run with
+  NO `SWARM_ENSURE_SUPERVISOR_CMD` override, because the env seam is exactly what
+  hid this defect for as long as it existed — the ticket therefore constrains how
+  the test may be written, not only what it must assert.
+
+source: |
+  Operator (human) 2026-07-27, via Cursor session during day-shift bring-up,
+  .swarmforge/operator/archive/INTAKE-ensure-daemon-repair-uses-check-once-not-start.md
+  (severity high, stated by the operator: "blocks unattended day-shift recovery;
+  may actively tear down agents ensure just restored"). Root cause traced by the
+  operator; every claim re-verified by the specifier against the live scripts
+  before speccing.
+
+description: |
+  ## What is broken
+
+  `swarm_ensure.bb:66-68` builds its daemon repair command as
+  `bb handoffd_supervisor.bb <root> --check-once`, and `ensure-daemon!`
+  (`swarm_ensure.bb:271-272`) just runs it. But `--check-once` is a health PROBE
+  (BL-144): `-main` dispatches to `check!`, and on a `:dead`/`:stalled` verdict
+  `check!` calls `alarm-and-halt!` (`handoffd_supervisor.bb:418-419`), which
+  writes the failure log, may email, touches `daemon/stop`, and calls
+  `halt-swarm!` — killing every agent tmux session.
+
+  Nothing in that path starts handoffd. So when the daemon is down, ensure's
+  "repair" is:
+
+  1. respawn the agent panes (coordinator, coder, …) — reported FIXED;
+  2. invoke `--check-once`, which sees a dead daemon and **alarms and halts**,
+     potentially killing the panes step 1 just restored;
+  3. re-probe `daemon-healthy?`, still false, and report
+     `daemon: FAILED (restarted the handoff daemon)` — an action string
+     describing something the code never did.
+
+  Observed live 2026-07-27 ~08:40–08:41Z: coordinator + coder FIXED, `daemon:
+  FAILED (restarted the handoff daemon)` on every pass, while
+  `bash swarmforge/scripts/start_handoff_daemon.sh <root>` succeeded immediately
+  by hand, twice (`.swarmforge/daemon/daemon-start-audit.log`, both SUCCESS, with
+  no corresponding success from ensure's own path). The operator had to hand-start
+  handoffd to get routing and chase sweeps back.
+
+  ## Why the suite did not catch it
+
+  `test_swarm_ensure.sh` scenario 02d (lines 196-205) asserts exactly the right
+  things — FIXED, and a live pid afterwards — but `run_ensure` supplies
+  `SWARM_ENSURE_SUPERVISOR_CMD` pointing at a fake that spawns a live process.
+  The seam that makes the test hermetic also means the real `--check-once`
+  behaviour is never once exercised. Green forever, defect intact. Scenario 03
+  (line 215) inherits the same fake.
+
+  ## Direction — Option A
+
+  `verify_daemon_lifecycle.sh:49-56` already has the correct shape: probe, and on
+  failure invoke `start_handoff_daemon.sh`, with postmortem collection when the
+  start itself fails. Point `ensure-daemon!` at that lifecycle script (or at
+  `start_handoff_daemon.sh` directly) so ensure and the launch paths share one
+  daemon-start owner.
+
+  Keep `handoffd_supervisor.bb` unchanged: it is the halt authority, and BL-144
+  gave it that role deliberately. Ensure must not be able to reach
+  `alarm-and-halt!` at all — that is invariant 1, and it is the half of this
+  defect that can destroy a running swarm rather than merely fail to fix one.
+
+  The `SWARM_ENSURE_SUPERVISOR_CMD` env seam stays (other scenarios need it), but
+  the scenarios that prove the repair works must NOT set it — see below.
+
+  ## The test constraint, stated as part of the contract
+
+  Scenarios 01 and 06 must exercise ensure's REAL default repair command against a
+  throwaway fixture root, with no supervisor-command override. Everything a
+  scenario touches — pid files, sockets, audit log, tmux sessions — belongs to
+  that fixture root, discovered through the existing env seams. No scenario may
+  run ensure against the live project root: this repo's own engineering rules
+  forbid targeting live runtime paths from tests, and here the failure mode under
+  test is "kills every agent session", so a leak would kill the running swarm.
+
+  Rewrite 02d and 03 to match: a fake that mirrors START semantics (leaves a live,
+  reap-able daemon behind and writes the audit line) or no fake at all — never a
+  bare `sleep` spawn.
+
+  ## Scope
+
+  - `swarmforge/scripts/swarm_ensure.bb` — `supervisor-cmd` / `ensure-daemon!`.
+  - `swarmforge/scripts/test/test_swarm_ensure.sh` — 02d and 03, plus any other
+    daemon scenario riding the same fake.
+  - `specs/pipeline/steps/` — new BL-690 handlers driving the fixture root.
+  - `docs/how-to/` — the ensure/bring-up runbook gains the corrected repair
+    behaviour (the documenter's pass; `BL-203-stabilize-two-pack-smoke-check.md`
+    and the launch runbook are the cross-references the operator named).
+
+  ## Out of scope
+
+  - Option B (`--repair` on `handoffd_supervisor.bb`) — rejected above; do not
+    add a start path to the halt authority.
+  - Any change to `handoffd_supervisor.bb`'s own alarm/halt policy, thresholds,
+    or BL-144 behaviour when it runs as the supervisor.
+  - The `./start-swarm.sh` coordinator-wait timeout that preceded this incident
+    (step 1 of the operator's session) — a separate symptom, not this defect.
+  - Babashka mutation/CRAP/DRY tooling: not wired for `.bb` (engineering.prompt
+    Startup Tools, BL-472). The gate here is `swarmforge/scripts/test/` plus the
+    acceptance scenarios, and the hardener should say so rather than run a
+    toolchain that does not exist.
+
+  ## e2e QA procedure
+
+  Against a throwaway fixture root (never the live one): write a stale pid into
+  `<fixture>/.swarmforge/daemon/handoffd.pid`, start two dummy tmux sessions in
+  the fixture's socket dir, then run `./swarm ensure` with no supervisor
+  override. Confirm it prints `daemon: FIXED (restarted the handoff daemon)`,
+  that the pid file now names a live process, that BOTH dummy sessions are still
+  alive, that no `<fixture>/.swarmforge/daemon/stop` marker exists, and that
+  `daemon-start-audit.log` gained a SUCCESS line. Run ensure a second time and
+  confirm `daemon: OK` with the same pid and no second daemon. Finally make the
+  start path fail (point it at a script that exits 1) and confirm `daemon: FAILED`
+  with a non-zero exit and the two sessions still alive.
+
+notes: |
+  Ordering note for the coordinator: this is a `high` defect, so Article 3.2.4
+  expedites it ahead of non-expedited candidates. It is orthogonal to BL-688 and
+  BL-689 (different tree entirely — `swarmforge/scripts/` vs
+  `extension/src/quality`), so it can run alongside either if a slot allows.
