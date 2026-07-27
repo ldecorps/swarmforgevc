@@ -26,6 +26,10 @@ if [[ -f "$SWARM_ENV" ]]; then
   source "$SWARM_ENV"
 fi
 
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/cursor_ripgrep_env.sh"
+resolve_cursor_ripgrep_path "$ROOT"
+
 if [[ "${CURSOR_BRIDGE_LAUNCH_DRYRUN:-}" == "1" ]]; then
   printf 'DRYRUN start_cursor_bridge supervisor cmd: bb %s %s\n' "$SUPERVISOR_BB" "$ROOT"
   printf 'DRYRUN bridge cmd: node %s %s\n' "$ENTRYPOINT" "$ROOT"

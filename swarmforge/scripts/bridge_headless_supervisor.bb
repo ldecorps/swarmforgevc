@@ -90,7 +90,8 @@
                  ["FFMPEG_BIN" (System/getenv "FFMPEG_BIN")]
                  ["OPENAI_API_KEY" (System/getenv "OPENAI_API_KEY")]
                  ["CURSOR_API_KEY" (System/getenv "CURSOR_API_KEY")]
-                 ["CURSOR_BRIDGE_MODEL" (System/getenv "CURSOR_BRIDGE_MODEL")]])))
+                 ["CURSOR_BRIDGE_MODEL" (System/getenv "CURSOR_BRIDGE_MODEL")]
+                 ["CURSOR_RIPGREP_PATH" (System/getenv "CURSOR_RIPGREP_PATH")]])))
 
 (defn probe-http-health! [http-get-fn]
   (try

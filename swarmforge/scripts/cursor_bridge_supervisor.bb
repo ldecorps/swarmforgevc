@@ -85,7 +85,8 @@
                  ["TELEGRAM_PRINCIPAL_USER_ID" (System/getenv "TELEGRAM_PRINCIPAL_USER_ID")]
                  ["CURSOR_API_KEY" (System/getenv "CURSOR_API_KEY")]
                  ["CURSOR_BRIDGE_MODEL" (System/getenv "CURSOR_BRIDGE_MODEL")]
-                 ["CURSOR_BRIDGE_BOOT_PROMPT" (System/getenv "CURSOR_BRIDGE_BOOT_PROMPT")]])))
+                 ["CURSOR_BRIDGE_BOOT_PROMPT" (System/getenv "CURSOR_BRIDGE_BOOT_PROMPT")]
+                 ["CURSOR_RIPGREP_PATH" (System/getenv "CURSOR_RIPGREP_PATH")]])))
 
 (defn clear-poll-heartbeat! []
   (fs/delete-if-exists poll-heartbeat-file))

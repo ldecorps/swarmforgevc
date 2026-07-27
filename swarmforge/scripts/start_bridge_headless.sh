@@ -28,6 +28,10 @@ if [[ -f "$SWARM_ENV" ]]; then
   source "$SWARM_ENV"
 fi
 
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/cursor_ripgrep_env.sh"
+resolve_cursor_ripgrep_path "$ROOT"
+
 export BRIDGE_PORT="$PORT"
 
 if [[ ! -f "$TOKEN_FILE" ]]; then
