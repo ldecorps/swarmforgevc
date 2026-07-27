@@ -252,3 +252,6 @@ notes: |
   guard at all — and the guard is exactly what scenarios 03/04/05 test. Reaching it
   from a test needs either the dryrun check moved below the guard or a separate
   seam. Which one is the coder's call; flagged so it is not discovered late.
+bounce_count: 1
+bounce_history:
+  - { at: 2026-07-27, by: QA, blamed: coder, class: acceptance, commit: 34eeea9ad1, evidence: backlog/evidence/BL-684-bounce-20260727.md }
