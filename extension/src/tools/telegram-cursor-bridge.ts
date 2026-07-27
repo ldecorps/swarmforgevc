@@ -153,7 +153,8 @@ async function runPrompt(agent: SDKAgent, prompt: string): Promise<string> {
   }
   const result = await run.wait();
   if (result.status === 'error') {
-    throw new Error(`Cursor run failed: ${result.id}`);
+    const detail = result.error?.message ?? 'unknown error';
+    throw new Error(`Cursor run failed (${result.id}): ${detail}`);
   }
   const text = collectAssistantTextFromMessages(messages).trim();
   return text.length > 0 ? text : '(no text reply)';
@@ -171,7 +172,7 @@ async function main(): Promise<void> {
   const chatId = requiredEnv('TELEGRAM_CHAT_ID');
   const principalUserId = requiredEnv('TELEGRAM_PRINCIPAL_USER_ID');
   const apiKey = process.env.CURSOR_API_KEY;
-  const modelId = process.env.CURSOR_BRIDGE_MODEL ?? 'composer-2.5';
+  const modelId = process.env.CURSOR_BRIDGE_MODEL ?? 'auto';
 
   let state = parseCursorBridgeState(loadJsonFile(statePath));
   state = await ensureCursorTopic(botToken, chatId, topicMapPath, state);
