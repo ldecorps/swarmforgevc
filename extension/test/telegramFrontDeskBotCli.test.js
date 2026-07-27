@@ -1793,6 +1793,7 @@ function readAmbulanceMarker(root) {
 
 test('BL-655: engageAmbulance writes an active marker naming the ticket and announces it', async () => {
   const root = mkTmpRoot();
+  writeActiveTicket(root, 'BL-654.yaml', 'id: BL-654\ntitle: t\n');
   const { postFn, calls } = fakeSendOk(1);
   await engageAmbulance(root, 'fake-token', 'fake-chat', 900, 'BL-654', postFn, 1000);
   assert.deepEqual(readAmbulanceMarker(root), { active: true, ticket: 'BL-654', engagedAtMs: 1000, by: 'telegram' });
@@ -1802,6 +1803,7 @@ test('BL-655: engageAmbulance writes an active marker naming the ticket and anno
 
 test('BL-655: a repeated engage of the SAME ticket is a true no-op - engagedAtMs is not bumped', async () => {
   const root = mkTmpRoot();
+  writeActiveTicket(root, 'BL-654.yaml', 'id: BL-654\ntitle: t\n');
   const { postFn } = fakeSendOk(2);
   await engageAmbulance(root, 'fake-token', 'fake-chat', 900, 'BL-654', postFn, 1000);
   await engageAmbulance(root, 'fake-token', 'fake-chat', 900, 'BL-654', postFn, 2000);
@@ -1810,14 +1812,37 @@ test('BL-655: a repeated engage of the SAME ticket is a true no-op - engagedAtMs
 
 test('BL-655: engaging a DIFFERENT ticket replaces the marker outright', async () => {
   const root = mkTmpRoot();
+  writeActiveTicket(root, 'BL-654.yaml', 'id: BL-654\ntitle: t\n');
+  writeActiveTicket(root, 'BL-660.yaml', 'id: BL-660\ntitle: t\n');
   const { postFn } = fakeSendOk(2);
   await engageAmbulance(root, 'fake-token', 'fake-chat', 900, 'BL-654', postFn, 1000);
   await engageAmbulance(root, 'fake-token', 'fake-chat', 900, 'BL-660', postFn, 2000);
   assert.deepEqual(readAmbulanceMarker(root), { active: true, ticket: 'BL-660', engagedAtMs: 2000, by: 'telegram' });
 });
 
+test('BL-655: engageAmbulance refuses a ticket with no YAML file anywhere under backlog/ - marker untouched, refusal posted', async () => {
+  const root = mkTmpRoot();
+  const { postFn, calls } = fakeSendOk(1);
+  await engageAmbulance(root, 'fake-token', 'fake-chat', 900, 'BL-9999', postFn, 1000);
+  assert.equal(fs.existsSync(controlAmbulanceStatePath(root)), false);
+  const body = JSON.parse(calls[0].body);
+  assert.match(body.text, /refused/i);
+  assert.match(body.text, /BL-9999/);
+});
+
+test('BL-655: engageAmbulance refuses a nonexistent ticket even when one is already engaged - the live marker is untouched', async () => {
+  const root = mkTmpRoot();
+  writeActiveTicket(root, 'BL-654.yaml', 'id: BL-654\ntitle: t\n');
+  const { postFn: engagePost } = fakeSendOk(1);
+  await engageAmbulance(root, 'fake-token', 'fake-chat', 900, 'BL-654', engagePost, 1000);
+  const { postFn } = fakeSendOk(1);
+  await engageAmbulance(root, 'fake-token', 'fake-chat', 900, 'BL-9999', postFn, 2000);
+  assert.deepEqual(readAmbulanceMarker(root), { active: true, ticket: 'BL-654', engagedAtMs: 1000, by: 'telegram' });
+});
+
 test('BL-655: releaseAmbulance clears an active marker and announces it', async () => {
   const root = mkTmpRoot();
+  writeActiveTicket(root, 'BL-654.yaml', 'id: BL-654\ntitle: t\n');
   const { postFn: engagePost } = fakeSendOk(1);
   await engageAmbulance(root, 'fake-token', 'fake-chat', 900, 'BL-654', engagePost, 1000);
   const { postFn, calls } = fakeSendOk(1);

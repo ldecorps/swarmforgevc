@@ -517,16 +517,18 @@ function registerSteps(registry) {
     }
   });
 
+  registry.define(/^a ticket (BL-\d+) exists$/, (ctx, ticket) => {
+    writeTicketYaml(ctx, ticket);
+  });
+
   registry.define(/^the human sends "([^"]+)" in the Control topic$/, async (ctx, text) => {
-    // Engaging a real ticket presupposes the ticket exists (ambulance-lib's
-    // own deadlock guard reads a marker naming a ticket with no backlog
-    // file as OFF) - the scenario's own Given never separately files this
-    // ticket the way every other scenario in this feature does, so this is
-    // the one place left to ensure it before the real engage effect runs.
-    const mentioned = text.match(/BL-\d+/);
-    if (mentioned) {
-      writeTicketYaml(ctx, mentioned[0]);
-    }
+    // Deliberately does NOT pre-file whatever ticket id the text mentions -
+    // the ambulance-hold-12 negative scenario relies on the real
+    // engageAmbulance effect (extension/src/tools/telegram-front-desk-bot.ts)
+    // refusing a ticket with no backlog file itself, the same guard
+    // ambulance_cli.bb's engage-cmd! already enforces on its own entry
+    // point. A scenario that needs the ticket to exist says so explicitly
+    // via "a ticket BL-... exists".
     const adapters = controlAdapters(ctx);
     adapters.getUpdates = async () => ({ success: true, updates: [mkTextUpdate({ fromId: PRINCIPAL_ID, topicId: CONTROL_TOPIC_ID, text })] });
     await pollAndForward(0, PRINCIPAL_ID, adapters);
@@ -726,6 +728,13 @@ function registerSteps(registry) {
     const texts = ctx.postCalls.map((c) => c.body.text);
     if (!texts.some((t) => t && t.includes('Ambulance released'))) {
       throw new Error(`expected a Control-topic message announcing ambulance release; got: ${JSON.stringify(texts)}`);
+    }
+  });
+
+  registry.define(/^the Control topic is told the engage was refused for (BL-\d+)$/, (ctx, ticket) => {
+    const texts = ctx.postCalls.map((c) => c.body.text);
+    if (!texts.some((t) => t && /refused/i.test(t) && t.includes(ticket))) {
+      throw new Error(`expected a Control-topic message refusing the engage for ${ticket}; got: ${JSON.stringify(texts)}`);
     }
   });
 }

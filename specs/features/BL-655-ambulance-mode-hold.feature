@@ -125,6 +125,7 @@ Feature: Ambulance mode holds every parcel except one ticket's
   # BL-655 ambulance-hold-10
   Scenario: the human engages the ambulance from the Control topic
     Given no ambulance is engaged
+    And a ticket BL-654 exists
     When the human sends "ambulance BL-654" in the Control topic
     Then the ambulance marker names BL-654
     And the Control topic is told the ambulance is engaged for BL-654
@@ -135,3 +136,10 @@ Feature: Ambulance mode holds every parcel except one ticket's
     When the human sends "ambulance off" in the Control topic
     Then no ambulance is engaged
     And the Control topic is told the ambulance is released
+
+  # BL-655 ambulance-hold-12
+  Scenario: the human tries to engage the ambulance for a ticket that does not exist
+    Given no ambulance is engaged
+    When the human sends "ambulance BL-9999999" in the Control topic
+    Then no ambulance is engaged
+    And the Control topic is told the engage was refused for BL-9999999

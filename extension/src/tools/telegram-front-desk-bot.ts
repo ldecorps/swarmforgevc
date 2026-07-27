@@ -159,7 +159,7 @@ import { runConciergeTick, ConciergeTickAdapters, BacklogFolderItem, BacklogFold
 import { approvalRequestedEventKey } from '../events/swarmEventStream';
 import { reconcileTopicLifecycle, ReconcileAdapters } from '../concierge/topicReconciliation';
 import { sweepTopicDeletions, TopicDeletionAdapters, topicRetentionWindowMs } from '../concierge/topicDeletion';
-import { readBacklogFolders } from '../panel/backlogReader';
+import { readBacklogFolders, lookupBacklogItemById } from '../panel/backlogReader';
 import { loadApprovalMoreText } from '../concierge/approvalAskMore';
 import { appendOperatorEvent } from '../bridge/operatorEventQueue';
 import { appendMessage, readRecord, hasCompletionRecord, isRecordCommitted, hasUpdateId, readSwarmIconId, recordSwarmIconId, lastActivityMs } from '../concierge/blTopicStore';
@@ -1830,6 +1830,24 @@ export async function engageAmbulance(
   postFn?: TelegramPostFn,
   nowMs: number = Date.now()
 ): Promise<void> {
+  // Mirrors ambulance_cli.bb's engage-cmd! refusal: a ticket with no YAML
+  // file anywhere under backlog/ would hold EVERYTHING forever (the read
+  // side degrades the marker to inactive, but a human who was just told
+  // "engaged" has no way to know that from here) - the deadlock the
+  // operator ruled out. lookupBacklogItemById already scans active, paused,
+  // hold, and done (with milestone subdirs), the same "anywhere" scope as
+  // ambulance_lib.bb's ticket-has-file?.
+  if (!lookupBacklogItemById(targetPath, ticket)) {
+    await postControlMessage(
+      botToken,
+      chatId,
+      controlTopicId,
+      `Ambulance refused for ${ticket} - no YAML file for it anywhere under backlog/ (would hold everything forever).`,
+      undefined,
+      postFn
+    );
+    return;
+  }
   const raw = readRawAmbulanceMarker(targetPath);
   if (!(raw?.active && raw.ticket === ticket)) {
     atomicWrite(controlAmbulanceStatePath(targetPath), JSON.stringify({ active: true, ticket, engagedAtMs: nowMs, by: 'telegram' }));
