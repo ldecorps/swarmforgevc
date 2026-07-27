@@ -4,7 +4,7 @@ milestone: M8
 type: feature
 status: todo
 epic: code-quality-gates
-human_approval: pending
+human_approval: approved
 priority: 35
 direction: swarm-proposed
 depends_on: [BL-692]
