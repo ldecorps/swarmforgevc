@@ -19,7 +19,9 @@
 ;;
 ;; Env overrides (tests + ops):
 ;;   SWARM_ENSURE_EXTENSION_CHECK_CMD / SWARM_ENSURE_EXTENSION_BOUNCE_CMD
-;;   SWARM_ENSURE_SUPERVISOR_CMD
+;;   SWARM_ENSURE_SUPERVISOR_CMD - the daemon repair command; defaults to
+;;     start_handoff_daemon.sh (BL-690: a START action, never
+;;     handoffd_supervisor.bb's --check-once probe, which can alarm-and-halt!)
 ;;   SWARM_ENSURE_OPERATOR_CMD / SWARM_ENSURE_FRONT_DESK_CMD
 ;;   SWARM_ENSURE_BABYSITTER_CMD
 ;;   SWARMFORGE_SKIP_OPERATOR=1 / SWARMFORGE_SKIP_FRONT_DESK=1
@@ -63,9 +65,19 @@
   (or (System/getenv "SWARM_ENSURE_EXTENSION_BOUNCE_CMD")
       (str (fs/path extension-dir "scripts" "start-extension-dev.sh"))))
 
+;; BL-690: this must be a START action, never a health PROBE.
+;; `handoffd_supervisor.bb --check-once` is BL-144's own halt authority - on
+;; a :dead/:stalled verdict it calls alarm-and-halt!, which kills every agent
+;; tmux session. Wiring that probe up as ensure's "repair" meant a dead
+;; daemon got alarmed-and-halted instead of started, tearing down panes
+;; ensure had just respawned. start_handoff_daemon.sh is the same daemon-
+;; start owner the launch paths already use (verify_daemon_lifecycle.sh's own
+;; shape): it only ever starts handoffd + its supervisor, never touches
+;; daemon/stop or a tmux session, and is idempotent (stops any pid-file
+;; process first, so a second run never leaves two daemons behind).
 (def supervisor-cmd
   (or (System/getenv "SWARM_ENSURE_SUPERVISOR_CMD")
-      (str "bb " (fs/path script-dir "handoffd_supervisor.bb") " " project-root " --check-once")))
+      (str "bash " (fs/path script-dir "start_handoff_daemon.sh") " " project-root)))
 
 (def operator-start-cmd
   (or (System/getenv "SWARM_ENSURE_OPERATOR_CMD")

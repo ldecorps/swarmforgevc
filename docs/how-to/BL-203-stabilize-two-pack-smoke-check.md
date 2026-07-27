@@ -15,6 +15,11 @@ so the daemon heartbeat read as missing even when handoffd was healthy. Both
 scripts now source `swarmforge/scripts/portable_stat_lib.sh`, which tries the
 BSD form and falls back to GNU `stat -c` automatically.
 
+`verify_daemon_lifecycle.sh`'s probe-then-`start_handoff_daemon.sh` shape is
+also the pattern BL-690 pointed `./swarm ensure`'s own daemon repair at: both
+now share the same daemon-start owner, so a healthy check here and a healthy
+`ensure` repair rest on the same underlying script.
+
 ## Running the checks
 
 Two independent, non-destructive scripts verify this workflow. Run them from

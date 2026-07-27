@@ -88,6 +88,11 @@ last daemon log lines:
    - Reattaches all agent panes to the tmux session
    - Resumes work from the preserved queue state
 
+   As of BL-690, ensure's daemon repair runs `start_handoff_daemon.sh` — the
+   same daemon-start owner the launch paths already use — never
+   `handoffd_supervisor.bb --check-once`, the health probe that can itself
+   `alarm-and-halt!` and re-stop a swarm ensure just brought back up.
+
 4. **Monitor the restart** — watch the swarm tiles in VS Code to confirm agents resume work. If the daemon dies again immediately, the underlying issue may not be fixed.
 
 ## Common Failure Reasons
@@ -113,4 +118,5 @@ The daemon is part of SwarmForge's reliability layer. If deaths are frequent:
 
 - **BL-146** — Single-daemon consolidation: explains how the daemon owns both delivery and liveness.
 - **BL-145** — Swarmforge ensure command: details on `swarmforge ensure` recovery.
+- **BL-690** — Fixed ensure's daemon repair to start the daemon instead of running the halt-authority probe; see the note under Recovery Steps above.
 - **Daemon Status** — `.swarmforge/daemon/handoffd.status.json` tracks the daemon's health state in real time.
