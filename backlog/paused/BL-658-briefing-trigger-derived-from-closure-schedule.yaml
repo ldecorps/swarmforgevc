@@ -83,8 +83,13 @@ description: |
      constant patch) is RETIRED by this ticket on the closure-scheduled
      path; kept as the trigger for 24/7 swarms with no closure schedule
      (byte-identical behaviour for them).
-  6. **WHERE the closure schedule is READ from — OPEN, operator asked
-     2026-07-27.** Verified at spec time: no TRACKED file knows the stop
+  6. **WHERE the closure schedule is READ from — OPEN; the ask is QUEUED,
+     not sent (2026-07-27).** `role_ask.bb` refused it: the specifier's
+     one-pending slot is still held by BL-687's drill-down reordering
+     question, unanswered since 09:04Z. The four candidate answers are
+     enumerated below; whoever frees that slot sends them verbatim as
+     `role_ask.bb --options`.
+     Verified at spec time: no TRACKED file knows the stop
      time. The whole closure schedule is the host crontab
      (`0 9 * * * .swarmforge/operator/night-stop.sh`) plus that script,
      both untracked runtime state. So "DERIVED from the closure schedule"
@@ -98,6 +103,40 @@ description: |
      and `ambiguous` degrade to today's fixed-time trigger, never to a
      guess). The coder must NOT choose the source unilaterally — the
      answer lands as a note on this ticket before build.
+
+     **The question to send** — "The ceremony must derive its begin time
+     from the closure schedule, but no file in git knows when the swarm
+     stops: the schedule is the host crontab plus an untracked script.
+     Where should the resolver read the stop time FROM?" with these four
+     options:
+
+     a. **"Parse the live crontab"** — the resolver shells `crontab -l`
+        and reads the `night-stop.sh` entry. Single source, zero drift by
+        construction, and it moves the moment you edit the cron. Cost: the
+        swarm reads host state it cannot test against and cannot see on
+        another machine; a reworded cron line breaks the parse. `absent`
+        and `ambiguous` (two matching entries, unparseable spec) both fall
+        to scenario 06's fixed-time degrade.
+     b. **"night-stop.sh writes a runtime state file"** — the closure path
+        itself publishes `.swarmforge/closure-schedule.json` (next stop
+        instant) and the resolver reads only that. Still untracked, but it
+        is a declared interface instead of a scraped one, and the writer
+        is the thing that actually stops the swarm. Cost: staleness if the
+        cron fires a script that no longer writes it.
+     c. **"`closure_stop_local HH:MM` in swarmforge.conf"** — tracked,
+        testable, visible in git; the plain option. Cost: it IS the sibling
+        clock this ticket exists to kill — the conf and the cron drift the
+        first time one is edited alone (already live on your desk today).
+        Only pick this if the drift is acceptable in exchange for the
+        schedule being in git.
+     d. **"Conf is authoritative and the cron is GENERATED from it"** —
+        `closure_stop_local` in swarmforge.conf as in (c), plus the cron
+        entry installed/regenerated from that value, so the crontab is a
+        build artifact nobody hand-edits. The only option that puts the
+        schedule in git WITHOUT a second editable clock. Cost: the largest
+        slice — it takes over crontab installation, which nothing in the
+        repo does today, and would likely be its own sibling ticket that
+        this one depends on.
 
 acceptance: specs/features/BL-658-briefing-trigger-derived-from-closure-schedule.feature
 
