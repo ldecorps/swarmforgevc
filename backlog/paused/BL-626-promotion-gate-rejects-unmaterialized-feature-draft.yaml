@@ -95,22 +95,55 @@ description: |
   invisible defects become detectable.
 
 acceptance: |
-  Specifier writes the scenarios. Minimum behaviour:
+  specs/features/BL-626-promotion-gate-rejects-unmaterialized-feature-draft.feature
 
-  1. A ticket whose `acceptance:` names `specs/features/<x>.feature`, where only
-     `specs/features/<x>.feature.draft` exists, is REFUSED at promotion, and the
-     refusal names both the missing `.feature` and the shadowing `.draft`.
-  2. A ticket whose `acceptance:` names a feature file that exists is promoted
-     normally — no new friction on the happy path.
-  3. A ticket whose `acceptance:` is prose with no `specs/features/` pointer is
-     promoted normally; the gate does not apply and does not demand a feature
-     file.
-  4. The gate is fail-closed: an unreadable/unresolvable `acceptance:` pointer
-     refuses rather than passes.
-  5. A backfill audit lists every ticket currently in `paused/` and `active/`
-     whose `acceptance:` resolves to a non-existent feature file, so the
-     existing 13-draft exposure is enumerated rather than discovered ticket by
-     ticket.
+  Every scenario needs its step handler wired in this same parcel (BL-233).
+
+  Scenario map: 01 outlines the three refusal shapes and asserts the refusal
+  names the offending path in each (a feature shadowed by its draft; an
+  acceptance pointing straight at a parked draft; a feature absent with no
+  draft at all) (#1/#4); 02 an acceptance that resolves promotes unchanged
+  (#2); 03 prose acceptance is outside the gate and no feature is demanded
+  (#3); 04 a same-prefix sibling feature does not rescue a dangling explicit
+  pointer; 05 the backfill audit enumerates the whole exposure at once (#5).
+
+  Scenario 04 is not in the original numbered list and is the one shape a
+  reimplementation is most likely to miss. The gate that exists today,
+  `is_buildable()` in promote_and_route_next.sh, falls back to a glob over
+  `specs/features/<id>-*.feature` when the explicit pointer fails to resolve,
+  so any sibling feature carrying the same ticket-id prefix silently passes a
+  candidate whose own acceptance dangles. Closing the hole means the explicit
+  pointer is authoritative; the glob may only be a fallback for tickets that
+  name no path at all.
+
+  Supporting gates:
+  - The same function already treats an acceptance naming an existing
+    `.feature.draft` as buildable (verified 2026-07-27 against BL-694 while
+    it was still parked). That is the live exposure, not a hypothetical: a
+    parked draft is by convention non-executable, so resolving to one must
+    refuse, not pass. Cover it as a distinct case from the missing-file one.
+  - Fail-closed: an acceptance field that cannot be parsed refuses. Absence of
+    a readable answer must never read as permission.
+  - The refusal text is asserted for CONTENT, not just for being a refusal -
+    the named path is the deliverable (prompt-text assertions over a message
+    that merely says "blocked" would be fake acceptance here).
+  - No new friction on the happy path: a resolving acceptance must promote in
+    the same number of steps as before.
+
+  QA end-to-end procedure (live swarm, scratch backlog fixtures - never the
+  live paused/ tree):
+  1. Point a scratch ticket's acceptance at `<x>.feature` with only
+     `<x>.feature.draft` on disk; run the promotion path. It refuses and the
+     output names both paths.
+  2. Point a second scratch ticket's acceptance directly at a
+     `.feature.draft` that exists; run the promotion path. It refuses and
+     says the draft is not executable.
+  3. Add a decoy `specs/features/<same-id>-other.feature` beside a ticket
+     whose own pointer dangles; confirm the decoy does not rescue it.
+  4. Promote a ticket whose acceptance resolves, and one whose acceptance is
+     prose: both promote, and the prose one is not asked for a feature file.
+  5. Run the backfill audit against the real `paused/` and `active/` trees
+     read-only; every unresolvable pointer is listed with its path.
 
 out_of_scope: |
   - Materialising the 13 existing drafts. This ticket ADDS THE GATE and
@@ -123,3 +156,28 @@ out_of_scope: |
   - Reducing bounce counts. See the rationale correction above — that is
     explicitly NOT this ticket's goal or its measure of success.
   - Forcing a feature file onto tickets that legitimately have none.
+
+notes: |
+  Scenarios written by the specifier 2026-07-27 and materialized as a live
+  `.feature`, so this ticket is no longer part of the draft exposure it was
+  filed to enumerate. Lint gate clean.
+
+  IR-DRY: two medium findings, both reviewed and kept. The first pairs
+  "acceptance names a feature file that does not exist" with "...that
+  exists" — opposites, not synonyms, and collapsing them would erase the
+  happy path. The second pairs the outline's parameterized
+  `the refusal names <named>` with scenario 04's concrete
+  `the refusal names the missing feature`; that is deliberate reuse, since
+  the outline's third row resolves to exactly that text and one handler
+  should serve both. Scenario 04's distinct value is in its Given (a decoy
+  sibling feature), not in its Then.
+
+  The exposure count in `source:` (13 BL-prefixed drafts) was measured
+  2026-07-25 and has moved since — 31 `.feature.draft` files on 07-27, of
+  which BL-615, BL-652, BL-675, BL-676, BL-677, BL-678, BL-679, BL-680,
+  BL-681, BL-682, BL-683, BL-691, BL-692, BL-693 and three GH- tickets are
+  pointed at directly by a paused ticket's `acceptance:`. Do not treat the
+  filed number as current; acceptance item 5 exists precisely because the
+  set drifts. Two tickets found on 07-27 carry the OTHER shape — BL-579 and
+  BL-580 name a `.feature` that exists nowhere, with no draft beside it —
+  and are the closest thing to a live reproduction of the origin incident.
