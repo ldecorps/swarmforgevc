@@ -5,7 +5,7 @@ type: defect
 severity: high
 status: todo
 epic: code-quality-gates
-human_approval: pending
+human_approval: approved
 priority: 03
 direction: swarm-proposed
 mutation_cost: low
