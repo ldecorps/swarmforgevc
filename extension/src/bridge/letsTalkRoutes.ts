@@ -7,6 +7,7 @@ import {
   decodeLetsTalkAudio,
   decideSttOutcome,
   isLetsTalkTurnRequestShape,
+  sttFailureForOutcome,
   unprocessableAudioMessage,
 } from './letsTalkCore';
 import type { SynthesizeSpeech, TranscribeAudio } from './letsTalkAudio';
@@ -29,68 +30,12 @@ export interface LetsTalkTurnSuccess {
   agentId: string;
 }
 
-export function isLetsTalkPath(url: string): boolean {
-  return url === '/lets-talk' || url.startsWith('/lets-talk?');
-}
+type LetsTalkTurnFailure = { success: false; reason: string; recoverable: boolean; state: 'ready' | 'error' };
 
-export function isLetsTalkTurnRoute(req: http.IncomingMessage, url: string): boolean {
-  return req.method === 'POST' && (url === '/lets-talk/turn' || url.startsWith('/lets-talk/turn?'));
-}
-
-export function isLetsTalkNewSessionRoute(req: http.IncomingMessage, url: string): boolean {
-  return req.method === 'POST' && (url === '/lets-talk/new-session' || url.startsWith('/lets-talk/new-session?'));
-}
-
-export async function processLetsTalkTurn(
-  body: { audioBase64: string; mimeType?: string },
-  deps: LetsTalkRouteDeps,
-  sttAttempts?: { transientFailuresBeforeSuccess: number }
-): Promise<
-  | LetsTalkTurnSuccess
-  | { success: false; reason: string; recoverable: boolean; state: 'ready' | 'error' }
-> {
-  const bytes = decodeLetsTalkAudio(body.audioBase64);
-  if (!bytes) {
-    return {
-      success: false,
-      reason: unprocessableAudioMessage(),
-      recoverable: true,
-      state: 'ready',
-    };
-  }
-  if (!deps.transcribeAudio) {
-    return { success: false, reason: 'speech-to-text is not configured', recoverable: true, state: 'ready' };
-  }
-  const stt = await deps.transcribeAudio(bytes, body.mimeType);
-  if (sttAttempts && stt.kind === 'transient-failure') {
-    sttAttempts.transientFailuresBeforeSuccess += 1;
-  }
-  const outcome = decideSttOutcome(stt);
-  if (outcome === 'unprocessable') {
-    return {
-      success: false,
-      reason: unprocessableAudioMessage(),
-      recoverable: true,
-      state: 'ready',
-    };
-  }
-  if (outcome === 'retry') {
-    return {
-      success: false,
-      reason: 'speech-to-text is temporarily unavailable — try again',
-      recoverable: true,
-      state: 'error',
-    };
-  }
-  if (stt.kind !== 'ok') {
-    return {
-      success: false,
-      reason: unprocessableAudioMessage(),
-      recoverable: true,
-      state: 'ready',
-    };
-  }
-  const transcript = stt.transcript;
+async function promptAgentAndSynthesize(
+  transcript: string,
+  deps: LetsTalkRouteDeps
+): Promise<LetsTalkTurnSuccess | LetsTalkTurnFailure> {
   let replyText: string;
   let agentId: string;
   try {
@@ -120,6 +65,67 @@ export async function processLetsTalkTurn(
     replyAudioBase64: tts.audio.toString('base64'),
     agentId,
   };
+}
+
+export function isLetsTalkPath(url: string): boolean {
+  return url === '/lets-talk' || url.startsWith('/lets-talk?');
+}
+
+export function isLetsTalkTurnRoute(req: http.IncomingMessage, url: string): boolean {
+  return req.method === 'POST' && (url === '/lets-talk/turn' || url.startsWith('/lets-talk/turn?'));
+}
+
+export function isLetsTalkNewSessionRoute(req: http.IncomingMessage, url: string): boolean {
+  return req.method === 'POST' && (url === '/lets-talk/new-session' || url.startsWith('/lets-talk/new-session?'));
+}
+
+async function transcribeTurnAudio(
+  bytes: Buffer,
+  mimeType: string | undefined,
+  deps: LetsTalkRouteDeps,
+  sttAttempts?: { transientFailuresBeforeSuccess: number }
+): Promise<{ transcript: string } | LetsTalkTurnFailure> {
+  if (!deps.transcribeAudio) {
+    return { success: false, reason: 'speech-to-text is not configured', recoverable: true, state: 'ready' };
+  }
+  const stt = await deps.transcribeAudio(bytes, mimeType);
+  if (sttAttempts && stt.kind === 'transient-failure') {
+    sttAttempts.transientFailuresBeforeSuccess += 1;
+  }
+  const sttFailure = sttFailureForOutcome(decideSttOutcome(stt), stt);
+  if (sttFailure) {
+    return sttFailure;
+  }
+  if (stt.kind !== 'ok') {
+    return {
+      success: false,
+      reason: unprocessableAudioMessage(),
+      recoverable: true,
+      state: 'ready',
+    };
+  }
+  return { transcript: stt.transcript };
+}
+
+export async function processLetsTalkTurn(
+  body: { audioBase64: string; mimeType?: string },
+  deps: LetsTalkRouteDeps,
+  sttAttempts?: { transientFailuresBeforeSuccess: number }
+): Promise<LetsTalkTurnSuccess | LetsTalkTurnFailure> {
+  const bytes = decodeLetsTalkAudio(body.audioBase64);
+  if (!bytes) {
+    return {
+      success: false,
+      reason: unprocessableAudioMessage(),
+      recoverable: true,
+      state: 'ready',
+    };
+  }
+  const sttResult = await transcribeTurnAudio(bytes, body.mimeType, deps, sttAttempts);
+  if ('success' in sttResult) {
+    return sttResult;
+  }
+  return promptAgentAndSynthesize(sttResult.transcript, deps);
 }
 
 export function createLetsTalkWriteRoutes(

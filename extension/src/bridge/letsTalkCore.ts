@@ -19,13 +19,12 @@ export function isLetsTalkTurnRequestShape(value: unknown): value is LetsTalkTur
     return false;
   }
   const record = value as Record<string, unknown>;
-  if (typeof record.audioBase64 !== 'string' || record.audioBase64.length === 0) {
+  const audioBase64 = record.audioBase64;
+  if (typeof audioBase64 !== 'string' || audioBase64.length === 0) {
     return false;
   }
-  if (record.mimeType !== undefined && typeof record.mimeType !== 'string') {
-    return false;
-  }
-  return true;
+  const mimeType = record.mimeType;
+  return mimeType === undefined || typeof mimeType === 'string';
 }
 
 export function decodeLetsTalkAudio(audioBase64: string): Buffer | undefined {
@@ -35,6 +34,29 @@ export function decodeLetsTalkAudio(audioBase64: string): Buffer | undefined {
   } catch {
     return undefined;
   }
+}
+
+export function sttFailureForOutcome(
+  outcome: LetsTalkSttOutcome,
+  stt: SttResult
+): { success: false; reason: string; recoverable: true; state: 'ready' | 'error' } | null {
+  if (outcome === 'retry') {
+    return {
+      success: false,
+      reason: 'speech-to-text is temporarily unavailable — try again',
+      recoverable: true,
+      state: 'error',
+    };
+  }
+  if (outcome === 'unprocessable' || stt.kind !== 'ok') {
+    return {
+      success: false,
+      reason: unprocessableAudioMessage(),
+      recoverable: true,
+      state: 'ready',
+    };
+  }
+  return null;
 }
 
 export function decideSttOutcome(stt: SttResult): LetsTalkSttOutcome {

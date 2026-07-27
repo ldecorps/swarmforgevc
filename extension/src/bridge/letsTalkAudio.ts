@@ -11,14 +11,14 @@ const OPENAI_TTS_VOICE = 'alloy';
 export type TranscribeAudio = (bytes: Buffer, mimeType?: string) => Promise<SttResult>;
 export type SynthesizeSpeech = (text: string) => Promise<TtsResult>;
 
-function classifyTranscriptionResponse(status: number, ok: boolean, text: string | undefined): SttResult {
+export function classifyTranscriptionResponse(status: number, ok: boolean, text: string | undefined): SttResult {
   if (!ok) {
     return status >= 400 && status < 500 ? { kind: 'unprocessable' } : { kind: 'transient-failure' };
   }
   return text ? { kind: 'ok', transcript: text } : { kind: 'unprocessable' };
 }
 
-function extensionForMime(mimeType: string | undefined): string {
+export function extensionForMime(mimeType: string | undefined): string {
   if (!mimeType) {
     return 'audio.webm';
   }

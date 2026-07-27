@@ -5,6 +5,7 @@ const {
   extractCodeWordFromRememberPhrase,
   mockAgentReplyForTranscript,
   isLetsTalkTurnRequestShape,
+  sttFailureForOutcome,
   sttRetryBudgetExhausted,
   unprocessableAudioMessage,
   LETS_TALK_STT_RETRY_BUDGET,
@@ -15,12 +16,20 @@ test('letsTalk: valid turn request shape', () => {
   assert.equal(isLetsTalkTurnRequestShape({ audioBase64: 'abc', mimeType: 'audio/webm' }), true);
   assert.equal(isLetsTalkTurnRequestShape({ audioBase64: '' }), false);
   assert.equal(isLetsTalkTurnRequestShape({ mimeType: 'audio/webm' }), false);
+  assert.equal(isLetsTalkTurnRequestShape(null), false);
+  assert.equal(isLetsTalkTurnRequestShape({ audioBase64: 'abc', mimeType: 42 }), false);
 });
 
 test('letsTalk: decode audio rejects empty and invalid base64', () => {
   assert.ok(decodeLetsTalkAudio(Buffer.from('x').toString('base64')));
   assert.equal(decodeLetsTalkAudio(''), undefined);
   assert.equal(decodeLetsTalkAudio('!!!'), undefined);
+});
+
+test('letsTalk: STT failure mapping', () => {
+  assert.deepEqual(sttFailureForOutcome('retry', { kind: 'transient-failure' })?.state, 'error');
+  assert.deepEqual(sttFailureForOutcome('unprocessable', { kind: 'unprocessable' })?.state, 'ready');
+  assert.equal(sttFailureForOutcome('prompt', { kind: 'ok', transcript: 'hi' }), null);
 });
 
 test('letsTalk: STT outcome routing', () => {

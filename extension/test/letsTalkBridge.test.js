@@ -164,3 +164,61 @@ test('processLetsTalkTurn: transient STT failure surfaces retry state', async ()
   assert.equal(result.state, 'error');
   assert.equal(result.recoverable, true);
 });
+
+test('processLetsTalkTurn: missing STT adapter is recoverable', async () => {
+  const target = mkTmp();
+  const result = await processLetsTalkTurn(
+    { audioBase64: SAMPLE_AUDIO },
+    { agentSession: createMockCursorBridgeAgentSession(target) }
+  );
+  assert.equal(result.success, false);
+  assert.match(result.reason, /speech-to-text is not configured/i);
+});
+
+test('processLetsTalkTurn: TTS failure is recoverable', async () => {
+  const target = mkTmp();
+  const result = await processLetsTalkTurn(
+    { audioBase64: SAMPLE_AUDIO },
+    {
+      agentSession: createMockCursorBridgeAgentSession(target),
+      transcribeAudio: async () => ({ kind: 'ok', transcript: 'hi' }),
+      synthesizeSpeech: async () => ({ kind: 'failure' }),
+    }
+  );
+  assert.equal(result.success, false);
+  assert.match(result.reason, /text-to-speech failed/i);
+});
+
+test('processLetsTalkTurn: increments transient STT attempt counter', async () => {
+  const target = mkTmp();
+  const sttAttempts = { transientFailuresBeforeSuccess: 0 };
+  await processLetsTalkTurn(
+    { audioBase64: SAMPLE_AUDIO },
+    {
+      agentSession: createMockCursorBridgeAgentSession(target),
+      transcribeAudio: async () => ({ kind: 'transient-failure' }),
+    },
+    sttAttempts
+  );
+  assert.equal(sttAttempts.transientFailuresBeforeSuccess, 1);
+});
+
+test('processLetsTalkTurn: agent errors are recoverable', async () => {
+  const target = mkTmp();
+  const result = await processLetsTalkTurn(
+    { audioBase64: SAMPLE_AUDIO },
+    {
+      agentSession: {
+        readAgentId: () => undefined,
+        resetSession: async () => ({ agentId: undefined }),
+        promptAgent: async () => {
+          throw new Error('cursor offline');
+        },
+      },
+      transcribeAudio: async () => ({ kind: 'ok', transcript: 'hi' }),
+      synthesizeSpeech: async () => ({ kind: 'ok', audio: Buffer.from('x') }),
+    }
+  );
+  assert.equal(result.success, false);
+  assert.match(result.reason, /cursor offline/i);
+});
