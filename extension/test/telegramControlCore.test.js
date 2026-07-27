@@ -30,6 +30,16 @@ test('BL-423: any verb is ignored while no control topic is bound yet', () => {
   assert.deepEqual(decision, { action: 'ignore' });
 });
 
+test('BL-423: with no control topic bound, an event that ALSO carries no topic id (e.g. a bare DM) is still ignored - the unbound-topic guard does not depend on the event happening to carry some other topic id', () => {
+  // Built by hand, not via textEvent's destructured default: passing
+  // `{ topicId: undefined }` through textEvent's `{ topicId = CONTROL_TOPIC_ID }`
+  // default would silently re-substitute CONTROL_TOPIC_ID (JS default
+  // parameters apply on `undefined` whether the key is missing or explicit),
+  // defeating the very case this test exists to cover.
+  const decision = decideControlEventAction({ kind: 'text', text: '/stop', fromId: PRINCIPAL_ID, topicId: undefined }, PRINCIPAL_ID, undefined, undefined, NOT_PAUSED);
+  assert.deepEqual(decision, { action: 'ignore' });
+});
+
 test('BL-423: an unauthorised sender in the control topic is refused, never ignored', () => {
   const decision = decideControlEventAction(textEvent('/stop', { fromId: 999 }), PRINCIPAL_ID, CONTROL_TOPIC_ID, undefined, NOT_PAUSED);
   assert.deepEqual(decision, { action: 'refuse' });
@@ -97,6 +107,11 @@ test('BL-423: a drain-stop tap while only a restart confirm is pending (wrong pe
     { kind: 'restart-confirm' },
     NOT_PAUSED
   );
+  assert.deepEqual(decision, { action: 'ignore' });
+});
+
+test('BL-423: a drain-stop tap with NO pending stop-modes confirm (stale/already-actioned) is ignored, never executed', () => {
+  const decision = decideControlEventAction(callbackEvent(CONTROL_CALLBACK_DATA.drainStop), PRINCIPAL_ID, CONTROL_TOPIC_ID, undefined, NOT_PAUSED);
   assert.deepEqual(decision, { action: 'ignore' });
 });
 
@@ -196,6 +211,16 @@ test('BL-423: callback data outside the control: namespace (e.g. an approve/reje
   assert.deepEqual(decision, { action: 'ignore' });
 });
 
+test('BL-423: callback data with garbage BEFORE "control:" (not at the very start) is ignored - the namespace must anchor the start, not just appear somewhere in the payload', () => {
+  const decision = decideControlEventAction(callbackEvent('xcontrol:cancel'), PRINCIPAL_ID, CONTROL_TOPIC_ID, { kind: 'stop-modes' }, NOT_PAUSED);
+  assert.deepEqual(decision, { action: 'ignore' });
+});
+
+test('BL-423: callback data whose captured verb is followed by a newline and more content is ignored, never dispatched on a truncated capture', () => {
+  const decision = decideControlEventAction(callbackEvent('control:cancel\nextra'), PRINCIPAL_ID, CONTROL_TOPIC_ID, { kind: 'stop-modes' }, NOT_PAUSED);
+  assert.deepEqual(decision, { action: 'ignore' });
+});
+
 // ── BL-655: ambulance mode (bare text, not slash-prefixed - the ticket's
 //    own vocabulary and the feature file's own scenarios type it bare) ────
 
@@ -271,6 +296,10 @@ test('BL-423: decidePauseAutoResume is none when not paused', () => {
   assert.equal(decidePauseAutoResume(NOT_PAUSED, 1_000_000), 'none');
 });
 
+test('BL-423: decidePauseAutoResume is none when not paused even if the state carries a stale untilMs already in the past - the active:false guard short-circuits before untilMs is ever consulted', () => {
+  assert.equal(decidePauseAutoResume({ active: false, untilMs: 5_000 }, 10_000), 'none');
+});
+
 test('BL-423: decidePauseAutoResume is none for "Until I resume" (no timer), regardless of elapsed time', () => {
   assert.equal(decidePauseAutoResume({ active: true, untilMs: undefined }, Number.MAX_SAFE_INTEGER), 'none');
 });
@@ -295,6 +324,10 @@ test('BL-423: decideDrainOutcome is "drained" the instant the pipeline is empty,
 
 test('BL-423: decideDrainOutcome is "wait" while work remains and the timeout has not elapsed', () => {
   assert.equal(decideDrainOutcome(false, 0, 599_999, 600_000), 'wait');
+});
+
+test('BL-423: decideDrainOutcome elapsed-time math is a subtraction of real epoch-ms timestamps, not a sum - a drain started at a large startedAtMs with only a little elapsed time is still "wait"', () => {
+  assert.equal(decideDrainOutcome(false, 1_000_000, 1_000_500, 600_000), 'wait');
 });
 
 test('BL-423: decideDrainOutcome is "forced" once the timeout elapses with work still outstanding', () => {

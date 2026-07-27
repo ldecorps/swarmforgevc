@@ -8,9 +8,12 @@ human_approval: approved
 severity: medium
 priority: 02
 direction: human-requested
-depends_on: [BL-262, BL-269, BL-344, BL-380, BL-381]
-assigned_to: coder
+depends_on: [BL-262, BL-269, BL-344, BL-380, BL-381, BL-684]
+assigned_to: cleaner
 mutation_cost: high
+required_stages: [cleaner, architect, hardender, documenter, qa]
+stage_skip_reasons:
+  coder: "Slice 1's 1929 insertions are ALREADY on main and origin — this parcel finishes REVIEWING them, it does not rebuild them. Re-entering at coder would re-do shipped work, which is what the park block forbade; with routing enabled the router now rewrites a coder-destined handoff to the cleaner, so the ruling is enforced rather than merely written down. See `unparked:`."
 invariants:
   - "Every durable write is idempotent under redelivery of the same Telegram update"
 # ^ BL-633 retro-fixture: the one property all four of slice 1's architect
@@ -27,73 +30,70 @@ unparked: |
   BL-643's own acceptance criterion 1. Do not resume BL-590 work ahead of that
   rename parcel.
 
-park: |
-  PARKED in `hold/` on 2026-07-25 by operator directive, and `hold/` is NOT read by
-  promotion — nothing will pick this up on its own. It comes back only when a human
-  moves the file.
+  ---
 
-  ## Why it was parked
+  Specifier addendum, 2026-07-26 (same directive, relayed as
+  `BL-643 ruled "Onboarder" (rename first); BL-590 unparked, both p01/p02`).
+  The `park:` block this replaces is preserved in git history at `3129d2cd7~`.
 
-  Not because the feature is unwanted — it is `human_approval: approved` and
-  human-requested. It was parked because the WORKFLOW was failing on it:
-  **six architect send-backs on slice 1**, four of them circling one unstated
-  property (durable writes must be idempotent under Telegram redelivery), on a slice
-  measured at **1929 insertions across 18 files** — above the p99 of ~2000
-  ticket-bearing commits. The operator's call was to stop feeding a broken pipeline
-  and fix the pipeline first.
+  ## The rename parcel named above is BL-684
 
-  ## Operator intent, 2026-07-25
+  The sequencing ruling is now encoded as DATA, not a note: `depends_on` gains
+  **BL-684**, so "do not resume ahead of the rename" survives a reader who skims.
+  BL-643 (the class documentation) also depends on BL-684. Order: BL-684 -> BL-590
+  resume -> BL-624 -> BL-625, with BL-643's prose any time after BL-684.
 
-  > "une fois le process stabilisé, il faudra ressortir 590"
+  **Known cost of that order, stated rather than discovered later.** Resuming this
+  ticket means an in-flight parcel again (`674f2538bf` on the cleaner branch), and
+  BL-684 renames 49 files including every file that parcel touches. So the resumed
+  parcel WILL absorb a rename conflict on top of six existing send-backs. That is
+  the ruled trade-off — the alternative was letting the old word keep spreading (36
+  tracked files on 2026-07-25 became 49 on 2026-07-26). Whoever resumes the cleaner
+  branch should merge `main` and expect the rename, not treat it as a phantom revert.
 
-  So this is a DEFERRAL, not a cancellation. Recorded here rather than in a session,
-  because a park decision that lives only in someone's memory is exactly what this
-  repo has lost before.
+  ## Two resume plans existed, and they CONTRADICTED each other
 
-  ## Unpark condition — checkable, not a feeling
+  Recorded because the next reader will hit it too:
 
-  "Process stabilisé" means the two mechanisms that were missing when this ticket
-  bounced six times are IN FORCE, not merely specified:
+  - The `park:` block said **"do not re-promote this ticket whole ... re-cut the
+    REMAINING slices only, against what is actually on `main`."**
+  - `backlog/evidence/BL-590-parked-20260725.md` (line 112) said **"the cleaner
+    resumes from `674f2538bf`; the architect reviews `01562217be` against SEND
+    BACK #6's D3/D4."**
 
-  1. **BL-633 shipped** — the `invariants:` field exists in `backlog-schema.md`, the
-     specifier prompt asks for properties before scenarios, and the architect prompt
-     says one bounce per PROPERTY, not one per site.
-  2. **BL-635 shipped** — `record-bounce --by <role>` exists and the ARCHITECT calls
-     it, so a repeat-bouncing ticket is visible while it is happening rather than
-     after a post-mortem.
+  They reconcile only one way, and that reading is now this ticket's plan: do not
+  REBUILD slice 1 (it is on `main`), but do FINISH REVIEWING it. The 1929 insertions
+  across 18 files landed on `main` and `origin` without ever passing architect,
+  hardener, documenter or QA — the incident BL-629/630/631/632 exist to PREVENT.
+  None of those four reviews the code that already landed, and no other ticket in
+  the backlog does either; that was checked, not assumed.
 
-  Both are `priority: 01` in the expedite lane as of 2026-07-25. Neither is a
-  judgement call — measured on the day of parking, all three read ZERO:
+  ## What resuming means, concretely
 
-  ```
-  grep -ic invariant       swarmforge/roles/specifier.prompt   ->  0
-  grep -c  record-bounce   swarmforge/roles/architect.prompt   ->  0
-  ls extension/src/tools/record-bounce*                        ->  absent
-  ```
+  1. This ticket resumes at the **cleaner**, from `674f2538bf`; the architect then
+     reviews `01562217be` against SEND BACK #6's D3/D4. It does NOT go to the coder
+     to be rebuilt — `assigned_to` is corrected from `coder` to `cleaner` for
+     exactly that reason.
+  2. Before trusting any BL-590 commit as reviewed:
+     `git merge-base --is-ancestor <sha> swarmforge-QA`. Stage history is not proof;
+     this ticket's own history is why that check exists.
+  3. The remaining slices are ALREADY ticketed — **BL-624** (survey -> gate) and
+     **BL-625** (prompts -> launch handoff). Nothing needs re-cutting into new
+     tickets. Both now carry the `invariants:` the park demanded, first entry being
+     the idempotency property that four of the six send-backs circled.
+  4. Two rule proposals raised during the bounces still await a human ruling; per
+     the park they do NOT block this, and they are settled separately.
 
-  (`architect.prompt` already says `invariant` 3 times, so grep that one for
-  `record-bounce`, not for `invariant`. `QA.prompt` is the only prompt in the repo
-  that calls the bounce recorder today — 3 hits — which is precisely BL-635's
-  complaint.)
+  ## Live hazard this unpark introduces — read before promoting
 
-  ## What unparking actually means — read before moving the file
-
-  **Do not re-promote this ticket whole.** Slice 1 is already on `main` and on
-  `origin` — it landed there un-reviewed, which is the incident BL-629/630/631/632
-  exist to prevent. Re-promoting the ticket as written would re-do shipped work.
-
-  On unpark:
-
-  - Re-cut the REMAINING slices only, against what is actually on `main`.
-  - The re-cut carries an `invariants:` section, and its first entry is the property
-    that caused four of the six send-backs: *every durable write is idempotent under
-    redelivery of the same Telegram update.* This ticket is BL-633's worked example;
-    using it here is the whole point.
-  - Size the slices against BL-634's envelope. 1929 insertions is what "slice 1"
-    meant last time.
-
-  Two rule proposals raised during the bounces are still awaiting a human ruling and
-  do NOT block the unpark — settle them at re-cut time.
+  The evidence file said to move the yaml `hold/` -> `active/` directly and warned
+  that **"going via `paused/` invites a promotion race with whatever else is
+  eligible."** The file is in `paused/` now, so that race is live: an auto-picker
+  taking this ticket at `priority: 02` with the old `assigned_to: coder` would have
+  routed 1929 already-shipped insertions back to the coder to rebuild. The
+  `assigned_to` correction defuses the worst of it and `depends_on: [BL-684]` holds
+  it behind the rename, but the coordinator should still promote this one
+  deliberately rather than let it be auto-picked.
 
 human_ruling: |
   RULED by the human 2026-07-23 (relayed via the operator tunnel, recorded

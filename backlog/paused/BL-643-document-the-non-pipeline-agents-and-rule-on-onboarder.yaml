@@ -6,11 +6,20 @@ status: todo
 epic: swarm-intelligence-layer
 human_approval: approved
 severity: medium
-priority: 09
+priority: 01
 direction: human-requested
-depends_on: []
-assigned_to: specifier
+depends_on: [BL-684]
+assigned_to: documenter
 mutation_cost: low
+required_stages: [documenter, qa]
+stage_skip_reasons:
+  coder: "No code ships: an explanation document, a reference table and index links. The one code-shaped criterion — that every path in the table resolves — is a verification, not an implementation."
+  cleaner: "Nothing to refactor; prose and a table."
+  architect: "The document DESCRIBES existing architecture, it does not change any. The taxonomy is the documenter's editorial call, reviewed by QA against the repo."
+  hardender: "No test, coverage or mutation surface. Invariant 1 is checked by resolving each path against the repo, which is QA's pass."
+invariants:
+  - "Every path in the reference table — launcher, stop path, role prompt, log — resolves in the repo at the commit that ships the table. A path in this document is checked, never recalled; a wrong stop path here is the BL-637 defect in a new place."
+  - "No agent's behaviour is described as authored when it was reverse-engineered from code: an agent with no role prompt is marked as such wherever it is described."
 
 approval_context: >
   Operator, 2026-07-25: document at length how the special agents work — the
@@ -51,6 +60,26 @@ source: |
   `negotiation_relay`, `front_desk_operator`, `resident_spy_tunnel`), so for those
   there is no authored description of their behaviour anywhere.
 
+  ## Re-measured 2026-07-26 — three irregular cases the table must EXPLAIN
+
+  Verified against the repo while BL-684 was specced. Every count above still holds,
+  and the mapping is less tidy than "eight agents, eight prompts, eight launchers":
+
+  - **`launch_*` scripts:** 9 files, but `launch_contract_lib.bb` is a library, not an
+    agent — so eight launched agents, as stated.
+  - **A prompt with no launcher:** `swarmforge/roles/model-steward.prompt` exists and
+    the model steward has 3 doc files, but there is no `launch_model_steward.sh`. It
+    is a non-pipeline agent that is not started like the others.
+  - **A launcher whose prompt is named for the ROLE, not the launcher:**
+    `launch_front_desk.sh` has no `front_desk.prompt`; the authored description lives
+    in `support.prompt`. That is why the naive count says "four with no prompt" — the
+    front desk is covered under another name.
+
+  So the enumeration is a MEASUREMENT to redo at writing time, from the repo, and the
+  table must have a row for each irregular case with the irregularity explained. An
+  agent silently omitted because it did not fit the table's shape is the exact failure
+  this ticket exists to end.
+
   ## The naming question, with the evidence
 
   "Onboarder" appears in exactly TWO tracked files, and both are BL-590's own —
@@ -68,23 +97,24 @@ source: |
   asked for it used, into vocabulary invented while building it.
 
 description: |
-  ## Rule on the name FIRST
+  ## The name is RULED — this ticket no longer decides it
 
-  Whatever is written now hardens the name. The specifier should put the question to
-  the operator as a decision with its cost, not a preference:
+  The three-way choice this ticket was filed to force is CLOSED: the human ruled
+  **full rename to "Onboarder"** on 2026-07-26 (see `approval_context`). The rename
+  itself is **BL-684**, its own parcel, and this ticket now declares
+  `depends_on: [BL-684]` so criterion 1 is enforced by data rather than by a reader
+  noticing a sentence. Nothing here re-opens the naming question; the remaining work
+  is prose.
 
-  - **Keep `Facilitator`.** Zero work. Cost: the operator keeps saying "onboarder"
-    and reading "facilitator", forever.
-  - **Rename to `Onboarder`.** 36 files, including a live Telegram topic subject and
-    a state machine whose phases are user-visible in that topic. Cheapest NOW, while
-    BL-590 is parked in `hold/` and slices 2 and 3 (BL-624, BL-625) are unbuilt —
-    every week of building makes it worse.
-  - **Split them.** "Onboarder" as the human-facing name in Telegram and docs;
-    `facilitator` as the internal module vocabulary. Honest and common, but it means
-    two names for one thing and a reader must learn the mapping.
+  Two premises in this ticket's original argument were checked against the repo while
+  BL-684 was specced, and one of them was wrong:
 
-  Recommend deciding before writing prose, because the docs are the thing that will
-  cement whichever word wins.
+  - **Wrong: "a live Telegram topic subject ... user-visible in that topic."** There
+    is no user-visible `Facilitator` string anywhere. The reserved topic is created
+    from `ONBOARDING_TOPIC_NAME` (`telegram-front-desk-bot.ts:782`) — the human
+    already reads "Onboarding". BL-684 therefore needs no Telegram work at all.
+  - **Right, and now measured: the word is still spreading.** 36 tracked files on
+    2026-07-25; 49 files and 456 occurrences on 2026-07-26.
 
   ## Then document the CLASS, not just two members
 
@@ -127,26 +157,13 @@ description: |
   say which ticket owns each. A doc that describes unbuilt behaviour is worse than a
   missing one, because a reader cannot tell which half is real.
 
-acceptance: |
-  Specifier writes the scenarios. Minimum:
-
-  1. The name is RULED and recorded before any prose is written. If the ruling is
-     `Onboarder`, the rename lands as its own parcel first — docs must not describe a
-     name the code does not use.
-  2. A reader who has never seen the repo can name every non-pipeline agent, say what
-     category it belongs to, and find its launcher and stop path from one table.
-  3. Every documented agent's launcher/stop path in that table is verified against the
-     repo, not recalled — a wrong stop path is the BL-637 defect in a new place.
-  4. The Onboarder document covers only shipped behaviour and names the ticket owning
-     each unshipped phase.
-  5. The Expeditor is LINKED, not restated.
-  6. Everything new is linked from `docs/index.md` in the same commit.
-  7. The four agents with no role prompt are identified as such rather than silently
-     described from their code — a reader should know when a description was
-     reverse-engineered.
+acceptance: specs/features/BL-643-non-pipeline-agents-documented-as-a-class.feature.draft
 
 out_of_scope: |
-  - Building anything. This is documentation plus a naming ruling.
+  - Building anything, and that now explicitly includes the rename: **BL-684 owns it**
+    and this ticket depends on it. If a documenter finds live code still saying
+    `facilitator`, BL-684 is incomplete — bounce it there rather than renaming here.
+  - Re-deciding the name. Ruled 2026-07-26; `approval_context` records it.
   - Finishing BL-590. It is parked; see `backlog/evidence/BL-590-parked-20260725.md`.
   - Retiring the babysitter agent — BL-611 owns that; this ticket documents whatever
     state it is in when written.
@@ -154,10 +171,12 @@ out_of_scope: |
     the specifier thinks they need one.
 
 notes: |
-  The naming half is time-sensitive in a way documentation usually is not: BL-624 and
-  BL-625 will add more `facilitator` surface, and the Telegram topic subject is
-  user-visible, so a later rename touches something the human already reads. Cheapest
-  moment to decide is while the ticket is parked.
+  The naming half was time-sensitive in a way documentation usually is not, and it is
+  now DISCHARGED: ruled 2026-07-26, carved out as BL-684, and this ticket blocked
+  behind it. The urgency was real — 36 tracked files on 2026-07-25 became 49 on
+  2026-07-26 — and BL-624/BL-625 would have added more. The one claim that did not
+  survive checking is the Telegram one: no user-visible `Facilitator` string exists,
+  so the rename touches nothing the human reads (BL-684 `source:` has the measurement).
 
   Worth stating in the explanation doc, because it is the thing a newcomer gets wrong:
   a non-pipeline agent is NOT a lesser role. The Operator supervises the swarm from

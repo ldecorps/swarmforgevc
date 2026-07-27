@@ -168,6 +168,15 @@ export type PauseAutoResumeDecision = 'auto-resume' | 'none';
 // nowMs reaches its own untilMs, evaluated against an INJECTED clock
 // (never the real system clock) so this is deterministic to test.
 export function decidePauseAutoResume(pauseState: PauseState, nowMs: number): PauseAutoResumeDecision {
+  // Hardener note: a mutant forcing `pauseState.untilMs === undefined` to
+  // `false` here is an EQUIVALENT mutant, not a coverage gap. It only
+  // changes behavior when active is true AND untilMs really is undefined -
+  // exactly the case the guard exists to short-circuit. Forced past the
+  // guard, the fallthrough evaluates `nowMs >= undefined`, which coerces to
+  // `nowMs >= NaN` and is FALSE for every nowMs (JS comparison semantics),
+  // landing on 'none' again by the fallthrough's own default branch - the
+  // same result the guard returns directly. No input can ever tell the two
+  // apart; no assertion should be forced to pretend otherwise.
   if (!pauseState.active || pauseState.untilMs === undefined) {
     return 'none';
   }
