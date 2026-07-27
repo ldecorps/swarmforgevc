@@ -22,7 +22,14 @@ export type QaBounceBouncingRole = (typeof KNOWN_BOUNCING_ROLES)[number];
 export const KNOWN_TICKET_TYPES = ['feature', 'bug', 'defect', 'chore', 'docs', 'enhancement', 'epic'] as const;
 export type QaBounceTicketType = (typeof KNOWN_TICKET_TYPES)[number];
 
-export const KNOWN_FAILURE_CLASSES = ['compile', 'unit', 'integration', 'acceptance', 'behavior'] as const;
+// BL-688: widened to add `invariant-unencoded` (BL-654's architect
+// send-back class for a missing property test) and `spec-gap` (Article 4.4's
+// class for a specification-level finding) - both were already named by live
+// role-prompt instructions but rejected here, so every such bounce was
+// silently dropped rather than recorded (see BL-688's ticket for the
+// measured-zero evidence). The set stays closed and case-sensitive - widening
+// adds members, it does not relax the closed-set/case-sensitivity contract.
+export const KNOWN_FAILURE_CLASSES = ['compile', 'unit', 'integration', 'acceptance', 'behavior', 'invariant-unencoded', 'spec-gap'] as const;
 export type QaBounceFailureClass = (typeof KNOWN_FAILURE_CLASSES)[number];
 
 function isKnownValue<T extends string>(known: readonly T[], value: string): value is T {

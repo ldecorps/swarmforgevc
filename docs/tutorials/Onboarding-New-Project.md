@@ -6,6 +6,51 @@ project. For installing and running the SwarmForge VC extension itself, see
 it at a target" and focuses on what actually drives the swarm's work: **the
 acceptance contract**.
 
+## 0. The Onboarder: a guided conversational front-end (BL-590, slice 1 of 3)
+
+Everything in sections 1–2 below can be driven by hand, one CLI/Telegram-relay
+command at a time. The **Onboarder** is a standing conversational agent that
+instead walks a human through the same ground, step by step, in a single
+Telegram topic — so onboarding a target reduces to "give it a repo URL" rather
+than remembering seven commands in order. It runs on the swarm's own host
+(never the target host) and clones/onboards the target from its GitHub URL.
+
+**What's shipped so far (slice 1 — this is the whole of it):** an "Onboarding"
+topic, ensured once in the primary swarm's Telegram group and **reused across
+every target** (never one topic per target — per-target identity lives in the
+onboarder's own state files, not the topic), plus the **prerequisites phase**
+that runs before any survey/contract work starts:
+
+- Posting a target's GitHub repo URL into the Onboarding topic opens (or
+  resumes, if that target is already mid-flight) a per-target onboarding at
+  its `checking-prerequisites` state. Re-posting the same URL (even a trivial
+  variant — a trailing slash, `.git`, `http` vs `git@`) resumes the same
+  onboarding rather than starting a second one from scratch.
+- The onboarder walks the checklist one step at a time — **toolchain**,
+  **GitHub access**, **swarmforge fork clone**, **target repo clone**, then a
+  **dedicated Telegram bot token** for the target (explicitly never the
+  primary swarm's own token — reusing it collides two long-polling pollers on
+  one token). Each step's message gives the exact command to run on the
+  target host and names the verification output to paste back.
+- A step only advances on a **passing pasted verification** — a bare "done",
+  "yes", or "ready" with no output is never accepted, and a failing paste gets
+  an explanation plus the same instruction re-issued. This is deliberate: the
+  point of the guided flow is to catch a broken setup, not to trust a claim.
+- The human can **pause** an onboarding at any point and **proceed** later;
+  the state (including which steps are already verified) persists to disk, so
+  restarting the onboarder mid-checklist resumes at the same step instead of
+  starting over.
+- Once every prerequisite is verified, the onboarder announces that
+  prerequisites are ready and that the survey phase (section 2 below) comes
+  next.
+
+**What's not shipped yet:** the onboarder does not itself run the
+survey/propose/negotiate/gate sequence or the prompt-proposal step — those
+remain the commands described in sections 1–2 below (tracked as slices 2 and
+3 of this same feature). Until those land, finish prerequisites in the
+Onboarding topic, then continue onboarding that target using the manual
+commands below.
+
 ## 1. Onboarding mechanics (reuse, don't re-derive)
 
 The mechanical steps — install the extension, set the target, launch, watch,

@@ -1,9 +1,26 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-07-27T12:05:21.765623495Z","feature_name":"Every failure class the role prompts instruct is recordable","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-688-recordable-spec-failure-classes.feature","background_hash":"3d6ec796f401515448a0c7aa08ba55770fe32372b6a510ae614fd9baa19f02bf","implementation_hash":"unknown","scenarios":[{"index":2,"name":"The briefing bounce line counts a record of a widened class","scenario_hash":"9ae18f5da2a14c35573c0ab42e85e7488c25f596616009478d9defe9be66b4da","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-07-27T12:03:27.325241380Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: Every failure class the role prompts instruct is recordable
 
   Background:
     Given a bounce log containing one record with failure class "behavior" bounced by "architect"
 
   # BL-688 recordable-spec-failure-classes-01
+  # Hardener note (BL-113 mutation pass, 2026-07-27): a case-mangle of the
+  # <class> VALUE on each of the two "rejected" rows below (flaky -> flAky;
+  # INVARIANT-UNENCODED -> INVARIANT-UNeNCODED) survives - an accepted
+  # equivalent mutant per BL-234, not a coverage gap. isKnownFailureClass is a
+  # plain closed-set Set.has() lookup (qaBounce.ts), so it treats every
+  # non-member string identically; both rows exist specifically to prove the
+  # reject path for a value outside the set (an arbitrary word, and a case
+  # variant of a valid class), and mutating one rejected string into another
+  # rejected string cannot change the "rejected"/"1" outcome - no assertion
+  # here (or anywhere downstream - parseArgs/isKnownFailureClass are the only
+  # consumers of the literal value) could ever differentiate them. All other
+  # 21 mutants in this outline (the 7 "recorded" classes, both non-class
+  # columns on every row) killed clean.
   Scenario Outline: The recorder accepts exactly the named failure classes
     When a bounce is recorded with failure class "<class>"
     Then the recorder answers "<outcome>"
