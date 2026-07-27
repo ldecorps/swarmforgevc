@@ -19,13 +19,14 @@
             [clojure.string :as str]))
 
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "front_desk_supervisor_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "bridge_supervisor_env_lib.bb")))
 
 (defn usage []
   (binding [*out* *err*]
     (println "Usage: cursor_bridge_supervisor.bb <project-root> [--check-once]"))
   (System/exit 1))
 
-(def project-root (or (first *command-line-args*) (usage)))
+(def project-root (str (fs/canonicalize (or (first *command-line-args*) (usage)))))
 (def check-once? (some #{"--check-once"} *command-line-args*))
 
 (def op-dir (fs/path project-root ".swarmforge" "operator"))
@@ -93,8 +94,11 @@
 
 (defn spawn-bridge! []
   (clear-poll-heartbeat!)
-  (process/process {:out :inherit :err :inherit
-                    :extra-env (bridge-extra-env)}
+  (spit (str bridge-log-file) (str (now-iso) " supervisor-spawn\n") :append true)
+  (process/process {:append true
+                    :out-file (str bridge-log-file)
+                    :err-file (str bridge-log-file)
+                    :env (bridge-supervisor-env-lib/bridge-child-env project-root (bridge-extra-env))}
                    "node" (str bridge-entrypoint) project-root))
 
 (def process-specs
@@ -144,11 +148,31 @@
         (when (pid-alive? pid)
           (some-> (java.lang.ProcessHandle/of pid) (.orElse nil) (.destroy)))))))
 
+(defn bridge-process-for-root? [pid root]
+  (when (and pid (pid-alive? pid))
+    (try
+      (let [cmd (str/replace (slurp (str "/proc/" pid "/cmdline")) "\0" " ")
+            root-str (str root)]
+        (and (str/includes? cmd "telegram-cursor-bridge.js")
+             (or (str/includes? cmd root-str)
+                 (str/includes? cmd "telegram-cursor-bridge.js ."))))
+      (catch Exception _ false))))
+
+(defn reconcile-state-on-start! []
+  (let [state (read-state)
+        entry (merge (front-desk-supervisor-lib/default-entry) (:bridge state))]
+    (when (or (= "gave-up" (:status entry))
+              (not (bridge-process-for-root? (:pid entry) project-root)))
+      (when (:pid entry) (kill-pid! (:pid entry)))
+      (write-status! {})
+      (clear-poll-heartbeat!))))
+
 (defn -main []
   (fs/create-dirs op-dir)
   (if check-once?
     (println (json/generate-string (tick!)))
     (do
+      (reconcile-state-on-start!)
       (atomic-spit! pid-file (str (.pid (java.lang.ProcessHandle/current))))
       (log! "cursor-bridge-supervisor started" (str "interval-ms=" interval-ms) "root=" project-root)
       (try

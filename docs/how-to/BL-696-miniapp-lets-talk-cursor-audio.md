@@ -44,6 +44,10 @@ playback instead of server TTS. See
 ```bash
 ./swarmforge/scripts/start_bridge_headless.sh /path/to/repo 8765
 ./swarmforge/scripts/stop_bridge_headless.sh /path/to/repo
+
+# After Mini App / bridge code changes: compile extension + restart so the
+# new build is live (probes /lets-talk).
+./swarmforge/scripts/bounce_bridge_headless.sh /path/to/repo 8765
 ```
 
 The **supervisor** (`bridge_headless_supervisor.bb`) auto-restarts the bridge on

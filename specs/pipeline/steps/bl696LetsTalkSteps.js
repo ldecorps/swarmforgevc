@@ -10,6 +10,7 @@ const path = require('node:path');
 
 const { startBridge } = require('../../../extension/out/bridge/bridgeServer');
 const { createMockCursorBridgeAgentSession } = require('../../../extension/out/bridge/cursorBridgeAgentSession');
+const { replyTextForSpeechSynthesis } = require('../../../extension/out/bridge/letsTalkCore');
 const { decideInboundAction } = require('../../../extension/out/tools/telegramCursorBridgeCore');
 
 const FEATURE = "Let's Talk — discrete audio turns with the Cursor agent on the Console Mini App";
@@ -190,7 +191,7 @@ function registerSteps(registry) {
   registry.defineScoped(/^I hear the synthesized reply audio for that transcript$/, (ctx) => {
     assert.ok(ctx.turnResult.replyAudioBase64);
     assert.equal(ctx.ttsCalls >= 1, true);
-    assert.equal(ctx.lastTtsText, ctx.turnResult.replyText);
+    assert.equal(ctx.lastTtsText, replyTextForSpeechSynthesis(ctx.turnResult.replyText));
   }, FEATURE);
 
   registry.defineScoped(/^conversation state returns to "ready"$/, (ctx) => {

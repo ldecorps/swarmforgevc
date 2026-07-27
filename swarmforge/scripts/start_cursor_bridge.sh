@@ -9,7 +9,7 @@
 #   CURSOR_BRIDGE_LAUNCH_DRYRUN=1    print command, start nothing
 set -euo pipefail
 
-ROOT="${1:?usage: start_cursor_bridge.sh <project-root>}"
+ROOT="$(cd "${1:?usage: start_cursor_bridge.sh <project-root>}" && pwd)"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OP_DIR="$ROOT/.swarmforge/operator"
 SUPERVISOR_BB="$SCRIPT_DIR/cursor_bridge_supervisor.bb"
@@ -29,6 +29,8 @@ fi
 # shellcheck disable=SC1091
 source "$SCRIPT_DIR/cursor_ripgrep_env.sh"
 resolve_cursor_ripgrep_path "$ROOT"
+
+unset CURSOR_AGENT CURSOR_CONVERSATION_ID CURSOR_LAYOUT __CURSOR_SANDBOX_ENV_RESTORE 2>/dev/null || true
 
 if [[ "${CURSOR_BRIDGE_LAUNCH_DRYRUN:-}" == "1" ]]; then
   printf 'DRYRUN start_cursor_bridge supervisor cmd: bb %s %s\n' "$SUPERVISOR_BB" "$ROOT"
@@ -54,8 +56,15 @@ fi
 if [[ -f "$PID_FILE" ]]; then
   existing_pid="$(< "$PID_FILE")"
   if [[ "$existing_pid" =~ ^[0-9]+$ ]] && kill -0 "$existing_pid" 2>/dev/null; then
-    echo "start_cursor_bridge: supervisor already running (pid $existing_pid)" >&2
-    exit 0
+    bridge_status="$(bb "$SUPERVISOR_BB" "$ROOT" --check-once 2>/dev/null || true)"
+    if [[ "$bridge_status" == *'"status":"gave-up"'* ]]; then
+      echo "start_cursor_bridge: supervisor running but bridge gave-up — restarting" >&2
+      "$SCRIPT_DIR/stop_cursor_bridge.sh" "$ROOT"
+      sleep 1
+    else
+      echo "start_cursor_bridge: supervisor already running (pid $existing_pid)" >&2
+      exit 0
+    fi
   fi
 fi
 

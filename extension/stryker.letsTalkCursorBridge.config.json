@@ -1,0 +1,20 @@
+{
+  "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "extends": "./stryker.config.json",
+  "testRunner": "vitest",
+  "vitest": {
+    "configFile": "vitest.letsTalkCursorBridge.config.mjs",
+    "related": false
+  },
+  "mutate": [
+    "out/bridge/letsTalkCore.js",
+    "out/bridge/letsTalkRoutes.js",
+    "out/bridge/letsTalkAudio.js",
+    "out/bridge/letsTalkLocalAudio.js",
+    "out/bridge/cursorBridgeAgentSession.js",
+    "out/tools/telegramCursorBridgeCore.js",
+    "out/tools/telegramCursorBridgeLive.js",
+    "out/tools/telegram-cursor-bridge.js",
+    "out/tools/start-bridge-headless.js"
+  ]
+}

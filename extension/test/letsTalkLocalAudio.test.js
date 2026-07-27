@@ -144,3 +144,23 @@ test('letsTalkLocalAudio: whisper-cli receives language flag when configured', a
   );
   assert.ok(calls.some((args) => args.includes('-l') && args.includes('fr')));
 });
+
+test('letsTalkLocalAudio: returns unprocessable when whisper fails and ffmpeg is unavailable', async () => {
+  const deps = {
+    mkTempDir: async () => '/tmp/work',
+    writeFile: async () => {},
+    readFile: async () => '',
+    exists: () => false,
+    rmDir: async () => {},
+    execFile: async () => {
+      throw new Error('whisper failed');
+    },
+  };
+  const result = await transcribeWithWhisperCpp(
+    { bin: '/bin/whisper-cli', modelPath: '/models/base.bin' },
+    Buffer.from('audio-bytes'),
+    'audio/webm',
+    deps
+  );
+  assert.equal(result.kind, 'transient-failure');
+});

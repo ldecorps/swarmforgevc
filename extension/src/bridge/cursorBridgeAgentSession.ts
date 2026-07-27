@@ -127,7 +127,7 @@ export async function withAgentLock<T>(targetPath: string, fn: () => Promise<T>)
   }
 }
 
-function agentOptions(repoRoot: string, apiKey: string | undefined, modelId: string) {
+export function buildAgentOptions(repoRoot: string, apiKey: string | undefined, modelId: string) {
   return {
     ...(apiKey ? { apiKey } : {}),
     model: { id: modelId },
@@ -142,12 +142,12 @@ async function openAgent(
   agentId: string | undefined
 ): Promise<SDKAgent> {
   if (agentId) {
-    return Agent.resume(agentId, agentOptions(repoRoot, apiKey, modelId));
+    return Agent.resume(agentId, buildAgentOptions(repoRoot, apiKey, modelId));
   }
-  return Agent.create(agentOptions(repoRoot, apiKey, modelId));
+  return Agent.create(buildAgentOptions(repoRoot, apiKey, modelId));
 }
 
-async function runPrompt(agent: SDKAgent, prompt: string): Promise<string> {
+export async function runCursorAgentPrompt(agent: SDKAgent, prompt: string): Promise<string> {
   const run = await agent.send(prompt);
   const messages: SDKMessage[] = [];
   for await (const event of run.stream()) {
@@ -197,7 +197,7 @@ export function createLiveCursorBridgeAgentSession(targetPath: string): CursorBr
       withAgentLock(targetPath, async () => {
         const attempt = async (): Promise<{ replyText: string; agentId: string }> => {
           const agent = await ensureAgent();
-          const replyText = await runPrompt(agent, prompt);
+          const replyText = await runCursorAgentPrompt(agent, prompt);
           const state = loadState(targetPath);
           saveState(targetPath, { ...state, agentId: agent.agentId });
           return { replyText, agentId: agent.agentId };

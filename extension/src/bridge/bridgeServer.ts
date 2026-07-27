@@ -322,11 +322,29 @@ function respondJson(res: http.ServerResponse, status: number, body: unknown): v
 }
 
 function requireControlAuth(req: http.IncomingMessage, res: http.ServerResponse, registry: DeviceRegistry): boolean {
-  if (!isAuthorizedForControl(req, requestPath(req), registry)) {
+  const url = requestPath(req);
+  if (isAuthorizedForControl(req, url, registry)) {
+    return true;
+  }
+  const queryCred = parseQueryCredential(url);
+  const bearer = extractBearerToken(req.headers.authorization) ?? queryCred;
+  const stepUpHeader = req.headers['x-control-token'];
+  const stepUp = typeof stepUpHeader === 'string' ? stepUpHeader : queryCred;
+  const device = findDeviceByToken(registry, bearer);
+  if (!device) {
+    respondJson(res, 401, { success: false, reason: 'unauthorized' });
+    return false;
+  }
+  if (device.scope !== 'control' || device.controlToken === undefined) {
     respondJson(res, 403, { success: false, reason: 'control auth required' });
     return false;
   }
-  return true;
+  if (!stepUp) {
+    respondJson(res, 403, { success: false, reason: 'control auth required' });
+    return false;
+  }
+  respondJson(res, 401, { success: false, reason: 'unauthorized' });
+  return false;
 }
 
 // Reads and shape-validates the request body, responding 400 itself (and

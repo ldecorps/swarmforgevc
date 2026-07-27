@@ -17,6 +17,7 @@ make_fixture() {
   mkdir -p "$d/swarmforge/scripts" "$d/extension/out/tools" "$d/.swarmforge/operator"
   cp "$SRC/start_cursor_bridge.sh" "$SRC/stop_cursor_bridge.sh" \
      "$SRC/cursor_bridge_supervisor.bb" "$SRC/front_desk_supervisor_lib.bb" \
+     "$SRC/bridge_supervisor_env_lib.bb" "$SRC/cursor_ripgrep_env.sh" \
      "$d/swarmforge/scripts/"
   printf '' > "$d/extension/out/tools/telegram-cursor-bridge.js"
   printf '%s' "$d"

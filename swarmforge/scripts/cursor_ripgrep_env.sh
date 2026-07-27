@@ -11,7 +11,8 @@ resolve_cursor_ripgrep_path() {
     return 0
   fi
 
-  local sdk_rg="${root}/extension/node_modules/@cursor/sdk-linux-x64/bin/rg"
+  local sdk_rg
+  sdk_rg="$(cd "$root" && pwd)/extension/node_modules/@cursor/sdk-linux-x64/bin/rg"
   if [[ -x "$sdk_rg" ]]; then
     export CURSOR_RIPGREP_PATH="$sdk_rg"
     return 0

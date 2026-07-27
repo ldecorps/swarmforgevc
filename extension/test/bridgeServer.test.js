@@ -1069,7 +1069,7 @@ test('serves /resident-spy HTML without a prior bearer/query token', async () =>
     assert.match(res.headers.get('content-type'), /text\/html/);
     const body = await res.text();
     assert.match(body, /<title>Swarm Live Screen<\/title>/);
-    assert.match(body, /resident-pane\?token=/);
+    assert.match(body, /resident-pane\?bearer=/);
     assert.match(body, /pane-split/);
     assert.match(body, /ticket-strip-line/);
     assert.match(body, /pane-fullscreen/);
@@ -1145,7 +1145,7 @@ test('serves /pipeline-grid HTML without a prior bearer/query token', async () =
     const res = await fetch(`http://127.0.0.1:${handle.port}/pipeline-grid`);
     assert.equal(res.status, 200);
     const body = await res.text();
-    assert.match(body, /pipeline-board\?token=/);
+    assert.match(body, /pipeline-board\?bearer=/);
     assert.match(body, /STATUS GRID/);
     assert.match(body, /overflow-x:\s*hidden/);
     assert.match(body, /font-controls/);
