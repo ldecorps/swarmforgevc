@@ -13,6 +13,8 @@ const {
   pickActiveOnboardingState,
   handleOnboardingMessage,
   renderStatus,
+  normalizeTargetRepoUrl,
+  isSameTarget,
 } = require('../out/onboarding/onboarderState');
 
 const fixedNow = () => 1_700_000_000_000;
@@ -350,6 +352,37 @@ test('BL-590: classifyControl pause/proceed regex anchors are exact, not substri
   assert.equal(classifyControl('proceed now'), null); // $ anchor
   assert.equal(classifyControl('  proceed'), 'proceed'); // leading \s* really allows whitespace
   assert.equal(classifyControl('proceed  '), 'proceed'); // trailing \s* really allows whitespace
+});
+
+// ── architect bounce #6/#7 (D3/D4): the handler must agree with the store on
+// what counts as "the same target", or an alias paste (scheme/.git/trailing
+// slash variant) of an in-flight target overwrites its verified progress
+// instead of resuming it ────────────────────────────────────────────────
+
+test('BL-590 architect bounce #6 D3: normalizeTargetRepoUrl collapses scheme, trailing slash, and .git aliases onto one key', () => {
+  const canonical = normalizeTargetRepoUrl('https://github.com/acme/widget');
+  assert.equal(normalizeTargetRepoUrl('https://github.com/acme/widget.git'), canonical);
+  assert.equal(normalizeTargetRepoUrl('http://github.com/acme/widget'), canonical);
+  assert.equal(normalizeTargetRepoUrl('https://github.com/acme/widget/'), canonical);
+});
+
+test('BL-590 architect bounce #6 D4: a trailing slash after .git still normalizes like plain .git', () => {
+  assert.equal(normalizeTargetRepoUrl('https://github.com/acme/widget.git/'), normalizeTargetRepoUrl('https://github.com/acme/widget.git'));
+});
+
+test('BL-590 architect bounce #6 D3: isSameTarget agrees with normalizeTargetRepoUrl, and distinct repos are never conflated', () => {
+  assert.equal(isSameTarget('https://github.com/acme/widget', 'https://github.com/acme/widget.git'), true);
+  assert.equal(isSameTarget('https://github.com/acme/widget', 'https://github.com/acme/gadget'), false);
+});
+
+test('BL-590 architect bounce #6 D3: re-posting an ALIAS of an in-flight target resumes it, never overwrites it', () => {
+  let state = createOnboardingState('https://github.com/acme/widget', fixedNow);
+  state = applyPrincipalReply(state, 'git version 2.43.0\nv20\ntmux 3.4\nBabashka 1.3\nclaude 1.2', fixedNow).state;
+  assert.deepEqual(state.verifiedSteps, ['toolchain']);
+
+  const outcome = handleOnboardingMessage([state], 'https://github.com/acme/widget.git', fixedNow);
+  assert.equal(outcome.kind, 'resumed');
+  assert.deepEqual(outcome.state.verifiedSteps, ['toolchain']);
 });
 
 test('BL-590: isLikelyRepoUrl regex anchors and scheme are exact, not substring matches', () => {
