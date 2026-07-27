@@ -196,6 +196,68 @@ test('BL-423: callback data outside the control: namespace (e.g. an approve/reje
   assert.deepEqual(decision, { action: 'ignore' });
 });
 
+// ── BL-655: ambulance mode (bare text, not slash-prefixed - the ticket's
+//    own vocabulary and the feature file's own scenarios type it bare) ────
+
+test('BL-655: "ambulance BL-654" in the control topic engages the named ticket', () => {
+  const decision = decideControlEventAction(textEvent('ambulance BL-654'), PRINCIPAL_ID, CONTROL_TOPIC_ID, undefined, NOT_PAUSED);
+  assert.deepEqual(decision, { action: 'engage-ambulance', ticket: 'BL-654' });
+});
+
+test('BL-655: ambulance engage is case/whitespace tolerant and normalizes the ticket id to uppercase', () => {
+  assert.deepEqual(
+    decideControlEventAction(textEvent('  AMBULANCE bl-654  '), PRINCIPAL_ID, CONTROL_TOPIC_ID, undefined, NOT_PAUSED),
+    { action: 'engage-ambulance', ticket: 'BL-654' }
+  );
+});
+
+test('BL-655: "ambulance off" releases the ambulance', () => {
+  const decision = decideControlEventAction(textEvent('ambulance off'), PRINCIPAL_ID, CONTROL_TOPIC_ID, undefined, NOT_PAUSED);
+  assert.deepEqual(decision, { action: 'release-ambulance' });
+});
+
+test('BL-655: "ambulance off" is case/whitespace tolerant', () => {
+  assert.deepEqual(
+    decideControlEventAction(textEvent('  Ambulance OFF  '), PRINCIPAL_ID, CONTROL_TOPIC_ID, undefined, NOT_PAUSED),
+    { action: 'release-ambulance' }
+  );
+});
+
+test('BL-655: "ambulance" with no ticket id and not "off" is ignored, never a fabricated engage', () => {
+  const decision = decideControlEventAction(textEvent('ambulance'), PRINCIPAL_ID, CONTROL_TOPIC_ID, undefined, NOT_PAUSED);
+  assert.deepEqual(decision, { action: 'ignore' });
+});
+
+test('BL-655: "ambulance not-a-ticket" is ignored - only a syntactically valid BL-### id engages', () => {
+  const decision = decideControlEventAction(textEvent('ambulance not-a-ticket'), PRINCIPAL_ID, CONTROL_TOPIC_ID, undefined, NOT_PAUSED);
+  assert.deepEqual(decision, { action: 'ignore' });
+});
+
+test('BL-655: an ambulance verb outside the control topic is ignored, even from the principal', () => {
+  const decision = decideControlEventAction(textEvent('ambulance BL-654', { topicId: 5 }), PRINCIPAL_ID, CONTROL_TOPIC_ID, undefined, NOT_PAUSED);
+  assert.deepEqual(decision, { action: 'ignore' });
+});
+
+test('BL-655: an unauthorised sender engaging the ambulance is refused, never ignored', () => {
+  const decision = decideControlEventAction(textEvent('ambulance BL-654', { fromId: 999 }), PRINCIPAL_ID, CONTROL_TOPIC_ID, undefined, NOT_PAUSED);
+  assert.deepEqual(decision, { action: 'refuse' });
+});
+
+test('BL-655: "ambulance" as a word inside other text does not engage - the verb must start the message', () => {
+  const decision = decideControlEventAction(textEvent('notambulance BL-654'), PRINCIPAL_ID, CONTROL_TOPIC_ID, undefined, NOT_PAUSED);
+  assert.deepEqual(decision, { action: 'ignore' });
+});
+
+test('BL-655: trailing text after the ticket id does not engage - the ticket id must end the message', () => {
+  const decision = decideControlEventAction(textEvent('ambulance BL-654 please'), PRINCIPAL_ID, CONTROL_TOPIC_ID, undefined, NOT_PAUSED);
+  assert.deepEqual(decision, { action: 'ignore' });
+});
+
+test('BL-655: more than one space between "ambulance" and the ticket id still engages', () => {
+  const decision = decideControlEventAction(textEvent('ambulance   BL-654'), PRINCIPAL_ID, CONTROL_TOPIC_ID, undefined, NOT_PAUSED);
+  assert.deepEqual(decision, { action: 'engage-ambulance', ticket: 'BL-654' });
+});
+
 // ── ordinary text (never a recognized verb) ──────────────────────────────
 
 test('BL-423: ordinary chatter in the control topic (not a recognized verb) is ignored', () => {

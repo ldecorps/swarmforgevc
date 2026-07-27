@@ -837,6 +837,12 @@ export interface PollAdapters {
   // BL-423: durationMs undefined means "Until I resume" (no timer).
   applyPause?: (durationMs: number | undefined) => Promise<void>;
   resumeNow?: () => Promise<void>;
+  // BL-655: ambulance mode's two effects - engage names the sole ticket
+  // allowed to move, release clears the marker. No confirm/menu step
+  // (unlike stop/restart/pause): the ticket id is already in the text, so
+  // the decision is self-contained.
+  engageAmbulance?: (ticket: string) => Promise<void>;
+  releaseAmbulance?: () => Promise<void>;
   // BL-590: the standing Onboarding topic's own id (ensureOnboardingTopic,
   // telegram-front-desk-bot.ts) - optional so every PollAdapters fixture
   // written before BL-590 keeps working unchanged, same posture as
@@ -1889,7 +1895,7 @@ async function attemptVoiceDelivery(
 // the same exhaustiveness guarantee a switch's `default: assertNever` gives.
 type ControlDecisionEffect = (adapters: PollAdapters) => Promise<void>;
 
-const CONTROL_DECISION_EFFECTS: Record<Exclude<ControlDecision['action'], 'apply-pause'>, ControlDecisionEffect> = {
+const CONTROL_DECISION_EFFECTS: Record<Exclude<ControlDecision['action'], 'apply-pause' | 'engage-ambulance'>, ControlDecisionEffect> = {
   ignore: async () => {},
   refuse: async () => {},
   'prompt-stop-modes': async (adapters) => {
@@ -1922,11 +1928,18 @@ const CONTROL_DECISION_EFFECTS: Record<Exclude<ControlDecision['action'], 'apply
   'resume-now': async (adapters) => {
     await adapters.resumeNow?.();
   },
+  'release-ambulance': async (adapters) => {
+    await adapters.releaseAmbulance?.();
+  },
 };
 
 async function applyControlDecision(decision: ControlDecision, adapters: PollAdapters): Promise<void> {
   if (decision.action === 'apply-pause') {
     await adapters.applyPause?.(decision.durationMs);
+    return;
+  }
+  if (decision.action === 'engage-ambulance') {
+    await adapters.engageAmbulance?.(decision.ticket);
     return;
   }
   await CONTROL_DECISION_EFFECTS[decision.action](adapters);

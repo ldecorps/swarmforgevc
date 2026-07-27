@@ -159,7 +159,7 @@ import { runConciergeTick, ConciergeTickAdapters, BacklogFolderItem, BacklogFold
 import { approvalRequestedEventKey } from '../events/swarmEventStream';
 import { reconcileTopicLifecycle, ReconcileAdapters } from '../concierge/topicReconciliation';
 import { sweepTopicDeletions, TopicDeletionAdapters, topicRetentionWindowMs } from '../concierge/topicDeletion';
-import { readBacklogFolders } from '../panel/backlogReader';
+import { readBacklogFolders, lookupBacklogItemById } from '../panel/backlogReader';
 import { loadApprovalMoreText } from '../concierge/approvalAskMore';
 import { appendOperatorEvent } from '../bridge/operatorEventQueue';
 import { appendMessage, readRecord, hasCompletionRecord, isRecordCommitted, hasUpdateId, readSwarmIconId, recordSwarmIconId, lastActivityMs } from '../concierge/blTopicStore';
@@ -1800,6 +1800,82 @@ export async function resumeNow(
   await postControlMessage(botToken, chatId, controlTopicId, 'Resumed - new work will be promoted again.', undefined, postFn);
 }
 
+// BL-655: the AMBULANCE marker - this bot is one of its two writers
+// (ambulance_cli.bb, human-only, is the other; nothing in the swarm ever
+// engages one for itself). Mirrors ambulance_lib.bb's EXACT shape
+// ({active, ticket, engagedAtMs, by}) and idempotency contract (a repeated
+// engage of the same ticket, or a release with no mode set, rewrites
+// nothing) so either surface honors the same "engage/release are
+// idempotent" invariant regardless of which one a human happens to use.
+export function controlAmbulanceStatePath(targetPath: string): string {
+  return path.join(targetPath, '.swarmforge', 'operator', 'control-ambulance.json');
+}
+
+type RawAmbulanceMarker = { active: true; ticket?: string; engagedAtMs?: number; by?: string } | { active: false } | undefined;
+
+function readRawAmbulanceMarker(targetPath: string): RawAmbulanceMarker {
+  try {
+    return JSON.parse(fs.readFileSync(controlAmbulanceStatePath(targetPath), 'utf8')) as RawAmbulanceMarker;
+  } catch {
+    return undefined;
+  }
+}
+
+export async function engageAmbulance(
+  targetPath: string,
+  botToken: string,
+  chatId: string,
+  controlTopicId: number | undefined,
+  ticket: string,
+  postFn?: TelegramPostFn,
+  nowMs: number = Date.now()
+): Promise<void> {
+  // Mirrors ambulance_cli.bb's engage-cmd! refusal: a ticket with no YAML
+  // file anywhere under backlog/ would hold EVERYTHING forever (the read
+  // side degrades the marker to inactive, but a human who was just told
+  // "engaged" has no way to know that from here) - the deadlock the
+  // operator ruled out. lookupBacklogItemById already scans active, paused,
+  // hold, and done (with milestone subdirs), the same "anywhere" scope as
+  // ambulance_lib.bb's ticket-has-file?.
+  if (!lookupBacklogItemById(targetPath, ticket)) {
+    await postControlMessage(
+      botToken,
+      chatId,
+      controlTopicId,
+      `Ambulance refused for ${ticket} - no YAML file for it anywhere under backlog/ (would hold everything forever).`,
+      undefined,
+      postFn
+    );
+    return;
+  }
+  const raw = readRawAmbulanceMarker(targetPath);
+  if (!(raw?.active && raw.ticket === ticket)) {
+    atomicWrite(controlAmbulanceStatePath(targetPath), JSON.stringify({ active: true, ticket, engagedAtMs: nowMs, by: 'telegram' }));
+  }
+  await postControlMessage(
+    botToken,
+    chatId,
+    controlTopicId,
+    `Ambulance engaged for ${ticket} - only its parcels move now; everything else queues in place, untouched.`,
+    undefined,
+    postFn
+  );
+}
+
+export async function releaseAmbulance(
+  targetPath: string,
+  botToken: string,
+  chatId: string,
+  controlTopicId: number | undefined,
+  postFn?: TelegramPostFn
+): Promise<void> {
+  const raw = readRawAmbulanceMarker(targetPath);
+  if (raw?.active) {
+    atomicWrite(controlAmbulanceStatePath(targetPath), JSON.stringify({ active: false }));
+  }
+  await postControlMessage(botToken, chatId, controlTopicId, 'Ambulance released - every held parcel resumes moving.', undefined, postFn);
+}
+
 function scopeTextFor(item: { description?: string; notes?: string } | undefined): string {
   if (!item) {
     return '';
@@ -2035,6 +2111,14 @@ function buildPollAdapters(
     resumeNow: async () => {
       const controlTopicId = await ensureControlTopic(targetPath, botToken, chatId);
       await resumeNow(targetPath, botToken, chatId, controlTopicId);
+    },
+    engageAmbulance: async (ticket) => {
+      const controlTopicId = await ensureControlTopic(targetPath, botToken, chatId);
+      await engageAmbulance(targetPath, botToken, chatId, controlTopicId, ticket);
+    },
+    releaseAmbulance: async () => {
+      const controlTopicId = await ensureControlTopic(targetPath, botToken, chatId);
+      await releaseAmbulance(targetPath, botToken, chatId, controlTopicId);
     },
     // ── BL-590: Onboarding Facilitator topic ────────────────────────────
     onboardingTopicId: () => ensureOnboardingTopic(targetPath, botToken, chatId),
