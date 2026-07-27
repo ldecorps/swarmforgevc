@@ -17,6 +17,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { Agent, CursorAgentError, type SDKAgent, type SDKMessage } from '@cursor/sdk';
+import { atomicWrite } from '../util/atomicWrite';
 import {
   createForumTopicWithRateLimitRetry,
   getTelegramUpdates,
@@ -41,6 +42,11 @@ import {
 const POLL_TIMEOUT_SECONDS = 30;
 const STATE_FILE_NAME = 'cursor-bridge-state.json';
 const TOPIC_MAP_FILE_NAME = 'cursor-bridge-topic-map.json';
+const HEARTBEAT_FILE_NAME = 'cursor-bridge-heartbeat.json';
+
+function writePollHeartbeat(opDir: string): void {
+  atomicWrite(path.join(opDir, HEARTBEAT_FILE_NAME), JSON.stringify({ lastHeartbeatMs: Date.now() }));
+}
 
 function requiredEnv(name: string): string {
   const value = process.env[name];
@@ -265,6 +271,7 @@ async function main(): Promise<void> {
     pollFailures = 0;
     state = { ...state, updateOffset: nextUpdateOffset(poll.updates, state.updateOffset) };
     persistState();
+    writePollHeartbeat(opDir);
 
     for (const update of poll.updates) {
       const inbound = inboundEventOf(update);
