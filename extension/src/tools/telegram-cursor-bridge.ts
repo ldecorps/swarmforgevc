@@ -12,7 +12,7 @@
  * Env:
  *   TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, TELEGRAM_PRINCIPAL_USER_ID
  *   CURSOR_API_KEY                         Cursor SDK credential
- *   CURSOR_BRIDGE_MODEL                    optional, default composer-2.5
+ *   CURSOR_BRIDGE_MODEL                    optional, default auto-smart
  */
 import * as fs from 'fs';
 import * as path from 'path';

@@ -164,7 +164,7 @@ async function runPrompt(agent: SDKAgent, prompt: string): Promise<string> {
 
 export function createLiveCursorBridgeAgentSession(targetPath: string): CursorBridgeAgentSessionDeps {
   const apiKey = process.env.CURSOR_API_KEY;
-  const modelId = process.env.CURSOR_BRIDGE_MODEL ?? 'auto';
+  const modelId = process.env.CURSOR_BRIDGE_MODEL ?? 'auto-smart';
   let cachedAgent: SDKAgent | undefined;
 
   const ensureAgent = async (): Promise<SDKAgent> => {
