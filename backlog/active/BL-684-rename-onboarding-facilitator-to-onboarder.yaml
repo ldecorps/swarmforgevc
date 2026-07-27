@@ -158,14 +158,36 @@ description: |
   ## What "done" looks like, as a command
 
   ```
-  git grep -lI -i facilitator -- . ':!backlog/evidence' ':!backlog/done'
+  git grep -lI -i facilitator -- . ':!backlog/evidence' ':!backlog/done' ':!backlog/topics'
   ```
 
-  returns only paths whose FILENAME is a `BL-###` record slug (boundary 2 in
-  `approval_context`), and every one of those files' CONTENT is already renamed.
-  Nothing else survives.
+  returns EXACTLY this allowlist and nothing else — the files whose own SUBJECT is
+  the rename, which cannot describe replacing a word without naming it:
 
-acceptance: specs/features/BL-684-rename-onboarding-facilitator-to-onboarder.feature.draft
+  ```
+  backlog/active/BL-684-rename-onboarding-facilitator-to-onboarder.yaml
+  specs/features/BL-684-rename-onboarding-facilitator-to-onboarder.feature
+  ```
+
+  Separately, and with no allowlist: no script, module, entrypoint, identifier,
+  env var or `.swarmforge/` state-file NAME contains the old word anywhere.
+
+  (Corrected at materialization, 2026-07-27. The earlier wording — "returns only
+  paths whose FILENAME is a `BL-###` record slug, and every one of those files'
+  CONTENT is already renamed" — cannot hold: `git grep -l` matches CONTENT, so a
+  file whose content was renamed is not returned at all. The allowlist above is the
+  same intent stated so it can actually be checked. Boundary 2 of `approval_context`
+  is unchanged: live `BL-###` FILENAMES keep their slug, which is why this ticket's
+  own two filenames still carry the old word.)
+
+  `backlog/topics/*.json` is excluded as dated record. Those files serialise
+  Concierge messages ALREADY POSTED to Telegram; rewriting them would falsify what
+  was actually sent. Invariant 3's own rationale — "a record keeps the words that
+  were actually used when it was written" — covers them, though it names only
+  `backlog/evidence/` and `backlog/done/`. Specifier call at materialization; amend
+  if the human reads invariant 3 more narrowly.
+
+acceptance: specs/features/BL-684-rename-onboarding-facilitator-to-onboarder.feature
 
 out_of_scope: |
   - Any Telegram API work: no `editForumTopic`, no topic migration, no subject
@@ -191,3 +213,42 @@ notes: |
 
   Cheapest-now argument, restated with the new measurement: 36 files on 2026-07-25,
   49 on 2026-07-26. Every parcel built in the old vocabulary adds to it.
+
+  ## Materialized 2026-07-27 (specifier) — BL-441 recovery, with five corrections
+
+  The coder bounced this blocked: `acceptance:` pointed at a `.feature.draft`, which
+  no `*.feature` glob and no acceptance runner picks up (BL-441 class). The draft is
+  now the live `specs/features/BL-684-...feature`; the `.draft` is removed. Lint gate
+  clean; IR-DRY clean (38 step occurrences, 35 unique, 0 findings).
+
+  Five scenarios were CORRECTED rather than shipped verbatim, because each was
+  unimplementable as drafted and would have bounced. Intent and scope are unchanged
+  in all five — no re-opening of the human's ruling:
+
+  1. **01** contradicted boundary 2, scenario 11 and the done-command: "no live file
+     name contains facilitator" is false while this ticket's own filename keeps its
+     slug. Reframed to the allowlist form above.
+  2. **04/05** asserted "a supervisor is started" — a real `bb` supervisor process
+     plus the launcher's `sleep 0.1` pid-claim poll, inside the acceptance suite.
+     That breaks engineering.prompt's no-real-timers rule. Reframed to the launcher's
+     observable DECISION (declines / does not decline). Real-process coverage stays
+     where it already lives: the supervisor tick test, scenario 09.
+  3. **08** ran the acceptance suite from inside the acceptance suite — unbounded
+     recursion, and no precedent for it anywhere in `specs/`. Reframed to the static
+     property it was reaching for: every live feature file's steps resolve against
+     the step registry, checked without executing them.
+  4. **09**'s "assertions are unchanged from before the rename" is a git-history
+     claim that rots the moment any later parcel touches that test. Dropped from the
+     durable contract — it is a REVIEW obligation (architect/hardener), not an
+     executable scenario. The behaviour claim itself survives as "it passes".
+  5. **10** had the same history-claim problem. Reframed to something durably
+     checkable and actually stronger: the dated record STILL CONTAINS the old word,
+     which is direct evidence it was not rewritten.
+
+  ## One implementation snag the coder should know about, not a prescription
+
+  `launch_onboarding_facilitator.sh` exits on `*_LAUNCH_DRYRUN=1` at line ~28,
+  ABOVE the pid-alive guard at line ~48. So dryrun cannot currently exercise the
+  guard at all — and the guard is exactly what scenarios 03/04/05 test. Reaching it
+  from a test needs either the dryrun check moved below the guard or a separate
+  seam. Which one is the coder's call; flagged so it is not discovered late.

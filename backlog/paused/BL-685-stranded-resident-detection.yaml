@@ -1,0 +1,171 @@
+id: BL-685
+title: "Detect a mono-router resident stranded off its home role — the turn-boundary failure both existing safeguards miss by construction"
+milestone: M8
+type: defect
+status: todo
+epic: swarm-reliability
+human_approval: approved
+severity: high
+priority: 06
+direction: human-requested
+depends_on: [BL-611]
+assigned_to: specifier
+mutation_cost: medium
+
+invariants:
+  - "Detection never depends on the stranded resident having done anything. Every signal the check reads is observable from outside the resident's own turn — pane state, the active-role file, mailbox contents on disk. The defect being detected IS the resident failing to act, so any check that needs its cooperation cannot see it. This is exactly why both existing safeguards miss it."
+
+approval_context: >
+  The intake was explicit that it is "a report, not a design" and asked the
+  specifier to size it. Sizing it produced one real choice, which is what needs
+  sign-off:
+
+  This ticket specs DETECTION only — the deterministic sweep grows a check that
+  sees a stranded resident and nudges the coordinator, which then re-dispatches.
+  The intake also floated PREVENTION (proposal 2): have the mono-router
+  launch/respawn wrapper enforce the rotate step structurally, as a
+  post-condition before the pane's turn truly ends, rather than trusting the
+  model to reach the last line of its checklist every time.
+
+  Prevention is deliberately NOT in this ticket. It is a larger, riskier change
+  to the rotation path — it has to distinguish "turn ended correctly" from "turn
+  ended early", and injecting a reminder into a pane at turn end interacts with
+  the endless-loop circuit breaker, which halts the whole swarm on a repeated
+  no-op spin. Detection is small, fully decidable from disk, and closes the
+  silent-stall half on its own.
+
+  Confirm: detection now, prevention as a separate ticket if the nudge loop
+  proves insufficient in practice? Or should prevention be specced alongside?
+
+severity_rationale: >
+  high — a live fault that silently stops all pipeline progress. Not critical:
+  the swarm is not down and no data is lost, and once detected the existing
+  coordinator re-dispatch path recovers it. But unlike the Class A failure it
+  sits beside, this one needs no external trigger — it is a property of the
+  resident's own turn-ending behaviour, so it can recur every time any role
+  finishes a batch. Article 3.2.4 expedite applies; note that depends_on gates
+  promotion regardless, so the lane does not actually move it ahead of BL-611.
+
+source: |
+  Operator intake `INTAKE-resident-turn-ends-without-self-rotation.md`, filed
+  2026-07-26 by the human live during that evening's stall.
+
+  ## Two failure classes, only one of them monitored
+
+  **Class A — already monitored** (`rotate-unhonored`, sweep check 9). A rotate
+  INSTRUCTION exists, is delivered, is marked completed, and
+  `mono-router-active-role` never flips. Confirmed incident 2026-07-24
+  23:59Z-02:57Z: ~1h of repeated CRIT `rotate-unhonored-QA` while the persona
+  stayed on coder/cleaner/architect/hardender.
+
+  **Class B — NOT monitored, this ticket.** No rotate instruction exists to
+  check, because none was ever written. Measured 2026-07-26 ~20:38Z onward: the
+  resident finished a real batch as specifier (BL-680/681/682/683, six commits
+  20:29-20:38Z, including an Article 5 constitutional ratification), then ended
+  its turn deliberately and reasonably — "it deserves a fresh turn" — without
+  the protocol's mandatory last step.
+
+  Verified state 9+ minutes later: `mono-router-active-role` still `specifier`;
+  both specifier mailboxes (`new`, `in_process`) empty; pane content
+  byte-identical across two captures fifteen minutes apart; process state `Sl+`,
+  genuinely sleeping rather than computing.
+
+  ## Why both existing safeguards miss it — the same blind spot twice
+
+  Verified against the tracked helpers, not assumed:
+
+  - `ready_for_next.sh:23` prints `ROTATE_HOME` for a non-home role with an
+    empty mailbox and execs `rotate_to_role.sh` (BL-550, covered by
+    `test/test_ready_for_next_rotate_home.sh`). It works — but it only runs if
+    the resident RUNS `ready_for_next.sh`. Class B is the resident not running
+    it at all.
+  - `rotate-unhonored` looks for a completed parcel carrying a rotate
+    instruction. In Class B no such parcel exists, so the check finds nothing
+    and reads green.
+
+  Both are triggered by an action the stranded resident skipped. The two checks
+  must be ADDITIVE, not one generalized — that is the intake's own conclusion
+  and it is right.
+
+  ## Why this is a turn-boundary problem, not a reasoning problem
+
+  The 2026-07-26 turn was full, productive and well-reasoned, and still skipped
+  the mandated final step — with an explicit, self-aware rationale for stopping.
+  That is consistent with the session's separate finding that turn OVERHEAD, not
+  per-command mechanics, is the dominant cost class (BL-664). A safeguard that
+  asks the model to remember one more last line is betting against the same
+  boundary that already lost.
+
+description: |
+  ## The check
+
+  A deterministic sweep check, distinct from `rotate-unhonored`, whose firing
+  signature is the observable shape of Class B:
+
+  - the resident's pane is idle (no busy footer), AND
+  - `mono-router-active-role` is not the configured home role, AND
+  - the resident's mailboxes (`new` and `in_process`) are empty, AND
+  - no dispatch note to the coordinator is pending, AND
+  - the idle state has persisted past a grace period.
+
+  All five, together. Each of the last four is a suppressor with a real
+  false-positive it exists to prevent — a resident that is busy, holding work,
+  legitimately at home, or has already correctly asked for dispatch is NOT
+  stranded, and neither is one that merely paused mid-turn.
+
+  On firing: a CRIT-equivalent finding naming the role the resident is stuck in,
+  nudged to the coordinator under the same dedup/cooldown contract as every
+  other nudge class, so the coordinator re-dispatches.
+
+  ## Where it lives, and why it waits for BL-611
+
+  This is a new entry in the babysitter's check catalogue, which BL-653's
+  `out_of_scope` already assigns to BL-611. It must wait for BL-611 for the same
+  reason BL-653 does: the sweep lives entirely in gitignored
+  `.swarmforge/operator/`, so until BL-611 ports it into `swarmforge/scripts/`
+  there is no tracked file for this check to be added to, no test runner to
+  cover it, and nothing QA could verify at a commit.
+
+  ## Wiring — the check must RUN, not merely exist
+
+  A pure predicate that no sweep calls is the BL-419 shape: shipped, unit-tested,
+  green, and wired into nothing. The check must be registered in the real sweep's
+  check list and reachable on a live run, and the acceptance evidence must show
+  it firing from the sweep entry point rather than from a direct unit call.
+
+  `required_wiring:` is deliberately NOT pinned here: BL-611 has not yet chosen
+  the ported sweep script's filename, and a guessed `path::pattern` would arm the
+  pre-QA gate against a path that never existed. Fill it in at promotion, once
+  BL-611 has landed and the real path is known.
+
+acceptance: specs/features/BL-685-stranded-resident-detection.feature
+
+out_of_scope: |
+  - Structural PREVENTION in the rotation path (the intake's proposal 2) — see
+    `approval_context`. Separate ticket if wanted.
+  - Any auto-remediation: this check observes and nudges the coordinator. It
+    never rotates the resident itself, sends it a keystroke, or picks a menu
+    option — BL-611's read-only invariant covers the whole sweep and scenario 05
+    pins it for this check.
+  - Changing `rotate-unhonored` (check 9). The two are additive; generalizing
+    one into the other is how the blind spot was missed in the first place.
+  - The operator's wake source. That is BL-653, a different layer — this ticket
+    is about the RESIDENT's turn-ending discipline, not who gets woken.
+  - Non-mono-router packs, where every role has its own standing session and the
+    stranded-resident shape does not exist.
+
+notes: |
+  Specced 2026-07-27 from the operator intake, which is now archived.
+
+  Sequencing: BL-611 (ports the sweep into git) -> this. Both sit behind the
+  same dependency for the same structural reason, and BL-653 joins them — three
+  tickets that all needed the babysitter to be a tracked deliverable before they
+  could be built at all. That is worth noticing as a pattern rather than three
+  coincidences: an untracked prototype accumulates dependents silently.
+
+  The intake noted the coordinator, on receiving the babysitter's stuck-parcel
+  nudge, independently began investigating the resident's process tree with
+  `ps --ppid` rather than assuming it dead or wedged. That is the correct
+  caution and the reason this check reports rather than remediates: from
+  outside, a stranded resident and a busy one differ only in signals this check
+  is required to read properly.
