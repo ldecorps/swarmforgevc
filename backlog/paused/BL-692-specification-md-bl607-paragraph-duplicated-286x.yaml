@@ -1,0 +1,129 @@
+id: BL-692
+title: "Specification.MD carries 285 junk copies of one BL-607 paragraph interleaved through its whole tail, and 284 of them contain a shell-mangled CLI example"
+milestone: M8
+type: defect
+severity: medium
+status: todo
+epic: spec-drift-realignment
+human_approval: pending
+priority: 25
+direction: swarm-proposed
+depends_on: []
+assigned_to: specifier
+mutation_cost: low
+
+invariants:
+  - "The repair removes only copies of the one duplicated paragraph: every other line of Specification.MD survives byte-identical and in the same relative order, including the ~100 lines markdown requires to repeat (code fences, horizontal rules, table separators, diagram glyphs)."
+
+approval_context: >
+  Reported by the documenter 2026-07-27 as a priority-00 note. Diagnosis below
+  is measured, not estimated, and the repaired output has been modelled end to
+  end — the numbers in the acceptance are the actual ones. Approve to schedule
+  the repair. Reject only if you would rather revert 7fa17fecd and re-document
+  BL-607 from scratch, which would also discard the eleven good doc commits
+  layered on top of it.
+
+source: |
+  ## What is wrong
+
+  `docs/reference/Specification.MD` contains **286 copies** of a single
+  ~2,900-character paragraph, `**Pipeline role clarifying questions into
+  per-role topics (BL-607).**`. One belongs there. The other 285 are junk,
+  interleaved between the real lines from line 1948 to the end of the file.
+
+  The file is **1,361,287 bytes / 2,802 lines**. Stripped of the junk it is
+  **531,668 bytes / 2,249 lines** — roughly 830 KB, 61% of the file, is one
+  paragraph repeated.
+
+  ## Where it came from — one commit, precisely
+
+  | commit | copies | bytes |
+  |---|---|---|
+  | `16e82c766` (BL-560, before) | 0 | 502,857 |
+  | `7fa17fecd` "Document BL-607…" | **286** | **1,335,926** |
+  | …eleven later doc commits… | 286 | grows to 1,361,287 |
+
+  `7fa17fecd` is `+573 / -1` in this file alone: 286 paragraph lines plus
+  their blank lines. Every documenter pass since has committed on top of the
+  corruption without noticing it — eleven commits, three days.
+
+  ## The second, sharper defect: two variants, and the wrong one won
+
+  The 286 copies are not identical. **284** carry a mangled CLI example:
+
+      --options ''[opt1,opt2]''
+
+  **2** carry the correct one, matching `role_ask.bb`'s real interface as
+  documented in `swarmforge/roles/specifier.prompt`:
+
+      --options '["opt1","opt2"]'
+
+  The mangling is a lost layer of shell quoting, which is also the mechanism
+  that explains the 286 inserts: the paragraph was appended through a shell
+  loop rather than an editor. **A naive dedupe that keeps "the most common"
+  copy preserves the broken example and deletes both good ones.**
+
+  ## What is NOT wrong
+
+  No content was lost. Every section that preceded the corruption survives,
+  including the closing `## Gaps & Things Still Missing` and
+  `## Out of Scope (v1)`. Verified by comparing all 1,509 non-blank
+  non-duplicate lines against the pre-corruption revision: byte-identical.
+
+description: |
+  Delete 285 of the 286 copies. Keep the one whose CLI example is correct, in
+  the position it already occupies in the chronological narrative — between
+  the BL-354 cross-thread paragraph and the BL-283 coordinator-handoff
+  paragraph.
+
+  The corruption also left 133 doubled blank lines behind. Collapse every run
+  of consecutive blank lines in the file to one. **This intentionally also
+  normalises the 2 doubled blanks that pre-date the corruption** — called out
+  here so it is not read as scope creep at review: it makes the criterion a
+  whole-file property (`no run of two blank lines anywhere`) instead of one
+  needing a hand-drawn region boundary, and the two incidental spots carry no
+  meaning.
+
+  ## Why medium, stated plainly
+
+  Not critical, not high: nothing at runtime reads this file, no safety or
+  health signal is broken, and the swarm's behaviour is unaffected. But this
+  is the project's reference specification — the document a human opens to
+  learn what was built — and it is currently 61% garbage and unreadable at
+  the point of corruption. Every agent that reads it pays 2.7x the tokens for
+  it. Contained, real, and cheap to fix: medium.
+
+  ## The generalisable bit
+
+  A documenter shelled out to append prose instead of editing, lost a layer
+  of quoting, and the loop ran once per remaining line. Nothing caught it —
+  not the commit, not eleven subsequent doc passes, not QA. The recurrence
+  guard is deliberately NOT in this ticket; it is BL-693, so this repair can
+  land as the small mechanical change it is.
+
+acceptance: specs/features/BL-692-specification-md-duplicate-paragraph-repair.feature.draft
+
+out_of_scope: |
+  - The recurrence guard. That is BL-693 — a repeated-paragraph gate wired
+    into the documenter's pass. Do not build it here.
+  - Reverting or re-writing `7fa17fecd`'s BL-607 documentation. The surviving
+    copy is good prose; only its 285 clones are the defect.
+  - Re-auditing the eleven doc commits layered on top. They are sound; they
+    simply did not notice what they were building on.
+  - Any other file. The duplication is confined to
+    `docs/reference/Specification.MD`.
+
+notes: |
+  Gherkin parked as `.feature.draft` per BL-233; the coder promotes it and
+  wires handlers in the same commit.
+
+  Lint gate clean. IR-DRY leaves two medium findings, both reviewed and
+  deliberately kept — do not "normalise" them: `repair runs` vs `runs again`
+  is the idempotence scenario's second invocation, and `2 copies correct` vs
+  `284 copies mangled` is the contrast this whole ticket turns on.
+
+  Candidate for `required_stages: [coder, documenter, qa]` — this is a
+  docs-only content deletion with no code, architecture or mutation surface.
+  Deliberately left unset: `required_stages_routing_enabled` is off by
+  default and BL-606 routing is under hawk-watch, so the safe full-chain
+  default applies until an operator says otherwise.

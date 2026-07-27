@@ -1,0 +1,89 @@
+id: BL-693
+title: "A repeated-paragraph gate for markdown docs, wired into the documenter's pass, so a botched append cannot ship 285 junk paragraphs undetected again"
+milestone: M8
+type: feature
+status: todo
+epic: code-quality-gates
+human_approval: pending
+priority: 35
+direction: swarm-proposed
+depends_on: [BL-692]
+assigned_to: specifier
+mutation_cost: low
+
+invariants:
+  - "No line whose content is markdown structure rather than prose — code fence, horizontal rule, table separator, list marker, blockquote marker, diagram glyph — is ever reported as a duplicate, however many times it repeats."
+
+approval_context: >
+  Prevention half of BL-692, split out so that repair can land as the small
+  mechanical deletion it is. The question worth your judgement is whether a
+  new gate is worth a parcel at all, versus accepting that this was a
+  one-off. Evidence for building it: nothing in the swarm noticed 830 KB of
+  duplicated prose in the reference specification for three days and eleven
+  documenter commits. Reject if you would rather rely on review alone.
+
+source: |
+  BL-692's corruption — 286 copies of one paragraph in
+  `docs/reference/Specification.MD` — was introduced by a single commit and
+  then survived eleven subsequent documenter passes and a QA gate without
+  anyone noticing. The file more than doubled in size and nothing objected.
+
+  There is no lint over prose docs in this repo. `gherkin_lint_gate.sh`
+  covers `.feature` files, the IR-DRY checker covers Gherkin steps, `jscpd`
+  covers TypeScript. Markdown is unguarded.
+
+  Measured on the corrupted file, the signal is unambiguous and needs no
+  fuzzy matching: the duplicated prose line appeared 284 times; the next most
+  repeated line in the whole document was a bare ``` fence at 50, and every
+  other repeat above 5 was markdown structure. Exact-match on prose lines
+  separates the defect from legitimate markdown cleanly.
+
+description: |
+  A gate in the shape of the existing `gherkin_lint_gate` trio —
+  `swarmforge/scripts/doc_dup_gate_lib.bb` (the logic, unit-tested),
+  `doc_dup_gate_cli.bb`, and a `doc_dup_gate.sh` wrapper — that takes one or
+  more markdown paths and exits non-zero when any prose line appears more
+  than once in the same file.
+
+  A failure names the file, the repeated text (truncated), the number of
+  occurrences, and the line numbers, so the reader can act without opening a
+  1.36 MB file.
+
+  Structural markdown is exempt: fences, horizontal rules, table separator
+  rows, list markers, blockquote markers, and box-drawing diagram lines all
+  legitimately repeat. That exemption set is open-ended, which is why it is
+  stated as an invariant rather than enumerated only in scenarios — a
+  property test over generated markdown is the right encoding.
+
+  ## Wiring
+
+  The documenter runs it over the doc files its pass touched, before
+  committing. That instruction goes in `swarmforge/roles/documenter.prompt`,
+  mirroring how `gherkin_lint_gate.sh` is named in `specifier.prompt` — and
+  it is declared in `required_wiring:` so the pre-QA gate refuses a handoff
+  that ships the mechanism without the call site.
+
+acceptance: specs/features/BL-693-repeated-paragraph-gate.feature.draft
+
+required_wiring:
+  - "swarmforge/roles/documenter.prompt::doc_dup_gate.sh::the gate is worthless unless the documenter is told to run it; a lib with no caller is the BL-419 shape"
+
+out_of_scope: |
+  - Near-duplicate / fuzzy matching. Exact line match is what the evidence
+    supports; similarity scoring invites false positives over a corpus that
+    legitimately repeats boilerplate.
+  - Cross-file duplication. Sections are deliberately restated across docs
+    here; only within-file repetition is the defect.
+  - Repairing BL-692's corruption. That is BL-692, and it must land first —
+    hence `depends_on`.
+  - Making the gate blocking anywhere other than the documenter's own pass.
+    Adding it to `swarm_handoff.bb` or a commit hook is a separate decision
+    about core transport, not this slice.
+
+notes: |
+  Gherkin parked as `.feature.draft` per BL-233; the coder promotes it and
+  wires handlers in the same commit.
+
+  Lint gate clean. IR-DRY leaves one medium finding, reviewed and kept:
+  `the gate runs on both` vs `the gate runs on it` differ by arity — one
+  file versus two — which is exactly what scenarios 04 and 05 test.
