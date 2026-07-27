@@ -1,0 +1,181 @@
+id: BL-687
+title: "Within-epic reorder covers every live child of the epic — paused, hold AND active — instead of parked children only"
+milestone: M8
+type: feature
+status: todo
+epic: swarmforge-console
+human_approval: pending
+priority: 03
+direction: human-requested
+mutation_cost: medium
+depends_on: [BL-686]
+invariants:
+  - "An epic tile's drill-down lists exactly the non-`type: epic` tickets in paused, hold AND active whose `epic:` slug equals that tile's slug — none of those three folders is ever silently absent, and a `done/` child never appears."
+  - "Widening the within-epic set changes ORDER only: for every backlog state, whether a topic make-top is refused, bounded, or accepted on DEPENDENCY grounds is identical to what it was when the set was paused+hold — an `active/` ticket is never a live dependency."
+  - "The epic-tile surface is untouched: for every backlog state, the tiles listed, their order, and the domination set of the epic-level Make top verb (BL-672) are exactly what they were before this ticket."
+acceptance: specs/features/BL-687-epic-reorder-includes-active-children.feature
+
+approval_context: >
+  The widening itself is already the operator's stated intent (intake
+  2026-07-27: peers are paused + hold + active, done excluded). Two decisions
+  genuinely new to this ticket need sign-off. (1) An in-flight (`active/`)
+  child is not merely DISPLAYED — it is a full ordering peer AND itself a
+  valid Make top target, so tapping it rewrites `priority:` inside a
+  `backlog/active/` file, and making a parked sibling top can rewrite an
+  in-flight file by displacement. That rewrite is recorded queue order only:
+  it never promotes, demotes, or reorders in-flight pipeline work, and the row
+  is badged "in flight" so the screen never implies otherwise. Say so if you
+  would rather in-flight children were read-only (shown, ordered around, but
+  no button). (2) Dependency semantics stay EXACTLY as BL-672 set them: a
+  `depends_on` pointing at an `active/` ticket remains a satisfied terminal
+  node, so it neither bounds nor refuses a move (the coordinator's promotion
+  gate owns in-flight completion). The alternative — active counts as a live
+  dependency — would newly REFUSE moves whose dependency is already being
+  built, which reads as a bug on the phone. Also still open, asked separately:
+  whether per-topic Make top alone satisfies "reorder all", or whether
+  pairwise move up/down is wanted inside the drill-down too (that would be its
+  own follow-up ticket, not this one).
+
+source: |
+  Operator (human) 2026-07-27, .swarmforge/operator/INTAKE-epic-within-reorder-all-child-bl-asap.md
+  ("within-epic reorder of ALL child BL", marked ASAP): from the Reorder epics
+  screen's epic drill-down the operator must be able to re-prioritize every
+  child BL of that epic, "not an active-only subset, not an empty drill-down",
+  with the peer set spanning paused + hold + active and `done/` excluded. The
+  intake also answers the question this ticket's predecessor raised
+  (BL-686 approval_context: "whether `active/` children should join this
+  reorder set at all") — the answer is yes. Urgency is carried as priority 03,
+  not as a defect severity: the shipped behaviour matches its own approved
+  spec (BL-673 scoped peers to paused + hold deliberately), so this is a scope
+  widening, not a defect.
+
+description: |
+  ## What
+
+  BL-673/674's within-epic reorder works over PARKED children only. Its live
+  set comes from `readLiveBacklogItems` (`bridgeServer.ts:739`), which is
+  `folders.paused` + `folders.hold` — so an epic whose children are split
+  across parked and in-flight shows a partial list, and the ordering the
+  operator applies is only true of the part they can see. Widen the
+  WITHIN-EPIC surface to paused + hold + active. `done/` stays out (shipped
+  work is not reorderable).
+
+  Real shape today: epic `swarm-intelligence-layer` has children in all three
+  folders at once — BL-624 (paused), BL-548/BL-557 (hold), BL-590 (active).
+  That epic's drill-down is exactly the case the operator hit.
+
+  ## The three decisions this ticket makes
+
+  1. **In-flight children are full members, not read-only guests.** They are
+     listed in the same priority-ordered list, they count as ordering peers
+     (a parked child made top must out-rank them), and they are themselves
+     valid Make top targets. Consequences, stated deliberately rather than
+     discovered later: a make-top can rewrite `priority:` in a
+     `backlog/active/` file, both as the target and by displacement. That is
+     a recorded-queue-order rewrite and nothing else — it does not promote,
+     demote, expedite or reorder in-flight pipeline work, and the pipeline
+     never reads a promoted ticket's `priority:` again. Every in-flight row
+     carries an "in flight" badge so the screen never implies otherwise.
+
+  2. **Dependency semantics do not move.** A `depends_on` naming an `active/`
+     ticket stays a satisfied terminal node (`buildResolveNonLiveDependency`,
+     `bridgeServer.ts:754`), exactly as BL-672 defined it — it neither bounds
+     a move nor refuses one, and it lights no live-dependency marker. This is
+     invariant 2 and it is the subtle one: putting active items into the set
+     `computeMakeTopPriority` traverses would silently make them live
+     dependencies, so a parked child whose in-flight dependency happens to
+     carry a worse priority number would be REFUSED ("promoting it would
+     deepen an existing dependency violation") for work that is already being
+     built. The ordering set and the dependency set are therefore different
+     sets, and the code must say so.
+
+  3. **Nothing above the drill-down changes.** `readLiveBacklogItems` is
+     shared with the epic-tile Make top route (BL-672, `bridgeServer.ts:861`)
+     and with the tiles' own `hasLiveDependency` markers. Widening it in place
+     would silently widen BL-672's whole-backlog domination set too — an
+     epic-tile make-top would then displace in-flight tickets' priorities.
+     Introduce the widened set for the within-epic surface only and leave the
+     existing reader serving the tile-level routes untouched (invariant 3,
+     and scenario 07 is its executable form).
+
+  ## Also in scope
+
+  - **Empty-state copy.** `"No live topics in this epic."`
+    (`epicReorderUiHtml.ts:202`) becomes
+    `"No reorderable topics under this epic."` — deferred here from BL-686
+    on purpose, because only now is "reorderable" the truthful word: the set
+    is every live child, and what is excluded is excluded because it shipped.
+
+  ## Direction
+
+  The membership decision stays where BL-686 puts it — in the testable module,
+  not the webview. `computeEpicReorderState` attaches each tile's children
+  from the widened set with an in-flight flag per child; the drill-down stays
+  presentation-only (filter on tile ticket id, render the badge); the topic
+  make-top route resolves its target and peers from that same widened set
+  while its dependency traversal keeps reading the paused+hold set. Read side
+  and write side must derive membership from ONE place, as BL-686 requires —
+  a second copy of "who is in this epic" is how BL-686 happened. Exact shape
+  is the coder's call; the scenarios and invariants are the contract.
+
+  ## Depends on BL-686
+
+  BL-686 fixes the id/slug comparison that makes every drill-down empty. This
+  ticket is unobservable until that lands: build on it, do not re-fix it, and
+  do not widen anything before its scenarios are green. If BL-686 is still in
+  flight when this is promoted, merge it first and re-read this ticket.
+
+  ## Scope
+
+  - `extension/src/bridge/bridgeServer.ts` — the widened within-epic reader,
+    `computeEpicReorderState`, `handleEpicReorderTopicMakeTopRoute`;
+    `readLiveBacklogItems` stays as-is for the tile-level routes.
+  - `extension/src/bridge/makeTopPrioritySafety.ts` — only if the ordering set
+    and the dependency set need separating there (invariant 2); its existing
+    callers' behaviour must not change.
+  - `extension/src/bridge/epicReorderUiHtml.ts` — `renderDrilldown`: in-flight
+    badge, renamed empty state.
+  - `specs/pipeline/steps/` — new BL-687 handlers.
+  - `extension/test/epicDrilldownUiHtml.test.js`, `topicMakeTopBridge.test.js`,
+    `epicMakeTopBridge.test.js` — regression coverage, on BL-686's corrected
+    fixtures (epic ticket id and slug must differ; never re-conflate them).
+
+  ## Out of scope
+
+  - Pairwise move up/down inside the drill-down (asked separately; own ticket
+    if wanted).
+  - Epic TILES for epic trackers that are not in `paused/` (there are none
+    today; if one is ever promoted its tile disappears — separate ticket).
+  - The BL-542 duplicate-slug data correction (BL-686 flagged it; still a
+    one-line YAML fix for a human).
+
+  ## e2e QA procedure
+
+  On the phone Mini App, with BL-686 landed: Reorder epics → drill into
+  "EPIC — Swarm Intelligence Layer" (BL-545). The list shows its parked
+  children AND BL-590, with BL-590 badged in flight; no done child appears.
+  Tap Make top on a parked child currently ranked below BL-590 — it lands
+  above BL-590 and the write commits (no 404). Re-open the screen: the order
+  survives the reload, and `git show` on the commit shows the rewritten
+  `priority:` values, including any inside `backlog/active/`. Tap Make top on
+  BL-590 itself: accepted, and BL-590 is unchanged in the pipeline (still
+  wherever it was, still assigned to the same role). Drill into an epic with
+  no live children and read the empty state: "No reorderable topics under this
+  epic." Finally, back on the tiles, tap an epic tile's own Make top and
+  confirm no `backlog/active/` file was rewritten by it.
+
+notes: |
+  IR-DRY (vendored APS checker) reports 19 near-duplicate / possible-synonym
+  findings on this feature file. Reviewed: every one is the SAME step pattern
+  differing only in its quoted arguments (folder, ticket id, priority) — the
+  intended parameterized shape, one handler per pattern. Not accidental
+  wording drift, so left as written; a Background data table was considered
+  and rejected because step data tables are all but unused in this repo's
+  pipeline and BL-233's runner hard-fails on anything it cannot handle.
+
+  Still open with the operator (asked 2026-07-27, separate from this ticket's
+  approval): does per-topic Make top alone satisfy "reorder all child BL", or
+  is pairwise move up/down wanted inside the drill-down as well (as the epic
+  tiles have had since BL-572)? If the answer is up/down, it becomes its own
+  follow-up ticket on top of this one — this ticket's widened peer set is what
+  such a verb would operate over either way.
