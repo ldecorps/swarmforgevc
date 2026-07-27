@@ -81,6 +81,72 @@ export function unprocessableAudioMessage(): string {
   return 'Could not transcribe the recording — the audio could not be decoded.';
 }
 
+export type LetsTalkSpeechLanguage = 'en' | 'fr';
+export type LetsTalkSpeechLanguageSetting = LetsTalkSpeechLanguage | 'auto';
+
+export function parseLetsTalkSpeechLanguage(raw: string | undefined): LetsTalkSpeechLanguageSetting {
+  if (!raw) {
+    return 'auto';
+  }
+  const lower = raw.trim().toLowerCase();
+  if (lower === 'auto') {
+    return 'auto';
+  }
+  if (lower === 'fr' || lower === 'french' || lower.startsWith('fr-')) {
+    return 'fr';
+  }
+  if (lower === 'en' || lower === 'english' || lower.startsWith('en-')) {
+    return 'en';
+  }
+  return 'auto';
+}
+
+export function speechLocaleForLanguage(language: LetsTalkSpeechLanguage): string {
+  return language === 'fr' ? 'fr-FR' : 'en-US';
+}
+
+/** Heuristic per-turn language when LETS_TALK_SPEECH_LANGUAGE=auto. */
+export function detectSpeechLanguageFromText(text: string): LetsTalkSpeechLanguage {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return 'en';
+  }
+  if (/[àâäæçéèêëïîôùûüœ]/i.test(trimmed)) {
+    return 'fr';
+  }
+  const frenchWord =
+    /\b(bonjour|merci|salut|oui|non|comment|pourquoi|quand|avec|sans|dans|chez|très|aussi|être|avoir|vous|nous|ils|elles|cette|cet|ces|quoi|quel|quelle|quels|quelles)\b/i;
+  const englishWord =
+    /\b(hello|thanks|thank you|yes|no|what|when|where|why|how|with|without|the|this|that|these|those|you|your|they|their)\b/i;
+  const frenchHits = (trimmed.match(frenchWord) ?? []).length;
+  const englishHits = (trimmed.match(englishWord) ?? []).length;
+  if (frenchHits > englishHits) {
+    return 'fr';
+  }
+  if (englishHits > frenchHits) {
+    return 'en';
+  }
+  return 'en';
+}
+
+export function resolveTurnSpeechLanguage(
+  setting: LetsTalkSpeechLanguageSetting,
+  transcript: string
+): LetsTalkSpeechLanguage {
+  if (setting === 'en' || setting === 'fr') {
+    return setting;
+  }
+  return detectSpeechLanguageFromText(transcript);
+}
+
+export function formatLetsTalkAgentPrompt(transcript: string, language: LetsTalkSpeechLanguage): string {
+  const trimmed = transcript.trim();
+  if (language === 'fr') {
+    return `[Let's Talk — réponds en français]\n\n${trimmed}`;
+  }
+  return trimmed;
+}
+
 export function extractCodeWordFromRememberPhrase(transcript: string): string | undefined {
   const match = transcript.match(/\bremember\s+the\s+code\s+word\s+(\w+)/i);
   return match?.[1];

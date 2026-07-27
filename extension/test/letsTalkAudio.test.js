@@ -105,6 +105,18 @@ test('letsTalkAudio: local engine wires whisper STT and client TTS only', () => 
   assert.equal(typeof local.transcribeAudio, 'function');
   assert.equal(local.synthesizeSpeech, undefined);
   assert.equal(local.clientTts, true);
+  assert.equal(local.speechLanguage, 'auto');
+  assert.equal(local.speechLocale, undefined);
+});
+
+test('letsTalkAudio: local engine with French speech language', () => {
+  const local = resolveLetsTalkAudioAdaptersFromEnv({
+    LETS_TALK_AUDIO_ENGINE: 'local',
+    WHISPER_MODEL_PATH: '/models/base.bin',
+    LETS_TALK_SPEECH_LANGUAGE: 'fr',
+  });
+  assert.equal(local.speechLanguage, 'fr');
+  assert.equal(local.speechLocale, 'fr-FR');
 });
 
 test('letsTalkAudio: local engine without model path is empty', () => {

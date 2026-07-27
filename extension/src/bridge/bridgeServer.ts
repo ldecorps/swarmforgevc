@@ -64,6 +64,7 @@ import {
   isLetsTalkPath,
 } from './letsTalkRoutes';
 import { resolveLetsTalkAudioAdaptersFromEnv } from './letsTalkAudio';
+import { parseLetsTalkSpeechLanguage, speechLocaleForLanguage } from './letsTalkCore';
 import { createLiveCursorBridgeAgentSession, type CursorBridgeAgentSessionDeps } from './cursorBridgeAgentSession';
 import type { TranscribeAudio, SynthesizeSpeech } from './letsTalkAudio';
 
@@ -1264,7 +1265,9 @@ export function startBridge(
         return;
       }
       if (isLetsTalkPath(url)) {
-        serveMiniAppHtml(res, getLetsTalkUiHtml());
+        const speechSetting = parseLetsTalkSpeechLanguage(process.env.LETS_TALK_SPEECH_LANGUAGE);
+        const speechLocale = speechLocaleForLanguage(speechSetting === 'auto' ? 'en' : speechSetting);
+        serveMiniAppHtml(res, getLetsTalkUiHtml(speechLocale));
         return;
       }
 

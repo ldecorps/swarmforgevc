@@ -10,6 +10,11 @@ const {
   unprocessableAudioMessage,
   LETS_TALK_STT_RETRY_BUDGET,
   replyTextForSpeechSynthesis,
+  parseLetsTalkSpeechLanguage,
+  speechLocaleForLanguage,
+  formatLetsTalkAgentPrompt,
+  resolveTurnSpeechLanguage,
+  detectSpeechLanguageFromText,
 } = require('../out/bridge/letsTalkCore');
 
 test('letsTalk: valid turn request shape', () => {
@@ -70,4 +75,21 @@ test('letsTalk: replyTextForSpeechSynthesis strips markdown for TTS', () => {
     'Name, Value\nfoo, bar'
   );
   assert.equal(replyTextForSpeechSynthesis('BL-696 is fine'), 'BL-696 is fine');
+});
+
+test('letsTalk: speech language parsing and agent prompt', () => {
+  assert.equal(parseLetsTalkSpeechLanguage(undefined), 'auto');
+  assert.equal(parseLetsTalkSpeechLanguage('auto'), 'auto');
+  assert.equal(parseLetsTalkSpeechLanguage('fr-FR'), 'fr');
+  assert.equal(parseLetsTalkSpeechLanguage('en-US'), 'en');
+  assert.equal(speechLocaleForLanguage('fr'), 'fr-FR');
+  assert.match(formatLetsTalkAgentPrompt('quel est le statut', 'fr'), /réponds en français/i);
+  assert.equal(formatLetsTalkAgentPrompt('status check', 'en'), 'status check');
+});
+
+test('letsTalk: auto language detection from transcript', () => {
+  assert.equal(detectSpeechLanguageFromText('Bonjour, comment ça va'), 'fr');
+  assert.equal(detectSpeechLanguageFromText('Hello, how are you'), 'en');
+  assert.equal(resolveTurnSpeechLanguage('auto', 'merci beaucoup'), 'fr');
+  assert.equal(resolveTurnSpeechLanguage('fr', 'hello there'), 'fr');
 });

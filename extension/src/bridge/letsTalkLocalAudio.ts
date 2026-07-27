@@ -7,6 +7,7 @@ import * as path from 'path';
 import { promisify } from 'util';
 import type { SttResult } from '../tools/telegramFrontDeskBotCore';
 import { extensionForMime } from './letsTalkAudio';
+import { parseLetsTalkSpeechLanguage, type LetsTalkSpeechLanguageSetting } from './letsTalkCore';
 
 const execFileAsync = promisify(execFile);
 
@@ -18,12 +19,14 @@ export interface LetsTalkAudioEnv {
   whisperCppBin?: string;
   whisperModelPath?: string;
   ffmpegBin?: string;
+  speechLanguage?: string;
 }
 
 export interface WhisperCppConfig {
   bin: string;
   modelPath: string;
   ffmpegBin?: string;
+  language?: LetsTalkSpeechLanguageSetting;
 }
 
 export interface WhisperCppDeps {
@@ -56,6 +59,7 @@ export function letsTalkAudioEnvFromProcessEnv(env: NodeJS.ProcessEnv): LetsTalk
     whisperCppBin: env.WHISPER_CPP_BIN,
     whisperModelPath: env.WHISPER_MODEL_PATH,
     ffmpegBin: env.FFMPEG_BIN,
+    speechLanguage: env.LETS_TALK_SPEECH_LANGUAGE,
   };
 }
 
@@ -66,7 +70,8 @@ export function resolveWhisperCppConfig(env: LetsTalkAudioEnv): WhisperCppConfig
   }
   const bin = env.whisperCppBin?.trim() || 'whisper-cli';
   const ffmpegBin = env.ffmpegBin?.trim();
-  return { bin, modelPath, ...(ffmpegBin ? { ffmpegBin } : {}) };
+  const language = parseLetsTalkSpeechLanguage(env.speechLanguage);
+  return { bin, modelPath, language, ...(ffmpegBin ? { ffmpegBin } : {}) };
 }
 
 function defaultDeps(): WhisperCppDeps {
@@ -90,6 +95,8 @@ async function runWhisperOnce(
 ): Promise<SttResult> {
   const outBase = path.join(workDir, 'whisper-out');
   const args = ['-m', config.modelPath, '-f', audioPath, '-otxt', '-of', outBase, '-nt'];
+  const lang = config.language ?? 'auto';
+  args.push('-l', lang);
   try {
     await deps.execFile(config.bin, args);
   } catch {

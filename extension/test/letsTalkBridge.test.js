@@ -57,8 +57,7 @@ test("lets-talk Mini App shell is served without auth", async () => {
     assert.match(body, /Let's Talk/);
     assert.match(body, /data-testid="lets-talk-record"/);
     assert.match(body, /data-testid="lets-talk-new-session"/);
-    assert.match(body, /speechSynthesis/);
-    assert.match(body, /speakReplyText/);
+    assert.match(body, /ensureSpeechVoices/);
   });
 });
 
@@ -204,8 +203,24 @@ test('processLetsTalkTurn: client TTS mode succeeds without server synthesizeSpe
   assert.equal(result.success, true);
   assert.equal(result.replyText, 'You said: hi');
   assert.equal(result.replySpeechText, 'You said: hi');
+  assert.equal(result.speechLocale, 'en-US');
   assert.equal(result.clientTts, true);
   assert.equal(result.replyAudioBase64, undefined);
+});
+
+test('processLetsTalkTurn: auto mode uses French locale for French transcript', async () => {
+  const target = mkTmp();
+  const result = await processLetsTalkTurn(
+    { audioBase64: SAMPLE_AUDIO },
+    {
+      agentSession: createMockCursorBridgeAgentSession(target),
+      transcribeAudio: async () => ({ kind: 'ok', transcript: 'bonjour' }),
+      clientTts: true,
+      speechLanguage: 'auto',
+    }
+  );
+  assert.equal(result.success, true);
+  assert.equal(result.speechLocale, 'fr-FR');
 });
 
 test('processLetsTalkTurn: client TTS mode strips markdown from replySpeechText', async () => {

@@ -12,6 +12,8 @@ import { extractCodeWordFromRememberPhrase, mockAgentReplyForTranscript } from '
 const STATE_FILE_NAME = 'cursor-bridge-state.json';
 const LOCK_FILE_NAME = 'cursor-bridge-agent.lock';
 const LOCK_STALE_MS = 5 * 60 * 1000;
+const LOCK_POLL_MS = 25;
+const LOCK_MAX_WAIT_MS = 10 * 60 * 1000;
 
 export type PromptCursorAgent = (prompt: string) => Promise<{ replyText: string; agentId: string }>;
 export type ResetCursorAgentSession = () => Promise<{ agentId: string | undefined }>;
@@ -53,10 +55,46 @@ function isStaleLock(lockPath: string): boolean {
   }
 }
 
+function readLockHolderPid(lockPath: string): number | undefined {
+  try {
+    const raw = fs.readFileSync(lockPath, 'utf8').trim();
+    const pid = Number.parseInt(raw, 10);
+    return Number.isFinite(pid) && pid > 0 ? pid : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function isProcessAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    return (err as NodeJS.ErrnoException).code === 'EPERM';
+  }
+}
+
+/** Lock file is stale by age, unreadable, or held by a process that no longer exists. */
+export function isAbandonedAgentLock(lockPath: string): boolean {
+  if (isStaleLock(lockPath)) {
+    return true;
+  }
+  const pid = readLockHolderPid(lockPath);
+  if (pid === undefined) {
+    return true;
+  }
+  return !isProcessAlive(pid);
+}
+
+function shouldClearContestedLock(lockPath: string): boolean {
+  return isAbandonedAgentLock(lockPath);
+}
+
 async function acquireAgentLock(targetPath: string): Promise<() => void> {
   const lockPath = lockPathOf(targetPath);
   fs.mkdirSync(path.dirname(lockPath), { recursive: true });
-  for (let attempt = 0; attempt < 200; attempt += 1) {
+  const maxAttempts = Math.ceil(LOCK_MAX_WAIT_MS / LOCK_POLL_MS);
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
     try {
       fs.writeFileSync(lockPath, `${process.pid}\n`, { flag: 'wx' });
       return () => {
@@ -67,14 +105,14 @@ async function acquireAgentLock(targetPath: string): Promise<() => void> {
         }
       };
     } catch {
-      if (isStaleLock(lockPath)) {
+      if (shouldClearContestedLock(lockPath)) {
         try {
           fs.unlinkSync(lockPath);
         } catch {
           // contested stale removal — retry
         }
       }
-      await new Promise((resolve) => setTimeout(resolve, 25));
+      await new Promise((resolve) => setTimeout(resolve, LOCK_POLL_MS));
     }
   }
   throw new Error('cursor bridge agent lock timeout');

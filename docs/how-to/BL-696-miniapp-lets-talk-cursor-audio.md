@@ -43,13 +43,20 @@ playback instead of server TTS. See
 
 ```bash
 export LETS_TALK_AUDIO_ENGINE=local
-export WHISPER_MODEL_PATH=~/.swarmforge/models/ggml-base.en.bin
+export WHISPER_MODEL_PATH=~/.swarmforge/models/ggml-base.bin
 export WHISPER_CPP_BIN=whisper-cli   # or path to whisper.cpp main binary
 export FFMPEG_BIN=ffmpeg             # optional; converts webm/mp4 from the phone
+export LETS_TALK_SPEECH_LANGUAGE=auto  # default: detect fr/en each turn
 ```
 
-Restart the bridge after setting env vars. The turn response includes
-`replyText` only; the Mini App speaks it via `speechSynthesis`.
+Use a **multilingual** whisper model (`ggml-base.bin`, not `base.en`) so French
+STT works. Force a language with `LETS_TALK_SPEECH_LANGUAGE=fr` or `=en`.
+
+Each turn returns `speechLocale` (`fr-FR` or `en-US`). The Mini App sets
+`speechSynthesis` to that locale and picks the best installed phone voice.
+The Cursor agent is prompted in the matching language.
+
+Restart the bridge after setting env vars.
 
 ### OpenAI mode (legacy v1)
 

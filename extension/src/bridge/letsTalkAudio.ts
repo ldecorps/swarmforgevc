@@ -4,6 +4,13 @@
 
 import type { SttResult, TtsResult } from '../tools/telegramFrontDeskBotCore';
 import {
+  parseLetsTalkSpeechLanguage,
+  resolveTurnSpeechLanguage,
+  speechLocaleForLanguage,
+  type LetsTalkSpeechLanguage,
+  type LetsTalkSpeechLanguageSetting,
+} from './letsTalkCore';
+import {
   letsTalkAudioEnvFromProcessEnv,
   parseLetsTalkAudioEngine,
   resolveWhisperCppConfig,
@@ -61,7 +68,12 @@ export function extensionForMime(mimeType: string | undefined): string {
   return 'audio.webm';
 }
 
-export async function transcribeAudioBytes(openaiApiKey: string, bytes: Buffer, mimeType?: string): Promise<SttResult> {
+export async function transcribeAudioBytes(
+  openaiApiKey: string,
+  bytes: Buffer,
+  mimeType?: string,
+  language?: LetsTalkSpeechLanguageSetting
+): Promise<SttResult> {
   if (bytes.length === 0) {
     return { kind: 'unprocessable' };
   }
@@ -71,6 +83,9 @@ export async function transcribeAudioBytes(openaiApiKey: string, bytes: Buffer, 
     const blobType = mimeType?.split(';')[0] || 'audio/webm';
     form.append('file', new Blob([bytes], { type: blobType }), filename);
     form.append('model', OPENAI_STT_MODEL);
+    if (language && language !== 'en' && language !== 'auto') {
+      form.append('language', language);
+    }
     const res = await fetch('https://api.openai.com/v1/audio/transcriptions', {
       method: 'POST',
       headers: { authorization: `Bearer ${openaiApiKey}` },
@@ -104,7 +119,17 @@ export type LetsTalkAudioAdapters = {
   synthesizeSpeech?: SynthesizeSpeech;
   /** When true, the Mini App speaks replyText via speechSynthesis (no server TTS). */
   clientTts?: boolean;
+  speechLanguage?: LetsTalkSpeechLanguageSetting;
+  speechLocale?: string;
 };
+
+function speechSettingsFromEnv(env: LetsTalkAudioEnv): Pick<LetsTalkAudioAdapters, 'speechLanguage' | 'speechLocale'> {
+  const speechLanguage = parseLetsTalkSpeechLanguage(env.speechLanguage);
+  if (speechLanguage === 'auto') {
+    return { speechLanguage };
+  }
+  return { speechLanguage, speechLocale: speechLocaleForLanguage(speechLanguage) };
+}
 
 function normalizeLetsTalkAudioEnv(envOrOpenAiKey: LetsTalkAudioEnv | string | undefined): LetsTalkAudioEnv {
   if (typeof envOrOpenAiKey === 'string' || envOrOpenAiKey === undefined) {
@@ -122,9 +147,11 @@ export function resolveLetsTalkAudioAdapters(
       transcribeAudio: overrides.transcribeAudio,
       synthesizeSpeech: overrides.synthesizeSpeech,
       clientTts: overrides.synthesizeSpeech === undefined && overrides.transcribeAudio !== undefined,
+      ...speechSettingsFromEnv(normalizeLetsTalkAudioEnv(envOrOpenAiKey)),
     };
   }
   const env = normalizeLetsTalkAudioEnv(envOrOpenAiKey);
+  const speech = speechSettingsFromEnv(env);
   const engine = parseLetsTalkAudioEngine(env.engine);
   if (engine === 'local') {
     const whisper = resolveWhisperCppConfig(env);
@@ -134,6 +161,7 @@ export function resolveLetsTalkAudioAdapters(
     return {
       transcribeAudio: (bytes, mimeType) => transcribeWithWhisperCpp(whisper, bytes, mimeType),
       clientTts: true,
+      ...speech,
     };
   }
   const openaiApiKey = env.openaiApiKey?.trim();
@@ -141,8 +169,15 @@ export function resolveLetsTalkAudioAdapters(
     return {};
   }
   return {
-    transcribeAudio: (bytes, mimeType) => transcribeAudioBytes(openaiApiKey, bytes, mimeType),
+    transcribeAudio: (bytes, mimeType) =>
+      transcribeAudioBytes(
+        openaiApiKey,
+        bytes,
+        mimeType,
+        speech.speechLanguage === 'auto' ? undefined : speech.speechLanguage
+      ),
     synthesizeSpeech: (text) => synthesizeSpeechBytes(openaiApiKey, text),
+    ...speech,
   };
 }
 

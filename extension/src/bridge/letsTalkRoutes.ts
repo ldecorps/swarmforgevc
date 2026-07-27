@@ -6,10 +6,14 @@ import type { SttResult } from '../tools/telegramFrontDeskBotCore';
 import {
   decodeLetsTalkAudio,
   decideSttOutcome,
+  formatLetsTalkAgentPrompt,
   isLetsTalkTurnRequestShape,
   replyTextForSpeechSynthesis,
+  resolveTurnSpeechLanguage,
+  speechLocaleForLanguage,
   sttFailureForOutcome,
   unprocessableAudioMessage,
+  type LetsTalkSpeechLanguageSetting,
 } from './letsTalkCore';
 import type { SynthesizeSpeech, TranscribeAudio } from './letsTalkAudio';
 import type { CursorBridgeAgentSessionDeps } from './cursorBridgeAgentSession';
@@ -20,6 +24,8 @@ export interface LetsTalkRouteDeps {
   transcribeAudio?: TranscribeAudio;
   synthesizeSpeech?: SynthesizeSpeech;
   clientTts?: boolean;
+  speechLanguage?: LetsTalkSpeechLanguageSetting;
+  speechLocale?: string;
   agentSession: CursorBridgeAgentSessionDeps;
 }
 
@@ -31,6 +37,7 @@ export interface LetsTalkTurnSuccess {
   replySpeechText?: string;
   replyAudioBase64?: string;
   clientTts?: boolean;
+  speechLocale?: string;
   agentId: string;
 }
 
@@ -40,10 +47,13 @@ async function promptAgentAndSynthesize(
   transcript: string,
   deps: LetsTalkRouteDeps
 ): Promise<LetsTalkTurnSuccess | LetsTalkTurnFailure> {
+  const turnLanguage = resolveTurnSpeechLanguage(deps.speechLanguage ?? 'auto', transcript);
+  const speechLocale = speechLocaleForLanguage(turnLanguage);
   let replyText: string;
   let agentId: string;
   try {
-    const result = await deps.agentSession.promptAgent(transcript);
+    const prompt = formatLetsTalkAgentPrompt(transcript, turnLanguage);
+    const result = await deps.agentSession.promptAgent(prompt);
     replyText = result.replyText;
     agentId = result.agentId;
   } catch (err) {
@@ -63,6 +73,7 @@ async function promptAgentAndSynthesize(
         replyText,
         replySpeechText: replyTextForSpeechSynthesis(replyText),
         clientTts: true,
+        speechLocale,
         agentId,
       };
     }
@@ -78,6 +89,7 @@ async function promptAgentAndSynthesize(
     transcript,
     replyText,
     replyAudioBase64: tts.audio.toString('base64'),
+    speechLocale,
     agentId,
   };
 }

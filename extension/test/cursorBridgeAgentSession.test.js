@@ -4,6 +4,7 @@ const path = require('node:path');
 const { mkTmpDir } = require('./helpers/tmpDir');
 const {
   createMockCursorBridgeAgentSession,
+  isAbandonedAgentLock,
   withAgentLock,
 } = require('../out/bridge/cursorBridgeAgentSession');
 
@@ -46,4 +47,23 @@ test('cursorBridgeAgentSession: withAgentLock serializes concurrent holders', as
   };
   await Promise.all([withAgentLock(root, hold), withAgentLock(root, hold)]);
   assert.equal(maxConcurrent, 1);
+});
+
+test('cursorBridgeAgentSession: isAbandonedAgentLock clears locks from dead processes', () => {
+  const root = mkRoot();
+  const lockPath = path.join(root, '.swarmforge', 'operator', 'cursor-bridge-agent.lock');
+  fs.writeFileSync(lockPath, '999999999\n');
+  assert.equal(isAbandonedAgentLock(lockPath), true);
+});
+
+test('cursorBridgeAgentSession: acquireAgentLock recovers an abandoned lock file', async () => {
+  const root = mkRoot();
+  const lockPath = path.join(root, '.swarmforge', 'operator', 'cursor-bridge-agent.lock');
+  fs.writeFileSync(lockPath, '999999999\n');
+  let acquired = false;
+  await withAgentLock(root, async () => {
+    acquired = true;
+  });
+  assert.equal(acquired, true);
+  assert.equal(fs.existsSync(lockPath), false);
 });

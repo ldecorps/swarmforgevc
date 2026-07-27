@@ -2,7 +2,7 @@
 // audio turns with the shared Cursor bridge agent session. Browser captures
 // audio; STT/TTS run server-side on POST /lets-talk/turn.
 
-export function getLetsTalkUiHtml(): string {
+export function getLetsTalkUiHtml(speechLocale = 'en-US'): string {
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -128,6 +128,7 @@ export function getLetsTalkUiHtml(): string {
   document.getElementById('menu').href = '/console' + q;
 
   var STT_RETRY_BUDGET = 3;
+  var DEFAULT_SPEECH_LOCALE = ${JSON.stringify(speechLocale)};
   var stateEl = document.getElementById('state');
   var recordBtn = document.getElementById('record');
   var newSessionBtn = document.getElementById('new-session');
@@ -237,19 +238,66 @@ export function getLetsTalkUiHtml(): string {
     });
   }
 
-  function speakReplyText(text) {
-    return new Promise(function (resolve, reject) {
-      if (!window.speechSynthesis || !window.SpeechSynthesisUtterance) {
-        reject(new Error('Text-to-speech is not available in this browser.'));
+  function pickSpeechVoice(locale) {
+    if (!window.speechSynthesis || !window.speechSynthesis.getVoices) {
+      return null;
+    }
+    var voices = window.speechSynthesis.getVoices();
+    var prefix = String(locale || '').split('-')[0].toLowerCase();
+    for (var i = 0; i < voices.length; i++) {
+      var lang = (voices[i].lang || '').toLowerCase();
+      if (lang === String(locale || '').toLowerCase() || lang.startsWith(prefix)) {
+        return voices[i];
+      }
+    }
+    return null;
+  }
+
+  function ensureSpeechVoices() {
+    return new Promise(function (resolve) {
+      if (!window.speechSynthesis || !window.speechSynthesis.getVoices) {
+        resolve();
         return;
       }
-      window.speechSynthesis.cancel();
-      var utter = new SpeechSynthesisUtterance(text);
-      utter.onend = function () { resolve(); };
-      utter.onerror = function (ev) {
-        reject(new Error((ev && ev.error) ? String(ev.error) : 'speech synthesis failed'));
-      };
-      window.speechSynthesis.speak(utter);
+      var voices = window.speechSynthesis.getVoices();
+      if (voices && voices.length > 0) {
+        resolve();
+        return;
+      }
+      var done = false;
+      function finish() {
+        if (done) {
+          return;
+        }
+        done = true;
+        resolve();
+      }
+      window.speechSynthesis.onvoiceschanged = finish;
+      setTimeout(finish, 250);
+    });
+  }
+
+  function speakReplyText(text, locale) {
+    return ensureSpeechVoices().then(function () {
+      return new Promise(function (resolve, reject) {
+        if (!window.speechSynthesis || !window.SpeechSynthesisUtterance) {
+          reject(new Error('Text-to-speech is not available in this browser.'));
+          return;
+        }
+        window.speechSynthesis.cancel();
+        var utter = new SpeechSynthesisUtterance(text);
+        var speechLocale = locale || DEFAULT_SPEECH_LOCALE;
+        utter.lang = speechLocale;
+        var voice = pickSpeechVoice(speechLocale);
+        if (voice) {
+          utter.voice = voice;
+        }
+        utter.onend = function () { resolve(); };
+        utter.onerror = function (ev) {
+          reject(new Error((ev && ev.error) ? String(ev.error) : 'speech synthesis failed'));
+        };
+        window.speechSynthesis.speak(utter);
+      });
     });
   }
 
@@ -290,7 +338,7 @@ export function getLetsTalkUiHtml(): string {
       if (result.replyAudioBase64) {
         await playReplyAudio(result.replyAudioBase64, 'audio/ogg');
       } else if (result.replySpeechText || result.replyText) {
-        await speakReplyText(result.replySpeechText || result.replyText);
+        await speakReplyText(result.replySpeechText || result.replyText, result.speechLocale || DEFAULT_SPEECH_LOCALE);
       }
       setPhase('ready');
     } catch (err) {

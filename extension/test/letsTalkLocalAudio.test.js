@@ -17,14 +17,22 @@ test('letsTalkLocalAudio: resolveWhisperCppConfig requires model path', () => {
   assert.deepEqual(resolveWhisperCppConfig({ whisperModelPath: '/models/base.bin' }), {
     bin: 'whisper-cli',
     modelPath: '/models/base.bin',
+    language: 'auto',
   });
+  assert.deepEqual(
+    resolveWhisperCppConfig({
+      whisperModelPath: '/models/base.bin',
+      speechLanguage: 'fr',
+    }),
+    { bin: 'whisper-cli', modelPath: '/models/base.bin', language: 'fr' }
+  );
   assert.deepEqual(
     resolveWhisperCppConfig({
       whisperModelPath: '/models/base.bin',
       whisperCppBin: '/usr/bin/whisper',
       ffmpegBin: '/usr/bin/ffmpeg',
     }),
-    { bin: '/usr/bin/whisper', modelPath: '/models/base.bin', ffmpegBin: '/usr/bin/ffmpeg' }
+    { bin: '/usr/bin/whisper', modelPath: '/models/base.bin', ffmpegBin: '/usr/bin/ffmpeg', language: 'auto' }
   );
 });
 
@@ -114,4 +122,25 @@ test('letsTalkLocalAudio: does not delete work dir until ffmpeg retry whisper fi
   );
   assert.deepEqual(result, { kind: 'ok', transcript: 'converted text' });
   assert.equal(rmAtWhisperCall, 2, 'tmpdir must survive until the converted whisper pass completes');
+});
+
+test('letsTalkLocalAudio: whisper-cli receives language flag when configured', async () => {
+  const calls = [];
+  const deps = {
+    mkTempDir: async () => '/tmp/work',
+    writeFile: async () => {},
+    readFile: async () => 'bonjour',
+    exists: (filePath) => filePath.endsWith('whisper-out.txt'),
+    rmDir: async () => {},
+    execFile: async (file, args) => {
+      calls.push(args);
+    },
+  };
+  await transcribeWithWhisperCpp(
+    { bin: '/bin/whisper-cli', modelPath: '/models/base.bin', language: 'fr' },
+    Buffer.from('audio-bytes'),
+    'audio/webm',
+    deps
+  );
+  assert.ok(calls.some((args) => args.includes('-l') && args.includes('fr')));
 });
