@@ -42,6 +42,15 @@ playback instead of server TTS. See
 ### Local mode (recommended)
 
 ```bash
+./swarmforge/scripts/start_bridge_headless.sh /path/to/repo 8765
+./swarmforge/scripts/stop_bridge_headless.sh /path/to/repo
+```
+
+The **supervisor** (`bridge_headless_supervisor.bb`) auto-restarts the bridge on
+crash or stalled `/lets-talk` health. Logs:
+`.swarmforge/operator/bridge-headless-supervisor.log`
+
+```bash
 export LETS_TALK_AUDIO_ENGINE=local
 export WHISPER_MODEL_PATH=~/.swarmforge/models/ggml-base.bin
 export WHISPER_CPP_BIN=whisper-cli   # or path to whisper.cpp main binary
