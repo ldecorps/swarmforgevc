@@ -30,6 +30,16 @@ test('BL-423: any verb is ignored while no control topic is bound yet', () => {
   assert.deepEqual(decision, { action: 'ignore' });
 });
 
+test('BL-423: with no control topic bound, an event that ALSO carries no topic id (e.g. a bare DM) is still ignored - the unbound-topic guard does not depend on the event happening to carry some other topic id', () => {
+  // Built by hand, not via textEvent's destructured default: passing
+  // `{ topicId: undefined }` through textEvent's `{ topicId = CONTROL_TOPIC_ID }`
+  // default would silently re-substitute CONTROL_TOPIC_ID (JS default
+  // parameters apply on `undefined` whether the key is missing or explicit),
+  // defeating the very case this test exists to cover.
+  const decision = decideControlEventAction({ kind: 'text', text: '/stop', fromId: PRINCIPAL_ID, topicId: undefined }, PRINCIPAL_ID, undefined, undefined, NOT_PAUSED);
+  assert.deepEqual(decision, { action: 'ignore' });
+});
+
 test('BL-423: an unauthorised sender in the control topic is refused, never ignored', () => {
   const decision = decideControlEventAction(textEvent('/stop', { fromId: 999 }), PRINCIPAL_ID, CONTROL_TOPIC_ID, undefined, NOT_PAUSED);
   assert.deepEqual(decision, { action: 'refuse' });
@@ -97,6 +107,11 @@ test('BL-423: a drain-stop tap while only a restart confirm is pending (wrong pe
     { kind: 'restart-confirm' },
     NOT_PAUSED
   );
+  assert.deepEqual(decision, { action: 'ignore' });
+});
+
+test('BL-423: a drain-stop tap with NO pending stop-modes confirm (stale/already-actioned) is ignored, never executed', () => {
+  const decision = decideControlEventAction(callbackEvent(CONTROL_CALLBACK_DATA.drainStop), PRINCIPAL_ID, CONTROL_TOPIC_ID, undefined, NOT_PAUSED);
   assert.deepEqual(decision, { action: 'ignore' });
 });
 
@@ -196,6 +211,78 @@ test('BL-423: callback data outside the control: namespace (e.g. an approve/reje
   assert.deepEqual(decision, { action: 'ignore' });
 });
 
+test('BL-423: callback data with garbage BEFORE "control:" (not at the very start) is ignored - the namespace must anchor the start, not just appear somewhere in the payload', () => {
+  const decision = decideControlEventAction(callbackEvent('xcontrol:cancel'), PRINCIPAL_ID, CONTROL_TOPIC_ID, { kind: 'stop-modes' }, NOT_PAUSED);
+  assert.deepEqual(decision, { action: 'ignore' });
+});
+
+test('BL-423: callback data whose captured verb is followed by a newline and more content is ignored, never dispatched on a truncated capture', () => {
+  const decision = decideControlEventAction(callbackEvent('control:cancel\nextra'), PRINCIPAL_ID, CONTROL_TOPIC_ID, { kind: 'stop-modes' }, NOT_PAUSED);
+  assert.deepEqual(decision, { action: 'ignore' });
+});
+
+// ── BL-655: ambulance mode (bare text, not slash-prefixed - the ticket's
+//    own vocabulary and the feature file's own scenarios type it bare) ────
+
+test('BL-655: "ambulance BL-654" in the control topic engages the named ticket', () => {
+  const decision = decideControlEventAction(textEvent('ambulance BL-654'), PRINCIPAL_ID, CONTROL_TOPIC_ID, undefined, NOT_PAUSED);
+  assert.deepEqual(decision, { action: 'engage-ambulance', ticket: 'BL-654' });
+});
+
+test('BL-655: ambulance engage is case/whitespace tolerant and normalizes the ticket id to uppercase', () => {
+  assert.deepEqual(
+    decideControlEventAction(textEvent('  AMBULANCE bl-654  '), PRINCIPAL_ID, CONTROL_TOPIC_ID, undefined, NOT_PAUSED),
+    { action: 'engage-ambulance', ticket: 'BL-654' }
+  );
+});
+
+test('BL-655: "ambulance off" releases the ambulance', () => {
+  const decision = decideControlEventAction(textEvent('ambulance off'), PRINCIPAL_ID, CONTROL_TOPIC_ID, undefined, NOT_PAUSED);
+  assert.deepEqual(decision, { action: 'release-ambulance' });
+});
+
+test('BL-655: "ambulance off" is case/whitespace tolerant', () => {
+  assert.deepEqual(
+    decideControlEventAction(textEvent('  Ambulance OFF  '), PRINCIPAL_ID, CONTROL_TOPIC_ID, undefined, NOT_PAUSED),
+    { action: 'release-ambulance' }
+  );
+});
+
+test('BL-655: "ambulance" with no ticket id and not "off" is ignored, never a fabricated engage', () => {
+  const decision = decideControlEventAction(textEvent('ambulance'), PRINCIPAL_ID, CONTROL_TOPIC_ID, undefined, NOT_PAUSED);
+  assert.deepEqual(decision, { action: 'ignore' });
+});
+
+test('BL-655: "ambulance not-a-ticket" is ignored - only a syntactically valid BL-### id engages', () => {
+  const decision = decideControlEventAction(textEvent('ambulance not-a-ticket'), PRINCIPAL_ID, CONTROL_TOPIC_ID, undefined, NOT_PAUSED);
+  assert.deepEqual(decision, { action: 'ignore' });
+});
+
+test('BL-655: an ambulance verb outside the control topic is ignored, even from the principal', () => {
+  const decision = decideControlEventAction(textEvent('ambulance BL-654', { topicId: 5 }), PRINCIPAL_ID, CONTROL_TOPIC_ID, undefined, NOT_PAUSED);
+  assert.deepEqual(decision, { action: 'ignore' });
+});
+
+test('BL-655: an unauthorised sender engaging the ambulance is refused, never ignored', () => {
+  const decision = decideControlEventAction(textEvent('ambulance BL-654', { fromId: 999 }), PRINCIPAL_ID, CONTROL_TOPIC_ID, undefined, NOT_PAUSED);
+  assert.deepEqual(decision, { action: 'refuse' });
+});
+
+test('BL-655: "ambulance" as a word inside other text does not engage - the verb must start the message', () => {
+  const decision = decideControlEventAction(textEvent('notambulance BL-654'), PRINCIPAL_ID, CONTROL_TOPIC_ID, undefined, NOT_PAUSED);
+  assert.deepEqual(decision, { action: 'ignore' });
+});
+
+test('BL-655: trailing text after the ticket id does not engage - the ticket id must end the message', () => {
+  const decision = decideControlEventAction(textEvent('ambulance BL-654 please'), PRINCIPAL_ID, CONTROL_TOPIC_ID, undefined, NOT_PAUSED);
+  assert.deepEqual(decision, { action: 'ignore' });
+});
+
+test('BL-655: more than one space between "ambulance" and the ticket id still engages', () => {
+  const decision = decideControlEventAction(textEvent('ambulance   BL-654'), PRINCIPAL_ID, CONTROL_TOPIC_ID, undefined, NOT_PAUSED);
+  assert.deepEqual(decision, { action: 'engage-ambulance', ticket: 'BL-654' });
+});
+
 // ── ordinary text (never a recognized verb) ──────────────────────────────
 
 test('BL-423: ordinary chatter in the control topic (not a recognized verb) is ignored', () => {
@@ -207,6 +294,10 @@ test('BL-423: ordinary chatter in the control topic (not a recognized verb) is i
 
 test('BL-423: decidePauseAutoResume is none when not paused', () => {
   assert.equal(decidePauseAutoResume(NOT_PAUSED, 1_000_000), 'none');
+});
+
+test('BL-423: decidePauseAutoResume is none when not paused even if the state carries a stale untilMs already in the past - the active:false guard short-circuits before untilMs is ever consulted', () => {
+  assert.equal(decidePauseAutoResume({ active: false, untilMs: 5_000 }, 10_000), 'none');
 });
 
 test('BL-423: decidePauseAutoResume is none for "Until I resume" (no timer), regardless of elapsed time', () => {
@@ -233,6 +324,10 @@ test('BL-423: decideDrainOutcome is "drained" the instant the pipeline is empty,
 
 test('BL-423: decideDrainOutcome is "wait" while work remains and the timeout has not elapsed', () => {
   assert.equal(decideDrainOutcome(false, 0, 599_999, 600_000), 'wait');
+});
+
+test('BL-423: decideDrainOutcome elapsed-time math is a subtraction of real epoch-ms timestamps, not a sum - a drain started at a large startedAtMs with only a little elapsed time is still "wait"', () => {
+  assert.equal(decideDrainOutcome(false, 1_000_000, 1_000_500, 600_000), 'wait');
 });
 
 test('BL-423: decideDrainOutcome is "forced" once the timeout elapses with work still outstanding', () => {

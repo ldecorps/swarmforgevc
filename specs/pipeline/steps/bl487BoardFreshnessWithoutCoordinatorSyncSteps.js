@@ -30,7 +30,10 @@ function mkFixtureRoot() {
   const root = mkTmp('bl487-fixture-');
   const scriptsDir = path.join(root, 'swarmforge', 'scripts');
   fs.mkdirSync(scriptsDir, { recursive: true });
-  for (const name of ['pipeline_stage_cli.bb', 'pipeline_stage_lib.bb', 'handoff_lib.bb']) {
+  // BL-655: handoff_lib.bb now load-files ambulance_lib.bb too - omitting it
+  // here does not throw loudly, it makes the real `bb` subprocess fail and
+  // the CLI wrapper this feature drives silently degrade instead.
+  for (const name of ['pipeline_stage_cli.bb', 'pipeline_stage_lib.bb', 'handoff_lib.bb', 'ambulance_lib.bb']) {
     fs.copyFileSync(path.join(REAL_SCRIPTS_DIR, name), path.join(scriptsDir, name));
   }
   return root;

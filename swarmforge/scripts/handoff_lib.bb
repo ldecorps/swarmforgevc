@@ -11,6 +11,13 @@
   (:import [java.nio.channels FileChannel]
            [java.nio.file OpenOption StandardOpenOption]))
 
+;; BL-655: ambulance-lib is a leaf dependency (no load-file of its own on
+;; this file, or the reverse load would be circular) - loaded here so
+;; resolve-dequeueable-candidates below can filter held candidates without
+;; every caller (ready_for_next_task.bb, ready_for_next_batch.bb) needing to
+;; thread project-root/ambulance state through by hand.
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "ambulance_lib.bb")))
+
 (defn worktree-root
   "Handoff state lives at the worktree root even when invoked from a
    subdirectory; the daemon only delivers to worktree-root inboxes (BL-056).
@@ -824,27 +831,63 @@
            (recur (next remaining) quarantined (conj valid f))))
        {:quarantined quarantined :valid valid}))))
 
+;; BL-655 site 2 (dequeue): unlike partition-corrupt/partition-unresolvable-
+;; commit above, a held candidate is NEVER moved/quarantined - it must stay
+;; byte-identical in new/, exactly where it already sat, and be re-considered
+;; on the very next dequeue attempt once the marker changes (no caching).
+(defn default-ambulance-held?
+  "The real impure check: reads the marker fresh (never cached) via
+   handoff-lib/target-root - the shared project root, not a worktree-local
+   path, since the marker lives at the target root alongside roles.tsv.
+   held?-fn is injectable below for tests."
+  [content]
+  (ambulance-lib/parcel-held?
+   (ambulance-lib/read-ambulance-state (target-root))
+   (parse-envelope content)))
+
+(defn partition-ambulance-held
+  "Splits already-structurally-valid, already-resolvable candidates into
+   :held (left completely untouched in place - never moved, never
+   quarantined) and :valid (still eligible to dequeue). held?-fn (default
+   default-ambulance-held?) is injectable for tests."
+  ([candidate-files] (partition-ambulance-held candidate-files default-ambulance-held?))
+  ([candidate-files held?-fn]
+   (loop [remaining candidate-files held [] valid []]
+     (if-let [f (first remaining)]
+       (if (held?-fn (slurp (str f)))
+         (recur (next remaining) (conj held f) valid)
+         (recur (next remaining) held (conj valid f)))
+       {:held held :valid valid}))))
+
 (defn resolve-dequeueable-candidates
   "Shared by ready_for_next_task.bb and ready_for_next_batch.bb: dedups
    new-dir candidates against the completed/abandoned terminal set, then
    quarantines any corrupt candidate (BL-365) and any git_handoff whose
-   commit no longer resolves (BL-610) among what's left, printing the
-   SKIPPED/QUARANTINED diagnostic for each as a side effect. Returns the
-   final list of files genuinely eligible to dequeue - both receive modes
-   apply the identical guards this way, rather than each re-deriving them.
-   resolve-fn? (default git-commit-resolves?) is injectable for tests."
+   commit no longer resolves (BL-610), then excludes any candidate BL-655
+   ambulance mode currently holds (left untouched in new/, never
+   quarantined) among what's left - printing the SKIPPED/QUARANTINED
+   diagnostic for each as a side effect. Returns the final list of files
+   genuinely eligible to dequeue - both receive modes apply the identical
+   guards this way, rather than each re-deriving them. resolve-fn? (default
+   git-commit-resolves?) and held?-fn (default default-ambulance-held?) are
+   both injectable for tests."
   ([new-files completed-basenames abandoned-basenames]
-   (resolve-dequeueable-candidates new-files completed-basenames abandoned-basenames git-commit-resolves?))
+   (resolve-dequeueable-candidates new-files completed-basenames abandoned-basenames git-commit-resolves? default-ambulance-held?))
   ([new-files completed-basenames abandoned-basenames resolve-fn?]
+   (resolve-dequeueable-candidates new-files completed-basenames abandoned-basenames resolve-fn? default-ambulance-held?))
+  ([new-files completed-basenames abandoned-basenames resolve-fn? held?-fn]
    (let [{:keys [skipped dequeueable]} (dedup-new-candidates new-files completed-basenames abandoned-basenames)
          {:keys [corrupt valid]} (partition-corrupt dequeueable)
-         {:keys [quarantined valid]} (partition-unresolvable-commit valid resolve-fn?)]
+         {:keys [quarantined valid]} (partition-unresolvable-commit valid resolve-fn?)
+         {:keys [held valid]} (partition-ambulance-held valid held?-fn)]
      (doseq [f skipped]
        (println "SKIPPED already-processed:" (fs/file-name f)))
      (doseq [f corrupt]
        (println "QUARANTINED corrupt-handoff:" (fs/file-name f)))
      (doseq [{:keys [file diagnostic]} quarantined]
        (println (str "QUARANTINED unresolvable-commit: " (fs/file-name file) " " diagnostic)))
+     (doseq [f held]
+       (println "SKIPPED ambulance-hold:" (fs/file-name f)))
      valid)))
 
 ;; BL-610 shape #5: the send-time decision logic behind swarm_handoff.bb's
