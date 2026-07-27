@@ -1,0 +1,97 @@
+id: BL-696
+title: "Console Mini App Let's Talk — discrete audio turns with the Cursor agent over the existing bridge session"
+milestone: M8
+type: feature
+status: todo
+epic: swarmforge-console
+human_approval: approved
+severity: medium
+priority: 14
+direction: human-requested
+depends_on: []
+assigned_to: coder
+mutation_cost: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+invariants:
+  - "Exactly one writer owns the Cursor bridge agent session at a time — the Mini App ingress and the Telegram Cursor Remote topic never race on agentId."
+  - "Every route that spends STT/TTS tokens or delivers a prompt to the Cursor agent requires the same console control auth as BL-538 and BL-572 — no new public surface."
+
+approval_context: >
+  Discrete turn-taking only (record → STT → Cursor agent → TTS → next turn).
+  Live duplex, streaming STT, open-mic, and WebRTC are explicitly rejected for
+  v1. The Mini App shares the default Cursor Remote agent session; a visible
+  New session control is the only way to fork. Text Cursor Remote and Concierge
+  topics stay unchanged.
+
+source: |
+  Drained from `.swarmforge/operator/INTAKE-miniapp-lets-talk-cursor-audio.md`
+  (operator, 2026-07-27). Child of epic swarmforge-console (BL-517), same
+  Mini App host as BL-526 / BL-538 / GH-23.
+
+description: |
+  ## What
+
+  A fifth console menu entry **Let's Talk** opens a full-screen Mini App where
+  the principal speaks and hears the **same Cursor SDK agent** the Telegram
+  Cursor Remote topic already drives — without typing in a forum thread.
+
+  ## Interaction model (settled)
+
+  BL-426-style **discrete turns**: tap-to-toggle record → stop → STT → prompt
+  the Cursor agent → TTS playback → ready for the next turn. Not a phone call;
+  no streaming STT; no open-mic.
+
+  **Tap-to-toggle** (not hold-to-talk): Telegram's WebView drops hold gestures
+  on scroll and orientation changes; a latched record/stop control matches the
+  discrete-turn model and is testable in headless fixtures.
+
+  Show **listening / thinking / speaking / error** on screen so silence is never
+  ambiguous. Ship a **short text transcript** under the playback bar (BL-426
+  ships text alongside voice for the same reason).
+
+  ## Architecture pins
+
+  1. **HOST** — `extension/src/bridge/bridgeServer.ts`: pre-auth shell
+     `/lets-talk` (same `?token=` pattern as `/console`) plus token-gated JSON
+     routes. Add a **Let's Talk** button on `consoleMenuUiHtml.ts`.
+  2. **Audio I/O seam** — browser captures audio with `MediaRecorder`, POSTs
+     the blob to a bridge route (`POST /lets-talk/turn`). The **bridge host**
+     runs STT and TTS server-side (CSP `connect-src 'self'` forbids provider
+     calls from the WebView). Do not widen CSP.
+  3. **Single session writer** — the bridge forwards transcribed text into the
+     **existing** Cursor bridge agent path (`telegramCursorBridgeCore` decisions
+     + `cursor-bridge-state.json` / `agentId`). Do not spin a second SDK
+     session in the browser or a parallel agent owner. Serialize access so
+     Telegram text and Mini App audio cannot race on `agentId`.
+  4. **Auth** — `requireControlAuth` on every route that transcribes, synthesizes,
+     or prompts the agent (`/lets-talk/turn`, `/lets-talk/new-session`). Missing
+     or wrong token → 401, no side effects.
+  5. **STT/TTS** — injectable adapters on the bridge host, BL-426 failure
+     posture: transient STT errors retry within a bounded budget; structurally
+     bad audio surfaces a recoverable on-screen error and does not wedge the
+     session.
+  6. **Session sharing** — default **shared** `agentId` with Cursor Remote text.
+     `POST /lets-talk/new-session` clears context (same semantics as `/new`).
+     No silent fork and no separate-session toggle in v1.
+  7. **Regression** — `telegram-cursor-bridge` text topic behaviour is unchanged;
+     this ticket adds a second ingress only.
+
+  ## Out of scope (human settled)
+
+  - Live duplex / streaming / WebRTC / barge-in
+  - Audio for coordinator, Operator, or pipeline roles
+  - Replacing Cursor Remote or Concierge text topics
+  - Static PWA surface
+  - Background or lock-screen playback
+
+acceptance: specs/features/BL-696-miniapp-lets-talk-cursor-audio.feature
+
+out_of_scope: |
+  - Coordinator/Operator voice (BL-426) — pattern reference only
+  - BL-695 supervisor-thread privacy — unrelated; this never routes through Concierge
+  - A second frontend outside bridgeServer.ts
+
+notes: |
+  Specifier drained 2026-07-27 from operator intake. Feature lint-clean at
+  materialization. Step handlers land with the coder parcel (BL-233).
