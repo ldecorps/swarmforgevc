@@ -1,0 +1,6 @@
+{
+  "task.allowAutomaticTasks": "on",
+  "git.autofetch": true,
+  "git.autofetchPeriod": 180,
+  "git.pullBeforeCheckout": true
+}
