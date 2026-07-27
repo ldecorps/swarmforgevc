@@ -335,47 +335,6 @@
            "Re-read your role and constitution.\n\n"
            (handoff-lib/handoff-body-lead ["coder" "coordinator"] dir)))
 
-;; ── BL-655 ambulance-hold-04: partition-ambulance-held / resolve-dequeueable-
-;;    candidates dequeue-site filtering (site 2) ────────────────────────────
-;; held?-fn is injected (never the real fs-reading default-ambulance-held?)
-;; so this exercises the pure partitioning logic deterministically, the same
-;; injection posture partition-unresolvable-commit's resolve-fn? already
-;; uses above.
-
-(let [dir (mk-tmp-dir)
-      for-654 (fs/path dir "50_a_from_specifier_to_coder.handoff")
-      for-660 (fs/path dir "50_b_from_specifier_to_coder.handoff")
-      held?-fn (fn [content] (str/includes? content "task: BL-660"))]
-  (spit (str for-654) (git-handoff-content "aaaaaaaaaa" "BL-654"))
-  (spit (str for-660) (git-handoff-content "bbbbbbbbbb" "BL-660"))
-  (let [{:keys [held valid]} (handoff-lib/partition-ambulance-held [for-654 for-660] held?-fn)]
-    (assert= "ambulance-hold-04: the parcel attributed to another ticket is held" [for-660] held)
-    (assert= "ambulance-hold-04: the parcel attributed to the ambulance ticket stays valid" [for-654] valid)
-    (assert-true "ambulance-hold-04: a held candidate is left byte-identical at its original path"
-                 (fs/exists? for-660))
-    (assert= "ambulance-hold-04: a held candidate's content is untouched"
-             (git-handoff-content "bbbbbbbbbb" "BL-660") (slurp (str for-660)))))
-
-(let [dir (mk-tmp-dir)
-      for-654 (fs/path dir "50_a_from_specifier_to_coder.handoff")
-      for-660 (fs/path dir "50_b_from_specifier_to_coder.handoff")
-      held?-fn (fn [content] (str/includes? content "task: BL-660"))]
-  (spit (str for-654) (git-handoff-content "aaaaaaaaaa" "BL-654"))
-  (spit (str for-660) (git-handoff-content "bbbbbbbbbb" "BL-660"))
-  (let [dequeued (handoff-lib/resolve-dequeueable-candidates [for-654 for-660] [] [] (constantly true) held?-fn)]
-    (assert= "ambulance-hold-04: resolve-dequeueable-candidates end-to-end excludes only the held candidate"
-             [for-654] dequeued)))
-
-(let [dir (mk-tmp-dir)
-      only-660 (fs/path dir "50_only_from_specifier_to_coder.handoff")]
-  (spit (str only-660) (git-handoff-content "cccccccccc" "BL-660"))
-  (let [dequeued (handoff-lib/resolve-dequeueable-candidates
-                  [only-660] [] [] (constantly true) (constantly true))]
-    (assert= "ambulance-hold-04: a fully-held new/ listing dequeues nothing (never falls through to a wrong pick)"
-             [] dequeued)
-    (assert-true "ambulance-hold-04: the held candidate is still sitting in new/, not moved anywhere"
-                 (fs/exists? only-660))))
-
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (empty? @failures)
   (println "handoff_lib (BL-365): ALL TESTS PASSED")

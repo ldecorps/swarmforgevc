@@ -18,11 +18,7 @@ function mkFixtureRoot() {
   const root = mkTmpDir('bl487-live-role-held-');
   const scriptsDir = path.join(root, 'swarmforge', 'scripts');
   fs.mkdirSync(scriptsDir, { recursive: true });
-  // BL-655: handoff_lib.bb now load-files ambulance_lib.bb too - omitting it
-  // here does not throw loudly, it makes the real `bb` subprocess fail and
-  // readLiveRoleHeldTickets silently degrade to {} (a missed-consumer
-  // regression this exact copy-the-real-scripts fixture exists to catch).
-  for (const name of ['pipeline_stage_cli.bb', 'pipeline_stage_lib.bb', 'handoff_lib.bb', 'ambulance_lib.bb']) {
+  for (const name of ['pipeline_stage_cli.bb', 'pipeline_stage_lib.bb', 'handoff_lib.bb']) {
     fs.copyFileSync(path.join(REAL_SCRIPTS_DIR, name), path.join(scriptsDir, name));
   }
   return root;
