@@ -6,7 +6,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { Agent, CursorAgentError, type SDKAgent, type SDKMessage } from '@cursor/sdk';
 import { atomicWrite } from '../util/atomicWrite';
-import { collectAssistantTextFromMessages, parseCursorBridgeState, type CursorBridgePersistedState } from '../tools/telegramCursorBridgeCore';
+import { collectAssistantTextFromMessages, isActiveRunConflict, parseCursorBridgeState, type CursorBridgePersistedState } from '../tools/telegramCursorBridgeCore';
 import { extractCodeWordFromRememberPhrase, mockAgentReplyForTranscript } from './letsTalkCore';
 
 const STATE_FILE_NAME = 'cursor-bridge-state.json';
@@ -177,30 +177,40 @@ export function createLiveCursorBridgeAgentSession(targetPath: string): CursorBr
     return cachedAgent;
   };
 
+  const clearCachedAgent = async (): Promise<void> => {
+    if (cachedAgent) {
+      await cachedAgent.close();
+      cachedAgent = undefined;
+    }
+    const state = loadState(targetPath);
+    saveState(targetPath, { ...state, agentId: undefined });
+  };
+
   return {
     readAgentId: () => loadState(targetPath).agentId,
     resetSession: async () =>
       withAgentLock(targetPath, async () => {
-        if (cachedAgent) {
-          await cachedAgent.close();
-          cachedAgent = undefined;
-        }
-        const state = loadState(targetPath);
-        const next = { ...state, agentId: undefined };
-        saveState(targetPath, next);
+        await clearCachedAgent();
         return { agentId: undefined };
       }),
     promptAgent: async (prompt: string) =>
       withAgentLock(targetPath, async () => {
-        try {
+        const attempt = async (): Promise<{ replyText: string; agentId: string }> => {
           const agent = await ensureAgent();
           const replyText = await runPrompt(agent, prompt);
           const state = loadState(targetPath);
           saveState(targetPath, { ...state, agentId: agent.agentId });
           return { replyText, agentId: agent.agentId };
+        };
+        try {
+          return await attempt();
         } catch (err) {
           const detail = err instanceof CursorAgentError ? err.message : err instanceof Error ? err.message : String(err);
-          throw new Error(detail);
+          if (!isActiveRunConflict(detail)) {
+            throw new Error(detail);
+          }
+          await clearCachedAgent();
+          return await attempt();
         }
       }),
   };
