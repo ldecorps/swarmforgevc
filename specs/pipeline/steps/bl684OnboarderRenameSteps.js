@@ -105,7 +105,12 @@ function gitLsFiles(pathspec) {
 // ticket's step handler naming another out-of-scope sibling's own
 // filename, the new regression/property tests whose job is to assert the
 // old word is gone, and the renamed launcher/stop-script dual-name
-// compat-shim code (and its tests) the ticket's own description requires. ─
+// compat-shim code (and its tests) the ticket's own description requires.
+// This step-handler file joins that last category for the same reason: it
+// must name the old word to search for it (gitGrepFacilitator's search
+// term) and to drive the compat-shim fixtures (old-named pid/heartbeat
+// files) scenarios 03-05/12-17 exercise - a self-referential gap of the
+// same shape 2e09d129c already fixed in the regression test. ─
 const CONTENT_EXEMPT = [
   /^backlog\/active\/BL-684-/,
   /^backlog\/paused\/BL-(590|624|625|643)-/,
@@ -115,6 +120,7 @@ const CONTENT_EXEMPT = [
   /^specs\/features\/BL-643-.*\.feature\.draft$/,
   /^specs\/features\/BL-684-.*\.feature$/,
   /^specs\/pipeline\/steps\/bl633InvariantsSectionSteps\.js$/,
+  /^specs\/pipeline\/steps\/bl684OnboarderRenameSteps\.js$/,
   /^swarmforge\/scripts\/(launch_onboarder\.sh|stop_ancillary_services\.sh)$/,
   /^swarmforge\/scripts\/test\/test_(launch_onboarder|onboarder_supervisor_ignores_old_heartbeat|stop_ancillary_services_onboarder_dual_clear)\.sh$/,
 ];
