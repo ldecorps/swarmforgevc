@@ -50,3 +50,4 @@ description: |
   (operator-tunnel/QA-live-work contamination); never stash-pop; target
   worktrees computed from roles.tsv — structurally eliminating the cd-habit
   class behind the BL-590 main contamination.
+mutation_cost: low
