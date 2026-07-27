@@ -1,5 +1,5 @@
 id: BL-655
-title: "Ambulance mode: the swarm runs NORMALLY but the resident may only work ONE designated ticket — the middle rung between the expedite lane and the last-resort offline Expeditor"
+title: "Ambulance mode slice 1 — the hold: the swarm runs normally, but only the one designated ticket's parcels move; everything else queues in place, untouched and unlost"
 milestone: M8
 type: feature
 status: todo
@@ -12,13 +12,23 @@ depends_on: []
 assigned_to: specifier
 mutation_cost: high
 invariants:
-  - "While ambulance mode is engaged the resident advances exactly one ticket — the designated one; every other parcel and duty queues in place, untouched and unlost."
+  - "While the mode is engaged, every parcel attributed to another ticket is still present, byte-identical, in the queue it occupied — never delivered onward, dropped, quarantined, abandoned or rewritten."
+  - "Engage and release are idempotent and order-independent: a repeated engage of the same ticket, or a release with no mode set, leaves the marker and every queue byte-identical."
+  - "Every ambulance decision reads the marker fresh at the moment of that decision — no cached mode state survives a marker change, so a release takes effect on the next decision without restarting anything."
+
+required_wiring:
+  - "swarmforge/scripts/handoffd.bb::ambulance-lib/::the delivery poll must consult the hold predicate, or the mode is a dark marker (BL-419)"
+  - "swarmforge/scripts/handoff_lib.bb::ambulance::the dequeue candidate resolution must consult it too, or parcels already in an inbox are claimed anyway"
+  - "extension/src/tools/telegram-front-desk-bot.ts::ambulance::the human's only reachable entry point at 01:15 is the phone"
 
 approval_context: >
   Operator, 2026-07-26 ~01:15, mid-expedition of BL-654: "expeditor est un
   dernier recours. ne devrait-il pas aussi y avoir un mode où la swarm tourne
   normalement, sauf que le resident n'est autorisé qu'à travailler sur un
-  unique ticket. en mode ambulance". The name is the spec.
+  unique ticket. en mode ambulance". The name is the spec. Approved intent
+  carried forward unchanged through the 2026-07-26 specifier rework
+  (operator: "BL-655 top priority; you didn't author it - rework it"); the
+  rework did not widen the ask, it split it — see notes.
 
 source: |
   ## The gap, demonstrated the night this was filed
@@ -48,77 +58,97 @@ source: |
   where "ultra urgent but the swarm is healthy" actually belongs.
 
 description: |
-  ## Shape
+  ## What this slice is
 
-  A durable marker (posture of `control-pause.json`: read fresh each sweep,
-  degrade-never-crash, absent = mode off) naming ONE ticket id. While set:
+  ONE mechanism — a hold predicate — read at three live decision points, plus
+  the human's way in and out. The perimeter (watchdog quiet, promotion freeze,
+  automatic exit) is BL-679; this slice is the ambulance itself.
 
-  1. **Dispatch filter**: handoffd delivers/claims only parcels whose task is
-     the ambulance ticket or its lineage (bounce parcels, evidence, its QA
-     merge broadcast). Everything else stays QUEUED IN PLACE — never dropped,
-     never abandoned, mailboxes untouched.
-  2. **Rotation override**: the resident's idle decision always chooses the
-     ambulance parcel's role next — the absolute version of BL-651's aged-work
-     rule (and it must compose with BL-651, not fork it).
-  3. **Coordinator scope**: promotion/bookkeeping only for the ambulance
-     ticket. No new promotions while the mode is set.
-  4. **Everything else runs**: daemons, babysitterd, Telegram, watchdog,
-     operator. The swarm is healthy and stays observable — that is the whole
-     point versus the Expeditor.
+  ## The marker
 
-  ## Entry / exit
+  `.swarmforge/operator/control-ambulance.json`, in the exact posture of
+  BL-423's `control-pause.json` (`backlog_depth_lib.bb`'s
+  `read-pause-state` / `pause-active?` pair is the model to copy, not to
+  extend — a separate `ambulance_lib.bb` with the same split: an impure
+  reader that degrades to "off" on any read/parse failure, and a pure
+  predicate over the parsed value). Shape: `{"active": true, "ticket":
+  "BL-654", "engagedAtMs": 1753..., "by": "<who>"}`.
 
-  - Entry: human command — Telegram verb alongside BL-423's pause verbs
-    ("ambulance BL-654"), or a CLI writing the marker. Human-only; the swarm
-    never self-declares an ambulance.
-  - Exit: AUTOMATIC when the ticket reaches done/ (announce it), or explicit
-    human "ambulance off". A bounced-out/parked ambulance ticket must NOT
-    deadlock the swarm: if the ticket leaves the pipeline for a human ruling,
-    the mode surfaces that loudly and exits rather than starving forever.
+  Reads as OFF — byte-identical behaviour to today, on every path — when the
+  file is absent, empty, unparseable, carries no `BL-###` ticket id, or names
+  a ticket with no YAML anywhere under `backlog/`. That last case matters:
+  a marker naming a ticket that does not exist would hold EVERYTHING forever,
+  which is precisely the deadlock the operator ruled out. Fail safe, and log
+  the reason.
 
-  ## Interactions the specifier must pin
+  ## Attribution — the one predicate
 
-  - **Flow-watchdog**: parcels deliberately held by ambulance mode must not
-    fire stall alarms — BL-650's active-time clock is the natural hook
-    (ambulance intervals count as could-not-process time for OTHER parcels).
-    An ambulance that itself stalls MUST still alarm.
-  - **Expedite lane**: an expedited defect arriving DURING an ambulance
-    queues like everything else — the human chose the ambulance knowingly;
-    only a human lifts it. State this explicitly; it is the one place the
-    mode outranks Article 3.2.4.
-  - **Depth breaker**: depth stays whatever it is; ambulance is a dispatch
-    filter, not a depth change.
-  - **Batch roles**: a batch containing ambulance + non-ambulance parcels
-    delivers ONLY the ambulance ones; the rest stay queued (no partial-batch
-    loss — the BL-590 idempotency lesson applies to the re-delivery later).
+  A parcel's attributed-ticket set is every `BL-###` id appearing in its
+  `task:` header (git_handoff) plus its `message:` header and body (any
+  type). The parcel is HELD when that set is non-empty and does not contain
+  the ambulance ticket; otherwise it moves.
 
-acceptance: |
-  Specifier writes the scenarios. Minimum behaviour:
+  **Attribution fails OPEN, deliberately.** A `note` has no `task:` header,
+  and real bounce/steering notes do sometimes name no ticket at all (live
+  example: QA's "3fed7545d3 cites 2 evidence files never committed"). Holding
+  those would deadlock the ambulance ticket the moment it was bounced without
+  its id in the message. The cost of the open direction is one stray note
+  reaching the resident; the cost of the closed direction is the ambulance
+  never finishing. Only positive attribution to a DIFFERENT ticket holds.
 
-  1. Mode set on ticket X, mixed queues everywhere: only X's parcels move;
-     after "ambulance off", every queued parcel is delivered intact (count
-     and content identical to a no-ambulance run — the non-loss invariant).
-  2. X completes -> mode exits by itself, announces, and the queues drain in
-     normal order.
-  3. X bounces within bounds: the bounce lineage flows (coder rework etc.)
-     without the mode releasing. X leaves the pipeline (parked / human
-     ruling): loud surface + exit, no deadlock.
-  4. An expedited critical defect filed mid-ambulance: queued, visible,
-     untouched until the mode lifts — and the lift announcement names it
-     first.
-  5. Watchdog: held parcels do not alarm during the mode; a stalled ambulance
-     parcel alarms exactly as today.
-  6. Marker absent/blank/malformed = mode off, byte-identical behaviour to
-     today (degrade-never-crash).
-  7. Non-vacuity: with the mode set, seed a tempting non-ambulance parcel
-     (priority 00 note) and assert the resident never touches it.
+  ## The three read sites (all three, or the mode is dark)
+
+  1. **Delivery** — `handoffd.bb`'s `poll-once!` / `deliver!`. A held parcel
+     is simply not delivered this poll: it stays in the sender's `outbox/`,
+     untouched, and is re-evaluated next poll. It is never moved to `failed/`,
+     `sent/`, `abandoned/` or a quarantine. Log `deliver-skip-ambulance`.
+  2. **Dequeue** — `handoff_lib.bb`'s `resolve-dequeueable-candidates`, the
+     single funnel both `ready_for_next_task.bb` and the batch helper already
+     pass through. A held parcel already sitting in an `inbox/new/` when the
+     mode engaged is not a dequeueable candidate; it stays in `new/`. Existing
+     `in_process/` work is NOT retracted — a mid-turn claim finishes.
+  3. **Rotation actionability** — `handoffd.bb`'s `role-mail-row`, feeding
+     `mono-router-lib/actionable-mail?` / `preferred-rotate-target`. Held mail
+     is not actionable, so the resident is never pulled to it. This composes
+     with BL-576's aged-note rule rather than forking it: ambulance filters
+     the candidate set, aging still decides among what survives the filter.
+
+  ## Entry and exit
+
+  - `swarmforge/scripts/ambulance_cli.bb engage <BL-id> | release | status`
+    writes/clears/reports the marker. Human-only; nothing in the swarm ever
+    engages an ambulance for itself.
+  - Telegram Control topic, alongside BL-423's pause verbs: `ambulance BL-654`
+    engages, `ambulance off` releases, each confirmed back in the topic naming
+    the ticket. The bot is the marker's writer here exactly as it already is
+    for `control-pause.json`. This is not optional polish — the operator's own
+    use case was phone-bound at 01:15, and a CLI-only ambulance would be
+    reachable by nobody at the moment it is needed (BL-419 / BL-335).
+
+  ## Explicitly unchanged by this slice
+
+  Depth is not touched: `active_backlog_max_depth`, the recommended-cap
+  throttle and `effective_backlog_depth_cli.bb` all read exactly as before.
+  Ambulance is a dispatch filter, not a depth change — so releasing it has no
+  cap to restore and cannot leave a throttle stuck on.
+
+  Everything else keeps running: handoffd, babysitterd, Telegram, the
+  watchdog, the operator. Staying observable is the whole point versus the
+  Expeditor.
+
+acceptance: specs/features/BL-655-ambulance-mode-hold.feature.draft
 
 out_of_scope: |
+  - The perimeter — flow-watchdog quiet for held parcels, the coordinator
+    promotion freeze, and automatic exit when the ticket lands in done/ or
+    leaves the pipeline. All of it is BL-679, specced and queued behind this.
   - Retiring or modifying the Expeditor. It stays the last resort for a
     broken pipeline; this mode assumes a HEALTHY one.
   - Multi-ticket ambulances or ambulance queues. One patient per ride, by
     design; a second emergency is a human re-decision.
   - Auto-triggering from severity/type. Human-only entry, deliberately.
+  - Retracting a claim already in `in_process/`. Engaging an ambulance never
+    interrupts a turn mid-flight; it decides what happens NEXT.
 
 notes: |
   Invariant to keep front of mind, from the operator's naming: an ambulance
@@ -126,3 +156,45 @@ notes: |
   Rung 2 should make rung 3 rare — if the Expeditor's log shows it being used
   on healthy pipelines after this ships, something is wrong with this mode's
   ergonomics, and that is a finding worth a ticket.
+
+  ## Specifier rework, 2026-07-26 — what changed and why
+
+  The pre-rework ticket carried a prose `acceptance:` block ("Specifier writes
+  the scenarios") over six live surfaces at `mutation_cost: high`. It is now
+  split in two, each an independently valuable parcel:
+
+  - **BL-655 (this)** — the hold: marker, lib, CLI, Telegram verb, and the
+    three read sites. Engage, hold, release, nothing lost.
+  - **BL-679** — the perimeter: watchdog quiet, promotion freeze, automatic
+    exit and the release announcement.
+
+  The split is a specifier decision on already-approved intent, not a new ask;
+  the operator's directive is quoted verbatim in `approval_context` on both.
+  BL-679 is specced and paused, not deferred indefinitely — an ambulance
+  without its perimeter is half a mode, and the two should ship back to back.
+
+  ## Known cost of shipping this slice alone
+
+  Until BL-679 lands, held parcels keep aging on the flow-watchdog's
+  wall clock, so a long ambulance will emit one WARN and later one ESCALATE
+  per held parcel. Noisy, not wrong, and bounded (the watchdog re-alarms only
+  on a tier change). Accepted knowingly rather than pulling BL-679's watchdog
+  work forward into an already-six-surface parcel.
+
+  ## The feature file is parked as a draft (BL-233)
+
+  `specs/features/BL-655-ambulance-mode-hold.feature.draft` — the coder
+  promotes it to `.feature` and wires its step handlers in the same commit.
+  A live `.feature` with no handlers makes `specs/pipeline/runtime.js` throw
+  ("no step handler matched"), which fails the acceptance gate for every OTHER
+  parcel in flight, not just this one.
+
+  ## IR-DRY disposition (do not re-litigate)
+
+  The feature file's IR-DRY report returns no high-confidence findings. The
+  remaining medium `possible-synonym` / `near-duplicate` pairs are all the
+  same canonical step pattern instantiated with different concrete values
+  ("a git_handoff for task BL-654 is queued in the coder outbox" vs
+  "... BL-660 ... cleaner inbox") — one step handler regex matches each
+  family. That is the intended state, per the checker's own guidance to
+  normalize only genuine wording drift.

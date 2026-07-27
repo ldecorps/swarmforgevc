@@ -1,0 +1,117 @@
+id: BL-680
+title: "Specifier consolidation authority: merge N intakes into one ticket, split one intake into N, and consolidate an epic's orbit when it goes top-priority — the prompt says 'ONE of these into A ticket' and never says merge"
+milestone: M8
+type: feature
+status: todo
+epic: code-quality-gates
+human_approval: approved
+priority: 00
+direction: human-requested
+depends_on: []
+assigned_to: specifier
+mutation_cost: medium
+
+invariants:
+  - "No consolidation drops a human sentence: every operator directive quoted in a source intake appears verbatim in at least one resulting ticket."
+  - "Consolidation reads and writes spec-time artifacts only — intakes, paused tickets, epic trackers. No ticket in backlog/active/ is ever modified by a consolidation pass."
+  - "The intake-to-ticket mapping is total in both directions: every source intake names every ticket it became, and every resulting ticket names every intake it came from."
+
+approval_context: >
+  Human proposal 2026-07-26 ~16:30, verbatim: "est-ce que le specifier peut
+  merger plusieurs intakes et les clobber en 1 seul BL. ou l'inverse, prendre
+  1 intake et en faire plusieurs BL. cas d'utilisation: lorsqu'un epic passe
+  en top priorité, il pourrait analyser l'ensemble des intakes + tickets en
+  pause, et faire ce travail de consolidation." Classified TOP PRIORITY by
+  the operator at 16:40: "mets cela en top priorité pour le specifier — qu'il
+  réfléchisse à updater la loi et/ou son rôle selon l'intake 10." The
+  layering answer to "faut-il l'inscrire dans sa constitution?" is the
+  two-vehicle split below.
+
+source: |
+  Drained from `.swarmforge/operator/INTAKE-specifier-consolidation-authority.md`
+  (2026-07-26), which is archived alongside this ticket and BL-681.
+
+  ## The gap, measured
+
+  specifier.prompt's BL-311 intake contract says "the moment you turn ONE of
+  these into A ticket" — an implicit 1:1 mapping. The words merge, split and
+  consolidate appear ZERO times in the prompt. Recorded costs:
+
+  - The standing-topic overlap cluster (BL-434/450/452/453/414/424/449/425):
+    coupled tickets filed independently, sharing files, `depends_on: []` all
+    lying — sequenced by hand after the fact.
+  - The founding fixture: 9 operator intakes filed 2026-07-26 in which the
+    SAME deterministic transcript walker appears as the proposed mechanism in
+    THREE (turn profiler, context-telemetry producer, budget governor's burn
+    meter). A 1:1 drain mints three overlapping tickets; a consolidating
+    specifier mints ONE walker ticket with three consumers.
+
+description: |
+  ## Two strata, two vehicles — this ticket is the first
+
+  The intake's own layering addendum, answering the human's "faut-il
+  l'inscrire dans sa constitution?":
+
+  - **Role contract (`swarmforge/roles/specifier.prompt`)** — the mechanics:
+    N:1, 1:N, the epic-top-priority pass, the caps. THIS ticket, shipping the
+    normal way a prompt amendment ships (pipeline parcel, QA-approved merge —
+    the path BL-633 already walked, never an operator edit).
+  - **Constitutional law (`constitution/articles/`)** — exactly ONE clause
+    qualifies: "a consolidation never drops a human sentence", because it must
+    bind EVERY future consolidator, not one role's contract. That is **BL-681**,
+    a separate, tiny, human-ratified companion per Article 5.1. It is
+    deliberately NOT folded into this parcel.
+
+  ## What the prompt gains
+
+  1. **N:1 merge.** Several intakes become one ticket. Traceability is the
+     contract: the ticket lists every source intake; each intake archives with
+     a pointer to the ticket; every operator directive quoted in any source
+     intake survives VERBATIM into the ticket.
+  2. **1:N split.** One intake becomes several tickets — BL-634's envelope
+     discipline applied at intake time rather than after the first oversized
+     parcel bounces. The intake archives once, pointing at ALL resulting
+     tickets, and the split states which part went where.
+  3. **Epic-top-priority consolidation pass.** When an epic is promoted to the
+     front, the specifier sweeps ALL open intakes and `paused/` tickets in that
+     epic's orbit: merge overlaps, split oversized, retire superseded
+     (retire-not-reword), correct `depends_on` the cluster contradicts, and
+     sequence what remains. Output is a recorded consolidation note on the
+     epic, so the history stays walkable.
+  4. **Caps.** A merge may not mint an oversized slice — BL-634's envelope
+     applies to the MERGED result. Consolidation happens at spec time only:
+     `backlog/active/` is untouchable, because rewriting an in-flight ticket's
+     YAML is precisely the worktree-staleness failure BL-317/BL-325 exist for.
+
+  ## Not in this ticket: the first exercise
+
+  The intake offers the transcript-walker trio as the authority's first live
+  case (merge the walker mechanism out of three intakes into one ticket with
+  three consumer slices). That is a USE of the authority and needs the
+  authority to exist first — it is deliberately left to the next intake-drain
+  turn rather than bundled here, so this parcel stays a prompt amendment.
+
+acceptance: specs/features/BL-680-specifier-consolidation-authority.feature.draft
+
+out_of_scope: |
+  - The constitutional clause itself. BL-681, human-gated, deliberately separate.
+  - Exercising the authority on the nine currently-open intakes, including the
+    transcript-walker trio. Next drain turn, once this has landed.
+  - Any change to how the coordinator promotes, or to Article 3.2.4 ordering.
+    Consolidation reshapes what tickets EXIST at spec time; it never reorders
+    or promotes them.
+  - Retroactively consolidating already-shipped clusters (the standing-topic
+    tickets). They are cited as evidence of the gap, not as work here.
+
+notes: |
+  The specifier is, fittingly, its own subject here — which is exactly why the
+  never-drop-a-human-sentence rule is being lifted OUT of this prompt and into
+  law in BL-681. A role that can rewrite the shape of its own inputs should not
+  also be the only thing guaranteeing the human's words survive that rewrite.
+
+  Gherkin is parked at
+  `specs/features/BL-680-specifier-consolidation-authority.feature.draft`
+  (BL-233): the coder promotes it to `.feature` and wires its step handlers in
+  the same commit. A live `.feature` with no handlers makes
+  `specs/pipeline/runtime.js` throw and fails the acceptance gate for every
+  parcel in flight.

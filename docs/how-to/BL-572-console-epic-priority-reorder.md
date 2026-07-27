@@ -14,8 +14,9 @@ feed and the move route require the console token.
 
 The screen lists every `backlog/paused/` ticket of `type: epic`, ordered by
 `priority:` ascending, one row per epic with its id, title, and current
-priority. Each row has **Move up** and **Move down** controls. When there are
-no paused epics, the screen shows an empty state and no rows.
+priority. Each row has **Move up**, **Move down**, **Make top**, and
+**Topics** controls. When there are no paused epics, the screen shows an
+empty state and no rows.
 
 ## Move an Epic
 
@@ -38,6 +39,84 @@ Expedite control commits — through the shared commit-integrity helper, never
 a bare `git commit` from the bridge server — so the change lands on `main`
 durably, not just on disk.
 
+## Make an Epic Top Priority
+
+Tap **Make top** on a row to jump that epic straight to the front of the
+whole live backlog in one step, instead of tapping **Move up** repeatedly.
+"Live" here means every `backlog/paused/` and `backlog/hold/` item, epics
+and topics together — not just the epics shown on this screen — so **Make
+top** always produces a genuine, unique top, never a tie with a topic the
+screen isn't displaying.
+
+**Make top** is never disabled for being "already first" the way **Move
+up** is — the epic list's own position doesn't tell you whether the epic is
+already the live top, so the button is always tappable and the server
+answers with a no-op reason when nothing needed to change.
+
+A few things shape what actually happens when you tap it:
+
+- Epics and topics the mover **doesn't** depend on, ranked worse than it,
+  keep their relative order — the tie-run shifts to make room, it doesn't
+  shuffle unrelated items past each other.
+- If the epic **depends on** another live item that already ranks better
+  than it, the move is bounded rather than refused: the epic lands
+  immediately after that dependency instead of ahead of it, and the shown
+  reason names which dependency did the bounding.
+- If the dependency graph itself is broken — a cycle back to the epic
+  itself, or a `depends_on` id that doesn't resolve to any backlog item — the
+  move is refused outright, and the reason names the offending id(s). Nothing
+  is written or committed in that case.
+- A dependency that is already `active` or `done` never bounds or blocks the
+  move; only a live (paused/hold) dependency can.
+- Re-tapping **Make top** on an epic that's already at the best position it
+  is allowed to reach is a no-op with a stated reason — same as a boundary
+  **Move up**/**Move down**, nothing is written or committed.
+
+Like a move, a successful **Make top** commits through the same
+commit-integrity helper as every other write on this screen, and a refusal
+or no-op always shows its reason rather than a bare status code.
+
+## Open an Epic's Topics
+
+Tap **Topics** on an epic row to drill into that epic's own live topics —
+every `backlog/paused/` and `backlog/hold/` item carrying that epic, listed
+in the same priority-ascending, id-ascending order as everywhere else on
+this screen. The pane header stays put across the drill-down, same as the
+tile view. A topic that depends on another live topic shows a small
+dependency marker next to its id, so a bound or refused move is never a
+surprise before you tap anything. An epic with no live topics shows its own
+empty state instead of a blank list.
+
+Tap **&larr; Back** to return to the epic tiles.
+
+## Make a Topic Top Priority Within Its Epic
+
+From an epic's drill-down, each topic row has its own **Make top** control.
+Tapping it is the same primitive as the epic-level **Make top**, one level
+down: the topic is made the strict top of *that epic's own live topics* —
+never the whole backlog, and never another epic's topics.
+
+The same rules apply, narrowed to that one epic's topic list:
+
+- Other epics' topics, and the target topic's own epic siblings it doesn't
+  depend on, keep their relative order.
+- A live dependency is resolved globally, not just within the epic — a
+  topic in a different epic entirely can still bound or refuse the move, the
+  same way an in-epic dependency would.
+- A broken dependency graph (a cycle, or a `depends_on` id that resolves to
+  nothing) refuses the move outright, naming the offending id(s); nothing is
+  written or committed.
+- Re-tapping **Make top** on a topic already in the best position it's
+  allowed to reach is a no-op with a stated reason.
+- Applying it to a topic that doesn't actually belong to the epic you're
+  viewing is refused as not-found, without writing anything — this can only
+  happen if the screen's own data is stale, since the drill-down only ever
+  shows a topic under its own epic.
+
+Like the epic-level move and **Make top**, a successful topic **Make top**
+commits through the shared commit-integrity helper, and every refusal or
+no-op shows its stated reason.
+
 ## If a Move Fails
 
 The screen always shows the server's stated reason for a failed or refused
@@ -48,5 +127,6 @@ its own.
 
 ## Scope
 
-The screen only reorders `type: epic` tickets. Reordering an epic's own
-child slices is a separate concern and is not part of this screen.
+The epic tiles only reorder `type: epic` tickets. Reordering one epic's own
+topics is a narrower, separate action — scoped to a single epic's drill-down
+(**Make top** within an epic), not a general topic reorder screen.

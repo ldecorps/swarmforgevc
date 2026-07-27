@@ -6,7 +6,7 @@ type: epic
 epic: swarm-intelligence-layer
 priority: 00
 depends_on: []
-decomposes_into: [BL-525, BL-546, BL-547, BL-548, BL-563]
+decomposes_into: [BL-525, BL-546, BL-547, BL-548, BL-563, BL-682, BL-624, BL-625, BL-643]
 promotion_order:
   - id: BL-546
     when: "PROMOTE FIRST — no upstream deps"
@@ -72,6 +72,15 @@ notes: |
     - BL-548 Prompt calibration loop — test experimental adapter variants against a
       real model via Model Steward evaluate; promote winners to the adapter catalogue
       with human approval and regression guard.
+    - Onboarding Facilitator (BL-624, BL-625; naming ruled by BL-643) — survey ->
+      propose -> negotiate -> agreed contract for a NEW target repo, gating dispatch
+      via the BL-262 onboarding-contract gate. Tagged `epic: swarm-intelligence-layer`
+      since its own drain landed but never backfilled into this tracker's
+      `decomposes_into` (fixed 2026-07-26) or this PILLARS list (fixed same pass).
+      Orthogonal to fleet-topology (BL-543): this pillar is per-target CONTRACT
+      negotiation, one swarm sequentially retargetable across many projects without
+      needing concurrent multi-swarm infrastructure; BL-543 is for when true
+      concurrent multi-swarm IS wanted.
 
   RELATIONSHIPS:
     PromptEngine produces prompts.

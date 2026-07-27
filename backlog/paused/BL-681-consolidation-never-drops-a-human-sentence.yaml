@@ -1,0 +1,101 @@
+id: BL-681
+title: "Constitutional clause (Article 5): a consolidation never drops a human sentence — binds every future consolidator, not one role's prompt, so it needs human ratification not a pipeline merge"
+milestone: M8
+type: feature
+status: todo
+epic: code-quality-gates
+human_approval: approved
+priority: 01
+direction: human-requested
+depends_on: [BL-680]
+assigned_to: specifier
+mutation_cost: low
+
+invariants:
+  - "The clause names no specific role: it binds the ACT of consolidating, so it reaches a consolidator the constitution has not met yet."
+
+approval_context: >
+  This is a CONSTITUTIONAL amendment, so Article 5.1 requires your explicit
+  ratification — a pipeline merge is not enough, which is exactly why it is
+  split out of BL-680 rather than folded into it.
+
+  What you are ratifying, in one sentence: "A consolidation never drops a
+  human sentence — every directive quoted from a human survives verbatim into
+  the resulting ticket(s), and a consolidation that cannot preserve one is
+  refused rather than trimmed."
+
+  Firm, not up for debate here: BL-680's mechanics (N:1, 1:N, the epic pass,
+  the caps) — those ship on their own as a role-contract amendment either way.
+
+  RATIFIED by the human 2026-07-26, answering both questions this ticket was
+  raised to ask: (1) it belongs in LAW, not in specifier.prompt alone; (2) its
+  home is **Article 5**, not Article 3. Both are now settled contract, not open
+  choices — build to them.
+
+source: |
+  Drained from `.swarmforge/operator/INTAKE-specifier-consolidation-authority.md`
+  (2026-07-26), whose layering addendum answers the human's own question
+  "faut-il l'inscrire dans sa constitution?" verbatim:
+
+  > **Constitutional law (`constitution/articles/`)**: ONE clause qualifies —
+  > "a consolidation never drops a human sentence" — because it must bind
+  > EVERY future consolidator (specifier today; coordinator or operator
+  > tomorrow), not one role's contract. An article change goes through
+  > Article 5.1: explicit HUMAN ratification, not a pipeline merge. The
+  > specifier should draft it as a separate, tiny, human-gated companion —
+  > never fold it silently into the role parcel.
+
+description: |
+  ## The whole change
+
+  One clause added to the constitution's amendments article, plus a citation
+  from `specifier.prompt` back to it so the role that exercises the authority
+  points at the law rather than restating it.
+
+  Draft wording:
+
+  > **A consolidation never drops a human sentence.** When intakes or tickets
+  > are merged, split, or otherwise reshaped before entering the pipeline,
+  > every directive quoted from a human survives verbatim into the resulting
+  > ticket or tickets. A consolidation that cannot preserve one is refused,
+  > not trimmed.
+
+  ## Why law and not prompt
+
+  BL-680 grants the specifier the power to rewrite the shape of its own
+  inputs. The guarantee that the human's words survive that rewrite should not
+  live in the same document as the power — and should not evaporate the day
+  the authority moves to another role. A rule in `specifier.prompt` reaches
+  the specifier; a rule in the constitution reaches whoever consolidates next.
+
+  ## Where it lands — ruled, not chosen by the coder
+
+  **Article 5** (`swarmforge/constitution/articles/05_amendments.md`), by the
+  human's ratification of 2026-07-26. Article 3 was the considered alternative
+  and was NOT chosen; do not relocate the clause on your own judgement.
+
+  ## Why it was human-gated
+
+  Article 5.1: a constitutional change is ratified by an explicit human
+  decision, never by a pipeline merge. That ratification has now been given —
+  the clause and its home are settled, and this ticket is ordinary pipeline
+  work from here.
+
+acceptance: specs/features/BL-681-consolidation-never-drops-a-human-sentence.feature.draft
+
+out_of_scope: |
+  - The consolidation mechanics themselves (N:1, 1:N, the epic-top-priority
+    pass, the caps). BL-680, shipping independently of this ruling.
+  - Any other constitutional change. One clause, deliberately tiny.
+  - Enforcement tooling. This slice states the law; nothing here builds a
+    checker for it.
+
+notes: |
+  Sequenced after BL-680 (`depends_on`) so the clause lands next to the
+  authority it constrains rather than ahead of it. Ratified 2026-07-26, so the
+  rule now binds by law and not only as BL-680's role obligation — which was
+  the whole point of asking: reach past the specifier to whoever consolidates
+  next.
+
+  Gherkin parked as `.feature.draft` per BL-233; the coder promotes it and
+  wires handlers in the same commit.

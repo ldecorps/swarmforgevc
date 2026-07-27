@@ -1,0 +1,137 @@
+id: BL-682
+title: "Wire Mistral Vibe into the Intelligence Layer: provider->agent has no mistral key and the Model Steward has no Mistral model, so a fully-built, live-verified provider can never be routed to"
+milestone: M5
+type: feature
+status: todo
+epic: swarm-intelligence-layer
+human_approval: approved
+priority: 20
+direction: human-requested
+depends_on: []
+assigned_to: specifier
+mutation_cost: low
+
+invariants:
+  - "No model id is invented: every Model Steward entry this slice writes is traceable to the live tool's own report, or is explicitly recorded as agent-granularity with the reason it could not be resolved."
+  - "Adding the mistral mapping changes no existing provider's resolution, and registering the Mistral model changes no existing registry entry's status, context window or cost class."
+
+approval_context: >
+  Operator (human, ldecorps@gmail.com) 2026-07-26 via the coordinator session,
+  filed alongside the qwen-code intake — same goal, reducing cost by routing
+  role assignment through the Swarm Intelligence Layer (BL-545). Operator's
+  own sequencing that session: BL-655 (ambulance) first, THEN this Mistral
+  wiring + BL-574, THEN qwen-code onboarding. The intake left the slicing to
+  the specifier ("it may be reasonable to slice it as a single small ticket
+  rather than the qwen multi-ticket sequence — specifier's call"): it is one
+  ticket, because both registrations are the same act in the same subsystem.
+
+source: |
+  Drained from `.swarmforge/operator/INTAKE-wire-mistral-vibe-into-intelligence-layer.md`
+  (2026-07-26), archived alongside this ticket.
+
+  ## Why this is small: the hard part already shipped
+
+  Unlike the qwen-code ask, Mistral Vibe (`vibe`, `pipx install mistral-vibe`)
+  is ALREADY fully built and verified live in this repo:
+
+  - `prompt_engine_lib.bb`'s provider-capabilities carries a `"vibe"` entry
+    with the correct real-agent shape (`:wake-style :chat-message`,
+    `:bootstrap-style :embedded`), explicitly contrasted in the code's own
+    comments against `"aider"`.
+  - Two production packs exist and are documented as verified live:
+    `swarmforge/packs/vibe-mono-router.conf` and `vibe-forge.conf` — the
+    latter's header states "Verified: it ran the script and performed the task
+    the output asked for."
+  - A dedicated launcher `start-swarm-mistral.sh` exists.
+  - Host smoke-check by the coordinator: `MISTRAL_API_KEY` present, `vibe`
+    2.19.1 installed (the version the pack comment verified), launcher
+    present. Launch-ready TODAY as a standalone pack — that part needs no
+    ticket.
+
+  The gap is exactly one layer up: the Intelligence Layer cannot route to it.
+
+description: |
+  ## The two registrations, and nothing else
+
+  1. **`model_factory_lib.bb`'s `provider->agent`** is
+     `{"anthropic" "claude", "openai" "codex", "cerebras" "aider"}` — no
+     `"mistral"` key, so `provider->agent-for` falls through to returning
+     `"mistral"` itself, which is not an agent. Add `"mistral" -> "vibe"`.
+  2. **Model Steward** (`model_steward_cli.bb register <provider>/<model>
+     [--status S] [--context-window N] [--cost-class C]`) has no Mistral entry
+     at all — the registry holds only `anthropic/claude-sonnet-5`,
+     `cerebras/llama-3.3-70b`, `openai/gpt-5.3-codex`. Without one, no role
+     recommendation can ever name Mistral, because `role-recommendations`
+     filters to certified registered models.
+
+  ## The model id must be READ, not invented — and it IS readable
+
+  The intake suggested checking `vibe-mono-router.conf` for the model string.
+  There isn't one there: that pack's per-role column is `--max-price` (a hard
+  per-session dollar cap — coder 3.00, everyone else 2.00), not a model.
+
+  The real source is Vibe's own config, `~/.vibe/config.toml` (NOT under
+  `~/.config`), read on this host 2026-07-26:
+
+  ```toml
+  active_model = "mistral-medium-3.5"
+
+  [[models]]
+  name = "mistral-vibe-cli-latest"
+  provider = "mistral"
+  alias = "mistral-medium-3.5"
+  input_price = 1.5
+  output_price = 7.5
+  auto_compact_threshold = 200000
+  ```
+
+  So all three registration arguments come from real data:
+
+  - **Model id — register the ALIAS, `mistral/mistral-medium-3.5`.** The
+    entry's `name` is `mistral-vibe-cli-latest`, a rolling "latest" pointer
+    that will silently drift to a different model; the alias names an actual
+    Mistral model and is what `active_model` selects. Record the underlying
+    `name` in the entry for traceability, but do not register the moving
+    pointer as the id. The other three registry entries
+    (`anthropic/claude-sonnet-5`, `cerebras/llama-3.3-70b`,
+    `openai/gpt-5.3-codex`) are all stable model names; this keeps that
+    property. Note `provider = "mistral"` in the config matches the
+    `provider->agent` key added above — they are the same namespace.
+  - **`--context-window 200000`**, from `auto_compact_threshold`.
+  - **`--cost-class`** from the real rates, `input_price 1.5` /
+    `output_price 7.5`. **The intake's guess that this is a low/cheap
+    candidate does not survive those numbers** — it was inferred from the
+    `--max-price` session cap, which bounds SPEND and says nothing about the
+    RATE. At 1.5/7.5 this is a mid-tier model. Classify from the rates, and
+    if the class is chosen otherwise, say why in the ticket.
+
+  If a future host's config cannot supply an id, the fallback stands:
+  register at agent granularity (`mistral/vibe`) and record WHY. Never write
+  a plausible-looking string like `mistral/mistral-vibe` that nothing in the
+  system actually reports — a fabricated fourth entry would make the registry
+  lie.
+
+acceptance: specs/features/BL-682-mistral-vibe-intelligence-layer-routing.feature.draft
+
+out_of_scope: |
+  - The packs, the launcher, and the `"vibe"` agent shape. All three exist and
+    are verified live; this slice must not touch them.
+  - BL-574 (PromptEngine Slice 2, per-model prompt adapters). Orthogonal and
+    already at priority 01 in its own right. Vibe is exactly the kind of
+    provider that will want an adapter once BL-574 ships — but it uses the
+    generic prompt wording today (BL-546 Slice 1 scope) and that is unchanged
+    here.
+  - The qwen-code onboarding (its own intake, sequenced after this one).
+  - Certifying the model or acting on any role recommendation it enables.
+    Registration only.
+
+notes: |
+  **CAUTION for the builder — two generations of Mistral packs exist.**
+  `vibe-mono-router.conf` and `vibe-forge.conf` are the real, working ones.
+  `mistral-lean.conf` and `two-pack-mistral.conf` are the OLD, BROKEN
+  aider-based attempt, kept only as the historical failure record (aider is a
+  file EDITOR and cannot drive the swarm). Do not confuse them, and do not
+  "fix" the old ones back into use.
+
+  Gherkin parked as `.feature.draft` per BL-233; the coder promotes it to
+  `.feature` and wires its step handlers in the same commit.
