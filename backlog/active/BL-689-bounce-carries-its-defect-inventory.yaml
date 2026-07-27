@@ -1,0 +1,135 @@
+id: BL-689
+title: "One bounce event carries its whole defect inventory — record-bounce takes N defect items and the blocked-check count, and the briefing reports defects-per-bounce"
+milestone: M8
+type: feature
+status: todo
+epic: code-quality-gates
+human_approval: approved
+priority: 05
+direction: human-requested
+mutation_cost: medium
+depends_on: [BL-688]
+invariants:
+  - "A call with no inventory writes exactly the record it writes today — same fields, no inventory key — so every existing writer, reader and tally is byte-for-byte unaffected."
+  - "One call is one bounce EVENT: for any inventory size N, every existing tally's bounce count rises by exactly 1, never by N."
+  - "A rejected or partially-invalid inventory never loses the bounce: the core single-item record is still written, the degrade reason is reported, and the exit status stays zero."
+acceptance: specs/features/BL-689-bounce-carries-its-defect-inventory.feature
+
+approval_context: >
+  The operator's intake marked this "optional follow-on ... if prompts alone are
+  insufficient", so the first decision is whether to build it at all now that
+  Article 4.4 binds via the role prompts. Two shape decisions if yes. (1) The
+  inventory is OPTIONAL and degrades: a malformed `--items` still records the
+  single-item bounce and exits zero, because a metric flag must never cost a
+  reviewer their bounce record. Say so if you would rather a bad inventory were
+  a hard usage error. (2) A no-inventory bounce counts as ONE defect in the
+  defects-per-bounce figure, so the 5 existing records and every future
+  minimal call remain comparable instead of being excluded from the mean.
+
+source: |
+  Operator (human) 2026-07-27,
+  .swarmforge/operator/INTAKE-single-pass-review-bounce-all-violations.md
+  section C ("Enforcement hooks (specifier to propose)"): `record-bounce.js`
+  optional `--items` so one bounce record can carry N defects with metrics
+  still counting ONE bounce event, and a `defects_per_bounce` metric to detect
+  first-failure-stop regression. Article 4.4 (the prose half of that intake) is
+  already incorporated; this is its durable-record half.
+
+description: |
+  ## What
+
+  Article 4.4 requires one bounce per review pass carrying EVERY defect that
+  pass found. `record-bounce.js` records exactly one `(producingRole,
+  failureClass)` pair per call, so the shape of a pass is invisible to the
+  durable log: a four-defect sweep and a first-failure stop are the same record.
+  The regression the amendment exists to prevent is therefore unmeasurable.
+
+  Give the recorder the inventory:
+
+  - `--items <json>` (optional) — a non-empty JSON array of objects, each
+    `{id, class, blamed, pointer}`: the item label (`D1`), its failure class
+    (BL-688's widened closed set), the role blamed for it
+    (`coder|cleaner|architect|hardender|documenter`), and a remediation pointer
+    string (file/function/scenario id).
+  - `--blocked <n>` (optional, default 0) — how many checks the pass could not
+    run because an earlier item blocked them. Article 4.4 makes this the field
+    that distinguishes a legitimately short inventory (compile failure blocked
+    eight gates) from a first-failure stop, so it is recorded, not derived.
+
+  One call stays one bounce event. The core `--role`/`--class` flags still
+  describe the item being ROUTED on (the earliest blamed role's most severe
+  item), unchanged, so Article 4.3 routing and every existing tally keep working
+  untouched.
+
+  ## The metric, and where it must land
+
+  `qa-bounce-line.js` (read by `briefing_email_lib.bb`, the live consumer) gains
+  a `defectsPerBounce` figure: total inventory items across recorded bounces
+  divided by bounce count, where a record with no inventory counts as ONE defect.
+  Without that call site the field is written and never read — the shape this
+  project has shipped dark before (see the runtime-wiring rule in
+  engineering.prompt), which is why it is a `required_wiring` entry here and not
+  a suggestion.
+
+  ## Degrade posture, stated deliberately
+
+  An optional JSON flag must catch its own parse errors and fall back to a
+  documented behaviour (engineering.prompt Guardrails). Here the fallback is:
+  write the core single-item record exactly as if `--items` were absent, print
+  the degrade reason (`unparseable` | `empty` | `invalid-item`), exit ZERO. A
+  reviewer who mistypes JSON must not lose the bounce record — that failure mode
+  is the one BL-635 exists to eliminate.
+
+  ## Direction
+
+  The parse-and-validate step belongs beside the existing flag validation
+  (`bounceArgsCore.ts` / `recordBounceArgs.ts`) as a pure, testable function
+  returning either an inventory or a degrade reason — never throwing into
+  `main()`. `BounceRecord` gains an optional inventory; readers must tolerate its
+  absence forever (invariant 1). Keep `record-qa-bounce.js` untouched: it is
+  legacy, still separately tested, and no prompt calls it.
+
+  ## Scope
+
+  - `extension/src/quality/qaBounce.ts` — optional inventory on `BounceRecord`,
+    the items validator, the defects-per-bounce aggregator.
+  - `extension/src/tools/recordBounceArgs.ts`, `record-bounce.ts` — the two new
+    flags and the degrade path; USAGE text.
+  - `extension/src/tools/qa-bounce-line.ts` — print the figure.
+  - `extension/src/metrics/bounceStore.ts` — round-trip the new field.
+  - `specs/pipeline/steps/` — new BL-689 handlers.
+  - `extension/test/qaBounce.test.js`, the recorder CLI tests, and the
+    briefing-line tests.
+
+  ## Out of scope
+
+  - Widening the failure-class vocabulary — that is BL-688, and this ticket is
+    unbuildable without it (per-item classes use the widened set). Merge BL-688
+    first; do not re-fix it here.
+  - A CI/acceptance gate asserting an evidence file lists >=1 item or an explicit
+    NONE, and the tracer bullet that seeds a multi-defect parcel and asserts one
+    bounce with >=3 items. Both are named follow-ons in the intake; spec them
+    only once this recorder exists, so no scenario outruns built code (BL-233).
+  - Parsing the inventory back OUT of evidence markdown
+    (`qaBounceEvidenceParser.ts`): the CLI flag is the record of truth here.
+
+  ## e2e QA procedure
+
+  From the repo root with `out/` compiled: record a bounce with a four-item
+  inventory and `--blocked 3`
+  (`--items '[{"id":"D1","class":"behavior","blamed":"coder","pointer":"foo.ts:12
+  bar()"}, ...]'`). Confirm `.swarmforge/bounces/<month>.jsonl` gained exactly
+  ONE line carrying all four items and `blocked: 3`. Run
+  `node extension/out/tools/qa-bounce-line.js` and confirm the total counts that
+  bounce ONCE and prints a defects-per-bounce figure. Repeat with
+  `--items '{not json'` and confirm the bounce is still recorded (one line, no
+  inventory), the degrade reason is printed, and the exit status is zero. Finally
+  run the recorder with no inventory flags at all and diff the resulting JSONL
+  line against one written before this ticket: identical fields.
+
+required_wiring:
+  - "extension/src/tools/qa-bounce-line.ts::defectsPerBounce::the briefing line is the only live reader of the bounce log; without this call site the inventory is written and never read"
+
+notes: |
+  Depends on BL-688 and touches the same files (`qaBounce.ts`, the recorder
+  args) — they are NOT orthogonal and must not be active concurrently.
