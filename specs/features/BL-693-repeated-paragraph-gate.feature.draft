@@ -1,0 +1,70 @@
+Feature: a markdown doc cannot ship the same prose paragraph twice
+
+  830 KB of one repeated paragraph sat in the project's reference
+  specification for three days and eleven documenter commits before a human
+  noticed. Nothing in the repo lints prose.
+
+  This gate exits non-zero when a prose line repeats inside one markdown
+  file. Markdown that is supposed to repeat — fences, rules, table
+  separators, list markers, diagram glyphs — never trips it.
+
+  Background:
+    Given the documenter's doc-duplication gate
+
+  # BL-693 doc-dup-gate-01
+  Scenario: a document with no repeated prose passes
+    Given a markdown file whose prose lines are all distinct
+    When the gate runs on it
+    Then the gate passes
+
+  # BL-693 doc-dup-gate-02
+  Scenario Outline: a repeated prose line fails the gate, and the report names what to fix
+    Given a markdown file with one prose line appearing <count> times
+    When the gate runs on it
+    Then the gate fails
+    And the report names the file, the repeated text, <count> occurrences, and the line numbers
+
+    Examples:
+      | count |
+      | 2     |
+      | 286   |
+
+  # BL-693 doc-dup-gate-03
+  Scenario Outline: markdown that is supposed to repeat never trips the gate
+    Given a markdown file repeating only the structural line <line>
+    When the gate runs on it
+    Then the gate passes
+
+    Examples:
+      | line               |
+      | code fence         |
+      | horizontal rule    |
+      | table separator    |
+      | list marker        |
+      | blockquote marker  |
+      | diagram glyph      |
+
+  # BL-693 doc-dup-gate-04
+  Scenario: repetition across two files is not a duplicate
+    Given two markdown files sharing one prose line
+    When the gate runs on both
+    Then the gate passes
+
+  # BL-693 doc-dup-gate-05
+  Scenario: every named file is checked, not just the first
+    Given a clean markdown file and a markdown file with a repeated prose line
+    When the gate runs on both
+    Then the gate fails
+    And the report names the second file
+
+  # BL-693 doc-dup-gate-06
+  Scenario: the repaired reference specification passes
+    Given the specification after its duplicate paragraphs are removed
+    When the gate runs on it
+    Then the gate passes
+
+  # BL-693 doc-dup-gate-07
+  Scenario: the corrupted reference specification fails
+    Given the specification while it still holds 286 copies of one paragraph
+    When the gate runs on it
+    Then the gate fails

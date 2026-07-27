@@ -1,0 +1,67 @@
+Feature: Specification.MD keeps one copy of the BL-607 paragraph, not 286
+
+  One commit appended the same ~2,900-character paragraph 286 times through
+  the tail of docs/reference/Specification.MD, taking the file from 503 KB to
+  1.36 MB. 284 of those copies also carry a shell-mangled CLI example, so the
+  two copies that are correct are the minority — a dedupe that keeps the most
+  common copy keeps the broken one.
+
+  The repair deletes 285 copies and nothing else. Markdown legitimately
+  repeats code fences, horizontal rules and table separators; those must
+  survive untouched.
+
+  Background:
+    Given a Specification.MD holding 286 copies of one paragraph
+    And 284 of those copies carry a mangled CLI example
+    And 2 of those copies carry the correct CLI example
+
+  # BL-692 spec-dup-repair-01
+  Scenario: exactly one copy survives
+    When the duplicate-paragraph repair runs
+    Then the document holds exactly 1 copy of that paragraph
+
+  # BL-692 spec-dup-repair-02
+  Scenario: the surviving copy is the correct one, not the common one
+    When the duplicate-paragraph repair runs
+    Then the surviving copy carries the correct CLI example
+    And no mangled CLI example remains in the document
+
+  # BL-692 spec-dup-repair-03
+  Scenario: the surviving copy stays where it belongs in the narrative
+    When the duplicate-paragraph repair runs
+    Then the surviving copy sits between the BL-354 paragraph and the BL-283 paragraph
+
+  # BL-692 spec-dup-repair-04
+  Scenario Outline: markdown that is supposed to repeat is left alone
+    Given the document repeats the structural line <line>
+    When the duplicate-paragraph repair runs
+    Then every occurrence of <line> survives
+
+    Examples:
+      | line              |
+      | code fence        |
+      | horizontal rule   |
+      | table separator   |
+      | diagram glyph     |
+
+  # BL-692 spec-dup-repair-05
+  Scenario: no real content is lost
+    When the duplicate-paragraph repair runs
+    Then every non-blank line other than the removed copies is byte-identical and in the same order
+
+  # BL-692 spec-dup-repair-06
+  Scenario: the blank lines the corruption doubled are collapsed
+    When the duplicate-paragraph repair runs
+    Then no run of two consecutive blank lines remains in the document
+
+  # BL-692 spec-dup-repair-07
+  Scenario: the repaired document is the measured size
+    When the duplicate-paragraph repair runs
+    Then the document is 2249 lines long
+
+  # BL-692 spec-dup-repair-08
+  Scenario: repairing an already-repaired document changes nothing
+    When the duplicate-paragraph repair runs
+    And the duplicate-paragraph repair runs again
+    Then the document holds exactly 1 copy of that paragraph
+    And the second run left the document unchanged
