@@ -142,3 +142,5 @@ notes: |
   expedites it ahead of non-expedited candidates. It is orthogonal to BL-688 and
   BL-689 (different tree entirely — `swarmforge/scripts/` vs
   `extension/src/quality`), so it can run alongside either if a slot allows.
+
+assigned_to: coder

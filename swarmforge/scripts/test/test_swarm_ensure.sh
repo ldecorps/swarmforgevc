@@ -70,21 +70,27 @@ EOF
   chmod +x "$FAKE_BIN/fake_ext_bounce.sh"
 
   echo "$$" > "$ROOT/.swarmforge/daemon/handoffd.pid"
-  # A daemon repair must actually leave a live process behind: redirect its
-  # stdio to real files, not :inherit/pipes - a piped/inherited stream here
-  # gets torn down along with the invoking process (discovered empirically:
-  # an :inherit-stdio child does not survive its spawning bb script's own
-  # exit, whereas one redirected to real out/err files does).
-  cat > "$FAKE_BIN/fake_supervisor.bb" <<EOF
-#!/usr/bin/env bb
-(require '[babashka.process :as process]
-         '[babashka.fs :as fs])
-(def p (process/process ["sleep" "100"]
-                         {:out :append :out-file (fs/file "$ROOT/fake-daemon.log")
-                          :err :append :err-file (fs/file "$ROOT/fake-daemon.log")}))
-(spit "$ROOT/.swarmforge/daemon/handoffd.pid" (str (.pid (:proc p))))
+  # BL-690: this fake must mirror the real repair command's START semantics
+  # (start_handoff_daemon.sh), never a health PROBE - the previous fake here
+  # (a bare `sleep` spawn standing in for `handoffd_supervisor.bb
+  # --check-once`) never exercised the real command at all, which is exactly
+  # how the alarm-and-halt! defect went undetected. It leaves a live process
+  # behind (same real-background-sleep survival idiom as fake_operator_start.sh
+  # below - a piped/inherited child does not survive this script's own exit,
+  # a backgrounded one does) and appends a SUCCESS line to the same
+  # daemon-start-audit.log path the real script writes, so scenarios can
+  # assert on it the same way. Scenarios 01 and 06 of the BL-690 acceptance
+  # feature (specs/pipeline/steps) exercise the REAL start_handoff_daemon.sh
+  # with no override at all - this fake only needs to stand in for it here.
+  cat > "$FAKE_BIN/fake_daemon_start.sh" <<EOF
+#!/usr/bin/env bash
+mkdir -p "$ROOT/.swarmforge/daemon"
+sleep 100 >"$ROOT/fake-daemon.log" 2>&1 &
+echo \$! > "$ROOT/.swarmforge/daemon/handoffd.pid"
+printf '%s SUCCESS handoffd+supervisor running\n' "\$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  >> "$ROOT/.swarmforge/daemon/daemon-start-audit.log"
 EOF
-  chmod +x "$FAKE_BIN/fake_supervisor.bb"
+  chmod +x "$FAKE_BIN/fake_daemon_start.sh"
 
   # Operator healthy by default (this test script's pid as a live stand-in).
   # Front desk is omitted unless a fixture sets TELEGRAM_* or a pid file.
@@ -110,7 +116,7 @@ EOF
 run_ensure() {
   SWARM_ENSURE_EXTENSION_CHECK_CMD="$FAKE_BIN/fake_ext_check.sh" \
   SWARM_ENSURE_EXTENSION_BOUNCE_CMD="$FAKE_BIN/fake_ext_bounce.sh" \
-  SWARM_ENSURE_SUPERVISOR_CMD="bb $FAKE_BIN/fake_supervisor.bb" \
+  SWARM_ENSURE_SUPERVISOR_CMD="$FAKE_BIN/fake_daemon_start.sh" \
   SWARM_ENSURE_OPERATOR_CMD="$FAKE_BIN/fake_operator_start.sh" \
   SWARM_ENSURE_FRONT_DESK_CMD="$FAKE_BIN/fake_front_desk_start.sh" \
   PATH="$FAKE_BIN:$PATH" bb "$ENSURE" "$ROOT"
