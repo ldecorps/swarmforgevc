@@ -67,6 +67,10 @@ test('letsTalk: replyTextForSpeechSynthesis strips markdown for TTS', () => {
   assert.equal(replyTextForSpeechSynthesis('**Ready** to try.'), 'Ready to try.');
   assert.equal(replyTextForSpeechSynthesis('# Summary\n\n- first item'), 'Summary\nfirst item');
   assert.equal(replyTextForSpeechSynthesis('Use `code` here.'), 'Use code here.');
+  assert.equal(
+    replyTextForSpeechSynthesis('Edit `extension/src/foo.ts` or `and/or`'),
+    'Edit extension src foo.ts or and or'
+  );
   assert.equal(replyTextForSpeechSynthesis('[docs](https://example.com)'), 'docs');
   assert.equal(replyTextForSpeechSynthesis('plain answer'), 'plain answer');
   assert.equal(replyTextForSpeechSynthesis('---'), '');
@@ -75,6 +79,20 @@ test('letsTalk: replyTextForSpeechSynthesis strips markdown for TTS', () => {
     'Name, Value\nfoo, bar'
   );
   assert.equal(replyTextForSpeechSynthesis('BL-696 is fine'), 'BL-696 is fine');
+  assert.equal(replyTextForSpeechSynthesis('Use and/or cloud STT'), 'Use and or cloud STT');
+  assert.equal(
+    replyTextForSpeechSynthesis('Edit extension/src/bridge/letsTalkCore.ts'),
+    'Edit extension src bridge letsTalkCore.ts'
+  );
+  assert.equal(
+    replyTextForSpeechSynthesis('Open /lets-talk from /console'),
+    'Open lets-talk from console'
+  );
+  assert.equal(
+    replyTextForSpeechSynthesis('See https://example.com/foo/bar for docs'),
+    'See for docs'
+  );
+  assert.equal(replyTextForSpeechSynthesis('About 1/2 done'), 'About 1 over 2 done');
 });
 
 test('letsTalk: speech language parsing and agent prompt', () => {
@@ -84,7 +102,8 @@ test('letsTalk: speech language parsing and agent prompt', () => {
   assert.equal(parseLetsTalkSpeechLanguage('en-US'), 'en');
   assert.equal(speechLocaleForLanguage('fr'), 'fr-FR');
   assert.match(formatLetsTalkAgentPrompt('quel est le statut', 'fr'), /réponds en français/i);
-  assert.equal(formatLetsTalkAgentPrompt('status check', 'en'), 'status check');
+  assert.match(formatLetsTalkAgentPrompt('status check', 'en'), /voice playback/i);
+  assert.match(formatLetsTalkAgentPrompt('status check', 'en'), /status check/);
 });
 
 test('letsTalk: auto language detection from transcript', () => {

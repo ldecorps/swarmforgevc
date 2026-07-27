@@ -139,12 +139,17 @@ export function resolveTurnSpeechLanguage(
   return detectSpeechLanguageFromText(transcript);
 }
 
+const VOICE_PLAYBACK_RULE_EN =
+  "[Let's Talk — reply in short plain sentences for voice playback; no markdown, file paths, or URLs.]";
+const VOICE_PLAYBACK_RULE_FR =
+  "[Let's Talk — réponds en français en phrases courtes pour la lecture vocale; pas de markdown, chemins de fichiers ni URL.]";
+
 export function formatLetsTalkAgentPrompt(transcript: string, language: LetsTalkSpeechLanguage): string {
   const trimmed = transcript.trim();
   if (language === 'fr') {
-    return `[Let's Talk — réponds en français]\n\n${trimmed}`;
+    return `${VOICE_PLAYBACK_RULE_FR}\n\n${trimmed}`;
   }
-  return trimmed;
+  return `${VOICE_PLAYBACK_RULE_EN}\n\n${trimmed}`;
 }
 
 export function extractCodeWordFromRememberPhrase(transcript: string): string | undefined {
@@ -193,12 +198,27 @@ export function replyTextForSpeechSynthesis(text: string): string {
   speech = speech.replace(/-{2,}/g, ' ');
   speech = speech.replace(/_{2,}/g, ' ');
   speech = speech.replace(/\*{2,}/g, ' ');
-  speech = speech.replace(/[|#*_`~]/g, ' ');
+  speech = speech.replace(/[|#*_`~\[\]]/g, ' ');
   speech = speech.replace(/\s:\s/g, ' ');
   speech = speech.replace(/\n{3,}/g, '\n\n');
   speech = speech.replace(/[ \t]+\n/g, '\n');
   speech = speech.replace(/[ \t]{2,}/g, ' ');
+  speech = sanitizeSlashesForSpeech(speech);
+  speech = speech.replace(/[ \t]{2,}/g, ' ');
   return speech.trim();
+}
+
+/** Slashes in paths, URLs, and "and/or" are read aloud as "slash" by speechSynthesis. */
+function sanitizeSlashesForSpeech(speech: string): string {
+  let out = speech;
+  out = out.replace(/\band\/or\b/gi, 'and or');
+  out = out.replace(/https?:\/\/\S+/gi, '');
+  out = out.replace(/\bwww\.\S+/gi, '');
+  out = out.replace(/\b(\d+)\/(\d+)\b/g, '$1 over $2');
+  out = out.replace(/\b[\w@$]*[A-Za-z][\w@$.-]*(?:\/[\w@$.-]+)+\b/g, (path) => path.replace(/\//g, ' '));
+  out = out.replace(/\/([\w][\w-]*)/g, ' $1');
+  out = out.replace(/\//g, ' ');
+  return out;
 }
 
 function isMarkdownTableSeparatorLine(line: string): boolean {

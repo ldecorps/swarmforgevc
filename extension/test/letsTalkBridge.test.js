@@ -201,8 +201,8 @@ test('processLetsTalkTurn: client TTS mode succeeds without server synthesizeSpe
     }
   );
   assert.equal(result.success, true);
-  assert.equal(result.replyText, 'You said: hi');
-  assert.equal(result.replySpeechText, 'You said: hi');
+  assert.match(result.replyText, /You said:.*\bhi\b/s);
+  assert.match(result.replySpeechText, /\bhi\b/);
   assert.equal(result.speechLocale, 'en-US');
   assert.equal(result.clientTts, true);
   assert.equal(result.replyAudioBase64, undefined);
