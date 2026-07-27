@@ -10,7 +10,7 @@ priority: 30
 mutation_cost: medium
 direction: swarm-proposed
 depends_on: []
-human_approval: pending
+human_approval: approved
 source: "QA follow-up on BL-528 (backlog/evidence/BL-528-qa-followups-20260724.md item 1); architect raised the same as SECONDARY in backlog/evidence/BL-528-architect-bounce.md; coder note to specifier 2026-07-24T02:37Z."
 
 approval_context: >
