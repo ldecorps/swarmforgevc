@@ -123,6 +123,13 @@ test('parseArgs rejects a defer whose --class is outside KNOWN_FAILURE_CLASSES',
   assert.equal(parseArgs(deferArgs({ cls: 'scope' })), null);
 });
 
+// BL-688: a sibling deferral may be filed under either widened class.
+for (const cls of ['invariant-unencoded', 'spec-gap']) {
+  test(`parseArgs accepts a defer with the widened class ${cls}`, () => {
+    assert.equal(parseArgs(deferArgs({ cls })).failureClass, cls);
+  });
+}
+
 test('parseArgs rejects a defer missing a required flag', () => {
   assert.equal(parseArgs(['defer', '--ticket', 'BL-477', '--blocked-by', 'BL-469', '--class', 'integration', '--commit', 'abc1234567']), null);
 });
@@ -209,6 +216,14 @@ test('status on a ticket with an open deferral exits 3 and names the blocker and
   assert.equal(result.logs[0], 'DEFERRED BL-477 BLOCKED_BY BL-469 CHECK npm run compile');
 });
 
+test('a defer recorded with the widened class spec-gap reports DEFERRED on status, same as any other class', async () => {
+  const root = mkRepo();
+  await runCli(root, deferArgs({ cls: 'spec-gap', check: 'npm run acceptance:spec-gap-check' }));
+  const result = await runCli(root, ['status', '--ticket', 'BL-477']);
+  assert.equal(result.exitCode, 3);
+  assert.equal(result.logs[0], 'DEFERRED BL-477 BLOCKED_BY BL-469 CHECK npm run acceptance:spec-gap-check');
+});
+
 test('status lists one line per open blocker when a ticket has several', async () => {
   const root = mkRepo();
   await runCli(root, deferArgs({ blockedBy: 'BL-469' }));
@@ -282,7 +297,7 @@ test('the usage message on exit 2 names all three subcommands and the --class en
   assert.match(usage, /qa-sibling-check\.js status --ticket <id>/);
   assert.match(usage, /qa-sibling-check\.js defer --ticket <id> --blocked-by <id> --class <failureClass> --check "<command>" --commit <hex>/);
   assert.match(usage, /qa-sibling-check\.js clear --ticket <id> --blocked-by <id> --commit <hex>/);
-  assert.match(usage, /--class: compile\|unit\|integration\|acceptance\|behavior/);
+  assert.match(usage, /--class: compile\|unit\|integration\|acceptance\|behavior\|invariant-unencoded\|spec-gap/);
 });
 
 test('a missing required flag exits 2', async () => {
