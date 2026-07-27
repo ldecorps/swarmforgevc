@@ -42,3 +42,17 @@ export function isAuthorizedByQueryToken(queryToken: string | undefined, token: 
   }
   return timingSafeStringEqual(queryToken, token);
 }
+
+/** Read credential from `?bearer=` (preferred) or legacy `?token=` on a request URL. */
+export function parseQueryCredential(url: string): string | undefined {
+  const queryIndex = url.indexOf('?');
+  if (queryIndex === -1) {
+    return undefined;
+  }
+  const params = new URLSearchParams(url.slice(queryIndex + 1));
+  return params.get('bearer') ?? params.get('token') ?? undefined;
+}
+
+export function formatQueryCredential(credential: string): string {
+  return `?bearer=${encodeURIComponent(credential)}`;
+}

@@ -77,8 +77,8 @@ export function getConsoleMenuUiHtml(): string {
 (function () {
   var tg = window.Telegram && window.Telegram.WebApp;
   if (tg) { tg.ready(); tg.expand(); }
-  var token = new URLSearchParams(location.search).get('token') || '';
-  var q = token ? ('?token=' + encodeURIComponent(token)) : '';
+  var token = new URLSearchParams(location.search).get('bearer') || new URLSearchParams(location.search).get('token') || '';
+  var q = token ? ('?bearer=' + encodeURIComponent(token)) : '';
   document.getElementById('pipeline-grid').href = '/pipeline-grid' + q;
   document.getElementById('mono-feed').href = '/resident-spy' + q;
   document.getElementById('paused-pager').href = '/paused-pager' + q;

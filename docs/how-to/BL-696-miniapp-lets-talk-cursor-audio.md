@@ -31,8 +31,30 @@ The screen shows:
    agent, synthesizes the reply server-side, and plays it back in the WebView.
 4. The transcript appears under the playback bar; state returns to **ready**.
 
-The browser captures audio only. Speech-to-text and text-to-speech run on the
-bridge host so the Mini App CSP is never widened beyond `connect-src 'self'`.
+The browser captures audio only. Speech-to-text runs on the bridge host so the
+Mini App CSP is never widened beyond `connect-src 'self'`.
+
+**Amendment (2026-07-27):** operator chose **local hybrid audio** — server-side
+STT via whisper.cpp (no OpenAI quota) and **browser `speechSynthesis`** for
+playback instead of server TTS. See
+[BL-696 amendment — local hybrid audio](../reference/specs/BL-696-amendment-local-hybrid-audio.md).
+
+### Local mode (recommended)
+
+```bash
+export LETS_TALK_AUDIO_ENGINE=local
+export WHISPER_MODEL_PATH=~/.swarmforge/models/ggml-base.en.bin
+export WHISPER_CPP_BIN=whisper-cli   # or path to whisper.cpp main binary
+export FFMPEG_BIN=ffmpeg             # optional; converts webm/mp4 from the phone
+```
+
+Restart the bridge after setting env vars. The turn response includes
+`replyText` only; the Mini App speaks it via `speechSynthesis`.
+
+### OpenAI mode (legacy v1)
+
+When `LETS_TALK_AUDIO_ENGINE=openai` (or unset) and `OPENAI_API_KEY` is set,
+the bridge uses OpenAI Whisper + TTS and returns `replyAudioBase64`.
 
 ## Shared Session with Cursor Remote
 

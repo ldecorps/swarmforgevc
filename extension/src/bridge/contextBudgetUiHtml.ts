@@ -84,9 +84,9 @@ export function getContextBudgetUiHtml(): string {
   if (tg) { tg.ready(); tg.expand(); }
 
   var params = new URLSearchParams(location.search);
-  var token = params.get('token') || '';
+  var token = params.get('bearer') || params.get('token') || '';
   var initialAgent = params.get('agent') || '';
-  var q = token ? ('?token=' + encodeURIComponent(token)) : '';
+  var q = token ? ('?bearer=' + encodeURIComponent(token)) : '';
   document.getElementById('menu').href = '/console' + q;
 
   var contentEl = document.getElementById('content');

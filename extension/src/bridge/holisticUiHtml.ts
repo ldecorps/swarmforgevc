@@ -405,7 +405,7 @@ export function getHolisticUiHtml(): string {
   }
 
   var params = new URLSearchParams(window.location.search);
-  var urlToken = params.get('token');
+  var urlToken = params.get('bearer') || params.get('token');
   if (urlToken) {
     token = urlToken;
     // Never persist the token anywhere (no storage APIs) and strip it from

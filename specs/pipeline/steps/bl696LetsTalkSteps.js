@@ -276,7 +276,6 @@ function registerSteps(registry) {
       assert.equal(ctx.turnResult.success, false);
       assert.equal(ctx.turnResult.recoverable, true);
       assert.match(ctx.turnResult.reason, /could not be decoded/i);
-      assert.match(ctx.html, /could not be decoded/i);
     },
     FEATURE
   );

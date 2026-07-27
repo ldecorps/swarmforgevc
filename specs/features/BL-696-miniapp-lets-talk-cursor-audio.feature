@@ -7,7 +7,12 @@ Feature: Let's Talk — discrete audio turns with the Cursor agent on the Consol
   # plus token-gated JSON routes. Fifth button on the /console menu.
   #
   # INTERACTION: tap-to-toggle record → STT (server-side) → existing Cursor
-  # bridge agent session → TTS (server-side) → playback. No duplex live.
+  # bridge agent session → TTS → playback. No duplex live.
+  #
+  # AMENDMENT (2026-07-27, operator): local hybrid audio — server STT
+  # (whisper.cpp) + browser speechSynthesis TTS. See
+  # docs/reference/specs/BL-696-amendment-local-hybrid-audio.md
+  # v1 shipped OpenAI for both; acceptance scenarios unchanged by outcome.
   #
   # SESSION: shared agentId with the Telegram Cursor Remote text topic by
   # default; POST /lets-talk/new-session clears context like /new.

@@ -57,7 +57,8 @@ test("lets-talk Mini App shell is served without auth", async () => {
     assert.match(body, /Let's Talk/);
     assert.match(body, /data-testid="lets-talk-record"/);
     assert.match(body, /data-testid="lets-talk-new-session"/);
-    assert.match(body, /\/lets-talk\/turn/);
+    assert.match(body, /speechSynthesis/);
+    assert.match(body, /speakReplyText/);
   });
 });
 
@@ -91,7 +92,7 @@ test('lets-talk turn completes with transcript, reply text, and audio', async ()
   const target = mkTmp();
   const counters = { transcript: 'hello there' };
   await withBridge(target, buildMocks(target, counters), async (handle) => {
-    const res = await fetch(`http://127.0.0.1:${handle.port}/lets-talk/turn?token=${TOKEN}`, {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/lets-talk/turn?bearer=${TOKEN}`, {
       method: 'POST',
       headers: controlAuthHeaders(),
       body: JSON.stringify({ audioBase64: SAMPLE_AUDIO, mimeType: 'audio/webm' }),
@@ -104,6 +105,21 @@ test('lets-talk turn completes with transcript, reply text, and audio', async ()
     assert.ok(body.replyAudioBase64);
     assert.ok(body.agentId);
     assert.equal(counters.sttCalls, 1);
+  });
+});
+
+test('lets-talk turn route accepts bearer query param without auth headers', async () => {
+  const target = mkTmp();
+  const counters = { transcript: 'ping' };
+  await withBridge(target, buildMocks(target, counters), async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/lets-talk/turn?bearer=${TOKEN}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ audioBase64: SAMPLE_AUDIO }),
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.success, true);
   });
 });
 
@@ -173,6 +189,40 @@ test('processLetsTalkTurn: missing STT adapter is recoverable', async () => {
   );
   assert.equal(result.success, false);
   assert.match(result.reason, /speech-to-text is not configured/i);
+});
+
+test('processLetsTalkTurn: client TTS mode succeeds without server synthesizeSpeech', async () => {
+  const target = mkTmp();
+  const result = await processLetsTalkTurn(
+    { audioBase64: SAMPLE_AUDIO },
+    {
+      agentSession: createMockCursorBridgeAgentSession(target),
+      transcribeAudio: async () => ({ kind: 'ok', transcript: 'hi' }),
+      clientTts: true,
+    }
+  );
+  assert.equal(result.success, true);
+  assert.equal(result.replyText, 'You said: hi');
+  assert.equal(result.replySpeechText, 'You said: hi');
+  assert.equal(result.clientTts, true);
+  assert.equal(result.replyAudioBase64, undefined);
+});
+
+test('processLetsTalkTurn: client TTS mode strips markdown from replySpeechText', async () => {
+  const target = mkTmp();
+  const session = createMockCursorBridgeAgentSession(target);
+  session.promptAgent = async () => ({ replyText: '**Ready** — use `code`.', agentId: 'agent-1' });
+  const result = await processLetsTalkTurn(
+    { audioBase64: SAMPLE_AUDIO },
+    {
+      agentSession: session,
+      transcribeAudio: async () => ({ kind: 'ok', transcript: 'status' }),
+      clientTts: true,
+    }
+  );
+  assert.equal(result.success, true);
+  assert.equal(result.replyText, '**Ready** — use `code`.');
+  assert.equal(result.replySpeechText, 'Ready — use code.');
 });
 
 test('processLetsTalkTurn: TTS failure is recoverable', async () => {

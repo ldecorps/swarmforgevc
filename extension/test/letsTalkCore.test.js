@@ -9,6 +9,7 @@ const {
   sttRetryBudgetExhausted,
   unprocessableAudioMessage,
   LETS_TALK_STT_RETRY_BUDGET,
+  replyTextForSpeechSynthesis,
 } = require('../out/bridge/letsTalkCore');
 
 test('letsTalk: valid turn request shape', () => {
@@ -55,4 +56,18 @@ test('letsTalk: code word remember and recall', () => {
 
 test('letsTalk: unprocessable audio message is recoverable copy', () => {
   assert.match(unprocessableAudioMessage(), /could not be decoded/i);
+});
+
+test('letsTalk: replyTextForSpeechSynthesis strips markdown for TTS', () => {
+  assert.equal(replyTextForSpeechSynthesis('**Ready** to try.'), 'Ready to try.');
+  assert.equal(replyTextForSpeechSynthesis('# Summary\n\n- first item'), 'Summary\nfirst item');
+  assert.equal(replyTextForSpeechSynthesis('Use `code` here.'), 'Use code here.');
+  assert.equal(replyTextForSpeechSynthesis('[docs](https://example.com)'), 'docs');
+  assert.equal(replyTextForSpeechSynthesis('plain answer'), 'plain answer');
+  assert.equal(replyTextForSpeechSynthesis('---'), '');
+  assert.equal(
+    replyTextForSpeechSynthesis('| Name | Value |\n| --- | --- |\n| foo | bar |'),
+    'Name, Value\nfoo, bar'
+  );
+  assert.equal(replyTextForSpeechSynthesis('BL-696 is fine'), 'BL-696 is fine');
 });

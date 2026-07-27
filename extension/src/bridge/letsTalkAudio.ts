@@ -1,8 +1,15 @@
 // BL-696: server-side STT/TTS adapters for Let's Talk audio turns.
-// Browser captures audio; the bridge host transcribes and synthesizes so
-// Mini App CSP connect-src 'self' is never widened.
+// Browser captures audio; the bridge host transcribes (and optionally
+// synthesizes). Local mode uses whisper.cpp + browser speechSynthesis.
 
 import type { SttResult, TtsResult } from '../tools/telegramFrontDeskBotCore';
+import {
+  letsTalkAudioEnvFromProcessEnv,
+  parseLetsTalkAudioEngine,
+  resolveWhisperCppConfig,
+  transcribeWithWhisperCpp,
+  type LetsTalkAudioEnv,
+} from './letsTalkLocalAudio';
 
 const OPENAI_STT_MODEL = 'whisper-1';
 const OPENAI_TTS_MODEL = 'tts-1';
@@ -11,8 +18,21 @@ const OPENAI_TTS_VOICE = 'alloy';
 export type TranscribeAudio = (bytes: Buffer, mimeType?: string) => Promise<SttResult>;
 export type SynthesizeSpeech = (text: string) => Promise<TtsResult>;
 
-export function classifyTranscriptionResponse(status: number, ok: boolean, text: string | undefined): SttResult {
+export type OpenAiTranscriptionError = { code?: string; message?: string };
+
+export function classifyTranscriptionResponse(
+  status: number,
+  ok: boolean,
+  text: string | undefined,
+  providerError?: OpenAiTranscriptionError
+): SttResult {
   if (!ok) {
+    if (status === 429 || providerError?.code === 'insufficient_quota') {
+      return {
+        kind: 'transient-failure',
+        reason: 'OpenAI API quota exceeded — check billing and plan limits.',
+      };
+    }
     return status >= 400 && status < 500 ? { kind: 'unprocessable' } : { kind: 'transient-failure' };
   }
   return text ? { kind: 'ok', transcript: text } : { kind: 'unprocessable' };
@@ -22,14 +42,21 @@ export function extensionForMime(mimeType: string | undefined): string {
   if (!mimeType) {
     return 'audio.webm';
   }
-  if (mimeType.includes('ogg')) {
+  const lower = mimeType.toLowerCase();
+  if (lower.includes('webm')) {
+    return 'audio.webm';
+  }
+  if (lower.includes('ogg')) {
     return 'audio.ogg';
   }
-  if (mimeType.includes('wav')) {
+  if (lower.includes('wav')) {
     return 'audio.wav';
   }
-  if (mimeType.includes('mpeg') || mimeType.includes('mp3')) {
+  if (lower.includes('mpeg') || lower.includes('mp3')) {
     return 'audio.mp3';
+  }
+  if (lower.includes('mp4') || lower.includes('m4a') || lower.includes('aac') || lower.includes('x-m4a') || lower.includes('caf')) {
+    return 'audio.m4a';
   }
   return 'audio.webm';
 }
@@ -40,15 +67,17 @@ export async function transcribeAudioBytes(openaiApiKey: string, bytes: Buffer, 
   }
   try {
     const form = new FormData();
-    form.append('file', new Blob([bytes]), extensionForMime(mimeType));
+    const filename = extensionForMime(mimeType);
+    const blobType = mimeType?.split(';')[0] || 'audio/webm';
+    form.append('file', new Blob([bytes], { type: blobType }), filename);
     form.append('model', OPENAI_STT_MODEL);
     const res = await fetch('https://api.openai.com/v1/audio/transcriptions', {
       method: 'POST',
       headers: { authorization: `Bearer ${openaiApiKey}` },
       body: form,
     });
-    const json = res.ok ? ((await res.json()) as { text?: string }) : undefined;
-    return classifyTranscriptionResponse(res.status, res.ok, json?.text);
+    const json = (await res.json()) as { text?: string; error?: OpenAiTranscriptionError };
+    return classifyTranscriptionResponse(res.status, res.ok, json?.text, json?.error);
   } catch {
     return { kind: 'transient-failure' };
   }
@@ -70,16 +99,44 @@ export async function synthesizeSpeechBytes(openaiApiKey: string, text: string):
   }
 }
 
+export type LetsTalkAudioAdapters = {
+  transcribeAudio?: TranscribeAudio;
+  synthesizeSpeech?: SynthesizeSpeech;
+  /** When true, the Mini App speaks replyText via speechSynthesis (no server TTS). */
+  clientTts?: boolean;
+};
+
+function normalizeLetsTalkAudioEnv(envOrOpenAiKey: LetsTalkAudioEnv | string | undefined): LetsTalkAudioEnv {
+  if (typeof envOrOpenAiKey === 'string' || envOrOpenAiKey === undefined) {
+    return { openaiApiKey: envOrOpenAiKey };
+  }
+  return envOrOpenAiKey;
+}
+
 export function resolveLetsTalkAudioAdapters(
-  openaiApiKey: string | undefined,
+  envOrOpenAiKey: LetsTalkAudioEnv | string | undefined,
   overrides?: { transcribeAudio?: TranscribeAudio; synthesizeSpeech?: SynthesizeSpeech }
-): { transcribeAudio?: TranscribeAudio; synthesizeSpeech?: SynthesizeSpeech } {
+): LetsTalkAudioAdapters {
   if (overrides?.transcribeAudio || overrides?.synthesizeSpeech) {
     return {
       transcribeAudio: overrides.transcribeAudio,
       synthesizeSpeech: overrides.synthesizeSpeech,
+      clientTts: overrides.synthesizeSpeech === undefined && overrides.transcribeAudio !== undefined,
     };
   }
+  const env = normalizeLetsTalkAudioEnv(envOrOpenAiKey);
+  const engine = parseLetsTalkAudioEngine(env.engine);
+  if (engine === 'local') {
+    const whisper = resolveWhisperCppConfig(env);
+    if (!whisper) {
+      return {};
+    }
+    return {
+      transcribeAudio: (bytes, mimeType) => transcribeWithWhisperCpp(whisper, bytes, mimeType),
+      clientTts: true,
+    };
+  }
+  const openaiApiKey = env.openaiApiKey?.trim();
   if (!openaiApiKey) {
     return {};
   }
@@ -87,4 +144,11 @@ export function resolveLetsTalkAudioAdapters(
     transcribeAudio: (bytes, mimeType) => transcribeAudioBytes(openaiApiKey, bytes, mimeType),
     synthesizeSpeech: (text) => synthesizeSpeechBytes(openaiApiKey, text),
   };
+}
+
+export function resolveLetsTalkAudioAdaptersFromEnv(
+  processEnv: NodeJS.ProcessEnv = process.env,
+  overrides?: { transcribeAudio?: TranscribeAudio; synthesizeSpeech?: SynthesizeSpeech }
+): LetsTalkAudioAdapters {
+  return resolveLetsTalkAudioAdapters(letsTalkAudioEnvFromProcessEnv(processEnv), overrides);
 }

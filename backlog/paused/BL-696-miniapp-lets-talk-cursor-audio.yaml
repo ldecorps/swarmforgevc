@@ -57,8 +57,12 @@ description: |
      routes. Add a **Let's Talk** button on `consoleMenuUiHtml.ts`.
   2. **Audio I/O seam** — browser captures audio with `MediaRecorder`, POSTs
      the blob to a bridge route (`POST /lets-talk/turn`). The **bridge host**
-     runs STT and TTS server-side (CSP `connect-src 'self'` forbids provider
-     calls from the WebView). Do not widen CSP.
+     runs STT server-side (CSP `connect-src 'self'` forbids provider calls from
+     the WebView). Do not widen CSP. **Amendment 2026-07-27:** TTS moves to
+     browser `speechSynthesis`; STT becomes local whisper.cpp when
+     `LETS_TALK_AUDIO_ENGINE=local`. See
+     `docs/reference/specs/BL-696-amendment-local-hybrid-audio.md`. v1 shipped
+     OpenAI for both STT and TTS.
   3. **Single session writer** — the bridge forwards transcribed text into the
      **existing** Cursor bridge agent path (`telegramCursorBridgeCore` decisions
      + `cursor-bridge-state.json` / `agentId`). Do not spin a second SDK
@@ -120,6 +124,12 @@ out_of_scope: |
 notes: |
   Specifier drained 2026-07-27 from operator intake. Feature lint-clean at
   materialization. Step handlers land with the coder parcel (BL-233).
+
+  Amendment 2026-07-27 (operator, post-QA): local hybrid audio decision
+  recorded in `docs/reference/specs/BL-696-amendment-local-hybrid-audio.md`.
+  Option 3 — server whisper.cpp STT + browser speechSynthesis TTS; avoids
+  OpenAI quota for the speech loop. Implementation is a follow-on ticket;
+  BL-696 acceptance scenarios stand by user-visible outcome.
 
   IR-DRY pass (2026-07-27, 4 findings, all medium confidence):
   - NORMALISED: `I record a second turn asking "..."` (scenario 03) collapsed

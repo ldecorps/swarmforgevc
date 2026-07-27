@@ -12,17 +12,17 @@ const {
   syncResidentSpyTunnelUrl,
 } = require('../out/concierge/residentSpyTunnelNotify');
 
-test('buildResidentSpyMiniAppUrl appends resident-spy path and token query', () => {
+test('buildResidentSpyMiniAppUrl appends resident-spy path and bearer query', () => {
   assert.equal(
     buildResidentSpyMiniAppUrl('https://foo.trycloudflare.com/', 'abc123'),
-    'https://foo.trycloudflare.com/resident-spy?token=abc123'
+    'https://foo.trycloudflare.com/resident-spy?bearer=abc123'
   );
 });
 
-test('buildConsoleMiniAppUrl appends console path and token query', () => {
+test('buildConsoleMiniAppUrl appends console path and bearer query', () => {
   assert.equal(
     buildConsoleMiniAppUrl('https://foo.trycloudflare.com/', 'abc123'),
-    'https://foo.trycloudflare.com/console?token=abc123'
+    'https://foo.trycloudflare.com/console?bearer=abc123'
   );
 });
 

@@ -123,8 +123,8 @@ export function getLetsTalkUiHtml(): string {
   if (tg) { tg.ready(); tg.expand(); }
 
   var params = new URLSearchParams(location.search);
-  var token = params.get('token') || '';
-  var q = token ? ('?token=' + encodeURIComponent(token)) : '';
+  var token = params.get('bearer') || params.get('token') || '';
+  var q = token ? ('?bearer=' + encodeURIComponent(token)) : '';
   document.getElementById('menu').href = '/console' + q;
 
   var STT_RETRY_BUDGET = 3;
@@ -137,8 +137,49 @@ export function getLetsTalkUiHtml(): string {
   var phase = 'ready';
   var recording = false;
   var mediaRecorder = null;
+  var recordStream = null;
   var chunks = [];
   var playbackAudio = null;
+  var recordMimeType = '';
+  var recordStartedAt = 0;
+  var MIN_RECORD_MS = 400;
+  var RECORDER_MIME_CANDIDATES = [
+    'audio/webm;codecs=opus',
+    'audio/webm',
+    'audio/mp4',
+    'audio/aac',
+    'audio/ogg;codecs=opus',
+    'audio/ogg',
+  ];
+
+  function pickRecorderMimeType() {
+    if (!window.MediaRecorder || !MediaRecorder.isTypeSupported) {
+      return 'audio/webm';
+    }
+    for (var i = 0; i < RECORDER_MIME_CANDIDATES.length; i++) {
+      if (MediaRecorder.isTypeSupported(RECORDER_MIME_CANDIDATES[i])) {
+        return RECORDER_MIME_CANDIDATES[i];
+      }
+    }
+    return '';
+  }
+
+  function finalizeRecording() {
+    if (recordStream) {
+      recordStream.getTracks().forEach(function (t) { t.stop(); });
+      recordStream = null;
+    }
+    var blobType = recordMimeType || 'audio/webm';
+    var blob = new Blob(chunks, { type: blobType });
+    chunks = [];
+    recordMimeType = '';
+    if (blob.size > 0) {
+      endTurn(blob, blobType);
+      return;
+    }
+    showError('No audio was captured — try speaking a bit longer before stopping.');
+    setPhase('ready');
+  }
 
   function setPhase(next) {
     phase = next;
@@ -196,6 +237,22 @@ export function getLetsTalkUiHtml(): string {
     });
   }
 
+  function speakReplyText(text) {
+    return new Promise(function (resolve, reject) {
+      if (!window.speechSynthesis || !window.SpeechSynthesisUtterance) {
+        reject(new Error('Text-to-speech is not available in this browser.'));
+        return;
+      }
+      window.speechSynthesis.cancel();
+      var utter = new SpeechSynthesisUtterance(text);
+      utter.onend = function () { resolve(); };
+      utter.onerror = function (ev) {
+        reject(new Error((ev && ev.error) ? String(ev.error) : 'speech synthesis failed'));
+      };
+      window.speechSynthesis.speak(utter);
+    });
+  }
+
   async function submitTurn(body, sttAttempt) {
     var res = await fetch('/lets-talk/turn' + q, {
       method: 'POST',
@@ -232,6 +289,8 @@ export function getLetsTalkUiHtml(): string {
       setPhase('speaking');
       if (result.replyAudioBase64) {
         await playReplyAudio(result.replyAudioBase64, 'audio/ogg');
+      } else if (result.replySpeechText || result.replyText) {
+        await speakReplyText(result.replySpeechText || result.replyText);
       }
       setPhase('ready');
     } catch (err) {
@@ -252,26 +311,23 @@ export function getLetsTalkUiHtml(): string {
       showError('');
       navigator.mediaDevices.getUserMedia({ audio: true }).then(function (stream) {
         chunks = [];
-        var preferred = 'audio/webm;codecs=opus';
-        var mimeType = window.MediaRecorder && MediaRecorder.isTypeSupported(preferred) ? preferred : 'audio/webm';
-        mediaRecorder = new MediaRecorder(stream, { mimeType: mimeType });
+        recordStream = stream;
+        recordMimeType = pickRecorderMimeType();
+        var options = recordMimeType ? { mimeType: recordMimeType } : undefined;
+        mediaRecorder = options ? new MediaRecorder(stream, options) : new MediaRecorder(stream);
+        if (!recordMimeType && mediaRecorder.mimeType) {
+          recordMimeType = mediaRecorder.mimeType;
+        }
         mediaRecorder.ondataavailable = function (ev) {
           if (ev.data && ev.data.size > 0) {
             chunks.push(ev.data);
           }
         };
         mediaRecorder.onstop = function () {
-          stream.getTracks().forEach(function (t) { t.stop(); });
-          var blob = new Blob(chunks, { type: mimeType });
-          chunks = [];
-          if (blob.size > 0) {
-            endTurn(blob, mimeType);
-          } else {
-            showError('Could not transcribe the recording — the audio could not be decoded.');
-            setPhase('ready');
-          }
+          setTimeout(finalizeRecording, 0);
         };
-        mediaRecorder.start();
+        recordStartedAt = Date.now();
+        mediaRecorder.start(250);
         recording = true;
         recordBtn.setAttribute('aria-pressed', 'true');
         recordBtn.textContent = 'Stop';
@@ -280,10 +336,17 @@ export function getLetsTalkUiHtml(): string {
       });
       return;
     }
+    if (Date.now() - recordStartedAt < MIN_RECORD_MS) {
+      showError('Keep recording a moment longer, then tap Stop.');
+      return;
+    }
     recording = false;
     recordBtn.setAttribute('aria-pressed', 'false');
     recordBtn.textContent = 'Record';
     if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+      if (typeof mediaRecorder.requestData === 'function') {
+        mediaRecorder.requestData();
+      }
       mediaRecorder.stop();
     }
   };

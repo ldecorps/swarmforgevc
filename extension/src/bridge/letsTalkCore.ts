@@ -43,7 +43,10 @@ export function sttFailureForOutcome(
   if (outcome === 'retry') {
     return {
       success: false,
-      reason: 'speech-to-text is temporarily unavailable — try again',
+      reason:
+        stt.kind === 'transient-failure' && stt.reason
+          ? stt.reason
+          : 'speech-to-text is temporarily unavailable — try again',
       recoverable: true,
       state: 'error',
     };
@@ -51,7 +54,8 @@ export function sttFailureForOutcome(
   if (outcome === 'unprocessable' || stt.kind !== 'ok') {
     return {
       success: false,
-      reason: unprocessableAudioMessage(),
+      reason:
+        stt.kind !== 'ok' && stt.reason ? stt.reason : unprocessableAudioMessage(),
       recoverable: true,
       state: 'ready',
     };
@@ -96,4 +100,55 @@ export function mockAgentReplyForTranscript(transcript: string, rememberedCodeWo
     return `Got it — I will remember the code word ${codeWord}.`;
   }
   return `You said: ${trimmed}`;
+}
+
+/** Strip markdown / markup so browser speechSynthesis reads natural prose. */
+export function replyTextForSpeechSynthesis(text: string): string {
+  let speech = text;
+  speech = speech.replace(/```[\w-]*\n?([\s\S]*?)```/g, '$1');
+  speech = speech.replace(/`([^`]+)`/g, '$1');
+  speech = speech.replace(/!\[([^\]]*)\]\([^)]+\)/g, '$1');
+  speech = speech.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
+  speech = speech.replace(/<[^>]+>/g, ' ');
+  speech = speech
+    .split('\n')
+    .filter((line) => !isMarkdownTableSeparatorLine(line))
+    .map((line) => flattenMarkdownTableRow(line))
+    .join('\n');
+  speech = speech.replace(/^#{1,6}\s+/gm, '');
+  speech = speech.replace(/^>\s?/gm, '');
+  speech = speech.replace(/\*\*([^*]+)\*\*/g, '$1');
+  speech = speech.replace(/\*([^*]+)\*/g, '$1');
+  speech = speech.replace(/__([^_]+)__/g, '$1');
+  speech = speech.replace(/_([^_]+)_/g, '$1');
+  speech = speech.replace(/^\s*[-*+]\s+/gm, '');
+  speech = speech.replace(/^\s*\d+\.\s+/gm, '');
+  speech = speech.replace(/^[\s]*[-*_]{3,}[\s]*$/gm, ' ');
+  speech = speech.replace(/-{2,}/g, ' ');
+  speech = speech.replace(/_{2,}/g, ' ');
+  speech = speech.replace(/\*{2,}/g, ' ');
+  speech = speech.replace(/[|#*_`~]/g, ' ');
+  speech = speech.replace(/\s:\s/g, ' ');
+  speech = speech.replace(/\n{3,}/g, '\n\n');
+  speech = speech.replace(/[ \t]+\n/g, '\n');
+  speech = speech.replace(/[ \t]{2,}/g, ' ');
+  return speech.trim();
+}
+
+function isMarkdownTableSeparatorLine(line: string): boolean {
+  if (!line.includes('|') && !line.includes('-')) {
+    return false;
+  }
+  return /^\s*\|?[\s|:-]+\|?\s*$/.test(line) && /-{3,}|:[-]+:/.test(line);
+}
+
+function flattenMarkdownTableRow(line: string): string {
+  if (!line.includes('|')) {
+    return line;
+  }
+  const cells = line
+    .split('|')
+    .map((cell) => cell.trim())
+    .filter((cell) => cell.length > 0 && !/^:?-{3,}:?$/.test(cell));
+  return cells.length > 0 ? cells.join(', ') : ' ';
 }

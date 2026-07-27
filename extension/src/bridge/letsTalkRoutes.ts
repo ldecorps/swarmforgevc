@@ -7,6 +7,7 @@ import {
   decodeLetsTalkAudio,
   decideSttOutcome,
   isLetsTalkTurnRequestShape,
+  replyTextForSpeechSynthesis,
   sttFailureForOutcome,
   unprocessableAudioMessage,
 } from './letsTalkCore';
@@ -18,6 +19,7 @@ export const LETS_TALK_TURN_MAX_BODY_BYTES = 8 * 1024 * 1024;
 export interface LetsTalkRouteDeps {
   transcribeAudio?: TranscribeAudio;
   synthesizeSpeech?: SynthesizeSpeech;
+  clientTts?: boolean;
   agentSession: CursorBridgeAgentSessionDeps;
 }
 
@@ -26,7 +28,9 @@ export interface LetsTalkTurnSuccess {
   state: 'ready';
   transcript: string;
   replyText: string;
-  replyAudioBase64: string;
+  replySpeechText?: string;
+  replyAudioBase64?: string;
+  clientTts?: boolean;
   agentId: string;
 }
 
@@ -51,9 +55,20 @@ async function promptAgentAndSynthesize(
     };
   }
   if (!deps.synthesizeSpeech) {
+    if (deps.clientTts) {
+      return {
+        success: true,
+        state: 'ready',
+        transcript,
+        replyText,
+        replySpeechText: replyTextForSpeechSynthesis(replyText),
+        clientTts: true,
+        agentId,
+      };
+    }
     return { success: false, reason: 'text-to-speech is not configured', recoverable: true, state: 'ready' };
   }
-  const tts = await deps.synthesizeSpeech(replyText);
+  const tts = await deps.synthesizeSpeech(replyTextForSpeechSynthesis(replyText));
   if (tts.kind !== 'ok') {
     return { success: false, reason: 'text-to-speech failed', recoverable: true, state: 'ready' };
   }
