@@ -11,7 +11,6 @@
             [clojure.string :as str]))
 
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "handoff_lib.bb")))
-(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "ambulance_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "chase_sweep_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "mono_router_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "backlog_depth_lib.bb")))
@@ -554,40 +553,27 @@
         (catch Exception e
           (log! "startup-notify-error" role (.getMessage e)))))))
 
-;; BL-655 site 1 (delivery): a held parcel is simply not delivered THIS
-;; poll - it stays byte-identical in the sender's outbox/, untouched, and is
-;; re-evaluated fresh next poll (never moved to failed/, sent/, or
-;; quarantined). ambulance-state is read once per poll-once! call (still
-;; "fresh at the moment of decision" - each poll IS a decision, ~1s apart),
-;; never cached across polls.
 (defn poll-once! []
   (if (outbound-wakes-suppressed?)
     (log! "poll-skip-paused" "delivery frozen while a pause is active")
     (let [roles (load-roles)
-          socket (str/trim (slurp (str socket-file)))
-          ambulance (ambulance-lib/read-ambulance-state (str project-root))
-          outbox-items (for [[role role-info] roles
-                             path (or (outbox-files role-info) [])]
-                         [role path])]
-      (when (and (seq outbox-items) (not (:active ambulance)))
-        (log! "ambulance-inactive" "mode not engaged"))
-      (doseq [[role path] outbox-items]
-        (if (ambulance-lib/parcel-held? ambulance (handoff-lib/parse-envelope (slurp (str path))))
-          (log! "deliver-skip-ambulance" (str path) (:ticket ambulance))
-          (try
-            (deliver! roles socket role path)
-            (catch Exception e
-              (log! "error" (str path) (.getMessage e))
-              (if (already-archived? (get roles role) (fs/file-name path))
-                (do
-                  (log! "already-archived" (str path))
-                  ;; The duplicate outbox copy is confirmed delivered (its
-                  ;; twin already landed in sent/); archive it too instead of
-                  ;; leaving it to be reprocessed and re-fail every poll cycle.
-                  (try
-                    (move-with-collision path (sent-dir (get roles role)))
-                    (catch Exception _ignored nil)))
-                (fail! path (.getMessage e))))))))))
+          socket (str/trim (slurp (str socket-file)))]
+      (doseq [[role role-info] roles
+              path (or (outbox-files role-info) [])]
+        (try
+          (deliver! roles socket role path)
+          (catch Exception e
+            (log! "error" (str path) (.getMessage e))
+            (if (already-archived? role-info (fs/file-name path))
+              (do
+                (log! "already-archived" (str path))
+                ;; The duplicate outbox copy is confirmed delivered (its
+                ;; twin already landed in sent/); archive it too instead of
+                ;; leaving it to be reprocessed and re-fail every poll cycle.
+                (try
+                  (move-with-collision path (sent-dir role-info))
+                  (catch Exception _ignored nil)))
+              (fail! path (.getMessage e)))))))))
 
 ;; ── BL-121: canary sweep - completes synthetic canary round-trips ──────────
 ;; The extension's canaryInjector.ts writes a pending marker under
@@ -633,18 +619,6 @@
 
 (def poll-once-only?
   (some #{"--poll-once"} *command-line-args*))
-
-;; BL-655: same one-shot-and-exit posture as --poll-once/--startup-notify-
-;; only above, for the OTHER daemon decision an acceptance test needs
-;; deterministically: which dormant role (if any) the resident would rotate
-;; to right now. Spinning up the full daemon loop + fake tmux + waiting out
-;; the real chase-sweep cadence (~10s) to observe this is what the ambulance
-;; wiring shell test already does for the true end-to-end proof; this flag
-;; exists so an acceptance scenario can ask the SAME real
-;; preferred-mono-rotate-role the resident's own chase sweep consults,
-;; without a background process or a wall-clock wait.
-(def print-preferred-rotate-target-only?
-  (some #{"--print-preferred-rotate-target"} *command-line-args*))
 
 (defn own-pid [] (.pid (java.lang.ProcessHandle/current)))
 
@@ -1023,28 +997,13 @@
    (try (slurp (str (backlog-depth-lib/conf-file-path project-root)))
         (catch Exception _ nil))))
 
-(defn- handoff-envelope
-  "The full {:headers :body} shape ambulance-lib/parcel-held? needs (task:/
-   message:/body attribution) - handoff-header-field above only ever reads
-   ONE named header, not enough to decide attribution."
-  [file-path]
-  (try (handoff-lib/parse-envelope (slurp file-path)) (catch Exception _ {:headers {} :body ""})))
-
 (defn- role-mail-row
-  "Score one role's mailbox for mono-router rotate preference. BL-655 site 3:
-   a held git_handoff/note is filtered out of the candidate set BEFORE
-   actionable?/newest-created-at are computed - ambulance filters the
-   candidates, BL-576's aged-note rule still decides among what survives the
-   filter. In-process (already-claimed) work is never filtered here - an
-   ambulance never retracts a mid-turn claim, so it stays actionable exactly
-   as before regardless of which ticket it names."
+  "Score one role's mailbox for mono-router rotate preference."
   [role role-info]
   (let [new-dir (str (handoff-lib/mailbox-dir role-info :new))
         ip-dir (str (handoff-lib/mailbox-dir role-info :in_process))
         held (chase-sweep-lib/scan-in-process ip-dir)
-        ambulance (ambulance-lib/read-ambulance-state (str project-root))
-        news (remove #(ambulance-lib/parcel-held? ambulance (handoff-envelope (:filePath %)))
-                     (chase-sweep-lib/scan-inbox-new new-dir))
+        news (chase-sweep-lib/scan-inbox-new new-dir)
         git-hfs (filterv #(= "git_handoff" (handoff-header-field (:filePath %) "type")) news)
         note-fs (filterv #(= "note" (handoff-header-field (:filePath %) "type")) news)
         now-ms (System/currentTimeMillis)
@@ -2224,11 +2183,6 @@
       (do
         (startup-notify-pending! roles socket)
         (log! "startup-notify-only done"))
-
-      print-preferred-rotate-target-only?
-      (let [target (preferred-mono-rotate-role roles)]
-        (println (or target "none"))
-        (log! "print-preferred-rotate-target done" (or target "none")))
 
       :else
       (let [claim (claim-pid-file!)]

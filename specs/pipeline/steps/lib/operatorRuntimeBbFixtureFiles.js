@@ -25,10 +25,6 @@ const OPERATOR_RUNTIME_BB_FILES = [
   'ticket_status_lib.bb',
   'operator_ask.bb',
   'handoff_lib.bb',
-  // BL-655: handoff_lib.bb now load-files this too (ambulance mode's hold
-  // predicate) - same "a new load-file dependency throws in every consumer
-  // fixture at once" gap this list exists to close.
-  'ambulance_lib.bb',
   'daemon_alarm_lib.bb',
   'disk_space_lib.bb',
   'sandbox_sweep_lib.bb',
