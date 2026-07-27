@@ -9,7 +9,7 @@ severity: medium
 priority: 08
 direction: human-requested
 depends_on: []
-assigned_to: specifier
+assigned_to: coder
 mutation_cost: medium
 invariants:
   - "The morning briefing is produced only as the closing sequence's last act — no independent clock can fire it against a stopped swarm or separate it from the stop."
@@ -84,26 +84,7 @@ description: |
      path; kept as the trigger for 24/7 swarms with no closure schedule
      (byte-identical behaviour for them).
 
-acceptance: |
-  Specifier writes the scenarios. Minimum behaviour:
-
-  1. Nominal night: parcel in flight at ceremony start finishes; resident
-     rotates to documenter; briefing written+sent; stop runs; ZERO claims
-     left in in_process across all mailboxes (the boundary invariant —
-     assert on porcelain state, not absence of complaints).
-  2. Happy-days branch: parcel drains AT the documenter stage — briefing
-     chains without a rotation; same end state.
-  3. Slow parcel: exceeds the drain deadline — parked cleanly (claim
-     intact, loud surface), briefing still produced and sent, stop still on
-     time. The morning-after resume is BL-648's fixture, referenced not
-     duplicated.
-  4. Documenter wedges on the briefing: backstop stop fires at the hard
-     deadline, the missing briefing is surfaced loudly — never a silent
-     morning. Fixture mirrors 2026-07-26.
-  5. Window moved (e.g. 01:00→07:00): ceremony follows with no other config
-     edit — the single-clock scenario this ticket exists for.
-  6. 24/7 swarm (no closure schedule): fixed-time trigger behaviour
-     byte-identical to today.
+acceptance: specs/features/BL-658-briefing-trigger-derived-from-closure-schedule.feature
 
 out_of_scope: |
   - Crash-path resume (BL-648 owns it; the ceremony only shrinks the class).
