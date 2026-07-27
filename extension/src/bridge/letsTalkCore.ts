@@ -238,3 +238,77 @@ function flattenMarkdownTableRow(line: string): string {
     .filter((cell) => cell.length > 0 && !/^:?-{3,}:?$/.test(cell));
   return cells.length > 0 ? cells.join(', ') : ' ';
 }
+
+// BL-697: optional hands-free listening — auto-start after playback, auto-stop on silence.
+export const LETS_TALK_HANDS_FREE_STORAGE_KEY = 'lets-talk-hands-free';
+export const LETS_TALK_HANDS_FREE_SILENCE_MS = 2500;
+export const LETS_TALK_HANDS_FREE_POST_SPEECH_MS = 400;
+export const LETS_TALK_HANDS_FREE_MAX_LISTEN_MS = 30000;
+export const LETS_TALK_HANDS_FREE_SPEECH_LEVEL_THRESHOLD = 0.02;
+
+export function parseHandsFreeEnabled(raw: string | null | undefined): boolean {
+  return raw === '1' || raw === 'true';
+}
+
+export function serializeHandsFreeEnabled(enabled: boolean): string {
+  return enabled ? '1' : '0';
+}
+
+export function shouldScheduleHandsFreeListen(input: {
+  handsFreeEnabled: boolean;
+  phase: LetsTalkTurnPhase;
+  recording: boolean;
+}): boolean {
+  return input.handsFreeEnabled && input.phase === 'ready' && !input.recording;
+}
+
+export function shouldEndHandsFreeRecording(input: {
+  handsFreeEnabled: boolean;
+  recording: boolean;
+  speechDetected: boolean;
+  silenceMs: number;
+  recordingMs: number;
+  minRecordingMs: number;
+  silenceThresholdMs: number;
+}): boolean {
+  if (!input.handsFreeEnabled || !input.recording) {
+    return false;
+  }
+  if (input.recordingMs < input.minRecordingMs) {
+    return false;
+  }
+  if (!input.speechDetected) {
+    return false;
+  }
+  return input.silenceMs >= input.silenceThresholdMs;
+}
+
+export function shouldCancelHandsFreeRecordingNoSpeech(input: {
+  handsFreeEnabled: boolean;
+  recording: boolean;
+  speechDetected: boolean;
+  recordingMs: number;
+  maxListenMs: number;
+}): boolean {
+  return (
+    input.handsFreeEnabled &&
+    input.recording &&
+    !input.speechDetected &&
+    input.recordingMs >= input.maxListenMs
+  );
+}
+
+export function computeAudioLevelRms(samples: readonly number[]): number {
+  if (samples.length === 0) {
+    return 0;
+  }
+  let sum = 0;
+  for (const sample of samples) {
+    sum += sample * sample;
+  }
+  return Math.sqrt(sum / samples.length);
+}
+
+export function isSpeechAudioLevel(rms: number, threshold: number = LETS_TALK_HANDS_FREE_SPEECH_LEVEL_THRESHOLD): boolean {
+  return rms >= threshold;
+}

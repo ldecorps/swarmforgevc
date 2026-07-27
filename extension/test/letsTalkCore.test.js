@@ -15,6 +15,14 @@ const {
   formatLetsTalkAgentPrompt,
   resolveTurnSpeechLanguage,
   detectSpeechLanguageFromText,
+  parseHandsFreeEnabled,
+  serializeHandsFreeEnabled,
+  shouldScheduleHandsFreeListen,
+  shouldEndHandsFreeRecording,
+  shouldCancelHandsFreeRecordingNoSpeech,
+  computeAudioLevelRms,
+  isSpeechAudioLevel,
+  LETS_TALK_HANDS_FREE_SILENCE_MS,
 } = require('../out/bridge/letsTalkCore');
 
 test('letsTalk: valid turn request shape', () => {
@@ -111,4 +119,63 @@ test('letsTalk: auto language detection from transcript', () => {
   assert.equal(detectSpeechLanguageFromText('Hello, how are you'), 'en');
   assert.equal(resolveTurnSpeechLanguage('auto', 'merci beaucoup'), 'fr');
   assert.equal(resolveTurnSpeechLanguage('fr', 'hello there'), 'fr');
+});
+
+test('letsTalk: hands-free preference parsing', () => {
+  assert.equal(parseHandsFreeEnabled('1'), true);
+  assert.equal(parseHandsFreeEnabled('true'), true);
+  assert.equal(parseHandsFreeEnabled('0'), false);
+  assert.equal(serializeHandsFreeEnabled(true), '1');
+  assert.equal(serializeHandsFreeEnabled(false), '0');
+});
+
+test('letsTalk: hands-free schedule and silence decisions', () => {
+  assert.equal(
+    shouldScheduleHandsFreeListen({ handsFreeEnabled: true, phase: 'ready', recording: false }),
+    true
+  );
+  assert.equal(
+    shouldScheduleHandsFreeListen({ handsFreeEnabled: true, phase: 'thinking', recording: false }),
+    false
+  );
+  assert.equal(
+    shouldEndHandsFreeRecording({
+      handsFreeEnabled: true,
+      recording: true,
+      speechDetected: true,
+      silenceMs: LETS_TALK_HANDS_FREE_SILENCE_MS,
+      recordingMs: 500,
+      minRecordingMs: 400,
+      silenceThresholdMs: LETS_TALK_HANDS_FREE_SILENCE_MS,
+    }),
+    true
+  );
+  assert.equal(
+    shouldEndHandsFreeRecording({
+      handsFreeEnabled: true,
+      recording: true,
+      speechDetected: false,
+      silenceMs: 5000,
+      recordingMs: 500,
+      minRecordingMs: 400,
+      silenceThresholdMs: LETS_TALK_HANDS_FREE_SILENCE_MS,
+    }),
+    false
+  );
+  assert.equal(
+    shouldCancelHandsFreeRecordingNoSpeech({
+      handsFreeEnabled: true,
+      recording: true,
+      speechDetected: false,
+      recordingMs: 30000,
+      maxListenMs: 30000,
+    }),
+    true
+  );
+});
+
+test('letsTalk: audio level helpers', () => {
+  assert.equal(computeAudioLevelRms([]), 0);
+  assert.equal(isSpeechAudioLevel(0.05), true);
+  assert.equal(isSpeechAudioLevel(0.001), false);
 });

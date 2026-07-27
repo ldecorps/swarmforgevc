@@ -57,6 +57,8 @@ test("lets-talk Mini App shell is served without auth", async () => {
     assert.match(body, /Let's Talk/);
     assert.match(body, /data-testid="lets-talk-record"/);
     assert.match(body, /data-testid="lets-talk-new-session"/);
+    assert.match(body, /data-testid="lets-talk-hands-free"/);
+    assert.match(body, /scheduleHandsFreeListen/);
     assert.match(body, /ensureSpeechVoices/);
   });
 });

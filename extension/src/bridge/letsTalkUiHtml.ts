@@ -1,6 +1,14 @@
-// BL-696: Telegram Mini App shell for Let's Talk — discrete tap-to-toggle
-// audio turns with the shared Cursor bridge agent session. Browser captures
-// audio; STT/TTS run server-side on POST /lets-talk/turn.
+// BL-696 / BL-697: Telegram Mini App shell for Let's Talk — discrete audio
+// turns with optional hands-free listening (auto-start after playback,
+// auto-stop on silence). Browser captures audio; STT runs server-side.
+
+import {
+  LETS_TALK_HANDS_FREE_MAX_LISTEN_MS,
+  LETS_TALK_HANDS_FREE_POST_SPEECH_MS,
+  LETS_TALK_HANDS_FREE_SILENCE_MS,
+  LETS_TALK_HANDS_FREE_SPEECH_LEVEL_THRESHOLD,
+  LETS_TALK_HANDS_FREE_STORAGE_KEY,
+} from './letsTalkCore';
 
 export function getLetsTalkUiHtml(speechLocale = 'en-US'): string {
   return `<!DOCTYPE html>
@@ -103,6 +111,20 @@ export function getLetsTalkUiHtml(speechLocale = 'en-US'): string {
     line-height: 1.4;
     overflow-wrap: anywhere;
   }
+  label.hands-free {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 14px;
+    color: var(--tg-theme-text-color, #e6edf3);
+    cursor: pointer;
+    user-select: none;
+  }
+  label.hands-free input {
+    width: 18px;
+    height: 18px;
+    accent-color: var(--tg-theme-button-color, #238636);
+  }
 </style>
 </head>
 <body>
@@ -112,6 +134,10 @@ export function getLetsTalkUiHtml(speechLocale = 'en-US'): string {
 </header>
 <main>
   <p class="state" id="state" data-testid="lets-talk-state" data-phase="ready">ready</p>
+  <label class="hands-free" id="hands-free-label">
+    <input type="checkbox" id="hands-free" data-testid="lets-talk-hands-free" />
+    Hands-free
+  </label>
   <button type="button" class="record" id="record" data-testid="lets-talk-record" aria-pressed="false">Record</button>
   <button type="button" class="secondary" id="new-session" data-testid="lets-talk-new-session">New session</button>
   <p class="transcript" id="transcript" data-testid="lets-talk-transcript" hidden></p>
@@ -129,20 +155,35 @@ export function getLetsTalkUiHtml(speechLocale = 'en-US'): string {
 
   var STT_RETRY_BUDGET = 3;
   var DEFAULT_SPEECH_LOCALE = ${JSON.stringify(speechLocale)};
+  var HANDS_FREE_STORAGE_KEY = ${JSON.stringify(LETS_TALK_HANDS_FREE_STORAGE_KEY)};
+  var HANDS_FREE_SILENCE_MS = ${LETS_TALK_HANDS_FREE_SILENCE_MS};
+  var HANDS_FREE_POST_SPEECH_MS = ${LETS_TALK_HANDS_FREE_POST_SPEECH_MS};
+  var HANDS_FREE_MAX_LISTEN_MS = ${LETS_TALK_HANDS_FREE_MAX_LISTEN_MS};
+  var SPEECH_LEVEL_THRESHOLD = ${LETS_TALK_HANDS_FREE_SPEECH_LEVEL_THRESHOLD};
   var stateEl = document.getElementById('state');
   var recordBtn = document.getElementById('record');
+  var handsFreeEl = document.getElementById('hands-free');
   var newSessionBtn = document.getElementById('new-session');
   var transcriptEl = document.getElementById('transcript');
   var errorEl = document.getElementById('error');
 
   var phase = 'ready';
   var recording = false;
+  var handsFreeEnabled = localStorage.getItem(HANDS_FREE_STORAGE_KEY) === '1';
   var mediaRecorder = null;
   var recordStream = null;
   var chunks = [];
   var playbackAudio = null;
   var recordMimeType = '';
   var recordStartedAt = 0;
+  var speechDetected = false;
+  var lastSoundAt = 0;
+  var silenceCheckTimer = null;
+  var autoListenTimer = null;
+  var audioContext = null;
+  var analyserNode = null;
+  var analyserBuffer = null;
+  var lastRecordingStopReason = '';
   var MIN_RECORD_MS = 400;
   var RECORDER_MIME_CANDIDATES = [
     'audio/webm;codecs=opus',
@@ -178,8 +219,14 @@ export function getLetsTalkUiHtml(speechLocale = 'en-US'): string {
       endTurn(blob, blobType);
       return;
     }
-    showError('No audio was captured — try speaking a bit longer before stopping.');
+    if (lastRecordingStopReason === 'no-speech') {
+      lastRecordingStopReason = '';
+      showError('No speech detected — try again.');
+    } else {
+      showError('No audio was captured — try speaking a bit longer before stopping.');
+    }
     setPhase('ready');
+    scheduleHandsFreeListen();
   }
 
   function setPhase(next) {
@@ -189,6 +236,106 @@ export function getLetsTalkUiHtml(speechLocale = 'en-US'): string {
     var busy = next === 'thinking' || next === 'speaking';
     recordBtn.disabled = busy;
     newSessionBtn.disabled = busy;
+    handsFreeEl.disabled = busy;
+  }
+
+  function parseHandsFreeEnabled(raw) {
+    return raw === '1' || raw === 'true';
+  }
+
+  function clearAutoListenTimer() {
+    if (autoListenTimer) {
+      clearTimeout(autoListenTimer);
+      autoListenTimer = null;
+    }
+  }
+
+  function scheduleHandsFreeListen() {
+    clearAutoListenTimer();
+    if (!handsFreeEnabled || phase !== 'ready' || recording) {
+      return;
+    }
+    autoListenTimer = setTimeout(function () {
+      autoListenTimer = null;
+      if (handsFreeEnabled && phase === 'ready' && !recording) {
+        startRecording(true);
+      }
+    }, HANDS_FREE_POST_SPEECH_MS);
+  }
+
+  function stopSilenceMonitor() {
+    if (silenceCheckTimer) {
+      clearInterval(silenceCheckTimer);
+      silenceCheckTimer = null;
+    }
+    if (audioContext) {
+      audioContext.close().catch(function () {});
+      audioContext = null;
+    }
+    analyserNode = null;
+    analyserBuffer = null;
+  }
+
+  function readRecordingRms() {
+    if (!analyserNode || !analyserBuffer) {
+      return 0;
+    }
+    analyserNode.getByteTimeDomainData(analyserBuffer);
+    var sum = 0;
+    for (var i = 0; i < analyserBuffer.length; i++) {
+      var sample = (analyserBuffer[i] - 128) / 128;
+      sum += sample * sample;
+    }
+    return Math.sqrt(sum / analyserBuffer.length);
+  }
+
+  function startSilenceMonitor(stream) {
+    stopSilenceMonitor();
+    speechDetected = false;
+    lastSoundAt = Date.now();
+    if (!handsFreeEnabled || !window.AudioContext) {
+      return;
+    }
+    audioContext = new AudioContext();
+    var source = audioContext.createMediaStreamSource(stream);
+    analyserNode = audioContext.createAnalyser();
+    analyserNode.fftSize = 2048;
+    analyserBuffer = new Uint8Array(analyserNode.fftSize);
+    source.connect(analyserNode);
+    silenceCheckTimer = setInterval(function () {
+      if (!recording) {
+        return;
+      }
+      var now = Date.now();
+      var recordingMs = now - recordStartedAt;
+      var rms = readRecordingRms();
+      if (rms >= SPEECH_LEVEL_THRESHOLD) {
+        speechDetected = true;
+        lastSoundAt = now;
+      }
+      if (!speechDetected && recordingMs >= HANDS_FREE_MAX_LISTEN_MS) {
+        lastRecordingStopReason = 'no-speech';
+        stopRecording(false);
+        return;
+      }
+      if (
+        speechDetected &&
+        recordingMs >= MIN_RECORD_MS &&
+        now - lastSoundAt >= HANDS_FREE_SILENCE_MS
+      ) {
+        stopRecording(false);
+      }
+    }, 100);
+  }
+
+  function updateRecordButton() {
+    if (recording) {
+      recordBtn.setAttribute('aria-pressed', 'true');
+      recordBtn.textContent = handsFreeEnabled ? 'Listening' : 'Stop';
+      return;
+    }
+    recordBtn.setAttribute('aria-pressed', 'false');
+    recordBtn.textContent = 'Record';
   }
 
   function showError(message) {
@@ -327,6 +474,7 @@ export function getLetsTalkUiHtml(speechLocale = 'en-US'): string {
   }
 
   async function endTurn(blob, mimeType) {
+    clearAutoListenTimer();
     setPhase('thinking');
     showError('');
     try {
@@ -341,9 +489,79 @@ export function getLetsTalkUiHtml(speechLocale = 'en-US'): string {
         await speakReplyText(result.replySpeechText || result.replyText, result.speechLocale || DEFAULT_SPEECH_LOCALE);
       }
       setPhase('ready');
+      scheduleHandsFreeListen();
     } catch (err) {
       showError(String(err && err.message || err));
       setPhase('ready');
+      scheduleHandsFreeListen();
+    }
+  }
+
+  function startRecording(autoStarted) {
+    if (phase !== 'ready' && phase !== 'error') {
+      return;
+    }
+    if (recording) {
+      return;
+    }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      showError('Microphone is not available in this browser.');
+      return;
+    }
+    clearAutoListenTimer();
+    showError('');
+    navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: true, noiseSuppression: true },
+    }).then(function (stream) {
+      if (recording) {
+        stream.getTracks().forEach(function (t) { t.stop(); });
+        return;
+      }
+      chunks = [];
+      recordStream = stream;
+      recordMimeType = pickRecorderMimeType();
+      var options = recordMimeType ? { mimeType: recordMimeType } : undefined;
+      mediaRecorder = options ? new MediaRecorder(stream, options) : new MediaRecorder(stream);
+      if (!recordMimeType && mediaRecorder.mimeType) {
+        recordMimeType = mediaRecorder.mimeType;
+      }
+      mediaRecorder.ondataavailable = function (ev) {
+        if (ev.data && ev.data.size > 0) {
+          chunks.push(ev.data);
+        }
+      };
+      mediaRecorder.onstop = function () {
+        stopSilenceMonitor();
+        setTimeout(finalizeRecording, 0);
+      };
+      recordStartedAt = Date.now();
+      mediaRecorder.start(250);
+      recording = true;
+      startSilenceMonitor(stream);
+      updateRecordButton();
+    }).catch(function (err) {
+      showError(String(err && err.message || err));
+      if (autoStarted) {
+        scheduleHandsFreeListen();
+      }
+    });
+  }
+
+  function stopRecording(manual) {
+    if (!recording) {
+      return;
+    }
+    if (manual && Date.now() - recordStartedAt < MIN_RECORD_MS) {
+      showError('Keep recording a moment longer, then tap Stop.');
+      return;
+    }
+    recording = false;
+    updateRecordButton();
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+      if (typeof mediaRecorder.requestData === 'function') {
+        mediaRecorder.requestData();
+      }
+      mediaRecorder.stop();
     }
   }
 
@@ -352,50 +570,26 @@ export function getLetsTalkUiHtml(speechLocale = 'en-US'): string {
       return;
     }
     if (!recording) {
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        showError('Microphone is not available in this browser.');
-        return;
-      }
-      showError('');
-      navigator.mediaDevices.getUserMedia({ audio: true }).then(function (stream) {
-        chunks = [];
-        recordStream = stream;
-        recordMimeType = pickRecorderMimeType();
-        var options = recordMimeType ? { mimeType: recordMimeType } : undefined;
-        mediaRecorder = options ? new MediaRecorder(stream, options) : new MediaRecorder(stream);
-        if (!recordMimeType && mediaRecorder.mimeType) {
-          recordMimeType = mediaRecorder.mimeType;
-        }
-        mediaRecorder.ondataavailable = function (ev) {
-          if (ev.data && ev.data.size > 0) {
-            chunks.push(ev.data);
-          }
-        };
-        mediaRecorder.onstop = function () {
-          setTimeout(finalizeRecording, 0);
-        };
-        recordStartedAt = Date.now();
-        mediaRecorder.start(250);
-        recording = true;
-        recordBtn.setAttribute('aria-pressed', 'true');
-        recordBtn.textContent = 'Stop';
-      }).catch(function (err) {
-        showError(String(err && err.message || err));
-      });
+      startRecording(false);
       return;
     }
-    if (Date.now() - recordStartedAt < MIN_RECORD_MS) {
-      showError('Keep recording a moment longer, then tap Stop.');
+    stopRecording(true);
+  };
+
+  handsFreeEl.checked = handsFreeEnabled;
+  handsFreeEl.onchange = function () {
+    handsFreeEnabled = handsFreeEl.checked;
+    localStorage.setItem(HANDS_FREE_STORAGE_KEY, handsFreeEnabled ? '1' : '0');
+    if (!handsFreeEnabled) {
+      clearAutoListenTimer();
+      if (recording) {
+        stopRecording(true);
+      }
+      updateRecordButton();
       return;
     }
-    recording = false;
-    recordBtn.setAttribute('aria-pressed', 'false');
-    recordBtn.textContent = 'Record';
-    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-      if (typeof mediaRecorder.requestData === 'function') {
-        mediaRecorder.requestData();
-      }
-      mediaRecorder.stop();
+    if (phase === 'ready' && !recording) {
+      scheduleHandsFreeListen();
     }
   };
 
