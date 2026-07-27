@@ -152,9 +152,12 @@ description: |
 
   ## Honest constraint on the Onboarder half
 
-  **BL-590 is parked in `hold/` at architect bounce #6, and slices 2 and 3 are
-  unbuilt.** Documenting it "at length" now would document something in flux — the
-  exact failure mode of writing docs ahead of behaviour.
+  **BL-590 slice 1 SHIPPED and closed to `backlog/done/` on 2026-07-27
+  (`92cfe8a58`), on an architect pass at bounce 8. Slices 2 and 3 are BL-624 and
+  BL-625 — both specced and approved, both still in `paused/`, neither built.**
+  So the flux is confined to the unbuilt half: slice 1's behaviour is on `main`
+  and reviewed, and is safe to describe at length. Documenting slices 2-3 ahead
+  of them being built is still the failure mode to avoid.
 
   So scope the Onboarder documentation to **what slice 1 actually shipped** (its own
   Telegram topic, the prerequisites state machine, per-target state, restart
@@ -169,7 +172,10 @@ out_of_scope: |
     and this ticket depends on it. If a documenter finds live code still saying
     `facilitator`, BL-684 is incomplete — bounce it there rather than renaming here.
   - Re-deciding the name. Ruled 2026-07-26; `approval_context` records it.
-  - Finishing BL-590. It is parked; see `backlog/evidence/BL-590-parked-20260725.md`.
+  - Finishing the Onboarder beyond slice 1. Slice 1 is done (`backlog/done/`);
+    slices 2 and 3 are BL-624 and BL-625, and this ticket documents neither as
+    built. The park that once blocked slice 1 is discharged — its history is in
+    `backlog/evidence/BL-590-*`.
   - Retiring the babysitter agent — BL-611 owns that; this ticket documents whatever
     state it is in when written.
   - Writing role prompts for the four agents that lack them. Worth its own ticket if

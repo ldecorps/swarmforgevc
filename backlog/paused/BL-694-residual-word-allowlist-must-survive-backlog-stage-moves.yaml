@@ -9,7 +9,7 @@ human_approval: approved
 priority: 20
 direction: swarm-proposed
 depends_on: []
-assigned_to: specifier
+assigned_to: coder
 mutation_cost: low
 
 invariants:
