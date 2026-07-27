@@ -137,3 +137,5 @@ description: |
   re-renders with it first and the write is committed (no 404). Back returns
   to the tiles. Repeat on a second epic (BL-517, swarmforge-console) to
   confirm it is not BL-545-specific.
+
+assigned_to: coder
