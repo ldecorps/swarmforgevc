@@ -329,7 +329,8 @@ const DOMAINS = [
   require('./bl672EpicMakeTopPrioritySteps'),
   require('./bl673TopicMakeTopPrioritySteps'),
   require('./bl674EpicDrilldownUiSteps'),
-  require('./bl655AmbulanceModeHoldSteps')
+  require('./bl655AmbulanceModeHoldSteps'),
+  require('./bl684OnboarderRenameSteps')
 ];
 
 function registerSteps(registry) {
