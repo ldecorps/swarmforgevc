@@ -9,7 +9,7 @@ severity: medium
 priority: 02
 direction: human-requested
 depends_on: [BL-262, BL-269, BL-344, BL-380, BL-381, BL-684]
-assigned_to: cleaner
+assigned_to: qa
 mutation_cost: high
 required_stages: [cleaner, architect, hardender, documenter, qa]
 stage_skip_reasons:
