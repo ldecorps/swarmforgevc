@@ -71,6 +71,7 @@ export function getConsoleMenuUiHtml(): string {
   <a class="btn secondary" id="paused-pager" data-testid="paused-ticket-pager" href="#">Paused tickets</a>
   <a class="btn secondary" id="epic-reorder" data-testid="epic-reorder" href="#">Reorder epics</a>
   <a class="btn secondary" id="context-budget" data-testid="context-budget" href="#">Context budget</a>
+  <a class="btn secondary" id="lets-talk" data-testid="lets-talk" href="#">Let's Talk</a>
 </main>
 <script>
 (function () {
@@ -83,6 +84,7 @@ export function getConsoleMenuUiHtml(): string {
   document.getElementById('paused-pager').href = '/paused-pager' + q;
   document.getElementById('epic-reorder').href = '/epic-reorder' + q;
   document.getElementById('context-budget').href = '/context-budget' + q;
+  document.getElementById('lets-talk').href = '/lets-talk' + q;
 })();
 </script>
 </body>

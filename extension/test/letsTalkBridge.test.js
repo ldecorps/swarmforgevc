@@ -1,0 +1,224 @@
+const { mkTmpDir } = require('./helpers/tmpDir');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const { startBridge } = require('../out/bridge/bridgeServer');
+const { createMockCursorBridgeAgentSession } = require('../out/bridge/cursorBridgeAgentSession');
+const { processLetsTalkTurn } = require('../out/bridge/letsTalkRoutes');
+
+const TOKEN = 'lets-talk-bridge-token';
+const SAMPLE_AUDIO = Buffer.from('audio-chunk').toString('base64');
+
+function mkTmp() {
+  const target = mkTmpDir('sfvc-lets-talk-bridge-');
+  fs.mkdirSync(path.join(target, '.swarmforge', 'operator'), { recursive: true });
+  return target;
+}
+
+function withBridge(targetPath, letsTalk, fn) {
+  return startBridge(targetPath, path.join(targetPath, 'runs.jsonl'), TOKEN, { letsTalk }).then(async (handle) => {
+    try {
+      return await fn(handle);
+    } finally {
+      handle.stop();
+    }
+  });
+}
+
+function controlAuthHeaders(token = TOKEN) {
+  return {
+    authorization: `Bearer ${token}`,
+    'x-control-token': token,
+    'content-type': 'application/json',
+  };
+}
+
+function buildMocks(targetPath, ctx = {}) {
+  const agentSession = createMockCursorBridgeAgentSession(targetPath);
+  return {
+    agentSession,
+    transcribeAudio: async () => {
+      ctx.sttCalls = (ctx.sttCalls ?? 0) + 1;
+      return { kind: 'ok', transcript: ctx.transcript ?? 'remember the code word ALPHA' };
+    },
+    synthesizeSpeech: async (text) => {
+      ctx.ttsCalls = (ctx.ttsCalls ?? 0) + 1;
+      return { kind: 'ok', audio: Buffer.from(`audio:${text}`) };
+    },
+  };
+}
+
+test("lets-talk Mini App shell is served without auth", async () => {
+  const target = mkTmp();
+  await withBridge(target, buildMocks(target), async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/lets-talk`);
+    assert.equal(res.status, 200);
+    const body = await res.text();
+    assert.match(body, /Let's Talk/);
+    assert.match(body, /data-testid="lets-talk-record"/);
+    assert.match(body, /data-testid="lets-talk-new-session"/);
+    assert.match(body, /\/lets-talk\/turn/);
+  });
+});
+
+test('console menu links to the lets-talk screen', async () => {
+  const target = mkTmp();
+  await withBridge(target, buildMocks(target), async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/console`);
+    assert.equal(res.status, 200);
+    const body = await res.text();
+    assert.match(body, /Let's Talk/);
+    assert.match(body, /\/lets-talk/);
+    assert.match(body, /data-testid="lets-talk"/);
+  });
+});
+
+test('lets-talk turn route requires control auth (401 without token)', async () => {
+  const target = mkTmp();
+  const counters = {};
+  await withBridge(target, buildMocks(target, counters), async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/lets-talk/turn`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ audioBase64: SAMPLE_AUDIO }),
+    });
+    assert.equal(res.status, 401);
+    assert.equal(counters.sttCalls ?? 0, 0);
+  });
+});
+
+test('lets-talk turn completes with transcript, reply text, and audio', async () => {
+  const target = mkTmp();
+  const counters = { transcript: 'hello there' };
+  await withBridge(target, buildMocks(target, counters), async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/lets-talk/turn?token=${TOKEN}`, {
+      method: 'POST',
+      headers: controlAuthHeaders(),
+      body: JSON.stringify({ audioBase64: SAMPLE_AUDIO, mimeType: 'audio/webm' }),
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.success, true);
+    assert.equal(body.state, 'ready');
+    assert.ok(body.replyText);
+    assert.ok(body.replyAudioBase64);
+    assert.ok(body.agentId);
+    assert.equal(counters.sttCalls, 1);
+  });
+});
+
+test('lets-talk new-session clears remembered context', async () => {
+  const target = mkTmp();
+  const counters = {};
+  const mocks = buildMocks(target, counters);
+  await withBridge(target, mocks, async (handle) => {
+    const turn1 = await fetch(`http://127.0.0.1:${handle.port}/lets-talk/turn?token=${TOKEN}`, {
+      method: 'POST',
+      headers: controlAuthHeaders(),
+      body: JSON.stringify({ audioBase64: SAMPLE_AUDIO }),
+    });
+    const first = await turn1.json();
+    assert.equal(first.success, true);
+
+    const reset = await fetch(`http://127.0.0.1:${handle.port}/lets-talk/new-session?token=${TOKEN}`, {
+      method: 'POST',
+      headers: controlAuthHeaders(),
+    });
+    assert.equal(reset.status, 200);
+
+    counters.transcript = 'what was the code word';
+    const turn2 = await fetch(`http://127.0.0.1:${handle.port}/lets-talk/turn?token=${TOKEN}`, {
+      method: 'POST',
+      headers: controlAuthHeaders(),
+      body: JSON.stringify({ audioBase64: SAMPLE_AUDIO }),
+    });
+    const second = await turn2.json();
+    assert.equal(second.success, true);
+    assert.match(second.replyText, /do not have a code word/i);
+  });
+});
+
+test('processLetsTalkTurn: bad audio is recoverable without agent prompt', async () => {
+  const target = mkTmp();
+  const counters = {};
+  const result = await processLetsTalkTurn(
+    { audioBase64: '' },
+    { agentSession: createMockCursorBridgeAgentSession(target), ...buildMocks(target, counters) }
+  );
+  assert.equal(result.success, false);
+  assert.equal(result.recoverable, true);
+  assert.equal(counters.sttCalls ?? 0, 0);
+});
+
+test('processLetsTalkTurn: transient STT failure surfaces retry state', async () => {
+  const target = mkTmp();
+  const result = await processLetsTalkTurn(
+    { audioBase64: SAMPLE_AUDIO },
+    {
+      agentSession: createMockCursorBridgeAgentSession(target),
+      transcribeAudio: async () => ({ kind: 'transient-failure' }),
+      synthesizeSpeech: async () => ({ kind: 'ok', audio: Buffer.from('x') }),
+    }
+  );
+  assert.equal(result.success, false);
+  assert.equal(result.state, 'error');
+  assert.equal(result.recoverable, true);
+});
+
+test('processLetsTalkTurn: missing STT adapter is recoverable', async () => {
+  const target = mkTmp();
+  const result = await processLetsTalkTurn(
+    { audioBase64: SAMPLE_AUDIO },
+    { agentSession: createMockCursorBridgeAgentSession(target) }
+  );
+  assert.equal(result.success, false);
+  assert.match(result.reason, /speech-to-text is not configured/i);
+});
+
+test('processLetsTalkTurn: TTS failure is recoverable', async () => {
+  const target = mkTmp();
+  const result = await processLetsTalkTurn(
+    { audioBase64: SAMPLE_AUDIO },
+    {
+      agentSession: createMockCursorBridgeAgentSession(target),
+      transcribeAudio: async () => ({ kind: 'ok', transcript: 'hi' }),
+      synthesizeSpeech: async () => ({ kind: 'failure' }),
+    }
+  );
+  assert.equal(result.success, false);
+  assert.match(result.reason, /text-to-speech failed/i);
+});
+
+test('processLetsTalkTurn: increments transient STT attempt counter', async () => {
+  const target = mkTmp();
+  const sttAttempts = { transientFailuresBeforeSuccess: 0 };
+  await processLetsTalkTurn(
+    { audioBase64: SAMPLE_AUDIO },
+    {
+      agentSession: createMockCursorBridgeAgentSession(target),
+      transcribeAudio: async () => ({ kind: 'transient-failure' }),
+    },
+    sttAttempts
+  );
+  assert.equal(sttAttempts.transientFailuresBeforeSuccess, 1);
+});
+
+test('processLetsTalkTurn: agent errors are recoverable', async () => {
+  const target = mkTmp();
+  const result = await processLetsTalkTurn(
+    { audioBase64: SAMPLE_AUDIO },
+    {
+      agentSession: {
+        readAgentId: () => undefined,
+        resetSession: async () => ({ agentId: undefined }),
+        promptAgent: async () => {
+          throw new Error('cursor offline');
+        },
+      },
+      transcribeAudio: async () => ({ kind: 'ok', transcript: 'hi' }),
+      synthesizeSpeech: async () => ({ kind: 'ok', audio: Buffer.from('x') }),
+    }
+  );
+  assert.equal(result.success, false);
+  assert.match(result.reason, /cursor offline/i);
+});

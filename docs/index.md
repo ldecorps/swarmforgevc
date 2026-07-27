@@ -43,6 +43,7 @@ here.
 - [Context Telemetry: Recording and Querying Agent Invocations](how-to/GH-22-context-telemetry-recorder-and-query-cli.md)
 - [Monitoring Agent Context Budget in the Mini App Console](how-to/GH-23-context-budget-dashboard.md)
 - [Reviewing Paused Tickets in the Mini App Console](how-to/BL-538-console-paused-ticket-pager.md)
+- [Let's Talk — Discrete Audio Turns in the Mini App Console](how-to/BL-696-miniapp-lets-talk-cursor-audio.md)
 - [Reordering Epic Priority in the Mini App Console](how-to/BL-572-console-epic-priority-reorder.md)
 - [Relaunch Resume and the Orphan-Claim Sweep](how-to/BL-648-relaunch-resume-orphan-claims.md)
 - [Launching the Perplexity mono-router pack](how-to/perplexity-mono-router-launch.md)

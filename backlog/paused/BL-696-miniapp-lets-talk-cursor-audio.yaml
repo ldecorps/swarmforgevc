@@ -87,6 +87,31 @@ description: |
 
 acceptance: specs/features/BL-696-miniapp-lets-talk-cursor-audio.feature
 
+required_wiring:
+  - "extension/src/bridge/consoleMenuUiHtml.ts::lets-talk::BL-419 shape: the console menu is the only way the principal reaches this screen. A /lets-talk shell and turn route that are built, unit-tested and green but never linked from the fifth menu button leave the feature unreachable on the phone — which is the entire ask."
+  - "extension/src/bridge/bridgeServer.ts::/lets-talk/turn::the audio turn route must be registered on the live bridge host, not merely exported from a module. An unregistered handler is a 404 behind a green unit suite."
+
+e2e_qa_procedure: |
+  Run against the live bridge on the phone (not a fixture) — the CSP and
+  WebView mic-permission behaviour are exactly what fixtures cannot prove:
+
+  1. Open the console Mini App with an allowlisted token; confirm a fifth
+     **Let's Talk** button is present, and that it opens the screen.
+  2. Speak "remember the code word ALPHA", end the turn. Expect: state moves
+     ready -> thinking -> speaking, audio plays, transcript appears, state
+     returns to ready.
+  3. Speak "what was the code word". Expect the reply names ALPHA (shared
+     agentId with the text topic).
+  4. Without leaving, send a text prompt on the **Cursor Remote** Telegram
+     topic referencing the same context. Expect it lands on the SAME agent
+     session and reflects the audio turns (scenario 08, live).
+  5. Tap **New session**, ask again for the code word. Expect no ALPHA.
+  6. Re-open `/lets-talk` with the token stripped from the URL and submit a
+     turn. Expect 401 with no STT spend and no agent prompt.
+  7. Confirm no second Cursor SDK session was created:
+     `.swarmforge/cursor-bridge-state.json` holds one `agentId` throughout
+     steps 2-4, changing only at step 5.
+
 out_of_scope: |
   - Coordinator/Operator voice (BL-426) — pattern reference only
   - BL-695 supervisor-thread privacy — unrelated; this never routes through Concierge
@@ -95,3 +120,27 @@ out_of_scope: |
 notes: |
   Specifier drained 2026-07-27 from operator intake. Feature lint-clean at
   materialization. Step handlers land with the coder parcel (BL-233).
+
+  IR-DRY pass (2026-07-27, 4 findings, all medium confidence):
+  - NORMALISED: `I record a second turn asking "..."` (scenario 03) collapsed
+    onto `I record a turn asking "..."` (scenario 04) — accidental drift; the
+    "second" was already established by that scenario's Given, so one step
+    pattern now serves both and the coder writes one handler.
+  - KEPT, deliberate: ALPHA vs BETA on `I completed one Let's Talk turn
+    asking "<phrase>"` — same pattern, the quoted value IS the parameter.
+  - KEPT, deliberate: `shows conversation state "ready"` (scenario 01, the
+    state on first paint) vs `conversation state returns to "ready"`
+    (02/06/07, the state after a turn completes). Same value, different
+    assertion — collapsing them would lose the "returns to" claim, which is
+    what proves a turn does not wedge the session.
+  - KEPT, deliberate: `I am on the Let's Talk screen` vs the same step
+    `without a valid console token` — the auth posture is the whole point of
+    scenario 05.
+
+  The intake's five open questions are all answered in `description` (audio
+  seam, auth, provider/failure posture, session sharing, epic placement) —
+  the human delegated each of those choices to the specifier in the intake
+  itself, which is why this lands `human_approval: approved` rather than
+  pending. What was NOT delegated (discrete turns only, no duplex, no
+  Concierge routing, no static-PWA surface) is pinned in `out_of_scope` and
+  must not be re-opened by the coder.

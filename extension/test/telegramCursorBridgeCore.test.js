@@ -1,6 +1,7 @@
 const assert = require('node:assert/strict');
 const {
   CURSOR_BRIDGE_TOPIC_NAME,
+  AGENT_RUN_HEARTBEAT_INTERVAL_MS,
   decideEnsureCursorTopicAction,
   decideInboundAction,
   gateBusy,
@@ -12,6 +13,7 @@ const {
   decidePollBackoffMs,
   DEFAULT_POLL_BACKOFF,
   frontDeskTopicMapWithoutCursorBridge,
+  isActiveRunConflict,
 } = require('../out/tools/telegramCursorBridgeCore');
 
 const CHAT_ID = '-100123';
@@ -199,4 +201,18 @@ test('cursor bridge: decidePollBackoffMs grows exponentially up to the cap', () 
   assert.equal(decidePollBackoffMs(1, { baseMs: 1000, maxMs: 8000 }), 1000);
   assert.equal(decidePollBackoffMs(3, { baseMs: 1000, maxMs: 8000 }), 4000);
   assert.equal(decidePollBackoffMs(10, { baseMs: 1000, maxMs: 8000 }), 8000);
+});
+
+test('cursor bridge: isActiveRunConflict detects stale Cursor SDK sessions', () => {
+  assert.equal(
+    isActiveRunConflict('Agent agent-28ff703f-ca98-4f34-9051-302569f044e3 already has active run'),
+    true
+  );
+  assert.equal(isActiveRunConflict('network timeout'), false);
+});
+
+test('cursor bridge: agent-run heartbeat interval stays inside the supervisor stall window', () => {
+  const stallMs = 120_000;
+  assert.ok(AGENT_RUN_HEARTBEAT_INTERVAL_MS < stallMs);
+  assert.ok(AGENT_RUN_HEARTBEAT_INTERVAL_MS <= stallMs / 3);
 });

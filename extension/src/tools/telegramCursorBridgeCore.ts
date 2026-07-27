@@ -43,6 +43,9 @@ export const DEFAULT_POLL_BACKOFF: PollBackoffConfig = {
   maxMs: 60_000,
 };
 
+/** Refresh supervisor heartbeat during long Cursor agent runs (poll loop is blocked). */
+export const AGENT_RUN_HEARTBEAT_INTERVAL_MS = 30_000;
+
 type AssistantStreamMessage = {
   type?: string;
   message?: { content?: Array<{ type?: string; text?: string }> } | string;
@@ -256,4 +259,9 @@ export function decidePollBackoffMs(consecutiveFailures: number, config: PollBac
   }
   const exponent = consecutiveFailures - 1;
   return Math.min(config.baseMs * 2 ** exponent, config.maxMs);
+}
+
+/** Cursor SDK rejects send() when the resumed agent still has an in-flight run. */
+export function isActiveRunConflict(message: string): boolean {
+  return message.toLowerCase().includes('already has active run');
 }

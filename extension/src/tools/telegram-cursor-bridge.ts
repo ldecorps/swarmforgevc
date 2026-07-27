@@ -16,8 +16,9 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
-import { Agent, CursorAgentError, type SDKAgent, type SDKMessage } from '@cursor/sdk';
+import { CursorAgentError } from '@cursor/sdk';
 import { atomicWrite } from '../util/atomicWrite';
+import { createLiveCursorBridgeAgentSession } from '../bridge/cursorBridgeAgentSession';
 import {
   createForumTopicWithRateLimitRetry,
   getTelegramUpdates,
@@ -26,14 +27,15 @@ import {
 } from '../notify/telegramClient';
 import { nextUpdateOffset } from './telegramTopicDecisions';
 import {
-  collectAssistantTextFromMessages,
   CURSOR_BRIDGE_TOPIC_NAME,
+  AGENT_RUN_HEARTBEAT_INTERVAL_MS,
   decideEnsureCursorTopicAction,
   decideInboundAction,
   decidePollBackoffMs,
   formatHelpMessage,
   formatStatusMessage,
   gateBusy,
+  isActiveRunConflict,
   parseCursorBridgeState,
   splitTelegramChunks,
   type CursorBridgePersistedState,
@@ -131,39 +133,20 @@ async function ensureCursorTopic(
   return { ...state, cursorTopicId: created.messageThreadId };
 }
 
-function agentOptions(repoRoot: string, apiKey: string | undefined, modelId: string) {
-  return {
-    ...(apiKey ? { apiKey } : {}),
-    model: { id: modelId },
-    local: { cwd: repoRoot, settingSources: [] },
-  };
-}
-
-async function openAgent(
-  repoRoot: string,
-  apiKey: string | undefined,
-  modelId: string,
-  agentId: string | undefined
-): Promise<SDKAgent> {
-  if (agentId) {
-    return Agent.resume(agentId, agentOptions(repoRoot, apiKey, modelId));
+async function promptWithHeartbeat(
+  opDir: string,
+  promptAgent: (prompt: string) => Promise<{ replyText: string; agentId: string }>,
+  prompt: string
+): Promise<string> {
+  writePollHeartbeat(opDir);
+  const timer = setInterval(() => writePollHeartbeat(opDir), AGENT_RUN_HEARTBEAT_INTERVAL_MS);
+  try {
+    const result = await promptAgent(prompt);
+    return result.replyText;
+  } finally {
+    clearInterval(timer);
+    writePollHeartbeat(opDir);
   }
-  return Agent.create(agentOptions(repoRoot, apiKey, modelId));
-}
-
-async function runPrompt(agent: SDKAgent, prompt: string): Promise<string> {
-  const run = await agent.send(prompt);
-  const messages: SDKMessage[] = [];
-  for await (const event of run.stream()) {
-    messages.push(event);
-  }
-  const result = await run.wait();
-  if (result.status === 'error') {
-    const detail = result.error?.message ?? 'unknown error';
-    throw new Error(`Cursor run failed (${result.id}): ${detail}`);
-  }
-  const text = collectAssistantTextFromMessages(messages).trim();
-  return text.length > 0 ? text : '(no text reply)';
 }
 
 async function main(): Promise<void> {
@@ -177,35 +160,43 @@ async function main(): Promise<void> {
   const botToken = requiredEnv('TELEGRAM_BOT_TOKEN');
   const chatId = requiredEnv('TELEGRAM_CHAT_ID');
   const principalUserId = requiredEnv('TELEGRAM_PRINCIPAL_USER_ID');
-  const apiKey = process.env.CURSOR_API_KEY;
-  const modelId = process.env.CURSOR_BRIDGE_MODEL ?? 'auto';
+
+  const agentSession = createLiveCursorBridgeAgentSession(repoRoot);
 
   let state = parseCursorBridgeState(loadJsonFile(statePath));
   state = await ensureCursorTopic(botToken, chatId, topicMapPath, state);
   writeJsonFile(statePath, state);
 
-  let agent: SDKAgent | undefined;
   let busy = false;
   let pollFailures = 0;
 
   const persistState = () => writeJsonFile(statePath, state);
 
+  const syncAgentIdFromSession = () => {
+    state = { ...state, agentId: agentSession.readAgentId() };
+  };
+
   const resetAgent = async () => {
-    if (agent) {
-      await agent.close();
-      agent = undefined;
-    }
-    state = { ...state, agentId: undefined };
+    await agentSession.resetSession();
+    syncAgentIdFromSession();
     persistState();
   };
 
-  const ensureAgent = async () => {
-    if (!agent) {
-      agent = await openAgent(repoRoot, apiKey, modelId, state.agentId);
-      state = { ...state, agentId: agent.agentId };
-      persistState();
+  const runPromptWithActiveRunRecovery = async (prompt: string): Promise<string> => {
+    try {
+      const reply = await promptWithHeartbeat(opDir, (text) => agentSession.promptAgent(text), prompt);
+      syncAgentIdFromSession();
+      return reply;
+    } catch (err) {
+      const detail = err instanceof CursorAgentError ? err.message : err instanceof Error ? err.message : String(err);
+      if (!isActiveRunConflict(detail)) {
+        throw err;
+      }
+      await resetAgent();
+      const reply = await promptWithHeartbeat(opDir, (text) => agentSession.promptAgent(text), prompt);
+      syncAgentIdFromSession();
+      return reply;
     }
-    return agent;
   };
 
   const handleDecision = async (
@@ -243,8 +234,7 @@ async function main(): Promise<void> {
     busy = true;
     await postChunks(botToken, chatId, topicId, '⏳ Working…', replyToMessageId);
     try {
-      const liveAgent = await ensureAgent();
-      const reply = await runPrompt(liveAgent, decision.text);
+      const reply = await runPromptWithActiveRunRecovery(decision.text);
       await postChunks(botToken, chatId, topicId, reply, replyToMessageId);
     } catch (err) {
       const detail = err instanceof CursorAgentError ? err.message : err instanceof Error ? err.message : String(err);
