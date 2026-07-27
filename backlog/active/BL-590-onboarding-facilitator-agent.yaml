@@ -397,3 +397,6 @@ out_of_scope: |
     the human launches on the target host.
   - Replacing per-ticket human_approval. The contract sits ABOVE it (BL-262);
     this ticket does not touch the per-feature gate.
+bounce_count: 1
+bounce_history:
+  - { at: 2026-07-27, by: architect, blamed: cleaner, class: behavior, commit: 609db8e724, evidence: backlog/evidence/BL-590-onboarder-slice1-architect-bounce7-20260727.md }
