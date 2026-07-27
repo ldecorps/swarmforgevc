@@ -1,0 +1,193 @@
+id: BL-684
+title: "Rename the Onboarding Facilitator to the Onboarder across live surface — the ruled rename, as its own parcel, before any prose or further slices bake the old word in"
+milestone: M8
+type: feature
+status: todo
+epic: swarm-intelligence-layer
+human_approval: approved
+severity: medium
+priority: 01
+direction: human-requested
+depends_on: []
+assigned_to: coder
+mutation_cost: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+# ^ Certified 2026-07-26 (BL-606): FULL chain, nothing skipped. A rename that
+#   "renamed some places and not others" IS a cleaner sweep; invariant 2 (no
+#   double-launch, no stale heartbeat read as live) is an architect pass; the
+#   behaviour-unchanged claim is the hardener's; doc surface says facilitator too.
+invariants:
+  - "After the rename, every start, stop, supervise and reconcile path in tracked live surface resolves: no caller anywhere names a script, entrypoint, identifier or state file that does not exist. A rename that silently turns a launch or stop into a no-op is the BL-637 defect in a new place."
+  - "The rename can never produce two live supervisors nor a stale heartbeat read as live: with a pre-rename supervisor still holding its old-named pid file, the new launcher declines to start, and the stop path clears the agent's artifacts under BOTH the old and the new names."
+  - "The dated audit trail is byte-identical: nothing under backlog/evidence/ or backlog/done/ is renamed, reworded or rewritten — a record keeps the words that were actually used when it was written."
+
+required_wiring:
+  - "swarmforge/scripts/start_ancillary_services.sh::launch_onboarder.sh::the only thing that starts this agent; a missed rename here silently stops launching it and nothing reports the absence (BL-637)"
+  - "swarmforge/scripts/stop_ancillary_services.sh::onboarder-supervisor::the stop path must name the new artifacts, or the agent becomes un-stoppable by the documented route"
+
+approval_context: >
+  RULED by the human, 2026-07-26, answering BL-643's own three-way naming choice:
+  **full rename to "Onboarder"** — not "keep Facilitator", not the split (public
+  name vs internal module vocabulary). Relayed again through the coordinator the
+  same evening: `BL-643 ruled "Onboarder" (rename first)`. BL-643's acceptance
+  criterion 1 requires the rename to land as its OWN parcel first, which is this
+  ticket; BL-643 now declares `depends_on: [BL-684]` so the ordering is data, not
+  a comment.
+
+  Three SCOPING boundaries below are specifier calls made inside that ruling, not
+  a re-opening of it — the ruling rejected splitting the *vocabulary*, and this
+  ticket renames all of it. What it declines to rewrite is historical *record
+  identity*. Amend any of the three if the reading is wrong:
+
+  1. `backlog/evidence/` and `backlog/done/` are untouched (invariant 3).
+  2. Live ticket and feature-file FILENAMES keep their `BL-###-...` slug — that
+     path is a durable cross-reference from evidence files, `backlog/topics/`
+     records, `acceptance:` pointers and git history. Their CONTENT vocabulary is
+     updated like any other live surface.
+  3. No Telegram work is needed — see the measurement in `source:`. BL-643 feared
+     a user-visible topic subject; there is none.
+
+source: |
+  ## Measured on the live repo, 2026-07-26 (not recalled)
+
+  ```
+  git grep -lI  -i facilitator          ->  49 tracked files
+  git grep -oI  -i facilitator | wc -l  -> 456 occurrences
+  git ls-files | grep -i facilitator    ->  26 files with it in the NAME
+  ```
+
+  BL-643 measured 36 files the day before. The word is still spreading, which is
+  the whole argument for doing this now.
+
+  ## Two premises checked — one false, one worse than described
+
+  **FALSE: "the Telegram topic subject is user-visible, so a later rename touches
+  something the human already reads"** (BL-643 `notes:`). It does not. The reserved
+  topic is created from `ONBOARDING_TOPIC_NAME` and mapped to
+  `ONBOARDING_SUBJECT_ID` (`extension/src/tools/telegram-front-desk-bot.ts:782`);
+  the human already reads the word "Onboarding". A repo-wide sweep for a
+  `Facilitator` string LITERAL returns only paths, imports, identifiers and usage
+  lines naming a file — no user-facing text anywhere. So this parcel needs no
+  `editForumTopic` call, no topic migration and no Telegram risk at all. That is a
+  real shrink of the ticket BL-643 imagined, and the reason it is stated here is so
+  no reviewer re-adds the work.
+
+  **WORSE: the agent is RUNNING while this lands.**
+
+  ```
+  .swarmforge/operator/onboarding-facilitator-supervisor.pid   -> pid 1253738, alive
+  .swarmforge/operator/onboarding-facilitator-heartbeat.json   -> written minutes ago
+  .swarmforge/operator/onboarding-facilitator-supervisor.status.json
+  .swarmforge/operator/onboarding-facilitator-supervisor.log
+  .swarmforge/operator/onboarding-facilitator-supervisor.stop  (stop sentinel)
+  ```
+
+  FIVE runtime paths form a contract between four files written in three languages:
+  the launcher (`launch_onboarding_facilitator.sh`), the supervisor
+  (`onboarding_facilitator_supervisor.bb`), the reconcile CLI
+  (`onboarding-facilitator-reconcile.ts`) and `stop_ancillary_services.sh`. Rename
+  the paths in some and not others and the failure is not a broken build — it is a
+  second supervisor launched alongside the first (the pid guard at
+  `launch_onboarding_facilitator.sh:48` looks at a path that no longer exists), or
+  an agent that the documented stop route can no longer stop. That is what
+  invariant 2 exists for, and it is why this is a `medium`-cost parcel and not a
+  one-line sed.
+
+description: |
+  ## What to rename
+
+  `facilitator` / `Facilitator` / `FACILITATOR` disappears from live surface, in
+  filenames and in content, replaced by the ruled word: `onboarder` /
+  `Onboarder` / `ONBOARDER`. The enclosing directory `extension/src/onboarding/`
+  already says "onboarding" and does not change.
+
+  Filename moves (`git mv`, so history follows):
+
+  ```
+  swarmforge/scripts/launch_onboarding_facilitator.sh     -> launch_onboarder.sh
+  swarmforge/scripts/onboarding_facilitator_supervisor.bb -> onboarder_supervisor.bb
+  swarmforge/scripts/test/test_onboarding_facilitator_supervisor_tick.sh
+                                                          -> test_onboarder_supervisor_tick.sh
+  extension/src/onboarding/onboardingFacilitatorState.ts      -> onboarderState.ts
+  extension/src/onboarding/onboardingFacilitatorStateStore.ts -> onboarderStateStore.ts
+  extension/src/tools/onboarding-facilitator-reconcile.ts     -> onboarder-reconcile.ts
+  extension/test/onboardingFacilitatorState.test.js           -> onboarderState.test.js
+  extension/test/onboardingFacilitatorStateStore.test.js      -> onboarderStateStore.test.js
+  extension/test/onboardingFacilitatorReconcileCli.test.js    -> onboarderReconcileCli.test.js
+  specs/pipeline/steps/bl590OnboardingFacilitatorSteps.js     -> bl590OnboarderSteps.js
+  ```
+
+  Runtime state under `.swarmforge/operator/` (all five, together):
+
+  ```
+  onboarding-facilitator-heartbeat.json          -> onboarder-heartbeat.json
+  onboarding-facilitator-supervisor.pid           -> onboarder-supervisor.pid
+  onboarding-facilitator-supervisor.log           -> onboarder-supervisor.log
+  onboarding-facilitator-supervisor.status.json   -> onboarder-supervisor.status.json
+  onboarding-facilitator-supervisor.stop          -> onboarder-supervisor.stop
+  ```
+
+  Identifiers follow the same rule — `handleOnboardingFacilitatorMessage`,
+  `OnboardingFacilitator*` types, `onboarding_facilitator_*` shell and Babashka
+  names. Comments and doc prose in live files too: this is the vocabulary, not
+  just the API.
+
+  ## The live-process handoff — the part that is not mechanical
+
+  Because a pre-rename supervisor may be running when the new code first starts:
+
+  - The renamed launcher uses ONLY new-named paths, and additionally refuses to
+    start when an OLD-named pid file still holds a LIVE pid, printing why. It
+    never adopts, kills or migrates that process — it declines and reports, so a
+    human stops the old one deliberately.
+  - `stop_ancillary_services.sh` removes the agent's artifacts under BOTH names
+    for this one release. Marked in-file as a compatibility shim with the reason,
+    so a later cleanup knows why it is there and when it can go.
+  - No automatic migration of heartbeat/status CONTENT. They are ephemeral
+    liveness data, regenerated within one supervisor tick; migrating them buys
+    nothing and risks reading a pre-rename heartbeat as current (invariant 2).
+
+  ## Step handlers and feature files move together
+
+  `specs/pipeline/steps/bl590OnboardingFacilitatorSteps.js` matches step text in
+  `specs/features/BL-590-*.feature`. Where the step TEXT contains the old word,
+  the text and its handler pattern change in the SAME commit, and the acceptance
+  suite passes — a handler renamed out from under a live `.feature` makes
+  `specs/pipeline/runtime.js` throw for every parcel in flight, not just this one.
+
+  ## What "done" looks like, as a command
+
+  ```
+  git grep -lI -i facilitator -- . ':!backlog/evidence' ':!backlog/done'
+  ```
+
+  returns only paths whose FILENAME is a `BL-###` record slug (boundary 2 in
+  `approval_context`), and every one of those files' CONTENT is already renamed.
+  Nothing else survives.
+
+acceptance: specs/features/BL-684-rename-onboarding-facilitator-to-onboarder.feature.draft
+
+out_of_scope: |
+  - Any Telegram API work: no `editForumTopic`, no topic migration, no subject
+    change. Measured absent — see `source:`. Re-adding it is scope creep.
+  - Renaming or rewording anything under `backlog/evidence/` or `backlog/done/`
+    (invariant 3), including the six BL-590 architect bounce records and the two
+    parked property tests.
+  - Renaming live ticket / feature-file FILENAMES (their content is renamed).
+  - Behaviour change of any kind. If a test needs a new assertion to pass, that is
+    a signal the rename changed behaviour and the parcel is wrong.
+  - Building, finishing or re-cutting the Onboarder itself. Slice 1 is on `main`;
+    BL-624 and BL-625 own slices 2 and 3 and will be written in the new vocabulary
+    after this lands.
+  - Writing the class documentation. BL-643 owns it and now depends on this.
+
+notes: |
+  Sequencing, and why this ticket exists separately at all: BL-643's criterion 1
+  says docs must not describe a name the code does not use. So the order is
+  BL-684 (this) -> BL-643 (prose) -> BL-624/BL-625 (remaining slices, already in
+  the new vocabulary). BL-590 slice 1 has already landed on `main`, so there is no
+  in-flight parcel for this rename to collide with — that was checked, not
+  assumed, before scheduling the rename ahead of the unparked BL-590 work.
+
+  Cheapest-now argument, restated with the new measurement: 36 files on 2026-07-25,
+  49 on 2026-07-26. Every parcel built in the old vocabulary adds to it.
