@@ -41,6 +41,12 @@ const EXEMPT_PREFIXES = ['backlog/evidence/', 'backlog/done/', 'docs/briefings/'
 
 const ALLOWED_RESIDUAL_FILES = new Set([
   'backlog/active/BL-684-rename-onboarding-facilitator-to-onboarder.yaml',
+  // Dated incident retrospective (invariant 3 rationale, same as docs/briefings/
+  // above): quotes a real 2026-07-25 architect send-back verbatim, from before
+  // "onboarder" existed as a word in this codebase. Architect bounce
+  // 2026-07-27 (backlog/evidence/BL-684-architect-bounce-20260727.md) - the
+  // original rename silently rewrote this quotation; restored here.
+  'docs/explanation/lessons-2026-07-25-green-suites-that-proved-nothing.md',
   'backlog/paused/BL-590-onboarding-facilitator-agent.yaml',
   'backlog/paused/BL-624-onboarding-facilitator-survey-to-gate.yaml',
   'backlog/paused/BL-625-onboarding-facilitator-prompts-and-launch-handoff.yaml',
