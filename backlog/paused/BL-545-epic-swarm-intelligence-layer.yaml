@@ -100,7 +100,7 @@ notes: |
     - BL-548 Prompt calibration loop — test experimental adapter variants against a
       real model via Model Steward evaluate; promote winners to the adapter catalogue
       with human approval and regression guard.
-    - Onboarding Facilitator (BL-624, BL-625; naming ruled by BL-643) — survey ->
+    - Onboarder (BL-624, BL-625; naming ruled by BL-643) — survey ->
       propose -> negotiate -> agreed contract for a NEW target repo, gating dispatch
       via the BL-262 onboarding-contract gate. Tagged `epic: swarm-intelligence-layer`
       since its own drain landed but never backfilled into this tracker's

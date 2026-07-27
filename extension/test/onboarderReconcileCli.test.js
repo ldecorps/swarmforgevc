@@ -2,14 +2,14 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { mkTmpDir } = require('./helpers/tmpDir');
-const { reconcileOnce, writeOnboardingFacilitatorHeartbeat, main } = require('../out/tools/onboarding-facilitator-reconcile');
+const { reconcileOnce, writeOnboarderHeartbeat, main } = require('../out/tools/onboarder-reconcile');
 
 function mkTmpRoot() {
   return mkTmpDir('sfvc-onboarding-reconcile-');
 }
 
 function heartbeatPath(root) {
-  return path.join(root, '.swarmforge', 'operator', 'onboarding-facilitator-heartbeat.json');
+  return path.join(root, '.swarmforge', 'operator', 'onboarder-heartbeat.json');
 }
 
 function topicMapPath(root) {
@@ -29,9 +29,9 @@ function fakeCreateOk(threadId) {
   return { postFn, calls };
 }
 
-test('BL-590: writeOnboardingFacilitatorHeartbeat writes the shared {lastHeartbeatMs} shape', () => {
+test('BL-590: writeOnboarderHeartbeat writes the shared {lastHeartbeatMs} shape', () => {
   const root = mkTmpRoot();
-  writeOnboardingFacilitatorHeartbeat(root, () => 12345);
+  writeOnboarderHeartbeat(root, () => 12345);
   assert.deepEqual(JSON.parse(fs.readFileSync(heartbeatPath(root), 'utf8')), { lastHeartbeatMs: 12345 });
 });
 

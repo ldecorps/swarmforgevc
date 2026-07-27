@@ -5352,7 +5352,7 @@ function onboardingPollAdapters(overrides = {}) {
   return {
     chatId: '1',
     onboardingTopicId: overrides.onboardingTopicId ?? (async () => 42),
-    handleOnboardingFacilitatorMessage: overrides.handleOnboardingFacilitatorMessage ?? (async () => true),
+    handleOnboarderMessage: overrides.handleOnboarderMessage ?? (async () => true),
     postToBridge: overrides.postToBridge ?? (async () => true),
     subjectForTopic: () => undefined,
     backlogForTopic: () => undefined,
@@ -5366,14 +5366,14 @@ function onboardingPollAdapters(overrides = {}) {
   };
 }
 
-test('BL-590: a principal message in the Onboarding topic reaches the facilitator and never falls through to the SUP path', async () => {
+test('BL-590: a principal message in the Onboarding topic reaches the onboarder and never falls through to the SUP path', async () => {
   const handled = [];
   const result = await pollAndForward(
     0,
     PRINCIPAL_ID,
     onboardingPollAdapters({
       getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 42, text: 'https://github.com/acme/widget' })] }),
-      handleOnboardingFacilitatorMessage: async (topicId, text, updateId) => {
+      handleOnboarderMessage: async (topicId, text, updateId) => {
         handled.push({ topicId, text, updateId });
         return true;
       },
@@ -5389,7 +5389,7 @@ test('BL-590: a message in an unrelated topic is unaffected by the Onboarding si
     PRINCIPAL_ID,
     onboardingPollAdapters({
       getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: undefined, text: 'hello' })] }),
-      handleOnboardingFacilitatorMessage: async () => {
+      handleOnboarderMessage: async () => {
         throw new Error('must not be called for a non-Onboarding-topic message');
       },
       openSubjectAndRecord: async () => 'SUP-9',

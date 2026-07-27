@@ -1,5 +1,5 @@
 // BL-590 slice 1: durable per-target persistence for the onboarding
-// facilitator's prerequisites state machine (onboardingFacilitatorState.ts).
+// onboarder's prerequisites state machine (onboarderState.ts).
 // Follows readRelayOffset/writeRelayOffset's own discipline (BL-381,
 // relay-onboarding-negotiation-telegram.ts): try/catch to a safe default on
 // read, atomicWrite (temp-file + rename) on write - never a bare
@@ -13,7 +13,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { atomicWrite } from '../util/atomicWrite';
-import { OnboardingFacilitatorState } from './onboardingFacilitatorState';
+import { OnboarderState } from './onboarderState';
 
 function onboardingStateDir(swarmRepoRoot: string): string {
   return path.join(swarmRepoRoot, '.swarmforge', 'onboarding');
@@ -55,7 +55,7 @@ export interface ProcessedOnboardingUpdate {
 }
 
 interface OnboardingStateEnvelope {
-  readonly state: OnboardingFacilitatorState;
+  readonly state: OnboarderState;
   readonly processedUpdates: Readonly<Record<string, ProcessedOnboardingUpdate>>;
 }
 
@@ -70,9 +70,9 @@ function readEnvelope(swarmRepoRoot: string, targetRepoUrl: string): OnboardingS
       return parsed;
     }
     // A state file written before this envelope existed (a bare
-    // OnboardingFacilitatorState) - keep its progress, start its
+    // OnboarderState) - keep its progress, start its
     // processed-update history empty rather than fail to read it at all.
-    return { state: parsed as OnboardingFacilitatorState, processedUpdates: {} };
+    return { state: parsed as OnboarderState, processedUpdates: {} };
   } catch {
     return undefined;
   }
@@ -82,11 +82,11 @@ function writeEnvelope(swarmRepoRoot: string, envelope: OnboardingStateEnvelope)
   atomicWrite(onboardingStatePath(swarmRepoRoot, envelope.state.targetRepoUrl), JSON.stringify(envelope, null, 2));
 }
 
-export function readOnboardingFacilitatorState(swarmRepoRoot: string, targetRepoUrl: string): OnboardingFacilitatorState | undefined {
+export function readOnboarderState(swarmRepoRoot: string, targetRepoUrl: string): OnboarderState | undefined {
   return readEnvelope(swarmRepoRoot, targetRepoUrl)?.state;
 }
 
-export function writeOnboardingFacilitatorState(swarmRepoRoot: string, state: OnboardingFacilitatorState): void {
+export function writeOnboarderState(swarmRepoRoot: string, state: OnboarderState): void {
   const existing = readEnvelope(swarmRepoRoot, state.targetRepoUrl);
   writeEnvelope(swarmRepoRoot, { state, processedUpdates: existing?.processedUpdates ?? {} });
 }
@@ -96,7 +96,7 @@ export function writeOnboardingFacilitatorState(swarmRepoRoot: string, state: On
 // topic applies to, since slice 1's single-topic-reused design (per the
 // specifier's design note) means the topic itself carries no target
 // identity of its own.
-export function listOnboardingFacilitatorStates(swarmRepoRoot: string): OnboardingFacilitatorState[] {
+export function listOnboarderStates(swarmRepoRoot: string): OnboarderState[] {
   return listOnboardingEnvelopes(swarmRepoRoot).map((envelope) => envelope.state);
 }
 
@@ -113,7 +113,7 @@ function listOnboardingEnvelopes(swarmRepoRoot: string): OnboardingStateEnvelope
     .map((entry) => {
       try {
         const parsed: unknown = JSON.parse(fs.readFileSync(path.join(dir, entry), 'utf8'));
-        return isEnvelope(parsed) ? parsed : { state: parsed as OnboardingFacilitatorState, processedUpdates: {} };
+        return isEnvelope(parsed) ? parsed : { state: parsed as OnboarderState, processedUpdates: {} };
       } catch {
         return undefined;
       }
@@ -152,7 +152,7 @@ export function hasProcessedOnboardingUpdateId(swarmRepoRoot: string, updateId: 
 // machine) on every redelivery until it is marked delivered.
 export function writeOnboardingStateAndMarkUpdateProcessed(
   swarmRepoRoot: string,
-  state: OnboardingFacilitatorState,
+  state: OnboarderState,
   updateId: number,
   message: string
 ): void {

@@ -12,7 +12,7 @@ const {
   isLikelyRepoUrl,
   pickActiveOnboardingState,
   handleOnboardingMessage,
-} = require('../out/onboarding/onboardingFacilitatorState');
+} = require('../out/onboarding/onboarderState');
 
 const fixedNow = () => 1_700_000_000_000;
 
@@ -84,7 +84,7 @@ test('BL-590 restart-resumes-mid-flow-08: verified steps and step index round-tr
   assert.deepEqual(state.verifiedSteps, ['toolchain', 'github-access']);
 
   // "restart" = re-derive from the persisted plain-object state, exactly
-  // what onboardingFacilitatorStateStore's read/write round-trip does.
+  // what onboarderStateStore's read/write round-trip does.
   const rehydrated = JSON.parse(JSON.stringify(state));
   assert.equal(currentPrerequisiteStep(rehydrated), 'fork-clone');
   assert.deepEqual(rehydrated.verifiedSteps, ['toolchain', 'github-access']);
@@ -178,7 +178,7 @@ test('BL-590: handleOnboardingMessage with no active onboarding and no repo URL 
 
 // ── architect bounce (defect 2, 2026-07-25): re-posting an in-flight
 // target's URL must RESUME, never overwrite (backlog/evidence/BL-590-
-// onboarding-facilitator-slice1-architect-bounce-20260725.md) ─────────────
+// onboarder-slice1-architect-bounce-20260725.md) ─────────────
 
 test('BL-590 architect bounce defect 2: re-posting the URL of an in-flight onboarding resumes it, preserving verifiedSteps', () => {
   let state = createOnboardingState('https://github.com/acme/widget', fixedNow);

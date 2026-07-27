@@ -317,7 +317,7 @@ const DOMAINS = [
   require('./bl610UnresolvableCommitQuarantinedSteps'),
   require('./bl577FlowWatchdogParcelAgeInvariantSteps'),
   require('./bl575CostRankHorizonPinnedClockSteps'),
-  require('./bl590OnboardingFacilitatorSteps'),
+  require('./bl590OnboarderSteps'),
   require('./expeditorOfflineSingleTicketPipelineSteps'),
   require('./bl629SyncQaApprovalGateSteps'),
   require('./bl633InvariantsSectionSteps'),

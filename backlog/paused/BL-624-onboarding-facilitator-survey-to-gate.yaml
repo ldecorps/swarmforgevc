@@ -1,5 +1,5 @@
 id: BL-624
-title: "Onboarding facilitator slice 2: survey -> propose -> negotiate -> agreed contract through the existing gate, on the facilitator's own GitHub clone"
+title: "Onboarder slice 2: survey -> propose -> negotiate -> agreed contract through the existing gate, on the onboarder's own GitHub clone"
 milestone: M8
 type: feature
 status: todo
@@ -25,14 +25,14 @@ invariants:
 source: |
   BL-590 slice 2, split out by the specifier 2026-07-25 per BL-590's own
   slicing instruction (mutation_cost high, must not ship as one parcel).
-  Human ruling on BL-590 applies unchanged: the facilitator runs on the
+  Human ruling on BL-590 applies unchanged: the onboarder runs on the
   primary Linux box and onboards from a GitHub URL, cloning the target
   itself with this box's own GitHub access.
 
 description: |
   The do-for-you phase of the onboarding state machine:
   prerequisites-ready -> surveying -> contract-proposed -> negotiating ->
-  contract-agreed. The facilitator clones the target GitHub repo itself,
+  contract-agreed. The onboarder clones the target GitHub repo itself,
   then chains the EXISTING, shipped CLIs against its own clone — never
   reimplementing one (BL-590 out_of_scope): contractSurvey /
   propose-onboarding-contract.js to propose,
@@ -72,7 +72,7 @@ acceptance: |
     runObject/runApprove write negotiation state (BL-381 comment contract).
 
   QA end-to-end procedure (live swarm, real target repo):
-  1. From prerequisites-ready, post proceed: the facilitator clones the
+  1. From prerequisites-ready, post proceed: the onboarder clones the
      real repo, posts the proposed contract in the topic.
   2. Post change-this with an objection: a revised contract appears and
      the negotiation files in the clone show a real object round.

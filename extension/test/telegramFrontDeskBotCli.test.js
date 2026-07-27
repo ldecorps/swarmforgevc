@@ -21,7 +21,7 @@ const {
   ensureAgentQuestionsTopic,
   ensureBacklogTopic,
   ensureOnboardingTopic,
-  handleOnboardingFacilitatorMessage,
+  handleOnboarderMessage,
   ensureControlTopic,
   ensureResidentSpyTopic,
   ensureBoardTopicAdapter,
@@ -93,12 +93,12 @@ const { readRecord: readTopicRecord } = require('../out/concierge/blTopicStore')
 const { readRoleTopicMap, writeRoleTopicMap } = require('../out/concierge/roleTopicMapStore');
 const { approvalRequestedEventKey } = require('../out/events/swarmEventStream');
 const {
-  readOnboardingFacilitatorState,
-  writeOnboardingFacilitatorState,
+  readOnboarderState,
+  writeOnboarderState,
   hasProcessedOnboardingUpdateId,
   findProcessedOnboardingUpdate,
-} = require('../out/onboarding/onboardingFacilitatorStateStore');
-const { createOnboardingState } = require('../out/onboarding/onboardingFacilitatorState');
+} = require('../out/onboarding/onboarderStateStore');
+const { createOnboardingState } = require('../out/onboarding/onboarderState');
 
 // parseNextSseRecord's own tests live in telegramFrontDeskBotCore.test.js -
 // its implementation moved there (the testable core); this file re-exports
@@ -1009,7 +1009,7 @@ test('BL-590: an already-bound Onboarding topic returns its existing topicId, wi
   assert.equal(calls.length, 0);
 });
 
-// ── handleOnboardingFacilitatorMessage idempotency (BL-590 architect
+// ── handleOnboarderMessage idempotency (BL-590 architect
 // bounce, defect 1, 2026-07-25) - a redelivered updateId (the offset only
 // advances after processing, so a crash between the state write and the
 // offset commit makes Telegram re-serve the same update) used to advance
@@ -1023,18 +1023,18 @@ test('BL-590 architect bounce defect 1: the same updateId processed twice writes
   const root = mkTmpRoot();
   const { postFn, calls } = fakeSendOk(1);
 
-  const first = await handleOnboardingFacilitatorMessage(root, 'fake-token', 'fake-chat', 42, 'https://github.com/acme/widget', 900, postFn);
+  const first = await handleOnboarderMessage(root, 'fake-token', 'fake-chat', 42, 'https://github.com/acme/widget', 900, postFn);
   assert.equal(first, true);
   assert.equal(calls.length, 1);
-  const afterFirst = readOnboardingFacilitatorState(root, 'https://github.com/acme/widget');
+  const afterFirst = readOnboarderState(root, 'https://github.com/acme/widget');
   assert.equal(afterFirst.phase, 'checking-prerequisites');
 
   // Redelivery: SAME updateId, and (as a real redelivery would) the exact
   // same text - must be a total no-op, not merely idempotent-by-luck.
-  const second = await handleOnboardingFacilitatorMessage(root, 'fake-token', 'fake-chat', 42, 'https://github.com/acme/widget', 900, postFn);
+  const second = await handleOnboarderMessage(root, 'fake-token', 'fake-chat', 42, 'https://github.com/acme/widget', 900, postFn);
   assert.equal(second, true);
   assert.equal(calls.length, 1, 'expected no second send for a redelivered updateId');
-  assert.deepEqual(readOnboardingFacilitatorState(root, 'https://github.com/acme/widget'), afterFirst, 'expected no second write for a redelivered updateId');
+  assert.deepEqual(readOnboarderState(root, 'https://github.com/acme/widget'), afterFirst, 'expected no second write for a redelivered updateId');
 });
 
 test('BL-590 architect bounce defect 1: redelivery of the fork-clone verification never re-applies as a failing verification for the NEXT step', async () => {
@@ -1042,30 +1042,30 @@ test('BL-590 architect bounce defect 1: redelivery of the fork-clone verificatio
   const { postFn, calls } = fakeSendOk(1);
   let state = createOnboardingState('https://github.com/acme/widget', () => 1_700_000_000_000);
   state = { ...state, phase: 'checking-prerequisites', stepIndex: 2, verifiedSteps: ['toolchain', 'github-access'] };
-  writeOnboardingFacilitatorState(root, state);
+  writeOnboarderState(root, state);
 
   const forkCloneOutput = "Cloning into 'swarm-forge'...";
-  const ok = await handleOnboardingFacilitatorMessage(root, 'fake-token', 'fake-chat', 42, forkCloneOutput, 901, postFn);
+  const ok = await handleOnboarderMessage(root, 'fake-token', 'fake-chat', 42, forkCloneOutput, 901, postFn);
   assert.equal(ok, true);
-  assert.deepEqual(readOnboardingFacilitatorState(root, 'https://github.com/acme/widget').verifiedSteps, ['toolchain', 'github-access', 'fork-clone']);
+  assert.deepEqual(readOnboarderState(root, 'https://github.com/acme/widget').verifiedSteps, ['toolchain', 'github-access', 'fork-clone']);
   assert.equal(calls.length, 1);
   assert.doesNotMatch(calls[0].body, /verification failed/i);
 
   // Redelivered: same updateId, same (now stale) text - must NOT be
   // re-applied against the now-current "target-repo" step.
-  const redelivered = await handleOnboardingFacilitatorMessage(root, 'fake-token', 'fake-chat', 42, forkCloneOutput, 901, postFn);
+  const redelivered = await handleOnboarderMessage(root, 'fake-token', 'fake-chat', 42, forkCloneOutput, 901, postFn);
   assert.equal(redelivered, true);
   assert.equal(calls.length, 1, 'expected no spurious failure message for the redelivered update');
-  assert.deepEqual(readOnboardingFacilitatorState(root, 'https://github.com/acme/widget').verifiedSteps, ['toolchain', 'github-access', 'fork-clone']);
+  assert.deepEqual(readOnboarderState(root, 'https://github.com/acme/widget').verifiedSteps, ['toolchain', 'github-access', 'fork-clone']);
 });
 
 test('BL-590 architect bounce defect 1: a DIFFERENT updateId is not short-circuited by an unrelated updateId already on record', async () => {
   const root = mkTmpRoot();
   const { postFn, calls } = fakeSendOk(1);
-  await handleOnboardingFacilitatorMessage(root, 'fake-token', 'fake-chat', 42, 'https://github.com/acme/widget', 900, postFn);
+  await handleOnboarderMessage(root, 'fake-token', 'fake-chat', 42, 'https://github.com/acme/widget', 900, postFn);
   assert.equal(calls.length, 1);
 
-  const ok = await handleOnboardingFacilitatorMessage(root, 'fake-token', 'fake-chat', 42, 'proceed', 901, postFn);
+  const ok = await handleOnboarderMessage(root, 'fake-token', 'fake-chat', 42, 'proceed', 901, postFn);
   assert.equal(ok, true);
   assert.equal(calls.length, 2, 'expected a genuinely new updateId to be processed, not short-circuited');
 });
@@ -1073,15 +1073,15 @@ test('BL-590 architect bounce defect 1: a DIFFERENT updateId is not short-circui
 test('BL-590 architect bounce #2: hasProcessedOnboardingUpdateId remembers EVERY processed updateId, not only the most recent', async () => {
   const root = mkTmpRoot();
   const { postFn } = fakeSendOk(1);
-  await handleOnboardingFacilitatorMessage(root, 'fake-token', 'fake-chat', 42, 'https://github.com/acme/widget', 900, postFn);
-  await handleOnboardingFacilitatorMessage(root, 'fake-token', 'fake-chat', 42, 'proceed', 901, postFn);
+  await handleOnboarderMessage(root, 'fake-token', 'fake-chat', 42, 'https://github.com/acme/widget', 900, postFn);
+  await handleOnboarderMessage(root, 'fake-token', 'fake-chat', 42, 'proceed', 901, postFn);
   assert.equal(hasProcessedOnboardingUpdateId(root, 900), true, 'the OLDER id must still be recognised as processed');
   assert.equal(hasProcessedOnboardingUpdateId(root, 901), true);
   assert.equal(hasProcessedOnboardingUpdateId(root, 902), false);
 });
 
 // ── Reproductions A/B/C from the architect's SEND BACK #2 evidence
-// (backlog/evidence/BL-590-facilitator-slice1-architect-bounce2-20260725.md)
+// (backlog/evidence/BL-590-onboarder-slice1-architect-bounce2-20260725.md)
 // - the residual defect: a single last-processed-updateId scalar misses a
 // redelivered BATCH (offsetAfterDelivery parks the offset at the first
 // stuck delivery, redelivering every already-processed id after it too),
@@ -1095,40 +1095,40 @@ test('BL-590 architect bounce #2, Reproduction A: redelivering an update OLDER t
   const toolchainOutput = 'git version 2.40.0\ntmux 3.3\nbabashka v1.3.0\nclaude 1.0.0';
   const githubOutput = "You've successfully authenticated, but GitHub does not provide shell access.";
 
-  await handleOnboardingFacilitatorMessage(root, 'fake-token', 'fake-chat', 42, 'https://github.com/acme/widget', 100, postFn);
-  await handleOnboardingFacilitatorMessage(root, 'fake-token', 'fake-chat', 42, toolchainOutput, 101, postFn);
-  await handleOnboardingFacilitatorMessage(root, 'fake-token', 'fake-chat', 42, githubOutput, 102, postFn);
+  await handleOnboarderMessage(root, 'fake-token', 'fake-chat', 42, 'https://github.com/acme/widget', 100, postFn);
+  await handleOnboarderMessage(root, 'fake-token', 'fake-chat', 42, toolchainOutput, 101, postFn);
+  await handleOnboarderMessage(root, 'fake-token', 'fake-chat', 42, githubOutput, 102, postFn);
   assert.equal(calls.length, 3);
-  const afterStep102 = readOnboardingFacilitatorState(root, 'https://github.com/acme/widget');
+  const afterStep102 = readOnboarderState(root, 'https://github.com/acme/widget');
   assert.deepEqual(afterStep102.verifiedSteps, ['toolchain', 'github-access']);
 
   // 101 is redelivered (its own head-of-line delivery got stuck), NOT 102 -
   // the most recently processed id. A scalar guard that only remembers 102
   // would misapply this stale toolchain paste against the now-current
   // "fork-clone" step and emit a spurious failure.
-  const redelivered = await handleOnboardingFacilitatorMessage(root, 'fake-token', 'fake-chat', 42, toolchainOutput, 101, postFn);
+  const redelivered = await handleOnboarderMessage(root, 'fake-token', 'fake-chat', 42, toolchainOutput, 101, postFn);
   assert.equal(redelivered, true);
   assert.equal(calls.length, 3, 'expected no spurious failure message for the redelivered OLDER update');
-  assert.deepEqual(readOnboardingFacilitatorState(root, 'https://github.com/acme/widget'), afterStep102, 'expected no state change from the redelivered OLDER update');
+  assert.deepEqual(readOnboarderState(root, 'https://github.com/acme/widget'), afterStep102, 'expected no state change from the redelivered OLDER update');
 });
 
 test('BL-590 architect bounce #2, Reproduction B: a stale redelivered control word does not regress durable state', async () => {
   const root = mkTmpRoot();
   const { postFn, calls } = fakeSendOk(1);
-  writeOnboardingFacilitatorState(root, createOnboardingState('https://github.com/acme/widget', () => 1_700_000_000_000));
+  writeOnboarderState(root, createOnboardingState('https://github.com/acme/widget', () => 1_700_000_000_000));
 
-  await handleOnboardingFacilitatorMessage(root, 'fake-token', 'fake-chat', 42, 'pause', 200, postFn);
-  assert.equal(readOnboardingFacilitatorState(root, 'https://github.com/acme/widget').paused, true);
-  await handleOnboardingFacilitatorMessage(root, 'fake-token', 'fake-chat', 42, 'proceed', 201, postFn);
-  assert.equal(readOnboardingFacilitatorState(root, 'https://github.com/acme/widget').paused, false);
+  await handleOnboarderMessage(root, 'fake-token', 'fake-chat', 42, 'pause', 200, postFn);
+  assert.equal(readOnboarderState(root, 'https://github.com/acme/widget').paused, true);
+  await handleOnboarderMessage(root, 'fake-token', 'fake-chat', 42, 'proceed', 201, postFn);
+  assert.equal(readOnboarderState(root, 'https://github.com/acme/widget').paused, false);
   assert.equal(calls.length, 2);
 
   // The human explicitly resumed (201). A redelivery of the now-stale 200
-  // ("pause") must not silently re-pause the facilitator.
-  const redelivered = await handleOnboardingFacilitatorMessage(root, 'fake-token', 'fake-chat', 42, 'pause', 200, postFn);
+  // ("pause") must not silently re-pause the onboarder.
+  const redelivered = await handleOnboarderMessage(root, 'fake-token', 'fake-chat', 42, 'pause', 200, postFn);
   assert.equal(redelivered, true);
   assert.equal(calls.length, 2, 'expected no second "paused" message from the redelivered stale control word');
-  assert.equal(readOnboardingFacilitatorState(root, 'https://github.com/acme/widget').paused, false, 'must not regress to paused');
+  assert.equal(readOnboarderState(root, 'https://github.com/acme/widget').paused, false, 'must not regress to paused');
 });
 
 function fakeSendFailThenOk(messageId) {
@@ -1147,29 +1147,29 @@ function fakeSendFailThenOk(messageId) {
 test('BL-590 architect bounce #2, Reproduction C: a failed send followed by redelivery ends with the human receiving exactly one reply', async () => {
   const root = mkTmpRoot();
   const { postFn, calls } = fakeSendFailThenOk(1);
-  writeOnboardingFacilitatorState(root, createOnboardingState('https://github.com/acme/widget', () => 1_700_000_000_000));
+  writeOnboarderState(root, createOnboardingState('https://github.com/acme/widget', () => 1_700_000_000_000));
   const toolchainOutput = 'git version 2.40.0\ntmux 3.3\nbabashka v1.3.0\nclaude 1.0.0';
 
-  const first = await handleOnboardingFacilitatorMessage(root, 'fake-token', 'fake-chat', 42, toolchainOutput, 300, postFn);
+  const first = await handleOnboarderMessage(root, 'fake-token', 'fake-chat', 42, toolchainOutput, 300, postFn);
   assert.equal(first, false, 'a failed send must be reported as a failure, not swallowed');
   assert.equal(calls.length, 1);
   // The state machine already advanced - the guard is armed atomically with
   // that write, not gated on the (still-pending) send succeeding.
-  assert.deepEqual(readOnboardingFacilitatorState(root, 'https://github.com/acme/widget').verifiedSteps, ['toolchain']);
+  assert.deepEqual(readOnboarderState(root, 'https://github.com/acme/widget').verifiedSteps, ['toolchain']);
   assert.equal(findProcessedOnboardingUpdate(root, 300).record.delivered, false);
 
-  const redelivered = await handleOnboardingFacilitatorMessage(root, 'fake-token', 'fake-chat', 42, toolchainOutput, 300, postFn);
+  const redelivered = await handleOnboarderMessage(root, 'fake-token', 'fake-chat', 42, toolchainOutput, 300, postFn);
   assert.equal(redelivered, true, 'the retry must actually be attempted, and must succeed');
   assert.equal(calls.length, 2, 'expected exactly one retry attempt, not a re-run of the state machine');
   assert.equal(calls.filter((c) => c.ok).length, 1, 'expected exactly one reply actually delivered to the human');
-  assert.deepEqual(readOnboardingFacilitatorState(root, 'https://github.com/acme/widget').verifiedSteps, ['toolchain'], 'must not re-apply the verification a second time');
+  assert.deepEqual(readOnboarderState(root, 'https://github.com/acme/widget').verifiedSteps, ['toolchain'], 'must not re-apply the verification a second time');
   assert.equal(findProcessedOnboardingUpdate(root, 300).record.delivered, true);
 });
 
-test('BL-590 slice 1: when no onboarding is in progress, the facilitator tells the user to start one with a repo URL', async () => {
+test('BL-590 slice 1: when no onboarding is in progress, the onboarder tells the user to start one with a repo URL', async () => {
   const root = mkTmpRoot();
   const { postFn, calls } = fakeSendOk(1);
-  const result = await handleOnboardingFacilitatorMessage(root, 'fake-token', 'fake-chat', 42, 'hello', 500, postFn);
+  const result = await handleOnboarderMessage(root, 'fake-token', 'fake-chat', 42, 'hello', 500, postFn);
   assert.equal(result, true, 'the message should be sent successfully');
   assert.equal(calls.length, 1);
   assert.match(calls[0].body, /No onboarding is currently in progress/);

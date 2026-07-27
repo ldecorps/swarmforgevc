@@ -63,7 +63,7 @@ description: |
     INSTRUCT launching "from a shell that still has the primary's token
     exported" — rewrite to per-swarm provisioning first.
 
-  Relationship to BL-590 (onboarding facilitator, paused): BL-590 treats a
+  Relationship to BL-590 (onboarder, paused): BL-590 treats a
   bot token as a possession-checklist item and its remit ends before the
   target swarm launches; it never requires the token to DIFFER from the
   primary's. This ticket owns that invariant at the launch/resolve layer,
@@ -107,7 +107,7 @@ acceptance: |
 out_of_scope: |
   - Minting bot tokens or automating BotFather (BL-380 owns provisioning
     input; a human supplies tokens).
-  - The onboarding facilitator flow itself (BL-590, paused).
+  - The onboarder flow itself (BL-590, paused).
   - 409-cause observability and sustained-outage escalation (BL-621).
   - Multi-swarm GROUP separation (already a recorded finding; this is the
     token half).
