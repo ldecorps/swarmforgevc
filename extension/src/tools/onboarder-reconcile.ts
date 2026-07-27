@@ -56,9 +56,9 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function pollLoop(targetPath: string, botToken: string, chatId: string): Promise<void> {
+export async function pollLoop(targetPath: string, botToken: string, chatId: string, postFn?: TelegramPostFn): Promise<void> {
   for (;;) {
-    await reconcileOnce(targetPath, botToken, chatId);
+    await reconcileOnce(targetPath, botToken, chatId, postFn);
     await sleep(RECONCILE_INTERVAL_MS);
   }
 }
@@ -71,15 +71,15 @@ function requireEnv(name: string): string {
   return value;
 }
 
-async function handleReconcileMode(targetPath: string, botToken: string, chatId: string): Promise<void> {
-  const topicId = await reconcileOnce(targetPath, botToken, chatId);
+export async function handleReconcileMode(targetPath: string, botToken: string, chatId: string, postFn?: TelegramPostFn): Promise<void> {
+  const topicId = await reconcileOnce(targetPath, botToken, chatId, postFn);
   console.log(JSON.stringify({ ok: topicId !== undefined, topicId }));
   if (topicId === undefined) {
     process.exit(1);
   }
 }
 
-export async function main(argv: string[] = process.argv.slice(2)): Promise<void> {
+export async function main(argv: string[] = process.argv.slice(2), postFn?: TelegramPostFn): Promise<void> {
   const [targetPath, mode] = argv;
   if (!targetPath || (mode !== 'reconcile-once' && mode !== 'poll-loop')) {
     console.error('Usage: onboarder-reconcile.js <targetPath> reconcile-once|poll-loop');
@@ -89,10 +89,10 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<void
   const botToken = requireEnv('TELEGRAM_BOT_TOKEN');
   const chatId = requireEnv('TELEGRAM_CHAT_ID');
   if (mode === 'poll-loop') {
-    await pollLoop(targetPath, botToken, chatId);
+    await pollLoop(targetPath, botToken, chatId, postFn);
     return;
   }
-  await handleReconcileMode(targetPath, botToken, chatId);
+  await handleReconcileMode(targetPath, botToken, chatId, postFn);
 }
 
 if (require.main === module) {
