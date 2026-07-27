@@ -5397,3 +5397,18 @@ test('BL-590: a message in an unrelated topic is unaffected by the Onboarding si
   );
   assert.equal(result.posted, 1);
 });
+
+test('BL-590: a text-less principal message in the Onboarding topic is refused and dropped, never reaching the onboarder', async () => {
+  const result = await pollAndForward(
+    0,
+    PRINCIPAL_ID,
+    onboardingPollAdapters({
+      getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 42 })] }),
+      handleOnboarderMessage: async () => {
+        throw new Error('must not be called for a refused Onboarding-topic message');
+      },
+    })
+  );
+  assert.equal(result.dropped, 1);
+  assert.equal(result.posted, 0);
+});
