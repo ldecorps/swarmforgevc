@@ -53,6 +53,33 @@ export function decideEnsureCursorTopicAction(topicMap: Record<string, string>):
   return existingTopicId !== undefined ? { kind: 'reuse', topicId: existingTopicId } : { kind: 'create' };
 }
 
+export function cursorBridgeTopicIdFromMap(topicMap: Record<string, string>): number | undefined {
+  return topicForSubject(topicMap, CURSOR_BRIDGE_SUBJECT_ID);
+}
+
+export function isCursorBridgeTopic(topicId: number | undefined, cursorBridgeTopicId: number | undefined): boolean {
+  return cursorBridgeTopicId !== undefined && topicId === cursorBridgeTopicId;
+}
+
+// The front desk and cursor bridge share one Telegram forum chat but use
+// separate topic-map files — strip any stale SUP binding on the cursor
+// topic so the concierge never routes or replies there.
+export function frontDeskTopicMapWithoutCursorBridge(
+  topicMap: Record<string, string>,
+  cursorBridgeTopicId: number | undefined
+): Record<string, string> {
+  if (cursorBridgeTopicId === undefined) {
+    return topicMap;
+  }
+  const key = String(cursorBridgeTopicId);
+  if (!(key in topicMap)) {
+    return topicMap;
+  }
+  const next = { ...topicMap };
+  delete next[key];
+  return next;
+}
+
 function parseCommand(text: string): 'new' | 'status' | 'help' | undefined {
   const lower = text.trim().toLowerCase();
   if (lower === '/new') {

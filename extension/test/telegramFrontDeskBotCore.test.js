@@ -5412,3 +5412,49 @@ test('BL-590: a text-less principal message in the Onboarding topic is refused a
   assert.equal(result.dropped, 1);
   assert.equal(result.posted, 0);
 });
+
+// ── Cursor Remote topic isolation — front desk never routes SUP/Operator here ──
+
+function cursorBridgePollAdapters(overrides = {}) {
+  return {
+    chatId: '1',
+    cursorBridgeTopicId: overrides.cursorBridgeTopicId ?? (async () => 8435),
+    postToBridge: overrides.postToBridge ?? (async () => {
+      throw new Error('postToBridge should never be called for Cursor Remote');
+    }),
+    subjectForTopic: overrides.subjectForTopic ?? (() => 'SUP-12'),
+    backlogForTopic: () => undefined,
+    openSubjectAndRecord: async () => {
+      throw new Error('openSubjectAndRecord should never open a subject for Cursor Remote');
+    },
+    postOperatorContext: async () => {
+      throw new Error('postOperatorContext should never be called for Cursor Remote');
+    },
+    ...overrides,
+  };
+}
+
+test('cursor bridge: a principal message in Cursor Remote is dropped even when telegram-topic-map still names a SUP binding', async () => {
+  const result = await pollAndForward(
+    0,
+    PRINCIPAL_ID,
+    cursorBridgePollAdapters({
+      getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 8435, text: '690' })] }),
+    })
+  );
+  assert.equal(result.dropped, 1);
+  assert.equal(result.posted, 0);
+});
+
+test('cursor bridge: a message in an unrelated topic is unaffected by the Cursor Remote exclusion', async () => {
+  const result = await pollAndForward(
+    0,
+    PRINCIPAL_ID,
+    cursorBridgePollAdapters({
+      getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 7, text: 'hello' })] }),
+      subjectForTopic: () => 'SUP-1',
+      postToBridge: async () => true,
+    })
+  );
+  assert.equal(result.posted, 1);
+});

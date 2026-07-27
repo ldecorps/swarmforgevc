@@ -11,6 +11,7 @@ const {
   formatHelpMessage,
   decidePollBackoffMs,
   DEFAULT_POLL_BACKOFF,
+  frontDeskTopicMapWithoutCursorBridge,
 } = require('../out/tools/telegramCursorBridgeCore');
 
 const CHAT_ID = '-100123';
@@ -33,6 +34,16 @@ test('cursor bridge: reuses an existing Cursor Remote topic binding', () => {
 
 test('cursor bridge: standing topic name is Cursor Remote', () => {
   assert.equal(CURSOR_BRIDGE_TOPIC_NAME, 'Cursor Remote');
+});
+
+test('cursor bridge: front desk topic map strips a stale SUP binding on the cursor topic id', () => {
+  const scrubbed = frontDeskTopicMapWithoutCursorBridge({ '8435': 'SUP-12', '2286': 'BACKLOG' }, 8435);
+  assert.deepEqual(scrubbed, { '2286': 'BACKLOG' });
+});
+
+test('cursor bridge: front desk topic map is unchanged when cursor topic is unbound', () => {
+  const map = { '8435': 'SUP-12' };
+  assert.deepEqual(frontDeskTopicMapWithoutCursorBridge(map, undefined), map);
 });
 
 // ── guard order ──────────────────────────────────────────────────────────

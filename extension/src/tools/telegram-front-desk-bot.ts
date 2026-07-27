@@ -132,6 +132,7 @@ import {
   closeApprovalAskForBacklogId,
   roleFromAskThreadId,
 } from './telegramFrontDeskBotCore';
+import { cursorBridgeTopicIdFromMap, frontDeskTopicMapWithoutCursorBridge } from './telegramCursorBridgeCore';
 import { backlogForTopic } from '../concierge/topicRouter';
 import { recordApprovalReply, recordRejectionReply, recordAmendReply, readRecordedVerdict, readApprovalCloseVerdict } from '../concierge/pendingApprovalReply';
 import { reconcileDecidedApprovalAskCloses } from '../concierge/decidedApprovalAskCloseReconcile';
@@ -239,6 +240,46 @@ export function readTopicMap(targetPath: string): Record<string, string> {
 export function writeTopicMap(targetPath: string, topicMap: Record<string, string>): void {
   fs.mkdirSync(path.dirname(topicMapPath(targetPath)), { recursive: true });
   fs.writeFileSync(topicMapPath(targetPath), JSON.stringify(topicMap));
+}
+
+function cursorBridgeTopicMapPath(targetPath: string): string {
+  return path.join(targetPath, '.swarmforge', 'operator', 'cursor-bridge-topic-map.json');
+}
+
+function cursorBridgeStatePath(targetPath: string): string {
+  return path.join(targetPath, '.swarmforge', 'operator', 'cursor-bridge-state.json');
+}
+
+// Cursor Remote forum topic id — read from the bridge's own map, falling
+// back to persisted poll state when the map is not written yet.
+export function readCursorBridgeTopicId(targetPath: string): number | undefined {
+  try {
+    const map = JSON.parse(fs.readFileSync(cursorBridgeTopicMapPath(targetPath), 'utf8')) as Record<string, string>;
+    const fromMap = cursorBridgeTopicIdFromMap(map);
+    if (fromMap !== undefined) {
+      return fromMap;
+    }
+  } catch {
+    // fall through to state file
+  }
+  try {
+    const state = JSON.parse(fs.readFileSync(cursorBridgeStatePath(targetPath), 'utf8')) as { cursorTopicId?: number };
+    return typeof state.cursorTopicId === 'number' ? state.cursorTopicId : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+// Front-desk routing map with any stale SUP binding on the cursor topic
+// stripped (and persisted when a collision is found).
+function readFrontDeskTopicMap(targetPath: string): Record<string, string> {
+  const raw = readTopicMap(targetPath);
+  const cursorTopicId = readCursorBridgeTopicId(targetPath);
+  const scrubbed = frontDeskTopicMapWithoutCursorBridge(raw, cursorTopicId);
+  if (Object.keys(scrubbed).length !== Object.keys(raw).length) {
+    writeTopicMap(targetPath, scrubbed);
+  }
+  return scrubbed;
 }
 
 // BL-410: {backlogId: 'reject' | 'amend'} - which ticket(s) are awaiting a
@@ -1373,6 +1414,10 @@ export async function enqueueRoleAnswerNote(targetPath: string, role: string, te
 // without ever calling openSubject (and therefore never externally
 // minting a second SUP-###) or re-notifying the Operator a second time.
 export async function openSubjectAndRecord(targetPath: string, topicId: number | undefined, text: string, updateId: number): Promise<string> {
+  const cursorTopicId = readCursorBridgeTopicId(targetPath);
+  if (cursorTopicId !== undefined && topicId === cursorTopicId) {
+    throw new Error('openSubjectAndRecord: Cursor Remote topic is owned by telegram-cursor-bridge, not the front desk');
+  }
   const already = readTopicMap(targetPath)[updateOpenKey(updateId)];
   if (already !== undefined) {
     return already;
@@ -1977,7 +2022,8 @@ function buildPollAdapters(
     chatId,
     getUpdates: (offset) => getTelegramUpdates(botToken, offset, POLL_TIMEOUT_SECONDS),
     postToBridge: (subjectId, text, updateId) => postToBridge(bridgeUrl, controlToken, subjectId, text, updateId),
-    subjectForTopic: (topicId) => subjectForTopic(readTopicMap(targetPath), topicId),
+    subjectForTopic: (topicId) => subjectForTopic(readFrontDeskTopicMap(targetPath), topicId),
+    cursorBridgeTopicId: () => Promise.resolve(readCursorBridgeTopicId(targetPath)),
     openSubjectAndRecord: (topicId, text, updateId) => openSubjectAndRecord(targetPath, topicId, text, updateId),
     backlogForTopic: (topicId) => backlogForTopic(readBacklogTopicMap(targetPath), topicId),
     postOperatorContext: (backlogId, text, updateId) => postOperatorContext(targetPath, backlogId, text, updateId),
@@ -2278,7 +2324,7 @@ async function connectAndRelayReplies(
       // and additionally decides whether General needs its own copy or
       // pointer (resolveReplyTopicId's own bare-topic-id resolution is
       // unchanged and still exported for any other caller).
-      resolveDelivery: (subjectId) => resolveReplyDelivery(readTopicMap(targetPath), readBacklogTopicMap(targetPath), subjectId),
+      resolveDelivery: (subjectId) => resolveReplyDelivery(readFrontDeskTopicMap(targetPath), readBacklogTopicMap(targetPath), subjectId),
       ackReply: (id) => ackReply(bridgeUrl, controlToken, id),
       // BL-466: sendPoll/recordPollMapping/agentQuestionsTopicId - the
       // outbound half of the agent-question round trip (deliverAgentQuestion,
