@@ -1,0 +1,178 @@
+id: BL-691
+title: "Ambulance mode's first live run moved everything except the patient: the sync deliver path ignores the hold, no gate lets the patient's parcel outrank a busy resident, and engaging on a paused ticket is a silent deadlock"
+milestone: M8
+type: defect
+severity: medium
+status: todo
+epic: swarm-reliability
+human_approval: pending
+priority: 15
+direction: human
+depends_on: []
+assigned_to: specifier
+mutation_cost: medium
+
+invariants:
+  - "While ambulance mode is engaged, no non-patient parcel advances at any point in its lifecycle: every site that moves a parcel — sync deliver, daemon deliver, dequeue — consults the same held? predicate, and adding a new mover without consulting it is the defect this ticket exists to close."
+  - "While ambulance mode is engaged, the patient's work is never deferred behind non-patient work by any gate — busy, cooldown, ranking, or idle-boundary."
+
+approval_context: >
+  Two things want your eye before this is scheduled.
+  (1) SEVERITY. You wrote "high" in the intake and also "do not expedite".
+  Those now conflict mechanically: Article 3.2.4 makes every `high` defect
+  jump the whole queue automatically. I have written `medium` so the lane
+  obeys your do-not-expedite directive, and recorded your high assessment in
+  the description rather than losing it. Flip it to `high` if you would
+  rather have the expedite than the ordering you asked for.
+  (2) D2's CAUSE. Your intake hypothesised a ranking bug in
+  `preferred-rotate-target`. I read the code and believe the ranking is fine
+  — the patient's parcel does rank first; a busy resident blocks the
+  rotation before ranking is ever consulted. The scenarios below are written
+  against the observable behaviour so they hold either way, but the fix site
+  moves if I am right.
+
+source: |
+  Operator intake, 2026-07-27, from the first live ambulance run:
+  `.swarmforge/operator/INTAKE-ambulance-workflow-gaps-bl688-live-run.md`.
+  Ambulance engaged 10:54 UTC for BL-688 to freeze BL-590 at QA.
+
+  ## D1 — the sync deliver path never consults the hold. VERIFIED.
+
+  BL-655 wired the hold into two sites: `handoffd.bb`'s `poll-once!`
+  delivery, and `handoff_lib.bb`'s `partition-ambulance-held` at dequeue.
+  It did not wire the third. `swarm_handoff.bb` delivers outbox→inbox
+  synchronously via `handoff_inject_lib/deliver-parcel!`
+  (`swarmforge/scripts/handoff_inject_lib.bb:176`) — a file containing **zero
+  occurrences of `ambulance`**. Held or not, a parcel sent while the daemon
+  is not the one delivering lands in the recipient's `inbox/new/`.
+
+  Observed: BL-590's documenter→QA handoff `000438`, created 10:55 with the
+  ambulance engaged for BL-688, sat in QA's `inbox/new/`. `handoffd.log` has
+  no `deliver-skip-ambulance` line for it — it never went through daemon
+  delivery at all. The documenter's `sent/` records a sync `HANDOFF
+  DELIVERED`.
+
+  The dequeue guard did stop QA from *claiming* it, so nothing incorrect was
+  worked. What broke is the invariant: "held" is supposed to mean the parcel
+  does not move, and it moved.
+
+  ## D2 — nothing lets the patient outrank a busy resident. VERIFIED, but
+  ## not where the intake expected.
+
+  Patient parcel `000440` sat unclaimed in QA's `inbox/new/` for over an
+  hour while the resident stayed at coder home redoing BL-688.
+
+  The intake hypothesised that `preferred-rotate-target` ranks home idle
+  above QA-with-patient-mail. Reading it, that is not what happens:
+  `mono_router_lib.bb:228` picks the actionable role with the newest mail,
+  and `handoffd.bb`'s `role-mail-row` already strips ambulance-held parcels
+  from `news`, so QA is actionable on the patient's parcel and coder — whose
+  mail was held — is not. Ranking looks correct.
+
+  What actually stops the rotation is the gate AFTER ranking.
+  `chase-rotate-to!` (`handoffd.bb:1098`) reaches
+  `should-rotate-resident?` with `:resident-busy? (resident-pane-busy?
+  socket)`, and a busy resident refuses. The logs the operator captured are
+  `chase-wake-skip-busy QA` and `chase-wake-skip-busy coder` — the busy gate,
+  not the ranking. Ambulance state is not an input to that gate anywhere.
+
+  So the pathology is: ambulance engaged, resident busy on non-patient work,
+  patient parcel deferred indefinitely by the very gate that exists to avoid
+  interrupting work. Ambulance mode's entire purpose is that the patient
+  interrupts.
+
+  ## D3 — engaging on a ticket that is not active is a silent deadlock.
+  ## VERIFIED against the intake's account.
+
+  `ambulance_cli.bb engage` accepts a patient whose YAML is anywhere under
+  `backlog/`. BL-688 was in `paused/`. Engage succeeded, reported success,
+  and froze the pipeline for a patient that could not move — no active
+  ticket, nothing dispatched. The operator had to file a separate manual
+  promote intake to unstick it. The failure is silent: everything the
+  operator could see said the ambulance was working.
+
+description: |
+  Close all three gaps in one parcel. They are one mechanism and the intake's
+  connected test exercises all three at once; fixing any two still leaves the
+  patient stuck.
+
+  **D1.** Consult the same `ambulance-lib/parcel-held?` predicate in
+  `deliver-parcel!` and in any other synchronous inject path. A held parcel
+  stays in the sender's outbox, byte-identical, and is delivered on release —
+  exactly as the daemon path already behaves. Reuse the existing predicate;
+  do not write a second one (that is what the first invariant is guarding).
+
+  **D2.** While the ambulance is engaged and the patient has a dequeueable
+  parcel in role R's `inbox/new/`, rotating the resident to R must not be
+  refused for busy. Confirm the fix site against the reading above before
+  building: if the busy gate is the blocker, `should-rotate-resident?` needs
+  ambulance state as an input; if ranking is also wrong, fix both. The
+  scenarios assert the observable outcome, so they are indifferent to which.
+  Cooldown and the once-per-sweep budget are deliberately left alone — this
+  is about `busy`, not about rotation thrash.
+
+  **D3.** `engage` must not silently succeed on a patient that cannot move.
+  Refuse when the patient is not in `backlog/active/`, naming the folder it
+  is in and what to do about it. Refusing is preferred to auto-promoting:
+  promotion is the coordinator's, and an ambulance that promotes is an
+  ambulance that decides what the queue holds.
+
+  ## Severity: why medium is written here when the operator wrote high
+
+  The operator assessed impact as **high** and, in the same intake,
+  explicitly directed **do not expedite** and **normal priority after BL-688
+  QA lands**. Under Article 3.2.4 a `high` defect is promoted ahead of every
+  non-expedited ticket automatically, which is precisely the outcome the
+  operator ruled out. `medium` is the encoding of the directive; the impact
+  assessment is recorded here rather than discarded. `priority: 15` places it
+  well forward of the ordinary queue without the lane. See `approval_context`
+  — one tap changes this if the reading is wrong.
+
+  ## The generalisable bit
+
+  BL-655 shipped a predicate and wired it into the two sites its author was
+  looking at. A third mover existed. This is the same shape as BL-590's four
+  send-backs and BL-683's third bespoke counter: a property true of every
+  site, verified at some of them. Both invariants are stated so the sweep is
+  a single pass over all movers and all gates, not one bounce per site.
+
+acceptance: specs/features/BL-691-ambulance-workflow-gaps.feature.draft
+
+out_of_scope: |
+  - **D4 from the intake — `assigned_to` stale after a forward.** A different
+    mechanism (backlog YAML holder bookkeeping), and the intake itself flags
+    it as possibly separate. It gets its own ticket from
+    `.swarmforge/operator/INTAKE-coder-rework-inflight-parcel-blind-spot.md`,
+    which is still undispositioned. Named here because it is very likely the
+    reason the resident was busy at coder at all during D2 — but the busy
+    gate ignoring ambulance is a defect whether or not the work it was busy
+    on was duplicated.
+  - **BL-679's perimeter** (watchdog quiet, promotion freeze, auto-exit on
+    done). Paused, still wanted, deliberately distinct: that ticket is about
+    what the ambulance silences, this one is about whether it moves the
+    patient at all. Do not fold them.
+  - The expeditor and the Article 3.2.4 expedite lane. Unrelated mechanisms
+    that share the word "urgent".
+  - BL-655's twelve existing scenarios. All still hold; this ticket adds to
+    the contract rather than amending it.
+
+notes: |
+  Gherkin parked as `.feature.draft` per BL-233; the coder promotes it and
+  wires handlers in the same commit. New file rather than appending to
+  `specs/features/BL-655-ambulance-mode-hold.feature`, which stays live and
+  unchanged.
+
+  Lint gate clean. IR-DRY: two findings fixed (a compound `rotates to QA and
+  claims` Then split into two reusable steps; one engage step reworded to
+  match its sibling), six medium findings reviewed and deliberately kept —
+  do not "normalise" them:
+  - `sitting in <folder>` vs `sitting in active`: the placeholder row and the
+    success case assert different Thens; folding them makes an outline whose
+    refusal steps do not apply to one row.
+  - `waiting to be sent` vs `was sent synchronously` vs `reaches the <mover>`:
+    three genuinely different parcel states — not yet sent, already sent, and
+    at an arbitrary mover.
+  - `the ambulance is engaged for that ticket` (Then) vs `for the patient`
+    (Given): the same state asserted in one scenario and assumed in another,
+    which is ordinary Gherkin.
+  - `is forwarded to QA` vs `waits in the QA inbox`: an action and a state.
