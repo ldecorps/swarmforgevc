@@ -6,7 +6,7 @@
  * `by` (optional, QA-only here) and `evidence` stay local, since `by` is the
  * one field the two CLIs genuinely disagree on.
  */
-import { isKnownBouncingRole, QaBounceBouncingRole, QaBounceRecord } from '../quality/qaBounce';
+import { isKnownBouncingRole, QaBounceBouncingRole, QaBounceRecord, KNOWN_FAILURE_CLASSES } from '../quality/qaBounce';
 import { FlagName, isValid, isValidEvidence, parseFlags, validatedCoreFields } from './bounceArgsCore';
 
 export interface RecordQaBounceArgs extends Omit<QaBounceRecord, 'at'> {
@@ -50,6 +50,6 @@ export const USAGE =
   '         --commit <hex> [--by <bouncingRole> --evidence <path>]\n' +
   `  --role: coder|cleaner|architect|hardender|documenter\n` +
   `  --type: feature|bug|defect|chore|docs|enhancement|epic\n` +
-  `  --class: compile|unit|integration|acceptance|behavior|invariant-unencoded|spec-gap\n` +
+  `  --class: ${KNOWN_FAILURE_CLASSES.join('|')}\n` +
   `  --by (optional): QA\n` +
   `  --evidence (optional): backlog/evidence/<file>.md\n`;

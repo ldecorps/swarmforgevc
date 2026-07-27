@@ -9,7 +9,7 @@
  * bounceArgsCore.ts - only `by` (required, wider vocabulary here) is
  * validated locally.
  */
-import { isKnownBounceRole, BounceRecord, BounceRole } from '../quality/qaBounce';
+import { isKnownBounceRole, BounceRecord, BounceRole, KNOWN_FAILURE_CLASSES } from '../quality/qaBounce';
 import { FlagName, isValid, isValidEvidence, parseFlags, validatedCoreFields } from './bounceArgsCore';
 
 export interface RecordBounceArgs extends Omit<BounceRecord, 'at' | 'by'> {
@@ -55,6 +55,6 @@ export const USAGE =
   '         --commit <hex> --by <bouncingRole> [--evidence <path>]\n' +
   `  --role: coder|cleaner|architect|hardender|documenter\n` +
   `  --type: feature|bug|defect|chore|docs|enhancement|epic\n` +
-  `  --class: compile|unit|integration|acceptance|behavior|invariant-unencoded|spec-gap\n` +
+  `  --class: ${KNOWN_FAILURE_CLASSES.join('|')}\n` +
   `  --by (required): specifier|coder|cleaner|architect|hardender|documenter|QA\n` +
   `  --evidence (optional): backlog/evidence/<file>.md\n`;

@@ -18,6 +18,7 @@
  * it would turn a data store into an arbitrary-command sink.
  */
 import { isKnownFailureClass, decideDisposition, openBlockersForTicket, QaBounceFailureClass, SiblingDeferralRecord } from '../quality/siblingDeferral';
+import { KNOWN_FAILURE_CLASSES } from '../quality/qaBounce';
 import { appendSiblingDeferralRecordIfNew, readSiblingDeferralRecords } from '../metrics/siblingDeferralStore';
 import { printJsonToStdout, resolveCliMainWorktreeContext, runCliMain } from './swarm-metrics';
 
@@ -139,7 +140,7 @@ const USAGE =
   'Usage: qa-sibling-check.js status --ticket <id>\n' +
   '       qa-sibling-check.js defer --ticket <id> --blocked-by <id> --class <failureClass> --check "<command>" --commit <hex>\n' +
   '       qa-sibling-check.js clear --ticket <id> --blocked-by <id> --commit <hex>\n' +
-  '  --class: compile|unit|integration|acceptance|behavior|invariant-unencoded|spec-gap\n';
+  `  --class: ${KNOWN_FAILURE_CLASSES.join('|')}\n`;
 
 function runStatus(mainWorktreePath: string, args: StatusArgs): void {
   const records = readSiblingDeferralRecords(mainWorktreePath);
