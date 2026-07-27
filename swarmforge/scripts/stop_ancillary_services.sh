@@ -91,16 +91,25 @@ rm -f "$OP_DIR/front-desk-supervisor.status.json" \
       "$OP_DIR/front-desk-poll-heartbeat.json" 2>/dev/null || true
 rm -f "$OP_DIR/front-desk-supervisor.stop"
 
-# Onboarding facilitator (graceful stop file — the reconcile poll-loop is
+# Onboarder (graceful stop file — the reconcile poll-loop is
 # its supervised child).
-log "stopping onboarding facilitator"
+log "stopping onboarder"
 mkdir -p "$OP_DIR"
+touch "$OP_DIR/onboarder-supervisor.stop" 2>/dev/null || true
+# BL-684 compat shim: a supervisor started before this rename may still be
+# running under the OLD name, with no one else left to stop it (the renamed
+# launcher only ever DECLINES to start beside it, never adopts it) - clear
+# both names' artifacts here for this one release. Drop once no pre-rename
+# supervisor can still be running.
 touch "$OP_DIR/onboarding-facilitator-supervisor.stop" 2>/dev/null || true
 sleep 1
+signal_pid_file "$OP_DIR/onboarder-supervisor.pid"
 signal_pid_file "$OP_DIR/onboarding-facilitator-supervisor.pid"
-rm -f "$OP_DIR/onboarding-facilitator-supervisor.status.json" \
+rm -f "$OP_DIR/onboarder-supervisor.status.json" \
+      "$OP_DIR/onboarder-heartbeat.json" \
+      "$OP_DIR/onboarding-facilitator-supervisor.status.json" \
       "$OP_DIR/onboarding-facilitator-heartbeat.json" 2>/dev/null || true
-rm -f "$OP_DIR/onboarding-facilitator-supervisor.stop"
+rm -f "$OP_DIR/onboarder-supervisor.stop" "$OP_DIR/onboarding-facilitator-supervisor.stop"
 
 # Operator runtime (disposable Operator + supervision loop).
 log "stopping operator runtime"

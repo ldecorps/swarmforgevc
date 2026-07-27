@@ -1,6 +1,6 @@
 #!/usr/bin/env bb
-;; BL-590 slice 1: supervises the Onboarding Facilitator's own topic-
-;; reconcile poll-loop (extension/out/tools/onboarding-facilitator-reconcile.js),
+;; BL-590 slice 1: supervises the Onboarder's own topic-
+;; reconcile poll-loop (extension/out/tools/onboarder-reconcile.js),
 ;; mirroring negotiation_relay_supervisor.bb's spawn/crash-detect/bounded-
 ;; restart-with-backoff shape and reusing front_desk_supervisor_lib.bb's pure
 ;; state machine wholesale (check-one!/default-entry/poll-heartbeat-stale?
@@ -19,7 +19,7 @@
 ;; already follows).
 ;;
 ;; What it does NOT do: open a second Telegram getUpdates poller. The
-;; facilitator's actual inbound message handling runs IN-PROCESS inside the
+;; onboarder's actual inbound message handling runs IN-PROCESS inside the
 ;; front-desk bot's own single poller (telegramFrontDeskBotCore.ts's
 ;; attemptOnboardingTopicDelivery) - a second poller on the SAME bot token
 ;; would 409-conflict with it (docs/how-to/BL-439-fes-second-swarm-bringup.md's
@@ -29,20 +29,20 @@
 ;; that restriction - polling is exclusive, sending is not.
 ;;
 ;; Usage:
-;;   onboarding_facilitator_supervisor.bb <swarm-repo-root> [--check-once]
+;;   onboarder_supervisor.bb <swarm-repo-root> [--check-once]
 ;;
 ;; Env:
 ;;   TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID   fallback when no fleet creds file exists
 ;;   SWARMFORGE_FLEET_HOME                   fleet creds root override (default $HOME)
-;;   ONBOARDING_FACILITATOR_INTERVAL_MS      loop sleep between checks (default 2000)
-;;   ONBOARDING_FACILITATOR_MAX_ATTEMPTS     bounded restart cap (default 5)
-;;   ONBOARDING_FACILITATOR_BACKOFF_BASE_MS / ONBOARDING_FACILITATOR_BACKOFF_MAX_MS
-;;   ONBOARDING_FACILITATOR_HEALTHY_RESET_MS continuous-uptime attempt reset (default 600000)
-;;   ONBOARDING_FACILITATOR_GIVEUP_COOLDOWN_MS give-up re-arm cooldown (default 900000)
-;;   ONBOARDING_FACILITATOR_STALL_MS         heartbeat staleness window (default 120000)
-;;   ONBOARDING_FACILITATOR_KILL_GRACE_MS    SIGTERM->SIGKILL grace period, ms (default 2000)
+;;   ONBOARDER_INTERVAL_MS      loop sleep between checks (default 2000)
+;;   ONBOARDER_MAX_ATTEMPTS     bounded restart cap (default 5)
+;;   ONBOARDER_BACKOFF_BASE_MS / ONBOARDER_BACKOFF_MAX_MS
+;;   ONBOARDER_HEALTHY_RESET_MS continuous-uptime attempt reset (default 600000)
+;;   ONBOARDER_GIVEUP_COOLDOWN_MS give-up re-arm cooldown (default 900000)
+;;   ONBOARDER_STALL_MS         heartbeat staleness window (default 120000)
+;;   ONBOARDER_KILL_GRACE_MS    SIGTERM->SIGKILL grace period, ms (default 2000)
 
-(ns onboarding-facilitator-supervisor
+(ns onboarder-supervisor
   (:require [babashka.fs :as fs]
             [babashka.process :as process]
             [cheshire.core :as json]
@@ -54,42 +54,42 @@
 
 (defn usage []
   (binding [*out* *err*]
-    (println "Usage: onboarding_facilitator_supervisor.bb <swarm-repo-root> [--check-once]"))
+    (println "Usage: onboarder_supervisor.bb <swarm-repo-root> [--check-once]"))
   (System/exit 1))
 
 (def swarm-repo-root (or (first *command-line-args*) (usage)))
 (def check-once? (some #{"--check-once"} *command-line-args*))
 
 (def op-dir (fs/path swarm-repo-root ".swarmforge" "operator"))
-(def pid-file (fs/path op-dir "onboarding-facilitator-supervisor.pid"))
-(def stop-file (fs/path op-dir "onboarding-facilitator-supervisor.stop"))
-(def status-file (fs/path op-dir "onboarding-facilitator-supervisor.status.json"))
-(def log-file (fs/path op-dir "onboarding-facilitator-supervisor.log"))
-;; Written by onboarding-facilitator-reconcile.ts on every completed
+(def pid-file (fs/path op-dir "onboarder-supervisor.pid"))
+(def stop-file (fs/path op-dir "onboarder-supervisor.stop"))
+(def status-file (fs/path op-dir "onboarder-supervisor.status.json"))
+(def log-file (fs/path op-dir "onboarder-supervisor.log"))
+;; Written by onboarder-reconcile.ts on every completed
 ;; reconcile cycle - the same {lastHeartbeatMs} shape front-desk-poll-
 ;; heartbeat.json and negotiation-relay-poll-heartbeat.json already
 ;; established.
-(def poll-heartbeat-file (fs/path op-dir "onboarding-facilitator-heartbeat.json"))
+(def poll-heartbeat-file (fs/path op-dir "onboarder-heartbeat.json"))
 
-(def reconcile-entrypoint (fs/path swarm-repo-root "extension" "out" "tools" "onboarding-facilitator-reconcile.js"))
+(def reconcile-entrypoint (fs/path swarm-repo-root "extension" "out" "tools" "onboarder-reconcile.js"))
 
 (defn env-long [name default]
   (or (some-> (System/getenv name) parse-long) default))
 
-(def interval-ms (env-long "ONBOARDING_FACILITATOR_INTERVAL_MS" 2000))
+(def interval-ms (env-long "ONBOARDER_INTERVAL_MS" 2000))
 (def restart-config
-  {:max-attempts (env-long "ONBOARDING_FACILITATOR_MAX_ATTEMPTS" 5)
-   :backoff-base-ms (env-long "ONBOARDING_FACILITATOR_BACKOFF_BASE_MS" 1000)
-   :backoff-max-ms (env-long "ONBOARDING_FACILITATOR_BACKOFF_MAX_MS" 60000)
-   :healthy-reset-ms (env-long "ONBOARDING_FACILITATOR_HEALTHY_RESET_MS" 600000)})
-(def giveup-config {:giveup-cooldown-ms (env-long "ONBOARDING_FACILITATOR_GIVEUP_COOLDOWN_MS" 900000)})
+  {:max-attempts (env-long "ONBOARDER_MAX_ATTEMPTS" 5)
+   :backoff-base-ms (env-long "ONBOARDER_BACKOFF_BASE_MS" 1000)
+   :backoff-max-ms (env-long "ONBOARDER_BACKOFF_MAX_MS" 60000)
+   :healthy-reset-ms (env-long "ONBOARDER_HEALTHY_RESET_MS" 600000)})
+(def giveup-config {:giveup-cooldown-ms (env-long "ONBOARDER_GIVEUP_COOLDOWN_MS" 900000)})
 
 ;; How long the reconcile loop's own heartbeat can go quiet before it is
 ;; treated as stalled. Default 120s - comfortably wider than the reconcile
 ;; loop's own 60s interval even accounting for one missed tick.
-(def stall-ms (env-long "ONBOARDING_FACILITATOR_STALL_MS" 120000))
+(def stall-ms (env-long "ONBOARDER_STALL_MS" 120000))
 
-(def kill-grace-ms (env-long "ONBOARDING_FACILITATOR_KILL_GRACE_MS" 2000))
+(def kill-grace-ms (env-long "ONBOARDER_KILL_GRACE_MS" 2000))
 (def kill-pid! (front-desk-supervisor-lib/make-kill-pid! kill-grace-ms))
 
 ;; BL-436: this swarm's Telegram identity is a property of the SWARM, not of
@@ -134,7 +134,7 @@
                     "node" (str reconcile-entrypoint) swarm-repo-root "poll-loop"))
 
 (def process-specs
-  [{:key :onboarding-facilitator :spawn-pid! (fn [] (.pid (:proc (spawn-reconcile!))))
+  [{:key :onboarder :spawn-pid! (fn [] (.pid (:proc (spawn-reconcile!))))
     :heartbeat-stale? (fn [now] (front-desk-supervisor-lib/poll-heartbeat-stale? (read-poll-heartbeat-ms) now stall-ms))}])
 
 (defn read-state []
@@ -185,7 +185,7 @@
     (println (json/generate-string (tick!)))
     (do
       (atomic-spit! pid-file (str (.pid (java.lang.ProcessHandle/current))))
-      (log! "onboarding-facilitator-supervisor started" (str "interval-ms=" interval-ms) "swarm-repo=" swarm-repo-root)
+      (log! "onboarder-supervisor started" (str "interval-ms=" interval-ms) "swarm-repo=" swarm-repo-root)
       (try
         (while (not (fs/exists? stop-file))
           (try (tick!) (catch Exception e (log! "tick-error" (.getMessage e))))
@@ -193,6 +193,6 @@
         (finally
           (stop-all!)
           (fs/delete-if-exists pid-file)
-          (log! "onboarding-facilitator-supervisor stopped"))))))
+          (log! "onboarder-supervisor stopped"))))))
 
 (-main)

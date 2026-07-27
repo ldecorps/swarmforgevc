@@ -174,13 +174,13 @@ import { sendInstructionVerified } from '../swarm/verifiedInject';
 import { sleepSync } from '../swarm/sleepSync';
 import { runCliMain } from './swarm-metrics';
 import { atomicWrite } from '../util/atomicWrite';
-import { handleOnboardingMessage } from '../onboarding/onboardingFacilitatorState';
+import { handleOnboardingMessage } from '../onboarding/onboarderState';
 import {
-  listOnboardingFacilitatorStates,
+  listOnboarderStates,
   findProcessedOnboardingUpdate,
   writeOnboardingStateAndMarkUpdateProcessed,
   markOnboardingUpdateDelivered,
-} from '../onboarding/onboardingFacilitatorStateStore';
+} from '../onboarding/onboarderStateStore';
 import { isSwarmReady, defaultRoleBootstrapped } from '../swarm/swarmLauncher';
 import { readBounceAck, BouncePhase } from '../swarm/bounceAck';
 import { buildRoleInboxes } from '../watchdog/chaserMonitor';
@@ -771,7 +771,7 @@ export async function ensureAgentQuestionsTopic(targetPath: string, botToken: st
 // identical reuse-or-create/idempotent-across-restarts shape, sharing the
 // SAME {topicId: subjectId} map. ONE topic, reused across every target
 // onboarded through it (the specifier's design note) - per-target identity
-// lives in onboardingFacilitatorStateStore.ts's own state files, never a
+// lives in onboarderStateStore.ts's own state files, never a
 // second topic minted per target.
 export async function ensureOnboardingTopic(targetPath: string, botToken: string, chatId: string, postFn?: TelegramPostFn): Promise<number | undefined> {
   const topicMap = readTopicMap(targetPath);
@@ -789,7 +789,7 @@ export async function ensureOnboardingTopic(targetPath: string, botToken: string
   return created.messageThreadId;
 }
 
-// BL-590: the facilitator's whole turn once a message is confirmed to
+// BL-590: the onboarder's whole turn once a message is confirmed to
 // belong to the Onboarding topic (decideOnboardingReplyAction, the pure
 // routing guard) - loads every persisted per-target state, applies the pure
 // state-machine decision (handleOnboardingMessage), persists the result,
@@ -806,7 +806,7 @@ export async function ensureOnboardingTopic(targetPath: string, botToken: string
 // ONLY the send, with the message computed on the first attempt - never
 // re-runs handleOnboardingMessage, which would misapply that (possibly
 // stale) text against whatever step the state has since moved to.
-export async function handleOnboardingFacilitatorMessage(
+export async function handleOnboarderMessage(
   targetPath: string,
   botToken: string,
   chatId: string,
@@ -827,7 +827,7 @@ export async function handleOnboardingFacilitatorMessage(
     return retry.success;
   }
 
-  const states = listOnboardingFacilitatorStates(targetPath);
+  const states = listOnboarderStates(targetPath);
   const outcome = handleOnboardingMessage(states, text, Date.now);
   if (outcome.kind === 'no-active-onboarding') {
     // No target, therefore nothing durable to guard - a redelivery here
@@ -2120,9 +2120,9 @@ function buildPollAdapters(
       const controlTopicId = await ensureControlTopic(targetPath, botToken, chatId);
       await releaseAmbulance(targetPath, botToken, chatId, controlTopicId);
     },
-    // ── BL-590: Onboarding Facilitator topic ────────────────────────────
+    // ── BL-590: Onboarder topic ────────────────────────────
     onboardingTopicId: () => ensureOnboardingTopic(targetPath, botToken, chatId),
-    handleOnboardingFacilitatorMessage: (topicId, text, updateId) => handleOnboardingFacilitatorMessage(targetPath, botToken, chatId, topicId, text, updateId),
+    handleOnboarderMessage: (topicId, text, updateId) => handleOnboarderMessage(targetPath, botToken, chatId, topicId, text, updateId),
   };
 }
 

@@ -317,7 +317,7 @@ const DOMAINS = [
   require('./bl610UnresolvableCommitQuarantinedSteps'),
   require('./bl577FlowWatchdogParcelAgeInvariantSteps'),
   require('./bl575CostRankHorizonPinnedClockSteps'),
-  require('./bl590OnboardingFacilitatorSteps'),
+  require('./bl590OnboarderSteps'),
   require('./expeditorOfflineSingleTicketPipelineSteps'),
   require('./bl629SyncQaApprovalGateSteps'),
   require('./bl633InvariantsSectionSteps'),
@@ -329,7 +329,8 @@ const DOMAINS = [
   require('./bl672EpicMakeTopPrioritySteps'),
   require('./bl673TopicMakeTopPrioritySteps'),
   require('./bl674EpicDrilldownUiSteps'),
-  require('./bl655AmbulanceModeHoldSteps')
+  require('./bl655AmbulanceModeHoldSteps'),
+  require('./bl684OnboarderRenameSteps')
 ];
 
 function registerSteps(registry) {
