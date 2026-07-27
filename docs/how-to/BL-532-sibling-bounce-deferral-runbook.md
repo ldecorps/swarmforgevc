@@ -89,7 +89,7 @@ qa-sibling-check.js defer \
 **Parameters:**
 - `--ticket`: The clean ticket being deferred
 - `--blocked-by`: The blocker ticket with the actual defect
-- `--class`: Failure class from the blocker (`compile|unit|integration|acceptance|behavior`)
+- `--class`: Failure class from the blocker (`compile|unit|integration|acceptance|behavior|invariant-unencoded|spec-gap`)
 - `--check`: The exact command that fails on the blocker (e.g. `npm run test`)
 - `--commit`: The parcel commit being tested (10 hex characters)
 
