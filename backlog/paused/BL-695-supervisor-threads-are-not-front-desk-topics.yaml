@@ -1,0 +1,149 @@
+id: BL-695
+title: "The concierge serialises the human's private supervisor thread into a git-tracked topic record, because nothing in the store distinguishes a supervisor conversation from a ticket's topic"
+milestone: M8
+type: feature
+status: todo
+epic: swarm-reliability
+human_approval: pending
+severity: medium
+priority: 12
+direction: human-requested
+depends_on: []
+assigned_to: coder
+mutation_cost: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+# ^ Certified 2026-07-27: FULL chain. The classification predicate is a new
+#   boundary in a store every front-desk path writes through, so the architect's
+#   pass is the point (invariant 1 is theirs to attack); the fail-closed default
+#   and the icon-marker relocation are exactly where mutation earns its keep.
+
+invariants:
+  - "No thread the concierge cannot bind to a ticket ever produces a git-tracked write. The default is silence: a thread of an unrecognised kind is left alone and reported, never recorded on the assumption it is ordinary."
+  - "Exempting a thread from the tracked record never exempts it from remembering what the swarm already did to it: for every decision the swarm makes from a record today — the icon marker is the live one — an exempt thread has an equally durable answer, or the swarm repeats the action on every restart."
+
+approval_context: >
+  The scope question is yours, and I have specced the narrower half.
+
+  What is here: a boundary at the point of serialisation. The concierge stops
+  writing git-tracked records for supervisor threads, the nine already committed
+  are removed, and ticket topics are untouched. Small, and it ends the thing you
+  actually saw — a commit in your project repo announcing your own conversation.
+
+  What is NOT here, and is the real question: whether the supervisor conversation
+  belongs in a separate Telegram GROUP entirely, the way BL-379/380/381 argue for
+  one bot and one forum per project. That is structural isolation rather than a
+  filter, and it is strictly better — a filter is one forgotten code path away
+  from leaking again, a separate group cannot leak by construction. It is also a
+  bigger piece of work and it touches how you reach the swarm day to day, so I am
+  not choosing it for you.
+
+  Approve this as specced if you want the intrusion stopped now and the structural
+  question kept open. Amend it if you would rather I fold this into the group
+  separation and spec that instead — in which case this ticket should not be built,
+  because the filter would be thrown away.
+
+  One measured fact worth having before you decide: no conversation text has been
+  committed. All nine records hold an id and an icon marker with an empty message
+  list. The exposure today is that the boundary does not exist, not that your words
+  are in git.
+
+source: |
+  Raw intake filed by the Operator 2026-07-27 (backlog root), from a Telegram
+  question in thread SUP-12 the Operator judged it could not answer itself.
+
+  The human asked to ISOLATE the Operator conversation thread from the swarm's
+  front desk, triggered by the commit `BL topic record for SUP-12` (53a70086d),
+  which they read as an intrusion into a private thread.
+
+  The Operator's own framing, preserved: the concierge serialises EVERY Telegram
+  topic, including SUP/Operator threads, into `backlog/topics/*.json` (the BL-295
+  / BL-329 durable topic persistence); it is harmless bookkeeping, but it treats
+  the private supervisor thread as an ordinary front-desk topic. The need
+  expressed: exempt the Operator/SUP thread(s) from the concierge's serialisation
+  and front-desk management so the supervisor conversation stays private and
+  distinct from the swarm's front-desk channel. Prior art to consider: multi-swarm
+  separation by GROUP (BL-379/380/381 — one bot and one forum group per project,
+  structural isolation rather than a filter). The intake left the scope choice to
+  the specifier.
+
+description: |
+  ## What is actually happening
+
+  `extension/src/concierge/blTopicStore.ts` is keyed by a bare ticket id string and
+  has no notion of what kind of thread it is recording. `recordSwarmIconId` and
+  `appendMessage` take the same path for `BL-690` and for `SUP-12`, and
+  `commitTopicRecord` commits the result into the tracked repo with a message
+  naming the thread. Nine `backlog/topics/SUP-*.json` records exist today.
+
+  ## Measured before speccing, 2026-07-27
+
+  Every one of the nine holds `{id, messages: [], swarmIconId}` — an id and an icon
+  marker, with an empty message list. **No conversation text has been committed.**
+  That matters for scoping in both directions: this is not an incident needing
+  history rewriting, and it is not nothing either, because `appendMessage` is fully
+  generic. The reason a supervisor thread's words are not in git is that no code
+  path has happened to call it for one yet, which is not a boundary.
+
+  ## The trap this must not fall into
+
+  `readSwarmIconId` (BL-342) is the durable "has the swarm already set this topic's
+  icon" marker. It is the ONLY thing in those nine records doing any work. Delete
+  the records and give the decision nothing in their place, and the swarm re-sets
+  the icon on every restart — visible to the human as icon flicker, and adjacent to
+  the backfill-versus-stale-tick icon revert already seen once on this project.
+
+  So the boundary is not "stop writing" but "stop writing to the TRACKED repo, and
+  keep the memory somewhere untracked" — `.swarmforge/` is local runtime state and
+  is the natural home. Invariant 2 states the general form of this so the next
+  decision anyone adds to a record does not walk into the same hole.
+
+  ## Fail closed
+
+  A thread the concierge cannot bind to a ticket is treated as private, not as
+  ordinary. That is invariant 1, and it is the difference between a boundary and a
+  denylist: a denylist that misses a thread kind leaks it, a fail-closed predicate
+  refuses it. The concierge reports what it could not classify rather than
+  swallowing it, so a genuinely mis-bound ticket topic surfaces as a report instead
+  of as a silently missing record.
+
+acceptance: specs/features/BL-695-supervisor-threads-are-not-front-desk-topics.feature
+
+out_of_scope: |
+  - Separating the supervisor conversation into its own Telegram group or bot.
+    That is the structural alternative to this ticket, not a companion to it — see
+    `approval_context`. If the human picks it, this ticket is dropped rather than
+    extended, because the filter becomes dead code.
+  - Rewriting git history. Nothing needs it: no conversation text was committed.
+    Removing the nine records is an ordinary commit.
+  - Changing how SUP-### subjects are assigned, mapped, or routed. The front desk's
+    conversation machinery is untouched; only what gets serialised changes.
+  - The Operator's own topic behaviour on Telegram (titles, icons, pinning). The
+    icon a supervisor thread already carries stays exactly as it is — scenario 04
+    says so explicitly.
+
+notes: |
+  Drained from the backlog root 2026-07-27 by the specifier, per the constitution's
+  Backlog Intake Order. The raw intake was `backlog/INTAKE-operator-question-
+  1785165095410.md`, removed in the same commit as this spec.
+
+  ## Why this is `feature`, not `defect`
+
+  The concierge does what it was built to do; nobody ever specified an exemption,
+  so there is no violated contract to point at. Filing it as a defect would also
+  put a severity on the expedite lane's desk for something that has leaked nothing.
+  The human's perception of intrusion is real and is the reason the ticket exists —
+  that is a missing boundary, which is a feature.
+
+  ## End-to-end QA procedure
+
+  1. `specs/pipeline/scripts/run_acceptance.sh specs/features/BL-695-supervisor-threads-are-not-front-desk-topics.feature`
+     — all five scenarios pass.
+  2. `ls backlog/topics/SUP-*.json` at the QA commit returns nothing, and
+     `git log --oneline -- backlog/topics/` shows no new commit naming a SUP thread.
+  3. Send a real message in the live supervisor thread, then check both that no
+     record appeared under `backlog/topics/` and that `git status` is clean.
+  4. Send a real message in a live BL-### ticket topic and confirm its record is
+     written and committed exactly as before — the regression that matters most.
+  5. Restart the front desk twice and watch the supervisor thread's icon. It must
+     not change, and it must not be re-set. This is invariant 2, and it is the
+     failure a green suite will not show you.

@@ -14,6 +14,7 @@ import { unsafeDispatchToastText } from '../concierge/expediteSafety';
 import { classifyRecertTopicReply } from '../concierge/recertTopicReply';
 import { roleForTopic } from '../concierge/roleTopicMapStore';
 import { ControlEvent, ControlDecision, PendingControlConfirm, PauseState, decideControlEventAction } from './telegramControlCore';
+import { isCursorBridgeTopic } from './telegramCursorBridgeCore';
 import {
   nextUpdateOffset,
   isFromPrincipal,
@@ -856,6 +857,12 @@ export interface PollAdapters {
   // pair) because there is no separate pending-thread indirection here: the
   // onboarder always replies in the topic it was addressed in.
   handleOnboarderMessage?: (topicId: number, text: string, updateId: number) => Promise<boolean>;
+  // Cursor Remote topic — owned exclusively by telegram-cursor-bridge.js.
+  // Optional so fixtures pre-dating the bridge keep working; when wired,
+  // every inbound message in that topic is a deliberate drop here, never
+  // SUP/Operator routing (even if telegram-topic-map.json still names a
+  // stale SUP binding for the same forum topic id).
+  cursorBridgeTopicId?: () => Promise<number | undefined>;
 }
 
 // BL-389: the keystone fix. A DROP is a DECISION (the code looked at the
@@ -2152,7 +2159,32 @@ async function attemptSideChannelDelivery(
   return attemptOnboardingTopicDelivery(update, principalUserId, adapters);
 }
 
+export function decideCursorBridgeExclusion(
+  update: TelegramUpdate,
+  cursorBridgeTopicId: number | undefined
+): 'not-applicable' | 'drop' {
+  return isCursorBridgeTopic(topicIdOf(update), cursorBridgeTopicId) ? 'drop' : 'not-applicable';
+}
+
+async function attemptCursorBridgeTopicExclusion(
+  update: TelegramUpdate,
+  adapters: PollAdapters
+): Promise<UpdateDeliveryOutcome | undefined> {
+  if (!adapters.cursorBridgeTopicId) {
+    return undefined;
+  }
+  const cursorTopicId = await adapters.cursorBridgeTopicId();
+  if (decideCursorBridgeExclusion(update, cursorTopicId) !== 'drop') {
+    return undefined;
+  }
+  return 'dropped';
+}
+
 async function processMessageUpdate(update: TelegramUpdate, principalUserId: string, adapters: PollAdapters): Promise<UpdateDeliveryOutcome> {
+  const cursorBridgeOutcome = await attemptCursorBridgeTopicExclusion(update, adapters);
+  if (cursorBridgeOutcome) {
+    return cursorBridgeOutcome;
+  }
   const sideChannelOutcome = await attemptSideChannelDelivery(update, principalUserId, adapters);
   if (sideChannelOutcome) {
     return sideChannelOutcome;

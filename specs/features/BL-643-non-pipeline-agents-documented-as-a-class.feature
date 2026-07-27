@@ -21,22 +21,21 @@ Feature: The non-pipeline agents are documented as a class, with every path veri
   real. And several agents have no role prompt, meaning their description can only be
   reverse-engineered from code — the reader is told when that is what happened.
 
+  The naming question this ticket was filed alongside is NOT here. BL-684 shipped the
+  rename and shipped its own permanent gate for it; a scenario restating that check
+  would be a second gate over one behaviour, and would force this file into BL-684's
+  residual-word allowlist for no gain. The dependency is carried as data instead.
+
   Background:
     Given the non-pipeline agent documentation has been written
 
   # BL-643 agent-class-doc-01
-  Scenario: the documentation uses the name the code actually uses
-    When the documentation is searched for the retired name
-    Then no document calls the agent a facilitator
-    And the rename parcel it depends on has already landed
-
-  # BL-643 agent-class-doc-02
   Scenario: every non-pipeline agent in the repo has a row in the reference table
     When the repo's non-pipeline agents are enumerated from their launchers
     Then every enumerated agent has a row in the reference table
     And the table has no row for an agent that does not exist
 
-  # BL-643 agent-class-doc-03
+  # BL-643 agent-class-doc-02
   Scenario Outline: every row answers the operational questions
     When a row of the reference table is read
     Then it states the agent's <column>
@@ -50,7 +49,7 @@ Feature: The non-pipeline agents are documented as a class, with every path veri
       | log location                |
       | supervising service         |
 
-  # BL-643 agent-class-doc-04
+  # BL-643 agent-class-doc-03
   Scenario Outline: every path printed in the table resolves in the repo
     When the <path kind> named in each row is resolved against the repo
     Then it exists
@@ -62,39 +61,39 @@ Feature: The non-pipeline agents are documented as a class, with every path veri
       | stop path   |
       | role prompt |
 
-  # BL-643 agent-class-doc-05
+  # BL-643 agent-class-doc-04
   Scenario: an agent described without a role prompt is marked as reverse-engineered
     Given an agent that has no role prompt
     When its description is read
     Then the description says it was derived from code
     And the reader is not left to assume it was authored
 
-  # BL-643 agent-class-doc-06
+  # BL-643 agent-class-doc-05
   Scenario Outline: the table explains its own irregular cases instead of omitting them
     Given <irregular case>
-    When the reference table is read
-    Then that agent still has a row
+    When that agent is looked up in the reference table
+    Then it has a row of its own
     And the row explains why it does not follow the usual shape
 
     Examples:
-      | irregular case                                    |
-      | an agent with a role prompt but no launcher       |
-      | an agent whose role prompt is named for its role  |
-      | an agent that is a driver rather than a process   |
+      | irregular case                                                   |
+      | an agent with a role prompt but no launcher                      |
+      | an agent whose authored description lives under another's prompt |
+      | an agent that is a driver rather than a launched process         |
 
-  # BL-643 agent-class-doc-07
+  # BL-643 agent-class-doc-06
   Scenario: the Onboarder document covers only what shipped
     When the Onboarder document is read
     Then every behaviour it describes is present on the main branch
     And each unshipped phase is named with the ticket that owns it
 
-  # BL-643 agent-class-doc-08
+  # BL-643 agent-class-doc-07
   Scenario: the Expeditor is linked rather than restated
     When the class document reaches the Expeditor
     Then it links the existing Expeditor documents
     And it does not restate their content
 
-  # BL-643 agent-class-doc-09
+  # BL-643 agent-class-doc-08
   Scenario: the new documents are reachable from the documentation index
     When the documentation index is read
     Then every document added by this work is linked from it
