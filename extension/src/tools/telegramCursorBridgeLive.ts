@@ -107,6 +107,27 @@ export async function postChunks(
   }
 }
 
+function reuseCursorTopicFromMap(state: CursorBridgePersistedState, topicId: number): CursorBridgePersistedState {
+  return { ...state, cursorTopicId: topicId };
+}
+
+async function createCursorRemoteTopic(
+  token: string,
+  chatId: string,
+  topicMapPath: string,
+  topicMap: Record<string, string>,
+  state: CursorBridgePersistedState,
+  createTopic: typeof createForumTopicWithRateLimitRetry
+): Promise<CursorBridgePersistedState> {
+  const created = await createTopic(token, chatId, CURSOR_BRIDGE_TOPIC_NAME);
+  if (!created.success || created.messageThreadId === undefined) {
+    throw new Error(created.error ?? 'createForumTopic failed');
+  }
+  const nextMap = { ...topicMap, [String(created.messageThreadId)]: 'CURSOR_REMOTE' };
+  writeJsonFile(topicMapPath, nextMap);
+  return { ...state, cursorTopicId: created.messageThreadId };
+}
+
 export async function ensureCursorTopic(
   token: string,
   chatId: string,
@@ -120,15 +141,9 @@ export async function ensureCursorTopic(
   const topicMap = loadTopicMap(topicMapPath);
   const action = decideEnsureCursorTopicAction(topicMap);
   if (action.kind === 'reuse') {
-    return { ...state, cursorTopicId: action.topicId };
+    return reuseCursorTopicFromMap(state, action.topicId);
   }
-  const created = await createTopic(token, chatId, CURSOR_BRIDGE_TOPIC_NAME);
-  if (!created.success || created.messageThreadId === undefined) {
-    throw new Error(created.error ?? 'createForumTopic failed');
-  }
-  const nextMap = { ...topicMap, [String(created.messageThreadId)]: 'CURSOR_REMOTE' };
-  writeJsonFile(topicMapPath, nextMap);
-  return { ...state, cursorTopicId: created.messageThreadId };
+  return createCursorRemoteTopic(token, chatId, topicMapPath, topicMap, state, createTopic);
 }
 
 export async function promptWithHeartbeat(
@@ -184,6 +199,68 @@ export async function runPromptWithActiveRunRecovery(
   }
 }
 
+async function postInboundReply(
+  ctx: CursorBridgeHandlerContext,
+  topicId: number,
+  text: string,
+  replyToMessageId: number | undefined
+): Promise<void> {
+  await ctx.post(ctx.botToken, ctx.chatId, topicId, text, replyToMessageId);
+}
+
+async function handleSimpleInboundAction(
+  ctx: CursorBridgeHandlerContext,
+  topicId: number,
+  text: string,
+  replyToMessageId: number | undefined
+): Promise<boolean> {
+  await postInboundReply(ctx, topicId, text, replyToMessageId);
+  return ctx.busy;
+}
+
+async function handlePromptInboundAction(
+  ctx: CursorBridgeHandlerContext,
+  topicId: number,
+  prompt: string,
+  replyToMessageId: number | undefined,
+  resetAgent: () => Promise<void>
+): Promise<boolean> {
+  await postInboundReply(ctx, topicId, '⏳ Working…', replyToMessageId);
+  try {
+    const reply = await runPromptWithActiveRunRecovery(ctx, prompt, resetAgent);
+    await postInboundReply(ctx, topicId, reply, replyToMessageId);
+  } catch (err) {
+    const detail = err instanceof CursorAgentError ? err.message : err instanceof Error ? err.message : String(err);
+    await postInboundReply(ctx, topicId, `Error: ${detail}`, replyToMessageId);
+  }
+  return false;
+}
+
+type InboundActionHandler = (
+  ctx: CursorBridgeHandlerContext,
+  topicId: number,
+  replyToMessageId: number | undefined,
+  resetAgent: () => Promise<void>
+) => Promise<boolean>;
+
+const INBOUND_ACTION_HANDLERS: Partial<Record<InboundDecision['action'], InboundActionHandler>> = {
+  refuse: (ctx, topicId, replyTo) => handleSimpleInboundAction(ctx, topicId, 'Unauthorized.', replyTo),
+  help: (ctx, topicId, replyTo) => handleSimpleInboundAction(ctx, topicId, formatHelpMessage(), replyTo),
+  status: (ctx, topicId, replyTo) =>
+    handleSimpleInboundAction(ctx, topicId, formatStatusMessage(ctx.state, ctx.busy), replyTo),
+  busy: (ctx, topicId, replyTo) =>
+    handleSimpleInboundAction(ctx, topicId, 'Busy — wait for the current run to finish.', replyTo),
+  'new-session': async (ctx, topicId, replyTo, resetAgent) => {
+    await resetAgent();
+    return handleSimpleInboundAction(
+      ctx,
+      topicId,
+      'Started a fresh Cursor session. Send your next instruction.',
+      replyTo
+    );
+  },
+};
+
 export async function handleInboundDecision(
   decision: InboundDecision,
   ctx: CursorBridgeHandlerContext,
@@ -191,48 +268,17 @@ export async function handleInboundDecision(
   resetAgent: () => Promise<void>
 ): Promise<boolean> {
   const topicId = ctx.state.cursorTopicId;
-  if (topicId === undefined) {
+  if (topicId === undefined || decision.action === 'ignore') {
     return ctx.busy;
   }
-  if (decision.action === 'ignore') {
-    return ctx.busy;
+  const handler = INBOUND_ACTION_HANDLERS[decision.action];
+  if (handler) {
+    return handler(ctx, topicId, replyToMessageId, resetAgent);
   }
-  if (decision.action === 'refuse') {
-    await ctx.post(ctx.botToken, ctx.chatId, topicId, 'Unauthorized.', replyToMessageId);
-    return ctx.busy;
+  if (decision.action === 'prompt') {
+    return handlePromptInboundAction(ctx, topicId, decision.text, replyToMessageId, resetAgent);
   }
-  if (decision.action === 'help') {
-    await ctx.post(ctx.botToken, ctx.chatId, topicId, formatHelpMessage(), replyToMessageId);
-    return ctx.busy;
-  }
-  if (decision.action === 'status') {
-    await ctx.post(ctx.botToken, ctx.chatId, topicId, formatStatusMessage(ctx.state, ctx.busy), replyToMessageId);
-    return ctx.busy;
-  }
-  if (decision.action === 'busy') {
-    await ctx.post(ctx.botToken, ctx.chatId, topicId, 'Busy — wait for the current run to finish.', replyToMessageId);
-    return ctx.busy;
-  }
-  if (decision.action === 'new-session') {
-    await resetAgent();
-    await ctx.post(
-      ctx.botToken,
-      ctx.chatId,
-      topicId,
-      'Started a fresh Cursor session. Send your next instruction.',
-      replyToMessageId
-    );
-    return ctx.busy;
-  }
-  await ctx.post(ctx.botToken, ctx.chatId, topicId, '⏳ Working…', replyToMessageId);
-  try {
-    const reply = await runPromptWithActiveRunRecovery(ctx, decision.text, resetAgent);
-    await ctx.post(ctx.botToken, ctx.chatId, topicId, reply, replyToMessageId);
-  } catch (err) {
-    const detail = err instanceof CursorAgentError ? err.message : err instanceof Error ? err.message : String(err);
-    await ctx.post(ctx.botToken, ctx.chatId, topicId, `Error: ${detail}`, replyToMessageId);
-  }
-  return false;
+  return ctx.busy;
 }
 
 export interface CursorBridgeLoopDeps {
@@ -249,6 +295,72 @@ export interface CursorBridgeLoopDeps {
   post?: PostChunksFn;
 }
 
+async function handleFailedPoll(
+  deps: CursorBridgeLoopDeps,
+  pollFailures: number
+): Promise<void> {
+  const nextFailures = pollFailures + 1;
+  if (deps.onPollFailure) {
+    await deps.onPollFailure(nextFailures);
+    return;
+  }
+  await sleep(decidePollBackoffMs(nextFailures));
+}
+
+function makePollHandlerContext(
+  deps: CursorBridgeLoopDeps,
+  holder: { state: CursorBridgePersistedState }
+) {
+  const persistState = () => writeJsonFile(deps.statePath, holder.state);
+  const syncAgentIdFromSession = () => {
+    holder.state = { ...holder.state, agentId: deps.agentSession.readAgentId() };
+  };
+  const resetAgent = async () => {
+    await deps.agentSession.resetSession();
+    syncAgentIdFromSession();
+    persistState();
+  };
+  const post: PostChunksFn =
+    deps.post ?? ((token, chatId, topicId, text, replyToMessageId) =>
+      postChunks(token, chatId, topicId, text, replyToMessageId));
+  return { persistState, syncAgentIdFromSession, resetAgent, post };
+}
+
+async function processInboundUpdates(
+  deps: CursorBridgeLoopDeps,
+  updates: TelegramUpdate[],
+  holder: { state: CursorBridgePersistedState; busy: boolean },
+  handlerCtx: ReturnType<typeof makePollHandlerContext>
+): Promise<void> {
+  for (const update of updates) {
+    const inbound = inboundEventOf(update);
+    if (!inbound) {
+      continue;
+    }
+    const rawDecision = decideInboundAction(inbound, deps.principalUserId, deps.chatId, holder.state.cursorTopicId);
+    const decision = gateBusy(rawDecision, holder.busy);
+    if (decision.action === 'prompt') {
+      holder.busy = true;
+    }
+    holder.busy = await handleInboundDecision(
+      decision,
+      {
+        botToken: deps.botToken,
+        chatId: deps.chatId,
+        state: holder.state,
+        busy: holder.busy,
+        agentSession: deps.agentSession,
+        opDir: deps.opDir,
+        post: handlerCtx.post,
+        persistState: handlerCtx.persistState,
+        syncAgentIdFromSession: handlerCtx.syncAgentIdFromSession,
+      },
+      update.message?.message_id,
+      handlerCtx.resetAgent
+    );
+  }
+}
+
 export async function runCursorBridgePollOnce(
   deps: CursorBridgeLoopDeps,
   state: CursorBridgePersistedState,
@@ -259,62 +371,136 @@ export async function runCursorBridgePollOnce(
   const timeout = deps.pollTimeoutSeconds ?? POLL_TIMEOUT_SECONDS;
   const poll = await getUpdates(deps.botToken, state.updateOffset, timeout);
   if (!poll.success) {
-    const nextFailures = pollFailures + 1;
-    if (deps.onPollFailure) {
-      await deps.onPollFailure(nextFailures);
-    } else {
-      await sleep(decidePollBackoffMs(nextFailures));
-    }
-    return { state, busy, pollFailures: nextFailures };
+    await handleFailedPoll(deps, pollFailures);
+    return { state, busy, pollFailures: pollFailures + 1 };
   }
 
-  let nextState = { ...state, updateOffset: nextUpdateOffset(poll.updates, state.updateOffset) };
-  writeJsonFile(deps.statePath, nextState);
+  const holder = {
+    state: { ...state, updateOffset: nextUpdateOffset(poll.updates, state.updateOffset) },
+    busy,
+  };
+  writeJsonFile(deps.statePath, holder.state);
   writePollHeartbeat(deps.opDir);
 
-  let nextBusy = busy;
-  const persistState = () => writeJsonFile(deps.statePath, nextState);
+  await processInboundUpdates(deps, poll.updates, holder, makePollHandlerContext(deps, holder));
+
+  return { state: holder.state, busy: holder.busy, pollFailures: 0 };
+}
+
+export interface CursorBridgeCliEnv {
+  repoRoot: string;
+  botToken: string;
+  chatId: string;
+  principalUserId: string;
+  bootPrompt?: string;
+  shouldContinue?: () => boolean;
+  loopOverrides?: Partial<CursorBridgeLoopDeps>;
+  post?: PostChunksFn;
+}
+
+export async function runCursorBridgeBootIfConfigured(
+  env: Pick<CursorBridgeCliEnv, 'bootPrompt' | 'botToken' | 'chatId' | 'post'>,
+  ctx: {
+    state: CursorBridgePersistedState;
+    busy: boolean;
+    agentSession: CursorBridgeAgentSessionDeps;
+    opDir: string;
+    persistState: () => void;
+    syncAgentIdFromSession: () => void;
+    resetAgent: () => Promise<void>;
+  }
+): Promise<boolean> {
+  if (!env.bootPrompt || ctx.state.cursorTopicId === undefined) {
+    return ctx.busy;
+  }
+  const post = env.post ?? postChunks;
+  await post(env.botToken, env.chatId, ctx.state.cursorTopicId, `Boot test prompt: ${env.bootPrompt}`);
+  return handleInboundDecision(
+    { action: 'prompt', text: env.bootPrompt },
+    {
+      botToken: env.botToken,
+      chatId: env.chatId,
+      state: ctx.state,
+      busy: ctx.busy,
+      agentSession: ctx.agentSession,
+      opDir: ctx.opDir,
+      post,
+      persistState: ctx.persistState,
+      syncAgentIdFromSession: ctx.syncAgentIdFromSession,
+    },
+    undefined,
+    ctx.resetAgent
+  );
+}
+
+export async function runCursorBridgeLoop(
+  loopDeps: CursorBridgeLoopDeps,
+  initial: { state: CursorBridgePersistedState; busy: boolean; pollFailures: number },
+  shouldContinue: () => boolean
+): Promise<{ state: CursorBridgePersistedState; busy: boolean; pollFailures: number }> {
+  let state = initial.state;
+  let busy = initial.busy;
+  let pollFailures = initial.pollFailures;
+  while (shouldContinue()) {
+    const next = await runCursorBridgePollOnce(loopDeps, state, busy, pollFailures);
+    state = next.state;
+    busy = next.busy;
+    pollFailures = next.pollFailures;
+  }
+  return { state, busy, pollFailures };
+}
+
+export async function runCursorBridgeApp(
+  env: CursorBridgeCliEnv,
+  agentSession: CursorBridgeAgentSessionDeps
+): Promise<void> {
+  const opDir = path.join(env.repoRoot, '.swarmforge', 'operator');
+  const statePath = path.join(opDir, STATE_FILE_NAME);
+  const topicMapPath = path.join(opDir, TOPIC_MAP_FILE_NAME);
+
+  let state = await bootstrapCursorBridgeState(env.repoRoot, env.botToken, env.chatId, statePath, topicMapPath);
+  let busy = false;
+  let pollFailures = 0;
+
+  const persistState = () => writeJsonFile(statePath, state);
   const syncAgentIdFromSession = () => {
-    nextState = { ...nextState, agentId: deps.agentSession.readAgentId() };
+    state = { ...state, agentId: agentSession.readAgentId() };
   };
   const resetAgent = async () => {
-    await deps.agentSession.resetSession();
+    await agentSession.resetSession();
     syncAgentIdFromSession();
     persistState();
   };
-  const post: PostChunksFn =
-    deps.post ?? ((token, chatId, topicId, text, replyToMessageId) =>
-      postChunks(token, chatId, topicId, text, replyToMessageId));
 
-  for (const update of poll.updates) {
-    const inbound = inboundEventOf(update);
-    if (!inbound) {
-      continue;
-    }
-    const rawDecision = decideInboundAction(inbound, deps.principalUserId, deps.chatId, nextState.cursorTopicId);
-    const decision = gateBusy(rawDecision, nextBusy);
-    if (decision.action === 'prompt') {
-      nextBusy = true;
-    }
-    nextBusy = await handleInboundDecision(
-      decision,
-      {
-        botToken: deps.botToken,
-        chatId: deps.chatId,
-        state: nextState,
-        busy: nextBusy,
-        agentSession: deps.agentSession,
-        opDir: deps.opDir,
-        post,
-        persistState,
-        syncAgentIdFromSession,
-      },
-      update.message?.message_id,
-      resetAgent
-    );
-  }
+  busy = await runCursorBridgeBootIfConfigured(env, {
+    state,
+    busy,
+    agentSession,
+    opDir,
+    persistState,
+    syncAgentIdFromSession,
+    resetAgent,
+  });
 
-  return { state: nextState, busy: nextBusy, pollFailures: 0 };
+  const loopDeps: CursorBridgeLoopDeps = {
+    botToken: env.botToken,
+    chatId: env.chatId,
+    principalUserId: env.principalUserId,
+    opDir,
+    statePath,
+    topicMapPath,
+    agentSession,
+    ...env.loopOverrides,
+  };
+
+  const loopResult = await runCursorBridgeLoop(
+    loopDeps,
+    { state, busy, pollFailures },
+    env.shouldContinue ?? (() => true)
+  );
+  state = loopResult.state;
+  busy = loopResult.busy;
+  pollFailures = loopResult.pollFailures;
 }
 
 export async function bootstrapCursorBridgeState(

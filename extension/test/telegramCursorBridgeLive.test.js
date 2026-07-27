@@ -14,6 +14,9 @@ const {
   promptWithHeartbeat,
   requiredEnv,
   runCursorBridgePollOnce,
+  runCursorBridgeApp,
+  runCursorBridgeLoop,
+  runCursorBridgeBootIfConfigured,
   runPromptWithActiveRunRecovery,
   sleep,
   writeJsonFile,
@@ -312,4 +315,77 @@ test('loadTopicMap treats JSON arrays as empty', () => {
   const filePath = path.join(root, 'map.json');
   writeJsonFile(filePath, []);
   assert.deepEqual(loadTopicMap(filePath), {});
+});
+
+test('runCursorBridgeLoop stops when shouldContinue returns false', async () => {
+  const root = mkRoot();
+  const opDir = path.join(root, '.swarmforge', 'operator');
+  const statePath = path.join(opDir, 'cursor-bridge-state.json');
+  const topicMapPath = path.join(opDir, 'cursor-bridge-topic-map.json');
+  writeJsonFile(statePath, { updateOffset: 0, cursorTopicId: 9 });
+  let polls = 0;
+  const result = await runCursorBridgeLoop(
+    {
+      botToken: 'tok',
+      chatId: '-100',
+      principalUserId: '42',
+      opDir,
+      statePath,
+      topicMapPath,
+      agentSession: createMockCursorBridgeAgentSession(root),
+      getUpdates: async () => {
+        polls += 1;
+        return { success: true, updates: [] };
+      },
+    },
+    { state: { updateOffset: 0, cursorTopicId: 9 }, busy: false, pollFailures: 0 },
+    () => polls < 2
+  );
+  assert.equal(polls, 2);
+  assert.equal(result.pollFailures, 0);
+});
+
+test('runCursorBridgeApp runs boot prompt and a single poll when configured', async () => {
+  const root = mkRoot();
+  const topicMapPath = path.join(root, '.swarmforge', 'operator', 'cursor-bridge-topic-map.json');
+  writeJsonFile(topicMapPath, { '9': 'CURSOR_REMOTE' });
+  const session = createMockCursorBridgeAgentSession(root);
+  let getUpdateCalls = 0;
+  await runCursorBridgeApp(
+    {
+      repoRoot: root,
+      botToken: 'tok',
+      chatId: '-100',
+      principalUserId: '42',
+      bootPrompt: 'wake',
+      post: async () => {},
+      loopOverrides: {
+        getUpdates: async () => {
+          getUpdateCalls += 1;
+          return { success: true, updates: [] };
+        },
+      },
+      shouldContinue: () => getUpdateCalls < 1,
+    },
+    session
+  );
+  assert.equal(getUpdateCalls, 1);
+});
+
+test('runCursorBridgeBootIfConfigured is a no-op without boot prompt', async () => {
+  const root = mkRoot();
+  const session = createMockCursorBridgeAgentSession(root);
+  const busy = await runCursorBridgeBootIfConfigured(
+    { bootPrompt: undefined, botToken: 'tok', chatId: '-100' },
+    {
+      state: { updateOffset: 0, cursorTopicId: 1 },
+      busy: false,
+      agentSession: session,
+      opDir: path.join(root, '.swarmforge', 'operator'),
+      persistState: () => {},
+      syncAgentIdFromSession: () => {},
+      resetAgent: async () => {},
+    }
+  );
+  assert.equal(busy, false);
 });

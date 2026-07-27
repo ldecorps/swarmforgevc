@@ -36,29 +36,54 @@ export function decodeLetsTalkAudio(audioBase64: string): Buffer | undefined {
   }
 }
 
+export function extensionForMime(mimeType: string | undefined): string {
+  if (!mimeType) {
+    return 'audio.webm';
+  }
+  const lower = mimeType.toLowerCase();
+  const rules: Array<{ match: (value: string) => boolean; ext: string }> = [
+    { match: (v) => v.includes('webm'), ext: 'audio.webm' },
+    { match: (v) => v.includes('ogg'), ext: 'audio.ogg' },
+    { match: (v) => v.includes('wav'), ext: 'audio.wav' },
+    { match: (v) => v.includes('mpeg') || v.includes('mp3'), ext: 'audio.mp3' },
+    {
+      match: (v) => v.includes('mp4') || v.includes('m4a') || v.includes('aac') || v.includes('x-m4a') || v.includes('caf'),
+      ext: 'audio.m4a',
+    },
+  ];
+  return rules.find((rule) => rule.match(lower))?.ext ?? 'audio.webm';
+}
+
+function sttRetryFailure(stt: SttResult): { success: false; reason: string; recoverable: true; state: 'error' } {
+  return {
+    success: false,
+    reason:
+      stt.kind === 'transient-failure' && stt.reason
+        ? stt.reason
+        : 'speech-to-text is temporarily unavailable — try again',
+    recoverable: true,
+    state: 'error',
+  };
+}
+
+function sttUnprocessableFailure(stt: SttResult): { success: false; reason: string; recoverable: true; state: 'ready' } {
+  return {
+    success: false,
+    reason: stt.kind !== 'ok' && stt.reason ? stt.reason : unprocessableAudioMessage(),
+    recoverable: true,
+    state: 'ready',
+  };
+}
+
 export function sttFailureForOutcome(
   outcome: LetsTalkSttOutcome,
   stt: SttResult
 ): { success: false; reason: string; recoverable: true; state: 'ready' | 'error' } | null {
   if (outcome === 'retry') {
-    return {
-      success: false,
-      reason:
-        stt.kind === 'transient-failure' && stt.reason
-          ? stt.reason
-          : 'speech-to-text is temporarily unavailable — try again',
-      recoverable: true,
-      state: 'error',
-    };
+    return sttRetryFailure(stt);
   }
   if (outcome === 'unprocessable' || stt.kind !== 'ok') {
-    return {
-      success: false,
-      reason:
-        stt.kind !== 'ok' && stt.reason ? stt.reason : unprocessableAudioMessage(),
-      recoverable: true,
-      state: 'ready',
-    };
+    return sttUnprocessableFailure(stt);
   }
   return null;
 }
@@ -84,25 +109,26 @@ export function unprocessableAudioMessage(): string {
 export type LetsTalkSpeechLanguage = 'en' | 'fr';
 export type LetsTalkSpeechLanguageSetting = LetsTalkSpeechLanguage | 'auto';
 
+const SPEECH_LANGUAGE_ALIASES: Array<{ matches: (lower: string) => boolean; value: LetsTalkSpeechLanguageSetting }> = [
+  { matches: (lower) => lower === 'auto', value: 'auto' },
+  { matches: (lower) => lower === 'fr' || lower === 'french' || lower.startsWith('fr-'), value: 'fr' },
+  { matches: (lower) => lower === 'en' || lower === 'english' || lower.startsWith('en-'), value: 'en' },
+];
+
 export function parseLetsTalkSpeechLanguage(raw: string | undefined): LetsTalkSpeechLanguageSetting {
   if (!raw) {
     return 'auto';
   }
   const lower = raw.trim().toLowerCase();
-  if (lower === 'auto') {
-    return 'auto';
-  }
-  if (lower === 'fr' || lower === 'french' || lower.startsWith('fr-')) {
-    return 'fr';
-  }
-  if (lower === 'en' || lower === 'english' || lower.startsWith('en-')) {
-    return 'en';
-  }
-  return 'auto';
+  return SPEECH_LANGUAGE_ALIASES.find((rule) => rule.matches(lower))?.value ?? 'auto';
 }
 
 export function speechLocaleForLanguage(language: LetsTalkSpeechLanguage): string {
   return language === 'fr' ? 'fr-FR' : 'en-US';
+}
+
+function countLanguageWordHits(text: string, pattern: RegExp): number {
+  return (text.match(pattern) ?? []).length;
 }
 
 /** Heuristic per-turn language when LETS_TALK_SPEECH_LANGUAGE=auto. */
@@ -118,8 +144,8 @@ export function detectSpeechLanguageFromText(text: string): LetsTalkSpeechLangua
     /\b(bonjour|merci|salut|oui|non|comment|pourquoi|quand|avec|sans|dans|chez|très|aussi|être|avoir|vous|nous|ils|elles|cette|cet|ces|quoi|quel|quelle|quels|quelles)\b/i;
   const englishWord =
     /\b(hello|thanks|thank you|yes|no|what|when|where|why|how|with|without|the|this|that|these|those|you|your|they|their)\b/i;
-  const frenchHits = (trimmed.match(frenchWord) ?? []).length;
-  const englishHits = (trimmed.match(englishWord) ?? []).length;
+  const frenchHits = countLanguageWordHits(trimmed, frenchWord);
+  const englishHits = countLanguageWordHits(trimmed, englishWord);
   if (frenchHits > englishHits) {
     return 'fr';
   }

@@ -1,9 +1,31 @@
 const assert = require('node:assert/strict');
 const {
+  letsTalkAudioEnvFromProcessEnv,
   parseLetsTalkAudioEngine,
   resolveWhisperCppConfig,
   transcribeWithWhisperCpp,
 } = require('../out/bridge/letsTalkLocalAudio');
+
+test('letsTalkLocalAudio: letsTalkAudioEnvFromProcessEnv maps env keys', () => {
+  assert.deepEqual(
+    letsTalkAudioEnvFromProcessEnv({
+      LETS_TALK_AUDIO_ENGINE: 'local',
+      OPENAI_API_KEY: 'sk-test',
+      WHISPER_CPP_BIN: '/bin/whisper',
+      WHISPER_MODEL_PATH: '/models/base.bin',
+      FFMPEG_BIN: '/bin/ffmpeg',
+      LETS_TALK_SPEECH_LANGUAGE: 'fr',
+    }),
+    {
+      engine: 'local',
+      openaiApiKey: 'sk-test',
+      whisperCppBin: '/bin/whisper',
+      whisperModelPath: '/models/base.bin',
+      ffmpegBin: '/bin/ffmpeg',
+      speechLanguage: 'fr',
+    }
+  );
+});
 
 test('letsTalkLocalAudio: parseLetsTalkAudioEngine accepts local and openai', () => {
   assert.equal(parseLetsTalkAudioEngine('local'), 'local');
@@ -163,4 +185,30 @@ test('letsTalkLocalAudio: returns unprocessable when whisper fails and ffmpeg is
     deps
   );
   assert.equal(result.kind, 'transient-failure');
+});
+
+test('letsTalkLocalAudio: missing whisper output file is unprocessable', async () => {
+  const deps = {
+    mkTempDir: async () => '/tmp/work',
+    writeFile: async () => {},
+    readFile: async () => '',
+    exists: () => false,
+    rmDir: async () => {},
+    execFile: async () => {},
+  };
+  const result = await transcribeWithWhisperCpp(
+    { bin: '/bin/whisper-cli', modelPath: '/models/base.bin' },
+    Buffer.from('audio-bytes'),
+    'audio/webm',
+    deps
+  );
+  assert.equal(result.kind, 'unprocessable');
+});
+
+test('letsTalkLocalAudio: empty audio bytes are unprocessable', async () => {
+  const result = await transcribeWithWhisperCpp(
+    { bin: '/bin/whisper-cli', modelPath: '/models/base.bin' },
+    Buffer.alloc(0)
+  );
+  assert.equal(result.kind, 'unprocessable');
 });

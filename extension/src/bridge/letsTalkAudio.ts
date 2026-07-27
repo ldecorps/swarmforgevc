@@ -7,6 +7,7 @@ import {
   parseLetsTalkSpeechLanguage,
   resolveTurnSpeechLanguage,
   speechLocaleForLanguage,
+  extensionForMime,
   type LetsTalkSpeechLanguage,
   type LetsTalkSpeechLanguageSetting,
 } from './letsTalkCore';
@@ -34,38 +35,40 @@ export function classifyTranscriptionResponse(
   providerError?: OpenAiTranscriptionError
 ): SttResult {
   if (!ok) {
-    if (status === 429 || providerError?.code === 'insufficient_quota') {
-      return {
-        kind: 'transient-failure',
-        reason: 'OpenAI API quota exceeded — check billing and plan limits.',
-      };
-    }
-    return status >= 400 && status < 500 ? { kind: 'unprocessable' } : { kind: 'transient-failure' };
+    return isTransientTranscriptionError(status, providerError)
+      ? {
+          kind: 'transient-failure',
+          reason: 'OpenAI API quota exceeded — check billing and plan limits.',
+        }
+      : isClientTranscriptionError(status)
+        ? { kind: 'unprocessable' }
+        : { kind: 'transient-failure' };
   }
   return text ? { kind: 'ok', transcript: text } : { kind: 'unprocessable' };
 }
 
-export function extensionForMime(mimeType: string | undefined): string {
-  if (!mimeType) {
-    return 'audio.webm';
+function isTransientTranscriptionError(status: number, providerError?: OpenAiTranscriptionError): boolean {
+  return status === 429 || providerError?.code === 'insufficient_quota';
+}
+
+function isClientTranscriptionError(status: number): boolean {
+  return status >= 400 && status < 500;
+}
+
+function buildTranscriptionForm(
+  bytes: Buffer,
+  mimeType: string | undefined,
+  language?: LetsTalkSpeechLanguageSetting
+): FormData {
+  const form = new FormData();
+  const filename = extensionForMime(mimeType);
+  const blobType = mimeType?.split(';')[0] || 'audio/webm';
+  form.append('file', new Blob([bytes], { type: blobType }), filename);
+  form.append('model', OPENAI_STT_MODEL);
+  if (language && language !== 'en' && language !== 'auto') {
+    form.append('language', language);
   }
-  const lower = mimeType.toLowerCase();
-  if (lower.includes('webm')) {
-    return 'audio.webm';
-  }
-  if (lower.includes('ogg')) {
-    return 'audio.ogg';
-  }
-  if (lower.includes('wav')) {
-    return 'audio.wav';
-  }
-  if (lower.includes('mpeg') || lower.includes('mp3')) {
-    return 'audio.mp3';
-  }
-  if (lower.includes('mp4') || lower.includes('m4a') || lower.includes('aac') || lower.includes('x-m4a') || lower.includes('caf')) {
-    return 'audio.m4a';
-  }
-  return 'audio.webm';
+  return form;
 }
 
 export async function transcribeAudioBytes(
@@ -78,18 +81,10 @@ export async function transcribeAudioBytes(
     return { kind: 'unprocessable' };
   }
   try {
-    const form = new FormData();
-    const filename = extensionForMime(mimeType);
-    const blobType = mimeType?.split(';')[0] || 'audio/webm';
-    form.append('file', new Blob([bytes], { type: blobType }), filename);
-    form.append('model', OPENAI_STT_MODEL);
-    if (language && language !== 'en' && language !== 'auto') {
-      form.append('language', language);
-    }
     const res = await fetch('https://api.openai.com/v1/audio/transcriptions', {
       method: 'POST',
       headers: { authorization: `Bearer ${openaiApiKey}` },
-      body: form,
+      body: buildTranscriptionForm(bytes, mimeType, language),
     });
     const json = (await res.json()) as { text?: string; error?: OpenAiTranscriptionError };
     return classifyTranscriptionResponse(res.status, res.ok, json?.text, json?.error);
@@ -138,35 +133,37 @@ function normalizeLetsTalkAudioEnv(envOrOpenAiKey: LetsTalkAudioEnv | string | u
   return envOrOpenAiKey;
 }
 
-export function resolveLetsTalkAudioAdapters(
-  envOrOpenAiKey: LetsTalkAudioEnv | string | undefined,
-  overrides?: { transcribeAudio?: TranscribeAudio; synthesizeSpeech?: SynthesizeSpeech }
+function adaptersFromOverrides(
+  env: LetsTalkAudioEnv,
+  overrides: { transcribeAudio?: TranscribeAudio; synthesizeSpeech?: SynthesizeSpeech }
 ): LetsTalkAudioAdapters {
-  if (overrides?.transcribeAudio || overrides?.synthesizeSpeech) {
-    return {
-      transcribeAudio: overrides.transcribeAudio,
-      synthesizeSpeech: overrides.synthesizeSpeech,
-      clientTts: overrides.synthesizeSpeech === undefined && overrides.transcribeAudio !== undefined,
-      ...speechSettingsFromEnv(normalizeLetsTalkAudioEnv(envOrOpenAiKey)),
-    };
+  return {
+    transcribeAudio: overrides.transcribeAudio,
+    synthesizeSpeech: overrides.synthesizeSpeech,
+    clientTts: overrides.synthesizeSpeech === undefined && overrides.transcribeAudio !== undefined,
+    ...speechSettingsFromEnv(env),
+  };
+}
+
+function adaptersFromLocalEngine(env: LetsTalkAudioEnv, speech: ReturnType<typeof speechSettingsFromEnv>): LetsTalkAudioAdapters | undefined {
+  const whisper = resolveWhisperCppConfig(env);
+  if (!whisper) {
+    return undefined;
   }
-  const env = normalizeLetsTalkAudioEnv(envOrOpenAiKey);
-  const speech = speechSettingsFromEnv(env);
-  const engine = parseLetsTalkAudioEngine(env.engine);
-  if (engine === 'local') {
-    const whisper = resolveWhisperCppConfig(env);
-    if (!whisper) {
-      return {};
-    }
-    return {
-      transcribeAudio: (bytes, mimeType) => transcribeWithWhisperCpp(whisper, bytes, mimeType),
-      clientTts: true,
-      ...speech,
-    };
-  }
+  return {
+    transcribeAudio: (bytes, mimeType) => transcribeWithWhisperCpp(whisper, bytes, mimeType),
+    clientTts: true,
+    ...speech,
+  };
+}
+
+function adaptersFromOpenAi(
+  env: LetsTalkAudioEnv,
+  speech: ReturnType<typeof speechSettingsFromEnv>
+): LetsTalkAudioAdapters | undefined {
   const openaiApiKey = env.openaiApiKey?.trim();
   if (!openaiApiKey) {
-    return {};
+    return undefined;
   }
   return {
     transcribeAudio: (bytes, mimeType) =>
@@ -181,9 +178,26 @@ export function resolveLetsTalkAudioAdapters(
   };
 }
 
+export function resolveLetsTalkAudioAdapters(
+  envOrOpenAiKey: LetsTalkAudioEnv | string | undefined,
+  overrides?: { transcribeAudio?: TranscribeAudio; synthesizeSpeech?: SynthesizeSpeech }
+): LetsTalkAudioAdapters {
+  const env = normalizeLetsTalkAudioEnv(envOrOpenAiKey);
+  if (overrides?.transcribeAudio || overrides?.synthesizeSpeech) {
+    return adaptersFromOverrides(env, overrides);
+  }
+  const speech = speechSettingsFromEnv(env);
+  if (parseLetsTalkAudioEngine(env.engine) === 'local') {
+    return adaptersFromLocalEngine(env, speech) ?? {};
+  }
+  return adaptersFromOpenAi(env, speech) ?? {};
+}
+
 export function resolveLetsTalkAudioAdaptersFromEnv(
   processEnv: NodeJS.ProcessEnv = process.env,
   overrides?: { transcribeAudio?: TranscribeAudio; synthesizeSpeech?: SynthesizeSpeech }
 ): LetsTalkAudioAdapters {
   return resolveLetsTalkAudioAdapters(letsTalkAudioEnvFromProcessEnv(processEnv), overrides);
 }
+
+export { extensionForMime } from './letsTalkCore';

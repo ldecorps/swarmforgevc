@@ -43,19 +43,15 @@ export interface LetsTalkTurnSuccess {
 
 type LetsTalkTurnFailure = { success: false; reason: string; recoverable: boolean; state: 'ready' | 'error' };
 
-async function promptAgentAndSynthesize(
+async function promptAgentForTranscript(
   transcript: string,
   deps: LetsTalkRouteDeps
-): Promise<LetsTalkTurnSuccess | LetsTalkTurnFailure> {
+): Promise<{ replyText: string; agentId: string } | LetsTalkTurnFailure> {
   const turnLanguage = resolveTurnSpeechLanguage(deps.speechLanguage ?? 'auto', transcript);
-  const speechLocale = speechLocaleForLanguage(turnLanguage);
-  let replyText: string;
-  let agentId: string;
   try {
     const prompt = formatLetsTalkAgentPrompt(transcript, turnLanguage);
     const result = await deps.agentSession.promptAgent(prompt);
-    replyText = result.replyText;
-    agentId = result.agentId;
+    return { replyText: result.replyText, agentId: result.agentId };
   } catch (err) {
     return {
       success: false,
@@ -64,20 +60,41 @@ async function promptAgentAndSynthesize(
       state: 'ready',
     };
   }
+}
+
+function clientTtsTurnSuccess(
+  transcript: string,
+  replyText: string,
+  agentId: string,
+  speechLocale: string
+): LetsTalkTurnSuccess {
+  return {
+    success: true,
+    state: 'ready',
+    transcript,
+    replyText,
+    replySpeechText: replyTextForSpeechSynthesis(replyText),
+    clientTts: true,
+    speechLocale,
+    agentId,
+  };
+}
+
+async function promptAgentAndSynthesize(
+  transcript: string,
+  deps: LetsTalkRouteDeps
+): Promise<LetsTalkTurnSuccess | LetsTalkTurnFailure> {
+  const turnLanguage = resolveTurnSpeechLanguage(deps.speechLanguage ?? 'auto', transcript);
+  const speechLocale = speechLocaleForLanguage(turnLanguage);
+  const agentResult = await promptAgentForTranscript(transcript, deps);
+  if ('success' in agentResult) {
+    return agentResult;
+  }
+  const { replyText, agentId } = agentResult;
   if (!deps.synthesizeSpeech) {
-    if (deps.clientTts) {
-      return {
-        success: true,
-        state: 'ready',
-        transcript,
-        replyText,
-        replySpeechText: replyTextForSpeechSynthesis(replyText),
-        clientTts: true,
-        speechLocale,
-        agentId,
-      };
-    }
-    return { success: false, reason: 'text-to-speech is not configured', recoverable: true, state: 'ready' };
+    return deps.clientTts
+      ? clientTtsTurnSuccess(transcript, replyText, agentId, speechLocale)
+      : { success: false, reason: 'text-to-speech is not configured', recoverable: true, state: 'ready' };
   }
   const tts = await deps.synthesizeSpeech(replyTextForSpeechSynthesis(replyText));
   if (tts.kind !== 'ok') {
@@ -106,6 +123,10 @@ export function isLetsTalkNewSessionRoute(req: http.IncomingMessage, url: string
   return req.method === 'POST' && (url === '/lets-talk/new-session' || url.startsWith('/lets-talk/new-session?'));
 }
 
+function sttNotConfiguredFailure(): LetsTalkTurnFailure {
+  return { success: false, reason: 'speech-to-text is not configured', recoverable: true, state: 'ready' };
+}
+
 async function transcribeTurnAudio(
   bytes: Buffer,
   mimeType: string | undefined,
@@ -113,7 +134,7 @@ async function transcribeTurnAudio(
   sttAttempts?: { transientFailuresBeforeSuccess: number }
 ): Promise<{ transcript: string } | LetsTalkTurnFailure> {
   if (!deps.transcribeAudio) {
-    return { success: false, reason: 'speech-to-text is not configured', recoverable: true, state: 'ready' };
+    return sttNotConfiguredFailure();
   }
   const stt = await deps.transcribeAudio(bytes, mimeType);
   if (sttAttempts && stt.kind === 'transient-failure') {
@@ -123,15 +144,12 @@ async function transcribeTurnAudio(
   if (sttFailure) {
     return sttFailure;
   }
-  if (stt.kind !== 'ok') {
-    return {
-      success: false,
-      reason: unprocessableAudioMessage(),
-      recoverable: true,
-      state: 'ready',
-    };
-  }
-  return { transcript: stt.transcript };
+  return stt.kind === 'ok' ? { transcript: stt.transcript } : {
+    success: false,
+    reason: unprocessableAudioMessage(),
+    recoverable: true,
+    state: 'ready',
+  };
 }
 
 export async function processLetsTalkTurn(

@@ -110,6 +110,13 @@ test('a missing BRIDGE_TOKEN exits non-zero with a clear message, never a raw ne
   assert.match(result.stderr, /BRIDGE_TOKEN is not set/);
 });
 
+test('an invalid port argument exits non-zero and prints usage', async () => {
+  const target = mkTmp();
+  const result = await runCli(target, 'not-a-port', { BRIDGE_TOKEN: 'tok' });
+  assert.notEqual(result.exitCode, 0);
+  assert.match(result.stderr, /Usage: start-bridge-headless\.js/);
+});
+
 // A single subprocess smoke test locks the compiled CLI's own wiring
 // (require.main === module, real argv/env boundary, and the ONLY safe place
 // to actually bind a real port and serve a real HTTP request) - an ADDITION

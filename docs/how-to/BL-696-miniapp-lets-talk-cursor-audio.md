@@ -102,3 +102,20 @@ That clears the shared session the same way `/new` does on the text topic.
 - Not a replacement for the Cursor Remote or Concierge text topics.
 - Not coordinator, operator, or pipeline voice.
 - Not background or lock-screen playback.
+
+## Developer Gates (Let's Talk + cursor bridge)
+
+From `extension/`:
+
+```bash
+npm run coverage:lets-talk-cursor-bridge   # >= 90% per scoped production file
+npm run crap:lets-talk-cursor-bridge       # CRAP <= 6
+npm run test:properties                    # BL-696 invariant property tests
+npm run mutation:lets-talk-cursor-bridge   # hardener: scoped Stryker
+```
+
+After TypeScript changes, restart the headless Mini App bridge:
+
+```bash
+./swarmforge/scripts/bounce_bridge_headless.sh [repo-root] [port]
+```

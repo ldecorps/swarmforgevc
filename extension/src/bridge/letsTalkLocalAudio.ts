@@ -6,7 +6,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { promisify } from 'util';
 import type { SttResult } from '../tools/telegramFrontDeskBotCore';
-import { extensionForMime } from './letsTalkAudio';
+import { extensionForMime } from './letsTalkCore';
 import { parseLetsTalkSpeechLanguage, type LetsTalkSpeechLanguageSetting } from './letsTalkCore';
 
 const execFileAsync = promisify(execFile);
