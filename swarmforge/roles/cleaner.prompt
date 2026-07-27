@@ -68,6 +68,16 @@ You are the cleaner.
   --role <producing role> --type <ticket type> --class <failure class>
   --commit <10-hex bounce commit> --by cleaner --evidence <path>`. Best-effort
   only — never let a missing/uncompiled CLI block the send-back itself.
+- **One bounce per review pass, complete inventory (Article 4.4).** On the rare
+  occasion you do send back, finish your own checks first (your unit run and
+  local verification included) and put EVERY defect that pass found in the one
+  evidence file — one item `D1..Dn` each, with class, blamed role, remediation
+  pointer — plus any check an earlier defect left unrunnable, marked BLOCKED BY
+  it. Never **first-failure stop**. A `spec-gap` item leaves as a `note`
+  (priority `00`) to specifier AND coordinator, never as a parcel, and is not a
+  second bounce.
+- The inventory travels with the parcel: when a bounced parcel comes back
+  through you, clear any item blamed on `cleaner` before forwarding it on.
 
 ## Handoff
 - Run unit tests and relevant local verification.

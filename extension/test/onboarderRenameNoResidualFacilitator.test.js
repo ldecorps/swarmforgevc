@@ -47,9 +47,11 @@ const ALLOWED_RESIDUAL_FILES = new Set([
   // 2026-07-27 (backlog/evidence/BL-684-architect-bounce-20260727.md) - the
   // original rename silently rewrote this quotation; restored here.
   'docs/explanation/lessons-2026-07-25-green-suites-that-proved-nothing.md',
-  // Promoted paused/ -> active/ 2026-07-27 (BL-590 resumed for cleaner review);
-  // filename keeps its old slug per boundary 2 above.
-  'backlog/active/BL-590-onboarding-facilitator-agent.yaml',
+  // Promoted paused/ -> active/ 2026-07-27 (BL-590 resumed for cleaner review),
+  // then re-parked to hold/ the same day (ambulance-mode operator directive);
+  // filename keeps its old slug per boundary 2 above regardless of which
+  // backlog stage directory currently holds it.
+  'backlog/hold/BL-590-onboarding-facilitator-agent.yaml',
   'backlog/paused/BL-624-onboarding-facilitator-survey-to-gate.yaml',
   'backlog/paused/BL-625-onboarding-facilitator-prompts-and-launch-handoff.yaml',
   'backlog/paused/BL-643-document-the-non-pipeline-agents-and-rule-on-onboarder.yaml',

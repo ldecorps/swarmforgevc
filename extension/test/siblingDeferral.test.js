@@ -216,3 +216,14 @@ test('with two open blockers, a failure matching neither signature bounces (does
   const disposition = decideDisposition(openBlockers, { failureClass: 'acceptance', check: 'npm run test:acceptance' });
   assert.deepEqual(disposition, { kind: 'bounce' });
 });
+
+// BL-688 recordable-spec-failure-classes-05: a sibling deferral carrying a
+// WIDENED class (spec-gap) suppresses only its own signature - it changes no
+// suppression semantics, it merely widens what a deferral may be filed under.
+test('a deferral carrying the widened class spec-gap suppresses only its own signature - an unrelated failure of its own still bounces', () => {
+  const openBlockers = [
+    { blockedBy: 'BL-501', failureClass: 'spec-gap', check: 'npm run acceptance:spec-gap-check', commit: 'abc1234567', at: '2026-07-17T10:00:00.000Z' },
+  ];
+  const disposition = decideDisposition(openBlockers, { failureClass: 'unit', check: 'npm test' });
+  assert.deepEqual(disposition, { kind: 'bounce' });
+});
