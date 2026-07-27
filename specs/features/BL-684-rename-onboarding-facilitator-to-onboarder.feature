@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=b1645b593bfa11bb8f81df31e99eaf21c01debbd6795bc55b0bf49febb27989b
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-07-27T07:29:23.863698508Z","feature_name":"The Onboarding Facilitator is renamed to the Onboarder without breaking a live agent","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-684-rename-onboarding-facilitator-to-onboarder.feature","background_hash":"abb065c4579f8c976e1dc687bec98f35af2715257d40429b66ca4fb28df79094","implementation_hash":"unknown","scenarios":[{"index":1,"name":"every caller of a renamed path still resolves","scenario_hash":"2aaad5953b1d76d66ce452c4ff59d108251e35e5bb5144a2da8bc0fefd87c115","mutation_count":6,"result":{"Total":6,"Killed":6,"Survived":0,"Errors":0},"tested_at":"2026-07-27T07:29:23.863698508Z"},{"index":4,"name":"an old-named pid file that is not alive never blocks a start","scenario_hash":"1e2d1070b31e954c8474c257e310d1b2fab2be03836f8992c949358059addbd8","mutation_count":3,"result":{"Total":3,"Killed":3,"Survived":0,"Errors":0},"tested_at":"2026-07-27T07:29:23.863698508Z"},{"index":5,"name":"the stop path clears the agent's artifacts under both names","scenario_hash":"882f34c439e9e808fdda309d348f1f0990376a27c2491c277481e233f5408665","mutation_count":4,"result":{"Total":4,"Killed":4,"Survived":0,"Errors":0},"tested_at":"2026-07-27T07:29:23.863698508Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: The Onboarding Facilitator is renamed to the Onboarder without breaking a live agent
 
   The human's own word was "Onboarder" - it appears in BL-590's source quoting them
