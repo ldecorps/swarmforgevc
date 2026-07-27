@@ -8,9 +8,12 @@ const { execFileSync } = require('node:child_process');
 // cleaner/hardener pass - or an unrelated future ticket - never quietly
 // reintroduces it. Two carve-outs, both principled, not convenience:
 //
-// 1. backlog/evidence/ and backlog/done/ (invariant 3 - the dated audit
-//    trail is never rewritten, so it is excluded from the scan entirely,
-//    not merely whitelisted).
+// 1. backlog/evidence/, backlog/done/ (invariant 3 - the dated audit trail
+//    is never rewritten, so it is excluded from the scan entirely, not
+//    merely whitelisted) and docs/briefings/ (dated generated reports -
+//    the same "a record keeps the words that were actually used when it
+//    was written" rationale; a NEW dated file appears on every future run
+//    and a hardcoded per-date whitelist entry would go stale by tomorrow).
 // 2. A short, explicit whitelist of files that legitimately still say the
 //    word because they ARE the record of the naming decision (BL-684's own
 //    ticket/feature, BL-643's ruling narrative and its own "checks for the
@@ -34,7 +37,7 @@ const { execFileSync } = require('node:child_process');
 // unlisted match fails it.
 const REPO_ROOT = path.join(__dirname, '..', '..');
 
-const EXEMPT_PREFIXES = ['backlog/evidence/', 'backlog/done/'];
+const EXEMPT_PREFIXES = ['backlog/evidence/', 'backlog/done/', 'docs/briefings/'];
 
 const ALLOWED_RESIDUAL_FILES = new Set([
   'backlog/active/BL-684-rename-onboarding-facilitator-to-onboarder.yaml',
@@ -48,7 +51,10 @@ const ALLOWED_RESIDUAL_FILES = new Set([
   'backlog/topics/BL-684.json',
   'docs/design/BL-659-traceability-explorer-mockup.html',
   'specs/features/BL-643-non-pipeline-agents-documented-as-a-class.feature.draft',
-  'specs/features/BL-684-rename-onboarding-facilitator-to-onboarder.feature.draft',
+  // Materialized from its .draft by the specifier (BL-441 recovery) - the
+  // live filename keeps the ticket's own BL-684 record slug (boundary 2),
+  // same as its own .yaml above.
+  'specs/features/BL-684-rename-onboarding-facilitator-to-onboarder.feature',
   'specs/pipeline/steps/bl633InvariantsSectionSteps.js',
   'swarmforge/scripts/launch_onboarder.sh',
   'swarmforge/scripts/stop_ancillary_services.sh',

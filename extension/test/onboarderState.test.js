@@ -12,6 +12,7 @@ const {
   isLikelyRepoUrl,
   pickActiveOnboardingState,
   handleOnboardingMessage,
+  renderStatus,
 } = require('../out/onboarding/onboarderState');
 
 const fixedNow = () => 1_700_000_000_000;
@@ -207,4 +208,154 @@ test('BL-590 architect bounce defect 2: re-posting the URL of a FINISHED (prereq
   const outcome = handleOnboardingMessage([finished], 'https://github.com/acme/widget', fixedNow);
   assert.equal(outcome.kind, 'started');
   assert.deepEqual(outcome.state.verifiedSteps, []);
+});
+
+// ── BL-684 hardening pass: the rename left the PREREQUISITE_STEPS checklist
+// data and a handful of control-flow branches without a test that
+// distinguishes their actual content/behavior from a gutted stand-in
+// (mutation survivors, not a behavior change - engineering.prompt) ────────
+
+const EXPECTED_STEP_MARKERS = {
+  toolchain: {
+    requiredMarkers: ['git version', 'tmux', 'babashka', 'claude'],
+    failureMarkers: ['not found', 'command not found'],
+  },
+  'github-access': {
+    requiredMarkers: ['successfully authenticated'],
+    failureMarkers: ['permission denied', 'could not resolve hostname'],
+  },
+  'fork-clone': {
+    requiredMarkers: ['cloning into'],
+    failureMarkers: ['fatal:', 'repository not found'],
+  },
+  'target-repo': {
+    requiredMarkers: ['cloning into', 'origin'],
+    failureMarkers: ['fatal:', 'repository not found'],
+  },
+  'bot-token': {
+    requiredMarkers: ['new bot', 'token'],
+    failureMarkers: ['reused the primary', "primary's token"],
+  },
+};
+
+test('BL-590: each step\'s required/failure marker lists match the documented checklist exactly', () => {
+  for (const [stepId, expected] of Object.entries(EXPECTED_STEP_MARKERS)) {
+    const spec = PREREQUISITE_STEPS[stepId].verification;
+    assert.deepEqual(spec.requiredMarkers, expected.requiredMarkers, `${stepId} requiredMarkers`);
+    assert.deepEqual(spec.failureMarkers, expected.failureMarkers, `${stepId} failureMarkers`);
+  }
+});
+
+test('BL-590: each step guidance verificationName is a specific descriptive label, not empty or generic', () => {
+  const expected = {
+    toolchain: 'toolchain version-check output',
+    'github-access': 'GitHub SSH access check output',
+    'fork-clone': 'swarmforge fork clone output',
+    'target-repo': 'target repo clone output',
+    'bot-token': 'dedicated bot token confirmation',
+  };
+  for (const [stepId, name] of Object.entries(expected)) {
+    assert.equal(PREREQUISITE_STEPS[stepId].verificationName, name);
+  }
+});
+
+test('BL-590: each step guidance id matches its own key in the table', () => {
+  for (const stepId of PREREQUISITE_STEP_ORDER) {
+    assert.equal(PREREQUISITE_STEPS[stepId].id, stepId);
+  }
+});
+
+test('BL-590: each step instruction actually names its real command and the paste-here prompt', () => {
+  const expectedSnippets = {
+    toolchain: [
+      'On the target host, run:',
+      'git --version && node --version && tmux -V && bb --version && claude --version',
+      'Paste the full output here.',
+    ],
+    'github-access': ['On the target host, run:', 'ssh -T git@github.com', 'Paste the full output here (a working key prints a "successfully authenticated" message).'],
+    'fork-clone': ['On the target host, run:', 'git clone git@github.com:unclebob/swarm-forge.git && cd swarm-forge && git rev-parse --short HEAD', 'Paste the full output here.'],
+    'target-repo': ['On the target host, run:', 'git clone <the target repo URL you gave me> && cd <the cloned directory> && git remote -v', 'Paste the full output here.'],
+    'bot-token': ['see BL-622/BL-439', 'Paste the new bot username and confirmation that the token was saved here.'],
+  };
+  for (const [stepId, snippets] of Object.entries(expectedSnippets)) {
+    for (const snippet of snippets) {
+      assert.ok(PREREQUISITE_STEPS[stepId].instruction.includes(snippet), `${stepId} instruction missing "${snippet}"`);
+    }
+  }
+});
+
+test('BL-590: verifyPrerequisiteStep reports the specific failure marker found, distinct from a missing-marker reason', () => {
+  const verdict = verifyPrerequisiteStep('github-access', 'permission denied (publickey).');
+  assert.equal(verdict.passed, false);
+  assert.equal(verdict.reason, 'output contains "permission denied"');
+});
+
+test('BL-590: currentPrerequisiteStep returns null once phase is prerequisites-ready, regardless of stepIndex', () => {
+  const readyButLowIndex = { ...createOnboardingState('https://github.com/acme/widget', fixedNow), phase: 'prerequisites-ready', stepIndex: 2 };
+  assert.equal(currentPrerequisiteStep(readyButLowIndex), null);
+});
+
+test('BL-590: applyPrincipalReply on a prerequisites-ready state with a non-control message replies with the ready status, never crashes', () => {
+  const ready = { ...createOnboardingState('https://github.com/acme/widget', fixedNow), phase: 'prerequisites-ready', stepIndex: 5 };
+  const turn = applyPrincipalReply(ready, 'some unrelated text', fixedNow);
+  assert.equal(turn.state, ready);
+  assert.match(turn.message, /survey/i);
+});
+
+test('BL-590 verification-gates-advancement-03: an advance that is not the final step lands back in checking-prerequisites', () => {
+  const state = createOnboardingState('https://github.com/acme/widget', fixedNow);
+  const turn = applyPrincipalReply(state, 'git version 2.43.0\nv20.11.0\ntmux 3.4\nBabashka 1.3.190\nclaude 1.2.3', fixedNow);
+  assert.equal(turn.state.phase, 'checking-prerequisites');
+});
+
+test('BL-590: the prerequisites-ready message names both the survey and the onboarding contract, exactly', () => {
+  const ready = { ...createOnboardingState('https://github.com/acme/widget', fixedNow), phase: 'prerequisites-ready' };
+  assert.equal(
+    renderStatus(ready),
+    'All prerequisites verified - prerequisites are ready. Next comes the survey phase: I will survey your ' +
+      'target repo and propose an onboarding contract.'
+  );
+});
+
+test('BL-590: pickActiveOnboardingState never lets an earlier-touched item override an already-found later one, and ties favor the first-seen', () => {
+  const earlyTouched = { ...createOnboardingState('https://github.com/acme/early', () => 1), updatedAtMs: 300 };
+  const olderButLaterInArray = { ...createOnboardingState('https://github.com/acme/older', () => 1), updatedAtMs: 100 };
+  assert.equal(pickActiveOnboardingState([earlyTouched, olderButLaterInArray]).targetRepoUrl, 'https://github.com/acme/early');
+
+  const tieA = { ...createOnboardingState('https://github.com/acme/tie-a', () => 1), updatedAtMs: 200 };
+  const tieB = { ...createOnboardingState('https://github.com/acme/tie-b', () => 1), updatedAtMs: 200 };
+  assert.equal(pickActiveOnboardingState([tieA, tieB]).targetRepoUrl, 'https://github.com/acme/tie-a');
+});
+
+test('BL-590: handleOnboardingMessage trims surrounding whitespace from a pasted repo URL before storing it', () => {
+  const outcome = handleOnboardingMessage([], '  https://github.com/acme/widget  ', fixedNow);
+  assert.equal(outcome.state.targetRepoUrl, 'https://github.com/acme/widget');
+});
+
+test('BL-590: isBareDoneClaim regex anchors and character classes are exact, not merely substring-ish', () => {
+  assert.equal(isBareDoneClaim('xdone'), false); // ^ anchor: no unanchored match after leading garbage
+  assert.equal(isBareDoneClaim('done extra'), false); // $ anchor: no trailing garbage
+  assert.equal(isBareDoneClaim('done  '), true); // trailing \s* really allows trailing whitespace
+  assert.equal(isBareDoneClaim("its  done"), true); // it's-prefix requires \s+ (1+), not exactly one space
+  assert.equal(isBareDoneClaim('complete'), true); // the "d" in complete[d]? is really optional
+  assert.equal(isBareDoneClaim('completed'), true); // "d" is really allowed, not excluded
+});
+
+test('BL-590: classifyControl pause/proceed regex anchors are exact, not substring matches', () => {
+  assert.equal(classifyControl('xpause'), null); // ^ anchor
+  assert.equal(classifyControl('pause now'), null); // $ anchor
+  assert.equal(classifyControl('  pause'), 'pause'); // leading \s* really allows whitespace
+  assert.equal(classifyControl('pause  '), 'pause'); // trailing \s* really allows whitespace
+  assert.equal(classifyControl('xproceed'), null); // ^ anchor
+  assert.equal(classifyControl('proceed now'), null); // $ anchor
+  assert.equal(classifyControl('  proceed'), 'proceed'); // leading \s* really allows whitespace
+  assert.equal(classifyControl('proceed  '), 'proceed'); // trailing \s* really allows whitespace
+});
+
+test('BL-590: isLikelyRepoUrl regex anchors and scheme are exact, not substring matches', () => {
+  assert.equal(isLikelyRepoUrl('xhttps://github.com/a/b'), false); // ^ anchor
+  assert.equal(isLikelyRepoUrl('https://github.com/a/b extra'), false); // $ anchor
+  assert.equal(isLikelyRepoUrl('  https://github.com/a/b'), true); // leading \s* really allows whitespace
+  assert.equal(isLikelyRepoUrl('https://github.com/a/b  '), true); // trailing \s* really allows whitespace
+  assert.equal(isLikelyRepoUrl('http://github.com/a/b'), true); // the "s" in https? is really optional
 });

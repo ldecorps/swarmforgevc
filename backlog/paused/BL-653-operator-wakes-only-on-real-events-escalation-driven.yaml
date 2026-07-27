@@ -8,11 +8,12 @@ human_approval: approved
 severity: medium
 priority: 07
 direction: human-requested
-depends_on: []
+depends_on: [BL-611]
 assigned_to: specifier
 mutation_cost: high
 invariants:
   - "The operator LLM wakes only for an inbound human message or a deterministic-layer escalation; the runtime never manufactures a wake from its own sweep."
+  - "The patrol wake is never removed before a live producer of escalations exists. At every commit in this ticket's history, at least one of the two is true: the payload-free timer still wakes the operator, or a real emitter is wired and proven to reach it end to end. Removing the old wake while the new one is unpopulated does not degrade supervision, it deletes it — silently, and precisely on the nights nobody is watching."
 
 approval_context: >
   Operator, 2026-07-25 23:55, designing the unattended-nights wake model:
@@ -128,3 +129,79 @@ notes: |
   free) do the watching, and the expensive judgement layer is summoned, never
   scheduled. The operator's one-line framing is the spec: "il ne devrait
   démarrer que s'il y a un message telegram, ou si le babysitter le réveille."
+
+  ## Amended 2026-07-27 (specifier) — operator intake dispositioned
+
+  From `INTAKE-unpark-bl653-stuck-parcel-blind-spot.md` (filed 2026-07-26, live
+  during the incident). The intake recommended "unpark unchanged, attach this as
+  the fixture, give it priority". Accepted, with one correction it did not ask
+  for and one flag it raised now answered.
+
+  ### The measured fixture (attach to scenarios 1, 3 and 4)
+
+  Previously this ticket argued from the operator's one-line framing. The
+  2026-07-26 night measured it:
+
+  - 14:54Z a QA->hardender parcel enters `in_process`; five architect->hardender
+    parcels join by 18:44Z. All six sit untouched — hardender is a dormant
+    mono-router rotation target and nothing rotates the resident there.
+  - 19:20:59Z babysitter first WARNs all six as `stuck-*`. It repeats the same
+    WARN every ~5min sweep through 20:03:40Z — six-plus sweeps, 40+ minutes,
+    oldest parcel then 5h+ old.
+  - 18:36:30Z, 19:06:52Z, 19:35:21Z, 20:05:31Z the operator LLM wakes four times
+    on `SWARM_CHECK_TIMER`. Every event is payload-free — literally
+    `{"type":"SWARM_CHECK_TIMER"}`, no finding text attached. Each run burns
+    ~60-90s and leaves zero artifacts: no commit, no note, no handoff.
+
+  Four wakes, a detector shouting for 40 minutes, and no connection between
+  them. That is scenario 1's headline claim (a wake that carries no information
+  buys nothing) and scenario 3's converse (a wake carrying the finding text is
+  the whole point), measured rather than argued.
+
+  ### depends_on: [BL-611] — added, and NOT a way of deprioritising this
+
+  The intake asked for priority; this dependency is what makes the fast path
+  actually work, not a deferral. BL-611 is already priority 05 to this ticket's
+  07, so the order is unchanged — the edge just makes it data instead of luck.
+
+  The reason is a producer/consumer split that would otherwise bite hard. The
+  operator side of this ticket is buildable today: `operator_lib.bb`,
+  `operator_runtime.bb` and their test runners are all tracked. The EMITTER is
+  not — the babysitter lives entirely in gitignored `.swarmforge/operator/`
+  (see BL-611's own notes), so nothing tracked can emit a `BABYSITTER_ESCALATION`
+  until BL-611 ports it.
+
+  Build the consumer first and every unit test passes over fakes while the live
+  path stays dark — the known epic-wiring failure shape. Here it is worse than
+  usual, because criterion 7 REMOVES night-start.sh's pid-hold and criterion 1
+  asserts zero launches on a healthy night. With no producer wired those two are
+  indistinguishable from zero launches on a catastrophic night. That is what
+  invariant 2 now forbids.
+
+  ### The out-of-band stopgap: preserved, but it does not satisfy this ticket
+
+  The operator patched the live `babysitter_check.sh` on 2026-07-26 (incident
+  containment, outside the pipeline, per the standing working agreement): `stuck-*`
+  keys are carved out of the CRIT-only nudge gate so they nudge like CRIT, same
+  1800s per-key dedup. No severity was reclassified.
+
+  Reviewed as the intake asked. It is a real fix for the COORDINATOR-visible half
+  and a strict subset of this ticket's intent — not a competing design. It closes
+  nothing on the OPERATOR-visible half, which is the half this ticket exists for:
+  the operator still wakes only on the payload-free timer. So it neither satisfies
+  nor supersedes any acceptance criterion here.
+
+  It is preserved where it can actually survive: folded into BL-611's acceptance 4
+  as a must-not-regress fixture. It had to be, and this is the part worth
+  remembering — the patch lives only on this checkout, in a gitignored file, in no
+  git history. A fresh bootstrap loses it, and a faithful port of the pre-patch
+  script would have quietly reinstated the exact blind spot it was written to
+  close.
+
+  ### The durability question the intake flagged as out of scope — answered
+
+  "Whether the babysitter script graduates into the tracked repo instead of
+  hand-authored runtime state": already ticketed, BL-611, human-approved, which
+  ports both scripts into `swarmforge/scripts/` with tests, lifecycle wiring and a
+  runbook. Nothing further needed; recorded here so the flag is visibly closed
+  rather than dropped.
