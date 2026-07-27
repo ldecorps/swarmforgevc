@@ -115,6 +115,13 @@ const CONTENT_EXEMPT = [
   /^backlog\/active\/BL-684-/,
   /^backlog\/paused\/BL-(590|624|625|643)-/,
   /^docs\/briefings\/\d{4}-\d{2}-\d{2}\.md$/,
+  // Dated incident retrospective (invariant 3 rationale, same as the
+  // docs/briefings/ entry above): quotes a real 2026-07-25 architect
+  // send-back verbatim, from before "onboarder" existed as a word in this
+  // codebase. Not a per-date pattern - this is a one-off retrospective, not
+  // a recurring generated file - so an exact match is correct here, same as
+  // the vitest allowlist's own entry for this file.
+  /^docs\/explanation\/lessons-2026-07-25-green-suites-that-proved-nothing\.md$/,
   /^docs\/design\/BL-659-/,
   /^extension\/test\/onboarder.*\.test\.js$/,
   /^specs\/features\/BL-643-.*\.feature\.draft$/,
