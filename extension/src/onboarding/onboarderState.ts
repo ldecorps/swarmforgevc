@@ -12,6 +12,28 @@ export const PREREQUISITE_STEP_ORDER: readonly PrerequisiteStepId[] = PREREQUISI
 
 export type OnboardingPhase = 'checking-prerequisites' | 'prerequisites-ready';
 
+// BL-590 architect bounce #6/#7 (D3/D4): target identity is POLICY, not
+// persistence, so it lives here and both the handler (findInFlightStateForTarget
+// below) and the store (onboarderStateStore.ts's slugifyTargetRepoUrl) import
+// this ONE definition instead of each carrying its own comparison - the two
+// layers disagreeing on "the same target" is what destroyed verified
+// prerequisites when a human re-pasted an alias URL (scheme/.git/trailing-slash
+// variant) of a target already in flight. The strip order (trailing slash,
+// then .git, then trailing slash again) is deliberate so `repo.git/` normalizes
+// like `repo.git` (bounce #6 D4) rather than keeping a stray `.git` in the key.
+export function normalizeTargetRepoUrl(targetRepoUrl: string): string {
+  return targetRepoUrl
+    .trim()
+    .replace(/^[a-z]+:\/\//i, '')
+    .replace(/\/+$/, '')
+    .replace(/\.git$/i, '')
+    .replace(/\/+$/, '');
+}
+
+export function isSameTarget(a: string, b: string): boolean {
+  return normalizeTargetRepoUrl(a) === normalizeTargetRepoUrl(b);
+}
+
 export interface OnboarderState {
   readonly targetRepoUrl: string;
   readonly phase: OnboardingPhase;
@@ -305,7 +327,7 @@ function findInFlightStateForTarget(
   existingStates: readonly OnboarderState[],
   targetRepoUrl: string
 ): OnboarderState | undefined {
-  return existingStates.find((s) => s.targetRepoUrl === targetRepoUrl && s.phase !== 'prerequisites-ready');
+  return existingStates.find((s) => isSameTarget(s.targetRepoUrl, targetRepoUrl) && s.phase !== 'prerequisites-ready');
 }
 
 // BL-590: the onboarder's whole per-message decision, given every
