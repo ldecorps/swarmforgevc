@@ -5,7 +5,7 @@ type: defect
 severity: high
 status: todo
 epic: swarmforge-console
-human_approval: pending
+human_approval: approved
 priority: 03
 direction: human-requested
 mutation_cost: low
