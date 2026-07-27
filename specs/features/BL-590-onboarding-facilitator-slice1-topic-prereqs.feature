@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=ea1150db1d37051f17c6e8f8620056d5ee7d6954a6a9eb5f40d0d75b45d6aa8e
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-07-27T10:20:39.332827402Z","feature_name":"Onboarder slice 1 - the Onboarding topic and the prerequisites phase","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-590-onboarding-facilitator-slice1-topic-prereqs.feature","background_hash":"4e4b57bb5bb2cdb5c253b5a40c43906c5a242409eb85afea2ba053475d8a584a","implementation_hash":"unknown","scenarios":[{"index":5,"name":"every prerequisite step is guided with an instruction and a verification","scenario_hash":"9c39a6a849f27f620791f708339715d8409b9731a7c257479d45c76f59a3785e","mutation_count":5,"result":{"Total":5,"Killed":5,"Survived":0,"Errors":0},"tested_at":"2026-07-27T10:20:39.332827402Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: Onboarder slice 1 - the Onboarding topic and the prerequisites phase
 
   # BL-590 slice 1 (of 3: BL-590 topic+prereqs, BL-624 survey->gate,

@@ -50,6 +50,13 @@ const ALLOWED_RESIDUAL_FILES = new Set([
   // Promoted paused/ -> active/ 2026-07-27 (BL-590 resumed for cleaner review);
   // filename keeps its old slug per boundary 2 above.
   'backlog/active/BL-590-onboarding-facilitator-agent.yaml',
+  // Same boundary-2 filename (old slug), plus the hardener's own required
+  // Gherkin acceptance mutation pass (BL-113) embeds this file's absolute
+  // path - which contains the filename - into the manifest header it writes
+  // into the feature file's own content, so the word now also appears in
+  // content, not just the filename. Not a missed rename; a side effect of
+  // the pinned, un-reimplementable mutation tool citing its own target path.
+  'specs/features/BL-590-onboarding-facilitator-slice1-topic-prereqs.feature',
   'backlog/paused/BL-624-onboarding-facilitator-survey-to-gate.yaml',
   'backlog/paused/BL-625-onboarding-facilitator-prompts-and-launch-handoff.yaml',
   'backlog/paused/BL-643-document-the-non-pipeline-agents-and-rule-on-onboarder.yaml',
