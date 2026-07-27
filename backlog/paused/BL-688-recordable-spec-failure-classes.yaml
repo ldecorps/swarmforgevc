@@ -1,0 +1,142 @@
+id: BL-688
+title: "`invariant-unencoded` and `spec-gap` are unrecordable: the bounce recorder rejects the very failure classes the role prompts instruct"
+milestone: M8
+type: defect
+severity: high
+status: todo
+epic: code-quality-gates
+human_approval: pending
+priority: 03
+direction: swarm-proposed
+mutation_cost: low
+depends_on: []
+invariants:
+  - "The widening is additive only: for every record already in either durable store and every one of the five pre-existing classes, the JSONL line written, the records read, and every tally reported are identical to what they were before this ticket."
+  - "The vocabulary stays CLOSED: any class outside the widened set (including a case variant of a valid one) is still a usage error that writes nothing to either durable store."
+acceptance: specs/features/BL-688-recordable-spec-failure-classes.feature
+
+approval_context: >
+  One decision needs sign-off: whether `invariant-unencoded` and `spec-gap`
+  become first-class members of the CLOSED failure-class vocabulary shared by
+  the bounce recorders and the sibling-deferral store. The alternative is to
+  keep the enum at five and express spec-level findings in evidence prose only
+  — which is effectively today's state, and it means the distinction BL-654
+  introduced ("property never encoded" vs "property violated") stays
+  permanently unmeasurable, and Article 4.4's `spec-gap` class is prose with no
+  durable record behind it. Widening also widens what a sibling deferral will
+  accept as a class; that is deliberate and scenario 05 pins that it changes no
+  suppression semantics. Nothing else here is open — the reject-unknown-class
+  behaviour is preserved exactly.
+
+source: |
+  Found by the specifier 2026-07-27 while grounding part C of
+  .swarmforge/operator/INTAKE-single-pass-review-bounce-all-violations.md
+  (the Article 4.4 complete-review-inventory amendment) against the live
+  recorder. Not in the operator's intake: the intake assumed the class
+  vocabulary already carried `invariant-unencoded` / `spec-gap`, and it does
+  not.
+
+description: |
+  ## What is broken
+
+  `KNOWN_FAILURE_CLASSES` (`extension/src/quality/qaBounce.ts:25`) is
+  `compile|unit|integration|acceptance|behavior`. Two live prompt instructions
+  name classes outside it:
+
+  - `architect.prompt` (BL-654, shipped): "Record a missing-property-test
+    send-back ... under the failure class `invariant-unencoded` — distinct from
+    `behavior` for a violated property — so BL-635's metric can distinguish
+    property never encoded from property violated."
+  - `Article 4.4` and `QA.prompt` (this amendment, 2026-07-27) additionally name
+    `spec-gap`.
+
+  Both are rejected at `bounceArgsCore.ts:68` (`isValid(failureClass,
+  isKnownFailureClass)`), so `parseArgs` returns `null`, `record-bounce.js`
+  prints usage and exits non-zero, and NOTHING is written — not the
+  `.swarmforge/bounces/<month>.jsonl` record, not the ticket's
+  `bounce_history:` merge. Every role prompt marks the recorder best-effort
+  ("never let a missing/uncompiled CLI block the send-back itself"), so the
+  bounce proceeds and the record is simply lost.
+
+  ## Why it went unnoticed
+
+  BL-654's own acceptance asserts only that the string appears in the architect
+  PROMPT — `bl654InvariantPropertyTestSteps.js:169-171` is
+  `requireIncludes(ctx.bl654Text, 'invariant-unencoded', 'the architect
+  prompt')`. Green, and it proves nothing about the recorder.
+
+  Measured 2026-07-27: `.swarmforge/bounces/2026-07.jsonl` holds 5 records, all
+  `"by":"architect"`, all `"failureClass":"behavior"`. Zero carry
+  `invariant-unencoded`, and none can. Whether the architect downgraded to
+  `behavior` or hit the usage error and dropped the record is not recoverable
+  from the store — that ambiguity is itself the defect.
+
+  ## Severity: high
+
+  BL-635 exists to stop losing architect send-backs. For the one class BL-654
+  added to make a distinction, the record is dropped ENTIRELY rather than
+  misclassified — so bounce COUNT under-reports, not just classification. Bounce
+  rate is one of the Article 3.5 circuit-breaker health signals; a silently
+  under-counted signal is worse than an absent one.
+
+  ## Direction
+
+  Add both classes to `KNOWN_FAILURE_CLASSES` and to the USAGE strings that
+  enumerate it. The set stays closed and case-sensitive — invariant 2 is the
+  fail-closed half and must not be relaxed while widening.
+
+  ## Consumer sweep — run EVERY one of these suites, do not sample
+
+  `isKnownFailureClass` / `QaBounceFailureClass` reach further than the CLI.
+  Every consumer below must be visited and its own suite RUN green, not reasoned
+  about (BL-629 bounced three times for a sampled sweep):
+
+  - `extension/src/tools/bounceArgsCore.ts` — the shared validator
+  - `extension/src/tools/recordBounceArgs.ts`, `recordQaBounceArgs.ts` — USAGE
+    text enumerates the classes; the legacy QA CLI keeps its own passing suite
+  - `extension/src/tools/qa-sibling-check.ts` — `--class` on a deferral
+  - `extension/src/quality/siblingDeferral.ts`,
+    `extension/src/metrics/siblingDeferralStore.ts` — validates class on read;
+    note the `isKnownFailureClass` closed-set mutant comment at
+    siblingDeferralStore.ts:50
+  - `extension/src/quality/qaBounceEvidenceParser.ts` — parses a class out of
+    evidence markdown
+  - `extension/src/metrics/qaBounceStore.ts`, `bounceStore.ts` — read validation
+  - `extension/src/tools/qa-bounce-line.ts` — the briefing line (live consumer)
+  - `extension/src/metrics/failureModeInventory.ts` — reads the class as a loose
+    string; confirm the widened values flow through its signatures
+
+  ## Scope
+
+  - `extension/src/quality/qaBounce.ts` — the vocabulary.
+  - The USAGE strings above.
+  - `specs/pipeline/steps/` — new BL-688 handlers.
+  - `extension/test/qaBounce.test.js`, `qaSiblingCheckCli.test.js`,
+    `siblingDeferral.property.test.js` and the recorder CLI tests — widened
+    vocabulary coverage plus the closed-set regression.
+
+  ## Out of scope
+
+  - Multi-defect inventories on one bounce (BL-689, which depends on this).
+  - Backfilling the 5 existing records — their true class is unrecoverable, and
+    guessing it would fabricate metric history.
+  - Any change to which role a bounce is ROUTED to (Article 4.3 is untouched).
+
+  ## e2e QA procedure
+
+  From the repo root with `out/` compiled, run the recorder as the architect
+  would for an unencoded invariant:
+  `node extension/out/tools/record-bounce.js --ticket BL-688 --role coder --type
+  defect --class invariant-unencoded --commit <10-hex> --by architect --evidence
+  backlog/evidence/<file>.md`. Confirm it prints `{"recorded":true,...}` and that
+  `.swarmforge/bounces/<month>.jsonl` gained a line carrying
+  `"failureClass":"invariant-unencoded"`. Repeat with `--class spec-gap`
+  (recorded) and `--class flaky` (usage error, exit non-zero, no new line).
+  Then run `node extension/out/tools/qa-bounce-line.js` and confirm both new
+  records are counted in the total and none of the pre-existing five vanished.
+
+notes: |
+  Discovered while incorporating the Article 4.4 amendment, whose own prose now
+  names `spec-gap` as a class — so the amendment's instructions are unrecordable
+  until this lands. That is not a reason to weaken the amendment: the prose rule
+  binds today via the role prompts, and the durable record catches up here.

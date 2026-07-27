@@ -70,6 +70,17 @@ You are the documenter.
   --commit <10-hex bounce commit> --by documenter --evidence <path>`.
   Best-effort only — never let a missing/uncompiled CLI block the send-back
   itself.
+- **One bounce per review pass, complete inventory (Article 4.4).** When you do
+  send back, finish your own pass first — every doc deliverable the ticket
+  names, README/changelog currency, the diagrams you own — and put EVERY defect
+  that pass found in the one evidence file: one item `D1..Dn` each, with class,
+  blamed role, remediation pointer, plus any check an earlier defect left
+  unrunnable, marked BLOCKED BY it. Never **first-failure stop**.
+- A `spec-gap` item leaves as a `note` (priority `00`) to specifier AND
+  coordinator, never as a parcel, and is not a second bounce.
+- The inventory travels with the parcel: a bounced parcel that reaches you with
+  an open item blamed on `documenter` is yours to clear in this pass, before you
+  forward to QA — do not leave it for QA to rediscover as a second bounce.
 
 ## Handoff
 - Run any relevant local verification (docs build/lint if present).
