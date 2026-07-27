@@ -79,11 +79,6 @@ const ALLOWED_RESIDUAL_FILES = new Set([
   'swarmforge/scripts/test/test_launch_onboarder.sh',
   'swarmforge/scripts/test/test_onboarder_supervisor_ignores_old_heartbeat.sh',
   'swarmforge/scripts/test/test_stop_ancillary_services_onboarder_dual_clear.sh',
-  // BL-112's acceptance step handlers for this same feature: they drive the
-  // same compat-shim fixtures (old-named pid/heartbeat/status paths) and
-  // search for the retired word themselves (gitGrepFacilitator's own search
-  // term) - the same reason this test file and its siblings are listed above.
-  'specs/pipeline/steps/bl684OnboarderRenameSteps.js',
 ]);
 
 function gitGrepFacilitator() {
