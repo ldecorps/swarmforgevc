@@ -115,6 +115,23 @@ for (const by of ['specifier', 'coder', 'cleaner', 'architect', 'hardender', 'do
   });
 }
 
+// BL-688: the two widened classes must parse identically to any other known
+// class - no special-casing at the CLI layer, the vocabulary lives solely in
+// qaBounce.ts's KNOWN_FAILURE_CLASSES.
+for (const cls of ['invariant-unencoded', 'spec-gap']) {
+  test(`parseArgs accepts the widened failure class ${cls}`, () => {
+    assert.equal(parseArgs(flagArgs({ cls })).failureClass, cls);
+  });
+}
+
+test('parseArgs rejects a failure class outside the widened set, e.g. "flaky"', () => {
+  assert.equal(parseArgs(flagArgs({ cls: 'flaky' })), null);
+});
+
+test('parseArgs rejects a case variant of a valid widened class, e.g. "INVARIANT-UNENCODED"', () => {
+  assert.equal(parseArgs(flagArgs({ cls: 'INVARIANT-UNENCODED' })), null);
+});
+
 // record-bounce-by-role-02: no --by at all fails loudly, writes nothing.
 
 test('parseArgs rejects an invocation with no --by flag at all', () => {
@@ -134,7 +151,7 @@ test('USAGE opens with the CLI name and its required core flags', () => {
 test('USAGE documents the --role, --type, --class and --evidence field values', () => {
   assert.match(USAGE, /--role: coder\|cleaner\|architect\|hardender\|documenter/);
   assert.match(USAGE, /--type: feature\|bug\|defect\|chore\|docs\|enhancement\|epic/);
-  assert.match(USAGE, /--class: compile\|unit\|integration\|acceptance\|behavior/);
+  assert.match(USAGE, /--class: compile\|unit\|integration\|acceptance\|behavior\|invariant-unencoded\|spec-gap/);
   assert.match(USAGE, /--evidence \(optional\): backlog\/evidence\/<file>\.md/);
 });
 
@@ -222,6 +239,28 @@ test('four architect bounces on one ticket, each a distinct commit, end with bou
   const yamlText = fs.readFileSync(ticketPath, 'utf8');
   assert.match(yamlText, /bounce_count: 4/);
   assert.equal((yamlText.match(/^ {2}- \{/gm) || []).length, 4);
+});
+
+// BL-688: the widened classes must actually record end to end, not merely
+// parse - a class that parses but is dropped somewhere downstream would be
+// just as silent a loss as today's rejection.
+for (const cls of ['invariant-unencoded', 'spec-gap']) {
+  test(`recording a bounce with the widened class ${cls} writes it to the durable log`, async () => {
+    const root = mkRepo();
+    const result = await runCli(root, flagArgs({ cls }));
+    assert.equal(result.recorded, true);
+    const records = readBounceRecords(root);
+    assert.equal(records.length, 1);
+    assert.equal(records[0].failureClass, cls);
+  });
+}
+
+test('recording a bounce with a failure class outside the widened set is a usage error that writes nothing', () => {
+  const root = mkRepo();
+  assert.throws(() => {
+    execFileSync('node', [CLI, ...flagArgs({ cls: 'flaky' })], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  }, /Command failed/);
+  assert.equal(fs.existsSync(bouncesDir(root)), false);
 });
 
 test('recording the identical bounce twice does not double-count it', async () => {

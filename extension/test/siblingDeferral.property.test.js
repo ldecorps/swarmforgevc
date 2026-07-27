@@ -8,6 +8,7 @@ const {
   siblingDeferralNaturalKey,
   decideDisposition,
 } = require('../out/quality/siblingDeferral');
+const { KNOWN_FAILURE_CLASSES } = require('../out/quality/qaBounce');
 
 // BL-532: siblingDeferral.ts is the pure decision surface behind "a parcel
 // with no failing check of its own is DEFERRED pending the blocker, never
@@ -20,8 +21,10 @@ const {
 // Runs ONLY via `npm run test:properties` (vitest.properties.config.mjs);
 // excluded from the unit/coverage/mutation run.
 
-const KNOWN_CLASSES = ['compile', 'unit', 'integration', 'acceptance', 'behavior'];
-const classArb = fc.constantFrom(...KNOWN_CLASSES);
+// BL-688: drawn from the real, now-widened vocabulary (rather than a local
+// copy) so this property fuzzes over invariant-unencoded/spec-gap too, not
+// just the original five classes.
+const classArb = fc.constantFrom(...KNOWN_FAILURE_CLASSES);
 
 // Commands built from non-whitespace words joined by arbitrary whitespace
 // runs, so the generator explores exactly the variation normalizeCommand

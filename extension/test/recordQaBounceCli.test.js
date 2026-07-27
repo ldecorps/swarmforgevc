@@ -224,6 +224,14 @@ test('parseArgs rejects a failureClass outside the closed set', () => {
   assert.equal(parseArgs(flagArgs({ cls: 'scope' })), null);
 });
 
+// BL-688: the legacy CLI shares its class validation with the generalised
+// one via bounceArgsCore.ts - the widened classes must parse here too.
+for (const cls of ['invariant-unencoded', 'spec-gap']) {
+  test(`parseArgs accepts the widened failure class ${cls}`, () => {
+    assert.equal(parseArgs(flagArgs({ cls })).failureClass, cls);
+  });
+}
+
 test('parseArgs rejects a missing commit', () => {
   assert.equal(parseArgs(['--ticket', 'BL-340', '--role', 'coder', '--type', 'feature', '--class', 'behavior']), null);
 });
@@ -461,7 +469,7 @@ test('USAGE documents all seven flags, including --by/--evidence as optional', (
       '         --commit <hex> [--by <bouncingRole> --evidence <path>]\n' +
       '  --role: coder|cleaner|architect|hardender|documenter\n' +
       '  --type: feature|bug|defect|chore|docs|enhancement|epic\n' +
-      '  --class: compile|unit|integration|acceptance|behavior\n' +
+      '  --class: compile|unit|integration|acceptance|behavior|invariant-unencoded|spec-gap\n' +
       '  --by (optional): QA\n' +
       '  --evidence (optional): backlog/evidence/<file>.md\n'
   );
