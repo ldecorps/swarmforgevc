@@ -80,7 +80,7 @@ async function acquireAgentLock(targetPath: string): Promise<() => void> {
   throw new Error('cursor bridge agent lock timeout');
 }
 
-async function withAgentLock<T>(targetPath: string, fn: () => Promise<T>): Promise<T> {
+export async function withAgentLock<T>(targetPath: string, fn: () => Promise<T>): Promise<T> {
   const release = await acquireAgentLock(targetPath);
   try {
     return await fn();
