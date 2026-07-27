@@ -1,0 +1,313 @@
+// BL-696: Telegram Mini App shell for Let's Talk — discrete tap-to-toggle
+// audio turns with the shared Cursor bridge agent session. Browser captures
+// audio; STT/TTS run server-side on POST /lets-talk/turn.
+
+export function getLetsTalkUiHtml(): string {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
+<title>Let's Talk</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: system-ui, -apple-system, Segoe UI, sans-serif;
+    background: var(--tg-theme-bg-color, #0d1117);
+    color: var(--tg-theme-text-color, #e6edf3);
+    min-height: 100vh;
+    max-width: 100vw;
+    overflow-x: hidden;
+  }
+  header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 14px;
+    border-bottom: 1px solid color-mix(in srgb, var(--tg-theme-hint-color, #8b949e) 35%, transparent);
+  }
+  h1 {
+    margin: 0;
+    font-size: 17px;
+    font-weight: 600;
+    flex: 1;
+  }
+  a.back {
+    font-size: 13px;
+    color: var(--tg-theme-link-color, #58a6ff);
+    text-decoration: none;
+  }
+  main {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 18px;
+    padding: 24px 16px calc(24px + env(safe-area-inset-bottom, 0px));
+    width: 100%;
+  }
+  .state {
+    font-size: 14px;
+    color: var(--tg-theme-hint-color, #8b949e);
+    text-transform: capitalize;
+  }
+  .state[data-phase="error"] { color: #f85149; }
+  .state[data-phase="thinking"] { color: #d29922; }
+  .state[data-phase="speaking"] { color: #58a6ff; }
+  button.record {
+    width: 120px;
+    height: 120px;
+    border-radius: 50%;
+    border: 3px solid var(--tg-theme-button-color, #238636);
+    background: color-mix(in srgb, var(--tg-theme-button-color, #238636) 25%, #111);
+    color: var(--tg-theme-button-text-color, #fff);
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  button.record[aria-pressed="true"] {
+    background: var(--tg-theme-button-color, #238636);
+    box-shadow: 0 0 0 6px color-mix(in srgb, var(--tg-theme-button-color, #238636) 35%, transparent);
+  }
+  button.record[disabled] { opacity: 0.45; cursor: default; }
+  button.secondary {
+    padding: 10px 16px;
+    border-radius: 8px;
+    border: 1px solid color-mix(in srgb, var(--tg-theme-button-color, #388bfd) 55%, #000);
+    background: color-mix(in srgb, var(--tg-theme-button-color, #388bfd) 85%, #111);
+    color: var(--tg-theme-button-text-color, #fff);
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+  }
+  button.secondary[disabled] { opacity: 0.45; cursor: default; }
+  .transcript {
+    width: 100%;
+    max-width: 100%;
+    min-height: 3em;
+    padding: 12px 14px;
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--tg-theme-bg-color, #0d1117) 90%, #fff 6%);
+    font-size: 14px;
+    line-height: 1.45;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    color: var(--tg-theme-text-color, #e6edf3);
+  }
+  .error {
+    width: 100%;
+    color: #f85149;
+    font-size: 13px;
+    line-height: 1.4;
+    overflow-wrap: anywhere;
+  }
+</style>
+</head>
+<body>
+<header>
+  <a class="back" id="menu" href="#">Menu</a>
+  <h1>Let's Talk</h1>
+</header>
+<main>
+  <p class="state" id="state" data-testid="lets-talk-state" data-phase="ready">ready</p>
+  <button type="button" class="record" id="record" data-testid="lets-talk-record" aria-pressed="false">Record</button>
+  <button type="button" class="secondary" id="new-session" data-testid="lets-talk-new-session">New session</button>
+  <p class="transcript" id="transcript" data-testid="lets-talk-transcript" hidden></p>
+  <p class="error" id="error" data-testid="lets-talk-error" hidden></p>
+</main>
+<script>
+(function () {
+  var tg = window.Telegram && window.Telegram.WebApp;
+  if (tg) { tg.ready(); tg.expand(); }
+
+  var params = new URLSearchParams(location.search);
+  var token = params.get('token') || '';
+  var q = token ? ('?token=' + encodeURIComponent(token)) : '';
+  document.getElementById('menu').href = '/console' + q;
+
+  var STT_RETRY_BUDGET = 3;
+  var stateEl = document.getElementById('state');
+  var recordBtn = document.getElementById('record');
+  var newSessionBtn = document.getElementById('new-session');
+  var transcriptEl = document.getElementById('transcript');
+  var errorEl = document.getElementById('error');
+
+  var phase = 'ready';
+  var recording = false;
+  var mediaRecorder = null;
+  var chunks = [];
+  var playbackAudio = null;
+
+  function setPhase(next) {
+    phase = next;
+    stateEl.textContent = next;
+    stateEl.setAttribute('data-phase', next);
+    var busy = next === 'thinking' || next === 'speaking';
+    recordBtn.disabled = busy;
+    newSessionBtn.disabled = busy;
+  }
+
+  function showError(message) {
+    if (!message) {
+      errorEl.hidden = true;
+      errorEl.textContent = '';
+      return;
+    }
+    errorEl.hidden = false;
+    errorEl.textContent = message;
+  }
+
+  function controlAuthHeaders() {
+    if (!token) {
+      return { 'content-type': 'application/json' };
+    }
+    return {
+      'content-type': 'application/json',
+      authorization: 'Bearer ' + token,
+      'x-control-token': token,
+    };
+  }
+
+  function blobToBase64(blob) {
+    return new Promise(function (resolve, reject) {
+      var reader = new FileReader();
+      reader.onloadend = function () {
+        var dataUrl = String(reader.result || '');
+        var comma = dataUrl.indexOf(',');
+        resolve(comma >= 0 ? dataUrl.slice(comma + 1) : '');
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  function playReplyAudio(base64, mimeType) {
+    return new Promise(function (resolve, reject) {
+      if (playbackAudio) {
+        playbackAudio.pause();
+        playbackAudio = null;
+      }
+      playbackAudio = new Audio('data:' + (mimeType || 'audio/ogg') + ';base64,' + base64);
+      playbackAudio.onended = function () { resolve(); };
+      playbackAudio.onerror = function () { reject(new Error('playback failed')); };
+      playbackAudio.play().catch(reject);
+    });
+  }
+
+  async function submitTurn(body, sttAttempt) {
+    var res = await fetch('/lets-talk/turn' + q, {
+      method: 'POST',
+      headers: controlAuthHeaders(),
+      body: JSON.stringify(body),
+    });
+    var payload = await res.json().catch(function () { return {}; });
+    if (!res.ok) {
+      throw new Error(payload && payload.reason ? String(payload.reason) : ('HTTP ' + res.status));
+    }
+    if (payload && payload.success) {
+      return payload;
+    }
+    if (payload && payload.recoverable && payload.state === 'error' && sttAttempt + 1 < STT_RETRY_BUDGET) {
+      setPhase('error');
+      await new Promise(function (r) { setTimeout(r, 50); });
+      setPhase('thinking');
+      return submitTurn(body, sttAttempt + 1);
+    }
+    if (payload && payload.recoverable) {
+      throw new Error(payload.reason || 'turn failed');
+    }
+    throw new Error(payload && payload.reason ? String(payload.reason) : 'turn failed');
+  }
+
+  async function endTurn(blob, mimeType) {
+    setPhase('thinking');
+    showError('');
+    try {
+      var audioBase64 = await blobToBase64(blob);
+      var result = await submitTurn({ audioBase64: audioBase64, mimeType: mimeType }, 0);
+      transcriptEl.hidden = false;
+      transcriptEl.textContent = result.replyText || result.transcript || '';
+      setPhase('speaking');
+      if (result.replyAudioBase64) {
+        await playReplyAudio(result.replyAudioBase64, 'audio/ogg');
+      }
+      setPhase('ready');
+    } catch (err) {
+      showError(String(err && err.message || err));
+      setPhase('ready');
+    }
+  }
+
+  recordBtn.onclick = function () {
+    if (phase !== 'ready' && phase !== 'error') {
+      return;
+    }
+    if (!recording) {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        showError('Microphone is not available in this browser.');
+        return;
+      }
+      showError('');
+      navigator.mediaDevices.getUserMedia({ audio: true }).then(function (stream) {
+        chunks = [];
+        var preferred = 'audio/webm;codecs=opus';
+        var mimeType = window.MediaRecorder && MediaRecorder.isTypeSupported(preferred) ? preferred : 'audio/webm';
+        mediaRecorder = new MediaRecorder(stream, { mimeType: mimeType });
+        mediaRecorder.ondataavailable = function (ev) {
+          if (ev.data && ev.data.size > 0) {
+            chunks.push(ev.data);
+          }
+        };
+        mediaRecorder.onstop = function () {
+          stream.getTracks().forEach(function (t) { t.stop(); });
+          var blob = new Blob(chunks, { type: mimeType });
+          chunks = [];
+          if (blob.size > 0) {
+            endTurn(blob, mimeType);
+          } else {
+            showError('Could not transcribe the recording — the audio could not be decoded.');
+            setPhase('ready');
+          }
+        };
+        mediaRecorder.start();
+        recording = true;
+        recordBtn.setAttribute('aria-pressed', 'true');
+        recordBtn.textContent = 'Stop';
+      }).catch(function (err) {
+        showError(String(err && err.message || err));
+      });
+      return;
+    }
+    recording = false;
+    recordBtn.setAttribute('aria-pressed', 'false');
+    recordBtn.textContent = 'Record';
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+      mediaRecorder.stop();
+    }
+  };
+
+  newSessionBtn.onclick = function () {
+    if (phase !== 'ready' && phase !== 'error') {
+      return;
+    }
+    showError('');
+    transcriptEl.hidden = true;
+    transcriptEl.textContent = '';
+    setPhase('thinking');
+    fetch('/lets-talk/new-session' + q, {
+      method: 'POST',
+      headers: controlAuthHeaders(),
+    }).then(function (r) { return r.json(); }).then(function () {
+      setPhase('ready');
+    }).catch(function (err) {
+      showError(String(err && err.message || err));
+      setPhase('ready');
+    });
+  };
+})();
+</script>
+</body>
+</html>`;
+}

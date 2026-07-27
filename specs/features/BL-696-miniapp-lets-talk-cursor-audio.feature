@@ -36,7 +36,7 @@ Feature: Let's Talk — discrete audio turns with the Cursor agent on the Consol
   # BL-696 lets-talk-03
   Scenario: a second spoken turn in the same session keeps Cursor agent context
     Given I completed one Let's Talk turn asking "remember the code word ALPHA"
-    When I record a second turn asking "what was the code word"
+    When I record a turn asking "what was the code word"
     Then the agent reply transcript mentions "ALPHA"
     And the reply uses the same Cursor bridge agent session as the first turn
 

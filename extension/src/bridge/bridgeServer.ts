@@ -58,6 +58,14 @@ import { requestConciergeTick } from '../concierge/conciergeTickRequest';
 import { getContextBudgetUiHtml } from './contextBudgetUiHtml';
 import { listTelemetryAgents, summarizeTelemetryForAgent } from './contextTelemetryGate';
 import { runCommitIntegrity } from '../util/commitIntegrityRunner';
+import { getLetsTalkUiHtml } from './letsTalkUiHtml';
+import {
+  createLetsTalkWriteRoutes,
+  isLetsTalkPath,
+} from './letsTalkRoutes';
+import { resolveLetsTalkAudioAdapters } from './letsTalkAudio';
+import { createLiveCursorBridgeAgentSession, type CursorBridgeAgentSessionDeps } from './cursorBridgeAgentSession';
+import type { TranscribeAudio, SynthesizeSpeech } from './letsTalkAudio';
 
 const DEFAULT_POLL_INTERVAL_MS = 1000;
 const LOCALHOST = '127.0.0.1';
@@ -109,6 +117,12 @@ export interface StartBridgeOptions {
   // (engineering article, Test Speed And Isolation). Undefined in
   // production - buildStageDwellState defaults to the real clock unchanged.
   nowMs?: number;
+  // BL-696: injectable Let's Talk adapters for headless/BDD tests.
+  letsTalk?: {
+    agentSession?: CursorBridgeAgentSessionDeps;
+    transcribeAudio?: TranscribeAudio;
+    synthesizeSpeech?: SynthesizeSpeech;
+  };
 }
 
 // BL-241: startBridge's auth param generalizes from BL-065's one static
@@ -942,6 +956,14 @@ function handleEpicReorderTopicMakeTopRoute(
   });
 }
 
+function requireLetsTalkControlAuth(req: http.IncomingMessage, res: http.ServerResponse, registry: DeviceRegistry): boolean {
+  if (!isAuthorizedForControl(req, registry)) {
+    respondJson(res, 401, { success: false, reason: 'unauthorized' });
+    return false;
+  }
+  return true;
+}
+
 interface WriteRoute {
   matches: (req: http.IncomingMessage, url: string) => boolean;
   handle: (req: http.IncomingMessage, res: http.ServerResponse, targetPath: string, registry: DeviceRegistry) => void;
@@ -1193,6 +1215,18 @@ export function startBridge(
     let lastSnapshot: string | undefined;
     let registry: DeviceRegistry = normalizeToRegistry(tokenOrRegistry);
 
+    const letsTalkAudio = resolveLetsTalkAudioAdapters(process.env.OPENAI_API_KEY, {
+      transcribeAudio: options.letsTalk?.transcribeAudio,
+      synthesizeSpeech: options.letsTalk?.synthesizeSpeech,
+    });
+    const letsTalkAgentSession = options.letsTalk?.agentSession ?? createLiveCursorBridgeAgentSession(targetPath);
+    const letsTalkWriteRoutes = createLetsTalkWriteRoutes(
+      { agentSession: letsTalkAgentSession, ...letsTalkAudio },
+      (req, res, maxBytes, isShape, shapeErrorReason) => readValidatedBody(req, res, maxBytes, isShape, shapeErrorReason),
+      requireLetsTalkControlAuth,
+      respondJson
+    );
+
     const server = http.createServer((req, res) => {
       const url = requestPath(req);
 
@@ -1230,6 +1264,10 @@ export function startBridge(
         serveMiniAppHtml(res, getContextBudgetUiHtml());
         return;
       }
+      if (isLetsTalkPath(url)) {
+        serveMiniAppHtml(res, getLetsTalkUiHtml());
+        return;
+      }
 
       if (!isAuthorizedForRead(req.headers.authorization, url, registry)) {
         res.writeHead(401, { 'content-type': 'application/json' });
@@ -1251,7 +1289,7 @@ export function startBridge(
         return;
       }
 
-      const writeRoute = writeRoutes.find((route) => route.matches(req, url));
+      const writeRoute = [...writeRoutes, ...letsTalkWriteRoutes].find((route) => route.matches(req, url));
       if (writeRoute) {
         writeRoute.handle(req, res, targetPath, registry);
         return;
