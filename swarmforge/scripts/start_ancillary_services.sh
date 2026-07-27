@@ -9,7 +9,7 @@
 # Env (same as swarmforge.sh):
 #   SWARMFORGE_SKIP_OPERATOR=1
 #   SWARMFORGE_SKIP_FRONT_DESK=1
-#   SWARMFORGE_SKIP_ONBOARDING_FACILITATOR=1
+#   SWARMFORGE_SKIP_ONBOARDER=1
 #   SWARMFORGE_SKIP_BABYSITTER=1
 #   SWARMFORGE_SKIP_TUNNEL=1
 #   SWARMFORGE_SKIP_RESIDENT_SPY_TUNNEL=1
@@ -58,15 +58,15 @@ else
   echo "Telegram front desk skipped (set TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, TELEGRAM_PRINCIPAL_USER_ID)."
 fi
 
-if [[ "${SWARMFORGE_SKIP_ONBOARDING_FACILITATOR:-}" == "1" ]]; then
-  echo "Skipping onboarding facilitator (SWARMFORGE_SKIP_ONBOARDING_FACILITATOR=1)."
+if [[ "${SWARMFORGE_SKIP_ONBOARDER:-}" == "1" ]]; then
+  echo "Skipping onboarder (SWARMFORGE_SKIP_ONBOARDER=1)."
 elif [[ -n "${TELEGRAM_BOT_TOKEN:-}" && -n "${TELEGRAM_CHAT_ID:-}" ]]; then
-  echo "Starting onboarding facilitator (Onboarding topic reconcile)..."
-  if ! bash "$SCRIPT_DIR/launch_onboarding_facilitator.sh" "$ROOT"; then
-    echo "WARN: onboarding facilitator failed to start; run './swarm ensure' after fixing." >&2
+  echo "Starting onboarder (Onboarding topic reconcile)..."
+  if ! bash "$SCRIPT_DIR/launch_onboarder.sh" "$ROOT"; then
+    echo "WARN: onboarder failed to start; run './swarm ensure' after fixing." >&2
   fi
 else
-  echo "Onboarding facilitator skipped (set TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)."
+  echo "Onboarder skipped (set TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)."
 fi
 
 if [[ "${SWARMFORGE_SKIP_BABYSITTER:-}" == "1" ]]; then

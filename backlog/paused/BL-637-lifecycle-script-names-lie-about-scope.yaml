@@ -31,7 +31,7 @@ source: |
 
   | entry point | scope | symmetric? |
   |---|---|---|
-  | `./start-swarm.sh` | **full stack** — pipeline + `start_ancillary_services.sh` (operator runtime, front desk, babysitter, onboarding facilitator, tunnels) | with `./stop-swarm.sh` |
+  | `./start-swarm.sh` | **full stack** — pipeline + `start_ancillary_services.sh` (operator runtime, front desk, babysitter, onboarder, tunnels) | with `./stop-swarm.sh` |
   | `./stop-swarm.sh` | **full stack** — ancillaries first, then `kill_all_swarm.sh` | with `./start-swarm.sh` |
   | `./swarm` | pipeline only (`exec`s `swarmforge.sh`) | with `./swarm-kill` |
   | `./swarm-kill` | pipeline only (`exec`s `kill_all_swarm.sh`) | with `./swarm` |
@@ -46,7 +46,7 @@ source: |
   `swarm-teardown-notes` — the operator's own durable procedure note, written
   2026-07-10 — said **"Stop: `./swarm-kill`"**. That is the narrow layer. Anyone
   following that note leaves the babysitter, operator runtime, Telegram front
-  desk, onboarding facilitator and tunnels running while believing the stack is
+  desk, onboarder and tunnels running while believing the stack is
   down. The note was corrected on 2026-07-25 only because this came up by
   accident.
 
@@ -58,7 +58,7 @@ description: |
 
   1. **`kill_all_swarm.sh` does not kill all.** It kills role agents, handoffd +
      its supervisor, stale sockets and state markers. It does not touch the
-     babysitter, operator runtime, front desk, facilitator or tunnels. The word
+     babysitter, operator runtime, front desk, onboarder or tunnels. The word
      "all" is the whole problem: it reads as the outermost layer and is the
      innermost.
   2. **`./swarm-kill` is not the counterpart to `./start-swarm.sh`.** It is the

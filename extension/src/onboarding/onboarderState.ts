@@ -1,6 +1,6 @@
-// BL-590 slice 1: the Onboarding Facilitator's own prerequisites state
+// BL-590 slice 1: the Onboarder's own prerequisites state
 // machine. Pure, clock-injected, no I/O - persistence is
-// onboardingFacilitatorStateStore.ts's job, Telegram/tmux wiring is the
+// onboarderStateStore.ts's job, Telegram/tmux wiring is the
 // poll-loop's job (testable-module boundary, engineering.prompt). Slice 1
 // covers needs-target -> checking-prerequisites -> prerequisites-ready only;
 // survey and everything after is BL-624/BL-625's own state.
@@ -12,7 +12,7 @@ export const PREREQUISITE_STEP_ORDER: readonly PrerequisiteStepId[] = PREREQUISI
 
 export type OnboardingPhase = 'checking-prerequisites' | 'prerequisites-ready';
 
-export interface OnboardingFacilitatorState {
+export interface OnboarderState {
   readonly targetRepoUrl: string;
   readonly phase: OnboardingPhase;
   readonly stepIndex: number;
@@ -148,7 +148,7 @@ export function classifyControl(text: string): OnboardingControl | null {
   return null;
 }
 
-export function currentPrerequisiteStep(state: OnboardingFacilitatorState): PrerequisiteStepId | null {
+export function currentPrerequisiteStep(state: OnboarderState): PrerequisiteStepId | null {
   if (state.phase === 'prerequisites-ready') {
     return null;
   }
@@ -164,7 +164,7 @@ const PREREQUISITES_READY_MESSAGE =
   'All prerequisites verified - prerequisites are ready. Next comes the survey phase: I will survey your ' +
   'target repo and propose an onboarding contract.';
 
-export function renderStatus(state: OnboardingFacilitatorState): string {
+export function renderStatus(state: OnboarderState): string {
   const step = currentPrerequisiteStep(state);
   if (!step) {
     return PREREQUISITES_READY_MESSAGE;
@@ -172,7 +172,7 @@ export function renderStatus(state: OnboardingFacilitatorState): string {
   return `Onboarding ${state.targetRepoUrl}: prerequisites phase, step "${step}".\n\n${renderStepInstruction(step)}`;
 }
 
-export function createOnboardingState(targetRepoUrl: string, now: () => number): OnboardingFacilitatorState {
+export function createOnboardingState(targetRepoUrl: string, now: () => number): OnboarderState {
   return {
     targetRepoUrl,
     phase: 'checking-prerequisites',
@@ -183,8 +183,8 @@ export function createOnboardingState(targetRepoUrl: string, now: () => number):
   };
 }
 
-export interface FacilitatorTurn {
-  readonly state: OnboardingFacilitatorState;
+export interface OnboarderTurn {
+  readonly state: OnboarderState;
   readonly message: string;
 }
 
@@ -207,7 +207,7 @@ export function isLikelyRepoUrl(text: string): boolean {
 // onboarding-at-a-time flow slice 1's own QA procedure walks. A target that
 // already reached prerequisites-ready is done with THIS topic's job (survey
 // is BL-624's own topic turn), so it is never picked back up here.
-export function pickActiveOnboardingState(states: readonly OnboardingFacilitatorState[]): OnboardingFacilitatorState | undefined {
+export function pickActiveOnboardingState(states: readonly OnboarderState[]): OnboarderState | undefined {
   const inFlight = states.filter((s) => s.phase !== 'prerequisites-ready');
   if (inFlight.length === 0) {
     return undefined;
@@ -217,14 +217,14 @@ export function pickActiveOnboardingState(states: readonly OnboardingFacilitator
 
 const PAUSED_MESSAGE = 'Onboarding is paused. Post "proceed" to resume.';
 
-function advanceStep(state: OnboardingFacilitatorState, stepId: PrerequisiteStepId, now: () => number): OnboardingFacilitatorState {
+function advanceStep(state: OnboarderState, stepId: PrerequisiteStepId, now: () => number): OnboarderState {
   const verifiedSteps = [...state.verifiedSteps, stepId];
   const nextIndex = state.stepIndex + 1;
   const phase: OnboardingPhase = nextIndex >= PREREQUISITE_STEP_ORDER.length ? 'prerequisites-ready' : 'checking-prerequisites';
   return { ...state, verifiedSteps, stepIndex: nextIndex, phase, updatedAtMs: now() };
 }
 
-function handlePausedState(state: OnboardingFacilitatorState, control: OnboardingControl | null, now: () => number): FacilitatorTurn | null {
+function handlePausedState(state: OnboarderState, control: OnboardingControl | null, now: () => number): OnboarderTurn | null {
   if (!state.paused) {
     return null;
   }
@@ -235,7 +235,7 @@ function handlePausedState(state: OnboardingFacilitatorState, control: Onboardin
   return { state, message: PAUSED_MESSAGE };
 }
 
-function handleControlCommands(state: OnboardingFacilitatorState, control: OnboardingControl | null, now: () => number): FacilitatorTurn | null {
+function handleControlCommands(state: OnboarderState, control: OnboardingControl | null, now: () => number): OnboarderTurn | null {
   if (control === 'pause') {
     const paused = { ...state, paused: true, updatedAtMs: now() };
     return { state: paused, message: `Onboarding paused at the current step. ${PAUSED_MESSAGE}` };
@@ -246,7 +246,7 @@ function handleControlCommands(state: OnboardingFacilitatorState, control: Onboa
   return null;
 }
 
-function handleVerificationInput(state: OnboardingFacilitatorState, step: PrerequisiteStepId, text: string, now: () => number): FacilitatorTurn {
+function handleVerificationInput(state: OnboarderState, step: PrerequisiteStepId, text: string, now: () => number): OnboarderTurn {
   if (isBareDoneClaim(text)) {
     return {
       state,
@@ -267,7 +267,7 @@ function handleVerificationInput(state: OnboardingFacilitatorState, step: Prereq
 // The whole per-reply transition (scenarios 03/04/05/09/10). Pause/proceed
 // are checked before verification so a control word is never misread as a
 // (failing) verification paste.
-export function applyPrincipalReply(state: OnboardingFacilitatorState, text: string, now: () => number): FacilitatorTurn {
+export function applyPrincipalReply(state: OnboarderState, text: string, now: () => number): OnboarderTurn {
   const control = classifyControl(text);
   const pausedResult = handlePausedState(state, control, now);
   if (pausedResult) {
@@ -288,9 +288,9 @@ const NO_ACTIVE_ONBOARDING_MESSAGE =
   'No onboarding is currently in progress in this topic. Post a target GitHub repo URL to start one.';
 
 export type OnboardingMessageOutcome =
-  | { kind: 'started'; state: OnboardingFacilitatorState; message: string }
-  | { kind: 'resumed'; state: OnboardingFacilitatorState; message: string }
-  | { kind: 'advanced'; state: OnboardingFacilitatorState; message: string }
+  | { kind: 'started'; state: OnboarderState; message: string }
+  | { kind: 'resumed'; state: OnboarderState; message: string }
+  | { kind: 'advanced'; state: OnboarderState; message: string }
   | { kind: 'no-active-onboarding'; message: string };
 
 // BL-590 architect bounce (defect 2, 2026-07-25): a repo URL for a target
@@ -302,19 +302,19 @@ export type OnboardingMessageOutcome =
 // in, scrolling back, resuming after a pause), so this must be the default,
 // not an opt-in.
 function findInFlightStateForTarget(
-  existingStates: readonly OnboardingFacilitatorState[],
+  existingStates: readonly OnboarderState[],
   targetRepoUrl: string
-): OnboardingFacilitatorState | undefined {
+): OnboarderState | undefined {
   return existingStates.find((s) => s.targetRepoUrl === targetRepoUrl && s.phase !== 'prerequisites-ready');
 }
 
-// BL-590: the facilitator's whole per-message decision, given every
+// BL-590: the onboarder's whole per-message decision, given every
 // currently-persisted target state plus the incoming text - the ONE function
 // the real (untested-shell) wiring calls between "read every state" and
 // "persist the result and send its message", so that shell never itself
 // contains a branch on message content (testable-module boundary).
 export function handleOnboardingMessage(
-  existingStates: readonly OnboardingFacilitatorState[],
+  existingStates: readonly OnboarderState[],
   text: string,
   now: () => number
 ): OnboardingMessageOutcome {

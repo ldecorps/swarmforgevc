@@ -446,12 +446,12 @@ export function decideAgentQuestionsReplyAction(
   return decideTopicReplyAction(update, principalUserId, chatId, agentQuestionsTopicId);
 }
 
-// BL-590: the Onboarding Facilitator's own reserved topic - same shape as
+// BL-590: the Onboarder's own reserved topic - same shape as
 // the AGENT_QUESTIONS topic above. A message in this topic is ALWAYS either
-// delivered to the facilitator or refused, never opened as a fresh SUP-###
-// the way an ordinary unmapped topic would. What the facilitator DOES with
+// delivered to the onboarder or refused, never opened as a fresh SUP-###
+// the way an ordinary unmapped topic would. What the onboarder DOES with
 // the text (state-machine advancement, persistence, its own reply) is
-// onboardingFacilitatorState.ts's job - this module only decides whether a
+// onboarderState.ts's job - this module only decides whether a
 // given update belongs to it at all.
 export type OnboardingReplyDecision = TopicReplyDecision;
 
@@ -846,16 +846,16 @@ export interface PollAdapters {
   // BL-590: the standing Onboarding topic's own id (ensureOnboardingTopic,
   // telegram-front-desk-bot.ts) - optional so every PollAdapters fixture
   // written before BL-590 keeps working unchanged, same posture as
-  // agentQuestionsTopicId above; missing means "onboarding facilitator not
+  // agentQuestionsTopicId above; missing means "onboarder not
   // wired", never a crash.
   onboardingTopicId?: () => Promise<number | undefined>;
-  // BL-590: the facilitator's own whole turn - loads/creates the per-target
-  // state, applies the principal's reply (onboardingFacilitatorState.ts),
+  // BL-590: the onboarder's own whole turn - loads/creates the per-target
+  // state, applies the principal's reply (onboarderState.ts),
   // persists it, and sends the resulting message back into the SAME topic.
   // A single adapter (unlike agent-questions' postToBridge+pending-thread
   // pair) because there is no separate pending-thread indirection here: the
-  // facilitator always replies in the topic it was addressed in.
-  handleOnboardingFacilitatorMessage?: (topicId: number, text: string, updateId: number) => Promise<boolean>;
+  // onboarder always replies in the topic it was addressed in.
+  handleOnboarderMessage?: (topicId: number, text: string, updateId: number) => Promise<boolean>;
 }
 
 // BL-389: the keystone fix. A DROP is a DECISION (the code looked at the
@@ -2107,10 +2107,10 @@ async function attemptOnboardingTopicDelivery(
   if (decision.kind === 'refuse') {
     return 'dropped';
   }
-  if (!adapters.handleOnboardingFacilitatorMessage || topicId === undefined) {
+  if (!adapters.handleOnboarderMessage || topicId === undefined) {
     return 'dropped';
   }
-  const ok = await adapters.handleOnboardingFacilitatorMessage(topicId, decision.text, update.update_id);
+  const ok = await adapters.handleOnboarderMessage(topicId, decision.text, update.update_id);
   return deliveryOutcome(ok);
 }
 

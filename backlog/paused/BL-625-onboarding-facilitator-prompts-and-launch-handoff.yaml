@@ -1,5 +1,5 @@
 id: BL-625
-title: "Onboarding facilitator slice 3: prompts via the existing CLI, ready-to-launch handoff, done state, topic reuse across targets"
+title: "Onboarder slice 3: prompts via the existing CLI, ready-to-launch handoff, done state, topic reuse across targets"
 milestone: M8
 type: feature
 status: todo
@@ -24,7 +24,7 @@ invariants:
 #   target attribution is a property, not a scenario.
 source: |
   BL-590 slice 3, split out by the specifier 2026-07-25. Human ruling on
-  BL-590 applies unchanged: the facilitator's remit ends at contract agreed
+  BL-590 applies unchanged: the onboarder's remit ends at contract agreed
   + prompts committed + prerequisites verified; the human launches on the
   target host.
 
@@ -33,11 +33,11 @@ description: |
   -> gate-open -> ready-to-launch -> done.
 
   1. PROMPTS. Proceed from contract-agreed runs the existing BL-269 CLI
-     (propose-onboarding-prompts.js) against the facilitator's clone; the
+     (propose-onboarding-prompts.js) against the onboarder's clone; the
      proposed project/engineering prompts are committed and pushed to the
      target repo (they travel with the repo, per the project's own
      Initialize Target pattern).
-  2. LAUNCH HANDOFF. At gate-open the facilitator posts the exact command
+  2. LAUNCH HANDOFF. At gate-open the onboarder posts the exact command
      the human runs ON THE TARGET HOST (./swarm <path> --pack mono-router,
      with the real path) and states plainly that the human runs it there.
      It NEVER claims to have launched or observed a swarm it cannot reach —

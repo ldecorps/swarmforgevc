@@ -1,5 +1,5 @@
 id: BL-590
-title: "Onboarding Facilitator: a standalone tooled agent that guides a human through onboarding a new target, step by step, in its own ad-hoc Telegram topic"
+title: "Onboarder: a standalone tooled agent that guides a human through onboarding a new target, step by step, in its own ad-hoc Telegram topic"
 milestone: M8
 type: feature
 status: todo
@@ -106,7 +106,7 @@ human_ruling: |
      therefore the FIRST LIVE TARGET that drives this ticket's acceptance,
      not a fixture - a real target beats a fixture (BL-454's lesson).
 
-  2. THE FACILITATOR RUNS ON THE PRIMARY LINUX BOX AND ONBOARDS FROM GITHUB
+  2. THE ONBOARDER RUNS ON THE PRIMARY LINUX BOX AND ONBOARDS FROM GITHUB
      BY URL. It is a standing ancillary service on this box, pointed at a
      target REPO URL. It clones that repo itself, surveys the clone,
      negotiates the contract with the human over Telegram, and commits the
@@ -116,22 +116,22 @@ human_ruling: |
      `./swarm <path> --pack mono-router` there.
 
      Consequences the specifier must build to:
-       - The facilitator never needs the target host reachable as a local
+       - The onboarder never needs the target host reachable as a local
          path. It uses THIS box's own GitHub access to clone/commit. (The
          Mac's own GitHub access is still a prerequisite the human sets up on
          the Mac before it can pull and run - that stays guide-and-verify.)
        - The whole prerequisites phase for the Mac is guide-and-verify: the
-         facilitator cannot touch the Mac, so it walks the human through
+         onboarder cannot touch the Mac, so it walks the human through
          toolchain / GitHub-auth / token setup and confirms each via a pasted
          verification, advancing only on a pass.
        - "Onboard a new project" reduces to "give the onboarder a repo URL",
          which is the repeatable shape decision 1 asked for.
 
-     This CLOSES the ticket's "where does the facilitator run" design fork -
+     This CLOSES the ticket's "where does the onboarder run" design fork -
      the specifier does not re-open it.
 
   3. CONVERSATIONAL FIRST, BY DESIGN - AND HERE IS WHEN TO STOP.
-     RULED 2026-07-25. The facilitator is a conversational, topic-bound agent
+     RULED 2026-07-25. The onboarder is a conversational, topic-bound agent
      rather than a REST/bridge API or a scripted flow because the onboarding
      PROCEDURE IS NOT YET KNOWN. The conversation is what discovers it: it
      forces every step to be articulated out loud, and every failure to be
@@ -145,7 +145,7 @@ human_ruling: |
      milestone one of that sample, not the whole of it.
 
      Consequences for whoever picks this up:
-       - Do NOT propose or build a REST/bridge API for the facilitator as an
+       - Do NOT propose or build a REST/bridge API for the onboarder as an
          improvement. It is not an oversight, it is the chosen stage. That
          exact suggestion was made and corrected on 2026-07-25: the previous
          version of this ticket said the agent IS conversational (see the
@@ -156,7 +156,7 @@ human_ruling: |
          pipeline will surface it on its own.
 source: |
   Human, 2026-07-23. Wants to onboard a new project (e.g. a mono-router on an
-  old Mac). Asked whether an onboarder role / a ready facilitator agent exists.
+  old Mac). Asked whether an onboarder role / a ready onboarder agent exists.
   It does not: onboarding today is a set of CLIs (survey -> propose -> negotiate
   -> provision channel -> prompts -> gate) with NO orchestrator, invoked step by
   step by an operator turn. Human's ask, verbatim: "a standalone agent which I
@@ -188,7 +188,7 @@ description: |
   1. **No orchestrator.** Nothing chains those CLIs. `swarmforge.sh` has no
      `onboard` subcommand. The sequence is run by hand, in order, by whoever
      remembers it.
-  2. **No facilitator persona.** The human wants to be GUIDED - "where are we,
+  2. **No onboarder persona.** The human wants to be GUIDED - "where are we,
      what's next, what do you need from me" - not to run seven commands. The
      closest existing thing, the BL-381 negotiation relay, only argues the
      contract (object/approve verbs) over the TARGET's provisioned channel; it
@@ -197,7 +197,7 @@ description: |
   ## Why this is a NEW agent, not the front-desk operator
 
   The restricted front-desk Operator answers Telegram with `claude -p --tools
-  ""` (BL-334) - deliberately NO repo access. A facilitator must READ the
+  ""` (BL-334) - deliberately NO repo access. An onboarder must READ the
   target repo (survey), RUN the onboarding CLIs, and WRITE/commit the contract
   and prompts into the target. It is therefore a TOOLED ancillary agent, closer
   to the full Operator than to the front-desk one - but conversational and
@@ -216,13 +216,13 @@ description: |
   decideEnsureOnboardingTopicAction alongside them. "Ad-hoc" = created when an
   onboarding starts, and either closed or reused when the next one does - the
   specifier decides one-topic-reused vs one-topic-per-target. Inbound there
-  routes to the facilitator, NOT to the front-desk operator's SUP path.
+  routes to the onboarder, NOT to the front-desk operator's SUP path.
 
   ### The agent + supervisor
   Reuse the proven ancillary-service shape, do not invent one:
   `negotiation_relay_supervisor.bb` already supervises a topic-bound poll-loop
   with bounded restart, itself modelled on `front_desk_supervisor.bb`. The
-  facilitator is a supervised poll-loop over the Onboarding topic that, unlike
+  onboarder is a supervised poll-loop over the Onboarding topic that, unlike
   the relay, holds tools and drives the whole sequence. `start_ancillary_services.sh`
   / `stop_ancillary_services.sh` are where it registers.
 
@@ -231,7 +231,7 @@ description: |
   presupposes the host is already set up. For a fresh box (the human's case: a
   mono-router on an old Mac) that presupposition IS the hard part, and it is
   exactly the error-prone setup where step-by-step guidance earns its keep. The
-  facilitator's state machine must therefore start at a PREREQUISITES phase,
+  onboarder's state machine must therefore start at a PREREQUISITES phase,
   ahead of the survey, covering at least:
 
     - **Host toolchain** present and working on the target: git, node, tmux,
@@ -247,7 +247,7 @@ description: |
       itself mint.
 
   These are GUIDE-AND-VERIFY steps, not do-it-for-you steps (see the design
-  note below): the facilitator cannot run sudo/auth on a remote Mac, but it can
+  note below): the onboarder cannot run sudo/auth on a remote Mac, but it can
   walk the human through each, give the exact command, and VERIFY the result
   before advancing - "run this, paste the output" - which is precisely the
   hand-holding the human asked for. The specifier should mine the FES
@@ -256,23 +256,23 @@ description: |
   that has never been written down as a guided flow.
 
   ### Step-by-step guidance = an explicit state machine, not vibes
-  The facilitator must know WHERE in onboarding a given target is and what the
+  The onboarder must know WHERE in onboarding a given target is and what the
   next action is. Full state line, prerequisites folded in:
   needs-target -> checking-prerequisites -> prerequisites-ready ->
   surveying -> contract-proposed -> negotiating -> contract-agreed ->
   prompts-proposed -> gate-open -> ready-to-launch -> done. Persist the state
   per target (same durable-state-file discipline the rest of .swarmforge/ uses),
-  so a facilitator restart resumes mid-onboarding rather than restarting it.
+  so an onboarder restart resumes mid-onboarding rather than restarting it.
   Each state has: what the human sees, what input advances it, and either which
-  CLI the facilitator runs OR (for the prerequisites states) which check it
+  CLI the onboarder runs OR (for the prerequisites states) which check it
   asks the human to run and how it verifies the answer. The contract-agreed
   transition is the EXISTING fail-closed gate (onboarding-contract-gate.js) -
   reuse it, do not re-implement the gate.
 
   ### Do-for-you vs guide-and-verify: two distinct step kinds
-  The state machine has two kinds of step and the facilitator must not blur
+  The state machine has two kinds of step and the onboarder must not blur
   them. DO-FOR-YOU steps (survey, propose, negotiate object/approve, run the
-  gate) the facilitator executes itself by shelling to a CLI against a repo it
+  gate) the onboarder executes itself by shelling to a CLI against a repo it
   can see. GUIDE-AND-VERIFY steps (host toolchain, GitHub access, cloning,
   token) it cannot perform on a host it does not control; it emits the exact
   instruction, waits, and confirms via a verification command whose output the
@@ -288,23 +288,23 @@ description: |
   is the ONE real writer of negotiation state.
 
   ### Cross-host reality (RULED - see human_ruling decision 2)
-  The where-does-it-run fork is CLOSED: the facilitator runs on the primary
+  The where-does-it-run fork is CLOSED: the onboarder runs on the primary
   Linux box and onboards from a GitHub URL, cloning the target itself with this
   box's own GitHub access. It therefore never needs the target host (the Mac)
   reachable as a local path - the earlier "shared mount / local clone" option is
   retired. Consequences that follow directly:
 
     - The survey/propose/negotiate/gate steps are do-for-you, run against the
-      facilitator's own clone of the GitHub repo. The agreed contract and
+      onboarder's own clone of the GitHub repo. The agreed contract and
       proposed prompts are committed back to that repo on GitHub.
     - The ENTIRE prerequisites phase for the Mac is guide-and-verify - the
-      facilitator cannot touch the Mac. It walks the human through the Mac's
+      onboarder cannot touch the Mac. It walks the human through the Mac's
       toolchain, its OWN GitHub access (so the Mac can pull and the swarm can
       push/PR from there), and the target bot token, confirming each via a
       pasted verification.
-    - The facilitator's remit ends at "contract agreed + prompts committed +
+    - The onboarder's remit ends at "contract agreed + prompts committed +
       prerequisites verified". The human then, ON THE MAC, pulls and runs
-      `./swarm <path> --pack mono-router`. The facilitator states that exact
+      `./swarm <path> --pack mono-router`. The onboarder states that exact
       command; it never claims to have launched a swarm it cannot reach.
 
 design: |
@@ -313,8 +313,8 @@ design: |
   a fresh Mac and is pure guide-and-verify):
 
   - Slice 1 = BL-590 (this parcel): reserved Onboarding topic
-    (ensure-or-reuse, own subject id, inbound routed to the facilitator and
-    never the front-desk SUP path) + supervised facilitator poll-loop
+    (ensure-or-reuse, own subject id, inbound routed to the onboarder and
+    never the front-desk SUP path) + supervised onboarder poll-loop
     (negotiation_relay_supervisor.bb shape, registered in
     start/stop_ancillary_services.sh) + persistent per-target state machine
     + the PREREQUISITES phase (toolchain, github-access, fork-clone,
@@ -322,7 +322,7 @@ design: |
     prerequisites-ready.
   - Slice 2 = BL-624 (paused): survey -> propose -> negotiate ->
     contract-agreed via the EXISTING gate, do-for-you against the
-    facilitator's own GitHub clone; contract committed back to the target
+    onboarder's own GitHub clone; contract committed back to the target
     repo.
   - Slice 3 = BL-625 (paused): prompts via the existing BL-269 CLI,
     ready-to-launch handoff (exact command, never claims remote launch),
@@ -370,18 +370,18 @@ acceptance: |
     existing pattern and its tests.
   - No real timers; controllable clock everywhere.
   - Supervisor registration in start/stop_ancillary_services.sh with bounded
-    restart; facilitator restart proves state resume (scenario 08).
+    restart; onboarder restart proves state resume (scenario 08).
 
   QA end-to-end procedure (live swarm — the first live target IS the
   acceptance, per the human ruling):
   1. Start ancillary services; the Onboarding topic appears once in the
      primary group; restarting does not duplicate it.
-  2. Post a real GitHub repo URL in the topic; the facilitator answers with
+  2. Post a real GitHub repo URL in the topic; the onboarder answers with
      where-we-are and the toolchain instruction.
   3. Reply "done" with no output — it re-asks for the verification. Paste a
      failing output — it explains and re-issues. Paste the passing output —
      it advances and posts the next step.
-  4. Kill and restart the facilitator mid-checklist — it resumes at the same
+  4. Kill and restart the onboarder mid-checklist — it resumes at the same
      step with verified steps intact.
   5. Walk all five steps to prerequisites-ready — it announces the survey
      phase (slice 2) comes next.
@@ -393,7 +393,7 @@ out_of_scope: |
     tested tool. If a tool is missing a capability, that is its own ticket.
   - A second negotiation engine (BL-381: runObject/runApprove is the one
     writer).
-  - Remote launch of the target swarm. The facilitator prepares onboarding;
+  - Remote launch of the target swarm. The onboarder prepares onboarding;
     the human launches on the target host.
   - Replacing per-ticket human_approval. The contract sits ABOVE it (BL-262);
     this ticket does not touch the per-feature gate.

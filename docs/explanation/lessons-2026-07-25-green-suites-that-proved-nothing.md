@@ -308,7 +308,7 @@ The counter-example to everything above. One ticket took six architect send-back
 and the send-backs got *better*:
 
 ```
-#1  un-guarded durable writes in the facilitator turn      "guard this branch"
+#1  un-guarded durable writes in the onboarder turn      "guard this branch"
 #2  idempotency guard misses redelivered batches           "guard this branch"
 #3  unguarded no-active branch re-applies stale text       "guard this branch"
 #4  re-paste at prerequisites-ready wipes the checklist    "the state-file KEY is wrong"

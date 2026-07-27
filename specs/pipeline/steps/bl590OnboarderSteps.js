@@ -1,6 +1,6 @@
 'use strict';
 
-// BL-590 slice 1: step handlers for the Onboarding Facilitator's reserved
+// BL-590 slice 1: step handlers for the Onboarder's reserved
 // topic + prerequisites state machine. Drives the REAL compiled modules
 // in-process - the topic ensure/reuse decision and routing guard from
 // telegramFrontDeskBotCore.ts (mirrors onboardingContractSteps.js's own
@@ -8,7 +8,7 @@
 // posture), the real pollAndForward delivery path (proving the "never
 // reaches the front-desk operator path" claim the same way
 // telegramFrontDeskBotCore.test.js's own BL-590 fixtures do), and the real
-// onboardingFacilitatorState.ts/onboardingFacilitatorStateStore.ts pure
+// onboarderState.ts/onboarderStateStore.ts pure
 // state machine + persistence. The poll loop / real Telegram network stay
 // out of scope entirely (testable-module boundary) - a fake postFn plays
 // Telegram's HTTP surface, exactly like telegramFrontDeskBotCli.test.js's
@@ -36,11 +36,11 @@ const {
   renderStepInstruction,
   renderStatus,
   classifyControl,
-} = require(path.join(EXT_DIR, 'out', 'onboarding', 'onboardingFacilitatorState'));
+} = require(path.join(EXT_DIR, 'out', 'onboarding', 'onboarderState'));
 const {
-  readOnboardingFacilitatorState,
-  writeOnboardingFacilitatorState,
-} = require(path.join(EXT_DIR, 'out', 'onboarding', 'onboardingFacilitatorStateStore'));
+  readOnboarderState,
+  writeOnboarderState,
+} = require(path.join(EXT_DIR, 'out', 'onboarding', 'onboarderStateStore'));
 
 const PRINCIPAL_ID = 111;
 const CHAT_ID = '1';
@@ -84,18 +84,18 @@ function requireKnownStep(step) {
 
 function registerSteps(registry) {
   // ── Background ────────────────────────────────────────────────────────
-  registry.define(/^a facilitator bound to the primary group's Onboarding topic with a controllable clock$/, (ctx) => {
+  registry.define(/^an onboarder bound to the primary group's Onboarding topic with a controllable clock$/, (ctx) => {
     ctx.root = mkTmpRoot();
     ctx.clockMs = 1_700_000_000_000;
     ctx.now = () => ctx.clockMs;
     ctx.createCalls = [];
     ctx.nextThreadId = 41;
-    ctx.states = new Map(); // targetRepoUrl -> OnboardingFacilitatorState
+    ctx.states = new Map(); // targetRepoUrl -> OnboarderState
   });
 
   function persistState(ctx, state) {
     ctx.states.set(state.targetRepoUrl, state);
-    writeOnboardingFacilitatorState(ctx.root, state);
+    writeOnboarderState(ctx.root, state);
     ctx.state = state;
   }
 
@@ -107,7 +107,7 @@ function registerSteps(registry) {
     }
   });
 
-  registry.define(/^the facilitator service starts$/, async (ctx) => {
+  registry.define(/^the onboarder service starts$/, async (ctx) => {
     ctx.onboardingTopicId = await ensureOnboardingTopic(ctx.root, 'fake-token', 'fake-chat', fakePostFn(ctx));
   });
 
@@ -132,13 +132,13 @@ function registerSteps(registry) {
     }
   });
 
-  registry.define(/^a principal message in that topic reaches the facilitator$/, async (ctx) => {
+  registry.define(/^a principal message in that topic reaches the onboarder$/, async (ctx) => {
     const handled = [];
     const result = await pollAndForward(0, PRINCIPAL_ID, {
       chatId: CHAT_ID,
-      getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: ctx.onboardingTopicId, text: 'hello facilitator' })] }),
+      getUpdates: async () => ({ success: true, updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: ctx.onboardingTopicId, text: 'hello onboarder' })] }),
       onboardingTopicId: async () => ctx.onboardingTopicId,
-      handleOnboardingFacilitatorMessage: async (topicId, text, updateId) => {
+      handleOnboarderMessage: async (topicId, text, updateId) => {
         handled.push({ topicId, text, updateId });
         return true;
       },
@@ -150,9 +150,9 @@ function registerSteps(registry) {
       },
     });
     if (handled.length !== 1 || result.posted !== 1) {
-      throw new Error(`expected the facilitator to receive exactly one message, got: ${JSON.stringify({ handled, result })}`);
+      throw new Error(`expected the onboarder to receive exactly one message, got: ${JSON.stringify({ handled, result })}`);
     }
-    ctx.facilitatorReceived = handled[0];
+    ctx.onboarderReceived = handled[0];
   });
 
   registry.define(/^it never reaches the front-desk operator path$/, (ctx) => {
@@ -160,13 +160,13 @@ function registerSteps(registry) {
     // reached - reaching here without that throw already proves it. Cross-
     // checked directly against the pure routing guard too.
     const decision = decideOnboardingReplyAction(
-      mkUpdate({ fromId: PRINCIPAL_ID, topicId: ctx.onboardingTopicId, text: 'hello facilitator' }),
+      mkUpdate({ fromId: PRINCIPAL_ID, topicId: ctx.onboardingTopicId, text: 'hello onboarder' }),
       PRINCIPAL_ID,
       CHAT_ID,
       ctx.onboardingTopicId
     );
     if (decision.kind !== 'deliver') {
-      throw new Error(`expected the routing guard to deliver to the facilitator, got: ${JSON.stringify(decision)}`);
+      throw new Error(`expected the routing guard to deliver to the onboarder, got: ${JSON.stringify(decision)}`);
     }
   });
 
@@ -179,20 +179,20 @@ function registerSteps(registry) {
   });
 
   registry.define(/^a per-target onboarding state is persisted for that URL$/, (ctx) => {
-    const rehydrated = readOnboardingFacilitatorState(ctx.root, ctx.targetRepoUrl);
+    const rehydrated = readOnboarderState(ctx.root, ctx.targetRepoUrl);
     if (!rehydrated || rehydrated.targetRepoUrl !== ctx.targetRepoUrl) {
       throw new Error(`expected a persisted state for ${ctx.targetRepoUrl}, got: ${JSON.stringify(rehydrated)}`);
     }
   });
 
   registry.define(/^the state is "checking-prerequisites"$/, (ctx) => {
-    const rehydrated = readOnboardingFacilitatorState(ctx.root, ctx.targetRepoUrl);
+    const rehydrated = readOnboarderState(ctx.root, ctx.targetRepoUrl);
     if (rehydrated.phase !== 'checking-prerequisites') {
       throw new Error(`expected phase "checking-prerequisites", got "${rehydrated.phase}"`);
     }
   });
 
-  registry.define(/^the facilitator posts where the onboarding stands and the first prerequisite instruction$/, (ctx) => {
+  registry.define(/^the onboarder posts where the onboarding stands and the first prerequisite instruction$/, (ctx) => {
     if (!ctx.lastMessage.includes(ctx.targetRepoUrl) || !ctx.lastMessage.includes(PREREQUISITE_STEPS.toolchain.instruction)) {
       throw new Error(`expected the posted message to name the target and the first step's instruction, got: ${ctx.lastMessage}`);
     }
@@ -244,7 +244,7 @@ function registerSteps(registry) {
     }
   });
 
-  registry.define(/^the facilitator posts the next prerequisite instruction$/, (ctx) => {
+  registry.define(/^the onboarder posts the next prerequisite instruction$/, (ctx) => {
     const nextStep = currentPrerequisiteStep(ctx.state);
     if (nextStep && !ctx.lastMessage.includes(nextStep)) {
       throw new Error(`expected the posted message to name the next step "${nextStep}", got: ${ctx.lastMessage}`);
@@ -265,7 +265,7 @@ function registerSteps(registry) {
     }
   });
 
-  registry.define(/^the facilitator re-asks for the step's verification command output$/, (ctx) => {
+  registry.define(/^the onboarder re-asks for the step's verification command output$/, (ctx) => {
     if (!/not a verification output/i.test(ctx.lastMessage)) {
       throw new Error(`expected a re-ask for verification output, got: ${ctx.lastMessage}`);
     }
@@ -279,7 +279,7 @@ function registerSteps(registry) {
     ctx.lastMessage = turn.message;
   });
 
-  registry.define(/^the facilitator explains what failed and re-issues the exact instruction$/, (ctx) => {
+  registry.define(/^the onboarder explains what failed and re-issues the exact instruction$/, (ctx) => {
     if (!/verification failed/i.test(ctx.lastMessage)) {
       throw new Error(`expected an explanation of the failure, got: ${ctx.lastMessage}`);
     }
@@ -293,7 +293,7 @@ function registerSteps(registry) {
     setOnboardingOnStep(ctx, requireKnownStep(step));
   });
 
-  registry.define(/^the facilitator posts the step's guidance$/, (ctx) => {
+  registry.define(/^the onboarder posts the step's guidance$/, (ctx) => {
     const step = currentPrerequisiteStep(ctx.state);
     ctx.postedGuidance = renderStepInstruction(step);
     ctx.guidanceStep = step;
@@ -329,11 +329,11 @@ function registerSteps(registry) {
     setOnboardingOnStep(ctx, requireKnownStep(step), 2);
   });
 
-  registry.define(/^the facilitator service restarts$/, (ctx) => {
+  registry.define(/^the onboarder service restarts$/, (ctx) => {
     // "Restart" = re-derive the in-memory state from the persisted file,
     // exactly what a freshly-spawned process's own first read would do -
     // never reusing the in-memory ctx.state object directly.
-    ctx.state = readOnboardingFacilitatorState(ctx.root, ctx.targetRepoUrl);
+    ctx.state = readOnboarderState(ctx.root, ctx.targetRepoUrl);
   });
 
   registry.define(/^the onboarding resumes at the "(.+)" step$/, (ctx, step) => {
@@ -362,7 +362,7 @@ function registerSteps(registry) {
     ctx.lastMessage = turn.message;
   });
 
-  registry.define(/^the facilitator holds and confirms the onboarding is paused$/, (ctx) => {
+  registry.define(/^the onboarder holds and confirms the onboarding is paused$/, (ctx) => {
     if (!ctx.state.paused) {
       throw new Error('expected the state to be paused');
     }
@@ -380,7 +380,7 @@ function registerSteps(registry) {
     ctx.lastMessage = turn.message;
   });
 
-  registry.define(/^the facilitator resumes at the same step with the same instruction$/, (ctx) => {
+  registry.define(/^the onboarder resumes at the same step with the same instruction$/, (ctx) => {
     if (ctx.state.paused) {
       throw new Error('expected the state to no longer be paused');
     }
@@ -410,7 +410,7 @@ function registerSteps(registry) {
     }
   });
 
-  registry.define(/^the facilitator announces the survey phase comes next$/, (ctx) => {
+  registry.define(/^the onboarder announces the survey phase comes next$/, (ctx) => {
     if (!/survey/i.test(ctx.lastMessage)) {
       throw new Error(`expected an announcement of the survey phase, got: ${ctx.lastMessage}`);
     }
