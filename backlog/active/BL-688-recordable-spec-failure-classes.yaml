@@ -10,6 +10,7 @@ priority: 03
 direction: swarm-proposed
 mutation_cost: low
 depends_on: []
+assigned_to: coder
 invariants:
   - "The widening is additive only: for every record already in either durable store and every one of the five pre-existing classes, the JSONL line written, the records read, and every tally reported are identical to what they were before this ticket."
   - "The vocabulary stays CLOSED: any class outside the widened set (including a case variant of a valid one) is still a usage error that writes nothing to either durable store."
