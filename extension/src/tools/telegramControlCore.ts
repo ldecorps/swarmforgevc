@@ -36,7 +36,9 @@ export type ControlDecision =
   | { action: 'execute-restart' }
   | { action: 'post-pause-menu' }
   | { action: 'apply-pause'; durationMs: number | undefined }
-  | { action: 'resume-now' };
+  | { action: 'resume-now' }
+  | { action: 'engage-ambulance'; ticket: string }
+  | { action: 'release-ambulance' };
 
 // The one callback_data namespace this ticket owns - deliberately its own
 // prefix ("control:"), never sharing BL-410's approve/reject/amend pattern:
@@ -63,16 +65,32 @@ const PAUSE_DURATIONS_MS: Record<string, number> = {
   'pause-4h': 4 * 60 * 60 * 1000,
 };
 
+// BL-655: bare "ambulance <BL-id>" / "ambulance off" - deliberately NOT
+// slash-prefixed like /stop /restart /pause (the ticket's own vocabulary,
+// verbatim, and the feature file's own scenarios type it bare). The ticket
+// id is self-contained in the text, so - unlike pause/stop/restart - this
+// never needs a confirm menu or button: the human's one message is the
+// whole decision.
+const AMBULANCE_ENGAGE_PATTERN = /^ambulance\s+(BL-\d+)$/i;
+
 function decideControlTextAction(text: string): ControlDecision {
-  const trimmed = text.trim().toLowerCase();
-  if (trimmed === '/stop') {
+  const trimmed = text.trim();
+  const lower = trimmed.toLowerCase();
+  if (lower === '/stop') {
     return { action: 'prompt-stop-modes' };
   }
-  if (trimmed === '/restart') {
+  if (lower === '/restart') {
     return { action: 'prompt-restart-confirm' };
   }
-  if (trimmed === '/pause') {
+  if (lower === '/pause') {
     return { action: 'post-pause-menu' };
+  }
+  if (lower === 'ambulance off') {
+    return { action: 'release-ambulance' };
+  }
+  const ambulanceMatch = trimmed.match(AMBULANCE_ENGAGE_PATTERN);
+  if (ambulanceMatch) {
+    return { action: 'engage-ambulance', ticket: ambulanceMatch[1].toUpperCase() };
   }
   return { action: 'ignore' };
 }
