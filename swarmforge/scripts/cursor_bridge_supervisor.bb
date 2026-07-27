@@ -50,6 +50,7 @@
 (def giveup-config {:giveup-cooldown-ms (env-long "CURSOR_BRIDGE_GIVEUP_COOLDOWN_MS" 900000)})
 ;; Poll long-polls up to 30s; 120s without heartbeat ⇒ stalled.
 (def stall-ms (env-long "CURSOR_BRIDGE_STALL_MS" 120000))
+(def heartbeat-startup-grace-ms (env-long "CURSOR_BRIDGE_HEARTBEAT_STARTUP_GRACE_MS" 90000))
 (def kill-grace-ms (env-long "CURSOR_BRIDGE_KILL_GRACE_MS" 2000))
 (def kill-pid! (front-desk-supervisor-lib/make-kill-pid! kill-grace-ms))
 
@@ -86,14 +87,21 @@
                  ["CURSOR_BRIDGE_MODEL" (System/getenv "CURSOR_BRIDGE_MODEL")]
                  ["CURSOR_BRIDGE_BOOT_PROMPT" (System/getenv "CURSOR_BRIDGE_BOOT_PROMPT")]])))
 
+(defn clear-poll-heartbeat! []
+  (fs/delete-if-exists poll-heartbeat-file))
+
 (defn spawn-bridge! []
+  (clear-poll-heartbeat!)
   (process/process {:out :inherit :err :inherit
                     :extra-env (bridge-extra-env)}
                    "node" (str bridge-entrypoint) project-root))
 
 (def process-specs
   [{:key :bridge :spawn-pid! (fn [] (.pid (:proc (spawn-bridge!))))
-    :heartbeat-stale? (fn [now] (front-desk-supervisor-lib/poll-heartbeat-stale? (read-poll-heartbeat-ms) now stall-ms))}])
+    :heartbeat-stale? (fn [now entry]
+                        (front-desk-supervisor-lib/poll-heartbeat-stale?
+                          (read-poll-heartbeat-ms) now stall-ms
+                          (:started-at-ms entry) heartbeat-startup-grace-ms))}])
 
 (defn read-state []
   (if (fs/exists? status-file)
@@ -119,7 +127,7 @@
         next-state (into {}
                          (map (fn [spec]
                                 (let [entry (merge (front-desk-supervisor-lib/default-entry) (get prior (:key spec)))
-                                      heartbeat-stale? ((:heartbeat-stale? spec) now)
+                                      heartbeat-stale? ((:heartbeat-stale? spec) now entry)
                                       {:keys [entry event]} (front-desk-supervisor-lib/check-one!
                                                               entry now pid-alive? (:spawn-pid! spec) restart-config giveup-config heartbeat-stale? kill-pid!)]
                                   (log-event! (:key spec) event entry)
