@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=22902f291837b42610728c2901878e9fb6613dcd05bd721288aa171b5d5359a6
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-07-27T14:25:38.491021958Z","feature_name":"Ensure repairs the handoff daemon by starting it, never by halting the swarm","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-690-ensure-daemon-repair-starts-not-halts.feature","background_hash":"b04bd980a5d6932616122ec913559cba6503e40240bbb5befd572c80585a707a","implementation_hash":"unknown","scenarios":[{"index":0,"name":"A daemon that is not running is started and reported FIXED","scenario_hash":"be599bba6b68d06af4d9ab7b6c44835b7083f970bdd8f126ea1ab366570db14d","mutation_count":3,"result":{"Total":3,"Killed":3,"Survived":0,"Errors":0},"tested_at":"2026-07-27T14:25:38.491021958Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: Ensure repairs the handoff daemon by starting it, never by halting the swarm
 
   Background:
