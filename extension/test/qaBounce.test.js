@@ -66,13 +66,26 @@ test('isKnownTicketType rejects a value outside the closed set', () => {
 });
 
 test('isKnownFailureClass accepts every class in the closed set', () => {
-  for (const cls of ['compile', 'unit', 'integration', 'acceptance', 'behavior']) {
+  for (const cls of ['compile', 'unit', 'integration', 'acceptance', 'behavior', 'invariant-unencoded', 'spec-gap']) {
     assert.equal(isKnownFailureClass(cls), true);
   }
 });
 
 test('isKnownFailureClass rejects a value outside the closed set (e.g. a real evidence file\'s own "scope")', () => {
   assert.equal(isKnownFailureClass('scope'), false);
+});
+
+// BL-688: invariant-unencoded/spec-gap were named by live role-prompt
+// instructions (BL-654's architect send-back, Article 4.4) but rejected here
+// until this ticket - every such bounce was silently dropped rather than
+// recorded.
+test('isKnownFailureClass rejects a class outside the widened set, e.g. "flaky"', () => {
+  assert.equal(isKnownFailureClass('flaky'), false);
+});
+
+test('isKnownFailureClass stays case-sensitive - a case variant of a valid widened class is still rejected', () => {
+  assert.equal(isKnownFailureClass('INVARIANT-UNENCODED'), false);
+  assert.equal(isKnownFailureClass('Spec-Gap'), false);
 });
 
 // ── qaBounceNaturalKey / hasQaBounceRecord (qa-bounce-02 support) ───────

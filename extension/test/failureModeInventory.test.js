@@ -75,6 +75,26 @@ test('recordsFromQaBounceJsonl groups by failureClass:producingRole and cites ti
   assert.ok(groups[0].citations.some((c) => c.includes('BL-1@abc')));
 });
 
+// BL-688: this reader treats failureClass as a loose string (no closed-set
+// validation of its own) - confirm the two widened classes flow straight
+// through into the signature, unchanged from any other class.
+test('recordsFromQaBounceJsonl flows a widened failure class (invariant-unencoded) through into the signature', () => {
+  const jsonl = JSON.stringify({
+    ticket: 'BL-654',
+    producingRole: 'coder',
+    failureClass: 'invariant-unencoded',
+    commit: 'abc',
+    at: '2026-07-27T00:00:00.000Z',
+    ticketType: 'defect',
+  });
+  const records = recordsFromQaBounceJsonl(jsonl);
+  assert.equal(records.length, 1);
+  assert.equal(records[0].signature, 'qa_bounce:invariant-unencoded:coder');
+  const groups = inventoryFailureModes(records);
+  assert.equal(groups.length, 1);
+  assert.equal(groups[0].signature, 'qa_bounce:invariant-unencoded:coder');
+});
+
 test('recordsFromRuleProposalJsonl skips malformed lines', () => {
   const jsonl = 'not-json\n' + JSON.stringify({ body: 'real one', proposer: 'x' }) + '\n';
   const records = recordsFromRuleProposalJsonl(jsonl);

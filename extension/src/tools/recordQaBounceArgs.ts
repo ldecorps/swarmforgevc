@@ -50,6 +50,6 @@ export const USAGE =
   '         --commit <hex> [--by <bouncingRole> --evidence <path>]\n' +
   `  --role: coder|cleaner|architect|hardender|documenter\n` +
   `  --type: feature|bug|defect|chore|docs|enhancement|epic\n` +
-  `  --class: compile|unit|integration|acceptance|behavior\n` +
+  `  --class: compile|unit|integration|acceptance|behavior|invariant-unencoded|spec-gap\n` +
   `  --by (optional): QA\n` +
   `  --evidence (optional): backlog/evidence/<file>.md\n`;
