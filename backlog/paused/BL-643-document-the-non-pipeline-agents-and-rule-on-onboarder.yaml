@@ -9,14 +9,19 @@ severity: medium
 priority: 01
 direction: human-requested
 depends_on: [BL-684]
-assigned_to: documenter
+assigned_to: coder
 mutation_cost: low
-required_stages: [documenter, qa]
+required_stages: [coder, hardender, documenter, qa]
+# ^ Re-certified 2026-07-27 when the acceptance was promoted from a draft to an
+#   executable feature file. The earlier [documenter, qa] declaration assumed the
+#   path-resolution criterion would be QA's manual pass; it cannot be, because a
+#   live `.feature` whose steps have no handler hard-fails the acceptance runner
+#   (specs/pipeline/runtime.js:24) — verified empirically against BL-101's
+#   handler-less feature, which fails 5/5 for exactly that reason. Handlers are
+#   tests, and the documenter's own prompt forbids it writing tests. See notes.
 stage_skip_reasons:
-  coder: "No code ships: an explanation document, a reference table and index links. The one code-shaped criterion — that every path in the table resolves — is a verification, not an implementation."
-  cleaner: "Nothing to refactor; prose and a table."
-  architect: "The document DESCRIBES existing architecture, it does not change any. The taxonomy is the documenter's editorial call, reviewed by QA against the repo."
-  hardender: "No test, coverage or mutation surface. Invariant 1 is checked by resolving each path against the repo, which is QA's pass."
+  cleaner: "Two documents, one table and one step-handler file; nothing to refactor."
+  architect: "The document DESCRIBES existing architecture, it does not change any. The taxonomy is an editorial call, reviewed by QA against the repo."
 invariants:
   - "Every path in the reference table — launcher, stop path, role prompt, log — resolves in the repo at the commit that ships the table. A path in this document is checked, never recalled; a wrong stop path here is the BL-637 defect in a new place."
   - "No agent's behaviour is described as authored when it was reverse-engineered from code: an agent with no role prompt is marked as such wherever it is described."
@@ -157,7 +162,7 @@ description: |
   say which ticket owns each. A doc that describes unbuilt behaviour is worse than a
   missing one, because a reader cannot tell which half is real.
 
-acceptance: specs/features/BL-643-non-pipeline-agents-documented-as-a-class.feature.draft
+acceptance: specs/features/BL-643-non-pipeline-agents-documented-as-a-class.feature
 
 out_of_scope: |
   - Building anything, and that now explicitly includes the rename: **BL-684 owns it**
@@ -182,3 +187,55 @@ notes: |
   a non-pipeline agent is NOT a lesser role. The Operator supervises the swarm from
   outside it; the Expeditor can drive the entire pipeline with the swarm stopped.
   "Non-pipeline" describes where they sit, not how much authority they have.
+
+  ## Promoted from draft to executable, 2026-07-27 — three decisions recorded
+
+  **1. Why the coder stage came back.** These scenarios are repo assertions —
+  enumerate the launchers, resolve each printed path — of exactly the shape
+  `specs/pipeline/steps/bl684OnboarderRenameSteps.js` already implements. They are
+  executable, so they need a handler file, and a handler file is a test. The
+  documenter may not write tests (documenter.prompt, "Does Not Own"), so the stage
+  that lands them is the coder.
+
+  **Who writes what, and why in that order.** The chain runs coder → … →
+  documenter → QA, so a deliverable authored at the documenter's stage cannot be
+  verified by a gate that runs before it. Therefore the CODER lands the two
+  documents AND their verifier in one green parcel; the DOCUMENTER's pass is its
+  own proper work and is not a formality — Divio mode placement, the `docs/index.md`
+  links scenario 08 gates, prose currency, and consistency with what the code says
+  today. If the documenter judges the coder's placement or framing wrong, that is a
+  normal documenter edit, not a bounce.
+
+  **2. One scenario was retired, not reworded.** The draft's scenario 01 ("no
+  document calls the agent a facilitator") is gone. BL-684 shipped, and it shipped
+  its own permanent gate for that check — its feature scenario 01 plus
+  `extension/test/onboarderRenameNoResidualFacilitator.test.js`. A second gate over
+  one behaviour is dead weight, and restating it here would have forced this feature
+  file into BL-684's residual-word allowlist to buy nothing. The other half of the
+  retired scenario ("the rename parcel has already landed") is now carried as data:
+  `depends_on: [BL-684]`, which this ticket's own description already argued for.
+
+  **3. Promotion hazard — read before moving this ticket to `active/`.** THIS FILE's
+  content legitimately still contains the retired word (it is the ticket that raised
+  the naming question), and it is grandfathered by EXACT PATH —
+  `backlog/paused/BL-643-…` — in that residual-word test's allowlist. Moving it to
+  `backlog/active/` therefore turns the test red without changing a byte of its
+  content. That is **BL-694**, already specced and reproduced when BL-590 was
+  unparked. Land BL-694 first, or expect one red test on promotion. The feature file
+  itself is clean: it names the retired word nowhere, so it needs no allowlist entry.
+
+  ## End-to-end QA procedure
+
+  1. `specs/pipeline/scripts/run_acceptance.sh specs/features/BL-643-non-pipeline-agents-documented-as-a-class.feature`
+     — all 8 scenarios pass (the outlines expand to 6 + 3 + 3 rows).
+  2. Re-derive the enumeration by hand at the QA commit — `ls swarmforge/scripts/launch_*.sh`
+     minus the library — and confirm the table's row set matches, including the three
+     irregular cases the ticket's `source:` names. Scenario 01 automates this; QA
+     confirms the handler's enumeration is the repo's, not a hardcoded list.
+  3. Spot-check three table rows by resolving their launcher, stop path and role
+     prompt against the working tree. A path that resolves only because the handler
+     normalised it is a defect, not a pass.
+  4. Read the Onboarder section against `git log main -- extension/src/onboarder*`
+     and confirm every behaviour described is on `main`, and every unshipped phase
+     names its owning ticket (BL-624, BL-625).
+  5. Confirm `docs/index.md` links every added document, in the same commit.
