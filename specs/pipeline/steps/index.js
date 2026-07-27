@@ -332,7 +332,8 @@ const DOMAINS = [
   require('./bl655AmbulanceModeHoldSteps'),
   require('./bl684OnboarderRenameSteps'),
   require('./bl688RecordableSpecFailureClassesSteps'),
-  require('./bl690EnsureDaemonRepairStartsNotHaltsSteps')
+  require('./bl690EnsureDaemonRepairStartsNotHaltsSteps'),
+  require('./bl686EpicDrilldownSlugMatchSteps')
 ];
 
 function registerSteps(registry) {

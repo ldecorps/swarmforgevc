@@ -44,11 +44,14 @@ const EPICS = [
   { id: 'EB', title: 'Epic B', priority: 10 },
 ];
 
+// BL-686: `epicIds` carries the server-resolved epic TICKET ids (never the
+// raw slug the webview used to compare against its own tile id) - EA/EB
+// here stand for those ids, same as the tiles' own data-id.
 const TOPICS = [
-  { id: 'A1', title: 'Topic A1', priority: 1, epic: 'EA', hasLiveDependency: false },
-  { id: 'A2', title: 'Topic A2', priority: 4, epic: 'EA', hasLiveDependency: false },
-  { id: 'A3', title: 'Topic A3', priority: 6, epic: 'EA', hasLiveDependency: true },
-  { id: 'B1', title: 'Topic B1', priority: 2, epic: 'EB', hasLiveDependency: false },
+  { id: 'A1', title: 'Topic A1', priority: 1, epicIds: ['EA'], hasLiveDependency: false },
+  { id: 'A2', title: 'Topic A2', priority: 4, epicIds: ['EA'], hasLiveDependency: false },
+  { id: 'A3', title: 'Topic A3', priority: 6, epicIds: ['EA'], hasLiveDependency: true },
+  { id: 'B1', title: 'Topic B1', priority: 2, epicIds: ['EB'], hasLiveDependency: false },
 ];
 
 test('BL-674-01: drilling into an epic lists its live topics in displayed order, header stays present', async () => {
@@ -96,10 +99,10 @@ test('BL-674-03: tapping make-top on a topic calls the topic route and re-render
     }
     if (url.startsWith('/epic-reorder/topic-make-top')) {
       currentTopics = [
-        { id: 'A3', title: 'Topic A3', priority: 0, epic: 'EA', hasLiveDependency: true },
-        { id: 'A1', title: 'Topic A1', priority: 1, epic: 'EA', hasLiveDependency: false },
-        { id: 'A2', title: 'Topic A2', priority: 4, epic: 'EA', hasLiveDependency: false },
-        { id: 'B1', title: 'Topic B1', priority: 2, epic: 'EB', hasLiveDependency: false },
+        { id: 'A3', title: 'Topic A3', priority: 0, epicIds: ['EA'], hasLiveDependency: true },
+        { id: 'A1', title: 'Topic A1', priority: 1, epicIds: ['EA'], hasLiveDependency: false },
+        { id: 'A2', title: 'Topic A2', priority: 4, epicIds: ['EA'], hasLiveDependency: false },
+        { id: 'B1', title: 'Topic B1', priority: 2, epicIds: ['EB'], hasLiveDependency: false },
       ];
       return Promise.resolve({ ok: true, json: () => Promise.resolve({ success: true, changed: true }) });
     }

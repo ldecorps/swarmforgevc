@@ -184,8 +184,14 @@ function registerSteps(registry) {
     async (ctx, epicId, topicIdsCsv) => {
       ctx.root = mkFixture();
       ctx.epicId = epicId;
-      writeTicket(ctx, epicId, 'epic', null, 0);
-      topicIdsCsv.split(',').forEach((id, i) => writeTicket(ctx, id, 'feature', epicId, i + 1));
+      // BL-686: a real epic ticket's own `epic:` slug is never its `id:` -
+      // give the epic ticket a distinct slug its topics declare, so this
+      // fixture exercises the real id/slug split rather than the id===slug
+      // shape that hid BL-686 through the whole pipeline.
+      const slug = `${epicId}-slug`;
+      ctx.epicSlug = slug;
+      writeTicket(ctx, epicId, 'epic', slug, 0);
+      topicIdsCsv.split(',').forEach((id, i) => writeTicket(ctx, id, 'feature', slug, i + 1));
       ctx.bridgeHandle = await startBridge(ctx.root, path.join(ctx.root, 'runs.jsonl'), TOKEN, {});
     },
     FEATURE
@@ -267,7 +273,10 @@ function registerSteps(registry) {
     /^the make-top button on row "([^"]+)" is tapped$/,
     async (ctx, topicId) => {
       await renderScreen(ctx);
-      await drillIntoEpic(ctx, ctx.meta[topicId].epic);
+      // BL-686: drill in by the epic ticket's own id (its tile data-id) -
+      // ctx.meta[topicId].epic is the topic's SLUG, not the epic's ticket
+      // id, and this feature's fixtures only ever hold one epic anyway.
+      await drillIntoEpic(ctx, ctx.epicId);
       ctx.beforeOrder = rowIds(ctx);
       await tapTopicMakeTop(ctx, topicId);
     },

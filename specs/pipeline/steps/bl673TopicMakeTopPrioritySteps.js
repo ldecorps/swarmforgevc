@@ -45,6 +45,7 @@ function ticketPath(ctx, folder, id) {
 function writeBacklogTicket(ctx, folder, id, type, epic, priority, dependsOn) {
   ctx.locations = ctx.locations || {};
   ctx.epics = ctx.epics || {};
+  ctx.types = ctx.types || {};
   const previousFolder = ctx.locations[id];
   if (previousFolder && previousFolder !== folder) {
     const previousPath = ticketPath(ctx, previousFolder, id);
@@ -63,6 +64,7 @@ function writeBacklogTicket(ctx, folder, id, type, epic, priority, dependsOn) {
   const content = lines.join('\n') + '\n';
   const filePath = ticketPath(ctx, folder, id);
   ctx.locations[id] = folder;
+  ctx.types[id] = type;
   if (epic) {
     ctx.epics[id] = epic;
   }
@@ -81,10 +83,14 @@ function readPriority(ctx, id) {
   return match ? Number(match[1]) : undefined;
 }
 
+// BL-686 invariant 3: an epic tracker is never itself one of "epic X's live
+// topics" - mirrors the production route's own `type !== 'epic'` exclusion
+// so this file's local bookkeeping can't disagree with what the real route
+// actually does.
 function liveOrder(ctx, epicFilter) {
   const liveIds = Object.keys(ctx.locations).filter((id) => {
     const folder = ctx.locations[id];
-    const isLive = folder === 'paused' || folder === 'hold';
+    const isLive = (folder === 'paused' || folder === 'hold') && ctx.types[id] !== 'epic';
     return isLive && (!epicFilter || ctx.epics[id] === epicFilter);
   });
   return liveIds
@@ -141,12 +147,21 @@ function registerSteps(registry) {
     /^a live backlog where epic "([^"]+)" has topics "([^"]+)" at priorities "([^"]+)" and epic "([^"]+)" has topics "([^"]+)" at priorities "([^"]+)"$/,
     (ctx, epicA, topicIdsA, prioritiesA, epicB, topicIdsB, prioritiesB) => {
       ctx.root = mkFixture();
+      // BL-686: a real epic ticket's own `epic:` slug is never its `id:` -
+      // "EA"/"EB" stay the epic tickets' ids (the wire identity every
+      // postTopicMakeTop call below still sends), but their topics declare
+      // a DIFFERENT slug, and a real `type: epic` ticket is written for
+      // each so the route can resolve id -> slug the same way production
+      // data requires.
+      ctx.epicSlugs = { [epicA]: `${epicA}-slug`, [epicB]: `${epicB}-slug` };
+      writeBacklogTicket(ctx, 'paused', epicA, 'epic', ctx.epicSlugs[epicA], 0);
+      writeBacklogTicket(ctx, 'paused', epicB, 'epic', ctx.epicSlugs[epicB], 0);
       const idsA = topicIdsA.split(',');
       const pA = prioritiesA.split(',').map(Number);
       const idsB = topicIdsB.split(',');
       const pB = prioritiesB.split(',').map(Number);
-      idsA.forEach((id, i) => writeBacklogTicket(ctx, 'paused', id, 'feature', epicA, pA[i]));
-      idsB.forEach((id, i) => writeBacklogTicket(ctx, 'paused', id, 'feature', epicB, pB[i]));
+      idsA.forEach((id, i) => writeBacklogTicket(ctx, 'paused', id, 'feature', ctx.epicSlugs[epicA], pA[i]));
+      idsB.forEach((id, i) => writeBacklogTicket(ctx, 'paused', id, 'feature', ctx.epicSlugs[epicB], pB[i]));
     },
     FEATURE
   );
@@ -170,7 +185,7 @@ function registerSteps(registry) {
         return;
       }
       if (defect === 'a cyclic depends_on chain back to itself') {
-        writeBacklogTicket(ctx, 'paused', 'A4', 'feature', 'EA', 0, [topicId]);
+        writeBacklogTicket(ctx, 'paused', 'A4', 'feature', ctx.epics[topicId], 0, [topicId]);
         writeBacklogTicket(ctx, 'paused', topicId, 'feature', ctx.epics[topicId], readPriority(ctx, topicId), ['A4']);
         return;
       }
@@ -219,7 +234,11 @@ function registerSteps(registry) {
   registry.defineScoped(
     /^topic "([^"]+)" carries epic "([^"]+)"$/,
     (ctx, topicId, epicId) => {
-      assert.equal(ctx.epics[topicId], epicId, `expected ${topicId} to already carry epic ${epicId} from the Background`);
+      assert.equal(
+        ctx.epics[topicId],
+        ctx.epicSlugs[epicId],
+        `expected ${topicId} to already carry epic ${epicId}'s slug from the Background`
+      );
     },
     FEATURE
   );
@@ -253,7 +272,7 @@ function registerSteps(registry) {
     /^"([^"]+)" ranks strictly better than every other live topic of epic "([^"]+)"$/,
     (ctx, topicId, epicId) => {
       assert.equal(ctx.lastResponse.status, 200);
-      const order = liveOrder(ctx, epicId);
+      const order = liveOrder(ctx, ctx.epicSlugs[epicId]);
       assert.equal(order[0], topicId, `expected ${topicId} to be the top of epic ${epicId}'s topics: ${JSON.stringify(order)}`);
     },
     FEATURE
