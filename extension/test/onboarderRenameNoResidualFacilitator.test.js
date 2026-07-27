@@ -66,6 +66,10 @@ const ALLOWED_RESIDUAL_FILES = new Set([
   'extension/test/onboarderEvidenceByteIdentical.property.test.js',
   'extension/test/onboarderLauncherPidGuard.property.test.js',
   'extension/test/onboarderRenameNoResidualFacilitator.test.js',
+  // The acceptance step handlers for this same scenario: they run this exact
+  // grep and cite the old-named artifact filenames the launcher/supervisor
+  // compat shim must still recognize - categories 2 and 3, not a missed rename.
+  'specs/pipeline/steps/bl684OnboarderRenameSteps.js',
   'swarmforge/scripts/test/test_launch_onboarder.sh',
   'swarmforge/scripts/test/test_onboarder_supervisor_ignores_old_heartbeat.sh',
   'swarmforge/scripts/test/test_stop_ancillary_services_onboarder_dual_clear.sh',

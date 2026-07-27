@@ -115,6 +115,7 @@ const CONTENT_EXEMPT = [
   /^specs\/features\/BL-643-.*\.feature\.draft$/,
   /^specs\/features\/BL-684-.*\.feature$/,
   /^specs\/pipeline\/steps\/bl633InvariantsSectionSteps\.js$/,
+  /^specs\/pipeline\/steps\/bl684OnboarderRenameSteps\.js$/,
   /^swarmforge\/scripts\/(launch_onboarder\.sh|stop_ancillary_services\.sh)$/,
   /^swarmforge\/scripts\/test\/test_(launch_onboarder|onboarder_supervisor_ignores_old_heartbeat|stop_ancillary_services_onboarder_dual_clear)\.sh$/,
 ];
