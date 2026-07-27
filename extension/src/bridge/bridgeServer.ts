@@ -1220,6 +1220,7 @@ export function startBridge(
       synthesizeSpeech: options.letsTalk?.synthesizeSpeech,
     });
     const letsTalkAgentSession = options.letsTalk?.agentSession ?? createLiveCursorBridgeAgentSession(targetPath);
+    // BL-696: POST /lets-talk/turn, POST /lets-talk/new-session (write routes).
     const letsTalkWriteRoutes = createLetsTalkWriteRoutes(
       { agentSession: letsTalkAgentSession, ...letsTalkAudio },
       (req, res, maxBytes, isShape, shapeErrorReason) => readValidatedBody(req, res, maxBytes, isShape, shapeErrorReason),

@@ -1,8 +1,8 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
 const fc = require('fast-check');
+const { mkTmpDir } = require('./helpers/tmpDir');
 const { withAgentLock } = require('../out/bridge/cursorBridgeAgentSession');
 const { createLetsTalkTurnHandler } = require('../out/bridge/letsTalkRoutes');
 const { createMockCursorBridgeAgentSession } = require('../out/bridge/cursorBridgeAgentSession');
@@ -13,7 +13,7 @@ const { createMockCursorBridgeAgentSession } = require('../out/bridge/cursorBrid
 // Coder-authored property tests per BL-654; runs only via npm run test:properties.
 
 function mkRoot() {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-bl696-inv-'));
+  const root = mkTmpDir('sfvc-bl696-inv-');
   fs.mkdirSync(path.join(root, '.swarmforge', 'operator'), { recursive: true });
   return root;
 }
