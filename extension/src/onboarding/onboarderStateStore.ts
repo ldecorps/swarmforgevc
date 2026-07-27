@@ -10,23 +10,30 @@
 // target, so there is no target-repo .swarmforge/ to write into yet. One
 // file per target (keyed by a slug of its repo URL) so concurrent
 // onboardings (slice 3) stay distinct.
+import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import { atomicWrite } from '../util/atomicWrite';
-import { OnboarderState } from './onboarderState';
+import { normalizeTargetRepoUrl, OnboarderState } from './onboarderState';
 
 function onboardingStateDir(swarmRepoRoot: string): string {
   return path.join(swarmRepoRoot, '.swarmforge', 'onboarding');
 }
 
 // A filesystem-safe, human-recognizable key for a target repo URL - strips
-// the scheme and replaces anything that isn't alphanumeric/-/. with '-', so
-// two distinct URLs never collide and the resulting filename stays legible
-// for operator debugging (e.g. github.com/org/repo).
+// the scheme and replaces anything that isn't alphanumeric/-/. with '-', then
+// appends an 8-char sha1 digest of the NORMALIZED (unmangled) URL. The
+// readable part alone is not injective - e.g. `acme/tools-ci` and
+// `acme-tools/ci` both collapse to `acme-tools-ci` once `/` is replaced with
+// `-` - so the digest is load-bearing, not decorative (architect bounce #5
+// D1). Built on normalizeTargetRepoUrl so aliases of the SAME repo (scheme,
+// `.git`, trailing slash) still collapse onto one file - the digest is taken
+// over the normalized string, not the raw one.
 export function slugifyTargetRepoUrl(targetRepoUrl: string): string {
-  const withoutScheme = targetRepoUrl.replace(/^[a-z]+:\/\//i, '').replace(/\.git$/i, '');
-  const slug = withoutScheme.replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/^-+|-+$/g, '');
-  return slug.length > 0 ? slug : 'target';
+  const normalized = normalizeTargetRepoUrl(targetRepoUrl);
+  const readable = normalized.replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || 'target';
+  const digest = crypto.createHash('sha1').update(normalized).digest('hex').slice(0, 8);
+  return `${readable}-${digest}`;
 }
 
 function onboardingStatePath(swarmRepoRoot: string, targetRepoUrl: string): string {
@@ -63,6 +70,22 @@ function isEnvelope(parsed: unknown): parsed is OnboardingStateEnvelope {
   return typeof parsed === 'object' && parsed !== null && 'state' in parsed && 'processedUpdates' in parsed;
 }
 
+// Shape-validating allow-list (architect bounce #5 D2) - a bare pre-envelope
+// state file is only wrapped if it actually LOOKS like an OnboarderState.
+// Replaces a deny-by-filename check that had to be extended for every new
+// non-state sibling `.json` (contract/negotiation state in slices 2/3 would
+// have been the next miss) with a check of the parsed value itself, so an
+// unrelated JSON file is dropped rather than cast into a fake state that
+// later throws deep in the state machine.
+function isOnboarderState(parsed: unknown): parsed is OnboarderState {
+  return (
+    typeof parsed === 'object' &&
+    parsed !== null &&
+    typeof (parsed as OnboarderState).targetRepoUrl === 'string' &&
+    typeof (parsed as OnboarderState).phase === 'string'
+  );
+}
+
 function readEnvelope(swarmRepoRoot: string, targetRepoUrl: string): OnboardingStateEnvelope | undefined {
   try {
     const parsed: unknown = JSON.parse(fs.readFileSync(onboardingStatePath(swarmRepoRoot, targetRepoUrl), 'utf8'));
@@ -72,7 +95,10 @@ function readEnvelope(swarmRepoRoot: string, targetRepoUrl: string): OnboardingS
     // A state file written before this envelope existed (a bare
     // OnboarderState) - keep its progress, start its
     // processed-update history empty rather than fail to read it at all.
-    return { state: parsed as OnboarderState, processedUpdates: {} };
+    if (isOnboarderState(parsed)) {
+      return { state: parsed, processedUpdates: {} };
+    }
+    return undefined;
   } catch {
     return undefined;
   }
@@ -113,7 +139,10 @@ function listOnboardingEnvelopes(swarmRepoRoot: string): OnboardingStateEnvelope
     .map((entry) => {
       try {
         const parsed: unknown = JSON.parse(fs.readFileSync(path.join(dir, entry), 'utf8'));
-        return isEnvelope(parsed) ? parsed : { state: parsed as OnboarderState, processedUpdates: {} };
+        if (isEnvelope(parsed)) {
+          return parsed;
+        }
+        return isOnboarderState(parsed) ? { state: parsed, processedUpdates: {} } : undefined;
       } catch {
         return undefined;
       }
