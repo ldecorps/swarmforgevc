@@ -52,6 +52,17 @@ const ALLOWED_RESIDUAL_FILES = new Set([
   'specs/pipeline/steps/bl633InvariantsSectionSteps.js',
   'swarmforge/scripts/launch_onboarder.sh',
   'swarmforge/scripts/stop_ancillary_services.sh',
+  // This test's own file, and its three siblings born with it: each cites the
+  // retired word on purpose (the evidence-file paths this test checksums, the
+  // old-named pid/heartbeat/status paths the invariant-2 compat shim and its
+  // dual-clear tests must exercise, and this file's own allowlist of same) -
+  // categories 2 and 3 above, not a rename that was missed.
+  'extension/test/onboarderEvidenceByteIdentical.property.test.js',
+  'extension/test/onboarderLauncherPidGuard.property.test.js',
+  'extension/test/onboarderRenameNoResidualFacilitator.test.js',
+  'swarmforge/scripts/test/test_launch_onboarder.sh',
+  'swarmforge/scripts/test/test_onboarder_supervisor_ignores_old_heartbeat.sh',
+  'swarmforge/scripts/test/test_stop_ancillary_services_onboarder_dual_clear.sh',
 ]);
 
 function gitGrepFacilitator() {
