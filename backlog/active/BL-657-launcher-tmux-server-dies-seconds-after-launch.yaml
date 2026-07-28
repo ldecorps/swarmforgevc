@@ -9,7 +9,7 @@ severity: high
 priority: 04
 direction: human-requested
 depends_on: []
-assigned_to: specifier
+assigned_to: coder
 mutation_cost: medium
 
 approval_context: >
