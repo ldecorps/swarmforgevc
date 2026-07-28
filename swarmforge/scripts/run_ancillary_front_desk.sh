@@ -28,10 +28,9 @@ cd "$ROOT"
 
 case "$FAMILY" in
   openrouter|claude_direct)
-    if [[ "$FAMILY" == openrouter ]]; then
-      SETTINGS="$ROOT/.swarmforge/operator/front-desk-operator.claude-settings.json"
-      ancillary_provider_write_claude_settings "$SETTINGS_TEMPLATE" "$SETTINGS" "$MODEL" "$EFFORT"
-    fi
+    SETTINGS="$ROOT/.swarmforge/operator/front-desk-operator.claude-settings.json"
+    mkdir -p "$(dirname "$SETTINGS")"
+    ancillary_provider_write_claude_settings "$SETTINGS_TEMPLATE" "$SETTINGS" "$MODEL" "$EFFORT"
     if ! claude -p --output-format json --tools "" --settings "$SETTINGS" "$(cat "$PROMPT_FILE")" > "$RESULT_FILE" 2>"$ERR_OUT"; then
       if [[ ! -s "$RESULT_FILE" ]]; then
         ancillary_provider_write_front_desk_result_json /dev/null "$RESULT_FILE" true

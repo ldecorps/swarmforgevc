@@ -22,12 +22,21 @@ function writeTicket(targetPath, folder, id, extraFields) {
   fs.writeFileSync(path.join(dir, `${id}.yaml`), `${lines.join('\n')}\n`);
 }
 
-function writeTopic(targetPath, folder, id, epic, priority, dependsOn) {
-  const fields = ['type: feature', `epic: ${epic}`, `priority: ${priority}`];
+function writeTopic(targetPath, folder, id, epicSlug, priority, dependsOn) {
+  const fields = ['type: feature', `epic: ${epicSlug}`, `priority: ${priority}`];
   if (dependsOn && dependsOn.length > 0) {
     fields.push(`depends_on: [${dependsOn.join(', ')}]`);
   }
   writeTicket(targetPath, folder, id, fields);
+}
+
+// BL-686: a real epic ticket's own `epic:` slug is never its `id:` (verified
+// across all 15 live epic tickets at filing time) - every test below gives
+// its epic ticket id ("EA"/"EB") a DIFFERENT slug ("slug-ea"/"slug-eb") that
+// its topics declare, so these fixtures exercise the real id/slug split
+// rather than the shape that hid BL-686 through the whole pipeline.
+function writeEpic(targetPath, id, epicSlug, priority) {
+  writeTicket(targetPath, 'paused', id, ['type: epic', `epic: ${epicSlug}`, `priority: ${priority}`]);
 }
 
 function readPriority(targetPath, folder, id) {
@@ -78,7 +87,8 @@ async function topicMakeTop(handle, epicId, topicId) {
 
 test('topic make-top route requires control auth (bearer-only 403, wrong token 401)', async () => {
   const target = mkTmp();
-  writeTopic(target, 'paused', 'A3', 'EA', 6);
+  writeEpic(target, 'EA', 'slug-ea', 0);
+  writeTopic(target, 'paused', 'A3', 'slug-ea', 6);
 
   await withBridge(target, {}, async (handle) => {
     const bearerOnly = await fetch(`http://127.0.0.1:${handle.port}/epic-reorder/topic-make-top`, {
@@ -101,11 +111,13 @@ test('topic make-top route requires control auth (bearer-only 403, wrong token 4
 
 test('scenario 01/02: a dependency-free topic becomes the strict top of its own epic, other epics untouched, one commit', async () => {
   const target = mkGitTarget();
-  writeTopic(target, 'paused', 'A1', 'EA', 1);
-  writeTopic(target, 'paused', 'A2', 'EA', 4);
-  writeTopic(target, 'paused', 'A3', 'EA', 6);
-  writeTopic(target, 'paused', 'B1', 'EB', 2);
-  writeTopic(target, 'hold', 'B2', 'EB', 5);
+  writeEpic(target, 'EA', 'slug-ea', 0);
+  writeEpic(target, 'EB', 'slug-eb', 0);
+  writeTopic(target, 'paused', 'A1', 'slug-ea', 1);
+  writeTopic(target, 'paused', 'A2', 'slug-ea', 4);
+  writeTopic(target, 'paused', 'A3', 'slug-ea', 6);
+  writeTopic(target, 'paused', 'B1', 'slug-eb', 2);
+  writeTopic(target, 'hold', 'B2', 'slug-eb', 5);
   execFileSync('git', ['add', '-A'], { cwd: target });
   execFileSync('git', ['commit', '-q', '-m', 'seed'], { cwd: target });
 
@@ -134,9 +146,10 @@ test('scenario 01/02: a dependency-free topic becomes the strict top of its own 
 
 test('scenario 03: a better-ranked live dependency (also a peer) bounds the move below itself', async () => {
   const target = mkGitTarget();
-  writeTopic(target, 'paused', 'A1', 'EA', 1);
-  writeTopic(target, 'paused', 'A2', 'EA', 4);
-  writeTopic(target, 'paused', 'A3', 'EA', 6, ['A1']);
+  writeEpic(target, 'EA', 'slug-ea', 0);
+  writeTopic(target, 'paused', 'A1', 'slug-ea', 1);
+  writeTopic(target, 'paused', 'A2', 'slug-ea', 4);
+  writeTopic(target, 'paused', 'A3', 'slug-ea', 6, ['A1']);
   execFileSync('git', ['add', '-A'], { cwd: target });
   execFileSync('git', ['commit', '-q', '-m', 'seed'], { cwd: target });
 
@@ -153,8 +166,10 @@ test('scenario 03: a better-ranked live dependency (also a peer) bounds the move
 
 test('scenario 04: a cross-epic live dependency ranked worse refuses the move, writing nothing', async () => {
   const target = mkTmp();
-  writeTopic(target, 'paused', 'A3', 'EA', 1, ['B2']);
-  writeTopic(target, 'paused', 'B2', 'EB', 5);
+  writeEpic(target, 'EA', 'slug-ea', 0);
+  writeEpic(target, 'EB', 'slug-eb', 0);
+  writeTopic(target, 'paused', 'A3', 'slug-ea', 1, ['B2']);
+  writeTopic(target, 'paused', 'B2', 'slug-eb', 5);
   const beforeA3 = fs.readFileSync(path.join(target, 'backlog', 'paused', 'A3.yaml'), 'utf8');
 
   await withBridge(target, {}, async (handle) => {
@@ -169,8 +184,9 @@ test('scenario 04: a cross-epic live dependency ranked worse refuses the move, w
 
 test('scenario 05: a cyclic depends_on chain refuses fail-closed', async () => {
   const target = mkTmp();
-  writeTopic(target, 'paused', 'A3', 'EA', 6, ['A4']);
-  writeTopic(target, 'paused', 'A4', 'EA', 0, ['A3']);
+  writeEpic(target, 'EA', 'slug-ea', 0);
+  writeTopic(target, 'paused', 'A3', 'slug-ea', 6, ['A4']);
+  writeTopic(target, 'paused', 'A4', 'slug-ea', 0, ['A3']);
 
   await withBridge(target, {}, async (handle) => {
     const { status, body } = await topicMakeTop(handle, 'EA', 'A3');
@@ -182,7 +198,8 @@ test('scenario 05: a cyclic depends_on chain refuses fail-closed', async () => {
 
 test('scenario 05: a dangling depends_on id refuses fail-closed', async () => {
   const target = mkTmp();
-  writeTopic(target, 'paused', 'A3', 'EA', 6, ['GHOST-1']);
+  writeEpic(target, 'EA', 'slug-ea', 0);
+  writeTopic(target, 'paused', 'A3', 'slug-ea', 6, ['GHOST-1']);
 
   await withBridge(target, {}, async (handle) => {
     const { status, body } = await topicMakeTop(handle, 'EA', 'A3');
@@ -194,8 +211,9 @@ test('scenario 05: a dangling depends_on id refuses fail-closed', async () => {
 
 test('scenario 06: done and active dependencies neither bound nor refuse the move', async () => {
   const target = mkGitTarget();
-  writeTopic(target, 'paused', 'A1', 'EA', 1);
-  writeTopic(target, 'paused', 'A3', 'EA', 6, ['DONE-1', 'ACTIVE-1']);
+  writeEpic(target, 'EA', 'slug-ea', 0);
+  writeTopic(target, 'paused', 'A1', 'slug-ea', 1);
+  writeTopic(target, 'paused', 'A3', 'slug-ea', 6, ['DONE-1', 'ACTIVE-1']);
   writeTicket(target, 'done', 'DONE-1', ['type: feature', 'priority: 0']);
   writeTicket(target, 'active', 'ACTIVE-1', ['type: feature', 'priority: 0']);
   execFileSync('git', ['add', '-A'], { cwd: target });
@@ -212,7 +230,9 @@ test('scenario 06: done and active dependencies neither bound nor refuse the mov
 
 test('scenario 07: a topic outside the named epic is refused without writes', async () => {
   const target = mkTmp();
-  writeTopic(target, 'paused', 'B1', 'EB', 2);
+  writeEpic(target, 'EA', 'slug-ea', 0);
+  writeEpic(target, 'EB', 'slug-eb', 0);
+  writeTopic(target, 'paused', 'B1', 'slug-eb', 2);
   const before = fs.readFileSync(path.join(target, 'backlog', 'paused', 'B1.yaml'), 'utf8');
 
   await withBridge(target, {}, async (handle) => {
@@ -226,8 +246,9 @@ test('scenario 07: a topic outside the named epic is refused without writes', as
 
 test('scenario 08: re-applying to a topic already in its best permitted slot is a no-op with a reason', async () => {
   const target = mkGitTarget();
-  writeTopic(target, 'paused', 'A1', 'EA', 1);
-  writeTopic(target, 'paused', 'A3', 'EA', 6);
+  writeEpic(target, 'EA', 'slug-ea', 0);
+  writeTopic(target, 'paused', 'A1', 'slug-ea', 1);
+  writeTopic(target, 'paused', 'A3', 'slug-ea', 6);
   execFileSync('git', ['add', '-A'], { cwd: target });
   execFileSync('git', ['commit', '-q', '-m', 'seed'], { cwd: target });
 
@@ -248,7 +269,8 @@ test('scenario 08: re-applying to a topic already in its best permitted slot is 
 
 test('topic make-top route returns 404 and mutates nothing for a topic id that does not exist at all', async () => {
   const target = mkTmp();
-  writeTopic(target, 'paused', 'A1', 'EA', 1);
+  writeEpic(target, 'EA', 'slug-ea', 0);
+  writeTopic(target, 'paused', 'A1', 'slug-ea', 1);
 
   await withBridge(target, {}, async (handle) => {
     const { status, body } = await topicMakeTop(handle, 'EA', 'NOT-A-REAL-ID');
@@ -259,7 +281,8 @@ test('topic make-top route returns 404 and mutates nothing for a topic id that d
 
 test('topic make-top route rejects a malformed body without mutating any backlog YAML', async () => {
   const target = mkTmp();
-  writeTopic(target, 'paused', 'A1', 'EA', 1);
+  writeEpic(target, 'EA', 'slug-ea', 0);
+  writeTopic(target, 'paused', 'A1', 'slug-ea', 1);
   const before = fs.readFileSync(path.join(target, 'backlog', 'paused', 'A1.yaml'), 'utf8');
 
   await withBridge(target, {}, async (handle) => {
@@ -276,8 +299,9 @@ test('topic make-top route rejects a malformed body without mutating any backlog
 
 test('topic make-top route: write succeeds but the commit fails - reports the BL-490 reason and leaves the write on disk', async () => {
   const target = mkTmp();
-  writeTopic(target, 'paused', 'A1', 'EA', 1);
-  writeTopic(target, 'paused', 'A3', 'EA', 6);
+  writeEpic(target, 'EA', 'slug-ea', 0);
+  writeTopic(target, 'paused', 'A1', 'slug-ea', 1);
+  writeTopic(target, 'paused', 'A3', 'slug-ea', 6);
 
   await withBridge(target, {}, async (handle) => {
     const { status, body } = await topicMakeTop(handle, 'EA', 'A3');
