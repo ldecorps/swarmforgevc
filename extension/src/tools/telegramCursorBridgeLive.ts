@@ -6,6 +6,7 @@ import {
   createForumTopicWithRateLimitRetry,
   getTelegramUpdates,
   sendTelegramMessageWithRateLimitRetry,
+  type TelegramMessage,
   type TelegramUpdate,
 } from '../notify/telegramClient';
 import { nextUpdateOffset } from './telegramTopicDecisions';
@@ -111,23 +112,41 @@ export function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-export function inboundEventOf(update: TelegramUpdate) {
-  const message = update.message;
-  if (!message || message.from?.id === undefined || message.chat?.id === undefined) {
+function inboundSenderOf(message: TelegramMessage) {
+  const fromId = message.from?.id;
+  const chatId = message.chat?.id;
+  if (fromId === undefined || chatId === undefined) {
     return undefined;
   }
+  return { fromId, chatId };
+}
+
+function inboundTextOf(message: TelegramMessage): string {
+  return message.text ?? message.caption ?? '';
+}
+
+function inboundPhotoFields(photoFileId: string | undefined) {
+  return photoFileId ? { photoFileId } : {};
+}
+
+export function inboundEventOf(update: TelegramUpdate) {
+  const message = update.message;
+  if (!message) {
+    return undefined;
+  }
+  const sender = inboundSenderOf(message);
   const photoFileId = largestTelegramPhotoFileId(message.photo);
-  const text = message.text ?? message.caption ?? '';
-  if (!text && !photoFileId) {
+  const text = inboundTextOf(message);
+  if (!sender || (!text && !photoFileId)) {
     return undefined;
   }
   return {
-    fromId: message.from.id,
-    chatId: message.chat.id,
+    fromId: sender.fromId,
+    chatId: sender.chatId,
     topicId: message.message_thread_id,
     text,
     messageId: message.message_id,
-    ...(photoFileId ? { photoFileId } : {}),
+    ...inboundPhotoFields(photoFileId),
   };
 }
 
@@ -279,19 +298,40 @@ export function previewPromptForActiveRun(prompt: string | SDKUserMessage): stri
   return `${prompt.text}${photoSuffix}`;
 }
 
-async function resolvePromptMessage(
+async function buildPhotoPromptMessage(
   ctx: CursorBridgeHandlerContext,
   text: string,
-  photoFileIds: string[] | undefined
-): Promise<string | SDKUserMessage> {
-  if (!photoFileIds || photoFileIds.length === 0) {
-    return text;
-  }
+  photoFileIds: string[]
+): Promise<SDKUserMessage> {
   const images = [];
   for (const fileId of photoFileIds) {
     images.push(await downloadTelegramPhotoAsSdkImage(ctx.botToken, fileId));
   }
   return { text: buildPhotoPromptText(text), images };
+}
+
+type ResolvedPrompt = { ok: true; message: string | SDKUserMessage } | { ok: false };
+
+// A photo download that fails is reported in-topic and ends the turn; the
+// caller must not start an agent run on a prompt whose image never arrived.
+async function resolvePromptOrReport(
+  ctx: CursorBridgeHandlerContext,
+  topicId: number,
+  promptText: string,
+  replyToMessageId: number | undefined,
+  photoFileIds: string[] | undefined
+): Promise<ResolvedPrompt> {
+  if (!photoFileIds || photoFileIds.length === 0) {
+    return { ok: true, message: promptText };
+  }
+  try {
+    await postInboundReply(ctx, topicId, '📷 Downloading photo…', undefined);
+    return { ok: true, message: await buildPhotoPromptMessage(ctx, promptText, photoFileIds) };
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    await postInboundReply(ctx, topicId, `Error: ${detail}`, replyToMessageId);
+    return { ok: false };
+  }
 }
 
 async function handlePromptInboundAction(
@@ -305,17 +345,11 @@ async function handlePromptInboundAction(
   if (ctx.busy) {
     ctx.persistState();
   }
-  let promptMessage: string | SDKUserMessage = promptText;
-  if (photoFileIds && photoFileIds.length > 0) {
-    try {
-      await postInboundReply(ctx, topicId, '📷 Downloading photo…', undefined);
-      promptMessage = await resolvePromptMessage(ctx, promptText, photoFileIds);
-    } catch (err) {
-      const detail = err instanceof Error ? err.message : String(err);
-      await postInboundReply(ctx, topicId, `Error: ${detail}`, replyToMessageId);
-      return ctx.busy;
-    }
+  const resolved = await resolvePromptOrReport(ctx, topicId, promptText, replyToMessageId, photoFileIds);
+  if (!resolved.ok) {
+    return ctx.busy;
   }
+  const promptMessage = resolved.message;
   beginActiveRun(previewPromptForActiveRun(promptMessage));
   const reportProgress = createThrottledProgressReporter(TELEGRAM_PROGRESS_MIN_INTERVAL_MS, (line) => {
     recordActiveRunProgress(line);

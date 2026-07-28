@@ -151,22 +151,24 @@ export function isAuthorizedPrincipal(fromId: string | number, principalUserId: 
   return String(fromId) === String(principalUserId);
 }
 
-export function decideInboundAction(
+// Undefined means the event cleared both gates and its CONTENT decides;
+// a decision here is terminal and never reaches command parsing.
+function decideInboundGate(
   event: CursorBridgeInboundEvent,
   principalUserId: string | number,
   chatId: string | number,
   cursorTopicId: number | undefined
-): CursorBridgeDecision {
+): CursorBridgeDecision | undefined {
   if (!isScopedToCursorTopic(event, chatId, cursorTopicId)) {
     return { action: 'ignore' };
   }
   if (!isAuthorizedPrincipal(event.fromId, principalUserId)) {
     return { action: 'refuse' };
   }
-  const trimmed = event.text.trim();
-  if (!trimmed && !event.photoFileId) {
-    return { action: 'ignore' };
-  }
+  return undefined;
+}
+
+function decideInboundContent(event: CursorBridgeInboundEvent, trimmed: string): CursorBridgeDecision {
   if (event.photoFileId) {
     return { action: 'prompt', text: buildPhotoPromptText(event.text), photoFileIds: [event.photoFileId] };
   }
@@ -175,6 +177,23 @@ export function decideInboundAction(
     return decideCommandAction(cmd);
   }
   return decideOperatorCommand(trimmed) ?? { action: 'prompt', text: trimmed };
+}
+
+export function decideInboundAction(
+  event: CursorBridgeInboundEvent,
+  principalUserId: string | number,
+  chatId: string | number,
+  cursorTopicId: number | undefined
+): CursorBridgeDecision {
+  const gated = decideInboundGate(event, principalUserId, chatId, cursorTopicId);
+  if (gated) {
+    return gated;
+  }
+  const trimmed = event.text.trim();
+  if (!trimmed && !event.photoFileId) {
+    return { action: 'ignore' };
+  }
+  return decideInboundContent(event, trimmed);
 }
 
 export function gateBusy(decision: CursorBridgeDecision, busy: boolean): CursorBridgeDecision {

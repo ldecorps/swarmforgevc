@@ -165,6 +165,16 @@ test('inboundEventOf accepts photo messages with optional caption', () => {
   });
 });
 
+test('inboundEventOf ignores a message carrying neither text nor a photo', () => {
+  assert.equal(
+    inboundEventOf({
+      update_id: 6,
+      message: { from: { id: 9 }, chat: { id: -100 }, message_id: 44 },
+    }),
+    undefined
+  );
+});
+
 test('postChunks splits and sends each chunk', async () => {
   const sent = [];
   await postChunks('token', '-100', 7, 'a\nb', undefined, async (_t, _c, chunk) => {
@@ -876,6 +886,33 @@ test('handleInboundDecision forwards Telegram photos to the Cursor agent', async
     assert.ok(ctx.posts.some((text) => text.includes('Downloading photo')));
     assert.ok(ctx.posts.some((text) => text.includes('started with photo')));
     assert.ok(ctx.posts.some((text) => text.includes('looks like a screenshot')));
+  } finally {
+    media.downloadTelegramPhotoAsSdkImage = originalDownload;
+  }
+});
+
+test('handleInboundDecision reports a failed photo download and starts no agent run', async () => {
+  const media = require('../out/bridge/cursorBridgeTelegramMedia');
+  const originalDownload = media.downloadTelegramPhotoAsSdkImage;
+  media.downloadTelegramPhotoAsSdkImage = async () => {
+    throw new Error('getFile 404');
+  };
+  try {
+    const ctx = mkCtx();
+    let prompted = false;
+    ctx.agentSession.promptAgent = async () => {
+      prompted = true;
+      return { replyText: 'never', agentId: ctx.agentSession.readAgentId() };
+    };
+    const busy = await handleInboundDecision(
+      { action: 'prompt', text: 'what is this?', photoFileIds: ['photo-1'] },
+      ctx,
+      11,
+      async () => {}
+    );
+    assert.equal(busy, false);
+    assert.equal(prompted, false);
+    assert.ok(ctx.posts.some((text) => text.includes('Error: getFile 404')));
   } finally {
     media.downloadTelegramPhotoAsSdkImage = originalDownload;
   }
