@@ -57,5 +57,4 @@ description: |
   telemetry recorded yet" state is gone; running the producer twice over
   the same window leaves the record count unchanged.
 
-acceptance: |
-  specs/features/BL-665-context-telemetry-producer-wiring.feature
+acceptance: specs/features/BL-665-context-telemetry-producer-wiring.feature

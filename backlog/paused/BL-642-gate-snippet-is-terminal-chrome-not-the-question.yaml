@@ -118,9 +118,7 @@ description: |
   releases and terminal widths; a snippet that fails closed stays correct across all
   of it.
 
-acceptance: |
-  specs/features/BL-642-gate-snippet-is-terminal-chrome-not-the-question.feature
-
+acceptance: specs/features/BL-642-gate-snippet-is-terminal-chrome-not-the-question.feature
 out_of_scope: |
   - The `NeedsApproval` event NAME, which reads as ticket `human_approval` but means
     "a role's pane is gated". Confusing, and worth its own ticket; renaming it here

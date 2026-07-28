@@ -107,9 +107,7 @@ description: |
   that the names should make the choice obvious, not that the choice should go
   away.
 
-acceptance: |
-  specs/features/BL-637-lifecycle-script-names-lie-about-scope.feature
-
+acceptance: specs/features/BL-637-lifecycle-script-names-lie-about-scope.feature
 out_of_scope: |
   - Building start_all / stop_all. They exist (`./start-swarm.sh` /
     `./stop-swarm.sh`) and are correct. This ticket is naming only.

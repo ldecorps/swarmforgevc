@@ -72,9 +72,7 @@ description: |
   reappears on a headless deployment after this lands, that is a NEW
   defect (marker bypass), not this one reopened.
 
-acceptance: |
-  specs/features/BL-578-devhost-bounce-wsl-window-leak.feature
-
+acceptance: specs/features/BL-578-devhost-bounce-wsl-window-leak.feature
 out_of_scope: |
   - Retroactive closing of already-leaked windows (manual, one-time).
   - Making headless the global default for `swarm ensure` (already

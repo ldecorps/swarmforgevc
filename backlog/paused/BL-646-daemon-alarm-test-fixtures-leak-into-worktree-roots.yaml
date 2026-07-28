@@ -130,9 +130,7 @@ description: |
      ticket that owns them, which is the rule working as intended rather than a role
      sweeping unilaterally.
 
-acceptance: |
-  specs/features/BL-646-daemon-alarm-test-fixtures-leak-into-worktree-roots.feature
-
+acceptance: specs/features/BL-646-daemon-alarm-test-fixtures-leak-into-worktree-roots.feature
 out_of_scope: |
   - Relaxing the never-delete rule. Its reasoning is sound and today's incident
     (`git add -A` sweeping the operator's uncommitted work into a cleaner commit)

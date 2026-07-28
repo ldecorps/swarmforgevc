@@ -188,14 +188,7 @@ description: |
   supervisor lines only) — (a)'s stderr line must land in a file that
   survives, name it in the spec.
 
-acceptance: |
-  specs/features/BL-582-approval-tap-never-records-or-repaints.feature
-
-  QA: reproduce by hand against the live bot - post an ask, tap Approve, and
-  confirm both the yaml write and the repaint. A fixture-only pass is not
-  sufficient here: every unit-level guard already passes today while the live
-  path does nothing (BL-454's lesson).
-
+acceptance: specs/features/BL-582-approval-tap-never-records-or-repaints.feature
 out_of_scope: |
   - The paused -> active promotion mover (BL-490); this ticket ends at
     recording the verdict and repainting the ask.
@@ -203,3 +196,10 @@ out_of_scope: |
     defect and not its cause.
   - The typed-reply approval path ("approve BL-579" as text) unless
     investigation shows it shares the broken code path.
+
+notes: |
+  QA: reproduce by hand against the live bot - post an ask, tap Approve, and
+  confirm both the yaml write and the repaint. A fixture-only pass is not
+  sufficient here: every unit-level guard already passes today while the live
+  path does nothing (BL-454's lesson).
+

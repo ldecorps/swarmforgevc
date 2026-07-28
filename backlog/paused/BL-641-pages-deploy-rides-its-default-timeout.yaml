@@ -86,9 +86,7 @@ description: |
   group `pages` with `cancel-in-progress: true` colliding with a neighbouring run),
   that is worth knowing before assuming it is external.
 
-acceptance: |
-  specs/features/BL-641-pages-deploy-rides-its-default-timeout.feature
-
+acceptance: specs/features/BL-641-pages-deploy-rides-its-default-timeout.feature
 out_of_scope: |
   - Changing what the dashboard generates or publishes.
   - The Pages service's own latency — outside our control; the headroom is the fix.

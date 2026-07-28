@@ -51,5 +51,4 @@ description: |
   present. If any of the nine turns out to fail for an unrelated
   pre-existing reason, surface it in the parcel rather than widening scope.
 
-acceptance: |
-  specs/features/BL-671-operator-runtime-fixtures-miss-cost-ledger-lib.feature
+acceptance: specs/features/BL-671-operator-runtime-fixtures-miss-cost-ledger-lib.feature

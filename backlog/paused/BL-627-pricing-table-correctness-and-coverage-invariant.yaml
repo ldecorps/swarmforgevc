@@ -118,9 +118,7 @@ description: |
   header already instructs. That judgement is not automatable and should not be
   faked with a scraper.
 
-acceptance: |
-  specs/features/BL-627-pricing-table-correctness-and-coverage-invariant.feature
-
+acceptance: specs/features/BL-627-pricing-table-correctness-and-coverage-invariant.feature
 out_of_scope: |
   - Any cron job, scheduled scrape, or automated rate fetch. See section 4 —
     this is an explicit rejection, not an oversight.

@@ -115,9 +115,7 @@ description: |
   `note` vs a directed one), not addressed here. Do not silently exempt `00`
   without deciding this.
 
-acceptance: |
-  specs/features/BL-636-rotate-preference-ignores-parcel-priority.feature
-
+acceptance: specs/features/BL-636-rotate-preference-ignores-parcel-priority.feature
 out_of_scope: |
   - The resident-busy gate. `chase-wake-skip-busy` is correct: not rotating
     mid-turn is deliberate (chase thrash incident 2026-07-19). This ticket is

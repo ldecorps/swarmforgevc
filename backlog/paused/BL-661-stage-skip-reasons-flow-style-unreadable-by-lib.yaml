@@ -64,5 +64,4 @@ description: |
   Scope note: .bb swarm scripts gate on their own unit suite only (BL-472
   toolchain not wired) — the test runner above is the actual gate.
 
-acceptance: |
-  specs/features/BL-661-stage-skip-reasons-flow-style-unreadable-by-lib.feature
+acceptance: specs/features/BL-661-stage-skip-reasons-flow-style-unreadable-by-lib.feature

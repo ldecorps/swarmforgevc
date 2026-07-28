@@ -65,5 +65,4 @@ description: |
   the reason text in the status line, not a bare HTTP code; a reasonless
   non-OK response still shows the failText + status fallback.
 
-acceptance: |
-  specs/features/BL-662-paused-pager-swallows-server-failure-reason.feature
+acceptance: specs/features/BL-662-paused-pager-swallows-server-failure-reason.feature

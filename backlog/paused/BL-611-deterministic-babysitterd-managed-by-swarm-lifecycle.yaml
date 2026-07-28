@@ -310,29 +310,7 @@ description: |
   with a real health-signal defect attached, not an incident. It rides the pipeline
   properly rather than being hand-applied.
 
-acceptance: |
-  specs/features/BL-611-deterministic-babysitterd-managed-by-swarm-lifecycle.feature
-
-  Supporting criteria the Gherkin does not pin (design/documentation, not
-  runtime behaviour):
-
-  - The runtime question (fold `babysitter_runtime.bb`'s claim-risk scan into
-    the ported check, option (a)) is answered in the design per the 2026-07-25
-    operator ruling — no second sweep whose only purpose was feeding the now-
-    removed LLM. `babysitter_runtime.bb` is retired; every check it performed
-    still runs somewhere, with its existing test runners passing against
-    whatever absorbs it.
-  - Every KEEP-listed deterministic file (`babysitter_assess_lib.bb` +
-    `babysitter_assess.bb`, `babysitter_lib.bb`, `babysitter_nudge_lib.bb`,
-    `babysitter_nudge_resident.bb`, `babysitter_enqueue_wake.sh`, and their 4
-    test runners) still exists and its test runner passes.
-  - `SWARMFORGE_SKIP_BABYSITTER`'s flipped meaning (was: skip the LLM hawk; now:
-    skip the deterministic sweep) is stated in the runbook, and the stale
-    `.swarmforge/swarm.env` line is called out there.
-  - A runbook exists: what babysitterd checks, what a nudge looks like, how to
-    start/stop/ensure it, where the log/state live, and the env skip; plus the
-    coordinator-facing doc line about "babysitter health sweep:" messages.
-
+acceptance: specs/features/BL-611-deterministic-babysitterd-managed-by-swarm-lifecycle.feature
 out_of_scope: |
   - Any auto-remediation (respawns, parcel moves, menu picks). Observation and
     coordinator nudges only — by design, per the human's division of labour.
@@ -372,3 +350,24 @@ notes: |
   6d passes that choice through to the implementer rather than mandating one,
   because the right answer depends on what the ported capture path looks like.
   The BEHAVIOUR is fixed; the mechanism is not.
+
+  Supporting criteria the Gherkin does not pin (design/documentation, not
+  runtime behaviour):
+
+  - The runtime question (fold `babysitter_runtime.bb`'s claim-risk scan into
+    the ported check, option (a)) is answered in the design per the 2026-07-25
+    operator ruling — no second sweep whose only purpose was feeding the now-
+    removed LLM. `babysitter_runtime.bb` is retired; every check it performed
+    still runs somewhere, with its existing test runners passing against
+    whatever absorbs it.
+  - Every KEEP-listed deterministic file (`babysitter_assess_lib.bb` +
+    `babysitter_assess.bb`, `babysitter_lib.bb`, `babysitter_nudge_lib.bb`,
+    `babysitter_nudge_resident.bb`, `babysitter_enqueue_wake.sh`, and their 4
+    test runners) still exists and its test runner passes.
+  - `SWARMFORGE_SKIP_BABYSITTER`'s flipped meaning (was: skip the LLM hawk; now:
+    skip the deterministic sweep) is stated in the runbook, and the stale
+    `.swarmforge/swarm.env` line is called out there.
+  - A runbook exists: what babysitterd checks, what a nudge looks like, how to
+    start/stop/ensure it, where the log/state live, and the env skip; plus the
+    coordinator-facing doc line about "babysitter health sweep:" messages.
+

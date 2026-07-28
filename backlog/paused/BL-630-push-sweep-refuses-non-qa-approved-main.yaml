@@ -91,15 +91,7 @@ description: |
   reaching origin for as long as any pipeline work sits un-QA'd on `main`, which
   on this swarm is most of the day. Recommend the allowlist.
 
-acceptance: |
-  specs/features/BL-630-push-sweep-refuses-non-qa-approved-main.feature
-
-  The specifier settled the allowlist question named in the description:
-  a tip whose non-QA commits touch only `backlog/`, `docs/`, `swarmforge/`
-  (the coordinator/specifier bookkeeping paths) may still publish — a total
-  refusal would stop routine bookkeeping from reaching origin for most of
-  the day. Recommend the allowlist, as the ticket invited.
-
+acceptance: specs/features/BL-630-push-sweep-refuses-non-qa-approved-main.feature
 out_of_scope: |
   - The deploy-time gate on `build_freshness_cli.bb sync` — that is BL-629.
   - Detection and alerting on a bad `main` — that is BL-631.
@@ -118,3 +110,10 @@ notes: |
   would have flipped it to ahead=1/behind=1 and jammed the sweep into
   `:diverged`. Consider surfacing "behind with nothing to push" as a distinct
   log line at minimum.
+
+  The specifier settled the allowlist question named in the description:
+  a tip whose non-QA commits touch only `backlog/`, `docs/`, `swarmforge/`
+  (the coordinator/specifier bookkeeping paths) may still publish — a total
+  refusal would stop routine bookkeeping from reaching origin for most of
+  the day. Recommend the allowlist, as the ticket invited.
+

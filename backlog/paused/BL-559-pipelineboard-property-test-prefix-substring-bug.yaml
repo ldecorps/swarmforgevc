@@ -65,9 +65,7 @@ description: |
 
   Only one of these is the real fix — do not patch both defensively.
 
-acceptance: |
-  specs/features/BL-559-pipelineboard-property-test-prefix-substring-bug.feature
-
+acceptance: specs/features/BL-559-pipelineboard-property-test-prefix-substring-bug.feature
 out_of_scope: |
   - Any change to budgetPipelineBoardLinks/trimLinksToBudget's actual
     trimming behavior unless investigation proves the render format

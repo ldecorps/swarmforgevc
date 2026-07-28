@@ -108,9 +108,7 @@ description: |
     hide a parcel that genuinely stalled for hours before the stop — exactly the one
     case in this incident that deserved the alarm.
 
-acceptance: |
-  specs/features/BL-639-parcel-age-counts-deliberate-downtime.feature
-
+acceptance: specs/features/BL-639-parcel-age-counts-deliberate-downtime.feature
 out_of_scope: |
   - The genuine stall this storm buried. That is BL-636 (rotation preference ignores
     parcel priority).
