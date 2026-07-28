@@ -149,7 +149,8 @@
            {:entry (assoc entry :status "gave-up" :gave-up-at-ms now-ms) :event :gave-up})))
 
      "gave-up"
-     (if (cooldown-elapsed? (:gave-up-at-ms entry) now-ms giveup-config)
+     (if (or (cooldown-elapsed? (:gave-up-at-ms entry) now-ms giveup-config)
+             (and (:pid entry) (not (pid-alive? (:pid entry)))))
        (do
          (when (:pid entry) (kill-pid! (:pid entry)))
          {:entry (started-entry (assoc entry :attempts 0) now-ms (spawn!)) :event :re-armed})

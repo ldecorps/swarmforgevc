@@ -9,7 +9,7 @@ severity: high
 priority: 04
 direction: human-requested
 depends_on: []
-assigned_to: specifier
+assigned_to: coder
 mutation_cost: medium
 
 approval_context: >
@@ -18,6 +18,9 @@ approval_context: >
   identically. The swarm was ultimately brought up by MANUAL session assembly,
   which is how it is running tonight. This ticket carries the full evidence
   trail so the fix does not restart the investigation from zero.
+
+  Hydrate batch 2026-07-28: materializes the already-approved prose acceptance
+  into APS Gherkin, unchanged in substance.
 
 source: |
   ## The failure signature (3 occurrences, byte-identical)
@@ -95,19 +98,7 @@ description: |
   3. The BL-372 detach check clearly passes while the server still dies —
      extend it or its wording so "detached" is not read as "will survive".
 
-acceptance: |
-  Specifier writes the scenarios. Minimum behaviour:
-
-  1. `./start-swarm.sh` from a claude-session/harness-descended shell brings
-     up a swarm whose sessions survive 60s+ (tonight's failing case, as the
-     fixture).
-  2. From cron: byte-identical to today (the working case must not regress).
-  3. Role sessions never inherit CLAUDE_CODE_CHILD_SESSION or transcript-off
-     state, whatever shell launched the stack.
-  4. A failed launch leaves a readable cause (canary pane frozen or server
-     log path printed), never only "did not become ready".
-  5. The Expeditor's restart half succeeds from an expedition run (its
-     EXPEDITE_START_CMD context is the original casualty).
+acceptance: specs/features/BL-657-launcher-tmux-server-dies-seconds-after-launch.feature
 
 out_of_scope: |
   - The handoffd startup-nudge racing into a pre-respawn BARE pane (typed

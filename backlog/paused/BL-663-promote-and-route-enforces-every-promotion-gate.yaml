@@ -10,6 +10,11 @@ direction: human-requested
 depends_on: []
 assigned_to: specifier
 mutation_cost: medium
+human_approval: pending
+approval_context: >
+  Hydrate batch 2026-07-28: materializes the described three-gate acceptance
+  into APS Gherkin, one fixture per gate plus a non-vacuity compliant-pass
+  scenario, per the ticket's own "Shape" and "Acceptance" sections.
 invariants:
   - "A promotion is refused unless every gate passes — human_approval, assignee/spec-stage, Article 3.2.4 expedite ordering, depth, orthogonality, hold markers — on every promotion path, manual or scripted."
   - "assigned_to is never silently rewritten at promote time: a reroute is an explicit, logged decision, never a side effect of the promote commit."
@@ -61,3 +66,5 @@ description: |
 
   On landing, retire the standing operator watch memo
   (promote-and-route-next-skips-approval-and-assignee-gates).
+
+acceptance: specs/features/BL-663-promote-and-route-enforces-every-promotion-gate.feature

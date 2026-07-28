@@ -508,6 +508,9 @@ export interface TelegramMessage {
   // with `text` above) - file_id is what getFile below resolves to a
   // downloadable path.
   voice?: { file_id: string; duration: number; mime_type?: string };
+  // BL-696: photo albums — largest size is typically last; caption carries optional prompt text.
+  photo?: Array<{ file_id: string; width: number; height: number }>;
+  caption?: string;
 }
 
 // BL-410: the update shape a tapped inline-keyboard button generates -

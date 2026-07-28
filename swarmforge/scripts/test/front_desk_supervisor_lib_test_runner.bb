@@ -156,6 +156,13 @@
   (assert= "supervisor-recovery-02 [elapsed]: gave-up-at-ms is cleared" nil (:gave-up-at-ms entry))
   (assert= "gave-up -> running (re-arm) emits :re-armed" :re-armed event))
 
+;; supervisor-recovery-02 [dead pid]: gave-up with a dead recorded pid re-arms immediately
+(let [gave-up-entry {:pid 1881442 :attempts 5 :status "gave-up" :crashed-at-ms 5000 :started-at-ms 1000 :gave-up-at-ms 1000000}
+      {:keys [entry event]} (front-desk-supervisor-lib/check-one! gave-up-entry 1005000 dead? fixed-pid! healthy-cfg giveup-cfg)]
+  (assert= "gave-up with dead pid: re-arms to running without waiting for cooldown" "running" (:status entry))
+  (assert= "gave-up with dead pid: attempts reset to a fresh budget" 1 (:attempts entry))
+  (assert= "gave-up with dead pid: emits :re-armed" :re-armed event))
+
 ;; ── BL-370: poll-heartbeat-stale? (pure) ─────────────────────────────────
 
 (assert= "front-desk-liveness-01: a heartbeat older than the stall window is stale"

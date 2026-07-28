@@ -370,7 +370,10 @@ export function formatSteerReceipt(role: string, result: SteerDeliveryResult): s
 // offset/retry treatment (the engineering article's own
 // deliberate-drop-vs-failure rule), so this never collapses them the way
 // BL-389 had to fix for ordinary drops.
-export type SttResult = { kind: 'ok'; transcript: string } | { kind: 'transient-failure' } | { kind: 'unprocessable' };
+export type SttResult =
+  | { kind: 'ok'; transcript: string }
+  | { kind: 'transient-failure'; reason?: string }
+  | { kind: 'unprocessable'; reason?: string };
 export type TtsResult = { kind: 'ok'; audio: Buffer } | { kind: 'failure' };
 
 export type VoiceUpdateDecision = { kind: 'transcribe'; fileId: string } | { kind: 'refuse' } | { kind: 'not-applicable' };

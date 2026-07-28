@@ -95,8 +95,8 @@ export function getEpicReorderUiHtml(): string {
   if (tg) { tg.ready(); tg.expand(); }
 
   var params = new URLSearchParams(location.search);
-  var token = params.get('token') || '';
-  var q = token ? ('?token=' + encodeURIComponent(token)) : '';
+  var token = params.get('bearer') || params.get('token') || '';
+  var q = token ? ('?bearer=' + encodeURIComponent(token)) : '';
   document.getElementById('menu').href = '/console' + q;
 
   var statusEl = document.getElementById('status');

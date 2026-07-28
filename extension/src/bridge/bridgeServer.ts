@@ -15,7 +15,7 @@ import {
   buildBurnRateState,
   BridgeState,
 } from './bridgeState';
-import { extractBearerToken, isAuthorizedByQueryToken } from './bridgeAuth';
+import { extractBearerToken, isAuthorizedByQueryToken, parseQueryCredential } from './bridgeAuth';
 import { getHolisticUiHtml } from './holisticUiHtml';
 import { getResidentSpyUiHtml } from './residentSpyUiHtml';
 import { getConsoleMenuUiHtml } from './consoleMenuUiHtml';
@@ -59,6 +59,15 @@ import { requestConciergeTick } from '../concierge/conciergeTickRequest';
 import { getContextBudgetUiHtml } from './contextBudgetUiHtml';
 import { listTelemetryAgents, summarizeTelemetryForAgent } from './contextTelemetryGate';
 import { runCommitIntegrity } from '../util/commitIntegrityRunner';
+import { getLetsTalkUiHtml } from './letsTalkUiHtml';
+import {
+  createLetsTalkWriteRoutes,
+  isLetsTalkPath,
+} from './letsTalkRoutes';
+import { resolveLetsTalkAudioAdaptersFromEnv } from './letsTalkAudio';
+import { parseLetsTalkSpeechLanguage, speechLocaleForLanguage } from './letsTalkCore';
+import { createLiveCursorBridgeAgentSession, type CursorBridgeAgentSessionDeps } from './cursorBridgeAgentSession';
+import type { TranscribeAudio, SynthesizeSpeech } from './letsTalkAudio';
 
 const DEFAULT_POLL_INTERVAL_MS = 1000;
 const LOCALHOST = '127.0.0.1';
@@ -110,6 +119,12 @@ export interface StartBridgeOptions {
   // (engineering article, Test Speed And Isolation). Undefined in
   // production - buildStageDwellState defaults to the real clock unchanged.
   nowMs?: number;
+  // BL-696: injectable Let's Talk adapters for headless/BDD tests.
+  letsTalk?: {
+    agentSession?: CursorBridgeAgentSessionDeps;
+    transcribeAudio?: TranscribeAudio;
+    synthesizeSpeech?: SynthesizeSpeech;
+  };
 }
 
 // BL-241: startBridge's auth param generalizes from BL-065's one static
@@ -308,11 +323,29 @@ function respondJson(res: http.ServerResponse, status: number, body: unknown): v
 }
 
 function requireControlAuth(req: http.IncomingMessage, res: http.ServerResponse, registry: DeviceRegistry): boolean {
-  if (!isAuthorizedForControl(req, registry)) {
+  const url = requestPath(req);
+  if (isAuthorizedForControl(req, url, registry)) {
+    return true;
+  }
+  const queryCred = parseQueryCredential(url);
+  const bearer = extractBearerToken(req.headers.authorization) ?? queryCred;
+  const stepUpHeader = req.headers['x-control-token'];
+  const stepUp = typeof stepUpHeader === 'string' ? stepUpHeader : queryCred;
+  const device = findDeviceByToken(registry, bearer);
+  if (!device) {
+    respondJson(res, 401, { success: false, reason: 'unauthorized' });
+    return false;
+  }
+  if (device.scope !== 'control' || device.controlToken === undefined) {
     respondJson(res, 403, { success: false, reason: 'control auth required' });
     return false;
   }
-  return true;
+  if (!stepUp) {
+    respondJson(res, 403, { success: false, reason: 'control auth required' });
+    return false;
+  }
+  respondJson(res, 401, { success: false, reason: 'unauthorized' });
+  return false;
 }
 
 // Reads and shape-validates the request body, responding 400 itself (and
@@ -955,6 +988,14 @@ function handleEpicReorderTopicMakeTopRoute(
   });
 }
 
+function requireLetsTalkControlAuth(req: http.IncomingMessage, res: http.ServerResponse, registry: DeviceRegistry): boolean {
+  if (!isAuthorizedForControl(req, requestPath(req), registry)) {
+    respondJson(res, 401, { success: false, reason: 'unauthorized' });
+    return false;
+  }
+  return true;
+}
+
 interface WriteRoute {
   matches: (req: http.IncomingMessage, url: string) => boolean;
   handle: (req: http.IncomingMessage, res: http.ServerResponse, targetPath: string, registry: DeviceRegistry) => void;
@@ -983,11 +1024,7 @@ function requestPath(req: http.IncomingMessage): string {
 }
 
 function queryToken(url: string): string | undefined {
-  const queryIndex = url.indexOf('?');
-  if (queryIndex === -1) {
-    return undefined;
-  }
-  return new URLSearchParams(url.slice(queryIndex + 1)).get('token') ?? undefined;
+  return parseQueryCredential(url);
 }
 
 // BL-094/BL-241: every route stays header-only EXCEPT the root HTML shell,
@@ -1026,10 +1063,12 @@ function isAuthorizedForRead(authHeader: string | undefined, url: string, regist
 // X-Control-Token header in addition to the normal bearer - a genuinely
 // stronger auth step than read-only viewing needs, never satisfiable by a
 // read-scoped device (it has no control token at all).
-function isAuthorizedForControl(req: http.IncomingMessage, registry: DeviceRegistry): boolean {
-  const bearer = extractBearerToken(req.headers.authorization);
-  const stepUp = req.headers['x-control-token'];
-  return Boolean(findDeviceByControlToken(registry, bearer, typeof stepUp === 'string' ? stepUp : undefined));
+function isAuthorizedForControl(req: http.IncomingMessage, url: string, registry: DeviceRegistry): boolean {
+  const queryCred = parseQueryCredential(url);
+  const bearer = extractBearerToken(req.headers.authorization) ?? queryCred;
+  const stepUpHeader = req.headers['x-control-token'];
+  const stepUp = typeof stepUpHeader === 'string' ? stepUpHeader : queryCred;
+  return Boolean(findDeviceByControlToken(registry, bearer, stepUp));
 }
 
 interface JsonRoute {
@@ -1206,6 +1245,19 @@ export function startBridge(
     let lastSnapshot: string | undefined;
     let registry: DeviceRegistry = normalizeToRegistry(tokenOrRegistry);
 
+    const letsTalkAudio = resolveLetsTalkAudioAdaptersFromEnv(process.env, {
+      transcribeAudio: options.letsTalk?.transcribeAudio,
+      synthesizeSpeech: options.letsTalk?.synthesizeSpeech,
+    });
+    const letsTalkAgentSession = options.letsTalk?.agentSession ?? createLiveCursorBridgeAgentSession(targetPath);
+    // BL-696: POST /lets-talk/turn, POST /lets-talk/new-session (write routes).
+    const letsTalkWriteRoutes = createLetsTalkWriteRoutes(
+      { agentSession: letsTalkAgentSession, ...letsTalkAudio },
+      (req, res, maxBytes, isShape, shapeErrorReason) => readValidatedBody(req, res, maxBytes, isShape, shapeErrorReason),
+      requireLetsTalkControlAuth,
+      respondJson
+    );
+
     const server = http.createServer((req, res) => {
       const url = requestPath(req);
 
@@ -1243,6 +1295,18 @@ export function startBridge(
         serveMiniAppHtml(res, getContextBudgetUiHtml());
         return;
       }
+      if (isLetsTalkPath(url)) {
+        const speechSetting = parseLetsTalkSpeechLanguage(process.env.LETS_TALK_SPEECH_LANGUAGE);
+        const speechLocale = speechLocaleForLanguage(speechSetting === 'auto' ? 'en' : speechSetting);
+        serveMiniAppHtml(res, getLetsTalkUiHtml(speechLocale));
+        return;
+      }
+
+      const writeRoute = [...writeRoutes, ...letsTalkWriteRoutes].find((route) => route.matches(req, url));
+      if (writeRoute) {
+        writeRoute.handle(req, res, targetPath, registry);
+        return;
+      }
 
       if (!isAuthorizedForRead(req.headers.authorization, url, registry)) {
         res.writeHead(401, { 'content-type': 'application/json' });
@@ -1261,12 +1325,6 @@ export function startBridge(
         sseClients.add(res);
         req.on('close', () => sseClients.delete(res));
         relayEntriesFrom(readPersistedCursor(targetPath).ackedIndex, [res]);
-        return;
-      }
-
-      const writeRoute = writeRoutes.find((route) => route.matches(req, url));
-      if (writeRoute) {
-        writeRoute.handle(req, res, targetPath, registry);
         return;
       }
 

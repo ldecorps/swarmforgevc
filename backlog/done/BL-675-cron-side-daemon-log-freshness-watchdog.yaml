@@ -2,7 +2,7 @@ id: BL-675
 title: "Cron-side daemon log-freshness watchdog — a share-no-fate POSIX check that restarts wedged sweep daemons, because process liveness lies"
 milestone: M8
 type: defect
-status: todo
+status: done
 epic: swarm-reliability
 human_approval: approved
 severity: high
@@ -19,7 +19,7 @@ required_wiring:
   - "swarmforge/scripts/install_freshness_cron.sh::freshness_check::the installer must reference the checker it schedules"
   - "swarmforge/scripts/handoffd.bb::heartbeat::handoffd must emit the heartbeat the checker depends on"
   - "swarmforge/scripts/babysitter_runtime.bb::heartbeat::babysitterd must emit the heartbeat the checker depends on"
-acceptance: specs/features/BL-675-daemon-log-freshness.feature.draft
+acceptance: specs/features/BL-675-daemon-log-freshness.feature
 
 approval_context: >
   Severity high: today (2026-07-26 ~14:09-15:20) BOTH watchdog loops froze

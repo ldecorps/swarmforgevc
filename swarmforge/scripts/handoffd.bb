@@ -136,7 +136,10 @@
 (def stop-file (fs/path daemon-dir "stop"))
 (def log-file (fs/path daemon-dir "handoffd.log"))
 (def heartbeat-file (fs/path daemon-dir "handoffd.heartbeat"))
-(def heartbeat-log-every-cycles 60)
+;; BL-675: log a heartbeat every loop tick so quiet != dead for the
+;; cron-side freshness checker (was every 60 cycles; that left long
+;; silent windows that looked identical to a futex hang).
+(def heartbeat-log-every-cycles 1)
 (def heartbeat-dir (fs/path state-dir "heartbeat"))
 ;; A dedicated file, deliberately NOT handoffd.status.json: that file is
 ;; exclusively owned by handoffd_supervisor.bb, which runs CONCURRENTLY
@@ -2245,9 +2248,10 @@
             (log! "started")
             (try
               (startup-notify-pending! roles socket)
-              ;; The heartbeat file (every cycle) and log line (periodic) let the
-              ;; supervisor detect a hung daemon and a post-mortem see liveness up
-              ;; to the moment of death (BL-061).
+              ;; The heartbeat file and log line (every cycle, BL-675) let the
+              ;; cron-side freshness checker and supervisor detect a hung
+              ;; daemon; a post-mortem sees liveness up to the moment of death
+              ;; (BL-061).
               (loop [cycle 0]
                 (when (and (not @stopping?) (not (fs/exists? stop-file)))
                   (poll-once!)
