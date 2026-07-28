@@ -2,14 +2,14 @@ id: BL-696
 title: "Console Mini App Let's Talk — discrete audio turns with the Cursor agent over the existing bridge session"
 milestone: M8
 type: feature
-status: todo
+status: done
 epic: swarmforge-console
 human_approval: approved
 severity: medium
 priority: 14
 direction: human-requested
 depends_on: []
-assigned_to: coder
+assigned_to: none
 mutation_cost: medium
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 
@@ -158,3 +158,6 @@ notes: |
   must not be re-opened by the coder.
 
   Closed 2026-07-28 via Cursor-as-expeditor offline run (operator-commands + Lets-Talk acceptances green; CRAP clean).
+  Reopened same day for /pilot amendment; re-closed after pilot expedition (specifier→QA):
+  Pilot module mutation 100%/0 survivors; operator acceptance 16/16; Lets Talk 8/8;
+  pre_qa_gate OK; dependency-gate OK.
