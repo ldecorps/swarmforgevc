@@ -2248,9 +2248,10 @@
             (log! "started")
             (try
               (startup-notify-pending! roles socket)
-              ;; The heartbeat file (every cycle) and log line (periodic) let the
-              ;; supervisor detect a hung daemon and a post-mortem see liveness up
-              ;; to the moment of death (BL-061).
+              ;; The heartbeat file and log line (every cycle, BL-675) let the
+              ;; cron-side freshness checker and supervisor detect a hung
+              ;; daemon; a post-mortem sees liveness up to the moment of death
+              ;; (BL-061).
               (loop [cycle 0]
                 (when (and (not @stopping?) (not (fs/exists? stop-file)))
                   (poll-once!)

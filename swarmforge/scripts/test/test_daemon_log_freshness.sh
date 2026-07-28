@@ -34,15 +34,6 @@ make_root() {
   printf '%s' "$d"
 }
 
-# Fake start scripts named like the real ones so conf's start_script field resolves
-# when FRESHNESS_START_CMD is unset; tests that exercise restart always inject
-# FRESHNESS_START_CMD so we never launch a real daemon.
-write_fake_starts() {
-  local root=$1
-  # Not used when FRESHNESS_START_CMD is set; present for path resolution sanity.
-  :
-}
-
 run_checker() {
   local root=$1
   local now=${2:?run_checker needs epoch}

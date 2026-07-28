@@ -74,12 +74,7 @@ last_restart_epoch() {
     printf '%s\n' "0"
     return
   fi
-  # Most recent restart (not escalate) for this daemon.
-  line=$(grep -E "action=restart[[:space:]].*daemon=${daemon}([[:space:]]|$)|daemon=${daemon}[[:space:]].*action=restart" "$INCIDENT_FILE" | tail -n 1 || true)
-  if [ -z "$line" ]; then
-    # Also accept epoch=... daemon=... action=restart ordering used below.
-    line=$(grep "daemon=${daemon}" "$INCIDENT_FILE" | grep 'action=restart' | tail -n 1 || true)
-  fi
+  line=$(grep "daemon=${daemon}" "$INCIDENT_FILE" | grep 'action=restart' | tail -n 1 || true)
   if [ -z "$line" ]; then
     printf '%s\n' "0"
     return
