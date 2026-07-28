@@ -829,9 +829,12 @@ resident to that dormant role to drain it.
 - **Dormant-note delivery wake suppressed.** When a note lands in a dormant role's
   mailbox while the resident is elsewhere, no wake is sent. The chase sweep will
   rotate when it ages in, removing wasted `NO_TASK` turns.
-- **Newest actionable mail still wins.** If an aged note and a git_handoff are
-  both actionable in different dormant roles, the newest (by created_at) rotates
-  first.
+- **Priority first, newest as tie-break (BL-636).** Rotation preference ranks
+  actionable roles by each role's best (lowest) handoff `priority` (`00`–`99`).
+  At equal priority, newest `created_at` still wins. A missing or unparseable
+  priority ranks worse than any valid value so it never jumps the queue. Fresh
+  notes remain non-actionable until they age past `note_actionable_after_ms`
+  regardless of priority.
 - **One rotation per sweep.** Busy gates, cooldown, and per-sweep resident budget
   all apply unchanged. Home-role return (`ROTATE_HOME`) is automatic.
 
