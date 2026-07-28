@@ -1040,7 +1040,10 @@
    candidates, BL-576's aged-note rule still decides among what survives the
    filter. In-process (already-claimed) work is never filtered here - an
    ambulance never retracts a mid-turn claim, so it stays actionable exactly
-   as before regardless of which ticket it names."
+   as before regardless of which ticket it names.
+   BL-636: :best-priority is the lowest parseable priority among the same
+   actionable set (held + git_handoff + aged notes) — a role ranks by its
+   best parcel, not by whichever parcel happens to be newest."
   [role role-info]
   (let [new-dir (str (handoff-lib/mailbox-dir role-info :new))
         ip-dir (str (handoff-lib/mailbox-dir role-info :in_process))
@@ -1058,13 +1061,18 @@
                                :now-ms now-ms
                                :threshold-ms threshold-ms})
                             note-fs)
-        newest (or (->> (concat held git-hfs aged-notes)
+        actionable-parcels (concat held git-hfs aged-notes)
+        newest (or (->> actionable-parcels
                         (keep #(handoff-header-field (:filePath %) "created_at"))
                         sort
                         last)
-                   "")]
+                   "")
+        best-priority (mono-router-lib/best-priority-rank
+                       (map #(handoff-header-field (:filePath %) "priority")
+                            actionable-parcels))]
     {:role role
      :newest-created-at newest
+     :best-priority best-priority
      :actionable? (mono-router-lib/actionable-mail?
                    {:in-process-count (count held)
                     :git-handoff-count (count git-hfs)
@@ -1072,8 +1080,9 @@
 
 (defn preferred-mono-rotate-role
   "At most one dormant role may rotate the resident per decision — the one
-   with the newest actionable mail. A note aged past
-   `note_actionable_after_ms` now qualifies; fresh broadcast notes still
+   with the best (lowest) handoff priority among actionable mail; at equal
+   priority, newest wins (BL-636). A note aged past
+   `note_actionable_after_ms` qualifies; fresh broadcast notes still
    don't (BL-576)."
   [roles]
   (mono-router-lib/preferred-rotate-target
