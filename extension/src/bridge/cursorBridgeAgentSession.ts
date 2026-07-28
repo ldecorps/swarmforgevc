@@ -4,7 +4,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { Agent, CursorAgentError, type SDKAgent, type SDKMessage } from '@cursor/sdk';
+import { Agent, CursorAgentError, type SDKAgent, type SDKMessage, type SDKUserMessage } from '@cursor/sdk';
 import { atomicWrite } from '../util/atomicWrite';
 import { collectAssistantTextFromMessages, isActiveRunConflict, parseCursorBridgeState, type CursorBridgePersistedState } from '../tools/telegramCursorBridgeCore';
 import { extractCodeWordFromRememberPhrase, mockAgentReplyForTranscript } from './letsTalkCore';
@@ -21,7 +21,7 @@ const LOCK_STALE_MS = 5 * 60 * 1000;
 const LOCK_POLL_MS = 25;
 const LOCK_MAX_WAIT_MS = 10 * 60 * 1000;
 
-export type PromptCursorAgent = (prompt: string) => Promise<{ replyText: string; agentId: string }>;
+export type PromptCursorAgent = (prompt: string | SDKUserMessage) => Promise<{ replyText: string; agentId: string }>;
 export type ResetCursorAgentSession = () => Promise<{ agentId: string | undefined }>;
 export type ReadCursorAgentId = () => string | undefined;
 
@@ -197,12 +197,17 @@ function assistantReplyOrPlaceholder(messages: SDKMessage[]): string {
   return text.length > 0 ? text : '(no text reply)';
 }
 
+function toSdkUserMessage(prompt: string | SDKUserMessage): SDKUserMessage {
+  return typeof prompt === 'string' ? { text: prompt } : prompt;
+}
+
 export async function runCursorAgentPrompt(
   agent: SDKAgent,
-  prompt: string,
+  prompt: string | SDKUserMessage,
   onProgress: CursorAgentProgressCallback | undefined = activePromptProgress
 ): Promise<string> {
-  const run = await agent.send(prompt);
+  const message = toSdkUserMessage(prompt);
+  const run = await agent.send(message);
   const messages: SDKMessage[] = [];
   for await (const event of run.stream()) {
     messages.push(event);
@@ -244,7 +249,7 @@ export function createLiveCursorBridgeAgentSession(targetPath: string): CursorBr
         await clearCachedAgent();
         return { agentId: undefined };
       }),
-    promptAgent: async (prompt: string) =>
+    promptAgent: async (prompt: string | SDKUserMessage) =>
       withAgentLock(targetPath, async () => {
         const attempt = async (): Promise<{ replyText: string; agentId: string }> => {
           const agent = await ensureAgent();
@@ -281,9 +286,10 @@ export function createMockCursorBridgeAgentSession(targetPath: string): CursorBr
       saveState(targetPath, { ...state, agentId });
       return { agentId };
     },
-    promptAgent: async (prompt: string) => {
-      const replyText = mockAgentReplyForTranscript(prompt, remembered);
-      const extracted = extractCodeWordFromRememberPhrase(prompt);
+    promptAgent: async (prompt: string | SDKUserMessage) => {
+      const text = typeof prompt === 'string' ? prompt : prompt.text;
+      const replyText = mockAgentReplyForTranscript(text, remembered);
+      const extracted = extractCodeWordFromRememberPhrase(text);
       if (extracted) {
         remembered = extracted;
       }

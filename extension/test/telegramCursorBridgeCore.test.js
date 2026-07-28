@@ -26,13 +26,14 @@ const {
   frontDeskTopicMapWithoutCursorBridge,
   isActiveRunConflict,
 } = require('../out/tools/telegramCursorBridgeCore');
+const { TELEGRAM_PHOTO_DEFAULT_PROMPT } = require('../out/bridge/cursorBridgeTelegramMedia');
 
 const CHAT_ID = '-100123';
 const PRINCIPAL_ID = 42;
 const CURSOR_TOPIC_ID = 7501;
 
-function event(text, { fromId = PRINCIPAL_ID, chatId = CHAT_ID, topicId = CURSOR_TOPIC_ID } = {}) {
-  return { fromId, chatId, topicId, text };
+function event(text, { fromId = PRINCIPAL_ID, chatId = CHAT_ID, topicId = CURSOR_TOPIC_ID, photoFileId } = {}) {
+  return { fromId, chatId, topicId, text, ...(photoFileId ? { photoFileId } : {}) };
 }
 
 // ── topic ensure ─────────────────────────────────────────────────────────
@@ -147,6 +148,21 @@ test('cursor bridge: whitespace-only text is ignored', () => {
   assert.deepEqual(decideInboundAction(event('   '), PRINCIPAL_ID, CHAT_ID, CURSOR_TOPIC_ID), { action: 'ignore' });
 });
 
+test('cursor bridge: photo-only inbound becomes a multimodal prompt', () => {
+  assert.deepEqual(decideInboundAction(event('', { photoFileId: 'photo-1' }), PRINCIPAL_ID, CHAT_ID, CURSOR_TOPIC_ID), {
+    action: 'prompt',
+    text: TELEGRAM_PHOTO_DEFAULT_PROMPT,
+    photoFileIds: ['photo-1'],
+  });
+});
+
+test('cursor bridge: photo caption becomes the prompt text', () => {
+  assert.deepEqual(
+    decideInboundAction(event('explain this UI', { photoFileId: 'photo-2' }), PRINCIPAL_ID, CHAT_ID, CURSOR_TOPIC_ID),
+    { action: 'prompt', text: 'explain this UI', photoFileIds: ['photo-2'] }
+  );
+});
+
 // ── commands ─────────────────────────────────────────────────────────────
 
 test('cursor bridge: /help in the cursor topic returns help', () => {
@@ -155,6 +171,11 @@ test('cursor bridge: /help in the cursor topic returns help', () => {
 
 test('cursor bridge: /status returns status', () => {
   assert.deepEqual(decideInboundAction(event('/status'), PRINCIPAL_ID, CHAT_ID, CURSOR_TOPIC_ID), { action: 'status' });
+});
+
+test('cursor bridge: /update returns update', () => {
+  assert.deepEqual(decideInboundAction(event('/update'), PRINCIPAL_ID, CHAT_ID, CURSOR_TOPIC_ID), { action: 'update' });
+  assert.deepEqual(decideInboundAction(event('  /UPDATE  '), PRINCIPAL_ID, CHAT_ID, CURSOR_TOPIC_ID), { action: 'update' });
 });
 
 test('cursor bridge: /new starts a fresh session', () => {
@@ -255,6 +276,7 @@ test('cursor bridge: a prompt while busy is rejected as busy', () => {
 test('cursor bridge: /new and /status still work while busy', () => {
   assert.deepEqual(gateBusy({ action: 'new-session' }, true), { action: 'new-session' });
   assert.deepEqual(gateBusy({ action: 'status' }, true), { action: 'status' });
+  assert.deepEqual(gateBusy({ action: 'update' }, true), { action: 'update' });
 });
 
 test('cursor bridge: help, ignore, and refuse are not blocked by the busy gate', () => {
@@ -467,10 +489,11 @@ test('cursor bridge: formatHelpMessage mentions all operator commands', () => {
     [
       'Cursor remote control',
       '',
-      'Send any message to run the local Cursor agent against this repo.',
+      'Send any message or photo to run the local Cursor agent against this repo.',
       '',
       '/new — start a fresh agent session',
       '/status — show session state',
+      '/update — short summary of agent / expedite / swarm activity (works while busy)',
       '/expedite [BL-xxx] — run offline expeditor with stage updates (default BL-696)',
       '/reexpedite [BL-xxx] — checkpoint main WIP and restart a divergent expedite',
       '/redeploy — compile extension and restart this bridge',
@@ -480,6 +503,7 @@ test('cursor bridge: formatHelpMessage mentions all operator commands', () => {
   );
   assert.match(help, /\/new/i);
   assert.match(help, /\/status/i);
+  assert.match(help, /\/update/i);
   assert.match(help, /\/expedite/i);
   assert.match(help, /\/reexpedite/i);
   assert.match(help, /\/redeploy/i);

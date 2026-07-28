@@ -140,6 +140,31 @@ test('inboundEventOf ignores updates without text or sender', () => {
   });
 });
 
+test('inboundEventOf accepts photo messages with optional caption', () => {
+  const event = inboundEventOf({
+    update_id: 4,
+    message: {
+      caption: 'what is this?',
+      photo: [
+        { file_id: 'small', width: 90, height: 90 },
+        { file_id: 'large', width: 1280, height: 720 },
+      ],
+      from: { id: 9 },
+      chat: { id: -100 },
+      message_thread_id: 5,
+      message_id: 43,
+    },
+  });
+  assert.deepEqual(event, {
+    fromId: 9,
+    chatId: -100,
+    topicId: 5,
+    text: 'what is this?',
+    messageId: 43,
+    photoFileId: 'large',
+  });
+});
+
 test('postChunks splits and sends each chunk', async () => {
   const sent = [];
   await postChunks('token', '-100', 7, 'a\nb', undefined, async (_t, _c, chunk) => {
@@ -296,7 +321,27 @@ test('runCursorBridgePollOnce processes authorized prompt updates', async () => 
     0
   );
   assert.equal(next.pollFailures, 0);
-  assert.equal(next.busy, false);
+  assert.equal(next.busy, true);
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.ok(posts.some((p) => p.includes('OMEGA')));
+  const settled = await runCursorBridgePollOnce(
+    {
+      repoRoot: root,
+      botToken: 'token',
+      chatId: '-100',
+      principalUserId: '42',
+      opDir,
+      statePath,
+      topicMapPath,
+      agentSession: session,
+      post: async () => {},
+      getUpdates: async () => ({ success: true, updates: [] }),
+    },
+    next.state,
+    false,
+    0
+  );
+  assert.equal(settled.busy, false);
   assert.ok(next.state.updateOffset >= 10);
 });
 
@@ -388,6 +433,7 @@ test('handleInboundDecision surfaces agent errors to Telegram', async () => {
     syncAgentIdFromSession: () => {},
   };
   await handleInboundDecision({ action: 'prompt', text: 'go' }, ctx, undefined, async () => {});
+  await new Promise((resolve) => setTimeout(resolve, 20));
   assert.ok(posts.some((p) => p.includes('model exploded')));
 });
 
@@ -787,16 +833,73 @@ test('handleInboundDecision prompt posts working indicator before agent reply', 
     ctx.posts.push(text);
     replyTargets.push(replyTo);
   };
-  await handleInboundDecision(
+  const busy = await handleInboundDecision(
     { action: 'prompt', text: 'remember the code word ZETA' },
     ctx,
     5,
     async () => {}
   );
+  assert.equal(busy, true);
+  await new Promise((resolve) => setTimeout(resolve, 20));
   assert.ok(ctx.posts[0].includes('Agent started'));
   assert.ok(ctx.posts.some((text) => text.includes('ZETA')));
   assert.equal(replyTargets.filter((id) => id === 5).length, 1);
   assert.ok(replyTargets.slice(0, -1).every((id) => id === undefined));
+});
+
+test('handleInboundDecision forwards Telegram photos to the Cursor agent', async () => {
+  const media = require('../out/bridge/cursorBridgeTelegramMedia');
+  const originalDownload = media.downloadTelegramPhotoAsSdkImage;
+  media.downloadTelegramPhotoAsSdkImage = async () => ({
+    data: Buffer.from('jpeg-bytes').toString('base64'),
+    mimeType: 'image/jpeg',
+  });
+  try {
+    const ctx = mkCtx();
+    let capturedPrompt;
+    ctx.agentSession.promptAgent = async (prompt) => {
+      capturedPrompt = prompt;
+      return { replyText: 'looks like a screenshot', agentId: ctx.agentSession.readAgentId() };
+    };
+    const busy = await handleInboundDecision(
+      { action: 'prompt', text: 'what is this?', photoFileIds: ['photo-1'] },
+      ctx,
+      9,
+      async () => {}
+    );
+    assert.equal(busy, true);
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    assert.deepEqual(capturedPrompt, {
+      text: 'what is this?',
+      images: [{ data: Buffer.from('jpeg-bytes').toString('base64'), mimeType: 'image/jpeg' }],
+    });
+    assert.ok(ctx.posts.some((text) => text.includes('Downloading photo')));
+    assert.ok(ctx.posts.some((text) => text.includes('started with photo')));
+    assert.ok(ctx.posts.some((text) => text.includes('looks like a screenshot')));
+  } finally {
+    media.downloadTelegramPhotoAsSdkImage = originalDownload;
+  }
+});
+
+test('handleInboundDecision update works while agent run is in flight', async () => {
+  const ctx = mkCtx();
+  const session = ctx.agentSession;
+  let release;
+  session.promptAgent = () =>
+    new Promise((resolve) => {
+      release = () => resolve({ replyText: 'done', agentId: session.readAgentId() });
+    });
+  const busy = await handleInboundDecision({ action: 'prompt', text: 'long task' }, ctx, undefined, async () => {});
+  assert.equal(busy, true);
+  const posts = [];
+  ctx.post = async (_t, _c, _topic, text) => {
+    posts.push(text);
+  };
+  await handleInboundDecision({ action: 'update' }, ctx, undefined, async () => {});
+  assert.ok(posts.some((text) => text.includes('Agent run in progress')));
+  assert.ok(posts.some((text) => text.includes('long task')));
+  release();
+  await new Promise((resolve) => setTimeout(resolve, 20));
 });
 
 test('handleInboundDecision returns busy for unrecognized actions', async () => {
@@ -901,8 +1004,14 @@ test('runCursorBridgePollOnce skips updates without inbound events', async () =>
 test('runCursorBridgePollOnce gates prompt to busy when already busy', async () => {
   const root = mkRoot();
   const deps = mkPollDeps(root);
+  const session = deps.agentSession;
+  let release;
+  session.promptAgent = () =>
+    new Promise((resolve) => {
+      release = () => resolve({ replyText: 'done', agentId: session.readAgentId() });
+    });
   const posts = [];
-  await runCursorBridgePollOnce(
+  const first = await runCursorBridgePollOnce(
     {
       ...deps,
       post: async (_t, _c, _topic, text) => {
@@ -925,10 +1034,39 @@ test('runCursorBridgePollOnce gates prompt to busy when already busy', async () 
       }),
     },
     { updateOffset: 0, cursorTopicId: 55 },
-    true,
+    false,
+    0
+  );
+  assert.equal(first.busy, true);
+  await runCursorBridgePollOnce(
+    {
+      ...deps,
+      post: async (_t, _c, _topic, text) => {
+        posts.push(text);
+      },
+      getUpdates: async () => ({
+        success: true,
+        updates: [
+          {
+            update_id: 12,
+            message: {
+              message_id: 3,
+              text: 'remember the code word GAMMA',
+              from: { id: 42 },
+              chat: { id: -100 },
+              message_thread_id: 55,
+            },
+          },
+        ],
+      }),
+    },
+    first.state,
+    first.busy,
     0
   );
   assert.ok(posts.some((text) => text.includes('Busy')));
+  release();
+  await new Promise((resolve) => setTimeout(resolve, 20));
 });
 
 test('runCursorBridgePollOnce uses default postChunks when post override is omitted', async () => {
@@ -1139,7 +1277,8 @@ test('runCursorBridgeBootIfConfigured runs boot prompt when configured', async (
   );
   assert.ok(posts.some((text) => text.includes('Boot test prompt: wake')));
   assert.equal(prompted, 'wake');
-  assert.equal(busy, false);
+  assert.equal(busy, true);
+  await new Promise((resolve) => setTimeout(resolve, 20));
 });
 
 test('runCursorBridgeBootIfConfigured skips when cursor topic is unbound', async () => {
@@ -1282,31 +1421,44 @@ test('runCursorBridgePollOnce writes holder agent id only via persistState on re
 test('runCursorBridgePollOnce leaves busy false after prompt completes', async () => {
   const root = mkRoot();
   const deps = mkPollDeps(root);
+  const updates = async () => ({
+    success: true,
+    updates: [
+      {
+        update_id: 42,
+        message: {
+          message_id: 12,
+          text: 'remember the code word GAMMA',
+          from: { id: 42 },
+          chat: { id: -100 },
+          message_thread_id: 55,
+        },
+      },
+    ],
+  });
   const next = await runCursorBridgePollOnce(
     {
       ...deps,
       post: async () => {},
-      getUpdates: async () => ({
-        success: true,
-        updates: [
-          {
-            update_id: 42,
-            message: {
-              message_id: 12,
-              text: 'remember the code word GAMMA',
-              from: { id: 42 },
-              chat: { id: -100 },
-              message_thread_id: 55,
-            },
-          },
-        ],
-      }),
+      getUpdates: updates,
     },
     { updateOffset: 0, cursorTopicId: 55 },
     false,
     0
   );
-  assert.equal(next.busy, false);
+  assert.equal(next.busy, true);
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  const settled = await runCursorBridgePollOnce(
+    {
+      ...deps,
+      post: async () => {},
+      getUpdates: async () => ({ success: true, updates: [] }),
+    },
+    next.state,
+    false,
+    0
+  );
+  assert.equal(settled.busy, false);
 });
 
 test('runCursorBridgeApp starts idle so the first poll can accept prompts', async () => {
@@ -1435,6 +1587,7 @@ test('runCursorBridgeApp boot persists state after active-run recovery reset', a
     },
     session
   );
+  await new Promise((resolve) => setTimeout(resolve, 30));
   assert.ok(calls >= 2);
   assert.ok(resetCalls >= 1);
   assert.equal(loadJsonFile(statePath).agentId, session.readAgentId());
@@ -1521,6 +1674,42 @@ test('handleInboundDecision starts expedite and posts confirmation', async () =>
   } finally {
     restore();
   }
+});
+
+test('handleInboundDecision /update posts an operational summary', async () => {
+  const root = mkRoot();
+  const progressDir = path.join(root, '.swarmforge', 'expedite', 'BL-696');
+  fs.mkdirSync(progressDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(progressDir, 'progress.json'),
+    JSON.stringify({
+      ticket: 'BL-696',
+      stage: 'specifier',
+      status: 'running',
+      detail: 'stage 1/7',
+      line: '[BL-696] 📝 specifier — running\nstage 1/7',
+      'updated-at-ms': Date.now(),
+    }),
+    'utf8'
+  );
+  fs.writeFileSync(
+    path.join(root, '.swarmforge', 'operator', 'expedite-bridge.lock'),
+    `${JSON.stringify({ ticket: 'BL-696', pid: process.pid })}\n`,
+    'utf8'
+  );
+  fs.mkdirSync(path.join(root, 'backlog', 'active'), { recursive: true });
+  fs.writeFileSync(
+    path.join(root, 'backlog', 'active', 'BL-696.yaml'),
+    'id: BL-696\ntitle: "Lets Talk"\nassigned_to: specifier\n',
+    'utf8'
+  );
+  const posts = [];
+  const ctx = mkCtx({ root, posts });
+  const busy = await handleInboundDecision({ action: 'update' }, ctx, 12, async () => {});
+  assert.equal(busy, false);
+  assert.ok(posts.some((p) => p.includes('Expedite BL-696')));
+  assert.ok(posts.some((p) => p.includes('Swarm: working')));
+  assert.ok(posts.some((p) => p.includes('BL-696 @ specifier')));
 });
 
 test('handleInboundDecision starts WIP checkpoint reexpedite and posts confirmation', async () => {

@@ -89,7 +89,9 @@ description: |
   - Static PWA surface
   - Background or lock-screen playback
 
-acceptance: specs/features/BL-696-miniapp-lets-talk-cursor-audio.feature
+acceptance: |
+  specs/features/BL-696-miniapp-lets-talk-cursor-audio.feature
+  specs/features/BL-696-telegram-cursor-bridge-operator-commands.feature
 
 required_wiring:
   - "extension/src/bridge/consoleMenuUiHtml.ts::lets-talk::BL-419 shape: the console menu is the only way the principal reaches this screen. A /lets-talk shell and turn route that are built, unit-tested and green but never linked from the fifth menu button leave the feature unreachable on the phone — which is the entire ask."

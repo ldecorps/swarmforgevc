@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { CursorAgentError } from '@cursor/sdk';
+import { CursorAgentError, type SDKUserMessage } from '@cursor/sdk';
 import { atomicWrite } from '../util/atomicWrite';
 import {
   createForumTopicWithRateLimitRetry,
@@ -25,7 +25,19 @@ import {
 } from './telegramCursorBridgeCore';
 import type { CursorBridgeAgentSessionDeps } from '../bridge/cursorBridgeAgentSession';
 import { withPromptProgress } from '../bridge/cursorBridgeAgentSession';
+import {
+  buildPhotoPromptText,
+  downloadTelegramPhotoAsSdkImage,
+  largestTelegramPhotoFileId,
+} from '../bridge/cursorBridgeTelegramMedia';
 import { createThrottledProgressReporter } from '../bridge/cursorBridgeProgress';
+import {
+  beginActiveRun,
+  endActiveRun,
+  isActiveRunInFlight,
+  recordActiveRunProgress,
+} from '../bridge/cursorBridgeRunTracker';
+import { collectUpdateSnapshot, formatUpdateMessage } from './telegramCursorBridgeUpdate';
 import {
   formatExpediteFailureMessage,
   formatExpediteStartMessage,
@@ -43,6 +55,7 @@ import {
 import { formatLogTelegramMessage } from './telegramCursorBridgeLogs';
 
 export const TELEGRAM_PROGRESS_MIN_INTERVAL_MS = 12_000;
+export const BUSY_POLL_TIMEOUT_SECONDS = 2;
 
 export const POLL_TIMEOUT_SECONDS = 30;
 export const STATE_FILE_NAME = 'cursor-bridge-state.json';
@@ -100,15 +113,21 @@ export function sleep(ms: number): Promise<void> {
 
 export function inboundEventOf(update: TelegramUpdate) {
   const message = update.message;
-  if (!message?.text || message.from?.id === undefined || message.chat?.id === undefined) {
+  if (!message || message.from?.id === undefined || message.chat?.id === undefined) {
+    return undefined;
+  }
+  const photoFileId = largestTelegramPhotoFileId(message.photo);
+  const text = message.text ?? message.caption ?? '';
+  if (!text && !photoFileId) {
     return undefined;
   }
   return {
     fromId: message.from.id,
     chatId: message.chat.id,
     topicId: message.message_thread_id,
-    text: message.text,
+    text,
     messageId: message.message_id,
+    ...(photoFileId ? { photoFileId } : {}),
   };
 }
 
@@ -178,8 +197,8 @@ export async function ensureCursorTopic(
 
 export async function promptWithHeartbeat(
   opDir: string,
-  promptAgent: (prompt: string) => Promise<{ replyText: string; agentId: string }>,
-  prompt: string,
+  promptAgent: (prompt: string | SDKUserMessage) => Promise<{ replyText: string; agentId: string }>,
+  prompt: string | SDKUserMessage,
   heartbeatWriter: (dir: string) => void = writePollHeartbeat,
   heartbeatIntervalMs = AGENT_RUN_HEARTBEAT_INTERVAL_MS
 ): Promise<string> {
@@ -211,11 +230,11 @@ export interface CursorBridgeHandlerContext {
 
 export async function runPromptWithActiveRunRecovery(
   ctx: Pick<CursorBridgeHandlerContext, 'agentSession' | 'opDir' | 'syncAgentIdFromSession'>,
-  prompt: string,
+  prompt: string | SDKUserMessage,
   resetAgent: () => Promise<void>,
   onProgress?: (line: string) => void | Promise<void>
 ): Promise<string> {
-  const runOnce = async (_text: string): Promise<{ replyText: string; agentId: string }> =>
+  const runOnce = async (_text: string | SDKUserMessage): Promise<{ replyText: string; agentId: string }> =>
     withPromptProgress(onProgress, async () => {
       const result = await ctx.agentSession.promptAgent(prompt);
       ctx.syncAgentIdFromSession();
@@ -252,28 +271,73 @@ async function handleSimpleInboundAction(
   return ctx.busy;
 }
 
+export function previewPromptForActiveRun(prompt: string | SDKUserMessage): string {
+  if (typeof prompt === 'string') {
+    return prompt;
+  }
+  const photoSuffix = prompt.images && prompt.images.length > 0 ? ` (+${prompt.images.length} photo)` : '';
+  return `${prompt.text}${photoSuffix}`;
+}
+
+async function resolvePromptMessage(
+  ctx: CursorBridgeHandlerContext,
+  text: string,
+  photoFileIds: string[] | undefined
+): Promise<string | SDKUserMessage> {
+  if (!photoFileIds || photoFileIds.length === 0) {
+    return text;
+  }
+  const images = [];
+  for (const fileId of photoFileIds) {
+    images.push(await downloadTelegramPhotoAsSdkImage(ctx.botToken, fileId));
+  }
+  return { text: buildPhotoPromptText(text), images };
+}
+
 async function handlePromptInboundAction(
   ctx: CursorBridgeHandlerContext,
   topicId: number,
-  prompt: string,
+  promptText: string,
   replyToMessageId: number | undefined,
-  resetAgent: () => Promise<void>
+  resetAgent: () => Promise<void>,
+  photoFileIds?: string[]
 ): Promise<boolean> {
   if (ctx.busy) {
     ctx.persistState();
   }
-  const reportProgress = createThrottledProgressReporter(TELEGRAM_PROGRESS_MIN_INTERVAL_MS, (line) =>
-    postInboundReply(ctx, topicId, line, undefined)
-  );
-  await postInboundReply(ctx, topicId, '🚀 Agent started…', undefined);
-  try {
-    const reply = await runPromptWithActiveRunRecovery(ctx, prompt, resetAgent, reportProgress);
-    await postInboundReply(ctx, topicId, reply, replyToMessageId);
-  } catch (err) {
-    const detail = err instanceof CursorAgentError ? err.message : err instanceof Error ? err.message : String(err);
-    await postInboundReply(ctx, topicId, `Error: ${detail}`, replyToMessageId);
+  let promptMessage: string | SDKUserMessage = promptText;
+  if (photoFileIds && photoFileIds.length > 0) {
+    try {
+      await postInboundReply(ctx, topicId, '📷 Downloading photo…', undefined);
+      promptMessage = await resolvePromptMessage(ctx, promptText, photoFileIds);
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      await postInboundReply(ctx, topicId, `Error: ${detail}`, replyToMessageId);
+      return ctx.busy;
+    }
   }
-  return false;
+  beginActiveRun(previewPromptForActiveRun(promptMessage));
+  const reportProgress = createThrottledProgressReporter(TELEGRAM_PROGRESS_MIN_INTERVAL_MS, (line) => {
+    recordActiveRunProgress(line);
+    return postInboundReply(ctx, topicId, line, undefined);
+  });
+  void (async () => {
+    try {
+      const started =
+        typeof promptMessage === 'string'
+          ? '🚀 Agent started…'
+          : '🚀 Agent started with photo…';
+      await postInboundReply(ctx, topicId, started, undefined);
+      const reply = await runPromptWithActiveRunRecovery(ctx, promptMessage, resetAgent, reportProgress);
+      await postInboundReply(ctx, topicId, reply, replyToMessageId);
+    } catch (err) {
+      const detail = err instanceof CursorAgentError ? err.message : err instanceof Error ? err.message : String(err);
+      await postInboundReply(ctx, topicId, `Error: ${detail}`, replyToMessageId);
+    } finally {
+      endActiveRun();
+    }
+  })();
+  return true;
 }
 
 type InboundActionHandler = (
@@ -287,7 +351,7 @@ const INBOUND_ACTION_HANDLERS: Partial<Record<InboundDecision['action'], Inbound
   refuse: (ctx, topicId, replyTo) => handleSimpleInboundAction(ctx, topicId, 'Unauthorized.', replyTo),
   help: (ctx, topicId, replyTo) => handleSimpleInboundAction(ctx, topicId, formatHelpMessage(), replyTo),
   status: (ctx, topicId, replyTo) => {
-    let text = formatStatusMessage(ctx.state, ctx.busy);
+    let text = formatStatusMessage(ctx.state, ctx.busy || isActiveRunInFlight());
     const expediteLock = readExpediteLock(ctx.repoRoot);
     if (expediteLock) {
       text += `\nExpedite: ${expediteLock.ticket} running (pid ${expediteLock.pid})`;
@@ -297,6 +361,12 @@ const INBOUND_ACTION_HANDLERS: Partial<Record<InboundDecision['action'], Inbound
       text += `\nRedeploy: running (pid ${redeployLock.pid})`;
     }
     return handleSimpleInboundAction(ctx, topicId, text, replyTo);
+  },
+  update: (ctx, topicId) => {
+    const text = formatUpdateMessage(
+      collectUpdateSnapshot(ctx.repoRoot, ctx.busy || isActiveRunInFlight())
+    );
+    return handleSimpleInboundAction(ctx, topicId, text, undefined);
   },
   busy: (ctx, topicId, replyTo) =>
     handleSimpleInboundAction(ctx, topicId, 'Busy — wait for the current run to finish.', replyTo),
@@ -375,7 +445,14 @@ export async function handleInboundDecision(
     return handler(ctx, topicId, replyToMessageId, resetAgent);
   }
   if (decision.action === 'prompt') {
-    return handlePromptInboundAction(ctx, topicId, decision.text, replyToMessageId, resetAgent);
+    return handlePromptInboundAction(
+      ctx,
+      topicId,
+      decision.text,
+      replyToMessageId,
+      resetAgent,
+      decision.photoFileIds
+    );
   }
   return handleOperationalInboundAction(decision, ctx, topicId, replyToMessageId);
 }
@@ -438,7 +515,7 @@ async function processInboundUpdates(
       continue;
     }
     const rawDecision = decideInboundAction(inbound, deps.principalUserId, deps.chatId, holder.state.cursorTopicId);
-    const decision = gateBusy(rawDecision, holder.busy);
+    const decision = gateBusy(rawDecision, holder.busy || isActiveRunInFlight());
     const ctxBusy = decision.action === 'prompt' ? true : holder.busy;
     holder.busy = await handleInboundDecision(
       decision,
@@ -467,7 +544,10 @@ export async function runCursorBridgePollOnce(
   pollFailures: number
 ): Promise<{ state: CursorBridgePersistedState; busy: boolean; pollFailures: number }> {
   const getUpdates = deps.getUpdates ?? getTelegramUpdates;
-  const timeout = deps.pollTimeoutSeconds ?? POLL_TIMEOUT_SECONDS;
+  const timeout =
+    busy || isActiveRunInFlight()
+      ? BUSY_POLL_TIMEOUT_SECONDS
+      : (deps.pollTimeoutSeconds ?? POLL_TIMEOUT_SECONDS);
   const poll = await getUpdates(deps.botToken, state.updateOffset, timeout);
   if (!poll.success) {
     await handleFailedPoll(deps, pollFailures);
@@ -543,9 +623,12 @@ export async function runCursorBridgeLoop(
   let busy = initial.busy;
   let pollFailures = initial.pollFailures;
   while (shouldContinue()) {
+    if (!isActiveRunInFlight()) {
+      busy = false;
+    }
     const next = await runCursorBridgePollOnce(loopDeps, state, busy, pollFailures);
     state = next.state;
-    busy = next.busy;
+    busy = next.busy || isActiveRunInFlight();
     pollFailures = next.pollFailures;
   }
   return { state, busy, pollFailures };

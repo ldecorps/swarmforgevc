@@ -36,6 +36,20 @@ test('summarizeSdkProgressLine ignores assistant stream chunks (final reply is p
   );
 });
 
+test('summarizeSdkProgressLine skips short thinking fragments', () => {
+  assert.equal(
+    summarizeSdkProgressLine({ type: 'thinking', text: 'pas.', agent_id: 'a', run_id: 'r' }),
+    undefined
+  );
+  const line = summarizeSdkProgressLine({
+      type: 'thinking',
+      text: 'Sinon il faut indiquer clairement le comportement attendu pour ce cas.',
+      agent_id: 'a',
+      run_id: 'r',
+    });
+  assert.match(line, /Sinon il faut indiquer/);
+});
+
 test('createThrottledProgressReporter coalesces rapid updates', async () => {
   const lines = [];
   let now = 0;

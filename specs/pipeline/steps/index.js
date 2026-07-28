@@ -332,6 +332,7 @@ const DOMAINS = [
   require('./bl655AmbulanceModeHoldSteps'),
   require('./bl684OnboarderRenameSteps'),
   require('./bl696LetsTalkSteps'),
+  require('./bl696TelegramCursorBridgeOperatorSteps'),
   require('./bl688RecordableSpecFailureClassesSteps'),
   require('./bl690EnsureDaemonRepairStartsNotHaltsSteps')
 ];

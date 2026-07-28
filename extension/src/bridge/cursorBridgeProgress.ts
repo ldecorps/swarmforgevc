@@ -6,6 +6,19 @@ function toolLabel(name: string): string {
   return name.length > 48 ? `${name.slice(0, 45)}…` : name;
 }
 
+const THINKING_PROGRESS_MIN_CHARS = 40;
+
+function shouldPostThinkingProgress(text: string): boolean {
+  const trimmed = text.trim();
+  if (trimmed.length === 0) {
+    return false;
+  }
+  if (trimmed.length >= THINKING_PROGRESS_MIN_CHARS) {
+    return true;
+  }
+  return trimmed.length >= 24 && /[.!?…]$/.test(trimmed);
+}
+
 /** Map one SDK stream event to a short user-facing progress line, if any. */
 export function summarizeSdkProgressLine(event: SDKMessage): string | undefined {
   switch (event.type) {
@@ -28,8 +41,16 @@ export function summarizeSdkProgressLine(event: SDKMessage): string | undefined 
         return `✗ ${toolLabel(event.name)} failed`;
       }
       return undefined;
-    case 'thinking':
-      return event.text.trim().length > 0 ? `💭 ${event.text.trim().slice(0, 120)}` : '💭 Thinking…';
+    case 'thinking': {
+      const trimmed = event.text.trim();
+      if (trimmed.length === 0) {
+        return undefined;
+      }
+      if (!shouldPostThinkingProgress(trimmed)) {
+        return undefined;
+      }
+      return `💭 ${trimmed.slice(0, 120)}`;
+    }
     case 'task':
       return event.text?.trim() ? `📋 ${event.text.trim().slice(0, 120)}` : undefined;
     default:

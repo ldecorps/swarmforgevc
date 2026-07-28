@@ -4,6 +4,7 @@
 // the Cursor SDK around these decisions.
 
 import { topicForSubject } from './telegramTopicDecisions';
+import { buildPhotoPromptText } from '../bridge/cursorBridgeTelegramMedia';
 import { parseExpediteTicket, parseReexpediteTicket } from './telegramCursorBridgeExpedite';
 import { parseRedeployCommand } from './telegramCursorBridgeRedeploy';
 import { parseLogCommand, type LogTarget } from './telegramCursorBridgeLogs';
@@ -23,6 +24,7 @@ export interface CursorBridgeInboundEvent {
   chatId: string | number;
   topicId: number | undefined;
   text: string;
+  photoFileId?: string;
 }
 
 export type CursorBridgeDecision =
@@ -30,12 +32,13 @@ export type CursorBridgeDecision =
   | { action: 'refuse' }
   | { action: 'new-session' }
   | { action: 'status' }
+  | { action: 'update' }
   | { action: 'help' }
   | { action: 'expedite'; ticket: string }
   | { action: 'reexpedite'; ticket: string }
   | { action: 'redeploy' }
   | { action: 'log'; target: LogTarget }
-  | { action: 'prompt'; text: string }
+  | { action: 'prompt'; text: string; photoFileIds?: string[] }
   | { action: 'busy' };
 
 export type EnsureCursorTopicAction = { kind: 'reuse'; topicId: number } | { kind: 'create' };
@@ -90,7 +93,7 @@ export function frontDeskTopicMapWithoutCursorBridge(
   return next;
 }
 
-export function parseCommand(text: string): 'new' | 'status' | 'help' | undefined {
+export function parseCommand(text: string): 'new' | 'status' | 'help' | 'update' | undefined {
   const lower = text.trim().toLowerCase();
   if (lower === '/new') {
     return 'new';
@@ -98,18 +101,24 @@ export function parseCommand(text: string): 'new' | 'status' | 'help' | undefine
   if (lower === '/status') {
     return 'status';
   }
+  if (lower === '/update') {
+    return 'update';
+  }
   if (lower === '/help') {
     return 'help';
   }
   return undefined;
 }
 
-function decideCommandAction(cmd: 'new' | 'status' | 'help'): CursorBridgeDecision {
+function decideCommandAction(cmd: 'new' | 'status' | 'help' | 'update'): CursorBridgeDecision {
   if (cmd === 'new') {
     return { action: 'new-session' };
   }
   if (cmd === 'status') {
     return { action: 'status' };
+  }
+  if (cmd === 'update') {
+    return { action: 'update' };
   }
   return { action: 'help' };
 }
@@ -155,8 +164,11 @@ export function decideInboundAction(
     return { action: 'refuse' };
   }
   const trimmed = event.text.trim();
-  if (!trimmed) {
+  if (!trimmed && !event.photoFileId) {
     return { action: 'ignore' };
+  }
+  if (event.photoFileId) {
+    return { action: 'prompt', text: buildPhotoPromptText(event.text), photoFileIds: [event.photoFileId] };
   }
   const cmd = parseCommand(trimmed);
   if (cmd) {
@@ -298,10 +310,11 @@ export function formatHelpMessage(): string {
   return [
     'Cursor remote control',
     '',
-    'Send any message to run the local Cursor agent against this repo.',
+    'Send any message or photo to run the local Cursor agent against this repo.',
     '',
     '/new — start a fresh agent session',
     '/status — show session state',
+    '/update — short summary of agent / expedite / swarm activity (works while busy)',
     '/expedite [BL-xxx] — run offline expeditor with stage updates (default BL-696)',
     '/reexpedite [BL-xxx] — checkpoint main WIP and restart a divergent expedite',
     '/redeploy — compile extension and restart this bridge',
