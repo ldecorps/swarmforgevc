@@ -22,6 +22,9 @@ approval_context: >
   it. The operator asked for it as its own ticket rather than a scope widening
   of BL-629.
 
+  Hydrate batch 2026-07-28: materializes the already-approved prose acceptance
+  into APS Gherkin, unchanged in substance.
+
 source: |
   BL-590 post-mortem, 2026-07-25. Four commits put un-QA'd pipeline code on
   `main` and on `origin/main`. Root cause, proven from the cleaner's own
@@ -106,27 +109,11 @@ description: |
   series, not one claimed-perfect one.
 
 acceptance: |
-  Specifier writes the scenarios. Minimum behaviour:
+  specs/features/BL-632-commit-time-guard-refuses-pipeline-code-on-main.feature
 
-  1. On `main`, a staged change touching `extension/src/` is refused with a
-     non-zero exit and a message naming the offending path(s) and the reason.
-  2. The same change with `SWARMFORGE_ROLE=QA` is allowed.
-  3. On `main`, a commit touching only `backlog/`, `docs/`, `specs/features/`,
-     `swarmforge/` is allowed with no role set — the coordinator/specifier
-     bookkeeping path, which runs many times a day and must gain no friction.
-  4. On any branch other than `main`, nothing is refused. A cleaner committing
-     to `swarmforge-cleaner` is untouched.
-  5. `git merge --no-ff` of a branch carrying `extension/src/` changes into
-     `main` is refused by `pre-merge-commit`.
-  6. The existing BL-105 commit-size guard still runs and still refuses an
-     oversized file. The current hook `exec`s `check_commit_size.sh`, so adding
-     a second check requires restructuring — a regression here silently disables
-     the size guard, so cover both guards firing independently AND the size
-     guard still firing when the branch guard passes.
-  7. Guard logic lives in a standalone script callable outside a hook, per the
-     BL-105 precedent, and is unit-tested there.
-  8. The refusal message states the remedy: commit in your own worktree and hand
-     off through the pipeline.
+  Supporting criteria the Gherkin does not pin: guard logic lives in a
+  standalone script callable outside a hook, per the BL-105 precedent, and is
+  unit-tested there.
 
 out_of_scope: |
   - Publish-time refusal (BL-630) and deploy-time refusal (BL-629).

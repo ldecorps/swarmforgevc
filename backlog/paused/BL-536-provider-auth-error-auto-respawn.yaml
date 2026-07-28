@@ -5,12 +5,18 @@ type: defect
 status: todo
 epic: swarm-reliability
 assigned_to: specifier
+human_approval: pending
 severity: high
 priority: 2
 mutation_cost: medium
 direction: swarm-surfaced
 depends_on: [BL-535]
 source: "SRE incident 2026-07-19 — AuthenticationError left standing roles idle while handoffd stayed healthy."
+
+approval_context: >
+  Hydrate batch 2026-07-28: materializes the already-drafted prose acceptance
+  into APS Gherkin, unchanged in substance. Needs a human look before
+  autopilot picks it up.
 
 notes: |
   WHAT / WHY: classify-provider-error already maps Invalid API key → :auth,
@@ -21,10 +27,4 @@ notes: |
   respawns the role via provider-respawn-env-args (CLI-forced remap), alerts
   after N failures, never busy-loops token burn on repeated 401.
 
-acceptance: |
-  Feature: provider auth failures auto-heal
-    Scenario: AuthenticationError in pane triggers respawn with compat env
-      Given a standing role pane whose recent scrollback matches auth-class text
-      When the reliability observe tick runs
-      Then the role is respawned with provider-compat env
-      And an operator-visible alert is recorded if auth persists after respawn
+acceptance: specs/features/BL-536-provider-auth-error-auto-respawn.feature

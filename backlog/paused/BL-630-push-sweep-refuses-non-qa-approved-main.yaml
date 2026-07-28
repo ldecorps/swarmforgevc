@@ -91,7 +91,8 @@ description: |
   reaching origin for as long as any pipeline work sits un-QA'd on `main`, which
   on this swarm is most of the day. Recommend the allowlist.
 
-acceptance: specs/features/BL-630-push-sweep-refuses-non-qa-approved-main.feature
+acceptance: |
+  specs/features/BL-630-push-sweep-refuses-non-qa-approved-main.feature
 
   The specifier settled the allowlist question named in the description:
   a tip whose non-QA commits touch only `backlog/`, `docs/`, `swarmforge/`

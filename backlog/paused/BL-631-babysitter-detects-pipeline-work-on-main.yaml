@@ -21,6 +21,9 @@ approval_context: >
   incident was found by an architect noticing branch state by eye, hours after
   the fact. This ticket makes the detection deterministic and prompt.
 
+  Hydrate batch 2026-07-28: materializes the already-approved prose acceptance
+  into APS Gherkin, unchanged in substance.
+
 source: |
   BL-590 post-mortem, 2026-07-25. Root cause (proven from the role's own
   transcript, `~/.claude/projects/-home-carillon-swarmforgevc--worktrees-cleaner/
@@ -119,23 +122,7 @@ description: |
   that is detectable before it merges anything. Treat as a follow-on if it
   complicates slice 1.
 
-acceptance: |
-  Specifier writes the scenarios. Minimum behaviour:
-
-  1. A commit on `main` that is not an ancestor of `swarmforge-QA` and touches
-     `extension/src/` produces a `critical` finding naming the sha and path.
-  2. A commit on `main` that is not an ancestor of `swarmforge-QA` and touches
-     only `backlog/`, `docs/`, `swarmforge/`, `specs/features/` produces NO
-     finding. Fixture must include a real-shaped coordinator bookkeeping commit
-     and a specifier `.feature` drain — these are the false positives the
-     refined rule was built to exclude, and a regression here makes the check
-     get ignored.
-  3. The finding reaches the wake queue and is visible to the LLM babysitter in
-     the same shape as a claim-progress finding.
-  4. A sha already reported does not re-alarm on the following tick.
-  5. Regression fixture reproduces the 2026-07-25 set: `4851901ed`, `73706d79e`,
-     `8e76f8f10`, `ebd12542d`, `e05c025d4`, `cce634a6c` all CRIT; the same run's
-     `b03e17429` (spec drain) and `cb85b9e4b` (cost sidecar) both clean.
+acceptance: specs/features/BL-631-babysitter-detects-pipeline-work-on-main.feature
 
 out_of_scope: |
   - Preventing the landing. Detection only. Prevention at commit time is the

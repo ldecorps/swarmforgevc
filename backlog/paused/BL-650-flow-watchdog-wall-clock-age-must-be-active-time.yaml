@@ -21,6 +21,9 @@ approval_context: >
   décompte pas le temps en temps actif ?" — measured answer: no — then
   "go for it".
 
+  Hydrate batch 2026-07-28: materializes the already-approved prose acceptance
+  into APS Gherkin, unchanged in substance.
+
 source: |
   ## The live alarm that exposed it (2026-07-25 21:44)
 
@@ -110,45 +113,7 @@ description: |
   cost; a reviewer should hold one property per parcel, and each carries its
   own non-vacuity fixture.
 
-acceptance: |
-  Specifier writes the scenarios. Minimum behaviour:
-
-  1. Tonight's fixture: parcel enqueued 1 min before a stop, swarm down 6 min,
-     then active 8 min — effective age 9 min, NO warn at the 15-min wall mark.
-     Warn fires only once ACTIVE time crosses the threshold.
-  2. The morning storm: parcel enqueued at cooldown start, swarm paused all
-     night — at the 07:00 resume its effective age is ~0 and NOTHING fires;
-     escalate requires the escalate threshold of ACTIVE time after resume.
-  3. Non-vacuity, load-bearing: a parcel ignored for the full warn threshold
-     while the swarm is ACTIVE and unpaused still fires WARN, and ESCALATE at
-     the escalate threshold — proving the fix is a better clock, not a mute.
-  4. `decide-tier`'s structural guarantee is intact: `snoozed?` remains the
-     only mute; no role/type/dormancy branch is added to it. Assert on the
-     function's inputs, not by code inspection.
-  5. Pause/stop intervals come from the durable records, never inferred from
-     process liveness at sweep time. An unreconstructable interval degrades to
-     wall clock, flagged in the alarm text.
-  6. Rotation pack thresholds: under `rotation router`, a broadcast waiting a
-     nominal rotation turn does not warn; the same wait under a parallel pack
-     (all roles resident) still does. Threshold resolution is config-driven
-     and the default derivation is stated in the conf comment.
-  7. Alarm text states the age it used ("aged 9m active (15m wall)") so a
-     human reading history can tell which clock spoke — and names any
-     provider-outage interval it subtracted ("−6m provider-529").
-  7b. Provider-outage fixture (2026-07-26 ~10:45): a 529 retry storm during
-     the architect's BL-647 review — the retry window subtracts from every
-     in-flight parcel's effective age, backed by the transcript's timestamped
-     attempt lines; an interval with NO signature evidence subtracts nothing.
-     Downstream consumers (BL-659 cycle-time percentiles/ETAs) must be able
-     to FLAG outage-tainted samples so one bad provider hour cannot silently
-     inflate a p85 service expectation.
-  8. Third recorded false shape (2026-07-26 10:03): an in_process claim whose
-     single-resident claimant is on a LEGITIMATE detour (rotated to another
-     stage to satisfy the parcel's own prerequisite — here the coder detouring
-     to specifier to author BL-647's missing .feature, back 7 min later with
-     the contract written). The clock/thresholds must not read a mono-router
-     prerequisite detour as a stall; an in_process claim whose owner never
-     returns MUST still alarm (the orphan case stays loud — non-vacuity).
+acceptance: specs/features/BL-650-flow-watchdog-wall-clock-age-must-be-active-time.feature
 
 out_of_scope: |
   - Muting alarms during a pause. Deliberately the opposite of this ticket:
