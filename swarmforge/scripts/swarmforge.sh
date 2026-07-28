@@ -966,6 +966,29 @@ role_claude_pid_alive() {
   kill -0 "$pid" 2>/dev/null
 }
 
+scrub_harness_env() {
+  # BL-657: when `new-session -d` starts a fresh tmux SERVER (no server was
+  # listening on $TMUX_SOCKET yet), tmux seeds the server's global
+  # environment from whatever process started it. Launched from an
+  # operator/harness-descended shell, that leaks Claude-Code-harness session
+  # markers (observed: CLAUDE_CODE_CHILD_SESSION) into every role pane's
+  # environment - launch_role's respawn-pane spawns each role's real agent
+  # process later, inheriting whatever the global environment still holds at
+  # that point. Scrubbing right after session creation, before any
+  # respawn-pane call, guarantees no role pane ever sees a marker regardless
+  # of which shell launched the stack. Idempotent and safe to call on every
+  # create_role_session invocation, not just the one that actually started
+  # the server.
+  local names
+  names="$(tmux -S "$TMUX_SOCKET" show-environment -g 2>/dev/null \
+    | bb "$SCRIPT_DIR/harness_env_scrub_names.bb" 2>/dev/null || true)"
+  [[ -n "$names" ]] || return 0
+  local name
+  while IFS= read -r name; do
+    [[ -n "$name" ]] && tmux -S "$TMUX_SOCKET" set-environment -g -u "$name" 2>/dev/null || true
+  done <<< "$names"
+}
+
 create_role_session() {
   local session="$1"
   local title="$2"
@@ -977,6 +1000,7 @@ create_role_session() {
   fi
 
   tmux -S "$TMUX_SOCKET" new-session -d -s "$session" -n "$AGENT_WINDOW"
+  scrub_harness_env
   tmux -S "$TMUX_SOCKET" rename-window -t "$session:$AGENT_WINDOW" "$title"
   tmux -S "$TMUX_SOCKET" set-window-option -t "$session:$title" allow-rename off
 }

@@ -80,8 +80,19 @@
 ;; ── decide-launch-outcome: BL-372 scenario 01/02 (ready + detached) ────────
 
 (assert= "ready and detached is a clean pass"
-         {:ok? true :message "swarm is up and its launch is detached from the caller"}
+         {:ok? true
+          :message "swarm launch job is detached from the caller (this proves the launch job survives - it does not by itself guarantee the tmux server stays up; see wait_for_ready)"}
          (swarm-detach-lib/decide-launch-outcome {:ready? true :detached? true}))
+
+;; BL-657: the pass message must never claim the tmux server itself will
+;; survive - only that the launch job is detached from the caller. Guards
+;; against the exact wording gap that let three identical server deaths go
+;; unreported as anything but "did not become ready" (this check's own
+;; "detached" verdict stayed true throughout).
+(let [{:keys [message]} (swarm-detach-lib/decide-launch-outcome {:ready? true :detached? true})]
+  (assert= "the pass message never asserts the swarm/server itself is 'up' or will survive"
+           false
+           (boolean (re-find #"(?i)swarm is up" message))))
 
 ;; ── decide-launch-outcome: BL-372 scenario 02 (still owned by caller) ─────
 
