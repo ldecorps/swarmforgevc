@@ -114,6 +114,22 @@ function decideCommandAction(cmd: 'new' | 'status' | 'help'): CursorBridgeDecisi
   return { action: 'help' };
 }
 
+function decideOperatorCommand(text: string): CursorBridgeDecision | undefined {
+  if (parseRedeployCommand(text)) {
+    return { action: 'redeploy' };
+  }
+  const logTarget = parseLogCommand(text);
+  if (logTarget) {
+    return { action: 'log', target: logTarget };
+  }
+  const reexpediteTicket = parseReexpediteTicket(text);
+  if (reexpediteTicket) {
+    return { action: 'reexpedite', ticket: reexpediteTicket };
+  }
+  const expediteTicket = parseExpediteTicket(text);
+  return expediteTicket ? { action: 'expedite', ticket: expediteTicket } : undefined;
+}
+
 export function isScopedToCursorTopic(
   event: Pick<CursorBridgeInboundEvent, 'chatId' | 'topicId'>,
   chatId: string | number,
@@ -146,22 +162,7 @@ export function decideInboundAction(
   if (cmd) {
     return decideCommandAction(cmd);
   }
-  if (parseRedeployCommand(trimmed)) {
-    return { action: 'redeploy' };
-  }
-  const logTarget = parseLogCommand(trimmed);
-  if (logTarget) {
-    return { action: 'log', target: logTarget };
-  }
-  const reexpediteTicket = parseReexpediteTicket(trimmed);
-  if (reexpediteTicket) {
-    return { action: 'reexpedite', ticket: reexpediteTicket };
-  }
-  const expediteTicket = parseExpediteTicket(trimmed);
-  if (expediteTicket) {
-    return { action: 'expedite', ticket: expediteTicket };
-  }
-  return { action: 'prompt', text: trimmed };
+  return decideOperatorCommand(trimmed) ?? { action: 'prompt', text: trimmed };
 }
 
 export function gateBusy(decision: CursorBridgeDecision, busy: boolean): CursorBridgeDecision {

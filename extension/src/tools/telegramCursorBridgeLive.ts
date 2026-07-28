@@ -320,6 +320,43 @@ const INBOUND_ACTION_HANDLERS: Partial<Record<InboundDecision['action'], Inbound
   },
 };
 
+type ExpediteInboundDecision = Extract<InboundDecision, { action: 'expedite' | 'reexpedite' }>;
+
+function startInboundExpedite(decision: ExpediteInboundDecision, repoRoot: string) {
+  return decision.action === 'expedite'
+    ? startExpediteRun(repoRoot, decision.ticket)
+    : startReexpediteRun(repoRoot, decision.ticket);
+}
+
+function formatInboundExpediteResult(decision: ExpediteInboundDecision, result: ReturnType<typeof startExpediteRun>): string {
+  if (!result.ok) {
+    return formatExpediteFailureMessage(result);
+  }
+  return decision.action === 'expedite'
+    ? formatExpediteStartMessage(result)
+    : formatReexpediteStartMessage(result);
+}
+
+async function handleOperationalInboundAction(
+  decision: InboundDecision,
+  ctx: CursorBridgeHandlerContext,
+  topicId: number,
+  replyToMessageId: number | undefined
+): Promise<boolean> {
+  if (decision.action === 'expedite' || decision.action === 'reexpedite') {
+    const result = startInboundExpedite(decision, ctx.repoRoot);
+    const text = formatInboundExpediteResult(decision, result);
+    await postInboundReply(ctx, topicId, text, replyToMessageId);
+    return false;
+  }
+  if (decision.action === 'log') {
+    const text = formatLogTelegramMessage(ctx.repoRoot, decision.target);
+    await postInboundReply(ctx, topicId, text, undefined);
+    return false;
+  }
+  return ctx.busy;
+}
+
 export async function handleInboundDecision(
   decision: InboundDecision,
   ctx: CursorBridgeHandlerContext,
@@ -340,24 +377,7 @@ export async function handleInboundDecision(
   if (decision.action === 'prompt') {
     return handlePromptInboundAction(ctx, topicId, decision.text, replyToMessageId, resetAgent);
   }
-  if (decision.action === 'expedite') {
-    const result = startExpediteRun(ctx.repoRoot, decision.ticket);
-    const text = result.ok ? formatExpediteStartMessage(result) : formatExpediteFailureMessage(result);
-    await postInboundReply(ctx, topicId, text, replyToMessageId);
-    return false;
-  }
-  if (decision.action === 'reexpedite') {
-    const result = startReexpediteRun(ctx.repoRoot, decision.ticket);
-    const text = result.ok ? formatReexpediteStartMessage(result) : formatExpediteFailureMessage(result);
-    await postInboundReply(ctx, topicId, text, replyToMessageId);
-    return false;
-  }
-  if (decision.action === 'log') {
-    const text = formatLogTelegramMessage(ctx.repoRoot, decision.target);
-    await postInboundReply(ctx, topicId, text, undefined);
-    return false;
-  }
-  return ctx.busy;
+  return handleOperationalInboundAction(decision, ctx, topicId, replyToMessageId);
 }
 
 export interface CursorBridgeLoopDeps {

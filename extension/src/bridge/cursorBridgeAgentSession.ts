@@ -175,6 +175,28 @@ export function withPromptProgress<T>(onProgress: CursorAgentProgressCallback | 
   });
 }
 
+async function reportSdkProgress(event: SDKMessage, onProgress: CursorAgentProgressCallback | undefined): Promise<void> {
+  if (!onProgress) {
+    return;
+  }
+  const line = summarizeSdkProgressLine(event);
+  if (line) {
+    await onProgress(line);
+  }
+}
+
+function assertCursorRunSucceeded(result: Awaited<ReturnType<Awaited<ReturnType<SDKAgent['send']>>['wait']>>): void {
+  if (result.status === 'error') {
+    const detail = result.error?.message ?? 'unknown error';
+    throw new Error(`Cursor run failed (${result.id}): ${detail}`);
+  }
+}
+
+function assistantReplyOrPlaceholder(messages: SDKMessage[]): string {
+  const text = collectAssistantTextFromMessages(messages).trim();
+  return text.length > 0 ? text : '(no text reply)';
+}
+
 export async function runCursorAgentPrompt(
   agent: SDKAgent,
   prompt: string,
@@ -184,20 +206,11 @@ export async function runCursorAgentPrompt(
   const messages: SDKMessage[] = [];
   for await (const event of run.stream()) {
     messages.push(event);
-    if (onProgress) {
-      const line = summarizeSdkProgressLine(event);
-      if (line) {
-        await onProgress(line);
-      }
-    }
+    await reportSdkProgress(event, onProgress);
   }
   const result = await run.wait();
-  if (result.status === 'error') {
-    const detail = result.error?.message ?? 'unknown error';
-    throw new Error(`Cursor run failed (${result.id}): ${detail}`);
-  }
-  const text = collectAssistantTextFromMessages(messages).trim();
-  return text.length > 0 ? text : '(no text reply)';
+  assertCursorRunSucceeded(result);
+  return assistantReplyOrPlaceholder(messages);
 }
 
 export function createLiveCursorBridgeAgentSession(targetPath: string): CursorBridgeAgentSessionDeps {

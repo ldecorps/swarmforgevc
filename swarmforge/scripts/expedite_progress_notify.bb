@@ -39,12 +39,11 @@
   (System/getenv "TELEGRAM_CHAT_ID"))
 
 (defn topic-id []
-  (when-let [explicit (System/getenv "EXPEDITE_NOTIFY_TOPIC_ID")]
-    (parse-long explicit))
-  (let [map-file (fs/path project-root ".swarmforge" "operator" "cursor-bridge-topic-map.json")]
-    (when (fs/exists? map-file)
-      (some (fn [[k v]] (when (= v "CURSOR_REMOTE") (parse-long k)))
-            (json/parse-string (slurp (str map-file)) true)))))
+  (or (some-> (System/getenv "EXPEDITE_NOTIFY_TOPIC_ID") parse-long)
+      (let [map-file (fs/path project-root ".swarmforge" "operator" "cursor-bridge-topic-map.json")]
+        (when (fs/exists? map-file)
+          (some (fn [[k v]] (when (= v "CURSOR_REMOTE") (parse-long (name k))))
+                (json/parse-string (slurp (str map-file)) true))))))
 
 (defn send-telegram! [text]
   (let [token (bot-token)
@@ -56,7 +55,7 @@
                    {:form-params (cond-> {:chat_id chat :text text :disable_web_page_preview true}
                                    topic (assoc :message_thread_id topic))})
         (catch Exception e
-          (println "expedite-notify: telegram post failed:" (.getMessage e))))))
+          (println "expedite-notify: telegram post failed:" (.getMessage e)))))))
 
 (defn read-progress []
   (when (fs/exists? progress-file)
