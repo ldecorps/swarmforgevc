@@ -243,7 +243,7 @@ export async function runCursorAgentPrompt(
 
 export function createLiveCursorBridgeAgentSession(targetPath: string): CursorBridgeAgentSessionDeps {
   const apiKey = resolveCursorApiKey(targetPath);
-  const modelId = process.env.CURSOR_BRIDGE_MODEL?.trim() || readSwarmEnvValue(targetPath, 'CURSOR_BRIDGE_MODEL') || 'auto-smart';
+  const modelId = process.env.CURSOR_BRIDGE_MODEL?.trim() || readSwarmEnvValue(targetPath, 'CURSOR_BRIDGE_MODEL') || 'auto';
   let cachedAgent: SDKAgent | undefined;
 
   const ensureAgent = async (): Promise<SDKAgent> => {
