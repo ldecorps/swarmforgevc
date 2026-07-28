@@ -276,7 +276,7 @@
     "coverage": "npm run compile && vitest run --coverage",
     "coverage:lets-talk-cursor-bridge": "npm run compile && vitest run --coverage letsTalk cursorBridge telegramCursorBridge startBridgeHeadless bridgeAuth telegramCursorBridgeCli && node scripts/letsTalkCursorBridgeCoverage.js",
     "crap": "npm run coverage && node scripts/crapReport.js",
-    "crap:lets-talk-cursor-bridge": "npm run coverage:lets-talk-cursor-bridge && node scripts/crapReport.js src/bridge/letsTalkCore.ts src/bridge/letsTalkRoutes.ts src/bridge/letsTalkAudio.ts src/bridge/letsTalkLocalAudio.ts src/bridge/letsTalkUiHtml.ts src/bridge/cursorBridgeAgentSession.ts src/tools/telegramCursorBridgeCore.ts src/tools/telegramCursorBridgeLive.ts src/tools/telegram-cursor-bridge.ts src/tools/start-bridge-headless.ts",
+    "crap:lets-talk-cursor-bridge": "npm run coverage:lets-talk-cursor-bridge && node scripts/crapReport.js src/bridge/letsTalkCore.ts src/bridge/letsTalkRoutes.ts src/bridge/letsTalkAudio.ts src/bridge/letsTalkLocalAudio.ts src/bridge/letsTalkUiHtml.ts src/bridge/cursorBridgeAgentSession.ts src/tools/telegramCursorBridgeCore.ts src/tools/telegramCursorBridgeLive.ts src/tools/telegramCursorBridgePilot.ts src/tools/telegram-cursor-bridge.ts src/tools/start-bridge-headless.ts",
     "mutation:lets-talk-cursor-bridge": "npm run compile && node scripts/ensureStrykerSandboxSiblings.js && stryker run stryker.letsTalkCursorBridge.config.json"
   },
   "devDependencies": {

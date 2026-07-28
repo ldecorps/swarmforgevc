@@ -6,6 +6,7 @@
 import { topicForSubject } from './telegramTopicDecisions';
 import { buildPhotoPromptText } from '../bridge/cursorBridgeTelegramMedia';
 import { parseExpediteTicket, parseReexpediteTicket } from './telegramCursorBridgeExpedite';
+import { parsePilotTicket } from './telegramCursorBridgePilot';
 import { parseRedeployCommand } from './telegramCursorBridgeRedeploy';
 import { parseLogCommand, type LogTarget } from './telegramCursorBridgeLogs';
 
@@ -36,6 +37,7 @@ export type CursorBridgeDecision =
   | { action: 'help' }
   | { action: 'expedite'; ticket: string }
   | { action: 'reexpedite'; ticket: string }
+  | { action: 'pilot'; ticket: string }
   | { action: 'redeploy' }
   | { action: 'log'; target: LogTarget }
   | { action: 'prompt'; text: string; photoFileIds?: string[] }
@@ -131,6 +133,10 @@ function decideOperatorCommand(text: string): CursorBridgeDecision | undefined {
   if (logTarget) {
     return { action: 'log', target: logTarget };
   }
+  const pilotTicket = parsePilotTicket(text);
+  if (pilotTicket) {
+    return { action: 'pilot', ticket: pilotTicket };
+  }
   const reexpediteTicket = parseReexpediteTicket(text);
   if (reexpediteTicket) {
     return { action: 'reexpedite', ticket: reexpediteTicket };
@@ -197,7 +203,7 @@ export function decideInboundAction(
 }
 
 export function gateBusy(decision: CursorBridgeDecision, busy: boolean): CursorBridgeDecision {
-  if (!busy || !['prompt', 'expedite', 'reexpedite'].includes(decision.action)) {
+  if (!busy || !['prompt', 'expedite', 'reexpedite', 'pilot'].includes(decision.action)) {
     return decision;
   }
   return { action: 'busy' };
@@ -334,7 +340,8 @@ export function formatHelpMessage(): string {
     '/new — start a fresh agent session',
     '/status — show session state',
     '/update — short summary of agent / expedite / swarm activity (works while busy)',
-    '/expedite [BL-xxx] — run offline expeditor with stage updates (default BL-696)',
+    '/pilot [BL-xxx] — Cursor agent staffs an offline expedition (default BL-696)',
+    '/expedite [BL-xxx] — run automated offline expeditor with stage updates (default BL-696)',
     '/reexpedite [BL-xxx] — checkpoint main WIP and restart a divergent expedite',
     '/redeploy — compile extension and restart this bridge',
     '/log [expedite|redeploy|bridge] — tail the active or named operator log',
@@ -353,4 +360,20 @@ export function decidePollBackoffMs(consecutiveFailures: number, config: PollBac
 /** Cursor SDK rejects send() when the resumed agent still has an in-flight run. */
 export function isActiveRunConflict(message: string): boolean {
   return message.toLowerCase().includes('already has active run');
+}
+
+/** Stale session or expired credentials — reset agentId and retry with a fresh agent. */
+export function isCursorAuthError(message: string): boolean {
+  const lower = message.toLowerCase();
+  return (
+    lower.includes('authentication error') ||
+    lower.includes('unauthorized') ||
+    lower.includes('invalid api key') ||
+    lower.includes('invalid_api_key') ||
+    (lower.includes('log out') && lower.includes('log in'))
+  );
+}
+
+export function shouldResetCursorAgentSession(message: string): boolean {
+  return isActiveRunConflict(message) || isCursorAuthError(message);
 }

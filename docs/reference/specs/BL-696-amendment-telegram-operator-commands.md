@@ -10,6 +10,7 @@ Operator skills on the **Cursor Remote** Telegram forum topic (principal-only, t
 
 | Command | Behavior |
 |---------|----------|
+| `/pilot [BL-xxx]` | Cursor agent staffs an offline expedition (wears pipeline hats; no `claude -p`) |
 | `/expedite [BL-xxx]` | Spawn detached `expedite_with_progress.sh` (default `BL-696`) |
 | `/reexpedite [BL-xxx]` | Checkpoint main WIP, then relaunch expedite |
 | `/redeploy` | Compile extension + restart supervised `telegram-cursor-bridge` |
@@ -19,6 +20,7 @@ Operator skills on the **Cursor Remote** Telegram forum topic (principal-only, t
 
 Also:
 
+- **`/pilot` vs `/expedite`:** `/pilot` asks the **Cursor bridge agent** to wear pipeline hats offline (Cursor-as-expeditor). `/expedite` spawns the automated `claude -p` driver. They refuse to overlap: `/pilot` is blocked while an automated expedite lock is held.
 - Agent prompts run **non-blocking** so Telegram poll continues during long runs.
 - Throttled progress posts (`🔧`, `✓`, `💭`) omit `reply_to` (no repeated quote of the original prompt).
 - Short thinking fragments are **not** posted as progress noise.
@@ -39,6 +41,7 @@ Steps: `specs/pipeline/steps/bl696TelegramCursorBridgeOperatorSteps.js`
 | Run tracker | `cursorBridgeRunTracker.ts` |
 | Progress summarize | `cursorBridgeProgress.ts` |
 | Expedite / reexpedite | `telegramCursorBridgeExpedite.ts` |
+| Pilot (Cursor-staffed) | `telegramCursorBridgePilot.ts` |
 | Redeploy | `telegramCursorBridgeRedeploy.ts` |
 | Log tail | `telegramCursorBridgeLogs.ts` |
 | `/update` snapshot | `telegramCursorBridgeUpdate.ts` |

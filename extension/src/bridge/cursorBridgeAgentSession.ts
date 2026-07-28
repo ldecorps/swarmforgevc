@@ -6,7 +6,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { Agent, CursorAgentError, type SDKAgent, type SDKMessage, type SDKUserMessage } from '@cursor/sdk';
 import { atomicWrite } from '../util/atomicWrite';
-import { collectAssistantTextFromMessages, isActiveRunConflict, parseCursorBridgeState, type CursorBridgePersistedState } from '../tools/telegramCursorBridgeCore';
+import { collectAssistantTextFromMessages, shouldResetCursorAgentSession, parseCursorBridgeState, type CursorBridgePersistedState } from '../tools/telegramCursorBridgeCore';
 import { extractCodeWordFromRememberPhrase, mockAgentReplyForTranscript } from './letsTalkCore';
 import { readSwarmEnvValue } from '../tools/swarmEnv';
 import type { CursorAgentProgressCallback } from './cursorBridgeProgress';
@@ -165,6 +165,29 @@ async function openAgent(
   return Agent.create(buildAgentOptions(repoRoot, apiKey, modelId));
 }
 
+function errorDetail(err: unknown): string {
+  return err instanceof CursorAgentError ? err.message : err instanceof Error ? err.message : String(err);
+}
+
+async function openAgentWithAuthRecovery(
+  targetPath: string,
+  apiKey: string,
+  modelId: string,
+  agentId: string | undefined
+): Promise<SDKAgent> {
+  try {
+    return await openAgent(targetPath, apiKey, modelId, agentId);
+  } catch (err) {
+    const detail = errorDetail(err);
+    if (!agentId || !shouldResetCursorAgentSession(detail)) {
+      throw err;
+    }
+    const state = loadState(targetPath);
+    saveState(targetPath, { ...state, agentId: undefined });
+    return openAgent(targetPath, apiKey, modelId, undefined);
+  }
+}
+
 let activePromptProgress: CursorAgentProgressCallback | undefined;
 
 export function withPromptProgress<T>(onProgress: CursorAgentProgressCallback | undefined, fn: () => Promise<T>): Promise<T> {
@@ -226,7 +249,7 @@ export function createLiveCursorBridgeAgentSession(targetPath: string): CursorBr
   const ensureAgent = async (): Promise<SDKAgent> => {
     const state = loadState(targetPath);
     if (!cachedAgent) {
-      cachedAgent = await openAgent(targetPath, apiKey, modelId, state.agentId);
+      cachedAgent = await openAgentWithAuthRecovery(targetPath, apiKey, modelId, state.agentId);
       const next = { ...state, agentId: cachedAgent.agentId };
       saveState(targetPath, next);
     }
@@ -261,8 +284,8 @@ export function createLiveCursorBridgeAgentSession(targetPath: string): CursorBr
         try {
           return await attempt();
         } catch (err) {
-          const detail = err instanceof CursorAgentError ? err.message : err instanceof Error ? err.message : String(err);
-          if (!isActiveRunConflict(detail)) {
+          const detail = errorDetail(err);
+          if (!shouldResetCursorAgentSession(detail)) {
             throw new Error(detail);
           }
           await clearCachedAgent();

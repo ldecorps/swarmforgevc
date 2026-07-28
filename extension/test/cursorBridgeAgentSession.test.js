@@ -342,6 +342,39 @@ test('cursorBridgeAgentSession: live session prompts through SDK agent', async (
   }
 });
 
+test('cursorBridgeAgentSession: live session recovers from authentication error', async () => {
+  const root = mkRoot();
+  const sdk = require('@cursor/sdk');
+  const originalCreate = sdk.Agent.create;
+  const originalResume = sdk.Agent.resume;
+  let creates = 0;
+  process.env.CURSOR_API_KEY = 'test-key';
+  fs.writeFileSync(
+    path.join(root, '.swarmforge', 'operator', 'cursor-bridge-state.json'),
+    `${JSON.stringify({ updateOffset: 0, agentId: 'stale-agent' }, null, 2)}\n`,
+    'utf8'
+  );
+  sdk.Agent.resume = async () => {
+    throw new Error('Authentication error If you are logged in, try logging out and back in.');
+  };
+  sdk.Agent.create = async () => {
+    creates += 1;
+    return mockSdkAgent('after auth reset');
+  };
+  try {
+    const { createLiveCursorBridgeAgentSession } = loadCursorBridgeAgentSessionFresh();
+    const session = createLiveCursorBridgeAgentSession(root);
+    const reply = await session.promptAgent('ping');
+    assert.match(reply.replyText, /after auth reset/);
+    assert.equal(creates, 1);
+    assert.equal(session.readAgentId(), 'agent-live-99');
+  } finally {
+    sdk.Agent.create = originalCreate;
+    sdk.Agent.resume = originalResume;
+    delete process.env.CURSOR_API_KEY;
+  }
+});
+
 test('cursorBridgeAgentSession: live session recovers from active-run conflict', async () => {
   const root = mkRoot();
   const sdk = require('@cursor/sdk');

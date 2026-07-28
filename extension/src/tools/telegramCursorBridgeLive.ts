@@ -19,7 +19,7 @@ import {
   formatHelpMessage,
   formatStatusMessage,
   gateBusy,
-  isActiveRunConflict,
+  shouldResetCursorAgentSession,
   parseCursorBridgeState,
   splitTelegramChunks,
   type CursorBridgePersistedState,
@@ -47,6 +47,12 @@ import {
   startExpediteRun,
   startReexpediteRun,
 } from './telegramCursorBridgeExpedite';
+import {
+  composePilotExpeditorPrompt,
+  formatPilotBlockedByExpediteMessage,
+  formatPilotStartMessage,
+  gatePilotAgainstExpediteLock,
+} from './telegramCursorBridgePilot';
 import {
   formatRedeployFailureMessage,
   formatRedeployStartMessage,
@@ -263,7 +269,7 @@ export async function runPromptWithActiveRunRecovery(
     return await promptWithHeartbeat(ctx.opDir, runOnce, prompt);
   } catch (err) {
     const detail = err instanceof CursorAgentError ? err.message : err instanceof Error ? err.message : String(err);
-    if (!isActiveRunConflict(detail)) {
+    if (!shouldResetCursorAgentSession(detail)) {
       throw err;
     }
     await resetAgent();
@@ -461,6 +467,27 @@ async function handleOperationalInboundAction(
   return ctx.busy;
 }
 
+async function handlePilotInboundAction(
+  ctx: CursorBridgeHandlerContext,
+  topicId: number,
+  ticket: string,
+  replyToMessageId: number | undefined,
+  resetAgent: () => Promise<void>
+): Promise<boolean> {
+  const gate = gatePilotAgainstExpediteLock(ctx.repoRoot);
+  if (!gate.ok) {
+    await postInboundReply(
+      ctx,
+      topicId,
+      formatPilotBlockedByExpediteMessage(ticket, gate.detail),
+      replyToMessageId
+    );
+    return ctx.busy;
+  }
+  await postInboundReply(ctx, topicId, formatPilotStartMessage(ticket), replyToMessageId);
+  return handlePromptInboundAction(ctx, topicId, composePilotExpeditorPrompt(ticket), replyToMessageId, resetAgent);
+}
+
 export async function handleInboundDecision(
   decision: InboundDecision,
   ctx: CursorBridgeHandlerContext,
@@ -487,6 +514,9 @@ export async function handleInboundDecision(
       resetAgent,
       decision.photoFileIds
     );
+  }
+  if (decision.action === 'pilot') {
+    return handlePilotInboundAction(ctx, topicId, decision.ticket, replyToMessageId, resetAgent);
   }
   return handleOperationalInboundAction(decision, ctx, topicId, replyToMessageId);
 }

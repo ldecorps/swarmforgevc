@@ -25,6 +25,8 @@ const {
   DEFAULT_POLL_BACKOFF,
   frontDeskTopicMapWithoutCursorBridge,
   isActiveRunConflict,
+  isCursorAuthError,
+  shouldResetCursorAgentSession,
 } = require('../out/tools/telegramCursorBridgeCore');
 const { TELEGRAM_PHOTO_DEFAULT_PROMPT } = require('../out/bridge/cursorBridgeTelegramMedia');
 
@@ -225,6 +227,21 @@ test('cursor bridge: /redeploy parses exact command', () => {
     action: 'prompt',
     text: '/redeploy now',
   });
+});
+
+test('cursor bridge: /pilot parses default and explicit ticket', () => {
+  assert.deepEqual(decideInboundAction(event('/pilot'), PRINCIPAL_ID, CHAT_ID, CURSOR_TOPIC_ID), {
+    action: 'pilot',
+    ticket: 'BL-696',
+  });
+  assert.deepEqual(decideInboundAction(event('/pilot BL-624'), PRINCIPAL_ID, CHAT_ID, CURSOR_TOPIC_ID), {
+    action: 'pilot',
+    ticket: 'BL-624',
+  });
+});
+
+test('cursor bridge: pilot while busy is rejected as busy', () => {
+  assert.deepEqual(gateBusy({ action: 'pilot', ticket: 'BL-696' }, true), { action: 'busy' });
 });
 
 test('cursor bridge: /expedite parses default and explicit ticket', () => {
@@ -494,7 +511,8 @@ test('cursor bridge: formatHelpMessage mentions all operator commands', () => {
       '/new — start a fresh agent session',
       '/status — show session state',
       '/update — short summary of agent / expedite / swarm activity (works while busy)',
-      '/expedite [BL-xxx] — run offline expeditor with stage updates (default BL-696)',
+      '/pilot [BL-xxx] — Cursor agent staffs an offline expedition (default BL-696)',
+      '/expedite [BL-xxx] — run automated offline expeditor with stage updates (default BL-696)',
       '/reexpedite [BL-xxx] — checkpoint main WIP and restart a divergent expedite',
       '/redeploy — compile extension and restart this bridge',
       '/log [expedite|redeploy|bridge] — tail the active or named operator log',
@@ -504,6 +522,7 @@ test('cursor bridge: formatHelpMessage mentions all operator commands', () => {
   assert.match(help, /\/new/i);
   assert.match(help, /\/status/i);
   assert.match(help, /\/update/i);
+  assert.match(help, /\/pilot/i);
   assert.match(help, /\/expedite/i);
   assert.match(help, /\/reexpedite/i);
   assert.match(help, /\/redeploy/i);
@@ -535,6 +554,23 @@ test('cursor bridge: isActiveRunConflict detects stale Cursor SDK sessions', () 
   );
   assert.equal(isActiveRunConflict('Agent ALREADY HAS ACTIVE RUN'), true);
   assert.equal(isActiveRunConflict('network timeout'), false);
+});
+
+test('cursor bridge: isCursorAuthError detects recoverable authentication failures', () => {
+  assert.equal(
+    isCursorAuthError(
+      'Cursor run failed (run-f4100d8e): Authentication error If you are logged in, try logging out and back in.'
+    ),
+    true
+  );
+  assert.equal(isCursorAuthError('401 Unauthorized'), true);
+  assert.equal(isCursorAuthError('network timeout'), false);
+});
+
+test('cursor bridge: shouldResetCursorAgentSession covers auth and active-run conflicts', () => {
+  assert.equal(shouldResetCursorAgentSession('already has active run'), true);
+  assert.equal(shouldResetCursorAgentSession('Authentication error'), true);
+  assert.equal(shouldResetCursorAgentSession('quota exceeded'), false);
 });
 
 test('cursor bridge: agent-run heartbeat interval stays inside the supervisor stall window', () => {

@@ -22,6 +22,18 @@ Feature: Telegram Cursor Remote operator commands
     When the principal sends "/expedite" on the Cursor Remote topic
     Then the bridge decision is to start expedite for ticket "BL-696"
 
+  # BL-696 tg-op-02b
+  Scenario: /pilot starts a Cursor-staffed offline expedition
+    When the principal sends "/pilot BL-700" on the Cursor Remote topic
+    Then the bridge decision is to start pilot for ticket "BL-700"
+    And the bridge posts a pilot started confirmation
+    And the Cursor agent is prompted as the offline expeditor for "BL-700"
+
+  # BL-696 tg-op-02c
+  Scenario: /pilot without a ticket defaults to BL-696
+    When the principal sends "/pilot" on the Cursor Remote topic
+    Then the bridge decision is to start pilot for ticket "BL-696"
+
   # BL-696 tg-op-03
   Scenario: /reexpedite checkpoints WIP and relaunches expedite
     When the principal sends "/reexpedite BL-696" on the Cursor Remote topic

@@ -265,6 +265,37 @@ test('runPromptWithActiveRunRecovery retries after active-run conflict', async (
   assert.ok(synced >= 1);
 });
 
+test('runPromptWithActiveRunRecovery retries after authentication error', async () => {
+  const root = mkRoot();
+  const opDir = path.join(root, '.swarmforge', 'operator');
+  fs.mkdirSync(opDir, { recursive: true });
+  const session = createMockCursorBridgeAgentSession(root);
+  let calls = 0;
+  const original = session.promptAgent.bind(session);
+  session.promptAgent = async (prompt) => {
+    calls += 1;
+    if (calls === 1) {
+      throw new Error(
+        'Cursor run failed (run-f4100d8e): Authentication error If you are logged in, try logging out and back in.'
+      );
+    }
+    return original(prompt);
+  };
+  const reply = await runPromptWithActiveRunRecovery(
+    {
+      agentSession: session,
+      opDir,
+      syncAgentIdFromSession: () => {},
+    },
+    'remember the code word ZETA',
+    async () => {
+      await session.resetSession();
+    }
+  );
+  assert.match(reply, /ZETA/);
+  assert.ok(calls >= 2);
+});
+
 test('handleInboundDecision routes help and status without agent calls', async () => {
   const root = mkRoot();
   const session = createMockCursorBridgeAgentSession(root);
@@ -1711,6 +1742,41 @@ test('handleInboundDecision starts expedite and posts confirmation', async () =>
   } finally {
     restore();
   }
+});
+
+test('handleInboundDecision /pilot prompts the Cursor agent as offline expeditor', async () => {
+  const ctx = mkCtx();
+  let captured;
+  ctx.agentSession.promptAgent = async (prompt) => {
+    captured = prompt;
+    return { replyText: 'piloting', agentId: ctx.agentSession.readAgentId() };
+  };
+  const busy = await handleInboundDecision({ action: 'pilot', ticket: 'BL-700' }, ctx, 15, async () => {});
+  assert.equal(busy, true);
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  assert.ok(ctx.posts.some((p) => p.includes('Pilot BL-700 started')));
+  assert.match(String(captured), /OFFLINE EXPEDITION for BL-700/);
+  assert.match(String(captured), /Do NOT spawn/);
+});
+
+test('handleInboundDecision /pilot refuses while automated expedite is running', async () => {
+  const root = mkRoot();
+  fs.writeFileSync(
+    path.join(root, '.swarmforge', 'operator', 'expedite-bridge.lock'),
+    `${JSON.stringify({ ticket: 'BL-696', pid: process.pid })}\n`,
+    'utf8'
+  );
+  const posts = [];
+  const ctx = mkCtx({ root, posts });
+  let prompted = false;
+  ctx.agentSession.promptAgent = async () => {
+    prompted = true;
+    return { replyText: 'nope', agentId: ctx.agentSession.readAgentId() };
+  };
+  const busy = await handleInboundDecision({ action: 'pilot', ticket: 'BL-700' }, ctx, 15, async () => {});
+  assert.equal(busy, false);
+  assert.equal(prompted, false);
+  assert.ok(posts.some((p) => p.includes('Cannot pilot BL-700')));
 });
 
 test('handleInboundDecision /update posts an operational summary', async () => {

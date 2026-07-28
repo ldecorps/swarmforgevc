@@ -45,7 +45,7 @@ while IFS= read -r line; do
   orphan_pid="${line%% *}"
   signal_pid "$orphan_pid"
   stopped=1
-done < <(pgrep -fl "${ENTRYPOINT_BASENAME}" 2>/dev/null | grep -E "${ROOT}|telegram-cursor-bridge\.js \\.$" || true)
+done < <(pgrep -fa "${ENTRYPOINT_BASENAME}" 2>/dev/null | grep -F "$ROOT" || true)
 
 rm -f "$STOP_FILE" "$OP_DIR/cursor-bridge.pid"
 

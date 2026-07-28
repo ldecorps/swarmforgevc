@@ -67,8 +67,9 @@ function mkCtx(ctx) {
   ctx.replyTargets = ctx.replyTargets ?? [];
   ctx.session = ctx.session ?? createMockCursorBridgeAgentSession(root);
   if (!ctx.releasePrompt) {
-    ctx.session.promptAgent = () =>
+    ctx.session.promptAgent = (prompt) =>
       new Promise((resolve) => {
+        ctx.capturedPilotPrompt = typeof prompt === 'string' ? prompt : prompt?.text;
         pendingPromptRelease = () => resolve({ replyText: 'done', agentId: ctx.session.readAgentId() });
         ctx.releasePrompt = pendingPromptRelease;
       });
@@ -158,6 +159,23 @@ function registerSteps(registry) {
 
   registry.define(/^the bridge decision is to start expedite for ticket "([^"]+)"$/, (ctx, ticket) => {
     assert.deepEqual(ctx.lastDecision, { action: 'expedite', ticket });
+  });
+
+  registry.define(/^the bridge decision is to start pilot for ticket "([^"]+)"$/, (ctx, ticket) => {
+    assert.deepEqual(ctx.lastDecision, { action: 'pilot', ticket });
+  });
+
+  registry.define(/^the bridge posts a pilot started confirmation$/, (ctx) => {
+    assert.ok(ctx.posts.some((p) => /Pilot BL-\d+ started/i.test(p)));
+  });
+
+  registry.define(/^the Cursor agent is prompted as the offline expeditor for "([^"]+)"$/, async (ctx, ticket) => {
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    assert.ok(
+      typeof ctx.capturedPilotPrompt === 'string' && ctx.capturedPilotPrompt.includes(ticket),
+      `expected pilot prompt mentioning ${ticket}`
+    );
+    assert.match(ctx.capturedPilotPrompt, /Do NOT spawn/);
   });
 
   registry.define(/^the bridge decision is to start reexpedite for ticket "([^"]+)"$/, (ctx, ticket) => {
