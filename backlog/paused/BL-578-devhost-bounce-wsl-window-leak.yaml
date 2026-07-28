@@ -11,6 +11,10 @@ direction: human-requested
 depends_on: []
 assigned_to: specifier
 mutation_cost: low
+approval_context: >
+  Hydrate-batch-2 commit only materializes this already-approved prose into
+  APS Gherkin; no scope change. status stays needs_design — the coder-level
+  interop-command implementation choice is not resolved by this commit.
 source: |
   Human, 2026-07-23, with screenshot evidence: SIX accumulated
   "[Extension Development Host]" VS Code windows on the Windows taskbar,
@@ -69,23 +73,7 @@ description: |
   defect (marker bypass), not this one reopened.
 
 acceptance: |
-  Specifier writes executable scenarios; minimum the design must make
-  testable:
-  1. On WSL (platform fixture), the kill-old stage constructs termination
-     commands that target Windows-side dev hosts for this extension path
-     — asserted against the pure seam, incl. the
-     path-with-spaces/quoting cases.
-  2. Two consecutive bounces yield exactly one recorded live host in the
-     bouncer's own accounting (pidfile/marker), never two — asserted via
-     the seam's state, with a runbook step for the live Windows check.
-  3. With `.swarmforge/headless-swarm` present, start-extension-dev exits
-     non-zero naming the marker and launches nothing; --force overrides
-     with a warning.
-  4. Non-WSL platforms (native Linux/macOS) keep today's behavior —
-     scenario pins that the interop path only activates under WSL
-     detection.
-  5. The activation-marker success contract (exit 0 only on fresh
-     activation) is unchanged.
+  specs/features/BL-578-devhost-bounce-wsl-window-leak.feature
 
 out_of_scope: |
   - Retroactive closing of already-leaked windows (manual, one-time).

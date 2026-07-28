@@ -10,6 +10,11 @@ direction: human-requested
 depends_on: [BL-664]
 assigned_to: specifier
 mutation_cost: medium
+human_approval: pending
+approval_context: >
+  Hydrate-batch-2: materializing the description's "Acceptance signal" prose
+  into APS Gherkin. No human sign-off yet on this specific ticket; flagged
+  pending per hydrate-batch convention.
 invariants:
   - "Producing is idempotent over the same transcripts: re-running the walker over an already-ingested window never duplicates a context-telemetry record."
 
@@ -51,3 +56,6 @@ description: |
   return non-empty output naming real roles, and the dashboard's "No
   telemetry recorded yet" state is gone; running the producer twice over
   the same window leaves the record count unchanged.
+
+acceptance: |
+  specs/features/BL-665-context-telemetry-producer-wiring.feature

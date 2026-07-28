@@ -19,6 +19,8 @@ approval_context: >
   Investigation found the CAPABILITY already exists and is correct — it is the
   naming that is wrong, and it has already caused a real error. Ticket scoped to
   naming/discoverability accordingly, not to building what is there.
+  Hydrate-batch-2 commit only materializes this approved prose into APS
+  Gherkin; no scope change.
 
 source: |
   2026-07-25. The operator was preparing a clean stop to run offline work. Both
@@ -106,25 +108,7 @@ description: |
   away.
 
 acceptance: |
-  Specifier writes the scenarios. Minimum behaviour:
-
-  1. Each lifecycle entry point's name or `--help` states its scope
-     unambiguously: full stack vs pipeline-only. A reader who has never seen the
-     repo picks the right one for "stop everything" on the first try.
-  2. `kill_all_swarm.sh`'s name no longer claims a scope it does not have —
-     whether by rename, or by genuinely widening it to match the name. If the
-     latter is chosen, the flow-watchdog's hard-stop call site must be re-examined:
-     it currently expects the narrow behaviour.
-  3. Every existing caller keeps working. Enumerate them in the design; the
-     flow-watchdog hard stop and `kill-all-audit.log` are the two that must not
-     regress silently.
-  4. `start_*` / `stop_*` pairing is complete and discoverable — for any
-     component with a start entry point, `--help` says how to stop it.
-  5. The casing rule (kebab at root vs snake in `scripts/`) is either documented
-     as intentional or made consistent.
-  6. `swarmforge/PIPELINE.md` and any runbook naming these scripts are updated in
-     the same parcel. A rename that leaves docs pointing at the old name
-     reproduces this defect with new words.
+  specs/features/BL-637-lifecycle-script-names-lie-about-scope.feature
 
 out_of_scope: |
   - Building start_all / stop_all. They exist (`./start-swarm.sh` /

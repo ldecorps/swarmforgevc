@@ -18,6 +18,8 @@ approval_context: >
   Operator, 2026-07-25, after run 30162790875 failed. Diagnosed as a marginal
   timeout rather than a broken build, so this is filed rather than hot-fixed —
   no product behaviour changes, but the standing rule is ticket-first.
+  Hydrate-batch-2 commit only materializes this approved prose into APS
+  Gherkin; no scope change.
 
 source: |
   Run `30162790875`, `backlog-dashboard.yml` on `main` @ `5b68bc2`, **failed** after
@@ -85,17 +87,7 @@ description: |
   that is worth knowing before assuming it is external.
 
 acceptance: |
-  Specifier writes the scenarios; this is small and should stay small.
-
-  1. `backlog-dashboard.yml` sets an explicit deploy timeout with headroom over the
-     observed worst-case successful run (~10m35s).
-  2. A deploy that genuinely never completes still fails, with a message naming the
-     deploy step — the headroom must not become "never fails".
-  3. Every workflow in `.github/workflows/` is on a non-deprecated action major, and
-     the four files move together rather than one at a time.
-  4. The workflow still publishes on a `backlog/**` push and still does not block the
-     push — its non-blocking property is the reason today's failure was harmless and
-     must survive the change.
+  specs/features/BL-641-pages-deploy-rides-its-default-timeout.feature
 
 out_of_scope: |
   - Changing what the dashboard generates or publishes.

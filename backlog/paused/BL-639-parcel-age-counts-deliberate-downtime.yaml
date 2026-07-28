@@ -19,6 +19,8 @@ approval_context: >
   flow-stall alarms on their phone within one second of the daemon coming back —
   for parcels that had barely stalled at all. Alarm fatigue by construction, on the
   channel the operator relies on.
+  Hydrate-batch-2 commit only materializes this approved prose into APS
+  Gherkin; no scope change.
 
 source: |
   Measured, 2026-07-25. The swarm was stopped deliberately at **12:06:02Z** and
@@ -107,24 +109,7 @@ description: |
     case in this incident that deserved the alarm.
 
 acceptance: |
-  Specifier writes the scenarios. Minimum behaviour:
-
-  1. A parcel enqueued 4 minutes before a clean stop, with a 2h outage, does NOT
-     escalate on restart. Reproduce this session's numbers directly.
-  2. A parcel that genuinely stalled 40 minutes while the swarm was LIVE, across the
-     same outage, still alarms — the credit must not swallow real pre-stop stall
-     time.
-  3. A parcel stalled past `escalate-ms` entirely while live alarms exactly as today.
-     No regression on the path that works.
-  4. **A CRASH grants no credit.** Seeded scenario: the daemon dies without a
-     `kill_all_swarm SUCCESS` record, restarts, and every parcel's age is unchanged.
-     This is the scenario an implementation passes by accident if it clamps to
-     uptime, and getting it wrong converts noise into silence.
-  5. `decide-tier` is unchanged and its `tier-decision-input-keys` set still holds —
-     the fix belongs in the age, never in the tier decision, whose
-     suppression-freedom is a stated structural guarantee.
-  6. The credited window is visible: the log line or state file says how much
-     downtime was credited, so a human can tell a quiet watchdog from a broken one.
+  specs/features/BL-639-parcel-age-counts-deliberate-downtime.feature
 
 out_of_scope: |
   - The genuine stall this storm buried. That is BL-636 (rotation preference ignores

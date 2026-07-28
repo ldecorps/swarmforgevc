@@ -19,6 +19,8 @@ approval_context: >
   during an Opus 4.8 -> Opus 5 migration, and after explicitly rejecting a
   cron-based auto-updater: "comment garder la table de prix à jour? devrait-on
   avoir un cronjob?" -> answer below is no, and the ticket says why.
+  Hydrate-batch-2 commit only materializes this approved prose into APS
+  Gherkin; no scope change.
 
 source: |
   Found 2026-07-25 while migrating Opus 4.8 seats to Opus 5. Rates in
@@ -117,27 +119,7 @@ description: |
   faked with a scraper.
 
 acceptance: |
-  Specifier writes the scenarios. Minimum behaviour:
-
-  1. Every rate in `PRICING_TABLE` matches Anthropic's published pricing at the
-     time of the change, including cache-create and cache-read columns, which
-     are derived from the corrected input/output rates and are wrong today by
-     the same factors.
-  2. `claude-opus-5` has an entry at $5 / $25.
-  3. `claude-opus-4-8` KEEPS its entry (historical records reference it) but at
-     the corrected $5 / $25.
-  4. `PRICING_TABLE_VERSION` is bumped from 1, per the file header's own rule.
-  5. A model present in any conf, pack, or launch settings file but absent from
-     `PRICING_TABLE` causes a loud, named failure — not a silent zero.
-  6. The check passes on the current repo once 2 and 3 are applied, and fails
-     on a fixture that adds an unpriced model.
-  7. `extension/src/swarm/modelDisplayName.ts` has a `claude-opus-5` label, or
-     the ticket records why the raw id is acceptable there.
-
-  A ruling is required on the 7 existing `front-desk-operator` records that
-  carry a `costUsd` computed from the wrong rates: recompute, annotate, or
-  leave with the table version that produced them. Silently leaving them
-  alongside corrected future records makes the series incomparable.
+  specs/features/BL-627-pricing-table-correctness-and-coverage-invariant.feature
 
 out_of_scope: |
   - Any cron job, scheduled scrape, or automated rate fetch. See section 4 —
