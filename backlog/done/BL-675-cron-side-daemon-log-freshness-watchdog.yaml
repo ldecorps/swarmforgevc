@@ -2,7 +2,7 @@ id: BL-675
 title: "Cron-side daemon log-freshness watchdog — a share-no-fate POSIX check that restarts wedged sweep daemons, because process liveness lies"
 milestone: M8
 type: defect
-status: todo
+status: done
 epic: swarm-reliability
 human_approval: approved
 severity: high

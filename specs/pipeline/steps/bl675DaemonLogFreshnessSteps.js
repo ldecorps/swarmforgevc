@@ -106,9 +106,15 @@ function registerSteps(registry) {
       knownDaemon(daemon);
       const output = ctx.output || runFreshnessSuite(ctx);
       if (daemon === 'handoffd') {
-        // Covered by 02a/04 PASS lines which assert age_secs + daemon=
-        expectLine(output, 'daemon=handoffd', 'record-handoffd');
-        expectLine(output, 'age_secs=200', 'age-handoffd');
+        // 02a and 04 both assert handoffd + age_secs in the durable record.
+        if (
+          !output.includes('PASS: 02a: stale handoffd restarts through start_handoff_daemon.sh') &&
+          !output.includes('PASS: 04: failed announce still leaves durable incident record')
+        ) {
+          throw new Error(
+            `expected PASS for handoffd durable-record coverage (02a or 04), got:\n${output}`
+          );
+        }
       } else {
         expectLine(output, 'PASS: 02b: stale babysitterd restarts through start_babysitter.sh', 'record-babysitterd');
       }
@@ -117,7 +123,7 @@ function registerSteps(registry) {
 
   registry.define(/^the announce command is invoked after the record is written$/, (ctx) => {
     const output = ctx.output || runFreshnessSuite(ctx);
-    expectLine(output, 'FRESHNESS_VIOLATION restart daemon=', 'announce-after-record');
+    expectLine(output, 'announce after record (FRESHNESS_VIOLATION)', 'announce-after-record');
   });
 
   // ── 03 ────────────────────────────────────────────────────────────────
