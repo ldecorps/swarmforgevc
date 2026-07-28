@@ -216,6 +216,85 @@ LINE_COUNT="$(grep -c 'swarmforge-BL-675-freshness-check' "$CRONTAB_STORE" || tr
 check "installer is idempotent (one marker line)" '[[ "$LINE_COUNT" -eq 1 ]]'
 pass "installer schedules freshness_check idempotently"
 
+# ── hardening (mutation_cost: low): work≠liveness, missing log, record-before-announce, pid guard ─
+ROOT="$(make_root)"
+NOW=1700000000
+FRESH_TS="$(date -u -d "@$NOW" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
+  || date -u -r "$NOW" +%Y-%m-%dT%H:%M:%SZ)"
+# Recent WORK lines only — no heartbeat token. Must still trip (process-liveness lie class).
+printf '%s delivered parcel-1\n%s chase-sweep done\n' "$FRESH_TS" "$FRESH_TS" \
+  > "$ROOT/.swarmforge/daemon/handoffd.log"
+printf '%s heartbeat\n' "$FRESH_TS" > "$ROOT/.swarmforge/babysitter/runtime.log"
+sleep 120 &
+FAKE_PID=$!
+echo "$FAKE_PID" > "$ROOT/.swarmforge/daemon/handoffd.pid"
+run_checker "$ROOT" "$NOW"
+kill "$FAKE_PID" 2>/dev/null || true
+check "harden: work lines without heartbeat still restart" \
+  'grep -q "start_handoff_daemon.sh" "$ROOT/starts.log"'
+pass "harden: work≠liveness — only heartbeat freshness counts"
+
+ROOT="$(make_root)"
+NOW=1700000000
+FRESH_TS="$(date -u -d "@$NOW" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
+  || date -u -r "$NOW" +%Y-%m-%dT%H:%M:%SZ)"
+# Missing handoffd log entirely
+rm -f "$ROOT/.swarmforge/daemon/handoffd.log"
+printf '%s heartbeat\n' "$FRESH_TS" > "$ROOT/.swarmforge/babysitter/runtime.log"
+sleep 120 &
+FAKE_PID=$!
+echo "$FAKE_PID" > "$ROOT/.swarmforge/daemon/handoffd.pid"
+run_checker "$ROOT" "$NOW"
+kill "$FAKE_PID" 2>/dev/null || true
+check "harden: missing log is treated as stale" \
+  'grep -q "action=restart" "$ROOT/.swarmforge/daemon/freshness-incidents.log"'
+pass "harden: missing log triggers restart"
+
+ROOT="$(make_root)"
+NOW=1700000000
+STALE_TS="$(date -u -d "@$((NOW - 200))" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
+  || date -u -r $((NOW - 200)) +%Y-%m-%dT%H:%M:%SZ)"
+FRESH_TS="$(date -u -d "@$NOW" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
+  || date -u -r "$NOW" +%Y-%m-%dT%H:%M:%SZ)"
+printf '%s heartbeat\n' "$STALE_TS" > "$ROOT/.swarmforge/daemon/handoffd.log"
+printf '%s heartbeat\n' "$FRESH_TS" > "$ROOT/.swarmforge/babysitter/runtime.log"
+sleep 120 &
+FAKE_PID=$!
+echo "$FAKE_PID" > "$ROOT/.swarmforge/daemon/handoffd.pid"
+# Announce asserts the durable record already exists (order property).
+FRESHNESS_ROOT="$ROOT" \
+FRESHNESS_CONF="$CONF" \
+FRESHNESS_NOW_EPOCH="$NOW" \
+FRESHNESS_INCIDENT_FILE="$ROOT/.swarmforge/daemon/freshness-incidents.log" \
+FRESHNESS_ANNOUNCE_CMD="test -s \"$ROOT/.swarmforge/daemon/freshness-incidents.log\" && printf order-ok\\\\n >> \"$ROOT/announces.log\"" \
+FRESHNESS_KILL_CMD="printf '%s\n' \"\$1\" >> \"$ROOT/kills.log\"" \
+FRESHNESS_START_CMD="printf '%s\n' \"\$1\" >> \"$ROOT/starts.log\"" \
+  /bin/sh "$CHECKER"
+kill "$FAKE_PID" 2>/dev/null || true
+check "harden: announce sees durable record already written" \
+  'grep -q "order-ok" "$ROOT/announces.log"'
+pass "harden: record-before-announce order holds"
+
+ROOT="$(make_root)"
+NOW=1700000000
+STALE_TS="$(date -u -d "@$((NOW - 200))" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
+  || date -u -r $((NOW - 200)) +%Y-%m-%dT%H:%M:%SZ)"
+FRESH_TS="$(date -u -d "@$NOW" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
+  || date -u -r "$NOW" +%Y-%m-%dT%H:%M:%SZ)"
+printf '%s heartbeat\n' "$STALE_TS" > "$ROOT/.swarmforge/daemon/handoffd.log"
+printf '%s heartbeat\n' "$FRESH_TS" > "$ROOT/.swarmforge/babysitter/runtime.log"
+echo "1" > "$ROOT/.swarmforge/daemon/handoffd.pid"
+# Default kill path (no FRESHNESS_KILL_CMD) must refuse pid 1
+FRESHNESS_ROOT="$ROOT" \
+FRESHNESS_CONF="$CONF" \
+FRESHNESS_NOW_EPOCH="$NOW" \
+FRESHNESS_INCIDENT_FILE="$ROOT/.swarmforge/daemon/freshness-incidents.log" \
+FRESHNESS_ANNOUNCE_CMD="true" \
+FRESHNESS_START_CMD="printf started\\\\n >> \"$ROOT/starts.log\"" \
+  /bin/sh "$CHECKER" 2>"$ROOT/stderr.log" || true
+check "harden: refuses to kill pid 1" 'grep -q "refusing to kill protected pid=1" "$ROOT/stderr.log"'
+pass "harden: protected-pid guard"
+
 # ── wiring: handoffd + babysitter emit heartbeat ─────────────────────────
 check "required_wiring: handoffd.bb mentions heartbeat" \
   'grep -q "heartbeat" "$SRC/handoffd.bb"'

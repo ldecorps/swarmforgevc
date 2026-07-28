@@ -177,7 +177,7 @@ process_daemon() {
     return 0
   fi
 
-  kill_daemon "$pid_path"
+  kill_daemon "$pid_path" || true
   restart_daemon "$start_script"
   record="epoch=${NOW} daemon=${name} age_secs=${age} threshold=${threshold} action=restart"
   append_incident "$record"
