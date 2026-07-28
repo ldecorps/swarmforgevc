@@ -109,10 +109,18 @@ From `extension/`:
 
 ```bash
 npm run coverage:lets-talk-cursor-bridge   # >= 90% per scoped production file
-npm run crap:lets-talk-cursor-bridge       # CRAP <= 6
+npm run crap:lets-talk-cursor-bridge       # CRAP <= 6 (includes telegramCursorBridgePilot)
 npm run test:properties                    # BL-696 invariant property tests
-npm run mutation:lets-talk-cursor-bridge   # hardener: scoped Stryker
+npm run mutation:lets-talk-cursor-bridge   # hardener: scoped Stryker (includes Pilot)
 ```
+
+### Cursor Remote `/pilot` (operator)
+
+On the Cursor Remote Telegram topic, `/pilot [BL-xxx]` asks the **Cursor bridge
+agent** to staff an offline expedition (Cursor-as-expeditor). It does **not**
+spawn `claude -p` / `expedite_cli`. `/pilot` is refused while an automated
+`/expedite` lock is held. See
+[BL-696 amendment — Telegram operator commands](../reference/specs/BL-696-amendment-telegram-operator-commands.md).
 
 After TypeScript changes, restart the headless Mini App bridge:
 

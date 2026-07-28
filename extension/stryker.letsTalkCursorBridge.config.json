@@ -24,6 +24,7 @@
     "out/bridge/cursorBridgeAgentSession.js",
     "out/tools/telegramCursorBridgeCore.js",
     "out/tools/telegramCursorBridgeLive.js",
+    "out/tools/telegramCursorBridgePilot.js",
     "out/tools/telegram-cursor-bridge.js",
     "out/tools/start-bridge-headless.js"
   ]

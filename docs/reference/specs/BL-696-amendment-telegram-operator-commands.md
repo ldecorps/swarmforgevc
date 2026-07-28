@@ -1,7 +1,7 @@
 # BL-696 amendment — Telegram Cursor Remote operator commands
 
 **Date:** 2026-07-28  
-**Status:** specified (acceptance added retroactively)  
+**Status:** implemented (Cursor `/pilot` landed; acceptance green)  
 **Parent:** BL-696 (Let's Talk + Cursor bridge parcel)
 
 ## Scope
