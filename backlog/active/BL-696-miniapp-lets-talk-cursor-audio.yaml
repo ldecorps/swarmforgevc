@@ -2,14 +2,14 @@ id: BL-696
 title: "Console Mini App Let's Talk — discrete audio turns with the Cursor agent over the existing bridge session"
 milestone: M8
 type: feature
-status: done
+status: todo
 epic: swarmforge-console
 human_approval: approved
 severity: medium
 priority: 14
 direction: human-requested
 depends_on: []
-assigned_to: none
+assigned_to: coder
 mutation_cost: medium
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 
