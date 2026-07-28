@@ -1,0 +1,1 @@
+{"id":"BL-657","messages":[{"seq":0,"ts":1785270059239,"author":"swarm","type":"outbound","text":"BL-657 🎵 in progress — start-swarm launched from an operator/harness-descended shell: the tmux server dies 1-3s after session creation — three identical failures in one night, while the cron-launched start and MANUAL session assembly both work"}]}
