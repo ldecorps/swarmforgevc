@@ -20,6 +20,9 @@ approval_context: >
   step. The post-mortem established that publish, not deploy, is what made the
   incident unrecoverable — so the same gate is needed one layer earlier.
 
+  Hydrate batch 2026-07-28: this commit only materializes the already-approved
+  prose into APS Gherkin, with the allowlist question resolved as recommended.
+
 source: |
   BL-590 post-mortem, 2026-07-25. BL-629 correctly gates `sync`, but the harm
   was already done before any deploy: every non-QA-approved commit was on
@@ -88,22 +91,13 @@ description: |
   reaching origin for as long as any pipeline work sits un-QA'd on `main`, which
   on this swarm is most of the day. Recommend the allowlist.
 
-acceptance: |
-  Specifier writes the scenarios. Minimum behaviour:
+acceptance: specs/features/BL-630-push-sweep-refuses-non-qa-approved-main.feature
 
-  1. `push-sweep!` does not push when the tip it would publish contains a commit
-     that is not an ancestor of `swarmforge-QA` (subject to whatever allowlist
-     the specifier settles on).
-  2. The refusal is logged with the offending sha(s) named, and is
-     distinguishable in `handoffd.log` from `up-to-date`, `diverged` and a
-     failed push.
-  3. The existing push-failure retry/backoff and divergence alarms do NOT fire
-     for this case — a QA refusal is a distinct, non-transient condition and
-     must not produce the "check network/auth and push by hand" email.
-  4. A normal QA-approved tip publishes exactly as it does today, with no added
-     latency on the common path.
-  5. Regression test: a `main` containing a non-QA-ancestor commit that touches
-     `extension/src/` is not pushed.
+  The specifier settled the allowlist question named in the description:
+  a tip whose non-QA commits touch only `backlog/`, `docs/`, `swarmforge/`
+  (the coordinator/specifier bookkeeping paths) may still publish — a total
+  refusal would stop routine bookkeeping from reaching origin for most of
+  the day. Recommend the allowlist, as the ticket invited.
 
 out_of_scope: |
   - The deploy-time gate on `build_freshness_cli.bb sync` — that is BL-629.
