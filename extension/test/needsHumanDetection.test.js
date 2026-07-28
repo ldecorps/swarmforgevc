@@ -333,6 +333,18 @@ test('detectNeedsHuman still returns false on the live chrome-only coder capture
   assert.equal(detectNeedsHuman(LIVE_CODER_PANE), false);
 });
 
+// Hardener: session-name alone (no box runs) is not chrome — only the
+// launcher title-rule shape between box glyphs is furniture.
+test('extractQuestionSnippet keeps a prose line that is only a SwarmForge role name', () => {
+  const prose = 'SwarmForge Coder is the role that owns this parcel.';
+  assert.equal(extractQuestionSnippet(prose), prose);
+});
+
+test('extractQuestionSnippet recognises a single-play-button footer start', () => {
+  const pane = [QUESTION, '⏵ bypass permissions on (shift+tab to cycle) · e…'].join('\n');
+  assert.equal(extractQuestionSnippet(pane), QUESTION);
+});
+
 // ── transcriptShowsDecisionMenu / classifyDecisionStatus (BL-421) ───────────
 // A specifier tile keeps showing a long-resolved AskUserQuestion decision
 // menu as if it were still live (the reconstructed transcript retains it
