@@ -13,20 +13,28 @@ test('parseCliArgs returns the target path and a parsed port when both are given
 });
 
 test('parseCliArgs returns null when no arguments are given', () => {
-  assert.equal(parseCliArgs([]), null);
+  assert.strictEqual(parseCliArgs([]), null);
 });
 
 test('parseCliArgs returns null when only the target path is given', () => {
-  assert.equal(parseCliArgs(['/some/target']), null);
+  assert.strictEqual(parseCliArgs(['/some/target']), null);
+});
+
+test('parseCliArgs returns null when only the port is given', () => {
+  assert.strictEqual(parseCliArgs(['8765']), null);
+});
+
+test('parseCliArgs returns null when the target path is empty but a port is present', () => {
+  assert.strictEqual(parseCliArgs(['', '8765']), null);
 });
 
 test('parseCliArgs returns null for a non-numeric port', () => {
-  assert.equal(parseCliArgs(['/some/target', 'not-a-port']), null);
+  assert.strictEqual(parseCliArgs(['/some/target', 'not-a-port']), null);
 });
 
 test('parseCliArgs returns null for a zero or negative port', () => {
-  assert.equal(parseCliArgs(['/some/target', '0']), null);
-  assert.equal(parseCliArgs(['/some/target', '-1']), null);
+  assert.strictEqual(parseCliArgs(['/some/target', '0']), null);
+  assert.strictEqual(parseCliArgs(['/some/target', '-1']), null);
 });
 
 // ── runLogPath (pure) ─────────────────────────────────────────────────────
@@ -115,6 +123,29 @@ test('an invalid port argument exits non-zero and prints usage', async () => {
   const result = await runCli(target, 'not-a-port', { BRIDGE_TOKEN: 'tok' });
   assert.notEqual(result.exitCode, 0);
   assert.match(result.stderr, /Usage: start-bridge-headless\.js/);
+});
+
+test('main starts the bridge and prints the listening port when args and token are valid', async () => {
+  const bridgeServer = require('../out/bridge/bridgeServer');
+  const previousStartBridge = bridgeServer.startBridge;
+  let captured;
+  bridgeServer.startBridge = async (targetPath, logPath, token, opts) => {
+    captured = { targetPath, logPath, token, opts };
+    return { port: opts.port };
+  };
+  const target = mkTmp();
+  const port = 28765;
+  try {
+    const result = await runCli(target, port, { BRIDGE_TOKEN: 'headless-token' });
+    assert.equal(result.exitCode, 0);
+    assert.equal(result.stdout, `BRIDGE_LISTENING port=${port}\n`);
+    assert.equal(captured.targetPath, target);
+    assert.equal(captured.logPath, runLogPath());
+    assert.equal(captured.token, 'headless-token');
+    assert.deepEqual(captured.opts, { port });
+  } finally {
+    bridgeServer.startBridge = previousStartBridge;
+  }
 });
 
 // A single subprocess smoke test locks the compiled CLI's own wiring

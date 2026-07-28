@@ -80,7 +80,7 @@
 
 (defn bridge-extra-env []
   (into {}
-        (remove (fn [[_ v]] (nil? v))
+        (remove (fn [[_ v]] (or (nil? v) (= v "")))
                 [["TELEGRAM_BOT_TOKEN" (System/getenv "TELEGRAM_BOT_TOKEN")]
                  ["TELEGRAM_CHAT_ID" (System/getenv "TELEGRAM_CHAT_ID")]
                  ["TELEGRAM_PRINCIPAL_USER_ID" (System/getenv "TELEGRAM_PRINCIPAL_USER_ID")]

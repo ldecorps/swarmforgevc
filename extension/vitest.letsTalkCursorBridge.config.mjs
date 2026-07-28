@@ -11,6 +11,8 @@ export default mergeConfig(
         'test/telegramCursorBridge*.test.js',
         'test/startBridgeHeadlessCli.test.js',
         'test/bridgeAuth.test.js',
+        'test/swarmEnv.test.js',
+        'test/cursorBridgeProgress.test.js',
       ],
     },
   })

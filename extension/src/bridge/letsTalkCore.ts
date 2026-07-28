@@ -36,22 +36,32 @@ export function decodeLetsTalkAudio(audioBase64: string): Buffer | undefined {
   }
 }
 
+const MIME_EXTENSION_RULES: ReadonlyArray<{ matches: (lower: string) => boolean; extension: string }> = [
+  { matches: (lower) => lower.includes('ogg'), extension: 'audio.ogg' },
+  { matches: (lower) => lower.includes('wav'), extension: 'audio.wav' },
+  { matches: (lower) => lower.includes('mpeg') || lower.includes('mp3'), extension: 'audio.mp3' },
+  {
+    matches: (lower) =>
+      lower.includes('mp4') ||
+      lower.includes('m4a') ||
+      lower.includes('aac') ||
+      lower.includes('x-m4a') ||
+      lower.includes('caf'),
+    extension: 'audio.m4a',
+  },
+];
+
 export function extensionForMime(mimeType: string | undefined): string {
   if (!mimeType) {
     return 'audio.webm';
   }
   const lower = mimeType.toLowerCase();
-  const rules: Array<{ match: (value: string) => boolean; ext: string }> = [
-    { match: (v) => v.includes('webm'), ext: 'audio.webm' },
-    { match: (v) => v.includes('ogg'), ext: 'audio.ogg' },
-    { match: (v) => v.includes('wav'), ext: 'audio.wav' },
-    { match: (v) => v.includes('mpeg') || v.includes('mp3'), ext: 'audio.mp3' },
-    {
-      match: (v) => v.includes('mp4') || v.includes('m4a') || v.includes('aac') || v.includes('x-m4a') || v.includes('caf'),
-      ext: 'audio.m4a',
-    },
-  ];
-  return rules.find((rule) => rule.match(lower))?.ext ?? 'audio.webm';
+  for (const rule of MIME_EXTENSION_RULES) {
+    if (rule.matches(lower)) {
+      return rule.extension;
+    }
+  }
+  return 'audio.webm';
 }
 
 function sttRetryFailure(stt: SttResult): { success: false; reason: string; recoverable: true; state: 'error' } {
@@ -110,7 +120,6 @@ export type LetsTalkSpeechLanguage = 'en' | 'fr';
 export type LetsTalkSpeechLanguageSetting = LetsTalkSpeechLanguage | 'auto';
 
 const SPEECH_LANGUAGE_ALIASES: Array<{ matches: (lower: string) => boolean; value: LetsTalkSpeechLanguageSetting }> = [
-  { matches: (lower) => lower === 'auto', value: 'auto' },
   { matches: (lower) => lower === 'fr' || lower === 'french' || lower.startsWith('fr-'), value: 'fr' },
   { matches: (lower) => lower === 'en' || lower === 'english' || lower.startsWith('en-'), value: 'en' },
 ];
@@ -120,23 +129,40 @@ export function parseLetsTalkSpeechLanguage(raw: string | undefined): LetsTalkSp
     return 'auto';
   }
   const lower = raw.trim().toLowerCase();
-  return SPEECH_LANGUAGE_ALIASES.find((rule) => rule.matches(lower))?.value ?? 'auto';
+  return isAutoSpeechLanguageSetting(lower)
+    ? 'auto'
+    : SPEECH_LANGUAGE_ALIASES.find((rule) => rule.matches(lower))?.value ?? 'auto';
+}
+
+/** Exported for mutation testing — auto must be recognized before alias fallback. */
+export function isAutoSpeechLanguageSetting(lower: string): boolean {
+  return lower === 'auto';
 }
 
 export function speechLocaleForLanguage(language: LetsTalkSpeechLanguage): string {
   return language === 'fr' ? 'fr-FR' : 'en-US';
 }
 
-function countLanguageWordHits(text: string, pattern: RegExp): number {
+export function countLanguageWordHits(text: string, pattern: RegExp): number {
   return (text.match(pattern) ?? []).length;
+}
+
+/** Exported for mutation testing — trim must run before blank detection. */
+export function isBlankTranscript(text: string): boolean {
+  return text.trim().length === 0;
+}
+
+/** Exported for mutation testing — language heuristics use trimmed transcript text. */
+export function normalizeTranscriptForLanguageDetection(text: string): string {
+  return text.trim();
 }
 
 /** Heuristic per-turn language when LETS_TALK_SPEECH_LANGUAGE=auto. */
 export function detectSpeechLanguageFromText(text: string): LetsTalkSpeechLanguage {
-  const trimmed = text.trim();
-  if (!trimmed) {
-    return 'en';
-  }
+  return isBlankTranscript(text) ? 'en' : detectSpeechLanguageFromTrimmedTranscript(normalizeTranscriptForLanguageDetection(text));
+}
+
+function detectSpeechLanguageFromTrimmedTranscript(trimmed: string): LetsTalkSpeechLanguage {
   if (/[àâäæçéèêëïîôùûüœ]/i.test(trimmed)) {
     return 'fr';
   }
@@ -146,13 +172,7 @@ export function detectSpeechLanguageFromText(text: string): LetsTalkSpeechLangua
     /\b(hello|thanks|thank you|yes|no|what|when|where|why|how|with|without|the|this|that|these|those|you|your|they|their)\b/i;
   const frenchHits = countLanguageWordHits(trimmed, frenchWord);
   const englishHits = countLanguageWordHits(trimmed, englishWord);
-  if (frenchHits > englishHits) {
-    return 'fr';
-  }
-  if (englishHits > frenchHits) {
-    return 'en';
-  }
-  return 'en';
+  return frenchHits > englishHits ? 'fr' : 'en';
 }
 
 export function resolveTurnSpeechLanguage(
@@ -200,6 +220,39 @@ export function mockAgentReplyForTranscript(transcript: string, rememberedCodeWo
 }
 
 /** Strip markdown / markup so browser speechSynthesis reads natural prose. */
+export function stripHeadingMarkersForSpeech(speech: string): string {
+  return speech.replace(/^#{1,6}\s+/gm, '');
+}
+
+export function stripBlockquoteMarkersForSpeech(speech: string): string {
+  return speech.replace(/^>\s?/gm, '');
+}
+
+export function stripBoldItalicForSpeech(speech: string): string {
+  let out = speech;
+  out = out.replace(/\*\*([^*]+)\*\*/g, '$1');
+  out = out.replace(/\*([^*]+)\*/g, '$1');
+  out = out.replace(/__([^_]+)__/g, '$1');
+  out = out.replace(/_([^_]+)_/g, '$1');
+  return out;
+}
+
+export function stripListMarkersForSpeech(speech: string): string {
+  let out = speech;
+  out = out.replace(/^\s*[-*+]\s+/gm, '');
+  out = out.replace(/^\s*\d+\.\s+/gm, '');
+  return out;
+}
+
+export function stripHorizontalRulesForSpeech(speech: string): string {
+  let out = speech;
+  out = out.replace(/^[\s]*[-*_]{3,}[\s]*$/gm, ' ');
+  out = out.replace(/-{2,}/g, ' ');
+  out = out.replace(/_{2,}/g, ' ');
+  out = out.replace(/\*{2,}/g, ' ');
+  return out;
+}
+
 export function replyTextForSpeechSynthesis(text: string): string {
   let speech = text;
   speech = speech.replace(/```[\w-]*\n?([\s\S]*?)```/g, '$1');
@@ -212,18 +265,11 @@ export function replyTextForSpeechSynthesis(text: string): string {
     .filter((line) => !isMarkdownTableSeparatorLine(line))
     .map((line) => flattenMarkdownTableRow(line))
     .join('\n');
-  speech = speech.replace(/^#{1,6}\s+/gm, '');
-  speech = speech.replace(/^>\s?/gm, '');
-  speech = speech.replace(/\*\*([^*]+)\*\*/g, '$1');
-  speech = speech.replace(/\*([^*]+)\*/g, '$1');
-  speech = speech.replace(/__([^_]+)__/g, '$1');
-  speech = speech.replace(/_([^_]+)_/g, '$1');
-  speech = speech.replace(/^\s*[-*+]\s+/gm, '');
-  speech = speech.replace(/^\s*\d+\.\s+/gm, '');
-  speech = speech.replace(/^[\s]*[-*_]{3,}[\s]*$/gm, ' ');
-  speech = speech.replace(/-{2,}/g, ' ');
-  speech = speech.replace(/_{2,}/g, ' ');
-  speech = speech.replace(/\*{2,}/g, ' ');
+  speech = stripHeadingMarkersForSpeech(speech);
+  speech = stripBlockquoteMarkersForSpeech(speech);
+  speech = stripBoldItalicForSpeech(speech);
+  speech = stripListMarkersForSpeech(speech);
+  speech = stripHorizontalRulesForSpeech(speech);
   speech = speech.replace(/[|#*_`~\[\]]/g, ' ');
   speech = speech.replace(/\s:\s/g, ' ');
   speech = speech.replace(/\n{3,}/g, '\n\n');
@@ -235,26 +281,31 @@ export function replyTextForSpeechSynthesis(text: string): string {
 }
 
 /** Slashes in paths, URLs, and "and/or" are read aloud as "slash" by speechSynthesis. */
-function sanitizeSlashesForSpeech(speech: string): string {
+export function replaceMultiSegmentPathsForSpeech(speech: string): string {
+  return speech.replace(/\b[\w@$]*[A-Za-z][\w@$.-]*(?:\/[\w@$.-]+)+\b/g, (path) => path.replace(/\//g, ' '));
+}
+
+export function replaceLeadingSlashSegmentsForSpeech(speech: string): string {
+  return speech.replace(/\/([\w][\w-]*)/g, ' $1');
+}
+
+export function sanitizeSlashesForSpeech(speech: string): string {
   let out = speech;
   out = out.replace(/\band\/or\b/gi, 'and or');
   out = out.replace(/https?:\/\/\S+/gi, '');
   out = out.replace(/\bwww\.\S+/gi, '');
   out = out.replace(/\b(\d+)\/(\d+)\b/g, '$1 over $2');
-  out = out.replace(/\b[\w@$]*[A-Za-z][\w@$.-]*(?:\/[\w@$.-]+)+\b/g, (path) => path.replace(/\//g, ' '));
-  out = out.replace(/\/([\w][\w-]*)/g, ' $1');
+  out = replaceMultiSegmentPathsForSpeech(out);
+  out = replaceLeadingSlashSegmentsForSpeech(out);
   out = out.replace(/\//g, ' ');
   return out;
 }
 
-function isMarkdownTableSeparatorLine(line: string): boolean {
-  if (!line.includes('|') && !line.includes('-')) {
-    return false;
-  }
+export function isMarkdownTableSeparatorLine(line: string): boolean {
   return /^\s*\|?[\s|:-]+\|?\s*$/.test(line) && /-{3,}|:[-]+:/.test(line);
 }
 
-function flattenMarkdownTableRow(line: string): string {
+export function flattenMarkdownTableRow(line: string): string {
   if (!line.includes('|')) {
     return line;
   }

@@ -74,7 +74,7 @@ export function resolveWhisperCppConfig(env: LetsTalkAudioEnv): WhisperCppConfig
   return { bin, modelPath, language, ...(ffmpegBin ? { ffmpegBin } : {}) };
 }
 
-function defaultDeps(): WhisperCppDeps {
+export function defaultDeps(): WhisperCppDeps {
   return {
     mkTempDir: async () => fs.promises.mkdtemp(path.join(os.tmpdir(), 'sfvc-whisper-')),
     writeFile: (filePath, data) => fs.promises.writeFile(filePath, data),
@@ -87,7 +87,7 @@ function defaultDeps(): WhisperCppDeps {
   };
 }
 
-async function runWhisperOnce(
+export async function runWhisperOnce(
   config: WhisperCppConfig,
   audioPath: string,
   workDir: string,
@@ -110,7 +110,7 @@ async function runWhisperOnce(
   return text ? { kind: 'ok', transcript: text } : { kind: 'unprocessable' };
 }
 
-async function convertToWav(
+export async function convertToWav(
   config: WhisperCppConfig,
   inputPath: string,
   workDir: string,
@@ -122,10 +122,10 @@ async function convertToWav(
   const wavPath = path.join(workDir, 'converted.wav');
   try {
     await deps.execFile(config.ffmpegBin, ['-i', inputPath, '-ar', '16000', '-ac', '1', '-y', wavPath]);
-    return wavPath;
   } catch {
     return undefined;
   }
+  return wavPath;
 }
 
 export async function transcribeWithWhisperCpp(
@@ -146,10 +146,10 @@ export async function transcribeWithWhisperCpp(
     if (direct.kind === 'ok') {
       return direct;
     }
-    const wavPath = await convertToWav(config, inputPath, tmpDir, deps);
-    if (!wavPath) {
-      return direct.kind === 'transient-failure' ? direct : { kind: 'unprocessable' };
-    }
+        const wavPath = await convertToWav(config, inputPath, tmpDir, deps);
+        if (!wavPath) {
+          return direct;
+        }
     return await runWhisperOnce(config, wavPath, tmpDir, deps);
   } finally {
     await deps.rmDir(tmpDir);

@@ -4,6 +4,9 @@
 // the Cursor SDK around these decisions.
 
 import { topicForSubject } from './telegramTopicDecisions';
+import { parseExpediteTicket, parseReexpediteTicket } from './telegramCursorBridgeExpedite';
+import { parseRedeployCommand } from './telegramCursorBridgeRedeploy';
+import { parseLogCommand, type LogTarget } from './telegramCursorBridgeLogs';
 
 export const CURSOR_BRIDGE_SUBJECT_ID = 'CURSOR_REMOTE';
 export const CURSOR_BRIDGE_TOPIC_NAME = 'Cursor Remote';
@@ -28,6 +31,10 @@ export type CursorBridgeDecision =
   | { action: 'new-session' }
   | { action: 'status' }
   | { action: 'help' }
+  | { action: 'expedite'; ticket: string }
+  | { action: 'reexpedite'; ticket: string }
+  | { action: 'redeploy' }
+  | { action: 'log'; target: LogTarget }
   | { action: 'prompt'; text: string }
   | { action: 'busy' };
 
@@ -83,7 +90,7 @@ export function frontDeskTopicMapWithoutCursorBridge(
   return next;
 }
 
-function parseCommand(text: string): 'new' | 'status' | 'help' | undefined {
+export function parseCommand(text: string): 'new' | 'status' | 'help' | undefined {
   const lower = text.trim().toLowerCase();
   if (lower === '/new') {
     return 'new';
@@ -139,11 +146,26 @@ export function decideInboundAction(
   if (cmd) {
     return decideCommandAction(cmd);
   }
+  if (parseRedeployCommand(trimmed)) {
+    return { action: 'redeploy' };
+  }
+  const logTarget = parseLogCommand(trimmed);
+  if (logTarget) {
+    return { action: 'log', target: logTarget };
+  }
+  const reexpediteTicket = parseReexpediteTicket(trimmed);
+  if (reexpediteTicket) {
+    return { action: 'reexpedite', ticket: reexpediteTicket };
+  }
+  const expediteTicket = parseExpediteTicket(trimmed);
+  if (expediteTicket) {
+    return { action: 'expedite', ticket: expediteTicket };
+  }
   return { action: 'prompt', text: trimmed };
 }
 
 export function gateBusy(decision: CursorBridgeDecision, busy: boolean): CursorBridgeDecision {
-  if (!busy || decision.action !== 'prompt') {
+  if (!busy || !['prompt', 'expedite', 'reexpedite'].includes(decision.action)) {
     return decision;
   }
   return { action: 'busy' };
@@ -172,9 +194,28 @@ export function splitTelegramChunks(text: string, maxLen: number = TELEGRAM_MESS
   return chunks;
 }
 
-function appendTextBlocks(content: Array<{ type?: string; text?: string }> | undefined): string {
+type AssistantContentBlock = { type?: string; text?: string };
+
+export function normalizedAssistantContentBlocks(
+  content: Array<AssistantContentBlock> | undefined | null
+): Array<AssistantContentBlock> {
+  if (content === undefined || content === null) {
+    return [];
+  }
+  return content;
+}
+
+export function isPlainAssistantStringMessage(message: unknown): boolean {
+  return Object.prototype.toString.call(message) === '[object String]';
+}
+
+export function isCursorBridgePersistedRecord(raw: unknown): raw is Record<string, unknown> {
+  return typeof raw === 'object' && raw !== null && !Array.isArray(raw);
+}
+
+function appendTextBlocks(content: Array<AssistantContentBlock> | undefined): string {
   let out = '';
-  for (const block of content ?? []) {
+  for (const block of normalizedAssistantContentBlocks(content)) {
     if (block.type === 'text' && typeof block.text === 'string') {
       out += block.text;
     }
@@ -186,10 +227,15 @@ function textFromAssistantMessage(message: AssistantStreamMessage): string {
   if (message.type !== 'assistant') {
     return '';
   }
-  if (!message.message || typeof message.message === 'string') {
+  if (message.message === undefined || message.message === null) {
     return '';
   }
-  return appendTextBlocks(message.message.content);
+  if (isPlainAssistantStringMessage(message.message)) {
+    return '';
+  }
+  return appendTextBlocks(
+    (message.message as { content?: Array<AssistantContentBlock> }).content
+  );
 }
 
 export function collectAssistantTextFromMessages(messages: readonly unknown[]): string {
@@ -200,8 +246,14 @@ export function collectAssistantTextFromMessages(messages: readonly unknown[]): 
   return out;
 }
 
-function parseNonNegativeInt(value: unknown, fallback: number): number {
-  return typeof value === 'number' && value >= 0 ? value : fallback;
+export function parseNonNegativeInt(value: unknown, fallback: number): number {
+  if (typeof value !== 'number') {
+    return fallback;
+  }
+  if (value < 0) {
+    return fallback;
+  }
+  return value;
 }
 
 function parseOptionalTopicId(value: unknown): number | undefined {
@@ -228,10 +280,10 @@ function buildPersistedState(record: Record<string, unknown>): CursorBridgePersi
 }
 
 export function parseCursorBridgeState(raw: unknown): CursorBridgePersistedState {
-  if (!raw || typeof raw !== 'object') {
+  if (!isCursorBridgePersistedRecord(raw)) {
     return { updateOffset: 0 };
   }
-  return buildPersistedState(raw as Record<string, unknown>);
+  return buildPersistedState(raw);
 }
 
 export function formatStatusMessage(state: CursorBridgePersistedState, busy: boolean): string {
@@ -249,6 +301,10 @@ export function formatHelpMessage(): string {
     '',
     '/new — start a fresh agent session',
     '/status — show session state',
+    '/expedite [BL-xxx] — run offline expeditor with stage updates (default BL-696)',
+    '/reexpedite [BL-xxx] — checkpoint main WIP and restart a divergent expedite',
+    '/redeploy — compile extension and restart this bridge',
+    '/log [expedite|redeploy|bridge] — tail the active or named operator log',
     '/help — this message',
   ].join('\n');
 }

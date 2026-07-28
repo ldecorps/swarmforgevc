@@ -24,6 +24,25 @@ import {
   type CursorBridgePersistedState,
 } from './telegramCursorBridgeCore';
 import type { CursorBridgeAgentSessionDeps } from '../bridge/cursorBridgeAgentSession';
+import { withPromptProgress } from '../bridge/cursorBridgeAgentSession';
+import { createThrottledProgressReporter } from '../bridge/cursorBridgeProgress';
+import {
+  formatExpediteFailureMessage,
+  formatExpediteStartMessage,
+  formatReexpediteStartMessage,
+  readExpediteLock,
+  startExpediteRun,
+  startReexpediteRun,
+} from './telegramCursorBridgeExpedite';
+import {
+  formatRedeployFailureMessage,
+  formatRedeployStartMessage,
+  readRedeployLock,
+  startRedeployRun,
+} from './telegramCursorBridgeRedeploy';
+import { formatLogTelegramMessage } from './telegramCursorBridgeLogs';
+
+export const TELEGRAM_PROGRESS_MIN_INTERVAL_MS = 12_000;
 
 export const POLL_TIMEOUT_SECONDS = 30;
 export const STATE_FILE_NAME = 'cursor-bridge-state.json';
@@ -42,15 +61,25 @@ export function requiredEnv(name: string): string {
   return value;
 }
 
+const JSON_PARSE_FAILED = Symbol('json-parse-failed');
+
+export function parseJsonOrUndefined(raw: string): unknown | typeof JSON_PARSE_FAILED {
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return JSON_PARSE_FAILED;
+  }
+}
+
 export function loadJsonFile(filePath: string): unknown {
   if (!fs.existsSync(filePath)) {
     return undefined;
   }
-  try {
-    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
-  } catch {
+  const parsed = parseJsonOrUndefined(fs.readFileSync(filePath, 'utf8'));
+  if (parsed === JSON_PARSE_FAILED) {
     return undefined;
   }
+  return parsed;
 }
 
 export function writeJsonFile(filePath: string, value: unknown): void {
@@ -79,6 +108,7 @@ export function inboundEventOf(update: TelegramUpdate) {
     chatId: message.chat.id,
     topicId: message.message_thread_id,
     text: message.text,
+    messageId: message.message_id,
   };
 }
 
@@ -167,6 +197,7 @@ export async function promptWithHeartbeat(
 export type InboundDecision = ReturnType<typeof decideInboundAction>;
 
 export interface CursorBridgeHandlerContext {
+  repoRoot: string;
   botToken: string;
   chatId: string;
   state: CursorBridgePersistedState;
@@ -181,21 +212,24 @@ export interface CursorBridgeHandlerContext {
 export async function runPromptWithActiveRunRecovery(
   ctx: Pick<CursorBridgeHandlerContext, 'agentSession' | 'opDir' | 'syncAgentIdFromSession'>,
   prompt: string,
-  resetAgent: () => Promise<void>
+  resetAgent: () => Promise<void>,
+  onProgress?: (line: string) => void | Promise<void>
 ): Promise<string> {
+  const runOnce = async (_text: string): Promise<{ replyText: string; agentId: string }> =>
+    withPromptProgress(onProgress, async () => {
+      const result = await ctx.agentSession.promptAgent(prompt);
+      ctx.syncAgentIdFromSession();
+      return result;
+    });
   try {
-    const reply = await promptWithHeartbeat(ctx.opDir, (text) => ctx.agentSession.promptAgent(text), prompt);
-    ctx.syncAgentIdFromSession();
-    return reply;
+    return await promptWithHeartbeat(ctx.opDir, runOnce, prompt);
   } catch (err) {
     const detail = err instanceof CursorAgentError ? err.message : err instanceof Error ? err.message : String(err);
     if (!isActiveRunConflict(detail)) {
       throw err;
     }
     await resetAgent();
-    const reply = await promptWithHeartbeat(ctx.opDir, (text) => ctx.agentSession.promptAgent(text), prompt);
-    ctx.syncAgentIdFromSession();
-    return reply;
+    return await promptWithHeartbeat(ctx.opDir, runOnce, prompt);
   }
 }
 
@@ -225,9 +259,15 @@ async function handlePromptInboundAction(
   replyToMessageId: number | undefined,
   resetAgent: () => Promise<void>
 ): Promise<boolean> {
-  await postInboundReply(ctx, topicId, '⏳ Working…', replyToMessageId);
+  if (ctx.busy) {
+    ctx.persistState();
+  }
+  const reportProgress = createThrottledProgressReporter(TELEGRAM_PROGRESS_MIN_INTERVAL_MS, (line) =>
+    postInboundReply(ctx, topicId, line, undefined)
+  );
+  await postInboundReply(ctx, topicId, '🚀 Agent started…', undefined);
   try {
-    const reply = await runPromptWithActiveRunRecovery(ctx, prompt, resetAgent);
+    const reply = await runPromptWithActiveRunRecovery(ctx, prompt, resetAgent, reportProgress);
     await postInboundReply(ctx, topicId, reply, replyToMessageId);
   } catch (err) {
     const detail = err instanceof CursorAgentError ? err.message : err instanceof Error ? err.message : String(err);
@@ -246,10 +286,23 @@ type InboundActionHandler = (
 const INBOUND_ACTION_HANDLERS: Partial<Record<InboundDecision['action'], InboundActionHandler>> = {
   refuse: (ctx, topicId, replyTo) => handleSimpleInboundAction(ctx, topicId, 'Unauthorized.', replyTo),
   help: (ctx, topicId, replyTo) => handleSimpleInboundAction(ctx, topicId, formatHelpMessage(), replyTo),
-  status: (ctx, topicId, replyTo) =>
-    handleSimpleInboundAction(ctx, topicId, formatStatusMessage(ctx.state, ctx.busy), replyTo),
+  status: (ctx, topicId, replyTo) => {
+    let text = formatStatusMessage(ctx.state, ctx.busy);
+    const expediteLock = readExpediteLock(ctx.repoRoot);
+    if (expediteLock) {
+      text += `\nExpedite: ${expediteLock.ticket} running (pid ${expediteLock.pid})`;
+    }
+    const redeployLock = readRedeployLock(ctx.repoRoot);
+    if (redeployLock) {
+      text += `\nRedeploy: running (pid ${redeployLock.pid})`;
+    }
+    return handleSimpleInboundAction(ctx, topicId, text, replyTo);
+  },
   busy: (ctx, topicId, replyTo) =>
     handleSimpleInboundAction(ctx, topicId, 'Busy — wait for the current run to finish.', replyTo),
+  ignore: () => {
+    throw new Error('ignore action must short-circuit before handlers');
+  },
   'new-session': async (ctx, topicId, replyTo, resetAgent) => {
     await resetAgent();
     return handleSimpleInboundAction(
@@ -258,6 +311,12 @@ const INBOUND_ACTION_HANDLERS: Partial<Record<InboundDecision['action'], Inbound
       'Started a fresh Cursor session. Send your next instruction.',
       replyTo
     );
+  },
+  redeploy: async (ctx, topicId, replyTo) => {
+    const result = startRedeployRun(ctx.repoRoot);
+    const text = result.ok ? formatRedeployStartMessage(result) : formatRedeployFailureMessage(result);
+    await postInboundReply(ctx, topicId, text, replyTo);
+    return false;
   },
 };
 
@@ -268,7 +327,10 @@ export async function handleInboundDecision(
   resetAgent: () => Promise<void>
 ): Promise<boolean> {
   const topicId = ctx.state.cursorTopicId;
-  if (topicId === undefined || decision.action === 'ignore') {
+  if (decision.action === 'ignore') {
+    return ctx.busy;
+  }
+  if (topicId === undefined) {
     return ctx.busy;
   }
   const handler = INBOUND_ACTION_HANDLERS[decision.action];
@@ -278,10 +340,28 @@ export async function handleInboundDecision(
   if (decision.action === 'prompt') {
     return handlePromptInboundAction(ctx, topicId, decision.text, replyToMessageId, resetAgent);
   }
+  if (decision.action === 'expedite') {
+    const result = startExpediteRun(ctx.repoRoot, decision.ticket);
+    const text = result.ok ? formatExpediteStartMessage(result) : formatExpediteFailureMessage(result);
+    await postInboundReply(ctx, topicId, text, replyToMessageId);
+    return false;
+  }
+  if (decision.action === 'reexpedite') {
+    const result = startReexpediteRun(ctx.repoRoot, decision.ticket);
+    const text = result.ok ? formatReexpediteStartMessage(result) : formatExpediteFailureMessage(result);
+    await postInboundReply(ctx, topicId, text, replyToMessageId);
+    return false;
+  }
+  if (decision.action === 'log') {
+    const text = formatLogTelegramMessage(ctx.repoRoot, decision.target);
+    await postInboundReply(ctx, topicId, text, undefined);
+    return false;
+  }
   return ctx.busy;
 }
 
 export interface CursorBridgeLoopDeps {
+  repoRoot: string;
   botToken: string;
   chatId: string;
   principalUserId: string;
@@ -339,23 +419,22 @@ async function processInboundUpdates(
     }
     const rawDecision = decideInboundAction(inbound, deps.principalUserId, deps.chatId, holder.state.cursorTopicId);
     const decision = gateBusy(rawDecision, holder.busy);
-    if (decision.action === 'prompt') {
-      holder.busy = true;
-    }
+    const ctxBusy = decision.action === 'prompt' ? true : holder.busy;
     holder.busy = await handleInboundDecision(
       decision,
       {
+        repoRoot: deps.repoRoot,
         botToken: deps.botToken,
         chatId: deps.chatId,
         state: holder.state,
-        busy: holder.busy,
+        busy: ctxBusy,
         agentSession: deps.agentSession,
         opDir: deps.opDir,
         post: handlerCtx.post,
         persistState: handlerCtx.persistState,
         syncAgentIdFromSession: handlerCtx.syncAgentIdFromSession,
       },
-      update.message?.message_id,
+      inbound.messageId,
       handlerCtx.resetAgent
     );
   }
@@ -401,6 +480,7 @@ export interface CursorBridgeCliEnv {
 export async function runCursorBridgeBootIfConfigured(
   env: Pick<CursorBridgeCliEnv, 'bootPrompt' | 'botToken' | 'chatId' | 'post'>,
   ctx: {
+    repoRoot: string;
     state: CursorBridgePersistedState;
     busy: boolean;
     agentSession: CursorBridgeAgentSessionDeps;
@@ -418,6 +498,7 @@ export async function runCursorBridgeBootIfConfigured(
   return handleInboundDecision(
     { action: 'prompt', text: env.bootPrompt },
     {
+      repoRoot: ctx.repoRoot,
       botToken: env.botToken,
       chatId: env.chatId,
       state: ctx.state,
@@ -473,6 +554,7 @@ export async function runCursorBridgeApp(
   };
 
   busy = await runCursorBridgeBootIfConfigured(env, {
+    repoRoot: env.repoRoot,
     state,
     busy,
     agentSession,
@@ -483,6 +565,7 @@ export async function runCursorBridgeApp(
   });
 
   const loopDeps: CursorBridgeLoopDeps = {
+    repoRoot: env.repoRoot,
     botToken: env.botToken,
     chatId: env.chatId,
     principalUserId: env.principalUserId,

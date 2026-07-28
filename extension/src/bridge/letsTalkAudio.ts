@@ -47,15 +47,15 @@ export function classifyTranscriptionResponse(
   return text ? { kind: 'ok', transcript: text } : { kind: 'unprocessable' };
 }
 
-function isTransientTranscriptionError(status: number, providerError?: OpenAiTranscriptionError): boolean {
+export function isTransientTranscriptionError(status: number, providerError?: OpenAiTranscriptionError): boolean {
   return status === 429 || providerError?.code === 'insufficient_quota';
 }
 
-function isClientTranscriptionError(status: number): boolean {
+export function isClientTranscriptionError(status: number): boolean {
   return status >= 400 && status < 500;
 }
 
-function buildTranscriptionForm(
+export function buildTranscriptionForm(
   bytes: Buffer,
   mimeType: string | undefined,
   language?: LetsTalkSpeechLanguageSetting
@@ -140,9 +140,22 @@ function adaptersFromOverrides(
   return {
     transcribeAudio: overrides.transcribeAudio,
     synthesizeSpeech: overrides.synthesizeSpeech,
-    clientTts: overrides.synthesizeSpeech === undefined && overrides.transcribeAudio !== undefined,
+    clientTts: clientTtsFromOverrides(overrides),
     ...speechSettingsFromEnv(env),
   };
+}
+
+export function clientTtsFromOverrides(overrides: {
+  transcribeAudio?: TranscribeAudio;
+  synthesizeSpeech?: SynthesizeSpeech;
+}): boolean {
+  return overrides.synthesizeSpeech === undefined && overrides.transcribeAudio !== undefined;
+}
+
+export function openAiTranscriptionLanguage(
+  speechLanguage?: LetsTalkSpeechLanguageSetting
+): LetsTalkSpeechLanguageSetting | undefined {
+  return speechLanguage === 'auto' ? undefined : speechLanguage;
 }
 
 function adaptersFromLocalEngine(env: LetsTalkAudioEnv, speech: ReturnType<typeof speechSettingsFromEnv>): LetsTalkAudioAdapters | undefined {
@@ -171,7 +184,7 @@ function adaptersFromOpenAi(
         openaiApiKey,
         bytes,
         mimeType,
-        speech.speechLanguage === 'auto' ? undefined : speech.speechLanguage
+        openAiTranscriptionLanguage(speech.speechLanguage)
       ),
     synthesizeSpeech: (text) => synthesizeSpeechBytes(openaiApiKey, text),
     ...speech,

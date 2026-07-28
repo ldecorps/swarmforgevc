@@ -242,6 +242,25 @@ test('processLetsTalkTurn: client TTS mode strips markdown from replySpeechText'
   assert.equal(result.replySpeechText, 'Ready — use code.');
 });
 
+test('processLetsTalkTurn: replySpeechText normalizes HR and list edge cases', async () => {
+  const target = mkTmp();
+  const session = createMockCursorBridgeAgentSession(target);
+  session.promptAgent = async () => ({
+    replyText: 'foo--bar\n- item\n| --- | --- |',
+    agentId: 'agent-1',
+  });
+  const result = await processLetsTalkTurn(
+    { audioBase64: SAMPLE_AUDIO },
+    {
+      agentSession: session,
+      transcribeAudio: async () => ({ kind: 'ok', transcript: 'status' }),
+      clientTts: true,
+    }
+  );
+  assert.equal(result.success, true);
+  assert.equal(result.replySpeechText, 'foo bar\nitem');
+});
+
 test('processLetsTalkTurn: TTS failure is recoverable', async () => {
   const target = mkTmp();
   const result = await processLetsTalkTurn(

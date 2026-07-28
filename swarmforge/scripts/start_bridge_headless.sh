@@ -32,6 +32,8 @@ fi
 source "$SCRIPT_DIR/cursor_ripgrep_env.sh"
 resolve_cursor_ripgrep_path "$ROOT"
 
+unset CURSOR_AGENT CURSOR_CONVERSATION_ID CURSOR_LAYOUT __CURSOR_SANDBOX_ENV_RESTORE 2>/dev/null || true
+
 export BRIDGE_PORT="$PORT"
 
 if [[ ! -f "$TOKEN_FILE" ]]; then

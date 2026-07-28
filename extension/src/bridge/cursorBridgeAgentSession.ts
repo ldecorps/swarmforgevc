@@ -8,6 +8,12 @@ import { Agent, CursorAgentError, type SDKAgent, type SDKMessage } from '@cursor
 import { atomicWrite } from '../util/atomicWrite';
 import { collectAssistantTextFromMessages, isActiveRunConflict, parseCursorBridgeState, type CursorBridgePersistedState } from '../tools/telegramCursorBridgeCore';
 import { extractCodeWordFromRememberPhrase, mockAgentReplyForTranscript } from './letsTalkCore';
+import { readSwarmEnvValue } from '../tools/swarmEnv';
+import type { CursorAgentProgressCallback } from './cursorBridgeProgress';
+import { summarizeSdkProgressLine } from './cursorBridgeProgress';
+
+const MISSING_CURSOR_API_KEY_MESSAGE =
+  'CURSOR_API_KEY is not set for the headless bridge. Add `export CURSOR_API_KEY=...` to .swarmforge/swarm.env and restart the bridge supervisor. The Cursor IDE login session is not passed to telegram/headless bridge processes.';
 
 const STATE_FILE_NAME = 'cursor-bridge-state.json';
 const LOCK_FILE_NAME = 'cursor-bridge-agent.lock';
@@ -127,6 +133,18 @@ export async function withAgentLock<T>(targetPath: string, fn: () => Promise<T>)
   }
 }
 
+export function resolveCursorApiKey(repoRoot: string): string {
+  const fromEnv = process.env.CURSOR_API_KEY?.trim();
+  if (fromEnv) {
+    return fromEnv;
+  }
+  const fromSwarmEnv = readSwarmEnvValue(repoRoot, 'CURSOR_API_KEY');
+  if (fromSwarmEnv) {
+    return fromSwarmEnv;
+  }
+  throw new Error(MISSING_CURSOR_API_KEY_MESSAGE);
+}
+
 export function buildAgentOptions(repoRoot: string, apiKey: string | undefined, modelId: string) {
   return {
     ...(apiKey ? { apiKey } : {}),
@@ -147,11 +165,31 @@ async function openAgent(
   return Agent.create(buildAgentOptions(repoRoot, apiKey, modelId));
 }
 
-export async function runCursorAgentPrompt(agent: SDKAgent, prompt: string): Promise<string> {
+let activePromptProgress: CursorAgentProgressCallback | undefined;
+
+export function withPromptProgress<T>(onProgress: CursorAgentProgressCallback | undefined, fn: () => Promise<T>): Promise<T> {
+  const previous = activePromptProgress;
+  activePromptProgress = onProgress;
+  return fn().finally(() => {
+    activePromptProgress = previous;
+  });
+}
+
+export async function runCursorAgentPrompt(
+  agent: SDKAgent,
+  prompt: string,
+  onProgress: CursorAgentProgressCallback | undefined = activePromptProgress
+): Promise<string> {
   const run = await agent.send(prompt);
   const messages: SDKMessage[] = [];
   for await (const event of run.stream()) {
     messages.push(event);
+    if (onProgress) {
+      const line = summarizeSdkProgressLine(event);
+      if (line) {
+        await onProgress(line);
+      }
+    }
   }
   const result = await run.wait();
   if (result.status === 'error') {
@@ -163,8 +201,8 @@ export async function runCursorAgentPrompt(agent: SDKAgent, prompt: string): Pro
 }
 
 export function createLiveCursorBridgeAgentSession(targetPath: string): CursorBridgeAgentSessionDeps {
-  const apiKey = process.env.CURSOR_API_KEY;
-  const modelId = process.env.CURSOR_BRIDGE_MODEL ?? 'auto-smart';
+  const apiKey = resolveCursorApiKey(targetPath);
+  const modelId = process.env.CURSOR_BRIDGE_MODEL?.trim() || readSwarmEnvValue(targetPath, 'CURSOR_BRIDGE_MODEL') || 'auto-smart';
   let cachedAgent: SDKAgent | undefined;
 
   const ensureAgent = async (): Promise<SDKAgent> => {

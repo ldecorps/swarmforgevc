@@ -19,6 +19,7 @@
             [clojure.string :as str]))
 
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "front_desk_supervisor_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "bridge_supervisor_env_lib.bb")))
 
 (defn usage []
   (binding [*out* *err*]
@@ -80,7 +81,7 @@
 
 (defn bridge-extra-env []
   (into {}
-        (remove (fn [[_ v]] (nil? v))
+        (remove (fn [[_ v]] (or (nil? v) (= v "")))
                 [["BRIDGE_TOKEN" (or (System/getenv "BRIDGE_TOKEN") (read-bridge-token))]
                  ["LD_LIBRARY_PATH" (System/getenv "LD_LIBRARY_PATH")]
                  ["LETS_TALK_AUDIO_ENGINE" (System/getenv "LETS_TALK_AUDIO_ENGINE")]
@@ -106,7 +107,8 @@
 (defn spawn-bridge! []
   (reset! last-http-ok-ms nil)
   (spit (str bridge-log-file) (str (now-iso) " supervisor-spawn port=" bridge-port "\n") :append true)
-  (process/process {:out :inherit :err :inherit :extra-env (bridge-extra-env)}
+  (process/process {:out :inherit :err :inherit
+                    :env (bridge-supervisor-env-lib/bridge-child-env project-root (bridge-extra-env))}
                    "node" (str bridge-entrypoint) project-root (str bridge-port)))
 
 (def process-specs
