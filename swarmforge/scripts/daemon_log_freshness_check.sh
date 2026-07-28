@@ -79,7 +79,12 @@ last_restart_epoch() {
     printf '%s\n' "0"
     return
   fi
-  printf '%s' "$line" | sed -n 's/.*epoch=\([0-9][0-9]*\).*/\1/p'
+  epoch=$(printf '%s' "$line" | sed -n 's/.*epoch=\([0-9][0-9]*\).*/\1/p')
+  if [ -z "$epoch" ]; then
+    printf '%s\n' "0"
+    return
+  fi
+  printf '%s\n' "$epoch"
 }
 
 append_incident() {
