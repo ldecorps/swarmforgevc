@@ -80,7 +80,8 @@
 ;; ── decide-launch-outcome: BL-372 scenario 01/02 (ready + detached) ────────
 
 (assert= "ready and detached is a clean pass"
-         {:ok? true :message "swarm is up and its launch is detached from the caller"}
+         {:ok? true
+          :message "swarm launch job is detached from the caller (SIGHUP ignored; does not prove session survival)"}
          (swarm-detach-lib/decide-launch-outcome {:ready? true :detached? true}))
 
 ;; ── decide-launch-outcome: BL-372 scenario 02 (still owned by caller) ─────

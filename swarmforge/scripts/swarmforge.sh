@@ -12,6 +12,10 @@ RESET='\033[0m'
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
+# BL-657: harness scrub helpers available to create_role_session / launch path.
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/harness_env_scrub.sh"
+
 # BL-145: `./swarm ensure <path>` checks/repairs the extension host, every
 # configured agent pane, the handoff daemon, the operator runtime, and (when
 # Telegram is configured) the front-desk bridge+bot in one idempotent
@@ -977,6 +981,8 @@ create_role_session() {
   fi
 
   tmux -S "$TMUX_SOCKET" new-session -d -s "$session" -n "$AGENT_WINDOW"
+  # BL-657: if this call started the server, wipe harness markers immediately.
+  scrub_tmux_harness_env "$TMUX_SOCKET"
   tmux -S "$TMUX_SOCKET" rename-window -t "$session:$AGENT_WINDOW" "$title"
   tmux -S "$TMUX_SOCKET" set-window-option -t "$session:$title" allow-rename off
 }
@@ -1726,10 +1732,17 @@ start_ancillary_services() {
 # it is sourced from another script.
 if [[ "$ZSH_EVAL_CONTEXT" == "toplevel" ]]; then
 
+# BL-657: scrub Claude Code / Cursor harness markers before ANY tmux client
+# call that might start the server (detect_tmux_base_indexes probes first).
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/harness_env_scrub.sh"
+scrub_harness_env
+
 check_dependency tmux
 check_dependency git
 check_dependency bb
 detect_tmux_base_indexes
+scrub_tmux_harness_env "$TMUX_SOCKET"
 initialize_git_repo
 ensure_runtime_git_excludes
 ensure_commit_size_guard

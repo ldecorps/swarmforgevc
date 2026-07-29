@@ -80,4 +80,7 @@
      :message "swarm launch is still owned by the caller - it will die when the caller exits"}
 
     :else
-    {:ok? true :message "swarm is up and its launch is detached from the caller"}))
+    ;; BL-657: "detached" only means the launch job ignored SIGHUP — not that
+    ;; the tmux server will survive harness-env poisoning or other killers.
+    {:ok? true
+     :message "swarm launch job is detached from the caller (SIGHUP ignored; does not prove session survival)"}))

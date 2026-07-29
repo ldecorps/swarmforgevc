@@ -21,6 +21,11 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 START_ANCILLARY="$SCRIPT_DIR/swarmforge/scripts/start_ancillary_services.sh"
+# BL-657: strip Claude Code / Cursor harness markers before any tmux server
+# can inherit them from this shell (or from the nohup'd ./swarm child).
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/swarmforge/scripts/harness_env_scrub.sh"
+scrub_harness_env
 
 CLEAN=0
 TARGET=""
@@ -178,20 +183,65 @@ expected_session_count() {
   fi
 }
 
+report_ready_failure() {
+  local want="$1"
+  local diag="$TARGET/.swarmforge/start-swarm-fail-diag.txt"
+  mkdir -p "$TARGET/.swarmforge"
+  {
+    echo "=== BL-657 launch failure diagnosis $(date -u +%Y-%m-%dT%H:%MZ) ==="
+    echo "wanted_sessions=$want"
+    echo "target=$TARGET"
+    if sock="$(read_socket)"; then
+      echo "socket=$sock"
+      echo "--- tmux list-sessions ---"
+      tmux -S "$sock" list-sessions 2>&1 || echo "(list-sessions failed — server likely dead)"
+      echo "--- tmux server pid ---"
+      tmux -S "$sock" display-message -p '#{pid}' 2>&1 || echo "(no responding server)"
+      echo "--- global env (harness markers) ---"
+      tmux -S "$sock" show-environment -g 2>&1 | grep -E 'CLAUDE_CODE_|CLAUDECODE|CURSOR_' || echo "(none or server gone)"
+    else
+      echo "socket file missing or empty at $SOCKET_FILE"
+    fi
+    echo "--- tail start-swarm-launch.log ---"
+    if [[ -f "$TARGET/.swarmforge/start-swarm-launch.log" ]]; then
+      tail -n 80 "$TARGET/.swarmforge/start-swarm-launch.log" 2>&1 || true
+    else
+      echo "(no start-swarm-launch.log)"
+    fi
+    echo "=== end diagnosis; full copy: $diag ==="
+  } | tee "$diag" >&2
+  echo "ERROR: swarm did not become ready (wanted $want sessions); diagnosis: $diag" >&2
+}
+
 wait_for_ready() {
+  # BL-657: sessions can appear then vanish in 1–3s when a harness-poisoned
+  # tmux server dies. Require a second sighting after the failure window.
   local want="$1" i sock n
+  local seen_once=0
   for ((i = 0; i < 60; i++)); do
     if sock="$(read_socket)"; then
+      scrub_tmux_harness_env "$sock"
       n="$(tmux -S "$sock" list-sessions 2>/dev/null | grep -c . || true)"
       if [[ "${n:-0}" -ge "$want" && "$want" -gt 0 ]]; then
-        echo "SwarmForge agents are up: $n session(s) on $sock"
-        tmux -S "$sock" list-sessions 2>/dev/null || true
-        return 0
+        if [[ "$seen_once" -eq 0 ]]; then
+          seen_once=1
+          echo "Sessions visible ($n) — waiting past the BL-657 failure window ..."
+          sleep 5
+          continue
+        fi
+        n="$(tmux -S "$sock" list-sessions 2>/dev/null | grep -c . || true)"
+        if [[ "${n:-0}" -ge "$want" ]]; then
+          echo "SwarmForge agents are up: $n session(s) on $sock"
+          tmux -S "$sock" list-sessions 2>/dev/null || true
+          return 0
+        fi
+        seen_once=0
+        echo "Sessions vanished after first sighting — continuing to wait ..."
       fi
     fi
     sleep 2
   done
-  echo "ERROR: swarm did not become ready (wanted $want sessions)" >&2
+  report_ready_failure "$want"
   return 1
 }
 
