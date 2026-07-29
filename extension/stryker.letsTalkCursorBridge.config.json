@@ -22,6 +22,7 @@
     "out/bridge/letsTalkAudio.js",
     "out/bridge/letsTalkLocalAudio.js",
     "out/bridge/cursorBridgeAgentSession.js",
+    "out/bridge/cursorBridgeTelegramHtml.js",
     "out/tools/telegramCursorBridgeCore.js",
     "out/tools/telegramCursorBridgeLive.js",
     "out/tools/telegramCursorBridgePilot.js",

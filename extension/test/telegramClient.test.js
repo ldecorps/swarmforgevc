@@ -185,7 +185,7 @@ test('getTelegramUpdates returns the update batch from a successful poll', async
   const updates = [{ update_id: 5, message: { message_id: 7, chat: { id: 999888777 }, text: 'yes' } }];
   const postFn = async (url, body) => {
     assert.equal(url, `https://api.telegram.org/bot${TOKEN}/getUpdates`);
-    assert.deepEqual(JSON.parse(body), { offset: 6, timeout: 25 });
+    assert.deepEqual(JSON.parse(body), { offset: 6, timeout: 25, allowed_updates: [] });
     return { ok: true, status: 200, json: { ok: true, result: updates } };
   };
 

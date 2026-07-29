@@ -45,4 +45,4 @@
                       extra-env)]
     (if (contains? merged "CURSOR_BRIDGE_MODEL")
       merged
-      (assoc merged "CURSOR_BRIDGE_MODEL" "auto-smart"))))
+      (assoc merged "CURSOR_BRIDGE_MODEL" "auto"))))

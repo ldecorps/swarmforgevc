@@ -1,0 +1,104 @@
+id: BL-698
+title: "Telegram / Cursor Remote operator command surface — shared verb semantics, env-reloading bounce/restart, shifts & holidays, documenter how-to + Cursor Remote diagrams"
+milestone: M8
+type: feature
+severity: high
+status: todo
+epic: swarmforge-console
+human_approval: approved
+priority: 02
+direction: human-requested
+depends_on: []
+mutation_cost: high
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+assigned_to: none
+
+invariants:
+  - "Every hard-tier verb (stop, start, restart, bounce, drain-*, ensure, ambulance, kill-all, hydrate, mint, autopilot, land) is a no-op unless the sender is the principal AND the message is in the Cursor Remote topic (or an explicitly aligned Control alias) AND the confirm gate has passed — wrong topic or unauthorised tap never mutates swarm state."
+  - "Every path that starts or relaunches swarm, extension child, or cursor/headless bridge after /start, /restart, /bounce, or /redeploy re-reads .swarmforge/swarm.env before spawn — never relaunches from a stale host process.env alone."
+  - "/pilot, /autopilot, and /land refuse when the swarm is live (unless an explicit Stop & run confirm runs first); /hydrate and /mint refuse when any full-pack pipeline role is up — Cursor-as-expeditor never races a live pack."
+
+approval_context: >
+  Operator session 2026-07-28: expand Telegram-actionable ops from Cursor
+  Remote as the main phone ingress; align backend semantic/syntax across
+  Cursor Remote / Control / CLI; require /bounce and /restart to read
+  swarm.env; add shifts & holidays; keep /ensure; documenter must ship a
+  how-to and Mermaid diagrams of the Cursor Remote flow. Command list and
+  suggestions accepted in-session — see
+  docs/reference/specs/BL-698-telegram-cursor-operator-command-surface.md.
+
+source: |
+  Human directive in Cursor chat 2026-07-28 after reviewing the proposed
+  command map (pull/compile/drain-*/ambulance/stop/start/restart/kill-all/
+  hold/reinstate/syncenv + bounce env-reload + shifts/holidays + ensure +
+  doctor/quiet/mode/lock and related). Ready for `/pilot BL-698`.
+
+description: |
+  ## What
+
+  Make **Cursor Remote** the principal phone ops console: one shared verb
+  vocabulary and confirm semantics on the backend, exposed first on the
+  Cursor Remote Telegram topic, with Control and CLI speaking the same
+  language. Close the env-reload hole on swarm bounce/restart. Add shift /
+  holiday / oncall operator policy. Documenter writes the phone how-to and
+  draws Mermaid diagrams of the Cursor Remote flow.
+
+  ## Settled command surface
+
+  Full map: `docs/reference/specs/BL-698-telegram-cursor-operator-command-surface.md`
+
+  Lifecycle: `/pull` `/compile` `/syncenv` `/start` `/stop` `/restart`
+  `/bounce [swarm|extension|bridge|all]` `/drain-agents` `/drain-swarm`
+  `/kill-all` `/ensure` `/pause` `/resume` `/doctor` `/tunnel`
+
+  Tickets: `/ambulance BL-xxx` `/ambulance off` `/hold BL-xxx`
+  `/reinstate BL-xxx`
+
+  Policy: `/quiet` `/mode` `/lock` `/unlock` `/confirm-off`
+  `/shift …` `/holiday …` `/oncall …`
+
+  Keep existing Cursor Remote skills: `/pilot` `/expedite` `/reexpedite`
+  `/redeploy` `/log` `/update` `/status` `/help` `/new` + agent prompts.
+
+  Prep pass (first-class): `/hydrate [INTAKE|BL-xxx]` and alias `/mint
+  [INTAKE|slug]` — wake sleeping swarm with **specifier only**, spec the
+  intake (or finish underspec), **auto drain-stop on handoff to coder**
+  (coder does not start). Distinct from `/pilot` (all hats) and `/expedite`.
+
+  Batch delivery: `/autopilot` — Cursor agent pilots every already-specced
+  high-severity or defect ticket in priority order (`/autopilot dry` lists
+  only). Same hats as `/pilot`; sequential; no overlap with in-flight
+  pilot/expedite/autopilot/land.
+
+  Clear the pipe: `/land` — Cursor pilots every **in-flight** (active /
+  parcel-owning) ticket out to done, then drain-stops by default. Like
+  `/drain-swarm` but finishes work via `/pilot` instead of stopping mid-stage.
+  `/land dry` lists only.
+
+  ## Hard pins
+
+  1. **Shared parse → execute** — one decision core (or thin shared module)
+     for slash verbs; Cursor Remote live handlers call it; Control aliases
+     the same names; CLI wrappers remain thin.
+  2. **Env reload** — `/bounce`, `/restart`, `/start`, `/redeploy` re-source
+     `.swarmforge/swarm.env` on relaunch (match bridge supervisor behaviour;
+     fix `buildLaunchEnv` / bounce path for swarm).
+  3. **Danger tiers** — read / soft / hard with two-step confirm on hard.
+  4. **hold ≠ ambulance** — `/hold` parks to `backlog/hold/`; `/ambulance`
+     is BL-655 exclusive-ticket live-pipeline hold.
+  5. **Shifts/holidays** — operator overlay under `.swarmforge/operator/`;
+     do not fork BL-660's conf shift-pack scheduling — compose with it when
+     present.
+  6. **Documenter (required, not optional)** —
+     - `docs/how-to/BL-698-telegram-cursor-operator-commands.md`
+     - `docs/diagrams/cursor-remote-flow.mmd`
+     - `docs/diagrams/operator-command-surface.mmd`
+     - cross-links from BL-696 how-to / amendment docs
+
+  ## Out of scope
+
+  - Mini App console page for these verbs (later BL-517 slice).
+  - Replacing role-topic steer with slash for every role message.
+  - Implementing BL-660 three-shift cron packs themselves.
+
+acceptance: specs/features/BL-698-telegram-cursor-operator-command-surface.feature

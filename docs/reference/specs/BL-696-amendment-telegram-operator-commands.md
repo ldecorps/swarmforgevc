@@ -51,3 +51,10 @@ Steps: `specs/pipeline/steps/bl696TelegramCursorBridgeOperatorSteps.js`
 
 - Exposing these commands on Concierge or non-Cursor topics.
 - Replacing `expedite_progress_notify.bb` (stage updates still push independently).
+
+## Successor
+
+**BL-698** expands this surface into the full phone ops console (shared verb
+backend, env-reloading bounce/restart, shifts/holidays, documenter how-to +
+Cursor Remote Mermaid diagrams). See
+[BL-698 reference spec](BL-698-telegram-cursor-operator-command-surface.md).

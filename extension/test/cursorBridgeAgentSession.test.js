@@ -261,8 +261,8 @@ test('cursorBridgeAgentSession: acquireAgentLock recovers an abandoned lock file
 });
 
 test('cursorBridgeAgentSession: buildAgentOptions includes model and local cwd', () => {
-  const opts = buildAgentOptions('/repo', 'key-1', 'auto-smart');
-  assert.equal(opts.model.id, 'auto-smart');
+  const opts = buildAgentOptions('/repo', 'key-1', 'auto');
+  assert.equal(opts.model.id, 'auto');
   assert.equal(opts.local.cwd, '/repo');
   assert.equal(opts.apiKey, 'key-1');
 });
@@ -478,7 +478,7 @@ test('cursorBridgeAgentSession: isAbandonedAgentLock treats EPERM from process.k
 });
 
 test('cursorBridgeAgentSession: buildAgentOptions omits apiKey and keeps empty settingSources', () => {
-  const opts = buildAgentOptions('/repo', undefined, 'auto-smart');
+  const opts = buildAgentOptions('/repo', undefined, 'auto');
   assert.equal('apiKey' in opts, false);
   assert.deepEqual(opts.local.settingSources, []);
   assert.equal(opts.local.cwd, '/repo');
@@ -630,7 +630,7 @@ test('cursorBridgeAgentSession: live session resumes agentId from persisted stat
   };
   sdk.Agent.resume = async (agentId, opts) => {
     resumedId = agentId;
-    assert.equal(opts.model.id, 'auto-smart');
+    assert.equal(opts.model.id, 'auto');
     return mockSdkAgent('resumed reply');
   };
   try {

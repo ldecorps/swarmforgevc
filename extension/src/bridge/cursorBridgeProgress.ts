@@ -1,9 +1,28 @@
 import type { SDKMessage } from '@cursor/sdk';
+import {
+  isPlayfulProgressEnabled,
+  playfulStatusProgressLine,
+  playfulToolProgressLabel,
+} from './cursorBridgeProgressPlayful';
 
 export type CursorAgentProgressCallback = (line: string) => void | Promise<void>;
 
 function toolLabel(name: string): string {
   return name.length > 48 ? `${name.slice(0, 45)}…` : name;
+}
+
+function formatToolProgress(name: string, phase: 'running' | 'completed' | 'error'): string {
+  if (isPlayfulProgressEnabled()) {
+    return playfulToolProgressLabel(name, phase);
+  }
+  const label = toolLabel(name);
+  if (phase === 'running') {
+    return `🔧 ${label}`;
+  }
+  if (phase === 'completed') {
+    return `✓ ${label}`;
+  }
+  return `✗ ${label} failed`;
 }
 
 const THINKING_PROGRESS_MIN_CHARS = 40;
@@ -24,21 +43,27 @@ export function summarizeSdkProgressLine(event: SDKMessage): string | undefined 
   switch (event.type) {
     case 'status':
       if (event.status === 'RUNNING') {
+        if (isPlayfulProgressEnabled()) {
+          return playfulStatusProgressLine('RUNNING', event.message);
+        }
         return event.message ? `▶ ${event.message}` : '▶ Agent running…';
       }
       if (event.status === 'CREATING') {
+        if (isPlayfulProgressEnabled()) {
+          return playfulStatusProgressLine('CREATING');
+        }
         return '🔄 Starting agent run…';
       }
       return undefined;
     case 'tool_call':
       if (event.status === 'running') {
-        return `🔧 ${toolLabel(event.name)}`;
+        return formatToolProgress(event.name, 'running');
       }
       if (event.status === 'completed') {
-        return `✓ ${toolLabel(event.name)}`;
+        return formatToolProgress(event.name, 'completed');
       }
       if (event.status === 'error') {
-        return `✗ ${toolLabel(event.name)} failed`;
+        return formatToolProgress(event.name, 'error');
       }
       return undefined;
     case 'thinking': {

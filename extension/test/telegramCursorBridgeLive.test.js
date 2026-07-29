@@ -184,6 +184,54 @@ test('postChunks splits and sends each chunk', async () => {
   assert.ok(sent.length >= 1);
 });
 
+test('postChunks sends a markdown grid as a rendered monospace block in HTML mode', async () => {
+  const sent = [];
+  await postChunks(
+    'token',
+    '-100',
+    7,
+    ['| Stage | Result |', '|--|--|', '| QA | **PASS** |'].join('\n'),
+    undefined,
+    async (_t, _c, chunk, _r, _p, _topic, _b, parseMode) => {
+      sent.push({ chunk, parseMode });
+      return { success: true };
+    }
+  );
+  assert.deepEqual(sent, [
+    {
+      chunk: ['<pre>Stage | Result', '------+-------', 'QA    | PASS</pre>'].join('\n'),
+      parseMode: 'HTML',
+    },
+  ]);
+});
+
+test('postChunks re-sends as plain text when Telegram refuses to parse the HTML', async () => {
+  const sent = [];
+  await postChunks('token', '-100', 7, 'ran **compile**', undefined, async (_t, _c, chunk, _r, _p, _topic, _b, parseMode) => {
+    sent.push({ chunk, parseMode });
+    return parseMode === 'HTML'
+      ? { success: false, error: "Bad Request: can't parse entities" }
+      : { success: true };
+  });
+  assert.deepEqual(sent, [
+    { chunk: 'ran <b>compile</b>', parseMode: 'HTML' },
+    { chunk: 'ran compile', parseMode: undefined },
+  ]);
+});
+
+test('postChunks does not retry a transient failure as plain text', async () => {
+  const sent = [];
+  await assert.rejects(
+    () =>
+      postChunks('token', '-100', 7, 'hi', undefined, async (_t, _c, chunk, _r, _p, _topic, _b, parseMode) => {
+        sent.push(parseMode);
+        return parseMode === 'HTML' ? { success: false, error: 'Telegram API 429: retry after 3' } : { success: true };
+      }),
+    /429/
+  );
+  assert.deepEqual(sent, ['HTML']);
+});
+
 test('postChunks surfaces send failures', async () => {
   await assert.rejects(
     () =>

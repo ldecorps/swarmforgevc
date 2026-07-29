@@ -21,7 +21,6 @@ import {
   gateBusy,
   shouldResetCursorAgentSession,
   parseCursorBridgeState,
-  splitTelegramChunks,
   type CursorBridgePersistedState,
 } from './telegramCursorBridgeCore';
 import type { CursorBridgeAgentSessionDeps } from '../bridge/cursorBridgeAgentSession';
@@ -31,6 +30,13 @@ import {
   downloadTelegramPhotoAsSdkImage,
   largestTelegramPhotoFileId,
 } from '../bridge/cursorBridgeTelegramMedia';
+import { detectProgressLocale } from '../bridge/progressLocale';
+import {
+  markdownToTelegramHtml,
+  shouldRetryTelegramPostAsPlainText,
+  splitTelegramHtmlChunks,
+  telegramHtmlToPlainText,
+} from '../bridge/cursorBridgeTelegramHtml';
 import { createThrottledProgressReporter } from '../bridge/cursorBridgeProgress';
 import {
   beginActiveRun,
@@ -164,6 +170,37 @@ export type PostChunksFn = (
   replyToMessageId?: number
 ) => Promise<void>;
 
+function sendFailure(error: string | undefined): Error {
+  return new Error(error ?? 'sendTelegramMessage failed');
+}
+
+// One rendered chunk: HTML first, then plain text if Telegram refused to parse
+// it, so a reply is never lost to its own formatting.
+async function postRenderedChunk(
+  sendMessage: typeof sendTelegramMessageWithRateLimitRetry,
+  token: string,
+  chatId: string,
+  topicId: number,
+  chunk: string,
+  replyToMessageId?: number
+): Promise<void> {
+  const rendered = await sendMessage(token, chatId, chunk, replyToMessageId, undefined, topicId, undefined, 'HTML');
+  if (rendered.success) {
+    return;
+  }
+  if (!shouldRetryTelegramPostAsPlainText(rendered.error)) {
+    throw sendFailure(rendered.error);
+  }
+  const plain = telegramHtmlToPlainText(chunk);
+  const retry = await sendMessage(token, chatId, plain, replyToMessageId, undefined, topicId);
+  if (!retry.success) {
+    throw sendFailure(retry.error);
+  }
+}
+
+// BL-696 amendment: an agent reply is markdown, and the Cursor Remote topic is
+// read on a phone — so it goes out RENDERED (grids as monospace blocks,
+// emphasis as HTML) rather than as raw pipes and asterisks.
 export async function postChunks(
   token: string,
   chatId: string,
@@ -172,12 +209,8 @@ export async function postChunks(
   replyToMessageId?: number,
   sendMessage: typeof sendTelegramMessageWithRateLimitRetry = sendTelegramMessageWithRateLimitRetry
 ): Promise<void> {
-  const chunks = splitTelegramChunks(text);
-  for (const chunk of chunks) {
-    const result = await sendMessage(token, chatId, chunk, replyToMessageId, undefined, topicId);
-    if (!result.success) {
-      throw new Error(result.error ?? 'sendTelegramMessage failed');
-    }
+  for (const chunk of splitTelegramHtmlChunks(markdownToTelegramHtml(text))) {
+    await postRenderedChunk(sendMessage, token, chatId, topicId, chunk, replyToMessageId);
   }
 }
 
@@ -356,7 +389,11 @@ async function handlePromptInboundAction(
     return ctx.busy;
   }
   const promptMessage = resolved.message;
-  beginActiveRun(previewPromptForActiveRun(promptMessage));
+  const localeSource = typeof promptMessage === 'string' ? promptMessage : promptMessage.text;
+  beginActiveRun(
+    previewPromptForActiveRun(promptMessage),
+    detectProgressLocale(localeSource)
+  );
   const reportProgress = createThrottledProgressReporter(TELEGRAM_PROGRESS_MIN_INTERVAL_MS, (line) => {
     recordActiveRunProgress(line);
     return postInboundReply(ctx, topicId, line, undefined);

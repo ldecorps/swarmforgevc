@@ -565,7 +565,14 @@ export async function getTelegramUpdates(
   timeoutSeconds: number,
   postFn: TelegramPostFn = defaultPost
 ): Promise<GetUpdatesResult> {
-  const body = JSON.stringify({ offset, timeout: timeoutSeconds });
+  // Always pin allowed_updates. Telegram remembers the last non-empty
+  // filter across deleteWebhook / getUpdates calls ("If not specified, the
+  // previous setting will be used"), so a one-shot setWebhook/getUpdates
+  // that asked only for `message` permanently starved Approve taps
+  // (`callback_query`) until something reset it — live 2026-07-28.
+  // Empty list = all default types (includes callback_query; excludes
+  // chat_member / message_reaction* per Bot API).
+  const body = JSON.stringify({ offset, timeout: timeoutSeconds, allowed_updates: [] });
   const result = await callTelegramApi(token, 'getUpdates', body, postFn);
   if (!result.success) {
     return { success: false, updates: [], error: result.error };
