@@ -10,12 +10,15 @@ Tetris and Mega Man — alongside the existing Zappa set.
 - Title line still shows the chosen song name.
 - Picker still avoids repeating the same song immediately.
 - Android float companion hold music catalog mirrors the Mini App list.
+- On the Android panel, **Playlist** can pin one tune or stay on shuffle;
+  volume for hold music and reply voice is under **Settings**.
 
 ## How to hear them
 
 1. Open Let's Talk (Mini App or Android bubble panel).
-2. Leave **Hold music** on.
-3. Send a turn and wait in **thinking** — a random catalog track plays quietly.
+2. Leave **Hold music** on (Android: Settings checkbox).
+3. Send a turn and wait in **thinking** — a catalog track plays quietly
+   (shuffle, or the Android-pinned choice).
 4. Toggle Hold music off or **Pause all** to silence it.
 
 ## Out of scope

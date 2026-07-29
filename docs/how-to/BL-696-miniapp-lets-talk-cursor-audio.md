@@ -40,6 +40,9 @@ Telegram topic, including numbered choice polls when the reply lists options.
   mirror, `/redeploy miniapp`, miniapp watchdog.
 - [Floating minimize](BL-706-lets-talk-floating-minimized-chat.md)
   (2026-07-29) — compact draggable bubble with record + pause + expand.
+- [Android floating overlay companion](BL-707-android-floating-overlay-companion.md)
+  (2026-07-29) — native bubble over other apps; home hands-free with
+  settings, volume, and playlist.
 
 ## Record a Turn
 

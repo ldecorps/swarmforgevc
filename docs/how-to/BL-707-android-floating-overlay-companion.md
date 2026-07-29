@@ -3,12 +3,19 @@
 Native system overlay bubble for SwarmForge. Distinct from Mini App
 minimize (BL-706): this bubble can stay visible while you leave Telegram.
 
+Current debug line: **BL-707 v0.3.8-home-handsfree** (`versionCode` 24). Confirm
+that string on the pairing screen status line after you install.
+
 ## What you get
 
-- Movable floating bubble over other apps
-- Tap to expand a mini panel
-- Discrete text turns to the existing Let's Talk bridge (same console bearer)
-- Collapse / stop removes the overlay
+- Movable floating bubble over other apps (phase shown by bubble color)
+- Tap to expand a Let's Talk panel; long-press the bubble to pause / resume all
+- Voice and typed turns to the existing Let's Talk bridge (same console bearer)
+- Hands-free listening that continues while collapsed to the bubble
+- Settings: hold music, mute, playback volume (default 55%)
+- Playlist: shuffle or pin a preferred hold-music tune
+- Day-to-day: open the app → bubble auto-starts and the pairing UI finishes away
+- Collapse hides the panel only; **Stop** or drag-to-X tears the overlay down
 
 ## Sideload (debug APK)
 
@@ -32,19 +39,21 @@ android/scripts/publish-apk.sh
 ```
 
 That copies into `.swarmforge/operator/public/` (Cloudflare tunnel). Prefer the
-**versioned** filename (e.g. `swarmforge-float-companion-0.1.2-BL707.apk`) so
-browsers/CDNs cannot keep serving a cached older APK via HTTP 304.
+**versioned** filename (e.g.
+`swarmforge-float-companion-0.3.8-home-handsfree.apk`) so browsers/CDNs cannot
+keep serving a cached older APK via HTTP 304.
 
 On the phone: **install the new APK over the existing app** (do not
-uninstall). Pairing (bridge URL + token) is kept in app prefs across
-updates. Confirm the status line shows the matching version (e.g.
-`BL-707 v0.2.4`) before Start bubble.
+uninstall). Pairing (bridge URL + token) and talk prefs (volume, mute, hold
+music, preferred song) stay in app storage across updates. Confirm the status
+line shows the matching version (e.g. `BL-707 v0.3.8-home-handsfree`) before
+you rely on new controls.
 
 If you do uninstall: choose **Keep app data** when Android asks, or rely
 on the `Download/swarmforge-float-pairing.json` mirror the app writes —
 open the new install and the fields should refill.
 
-## Pair
+## Pair (first run or re-pair)
 
 1. Open the app.
 2. Paste your bridge base URL (same host as the Mini App), e.g. the
@@ -54,6 +63,10 @@ open the new install and the fields should refill.
 4. Grant **Display over other apps**.
 5. Tap **Start bubble**.
 
+When URL, token, and overlay permission are already good, launching the app
+**auto-starts the bubble** and leaves the pairing screen. To change URL or
+token later: open **Settings** on the talk panel → **Edit pairing**.
+
 ## Talk
 
 Tap the bubble. You get a **Let's Talk**-style panel:
@@ -61,9 +74,16 @@ Tap the bubble. You get a **Let's Talk**-style panel:
 - **Record** — hold/tap to capture a voice turn (same `/lets-talk/turn` audio path)
 - **Hands-free** — auto-listen after the reply finishes (keeps listening
   while the panel is collapsed to the bubble; bubble color shows phase)
-- **Hold music** — chiptune while thinking (same Zappa set as the Mini App)
-- **Mute** — skip speaking the reply
-- **Pause all** — stops mic, playback, and hold music
+- **Hold music** — chiptune while thinking (same catalog as the Mini App,
+  including BL-705 iconics). Toggle lives under **Settings**
+- **Playlist** — shuffle, or pin one tune for the next hold loop; stop music
+  from the same dialog
+- **Mute** — skip speaking the reply (Settings)
+- **Volume** — shared loudness for hold music and reply voice, 0–100,
+  default 55 (Settings; live while playing)
+- **Pause all** — stops mic, playback, and hold music (panel control, or
+  long-press the bubble)
+- **New session** — clears the shared Cursor agent id (same idea as Mini App `/new`)
 - Optional text field for typed turns
 - **Collapse** — hides the panel, shows the bubble; does **not** stop
   hands-free / mid-turn mic (owned by the overlay service)
@@ -73,10 +93,10 @@ Grant **microphone** when Android asks (first Record).
 
 ## Stop
 
-Use **Stop bubble** in the app, the stop control on the mini panel, or
+Use **Stop** on the mini panel, **Stop bubble** on the pairing screen, or
 **drag the bubble down onto the red X** that appears at the bottom while
 dragging (Messenger-style dismiss). The overlay must disappear; start
-again later when you want it.
+again later when you want it (opening the app is enough once paired).
 
 ## Android Studio (optional)
 
