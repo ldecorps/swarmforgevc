@@ -3,7 +3,7 @@ title: "Cursor /pilot: quality over speed and first-class bounce-backs"
 milestone: M8
 type: feature
 severity: medium
-status: todo
+status: done
 epic: swarmforge-console
 human_approval: approved
 priority: 03
@@ -59,4 +59,4 @@ description: |
   - BL-699 pilot-quality-05 — offline mode, no expedite_cli/claude -p, worktree
     isolation, expedite-lock gate unchanged
 
-assigned_to: coder
+assigned_to: QA
