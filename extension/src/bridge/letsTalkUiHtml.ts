@@ -1,6 +1,7 @@
-// BL-696 / BL-697: Telegram Mini App shell for Let's Talk — discrete audio
-// turns with optional hands-free listening (auto-start after playback,
-// auto-stop on silence). Browser captures audio; STT runs server-side.
+// BL-696 / BL-697 / BL-706: Telegram Mini App shell for Let's Talk — discrete
+// audio turns with optional hands-free listening, plus minimize-to-floating
+// meter bubble (draggable; record + pause + reply). Browser captures audio;
+// STT runs server-side.
 
 import {
   LETS_TALK_HANDS_FREE_MAX_LISTEN_MS,
@@ -8,6 +9,8 @@ import {
   LETS_TALK_HANDS_FREE_SILENCE_MS,
   LETS_TALK_HANDS_FREE_SPEECH_LEVEL_THRESHOLD,
   LETS_TALK_HANDS_FREE_STORAGE_KEY,
+  LETS_TALK_MINIMIZED_STORAGE_KEY,
+  LETS_TALK_FLOAT_POS_STORAGE_KEY,
 } from './letsTalkCore';
 
 export function getLetsTalkUiHtml(speechLocale = 'en-US'): string {
@@ -189,6 +192,120 @@ export function getLetsTalkUiHtml(speechLocale = 'en-US'): string {
     color: var(--tg-theme-hint-color, #8b949e);
     font-style: italic;
   }
+  /* BL-706: compact chat-head bubble (round mic face + rim dots) */
+  button.chrome {
+    padding: 6px 10px;
+    border-radius: 8px;
+    border: 1px solid color-mix(in srgb, var(--tg-theme-hint-color, #8b949e) 45%, #000);
+    background: color-mix(in srgb, var(--tg-theme-bg-color, #0d1117) 88%, #fff 8%);
+    color: var(--tg-theme-text-color, #e6edf3);
+    font-size: 13px;
+    cursor: pointer;
+    flex: 0 0 auto;
+  }
+  .float-drag {
+    display: none;
+  }
+  .float-actions {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    gap: 12px;
+    justify-content: center;
+    align-items: center;
+  }
+  html.lets-talk-minimized,
+  body.lets-talk-minimized {
+    background: transparent !important;
+    min-height: 0 !important;
+    height: 100%;
+    overflow: hidden;
+  }
+  body.lets-talk-minimized header {
+    display: none;
+  }
+  body.lets-talk-minimized .full-only,
+  body.lets-talk-minimized .transcript,
+  body.lets-talk-minimized .error,
+  body.lets-talk-minimized .state,
+  body.lets-talk-minimized .float-drag {
+    display: none !important;
+  }
+  body.lets-talk-minimized main {
+    position: fixed;
+    z-index: 40;
+    width: 64px;
+    height: 64px;
+    max-width: calc(100vw - 12px);
+    gap: 0;
+    padding: 0;
+    border-radius: 50%;
+    border: 2px solid color-mix(in srgb, #3fb950 55%, #8b949e);
+    background: color-mix(in srgb, var(--tg-theme-bg-color, #0d1117) 88%, #238636 12%);
+    box-shadow: 0 6px 20px color-mix(in srgb, #000 55%, transparent);
+    align-items: center;
+    justify-content: center;
+    touch-action: none;
+    cursor: grab;
+  }
+  body.lets-talk-minimized main:active {
+    cursor: grabbing;
+  }
+  body.lets-talk-minimized .float-actions {
+    position: absolute;
+    left: 50%;
+    bottom: -26px;
+    transform: translateX(-50%);
+    flex-direction: row;
+    width: auto;
+    gap: 6px;
+    z-index: 2;
+  }
+  body.lets-talk-minimized button.record {
+    width: 56px;
+    height: 56px;
+    margin: 0;
+    padding: 0;
+    border-width: 0;
+    border-radius: 50%;
+    font-size: 22px;
+    line-height: 1;
+    background: transparent;
+    color: var(--tg-theme-text-color, #e6edf3);
+    box-shadow: none;
+  }
+  body.lets-talk-minimized button.record[aria-pressed="true"] {
+    color: #ff7b72;
+    box-shadow: 0 0 0 3px color-mix(in srgb, #f85149 45%, transparent);
+  }
+  body.lets-talk-minimized button.secondary.warn,
+  body.lets-talk-minimized #expand-float {
+    width: 24px;
+    min-width: 24px;
+    height: 24px;
+    padding: 0;
+    border-radius: 50%;
+    font-size: 11px;
+    line-height: 1;
+    flex: 0 0 auto;
+    box-shadow: 0 2px 8px color-mix(in srgb, #000 45%, transparent);
+  }
+  #expand-float {
+    display: none;
+  }
+  body.lets-talk-minimized #expand-float {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  body.lets-talk-minimized #pause-all {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  #minimize {
+    margin-left: auto;
+  }
 </style>
 </head>
 <body>
@@ -202,30 +319,35 @@ export function getLetsTalkUiHtml(speechLocale = 'en-US'): string {
       <span class="badge" id="pwa-install-indicator" data-testid="lets-talk-pwa-install-indicator" data-state="inactive"><span class="dot" aria-hidden="true"></span><span id="pwa-install-text">install: checking</span></span>
     </div>
   </div>
+  <button type="button" class="chrome" id="minimize" data-testid="lets-talk-minimize" aria-label="Minimize to floating bubble">Minimize</button>
 </header>
-<main>
+<main id="lets-talk-main" data-testid="lets-talk-main">
+  <div class="float-drag" id="float-drag" data-testid="lets-talk-float-drag" aria-label="Drag floating bubble" hidden></div>
   <p class="state" id="state" data-testid="lets-talk-state" data-phase="ready">ready</p>
-  <label class="hands-free" id="hands-free-label">
+  <label class="hands-free full-only" id="hands-free-label">
     <input type="checkbox" id="hands-free" data-testid="lets-talk-hands-free" />
     Hands-free
   </label>
-  <label class="hands-free" id="mute-label">
+  <label class="hands-free full-only" id="mute-label">
     <input type="checkbox" id="mute" data-testid="lets-talk-mute" />
     Mute voice playback
   </label>
-  <label class="hands-free" id="wake-lock-label">
+  <label class="hands-free full-only" id="wake-lock-label">
     <input type="checkbox" id="wake-lock-toggle" data-testid="lets-talk-wake-lock-toggle" />
     Keep screen awake
   </label>
-  <label class="hands-free" id="hold-music-label">
+  <label class="hands-free full-only" id="hold-music-label">
     <input type="checkbox" id="hold-music-toggle" data-testid="lets-talk-hold-music" checked />
     Hold music
   </label>
-  <span class="hold-music-title" id="hold-music-title" data-testid="lets-talk-hold-music-title" hidden></span>
+  <span class="hold-music-title full-only" id="hold-music-title" data-testid="lets-talk-hold-music-title" hidden></span>
   <button type="button" class="record" id="record" data-testid="lets-talk-record" aria-pressed="false">Record</button>
-  <button type="button" class="secondary warn" id="pause-all" data-testid="lets-talk-pause-all" aria-pressed="false">Pause all</button>
-  <button type="button" class="secondary" id="pwa-install" data-testid="lets-talk-pwa-install">Install app</button>
-  <button type="button" class="secondary" id="new-session" data-testid="lets-talk-new-session">New session</button>
+  <div class="float-actions" id="float-actions">
+    <button type="button" class="secondary warn" id="pause-all" data-testid="lets-talk-pause-all" aria-pressed="false" aria-label="Pause all">Pause all</button>
+    <button type="button" class="secondary" id="expand-float" data-testid="lets-talk-expand" aria-label="Expand full Let's Talk page">Expand</button>
+  </div>
+  <button type="button" class="secondary full-only" id="pwa-install" data-testid="lets-talk-pwa-install">Install app</button>
+  <button type="button" class="secondary full-only" id="new-session" data-testid="lets-talk-new-session">New session</button>
   <p class="transcript" id="transcript" data-testid="lets-talk-transcript" hidden></p>
   <p class="error" id="error" data-testid="lets-talk-error" hidden></p>
 </main>
@@ -291,6 +413,8 @@ export function getLetsTalkUiHtml(speechLocale = 'en-US'): string {
   var STT_RETRY_BUDGET = 3;
   var DEFAULT_SPEECH_LOCALE = ${JSON.stringify(speechLocale)};
   var HANDS_FREE_STORAGE_KEY = ${JSON.stringify(LETS_TALK_HANDS_FREE_STORAGE_KEY)};
+  var MINIMIZED_STORAGE_KEY = ${JSON.stringify(LETS_TALK_MINIMIZED_STORAGE_KEY)};
+  var FLOAT_POS_STORAGE_KEY = ${JSON.stringify(LETS_TALK_FLOAT_POS_STORAGE_KEY)};
   var MUTE_STORAGE_KEY = 'lets-talk-muted';
   var WAKE_LOCK_STORAGE_KEY = 'lets-talk-wake-lock-enabled';
   var HANDS_FREE_SILENCE_MS = ${LETS_TALK_HANDS_FREE_SILENCE_MS};
@@ -802,19 +926,40 @@ export function getLetsTalkUiHtml(speechLocale = 'en-US'): string {
   }
 
   function updateRecordButton() {
+    var mini = document.body.classList.contains('lets-talk-minimized');
     if (recording) {
       recordBtn.setAttribute('aria-pressed', 'true');
-      recordBtn.textContent = handsFreeEnabled ? 'Listening' : 'Stop';
+      if (mini) {
+        recordBtn.textContent = '⏹';
+        recordBtn.setAttribute('aria-label', handsFreeEnabled ? 'Listening — tap to stop' : 'Stop recording');
+      } else {
+        recordBtn.textContent = handsFreeEnabled ? 'Listening' : 'Stop';
+        recordBtn.removeAttribute('aria-label');
+      }
       return;
     }
     recordBtn.setAttribute('aria-pressed', 'false');
-    recordBtn.textContent = 'Record';
+    if (mini) {
+      recordBtn.textContent = '🎤';
+      recordBtn.setAttribute('aria-label', 'Record');
+    } else {
+      recordBtn.textContent = 'Record';
+      recordBtn.removeAttribute('aria-label');
+    }
+  }
+
+  function updatePauseAllLabel() {
+    pauseAllBtn.setAttribute('aria-pressed', pausedAll ? 'true' : 'false');
+    if (document.body.classList.contains('lets-talk-minimized')) {
+      pauseAllBtn.textContent = pausedAll ? '▶' : '⏸';
+      return;
+    }
+    pauseAllBtn.textContent = pausedAll ? 'Resume' : 'Pause all';
   }
 
   function setPauseAll(nextPaused) {
     pausedAll = !!nextPaused;
-    pauseAllBtn.setAttribute('aria-pressed', pausedAll ? 'true' : 'false');
-    pauseAllBtn.textContent = pausedAll ? 'Resume' : 'Pause all';
+    updatePauseAllLabel();
     if (pausedAll) {
       muted = true;
       muteEl.checked = true;
@@ -1282,6 +1427,164 @@ export function getLetsTalkUiHtml(speechLocale = 'en-US'): string {
       setPhase('ready');
     });
   };
+
+  // BL-706: minimize full page into a compact chat-head bubble.
+  var mainEl = document.getElementById('lets-talk-main');
+  var minimizeBtn = document.getElementById('minimize');
+  var expandBtn = document.getElementById('expand-float');
+  var minimized = false;
+  var dragState = null;
+  var BUBBLE_W = 64;
+  var BUBBLE_H = 92;
+
+  function clampFloatPos(left, top) {
+    var maxLeft = Math.max(8, window.innerWidth - (mainEl.offsetWidth || BUBBLE_W) - 8);
+    var maxTop = Math.max(8, window.innerHeight - (mainEl.offsetHeight || BUBBLE_H) - 8);
+    return {
+      left: Math.min(Math.max(8, left), maxLeft),
+      top: Math.min(Math.max(8, top), maxTop),
+    };
+  }
+
+  function readSavedFloatPos() {
+    try {
+      var raw = localStorage.getItem(FLOAT_POS_STORAGE_KEY);
+      if (!raw) return null;
+      var parsed = JSON.parse(raw);
+      if (typeof parsed.left !== 'number' || typeof parsed.top !== 'number') return null;
+      return parsed;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function persistFloatPos(left, top) {
+    try {
+      localStorage.setItem(FLOAT_POS_STORAGE_KEY, JSON.stringify({ left: left, top: top }));
+    } catch (_) {}
+  }
+
+  function applyFloatPos(left, top) {
+    var pos = clampFloatPos(left, top);
+    mainEl.style.left = pos.left + 'px';
+    mainEl.style.top = pos.top + 'px';
+    mainEl.style.right = 'auto';
+    mainEl.style.bottom = 'auto';
+    return pos;
+  }
+
+  function defaultFloatPos() {
+    return {
+      left: Math.max(8, window.innerWidth - (BUBBLE_W + 16)),
+      top: Math.max(8, window.innerHeight - (BUBBLE_H + 24)),
+    };
+  }
+
+  function syncMinimizedChrome() {
+    if (expandBtn) {
+      expandBtn.textContent = minimized ? '↗' : 'Expand';
+    }
+    updatePauseAllLabel();
+    updateRecordButton();
+  }
+
+  function setTelegramFloatChrome(on) {
+    if (!tg) return;
+    try {
+      if (on && typeof tg.setBackgroundColor === 'function') {
+        tg.setBackgroundColor('#00000000');
+      } else if (!on && typeof tg.setBackgroundColor === 'function' && tg.themeParams && tg.themeParams.bg_color) {
+        tg.setBackgroundColor(tg.themeParams.bg_color);
+      }
+    } catch (_) {}
+  }
+
+  function setMinimized(next) {
+    minimized = !!next;
+    document.documentElement.classList.toggle('lets-talk-minimized', minimized);
+    document.body.classList.toggle('lets-talk-minimized', minimized);
+    document.body.setAttribute('data-minimized', minimized ? 'true' : 'false');
+    try {
+      localStorage.setItem(MINIMIZED_STORAGE_KEY, minimized ? '1' : '0');
+    } catch (_) {}
+    syncMinimizedChrome();
+    setTelegramFloatChrome(minimized);
+    if (minimized) {
+      var saved = readSavedFloatPos() || defaultFloatPos();
+      applyFloatPos(saved.left, saved.top);
+      if (tg && typeof tg.disableVerticalSwipes === 'function') {
+        try { tg.disableVerticalSwipes(); } catch (_) {}
+      }
+    } else {
+      mainEl.style.left = '';
+      mainEl.style.top = '';
+      mainEl.style.right = '';
+      mainEl.style.bottom = '';
+      if (tg && typeof tg.enableVerticalSwipes === 'function') {
+        try { tg.enableVerticalSwipes(); } catch (_) {}
+      }
+    }
+  }
+
+  if (minimizeBtn) {
+    minimizeBtn.onclick = function () { setMinimized(true); };
+  }
+  if (expandBtn) {
+    expandBtn.onclick = function () { setMinimized(false); };
+  }
+
+  function dragTargetIsControl(el) {
+    if (!el || !mainEl) return false;
+    var node = el;
+    while (node && node !== mainEl) {
+      if (node.tagName === 'BUTTON' || node.tagName === 'A' || node.tagName === 'INPUT' || node.tagName === 'LABEL') {
+        return true;
+      }
+      node = node.parentElement;
+    }
+    return false;
+  }
+
+  function onDragPointerDown(ev) {
+    if (!minimized) return;
+    if (dragTargetIsControl(ev.target)) return;
+    dragState = {
+      pointerId: ev.pointerId,
+      startX: ev.clientX,
+      startY: ev.clientY,
+      origLeft: mainEl.offsetLeft,
+      origTop: mainEl.offsetTop,
+    };
+    try { mainEl.setPointerCapture(ev.pointerId); } catch (_) {}
+    ev.preventDefault();
+  }
+  function onDragPointerMove(ev) {
+    if (!dragState || ev.pointerId !== dragState.pointerId) return;
+    var nextLeft = dragState.origLeft + (ev.clientX - dragState.startX);
+    var nextTop = dragState.origTop + (ev.clientY - dragState.startY);
+    applyFloatPos(nextLeft, nextTop);
+  }
+  function onDragPointerUp(ev) {
+    if (!dragState || ev.pointerId !== dragState.pointerId) return;
+    var pos = applyFloatPos(mainEl.offsetLeft, mainEl.offsetTop);
+    persistFloatPos(pos.left, pos.top);
+    dragState = null;
+  }
+  if (mainEl) {
+    mainEl.addEventListener('pointerdown', onDragPointerDown);
+    mainEl.addEventListener('pointermove', onDragPointerMove);
+    mainEl.addEventListener('pointerup', onDragPointerUp);
+    mainEl.addEventListener('pointercancel', onDragPointerUp);
+  }
+  window.addEventListener('resize', function () {
+    if (!minimized) return;
+    applyFloatPos(mainEl.offsetLeft || defaultFloatPos().left, mainEl.offsetTop || defaultFloatPos().top);
+  });
+  try {
+    if (localStorage.getItem(MINIMIZED_STORAGE_KEY) === '1') {
+      setMinimized(true);
+    }
+  } catch (_) {}
 
   document.addEventListener('visibilitychange', function () {
     if (document.visibilityState === 'visible') {

@@ -14,7 +14,10 @@ prompt is the contract for how the agent wears every pipeline hat.
    Do not rush a QA stamp.
 3. **Human questions use a Telegram poll** on Cursor Remote — clear question
    plus discrete options; wait for the vote. Free-text-only asks are not enough.
-   Poll send helpers may still grow; the prompt rule is already in force.
+   **Every poll must include an extra option labeled exactly `Need more detail`**
+   so the human can say they lack context to answer. If that option wins, the
+   pilot posts a richer brief (or fewer sharper polls) and asks again — silence
+   is not consent. Poll send helpers may still grow; the prompt rule is in force.
 
 ## What stays unchanged
 

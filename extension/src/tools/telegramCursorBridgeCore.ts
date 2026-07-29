@@ -86,7 +86,8 @@ export type CursorBridgeDecision =
   | { action: 'execute-operator'; verb: string; args?: string }
   | { action: 'stop-and-run'; verb: string; args?: string }
   | { action: 'run-anyway'; verb: string; args?: string }
-  | { action: 'land-sleep'; answer: 'yes' | 'no' };
+  | { action: 'land-sleep'; answer: 'yes' | 'no' }
+  | { action: 'stop-mode'; mode: 'drain' | 'emergency' };
 
 export type EnsureCursorTopicAction = { kind: 'reuse'; topicId: number } | { kind: 'create' };
 
@@ -305,6 +306,9 @@ function decideInboundContent(
     }
     if (special.action === 'land-sleep') {
       return { action: 'land-sleep', answer: special.answer };
+    }
+    if (special.action === 'stop-mode') {
+      return { action: 'stop-mode', mode: special.mode };
     }
     const mapped = mapOperatorConfirmDecision(
       decideOperatorConfirmCallback(pending, event.callbackData)

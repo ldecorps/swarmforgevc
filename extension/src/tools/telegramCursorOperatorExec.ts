@@ -37,6 +37,11 @@ import {
   applyOncall,
 } from './telegramCursorOperatorPolicy';
 import { readPipelineStages } from '../swarm/swarmState';
+import { drainAgentSessions } from '../swarm/swarmStopper';
+import { parkToHold, reinstateFromHold } from '../panel/backlogWriter';
+import { engageOperatorAmbulance, releaseOperatorAmbulance } from './telegramOperatorAmbulance';
+import { isPipelineEmpty } from './telegram-front-desk-bot';
+import { decideDrainOutcome } from './telegramControlCore';
 
 function bounceSentinelPath(repoRoot: string): string {
   return path.join(repoRoot, '.swarmforge', 'bounce');
@@ -241,6 +246,97 @@ export function runOperatorStop(repoRoot: string): string {
   return `stop: reported error (exit ${result.status})\n${out.slice(0, 1500)}`;
 }
 
+/** /kill-all — hard kill, distinct label from /stop. */
+export function runOperatorKillAll(repoRoot: string): string {
+  const text = runOperatorStop(repoRoot);
+  return text.replace(/^stop:/, 'kill-all:');
+}
+
+function executeHold(repoRoot: string, args?: string): OperatorExecuteResult {
+  const id = (args ?? '').trim().toUpperCase();
+  if (!/^BL-\d+$/.test(id)) {
+    return { text: `hold: need BL-xxx (got ${args || '(empty)'}).`, wroteBounceSentinel: false };
+  }
+  const result = parkToHold(repoRoot, id);
+  if (!result.moved) {
+    return { text: `hold: ${id} not found under backlog/active/ or backlog/paused/.`, wroteBounceSentinel: false };
+  }
+  return { text: `hold: ${id} parked under backlog/hold/.`, wroteBounceSentinel: false };
+}
+
+function executeReinstate(repoRoot: string, args?: string): OperatorExecuteResult {
+  const id = (args ?? '').trim().toUpperCase();
+  if (!/^BL-\d+$/.test(id)) {
+    return { text: `reinstate: need BL-xxx (got ${args || '(empty)'}).`, wroteBounceSentinel: false };
+  }
+  const result = reinstateFromHold(repoRoot, id);
+  if (!result.moved) {
+    return { text: `reinstate: ${id} not found under backlog/hold/.`, wroteBounceSentinel: false };
+  }
+  return { text: `reinstate: ${id} restored to backlog/paused/.`, wroteBounceSentinel: false };
+}
+
+function executeAmbulance(repoRoot: string, args?: string): OperatorExecuteResult {
+  const rest = (args ?? '').trim();
+  if (!rest || /^off$/i.test(rest)) {
+    const released = releaseOperatorAmbulance(repoRoot);
+    return { text: released.text, wroteBounceSentinel: false };
+  }
+  const engaged = engageOperatorAmbulance(repoRoot, rest);
+  return { text: engaged.text, wroteBounceSentinel: false };
+}
+
+function executeDrainAgents(repoRoot: string): OperatorExecuteResult {
+  const result = drainAgentSessions(repoRoot);
+  return { text: result.message, wroteBounceSentinel: false };
+}
+
+/**
+ * /drain-swarm — if already empty, report; else ask Live to wait (no kill).
+ * Sync peek uses the same isPipelineEmpty as Control.
+ */
+export function executeDrainSwarm(repoRoot: string): OperatorExecuteResult {
+  if (isPipelineEmpty(repoRoot)) {
+    return { text: 'drain-swarm: pipeline empty (no parcels in inbox/in_process).', wroteBounceSentinel: false };
+  }
+  return {
+    text: 'drain-swarm: waiting for pipeline to empty (no kill)…',
+    wroteBounceSentinel: false,
+    awaitPipelineDrain: true,
+  };
+}
+
+/** /stop with mode — emergency kills now; drain asks Live to wait then kill. */
+export function executeStopMode(repoRoot: string, mode: 'drain' | 'emergency'): OperatorExecuteResult {
+  if (mode === 'emergency') {
+    return {
+      text: `Emergency stop - tearing down immediately.\n${runOperatorStop(repoRoot)}`,
+      wroteBounceSentinel: false,
+    };
+  }
+  if (isPipelineEmpty(repoRoot)) {
+    return {
+      text: `Drain-stop: pipeline already empty.\n${runOperatorStop(repoRoot)}`,
+      wroteBounceSentinel: false,
+    };
+  }
+  return {
+    text: 'Drain-stop: draining in-flight work before stopping…',
+    wroteBounceSentinel: false,
+    awaitDrainThenKill: true,
+  };
+}
+
+/** Pure peek helper for tests: map decideDrainOutcome over isPipelineEmpty. */
+export function peekDrainOutcome(
+  repoRoot: string,
+  startedAtMs: number,
+  nowMs: number,
+  timeoutMs: number
+): 'wait' | 'drained' | 'forced' {
+  return decideDrainOutcome(isPipelineEmpty(repoRoot), startedAtMs, nowMs, timeoutMs);
+}
+
 /** /start — bounce sentinel so owning context relaunches with swarm.env merge. */
 export function runOperatorStart(repoRoot: string): string {
   writeOperatorBounceSentinel(repoRoot, 'swarm');
@@ -265,6 +361,10 @@ export type OperatorExecuteResult = {
   /** BL-703: start hydrate/mint Cursor prompt for this target. */
   hydrateTarget?: string;
   hydrateMode?: 'hydrate' | 'mint';
+  /** BL-698: Live should async-wait for empty pipeline (no kill). */
+  awaitPipelineDrain?: boolean;
+  /** BL-698: Live should drain-wait then kill (/stop drain mode). */
+  awaitDrainThenKill?: boolean;
 };
 
 function loadQueueTickets(repoRoot: string): OperatorQueueTicket[] {
@@ -490,7 +590,26 @@ export function executeOperatorVerb(
     return { text, wroteBounceSentinel: false };
   }
   if (v === '/stop') {
-    return { text: runOperatorStop(repoRoot), wroteBounceSentinel: false };
+    const mode = (args ?? '').trim().toLowerCase() === 'drain' ? 'drain' : 'emergency';
+    return executeStopMode(repoRoot, mode);
+  }
+  if (v === '/kill-all') {
+    return { text: runOperatorKillAll(repoRoot), wroteBounceSentinel: false };
+  }
+  if (v === '/drain-agents') {
+    return executeDrainAgents(repoRoot);
+  }
+  if (v === '/drain-swarm') {
+    return executeDrainSwarm(repoRoot);
+  }
+  if (v === '/hold') {
+    return executeHold(repoRoot, args);
+  }
+  if (v === '/reinstate') {
+    return executeReinstate(repoRoot, args);
+  }
+  if (v === '/ambulance') {
+    return executeAmbulance(repoRoot, args);
   }
   if (v === '/pause') {
     writeOperatorPauseState(repoRoot, { active: true });

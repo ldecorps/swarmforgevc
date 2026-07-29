@@ -1,0 +1,57 @@
+id: BL-705
+title: "Let's Talk hold music — expand chiptune catalog (Thanatos, Ghost'n Goblins, Zelda, Tron + iconics)"
+milestone: M8
+type: feature
+severity: low
+status: todo
+epic: swarmforge-console
+human_approval: approved
+priority: 20
+direction: human-requested
+depends_on: []
+mutation_cost: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+assigned_to: none
+
+invariants:
+  - "Hold music stays quiet (existing ~0.015 gain) and opt-out via the hold-music toggle / Pause all."
+  - "No full commercial soundtrack dumps as binary assets; ship short homage/approximation loops in the existing Web Audio step catalog unless a later ticket scopes licensed YM playback."
+  - "Catalog expansion must not break title display or the avoid-immediate-repeat picker."
+
+approval_context: >
+  Human asked to mint GitHub issue #28 (2026-07-29). Confirmed no YM
+  attachments could be added to the issue; source inspiration remains
+  https://www.genesis8bit.fr and public chiptune refs. YM decoder deferred.
+
+description: |
+  ## What
+
+  Expand Let's Talk **hold music** (`chiptuneSongs` in
+  `extension/src/bridge/letsTalkUiHtml.ts`) with well-known chiptune themes.
+
+  ## Named asks
+
+  - Thanatos (1986) — favorite; YM referenced at genesis8bit.fr (no file on GH #28)
+  - Ghost'n Goblins
+  - Zelda
+  - Tron
+  - Other iconic themes the implementer can reasonably approximate
+
+  ## Approach
+
+  Prefer additive entries in the existing step-sequence player (name + bpm +
+  4-channel steps). Do **not** build an Atari ST YM decoder in this ticket.
+
+  ## Out of scope
+
+  - YM file loader / streaming YM playback engine
+  - Replacing the existing Zappa-adjacent set (additive unless amended)
+  - Hold-music / Pause-all UX changes
+
+acceptance: specs/features/BL-705-lets-talk-more-chiptunes.feature
+
+source: |
+  https://github.com/ldecorps/swarmforgevc/issues/28
+  Drained from `.swarmforge/operator/INTAKE-lets-talk-more-chiptunes.md`
+  (and backlog/INTAKE-lets-talk-more-chiptunes.md). Human: no YM attachment
+  could be uploaded to the issue.

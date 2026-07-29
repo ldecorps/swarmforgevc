@@ -119,3 +119,58 @@ test('BL-704: holiday/shift/oncall durable under operator/', () => {
   assert.equal(raw.oncallId, '777');
   assert.ok(raw.shift);
 });
+
+test('BL-698: hold and reinstate via execute', () => {
+  const root = mkTmpDir('bl698-hold-');
+  fs.mkdirSync(path.join(root, 'backlog', 'paused'), { recursive: true });
+  fs.writeFileSync(
+    path.join(root, 'backlog', 'paused', 'BL-697.yaml'),
+    'id: BL-697\ntitle: t\nstatus: todo\n',
+    'utf8'
+  );
+  const held = executeOperatorVerb(root, '/hold', 'BL-697');
+  assert.match(held.text, /parked under backlog\/hold/);
+  assert.ok(fs.existsSync(path.join(root, 'backlog', 'hold', 'BL-697.yaml')));
+  const back = executeOperatorVerb(root, '/reinstate', 'BL-697');
+  assert.match(back.text, /restored to backlog\/paused/);
+});
+
+test('BL-698: ambulance engage and release via execute', () => {
+  const root = mkTmpDir('bl698-amb-');
+  fs.mkdirSync(path.join(root, 'backlog', 'paused'), { recursive: true });
+  fs.writeFileSync(
+    path.join(root, 'backlog', 'paused', 'BL-698.yaml'),
+    'id: BL-698\ntitle: t\nstatus: todo\n',
+    'utf8'
+  );
+  const on = executeOperatorVerb(root, '/ambulance', 'BL-698');
+  assert.match(on.text, /Ambulance engaged for BL-698/);
+  const marker = path.join(root, '.swarmforge', 'operator', 'control-ambulance.json');
+  assert.equal(JSON.parse(fs.readFileSync(marker, 'utf8')).ticket, 'BL-698');
+  const off = executeOperatorVerb(root, '/ambulance', 'off');
+  assert.match(off.text, /Ambulance released/);
+});
+
+test('BL-698: kill-all and drain-swarm execute paths', () => {
+  const root = mkTmpDir('bl698-kill-');
+  const scriptDir = path.join(root, 'swarmforge', 'scripts');
+  fs.mkdirSync(scriptDir, { recursive: true });
+  const marker = path.join(root, 'killed.marker');
+  fs.writeFileSync(
+    path.join(scriptDir, 'kill_all_swarm.sh'),
+    `#!/usr/bin/env bash\necho ok > "${marker}"\nexit 0\n`,
+    'utf8'
+  );
+  fs.chmodSync(path.join(scriptDir, 'kill_all_swarm.sh'), 0o755);
+  const kill = executeOperatorVerb(root, '/kill-all');
+  assert.match(kill.text, /kill-all:/);
+  assert.equal(fs.readFileSync(marker, 'utf8').trim(), 'ok');
+  const drain = executeOperatorVerb(root, '/drain-swarm');
+  assert.match(drain.text, /drain-swarm:/);
+});
+
+test('BL-698: drain-agents reports when no socket', () => {
+  const root = mkTmpDir('bl698-agents-');
+  const result = executeOperatorVerb(root, '/drain-agents');
+  assert.match(result.text, /drain-agents:/);
+});

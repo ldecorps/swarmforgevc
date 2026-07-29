@@ -52,6 +52,8 @@ export const OPERATOR_CALLBACK_PREFIX = 'op:';
 export const OPERATOR_CALLBACK_DATA = {
   confirm: 'op:confirm',
   cancel: 'op:cancel',
+  stopDrain: 'op:stop-drain',
+  stopEmergency: 'op:stop-emergency',
 } as const;
 
 export const OPERATOR_CALLBACK_PREFIXES = {
@@ -129,12 +131,19 @@ export type OperatorSpecialCallbackDecision =
   | { action: 'cancel-pending' }
   | { action: 'stop-and-run'; verb: string; args?: string }
   | { action: 'run-anyway'; verb: string; args?: string }
-  | { action: 'land-sleep'; answer: 'yes' | 'no' };
+  | { action: 'land-sleep'; answer: 'yes' | 'no' }
+  | { action: 'stop-mode'; mode: 'drain' | 'emergency' };
 
-/** Parse Stop & run / Run anyway / land-sleep callback payloads. */
+/** Parse Stop & run / Run anyway / land-sleep / stop-mode callback payloads. */
 export function decideOperatorSpecialCallback(callbackData: string): OperatorSpecialCallbackDecision {
   if (callbackData === OPERATOR_CALLBACK_DATA.cancel) {
     return { action: 'cancel-pending' };
+  }
+  if (callbackData === OPERATOR_CALLBACK_DATA.stopDrain) {
+    return { action: 'stop-mode', mode: 'drain' };
+  }
+  if (callbackData === OPERATOR_CALLBACK_DATA.stopEmergency) {
+    return { action: 'stop-mode', mode: 'emergency' };
   }
   if (callbackData.startsWith(OPERATOR_CALLBACK_PREFIXES.stopAndRun)) {
     const rest = callbackData.slice(OPERATOR_CALLBACK_PREFIXES.stopAndRun.length).trim();
@@ -173,6 +182,10 @@ export function decideOperatorConfirmCallback(
   if (!pending) {
     return { action: 'ignore' };
   }
+  // /stop uses stop-mode buttons, not generic Confirm.
+  if (pending.verb.toLowerCase() === '/stop') {
+    return { action: 'ignore' };
+  }
   return { action: 'execute', verb: pending.verb, args: pending.args };
 }
 
@@ -209,4 +222,19 @@ export function operatorConfirmButtons(): Array<Array<{ text: string; callbackDa
       { text: 'Cancel', callbackData: OPERATOR_CALLBACK_DATA.cancel },
     ],
   ];
+}
+
+/** BL-698: /stop offers drain-stop vs emergency-stop (Control twin). */
+export function operatorStopModeButtons(): Array<Array<{ text: string; callbackData: string }>> {
+  return [
+    [
+      { text: 'Drain-stop', callbackData: OPERATOR_CALLBACK_DATA.stopDrain },
+      { text: 'Emergency-stop', callbackData: OPERATOR_CALLBACK_DATA.stopEmergency },
+    ],
+    [{ text: 'Cancel', callbackData: OPERATOR_CALLBACK_DATA.cancel }],
+  ];
+}
+
+export function formatOperatorStopModePrompt(): string {
+  return 'Stop the swarm? Choose drain-stop (wait for empty pipeline, then kill) or emergency-stop (kill now).';
 }

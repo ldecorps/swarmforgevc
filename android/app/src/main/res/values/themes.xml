@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="sf_bg">#FF0D1117</color>
+    <color name="sf_panel">#FF161B22</color>
+    <color name="sf_accent">#FF238636</color>
+    <color name="sf_text">#FFE6EDF3</color>
+    <color name="sf_muted">#FF8B949E</color>
+    <color name="sf_bubble">#FF238636</color>
+    <color name="sf_bubble_recording">#FFDA3633</color>
+    <color name="sf_bubble_thinking">#FFD29922</color>
+    <color name="sf_bubble_speaking">#FF1F6FEB</color>
+    <color name="sf_bubble_error">#FFDA3633</color>
+    <style name="Theme.FloatCompanion" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/sf_accent</item>
+        <item name="android:statusBarColor">@color/sf_bg</item>
+        <item name="android:navigationBarColor">@color/sf_bg</item>
+        <item name="android:windowBackground">@color/sf_bg</item>
+        <item name="android:textColor">@color/sf_text</item>
+    </style>
+    <!-- Real Activity for typing — overlay EditText crashes on many phones. -->
+    <style name="Theme.FloatCompanion.Panel" parent="Theme.MaterialComponents.DayNight.Dialog">
+        <item name="colorPrimary">@color/sf_accent</item>
+        <item name="android:windowBackground">@drawable/bg_panel</item>
+        <item name="android:windowIsFloating">true</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="windowNoTitle">true</item>
+        <item name="android:windowCloseOnTouchOutside">true</item>
+        <item name="android:backgroundDimEnabled">true</item>
+        <item name="android:backgroundDimAmount">0.45</item>
+        <item name="android:windowMinWidthMajor">94%</item>
+        <item name="android:windowMinWidthMinor">94%</item>
+        <item name="android:windowSoftInputMode">adjustPan</item>
+    </style>
+</resources>

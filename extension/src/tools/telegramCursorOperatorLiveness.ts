@@ -3,6 +3,8 @@
 
 import { readLiveSwarmRoles, type SwarmRole } from '../swarm/tmuxClient';
 import { PIPELINE_CHAIN } from '../swarm/rolePack';
+import { decideDrainOutcome } from './telegramControlCore';
+import { isPipelineEmpty, controlDrainTimeoutMs } from './telegram-front-desk-bot';
 
 export interface LivenessSnapshot {
   roles: Array<{ role: string; session: string }>;
@@ -92,4 +94,35 @@ export async function awaitSwarmDrain(
     snapshot = probe(repoRoot);
   }
   return { cleared: true, snapshot };
+}
+
+export type AwaitPipelineDrainDeps = {
+  isEmpty?: (repoRoot: string) => boolean;
+  sleep?: (ms: number) => Promise<void>;
+  nowMs?: () => number;
+};
+
+/**
+ * BL-698: poll until role inboxes/in_process are empty (or timeout).
+ * Used by /drain-swarm and drain-stop — does not kill processes.
+ */
+export async function awaitPipelineEmpty(
+  repoRoot: string,
+  opts: { timeoutMs?: number; pollMs?: number } & AwaitPipelineDrainDeps = {}
+): Promise<{ outcome: 'drained' | 'forced' }> {
+  const timeoutMs = opts.timeoutMs ?? controlDrainTimeoutMs();
+  const pollMs = opts.pollMs ?? 2_000;
+  const isEmpty = opts.isEmpty ?? isPipelineEmpty;
+  const sleep =
+    opts.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+  const nowMs = opts.nowMs ?? Date.now;
+  const startedAtMs = nowMs();
+  for (;;) {
+    const outcome = decideDrainOutcome(isEmpty(repoRoot), startedAtMs, nowMs(), timeoutMs);
+    if (outcome === 'wait') {
+      await sleep(pollMs);
+      continue;
+    }
+    return { outcome };
+  }
 }

@@ -66,7 +66,10 @@ test('composePilotExpeditorPrompt is the full offline-expeditor brief', () => {
       'HUMAN QUESTIONS: if you (any hat) need a decision or answer from the human,',
       'you MUST ask with a native Telegram poll on the Cursor Remote topic. Clear',
       'question + discrete options. Wait for the vote. Do not rely on free-text-only',
-      'asks.',
+      'asks. EVERY poll MUST include one extra option meaning the human needs more',
+      'context before they can answer — label it exactly: "Need more detail". If',
+      'that option wins, post a richer brief (or fewer sharper polls) and ask again;',
+      'do not treat silence as consent.',
       '',
       'STAGE-BOUNDARY CLEANUP: after each stage and at run end, check and kill',
       'leftovers from THIS expedition before declaring the stage done or going',
@@ -120,6 +123,8 @@ test('composePilotExpeditorPrompt requires Telegram poll for human questions (BL
   const text = composePilotExpeditorPrompt('BL-699');
   assert.match(text, /native Telegram poll on the Cursor Remote topic/);
   assert.match(text, /Do not rely on free-text-only\nasks/);
+  assert.match(text, /Need more detail/);
+  assert.match(text, /EVERY poll MUST include one extra option/);
 });
 
 test('composePilotExpeditorPrompt keeps isolation and expedite lock gate (BL-699)', () => {

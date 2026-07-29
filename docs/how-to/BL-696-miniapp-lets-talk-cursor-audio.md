@@ -38,6 +38,8 @@ Telegram topic, including numbered choice polls when the reply lists options.
 - [Operator console post-ship](../reference/specs/BL-696-amendment-lets-talk-operator-console.md)
   (2026-07-29) — PWA auth, hold music, wake lock, Pause all, Cursor Remote
   mirror, `/redeploy miniapp`, miniapp watchdog.
+- [Floating minimize](BL-706-lets-talk-floating-minimized-chat.md)
+  (2026-07-29) — compact draggable bubble with record + pause + expand.
 
 ## Record a Turn
 

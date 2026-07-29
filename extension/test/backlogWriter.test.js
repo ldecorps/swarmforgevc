@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { setAssignedTo, markDone, promoteToActive, findBacklogFilePath } = require('../out/panel/backlogWriter');
+const { setAssignedTo, markDone, promoteToActive, parkToHold, reinstateFromHold, findBacklogFilePath } = require('../out/panel/backlogWriter');
 const { readBacklog } = require('../out/panel/backlogReader');
 
 function mkTmp() {
@@ -228,6 +228,27 @@ test('promoteToActive skips promotion when the item is already active (scenario 
 
   assert.equal(result.moved, false);
   assert.equal(fs.existsSync(path.join(target, 'backlog', 'active', 'BL-203-already-active.yaml')), true);
+});
+
+// --- parkToHold / reinstateFromHold (BL-698) ---
+
+test('BL-698: parkToHold moves active ticket into backlog/hold/', () => {
+  const target = mkTmp();
+  writeActiveItem(target, 'BL-697-hold.yaml', 'id: BL-697\ntitle: t\n');
+  const result = parkToHold(target, 'BL-697');
+  assert.equal(result.moved, true);
+  assert.equal(fs.existsSync(path.join(target, 'backlog', 'hold', 'BL-697-hold.yaml')), true);
+  assert.equal(fs.existsSync(path.join(target, 'backlog', 'active', 'BL-697-hold.yaml')), false);
+});
+
+test('BL-698: reinstateFromHold restores hold ticket to paused/', () => {
+  const target = mkTmp();
+  const holdDir = path.join(target, 'backlog', 'hold');
+  mkdirp(holdDir);
+  fs.writeFileSync(path.join(holdDir, 'BL-697-hold.yaml'), 'id: BL-697\ntitle: t\n');
+  const result = reinstateFromHold(target, 'BL-697');
+  assert.equal(result.moved, true);
+  assert.equal(fs.existsSync(path.join(target, 'backlog', 'paused', 'BL-697-hold.yaml')), true);
 });
 
 // --- findBacklogFilePath (BL-490-VIOLATION: locates a ticket's CURRENT file

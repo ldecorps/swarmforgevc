@@ -123,6 +123,11 @@ test('BL-703: stop-and-run callback parse', () => {
   assert.deepEqual(d, { action: 'stop-and-run', verb: '/pilot', args: 'BL-698' });
 });
 
+test('BL-698: stop-mode callback parse', () => {
+  assert.deepEqual(decideOperatorSpecialCallback('op:stop-drain'), { action: 'stop-mode', mode: 'drain' });
+  assert.deepEqual(decideOperatorSpecialCallback('op:stop-emergency'), { action: 'stop-mode', mode: 'emergency' });
+});
+
 test('BL-704: holiday add parse and quiet check', () => {
   const parsed = parseHolidayAddArgs('2099-01-01 2099-01-02 maintenance');
   assert.deepEqual(parsed, { start: '2099-01-01', end: '2099-01-02', reason: 'maintenance' });

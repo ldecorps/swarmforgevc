@@ -154,11 +154,24 @@ async function transcribeTurnAudio(
 }
 
 export async function processLetsTalkTurn(
-  body: { audioBase64: string; mimeType?: string },
+  body: { audioBase64?: string; mimeType?: string; text?: string },
   deps: LetsTalkRouteDeps,
   sttAttempts?: { transientFailuresBeforeSuccess: number }
 ): Promise<LetsTalkTurnSuccess | LetsTalkTurnFailure> {
-  const bytes = decodeLetsTalkAudio(body.audioBase64);
+  const textTurn = typeof body.text === 'string' ? body.text.trim() : '';
+  if (textTurn.length > 0) {
+    const result = await promptAgentAndSynthesize(textTurn, deps);
+    if (result.success && deps.onTurnSuccess) {
+      try {
+        await deps.onTurnSuccess(result);
+      } catch {
+        // Mirror delivery is best-effort and must not fail the turn itself.
+      }
+    }
+    return result;
+  }
+  const audioBase64 = body.audioBase64 ?? '';
+  const bytes = decodeLetsTalkAudio(audioBase64);
   if (!bytes) {
     return {
       success: false,
@@ -188,9 +201,9 @@ export function createLetsTalkWriteRoutes(
     req: http.IncomingMessage,
     res: http.ServerResponse,
     maxBytes: number,
-    isShape: (value: unknown) => value is { audioBase64: string; mimeType?: string },
+    isShape: (value: unknown) => value is { audioBase64?: string; mimeType?: string; text?: string },
     shapeErrorReason: string
-  ) => Promise<{ audioBase64: string; mimeType?: string } | null>,
+  ) => Promise<{ audioBase64?: string; mimeType?: string; text?: string } | null>,
   requireAuth: (req: http.IncomingMessage, res: http.ServerResponse, registry: DeviceRegistry) => boolean,
   respond: (res: http.ServerResponse, status: number, body: unknown) => void
 ): Array<{
@@ -215,9 +228,9 @@ export function createLetsTalkTurnHandler(
     req: http.IncomingMessage,
     res: http.ServerResponse,
     maxBytes: number,
-    isShape: (value: unknown) => value is { audioBase64: string; mimeType?: string },
+    isShape: (value: unknown) => value is { audioBase64?: string; mimeType?: string; text?: string },
     shapeErrorReason: string
-  ) => Promise<{ audioBase64: string; mimeType?: string } | null>,
+  ) => Promise<{ audioBase64?: string; mimeType?: string; text?: string } | null>,
   requireAuth: (req: http.IncomingMessage, res: http.ServerResponse, registry: DeviceRegistry) => boolean,
   respond: (res: http.ServerResponse, status: number, body: unknown) => void,
   sttAttempts?: { transientFailuresBeforeSuccess: number }
@@ -226,7 +239,13 @@ export function createLetsTalkTurnHandler(
     if (!requireAuth(req, res, registry)) {
       return;
     }
-    readBody(req, res, LETS_TALK_TURN_MAX_BODY_BYTES, isLetsTalkTurnRequestShape, 'expected a JSON body of {audioBase64, mimeType?}').then(
+    readBody(
+      req,
+      res,
+      LETS_TALK_TURN_MAX_BODY_BYTES,
+      isLetsTalkTurnRequestShape,
+      'expected a JSON body of {audioBase64, mimeType?} or {text}'
+    ).then(
       async (value) => {
         if (!value) {
           return;

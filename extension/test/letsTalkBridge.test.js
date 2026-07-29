@@ -57,6 +57,22 @@ test("lets-talk Mini App shell is served without auth", async () => {
     assert.match(body, /Let's Talk/);
     assert.match(body, /data-testid="lets-talk-record"/);
     assert.match(body, /data-testid="lets-talk-pause-all"/);
+    assert.match(body, /data-testid="lets-talk-minimize"/);
+    assert.match(body, /data-testid="lets-talk-expand"/);
+    assert.match(body, /data-testid="lets-talk-float-drag"/);
+    assert.match(body, /lets-talk-minimized/);
+    assert.match(body, /lets-talk-float-pos/);
+    // BL-706: compact chat-head bubble; record stays speakable while minimized.
+    assert.match(body, /width: 64px/);
+    assert.match(body, /border-radius: 50%/);
+    assert.match(body, /compact chat-head bubble/);
+    assert.match(body, /function setMinimized/);
+    assert.match(body, /localStorage\.getItem\(MINIMIZED_STORAGE_KEY\) === '1'/);
+    assert.match(body, /localStorage\.setItem\(MINIMIZED_STORAGE_KEY/);
+    assert.match(body, /localStorage\.setItem\(FLOAT_POS_STORAGE_KEY/);
+    assert.match(body, /id="pause-all"[^>]*data-testid="lets-talk-pause-all"/);
+    assert.doesNotMatch(body, /id="record"[^>]*full-only/);
+    assert.doesNotMatch(body, /id="pause-all"[^>]*full-only/);
     assert.match(body, /data-testid="lets-talk-new-session"/);
     assert.match(body, /data-testid="lets-talk-hands-free"/);
     assert.match(body, /data-testid="lets-talk-mute"/);

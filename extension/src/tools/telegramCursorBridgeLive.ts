@@ -34,10 +34,17 @@ import {
 } from './telegramCursorBridgeCore';
 import {
   formatOperatorConfirmPrompt,
+  formatOperatorStopModePrompt,
   operatorConfirmButtons,
+  operatorStopModeButtons,
   type PendingOperatorConfirm,
 } from './telegramCursorOperatorCore';
-import { executeOperatorVerb, writeOperatorBounceSentinel, runOperatorStop } from './telegramCursorOperatorExec';
+import {
+  executeOperatorVerb,
+  executeStopMode,
+  writeOperatorBounceSentinel,
+  runOperatorStop,
+} from './telegramCursorOperatorExec';
 import {
   probeSwarmLiveness,
   isSwarmLive,
@@ -46,6 +53,7 @@ import {
   fullPackPipelineRolesUp,
   stopAndRunButtons,
   awaitSwarmDrain,
+  awaitPipelineEmpty,
 } from './telegramCursorOperatorLiveness';
 import {
   readOperatorPolicy,
@@ -756,6 +764,29 @@ async function followOperatorExecuteResult(
   resetAgent: () => Promise<void>
 ): Promise<boolean> {
   await postInboundReply(ctx, topicId, result.text, replyToMessageId);
+  if (result.awaitPipelineDrain) {
+    const { outcome } = await awaitPipelineEmpty(ctx.repoRoot);
+    const text =
+      outcome === 'drained'
+        ? 'drain-swarm: pipeline empty.'
+        : 'drain-swarm: drain window elapsed with work still in flight (no kill).';
+    await postInboundReply(ctx, topicId, text, replyToMessageId);
+    return ctx.busy;
+  }
+  if (result.awaitDrainThenKill) {
+    const { outcome } = await awaitPipelineEmpty(ctx.repoRoot);
+    if (outcome === 'forced') {
+      await postInboundReply(
+        ctx,
+        topicId,
+        'Drain window elapsed with work still in flight - forcing teardown.',
+        replyToMessageId
+      );
+    }
+    const stopText = runOperatorStop(ctx.repoRoot);
+    await postInboundReply(ctx, topicId, `Stop complete: ${outcome}.\n${stopText}`, replyToMessageId);
+    return ctx.busy;
+  }
   if (result.hydrateTarget && result.hydrateMode) {
     writeOperatorBatch(ctx.repoRoot, {
       mode: 'hydrate',
@@ -832,6 +863,16 @@ async function handleOperatorGateDecision(
       verb: decision.verb,
       ...(decision.args ? { args: decision.args } : {}),
     });
+    if (confirmVerb === '/stop') {
+      await postButtonReply(
+        ctx,
+        topicId,
+        formatOperatorStopModePrompt(),
+        operatorStopModeButtons() as InlineKeyboardButton[][],
+        replyToMessageId
+      );
+      return ctx.busy;
+    }
     await postOperatorConfirmPrompt(
       ctx,
       topicId,
@@ -951,6 +992,16 @@ async function handleOperatorGateDecision(
       await postInboundReply(ctx, topicId, 'land: leaving swarm up.', replyToMessageId);
     }
     return ctx.busy;
+  }
+  if (decision.action === 'stop-mode') {
+    const pending = readPendingOperatorConfirm(ctx.repoRoot);
+    if (!pending || pending.verb.toLowerCase() !== '/stop') {
+      await postInboundReply(ctx, topicId, 'Stop mode ignored — no pending /stop.', replyToMessageId);
+      return ctx.busy;
+    }
+    writePendingOperatorConfirm(ctx.repoRoot, undefined);
+    const result = executeStopMode(ctx.repoRoot, decision.mode);
+    return followOperatorExecuteResult(result, ctx, topicId, replyToMessageId, resetAgent);
   }
   return undefined;
 }

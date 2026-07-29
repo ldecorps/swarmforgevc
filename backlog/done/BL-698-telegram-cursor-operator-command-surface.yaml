@@ -3,7 +3,7 @@ title: "Telegram / Cursor Remote operator command surface — shared verb semant
 milestone: M8
 type: feature
 severity: high
-status: todo
+status: done
 epic: swarmforge-console
 human_approval: approved
 priority: 02
@@ -11,7 +11,7 @@ direction: human-requested
 depends_on: []
 mutation_cost: high
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
-assigned_to: none
+assigned_to: QA
 
 invariants:
   - "Every hard-tier verb (stop, start, restart, bounce, drain-*, ensure, ambulance, kill-all, hydrate, mint, autopilot, land) is a no-op unless the sender is the principal AND the message is in the Cursor Remote topic (or an explicitly aligned Control alias) AND the confirm gate has passed — wrong topic or unauthorised tap never mutates swarm state."
@@ -22,10 +22,10 @@ approval_context: >
   Operator session 2026-07-28: expand Telegram-actionable ops from Cursor
   Remote as the main phone ingress. Clarifications pinned via Cursor Remote
   polls 2026-07-29 (Q1–Q5). Delivery sliced into BL-702 / BL-703 / BL-704
-  (all done 2026-07-29). This umbrella remains open for leftover lifecycle
-  verbs still stubbed: /drain-agents /drain-swarm /kill-all /ambulance
-  /hold /reinstate, stop-mode menu, and Control aliasing of the shared
-  backend. See docs/reference/specs/BL-698-telegram-cursor-operator-command-surface.md.
+  (all done 2026-07-29). Leftover lifecycle verbs + stop-mode menu + Control
+  slash aliasing closed 2026-07-29 (evidence
+  backlog/evidence/BL-698-leftovers-pass-20260729.md). Quiet/mode/lock remain
+  optional follow-up.
 
 source: |
   Human directive in Cursor chat 2026-07-28 after reviewing the proposed

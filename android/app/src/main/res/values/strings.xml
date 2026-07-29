@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">SwarmForge Float</string>
+    <string name="lets_talk_title">Let\'s Talk</string>
+    <string name="start_bubble">Start bubble</string>
+    <string name="stop_bubble">Stop bubble</string>
+    <string name="grant_overlay">Grant draw-over permission</string>
+    <string name="bridge_url_hint">Bridge base URL (saved on phone)</string>
+    <string name="token_hint">Console control token (saved on phone)</string>
+    <string name="overlay_channel">Floating talk</string>
+    <string name="overlay_running">SwarmForge bubble running</string>
+    <string name="overlay_listening">Listening…</string>
+    <string name="remove_zone">Drag here to close</string>
+    <string name="bubble_closed">Bubble closed</string>
+    <string name="send">Send</string>
+    <string name="collapse">Collapse</string>
+    <string name="stop">Stop</string>
+    <string name="reply_hint">Reply appears here</string>
+    <string name="turn_hint">Or type a turn…</string>
+    <string name="record">Record</string>
+    <string name="stop_recording">Stop</string>
+    <string name="hands_free">Hands-free</string>
+    <string name="hold_music">Hold music</string>
+    <string name="mute">Mute</string>
+    <string name="pause_all">Pause all</string>
+    <string name="resume_all">Resume</string>
+    <string name="new_session">New session</string>
+    <string name="phase_ready">ready</string>
+    <string name="phase_recording">recording</string>
+    <string name="phase_thinking">thinking</string>
+    <string name="phase_speaking">speaking</string>
+    <string name="phase_error">error</string>
+    <string name="need_mic_permission">Microphone permission is required to record.</string>
+    <string name="keep_recording">Keep recording a bit longer.</string>
+    <string name="no_speech">No speech detected.</string>
+    <string name="no_audio">No audio captured.</string>
+</resources>
