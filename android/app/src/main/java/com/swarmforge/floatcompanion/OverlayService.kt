@@ -26,7 +26,6 @@ import androidx.core.content.ContextCompat
 import com.swarmforge.floatcompanion.databinding.OverlayBubbleBinding
 import com.swarmforge.floatcompanion.databinding.OverlayRemoveZoneBinding
 import kotlin.math.abs
-import kotlin.math.hypot
 
 /**
  * BL-707: bubble overlay + owns [TalkEngine] so mic/hands-free survive panel collapse.
@@ -295,29 +294,14 @@ class OverlayService : Service() {
         target.animate().scaleX(scale).scaleY(scale).setDuration(120).start()
     }
 
-    /** True when bubble center sits over the bottom remove X. */
+    /** True when the bubble is in the bottom dismiss strip (wide, easy drop). */
     private fun isOverRemoveZone(params: WindowManager.LayoutParams, bubble: View): Boolean {
-        if (removeTarget == null) return false
+        if (removeZoneView == null) return false
         val dm = resources.displayMetrics
-        val density = dm.density
-        val bubbleCx = params.x + bubble.width / 2f
-        val bubbleCy = params.y + bubble.height / 2f
-        // Expected center of the 72dp X, 28dp above the bottom edge.
-        val targetSize = 72f * density
-        val marginBottom = 28f * density
-        var targetCx = dm.widthPixels / 2f
-        var targetCy = dm.heightPixels - marginBottom - targetSize / 2f
-        val target = removeTarget
-        if (target != null && target.width > 0 && target.height > 0) {
-            val loc = IntArray(2)
-            target.getLocationOnScreen(loc)
-            if (loc[0] > 0 || loc[1] > 0) {
-                targetCx = loc[0] + target.width / 2f
-                targetCy = loc[1] + target.height / 2f
-            }
-        }
-        val hitRadius = targetSize / 2f + 56f * density
-        return hypot(bubbleCx - targetCx, bubbleCy - targetCy) <= hitRadius
+        val bubbleBottom = params.y + bubble.height
+        // Whole lower band of the screen — drag down to close, not only dead-center on X.
+        val dismissTop = (dm.heightPixels * 0.72f).toInt()
+        return bubbleBottom >= dismissTop
     }
 
     private fun applyBubblePhase(phase: TalkEngine.Phase) {
