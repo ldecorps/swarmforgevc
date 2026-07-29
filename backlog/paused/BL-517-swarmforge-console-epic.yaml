@@ -6,7 +6,7 @@ type: epic
 epic: swarmforge-console
 priority: 1
 depends_on: []
-decomposes_into: [BL-516, BL-526, BL-538, BL-696, BL-697, BL-698]
+decomposes_into: [BL-516, BL-526, BL-538, BL-696, BL-697, BL-698, BL-702, BL-703, BL-704, BL-705]
 source: "Human directive in-session 2026-07-18: upload 'Spec brief — Operator Telegram console (status slice)' labelled 'epic: swarmforge console', then 'you've got to create a console epic for that'. UMBRELLA/tracking item — not directly promotable; children are promoted individually."
 
 notes: |
@@ -35,10 +35,13 @@ notes: |
     - Slice 4 — Mini-app webview / console UI (NOT YET TICKETED; BL-538 is the first
       concrete page on this surface). The tiles+Mermaid frontend; when built it
       becomes the Telegram webview on this same allowlisted channel — do NOT build a second frontend.
-    - Slice 5 — Cursor Remote operator command surface (TICKETED: BL-698). Shared
-      slash-verb semantics across Cursor Remote / Control / CLI; env-reloading
-      bounce/restart; shifts & holidays; documenter how-to + Cursor Remote Mermaid
-      diagrams. Phone-first ingress is Cursor Remote; backend syntax is one vocabulary.
+    - Slice 5 — Cursor Remote operator command surface (TICKETED: BL-698 umbrella;
+      children BL-702 parse+env-reload+danger tiers DONE, BL-703 hydrate/autopilot/land
+      DONE, BL-704 shifts/holidays+docs DONE 2026-07-29). Shared slash-verb semantics
+      across Cursor Remote / Control / CLI; env-reloading bounce/restart; shifts &
+      holidays; documenter how-to + Cursor Remote Mermaid diagrams. Phone-first
+      ingress is Cursor Remote; backend syntax is one vocabulary. BL-698 umbrella
+      still tracks leftover drain/ambulance/hold verbs.
 
   DISCIPLINE ACROSS SLICES (pin at the epic level so no slice ships a dark or unsafe surface):
     - Operator LOGIC lives in tracked swarmforge/scripts/ (committed through the pipeline); runtime STATE +

@@ -20,12 +20,12 @@ invariants:
 
 approval_context: >
   Operator session 2026-07-28: expand Telegram-actionable ops from Cursor
-  Remote as the main phone ingress; align backend semantic/syntax across
-  Cursor Remote / Control / CLI; require /bounce and /restart to read
-  swarm.env; add shifts & holidays; keep /ensure; documenter must ship a
-  how-to and Mermaid diagrams of the Cursor Remote flow. Command list and
-  suggestions accepted in-session — see
-  docs/reference/specs/BL-698-telegram-cursor-operator-command-surface.md.
+  Remote as the main phone ingress. Clarifications pinned via Cursor Remote
+  polls 2026-07-29 (Q1–Q5). Delivery sliced into BL-702 / BL-703 / BL-704
+  (all done 2026-07-29). This umbrella remains open for leftover lifecycle
+  verbs still stubbed: /drain-agents /drain-swarm /kill-all /ambulance
+  /hold /reinstate, stop-mode menu, and Control aliasing of the shared
+  backend. See docs/reference/specs/BL-698-telegram-cursor-operator-command-surface.md.
 
 source: |
   Human directive in Cursor chat 2026-07-28 after reviewing the proposed

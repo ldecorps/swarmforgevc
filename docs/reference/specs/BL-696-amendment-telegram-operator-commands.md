@@ -59,4 +59,6 @@ Steps: `specs/pipeline/steps/bl696TelegramCursorBridgeOperatorSteps.js`
 **BL-698** expands this surface into the full phone ops console (shared verb
 backend, env-reloading bounce/restart, shifts/holidays, documenter how-to +
 Cursor Remote Mermaid diagrams). See
-[BL-698 reference spec](BL-698-telegram-cursor-operator-command-surface.md).
+[BL-698 reference spec](BL-698-telegram-cursor-operator-command-surface.md)
+and the phone how-to
+[BL-698 Telegram Cursor Remote operator commands](../../how-to/BL-698-telegram-cursor-operator-commands.md).

@@ -67,10 +67,11 @@ Feature: BL-698 Telegram / Cursor Remote operator command surface
 
   # ── Lifecycle verbs ─────────────────────────────────────────────────
 
-  Scenario Outline: Soft lifecycle verbs execute without hard confirm
+  Scenario Outline: Soft lifecycle verbs need a light confirm before run
     When the principal sends "<verb>" in Cursor Remote
-    Then the verb runs without a two-step confirm
-    And a short result is posted to the topic
+    Then the bridge prompts for a single Confirm tap and does not run yet
+    When the principal confirms
+    Then the verb runs and a short result is posted to the topic
 
     Examples:
       | verb     |
@@ -107,11 +108,12 @@ Feature: BL-698 Telegram / Cursor Remote operator command surface
 
   # ── Shifts & holidays ───────────────────────────────────────────────
 
-  Scenario: Holiday quiet refuses pilot/expedite without override
+  Scenario: Holiday quiet refuses pilot/expedite with Run anyway
     Given a holiday covering today is recorded
     When the principal sends "/pilot BL-698"
     Then the bridge refuses citing holiday quiet
-    When the principal sends an explicit override and "/pilot BL-698" again
+    And the reply offers a Run anyway confirm
+    When the principal confirms Run anyway
     Then the pilot path may proceed
 
   Scenario: Shift and holiday state round-trip under operator runtime
@@ -145,9 +147,10 @@ Feature: BL-698 Telegram / Cursor Remote operator command surface
   # ── Batch delivery: /autopilot ──────────────────────────────────────
 
   Scenario: /autopilot dry lists high-priority specced tickets and defects
-    Given live tickets include a high-severity approved item and a pending-approval item
+    Given live tickets include a high-severity approved item, a defect-typed approved item, and a pending-approval item
     When the principal sends "/autopilot dry"
     Then the reply lists the high-severity approved item
+    And the reply lists the defect-typed approved item
     And the reply does not list the pending-approval item
     And no Cursor expedition starts
 
@@ -168,12 +171,13 @@ Feature: BL-698 Telegram / Cursor Remote operator command surface
     And the reply does not list the paused-only ticket
     And no Cursor expedition starts
 
-  Scenario: /land pilots in-flight tickets out then sleeps
+  Scenario: /land pilots in-flight tickets out then asks about sleep
     Given two in-flight tickets with parcels in the pipeline
     When the principal confirms "/land"
     Then the Cursor agent pilots each in-flight ticket to done sequentially
     And paused-only tickets are not selected
-    And when the in-flight set is empty the swarm drain-stops by default
+    And when the in-flight set is empty the bridge asks whether to drain-stop
+    And only after that confirm does the swarm drain-stop
     And a concurrent /autopilot /pilot or /expedite is refused while land is in flight
 
   # ── Shared syntax alignment ─────────────────────────────────────────

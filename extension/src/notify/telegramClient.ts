@@ -523,7 +523,7 @@ export interface TelegramCallbackQuery {
   id: string;
   data?: string;
   from?: { id: number | string };
-  message?: { chat?: TelegramChat; message_thread_id?: number };
+  message?: { chat?: TelegramChat; message_thread_id?: number; message_id?: number };
 }
 
 // BL-466: the update shape a vote on a non-anonymous poll generates -

@@ -3,10 +3,13 @@ import * as path from 'path';
 import { CursorAgentError, type SDKUserMessage } from '@cursor/sdk';
 import { atomicWrite } from '../util/atomicWrite';
 import {
+  answerCallbackQuery,
   createForumTopicWithRateLimitRetry,
   getTelegramUpdates,
+  sendTelegramMessage,
   sendTelegramPoll,
   sendTelegramMessageWithRateLimitRetry,
+  type InlineKeyboardButton,
   type TelegramMessage,
   type TelegramPollAnswer,
   type TelegramUpdate,
@@ -27,7 +30,39 @@ import {
   type CursorBridgeQueuedPrompt,
   type CursorBridgePersistedState,
   type CursorBridgeChoicePoll,
+  type CursorBridgeInboundEvent,
 } from './telegramCursorBridgeCore';
+import {
+  formatOperatorConfirmPrompt,
+  operatorConfirmButtons,
+  type PendingOperatorConfirm,
+} from './telegramCursorOperatorCore';
+import { executeOperatorVerb, writeOperatorBounceSentinel, runOperatorStop } from './telegramCursorOperatorExec';
+import {
+  probeSwarmLiveness,
+  isSwarmLive,
+  formatSwarmLiveRefuse,
+  formatFullPackRefuse,
+  fullPackPipelineRolesUp,
+  stopAndRunButtons,
+  awaitSwarmDrain,
+} from './telegramCursorOperatorLiveness';
+import {
+  readOperatorPolicy,
+  isHolidayQuietToday,
+  formatHolidayRefuse,
+  runAnywayButtons,
+  isHolidayBlockedVerb,
+} from './telegramCursorOperatorPolicy';
+import {
+  readOperatorBatch,
+  writeOperatorBatch,
+  clearOperatorBatch,
+  isOperatorBatchInFlight,
+  isBatchExclusiveVerb,
+  formatBatchBusyRefuse,
+  advanceOperatorBatch,
+} from './telegramCursorOperatorBatch';
 import type { CursorBridgeAgentSessionDeps } from '../bridge/cursorBridgeAgentSession';
 import { withPromptProgress } from '../bridge/cursorBridgeAgentSession';
 import {
@@ -60,9 +95,12 @@ import {
 } from './telegramCursorBridgeExpedite';
 import {
   composePilotExpeditorPrompt,
+  composeHydratePrompt,
   formatPilotBlockedByExpediteMessage,
+  formatPilotBlockedBySwarmLiveMessage,
   formatPilotStartMessage,
   gatePilotAgainstExpediteLock,
+  landSleepButtons,
 } from './telegramCursorBridgePilot';
 import {
   formatRedeployFailureMessage,
@@ -155,7 +193,29 @@ function inboundPhotoFields(photoFileId: string | undefined) {
   return photoFileId ? { photoFileId } : {};
 }
 
-export function inboundEventOf(update: TelegramUpdate) {
+export function inboundEventOf(update: TelegramUpdate):
+  | (CursorBridgeInboundEvent & { messageId?: number })
+  | undefined {
+  const callback = update.callback_query;
+  if (callback) {
+    const fromId = callback.from?.id;
+    const message = callback.message;
+    const chatId = message?.chat?.id;
+    const data = callback.data;
+    if (fromId === undefined || chatId === undefined || !data) {
+      return undefined;
+    }
+    return {
+      kind: 'callback',
+      fromId,
+      chatId,
+      topicId: message?.message_thread_id,
+      text: '',
+      callbackData: data,
+      callbackQueryId: callback.id,
+      messageId: message?.message_id,
+    };
+  }
   const message = update.message;
   if (!message) {
     return undefined;
@@ -167,6 +227,7 @@ export function inboundEventOf(update: TelegramUpdate) {
     return undefined;
   }
   return {
+    kind: 'text',
     fromId: sender.fromId,
     chatId: sender.chatId,
     topicId: message.message_thread_id,
@@ -174,6 +235,50 @@ export function inboundEventOf(update: TelegramUpdate) {
     messageId: message.message_id,
     ...inboundPhotoFields(photoFileId),
   };
+}
+
+export function pendingOperatorConfirmPath(repoRoot: string): string {
+  return path.join(repoRoot, '.swarmforge', 'operator', 'cursor-remote-pending-confirm.json');
+}
+
+export function readPendingOperatorConfirm(repoRoot: string): PendingOperatorConfirm {
+  const filePath = pendingOperatorConfirmPath(repoRoot);
+  if (!fs.existsSync(filePath)) {
+    return undefined;
+  }
+  try {
+    const parsed = JSON.parse(fs.readFileSync(filePath, 'utf8')) as {
+      tier?: string;
+      verb?: string;
+      args?: string;
+    };
+    if ((parsed.tier !== 'soft' && parsed.tier !== 'hard') || typeof parsed.verb !== 'string') {
+      return undefined;
+    }
+    return {
+      tier: parsed.tier,
+      verb: parsed.verb,
+      ...(typeof parsed.args === 'string' && parsed.args ? { args: parsed.args } : {}),
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+export function writePendingOperatorConfirm(
+  repoRoot: string,
+  pending: PendingOperatorConfirm
+): void {
+  const filePath = pendingOperatorConfirmPath(repoRoot);
+  if (!pending) {
+    try {
+      fs.unlinkSync(filePath);
+    } catch {
+      // absent is fine
+    }
+    return;
+  }
+  atomicWrite(filePath, JSON.stringify(pending));
 }
 
 function nextQueuedPromptId(nowMs: number, seq: number): string {
@@ -357,6 +462,8 @@ export interface CursorBridgeHandlerContext {
   repoRoot: string;
   botToken: string;
   chatId: string;
+  /** BL-704: principal id for /oncall me. */
+  principalUserId?: string;
   state: CursorBridgePersistedState;
   busy: boolean;
   agentSession: CursorBridgeAgentSessionDeps;
@@ -492,9 +599,42 @@ async function handlePromptInboundAction(
       await postInboundReply(ctx, topicId, `Error: ${detail}`, replyToMessageId);
     } finally {
       endActiveRun();
+      await continueOperatorBatchAfterPrompt(ctx, topicId, resetAgent);
     }
   })();
   return true;
+}
+
+/** After a Cursor prompt finishes, advance autopilot/land and maybe ask land-sleep. */
+async function continueOperatorBatchAfterPrompt(
+  ctx: CursorBridgeHandlerContext,
+  topicId: number,
+  resetAgent: () => Promise<void>
+): Promise<void> {
+  const advanced = advanceOperatorBatch(ctx.repoRoot);
+  if (advanced.nextTicket) {
+    await postInboundReply(
+      ctx,
+      topicId,
+      `Batch next: /pilot ${advanced.nextTicket}`,
+      undefined
+    );
+    await handlePilotInboundAction(ctx, topicId, advanced.nextTicket, undefined, resetAgent, {
+      skipSwarmLiveGate: true,
+      skipHolidayGate: true,
+      skipBatchGate: true,
+    });
+    return;
+  }
+  if (advanced.askLandSleep) {
+    await postButtonReply(
+      ctx,
+      topicId,
+      'Land queue clear. Drain-stop the swarm now?',
+      landSleepButtons() as InlineKeyboardButton[][],
+      undefined
+    );
+  }
 }
 
 type InboundActionHandler = (
@@ -549,6 +689,7 @@ const INBOUND_ACTION_HANDLERS: Partial<Record<InboundDecision['action'], Inbound
     );
   },
   redeploy: async (ctx, topicId, replyTo) => {
+    // Legacy decision shape; BL-702 routes /redeploy through execute-operator.
     const result = startRedeployRun(ctx.repoRoot);
     const text = result.ok ? formatRedeployStartMessage(result) : formatRedeployFailureMessage(result);
     await postInboundReply(ctx, topicId, text, replyTo);
@@ -561,6 +702,258 @@ const INBOUND_ACTION_HANDLERS: Partial<Record<InboundDecision['action'], Inbound
     return false;
   },
 };
+
+async function postOperatorConfirmPrompt(
+  ctx: CursorBridgeHandlerContext,
+  topicId: number,
+  tier: 'soft' | 'hard',
+  verb: string,
+  args: string | undefined,
+  replyToMessageId: number | undefined
+): Promise<void> {
+  const text = formatOperatorConfirmPrompt(tier, verb, args);
+  const buttons = operatorConfirmButtons() as InlineKeyboardButton[][];
+  const sent = await sendTelegramMessage(
+    ctx.botToken,
+    ctx.chatId,
+    text,
+    replyToMessageId,
+    undefined,
+    topicId,
+    buttons
+  );
+  if (!sent.success) {
+    await postInboundReply(ctx, topicId, `${text}\n(Confirm buttons failed to send — use /confirm-off to cancel.)`, replyToMessageId);
+  }
+}
+
+async function postButtonReply(
+  ctx: CursorBridgeHandlerContext,
+  topicId: number,
+  text: string,
+  buttons: InlineKeyboardButton[][],
+  replyToMessageId: number | undefined
+): Promise<void> {
+  const sent = await sendTelegramMessage(
+    ctx.botToken,
+    ctx.chatId,
+    text,
+    replyToMessageId,
+    undefined,
+    topicId,
+    buttons
+  );
+  if (!sent.success) {
+    await postInboundReply(ctx, topicId, text, replyToMessageId);
+  }
+}
+
+async function followOperatorExecuteResult(
+  result: ReturnType<typeof executeOperatorVerb>,
+  ctx: CursorBridgeHandlerContext,
+  topicId: number,
+  replyToMessageId: number | undefined,
+  resetAgent: () => Promise<void>
+): Promise<boolean> {
+  await postInboundReply(ctx, topicId, result.text, replyToMessageId);
+  if (result.hydrateTarget && result.hydrateMode) {
+    writeOperatorBatch(ctx.repoRoot, {
+      mode: 'hydrate',
+      queue: [],
+      index: 0,
+      hydrateTarget: result.hydrateTarget,
+      hydrateMode: result.hydrateMode,
+      startedAtMs: Date.now(),
+    });
+    return handlePromptInboundAction(
+      ctx,
+      topicId,
+      composeHydratePrompt(result.hydrateTarget, result.hydrateMode),
+      replyToMessageId,
+      resetAgent
+    );
+  }
+  if (result.pilotQueue && result.pilotQueue.length > 0) {
+    const mode = result.askLandSleep ? 'land' : 'autopilot';
+    writeOperatorBatch(ctx.repoRoot, {
+      mode,
+      queue: result.pilotQueue,
+      index: 0,
+      askLandSleep: result.askLandSleep,
+      startedAtMs: Date.now(),
+    });
+    const first = result.pilotQueue[0];
+    return handlePilotInboundAction(ctx, topicId, first, replyToMessageId, resetAgent, {
+      skipBatchGate: true,
+    });
+  }
+  if (result.askLandSleep) {
+    await postButtonReply(
+      ctx,
+      topicId,
+      'Land queue clear. Drain-stop the swarm now?',
+      landSleepButtons() as InlineKeyboardButton[][],
+      replyToMessageId
+    );
+  }
+  return false;
+}
+
+async function handleOperatorGateDecision(
+  decision: InboundDecision,
+  ctx: CursorBridgeHandlerContext,
+  topicId: number,
+  replyToMessageId: number | undefined,
+  resetAgent: () => Promise<void>
+): Promise<boolean | undefined> {
+  if (decision.action === 'prompt-operator-confirm') {
+    const holiday = isHolidayQuietToday(readOperatorPolicy(ctx.repoRoot));
+    if (holiday && isHolidayBlockedVerb(decision.verb)) {
+      const cmd = decision.args ? `${decision.verb} ${decision.args}` : decision.verb;
+      await postButtonReply(
+        ctx,
+        topicId,
+        formatHolidayRefuse(holiday, cmd),
+        runAnywayButtons(decision.verb, decision.args) as InlineKeyboardButton[][],
+        replyToMessageId
+      );
+      return ctx.busy;
+    }
+    const confirmVerb = decision.verb.toLowerCase();
+    if (confirmVerb === '/hydrate' || confirmVerb === '/mint') {
+      const up = fullPackPipelineRolesUp(probeSwarmLiveness(ctx.repoRoot));
+      if (up.length > 0) {
+        await postInboundReply(ctx, topicId, formatFullPackRefuse(up, decision.verb), replyToMessageId);
+        return ctx.busy;
+      }
+    }
+    writePendingOperatorConfirm(ctx.repoRoot, {
+      tier: decision.tier,
+      verb: decision.verb,
+      ...(decision.args ? { args: decision.args } : {}),
+    });
+    await postOperatorConfirmPrompt(
+      ctx,
+      topicId,
+      decision.tier,
+      decision.verb,
+      decision.args,
+      replyToMessageId
+    );
+    return ctx.busy;
+  }
+  if (decision.action === 'clear-operator-pending' || decision.action === 'cancel-operator-pending') {
+    writePendingOperatorConfirm(ctx.repoRoot, undefined);
+    const text =
+      decision.action === 'clear-operator-pending'
+        ? 'Pending confirm cleared (/confirm-off).'
+        : 'Confirm cancelled.';
+    await postInboundReply(ctx, topicId, text, replyToMessageId);
+    return ctx.busy;
+  }
+  if (decision.action === 'execute-operator') {
+    writePendingOperatorConfirm(ctx.repoRoot, undefined);
+    const v = decision.verb.toLowerCase();
+    const argsLower = (decision.args ?? '').toLowerCase();
+    const exclusive =
+      isBatchExclusiveVerb(decision.verb) &&
+      !(v === '/autopilot' && argsLower.startsWith('dry')) &&
+      !(v === '/land' && argsLower.startsWith('dry'));
+    if (exclusive && isOperatorBatchInFlight(ctx.repoRoot)) {
+      const batch = readOperatorBatch(ctx.repoRoot)!;
+      await postInboundReply(ctx, topicId, formatBatchBusyRefuse(batch, decision.verb), replyToMessageId);
+      return ctx.busy;
+    }
+    const snap = probeSwarmLiveness(ctx.repoRoot);
+    if ((v === '/autopilot' || v === '/land') && !argsLower.startsWith('dry') && isSwarmLive(snap)) {
+      await postButtonReply(
+        ctx,
+        topicId,
+        formatSwarmLiveRefuse(snap, decision.verb),
+        stopAndRunButtons(decision.verb, decision.args) as InlineKeyboardButton[][],
+        replyToMessageId
+      );
+      return ctx.busy;
+    }
+    if (v === '/hydrate' || v === '/mint') {
+      const up = fullPackPipelineRolesUp(snap);
+      if (up.length > 0) {
+        await postInboundReply(ctx, topicId, formatFullPackRefuse(up, decision.verb), replyToMessageId);
+        return ctx.busy;
+      }
+    }
+    const result = executeOperatorVerb(ctx.repoRoot, decision.verb, decision.args, {
+      principalId: ctx.principalUserId,
+    });
+    return followOperatorExecuteResult(result, ctx, topicId, replyToMessageId, resetAgent);
+  }
+  if (decision.action === 'stop-and-run') {
+    const stopText = runOperatorStop(ctx.repoRoot);
+    await postInboundReply(
+      ctx,
+      topicId,
+      `Stop & run: ${stopText}\nWaiting for swarm to go down…`,
+      replyToMessageId
+    );
+    const drained = await awaitSwarmDrain(ctx.repoRoot, { timeoutMs: 90_000, pollMs: 1_000 });
+    if (!drained.cleared) {
+      await postInboundReply(
+        ctx,
+        topicId,
+        'Stop & run: swarm still live after timeout — re-send the verb when clear, or /stop again.',
+        replyToMessageId
+      );
+      return ctx.busy;
+    }
+    if (decision.verb === '/pilot') {
+      const ticket = (decision.args ?? '').trim() || 'BL-696';
+      return handlePilotInboundAction(ctx, topicId, ticket, replyToMessageId, resetAgent, {
+        skipSwarmLiveGate: true,
+      });
+    }
+    const result = executeOperatorVerb(ctx.repoRoot, decision.verb, decision.args, {
+      principalId: ctx.principalUserId,
+    });
+    return followOperatorExecuteResult(result, ctx, topicId, replyToMessageId, resetAgent);
+  }
+  if (decision.action === 'run-anyway') {
+    if (decision.verb === '/pilot') {
+      const ticket = (decision.args ?? '').trim() || 'BL-696';
+      return handlePilotInboundAction(ctx, topicId, ticket, replyToMessageId, resetAgent, {
+        skipHolidayGate: true,
+      });
+    }
+    if (decision.verb === '/expedite' || decision.verb === '/reexpedite') {
+      const ticket = (decision.args ?? '').trim();
+      if (!ticket) {
+        await postInboundReply(ctx, topicId, `${decision.verb}: need a BL-xxx ticket.`, replyToMessageId);
+        return ctx.busy;
+      }
+      const fake: ExpediteInboundDecision = {
+        action: decision.verb === '/reexpedite' ? 'reexpedite' : 'expedite',
+        ticket,
+      };
+      const result = startInboundExpedite(fake, ctx.repoRoot);
+      await postInboundReply(ctx, topicId, formatInboundExpediteResult(fake, result), replyToMessageId);
+      return false;
+    }
+    const result = executeOperatorVerb(ctx.repoRoot, decision.verb, decision.args, {
+      principalId: ctx.principalUserId,
+    });
+    return followOperatorExecuteResult(result, ctx, topicId, replyToMessageId, resetAgent);
+  }
+  if (decision.action === 'land-sleep') {
+    clearOperatorBatch(ctx.repoRoot);
+    if (decision.answer === 'yes') {
+      writeOperatorBounceSentinel(ctx.repoRoot, 'swarm');
+      await postInboundReply(ctx, topicId, 'land: drain-stop requested (bounce sentinel written).', replyToMessageId);
+    } else {
+      await postInboundReply(ctx, topicId, 'land: leaving swarm up.', replyToMessageId);
+    }
+    return ctx.busy;
+  }
+  return undefined;
+}
 
 async function handleDequeueInboundAction(
   ctx: CursorBridgeHandlerContext,
@@ -616,6 +1009,27 @@ async function handleOperationalInboundAction(
   replyToMessageId: number | undefined
 ): Promise<boolean> {
   if (decision.action === 'expedite' || decision.action === 'reexpedite') {
+    const holiday = isHolidayQuietToday(readOperatorPolicy(ctx.repoRoot));
+    if (holiday) {
+      await postButtonReply(
+        ctx,
+        topicId,
+        formatHolidayRefuse(holiday, `/${decision.action} ${decision.ticket}`),
+        runAnywayButtons(`/${decision.action}`, decision.ticket) as InlineKeyboardButton[][],
+        replyToMessageId
+      );
+      return ctx.busy;
+    }
+    if (isOperatorBatchInFlight(ctx.repoRoot)) {
+      const batch = readOperatorBatch(ctx.repoRoot)!;
+      await postInboundReply(
+        ctx,
+        topicId,
+        formatBatchBusyRefuse(batch, `/${decision.action}`),
+        replyToMessageId
+      );
+      return ctx.busy;
+    }
     const result = startInboundExpedite(decision, ctx.repoRoot);
     const text = formatInboundExpediteResult(decision, result);
     await postInboundReply(ctx, topicId, text, replyToMessageId);
@@ -634,8 +1048,41 @@ async function handlePilotInboundAction(
   topicId: number,
   ticket: string,
   replyToMessageId: number | undefined,
-  resetAgent: () => Promise<void>
+  resetAgent: () => Promise<void>,
+  opts?: { skipSwarmLiveGate?: boolean; skipHolidayGate?: boolean; skipBatchGate?: boolean }
 ): Promise<boolean> {
+  if (!opts?.skipBatchGate && isOperatorBatchInFlight(ctx.repoRoot)) {
+    const batch = readOperatorBatch(ctx.repoRoot)!;
+    await postInboundReply(ctx, topicId, formatBatchBusyRefuse(batch, `/pilot ${ticket}`), replyToMessageId);
+    return ctx.busy;
+  }
+  if (!opts?.skipHolidayGate) {
+    const holiday = isHolidayQuietToday(readOperatorPolicy(ctx.repoRoot));
+    if (holiday) {
+      await postButtonReply(
+        ctx,
+        topicId,
+        formatHolidayRefuse(holiday, `/pilot ${ticket}`),
+        runAnywayButtons('/pilot', ticket) as InlineKeyboardButton[][],
+        replyToMessageId
+      );
+      return ctx.busy;
+    }
+  }
+  if (!opts?.skipSwarmLiveGate) {
+    const snap = probeSwarmLiveness(ctx.repoRoot);
+    if (isSwarmLive(snap)) {
+      const detail = snap.roles.map((r) => r.role).join(', ');
+      await postButtonReply(
+        ctx,
+        topicId,
+        formatPilotBlockedBySwarmLiveMessage(ticket, detail),
+        stopAndRunButtons('/pilot', ticket) as InlineKeyboardButton[][],
+        replyToMessageId
+      );
+      return ctx.busy;
+    }
+  }
   const gate = gatePilotAgainstExpediteLock(ctx.repoRoot);
   if (!gate.ok) {
     await postInboundReply(
@@ -662,6 +1109,10 @@ export async function handleInboundDecision(
   }
   if (topicId === undefined) {
     return ctx.busy;
+  }
+  const operatorHandled = await handleOperatorGateDecision(decision, ctx, topicId, replyToMessageId, resetAgent);
+  if (operatorHandled !== undefined) {
+    return operatorHandled;
   }
   const handler = INBOUND_ACTION_HANDLERS[decision.action];
   if (handler) {
@@ -894,7 +1345,17 @@ async function processInboundUpdates(
     if (!inbound) {
       continue;
     }
-    const rawDecision = decideInboundAction(inbound, deps.principalUserId, deps.chatId, holder.state.cursorTopicId);
+    const pending = readPendingOperatorConfirm(deps.repoRoot);
+    const rawDecision = decideInboundAction(
+      inbound,
+      deps.principalUserId,
+      deps.chatId,
+      holder.state.cursorTopicId,
+      pending
+    );
+    if (inbound.kind === 'callback' && inbound.callbackQueryId) {
+      await answerCallbackQuery(deps.botToken, inbound.callbackQueryId);
+    }
     const bridgeBusy = holder.busy || isActiveRunInFlight();
     if (bridgeBusy && hasQueueablePromptDecision(rawDecision)) {
       holder.state = clearQueuedPollIfStale(
@@ -920,6 +1381,7 @@ async function processInboundUpdates(
         repoRoot: deps.repoRoot,
         botToken: deps.botToken,
         chatId: deps.chatId,
+        principalUserId: deps.principalUserId,
         state: holder.state,
         busy: ctxBusy,
         agentSession: deps.agentSession,

@@ -133,6 +133,7 @@ test('inboundEventOf ignores updates without text or sender', () => {
     },
   });
   assert.deepEqual(event, {
+    kind: 'text',
     fromId: 9,
     chatId: -100,
     topicId: 5,
@@ -157,6 +158,7 @@ test('inboundEventOf accepts photo messages with optional caption', () => {
     },
   });
   assert.deepEqual(event, {
+    kind: 'text',
     fromId: 9,
     chatId: -100,
     topicId: 5,
@@ -164,6 +166,45 @@ test('inboundEventOf accepts photo messages with optional caption', () => {
     messageId: 43,
     photoFileId: 'large',
   });
+});
+
+test('BL-702: inboundEventOf accepts Confirm callback taps', () => {
+  const event = inboundEventOf({
+    update_id: 5,
+    callback_query: {
+      id: 'cb-1',
+      data: 'op:confirm',
+      from: { id: 9 },
+      message: { chat: { id: -100 }, message_thread_id: 5, message_id: 99 },
+    },
+  });
+  assert.deepEqual(event, {
+    kind: 'callback',
+    fromId: 9,
+    chatId: -100,
+    topicId: 5,
+    text: '',
+    callbackData: 'op:confirm',
+    callbackQueryId: 'cb-1',
+    messageId: 99,
+  });
+});
+
+test('BL-702: pending operator confirm round-trips on disk', () => {
+  const {
+    writePendingOperatorConfirm,
+    readPendingOperatorConfirm,
+  } = require('../out/tools/telegramCursorBridgeLive');
+  const root = mkTmpDir('bl702-pending-');
+  assert.equal(readPendingOperatorConfirm(root), undefined);
+  writePendingOperatorConfirm(root, { tier: 'hard', verb: '/bounce', args: 'extension' });
+  assert.deepEqual(readPendingOperatorConfirm(root), {
+    tier: 'hard',
+    verb: '/bounce',
+    args: 'extension',
+  });
+  writePendingOperatorConfirm(root, undefined);
+  assert.equal(readPendingOperatorConfirm(root), undefined);
 });
 
 test('inboundEventOf ignores a message carrying neither text nor a photo', () => {

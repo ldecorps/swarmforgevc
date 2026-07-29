@@ -1,10 +1,20 @@
 # BL-698 — Telegram / Cursor Remote operator command surface
 
 **Date:** 2026-07-28  
-**Status:** specified (ready for `/pilot BL-698`)  
+**Status:** clarified (operator polls 2026-07-29); sliced into BL-702 / BL-703 / BL-704  
 **Parent epic:** swarmforge-console (BL-517)  
 **Primary ingress:** Cursor Remote Telegram topic (principal-only, topic-bound)  
 **Alignment:** CLI and Control topic must share the same verb vocabulary and confirm semantics; Cursor Remote is the phone-first surface.
+
+## Clarifications pinned (Cursor Remote polls, 2026-07-29)
+
+| # | Topic | Decision |
+|---|-------|----------|
+| Q1 | Soft verbs (“optional ack”) | **Light confirm** — one Confirm tap, then run (not fire-and-report) |
+| Q2 | Holiday override | **Refuse** citing holiday quiet, with a **Run anyway** button (not slash `/override` alone) |
+| Q3 | After `/land` clears the pipe | **Ask each time** whether to drain-stop / sleep (no fixed default without asking) |
+| Q4 | `/autopilot` selection | Every already-specced ticket with `type: defect` (plus high/critical severity as already pinned) |
+| Q5 | Delivery shape | **Three child tickets:** BL-702 parse+env-reload+danger tiers → BL-703 hydrate/mint/autopilot/land → BL-704 shifts/holidays+docs |
 
 ## Goals
 
@@ -25,7 +35,7 @@
 | Tier | Verbs | Gate |
 |------|-------|------|
 | Read | `/status` `/update` `/log` `/doctor` `/tunnel` `/help` `/shift status` `/holiday list` | none |
-| Soft | `/pause` `/resume` `/hold` `/reinstate` `/syncenv` `/compile` `/pull` `/quiet` | optional ack |
+| Soft | `/pause` `/resume` `/hold` `/reinstate` `/syncenv` `/compile` `/pull` `/quiet` | **light confirm** (one Confirm tap; Q1 pin) |
 | Hard | `/stop` `/start` `/restart` `/bounce` `/drain-agents` `/drain-swarm` `/ensure` `/ambulance` `/kill-all` `/hydrate` `/mint` `/autopilot` `/land` | two-step confirm |
 
 Unauthorised sender or wrong topic → ignore/refuse with no side effect (same bar as BL-423 / BL-696).
@@ -89,7 +99,7 @@ does (swarm tmux session / role panes / handoffd) — not “Cursor bridge busy.
 
 **In-flight** means a non-epic ticket under `backlog/active/`, or any live ticket that currently owns a parcel in a role mailbox / `in_process` (same notion `/update` uses for “Swarm: working”). Not `paused/`, not `hold/`, not `done/`.
 
-Ordered by stage urgency (furthest downstream first — closest to done lands first — then `priority` ascending). Each item is a sequential `/pilot`-equivalent until the ticket is in `backlog/done/` or the human aborts. After the set is clear, optionally drain-stop the swarm (same teardown as a successful `/drain-swarm` once parcels are gone) — default **yes**: land then sleep.
+Ordered by stage urgency (furthest downstream first — closest to done lands first — then `priority` ascending). Each item is a sequential `/pilot`-equivalent until the ticket is in `backlog/done/` or the human aborts. After the set is clear, **ask each time** whether to drain-stop / sleep (Q3 pin) — do not silently default to land-then-sleep.
 
 `/land` vs `/drain-swarm`: drain waits/stops without Cursor finishing tickets; land **pilots them out** then sleeps. `/land` vs `/autopilot`: autopilot pulls high/defect from paused+active; land only clears what is already in flight.
 
@@ -144,7 +154,7 @@ Ordered by stage urgency (furthest downstream first — closest to done lands fi
 
 **Semantics (pin):**
 
-- **holiday** → auto-quiet + refuse `/expedite` `/pilot` `/autopilot` `/land` `/hydrate` `/mint` unless `/override` (or explicit unlock).
+- **holiday** → auto-quiet + refuse `/expedite` `/pilot` `/autopilot` `/land` `/hydrate` `/mint`, with a **Run anyway** confirm button on the refuse reply (Q2 pin). `/unlock` remains available for the stronger lock overlay.
 - **shift** → who is principal for confirms; off-shift → refuse hard-tier verbs or require double-confirm.
 - **oncall** → who receives ambulance / ensure / doctor alerts.
 - Durable state under `.swarmforge/operator/` (gitignored runtime), not committed secrets.

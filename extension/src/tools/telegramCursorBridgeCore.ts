@@ -10,6 +10,13 @@ import { parsePilotTicket } from './telegramCursorBridgePilot';
 import { parseRedeployCommand } from './telegramCursorBridgeRedeploy';
 import { parseMiniAppRedeployCommand } from './telegramCursorBridgeMiniAppRedeploy';
 import { parseLogCommand, type LogTarget } from './telegramCursorBridgeLogs';
+import {
+  decideOperatorConfirmCallback,
+  decideOperatorVerbConfirm,
+  decideOperatorSpecialCallback,
+  operatorDangerTier,
+  type PendingOperatorConfirm,
+} from './telegramCursorOperatorCore';
 
 export const CURSOR_BRIDGE_SUBJECT_ID = 'CURSOR_REMOTE';
 export const CURSOR_BRIDGE_TOPIC_NAME = 'Cursor Remote';
@@ -50,6 +57,10 @@ export interface CursorBridgeInboundEvent {
   topicId: number | undefined;
   text: string;
   photoFileId?: string;
+  /** BL-702: inline Confirm / Cancel taps on Cursor Remote. */
+  kind?: 'text' | 'callback';
+  callbackData?: string;
+  callbackQueryId?: string;
 }
 
 export type CursorBridgeDecision =
@@ -68,7 +79,14 @@ export type CursorBridgeDecision =
   | { action: 'redeploy-miniapp' }
   | { action: 'log'; target: LogTarget }
   | { action: 'prompt'; text: string; photoFileIds?: string[] }
-  | { action: 'busy' };
+  | { action: 'busy' }
+  | { action: 'prompt-operator-confirm'; tier: 'soft' | 'hard'; verb: string; args?: string }
+  | { action: 'clear-operator-pending' }
+  | { action: 'cancel-operator-pending' }
+  | { action: 'execute-operator'; verb: string; args?: string }
+  | { action: 'stop-and-run'; verb: string; args?: string }
+  | { action: 'run-anyway'; verb: string; args?: string }
+  | { action: 'land-sleep'; answer: 'yes' | 'no' };
 
 export type EnsureCursorTopicAction = { kind: 'reuse'; topicId: number } | { kind: 'create' };
 
@@ -168,12 +186,7 @@ function parseDequeuePosition(text: string): number | undefined {
 }
 
 function decideOperatorCommand(text: string): CursorBridgeDecision | undefined {
-  if (parseMiniAppRedeployCommand(text)) {
-    return { action: 'redeploy-miniapp' };
-  }
-  if (parseRedeployCommand(text)) {
-    return { action: 'redeploy' };
-  }
+  // BL-702: /redeploy is gated via operator soft confirm (not fire-and-forget).
   const logTarget = parseLogCommand(text);
   if (logTarget) {
     return { action: 'log', target: logTarget };
@@ -188,6 +201,61 @@ function decideOperatorCommand(text: string): CursorBridgeDecision | undefined {
   }
   const expediteTicket = parseExpediteTicket(text);
   return expediteTicket ? { action: 'expedite', ticket: expediteTicket } : undefined;
+}
+
+function mapOperatorConfirmDecision(
+  decision: ReturnType<typeof decideOperatorVerbConfirm>
+): CursorBridgeDecision | undefined {
+  switch (decision.action) {
+    case 'ignore':
+      return undefined;
+    case 'execute':
+      return { action: 'execute-operator', verb: decision.verb, args: decision.args };
+    case 'prompt-confirm':
+      return {
+        action: 'prompt-operator-confirm',
+        tier: decision.tier,
+        verb: decision.verb,
+        args: decision.args,
+      };
+    case 'clear-pending':
+      return { action: 'clear-operator-pending' };
+    case 'cancel-pending':
+      return { action: 'cancel-operator-pending' };
+    default:
+      return undefined;
+  }
+}
+
+function decideGatedOperatorVerb(
+  text: string,
+  pending: PendingOperatorConfirm
+): CursorBridgeDecision | undefined {
+  const trimmed = text.trim();
+  const base = trimmed.split(/\s+/)[0]?.toLowerCase() ?? '';
+  // Keep pilot/expedite/log on their existing dedicated actions.
+  if (
+    base === '/pilot' ||
+    base === '/expedite' ||
+    base === '/reexpedite' ||
+    base === '/log' ||
+    base === '/status' ||
+    base === '/help' ||
+    base === '/update' ||
+    base === '/new' ||
+    base === '/queue' ||
+    base === '/dequeue'
+  ) {
+    return undefined;
+  }
+  // Miniapp redeploy: treat as soft /redeploy with args for confirm+exec.
+  if (parseMiniAppRedeployCommand(trimmed)) {
+    return mapOperatorConfirmDecision(decideOperatorVerbConfirm('/redeploy miniapp', pending));
+  }
+  if (parseRedeployCommand(trimmed) || operatorDangerTier(trimmed) !== undefined) {
+    return mapOperatorConfirmDecision(decideOperatorVerbConfirm(trimmed, pending));
+  }
+  return undefined;
 }
 
 export function isScopedToCursorTopic(
@@ -219,13 +287,40 @@ function decideInboundGate(
   return undefined;
 }
 
-function decideInboundContent(event: CursorBridgeInboundEvent, trimmed: string): CursorBridgeDecision {
+function decideInboundContent(
+  event: CursorBridgeInboundEvent,
+  trimmed: string,
+  pending: PendingOperatorConfirm
+): CursorBridgeDecision {
+  if (event.kind === 'callback' && event.callbackData) {
+    const special = decideOperatorSpecialCallback(event.callbackData);
+    if (special.action === 'cancel-pending') {
+      return { action: 'cancel-operator-pending' };
+    }
+    if (special.action === 'stop-and-run') {
+      return { action: 'stop-and-run', verb: special.verb, args: special.args };
+    }
+    if (special.action === 'run-anyway') {
+      return { action: 'run-anyway', verb: special.verb, args: special.args };
+    }
+    if (special.action === 'land-sleep') {
+      return { action: 'land-sleep', answer: special.answer };
+    }
+    const mapped = mapOperatorConfirmDecision(
+      decideOperatorConfirmCallback(pending, event.callbackData)
+    );
+    return mapped ?? { action: 'ignore' };
+  }
   if (event.photoFileId) {
     return { action: 'prompt', text: buildPhotoPromptText(event.text), photoFileIds: [event.photoFileId] };
   }
   const dequeuePosition = parseDequeuePosition(trimmed);
   if (dequeuePosition !== undefined) {
     return { action: 'dequeue', position: dequeuePosition };
+  }
+  const gated = decideGatedOperatorVerb(trimmed, pending);
+  if (gated) {
+    return gated;
   }
   const cmd = parseCommand(trimmed);
   if (cmd) {
@@ -238,24 +333,43 @@ export function decideInboundAction(
   event: CursorBridgeInboundEvent,
   principalUserId: string | number,
   chatId: string | number,
-  cursorTopicId: number | undefined
+  cursorTopicId: number | undefined,
+  pending: PendingOperatorConfirm = undefined
 ): CursorBridgeDecision {
   const gated = decideInboundGate(event, principalUserId, chatId, cursorTopicId);
   if (gated) {
     return gated;
   }
+  if (event.kind === 'callback') {
+    return decideInboundContent(event, '', pending);
+  }
   const trimmed = event.text.trim();
   if (!trimmed && !event.photoFileId) {
     return { action: 'ignore' };
   }
-  return decideInboundContent(event, trimmed);
+  return decideInboundContent(event, trimmed, pending);
 }
 
 export function gateBusy(decision: CursorBridgeDecision, busy: boolean): CursorBridgeDecision {
-  if (!busy || !['prompt', 'expedite', 'reexpedite', 'pilot'].includes(decision.action)) {
+  if (!busy) {
     return decision;
   }
-  return { action: 'busy' };
+  if (['prompt', 'expedite', 'reexpedite', 'pilot'].includes(decision.action)) {
+    return { action: 'busy' };
+  }
+  if (decision.action === 'execute-operator') {
+    const v = decision.verb.toLowerCase();
+    const args = (decision.args ?? '').toLowerCase();
+    if (
+      v === '/hydrate' ||
+      v === '/mint' ||
+      (v === '/autopilot' && !args.startsWith('dry')) ||
+      (v === '/land' && !args.startsWith('dry'))
+    ) {
+      return { action: 'busy' };
+    }
+  }
+  return decision;
 }
 
 export function splitTelegramChunks(text: string, maxLen: number = TELEGRAM_MESSAGE_MAX_LENGTH): string[] {
@@ -472,8 +586,12 @@ export function formatHelpMessage(): string {
     '/pilot [BL-xxx] — Cursor agent staffs an offline expedition (default BL-696)',
     '/expedite [BL-xxx] — run automated offline expeditor with stage updates (default BL-696)',
     '/reexpedite [BL-xxx] — checkpoint main WIP and restart a divergent expedite',
-    '/redeploy — compile extension and restart this bridge',
-    '/redeploy miniapp — compile extension and bounce the headless mini app bridge',
+    '/redeploy — soft confirm, then compile and restart this bridge (reloads swarm.env)',
+    '/redeploy miniapp — soft confirm, then bounce the headless mini app bridge',
+    '/syncenv /compile /pull — soft confirm (one Confirm tap)',
+    '/restart /bounce [swarm|extension|bridge|all] /ensure — hard confirm',
+    '/doctor /tunnel — read-only checks',
+    '/confirm-off — clear a pending Confirm',
     '/log [expedite|redeploy|bridge] — tail the active or named operator log',
     '/help — this message',
   ].join('\n');

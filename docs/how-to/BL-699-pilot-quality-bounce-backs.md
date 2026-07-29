@@ -14,13 +14,17 @@ prompt is the contract for how the agent wears every pipeline hat.
    Do not rush a QA stamp.
 3. **Human questions use a Telegram poll** on Cursor Remote — clear question
    plus discrete options; wait for the vote. Free-text-only asks are not enough.
-   Poll send helpers may land in a later slice; the prompt rule is already in force.
+   Poll send helpers may still grow; the prompt rule is already in force.
 
 ## What stays unchanged
 
 - `/pilot` stays distinct from automated `/expedite` (`expedite_cli` / `claude -p`).
 - The gate that refuses `/pilot` while an expedite lock is held is unchanged.
-- Sibling work (Telegram status-post matrix, orphan cleanup) is out of scope here.
+
+## Siblings
+
+- BL-700 — Telegram status posts on ticket / hat / bounce
+- BL-701 — orphan acceptance / Stryker cleanup at stage boundaries
 
 ## Where it lives
 

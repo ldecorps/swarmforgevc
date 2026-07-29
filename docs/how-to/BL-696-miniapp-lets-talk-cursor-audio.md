@@ -147,7 +147,10 @@ npm run mutation:lets-talk-cursor-bridge   # hardener: scoped Stryker (includes 
 On the Cursor Remote Telegram topic, `/pilot [BL-xxx]` asks the **Cursor bridge
 agent** to staff an offline expedition (Cursor-as-expeditor). It does **not**
 spawn `claude -p` / `expedite_cli`. `/pilot` is refused while an automated
-`/expedite` lock is held. See
+`/expedite` lock is held. Sibling verbs (`/hydrate`, `/autopilot`, `/land`,
+shifts/holidays) live on the same surface — see
+[BL-698 operator commands how-to](BL-698-telegram-cursor-operator-commands.md)
+and
 [BL-696 amendment — Telegram operator commands](../reference/specs/BL-696-amendment-telegram-operator-commands.md).
 
 After TypeScript changes, restart the headless Mini App bridge:

@@ -37,7 +37,11 @@ const PRINCIPAL_ID = 42;
 const CURSOR_TOPIC_ID = 7501;
 
 function event(text, { fromId = PRINCIPAL_ID, chatId = CHAT_ID, topicId = CURSOR_TOPIC_ID, photoFileId } = {}) {
-  return { fromId, chatId, topicId, text, ...(photoFileId ? { photoFileId } : {}) };
+  return { kind: 'text', fromId, chatId, topicId, text, ...(photoFileId ? { photoFileId } : {}) };
+}
+
+function callbackEvent(callbackData, { fromId = PRINCIPAL_ID, chatId = CHAT_ID, topicId = CURSOR_TOPIC_ID } = {}) {
+  return { kind: 'callback', fromId, chatId, topicId, text: '', callbackData };
 }
 
 // ── topic ensure ─────────────────────────────────────────────────────────
@@ -233,29 +237,139 @@ test('cursor bridge: /log parses auto and named targets', () => {
   });
 });
 
-test('cursor bridge: /redeploy parses exact command', () => {
+test('cursor bridge: /redeploy soft-confirms before execute (BL-702)', () => {
   assert.deepEqual(decideInboundAction(event('/redeploy'), PRINCIPAL_ID, CHAT_ID, CURSOR_TOPIC_ID), {
-    action: 'redeploy',
+    action: 'prompt-operator-confirm',
+    tier: 'soft',
+    verb: '/redeploy',
+    args: undefined,
   });
   assert.deepEqual(decideInboundAction(event('  /REDEPLOY  '), PRINCIPAL_ID, CHAT_ID, CURSOR_TOPIC_ID), {
-    action: 'redeploy',
+    action: 'prompt-operator-confirm',
+    tier: 'soft',
+    verb: '/redeploy',
+    args: undefined,
   });
   assert.deepEqual(decideInboundAction(event('/redeploy now'), PRINCIPAL_ID, CHAT_ID, CURSOR_TOPIC_ID), {
-    action: 'prompt',
-    text: '/redeploy now',
+    action: 'prompt-operator-confirm',
+    tier: 'soft',
+    verb: '/redeploy',
+    args: 'now',
   });
 });
 
-test('cursor bridge: /redeploy miniapp parses mini app redeploy action', () => {
+test('cursor bridge: /redeploy miniapp soft-confirms (BL-702)', () => {
   assert.deepEqual(decideInboundAction(event('/redeploy miniapp'), PRINCIPAL_ID, CHAT_ID, CURSOR_TOPIC_ID), {
-    action: 'redeploy-miniapp',
+    action: 'prompt-operator-confirm',
+    tier: 'soft',
+    verb: '/redeploy',
+    args: 'miniapp',
   });
   assert.deepEqual(decideInboundAction(event('/redeploy-miniapp'), PRINCIPAL_ID, CHAT_ID, CURSOR_TOPIC_ID), {
-    action: 'redeploy-miniapp',
+    action: 'prompt-operator-confirm',
+    tier: 'soft',
+    verb: '/redeploy',
+    args: 'miniapp',
   });
   assert.deepEqual(decideInboundAction(event('/redeploy mini app'), PRINCIPAL_ID, CHAT_ID, CURSOR_TOPIC_ID), {
-    action: 'redeploy-miniapp',
+    action: 'prompt-operator-confirm',
+    tier: 'soft',
+    verb: '/redeploy',
+    args: 'miniapp',
   });
+});
+
+test('BL-702: hard verb prompts confirm; unauthorised refuses without execute', () => {
+  assert.deepEqual(decideInboundAction(event('/ensure'), PRINCIPAL_ID, CHAT_ID, CURSOR_TOPIC_ID), {
+    action: 'prompt-operator-confirm',
+    tier: 'hard',
+    verb: '/ensure',
+    args: undefined,
+  });
+  assert.deepEqual(
+    decideInboundAction(event('/restart', { fromId: 999 }), PRINCIPAL_ID, CHAT_ID, CURSOR_TOPIC_ID),
+    { action: 'refuse' }
+  );
+  assert.deepEqual(
+    decideInboundAction(event('/kill-all', { topicId: 5 }), PRINCIPAL_ID, CHAT_ID, CURSOR_TOPIC_ID),
+    { action: 'ignore' }
+  );
+});
+
+test('BL-702: soft compile prompts; confirm-off clears pending', () => {
+  assert.deepEqual(decideInboundAction(event('/compile'), PRINCIPAL_ID, CHAT_ID, CURSOR_TOPIC_ID), {
+    action: 'prompt-operator-confirm',
+    tier: 'soft',
+    verb: '/compile',
+    args: undefined,
+  });
+  assert.deepEqual(
+    decideInboundAction(event('/confirm-off'), PRINCIPAL_ID, CHAT_ID, CURSOR_TOPIC_ID, {
+      tier: 'hard',
+      verb: '/bounce',
+    }),
+    { action: 'clear-operator-pending' }
+  );
+});
+
+test('BL-702: syncenv and doctor execute as read/soft appropriately', () => {
+  assert.deepEqual(decideInboundAction(event('/doctor'), PRINCIPAL_ID, CHAT_ID, CURSOR_TOPIC_ID), {
+    action: 'execute-operator',
+    verb: '/doctor',
+    args: undefined,
+  });
+  assert.deepEqual(decideInboundAction(event('/syncenv'), PRINCIPAL_ID, CHAT_ID, CURSOR_TOPIC_ID), {
+    action: 'prompt-operator-confirm',
+    tier: 'soft',
+    verb: '/syncenv',
+    args: undefined,
+  });
+});
+
+test('BL-702: op:confirm callback executes pending hard verb', () => {
+  assert.deepEqual(
+    decideInboundAction(
+      callbackEvent('op:confirm'),
+      PRINCIPAL_ID,
+      CHAT_ID,
+      CURSOR_TOPIC_ID,
+      { tier: 'hard', verb: '/ensure' }
+    ),
+    { action: 'execute-operator', verb: '/ensure', args: undefined }
+  );
+});
+
+test('BL-702: op:cancel clears pending without execute', () => {
+  assert.deepEqual(
+    decideInboundAction(
+      callbackEvent('op:cancel'),
+      PRINCIPAL_ID,
+      CHAT_ID,
+      CURSOR_TOPIC_ID,
+      { tier: 'hard', verb: '/bounce', args: 'swarm' }
+    ),
+    { action: 'cancel-operator-pending' }
+  );
+});
+
+test('BL-702: soft confirm callback executes compile', () => {
+  assert.deepEqual(
+    decideInboundAction(
+      callbackEvent('op:confirm'),
+      PRINCIPAL_ID,
+      CHAT_ID,
+      CURSOR_TOPIC_ID,
+      { tier: 'soft', verb: '/compile' }
+    ),
+    { action: 'execute-operator', verb: '/compile', args: undefined }
+  );
+});
+
+test('BL-702: confirm with no pending is ignore', () => {
+  assert.deepEqual(
+    decideInboundAction(callbackEvent('op:confirm'), PRINCIPAL_ID, CHAT_ID, CURSOR_TOPIC_ID),
+    { action: 'ignore' }
+  );
 });
 
 test('cursor bridge: /pilot parses default and explicit ticket', () => {
@@ -332,6 +446,25 @@ test('cursor bridge: help, ignore, and refuse are not blocked by the busy gate',
   assert.deepEqual(gateBusy({ action: 'ignore' }, true), { action: 'ignore' });
   assert.deepEqual(gateBusy({ action: 'refuse' }, true), { action: 'refuse' });
   assert.deepEqual(gateBusy({ action: 'prompt', text: 'hi' }, false), { action: 'prompt', text: 'hi' });
+});
+
+test('BL-703: busy gate blocks hydrate/autopilot/land execute', () => {
+  assert.deepEqual(gateBusy({ action: 'execute-operator', verb: '/hydrate', args: 'x' }, true), {
+    action: 'busy',
+  });
+  assert.deepEqual(gateBusy({ action: 'execute-operator', verb: '/autopilot' }, true), {
+    action: 'busy',
+  });
+  assert.deepEqual(gateBusy({ action: 'execute-operator', verb: '/land' }, true), { action: 'busy' });
+  assert.deepEqual(gateBusy({ action: 'execute-operator', verb: '/autopilot', args: 'dry' }, true), {
+    action: 'execute-operator',
+    verb: '/autopilot',
+    args: 'dry',
+  });
+  assert.deepEqual(gateBusy({ action: 'execute-operator', verb: '/compile' }, true), {
+    action: 'execute-operator',
+    verb: '/compile',
+  });
 });
 
 // ── telegram chunking ────────────────────────────────────────────────────
@@ -563,8 +696,12 @@ test('cursor bridge: formatHelpMessage mentions all operator commands', () => {
       '/pilot [BL-xxx] — Cursor agent staffs an offline expedition (default BL-696)',
       '/expedite [BL-xxx] — run automated offline expeditor with stage updates (default BL-696)',
       '/reexpedite [BL-xxx] — checkpoint main WIP and restart a divergent expedite',
-      '/redeploy — compile extension and restart this bridge',
-      '/redeploy miniapp — compile extension and bounce the headless mini app bridge',
+      '/redeploy — soft confirm, then compile and restart this bridge (reloads swarm.env)',
+      '/redeploy miniapp — soft confirm, then bounce the headless mini app bridge',
+      '/syncenv /compile /pull — soft confirm (one Confirm tap)',
+      '/restart /bounce [swarm|extension|bridge|all] /ensure — hard confirm',
+      '/doctor /tunnel — read-only checks',
+      '/confirm-off — clear a pending Confirm',
       '/log [expedite|redeploy|bridge] — tail the active or named operator log',
       '/help — this message',
     ].join('\n')

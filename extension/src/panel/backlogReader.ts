@@ -63,6 +63,8 @@ export interface BacklogItem {
   // (title + remainingSlices below), distinct from an ordinary slice
   // merely declaring the same `epic:` id.
   type?: string;
+  // BL-703: severity for /autopilot selection (high|critical|…).
+  severity?: string;
   // BL-341: free-text descriptions of work known to belong to this epic
   // but not yet ticketed - only meaningful on the epic-defining ticket
   // itself (type: epic). Nothing in the backlog can derive an unticketed
@@ -187,6 +189,7 @@ function assignOptionalFields(item: BacklogItem, content: string): void {
   assignIfTruthy(item, 'approvalContext', parseYamlBlockScalar(content, 'approval_context'));
   assignIfTruthy(item, 'epic', parseYamlScalar(content, 'epic'));
   assignIfTruthy(item, 'type', parseYamlScalar(content, 'type'));
+  assignIfTruthy(item, 'severity', parseYamlScalar(content, 'severity'));
   assignIfTruthy(item, 'remainingSlices', parseYamlList(content, 'remaining_slices'));
 }
 
@@ -303,6 +306,7 @@ function assignOptionalFieldsFromObject(item: BacklogItem, obj: Record<string, u
   assignIfTruthy(item, 'approvalContext', toTrimmedOptionalString(obj.approval_context));
   assignIfTruthy(item, 'epic', toOptionalString(obj.epic));
   assignIfTruthy(item, 'type', toOptionalString(obj.type));
+  assignIfTruthy(item, 'severity', toOptionalString(obj.severity));
   assignIfTruthy(item, 'remainingSlices', toOptionalStringList(obj.remaining_slices));
 }
 
