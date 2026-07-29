@@ -18,13 +18,36 @@ class HoldMusicPlayer {
     private var playThread: Thread? = null
     private val playing = AtomicBoolean(false)
     private var generation = 0
+    @Volatile private var volumeGain = 0.55f
+    @Volatile private var preferredSongName: String? = null
     @Volatile var currentSongName: String = ""
         private set
+
+    /** null or blank = shuffle. */
+    fun setPreferredSong(name: String?) {
+        preferredSongName = name?.takeIf { it.isNotBlank() }
+    }
+
+    fun preferredSong(): String? = preferredSongName
+
+    /** 0..1 linear gain applied live to the AudioTrack. */
+    fun setVolume(gain: Float) {
+        volumeGain = gain.coerceIn(0f, 1f)
+        try {
+            track?.setVolume(volumeGain)
+        } catch (_: Exception) {
+        }
+    }
 
     fun start(onSongPicked: ((String) -> Unit)? = null) {
         stop()
         val gen = ++generation
-        val song = SONGS[Random.nextInt(SONGS.size)]
+        val preferred = preferredSongName
+        val song = if (!preferred.isNullOrBlank()) {
+            SONGS.find { it.name == preferred } ?: SONGS[Random.nextInt(SONGS.size)]
+        } else {
+            SONGS[Random.nextInt(SONGS.size)]
+        }
         currentSongName = song.name
         onSongPicked?.invoke(song.name)
         playing.set(true)
@@ -82,6 +105,10 @@ class HoldMusicPlayer {
             .setTransferMode(AudioTrack.MODE_STREAM)
             .build()
         track = at
+        try {
+            at.setVolume(volumeGain)
+        } catch (_: Exception) {
+        }
         at.play()
         var step = 0
         val phase = DoubleArray(3)

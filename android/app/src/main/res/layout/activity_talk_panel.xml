@@ -11,23 +11,58 @@
         android:orientation="vertical"
         android:padding="16dp">
 
-        <TextView
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="@string/lets_talk_title"
-            android:textColor="@color/sf_text"
-            android:textSize="20sp"
-            android:textStyle="bold" />
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/lets_talk_title"
+                android:textColor="@color/sf_text"
+                android:textSize="20sp"
+                android:textStyle="bold" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/settingsBtn"
+                style="@style/Widget.MaterialComponents.Button.TextButton"
+                android:layout_width="wrap_content"
+                android:layout_height="40dp"
+                android:minWidth="0dp"
+                android:text="@string/settings"
+                android:textSize="12sp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/playlistBtn"
+                style="@style/Widget.MaterialComponents.Button.TextButton"
+                android:layout_width="wrap_content"
+                android:layout_height="40dp"
+                android:minWidth="0dp"
+                android:text="@string/playlist"
+                android:textSize="12sp" />
+        </LinearLayout>
 
         <TextView
             android:id="@+id/phaseText"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:paddingTop="6dp"
-            android:paddingBottom="10dp"
+            android:paddingTop="4dp"
+            android:paddingBottom="8dp"
             android:text="@string/phase_ready"
             android:textColor="@color/sf_accent"
             android:textSize="15sp" />
+
+        <TextView
+            android:id="@+id/holdMusicTitle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingBottom="6dp"
+            android:textColor="@color/sf_muted"
+            android:textSize="12sp"
+            android:visibility="gone" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/recordBtn"
@@ -36,48 +71,14 @@
             android:text="@string/record"
             android:textSize="18sp" />
 
-        <LinearLayout
+        <com.google.android.material.checkbox.MaterialCheckBox
+            android:id="@+id/handsFree"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="10dp"
-            android:orientation="horizontal">
-
-            <com.google.android.material.checkbox.MaterialCheckBox
-                android:id="@+id/handsFree"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="@string/hands_free"
-                android:textColor="@color/sf_text"
-                android:textSize="13sp" />
-
-            <com.google.android.material.checkbox.MaterialCheckBox
-                android:id="@+id/holdMusic"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="@string/hold_music"
-                android:textColor="@color/sf_text"
-                android:textSize="13sp" />
-
-            <com.google.android.material.checkbox.MaterialCheckBox
-                android:id="@+id/mute"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="@string/mute"
-                android:textColor="@color/sf_text"
-                android:textSize="13sp" />
-        </LinearLayout>
-
-        <TextView
-            android:id="@+id/holdMusicTitle"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:paddingTop="4dp"
-            android:textColor="@color/sf_muted"
-            android:textSize="12sp"
-            android:visibility="gone" />
+            android:layout_marginTop="6dp"
+            android:text="@string/hands_free"
+            android:textColor="@color/sf_text"
+            android:textSize="14sp" />
 
         <TextView
             android:id="@+id/replyText"

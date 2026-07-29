@@ -19,6 +19,7 @@ import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewConfiguration
 import android.view.WindowManager
 import android.widget.Toast
 import androidx.core.app.NotificationCompat
@@ -59,6 +60,8 @@ class OverlayService : Service() {
             startAsForeground(micActive = false)
             talkEngine = TalkEngine(applicationContext)
             showBubble()
+            // Resume last mode: hands-free cold-start greets then opens the mic.
+            talkEngine?.greetAndResumeHandsFreeIfNeeded()
         } catch (e: Exception) {
             Log.e(TAG, "onCreate failed", e)
             Toast.makeText(this, "overlay failed: ${e.message}", Toast.LENGTH_LONG).show()
@@ -205,7 +208,7 @@ class OverlayService : Service() {
                 mainHandler.post { openTalkPanel() }
             }
             windowManager.addView(binding.root, params)
-            applyBubblePhase(TalkEngine.Phase.READY)
+            applyBubbleAppearance(TalkEngine.Phase.READY, paused = false)
         } catch (e: Exception) {
             Log.e(TAG, "showBubble failed", e)
             Toast.makeText(this, "bubble failed: ${e.message}", Toast.LENGTH_LONG).show()
@@ -304,25 +307,42 @@ class OverlayService : Service() {
         return bubbleBottom >= dismissTop
     }
 
-    private fun applyBubblePhase(phase: TalkEngine.Phase) {
+    private fun applyBubbleAppearance(phase: TalkEngine.Phase, paused: Boolean) {
         val view = bubbleView ?: return
         val color = ContextCompat.getColor(
             this,
-            when (phase) {
-                TalkEngine.Phase.READY -> R.color.sf_bubble
-                TalkEngine.Phase.RECORDING -> R.color.sf_bubble_recording
-                TalkEngine.Phase.THINKING -> R.color.sf_bubble_thinking
-                TalkEngine.Phase.SPEAKING -> R.color.sf_bubble_speaking
-                TalkEngine.Phase.ERROR -> R.color.sf_bubble_error
+            when {
+                paused -> R.color.sf_bubble_paused
+                phase == TalkEngine.Phase.READY -> R.color.sf_bubble
+                phase == TalkEngine.Phase.RECORDING -> R.color.sf_bubble_recording
+                phase == TalkEngine.Phase.THINKING -> R.color.sf_bubble_thinking
+                phase == TalkEngine.Phase.SPEAKING -> R.color.sf_bubble_speaking
+                phase == TalkEngine.Phase.ERROR -> R.color.sf_bubble_error
+                else -> R.color.sf_bubble
             }
         )
         val bg = view.background?.mutate()
         if (bg is GradientDrawable) {
             bg.setColor(color)
+            // Keep stroke matching the fill so phase color is a solid disc, not a rim.
+            val strokePx = (2f * resources.displayMetrics.density).toInt().coerceAtLeast(1)
+            bg.setStroke(strokePx, color)
             view.background = bg
         } else {
             view.setBackgroundColor(color)
         }
+    }
+
+    private fun toggleBubblePause() {
+        val eng = talkEngine ?: return
+        eng.togglePauseAll()
+        val snap = eng.snapshot()
+        applyBubbleAppearance(snap.phase, snap.pausedAll)
+        Toast.makeText(
+            this,
+            if (snap.pausedAll) R.string.bubble_paused else R.string.bubble_resumed,
+            Toast.LENGTH_SHORT
+        ).show()
     }
 
     private fun attachDrag(
@@ -335,48 +355,76 @@ class OverlayService : Service() {
         var startX = 0
         var startY = 0
         var moved = false
+        var longPressFired = false
+        // Finger tremor often exceeds 8px and cancels long-press — use system slop * 2.
+        val touchSlop = ViewConfiguration.get(view.context).scaledTouchSlop * 2
+        val longPressTimeout = ViewConfiguration.getLongPressTimeout().toLong()
+        val longPressRunnable = Runnable {
+            if (!moved && !longPressFired) {
+                longPressFired = true
+                view.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
+                toggleBubblePause()
+            }
+        }
         view.setOnTouchListener { v, event ->
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
                     moved = false
+                    longPressFired = false
                     downX = event.rawX.toInt()
                     downY = event.rawY.toInt()
                     startX = params.x
                     startY = params.y
+                    mainHandler.removeCallbacks(longPressRunnable)
+                    mainHandler.postDelayed(longPressRunnable, longPressTimeout)
                     true
                 }
                 MotionEvent.ACTION_MOVE -> {
                     val dx = event.rawX.toInt() - downX
                     val dy = event.rawY.toInt() - downY
-                    if (abs(dx) > 8 || abs(dy) > 8) {
-                        if (!moved) showRemoveZone()
+                    if (!moved && (abs(dx) > touchSlop || abs(dy) > touchSlop)) {
+                        // Long-press already acted — keep this gesture as pause/resume only.
+                        if (longPressFired) {
+                            return@setOnTouchListener true
+                        }
+                        mainHandler.removeCallbacks(longPressRunnable)
                         moved = true
+                        showRemoveZone()
                     }
-                    params.x = startX + dx
-                    params.y = startY + dy
-                    try {
-                        windowManager.updateViewLayout(v, params)
-                    } catch (e: Exception) {
-                        Log.w(TAG, "drag update failed", e)
+                    if (moved) {
+                        params.x = startX + dx
+                        params.y = startY + dy
+                        try {
+                            windowManager.updateViewLayout(v, params)
+                        } catch (e: Exception) {
+                            Log.w(TAG, "drag update failed", e)
+                        }
+                        setRemoveHot(isOverRemoveZone(params, v))
                     }
-                    if (moved) setRemoveHot(isOverRemoveZone(params, v))
                     true
                 }
                 MotionEvent.ACTION_UP -> {
-                    if (!moved) {
-                        hideRemoveZone()
-                        onTap()
-                    } else if (isOverRemoveZone(params, v)) {
-                        hideRemoveZone()
-                        Toast.makeText(this, R.string.bubble_closed, Toast.LENGTH_SHORT).show()
-                        stopSelf()
-                    } else {
-                        hideRemoveZone()
-                        magnetEdge(params, v)
+                    mainHandler.removeCallbacks(longPressRunnable)
+                    when {
+                        longPressFired -> hideRemoveZone()
+                        !moved -> {
+                            hideRemoveZone()
+                            onTap()
+                        }
+                        isOverRemoveZone(params, v) -> {
+                            hideRemoveZone()
+                            Toast.makeText(this, R.string.bubble_closed, Toast.LENGTH_SHORT).show()
+                            stopSelf()
+                        }
+                        else -> {
+                            hideRemoveZone()
+                            magnetEdge(params, v)
+                        }
                     }
                     true
                 }
                 MotionEvent.ACTION_CANCEL -> {
+                    mainHandler.removeCallbacks(longPressRunnable)
                     hideRemoveZone()
                     true
                 }
@@ -435,7 +483,7 @@ class OverlayService : Service() {
 
         fun onTalkSnapshot(@Suppress("UNUSED_PARAMETER") context: Context, snapshot: TalkEngine.Snapshot) {
             instance?.mainHandler?.post {
-                instance?.applyBubblePhase(snapshot.phase)
+                instance?.applyBubbleAppearance(snapshot.phase, snapshot.pausedAll)
                 // Keep FGS mic type aligned with recording only.
                 try {
                     instance?.updateMicrophoneForeground(snapshot.phase == TalkEngine.Phase.RECORDING)

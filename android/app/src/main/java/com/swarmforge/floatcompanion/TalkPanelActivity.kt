@@ -1,15 +1,20 @@
 package com.swarmforge.floatcompanion
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.util.Log
+import android.view.LayoutInflater
 import android.view.View
 import android.view.WindowManager
+import android.widget.SeekBar
 import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import com.google.android.material.checkbox.MaterialCheckBox
 import com.swarmforge.floatcompanion.databinding.ActivityTalkPanelBinding
 
 /**
@@ -71,6 +76,8 @@ class TalkPanelActivity : AppCompatActivity(), TalkEngine.Listener {
         }
         binding.pauseAll.setOnClickListener { eng.togglePauseAll() }
         binding.newSession.setOnClickListener { eng.resetSession() }
+        binding.settingsBtn.setOnClickListener { showSettingsDialog(eng) }
+        binding.playlistBtn.setOnClickListener { showPlaylistDialog(eng) }
 
         binding.handsFree.setOnCheckedChangeListener { _, checked ->
             if (suppressToggleCallbacks) return@setOnCheckedChangeListener
@@ -90,25 +97,120 @@ class TalkPanelActivity : AppCompatActivity(), TalkEngine.Listener {
             }
             eng.setHandsFree(checked)
         }
-        binding.holdMusic.setOnCheckedChangeListener { _, checked ->
-            if (suppressToggleCallbacks) return@setOnCheckedChangeListener
-            eng.setHoldMusic(checked)
-        }
-        binding.mute.setOnCheckedChangeListener { _, checked ->
-            if (suppressToggleCallbacks) return@setOnCheckedChangeListener
-            if (eng.snapshot().pausedAll) {
-                suppressToggleCallbacks = true
-                binding.mute.isChecked = true
-                suppressToggleCallbacks = false
-                return@setOnCheckedChangeListener
-            }
-            eng.setMuted(checked)
-        }
 
         eng.setListener(this)
         if (eng.snapshot().handsFree && hasMicPermission()) {
             eng.ensureListeningIfHandsFree()
         }
+    }
+
+    /**
+     * Home / Recents: collapse to bubble on the launcher, same as the Collapse
+     * button — do not leave the pairing activity or a stuck panel task visible.
+     */
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        if (!stoppingOverlay && !isFinishing) {
+            finish()
+        }
+    }
+
+    private fun showSettingsDialog(eng: TalkEngine) {
+        val view = LayoutInflater.from(this).inflate(R.layout.dialog_settings, null)
+        val holdMusic = view.findViewById<MaterialCheckBox>(R.id.holdMusic)
+        val mute = view.findViewById<MaterialCheckBox>(R.id.mute)
+        val volumeSeek = view.findViewById<SeekBar>(R.id.volumeSeek)
+        val volumeValue = view.findViewById<android.widget.TextView>(R.id.volumeValue)
+
+        fun syncFromEngine() {
+            val snap = eng.snapshot()
+            suppressToggleCallbacks = true
+            holdMusic.isChecked = snap.holdMusicOn
+            mute.isChecked = snap.muted
+            if (!volumeSeek.isPressed) {
+                volumeSeek.progress = snap.volumePercent
+                volumeValue.text = snap.volumePercent.toString()
+            }
+            mute.isEnabled = !snap.pausedAll
+            volumeSeek.isEnabled = !snap.pausedAll
+            suppressToggleCallbacks = false
+        }
+        syncFromEngine()
+
+        holdMusic.setOnCheckedChangeListener { _, checked ->
+            if (suppressToggleCallbacks) return@setOnCheckedChangeListener
+            eng.setHoldMusic(checked)
+        }
+        mute.setOnCheckedChangeListener { _, checked ->
+            if (suppressToggleCallbacks) return@setOnCheckedChangeListener
+            if (eng.snapshot().pausedAll) {
+                suppressToggleCallbacks = true
+                mute.isChecked = true
+                suppressToggleCallbacks = false
+                return@setOnCheckedChangeListener
+            }
+            eng.setMuted(checked)
+        }
+        volumeSeek.max = 100
+        volumeSeek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                volumeValue.text = progress.toString()
+                if (fromUser) eng.setVolumePercent(progress)
+            }
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
+        })
+
+        AlertDialog.Builder(this)
+            .setTitle(R.string.settings)
+            .setView(view)
+            .setPositiveButton(android.R.string.ok) { _, _ ->
+                Toast.makeText(this, R.string.settings_saved, Toast.LENGTH_SHORT).show()
+            }
+            .setNeutralButton(R.string.edit_pairing) { _, _ ->
+                startActivity(
+                    Intent(this, MainActivity::class.java)
+                        .putExtra(MainActivity.EXTRA_EDIT_PAIRING, true)
+                )
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun showPlaylistDialog(eng: TalkEngine) {
+        val songs = eng.songNames()
+        val labels = ArrayList<String>(songs.size + 1)
+        labels.add(getString(R.string.playlist_shuffle))
+        labels.addAll(songs)
+        val preferred = eng.snapshot().preferredSong
+        val checked = if (preferred.isBlank()) {
+            0
+        } else {
+            val idx = songs.indexOf(preferred)
+            if (idx >= 0) idx + 1 else 0
+        }
+        AlertDialog.Builder(this)
+            .setTitle(R.string.playlist)
+            .setSingleChoiceItems(labels.toTypedArray(), checked) { _, which ->
+                val name = if (which == 0) "" else songs[which - 1]
+                eng.setPreferredSong(name)
+                eng.previewSong(name)
+                val label = if (name.isBlank()) {
+                    getString(R.string.playlist_shuffle)
+                } else {
+                    name
+                }
+                Toast.makeText(
+                    this,
+                    getString(R.string.playlist_playing, label),
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+            .setPositiveButton(R.string.playlist_stop) { _, _ ->
+                eng.stopHoldMusicPreview()
+            }
+            .setNegativeButton(android.R.string.ok, null)
+            .show()
     }
 
     override fun onDestroy() {
@@ -157,15 +259,14 @@ class TalkPanelActivity : AppCompatActivity(), TalkEngine.Listener {
             binding.holdMusicTitle.visibility = View.GONE
         }
 
-        suppressToggleCallbacks = true
-        binding.handsFree.isChecked = snapshot.handsFree
-        binding.holdMusic.isChecked = snapshot.holdMusicOn
-        binding.mute.isChecked = snapshot.muted
-        suppressToggleCallbacks = false
-
         binding.pauseAll.setText(
             if (snapshot.pausedAll) R.string.resume_all else R.string.pause_all
         )
+
+        suppressToggleCallbacks = true
+        binding.handsFree.isChecked = snapshot.handsFree
+        binding.handsFree.isEnabled = !snapshot.pausedAll
+        suppressToggleCallbacks = false
 
         val thinking = snapshot.phase == TalkEngine.Phase.THINKING
         binding.recordBtn.isEnabled = !snapshot.pausedAll && !thinking
@@ -173,8 +274,6 @@ class TalkPanelActivity : AppCompatActivity(), TalkEngine.Listener {
             !snapshot.pausedAll && !thinking && snapshot.phase != TalkEngine.Phase.SPEAKING
         binding.turnInput.isEnabled =
             !snapshot.pausedAll && !thinking && snapshot.phase != TalkEngine.Phase.SPEAKING
-        binding.handsFree.isEnabled = !snapshot.pausedAll
-        binding.mute.isEnabled = !snapshot.pausedAll
         binding.newSession.isEnabled =
             !thinking && snapshot.phase != TalkEngine.Phase.SPEAKING
     }

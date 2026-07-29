@@ -23,7 +23,9 @@ class TalkEngine(private val appContext: Context) {
         val handsFree: Boolean = false,
         val holdMusicOn: Boolean = true,
         val muted: Boolean = false,
-        val pausedAll: Boolean = false
+        val pausedAll: Boolean = false,
+        val volumePercent: Int = 55,
+        val preferredSong: String = ""
     )
 
     fun interface Listener {
@@ -38,7 +40,11 @@ class TalkEngine(private val appContext: Context) {
     private var handsFree = CompanionPrefs.isHandsFree(appContext)
     private var holdMusicOn = CompanionPrefs.isHoldMusic(appContext)
     private var muted = CompanionPrefs.isMuted(appContext)
+    private var volumePercent = CompanionPrefs.getVolumePercent(appContext)
+    private var preferredSong = CompanionPrefs.getPreferredSong(appContext)
     private var pausedAll = false
+    private var handsFreeBeforePause = false
+    private var mutedBeforePause = false
     private var replyText = ""
     private var replyIsErrorStyle = false
     private var holdMusicTitle: String? = null
@@ -54,6 +60,9 @@ class TalkEngine(private val appContext: Context) {
         replyPlayer = ReplyAudioPlayer(appContext) {
             mainHandler.post { onPlaybackDone() }
         }
+        replyPlayer?.setVolume(volumePercent / 100f)
+        holdMusic.setVolume(volumePercent / 100f)
+        holdMusic.setPreferredSong(preferredSong.ifBlank { null })
         recorder = AudioTurnRecorder(appContext.cacheDir) {
             mainHandler.post { onRecorderAutoStop() }
         }
@@ -67,8 +76,12 @@ class TalkEngine(private val appContext: Context) {
         handsFree = handsFree,
         holdMusicOn = holdMusicOn,
         muted = muted,
-        pausedAll = pausedAll
+        pausedAll = pausedAll,
+        volumePercent = volumePercent,
+        preferredSong = preferredSong
     )
+
+    fun songNames(): List<String> = HoldMusicPlayer.SONGS.map { it.name }
 
     fun setListener(l: Listener?) {
         listener = l
@@ -123,23 +136,83 @@ class TalkEngine(private val appContext: Context) {
         publish()
     }
 
+    fun setVolumePercent(percent: Int) {
+        volumePercent = percent.coerceIn(0, 100)
+        CompanionPrefs.setVolumePercent(appContext, volumePercent)
+        val gain = volumePercent / 100f
+        holdMusic.setVolume(gain)
+        replyPlayer?.setVolume(gain)
+        publish()
+    }
+
+    /** Empty name = shuffle. If hold music is playing, switch now. */
+    fun setPreferredSong(name: String) {
+        preferredSong = name.trim()
+        CompanionPrefs.setPreferredSong(appContext, preferredSong)
+        holdMusic.setPreferredSong(preferredSong.ifBlank { null })
+        if (holdMusicOn && !pausedAll && phase == Phase.THINKING) {
+            startHoldMusic()
+        }
+        publish()
+    }
+
+    /** Play a hold tune now for listening — works even when not thinking. */
+    fun previewSong(name: String) {
+        if (pausedAll) return
+        val trimmed = name.trim()
+        if (trimmed.isNotEmpty()) {
+            preferredSong = trimmed
+            CompanionPrefs.setPreferredSong(appContext, preferredSong)
+            holdMusic.setPreferredSong(preferredSong)
+        } else {
+            holdMusic.setPreferredSong(null)
+        }
+        if (!holdMusicOn) {
+            holdMusicOn = true
+            CompanionPrefs.setHoldMusic(appContext, true)
+        }
+        startHoldMusic()
+    }
+
+    fun stopHoldMusicPreview() {
+        // Keep thinking-phase music if a turn is in flight; only stop idle previews.
+        if (phase == Phase.THINKING) return
+        holdMusic.stop()
+        holdMusicTitle = null
+        publish()
+    }
+
     fun togglePauseAll() {
-        pausedAll = !pausedAll
-        if (pausedAll) {
+        if (!pausedAll) {
+            handsFreeBeforePause = handsFree
+            mutedBeforePause = muted
+            pausedAll = true
+            // In-memory only — do not clobber prefs; pause is ephemeral.
             muted = true
             handsFree = false
-            CompanionPrefs.setMuted(appContext, true)
-            CompanionPrefs.setHandsFree(appContext, false)
             clearAutoListen()
             if (recorder?.isRecording == true) recorder?.cancel()
             replyPlayer?.stopNow()
             holdMusic.stop()
             holdMusicTitle = null
-            setPhase(Phase.READY)
-        } else if (holdMusicOn && phase == Phase.THINKING) {
-            startHoldMusic()
+            if (phase != Phase.READY) {
+                phase = Phase.READY
+            }
+            publish()
+        } else {
+            pausedAll = false
+            muted = mutedBeforePause
+            handsFree = handsFreeBeforePause
+            CompanionPrefs.setMuted(appContext, muted)
+            CompanionPrefs.setHandsFree(appContext, handsFree)
+            publish()
+            if (holdMusicOn && phase == Phase.THINKING) {
+                startHoldMusic()
+            }
+            if (handsFree) {
+                ensureListeningIfHandsFree()
+            }
         }
-        publish()
     }
 
     fun onRecordClicked() {
@@ -162,6 +235,26 @@ class TalkEngine(private val appContext: Context) {
             if (phase == Phase.ERROR) setPhase(Phase.READY)
             scheduleHandsFreeListen(AudioTurnRecorder.HANDS_FREE_POST_SPEECH_MS)
         }
+    }
+
+    /**
+     * Cold-start: if the user last left hands-free on, greet briefly then open the mic.
+     * Safe to call once when [OverlayService] creates the engine.
+     */
+    fun greetAndResumeHandsFreeIfNeeded() {
+        if (!alive.get() || pausedAll || !handsFree) return
+        if (phase != Phase.READY && phase != Phase.ERROR) return
+        if (phase == Phase.ERROR) setPhase(Phase.READY)
+        val greeting = appContext.getString(R.string.hands_free_hello)
+        replyText = greeting
+        replyIsErrorStyle = true
+        publish()
+        if (muted) {
+            ensureListeningIfHandsFree()
+            return
+        }
+        setPhase(Phase.SPEAKING)
+        replyPlayer?.speakPlain(greeting)
     }
 
     fun startRecording(auto: Boolean) {
@@ -228,11 +321,16 @@ class TalkEngine(private val appContext: Context) {
     }
 
     private fun onRecorderAutoStop() {
+        if (pausedAll) return
         if (phase != Phase.RECORDING) return
         stopRecording(manual = false)
     }
 
     private fun stopRecording(manual: Boolean) {
+        if (pausedAll) {
+            recorder?.cancel()
+            return
+        }
         if (phase != Phase.RECORDING && recorder?.isRecording != true) return
         if (manual && System.currentTimeMillis() - recordStartedAt < AudioTurnRecorder.MIN_RECORD_MS) {
             Toast.makeText(appContext, R.string.keep_recording, Toast.LENGTH_SHORT).show()

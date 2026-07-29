@@ -3,6 +3,7 @@ package com.swarmforge.floatcompanion
 import android.content.Context
 import android.media.AudioAttributes
 import android.media.MediaPlayer
+import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.speech.tts.TextToSpeech
@@ -25,6 +26,16 @@ class ReplyAudioPlayer(
     private val mainHandler = Handler(Looper.getMainLooper())
     private var watchdog: Runnable? = null
     private var speakPoll: Runnable? = null
+    @Volatile private var volumeGain = 0.55f
+
+    /** 0..1 linear gain for MediaPlayer + TTS. */
+    fun setVolume(gain: Float) {
+        volumeGain = gain.coerceIn(0f, 1f)
+        try {
+            mediaPlayer?.setVolume(volumeGain, volumeGain)
+        } catch (_: Exception) {
+        }
+    }
 
     override fun onInit(status: Int) {
         ttsReady.set(status == TextToSpeech.SUCCESS)
@@ -70,6 +81,25 @@ class ReplyAudioPlayer(
             tts?.stop()
         } catch (_: Exception) {
         }
+    }
+
+    /**
+     * Local TTS greeting (not a bridge reply). Waits briefly for TTS init.
+     * Invokes [onDone] when finished or skipped.
+     */
+    fun speakPlain(text: String, attemptsLeft: Int = 8) {
+        stopNow()
+        finished.set(false)
+        if (!ttsReady.get()) {
+            if (attemptsLeft <= 0) {
+                Log.w(TAG, "TTS not ready for plain speak — skipping")
+                complete()
+                return
+            }
+            mainHandler.postDelayed({ speakPlain(text, attemptsLeft - 1) }, 250)
+            return
+        }
+        speak(text, null)
     }
 
     fun shutdown() {
@@ -126,6 +156,10 @@ class ReplyAudioPlayer(
                 true
             }
             mp.prepare()
+            try {
+                mp.setVolume(volumeGain, volumeGain)
+            } catch (_: Exception) {
+            }
             armWatchdog((mp.duration.takeIf { it > 0 } ?: 8_000).toLong() + 2_000)
             mp.start()
         } catch (e: Exception) {
@@ -164,7 +198,9 @@ class ReplyAudioPlayer(
         // ~180 wpm + buffer; never leave the panel stuck on "speaking"
         armWatchdog((words * 400L + 3_000L).coerceIn(4_000L, 45_000L))
 
-        val status = engine.speak(text, TextToSpeech.QUEUE_FLUSH, null, "sf-reply")
+        val params = Bundle()
+        params.putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, volumeGain)
+        val status = engine.speak(text, TextToSpeech.QUEUE_FLUSH, params, "sf-reply")
         if (status != TextToSpeech.SUCCESS) {
             Log.w(TAG, "TTS speak() returned $status")
             complete()

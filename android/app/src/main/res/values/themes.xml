@@ -10,6 +10,7 @@
     <color name="sf_bubble_thinking">#FFD29922</color>
     <color name="sf_bubble_speaking">#FF1F6FEB</color>
     <color name="sf_bubble_error">#FFDA3633</color>
+    <color name="sf_bubble_paused">#FF6E7681</color>
     <style name="Theme.FloatCompanion" parent="Theme.MaterialComponents.DayNight.NoActionBar">
         <item name="colorPrimary">@color/sf_accent</item>
         <item name="android:statusBarColor">@color/sf_bg</item>

@@ -19,6 +19,7 @@
             android:paddingBottom="12dp" />
 
         <com.google.android.material.textfield.TextInputLayout
+            android:id="@+id/bridgeUrlLayout"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:hint="@string/bridge_url_hint">
@@ -31,6 +32,7 @@
         </com.google.android.material.textfield.TextInputLayout>
 
         <com.google.android.material.textfield.TextInputLayout
+            android:id="@+id/tokenLayout"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"

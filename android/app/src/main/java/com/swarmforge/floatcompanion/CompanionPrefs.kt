@@ -11,6 +11,8 @@ object CompanionPrefs {
     private const val KEY_HANDS_FREE = "hands_free"
     private const val KEY_HOLD_MUSIC = "hold_music"
     private const val KEY_MUTE = "mute"
+    private const val KEY_VOLUME = "playback_volume_percent"
+    private const val KEY_PREFERRED_SONG = "preferred_hold_song"
 
     private fun prefs(ctx: Context): SharedPreferences =
         ctx.getSharedPreferences(NAME, Context.MODE_PRIVATE)
@@ -25,6 +27,14 @@ object CompanionPrefs {
 
     fun isMuted(ctx: Context): Boolean = prefs(ctx).getBoolean(KEY_MUTE, false)
 
+    /** 0..100 playback loudness for hold music + reply voice. Default 55. */
+    fun getVolumePercent(ctx: Context): Int =
+        prefs(ctx).getInt(KEY_VOLUME, 55).coerceIn(0, 100)
+
+    /** Empty string means shuffle. */
+    fun getPreferredSong(ctx: Context): String =
+        prefs(ctx).getString(KEY_PREFERRED_SONG, "") ?: ""
+
     fun setHandsFree(ctx: Context, on: Boolean) {
         prefs(ctx).edit().putBoolean(KEY_HANDS_FREE, on).apply()
     }
@@ -35,6 +45,14 @@ object CompanionPrefs {
 
     fun setMuted(ctx: Context, on: Boolean) {
         prefs(ctx).edit().putBoolean(KEY_MUTE, on).apply()
+    }
+
+    fun setVolumePercent(ctx: Context, percent: Int) {
+        prefs(ctx).edit().putInt(KEY_VOLUME, percent.coerceIn(0, 100)).apply()
+    }
+
+    fun setPreferredSong(ctx: Context, name: String) {
+        prefs(ctx).edit().putString(KEY_PREFERRED_SONG, name).apply()
     }
 
     /**
