@@ -48,6 +48,9 @@ Telegram topic, including numbered choice polls when the reply lists options.
 3. The bridge transcribes the audio server-side, prompts the shared Cursor
    agent, and the WebView speaks the reply via `speechSynthesis` (local mode).
    Quiet hold music plays during `thinking` when enabled.
+   Catalog includes the Zappa set plus BL-705 iconic homages (Thanatos,
+   Ghost'n Goblins, Zelda, Tron, Tetris, Mega Man) — see
+   `docs/how-to/BL-705-lets-talk-more-chiptunes.md`.
 4. The transcript appears under the playback bar; state returns to **ready**.
 
 The browser captures audio only. Speech-to-text runs on the bridge host so the

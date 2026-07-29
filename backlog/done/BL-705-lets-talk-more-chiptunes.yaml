@@ -3,7 +3,7 @@ title: "Let's Talk hold music — expand chiptune catalog (Thanatos, Ghost'n Gob
 milestone: M8
 type: feature
 severity: low
-status: todo
+status: done
 epic: swarmforge-console
 human_approval: approved
 priority: 20
@@ -22,6 +22,8 @@ approval_context: >
   Human asked to mint GitHub issue #28 (2026-07-29). Confirmed no YM
   attachments could be added to the issue; source inspiration remains
   https://www.genesis8bit.fr and public chiptune refs. YM decoder deferred.
+  Closed 2026-07-29 after human asked to attack chiptunes once BL-707
+  dismiss was validated (evidence backlog/evidence/BL-705-qa-pass-20260729.md).
 
 description: |
   ## What

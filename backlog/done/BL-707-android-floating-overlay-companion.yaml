@@ -3,7 +3,7 @@ title: "Android floating overlay companion — system bubble over other apps tha
 milestone: M8
 type: feature
 severity: high
-status: todo
+status: done
 epic: swarmforge-console
 human_approval: approved
 priority: 2
@@ -24,6 +24,8 @@ approval_context: >
   they want a real floating widget. Confirmed absolutely push mint of the
   Android Overlay Companion and pilot ASAP. Drained from
   INTAKE-android-floating-ai-assistant (operator + backlog root).
+  Closed 2026-07-29 after human confirmed drag-to-bottom dismiss
+  (evidence backlog/evidence/BL-707-qa-pass-20260729.md; APK 0.2.8-BL707).
 
 description: |
   ## What

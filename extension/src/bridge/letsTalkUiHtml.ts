@@ -631,6 +631,72 @@ export function getLetsTalkUiHtml(speechLocale = 'en-US'): string {
       [C5,G4,A3,2],[E5,B4,A3,0],[D5,A4,F3,1],[C5,G4,F3,0],
       [A4,E4,E3,1],[G4,D4,E3,0],[A4,E4,A3,2],[C5,G4,A3,0],
     ]},
+    // 13. Thanatos (1986) — dark dungeon homage
+    { name: 'Thanatos', bpm: 96, steps: [
+      [E4,B3,E3,1],[R,R,E3,0],[G4,E4,E3,1],[B4,G4,G3,2],
+      [A4,E4,A3,1],[G4,D4,A3,0],[E4,B3,E3,1],[R,R,E3,0],
+      [D4,A3,D3,1],[E4,B3,D3,0],[F4,C4,F3,2],[E4,B3,F3,0],
+      [D4,A3,A3,1],[C4,G3,A3,0],[B3,Fs3,E3,1],[R,R,E3,0],
+      [E5,B4,E3,1],[D5,A4,E3,0],[B4,G4,G3,2],[A4,E4,G3,0],
+      [G4,D4,A3,1],[E4,B3,A3,0],[D4,A3,D3,1],[E4,B3,D3,0],
+      [F4,C4,F3,2],[G4,D4,F3,0],[A4,E4,A3,1],[G4,D4,A3,0],
+      [E4,B3,E3,1],[R,R,E3,0],[B3,G3,E3,2],[E4,B3,E3,0],
+    ]},
+    // 14. Ghost'n Goblins — Capcom stage homage
+    { name: "Ghost'n Goblins", bpm: 128, steps: [
+      [E5,B4,E3,1],[D5,A4,E3,0],[C5,G4,A3,1],[B4,Fs4,A3,2],
+      [A4,E4,F3,1],[G4,D4,F3,0],[A4,E4,E3,1],[B4,Fs4,E3,0],
+      [C5,G4,C3,2],[D5,A4,C3,0],[E5,B4,G3,1],[D5,A4,G3,0],
+      [C5,G4,A3,1],[B4,Fs4,A3,0],[A4,E4,E3,2],[R,R,E3,0],
+      [G5,E5,E3,1],[Fs5,D5,E3,0],[E5,B4,A3,1],[D5,A4,A3,2],
+      [C5,G4,F3,1],[B4,Fs4,F3,0],[A4,E4,E3,1],[G4,D4,E3,0],
+      [A4,E4,A3,2],[B4,Fs4,A3,0],[C5,G4,C3,1],[D5,A4,C3,0],
+      [E5,B4,E3,1],[D5,A4,E3,0],[B4,Fs4,B3,2],[E5,B4,E3,0],
+    ]},
+    // 15. Zelda — overworld homage
+    { name: 'Zelda Overworld', bpm: 120, steps: [
+      [Bb4,F4,Bb3,1],[F4,D4,Bb3,0],[Bb4,F4,F3,1],[Bb4,F4,F3,0],
+      [C5,G4,Eb3,1],[D5,A4,Eb3,2],[Eb5,Bb4,Bb3,1],[D5,A4,Bb3,0],
+      [C5,G4,F3,1],[Bb4,F4,F3,0],[A4,F4,C3,1],[Bb4,F4,C3,2],
+      [C5,G4,F3,1],[R,R,F3,0],[F5,C5,Bb3,1],[Eb5,Bb4,Bb3,0],
+      [D5,A4,G3,2],[C5,G4,G3,0],[Bb4,F4,Eb3,1],[A4,F4,Eb3,0],
+      [Bb4,F4,Bb3,1],[C5,G4,Bb3,0],[D5,A4,F3,2],[Eb5,Bb4,F3,0],
+      [F5,C5,Bb3,1],[Eb5,Bb4,Bb3,0],[D5,A4,G3,1],[C5,G4,G3,0],
+      [Bb4,F4,Bb3,2],[A4,F4,Bb3,0],[Bb4,F4,F3,1],[C5,G4,F3,0],
+    ]},
+    // 16. Tron — lightcycle pulse homage
+    { name: 'Tron Lightcycle', bpm: 110, steps: [
+      [E4,B3,E3,1],[E4,B3,E3,0],[B4,E4,E3,1],[E4,B3,E3,2],
+      [Fs4,D4,Fs3,1],[Fs4,D4,Fs3,0],[B4,Fs4,Fs3,1],[Fs4,D4,Fs3,0],
+      [G4,E4,G3,2],[G4,E4,G3,0],[B4,G4,G3,1],[G4,E4,G3,0],
+      [A4,E4,A3,1],[A4,E4,A3,0],[E5,A4,A3,2],[A4,E4,A3,0],
+      [B4,Fs4,B3,1],[B4,Fs4,B3,0],[Fs5,B4,B3,1],[B4,Fs4,B3,2],
+      [A4,E4,A3,1],[G4,E4,G3,0],[Fs4,D4,Fs3,1],[E4,B3,E3,0],
+      [E5,B4,E3,2],[B4,Fs4,E3,0],[A4,E4,A3,1],[G4,D4,A3,0],
+      [Fs4,D4,B3,1],[E4,B3,B3,0],[B3,Fs3,E3,2],[E4,B3,E3,0],
+    ]},
+    // 17. Tetris — Korobeiniki homage
+    { name: 'Tetris', bpm: 140, steps: [
+      [E5,B4,E3,1],[B4,G4,E3,0],[C5,A4,A3,1],[D5,B4,A3,2],
+      [C5,A4,E3,1],[B4,G4,E3,0],[A4,E4,A3,1],[C5,A4,A3,0],
+      [E5,C5,C3,2],[D5,B4,C3,0],[C5,A4,G3,1],[B4,G4,G3,0],
+      [E4,B3,E3,1],[R,R,E3,0],[E5,B4,E3,2],[B4,G4,E3,0],
+      [C5,A4,A3,1],[D5,B4,A3,0],[C5,A4,E3,2],[B4,G4,E3,0],
+      [A4,E4,A3,1],[C5,A4,A3,0],[E5,C5,C3,1],[D5,B4,C3,0],
+      [C5,A4,G3,2],[B4,G4,G3,0],[A4,E4,A3,1],[R,R,A3,0],
+      [B4,G4,E3,1],[C5,A4,E3,0],[D5,B4,G3,2],[E5,C5,G3,0],
+    ]},
+    // 18. Mega Man — stage start homage
+    { name: 'Mega Man', bpm: 150, steps: [
+      [G4,D4,G3,1],[G4,D4,G3,0],[G4,D4,G3,1],[Bb4,F4,G3,2],
+      [C5,G4,C3,1],[Bb4,F4,C3,0],[G4,D4,G3,1],[R,R,G3,0],
+      [F4,C4,F3,1],[G4,D4,F3,0],[Bb4,F4,Bb3,2],[C5,G4,Bb3,0],
+      [D5,A4,G3,1],[C5,G4,G3,0],[Bb4,F4,D3,1],[G4,D4,D3,0],
+      [G5,D5,G3,2],[F5,C5,G3,0],[D5,A4,Bb3,1],[C5,G4,Bb3,0],
+      [Bb4,F4,F3,1],[A4,F4,F3,0],[G4,D4,G3,2],[R,R,G3,0],
+      [Bb4,F4,Bb3,1],[C5,G4,Bb3,0],[D5,A4,G3,1],[F5,C5,G3,2],
+      [D5,A4,C3,1],[C5,G4,C3,0],[Bb4,F4,G3,1],[G4,D4,G3,0],
+    ]},
   ];
 
   function createChiptuneOsc(ctx, type, freq, gain, dest) {

@@ -78,6 +78,15 @@ test("lets-talk Mini App shell is served without auth", async () => {
     assert.match(body, /data-testid="lets-talk-mute"/);
     assert.match(body, /data-testid="lets-talk-wake-lock-toggle"/);
     assert.match(body, /data-testid="lets-talk-bridge-health"/);
+    // BL-705: iconic hold-music chiptune catalog expansion
+    assert.match(body, /name: 'Thanatos'/);
+    assert.match(body, /name: "Ghost'n Goblins"/);
+    assert.match(body, /name: 'Zelda Overworld'/);
+    assert.match(body, /name: 'Tron Lightcycle'/);
+    assert.match(body, /name: 'Tetris'/);
+    assert.match(body, /name: 'Mega Man'/);
+    assert.match(body, /chiptuneSongs/);
+    assert.doesNotMatch(body, /YM decoder|ymDecode|Atari ST YM/i);
     assert.match(body, /scheduleHandsFreeListen/);
     assert.match(body, /pollBridgeHealth/);
     assert.match(body, /ensureSpeechVoices/);

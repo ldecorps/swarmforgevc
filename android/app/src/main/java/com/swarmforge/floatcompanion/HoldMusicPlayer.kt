@@ -280,6 +280,67 @@ class HoldMusicPlayer {
                 intArrayOf(C5,G4,G3,1), intArrayOf(A4,E4,G3,0), intArrayOf(G4,D4,D3,1), intArrayOf(A4,E4,D3,0),
                 intArrayOf(C5,G4,A3,2), intArrayOf(E5,B4,A3,0), intArrayOf(D5,A4,F3,1), intArrayOf(C5,G4,F3,0),
                 intArrayOf(A4,E4,E3,1), intArrayOf(G4,D4,E3,0), intArrayOf(A4,E4,A3,2), intArrayOf(C5,G4,A3,0)
+            )),
+            // BL-705 iconic homages (same names/steps as letsTalkUiHtml.ts)
+            Song("Thanatos", 96, arrayOf(
+                intArrayOf(E4,B3,E3,1), intArrayOf(R,R,E3,0), intArrayOf(G4,E4,E3,1), intArrayOf(B4,G4,G3,2),
+                intArrayOf(A4,E4,A3,1), intArrayOf(G4,D4,A3,0), intArrayOf(E4,B3,E3,1), intArrayOf(R,R,E3,0),
+                intArrayOf(D4,A3,D3,1), intArrayOf(E4,B3,D3,0), intArrayOf(F4,C4,F3,2), intArrayOf(E4,B3,F3,0),
+                intArrayOf(D4,A3,A3,1), intArrayOf(C4,G3,A3,0), intArrayOf(B3,Fs3,E3,1), intArrayOf(R,R,E3,0),
+                intArrayOf(E5,B4,E3,1), intArrayOf(D5,A4,E3,0), intArrayOf(B4,G4,G3,2), intArrayOf(A4,E4,G3,0),
+                intArrayOf(G4,D4,A3,1), intArrayOf(E4,B3,A3,0), intArrayOf(D4,A3,D3,1), intArrayOf(E4,B3,D3,0),
+                intArrayOf(F4,C4,F3,2), intArrayOf(G4,D4,F3,0), intArrayOf(A4,E4,A3,1), intArrayOf(G4,D4,A3,0),
+                intArrayOf(E4,B3,E3,1), intArrayOf(R,R,E3,0), intArrayOf(B3,G3,E3,2), intArrayOf(E4,B3,E3,0)
+            )),
+            Song("Ghost'n Goblins", 128, arrayOf(
+                intArrayOf(E5,B4,E3,1), intArrayOf(D5,A4,E3,0), intArrayOf(C5,G4,A3,1), intArrayOf(B4,Fs4,A3,2),
+                intArrayOf(A4,E4,F3,1), intArrayOf(G4,D4,F3,0), intArrayOf(A4,E4,E3,1), intArrayOf(B4,Fs4,E3,0),
+                intArrayOf(C5,G4,C3,2), intArrayOf(D5,A4,C3,0), intArrayOf(E5,B4,G3,1), intArrayOf(D5,A4,G3,0),
+                intArrayOf(C5,G4,A3,1), intArrayOf(B4,Fs4,A3,0), intArrayOf(A4,E4,E3,2), intArrayOf(R,R,E3,0),
+                intArrayOf(G5,E5,E3,1), intArrayOf(Fs5,D5,E3,0), intArrayOf(E5,B4,A3,1), intArrayOf(D5,A4,A3,2),
+                intArrayOf(C5,G4,F3,1), intArrayOf(B4,Fs4,F3,0), intArrayOf(A4,E4,E3,1), intArrayOf(G4,D4,E3,0),
+                intArrayOf(A4,E4,A3,2), intArrayOf(B4,Fs4,A3,0), intArrayOf(C5,G4,C3,1), intArrayOf(D5,A4,C3,0),
+                intArrayOf(E5,B4,E3,1), intArrayOf(D5,A4,E3,0), intArrayOf(B4,Fs4,B3,2), intArrayOf(E5,B4,E3,0)
+            )),
+            Song("Zelda Overworld", 120, arrayOf(
+                intArrayOf(Bb4,F4,Bb3,1), intArrayOf(F4,D4,Bb3,0), intArrayOf(Bb4,F4,F3,1), intArrayOf(Bb4,F4,F3,0),
+                intArrayOf(C5,G4,Eb3,1), intArrayOf(D5,A4,Eb3,2), intArrayOf(Eb5,Bb4,Bb3,1), intArrayOf(D5,A4,Bb3,0),
+                intArrayOf(C5,G4,F3,1), intArrayOf(Bb4,F4,F3,0), intArrayOf(A4,F4,C3,1), intArrayOf(Bb4,F4,C3,2),
+                intArrayOf(C5,G4,F3,1), intArrayOf(R,R,F3,0), intArrayOf(F5,C5,Bb3,1), intArrayOf(Eb5,Bb4,Bb3,0),
+                intArrayOf(D5,A4,G3,2), intArrayOf(C5,G4,G3,0), intArrayOf(Bb4,F4,Eb3,1), intArrayOf(A4,F4,Eb3,0),
+                intArrayOf(Bb4,F4,Bb3,1), intArrayOf(C5,G4,Bb3,0), intArrayOf(D5,A4,F3,2), intArrayOf(Eb5,Bb4,F3,0),
+                intArrayOf(F5,C5,Bb3,1), intArrayOf(Eb5,Bb4,Bb3,0), intArrayOf(D5,A4,G3,1), intArrayOf(C5,G4,G3,0),
+                intArrayOf(Bb4,F4,Bb3,2), intArrayOf(A4,F4,Bb3,0), intArrayOf(Bb4,F4,F3,1), intArrayOf(C5,G4,F3,0)
+            )),
+            Song("Tron Lightcycle", 110, arrayOf(
+                intArrayOf(E4,B3,E3,1), intArrayOf(E4,B3,E3,0), intArrayOf(B4,E4,E3,1), intArrayOf(E4,B3,E3,2),
+                intArrayOf(Fs4,D4,Fs3,1), intArrayOf(Fs4,D4,Fs3,0), intArrayOf(B4,Fs4,Fs3,1), intArrayOf(Fs4,D4,Fs3,0),
+                intArrayOf(G4,E4,G3,2), intArrayOf(G4,E4,G3,0), intArrayOf(B4,G4,G3,1), intArrayOf(G4,E4,G3,0),
+                intArrayOf(A4,E4,A3,1), intArrayOf(A4,E4,A3,0), intArrayOf(E5,A4,A3,2), intArrayOf(A4,E4,A3,0),
+                intArrayOf(B4,Fs4,B3,1), intArrayOf(B4,Fs4,B3,0), intArrayOf(Fs5,B4,B3,1), intArrayOf(B4,Fs4,B3,2),
+                intArrayOf(A4,E4,A3,1), intArrayOf(G4,E4,G3,0), intArrayOf(Fs4,D4,Fs3,1), intArrayOf(E4,B3,E3,0),
+                intArrayOf(E5,B4,E3,2), intArrayOf(B4,Fs4,E3,0), intArrayOf(A4,E4,A3,1), intArrayOf(G4,D4,A3,0),
+                intArrayOf(Fs4,D4,B3,1), intArrayOf(E4,B3,B3,0), intArrayOf(B3,Fs3,E3,2), intArrayOf(E4,B3,E3,0)
+            )),
+            Song("Tetris", 140, arrayOf(
+                intArrayOf(E5,B4,E3,1), intArrayOf(B4,G4,E3,0), intArrayOf(C5,A4,A3,1), intArrayOf(D5,B4,A3,2),
+                intArrayOf(C5,A4,E3,1), intArrayOf(B4,G4,E3,0), intArrayOf(A4,E4,A3,1), intArrayOf(C5,A4,A3,0),
+                intArrayOf(E5,C5,C3,2), intArrayOf(D5,B4,C3,0), intArrayOf(C5,A4,G3,1), intArrayOf(B4,G4,G3,0),
+                intArrayOf(E4,B3,E3,1), intArrayOf(R,R,E3,0), intArrayOf(E5,B4,E3,2), intArrayOf(B4,G4,E3,0),
+                intArrayOf(C5,A4,A3,1), intArrayOf(D5,B4,A3,0), intArrayOf(C5,A4,E3,2), intArrayOf(B4,G4,E3,0),
+                intArrayOf(A4,E4,A3,1), intArrayOf(C5,A4,A3,0), intArrayOf(E5,C5,C3,1), intArrayOf(D5,B4,C3,0),
+                intArrayOf(C5,A4,G3,2), intArrayOf(B4,G4,G3,0), intArrayOf(A4,E4,A3,1), intArrayOf(R,R,A3,0),
+                intArrayOf(B4,G4,E3,1), intArrayOf(C5,A4,E3,0), intArrayOf(D5,B4,G3,2), intArrayOf(E5,C5,G3,0)
+            )),
+            Song("Mega Man", 150, arrayOf(
+                intArrayOf(G4,D4,G3,1), intArrayOf(G4,D4,G3,0), intArrayOf(G4,D4,G3,1), intArrayOf(Bb4,F4,G3,2),
+                intArrayOf(C5,G4,C3,1), intArrayOf(Bb4,F4,C3,0), intArrayOf(G4,D4,G3,1), intArrayOf(R,R,G3,0),
+                intArrayOf(F4,C4,F3,1), intArrayOf(G4,D4,F3,0), intArrayOf(Bb4,F4,Bb3,2), intArrayOf(C5,G4,Bb3,0),
+                intArrayOf(D5,A4,G3,1), intArrayOf(C5,G4,G3,0), intArrayOf(Bb4,F4,D3,1), intArrayOf(G4,D4,D3,0),
+                intArrayOf(G5,D5,G3,2), intArrayOf(F5,C5,G3,0), intArrayOf(D5,A4,Bb3,1), intArrayOf(C5,G4,Bb3,0),
+                intArrayOf(Bb4,F4,F3,1), intArrayOf(A4,F4,F3,0), intArrayOf(G4,D4,G3,2), intArrayOf(R,R,G3,0),
+                intArrayOf(Bb4,F4,Bb3,1), intArrayOf(C5,G4,Bb3,0), intArrayOf(D5,A4,G3,1), intArrayOf(F5,C5,G3,2),
+                intArrayOf(D5,A4,C3,1), intArrayOf(C5,G4,C3,0), intArrayOf(Bb4,F4,G3,1), intArrayOf(G4,D4,G3,0)
             ))
         )
     }

@@ -11,8 +11,8 @@ android {
         applicationId = "com.swarmforge.floatcompanion"
         minSdk = 26
         targetSdk = 34
-        versionCode = 14
-        versionName = "0.2.8-BL707"
+        versionCode = 15
+        versionName = "0.2.9-BL707"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
