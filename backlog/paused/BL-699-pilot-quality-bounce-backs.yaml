@@ -1,0 +1,62 @@
+id: BL-699
+title: "Cursor /pilot: quality over speed and first-class bounce-backs"
+milestone: M8
+type: feature
+severity: medium
+status: todo
+epic: swarmforge-console
+human_approval: approved
+priority: 03
+direction: human-requested
+mutation_cost: low
+invariants:
+  - "/pilot remains distinct from /expedite; gate against expedite lock unchanged."
+  - "Prompt authorizes bounce-backs with rationale; does not paper over upstream defects to rush QA."
+  - "Any human question from a piloted hat uses a Telegram poll on Cursor Remote (prompt rule in this ticket; poll wiring may land with BL for status-posts slice)."
+acceptance: specs/features/BL-699-pilot-quality-bounce-backs.feature
+
+approval_context: >
+  Operator via Let's Talk 2026-07-29: split from archived
+  INTAKE-cursor-remote-pilot-quality-updates.md. Slice 1 of 3 — prompt
+  quality-over-speed + bounce-backs. Launch Cursor-as-specifier via /pilot.
+  Source intake: .swarmforge/operator/INTAKE-pilot-quality-bounce-backs.md.
+  Specifier (cursor-as-expeditor, 2026-07-29): Gherkin locked to prompt-only
+  contract; siblings (status posts, orphan cleanup) explicitly out of scope.
+
+description: |
+  ## What
+
+  Retune `composePilotExpeditorPrompt` so Cursor `/pilot` optimizes output
+  quality over speed, and treats bounce-backs to earlier pipeline roles as
+  first-class (native-swarm spirit). Prompt must also say: human questions
+  from any hat → Telegram poll on Cursor Remote.
+
+  ## Source
+
+  `.swarmforge/operator/INTAKE-pilot-quality-bounce-backs.md`
+
+  Sibling intakes (do not expand this ticket into them):
+  - INTAKE-pilot-telegram-status-posts.md
+  - INTAKE-pilot-orphan-cleanup-stage-boundaries.md
+
+  ## Scope (this ticket only)
+
+  - `extension/src/tools/telegramCursorBridgePilot.ts` prompt contract
+  - Unit tests on prompt composition (extend
+    `extension/test/telegramCursorBridgePilot.test.js`)
+  - Spec feature `specs/features/BL-699-pilot-quality-bounce-backs.feature`
+  - How-to note as needed (documenter)
+
+  Out of scope: structured Telegram status helpers, orphan cleanup, full poll
+  API (prompt rule only here), changes to automated `/expedite`.
+
+  ## Acceptance scenarios (specifier)
+
+  - BL-699 pilot-quality-01 — quality over speed + evidence/gate discipline
+  - BL-699 pilot-quality-02 — bounce-backs first-class with rationale; no papering over
+  - BL-699 pilot-quality-03 — forbid rushing QA stamp
+  - BL-699 pilot-quality-04 — Telegram poll required for human questions
+  - BL-699 pilot-quality-05 — offline mode, no expedite_cli/claude -p, worktree
+    isolation, expedite-lock gate unchanged
+
+assigned_to: coder

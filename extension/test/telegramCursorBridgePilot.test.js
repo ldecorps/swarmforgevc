@@ -43,6 +43,20 @@ test('composePilotExpeditorPrompt is the full offline-expeditor brief', () => {
       'Mode: Cursor-as-expeditor. YOU wear every pipeline hat in turn. Do NOT spawn',
       '`expedite_cli.bb`, `expedite_with_progress.sh`, or `claude -p` stage runners.',
       '',
+      'Quality over speed: prefer correctness, evidence, and gate discipline over',
+      'finishing quickly. Output quality beats delivery speed.',
+      '',
+      'Bounce-backs are first-class (native-swarm spirit): if a later hat finds a',
+      'defect that belongs upstream, return to that earlier pipeline role, fix it,',
+      'and re-walk downstream as needed — with a clear rationale. Do not treat',
+      '"already past role N" as a reason to paper over defects. Do not rush to a',
+      'QA stamp over fixing upstream defects.',
+      '',
+      'HUMAN QUESTIONS: if you (any hat) need a decision or answer from the human,',
+      'you MUST ask with a native Telegram poll on the Cursor Remote topic. Clear',
+      'question + discrete options. Wait for the vote. Do not rely on free-text-only',
+      'asks.',
+      '',
       'Isolation (same as BL-567):',
       '- Work only in `.worktrees/expedite-BL-700` on branch `expedite/BL-700`.',
       '- Do not use handoffd, mailboxes, tmux, rotate_to_role, ready_for_next, or the coordinator.',
@@ -64,6 +78,47 @@ test('composePilotExpeditorPrompt is the full offline-expeditor brief', () => {
   const fallback = composePilotExpeditorPrompt('not-a-ticket');
   assert.match(fallback, /OFFLINE EXPEDITION for NOT-A-TICKET/);
   assert.doesNotMatch(fallback, /not-a-ticket/);
+});
+
+// BL-699 pilot-quality-01..05 — contract checks against the composed prompt
+test('composePilotExpeditorPrompt prefers quality over speed (BL-699)', () => {
+  const text = composePilotExpeditorPrompt('BL-699');
+  assert.match(text, /Output quality beats delivery speed/);
+  assert.match(text, /evidence, and gate discipline/);
+  assert.match(text, /finishing quickly/);
+});
+
+test('composePilotExpeditorPrompt treats bounce-backs as first-class (BL-699)', () => {
+  const text = composePilotExpeditorPrompt('BL-699');
+  assert.match(text, /Bounce-backs are first-class/);
+  assert.match(text, /return to that earlier pipeline role/);
+  assert.match(text, /with a clear rationale/);
+  assert.match(text, /paper over defects/);
+  assert.match(text, /Do not rush to a\nQA stamp/);
+});
+
+test('composePilotExpeditorPrompt requires Telegram poll for human questions (BL-699)', () => {
+  const text = composePilotExpeditorPrompt('BL-699');
+  assert.match(text, /native Telegram poll on the Cursor Remote topic/);
+  assert.match(text, /Do not rely on free-text-only\nasks/);
+});
+
+test('composePilotExpeditorPrompt keeps isolation and expedite lock gate (BL-699)', () => {
+  const text = composePilotExpeditorPrompt('BL-699');
+  assert.match(text, /Cursor-as-expeditor/);
+  assert.match(text, /expedite_cli\.bb/);
+  assert.match(text, /claude -p/);
+  assert.match(text, /\.worktrees\/expedite-BL-699/);
+  assert.match(text, /expedite\/BL-699/);
+  const root = mkRoot();
+  assert.deepEqual(gatePilotAgainstExpediteLock(root), { ok: true });
+  fs.writeFileSync(
+    path.join(root, '.swarmforge', 'operator', 'expedite-bridge.lock'),
+    `${JSON.stringify({ ticket: 'BL-700', pid: process.pid })}\n`,
+    'utf8'
+  );
+  const blocked = gatePilotAgainstExpediteLock(root);
+  assert.equal(blocked.ok, false);
 });
 
 test('formatPilotStartMessage identifies Cursor-piloted mode', () => {
