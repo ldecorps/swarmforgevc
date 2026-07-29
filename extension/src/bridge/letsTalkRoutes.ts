@@ -27,6 +27,7 @@ export interface LetsTalkRouteDeps {
   speechLanguage?: LetsTalkSpeechLanguageSetting;
   speechLocale?: string;
   agentSession: CursorBridgeAgentSessionDeps;
+  onTurnSuccess?: (turn: LetsTalkTurnSuccess) => Promise<void> | void;
 }
 
 export interface LetsTalkTurnSuccess {
@@ -170,7 +171,15 @@ export async function processLetsTalkTurn(
   if ('success' in sttResult) {
     return sttResult;
   }
-  return promptAgentAndSynthesize(sttResult.transcript, deps);
+  const result = await promptAgentAndSynthesize(sttResult.transcript, deps);
+  if (result.success && deps.onTurnSuccess) {
+    try {
+      await deps.onTurnSuccess(result);
+    } catch {
+      // Mirror delivery is best-effort and must not fail the turn itself.
+    }
+  }
+  return result;
 }
 
 export function createLetsTalkWriteRoutes(

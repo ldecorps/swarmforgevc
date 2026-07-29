@@ -8,16 +8,40 @@ import { buildPhotoPromptText } from '../bridge/cursorBridgeTelegramMedia';
 import { parseExpediteTicket, parseReexpediteTicket } from './telegramCursorBridgeExpedite';
 import { parsePilotTicket } from './telegramCursorBridgePilot';
 import { parseRedeployCommand } from './telegramCursorBridgeRedeploy';
+import { parseMiniAppRedeployCommand } from './telegramCursorBridgeMiniAppRedeploy';
 import { parseLogCommand, type LogTarget } from './telegramCursorBridgeLogs';
 
 export const CURSOR_BRIDGE_SUBJECT_ID = 'CURSOR_REMOTE';
 export const CURSOR_BRIDGE_TOPIC_NAME = 'Cursor Remote';
 export const TELEGRAM_MESSAGE_MAX_LENGTH = 4096;
 
+export interface CursorBridgeQueuedPrompt {
+  id: string;
+  text: string;
+  photoFileIds?: string[];
+  replyToMessageId?: number;
+  createdAtMs: number;
+}
+
+export interface CursorBridgeQueuedPromptPoll {
+  pollId: string;
+  itemIds: string[];
+}
+
+export interface CursorBridgeChoicePoll {
+  pollId: string;
+  question: string;
+  options: string[];
+  createdAtMs: number;
+}
+
 export interface CursorBridgePersistedState {
   updateOffset: number;
   cursorTopicId?: number;
   agentId?: string;
+  pendingPrompts?: CursorBridgeQueuedPrompt[];
+  pendingPromptPoll?: CursorBridgeQueuedPromptPoll;
+  pendingChoicePolls?: CursorBridgeChoicePoll[];
 }
 
 export interface CursorBridgeInboundEvent {
@@ -33,12 +57,15 @@ export type CursorBridgeDecision =
   | { action: 'refuse' }
   | { action: 'new-session' }
   | { action: 'status' }
+  | { action: 'queue' }
+  | { action: 'dequeue'; position: number }
   | { action: 'update' }
   | { action: 'help' }
   | { action: 'expedite'; ticket: string }
   | { action: 'reexpedite'; ticket: string }
   | { action: 'pilot'; ticket: string }
   | { action: 'redeploy' }
+  | { action: 'redeploy-miniapp' }
   | { action: 'log'; target: LogTarget }
   | { action: 'prompt'; text: string; photoFileIds?: string[] }
   | { action: 'busy' };
@@ -95,7 +122,7 @@ export function frontDeskTopicMapWithoutCursorBridge(
   return next;
 }
 
-export function parseCommand(text: string): 'new' | 'status' | 'help' | 'update' | undefined {
+export function parseCommand(text: string): 'new' | 'status' | 'help' | 'update' | 'queue' | undefined {
   const lower = text.trim().toLowerCase();
   if (lower === '/new') {
     return 'new';
@@ -109,10 +136,13 @@ export function parseCommand(text: string): 'new' | 'status' | 'help' | 'update'
   if (lower === '/help') {
     return 'help';
   }
+  if (lower === '/queue') {
+    return 'queue';
+  }
   return undefined;
 }
 
-function decideCommandAction(cmd: 'new' | 'status' | 'help' | 'update'): CursorBridgeDecision {
+function decideCommandAction(cmd: 'new' | 'status' | 'help' | 'update' | 'queue'): CursorBridgeDecision {
   if (cmd === 'new') {
     return { action: 'new-session' };
   }
@@ -122,10 +152,25 @@ function decideCommandAction(cmd: 'new' | 'status' | 'help' | 'update'): CursorB
   if (cmd === 'update') {
     return { action: 'update' };
   }
+  if (cmd === 'queue') {
+    return { action: 'queue' };
+  }
   return { action: 'help' };
 }
 
+function parseDequeuePosition(text: string): number | undefined {
+  const match = text.trim().match(/^\/dequeue\s+(\d+)$/i);
+  if (!match) {
+    return undefined;
+  }
+  const position = Number.parseInt(match[1], 10);
+  return Number.isFinite(position) && position > 0 ? position : undefined;
+}
+
 function decideOperatorCommand(text: string): CursorBridgeDecision | undefined {
+  if (parseMiniAppRedeployCommand(text)) {
+    return { action: 'redeploy-miniapp' };
+  }
   if (parseRedeployCommand(text)) {
     return { action: 'redeploy' };
   }
@@ -177,6 +222,10 @@ function decideInboundGate(
 function decideInboundContent(event: CursorBridgeInboundEvent, trimmed: string): CursorBridgeDecision {
   if (event.photoFileId) {
     return { action: 'prompt', text: buildPhotoPromptText(event.text), photoFileIds: [event.photoFileId] };
+  }
+  const dequeuePosition = parseDequeuePosition(trimmed);
+  if (dequeuePosition !== undefined) {
+    return { action: 'dequeue', position: dequeuePosition };
   }
   const cmd = parseCommand(trimmed);
   if (cmd) {
@@ -302,6 +351,61 @@ function parseOptionalNonEmptyString(value: unknown): string | undefined {
   return typeof value === 'string' && value.length > 0 ? value : undefined;
 }
 
+function parseOptionalStringArray(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const items = value.filter((entry): entry is string => typeof entry === 'string' && entry.length > 0);
+  return items.length > 0 ? items : undefined;
+}
+
+function parseQueuedPrompt(value: unknown): CursorBridgeQueuedPrompt | undefined {
+  if (!isCursorBridgePersistedRecord(value)) {
+    return undefined;
+  }
+  const id = parseOptionalNonEmptyString(value.id);
+  const text = parseOptionalNonEmptyString(value.text);
+  const createdAtMs = parseNonNegativeInt(value.createdAtMs, -1);
+  if (!id || !text || createdAtMs < 0) {
+    return undefined;
+  }
+  const queued: CursorBridgeQueuedPrompt = { id, text, createdAtMs };
+  const photoFileIds = parseOptionalStringArray(value.photoFileIds);
+  if (photoFileIds) {
+    queued.photoFileIds = photoFileIds;
+  }
+  if (typeof value.replyToMessageId === 'number') {
+    queued.replyToMessageId = value.replyToMessageId;
+  }
+  return queued;
+}
+
+function parseQueuedPromptPoll(value: unknown): CursorBridgeQueuedPromptPoll | undefined {
+  if (!isCursorBridgePersistedRecord(value)) {
+    return undefined;
+  }
+  const pollId = parseOptionalNonEmptyString(value.pollId);
+  const itemIds = parseOptionalStringArray(value.itemIds);
+  if (!pollId || !itemIds || itemIds.length === 0) {
+    return undefined;
+  }
+  return { pollId, itemIds };
+}
+
+function parseChoicePoll(value: unknown): CursorBridgeChoicePoll | undefined {
+  if (!isCursorBridgePersistedRecord(value)) {
+    return undefined;
+  }
+  const pollId = parseOptionalNonEmptyString(value.pollId);
+  const question = parseOptionalNonEmptyString(value.question);
+  const options = parseOptionalStringArray(value.options);
+  const createdAtMs = parseNonNegativeInt(value.createdAtMs, -1);
+  if (!pollId || !question || !options || options.length < 2 || createdAtMs < 0) {
+    return undefined;
+  }
+  return { pollId, question, options, createdAtMs };
+}
+
 function buildPersistedState(record: Record<string, unknown>): CursorBridgePersistedState {
   const state: CursorBridgePersistedState = {
     updateOffset: parseNonNegativeInt(record.updateOffset, 0),
@@ -313,6 +417,28 @@ function buildPersistedState(record: Record<string, unknown>): CursorBridgePersi
   }
   if (agentId !== undefined) {
     state.agentId = agentId;
+  }
+  const pendingPromptsRaw = Array.isArray(record.pendingPrompts) ? record.pendingPrompts : undefined;
+  if (pendingPromptsRaw) {
+    const pendingPrompts = pendingPromptsRaw
+      .map((entry) => parseQueuedPrompt(entry))
+      .filter((entry): entry is CursorBridgeQueuedPrompt => entry !== undefined);
+    if (pendingPrompts.length > 0) {
+      state.pendingPrompts = pendingPrompts;
+    }
+  }
+  const pendingPromptPoll = parseQueuedPromptPoll(record.pendingPromptPoll);
+  if (pendingPromptPoll) {
+    state.pendingPromptPoll = pendingPromptPoll;
+  }
+  const pendingChoicePollsRaw = Array.isArray(record.pendingChoicePolls) ? record.pendingChoicePolls : undefined;
+  if (pendingChoicePollsRaw) {
+    const pendingChoicePolls = pendingChoicePollsRaw
+      .map((entry) => parseChoicePoll(entry))
+      .filter((entry): entry is CursorBridgeChoicePoll => entry !== undefined);
+    if (pendingChoicePolls.length > 0) {
+      state.pendingChoicePolls = pendingChoicePolls;
+    }
   }
   return state;
 }
@@ -328,7 +454,8 @@ export function formatStatusMessage(state: CursorBridgePersistedState, busy: boo
   const agent = state.agentId ?? '(none — next message starts a session)';
   const topic = state.cursorTopicId ?? '(unbound)';
   const mode = busy ? 'busy (run in flight)' : 'idle';
-  return `Cursor bridge status\nTopic: ${topic}\nAgent: ${agent}\nMode: ${mode}`;
+  const queuedCount = state.pendingPrompts?.length ?? 0;
+  return `Cursor bridge status\nTopic: ${topic}\nAgent: ${agent}\nMode: ${mode}\nQueued questions: ${queuedCount}`;
 }
 
 export function formatHelpMessage(): string {
@@ -339,11 +466,14 @@ export function formatHelpMessage(): string {
     '',
     '/new — start a fresh agent session',
     '/status — show session state',
+    '/queue — list queued questions',
+    '/dequeue N — remove queued question #N',
     '/update — short summary of agent / expedite / swarm activity (works while busy)',
     '/pilot [BL-xxx] — Cursor agent staffs an offline expedition (default BL-696)',
     '/expedite [BL-xxx] — run automated offline expeditor with stage updates (default BL-696)',
     '/reexpedite [BL-xxx] — checkpoint main WIP and restart a divergent expedite',
     '/redeploy — compile extension and restart this bridge',
+    '/redeploy miniapp — compile extension and bounce the headless mini app bridge',
     '/log [expedite|redeploy|bridge] — tail the active or named operator log',
     '/help — this message',
   ].join('\n');
@@ -374,6 +504,24 @@ export function isCursorAuthError(message: string): boolean {
   );
 }
 
+/** Transient SDK/network faults that often leave a stale active run behind. */
+export function isCursorConnectionFailure(message: string): boolean {
+  const lower = message.toLowerCase();
+  return (
+    lower.includes('connection failed repeatedly') ||
+    lower.includes('connection failed') ||
+    lower.includes('fetch failed') ||
+    lower.includes('[unavailable]') ||
+    lower.includes('service unavailable')
+  );
+}
+
 export function shouldResetCursorAgentSession(message: string): boolean {
-  return isActiveRunConflict(message) || isCursorAuthError(message);
+  return isActiveRunConflict(message) || isCursorAuthError(message) || isCursorConnectionFailure(message);
+}
+
+/** Rate-limit / quota errors from the Cursor API — fail fast with a clear message, no session reset. */
+export function isCursorResourceExhausted(message: string): boolean {
+  const lower = message.toLowerCase();
+  return lower.includes('resource_exhausted') || lower.includes('resource exhausted') || lower.includes('rate limit');
 }

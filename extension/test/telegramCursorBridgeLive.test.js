@@ -23,6 +23,7 @@ const {
   sleep,
   writeJsonFile,
   writePollHeartbeat,
+  BRIDGE_READY_MESSAGE,
 } = require('../out/tools/telegramCursorBridgeLive');
 
 function mkRoot() {
@@ -344,6 +345,35 @@ test('runPromptWithActiveRunRecovery retries after authentication error', async 
   assert.ok(calls >= 2);
 });
 
+test('runPromptWithActiveRunRecovery retries after repeated connection failures', async () => {
+  const root = mkRoot();
+  const opDir = path.join(root, '.swarmforge', 'operator');
+  fs.mkdirSync(opDir, { recursive: true });
+  const session = createMockCursorBridgeAgentSession(root);
+  let calls = 0;
+  const original = session.promptAgent.bind(session);
+  session.promptAgent = async (prompt) => {
+    calls += 1;
+    if (calls === 1) {
+      throw new Error('Cursor run failed (run-abcd1234): Connection failed repeatedly');
+    }
+    return original(prompt);
+  };
+  const reply = await runPromptWithActiveRunRecovery(
+    {
+      agentSession: session,
+      opDir,
+      syncAgentIdFromSession: () => {},
+    },
+    'remember the code word ZETA',
+    async () => {
+      await session.resetSession();
+    }
+  );
+  assert.match(reply, /ZETA/);
+  assert.ok(calls >= 2);
+});
+
 test('handleInboundDecision routes help and status without agent calls', async () => {
   const root = mkRoot();
   const session = createMockCursorBridgeAgentSession(root);
@@ -587,6 +617,27 @@ test('runCursorBridgeApp runs boot prompt and a single poll when configured', as
     session
   );
   assert.equal(getUpdateCalls, 1);
+});
+
+test('runCursorBridgeApp posts a ready message on startup', async () => {
+  const root = mkRoot();
+  const topicMapPath = path.join(root, '.swarmforge', 'operator', 'cursor-bridge-topic-map.json');
+  writeJsonFile(topicMapPath, { '9': 'CURSOR_REMOTE' });
+  const posts = [];
+  await runCursorBridgeApp(
+    {
+      repoRoot: root,
+      botToken: 'tok',
+      chatId: '-100',
+      principalUserId: '42',
+      post: async (_token, _chatId, _topicId, text) => {
+        posts.push(text);
+      },
+      shouldContinue: () => false,
+    },
+    createMockCursorBridgeAgentSession(root)
+  );
+  assert.ok(posts.includes(BRIDGE_READY_MESSAGE));
 });
 
 test('runCursorBridgeBootIfConfigured is a no-op without boot prompt', async () => {
@@ -915,6 +966,37 @@ test('handleInboundDecision status reflects busy state', async () => {
   assert.ok(ctx.posts.some((text) => text.includes('busy (run in flight)')));
 });
 
+test('handleInboundDecision queue lists pending prompts', async () => {
+  const ctx = mkCtx();
+  ctx.state.pendingPrompts = [
+    { id: 'qp-1', text: 'first', createdAtMs: 1 },
+    { id: 'qp-2', text: 'second', createdAtMs: 2 },
+  ];
+  await handleInboundDecision({ action: 'queue' }, ctx, 30, async () => {});
+  assert.ok(ctx.posts.some((text) => text.includes('Queued questions: 2')));
+  assert.ok(ctx.posts.some((text) => text.includes('1. first')));
+});
+
+test('handleInboundDecision dequeue removes by index and persists state', async () => {
+  let persisted = 0;
+  const ctx = mkCtx({
+    persistState: () => {
+      persisted += 1;
+    },
+  });
+  ctx.state.pendingPrompts = [
+    { id: 'qp-1', text: 'first', createdAtMs: 1 },
+    { id: 'qp-2', text: 'second', createdAtMs: 2 },
+  ];
+  ctx.state.pendingPromptPoll = { pollId: 'poll-1', itemIds: ['qp-1', 'qp-2'] };
+  await handleInboundDecision({ action: 'dequeue', position: 1 }, ctx, 31, async () => {});
+  assert.equal((ctx.state.pendingPrompts ?? []).length, 1);
+  assert.equal(ctx.state.pendingPrompts[0].id, 'qp-2');
+  assert.equal(ctx.state.pendingPromptPoll, undefined);
+  assert.ok(ctx.posts.some((text) => text.includes('Dequeued #1')));
+  assert.ok(persisted >= 1);
+});
+
 test('handleInboundDecision prompt posts working indicator before agent reply', async () => {
   const ctx = mkCtx();
   const replyTargets = [];
@@ -1183,6 +1265,146 @@ test('runCursorBridgePollOnce gates prompt to busy when already busy', async () 
   assert.ok(posts.some((text) => text.includes('Busy')));
   release();
   await new Promise((resolve) => setTimeout(resolve, 20));
+});
+
+test('runCursorBridgePollOnce queues busy prompts and raises a selection poll when idle', async () => {
+  const root = mkRoot();
+  const deps = mkPollDeps(root);
+  const session = deps.agentSession;
+  let release;
+  session.promptAgent = () =>
+    new Promise((resolve) => {
+      release = () => resolve({ replyText: 'done', agentId: session.readAgentId() });
+    });
+  const posts = [];
+  await runCursorBridgePollOnce(
+    {
+      ...deps,
+      post: async (_t, _c, _topic, text) => {
+        posts.push(text);
+      },
+      getUpdates: async () => ({
+        success: true,
+        updates: [
+          {
+            update_id: 71,
+            message: {
+              message_id: 2,
+              text: 'first long task',
+              from: { id: 42 },
+              chat: { id: -100 },
+              message_thread_id: 55,
+            },
+          },
+        ],
+      }),
+    },
+    { updateOffset: 0, cursorTopicId: 55 },
+    false,
+    0
+  );
+  await runCursorBridgePollOnce(
+    {
+      ...deps,
+      post: async (_t, _c, _topic, text) => {
+        posts.push(text);
+      },
+      getUpdates: async () => ({
+        success: true,
+        updates: [
+          {
+            update_id: 72,
+            message: {
+              message_id: 3,
+              text: 'second queued task',
+              from: { id: 42 },
+              chat: { id: -100 },
+              message_thread_id: 55,
+            },
+          },
+        ],
+      }),
+    },
+    { updateOffset: 71, cursorTopicId: 55 },
+    true,
+    0
+  );
+  const queuedState = loadJsonFile(deps.statePath);
+  assert.equal(queuedState.pendingPrompts.length, 1);
+  assert.match(queuedState.pendingPrompts[0].text, /second queued task/);
+  const telegramClient = require('../out/notify/telegramClient');
+  const originalSendPoll = telegramClient.sendTelegramPoll;
+  const sentPolls = [];
+  telegramClient.sendTelegramPoll = async (_token, _chatId, question, options) => {
+    sentPolls.push({ question, options });
+    return { success: true, pollId: 'poll-queue-1' };
+  };
+  try {
+    release();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    await runCursorBridgePollOnce(
+      {
+        ...deps,
+        post: async () => {},
+        getUpdates: async () => ({ success: true, updates: [] }),
+      },
+      { updateOffset: 72, cursorTopicId: 55, pendingPrompts: queuedState.pendingPrompts },
+      false,
+      0
+    );
+  } finally {
+    telegramClient.sendTelegramPoll = originalSendPoll;
+  }
+  const polledState = loadJsonFile(deps.statePath);
+  assert.equal(sentPolls.length, 1);
+  assert.equal(polledState.pendingPromptPoll.pollId, 'poll-queue-1');
+  assert.equal(polledState.pendingPrompts.length, 1);
+  assert.ok(posts.some((text) => text.includes('question queued')));
+});
+
+test('runCursorBridgePollOnce runs selected queued prompt from poll_answer', async () => {
+  const root = mkRoot();
+  const deps = mkPollDeps(root);
+  const posts = [];
+  const initialState = {
+    updateOffset: 80,
+    cursorTopicId: 55,
+    pendingPrompts: [
+      { id: 'qp-1', text: 'queued follow-up', createdAtMs: Date.now(), replyToMessageId: 45 },
+    ],
+    pendingPromptPoll: { pollId: 'poll-queue-1', itemIds: ['qp-1'] },
+  };
+  const next = await runCursorBridgePollOnce(
+    {
+      ...deps,
+      post: async (_t, _c, _topic, text) => {
+        posts.push(text);
+      },
+      getUpdates: async () => ({
+        success: true,
+        updates: [
+          {
+            update_id: 81,
+            poll_answer: {
+              poll_id: 'poll-queue-1',
+              option_ids: [0],
+              user: { id: 42 },
+            },
+          },
+        ],
+      }),
+    },
+    initialState,
+    false,
+    0
+  );
+  assert.equal(next.busy, true);
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  const persisted = loadJsonFile(deps.statePath);
+  assert.equal((persisted.pendingPrompts ?? []).length, 0);
+  assert.equal(persisted.pendingPromptPoll, undefined);
+  assert.ok(posts.some((text) => text.includes('Agent started')));
+  assert.ok(posts.some((text) => text.includes('queued follow-up')));
 });
 
 test('runCursorBridgePollOnce uses default postChunks when post override is omitted', async () => {
@@ -1912,6 +2134,27 @@ test('handleInboundDecision redeploy posts confirmation', async () => {
     assert.ok(posts.some((p) => p.includes('Redeploy started')));
   } finally {
     require('../out/tools/telegramCursorBridgeRedeploy').startRedeployRun = original;
+  }
+});
+
+test('handleInboundDecision redeploy-miniapp posts confirmation', async () => {
+  const root = mkRoot();
+  const script = path.join(root, 'swarmforge', 'scripts', 'bounce_bridge_headless.sh');
+  fs.mkdirSync(path.dirname(script), { recursive: true });
+  fs.writeFileSync(script, '#!/usr/bin/env bash\nexit 0\n', 'utf8');
+  fs.chmodSync(script, 0o755);
+  const posts = [];
+  const ctx = mkCtx({ root, posts });
+  const mod = require('../out/tools/telegramCursorBridgeMiniAppRedeploy');
+  const original = mod.startMiniAppRedeployRun;
+  mod.startMiniAppRedeployRun = (...args) =>
+    original(args[0], () => ({ pid: 9003, unref: () => {} }));
+  try {
+    const busy = await handleInboundDecision({ action: 'redeploy-miniapp' }, ctx, 14, async () => {});
+    assert.equal(busy, false);
+    assert.ok(posts.some((p) => p.includes('Mini app redeploy started')));
+  } finally {
+    mod.startMiniAppRedeployRun = original;
   }
 });
 
