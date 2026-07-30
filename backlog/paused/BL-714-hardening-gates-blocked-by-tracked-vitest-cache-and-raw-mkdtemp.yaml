@@ -1,0 +1,94 @@
+id: BL-714
+title: "DEFECT — hardening gates blocked repo-wide: tracked vitest cache trips facilitator scan; four bridge tests bypass mkdtemp helper"
+milestone: M8
+type: defect
+severity: high
+status: todo
+epic: swarm-reliability
+human_approval: approved
+priority: 1
+direction: expedite
+depends_on: []
+mutation_cost: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+assigned_to: none
+
+invariants:
+  - "No gitignored vitest/vite cache artifact under node_modules is tracked in git; a full-suite residual scan never fails solely because a tracked cache blob contains a retired word."
+  - "Every extension/test file that creates a temp directory uses the shared mkTmpDir helper; the raw-mkdtemp migration guard finds zero call sites outside its documented exemptions."
+
+required_wiring:
+  - "node_modules/.vite/vitest/da39a3ee5e6b4b0d3255bfef95601890afd80709/results.json::tracked-cache::git rm --cached (or equivalent) so the blob is untracked and stays ignored"
+  - "extension/test/telegramCursorBridgeExpedite.test.js::mkdtemp::use test/helpers/tmpDir.js"
+  - "extension/test/telegramCursorBridgeLogs.test.js::mkdtemp::use test/helpers/tmpDir.js"
+  - "extension/test/telegramCursorBridgeRedeploy.test.js::mkdtemp::use test/helpers/tmpDir.js"
+  - "extension/test/telegramCursorBridgeUpdate.test.js::mkdtemp::use test/helpers/tmpDir.js"
+
+description: |
+  ## What
+
+  Two pre-existing defects on main block Stryker's dry run and `npm run coverage`
+  for every hardening pass. Neither belongs to the ticket under harden; both came
+  in via ancestry (expedite-path checkpoints for BL-696 / CRAP work). Until fixed,
+  every hardener burns wall-clock rediscovering them or applying a local
+  move-aside workaround.
+
+  ## D1 — tracked vitest cache blob
+
+  `node_modules/.vite/vitest/da39a3ee5e6b4b0d3255bfef95601890afd80709/results.json`
+  is committed (added in `bdb29b719` "Reduce CRAP on cursor bridge inbound
+  decision paths" — almost certainly an accidental broad-add). It matches
+  `node_modules/.vite/vitest/` in `.gitignore`, so ignore rules never re-exclude
+  a tracked path. Its serialized content contains the literal substring
+  "facilitator", so `extension/test/onboarderRenameNoResidualFacilitator.test.js`
+  fails on every full run via `git grep -i facilitator`.
+
+  Fix: remove the blob from the index (`git rm --cached`), leave it ignored,
+  confirm the facilitator residual scan is green without touching allowlists.
+
+  ## D2 — four shipped tests bypass the shared mkdtemp helper
+
+  `extension/test/tmpDirMigrationGuard.test.js` (BL-420) fails against four
+  files added on the BL-696 checkpoint path:
+  `telegramCursorBridgeExpedite.test.js`, `telegramCursorBridgeLogs.test.js`,
+  `telegramCursorBridgeRedeploy.test.js`, `telegramCursorBridgeUpdate.test.js`.
+  Each calls `fs.mkdtempSync` directly instead of `test/helpers/tmpDir.js`.
+
+  Fix: swap those four call sites to `mkTmpDir`; do not weaken the guard.
+
+  ## Cost
+
+  Hardener session 2026-07-30 spent ~1h on BL-686 + BL-630 largely fighting
+  these gates (plus a separate Gherkin hang). Surfaced as notes to specifier /
+  coordinator; this ticket is the durable fix those notes asked for.
+
+  ## Approach
+
+  Mechanical only. No product behavior change. No allowlist expansions that
+  paper over the tracked blob or the raw mkdtemp calls.
+
+  ## Out of scope
+
+  - Speeding Gherkin mutation or fixing acceptance hang teardown (separate)
+  - Stereo / second resident capacity
+  - Re-opening BL-696 or resurrecting stale hardener parcels
+
+  ## STEERING note
+
+  `expedite` defect / operational blocker: quality gates that every ticket must
+  pass are red on main. Eligible for Expedite force-promote / expeditor run.
+  Phone/Bubble freeze does not apply — this is test-harness hygiene, not new
+  Telegram product.
+
+approval_context: >
+  Human via Let's Talk 2026-07-30: asked to use existing process to expedite
+  this costly gate bug after hardener forensics. Verbal approve to mint as
+  expedite and pull ahead of ordinary queue.
+
+acceptance: specs/features/BL-714-hardening-gates-blocked-by-tracked-vitest-cache-and-raw-mkdtemp.feature
+
+source: |
+  Hardener session 2026-07-30 (mono-router), memory
+  two-preexisting-defects-block-hardening-20260730, plus notes to specifier
+  (handoff 000490) and coordinator (000491). Human asked Bubble to expedite
+  via existing process.
