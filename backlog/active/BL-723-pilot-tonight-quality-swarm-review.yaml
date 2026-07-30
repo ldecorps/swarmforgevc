@@ -10,7 +10,7 @@ direction: queue-jump
 depends_on: []
 mutation_cost: low
 required_stages: [specifier, architect, hardender, documenter, qa]
-assigned_to: none
+assigned_to: specifier
 
 invariants:
   - "This ticket is a live-swarm quality review of listed done pilot tickets; it does not reopen them as active work unless a true defect or revert is warranted."
