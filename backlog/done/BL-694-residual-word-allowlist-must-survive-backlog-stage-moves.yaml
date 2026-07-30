@@ -3,7 +3,7 @@ title: "The BL-684 residual-word allowlist pins backlog tickets to an exact stag
 milestone: M8
 type: defect
 severity: medium
-status: todo
+status: done
 epic: swarm-reliability
 human_approval: approved
 priority: 20
