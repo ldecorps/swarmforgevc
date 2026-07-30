@@ -2,7 +2,7 @@ id: BL-636
 title: "mono-router rotation preference ignores parcel priority: a `00` incident note starved 2h40 behind `50` rule_proposals because the only ordering key is newest-first"
 milestone: M8
 type: defect
-status: todo
+status: done
 epic: swarm-reliability
 human_approval: approved
 severity: medium
