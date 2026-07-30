@@ -68,29 +68,91 @@
           t (if (= t "hardener") "hardender" t)]
       (some #(when (= t (str/lower-case %)) %) canonical-order))))
 
-;; ── stage_skip_reasons: block (committed, git-greppable intent) ──────────
+;; ── stage_skip_reasons: block AND flow (BL-661) ──────────────────────────
+;; Schema + every live ticket use flow style on the header line
+;; (`stage_skip_reasons: { cleaner: "…", … }`). Block style (indented
+;; `  <stage>: <reason>` lines after a bare header) remains supported.
 
 (defn- skip-reason-line [line]
   (when-let [[_ stage reason] (re-matches #"^\s+([A-Za-z]+):\s*(.+?)\s*$" line)]
-    [stage reason]))
+    [stage (strip-quotes (str/trim reason))]))
+
+(defn- normalize-reason-pairs
+  "Apply normalize-token to stage keys; unrecognized keys stay verbatim."
+  [pairs]
+  (into {} (map (fn [[stage reason]]
+                  [(or (normalize-token stage) stage) reason])
+                pairs)))
+
+(defn- take-flow-reason
+  [after]
+  (cond
+    (str/starts-with? after "\"")
+    (let [end (.indexOf after "\"" 1)]
+      (if (neg? end)
+        [(subs after 1) ""]
+        (let [tail (str/trim (subs after (inc end)))
+              tail (if (str/starts-with? tail ",") (str/trim (subs tail 1)) tail)]
+          [(subs after 1 end) tail])))
+    (str/starts-with? after "'")
+    (let [end (.indexOf after "'" 1)]
+      (if (neg? end)
+        [(subs after 1) ""]
+        (let [tail (str/trim (subs after (inc end)))
+              tail (if (str/starts-with? tail ",") (str/trim (subs tail 1)) tail)]
+          [(subs after 1 end) tail])))
+    :else
+    (let [comma (.indexOf after ",")]
+      (if (neg? comma)
+        [(str/trim after) ""]
+        [(str/trim (subs after 0 comma)) (str/trim (subs after (inc comma)))]))))
+
+(defn- parse-flow-skip-reasons
+  [after-colon]
+  (let [s (str/trim (or after-colon ""))]
+    (when (and (>= (count s) 2)
+               (str/starts-with? s "{")
+               (str/ends-with? s "}"))
+      (let [inner (str/trim (subs s 1 (dec (count s))))]
+        (if (str/blank? inner)
+          []
+          (loop [remaining inner
+                 pairs []]
+            (let [remaining (str/trim remaining)]
+              (cond
+                (str/blank? remaining)
+                pairs
+                :else
+                (let [m (re-matches #"^([A-Za-z]+)\s*:\s*(.*)$" remaining)]
+                  (if (nil? m)
+                    pairs
+                    (let [stage (nth m 1)
+                          after (nth m 2)
+                          split (take-flow-reason after)
+                          reason (nth split 0)
+                          rest-after (nth split 1)]
+                      (recur rest-after (conj pairs [stage reason])))))))))))))
 
 (defn read-stage-skip-reasons
-  "{stage -> reason} from an optional `stage_skip_reasons:` block
-   immediately following the header line (one `  <stage>: <reason>` line per
-   skipped stage) - {} when the block is absent. Stage keys are normalized
-   through normalize-token above (case + hardener/hardender alias) so a
-   lookup by canonical stage name always succeeds regardless of how the
-   specifier cased it; an unrecognized key is kept verbatim rather than
-   dropped, so a typo is still visible to a human reading the report."
+  "{stage -> reason} from an optional `stage_skip_reasons` field.
+   Prefers a FLOW mapping on the header line (schema + live tickets);
+   otherwise reads a BLOCK mapping of indented `  <stage>: <reason>` lines.
+   Returns {} when absent. Stage keys are normalized through normalize-token
+   (case + hardener/hardender alias); unrecognized keys stay verbatim."
   [content]
   (let [lines (str/split-lines (or content ""))
         idx (some (fn [[i l]] (when (str/starts-with? l "stage_skip_reasons:") i))
                   (map-indexed vector lines))]
     (if (nil? idx)
       {}
-      (let [block (take-while #(re-matches #"^(\s+.*)?$" %) (drop (inc idx) lines))
-            pairs (keep skip-reason-line block)]
-        (into {} (map (fn [[stage reason]] [(or (normalize-token stage) stage) reason]) pairs))))))
+      (let [header (nth lines idx)
+            after (str/trim (subs header (count "stage_skip_reasons:")))
+            flow (parse-flow-skip-reasons after)]
+        (if (some? flow)
+          (normalize-reason-pairs flow)
+          (let [block (take-while #(re-matches #"^(\s+.*)?$" %) (drop (inc idx) lines))
+                pairs (keep skip-reason-line block)]
+            (normalize-reason-pairs pairs)))))))
 
 ;; ── parse: the flow-list value after the colon -> raw tokens, or :invalid ──
 
