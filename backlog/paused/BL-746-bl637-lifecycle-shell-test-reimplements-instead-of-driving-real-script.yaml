@@ -1,0 +1,75 @@
+id: BL-746
+title: "BL-637's shell test never invokes the real stop-swarm.sh — it re-implements its refuse-gate logic inline, with different wording and a missing exit-code check"
+milestone: M8
+type: defect
+severity: high
+status: todo
+epic: swarm-reliability
+assigned_to: specifier
+priority: 3
+direction: normal
+depends_on: []
+mutation_cost: low
+source: |
+  Found during BL-723 (pilot-tonight quality review), hardener viewpoint
+  pass, 2026-07-30/31 (third independent shortfall on BL-637, after the
+  coder's BL-730/731 pgrep-scope bug and the cleaner's BL-736/737
+  duplicated --help block).
+
+  `swarmforge/scripts/test/test_lifecycle_script_scope.sh` scenarios 04/05
+  and the "clean fixture" case (lines ~118-208) claim to verify
+  "stop path refuses clean slate and names babysitterd/Operator", but they
+  never invoke the real `stop-swarm.sh` (repo root). Each scenario instead
+  does `source "$SCRIPTS/stack_survivor_scan.sh"` directly and hand-writes
+  the SAME branching logic `stop-swarm.sh` itself contains
+  (`if stack_survivor_scan; then REFUSE... else echo ...`) as a second,
+  parallel implementation.
+
+  Two concrete pieces of evidence this is a real gap, not cosmetic:
+
+  1. **Wording mismatch.** The real `stop-swarm.sh:96` prints
+     `"full stack SUCCESS — no known survivors"`. The test's own
+     reimplementation prints `"full stack SUCCESS — clean slate"` — a
+     different string. A test asserting against its OWN reimplementation's
+     wording rather than the real script's actual output cannot detect a
+     regression in the real script's wording.
+  2. **Missing exit-code branch.** `stop-swarm.sh:88-93` also REFUSEs a
+     "finished" clean stop when the pipeline kill itself exited non-zero
+     (`kill_rc`) — a second, independent refuse condition alongside the
+     survivor scan. The test's reimplementation only re-derives the
+     survivor-scan branch and has no equivalent check for a non-zero
+     `kill_rc`; that whole refuse path is completely unexercised.
+
+  If `stop-swarm.sh`'s actual refuse-gate logic were ever broken, weakened,
+  or its `kill_rc` check removed, this suite would stay green throughout.
+
+notes: |
+  BL-723 hardener verdict on BL-637: additional (third) independent
+  shortfall, on top of the coder's BL-730/731 and the cleaner's BL-736/737.
+  Linked pilot-process defect: BL-747.
+
+description: |
+  ## What
+
+  Rewrite `test_lifecycle_script_scope.sh`'s stop-path scenarios (04, 05,
+  and the clean-fixture case) to actually invoke the real `stop-swarm.sh`
+  end to end (with `SWARMFORGE_SURVIVOR_PS_FILE` injecting the fixture
+  process table, as the scenarios already do, and stubbed ancillary/kill
+  scripts as scenario 04 already sets up) rather than sourcing
+  `stack_survivor_scan.sh` and re-deriving the refuse/success branch
+  inline. Assert against the REAL script's actual stdout/stderr and exit
+  code, including the `kill_rc`-driven refuse path (inject a non-zero exit
+  from the stubbed pipeline-kill script and confirm `stop-swarm.sh` refuses
+  a clean report).
+
+  ## Acceptance
+
+  - Every stop-path scenario in `test_lifecycle_script_scope.sh` invokes
+    `stop-swarm.sh` itself (not a hand-rolled reimplementation of its
+    branch logic).
+  - A scenario asserts on `stop-swarm.sh`'s literal success string
+    (`"full stack SUCCESS — no known survivors"`).
+  - A new scenario covers the `kill_rc`-driven refuse path (line 88-93),
+    currently untested by any suite.
+  - Existing pass/fail behavior for the babysitterd/Operator survivor
+    cases is preserved.

@@ -1,0 +1,58 @@
+id: BL-750
+title: "babysitter_assess_lib's new :warn-fixture-droppings severity has no elapsed-pct grace period, unlike its :warn-uncommitted/:watch siblings — untested boundary"
+milestone: M8
+type: defect
+severity: medium
+status: todo
+epic: code-quality-gates
+assigned_to: specifier
+priority: 5
+direction: normal
+depends_on: []
+mutation_cost: low
+source: |
+  Found during BL-723 (pilot-tonight quality review), hardener viewpoint
+  pass, 2026-07-30/31. `babysitter_assess_lib.bb`'s new
+  `:warn-fixture-droppings` severity branch (~line 104, added by BL-646)
+  is the only alert-worthy severity with no `elapsed-pct >= 0.75`-style
+  grace-period gate, unlike its siblings `:warn-uncommitted` and `:watch`.
+
+  Consequence: a role that claimed a ticket seconds ago, but whose
+  worktree still has stale fixture debris (e.g. `calls.log`) left over
+  from an EARLIER, unrelated test run, immediately trips
+  `alert-severity?` and wakes the babysitter LLM — with zero grace period,
+  unlike every other alert-worthy condition this same lib gates.
+
+  The one new test added for this branch
+  (`babysitter_assess_lib_test_runner.bb`) always constructs `claimAtMs`
+  15 minutes in the past regardless of the configured idle-timeout, so it
+  never actually exercises or asserts the boundary at issue: whether
+  immediate-wake-with-no-grace-period for fresh claims is the intended
+  design, or an oversight relative to the pattern its sibling severities
+  follow.
+
+notes: |
+  BL-723 hardener verdict on BL-646: not-on-par (independent finding; the
+  coder, cleaner, and architect passes on BL-646 found "no coder-eye
+  concerns" and ran both suites live with all green, but did not compare
+  the new severity branch's gating against its siblings' pattern).
+  Linked pilot-process defect: BL-751.
+
+description: |
+  ## What
+
+  Either (a) add the same `elapsed-pct >= 0.75`-style grace-period gate to
+  `:warn-fixture-droppings` that `:warn-uncommitted`/`:watch` already have,
+  if immediate wake was not deliberate, or (b) if immediate wake IS
+  deliberate (stale fixture debris is a stronger signal than uncommitted
+  work and should not wait), document that reasoning explicitly in the
+  function's own docstring/comment so the asymmetry reads as intentional,
+  not missed.
+
+  ## Acceptance
+
+  - A test constructs `claimAtMs` recent enough to be WITHIN whatever
+    grace period the sibling severities use, with fixture droppings
+    present, and asserts the actual (chosen) behavior — wake immediately,
+    or wait like its siblings.
+  - Existing BL-646 tests stay green.

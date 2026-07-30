@@ -1,0 +1,81 @@
+id: BL-744
+title: "BL-718 lands 6 new/modified functions over the CRAP<=6 gate, worst at CRAP=14.08 with 14% coverage — CRAP was never run against this landing"
+milestone: M8
+type: defect
+severity: medium
+status: todo
+epic: swarmforge-console
+assigned_to: specifier
+priority: 5
+direction: normal
+depends_on: []
+mutation_cost: low
+source: |
+  Found during BL-723 (pilot-tonight quality review), hardener viewpoint
+  pass, 2026-07-30. Coder, cleaner, and architect all reviewed BL-718's
+  landing (commit 5d033aa92) and none ran the project's CRAP tool.
+
+  `node scripts/crapReport.js src/bridge/bridgeServer.ts
+  src/tools/telegramCursorBridgeCore.ts` (clean coverage baseline,
+  excluding the pre-existing BL-720 flake and BL-627's own
+  BL-742-tracked mkdtemp gate failure) reports 6 functions this landing
+  touches over the CRAP<=6 gate. Cross-checked each against
+  `git show 5d033aa92` to confirm attribution (all appear as `+` new
+  function declarations or inside a changed hunk in that commit, not
+  pre-existing debt the landing merely walked past):
+
+  - `mergeTopicId` (bridgeServer.ts:113, NEW) — complexity=4,
+    **coverage=14%**, CRAP=14.08. The worst offender: this is the function
+    that decides which of a state-file topic id vs. a topic-map id wins
+    when routing a Bubble/Cursor mirror message, and 86% of its branches
+    (valid/invalid/absent preferred, absent fallback) are untested.
+  - `readCursorBridgeTopicIds` (bridgeServer.ts:122, NEW) — complexity=5,
+    coverage=58%, CRAP=6.91. Reads two on-disk state files behind
+    try/catch fallbacks; several of those fallback and multi-source-merge
+    paths are untested.
+  - `mirrorLetsTalkTurnToBubble` (bridgeServer.ts, NEW) — complexity=10,
+    coverage=95%, CRAP=10.01.
+  - `mirrorLetsTalkChoicePollToBubble` (bridgeServer.ts, NEW) —
+    complexity=8, coverage=88%, CRAP=8.13.
+  - `appendPendingChoicePoll` (bridgeServer.ts, MODIFIED by this landing)
+    — complexity=7, coverage=89%, CRAP=7.07.
+  - `buildPersistedState` (telegramCursorBridgeCore.ts, MODIFIED — this
+    landing added the `bubbleTopicId` parse/assign branch) — complexity=11,
+    coverage=92%, CRAP=11.07.
+
+  `mergeTopicId` at 14% coverage is the standout risk: it is genuinely new
+  routing logic (which topic id a mirrored message actually goes to),
+  reachable in production any time both a state-file topic id and a
+  topic-map id are present, and almost none of its branch combinations
+  are exercised by any test today.
+
+notes: |
+  BL-723 hardener verdict on BL-718: not-on-par (independent finding,
+  additional to the coder's acceptance-wiring gap (BL-726/727) and the
+  architect's vacuous-property-test finding (BL-738/739)). This is the
+  third independent shortfall found on this same ticket. Linked
+  pilot-process defect: BL-745.
+
+description: |
+  ## What
+
+  Add tests that actually drive `mergeTopicId`'s branch space (preferred
+  present+valid, preferred present+invalid/non-positive/non-finite,
+  preferred absent, each combined with fallback present/absent) until it
+  reaches real coverage, and add targeted coverage for
+  `readCursorBridgeTopicIds`'s untested fallback/merge paths (state file
+  absent, state file present but unparseable, map file absent, map file
+  present but unparseable, both present and merged via mergeTopicId).
+
+  ## Acceptance
+
+  - `mergeTopicId`, `readCursorBridgeTopicIds`,
+    `mirrorLetsTalkTurnToBubble`, `mirrorLetsTalkChoicePollToBubble`,
+    `appendPendingChoicePoll`, and `buildPersistedState` all reach
+    CRAP<=6 via real branch coverage, not by reducing complexity away
+    from real logic.
+  - `node scripts/crapReport.js src/bridge/bridgeServer.ts
+    src/tools/telegramCursorBridgeCore.ts` no longer flags any of the six.
+  - Existing BL-718 behavioral tests
+    (`extension/test/letsTalkBridge.test.js`,
+    `extension/test/telegramCursorBridgeCore.test.js`) stay green.

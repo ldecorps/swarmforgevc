@@ -87,3 +87,17 @@ notes: |
 
   BL-723 architect verdict (2026-07-30): on-par. No extension/src files
   touched, no declared invariants. No architecture concerns.
+
+  BL-723 hardener verdict (2026-07-31): not-on-par (independent finding).
+  take-flow-reason has three branches (double-quoted, single-quoted,
+  unquoted/bare-comma-split); every test in
+  required_stages_test_runner.bb and the feature file exercises the
+  double-quoted branch only. The single-quote branch is entirely
+  untested, and the unquoted :else branch's actual failure mode is
+  untested: an unquoted, comma-containing reason (e.g. "cleaner: no test,
+  obvious") silently splits at the first comma, truncating the reason and
+  mis-parsing the remainder as the start of a next stage:reason pair with
+  no error. Live production risk is currently low (this ticket's own
+  docstring says live tickets always use quoted values), but the parser
+  accepts and silently mis-parses malformed input rather than rejecting
+  it. Remaining-work defect: BL-754. Pilot-process defect: BL-755.

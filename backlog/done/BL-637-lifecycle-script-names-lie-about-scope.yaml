@@ -185,3 +185,13 @@ notes: |
   findings both stand). No extension/src files touched by this ticket, so
   dependency-gate.js does not apply; no declared invariants to review. No
   additional architecture concerns found from this lens.
+
+  BL-723 hardener verdict (2026-07-31): not-on-par (third independent
+  shortfall). test_lifecycle_script_scope.sh's stop-path scenarios never
+  invoke the real stop-swarm.sh — they source stack_survivor_scan.sh and
+  re-derive the same refuse/success branch logic inline, printing "full
+  stack SUCCESS — clean slate" (a string stop-swarm.sh itself never
+  prints; the real script's actual line 96 is "full stack SUCCESS — no
+  known survivors") and never exercising stop-swarm.sh's second,
+  independent kill_rc-driven refuse path at all. Remaining-work defect:
+  BL-746. Pilot-process defect: BL-747.

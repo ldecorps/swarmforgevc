@@ -159,3 +159,13 @@ notes: |
   stands). dependency-gate.js passed clean against needsHumanDetection.ts
   (no forbidden edges). No declared invariants. No additional architecture
   concerns from this lens.
+
+  BL-723 hardener verdict (2026-07-31): not-on-par (coder's finding
+  stands). Ran node scripts/crapReport.js against needsHumanDetection.ts:
+  the new/changed functions from this landing (isPaneTitleRuleLine and
+  the isFooterFurnitureLine/isVisibleChromeLine extensions) are all at or
+  under CRAP<=6. detectNeedsHuman itself shows CRAP=11 at 100% coverage
+  (CRAP equals its own complexity at full coverage), but it predates this
+  landing entirely and this ticket's diff does not touch it — pre-existing
+  debt, out of scope for this review. No new coverage/CRAP gap from this
+  lens.

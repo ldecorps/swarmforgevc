@@ -157,3 +157,18 @@ notes: |
   it") rather than a fast-check property — a reasonable choice given
   checkPricingCoverage reads real files, not a pure generatable input
   space. No architecture concerns.
+
+  BL-723 hardener verdict (2026-07-30): not-on-par (two independent
+  findings, neither caught by the three prior seats). (1)
+  collectReferencedClaudeModels lands at CRAP=10.89/79% coverage — the
+  packs-dir and launch-dir multi-file scan branches (the paths the
+  ticket's own fail-loud invariant depends on once a swarm launches with
+  per-role model overrides) are never deliberately driven by a test, only
+  incidentally exercised via the ambient real repo state. Remaining-work:
+  BL-740. Pilot-process: BL-741. (2) The ticket's own new test
+  (extension/test/pricingTable.test.js:92) uses a raw fs.mkdtempSync call
+  instead of the shared mkTmpDir() helper, which is currently RED against
+  the repo-wide tmpDirMigrationGuard "zero raw mkdtemp call sites" gate —
+  confirmed via an isolated, deterministic run, not a flake. Not fixed in
+  this parcel per BL-723's own invariant (reviews landings, does not
+  reopen them). Remaining-work: BL-742. Pilot-process: BL-743.

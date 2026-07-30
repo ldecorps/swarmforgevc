@@ -1,0 +1,70 @@
+id: BL-754
+title: "take-flow-reason's single-quote and unquoted branches are completely untested — an unquoted comma silently truncates a reason and can drop a stage with no error"
+milestone: M8
+type: defect
+severity: medium
+status: todo
+epic: swarm-reliability
+assigned_to: specifier
+priority: 5
+direction: normal
+depends_on: []
+mutation_cost: low
+source: |
+  Found during BL-723 (pilot-tonight quality review), hardener viewpoint
+  pass, 2026-07-30/31. `take-flow-reason`
+  (swarmforge/scripts/lib/required_stages_lib.bb:87-108) has three
+  branches: double-quoted (`"..."`), single-quoted (`'...'`), and
+  unquoted/bare (`:else`, splits on the first comma).
+
+  Every test in `required_stages_test_runner.bb` (lines ~226-260) and
+  every scenario in the `.feature` file uses double-quoted reason values
+  only. The single-quote branch is entirely untested, and the unquoted
+  `:else` branch's actual failure mode is untested: for an unquoted,
+  comma-containing reason like
+  `stage_skip_reasons: { cleaner: no test, obvious }`, the `:else` branch
+  splits at the FIRST comma — `take-flow-reason` returns `["no test",
+  "obvious"]` — so the parser stores `cleaner -> "no test"` and then tries
+  to parse `"obvious"` as the start of a NEXT `stage: reason` pair. Since
+  `"obvious"` has no colon, the next stage/reason pair fails to parse
+  correctly (silently mis-parsed or dropped depending on exactly how the
+  recursive parse loop handles a colon-less remainder) — with no error
+  surfaced anywhere.
+
+  Not filed as high severity: this ticket's own docstring states live
+  tickets always use quoted values by convention, so current production
+  risk is low. But the parser accepts and silently mis-parses unquoted
+  input rather than rejecting it, and nothing proves what it actually does
+  in that case — exactly the "a parser that returns the same value/keeps
+  going for present-but-malformed input as for well-formed input" pattern
+  this project's own hardener guidance already names as a gap class.
+
+notes: |
+  BL-723 hardener verdict on BL-661: not-on-par (independent finding; the
+  three prior seats read the "real parsing hazard (quoted reasons
+  containing commas and braces)" as covered and only noted the unrelated
+  scenario-05 wiring gap as a nit).
+  Linked pilot-process defect: BL-755.
+
+description: |
+  ## What
+
+  Add tests for `take-flow-reason`'s single-quote branch (mirroring the
+  existing double-quote cases) and for the unquoted/bare-comma `:else`
+  branch specifically with a comma INSIDE the intended reason text (e.g.
+  `cleaner: no test, obvious` as a single reason), asserting on the
+  ACTUAL current behavior first (to prove what it does today), then decide
+  and implement the intended fix: either reject/flag unquoted values
+  containing commas (fail loud, matching this project's general
+  fail-loud-over-silent-misparse convention), or require quoting for any
+  reason containing a comma at the schema level.
+
+  ## Acceptance
+
+  - A test proves what `read-stage-skip-reasons` currently returns for
+    `stage_skip_reasons: { cleaner: no test, obvious }` (documents current
+    behavior).
+  - After the fix, an unquoted reason containing a comma either fails
+    loud with a clear message, or is handled losslessly — never silently
+    drops or mis-attributes a stage.
+  - Existing double-quoted-value tests stay green.

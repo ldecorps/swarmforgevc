@@ -1,0 +1,41 @@
+id: BL-745
+title: "Pilot process: BL-718 landed six functions over the CRAP<=6 gate without a CRAP pass ever running"
+milestone: M8
+type: defect
+severity: low
+status: todo
+epic: swarmforge-console
+assigned_to: specifier
+priority: 6
+direction: normal
+depends_on: []
+mutation_cost: low
+source: |
+  Found during BL-723 (pilot-tonight quality review), hardener viewpoint
+  pass, 2026-07-30. Companion remaining-work ticket: BL-744.
+
+notes: |
+  Pilot-process half of the BL-744 hardener-lens shortfall on BL-718. This
+  is the third independent shortfall pair found on BL-718 across three
+  different seats (coder: BL-726/727, architect: BL-738/739, hardener:
+  this pair) — worth flagging as its own pattern: a single landing missed
+  by acceptance-wiring, invariant-property, AND CRAP in the same pass.
+
+description: |
+  ## What
+
+  BL-718 is now the second ticket this same BL-723 review batch has found
+  a CRAP gap on (see also BL-627/BL-740-743) — same root gap: hardener-
+  equivalent CRAP checking was skipped or not verified for tonight's
+  batch as a class, not a one-off.
+
+  ## Question to answer
+
+  Given BL-718 alone accumulated three independent shortfalls across
+  three different review lenses (coder's acceptance-wiring gap, architect's
+  vacuous property test, hardener's CRAP gap), was the offline pilot's
+  hardener-equivalent step run at all for this ticket, or run and not
+  verified? Harden `/pilot` so a CRAP pass against every touched
+  `extension/src/**` file is a mandatory, logged step for every ticket
+  that touches TypeScript — not something a downstream live-swarm review
+  has to rediscover from scratch two tickets in a row.

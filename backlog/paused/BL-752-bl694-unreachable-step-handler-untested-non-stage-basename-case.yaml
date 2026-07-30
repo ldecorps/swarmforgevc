@@ -1,0 +1,64 @@
+id: BL-752
+title: "BL-694 added a step handler for the non-stage-basename-collision case with no matching Examples row — the behavior it asserts is untested anywhere"
+milestone: M8
+type: defect
+severity: medium
+status: todo
+epic: swarm-reliability
+assigned_to: specifier
+priority: 5
+direction: normal
+depends_on: []
+mutation_cost: low
+source: |
+  Found during BL-723 (pilot-tonight quality review), hardener viewpoint
+  pass, 2026-07-30/31. `specs/pipeline/steps/bl694ResidualAllowlistSteps.js:75`
+  registers a step handler for
+  `/^a different file with the same basename at (?:at )?a non-stage path
+  under the backlog$/`, but
+  `specs/features/BL-694-residual-word-allowlist-survives-stage-moves.feature`'s
+  Scenario Outline 04 only has two `Examples:` rows ("outside the
+  backlog", "elsewhere in the tree") — no "a non-stage path under the
+  backlog" row exists. The step regex is registered but never matched or
+  executed by any scenario.
+
+  This is dead test code hiding an untested behavior claim: that a
+  basename match under a non-stage `backlog/` path (e.g.
+  `backlog/topics/BL-624-....yaml`, which shares a basename with a
+  grandfathered ticket file but lives under `backlog/topics/`, not
+  `backlog/active|paused|hold/`) is correctly NOT excused by
+  `BACKLOG_STAGE_RE`/the basename allowlist. Checked
+  `onboarderResidualAllowlist.js`'s own `isAllowlisted` (its
+  `BACKLOG_STAGE_RE` requires `^backlog/(active|paused|hold)/`, so a
+  `backlog/topics/...` path should correctly fail the regex and fall
+  through to the exact-path check) and `onboarderRenameNoResidualFacilitator.test.js`
+  — neither has any test coverage for this specific case either. The
+  underlying regex logic looks correct by inspection, but the specific
+  scenario meant to prove it (this ticket's own review-04 handler) is
+  provably unreachable, so the claim rides on inspection alone, not on
+  any executed test.
+
+notes: |
+  BL-723 hardener verdict on BL-694: not-on-par (independent finding; the
+  three prior seats read the acceptance suite as exercising "the real
+  scanUnexpected/isAllowlisted functions across all 5 scenarios" and
+  found only a "minor dead-code nit" — an unexercised step registration —
+  but did not connect that dead code to an actual UNTESTED behavior claim
+  worth a defect, treating it as cosmetic).
+  Linked pilot-process defect: BL-753.
+
+description: |
+  ## What
+
+  Add the missing `Examples:` row to Scenario Outline 04 in
+  `specs/features/BL-694-residual-word-allowlist-survives-stage-moves.feature`
+  so the already-written step handler for "a non-stage path under the
+  backlog" (e.g. `backlog/topics/`) actually runs, confirming a basename
+  match there does NOT inherit the stage-move exemption.
+
+  ## Acceptance
+
+  - The new Examples row exercises the registered-but-dead step handler.
+  - `node specs/pipeline/cli.js
+    specs/features/BL-694-residual-word-allowlist-survives-stage-moves.feature`
+    passes with the new row included.

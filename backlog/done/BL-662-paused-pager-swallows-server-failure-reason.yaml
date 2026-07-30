@@ -93,3 +93,8 @@ notes: |
   shared reasonOrFallback helper — not exhaustive on every action x shape
   permutation, but the shared-helper structure makes an unencoded path
   unlikely. No architecture concerns.
+
+  BL-723 hardener verdict (2026-07-31): on-par. Ran node
+  scripts/crapReport.js against pausedPagerUiHtml.ts: no function exceeds
+  CRAP<=6 (getPausedPagerUiHtml itself is complexity=1, 100% coverage).
+  No coverage/CRAP concerns from this lens.

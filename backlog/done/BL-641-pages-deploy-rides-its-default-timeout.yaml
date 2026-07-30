@@ -113,3 +113,10 @@ notes: |
   introduced inside any `run:` shell body (existing `with:`/`env:` usage
   only); no extension/src files touched, no declared invariants. No
   architecture concerns.
+
+  BL-723 hardener verdict (2026-07-31): on-par. Pure YAML/CI config
+  change; the Gherkin outline exercises all four workflow files for
+  deprecated-major detection and the timeout-headroom check is properly
+  value-driven, not a string match. No coverage/CRAP concerns — static
+  CI-config assertions are an inherent limit of testing YAML locally, not
+  a gap this lens can harden further.
