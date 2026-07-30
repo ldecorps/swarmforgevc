@@ -2,10 +2,10 @@ const { mkTmpDir } = require('./helpers/tmpDir');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { startBridge } = require('../out/bridge/bridgeServer');
+const { startBridge, effectiveBubbleMirrorTopicId, formatBubbleMirrorText, mirrorLetsTalkTurnToBubble } = require('../out/bridge/bridgeServer');
 const { createMockCursorBridgeAgentSession } = require('../out/bridge/cursorBridgeAgentSession');
 const { processLetsTalkTurn } = require('../out/bridge/letsTalkRoutes');
-
+const { splitTelegramChunks } = require('../out/tools/telegramCursorBridgeCore');
 const TOKEN = 'lets-talk-bridge-token';
 const SAMPLE_AUDIO = Buffer.from('audio-chunk').toString('base64');
 
@@ -421,4 +421,156 @@ test('processLetsTalkTurn: onTurnSuccess failure is ignored', async () => {
     }
   );
   assert.equal(result.success, true);
+});
+
+test('effectiveBubbleMirrorTopicId keeps dedicated Bubble topic', () => {
+  assert.equal(effectiveBubbleMirrorTopicId({ cursorTopicId: 9, bubbleTopicId: 91 }), 91);
+});
+
+test('effectiveBubbleMirrorTopicId suppresses mirror when Bubble equals host topic', () => {
+  assert.equal(effectiveBubbleMirrorTopicId({ cursorTopicId: 9, bubbleTopicId: 9 }), undefined);
+});
+
+test('formatBubbleMirrorText builds You / Bubble transcript', () => {
+  assert.equal(formatBubbleMirrorText('hi', 'hello'), 'You: hi\n\nBubble: hello');
+});
+
+test('BL-718 mirror: short turn posts You/Bubble text to Bubble topic only', async () => {
+  const target = mkTmp();
+  fs.writeFileSync(
+    path.join(target, '.swarmforge', 'operator', 'cursor-bridge-state.json'),
+    JSON.stringify({ updateOffset: 0, cursorTopicId: 9, bubbleTopicId: 91 }, null, 2) + '\n'
+  );
+  const prevToken = process.env.TELEGRAM_BOT_TOKEN;
+  const prevChat = process.env.TELEGRAM_CHAT_ID;
+  process.env.TELEGRAM_BOT_TOKEN = 'test-token';
+  process.env.TELEGRAM_CHAT_ID = '12345';
+  const sent = [];
+  try {
+    await mirrorLetsTalkTurnToBubble(target, 'hi', 'hello there', {
+      sendMessage: async (_t, _c, text, _r, _p, topicId) => {
+        sent.push({ text, topicId });
+        return { success: true, messageId: sent.length };
+      },
+    });
+  } finally {
+    if (prevToken === undefined) delete process.env.TELEGRAM_BOT_TOKEN;
+    else process.env.TELEGRAM_BOT_TOKEN = prevToken;
+    if (prevChat === undefined) delete process.env.TELEGRAM_CHAT_ID;
+    else process.env.TELEGRAM_CHAT_ID = prevChat;
+  }
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].topicId, 91);
+  assert.equal(sent[0].text, 'You: hi\n\nBubble: hello there');
+});
+
+test('BL-718 mirror: long reply uses shared chunker and sends ordered chunks', async () => {
+  const target = mkTmp();
+  fs.writeFileSync(
+    path.join(target, '.swarmforge', 'operator', 'cursor-bridge-state.json'),
+    JSON.stringify({ updateOffset: 0, cursorTopicId: 9, bubbleTopicId: 91 }, null, 2) + '\n'
+  );
+  const prevToken = process.env.TELEGRAM_BOT_TOKEN;
+  const prevChat = process.env.TELEGRAM_CHAT_ID;
+  process.env.TELEGRAM_BOT_TOKEN = 'test-token';
+  process.env.TELEGRAM_CHAT_ID = '12345';
+  const longReply = 'x'.repeat(5000);
+  const sent = [];
+  const splitCalls = [];
+  try {
+    await mirrorLetsTalkTurnToBubble(target, 'ask', longReply, {
+      splitChunks: (text) => {
+        splitCalls.push(text);
+        return splitTelegramChunks(text);
+      },
+      sendMessage: async (_t, _c, text, _r, _p, topicId) => {
+        sent.push({ text, topicId });
+        return { success: true, messageId: sent.length };
+      },
+    });
+  } finally {
+    if (prevToken === undefined) delete process.env.TELEGRAM_BOT_TOKEN;
+    else process.env.TELEGRAM_BOT_TOKEN = prevToken;
+    if (prevChat === undefined) delete process.env.TELEGRAM_CHAT_ID;
+    else process.env.TELEGRAM_CHAT_ID = prevChat;
+  }
+  assert.equal(splitCalls.length, 1);
+  assert.ok(sent.length >= 2);
+  assert.ok(sent.every((s) => s.topicId === 91 && s.text.length <= 4096));
+  const reassembled = sent.map((s) => s.text).join('');
+  assert.match(reassembled, /^You: ask/);
+  assert.ok(reassembled.includes(longReply));
+  assert.ok(reassembled.includes('Bubble:'));
+});
+
+test('BL-718 mirror: exhausted send failure surfaces operator event', async () => {
+  const target = mkTmp();
+  fs.writeFileSync(
+    path.join(target, '.swarmforge', 'operator', 'cursor-bridge-state.json'),
+    JSON.stringify({ updateOffset: 0, cursorTopicId: 9, bubbleTopicId: 91 }, null, 2) + '\n'
+  );
+  const prevToken = process.env.TELEGRAM_BOT_TOKEN;
+  const prevChat = process.env.TELEGRAM_CHAT_ID;
+  process.env.TELEGRAM_BOT_TOKEN = 'test-token';
+  process.env.TELEGRAM_CHAT_ID = '12345';
+  try {
+    await mirrorLetsTalkTurnToBubble(target, 'hi', 'hello', {
+      sendMessage: async () => ({ success: false, error: 'Telegram API error: 400 bad request' }),
+    });
+  } finally {
+    if (prevToken === undefined) delete process.env.TELEGRAM_BOT_TOKEN;
+    else process.env.TELEGRAM_BOT_TOKEN = prevToken;
+    if (prevChat === undefined) delete process.env.TELEGRAM_CHAT_ID;
+    else process.env.TELEGRAM_CHAT_ID = prevChat;
+  }
+  const eventsPath = path.join(target, '.swarmforge', 'operator', 'events.jsonl');
+  assert.ok(fs.existsSync(eventsPath));
+  const lines = fs.readFileSync(eventsPath, 'utf8').trim().split('\n');
+  assert.equal(lines.length, 1);
+  const event = JSON.parse(lines[0]);
+  assert.equal(event.type, 'bubble-talk-mirror-failed');
+  assert.equal(event.topicId, 91);
+  assert.match(event.error, /Telegram API error/);
+});
+
+test('BL-718 mirror: choice poll still mirrored with text transcript', async () => {
+  const target = mkTmp();
+  fs.writeFileSync(
+    path.join(target, '.swarmforge', 'operator', 'cursor-bridge-state.json'),
+    JSON.stringify({ updateOffset: 0, cursorTopicId: 9, bubbleTopicId: 91 }, null, 2) + '\n'
+  );
+  const prevToken = process.env.TELEGRAM_BOT_TOKEN;
+  const prevChat = process.env.TELEGRAM_CHAT_ID;
+  process.env.TELEGRAM_BOT_TOKEN = 'test-token';
+  process.env.TELEGRAM_CHAT_ID = '12345';
+  const sent = [];
+  const polls = [];
+  const reply = 'Pick one:\n1) Alpha\n2) Beta';
+  try {
+    await mirrorLetsTalkTurnToBubble(target, 'choose', reply, {
+      sendMessage: async (_t, _c, text, _r, _p, topicId) => {
+        sent.push({ text, topicId });
+        return { success: true, messageId: 1 };
+      },
+      sendPoll: async (_t, _c, question, options, topicId) => {
+        polls.push({ question, options, topicId });
+        return { success: true, pollId: 'poll-1' };
+      },
+    });
+  } finally {
+    if (prevToken === undefined) delete process.env.TELEGRAM_BOT_TOKEN;
+    else process.env.TELEGRAM_BOT_TOKEN = prevToken;
+    if (prevChat === undefined) delete process.env.TELEGRAM_CHAT_ID;
+    else process.env.TELEGRAM_CHAT_ID = prevChat;
+  }
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].topicId, 91);
+  assert.match(sent[0].text, /You: choose/);
+  assert.equal(polls.length, 1);
+  assert.equal(polls[0].topicId, 91);
+  assert.deepEqual(polls[0].options, ['Alpha', 'Beta']);
+  const state = JSON.parse(
+    fs.readFileSync(path.join(target, '.swarmforge', 'operator', 'cursor-bridge-state.json'), 'utf8')
+  );
+  assert.equal(state.pendingChoicePolls[0].pollId, 'poll-1');
 });

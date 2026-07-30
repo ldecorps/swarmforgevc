@@ -41,16 +41,36 @@
       (when (zero? exit) (str/trim out)))
     (catch Exception _ nil)))
 
-(defn count-untracked-files [worktree-dir]
+;; BL-646: daemon-death/alarm test fixtures that leaked into worktree roots.
+(def known-fixture-file-names
+  #{"calls.log" "email-text.txt" "failure.log" "status.json"})
+
+(defn parse-untracked-paths
+  "Extract untracked paths from `git status --porcelain` output."
+  [porcelain]
+  (->> (str/split-lines (str/trim (or porcelain "")))
+       (filter #(str/starts-with? % "??"))
+       (map (fn [line] (str/trim (subs line 3))))
+       vec))
+
+(defn list-untracked-files [worktree-dir]
   (try
     (let [{:keys [out exit]} (process/shell {:dir worktree-dir :err :string}
                                             "git" "status" "--porcelain")]
       (if (zero? exit)
-        (->> (str/split-lines (str/trim out))
-             (filter #(str/starts-with? % "??"))
-             count)
-        0))
-    (catch Exception _ 0)))
+        (parse-untracked-paths out)
+        []))
+    (catch Exception _ [])))
+
+(defn count-untracked-files [worktree-dir]
+  (count (list-untracked-files worktree-dir)))
+
+(defn only-known-fixture-droppings?
+  "True when every untracked path is one of the four known alarm-test fixture
+   names at the worktree root (BL-646 tool droppings, not role work)."
+  [untracked-paths]
+  (and (seq untracked-paths)
+       (every? #(contains? known-fixture-file-names %) untracked-paths)))
 
 (defn find-claim-sidecars [worktree-path]
   (let [ip (fs/path worktree-path ".swarmforge" "handoffs" "inbox" "in_process")]
@@ -60,18 +80,22 @@
            vec))))
 
 (defn assess-one-claim
-  [{:keys [role worktree-path sidecar-path progress now-ms config]}]
+  [{:keys [role worktree-path sidecar-path progress now-ms config untracked-paths head-commit]}]
   (let [cfg (merge claim-progress-lib/default-config config)
         reclaims (long (or (:reclaims progress) 0))
         claim-at (long (or (:claimAtMs progress) 0))
         elapsed-ms (max 0 (- now-ms claim-at))
         idle-ms (claim-progress-lib/resolve-claim-idle-timeout-ms role cfg)
-        head (worktree-head-commit-10 worktree-path)
+        head (or head-commit (worktree-head-commit-10 worktree-path))
         claim-commit (or (:claimCommit progress) "")
         head-unchanged? (and (not (str/blank? head))
                              (not (str/blank? claim-commit))
                              (= head claim-commit))
-        untracked (if head-unchanged? (count-untracked-files worktree-path) 0)
+        untracked-list (or untracked-paths
+                           (if head-unchanged? (list-untracked-files worktree-path) []))
+        untracked (count untracked-list)
+        fixture-droppings? (and head-unchanged?
+                                (only-known-fixture-droppings? untracked-list))
         reclaims-to-bounce (max 0 (- (:bounce-threshold cfg) reclaims))
         reclaims-to-halt (max 0 (- (:halt-threshold cfg) reclaims))
         elapsed-pct (if (pos? idle-ms) (/ (double elapsed-ms) idle-ms) 0.0)
@@ -79,12 +103,17 @@
                    (>= reclaims (:halt-threshold cfg)) :halt-imminent
                    (>= reclaims (:bounce-threshold cfg)) :critical
                    (>= reclaims default-warn-reclaims) :warn
+                   (and head-unchanged? fixture-droppings?) :warn-fixture-droppings
                    (and head-unchanged?
                         (>= elapsed-pct 0.75)
                         (pos? untracked)) :warn-uncommitted
                    (and head-unchanged? (>= elapsed-pct 0.75)) :watch
                    :else :ok)
         hint (cond
+               fixture-droppings?
+               (str "HEAD still " head " but " untracked
+                    " untracked test-fixture droppings (calls.log, email-text.txt, failure.log, status.json) — do NOT git add/commit; fix the leaking test suite.")
+
                (and (pos? untracked) head-unchanged?)
                (str "HEAD still " head " but " untracked
                     " untracked file(s) — nudge role to git add/commit before BL-528 halt.")
@@ -112,7 +141,7 @@
 (defn alert-severity?
   "Severities that should wake the babysitter LLM."
   [severity]
-  (#{"warn" "warn-uncommitted" "critical" "halt-imminent"} severity))
+  (#{"warn" "warn-uncommitted" "warn-fixture-droppings" "critical" "halt-imminent"} severity))
 
 (defn scan-claim-risks
   "Scan every role worktree for in_process claim-progress sidecars.

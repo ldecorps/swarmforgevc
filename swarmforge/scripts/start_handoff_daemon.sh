@@ -4,6 +4,18 @@
 # BL-081 orphan reap race and BL-144 stalled-alarm during startup-notify.
 set -euo pipefail
 
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+  cat <<'EOF'
+start_handoff_daemon.sh — lifecycle start entry point.
+
+Stop: stop_ancillary_services.sh / ./stop-swarm.sh (or ./swarm-kill for pipeline-only)
+
+Usage: see header comments above.
+EOF
+  exit 0
+fi
+
+
 WORKING_DIR="${1:?usage: start_handoff_daemon.sh <project-root>}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DAEMON_DIR="$WORKING_DIR/.swarmforge/daemon"

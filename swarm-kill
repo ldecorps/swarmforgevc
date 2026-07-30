@@ -1,12 +1,33 @@
 #!/usr/bin/env bash
-# Stop every SwarmForge agent, daemon, and stale tmux server for this repo.
+# Pipeline-only stop: every SwarmForge role agent, handoffd, and stale tmux
+# server for this repo. Does NOT stop the full stack (operator, front desk,
+# babysitterd outside the managed pidfile path, tunnels).
+#
+# Scope: pipeline-only — counterpart to ./swarm, NOT to ./start-swarm.sh.
+# Full stack stop: ./stop-swarm.sh
 #
 # Usage:
 #   ./swarm-kill                  # kill processes + clear state
-#   ./swarm-kill --sweep-inbox      # also archive pending handoffs
-#   ./swarm-kill --reset-worktrees  # also reset role worktrees
-#   ./swarm-kill --full             # kill + inbox sweep + worktree reset
+#   ./swarm-kill --sweep-inbox
+#   ./swarm-kill --reset-worktrees
+#   ./swarm-kill --full
+#
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-exec bash "$SCRIPT_DIR/swarmforge/scripts/kill_all_swarm.sh" "$@"
+
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+  cat <<'EOFHELP'
+./swarm-kill — pipeline-only stop (counterpart to ./swarm).
+
+Scope: pipeline-only
+Stops: role agents, handoffd (+ supervisor), stale tmux sockets, state markers.
+Does NOT stop: operator runtime, Telegram front desk, onboarder, tunnels.
+
+Full stack stop: ./stop-swarm.sh
+Canonical script: swarmforge/scripts/kill_pipeline_swarm.sh
+EOFHELP
+  exit 0
+fi
+
+exec bash "$SCRIPT_DIR/swarmforge/scripts/kill_pipeline_swarm.sh" "$@"

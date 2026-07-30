@@ -20,3 +20,7 @@ extension/stryker-incremental.json
 extension/stryker-incremental-live.json
 .aider*
 specs/pipeline/generated/
+/calls.log
+/email-text.txt
+/failure.log
+/status.json

@@ -6,6 +6,8 @@ const {
   AGENT_RUN_HEARTBEAT_INTERVAL_MS,
   decideEnsureCursorTopicAction,
   cursorBridgeTopicIdFromMap,
+  bubbleTopicIdFromMap,
+  BUBBLE_SUBJECT_ID,
   isCursorBridgeTopic,
   isScopedToCursorTopic,
   isAuthorizedPrincipal,
@@ -58,6 +60,12 @@ test('cursor bridge: cursorBridgeTopicIdFromMap reads the CURSOR_REMOTE binding'
   assert.equal(cursorBridgeTopicIdFromMap({ '7501': 'CURSOR_REMOTE' }), 7501);
   assert.equal(cursorBridgeTopicIdFromMap({ '7501': 'SUP-12' }), undefined);
   assert.equal(cursorBridgeTopicIdFromMap({}), undefined);
+});
+
+test('cursor bridge: bubbleTopicIdFromMap reads the BUBBLE binding', () => {
+  assert.equal(BUBBLE_SUBJECT_ID, 'BUBBLE');
+  assert.equal(bubbleTopicIdFromMap({ '11810': 'BUBBLE', '8435': 'CURSOR_REMOTE' }), 11810);
+  assert.equal(bubbleTopicIdFromMap({ '8435': 'CURSOR_REMOTE' }), undefined);
 });
 
 test('cursor bridge: isCursorBridgeTopic matches only the bound cursor topic', () => {
@@ -613,6 +621,13 @@ test('cursor bridge: parseCursorBridgeState accepts a valid snapshot', () => {
     cursorTopicId: 7501,
     agentId: 'local-abc',
   });
+});
+
+test('cursor bridge: parseCursorBridgeState accepts bubbleTopicId', () => {
+  assert.deepEqual(
+    parseCursorBridgeState({ updateOffset: 1, cursorTopicId: 9, bubbleTopicId: 91 }),
+    { updateOffset: 1, cursorTopicId: 9, bubbleTopicId: 91 }
+  );
 });
 
 test('cursor bridge: parseCursorBridgeState defaults missing fields safely', () => {

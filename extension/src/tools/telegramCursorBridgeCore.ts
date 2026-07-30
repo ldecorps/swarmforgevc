@@ -20,6 +20,9 @@ import {
 
 export const CURSOR_BRIDGE_SUBJECT_ID = 'CURSOR_REMOTE';
 export const CURSOR_BRIDGE_TOPIC_NAME = 'Cursor Remote';
+/** Standing Telegram topic for Float Companion / Let's Talk discussion mirror. */
+export const BUBBLE_SUBJECT_ID = 'BUBBLE';
+export const BUBBLE_TOPIC_NAME = 'Bubble';
 export const TELEGRAM_MESSAGE_MAX_LENGTH = 4096;
 
 export interface CursorBridgeQueuedPrompt {
@@ -45,6 +48,8 @@ export interface CursorBridgeChoicePoll {
 export interface CursorBridgePersistedState {
   updateOffset: number;
   cursorTopicId?: number;
+  /** Standing Bubble topic — Let's Talk / companion discussion mirror (not Cursor Remote). */
+  bubbleTopicId?: number;
   agentId?: string;
   pendingPrompts?: CursorBridgeQueuedPrompt[];
   pendingPromptPoll?: CursorBridgeQueuedPromptPoll;
@@ -116,6 +121,10 @@ export function decideEnsureCursorTopicAction(topicMap: Record<string, string>):
 
 export function cursorBridgeTopicIdFromMap(topicMap: Record<string, string>): number | undefined {
   return topicForSubject(topicMap, CURSOR_BRIDGE_SUBJECT_ID);
+}
+
+export function bubbleTopicIdFromMap(topicMap: Record<string, string>): number | undefined {
+  return topicForSubject(topicMap, BUBBLE_SUBJECT_ID);
 }
 
 export function isCursorBridgeTopic(topicId: number | undefined, cursorBridgeTopicId: number | undefined): boolean {
@@ -529,9 +538,13 @@ function buildPersistedState(record: Record<string, unknown>): CursorBridgePersi
     updateOffset: parseNonNegativeInt(record.updateOffset, 0),
   };
   const topicId = parseOptionalTopicId(record.cursorTopicId);
+  const bubbleTopicId = parseOptionalTopicId(record.bubbleTopicId);
   const agentId = parseOptionalNonEmptyString(record.agentId);
   if (topicId !== undefined) {
     state.cursorTopicId = topicId;
+  }
+  if (bubbleTopicId !== undefined) {
+    state.bubbleTopicId = bubbleTopicId;
   }
   if (agentId !== undefined) {
     state.agentId = agentId;

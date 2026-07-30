@@ -63,14 +63,14 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           # Full history: backlog.json's velocity/burndown/cycle-time series
           # are reconstructed from the full git log of backlog/ file moves -
           # a shallow clone would only see the latest commit.
           fetch-depth: 0
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: '22'
 
@@ -131,9 +131,14 @@ jobs:
       - name: Stamp PWA cache name
         run: node extension/out/tools/stamp-pwa-cache-name.js _site
 
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v4
         with:
           path: _site
 
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
+        with:
+          # BL-641: default deploy-pages timeout is 10m; successful runs have
+          # reached ~10m35s for the same artifact. 20m leaves headroom without
+          # hiding a genuine Pages outage.
+          timeout: 1200000

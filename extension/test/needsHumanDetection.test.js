@@ -5,6 +5,7 @@ const {
   stripTerminalChrome,
   transcriptShowsDecisionMenu,
   classifyDecisionStatus,
+  NO_QUESTION_TEXT_CAPTURED,
 } = require('../out/panel/needsHumanDetection');
 
 test('detectNeedsHuman returns false for empty text', () => {
@@ -271,6 +272,77 @@ test('extractQuestionSnippet excludes the permission-mode footer even without th
 test('extractQuestionSnippet keeps a prompt line where real text is glued directly onto the placeholder word', () => {
   const pane = [QUESTION, '❯ typewriter'].join('\n');
   assert.equal(extractQuestionSnippet(pane), `${QUESTION} ❯ typewriter`);
+});
+
+// ── extractQuestionSnippet: word-bearing furniture (BL-642) ─────────────────
+const LIVE_CODER_PANE = [
+  '──────────────────────── SwarmForge Coder ──',
+  '⏵⏵ bypass permissions on (shift+tab to cycle) · install gh for PR status · e…',
+  '/rc',
+].join('\n');
+
+const FULL_FOOTER_LINE =
+  '⏵⏵ bypass permissions on (shift+tab to cycle) · install gh for PR status · esc to interrupt';
+
+// BL-642 live-capture-strips-all-known-chrome-01
+test('extractQuestionSnippet strips the live coder pane title rule, truncated footer, and bare /rc', () => {
+  const snippet = extractQuestionSnippet(LIVE_CODER_PANE);
+  assert.doesNotMatch(snippet, /SwarmForge Coder/);
+  assert.doesNotMatch(snippet, /bypass permissions/i);
+  assert.doesNotMatch(snippet, /⏵/);
+  assert.notEqual(snippet.trim(), '/rc');
+  assert.doesNotMatch(snippet, /(^|\s)\/rc(\s|$)/i);
+});
+
+// BL-642 real-question-with-chrome-like-words-survives-02
+test('extractQuestionSnippet keeps a real question containing the word permissions', () => {
+  const prose = 'Should I change the bypass permissions setting for this role?';
+  assert.equal(extractQuestionSnippet(prose), prose);
+});
+
+test('extractQuestionSnippet keeps a real question containing box-drawing characters', () => {
+  const prose = 'Deploy along the ──── path, or abort?';
+  assert.equal(extractQuestionSnippet(prose), prose);
+});
+
+// BL-642 no-question-text-yields-explicit-message-03
+test('extractQuestionSnippet returns the explicit nothing-captured message when only chrome remains', () => {
+  const snippet = extractQuestionSnippet(LIVE_CODER_PANE);
+  assert.equal(snippet, NO_QUESTION_TEXT_CAPTURED);
+  assert.ok(snippet.trim().length > 0);
+});
+
+// BL-642 truncated-footer-recognised-at-several-widths-04
+for (const width of [40, 60, 80]) {
+  test(`extractQuestionSnippet drops a footer truncated to ${width} characters`, () => {
+    const truncated = FULL_FOOTER_LINE.slice(0, width);
+    const snippet = extractQuestionSnippet([QUESTION, truncated].join('\n'));
+    assert.equal(snippet, QUESTION);
+    assert.doesNotMatch(snippet, /bypass permissions/i);
+    assert.doesNotMatch(snippet, /⏵/);
+  });
+}
+
+test('extractQuestionSnippet treats a SwarmForge role title rule as chrome', () => {
+  const pane = [QUESTION, '──────────────────────────────── SwarmForge Architect ──'].join('\n');
+  assert.equal(extractQuestionSnippet(pane), QUESTION);
+});
+
+// BL-642 detectNeedsHuman-unchanged-05
+test('detectNeedsHuman still returns false on the live chrome-only coder capture', () => {
+  assert.equal(detectNeedsHuman(LIVE_CODER_PANE), false);
+});
+
+// Hardener: session-name alone (no box runs) is not chrome — only the
+// launcher title-rule shape between box glyphs is furniture.
+test('extractQuestionSnippet keeps a prose line that is only a SwarmForge role name', () => {
+  const prose = 'SwarmForge Coder is the role that owns this parcel.';
+  assert.equal(extractQuestionSnippet(prose), prose);
+});
+
+test('extractQuestionSnippet recognises a single-play-button footer start', () => {
+  const pane = [QUESTION, '⏵ bypass permissions on (shift+tab to cycle) · e…'].join('\n');
+  assert.equal(extractQuestionSnippet(pane), QUESTION);
 });
 
 // ── transcriptShowsDecisionMenu / classifyDecisionStatus (BL-421) ───────────

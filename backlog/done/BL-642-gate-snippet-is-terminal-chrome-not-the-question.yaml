@@ -2,7 +2,7 @@ id: BL-642
 title: "A gated role's Telegram alert shows terminal chrome instead of its question — the snippet the human is meant to read is the pane's title rule and footer"
 milestone: M8
 type: defect
-status: todo
+status: done
 epic: swarm-reliability
 human_approval: approved
 severity: medium

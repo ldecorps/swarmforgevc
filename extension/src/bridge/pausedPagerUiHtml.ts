@@ -205,6 +205,10 @@ export function getPausedPagerUiHtml(): string {
     };
   }
 
+  function reasonOrFallback(payload, fallback) {
+    return (payload && payload.reason) ? String(payload.reason) : fallback;
+  }
+
   function postPausedPagerAction(path, item, opts) {
     if (loading) return;
     if (!window.confirm(opts.confirmText)) {
@@ -219,15 +223,17 @@ export function getPausedPagerUiHtml(): string {
     }).then(function (r) {
       loading = false;
       if (!r.ok) {
-        setStatus(opts.failText + ' (HTTP ' + r.status + ')');
-        return r.json().catch(function () { return {}; });
+        // BL-662: prefer server JSON reason (match epicReorderUiHtml / BL-572).
+        return r.json().catch(function () { return {}; }).then(function (payload) {
+          setStatus(reasonOrFallback(payload, opts.failText + ' (HTTP ' + r.status + ')'));
+        });
       }
       return r.json().then(function (payload) {
         if (payload && payload.success) {
           setStatus(opts.successText);
           refresh();
         } else {
-          setStatus(payload && payload.reason ? String(payload.reason) : opts.failText);
+          setStatus(reasonOrFallback(payload, opts.failText));
         }
       });
     }).catch(function (err) {
