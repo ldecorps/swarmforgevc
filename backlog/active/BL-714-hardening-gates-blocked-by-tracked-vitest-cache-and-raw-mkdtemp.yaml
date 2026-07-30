@@ -96,6 +96,32 @@ approval_context: >
 
 acceptance: specs/features/BL-714-hardening-gates-blocked-by-tracked-vitest-cache-and-raw-mkdtemp.feature
 
+notes: |
+  ## 2026-07-30 — this parcel was absorbed into BL-630's lineage and dropped
+
+  Recorded by the specifier on QA's note (handoff `000842`): "BL-714 rode in
+  BL-630's parcel, never its own git_handoff - track it". Full forensics in
+  `backlog/evidence/BL-714-parcel-absorbed-into-BL-630-20260730.md`.
+
+  Passes actually run under this ticket's name: **coder, cleaner, architect**
+  (`33196b5af`, `39012c6df` → `fcc40a1e4` → `92a213127`). The hardener merged
+  that architect tip at `80c8520a5` — the last commit naming BL-714 — then
+  merged QA's BL-630 bounce on top and forwarded under BL-630's name only.
+  Everything downstream carried BL-714's diff anonymously.
+
+  Verified 2026-07-30: no BL-714 commit is an ancestor of `main` (the fix is
+  NOT landed), and no BL-714 parcel exists in any mailbox. This ticket was
+  dropped, not stalled — nothing will wake it without a fresh dispatch.
+
+  Still owed: **hardender, documenter, QA**. Resuming means a `git_handoff` to
+  hardender under this ticket's stable task name, on a tip having `92a213127`
+  as an ancestor. `assigned_to: coder` below is stale — coder's pass is done.
+
+  Entanglement to resolve when routing: BL-630's rework tip also contains this
+  ticket's diff, so whichever lands first carries the other's changes. Landing
+  both under one approval is what QA refused; separating them is a coordinator
+  routing decision, not a spec change.
+
 source: |
   Hardener session 2026-07-30 (mono-router), memory
   two-preexisting-defects-block-hardening-20260730, plus notes to specifier
