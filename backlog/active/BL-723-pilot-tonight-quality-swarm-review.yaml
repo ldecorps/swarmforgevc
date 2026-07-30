@@ -9,17 +9,21 @@ priority: 0
 direction: queue-jump
 depends_on: []
 mutation_cost: low
-required_stages: [specifier, architect, hardender, documenter, qa]
+required_stages: [specifier, coder, cleaner, architect, hardender, documenter, qa]
 assigned_to: specifier
 
 invariants:
   - "This ticket is a live-swarm quality review of listed done pilot tickets; it does not reopen them as active work unless a true defect or revert is warranted."
   - "The deliverable includes an explicit on-par / not-on-par verdict against normal live-swarm standards."
   - "When quality falls short, the swarm files BOTH: (1) detailed remaining-work defects for the landed code or unfinished acceptance, and (2) pilot-process defects so the next pilot run is stronger."
+  - "After review, write the per-ticket verdict back onto each reviewed done ticket (or a linked note on that ticket) so the landing record shows on-par / not-on-par and pointers to any new defects."
   - "Process is queue-jump into the live pack (specifier then coordinator then seats), never the offline expeditor or /pilot for this review parcel itself."
+  - "Final deliverable is a fairly detailed email to the configured notify_email_to recipient with dedicated sections for coder, cleaner, architect, hardender, documenter, and especially QA viewpoints — not only a repo note."
 
 required_wiring:
-  - "docs/how-to or briefing note::BL-723 pilot-tonight review verdict"
+  - "docs/how-to::BL-723 pilot-tonight multi-hat review verdict (source body for the email)"
+  - "email via daemon_alarm_lib send-configured-email! (or Resend with RESEND_API_KEY)::detailed multi-hat review including QA emphasis"
+  - "backlog/done (reviewed tickets)::per-ticket verdict written back"
   - "backlog/ (new defect YAMLs if shortfalls)::remaining-work defects AND pilot-process defects"
 
 description: |
@@ -40,18 +44,33 @@ description: |
   ## Pass criteria
 
   - Diff + acceptance would survive coder→cleaner→architect→hardender→documenter→qa
-    scrutiny at live-swarm bar.
+    scrutiny at live-swarm bar. Route through those seats (required_stages) so
+    each hat actually looks; do not synthesize fake POVs without the seat.
   - Explicit verdict: on par or not, with reasons.
   - Shortfalls → **both** kinds of new defects (do both, not either/or):
     1. **Remaining work** — detailed defects for what is still wrong or unfinished
        in the landed code / acceptance.
     2. **Pilot process** — defects that raise what the pilot missed, which gate
        or hat should have caught it, and how to harden `/pilot` next time.
+  - **Update them back:** each reviewed done ticket gets its verdict written back
+    (on-par or not, short reason, links to any new defects). Do not leave verdicts
+    only in the BL-723 parcel.
   - Do not silently rewrite done history unless a true revert is warranted.
+  - **Email the human (mandatory, human 2026-07-30 Let's Talk):** when the
+    review closes, send one fairly detailed email to `notify_email_to` with
+    separate sections for each seat's point of view — coder, cleaner,
+    architect, hardender, documenter, and **especially QA** (QA section must
+    be the fullest). Include overall on-par / not-on-par, per-ticket notes,
+    and any filed remaining-work / pilot-process defects. Documenter (or QA
+    after pass) writes the body under docs/how-to and sends via
+    `daemon_alarm_lib/send-configured-email!` (same Resend path as briefings).
+    Closing without that email is not done.
 
   ## Process
 
-  **queue-jump** for tomorrow morning live shift. Not expeditor. Not pilot.
+  **queue-jump now** (live pack already up). Not expeditor. Not pilot.
+  Human amendment 2026-07-30 evening Let's Talk: do not wait for morning;
+  finish with the multi-hat email.
 
   ## Out of scope
 

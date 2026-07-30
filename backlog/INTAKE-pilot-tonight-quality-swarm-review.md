@@ -37,9 +37,13 @@ For each in-scope ticket (or a clear batch report covering all):
 
 ## Process
 
-- **queue-jump** into the live pack tomorrow morning (specifier → coordinator →
-  seats). Not `/expedite` / offline pilot.
+- **queue-jump** into the live pack (specifier → coordinator → seats including
+  coder, cleaner, architect, hardender, documenter, QA). Not `/expedite` /
+  offline pilot. Human 2026-07-30 Let's Talk: run now, do not wait for morning.
 - Prefer architect + hardender scrutiny; documenter records the verdict.
+- **Email deliverable (mandatory):** send a fairly detailed email to the human
+  with each agent's point of view — coder, cleaner, architect, hardender,
+  documenter, and most importantly QA — plus overall on-par / not-on-par.
 
 ## Out of scope
 

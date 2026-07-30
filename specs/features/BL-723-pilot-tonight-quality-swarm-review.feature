@@ -29,7 +29,27 @@ Feature: Live swarm reviews tonight's pilot-landed defect quality
     And the original done ticket is not silently rewritten unless a true revert is warranted
 
   # BL-723 review-04
+  Scenario: verdicts are written back onto reviewed tickets
+    When the review finishes
+    Then each primary reviewed done ticket has its on-par or not-on-par verdict recorded back on that ticket
+    And any new remaining-work or pilot-process defects are pointed to from that ticket
+
+  # BL-723 review-05
   Scenario: this review is not run as offline pilot
     When BL-723 is executed
     Then it walks the live swarm path after queue-jump
     And it is not driven by the offline expeditor or /pilot for this parcel
+
+  # BL-723 review-06
+  Scenario: detailed multi-hat email reaches the human
+    When the live swarm completes BL-723
+    Then an email is sent to the configured notify recipient
+    And the email has separate sections for coder, cleaner, architect, hardender, documenter, and QA viewpoints
+    And the QA section is the most detailed
+    And the email states the overall on-par or not-on-par verdict with reasons
+
+  # BL-723 review-07
+  Scenario: coder and cleaner seats actually review
+    When BL-723 walks required_stages
+    Then coder and cleaner each perform a real review pass
+    And their viewpoints in the email come from those seats not from a later seat inventing them
