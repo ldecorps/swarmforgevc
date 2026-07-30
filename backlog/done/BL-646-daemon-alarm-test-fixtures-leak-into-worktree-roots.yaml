@@ -2,7 +2,7 @@ id: BL-646
 title: "Daemon-alarm test fixtures leak into worktree ROOTS, where no role may delete them — four files in two worktrees, and they blocked a legitimate fast-forward"
 milestone: M8
 type: defect
-status: todo
+status: done
 epic: code-quality-gates
 human_approval: approved
 severity: medium

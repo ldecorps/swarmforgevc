@@ -320,6 +320,7 @@ const DOMAINS = [
   require('./bl610UnresolvableCommitQuarantinedSteps'),
   require('./bl577FlowWatchdogParcelAgeInvariantSteps'),
   require('./bl642GateSnippetTerminalChromeSteps'),
+  require('./bl646DaemonAlarmFixtureLeakSteps'),
   require('./bl627PricingTableCorrectnessSteps'),
   require('./bl575CostRankHorizonPinnedClockSteps'),
   require('./bl590OnboarderSteps'),
