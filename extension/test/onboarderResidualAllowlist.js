@@ -17,12 +17,9 @@ const ALLOWED_EXACT_PATHS = new Set([
   'backlog/topics/BL-624.json',
   'backlog/topics/BL-625.json',
   'backlog/topics/BL-684.json',
-  'backlog/topics/BL-714.json',
   'docs/design/BL-659-traceability-explorer-mockup.html',
   'specs/features/BL-684-rename-onboarding-facilitator-to-onboarder.feature',
-  'specs/features/BL-714-hardening-gates-blocked-by-tracked-vitest-cache-and-raw-mkdtemp.feature',
   'specs/pipeline/steps/bl633InvariantsSectionSteps.js',
-  'specs/pipeline/steps/bl714HardeningGatesBlockedSteps.js',
   'swarmforge/scripts/launch_onboarder.sh',
   'swarmforge/scripts/stop_ancillary_services.sh',
   'extension/test/onboarderEvidenceByteIdentical.property.test.js',
@@ -45,7 +42,6 @@ const ALLOWED_BACKLOG_TICKET_BASENAMES = new Set([
   'BL-624-onboarding-facilitator-survey-to-gate.yaml',
   'BL-625-onboarding-facilitator-prompts-and-launch-handoff.yaml',
   'BL-643-document-the-non-pipeline-agents-and-rule-on-onboarder.yaml',
-  'BL-714-hardening-gates-blocked-by-tracked-vitest-cache-and-raw-mkdtemp.yaml',
 ]);
 
 function gitGrepFacilitator(cwd = REPO_ROOT) {
