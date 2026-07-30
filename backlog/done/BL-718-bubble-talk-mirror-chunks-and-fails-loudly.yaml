@@ -3,7 +3,7 @@ title: "DEFECT — Bubble talk mirror drops long replies and fails silently"
 milestone: M8
 type: defect
 severity: medium
-status: todo
+status: done
 epic: swarmforge-console
 human_approval: approved
 priority: 2
