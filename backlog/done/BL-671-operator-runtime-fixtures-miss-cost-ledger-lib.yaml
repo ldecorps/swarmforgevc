@@ -2,7 +2,7 @@ id: BL-671
 title: "9 of 10 test_operator_runtime_*.sh fixtures sandbox-copy operator_runtime.bb without llm_cost_ledger_lib.bb, which it load-files — every one breaks at require time in its sandbox"
 milestone: M8
 type: defect
-status: todo
+status: done
 epic: swarm-reliability
 severity: medium
 priority: 20
