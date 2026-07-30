@@ -1,7 +1,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
+const { mkTmpDir } = require('./helpers/tmpDir');
 const {
   parseExpediteProgressRaw,
   parseActiveTicketYaml,
@@ -15,7 +15,7 @@ const {
 const { beginActiveRun, endActiveRun } = require('../out/bridge/cursorBridgeRunTracker');
 
 function mkRoot() {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sf-update-'));
+  const root = mkTmpDir('sf-update-');
   fs.mkdirSync(path.join(root, 'backlog', 'active'), { recursive: true });
   fs.mkdirSync(path.join(root, '.swarmforge', 'operator'), { recursive: true });
   return root;
