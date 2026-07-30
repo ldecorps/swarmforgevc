@@ -2,22 +2,28 @@
 #
 # stop-swarm.sh — stop the full SwarmForge stack for this repo.
 #
-# Stops ancillaries first (babysitter, operator, Telegram front desk, tunnels),
-# then the swarm agents + handoffd via kill_all_swarm.sh. Idempotent.
+# Scope: full stack — ancillaries first (babysitter, operator, Telegram front
+# desk, onboarder, tunnels), then the pipeline via kill_pipeline_swarm.sh.
+# Idempotent. After teardown, VERIFIES known supervised processes are gone
+# (BL-637) and refuses to report a clean slate while any survive.
 #
 # Usage:
 #   ./stop-swarm.sh [options] [target-path]   # defaults to this repo's root
 #
-# Options (forwarded to kill_all_swarm.sh after ancillaries stop):
+# Options (forwarded to kill_pipeline_swarm.sh after ancillaries stop):
 #   --sweep-inbox
 #   --reset-worktrees
 #   --full                 # inbox sweep + worktree reset
 #
+# Pipeline-only stop (tests / surgical): ./swarm-kill
+#
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-KILL_ALL="$SCRIPT_DIR/swarmforge/scripts/kill_all_swarm.sh"
+KILL_PIPELINE="$SCRIPT_DIR/swarmforge/scripts/kill_pipeline_swarm.sh"
 STOP_ANCILLARY="$SCRIPT_DIR/swarmforge/scripts/stop_ancillary_services.sh"
+# shellcheck source=swarmforge/scripts/stack_survivor_scan.sh
+source "$SCRIPT_DIR/swarmforge/scripts/stack_survivor_scan.sh"
 
 OPTS=()
 TARGET=""
@@ -31,18 +37,20 @@ while [[ $# -gt 0 ]]; do
       cat <<'EOF'
 stop-swarm.sh — stop the full SwarmForge stack for this repo.
 
-Stops: babysitter, operator runtime, Telegram front desk, remote tunnels,
-       then swarm agent sessions and handoffd.
+Scope: full stack
+Stops: babysitterd, operator runtime, Telegram front desk, onboarder,
+       remote tunnels, then swarm agent sessions and handoffd.
+Then verifies no babysitterd / Operator agent process survived.
 
 Usage:
   ./stop-swarm.sh [options] [target-path]   # defaults to this repo's root
 
-Options (swarm agents / handoffd only — after ancillaries):
+Options (pipeline only — after ancillaries):
   --sweep-inbox
   --reset-worktrees
   --full                 # inbox sweep + worktree reset
 
-For agents-only stop (tests / surgical): ./swarm-kill
+Pipeline-only stop (tests / surgical): ./swarm-kill
 EOF
       exit 0
       ;;
@@ -66,8 +74,23 @@ TARGET="${TARGET:-$SCRIPT_DIR}"
 TARGET="$(cd "$TARGET" && pwd)"
 
 bash "$STOP_ANCILLARY" "$TARGET"
+kill_rc=0
 if ((${#OPTS[@]})); then
-  exec bash "$KILL_ALL" "${OPTS[@]}" "$TARGET"
+  bash "$KILL_PIPELINE" "${OPTS[@]}" "$TARGET" || kill_rc=$?
 else
-  exec bash "$KILL_ALL" "$TARGET"
+  bash "$KILL_PIPELINE" "$TARGET" || kill_rc=$?
 fi
+
+if stack_survivor_scan; then
+  echo "REFUSE: full-stack stop left surviving processes:" >&2
+  printf '%s\n' "$stack_survivor_lines" >&2
+  echo "named survivors: $stack_survivor_names" >&2
+  exit 1
+fi
+
+if [[ "$kill_rc" -ne 0 ]]; then
+  echo "REFUSE: pipeline stop exited $kill_rc; not reporting a finished clean stop" >&2
+  exit "$kill_rc"
+fi
+
+echo "full stack SUCCESS — no known survivors"

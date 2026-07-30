@@ -1,0 +1,42 @@
+id: BL-747
+title: "Pilot process: a shell test reimplementing the script it claims to test, instead of driving it, was never checked"
+milestone: M8
+type: defect
+severity: low
+status: todo
+epic: swarm-reliability
+assigned_to: specifier
+priority: 6
+direction: normal
+depends_on: []
+mutation_cost: low
+source: |
+  Found during BL-723 (pilot-tonight quality review), hardener viewpoint
+  pass, 2026-07-30/31. Companion remaining-work ticket: BL-746.
+
+notes: |
+  Pilot-process half of the BL-746 hardener-lens shortfall on BL-637 —
+  its third independent shortfall this review batch.
+
+description: |
+  ## What
+
+  BL-637 is now the third seat (coder, cleaner, hardener) to independently
+  find its own real, distinct shortfall. This one is a specific test-design
+  anti-pattern this project's own BL-637 acceptance steps file explicitly
+  disclaims in its own header comment ("Drives the REAL shell suite — never
+  a parallel reimplementation") — yet the shell suite's OWN newly-added
+  scenarios do exactly that against a DIFFERENT script (`stop-swarm.sh`)
+  than the one the acceptance steps file was guarding.
+
+  ## Question to answer
+
+  Should a pilot (or a live hardener pass) grep a newly-added shell test for
+  the specific anti-pattern of `source`-ing a helper and re-deriving branch
+  logic inline, instead of invoking the actual entry-point script under
+  test? Given this project already names the anti-pattern explicitly in one
+  place (the JS acceptance-steps convention), harden `/pilot` to check for
+  it in shell tests too — e.g. a mechanical check that any script named in
+  a ticket's own description as "the thing this verifies" is actually
+  invoked (not just `source`d for one helper function) somewhere in that
+  ticket's test file.

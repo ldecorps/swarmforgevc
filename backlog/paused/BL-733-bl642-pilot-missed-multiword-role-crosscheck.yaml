@@ -1,0 +1,37 @@
+id: BL-733
+title: "Pilot process: BL-642's new chrome regex was never cross-checked against the launcher's actual role-name output space"
+milestone: M8
+type: defect
+severity: low
+status: todo
+epic: swarm-reliability
+assigned_to: specifier
+priority: 6
+direction: normal
+depends_on: []
+mutation_cost: low
+source: |
+  Found during BL-723 (pilot-tonight quality review), coder viewpoint pass,
+  2026-07-30. Companion remaining-work ticket: BL-732.
+
+notes: |
+  Pilot-process half of the BL-642 shortfall pair.
+
+description: |
+  ## What
+
+  BL-642's tests reuse the exact live-pane text from its own repro plus a
+  handful of negative cases, but nobody checked the new pattern against
+  swarmforge.sh's display_name_for_role() — the actual generator of the
+  strings the pattern is supposed to match everywhere, not just in the one
+  observed repro.
+
+  ## Question to answer
+
+  For any ticket that adds a regex/pattern meant to recognize output
+  produced elsewhere in the codebase (here, role display names), what gate
+  should require checking the pattern against that producer's real output
+  space rather than only the one observed instance? This is a smaller
+  instance of the same class of gap "consumer sweep must be exhaustive, not
+  sampled" already names for consumers — apply the same discipline to
+  producer/pattern pairs, and harden `/pilot` accordingly.

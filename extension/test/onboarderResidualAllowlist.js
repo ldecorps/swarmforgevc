@@ -29,6 +29,7 @@ const ALLOWED_EXACT_PATHS = new Set([
   'extension/test/onboarderLauncherPidGuard.property.test.js',
   'extension/test/onboarderRenameNoResidualFacilitator.test.js',
   'extension/test/onboarderResidualAllowlist.js',
+  'docs/how-to/BL-723-pilot-tonight-quality-review.md',
   'specs/pipeline/steps/bl684OnboarderRenameSteps.js',
   'specs/pipeline/steps/bl694ResidualAllowlistSteps.js',
   'swarmforge/scripts/test/test_launch_onboarder.sh',

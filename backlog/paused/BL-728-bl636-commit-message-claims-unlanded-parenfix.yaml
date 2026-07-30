@@ -1,0 +1,44 @@
+id: BL-728
+title: "BL-636's landing commit claims a handoffd.bb paren fix its own diff never made — verify the one-shot deliver! bug independently"
+milestone: M8
+type: defect
+severity: medium
+status: todo
+epic: swarm-reliability
+assigned_to: specifier
+priority: 5
+direction: normal
+depends_on: []
+mutation_cost: low
+source: |
+  Found during BL-723 (pilot-tonight quality review), coder viewpoint pass,
+  2026-07-30. Landing commit 6a2e4aaf6 ("BL-636: order mono-router rotate
+  preference by handoff priority first") says it restores a `deliver!`
+  close-paren dropped by BL-611, but `git show 6a2e4aaf6 --
+  swarmforge/scripts/handoffd.bb` contains no such change — that paren fix
+  exists only on the unmerged sibling commit 79c5d09b8 (branch
+  expedite/BL-571), never merged into main history. The current
+  swarmforge/scripts/handoffd.bb:445-496 does balance correctly, but only
+  because a later, unrelated enqueue-babysitter-wake! addition (BL-611
+  productization commits 9bc8de790/38f6d21a6) independently closed it.
+
+notes: |
+  BL-723 coder verdict on BL-636: not-on-par for this specific discrepancy —
+  the priority-ordering fix itself (mono_router_lib.bb) is correct and well
+  tested. Linked pilot-process defect: BL-729.
+
+description: |
+  ## What
+
+  Confirm, independently of commit-message prose, whether the "one-shot
+  handoffd flags blocked under streaming eval" bug BL-636's ticket described
+  is actually fixed on main today, and by what change. If it is fixed only
+  incidentally (by BL-611's unrelated commit), record that plainly rather
+  than crediting BL-636's own commit. If it is NOT actually fixed in some
+  code path, that is a live defect needing its own fix.
+
+  ## Acceptance
+
+  A verification pass that traces the exact bug scenario BL-636 described
+  through current swarmforge/scripts/handoffd.bb and states, with commit
+  references, which change (if any) actually closes it.

@@ -19,8 +19,48 @@ RUNNER="$SCRIPT_DIR/daemon_alarm_test_runner.bb"
 fail() { echo "FAIL: $*" >&2; exit 1; }
 pass() { echo "PASS: $*"; }
 
+# BL-646: run from a throwaway git root so any CWD-relative fixture write is caught.
+GUARD_ROOT="$(mktemp -d)"
+git -C "$GUARD_ROOT" init -q
+GUARD_ROOT="$(cd "$GUARD_ROOT" && pwd -P)"
+cd "$GUARD_ROOT"
+
+assert_no_untracked_in_root() {
+  local root="$1"
+  local leaked
+  leaked="$(git -C "$root" status --porcelain | grep '^??' || true)"
+  if [[ -n "$leaked" ]]; then
+    echo "FAIL: clean-working-tree guard: untracked file(s) in $root:" >&2
+    echo "$leaked" >&2
+    return 1
+  fi
+}
+
 ROOT="$(cd "$(mktemp -d)" && pwd -P)"
-trap 'rm -rf "$ROOT"' EXIT
+trap 'rm -rf "$ROOT" "$GUARD_ROOT"' EXIT
+
+# ── BL-646: runner refuses to write relative to CWD ─────────────────────────
+if bb "$RUNNER" >/dev/null 2>&1; then
+  fail "BL-646: runner must exit non-zero without fixture-root"
+fi
+pass "BL-646: runner refuses missing fixture-root"
+
+if bb "$RUNNER" "/home/carillon/swarmforgevc" >/dev/null 2>&1; then
+  fail "BL-646: runner must exit non-zero for a non-temp fixture-root"
+fi
+pass "BL-646: runner refuses non-temp fixture-root"
+
+# ── BL-646 seeded-leak-fails-the-guard-02 ───────────────────────────────────
+LEAK_ROOT="$(mktemp -d)"
+git -C "$LEAK_ROOT" init -q
+echo "leaked fixture output" > "$LEAK_ROOT/calls.log"
+if assert_no_untracked_in_root "$LEAK_ROOT" 2>"$LEAK_ROOT/guard.err"; then
+  fail "BL-646 seeded-leak-02: guard must fail when calls.log is present"
+fi
+grep -q "calls.log" "$LEAK_ROOT/guard.err" \
+  || fail "BL-646 seeded-leak-02: failure must name calls.log, got: $(cat "$LEAK_ROOT/guard.err")"
+pass "BL-646 seeded-leak-02: clean-working-tree guard fails and names the leaked file"
+rm -rf "$LEAK_ROOT"
 
 bb "$RUNNER" "$ROOT"
 
@@ -299,5 +339,10 @@ EOF
 bb "$ROOT/refuse_tmp_daemon_start_test.bb" | grep -q "refuse-tmp-daemon-start-ok" \
   || fail "BL-406: refuse-tmp-daemon-start? did not gate correctly on root shape + explicit allow flag"
 pass "BL-406: refuse-tmp-daemon-start? refuses a temp-directory root by default, only allowing it with an explicit opt-in flag, and never refuses a real project root"
+
+# ── BL-646 suites-leave-no-untracked-files-01 ───────────────────────────────
+assert_no_untracked_in_root "$GUARD_ROOT" \
+  || fail "BL-646 suites-leave-no-untracked-files-01: daemon-death/alarm suite left debris in guard root"
+pass "BL-646 suites-leave-no-untracked-files-01: suite leaves guard root clean"
 
 echo "ALL PASS"

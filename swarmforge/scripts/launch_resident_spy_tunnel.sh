@@ -6,6 +6,18 @@
 # Pair with the bridge token:
 #   $URL/resident-spy?token=$(cat .swarmforge/operator/bridge-token)
 set -euo pipefail
+
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+  cat <<'EOF'
+launch_resident_spy_tunnel.sh — lifecycle start entry point.
+
+Stop: stop_ancillary_services.sh / ./stop-swarm.sh (or ./swarm-kill for pipeline-only)
+
+Usage: see header comments above.
+EOF
+  exit 0
+fi
+
 ROOT="${1:-.}"
 ROOT="$(cd "$ROOT" && pwd)"
 OP="$ROOT/.swarmforge/operator"

@@ -1,0 +1,37 @@
+id: BL-755
+title: "Pilot process: a flow-style value parser with three branches only ever got tests for one branch"
+milestone: M8
+type: defect
+severity: low
+status: todo
+epic: swarm-reliability
+assigned_to: specifier
+priority: 6
+direction: normal
+depends_on: []
+mutation_cost: low
+source: |
+  Found during BL-723 (pilot-tonight quality review), hardener viewpoint
+  pass, 2026-07-30/31. Companion remaining-work ticket: BL-754.
+
+notes: |
+  Pilot-process half of the BL-754 hardener-lens shortfall on BL-661.
+
+description: |
+  ## What
+
+  `take-flow-reason` has three distinct branches (double-quoted,
+  single-quoted, unquoted) but every test this ticket added exercises
+  only the double-quoted branch. Coder/cleaner/architect all praised the
+  parsing-hazard tests that DO exist (quoted reasons with commas and
+  braces) without noticing the other two branches had zero coverage.
+
+  ## Question to answer
+
+  When a ticket's own fix is a multi-branch parser, should a gate require
+  at least one test per branch before landing — not just "some tests for
+  the parsing hazard the ticket names"? Harden `/pilot`'s hardener-
+  equivalent step to enumerate a new/changed function's branches (cond/
+  case/if-else arms) and check each has at least one distinct test,
+  rather than accepting coverage of the branch the ticket happens to
+  narrate.

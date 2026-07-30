@@ -1,0 +1,43 @@
+id: BL-734
+title: "BL-559's acceptance feature has zero step handlers and the ticket did no coder work of its own"
+milestone: M8
+type: defect
+severity: low
+status: todo
+epic: code-quality-gates
+assigned_to: specifier
+priority: 6
+direction: normal
+depends_on: []
+mutation_cost: low
+source: |
+  Found during BL-723 (pilot-tonight quality review), coder viewpoint pass,
+  2026-07-30. BL-559's landing commits contain zero code diff — they only
+  flip status paused->done (twice: Jul 29, reverted, re-landed Jul 30) plus
+  an evidence note. The real fix (9b211456a, "test: realign pipelineBoard
+  prefix-property oracle with shortened link HTML") predates this ticket's
+  own filing/landing entirely. specs/features/BL-559-*.feature has no
+  matching step handlers anywhere in specs/pipeline/steps/; running it via
+  specs/pipeline/cli.js would throw "no step handler matched" — the
+  acceptance contract was never mechanically gated, only asserted in commit
+  message prose.
+
+notes: |
+  BL-723 coder verdict on BL-559: not-on-par. Linked pilot-process defect:
+  BL-735.
+
+description: |
+  ## What
+
+  Either wire specs/pipeline/steps/ handlers for BL-559's feature file so it
+  actually gates (running the real vitest property suite and asserting 7/7
+  pass, matching the fix already on main), or, if the ticket is judged
+  correctly closed as "rode a pre-existing fix," record that explicitly in
+  its notes and retire/simplify its acceptance field rather than leaving a
+  feature file that throws if anyone runs it.
+
+  ## Acceptance
+
+  node specs/pipeline/cli.js against BL-559's feature file completes with no
+  "no step handler matched" failures, or the ticket's acceptance field is
+  amended to match what was actually verified.

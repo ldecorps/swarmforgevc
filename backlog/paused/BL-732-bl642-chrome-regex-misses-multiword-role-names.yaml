@@ -1,0 +1,42 @@
+id: BL-732
+title: "needsHumanDetection pane-title chrome regex misses multi-word role display names (e.g. Model Steward)"
+milestone: M8
+type: defect
+severity: medium
+status: todo
+epic: swarmforge-console
+assigned_to: specifier
+priority: 5
+direction: normal
+depends_on: []
+mutation_cost: low
+source: |
+  Found during BL-723 (pilot-tonight quality review), coder viewpoint pass,
+  2026-07-30. extension/src/panel/needsHumanDetection.ts:39 defines
+  PANE_TITLE_SESSION_NAME_PATTERN = /^SwarmForge [A-Za-z][\w-]*$/, which only
+  matches a single token after "SwarmForge ". swarmforge/scripts/swarmforge.sh
+  display_name_for_role():304-316 title-cases hyphen/underscore-split role
+  names into space-separated words (e.g. model-steward -> "Model Steward"),
+  so a pane title rule line "SwarmForge Model Steward" is NOT recognized as
+  chrome by the shipped regex — confirmed directly against the live regex.
+  This is the exact leak class BL-642 was meant to close, left open for any
+  multi-word role.
+
+notes: |
+  BL-723 coder verdict on BL-642: not-on-par for this gap — the rest of the
+  fix (FOOTER_START_PATTERN, NO_QUESTION_TEXT_CAPTURED fail-closed fallback)
+  is correct and well tested. Linked pilot-process defect: BL-733.
+
+description: |
+  ## What
+
+  Widen PANE_TITLE_SESSION_NAME_PATTERN (or the isPaneTitleRuleLine check
+  around it) to match any role name display_name_for_role() can actually
+  produce, including multi-word, space-separated names — not just a single
+  token.
+
+  ## Acceptance
+
+  A test asserting a title-rule line "SwarmForge Model Steward" (or any
+  other currently multi-word role name in swarmforge.conf) is recognized as
+  pane chrome and stripped, alongside the existing single-word cases.

@@ -1,0 +1,45 @@
+id: BL-741
+title: "Pilot process: BL-627 landed new branching logic without a CRAP pass ever running against it"
+milestone: M8
+type: defect
+severity: low
+status: todo
+epic: cost-intelligence
+assigned_to: specifier
+priority: 6
+direction: normal
+depends_on: []
+mutation_cost: low
+source: |
+  Found during BL-723 (pilot-tonight quality review), hardener viewpoint
+  pass, 2026-07-30. Companion remaining-work ticket: BL-740.
+
+notes: |
+  Pilot-process half of the BL-740 hardener-lens shortfall on BL-627.
+
+description: |
+  ## What
+
+  Three of BL-723's own seats (coder, cleaner, architect) reviewed
+  BL-627's landing in real depth — structure, invariant-encoding,
+  dependency direction — and all three judged it on-par. None checked
+  test coverage completeness or ran the project's CRAP tool
+  (`scripts/crapReport.js`) against the new `collectReferencedClaudeModels`
+  function, which lands at CRAP=10.89 (see BL-740).
+
+  This is the same gap class BL-723's own required_stages exists to close:
+  `mutation_cost: low` on BL-627 likely meant the original pilot skipped
+  or lightly weighted the hardener-equivalent step for this ticket. But
+  "low mutation cost" is about the CHANGE's size, not about whether the
+  new code's coverage should go unchecked entirely.
+
+  ## Question to answer
+
+  Should a pilot (or a live pipeline pass) treat `mutation_cost: low` as
+  license to skip the CRAP gate outright, or should CRAP still run — just
+  scoped to the actual changed files, which is cheap regardless of
+  mutation cost? The pilot missed running that gate here; harden `/pilot`
+  (and this project's own hardener-role guidance) to make explicit that
+  CRAP is a separate, always-run gate from mutation testing, never bundled
+  under the same low-cost exemption that let this landing's coverage gap
+  through uncaught.

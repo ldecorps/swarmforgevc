@@ -1,0 +1,35 @@
+id: BL-753
+title: "Pilot process: an unreachable step handler was read as a cosmetic dead-code nit instead of an untested behavior claim"
+milestone: M8
+type: defect
+severity: low
+status: todo
+epic: swarm-reliability
+assigned_to: specifier
+priority: 6
+direction: normal
+depends_on: []
+mutation_cost: low
+source: |
+  Found during BL-723 (pilot-tonight quality review), hardener viewpoint
+  pass, 2026-07-30/31. Companion remaining-work ticket: BL-752.
+
+notes: |
+  Pilot-process half of the BL-752 hardener-lens shortfall on BL-694.
+
+description: |
+  ## What
+
+  Coder/cleaner/architect all noted BL-694's unexercised step registration
+  as a "minor dead-code nit", correctly identifying the symptom but not
+  asking what BEHAVIOR that dead step handler was meant to prove was
+  therefore untested.
+
+  ## Question to answer
+
+  When a review finds a registered-but-never-matched step handler, should
+  the check always ask "what specific claim was this step meant to
+  verify, and is that claim tested any other way?" before downgrading it
+  to cosmetic? Harden `/pilot` so an unreachable acceptance step is
+  treated as a potential untested-behavior flag by default, not dismissed
+  as dead code, until that question is explicitly answered.

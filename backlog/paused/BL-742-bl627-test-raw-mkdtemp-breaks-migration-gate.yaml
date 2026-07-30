@@ -1,0 +1,69 @@
+id: BL-742
+title: "BL-627's own test uses raw fs.mkdtempSync, breaking the repo-wide tmpDirMigrationGuard gate for every developer"
+milestone: M8
+type: defect
+severity: medium
+status: todo
+epic: cost-intelligence
+assigned_to: specifier
+priority: 5
+direction: normal
+depends_on: []
+mutation_cost: low
+source: |
+  Found during BL-723 (pilot-tonight quality review), hardener viewpoint
+  pass, 2026-07-30, while getting a clean coverage baseline to run CRAP
+  (see BL-740).
+
+  `extension/test/tmpDirMigrationGuard.test.js`'s
+  "the real extension/test/ tree has zero raw mkdtemp call sites outside
+  the shared helper" is currently RED on `main`/this worktree:
+
+    expected zero raw mkdtemp call sites, found:
+    extension/test/pricingTable.test.js:92
+
+  `extension/test/pricingTable.test.js:92` (the "BL-627: an unpriced model
+  referenced by a fixture conf fails loud and names it" test) calls
+  `fs.mkdtempSync(path.join(os.tmpdir(), 'bl627-unpriced-'))` directly and
+  cleans up with its own `finally { fs.rmSync(root, ...) }` block, instead
+  of going through the shared `mkTmpDir()` helper
+  (`extension/test/helpers/tmpDir.js`) BL-420/BL-714 established as the
+  one sanctioned path (so cleanup happens exactly once, via the shared
+  afterEach sweep, and the migration-complete gate can mechanically prove
+  it).
+
+  This is a genuinely RED, deterministic, repo-wide gate failure right
+  now — confirmed with a clean, isolated run
+  (`npx vitest run test/tmpDirMigrationGuard.test.js`), not a flake and
+  not related to the separately-ticketed BL-720 CURSOR_API_KEY
+  cross-file pollution. Every future hardener/QA pass that runs the full
+  suite will see this same failure until it is fixed, and (per this
+  ticket's own invariant) it must not be fixed by editing BL-627's own
+  landed test in this parcel — filed as its own shortfall instead.
+
+notes: |
+  BL-723 hardener verdict on BL-627 (this finding, combined with BL-740):
+  not-on-par. Linked pilot-process defect: BL-743.
+
+description: |
+  ## What
+
+  Replace the raw `fs.mkdtempSync(path.join(os.tmpdir(), 'bl627-unpriced-'))`
+  / manual `finally { fs.rmSync(...) }` pair in
+  `extension/test/pricingTable.test.js`'s "an unpriced model referenced by
+  a fixture conf fails loud and names it" test with the shared helper:
+
+  ```js
+  const { mkTmpDir } = require('./helpers/tmpDir');
+  ...
+  const root = mkTmpDir('bl627-unpriced-');
+  // no manual fs.rmSync needed - the shared afterEach sweep handles it
+  ```
+
+  ## Acceptance
+
+  - `extension/test/tmpDirMigrationGuard.test.js`'s migration-complete
+    test passes again.
+  - The BL-627 unpriced-model test itself still passes and still exercises
+    the same behavior (fixture conf with an unpriced model -> fail loud,
+    names the model).

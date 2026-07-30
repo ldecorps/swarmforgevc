@@ -1,0 +1,36 @@
+id: BL-751
+title: "Pilot process: a new alert severity branch was never compared against its siblings' gating pattern"
+milestone: M8
+type: defect
+severity: low
+status: todo
+epic: code-quality-gates
+assigned_to: specifier
+priority: 6
+direction: normal
+depends_on: []
+mutation_cost: low
+source: |
+  Found during BL-723 (pilot-tonight quality review), hardener viewpoint
+  pass, 2026-07-30/31. Companion remaining-work ticket: BL-750.
+
+notes: |
+  Pilot-process half of the BL-750 hardener-lens shortfall on BL-646.
+
+description: |
+  ## What
+
+  BL-646 added a new alert-severity branch to a function whose existing
+  branches all share a grace-period gating pattern, without following (or
+  explicitly deviating from and documenting) that pattern.
+
+  ## Question to answer
+
+  When a ticket adds a new branch to an existing multi-branch decision
+  function (severities, states, verdicts), should a gate require diffing
+  the new branch's structure against its siblings' shared pattern
+  (timeouts, grace periods, guard conditions) before landing — flagging
+  any asymmetry for an explicit decision rather than a silent omission?
+  Harden `/pilot`'s architect-equivalent or hardener-equivalent step to
+  perform this sibling-branch comparison for any new case added to an
+  existing multi-branch dispatch.

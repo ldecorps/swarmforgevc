@@ -4,6 +4,7 @@
 # LLM launch (OPERATOR_SKIP_LAUNCH / OPERATOR_LAUNCH_DRYRUN). Asserts the
 # event loop, status schema, launch gate, cooldown hold, and reap.
 set -euo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/operator_runtime_sandbox.sh"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SRC="$SCRIPT_DIR/.."
@@ -27,12 +28,8 @@ make_fixture() {
   # closing-pass-sweep! uses for per-role inbox/in-process counts).
   # BL-333: + daemon_alarm_lib.bb (the starvation alarm reuses the SAME
   # daemon-death email path, never a second notifier).
-  cp "$SRC/operator_lib.bb" "$SRC/operator_runtime.bb" "$SRC/llm_cost_ledger_lib.bb" "$SRC/operator_telegram.bb" "$SRC/operator_telegram_lib.bb" "$SRC/telegram_topic_lib.bb" \
-     "$SRC/support_lib.bb" "$SRC/support_thread_store.bb" \
-     "$SRC/operator_memory_lib.bb" "$SRC/operator_memory_store.bb" \
-     "$SRC/ticket_status_lib.bb" "$SRC/operator_ask.bb" "$SRC/handoff_lib.bb" "$SRC/ambulance_lib.bb" \
-     "$SRC/swarm_identity_lib.bb" "$SRC/daemon_alarm_lib.bb" "$SRC/disk_space_lib.bb" "$SRC/sandbox_sweep_lib.bb" "$SRC/bounded_delete_sweep_lib.bb" "$SRC/proc_fd_scan_lib.bb" "$SRC/fixture_reaper_lib.bb" "$SRC/fixture_reaper_sweep_lib.bb" "$SRC/orphan_agent_reaper_lib.bb" "$SRC/orphan_agent_reaper_sweep_lib.bb" "$SRC/orphan_janitor_lib.bb" "$SRC/orphan_janitor_sweep_lib.bb" \
-     "$d/swarmforge/scripts/"
+  copy_operator_runtime_sandbox "$SRC" "$d/swarmforge/scripts"
+  cp "$SRC/operator_telegram.bb" "$SRC/operator_telegram_lib.bb" "$d/swarmforge/scripts/"
   printf '%s' "$d"
 }
 # Isolates this generic tick from BL-413/BL-458's own real-/tmp sweeps -
