@@ -108,3 +108,8 @@ notes: |
   BL-723 cleaner verdict (2026-07-30): on-par. Mechanical, well-scoped
   config change (action version bumps plus one commented timeout: key)
   across four workflow files. Nothing to flag from this lens.
+
+  BL-723 architect verdict (2026-07-30): on-par. No `${{ }}` interpolation
+  introduced inside any `run:` shell body (existing `with:`/`env:` usage
+  only); no extension/src files touched, no declared invariants. No
+  architecture concerns.

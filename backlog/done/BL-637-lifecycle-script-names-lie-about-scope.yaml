@@ -180,3 +180,8 @@ notes: |
   hand-maintained-list shape BL-671 was filed to eliminate elsewhere in this
   same review batch. Remaining-work defect: BL-736 (severity low).
   Pilot-process defect: BL-737 (severity low).
+
+  BL-723 architect verdict (2026-07-30): not-on-par (coder's and cleaner's
+  findings both stand). No extension/src files touched by this ticket, so
+  dependency-gate.js does not apply; no declared invariants to review. No
+  additional architecture concerns found from this lens.

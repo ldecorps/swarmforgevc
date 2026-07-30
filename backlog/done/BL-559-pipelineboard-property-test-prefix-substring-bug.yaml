@@ -86,3 +86,9 @@ notes: |
   stale-oracle fix. Nothing to flag from this lens; the provenance issue
   the coder found (no coder work under this ticket, double-landed) is
   entirely outside it.
+
+  BL-723 architect verdict (2026-07-30): not-on-par (coder's finding
+  stands; the acceptance-wiring gap is architect territory too, but
+  already filed under BL-734/735). No extension/src changed by this
+  ticket's own diff (only a test-assertion realignment), no declared
+  invariants. No additional architecture concerns.

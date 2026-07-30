@@ -164,3 +164,6 @@ notes: |
   (built on extracted parse-untracked-paths); only-known-fixture-droppings?
   is a small, clearly-named predicate threaded cleanly through
   assess-one-claim without duplicating git-status parsing. Good extraction.
+
+  BL-723 architect verdict (2026-07-30): on-par. No extension/src files
+  touched, no declared invariants. No architecture concerns.

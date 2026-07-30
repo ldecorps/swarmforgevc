@@ -92,10 +92,114 @@ tickets' `notes:` in `backlog/done/` in this same pass.
 
 ### Architect viewpoint
 
-PENDING — this parcel has not yet reached the architect hop. The architect
-will review the 13 landings' architecture, design patterns, and the
-declared-invariant property-test contract, and fill in this section with
-real findings when this parcel arrives.
+Reviewed all 13 landings through the architect lens: the two-layer
+boundary (view vs. tmux substrate), extension-host IO ownership, no
+webview storage, secrets handling, integrate-not-fork, dependency
+direction, and — per BL-654 — whether each ticket's own declared
+`invariants:` (where it has any) carries a real executable encoding
+rather than a missing or vacuous one.
+
+**Hard gate:** ran `dependency-gate.js` against every `extension/src/**`
+file any of the 13 landings touched (BL-718: `bridgeServer.ts`,
+`telegramCursorBridgeCore.ts`; BL-627: `pricingTable.ts`,
+`modelDisplayName.ts`; BL-642: `needsHumanDetection.ts`; BL-662:
+`pausedPagerUiHtml.ts`) — all PASSED, no forbidden edges. A full-repo
+scan (no file args) additionally found one real `acyclic` violation
+(`telegram-front-desk-bot.ts` -> `telegramCursorOperatorExec.ts` ->
+`telegramCursorOperatorLiveness.ts`), but it predates all 13 landings and
+this review (introduced by the unrelated BL-700-704 Cursor Remote
+landing; confirmed via `git log`, none of the 13 tickets or this parcel's
+own diff touch those three files) — out of scope here, worth its own
+hygiene ticket. Also ran `co-change-report.js` across the touched files;
+`bridgeServer.ts` shows heavy pre-existing fan-in as a known routing hub,
+unchanged in shape by BL-718's small, additive diff — not a new coupling
+concern. The rest of the 13 (swarm `.bb`/`.sh`/workflow/doc changes) sit
+outside `extension/src`/`extension/media` entirely, so the gate does not
+apply to them; cleaner's dependency-direction/module-boundary read for
+those already covers that ground from its own lens.
+
+**Invariants Review (BL-654):** 5 of the 13 tickets declare `invariants:`
+in their YAML — BL-718, BL-627, BL-636, BL-694, BL-662. Checked each for
+a real executable encoding before hand-verifying the property itself:
+
+- **BL-627** (every referenced model is priced, fails loud otherwise):
+  covered directly by a fixture-backed example test
+  (`extension/test/pricingTable.test.js`, "an unpriced model referenced
+  by a fixture conf fails loud and names it") — a fixture conf is the
+  natural unit here since `checkPricingCoverage` reads real files; no gap.
+- **BL-636** (rotation is priority-first, recency only breaks ties):
+  no `fast-check`-equivalent tool is wired for Babashka anywhere in this
+  repo today (confirmed: zero `clojure.test.check` usage under
+  `swarmforge/`) — a real, project-wide tooling gap, not specific to this
+  ticket. `mono_router_lib_test_runner.bb` compensates with a genuinely
+  well-chosen example matrix (priority-00 beats a newer priority-50,
+  equal-priority ties go to recency, ranking uses a role's *best*
+  priority rather than its newest parcel's, a missing priority never
+  outranks a valid low-urgency one) that exercises the invariant's actual
+  boundary cases. Judged adequate given current tooling; not filed as a
+  defect.
+- **BL-694** (a stage move never changes the residual-word scan's
+  verdict): initially looked untested — the only `extension/test/*`
+  consumer (`onboarderRenameNoResidualFacilitator.test.js`) is a
+  whole-tree smoke scan, not a direct call. But the ticket's *Gherkin*
+  acceptance steps (`specs/pipeline/steps/bl694ResidualAllowlistSteps.js`)
+  do call `isAllowlisted` directly for the grandfathered basename across
+  all three of `active`/`paused`/`hold`, for the ungrandfathered case, and
+  for the basename-collision edge case (same basename, different
+  location, must NOT inherit the exemption) — a genuine, well-targeted
+  direct encoding of the invariant. No gap; on-par confirmed.
+- **BL-662** (every server failure reason reaches the screen): covered by
+  four jsdom example tests spanning both action types (expedite, approve)
+  and all three response shapes (reason present, reason absent, body
+  unparseable) through the one shared `reasonOrFallback` helper both
+  actions use — not exhaustive on the two untested approve-branch
+  permutations, but those share the same helper already exercised on the
+  expedite side, so the risk of an unencoded path is low. No gap.
+- **BL-718** (mirror delivery is length-independent: never silently
+  truncates; a failed send is always surfaced) — see the independent
+  finding below. Not on-par for this invariant specifically.
+
+**Independent finding — BL-718's property test is vacuous for its own
+invariant:** `extension/test/cursorBridgeLive.property.test.js` carries
+`property: splitTelegramChunks reassembles without loss for short
+strings`, generated with `fc.string({ maxLength: 200 })`. The function's
+real default split boundary is `TELEGRAM_MESSAGE_MAX_LENGTH = 4096`
+(`extension/src/tools/telegramCursorBridgeCore.ts:26`). Since 200 < 4096,
+every generated string takes `splitTelegramChunks`'s early-return branch
+(`text.length <= maxLen` is always true), so the property runs its
+`chunks.join('') === text` assertion against a single-element array on
+every single run — the multi-chunk split/rejoin loop the "length alone
+never silently truncates" invariant is actually about never executes.
+Proof of vacuousness: a deliberately broken multi-chunk branch (e.g.
+dropping a character across a split boundary) would leave this property
+fully green. Not a live production risk — `telegramCursorBridgeCore.test.js`
+independently covers the real 4096-boundary multi-chunk case with
+hand-picked examples (including the exact `'a'.repeat(5000)`
+lossless-reassembly case and several newline/byte-limit edge cases) — but
+the declared-invariant property-test contract itself (BL-654) is not
+actually satisfied by this property as written. Filed as its own
+shortfall pair, independent of the coder's already-filed acceptance-wiring
+gap (BL-726/727): **BL-738** (remaining work) and **BL-739** (pilot
+process), both severity low.
+
+**Acceptance-scaffolding observation, not filed as a defect:** BL-723's
+own `review-05`/`review-06` step handlers
+(`specs/pipeline/steps/bl723PilotReviewSteps.js`) parse only the *first*
+`**Filed defects:**` line in a per-ticket section (regex stops at the
+first blank line). BL-637's second, cleaner-found pair (BL-736/737) and
+this section's own BL-718 pair (BL-738/739) both ride as prose past that
+line and are not independently gate-checked by the Gherkin scenario — the
+mechanical suite only guarantees the *first* filed pair per ticket is
+well-formed. Manually verified by hand that every currently-filed defect
+in this batch (BL-726 through BL-739) genuinely carries `type: defect`
+and an explicit `severity:`, so the substance of invariant #2 holds; this
+is a narrow blind spot in the automated check, not a broken invariant.
+Flagging for the hardener/documenter/QA hops still ahead, especially QA's
+mandated re-verification pass — not renegotiating the ticket's
+human-approved acceptance contract per its own explicit instruction.
+
+No other architecture, boundary, or dependency-direction concerns found
+across the 13 landings.
 
 ### Hardender viewpoint
 
@@ -136,6 +240,17 @@ on every scenario, so the acceptance contract this ticket names has never
 actually gated.
 
 **Filed defects:** BL-726 (remaining work), BL-727 (pilot process)
+
+**Architect note:** independently found a second, unrelated shortfall —
+the `splitTelegramChunks` property test in
+`extension/test/cursorBridgeLive.property.test.js` caps its generator at
+200 chars against the real 4096-char split boundary, so it never
+exercises the multi-chunk branch the ticket's own declared invariant
+("length alone never silently truncates") is about; it stays green
+against a deliberately broken multi-chunk implementation. Real behavior
+is independently covered by example tests, so no live risk. Filed as its
+own pair: BL-738 (remaining work), BL-739 (pilot process), both severity
+low.
 
 ### BL-627
 

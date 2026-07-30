@@ -1,0 +1,72 @@
+id: BL-738
+title: "BL-718's chunking property test caps generated strings at 200 chars — never exercises the real 4096-char split boundary"
+milestone: M8
+type: defect
+severity: low
+status: todo
+epic: swarmforge-console
+assigned_to: specifier
+priority: 40
+direction: normal
+depends_on: []
+mutation_cost: low
+source: |
+  Found during BL-723 (pilot-tonight quality review), architect viewpoint
+  pass, 2026-07-30. BL-718 declares the invariant "Mirror delivery is
+  length-independent: a reply of any length reaches the Bubble topic
+  complete and in order, or fails loudly — length alone never silently
+  truncates or drops a transcript." Per BL-654, the coder authors a
+  property test encoding a declared invariant.
+
+  `extension/test/cursorBridgeLive.property.test.js` does carry
+  `property: splitTelegramChunks reassembles without loss for short
+  strings`, but its generator is `fc.string({ maxLength: 200 })` against
+  `splitTelegramChunks`'s real default boundary
+  (`TELEGRAM_MESSAGE_MAX_LENGTH = 4096`,
+  extension/src/tools/telegramCursorBridgeCore.ts:26). Since 200 < 4096,
+  `text.length <= maxLen` is true on every generated run, so
+  `splitTelegramChunks` takes its early-return branch (`return [text]`) on
+  every single property run — the multi-chunk split/rejoin loop the
+  invariant is actually about never executes. Proof of vacuousness: a
+  deliberately broken multi-chunk branch (e.g. dropping the first
+  character of `remaining` after a split) would leave this property fully
+  green.
+
+  Not a live production risk: `extension/test/telegramCursorBridgeCore.test.js`
+  independently covers the multi-chunk case with real examples (line ~496,
+  `'a'.repeat(5000)` at the true 4096 boundary asserting `chunks.join('')`
+  reassembles losslessly, plus newline-boundary and byte-limit edge cases).
+  This is a rigor gap in the declared-invariant property-test contract, not
+  a behavior bug.
+
+notes: |
+  BL-723 architect verdict on BL-718: not-on-par (independent finding,
+  additional to the coder's already-filed acceptance-wiring gap: BL-726/727).
+  Linked pilot-process defect: BL-739.
+
+description: |
+  ## What
+
+  Fix the generator in `extension/test/cursorBridgeLive.property.test.js`'s
+  `splitTelegramChunks` property so it actually reaches the multi-chunk
+  branch, e.g. either:
+
+  - Generate strings long enough to cross the real default boundary
+    (`fc.string({ maxLength: 12000 })` against the real 4096 default), or
+  - Parameterize `maxLen` down to a small value the way the example-based
+    tests already do (`splitTelegramChunks(text, smallMaxLen)`), so
+    reasonable string lengths still exercise splitting.
+
+  Either way, assert on the ACTUAL invariant claim across the generated
+  range: lossless, order-preserving reassembly (`chunks.join('') === text`
+  after undoing the newline-trim the splitter performs, or an equivalent
+  order-preserving check) AND every emitted chunk's length within the
+  configured `maxLen`.
+
+  ## Acceptance
+
+  - The property test fails when run against a deliberately broken
+    multi-chunk branch (verify with a throwaway break-then-fix pass, per
+    this project's non-vacuous-property-test discipline), then passes
+    again against the real implementation.
+  - `npm run test:properties` stays green.

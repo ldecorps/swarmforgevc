@@ -180,3 +180,12 @@ notes: |
   independently testable; policy (the allowlist) is properly separated from
   mechanism (the test). The dead-code nit the coder noted is out of this
   lens.
+
+  BL-723 architect verdict (2026-07-30): on-par. Confirmed the declared
+  invariant (a stage move never changes the scan's verdict) is directly
+  encoded, not just smoke-tested: bl694ResidualAllowlistSteps.js calls
+  isAllowlisted directly for the grandfathered basename across all three
+  of active/paused/hold, for the ungrandfathered case, and for the
+  basename-collision edge case (same basename elsewhere must not inherit
+  the exemption) — a genuine BL-654 property-test-equivalent encoding. No
+  architecture concerns.

@@ -137,3 +137,6 @@ notes: |
   rewritten-branch fallback reconstructs the same four-key map shape
   emit-skip already builds, and is confirmed unreachable in practice —
   worth trimming, but not defect-worthy on its own.
+
+  BL-723 architect verdict (2026-07-30): on-par. No extension/src files
+  touched, no declared invariants. No architecture concerns.

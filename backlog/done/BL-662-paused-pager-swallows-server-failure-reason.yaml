@@ -84,3 +84,12 @@ notes: |
   replaces what would otherwise be a second copy of the same ternary, and
   matches an existing sibling pattern in epicReorderUiHtml per the commit
   message rather than inventing a new idiom. No structural concerns.
+
+  BL-723 architect verdict (2026-07-30): on-par. dependency-gate.js passed
+  clean against pausedPagerUiHtml.ts (no forbidden edges). The declared
+  invariant (every server failure reason reaches the screen) is covered by
+  four example tests spanning both action types and all three response
+  shapes (reason present, reason absent, unparseable body) through the one
+  shared reasonOrFallback helper — not exhaustive on every action x shape
+  permutation, but the shared-helper structure makes an unencoded path
+  unlikely. No architecture concerns.

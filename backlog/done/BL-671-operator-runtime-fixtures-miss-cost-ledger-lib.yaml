@@ -67,3 +67,6 @@ notes: |
   drifted across at least nine files, with a comment telling future authors
   where to add a new lib; every consumer updated to call the helper. Exactly
   the shape this lens wants.
+
+  BL-723 architect verdict (2026-07-30): on-par. No extension/src files
+  touched, no declared invariants. No architecture concerns.

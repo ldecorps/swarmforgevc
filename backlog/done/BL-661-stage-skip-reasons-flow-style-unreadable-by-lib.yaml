@@ -84,3 +84,6 @@ notes: |
   version. One nit: take-flow-reason's double- and single-quote branches
   are structurally identical but for the quote literal; a parameterized
   version would remove ~10 duplicate lines. Minor, not defect-worthy.
+
+  BL-723 architect verdict (2026-07-30): on-par. No extension/src files
+  touched, no declared invariants. No architecture concerns.

@@ -154,3 +154,8 @@ notes: |
   constants; NO_QUESTION_TEXT_CAPTURED is a clearly-named exported
   sentinel. The multi-word-role gap the coder found is a regex-coverage
   correctness issue, not a structural one — the code itself is clean.
+
+  BL-723 architect verdict (2026-07-30): not-on-par (coder's finding
+  stands). dependency-gate.js passed clean against needsHumanDetection.ts
+  (no forbidden edges). No declared invariants. No additional architecture
+  concerns from this lens.

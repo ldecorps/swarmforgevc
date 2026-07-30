@@ -148,3 +148,12 @@ notes: |
   checkPricingCoverage, assertPricingCoverage), each single-purpose; the
   conf/packs/launch-dir read loops share one readIfExists helper rather than
   repeating the try/catch pattern three times. No structural concerns.
+
+  BL-723 architect verdict (2026-07-30): on-par. dependency-gate.js passed
+  clean against pricingTable.ts and modelDisplayName.ts (no forbidden
+  edges). The declared invariant (every referenced model is priced, fails
+  loud otherwise) is directly encoded by a fixture-backed example test
+  ("an unpriced model referenced by a fixture conf fails loud and names
+  it") rather than a fast-check property — a reasonable choice given
+  checkPricingCoverage reads real files, not a pure generatable input
+  space. No architecture concerns.

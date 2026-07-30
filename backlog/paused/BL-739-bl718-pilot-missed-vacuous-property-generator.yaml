@@ -1,0 +1,47 @@
+id: BL-739
+title: "Pilot process: a declared-invariant property test landed without checking its generator actually reaches the behavior under test"
+milestone: M8
+type: defect
+severity: low
+status: todo
+epic: swarmforge-console
+assigned_to: specifier
+priority: 40
+direction: normal
+depends_on: []
+mutation_cost: low
+source: |
+  Found during BL-723 (pilot-tonight quality review), architect viewpoint
+  pass, 2026-07-30. Companion remaining-work ticket: BL-738.
+
+notes: |
+  Pilot-process half of the BL-738 architect-lens shortfall pair on BL-718.
+
+description: |
+  ## What
+
+  BL-718's landing added a fast-check property test for
+  `splitTelegramChunks` capped at `maxLength: 200` against a real 4096-char
+  split boundary — the property never triggers the multi-chunk branch it
+  is nominally there to protect (see BL-738 for the full vacuousness
+  proof). The offline pilot's architect-equivalent pass either had no
+  step that reviews a new `*.property.test.js`'s generator range against
+  the boundary constants of the code under test, or that step did not
+  catch this one.
+
+  This is the same class of near-miss as this project's own recorded
+  lesson ("property-test generator must reach deep state — weight ops,
+  assert coverage"): a property test that reads as real coverage but,
+  because of a generator range mismatch, only ever exercises the trivial
+  branch.
+
+  ## Question to answer
+
+  Does `/pilot`'s architect-equivalent step (BL-654's Invariants Review)
+  actually diff a new or touched `*.property.test.js`'s generator bounds
+  against the literal constants (max lengths, thresholds, boundary values)
+  of the function it targets? Harden the pilot (or the live architect gate
+  contract) so a property test whose generator provably cannot reach a
+  function's non-trivial branch is flagged before landing — e.g. a cheap
+  check: run the property once with logging/coverage and confirm the
+  branch under test was actually hit, not just that assertions passed.

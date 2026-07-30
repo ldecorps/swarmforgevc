@@ -116,3 +116,14 @@ notes: |
   mirrors the existing cursorTopicId shape rather than inventing a parallel
   one. No duplication or encapsulation concerns from this lens; the
   acceptance-wiring gap is architect/QA territory, not cleaner's.
+
+  BL-723 architect verdict (2026-07-30): not-on-par (independent finding).
+  The declared invariant's own property test (splitTelegramChunks in
+  extension/test/cursorBridgeLive.property.test.js) generates strings
+  capped at 200 chars against the function's real 4096-char split
+  boundary, so it never exercises the multi-chunk branch and stays green
+  against a deliberately broken implementation — vacuous relative to the
+  "length alone never silently truncates" invariant. Real behavior is
+  independently covered by example tests in telegramCursorBridgeCore.test.js,
+  so no live risk. Remaining-work defect: BL-738. Pilot-process defect:
+  BL-739.

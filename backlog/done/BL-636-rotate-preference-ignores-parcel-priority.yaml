@@ -155,3 +155,16 @@ notes: |
   in preferred-rotate-target leans on an implicit stable-sort contract
   that's only explained in the docstring rather than the code — a minor
   readability nit, not defect-worthy. No duplication found.
+
+  BL-723 architect verdict (2026-07-30): on-par, for the priority-ordering
+  fix itself (the commit-message/deliver! mismatch is the coder's
+  already-filed finding, outside architecture scope). The declared
+  invariant (priority decides first, recency only ties) has no fast-check-
+  equivalent property test, but no such tool is wired for Babashka
+  anywhere in this repo today (confirmed: zero clojure.test.check usage
+  under swarmforge/) — a project-wide tooling gap, not specific to this
+  ticket. mono_router_lib_test_runner.bb's example matrix genuinely covers
+  the invariant's boundary cases (priority-00 beats a newer priority-50,
+  equal-priority ties go to recency, ranking uses a role's best priority
+  not its newest parcel's, a missing priority never outranks a valid low
+  one). Judged adequate; not filed as a defect.
