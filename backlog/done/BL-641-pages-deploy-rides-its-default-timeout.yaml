@@ -120,3 +120,10 @@ notes: |
   value-driven, not a string match. No coverage/CRAP concerns — static
   CI-config assertions are an inherent limit of testing YAML locally, not
   a gap this lens can harden further.
+
+  BL-723 documenter verdict (2026-07-31): not-on-par (independent finding,
+  the deciding shortfall — every other lens found this ticket clean). Its
+  new how-to doc (docs/how-to/BL-641-pages-deploy-timeout-and-action-majors.md)
+  is orphaned, never linked from docs/index.md. Remaining-work defect:
+  BL-756 (shared across all ten of tonight's orphaned docs). Pilot-process
+  defect: BL-757.
