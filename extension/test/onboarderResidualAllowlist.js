@@ -22,6 +22,7 @@ const ALLOWED_EXACT_PATHS = new Set([
   'specs/features/BL-684-rename-onboarding-facilitator-to-onboarder.feature',
   'specs/features/BL-714-hardening-gates-blocked-by-tracked-vitest-cache-and-raw-mkdtemp.feature',
   'specs/pipeline/steps/bl633InvariantsSectionSteps.js',
+  'specs/pipeline/steps/bl714HardeningGatesBlockedSteps.js',
   'swarmforge/scripts/launch_onboarder.sh',
   'swarmforge/scripts/stop_ancillary_services.sh',
   'extension/test/onboarderEvidenceByteIdentical.property.test.js',
