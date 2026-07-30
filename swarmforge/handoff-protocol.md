@@ -891,24 +891,6 @@ against the master checkout's `main` branch:
   (backoff, both alarms) — a later failure episode of either kind always
   starts fresh and alarms again.
 
-**BL-630: a "local ahead" tip is refused, not pushed, unless it is QA-approved.**
-Before pushing, the sweep checks whether the tip is an ancestor of
-`swarmforge-QA`. If it is, the push proceeds as above with no added checks. If
-it is not, every commit ahead of `origin/main` must be either a QA ancestor
-itself or **bookkeeping-only** (its changed paths entirely under `backlog/`,
-`docs/`, or `swarmforge/` — the coordinator/specifier routine paths, so
-routine bookkeeping keeps reaching origin instead of a total refusal stalling
-it for as long as any pipeline work sits un-QA'd on `main`); otherwise the push
-is refused, the offending shas are logged, and this is its own alarm class
-(`:non-qa-ancestor`) — never absorbed into the push-failure/divergence retry
-state, since retrying cannot fix it. A merge commit is exempted from this check
-only when its combined diff (`git diff-tree -c`) is empty (a trivial merge,
-fully covered by its parents' own entries); a merge that hand-resolves a real
-conflict carries content no other commit covers and is scrutinized like any
-other commit's changed paths. This never force-pushes or rewrites history —
-only the deploy-time gate (BL-629), detection/alerting (BL-631), and
-commit-time guard (BL-632) are separate, companion protections.
-
 Both alarms are delivered via the shared `daemon_alarm_lib.bb` email sender
 and follow the project's delivery-based arming rule: a transient send failure
 never arms the "already alarmed" flag (it retries, bounded), while a terminal

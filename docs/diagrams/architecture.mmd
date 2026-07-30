@@ -102,7 +102,7 @@ flowchart TB
   PANES -->|read/write| HANDOFFS
   PANES -->|handoffd.bb: polls outbox,\nperforms chase sweeps,\ncanary sweep, push sweep,\nnotifies via tmux send-keys| SOCKET
   PANES -->|git commit/merge| TARGETREPO
-  DAEMONDIR -->|handoffd.bb push-sweep!:\ngit push main\n(bounded retry, no force-push;\nBL-630 refuses a non-QA-approved tip)| TARGETREPO
+  DAEMONDIR -->|handoffd.bb push-sweep!:\ngit push main\n(bounded retry, no force-push)| TARGETREPO
 
   PANEL -->|postMessage: output, stage,\nbadgeUpdate, backlogUpdate, ...| TILES
   TILES -->|postMessage: keystroke,\nclick, command| PANEL
