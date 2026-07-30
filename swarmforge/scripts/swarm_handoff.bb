@@ -430,26 +430,38 @@
                 (if (= :default-full (:source decision))
                   identity-result
                   (let [literal-to (first recipients)
-                        effective (:effective decision)]
+                        effective (:effective decision)
+                        reasons (required-stages-lib/read-stage-skip-reasons content)
+                        ;; BL-623: record derives from what the hop actually skipped
+                        ;; (sender → delivered), not only from whether the router rewrote.
+                        emit-skip (fn [delivered rewritten-away]
+                                    (let [between (required-stages-lib/hop-skipped-stages sender delivered)
+                                          skipped (vec (distinct
+                                                         (concat (when rewritten-away [rewritten-away])
+                                                                 between)))]
+                                      (when (seq skipped)
+                                        {:ticket-id ticket-id
+                                         :from sender
+                                         :to delivered
+                                         :skipped skipped
+                                         :reasons reasons})))]
                     (if (contains? effective literal-to)
-                      identity-result
+                      (let [skip (emit-skip literal-to nil)]
+                        (if skip
+                          {:recipients recipients :routing-skipped skip}
+                          identity-result))
                       (let [next-stage (required-stages-lib/next-required-stage effective literal-to)]
                         (if (nil? next-stage)
                           identity-result
                           {:recipients [next-stage]
-                           :routing-skipped {:ticket-id ticket-id
-                                             :from literal-to
-                                             :to next-stage
-                                             ;; literal-to is by construction always a skipped
-                                             ;; stage (this branch is only reached when it is
-                                             ;; NOT a member of `effective`), so it must be
-                                             ;; included in the report - hop-skipped-stages'
-                                             ;; strictly-between semantics alone would drop it
-                                             ;; (architect BL-606 bounce #2, guardrail #2/#6).
-                                             :skipped (vec (cons literal-to
-                                                                  (required-stages-lib/hop-skipped-stages literal-to next-stage)))
-                                             :reasons (required-stages-lib/read-stage-skip-reasons content)}})))))))))))))
-
+                           :routing-skipped (or (emit-skip next-stage literal-to)
+                                                ;; rewrite with empty between still names the
+                                                ;; rewritten-away literal (existing BL-606 contract)
+                                                {:ticket-id ticket-id
+                                                 :from sender
+                                                 :to next-stage
+                                                 :skipped [literal-to]
+                                                 :reasons reasons})})))))))))))))
 (defn- format-routing-skipped [{:keys [ticket-id from to skipped reasons]}]
   (str ticket-id " " from "->" to
        " skipped=" (str/join "," skipped)
