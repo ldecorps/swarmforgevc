@@ -1,0 +1,182 @@
+id: BL-694
+title: "The BL-684 residual-word allowlist pins backlog tickets to an exact stage directory, so moving a grandfathered ticket between active/paused/hold fails a test whose own comment says it is location-agnostic"
+milestone: M8
+type: defect
+severity: medium
+status: done
+epic: swarm-reliability
+human_approval: approved
+priority: 20
+direction: swarm-proposed
+depends_on: []
+assigned_to: coder
+mutation_cost: low
+
+invariants:
+  - "Moving a backlog ticket between stage directories never changes the outcome of the residual-word scan: an entry grandfathered by filename stays grandfathered in every stage folder, and in none of them is a different file newly excused."
+
+approval_context: >
+  Small and mechanical. The judgement worth your eye is the second bullet
+  under "What the intake missed": the same scan already exempts
+  `backlog/done/` wholesale, so a ticket reaching done self-heals and only
+  moves among active/paused/hold break. That asymmetry is arguably the real
+  defect and could instead be fixed by exempting every backlog stage folder
+  — a smaller change, but one that weakens the scan. I have specced the
+  narrower basename fix; say so if you would rather have the broader one.
+
+source: |
+  Filed by the coordinator 2026-07-27 from a coder report.
+
+  `extension/test/onboarderRenameNoResidual*.test.js` scans every git-tracked
+  file for the word BL-684 retired, and carries `ALLOWED_RESIDUAL_FILES`, a
+  Set of **exact full paths** that legitimately still contain it. Several
+  entries are backlog tickets grandfathered by filename — their slug was
+  deliberately not rewritten (the test's own "boundary 2").
+
+  The comment above one such entry states the intent outright: the filename
+  keeps its old slug *"regardless of which backlog stage directory currently
+  holds it."* The implementation is an exact-path Set, which is precisely
+  directory-specific. Intent and mechanism disagree.
+
+  ## Reproduced, 2026-07-27
+
+  The coordinator unparked BL-590 from `backlog/hold/` to `backlog/active/`
+  after the ambulance released. The file's name and content are unchanged;
+  only its directory moved. `npx vitest run` on that test now fails:
+
+      unexpected residual mentions (BL-684): [
+        "backlog/INTAKE-onboarder-rename-test-allowlist-tracks-stage-moves.md",
+        "backlog/active/BL-590-*.yaml"
+      ]
+
+  (The first of those two is the intake describing this very defect, which
+  tripped the test by naming the word. It is gone with the root drain; the
+  second is the defect.)
+
+  ## What the intake missed
+
+  - **Two entries are already stale, not one.** `backlog/active/BL-684-*.yaml`
+    also no longer resolves — that ticket moved to `backlog/done/`. It is
+    dead weight in the Set rather than a failure, because the check is an
+    allowlist-as-subset: an entry that matches nothing is silently inert.
+    So the Set is already accumulating unnoticed rot.
+  - **`backlog/done/` is already exempt wholesale** (`EXEMPT_PREFIXES`),
+    which is why BL-684's move was survivable and BL-590's was not. The
+    fragility is confined to moves among `active/`, `paused/` and `hold/`.
+  - **Five entries carry the fragile shape**, not one: the BL-684, BL-590,
+    BL-624, BL-625 and BL-643 ticket paths. Fixing only the one that happens
+    to be failing leaves the other four armed.
+
+description: |
+  For allowlist entries that are backlog ticket files grandfathered by
+  filename, match on the basename — or on a path suffix that ignores the
+  `backlog/<stage>/` prefix — instead of the exact full path. A legitimate
+  stage move must then never require a test edit.
+
+  Everything outside `backlog/` keeps exact-path matching. Those entries are
+  source, docs and transcripts whose location is meaningful; loosening them
+  would let an unrelated new file at a different path inherit an excuse it
+  was never granted. That distinction is what the invariant is guarding, and
+  it is the half of this change that can go wrong: a basename rule applied
+  too widely quietly stops the scan from catching a real regression.
+
+  Drop the entries that no longer resolve while you are there, or note
+  in-file why they are kept. Re-verified 2026-07-27 16:50Z — there are now
+  THREE, not the two the filer counted:
+
+    - `backlog/active/BL-684-*.yaml`   (ticket moved to `done/`)
+    - `backlog/active/BL-590-*.yaml`   (moved to `done/` LATER THE SAME DAY)
+    - `specs/features/BL-643-non-pipeline-agents-documented-as-a-class.feature.draft`
+      (materialized to a live `.feature` in 5b22ca5be; the live path needs no
+      entry — it does not carry the word)
+
+  Do not hand-copy that list. Re-derive it: every entry in the Set that
+  matches no file on disk is stale by definition, and the count keeps
+  changing under you.
+
+  ## Immediate unblock — do this first, and separately
+
+  The one-line unblock the intake describes (point the BL-590 entry at its
+  current directory) should land ahead of the proper fix, so BL-590's own QA
+  pass is not held up by an unrelated defect. It is not this ticket's
+  deliverable and does not close it. The coordinator has been notified.
+
+  ## Writing about this ticket is itself constrained
+
+  The scan greps case-insensitively for the retired word across all tracked
+  files, so this YAML, its feature file, and any evidence or commit message
+  must avoid the literal string — which is why the paths above are written
+  as `BL-590-*.yaml` rather than in full, and this ticket's own slug does
+  not name it. That is not squeamishness; a spec that names the word becomes
+  a new unexpected match and fails the test it is trying to fix. Whoever
+  picks this up inherits the same constraint until the fix lands.
+
+  ## Why medium
+
+  It blocks the active ticket's QA right now, which argues for high. Two
+  things pull it back: the blockage is fully discharged by a one-line
+  unblock that needs no ticket, and the coordinator who filed it asked for
+  normal priority. `medium` keeps it out of the expedite lane, per Article
+  3.2.4, which is what the filer asked for; `priority: 20` keeps it near the
+  front.
+
+acceptance: specs/features/BL-694-residual-word-allowlist-survives-stage-moves.feature
+
+out_of_scope: |
+  - Renaming any grandfathered ticket file. Boundary 2 is deliberate: the
+    slug is the record. This ticket makes the allowlist honour that, not
+    revisit it.
+  - The `EXEMPT_PREFIXES` carve-outs for evidence, done and briefings. All
+    principled and unchanged.
+  - BL-643's own eventual rename and the launcher compat shim's removal.
+    Both are already anticipated by the subset check and shrink the match
+    set without a test edit when they land.
+  - Auditing other tests for exact-path fixtures with the same shape. If the
+    invariant's sweep turns one up, that is its own finding.
+
+notes: |
+  Feature materialized from its `.feature.draft` by the specifier
+  2026-07-27 16:50Z, on operator directive, so the whole onboarding stack
+  is expedition-ready with no `.draft` left in it. BL-233 still binds the
+  coder: the five scenarios are live and un-handled until the fix parcel
+  lands, so `run_acceptance.sh` on THIS feature fails until the handlers
+  are wired in the same commit. Nothing else runs it — acceptance is
+  invoked per feature file, never as a repo-wide glob, and the only
+  repo-wide sweep over `specs/features/*.feature`
+  (`swarmforge/scripts/test/test_gherkin_lint_gate.sh`) lints rather than
+  executes. Verified lint-clean at materialization.
+
+  The defect recurred while this ticket sat in `paused/`. The filer's
+  reproduction was BL-590 moving `hold/` -> `active/`; by the time the
+  feature was materialized, BL-590 had moved on to `done/`, so its
+  freshly-corrected allowlist entry is stale again — a second stage move,
+  a second breakage, inside one day. The scan happens to be green right
+  now only because `done/` is exempt wholesale, which is the asymmetry
+  `approval_context` already flags. Two moves in a day is the argument
+  that this is worth fixing properly rather than re-pinning by hand.
+
+  A materialized feature file changes nothing about the allowlist: neither
+  this feature nor BL-643's live one carries the retired word, so no new
+  entry is needed for either.
+
+  Lint gate clean. IR-DRY: one high-confidence finding fixed (a redundant
+  Given restating scenario 01's assertion) and two scenarios folded into an
+  outline; three medium findings remain, reviewed and kept — they pair the
+  pass assertion against the fail assertion, which are opposites, not
+  synonyms.
+
+  BL-723 coder verdict (2026-07-30): on-par. Design directly satisfies the
+  stated invariant (stage-agnostic for backlog tickets, still exact-path
+  elsewhere); acceptance suite exercises real scanUnexpected/isAllowlisted
+  behavior across all 5 scenarios, and later commits reusing the same
+  pattern (e.g. BL-714 entries) show it's a real, adopted abstraction. Minor
+  dead-code nit only (an unexercised step registration with no matching
+  Examples row) — not filed as a separate defect.
+
+  BL-723 cleaner verdict (2026-07-30): on-par. Extracting
+  onboarderResidualAllowlist.js out of the test file is a clean
+  module-boundary move — gitGrepFacilitator, isExemptPrefix, isAllowlisted,
+  unexpectedResidualMatches, and scanUnexpected are each single-purpose and
+  independently testable; policy (the allowlist) is properly separated from
+  mechanism (the test). The dead-code nit the coder noted is out of this
+  lens.

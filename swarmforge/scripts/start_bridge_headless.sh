@@ -9,6 +9,18 @@
 #   BRIDGE_HEADLESS_LAUNCH_DRYRUN=1    print command, start nothing
 set -euo pipefail
 
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+  cat <<'EOF'
+start_bridge_headless.sh — lifecycle start entry point.
+
+Stop: stop_ancillary_services.sh / ./stop-swarm.sh (or ./swarm-kill for pipeline-only)
+
+Usage: see header comments above.
+EOF
+  exit 0
+fi
+
+
 ROOT="${1:?usage: start_bridge_headless.sh <project-root> [port]}"
 PORT="${2:-8765}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

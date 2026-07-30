@@ -6,6 +6,7 @@
 # real read of /mnt/c, matching the ticket's own explicit testability rule.
 set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/tmp_cleanup.sh"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/operator_runtime_sandbox.sh"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SRC="$SCRIPT_DIR/.."
@@ -17,12 +18,7 @@ make_fixture() {
   local d; d="$(mktemp -d)"
   register_tmp_dir "$d"
   mkdir -p "$d/.swarmforge/operator" "$d/swarmforge/scripts" "$d/swarmforge/roles"
-  cp "$SRC/operator_lib.bb" "$SRC/operator_runtime.bb" "$SRC/telegram_topic_lib.bb" \
-     "$SRC/support_lib.bb" "$SRC/support_thread_store.bb" \
-     "$SRC/operator_memory_lib.bb" "$SRC/operator_memory_store.bb" \
-     "$SRC/ticket_status_lib.bb" "$SRC/operator_ask.bb" "$SRC/handoff_lib.bb" \
-     "$SRC/daemon_alarm_lib.bb" "$SRC/disk_space_lib.bb" "$SRC/sandbox_sweep_lib.bb" "$SRC/bounded_delete_sweep_lib.bb" "$SRC/proc_fd_scan_lib.bb" "$SRC/fixture_reaper_lib.bb" "$SRC/fixture_reaper_sweep_lib.bb" "$SRC/orphan_agent_reaper_lib.bb" "$SRC/orphan_agent_reaper_sweep_lib.bb" \
-     "$d/swarmforge/scripts/"
+  copy_operator_runtime_sandbox "$SRC" "$d/swarmforge/scripts"
   printf '%s' "$d"
 }
 

@@ -1,0 +1,1 @@
+{"id":"BL-636","messages":[{"seq":0,"ts":1785432896823,"author":"swarm","type":"outbound","text":"BL-636 ✅ done — mono-router rotation preference ignores parcel priority: a `00` incident note starved 2h40 behind `50` rule_proposals because the only ordering key is newest-first"}]}

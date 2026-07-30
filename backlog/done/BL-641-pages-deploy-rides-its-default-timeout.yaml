@@ -1,0 +1,110 @@
+id: BL-641
+title: "The backlog-dashboard Pages deploy rides its own 10-minute default timeout, so a slow Pages service fails the run — plus a repo-wide Node 20 action deprecation"
+milestone: M8
+type: defect
+status: done
+epic: swarm-reliability
+human_approval: approved
+severity: low
+priority: 20
+direction: human-requested
+depends_on: []
+assigned_to: specifier
+mutation_cost: low
+required_stages: [coder, documenter, qa]
+stage_skip_reasons: { cleaner: "GitHub Actions config inputs and version bumps only — nothing to refactor", architect: "CI config only, no architecture surface", hardender: "workflow YAML has no local test or mutation surface" }
+
+approval_context: >
+  Operator, 2026-07-25, after run 30162790875 failed. Diagnosed as a marginal
+  timeout rather than a broken build, so this is filed rather than hot-fixed —
+  no product behaviour changes, but the standing rule is ticket-first.
+  Hydrate-batch-2 commit only materializes this approved prose into APS
+  Gherkin; no scope change.
+
+source: |
+  Run `30162790875`, `backlog-dashboard.yml` on `main` @ `5b68bc2`, **failed** after
+  10m28s with two annotations reading `Timeout reached, aborting!`.
+
+  Diagnosis — the build was fine:
+
+  - The `github-pages` artifact (1.07 MB) **was produced**, so generation of
+    `backlog.json`, `docs-tree.json`, the FR translation pass and the PWA assets all
+    succeeded. Only the DEPLOY step failed.
+  - `Timeout reached, aborting!` is not ours — `grep -rn "Timeout reached"` over the
+    repo returns nothing. It is `actions/deploy-pages`' own message when it gives up
+    polling the Pages service, default **10 minutes**. The job ran **10m28s**.
+  - The previous ten runs of this workflow all succeeded.
+
+  So: one marginal failure, not a regression. And the workflow's own header says it
+  cannot block anything:
+
+  > Runs AFTER a push has already landed, and is not configured as a required status
+  > check, so a failure here is visible in the Actions tab but never blocks the push
+  > or the pipeline that produced it.
+
+  **But it will recur.** Successful runs of this same workflow take anywhere from
+  ~30s to ~10m35s for an identical 1.07 MB artifact — the variance is the Pages
+  service, not us. With a 10-minute deploy timeout, a 10m35s run passes by 35 seconds
+  and a 10m28s run fails. The workflow is configured to sit on the edge of its own
+  limit: `grep -c timeout .github/workflows/backlog-dashboard.yml` returns **0**.
+
+description: |
+  ## 1. Give the deploy real headroom
+
+  `actions/deploy-pages` accepts a `timeout` input. Raising it (20 min is a sensible
+  starting point) removes the whole class of marginal failures without hiding a real
+  problem: if Pages has not responded in twenty minutes that is an incident, not
+  slowness, and it should still fail.
+
+  Deliberately NOT proposed: a job-level `timeout-minutes`. That would cap the whole
+  job and produce a less informative failure than the deploy step's own message.
+
+  ## 2. Node 20 deprecation, and it is repo-wide
+
+  The same run warns that these are pinned to Node 20 and are being forced onto
+  Node 24:
+
+  ```
+  actions/checkout@v4          3 uses across .github/workflows/
+  actions/setup-node@v4        1
+  actions/deploy-pages@v4      1
+  actions/upload-pages-artifact@v3   1
+  actions/github-script@v7     1
+  ```
+
+  It works today and will stop working when GitHub drops the shim. Bumping to
+  current majors is small, but it touches **four** workflow files, not just this one
+  — `backlog-dashboard.yml`, `second-swarm-wakeup.yml`, `swarm-intake-scan.yml`,
+  `swarm-intake.yml`. Doing it piecemeal leaves the repo half-migrated, which is
+  worse than either state.
+
+  ## Worth a look, not necessarily a fix
+
+  The 30s-vs-10m spread on an identical artifact is unexplained. It is very likely
+  the Pages service, and the timeout headroom makes it harmless either way — but if
+  the slow runs correlate with something on our side (artifact churn, concurrency
+  group `pages` with `cancel-in-progress: true` colliding with a neighbouring run),
+  that is worth knowing before assuming it is external.
+
+acceptance: specs/features/BL-641-pages-deploy-rides-its-default-timeout.feature
+out_of_scope: |
+  - Changing what the dashboard generates or publishes.
+  - The Pages service's own latency — outside our control; the headroom is the fix.
+  - Making this a required status check. It is deliberately advisory.
+
+notes: |
+  Priced `severity: low`, `priority: 20`: nothing is broken, nothing is lost, the next
+  push regenerates everything, and the workflow cannot block the pipeline. Filed
+  because it WILL recur — a config sitting 35 seconds inside its own limit is a
+  failure waiting for a slow day — and because an Actions tab with a red run in it
+  trains the operator to ignore red runs. Same family as BL-639: an alarm that is
+  technically correct and practically noise.
+
+  BL-723 coder verdict (2026-07-30): on-par. Matches the ticket's shape
+  exactly (headroom not a job-level cap; repo-wide major bump, not
+  piecemeal); acceptance suite ran 7/7 pass against real parsed YAML. No
+  coder-eye concerns found.
+
+  BL-723 cleaner verdict (2026-07-30): on-par. Mechanical, well-scoped
+  config change (action version bumps plus one commented timeout: key)
+  across four workflow files. Nothing to flag from this lens.

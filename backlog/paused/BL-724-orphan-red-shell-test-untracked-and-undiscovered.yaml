@@ -1,0 +1,107 @@
+id: BL-724
+title: "Orphan red shell test sat untracked and undiscovered for a week"
+milestone: M8
+type: defect
+severity: medium
+status: todo
+epic: swarm-reliability
+priority: 20
+depends_on: []
+mutation_cost: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+invariants:
+  - "No shell test under swarmforge/scripts/test/ is invisible: every test_*.sh there is either reached by the discovery sweep or explicitly recorded as excluded with a reason."
+  - "The sweep reports a test it cannot account for as a failure, never as silence — an unaccounted test must never read the same as a clean run."
+
+required_wiring:
+  - "swarmforge/scripts/test/test_shell_test_discovery.sh::test_swarm_handoff_mono_router_auto_rotate::the sweep's own test proves the orphan case is caught"
+
+description: |
+  ## What
+
+  `swarmforge/scripts/test/test_swarm_handoff_mono_router_auto_rotate.sh` has
+  existed **untracked** in `.worktrees/coder/` and `.worktrees/architect/` since
+  BL-537 (2026-07-23) — one week. It is absent from `main`, absent from every
+  other worktree, and belongs to no ticket. The coder re-flagged it to the
+  specifier on 2026-07-30 after flagging it once before.
+
+  Two separate faults, both real:
+
+  1. **The test is red against shipped code.** It asserts `swarm_handoff.bb`
+     logs `MONO-ROUTER AUTO-ROTATE:<role>` / `MONO-ROUTER ROTATED:<role>` and
+     issues a tmux `respawn-pane` into the recipient's launch script when
+     `.swarmforge/swarm-identity` carries `rotation router`. That behavior does
+     **not** exist in `swarm_handoff.bb` on `main`, in either worktree, or
+     anywhere else — verified by grep for `MONO-ROUTER` (zero hits) and by
+     running the test, which fails at `expected auto-rotate log`. So it is a
+     test written for code that was never shipped.
+
+  2. **Nothing would ever have told us.** There are 169 `test_*.sh` files under
+     `swarmforge/scripts/test/` and **no runner that discovers them**. Nothing
+     globs that directory, so an untracked or unreferenced test is invisible:
+     it neither runs nor reports. That is the defect worth fixing — fault 1 is
+     one instance of a class, and the next orphan will hide just as long.
+
+  ## Scope — this ticket fixes fault 2 only
+
+  Add a discovery sweep over `swarmforge/scripts/test/test_*.sh` that fails loud
+  when a test file there is not accounted for. "Accounted for" means either
+  reached by the sweep, or listed in an explicit exclusions manifest with a
+  one-line reason (a fixture, a harness, a deliberately-manual test).
+
+  The sweep must treat an unaccounted file as a **failure**, not a warning — the
+  whole point is that silence is what let this sit a week.
+
+  Also: the sweep must work from the master checkout and see only tracked files,
+  so an untracked test in some worktree is reported as untracked rather than
+  silently executed.
+
+  ## Disposition of the orphan file itself
+
+  Do **not** delete it and do **not** commit it as a passing test — the behavior
+  it asserts is unshipped, so committing it would land a red test. The auto-rotate
+  behavior it proposes is a genuine design question (it would automate what
+  agents currently do by hand via `rotate_to_role.sh`), so it is raised with the
+  human separately rather than guessed at here. Until that is decided, the file
+  stays where it is and this ticket's sweep reports it as an untracked orphan —
+  which is exactly the correct outcome.
+
+  Per the constitution's clean-up rule, a file this ticket did not create is
+  surfaced, never swept.
+
+  ## Out of scope
+
+  - Implementing mono-router auto-rotate on `git_handoff` (undecided; see notes).
+  - Rewriting the 169 existing shell tests or adding a parallel runner for them.
+  - Any change to `swarm_handoff.bb` behavior.
+
+acceptance: specs/features/BL-724-orphan-red-shell-test-untracked-and-undiscovered.feature
+
+notes: |
+  Evidence gathered 2026-07-30 while draining the coder's note:
+  - `grep -c 'MONO-ROUTER' swarmforge/scripts/swarm_handoff.bb` -> 0 on main,
+    0 in .worktrees/coder, 0 in .worktrees/architect.
+  - Running the test: `FAIL: expected auto-rotate log; got: HANDOFF DELIVERED:...`
+  - `git ls-files --error-unmatch` on the path -> not known to git.
+  - No file under swarmforge/ or .github/ globs swarmforge/scripts/test/.
+
+  Operator memory has carried this as a watch item ("stray unticketed
+  mono-router auto-rotate test") since 2026-07-23; this ticket retires that
+  watch by turning it into tracked work.
+
+  The auto-rotate design question (fault 1 — should `swarm_handoff.bb` itself
+  auto-rotate the mono-router resident on delivery, instead of agents calling
+  `rotate_to_role.sh` by hand?) is NOT answered here and was NOT guessed at.
+  `role_ask.bb` refused to raise it: the specifier already has an unanswered
+  clarifying question pending (backlog-root disposition, asked 14:32 today) and
+  only one may be outstanding at a time. So it is deliberately left open. This
+  ticket is complete without it — its scope is fault 2 only, and the correct
+  behaviour of the sweep it adds is to keep reporting the orphan as untracked
+  until a human decides. Raise the auto-rotate question once the pending one
+  clears.
+
+source: |
+  Coder note to specifier 2026-07-30 (priority 50): "Untracked
+  test_swarm_handoff_mono_router_auto_rotate.sh unticketed since BL-537".
+  Second time the coder raised it.

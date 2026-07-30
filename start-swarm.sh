@@ -39,6 +39,12 @@ while [[ $# -gt 0 ]]; do
       cat <<'EOF'
 start-swarm.sh — reliably (re)start the full SwarmForge stack headless.
 
+Scope: full stack
+Starts: pipeline agents + handoffd, then ancillaries (operator runtime,
+        Telegram front desk, babysitterd, onboarder, tunnels).
+
+Stop: ./stop-swarm.sh (full stack). Pipeline-only stop: ./swarm-kill.
+
 Usage:
   ./start-swarm.sh [options] [target-path]   # defaults to this repo's root
 

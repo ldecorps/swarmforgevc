@@ -306,9 +306,15 @@ const DOMAINS = [
   require('./bl560GithubScheduledAutoIntakeSteps'),
   require('./bl566SteerDeliveryReceiptSteps'),
   require('./bl576AgedNoteActionabilitySteps'),
+  require('./bl636RotatePreferenceParcelPrioritySteps'),
+  require('./bl637LifecycleScriptScopeSteps'),
+  require('./bl641PagesDeploySteps'),
   require('./bl532SiblingBounceIsolationSteps'),
   require('./bl531PreQaDurabilityWiringGateSteps'),
   require('./bl606RequiredStagesRoutingSteps'),
+  require('./bl623RoutingSkipTrailSteps'),
+  require('./bl671OperatorRuntimeFixtureSandboxSteps'),
+  require('./bl694ResidualAllowlistSteps'),
   require('./bl607RoleClarifyingPollSteps'),
   require('./bl608BounceHistoryOnTicketSteps'),
   require('./bl563ModelFactoryRuntimeWiringSteps'),
@@ -316,6 +322,9 @@ const DOMAINS = [
   require('./bl618StablePrefixCapSteps'),
   require('./bl610UnresolvableCommitQuarantinedSteps'),
   require('./bl577FlowWatchdogParcelAgeInvariantSteps'),
+  require('./bl642GateSnippetTerminalChromeSteps'),
+  require('./bl646DaemonAlarmFixtureLeakSteps'),
+  require('./bl627PricingTableCorrectnessSteps'),
   require('./bl575CostRankHorizonPinnedClockSteps'),
   require('./bl590OnboarderSteps'),
   require('./expeditorOfflineSingleTicketPipelineSteps'),
@@ -338,7 +347,8 @@ const DOMAINS = [
   require('./bl686EpicDrilldownSlugMatchSteps'),
   require('./bl675DaemonLogFreshnessSteps'),
   require('./bl630PushSweepQaGateSteps'),
-  require('./bl714HardeningGatesBlockedSteps')
+  require('./bl714HardeningGatesBlockedSteps'),
+  require('./bl723PilotReviewSteps')
 ];
 
 function registerSteps(registry) {

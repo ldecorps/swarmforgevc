@@ -225,13 +225,42 @@
       (pos? (or git-handoff-count 0))
       (pos? (or aged-note-count 0))))
 
+;; BL-636: handoff-protocol.md priority scale is two digits 00-99, lower
+;; first. A missing/unparseable value must never jump the rotate queue, so
+;; it ranks strictly worse than any valid priority.
+(def missing-priority-rank 100)
+
+(defn parse-priority-rank
+  "Pure: a handoff `priority:` header value to an int 0-99. Absent, blank,
+   and anything that is not exactly two digits degrade to
+   missing-priority-rank (100) — never throw, never sort ahead of real mail."
+  [s]
+  (let [trimmed (some-> s str str/trim not-empty)]
+    (if (and trimmed (re-matches #"[0-9][0-9]" trimmed))
+      (parse-long trimmed)
+      missing-priority-rank)))
+
+(defn best-priority-rank
+  "Lowest (best) priority rank among a coll of raw priority header strings.
+   Empty coll -> missing-priority-rank."
+  [priorities]
+  (if (seq priorities)
+    (apply min (map parse-priority-rank priorities))
+    missing-priority-rank))
+
 (defn preferred-rotate-target
-  "Among mailbox score rows, the role with the newest actionable mail."
+  "Among mailbox score rows, the actionable role with the best (lowest)
+   :best-priority; at equal priority, newest :newest-created-at wins.
+   sort-by is stable, so newest-first survives inside each priority band.
+   Rows that omit :best-priority (legacy callers) rank as
+   missing-priority-rank and therefore keep pure newest-first behaviour."
   [rows]
   (some->> rows
            (filter :actionable?)
            (sort-by :newest-created-at)
-           last
+           reverse
+           (sort-by #(or (:best-priority %) missing-priority-rank))
+           first
            :role))
 
 ;; ── BL-550: non-home resident strands after a merge-up note ────────────────

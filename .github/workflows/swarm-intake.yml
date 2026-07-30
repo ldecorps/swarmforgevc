@@ -19,7 +19,7 @@ jobs:
     if: github.event.label.name == 'swarm-intake'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: main
 
@@ -58,7 +58,7 @@ jobs:
           fi
 
       - name: Acknowledge on issue
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             await github.rest.issues.createComment({
