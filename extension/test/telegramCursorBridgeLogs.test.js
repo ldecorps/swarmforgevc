@@ -1,7 +1,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
+const { mkTmpDir } = require('./helpers/tmpDir');
 const {
   parseLogCommand,
   resolveLogTarget,
@@ -12,7 +12,7 @@ const {
 const { expediteLogPath } = require('../out/tools/telegramCursorBridgeExpedite');
 
 function mkRoot() {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sf-bridge-log-'));
+  const root = mkTmpDir('sf-bridge-log-');
   fs.mkdirSync(path.join(root, '.swarmforge', 'operator'), { recursive: true });
   return root;
 }
