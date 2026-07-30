@@ -89,6 +89,14 @@ empty state instead of a blank list.
 
 Tap **&larr; Back** to return to the epic tiles.
 
+Membership is resolved by the epic's `epic:` slug, not by the tile's own
+ticket id — a topic declares which epic it belongs to with the slug, and two
+epic tickets can (today) declare the same slug. If that happens, both
+tiles' **Topics** drill-downs list the same child set, deterministically,
+until the duplicate-slug ticket data itself is corrected; the screen does
+not invent a tie-break. An epic tracker never appears as a topic or a
+**Make top** peer in its own (or any) drill-down.
+
 ## Make a Topic Top Priority Within Its Epic
 
 From an epic's drill-down, each topic row has its own **Make top** control.
