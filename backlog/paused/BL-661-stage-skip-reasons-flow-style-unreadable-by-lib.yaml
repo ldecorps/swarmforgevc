@@ -10,7 +10,7 @@ direction: swarm-surfaced
 depends_on: []
 assigned_to: specifier
 mutation_cost: low
-human_approval: pending
+human_approval: approved
 approval_context: >
   Hydrate-batch-2: materializing prose acceptance (implicit in the
   description's "The fix" section) into APS Gherkin. No human sign-off yet

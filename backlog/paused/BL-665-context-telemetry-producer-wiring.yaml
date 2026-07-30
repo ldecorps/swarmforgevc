@@ -10,7 +10,7 @@ direction: human-requested
 depends_on: [BL-664]
 assigned_to: specifier
 mutation_cost: medium
-human_approval: pending
+human_approval: approved
 approval_context: >
   Hydrate-batch-2: materializing the description's "Acceptance signal" prose
   into APS Gherkin. No human sign-off yet on this specific ticket; flagged
