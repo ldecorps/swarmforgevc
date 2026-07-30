@@ -53,6 +53,7 @@ import { getPausedPagerUiHtml } from './pausedPagerUiHtml';
 import { getEpicReorderUiHtml } from './epicReorderUiHtml';
 import { sortEpicsByPriority, computeEpicReorder, EpicPriorityItem, ReorderDirection, PriorityWrite } from './epicReorderSafety';
 import { computeMakeTopPriority, MakeTopItem, MakeTopResult, DependencyResolution } from './makeTopPrioritySafety';
+import { computeEpicTopics, resolveTopicMembership } from './epicTopicSlugMatch';
 import { recordApprovalReply } from '../concierge/pendingApprovalReply';
 import { requestConciergeTick } from '../concierge/conciergeTickRequest';
 import { getContextBudgetUiHtml } from './contextBudgetUiHtml';
@@ -722,18 +723,24 @@ function computeEpicReorderState(targetPath: string): unknown {
   const epics = readPausedEpics(targetPath);
   const liveItems = readLiveBacklogItems(targetPath);
   const liveIds = new Set(liveItems.map((item) => item.id));
-  const topics = liveItems.filter((item) => item.epic);
+  // BL-686: membership is resolved by slug (epicTopicSlugMatch.ts), never by
+  // comparing a child's `epic:` slug against an epic tile's `id:` - those
+  // are different strings by design (BL-542/BL-545's shared slug proves a
+  // slug isn't even unique). `type: epic` rows are excluded from `topics`
+  // by computeEpicTopics itself.
+  const topics = computeEpicTopics(liveItems, epics);
   return {
     items: epics.map((epic) => ({ id: epic.id, title: epic.title, priority: epic.priority })),
     total: epics.length,
-    // BL-674: every live topic, tagged with its own epic - the drill-down
-    // groups these client-side per epic (presentation-only filtering, no
-    // new decision logic in the webview).
+    // BL-674/BL-686: every live topic, tagged with every epic TICKET ID
+    // (unique, unlike its raw slug) whose own slug matches it - the
+    // drill-down filters client-side on this ticket id (presentation-only,
+    // no new decision logic in the webview).
     topics: topics.map((topic) => ({
       id: topic.id,
       title: topic.title,
       priority: topic.priority,
-      epic: topic.epic,
+      epicIds: topic.epicIds,
       hasLiveDependency: hasLiveDependency(topic, liveIds),
     })),
   };
@@ -1051,18 +1058,24 @@ function handleEpicReorderTopicMakeTopRoute(
       return;
     }
     const folders = readBacklogFolders(targetPath);
+    const epics = readPausedEpics(targetPath);
     const liveItems = readLiveBacklogItems(targetPath);
-    const target = liveItems.find((item) => item.id === value.topicId);
-    if (!target || target.epic !== value.epicId) {
+    // BL-686: `epicId` on the wire is the tile's TICKET id; membership is
+    // decided by resolving THAT ticket's own slug and comparing it against
+    // the target's `epic:` slug (epicTopicSlugMatch.ts) - the same rule the
+    // read side uses, so read and write can never disagree about who is in
+    // the epic (invariant 2). A `type: epic` row is never itself a valid
+    // make-top target or peer here (invariant 3).
+    const membership = resolveTopicMembership(liveItems, epics, value.epicId, value.topicId);
+    if (!membership) {
       respondJson(res, 404, { success: false, reason: `topic not found among epic '${value.epicId}'s live topics` });
       return;
     }
-    const peers = liveItems.filter((item) => item.epic === value.epicId && item.id !== value.topicId);
     const result = computeMakeTopPriority(
       liveItems,
       value.topicId,
       buildResolveNonLiveDependency(folders),
-      peers,
+      membership.peers,
       `epic ${value.epicId}'s live topics`
     );
     if (!result) {

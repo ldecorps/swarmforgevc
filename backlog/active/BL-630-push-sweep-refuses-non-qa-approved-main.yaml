@@ -116,4 +116,6 @@ notes: |
   (the coordinator/specifier bookkeeping paths) may still publish — a total
   refusal would stop routine bookkeeping from reaching origin for most of
   the day. Recommend the allowlist, as the ticket invited.
-
+bounce_count: 1
+bounce_history:
+  - { at: 2026-07-30, by: architect, blamed: coder, class: behavior, commit: 325add9f38, evidence: backlog/evidence/BL-630-push-sweep-refuses-non-qa-approved-main-bounce-20260730.md }

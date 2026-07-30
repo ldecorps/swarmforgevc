@@ -335,7 +335,9 @@ const DOMAINS = [
   require('./bl696TelegramCursorBridgeOperatorSteps'),
   require('./bl688RecordableSpecFailureClassesSteps'),
   require('./bl690EnsureDaemonRepairStartsNotHaltsSteps'),
-  require('./bl675DaemonLogFreshnessSteps')
+  require('./bl686EpicDrilldownSlugMatchSteps'),
+  require('./bl675DaemonLogFreshnessSteps'),
+  require('./bl630PushSweepQaGateSteps')
 ];
 
 function registerSteps(registry) {

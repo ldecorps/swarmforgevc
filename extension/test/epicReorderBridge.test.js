@@ -22,8 +22,12 @@ function writeTicket(targetPath, folder, id, extraFields) {
   fs.writeFileSync(path.join(dir, `${id}.yaml`), `${lines.join('\n')}\n`);
 }
 
-function writeEpic(targetPath, id, priority) {
-  writeTicket(targetPath, 'paused', id, ['type: epic', `priority: ${priority}`]);
+function writeEpic(targetPath, id, priority, slug) {
+  const fields = ['type: epic', `priority: ${priority}`];
+  if (slug) {
+    fields.push(`epic: ${slug}`);
+  }
+  writeTicket(targetPath, 'paused', id, fields);
 }
 
 function readPriority(targetPath, id) {
@@ -91,11 +95,18 @@ test('epic-reorder JSON feed: lists only type: epic paused tickets, excluding ot
   });
 });
 
-test('BL-674: epic-reorder JSON feed lists every live (paused+hold) topic tagged with its epic, ordered by priority/id, with a live-dependency marker', async () => {
+test('BL-674/BL-686: epic-reorder JSON feed lists every live (paused+hold) topic tagged with the epic TICKET IDS whose slug matches it, ordered by priority/id, with a live-dependency marker', async () => {
   const target = mkTmp();
-  writeTicket(target, 'paused', 'A1', ['type: feature', 'epic: EA', 'priority: 1']);
-  writeTicket(target, 'paused', 'A3', ['type: feature', 'epic: EA', 'priority: 6', 'depends_on: [A1]']);
-  writeTicket(target, 'hold', 'B1', ['type: feature', 'epic: EB', 'priority: 2']);
+  // BL-686: the epic ticket's own id ("EPIC-A") is deliberately different
+  // from the slug its children declare ("slug-a") - real backlog data never
+  // has these equal (verified across all 15 live epic tickets at filing
+  // time). A fixture where id === slug would hide the exact defect this
+  // ticket fixes.
+  writeEpic(target, 'EPIC-A', 0, 'slug-a');
+  writeEpic(target, 'EPIC-B', 0, 'slug-b');
+  writeTicket(target, 'paused', 'A1', ['type: feature', 'epic: slug-a', 'priority: 1']);
+  writeTicket(target, 'paused', 'A3', ['type: feature', 'epic: slug-a', 'priority: 6', 'depends_on: [A1]']);
+  writeTicket(target, 'hold', 'B1', ['type: feature', 'epic: slug-b', 'priority: 2']);
   // An epic-less ticket (no epic: field) must never appear in topics.
   writeTicket(target, 'paused', 'BL-999', ['type: feature', 'priority: 0']);
 
@@ -105,11 +116,27 @@ test('BL-674: epic-reorder JSON feed lists every live (paused+hold) topic tagged
     const body = await res.json();
     const byId = new Map(body.topics.map((t) => [t.id, t]));
     assert.deepEqual(body.topics.map((t) => t.id), ['A1', 'B1', 'A3']);
-    assert.equal(byId.get('A1').epic, 'EA');
-    assert.equal(byId.get('B1').epic, 'EB');
+    assert.deepEqual(byId.get('A1').epicIds, ['EPIC-A']);
+    assert.deepEqual(byId.get('B1').epicIds, ['EPIC-B']);
     assert.equal(byId.get('A1').hasLiveDependency, false);
     assert.equal(byId.get('A3').hasLiveDependency, true, 'A3 depends on live topic A1');
     assert.ok(!byId.has('BL-999'), 'an epic-less ticket must never appear in topics');
+    assert.ok(!byId.has('EPIC-A'), 'an epic tracker must never appear as a topic of itself');
+    assert.ok(!byId.has('EPIC-B'), 'an epic tracker must never appear as a topic of another epic sharing no slug');
+  });
+});
+
+test('BL-686: two epic trackers declaring the same slug both resolve the same topics into their epicIds', async () => {
+  const target = mkTmp();
+  writeEpic(target, 'EPIC-A', 0, 'shared-slug');
+  writeEpic(target, 'EPIC-A2', 1, 'shared-slug');
+  writeTicket(target, 'paused', 'A1', ['type: feature', 'epic: shared-slug', 'priority: 1']);
+
+  await withBridge(target, {}, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/epic-reorder-state?token=${TOKEN}`);
+    const body = await res.json();
+    const a1 = body.topics.find((t) => t.id === 'A1');
+    assert.deepEqual(a1.epicIds.slice().sort(), ['EPIC-A', 'EPIC-A2']);
   });
 });
 

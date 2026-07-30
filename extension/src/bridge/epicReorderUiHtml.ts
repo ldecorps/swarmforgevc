@@ -196,7 +196,11 @@ export function getEpicReorderUiHtml(): string {
   // the tiles above. A topic carrying at least one live depends_on gets a
   // marker so a bound/refusal is never a surprise (approval_context).
   function renderDrilldown(epicId) {
-    var topics = ((lastData && lastData.topics) || []).filter(function (t) { return t.epic === epicId; });
+    // BL-686: filter on the server-resolved epic TICKET ids attached to each
+    // topic - never a raw slug comparison, which the tile's own id never
+    // equals (and, since slugs aren't unique, a topic can carry more than
+    // one epic id).
+    var topics = ((lastData && lastData.topics) || []).filter(function (t) { return (t.epicIds || []).indexOf(epicId) !== -1; });
     var html = '<button class="back-to-tiles" id="back-to-tiles">&larr; Back</button>';
     if (topics.length === 0) {
       html += '<p class="empty">No live topics in this epic.</p>';
