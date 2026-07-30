@@ -11,7 +11,7 @@ depends_on: []
 assigned_to: specifier
 mutation_cost: medium
 supersedes: BL-573
-human_approval: pending
+human_approval: approved
 approval_context: >
   Hydrate batch 2026-07-28: materializes the described semantics and the
   human's verbatim layout rulings into APS Gherkin. Needs a human look before
