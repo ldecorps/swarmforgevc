@@ -1,0 +1,142 @@
+id: BL-719
+title: "DEFECT — a ticket dropped mid-pipeline has no detector: the dispatch-gap sweep only ever asks 'was this EVER dispatched'"
+milestone: M8
+type: defect
+severity: medium
+status: todo
+epic: swarm-reliability
+human_approval: approved
+priority: 3
+direction: normal
+depends_on: []
+mutation_cost: medium
+required_stages: [specifier, coder, cleaner, architect, hardender, documenter, qa]
+assigned_to: none
+
+invariants:
+  - "A nudge fires only for an active ticket with NO parcel in any role's new or in_process; a ticket holding live mail is never nudged, at any trail age."
+  - "The sweep's only side effect is a note to the coordinator — it never writes assigned_to, never routes, never promotes, and never moves a backlog file."
+  - "Repeated sweeps over an unchanged stalled ticket produce at most one nudge per cooldown window; the nudge's own trail never re-arms the detector."
+
+required_wiring:
+  - "swarmforge/scripts/handoffd.bb::dropped-parcel::the daemon tick must call the new sweep, or the detector ships dark like BL-419"
+
+approval_context: >
+  Two defaults chosen without asking, both cheap to amend:
+  (1) the nudge goes to the coordinator ONLY — never auto-routing to a stage —
+  because which stage owns a dropped parcel and which commit it should carry
+  are routing judgements, the coordinator's exclusive duty (Article 1.1);
+  (2) severity is medium, not high: the failure is a MISSING detector rather
+  than a broken one, and the human review layer did catch the live instance.
+  Raise it to high if you want it in the Article 3.2.4 expedite lane — the
+  argument for that is that BL-714 was caught by luck (QA happened to be
+  reviewing the parcel that had absorbed it), not by design.
+
+description: |
+  ## The gap
+
+  `chase_sweep_lib.bb`'s dispatch-gap detector (BL-222) answers exactly one
+  question: **was this ticket EVER dispatched?** Its own comment says so:
+
+  > the set of ticket ids already known to have SOME handoff trail anywhere
+  > (any mailbox state, any role - proof of dispatch even if the item has since
+  > progressed past its original assignee)
+
+  `dispatch-gap-scan-dirs` (`handoffd.bb:1364`) scans `:new :in_process
+  :completed :sent :outbox`. So any historical mention marks a ticket
+  dispatched permanently — including a plain `note` whose message text merely
+  contains the id. `decide-dispatch-gaps` then removes it from the candidate
+  set forever.
+
+  That is correct for the case BL-217/BL-222 were built for (a ticket that was
+  never dispatched at all). It leaves a different case with **no detector of
+  any kind**: a ticket dispatched once, then dropped mid-pipeline. It sits in
+  `backlog/active/` with nothing to wake it.
+
+  ## The live instance
+
+  BL-714 (2026-07-30). The hardener merged BL-714's architect tip
+  (`80c8520a5`), never ran a BL-714 hardening pass, and forwarded under BL-630's
+  task name only — Article 2.6's per-ticket forward discipline. BL-714's diff
+  travelled downstream anonymously; its identity stopped moving.
+
+  Verified while writing this ticket: no BL-714 commit was an ancestor of
+  `main`, no BL-714 parcel existed in any mailbox, and BL-714's id appeared in
+  **five** `sent/` files — so the dispatch-gap sweep saw it as dispatched and
+  would never have fired for it again. One of those five files was the
+  specifier's own note asking the coordinator to re-dispatch it, which
+  illustrates the defect neatly: a note *about* the stall counts as proof the
+  stall cannot exist.
+
+  Nothing automated surfaced it. QA caught it by eye, at review, hours later.
+
+  ## Shape
+
+  A sibling sweep alongside `dispatch-gap-sweep!` and
+  `unassigned-active-nudge-sweep!`, same cadence, same posture: a pure decision
+  core in `chase_sweep_lib.bb` plus a thin adapter in `handoffd.bb`.
+
+  It fires when an active ticket has a trail (so the dispatch-gap sweep is
+  silent on it) but no parcel in any role's `new`/`in_process`, and its newest
+  trail event is older than a configurable stall threshold. The threshold is
+  what separates a dropped parcel from an ordinary gap between stages — pick a
+  default well above normal inter-stage latency and make it configurable.
+
+  Reuse the existing self-suppression posture: the nudge names the ticket id
+  first so it becomes its own trail, plus a cooldown window so an unchanged
+  stalled ticket is nudged once, not every tick.
+
+out_of_scope: |
+  - Preventing the absorption itself (a role merging another ticket's tip and
+    forwarding one name). That is a discipline/guard question, not detection —
+    file separately if wanted.
+  - Auto-routing a dropped parcel. The sweep reports; the coordinator routes.
+  - Reconciling the coordinator's existing in_process backlog.
+  - Widening `record-bounce.js`'s `--role` enum so spec-gap bounces are
+    representable — noted in BL-714's evidence, still unticketed.
+
+acceptance: specs/features/BL-719-dropped-parcel-surfaces-to-coordinator.feature
+
+notes: |
+  ## Feature-file review record (specifier)
+
+  Gherkin lint gate: clean. IR-DRY checker: 3 findings remaining, all reviewed
+  and deliberately kept — each is a polarity pair, not accidental drift:
+  older/newer than the threshold; trail present/absent; parcel present/absent.
+  One genuine drift finding was fixed ("sends no further nudge" normalized to
+  "sends no nudge").
+
+  The feature has two independent axes — trail freshness x live-mail presence —
+  so no single `Background` covers every scenario without contradicting one of
+  them. `Background` therefore carries only the universally shared Given (an
+  active item with an `assigned_to`), and each scenario states both axes
+  explicitly. That repetition is load-bearing, not drift.
+
+  ## e2e procedure for QA
+
+  With the swarm running:
+
+  1. Pick a ticket in `backlog/active/` with an `assigned_to`, and confirm its
+     id appears in some `sent/` or `completed/` handoff (so the dispatch-gap
+     sweep is provably silent on it).
+  2. Confirm no parcel for it sits in any role's `inbox/new` or
+     `inbox/in_process` — this is the dropped state:
+     `grep -rl '<TICKET-ID>' .swarmforge/handoffs/*/inbox/{new,in_process}`
+     must return nothing.
+  3. Age its newest trail event past the configured stall threshold (or lower
+     the threshold via its env seam for the test).
+  4. Wait one sweep cadence. Assert a note naming that ticket lands in the
+     coordinator's inbox, and that the ticket's `assigned_to`, its
+     `backlog/active/` path, and every mailbox are otherwise untouched.
+  5. Wait a second cadence inside the cooldown. Assert no second nudge.
+  6. Deliver any parcel for that ticket into a role's `inbox/new` and wait a
+     cadence. Assert the nudging stops.
+
+source: |
+  BL-714 forensics, 2026-07-30, written on QA's note (handoff `000842`:
+  "BL-714 rode in BL-630's parcel, never its own git_handoff - track it").
+  Full chain: backlog/evidence/BL-714-parcel-absorbed-into-BL-630-20260730.md.
+
+  Third instance this week of a ticket's identity being lost while its content
+  travelled a different path; the two prior ones went via the expedite path
+  (BL-657, BL-696), this one entirely in-pipeline.
