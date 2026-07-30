@@ -95,11 +95,26 @@
                             QA-approved tip publishes with no added
                             latency - the CLI adapter never even gathers
                             :ahead-commits for this case).
-     :ahead-commits         seq of {:sha :qa-ancestor? :changed-paths},
+     :ahead-commits         seq of {:sha :qa-ancestor? :changed-paths :merge?},
                             the commits about to be pushed (origin/main..
                             main), each pre-tagged by the CLI - only
                             populated/consulted when tip-is-qa-ancestor?
-                            is false.
+                            is false. :merge? true (BL-630 bounce,
+                            2026-07-30) means this sha has 2+ parents - a
+                            merge introduces no independent content of its
+                            own; every real content-bearing commit it
+                            folds in already appears as its OWN entry in
+                            this same seq (the CLI's `git rev-list` lists
+                            every commit in the ahead range, not just the
+                            tip), each already carrying its own accurate
+                            :qa-ancestor?/:changed-paths. Scrutinizing a
+                            merge's own changed-paths instead re-surfaces
+                            that already-checked content against whichever
+                            parent it happens to differ from and can
+                            falsely refuse a routine, fully QA-approved
+                            landing - so a merge is never itself treated
+                            as offending, regardless of its own
+                            :qa-ancestor?/:changed-paths.
      :facts-complete?       bool, default true - false when the CLI could
                             not gather the facts above (a merge-base/rev-
                             list/diff-tree failure); fails closed exactly
@@ -120,7 +135,7 @@
     {:refuse? false :reason nil :offending-shas []}
 
     :else
-    (let [offending (remove :qa-ancestor? ahead-commits)
+    (let [offending (remove #(or (:qa-ancestor? %) (:merge? %)) ahead-commits)
           non-bookkeeping (remove #(commit-bookkeeping-only? (:changed-paths %)) offending)]
       (if (seq non-bookkeeping)
         {:refuse? true :reason :non-qa-ancestor :offending-shas (mapv :sha non-bookkeeping)}

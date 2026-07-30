@@ -79,10 +79,16 @@
               (let [[p sy] (gen-pick sx all-paths)] [(conj acc p) sy]))
             [[] s1] (range n))))
 
+;; BL-630 bounce (architect, 2026-07-30): a merge commit (:merge? true) is
+;; never itself offending, however its own :qa-ancestor?/:changed-paths
+;; read - generated on equal footing with every other bool/path combination
+;; so the merge-transparent branch is exercised as often as any other, not
+;; a rare corner (BL-654 generator-reach: weight it in, don't hope for it).
 (defn gen-ahead-commit [s idx]
   (let [[qa-ancestor? s1] (gen-bool s)
-        [paths s2] (gen-changed-paths s1)]
-    [{:sha (str "sha" idx) :qa-ancestor? qa-ancestor? :changed-paths paths} s2]))
+        [paths s2] (gen-changed-paths s1)
+        [merge? s3] (gen-bool s2)]
+    [{:sha (str "sha" idx) :qa-ancestor? qa-ancestor? :changed-paths paths :merge? merge?} s3]))
 
 (defn gen-ahead-commits [s]
   (let [[n s1] (gen-int s 4)] ; 0..3 commits
@@ -112,8 +118,8 @@
     (not facts-complete?) true
     (not qa-ref-exists?) true
     tip-is-qa-ancestor? false
-    :else (boolean (some (fn [{:keys [qa-ancestor? changed-paths]}]
-                           (and (not qa-ancestor?) (not (oracle-bookkeeping-only? changed-paths))))
+    :else (boolean (some (fn [{:keys [qa-ancestor? changed-paths merge?]}]
+                           (and (not merge?) (not qa-ancestor?) (not (oracle-bookkeeping-only? changed-paths))))
                          ahead-commits))))
 
 (check-all "push_sweep_lib qa-gate invariant: no push without QA approval, every refusal is loud"
