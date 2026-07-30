@@ -6,12 +6,12 @@ severity: high
 status: todo
 epic: swarm-reliability
 human_approval: approved
-priority: 1
+priority: 0
 direction: expedite
 depends_on: []
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
-assigned_to: none
+assigned_to: coder
 
 invariants:
   - "No gitignored vitest/vite cache artifact under node_modules is tracked in git; a full-suite residual scan never fails solely because a tracked cache blob contains a retired word."
