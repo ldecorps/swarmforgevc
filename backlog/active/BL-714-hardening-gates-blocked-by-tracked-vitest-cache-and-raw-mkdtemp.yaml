@@ -1,0 +1,132 @@
+id: BL-714
+title: "DEFECT — hardening gates blocked repo-wide: tracked vitest cache trips facilitator scan; four bridge tests bypass mkdtemp helper"
+milestone: M8
+type: defect
+severity: high
+status: todo
+epic: swarm-reliability
+human_approval: approved
+priority: 0
+direction: expedite
+depends_on: []
+mutation_cost: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+assigned_to: coder
+
+invariants:
+  - "No gitignored vitest/vite cache artifact under node_modules is tracked in git; a full-suite residual scan never fails solely because a tracked cache blob contains a retired word."
+  - "Every extension/test file that creates a temp directory uses the shared mkTmpDir helper; the raw-mkdtemp migration guard finds zero call sites outside its documented exemptions."
+
+# Amended 2026-07-30 (specifier), on a documenter send-back. The gate asserts
+# PRESENCE only: for each entry it reads `path` at the cited commit and requires
+# the content to CONTAIN `pattern` (pre_qa_gate_lib.bb). The original five
+# entries all asserted the state this ticket REMOVES, so the field passed before
+# the fix and failed after it — unsatisfiable by design. D1's "the blob is no
+# longer tracked" is a deletion and cannot be written as a presence assertion at
+# all; it is carried by invariant 1 and by the existing residual-scan test
+# (extension/test/onboarderRenameNoResidualFacilitator.test.js), so it is dropped
+# here rather than restated in a form the gate cannot check. D2's four entries
+# now name what the migrated file MUST contain.
+required_wiring:
+  - "extension/test/telegramCursorBridgeExpedite.test.js::helpers/tmpDir::allocate the temp root through the shared mkTmpDir helper"
+  - "extension/test/telegramCursorBridgeLogs.test.js::helpers/tmpDir::allocate the temp root through the shared mkTmpDir helper"
+  - "extension/test/telegramCursorBridgeRedeploy.test.js::helpers/tmpDir::allocate the temp root through the shared mkTmpDir helper"
+  - "extension/test/telegramCursorBridgeUpdate.test.js::helpers/tmpDir::allocate the temp root through the shared mkTmpDir helper"
+
+description: |
+  ## What
+
+  Two pre-existing defects on main block Stryker's dry run and `npm run coverage`
+  for every hardening pass. Neither belongs to the ticket under harden; both came
+  in via ancestry (expedite-path checkpoints for BL-696 / CRAP work). Until fixed,
+  every hardener burns wall-clock rediscovering them or applying a local
+  move-aside workaround.
+
+  ## D1 — tracked vitest cache blob
+
+  `node_modules/.vite/vitest/da39a3ee5e6b4b0d3255bfef95601890afd80709/results.json`
+  is committed (added in `bdb29b719` "Reduce CRAP on cursor bridge inbound
+  decision paths" — almost certainly an accidental broad-add). It matches
+  `node_modules/.vite/vitest/` in `.gitignore`, so ignore rules never re-exclude
+  a tracked path. Its serialized content contains the literal substring
+  "facilitator", so `extension/test/onboarderRenameNoResidualFacilitator.test.js`
+  fails on every full run via `git grep -i facilitator`.
+
+  Fix: remove the blob from the index (`git rm --cached`), leave it ignored,
+  confirm the facilitator residual scan is green without touching allowlists.
+
+  ## D2 — four shipped tests bypass the shared mkdtemp helper
+
+  `extension/test/tmpDirMigrationGuard.test.js` (BL-420) fails against four
+  files added on the BL-696 checkpoint path:
+  `telegramCursorBridgeExpedite.test.js`, `telegramCursorBridgeLogs.test.js`,
+  `telegramCursorBridgeRedeploy.test.js`, `telegramCursorBridgeUpdate.test.js`.
+  Each calls `fs.mkdtempSync` directly instead of `test/helpers/tmpDir.js`.
+
+  Fix: swap those four call sites to `mkTmpDir`; do not weaken the guard.
+
+  ## Cost
+
+  Hardener session 2026-07-30 spent ~1h on BL-686 + BL-630 largely fighting
+  these gates (plus a separate Gherkin hang). Surfaced as notes to specifier /
+  coordinator; this ticket is the durable fix those notes asked for.
+
+  ## Approach
+
+  Mechanical only. No product behavior change. No allowlist expansions that
+  paper over the tracked blob or the raw mkdtemp calls.
+
+  ## Out of scope
+
+  - Speeding Gherkin mutation or fixing acceptance hang teardown (separate)
+  - Stereo / second resident capacity
+  - Re-opening BL-696 or resurrecting stale hardener parcels
+
+  ## STEERING note
+
+  `expedite` defect / operational blocker: quality gates that every ticket must
+  pass are red on main. Eligible for Expedite force-promote / expeditor run.
+  Phone/Bubble freeze does not apply — this is test-harness hygiene, not new
+  Telegram product.
+
+approval_context: >
+  Human via Let's Talk 2026-07-30: asked to use existing process to expedite
+  this costly gate bug after hardener forensics. Verbal approve to mint as
+  expedite and pull ahead of ordinary queue.
+
+acceptance: specs/features/BL-714-hardening-gates-blocked-by-tracked-vitest-cache-and-raw-mkdtemp.feature
+
+notes: |
+  ## 2026-07-30 — this parcel was absorbed into BL-630's lineage and dropped
+
+  Recorded by the specifier on QA's note (handoff `000842`): "BL-714 rode in
+  BL-630's parcel, never its own git_handoff - track it". Full forensics in
+  `backlog/evidence/BL-714-parcel-absorbed-into-BL-630-20260730.md`.
+
+  Passes actually run under this ticket's name: **coder, cleaner, architect**
+  (`33196b5af`, `39012c6df` → `fcc40a1e4` → `92a213127`). The hardener merged
+  that architect tip at `80c8520a5` — the last commit naming BL-714 — then
+  merged QA's BL-630 bounce on top and forwarded under BL-630's name only.
+  Everything downstream carried BL-714's diff anonymously.
+
+  Verified 2026-07-30: no BL-714 commit is an ancestor of `main` (the fix is
+  NOT landed), and no BL-714 parcel exists in any mailbox. This ticket was
+  dropped, not stalled — nothing will wake it without a fresh dispatch.
+
+  Still owed: **hardender, documenter, QA**. Resuming means a `git_handoff` to
+  hardender under this ticket's stable task name, on a tip having `92a213127`
+  as an ancestor. `assigned_to: coder` below is stale — coder's pass is done.
+
+  Entanglement to resolve when routing: BL-630's rework tip also contains this
+  ticket's diff, so whichever lands first carries the other's changes. Landing
+  both under one approval is what QA refused; separating them is a coordinator
+  routing decision, not a spec change.
+
+source: |
+  Hardener session 2026-07-30 (mono-router), memory
+  two-preexisting-defects-block-hardening-20260730, plus notes to specifier
+  (handoff 000490) and coordinator (000491). Human asked Bubble to expedite
+  via existing process.
+bounce_count: 1
+bounce_history:
+  - { at: 2026-07-30, by: QA, blamed: documenter, class: behavior, commit: 2903a32e6, evidence: backlog/evidence/BL-714-hardening-gates-blocked-by-tracked-vitest-cache-and-raw-mkdtemp-bounce-20260730.md }

@@ -1,0 +1,66 @@
+id: BL-716
+title: "DEFECT — Bubble / Let's Talk dies when the Cloudflare quick-tunnel hostname will not resolve"
+milestone: M8
+type: defect
+severity: high
+status: todo
+epic: swarmforge-console
+human_approval: approved
+priority: 1
+direction: queue-jump
+depends_on: []
+mutation_cost: medium
+required_stages: [specifier, coder, cleaner, architect, hardender, documenter, qa]
+assigned_to: none
+
+invariants:
+  - "When the configured bridge base URL host cannot be resolved or reached, Let's Talk does not stay in a fake-healthy recording / hands-free state — the human sees a clear reconnect failure and recording stops or is refused."
+  - "After the operator refreshes or receives a live tunnel URL, a Let's Talk turn succeeds without reinstalling the app."
+  - "A hostname change on the host side has an operator-visible path to update the phone (settings, pairing, or Telegram) — silent stale prefs are not the steady state."
+
+required_wiring:
+  - "android companion BridgeClient / TalkEngine::DNS or connect failure::surface error and leave recording"
+  - "operator tunnel publish or pairing path::fresh trycloudflare or named-tunnel URL reaches the phone"
+  - "specs/features/BL-716-bubble-lets-talk-tunnel-hostname-dns.feature::acceptance"
+
+description: |
+  ## What
+
+  Live 2026-07-30: Let's Talk on the phone showed hands-free recording with
+  `Unable to resolve host "oem-participant-outer-nail.trycloudflare.com": No
+  address associated with hostname`. Turns never reached the bridge. Host had
+  local bridge up and a long-lived quick tunnel; failure presented as phone
+  DNS / stale prefs, not swarm-down.
+
+  ## Queue-jump only (clarified 2026-07-30)
+
+  Human: **not** offline expeditor / `/expedite` / pilot. Jump the promotion
+  queue (`direction: queue-jump`; severity high also feeds Art 3.2.4 among
+  defects), then **normal live pipeline**: specifier → coordinator to coder →
+  rest of the pack. Same gates. Promote after BL-715 when both are waiting.
+  Name the intent **queue-jump** so it is not confused with the expeditor.
+
+  ## Approach
+
+  Specifier turns this into a tight acceptance contract (detect unreachable
+  URL; clear UX; refresh/push live URL; optional durable tunnel vs automated
+  refresh). Coder implements. Do not redesign barge-in or wake-word intakes
+  here.
+
+  ## Out of scope
+
+  - Offline expeditor / pilot
+  - Closing-ceremony / briefing
+  - Full hey-bubble / barge-in intakes
+
+acceptance: specs/features/BL-716-bubble-lets-talk-tunnel-hostname-dns.feature
+
+source: |
+  Human via Let's Talk / Cursor 2026-07-30 after phone screenshot. Drained from
+  `backlog/INTAKE-bubble-lets-talk-tunnel-hostname-dns.md`. Clarified:
+  queue-jump into live swarm — not offline expeditor. Behind BL-715.
+
+notes: |
+  Coordinator: after BL-715 is in flight or done, promote this next among
+  queue-jump work. Specifier first. Never start `/expedite` / offline
+  expeditor for this unless the human says so.

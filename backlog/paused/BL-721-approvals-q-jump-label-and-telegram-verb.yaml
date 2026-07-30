@@ -1,0 +1,59 @@
+id: BL-721
+title: "Approvals: rename Expedite to Q jump; add Telegram /qjump verb"
+milestone: M8
+type: chore
+status: todo
+epic: swarmforge-console
+human_approval: approved
+priority: 2
+direction: normal
+depends_on: []
+mutation_cost: low
+required_stages: [specifier, coder, cleaner, architect, hardender, documenter, qa]
+assigned_to: none
+
+invariants:
+  - "The Approvals ask fourth button is labeled Q jump (not Expedite); tapping it still approve + promote + dispatch into the live swarm (BL-490 behavior unchanged)."
+  - "A Telegram front-desk slash verb /qjump BL-xxx performs the same queue-jump effects as that button for an eligible ticket."
+  - "Offline expeditor stays on /expedite (Cursor bridge); /qjump never starts the offline expeditor; queue-jump ≠ expeditor."
+
+required_wiring:
+  - "extension/src/concierge/topicRouter.ts::Approvals buttons::Q jump label"
+  - "extension/src/tools/telegramFrontDeskBotCore.ts or front-desk command path::/qjump::queue-jump dispatch"
+  - "specs/features/BL-721-approvals-q-jump-label-and-telegram-verb.feature::acceptance"
+
+description: |
+  ## What
+
+  Human via Let's Talk 2026-07-30: the Approvals fourth button still says
+  Expedite, which people confuse with the offline expeditor. Rename the visible
+  label to **Q jump**. Also add a Telegram front-desk verb **/qjump** so the
+  same queue-jump (approve + promote + dispatch now) can be typed without
+  hunting the ask buttons.
+
+  ## Behavior (unchanged under the new name)
+
+  Same three effects as BL-490 Expedite: approve, promote paused→active if
+  needed, dispatch into the live pack (with existing file-collision safety).
+  Callback wire may keep `expedite:` for compatibility; humans must see Q jump.
+  Closing line should match the new vocabulary (e.g. `-- Q jumped <UTC>`).
+
+  ## Out of scope
+
+  - Renaming Cursor-bridge `/expedite` (offline expeditor) — stays as is
+  - Ambulance mode
+  - BL-715 prose-only orientation (may cross-link; does not absorb this)
+
+  ## Process
+
+  Normal after approval, or queue-jump if the human taps Q jump on this ticket
+  once the label ships — chicken/egg: until this lands, the old Expedite button
+  is the queue-jump.
+
+approval_context: >
+  Label chosen by human: "Q jump". Verb: /qjump on the Telegram front desk
+  (Approvals surface), not the Cursor offline expeditor.
+
+source: |
+  Human via Let's Talk / Cursor 2026-07-30 after clarifying Expedite-on-Approvals
+  is queue-jump, not the expeditor.

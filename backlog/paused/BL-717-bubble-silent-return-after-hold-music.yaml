@@ -1,0 +1,114 @@
+id: BL-717
+title: "DEFECT — Bubble returns silent after hold music instead of speaking a reply"
+milestone: M8
+type: defect
+severity: medium
+status: todo
+epic: swarmforge-console
+human_approval: approved
+priority: 2
+direction: normal
+depends_on: []
+mutation_cost: medium
+required_stages: [specifier, coder, cleaner, architect, hardender, documenter, qa]
+assigned_to: none
+
+invariants:
+  - "No terminal branch of a hold-music turn is silent: every path that ends the working interval speaks either the real reply or an explicit failure line — including branches added later."
+  - "The fallback line is spoken only when no real speakable reply is available; it never masks, truncates, or replaces a reply that could have played."
+  - "The window between hold-music stop and the start of speech is bounded — no branch leaves the human in an open-ended silence."
+
+approval_context: >
+  Three defaults chosen without asking, cheap to amend:
+  (1) the empty-content fallback is spoken, not merely shown on screen;
+  (2) the bridge stops answering `success: true` when the agent produced empty
+  reply text — it returns fallback speakable text or an explicit failure
+  instead, so the phone is never handed a successful turn with nothing to say;
+  (3) the bounded gap between hold-music stop and speech start is a documented
+  constant rather than a configurable pref in this slice. Amend if you want the
+  fallback silent-but-visible, the bridge left permissive, or the gap tunable.
+
+required_wiring:
+  - "specs/features/BL-717-bubble-silent-return-after-hold-music.feature::Scenario::acceptance contract"
+
+description: |
+  ## What
+
+  Human via Let's Talk 2026-07-30: ask a question, Bubble goes off to think or
+  use tools, hold music plays, music stops — and Bubble comes back with no
+  spoken answer. The human cannot tell whether the turn failed, returned
+  empty, or is still running. Has happened more than once in live use.
+
+  ## Confirmed failing sites (verified at spec time, 2026-07-30)
+
+  Two independent branches can end a turn in silence, and they live in
+  different layers:
+
+  - **Host side.** `extension/src/bridge/letsTalkRoutes.ts` builds a
+    `LetsTalkTurnSuccess` from whatever the agent returned. Nothing checks
+    that `replyText` is non-empty, so the bridge can legitimately answer
+    `success: true` carrying no speakable content at all.
+  - **Device side.** `ReplyAudioPlayer.play()`
+    (`android/app/src/main/java/com/swarmforge/floatcompanion/ReplyAudioPlayer.kt`)
+    falls through to a bare `complete()` when there is no audio and no
+    speech text — a silent success. Its playback/TTS `onError` paths and the
+    watchdog reach the same terminal `complete()`.
+
+  Fix both. Fixing only the device side leaves the bridge free to keep
+  emitting empty successes; fixing only the bridge leaves the playback-failure
+  and watchdog branches silent.
+
+  ## Where the executable gate lives
+
+  The Android half has no test harness in this repo (there is no
+  `android/app/src/test` or `androidTest`, and the node acceptance runner is
+  invoked per feature file and cannot drive an on-device MediaPlayer — the
+  BL-707 precedent). So:
+
+  - The **host-side** guarantee (scenario `hold-music-speech-03`, and the
+    fallback-text contract behind `-02`) must carry real unit coverage in the
+    extension suite — `extension/test/letsTalkBridge.test.js` is the existing
+    home — and goes through the normal coverage/mutation/CRAP gates.
+  - The **device-side** scenarios are the durable contract, verified by the
+    manual e2e procedure below. Do not fake them with a node step handler
+    that asserts nothing.
+
+  ## e2e QA procedure
+
+  1. Pair the Bubble companion to a live bridge; hold music on.
+  2. Ask a question that makes the agent use tools long enough for hold music
+     to play. Confirm music stops and speech starts, with no silent gap.
+  3. Force the empty-content branch (stub the agent to return empty reply
+     text): confirm a spoken nothing-to-say line, not silence.
+  4. Force a playback failure (corrupt/blank reply audio): confirm a spoken
+     failure line.
+  5. Confirm a normal reply still speaks the reply itself and never the
+     fallback line.
+
+  ## Out of scope
+
+  - Voice barge-in / interrupt while speaking (separate intake).
+  - Hey-bubble offline wake and the passive/active state machine (separate
+    intake).
+  - Hold-music catalog, volume defaults, or chiptune selection.
+  - Not expedite, not ambulance, not the offline expeditor.
+
+acceptance: specs/features/BL-717-bubble-silent-return-after-hold-music.feature
+
+source: |
+  Human via Let's Talk 2026-07-30. Drained from
+  `backlog/INTAKE-bubble-silent-return-after-hold-music.md`. Human explicitly
+  called it "a defect, not critical enough to expedite" — hence severity
+  medium, direction normal, and no queue-jump.
+
+notes: |
+  Severity rationale: real and repeated, but contained to voice UX and the
+  human can retry the turn; nothing is lost or corrupted. Deliberately NOT
+  high — high would put it in the Article 3.2.4 expedite lane, which the human
+  ruled out for this one.
+
+  Coder: the two layers are one ticket because the guarantee only holds if
+  both are closed. Treat the invariant "no terminal branch is silent" as a
+  design constraint over the whole terminal-branch set, not as five separate
+  patches — a property test over the branch enumeration fits better than more
+  example scenarios.

@@ -11,6 +11,8 @@ direction: human-requested
 depends_on: []
 assigned_to: coder
 mutation_cost: medium
+abandoned_commits:
+  - "910d2a4e80"
 invariants:
   - "No handoffd tick ever pushes a `main` tip that lacks QA approval; every refusal to publish is loud, never silent."
 
@@ -116,6 +118,21 @@ notes: |
   (the coordinator/specifier bookkeeping paths) may still publish — a total
   refusal would stop routine bookkeeping from reaching origin for most of
   the day. Recommend the allowlist, as the ticket invited.
+
+  ## 2026-07-30 — `abandoned_commits: 910d2a4e80` is a deliberate exclusion
+
+  `910d2a4e80` on `swarmforge-QA` is `Revert "Merge documenter 32d36ad4db for
+  BL-630-..."` — QA's own bounce-hygiene revert (per the constitution's "A
+  Bounce Must Be Reverted Out Of The Bouncing Branch") of its earlier
+  premature review-merge of the documenter-pass-missing parcel. Its diff is a
+  584-line subtraction: the property tests, the octopus-merge wiring
+  fixtures, the feature file and step handlers, the mkdtemp migrations — this
+  ticket's and BL-714's entire actual fix content. Merging it forward would
+  strip the shipped fix while re-fixing only the documentation gap it was
+  bounced for. The documenter pass this round (commit re-adds the doc content
+  that got reverted along with it) supplies what QA actually asked for
+  without replaying that subtraction. Recorded here per the pre-QA gate's own
+  escape hatch (`swarmforge/scripts/pre_qa_gate_lib.bb`) rather than merged.
 bounce_count: 1
 bounce_history:
   - { at: 2026-07-30, by: architect, blamed: coder, class: behavior, commit: 325add9f38, evidence: backlog/evidence/BL-630-push-sweep-refuses-non-qa-approved-main-bounce-20260730.md }

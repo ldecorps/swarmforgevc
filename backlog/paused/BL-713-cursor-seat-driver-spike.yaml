@@ -5,7 +5,7 @@ type: feature
 severity: medium
 status: todo
 epic: swarm-intelligence-layer
-human_approval: pending
+human_approval: approved
 priority: 12
 direction: human-requested
 depends_on: []
