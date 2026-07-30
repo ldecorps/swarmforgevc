@@ -82,7 +82,9 @@ Bubble began as a chatbox; it became a native app to float; it is now the
 **full operator phone**. Pages `pwa/` + JSON artifacts and the bridge Mini App
 shells remain **package / protocol sources** (and temporary fallbacks) until
 parity — not destinations. See
-`backlog/INTAKE-phone-wire-format-and-offline.md`.
+`backlog/hold/INTAKE-phone-wire-format-and-offline.md` (human-held: it is
+blocked on three answers, not on engineering — the file names which answer
+unblocks which slice).
 
 Prefer / pull toward:
 
