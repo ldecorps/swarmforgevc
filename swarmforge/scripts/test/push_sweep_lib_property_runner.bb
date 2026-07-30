@@ -79,11 +79,13 @@
               (let [[p sy] (gen-pick sx all-paths)] [(conj acc p) sy]))
             [[] s1] (range n))))
 
-;; BL-630 bounce (architect, 2026-07-30): a merge commit (:merge? true) is
-;; never itself offending, however its own :qa-ancestor?/:changed-paths
-;; read - generated on equal footing with every other bool/path combination
-;; so the merge-transparent branch is exercised as often as any other, not
-;; a rare corner (BL-654 generator-reach: weight it in, don't hope for it).
+;; BL-630 bounces (architect, 2026-07-30): :merge? and :changed-paths are
+;; generated independently and on equal footing with every other
+;; bool/path combination, so BOTH the trivial-merge branch (:merge? true,
+;; empty paths - exempt) and the content-bearing-merge branch (:merge?
+;; true, non-empty paths - scrutinized like any other commit, bounce #2)
+;; are exercised as often as any other case, not a rare corner (BL-654
+;; generator-reach: weight it in, don't hope for it).
 (defn gen-ahead-commit [s idx]
   (let [[qa-ancestor? s1] (gen-bool s)
         [paths s2] (gen-changed-paths s1)
@@ -113,13 +115,22 @@
   (and (seq paths)
        (every? (fn [p] (some #(clojure.string/starts-with? p %) ["backlog/" "docs/" "swarmforge/"])) paths)))
 
+;; BL-630 bounce #2: only a TRIVIAL merge (empty combined-diff paths) is
+;; exempt from scrutiny - a content-bearing merge (:merge? true with
+;; non-empty :changed-paths, e.g. a hand-resolved conflict) is checked like
+;; any other commit, same as the real implementation.
+(defn- oracle-trivial-merge? [{:keys [merge? changed-paths]}]
+  (and merge? (empty? changed-paths)))
+
 (defn oracle-lacks-qa-approval? [{:keys [qa-ref-exists? facts-complete? tip-is-qa-ancestor? ahead-commits]}]
   (cond
     (not facts-complete?) true
     (not qa-ref-exists?) true
     tip-is-qa-ancestor? false
-    :else (boolean (some (fn [{:keys [qa-ancestor? changed-paths merge?]}]
-                           (and (not merge?) (not qa-ancestor?) (not (oracle-bookkeeping-only? changed-paths))))
+    :else (boolean (some (fn [c]
+                           (and (not (oracle-trivial-merge? c))
+                                (not (:qa-ancestor? c))
+                                (not (oracle-bookkeeping-only? (:changed-paths c)))))
                          ahead-commits))))
 
 (check-all "push_sweep_lib qa-gate invariant: no push without QA approval, every refusal is loud"

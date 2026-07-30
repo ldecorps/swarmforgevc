@@ -1887,31 +1887,44 @@
     (when (zero? exit)
       (->> (str/split-lines (str/trim out)) (remove str/blank?)))))
 
+;; BL-630 bounce #2 (architect, 2026-07-30): `-c` (combined diff) reports a
+;; path ONLY when a file's merge result differs from a trivial recombination
+;; of its parents - i.e. it is empty for a clean/conflict-free merge and
+;; non-empty exactly when the merge carries real content of its own (most
+;; often a hand-resolved conflict, which exists in neither parent's tree
+;; and so is invisible to every other commit's own single-parent diff). See
+;; backlog/evidence/BL-630-push-sweep-refuses-non-qa-approved-main-bounce-
+;; 20260730-2.md for the empirical proof this relies on.
+(defn- git-changed-paths-combined [sha]
+  (let [{:keys [exit out]} (process/sh ["git" "diff-tree" "--no-commit-id" "--name-only" "-r" "-c" sha] {:dir (str project-root)})]
+    (when (zero? exit)
+      (->> (str/split-lines (str/trim out)) (remove str/blank?)))))
+
 ;; BL-630 bounce (architect, 2026-07-30): a merge commit has a real 2nd
 ;; parent iff `<sha>^2` resolves - reuses git-ref-exists? rather than adding
 ;; a second git-shelling helper.
 (defn- git-merge-commit? [sha]
   (git-ref-exists? (str sha "^2")))
 
-;; A merge commit is never independently scrutinized for content: plain
-;; `diff-tree` (no `-m`) answers it with zero paths always (misread by
-;; commit-bookkeeping-only? as "unknown -> not bookkeeping"), and even the
-;; per-parent `-m` diff only re-surfaces content that already belongs to
-;; the merge's own non-merge ancestors - each of which is its OWN entry in
-;; this same ahead-shas range (git rev-list lists every commit reachable
-;; in the range, not just the tip) with its own accurate, single-parent
-;; changed-paths already checked there. Diffing the merge against a single
-;; parent (or the -m union) re-flags that already-checked content, and can
-;; falsely refuse a routine, fully QA-approved landing purely because of
-;; which parent it happens to differ from (proven empirically against a
-;; real `git merge --no-ff` fixture during the bounce - see
-;; backlog/evidence/BL-630-push-sweep-refuses-non-qa-approved-main-bounce-20260730.md).
-;; So a merge sha is passed through with :merge? true and never given its
-;; own changed-paths; push_sweep_lib.bb/qa-gate-decision treats :merge? true
-;; as never-offending on that basis.
+;; A merge commit's OWN combined diff (see git-changed-paths-combined above)
+;; decides how it is scrutinized. Empty -> trivial merge, no independent
+;; content: every real content-bearing commit it folds in already appears
+;; as its OWN entry in this same ahead-shas range (git rev-list lists every
+;; commit reachable in the range, not just the tip) with its own accurate,
+;; single-parent changed-paths already checked there - push_sweep_lib.bb/
+;; qa-gate-decision exempts exactly this case (:merge? true with empty
+;; :changed-paths). Non-empty -> the merge carries content that belongs to
+;; no other entry (bounce #1 first tried "plain diff-tree", which is always
+;; empty for a merge regardless of content and was misread as "unknown ->
+;; not bookkeeping"; bounce #2 then found that unconditionally exempting
+;; every :merge? true sha waved through exactly this non-empty case, e.g. a
+;; hand-resolved conflict, with zero review) - so a content-bearing merge's
+;; combined-diff paths are carried through and checked by qa-gate-decision
+;; exactly like a non-merge commit's :changed-paths.
 (defn- ahead-commit-facts [sha]
   (if (git-merge-commit? sha)
-    {:sha sha :ok? true :merge? true :qa-ancestor? false :changed-paths []}
+    (let [paths (git-changed-paths-combined sha)]
+      {:sha sha :ok? (some? paths) :merge? true :qa-ancestor? false :changed-paths (or paths [])})
     (let [ancestry (git-is-ancestor? sha "swarmforge-QA")]
       (if-not (:ok? ancestry)
         {:sha sha :ok? false}

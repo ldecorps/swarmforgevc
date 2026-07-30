@@ -99,22 +99,30 @@
                             the commits about to be pushed (origin/main..
                             main), each pre-tagged by the CLI - only
                             populated/consulted when tip-is-qa-ancestor?
-                            is false. :merge? true (BL-630 bounce,
-                            2026-07-30) means this sha has 2+ parents - a
-                            merge introduces no independent content of its
-                            own; every real content-bearing commit it
-                            folds in already appears as its OWN entry in
-                            this same seq (the CLI's `git rev-list` lists
-                            every commit in the ahead range, not just the
-                            tip), each already carrying its own accurate
-                            :qa-ancestor?/:changed-paths. Scrutinizing a
-                            merge's own changed-paths instead re-surfaces
-                            that already-checked content against whichever
-                            parent it happens to differ from and can
+                            is false. :merge? true means this sha has 2+
+                            parents; its :changed-paths is the CLI's
+                            *combined* diff (`git diff-tree -c`), which is
+                            empty ONLY for a trivial merge (its tree is
+                            fully reconstructible from its parents - every
+                            real content-bearing commit it folds in already
+                            appears as its own entry in this same seq with
+                            its own accurate :qa-ancestor?/:changed-paths,
+                            so re-scrutinizing a trivial merge's own diff
+                            would just re-flag already-checked content
+                            against whichever parent it differs from and
                             falsely refuse a routine, fully QA-approved
-                            landing - so a merge is never itself treated
-                            as offending, regardless of its own
-                            :qa-ancestor?/:changed-paths.
+                            landing). A NON-empty combined diff on a merge
+                            means the merge itself carries content absent
+                            from every parent - typically a hand-resolved
+                            conflict - which was never independently
+                            reviewed and is not covered by any other
+                            entry in this seq, so it is scrutinized exactly
+                            like a non-merge commit's :changed-paths (BL-630
+                            bounce #2, 2026-07-30: the original :merge? ->
+                            always-exempt rule waved this class through
+                            unchecked; see backlog/evidence/BL-630-push-
+                            sweep-refuses-non-qa-approved-main-bounce-
+                            20260730-2.md).
      :facts-complete?       bool, default true - false when the CLI could
                             not gather the facts above (a merge-base/rev-
                             list/diff-tree failure); fails closed exactly
@@ -135,7 +143,8 @@
     {:refuse? false :reason nil :offending-shas []}
 
     :else
-    (let [offending (remove #(or (:qa-ancestor? %) (:merge? %)) ahead-commits)
+    (let [trivial-merge? (fn [{:keys [merge? changed-paths]}] (and merge? (empty? changed-paths)))
+          offending (remove #(or (:qa-ancestor? %) (trivial-merge? %)) ahead-commits)
           non-bookkeeping (remove #(commit-bookkeeping-only? (:changed-paths %)) offending)]
       (if (seq non-bookkeeping)
         {:refuse? true :reason :non-qa-ancestor :offending-shas (mapv :sha non-bookkeeping)}
