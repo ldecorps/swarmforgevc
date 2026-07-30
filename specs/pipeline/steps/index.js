@@ -314,6 +314,7 @@ const DOMAINS = [
   require('./bl606RequiredStagesRoutingSteps'),
   require('./bl623RoutingSkipTrailSteps'),
   require('./bl671OperatorRuntimeFixtureSandboxSteps'),
+  require('./bl694ResidualAllowlistSteps'),
   require('./bl607RoleClarifyingPollSteps'),
   require('./bl608BounceHistoryOnTicketSteps'),
   require('./bl563ModelFactoryRuntimeWiringSteps'),
