@@ -9,6 +9,18 @@
 #   CURSOR_BRIDGE_LAUNCH_DRYRUN=1    print command, start nothing
 set -euo pipefail
 
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+  cat <<'EOF'
+start_cursor_bridge.sh — lifecycle start entry point.
+
+Stop: stop_ancillary_services.sh / ./stop-swarm.sh (or ./swarm-kill for pipeline-only)
+
+Usage: see header comments above.
+EOF
+  exit 0
+fi
+
+
 ROOT="$(cd "${1:?usage: start_cursor_bridge.sh <project-root>}" && pwd)"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OP_DIR="$ROOT/.swarmforge/operator"

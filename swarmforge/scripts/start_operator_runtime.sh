@@ -8,6 +8,18 @@
 # Usage: start_operator_runtime.sh <project-root>
 set -euo pipefail
 
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+  cat <<'EOF'
+start_operator_runtime.sh — lifecycle start entry point.
+
+Stop: stop_ancillary_services.sh / ./stop-swarm.sh (or ./swarm-kill for pipeline-only)
+
+Usage: see header comments above.
+EOF
+  exit 0
+fi
+
+
 ROOT="${1:?usage: start_operator_runtime.sh <project-root>}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OP_DIR="$ROOT/.swarmforge/operator"
