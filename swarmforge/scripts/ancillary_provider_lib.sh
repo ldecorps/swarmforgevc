@@ -250,6 +250,7 @@ ancillary_provider_default_model() {
       ;;
     claude_direct)
       if [[ "$role" == operator ]]; then printf '%s\n' "claude-opus-4-8"
+      elif [[ "$role" == front_desk ]]; then printf '%s\n' "claude-haiku-4-5-20251001"
       else printf '%s\n' "claude-sonnet-5"
       fi
       ;;
@@ -320,7 +321,14 @@ ancillary_provider_fill_tmux_env() {
         ANCILLARY_TMUX_ENV=(-e "OPENAI_API_KEY=${OPENAI_API_KEY}")
       fi
       ;;
-    claude_direct) ANCILLARY_TMUX_ENV=() ;;
+    claude_direct)
+      if [[ -n "${FRONT_DESK_OPERATOR_MODEL:-}" ]]; then
+        ANCILLARY_TMUX_ENV+=(-e "FRONT_DESK_OPERATOR_MODEL=${FRONT_DESK_OPERATOR_MODEL}")
+      fi
+      if [[ -n "${FRONT_DESK_OPERATOR_EFFORT:-}" ]]; then
+        ANCILLARY_TMUX_ENV+=(-e "FRONT_DESK_OPERATOR_EFFORT=${FRONT_DESK_OPERATOR_EFFORT}")
+      fi
+      ;;
   esac
 }
 

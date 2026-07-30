@@ -8,9 +8,25 @@ human_approval: approved
 severity: medium
 priority: 08
 direction: human-requested
-depends_on: []
-assigned_to: specifier
+depends_on: [BL-622]
+# ^ Promoted from prose to data at speccing, 2026-07-27. `out_of_scope` already
+#   said BL-622 (Telegram token separation) is "a PREREQUISITE for this ticket
+#   being safe to use" and "do not ship this without it" — a second swarm that
+#   inherits the primary's token steals its messages. A prerequisite that lives
+#   only in a paragraph is one a promoter has to notice; as `depends_on` it is
+#   enforced. BL-622 is `severity: high` and paused, so it is expedited anyway.
+assigned_to: coder
 mutation_cost: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+# ^ Certified 2026-07-27: FULL chain, nothing skipped. The split between the two
+#   provisioners is an architect pass by construction (scenario 07 is a design
+#   constraint, not a behaviour); shell provisioning has a real test surface for
+#   the hardener; and the ticket's own acceptance item 6 IS a runbook sentence,
+#   which is the documenter's.
+
+invariants:
+  - "Dry-run mutates nothing on the host: for every action the real path performs — package install, file write, unit enable — dry-run prints it and performs none of it. A dry-run that is faithful for most actions and not for one is worse than none, because the operator inspects an internet-facing box on its word."
+  - "Nothing the autonomous path adds changes what the secondary path does: for identical inputs, the secondary path installs the same substrate, writes the same conf and enables the same unit set as it did before this ticket."
 
 approval_context: >
   Operator asked on 2026-07-25 how to onboard a new project AND deploy the
@@ -63,39 +79,21 @@ description: |
   `DISABLE_AUTOUPDATER`, clone) are shape-agnostic already. Only steps 5-6
   (conf generation + which systemd units get enabled) branch.
 
-  The specifier should decide between a flag on the existing script and a
-  shared library both provisioners call, and must NOT duplicate
-  `generate_systemd_units.sh`'s unit-content logic — BL-359's own comment is
-  explicit that reusing that generator, never re-implementing it, is the rule.
+  **The flag-versus-shared-library choice is deliberately NOT specced.** It is a
+  design call, and the acceptance constrains it from the outside either way:
+  scenario 04 and invariant 2 forbid any split that changes what the secondary
+  path does, and scenario 07 forbids any split that authors unit content outside
+  `generate_systemd_units.sh` — BL-359's own comment is explicit that reusing that
+  generator, never re-implementing it, is the rule. Whichever shape passes both is
+  acceptable; picking one here would prescribe implementation the behaviour does
+  not require.
 
   Whatever the split, the acceptance must cover the fact that an autonomous
   swarm needs the **front-desk unit** too (its own Telegram channel), which
   `provision_secondary_host.sh` today never installs — BL-359 called that
   omission out as "exactly as dark as no unit at all".
 
-acceptance: |
-  Specifier writes the scenarios. Minimum behaviour:
-
-  1. A single documented path takes a bare Linux box to a running AUTONOMOUS
-     swarm — own coordinator, own backlog, own target repo — with the same
-     headless guarantees BL-101 already gives the secondary shape: pinned
-     substrate, `DISABLE_AUTOUPDATER=1`, systemd units enabled, survives a
-     reboot with no human action.
-  2. The autonomous path installs the front-desk unit as well as the operator
-     and swarm units. A swarm with its own Telegram channel and no front-desk
-     unit is not a completed bring-up.
-  3. The secondary path (BL-101) still works unchanged — this ticket must not
-     regress the throughput-brick use case, which is a different and still
-     valid shape.
-  4. `swarm_name` collision is still rejected (BL-090 multi-swarm-06) on the
-     autonomous path.
-  5. A dry-run mode exists on the autonomous path, mirroring
-     `PROVISION_PRIMARY_DRYRUN=1`, so the operator can inspect what would be
-     installed on an internet-facing box before it happens.
-  6. The runbook states explicitly where the onboarding ceremony happens: on
-     the PRIMARY box against a GitHub URL (BL-590 ruling 2), producing a
-     committed contract and prompts that the remote box then pulls. The remote
-     box is never where the contract is negotiated.
+acceptance: specs/features/BL-628-bare-host-bootstrap-for-autonomous-swarm.feature
 
 out_of_scope: |
   - The onboarding ceremony itself. Survey/propose/negotiate/gate are shipped
@@ -116,3 +114,51 @@ notes: |
   verification via `docs/how-to/BL-101-pi-vps-secondary-swarm-bringup.md`
   section 10. Doing that verification first would de-risk this ticket, since it
   exercises steps 1-4 — the shape-agnostic half this ticket wants to reuse.
+
+  ## Specced 2026-07-27
+
+  The `acceptance:` field was a prose list ending "Specifier writes the scenarios";
+  it is now the feature file. Each of the six numbered criteria has a scenario, and
+  the mapping is one-to-one so a reviewer can check nothing was dropped:
+
+  | old criterion               | scenario                              |
+  |-----------------------------|---------------------------------------|
+  | 1 autonomous shape          | autonomous-bootstrap-01               |
+  | 1 headless guarantees       | autonomous-bootstrap-03 (3 rows)      |
+  | 2 front-desk unit installed | autonomous-bootstrap-02 (3 rows)      |
+  | 3 secondary path unchanged  | autonomous-bootstrap-04 + invariant 2 |
+  | 4 swarm_name collision      | autonomous-bootstrap-05 (2 rows)      |
+  | 5 dry-run mode              | autonomous-bootstrap-06 + invariant 1 |
+  | 6 runbook states the where  | autonomous-bootstrap-08               |
+
+  Scenario 07 has no numbered ancestor: it pins the "do not duplicate
+  `generate_systemd_units.sh`" rule that the shape section states in prose, so the
+  one design constraint the ticket does impose is checkable rather than trusted.
+
+  **IR-DRY findings reviewed, not normalised.** The checker reports four
+  `possible-synonym` pairs at 0.5-0.57, all between deliberately distinct concepts:
+  the autonomous path versus the secondary path, run-to-completion versus started-
+  and-refused versus dry-run mode, and the two different runbook sentences scenario
+  08 asserts. Collapsing any of those would merge behaviours the ticket exists to
+  keep apart. The one genuine drift the checker found — a bare "is run" in scenario
+  05 that near-duplicated "is run to completion" at 0.80 — was fixed at speccing.
+
+  ## End-to-end QA procedure
+
+  This ticket cannot be fully verified on the primary box: scenarios 01-04 end in a
+  provisioned host. QA runs what is runnable here and the operator does the rest.
+
+  1. `specs/pipeline/scripts/run_acceptance.sh specs/features/BL-628-bare-host-bootstrap-for-autonomous-swarm.feature`
+     — all scenarios pass against the provisioners' own testable seams.
+  2. Dry-run both paths in a throwaway container and diff the printed plan against
+     what a real run does. Invariant 1 is the thing to attack: find one action the
+     real path takes that dry-run does not print, or one dry-run performs anyway.
+  3. Re-run the existing secondary provisioning tests unchanged and confirm the
+     generated conf and unit set are byte-identical to before the change
+     (invariant 2). A diff here is a regression, not a rebase.
+  4. On a real bare box (operator, hardware step — same posture as BL-101 section
+     10): run the autonomous path end to end, reboot it, and confirm the swarm,
+     operator and front-desk units all come back with no human action.
+  5. Confirm the front desk actually reaches its OWN Telegram channel, not the
+     primary's — this is where a missing BL-622 shows up as stolen messages rather
+     than as an error.

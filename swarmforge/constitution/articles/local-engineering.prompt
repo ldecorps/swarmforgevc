@@ -68,6 +68,23 @@ shared article remains in force.
    `getForumTopicIconStickers` offers no notation/instrument glyphs. See
    **local-engineering-detailed.prompt** for the BL-449 platform-wall
    rationale.
+7. Interface vs incarnation — two naming layers, deliberately. Architecture
+   and forward-looking prose may name the INTERFACES: **messaging** (the
+   human chat channel / chat adapter) and **host agent** (the IDE seat that
+   drives Remote verbs, pairing, and pack staffing). Everyday operator speech
+   names the live INCARNATIONS: **Telegram** (messaging) and **Cursor** (host
+   agent). The phone app's product name is **Bubble** (native Android under
+   `android/`; BL-707) — do not introduce a parallel brand (Float Companion,
+   companion app, overlay app) in new prose, though historical ticket titles
+   and the `floatcompanion` package id may stay. Doc style: "the host agent
+   (today: Cursor) …", "messaging (today: Telegram) …", "the phone app is
+   **Bubble** …". A proposal to rename identifiers, env vars, files, or
+   how-tos to erase Telegram/Cursor "for purity" is OUT OF POLICY: the
+   specifier does not spec it and the coordinator does not promote it, unless
+   the human explicitly asks for a second messaging app or a second
+   host-agent backend AND a shim plan. Dual-name shims belong at adapter
+   edges when a real second incarnation lands — never as a vocabulary chore.
+   (Human directive 2026-07-30, `backlog/INTAKE-messaging-host-agent-interface-vs-incarnation.md`.)
 
 ## Diagrams (this project)
 Per the shared Diagrams rule, the diagrams this project maintains are:

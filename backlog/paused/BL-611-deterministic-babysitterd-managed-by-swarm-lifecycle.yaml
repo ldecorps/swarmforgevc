@@ -11,6 +11,11 @@ direction: human-requested
 depends_on: []
 assigned_to: specifier
 mutation_cost: medium
+approval_context: >
+  Hydrate batch 2026-07-28: materializes the already-approved prose acceptance
+  (A-G, 1-7 with 6b/6c/6d) into APS Gherkin, unchanged in substance; the
+  runtime-fold design question is answered per the 2026-07-25 operator ruling
+  already recorded in this ticket's description.
 
 invariants:
   - "No check raises a CRIT while the swarm is verifiably making progress. Every finding is a claim about absence, so each one must be false whenever a live, checkable signal of work exists — a busy pane, an actively-worked claim, a recent commit. A sweep that cries wolf is worse than no sweep: it trains its only reader to dismiss it, which is how a real starvation gets ignored."
@@ -305,108 +310,7 @@ description: |
   with a real health-signal defect attached, not an incident. It rides the pipeline
   properly rather than being hand-applied.
 
-acceptance: |
-  F. `babysitter_runtime.bb` is retired, and every check it performed still runs
-     somewhere - its existing test runners pass against whatever absorbs the
-     claim-risk scan. A fold that quietly drops a check is a regression, not a
-     simplification.
-  G. No process remains whose purpose was waking or relaunching an LLM babysitter.
-
-  ADDED 2026-07-25 (operator amendment):
-
-  A. The five agent-side files are gone, and no caller references a missing path -
-     `./start-swarm.sh`, `./stop-swarm.sh` and `./swarm ensure` all still run clean.
-  B. `./swarm status` no longer reports a row for the retired agent, and DOES report
-     the deterministic daemon it actually runs.
-  C. Every KEEP-listed deterministic file still exists and its test runner passes -
-     a regression here means the removal over-reached.
-  D. The runtime question (a or b) is answered in the design, with a scenario for
-     whichever was chosen.
-  E. The skip-slot semantics are stated, and the stale `.swarmforge/swarm.env` line
-     is called out in the runbook.
-
-  Specifier writes the scenarios. Minimum:
-
-  1. `start-swarm.sh` brings up babysitterd (absent `SWARMFORGE_SKIP_BABYSITTER=1`);
-     `stop-swarm.sh` and `kill_all_swarm.sh` terminate it and clean the pidfile;
-     double-start is refused while the pidfile is live.
-  2. `./swarm ensure` restarts a dead babysitterd and leaves a live one alone.
-  3. The pure finding-assembly core is unit-tested with fixtures covering each
-     of the eight checks firing and staying quiet (green snapshot -> zero
-     findings; each degraded snapshot -> exactly its finding).
-  4. Nudge contract proven pure-side: dedup within cooldown, re-nudge after
-     cooldown expiry, NUDGE-SKIP when coordinator absent, and this eligibility
-     rule — CRIT always nudges, `stuck-*` nudges even though it is WARN, every
-     other WARN does not.
-
-     The `stuck-*` carve-out is NOT a detail to normalize away during the port.
-     It was applied to the prototype out of band on 2026-07-26 as incident
-     containment (still visible at `babysitter_check.sh:197`, commented
-     INCIDENT CONTAINMENT) after six in_process parcels sat ignored through 8+
-     sweeps: `stuck-*` findings are WARN by design — a dwelling parcel is not a
-     swarm-down condition — so under a CRIT-only gate they were detected and
-     reported every sweep for 40+ minutes and never once nudged anyone. No
-     severity was reclassified; WARN still prints as WARN. Only nudge
-     eligibility changed.
-
-     Because the prototype is untracked, this fix exists ONLY on the live
-     checkout and is in no git history — a port that faithfully reproduces the
-     pre-patch CRIT-only gate would silently reintroduce the exact blind spot
-     it was written to close. Fixture: a sweep whose only finding is a `stuck-*`
-     WARN still emits exactly one nudge, and a sweep whose only finding is any
-     other WARN emits none.
-  5. A menu-blocked pane produces a report finding and NO keystrokes toward
-     the menu (the sweep is observably read-only apart from the coordinator
-     nudge line).
-  6. The agent-based babysitter is GONE: no babysitter.prompt role, no LLM
-     launch path, no wake runtime — a repo grep for babysitter finds only the
-     daemon, its salvaged pure libs, docs, and history. The deterministic
-     daemon owns the ancillary slot and the name.
-  6b. The salvaged claim-progress risk scan (babysitter_assess_lib.bb) runs as
-     sweep check #11 with its existing unit tests still green, its findings
-     flowing through the same severity/nudge contract.
-  6c. Checks 9 and 10 have fixture coverage for the live-validated incident
-     shapes: a completed rotate parcel + mismatched active-role fires check 9
-     (and stops firing once the role flips); the all-idle-with-active-work
-     snapshot fires check 10 only on the second consecutive sweep.
-  6d. Check 10 STAYS QUIET on both live-proven false-positive shapes (operator
-     intake 2026-07-26, two consecutive false `swarm-starved` CRITs while the
-     hardener was verifiably running Stryker, confirmed via `ps`). Port the
-     check with these fixed — a port that faithfully reproduces them is a bad
-     port, and each has its own must-not-fire fixture:
-
-     - **Busy detection survives a truncated pane line.** The swarm's panes are
-       80 columns (`tmux list-panes -F '#{pane_width}'` -> 80). When several
-       footer hint fragments coincide, tmux truncates the line before the
-       `esc to interrupt` substring the prototype greps for — a live capture
-       ended in `· e…`. `capture-pane -S` sets scrollback depth, not width, so
-       it cannot fix this. Busy-detection must key on a signal that survives
-       truncation regardless of which hint fragments are present. The fix
-       approach is the implementer's call; the intake's candidates were the
-       spinner glyph + elapsed-time pattern (`Doodling… (Nm Ns`), which appears
-       early in the block and was intact in both false captures, or a wider
-       capture width. Fixture: a captured pane whose busy marker is truncated
-       away is still classified BUSY.
-
-     - **An aged-but-active in_process claim still counts as motion.** The
-       prototype's `-mmin -120` window on the `in_process` find exists to stop
-       ancient strays suppressing detection forever, but it also zeroes out a
-       batch that is legitimately still being worked: the hardener's 6-parcel
-       claim was ~3h41m old and under active mutation at the moment the false
-       CRIT fired. A flat time cutoff cannot tell "abandoned" from "slow";
-       correlate the aged claim against whether the resident is verifiably
-       working it (busy state / mono-router-active-role vs the claim's
-       worktree) instead. Fixture: an in_process claim older than the window,
-       whose owning worktree's resident is busy, does NOT contribute to a
-       starved finding — while a same-aged claim with an idle resident and no
-       other motion still does.
-
-     The two compound: fixing only the first still lets an aged-but-active
-     batch zero `inproc` and fire on `pend==0 && inproc==0` alone. Both, or
-     neither.
-  7. Runbook exists and the coordinator-facing doc line about
-     "babysitter health sweep:" messages is in place.
-
+acceptance: specs/features/BL-611-deterministic-babysitterd-managed-by-swarm-lifecycle.feature
 out_of_scope: |
   - Any auto-remediation (respawns, parcel moves, menu picks). Observation and
     coordinator nudges only — by design, per the human's division of labour.
@@ -446,3 +350,24 @@ notes: |
   6d passes that choice through to the implementer rather than mandating one,
   because the right answer depends on what the ported capture path looks like.
   The BEHAVIOUR is fixed; the mechanism is not.
+
+  Supporting criteria the Gherkin does not pin (design/documentation, not
+  runtime behaviour):
+
+  - The runtime question (fold `babysitter_runtime.bb`'s claim-risk scan into
+    the ported check, option (a)) is answered in the design per the 2026-07-25
+    operator ruling — no second sweep whose only purpose was feeding the now-
+    removed LLM. `babysitter_runtime.bb` is retired; every check it performed
+    still runs somewhere, with its existing test runners passing against
+    whatever absorbs it.
+  - Every KEEP-listed deterministic file (`babysitter_assess_lib.bb` +
+    `babysitter_assess.bb`, `babysitter_lib.bb`, `babysitter_nudge_lib.bb`,
+    `babysitter_nudge_resident.bb`, `babysitter_enqueue_wake.sh`, and their 4
+    test runners) still exists and its test runner passes.
+  - `SWARMFORGE_SKIP_BABYSITTER`'s flipped meaning (was: skip the LLM hawk; now:
+    skip the deterministic sweep) is stated in the runbook, and the stale
+    `.swarmforge/swarm.env` line is called out there.
+  - A runbook exists: what babysitterd checks, what a nudge looks like, how to
+    start/stop/ensure it, where the log/state live, and the env skip; plus the
+    coordinator-facing doc line about "babysitter health sweep:" messages.
+

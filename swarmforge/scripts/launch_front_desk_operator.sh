@@ -16,6 +16,11 @@ ROOT="${1:?usage: launch_front_desk_operator.sh <project-root> <prompt-file> <re
 PROMPT_FILE="${2:?usage: launch_front_desk_operator.sh <project-root> <prompt-file> <result-file>}"
 RESULT_FILE="${3:?usage: launch_front_desk_operator.sh <project-root> <prompt-file> <result-file>}"
 
+if [[ -f "$ROOT/.swarmforge/swarm.env" ]]; then
+  # shellcheck disable=SC1090
+  source "$ROOT/.swarmforge/swarm.env"
+fi
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=ancillary_provider_lib.sh
 source "$SCRIPT_DIR/ancillary_provider_lib.sh"

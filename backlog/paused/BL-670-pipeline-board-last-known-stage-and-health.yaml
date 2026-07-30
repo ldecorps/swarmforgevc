@@ -11,6 +11,11 @@ depends_on: []
 assigned_to: specifier
 mutation_cost: medium
 supersedes: BL-573
+human_approval: pending
+approval_context: >
+  Hydrate batch 2026-07-28: materializes the described semantics and the
+  human's verbatim layout rulings into APS Gherkin. Needs a human look before
+  autopilot picks it up.
 invariants:
   - "A ticket any stage has touched never renders as not-started: it always shows its last-known stage with status (claimed | in-transit-to | last-known) and age."
   - "Grid alignment is a rendering invariant with a fixture: every cell is padded to its column's widest cell — marks like X(34m) never shear the grid."
@@ -72,3 +77,5 @@ description: |
   half of the same derivation gap; its fix is strictly contained in the
   semantics above, so it retires to done/ as superseded (BL-587/BL-562
   precedent) rather than riding as a duplicate.
+
+acceptance: specs/features/BL-670-pipeline-board-last-known-stage-and-health.feature

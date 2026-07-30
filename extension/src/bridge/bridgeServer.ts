@@ -15,7 +15,7 @@ import {
   buildBurnRateState,
   BridgeState,
 } from './bridgeState';
-import { extractBearerToken, isAuthorizedByQueryToken } from './bridgeAuth';
+import { extractBearerToken, isAuthorizedByQueryToken, parseQueryCredential } from './bridgeAuth';
 import { getHolisticUiHtml } from './holisticUiHtml';
 import { getResidentSpyUiHtml } from './residentSpyUiHtml';
 import { getConsoleMenuUiHtml } from './consoleMenuUiHtml';
@@ -53,11 +53,23 @@ import { getPausedPagerUiHtml } from './pausedPagerUiHtml';
 import { getEpicReorderUiHtml } from './epicReorderUiHtml';
 import { sortEpicsByPriority, computeEpicReorder, EpicPriorityItem, ReorderDirection, PriorityWrite } from './epicReorderSafety';
 import { computeMakeTopPriority, MakeTopItem, MakeTopResult, DependencyResolution } from './makeTopPrioritySafety';
+import { computeEpicTopics, resolveTopicMembership } from './epicTopicSlugMatch';
 import { recordApprovalReply } from '../concierge/pendingApprovalReply';
 import { requestConciergeTick } from '../concierge/conciergeTickRequest';
 import { getContextBudgetUiHtml } from './contextBudgetUiHtml';
 import { listTelemetryAgents, summarizeTelemetryForAgent } from './contextTelemetryGate';
 import { runCommitIntegrity } from '../util/commitIntegrityRunner';
+import { getLetsTalkUiHtml } from './letsTalkUiHtml';
+import {
+  createLetsTalkWriteRoutes,
+  isLetsTalkPath,
+} from './letsTalkRoutes';
+import { resolveLetsTalkAudioAdaptersFromEnv } from './letsTalkAudio';
+import { parseLetsTalkSpeechLanguage, speechLocaleForLanguage } from './letsTalkCore';
+import { createLiveCursorBridgeAgentSession, type CursorBridgeAgentSessionDeps } from './cursorBridgeAgentSession';
+import type { TranscribeAudio, SynthesizeSpeech } from './letsTalkAudio';
+import { sendTelegramMessageWithRateLimitRetry } from '../notify/telegramClient';
+import { sendTelegramPoll } from '../notify/telegramClient';
 
 const DEFAULT_POLL_INTERVAL_MS = 1000;
 const LOCALHOST = '127.0.0.1';
@@ -81,6 +93,104 @@ const EPIC_REORDER_MOVE_MAX_BODY_BYTES = 4 * 1024;
 const EPIC_MAKE_TOP_MAX_BODY_BYTES = 4 * 1024;
 // BL-673: topic make-top body ({epicId, topicId}).
 const EPIC_TOPIC_MAKE_TOP_MAX_BODY_BYTES = 4 * 1024;
+const CURSOR_BRIDGE_STATE_FILE = 'cursor-bridge-state.json';
+
+function readCursorRemoteTopicId(targetPath: string): number | undefined {
+  const statePath = path.join(targetPath, '.swarmforge', 'operator', CURSOR_BRIDGE_STATE_FILE);
+  if (!fs.existsSync(statePath)) {
+    return undefined;
+  }
+  try {
+    const parsed = JSON.parse(fs.readFileSync(statePath, 'utf8')) as { cursorTopicId?: unknown };
+    return typeof parsed.cursorTopicId === 'number' ? parsed.cursorTopicId : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+interface LetsTalkChoicePollSpec {
+  question: string;
+  options: string[];
+}
+
+function extractLetsTalkChoicePoll(replyText: string): LetsTalkChoicePollSpec | null {
+  const lines = replyText
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+  const optionMatches = lines
+    .map((line) => line.match(/^(?:[-*]\s+)?(\d+)[\).:-]\s+(.+)$/))
+    .filter((m): m is RegExpMatchArray => m !== null);
+  if (optionMatches.length < 2 || optionMatches.length > 10) {
+    return null;
+  }
+  const options: string[] = [];
+  for (let i = 0; i < optionMatches.length; i += 1) {
+    const expected = String(i + 1);
+    if (optionMatches[i][1] !== expected) {
+      return null;
+    }
+    options.push(optionMatches[i][2].trim());
+  }
+  const firstOptionLine = optionMatches[0][0];
+  const firstOptionIndex = lines.findIndex((line) => line === firstOptionLine);
+  const question = firstOptionIndex > 0 ? lines.slice(0, firstOptionIndex).join(' ') : 'Choose one option';
+  return { question: question.slice(0, 280), options: options.map((opt) => opt.slice(0, 100)) };
+}
+
+function appendPendingChoicePoll(targetPath: string, pollId: string, spec: LetsTalkChoicePollSpec): void {
+  const statePath = path.join(targetPath, '.swarmforge', 'operator', CURSOR_BRIDGE_STATE_FILE);
+  let raw: Record<string, unknown> = {};
+  if (fs.existsSync(statePath)) {
+    try {
+      const parsed = JSON.parse(fs.readFileSync(statePath, 'utf8')) as Record<string, unknown>;
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        raw = parsed;
+      }
+    } catch {
+      raw = {};
+    }
+  }
+  const existing = Array.isArray(raw.pendingChoicePolls) ? raw.pendingChoicePolls : [];
+  const next = [...existing, { pollId, question: spec.question, options: spec.options, createdAtMs: Date.now() }].slice(-20);
+  raw.pendingChoicePolls = next;
+  fs.writeFileSync(statePath, `${JSON.stringify(raw, null, 2)}\n`, 'utf8');
+}
+
+async function mirrorLetsTalkChoicePollToCursorRemote(targetPath: string, replyText: string): Promise<void> {
+  const botToken = process.env.TELEGRAM_BOT_TOKEN;
+  const chatId = process.env.TELEGRAM_CHAT_ID;
+  if (!botToken || !chatId) {
+    return;
+  }
+  const topicId = readCursorRemoteTopicId(targetPath);
+  if (topicId === undefined) {
+    return;
+  }
+  const spec = extractLetsTalkChoicePoll(replyText);
+  if (!spec) {
+    return;
+  }
+  const sent = await sendTelegramPoll(botToken, chatId, spec.question, spec.options, topicId);
+  if (!sent.success || !sent.pollId) {
+    return;
+  }
+  appendPendingChoicePoll(targetPath, sent.pollId, spec);
+}
+
+async function mirrorLetsTalkReplyToCursorRemote(targetPath: string, replyText: string): Promise<void> {
+  const botToken = process.env.TELEGRAM_BOT_TOKEN;
+  const chatId = process.env.TELEGRAM_CHAT_ID;
+  if (!botToken || !chatId || !replyText.trim()) {
+    return;
+  }
+  const topicId = readCursorRemoteTopicId(targetPath);
+  if (topicId === undefined) {
+    return;
+  }
+  await sendTelegramMessageWithRateLimitRetry(botToken, chatId, replyText, undefined, undefined, topicId);
+  await mirrorLetsTalkChoicePollToCursorRemote(targetPath, replyText);
+}
 
 export interface BridgeHandle {
   port: number;
@@ -109,6 +219,12 @@ export interface StartBridgeOptions {
   // (engineering article, Test Speed And Isolation). Undefined in
   // production - buildStageDwellState defaults to the real clock unchanged.
   nowMs?: number;
+  // BL-696: injectable Let's Talk adapters for headless/BDD tests.
+  letsTalk?: {
+    agentSession?: CursorBridgeAgentSessionDeps;
+    transcribeAudio?: TranscribeAudio;
+    synthesizeSpeech?: SynthesizeSpeech;
+  };
 }
 
 // BL-241: startBridge's auth param generalizes from BL-065's one static
@@ -307,11 +423,29 @@ function respondJson(res: http.ServerResponse, status: number, body: unknown): v
 }
 
 function requireControlAuth(req: http.IncomingMessage, res: http.ServerResponse, registry: DeviceRegistry): boolean {
-  if (!isAuthorizedForControl(req, registry)) {
+  const url = requestPath(req);
+  if (isAuthorizedForControl(req, url, registry)) {
+    return true;
+  }
+  const queryCred = parseQueryCredential(url);
+  const bearer = extractBearerToken(req.headers.authorization) ?? queryCred;
+  const stepUpHeader = req.headers['x-control-token'];
+  const stepUp = typeof stepUpHeader === 'string' ? stepUpHeader : queryCred;
+  const device = findDeviceByToken(registry, bearer);
+  if (!device) {
+    respondJson(res, 401, { success: false, reason: 'unauthorized' });
+    return false;
+  }
+  if (device.scope !== 'control' || device.controlToken === undefined) {
     respondJson(res, 403, { success: false, reason: 'control auth required' });
     return false;
   }
-  return true;
+  if (!stepUp) {
+    respondJson(res, 403, { success: false, reason: 'control auth required' });
+    return false;
+  }
+  respondJson(res, 401, { success: false, reason: 'unauthorized' });
+  return false;
 }
 
 // Reads and shape-validates the request body, responding 400 itself (and
@@ -589,18 +723,24 @@ function computeEpicReorderState(targetPath: string): unknown {
   const epics = readPausedEpics(targetPath);
   const liveItems = readLiveBacklogItems(targetPath);
   const liveIds = new Set(liveItems.map((item) => item.id));
-  const topics = liveItems.filter((item) => item.epic);
+  // BL-686: membership is resolved by slug (epicTopicSlugMatch.ts), never by
+  // comparing a child's `epic:` slug against an epic tile's `id:` - those
+  // are different strings by design (BL-542/BL-545's shared slug proves a
+  // slug isn't even unique). `type: epic` rows are excluded from `topics`
+  // by computeEpicTopics itself.
+  const topics = computeEpicTopics(liveItems, epics);
   return {
     items: epics.map((epic) => ({ id: epic.id, title: epic.title, priority: epic.priority })),
     total: epics.length,
-    // BL-674: every live topic, tagged with its own epic - the drill-down
-    // groups these client-side per epic (presentation-only filtering, no
-    // new decision logic in the webview).
+    // BL-674/BL-686: every live topic, tagged with every epic TICKET ID
+    // (unique, unlike its raw slug) whose own slug matches it - the
+    // drill-down filters client-side on this ticket id (presentation-only,
+    // no new decision logic in the webview).
     topics: topics.map((topic) => ({
       id: topic.id,
       title: topic.title,
       priority: topic.priority,
-      epic: topic.epic,
+      epicIds: topic.epicIds,
       hasLiveDependency: hasLiveDependency(topic, liveIds),
     })),
   };
@@ -918,18 +1058,24 @@ function handleEpicReorderTopicMakeTopRoute(
       return;
     }
     const folders = readBacklogFolders(targetPath);
+    const epics = readPausedEpics(targetPath);
     const liveItems = readLiveBacklogItems(targetPath);
-    const target = liveItems.find((item) => item.id === value.topicId);
-    if (!target || target.epic !== value.epicId) {
+    // BL-686: `epicId` on the wire is the tile's TICKET id; membership is
+    // decided by resolving THAT ticket's own slug and comparing it against
+    // the target's `epic:` slug (epicTopicSlugMatch.ts) - the same rule the
+    // read side uses, so read and write can never disagree about who is in
+    // the epic (invariant 2). A `type: epic` row is never itself a valid
+    // make-top target or peer here (invariant 3).
+    const membership = resolveTopicMembership(liveItems, epics, value.epicId, value.topicId);
+    if (!membership) {
       respondJson(res, 404, { success: false, reason: `topic not found among epic '${value.epicId}'s live topics` });
       return;
     }
-    const peers = liveItems.filter((item) => item.epic === value.epicId && item.id !== value.topicId);
     const result = computeMakeTopPriority(
       liveItems,
       value.topicId,
       buildResolveNonLiveDependency(folders),
-      peers,
+      membership.peers,
       `epic ${value.epicId}'s live topics`
     );
     if (!result) {
@@ -940,6 +1086,14 @@ function handleEpicReorderTopicMakeTopRoute(
       commitTopicMakeTopPriorityWrites(targetPath, relPaths, value.topicId)
     );
   });
+}
+
+function requireLetsTalkControlAuth(req: http.IncomingMessage, res: http.ServerResponse, registry: DeviceRegistry): boolean {
+  if (!isAuthorizedForControl(req, requestPath(req), registry)) {
+    respondJson(res, 401, { success: false, reason: 'unauthorized' });
+    return false;
+  }
+  return true;
 }
 
 interface WriteRoute {
@@ -970,11 +1124,7 @@ function requestPath(req: http.IncomingMessage): string {
 }
 
 function queryToken(url: string): string | undefined {
-  const queryIndex = url.indexOf('?');
-  if (queryIndex === -1) {
-    return undefined;
-  }
-  return new URLSearchParams(url.slice(queryIndex + 1)).get('token') ?? undefined;
+  return parseQueryCredential(url);
 }
 
 // BL-094/BL-241: every route stays header-only EXCEPT the root HTML shell,
@@ -1013,10 +1163,12 @@ function isAuthorizedForRead(authHeader: string | undefined, url: string, regist
 // X-Control-Token header in addition to the normal bearer - a genuinely
 // stronger auth step than read-only viewing needs, never satisfiable by a
 // read-scoped device (it has no control token at all).
-function isAuthorizedForControl(req: http.IncomingMessage, registry: DeviceRegistry): boolean {
-  const bearer = extractBearerToken(req.headers.authorization);
-  const stepUp = req.headers['x-control-token'];
-  return Boolean(findDeviceByControlToken(registry, bearer, typeof stepUp === 'string' ? stepUp : undefined));
+function isAuthorizedForControl(req: http.IncomingMessage, url: string, registry: DeviceRegistry): boolean {
+  const queryCred = parseQueryCredential(url);
+  const bearer = extractBearerToken(req.headers.authorization) ?? queryCred;
+  const stepUpHeader = req.headers['x-control-token'];
+  const stepUp = typeof stepUpHeader === 'string' ? stepUpHeader : queryCred;
+  return Boolean(findDeviceByControlToken(registry, bearer, stepUp));
 }
 
 interface JsonRoute {
@@ -1193,6 +1345,23 @@ export function startBridge(
     let lastSnapshot: string | undefined;
     let registry: DeviceRegistry = normalizeToRegistry(tokenOrRegistry);
 
+    const letsTalkAudio = resolveLetsTalkAudioAdaptersFromEnv(process.env, {
+      transcribeAudio: options.letsTalk?.transcribeAudio,
+      synthesizeSpeech: options.letsTalk?.synthesizeSpeech,
+    });
+    const letsTalkAgentSession = options.letsTalk?.agentSession ?? createLiveCursorBridgeAgentSession(targetPath);
+    // BL-696: POST /lets-talk/turn, POST /lets-talk/new-session (write routes).
+    const letsTalkWriteRoutes = createLetsTalkWriteRoutes(
+      {
+        agentSession: letsTalkAgentSession,
+        ...letsTalkAudio,
+        onTurnSuccess: (turn) => mirrorLetsTalkReplyToCursorRemote(targetPath, turn.replyText),
+      },
+      (req, res, maxBytes, isShape, shapeErrorReason) => readValidatedBody(req, res, maxBytes, isShape, shapeErrorReason),
+      requireLetsTalkControlAuth,
+      respondJson
+    );
+
     const server = http.createServer((req, res) => {
       const url = requestPath(req);
 
@@ -1230,6 +1399,50 @@ export function startBridge(
         serveMiniAppHtml(res, getContextBudgetUiHtml());
         return;
       }
+      if (url === '/lets-talk/manifest.json' || url.startsWith('/lets-talk/manifest.json?')) {
+        // Bake bearer into start_url when present so the home-screen icon
+        // launches signed in (Telegram WebView storage does not carry over
+        // to the installed Chrome PWA).
+        const manifestQuery = url.includes('?') ? url.slice(url.indexOf('?') + 1) : '';
+        const manifestParams = new URLSearchParams(manifestQuery);
+        const manifestBearer = String(manifestParams.get('bearer') || manifestParams.get('token') || '').trim();
+        const startUrl = manifestBearer
+          ? `/lets-talk?bearer=${encodeURIComponent(manifestBearer)}`
+          : '/lets-talk';
+        res.writeHead(200, {
+          'content-type': 'application/manifest+json',
+          'cache-control': 'no-store',
+        });
+        res.end(JSON.stringify({
+          name: "Let's Talk",
+          short_name: "Let's Talk",
+          start_url: startUrl,
+          scope: '/lets-talk',
+          display: 'standalone',
+          orientation: 'portrait',
+          theme_color: '#0d1117',
+          background_color: '#0d1117',
+          icons: [{ src: 'data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 128 128%22><rect width=%22128%22 height=%22128%22 rx=%2224%22 fill=%22%230d1117%22/><circle cx=%2264%22 cy=%2264%22 r=%2232%22 fill=%22%2358a6ff%22/><path d=%22M52 56 a16 16 0 0 1 24 0%22 stroke=%22%230d1117%22 stroke-width=%224%22 fill=%22none%22/><circle cx=%2264%22 cy=%2272%22 r=%226%22 fill=%22%230d1117%22/></svg>', sizes: '128x128', type: 'image/svg+xml' }],
+        }));
+        return;
+      }
+      if (url === '/lets-talk/sw.js' || url.startsWith('/lets-talk/sw.js?')) {
+        res.writeHead(200, { 'content-type': 'application/javascript', 'cache-control': 'no-cache' });
+        res.end(`self.addEventListener('install',e=>{self.skipWaiting()});self.addEventListener('activate',e=>{e.waitUntil(self.clients.claim())});self.addEventListener('fetch',e=>{});`);
+        return;
+      }
+      if (isLetsTalkPath(url)) {
+        const speechSetting = parseLetsTalkSpeechLanguage(process.env.LETS_TALK_SPEECH_LANGUAGE);
+        const speechLocale = speechLocaleForLanguage(speechSetting === 'auto' ? 'en' : speechSetting);
+        serveMiniAppHtml(res, getLetsTalkUiHtml(speechLocale));
+        return;
+      }
+
+      const writeRoute = [...writeRoutes, ...letsTalkWriteRoutes].find((route) => route.matches(req, url));
+      if (writeRoute) {
+        writeRoute.handle(req, res, targetPath, registry);
+        return;
+      }
 
       if (!isAuthorizedForRead(req.headers.authorization, url, registry)) {
         res.writeHead(401, { 'content-type': 'application/json' });
@@ -1248,12 +1461,6 @@ export function startBridge(
         sseClients.add(res);
         req.on('close', () => sseClients.delete(res));
         relayEntriesFrom(readPersistedCursor(targetPath).ackedIndex, [res]);
-        return;
-      }
-
-      const writeRoute = writeRoutes.find((route) => route.matches(req, url));
-      if (writeRoute) {
-        writeRoute.handle(req, res, targetPath, registry);
         return;
       }
 

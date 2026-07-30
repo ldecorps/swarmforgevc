@@ -1,0 +1,18 @@
+%% BL-698 / BL-704 — Cursor Remote inbound flow
+flowchart TD
+  A[Telegram update] --> B{Cursor Remote topic + principal?}
+  B -->|no| Z[ignore / refuse]
+  B -->|yes| C{callback?}
+  C -->|confirm / cancel| D[operator confirm gate]
+  C -->|Stop and run / Run anyway| E[special callback]
+  C -->|text| F{slash verb?}
+  F -->|/pilot| G[swarm-live + holiday gates]
+  F -->|operator verb| H[danger tier]
+  F -->|plain / photo| I[Cursor prompt]
+  H -->|read| J[execute]
+  H -->|soft/hard| K[prompt Confirm]
+  K --> D
+  D --> J
+  G -->|refuse| L[buttons]
+  G -->|ok| M[Cursor /pilot expedition]
+  J --> N[/autopilot land hydrate shift holiday/]

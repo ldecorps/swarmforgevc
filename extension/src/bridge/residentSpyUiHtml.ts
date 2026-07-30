@@ -269,7 +269,7 @@ export function getResidentSpyUiHtml(): string {
 (function () {
   var tg = window.Telegram && window.Telegram.WebApp;
   var params = new URLSearchParams(location.search);
-  var token = params.get('token') || '';
+  var token = params.get('bearer') || params.get('token') || '';
   var splitEl = document.getElementById('pane-split');
   var dotEl = document.getElementById('dot');
   var ticketStripEl = document.getElementById('ticket-strip');
@@ -721,7 +721,7 @@ export function getResidentSpyUiHtml(): string {
   }
 
   function refresh() {
-    fetch('/resident-pane?token=' + encodeURIComponent(token), { cache: 'no-store' })
+    fetch('/resident-pane?bearer=' + encodeURIComponent(token), { cache: 'no-store' })
       .then(function (r) {
         if (!r.ok) throw new Error('HTTP ' + r.status);
         return r.json();

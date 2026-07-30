@@ -1,0 +1,95 @@
+id: BL-710
+title: "One clear way to redeploy Telegram code — add a front-desk target to /redeploy"
+milestone: M8
+type: feature
+severity: medium
+status: todo
+epic: swarmforge-console
+human_approval: approved
+priority: 18
+direction: human-requested
+depends_on: []
+mutation_cost: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+assigned_to: none
+
+invariants:
+  - "Every redeploy form reports which live process it actually restarted; a success reply never names a process the command did not bounce."
+  - "A redeploy form restarts through the launch/stop helpers the swarm already owns — no second unsupervised background launch path is introduced."
+  - "The existing danger tier holds for every new form: soft confirm required, and a wrong-topic or non-principal sender still no-ops."
+
+approval_context: >
+  Human via Cursor 2026-07-30: "it is not clear how to redeploy changes to
+  Telegram". The intake left verb naming to the specifier; this spec proposes
+  `/redeploy frontdesk` for the missing target and `/redeploy all` for the union
+  after a shared `extension/` change, keeping today's `/redeploy` and
+  `/redeploy miniapp` unchanged. Tap to confirm those two names (or type
+  alternatives) before the coder wires them — renaming an operator verb after it
+  ships is worse than picking it now.
+
+description: |
+  ## What
+
+  Make "I changed Telegram-related code — what do I type?" answerable with one
+  command and one how-to. Today three Telegram-adjacent runtimes have three
+  different bounce paths and only two of them have an operator verb.
+
+  | Live process | Owns | Bounced today |
+  |--------------|------|---------------|
+  | Cursor bridge | Cursor Remote slash verbs, Let's Talk text pairing | `/redeploy` |
+  | Mini App headless bridge | `/lets-talk` HTTP | `/redeploy miniapp` |
+  | Front desk (bridge + bot) | approvals, role topics, role_ask delivery, reply-outbox relay | **no verb** — swarm start / `./swarm ensure` / `launch_front_desk.sh` |
+
+  So a fix on the front-desk or reply-outbox relay path can be confirmed,
+  reported successful, and still leave stale code running. `/compile` alone
+  restarts nothing.
+
+  ## Why now
+
+  BL-708 fixes the reply-outbox relay — a front-desk-path change. Without a
+  front-desk redeploy the human ships that fix, taps Confirm, sees success, and
+  still runs the broken build. The two tickets are worth verifying together.
+
+  ## Proposed shape (names need the approval tap)
+
+  - `/redeploy` — cursor bridge (unchanged)
+  - `/redeploy miniapp` — Mini App headless bridge (unchanged)
+  - `/redeploy frontdesk` — compile, then bounce the front-desk supervisor
+    (bridge + bot), reloading `swarm.env` like the other redeploy paths
+  - `/redeploy all` — the union needed after a shared `extension/` change, with
+    a status reply naming exactly what came back
+
+  Same soft-confirm tier as `/redeploy` today. `/help` lists every form. Extend
+  or document `/log redeploy|bridge` so the human can see the compile and which
+  child returned.
+
+  ## Out of scope
+
+  - Redesigning the Cursor-Remote-vs-front-desk architecture
+  - Auto-redeploy on every `extension/` save
+  - Installing the Bubble APK from Telegram
+  - Inventing a parallel console surface instead of extending `/redeploy`
+
+  ## STEERING note
+
+  Operator lifecycle tooling, explicitly human-requested. It does not grow
+  Telegram product UX; it makes shipping and verifying Telegram infrastructure
+  changes operable from the phone.
+
+acceptance: specs/features/BL-710-one-clear-telegram-redeploy-path.feature
+
+source: |
+  Human via Cursor 2026-07-30. Drained from
+  `backlog/INTAKE-telegram-redeploy-clarity.md`.
+
+notes: |
+  e2e QA procedure: make a visible no-op change to a front-desk-only source
+  file, send the front-desk redeploy form from the Cursor Remote topic, Confirm,
+  and verify a NEW front-desk build fingerprint is live (build stamp or process
+  start time) while the cursor bridge is untouched; repeat with the union form
+  and verify the status reply names every process that actually restarted;
+  finally send a redeploy form from a non-principal sender and from the wrong
+  topic and verify both no-op. Related: `docs/how-to/BL-698-telegram-cursor-operator-commands.md`,
+  `docs/how-to/BL-702-operator-confirm-env-reload.md`,
+  `swarmforge/scripts/redeploy_cursor_bridge.sh`,
+  `swarmforge/scripts/launch_front_desk.sh`.

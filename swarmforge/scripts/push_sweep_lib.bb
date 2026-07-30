@@ -25,7 +25,8 @@
 ;; and referred to as push-sweep-lib/foo.
 (ns push-sweep-lib
   (:require [babashka.fs :as fs]
-            [cheshire.core :as json]))
+            [cheshire.core :as json]
+            [clojure.string :as str]))
 
 (defn- read-json [path]
   (when (fs/exists? path)
@@ -57,6 +58,97 @@
       (zero? ahead) :nothing-to-push
       (pos? behind) :diverged
       :else :should-push)))
+
+;; ── BL-630: push-sweep refuses to publish a `main` tip that is not
+;;    QA-approved ────────────────────────────────────────────────────────
+;; BL-590 post-mortem: publish-time (this sweep reaching origin), not
+;; deploy-time (BL-629's sync gate), is what made that incident
+;; irreversible. Mirrors BL-629's own gate shape
+;; (build_freshness_lib.bb/sync-gate-decision) at the publish boundary
+;; instead - "unknown fails closed, a bookkeeping-only allowlist, explicit
+;; offending shas" - kept as its own small copy per this project's
+;; established small-duplication-over-cross-file-coupling convention (see
+;; this file's own header comment), because the two gates check different
+;; refs (swarmforge-QA ancestry of the PUSH tip here vs. drift since the
+;; last QA-landed commit there) and must be free to diverge independently.
+(defn bookkeeping-only-path?
+  [path]
+  (boolean
+   (and path
+        (or (str/starts-with? path "backlog/")
+            (str/starts-with? path "docs/")
+            (str/starts-with? path "swarmforge/")))))
+
+(defn commit-bookkeeping-only?
+  "A commit whose changed-paths are empty or unknown is NOT bookkeeping-
+   only - an empty/unknown change set never earns the allowlist, the same
+   conservative-refusal posture facts-complete? uses below."
+  [changed-paths]
+  (boolean (and (seq changed-paths) (every? bookkeeping-only-path? changed-paths))))
+
+(defn qa-gate-decision
+  "Pure decision: may push-sweep publish this tip? facts:
+     :qa-ref-exists?        bool - whether swarmforge-QA resolves at all
+     :tip-is-qa-ancestor?   bool - `git merge-base --is-ancestor <main-tip>
+                            swarmforge-QA`, the fast path: when true, NO
+                            ahead-commit enumeration is needed at all (a
+                            QA-approved tip publishes with no added
+                            latency - the CLI adapter never even gathers
+                            :ahead-commits for this case).
+     :ahead-commits         seq of {:sha :qa-ancestor? :changed-paths :merge?},
+                            the commits about to be pushed (origin/main..
+                            main), each pre-tagged by the CLI - only
+                            populated/consulted when tip-is-qa-ancestor?
+                            is false. :merge? true means this sha has 2+
+                            parents; its :changed-paths is the CLI's
+                            *combined* diff (`git diff-tree -c`), which is
+                            empty ONLY for a trivial merge (its tree is
+                            fully reconstructible from its parents - every
+                            real content-bearing commit it folds in already
+                            appears as its own entry in this same seq with
+                            its own accurate :qa-ancestor?/:changed-paths,
+                            so re-scrutinizing a trivial merge's own diff
+                            would just re-flag already-checked content
+                            against whichever parent it differs from and
+                            falsely refuse a routine, fully QA-approved
+                            landing). A NON-empty combined diff on a merge
+                            means the merge itself carries content absent
+                            from every parent - typically a hand-resolved
+                            conflict - which was never independently
+                            reviewed and is not covered by any other
+                            entry in this seq, so it is scrutinized exactly
+                            like a non-merge commit's :changed-paths (BL-630
+                            bounce #2, 2026-07-30: the original :merge? ->
+                            always-exempt rule waved this class through
+                            unchecked; see backlog/evidence/BL-630-push-
+                            sweep-refuses-non-qa-approved-main-bounce-
+                            20260730-2.md).
+     :facts-complete?       bool, default true - false when the CLI could
+                            not gather the facts above (a merge-base/rev-
+                            list/diff-tree failure); fails closed exactly
+                            like BL-629's own gather-failed, never
+                            fabricating an approved answer from a gap.
+   Returns {:refuse? :reason (:gather-failed/:missing-ref/:non-qa-ancestor/
+            nil) :offending-shas}."
+  [{:keys [qa-ref-exists? tip-is-qa-ancestor? ahead-commits facts-complete?]
+    :or {facts-complete? true}}]
+  (cond
+    (not facts-complete?)
+    {:refuse? true :reason :gather-failed :offending-shas []}
+
+    (not qa-ref-exists?)
+    {:refuse? true :reason :missing-ref :offending-shas []}
+
+    tip-is-qa-ancestor?
+    {:refuse? false :reason nil :offending-shas []}
+
+    :else
+    (let [trivial-merge? (fn [{:keys [merge? changed-paths]}] (and merge? (empty? changed-paths)))
+          offending (remove #(or (:qa-ancestor? %) (trivial-merge? %)) ahead-commits)
+          non-bookkeeping (remove #(commit-bookkeeping-only? (:changed-paths %)) offending)]
+      (if (seq non-bookkeeping)
+        {:refuse? true :reason :non-qa-ancestor :offending-shas (mapv :sha non-bookkeeping)}
+        {:refuse? false :reason nil :offending-shas []}))))
 
 ;; ── pure: bounded exponential backoff, shared by both state machines below
 ;;    (own small copy, not required from stuck_escalation_email_lib.bb/
@@ -129,6 +221,9 @@
 ;;            :push!                  (fn [] -> {:success bool :error str?})
 ;;            :send-push-alarm!       (fn [attempts] -> {:success bool :reason kw? :error str?})
 ;;            :send-divergence-alarm! (fn [ahead behind] -> {:success bool :reason kw? :error str?})
+;;            :qa-gate-facts!         (fn [] -> qa-gate-decision's own facts map, BL-630) -
+;;                                    called ONLY when push-decision is :should-push, never
+;;                                    on :nothing-to-push/:diverged ticks
 ;;            :log!                   (fn [& parts])}
 ;;
 ;; Fully self-healing across every transition, not only the two terminal
@@ -150,7 +245,13 @@
     (case decision
       :nothing-to-push
       (do
-        ((:log! adapters) "push-sweep" "up-to-date")
+        ;; BL-630 notes: ahead=0 with behind>0 (nothing of local's is
+        ;; unpublished, but origin has moved on) must never read as the
+        ;; same "up-to-date" a genuinely synced tip gets - this sweep only
+        ;; pushes, it never pulls, so a persistently-behind local main
+        ;; would otherwise stay silently invisible indefinitely (exactly
+        ;; the state a prior incident's self-repair left the repo in).
+        ((:log! adapters) "push-sweep" (if (pos? (or (:behind counts) 0)) "behind-only" "up-to-date"))
         (when (seq state) (write-state! daemon-dir {})))
 
       :diverged
@@ -188,25 +289,38 @@
       ;; unconditionally here; every write below persists this cleared
       ;; value along with whatever :push/:alarm updates this tick makes.
       (let [state (if (seq (:divergence state)) (assoc state :divergence {}) state)
-            push-state (or (:push state) {})
-            push-due? (due? {:attempts (:attempts push-state)
-                             :last-attempt-at-ms (:last-attempt-at-ms push-state)
-                             :now-ms now-ms :retry-config retry-config})
-            push-state' (if-not push-due?
-                          (do ((:log! adapters) "push-sweep" "push-backoff-wait") push-state)
-                          (let [result ((:push! adapters))]
-                            (if (:success result)
-                              (do ((:log! adapters) "push-sweep" "pushed") nil)
-                              (let [next-push (next-push-state :transient-failure push-state retry-config now-ms)]
-                                ((:log! adapters) "push-sweep" "push-failed" (str "attempts=" (:attempts next-push)))
-                                next-push))))]
-        (if (nil? push-state')
-          (write-state! daemon-dir {})
-          (let [alarm-state (or (:alarm state) {})]
-            (if (and (:exhausted? push-state') (alarm-due? alarm-state now-ms retry-config))
-              (let [alarm-result ((:send-push-alarm! adapters) (:attempts push-state'))
-                    alarm-outcome (classify-send-result alarm-result)
-                    next-alarm (next-alarm-state alarm-outcome alarm-state retry-config now-ms)]
-                ((:log! adapters) "push-sweep" "push-alarm" (name alarm-outcome))
-                (write-state! daemon-dir (assoc state :push push-state' :alarm next-alarm)))
-              (write-state! daemon-dir (assoc state :push push-state')))))))))
+            ;; BL-630: the QA-ancestry gate runs BEFORE the push-attempt
+            ;; backoff/alarm machinery below ever sees this tick - a
+            ;; refusal here is its own outcome, never absorbed into
+            ;; push-failed's transient-retry counting nor into the
+            ;; divergence alarm (this branch is ahead>0/behind=0, so
+            ;; divergence was never in play regardless).
+            qa-gate (qa-gate-decision ((:qa-gate-facts! adapters)))]
+        (if (:refuse? qa-gate)
+          (do
+            ((:log! adapters) "push-sweep" "qa-refused"
+             (name (:reason qa-gate))
+             (str/join "," (:offending-shas qa-gate)))
+            (write-state! daemon-dir state))
+          (let [push-state (or (:push state) {})
+                push-due? (due? {:attempts (:attempts push-state)
+                                 :last-attempt-at-ms (:last-attempt-at-ms push-state)
+                                 :now-ms now-ms :retry-config retry-config})
+                push-state' (if-not push-due?
+                              (do ((:log! adapters) "push-sweep" "push-backoff-wait") push-state)
+                              (let [result ((:push! adapters))]
+                                (if (:success result)
+                                  (do ((:log! adapters) "push-sweep" "pushed") nil)
+                                  (let [next-push (next-push-state :transient-failure push-state retry-config now-ms)]
+                                    ((:log! adapters) "push-sweep" "push-failed" (str "attempts=" (:attempts next-push)))
+                                    next-push))))]
+            (if (nil? push-state')
+              (write-state! daemon-dir {})
+              (let [alarm-state (or (:alarm state) {})]
+                (if (and (:exhausted? push-state') (alarm-due? alarm-state now-ms retry-config))
+                  (let [alarm-result ((:send-push-alarm! adapters) (:attempts push-state'))
+                        alarm-outcome (classify-send-result alarm-result)
+                        next-alarm (next-alarm-state alarm-outcome alarm-state retry-config now-ms)]
+                    ((:log! adapters) "push-sweep" "push-alarm" (name alarm-outcome))
+                    (write-state! daemon-dir (assoc state :push push-state' :alarm next-alarm)))
+                  (write-state! daemon-dir (assoc state :push push-state')))))))))))

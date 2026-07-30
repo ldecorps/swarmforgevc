@@ -1,0 +1,114 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="20dp">
+
+        <TextView
+            android:id="@+id/connectionHeader"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/settings_connection"
+            android:textColor="@color/sf_muted"
+            android:textSize="12sp"
+            android:textAllCaps="true"
+            android:visibility="gone" />
+
+        <com.google.android.material.textfield.TextInputLayout
+            android:id="@+id/bridgeUrlLayout"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:hint="@string/bridge_url_hint"
+            android:visibility="gone">
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/bridgeUrl"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:inputType="textUri"
+                android:importantForAutofill="no"
+                android:textColor="@color/sf_text"
+                android:textSize="14sp" />
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <com.google.android.material.textfield.TextInputLayout
+            android:id="@+id/tokenLayout"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:hint="@string/token_hint"
+            android:visibility="gone">
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/token"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:inputType="textPassword"
+                android:importantForAutofill="no"
+                android:textColor="@color/sf_text"
+                android:textSize="14sp" />
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="@string/settings_talk"
+            android:textColor="@color/sf_muted"
+            android:textSize="12sp"
+            android:textAllCaps="true" />
+
+        <com.google.android.material.checkbox.MaterialCheckBox
+            android:id="@+id/holdMusic"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/hold_music"
+            android:textColor="@color/sf_text"
+            android:textSize="15sp" />
+
+        <com.google.android.material.checkbox.MaterialCheckBox
+            android:id="@+id/mute"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/mute"
+            android:textColor="@color/sf_text"
+            android:textSize="15sp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="@string/volume"
+            android:textColor="@color/sf_text"
+            android:textSize="14sp" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <SeekBar
+                android:id="@+id/volumeSeek"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:max="100"
+                android:progress="55" />
+
+            <TextView
+                android:id="@+id/volumeValue"
+                android:layout_width="40dp"
+                android:layout_height="wrap_content"
+                android:gravity="end"
+                android:text="55"
+                android:textColor="@color/sf_muted"
+                android:textSize="14sp" />
+        </LinearLayout>
+    </LinearLayout>
+</ScrollView>

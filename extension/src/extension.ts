@@ -1258,7 +1258,7 @@ export function activate(context: vscode.ExtensionContext): void {
           console.log(`[Launch] Target: ${targetPath}`);
 
           // Prepare launch environment with API keys
-          const launchEnv = buildLaunchEnv(runName, resolveSwarmConfigPath());
+          const launchEnv = buildLaunchEnv(runName, resolveSwarmConfigPath(), targetPath);
           console.log(`[Launch] Environment prepared with run name and config`);
 
           const enrichedEnv = await import('./notify/secrets').then(async (m) => {

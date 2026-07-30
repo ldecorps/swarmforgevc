@@ -1,0 +1,28 @@
+%% BL-698 / BL-704 — operator command surface map
+flowchart LR
+  subgraph read [Read]
+    status["/status /doctor /tunnel"]
+    dry["/autopilot dry /land dry"]
+    shiftStatus["/shift status /holiday list"]
+  end
+  subgraph soft [Soft confirm]
+    softV["/compile /pull /syncenv /redeploy"]
+    policy["/shift start /holiday add /oncall"]
+  end
+  subgraph hard [Hard confirm]
+    life["/restart /bounce /ensure /stop"]
+    batch["/hydrate /mint /autopilot /land"]
+  end
+  subgraph pilot [Cursor expedition]
+    p["/pilot"]
+    ap["autopilot queue"]
+    land["land in-flight"]
+  end
+  dry --> ap
+  dry --> land
+  batch --> ap
+  batch --> land
+  batch --> hydrate["specifier-only wake"]
+  p --> pilot
+  ap --> p
+  land --> p

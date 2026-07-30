@@ -1,5 +1,5 @@
 const assert = require('node:assert/strict');
-const { isAuthorizedRequest, isAuthorizedByQueryToken, extractBearerToken } = require('../out/bridge/bridgeAuth');
+const { isAuthorizedRequest, isAuthorizedByQueryToken, extractBearerToken, parseQueryCredential, formatQueryCredential } = require('../out/bridge/bridgeAuth');
 
 const TOKEN = 'abc123def456';
 
@@ -62,4 +62,15 @@ test('isAuthorizedByQueryToken rejects a mismatched token', () => {
 
 test('isAuthorizedByQueryToken rejects an empty string token', () => {
   assert.equal(isAuthorizedByQueryToken('', TOKEN), false);
+});
+
+test('parseQueryCredential prefers bearer over token', () => {
+  assert.equal(parseQueryCredential('/console?token=legacy&bearer=preferred'), 'preferred');
+  assert.equal(parseQueryCredential('/console?token=only'), 'only');
+  assert.equal(parseQueryCredential('/console?bearer=only'), 'only');
+  assert.equal(parseQueryCredential('/console'), undefined);
+});
+
+test('formatQueryCredential emits a bearer query param', () => {
+  assert.equal(formatQueryCredential(TOKEN), `?bearer=${encodeURIComponent(TOKEN)}`);
 });

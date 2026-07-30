@@ -239,6 +239,28 @@ test('BL-352: buildLaunchEnv always sets SWARMFORGE_SKIP_SHELL_RUN_RECORD - a VS
   assert.equal(env['SWARMFORGE_SKIP_SHELL_RUN_RECORD'], '1');
 });
 
+test('BL-702: buildLaunchEnv merges swarm.env keys over host process.env', () => {
+  const root = mkTmpDir('bl702-launch-env-');
+  fs.mkdirSync(path.join(root, '.swarmforge'), { recursive: true });
+  fs.writeFileSync(
+    path.join(root, '.swarmforge', 'swarm.env'),
+    'export BL702_SWARM_ENV_PROBE="from-swarm-env"\n',
+    'utf8'
+  );
+  const previous = process.env.BL702_SWARM_ENV_PROBE;
+  delete process.env.BL702_SWARM_ENV_PROBE;
+  try {
+    const env = buildLaunchEnv(undefined, undefined, root);
+    assert.equal(env['BL702_SWARM_ENV_PROBE'], 'from-swarm-env');
+  } finally {
+    if (previous === undefined) {
+      delete process.env.BL702_SWARM_ENV_PROBE;
+    } else {
+      process.env.BL702_SWARM_ENV_PROBE = previous;
+    }
+  }
+});
+
 // --- PATH augmentation: GUI-launched VS Code lacks Homebrew paths where
 //     tmux/bb/claude live, so the swarm launch fails. buildLaunchEnv must
 //     ensure those dirs are on PATH. ---

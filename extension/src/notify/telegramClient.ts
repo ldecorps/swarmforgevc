@@ -508,6 +508,9 @@ export interface TelegramMessage {
   // with `text` above) - file_id is what getFile below resolves to a
   // downloadable path.
   voice?: { file_id: string; duration: number; mime_type?: string };
+  // BL-696: photo albums — largest size is typically last; caption carries optional prompt text.
+  photo?: Array<{ file_id: string; width: number; height: number }>;
+  caption?: string;
 }
 
 // BL-410: the update shape a tapped inline-keyboard button generates -
@@ -520,7 +523,7 @@ export interface TelegramCallbackQuery {
   id: string;
   data?: string;
   from?: { id: number | string };
-  message?: { chat?: TelegramChat; message_thread_id?: number };
+  message?: { chat?: TelegramChat; message_thread_id?: number; message_id?: number };
 }
 
 // BL-466: the update shape a vote on a non-anonymous poll generates -
@@ -562,7 +565,14 @@ export async function getTelegramUpdates(
   timeoutSeconds: number,
   postFn: TelegramPostFn = defaultPost
 ): Promise<GetUpdatesResult> {
-  const body = JSON.stringify({ offset, timeout: timeoutSeconds });
+  // Always pin allowed_updates. Telegram remembers the last non-empty
+  // filter across deleteWebhook / getUpdates calls ("If not specified, the
+  // previous setting will be used"), so a one-shot setWebhook/getUpdates
+  // that asked only for `message` permanently starved Approve taps
+  // (`callback_query`) until something reset it — live 2026-07-28.
+  // Empty list = all default types (includes callback_query; excludes
+  // chat_member / message_reaction* per Bot API).
+  const body = JSON.stringify({ offset, timeout: timeoutSeconds, allowed_updates: [] });
   const result = await callTelegramApi(token, 'getUpdates', body, postFn);
   if (!result.success) {
     return { success: false, updates: [], error: result.error };

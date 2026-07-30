@@ -19,12 +19,22 @@ function mkDaemonDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-bl356-acceptance-'));
 }
 
-function runSweep(daemonDir, nowMs, { revCounts, pushResult, alarmResult, divergenceResult }) {
+// BL-630: every scenario below predates the QA gate and expects an
+// unconditional publish once :should-push is reached - default to the
+// fast "already QA-approved" tip-ancestor path so none of them have to
+// know the gate exists. Scenarios that DO reach :should-push with
+// ahead>0 (01/02/03) get this by default; 04 (:diverged) and 05
+// (:nothing-to-push) never call :qa-gate-facts! at all, so this default
+// is harmless dead weight for them.
+const APPROVED_QA_GATE_FACTS = { 'qa-ref-exists?': true, 'tip-is-qa-ancestor?': true };
+
+function runSweep(daemonDir, nowMs, { revCounts, pushResult, alarmResult, divergenceResult, qaGateFacts }) {
   const env = { PATH: process.env.PATH, HOME: process.env.HOME };
   if (revCounts) env.PUSH_SWEEP_REV_COUNTS = JSON.stringify(revCounts);
   if (pushResult) env.PUSH_SWEEP_PUSH_RESULT = JSON.stringify(pushResult);
   if (alarmResult) env.PUSH_SWEEP_ALARM_RESULT = JSON.stringify(alarmResult);
   if (divergenceResult) env.PUSH_SWEEP_DIVERGENCE_RESULT = JSON.stringify(divergenceResult);
+  env.PUSH_SWEEP_QA_GATE_FACTS = JSON.stringify(qaGateFacts || APPROVED_QA_GATE_FACTS);
   const out = execFileSync('bb', [CLI, daemonDir, String(nowMs)], { encoding: 'utf8', env });
   return JSON.parse(out);
 }
@@ -48,6 +58,7 @@ function registerSteps(registry) {
       pushResult: ctx.pushResult,
       alarmResult: ctx.alarmResult,
       divergenceResult: ctx.divergenceResult,
+      qaGateFacts: ctx.qaGateFacts,
     });
   });
 
@@ -151,4 +162,4 @@ function registerSteps(registry) {
   });
 }
 
-module.exports = { registerSteps };
+module.exports = { registerSteps, runSweep, mkDaemonDir };

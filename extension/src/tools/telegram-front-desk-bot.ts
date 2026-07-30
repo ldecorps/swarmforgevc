@@ -132,6 +132,7 @@ import {
   closeApprovalAskForBacklogId,
   roleFromAskThreadId,
 } from './telegramFrontDeskBotCore';
+import { cursorBridgeTopicIdFromMap, frontDeskTopicMapWithoutCursorBridge } from './telegramCursorBridgeCore';
 import { backlogForTopic } from '../concierge/topicRouter';
 import { recordApprovalReply, recordRejectionReply, recordAmendReply, readRecordedVerdict, readApprovalCloseVerdict } from '../concierge/pendingApprovalReply';
 import { reconcileDecidedApprovalAskCloses } from '../concierge/decidedApprovalAskCloseReconcile';
@@ -239,6 +240,46 @@ export function readTopicMap(targetPath: string): Record<string, string> {
 export function writeTopicMap(targetPath: string, topicMap: Record<string, string>): void {
   fs.mkdirSync(path.dirname(topicMapPath(targetPath)), { recursive: true });
   fs.writeFileSync(topicMapPath(targetPath), JSON.stringify(topicMap));
+}
+
+function cursorBridgeTopicMapPath(targetPath: string): string {
+  return path.join(targetPath, '.swarmforge', 'operator', 'cursor-bridge-topic-map.json');
+}
+
+function cursorBridgeStatePath(targetPath: string): string {
+  return path.join(targetPath, '.swarmforge', 'operator', 'cursor-bridge-state.json');
+}
+
+// Cursor Remote forum topic id — read from the bridge's own map, falling
+// back to persisted poll state when the map is not written yet.
+export function readCursorBridgeTopicId(targetPath: string): number | undefined {
+  try {
+    const map = JSON.parse(fs.readFileSync(cursorBridgeTopicMapPath(targetPath), 'utf8')) as Record<string, string>;
+    const fromMap = cursorBridgeTopicIdFromMap(map);
+    if (fromMap !== undefined) {
+      return fromMap;
+    }
+  } catch {
+    // fall through to state file
+  }
+  try {
+    const state = JSON.parse(fs.readFileSync(cursorBridgeStatePath(targetPath), 'utf8')) as { cursorTopicId?: number };
+    return typeof state.cursorTopicId === 'number' ? state.cursorTopicId : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+// Front-desk routing map with any stale SUP binding on the cursor topic
+// stripped (and persisted when a collision is found).
+function readFrontDeskTopicMap(targetPath: string): Record<string, string> {
+  const raw = readTopicMap(targetPath);
+  const cursorTopicId = readCursorBridgeTopicId(targetPath);
+  const scrubbed = frontDeskTopicMapWithoutCursorBridge(raw, cursorTopicId);
+  if (Object.keys(scrubbed).length !== Object.keys(raw).length) {
+    writeTopicMap(targetPath, scrubbed);
+  }
+  return scrubbed;
 }
 
 // BL-410: {backlogId: 'reject' | 'amend'} - which ticket(s) are awaiting a
@@ -1373,6 +1414,10 @@ export async function enqueueRoleAnswerNote(targetPath: string, role: string, te
 // without ever calling openSubject (and therefore never externally
 // minting a second SUP-###) or re-notifying the Operator a second time.
 export async function openSubjectAndRecord(targetPath: string, topicId: number | undefined, text: string, updateId: number): Promise<string> {
+  const cursorTopicId = readCursorBridgeTopicId(targetPath);
+  if (cursorTopicId !== undefined && topicId === cursorTopicId) {
+    throw new Error('openSubjectAndRecord: Cursor Remote topic is owned by telegram-cursor-bridge, not the front desk');
+  }
   const already = readTopicMap(targetPath)[updateOpenKey(updateId)];
   if (already !== undefined) {
     return already;
@@ -1800,26 +1845,8 @@ export async function resumeNow(
   await postControlMessage(botToken, chatId, controlTopicId, 'Resumed - new work will be promoted again.', undefined, postFn);
 }
 
-// BL-655: the AMBULANCE marker - this bot is one of its two writers
-// (ambulance_cli.bb, human-only, is the other; nothing in the swarm ever
-// engages one for itself). Mirrors ambulance_lib.bb's EXACT shape
-// ({active, ticket, engagedAtMs, by}) and idempotency contract (a repeated
-// engage of the same ticket, or a release with no mode set, rewrites
-// nothing) so either surface honors the same "engage/release are
-// idempotent" invariant regardless of which one a human happens to use.
-export function controlAmbulanceStatePath(targetPath: string): string {
-  return path.join(targetPath, '.swarmforge', 'operator', 'control-ambulance.json');
-}
-
-type RawAmbulanceMarker = { active: true; ticket?: string; engagedAtMs?: number; by?: string } | { active: false } | undefined;
-
-function readRawAmbulanceMarker(targetPath: string): RawAmbulanceMarker {
-  try {
-    return JSON.parse(fs.readFileSync(controlAmbulanceStatePath(targetPath), 'utf8')) as RawAmbulanceMarker;
-  } catch {
-    return undefined;
-  }
-}
+// BL-655 / BL-698: ambulance marker path — shared with Cursor Remote.
+export { controlAmbulanceStatePath } from './telegramOperatorAmbulance';
 
 export async function engageAmbulance(
   targetPath: string,
@@ -1830,36 +1857,9 @@ export async function engageAmbulance(
   postFn?: TelegramPostFn,
   nowMs: number = Date.now()
 ): Promise<void> {
-  // Mirrors ambulance_cli.bb's engage-cmd! refusal: a ticket with no YAML
-  // file anywhere under backlog/ would hold EVERYTHING forever (the read
-  // side degrades the marker to inactive, but a human who was just told
-  // "engaged" has no way to know that from here) - the deadlock the
-  // operator ruled out. lookupBacklogItemById already scans active, paused,
-  // hold, and done (with milestone subdirs), the same "anywhere" scope as
-  // ambulance_lib.bb's ticket-has-file?.
-  if (!lookupBacklogItemById(targetPath, ticket)) {
-    await postControlMessage(
-      botToken,
-      chatId,
-      controlTopicId,
-      `Ambulance refused for ${ticket} - no YAML file for it anywhere under backlog/ (would hold everything forever).`,
-      undefined,
-      postFn
-    );
-    return;
-  }
-  const raw = readRawAmbulanceMarker(targetPath);
-  if (!(raw?.active && raw.ticket === ticket)) {
-    atomicWrite(controlAmbulanceStatePath(targetPath), JSON.stringify({ active: true, ticket, engagedAtMs: nowMs, by: 'telegram' }));
-  }
-  await postControlMessage(
-    botToken,
-    chatId,
-    controlTopicId,
-    `Ambulance engaged for ${ticket} - only its parcels move now; everything else queues in place, untouched.`,
-    undefined,
-    postFn
-  );
+  const { engageOperatorAmbulance } = await import('./telegramOperatorAmbulance');
+  const result = engageOperatorAmbulance(targetPath, ticket, nowMs);
+  await postControlMessage(botToken, chatId, controlTopicId, result.text, undefined, postFn);
 }
 
 export async function releaseAmbulance(
@@ -1869,11 +1869,9 @@ export async function releaseAmbulance(
   controlTopicId: number | undefined,
   postFn?: TelegramPostFn
 ): Promise<void> {
-  const raw = readRawAmbulanceMarker(targetPath);
-  if (raw?.active) {
-    atomicWrite(controlAmbulanceStatePath(targetPath), JSON.stringify({ active: false }));
-  }
-  await postControlMessage(botToken, chatId, controlTopicId, 'Ambulance released - every held parcel resumes moving.', undefined, postFn);
+  const { releaseOperatorAmbulance } = await import('./telegramOperatorAmbulance');
+  const result = releaseOperatorAmbulance(targetPath);
+  await postControlMessage(botToken, chatId, controlTopicId, result.text, undefined, postFn);
 }
 
 function scopeTextFor(item: { description?: string; notes?: string } | undefined): string {
@@ -1977,7 +1975,8 @@ function buildPollAdapters(
     chatId,
     getUpdates: (offset) => getTelegramUpdates(botToken, offset, POLL_TIMEOUT_SECONDS),
     postToBridge: (subjectId, text, updateId) => postToBridge(bridgeUrl, controlToken, subjectId, text, updateId),
-    subjectForTopic: (topicId) => subjectForTopic(readTopicMap(targetPath), topicId),
+    subjectForTopic: (topicId) => subjectForTopic(readFrontDeskTopicMap(targetPath), topicId),
+    cursorBridgeTopicId: () => Promise.resolve(readCursorBridgeTopicId(targetPath)),
     openSubjectAndRecord: (topicId, text, updateId) => openSubjectAndRecord(targetPath, topicId, text, updateId),
     backlogForTopic: (topicId) => backlogForTopic(readBacklogTopicMap(targetPath), topicId),
     postOperatorContext: (backlogId, text, updateId) => postOperatorContext(targetPath, backlogId, text, updateId),
@@ -2119,6 +2118,21 @@ function buildPollAdapters(
     releaseAmbulance: async () => {
       const controlTopicId = await ensureControlTopic(targetPath, botToken, chatId);
       await releaseAmbulance(targetPath, botToken, chatId, controlTopicId);
+    },
+    executeSharedOperator: async (verb, args) => {
+      const { executeOperatorVerb } = await import('./telegramCursorOperatorExec');
+      const controlTopicId = await ensureControlTopic(targetPath, botToken, chatId);
+      const result = executeOperatorVerb(targetPath, verb, args);
+      await postControlMessage(botToken, chatId, controlTopicId, result.text);
+      if (result.awaitPipelineDrain) {
+        const { awaitPipelineEmpty } = await import('./telegramCursorOperatorLiveness');
+        const { outcome } = await awaitPipelineEmpty(targetPath);
+        const text =
+          outcome === 'drained'
+            ? 'drain-swarm: pipeline empty.'
+            : 'drain-swarm: drain window elapsed with work still in flight (no kill).';
+        await postControlMessage(botToken, chatId, controlTopicId, text);
+      }
     },
     // ── BL-590: Onboarder topic ────────────────────────────
     onboardingTopicId: () => ensureOnboardingTopic(targetPath, botToken, chatId),
@@ -2278,7 +2292,7 @@ async function connectAndRelayReplies(
       // and additionally decides whether General needs its own copy or
       // pointer (resolveReplyTopicId's own bare-topic-id resolution is
       // unchanged and still exported for any other caller).
-      resolveDelivery: (subjectId) => resolveReplyDelivery(readTopicMap(targetPath), readBacklogTopicMap(targetPath), subjectId),
+      resolveDelivery: (subjectId) => resolveReplyDelivery(readFrontDeskTopicMap(targetPath), readBacklogTopicMap(targetPath), subjectId),
       ackReply: (id) => ackReply(bridgeUrl, controlToken, id),
       // BL-466: sendPoll/recordPollMapping/agentQuestionsTopicId - the
       // outbound half of the agent-question round trip (deliverAgentQuestion,

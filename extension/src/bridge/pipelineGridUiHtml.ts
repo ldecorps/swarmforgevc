@@ -99,8 +99,8 @@ export function getPipelineGridUiHtml(): string {
   var tg = window.Telegram && window.Telegram.WebApp;
   if (tg) { tg.ready(); tg.expand(); }
   var params = new URLSearchParams(location.search);
-  var token = params.get('token') || '';
-  var q = token ? ('?token=' + encodeURIComponent(token)) : '';
+  var token = params.get('bearer') || params.get('token') || '';
+  var q = token ? ('?bearer=' + encodeURIComponent(token)) : '';
   document.getElementById('menu').href = '/console' + q;
   var boardEl = document.getElementById('board');
   var ageEl = document.getElementById('age');
@@ -152,7 +152,7 @@ export function getPipelineGridUiHtml(): string {
   }
 
   function refresh() {
-    fetch('/pipeline-board?token=' + encodeURIComponent(token), { cache: 'no-store' })
+    fetch('/pipeline-board?bearer=' + encodeURIComponent(token), { cache: 'no-store' })
       .then(function (r) {
         if (!r.ok) throw new Error('HTTP ' + r.status);
         return r.json();

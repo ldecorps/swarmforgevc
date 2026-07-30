@@ -10,6 +10,11 @@ direction: swarm-surfaced
 depends_on: []
 assigned_to: specifier
 mutation_cost: low
+human_approval: pending
+approval_context: >
+  Hydrate-batch-2: materializing the description's "run all ten fixtures,
+  suite green" acceptance prose into APS Gherkin. No human sign-off yet on
+  this specific ticket; flagged pending per hydrate-batch convention.
 
 source: |
   .swarmforge/operator/INTAKE-test-operator-runtime-fixtures-miss-llm-cost-ledger-lib.md
@@ -45,3 +50,5 @@ description: |
   passes end-to-end — the acceptance is the suite green, not the cp lines
   present. If any of the nine turns out to fail for an unrelated
   pre-existing reason, surface it in the parcel rather than widening scope.
+
+acceptance: specs/features/BL-671-operator-runtime-fixtures-miss-cost-ledger-lib.feature

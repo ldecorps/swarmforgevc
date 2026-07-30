@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/removeZoneRoot"
+    android:layout_width="match_parent"
+    android:layout_height="160dp"
+    android:clickable="false"
+    android:focusable="false">
+
+    <FrameLayout
+        android:id="@+id/removeTarget"
+        android:layout_width="72dp"
+        android:layout_height="72dp"
+        android:layout_gravity="center_horizontal|bottom"
+        android:layout_marginBottom="28dp"
+        android:background="@drawable/bg_remove_zone">
+
+        <ImageView
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:layout_gravity="center"
+            android:contentDescription="@string/remove_zone"
+            android:src="@drawable/ic_close_x" />
+    </FrameLayout>
+</FrameLayout>

@@ -92,6 +92,28 @@ export function promoteToActive(targetPath: string, itemId: string): BacklogMove
   return moveBacklogFileTo(filePath, destDir);
 }
 
+/** BL-698: park a live ticket into backlog/hold/ (active preferred, else paused). */
+export function parkToHold(targetPath: string, itemId: string): BacklogMoveResult {
+  const filePath =
+    findBacklogFilePathIn(targetPath, 'active', itemId) ??
+    findBacklogFilePathIn(targetPath, 'paused', itemId);
+  if (!filePath) {
+    return { moved: false };
+  }
+  const destDir = path.join(targetPath, 'backlog', 'hold');
+  return moveBacklogFileTo(filePath, destDir);
+}
+
+/** BL-698: reinstate from backlog/hold/ back to paused. */
+export function reinstateFromHold(targetPath: string, itemId: string): BacklogMoveResult {
+  const filePath = findBacklogFilePathIn(targetPath, 'hold', itemId);
+  if (!filePath) {
+    return { moved: false };
+  }
+  const destDir = path.join(targetPath, 'backlog', 'paused');
+  return moveBacklogFileTo(filePath, destDir);
+}
+
 // BL-490-VIOLATION: locates a ticket's CURRENT file regardless of which live
 // folder it sits in - active checked first (the common case, and where a
 // just-promoted ticket now lives), paused second, hold third (BL-672: a

@@ -47,6 +47,11 @@ git -C "$ROOT" remote add origin "$REMOTE"
 git -C "$ROOT" push -q origin main
 # One unpublished commit - this is what push-sweep! must reach origin.
 echo "second" > "$ROOT/seed.txt" && git -C "$ROOT" add seed.txt && git -C "$ROOT" commit -q -m "unpushed commit"
+# BL-630: push-sweep now refuses to publish a tip that is not a
+# swarmforge-QA ancestor - this fixture's unpushed commit represents
+# QA-approved work reaching origin, so swarmforge-QA points at the same
+# tip (a commit is trivially its own ancestor).
+git -C "$ROOT" branch swarmforge-QA main
 
 SOCK="$ROOT/fake.sock"
 touch "$SOCK"
@@ -105,9 +110,123 @@ grep -q "push-sweep-error" "$LOG_FILE" && fail "the push sweep threw an exceptio
 pass "the push sweep ran without throwing"
 
 # ── an already-published main stays quiet on a later cycle ────────────────
-sleep 6
-UP_TO_DATE_COUNT="$(grep -c "push-sweep up-to-date" "$LOG_FILE" || true)"
-[[ "$UP_TO_DATE_COUNT" -ge 1 ]] || fail "expected a later sweep to report up-to-date once published, got: $(cat "$LOG_FILE")"
+# push-sweep! only runs every chase-sweep-every-cycles (10) poll cycles
+# (~10s at poll-ms=1000) - a blind `sleep 6` here can land before the next
+# tick ever fires (confirmed: this raced on a plain, unmodified main
+# checkout too - a pre-existing flake, not introduced by BL-630). Poll for
+# the log line instead of guessing a fixed sleep.
+wait_for_log "push-sweep up-to-date" 15 \
+  || fail "expected a later sweep to report up-to-date once published, got: $(cat "$LOG_FILE")"
 pass "a later sweep sees the published state and pushes nothing further"
+
+# ── BL-630: a commit that is not a swarmforge-QA ancestor is never
+#    published, proven against the REAL git adapter (push-sweep-qa-gate-
+#    facts! in handoffd.bb), not just the forced-result CLI/lib tests ──────
+echo "third" > "$ROOT/seed.txt" && git -C "$ROOT" add seed.txt && git -C "$ROOT" commit -q -m "un-QA'd commit"
+NON_QA_SHA="$(git -C "$ROOT" rev-parse HEAD)"
+
+wait_for_log "qa-refused" 15 \
+  || fail "the push sweep never refused the non-QA-ancestor commit within 15s; log: $(cat "$LOG_FILE" 2>/dev/null)"
+grep -q "qa-refused non-qa-ancestor $NON_QA_SHA" "$LOG_FILE" \
+  || fail "expected the refusal to name $NON_QA_SHA, got: $(cat "$LOG_FILE")"
+pass "push-sweep! refuses a real commit that is not a swarmforge-QA ancestor, naming its sha"
+
+REMOTE_HEAD_AFTER="$(git -C "$REMOTE" rev-parse main)"
+[[ "$REMOTE_HEAD_AFTER" != "$NON_QA_SHA" ]] \
+  || fail "the non-QA-ancestor commit must never reach origin, but origin/main is now $REMOTE_HEAD_AFTER"
+[[ "$REMOTE_HEAD_AFTER" == "$LOCAL_HEAD" ]] \
+  || fail "expected origin/main to stay at the earlier QA-approved tip $LOCAL_HEAD, got $REMOTE_HEAD_AFTER"
+pass "origin/main stays at the last QA-approved tip, never advancing to the refused commit"
+
+wait_for_remote_head() {
+  local expected_sha="$1" timeout_s="$2" waited=0
+  while (( waited < timeout_s * 4 )); do
+    [[ "$(git -C "$REMOTE" rev-parse main 2>/dev/null)" == "$expected_sha" ]] && return 0
+    sleep 0.25
+    waited=$((waited + 1))
+  done
+  return 1
+}
+
+# ── BL-630 architect bounce (2026-07-30): a genuine QA-approved landing via
+#    a REAL `git merge --no-ff` (the routine shape whenever local main has
+#    diverged since swarmforge-QA was cut - see backlog/evidence/BL-630-
+#    push-sweep-refuses-non-qa-approved-main-bounce-20260730.md) must still
+#    publish. Reset past the still-jammed non-QA commit above - it is a
+#    throwaway probe commit this fixture never intended to land, not
+#    something under test here - then build the shape the bounce reproduced:
+#    a bookkeeping-only commit lands directly on main (the divergence
+#    trigger), a real feature commit lands only on the QA-approved branch,
+#    and QA merges that branch into main with --no-ff.
+git -C "$ROOT" reset --hard -q "$LOCAL_HEAD"
+
+git -C "$ROOT" checkout -q -b feature-merge-test "$LOCAL_HEAD"
+mkdir -p "$ROOT/extension/src"
+echo "feature" > "$ROOT/extension/src/merge_test.ts"
+git -C "$ROOT" add extension/src/merge_test.ts
+git -C "$ROOT" commit -q -m "real feature work, QA-approved"
+FEATURE_SHA="$(git -C "$ROOT" rev-parse HEAD)"
+git -C "$ROOT" branch -f swarmforge-QA feature-merge-test
+
+git -C "$ROOT" checkout -q main
+mkdir -p "$ROOT/backlog/done"
+echo "bookkeeping" > "$ROOT/backlog/done/BL-merge-test.yaml"
+git -C "$ROOT" add backlog/done/BL-merge-test.yaml
+git -C "$ROOT" commit -q -m "coordinator bookkeeping lands directly on main"
+
+git -C "$ROOT" merge --no-ff -q feature-merge-test -m "QA merge feature-merge-test into main"
+MERGE_SHA="$(git -C "$ROOT" rev-parse HEAD)"
+
+wait_for_remote_head "$MERGE_SHA" 30 \
+  || fail "expected origin/main to reach the QA-approved merge commit $MERGE_SHA within 30s; log: $(cat "$LOG_FILE" 2>/dev/null); origin=$(git -C "$REMOTE" rev-parse main 2>/dev/null)"
+pass "a real git merge --no-ff landing a QA-approved feature (diverged by a bookkeeping commit on main) still publishes"
+
+grep -q "qa-refused non-qa-ancestor $MERGE_SHA" "$LOG_FILE" \
+  && fail "the QA-approved merge commit $MERGE_SHA must never be refused, but it was: $(cat "$LOG_FILE")"
+pass "the QA-approved merge commit itself is never independently flagged non-qa-ancestor"
+
+grep -q "qa-refused non-qa-ancestor $FEATURE_SHA" "$LOG_FILE" \
+  && fail "the feature commit $FEATURE_SHA is a swarmforge-QA ancestor and must never be refused, but it was: $(cat "$LOG_FILE")"
+pass "the feature commit folded in by the merge is recognized as its own QA-approved entry"
+
+# ── BL-630 architect bounce #2 (2026-07-30): a merge that resolves a real
+#    conflict by hand carries content that exists in NEITHER parent's tree -
+#    that content was never independently QA-approved and is invisible to
+#    every other commit's own single-parent diff, so it must be scrutinized
+#    on its own and refused if it touches a non-bookkeeping path. Build a
+#    forced conflict on the same file both sides touch, resolve it with
+#    content matching neither side, and prove the resulting merge commit is
+#    refused (see backlog/evidence/BL-630-push-sweep-refuses-non-qa-
+#    approved-main-bounce-20260730-2.md).
+git -C "$ROOT" checkout -q -b conflict-feature-test "$MERGE_SHA"
+echo "feature-branch-change" > "$ROOT/extension/src/merge_test.ts"
+git -C "$ROOT" add extension/src/merge_test.ts
+git -C "$ROOT" commit -q -m "feature branch edits merge_test.ts, QA-approved"
+git -C "$ROOT" branch -f swarmforge-QA conflict-feature-test
+
+git -C "$ROOT" checkout -q main
+echo "main-branch-change" > "$ROOT/extension/src/merge_test.ts"
+git -C "$ROOT" add extension/src/merge_test.ts
+git -C "$ROOT" commit -q -m "unrelated main-side edit to the same file"
+
+git -C "$ROOT" merge --no-ff conflict-feature-test -m "QA merge conflict-feature-test into main" \
+  || true
+grep -q "^<<<<<<<" "$ROOT/extension/src/merge_test.ts" \
+  || fail "expected a real git merge conflict in this fixture, got none"
+echo "CONFLICT-RESOLUTION-NEVER-QA-APPROVED" > "$ROOT/extension/src/merge_test.ts"
+git -C "$ROOT" add extension/src/merge_test.ts
+git -C "$ROOT" commit -q -m "QA merge conflict-feature-test into main (conflict resolved by hand)"
+CONFLICT_MERGE_SHA="$(git -C "$ROOT" rev-parse HEAD)"
+
+wait_for_log "qa-refused non-qa-ancestor $CONFLICT_MERGE_SHA" 15 \
+  || fail "expected the hand-resolved-conflict merge $CONFLICT_MERGE_SHA to be refused within 15s; log: $(cat "$LOG_FILE" 2>/dev/null)"
+pass "a merge commit whose own hand-resolved conflict content touches a non-bookkeeping path is refused, not waved through as :merge? true"
+
+REMOTE_HEAD_AFTER_CONFLICT="$(git -C "$REMOTE" rev-parse main)"
+[[ "$REMOTE_HEAD_AFTER_CONFLICT" != "$CONFLICT_MERGE_SHA" ]] \
+  || fail "the unreviewed conflict-resolution content must never reach origin, but origin/main is now $REMOTE_HEAD_AFTER_CONFLICT"
+[[ "$REMOTE_HEAD_AFTER_CONFLICT" == "$MERGE_SHA" ]] \
+  || fail "expected origin/main to stay at the last QA-approved tip $MERGE_SHA, got $REMOTE_HEAD_AFTER_CONFLICT"
+pass "origin/main stays at the last QA-approved tip, never advancing to the unreviewed conflict-resolution merge"
 
 echo "ALL PASS"

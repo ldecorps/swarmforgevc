@@ -136,7 +136,10 @@
 (def stop-file (fs/path daemon-dir "stop"))
 (def log-file (fs/path daemon-dir "handoffd.log"))
 (def heartbeat-file (fs/path daemon-dir "handoffd.heartbeat"))
-(def heartbeat-log-every-cycles 60)
+;; BL-675: log a heartbeat every loop tick so quiet != dead for the
+;; cron-side freshness checker (was every 60 cycles; that left long
+;; silent windows that looked identical to a futex hang).
+(def heartbeat-log-every-cycles 1)
 (def heartbeat-dir (fs/path state-dir "heartbeat"))
 ;; A dedicated file, deliberately NOT handoffd.status.json: that file is
 ;; exclusively owned by handoffd_supervisor.bb, which runs CONCURRENTLY
@@ -1849,12 +1852,118 @@
       {:success true}
       {:success false :error (str/trim (or err ""))})))
 
+;; BL-630: the real git/CLI-specific wiring for push_sweep_lib.bb's own
+;; qa-gate-decision - pure decision logic stays there, this is only the
+;; git-shelling adapter (mirrors this file's own push-sweep-rev-counts!
+;; posture). Called ONLY from within push_sweep_lib.bb's :should-push
+;; branch, so origin/main is already freshly fetched this tick (by
+;; push-sweep-rev-counts! above, which always runs first).
+(defn- git-ref-exists? [ref]
+  (zero? (:exit (process/sh ["git" "rev-parse" "--verify" "-q" ref] {:dir (str project-root)}))))
+
+(defn- git-rev-parse [ref]
+  (let [{:keys [exit out]} (process/sh ["git" "rev-parse" ref] {:dir (str project-root)})]
+    (when (zero? exit) (str/trim out))))
+
+;; git merge-base --is-ancestor's own exit codes: 0 = is an ancestor, 1 =
+;; is NOT (a clean, known "no" - never a failure), anything else = a real
+;; git failure (e.g. an unresolvable sha) - :ok? false distinguishes that
+;; from a clean :ancestor? false, so a real failure can fail closed instead
+;; of silently reading as "not approved" for the wrong reason.
+(defn- git-is-ancestor? [sha ref]
+  (let [{:keys [exit]} (process/sh ["git" "merge-base" "--is-ancestor" sha ref] {:dir (str project-root)})]
+    (cond
+      (zero? exit) {:ok? true :ancestor? true}
+      (= 1 exit) {:ok? true :ancestor? false}
+      :else {:ok? false :ancestor? false})))
+
+(defn- git-ahead-shas []
+  (let [{:keys [exit out]} (process/sh ["git" "rev-list" "origin/main..main"] {:dir (str project-root)})]
+    (when (zero? exit)
+      (->> (str/split-lines (str/trim out)) (remove str/blank?)))))
+
+(defn- git-changed-paths [sha]
+  (let [{:keys [exit out]} (process/sh ["git" "diff-tree" "--no-commit-id" "--name-only" "-r" sha] {:dir (str project-root)})]
+    (when (zero? exit)
+      (->> (str/split-lines (str/trim out)) (remove str/blank?)))))
+
+;; BL-630 bounce #2 (architect, 2026-07-30): `-c` (combined diff) reports a
+;; path ONLY when a file's merge result differs from a trivial recombination
+;; of its parents - i.e. it is empty for a clean/conflict-free merge and
+;; non-empty exactly when the merge carries real content of its own (most
+;; often a hand-resolved conflict, which exists in neither parent's tree
+;; and so is invisible to every other commit's own single-parent diff). See
+;; backlog/evidence/BL-630-push-sweep-refuses-non-qa-approved-main-bounce-
+;; 20260730-2.md for the empirical proof this relies on.
+(defn- git-changed-paths-combined [sha]
+  (let [{:keys [exit out]} (process/sh ["git" "diff-tree" "--no-commit-id" "--name-only" "-r" "-c" sha] {:dir (str project-root)})]
+    (when (zero? exit)
+      (->> (str/split-lines (str/trim out)) (remove str/blank?)))))
+
+;; BL-630 bounce (architect, 2026-07-30): a merge commit has a real 2nd
+;; parent iff `<sha>^2` resolves - reuses git-ref-exists? rather than adding
+;; a second git-shelling helper.
+(defn- git-merge-commit? [sha]
+  (git-ref-exists? (str sha "^2")))
+
+;; A merge commit's OWN combined diff (see git-changed-paths-combined above)
+;; decides how it is scrutinized. Empty -> trivial merge, no independent
+;; content: every real content-bearing commit it folds in already appears
+;; as its OWN entry in this same ahead-shas range (git rev-list lists every
+;; commit reachable in the range, not just the tip) with its own accurate,
+;; single-parent changed-paths already checked there - push_sweep_lib.bb/
+;; qa-gate-decision exempts exactly this case (:merge? true with empty
+;; :changed-paths). Non-empty -> the merge carries content that belongs to
+;; no other entry (bounce #1 first tried "plain diff-tree", which is always
+;; empty for a merge regardless of content and was misread as "unknown ->
+;; not bookkeeping"; bounce #2 then found that unconditionally exempting
+;; every :merge? true sha waved through exactly this non-empty case, e.g. a
+;; hand-resolved conflict, with zero review) - so a content-bearing merge's
+;; combined-diff paths are carried through and checked by qa-gate-decision
+;; exactly like a non-merge commit's :changed-paths.
+(defn- ahead-commit-facts [sha]
+  (if (git-merge-commit? sha)
+    (let [paths (git-changed-paths-combined sha)]
+      {:sha sha :ok? (some? paths) :merge? true :qa-ancestor? false :changed-paths (or paths [])})
+    (let [ancestry (git-is-ancestor? sha "swarmforge-QA")]
+      (if-not (:ok? ancestry)
+        {:sha sha :ok? false}
+        (let [paths (git-changed-paths sha)]
+          {:sha sha :ok? (some? paths) :qa-ancestor? (:ancestor? ancestry) :changed-paths (or paths [])})))))
+
+(defn push-sweep-qa-gate-facts! []
+  (try
+    (if-not (git-ref-exists? "swarmforge-QA")
+      {:qa-ref-exists? false :facts-complete? true}
+      (let [main-tip (git-rev-parse "main")
+            tip-check (when main-tip (git-is-ancestor? main-tip "swarmforge-QA"))]
+        (cond
+          (or (nil? main-tip) (nil? tip-check) (not (:ok? tip-check)))
+          {:qa-ref-exists? true :facts-complete? false}
+
+          (:ancestor? tip-check)
+          {:qa-ref-exists? true :tip-is-qa-ancestor? true :facts-complete? true}
+
+          :else
+          (let [shas (git-ahead-shas)]
+            (if (nil? shas)
+              {:qa-ref-exists? true :tip-is-qa-ancestor? false :facts-complete? false}
+              (let [commit-facts (mapv ahead-commit-facts shas)]
+                (if (some (complement :ok?) commit-facts)
+                  {:qa-ref-exists? true :tip-is-qa-ancestor? false :facts-complete? false}
+                  {:qa-ref-exists? true :tip-is-qa-ancestor? false :facts-complete? true
+                   :ahead-commits (mapv #(select-keys % [:sha :qa-ancestor? :changed-paths :merge?]) commit-facts)})))))))
+    (catch Exception e
+      (log! "push-sweep-qa-gate-error" (.getMessage e))
+      {:facts-complete? false})))
+
 (defn push-sweep! []
   (try
     (push-sweep-lib/sweep!
      (System/currentTimeMillis) (str daemon-dir) push-sweep-retry-config
      {:rev-counts! push-sweep-rev-counts!
       :push! push-sweep-push!
+      :qa-gate-facts! push-sweep-qa-gate-facts!
       :send-push-alarm!
       (fn [attempts]
         (send-push-alarm-email!
@@ -2245,9 +2354,10 @@
             (log! "started")
             (try
               (startup-notify-pending! roles socket)
-              ;; The heartbeat file (every cycle) and log line (periodic) let the
-              ;; supervisor detect a hung daemon and a post-mortem see liveness up
-              ;; to the moment of death (BL-061).
+              ;; The heartbeat file and log line (every cycle, BL-675) let the
+              ;; cron-side freshness checker and supervisor detect a hung
+              ;; daemon; a post-mortem sees liveness up to the moment of death
+              ;; (BL-061).
               (loop [cycle 0]
                 (when (and (not @stopping?) (not (fs/exists? stop-file)))
                   (poll-once!)

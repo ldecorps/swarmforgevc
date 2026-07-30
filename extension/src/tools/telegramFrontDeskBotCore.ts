@@ -14,6 +14,7 @@ import { unsafeDispatchToastText } from '../concierge/expediteSafety';
 import { classifyRecertTopicReply } from '../concierge/recertTopicReply';
 import { roleForTopic } from '../concierge/roleTopicMapStore';
 import { ControlEvent, ControlDecision, PendingControlConfirm, PauseState, decideControlEventAction } from './telegramControlCore';
+import { isCursorBridgeTopic } from './telegramCursorBridgeCore';
 import {
   nextUpdateOffset,
   isFromPrincipal,
@@ -369,7 +370,10 @@ export function formatSteerReceipt(role: string, result: SteerDeliveryResult): s
 // offset/retry treatment (the engineering article's own
 // deliberate-drop-vs-failure rule), so this never collapses them the way
 // BL-389 had to fix for ordinary drops.
-export type SttResult = { kind: 'ok'; transcript: string } | { kind: 'transient-failure' } | { kind: 'unprocessable' };
+export type SttResult =
+  | { kind: 'ok'; transcript: string }
+  | { kind: 'transient-failure'; reason?: string }
+  | { kind: 'unprocessable'; reason?: string };
 export type TtsResult = { kind: 'ok'; audio: Buffer } | { kind: 'failure' };
 
 export type VoiceUpdateDecision = { kind: 'transcribe'; fileId: string } | { kind: 'refuse' } | { kind: 'not-applicable' };
@@ -843,6 +847,8 @@ export interface PollAdapters {
   // the decision is self-contained.
   engageAmbulance?: (ticket: string) => Promise<void>;
   releaseAmbulance?: () => Promise<void>;
+  /** BL-698: Control slash aliases for hold/reinstate/drain-* via shared Cursor Remote exec. */
+  executeSharedOperator?: (verb: string, args?: string) => Promise<void>;
   // BL-590: the standing Onboarding topic's own id (ensureOnboardingTopic,
   // telegram-front-desk-bot.ts) - optional so every PollAdapters fixture
   // written before BL-590 keeps working unchanged, same posture as
@@ -856,6 +862,12 @@ export interface PollAdapters {
   // pair) because there is no separate pending-thread indirection here: the
   // onboarder always replies in the topic it was addressed in.
   handleOnboarderMessage?: (topicId: number, text: string, updateId: number) => Promise<boolean>;
+  // Cursor Remote topic — owned exclusively by telegram-cursor-bridge.js.
+  // Optional so fixtures pre-dating the bridge keep working; when wired,
+  // every inbound message in that topic is a deliberate drop here, never
+  // SUP/Operator routing (even if telegram-topic-map.json still names a
+  // stale SUP binding for the same forum topic id).
+  cursorBridgeTopicId?: () => Promise<number | undefined>;
 }
 
 // BL-389: the keystone fix. A DROP is a DECISION (the code looked at the
@@ -1895,7 +1907,7 @@ async function attemptVoiceDelivery(
 // the same exhaustiveness guarantee a switch's `default: assertNever` gives.
 type ControlDecisionEffect = (adapters: PollAdapters) => Promise<void>;
 
-const CONTROL_DECISION_EFFECTS: Record<Exclude<ControlDecision['action'], 'apply-pause' | 'engage-ambulance'>, ControlDecisionEffect> = {
+const CONTROL_DECISION_EFFECTS: Record<Exclude<ControlDecision['action'], 'apply-pause' | 'engage-ambulance' | 'execute-shared-operator'>, ControlDecisionEffect> = {
   ignore: async () => {},
   refuse: async () => {},
   'prompt-stop-modes': async (adapters) => {
@@ -1940,6 +1952,10 @@ async function applyControlDecision(decision: ControlDecision, adapters: PollAda
   }
   if (decision.action === 'engage-ambulance') {
     await adapters.engageAmbulance?.(decision.ticket);
+    return;
+  }
+  if (decision.action === 'execute-shared-operator') {
+    await adapters.executeSharedOperator?.(decision.verb, decision.args);
     return;
   }
   await CONTROL_DECISION_EFFECTS[decision.action](adapters);
@@ -2152,7 +2168,32 @@ async function attemptSideChannelDelivery(
   return attemptOnboardingTopicDelivery(update, principalUserId, adapters);
 }
 
+export function decideCursorBridgeExclusion(
+  update: TelegramUpdate,
+  cursorBridgeTopicId: number | undefined
+): 'not-applicable' | 'drop' {
+  return isCursorBridgeTopic(topicIdOf(update), cursorBridgeTopicId) ? 'drop' : 'not-applicable';
+}
+
+async function attemptCursorBridgeTopicExclusion(
+  update: TelegramUpdate,
+  adapters: PollAdapters
+): Promise<UpdateDeliveryOutcome | undefined> {
+  if (!adapters.cursorBridgeTopicId) {
+    return undefined;
+  }
+  const cursorTopicId = await adapters.cursorBridgeTopicId();
+  if (decideCursorBridgeExclusion(update, cursorTopicId) !== 'drop') {
+    return undefined;
+  }
+  return 'dropped';
+}
+
 async function processMessageUpdate(update: TelegramUpdate, principalUserId: string, adapters: PollAdapters): Promise<UpdateDeliveryOutcome> {
+  const cursorBridgeOutcome = await attemptCursorBridgeTopicExclusion(update, adapters);
+  if (cursorBridgeOutcome) {
+    return cursorBridgeOutcome;
+  }
   const sideChannelOutcome = await attemptSideChannelDelivery(update, principalUserId, adapters);
   if (sideChannelOutcome) {
     return sideChannelOutcome;
