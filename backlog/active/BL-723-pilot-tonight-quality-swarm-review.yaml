@@ -13,18 +13,13 @@ required_stages: [specifier, coder, cleaner, architect, hardender, documenter, q
 assigned_to: specifier
 
 invariants:
-  - "This ticket is a live-swarm quality review of listed done pilot tickets; it does not reopen them as active work unless a true defect or revert is warranted."
-  - "The deliverable includes an explicit on-par / not-on-par verdict against normal live-swarm standards."
-  - "When quality falls short, the swarm files BOTH: (1) detailed remaining-work defects for the landed code or unfinished acceptance, and (2) pilot-process defects so the next pilot run is stronger."
-  - "After review, write the per-ticket verdict back onto each reviewed done ticket (or a linked note on that ticket) so the landing record shows on-par / not-on-par and pointers to any new defects."
-  - "Process is queue-jump into the live pack (specifier then coordinator then seats), never the offline expeditor or /pilot for this review parcel itself."
-  - "Final deliverable is a fairly detailed email to the configured notify_email_to recipient with dedicated sections for coder, cleaner, architect, hardender, documenter, and especially QA viewpoints — not only a repo note."
+  - "Every reviewed ticket stays in backlog/done and no reviewed ticket's description or acceptance is rewritten unless a true revert is warranted — this parcel reviews landings, it does not reopen them."
+  - "Every shortfall found yields BOTH a remaining-work defect AND a pilot-process defect (never either/or), each with type defect and an explicit severity."
+  - "Every one of the 13 primary tickets carries its own on-par / not-on-par verdict in all three durable places: that ticket's notes, the review body, and the emailed body."
 
 required_wiring:
-  - "docs/how-to::BL-723 pilot-tonight multi-hat review verdict (source body for the email)"
-  - "email via daemon_alarm_lib send-configured-email! (or Resend with RESEND_API_KEY)::detailed multi-hat review including QA emphasis"
-  - "backlog/done (reviewed tickets)::per-ticket verdict written back"
-  - "backlog/ (new defect YAMLs if shortfalls)::remaining-work defects AND pilot-process defects"
+  - "docs/how-to/BL-723-pilot-tonight-quality-review.md::QA viewpoint::multi-hat review body; QA section must be the fullest"
+  - "docs/briefings/2026-07-30-bl723-pilot-review.md::BL-723::email body handoffd's briefing sweep mails to notify_email_to"
 
 description: |
   ## What
@@ -56,21 +51,68 @@ description: |
     (on-par or not, short reason, links to any new defects). Do not leave verdicts
     only in the BL-723 parcel.
   - Do not silently rewrite done history unless a true revert is warranted.
-  - **Email the human (mandatory, human 2026-07-30 Let's Talk):** when the
-    review closes, send one fairly detailed email to `notify_email_to` with
-    separate sections for each seat's point of view — coder, cleaner,
-    architect, hardender, documenter, and **especially QA** (QA section must
-    be the fullest). Include overall on-par / not-on-par, per-ticket notes,
-    and any filed remaining-work / pilot-process defects. Documenter (or QA
-    after pass) writes the body under docs/how-to and sends via
-    `daemon_alarm_lib/send-configured-email!` (same Resend path as briefings).
-    Closing without that email is not done.
+  - **Email the human (mandatory, human 2026-07-30 Let's Talk):** one fairly
+    detailed email to `notify_email_to`, with separate sections for each seat's
+    point of view — coder, cleaner, architect, hardender, documenter, and
+    **especially QA** (the QA section must be the fullest). Include the overall
+    on-par / not-on-par verdict, per-ticket notes, and any filed
+    remaining-work / pilot-process defects. Closing without that email is not
+    done.
+
+  ## Delivery mechanism for the email (do not invent a new one)
+
+  There is no ad-hoc "send an email" CLI a role can call. The live, already-wired
+  path is handoffd's briefing sweep, so use it:
+
+  1. The **documenter** writes the full review body to
+     `docs/how-to/BL-723-pilot-tonight-quality-review.md` (per-seat viewpoints,
+     per-ticket verdicts, overall verdict, filed defects).
+  2. The **documenter** also commits the email body as
+     `docs/briefings/2026-07-30-bl723-pilot-review.md`. Its first non-empty line
+     becomes the email subject (`briefing_email_lib/build-briefing-subject`,
+     bounded at 80 chars) — make that line a real headline carrying the verdict.
+  3. Do **not** add that file to `docs/briefings/.sent.json`. handoffd's
+     `briefing-email-sweep!` runs unconditionally each tick, mails every unsent
+     `.md` in `docs/briefings/` via `send-configured-email!` to `notify_email_to`
+     (`ldecorps@gmail.com`), and records it as sent exactly once on success.
+  4. **QA** verifies delivery before approving: the file is committed, and the
+     sweep has either recorded it in `.sent.json` or logged a
+     `briefing-skip-missing-key` / `briefing-send-failed` reason. A missing
+     `RESEND_API_KEY` is an environment fault to report to the human, not a
+     silent pass.
+
+  ## Acceptance scaffolding (coder owns; BL-233)
+
+  This ticket has a feature file but **no step handlers yet**, and
+  `specs/pipeline/runtime.js` THROWS on any step with no handler. The coder
+  writes `specs/pipeline/steps/bl723PilotReviewSteps.js` in this same parcel.
+  The scenarios are deliberately artifact-anchored so the handlers assert against
+  real committed files rather than prose: read the review body, the briefing
+  body, `.sent.json`, and each reviewed ticket's YAML from disk. No handler may
+  assert over prompt text (that is fake acceptance).
+
+  Ordering note: the review body must exist before the handlers can pass, so the
+  coder may land handlers plus a first-draft body, with the documenter filling in
+  the final per-seat content. The gate is green only once both exist.
 
   ## Process
 
   **queue-jump now** (live pack already up). Not expeditor. Not pilot.
   Human amendment 2026-07-30 evening Let's Talk: do not wait for morning;
   finish with the multi-hat email.
+
+  ## e2e QA procedure
+
+  1. `swarmforge/scripts/gherkin_lint_gate.sh specs/features/BL-723-pilot-tonight-quality-swarm-review.feature`
+  2. `node specs/pipeline/cli.js specs/features/BL-723-pilot-tonight-quality-swarm-review.feature`
+     — every scenario passes, none throws "no step handler matched".
+  3. Confirm all 13 primary tickets are still in `backlog/done/` and each one's
+     `notes:` carries its verdict plus links to any defect filed against it.
+  4. Confirm any filed defect YAML has `type: defect` and an explicit
+     `severity:` (the Article 3.2.4 lane fails closed without it).
+  5. Confirm `docs/briefings/2026-07-30-bl723-pilot-review.md` is committed, and
+     check the handoffd log for `briefing-sent` for that file — or report the
+     skip reason to the human.
 
   ## Out of scope
 
