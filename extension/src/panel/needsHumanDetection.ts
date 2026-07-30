@@ -30,11 +30,22 @@ export function stripTerminalChrome(text: string): string {
 // incl. the tofu placeholder ▯ (U+25A0-25FF), and braille spinner glyphs
 // (U+2800-28FF) - a line is chrome only when it consists ENTIRELY of these
 // plus whitespace, never merely containing one alongside real text.
+const BOX_DRAWING_CHARS_PATTERN = /[─-╿▀-▟■-◿⠀-⣿]/g;
 const BOX_RULE_OR_PLACEHOLDER_LINE_PATTERN = /^[\s─-╿▀-▟■-◿⠀-⣿]+$/;
+
+// BL-642: tmux embeds the launcher session name inside the pane-title rule
+// ("──── SwarmForge Coder ──"). Letters mean the whole-line box test above
+// misses it; the session-name shape the launcher itself creates is exact
+// chrome, not a heuristic over arbitrary words.
+const PANE_TITLE_SESSION_NAME_PATTERN = /^SwarmForge [A-Za-z][\w-]*$/;
 
 // A bare prompt marker with only placeholder text - mirrors
 // detectNeedsHuman's own standard-input-box regex below.
 const BARE_PROMPT_LINE_PATTERN = /^[❯>]\s*(type|message)?\s*$/i;
+
+// BL-642: Claude Code remote-control slash remnant that appears as its own
+// line under the status footer on live panes.
+const BARE_REMOTE_CONTROL_LINE_PATTERN = /^\/rc$/i;
 
 // Known Claude Code footer phrases. Matched by STRIPPING them out of the
 // line and checking that only connector punctuation (·, arrows, parens,
@@ -44,7 +55,27 @@ const BARE_PROMPT_LINE_PATTERN = /^[❯>]\s*(type|message)?\s*$/i;
 const FOOTER_PHRASES_PATTERN = /(bypass permissions(?: on)?|shift\+tab to cycle|accept edits|for agents|⏵+)/gi;
 const FOOTER_CONNECTOR_ONLY_PATTERN = /^[\s·←→()]*$/;
 
+// BL-642: the terminal truncates the footer's END by width, so unknown tails
+// ("install gh for PR status · e…") defeat the phrase-strip remainder check.
+// A line that BEGINS as the footer is the footer regardless of truncation.
+const FOOTER_START_PATTERN = /^⏵+\s*(bypass permissions|accept edits|for agents|shift\+tab)/i;
+
+// BL-642: when every surviving line was furniture, say so rather than
+// shipping an empty body or leftover chrome. Future filter misses fail closed.
+export const NO_QUESTION_TEXT_CAPTURED = '(no question text captured; open the pane)';
+
+function isPaneTitleRuleLine(line: string): boolean {
+  const withoutBox = line.replace(BOX_DRAWING_CHARS_PATTERN, '');
+  if (withoutBox === line) {
+    return false;
+  }
+  return PANE_TITLE_SESSION_NAME_PATTERN.test(withoutBox.trim());
+}
+
 function isFooterFurnitureLine(line: string): boolean {
+  if (FOOTER_START_PATTERN.test(line)) {
+    return true;
+  }
   const withoutPhrases = line.replace(FOOTER_PHRASES_PATTERN, '');
   return withoutPhrases.length !== line.length && FOOTER_CONNECTOR_ONLY_PATTERN.test(withoutPhrases);
 }
@@ -52,7 +83,9 @@ function isFooterFurnitureLine(line: string): boolean {
 function isVisibleChromeLine(line: string): boolean {
   return (
     BOX_RULE_OR_PLACEHOLDER_LINE_PATTERN.test(line) ||
+    isPaneTitleRuleLine(line) ||
     BARE_PROMPT_LINE_PATTERN.test(line) ||
+    BARE_REMOTE_CONTROL_LINE_PATTERN.test(line) ||
     isFooterFurnitureLine(line)
   );
 }
@@ -71,6 +104,9 @@ export function extractQuestionSnippet(paneText: string | null | undefined): str
     .map((l) => l.trim())
     .filter((l) => l.length > 0 && !isVisibleChromeLine(l));
   const snippet = lines.slice(-3).join(' ').trim();
+  if (!snippet) {
+    return NO_QUESTION_TEXT_CAPTURED;
+  }
   if (snippet.length <= SNIPPET_MAX_LENGTH) {
     return snippet;
   }
