@@ -45,8 +45,66 @@ points at two candidate themes, and the human has pushed on BOTH:
   (BL-325); a topic still opens with a bare `TaskStarted` (BL-322, asked for
   twice).
 
-Until the human declares one, no direction is in force and nothing is gated by
-this file.
+Until the human declares one of those as the cycle direction, no Direction-lane
+gate is in force. That does **not** mean the human has said nothing about
+product surfaces — see the standing freeze below.
+
+## Standing human freeze (2026-07-30) — one Bubble over Telegram / PWA clients
+
+**Naming note (same day):** **messaging** and **host agent** are the architecture
+interfaces; **Telegram** and **Cursor** remain the everyday incarnations. The
+phone app’s product name is **Bubble** (not Float Companion in new prose). The
+policy is Architecture Rule 7 in
+`swarmforge/constitution/articles/local-engineering.prompt` (a rename sweep off
+Telegram/Cursor is out of policy); the docs half is BL-711.
+
+**Human directive (Cursor session, 2026-07-30):** stop investing in **new
+Telegram** product/UI work. Ramp the **phone app** instead.
+
+**Settled (same day):** **one app** — **Bubble** (`android/`, BL-707).
+Migrate into it:
+
+1. **Pages PWA** surfaces (backlog dashboard, docs browser, pipeline board /
+   groom) — offline tube/plane reading lives here
+2. **Telegram Mini App** operator console (Let's Talk + related mini-app
+   chrome) — talk/control lives here; Mini App is not grown as a peer client
+
+### Bubble migration checklist
+
+- [x] ~~Let's Talk Mini App screen~~ — retired 2026-07-30; talk UX is **Bubble**
+  only. Bridge keeps `POST /lets-talk/turn`, `/new-session`,
+  `/lets-talk/chiptunes.json`, and a `GET /lets-talk` health stub for
+  watchdogs. Console menu no longer links a Mini App Let's Talk page.
+- [ ] Pages PWA (backlog / docs / board / groom) → Bubble panels
+- [ ] Remaining Mini App console slices (pipeline grid, etc.) → Bubble as needed
+
+Bubble began as a chatbox; it became a native app to float; it is now the
+**full operator phone**. Pages `pwa/` + JSON artifacts and the bridge Mini App
+shells remain **package / protocol sources** (and temporary fallbacks) until
+parity — not destinations. See
+`backlog/INTAKE-phone-wire-format-and-offline.md`.
+
+Prefer / pull toward:
+
+1. **Bubble** — single install (talk + backlog/docs/groom + console
+   capabilities migrating from Mini App)
+2. **Package / bridge contracts** — `backlog.json`, `docs-tree.json`, Let's
+   Talk routes, chiptunes / companion-manifest the app syncs while online
+3. **Maintain-only** on Telegram Mini App and Pages PWA UX — fix expedite
+   defects; do not add features whose only home is those clients
+
+**Do not promote or mint** tickets whose primary deliverable is a new Telegram
+bot feature, topic UI, board chrome, or mini-app-in-Telegram page — unless the
+human tags them `human-requested` or they are a true `expedite` defect that
+breaks an already-shipped Telegram path (front desk deaf, control verbs broken,
+etc.). Operator slash verbs and Cursor Remote that already shipped stay
+maintainable; they are not a license to grow the Telegram surface further.
+Same for Pages-PWA-only feature work once Bubble parity is the ramp.
+
+This freeze is stronger than "Awaiting the human" silence: it is an explicit
+veto on a class of work, recorded here so specifier/coordinator do not keep
+pulling Telegram / PWA-client UX by inertia while Bubble is the stated
+ramp.
 
 ## Classification
 
