@@ -12,6 +12,18 @@
 #   ONBOARDER_LAUNCH_DRYRUN=1   print the assembled supervisor command, start nothing
 set -euo pipefail
 
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+  cat <<'EOF'
+launch_onboarder.sh — lifecycle start entry point.
+
+Stop: stop_ancillary_services.sh / ./stop-swarm.sh (or ./swarm-kill for pipeline-only)
+
+Usage: see header comments above.
+EOF
+  exit 0
+fi
+
+
 SWARM_REPO_ROOT="${1:?usage: launch_onboarder.sh <swarm-repo-root>}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OP_DIR="$SWARM_REPO_ROOT/.swarmforge/operator"

@@ -1,0 +1,112 @@
+id: BL-725
+title: "Standing host-agent Telegram topic is named Host, not Cursor Remote"
+milestone: M8
+type: feature
+severity: low
+status: todo
+epic: swarmforge-console
+priority: 40
+direction: human-requested
+depends_on: []
+mutation_cost: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+assigned_to: none
+
+invariants:
+  - "The existing bound topic keeps working: the subject id CURSOR_REMOTE and the topic-map key are unchanged, so no second topic is ever created and slash verbs plus typed host prompts keep landing on the already-bound thread."
+
+required_wiring:
+  - "extension/src/tools/telegramCursorBridgeCore.ts::CURSOR_BRIDGE_TOPIC_NAME = 'Host'::the constant creation path reads, so a fresh topic is titled Host"
+
+description: |
+  ## What
+
+  In live Telegram the standing host-agent control topic was renamed BY HAND to
+  **Host** (just "Host"). The codebase still calls it "Cursor Remote", so the
+  live title and the code disagree — and a fresh topic creation would still be
+  titled "Cursor Remote", silently undoing the human's rename on any new group.
+
+  Make **Host** the standing display name in code and operator-facing copy.
+
+  ## Why this is in policy
+
+  Architecture Rule 7 (local-engineering.prompt) puts "rename identifiers off
+  Cursor/Telegram for purity" OUT of policy. This ticket is not that: the human
+  asked for it directly (Let's Talk 2026-07-30), and it is the *interface* layer
+  winning for one specific display string — the topic is the **host agent** seat,
+  and Cursor is merely today's incarnation. Nothing else is renamed.
+
+  Distinct from BL-711 (the vocabulary glossary), which explicitly lists
+  "Renaming Cursor Remote / telegramCursorBridge* modules" as out of scope. That
+  exclusion stands: this ticket renames the **display string**, not the modules.
+
+  ## Verified binding facts (gathered 2026-07-30 — do not re-derive)
+
+  - `extension/src/tools/telegramCursorBridgeCore.ts:22` —
+    `export const CURSOR_BRIDGE_TOPIC_NAME = 'Cursor Remote'`.
+  - That constant has exactly ONE production consumer:
+    `telegramCursorBridgeLive.ts:482`, inside `createCursorRemoteTopic`, i.e.
+    the **creation** path only.
+  - The topic is bound by **subject id**, not by name: the map records
+    `{ "<threadId>": "CURSOR_REMOTE" }` and reuse goes through
+    `reuseCursorTopicFromMap`, which only ever reads the stored thread id.
+
+  So changing the constant retitles a NEWLY created topic and cannot orphan or
+  duplicate the bound one. That is why the invariant below is satisfiable and
+  why this is `mutation_cost: low`.
+
+  ## Scope
+
+  1. `CURSOR_BRIDGE_TOPIC_NAME` becomes `'Host'`. Its test assertion at
+     `extension/test/telegramCursorBridgeCore.test.js:80` moves with it.
+  2. Operator-facing copy that names the topic to a human says **Host**. The
+     sites verified today:
+     - `telegramCursorBridgePilot.ts` lines 118, 127, 139, 171 — pilot prompt
+       and status text ("status posts ... on Cursor Remote", "poll on the Cursor
+       Remote topic", "do not kill the host Cursor Remote bridge", "post
+       Telegram status on Cursor Remote").
+     - `telegramCursorOperatorExec.ts:640` — the unknown-verb reply
+       `"<verb>: no Cursor Remote execute handler yet."`.
+     - `telegram-front-desk-bot.ts:1438` — the ownership error thrown by
+       `openSubjectAndRecord`.
+     Grep for `Cursor Remote` before finishing; treat the list above as the
+     verified floor, not a closed set.
+  3. Docs that name the topic as a thing the operator looks at say Host. At
+     least `docs/diagrams/cursor-remote-flow.mmd` (the diagram label, per the
+     Diagrams rule) and the how-tos that instruct the operator to watch that
+     topic.
+
+  ## Explicitly NOT renamed
+
+  - The subject id `CURSOR_BRIDGE_SUBJECT_ID = 'CURSOR_REMOTE'` and the
+    topic-map value `'CURSOR_REMOTE'` — these are the binding key. Renaming them
+    would strand the live topic. The human said the id may stay.
+  - Filenames, module names, symbols: `telegramCursorBridge*`,
+    `CURSOR_BRIDGE_TOPIC_NAME` itself, `telegramCursorOperatorExec`, etc.
+  - `docs/done/**` and historical evidence.
+  - Internal code comments that say "the Cursor Remote bridge" as shorthand for
+    the module — those name the incarnation correctly. Only text a human READS
+    in Telegram or in a how-to must change.
+
+  ## Out of scope
+
+  - Merging Host and Bubble topics.
+  - Any new Telegram feature or surface.
+  - Renaming Bubble's topic.
+  - The BL-711 glossary prose (separate ticket, separate file).
+
+acceptance: specs/features/BL-725-rename-cursor-remote-topic-to-host.feature
+
+notes: |
+  The rename is already live in Telegram by hand, so the acceptance signal is
+  agreement between code and the live title — not a visible change on the
+  existing thread. Reviewers should expect the bound topic to look identical
+  after this lands; that is the invariant holding, not a no-op.
+
+  A no-op check for the No-Op Rule: this ticket DOES change functional
+  behaviour — a fresh group's topic gets a different title, and four operator
+  message strings change. It is not meta-churn.
+
+source: |
+  Human via Let's Talk / Cursor 2026-07-30. Drained from
+  `backlog/INTAKE-rename-cursor-remote-topic-to-host.md`.

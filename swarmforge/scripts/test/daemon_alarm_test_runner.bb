@@ -6,6 +6,8 @@
 ;; live daemon, no real timers, matching the non-behavioral gate.
 ;;
 ;; Usage: daemon_alarm_test_runner.bb <fixture-root>
+;; BL-646: fixture-root is mandatory and must resolve under the system temp
+;; directory — never write relative to CWD.
 
 (ns daemon-alarm-test-runner
   (:require [babashka.fs :as fs]
@@ -14,7 +16,21 @@
 
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) ".." "daemon_alarm_lib.bb")))
 
-(def fixture-root (nth *command-line-args* 0))
+(defn die! [msg]
+  (binding [*out* *err*]
+    (println msg))
+  (System/exit 1))
+
+(let [raw-arg (nth *command-line-args* 0 nil)]
+  (when (or (nil? raw-arg) (str/blank? (str raw-arg)))
+    (die! "ERROR: daemon_alarm_test_runner.bb requires a non-blank <fixture-root> argument (must be under the system temp directory); refusing to write relative to CWD."))
+  (let [fixture-root (str/trim (str raw-arg))]
+    (when-not (daemon-alarm-lib/test-fixture-root? fixture-root)
+      (die! (str "ERROR: fixture-root must be under the system temp directory (test-fixture-root?), got: "
+                (pr-str fixture-root)
+                "; refusing to write outside a throwaway test directory.")))
+    (def fixture-root fixture-root)))
+
 (def calls-log (str (fs/path fixture-root "calls.log")))
 (def failure-log-path (str (fs/path fixture-root "failure.log")))
 (def status-file (str (fs/path fixture-root "status.json")))

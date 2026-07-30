@@ -1,0 +1,144 @@
+id: BL-627
+title: "Pricing table: correct every wrong rate, add `claude-opus-5`, and add a fail-loud invariant that every model the swarm actually runs has a pricing entry"
+milestone: M8
+type: defect
+status: done
+epic: cost-intelligence
+human_approval: approved
+severity: medium
+priority: 05
+direction: human-requested
+depends_on: []
+assigned_to: specifier
+mutation_cost: low
+invariants:
+  - "Every model the swarm actually runs has a pricing entry; costing an unpriced model fails loud, never silently as zero."
+
+approval_context: >
+  Operator asked for this ticket on 2026-07-25 after the wrong rates surfaced
+  during an Opus 4.8 -> Opus 5 migration, and after explicitly rejecting a
+  cron-based auto-updater: "comment garder la table de prix à jour? devrait-on
+  avoir un cronjob?" -> answer below is no, and the ticket says why.
+  Hydrate-batch-2 commit only materializes this approved prose into APS
+  Gherkin; no scope change.
+
+source: |
+  Found 2026-07-25 while migrating Opus 4.8 seats to Opus 5. Rates in
+  `extension/src/metrics/pricingTable.ts` were verified against Anthropic's
+  published pricing and do not match.
+
+description: |
+  ## 1. The rates are wrong
+
+  | model | table says | actual | error |
+  |---|---|---|---|
+  | `claude-opus-4-8` | $15 / $75 | **$5 / $25** | **3x overstated** |
+  | `claude-fable-5` | $15 / $75 | **$10 / $50** | 1.5x overstated |
+  | `claude-haiku-4-5-20251001` | $0.8 / $4 | $1 / $5 | ~20% understated |
+  | `claude-sonnet-5` | $3 / $15 | $3 / $15 | correct |
+
+  The Opus row is the Opus 4.1 rate ($15/$75) — a different tier entirely,
+  almost certainly copied when the table was authored.
+
+  `claude-sonnet-5` additionally carries **introductory pricing of $2 / $10 per
+  MTok through 2026-08-31**. The table has no notion of a time-bounded rate.
+  The specifier should rule whether to model that or to deliberately ignore it
+  and document the choice — silently using list price during the intro window
+  overstates the single highest-volume seat in the swarm.
+
+  ## 2. The table describes yesterday's roster
+
+  Models actually in use (from `swarmforge.conf`, `packs/*.conf`, and
+  `.swarmforge/launch/*.claude-settings.json`) versus table coverage:
+
+  | model | in use | in table |
+  |---|---|---|
+  | `claude-fable-5` | specifier | yes (wrong rate) |
+  | `claude-sonnet-5` | coder, QA, hardener | yes |
+  | `claude-haiku-4-5-20251001` | cleaner, documenter | yes (wrong rate) |
+  | **`claude-opus-5`** | **architect** | **NO ENTRY** |
+  | `claude-opus-4-8` | nowhere | yes (stale) |
+
+  A model can enter service and silently produce no cost attribution. That is
+  the failure this ticket must make impossible, and it is the one that actually
+  occurred.
+
+  ## 3. ⚠️ Scope reality check — the table is nearly inert TODAY
+
+  Do not scope this as "the swarm's cost figures are wrong". Measured against
+  `.swarmforge/telemetry/llm-cost-2026-07.jsonl`, 106 records:
+
+    - `model` non-null:   **0 / 106**
+    - `tokens` non-null:  **0 / 106**
+    - `costUsd` non-null: **7 / 106** — exactly the 7 `front-desk-operator`
+      records
+
+  The 99 pipeline-role invocations (coder, cleaner, architect, hardener,
+  documenter, coordinator, specifier, QA) record **no model, no tokens, and no
+  cost at all**. Max-billed roles driven through the `claude` CLI emit no
+  per-call cost. So today a wrong rate has almost nothing to multiply.
+
+  **This does not make the ticket low-value — it makes it a PREREQUISITE.**
+  BL-565 ("cost ledger synthetic pricing — capture tokens and list-price dollar
+  equivalents for Max-billed swarm roles") exists precisely to start producing
+  those tokens. The moment it lands, every wrong rate in this table becomes
+  wrong dollars at full pipeline volume. **This ticket should land before or
+  with BL-565, not after.** The specifier should consider adding BL-627 to
+  BL-565's `depends_on`; it is not done here to avoid editing another ticket
+  unbidden.
+
+  ## 4. The invariant — a detector, NOT a cron
+
+  The operator explicitly asked whether a cron job should refresh the table.
+  **The answer is no, and the ticket must not build one.** Reasons, recorded so
+  the option is not revived:
+
+    1. **There is no pricing API to poll.** The Models API exposes `id`,
+       `max_input_tokens`, `max_tokens`, and `capabilities` — not prices. An
+       auto-updater would have to scrape a documentation page and commit into
+       the file that computes every cost figure. A misparse would silently
+       rewrite cost history with no review: the same class of silent corruption
+       as the present bug, but automated and recurring.
+    2. **Rates are not what drifts.** Prices change rarely; the swarm's roster
+       changed three times on 2026-07-25 alone. The observed failure is a model
+       in service with no entry — not a stale rate.
+
+  Build instead a deterministic check, no network, that fails loudly:
+
+  > every model referenced by `swarmforge.conf`, `swarmforge/packs/*.conf`, and
+  > `.swarmforge/launch/*.claude-settings.json` MUST have a `PRICING_TABLE`
+  > entry.
+
+  Where it runs is the specifier's call — a unit/integration test, a
+  `babysitterd` sweep finding, or a daily-briefing line are all defensible. It
+  must name the offending model, not merely fail.
+
+  Rate *accuracy* stays a human/agent verification against the published
+  pricing page, at low frequency, bumping `PRICING_TABLE_VERSION` as the file
+  header already instructs. That judgement is not automatable and should not be
+  faked with a scraper.
+
+acceptance: specs/features/BL-627-pricing-table-correctness-and-coverage-invariant.feature
+out_of_scope: |
+  - Any cron job, scheduled scrape, or automated rate fetch. See section 4 —
+    this is an explicit rejection, not an oversight.
+  - Capturing tokens or cost for Max-billed pipeline roles. That is BL-565.
+    This ticket only guarantees the multiplier is right and present when BL-565
+    starts supplying the multiplicand.
+  - Any change to how cost is computed. The file header is explicit that this
+    table is data, not code: "updating a rate is a one-line PR to this file,
+    never a code change to the cost computation itself."
+
+notes: |
+  Hygiene observation, not part of this ticket's work: the `cost-intelligence`
+  epic has NO epic tracker file. BL-565 and this ticket both carry
+  `epic: cost-intelligence`, but no `type: epic` ticket tracks them, which
+  breaks the "every epic must have a milestone and a tracker" convention that
+  BL-543 and BL-541 follow. Worth a separate hygiene ticket.
+
+  BL-723 coder verdict (2026-07-30): on-par. Root cause addressed directly
+  (wrong rates, missing roster model, fail-loud coverage check); real
+  fixture-backed tests and a wired acceptance suite (7/7 pass). Minor nit
+  only: the conf/JSON scanner is a regex heuristic rather than a real
+  parser, so an unusually-shaped model id could still evade detection — not
+  filed as a separate defect, judged not to rise to a shortfall.

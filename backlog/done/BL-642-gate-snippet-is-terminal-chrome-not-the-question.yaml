@@ -1,0 +1,149 @@
+id: BL-642
+title: "A gated role's Telegram alert shows terminal chrome instead of its question — the snippet the human is meant to read is the pane's title rule and footer"
+milestone: M8
+type: defect
+status: done
+epic: swarm-reliability
+human_approval: approved
+severity: medium
+priority: 08
+direction: human-requested
+depends_on: []
+assigned_to: specifier
+mutation_cost: low
+
+approval_context: >
+  Operator, 2026-07-25, from a live Telegram alert whose body was pure terminal
+  furniture. Reproduced against the running coder pane, so the failing input is
+  real capture text rather than a fixture.
+  Hydrate-batch-2 commit only materializes this approved prose into APS
+  Gherkin; no scope change.
+
+source: |
+  A `NeedsApproval` alert reached the operator's phone at 16:01 reading, in full:
+
+  ```
+  NeedsApproval: BL-629 -
+  ──────────────────────── SwarmForge Coder ──
+  ⏵⏵ bypass permissions on (shift+tab to cycle) · install gh for PR status · e…
+  /rc
+  ```
+
+  Zero information. The human cannot tell what was asked, so the alert's only
+  effect is to send them to look at the pane — which is exactly what the snippet
+  exists to avoid (BL-325: *"the gated role's own question text"*).
+
+  Reproduced against the LIVE coder pane, not a fixture:
+
+  ```
+  detectNeedsHuman(<live coder pane>)      -> false      (correct: it was working)
+  extractQuestionSnippet(<live coder pane>) -> "──── SwarmForge Coder ── ⏵⏵ bypass
+                                                permissions on (shift+tab to cycle)
+                                                · install gh for PR status · e… /rc"
+  ```
+
+  So the extractor returns chrome even with no question present. When a gate does
+  fire, that is what the human gets.
+
+description: |
+  ## Two distinct leaks, both precisely diagnosable
+
+  `extractQuestionSnippet` does apply the BL-395 chrome filter — the failure is that
+  two real-world lines slip through it.
+
+  **1. The pane title rule is not "all box characters".**
+
+  ```
+  BOX_RULE_OR_PLACEHOLDER_LINE_PATTERN = /^[\s─-╿▀-▟■-◿⠀-⣿]+$/
+  ```
+
+  Requires the WHOLE line to be box-drawing glyphs. tmux renders the pane title
+  inside the rule:
+
+  ```
+  ──────────────────────────── SwarmForge Coder ──
+  ```
+
+  Letters present, so it is not chrome by this test, and it survives.
+
+  **2. The footer survives when it is TRUNCATED.**
+
+  `isFooterFurnitureLine` strips known phrases then requires the remainder to be
+  connector-only:
+
+  ```
+  FOOTER_PHRASES_PATTERN     = /(bypass permissions(?: on)?|shift\+tab to cycle|accept edits|for agents|⏵+)/gi
+  FOOTER_CONNECTOR_ONLY_PATTERN = /^[\s·←→()]*$/
+  ```
+
+  The live footer is `⏵⏵ bypass permissions on (shift+tab to cycle) · install gh for
+  PR status · e…`. `install gh for PR status` is not in the phrase list, and `e…` is
+  a phrase tmux truncated mid-word. The remainder is not connector-only, so the whole
+  line survives.
+
+  The truncation is the harder half: the footer's tail is elided by terminal WIDTH,
+  so its text differs between panes and window sizes. A fixed phrase list will keep
+  losing this race.
+
+  ## Why BL-395 let these through, and why that was reasonable
+
+  BL-395's stated rule is *"a line is dropped only when it is UNAMBIGUOUSLY chrome; a
+  line containing real words is never chrome"* — deliberately conservative, so real
+  content is never eaten. Both leaking lines contain real words. The guard is working
+  as designed; the design does not cover word-bearing furniture.
+
+  This is a genuine tension, not sloppiness, and the fix must not resolve it by
+  loosening the rule — dropping a line because it *looks* like furniture is how a real
+  question gets eaten, which is far worse than a noisy alert.
+
+  ## Shape
+
+  Match the furniture EXACTLY rather than heuristically. Both leaks are fixed,
+  known strings, not fuzzy shapes:
+
+  1. **Pane title rule:** a line whose non-box characters are only the known session
+     name (`SwarmForge <Role>`), between box runs, is chrome. Anchored on the
+     session-name shape the launcher itself creates, so it cannot match prose.
+  2. **Truncated footer:** anchor on the line's START (`⏵⏵` / `⏵` plus a known opening
+     phrase) rather than trying to account for every phrase to the end of a line the
+     terminal has already cut. A line that BEGINS as the footer is the footer,
+     however it was truncated.
+  3. **Refuse to send an empty snippet.** If nothing survives the filter, say so —
+     `"(no question text captured; open the pane)"` — rather than sending furniture.
+     That is the load-bearing change: it converts every future filter miss from
+     misinformation into an honest "look yourself", and it makes the alert useful
+     even when a new terminal chrome line appears that nobody has seen yet.
+
+  Item 3 matters more than 1 and 2. Chrome will keep changing with Claude Code
+  releases and terminal widths; a snippet that fails closed stays correct across all
+  of it.
+
+acceptance: specs/features/BL-642-gate-snippet-is-terminal-chrome-not-the-question.feature
+out_of_scope: |
+  - The `NeedsApproval` event NAME, which reads as ticket `human_approval` but means
+    "a role's pane is gated". Confusing, and worth its own ticket; renaming it here
+    would mix a rename into a defect fix.
+  - Whether the 16:01 gate was itself a false positive. Unverifiable after the fact —
+    the pane has moved on, and `detectNeedsHuman` is correct on the current capture.
+  - Any change to how gates are detected or routed.
+
+notes: |
+  Priced `severity: medium`: nothing breaks, but the alert channel is the operator's
+  phone and this makes a gate notification worthless — the human must open the pane
+  anyway, which is precisely what BL-325 added the snippet to avoid. An alert that
+  reliably says nothing trains the operator to ignore the channel. Same family as
+  BL-639 (age counts deliberate downtime) and BL-637 (a teardown reporting success
+  it did not achieve).
+
+  Found by reading one screenshot and re-running the real function against the live
+  pane rather than trusting the message's appearance. The message looked corrupted;
+  it was in fact working exactly as written.
+
+  BL-723 coder verdict (2026-07-30): not-on-par. FOOTER_START_PATTERN and the
+  NO_QUESTION_TEXT_CAPTURED fail-closed fallback are correct and well tested.
+  But PANE_TITLE_SESSION_NAME_PATTERN (needsHumanDetection.ts:39) only
+  matches a single-token role name after "SwarmForge " — swarmforge.sh's
+  display_name_for_role() title-cases multi-word roles (e.g. model-steward ->
+  "Model Steward"), and a title-rule line for such a role is not recognized
+  as chrome, confirmed directly against the shipped regex. Remaining-work
+  defect: BL-732. Pilot-process defect: BL-733.

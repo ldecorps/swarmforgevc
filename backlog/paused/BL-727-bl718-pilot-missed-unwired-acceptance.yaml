@@ -1,0 +1,46 @@
+id: BL-727
+title: "Pilot process: BL-718 landed with a hand-authored feature file and zero step handlers — no gate caught it"
+milestone: M8
+type: defect
+severity: low
+status: todo
+epic: swarm-reliability
+assigned_to: specifier
+priority: 6
+direction: normal
+depends_on: []
+mutation_cost: low
+source: |
+  Found during BL-723 (pilot-tonight quality review), coder viewpoint pass,
+  2026-07-30. Companion remaining-work ticket: BL-726.
+
+notes: |
+  Pilot-process half of the BL-718 shortfall pair (Article 4.4-style pairing
+  required by BL-723's pass criteria: every shortfall gets both a
+  remaining-work defect and a pilot-process defect).
+
+description: |
+  ## What
+
+  BL-718 shipped through the offline pilot with an acceptance feature file
+  that has never had a matching step handler, so `specs/pipeline/cli.js`
+  would throw "no step handler matched" on the very first run. On a normal
+  live pipeline, BL-112 requires the coder to generate and run the acceptance
+  entry point as part of implementing the slice, and QA independently runs
+  the acceptance gate before merge — either of those, run for real, would
+  have caught this immediately.
+
+  ## Question to answer
+
+  Did the pilot run `specs/pipeline/scripts/run_acceptance.sh` (or the
+  equivalent QA gate) at all for BL-718, or was the acceptance step silently
+  skipped/assumed? If skipped, what pilot-specific condition let a ticket
+  reach `done/` without ever executing its own named acceptance contract —
+  and how does `/pilot` get hardened so a missing step-handler file fails the
+  pilot's gate the same way it would fail a live QA pass, rather than landing
+  invisibly.
+
+  ## Out of scope
+
+  Re-litigating BL-718's implementation quality (that's BL-726); this ticket
+  is about the pilot's gate blind spot only.

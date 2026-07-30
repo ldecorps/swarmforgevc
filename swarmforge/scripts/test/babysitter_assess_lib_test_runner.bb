@@ -46,8 +46,35 @@
   (assert-true "alert-severity filters ok"
                (and (babysitter-assess-lib/alert-severity? "warn")
                     (babysitter-assess-lib/alert-severity? "critical")
+                    (babysitter-assess-lib/alert-severity? "warn-fixture-droppings")
                     (not (babysitter-assess-lib/alert-severity? "ok"))
-                    (not (babysitter-assess-lib/alert-severity? "watch")))))
+                    (not (babysitter-assess-lib/alert-severity? "watch"))))
+
+  ;; BL-646: flip babysitter hint for pure test-fixture droppings
+  (let [assessment (babysitter-assess-lib/assess-one-claim
+                      (assoc base
+                             :progress {:claimCommit "aaaa" :claimAtMs (- now 900000) :reclaims 0}
+                             :worktree-path "/nonexistent"
+                             :head-commit "aaaa"
+                             :untracked-paths ["calls.log" "email-text.txt" "failure.log" "status.json"]))]
+    (assert= "BL-646 fixture droppings severity"
+             "warn-fixture-droppings"
+             (:severity assessment))
+    (assert-true "BL-646 fixture droppings hint forbids commit"
+                 (and (string? (:hint assessment))
+                      (re-find #"do NOT git add/commit" (:hint assessment))
+                      (not (re-find #"nudge role to git add/commit" (:hint assessment)))))
+    (println "PASS: BL-646 fixture droppings hint forbids commit")))
+
+;; ── BL-646: pure fixture-droppings predicate ────────────────────────────────
+(assert-true "only-known-fixture-droppings? true for the four fixture names"
+             (babysitter-assess-lib/only-known-fixture-droppings?
+              ["calls.log" "email-text.txt" "failure.log" "status.json"]))
+(assert-true "only-known-fixture-droppings? false when mixed with real work"
+             (not (babysitter-assess-lib/only-known-fixture-droppings?
+                   ["calls.log" "extension/src/draft.ts"])))
+(assert-true "only-known-fixture-droppings? false when empty"
+             (not (babysitter-assess-lib/only-known-fixture-droppings? [])))
 
 (when (seq @failures)
   (binding [*out* *err*]

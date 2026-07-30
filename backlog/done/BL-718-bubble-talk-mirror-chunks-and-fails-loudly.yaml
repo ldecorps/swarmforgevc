@@ -1,0 +1,109 @@
+id: BL-718
+title: "DEFECT — Bubble talk mirror drops long replies and fails silently"
+milestone: M8
+type: defect
+severity: medium
+status: done
+epic: swarmforge-console
+human_approval: approved
+priority: 2
+direction: normal
+depends_on: []
+mutation_cost: low
+required_stages: [specifier, coder, cleaner, architect, hardender, documenter, qa]
+assigned_to: none
+
+invariants:
+  - "Mirror delivery is length-independent: a reply of any length reaches the Bubble topic complete and in order, or fails loudly — length alone never silently truncates or drops a transcript."
+  - "The mirror never both fails and stays quiet: any send that exhausts its retry budget is surfaced on an operator-visible channel."
+  - "An ordinary Let's Talk turn posts its transcript to the Bubble topic and not to the Cursor Remote topic."
+
+approval_context: >
+  Two defaults chosen without asking, cheap to amend:
+  (1) a mirror failure is surfaced to the OPERATOR channel (log plus operator
+  alert), not spoken to the human on the phone — the turn itself succeeded and
+  interrupting it with a delivery complaint seemed worse than a quiet operator
+  alert; (2) the mirror keeps failing soft with respect to the phone turn: a
+  dead mirror never fails the human's Let's Talk turn. Amend if you want the
+  failure announced in Bubble itself, or the turn marked degraded.
+
+required_wiring:
+  - "extension/src/bridge/bridgeServer.ts::splitTelegram::the Bubble mirror must call the shared chunker, not one un-chunked send"
+  - "specs/features/BL-718-bubble-talk-mirror-chunks-and-fails-loudly.feature::Scenario::acceptance contract"
+
+description: |
+  ## What
+
+  Human via Let's Talk 2026-07-30: spoken turns are not reliably mirrored into
+  the standing Bubble topic. Conversation text shows up on the Cursor Remote
+  host topic instead, and Bubble gets no clean You / Bubble transcript. A
+  hand-posted audio message into Bubble worked, so the topic binding is fine —
+  the automatic mirror path is the defect.
+
+  ## Confirmed failing site (verified at spec time, 2026-07-30)
+
+  `mirrorLetsTalkTurnToBubble` in `extension/src/bridge/bridgeServer.ts:256`:
+
+  - It calls `sendTelegramMessageWithRateLimitRetry` **once, un-chunked**, so a
+    reply over Telegram's single-message limit is rejected wholesale. The
+    Cursor Remote path already chunks — `telegramCursorBridgeLive.ts:458` uses
+    `splitTelegramHtmlChunks`; the shared plain-text chunker is
+    `splitTelegramChunks` in `telegramCursorBridgeCore.ts:478`. Reuse one of
+    those; do not write a third splitter.
+  - It **discards the send result** and returns `void`, and its only caller
+    (`bridgeServer.ts:1436`, `onTurnSuccess`) does not await it — so both a
+    failed send and a rejected promise vanish. That is the "fails silent" half.
+
+  ## Requested outcome
+
+  Every successful turn leaves a complete You / Bubble transcript in the Bubble
+  topic, chunked as needed; a send that exhausts its retries is surfaced to the
+  operator; choice-poll mirroring keeps working; and the Cursor Remote topic
+  stops receiving the ordinary talk dump.
+
+  ## e2e QA procedure
+
+  1. With the Bubble topic bound, take a short Let's Talk turn — confirm a
+     You / Bubble transcript in Bubble and nothing in Cursor Remote.
+  2. Take a turn whose reply exceeds one Telegram message — confirm every part
+     arrives, in order, as multiple chunks.
+  3. Point the mirror at an invalid topic id (or revoke the token) and take a
+     turn — confirm the phone still gets its spoken reply AND the operator sees
+     an explicit mirror failure.
+  4. Take a turn whose reply contains a choice poll — confirm both the poll and
+     the text transcript land in Bubble.
+
+  ## Out of scope
+
+  - Merging Bubble and Cursor Remote into one topic.
+  - Hold music, TTS, or the silent-return defect (BL-717).
+  - Barge-in and hey-bubble wake intakes.
+  - Not expedite, not ambulance, not the offline expeditor.
+
+acceptance: specs/features/BL-718-bubble-talk-mirror-chunks-and-fails-loudly.feature
+
+source: |
+  Human via Let's Talk 2026-07-30, after a hand-posted Bubble audio message
+  proved the topic binding works. Drained from
+  `backlog/INTAKE-bubble-talk-mirror-must-chunk-and-not-fail-silent.md`.
+  Human: normal defect, not expedite.
+
+notes: |
+  Severity rationale: the human loses a durable transcript, not control of the
+  swarm — the spoken turn itself still works and Cursor Remote still shows the
+  text. Contained, so medium; deliberately not high, which would put it in the
+  Article 3.2.4 expedite lane the human ruled out.
+
+  `required_wiring` is declared because this is the BL-419 shape: it would be
+  entirely possible to ship a chunk-aware mirror helper that nothing calls, and
+  the un-chunked `sendTelegramMessageWithRateLimitRetry` at bridgeServer.ts:271
+  would keep running in production while a green suite covered the new helper.
+  The gate refuses the documenter's handoff to QA if the mirror site does not
+  actually call the shared chunker.
+
+  BL-723 coder verdict (2026-07-30): not-on-par. The mirror/chunking
+  implementation itself is correct and has real behavioral unit tests, but
+  this ticket's own acceptance feature file has zero step handlers under
+  specs/pipeline/steps/ — specs/pipeline/cli.js would throw "no step handler
+  matched" on every scenario, so the acceptance gate never actually ran.
+  Remaining-work defect: BL-726. Pilot-process defect: BL-727.

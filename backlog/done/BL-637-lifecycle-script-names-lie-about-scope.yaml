@@ -1,0 +1,174 @@
+id: BL-637
+title: "Lifecycle script names lie about their scope: `kill_all_swarm.sh` is the one that does NOT kill all, and the operator's own recorded teardown procedure named the wrong script because of it"
+milestone: M8
+type: defect
+status: done
+epic: swarm-reliability
+human_approval: approved
+severity: medium
+priority: 06
+direction: human-requested
+depends_on: []
+assigned_to: specifier
+mutation_cost: low
+
+approval_context: >
+  Operator, 2026-07-25: "kill_all_swarm.sh ne couvre ni le babysitter ni les
+  services annexes -> il devrait. kill_all means kill_all. Il faut aussi un
+  start_all qui start_all. Il faut nommer les scripts plus clairement peut-etre?"
+  Investigation found the CAPABILITY already exists and is correct — it is the
+  naming that is wrong, and it has already caused a real error. Ticket scoped to
+  naming/discoverability accordingly, not to building what is there.
+  Hydrate-batch-2 commit only materializes this approved prose into APS
+  Gherkin; no scope change.
+
+source: |
+  2026-07-25. The operator was preparing a clean stop to run offline work. Both
+  the operator and this session independently concluded that
+  `kill_all_swarm.sh` "does not cover the babysitter or the ancillary services,
+  so I will stop them by hand" — and both were about to reimplement, by hand,
+  something that already exists and is already correct.
+
+  ## What actually exists (verified by inspection)
+
+  | entry point | scope | symmetric? |
+  |---|---|---|
+  | `./start-swarm.sh` | **full stack** — pipeline + `start_ancillary_services.sh` (operator runtime, front desk, babysitter, onboarder, tunnels) | with `./stop-swarm.sh` |
+  | `./stop-swarm.sh` | **full stack** — ancillaries first, then `kill_all_swarm.sh` | with `./start-swarm.sh` |
+  | `./swarm` | pipeline only (`exec`s `swarmforge.sh`) | with `./swarm-kill` |
+  | `./swarm-kill` | pipeline only (`exec`s `kill_all_swarm.sh`) | with `./swarm` |
+
+  `start_ancillary_services.sh` / `stop_ancillary_services.sh` are a correct,
+  complete, symmetric pair. `stop_ancillary_services.sh` even stops the
+  babysitter FIRST, with the right reason in a comment: *"Babysitter first — it
+  can relaunch or wake agents while we tear down."* Nothing here needs building.
+
+  ## The harm, which is not hypothetical
+
+  `swarm-teardown-notes` — the operator's own durable procedure note, written
+  2026-07-10 — said **"Stop: `./swarm-kill`"**. That is the narrow layer. Anyone
+  following that note leaves the babysitter, operator runtime, Telegram front
+  desk, onboarder and tunnels running while believing the stack is
+  down. The note was corrected on 2026-07-25 only because this came up by
+  accident.
+
+  A name that makes a competent reader reach for the wrong tool, and that
+  survived fifteen days inside a written procedure, is a defect in the name.
+
+description: |
+  ## The specific lies
+
+  1. **`kill_all_swarm.sh` does not kill all.** It kills role agents, handoffd +
+     its supervisor, stale sockets and state markers. It does not touch the
+     babysitter, operator runtime, front desk, onboarder or tunnels. The word
+     "all" is the whole problem: it reads as the outermost layer and is the
+     innermost.
+  2. **`./swarm-kill` is not the counterpart to `./start-swarm.sh`.** It is the
+     counterpart to `./swarm`. Two pairs exist at two scopes and no name says
+     which is which — `./swarm-kill` in particular sounds like the definitive
+     stop, and it is the partial one.
+  3. **Three verbs for one concept.** `start_*` (4), `launch_*` (10), and
+     `stop_*`/`kill_*` on the teardown side. `start_babysitter.sh` has no
+     `stop_babysitter.sh` sibling — its stop lives inside
+     `stop_ancillary_services.sh`, discoverable only by reading it.
+  4. **Two casing conventions by location.** Root wrappers are kebab-case
+     (`start-swarm.sh`, `stop-swarm.sh`, `attach-swarm.sh`); everything in
+     `swarmforge/scripts/` is snake_case. Nothing signals that the kebab ones
+     are the user-facing entry points, if that is even the intended rule.
+
+  ## Shape
+
+  Specifier's call, but the constraint that matters: **names must state scope**,
+  and the outermost name must be the one a hurried operator reaches for.
+
+  A rename is cheap and the blast radius is knowable — but it is NOT zero, and
+  the specifier must enumerate callers before touching anything:
+
+  - `swarm-kill` (root) `exec`s it; `stop-swarm.sh` calls it after ancillaries.
+  - The flow-watchdog's endless-loop hard stop runs `kill_all_swarm.sh`
+    (see PIPELINE.md's "Endless-loop hard stop") — a rename that misses this
+    turns the swarm's own emergency brake into a no-op, which is far worse than
+    a confusing name.
+  - `.swarmforge/daemon/kill-all-audit.log` is written by it and is referenced
+    by recorded operator procedure for diagnosing AGENT_EXITED storms.
+  - Role prompts, runbooks and `docs/how-to/` may name it.
+
+  Recommend keeping the old names as thin shims that delegate and print a
+  one-line pointer to the new name, rather than a hard cut. Cheaper than
+  auditing every prompt and doc for stale references, and it makes the next
+  reader's mistake self-correcting.
+
+  ## Deliberately NOT proposed: merging the two scopes
+
+  Both scopes are legitimate. Stopping the pipeline while leaving the Telegram
+  front desk up is exactly what an operator wants when parking work — it keeps
+  alerting visibility with no agents running. Collapsing to a single "stop
+  everything" would remove a capability that is in active use today. The fix is
+  that the names should make the choice obvious, not that the choice should go
+  away.
+
+acceptance: specs/features/BL-637-lifecycle-script-names-lie-about-scope.feature
+out_of_scope: |
+  - Building start_all / stop_all. They exist (`./start-swarm.sh` /
+    `./stop-swarm.sh`) and are correct. This ticket is naming only.
+  - Collapsing the two scopes into one. See the description.
+  - Changing what `stop_ancillary_services.sh` stops, or its babysitter-first
+    ordering — that ordering is correct and its comment states why.
+  - The `/tmp/tmp.*` front-desk bot/bridge husks visible in `ps` during this
+    investigation. Separate, already-recorded proliferation issue.
+
+  ## Measured teardown gap, 2026-07-25 13:06 BST — `./stop-swarm.sh` reported
+  ## "SUCCESS — clean slate" with two processes still running
+
+  This was not inferred; it was observed while stopping the stack for offline
+  work. The full-stack stop ran cleanly and logged every step, then:
+
+  1. **`stopping babysitter` succeeded and the running babysitter survived.**
+     There are TWO babysitters and the stop path knows only one:
+     - `.swarmforge/babysitter/` + `start_babysitter.sh` — what
+       `stop_ancillary_services.sh` targets. Its log's mtime was **Jul 22 16:43**;
+       it had been dead for three days.
+     - `./.swarmforge/operator/babysitterd.sh` — PID 2073141, **up 1d08h**, the
+       one actually performing 5-minute deterministic sweeps that nudge the
+       coordinator. Operator-launched, unknown to the stop path, survived.
+  2. **`stopping operator runtime` succeeded and the Operator AGENT survived** —
+     PID 1149684, elapsed **2d06h**, `--remote-control Operator`, with 6
+     unprocessed events in `events.inflight.jsonl`. An Operator whose job is to
+     health-check and recover the swarm, left alive next to a deliberately
+     stopped swarm, can restart what was just stopped.
+
+  Both had to be SIGTERMed by hand. So the scope problem is not only in the names:
+  `stop_ancillary_services.sh` genuinely does not cover everything the ancillary
+  start path (and the operator, by hand) brings up. Whatever the specifier decides
+  about naming, add a scenario for each of these two.
+
+  Suggested and cheap: have the stop path VERIFY rather than assume, and refuse to
+  print "clean slate" while a known-supervised process is still alive. A teardown
+  that reports success while two daemons run is worse than one that reports a
+  partial stop, because the operator stops checking.
+
+  Note the self-match trap when auditing this by hand: `ps -eo args | grep -c
+  babysitterd` and `pgrep -f handoffd.bb` both match the auditing shell's OWN
+  command line and report phantom survivors. Count by parsing `ps` output, or the
+  audit invents processes that do not exist.
+
+notes: |
+  Priced `severity: medium`: nothing is broken at runtime, but the failure mode is
+  a human confidently believing the stack is down when it is not — during exactly
+  the situations (incident, teardown, offline work) where that belief is
+  load-bearing. Not expedited ahead of BL-629/630/631/632.
+
+  Worth stating in the design as the standing lesson: the capability was right and
+  two readers still got it wrong, fifteen days apart, one of them writing the
+  error into a durable procedure note. That is the signal a name is doing damage.
+
+  BL-723 coder verdict (2026-07-30): not-on-par. Script renaming, --help
+  scope wording, and the new full-stack stack_survivor_scan.sh are all
+  correct. But kill_pipeline_swarm.sh:271 kept the old unscoped pgrep
+  survivor check (not anchored to $ROOT, unlike the reaping loop two lines
+  above it) — reproduced live: it false-positives on a legitimately running
+  handoffd.bb from a sibling worktree, which is exactly the multi-worktree
+  reality this repo runs in daily, and is what failed this ticket's own
+  acceptance suite (8/8) and one shell test when re-run during this review.
+  Remaining-work defect: BL-730 (severity high — live, reproducible false
+  positive). Pilot-process defect: BL-731.

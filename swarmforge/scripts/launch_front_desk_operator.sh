@@ -12,6 +12,18 @@
 #   FRONT_DESK_OPERATOR_EFFORT=...
 set -euo pipefail
 
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+  cat <<'EOF'
+launch_front_desk_operator.sh — lifecycle start entry point.
+
+Stop: stop_ancillary_services.sh / ./stop-swarm.sh (or ./swarm-kill for pipeline-only)
+
+Usage: see header comments above.
+EOF
+  exit 0
+fi
+
+
 ROOT="${1:?usage: launch_front_desk_operator.sh <project-root> <prompt-file> <result-file>}"
 PROMPT_FILE="${2:?usage: launch_front_desk_operator.sh <project-root> <prompt-file> <result-file>}"
 RESULT_FILE="${3:?usage: launch_front_desk_operator.sh <project-root> <prompt-file> <result-file>}"

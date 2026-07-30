@@ -1,0 +1,43 @@
+id: BL-726
+title: "BL-718's acceptance feature file has zero step handlers — Gherkin gate never actually ran"
+milestone: M8
+type: defect
+severity: medium
+status: todo
+epic: swarmforge-console
+assigned_to: specifier
+priority: 5
+direction: normal
+depends_on: []
+mutation_cost: low
+source: |
+  Found during BL-723 (pilot-tonight quality review), coder viewpoint pass,
+  2026-07-30. BL-718's own implementation (Bubble talk mirror chunking) is
+  solid and has real unit tests in extension/test/letsTalkBridge.test.js, but
+  its acceptance field points at specs/features/BL-718-*.feature and no
+  matching handler file exists anywhere under specs/pipeline/steps/ (grepped
+  both the steps directory and index.js). specs/pipeline/runtime.js throws
+  "no step handler matched" for any unhandled step, so this feature file has
+  never actually executed to completion.
+
+notes: |
+  BL-723 coder verdict on BL-718: not-on-par, specifically for this gap (the
+  implementation itself was rated on-par). Linked pilot-process defect: BL-727.
+
+description: |
+  ## What
+
+  Wire specs/pipeline/steps/bl718BubbleTalkMirrorSteps.js (or equivalent) so
+  the BL-718 acceptance feature's Given/When/Then steps resolve to real
+  handlers driving the actual mirror/chunking code, matching the pattern
+  already used by sibling tickets (e.g. bl627PricingTableCorrectnessSteps.js,
+  bl642GateSnippetTerminalChromeSteps.js) — assert against real committed
+  behavior (chunk boundaries, operator event JSON, topic routing), never
+  prompt text.
+
+  ## Acceptance
+
+  Run `node specs/pipeline/cli.js specs/features/BL-718-bubble-talk-mirror-chunks-and-fails-loudly.feature`
+  end to end with no "no step handler matched" failures, and each scenario's
+  assertions are behavior-real (grep for the actual function calls in the
+  handler file).

@@ -1,0 +1,38 @@
+id: BL-735
+title: "Pilot process: BL-559 was QA-landed twice (paused->done, revert, re-land) without ever executing its Gherkin acceptance"
+milestone: M8
+type: defect
+severity: low
+status: todo
+epic: swarm-reliability
+assigned_to: specifier
+priority: 6
+direction: normal
+depends_on: []
+mutation_cost: low
+source: |
+  Found during BL-723 (pilot-tonight quality review), coder viewpoint pass,
+  2026-07-30. Companion remaining-work ticket: BL-734.
+
+notes: |
+  Pilot-process half of the BL-559 shortfall pair.
+
+description: |
+  ## What
+
+  BL-559 moved paused -> done on 2026-07-29, was reverted, then re-landed
+  done on 2026-07-30 — a double-landing that is itself a landing-hygiene red
+  flag — and at no point did the pilot run the ticket's own named acceptance
+  feature. On a live QA pass this is the final gate before merge (Article
+  4.1/4.2); its absence here is exactly the kind of gap BL-723 exists to
+  surface.
+
+  ## Question to answer
+
+  What caused the first done-landing to get reverted, and did the pilot's
+  QA-equivalent step ever actually execute
+  specs/pipeline/scripts/run_acceptance.sh (or the CLI directly) for this
+  ticket at either landing? Harden `/pilot` so a ticket cannot reach done/
+  without its own acceptance feature having actually run (not merely being
+  present), and so a revert-then-relanded ticket carries a visible note
+  explaining why.

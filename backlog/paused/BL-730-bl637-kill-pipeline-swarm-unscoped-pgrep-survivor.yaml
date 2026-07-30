@@ -1,0 +1,48 @@
+id: BL-730
+title: "kill_pipeline_swarm.sh's survivor check still uses unscoped pgrep — false-positives across sibling worktrees"
+milestone: M8
+type: defect
+severity: high
+status: todo
+epic: swarm-reliability
+assigned_to: specifier
+priority: 3
+direction: normal
+depends_on: []
+mutation_cost: low
+source: |
+  Found during BL-723 (pilot-tonight quality review), coder viewpoint pass,
+  2026-07-30. BL-637 extracted kill_pipeline_swarm.sh from the old
+  kill_all_swarm.sh body and added a correctly root-scoped
+  stack_survivor_scan.sh for the new full-stack verify path, but
+  swarmforge/scripts/kill_pipeline_swarm.sh:271 kept the OLD unscoped
+  `pgrep -fl 'handoffd\.bb|copilot.*SwarmForge'` "remaining" check verbatim
+  — not anchored to $ROOT, unlike the reaping loop two lines above it at
+  :230 which is. Reproduced live: this currently matches a legitimately
+  running handoffd.bb process from the sibling /home/carillon/swarmforgevc
+  worktree and reports a false "WARNING survivors remain", which is what
+  failed the BL-637 acceptance suite (8/8 FAIL) and one shell test
+  (test_lifecycle_script_scope.sh test 02) when reproduced during this
+  review.
+
+notes: |
+  BL-723 coder verdict on BL-637: not-on-par for this gap — everything else
+  in the ticket (script renaming, --help scope wording, the new full-stack
+  survivor scan) is correct. Linked pilot-process defect: BL-731.
+
+description: |
+  ## What
+
+  Anchor kill_pipeline_swarm.sh's post-kill "remaining" pgrep check to
+  $ROOT the same way the reaping loop above it already is (or reuse the
+  scoped stack_survivor_scan.sh helper this same ticket built for the
+  full-stack path), so it stops flagging processes from unrelated sibling
+  worktrees as survivors of THIS pipeline's teardown.
+
+  ## Acceptance
+
+  With a real second worktree's handoffd.bb running (the actual repro
+  condition here), kill_pipeline_swarm.sh in this worktree must not report
+  false survivors. specs/features/BL-637-*.feature and
+  test_lifecycle_script_scope.sh must both pass in that same multi-worktree
+  condition, not just in isolation.

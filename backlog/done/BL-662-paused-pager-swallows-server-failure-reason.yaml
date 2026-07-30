@@ -1,0 +1,81 @@
+id: BL-662
+title: "Paused pager console screen swallows the server's failure reason on non-OK responses — shows a bare 'HTTP 404' while discarding 'ticket not found in active/paused'"
+milestone: M8
+type: defect
+status: todo
+epic: swarmforge-console
+severity: low
+priority: 30
+direction: swarm-surfaced
+depends_on: []
+assigned_to: specifier
+mutation_cost: low
+human_approval: approved
+approval_context: >
+  Hydrate-batch-2: materializing the description's "Acceptance signal" prose
+  into APS Gherkin. No human sign-off yet on this specific ticket; flagged
+  pending per hydrate-batch convention.
+invariants:
+  - "Every server-sent failure reason reaches the screen: no response path of the paused pager reduces an error carrying a reason to a bare HTTP status code."
+
+source: |
+  Architect rule_proposal (engineering scope), 2026-07-26, handoff
+  50_20260726T124600Z_000561: "BL-572 bounce #3 fixed this in
+  epicReorderUiHtml; pausedPagerUiHtml.ts:222 still swallows 'ticket not
+  found in active/paused' on 404. Needs its own ticket." Rule ACCEPTED into
+  engineering.prompt Guardrails the same turn; this ticket is the surviving
+  concrete site. Site verified on main by the specifier: the non-OK branch
+  sets `failText + ' (HTTP ' + r.status + ')'` then reads `r.json()` only to
+  discard it.
+
+description: |
+  ## Defect
+
+  In `extension/src/bridge/pausedPagerUiHtml.ts` (~line 222), the POST action
+  handler's non-OK branch renders `opts.failText + ' (HTTP ' + r.status + ')'`
+  and then swallows the response body:
+
+      if (!r.ok) {
+        setStatus(opts.failText + ' (HTTP ' + r.status + ')');
+        return r.json().catch(function () { return {}; });
+      }
+
+  The bridge sends a JSON `reason` on failure (e.g. `ticket not found in
+  active/paused` on 404), and the OK-but-unsuccessful branch directly below
+  already displays `payload.reason` — only the non-OK branch discards it. The
+  human sees "HTTP 404" and has to guess which of several possible causes
+  applies.
+
+  ## Fix shape
+
+  Read the body FIRST on the non-OK branch and prefer its `reason` for the
+  status line, falling back to `failText (HTTP <status>)` only when the body
+  has none or fails to parse. BL-572's bounce-#3 rework applied exactly this
+  to the epic reorder screen (commit decc3f7d6, "fix reason-swallowing UI
+  bug") — match that pattern rather than inventing a sibling variant; when
+  BL-572 lands on main, the two screens should read identically.
+
+  Sweep the rest of pausedPagerUiHtml.ts (and any other status-line writer in
+  the same file) for the same shape while in there — the invariant above
+  covers every response path of this screen, not just the one named line.
+
+  ## Acceptance signal
+
+  Driving the screen's action against a bridge returning 404 + reason shows
+  the reason text in the status line, not a bare HTTP code; a reasonless
+  non-OK response still shows the failText + status fallback.
+
+acceptance: specs/features/BL-662-paused-pager-swallows-server-failure-reason.feature
+
+notes: |
+  BL-723 coder verdict (2026-07-30): on-par. Root cause fixed directly
+  (discarding the parsed body) via a shared reasonOrFallback helper that
+  also removes prior duplication; jsdom tests genuinely drive the compiled
+  script and exercise both approve/expedite action types. Caveat: the
+  ticket asked to sweep the rest of the file for the same shape — a scan
+  didn't turn up other status-line writers, so this appears satisfied, but
+  the sweep itself isn't documented in the commit. The feature file's
+  Scenario Outline has no matching specs/pipeline/steps/ handler (covered
+  instead by hand-written unit tests) — not filed as a separate defect
+  since the underlying behavior is genuinely tested, just not through the
+  Gherkin path.

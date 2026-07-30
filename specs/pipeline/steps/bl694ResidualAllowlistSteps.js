@@ -1,5 +1,7 @@
 'use strict';
 
+const path = require('node:path');
+
 const {
   ALLOWED_EXACT_PATHS,
   ALLOWED_BACKLOG_TICKET_BASENAMES,
@@ -12,6 +14,10 @@ const FEATURE_NAME = 'a grandfathered ticket keeps its allowlist entry when it c
 
 const GRANDFATHERED_BASENAME = 'BL-624-onboarding-facilitator-survey-to-gate.yaml';
 const UNGRANDFATHERED_PATH = 'backlog/paused/BL-999-not-on-allowlist-facilitator.yaml';
+
+function conflictBasename(ctx) {
+  return ctx.grandfatheredBasename ?? path.basename(ctx.grandfatheredPath);
+}
 
 function registerSteps(registry) {
   registry.define(/^a residual-word scan with an allowlist of grandfathered files$/, (ctx) => {
@@ -61,12 +67,20 @@ function registerSteps(registry) {
   });
 
   registry.define(/^a different file with the same basename at outside the backlog$/, (ctx) => {
-    ctx.conflictPath = `docs/tmp/${ctx.grandfatheredBasename}`;
+    ctx.conflictPath = `docs/tmp/${conflictBasename(ctx)}`;
     ctx.extraMatches = [...(ctx.extraMatches ?? []), ctx.grandfatheredPath, ctx.conflictPath];
   });
 
+  registry.define(
+    /^a different file with the same basename at (?:at )?a non-stage path under the backlog$/,
+    (ctx) => {
+      ctx.conflictPath = `backlog/topics/${conflictBasename(ctx)}`;
+      ctx.extraMatches = [...(ctx.extraMatches ?? []), ctx.grandfatheredPath, ctx.conflictPath];
+    }
+  );
+
   registry.define(/^a different file with the same basename at elsewhere in the tree$/, (ctx) => {
-    ctx.conflictPath = `specs/tmp/${ctx.grandfatheredBasename}`;
+    ctx.conflictPath = `specs/tmp/${conflictBasename(ctx)}`;
     ctx.extraMatches = [...(ctx.extraMatches ?? []), ctx.grandfatheredPath, ctx.conflictPath];
   });
 

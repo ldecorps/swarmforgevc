@@ -175,12 +175,67 @@
 (assert-true "empty mailbox is not actionable"
              (not (mono-router-lib/actionable-mail? {:in-process-count 0 :git-handoff-count 0})))
 
-(assert= "newest actionable role wins"
+(assert= "newest actionable role wins when priorities equal/absent"
          "architect"
          (mono-router-lib/preferred-rotate-target
           [{:role "coder" :newest-created-at "2026-07-22T01:00:00Z" :actionable? false}
            {:role "cleaner" :newest-created-at "2026-07-22T02:00:00Z" :actionable? true}
            {:role "architect" :newest-created-at "2026-07-22T03:00:00Z" :actionable? true}]))
+
+;; ── BL-636: priority-first rotate preference ──────────────────────────────
+(assert= "BL-636: parse-priority-rank accepts 00"
+         0 (mono-router-lib/parse-priority-rank "00"))
+(assert= "BL-636: parse-priority-rank accepts 50"
+         50 (mono-router-lib/parse-priority-rank "50"))
+(assert= "BL-636: absent priority ranks worse than any valid"
+         mono-router-lib/missing-priority-rank
+         (mono-router-lib/parse-priority-rank nil))
+(assert= "BL-636: blank priority ranks worse than any valid"
+         mono-router-lib/missing-priority-rank
+         (mono-router-lib/parse-priority-rank "  "))
+(assert= "BL-636: unparseable priority ranks worse than any valid"
+         mono-router-lib/missing-priority-rank
+         (mono-router-lib/parse-priority-rank "xx"))
+(assert= "BL-636: single-digit priority is unparseable"
+         mono-router-lib/missing-priority-rank
+         (mono-router-lib/parse-priority-rank "5"))
+(assert= "BL-636: best-priority-rank takes the lowest"
+         0 (mono-router-lib/best-priority-rank ["70" "00" "40"]))
+(assert= "BL-636: best-priority-rank empty -> missing"
+         mono-router-lib/missing-priority-rank
+         (mono-router-lib/best-priority-rank []))
+
+(assert= "BL-636: priority-00 beats newer priority-50"
+         "specifier"
+         (mono-router-lib/preferred-rotate-target
+          [{:role "specifier" :newest-created-at "2026-07-25T10:00:00Z"
+            :best-priority 0 :actionable? true}
+           {:role "coder" :newest-created-at "2026-07-25T12:30:00Z"
+            :best-priority 50 :actionable? true}]))
+
+(assert= "BL-636: at equal priority, newest still wins"
+         "architect"
+         (mono-router-lib/preferred-rotate-target
+          [{:role "cleaner" :newest-created-at "2026-07-25T10:00:00Z"
+            :best-priority 50 :actionable? true}
+           {:role "architect" :newest-created-at "2026-07-25T11:00:00Z"
+            :best-priority 50 :actionable? true}]))
+
+(assert= "BL-636: role ranked by best priority, not newest parcel's"
+         "specifier"
+         (mono-router-lib/preferred-rotate-target
+          [{:role "specifier" :newest-created-at "2026-07-25T12:00:00Z"
+            :best-priority 0 :actionable? true}
+           {:role "coder" :newest-created-at "2026-07-25T11:00:00Z"
+            :best-priority 40 :actionable? true}]))
+
+(assert= "BL-636: missing priority never jumps ahead of a valid 90"
+         "cleaner"
+         (mono-router-lib/preferred-rotate-target
+          [{:role "coder" :newest-created-at "2026-07-25T12:00:00Z"
+            :best-priority mono-router-lib/missing-priority-rank :actionable? true}
+           {:role "cleaner" :newest-created-at "2026-07-25T10:00:00Z"
+            :best-priority 90 :actionable? true}]))
 
 (assert= "busy resident blocks rotate"
          :busy

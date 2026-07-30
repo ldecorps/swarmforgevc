@@ -1,0 +1,78 @@
+id: BL-661
+title: "`read-stage-skip-reasons` parses only block-style mappings, but backlog-schema.md and every live ticket declare `stage_skip_reasons` flow-style — so declared reasons never reach the routing audit record"
+milestone: M8
+type: defect
+status: todo
+epic: swarm-reliability
+severity: low
+priority: 30
+direction: swarm-surfaced
+depends_on: []
+assigned_to: specifier
+mutation_cost: low
+human_approval: approved
+approval_context: >
+  Hydrate-batch-2: materializing prose acceptance (implicit in the
+  description's "The fix" section) into APS Gherkin. No human sign-off yet
+  on this specific ticket; flagged pending per hydrate-batch convention.
+
+source: |
+  Specifier, 2026-07-26, during the coordinator-requested BL-606/BL-633
+  retrofit sweep of backlog/paused/ (coordinator note 000801). Dogfooding the
+  two new `required_stages` declarations through the live resolver
+  (required_stages_lib.bb) showed `resolve-effective` accepting both, but
+  `read-stage-skip-reasons` returning {} for every declared reason. Checked
+  the rest of the queue: ALL SEVEN paused tickets carrying
+  `stage_skip_reasons` (BL-615, BL-641, BL-644, BL-646, BL-650, BL-651,
+  BL-656) use flow style, and backlog-schema.md's own example is flow style
+  (`stage_skip_reasons: { cleaner: "style-only commit", ... }`). Zero live
+  declarations are readable by the lib.
+
+description: |
+  ## The divergence
+
+  `required_stages_lib.bb` `read-stage-skip-reasons` recognizes only a BLOCK
+  mapping — indented `  <stage>: <reason>` lines following a bare
+  `stage_skip_reasons:` header. Every real declaration (and the schema doc's
+  example) puts a FLOW mapping `{ stage: "reason", ... }` on the header line
+  itself, so the reader's block scan finds nothing and returns {}.
+
+  Consumer impact: `swarm_handoff.bb:451` embeds `:reasons` in the routing
+  decision record it builds when `required_stages` routing skips stages. With
+  every live declaration flow-style, that audit field is always empty — the
+  committed justification exists in the ticket YAML but never travels into
+  the skip-trail record (the surface BL-623 extends). Routing itself is
+  unaffected: `resolve-effective` reads only `required_stages`, and the
+  schema explicitly treats absent/incomplete reasons as warning-grade.
+
+  ## The fix (pick one side, align the other)
+
+  Preferred: teach `read-stage-skip-reasons` to ALSO parse the single-line
+  flow mapping (the shape the schema documents and all real tickets use),
+  keeping block-style support for free. Stage keys still normalize through
+  `normalize-token` (case + hardener/hardender alias); unrecognized keys stay
+  verbatim per the existing contract. Alternative — rewriting schema doc plus
+  seven tickets to block style — touches more surfaces to express the same
+  intent and leaves old-commit archaeology unreadable; take it only if the
+  architect finds flow parsing genuinely fragile.
+
+  Unit tests live in swarmforge/scripts/test/required_stages_test_runner.bb
+  (the read-stage-skip-reasons section) — extend them with the flow-style
+  shape, including quoted reasons containing commas and braces, which is the
+  one real parsing hazard flow style introduces.
+
+  Scope note: .bb swarm scripts gate on their own unit suite only (BL-472
+  toolchain not wired) — the test runner above is the actual gate.
+
+acceptance: specs/features/BL-661-stage-skip-reasons-flow-style-unreadable-by-lib.feature
+
+notes: |
+  BL-723 coder verdict (2026-07-30): on-par. Root cause (block-only scanner
+  vs. universally flow-style declarations) correctly fixed at the source;
+  ran the unit suite live (ALL PASS). Caveat: the feature's scenario 05
+  (routing skip-trail audit record carries a flow-style reason end to end)
+  has no step handler wired against swarm_handoff.bb itself — the .bb unit
+  test only simulates the embed, so the ticket's stated consumer-impact
+  claim is unverified end-to-end. Judged a caveat, not a shortfall worth a
+  separate defect pair, since the underlying parser fix is correct and
+  tested directly.
