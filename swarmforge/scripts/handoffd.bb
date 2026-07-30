@@ -1852,12 +1852,81 @@
       {:success true}
       {:success false :error (str/trim (or err ""))})))
 
+;; BL-630: the real git/CLI-specific wiring for push_sweep_lib.bb's own
+;; qa-gate-decision - pure decision logic stays there, this is only the
+;; git-shelling adapter (mirrors this file's own push-sweep-rev-counts!
+;; posture). Called ONLY from within push_sweep_lib.bb's :should-push
+;; branch, so origin/main is already freshly fetched this tick (by
+;; push-sweep-rev-counts! above, which always runs first).
+(defn- git-ref-exists? [ref]
+  (zero? (:exit (process/sh ["git" "rev-parse" "--verify" "-q" ref] {:dir (str project-root)}))))
+
+(defn- git-rev-parse [ref]
+  (let [{:keys [exit out]} (process/sh ["git" "rev-parse" ref] {:dir (str project-root)})]
+    (when (zero? exit) (str/trim out))))
+
+;; git merge-base --is-ancestor's own exit codes: 0 = is an ancestor, 1 =
+;; is NOT (a clean, known "no" - never a failure), anything else = a real
+;; git failure (e.g. an unresolvable sha) - :ok? false distinguishes that
+;; from a clean :ancestor? false, so a real failure can fail closed instead
+;; of silently reading as "not approved" for the wrong reason.
+(defn- git-is-ancestor? [sha ref]
+  (let [{:keys [exit]} (process/sh ["git" "merge-base" "--is-ancestor" sha ref] {:dir (str project-root)})]
+    (cond
+      (zero? exit) {:ok? true :ancestor? true}
+      (= 1 exit) {:ok? true :ancestor? false}
+      :else {:ok? false :ancestor? false})))
+
+(defn- git-ahead-shas []
+  (let [{:keys [exit out]} (process/sh ["git" "rev-list" "origin/main..main"] {:dir (str project-root)})]
+    (when (zero? exit)
+      (->> (str/split-lines (str/trim out)) (remove str/blank?)))))
+
+(defn- git-changed-paths [sha]
+  (let [{:keys [exit out]} (process/sh ["git" "diff-tree" "--no-commit-id" "--name-only" "-r" sha] {:dir (str project-root)})]
+    (when (zero? exit)
+      (->> (str/split-lines (str/trim out)) (remove str/blank?)))))
+
+(defn- ahead-commit-facts [sha]
+  (let [ancestry (git-is-ancestor? sha "swarmforge-QA")]
+    (if-not (:ok? ancestry)
+      {:sha sha :ok? false}
+      (let [paths (git-changed-paths sha)]
+        {:sha sha :ok? (some? paths) :qa-ancestor? (:ancestor? ancestry) :changed-paths (or paths [])}))))
+
+(defn push-sweep-qa-gate-facts! []
+  (try
+    (if-not (git-ref-exists? "swarmforge-QA")
+      {:qa-ref-exists? false :facts-complete? true}
+      (let [main-tip (git-rev-parse "main")
+            tip-check (when main-tip (git-is-ancestor? main-tip "swarmforge-QA"))]
+        (cond
+          (or (nil? main-tip) (nil? tip-check) (not (:ok? tip-check)))
+          {:qa-ref-exists? true :facts-complete? false}
+
+          (:ancestor? tip-check)
+          {:qa-ref-exists? true :tip-is-qa-ancestor? true :facts-complete? true}
+
+          :else
+          (let [shas (git-ahead-shas)]
+            (if (nil? shas)
+              {:qa-ref-exists? true :tip-is-qa-ancestor? false :facts-complete? false}
+              (let [commit-facts (mapv ahead-commit-facts shas)]
+                (if (some (complement :ok?) commit-facts)
+                  {:qa-ref-exists? true :tip-is-qa-ancestor? false :facts-complete? false}
+                  {:qa-ref-exists? true :tip-is-qa-ancestor? false :facts-complete? true
+                   :ahead-commits (mapv #(select-keys % [:sha :qa-ancestor? :changed-paths]) commit-facts)})))))))
+    (catch Exception e
+      (log! "push-sweep-qa-gate-error" (.getMessage e))
+      {:facts-complete? false})))
+
 (defn push-sweep! []
   (try
     (push-sweep-lib/sweep!
      (System/currentTimeMillis) (str daemon-dir) push-sweep-retry-config
      {:rev-counts! push-sweep-rev-counts!
       :push! push-sweep-push!
+      :qa-gate-facts! push-sweep-qa-gate-facts!
       :send-push-alarm!
       (fn [attempts]
         (send-push-alarm-email!

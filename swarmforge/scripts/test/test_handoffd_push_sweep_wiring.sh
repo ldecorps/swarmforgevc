@@ -47,6 +47,11 @@ git -C "$ROOT" remote add origin "$REMOTE"
 git -C "$ROOT" push -q origin main
 # One unpublished commit - this is what push-sweep! must reach origin.
 echo "second" > "$ROOT/seed.txt" && git -C "$ROOT" add seed.txt && git -C "$ROOT" commit -q -m "unpushed commit"
+# BL-630: push-sweep now refuses to publish a tip that is not a
+# swarmforge-QA ancestor - this fixture's unpushed commit represents
+# QA-approved work reaching origin, so swarmforge-QA points at the same
+# tip (a commit is trivially its own ancestor).
+git -C "$ROOT" branch swarmforge-QA main
 
 SOCK="$ROOT/fake.sock"
 touch "$SOCK"
@@ -105,9 +110,32 @@ grep -q "push-sweep-error" "$LOG_FILE" && fail "the push sweep threw an exceptio
 pass "the push sweep ran without throwing"
 
 # ── an already-published main stays quiet on a later cycle ────────────────
-sleep 6
-UP_TO_DATE_COUNT="$(grep -c "push-sweep up-to-date" "$LOG_FILE" || true)"
-[[ "$UP_TO_DATE_COUNT" -ge 1 ]] || fail "expected a later sweep to report up-to-date once published, got: $(cat "$LOG_FILE")"
+# push-sweep! only runs every chase-sweep-every-cycles (10) poll cycles
+# (~10s at poll-ms=1000) - a blind `sleep 6` here can land before the next
+# tick ever fires (confirmed: this raced on a plain, unmodified main
+# checkout too - a pre-existing flake, not introduced by BL-630). Poll for
+# the log line instead of guessing a fixed sleep.
+wait_for_log "push-sweep up-to-date" 15 \
+  || fail "expected a later sweep to report up-to-date once published, got: $(cat "$LOG_FILE")"
 pass "a later sweep sees the published state and pushes nothing further"
+
+# ── BL-630: a commit that is not a swarmforge-QA ancestor is never
+#    published, proven against the REAL git adapter (push-sweep-qa-gate-
+#    facts! in handoffd.bb), not just the forced-result CLI/lib tests ──────
+echo "third" > "$ROOT/seed.txt" && git -C "$ROOT" add seed.txt && git -C "$ROOT" commit -q -m "un-QA'd commit"
+NON_QA_SHA="$(git -C "$ROOT" rev-parse HEAD)"
+
+wait_for_log "qa-refused" 15 \
+  || fail "the push sweep never refused the non-QA-ancestor commit within 15s; log: $(cat "$LOG_FILE" 2>/dev/null)"
+grep -q "qa-refused non-qa-ancestor $NON_QA_SHA" "$LOG_FILE" \
+  || fail "expected the refusal to name $NON_QA_SHA, got: $(cat "$LOG_FILE")"
+pass "push-sweep! refuses a real commit that is not a swarmforge-QA ancestor, naming its sha"
+
+REMOTE_HEAD_AFTER="$(git -C "$REMOTE" rev-parse main)"
+[[ "$REMOTE_HEAD_AFTER" != "$NON_QA_SHA" ]] \
+  || fail "the non-QA-ancestor commit must never reach origin, but origin/main is now $REMOTE_HEAD_AFTER"
+[[ "$REMOTE_HEAD_AFTER" == "$LOCAL_HEAD" ]] \
+  || fail "expected origin/main to stay at the earlier QA-approved tip $LOCAL_HEAD, got $REMOTE_HEAD_AFTER"
+pass "origin/main stays at the last QA-approved tip, never advancing to the refused commit"
 
 echo "ALL PASS"
