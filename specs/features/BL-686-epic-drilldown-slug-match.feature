@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-07-30T11:39:22.708990642Z","feature_name":"Epic drill-down resolves epic membership by slug","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-686-epic-drilldown-slug-match.feature","background_hash":"335679d195b28233848c059d7533e58a485ddfae03751b6c7c005e03fe51bcb6","implementation_hash":"unknown","scenarios":[]}
+# acceptance-mutation-manifest-end
+
 Feature: Epic drill-down resolves epic membership by slug
 
   Background:

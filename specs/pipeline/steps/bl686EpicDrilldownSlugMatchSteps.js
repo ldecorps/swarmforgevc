@@ -164,6 +164,29 @@ function stopBridge(ctx) {
   }
 }
 
+// BL-686 hardening: a mutated/bad example value can make any step's own
+// assertion throw before a LATER step's stopBridge(ctx) is ever reached -
+// leaving ctx.bridgeHandle's HTTP server open with no owner, which hangs
+// the whole node --test process (it never exits while a listening socket
+// stays open) instead of failing the scenario fast. Every step below that
+// runs while the bridge may be live wraps its body with this so any throw
+// still closes the bridge before propagating the real failure.
+function stopBridgeOnError(ctx, fn) {
+  try {
+    const result = fn();
+    if (result && typeof result.catch === 'function') {
+      return result.catch((err) => {
+        stopBridge(ctx);
+        throw err;
+      });
+    }
+    return result;
+  } catch (err) {
+    stopBridge(ctx);
+    throw err;
+  }
+}
+
 function registerSteps(registry) {
   // ── Background / scenario 05's extra Given ──────────────────────────
   registry.defineScoped(
@@ -193,8 +216,10 @@ function registerSteps(registry) {
     /^the "([^"]+)" tile is drilled into$/,
     async (ctx, epicId) => {
       await ensureBridge(ctx);
-      await renderScreen(ctx);
-      await drillIntoEpic(ctx, epicId);
+      await stopBridgeOnError(ctx, async () => {
+        await renderScreen(ctx);
+        await drillIntoEpic(ctx, epicId);
+      });
     },
     FEATURE
   );
@@ -202,7 +227,7 @@ function registerSteps(registry) {
   registry.defineScoped(
     /^the drill-down lists exactly "([^"]+)"$/,
     (ctx, idsCsv) => {
-      assert.deepEqual(rowIds(ctx), idsCsv.split(','));
+      stopBridgeOnError(ctx, () => assert.deepEqual(rowIds(ctx), idsCsv.split(',')));
       stopBridge(ctx);
     },
     FEATURE
@@ -214,7 +239,7 @@ function registerSteps(registry) {
     async (ctx, topicId, epicId) => {
       await ensureBridge(ctx);
       ctx.priorityBefore = snapshotPriorities(ctx);
-      await tapTopicMakeTop(ctx, epicId, topicId);
+      await stopBridgeOnError(ctx, () => tapTopicMakeTop(ctx, epicId, topicId));
     },
     FEATURE
   );
@@ -222,10 +247,12 @@ function registerSteps(registry) {
   registry.defineScoped(
     /^epic ticket "([^"]+)" keeps its priority$/,
     (ctx, id) => {
-      assert.equal(
-        readPriority(ctx, id),
-        ctx.priorityBefore[id],
-        `expected epic ticket ${id}'s priority to be unchanged`
+      stopBridgeOnError(ctx, () =>
+        assert.equal(
+          readPriority(ctx, id),
+          ctx.priorityBefore[id],
+          `expected epic ticket ${id}'s priority to be unchanged`
+        )
       );
       stopBridge(ctx);
     },
@@ -235,10 +262,12 @@ function registerSteps(registry) {
   registry.defineScoped(
     /^live topic "([^"]+)" keeps its priority$/,
     (ctx, id) => {
-      assert.equal(
-        readPriority(ctx, id),
-        ctx.priorityBefore[id],
-        `expected live topic ${id}'s priority to be unchanged`
+      stopBridgeOnError(ctx, () =>
+        assert.equal(
+          readPriority(ctx, id),
+          ctx.priorityBefore[id],
+          `expected live topic ${id}'s priority to be unchanged`
+        )
       );
       stopBridge(ctx);
     },
@@ -248,10 +277,12 @@ function registerSteps(registry) {
   registry.defineScoped(
     /^the topic make-top route answers success$/,
     (ctx) => {
-      const call = ctx.fetchCalls.find((c) => c.url.startsWith('/epic-reorder/topic-make-top'));
-      assert.ok(call, 'expected the topic-make-top route to have been called');
-      const moveStatusEl = ctx.dom.window.document.getElementById('move-status');
-      assert.equal(moveStatusEl.textContent, '', 'a success response leaves move-status empty, never a reason');
+      stopBridgeOnError(ctx, () => {
+        const call = ctx.fetchCalls.find((c) => c.url.startsWith('/epic-reorder/topic-make-top'));
+        assert.ok(call, 'expected the topic-make-top route to have been called');
+        const moveStatusEl = ctx.dom.window.document.getElementById('move-status');
+        assert.equal(moveStatusEl.textContent, '', 'a success response leaves move-status empty, never a reason');
+      });
     },
     FEATURE
   );
