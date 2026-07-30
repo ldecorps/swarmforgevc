@@ -189,4 +189,44 @@ grep -q "qa-refused non-qa-ancestor $FEATURE_SHA" "$LOG_FILE" \
   && fail "the feature commit $FEATURE_SHA is a swarmforge-QA ancestor and must never be refused, but it was: $(cat "$LOG_FILE")"
 pass "the feature commit folded in by the merge is recognized as its own QA-approved entry"
 
+# ── BL-630 architect bounce #2 (2026-07-30): a merge that resolves a real
+#    conflict by hand carries content that exists in NEITHER parent's tree -
+#    that content was never independently QA-approved and is invisible to
+#    every other commit's own single-parent diff, so it must be scrutinized
+#    on its own and refused if it touches a non-bookkeeping path. Build a
+#    forced conflict on the same file both sides touch, resolve it with
+#    content matching neither side, and prove the resulting merge commit is
+#    refused (see backlog/evidence/BL-630-push-sweep-refuses-non-qa-
+#    approved-main-bounce-20260730-2.md).
+git -C "$ROOT" checkout -q -b conflict-feature-test "$MERGE_SHA"
+echo "feature-branch-change" > "$ROOT/extension/src/merge_test.ts"
+git -C "$ROOT" add extension/src/merge_test.ts
+git -C "$ROOT" commit -q -m "feature branch edits merge_test.ts, QA-approved"
+git -C "$ROOT" branch -f swarmforge-QA conflict-feature-test
+
+git -C "$ROOT" checkout -q main
+echo "main-branch-change" > "$ROOT/extension/src/merge_test.ts"
+git -C "$ROOT" add extension/src/merge_test.ts
+git -C "$ROOT" commit -q -m "unrelated main-side edit to the same file"
+
+git -C "$ROOT" merge --no-ff conflict-feature-test -m "QA merge conflict-feature-test into main" \
+  || true
+grep -q "^<<<<<<<" "$ROOT/extension/src/merge_test.ts" \
+  || fail "expected a real git merge conflict in this fixture, got none"
+echo "CONFLICT-RESOLUTION-NEVER-QA-APPROVED" > "$ROOT/extension/src/merge_test.ts"
+git -C "$ROOT" add extension/src/merge_test.ts
+git -C "$ROOT" commit -q -m "QA merge conflict-feature-test into main (conflict resolved by hand)"
+CONFLICT_MERGE_SHA="$(git -C "$ROOT" rev-parse HEAD)"
+
+wait_for_log "qa-refused non-qa-ancestor $CONFLICT_MERGE_SHA" 15 \
+  || fail "expected the hand-resolved-conflict merge $CONFLICT_MERGE_SHA to be refused within 15s; log: $(cat "$LOG_FILE" 2>/dev/null)"
+pass "a merge commit whose own hand-resolved conflict content touches a non-bookkeeping path is refused, not waved through as :merge? true"
+
+REMOTE_HEAD_AFTER_CONFLICT="$(git -C "$REMOTE" rev-parse main)"
+[[ "$REMOTE_HEAD_AFTER_CONFLICT" != "$CONFLICT_MERGE_SHA" ]] \
+  || fail "the unreviewed conflict-resolution content must never reach origin, but origin/main is now $REMOTE_HEAD_AFTER_CONFLICT"
+[[ "$REMOTE_HEAD_AFTER_CONFLICT" == "$MERGE_SHA" ]] \
+  || fail "expected origin/main to stay at the last QA-approved tip $MERGE_SHA, got $REMOTE_HEAD_AFTER_CONFLICT"
+pass "origin/main stays at the last QA-approved tip, never advancing to the unreviewed conflict-resolution merge"
+
 echo "ALL PASS"

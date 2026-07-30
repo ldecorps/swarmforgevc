@@ -86,25 +86,46 @@
            :ahead-commits [{:sha "abc1234567" :qa-ancestor? false :changed-paths ["backlog/active/BL-1.yaml"]}
                            {:sha "def1234567" :qa-ancestor? false :changed-paths ["extension/src/foo.ts"]}]}))
 
-;; ── BL-630 bounce (architect, 2026-07-30): a merge commit is never itself
-;;    offending, regardless of its own :qa-ancestor?/:changed-paths - its
-;;    real content is already covered by its own non-merge ancestors
-;;    appearing as separate entries in the same ahead-commits seq ────────────
+;; ── BL-630 bounce #1 (architect, 2026-07-30): a TRIVIAL merge (empty
+;;    combined diff - no independent content of its own) is never itself
+;;    offending, regardless of its own :qa-ancestor? - its real content is
+;;    already covered by its own non-merge ancestors appearing as separate
+;;    entries in the same ahead-commits seq ─────────────────────────────────
 
-(assert= "qa-gate-decision: a merge commit with real non-bookkeeping changed-paths still publishes (transparent), its qa-ancestor feature commit alongside it"
-         {:refuse? false :reason nil :offending-shas []}
-         (push-sweep-lib/qa-gate-decision
-          {:qa-ref-exists? true :tip-is-qa-ancestor? false
-           :ahead-commits [{:sha "merge1234" :merge? true :qa-ancestor? false
-                            :changed-paths ["extension/src/foo.ts" "backlog/active/BL-1.yaml"]}
-                           {:sha "feat1234a" :qa-ancestor? true :changed-paths ["extension/src/foo.ts"]}]}))
-
-(assert= "qa-gate-decision: a merge commit's :merge? true never masks a genuinely offending non-merge commit alongside it"
+(assert= "qa-gate-decision: a trivial merge (:merge? true, empty changed-paths) never masks a genuinely offending non-merge commit alongside it"
          {:refuse? true :reason :non-qa-ancestor :offending-shas ["bad12345a"]}
          (push-sweep-lib/qa-gate-decision
           {:qa-ref-exists? true :tip-is-qa-ancestor? false
            :ahead-commits [{:sha "merge1234" :merge? true :qa-ancestor? false :changed-paths []}
                            {:sha "bad12345a" :qa-ancestor? false :changed-paths ["extension/src/foo.ts"]}]}))
+
+(assert= "qa-gate-decision: a trivial merge alongside its already-QA-approved feature commit still publishes"
+         {:refuse? false :reason nil :offending-shas []}
+         (push-sweep-lib/qa-gate-decision
+          {:qa-ref-exists? true :tip-is-qa-ancestor? false
+           :ahead-commits [{:sha "merge1234" :merge? true :qa-ancestor? false :changed-paths []}
+                           {:sha "feat1234a" :qa-ancestor? true :changed-paths ["extension/src/foo.ts"]}]}))
+
+;; ── BL-630 bounce #2 (architect, 2026-07-30): a CONTENT-BEARING merge (its
+;;    own combined diff is non-empty - typically a hand-resolved conflict
+;;    that exists in neither parent's tree, so no other entry in the seq
+;;    covers it) is scrutinized exactly like a non-merge commit's own
+;;    :changed-paths - :merge? true does NOT exempt it ───────────────────────
+
+(assert= "qa-gate-decision: a content-bearing merge (non-empty combined diff) with a non-bookkeeping path is offending and refuses, even with a qa-ancestor feature commit alongside it"
+         {:refuse? true :reason :non-qa-ancestor :offending-shas ["merge1234"]}
+         (push-sweep-lib/qa-gate-decision
+          {:qa-ref-exists? true :tip-is-qa-ancestor? false
+           :ahead-commits [{:sha "merge1234" :merge? true :qa-ancestor? false
+                            :changed-paths ["extension/src/foo.ts"]}
+                           {:sha "feat1234a" :qa-ancestor? true :changed-paths ["extension/src/foo.ts"]}]}))
+
+(assert= "qa-gate-decision: a content-bearing merge whose own combined-diff paths are all bookkeeping-only still publishes"
+         {:refuse? false :reason nil :offending-shas []}
+         (push-sweep-lib/qa-gate-decision
+          {:qa-ref-exists? true :tip-is-qa-ancestor? false
+           :ahead-commits [{:sha "merge1234" :merge? true :qa-ancestor? false
+                            :changed-paths ["backlog/active/BL-1.yaml"]}]}))
 
 ;; ── due? ──────────────────────────────────────────────────────────────────
 
