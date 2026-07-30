@@ -1,0 +1,141 @@
+id: BL-720
+title: "DEFECT — tests unconditionally delete process.env keys they did not own; with isolate:false this unsets ambient credentials for the rest of the worker and makes the suite verdict non-deterministic"
+milestone: M8
+type: defect
+severity: high
+status: todo
+epic: swarm-reliability
+human_approval: pending
+priority: 1
+direction: normal
+depends_on: []
+mutation_cost: low
+required_stages: [specifier, coder, cleaner, architect, hardender, documenter, qa]
+assigned_to: none
+
+invariants:
+  - "A test that mutates a process.env key restores it to exactly what it found — the same value, or absent if it was absent — before the next file in that worker runs."
+  - "The set of failing files is the same on every run of the same commit; no part of the suite's verdict depends on fork or file scheduling."
+  - "A leak fails the suite loudly, naming the offending file and the leaked key — never silently, and never only under unlucky scheduling."
+
+approval_context: >
+  Two defaults chosen without asking:
+  (1) severity high, which puts this in the Article 3.2.4 expedite lane. The
+  argument: this defect does not merely fail gates, it makes every gate's
+  verdict untrustworthy in both directions — a lucky run reads green, an
+  unlucky one invents regressions in files the ticket never touched. BL-714
+  (already high) blocks gates loudly; this one corrupts them silently.
+  (2) `direction: normal`, not `expedite` — severity alone earns the lane.
+  BL-714 carried an explicit human expedite grant; this ticket has none, and
+  the specifier does not self-authorize one. Say the word to add it.
+
+description: |
+  ## The mechanism
+
+  `extension/vitest.config.mjs` sets `pool: 'forks'` (line 36) with
+  `isolate: false` (line 57) — a deliberate BL-445 performance choice. Module
+  registry AND `process.env` therefore persist across every test file sharing a
+  worker.
+
+  So `delete process.env.SOME_KEY` in a test's `finally` block does not "clean
+  up". It permanently unsets that key for every later file in that fork. When
+  the key is an ambient credential present in the operator's real shell
+  profile, every later file that needs it fails — and *which* files those are
+  depends on fork/file scheduling.
+
+  ## The live instance
+
+  `extension/test/cursorBridgeAgentSession.test.js` (added by BL-696,
+  `4c5c4bb2a`). Eight sites set `CURSOR_API_KEY = 'test-key'` and then
+  unconditionally `delete process.env.CURSOR_API_KEY` — verified 2026-07-30 at
+  lines 374, 405, 647, 672, 695, 722, 753, 778.
+
+  The same file already contains the correct pattern three times (lines 325-341,
+  799-805, 811-818): capture `prevKey`, and in `finally` either restore it or
+  delete only if it was absent. So the fix is to apply the file's own existing
+  idiom to the eight sites that skipped it.
+
+  Measured effect (QA pass on BL-686): three bare `npx vitest run` invocations
+  produced 5, then 24, then 81 failing tests across varying files. Excluding
+  this one file gave a clean, deterministic 387/389 files and 6756/6758 tests,
+  leaving only BL-714's two known failures.
+
+  ## Why this is worse than a red gate
+
+  A red gate stops work honestly. This one lies in both directions: a QA or
+  hardener run that draws lucky scheduling reports green on a suite that is not
+  green, and an unlucky one reports regressions in files the ticket under
+  review never touched. Every verdict from every role is affected, and nothing
+  in the output distinguishes the two cases.
+
+  ## Shape
+
+  1. Fix the eight sites using the idiom already in that file.
+  2. Add a guard so the class cannot return — the repo's own established
+     response to exactly this shape (BL-420's `helpers/rawMkdtempGuard.js` +
+     `tmpDirMigrationGuard.test.js`).
+
+  The guard must be reachable from a default `npx vitest run` with no extra
+  flags — a guard that needs a special invocation is a guard nobody runs.
+  Whether it is a static source check or a runtime before/after snapshot of
+  `process.env` is the coder's call; the invariants above are what must hold.
+
+  ## Scale, for scoping
+
+  Across `extension/test/` there are 66 `delete process.env.*` sites in 18
+  files; only 21 are guarded by an `=== undefined` check on the same line. Not
+  every unguarded site is a defect — deleting a key that is never ambient is
+  harmless — so a blanket migration is NOT what this ticket asks for. Fix the
+  proven-harmful file, then let the guard surface whatever else it finds.
+
+out_of_scope: |
+  - Migrating all ~45 unguarded delete sites repo-wide as a bulk sweep. The
+    guard added here is what should drive that, ticket by ticket, with evidence
+    that each site is actually reachable with the key ambient.
+  - Revisiting `isolate: false` / `pool: 'forks'` (BL-445). Worker isolation is
+    a real perf win and is not the defect; tests that do not clean up are.
+  - BL-714's two blocking defects (tracked vitest cache blob, raw mkdtemp) —
+    separate ticket, already in flight.
+
+acceptance: specs/features/BL-720-tests-restore-every-env-key-they-touch.feature
+
+notes: |
+  ## No required_wiring, deliberately
+
+  Applying the lesson written up in
+  `backlog/evidence/BL-714-parcel-absorbed-into-BL-630-20260730.md` and the
+  BL-714 `required_wiring` amendment: the gate asserts PRESENCE only. This
+  ticket's core change is a REMOVAL (unconditional deletes stop existing), which
+  has no presence form. Worse, the obvious pattern to assert — `prevKey` — is
+  already present in that file three times, so the entry would pass before the
+  fix and prove nothing. The removal is carried by invariant 1 and by the guard
+  in scenario `env-restore-04`.
+
+  ## Feature-file review record (specifier)
+
+  Gherkin lint gate: clean. IR-DRY checker: 0 findings after normalizing one
+  drift ("the suite runs to completion" -> "the suite runs").
+
+  ## e2e procedure for QA
+
+  1. With `CURSOR_API_KEY` set in the environment, run the full suite from
+     `extension/` three times: `npx vitest run`. Assert all three report an
+     identical set of failing files. Before the fix this reliably differs.
+  2. Assert `CURSOR_API_KEY` is still set in the parent shell afterwards.
+  3. Temporarily add a test that sets and unconditionally deletes an env key.
+     Run the suite. Assert it fails, and that the message names both the file
+     and the key. Remove the probe.
+  4. Confirm step 3's failure appears under a plain `npx vitest run` with no
+     added flags or config.
+  5. Re-run BL-714's two known failures separately to confirm this ticket
+     changed neither of them.
+
+source: |
+  Coordinator note (handoff `000914`, 2026-07-30): "Ticket needed:
+  cursorBridgeAgentSession.test.js unconditional env delete x10" — the verified
+  site count is eight, not ten.
+
+  Originally found by QA while verifying BL-686-epic-drilldown-slug-match,
+  2026-07-30, and recorded in operator memory
+  `cursor-api-key-test-leak-cascading-flake-20260730`. Third pre-existing,
+  ticket-unrelated defect blocking clean full-suite runs, alongside BL-714's two.
