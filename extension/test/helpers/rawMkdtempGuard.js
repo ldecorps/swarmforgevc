@@ -25,7 +25,11 @@ function findRawMkdtempLines(text) {
 // contain the pattern as test DATA (not executable code) to prove the
 // scanner detects it - a scan that flagged its own fixtures would make the
 // migration-complete gate (scenario 03) permanently unsatisfiable.
-const SELF_EXEMPT_RELATIVE_PATHS = ['helpers/tmpDir.js', 'tmpDirMigrationGuard.test.js'];
+const SELF_EXEMPT_RELATIVE_PATHS = [
+  'helpers/tmpDir.js',
+  'tmpDirMigrationGuard.test.js',
+  'tmpDirMigrationGuard.property.test.js',
+];
 
 // Impure: walks every .js file under testDir (recursively), skipping the
 // paths above and anything under a directory named "fixtures" - pinned
