@@ -101,6 +101,59 @@ description: |
   Human amendment 2026-07-30 evening Let's Talk: do not wait for morning;
   finish with the multi-hat email.
 
+  ## Redo — human reset 2026-07-30 21:29Z (discard the OpenRouter pass)
+
+  A first live attempt was forwarded to the coder at spec commit `0b16389972`
+  (2026-07-30 19:31Z) and ran on the OpenRouter-backed pack. The human reset it:
+  **that pass is void. Nothing from it may be reused, cited, or carried
+  forward.** Produce every artifact fresh.
+
+  Specifier verified at reset time that the discarded pass left nothing behind,
+  so there is nothing to revert and no half-work to inherit:
+
+  - No `docs/how-to/BL-723-pilot-tonight-quality-review.md` anywhere.
+  - No `docs/briefings/2026-07-30-bl723-pilot-review.md` anywhere.
+  - No `specs/pipeline/steps/bl723PilotReviewSteps.js` anywhere.
+  - No verdict text written back onto any of the 13 done tickets (`BL-723`
+    appears in none of them).
+  - Its only git trace is coder-branch merge `d37cce457`, which merged spec
+    commit `0b16389972` (already on `main`) and added no files of its own.
+
+  All 13 primary tickets were re-confirmed present in `backlog/done/` at reset
+  time, so the review set below is accurate as written.
+
+  The review body must record this honestly under scenario `review-09`: BL-723
+  reached its verdict on the **second** live walk, the first having been
+  discarded by human reset — still a live-swarm path, still not expeditor and
+  not pilot.
+
+  ## Work order for the redo (acceptance contract unchanged)
+
+  The acceptance contract in the feature file is human-approved and gate-clean —
+  do not renegotiate it. This is only the order that makes it reachable, because
+  the Background requires both artifacts to exist before any scenario can pass:
+
+  1. **Coder**: write `specs/pipeline/steps/bl723PilotReviewSteps.js` (handlers
+     assert against committed files on disk — never over prompt text), plus a
+     first-draft review body and briefing body substantial enough for the gate
+     to run. Do the coder-seat reading of the 13 diffs as you go; that reading is
+     the coder viewpoint section, not a separate later chore.
+  2. **Cleaner, architect, hardender**: each seat reviews the 13 landings through
+     its own lens and fills in its own viewpoint section. A seat that finds a
+     shortfall files **both** defect kinds (remaining-work AND pilot-process),
+     each `type: defect` with an explicit `severity:`, and writes the verdict plus
+     defect links back onto that reviewed ticket's `notes:` in the same pass —
+     do not defer write-back to the documenter.
+  3. **Documenter**: completes the review body and the briefing email body, makes
+     the briefing's first non-empty line a real headline carrying the verdict
+     (≤80 chars), and does **not** touch `docs/briefings/.sent.json`.
+  4. **QA**: fullest viewpoint section, then verifies delivery per the mechanism
+     above before approving.
+
+  A seat that judges the landings genuinely on par records that verdict with its
+  reasons and files nothing — an empty defect list is a legitimate outcome here,
+  not a failure to look.
+
   ## e2e QA procedure
 
   1. `swarmforge/scripts/gherkin_lint_gate.sh specs/features/BL-723-pilot-tonight-quality-swarm-review.feature`
