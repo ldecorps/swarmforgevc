@@ -1,7 +1,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
-const { mkTmpDir } = require('./helpers/tmpDir');
 const {
   parseExpediteTicket,
   parseReexpediteTicket,
@@ -17,7 +17,7 @@ const {
 } = require('../out/tools/telegramCursorBridgeExpedite');
 
 function mkRoot() {
-  const root = mkTmpDir('sf-expedite-');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sf-expedite-'));
   fs.mkdirSync(path.join(root, 'swarmforge', 'scripts'), { recursive: true });
   fs.mkdirSync(path.join(root, '.swarmforge', 'operator'), { recursive: true });
   return root;
