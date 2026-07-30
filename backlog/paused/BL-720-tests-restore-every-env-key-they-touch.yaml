@@ -11,7 +11,7 @@ direction: normal
 depends_on: []
 mutation_cost: low
 required_stages: [specifier, coder, cleaner, architect, hardender, documenter, qa]
-assigned_to: coder
+assigned_to: none
 
 invariants:
   - "A test that mutates a process.env key restores it to exactly what it found — the same value, or absent if it was absent — before the next file in that worker runs."

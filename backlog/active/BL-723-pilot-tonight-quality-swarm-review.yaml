@@ -1,0 +1,66 @@
+id: BL-723
+title: "Queue-jump — live swarm reviews tonight's pilot-landed defect quality"
+milestone: M8
+type: chore
+status: todo
+epic: swarm-reliability
+human_approval: approved
+priority: 0
+direction: queue-jump
+depends_on: []
+mutation_cost: low
+required_stages: [specifier, architect, hardender, documenter, qa]
+assigned_to: none
+
+invariants:
+  - "This ticket is a live-swarm quality review of listed done pilot tickets; it does not reopen them as active work unless a true defect or revert is warranted."
+  - "The deliverable includes an explicit on-par / not-on-par verdict against normal live-swarm standards."
+  - "When quality falls short, the swarm files BOTH: (1) detailed remaining-work defects for the landed code or unfinished acceptance, and (2) pilot-process defects so the next pilot run is stronger."
+  - "Process is queue-jump into the live pack (specifier then coordinator then seats), never the offline expeditor or /pilot for this review parcel itself."
+
+required_wiring:
+  - "docs/how-to or briefing note::BL-723 pilot-tonight review verdict"
+  - "backlog/ (new defect YAMLs if shortfalls)::remaining-work defects AND pilot-process defects"
+
+description: |
+  ## What
+
+  Human via Let's Talk 2026-07-30 evening: for the **next morning swarm shift**,
+  queue-jump so the **live swarm** code-reviews the defects the offline pilot
+  just closed tonight, and confirms quality is on par with a normal live
+  pipeline walk.
+
+  ## Primary review set (tonight / 2026-07-30 QA land)
+
+  BL-718, BL-627, BL-636, BL-637, BL-641, BL-642, BL-646, BL-623, BL-671,
+  BL-694, BL-559, BL-661, BL-662.
+
+  Optional same-day if bandwidth: BL-630, BL-714, BL-686.
+
+  ## Pass criteria
+
+  - Diff + acceptance would survive coder→cleaner→architect→hardender→documenter→qa
+    scrutiny at live-swarm bar.
+  - Explicit verdict: on par or not, with reasons.
+  - Shortfalls → **both** kinds of new defects (do both, not either/or):
+    1. **Remaining work** — detailed defects for what is still wrong or unfinished
+       in the landed code / acceptance.
+    2. **Pilot process** — defects that raise what the pilot missed, which gate
+       or hat should have caught it, and how to harden `/pilot` next time.
+  - Do not silently rewrite done history unless a true revert is warranted.
+
+  ## Process
+
+  **queue-jump** for tomorrow morning live shift. Not expeditor. Not pilot.
+
+  ## Out of scope
+
+  - Re-piloting the remaining safe pool
+  - New product work
+  - Punitive process changes (calibration to improve pilot, not blame)
+
+acceptance: specs/features/BL-723-pilot-tonight-quality-swarm-review.feature
+
+source: |
+  Human via Let's Talk / Cursor 2026-07-30. Queue-jump for next morning swarm
+  shift after ~13 pilot-landed low-mutation defects closed tonight.
