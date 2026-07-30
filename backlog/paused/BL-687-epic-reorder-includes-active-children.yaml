@@ -179,3 +179,18 @@ notes: |
   tiles have had since BL-572)? If the answer is up/down, it becomes its own
   follow-up ticket on top of this one — this ticket's widened peer set is what
   such a verb would operate over either way.
+
+  UPDATE 2026-07-30 (specifier): that question was never answered, and this
+  ticket was approved past it on 2026-07-27 (`b2edcf681`) — so BL-687 proceeds
+  under **Make top only**, which was always the intent (the up/down verb was
+  scoped as a follow-up ticket, never a blocker on this one).
+
+  The unanswered `role_ask` left its marker
+  (`.swarmforge/operator/role-awaiting/specifier.json`) in place, and that file
+  is the specifier's ONE pending-question slot — only the front-desk bot clears
+  it, and only when an answer is captured. Since the subject shipped through the
+  Approvals path instead, nothing would ever have cleared it, and the specifier
+  could raise no further questions. Marker cleared by hand on 2026-07-30 after
+  the coordinator flagged the stall; the question itself is preserved here and
+  in `approval_context` above, so nothing is lost. If you do want pairwise
+  move up/down, say so and it becomes its own ticket.

@@ -17,12 +17,21 @@ invariants:
   - "No gitignored vitest/vite cache artifact under node_modules is tracked in git; a full-suite residual scan never fails solely because a tracked cache blob contains a retired word."
   - "Every extension/test file that creates a temp directory uses the shared mkTmpDir helper; the raw-mkdtemp migration guard finds zero call sites outside its documented exemptions."
 
+# Amended 2026-07-30 (specifier), on a documenter send-back. The gate asserts
+# PRESENCE only: for each entry it reads `path` at the cited commit and requires
+# the content to CONTAIN `pattern` (pre_qa_gate_lib.bb). The original five
+# entries all asserted the state this ticket REMOVES, so the field passed before
+# the fix and failed after it — unsatisfiable by design. D1's "the blob is no
+# longer tracked" is a deletion and cannot be written as a presence assertion at
+# all; it is carried by invariant 1 and by the existing residual-scan test
+# (extension/test/onboarderRenameNoResidualFacilitator.test.js), so it is dropped
+# here rather than restated in a form the gate cannot check. D2's four entries
+# now name what the migrated file MUST contain.
 required_wiring:
-  - "node_modules/.vite/vitest/da39a3ee5e6b4b0d3255bfef95601890afd80709/results.json::tracked-cache::git rm --cached (or equivalent) so the blob is untracked and stays ignored"
-  - "extension/test/telegramCursorBridgeExpedite.test.js::mkdtemp::use test/helpers/tmpDir.js"
-  - "extension/test/telegramCursorBridgeLogs.test.js::mkdtemp::use test/helpers/tmpDir.js"
-  - "extension/test/telegramCursorBridgeRedeploy.test.js::mkdtemp::use test/helpers/tmpDir.js"
-  - "extension/test/telegramCursorBridgeUpdate.test.js::mkdtemp::use test/helpers/tmpDir.js"
+  - "extension/test/telegramCursorBridgeExpedite.test.js::helpers/tmpDir::allocate the temp root through the shared mkTmpDir helper"
+  - "extension/test/telegramCursorBridgeLogs.test.js::helpers/tmpDir::allocate the temp root through the shared mkTmpDir helper"
+  - "extension/test/telegramCursorBridgeRedeploy.test.js::helpers/tmpDir::allocate the temp root through the shared mkTmpDir helper"
+  - "extension/test/telegramCursorBridgeUpdate.test.js::helpers/tmpDir::allocate the temp root through the shared mkTmpDir helper"
 
 description: |
   ## What

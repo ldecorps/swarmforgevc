@@ -1,0 +1,54 @@
+id: BL-715
+title: "Workflow articles: orient seats on queue-jump, ambulance, and expeditor"
+milestone: M8
+type: chore
+status: todo
+epic: swarm-reliability
+human_approval: approved
+priority: 0
+direction: queue-jump
+depends_on: []
+mutation_cost: low
+required_stages: [specifier, coder, cleaner, architect, hardender, documenter, qa]
+assigned_to: none
+
+invariants:
+  - "workflow.prompt names the normal live swarm as default and teaches queue-jump, ambulance, and expeditor as three distinct modes that do not replace that path."
+  - "New orientation prose prefers the words queue-jump, ambulance, and expeditor; it states queue-jump ≠ ambulance ≠ expeditor; legacy uses of expedite are disambiguated, not used as the primary name for queue-jump or the expeditor."
+  - "No daemon, promotion, ambulance-marker, or offline-expeditor behavior changes in this ticket — governance/orientation prose only."
+
+required_wiring:
+  - "swarmforge/constitution/articles/workflow.prompt::How Work Moves::queue-jump, ambulance, expeditor orientation"
+  - "swarmforge/constitution/articles/reference/workflow-detailed.prompt::ladder::pointers to how-tos; disambiguate legacy expedite"
+
+description: |
+  ## What
+
+  Live seats were confused when special paths were in play. Teach three named
+  specials plus the default: **queue-jump**, **ambulance**, **expeditor**, and
+  the normal live swarm. Prefer those words; the overloaded label “expedite”
+  only appears to disambiguate (Art 3.2.4 severity queue-jump, Approvals button,
+  Telegram `/expedite` → expeditor).
+
+  ## This ticket’s process
+
+  BL-715 itself is a **queue-jump** (not the expeditor): specifier owns the
+  wording → coordinator puts it on the coder → normal live pack. Promote before
+  BL-716. Intake text is the source of truth for the vocabulary:
+  `backlog/INTAKE-workflow-prompt-modes-orientation.md`.
+
+  ## Out of scope
+
+  - Runtime behavior changes
+  - Renaming `/expedite` or Approvals buttons (prose disambiguation only)
+  - BL-716 tunnel DNS
+
+acceptance: specs/features/BL-715-workflow-prompt-modes-orientation.feature
+
+source: |
+  Human via Let's Talk / Cursor 2026-07-30. Intake updated same day to name
+  queue-jump, ambulance, and expeditor as the required trio.
+
+notes: |
+  Coordinator: queue-jump promote; specifier first; never `/expedite` unless
+  human says so. e2e: orientation names the trio and states they are distinct.
