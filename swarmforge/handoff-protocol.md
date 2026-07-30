@@ -662,7 +662,7 @@ changes, config tweaks, pure refactors with existing coverage).
    - Records the skipped stages in the handoff envelope and in a durable log
 
 3. **Skipped stages are visible** — the handoff trail shows:
-   - `routing_skipped: cleaner,architect,hardender,documenter` envelope header
+   - `routing_skipped: BL-042 coder->QA skipped=cleaner,architect,hardender,documenter reasons=cleaner:style-only;architect:configuration change` envelope header (grammar: `ticket-id from->to skipped=a,b reasons=stage:reason;...`)
    - A line appended to `.swarmforge/routing-skips.jsonl` with the skip event
    - `stage_skip_reasons` committed to the ticket YAML for git audit
 
@@ -705,15 +705,17 @@ the old predictable pipeline.
 
 `.swarmforge/routing-skips.jsonl` (one JSON event per line) records every skip:
 
+Envelope header grammar: `routing_skipped: BL-042 coder->QA skipped=cleaner,architect,hardender,documenter reasons=cleaner:style-only;architect:configuration change`
+
 ```json
-{"ticket":"BL-042","commit":"a1b2c3d9e8","at":"2026-07-23T14:30:15Z","skipped":["cleaner","architect","hardender","documenter"],"reason":"doc-only copy change"}
+{"ticket-id":"BL-042","from":"coder","to":"QA","skipped":["cleaner","architect","hardender","documenter"],"reasons":{"cleaner":"style-only, no code logic","architect":"configuration change","hardender":"no new code paths","documenter":"no user-facing docs change"},"sender":"coder","created_at":"2026-07-23T14:30:15Z"}
 ```
 
 To check what stages actually ran for a completed ticket:
 
 ```bash
 # Grep the ticket in routing-skips.jsonl
-grep '"ticket":"BL-042"' .swarmforge/routing-skips.jsonl
+grep '"ticket-id":"BL-042"' .swarmforge/routing-skips.jsonl
 
 # For each found line, see which stages were skipped
 # The stages NOT in the skip list are the ones that ran
