@@ -10,7 +10,7 @@ direction: swarm-surfaced
 depends_on: []
 assigned_to: specifier
 mutation_cost: low
-human_approval: pending
+human_approval: approved
 approval_context: >
   Hydrate-batch-2: materializing the description's "run all ten fixtures,
   suite green" acceptance prose into APS Gherkin. No human sign-off yet on

@@ -10,7 +10,7 @@ direction: human-requested
 depends_on: []
 assigned_to: specifier
 mutation_cost: medium
-human_approval: pending
+human_approval: approved
 approval_context: >
   Hydrate batch 2026-07-28: materializes the described three-gate acceptance
   into APS Gherkin, one fixture per gate plus a non-vacuity compliant-pass
