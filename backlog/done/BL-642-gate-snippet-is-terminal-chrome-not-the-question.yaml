@@ -138,3 +138,12 @@ notes: |
   Found by reading one screenshot and re-running the real function against the live
   pane rather than trusting the message's appearance. The message looked corrupted;
   it was in fact working exactly as written.
+
+  BL-723 coder verdict (2026-07-30): not-on-par. FOOTER_START_PATTERN and the
+  NO_QUESTION_TEXT_CAPTURED fail-closed fallback are correct and well tested.
+  But PANE_TITLE_SESSION_NAME_PATTERN (needsHumanDetection.ts:39) only
+  matches a single-token role name after "SwarmForge " — swarmforge.sh's
+  display_name_for_role() title-cases multi-word roles (e.g. model-steward ->
+  "Model Steward"), and a title-rule line for such a role is not recognized
+  as chrome, confirmed directly against the shipped regex. Remaining-work
+  defect: BL-732. Pilot-process defect: BL-733.

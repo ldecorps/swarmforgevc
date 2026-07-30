@@ -52,3 +52,12 @@ description: |
   pre-existing reason, surface it in the parcel rather than widening scope.
 
 acceptance: specs/features/BL-671-operator-runtime-fixtures-miss-cost-ledger-lib.feature
+
+notes: |
+  BL-723 coder verdict (2026-07-30): on-par. Root cause (hand-maintained,
+  unsynced cp lists) addressed structurally via a shared helper; cross-
+  checked the helper's lib list against operator_runtime.bb's actual
+  load-file forms and all are present. Acceptance suite genuinely spawns
+  bash against each of the 10 real fixture scripts end to end. The
+  events-lock fixture flake fix is a bonus correctness improvement. No
+  coder-eye concerns found.

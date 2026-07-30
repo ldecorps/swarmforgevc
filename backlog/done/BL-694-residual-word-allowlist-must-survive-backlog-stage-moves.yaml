@@ -164,3 +164,11 @@ notes: |
   outline; three medium findings remain, reviewed and kept — they pair the
   pass assertion against the fail assertion, which are opposites, not
   synonyms.
+
+  BL-723 coder verdict (2026-07-30): on-par. Design directly satisfies the
+  stated invariant (stage-agnostic for backlog tickets, still exact-path
+  elsewhere); acceptance suite exercises real scanUnexpected/isAllowlisted
+  behavior across all 5 scenarios, and later commits reusing the same
+  pattern (e.g. BL-714 entries) show it's a real, adopted abstraction. Minor
+  dead-code nit only (an unexercised step registration with no matching
+  Examples row) — not filed as a separate defect.

@@ -100,3 +100,10 @@ notes: |
   would keep running in production while a green suite covered the new helper.
   The gate refuses the documenter's handoff to QA if the mirror site does not
   actually call the shared chunker.
+
+  BL-723 coder verdict (2026-07-30): not-on-par. The mirror/chunking
+  implementation itself is correct and has real behavioral unit tests, but
+  this ticket's own acceptance feature file has zero step handlers under
+  specs/pipeline/steps/ — specs/pipeline/cli.js would throw "no step handler
+  matched" on every scenario, so the acceptance gate never actually ran.
+  Remaining-work defect: BL-726. Pilot-process defect: BL-727.

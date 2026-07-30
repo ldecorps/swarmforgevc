@@ -140,3 +140,11 @@ notes: |
   Priced `severity: medium`, not high: the harm ceiling is delay, and it
   self-resolves when the hot loop quiets. Deliberately NOT expedited ahead of
   BL-629/630/631/632, which are broken safety gates.
+
+  BL-723 coder verdict (2026-07-30): not-on-par. The priority-ordering fix
+  itself (mono_router_lib.bb preferred-rotate-target) is correct and
+  well-tested. But the landing commit (6a2e4aaf6) claims to restore a
+  handoffd.bb deliver! close-paren dropped by BL-611 — that change is not in
+  this commit's actual diff; it exists only on an unmerged sibling commit.
+  The paren is closed today only incidentally, by a later unrelated BL-611
+  commit. Remaining-work defect: BL-728. Pilot-process defect: BL-729.

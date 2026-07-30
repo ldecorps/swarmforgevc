@@ -66,3 +66,16 @@ description: |
   non-OK response still shows the failText + status fallback.
 
 acceptance: specs/features/BL-662-paused-pager-swallows-server-failure-reason.feature
+
+notes: |
+  BL-723 coder verdict (2026-07-30): on-par. Root cause fixed directly
+  (discarding the parsed body) via a shared reasonOrFallback helper that
+  also removes prior duplication; jsdom tests genuinely drive the compiled
+  script and exercise both approve/expedite action types. Caveat: the
+  ticket asked to sweep the rest of the file for the same shape — a scan
+  didn't turn up other status-line writers, so this appears satisfied, but
+  the sweep itself isn't documented in the commit. The feature file's
+  Scenario Outline has no matching specs/pipeline/steps/ handler (covered
+  instead by hand-written unit tests) — not filed as a separate defect
+  since the underlying behavior is genuinely tested, just not through the
+  Gherkin path.

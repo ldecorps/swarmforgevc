@@ -70,3 +70,13 @@ out_of_scope: |
   - Any change to budgetPipelineBoardLinks/trimLinksToBudget's actual
     trimming behavior unless investigation proves the render format
     itself is the regression (see fix option 2).
+
+notes: |
+  BL-723 coder verdict (2026-07-30): not-on-par. The property suite passes
+  (7/7, real assertions on the rendered anchor label), but the fix it
+  verifies (9b211456a) predates this ticket's own filing and landing
+  entirely — no coder work happened under this ticket. It was also
+  QA-landed twice (paused->done, reverted, re-landed) and its acceptance
+  feature file has zero step handlers anywhere in specs/pipeline/steps/, so
+  the acceptance contract was never mechanically gated. Remaining-work
+  defect: BL-734. Pilot-process defect: BL-735.

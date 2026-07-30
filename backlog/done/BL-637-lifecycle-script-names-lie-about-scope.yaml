@@ -161,3 +161,14 @@ notes: |
   Worth stating in the design as the standing lesson: the capability was right and
   two readers still got it wrong, fifteen days apart, one of them writing the
   error into a durable procedure note. That is the signal a name is doing damage.
+
+  BL-723 coder verdict (2026-07-30): not-on-par. Script renaming, --help
+  scope wording, and the new full-stack stack_survivor_scan.sh are all
+  correct. But kill_pipeline_swarm.sh:271 kept the old unscoped pgrep
+  survivor check (not anchored to $ROOT, unlike the reaping loop two lines
+  above it) — reproduced live: it false-positives on a legitimately running
+  handoffd.bb from a sibling worktree, which is exactly the multi-worktree
+  reality this repo runs in daily, and is what failed this ticket's own
+  acceptance suite (8/8) and one shell test when re-run during this review.
+  Remaining-work defect: BL-730 (severity high — live, reproducible false
+  positive). Pilot-process defect: BL-731.

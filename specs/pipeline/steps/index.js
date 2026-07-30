@@ -347,7 +347,8 @@ const DOMAINS = [
   require('./bl686EpicDrilldownSlugMatchSteps'),
   require('./bl675DaemonLogFreshnessSteps'),
   require('./bl630PushSweepQaGateSteps'),
-  require('./bl714HardeningGatesBlockedSteps')
+  require('./bl714HardeningGatesBlockedSteps'),
+  require('./bl723PilotReviewSteps')
 ];
 
 function registerSteps(registry) {

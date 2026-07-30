@@ -99,3 +99,8 @@ notes: |
   failure waiting for a slow day — and because an Actions tab with a red run in it
   trains the operator to ignore red runs. Same family as BL-639: an alarm that is
   technically correct and practically noise.
+
+  BL-723 coder verdict (2026-07-30): on-par. Matches the ticket's shape
+  exactly (headroom not a job-level cap; repo-wide major bump, not
+  piecemeal); acceptance suite ran 7/7 pass against real parsed YAML. No
+  coder-eye concerns found.

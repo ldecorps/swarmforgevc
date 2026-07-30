@@ -65,3 +65,14 @@ description: |
   toolchain not wired) — the test runner above is the actual gate.
 
 acceptance: specs/features/BL-661-stage-skip-reasons-flow-style-unreadable-by-lib.feature
+
+notes: |
+  BL-723 coder verdict (2026-07-30): on-par. Root cause (block-only scanner
+  vs. universally flow-style declarations) correctly fixed at the source;
+  ran the unit suite live (ALL PASS). Caveat: the feature's scenario 05
+  (routing skip-trail audit record carries a flow-style reason end to end)
+  has no step handler wired against swarm_handoff.bb itself — the .bb unit
+  test only simulates the embed, so the ticket's stated consumer-impact
+  claim is unverified end-to-end. Judged a caveat, not a shortfall worth a
+  separate defect pair, since the underlying parser fix is correct and
+  tested directly.

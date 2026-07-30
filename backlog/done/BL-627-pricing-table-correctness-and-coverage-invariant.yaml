@@ -135,3 +135,10 @@ notes: |
   `epic: cost-intelligence`, but no `type: epic` ticket tracks them, which
   breaks the "every epic must have a milestone and a tracker" convention that
   BL-543 and BL-541 follow. Worth a separate hygiene ticket.
+
+  BL-723 coder verdict (2026-07-30): on-par. Root cause addressed directly
+  (wrong rates, missing roster model, fail-loud coverage check); real
+  fixture-backed tests and a wired acceptance suite (7/7 pass). Minor nit
+  only: the conf/JSON scanner is a regex heuristic rather than a real
+  parser, so an unusually-shaped model id could still evade detection — not
+  filed as a separate defect, judged not to rise to a shortfall.

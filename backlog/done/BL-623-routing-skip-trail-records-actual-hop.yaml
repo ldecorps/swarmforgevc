@@ -121,3 +121,12 @@ approval_context: >
   (rewrite to the next required stage) becomes its own ticket. Firm: the
   BL-606 acceptance steps keep passing — the record keys they parse are
   compatibility constraints.
+
+notes: |
+  BL-723 coder verdict (2026-07-30): on-par. Logic is correct for all
+  documented scenarios; acceptance suite genuinely shells out to bb against a
+  scratch git fixture rather than asserting prose. Minor nits only, not filed
+  as separate defects: an unreachable fallback branch in emit-skip's caller
+  (swarm_handoff.bb ~449-456), and log-routing-skip! has no try/catch around
+  it despite the ticket's own "a record-write failure must not block the
+  send" guardrail — no scenario exercises that path either.

@@ -151,3 +151,10 @@ notes: |
   untracked files are as likely to be load-bearing as litter, an individual role
   cannot execute it safely. The boy-scout duty belongs to whatever has the whole
   picture — the test that made the mess, or the daemon that watches every worktree.
+
+  BL-723 coder verdict (2026-07-30): on-par. Addresses the actual root cause
+  (CWD-relative writes), correctly inverts the babysitter hint only for the
+  pure-fixture case, and the guard-root assertion is a genuine regression
+  test. Ran both suites live: 23/23 shell checks and 12/12 acceptance
+  scenarios pass; the 8 stray files no longer exist. No coder-eye concerns
+  found.
