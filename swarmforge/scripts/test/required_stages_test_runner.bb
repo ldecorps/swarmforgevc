@@ -228,6 +228,37 @@
                "  architect: no design impact\n"
                "status: todo\n")))
 
+
+(assert= "flow-style mapping is read as stage->reason, keys normalized"
+         {"cleaner" "style-only commit" "architect" "no design impact"}
+         (required-stages-lib/read-stage-skip-reasons
+          (str "id: BL-1\n"
+               "required_stages: [coder, qa]\n"
+               "stage_skip_reasons: { cleaner: \"style-only commit\", architect: \"no design impact\" }\n"
+               "status: todo\n")))
+
+(assert= "flow-style quoted reason keeps commas and braces"
+         {"cleaner" "touched {a, b}, still style-only"}
+         (required-stages-lib/read-stage-skip-reasons
+          "id: BL-1\nstage_skip_reasons: { cleaner: \"touched {a, b}, still style-only\" }\n"))
+
+(assert= "flow-style hardener alias normalizes to hardender"
+         {"hardender" "coverage only"}
+         (required-stages-lib/read-stage-skip-reasons
+          "id: BL-1\nstage_skip_reasons: { hardener: \"coverage only\" }\n"))
+
+(assert= "empty flow map reads as empty"
+         {}
+         (required-stages-lib/read-stage-skip-reasons
+          "id: BL-1\nstage_skip_reasons: {}\n"))
+
+;; BL-661 scenario 05: swarm_handoff embeds :reasons from read-stage-skip-reasons —
+;; covered here by asserting the reader returns the flow reason that handoff would embed.
+(assert= "flow reason available for skip-trail audit embedding"
+         {"architect" "no design fork"}
+         (required-stages-lib/read-stage-skip-reasons
+          "id: BL-661\nrequired_stages: [coder, qa]\nstage_skip_reasons: { architect: \"no design fork\" }\n"))
+
 ;; ── ran-and-skipped (acceptance scenario 08) ──────────────────────────────
 
 (let [content (str "id: BL-606\nrequired_stages: [coder, qa]\nstatus: done\n")
