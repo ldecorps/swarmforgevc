@@ -15,6 +15,18 @@
 #   NEGOTIATION_RELAY_LAUNCH_DRYRUN=1   print the assembled supervisor command, start nothing
 set -euo pipefail
 
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+  cat <<'EOF'
+launch_negotiation_relay.sh — lifecycle start entry point.
+
+Stop: stop_ancillary_services.sh / ./stop-swarm.sh (or ./swarm-kill for pipeline-only)
+
+Usage: see header comments above.
+EOF
+  exit 0
+fi
+
+
 TARGET_REPO_PATH="${1:?usage: launch_negotiation_relay.sh <target-repo-path> <host-secrets-file-path>}"
 HOST_SECRETS_FILE_PATH="${2:?usage: launch_negotiation_relay.sh <target-repo-path> <host-secrets-file-path>}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

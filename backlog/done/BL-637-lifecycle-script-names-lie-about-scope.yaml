@@ -2,7 +2,7 @@ id: BL-637
 title: "Lifecycle script names lie about their scope: `kill_all_swarm.sh` is the one that does NOT kill all, and the operator's own recorded teardown procedure named the wrong script because of it"
 milestone: M8
 type: defect
-status: todo
+status: done
 epic: swarm-reliability
 human_approval: approved
 severity: medium
