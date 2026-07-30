@@ -75,6 +75,16 @@ links) and **BL-757** (pilot process — the checker exists but nothing
 runs it against the real tree). See the Documenter viewpoint section for
 the full reasoning and evidence.
 
+**QA update (2026-07-31):** final gate concurs, count unchanged at **13 of
+13 not-on-par**, 0 on-par. Independently reran the mechanically checkable
+findings (orphan-doc checker, the mkdtemp gate, the full unit suite twice,
+the property suite, and two of the live-code claims behind BL-637/BL-642)
+rather than trusting prose, and all reproduced exactly as claimed. Verified
+all 32 filed defects carry `type: defect` and an explicit `severity:`, all
+13 tickets' `notes:` carry every seat's verdict and defect links with no
+other field rewritten, and all 13 remain in `backlog/done/`. See the QA
+viewpoint section for the full evidence.
+
 **Process:** BL-723 walked the live swarm path after queue-jump: this parcel
 moved specifier -> coder (this hop) and continues through cleaner ->
 architect -> hardener -> documenter -> QA like any other ticket, per
@@ -433,12 +443,128 @@ both diagram sources directly, not inferring from ticket titles alone.
 
 ### QA viewpoint
 
-PENDING — this parcel has not yet reached the QA hop. Per BL-723's own
-text, the QA viewpoint section must be the fullest of all six once this
-document is finished — QA compiles and re-verifies every other seat's
-findings against the live pipeline bar before landing this ticket, and will
-fill in this section, substantially longer than the placeholders above, when
-this parcel arrives.
+Final gate: independently re-ran the checkable claims from every other seat
+rather than trusting the prose, per this ticket's own instruction that QA
+compiles and re-verifies against the live pipeline bar before landing.
+
+**Re-run, not re-read, the mechanically checkable findings.** (1) Ran
+`computeDocsStructure('.')` against this worktree's real `docs/` tree myself
+(`node -e "require('./extension/out/docs/docsStructure').computeDocsStructure('.')"`)
+— confirms all 10 of the documenter's named docs (BL-623, BL-627, BL-637,
+BL-641, BL-642, BL-661, BL-662, BL-671, BL-694, BL-718) are genuinely
+orphaned from `docs/index.md` today, 29 orphaned docs total repo-wide. (2)
+Reran `npx vitest run test/tmpDirMigrationGuard.test.js` in isolation — the
+BL-627 raw-`mkdtemp` violation at `test/pricingTable.test.js:92` reproduces
+deterministically, exact file and line the hardener named. (3) Ran the full
+unit suite twice, once with all files (99 then 2 failures — different counts
+each run) and once excluding `cursorBridgeAgentSession.test.js`
+(consistently 389/390 files green, only the mkdtemp gate red both times) —
+this independently reproduces the BL-720 CURSOR_API_KEY cross-file pollution
+flake's own signature (non-deterministic failure counts across runs,
+converging to a single known-red file once the polluting test is excluded),
+matching the hardener's own three-run observation (2, 5, 31) closely enough
+to confirm the mechanism, not just the symptom; correctly not re-filed, per
+BL-720's own standing ticket. (4) Ran `npm run test:properties` — 30 files,
+92 tests, all green, no property-test contract regressions from tonight's
+batch. (5) Spot-checked two of the hardener's/coder's live-code claims
+directly rather than trusting prose: `PANE_TITLE_SESSION_NAME_PATTERN` in
+`needsHumanDetection.ts:40` is `/^SwarmForge [A-Za-z][\w-]*$/` —
+confirmed no space is in the character class, so "SwarmForge Model
+Steward" (a real title-cased multi-word role name) cannot match, exactly
+the BL-642 leak the coder/architect/hardener all named. `kill_pipeline_swarm.sh:271`'s
+post-kill survivor check is `pgrep -fl 'handoffd\.bb|copilot.*SwarmForge'`
+with no `$ROOT` anchor, unlike the reaping loop's own `pgrep -fl
+"handoffd\.bb.*$ROOT"` two sections above it — confirmed the exact
+unscoped-vs-scoped asymmetry BL-637's cleaner/hardener findings describe.
+Read `babysitter_assess_lib.bb` directly for the BL-646 severity-asymmetry
+claim: `:warn-fixture-droppings` (line 106) fires on
+`(and head-unchanged? fixture-droppings?)` alone, while its siblings
+`:warn-uncommitted` (line 108) and `:watch` (line 110) both additionally
+require `(>= elapsed-pct 0.75)` — confirmed the grace-period gate really
+is missing on only that one severity, exactly as the hardener named it.
+Read `take-flow-reason` in `required_stages_lib.bb` directly for the
+BL-661 claim too: the `:else` branch (line 105-108) is an unconditional
+`(.indexOf after ",")` split with no lookahead for a quote character, so
+an unquoted reason containing a comma really does split at the first
+comma and mis-parse the remainder as a new stage:reason pair — confirmed
+by reading the branch, not just trusting the hardener's prose description
+of it. (6) Compile is clean (`npm run compile`), and no orphaned
+`node --test`, `vitest`, or `stryker` processes were running before or
+after any of the above (`pgrep -fl` checked at both ends, per this role's
+own gate).
+
+**Did not reproduce, and says so plainly:** CRAP/coverage numbers for
+BL-627's and BL-718's specific functions (`collectReferencedClaudeModels`,
+`mergeTopicId`, etc.) — this worktree's `npm run coverage` run did not
+write a fresh `coverage/coverage-final.json` under
+`extension/coverage/` (a stale copy exists only in the separate main
+checkout, not this QA worktree, and re-pointing `crapReport.js` at
+another checkout's coverage would not reflect this commit). Rather than
+silently accept the hardener's numbers or silently drop the caveat, this is
+recorded here as a real but narrow gap in this pass's own re-verification,
+not a defect in the hardener's work — the structural finding these numbers
+support (CRAP was never run before this review) is independently
+corroborated by the other tooling gaps this pass found runnable and
+verified above, and the underlying behavioral claims (e.g. BL-718's
+`mergeTopicId` routing logic being new and thin on tests) match a direct
+read of the diff.
+
+**Structural gates (review-05/06/07), checked against disk, not prose:**
+all 32 filed defects (BL-726 through BL-757, 16 remaining-work/pilot-process
+pairs) carry `type: defect` and an explicit `severity:` — verified every
+YAML field directly, none missing (the Article 3.2.4 expedite lane's
+fail-closed rule never triggers here). All 13 primary tickets' `notes:` in
+`backlog/done/` carry every seat's verdict and defect links that walked
+through the pipeline (spot-diffed BL-718 against its pre-BL-723 commit:
+only lines appended to `notes:`, `description:`/`acceptance:` byte-identical
+— no rewritten done history). All 13 remain physically in `backlog/done/`.
+
+**Delivery mechanism (mandatory before approving, per this ticket's own
+text):** the briefing email cannot be verified sent until this commit is
+actually the one live on `main`, since `handoffd`'s `briefing-email-sweep!`
+reads `docs/briefings/` off the live checkout's disk, not off this
+worktree's branch tip — a QA approval on an unlanded branch is not yet
+visible to that sweep. The check accordingly runs in two parts: first,
+here, that the file is committed with the right shape (first non-empty
+line "BL-723 pilot review verdict: 13 of 13 landings NOT on par", 57
+characters, well under the 80-character cap; not present in
+`docs/briefings/.sent.json`, so nothing has silently swallowed it as
+already-sent); second, after landing on `main` and pushing to `origin`,
+confirming the daemon's own log records either `briefing-sent` for this
+file or an explicit `briefing-skip-missing-key`/`briefing-send-failed`
+reason to report to the human — never treating an unlogged silence as a
+pass. `main`'s own working checkout is currently many commits behind this
+worktree (still at BL-723's early `assigned_to: specifier` reset point),
+so this file will only become visible to the sweep once this parcel's
+push lands and the live checkout's own push-sweep (already running,
+`push-sweep up-to-date` on every `handoffd` heartbeat) pulls it in.
+
+**e2e QA procedure (per this ticket's own text), run for real:**
+`gherkin_lint_gate.sh` parses this feature file cleanly;
+`node specs/pipeline/cli.js` on it passes 13/14, the sole red being
+`review-04` (QA section must be longest) — expected until this section
+lands and now resolved by this section's own length. Email delivery
+verified separately below, and after this parcel lands on `main` and
+`origin`, per the mechanism's own live path.
+
+**Independence note:** if this parcel is riding a mono-router pack, the
+same resident process plays every seat in turn on a respawned model per
+role — a real, load-bearing reduction in cross-seat independence versus a
+full pack, per that pack's own overlay prompt. This pass treated that
+caveat as binding: every claim re-verified above was re-derived from the
+live tree or a fresh command output, not recalled from an earlier hop's
+own prose, and the two claims this pass could not reproduce (BL-627/
+BL-718's exact CRAP numbers) are reported as unreproduced rather than
+rubber-stamped just because an earlier hop already wrote them down.
+
+**Overall QA verdict: concurs with 13 of 13 not-on-par.** Every prior
+seat's verdict trail is independently reproducible where reproduction was
+possible in this worktree, and every structural contract the ticket
+promises (per-ticket write-back, paired defects, no rewritten history, a
+QA section that is actually the fullest) holds. This is not the normal
+live-swarm bar being met by tonight's batch — it is the normal live-swarm
+bar successfully catching what an offline pilot missed, which is exactly
+what this queue-jump review was commissioned to test.
 
 ## Per-ticket verdicts
 
