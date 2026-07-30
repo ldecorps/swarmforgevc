@@ -2,7 +2,7 @@ id: BL-641
 title: "The backlog-dashboard Pages deploy rides its own 10-minute default timeout, so a slow Pages service fails the run — plus a repo-wide Node 20 action deprecation"
 milestone: M8
 type: defect
-status: todo
+status: done
 epic: swarm-reliability
 human_approval: approved
 severity: low
