@@ -189,6 +189,54 @@
 
 (non-vacuity-check)
 
+;; BL-630 hardener pass (QA bounce #3, 2026-07-30): the non-vacuity check
+;; above only proves this property catches a FULLY-bypassed gate
+;; (always-approve). QA's bounce evidence named a narrower, historically
+;; real gap: the check-all loop above calls the REAL push-sweep-lib/
+;; qa-gate-decision, which already treats a content-bearing merge (bounce
+;; #2's exact defect - `main`/`push_sweep_lib.bb` reintroduced this once
+;; already) as non-exempt, correctly - but nothing here PROVES the
+;; generator+oracle pairing would actually catch a regression BACK to
+;; bounce #2's specific behavior (unconditionally exempting every
+;; `:merge? true` sha regardless of its own content), as opposed to merely
+;; hoping 500 random draws happen to hit that exact shape. Reproduce
+;; bounce #2's decision function verbatim here (a local copy, deliberately
+;; NOT `push-sweep-lib/qa-gate-decision` - this is standing in for the
+;; historical bug, not the current fix) and prove on the SAME
+;; content-bearing-merge scenario that: (a) today's real qa-gate-decision
+;; refuses it, and (b) the bounce-#2 shape would NOT have - i.e. this
+;; property's generator/oracle pairing is demonstrated, not assumed, to
+;; discriminate the two.
+(defn- bounce2-buggy-qa-gate-decision
+  "Verbatim restatement of the pre-fix (bounce #2) bug: every :merge? true
+   sha is treated as content-free and skipped, regardless of :changed-paths."
+  [{:keys [qa-ref-exists? tip-is-qa-ancestor? ahead-commits facts-complete?]
+    :or {facts-complete? true}}]
+  (cond
+    (not facts-complete?) {:refuse? true :reason :gather-failed :offending-shas []}
+    (not qa-ref-exists?) {:refuse? true :reason :missing-ref :offending-shas []}
+    tip-is-qa-ancestor? {:refuse? false :reason nil :offending-shas []}
+    :else
+    (let [offending (remove #(or (:qa-ancestor? %) (:merge? %)) ahead-commits)
+          non-bookkeeping (remove #(push-sweep-lib/commit-bookkeeping-only? (:changed-paths %)) offending)]
+      (if (seq non-bookkeeping)
+        {:refuse? true :reason :non-qa-ancestor :offending-shas (mapv :sha non-bookkeeping)}
+        {:refuse? false :reason nil :offending-shas []}))))
+
+(defn- non-vacuity-check-bounce2 []
+  (let [content-bearing-merge-scenario
+        {:qa-ref-exists? true :facts-complete? true :tip-is-qa-ancestor? false
+         :ahead-commits [{:sha "octopusMergeSha" :qa-ancestor? false :merge? true
+                           :changed-paths ["extension/src/hand-resolved-conflict.ts"]}]}
+        real-decision (push-sweep-lib/qa-gate-decision content-bearing-merge-scenario)
+        buggy-decision (bounce2-buggy-qa-gate-decision content-bearing-merge-scenario)]
+    (if (and (:refuse? real-decision) (not (:refuse? buggy-decision)))
+      (println "non-vacuity confirmed: today's qa-gate-decision refuses a content-bearing merge that bounce #2's unconditional-merge-exemption would have waved through")
+      (do (println (str "NON-VACUITY FAILURE (bounce #2 mutant): expected the real decision to refuse and the buggy one to approve; got real=" (pr-str real-decision) " buggy=" (pr-str buggy-decision)))
+          (System/exit 1)))))
+
+(non-vacuity-check-bounce2)
+
 ;; ── report ────────────────────────────────────────────────────────────────
 (println (str "push_sweep_lib qa-gate property: " runs " runs"))
 (if (empty? @failures)
