@@ -1,0 +1,85 @@
+id: BL-711
+title: "Docs state the interface-vs-incarnation vocabulary and the Bubble product name"
+milestone: M8
+type: feature
+severity: low
+status: todo
+epic: swarmforge-console
+priority: 40
+direction: human-requested
+depends_on: []
+mutation_cost: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+assigned_to: none
+
+invariants:
+  - "No live identifier, env var, filename, or how-to command is renamed by this ticket — closing it must require zero changes outside prose."
+
+description: |
+  ## What
+
+  Write the two-layer vocabulary into the docs so it stops being tribal
+  knowledge:
+
+  | Layer | Interface term | Today's incarnation |
+  |-------|----------------|---------------------|
+  | human chat channel | **messaging** (chat adapter) | **Telegram** |
+  | IDE seat driving Remote verbs / pairing / pack staffing | **host agent** | **Cursor** |
+  | operator phone app | — (it is the product) | **Bubble** (native Android, `android/`, BL-707) |
+
+  Doc sentence style: "the host agent (today: Cursor) …", "messaging (today:
+  Telegram) …", "the phone app is **Bubble** …".
+
+  ## Why
+
+  The human asked for a balance between future-proof abstraction and practical
+  everyday names — interface vs incarnation, in OO terms. Strict
+  one-name-everywhere either freezes vendor names forever or forces abstract
+  words into operator speech. Two layers is the deliberate answer, and it needs
+  to be written down so nobody "fixes" it later.
+
+  ## Where
+
+  - `docs/reference/Specification.MD` — the glossary paragraph belongs beside
+    the existing chat-adapter section. NOTE (verified 2026-07-30): a draft of
+    exactly this paragraph already sits UNCOMMITTED in the master working tree
+    at that anchor. It is ticket-less prose under the BL-506 rule — review it as
+    parcel content, keep what is right, do not assume it is final.
+  - New/forward-looking prose may use the interface words when explaining
+    architecture; operator how-tos keep Telegram and Cursor when naming live
+    bounce paths, env vars, and verbs the human types.
+  - New copy says **Bubble** for the phone app.
+
+  ## Already discharged (do not redo)
+
+  The POLICY half is not a doc change and is already committed by the specifier
+  as Architecture Rule 7 in
+  `swarmforge/constitution/articles/local-engineering.prompt`: a
+  rename-off-Telegram/Cursor proposal is out of policy unless the human asks for
+  a second incarnation plus a shim plan. This ticket is the docs half only.
+
+  ## Out of scope — do not pull as a rename epic
+
+  - Renaming `telegram-*` files, `TELEGRAM_*` env vars,
+    `telegram-reply-outbox.jsonl`, or Telegram HTTP client symbols
+  - Renaming Cursor Remote / `telegramCursorBridge*` modules
+  - Rewriting `backlog/done/**` or historical evidence
+  - Dual-name adapter shims (only when a real second incarnation is asked for)
+
+  ## Constraint
+
+  `docs/reference/Specification.MD` is also the subject of BL-692 (285 junk
+  duplicate paragraphs) and BL-693 (repeated-paragraph gate). Those overlap this
+  file — do not run them concurrently with this ticket.
+
+acceptance: specs/features/BL-711-interface-vs-incarnation-glossary.feature
+
+source: |
+  Human via Let's Talk / Cursor 2026-07-30. Drained from
+  `backlog/INTAKE-messaging-host-agent-interface-vs-incarnation.md`.
+
+notes: |
+  e2e QA procedure: read the Specification glossary section and confirm all
+  three rows and the sentence style are stated, including Bubble as the phone
+  app's product name; then confirm `git diff` for the parcel touches prose only
+  — no identifier, env var, filename, or verb rename anywhere in the diff.

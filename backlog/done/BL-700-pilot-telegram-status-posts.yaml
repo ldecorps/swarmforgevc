@@ -1,0 +1,49 @@
+id: BL-700
+title: "Cursor /pilot: Telegram status posts on ticket / hat / bounce"
+milestone: M8
+type: feature
+severity: medium
+status: done
+epic: swarmforge-console
+human_approval: approved
+priority: 03
+direction: human-requested
+mutation_cost: low
+depends_on:
+  - BL-699
+invariants:
+  - "/pilot remains distinct from /expedite; gate against expedite lock unchanged."
+  - "Mandatory Cursor Remote posts on ticket change, hat change, and bounce-back with reason — not only progress.json / SDK status."
+  - "Human-question Telegram poll rule from BL-699 remains in force."
+acceptance: specs/features/BL-700-pilot-telegram-status-posts.feature
+
+approval_context: >
+  Operator via Let's Talk 2026-07-29: proceed with BL-699 siblings (status
+  posts then orphan cleanup). Source intake:
+  .swarmforge/operator/INTAKE-pilot-telegram-status-posts.md. Slice 2 of 3 —
+  prompt + structured status format helpers. Native poll send API growth
+  left as future affordance if prompt-only proves insufficient.
+
+description: |
+  ## What
+
+  Require Cursor `/pilot` to keep the Cursor Remote Telegram topic informed
+  with structured status on ticket change, hat/casquette change, and
+  bounce-back (with explicit reason). Prefer prompt contract; ship pure
+  format helpers for the three mandatory lines.
+
+  ## Source
+
+  `.swarmforge/operator/INTAKE-pilot-telegram-status-posts.md`
+
+  ## Scope
+
+  - `composePilotExpeditorPrompt` status-post contract
+  - `formatPilotTicketChangeStatus` / `formatPilotHatChangeStatus` /
+    `formatPilotBounceBackStatus`
+  - Unit tests + Gherkin feature + how-to
+
+  Out of scope: orphan cleanup (BL-701), automated `/expedite`, full agent-
+  driven poll send wiring beyond the existing BL-699 prompt rule.
+
+assigned_to: QA

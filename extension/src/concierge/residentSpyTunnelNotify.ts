@@ -8,12 +8,12 @@ export const RESIDENT_SPY_TUNNEL_NOTIFY_FORMAT_VERSION = 3;
 
 export function buildResidentSpyMiniAppUrl(baseUrl: string, token: string): string {
   const base = baseUrl.replace(/\/$/, '');
-  return `${base}/resident-spy?token=${encodeURIComponent(token)}`;
+  return `${base}/resident-spy?bearer=${encodeURIComponent(token)}`;
 }
 
 export function buildConsoleMiniAppUrl(baseUrl: string, token: string): string {
   const base = baseUrl.replace(/\/$/, '');
-  return `${base}/console?token=${encodeURIComponent(token)}`;
+  return `${base}/console?bearer=${encodeURIComponent(token)}`;
 }
 
 export function consoleUrlFromLiveUrl(liveUrl: string): string {

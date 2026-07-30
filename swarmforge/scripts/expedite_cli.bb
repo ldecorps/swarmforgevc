@@ -40,6 +40,7 @@
 (def scripts-dir (fs/parent (fs/canonicalize *file*)))
 (load-file (str (fs/path scripts-dir "expedite_lib.bb")))
 (load-file (str (fs/path scripts-dir "prompt_engine_lib.bb")))
+(load-file (str (fs/path scripts-dir "expedite_progress_lib.bb")))
 
 ;; ── args ──────────────────────────────────────────────────────────────────
 
@@ -116,6 +117,16 @@
 (defn- write-json! [path data]
   (fs/create-dirs (fs/parent path))
   (spit (str path) (str (json/generate-string data {:pretty true}) "\n")))
+
+(defn- write-progress! [run-dir ticket stage status & [detail]]
+  (write-json! (fs/path run-dir "progress.json")
+               {:ticket ticket
+                :stage (name stage)
+                :status (name status)
+                :detail (str (or detail ""))
+                :line (expedite-progress-lib/format-progress-line
+                       {:ticket ticket :stage stage :status status :detail detail})
+                :updated-at-ms (now-ms)}))
 
 ;; ── liveness probe (real) ─────────────────────────────────────────────────
 ;; The socket FILE is deliberately not consulted as a signal. We glob to find
@@ -378,11 +389,20 @@
         :else
         (let [idx (count @history)
               stage-dir (fs/path run-dir (format "%02d-%s" idx stage))
+              _ (write-progress! run-dir ticket stage :running (str "stage " (inc idx) "/" (count stages)))
               task (str "Ticket " ticket ". You are the " stage " stage of an offline expedited run."
                         (when-let [b (seq (get @bounces stage))]
                           (str " This is a rework after " (count b) " bounce(s): "
                                (str/join "; " (map :reason b)))))
               res (run-stage! opts worktree stage task stage-dir)]
+          (write-progress! run-dir ticket stage
+                           (case (expedite-lib/classify-verdict (:verdict res))
+                             :advance :passed
+                             :bounce :bounced
+                             :fail :failed
+                             :failed)
+                           (str "verdict=" (name (:verdict res))
+                                (when-let [r (:reason res)] (str " reason=" (name r)))))
           (swap! history conj (select-keys res [:stage :verdict :reason :class]))
           (write-json! (fs/path stage-dir "verdict.json") res)
           (case (expedite-lib/classify-verdict (:verdict res))
@@ -448,6 +468,7 @@
           opts (assoc opts :project-root root)
           run-dir (fs/path root ".swarmforge" "expedite" ticket)
           _ (fs/create-dirs run-dir)
+          _ (write-progress! run-dir ticket :init :running "teardown + worktree")
           init (initiate! opts run-dir)
           worktree (ensure-worktree! opts)
           stages (expedite-lib/stages-for {})
@@ -455,6 +476,10 @@
           _ (when (and (= :done (:ticket staged)) (not (:dry-run? opts)))
               (move-ticket! root ticket "active" "done"))
           restart (restart-stack! opts)
+          _ (when (not (:dry-run? opts))
+              (write-progress! run-dir ticket :done
+                               (if (= :done (:ticket staged)) :passed :failed)
+                               (str "ticket=" (name (:ticket staged)) " restart=" (name (:outcome restart)))))
           result (expedite-lib/run-result {:ticket (:ticket staged)
                                            :restart (:outcome restart)})
           run-record (merge result

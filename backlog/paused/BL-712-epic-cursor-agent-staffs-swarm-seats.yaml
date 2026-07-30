@@ -1,0 +1,75 @@
+id: BL-712
+title: "EPIC — staff real swarm role seats with a Cursor agent (Cursor SDK / ACP); tracks children"
+milestone: M8
+type: epic
+status: todo
+epic: swarm-intelligence-layer
+priority: 6
+direction: human-requested
+depends_on: [BL-545]
+decomposes_into: [BL-713]
+mutation_cost: high
+
+remaining_slices:
+  - "B. Launcher + agent runtime — a cursor agent token accepted by swarmforge.sh's agent whitelist, ensure, and the poke/wake path; the ACP or SDK host process that backs it."
+  - "C. Model Steward registration + certify path — register the Cursor identity as candidate, run the existing compliance battery, produce an evidence artifact, then certify; pack apply refuses a candidate Cursor unless an explicit spike-only escape is set."
+  - "D. Pack + docs — how-to on when to use a Cursor seat vs /pilot vs Claude; the unsupported-agent error points here."
+
+acceptance:
+  none: "tracker only — see decomposes_into children for acceptance"
+
+description: |
+  ## Vision
+
+  A Cursor agent can staff a REAL pack seat (coder, specifier, QA, …) and
+  participate in the ordinary handoff loop — mail, poke/wake, `ready_for_next` /
+  rotation, every gate — not only the offline `/pilot` expedition that wears
+  every hat while the swarm is stopped.
+
+  ## Not to be confused with what already exists
+
+  | Surface | What it is | Why it is not this epic |
+  |---------|------------|-------------------------|
+  | `/pilot` (BL-696/699) | one Cursor agent walks the pipeline hats OFFLINE, swarm stopped | offline expeditor, not a live seat |
+  | pack `window <role> <agent> …` | live tmux seat; `swarmforge.sh` whitelists `claude\|codex\|copilot\|grok\|aider\|vibe\|gemini` | **no `cursor`** today — the whitelist rejects it |
+  | ACP spike intake (`.swarmforge/operator/INTAKE-acp-spike-one-seat-structured-driving.md`) | ACP-host-in-a-pane for an ACP-native CLI (Vibe/Qwen) | adjacent; share the host machinery, do not merge the tickets |
+  | Model Steward (BL-547+) | registry plus `register` / `certify` / `decertify`; ModelFactory consumes certified entries | the gate this epic must pass through, not the work itself |
+
+  ## Non-negotiable: Model Steward certification gates production routing
+
+  Before a Cursor seat is eligible for ordinary pack routing, ModelFactory
+  assignment, or a "just use cursor for role X" operator default:
+
+  1. Register the Cursor identity as `candidate` under a provider/model form
+     that matches how the seat actually bills and identifies itself — never a
+     fabricated Anthropic id.
+  2. Run the compliance battery the steward already owns (see
+     `docs/how-to/BL-547-model-steward-overview.md`): protocol follow-through,
+     handoff helpers, asks-when-blocked posture.
+  3. Only then `model_steward_cli.bb certify <provider>/<model>`, with an
+     evidence artifact.
+
+  An uncertified Cursor must not be silently routable on mono-router or
+  full-forge production packs. Document every Cursor-specific residual: prompt
+  injection / bootstrap limits under ACP, remote-control differences versus
+  Claude's `/rc`, and cost attribution.
+
+  ## Placement
+
+  Sub-tracker under BL-545 (Swarm Intelligence Layer), alongside BL-542
+  (model routing / ModelFactory), BL-546 (PromptEngine) and BL-547 (Model
+  Steward) — the same nesting BL-542 uses. Not a parallel epic namespace.
+
+  ## Out of scope for the whole epic
+
+  - Replacing every Claude seat
+  - Making `/pilot` the live swarm
+  - Skipping the steward and trying Cursor in production
+  - A second Telegram console for Cursor seats
+
+  UMBRELLA / tracking item (`type: epic`), NOT directly promotable — the
+  coordinator promotes CHILD slices, never this.
+
+source: |
+  Human via Cursor 2026-07-30. Drained from
+  `backlog/INTAKE-cursor-agent-staffs-swarm-roles-acp.md`.

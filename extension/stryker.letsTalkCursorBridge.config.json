@@ -1,0 +1,32 @@
+{
+  "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "testRunner": "vitest",
+  "vitest": {
+    "configFile": "vitest.letsTalkCursorBridge.config.mjs",
+    "related": false
+  },
+  "concurrency": 12,
+  "timeoutMS": 60000,
+  "timeoutFactor": 3,
+  "incremental": true,
+  "incrementalFile": "stryker-incremental.json",
+  "coverageAnalysis": "perTest",
+  "appendPlugins": ["./out/mutation/stryker-plugin.js"],
+  "ignorers": ["entrypoint-boilerplate"],
+  "reporters": ["clear-text", "progress", "mutation-progress"],
+  "tempDirName": ".stryker-tmp",
+  "cleanTempDir": true,
+  "mutate": [
+    "out/bridge/letsTalkCore.js",
+    "out/bridge/letsTalkRoutes.js",
+    "out/bridge/letsTalkAudio.js",
+    "out/bridge/letsTalkLocalAudio.js",
+    "out/bridge/cursorBridgeAgentSession.js",
+    "out/bridge/cursorBridgeTelegramHtml.js",
+    "out/tools/telegramCursorBridgeCore.js",
+    "out/tools/telegramCursorBridgeLive.js",
+    "out/tools/telegramCursorBridgePilot.js",
+    "out/tools/telegram-cursor-bridge.js",
+    "out/tools/start-bridge-headless.js"
+  ]
+}

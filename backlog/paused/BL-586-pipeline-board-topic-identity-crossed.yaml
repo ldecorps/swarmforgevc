@@ -5,6 +5,11 @@ type: defect
 status: needs_design
 epic: pipeline-board
 human_approval: approved
+approval_context: >
+  Hydrate batch 2026-07-28: materializes the already-approved prose acceptance
+  into APS Gherkin, unchanged in substance. Status stays needs_design — the
+  reuse-or-create/collision-guard mechanics are firmed up by the coder per
+  the description's "Design directions", not settled here.
 severity: high
 priority: 12
 direction: human-requested
@@ -82,21 +87,7 @@ description: |
   sendTelegramMessage call's unused parameter slot in
   buildConciergeTickAdapters.
 
-acceptance: |
-  Specifier writes executable scenarios; minimum:
-  1. Board resolve with a topicId that telegram-topic-map maps to any
-     non-board purpose refuses to post, alerts the Operator topic, and
-     re-ensures; the support thread receives nothing.
-  2. State reset with a recorded PIPELINE_BOARD standing id reuses that
-     topic — no new topic minted (zombie regression guard).
-  3. Freshly minted topic id is durably recorded before the first board
-     post (crash-between fixture).
-  4. Operator file repair while the stack runs takes effect within one
-     tick (no restart) — or the documented reset surface exists and works.
-  5. Two concurrent writers produce a loud log naming both identities, and
-     the board never posts into a topic the surviving state cannot
-     validate.
-  6. Board messages send with link previews disabled.
+acceptance: specs/features/BL-586-pipeline-board-topic-identity-crossed.feature
 
 out_of_scope: |
   - Deleting existing zombie topics (manual, runbook only).

@@ -70,9 +70,30 @@ description: |
   so BL-590 inherits it for free. Extends the multi-swarm GROUP-separation
   finding to TOKEN separation.
 
-acceptance: |
-  specs/features/BL-622-onboarding-telegram-token-separation.feature
+acceptance: specs/features/BL-622-onboarding-telegram-token-separation.feature
+out_of_scope: |
+  - Minting bot tokens or automating BotFather (BL-380 owns provisioning
+    input; a human supplies tokens).
+  - The onboarder flow itself (BL-590, paused).
+  - 409-cause observability and sustained-outage escalation (BL-621).
+  - Multi-swarm GROUP separation (already a recorded finding; this is the
+    token half).
+  - Removing the ~/.zshenv sourcing from launchers generally (other
+    ancillary services legitimately read it; only Telegram cred RESOLUTION
+    is being scoped to the recorded primary).
 
+approval_context: >
+  One genuine ruling: the primary-root record. Recommendation: first
+  primary launch writes ~/.swarmforge/fleet/primary/root; env-token
+  fallback then works only for that root, and moving the primary is a
+  deliberate operator edit of that record. Alternative (stricter): kill env
+  fallback entirely and require a creds file even for the primary — safer
+  but adds a migration step for the live swarm on day one. Say which you
+  want; the spec as written takes the first. Firm either way: a swarm
+  without its own resolvable creds keeps its front desk DOWN and says so in
+  one loud line — silent inheritance is the incident.
+
+notes: |
   Every scenario needs its step handler wired in this same parcel (BL-233).
 
   Scenario map: 01 non-primary never inherits the env token + loud line;
@@ -104,24 +125,3 @@ acceptance: |
      desk still refuses, same loud line.
   4. Primary root: normal launch still comes up on env creds unchanged.
 
-out_of_scope: |
-  - Minting bot tokens or automating BotFather (BL-380 owns provisioning
-    input; a human supplies tokens).
-  - The onboarder flow itself (BL-590, paused).
-  - 409-cause observability and sustained-outage escalation (BL-621).
-  - Multi-swarm GROUP separation (already a recorded finding; this is the
-    token half).
-  - Removing the ~/.zshenv sourcing from launchers generally (other
-    ancillary services legitimately read it; only Telegram cred RESOLUTION
-    is being scoped to the recorded primary).
-
-approval_context: >
-  One genuine ruling: the primary-root record. Recommendation: first
-  primary launch writes ~/.swarmforge/fleet/primary/root; env-token
-  fallback then works only for that root, and moving the primary is a
-  deliberate operator edit of that record. Alternative (stricter): kill env
-  fallback entirely and require a creds file even for the primary — safer
-  but adds a migration step for the live swarm on day one. Say which you
-  want; the spec as written takes the first. Firm either way: a swarm
-  without its own resolvable creds keeps its front desk DOWN and says so in
-  one loud line — silent inheritance is the incident.

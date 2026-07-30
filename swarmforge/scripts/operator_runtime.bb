@@ -103,6 +103,10 @@
 ;; bring-up left behind) - loads its own pure decision lib via load-file
 ;; internally, reuses proc_fd_scan_lib.bb loaded just above.
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "orphan_agent_reaper_sweep_lib.bb")))
+;; Orphan janitor: reclaim leftovers fixture + agent reapers miss —
+;; /tmp operator_runtime.bb, hung generated acceptance tests, and
+;; disposable-root babysitter/bridge/bot (name is tmp.*, not aps-/sfvc-).
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "orphan_janitor_sweep_lib.bb")))
 
 (defn usage []
   (binding [*out* *err*]
@@ -190,6 +194,8 @@
 (def tunnel-status-file (fs/path op-dir "tunnel.status.json"))
 (def telegram-console-helper (fs/path script-dir "operator_telegram.bb"))
 (def telegram-console-status-file (fs/path op-dir "telegram-console.status.json"))
+(def miniapp-watchdog-state-file (fs/path op-dir "miniapp-watchdog.json"))
+(def bounce-bridge-headless-script (fs/path script-dir "bounce_bridge_headless.sh"))
 
 ;; The Operator is NOT a swarm agent: it runs on its OWN tmux socket (see
 ;; launch_operator.sh) and its session/RC name deliberately drop the
@@ -253,6 +259,11 @@
 (def alarm-retry-config {:max-attempts alarm-max-attempts
                           :backoff-base-ms alarm-backoff-base-ms
                           :backoff-max-ms alarm-backoff-max-ms})
+;; Mini app bridge watchdog: bounded auto-recovery when /lets-talk is down.
+(def miniapp-watchdog-enabled? (not= "0" (System/getenv "OPERATOR_MINIAPP_WATCHDOG_ENABLED")))
+(def miniapp-watchdog-port (or (some-> (System/getenv "BRIDGE_HEADLESS_PORT") parse-long) 8765))
+(def miniapp-watchdog-threshold (env-ms "OPERATOR_MINIAPP_FAILURE_THRESHOLD" 3))
+(def miniapp-watchdog-cooldown-ms (env-ms "OPERATOR_MINIAPP_BOUNCE_COOLDOWN_MS" 120000))
 
 (defn now-ms [] (System/currentTimeMillis))
 (defn now-iso []
@@ -816,6 +827,87 @@
 
 (defn write-cooldown! [m] (atomic-spit! cooldown-file (json/generate-string m)))
 (defn clear-cooldown! [] (fs/delete-if-exists cooldown-file))
+
+(defn read-miniapp-watchdog-state []
+  (if (fs/exists? miniapp-watchdog-state-file)
+    (try
+      (let [raw (json/parse-string (slurp (str miniapp-watchdog-state-file)) true)
+            failures (:consecutive_failures raw)
+            last-bounce (:last_bounce_at_ms raw)]
+        {:consecutive-failures (if (and (number? failures) (>= failures 0)) failures 0)
+         :last-bounce-at-ms (when (number? last-bounce) last-bounce)})
+      (catch Exception _ {:consecutive-failures 0 :last-bounce-at-ms nil}))
+    {:consecutive-failures 0 :last-bounce-at-ms nil}))
+
+(defn write-miniapp-watchdog-state! [{:keys [consecutive-failures last-bounce-at-ms]}]
+  (atomic-spit!
+   miniapp-watchdog-state-file
+   (str
+    (json/generate-string
+     {:consecutive_failures (long (max 0 (or consecutive-failures 0)))
+      :last_bounce_at_ms last-bounce-at-ms
+      :updated_at (now-iso)})
+    "\n")))
+
+(defn miniapp-bridge-healthy?
+  "True when /lets-talk returns HTTP 200 quickly on localhost."
+  []
+  (try
+    (let [http-get (requiring-resolve 'babashka.http-client/get)
+          response (http-get (str "http://127.0.0.1:" miniapp-watchdog-port "/lets-talk")
+                             {:request-timeout 2000 :throw false})]
+      (= 200 (:status response)))
+    (catch Exception _ false)))
+
+(defn miniapp-bounce-bridge! []
+  (process/sh {:continue true}
+              "bash" (str bounce-bridge-headless-script) project-root (str miniapp-watchdog-port)))
+
+(defn miniapp-watchdog-sweep! [now]
+  (when miniapp-watchdog-enabled?
+    (let [{:keys [consecutive-failures last-bounce-at-ms]} (read-miniapp-watchdog-state)
+          healthy? (miniapp-bridge-healthy?)
+          next-failures (if healthy? 0 (inc consecutive-failures))
+          cooldown-active?
+          (and last-bounce-at-ms (< (- now last-bounce-at-ms) miniapp-watchdog-cooldown-ms))]
+      (cond
+        healthy?
+        (when (pos? consecutive-failures)
+          (log! "miniapp-watchdog" "recovered" (str "after_failures=" consecutive-failures))
+          (write-miniapp-watchdog-state! {:consecutive-failures 0 :last-bounce-at-ms last-bounce-at-ms}))
+
+        (and (>= next-failures miniapp-watchdog-threshold) (not cooldown-active?))
+        (let [{:keys [exit err]} (miniapp-bounce-bridge!)]
+          (if (zero? exit)
+            (log! "miniapp-watchdog" "bounced"
+                  (str "failures=" next-failures)
+                  (str "port=" miniapp-watchdog-port))
+            (log! "miniapp-watchdog" "bounce-failed"
+                  (str "failures=" next-failures)
+                  (str "exit=" exit)
+                  (str/trim (or err ""))))
+          (write-miniapp-watchdog-state! {:consecutive-failures 0 :last-bounce-at-ms now}))
+
+        :else
+        (do
+          (when (= next-failures 1)
+            (log! "miniapp-watchdog" "down" (str "port=" miniapp-watchdog-port)))
+          (write-miniapp-watchdog-state! {:consecutive-failures next-failures
+                                          :last-bounce-at-ms last-bounce-at-ms}))))))
+
+(defn miniapp-watchdog-status []
+  (let [{:keys [consecutive-failures last-bounce-at-ms]} (read-miniapp-watchdog-state)
+        enabled miniapp-watchdog-enabled?]
+    {:enabled enabled
+     :port miniapp-watchdog-port
+     :failure_threshold miniapp-watchdog-threshold
+     :consecutive_failures consecutive-failures
+     :last_bounce_at_ms last-bounce-at-ms
+     :state (cond
+              (not enabled) "disabled"
+              (>= consecutive-failures miniapp-watchdog-threshold) "down"
+              (pos? consecutive-failures) "degraded"
+              :else "healthy")}))
 
 ;; ── BL-333: front-desk starvation state (runtime-owned, same posture as
 ;;    cooldown above) - {:backlog-started-at-ms :armed?} ────────────────────
@@ -1687,6 +1779,13 @@
      (assoc (orphan-agent-reaper-sweep-lib/default-adapters project-root)
             :log! (fn [msg] (log! "orphan-agent-reaper-sweep" msg))))
 
+    ;; Orphan janitor: /tmp operator_runtime + hung acceptance + tmp
+    ;; babysitter/bridge/bot — same best-effort tick; never gates LLM launch.
+    (orphan-janitor-sweep-lib/sweep!
+     project-root
+     (assoc (orphan-janitor-sweep-lib/default-adapters project-root)
+            :log! (fn [msg] (log! "orphan-janitor-sweep" msg))))
+
     ;; BL-306: bounded escalate-once-then-drop on an unanswered clarifying
     ;; question - same "best-effort side action every tick" posture as the
     ;; sweeps above; never gates the launch decision below (a pending
@@ -1722,12 +1821,16 @@
     (ensure-tunnel!)
     ;; keep the allowlisted operator Telegram console alive (best-effort)
     (ensure-telegram!)
+    ;; Mini app bridge watchdog: if /lets-talk stays down for N checks,
+    ;; auto-bounce headless bridge with cooldown (never thrash).
+    (miniapp-watchdog-sweep! now)
 
     (let [llm-running? (operator-running?)
           pending (read-events events-file)
           pending-count (count pending)
           tunnel (read-tunnel-status)
           telegram-console (read-telegram-console-status)
+          miniapp-watchdog (miniapp-watchdog-status)
           decision (operator-lib/should-launch-operator?
                     {:llm-running? llm-running?
                      :provider-state provider-state
@@ -1781,6 +1884,7 @@
                                :oldest-pending-age-ms oldest-pending-age-ms})
                        tunnel (assoc :tunnel tunnel)
                        telegram-console (assoc :telegram_console telegram-console)
+                       true (assoc :miniapp_watchdog miniapp-watchdog)
                        true (assoc :build_sha own-build-sha)
                        true (assoc :front_desk
                                    (operator-lib/render-front-desk-status

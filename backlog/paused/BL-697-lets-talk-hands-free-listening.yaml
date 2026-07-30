@@ -1,0 +1,39 @@
+id: BL-697
+title: "Let's Talk hands-free listening — auto-start after playback, auto-stop on silence"
+milestone: M8
+type: feature
+severity: medium
+status: todo
+epic: swarmforge-console
+human_approval: approved
+priority: 04
+direction: human-requested
+mutation_cost: low
+invariants:
+  - "With hands-free off, BL-696 tap-to-toggle behaviour is unchanged."
+  - "With hands-free on, the server still receives one discrete POST /lets-talk/turn per user utterance; no duplex route is added."
+  - "Hands-free preference persists in browser localStorage only."
+acceptance: specs/features/BL-697-lets-talk-hands-free-listening.feature
+
+approval_context: >
+  Operator request via Let's Talk 2026-07-27: after the agent speaks, reopen the
+  mic automatically; when the user is silent for ~2–3 seconds, submit the turn
+  without tapping Stop. Toggle to enable/disable. See
+  docs/reference/specs/BL-697-lets-talk-hands-free-listening.md.
+
+description: |
+  ## What
+
+  Optional hands-free mode on the Let's Talk Mini App screen. When enabled,
+  listening resumes shortly after TTS playback; silence (~2.5 s after speech)
+  ends the capture and submits the turn. Manual Record/Stop remains available.
+
+  ## Scope
+
+  - `extension/src/bridge/letsTalkCore.ts` — thresholds and pure decisions
+  - `extension/src/bridge/letsTalkUiHtml.ts` — toggle, Web Audio VAD, auto loop
+  - Tests and BL-697 feature file
+
+  Out of scope: server routes, streaming STT, wake word.
+
+assigned_to: coder

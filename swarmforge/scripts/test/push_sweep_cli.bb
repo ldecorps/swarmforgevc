@@ -20,6 +20,16 @@
 ;;   PUSH_SWEEP_DIVERGENCE_RESULT JSON send result for the divergence alarm
 ;;                                (required whenever the divergence alarm is
 ;;                                actually due this call)
+;;   PUSH_SWEEP_QA_GATE_FACTS     BL-630. JSON qa-gate-decision facts, e.g.
+;;                                {"qa-ref-exists?": true,
+;;                                 "tip-is-qa-ancestor?": true} or
+;;                                {"qa-ref-exists?": true,
+;;                                 "tip-is-qa-ancestor?": false,
+;;                                 "ahead-commits": [{"sha": "...",
+;;                                 "qa-ancestor?": false, "changed-paths":
+;;                                 [...]}]} (required whenever ahead>0 and
+;;                                the sweep actually reaches :should-push
+;;                                this call)
 ;;   PUSH_TEST_MAX_PUSH_ATTEMPTS / _MAX_ALARM_ATTEMPTS / _BACKOFF_BASE_MS /
 ;;   _BACKOFF_MAX_MS              override the retry-config (test-friendly
 ;;                                small defaults)
@@ -83,6 +93,10 @@
   (or (env-json "PUSH_SWEEP_DIVERGENCE_RESULT")
       (throw (ex-info "PUSH_SWEEP_DIVERGENCE_RESULT not set - no real network call is ever allowed here" {}))))
 
+(defn qa-gate-facts! []
+  (or (env-json "PUSH_SWEEP_QA_GATE_FACTS")
+      (throw (ex-info "PUSH_SWEEP_QA_GATE_FACTS not set - no real git process is ever allowed here" {}))))
+
 (fs/create-dirs daemon-dir)
 (push-sweep-lib/sweep!
  now-ms daemon-dir retry-config
@@ -90,6 +104,7 @@
   :push! push!
   :send-push-alarm! send-push-alarm!
   :send-divergence-alarm! send-divergence-alarm!
+  :qa-gate-facts! qa-gate-facts!
   :log! (fn [& parts] (swap! log-lines conj (str/join " " parts)))})
 
 (println

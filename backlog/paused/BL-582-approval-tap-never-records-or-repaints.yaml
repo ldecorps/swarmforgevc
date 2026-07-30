@@ -11,6 +11,11 @@ direction: human-requested
 depends_on: []
 assigned_to: specifier
 mutation_cost: medium
+approval_context: >
+  Hydrate batch 2026-07-28: materializes the already-approved prose acceptance
+  into APS Gherkin, unchanged in substance. Root cause (stale build) already
+  settled in this ticket's own findings; the scenarios pin the three
+  hardening gaps left open, not a re-investigation.
 invariants:
   - "Every approval tap produces an observable, durable outcome — a recorded decision or a durable failure record; no code path silently no-ops."
 source: |
@@ -183,26 +188,7 @@ description: |
   supervisor lines only) — (a)'s stderr line must land in a file that
   survives, name it in the spec.
 
-acceptance: |
-  Specifier writes the scenarios. Minimum:
-
-  1. A principal's Approve tap on a tracked ask records `human_approval:
-     approved` in the ticket yaml wherever it lives (`active/` or `paused/`).
-  2. The same tap repaints the ask: buttons stripped, verdict shown.
-  3. Record and repaint are INDEPENDENTLY observable - a repaint failure
-     after a successful record is reported, never silently swallowed, and
-     leaves the recorded verdict intact.
-  4. Every callback drop path (`not-my-chat`, `not-principal`,
-     `unrecognized-data`) emits a distinguishable diagnostic; the human-facing
-     ones surface as a callback toast rather than silence.
-  5. A tap on a ticket whose verdict is ALREADY recorded stays idempotent
-     (the BL-484 stale-tap guard) and says so rather than doing nothing.
-
-  QA: reproduce by hand against the live bot - post an ask, tap Approve, and
-  confirm both the yaml write and the repaint. A fixture-only pass is not
-  sufficient here: every unit-level guard already passes today while the live
-  path does nothing (BL-454's lesson).
-
+acceptance: specs/features/BL-582-approval-tap-never-records-or-repaints.feature
 out_of_scope: |
   - The paused -> active promotion mover (BL-490); this ticket ends at
     recording the verdict and repainting the ask.
@@ -210,3 +196,10 @@ out_of_scope: |
     defect and not its cause.
   - The typed-reply approval path ("approve BL-579" as text) unless
     investigation shows it shares the broken code path.
+
+notes: |
+  QA: reproduce by hand against the live bot - post an ask, tap Approve, and
+  confirm both the yaml write and the repaint. A fixture-only pass is not
+  sufficient here: every unit-level guard already passes today while the live
+  path does nothing (BL-454's lesson).
+

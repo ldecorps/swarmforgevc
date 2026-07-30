@@ -9,7 +9,7 @@ severity: medium
 priority: 08
 direction: human-requested
 depends_on: []
-assigned_to: specifier
+assigned_to: coder
 mutation_cost: medium
 invariants:
   - "The morning briefing is produced only as the closing sequence's last act — no independent clock can fire it against a stopped swarm or separate it from the stop."
@@ -83,27 +83,65 @@ description: |
      constant patch) is RETIRED by this ticket on the closure-scheduled
      path; kept as the trigger for 24/7 swarms with no closure schedule
      (byte-identical behaviour for them).
+  6. **WHERE the closure schedule is READ from — OPEN; the ask is QUEUED,
+     not sent (2026-07-27).** `role_ask.bb` refused it: the specifier's
+     one-pending slot is still held by BL-687's drill-down reordering
+     question, unanswered since 09:04Z. The four candidate answers are
+     enumerated below; whoever frees that slot sends them verbatim as
+     `role_ask.bb --options`.
+     Verified at spec time: no TRACKED file knows the stop
+     time. The whole closure schedule is the host crontab
+     (`0 9 * * * .swarmforge/operator/night-stop.sh`) plus that script,
+     both untracked runtime state. So "DERIVED from the closure schedule"
+     has no committed source to derive FROM today, and the obvious patch
+     — adding `config closure_stop_local HH:MM` to swarmforge.conf —
+     RECREATES the exact sibling-clock hazard this ticket exists to kill
+     (a second constant that drifts from the cron nobody edits in step;
+     the live cron-vs-conf disagreement is already on the operator's
+     desk). Scenarios 05/06 deliberately leave the source abstract and
+     pin only the resolver's contract (moves with the schedule; `absent`
+     and `ambiguous` degrade to today's fixed-time trigger, never to a
+     guess). The coder must NOT choose the source unilaterally — the
+     answer lands as a note on this ticket before build.
 
-acceptance: |
-  Specifier writes the scenarios. Minimum behaviour:
+     **The question to send** — "The ceremony must derive its begin time
+     from the closure schedule, but no file in git knows when the swarm
+     stops: the schedule is the host crontab plus an untracked script.
+     Where should the resolver read the stop time FROM?" with these four
+     options:
 
-  1. Nominal night: parcel in flight at ceremony start finishes; resident
-     rotates to documenter; briefing written+sent; stop runs; ZERO claims
-     left in in_process across all mailboxes (the boundary invariant —
-     assert on porcelain state, not absence of complaints).
-  2. Happy-days branch: parcel drains AT the documenter stage — briefing
-     chains without a rotation; same end state.
-  3. Slow parcel: exceeds the drain deadline — parked cleanly (claim
-     intact, loud surface), briefing still produced and sent, stop still on
-     time. The morning-after resume is BL-648's fixture, referenced not
-     duplicated.
-  4. Documenter wedges on the briefing: backstop stop fires at the hard
-     deadline, the missing briefing is surfaced loudly — never a silent
-     morning. Fixture mirrors 2026-07-26.
-  5. Window moved (e.g. 01:00→07:00): ceremony follows with no other config
-     edit — the single-clock scenario this ticket exists for.
-  6. 24/7 swarm (no closure schedule): fixed-time trigger behaviour
-     byte-identical to today.
+     a. **"Parse the live crontab"** — the resolver shells `crontab -l`
+        and reads the `night-stop.sh` entry. Single source, zero drift by
+        construction, and it moves the moment you edit the cron. Cost: the
+        swarm reads host state it cannot test against and cannot see on
+        another machine; a reworded cron line breaks the parse. `absent`
+        and `ambiguous` (two matching entries, unparseable spec) both fall
+        to scenario 06's fixed-time degrade.
+     b. **"night-stop.sh writes a runtime state file"** — the closure path
+        itself publishes `.swarmforge/closure-schedule.json` (next stop
+        instant) and the resolver reads only that. Still untracked, but it
+        is a declared interface instead of a scraped one, and the writer
+        is the thing that actually stops the swarm. Cost: staleness if the
+        cron fires a script that no longer writes it.
+     c. **"`closure_stop_local HH:MM` in swarmforge.conf"** — tracked,
+        testable, visible in git; the plain option. Cost: it IS the sibling
+        clock this ticket exists to kill — the conf and the cron drift the
+        first time one is edited alone (already live on your desk today).
+        Only pick this if the drift is acceptable in exchange for the
+        schedule being in git.
+     d. **"Conf is authoritative and the cron is GENERATED from it"** —
+        `closure_stop_local` in swarmforge.conf as in (c), plus the cron
+        entry installed/regenerated from that value, so the crontab is a
+        build artifact nobody hand-edits. The only option that puts the
+        schedule in git WITHOUT a second editable clock. Cost: the largest
+        slice — it takes over crontab installation, which nothing in the
+        repo does today, and would likely be its own sibling ticket that
+        this one depends on.
+
+acceptance: specs/features/BL-658-briefing-trigger-derived-from-closure-schedule.feature
+
+required_wiring:
+  - "swarmforge/scripts/handoffd.bb::closing-ceremony::BL-419 shape: handoffd.bb's briefing sweep is the ONLY live consumer of the morning trigger (configured-morning-time, ~line 1970). A ceremony lib that is fully unit-tested but never consulted here leaves 04:30 firing unchanged and the ticket's value at zero."
 
 out_of_scope: |
   - Crash-path resume (BL-648 owns it; the ceremony only shrinks the class).
@@ -119,3 +157,14 @@ notes: |
   scheduled stops, and the mailman structurally incapable of missing the
   swarm. Seventh member of the week's schedule-blindness family, and the
   first that removes a class instead of patching an instance.
+
+  2026-07-27 specifier pass: feature file written (8 scenarios), gherkin
+  lint gate clean, IR-DRY reviewed — 14 findings, all medium-confidence
+  near-duplicate/possible-synonym on one parameterised step
+  (`the recorded closing sequence is "<seq>"`) and on
+  `the resident is "<role>" holding an in-flight parcel`; the varying
+  quoted value IS the parameter in both, so the wording differences are
+  deliberate, not drift. No normalisation applied.
+
+  NOT READY TO PROMOTE until edge 6 is answered — the ticket's premise
+  needs a closure-time source that exists in git.

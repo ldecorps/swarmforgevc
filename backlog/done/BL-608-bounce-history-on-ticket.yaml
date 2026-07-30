@@ -2,7 +2,7 @@ id: BL-608
 title: "Persist bounce history (count + reason) on the ticket's own YAML record, so 'how many times did this bounce, and why' is answerable from the ticket alone"
 milestone: M8
 type: feature
-status: todo
+status: done
 epic: swarm-reliability
 human_approval: approved
 severity: medium

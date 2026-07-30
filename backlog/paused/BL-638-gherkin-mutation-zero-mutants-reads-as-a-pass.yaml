@@ -20,6 +20,12 @@ approval_context: >
   satisfy it and built a substitute rather than declare it passed. 60% of the
   feature corpus is exposed.
 
+  Hydrate batch 2026-07-28: materializes the already-approved prose acceptance
+  into APS Gherkin, unchanged in substance. The wider `.bb` mutation-coverage
+  hole and the "widen vs accept the limit" design choice remain the coder's
+  and hardener's to settle per the ticket's own "Shape" and "Also unaddressed"
+  sections; the scenarios above pin only the externally observable contract.
+
 source: |
   BL-567 hardener pass, 2026-07-25. Ran the BL-113 Gherkin acceptance mutation gate
   against `specs/features/BL-567-expeditor-offline-single-ticket-pipeline.feature`
@@ -112,24 +118,7 @@ description: |
   hole than this ticket, and the specifier should say whether it belongs here, in a
   sibling, or in an epic.
 
-acceptance: |
-  Specifier writes the scenarios. Minimum behaviour:
-
-  1. A feature with no `Scenario Outline:` produces an outcome distinguishable from a
-     clean sweep — in the exit status AND in the printed summary. A caller cannot
-     mistake it for a pass.
-  2. That run does not write a stamp that suppresses a later run. Regression:
-     mutate a zero-mutant feature, then ADD a Scenario Outline, then re-run at the
-     default level — the mutants must actually be generated.
-  3. A feature WITH outlines behaves exactly as today. No new friction on the path
-     that works.
-  4. The manifest never records a completed-looking run for zero mutants;
-     `implementation_hash: "unknown"` with `scenarios: []` must not be the shape of a
-     success.
-  5. `hardender.prompt` states what to do when a mutation gate is inapplicable to the
-     parcel's code, so the next hardener does not have to invent it.
-  6. Fixture uses a real corpus feature, not a synthetic one — 216 of 356 are
-     available.
+acceptance: specs/features/BL-638-gherkin-mutation-zero-mutants-reads-as-a-pass.feature
 
 out_of_scope: |
   - Modifying or reimplementing the vendored APS parser/mutator. PINNED, and

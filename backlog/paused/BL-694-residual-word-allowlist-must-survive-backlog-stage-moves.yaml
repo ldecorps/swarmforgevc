@@ -9,7 +9,7 @@ human_approval: approved
 priority: 20
 direction: swarm-proposed
 depends_on: []
-assigned_to: specifier
+assigned_to: coder
 mutation_cost: low
 
 invariants:
@@ -80,8 +80,19 @@ description: |
   it is the half of this change that can go wrong: a basename rule applied
   too widely quietly stops the scan from catching a real regression.
 
-  Drop the two entries that no longer resolve while you are there, or note
-  in-file why they are kept.
+  Drop the entries that no longer resolve while you are there, or note
+  in-file why they are kept. Re-verified 2026-07-27 16:50Z — there are now
+  THREE, not the two the filer counted:
+
+    - `backlog/active/BL-684-*.yaml`   (ticket moved to `done/`)
+    - `backlog/active/BL-590-*.yaml`   (moved to `done/` LATER THE SAME DAY)
+    - `specs/features/BL-643-non-pipeline-agents-documented-as-a-class.feature.draft`
+      (materialized to a live `.feature` in 5b22ca5be; the live path needs no
+      entry — it does not carry the word)
+
+  Do not hand-copy that list. Re-derive it: every entry in the Set that
+  matches no file on disk is stale by definition, and the count keeps
+  changing under you.
 
   ## Immediate unblock — do this first, and separately
 
@@ -109,7 +120,7 @@ description: |
   3.2.4, which is what the filer asked for; `priority: 20` keeps it near the
   front.
 
-acceptance: specs/features/BL-694-residual-word-allowlist-survives-stage-moves.feature.draft
+acceptance: specs/features/BL-694-residual-word-allowlist-survives-stage-moves.feature
 
 out_of_scope: |
   - Renaming any grandfathered ticket file. Boundary 2 is deliberate: the
@@ -124,8 +135,29 @@ out_of_scope: |
     invariant's sweep turns one up, that is its own finding.
 
 notes: |
-  Gherkin parked as `.feature.draft` per BL-233; the coder promotes it and
-  wires handlers in the same commit.
+  Feature materialized from its `.feature.draft` by the specifier
+  2026-07-27 16:50Z, on operator directive, so the whole onboarding stack
+  is expedition-ready with no `.draft` left in it. BL-233 still binds the
+  coder: the five scenarios are live and un-handled until the fix parcel
+  lands, so `run_acceptance.sh` on THIS feature fails until the handlers
+  are wired in the same commit. Nothing else runs it — acceptance is
+  invoked per feature file, never as a repo-wide glob, and the only
+  repo-wide sweep over `specs/features/*.feature`
+  (`swarmforge/scripts/test/test_gherkin_lint_gate.sh`) lints rather than
+  executes. Verified lint-clean at materialization.
+
+  The defect recurred while this ticket sat in `paused/`. The filer's
+  reproduction was BL-590 moving `hold/` -> `active/`; by the time the
+  feature was materialized, BL-590 had moved on to `done/`, so its
+  freshly-corrected allowlist entry is stale again — a second stage move,
+  a second breakage, inside one day. The scan happens to be green right
+  now only because `done/` is exempt wholesale, which is the asymmetry
+  `approval_context` already flags. Two moves in a day is the argument
+  that this is worth fixing properly rather than re-pinning by hand.
+
+  A materialized feature file changes nothing about the allowlist: neither
+  this feature nor BL-643's live one carries the retired word, so no new
+  entry is needed for either.
 
   Lint gate clean. IR-DRY: one high-confidence finding fixed (a redundant
   Given restating scenario 01's assertion) and two scenarios folded into an

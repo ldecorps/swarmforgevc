@@ -176,9 +176,17 @@
   (let [last (:last-assess-ms st 0)]
     (or (zero? last) (>= (- now-ms last) assess-interval-ms))))
 
+(defn emit-heartbeat!
+  "BL-675: content-free timestamped pulse so the cron-side freshness
+   checker never confuses a quiet pause with a mute/wedged loop."
+  []
+  (log! "heartbeat"))
+
 (defn tick! []
   (if-not (fs/exists? enabled-file)
-    (do (log! "disabled (no enabled file)") false)
+    (do (log! "disabled (no enabled file)")
+        (emit-heartbeat!)
+        false)
     (let [st0 (read-state)
           now (now-ms)
           assess? (assess-due? st0 now)
@@ -206,6 +214,7 @@
                                :last-reason (name reason)))))
       (when (and assess? (not fire?))
         (write-state! st1))
+      (emit-heartbeat!)
       fire?)))
 
 (defn claim-pid! []
@@ -230,7 +239,9 @@
         (Thread/sleep poll-ms)
         (try (tick!)
              (catch Exception e
-               (log! "tick-error" (.getMessage e))))
+               (log! "tick-error" (.getMessage e))
+               ;; Still pulse on a tick error — the loop itself is alive.
+               (emit-heartbeat!)))
         (recur))))
   (log! "babysitter_runtime exit")
   (fs/delete-if-exists pid-file))

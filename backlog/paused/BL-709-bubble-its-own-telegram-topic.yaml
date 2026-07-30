@@ -1,0 +1,96 @@
+id: BL-709
+title: "Bubble gets its own Telegram topic — Let's Talk turns stop landing in Cursor Remote"
+milestone: M8
+type: feature
+severity: medium
+status: todo
+epic: swarmforge-console
+human_approval: approved
+priority: 15
+direction: human-requested
+depends_on: []
+mutation_cost: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+assigned_to: none
+
+invariants:
+  - "Cursor Remote and Bubble are distinct destinations: no Let's Talk turn is mirrored into the Cursor Remote topic once a Bubble topic id is bound, and no operator control verb is answered into Bubble."
+  - "The topic map exported to the front desk never claims Bubble or Cursor Remote, so Concierge role-topic ownership cannot bind either of them."
+  - "A missing or unbound Bubble topic id degrades to the previous Cursor Remote behaviour — never to posting nowhere or crashing the poll loop."
+
+approval_context: >
+  Human via Cursor 2026-07-30 asked for this directly, so the freeze does not
+  veto it. One fork needs a tap before the coder starts: an UNREVIEWED,
+  UNCOMMITTED implementation of exactly this behaviour already sits in the
+  master working tree (BUBBLE_SUBJECT_ID / BUBBLE_TOPIC_NAME, topic ensure,
+  turn mirror preferring bubbleTopicId, front-desk scrub, inbound scoping,
+  plus unit tests) with no ticket, no acceptance contract and no pipeline
+  review. Option A — adopt it: the coder starts from that working tree, this
+  ticket becomes its retroactive ticket, and the pipeline reviews it as ordinary
+  parcel content. Option B — rebuild: the coder implements from this spec and
+  the working-tree changes are reverted first. A is cheaper; B is the only one
+  that guarantees the gates saw the code before it was written. Nothing about
+  this ticket's behaviour changes either way.
+
+description: |
+  ## What
+
+  Give Bubble (the phone app's talk surface) its own Telegram forum topic
+  instead of dumping Let's Talk turns into Cursor Remote. Cursor Remote goes
+  back to being operator control only: slash verbs and typed direct prompts.
+
+  ## Why
+
+  Bubble turns appearing in Cursor Remote make that topic look like the agent's
+  memory when it is only a control and chat surface. Separating the two gives
+  conversation history its own home, keeps operator command logs readable, and
+  removes a UX that implies persistence the system does not have.
+
+  | Surface | Role after this slice |
+  |---------|----------------------|
+  | Bubble standing topic (`BUBBLE`, display name `Bubble`) | Let's Talk turns, choice polls, typed follow-ups made in that topic |
+  | Cursor Remote | Host-agent remote control only — slash verbs, typed direct prompts |
+
+  The shared `agentId` is unchanged: Bubble voice turns and Cursor Remote typed
+  prompts still reach the same host-agent session. This is routing, not a
+  session split.
+
+  ## State of the code (verified 2026-07-30 — read before scoping)
+
+  An implementation of this behaviour already exists as UNCOMMITTED changes in
+  the master working tree, with unit tests but no acceptance contract and no
+  pipeline review: `telegramCursorBridgeCore.ts` (`BUBBLE_SUBJECT_ID`,
+  `BUBBLE_TOPIC_NAME`, `bubbleTopicIdFromMap`, inbound scoping),
+  `telegramCursorBridgeLive.ts` (topic ensure/create, turn mirror preferring
+  `bubbleTopicId`), `telegram-front-desk-bot.ts` (`readBubbleTopicId`, map
+  scrub), `bridgeServer.ts`. It is ticket-less work under the BL-506 rule and
+  must be reviewed as parcel content, never assumed correct. See
+  `approval_context` for the adopt-vs-rebuild fork.
+
+  ## Out of scope
+
+  - Splitting Bubble and Cursor Remote onto different backend `agentId`s
+  - Making Telegram history reloadable as model memory
+  - Reworking the Concierge role-topic assignment model
+  - Any new Telegram UI beyond the topic these turns already need
+
+  ## STEERING note
+
+  Explicitly human-requested (2026-07-30), so eligible for pull under the
+  standing freeze: it is routing and operator clarity on existing surfaces, not
+  growth of the Telegram product surface.
+
+acceptance: specs/features/BL-709-bubble-its-own-telegram-topic.feature
+
+source: |
+  Human via Cursor 2026-07-30. Drained from
+  `backlog/INTAKE-bubble-dedicated-telegram-topic.md`.
+
+notes: |
+  e2e QA procedure: with the cursor bridge and front desk live, confirm the
+  Bubble topic exists in the forum (reused, not duplicated, across a bridge
+  restart); take one Let's Talk turn from Bubble and confirm both sides of the
+  turn appear in the Bubble topic and nothing appears in Cursor Remote; type a
+  slash verb in Cursor Remote and confirm its answer stays there; type a
+  follow-up in the Bubble topic and confirm the reply comes back into Bubble;
+  confirm the front-desk topic map on disk binds neither topic.

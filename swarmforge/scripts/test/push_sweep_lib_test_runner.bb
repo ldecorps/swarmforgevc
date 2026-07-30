@@ -32,6 +32,60 @@
 (assert= "push-decision: ahead AND behind -> diverged (a plain push would be non-fast-forward)"
          :diverged (push-sweep-lib/push-decision {:ahead 2 :behind 1}))
 
+;; ── BL-630: bookkeeping-only-path? / commit-bookkeeping-only? ──────────────
+
+(assert-true "bookkeeping-only-path?: backlog/ is bookkeeping"
+             (push-sweep-lib/bookkeeping-only-path? "backlog/active/BL-1.yaml"))
+(assert-true "bookkeeping-only-path?: docs/ is bookkeeping"
+             (push-sweep-lib/bookkeeping-only-path? "docs/how-to/x.md"))
+(assert-true "bookkeeping-only-path?: swarmforge/ is bookkeeping"
+             (push-sweep-lib/bookkeeping-only-path? "swarmforge/scripts/x.bb"))
+(assert-false "bookkeeping-only-path?: extension/src/ is NOT bookkeeping"
+              (push-sweep-lib/bookkeeping-only-path? "extension/src/foo.ts"))
+(assert-false "bookkeeping-only-path?: nil path is NOT bookkeeping"
+              (push-sweep-lib/bookkeeping-only-path? nil))
+
+(assert-true "commit-bookkeeping-only?: every changed path is bookkeeping"
+             (push-sweep-lib/commit-bookkeeping-only? ["backlog/active/BL-1.yaml" "docs/x.md"]))
+(assert-false "commit-bookkeeping-only?: one non-bookkeeping path disqualifies the whole commit"
+              (push-sweep-lib/commit-bookkeeping-only? ["backlog/active/BL-1.yaml" "extension/src/foo.ts"]))
+(assert-false "commit-bookkeeping-only?: an empty/unknown change set never earns the allowlist"
+              (push-sweep-lib/commit-bookkeeping-only? []))
+
+;; ── BL-630: qa-gate-decision ────────────────────────────────────────────
+
+(assert= "qa-gate-decision: facts-complete? false fails closed regardless of other facts"
+         {:refuse? true :reason :gather-failed :offending-shas []}
+         (push-sweep-lib/qa-gate-decision {:facts-complete? false :qa-ref-exists? true :tip-is-qa-ancestor? true}))
+
+(assert= "qa-gate-decision: no swarmforge-QA ref at all refuses"
+         {:refuse? true :reason :missing-ref :offending-shas []}
+         (push-sweep-lib/qa-gate-decision {:qa-ref-exists? false}))
+
+(assert= "qa-gate-decision: tip IS a QA ancestor -> publishes, no ahead-commits needed"
+         {:refuse? false :reason nil :offending-shas []}
+         (push-sweep-lib/qa-gate-decision {:qa-ref-exists? true :tip-is-qa-ancestor? true}))
+
+(assert= "qa-gate-decision: tip not a QA ancestor, offending commit touches non-bookkeeping path -> refused"
+         {:refuse? true :reason :non-qa-ancestor :offending-shas ["abc1234567"]}
+         (push-sweep-lib/qa-gate-decision
+          {:qa-ref-exists? true :tip-is-qa-ancestor? false
+           :ahead-commits [{:sha "abc1234567" :qa-ancestor? false :changed-paths ["extension/src/foo.ts"]}]}))
+
+(assert= "qa-gate-decision: tip not a QA ancestor, but every offending commit touches only bookkeeping paths -> publishes"
+         {:refuse? false :reason nil :offending-shas []}
+         (push-sweep-lib/qa-gate-decision
+          {:qa-ref-exists? true :tip-is-qa-ancestor? false
+           :ahead-commits [{:sha "abc1234567" :qa-ancestor? false :changed-paths ["backlog/active/BL-1.yaml"]}
+                           {:sha "def1234567" :qa-ancestor? true :changed-paths ["extension/src/foo.ts"]}]}))
+
+(assert= "qa-gate-decision: a mix of bookkeeping-only and non-bookkeeping offending commits names only the non-bookkeeping ones"
+         {:refuse? true :reason :non-qa-ancestor :offending-shas ["def1234567"]}
+         (push-sweep-lib/qa-gate-decision
+          {:qa-ref-exists? true :tip-is-qa-ancestor? false
+           :ahead-commits [{:sha "abc1234567" :qa-ancestor? false :changed-paths ["backlog/active/BL-1.yaml"]}
+                           {:sha "def1234567" :qa-ancestor? false :changed-paths ["extension/src/foo.ts"]}]}))
+
 ;; ── due? ──────────────────────────────────────────────────────────────────
 
 (assert-true "due?: never attempted is always due"
@@ -91,7 +145,14 @@
     (swap! created-temp-dirs conj d)
     d))
 
-(defn fake-adapters [{:keys [counts push-results alarm-results divergence-results]}]
+;; BL-630: every pre-existing sweep! test below predates the QA gate and
+;; expects an unconditional publish once :should-push is reached - default
+;; qa-gate-facts here mirrors "already QA-approved", the fast tip-ancestor
+;; path, so none of them have to know the gate exists. Tests of the gate
+;; ITSELF pass their own :qa-gate-facts.
+(def approved-qa-gate-facts {:qa-ref-exists? true :tip-is-qa-ancestor? true})
+
+(defn fake-adapters [{:keys [counts push-results alarm-results divergence-results qa-gate-facts]}]
   (let [counts-atom (atom counts)
         push-calls (atom 0)
         alarm-calls (atom 0)
@@ -116,6 +177,7 @@
                                  (swap! divergence-calls inc)
                                  (let [r (nth divergence-results (dec @divergence-calls) (last divergence-results))]
                                    r))
+      :qa-gate-facts! (fn [] (or qa-gate-facts approved-qa-gate-facts))
       :log! (fn [& parts] (swap! logs conj (clojure.string/join " " parts)))}}))
 
 ;; BL-356 swarm-pushes-main-to-origin-01: committed work reaches origin
@@ -244,6 +306,73 @@
   (assert= "05: nothing is pushed" 0 @(:push calls))
   (assert= "05: no alarm of any kind is raised" 0 (+ @(:alarm calls) @(:divergence calls)))
   (assert= "05: no state is left behind" {} (push-sweep-lib/read-state dir)))
+
+;; BL-630 non-qa-ancestor-tip-blocks-push-01: a main tip that is not a QA
+;; ancestor, whose offending commit touches a non-bookkeeping path, is
+;; never pushed - the refusal names the offending sha.
+(let [dir (mk-fixture-dir)
+      {:keys [calls adapters]}
+      (fake-adapters {:counts {:ahead 1 :behind 0}
+                      :qa-gate-facts {:qa-ref-exists? true :tip-is-qa-ancestor? false
+                                      :ahead-commits [{:sha "cafe000001" :qa-ancestor? false
+                                                        :changed-paths ["extension/src/foo.ts"]}]}})]
+  (push-sweep-lib/sweep! 100000 dir retry-cfg adapters)
+  (assert= "BL-630 01: origin/main is not updated" 0 @(:push calls))
+  (assert-true "BL-630 01: the refusal is logged naming the offending commit sha"
+               (some #(clojure.string/includes? % "cafe000001") @(:logs calls))))
+
+;; BL-630 refusal-distinct-from-other-outcomes-02: a QA-refusal is logged as
+;; its own outcome, never folded into push-failed/divergence, and none of
+;; the existing retry/alarm machinery engages.
+(let [dir (mk-fixture-dir)
+      {:keys [calls adapters]}
+      (fake-adapters {:counts {:ahead 1 :behind 0}
+                      :qa-gate-facts {:qa-ref-exists? true :tip-is-qa-ancestor? false
+                                      :ahead-commits [{:sha "cafe000002" :qa-ancestor? false
+                                                        :changed-paths ["extension/src/foo.ts"]}]}})]
+  (push-sweep-lib/sweep! 100000 dir retry-cfg adapters)
+  (assert-true "BL-630 02: the refusal entry is distinguishable (tagged qa-refused)"
+               (some #(clojure.string/includes? % "qa-refused") @(:logs calls)))
+  (assert= "BL-630 02: no push-failure/push-backoff state is recorded"
+           nil (:push (push-sweep-lib/read-state dir)))
+  (assert= "BL-630 02: the existing push-failure retry/backoff never engaged" 0 @(:push calls))
+  (assert= "BL-630 02: the existing divergence alarm never fires" 0 @(:divergence calls))
+  (assert= "BL-630 02: no push-failure alarm (the 'check network/auth' email) is sent" 0 @(:alarm calls)))
+
+;; BL-630 bookkeeping-only-tip-still-publishes-03: a non-QA tip whose every
+;; offending commit touches only backlog/docs/swarmforge/ still publishes.
+(let [dir (mk-fixture-dir)
+      {:keys [calls adapters]}
+      (fake-adapters {:counts {:ahead 1 :behind 0}
+                      :push-results [{:success true}]
+                      :qa-gate-facts {:qa-ref-exists? true :tip-is-qa-ancestor? false
+                                      :ahead-commits [{:sha "cafe000003" :qa-ancestor? false
+                                                        :changed-paths ["backlog/active/BL-1.yaml"]}]}})]
+  (push-sweep-lib/sweep! 100000 dir retry-cfg adapters)
+  (assert= "BL-630 03: origin/main IS updated (bookkeeping-only allowlist)" 1 @(:push calls)))
+
+;; BL-630 qa-approved-tip-publishes-unchanged-04: a QA-approved tip
+;; publishes exactly as it did before this ticket.
+(let [dir (mk-fixture-dir)
+      {:keys [calls adapters]}
+      (fake-adapters {:counts {:ahead 1 :behind 0}
+                      :push-results [{:success true}]
+                      :qa-gate-facts {:qa-ref-exists? true :tip-is-qa-ancestor? true}})]
+  (push-sweep-lib/sweep! 100000 dir retry-cfg adapters)
+  (assert= "BL-630 04: origin/main is updated exactly as before" 1 @(:push calls))
+  (assert= "BL-630 04: a successful push clears all state" {} (push-sweep-lib/read-state dir)))
+
+;; BL-630 behind-with-nothing-to-push-still-surfaces-05: a local main
+;; behind origin with nothing to push is distinguished from a genuinely
+;; up-to-date tip, never silently folded into "up-to-date".
+(let [dir (mk-fixture-dir)
+      {:keys [calls adapters]} (fake-adapters {:counts {:ahead 0 :behind 3}})]
+  (push-sweep-lib/sweep! 100000 dir retry-cfg adapters)
+  (assert= "BL-630 05: nothing is pushed" 0 @(:push calls))
+  (assert-true "BL-630 05: the log distinguishes behind-only from up-to-date"
+               (some #(clojure.string/includes? % "behind-only") @(:logs calls)))
+  (assert-false "BL-630 05: the behind-only tick is never logged as plain up-to-date"
+                (some #(= % "push-sweep up-to-date") @(:logs calls))))
 
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (empty? @failures)

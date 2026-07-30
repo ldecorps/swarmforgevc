@@ -1,0 +1,80 @@
+id: BL-707
+title: "Android floating overlay companion — system bubble over other apps that talks to Let's Talk / bridge"
+milestone: M8
+type: feature
+severity: high
+status: done
+epic: swarmforge-console
+human_approval: approved
+priority: 2
+direction: human-requested
+depends_on: []
+mutation_cost: high
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+assigned_to: none
+
+invariants:
+  - "This is a native Android overlay companion, not Mini App minimize (BL-706). Leaving Telegram must not remove the bubble."
+  - "Auth reuses the existing allowlisted console / Let's Talk bearer path — no new public unauthenticated agent surface."
+  - "Discrete turn loop only (speak or type in, hear or read reply out); no duplex continuous-call audio in this slice."
+  - "ChatGPT stack notes in intake are advisory research only — do not treat them as mandatory dependencies."
+
+approval_context: >
+  Human via Let's Talk voice 2026-07-29: Mini App minimize is not enough;
+  they want a real floating widget. Confirmed absolutely push mint of the
+  Android Overlay Companion and pilot ASAP. Drained from
+  INTAKE-android-floating-ai-assistant (operator + backlog root).
+  Closed 2026-07-29 after human confirmed drag-to-bottom dismiss
+  (evidence backlog/evidence/BL-707-qa-pass-20260729.md; APK 0.2.8-BL707).
+
+description: |
+  ## What
+
+  Ship a thin native Android companion that draws a movable floating bubble
+  over other apps (system overlay), expands to a mini talk panel, and sends
+  discrete turns to the existing SwarmForge Let's Talk / Cursor bridge using
+  the same console control token auth as the Mini App.
+
+  ## Why (human words)
+
+  BL-706 only shrinks chrome inside the open Mini App. The human wants a
+  bubble that stays reachable while using Telegram or other apps.
+
+  ## First-slice scope (thin)
+
+  1. Android companion project in-repo (Kotlin), installable on a device/emulator.
+  2. Request and handle "draw over other apps" permission.
+  3. Draggable bubble (edge magnet nice-to-have); tap expands mini panel.
+  4. Mini panel: text and/or mic turn → existing bridge Let's Talk turn path
+     with bearer; show/speak reply.
+  5. How-to for install, overlay permission, pairing token / bridge base URL.
+  6. Collapse back to bubble; stop/pause service without leaking a stuck overlay.
+
+  ## Architecture pins (must not invent parallel product)
+
+  - Transport: reuse existing bridge HTTP Let's Talk turn routes (same host as
+    Mini App), not a guessed WebSocket/MCP from ChatGPT notes.
+  - Auth: console control token / allowlisted bearer already used by Let's Talk.
+  - Product home: child of epic swarmforge-console (BL-517); companion to
+    BL-696 / BL-706, not a replacement of Telegram Cursor Remote.
+
+  ## Out of scope this slice
+
+  - iOS
+  - Replacing Telegram Cursor Remote or the Mini App host wholesale
+  - Full notification-bubble / confirmation matrix (may follow)
+  - Duplex continuous-call audio
+  - Treating ChatGPT's library list as required deps
+
+  ## Research links (optional, not required)
+
+  - Android Notification Bubbles docs
+  - Jetpack Compose floating-window patterns
+  - OSS floating-bubble-view (advisory only)
+
+acceptance: specs/features/BL-707-android-floating-overlay-companion.feature
+
+source: |
+  Human via Let's Talk voice session 2026-07-29: mint then pilot ASAP.
+  Drained from `.swarmforge/operator/INTAKE-android-floating-ai-assistant.md`
+  (and backlog/INTAKE-android-floating-ai-assistant.md).
