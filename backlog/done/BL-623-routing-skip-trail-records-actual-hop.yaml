@@ -2,14 +2,14 @@ id: BL-623
 title: "Routing skip trail records what the hop actually skipped — sender pre-routed direct sends included, not only router rewrites"
 milestone: M8
 type: defect
-status: todo
+status: done
 epic: swarm-reliability
 human_approval: approved
 severity: medium
 priority: 10
 direction: operator-reported
 depends_on: []
-assigned_to: coder
+assigned_to: none
 mutation_cost: low
 source: |
   backlog/INTAKE-20260724-skip-trail-bypassed-when-sender-preroutes.md —
