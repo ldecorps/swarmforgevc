@@ -2,7 +2,7 @@ id: BL-627
 title: "Pricing table: correct every wrong rate, add `claude-opus-5`, and add a fail-loud invariant that every model the swarm actually runs has a pricing entry"
 milestone: M8
 type: defect
-status: todo
+status: done
 epic: cost-intelligence
 human_approval: approved
 severity: medium
