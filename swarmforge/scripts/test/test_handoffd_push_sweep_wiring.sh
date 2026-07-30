@@ -138,4 +138,55 @@ REMOTE_HEAD_AFTER="$(git -C "$REMOTE" rev-parse main)"
   || fail "expected origin/main to stay at the earlier QA-approved tip $LOCAL_HEAD, got $REMOTE_HEAD_AFTER"
 pass "origin/main stays at the last QA-approved tip, never advancing to the refused commit"
 
+wait_for_remote_head() {
+  local expected_sha="$1" timeout_s="$2" waited=0
+  while (( waited < timeout_s * 4 )); do
+    [[ "$(git -C "$REMOTE" rev-parse main 2>/dev/null)" == "$expected_sha" ]] && return 0
+    sleep 0.25
+    waited=$((waited + 1))
+  done
+  return 1
+}
+
+# ── BL-630 architect bounce (2026-07-30): a genuine QA-approved landing via
+#    a REAL `git merge --no-ff` (the routine shape whenever local main has
+#    diverged since swarmforge-QA was cut - see backlog/evidence/BL-630-
+#    push-sweep-refuses-non-qa-approved-main-bounce-20260730.md) must still
+#    publish. Reset past the still-jammed non-QA commit above - it is a
+#    throwaway probe commit this fixture never intended to land, not
+#    something under test here - then build the shape the bounce reproduced:
+#    a bookkeeping-only commit lands directly on main (the divergence
+#    trigger), a real feature commit lands only on the QA-approved branch,
+#    and QA merges that branch into main with --no-ff.
+git -C "$ROOT" reset --hard -q "$LOCAL_HEAD"
+
+git -C "$ROOT" checkout -q -b feature-merge-test "$LOCAL_HEAD"
+mkdir -p "$ROOT/extension/src"
+echo "feature" > "$ROOT/extension/src/merge_test.ts"
+git -C "$ROOT" add extension/src/merge_test.ts
+git -C "$ROOT" commit -q -m "real feature work, QA-approved"
+FEATURE_SHA="$(git -C "$ROOT" rev-parse HEAD)"
+git -C "$ROOT" branch -f swarmforge-QA feature-merge-test
+
+git -C "$ROOT" checkout -q main
+mkdir -p "$ROOT/backlog/done"
+echo "bookkeeping" > "$ROOT/backlog/done/BL-merge-test.yaml"
+git -C "$ROOT" add backlog/done/BL-merge-test.yaml
+git -C "$ROOT" commit -q -m "coordinator bookkeeping lands directly on main"
+
+git -C "$ROOT" merge --no-ff -q feature-merge-test -m "QA merge feature-merge-test into main"
+MERGE_SHA="$(git -C "$ROOT" rev-parse HEAD)"
+
+wait_for_remote_head "$MERGE_SHA" 30 \
+  || fail "expected origin/main to reach the QA-approved merge commit $MERGE_SHA within 30s; log: $(cat "$LOG_FILE" 2>/dev/null); origin=$(git -C "$REMOTE" rev-parse main 2>/dev/null)"
+pass "a real git merge --no-ff landing a QA-approved feature (diverged by a bookkeeping commit on main) still publishes"
+
+grep -q "qa-refused non-qa-ancestor $MERGE_SHA" "$LOG_FILE" \
+  && fail "the QA-approved merge commit $MERGE_SHA must never be refused, but it was: $(cat "$LOG_FILE")"
+pass "the QA-approved merge commit itself is never independently flagged non-qa-ancestor"
+
+grep -q "qa-refused non-qa-ancestor $FEATURE_SHA" "$LOG_FILE" \
+  && fail "the feature commit $FEATURE_SHA is a swarmforge-QA ancestor and must never be refused, but it was: $(cat "$LOG_FILE")"
+pass "the feature commit folded in by the merge is recognized as its own QA-approved entry"
+
 echo "ALL PASS"

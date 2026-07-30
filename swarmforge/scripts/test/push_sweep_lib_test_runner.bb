@@ -86,6 +86,26 @@
            :ahead-commits [{:sha "abc1234567" :qa-ancestor? false :changed-paths ["backlog/active/BL-1.yaml"]}
                            {:sha "def1234567" :qa-ancestor? false :changed-paths ["extension/src/foo.ts"]}]}))
 
+;; ── BL-630 bounce (architect, 2026-07-30): a merge commit is never itself
+;;    offending, regardless of its own :qa-ancestor?/:changed-paths - its
+;;    real content is already covered by its own non-merge ancestors
+;;    appearing as separate entries in the same ahead-commits seq ────────────
+
+(assert= "qa-gate-decision: a merge commit with real non-bookkeeping changed-paths still publishes (transparent), its qa-ancestor feature commit alongside it"
+         {:refuse? false :reason nil :offending-shas []}
+         (push-sweep-lib/qa-gate-decision
+          {:qa-ref-exists? true :tip-is-qa-ancestor? false
+           :ahead-commits [{:sha "merge1234" :merge? true :qa-ancestor? false
+                            :changed-paths ["extension/src/foo.ts" "backlog/active/BL-1.yaml"]}
+                           {:sha "feat1234a" :qa-ancestor? true :changed-paths ["extension/src/foo.ts"]}]}))
+
+(assert= "qa-gate-decision: a merge commit's :merge? true never masks a genuinely offending non-merge commit alongside it"
+         {:refuse? true :reason :non-qa-ancestor :offending-shas ["bad12345a"]}
+         (push-sweep-lib/qa-gate-decision
+          {:qa-ref-exists? true :tip-is-qa-ancestor? false
+           :ahead-commits [{:sha "merge1234" :merge? true :qa-ancestor? false :changed-paths []}
+                           {:sha "bad12345a" :qa-ancestor? false :changed-paths ["extension/src/foo.ts"]}]}))
+
 ;; ── due? ──────────────────────────────────────────────────────────────────
 
 (assert-true "due?: never attempted is always due"

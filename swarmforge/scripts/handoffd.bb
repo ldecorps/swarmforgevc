@@ -1887,12 +1887,36 @@
     (when (zero? exit)
       (->> (str/split-lines (str/trim out)) (remove str/blank?)))))
 
+;; BL-630 bounce (architect, 2026-07-30): a merge commit has a real 2nd
+;; parent iff `<sha>^2` resolves - reuses git-ref-exists? rather than adding
+;; a second git-shelling helper.
+(defn- git-merge-commit? [sha]
+  (git-ref-exists? (str sha "^2")))
+
+;; A merge commit is never independently scrutinized for content: plain
+;; `diff-tree` (no `-m`) answers it with zero paths always (misread by
+;; commit-bookkeeping-only? as "unknown -> not bookkeeping"), and even the
+;; per-parent `-m` diff only re-surfaces content that already belongs to
+;; the merge's own non-merge ancestors - each of which is its OWN entry in
+;; this same ahead-shas range (git rev-list lists every commit reachable
+;; in the range, not just the tip) with its own accurate, single-parent
+;; changed-paths already checked there. Diffing the merge against a single
+;; parent (or the -m union) re-flags that already-checked content, and can
+;; falsely refuse a routine, fully QA-approved landing purely because of
+;; which parent it happens to differ from (proven empirically against a
+;; real `git merge --no-ff` fixture during the bounce - see
+;; backlog/evidence/BL-630-push-sweep-refuses-non-qa-approved-main-bounce-20260730.md).
+;; So a merge sha is passed through with :merge? true and never given its
+;; own changed-paths; push_sweep_lib.bb/qa-gate-decision treats :merge? true
+;; as never-offending on that basis.
 (defn- ahead-commit-facts [sha]
-  (let [ancestry (git-is-ancestor? sha "swarmforge-QA")]
-    (if-not (:ok? ancestry)
-      {:sha sha :ok? false}
-      (let [paths (git-changed-paths sha)]
-        {:sha sha :ok? (some? paths) :qa-ancestor? (:ancestor? ancestry) :changed-paths (or paths [])}))))
+  (if (git-merge-commit? sha)
+    {:sha sha :ok? true :merge? true :qa-ancestor? false :changed-paths []}
+    (let [ancestry (git-is-ancestor? sha "swarmforge-QA")]
+      (if-not (:ok? ancestry)
+        {:sha sha :ok? false}
+        (let [paths (git-changed-paths sha)]
+          {:sha sha :ok? (some? paths) :qa-ancestor? (:ancestor? ancestry) :changed-paths (or paths [])})))))
 
 (defn push-sweep-qa-gate-facts! []
   (try
@@ -1915,7 +1939,7 @@
                 (if (some (complement :ok?) commit-facts)
                   {:qa-ref-exists? true :tip-is-qa-ancestor? false :facts-complete? false}
                   {:qa-ref-exists? true :tip-is-qa-ancestor? false :facts-complete? true
-                   :ahead-commits (mapv #(select-keys % [:sha :qa-ancestor? :changed-paths]) commit-facts)})))))))
+                   :ahead-commits (mapv #(select-keys % [:sha :qa-ancestor? :changed-paths :merge?]) commit-facts)})))))))
     (catch Exception e
       (log! "push-sweep-qa-gate-error" (.getMessage e))
       {:facts-complete? false})))
