@@ -10,6 +10,11 @@ direction: swarm-surfaced
 depends_on: []
 assigned_to: specifier
 mutation_cost: low
+human_approval: pending
+approval_context: >
+  Hydrate-batch-2: materializing the description's "Acceptance signal" prose
+  into APS Gherkin. No human sign-off yet on this specific ticket; flagged
+  pending per hydrate-batch convention.
 invariants:
   - "Every server-sent failure reason reaches the screen: no response path of the paused pager reduces an error carrying a reason to a bare HTTP status code."
 
@@ -59,3 +64,5 @@ description: |
   Driving the screen's action against a bridge returning 404 + reason shows
   the reason text in the status line, not a bare HTTP code; a reasonless
   non-OK response still shows the failText + status fallback.
+
+acceptance: specs/features/BL-662-paused-pager-swallows-server-failure-reason.feature

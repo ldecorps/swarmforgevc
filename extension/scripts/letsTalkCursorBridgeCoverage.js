@@ -12,6 +12,7 @@ const TARGET_SUFFIXES = [
   'src/bridge/letsTalkLocalAudio.ts',
   'src/bridge/letsTalkUiHtml.ts',
   'src/bridge/cursorBridgeAgentSession.ts',
+  'src/bridge/cursorBridgeTelegramHtml.ts',
   'src/tools/telegramCursorBridgeCore.ts',
   'src/tools/telegramCursorBridgeLive.ts',
   'src/tools/start-bridge-headless.ts',

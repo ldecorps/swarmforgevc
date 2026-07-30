@@ -26,7 +26,9 @@ const {
   frontDeskTopicMapWithoutCursorBridge,
   isActiveRunConflict,
   isCursorAuthError,
+  isCursorConnectionFailure,
   shouldResetCursorAgentSession,
+  isCursorResourceExhausted,
 } = require('../out/tools/telegramCursorBridgeCore');
 const { TELEGRAM_PHOTO_DEFAULT_PROMPT } = require('../out/bridge/cursorBridgeTelegramMedia');
 
@@ -35,7 +37,11 @@ const PRINCIPAL_ID = 42;
 const CURSOR_TOPIC_ID = 7501;
 
 function event(text, { fromId = PRINCIPAL_ID, chatId = CHAT_ID, topicId = CURSOR_TOPIC_ID, photoFileId } = {}) {
-  return { fromId, chatId, topicId, text, ...(photoFileId ? { photoFileId } : {}) };
+  return { kind: 'text', fromId, chatId, topicId, text, ...(photoFileId ? { photoFileId } : {}) };
+}
+
+function callbackEvent(callbackData, { fromId = PRINCIPAL_ID, chatId = CHAT_ID, topicId = CURSOR_TOPIC_ID } = {}) {
+  return { kind: 'callback', fromId, chatId, topicId, text: '', callbackData };
 }
 
 // ── topic ensure ─────────────────────────────────────────────────────────
@@ -175,6 +181,21 @@ test('cursor bridge: /status returns status', () => {
   assert.deepEqual(decideInboundAction(event('/status'), PRINCIPAL_ID, CHAT_ID, CURSOR_TOPIC_ID), { action: 'status' });
 });
 
+test('cursor bridge: /queue returns queue action', () => {
+  assert.deepEqual(decideInboundAction(event('/queue'), PRINCIPAL_ID, CHAT_ID, CURSOR_TOPIC_ID), { action: 'queue' });
+});
+
+test('cursor bridge: /dequeue N parses queue removal action', () => {
+  assert.deepEqual(decideInboundAction(event('/dequeue 2'), PRINCIPAL_ID, CHAT_ID, CURSOR_TOPIC_ID), {
+    action: 'dequeue',
+    position: 2,
+  });
+  assert.deepEqual(decideInboundAction(event('/DEQUEUE 7'), PRINCIPAL_ID, CHAT_ID, CURSOR_TOPIC_ID), {
+    action: 'dequeue',
+    position: 7,
+  });
+});
+
 test('cursor bridge: /update returns update', () => {
   assert.deepEqual(decideInboundAction(event('/update'), PRINCIPAL_ID, CHAT_ID, CURSOR_TOPIC_ID), { action: 'update' });
   assert.deepEqual(decideInboundAction(event('  /UPDATE  '), PRINCIPAL_ID, CHAT_ID, CURSOR_TOPIC_ID), { action: 'update' });
@@ -216,17 +237,139 @@ test('cursor bridge: /log parses auto and named targets', () => {
   });
 });
 
-test('cursor bridge: /redeploy parses exact command', () => {
+test('cursor bridge: /redeploy soft-confirms before execute (BL-702)', () => {
   assert.deepEqual(decideInboundAction(event('/redeploy'), PRINCIPAL_ID, CHAT_ID, CURSOR_TOPIC_ID), {
-    action: 'redeploy',
+    action: 'prompt-operator-confirm',
+    tier: 'soft',
+    verb: '/redeploy',
+    args: undefined,
   });
   assert.deepEqual(decideInboundAction(event('  /REDEPLOY  '), PRINCIPAL_ID, CHAT_ID, CURSOR_TOPIC_ID), {
-    action: 'redeploy',
+    action: 'prompt-operator-confirm',
+    tier: 'soft',
+    verb: '/redeploy',
+    args: undefined,
   });
   assert.deepEqual(decideInboundAction(event('/redeploy now'), PRINCIPAL_ID, CHAT_ID, CURSOR_TOPIC_ID), {
-    action: 'prompt',
-    text: '/redeploy now',
+    action: 'prompt-operator-confirm',
+    tier: 'soft',
+    verb: '/redeploy',
+    args: 'now',
   });
+});
+
+test('cursor bridge: /redeploy miniapp soft-confirms (BL-702)', () => {
+  assert.deepEqual(decideInboundAction(event('/redeploy miniapp'), PRINCIPAL_ID, CHAT_ID, CURSOR_TOPIC_ID), {
+    action: 'prompt-operator-confirm',
+    tier: 'soft',
+    verb: '/redeploy',
+    args: 'miniapp',
+  });
+  assert.deepEqual(decideInboundAction(event('/redeploy-miniapp'), PRINCIPAL_ID, CHAT_ID, CURSOR_TOPIC_ID), {
+    action: 'prompt-operator-confirm',
+    tier: 'soft',
+    verb: '/redeploy',
+    args: 'miniapp',
+  });
+  assert.deepEqual(decideInboundAction(event('/redeploy mini app'), PRINCIPAL_ID, CHAT_ID, CURSOR_TOPIC_ID), {
+    action: 'prompt-operator-confirm',
+    tier: 'soft',
+    verb: '/redeploy',
+    args: 'miniapp',
+  });
+});
+
+test('BL-702: hard verb prompts confirm; unauthorised refuses without execute', () => {
+  assert.deepEqual(decideInboundAction(event('/ensure'), PRINCIPAL_ID, CHAT_ID, CURSOR_TOPIC_ID), {
+    action: 'prompt-operator-confirm',
+    tier: 'hard',
+    verb: '/ensure',
+    args: undefined,
+  });
+  assert.deepEqual(
+    decideInboundAction(event('/restart', { fromId: 999 }), PRINCIPAL_ID, CHAT_ID, CURSOR_TOPIC_ID),
+    { action: 'refuse' }
+  );
+  assert.deepEqual(
+    decideInboundAction(event('/kill-all', { topicId: 5 }), PRINCIPAL_ID, CHAT_ID, CURSOR_TOPIC_ID),
+    { action: 'ignore' }
+  );
+});
+
+test('BL-702: soft compile prompts; confirm-off clears pending', () => {
+  assert.deepEqual(decideInboundAction(event('/compile'), PRINCIPAL_ID, CHAT_ID, CURSOR_TOPIC_ID), {
+    action: 'prompt-operator-confirm',
+    tier: 'soft',
+    verb: '/compile',
+    args: undefined,
+  });
+  assert.deepEqual(
+    decideInboundAction(event('/confirm-off'), PRINCIPAL_ID, CHAT_ID, CURSOR_TOPIC_ID, {
+      tier: 'hard',
+      verb: '/bounce',
+    }),
+    { action: 'clear-operator-pending' }
+  );
+});
+
+test('BL-702: syncenv and doctor execute as read/soft appropriately', () => {
+  assert.deepEqual(decideInboundAction(event('/doctor'), PRINCIPAL_ID, CHAT_ID, CURSOR_TOPIC_ID), {
+    action: 'execute-operator',
+    verb: '/doctor',
+    args: undefined,
+  });
+  assert.deepEqual(decideInboundAction(event('/syncenv'), PRINCIPAL_ID, CHAT_ID, CURSOR_TOPIC_ID), {
+    action: 'prompt-operator-confirm',
+    tier: 'soft',
+    verb: '/syncenv',
+    args: undefined,
+  });
+});
+
+test('BL-702: op:confirm callback executes pending hard verb', () => {
+  assert.deepEqual(
+    decideInboundAction(
+      callbackEvent('op:confirm'),
+      PRINCIPAL_ID,
+      CHAT_ID,
+      CURSOR_TOPIC_ID,
+      { tier: 'hard', verb: '/ensure' }
+    ),
+    { action: 'execute-operator', verb: '/ensure', args: undefined }
+  );
+});
+
+test('BL-702: op:cancel clears pending without execute', () => {
+  assert.deepEqual(
+    decideInboundAction(
+      callbackEvent('op:cancel'),
+      PRINCIPAL_ID,
+      CHAT_ID,
+      CURSOR_TOPIC_ID,
+      { tier: 'hard', verb: '/bounce', args: 'swarm' }
+    ),
+    { action: 'cancel-operator-pending' }
+  );
+});
+
+test('BL-702: soft confirm callback executes compile', () => {
+  assert.deepEqual(
+    decideInboundAction(
+      callbackEvent('op:confirm'),
+      PRINCIPAL_ID,
+      CHAT_ID,
+      CURSOR_TOPIC_ID,
+      { tier: 'soft', verb: '/compile' }
+    ),
+    { action: 'execute-operator', verb: '/compile', args: undefined }
+  );
+});
+
+test('BL-702: confirm with no pending is ignore', () => {
+  assert.deepEqual(
+    decideInboundAction(callbackEvent('op:confirm'), PRINCIPAL_ID, CHAT_ID, CURSOR_TOPIC_ID),
+    { action: 'ignore' }
+  );
 });
 
 test('cursor bridge: /pilot parses default and explicit ticket', () => {
@@ -293,6 +436,8 @@ test('cursor bridge: a prompt while busy is rejected as busy', () => {
 test('cursor bridge: /new and /status still work while busy', () => {
   assert.deepEqual(gateBusy({ action: 'new-session' }, true), { action: 'new-session' });
   assert.deepEqual(gateBusy({ action: 'status' }, true), { action: 'status' });
+  assert.deepEqual(gateBusy({ action: 'queue' }, true), { action: 'queue' });
+  assert.deepEqual(gateBusy({ action: 'dequeue', position: 1 }, true), { action: 'dequeue', position: 1 });
   assert.deepEqual(gateBusy({ action: 'update' }, true), { action: 'update' });
 });
 
@@ -301,6 +446,25 @@ test('cursor bridge: help, ignore, and refuse are not blocked by the busy gate',
   assert.deepEqual(gateBusy({ action: 'ignore' }, true), { action: 'ignore' });
   assert.deepEqual(gateBusy({ action: 'refuse' }, true), { action: 'refuse' });
   assert.deepEqual(gateBusy({ action: 'prompt', text: 'hi' }, false), { action: 'prompt', text: 'hi' });
+});
+
+test('BL-703: busy gate blocks hydrate/autopilot/land execute', () => {
+  assert.deepEqual(gateBusy({ action: 'execute-operator', verb: '/hydrate', args: 'x' }, true), {
+    action: 'busy',
+  });
+  assert.deepEqual(gateBusy({ action: 'execute-operator', verb: '/autopilot' }, true), {
+    action: 'busy',
+  });
+  assert.deepEqual(gateBusy({ action: 'execute-operator', verb: '/land' }, true), { action: 'busy' });
+  assert.deepEqual(gateBusy({ action: 'execute-operator', verb: '/autopilot', args: 'dry' }, true), {
+    action: 'execute-operator',
+    verb: '/autopilot',
+    args: 'dry',
+  });
+  assert.deepEqual(gateBusy({ action: 'execute-operator', verb: '/compile' }, true), {
+    action: 'execute-operator',
+    verb: '/compile',
+  });
 });
 
 // ── telegram chunking ────────────────────────────────────────────────────
@@ -471,6 +635,22 @@ test('cursor bridge: parseCursorBridgeState accepts zero update offsets and part
   assert.deepEqual(parseCursorBridgeState({ updateOffset: 0.5 }), { updateOffset: 0.5 });
 });
 
+test('cursor bridge: parseCursorBridgeState accepts queued prompts and pending poll metadata', () => {
+  const parsed = parseCursorBridgeState({
+    updateOffset: 7,
+    pendingPrompts: [
+      { id: 'qp-1', text: 'First queued question', createdAtMs: 10 },
+      { id: 'qp-2', text: 'Second queued question', createdAtMs: 20, replyToMessageId: 88 },
+    ],
+    pendingPromptPoll: { pollId: 'poll-1', itemIds: ['qp-1', 'qp-2'] },
+  });
+  assert.deepEqual(parsed.pendingPrompts, [
+    { id: 'qp-1', text: 'First queued question', createdAtMs: 10 },
+    { id: 'qp-2', text: 'Second queued question', createdAtMs: 20, replyToMessageId: 88 },
+  ]);
+  assert.deepEqual(parsed.pendingPromptPoll, { pollId: 'poll-1', itemIds: ['qp-1', 'qp-2'] });
+});
+
 test('cursor bridge: parseCursorBridgeState rejects negative offsets and empty agent ids', () => {
   assert.deepEqual(parseCursorBridgeState({ updateOffset: -3, agentId: '', cursorTopicId: 'nope' }), { updateOffset: 0 });
   assert.deepEqual(parseCursorBridgeState({ updateOffset: '3' }), { updateOffset: 0 });
@@ -488,14 +668,14 @@ test('cursor bridge: formatStatusMessage reports agent and topic ids', () => {
 test('cursor bridge: formatStatusMessage reports busy when a run is in flight', () => {
   assert.equal(
     formatStatusMessage({ updateOffset: 0 }, true),
-    'Cursor bridge status\nTopic: (unbound)\nAgent: (none — next message starts a session)\nMode: busy (run in flight)'
+    'Cursor bridge status\nTopic: (unbound)\nAgent: (none — next message starts a session)\nMode: busy (run in flight)\nQueued questions: 0'
   );
 });
 
 test('cursor bridge: formatStatusMessage reports idle defaults when unbound', () => {
   assert.equal(
     formatStatusMessage({ updateOffset: 0 }, false),
-    'Cursor bridge status\nTopic: (unbound)\nAgent: (none — next message starts a session)\nMode: idle'
+    'Cursor bridge status\nTopic: (unbound)\nAgent: (none — next message starts a session)\nMode: idle\nQueued questions: 0'
   );
 });
 
@@ -510,17 +690,26 @@ test('cursor bridge: formatHelpMessage mentions all operator commands', () => {
       '',
       '/new — start a fresh agent session',
       '/status — show session state',
+      '/queue — list queued questions',
+      '/dequeue N — remove queued question #N',
       '/update — short summary of agent / expedite / swarm activity (works while busy)',
       '/pilot [BL-xxx] — Cursor agent staffs an offline expedition (default BL-696)',
       '/expedite [BL-xxx] — run automated offline expeditor with stage updates (default BL-696)',
       '/reexpedite [BL-xxx] — checkpoint main WIP and restart a divergent expedite',
-      '/redeploy — compile extension and restart this bridge',
+      '/redeploy — soft confirm, then compile and restart this bridge (reloads swarm.env)',
+      '/redeploy miniapp — soft confirm, then bounce the headless mini app bridge',
+      '/syncenv /compile /pull — soft confirm (one Confirm tap)',
+      '/restart /bounce [swarm|extension|bridge|all] /ensure — hard confirm',
+      '/doctor /tunnel — read-only checks',
+      '/confirm-off — clear a pending Confirm',
       '/log [expedite|redeploy|bridge] — tail the active or named operator log',
       '/help — this message',
     ].join('\n')
   );
   assert.match(help, /\/new/i);
   assert.match(help, /\/status/i);
+  assert.match(help, /\/queue/i);
+  assert.match(help, /\/dequeue/i);
   assert.match(help, /\/update/i);
   assert.match(help, /\/pilot/i);
   assert.match(help, /\/expedite/i);
@@ -567,10 +756,31 @@ test('cursor bridge: isCursorAuthError detects recoverable authentication failur
   assert.equal(isCursorAuthError('network timeout'), false);
 });
 
-test('cursor bridge: shouldResetCursorAgentSession covers auth and active-run conflicts', () => {
+test('cursor bridge: isCursorConnectionFailure detects repeated connection failures', () => {
+  assert.equal(isCursorConnectionFailure('Connection failed repeatedly after retries'), true);
+  assert.equal(isCursorConnectionFailure('Telegram request failed: fetch failed'), true);
+  assert.equal(isCursorConnectionFailure('Cursor run failed (run-123): [unavailable] Error'), true);
+  assert.equal(isCursorConnectionFailure('quota exceeded'), false);
+});
+
+test('cursor bridge: shouldResetCursorAgentSession covers auth, active-run, and connection failures', () => {
   assert.equal(shouldResetCursorAgentSession('already has active run'), true);
   assert.equal(shouldResetCursorAgentSession('Authentication error'), true);
+  assert.equal(shouldResetCursorAgentSession('Connection failed repeatedly after retries'), true);
+  assert.equal(shouldResetCursorAgentSession('Cursor run failed (run-123): [unavailable] Error'), true);
   assert.equal(shouldResetCursorAgentSession('quota exceeded'), false);
+});
+
+test('cursor bridge: isCursorResourceExhausted detects rate-limit / quota errors', () => {
+  assert.equal(isCursorResourceExhausted('[resource_exhausted] Error'), true);
+  assert.equal(isCursorResourceExhausted('resource exhausted'), true);
+  assert.equal(isCursorResourceExhausted('Rate limit exceeded'), true);
+  assert.equal(isCursorResourceExhausted('Connection failed'), false);
+  assert.equal(isCursorResourceExhausted('Authentication error'), false);
+});
+
+test('cursor bridge: resource-exhausted does not trigger session reset', () => {
+  assert.equal(shouldResetCursorAgentSession('[resource_exhausted] Error'), false);
 });
 
 test('cursor bridge: agent-run heartbeat interval stays inside the supervisor stall window', () => {

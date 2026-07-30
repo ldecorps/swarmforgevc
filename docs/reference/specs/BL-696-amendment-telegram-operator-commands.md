@@ -14,6 +14,7 @@ Operator skills on the **Cursor Remote** Telegram forum topic (principal-only, t
 | `/expedite [BL-xxx]` | Spawn detached `expedite_with_progress.sh` (default `BL-696`) |
 | `/reexpedite [BL-xxx]` | Checkpoint main WIP, then relaunch expedite |
 | `/redeploy` | Compile extension + restart supervised `telegram-cursor-bridge` |
+| `/redeploy miniapp` | Compile extension + bounce headless Mini App bridge (`/lets-talk`) |
 | `/log [expedite\|redeploy\|bridge]` | Tail last lines of operator log (`/log` auto-picks running expedite) |
 | `/update` | Operational snapshot: in-flight agent run, expedite progress, active backlog |
 | Photo + optional caption | Downloaded and forwarded to Cursor agent as multimodal prompt |
@@ -42,7 +43,8 @@ Steps: `specs/pipeline/steps/bl696TelegramCursorBridgeOperatorSteps.js`
 | Progress summarize | `cursorBridgeProgress.ts` |
 | Expedite / reexpedite | `telegramCursorBridgeExpedite.ts` |
 | Pilot (Cursor-staffed) | `telegramCursorBridgePilot.ts` |
-| Redeploy | `telegramCursorBridgeRedeploy.ts` |
+| Redeploy (cursor bridge) | `telegramCursorBridgeRedeploy.ts` |
+| Redeploy (mini app) | `telegramCursorBridgeMiniAppRedeploy.ts` |
 | Log tail | `telegramCursorBridgeLogs.ts` |
 | `/update` snapshot | `telegramCursorBridgeUpdate.ts` |
 | Shell wrappers | `swarmforge/scripts/expedite_with_progress.sh`, `redeploy_cursor_bridge.sh`, … |
@@ -51,3 +53,12 @@ Steps: `specs/pipeline/steps/bl696TelegramCursorBridgeOperatorSteps.js`
 
 - Exposing these commands on Concierge or non-Cursor topics.
 - Replacing `expedite_progress_notify.bb` (stage updates still push independently).
+
+## Successor
+
+**BL-698** expands this surface into the full phone ops console (shared verb
+backend, env-reloading bounce/restart, shifts/holidays, documenter how-to +
+Cursor Remote Mermaid diagrams). See
+[BL-698 reference spec](BL-698-telegram-cursor-operator-command-surface.md)
+and the phone how-to
+[BL-698 Telegram Cursor Remote operator commands](../../how-to/BL-698-telegram-cursor-operator-commands.md).

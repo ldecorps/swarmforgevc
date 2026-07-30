@@ -1,4 +1,4 @@
-import { runGitLog, deriveTicketLifecycles, TicketLifecycleEvent } from './gitHistoryAdapter';
+import { runGitLog, deriveTicketLifecycles, TicketLifecycleEvent, GitLogEntry, GitLogChange } from './gitHistoryAdapter';
 import { computeTrend, TrendResult, TrendSeriesPoint } from './trend';
 import { readBacklogFolders, BacklogFolders, BacklogItem } from '../panel/backlogReader';
 import { RoleWorktree, readAllTestDurationRecords, computeSuiteDuration } from './swarmMetrics';
@@ -14,6 +14,7 @@ import { RoleWorktree, readAllTestDurationRecords, computeSuiteDuration } from '
 const DAY_MS = 24 * 60 * 60 * 1000;
 const WEEK_MS = 7 * DAY_MS;
 const MAX_PRIORITY = Number.MAX_SAFE_INTEGER;
+const DEFAULT_INTAKE_BALANCE_WINDOW_DAYS = 30;
 
 function bucketStartMs(dateMs: number, bucketMs: number): number {
   return Math.floor(dateMs / bucketMs) * bucketMs;
@@ -220,6 +221,131 @@ export function computeCycleTime(
     sampleCount: recent.length,
     weeklySeries,
     trend: computeTrend(weeklySeries),
+  };
+}
+
+// ── intake balance (metrics-10) ───────────────────────────────────────────
+
+export interface IntakeBalanceDayPoint {
+  periodStart: string;
+  filed: number;
+  closed: number;
+  net: number;
+  runningNet: number;
+}
+
+export interface IntakeBalanceResult {
+  dailySeries: IntakeBalanceDayPoint[];
+  trend: TrendResult;
+  windowDays: number;
+  trailingFiled: number;
+  trailingClosed: number;
+  trailingNet: number;
+}
+
+function isArrival(status: string): boolean {
+  return status === 'A' || status.startsWith('R') || status.startsWith('C');
+}
+
+function isEpicTrackerPath(filePath: string): boolean {
+  return /\/BL-\d+-epic-[^/]+\.ya?ml$/i.test(filePath);
+}
+
+function isBuildableTicketIntakePath(filePath: string): boolean {
+  return /^backlog\/(active|paused)\/BL-\d+[^/]*\.ya?ml$/i.test(filePath) && !isEpicTrackerPath(filePath);
+}
+
+function isRootIntakeDocPath(filePath: string): boolean {
+  return /^backlog\/INTAKE-[^/]+\.md$/i.test(filePath);
+}
+
+function isBuildableTicketDonePath(filePath: string): boolean {
+  return /^backlog\/done\/.+\/BL-\d+[^/]*\.ya?ml$/i.test(filePath) && !isEpicTrackerPath(filePath);
+}
+
+interface IntakeBalanceEvents {
+  filedAtMs: number[];
+  closedAtMs: number[];
+}
+
+function pushIfValidMs(values: number[], iso: string): void {
+  const ms = Date.parse(iso);
+  if (!Number.isNaN(ms)) {
+    values.push(ms);
+  }
+}
+
+function recordIntakeBalanceEvent(change: GitLogChange, entryDateIso: string, events: IntakeBalanceEvents): void {
+  if (!isArrival(change.status)) {
+    return;
+  }
+  if (isBuildableTicketIntakePath(change.path) || isRootIntakeDocPath(change.path)) {
+    pushIfValidMs(events.filedAtMs, entryDateIso);
+  }
+  if (isBuildableTicketDonePath(change.path)) {
+    pushIfValidMs(events.closedAtMs, entryDateIso);
+  }
+}
+
+export function deriveIntakeBalanceEvents(entries: GitLogEntry[]): IntakeBalanceEvents {
+  const sorted = [...entries].sort((a, b) => Date.parse(a.dateIso) - Date.parse(b.dateIso));
+  const events: IntakeBalanceEvents = { filedAtMs: [], closedAtMs: [] };
+  for (const entry of sorted) {
+    for (const change of entry.changes) {
+      recordIntakeBalanceEvent(change, entry.dateIso, events);
+    }
+  }
+  return events;
+}
+
+function countInTrailingWindow(values: number[], nowMs: number, windowDays: number): number {
+  const startMs = nowMs - windowDays * DAY_MS;
+  return values.filter((ms) => ms >= startMs && ms <= nowMs).length;
+}
+
+function buildDailyCountsSeries(filedAtMs: number[], closedAtMs: number[], nowMs: number): IntakeBalanceDayPoint[] {
+  const nowDay = bucketStartMs(nowMs, DAY_MS);
+  const allTimes = [...filedAtMs, ...closedAtMs];
+  const earliestDay = allTimes.length > 0 ? bucketStartMs(Math.min(...allTimes), DAY_MS) : nowDay;
+  const filedByDay = new Map<number, number>();
+  const closedByDay = new Map<number, number>();
+  for (const ms of filedAtMs) {
+    const day = bucketStartMs(ms, DAY_MS);
+    filedByDay.set(day, (filedByDay.get(day) ?? 0) + 1);
+  }
+  for (const ms of closedAtMs) {
+    const day = bucketStartMs(ms, DAY_MS);
+    closedByDay.set(day, (closedByDay.get(day) ?? 0) + 1);
+  }
+
+  const series: IntakeBalanceDayPoint[] = [];
+  let runningNet = 0;
+  for (let day = earliestDay; day <= nowDay; day += DAY_MS) {
+    const filed = filedByDay.get(day) ?? 0;
+    const closed = closedByDay.get(day) ?? 0;
+    const net = filed - closed;
+    runningNet += net;
+    series.push({ periodStart: toIso(day), filed, closed, net, runningNet });
+  }
+  return series;
+}
+
+export function computeIntakeBalance(
+  events: IntakeBalanceEvents,
+  nowMs: number,
+  windowDays: number = DEFAULT_INTAKE_BALANCE_WINDOW_DAYS
+): IntakeBalanceResult {
+  const dailySeries = buildDailyCountsSeries(events.filedAtMs, events.closedAtMs, nowMs);
+  const netSeries: TrendSeriesPoint[] = dailySeries.map((p) => ({ periodStart: p.periodStart, value: p.net }));
+  const trailingFiled = countInTrailingWindow(events.filedAtMs, nowMs, windowDays);
+  const trailingClosed = countInTrailingWindow(events.closedAtMs, nowMs, windowDays);
+  return {
+    dailySeries,
+    trend: computeTrend(netSeries),
+    windowDays,
+    trailingFiled,
+    trailingClosed,
+    trailingNet: trailingFiled - trailingClosed,
   };
 }
 
@@ -461,6 +587,7 @@ export interface DeliveryMetrics {
   burndown: MilestoneBurndownResult[];
   cycleTime: CycleTimeResult;
   forecasts: ForecastResult;
+  intakeBalance: IntakeBalanceResult;
   suiteDurationTrend: SuiteDurationTrendResult;
 }
 
@@ -478,7 +605,9 @@ function toOpenTicketInput(item: BacklogItem): OpenTicketInput {
 // running this twice with no intervening git changes creates or modifies
 // nothing (metrics-05).
 export function computeDeliveryMetrics(targetPath: string, roles: RoleWorktree[], nowMs: number = Date.now()): DeliveryMetrics {
-  const lifecycles = [...deriveTicketLifecycles(runGitLog(targetPath, 'backlog')).values()];
+  const history = runGitLog(targetPath, 'backlog');
+  const lifecycles = [...deriveTicketLifecycles(history).values()];
+  const intakeBalanceEvents = deriveIntakeBalanceEvents(history);
 
   const folders = readBacklogFolders(targetPath);
   const milestoneByTicketId = new Map<string, string>();
@@ -494,6 +623,7 @@ export function computeDeliveryMetrics(targetPath: string, roles: RoleWorktree[]
     burndown: computeBurndown(lifecycles, milestoneByTicketId, nowMs),
     cycleTime: computeCycleTime(lifecycles, nowMs),
     forecasts: computeForecasts(lifecycles, openTickets, nowMs),
+    intakeBalance: computeIntakeBalance(intakeBalanceEvents, nowMs),
     suiteDurationTrend: computeSuiteDurationTrend(targetPath, roles, nowMs),
   };
 }

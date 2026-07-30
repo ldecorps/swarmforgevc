@@ -1845,26 +1845,8 @@ export async function resumeNow(
   await postControlMessage(botToken, chatId, controlTopicId, 'Resumed - new work will be promoted again.', undefined, postFn);
 }
 
-// BL-655: the AMBULANCE marker - this bot is one of its two writers
-// (ambulance_cli.bb, human-only, is the other; nothing in the swarm ever
-// engages one for itself). Mirrors ambulance_lib.bb's EXACT shape
-// ({active, ticket, engagedAtMs, by}) and idempotency contract (a repeated
-// engage of the same ticket, or a release with no mode set, rewrites
-// nothing) so either surface honors the same "engage/release are
-// idempotent" invariant regardless of which one a human happens to use.
-export function controlAmbulanceStatePath(targetPath: string): string {
-  return path.join(targetPath, '.swarmforge', 'operator', 'control-ambulance.json');
-}
-
-type RawAmbulanceMarker = { active: true; ticket?: string; engagedAtMs?: number; by?: string } | { active: false } | undefined;
-
-function readRawAmbulanceMarker(targetPath: string): RawAmbulanceMarker {
-  try {
-    return JSON.parse(fs.readFileSync(controlAmbulanceStatePath(targetPath), 'utf8')) as RawAmbulanceMarker;
-  } catch {
-    return undefined;
-  }
-}
+// BL-655 / BL-698: ambulance marker path — shared with Cursor Remote.
+export { controlAmbulanceStatePath } from './telegramOperatorAmbulance';
 
 export async function engageAmbulance(
   targetPath: string,
@@ -1875,36 +1857,9 @@ export async function engageAmbulance(
   postFn?: TelegramPostFn,
   nowMs: number = Date.now()
 ): Promise<void> {
-  // Mirrors ambulance_cli.bb's engage-cmd! refusal: a ticket with no YAML
-  // file anywhere under backlog/ would hold EVERYTHING forever (the read
-  // side degrades the marker to inactive, but a human who was just told
-  // "engaged" has no way to know that from here) - the deadlock the
-  // operator ruled out. lookupBacklogItemById already scans active, paused,
-  // hold, and done (with milestone subdirs), the same "anywhere" scope as
-  // ambulance_lib.bb's ticket-has-file?.
-  if (!lookupBacklogItemById(targetPath, ticket)) {
-    await postControlMessage(
-      botToken,
-      chatId,
-      controlTopicId,
-      `Ambulance refused for ${ticket} - no YAML file for it anywhere under backlog/ (would hold everything forever).`,
-      undefined,
-      postFn
-    );
-    return;
-  }
-  const raw = readRawAmbulanceMarker(targetPath);
-  if (!(raw?.active && raw.ticket === ticket)) {
-    atomicWrite(controlAmbulanceStatePath(targetPath), JSON.stringify({ active: true, ticket, engagedAtMs: nowMs, by: 'telegram' }));
-  }
-  await postControlMessage(
-    botToken,
-    chatId,
-    controlTopicId,
-    `Ambulance engaged for ${ticket} - only its parcels move now; everything else queues in place, untouched.`,
-    undefined,
-    postFn
-  );
+  const { engageOperatorAmbulance } = await import('./telegramOperatorAmbulance');
+  const result = engageOperatorAmbulance(targetPath, ticket, nowMs);
+  await postControlMessage(botToken, chatId, controlTopicId, result.text, undefined, postFn);
 }
 
 export async function releaseAmbulance(
@@ -1914,11 +1869,9 @@ export async function releaseAmbulance(
   controlTopicId: number | undefined,
   postFn?: TelegramPostFn
 ): Promise<void> {
-  const raw = readRawAmbulanceMarker(targetPath);
-  if (raw?.active) {
-    atomicWrite(controlAmbulanceStatePath(targetPath), JSON.stringify({ active: false }));
-  }
-  await postControlMessage(botToken, chatId, controlTopicId, 'Ambulance released - every held parcel resumes moving.', undefined, postFn);
+  const { releaseOperatorAmbulance } = await import('./telegramOperatorAmbulance');
+  const result = releaseOperatorAmbulance(targetPath);
+  await postControlMessage(botToken, chatId, controlTopicId, result.text, undefined, postFn);
 }
 
 function scopeTextFor(item: { description?: string; notes?: string } | undefined): string {
@@ -2165,6 +2118,21 @@ function buildPollAdapters(
     releaseAmbulance: async () => {
       const controlTopicId = await ensureControlTopic(targetPath, botToken, chatId);
       await releaseAmbulance(targetPath, botToken, chatId, controlTopicId);
+    },
+    executeSharedOperator: async (verb, args) => {
+      const { executeOperatorVerb } = await import('./telegramCursorOperatorExec');
+      const controlTopicId = await ensureControlTopic(targetPath, botToken, chatId);
+      const result = executeOperatorVerb(targetPath, verb, args);
+      await postControlMessage(botToken, chatId, controlTopicId, result.text);
+      if (result.awaitPipelineDrain) {
+        const { awaitPipelineEmpty } = await import('./telegramCursorOperatorLiveness');
+        const { outcome } = await awaitPipelineEmpty(targetPath);
+        const text =
+          outcome === 'drained'
+            ? 'drain-swarm: pipeline empty.'
+            : 'drain-swarm: drain window elapsed with work still in flight (no kill).';
+        await postControlMessage(botToken, chatId, controlTopicId, text);
+      }
     },
     // ── BL-590: Onboarder topic ────────────────────────────
     onboardingTopicId: () => ensureOnboardingTopic(targetPath, botToken, chatId),

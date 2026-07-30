@@ -19,6 +19,8 @@ approval_context: >
   explicit on the required ordering: priority decides first, and **at equal
   priority the most recent must still win** — newest-first is correct as a
   tie-break, wrong as the only key.
+  Hydrate-batch-2 commit only materializes this approved prose into APS
+  Gherkin; no scope change.
 
 source: |
   Live incident, 2026-07-25. The concierge escalated twice within two minutes:
@@ -113,25 +115,7 @@ description: |
   `note` vs a directed one), not addressed here. Do not silently exempt `00`
   without deciding this.
 
-acceptance: |
-  Specifier writes the scenarios. Minimum behaviour:
-
-  1. Given actionable mail in two roles, one at priority `00` and one at `50`,
-     the `00` role is the rotation target regardless of which is newer.
-  2. Given two roles whose best actionable mail is at the SAME priority, the one
-     with the newest mail wins — current behaviour, explicitly regression-tested.
-  3. A role's row carries the best (lowest) priority among its actionable mail,
-     not the priority of its newest parcel — a role holding `00` and `70` is
-     ranked as `00`.
-  4. Unparseable or absent priority fails to a defined default and is documented;
-     it must not silently rank as `00` and jump the queue.
-  5. `full-forge` / non-router packs are unaffected.
-  6. Regression fixture reproduces 2026-07-25: specifier holding `00` (aged note)
-     + `50` + `50` against an architect/coder loop producing newer `50` mail —
-     specifier is selected.
-  7. Whatever is decided on the aged-note question above is covered by a scenario
-     stating the chosen behaviour, so a future reader sees it was a decision.
-
+acceptance: specs/features/BL-636-rotate-preference-ignores-parcel-priority.feature
 out_of_scope: |
   - The resident-busy gate. `chase-wake-skip-busy` is correct: not rotating
     mid-turn is deliberate (chase thrash incident 2026-07-19). This ticket is

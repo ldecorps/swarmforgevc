@@ -1,0 +1,96 @@
+id: BL-708
+title: "DEFECT — role_ask questions never reach Telegram: the bridge relay strips roleQuestion/agentQuestion/options"
+milestone: M8
+type: defect
+severity: high
+status: todo
+epic: swarmforge-console
+priority: 2
+direction: expedite
+depends_on: []
+mutation_cost: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+assigned_to: none
+
+invariants:
+  - "Every field a producer writes into telegram-reply-outbox.jsonl that a front-desk delivery path reads is carried through the bridge relay unchanged — the relay never narrows a record to a shape that changes which delivery path handles it."
+  - "A question record the front desk cannot deliver leaves a surfaced trace (log line or counter) before its id is acked — never a silent ack that reads as delivered."
+
+required_wiring:
+  - "extension/src/bridge/operatorEventQueue.ts::roleQuestion::the relay reader must carry the field role_ask.bb writes"
+  - "extension/src/bridge/operatorEventQueue.ts::agentQuestion::same hole on the agent-question path"
+  - "extension/src/bridge/operatorEventQueue.ts::options::without options the buttons are lost even if routing is fixed"
+
+description: |
+  ## What
+
+  `swarmforge/scripts/role_ask.bb` appends a reply-outbox line marked
+  `roleQuestion: <role>` (plus `options`) so the front desk delivers a role's
+  clarifying question into that role's OWN Telegram topic. That never happens.
+  The bridge's relay reader narrows every outbox line to
+  `{ id, threadId, text, retractsPendingQuestion }`, so `roleQuestion`,
+  `agentQuestion` and `options` are gone by the time the front-desk bot parses
+  the SSE record. `relayOneRecord` therefore takes the ordinary-reply branch for
+  a synthetic thread id (`role-ask-<role>`) that resolves to no topic, and the
+  record is acked and dropped.
+
+  Net effect: BL-607 has been dark since it landed (2026-07-24). The specifier
+  has never successfully asked the human a clarifying question.
+
+  ## Why (why it stayed invisible)
+
+  The relay advanced its cursor past every one of those lines, so the counters
+  all looked healthy: `ackedIndex` equals the outbox line count while zero
+  questions were delivered. An undeliverable record acked as delivered is what
+  turned a one-line passthrough bug into six days of silence.
+
+  ## Confirmed live forensics (2026-07-30)
+
+  - `extension/src/bridge/operatorEventQueue.ts` `readNewReplyOutboxEntries`
+    builds `ReplyOutboxEntry` from `id`/`threadId`/`text` only;
+    `bridgeServer.ts` emits `JSON.stringify(entry)` as the `telegram-reply`
+    SSE payload, so the dropped fields never reach the bot.
+  - `extension/src/tools/telegramFrontDeskBotCore.ts` (~2808) already destructures
+    `agentQuestion`, `roleQuestion`, `options` and already calls
+    `deliverRoleQuestion` when `roleQuestion` is set — the consumer is correct
+    and unit-tested; only the transport narrows the record.
+  - `.swarmforge/operator/role-awaiting/specifier.json` still holds an
+    unanswered 2026-07-27 question; `backlog/topics/specifier.json` has no
+    messages.
+
+  ## Approach
+
+  Carry the delivery-routing fields through the relay read and the SSE payload,
+  and make an undeliverable question record surface before it is acked. Do not
+  redesign the ask UX, the outbox format, or BL-568 menu detection.
+
+  ## Out of scope
+
+  - New Telegram UX or new ask surfaces
+  - Reworking BL-568 menu detection
+  - Clearing the stale `role-awaiting/specifier.json` without a real answer
+    (the operator may retract that manually; it is not this fix)
+  - Changing `role_ask.bb`'s written record shape
+
+  ## STEERING note
+
+  Permitted under the 2026-07-30 phone/Bubble freeze as an expedite defect on an
+  already-shipped Telegram path (front desk deaf to role asks), not new Telegram
+  product/UI.
+
+acceptance: specs/features/BL-708-role-ask-relay-strips-question-fields.feature
+
+source: |
+  Human via Cursor 2026-07-30, after noticing the specifier topic had never
+  shown a role ask since BL-607 landed. Drained from
+  `backlog/INTAKE-bl607-role-ask-outbox-strips-roleQuestion.md`.
+
+notes: |
+  e2e QA procedure: with the front desk live, run
+  `bb swarmforge/scripts/role_ask.bb <repo-root> --role specifier --question
+  "<probe>" --options '["a","b"]'`, then confirm the question appears in the
+  specifier's own Telegram topic with two tappable buttons, that tapping one
+  clears `.swarmforge/operator/role-awaiting/specifier.json`, and that the
+  answer reaches the specifier (live pane or inbox note). Sibling BL-710 covers
+  the front-desk bounce needed to make this fix live at all — verify against a
+  restarted front desk, not a stale one.

@@ -108,13 +108,7 @@ description: |
   redundant by this ticket and must ship regardless. Three imperfect layers in
   series, not one claimed-perfect one.
 
-acceptance: |
-  specs/features/BL-632-commit-time-guard-refuses-pipeline-code-on-main.feature
-
-  Supporting criteria the Gherkin does not pin: guard logic lives in a
-  standalone script callable outside a hook, per the BL-105 precedent, and is
-  unit-tested there.
-
+acceptance: specs/features/BL-632-commit-time-guard-refuses-pipeline-code-on-main.feature
 out_of_scope: |
   - Publish-time refusal (BL-630) and deploy-time refusal (BL-629).
   - Detection/alerting (BL-631).
@@ -132,3 +126,8 @@ notes: |
   touch adjacent concerns and share the QA-exclusive path definition. BL-631 and
   BL-632 in particular must agree on that set — land one first and have the
   other consume its definition rather than restating it.
+
+  Supporting criteria the Gherkin does not pin: guard logic lives in a
+  standalone script callable outside a hook, per the BL-105 precedent, and is
+  unit-tested there.
+

@@ -6,7 +6,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { Agent, CursorAgentError, type SDKAgent, type SDKMessage, type SDKUserMessage } from '@cursor/sdk';
 import { atomicWrite } from '../util/atomicWrite';
-import { collectAssistantTextFromMessages, shouldResetCursorAgentSession, parseCursorBridgeState, type CursorBridgePersistedState } from '../tools/telegramCursorBridgeCore';
+import { collectAssistantTextFromMessages, shouldResetCursorAgentSession, isCursorResourceExhausted, parseCursorBridgeState, type CursorBridgePersistedState } from '../tools/telegramCursorBridgeCore';
 import { extractCodeWordFromRememberPhrase, mockAgentReplyForTranscript } from './letsTalkCore';
 import { readSwarmEnvValue } from '../tools/swarmEnv';
 import type { CursorAgentProgressCallback } from './cursorBridgeProgress';
@@ -211,6 +211,9 @@ async function reportSdkProgress(event: SDKMessage, onProgress: CursorAgentProgr
 function assertCursorRunSucceeded(result: Awaited<ReturnType<Awaited<ReturnType<SDKAgent['send']>>['wait']>>): void {
   if (result.status === 'error') {
     const detail = result.error?.message ?? 'unknown error';
+    if (isCursorResourceExhausted(detail)) {
+      throw new Error('Cursor usage quota exhausted — the agent cannot process requests right now. Wait a few minutes and try again, or check your Cursor plan limits.');
+    }
     throw new Error(`Cursor run failed (${result.id}): ${detail}`);
   }
 }

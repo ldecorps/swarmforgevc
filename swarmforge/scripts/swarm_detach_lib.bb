@@ -40,19 +40,6 @@
 ;; it flips correctly in both directions: verified in this session,
 ;; `sleep 30 &` shows SigIgn missing bit 0 (SIGHUP not ignored);
 ;; `nohup sleep 30 >/dev/null 2>&1 &` shows bit 0 set.
-;;
-;; BL-657 WORDING CORRECTION (2026-07-28): this check proves our launch
-;; JOB won't die when the calling shell exits. It does NOT prove the tmux
-;; SERVER that job goes on to start will stay running - three occurrences
-;; in one night showed a server come up, exist for ~2s, then vanish
-;; entirely (socket file left behind) while this check's "detached"
-;; verdict would have read true throughout, since it was never checking
-;; the server at all. The "ok" message below used to read "swarm is up
-;; and its launch is detached", which conflates the two and can be
-;; misread as "will survive" - reworded so a caller cannot mistake this
-;; check for a liveness guarantee. wait_for_ready's own sustained-readiness
-;; check (start-swarm.sh) is what actually catches a server that comes up
-;; and then dies.
 
 (ns swarm-detach-lib
   (:require [clojure.string :as str]))
@@ -93,5 +80,7 @@
      :message "swarm launch is still owned by the caller - it will die when the caller exits"}
 
     :else
+    ;; BL-657: "detached" only means the launch job ignored SIGHUP — not that
+    ;; the tmux server will survive harness-env poisoning or other killers.
     {:ok? true
-     :message "swarm launch job is detached from the caller (this proves the launch job survives - it does not by itself guarantee the tmux server stays up; see wait_for_ready)"}))
+     :message "swarm launch job is detached from the caller (SIGHUP ignored; does not prove session survival)"}))

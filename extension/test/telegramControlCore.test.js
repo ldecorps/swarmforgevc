@@ -241,6 +241,38 @@ test('BL-655: "ambulance off" releases the ambulance', () => {
   assert.deepEqual(decision, { action: 'release-ambulance' });
 });
 
+test('BL-698: slash /ambulance BL-xxx aliases bare ambulance engage', () => {
+  const decision = decideControlEventAction(textEvent('/ambulance BL-698'), PRINCIPAL_ID, CONTROL_TOPIC_ID, undefined, NOT_PAUSED);
+  assert.deepEqual(decision, { action: 'engage-ambulance', ticket: 'BL-698' });
+});
+
+test('BL-698: slash /hold and /reinstate route to shared operator exec', () => {
+  assert.deepEqual(
+    decideControlEventAction(textEvent('/hold BL-697'), PRINCIPAL_ID, CONTROL_TOPIC_ID, undefined, NOT_PAUSED),
+    { action: 'execute-shared-operator', verb: '/hold', args: 'BL-697' }
+  );
+  assert.deepEqual(
+    decideControlEventAction(textEvent('/reinstate BL-697'), PRINCIPAL_ID, CONTROL_TOPIC_ID, undefined, NOT_PAUSED),
+    { action: 'execute-shared-operator', verb: '/reinstate', args: 'BL-697' }
+  );
+});
+
+test('BL-698: /kill-all on Control maps to emergency stop', () => {
+  const decision = decideControlEventAction(textEvent('/kill-all'), PRINCIPAL_ID, CONTROL_TOPIC_ID, undefined, NOT_PAUSED);
+  assert.deepEqual(decision, { action: 'execute-emergency-stop' });
+});
+
+test('BL-698: /drain-agents and /drain-swarm alias shared operator', () => {
+  assert.deepEqual(
+    decideControlEventAction(textEvent('/drain-agents'), PRINCIPAL_ID, CONTROL_TOPIC_ID, undefined, NOT_PAUSED),
+    { action: 'execute-shared-operator', verb: '/drain-agents' }
+  );
+  assert.deepEqual(
+    decideControlEventAction(textEvent('/drain-swarm'), PRINCIPAL_ID, CONTROL_TOPIC_ID, undefined, NOT_PAUSED),
+    { action: 'execute-shared-operator', verb: '/drain-swarm' }
+  );
+});
+
 test('BL-655: "ambulance off" is case/whitespace tolerant', () => {
   assert.deepEqual(
     decideControlEventAction(textEvent('  Ambulance OFF  '), PRINCIPAL_ID, CONTROL_TOPIC_ID, undefined, NOT_PAUSED),

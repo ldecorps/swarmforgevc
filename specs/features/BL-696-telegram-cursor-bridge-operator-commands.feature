@@ -108,3 +108,34 @@ Feature: Telegram Cursor Remote operator commands
     Then the bridge posts a status mentioning "busy"
     When the principal sends "/update" on the Cursor Remote topic while busy
     Then the bridge posts an update mentioning "Agent run in progress"
+
+  # BL-696 amendment (2026-07-28): the Cursor Remote topic is the principal's
+  # phone-side reading surface, so an agent reply must arrive RENDERED — a
+  # markdown grid that lands as raw "|--|--|" pipe rows is unreadable in
+  # portrait, and raw ** markers are noise.
+
+  # BL-696 tg-op-14
+  Scenario: a markdown grid renders as an aligned monospace block
+    When the Cursor agent reply carrying a markdown grid is posted to Telegram
+    Then the Telegram post renders the grid inside a monospace block
+    And no Telegram post carries a raw markdown separator row
+    And every Telegram post is sent with HTML parse mode
+
+  # BL-696 tg-op-15
+  Scenario: a grid too wide for a phone renders as one labelled block per row
+    When the Cursor agent reply carrying a grid too wide for a phone is posted to Telegram
+    Then each grid row is posted as its own labelled block
+    And no Telegram post carries a raw markdown separator row
+
+  # BL-696 tg-op-16
+  Scenario: emphasis and inline code render without raw markdown markers
+    When the Cursor agent reply carrying bold text and inline code is posted to Telegram
+    Then the Telegram post renders bold and inline code as HTML
+    And no Telegram post carries a raw emphasis marker
+
+  # BL-696 tg-op-17
+  Scenario: a reply Telegram refuses to parse as HTML still reaches the principal
+    Given Telegram rejects HTML formatted posts
+    When the Cursor agent reply carrying a markdown grid is posted to Telegram
+    Then the reply is retried as plain text with no parse mode
+    And the plain text retry keeps the reply content

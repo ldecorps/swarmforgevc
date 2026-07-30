@@ -1,0 +1,8 @@
+# BL-707 Android floating overlay companion
+.gradle/
+**/build/
+local.properties
+**/*.iml
+.idea/
+dist/
+*.apk

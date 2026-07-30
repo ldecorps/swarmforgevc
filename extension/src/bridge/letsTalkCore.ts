@@ -10,8 +10,11 @@ export type LetsTalkSttOutcome = 'prompt' | 'retry' | 'unprocessable';
 export type LetsTalkTurnPhase = 'ready' | 'thinking' | 'speaking' | 'error';
 
 export interface LetsTalkTurnRequest {
-  audioBase64: string;
+  /** Mini App / mic path — base64 audio blob. */
+  audioBase64?: string;
   mimeType?: string;
+  /** BL-707 Android overlay companion — discrete text turn (skips STT). */
+  text?: string;
 }
 
 export function isLetsTalkTurnRequestShape(value: unknown): value is LetsTalkTurnRequest {
@@ -19,12 +22,19 @@ export function isLetsTalkTurnRequestShape(value: unknown): value is LetsTalkTur
     return false;
   }
   const record = value as Record<string, unknown>;
+  const text = record.text;
+  const hasText = typeof text === 'string' && text.trim().length > 0;
   const audioBase64 = record.audioBase64;
-  if (typeof audioBase64 !== 'string' || audioBase64.length === 0) {
+  const hasAudio = typeof audioBase64 === 'string' && audioBase64.length > 0;
+  if (hasText === hasAudio) {
+    // Exactly one of text or audioBase64 must be present.
     return false;
   }
   const mimeType = record.mimeType;
-  return mimeType === undefined || typeof mimeType === 'string';
+  if (mimeType !== undefined && typeof mimeType !== 'string') {
+    return false;
+  }
+  return true;
 }
 
 export function decodeLetsTalkAudio(audioBase64: string): Buffer | undefined {
@@ -318,6 +328,12 @@ export function flattenMarkdownTableRow(line: string): string {
 
 // BL-697: optional hands-free listening — auto-start after playback, auto-stop on silence.
 export const LETS_TALK_HANDS_FREE_STORAGE_KEY = 'lets-talk-hands-free';
+
+/** BL-706: persist minimized floating-bubble mode across reload. */
+export const LETS_TALK_MINIMIZED_STORAGE_KEY = 'lets-talk-minimized';
+
+/** BL-706: persist floating bubble position `{left,top}` in CSS pixels. */
+export const LETS_TALK_FLOAT_POS_STORAGE_KEY = 'lets-talk-float-pos';
 export const LETS_TALK_HANDS_FREE_SILENCE_MS = 2500;
 export const LETS_TALK_HANDS_FREE_POST_SPEECH_MS = 400;
 export const LETS_TALK_HANDS_FREE_MAX_LISTEN_MS = 30000;

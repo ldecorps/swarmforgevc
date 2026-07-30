@@ -56,10 +56,89 @@ test("lets-talk Mini App shell is served without auth", async () => {
     const body = await res.text();
     assert.match(body, /Let's Talk/);
     assert.match(body, /data-testid="lets-talk-record"/);
+    assert.match(body, /data-testid="lets-talk-pause-all"/);
+    assert.match(body, /data-testid="lets-talk-minimize"/);
+    assert.match(body, /data-testid="lets-talk-expand"/);
+    assert.match(body, /data-testid="lets-talk-float-drag"/);
+    assert.match(body, /lets-talk-minimized/);
+    assert.match(body, /lets-talk-float-pos/);
+    // BL-706: compact chat-head bubble; record stays speakable while minimized.
+    assert.match(body, /width: 64px/);
+    assert.match(body, /border-radius: 50%/);
+    assert.match(body, /compact chat-head bubble/);
+    assert.match(body, /function setMinimized/);
+    assert.match(body, /localStorage\.getItem\(MINIMIZED_STORAGE_KEY\) === '1'/);
+    assert.match(body, /localStorage\.setItem\(MINIMIZED_STORAGE_KEY/);
+    assert.match(body, /localStorage\.setItem\(FLOAT_POS_STORAGE_KEY/);
+    assert.match(body, /id="pause-all"[^>]*data-testid="lets-talk-pause-all"/);
+    assert.doesNotMatch(body, /id="record"[^>]*full-only/);
+    assert.doesNotMatch(body, /id="pause-all"[^>]*full-only/);
     assert.match(body, /data-testid="lets-talk-new-session"/);
     assert.match(body, /data-testid="lets-talk-hands-free"/);
+    assert.match(body, /data-testid="lets-talk-mute"/);
+    assert.match(body, /data-testid="lets-talk-wake-lock-toggle"/);
+    assert.match(body, /data-testid="lets-talk-bridge-health"/);
+    // BL-705: iconic hold-music chiptune catalog expansion
+    assert.match(body, /name: 'Thanatos'/);
+    assert.match(body, /name: "Ghost'n Goblins"/);
+    assert.match(body, /name: 'Zelda Overworld'/);
+    assert.match(body, /name: 'Tron Lightcycle'/);
+    assert.match(body, /name: 'Tetris'/);
+    assert.match(body, /name: 'Mega Man'/);
+    assert.match(body, /chiptuneSongs/);
+    assert.doesNotMatch(body, /YM decoder|ymDecode|Atari ST YM/i);
     assert.match(body, /scheduleHandsFreeListen/);
+    assert.match(body, /pollBridgeHealth/);
     assert.match(body, /ensureSpeechVoices/);
+    assert.match(body, /MUTE_STORAGE_KEY/);
+    assert.match(body, /stopPlaybackNow/);
+    assert.match(body, /setPauseAll/);
+    assert.match(body, /data-bridge-state/);
+    assert.match(body, /rel="manifest"/);
+    assert.match(body, /apple-mobile-web-app-capable/);
+    assert.match(body, /serviceWorker/);
+    assert.match(body, /data-testid="lets-talk-pwa-install"/);
+    assert.match(body, /lets-talk-bearer/);
+    assert.match(body, /localStorage\.setItem\(AUTH_STORAGE_KEY/);
+    assert.match(body, /localStorage\.getItem\(AUTH_STORAGE_KEY/);
+    assert.match(body, /lets-talk-manifest/);
+    assert.match(body, /writeAuthCookie/);
+    assert.match(body, /manifest\.json' \+ q/);
+  });
+});
+
+test("lets-talk PWA manifest is served at /lets-talk/manifest.json", async () => {
+  const target = mkTmp();
+  await withBridge(target, buildMocks(target), async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/lets-talk/manifest.json`);
+    assert.equal(res.status, 200);
+    assert.match(res.headers.get('content-type'), /application\/manifest\+json/);
+    const manifest = await res.json();
+    assert.equal(manifest.display, 'standalone');
+    assert.equal(manifest.start_url, '/lets-talk');
+    assert.equal(manifest.scope, '/lets-talk');
+  });
+});
+
+test("lets-talk PWA manifest start_url includes bearer when requested", async () => {
+  const target = mkTmp();
+  await withBridge(target, buildMocks(target), async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/lets-talk/manifest.json?bearer=test-token-123`);
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get('cache-control'), 'no-store');
+    const manifest = await res.json();
+    assert.equal(manifest.start_url, '/lets-talk?bearer=test-token-123');
+  });
+});
+
+test("lets-talk service worker is served at /lets-talk/sw.js", async () => {
+  const target = mkTmp();
+  await withBridge(target, buildMocks(target), async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/lets-talk/sw.js`);
+    assert.equal(res.status, 200);
+    assert.match(res.headers.get('content-type'), /application\/javascript/);
+    const body = await res.text();
+    assert.match(body, /skipWaiting/);
   });
 });
 
@@ -307,4 +386,39 @@ test('processLetsTalkTurn: agent errors are recoverable', async () => {
   );
   assert.equal(result.success, false);
   assert.match(result.reason, /cursor offline/i);
+});
+
+test('processLetsTalkTurn: successful turns call onTurnSuccess with reply text', async () => {
+  const target = mkTmp();
+  const seen = [];
+  const result = await processLetsTalkTurn(
+    { audioBase64: SAMPLE_AUDIO },
+    {
+      agentSession: createMockCursorBridgeAgentSession(target),
+      transcribeAudio: async () => ({ kind: 'ok', transcript: 'hello' }),
+      clientTts: true,
+      onTurnSuccess: async (turn) => {
+        seen.push(turn.replyText);
+      },
+    }
+  );
+  assert.equal(result.success, true);
+  assert.equal(seen.length, 1);
+  assert.equal(seen[0], result.replyText);
+});
+
+test('processLetsTalkTurn: onTurnSuccess failure is ignored', async () => {
+  const target = mkTmp();
+  const result = await processLetsTalkTurn(
+    { audioBase64: SAMPLE_AUDIO },
+    {
+      agentSession: createMockCursorBridgeAgentSession(target),
+      transcribeAudio: async () => ({ kind: 'ok', transcript: 'hello' }),
+      clientTts: true,
+      onTurnSuccess: async () => {
+        throw new Error('mirror failed');
+      },
+    }
+  );
+  assert.equal(result.success, true);
 });

@@ -26,6 +26,8 @@ const {
   LETS_TALK_HANDS_FREE_SILENCE_MS,
   LETS_TALK_HANDS_FREE_SPEECH_LEVEL_THRESHOLD,
   LETS_TALK_HANDS_FREE_STORAGE_KEY,
+  LETS_TALK_MINIMIZED_STORAGE_KEY,
+  LETS_TALK_FLOAT_POS_STORAGE_KEY,
   countLanguageWordHits,
   isMarkdownTableSeparatorLine,
   flattenMarkdownTableRow,
@@ -45,8 +47,13 @@ const {
 test('letsTalk: valid turn request shape', () => {
   assert.equal(isLetsTalkTurnRequestShape({ audioBase64: 'abc' }), true);
   assert.equal(isLetsTalkTurnRequestShape({ audioBase64: 'abc', mimeType: 'audio/webm' }), true);
+  assert.equal(isLetsTalkTurnRequestShape({ text: 'hello from overlay' }), true);
+  assert.equal(isLetsTalkTurnRequestShape({ text: '  hi  ' }), true);
   assert.equal(isLetsTalkTurnRequestShape({ audioBase64: '' }), false);
+  assert.equal(isLetsTalkTurnRequestShape({ text: '' }), false);
+  assert.equal(isLetsTalkTurnRequestShape({ text: '   ' }), false);
   assert.equal(isLetsTalkTurnRequestShape({ mimeType: 'audio/webm' }), false);
+  assert.equal(isLetsTalkTurnRequestShape({ audioBase64: 'abc', text: 'both' }), false);
   assert.equal(isLetsTalkTurnRequestShape(null), false);
   assert.equal(isLetsTalkTurnRequestShape(undefined), false);
   assert.equal(isLetsTalkTurnRequestShape('not-an-object'), false);
@@ -460,8 +467,10 @@ test('letsTalk: audio level helpers', () => {
   assert.equal(isSpeechAudioLevel(0.001), false);
 });
 
-test('letsTalk: exported hands-free storage key', () => {
+test('letsTalk: exported hands-free and floating-bubble storage keys', () => {
   assert.equal(LETS_TALK_HANDS_FREE_STORAGE_KEY, 'lets-talk-hands-free');
+  assert.equal(LETS_TALK_MINIMIZED_STORAGE_KEY, 'lets-talk-minimized');
+  assert.equal(LETS_TALK_FLOAT_POS_STORAGE_KEY, 'lets-talk-float-pos');
 });
 
 test('letsTalk: countLanguageWordHits uses empty fallback when no matches', () => {

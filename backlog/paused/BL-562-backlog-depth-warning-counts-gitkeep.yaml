@@ -107,9 +107,20 @@ description: |
   to. If a deliberate rationale IS found, leave the behaviour alone and
   record the reason in a comment at the call site instead.
 
-acceptance: |
-  specs/features/BL-562-backlog-depth-warning-counts-gitkeep.feature
+acceptance: specs/features/BL-562-backlog-depth-warning-counts-gitkeep.feature
+out_of_scope: |
+  - Deleting or relocating `backlog/active/.gitkeep`. The placeholder is
+    intentional (it keeps the directory tracked when the backlog is fully
+    drained) and removing it would only hide this bug, not fix the counter
+    that every other backlog folder is also exposed to.
+  - Changing any pack's `active_backlog_max_depth` value.
+  - Whether `ready_for_next.bb` should auto-promote at all — already
+    explicitly scoped out by BL-216 and unchanged here.
+  - Any change to the throttle recommendation (BL-432) or pause marker
+    (BL-423) logic itself; this ticket only decides WHICH already-existing
+    reader the warning consults.
 
+notes: |
   Every scenario needs its step handler in this same parcel — the acceptance
   runner throws on an unhandled scenario (BL-233). The feature file was linted
   clean (`gherkin_lint_gate.sh`) and IR-DRY reviewed; its two remaining checker
@@ -142,14 +153,3 @@ acceptance: |
      ticket yaml in `backlog/active/` (plus its `.gitkeep`) and the pack's
      cap of 1, a real handoff send prints no depth warning.
 
-out_of_scope: |
-  - Deleting or relocating `backlog/active/.gitkeep`. The placeholder is
-    intentional (it keeps the directory tracked when the backlog is fully
-    drained) and removing it would only hide this bug, not fix the counter
-    that every other backlog folder is also exposed to.
-  - Changing any pack's `active_backlog_max_depth` value.
-  - Whether `ready_for_next.bb` should auto-promote at all — already
-    explicitly scoped out by BL-216 and unchanged here.
-  - Any change to the throttle recommendation (BL-432) or pause marker
-    (BL-423) logic itself; this ticket only decides WHICH already-existing
-    reader the warning consults.

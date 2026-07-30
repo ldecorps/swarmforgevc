@@ -1,11 +1,15 @@
 // In-memory tracker for the active Cursor agent run (same bridge process).
 
+import type { ProgressLocale } from './progressLocale';
+import { detectProgressLocale } from './progressLocale';
+
 export const MAX_RUN_PROGRESS_LINES = 12;
 
 export interface CursorBridgeActiveRun {
   prompt: string;
   startedAtMs: number;
   progressLines: string[];
+  locale: ProgressLocale;
 }
 
 let activeRun: CursorBridgeActiveRun | undefined;
@@ -14,8 +18,25 @@ export function parseUpdateCommand(text: string): boolean {
   return /^\/update\s*$/i.test(text.trim());
 }
 
-export function beginActiveRun(prompt: string, nowMs = Date.now()): void {
-  activeRun = { prompt, startedAtMs: nowMs, progressLines: [] };
+export function beginActiveRun(
+  prompt: string,
+  localeOrNowMs?: ProgressLocale | number,
+  nowMs = Date.now()
+): void {
+  let locale: ProgressLocale;
+  let startedAtMs = nowMs;
+  if (typeof localeOrNowMs === 'number') {
+    startedAtMs = localeOrNowMs;
+    locale = detectProgressLocale(prompt);
+  } else {
+    locale = localeOrNowMs ?? detectProgressLocale(prompt);
+  }
+  activeRun = {
+    prompt,
+    startedAtMs,
+    progressLines: [],
+    locale,
+  };
 }
 
 export function recordActiveRunProgress(line: string, maxLines = MAX_RUN_PROGRESS_LINES): void {

@@ -1,0 +1,106 @@
+id: BL-713
+title: "Cursor seat spike — one role seat driven over Cursor SDK/ACP completes a real parcel"
+milestone: M8
+type: feature
+severity: medium
+status: todo
+epic: swarm-intelligence-layer
+human_approval: pending
+priority: 12
+direction: human-requested
+depends_on: []
+mutation_cost: high
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+assigned_to: none
+
+invariants:
+  - "The seat driver reaches the swarm only through the handoff helpers and mailbox every other agent uses; it never delivers or completes a parcel by a private side channel that bypasses coordinator routing."
+  - "Every driver decision is taken from a structured session signal (stop reason, tool/permission event, explicit helper exit status) — never from scraping rendered pane text."
+  - "A Cursor identity that is not certified in the Model Steward registry cannot be selected for a production pack; only an explicit spike-only escape admits a candidate."
+
+required_wiring:
+  - "extension/src/tools/cursor-seat-spike.ts::cursorSeatDriver::slice A's only live caller — without it the driver is a dark module (the BL-419 shape)"
+
+approval_context: >
+  Human via Cursor 2026-07-30 asked for Cursor agents to staff real swarm seats.
+  Two forks want a tap before the coder starts. (1) Which role to spike:
+  **documenter** (recommended — smallest blast radius, cheap parcels, a bad run
+  costs a doc pass) or **coder** (proves the hardest seat but a bad run costs a
+  real implementation). (2) Whether the spike-only escape is acceptable at all:
+  this slice runs an UNCERTIFIED Cursor identity behind an explicit
+  `SWARMFORGE_*` escape, with steward certification deferred to BL-712 slice C.
+  If you would rather certify first, say so and the slices swap order.
+
+description: |
+  ## What
+
+  Prove, once, that a Cursor agent can hold a real pack seat: a parcel arrives
+  in that role's mailbox, the Cursor-driven seat does the stage work, and a
+  handoff leaves for the next role — with no human ferrying anything between
+  the two.
+
+  Deliverable is two things, not one:
+
+  1. **A seat driver** — a testable module that maps a role seat's lifecycle
+     onto Cursor SDK / ACP session calls: boot with the role's prompt bundle,
+     take a wake, run `ready_for_next.sh`, do the stage work, send the handoff
+     via `swarm_handoff.sh`, report a stop reason. Decisions come from
+     structured session signals (stop reason, tool/permission events, helper
+     exit status), not pane-tail heuristics.
+  2. **A spike CLI** — an operator-invoked entry point that drives one seat with
+     that module. It is slice A's only live caller and is expected to be
+     replaced by the real launcher path in BL-712 slice B; without it this slice
+     ships a dark module.
+
+  ## Why a spike and not the launcher
+
+  The launcher whitelist (`swarmforge.sh`, agent tokens
+  `claude|codex|copilot|grok|aider|vibe|gemini`) is a small change; the risk is
+  entirely in whether an ACP/SDK-driven session can actually follow the protocol
+  — bootstrap the prompt bundle, wake reliably, and finish a parcel. Prove that
+  before spending the launcher, steward and pack slices on it.
+
+  ## Falsifiable outcome
+
+  One real ticket slice goes in as a handoff and comes out as a handoff, under
+  mono-router or a minimal classic pack, with the seat's transcript visible to a
+  human. If the seat cannot complete a parcel without hand-holding, the spike
+  has failed and BL-712's remaining slices do not start.
+
+  ## Certification posture in this slice
+
+  This slice runs an uncertified Cursor identity behind an explicit spike-only
+  environment escape, and must refuse to run on a production pack without it.
+  Registration, the compliance battery, the evidence artifact and `certify` are
+  BL-712 slice C — deliberately not folded in here (see `approval_context` if
+  you would rather reverse that order).
+
+  ## Prefer, do not fork
+
+  Reuse the ACP-host-in-a-pane direction from
+  `.swarmforge/operator/INTAKE-acp-spike-one-seat-structured-driving.md` where it
+  fits. Do not invent a third control model without writing down why.
+
+  ## Out of scope
+
+  - The launcher agent token and ensure/poke wiring (BL-712 slice B)
+  - Steward registration and certify (BL-712 slice C)
+  - Pack lines, how-tos, unsupported-agent error text (BL-712 slice D)
+  - Replacing any Claude seat
+  - Changing what `/pilot` does
+
+acceptance: specs/features/BL-713-cursor-seat-driver-spike.feature
+
+source: |
+  Human via Cursor 2026-07-30, slice A of the intake's suggested cut. Drained
+  from `backlog/INTAKE-cursor-agent-staffs-swarm-roles-acp.md`.
+
+notes: |
+  e2e QA procedure: pick one small real ticket for the spiked role. Start the
+  seat through the spike CLI with the spike-only escape set. Send that role a
+  real `git_handoff` through `swarm_handoff.sh` from the previous stage. Confirm
+  the seat wakes, `ready_for_next.sh` returns the task, the stage work lands as
+  a commit with the role byline, and a handoff reaches the next role's mailbox —
+  all without a human typing into the seat. Then unset the escape and confirm the
+  seat refuses to start for a production pack. Capture the transcript as the
+  slice's evidence artifact.

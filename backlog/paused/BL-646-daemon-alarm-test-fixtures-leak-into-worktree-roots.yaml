@@ -18,6 +18,8 @@ approval_context: >
   Operator, 2026-07-25, from a coder turn report that correctly flagged untracked
   debris and correctly refused to delete it. The rule the coder obeyed is right;
   the debris should never have been there to flag.
+  Hydrate-batch-2 commit only materializes this approved prose into APS
+  Gherkin; no scope change.
 
 source: |
   A coder working BL-629 reported:
@@ -128,24 +130,7 @@ description: |
      ticket that owns them, which is the rule working as intended rather than a role
      sweeping unilaterally.
 
-acceptance: |
-  Specifier writes the scenarios. Minimum:
-
-  1. Running the daemon-death/alarm suites leaves no untracked files in the repo root
-     or any worktree root — asserted by `git status --porcelain`, not by inspection.
-  2. A deliberately-leaking test FAILS. Seed one; if the guard cannot catch a seeded
-     leak it will not catch a real one.
-  3. The eight existing files are gone, and their removal is attributable to this
-     ticket.
-  4. `workflow.prompt`'s "never delete what you did not create" rule is UNCHANGED.
-     This ticket removes the need for a role to face the question; it does not relax
-     the answer.
-  5. If `.gitignore` is used, it does not mask a future file of the same name in a
-     directory where such a file would be real.
-  6. If the babysitter check is folded in: a worktree holding ONLY tool droppings does
-     not produce a "nudge role to git add/commit" hint. Fixture: the four known fixture
-     names in a worktree root with an unmoved HEAD must not advise committing them.
-
+acceptance: specs/features/BL-646-daemon-alarm-test-fixtures-leak-into-worktree-roots.feature
 out_of_scope: |
   - Relaxing the never-delete rule. Its reasoning is sound and today's incident
     (`git add -A` sweeping the operator's uncommitted work into a cleaner commit)

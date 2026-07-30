@@ -76,6 +76,11 @@ test('computeDeliveryMetrics wires git history + current backlog state into ever
   assert.equal(result.forecasts.tickets[0].ticketId, 'BL-102');
   assert.ok(result.forecasts.tickets[0].p50Iso);
 
+  // intake balance: 2 filed (BL-101/102), 1 closed (BL-101)
+  assert.equal(result.intakeBalance.trailingFiled, 2);
+  assert.equal(result.intakeBalance.trailingClosed, 1);
+  assert.equal(result.intakeBalance.trailingNet, 1);
+
   // suite duration: no .test-durations.jsonl in this fixture repo
   assert.equal(result.suiteDurationTrend.hasLocalData, false);
 });

@@ -5,6 +5,8 @@ const {
   computeBurndown,
   computeCycleTime,
   computeForecasts,
+  deriveIntakeBalanceEvents,
+  computeIntakeBalance,
   computeSuiteDurationTrend,
 } = require('../out/metrics/deliveryMetrics');
 
@@ -23,6 +25,10 @@ function dayBucketIso(iso) {
 
 function lifecycle(ticketId, specDateIso, closeDateIso = null) {
   return { ticketId, specDateIso, closeDateIso };
+}
+
+function commit(dateIso, changes) {
+  return { commit: `c-${dateIso}`, dateIso, changes };
 }
 
 // ── computeVelocity ───────────────────────────────────────────────────────
@@ -313,6 +319,58 @@ test('depends_on entries with trailing prose or comma lists still resolve to rea
   const dep81 = result.tickets.find((t) => t.ticketId === 'BL-081');
   assert.ok(Date.parse(dependent.p50Iso) >= Date.parse(dep80.p50Iso));
   assert.ok(Date.parse(dependent.p50Iso) >= Date.parse(dep81.p50Iso));
+});
+
+// ── intake balance ────────────────────────────────────────────────────────
+
+test('deriveIntakeBalanceEvents counts filed from active or paused tickets and root INTAKE docs', () => {
+  const events = deriveIntakeBalanceEvents([
+    commit('2026-01-01T00:00:00Z', [{ status: 'A', path: 'backlog/active/BL-101-ticket.yaml' }]),
+    commit('2026-01-02T00:00:00Z', [{ status: 'A', path: 'backlog/paused/BL-102-ticket.yaml' }]),
+    commit('2026-01-03T00:00:00Z', [{ status: 'A', path: 'backlog/INTAKE-20260103-notes.md' }]),
+  ]);
+  assert.equal(events.filedAtMs.length, 3);
+  assert.equal(events.closedAtMs.length, 0);
+});
+
+test('deriveIntakeBalanceEvents excludes epic tracker arrivals from filed and closed counts', () => {
+  const events = deriveIntakeBalanceEvents([
+    commit('2026-01-01T00:00:00Z', [{ status: 'A', path: 'backlog/paused/BL-594-epic-swarm-behaviour-trends.yaml' }]),
+    commit('2026-01-02T00:00:00Z', [{ status: 'R100', path: 'backlog/done/M8/BL-594-epic-swarm-behaviour-trends.yaml' }]),
+  ]);
+  assert.equal(events.filedAtMs.length, 0);
+  assert.equal(events.closedAtMs.length, 0);
+});
+
+test('computeIntakeBalance builds daily filed and closed counts with net and running net', () => {
+  const nowMs = Date.parse('2026-01-04T00:00:00Z');
+  const events = {
+    filedAtMs: [Date.parse('2026-01-01T10:00:00Z'), Date.parse('2026-01-02T10:00:00Z')],
+    closedAtMs: [Date.parse('2026-01-02T12:00:00Z')],
+  };
+  const result = computeIntakeBalance(events, nowMs, 30);
+  const day1 = result.dailySeries.find((p) => p.periodStart === dayBucketIso('2026-01-01T00:00:00Z'));
+  const day2 = result.dailySeries.find((p) => p.periodStart === dayBucketIso('2026-01-02T00:00:00Z'));
+  assert.equal(day1.filed, 1);
+  assert.equal(day1.closed, 0);
+  assert.equal(day1.net, 1);
+  assert.equal(day1.runningNet, 1);
+  assert.equal(day2.filed, 1);
+  assert.equal(day2.closed, 1);
+  assert.equal(day2.net, 0);
+  assert.equal(day2.runningNet, 1);
+});
+
+test('computeIntakeBalance reports trailing filed and closed totals and net', () => {
+  const nowMs = Date.parse('2026-01-10T00:00:00Z');
+  const events = {
+    filedAtMs: [Date.parse('2026-01-09T00:00:00Z'), Date.parse('2026-01-01T00:00:00Z')],
+    closedAtMs: [Date.parse('2026-01-09T00:00:00Z')],
+  };
+  const result = computeIntakeBalance(events, nowMs, 2);
+  assert.equal(result.trailingFiled, 1);
+  assert.equal(result.trailingClosed, 1);
+  assert.equal(result.trailingNet, 0);
 });
 
 // ── computeSuiteDurationTrend (metrics-07) ──────────────────────────────

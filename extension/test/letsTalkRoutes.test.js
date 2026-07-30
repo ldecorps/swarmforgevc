@@ -120,7 +120,7 @@ test('createLetsTalkTurnHandler passes body shape error to readBody', async () =
   );
   handler({ method: 'POST' }, { end() {} }, '/lets-talk/turn', { devices: [] });
   await new Promise((resolve) => setImmediate(resolve));
-  assert.equal(shapeErrorReason, 'expected a JSON body of {audioBase64, mimeType?}');
+  assert.equal(shapeErrorReason, 'expected a JSON body of {audioBase64, mimeType?} or {text}');
 });
 
 test('createLetsTalkTurnHandler ignores null validated body', async () => {
@@ -241,6 +241,26 @@ test('processLetsTalkTurn: default speech language auto-detects from transcript'
   assert.equal(result.success, true);
   assert.equal(result.state, 'ready');
   assert.equal(result.speechLocale, 'fr-FR');
+});
+
+test('processLetsTalkTurn: BL-707 text turn skips STT and returns replyText', async () => {
+  const target = mkTarget();
+  let sttCalls = 0;
+  const result = await processLetsTalkTurn(
+    { text: 'float bubble ping' },
+    {
+      agentSession: createMockCursorBridgeAgentSession(target),
+      transcribeAudio: async () => {
+        sttCalls += 1;
+        return { kind: 'ok', transcript: 'should-not-run' };
+      },
+      clientTts: true,
+    }
+  );
+  assert.equal(sttCalls, 0);
+  assert.equal(result.success, true);
+  assert.equal(result.transcript, 'float bubble ping');
+  assert.ok(typeof result.replyText === 'string' && result.replyText.length > 0);
 });
 
 test('processLetsTalkTurn: omitted speechLanguage defaults to auto', async () => {

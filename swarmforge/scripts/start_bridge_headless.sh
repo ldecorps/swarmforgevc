@@ -66,6 +66,59 @@ if [[ -f "$PID_FILE" ]]; then
   fi
 fi
 
+# Front desk already owns start-bridge-headless on this port. Starting
+# bridge_headless_supervisor.bb in parallel causes EADDRINUSE crash loops in
+# front_desk_supervisor (give-up emails). Hand off: re-arm front desk if the
+# port is down, never spawn a second supervisor.
+FD_PID_FILE="$OP_DIR/front-desk-supervisor.pid"
+FD_STATUS="$OP_DIR/front-desk-supervisor.status.json"
+HEALTH_URL="http://127.0.0.1:${PORT}/lets-talk"
+if [[ -f "$FD_PID_FILE" ]]; then
+  fd_pid="$(tr -d '[:space:]' < "$FD_PID_FILE" 2>/dev/null || true)"
+  if [[ "$fd_pid" =~ ^[0-9]+$ ]] && kill -0 "$fd_pid" 2>/dev/null; then
+    if command -v curl >/dev/null 2>&1 && curl -sf --max-time 2 "$HEALTH_URL" >/dev/null 2>&1; then
+      echo "start_bridge_headless: front-desk-supervisor (pid $fd_pid) already serves $HEALTH_URL; not starting a second supervisor" >&2
+      exit 0
+    fi
+    echo "start_bridge_headless: front-desk-supervisor (pid $fd_pid) owns this stack; re-arming its bridge instead of starting bridge-headless-supervisor" >&2
+    if [[ -f "$FD_STATUS" ]] && command -v python3 >/dev/null 2>&1; then
+      python3 - "$FD_STATUS" <<'PY'
+import json, sys
+from pathlib import Path
+p = Path(sys.argv[1])
+try:
+    d = json.loads(p.read_text())
+except Exception:
+    d = {}
+bot = d.get("bot")
+d["bridge"] = {
+    "pid": None,
+    "attempts": 0,
+    "status": "not-started",
+    "crashed-at-ms": None,
+    "started-at-ms": None,
+    "gave-up-at-ms": None,
+}
+if bot is not None:
+    d["bot"] = bot
+p.write_text(json.dumps(d) + "\n")
+PY
+    fi
+    if command -v curl >/dev/null 2>&1; then
+      for (( attempt = 1; attempt <= PID_WAIT_ATTEMPTS; attempt++ )); do
+        if curl -sf --max-time 2 "$HEALTH_URL" >/dev/null 2>&1; then
+          echo "start_bridge_headless: front-desk bridge is live on port $PORT"
+          exit 0
+        fi
+        sleep 0.1
+      done
+      echo "start_bridge_headless: timed out waiting for front-desk bridge on $HEALTH_URL" >&2
+      exit 1
+    fi
+    exit 0
+  fi
+fi
+
 # Free the port if an orphan from another worktree holds it.
 while IFS= read -r line; do
   pid="${line%% *}"

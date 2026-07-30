@@ -68,6 +68,8 @@ import { resolveLetsTalkAudioAdaptersFromEnv } from './letsTalkAudio';
 import { parseLetsTalkSpeechLanguage, speechLocaleForLanguage } from './letsTalkCore';
 import { createLiveCursorBridgeAgentSession, type CursorBridgeAgentSessionDeps } from './cursorBridgeAgentSession';
 import type { TranscribeAudio, SynthesizeSpeech } from './letsTalkAudio';
+import { sendTelegramMessageWithRateLimitRetry } from '../notify/telegramClient';
+import { sendTelegramPoll } from '../notify/telegramClient';
 
 const DEFAULT_POLL_INTERVAL_MS = 1000;
 const LOCALHOST = '127.0.0.1';
@@ -91,6 +93,104 @@ const EPIC_REORDER_MOVE_MAX_BODY_BYTES = 4 * 1024;
 const EPIC_MAKE_TOP_MAX_BODY_BYTES = 4 * 1024;
 // BL-673: topic make-top body ({epicId, topicId}).
 const EPIC_TOPIC_MAKE_TOP_MAX_BODY_BYTES = 4 * 1024;
+const CURSOR_BRIDGE_STATE_FILE = 'cursor-bridge-state.json';
+
+function readCursorRemoteTopicId(targetPath: string): number | undefined {
+  const statePath = path.join(targetPath, '.swarmforge', 'operator', CURSOR_BRIDGE_STATE_FILE);
+  if (!fs.existsSync(statePath)) {
+    return undefined;
+  }
+  try {
+    const parsed = JSON.parse(fs.readFileSync(statePath, 'utf8')) as { cursorTopicId?: unknown };
+    return typeof parsed.cursorTopicId === 'number' ? parsed.cursorTopicId : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+interface LetsTalkChoicePollSpec {
+  question: string;
+  options: string[];
+}
+
+function extractLetsTalkChoicePoll(replyText: string): LetsTalkChoicePollSpec | null {
+  const lines = replyText
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+  const optionMatches = lines
+    .map((line) => line.match(/^(?:[-*]\s+)?(\d+)[\).:-]\s+(.+)$/))
+    .filter((m): m is RegExpMatchArray => m !== null);
+  if (optionMatches.length < 2 || optionMatches.length > 10) {
+    return null;
+  }
+  const options: string[] = [];
+  for (let i = 0; i < optionMatches.length; i += 1) {
+    const expected = String(i + 1);
+    if (optionMatches[i][1] !== expected) {
+      return null;
+    }
+    options.push(optionMatches[i][2].trim());
+  }
+  const firstOptionLine = optionMatches[0][0];
+  const firstOptionIndex = lines.findIndex((line) => line === firstOptionLine);
+  const question = firstOptionIndex > 0 ? lines.slice(0, firstOptionIndex).join(' ') : 'Choose one option';
+  return { question: question.slice(0, 280), options: options.map((opt) => opt.slice(0, 100)) };
+}
+
+function appendPendingChoicePoll(targetPath: string, pollId: string, spec: LetsTalkChoicePollSpec): void {
+  const statePath = path.join(targetPath, '.swarmforge', 'operator', CURSOR_BRIDGE_STATE_FILE);
+  let raw: Record<string, unknown> = {};
+  if (fs.existsSync(statePath)) {
+    try {
+      const parsed = JSON.parse(fs.readFileSync(statePath, 'utf8')) as Record<string, unknown>;
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        raw = parsed;
+      }
+    } catch {
+      raw = {};
+    }
+  }
+  const existing = Array.isArray(raw.pendingChoicePolls) ? raw.pendingChoicePolls : [];
+  const next = [...existing, { pollId, question: spec.question, options: spec.options, createdAtMs: Date.now() }].slice(-20);
+  raw.pendingChoicePolls = next;
+  fs.writeFileSync(statePath, `${JSON.stringify(raw, null, 2)}\n`, 'utf8');
+}
+
+async function mirrorLetsTalkChoicePollToCursorRemote(targetPath: string, replyText: string): Promise<void> {
+  const botToken = process.env.TELEGRAM_BOT_TOKEN;
+  const chatId = process.env.TELEGRAM_CHAT_ID;
+  if (!botToken || !chatId) {
+    return;
+  }
+  const topicId = readCursorRemoteTopicId(targetPath);
+  if (topicId === undefined) {
+    return;
+  }
+  const spec = extractLetsTalkChoicePoll(replyText);
+  if (!spec) {
+    return;
+  }
+  const sent = await sendTelegramPoll(botToken, chatId, spec.question, spec.options, topicId);
+  if (!sent.success || !sent.pollId) {
+    return;
+  }
+  appendPendingChoicePoll(targetPath, sent.pollId, spec);
+}
+
+async function mirrorLetsTalkReplyToCursorRemote(targetPath: string, replyText: string): Promise<void> {
+  const botToken = process.env.TELEGRAM_BOT_TOKEN;
+  const chatId = process.env.TELEGRAM_CHAT_ID;
+  if (!botToken || !chatId || !replyText.trim()) {
+    return;
+  }
+  const topicId = readCursorRemoteTopicId(targetPath);
+  if (topicId === undefined) {
+    return;
+  }
+  await sendTelegramMessageWithRateLimitRetry(botToken, chatId, replyText, undefined, undefined, topicId);
+  await mirrorLetsTalkChoicePollToCursorRemote(targetPath, replyText);
+}
 
 export interface BridgeHandle {
   port: number;
@@ -1252,7 +1352,11 @@ export function startBridge(
     const letsTalkAgentSession = options.letsTalk?.agentSession ?? createLiveCursorBridgeAgentSession(targetPath);
     // BL-696: POST /lets-talk/turn, POST /lets-talk/new-session (write routes).
     const letsTalkWriteRoutes = createLetsTalkWriteRoutes(
-      { agentSession: letsTalkAgentSession, ...letsTalkAudio },
+      {
+        agentSession: letsTalkAgentSession,
+        ...letsTalkAudio,
+        onTurnSuccess: (turn) => mirrorLetsTalkReplyToCursorRemote(targetPath, turn.replyText),
+      },
       (req, res, maxBytes, isShape, shapeErrorReason) => readValidatedBody(req, res, maxBytes, isShape, shapeErrorReason),
       requireLetsTalkControlAuth,
       respondJson
@@ -1293,6 +1397,38 @@ export function startBridge(
       }
       if (isContextBudgetPath(url)) {
         serveMiniAppHtml(res, getContextBudgetUiHtml());
+        return;
+      }
+      if (url === '/lets-talk/manifest.json' || url.startsWith('/lets-talk/manifest.json?')) {
+        // Bake bearer into start_url when present so the home-screen icon
+        // launches signed in (Telegram WebView storage does not carry over
+        // to the installed Chrome PWA).
+        const manifestQuery = url.includes('?') ? url.slice(url.indexOf('?') + 1) : '';
+        const manifestParams = new URLSearchParams(manifestQuery);
+        const manifestBearer = String(manifestParams.get('bearer') || manifestParams.get('token') || '').trim();
+        const startUrl = manifestBearer
+          ? `/lets-talk?bearer=${encodeURIComponent(manifestBearer)}`
+          : '/lets-talk';
+        res.writeHead(200, {
+          'content-type': 'application/manifest+json',
+          'cache-control': 'no-store',
+        });
+        res.end(JSON.stringify({
+          name: "Let's Talk",
+          short_name: "Let's Talk",
+          start_url: startUrl,
+          scope: '/lets-talk',
+          display: 'standalone',
+          orientation: 'portrait',
+          theme_color: '#0d1117',
+          background_color: '#0d1117',
+          icons: [{ src: 'data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 128 128%22><rect width=%22128%22 height=%22128%22 rx=%2224%22 fill=%22%230d1117%22/><circle cx=%2264%22 cy=%2264%22 r=%2232%22 fill=%22%2358a6ff%22/><path d=%22M52 56 a16 16 0 0 1 24 0%22 stroke=%22%230d1117%22 stroke-width=%224%22 fill=%22none%22/><circle cx=%2264%22 cy=%2272%22 r=%226%22 fill=%22%230d1117%22/></svg>', sizes: '128x128', type: 'image/svg+xml' }],
+        }));
+        return;
+      }
+      if (url === '/lets-talk/sw.js' || url.startsWith('/lets-talk/sw.js?')) {
+        res.writeHead(200, { 'content-type': 'application/javascript', 'cache-control': 'no-cache' });
+        res.end(`self.addEventListener('install',e=>{self.skipWaiting()});self.addEventListener('activate',e=>{e.waitUntil(self.clients.claim())});self.addEventListener('fetch',e=>{});`);
         return;
       }
       if (isLetsTalkPath(url)) {

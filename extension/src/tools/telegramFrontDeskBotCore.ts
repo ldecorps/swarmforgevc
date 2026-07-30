@@ -847,6 +847,8 @@ export interface PollAdapters {
   // the decision is self-contained.
   engageAmbulance?: (ticket: string) => Promise<void>;
   releaseAmbulance?: () => Promise<void>;
+  /** BL-698: Control slash aliases for hold/reinstate/drain-* via shared Cursor Remote exec. */
+  executeSharedOperator?: (verb: string, args?: string) => Promise<void>;
   // BL-590: the standing Onboarding topic's own id (ensureOnboardingTopic,
   // telegram-front-desk-bot.ts) - optional so every PollAdapters fixture
   // written before BL-590 keeps working unchanged, same posture as
@@ -1905,7 +1907,7 @@ async function attemptVoiceDelivery(
 // the same exhaustiveness guarantee a switch's `default: assertNever` gives.
 type ControlDecisionEffect = (adapters: PollAdapters) => Promise<void>;
 
-const CONTROL_DECISION_EFFECTS: Record<Exclude<ControlDecision['action'], 'apply-pause' | 'engage-ambulance'>, ControlDecisionEffect> = {
+const CONTROL_DECISION_EFFECTS: Record<Exclude<ControlDecision['action'], 'apply-pause' | 'engage-ambulance' | 'execute-shared-operator'>, ControlDecisionEffect> = {
   ignore: async () => {},
   refuse: async () => {},
   'prompt-stop-modes': async (adapters) => {
@@ -1950,6 +1952,10 @@ async function applyControlDecision(decision: ControlDecision, adapters: PollAda
   }
   if (decision.action === 'engage-ambulance') {
     await adapters.engageAmbulance?.(decision.ticket);
+    return;
+  }
+  if (decision.action === 'execute-shared-operator') {
+    await adapters.executeSharedOperator?.(decision.verb, decision.args);
     return;
   }
   await CONTROL_DECISION_EFFECTS[decision.action](adapters);

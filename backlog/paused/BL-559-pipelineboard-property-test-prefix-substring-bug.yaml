@@ -8,6 +8,10 @@ priority: 40
 direction: architect-reported
 human_approval: approved
 depends_on: []
+approval_context: >
+  Hydrate-batch-2 commit only materializes this already-approved acceptance
+  (an existing property-test command) into a Gherkin wrapper; no scope
+  change.
 source: |
   architect note 2026-07-22 ("pipelineBoard.property.test.js fails (seed
   603136857) - file fix ticket"). Verified by specifier by running
@@ -61,12 +65,7 @@ description: |
 
   Only one of these is the real fix — do not patch both defensively.
 
-acceptance: |
-  `npx vitest run --config vitest.properties.config.mjs test/pipelineBoard.property.test.js`
-  passes all 7 properties, including the one currently failing, across
-  multiple runs (property tests use randomized seeds — run at least twice
-  to catch a narrow fix that only happens to satisfy one seed).
-
+acceptance: specs/features/BL-559-pipelineboard-property-test-prefix-substring-bug.feature
 out_of_scope: |
   - Any change to budgetPipelineBoardLinks/trimLinksToBudget's actual
     trimming behavior unless investigation proves the render format

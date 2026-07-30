@@ -19,6 +19,7 @@ import {
 import { stopSwarm } from './swarmStopper';
 import { spawnTrackedJob } from './childJobRegistry';
 import { classifyProviderError, ForgeErrorCategory } from './providerErrorTaxonomy';
+import { loadSwarmEnvFile } from '../tools/swarmEnv';
 
 export interface LaunchResult {
   success: boolean;
@@ -373,9 +374,16 @@ export function runningSwarmMatchesConfig(targetPath: string, configPath?: strin
   return pipelineRoles.length === expected;
 }
 
-export function buildLaunchEnv(runName?: string, configPath?: string): NodeJS.ProcessEnv {
+/** BL-702: merge `.swarmforge/swarm.env` over host env (same order as bridge-child-env). */
+export function buildLaunchEnv(
+  runName?: string,
+  configPath?: string,
+  repoRoot?: string
+): NodeJS.ProcessEnv {
+  const swarmEnv = repoRoot ? loadSwarmEnvFile(repoRoot) : {};
   const env: NodeJS.ProcessEnv = {
     ...process.env,
+    ...swarmEnv,
     SWARMFORGE_TERMINAL: 'none',
     PATH: augmentPath(process.env.PATH, readCachedLoginShellPathDirsSync()),
     // BL-352: the ONE shared env builder both VS Code launch paths use
@@ -460,7 +468,7 @@ export async function launchSwarm(
   stopSwarm(targetPath);
 
   const launchEnv = await enrichLaunchEnvWithProviderKeys(
-    buildLaunchEnv(runName, configPath),
+    buildLaunchEnv(runName, configPath, targetPath),
     secrets
   );
 

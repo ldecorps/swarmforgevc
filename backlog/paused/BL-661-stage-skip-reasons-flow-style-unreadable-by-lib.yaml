@@ -10,6 +10,11 @@ direction: swarm-surfaced
 depends_on: []
 assigned_to: specifier
 mutation_cost: low
+human_approval: pending
+approval_context: >
+  Hydrate-batch-2: materializing prose acceptance (implicit in the
+  description's "The fix" section) into APS Gherkin. No human sign-off yet
+  on this specific ticket; flagged pending per hydrate-batch convention.
 
 source: |
   Specifier, 2026-07-26, during the coordinator-requested BL-606/BL-633
@@ -58,3 +63,5 @@ description: |
 
   Scope note: .bb swarm scripts gate on their own unit suite only (BL-472
   toolchain not wired) — the test runner above is the actual gate.
+
+acceptance: specs/features/BL-661-stage-skip-reasons-flow-style-unreadable-by-lib.feature

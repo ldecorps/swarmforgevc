@@ -36,6 +36,42 @@ export function buildKillSessionArgs(socketPath: string, sessions: string[]): st
 }
 
 /**
+ * BL-698 /drain-agents: kill role tmux sessions only. Leaves the tmux
+ * server, handoffd, and supervisors up (distinct from kill_all_swarm).
+ */
+export function drainAgentSessions(targetPath: string): {
+  success: boolean;
+  message: string;
+  sessionsStopped: number;
+  sessionsAttempted: string[];
+} {
+  const socketPath = readTmuxSocket(targetPath);
+  if (!socketPath) {
+    return {
+      success: true,
+      message: 'drain-agents: no tmux socket — nothing to drain.',
+      sessionsStopped: 0,
+      sessionsAttempted: [],
+    };
+  }
+  const roles = readSwarmRoles(targetPath);
+  const sessions = roles.map((r) => r.session);
+  let sessionsStopped = 0;
+  for (const args of buildKillSessionArgs(socketPath, sessions)) {
+    const result = runCommand('tmux', args);
+    if (result.exitCode === 0) {
+      sessionsStopped++;
+    }
+  }
+  return {
+    success: true,
+    message: `drain-agents: stopped ${sessionsStopped}/${sessions.length} role session(s); daemons left up.`,
+    sessionsStopped,
+    sessionsAttempted: sessions,
+  };
+}
+
+/**
  * Remove the swarm's state marker files so a stale previous run can never
  * satisfy isSwarmReady for a new launch. Safe to call when files are absent.
  */

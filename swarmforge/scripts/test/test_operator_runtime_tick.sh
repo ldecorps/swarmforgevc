@@ -27,11 +27,11 @@ make_fixture() {
   # closing-pass-sweep! uses for per-role inbox/in-process counts).
   # BL-333: + daemon_alarm_lib.bb (the starvation alarm reuses the SAME
   # daemon-death email path, never a second notifier).
-  cp "$SRC/operator_lib.bb" "$SRC/operator_runtime.bb" "$SRC/operator_telegram.bb" "$SRC/operator_telegram_lib.bb" "$SRC/telegram_topic_lib.bb" \
+  cp "$SRC/operator_lib.bb" "$SRC/operator_runtime.bb" "$SRC/llm_cost_ledger_lib.bb" "$SRC/operator_telegram.bb" "$SRC/operator_telegram_lib.bb" "$SRC/telegram_topic_lib.bb" \
      "$SRC/support_lib.bb" "$SRC/support_thread_store.bb" \
      "$SRC/operator_memory_lib.bb" "$SRC/operator_memory_store.bb" \
-     "$SRC/ticket_status_lib.bb" "$SRC/operator_ask.bb" "$SRC/handoff_lib.bb" \
-     "$SRC/daemon_alarm_lib.bb" "$SRC/disk_space_lib.bb" "$SRC/sandbox_sweep_lib.bb" "$SRC/bounded_delete_sweep_lib.bb" "$SRC/proc_fd_scan_lib.bb" "$SRC/fixture_reaper_lib.bb" "$SRC/fixture_reaper_sweep_lib.bb" "$SRC/orphan_agent_reaper_lib.bb" "$SRC/orphan_agent_reaper_sweep_lib.bb" \
+     "$SRC/ticket_status_lib.bb" "$SRC/operator_ask.bb" "$SRC/handoff_lib.bb" "$SRC/ambulance_lib.bb" \
+     "$SRC/swarm_identity_lib.bb" "$SRC/daemon_alarm_lib.bb" "$SRC/disk_space_lib.bb" "$SRC/sandbox_sweep_lib.bb" "$SRC/bounded_delete_sweep_lib.bb" "$SRC/proc_fd_scan_lib.bb" "$SRC/fixture_reaper_lib.bb" "$SRC/fixture_reaper_sweep_lib.bb" "$SRC/orphan_agent_reaper_lib.bb" "$SRC/orphan_agent_reaper_sweep_lib.bb" "$SRC/orphan_janitor_lib.bb" "$SRC/orphan_janitor_sweep_lib.bb" \
      "$d/swarmforge/scripts/"
   printf '%s' "$d"
 }
@@ -40,7 +40,7 @@ make_fixture() {
 # both sweeps see a missing root and no-op (fs/exists? false), never touching
 # the real /tmp as a side effect of a test that is not ABOUT sweeping.
 tick() {
-  OPERATOR_SKIP_LAUNCH=1 SWARMFORGE_SANDBOX_SWEEP_ROOT="$1/.no-sandbox-sweep" SWARMFORGE_FIXTURE_REAP_ROOT="$1/.no-fixture-reap" SWARMFORGE_ORPHAN_REAP_CANDIDATE_PIDS="" \
+  OPERATOR_SKIP_LAUNCH=1 OPERATOR_MINIAPP_WATCHDOG_ENABLED=0 SWARMFORGE_SANDBOX_SWEEP_ROOT="$1/.no-sandbox-sweep" SWARMFORGE_FIXTURE_REAP_ROOT="$1/.no-fixture-reap" SWARMFORGE_ORPHAN_REAP_CANDIDATE_PIDS="" \
     bb "$1/swarmforge/scripts/operator_runtime.bb" "$1" --tick-once
 }
 jget() { bb -e "(require '[cheshire.core :as j]) (println (get (j/parse-string (slurp \"$1\") true) $2))"; }
@@ -54,6 +54,8 @@ check "status.json written"                    '[[ -f "$F/.swarmforge/operator/s
 check "provider_state available"               '[[ "$(jget "$F/.swarmforge/operator/status.json" ":provider_state")" == available ]]'
 check "state dispatching"                      '[[ "$(jget "$F/.swarmforge/operator/status.json" ":state")" == dispatching ]]'
 check "pending_events >= 1"                     '[[ "$(jget "$F/.swarmforge/operator/status.json" ":pending_events")" -ge 1 ]]'
+check "miniapp watchdog status is published and disabled in test mode" \
+  '[[ "$(jget_in "$F/.swarmforge/operator/status.json" "[:miniapp_watchdog :state]")" == disabled ]] && [[ "$(jget_in "$F/.swarmforge/operator/status.json" "[:miniapp_watchdog :consecutive_failures]")" == 0 ]]'
 check "BL-516: missing operator Telegram token disables console" \
   '[[ "$(jget_in "$F/.swarmforge/operator/status.json" "[:telegram_console :state]")" == disabled ]]'
 check "heartbeat written"                       '[[ -f "$F/.swarmforge/operator/heartbeat" ]]'
@@ -65,6 +67,25 @@ OUT2="$(tick "$F")"
 check "second tick does not relaunch"          '[[ "$OUT2" == *"\"launched?\":false"* ]]'
 check "state back to idle"                      '[[ "$(jget "$F/.swarmforge/operator/status.json" ":state")" == idle ]]'
 check "inflight reaped to events-done"          '[[ -n "$(ls "$F/.swarmforge/operator/events-done/" 2>/dev/null)" ]]'
+rm -rf "$F"
+
+# ── mini app watchdog: a down /lets-talk endpoint triggers a bounded auto-bounce ──
+F="$(make_fixture)"
+cat > "$F/swarmforge/scripts/bounce_bridge_headless.sh" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+ROOT="${1:?root required}"
+mkdir -p "$ROOT/.swarmforge/operator"
+echo "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$ROOT/.swarmforge/operator/miniapp-bounced.marker"
+EOF
+chmod +x "$F/swarmforge/scripts/bounce_bridge_headless.sh"
+OPERATOR_SKIP_LAUNCH=1 OPERATOR_MINIAPP_WATCHDOG_ENABLED=1 OPERATOR_MINIAPP_FAILURE_THRESHOLD=1 OPERATOR_MINIAPP_BOUNCE_COOLDOWN_MS=0 \
+  BRIDGE_HEADLESS_PORT=1 SWARMFORGE_SANDBOX_SWEEP_ROOT="$F/.no-sandbox-sweep" SWARMFORGE_FIXTURE_REAP_ROOT="$F/.no-fixture-reap" \
+  SWARMFORGE_ORPHAN_REAP_CANDIDATE_PIDS="" bb "$F/swarmforge/scripts/operator_runtime.bb" "$F" --tick-once >/dev/null
+check "miniapp-watchdog: down bridge triggers a bounce attempt" \
+  '[[ -f "$F/.swarmforge/operator/miniapp-bounced.marker" ]]'
+check "miniapp-watchdog: watchdog state records a completed bounce cycle" \
+  '[[ "$(jget "$F/.swarmforge/operator/miniapp-watchdog.json" ":consecutive_failures")" == 0 ]] && [[ "$(jget "$F/.swarmforge/operator/miniapp-watchdog.json" ":last_bounce_at_ms")" != nil ]]'
 rm -rf "$F"
 
 # ── BL-516: valid operator Telegram config is supervised by the runtime tick ──

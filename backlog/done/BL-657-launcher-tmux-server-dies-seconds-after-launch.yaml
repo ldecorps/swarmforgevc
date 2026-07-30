@@ -2,7 +2,7 @@ id: BL-657
 title: "start-swarm launched from an operator/harness-descended shell: the tmux server dies 1-3s after session creation — three identical failures in one night, while the cron-launched start and MANUAL session assembly both work"
 milestone: M8
 type: defect
-status: todo
+status: done
 epic: swarm-reliability
 human_approval: approved
 severity: high
@@ -116,3 +116,9 @@ notes: |
   accordingly. The investigation trail (witness server, frozen panes,
   second-by-second session watches) is in the operator session of
   2026-07-26; the reproduction kit above is its distillation.
+
+  2026-07-29 fix: harness_env_scrub before any tmux server start; wait_for_ready
+  survival window + fail-diag; detach wording clarified. Live cold start with
+  CLAUDE_CODE_CHILD_SESSION=1 / CURSOR_AGENT=1 survived 60s with scrubbed
+  session env. Evidence: backlog/evidence/BL-657-harness-env-scrub-20260729.md.
+  Closed 2026-07-29 after live poison-env cold start survived 60s.

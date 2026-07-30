@@ -11,7 +11,7 @@ const { summarizeSdkProgressLine } = require('../../../extension/out/bridge/curs
 const { endActiveRun } = require('../../../extension/out/bridge/cursorBridgeRunTracker');
 const { createMockCursorBridgeAgentSession } = require('../../../extension/out/bridge/cursorBridgeAgentSession');
 const { decideInboundAction, gateBusy } = require('../../../extension/out/tools/telegramCursorBridgeCore');
-const { handleInboundDecision } = require('../../../extension/out/tools/telegramCursorBridgeLive');
+const { handleInboundDecision, postChunks } = require('../../../extension/out/tools/telegramCursorBridgeLive');
 const { isActiveRunInFlight, beginActiveRun } = require('../../../extension/out/bridge/cursorBridgeRunTracker');
 const expediteModule = require('../../../extension/out/tools/telegramCursorBridgeExpedite');
 const redeployModule = require('../../../extension/out/tools/telegramCursorBridgeRedeploy');
@@ -95,6 +95,47 @@ async function sendCommand(ctx, text) {
   const rawDecision = decideInboundAction(inbound(text), PRINCIPAL_ID, CHAT_ID, CURSOR_TOPIC_ID);
   ctx.lastDecision = gateBusy(rawDecision, ctx.busy || isActiveRunInFlight());
   ctx.lastBusy = await handleInboundDecision(ctx.lastDecision, mkCtx(ctx), ctx.replyToMessageId, async () => {});
+}
+
+const GRID_REPLY = [
+  'Vacances armées. Swarm arrêtée jusqu’à jeudi matin.',
+  '',
+  '| | |',
+  '|--|--|',
+  '| Off | maintenant → **jeu. 30/07 09:00** |',
+  '| Prochain quart | **day shift** 09:00–17:00 |',
+].join('\n');
+
+const WIDE_GRID_REPLY = [
+  '| Gate | Result | Detail |',
+  '|--|--|--|',
+  '| Coverage | PASS | ninety nine point one percent of statements covered |',
+  '| Mutation | PASS | zero survivors on the pilot module after the rewrite |',
+].join('\n');
+
+function recordingSendMessage(ctx) {
+  return async (_token, _chat, text, _replyTo, _postFn, _topic, _buttons, parseMode) => {
+    ctx.sent.push({ text, parseMode });
+    if (ctx.rejectHtml && parseMode === 'HTML') {
+      return { success: false, error: "Telegram API 400: Bad Request: can't parse entities" };
+    }
+    return { success: true, messageId: ctx.sent.length };
+  };
+}
+
+async function postReply(ctx, markdown) {
+  ctx.sent = [];
+  await postChunks('tok', CHAT_ID, CURSOR_TOPIC_ID, markdown, undefined, recordingSendMessage(ctx));
+}
+
+function sentText(ctx) {
+  return ctx.sent.map((s) => s.text).join('\n');
+}
+
+function monospaceBlockLines(rendered) {
+  const block = rendered.match(/<pre>([\s\S]*?)<\/pre>/);
+  assert.ok(block, `no monospace block in: ${rendered}`);
+  return block[1].split('\n');
 }
 
 function writeExpediteScript(root) {
@@ -351,6 +392,80 @@ function registerSteps(registry) {
       async () => {}
     );
     await new Promise((resolve) => setTimeout(resolve, 50));
+  });
+
+  // BL-696 amendment: rendering is exercised at the real send seam
+  // (postChunks + a recording sendMessage), not at the handler's post hook —
+  // the handler hands markdown down, postChunks decides what Telegram gets.
+  registry.define(/^Telegram rejects HTML formatted posts$/, (ctx) => {
+    ctx.rejectHtml = true;
+  });
+
+  registry.define(
+    /^the Cursor agent reply carrying a markdown grid is posted to Telegram$/,
+    async (ctx) => {
+      await postReply(ctx, GRID_REPLY);
+    }
+  );
+
+  registry.define(
+    /^the Cursor agent reply carrying a grid too wide for a phone is posted to Telegram$/,
+    async (ctx) => {
+      await postReply(ctx, WIDE_GRID_REPLY);
+    }
+  );
+
+  registry.define(
+    /^the Cursor agent reply carrying bold text and inline code is posted to Telegram$/,
+    async (ctx) => {
+      await postReply(ctx, 'Ran **compile** with `npm run compile` — green.');
+    }
+  );
+
+  registry.define(/^the Telegram post renders the grid inside a monospace block$/, (ctx) => {
+    const rendered = sentText(ctx);
+    assert.match(rendered, /<pre>[\s\S]*Prochain quart \| day shift 09:00–17:00<\/pre>/);
+    assert.match(rendered, /<pre>Off\s+\| maintenant → jeu\. 30\/07 09:00/);
+    const columns = [...new Set(monospaceBlockLines(rendered).map((line) => line.indexOf('|')))];
+    assert.deepEqual(columns.length, 1, `grid columns are not aligned: ${rendered}`);
+  });
+
+  registry.define(/^no Telegram post carries a raw markdown separator row$/, (ctx) => {
+    assert.equal(/\|\s*:?-+:?\s*\|/.test(sentText(ctx)), false, `separator row survived: ${sentText(ctx)}`);
+  });
+
+  registry.define(/^every Telegram post is sent with HTML parse mode$/, (ctx) => {
+    assert.ok(ctx.sent.length >= 1);
+    assert.deepEqual([...new Set(ctx.sent.map((s) => s.parseMode))], ['HTML']);
+  });
+
+  registry.define(/^each grid row is posted as its own labelled block$/, (ctx) => {
+    const rendered = sentText(ctx);
+    assert.match(rendered, /<b>Coverage<\/b>\nResult: PASS\nDetail: ninety nine/);
+    assert.match(rendered, /<b>Mutation<\/b>\nResult: PASS\nDetail: zero survivors/);
+    assert.equal(rendered.includes('<pre>'), false);
+  });
+
+  registry.define(/^the Telegram post renders bold and inline code as HTML$/, (ctx) => {
+    assert.match(sentText(ctx), /Ran <b>compile<\/b> with <code>npm run compile<\/code> — green\./);
+  });
+
+  registry.define(/^no Telegram post carries a raw emphasis marker$/, (ctx) => {
+    assert.equal(/[*`]/.test(sentText(ctx)), false, `marker survived: ${sentText(ctx)}`);
+  });
+
+  registry.define(/^the reply is retried as plain text with no parse mode$/, (ctx) => {
+    assert.deepEqual(
+      ctx.sent.map((s) => s.parseMode),
+      ['HTML', undefined]
+    );
+  });
+
+  registry.define(/^the plain text retry keeps the reply content$/, (ctx) => {
+    const plain = ctx.sent[ctx.sent.length - 1].text;
+    assert.ok(plain.includes('Prochain quart'), `plain retry lost the grid: ${plain}`);
+    assert.equal(plain.includes('<pre>'), false);
+    assert.equal(plain.includes('|--|'), false);
   });
 
   registry.define(/^the bridge forwards the photo to the Cursor agent$/, (ctx) => {
