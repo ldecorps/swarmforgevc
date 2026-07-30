@@ -92,3 +92,6 @@ source: |
   two-preexisting-defects-block-hardening-20260730, plus notes to specifier
   (handoff 000490) and coordinator (000491). Human asked Bubble to expedite
   via existing process.
+bounce_count: 1
+bounce_history:
+  - { at: 2026-07-30, by: QA, blamed: documenter, class: behavior, commit: 2903a32e6, evidence: backlog/evidence/BL-714-hardening-gates-blocked-by-tracked-vitest-cache-and-raw-mkdtemp-bounce-20260730.md }
