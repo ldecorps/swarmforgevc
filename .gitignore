@@ -6,6 +6,7 @@ swarmforge/scripts/.bin/
 .worktrees/
 /tmp/
 extension/tmp/
+/node_modules/
 extension/node_modules/
 extension/out/
 extension/coverage/
