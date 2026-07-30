@@ -172,3 +172,11 @@ notes: |
   acceptance suite (8/8) and one shell test when re-run during this review.
   Remaining-work defect: BL-730 (severity high — live, reproducible false
   positive). Pilot-process defect: BL-731.
+
+  BL-723 cleaner verdict (2026-07-30): not-on-par (independent shortfall).
+  The same landing commit pasted the identical 12-line --help heredoc block
+  into 16 separate launch_*.sh/start_*.sh scripts instead of factoring it
+  into one sourced helper — real production duplication, the same
+  hand-maintained-list shape BL-671 was filed to eliminate elsewhere in this
+  same review batch. Remaining-work defect: BL-736 (severity low).
+  Pilot-process defect: BL-737 (severity low).

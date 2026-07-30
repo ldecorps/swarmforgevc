@@ -147,3 +147,10 @@ notes: |
   "Model Steward"), and a title-rule line for such a role is not recognized
   as chrome, confirmed directly against the shipped regex. Remaining-work
   defect: BL-732. Pilot-process defect: BL-733.
+
+  BL-723 cleaner verdict (2026-07-30): on-par. isPaneTitleRuleLine and the
+  isFooterFurnitureLine/isVisibleChromeLine extensions are small,
+  well-named, single-purpose predicates backed by clearly-named regex
+  constants; NO_QUESTION_TEXT_CAPTURED is a clearly-named exported
+  sentinel. The multi-word-role gap the coder found is a regex-coverage
+  correctness issue, not a structural one — the code itself is clean.

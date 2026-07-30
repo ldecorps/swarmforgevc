@@ -61,3 +61,9 @@ notes: |
   bash against each of the 10 real fixture scripts end to end. The
   events-lock fixture flake fix is a bonus correctness improvement. No
   coder-eye concerns found.
+
+  BL-723 cleaner verdict (2026-07-30): on-par. Textbook shared-helper fix:
+  one sandbox-copy array/function replaces per-fixture cp lists that had
+  drifted across at least nine files, with a comment telling future authors
+  where to add a new lib; every consumer updated to call the helper. Exactly
+  the shape this lens wants.

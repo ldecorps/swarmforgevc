@@ -148,3 +148,10 @@ notes: |
   this commit's actual diff; it exists only on an unmerged sibling commit.
   The paren is closed today only incidentally, by a later unrelated BL-611
   commit. Remaining-work defect: BL-728. Pilot-process defect: BL-729.
+
+  BL-723 cleaner verdict (2026-07-30): on-par. parse-priority-rank and
+  best-priority-rank are small, documented pure functions with an explicit
+  missing-priority-rank sentinel instead of throwing. The two-stage sort-by
+  in preferred-rotate-target leans on an implicit stable-sort contract
+  that's only explained in the docstring rather than the code — a minor
+  readability nit, not defect-worthy. No duplication found.

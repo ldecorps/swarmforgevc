@@ -1,0 +1,39 @@
+id: BL-737
+title: "Pilot process: mechanical multi-file --help edit was never checked for cross-file duplication before landing"
+milestone: M8
+type: defect
+severity: low
+status: todo
+epic: swarm-reliability
+assigned_to: specifier
+priority: 40
+direction: normal
+depends_on: []
+mutation_cost: low
+source: |
+  Found during BL-723 (pilot-tonight quality review), cleaner viewpoint
+  pass, 2026-07-30. Companion remaining-work ticket: BL-736.
+
+notes: |
+  Pilot-process half of the BL-736 cleaner-lens shortfall pair on BL-637.
+
+description: |
+  ## What
+
+  BL-637's own landing commit added the same 12-line --help block, by hand,
+  to 16 separate scripts in one pass — exactly the DRY smell the cleaner
+  stage exists to catch, and exactly the shape (hand-maintained duplicated
+  list across many files) this same review batch's BL-671 was filed to
+  eliminate elsewhere in the repo. The offline pilot session that landed
+  BL-637 either had no cleaner-equivalent pass, or its cleaner-equivalent
+  pass did not check newly-added multi-file mechanical edits for
+  duplication before commit.
+
+  ## Question to answer
+
+  Does `/pilot`'s cleaner-equivalent step run a duplication check (e.g. the
+  project's DRY tool, or even a simple repeated-heredoc grep) over files the
+  pilot itself just touched in the same session, not only pre-existing
+  code? Harden the pilot (or the live cleaner gate contract) so a commit
+  that pastes the same block into N>2 files in one sitting gets flagged
+  before landing, not three days later in a follow-up review.

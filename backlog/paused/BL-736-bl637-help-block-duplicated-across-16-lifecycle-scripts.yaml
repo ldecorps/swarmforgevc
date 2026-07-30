@@ -1,0 +1,55 @@
+id: BL-736
+title: "BL-637 pasted the identical --help block into 16 lifecycle scripts instead of factoring it into one sourced helper"
+milestone: M8
+type: defect
+severity: low
+status: todo
+epic: swarm-reliability
+assigned_to: specifier
+priority: 40
+direction: normal
+depends_on: []
+mutation_cost: low
+source: |
+  Found during BL-723 (pilot-tonight quality review), cleaner viewpoint
+  pass, 2026-07-30. BL-637's own landing commit (97147316d5) added the
+  identical 12-line `-h`/`--help` heredoc block (differing only in the
+  script's own name inside the text) to 16 files in one commit:
+  swarmforge/scripts/launch_babysitter.sh, launch_cursor_bridge.sh,
+  launch_front_desk.sh, launch_front_desk_operator.sh,
+  launch_negotiation_relay.sh, launch_onboarder.sh, launch_operator.sh,
+  launch_resident_spy_tunnel.sh, launch_support.sh,
+  start_ancillary_services.sh, start_babysitter.sh,
+  start_bridge_headless.sh, start_cursor_bridge.sh,
+  start_handoff_daemon.sh, start_operator_runtime.sh (plus
+  kill_pipeline_swarm.sh's own copy). This is exactly the "hand-maintained,
+  unsynced list" shape BL-671 was filed and fixed elsewhere in this same
+  review batch (operator_runtime_sandbox.sh's shared cp-list helper) — just
+  not caught here, in a commit that landed in the same session.
+
+notes: |
+  BL-723 cleaner verdict on BL-637: this is a new, cleaner-lens shortfall
+  independent of the coder's already-filed correctness bug (BL-730/731) —
+  the code duplicated here is real production shell, not test scaffolding.
+  Linked pilot-process defect: BL-737.
+
+description: |
+  ## What
+
+  Factor the shared `-h`/`--help` block out of the 16 launch_*.sh /
+  start_*.sh scripts (and kill_pipeline_swarm.sh) into one sourced helper
+  function (e.g. a `print_lifecycle_help "<script-name>" "<scope-line>"`
+  in an existing or new shared lib under swarmforge/scripts/), parameterized
+  by the one line of text that actually varies per script. Update all 16+
+  call sites to source and call it instead of embedding the heredoc.
+
+  ## Acceptance
+
+  - `grep -rn "cat <<'EOF'" swarmforge/scripts/*.sh` (or equivalent) shows
+    no duplicate --help heredoc bodies remaining across the affected
+    scripts.
+  - Each script's `-h`/`--help` output is unchanged (same scope wording per
+    script) after the refactor — verified by re-running each script with
+    `--help` and diffing against its current output.
+  - Existing lifecycle/teardown shell tests (test_lifecycle_script_scope.sh
+    and siblings) continue to pass unmodified in behavior.

@@ -142,3 +142,9 @@ notes: |
   only: the conf/JSON scanner is a regex heuristic rather than a real
   parser, so an unusually-shaped model id could still evade detection — not
   filed as a separate defect, judged not to rise to a shortfall.
+
+  BL-723 cleaner verdict (2026-07-30): on-par. Data table and the new
+  coverage-check logic are cleanly separated (collectReferencedClaudeModels,
+  checkPricingCoverage, assertPricingCoverage), each single-purpose; the
+  conf/packs/launch-dir read loops share one readIfExists helper rather than
+  repeating the try/catch pattern three times. No structural concerns.

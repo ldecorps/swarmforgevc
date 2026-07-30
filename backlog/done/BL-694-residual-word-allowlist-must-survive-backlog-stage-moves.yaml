@@ -172,3 +172,11 @@ notes: |
   pattern (e.g. BL-714 entries) show it's a real, adopted abstraction. Minor
   dead-code nit only (an unexercised step registration with no matching
   Examples row) — not filed as a separate defect.
+
+  BL-723 cleaner verdict (2026-07-30): on-par. Extracting
+  onboarderResidualAllowlist.js out of the test file is a clean
+  module-boundary move — gitGrepFacilitator, isExemptPrefix, isAllowlisted,
+  unexpectedResidualMatches, and scanUnexpected are each single-purpose and
+  independently testable; policy (the allowlist) is properly separated from
+  mechanism (the test). The dead-code nit the coder noted is out of this
+  lens.

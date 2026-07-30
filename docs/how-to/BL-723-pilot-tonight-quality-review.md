@@ -64,11 +64,31 @@ ticket's own section and in its `notes:` field in `backlog/done/`.
 
 ### Cleaner viewpoint
 
-PENDING — this parcel has not yet reached the cleaner hop. The cleaner will
-review the 13 landings' readability, DRYness, and naming, and fill in this
-section with real findings when this parcel arrives, per BL-723's ordering
-note (coder lands a first draft; downstream seats complete their own
-viewpoints as the parcel travels the pipeline).
+Reviewed all 13 landings through the cleaner lens only: readability, DRY,
+naming, module boundaries, encapsulation, dependency direction — not test
+coverage/mutation (hardener) or acceptance wiring/design correctness
+(architect), though a couple of those are noted in passing where they were
+already flagged by the coder. 12 of 13 are on-par from this lens; several
+(BL-671's shared sandbox-copy helper, BL-694's extracted allowlist module,
+BL-646's thin-wrapper reduction, BL-623's and BL-662's DRY fixes) are
+genuinely good structural work, not just adequate.
+
+One is not-on-par from a shortfall this lens found independently of the
+coder's already-filed correctness bug: **BL-637**'s own landing commit
+(97147316d5) pasted the identical 12-line `-h`/`--help` heredoc block into
+16 separate `launch_*.sh`/`start_*.sh` scripts in one sitting, rather than
+factoring it into one sourced helper — real production duplication, not
+test scaffolding, and the exact hand-maintained-list shape BL-671 (this same
+review batch) was filed to eliminate elsewhere. Filed as its own shortfall
+pair since it is independent of BL-730/731 (the pgrep-scope bug): BL-736
+(remaining work) and BL-737 (pilot process), both severity low. Two other
+tickets have minor, non-blocking cleaner-adjacent nits recorded in their own
+per-ticket sections and `notes:` but judged not to rise to a defect:
+BL-623's confirmed-unreachable fallback branch in `emit-skip`, and BL-661's
+duplicated quote-parsing branches in `take-flow-reason`.
+
+Verdicts and any filed-defect links have been written back onto all 13
+tickets' `notes:` in `backlog/done/` in this same pass.
 
 ### Architect viewpoint
 
@@ -164,6 +184,11 @@ ticket's own acceptance suite (8/8) and one shell test when re-run during
 this review.
 
 **Filed defects:** BL-730 (remaining work, severity high, live reproducible false positive), BL-731 (pilot process)
+
+**Cleaner note:** independently found a second, unrelated shortfall — the
+same landing commit pasted the identical --help heredoc block into 16
+scripts instead of factoring it into a shared helper. Filed as its own
+pair: BL-736 (remaining work), BL-737 (pilot process), both severity low.
 
 ### BL-641
 

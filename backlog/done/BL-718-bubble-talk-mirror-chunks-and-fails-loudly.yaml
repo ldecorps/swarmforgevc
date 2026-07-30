@@ -107,3 +107,12 @@ notes: |
   specs/pipeline/steps/ — specs/pipeline/cli.js would throw "no step handler
   matched" on every scenario, so the acceptance gate never actually ran.
   Remaining-work defect: BL-726. Pilot-process defect: BL-727.
+
+  BL-723 cleaner verdict (2026-07-30): on-par. The new mirror path is well
+  decomposed into small pure helpers (effectiveBubbleMirrorTopicId,
+  formatBubbleMirrorText, mergeTopicId) and mirrorLetsTalkTurnToBubble
+  cleanly separates topic-resolution/formatting/chunked-send/failure-report
+  concerns via an injectable deps object; the Bubble topic-map extension
+  mirrors the existing cursorTopicId shape rather than inventing a parallel
+  one. No duplication or encapsulation concerns from this lens; the
+  acceptance-wiring gap is architect/QA territory, not cleaner's.

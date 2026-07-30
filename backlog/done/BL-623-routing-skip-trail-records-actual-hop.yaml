@@ -130,3 +130,10 @@ notes: |
   (swarm_handoff.bb ~449-456), and log-routing-skip! has no try/catch around
   it despite the ticket's own "a record-write failure must not block the
   send" guardrail — no scenario exercises that path either.
+
+  BL-723 cleaner verdict (2026-07-30): on-par. emit-skip consolidates two
+  near-duplicate :routing-skipped map literals into one shared builder — a
+  real DRY improvement. One nit, overlapping the coder's own aside: the
+  rewritten-branch fallback reconstructs the same four-key map shape
+  emit-skip already builds, and is confirmed unreachable in practice —
+  worth trimming, but not defect-worthy on its own.

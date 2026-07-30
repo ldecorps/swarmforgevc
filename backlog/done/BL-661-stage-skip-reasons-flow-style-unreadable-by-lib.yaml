@@ -76,3 +76,11 @@ notes: |
   claim is unverified end-to-end. Judged a caveat, not a shortfall worth a
   separate defect pair, since the underlying parser fix is correct and
   tested directly.
+
+  BL-723 cleaner verdict (2026-07-30): on-par. read-stage-skip-reasons is
+  well restructured (flow-style first, block-style fallback) with
+  normalize-reason-pairs factored out so both paths share key
+  normalization — a genuine dedup improvement over the prior inline-only
+  version. One nit: take-flow-reason's double- and single-quote branches
+  are structurally identical but for the quote literal; a parameterized
+  version would remove ~10 duplicate lines. Minor, not defect-worthy.

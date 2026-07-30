@@ -79,3 +79,8 @@ notes: |
   instead by hand-written unit tests) — not filed as a separate defect
   since the underlying behavior is genuinely tested, just not through the
   Gherkin path.
+
+  BL-723 cleaner verdict (2026-07-30): on-par. reasonOrFallback directly
+  replaces what would otherwise be a second copy of the same ternary, and
+  matches an existing sibling pattern in epicReorderUiHtml per the commit
+  message rather than inventing a new idiom. No structural concerns.

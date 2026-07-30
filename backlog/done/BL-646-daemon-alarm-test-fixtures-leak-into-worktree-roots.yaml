@@ -158,3 +158,9 @@ notes: |
   test. Ran both suites live: 23/23 shell checks and 12/12 acceptance
   scenarios pass; the 8 stray files no longer exist. No coder-eye concerns
   found.
+
+  BL-723 cleaner verdict (2026-07-30): on-par. count-untracked-files is
+  properly reduced to a thin wrapper over the new list-untracked-files
+  (built on extracted parse-untracked-paths); only-known-fixture-droppings?
+  is a small, clearly-named predicate threaded cleanly through
+  assess-one-claim without duplicating git-status parsing. Good extraction.
