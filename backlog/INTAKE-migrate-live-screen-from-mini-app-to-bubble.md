@@ -47,20 +47,21 @@ Suggested slice candidates
 
 ---
 
-## Specifier disposition 2026-07-30 — NOT drained, blocked on a question
+## Specifier disposition 2026-07-30 — NOT drained, question asked
 
 Read and assessed; deliberately left in the root. Each of this intake's open
 design questions changes the shape of slice A materially (e.g. for barge-in,
 "wake phrase vs keyword vs pure VAD overlap" is the slice), so speccing now
 would mean guessing rather than asking.
 
-The specifier tried to raise one clarifying question covering the disposition of
-all three intakes and was refused: `role_ask.bb` allows ONE pending question per
-role, and the specifier's slot has been held since 2026-07-25 by an unanswered
-question about BL-687 ("is per-topic 'Make top' enough to count as reordering
-all child BL, or do you also want move up/down inside the drill-down?"). Answer
-that one and the specifier's ask channel unblocks.
+One clarifying question covering the disposition of all three is now PENDING in
+the specifier's Telegram topic: mint each as epic + slice A with
+`human_approval: pending` and specifier-chosen defaults, hold all three as
+capture-only, or mint voice-barge-in only.
 
-Resume point: ask whether these three should be minted as epic + slice A with
-`human_approval: pending` and specifier-chosen defaults, or held as capture-only
-like the hey-bubble-wake and stereo-router intakes.
+Raising it first required clearing a stale marker: `role_ask.bb` allows ONE
+pending question per role, and the specifier's slot had been held since
+2026-07-25 by a question about BL-687 that shipped past it (approved 2026-07-27,
+`b2edcf681`) — so nothing would ever have cleared it. See BL-687's `notes:`.
+
+Resume point: act on the answer when it arrives. Do not re-ask.
