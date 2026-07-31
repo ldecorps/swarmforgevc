@@ -48,4 +48,5 @@
     <string name="keep_recording">Keep recording a bit longer.</string>
     <string name="no_speech">No speech detected.</string>
     <string name="no_audio">No audio captured.</string>
+    <string name="connection_error_hint">Check pairing in Settings → Edit pairing.</string>
 </resources>
