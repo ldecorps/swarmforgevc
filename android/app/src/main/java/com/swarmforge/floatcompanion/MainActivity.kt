@@ -27,6 +27,7 @@ class MainActivity : AppCompatActivity() {
         setContentView(binding.root)
 
         CompanionPrefs.hydrateFromDurableBackup(this)
+        applyPairingDeepLinkIfPresent(intent)
         binding.bridgeUrl.setText(CompanionPrefs.getBaseUrl(this))
         binding.token.setText(CompanionPrefs.getToken(this))
 
@@ -90,11 +91,26 @@ class MainActivity : AppCompatActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        applyPairingDeepLinkIfPresent(intent)
         if (!intent.getBooleanExtra(EXTRA_EDIT_PAIRING, false) && tryAutoStartBubble()) {
             return
         }
         showPairingUi(intent.getBooleanExtra(EXTRA_EDIT_PAIRING, false) || !isPaired())
         refreshStatus()
+    }
+
+    /**
+     * BL-716 dns-05: applies a swarmforge-bubble://pair deep link if this
+     * intent carries one, so a revived tunnel URL reaches the phone without
+     * the human hunting logs or retyping it by hand.
+     * @return true if a pairing update was applied.
+     */
+    private fun applyPairingDeepLinkIfPresent(intent: Intent): Boolean {
+        val data = intent.data ?: return false
+        val pairing = PairingDeepLink.parse(data) ?: return false
+        CompanionPrefs.save(this, pairing.baseUrl, pairing.token, sync = true)
+        Toast.makeText(this, "Bubble pairing updated", Toast.LENGTH_SHORT).show()
+        return true
     }
 
     override fun onPause() {

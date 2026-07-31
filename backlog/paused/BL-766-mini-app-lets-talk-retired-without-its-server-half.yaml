@@ -1,0 +1,106 @@
+id: BL-766
+title: "DEFECT — Mini App Let's Talk was half-retired in the working tree: steps assert a health stub the server never serves"
+milestone: M8
+type: defect
+severity: high
+status: todo
+epic: swarmforge-console
+human_approval: pending
+assigned_to: none
+priority: 1
+direction: queue-jump
+depends_on: []
+mutation_cost: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+invariants:
+  - "Every scenario in a live feature file has a step handler whose assertions can actually pass against the running system; a contract that cannot run is a failure, never a pass."
+  - "Retiring a surface removes or rewrites its route, its acceptance scenarios, and its quality-gate entry together — a surface still served by the bridge stays inside the coverage, CRAP and mutation scopes that guard it."
+
+required_wiring:
+  - "extension/src/bridge/bridgeServer.ts::/lets-talk::route matches whatever the BL-696 steps assert"
+  - "extension/package.json::crap:lets-talk-cursor-bridge::gate scope matches the surfaces still served"
+
+approval_context: >
+  Found by the 2026-07-31 master-diff review, not reported by any gate. Needs a
+  decision because the two honest repairs point opposite ways:
+
+  Option A — finish the retirement: serve a health document at `/lets-talk`
+  (`ok`, `talkClient`), retire or redirect the Mini App Let's Talk route, and
+  update BL-696's how-to and the CRAP gate to match. The working tree's step
+  rewrite then becomes correct.
+
+  Option B — revert the step rewrite: keep the Mini App Let's Talk route as the
+  contract says today and drop the working tree's changes to
+  `specs/pipeline/steps/bl696LetsTalkSteps.js`, `consoleMenuUiHtml.ts` and the
+  BL-696 how-to, leaving retirement to the parked Live Screen migration intake.
+
+  Either way the CRAP gate scope must stop excluding a file the bridge still
+  serves. Recommend Option A only if Mini App Let's Talk really is retired;
+  otherwise B, because the console entry is already gone in the working tree
+  while the route still answers.
+
+description: |
+  ## What
+
+  The uncommitted master working tree partially retires Mini App Let's Talk in
+  favour of Bubble, and the halves do not meet:
+
+  - `specs/pipeline/steps/bl696LetsTalkSteps.js` was rewritten to fetch
+    `GET /lets-talk`, `JSON.parse` the body, and assert `health.ok` and
+    `health.talkClient == "bubble"`.
+  - `extension/src/bridge/bridgeServer.ts` still answers that route with the
+    Mini App HTML page, and the string `talkClient` is produced nowhere in
+    `extension/src`. Parsing an HTML body as JSON throws, so those BL-696
+    scenarios cannot pass as written.
+  - `docs/how-to/BL-696-miniapp-lets-talk-cursor-audio.md` was cut by ~189 lines
+    to match the retirement that did not happen on the server.
+  - `extension/package.json` dropped `src/bridge/letsTalkUiHtml.ts` from
+    `crap:lets-talk-cursor-bridge`, so a 61k file the bridge still serves left
+    the CRAP gate's scope while remaining live. `specs/features/BL-697-*.feature`
+    still depends on that surface.
+
+  The console half IS done: `consoleMenuUiHtml.ts` replaced the Let's Talk entry
+  with a "talk lives in Bubble" note, so the entry point is already gone while
+  the route still answers.
+
+  ## Why this is a defect and not a feature
+
+  This is the BL-761 class made concrete — an acceptance contract that cannot
+  run reaching the pipeline — plus a quality gate narrowed to exclude code that
+  is still live. Nothing failed loudly: the rewrite weakened assertions rather
+  than breaking a build, and a gate that stops measuring a file reports green.
+  Adopting this chunk unexamined would land both.
+
+  ## Scope
+
+  Resolve the halves per the approved option, and restore the CRAP gate to cover
+  every Let's Talk surface the bridge still serves.
+
+  ## Out of scope
+
+  - The full Live Screen migration from Mini App to Bubble. That intake is
+    parked in the backlog root awaiting a human answer to a pending specifier
+    question; this ticket only reconciles what the working tree already changed.
+  - Bubble remote config and hold-music catalog (BL-765).
+  - Shared-token inbound fan-out (BL-764).
+
+acceptance: specs/features/BL-766-mini-app-lets-talk-retired-without-its-server-half.feature
+
+source: |
+  2026-07-31 master-diff review, drained from
+  `backlog/INTAKE-untracked-master-changes-need-review.md`. Static evidence
+  only: `talkClient` matches nothing under `extension/src`, and
+  `bridgeServer.ts` still calls `getLetsTalkUiHtml` for `/lets-talk`. Confirm by
+  running the BL-696 acceptance before choosing a repair.
+
+notes: |
+  Do not treat the shrunken CRAP file list as cosmetic. A gate that stops
+  measuring a live file is the same failure shape as a test that stops
+  asserting: it reports green because it looks at less.
+
+  e2e QA procedure: run the BL-696 acceptance feature against a live bridge and
+  confirm every scenario executes and passes rather than being skipped; request
+  `/lets-talk` and confirm the body matches what the steps assert; run
+  `npm run crap:lets-talk-cursor-bridge` and confirm every Let's Talk source the
+  bridge still serves appears in the report.

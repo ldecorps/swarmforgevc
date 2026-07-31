@@ -6,8 +6,8 @@ severity: low
 status: todo
 epic: swarmforge-console
 assigned_to: specifier
-priority: 6
-direction: normal
+priority: 0
+direction: queue-jump
 depends_on: []
 mutation_cost: low
 source: |
@@ -15,6 +15,8 @@ source: |
   pass, 2026-07-30. Companion remaining-work ticket: BL-744.
 
 notes: |
+  Human 2026-07-31 Let's Talk: queue-jump for today's live shift — pilot-process hardening before more /pilot safe volume.
+
   Pilot-process half of the BL-744 hardener-lens shortfall on BL-718. This
   is the third independent shortfall pair found on BL-718 across three
   different seats (coder: BL-726/727, architect: BL-738/739, hardener:

@@ -6,8 +6,8 @@ severity: low
 status: todo
 epic: code-quality-gates
 assigned_to: specifier
-priority: 20
-direction: normal
+priority: 0
+direction: queue-jump
 depends_on: []
 mutation_cost: low
 source: |
@@ -55,6 +55,8 @@ source: |
   fix or track them separately when it lands.
 
 notes: |
+  Human 2026-07-31 Let's Talk: queue-jump for today's live shift — pilot-process hardening before more /pilot safe volume.
+
   Filed during BL-723's documenter viewpoint pass. Linked pilot-process
   defect: BL-757. Referenced as the deciding shortfall on BL-641, BL-662,
   and BL-671 (previously on-par under every other lens); also a real,

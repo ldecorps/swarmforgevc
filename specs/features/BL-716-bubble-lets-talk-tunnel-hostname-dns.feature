@@ -35,3 +35,10 @@ Feature: Bubble Let's Talk fails clearly when the tunnel hostname will not resol
     Given the host quick tunnel hostname has changed
     When the operator follows the documented or in-product refresh path
     Then the phone can be updated to the new URL without hunting logs blind
+
+  # BL-716 dns-05
+  Scenario: Bubble can discover a new pairing URL without manual log hunting
+    Given the public tunnel hostname has changed since the phone last paired
+    When discovery runs via the chosen channel (deep link, stable hostname, or fixed discovery doc)
+    Then Bubble's stored bridge base URL matches the live host URL
+    And a Let's Talk turn no longer fails solely on the stale hostname
