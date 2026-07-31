@@ -1,0 +1,45 @@
+id: BL-722
+title: "/pilot safe — auto-pick approved low-mutation specced defects for offline pilot"
+milestone: M8
+type: feature
+status: todo
+epic: swarmforge-console
+human_approval: approved
+priority: 0
+direction: queue-jump
+depends_on: []
+mutation_cost: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+assigned_to: none
+
+invariants:
+  - "A /pilot safe start never selects a ticket that fails the safe filter (type defect, real .feature, not needs_design, human_approval approved, mutation_cost low, paused by default)."
+  - "When the safe pool is empty, /pilot safe does not start a pilot and does not fall back to a medium/high-mutation or needs_design ticket."
+  - "Explicit /pilot BL-xxx remains an escape hatch for any ticket id."
+
+required_wiring:
+  - "extension/src/tools/pilotSafeDefects.ts::listSafePilotDefects::pure filter+rank"
+  - "extension/src/tools/telegramCursorBridgePilot.ts::parsePilotSafeCommand"
+  - "extension/src/tools/telegramCursorBridgeCore.ts::decideInboundAction::/pilot safe and /pilot safe --list"
+  - "extension/src/tools/telegramCursorBridgeLive.ts::pilot safe list/start handlers"
+
+description: |
+  ## What
+
+  Operator verb `/pilot safe` (and `/pilot safe --list`) selects from the safe
+  pilot pool defined with the human 2026-07-30: specced defect, not
+  needs_design, approved, mutation_cost low, paused. Rank high→medium→low
+  severity then priority then id. Start uses the same pilot hat-walk as
+  `/pilot BL-xxx`.
+
+  ## Why
+
+  Encode safe scoping so the human does not hand-pick among ~15 low-blast
+  defects. Empty pool must refuse, never silently widen the filter.
+
+acceptance: specs/features/BL-722-pilot-safe-defects.feature
+
+source: |
+  Human via Let's Talk / Cursor 2026-07-30. Drained from
+  `backlog/INTAKE-pilot-safe-defects.md`. Queue-jump + implement now so the
+  safe pool can be piloted.

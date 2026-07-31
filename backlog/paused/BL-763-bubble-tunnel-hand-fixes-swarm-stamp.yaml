@@ -93,6 +93,24 @@ source: |
   BL-716 (discovery) and BL-762 (bedtime keep phone path).
 
 notes: |
+  ## 2026-07-31 master-diff review — adopt scope confirmed, two more files land here
+
+  The full 83-entry dirty tree was reviewed and split across tickets. This
+  ticket's adopt scope is judged right as written, not too wide, and it gains
+  two files no other ticket owns:
+
+  - `swarmforge/scripts/swarm_ensure.bb` — `ensure-cursor-bridge!`, the
+    supervisor pid file and health predicate, so `./swarm ensure` repairs
+    Cursor Remote the same way it repairs the front desk.
+  - `swarmforge/scripts/operator_runtime.bb` — the Cursor Remote supervisor
+    liveness and heartbeat-freshness checks (120s stall window, matching
+    `cursor_bridge_supervisor.bb`).
+
+  Both are "keep Cursor Remote up", which is this ticket. Siblings from the
+  same review, deliberately NOT folded in here: BL-764 (shared-token inbound
+  fan-out and bridge liveness cue), BL-765 (Bubble remote config and hold-music
+  catalog), BL-766 (half-retired Mini App Let's Talk).
+
   e2e on phone (manual until Android-seam policy from BL-761): with Bubble
   paired to a LIVE base URL, bounce the headless bridge; confirm one
   new-session after instanceId changes and turns still work. Separately,
