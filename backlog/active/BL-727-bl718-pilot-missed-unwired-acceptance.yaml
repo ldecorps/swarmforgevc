@@ -6,8 +6,8 @@ severity: low
 status: todo
 epic: swarm-reliability
 assigned_to: specifier
-priority: 6
-direction: normal
+priority: 0
+direction: queue-jump
 depends_on: []
 mutation_cost: low
 source: |
@@ -15,6 +15,8 @@ source: |
   2026-07-30. Companion remaining-work ticket: BL-726.
 
 notes: |
+  Human 2026-07-31 Let's Talk: queue-jump for today's live shift — pilot-process hardening before more /pilot safe volume.
+
   Pilot-process half of the BL-718 shortfall pair (Article 4.4-style pairing
   required by BL-723's pass criteria: every shortfall gets both a
   remaining-work defect and a pilot-process defect).
