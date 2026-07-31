@@ -11,7 +11,7 @@ direction: queue-jump
 depends_on: []
 mutation_cost: medium
 required_stages: [specifier, coder, cleaner, architect, hardender, documenter, qa]
-assigned_to: none
+assigned_to: coder
 
 invariants:
   - "When the configured bridge base URL host cannot be resolved or reached, Let's Talk does not stay in a fake-healthy recording / hands-free state — the human sees a clear reconnect failure and recording stops or is refused."
