@@ -49,6 +49,7 @@ here.
 - [Launching the Perplexity mono-router pack](how-to/perplexity-mono-router-launch.md)
 - [Aged-note Actionability in Mono-router: Draining Dormant Mailboxes](how-to/BL-576-aged-note-actionability-mono-router.md)
 - [GitHub Auto-Intake Scheduler](how-to/github-auto-intake-scheduler.md)
+- [/pilot's acceptance-contract landing gate](how-to/BL-727-pilot-acceptance-contract-gate.md)
 
 ## Reference
 

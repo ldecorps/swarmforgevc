@@ -81,35 +81,59 @@ export function describeAcceptanceFailure(output: string): { failingScenario?: s
   return {};
 }
 
-export async function landPilotedTicket(ticketId: string, deps: PilotAcceptanceGateDeps): Promise<PilotLandOutcome> {
+type ContractResolution = { declaration: string; featureFilePath: string } | { refusal: PilotLandRefusal };
+
+// Step 1: resolve the ticket's acceptance: declaration to an executable
+// feature file, or the no-contract refusal naming what was declared.
+function resolveContract(ticketId: string, deps: PilotAcceptanceGateDeps): ContractResolution {
   const declaration = deps.readAcceptanceDeclaration(ticketId);
   const featureFilePath = declaration ? deps.resolveFeatureFilePath(declaration) : undefined;
   if (!featureFilePath) {
     const declared = declaration === undefined ? 'no acceptance: field' : JSON.stringify(declaration);
     return {
-      landed: false,
-      reasonKind: 'no-contract',
-      reason: `${ticketId} has no executable acceptance contract: acceptance: must name an existing feature file (declared: ${declared})`,
+      refusal: {
+        landed: false,
+        reasonKind: 'no-contract',
+        reason: `${ticketId} has no executable acceptance contract: acceptance: must name an existing feature file (declared: ${declared})`,
+      },
     };
   }
+  // featureFilePath is only ever truthy when declaration was too (see the
+  // ternary above), so this narrows what TS cannot infer from that ternary.
+  return { declaration: declaration!, featureFilePath };
+}
 
+// Step 2: run the resolved feature file through the acceptance pipeline, or
+// the contract-failed refusal naming the unmatched step / failing scenario.
+async function runContract(
+  ticketId: string,
+  featureFilePath: string,
+  deps: PilotAcceptanceGateDeps
+): Promise<{ refusal: PilotLandRefusal } | undefined> {
   const result = await deps.runAcceptance(featureFilePath);
-  if (!result.success) {
-    const { failingScenario, unmatchedStep } = describeAcceptanceFailure(result.output);
-    const named = failingScenario
-      ? `failing scenario "${failingScenario}"`
-      : unmatchedStep
-        ? `unmatched step "${unmatchedStep}"`
-        : 'see acceptance output';
-    return {
+  if (result.success) {
+    return undefined;
+  }
+  const { failingScenario, unmatchedStep } = describeAcceptanceFailure(result.output);
+  const named = failingScenario
+    ? `failing scenario "${failingScenario}"`
+    : unmatchedStep
+      ? `unmatched step "${unmatchedStep}"`
+      : 'see acceptance output';
+  return {
+    refusal: {
       landed: false,
       reasonKind: 'contract-failed',
       reason: `${ticketId}'s acceptance contract did not pass: ${named}`,
       failingScenario,
       unmatchedStep,
-    };
-  }
+    },
+  };
+}
 
+// Step 3: a green contract's only remaining ways to not land - the move
+// itself failing - versus the landed outcome with its written receipt.
+function moveAndRecordReceipt(ticketId: string, declaration: string, deps: PilotAcceptanceGateDeps): PilotLandOutcome {
   // Captured before the move: if getLandedCommit() itself fails (e.g. no
   // HEAD yet), nothing has moved or been written yet either.
   const landedCommit = deps.getLandedCommit();
@@ -125,13 +149,27 @@ export async function landPilotedTicket(ticketId: string, deps: PilotAcceptanceG
 
   const receipt: AcceptanceReceipt = {
     ticketId,
-    featureFile: declaration!.trim(),
+    featureFile: declaration.trim(),
     landedCommit,
     result: 'passed',
     landedAt: deps.now(),
   };
   deps.writeReceipt(ticketId, receipt);
   return { landed: true, destination: move.destination, receipt };
+}
+
+export async function landPilotedTicket(ticketId: string, deps: PilotAcceptanceGateDeps): Promise<PilotLandOutcome> {
+  const contract = resolveContract(ticketId, deps);
+  if ('refusal' in contract) {
+    return contract.refusal;
+  }
+
+  const contractFailure = await runContract(ticketId, contract.featureFilePath, deps);
+  if (contractFailure) {
+    return contractFailure.refusal;
+  }
+
+  return moveAndRecordReceipt(ticketId, contract.declaration, deps);
 }
 
 // Pure, fs-based: an acceptance declaration is executable only when it

@@ -87,3 +87,29 @@ One item, D1. Not blocked by anything else — full checklist above ran clean.
 Sending back to **coder** to fix D1; the rest of the parcel (gate module,
 CLI, property tests, other 3 scenarios' step handlers, `steps/index.js`
 wiring) stands as reviewed and does not need to be redone.
+
+## Divergence incident (discovered while closing out this bounce)
+
+This ticket's commit `f0820a5457` reached architect via two separate
+inbox parcels (same commit, two different `git_handoff` task-name
+strings — `BL-727-bl727-make-the-pilots-land-the-acceptance-contract-gate`
+vs the ticket's own `BL-727-bl718-pilot-missed-unwired-acceptance`). The
+first delivery was processed and forwarded to hardener as `2870359e5f`
+(sent handoff `00_20260731T064917Z_000593_from_architect_to_hardender`)
+*without* this D1 finding surfacing — an earlier, incomplete review pass.
+Hardener and documenter both completed their stages on that copy without
+catching D1 (unsurprising: D1 is a spec-instruction / architecture defect,
+not something coverage/mutation/CRAP or docs review would flag), and
+documenter forwarded `065cf1750b` to QA
+(`00_20260731T074326Z_000451_from_documenter_to_QA`) — currently sitting
+in QA's `inbox/new/` as of this writing.
+
+This second, complete review pass (this file) is what actually found D1.
+Since the coder-fix path this bounce starts will not reach QA until it
+re-clears cleaner → architect → hardener → documenter, it will not
+overtake the already-in-flight `065cf1750b` copy in QA's queue. Sent
+direct `note`s (priority 00) to **QA** (naming the defect and this file)
+and to **coordinator** (naming the fork) so QA can hold/bounce
+`065cf1750b` on its own review rather than approving it unaware. Not
+recorded as a second bounce — same D1, same evidence, no new
+`record-bounce.js` entry.
