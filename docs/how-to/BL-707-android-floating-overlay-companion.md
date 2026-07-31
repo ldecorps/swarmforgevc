@@ -91,6 +91,33 @@ Tap the bubble. You get a **Let's Talk**-style panel:
 
 Grant **microphone** when Android asks (first Record).
 
+## When the bridge host is unreachable (BL-716)
+
+If the paired tunnel hostname stops resolving, or the tunnel edge itself is
+dead, a turn no longer looks like a healthy, silently-stuck recording. The
+bubble turns **red** (error phase), and the panel shows a plain-language
+reason instead of a raw DNS exception or Cloudflare error body — e.g. "Can't
+find the bridge host — pairing URL may be stale." with a hint to check
+**Settings → Edit pairing**. Recording stops for that turn; hands-free resumes
+listening once the failure clears.
+
+### Re-pairing without hunting logs
+
+The quick-tunnel hostname changes whenever the host's Cloudflare tunnel
+restarts. Two ways to get the phone back on the live URL, no manual log
+digging or retyping:
+
+- **Deep link (near-term default)** — the operator's Telegram tunnel-notify
+  topic carries an **"Update Bubble pairing"** button/link
+  (`swarmforge-bubble://pair?url=...&token=...`). Tap it on the phone and
+  Bubble re-pairs itself and shows "Bubble pairing updated" — no need to open
+  the app or edit fields by hand.
+- **Manual re-pair** — still available via **Settings → Edit pairing** on the
+  talk panel, same as first-run pairing above.
+
+A stable named Cloudflare tunnel (so the hostname stops rotating at all) is
+the longer-term direction; until then, use the deep link.
+
 ## Stop
 
 Use **Stop** on the mini panel, **Stop bubble** on the pairing screen, or
