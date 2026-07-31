@@ -5,14 +5,35 @@ type: defect
 severity: low
 status: todo
 epic: swarm-reliability
-assigned_to: specifier
+human_approval: pending
+assigned_to: coder
 priority: 0
 direction: queue-jump
 depends_on: []
 mutation_cost: low
+acceptance: specs/features/BL-727-pilot-acceptance-contract-gate.feature
+
+invariants:
+  - "A piloted ticket reaches backlog/done/ only after its own declared acceptance contract executed green at the commit being landed — absent, inline-only, or unreadable acceptance declarations fail CLOSED, never pass by absence."
+  - "The gate executes the project's existing acceptance pipeline (specs/pipeline parse + step registry + runner); it never reimplements Gherkin parsing or step matching."
+  - "A refused land is inert: no yaml move, no receipt, no other durable write."
+
+required_wiring:
+  - "extension/src/tools/telegramCursorBridgePilot.ts::pilot-acceptance-gate::composePilotExpeditorPrompt must land through the gate CLI instead of a bare git mv — the prompt is the pilot's only call site, since the pilot is an agent, not a code path"
+
 source: |
   Found during BL-723 (pilot-tonight quality review), coder viewpoint pass,
   2026-07-30. Companion remaining-work ticket: BL-726.
+
+approval_context: >
+  One decision worth a tap before the coder builds: enforcement strength.
+  This spec makes the gate BLOCKING — the pilot's only landing path runs the
+  ticket's acceptance contract and refuses the move to done/ when it is not
+  green. The weaker alternative is an advisory audit that reports violations
+  after the fact without blocking. Blocking was chosen because the defect
+  being fixed IS an invisible landing: an advisory gate is skippable in
+  exactly the way run_acceptance.sh already was. Everything else here is
+  firm.
 
 notes: |
   Human 2026-07-31 Let's Talk: queue-jump for today's live shift — pilot-process hardening before more /pilot safe volume.
@@ -20,6 +41,13 @@ notes: |
   Pilot-process half of the BL-718 shortfall pair (Article 4.4-style pairing
   required by BL-723's pass criteria: every shortfall gets both a
   remaining-work defect and a pilot-process defect).
+
+  Specifier 2026-07-31: IR-DRY checker reports two medium-confidence
+  possible-synonym findings on the feature file; both reviewed and kept
+  deliberately. (1) The Background Given and scenario 04's Then both mention
+  backlog/active/, but one is setup and the other a post-condition. (2) The
+  outline's parameterised Given substitutes to exactly scenario 04's literal
+  Given, so both resolve to one handler — same step, not duplicate vocabulary.
 
 description: |
   ## What
@@ -32,17 +60,100 @@ description: |
   the acceptance gate before merge — either of those, run for real, would
   have caught this immediately.
 
-  ## Question to answer
+  ## The question, answered (specifier investigation 2026-07-31)
 
-  Did the pilot run `specs/pipeline/scripts/run_acceptance.sh` (or the
-  equivalent QA gate) at all for BL-718, or was the acceptance step silently
-  skipped/assumed? If skipped, what pilot-specific condition let a ticket
-  reach `done/` without ever executing its own named acceptance contract —
-  and how does `/pilot` get hardened so a missing step-handler file fails the
-  pilot's gate the same way it would fail a live QA pass, rather than landing
-  invisibly.
+  **The pilot never ran it.** Reproduced on this checkout:
+
+      bash specs/pipeline/scripts/run_acceptance.sh \
+        specs/features/BL-718-bubble-talk-mirror-chunks-and-fails-loudly.feature
+
+  fails 6 of 6 scenarios, every one at `runtime.js:24` — "no step handler
+  matched". No step file under `specs/pipeline/steps/` registers BL-718's
+  vocabulary.
+
+  The pilot's own artifacts show what was run instead. Every stage verdict
+  under `.swarmforge/expedite/BL-718/NN-<role>/verdict.json` cites Vitest
+  unit runs and prose: the hardener's evidence is
+  `"vitest run test/letsTalkBridge.test.js … → 119 passed"` with a
+  hand-written scenario-to-unit-test mapping ("Scenarios covered: …"), and
+  the QA verdict asserts `"feature scenarios covered"` with no command
+  behind it. The acceptance contract was **read and mapped by eye, never
+  executed**.
+
+  ## The pilot-specific condition
+
+  `composePilotExpeditorPrompt` (`extension/src/tools/telegramCursorBridgePilot.ts`)
+  tells the agent to walk the stages, write a free-prose `verdict.json` per
+  stage, and then — when QA stamps — `git mv` the ticket to `backlog/done/`
+  itself. Nothing between "the agent believes it passed" and "the yaml is in
+  done/" executes anything. `verdict.json` has no schema requiring a gate
+  command and an exit code, so an *assertion* of coverage is indistinguishable
+  from a *run*. A live pass cannot make that substitution: BL-112 has the
+  coder run the generated entry point, and QA runs the acceptance gate again
+  independently.
+
+  ## The fix
+
+  Make the land itself the gate. Give the pilot one landing path — the
+  acceptance-contract gate CLI, invoked as
+  `node extension/out/tools/pilot-acceptance-gate.js <TICKET-ID>` (the name is
+  pinned because `required_wiring:` above checks for the literal string
+  `pilot-acceptance-gate` in the prompt composer) — that:
+
+  1. resolves the ticket's declared `acceptance:` to a feature file;
+  2. executes it through the project's existing acceptance pipeline
+     (`specs/pipeline/runnerAdapter.js` — `parseFeatureFile` via the pinned
+     vendored APS parser, `createStepRegistry` + `registerSteps` from
+     `specs/pipeline/steps/index.js`, and the existing runner). Reuse, never
+     a second implementation of step matching;
+  3. on green, writes an acceptance receipt (feature file, landed commit,
+     result) and moves the yaml to `backlog/done/`;
+  4. on anything else — an unmatched step, a failing scenario, an absent or
+     inline-only or missing-file `acceptance:` — refuses, names the reason,
+     and writes nothing.
+
+  Then point `composePilotExpeditorPrompt` at that CLI in place of the bare
+  `git mv`. For an agent-driven stage the prompt *is* the call site, which is
+  why it is declared in `required_wiring:` rather than left implicit. Do not
+  write acceptance scenarios that assert on prompt text — prompt-text
+  assertions are not acceptance; the scenarios here test the gate's behavior.
+
+  ## Scope
+
+  - `extension/src/tools/pilotAcceptanceGate.ts` — pure decision logic
+    (TypeScript, so the CRAP and mutation gates that are wired for
+    `extension/out/**/*.js` actually cover it) — plus the thin CLI
+    `extension/src/tools/pilot-acceptance-gate.ts`, per the CLI `main()`
+    thin-wrapper rule. Inject the
+    acceptance-pipeline pieces as deps so the module is unit-testable without
+    running a real feature file, and so no static import edge is created from
+    `extension/src` into `specs/pipeline`.
+  - `extension/src/tools/telegramCursorBridgePilot.ts` — prompt lands through
+    the gate.
+  - `specs/pipeline/steps/` — step handlers for this ticket's own feature
+    file, in this same parcel.
 
   ## Out of scope
 
-  Re-litigating BL-718's implementation quality (that's BL-726); this ticket
-  is about the pilot's gate blind spot only.
+  - Re-litigating BL-718's implementation quality (that is BL-726), and
+    fixing BL-718's own missing step handlers (also BL-726).
+  - The automated expeditor (`expedite_cli.bb`) has the same blind spot — it
+    classifies each stage from the agent's self-reported `verdict.json` and
+    runs no gate of its own. Out of scope here (BL-727 is the `/pilot` gate
+    only); file a sibling if the swarm wants it closed.
+  - A repo-wide audit of already-landed tickets whose acceptance contracts
+    cannot execute (BL-718 and BL-559 are both known). Out of scope; the
+    remaining-work half of each pair owns its own ticket.
+
+  ## e2e procedure for QA
+
+  1. `bash specs/pipeline/scripts/run_acceptance.sh specs/features/BL-727-pilot-acceptance-contract-gate.feature`
+     — all scenarios green (this is the gate gating itself).
+  2. Against a throwaway fixture ticket whose `acceptance:` names a feature
+     file with no registered handlers, run the gate CLI: it must exit
+     non-zero, name the unmatched step, and leave the fixture yaml unmoved
+     with no receipt written.
+  3. Repeat with a fixture whose contract is green: the yaml moves to
+     `backlog/done/` and the receipt records the feature file and commit.
+  4. Confirm `composePilotExpeditorPrompt` output routes the landing through
+     the gate CLI, and that `required_wiring:` above passes the pre-QA gate.
