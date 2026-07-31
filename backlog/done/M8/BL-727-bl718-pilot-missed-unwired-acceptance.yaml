@@ -5,7 +5,7 @@ type: defect
 severity: low
 status: todo
 epic: swarm-reliability
-human_approval: pending
+human_approval: approved
 assigned_to: coder
 priority: 0
 direction: queue-jump

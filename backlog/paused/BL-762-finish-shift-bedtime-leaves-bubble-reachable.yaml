@@ -1,0 +1,146 @@
+id: BL-762
+title: "Bedtime runs the lights-out stop, so the phone loses its origin and Bubble reads as dead"
+milestone: M8
+type: feature
+status: todo
+epic: swarm-reliability
+human_approval: pending
+assigned_to: specifier
+priority: 5
+direction: normal
+depends_on: []
+mutation_cost: low
+acceptance: specs/features/BL-762-finish-shift-leaves-the-phone-path-up.feature
+
+invariants:
+  - "Every component the stack can stop is classified by each lifecycle verb explicitly; a component that is neither in the stop set nor the keep set of a verb is an error, never a default."
+  - "Bedtime never leaves running anything that can revive a seat it just stopped."
+
+source: |
+  backlog/INTAKE-finish-shift-leave-bubble-reachable.md — human via Let's Talk
+  / Cursor 2026-07-30, after day-shift-end killed the bridge and Bubble showed
+  Cloudflare 530 / Error 1033. Raw intake removed from the backlog root by this
+  spec.
+
+notes: |
+  Keep-vs-kill matrix, derived 2026-07-31 from the scripts themselves rather
+  than from the intake's prose. `stop-swarm.sh` runs
+  `stop_ancillary_services.sh` (babysitterd, operator runtime, Telegram front
+  desk, onboarder, remote tunnels) and then `kill_pipeline_swarm.sh` (agent
+  sessions + handoffd), then `stack_survivor_scan.sh`.
+
+  | component | lights-out (`stop-swarm.sh`) | bedtime (this ticket) |
+  |---|---|---|
+  | swarm agent sessions | stop | stop |
+  | handoffd | stop | stop |
+  | babysitterd | stop | stop — it can relaunch seats |
+  | operator runtime | stop | stop — disposable LLM burn |
+  | onboarder | stop | stop — supervised poll loop, burns |
+  | Telegram front desk (bridge + bot) | stop | **keep** |
+  | remote tunnels | stop | **keep** |
+
+  Note the existing comment at the head of `stop_ancillary_services.sh` — "the
+  Cursor Remote bridge is intentionally NOT stopped here (always-on)" — is
+  already only half true in effect: `stop_front_desk_children` takes the front
+  desk's bridge with it, and the tunnel section takes the published origin. The
+  530/1033 the human saw is that gap, not a tunnel fault. Worth correcting that
+  comment in the same parcel so the next reader is not misled.
+
+  `swarm-kill` (pipeline-only) is the closest existing verb — bedtime is that
+  plus babysitterd, the operator runtime and the onboarder. Compose from the
+  existing pieces; do not fork a second teardown implementation.
+
+  Specifier 2026-07-31: IR-DRY reports four medium-confidence findings, all
+  reviewed and kept — two pair a Scenario Outline placeholder against the
+  literal it substitutes to, one pairs scenario 04's Given against the same
+  action's When, and one pairs a Given against a When inside one outline.
+
+description: |
+  ## What
+
+  Ordinary end of day uses the full `stop-swarm.sh`. That is the lights-out
+  verb: it stops the Telegram front desk (which owns the Let's Talk bridge) and
+  the remote tunnels (which publish it). The phone is then pointing at an origin
+  that no longer exists, so Bubble shows Cloudflare 530 / Error 1033 — which
+  reads as "the app is broken", not "the pack went to sleep".
+
+  Bedtime and lights-out are two different intentions. The stack implements only
+  the second, so every evening spends a debugging loop on a predictable stop.
+
+  ## The fix
+
+  A distinct bedtime verb — **finish-shift** — that stops the token burn and
+  leaves the phone path up, per the matrix in `notes:`. `stop-swarm.sh` stays
+  exactly as it is and remains the true lights-out verb, still available when
+  the human is travelling or the host is going off.
+
+  The classification is the deliverable. Make the matrix a single explicit
+  table that both verbs read, so "which ancillaries does bedtime keep?" has one
+  answer in one place and adding a component to the stack forces a decision for
+  every verb (first invariant). A component silently defaulting to "keep" is how
+  bedtime would grow a leak; defaulting to "stop" is how it would grow this bug
+  back.
+
+  The scheduled end of day calls finish-shift by default, and lights-out only
+  when configuration says so.
+
+  ## Constraints
+
+  - **Compose, do not fork.** `kill_pipeline_swarm.sh`, the per-component stop
+    helpers inside `stop_ancillary_services.sh`, and `stack_survivor_scan.sh`
+    already exist and are already the tested path. Bedtime is a different
+    selection over those pieces, not a second teardown.
+  - **Verify, do not trust exit codes.** `stop-swarm.sh` already refuses to
+    report a clean slate while supervised processes survive (BL-637). Bedtime
+    inherits that posture for the components it stops — and must also verify
+    that what it kept is still up, which is the half nobody checks today.
+  - **Register step handlers scoped to this feature.** The registry is global
+    and first-match; text like "the command succeeds" must not be registered
+    unscoped (BL-425).
+
+  ## Scope
+
+  - The bedtime verb and the shared keep-vs-kill table both verbs read.
+  - `stop_ancillary_services.sh` — the misleading always-on comment at its head.
+  - The scheduled day-shift-end path — call bedtime unless configured otherwise.
+  - `swarmforge/scripts/test/` — unit runner for the matrix decision.
+  - `specs/pipeline/steps/` — this feature file's handlers, in this parcel.
+  - One short how-to: bedtime vs lights-out, what stays up, how to fully stop.
+
+  ## Out of scope
+
+  - **Keeping a Let's Talk agent awake overnight** so voice still answers while
+    the pack sleeps. The intake names this as its own later slice; bedtime only
+    has to stop looking like tunnel death, not keep answering.
+  - **Making a new tunnel URL discoverable to the phone** (stable hostname, deep
+    link, discovery document, refresh-pairing UX). The intake lists four options
+    and it is complementary to BL-716 — that is a design decision of its own and
+    does not belong inside a teardown verb.
+  - Renaming or restructuring `stop-swarm.sh` / `swarm-kill`.
+
+  ## e2e procedure for QA
+
+  1. `bash specs/pipeline/scripts/run_acceptance.sh specs/features/BL-762-finish-shift-leaves-the-phone-path-up.feature`
+     — all scenarios green.
+  2. On a live swarm: run finish-shift. Confirm no agent sessions and no
+     handoffd, no babysitterd, no operator runtime, no onboarder — and that the
+     bridge still answers locally and the published tunnel URL still returns
+     something other than 530.
+  3. From the phone: open Bubble and start a turn. It may honestly report the
+     swarm is asleep; it must not show a tunnel or DNS error.
+  4. Run `stop-swarm.sh` after that: front desk and tunnels now stop too, and
+     the survivor scan reports a clean slate.
+  5. Run finish-shift twice in a row, and once against an already-stopped
+     stack: both succeed and neither disturbs what bedtime keeps up.
+  6. Add a fake component to the matrix with no classification for one verb and
+     confirm the failure is loud (first invariant).
+
+approval_context: >
+  One decision worth a tap: whether the **onboarder** belongs in bedtime's stop
+  set. I put it there — it is a supervised poll loop that burns tokens, which is
+  what bedtime exists to stop — but unlike babysitterd it cannot revive a seat,
+  so keeping it would be defensible if you ever want overnight onboarding
+  reconciliation to continue. Everything else in the matrix follows directly
+  from the intake: the front desk and tunnels stay up because they are the phone
+  path, and babysitterd goes because it would relaunch what bedtime just
+  stopped.

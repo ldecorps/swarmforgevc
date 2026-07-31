@@ -1,0 +1,122 @@
+id: BL-763
+title: "DEFECT — Stamp hand Bubble tunnel revive fixes (meta bounce + always-on path); 2026-07-31 DNS recurrence"
+milestone: M8
+type: defect
+severity: medium
+status: todo
+epic: swarmforge-console
+human_approval: approved
+priority: 2
+direction: queue-jump
+depends_on: []
+mutation_cost: medium
+required_stages: [specifier, coder, cleaner, architect, hardender, documenter, qa]
+assigned_to: none
+
+invariants:
+  - "GET /lets-talk/meta on a live bridge returns a stable instanceId for that process lifetime; a bounce yields a different instanceId."
+  - "When Bubble sees a new bridge instanceId and bounce-auto-session-reset is enabled, it opens a fresh Let's Talk session once — not on every poll against the same instance."
+  - "Hostname rotation / dead trycloudflare DNS is not claimed fixed by this ticket — that remains BL-716; this parcel must not close BL-716 by assertion."
+
+required_wiring:
+  - "extension bridge lets-talk routes::GET /lets-talk/meta::instanceId (+ startedAt)"
+  - "android BridgeClient.fetchBridgeMeta + TalkEngine.syncBridgeInstanceAndSession::bounce detect"
+  - "swarmforge/scripts start_ancillary / start_cursor_bridge / stop_ancillary::Cursor Remote always-on keep/stop contract"
+  - "specs/features/BL-763-bubble-tunnel-hand-fixes-swarm-stamp.feature::acceptance"
+
+approval_context: >
+  Human via Cursor 2026-07-31 after Bubble screenshot Unable to resolve host
+  "aimed-screenshots-reduction-wall.trycloudflare.com". Asked to file a defect
+  about the outside/IDE tunnelling fixes so the swarm can stamp them.
+
+  Tonight's user-visible recovery was operational only: live base
+  https://kirk-appeared-olympics-northwest.trycloudflare.com from
+  .swarmforge/operator/resident-spy-tunnel.json; human re-pairs by paste.
+  That is the BL-716 gap recurring — not a code fix.
+
+  Uncommitted adopt candidate already in the master working tree (ticket-less,
+  BL-506): Android /lets-talk/meta bounce detection + session refresh;
+  CompanionPrefs last instance id; start_ancillary / start_cursor_bridge /
+  stop_ancillary Cursor Remote always-on comments and wiring. Extension does
+  not yet serve GET /lets-talk/meta — client is ahead of server.
+
+  Option A — adopt: coder starts from that working tree, this ticket is the
+  retroactive ticket, pipeline reviews as ordinary parcel content; wire the
+  missing meta route in the same parcel. Option B — rebuild: revert the
+  working-tree changes first. A is cheaper. Hostname discovery stays BL-716.
+
+description: |
+  ## What
+
+  Outside/IDE work landed in the dirty master tree to soften Bubble tunnel
+  revive pain (bridge bounce → auto new-session; keep Cursor Remote up across
+  ancillary stop). It has no ticket, no acceptance contract, and no pipeline
+  review. Tonight the phone still died on a **stale quick-tunnel hostname**
+  until a human pasted the live base URL — proving bounce-meta does not
+  substitute for BL-716 discovery.
+
+  ## Why stamp this now
+
+  Per BL-506, ticket-less functional work must be retroactively ticketed or
+  reverted. Per BL-709's adopt fork, the cheap honest path is adopt + review,
+  not a silent commit past QA.
+
+  ## Scope (this ticket)
+
+  - Adopt the uncommitted Android meta/bounce-session path and finish the
+    missing bridge `GET /lets-talk/meta` so the client is not calling a ghost.
+  - Adopt / verify the Cursor Remote always-on start/stop contract in the
+    ancillary scripts (compose with BL-762's bedtime matrix; do not fork a
+    second teardown).
+  - Record the 2026-07-31 hostname pair in evidence/notes.
+
+  ## Out of scope
+
+  - App discovery of new trycloudflare hostnames, deep links, named tunnels
+    (BL-716)
+  - Full finish-shift bedtime verb (BL-762) beyond the always-on pieces already
+    in this dirty tree
+  - Claiming operational paste fixed the product
+
+  ## STEERING note
+
+  Human-requested stamp/adopt. Queue-jump so it does not rot under pilot-process
+  volume, but do not displace priority-0 BL-727…BL-757 evidence-gate work unless
+  the human says so.
+
+acceptance: specs/features/BL-763-bubble-tunnel-hand-fixes-swarm-stamp.feature
+
+source: |
+  Human via Cursor 2026-07-31 (Bubble screenshot + "file a defect telling about
+  the fixes you did to fix the tunnelling"). Drained from
+  `backlog/INTAKE-bubble-tunnel-hand-fixes-need-swarm-stamp.md`. Sibling of
+  BL-716 (discovery) and BL-762 (bedtime keep phone path).
+
+notes: |
+  e2e on phone (manual until Android-seam policy from BL-761): with Bubble
+  paired to a LIVE base URL, bounce the headless bridge; confirm one
+  new-session after instanceId changes and turns still work. Separately,
+  with a DEAD hostname in prefs, confirm DNS error still surfaces (BL-716) —
+  this ticket must not paper over that.
+
+  Specifier: if adopt scope is judged too wide, split script always-on into
+  BL-762 and keep this ticket meta-only — say so in an amend, do not silently
+  widen BL-716.
+
+  ## 2026-07-31 evening — STT "not configured" (ops, no product code land)
+
+  After hostname re-pair, Bubble still got `speech-to-text is not configured`
+  while recording. Diagnosis: port 8765 is owned by **front-desk-supervisor**
+  (not bridge-headless-supervisor). `bounce_bridge_headless.sh` only re-arms
+  the front-desk bridge child; that child inherits the supervisor's env.
+  Front-desk supervisor pid had **no** `LETS_TALK_*` / `WHISPER_*` —
+  `launch_front_desk.sh` does not source `.swarmforge/swarm.env`, and
+  `spawn-bridge!` only injects `BRIDGE_TOKEN`.
+
+  Recovery tonight: stop front desk, relaunch `launch_front_desk.sh` with
+  `swarm.env` sourced (+ Telegram creds). Whisper paths present; adapters
+  resolve; voice works. **No extension/android/script source was edited for
+  this recovery.** Durable fix belongs in this parcel or a sibling: make
+  `launch_front_desk.sh` (or `spawn-bridge!`) forward Let's Talk audio env
+  the same way `start_bridge_headless.sh` / `bridge_headless_supervisor.bb`
+  already do.

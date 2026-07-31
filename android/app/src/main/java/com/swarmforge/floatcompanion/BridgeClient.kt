@@ -2,9 +2,13 @@ package com.swarmforge.floatcompanion
 
 import org.json.JSONObject
 import java.io.BufferedReader
+import java.io.IOException
 import java.io.OutputStreamWriter
+import java.net.ConnectException
 import java.net.HttpURLConnection
+import java.net.SocketTimeoutException
 import java.net.URL
+import java.net.UnknownHostException
 
 /**
  * BL-707: discrete turns against the Let's Talk bridge path.
@@ -20,8 +24,26 @@ object BridgeClient {
         val clientTts: Boolean = false,
         val speechLocale: String? = null,
         val recoverable: Boolean = false,
-        val reason: String? = null
+        val reason: String? = null,
+        /** BL-716: host unresolved/unreachable or the tunnel edge itself is dead. */
+        val connectionFailure: Boolean = false
     )
+
+    /** Cloudflare quick-tunnel edge codes for "origin (this bridge) is gone". */
+    private val TUNNEL_DEAD_HTTP_CODES = setOf(521, 522, 523, 524, 530)
+
+    /** BL-716: a clear, non-raw message for DNS/connect failures — never the exception dump. */
+    private fun friendlyConnectionMessage(e: Exception): String = when (e) {
+        is UnknownHostException -> "Can't find the bridge host — pairing URL may be stale."
+        is SocketTimeoutException -> "Bridge connection timed out — the tunnel may be down."
+        is ConnectException -> "Can't connect to the bridge — the tunnel may be down."
+        is IOException -> "Bridge connection error — the tunnel may be down."
+        else -> "Connection error: ${e.message ?: e.javaClass.simpleName}"
+    }
+
+    /** BL-716: a clear message for a dead tunnel edge — never the raw Cloudflare error body. */
+    private fun friendlyTunnelMessage(code: Int): String =
+        "Bridge tunnel unreachable (HTTP $code) — pairing URL may be stale."
 
     fun submitTextTurn(baseUrl: String, token: String, text: String): TurnResult =
         postTurn(baseUrl, token, JSONObject().put("text", text))
@@ -52,7 +74,12 @@ object BridgeClient {
             val stream = if (code in 200..299) conn.inputStream else conn.errorStream
             val raw = stream?.bufferedReader()?.use(BufferedReader::readText).orEmpty()
             if (code !in 200..299) {
-                return false to "HTTP $code: ${raw.take(200)}"
+                val reason = if (code in TUNNEL_DEAD_HTTP_CODES) {
+                    friendlyTunnelMessage(code)
+                } else {
+                    "HTTP $code: ${raw.take(200)}"
+                }
+                return false to reason
             }
             val json = JSONObject(raw)
             if (!json.optBoolean("success", false)) {
@@ -60,7 +87,7 @@ object BridgeClient {
             }
             true to null
         } catch (e: Exception) {
-            false to (e.message ?: "network error")
+            false to friendlyConnectionMessage(e)
         } finally {
             conn.disconnect()
         }
@@ -77,7 +104,11 @@ object BridgeClient {
             val stream = if (code in 200..299) conn.inputStream else conn.errorStream
             val raw = stream?.bufferedReader()?.use(BufferedReader::readText).orEmpty()
             if (code !in 200..299) {
-                return TurnResult(false, "", reason = "HTTP $code: ${raw.take(200)}")
+                return if (code in TUNNEL_DEAD_HTTP_CODES) {
+                    TurnResult(false, "", reason = friendlyTunnelMessage(code), connectionFailure = true)
+                } else {
+                    TurnResult(false, "", reason = "HTTP $code: ${raw.take(200)}")
+                }
             }
             val json = JSONObject(raw)
             if (!json.optBoolean("success", false)) {
@@ -101,7 +132,7 @@ object BridgeClient {
                 speechLocale = json.optString("speechLocale", "").ifBlank { null }
             )
         } catch (e: Exception) {
-            TurnResult(false, "", reason = e.message ?: "network error")
+            TurnResult(false, "", reason = friendlyConnectionMessage(e), connectionFailure = true)
         } finally {
             conn.disconnect()
         }

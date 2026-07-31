@@ -99,9 +99,33 @@ Prefer / pull toward:
 bot feature, topic UI, board chrome, or mini-app-in-Telegram page — unless the
 human tags them `human-requested` or they are a true `expedite` defect that
 breaks an already-shipped Telegram path (front desk deaf, control verbs broken,
-etc.). Operator slash verbs and Cursor Remote that already shipped stay
+etc.). Operator slash verbs and the host-agent control topic that already shipped stay
 maintainable; they are not a license to grow the Telegram surface further.
+(2026-07-30 human note: that topic was renamed in Telegram from "Cursor Remote"
+to "Host"; intake filed as `INTAKE-rename-cursor-remote-topic-to-host.md` so code
+and copy can catch up — maintain rename only, not new Telegram surface.)
 Same for Pages-PWA-only feature work once Bubble parity is the ramp.
+
+**Human directive 2026-07-31 (Let's Talk, morning):** for **today's live
+shift**, prefer the **pilot-process** defect batch from BL-723 (roughly
+BL-727…BL-757 process half, plus orphan-doc companion BL-756) — already
+tagged `direction: queue-jump`, `priority: 0`, `human_approval: approved`.
+Do these on the **live swarm**, not `/pilot`. Goal: harden pilot close gates
+before more safe-pilot volume. Ordinary paused work waits behind this batch
+unless a true high/critical operational defect must jump first.
+
+**Same day, JumpQ order (Let's Talk):** after that priority-0 evidence-gate
+slice, pull **BL-758** (`direction: queue-jump`, `priority: 1`) — inject each
+pipeline role's real prompt at hat change instead of one mega-brief. Same
+batch, gates first, root staffing shape second. Still live swarm only.
+
+**Human directive 2026-07-31 (Cursor, evening):** **continuous shifts until
+revoked.** Keep the pack up across former day/night boundaries — no scheduled
+`night-stop` / `day-shift-end`. Crontab ensure-up only (09:00 + 17:00). State:
+`.swarmforge/operator/continuous-shifts.json`. Do not restore
+`crontab.night-standing` or lights-out the stack on a timer until the human
+says otherwise. Operator note:
+`.swarmforge/operator/INTAKE-continuous-shifts-until-revoked.md`.
 
 This freeze is stronger than "Awaiting the human" silence: it is an explicit
 veto on a class of work, recorded here so specifier/coordinator do not keep

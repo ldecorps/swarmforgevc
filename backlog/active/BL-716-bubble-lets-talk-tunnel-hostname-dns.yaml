@@ -11,7 +11,7 @@ direction: queue-jump
 depends_on: []
 mutation_cost: medium
 required_stages: [specifier, coder, cleaner, architect, hardender, documenter, qa]
-assigned_to: none
+assigned_to: coder
 
 invariants:
   - "When the configured bridge base URL host cannot be resolved or reached, Let's Talk does not stay in a fake-healthy recording / hands-free state — the human sees a clear reconnect failure and recording stops or is refused."
@@ -47,6 +47,23 @@ description: |
   refresh). Coder implements. Do not redesign barge-in or wake-word intakes
   here.
 
+  ## App discovery (human ask 2026-07-30 evening)
+
+  Today: host Telegram-notifies the new quick-tunnel URL; Bubble stores pairing
+  only in prefs / Downloads mirror and does not consume that notify — so a
+  revived hostname is invisible until manual paste.
+
+  Make the new URL discoverable — specifier picks primary:
+  1. **Stable hostname** (named Cloudflare tunnel) — best; URL stops rotating.
+  2. **Deep link / App Link** from the existing Telegram notify
+     (`swarmforge-bubble://pair?…` or HTTPS) — one-tap writes prefs.
+  3. **Fixed discovery document** on stable HTTPS (Pages / named endpoint)
+     that Bubble polls on 530/DNS failure; keep token handling safe.
+  4. **Failure UX** — prompt “Refresh pairing” instead of raw Cloudflare JSON.
+
+  Near-term while quick tunnels remain: (2). Production steady state: (1).
+  Share design with finish-shift revive path.
+
   ## Out of scope
 
   - Offline expeditor / pilot
@@ -64,3 +81,9 @@ notes: |
   Coordinator: after BL-715 is in flight or done, promote this next among
   queue-jump work. Specifier first. Never start `/expedite` / offline
   expeditor for this unless the human says so.
+
+  Recurrence 2026-07-31 (Cursor / Bubble screenshot): phone still paired to
+  dead `aimed-screenshots-reduction-wall.trycloudflare.com` while live base was
+  `kirk-appeared-olympics-northwest.trycloudflare.com`. Recovery was manual
+  re-pair only. Sibling adopt ticket for unrelated hand bounce-meta /
+  always-on script work: BL-763 — do not close this ticket from that parcel.
