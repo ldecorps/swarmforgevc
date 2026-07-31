@@ -157,3 +157,6 @@ description: |
      `backlog/done/` and the receipt records the feature file and commit.
   4. Confirm `composePilotExpeditorPrompt` output routes the landing through
      the gate CLI, and that `required_wiring:` above passes the pre-QA gate.
+bounce_count: 1
+bounce_history:
+  - { at: 2026-07-31, by: architect, blamed: coder, class: behavior, commit: f0820a5457ab322e86f3f71a39b4ca6d4f413041, evidence: backlog/evidence/BL-727-architect-bounce-20260731.md }
