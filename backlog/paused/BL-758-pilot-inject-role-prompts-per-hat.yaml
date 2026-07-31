@@ -1,0 +1,67 @@
+id: BL-758
+title: "Pilot process: inject each pipeline role's real prompt at hat change instead of one mega-brief"
+milestone: M8
+type: defect
+severity: medium
+status: todo
+epic: swarm-reliability
+assigned_to: specifier
+priority: 1
+direction: queue-jump
+depends_on: []
+mutation_cost: medium
+source: |
+  Human via Let's Talk / Cursor, 2026-07-31 morning. Complements the BL-723
+  pilot-process batch (BL-727…BL-757 process half): those tickets harden
+  close gates and evidence; this one attacks the root staffing shape —
+  `/pilot` today injects a single `composePilotExpeditorPrompt` mega-brief
+  that says "wear every hat" without loading `roles/<role>.prompt` (or the
+  live swarm's stage overlays) when the casquette changes.
+
+notes: |
+  Human 2026-07-31 Let's Talk: queue-jump for today's live shift. Order:
+  pull the priority-0 evidence-gate pilot-process tickets first (acceptance
+  actually run, CRAP, tmpDir, orphan docs, vacuous-test catches). Then pull
+  this ticket. Same JumpQ batch; gates protect immediately; per-hat role
+  prompts are the complementary root fix. Live swarm only — do not implement
+  via `/pilot`.
+
+description: |
+  ## What
+
+  Today `/pilot` (Cursor-as-expeditor) starts with one composed system brief
+  that lists stages and tells the agent to wear every pipeline hat in turn.
+  It does not, at each hat change, inject the real role prompt that the live
+  swarm would load for that stage (specifier, coder, cleaner, architect,
+  hardener, documenter, QA — including any stage overlays the pack already
+  uses).
+
+  Consequence observed in BL-723: the pilot skipped gates and conventions
+  that a role wearing its own prompt would treat as mandatory. Evidence gates
+  (sibling tickets) catch silent skips; they do not restore hat-faithful
+  judgment. One mega-brief remains a different agent than seven sequential
+  role loads.
+
+  ## Requested outcome
+
+  1. At each pilot hat change (and on bounce-back to an earlier role), inject
+     that role's real prompt content as the active system context for the
+     stage — not a one-line reminder of the role name.
+  2. Keep the existing pilot isolation rules (worktree, no handoffd/tmux,
+     Telegram status posts, stage-boundary cleanup) as a thin wrapper around
+     those role prompts, not as a replacement for them.
+  3. Prefer reusing the same role prompt files / overlays the live pipeline
+     already loads; do not invent a second parallel "pilot dialect" of duties.
+  4. Machine-checkable: a pilot run's stage boundary evidence shows which
+     role prompt was active (path or content hash), not only a free-text
+     "now wearing coder" status line.
+  5. Out of scope: replacing the evidence-gate tickets (BL-727…BL-757 process
+     half); those still land. This ticket does not unblock more `/pilot safe`
+     volume by itself.
+
+  ## Question for specifier
+
+  Exact injection mechanism (append-system-prompt per stage vs session
+  restart vs Cursor skill swap) is a design choice — pick the smallest
+  change that makes the active prompt content match the live role for that
+  hat, with durable proof at the stage boundary.

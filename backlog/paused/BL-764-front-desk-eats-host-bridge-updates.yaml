@@ -1,0 +1,110 @@
+id: BL-764
+title: "DEFECT — Front desk and Host bridge share one bot token, so Host/Bubble messages are silently dropped"
+milestone: M8
+type: defect
+severity: high
+status: todo
+epic: swarmforge-console
+human_approval: pending
+assigned_to: none
+priority: 1
+direction: queue-jump
+depends_on: []
+mutation_cost: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+invariants:
+  - "At most one process calls Telegram getUpdates for a given bot token; any second consumer of that token reads its updates from the on-disk fan-out instead."
+  - "An inbound update addressed to a bridge-owned topic is either forwarded to that bridge or explicitly dropped with a recorded reason — never routed to SUP/Operator, and never silently discarded."
+  - "Draining the inbound queue is idempotent under redelivery: an update drained once is not acted on twice, and a concurrent append is never lost by the drain."
+
+required_wiring:
+  - "extension/src/tools/telegramFrontDeskBotCore.ts::forwardCursorBridgeUpdate::front desk forwards instead of dropping"
+  - "extension/src/tools/telegramCursorBridgeLive.ts::drainCursorBridgeInboundUpdates::bridge consumes the queue"
+  - "extension/src/tools/telegramCursorBridgeCore.ts::shouldUseCursorBridgeInboundQueue::shared-token default"
+  - "swarmforge/scripts/start_cursor_bridge.sh::CURSOR_BRIDGE_INBOUND_QUEUE::shared-token launch default"
+
+approval_context: >
+  Retro-ticket for functional work already sitting uncommitted in the master
+  working tree (ticket-less, BL-506), surfaced by the 2026-07-31 master-diff
+  review. Same adopt posture the human already approved on BL-763: the coder
+  starts from that working tree, this ticket is the retroactive ticket, and the
+  pipeline reviews it as ordinary parcel content. Nothing is reverted before
+  review.
+
+  What needs sign-off: that adopt (not rebuild-from-scratch) is right here too,
+  and that the liveness cue ships in the same parcel as the queue rather than as
+  its own ticket — the "N waiting" count it renders comes from the queue depth,
+  so splitting them would ship a counter with nothing to count.
+
+description: |
+  ## What
+
+  When the Telegram front desk and `telegram-cursor-bridge` are configured with
+  the SAME bot token, both call `getUpdates` on it. Telegram hands each update
+  to exactly one caller, so Host / Cursor Remote and Bubble messages landed at
+  whichever poller won the race. The front desk's rule for a bridge-owned topic
+  was `drop`, so a message that reached the front desk first was discarded and
+  the human saw a single tick and no reply — the Host topic read as dead while
+  every process reported healthy.
+
+  Make the front desk the sole `getUpdates` caller on a shared token and
+  fan updates out to the bridge over an on-disk queue
+  (`cursor-bridge-inbound.jsonl`): the front desk appends bridge-owned updates
+  instead of dropping them, and the bridge drains that file instead of competing
+  on Telegram. An exclusive `CURSOR_BRIDGE_BOT_TOKEN` keeps owning `getUpdates`
+  directly — the queue is the shared-token path only.
+
+  Ships with a standing busy/idle liveness line on the Cursor Remote topic,
+  edit-in-place and change-gated, showing whether the bridge is working a turn
+  and how many are waiting — the cue whose absence made this defect invisible.
+
+  Also in scope, from the same intake: `--help` / `-h` on
+  `telegram-cursor-bridge.js` must print usage and exit, never treat the flag as
+  a repo root and open a long poll. A historical `--help` process was doing
+  exactly that and stealing updates.
+
+  ## Why
+
+  A whole operator surface was silently unusable with no failing signal
+  anywhere. Two pollers on one token is a standing hazard, not a one-off: any
+  future consumer of that token reintroduces it unless the single-poller rule is
+  encoded and the fan-out is the documented way to add a second consumer.
+
+  ## Out of scope
+
+  - Bubble remote configuration and hold-music catalog (BL-765).
+  - Keeping Cursor Remote up across ancillary/night stop (BL-763, BL-762).
+  - Mini App Let's Talk retirement (BL-766).
+
+acceptance: specs/features/BL-764-front-desk-eats-host-bridge-updates.feature
+
+source: |
+  `.swarmforge/operator/INTAKE-host-topic-silent-dual-poller.md` (human via
+  Cursor 2026-07-31 ~22:05, "no reply when typing in Host") plus the
+  2026-07-31 master-diff review drained from
+  `backlog/INTAKE-untracked-master-changes-need-review.md`. Intake archived to
+  `.swarmforge/operator/archive/` by this spec.
+
+notes: |
+  Adopt candidates already in the dirty master tree — new
+  `extension/src/tools/cursorBridgeInboundQueue.ts`,
+  `extension/src/tools/telegramCursorBridgeLiveness.ts`, modifications to
+  `telegramFrontDeskBotCore.ts` (`forwardCursorBridgeUpdate`, `ownedTopicIds`,
+  Bubble topic ownership), `telegramCursorBridgeCore.ts`,
+  `telegramCursorBridgeLive.ts`, `telegramCursorBridgeRedeploy.ts`,
+  `telegram-cursor-bridge.ts`, and their vitest files. Coder adopts, does not
+  re-derive.
+
+  Redelivery/idempotence is the invariant to design against up front:
+  `drainCursorBridgeInboundUpdates` currently clears the file with a truncating
+  write before parsing, so an append landing between the read and the truncate
+  is lost. That is the third invariant, and it wants a property test rather than
+  more example scenarios.
+
+  e2e QA procedure: with front desk and bridge sharing one token, type in the
+  Host topic and confirm an Agent-started acknowledgement and a reply while the
+  front desk stays healthy; confirm `node extension/out/tools/telegram-cursor-bridge.js --help`
+  exits 0 without Telegram env and opens no poll; confirm the Cursor Remote
+  liveness line flips busy → idle in place rather than posting a new message per
+  turn.

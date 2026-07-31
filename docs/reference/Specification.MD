@@ -1898,7 +1898,19 @@ This pairs naturally with the `to: human` gate (see Correctness & Failure Handli
 
 ### Chat adapter (Signal / Telegram / WhatsApp / Teams) — human channel only
 
-Instead of (or alongside) a custom phone app, the bridge can expose a **chat adapter**: a bot in a messaging app becomes the human's remote channel. This is attractive because the platform already solved delivery, identity, encryption, and a UI that's already on your phone — no push infra or custom app to build.
+**Interface vs incarnation (2026-07-30).** Architecture may name two interfaces:
+**messaging** (the human chat channel / chat adapter) and **host agent** (the
+IDE seat that drives Remote verbs, pairing, and future pack staffing). The
+current everyday incarnations are **Telegram** (messaging) and **Cursor** (host
+agent). The operator **phone app** product name is **Bubble** (native Android
+under `android/`; BL-707). That duality / product lock is deliberate — not a
+ubiquitous-language failure. Docs may say “host agent (today: Cursor)” when
+teaching architecture; operators still say Telegram and Cursor when naming live
+processes, env vars, and slash verbs, and say **Bubble** for the phone app. Do
+**not** run a purity rename that erases those incarnation names from code or
+how-tos; see `backlog/INTAKE-messaging-host-agent-interface-vs-incarnation.md`.
+
+Instead of (or alongside) Bubble, the bridge can expose a **chat adapter**: a bot in a messaging app becomes the human's remote channel. This is attractive because the platform already solved delivery, identity, encryption, and a UI that's already on your phone — no push infra or custom app to build.
 
 **Hard boundary: the chat app is a human-facing projection, never the agent coordination bus.** Agents continue to talk *only* through the on-disk message store (with its append-only log, leases, sequencing, chase, dead-letter). Routing agent-to-agent traffic through a consumer chat API would trade those hard-won guarantees for an unreliable network dependency in the core path — explicitly out of scope. The adapter holds no state; it projects store events outward and turns human replies into `human-input` / gate-answer messages.
 
