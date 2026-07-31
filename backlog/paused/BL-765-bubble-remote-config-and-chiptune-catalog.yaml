@@ -1,0 +1,101 @@
+id: BL-765
+title: "Bubble reads its capability flags and hold-music catalog from the bridge, so changes ship without an APK"
+milestone: M8
+type: feature
+status: todo
+epic: swarmforge-console
+human_approval: pending
+assigned_to: none
+priority: 3
+direction: normal
+depends_on: []
+mutation_cost: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+invariants:
+  - "Bubble stays usable when remote config or catalog is missing, unreachable, or malformed: it falls back to bundled defaults and never renders an empty or broken surface."
+  - "Every remote-served payload is versioned and validated before use; an unparseable or wrong-schema payload is rejected whole, never applied field-by-field."
+
+required_wiring:
+  - "extension/src/bridge/letsTalkBubbleConfig.ts::served over GET /lets-talk/bubble-config.json"
+  - "extension/src/bridge/letsTalkChiptunes.ts::served over GET /lets-talk/chiptunes.json"
+  - "android BridgeClient::fetch bubble-config and chiptunes on pair/resume"
+
+approval_context: >
+  Retro-ticket for functional work already sitting uncommitted in the master
+  working tree (ticket-less, BL-506), surfaced by the 2026-07-31 master-diff
+  review. Same adopt posture the human already approved on BL-763 — coder starts
+  from the working tree, pipeline reviews it as ordinary parcel content, nothing
+  is reverted before review.
+
+  What needs sign-off: the remote kill-switch shape. The working tree ships
+  `LETS_TALK_BUBBLE_FORCE_ROLLBACK=1` and
+  `LETS_TALK_BUBBLE_CONFIG_DISABLED=1` plus a `.rollback.json` sibling file.
+  That is a real remote-disable channel into an installed phone app, so it is
+  the human's call whether it stays as specced or is narrowed.
+
+description: |
+  ## What
+
+  Bubble currently hard-codes its capability set and its hold-music catalog in
+  the APK, so turning a feature off or adding a tune means building, publishing
+  and installing a new APK on the phone. Serve both from the bridge instead:
+
+  - `GET /lets-talk/bubble-config.json` — a versioned capability document
+    (text turns, hands-free, hold music, playlist, new session, pause all,
+    bridge-bounce auto session reset). Bubble applies it on pair/resume and
+    falls back to bundled defaults when it is absent or unusable.
+  - `GET /lets-talk/chiptunes.json` — the hold-music catalog as data, so new
+    songs ship with a bridge redeploy.
+
+  Also in scope, from the same working tree: hold-music volume and reply-voice
+  volume stop sharing one control — the setting governs music only and the
+  reply voice follows the phone's media volume. The debug version label moves
+  to a plain `v<version>` string on the pairing screen and talk panel.
+
+  ## Why
+
+  The phone is the surface the human actually uses, and it is the slowest thing
+  in the loop to change. Remote config and a remote catalog turn a
+  build-publish-install cycle into a bridge redeploy, and give a way to disable
+  a misbehaving capability without touching the installed app.
+
+  ## Out of scope
+
+  - Shared-token inbound fan-out and bridge liveness (BL-764).
+  - Bridge bounce detection / `GET /lets-talk/meta` and Cursor Remote always-on
+    (BL-763).
+  - Tunnel hostname discovery (BL-716).
+  - Migrating Live Screen from the Mini App to Bubble — that intake is parked in
+    the backlog root pending a human answer; do not widen into it.
+
+acceptance: specs/features/BL-765-bubble-remote-config-and-chiptune-catalog.feature
+
+source: |
+  2026-07-31 master-diff review, drained from
+  `backlog/INTAKE-untracked-master-changes-need-review.md`. The work reached
+  Bubble v0.3.14 (versionCode 30) outside the pipeline; this ticket is its
+  retroactive contract.
+
+notes: |
+  Adopt candidates already in the dirty master tree — new
+  `extension/src/bridge/letsTalkBubbleConfig.ts`,
+  `extension/src/bridge/letsTalkChiptunes.ts`,
+  `extension/src/bridge/letsTalkChiptunes.json`, `resolveJsonModule` in
+  `extension/tsconfig.json`, the `android/app/**` changes, and the how-to
+  updates under `docs/how-to/BL-705-*` and `docs/how-to/BL-707-*`. Coder
+  adopts, does not re-derive.
+
+  `letsTalkChiptunes.json` is ~3.5k lines of step data. It is data, not logic —
+  keep it out of coverage/mutation scope and gate the loader, not the payload.
+
+  Android has no automated seam in this repo yet (see BL-761), so the phone-side
+  half of each scenario is verified manually until that lands; the bridge-side
+  half must still be an executable scenario.
+
+  e2e QA procedure: with Bubble paired to a live bridge, remove
+  `.swarmforge/operator/lets-talk-bubble-config.json` and confirm Bubble still
+  opens with every bundled capability; restore it with one capability disabled
+  and confirm that control disappears after a resume without reinstalling; add a
+  song to the catalog, redeploy the bridge, and confirm it appears in the
+  playlist dialog on the phone with no APK change.
