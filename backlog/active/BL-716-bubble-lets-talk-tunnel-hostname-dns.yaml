@@ -87,3 +87,6 @@ notes: |
   `kirk-appeared-olympics-northwest.trycloudflare.com`. Recovery was manual
   re-pair only. Sibling adopt ticket for unrelated hand bounce-meta /
   always-on script work: BL-763 — do not close this ticket from that parcel.
+bounce_count: 1
+bounce_history:
+  - { at: 2026-07-31, by: architect, blamed: coder, class: acceptance, commit: d255a73b2, evidence: backlog/evidence/BL-716-bubble-lets-talk-tunnel-hostname-dns-bounce-20260731.md }
