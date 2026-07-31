@@ -57,6 +57,34 @@ pairs were filed (BL-740 through BL-755) alongside the seven pairs already
 filed by the coder, cleaner, and architect (BL-726/727, BL-728/729,
 BL-730/731, BL-732/733, BL-734/735, BL-736/737, BL-738/739).
 
+**Documenter update (2026-07-31):** the last three holdouts flip too.
+Running this project's own BL-456 orphan-doc checker
+(`computeDocsStructure`, never before run against this repo's real `docs/`
+tree — see the Documenter viewpoint section) against every doc tonight's
+13 landings added found **10 of the 13 landed a doc that is orphaned** —
+never linked from `docs/index.md`, including the last three tickets every
+other seat had called clean: **BL-641**, **BL-671**, and **BL-662**. That
+was the deciding shortfall on those three; the other 7 orphaned docs
+(BL-623, BL-627, BL-637, BL-642, BL-661, BL-694, BL-718) belong to tickets
+already not-on-par for independent reasons, noted in their own sections
+below without re-flipping an already-flipped verdict. Updated overall
+count: **13 of 13 not-on-par**, 0 on-par. Filed as one shared pair rather
+than ten near-duplicates, since the root cause and fix are byte-identical
+across every instance: **BL-756** (remaining work — the 10 missing index
+links) and **BL-757** (pilot process — the checker exists but nothing
+runs it against the real tree). See the Documenter viewpoint section for
+the full reasoning and evidence.
+
+**QA update (2026-07-31):** final gate concurs, count unchanged at **13 of
+13 not-on-par**, 0 on-par. Independently reran the mechanically checkable
+findings (orphan-doc checker, the mkdtemp gate, the full unit suite twice,
+the property suite, and two of the live-code claims behind BL-637/BL-642)
+rather than trusting prose, and all reproduced exactly as claimed. Verified
+all 32 filed defects carry `type: defect` and an explicit `severity:`, all
+13 tickets' `notes:` carry every seat's verdict and defect links with no
+other field rewritten, and all 13 remain in `backlog/done/`. See the QA
+viewpoint section for the full evidence.
+
 **Process:** BL-723 walked the live swarm path after queue-jump: this parcel
 moved specifier -> coder (this hop) and continues through cleaner ->
 architect -> hardener -> documenter -> QA like any other ticket, per
@@ -352,19 +380,191 @@ scoped to this worktree, checked both times).
 
 ### Documenter viewpoint
 
-PENDING — this parcel has not yet reached the documenter hop. The
-documenter owns finishing this review body (per-seat content from every
-hop) and committing the briefing email body under `docs/briefings/`, and
-will fill in this section with real findings when this parcel arrives.
+Reviewed all 13 landings through the documenter lens: does each ticket's
+user-facing behavior change carry an accurate, correctly-classified
+(Divio-mode) doc, is it discoverable (linked from `docs/index.md`, not
+orphaned), and is any doc with a freshness field (e.g. Specification.MD's
+`Last Updated`) current. Checked which of the 13 actually needed a new
+doc at all before checking whether the doc that landed is adequate — a
+ticket with no prior doc surface and no new user-facing behavior (BL-636's
+rotation-ordering fix, BL-646's fixture-path fix, BL-559's pre-existing
+property test) correctly added none; nothing stale to update either,
+confirmed by grepping `docs/` for any prior description of the old, buggy
+behavior in each case and finding none. The other 10 tickets each added a
+doc, correctly classified (9 how-to task recipes, BL-627's reference doc
+sitting in `docs/reference/specs/` alongside its sibling spec docs — no
+mode-mixing found anywhere).
+
+**Independent finding: every one of those 10 new docs is orphaned.** This
+project's own `docs/index.md` states the rule plainly ("the index stays
+exhaustive and orphan-free") and this project already built a real checker
+for exactly this — `computeDocsStructure` /
+`computeDocsStructureReport` (`extension/src/docs/docsStructure.ts`,
+landed by BL-456). Grepping for its only real-tree caller
+(`computeDocsStructure(`, the impure entry point) turned up exactly one
+call site: its own test file, and only ever against a throwaway
+`mkTmpDir` fixture — never this repo's actual `docs/` directory. Running
+it for real (`node -e "require('./extension/out/docs/docsStructure').computeDocsStructure('.')"`)
+reports 28 orphaned docs total, of which 10 are tonight's own landings:
+the 9 how-to docs (BL-623, BL-637, BL-641, BL-642, BL-661, BL-662, BL-671,
+BL-694, BL-718) and BL-627's reference doc — none of them linked from
+`docs/index.md` despite each one's own documenter pass having just
+written it. This is the same "pure module DARK until wired" shape this
+project's own guidance already names for other subsystems: the checker is
+real and tested, it is just never pointed at the tree it exists to check.
+Three of the ten — **BL-641**, **BL-671**, **BL-662** — were on-par under
+every other lens; this is their deciding shortfall, so their verdicts flip
+above. The other seven were already not-on-par for unrelated reasons; this
+is an additional, independent finding on each, noted in their own sections
+below rather than silently folded into someone else's already-filed pair.
+
+**Judgment call, stated plainly for QA/human review:** filed as ONE shared
+remaining-work/pilot-process pair (**BL-756**/**BL-757**) covering all ten
+instances, not ten near-duplicate pairs. Every other seat in this review
+filed a distinct pair per ticket even for a repeated pattern (e.g. the
+coder's feature-file-with-no-step-handler finding on both BL-718 and
+BL-559 got two separate pairs, BL-726/727 and BL-734/735) — deviating from
+that precedent here because the fix itself is one mechanical, single-PR
+change (ten one-line additions to `docs/index.md`), and ten tickets each
+opened to add one line apiece would itself be the kind of unDRY,
+process-heavy busywork a documentation-quality pass should be flagging,
+not committing. BL-756's own description makes this reasoning explicit so
+a human disagreeing with the call can split it back out at spec time.
+
+**Also checked, no gap found:** `docs/reference/Specification.MD`'s
+`Last Updated` preamble line already carries a July 30, 2026 entry for the
+day's landings (BL-714/BL-630 most recently) — current, no bump needed by
+this parcel since BL-723 itself adds no Specification.MD content of its
+own. None of the 13 landings changed anything the constitution's mandated
+architecture or swarm-workflow diagrams (`docs/diagrams/`) depict — no
+pipeline-topology, component-boundary, or backlog-flow change among them —
+so neither diagram needed updating in this pass. Confirmed by reading
+both diagram sources directly, not inferring from ticket titles alone.
 
 ### QA viewpoint
 
-PENDING — this parcel has not yet reached the QA hop. Per BL-723's own
-text, the QA viewpoint section must be the fullest of all six once this
-document is finished — QA compiles and re-verifies every other seat's
-findings against the live pipeline bar before landing this ticket, and will
-fill in this section, substantially longer than the placeholders above, when
-this parcel arrives.
+Final gate: independently re-ran the checkable claims from every other seat
+rather than trusting the prose, per this ticket's own instruction that QA
+compiles and re-verifies against the live pipeline bar before landing.
+
+**Re-run, not re-read, the mechanically checkable findings.** (1) Ran
+`computeDocsStructure('.')` against this worktree's real `docs/` tree myself
+(`node -e "require('./extension/out/docs/docsStructure').computeDocsStructure('.')"`)
+— confirms all 10 of the documenter's named docs (BL-623, BL-627, BL-637,
+BL-641, BL-642, BL-661, BL-662, BL-671, BL-694, BL-718) are genuinely
+orphaned from `docs/index.md` today, 29 orphaned docs total repo-wide. (2)
+Reran `npx vitest run test/tmpDirMigrationGuard.test.js` in isolation — the
+BL-627 raw-`mkdtemp` violation at `test/pricingTable.test.js:92` reproduces
+deterministically, exact file and line the hardener named. (3) Ran the full
+unit suite twice, once with all files (99 then 2 failures — different counts
+each run) and once excluding `cursorBridgeAgentSession.test.js`
+(consistently 389/390 files green, only the mkdtemp gate red both times) —
+this independently reproduces the BL-720 CURSOR_API_KEY cross-file pollution
+flake's own signature (non-deterministic failure counts across runs,
+converging to a single known-red file once the polluting test is excluded),
+matching the hardener's own three-run observation (2, 5, 31) closely enough
+to confirm the mechanism, not just the symptom; correctly not re-filed, per
+BL-720's own standing ticket. (4) Ran `npm run test:properties` — 30 files,
+92 tests, all green, no property-test contract regressions from tonight's
+batch. (5) Spot-checked two of the hardener's/coder's live-code claims
+directly rather than trusting prose: `PANE_TITLE_SESSION_NAME_PATTERN` in
+`needsHumanDetection.ts:40` is `/^SwarmForge [A-Za-z][\w-]*$/` —
+confirmed no space is in the character class, so "SwarmForge Model
+Steward" (a real title-cased multi-word role name) cannot match, exactly
+the BL-642 leak the coder/architect/hardener all named. `kill_pipeline_swarm.sh:271`'s
+post-kill survivor check is `pgrep -fl 'handoffd\.bb|copilot.*SwarmForge'`
+with no `$ROOT` anchor, unlike the reaping loop's own `pgrep -fl
+"handoffd\.bb.*$ROOT"` two sections above it — confirmed the exact
+unscoped-vs-scoped asymmetry BL-637's cleaner/hardener findings describe.
+Read `babysitter_assess_lib.bb` directly for the BL-646 severity-asymmetry
+claim: `:warn-fixture-droppings` (line 106) fires on
+`(and head-unchanged? fixture-droppings?)` alone, while its siblings
+`:warn-uncommitted` (line 108) and `:watch` (line 110) both additionally
+require `(>= elapsed-pct 0.75)` — confirmed the grace-period gate really
+is missing on only that one severity, exactly as the hardener named it.
+Read `take-flow-reason` in `required_stages_lib.bb` directly for the
+BL-661 claim too: the `:else` branch (line 105-108) is an unconditional
+`(.indexOf after ",")` split with no lookahead for a quote character, so
+an unquoted reason containing a comma really does split at the first
+comma and mis-parse the remainder as a new stage:reason pair — confirmed
+by reading the branch, not just trusting the hardener's prose description
+of it. (6) Compile is clean (`npm run compile`), and no orphaned
+`node --test`, `vitest`, or `stryker` processes were running before or
+after any of the above (`pgrep -fl` checked at both ends, per this role's
+own gate).
+
+**Did not reproduce, and says so plainly:** CRAP/coverage numbers for
+BL-627's and BL-718's specific functions (`collectReferencedClaudeModels`,
+`mergeTopicId`, etc.) — this worktree's `npm run coverage` run did not
+write a fresh `coverage/coverage-final.json` under
+`extension/coverage/` (a stale copy exists only in the separate main
+checkout, not this QA worktree, and re-pointing `crapReport.js` at
+another checkout's coverage would not reflect this commit). Rather than
+silently accept the hardener's numbers or silently drop the caveat, this is
+recorded here as a real but narrow gap in this pass's own re-verification,
+not a defect in the hardener's work — the structural finding these numbers
+support (CRAP was never run before this review) is independently
+corroborated by the other tooling gaps this pass found runnable and
+verified above, and the underlying behavioral claims (e.g. BL-718's
+`mergeTopicId` routing logic being new and thin on tests) match a direct
+read of the diff.
+
+**Structural gates (review-05/06/07), checked against disk, not prose:**
+all 32 filed defects (BL-726 through BL-757, 16 remaining-work/pilot-process
+pairs) carry `type: defect` and an explicit `severity:` — verified every
+YAML field directly, none missing (the Article 3.2.4 expedite lane's
+fail-closed rule never triggers here). All 13 primary tickets' `notes:` in
+`backlog/done/` carry every seat's verdict and defect links that walked
+through the pipeline (spot-diffed BL-718 against its pre-BL-723 commit:
+only lines appended to `notes:`, `description:`/`acceptance:` byte-identical
+— no rewritten done history). All 13 remain physically in `backlog/done/`.
+
+**Delivery mechanism (mandatory before approving, per this ticket's own
+text):** the briefing email cannot be verified sent until this commit is
+actually the one live on `main`, since `handoffd`'s `briefing-email-sweep!`
+reads `docs/briefings/` off the live checkout's disk, not off this
+worktree's branch tip — a QA approval on an unlanded branch is not yet
+visible to that sweep. The check accordingly runs in two parts: first,
+here, that the file is committed with the right shape (first non-empty
+line "BL-723 pilot review verdict: 13 of 13 landings NOT on par", 57
+characters, well under the 80-character cap; not present in
+`docs/briefings/.sent.json`, so nothing has silently swallowed it as
+already-sent); second, after landing on `main` and pushing to `origin`,
+confirming the daemon's own log records either `briefing-sent` for this
+file or an explicit `briefing-skip-missing-key`/`briefing-send-failed`
+reason to report to the human — never treating an unlogged silence as a
+pass. `main`'s own working checkout is currently many commits behind this
+worktree (still at BL-723's early `assigned_to: specifier` reset point),
+so this file will only become visible to the sweep once this parcel's
+push lands and the live checkout's own push-sweep (already running,
+`push-sweep up-to-date` on every `handoffd` heartbeat) pulls it in.
+
+**e2e QA procedure (per this ticket's own text), run for real:**
+`gherkin_lint_gate.sh` parses this feature file cleanly;
+`node specs/pipeline/cli.js` on it passes 13/14, the sole red being
+`review-04` (QA section must be longest) — expected until this section
+lands and now resolved by this section's own length. Email delivery
+verified separately below, and after this parcel lands on `main` and
+`origin`, per the mechanism's own live path.
+
+**Independence note:** if this parcel is riding a mono-router pack, the
+same resident process plays every seat in turn on a respawned model per
+role — a real, load-bearing reduction in cross-seat independence versus a
+full pack, per that pack's own overlay prompt. This pass treated that
+caveat as binding: every claim re-verified above was re-derived from the
+live tree or a fresh command output, not recalled from an earlier hop's
+own prose, and the two claims this pass could not reproduce (BL-627/
+BL-718's exact CRAP numbers) are reported as unreproduced rather than
+rubber-stamped just because an earlier hop already wrote them down.
+
+**Overall QA verdict: concurs with 13 of 13 not-on-par.** Every prior
+seat's verdict trail is independently reproducible where reproduction was
+possible in this worktree, and every structural contract the ticket
+promises (per-ticket write-back, paired defects, no rewritten history, a
+QA section that is actually the fullest) holds. This is not the normal
+live-swarm bar being met by tonight's batch — it is the normal live-swarm
+bar successfully catching what an offline pilot missed, which is exactly
+what this queue-jump review was commissioned to test.
 
 ## Per-ticket verdicts
 
@@ -414,6 +614,13 @@ coder's acceptance-wiring gap and the architect's vacuous-property-test
 finding: BL-744 (remaining work, severity medium), BL-745 (pilot process,
 severity low).
 
+**Documenter note:** also not-on-par by an independent finding, though not
+the deciding one — its new how-to doc
+(`docs/how-to/BL-718-bubble-talk-mirror-chunks-and-fails-loudly.md`) is
+orphaned, never linked from `docs/index.md`. Rides the shared BL-756/
+BL-757 pair (see Documenter viewpoint section above); no dedicated pair
+filed for this ticket alone.
+
 ### BL-627
 
 **Verdict:** not-on-par
@@ -449,6 +656,13 @@ rerun (`npx vitest run test/tmpDirMigrationGuard.test.js`), not a flake.
 Not fixed in this parcel, per this ticket's own invariant (reviews
 landings, does not reopen them). Remaining-work: BL-742. Pilot-process:
 BL-743.
+
+**Documenter note:** also not-on-par by an independent finding, though not
+the deciding one — its new reference doc
+(`docs/reference/specs/BL-627-pricing-table-correctness-and-coverage-invariant.md`)
+is orphaned, never linked from `docs/index.md`. Rides the shared
+BL-756/BL-757 pair (see Documenter viewpoint section above); no dedicated
+pair filed for this ticket alone.
 
 ### BL-636
 
@@ -499,16 +713,32 @@ would stay green. Filed as its own pair, independent of the coder's and
 cleaner's own: BL-746 (remaining work, severity high), BL-747 (pilot
 process, severity low).
 
+**Documenter note:** also not-on-par by an independent finding, though not
+the deciding one — its new how-to doc
+(`docs/how-to/BL-637-lifecycle-script-scope.md`) is orphaned, never linked
+from `docs/index.md`. Rides the shared BL-756/BL-757 pair (see Documenter
+viewpoint section above); no dedicated pair filed for this ticket alone.
+
 ### BL-641
 
-**Verdict:** on-par
+**Verdict:** not-on-par
 
 Matches the ticket's shape exactly: 20-minute headroom (not a job-level
 cap) on the Pages deploy step, and a repo-wide major-version bump across all
 workflow files that actually pin the affected actions. Acceptance suite ran
-7/7 against real parsed YAML. No coder-eye concerns found.
+7/7 against real parsed YAML. No coder-eye concerns found. See the
+documenter note below for the shortfall that flips this ticket's overall
+verdict.
 
-**Filed defects:** none
+**Filed defects:** BL-756 (remaining work), BL-757 (pilot process)
+
+**Documenter note:** not-on-par (independent finding, the deciding
+shortfall — every other lens found this ticket clean) — its new how-to doc
+(`docs/how-to/BL-641-pages-deploy-timeout-and-action-majors.md`) is
+orphaned, never linked from `docs/index.md`. See the Documenter viewpoint
+section above for the full evidence and why this is filed as one shared
+pair (BL-756/BL-757) across all ten of tonight's orphaned docs rather than
+its own dedicated pair.
 
 ### BL-642
 
@@ -524,6 +754,13 @@ directly against the shipped regex. This leaves open the exact leak class
 the ticket was meant to close, for any multi-word role.
 
 **Filed defects:** BL-732 (remaining work), BL-733 (pilot process)
+
+**Documenter note:** also not-on-par by an independent finding, though not
+the deciding one — its new how-to doc
+(`docs/how-to/BL-642-gate-snippet-question-not-chrome.md`) is orphaned,
+never linked from `docs/index.md`. Rides the shared BL-756/BL-757 pair
+(see Documenter viewpoint section above); no dedicated pair filed for this
+ticket alone.
 
 ### BL-646
 
@@ -575,18 +812,34 @@ parcel itself is not lost (this repo's own backup mailbox delivery path
 covers a missed sync-inject), so the practical failure mode is a delayed
 wake plus an ugly crash trace, not silent data loss.
 
+**Documenter note:** also not-on-par by an independent finding, though not
+the deciding one — its new how-to doc
+(`docs/how-to/BL-623-routing-skip-trail-records-actual-hop.md`) is
+orphaned, never linked from `docs/index.md`. Rides the shared BL-756/
+BL-757 pair (see Documenter viewpoint section above); no dedicated pair
+filed for this ticket alone.
+
 ### BL-671
 
-**Verdict:** on-par
+**Verdict:** not-on-par
 
 Root cause (ten hand-maintained, unsynced `cp` lists) addressed structurally
 via one shared sandbox-copy helper. Cross-checked the helper's lib list
 against `operator_runtime.bb`'s actual `load-file` forms directly — all
 present, none missing. The acceptance suite genuinely spawns bash against
 all 10 real fixture scripts end to end, and the events-lock fixture flake
-fix is a bonus correctness improvement. No coder-eye concerns found.
+fix is a bonus correctness improvement. No coder-eye concerns found. See
+the documenter note below for the shortfall that flips this ticket's
+overall verdict.
 
-**Filed defects:** none
+**Filed defects:** BL-756 (remaining work), BL-757 (pilot process)
+
+**Documenter note:** not-on-par (independent finding, the deciding
+shortfall) — its new how-to doc
+(`docs/how-to/BL-671-operator-runtime-fixture-sandbox.md`) is orphaned,
+never linked from `docs/index.md`. See the Documenter viewpoint section
+above for the full evidence and why this rides the same shared pair
+(BL-756/BL-757) as the other nine orphaned docs from tonight's batch.
 
 ### BL-694
 
@@ -611,6 +864,13 @@ the tree" rows exist; confirmed the regex cannot match either). The claim
 it was meant to prove — a basename match under a non-stage `backlog/`
 path (e.g. `backlog/topics/`) is correctly not excused — is untested
 anywhere, not just cosmetically dead code.
+
+**Documenter note:** also not-on-par by an independent finding, though not
+the deciding one — its new how-to doc
+(`docs/how-to/BL-694-residual-word-allowlist-survives-stage-moves.md`) is
+orphaned, never linked from `docs/index.md`. Rides the shared BL-756/
+BL-757 pair (see Documenter viewpoint section above); no dedicated pair
+filed for this ticket alone.
 
 ### BL-559
 
@@ -653,9 +913,16 @@ no error. Current production risk is low (the ticket's own docstring says
 live tickets always use quoted values), but the parser silently
 mis-parses malformed input rather than rejecting it.
 
+**Documenter note:** also not-on-par by an independent finding, though not
+the deciding one — its new how-to doc
+(`docs/how-to/BL-661-stage-skip-reasons-flow-style.md`) is orphaned, never
+linked from `docs/index.md`. Rides the shared BL-756/BL-757 pair (see
+Documenter viewpoint section above); no dedicated pair filed for this
+ticket alone.
+
 ### BL-662
 
-**Verdict:** on-par
+**Verdict:** not-on-par
 
 Root cause fixed directly (the parsed response body was being discarded) via
 a shared `reasonOrFallback` helper that also removes prior duplication
@@ -665,6 +932,14 @@ defect: the ticket asked to sweep the rest of the file for the same shape —
 a scan turned up nothing else, but the sweep isn't documented in the commit;
 and the feature file's Scenario Outline has no matching
 `specs/pipeline/steps/` handler (covered instead by hand-written unit tests,
-which are genuinely real).
+which are genuinely real). See the documenter note below for the shortfall
+that flips this ticket's overall verdict.
 
-**Filed defects:** none
+**Filed defects:** BL-756 (remaining work), BL-757 (pilot process)
+
+**Documenter note:** not-on-par (independent finding, the deciding
+shortfall) — its new how-to doc
+(`docs/how-to/BL-662-paused-pager-shows-server-failure-reason.md`) is
+orphaned, never linked from `docs/index.md`. See the Documenter viewpoint
+section above for the full evidence and why this rides the same shared
+pair (BL-756/BL-757) as the other nine orphaned docs from tonight's batch.

@@ -90,7 +90,12 @@ test('composePilotExpeditorPrompt is the full offline-expeditor brief', () => {
       'and refresh `.swarmforge/expedite/BL-702/progress.json` (include',
       '`"mode":"cursor-as-expeditor"`).',
       '',
-      'When QA stamps the ticket, `git mv` it to backlog/done/ and write run.json.',
+      'When QA stamps the ticket, land it by running',
+      '`node extension/out/tools/pilot-acceptance-gate.js BL-702`',
+      "— this is the ONLY landing path. It runs the ticket's own declared",
+      'acceptance contract and moves the yaml to backlog/done/ only on a green',
+      "result, refusing (and writing nothing) otherwise; never `git mv` the",
+      'yaml directly. Then write run.json.',
       'Restart of the swarm is optional and non-blocking — ask before restarting.',
       '',
       'Begin now with BL-702. Read the ticket YAML and current expedite artifacts first.',
@@ -143,6 +148,17 @@ test('composePilotExpeditorPrompt keeps isolation and expedite lock gate (BL-699
   );
   const blocked = gatePilotAgainstExpediteLock(root);
   assert.equal(blocked.ok, false);
+});
+
+// BL-727: landing runs through the acceptance-contract gate CLI, never a
+// bare git mv (required_wiring pins the literal "pilot-acceptance-gate"
+// string in this file).
+test('composePilotExpeditorPrompt lands through the pilot-acceptance-gate CLI, never a bare git mv (BL-727)', () => {
+  const text = composePilotExpeditorPrompt('BL-727');
+  assert.match(text, /node extension\/out\/tools\/pilot-acceptance-gate\.js BL-727/);
+  assert.match(text, /ONLY landing path/);
+  assert.match(text, /never `git mv` the/);
+  assert.doesNotMatch(text, /land it by running `git mv`/);
 });
 
 // BL-700 pilot-status-01..03

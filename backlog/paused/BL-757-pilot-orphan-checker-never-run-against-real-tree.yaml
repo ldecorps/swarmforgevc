@@ -1,0 +1,70 @@
+id: BL-757
+title: "Pilot process: BL-456's docs-structure orphan checker exists but has never been run against this repo's real docs/ tree"
+milestone: M8
+type: defect
+severity: low
+status: todo
+epic: code-quality-gates
+assigned_to: specifier
+priority: 21
+direction: normal
+depends_on: []
+mutation_cost: low
+source: |
+  Found during BL-723 (pilot-tonight quality review), documenter viewpoint
+  pass, 2026-07-31. Companion remaining-work ticket: BL-756.
+
+  BL-456 (already in `backlog/done/`) built a real, working orphan-doc
+  checker: `computeDocsStructure` / `computeDocsStructureReport`
+  (`extension/src/docs/docsStructure.ts`), which reports any authored doc
+  under a Divio mode directory that `docs/index.md` doesn't link. Its own
+  test file (`extension/test/docsStructure.test.js`) exercises the pure
+  report function and the impure real-tree reader thoroughly — but only
+  ever against throwaway fixture trees built with `mkTmpDir`. Grepped the
+  whole `extension/` tree: `computeDocsStructure` (the real-tree entry
+  point) is called from exactly one place — its own test file, against a
+  fixture, never against this repo's actual `docs/` directory. No test, CI
+  step, or gate asserts the real tree's `orphanedDocs` is empty.
+
+  Consequence, made concrete by BL-756: tonight's pilot landed 9 new how-to
+  docs and 1 new reference doc, and every single one went unlinked from
+  `docs/index.md` with nothing catching it — the exact "pure module DARK
+  until wired" pattern this project's own engineering guidance already
+  names as a gap class for other subsystems. Running the checker by hand
+  against the real tree (not part of any landed gate) also turned up 18
+  more pre-existing orphans predating tonight's batch entirely, meaning
+  this has been silently drifting since at least BL-456 landed.
+
+notes: |
+  Pilot-process half of the BL-756 documenter-lens shortfall (shared across
+  all 10 of tonight's orphaned docs).
+
+description: |
+  ## What
+
+  Wire `computeDocsStructure` into something that actually runs against
+  this repo, not just its own fixture tests. Two reasonable shapes (pick
+  one, or propose a third at spec time):
+
+  1. A repo-scoped test (e.g. `extension/test/docsStructureRealTree.test.js`)
+     that calls `computeDocsStructure(REPO_ROOT)` and asserts
+     `orphanedDocs` is empty — paired with fixing BL-756 and the 18
+     pre-existing orphans (or an explicit, dated allowlist for orphans not
+     yet fixed, so the gate is honest about known debt rather than
+     permanently red or silently gutted).
+  2. A documenter-role handoff-checklist addition: before forwarding to QA,
+     run the orphan checker against the working tree and confirm any
+     newly-added doc isn't in the report — cheaper than a permanent gate,
+     but relies on the role remembering to run it rather than a mechanical
+     backstop.
+
+  ## Question to answer
+
+  Given this project already has a real, tested checker for exactly this
+  class of defect, should landing a NEW authored doc without linking it be
+  gate-blocking (option 1) the same way a missing test or a CRAP violation
+  is, or is a checklist reminder (option 2) enough given the low severity
+  (an orphaned doc is still findable by search, just not from the index)?
+  Recommend option 1 given this project's own stated "index stays
+  exhaustive and orphan-free" rule already treats it as a hard requirement,
+  not a nice-to-have — but leave the tradeoff for the specifier to rule on.

@@ -1,0 +1,85 @@
+id: BL-756
+title: "10 of tonight's pilot-landed docs (9 how-to + BL-627's reference doc) are orphaned — never linked from docs/index.md"
+milestone: M8
+type: defect
+severity: low
+status: todo
+epic: code-quality-gates
+assigned_to: specifier
+priority: 20
+direction: normal
+depends_on: []
+mutation_cost: low
+source: |
+  Found during BL-723 (pilot-tonight quality review), documenter viewpoint
+  pass, 2026-07-31. This project's own local-engineering guidance
+  (`docs/index.md`'s own intro, and the documenter role prompt's
+  Documentation Standard section) requires "New authored docs go in the
+  matching mode directory and get linked from docs/index.md in the same
+  commit — the index stays exhaustive and orphan-free." Ran the repo's own
+  BL-456 orphan checker (`computeDocsStructure`,
+  `extension/src/docs/docsStructure.ts`) against this repo's real `docs/`
+  tree (see companion pilot-process ticket BL-757 for why that check isn't
+  already wired anywhere) and it reports 10 of tonight's 13 pilot-review
+  tickets' own new docs as orphaned:
+
+  - `how-to/BL-623-routing-skip-trail-records-actual-hop.md`
+  - `how-to/BL-637-lifecycle-script-scope.md`
+  - `how-to/BL-641-pages-deploy-timeout-and-action-majors.md`
+  - `how-to/BL-642-gate-snippet-question-not-chrome.md`
+  - `how-to/BL-661-stage-skip-reasons-flow-style.md`
+  - `how-to/BL-662-paused-pager-shows-server-failure-reason.md`
+  - `how-to/BL-671-operator-runtime-fixture-sandbox.md`
+  - `how-to/BL-694-residual-word-allowlist-survives-stage-moves.md`
+  - `how-to/BL-718-bubble-talk-mirror-chunks-and-fails-loudly.md`
+  - `reference/specs/BL-627-pricing-table-correctness-and-coverage-invariant.md`
+
+  (The remaining three of the 13 — BL-636, BL-646, BL-559 — correctly added
+  no doc, since none of them changed user-facing behavior with a prior doc
+  surface to update, so they have no gap here.)
+
+  Filed as ONE ticket covering all 10 rather than 10 near-duplicate tickets:
+  the root cause and the fix are byte-identical in every case (add one
+  bullet line to the correct `docs/index.md` section), so ten separate
+  tickets would themselves be the kind of unDRY busywork this project's own
+  cleaner lens exists to avoid. This is a deliberate documenter-lens
+  judgment call, not a shortcut — noted explicitly in the BL-723 review body
+  for QA/human visibility.
+
+  This orphan condition is NOT unique to tonight's batch — the same checker
+  found 18 more pre-existing orphaned docs elsewhere in the tree (predating
+  all 13 reviewed tickets and this review). Those 18 are pre-existing repo
+  debt, out of BL-723's reviewed-landings scope, and are intentionally left
+  out of this ticket to keep it scoped to what tonight's pilot actually
+  introduced; a human/specifier may choose to fold them into this ticket's
+  fix or track them separately when it lands.
+
+notes: |
+  Filed during BL-723's documenter viewpoint pass. Linked pilot-process
+  defect: BL-757. Referenced as the deciding shortfall on BL-641, BL-662,
+  and BL-671 (previously on-par under every other lens); also a real,
+  independent (non-deciding) finding on the other 7 orphaned tickets,
+  already not-on-par for unrelated reasons.
+
+description: |
+  ## What
+
+  Add one link per file to the correct section of `docs/index.md`:
+
+  - The 9 how-to files above under "## How-to guides".
+  - `reference/specs/BL-627-pricing-table-correctness-and-coverage-invariant.md`
+    under "## Reference" (matching the existing style used for the other
+    `reference/specs/*.md` entries already linked there, if any — if this is
+    the first `reference/specs/*` entry in the index, add a short one-line
+    description consistent with the section's existing bullet format).
+
+  ## Acceptance
+
+  - Run `node -e "console.log(JSON.stringify(require('./extension/out/docs/docsStructure').computeDocsStructure('.').orphanedDocs))"`
+    (or the equivalent compiled-output call) before and after: the 10 files
+    listed above must no longer appear in `orphanedDocs` afterward.
+  - `docs/index.md`'s existing entries and section structure are otherwise
+    unchanged — this is additive-only.
+  - Do not fix or touch the pre-existing 18 unrelated orphans as part of
+    this ticket's acceptance (out of scope; see `source:` above) unless a
+    human/specifier explicitly folds them in.

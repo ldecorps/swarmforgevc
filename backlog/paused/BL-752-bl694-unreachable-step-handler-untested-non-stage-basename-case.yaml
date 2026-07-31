@@ -31,8 +31,9 @@ source: |
   `onboarderResidualAllowlist.js`'s own `isAllowlisted` (its
   `BACKLOG_STAGE_RE` requires `^backlog/(active|paused|hold)/`, so a
   `backlog/topics/...` path should correctly fail the regex and fall
-  through to the exact-path check) and `onboarderRenameNoResidualFacilitator.test.js`
-  — neither has any test coverage for this specific case either. The
+  through to the exact-path check) and the BL-684 residual-word rename
+  guard's own test suite — neither has any test coverage for this
+  specific case either. The
   underlying regex logic looks correct by inspection, but the specific
   scenario meant to prove it (this ticket's own review-04 handler) is
   provably unreachable, so the claim rides on inspection alone, not on

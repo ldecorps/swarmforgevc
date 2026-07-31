@@ -4,6 +4,10 @@
 // questions via Telegram poll on Cursor Remote.
 // BL-700: mandatory Telegram status posts on ticket / hat / bounce-back.
 // BL-701: stage-boundary cleanup of orphan acceptance / Stryker leftovers.
+// BL-727: landing runs through the acceptance-contract gate CLI
+// (pilot-acceptance-gate.ts) instead of a bare `git mv` - the gate refuses
+// the land unless the ticket's own declared acceptance contract just ran
+// green.
 
 import { normalizeExpediteTicket, readExpediteLock } from './telegramCursorBridgeExpedite';
 
@@ -126,7 +130,12 @@ export function composePilotExpeditorPrompt(ticket: string): string {
     'and refresh `.swarmforge/expedite/' + normalized + '/progress.json` (include',
     '`"mode":"cursor-as-expeditor"`).',
     '',
-    'When QA stamps the ticket, `git mv` it to backlog/done/ and write run.json.',
+    'When QA stamps the ticket, land it by running',
+    '`node extension/out/tools/pilot-acceptance-gate.js ' + normalized + '`',
+    '— this is the ONLY landing path. It runs the ticket\'s own declared',
+    'acceptance contract and moves the yaml to backlog/done/ only on a green',
+    'result, refusing (and writing nothing) otherwise; never `git mv` the',
+    'yaml directly. Then write run.json.',
     'Restart of the swarm is optional and non-blocking — ask before restarting.',
     '',
     `Begin now with ${normalized}. Read the ticket YAML and current expedite artifacts first.`,
