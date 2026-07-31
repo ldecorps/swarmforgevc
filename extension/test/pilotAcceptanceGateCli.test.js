@@ -82,6 +82,45 @@ test('readAcceptanceDeclaration returns undefined when the ticket carries no acc
   assert.equal(readAcceptanceDeclaration(root, 'BL-FIX'), undefined);
 });
 
+// parseBacklogYaml returns null (not an object) when the file has no id/title
+// at all - readAcceptanceDeclaration must not throw on that null via a bare
+// `.acceptance` access; it needs the optional-chaining guard. Note:
+// findBacklogFilePath itself only matches a file whose OWN parse already
+// produced a matching id, so this fixture can never make readAcceptanceDeclaration's
+// re-parse of that same content return null in practice (parseBacklogYaml is
+// pure/deterministic over identical bytes) - this test documents the intent
+// but cannot, by construction, make `item` null at the `item?.acceptance` line.
+test('readAcceptanceDeclaration returns undefined (not a throw) when the ticket file parses to no item at all (no id/title)', () => {
+  const root = mkRepo();
+  fs.mkdirSync(path.join(root, 'backlog', 'active'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'backlog', 'active', 'BL-FIX-fixture.yaml'), 'notes: unrelated content\n', 'utf8');
+  assert.equal(readAcceptanceDeclaration(root, 'BL-FIX'), undefined);
+});
+
+// A raw fs.readFileSync encoding mutant ('utf8' -> '') returns a Buffer
+// instead of a string. For content that yaml.load can parse directly, that's
+// unobservable (js-yaml accepts Buffer input transparently) - but this
+// project's parser has a SECOND, lenient regex-based path
+// (parseBacklogYamlLenient) for tickets whose free-form title/notes are not
+// valid strict YAML (an unquoted title containing a bare colon, here), and
+// regex methods don't exist on a Buffer. That's where the mutant is
+// observable: strict yaml.load throws on this content, falls to the lenient
+// path, and a Buffer there throws "content.match is not a function" instead
+// of returning the parsed ticket.
+test('readAcceptanceDeclaration reads a real ticket whose title only parses via the lenient (non-strict-YAML) fallback', () => {
+  const root = mkRepo();
+  fs.mkdirSync(path.join(root, 'backlog', 'active'), { recursive: true });
+  // An unquoted colon-bearing title: js-yaml's strict loader rejects this
+  // (bad indentation of a mapping entry), forcing the lenient regex
+  // extractor - the real path this test covers.
+  fs.writeFileSync(
+    path.join(root, 'backlog', 'active', 'BL-FIX-fixture.yaml'),
+    'id: BL-FIX\ntitle: SwarmForge VC: build the extension\nacceptance: specs/features/fixture.feature\n',
+    'utf8'
+  );
+  assert.equal(readAcceptanceDeclaration(root, 'BL-FIX'), 'specs/features/fixture.feature');
+});
+
 // ── moveTicketToDone: real fs move ───────────────────────────────────────
 
 test('moveTicketToDone physically moves the yaml from backlog/active to backlog/done', () => {
@@ -97,6 +136,14 @@ test('moveTicketToDone physically moves the yaml from backlog/active to backlog/
 });
 
 // ── writeReceipt: real disk write ────────────────────────────────────────
+//
+// Note: a Stryker mutant replacing the writeFileSync 'utf8' encoding arg
+// with '' survives here - confirmed by hand (node -e) that Node's
+// fs.writeFileSync treats an empty-string encoding identically to 'utf8'
+// for a string payload, for both ASCII and non-ASCII content. No assertion
+// on this receipt (whose content is always safely JSON-representable) can
+// observe a difference; recorded as an equivalent mutant per BL-234, not
+// fixed by adding a vacuous assertion.
 
 test('writeReceipt writes the receipt under .swarmforge/expedite/<ticket>/acceptance-receipt.json', () => {
   const root = mkRepo();
@@ -110,10 +157,13 @@ test('writeReceipt writes the receipt under .swarmforge/expedite/<ticket>/accept
 
   writeReceipt(root, 'BL-FIX', receipt);
 
-  const written = JSON.parse(
-    fs.readFileSync(path.join(root, '.swarmforge', 'expedite', 'BL-FIX', 'acceptance-receipt.json'), 'utf8')
-  );
-  assert.deepEqual(written, receipt);
+  const raw = fs.readFileSync(path.join(root, '.swarmforge', 'expedite', 'BL-FIX', 'acceptance-receipt.json'), 'utf8');
+  // Exact trailing newline, not just the parsed JSON content (JSON.parse
+  // ignores trailing whitespace, so a receipt-writer regression that drops
+  // the newline would pass a JSON.parse-only assertion).
+  assert.equal(raw.endsWith('\n'), true);
+  assert.equal(raw.endsWith('\n\n'), false);
+  assert.deepEqual(JSON.parse(raw), receipt);
 });
 
 // ── getLandedCommit: real git wiring, including the failure path ────────
@@ -185,9 +235,15 @@ async function runCli(argv, cwd) {
   const previousExitCode = process.exitCode;
   const previousCwd = process.cwd;
   const writes = [];
+  const errWrites = [];
   const originalWrite = process.stdout.write.bind(process.stdout);
+  const originalErrWrite = process.stderr.write.bind(process.stderr);
   process.stdout.write = (chunk) => {
     writes.push(chunk);
+    return true;
+  };
+  process.stderr.write = (chunk) => {
+    errWrites.push(chunk);
     return true;
   };
   try {
@@ -199,9 +255,10 @@ async function runCli(argv, cwd) {
     await main();
     const exitCode = process.exitCode;
     const raw = writes.join('');
-    return { exitCode, output: raw ? JSON.parse(raw) : null };
+    return { exitCode, output: raw ? JSON.parse(raw) : null, stderr: errWrites.join('') };
   } finally {
     process.stdout.write = originalWrite;
+    process.stderr.write = originalErrWrite;
     process.argv = previousArgv;
     process.exitCode = previousExitCode;
     process.cwd = previousCwd;
@@ -209,9 +266,10 @@ async function runCli(argv, cwd) {
 }
 
 test('main(): prints usage and exits non-zero when no ticket id is given', async () => {
-  const { exitCode, output } = await runCli([]);
+  const { exitCode, output, stderr } = await runCli([]);
   assert.equal(exitCode, 1);
   assert.equal(output, null);
+  assert.equal(stderr, 'Usage: node pilot-acceptance-gate.js <TICKET-ID>\n');
 });
 
 test('main(): refuses in-process for a ticket with no executable acceptance contract, and writes nothing to disk', async () => {
@@ -252,6 +310,7 @@ test('main(): lands in-process on a green run, moving the yaml and writing a rec
   );
   assert.equal(receipt.featureFile, 'specs/features/fixture.feature');
   assert.equal(receipt.result, 'passed');
+  assert.match(receipt.landedAt, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
   assert.equal(receipt.landedCommit, output.receipt.landedCommit);
 });
 

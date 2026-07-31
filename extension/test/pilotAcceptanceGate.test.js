@@ -82,28 +82,66 @@ test('resolveFeatureFilePath refuses a directory (not a file)', () => {
   assert.equal(resolveFeatureFilePath(root, 'specs/features'), undefined);
 });
 
+test('resolveFeatureFilePath trims surrounding whitespace before resolving (not just before the emptiness check)', () => {
+  const root = mkTmpDir('sfvc-pag-resolve-');
+  fs.mkdirSync(path.join(root, 'specs', 'features'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'specs', 'features', 'fixture.feature'), 'Feature: X\n', 'utf8');
+  assert.equal(
+    resolveFeatureFilePath(root, '  specs/features/fixture.feature  \n'),
+    path.join(root, 'specs', 'features', 'fixture.feature')
+  );
+});
+
+// The blank/newline guard is load-bearing on its own, not merely incidental
+// fallout of fs.statSync failing on a malformed candidate path - prove it by
+// making the untrimmed/unguarded candidate resolve to a REAL file, so a
+// guard-skipping mutant would wrongly land it instead of refusing.
+test('resolveFeatureFilePath refuses a blank declaration even when the empty-join candidate is itself a real file (blank guard is load-bearing)', () => {
+  const dir = mkTmpDir('sfvc-pag-resolve-');
+  const filePath = path.join(dir, 'looks-like-a-repo-root.txt');
+  fs.writeFileSync(filePath, 'x', 'utf8');
+  assert.equal(resolveFeatureFilePath(filePath, '   '), undefined);
+});
+
+test('resolveFeatureFilePath refuses inline Gherkin text even when a file with that literal newline-bearing name exists (newline guard is load-bearing)', () => {
+  const root = mkTmpDir('sfvc-pag-resolve-');
+  const inline = 'Feature: inline\n  Scenario: works\n    Given a thing\n';
+  fs.writeFileSync(path.join(root, inline.trim()), 'x', 'utf8');
+  assert.equal(resolveFeatureFilePath(root, inline), undefined);
+});
+
+// The catch block's explicit `return undefined` is equivalent to falling
+// through with no return (both yield `undefined`, the function's last
+// statement) - a Stryker BlockStatement mutant emptying the catch body
+// cannot be killed by any assertion; recorded per BL-234, not fixed.
+
 // ── landPilotedTicket: scenario 03 (no executable acceptance contract) ─
 
-test('landPilotedTicket refuses when the acceptance declaration is absent', async () => {
+test('landPilotedTicket refuses when the acceptance declaration is absent, naming "no acceptance: field" specifically (not the declared-value branch)', async () => {
   const { deps, calls } = mkDeps({
     readAcceptanceDeclaration: () => undefined,
   });
   const outcome = await landPilotedTicket('BL-FIX', deps);
   assert.equal(outcome.landed, false);
   assert.equal(outcome.reasonKind, 'no-contract');
-  assert.match(outcome.reason, /no executable acceptance contract/);
+  assert.equal(
+    outcome.reason,
+    'BL-FIX has no executable acceptance contract: acceptance: must name an existing feature file (declared: no acceptance: field)'
+  );
   assert.equal(calls.move, 0);
   assert.equal(calls.writeReceipt, 0);
 });
 
-test('landPilotedTicket refuses when the acceptance declaration resolves to no file (inline text or missing path)', async () => {
+test('landPilotedTicket refuses when the acceptance declaration resolves to no file, quoting the actual declared value (not the absent-field branch)', async () => {
+  const declaration = 'Feature: inline\n  Scenario: x\n';
   const { deps, calls } = mkDeps({
-    readAcceptanceDeclaration: () => 'Feature: inline\n  Scenario: x\n',
+    readAcceptanceDeclaration: () => declaration,
     resolveFeatureFilePath: () => undefined,
   });
   const outcome = await landPilotedTicket('BL-FIX', deps);
   assert.equal(outcome.landed, false);
   assert.equal(outcome.reasonKind, 'no-contract');
+  assert.equal(outcome.reason, `BL-FIX has no executable acceptance contract: acceptance: must name an existing feature file (declared: ${JSON.stringify(declaration)})`);
   assert.equal(calls.move, 0);
   assert.equal(calls.writeReceipt, 0);
 });
@@ -140,6 +178,20 @@ test('landPilotedTicket refuses and names the failing scenario', async () => {
   assert.equal(outcome.failingScenario, 'Renders the tile');
   assert.equal(outcome.unmatchedStep, undefined);
   assert.match(outcome.reason, /failing scenario "Renders the tile"/);
+  assert.equal(calls.move, 0);
+  assert.equal(calls.writeReceipt, 0);
+});
+
+test('landPilotedTicket refuses with a generic reason when the acceptance output names neither a scenario nor a step', async () => {
+  const { deps, calls } = mkDeps({
+    runAcceptance: async () => ({ success: false, output: 'unrelated crash, no scenario or step named\n' }),
+  });
+  const outcome = await landPilotedTicket('BL-FIX', deps);
+  assert.equal(outcome.landed, false);
+  assert.equal(outcome.reasonKind, 'contract-failed');
+  assert.equal(outcome.failingScenario, undefined);
+  assert.equal(outcome.unmatchedStep, undefined);
+  assert.match(outcome.reason, /see acceptance output/);
   assert.equal(calls.move, 0);
   assert.equal(calls.writeReceipt, 0);
 });
@@ -205,6 +257,25 @@ test('landPilotedTicket refuses (without a receipt) when the move itself fails a
     moveTicketToDone: () => {
       calls.move += 1;
       return { moved: false };
+    },
+  });
+  const outcome = await landPilotedTicket('BL-FIX', deps);
+  assert.equal(outcome.landed, false);
+  assert.equal(outcome.reasonKind, 'move-failed');
+  assert.equal(
+    outcome.reason,
+    "BL-FIX's acceptance contract passed but the ticket yaml could not be moved to backlog/done/"
+  );
+  assert.equal(calls.writeReceipt, 0);
+});
+
+// moved=true but destination missing must ALSO refuse - an `||` weakened to
+// `&&` here would let this case through since !moved is false.
+test('landPilotedTicket refuses when moveTicketToDone reports moved=true but omits the destination', async () => {
+  const { deps, calls } = mkDeps({
+    moveTicketToDone: () => {
+      calls.move += 1;
+      return { moved: true };
     },
   });
   const outcome = await landPilotedTicket('BL-FIX', deps);
