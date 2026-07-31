@@ -16,7 +16,7 @@ const path = require('node:path');
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const EXT_DIR = path.join(REPO_ROOT, 'extension');
 const { landPilotedTicket, resolveFeatureFilePath } = require(path.join(EXT_DIR, 'out', 'tools', 'pilotAcceptanceGate'));
-const PILOT_SOURCE_PATH = path.join(EXT_DIR, 'src', 'tools', 'telegramCursorBridgePilot.ts');
+const { composePilotExpeditorPrompt } = require(path.join(EXT_DIR, 'out', 'tools', 'telegramCursorBridgePilot'));
 
 const FEATURE = 'A piloted ticket cannot land without executing its own acceptance contract';
 
@@ -79,14 +79,14 @@ function registerSteps(registry) {
   });
 
   scoped(registry, /^the acceptance-contract gate is the pilot's only landing path$/, () => {
-    const source = fs.readFileSync(PILOT_SOURCE_PATH, 'utf8');
-    if (!source.includes('pilot-acceptance-gate')) {
+    const prompt = composePilotExpeditorPrompt('BL-727-FIXTURE');
+    if (!/node extension\/out\/tools\/pilot-acceptance-gate\.js BL-727-FIXTURE/.test(prompt)) {
       throw new Error(
-        `${PILOT_SOURCE_PATH} does not reference the pilot-acceptance-gate CLI - composePilotExpeditorPrompt must land through the gate, not a bare git mv (required_wiring)`
+        'composePilotExpeditorPrompt output does not invoke the pilot-acceptance-gate CLI - it must land through the gate, not a bare git mv (required_wiring)'
       );
     }
-    if (/land it by running\s*\n?\s*`git mv`|`git mv` it to backlog\/done\//.test(source)) {
-      throw new Error(`${PILOT_SOURCE_PATH} still instructs a bare "git mv" landing path`);
+    if (/land it by running `git mv`/.test(prompt)) {
+      throw new Error('composePilotExpeditorPrompt output still instructs a bare "git mv" landing path');
     }
   });
 
