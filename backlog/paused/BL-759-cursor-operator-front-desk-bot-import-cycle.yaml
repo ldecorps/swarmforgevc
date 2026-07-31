@@ -1,0 +1,142 @@
+id: BL-759
+title: "The Cursor-operator modules import back out of the front-desk bot, so the dependency gate's acyclic rule fails repo-wide"
+milestone: M8
+type: defect
+severity: medium
+status: todo
+epic: code-quality-gates
+assigned_to: specifier
+priority: 5
+direction: normal
+depends_on: []
+mutation_cost: low
+acceptance: specs/features/BL-759-cursor-operator-front-desk-cycle.feature
+
+invariants:
+  - "A whole-repository dependency-rule gate scan reports zero forbidden edges, for every rule in the ruleset and not only `acyclic`."
+  - "Every module and test that resolved `isPipelineEmpty`, `controlDrainTimeoutMs` or `resolveLiveRoles` before the move resolves the same implementation after it."
+
+source: |
+  Architect note to specifier, 2026-07-31: "Dep-gate: unticketed acyclic
+  cycle in telegramCursorOperator* - please ticket". First recorded during
+  the BL-723 pilot review (docs/how-to/BL-723-pilot-tonight-quality-review.md,
+  "Hard gate" section), where a full-repo scan surfaced it but it was
+  correctly ruled out of that parcel's scope. Introduced by the Cursor
+  Remote landing e54d2129a ("Land Let's Talk float surfaces and Android
+  overlay companion", BL-700..704).
+
+notes: |
+  Reproduced 2026-07-31 from a clean `main`:
+
+      $ node extension/out/tools/dependency-gate.js
+      Dependency-rule gate FAILED:
+        src/tools/telegram-front-desk-bot.ts -> src/tools/telegramCursorOperatorExec.ts violates "acyclic"
+        src/tools/telegram-front-desk-bot.ts -> src/tools/telegramCursorOperatorLiveness.ts violates "acyclic"
+        src/tools/telegramCursorOperatorExec.ts -> src/tools/telegramCursorOperatorLiveness.ts violates "acyclic"
+
+  Severity `medium`, deliberately, not `high`: nothing misbehaves at
+  runtime today. The bot's own edge into the operator modules is a lazy
+  `await import(...)`, so there is no circular module-init hazard — the
+  cost is a genuine module-boundary violation plus a gate that now fails
+  for anyone who touches these files. It is contained, not a live fault
+  and not a broken health signal, so it does not buy the Article 3.2.4
+  expedite lane.
+
+  Coordinator, one sequencing note (not a `depends_on`): BL-725 already
+  names `telegramCursorOperatorExec.ts` in its scope. Whichever of the two
+  runs second inherits the other's tree, and BL-725 will trip the
+  architect's hard gate on an edge it did not introduce unless this lands
+  first. Landing this one first is the cheaper order; they are not
+  orthogonal, so do not run them concurrently.
+
+description: |
+  ## What
+
+  Three modules form an import cycle, and the architect's REQUIRED HARD
+  GATE (`node extension/out/tools/dependency-gate.js`, ruleset
+  `extension/.dependency-cruiser.cjs`) reports it as three forbidden
+  `acyclic` edges on a full-repo scan.
+
+  The cycle:
+
+  - `telegram-front-desk-bot.ts:2142,2147` lazily loads
+    `telegramCursorOperatorExec` and `telegramCursorOperatorLiveness`
+    (`await import(...)`) to dispatch an operator verb.
+  - `telegramCursorOperatorExec.ts:43` statically imports
+    `isPipelineEmpty` **from** `./telegram-front-desk-bot`.
+  - `telegramCursorOperatorLiveness.ts:7` statically imports
+    `isPipelineEmpty, controlDrainTimeoutMs` **from**
+    `./telegram-front-desk-bot`.
+  - `telegramCursorOperatorExec.ts:25` also imports
+    `telegramCursorOperatorLiveness`, closing the third edge.
+
+  Break the cycle so a whole-repository gate scan passes, without changing
+  what any of the moved helpers decide.
+
+  ## Why it matters
+
+  The gate is per-changed-file and architect-run, so this is latent rather
+  than breaking today — but it is armed. The next parcel that touches any
+  of these three files fails the architect's hard gate on an edge it did
+  not introduce, and the architect's own prompt says to bounce on any
+  reported forbidden edge. That is a wasted round-trip charged to an
+  innocent ticket. `telegram-front-desk-bot.ts` is 3101 lines and one of
+  the hottest files in the repo, so the wait is short.
+
+  Beyond the gate, the coupling is real in its own right: the operator
+  verb executor cannot be loaded without dragging in the entire front-desk
+  bot module graph, purely to reach two drain helpers.
+
+  ## Constraint the fix has to reckon with — the extraction is transitive
+
+  Do not assume this is a two-function move. `isPipelineEmpty`
+  (`telegram-front-desk-bot.ts:1642`) calls `resolveLiveRoles`, which is
+  **also defined in `telegram-front-desk-bot.ts`** (line 2466). Extracting
+  only the leaf leaves the same back-edge in place under a new name.
+  `notify-dead-letters.ts:24` imports `resolveLiveRoles` from the bot
+  module too — that direction is one-way and forms no cycle, but it is a
+  consumer whose resolution must not change.
+
+  Note also that the existing pure-decision module `telegramControlCore.ts`
+  documents itself as having "no I/O at all". `controlDrainTimeoutMs` is a
+  pure env parse and would fit; `isPipelineEmpty` and `resolveLiveRoles`
+  read disk and would not. Choosing where the disk-reading pair lands is
+  the coder's and architect's call — this ticket does not prescribe it,
+  only that the cycle goes and the ruleset's other rules stay satisfied.
+
+  ## Scope
+
+  - `extension/src/tools/telegram-front-desk-bot.ts`
+  - `extension/src/tools/telegramCursorOperatorExec.ts`
+  - `extension/src/tools/telegramCursorOperatorLiveness.ts`
+  - whichever module the shared helpers land in (new or existing)
+  - consumers whose imports move with them:
+    `extension/src/tools/notify-dead-letters.ts`,
+    `extension/test/telegramFrontDeskBotCli.test.js`
+
+  Explicitly NOT in scope: any change to what a drain-stop, an operator
+  verb, or the liveness wait actually does. This is a structural move.
+  A diff that alters drain semantics is a defect, not a bonus.
+
+  ## Acceptance signal
+
+  `node extension/out/tools/dependency-gate.js` (no arguments — the
+  full-repo scan) exits zero and reports no forbidden edge, and the
+  existing unit and acceptance suites stay green with no test deleted or
+  weakened to get there.
+
+  ## QA end-to-end procedure
+
+  1. From a clean checkout of the QA-approved commit, `npm run compile`
+     (`extension/out/` is gitignored; do not trust a stale build).
+  2. Run `node extension/out/tools/dependency-gate.js` with no arguments.
+     Expect exit 0 and no `FAILED` block — in particular none of the three
+     `acyclic` edges quoted in `notes:` above.
+  3. Run the same gate against each of the three named source files
+     individually, as the architect would on a real parcel; each must pass.
+  4. Run the full unit suite and the acceptance runner. Confirm the four
+     BL-759 scenarios execute (not skipped) and pass, and that
+     `telegramFrontDeskBotCli.test.js`'s existing `controlDrainTimeoutMs`
+     and `isPipelineEmpty` tests still run and still pass.
+  5. Confirm by reading the diff that no drain, verb-dispatch or liveness
+     decision changed — only where symbols live and who imports them.
