@@ -6,3 +6,16 @@ description: |2
   Can also do
   Amend note
   Remove note
+
+specifier_disposition: |
+  2026-07-31 — NOT drained. Four words ("Send note to Drop-down Agents /
+  Amend note / Remove note") are not enough to spec responsibly. Best
+  reading is a Bubble screen that composes a `note` handoff to a chosen
+  swarm role, with amend/remove of a pending one — but "drop-down agents",
+  and whether amend/remove act on a queued handoff or on an approval-style
+  card, are both guesses.
+
+  Not asked, because `role_ask.bb` allows ONE pending question per role and
+  the specifier's slot has been held since 2026-07-30 by the three-intake
+  disposition question (see the INTAKE-*.md footers). Ask this the moment
+  that slot clears, or the human can just answer it directly.
