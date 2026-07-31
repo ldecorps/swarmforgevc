@@ -1,0 +1,83 @@
+id: BL-740
+title: "BL-627's collectReferencedClaudeModels lands at CRAP=10.89/79% coverage — never checked against the CRAP<=6 gate"
+milestone: M8
+type: defect
+severity: medium
+status: todo
+epic: cost-intelligence
+assigned_to: specifier
+priority: 5
+direction: normal
+depends_on: []
+mutation_cost: low
+source: |
+  Found during BL-723 (pilot-tonight quality review), hardener viewpoint
+  pass, 2026-07-30. Coder, cleaner, and architect all reviewed BL-627's
+  landing (commit 9b3e1f74a) and judged it on-par, but none ran the
+  project's CRAP tool against the new code.
+
+  `node scripts/crapReport.js src/metrics/pricingTable.ts` (run from
+  `extension/`, against a clean coverage run excluding the two known
+  pre-existing suite issues — the tracked BL-720 CURSOR_API_KEY flake and
+  this same ticket's own raw-mkdtemp violation, see BL-742) reports:
+
+    src/metrics/pricingTable.ts  collectReferencedClaudeModels  complexity=10  coverage=79%  CRAP=10.89  *** CRAP > 6 ***
+
+  `collectReferencedClaudeModels` (extension/src/metrics/pricingTable.ts:90-122)
+  is a brand-new function from this landing — confirmed via
+  `git show 9b3e1f74a -- extension/src/metrics/pricingTable.ts`, which adds
+  it with a leading `+`. It scans three sources for referenced
+  `claude-*` model ids: `swarmforge/swarmforge.conf`, every `*.conf` under
+  `swarmforge/packs/`, and every `*.claude-settings.json` under
+  `.swarmforge/launch/` — each behind its own try/catch "absent is fine"
+  fallback.
+
+  `extension/test/pricingTable.test.js` calls
+  `collectReferencedClaudeModels(REPO_ROOT)` exactly once (line 111),
+  against whatever the real repo happens to contain at test-run time, and
+  only asserts `referenced.length > 0`. This exercises the conf-file
+  happy path incidentally but never deliberately drives: the packs-dir
+  readdir with actual matching `.conf` files present, the launch-dir
+  readdir with actual matching `.claude-settings.json` files present, the
+  non-matching-extension skip inside either loop, or the confPath-absent
+  branch. The only other caller,
+  `checkPricingCoverage`/`assertPricingCoverage`'s own fixture test (line
+  ~91-108), builds an empty `packs/` dir and no `launch/` dir at all — so
+  it only ever exercises the two absent/empty-loop paths, never the
+  positive multi-file scan this ticket's own fail-loud invariant ("every
+  referenced model is priced, fails loud otherwise") actually depends on
+  when a swarm is launched with per-role model overrides via
+  `.swarmforge/launch/*.claude-settings.json`.
+
+  This is exactly the kind of gap CRAP is designed to surface: real,
+  non-trivial branching (complexity=10) behind incomplete coverage,
+  reachable in production but never deliberately driven by a test.
+
+notes: |
+  BL-723 hardener verdict on BL-627: not-on-par (independent finding,
+  additional to the coder/cleaner/architect on-par verdicts, which read
+  the function's structure and invariant-encoding but never ran CRAP).
+  Linked pilot-process defect: BL-741. See also BL-742/743 (same ticket,
+  separate raw-mkdtemp test-hygiene shortfall this hardener pass also
+  found).
+
+description: |
+  ## What
+
+  Add a fixture-driven test (or extend the existing one) for
+  `collectReferencedClaudeModels` that deliberately populates
+  `swarmforge/packs/*.conf` with more than one matching file and
+  `.swarmforge/launch/*.claude-settings.json` with at least one matching
+  file, asserting the models referenced in EACH source are collected and
+  merged (not just the conf-file source). Also cover: a non-`.conf`/
+  non-`.claude-settings.json` file present in either directory is skipped,
+  and the confPath-absent case still returns whatever packs/launch turn up.
+
+  ## Acceptance
+
+  - `collectReferencedClaudeModels` reaches CRAP<=6 (via real coverage of
+    its actual branches, not by simplifying the function away).
+  - `npm run crap` (or a scoped `node scripts/crapReport.js
+    src/metrics/pricingTable.ts` run) no longer flags it.
+  - Existing BL-627 tests (fixture-backed unpriced-model test, current
+    roster coverage test) stay green.

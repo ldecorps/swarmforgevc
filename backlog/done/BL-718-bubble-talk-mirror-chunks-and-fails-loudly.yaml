@@ -127,3 +127,15 @@ notes: |
   independently covered by example tests in telegramCursorBridgeCore.test.js,
   so no live risk. Remaining-work defect: BL-738. Pilot-process defect:
   BL-739.
+
+  BL-723 hardener verdict (2026-07-30): not-on-par (third independent
+  finding on this ticket, additional to the coder's and architect's own).
+  CRAP was never run against this landing. `mergeTopicId` (new,
+  bridgeServer.ts:113) lands at complexity=4/coverage=14%/CRAP=14.08 — the
+  routing logic deciding which topic id a mirrored message actually goes
+  to, 86% untested. Five more new/modified functions from this same
+  commit also exceed CRAP<=6: readCursorBridgeTopicIds (CRAP=6.91),
+  appendPendingChoicePoll (CRAP=7.07), mirrorLetsTalkChoicePollToBubble
+  (CRAP=8.13), mirrorLetsTalkTurnToBubble (CRAP=10.01), and
+  buildPersistedState in telegramCursorBridgeCore.ts (CRAP=11.07).
+  Remaining-work defect: BL-744. Pilot-process defect: BL-745.

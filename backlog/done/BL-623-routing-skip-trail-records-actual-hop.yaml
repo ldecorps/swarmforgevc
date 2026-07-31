@@ -140,3 +140,16 @@ notes: |
 
   BL-723 architect verdict (2026-07-30): on-par. No extension/src files
   touched, no declared invariants. No architecture concerns.
+
+  BL-723 hardener verdict (2026-07-31): not-on-par (upgrades the coder's
+  and cleaner's own already-noted "no try/catch" nit to a traced, real
+  defect). log-routing-skip! (swarm_handoff.bb:600) sits before
+  try-sync-deliver! in the same let in -main, which has no wrapping
+  try/catch anywhere up to the top-level (apply -main
+  *command-line-args*). A write failure there throws uncaught, so
+  try-sync-deliver! (real-time tmux wake) and the draft-file cleanup never
+  run — even though the parcel was already durably written to outbox.
+  Contradicts the ticket's own "a record-write failure must not block the
+  send" guardrail. Not high severity: the parcel itself is not lost (this
+  repo's own backup mailbox delivery path covers a missed sync-inject).
+  Remaining-work defect: BL-748. Pilot-process defect: BL-749.

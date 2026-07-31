@@ -92,3 +92,9 @@ notes: |
   already filed under BL-734/735). No extension/src changed by this
   ticket's own diff (only a test-assertion realignment), no declared
   invariants. No additional architecture concerns.
+
+  BL-723 hardener verdict (2026-07-31): not-on-par (coder's and
+  architect's findings stand). No new production code landed under this
+  ticket's own diff to run coverage/CRAP/mutation against — only the
+  7-line test-assertion realignment, already reviewed by cleaner. Nothing
+  further to harden from this lens.

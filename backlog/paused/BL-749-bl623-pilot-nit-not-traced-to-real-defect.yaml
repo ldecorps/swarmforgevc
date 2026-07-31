@@ -1,0 +1,40 @@
+id: BL-749
+title: "Pilot process: a reviewer-noted 'no try/catch' nit was never traced far enough to see it actually blocks delivery"
+milestone: M8
+type: defect
+severity: low
+status: todo
+epic: swarm-reliability
+assigned_to: specifier
+priority: 6
+direction: normal
+depends_on: []
+mutation_cost: low
+source: |
+  Found during BL-723 (pilot-tonight quality review), hardener viewpoint
+  pass, 2026-07-30/31. Companion remaining-work ticket: BL-748.
+
+notes: |
+  Pilot-process half of the BL-748 hardener-lens shortfall on BL-623.
+
+description: |
+  ## What
+
+  This review batch's own cleaner-lens pass on BL-623 already noticed
+  `log-routing-skip!` has no try/catch despite the ticket's own guardrail
+  language — but judged it a non-blocking nit rather than tracing the
+  actual call site to see whether the missing try/catch has a real
+  consequence (it does: it sits before the real-time delivery call in the
+  same `let`, so a write failure there skips delivery entirely).
+
+  ## Question to answer
+
+  When a reviewer notices a missing error-handling guard that the ticket's
+  OWN text explicitly promises ("a record-write failure must not block the
+  send"), should that observation always be traced to its actual call-site
+  consequence before being downgraded to a non-blocking nit? Harden
+  `/pilot` (and this project's own review-role guidance) so a
+  reviewer-noticed gap against a ticket's own explicit guardrail claim is
+  never dismissed without first confirming — by reading the call site, not
+  just the function in isolation — whether the guardrail is actually
+  upheld.

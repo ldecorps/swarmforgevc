@@ -167,3 +167,13 @@ notes: |
 
   BL-723 architect verdict (2026-07-30): on-par. No extension/src files
   touched, no declared invariants. No architecture concerns.
+
+  BL-723 hardener verdict (2026-07-31): not-on-par (independent finding).
+  The new :warn-fixture-droppings severity in babysitter_assess_lib.bb is
+  the only alert-worthy severity with no elapsed-pct grace-period gate,
+  unlike its :warn-uncommitted/:watch siblings — a role that claimed a
+  ticket seconds ago with stale fixture debris from an earlier run
+  immediately wakes the babysitter LLM. The one new test always uses a
+  claimAtMs 15 minutes in the past, so it never exercises or asserts this
+  boundary either way. Remaining-work defect: BL-750. Pilot-process
+  defect: BL-751.

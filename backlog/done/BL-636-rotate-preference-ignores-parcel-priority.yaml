@@ -168,3 +168,14 @@ notes: |
   equal-priority ties go to recency, ranking uses a role's best priority
   not its newest parcel's, a missing priority never outranks a valid low
   one). Judged adequate; not filed as a defect.
+
+  BL-723 hardener verdict (2026-07-31): on-par from this lens (the
+  coder's already-filed commit-message/deliver! mismatch stands as the
+  ticket's overall not-on-par verdict). parse-priority-rank/
+  best-priority-rank edge cases (nil, blank, non-numeric, single-digit)
+  are unit-tested, and the real wiring (role-mail-row through handoffd's
+  --print-preferred-rotate-target) is exercised end-to-end for 4 distinct
+  scenarios in test_handoffd_priority_rotate_wiring.sh, including the
+  "best priority wins over newest parcel" and "missing priority never
+  outranks a valid rank" cases. No coverage/CRAP/mutation-equivalent
+  concerns found.

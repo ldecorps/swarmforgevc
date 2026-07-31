@@ -1,0 +1,42 @@
+id: BL-743
+title: "Pilot process: BL-627's new test was never checked against the shared mkTmpDir test-infra convention"
+milestone: M8
+type: defect
+severity: low
+status: todo
+epic: cost-intelligence
+assigned_to: specifier
+priority: 6
+direction: normal
+depends_on: []
+mutation_cost: low
+source: |
+  Found during BL-723 (pilot-tonight quality review), hardener viewpoint
+  pass, 2026-07-30. Companion remaining-work ticket: BL-742.
+
+notes: |
+  Pilot-process half of the BL-742 hardener-lens shortfall on BL-627.
+
+description: |
+  ## What
+
+  BL-627 added a new test using a raw `fs.mkdtempSync` call instead of
+  this repo's shared `mkTmpDir()` helper (`extension/test/helpers/tmpDir.js`,
+  BL-420/BL-714). At the time BL-627 landed, the repo-wide migration gate
+  (`tmpDirMigrationGuard.test.js`'s "zero raw mkdtemp call sites" test) may
+  or may not have existed yet depending on landing order relative to
+  BL-714 — but regardless of timing, nothing in the pilot's own review
+  steps checked a brand-new test file against this project's own
+  documented test-infrastructure convention before landing.
+
+  ## Question to answer
+
+  For any ticket that adds a NEW test file (or a new test to an existing
+  file) touching `os.tmpdir()`, should a mechanical pre-land check (grep
+  for `mkdtempSync` outside `helpers/tmpDir.js`) run as part of that
+  ticket's own gate, rather than relying on a later, unrelated ticket's
+  repo-wide sweep to catch it retroactively? Harden `/pilot` (or the live
+  hardener/QA role prompts) to check new test files against this and any
+  other shared-helper conventions the repo already has a mechanical
+  detector for, before landing — not just after, when the detector
+  happens to be run by an unrelated later pass.

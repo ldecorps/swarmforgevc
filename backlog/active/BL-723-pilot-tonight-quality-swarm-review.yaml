@@ -10,7 +10,7 @@ direction: queue-jump
 depends_on: []
 mutation_cost: low
 required_stages: [specifier, coder, cleaner, architect, hardender, documenter, qa]
-assigned_to: specifier
+assigned_to: coder
 
 invariants:
   - "Every reviewed ticket stays in backlog/done and no reviewed ticket's description or acceptance is rewritten unless a true revert is warranted — this parcel reviews landings, it does not reopen them."

@@ -70,3 +70,21 @@ notes: |
 
   BL-723 architect verdict (2026-07-30): on-par. No extension/src files
   touched, no declared invariants. No architecture concerns.
+
+  BL-723 hardener verdict (2026-07-31): on-par. One minor nit, not filed
+  as a defect: the regression check meant to keep the sandbox lib list in
+  sync only regexes direct load-file calls inside operator_runtime.bb
+  itself, missing libs loaded transitively (e.g. via
+  fixture_reaper_sweep_lib.bb -> fixture_reaper_lib.bb). Low risk in
+  practice — the suite's dynamic "operator_runtime.bb loads successfully
+  in its sandbox" check would still catch a genuinely missing transitive
+  lib at runtime, so this is a blast-radius/documentation gap in the
+  static check, not a silent-failure risk. Judged not to rise to a
+  shortfall.
+
+  BL-723 documenter verdict (2026-07-31): not-on-par (independent finding,
+  the deciding shortfall — every other lens found this ticket clean). Its
+  new how-to doc (docs/how-to/BL-671-operator-runtime-fixture-sandbox.md)
+  is orphaned, never linked from docs/index.md. Remaining-work defect:
+  BL-756 (shared across all ten of tonight's orphaned docs). Pilot-process
+  defect: BL-757.

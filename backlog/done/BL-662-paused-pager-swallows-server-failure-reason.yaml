@@ -93,3 +93,15 @@ notes: |
   shared reasonOrFallback helper — not exhaustive on every action x shape
   permutation, but the shared-helper structure makes an unencoded path
   unlikely. No architecture concerns.
+
+  BL-723 hardener verdict (2026-07-31): on-par. Ran node
+  scripts/crapReport.js against pausedPagerUiHtml.ts: no function exceeds
+  CRAP<=6 (getPausedPagerUiHtml itself is complexity=1, 100% coverage).
+  No coverage/CRAP concerns from this lens.
+
+  BL-723 documenter verdict (2026-07-31): not-on-par (independent finding,
+  the deciding shortfall — every other lens found this ticket clean). Its
+  new how-to doc (docs/how-to/BL-662-paused-pager-shows-server-failure-reason.md)
+  is orphaned, never linked from docs/index.md. Remaining-work defect:
+  BL-756 (shared across all ten of tonight's orphaned docs). Pilot-process
+  defect: BL-757.

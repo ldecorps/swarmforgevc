@@ -189,3 +189,14 @@ notes: |
   basename-collision edge case (same basename elsewhere must not inherit
   the exemption) — a genuine BL-654 property-test-equivalent encoding. No
   architecture concerns.
+
+  BL-723 hardener verdict (2026-07-31): not-on-par (upgrades the coder's
+  own already-noted dead-code nit). The step handler at
+  bl694ResidualAllowlistSteps.js:75 for "a different file with the same
+  basename at a non-stage path under the backlog" has no matching Examples
+  row in Scenario Outline 04 (only "outside the backlog" and "elsewhere in
+  the tree" rows exist) — confirmed the regex cannot match either
+  existing row. The claim it was meant to prove (a basename match under a
+  non-stage backlog/ path, e.g. backlog/topics/, is correctly not excused)
+  is untested anywhere, not just cosmetically dead. Remaining-work defect:
+  BL-752. Pilot-process defect: BL-753.

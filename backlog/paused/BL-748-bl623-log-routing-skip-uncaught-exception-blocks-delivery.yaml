@@ -1,0 +1,76 @@
+id: BL-748
+title: "log-routing-skip! has no try/catch and sits before try-sync-deliver! in the same let — a write failure skips real-time delivery and draft cleanup, contradicting the ticket's own guardrail"
+milestone: M8
+type: defect
+severity: medium
+status: todo
+epic: swarm-reliability
+assigned_to: specifier
+priority: 5
+direction: normal
+depends_on: []
+mutation_cost: low
+source: |
+  Found during BL-723 (pilot-tonight quality review), hardener viewpoint
+  pass, 2026-07-30/31. The cleaner's own BL-723 pass already noted this as
+  a non-blocking nit ("log-routing-skip! has no try/catch despite the
+  ticket's own 'a record-write failure must not block the send' guardrail
+  — no scenario exercises that path"), but did not trace the actual call
+  chain. Traced it directly in `swarmforge/scripts/swarm_handoff.bb`:
+
+  `-main` (line 572, invoked bare at line 623 with no wrapping try/catch)
+  binds, in a single `let`:
+    1. `outbox-file` via `write-handoff!` (line 594) — durably installs the
+       parcel to `.swarmforge/handoffs/outbox/` and returns.
+    2. `_` via `(when-let [skip (:routing-skipped routed)]
+       (log-routing-skip! ...))` (line 599-600).
+    3. `sync-result` via `try-sync-deliver!` (line 601-603) — the real-time
+       tmux injection that wakes the recipient role.
+
+  Clojure `let` bindings evaluate strictly in order. If `log-routing-skip!`
+  throws (disk full, permission denied, or any I/O failure writing
+  `.swarmforge/routing-skips.jsonl` or creating its parent dir via
+  `fs/create-dirs`), the exception propagates uncaught out of the whole
+  `let` — `-main` has no try/catch around any of this, and there is no
+  wrapping try anywhere between it and the top-level `(apply -main
+  *command-line-args*)` at line 623. Consequence: `sync-result` (real-time
+  delivery) is NEVER computed — `try-sync-deliver!` never runs — and
+  `(fs/delete draft)` (line 604) never runs either, even though the parcel
+  was already durably written to outbox moments earlier at step 1. The
+  process exits with an uncaught-exception stack trace rather than a
+  controlled message.
+
+  This directly contradicts this ticket's own stated guardrail that "a
+  record-write failure must not block the send." No scenario in
+  `bl623RoutingSkipTrailSteps.js` or the feature file exercises a
+  `log-routing-skip!` write failure.
+
+  Not filed as high severity: the parcel itself is not lost (already
+  durably in outbox before this point), and this repo's own constitution
+  documents a backup delivery path for exactly a missed sync-inject
+  ("Only when ready_for_next.sh returns a task you were not woken for
+  (backup mailbox delivery) may you briefly note that unseen mail was
+  picked up") — so the practical failure mode is a delayed wake plus an
+  ugly crash trace and a leftover draft file, not silent data loss.
+
+notes: |
+  BL-723 hardener verdict on BL-623: not-on-par (upgrades the cleaner's
+  own already-noted nit to a real, traced defect — the cleaner flagged the
+  missing try/catch but did not confirm it actually blocks delivery).
+  Linked pilot-process defect: BL-749.
+
+description: |
+  ## What
+
+  Wrap the `log-routing-skip!` call site (swarm_handoff.bb:599-600) in its
+  own try/catch that logs the failure (stderr) and continues, so a
+  routing-skip record-write failure can never prevent `try-sync-deliver!`
+  or `(fs/delete draft)` from running — matching the ticket's own stated
+  guardrail literally, not just in the function's own body.
+
+  ## Acceptance
+
+  - A test that makes `log-routing-skip!`'s write throw (e.g. an
+    unwritable `.swarmforge` dir, or a stubbed `fs/create-dirs`/`spit`)
+    confirms `try-sync-deliver!` still runs and the draft is still deleted.
+  - The existing routing-skip-trail scenarios stay green.
