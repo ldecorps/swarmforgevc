@@ -292,10 +292,7 @@ class TalkEngine(private val appContext: Context) {
                 if (result.ok) {
                     onTurnOk(result)
                 } else {
-                    replyText = result.reason ?: "turn failed"
-                    replyIsErrorStyle = true
-                    setPhase(Phase.READY)
-                    scheduleHandsFreeListen(AudioTurnRecorder.HANDS_FREE_AFTER_ERROR_MS)
+                    applyTurnFailure(result)
                 }
             }
         }
@@ -369,10 +366,7 @@ class TalkEngine(private val appContext: Context) {
                 ) {
                     submitAudio(audioBase64, mimeType, sttAttempt + 1)
                 } else {
-                    replyText = result.reason ?: "turn failed"
-                    replyIsErrorStyle = true
-                    setPhase(Phase.READY)
-                    scheduleHandsFreeListen(AudioTurnRecorder.HANDS_FREE_AFTER_ERROR_MS)
+                    applyTurnFailure(result)
                 }
             }
         }
@@ -383,6 +377,24 @@ class TalkEngine(private val appContext: Context) {
         replyIsErrorStyle = false
         setPhase(Phase.SPEAKING)
         replyPlayer?.play(result, muted)
+    }
+
+    /**
+     * BL-716: a DNS/connect failure (or dead tunnel edge) must not read as a healthy
+     * READY/RECORDING cycle — land on the distinct ERROR phase so the bubble color and
+     * panel text make the failure visible, instead of the invisible pass-through READY
+     * previously used for every failure class alike.
+     */
+    private fun applyTurnFailure(result: BridgeClient.TurnResult) {
+        val reason = result.reason ?: "turn failed"
+        replyText = if (result.connectionFailure) {
+            "$reason ${appContext.getString(R.string.connection_error_hint)}"
+        } else {
+            reason
+        }
+        replyIsErrorStyle = true
+        setPhase(if (result.connectionFailure) Phase.ERROR else Phase.READY)
+        scheduleHandsFreeListen(AudioTurnRecorder.HANDS_FREE_AFTER_ERROR_MS)
     }
 
     private fun onPlaybackDone() {
@@ -419,7 +431,9 @@ class TalkEngine(private val appContext: Context) {
         clearAutoListen()
         if (!alive.get() || pausedAll || !handsFree) return
         val r = Runnable {
-            if (alive.get() && !pausedAll && handsFree && phase == Phase.READY) {
+            // BL-716: ERROR now included — a connection failure lands there (not READY),
+            // and hands-free must still resume the listen loop once it clears.
+            if (alive.get() && !pausedAll && handsFree && (phase == Phase.READY || phase == Phase.ERROR)) {
                 startRecording(auto = true)
             }
         }

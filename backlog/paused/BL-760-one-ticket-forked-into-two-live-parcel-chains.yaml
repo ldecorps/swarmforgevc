@@ -1,0 +1,194 @@
+id: BL-760
+title: "BL-727 forked into two live parcel chains under two task names, and nothing mechanical noticed"
+milestone: M8
+type: defect
+severity: high
+status: todo
+epic: swarm-reliability
+human_approval: approved
+assigned_to: specifier
+priority: 3
+direction: normal
+depends_on: []
+mutation_cost: low
+acceptance: specs/features/BL-760-one-ticket-one-live-parcel.feature
+
+invariants:
+  - "At most one live git_handoff parcel exists per ticket id across every role's new/ and in_process/ mailboxes; a send that would create a second is refused, never queued."
+  - "A refused send is inert: nothing is written to the sender's outbox or sent mailbox, no parcel reaches any recipient inbox, and no wake is injected."
+  - "Ticket identity is decided by exact ticket-id equality, never by task-name prefix or substring match."
+
+required_wiring:
+  - "swarmforge/scripts/swarm_handoff.bb::duplicate-chain-errors::the guard must be invoked from validate's error cond-> beside ticket-close-guard-lib; a guard lib with no call site in the send path gates nothing (the BL-419 shape)"
+
+source: |
+  Coordinator note to specifier, 2026-07-31 16:08: "BL-727 commit
+  double-dispatched under 2 task names, forked to QA - ticket?". Raised by
+  the architect at 16:05 after it bounced the second chain: "BL-727 forked:
+  doc'd copy in QA queue has same defect architect bounced".
+
+notes: |
+  Specifier 2026-07-31: IR-DRY reports six medium-confidence findings on the
+  feature file; all six reviewed and kept deliberately. Four are the outline's
+  parameterised steps substituting to exactly the literal steps used by the
+  standalone scenarios (`<sent task>`/`<mailbox>`/`<held task>`/`<outcome>`) —
+  the same step resolving to one handler, which is DRY working, not duplicate
+  vocabulary. The fifth pairs the note draft against the git_handoff draft:
+  different message types, and the difference is the behavior under test. The
+  sixth pairs "the coder's in_process mailbox holds the git_handoff it is
+  working" against "the documenter's new mailbox holds a git_handoff" — these
+  are the exclusion case and the blocking case, and treating them differently
+  is the entire point of the ticket.
+
+  Fixture ticket ids in the feature file (BL-901, BL-90) are deliberately not
+  real backlog ids: a scenario keyed on the real BL-727 would silently change
+  meaning the day BL-727 reaches backlog/done/ and the existing closed-ticket
+  guard starts refusing first.
+
+description: |
+  ## What happened
+
+  BL-727 ran the pipeline twice, concurrently, under two different task names,
+  for eight hours. Reconstructed from the mailbox audit trail:
+
+  | time (2026-07-31) | hop | task | commit |
+  |---|---|---|---|
+  | 06:10 | specifier -> coder | `BL-727` | c374555779 |
+  | 06:31 | coder -> cleaner | `BL-727` | f0820a5457 |
+  | 06:33 | cleaner -> architect | `BL-727` | f0820a5457 |
+  | 06:49 | architect -> hardender | `BL-727` | 2870359e5f |
+  | 07:25 | hardender -> documenter | `BL-727` | 62fdea8cc0 |
+  | 07:43 | documenter -> QA | `BL-727` | 065cf1750b |
+  | 07:47 | coder -> cleaner | `BL-727-bl718-pilot-missed-unwired-acceptance` | f0820a5457 |
+  | 07:49 | cleaner -> architect | `BL-727-bl718-pilot-missed-unwired-acceptance` | f0820a5457 |
+  | 16:04 | architect -> coder (bounce) | `BL-727-bl718-pilot-missed-unwired-acceptance` | ec80c76e8e |
+
+  At 07:47 the coder re-sent **the same commit it had already forwarded at
+  06:31**, under the ticket's yaml *filename* instead of its id, four minutes
+  after the first chain had already parked a parcel in QA's inbox.
+
+  ## Why the resident did it
+
+  Nothing dispatched that second send. The coder's mailbox holds exactly one
+  inbound parcel for this ticket (`specifier -> coder`, 06:10, completed
+  06:31:26) and nothing else between then and the architect's 16:04 bounce.
+  There is no `Work BL-727` note anywhere in any mailbox, no chase and no
+  nudge for coder in `telemetry/chaser-2026-07.jsonl` in that window (the only
+  chase entries are documenter 07:40 and architect 07:52), and nothing in
+  `handoffs/inject-traffic.log`.
+
+  So this is the mono-router overlay's anti-loop rule being broken from the
+  other side: the resident rotated home to coder after the documenter's
+  handoff, found the ticket still in `backlog/active/`, and re-entered a stage
+  it had already completed instead of stopping on `NO_TASK`. That is agent
+  discipline, and agent discipline is exactly what a gate exists to backstop.
+
+  ## What it cost
+
+  - Three stages (coder, cleaner, architect) re-ran on a commit that had
+    already passed them.
+  - The architect found a real defect on the second chain and bounced it —
+    then had to hand-write a `note` to QA warning that the copy already
+    queued in its inbox carried the same unfixed defect. That warning is the
+    only thing standing between 065cf1750b and a QA approval of known-bad
+    work. Nothing mechanical would have caught it.
+  - Two task names for one ticket also splits every per-ticket trail keyed on
+    the task header: bounce telemetry, the dispatch-gap sweep, and the board.
+
+  ## The fix
+
+  A send-time guard in `swarm_handoff.sh`, in the shape the send path already
+  uses. `swarm_handoff.bb`'s `validate` already refuses a `git_handoff` whose
+  ticket sits in `backlog/done/` (`ticket-close-guard-lib/git-handoff-blocked-for-task?`,
+  conjoined into the error `cond->`). Add a sibling that refuses a
+  `git_handoff` when the same ticket is **already live in another role's
+  mailbox**:
+
+  1. resolve the draft's `task` header to a ticket id — no id means the guard
+     skips silently, exactly as the pre-QA gate already does;
+  2. scan every role's `new/` and `in_process/` mailboxes for `git_handoff`
+     parcels resolving to that same ticket id;
+  3. exclude parcels sitting in the **sender's own** mailbox — the sender is
+     the holder, and its inbound parcel is by definition the one it is acting
+     on. This is what keeps every ordinary forward legal;
+  4. if anything remains, refuse, naming the ticket, the role whose mailbox
+     holds the blocker, and the blocking parcel's filename.
+
+  ## Constraints
+
+  - **Reuse, never reimplement.** `pipeline-stage-lib/extract-ticket-id`
+    already normalizes both `BL-727` and `BL-727-bl718-...` to `BL-727`;
+    `handoff-lib/load-all-roles` + `handoff-lib/mailbox-dir` already enumerate
+    every role's physical mailbox including the worktree-resident ones
+    (BL-128), and `salvage-lib/abandon-stale!` already walks exactly the
+    new/+in_process set this guard needs to read. A second ticket-id parser or
+    a second mailbox walker is a defect, not an implementation choice.
+  - **Do not reuse `salvage-lib/item-handoff?` as the identity test.** It
+    prefix-matches the task header, so ticket `BL-72` matches parcel
+    `BL-727`. Compare extracted ticket ids for equality — the third invariant,
+    and the `BL-90`/`BL-901` example row exists to pin it.
+  - **A blocking gate must be clearable.** A genuinely stale parcel left in
+    some role's `new/` would otherwise wedge that ticket forever, so the
+    refusal must name the command that abandons it. This is the ticket's main
+    risk and the reason scenario 04 asserts on it.
+  - **`.bb`, not TypeScript.** The decision belongs beside the guards it
+    mirrors, in the send path itself; a subprocess hop into `extension/out`
+    on every handoff send would be worse in every dimension. Note the
+    consequence honestly: per engineering.prompt's tool table, `.bb` has no
+    wired mutation/CRAP/DRY tooling (BL-472), so the real gate here is a unit
+    runner under `swarmforge/scripts/test/`, in the idiom of
+    `ticket_close_guard_lib`'s own.
+  - **Step handlers ship in this same parcel.** The acceptance runner throws
+    on any scenario with no handler (BL-233), and this ticket exists because a
+    gate that never ran looked green. Register them with
+    `defineScoped(..., 'one ticket travels the pipeline as one live parcel')`
+    — the registry is global and first-match, so an unscoped registration of
+    text this generic would collide with another ticket's (BL-425).
+
+  ## Scope
+
+  - `swarmforge/scripts/duplicate_chain_guard_lib.bb` — the pure decision,
+    given a ticket id, a sender role, and the live-parcel set.
+  - `swarmforge/scripts/swarm_handoff.bb` — the call site in `validate`.
+  - `swarmforge/scripts/test/` — unit runner for the guard lib.
+  - `specs/pipeline/steps/` — this feature file's handlers.
+
+  ## Out of scope
+
+  - Clearing the two parcels this incident actually left behind
+    (`065cf1750b` in QA's inbox, and the reworked chain). That is live
+    operational recovery, owned by the coordinator now, not by this ticket.
+  - Making the mono-router resident's home-rotation behavior itself
+    unbreakable. The overlay already forbids re-entering a completed stage;
+    this ticket backstops it mechanically rather than re-litigating the prose.
+  - Any change to how the coordinator derives task names when routing. Task
+    names staying stable is desirable, but the guard is deliberately built to
+    be correct whether or not they do.
+
+  ## e2e procedure for QA
+
+  1. `bash specs/pipeline/scripts/run_acceptance.sh specs/features/BL-760-one-ticket-one-live-parcel.feature`
+     — all scenarios green.
+  2. In a throwaway project root, drop a `git_handoff` parcel for a fixture
+     ticket into the documenter's `new/`, then send a `git_handoff` for the
+     same ticket from coder: it must exit non-zero, name the documenter and
+     the blocking filename, and leave the coder's `outbox/`, the coder's
+     `sent/` and the cleaner's `new/` untouched.
+  3. Abandon the blocking parcel with the command the refusal names, re-send:
+     it must now succeed.
+  4. Replay the real fork: with a live parcel for `BL-901` in the documenter's
+     inbox, send under task `BL-901-some-slug` — refused. Send under `BL-90` —
+     sent.
+  5. Confirm an ordinary forward is unaffected: run one real ticket coder ->
+     cleaner -> architect end to end with no refusal.
+
+approval_context: >
+  One decision worth a tap before the coder builds: this gate BLOCKS the send
+  rather than warning. A blocking gate on the send path can wedge a ticket if
+  a stale parcel is left in some role's mailbox — which is why the refusal is
+  required to name the command that clears it. Blocking was chosen because the
+  failure being fixed is silent by construction: the fork ran for eight hours
+  and was caught only because the architect happened to notice, and an
+  advisory warning on a send nobody is watching would have changed nothing.
+  The weaker alternative is to log the duplicate and let the send through, and
+  reconcile later. Everything else here is firm.

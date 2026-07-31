@@ -1,0 +1,174 @@
+id: BL-761
+title: "Four shipped tickets carry acceptance feature files no step handler has ever matched, and the ordinary pipeline has no gate that would notice"
+milestone: M8
+type: defect
+severity: high
+status: todo
+epic: code-quality-gates
+human_approval: approved
+assigned_to: specifier
+priority: 3
+direction: normal
+depends_on: []
+mutation_cost: low
+acceptance: specs/features/BL-761-acceptance-contract-must-be-runnable.feature
+
+invariants:
+  - "The gate's verdict comes from the same parser and step registry the acceptance runner itself uses; it never reimplements Gherkin parsing or step matching."
+  - "A contract passes only when every scenario's every step resolves, including every Scenario Outline row after example substitution; a step is never skipped, sampled, or assumed matched."
+  - "An acceptance declaration that cannot be read — absent, inline-only, or naming a missing file — fails CLOSED, while an infrastructure failure that prevents the check from running at all fails OPEN with a warning."
+
+required_wiring:
+  - "swarmforge/scripts/pre_qa_gate_gather_lib.bb::acceptance-contract::the check must be gathered as a third pre-QA finding beside lineage and declared wiring; a checker lib with no call site on the QA edge gates nothing (the BL-419 shape)"
+
+source: |
+  Found by the specifier on 2026-07-31 while draining the backlog root. Reading
+  the Bubble intakes required knowing how Android behavior is acceptance-tested
+  here; running the existing Bubble-family feature files showed it is not.
+
+notes: |
+  Measured 2026-07-31 on a clean main, `bash specs/pipeline/scripts/run_acceptance.sh`
+  per feature file:
+
+  | ticket | state | scenarios pass/fail |
+  |---|---|---|
+  | BL-696 miniapp-lets-talk-cursor-audio | done/ | 3 / 5 |
+  | BL-706 lets-talk-floating-minimized-chat | done/ | 0 / 4 |
+  | BL-707 android-floating-overlay-companion | done/ | 0 / 6 |
+  | BL-718 bubble-talk-mirror-chunks-and-fails-loudly | done/ | 0 / 6 |
+  | BL-697 lets-talk-hands-free-listening | paused/ | 0 / 6 |
+  | BL-716 bubble-lets-talk-tunnel-hostname-dns | paused/ | 0 / 5 |
+  | BL-717 bubble-silent-return-after-hold-music | paused/ | 0 / 8 |
+
+  Every failure is `runtime.js:24` — "no step handler matched". The three
+  paused rows are NOT defects: an unbuilt ticket legitimately has no handlers
+  yet, and they are listed only to show the pattern is the whole family rather
+  than one bad ticket. The four `done/` rows are the defect: they landed.
+
+  Specifier 2026-07-31: IR-DRY reports three medium-confidence possible-synonym
+  findings, all reviewed and kept. Two pair the gate's PASS precondition against
+  its FAIL precondition, and against the deliberately commit-scoped variant that
+  scenario 04 exists to distinguish — the differences are the behavior under
+  test. The third is the outline's `<outcome>` placeholder substituting to the
+  literal "the parcel is forwarded", which is one step resolving to one handler.
+
+description: |
+  ## What
+
+  Four tickets are in `backlog/done/` whose declared `acceptance:` feature file
+  cannot execute a single scenario end to end. `specs/pipeline/runtime.js`
+  throws "no step handler matched" on the first step of each. The contracts were
+  read and mapped by eye, never run — the same substitution BL-727 documents for
+  the offline pilot, arrived at independently on the ordinary pipeline.
+
+  ## Why nothing caught it
+
+  Two roles are supposed to run the acceptance contract: the coder generates and
+  runs the entry point when implementing the slice (BL-112), and QA runs the
+  acceptance gate again independently before merge. Both are prose obligations
+  on an agent. Nothing between "the agent believes the scenarios are covered"
+  and "the ticket is in done/" executes anything, so an *assertion* of coverage
+  is indistinguishable from a *run* — exactly the gap BL-727 names in
+  `verdict.json` for `/pilot`, present here in the live pipeline too.
+
+  BL-727 closes the pilot path by making the land itself run the contract. This
+  ticket closes the ordinary path at the QA edge.
+
+  ## The fix
+
+  A third finding in the gate that already guards that edge. `swarm_handoff.bb`
+  arms `pre-qa-gate-errors` on a `git_handoff` whose recipients include QA, and
+  `pre_qa_gate_gather_lib.bb` already gathers two findings there — stranded
+  lineage and absent declared wiring (BL-531). Add a third:
+
+  1. resolve the ticket's `acceptance:` to a feature file **at the cited
+     commit** — absent, inline-only, or a path missing at that commit is a
+     finding, not a skip;
+  2. parse it with the vendored APS parser and build the step registry from
+     `specs/pipeline/steps/index.js`, both read at the cited commit;
+  3. resolve every step of every scenario, substituting each Scenario Outline
+     example row first, and honouring `defineScoped` feature-name scoping so a
+     handler pinned to another feature does not count (BL-425);
+  4. report every unresolved step with its scenario, example row, and step text.
+
+  If the registry or parser cannot be loaded at all, warn and let the parcel
+  through — the same fail-open posture the existing pre-QA findings take for
+  infrastructure trouble, and deliberately the opposite of the fail-closed
+  posture for a contract that is merely absent.
+
+  ## Constraints
+
+  - **Reuse, never reimplement.** `specs/pipeline/runnerAdapter.js` already
+    wraps the pinned vendored parser; `specs/pipeline/stepRegistry.js` already
+    implements scoped and unscoped resolution. A second Gherkin parser or a
+    second step matcher is a defect, not an implementation choice — it would
+    make the gate's verdict differ from the runner's, which is the one thing it
+    must never do (first invariant).
+  - **Step text must not collide.** This feature file's own handlers register
+    generic-sounding text ("the parcel is forwarded"). Register them with
+    `defineScoped(..., 'a parcel reaches QA only with an acceptance contract that can actually run')`
+    — the registry is global and first-match, and an unscoped registration of
+    text this generic will silently win for some other ticket's feature.
+    Scenario 03 exists to prove the gate itself honours that scoping.
+  - **Do not "fix" the four shipped tickets here.** Their contracts are debt
+    with a separate owner (see Out of scope). This ticket lands the gate; it
+    does not retro-run it over `done/`.
+
+  ## Scope
+
+  - `swarmforge/scripts/acceptance_contract_gate_lib.bb` — the pure decision
+    over (feature file text, registry contents, declaration state).
+  - `swarmforge/scripts/pre_qa_gate_gather_lib.bb` — the call site: gather the
+    third finding beside the two that already exist.
+  - `swarmforge/scripts/test/` — unit runner for the new lib, in the idiom of
+    `pre_qa_gate_lib_test_runner.bb`.
+  - `specs/pipeline/steps/` — this feature file's own handlers, in this parcel.
+
+  ## Out of scope
+
+  - **Clearing the four shipped tickets' inert contracts.** BL-718's is already
+    owned by BL-726. BL-696, BL-706 and BL-707 need an equivalent; file it as
+    the burn-down sibling rather than widening this slice. Until that lands,
+    those tickets stay in `done/` with unrunnable contracts — stated plainly
+    rather than quietly grandfathered.
+  - **Deciding where Android device behavior's contract lives.** The reason the
+    Bubble family is the worst-hit is that this repo has no testable seam for
+    Android at all: no `test`/`androidTest` source set, no JVM unit suite, and a
+    Node-based acceptance runner that cannot reach Kotlin. Naming the Android
+    device surface as environmentally unsuitable (as `engineering.prompt`
+    already does for the VS Code API, the webview, and live tmux) and saying
+    where its behavior is verified instead is a policy question for a separate
+    ticket. **This is a sequencing hazard, not a detail — see approval_context.**
+  - A repo-wide standing sweep over every `specs/features/*.feature`. The QA
+    edge is where a parcel can still be stopped; a sweep is a reporting tool and
+    can follow.
+
+  ## e2e procedure for QA
+
+  1. `bash specs/pipeline/scripts/run_acceptance.sh specs/features/BL-761-acceptance-contract-must-be-runnable.feature`
+     — all scenarios green (the gate gating itself).
+  2. Against a fixture ticket whose feature file has one unhandled step, send a
+     `git_handoff` addressed to QA: refused, naming the scenario and the step,
+     with nothing written to the sender's outbox or QA's inbox.
+  3. Register the missing handler, re-send: forwarded.
+  4. Send the same fixture to `cleaner` instead of QA: forwarded — the gate owns
+     the QA edge only.
+  5. Point a fixture ticket's `acceptance:` at a path that does not exist at the
+     cited commit: refused (fails closed).
+  6. Regression against the real thing: at a commit of BL-707, the gate must
+     report its six unresolved scenarios; at this ticket's own commit, clean.
+
+approval_context: >
+  One sequencing decision, and it is the whole risk of this ticket. The moment
+  this gate lands, every Bubble/Android ticket becomes unlandable, because there
+  is currently no way to write an executable acceptance contract for Android
+  device behavior — no Kotlin test source set exists, and the acceptance runner
+  is Node and cannot reach Kotlin. BL-697, BL-716 and BL-717 are already paused
+  and would be caught, as would the four Bubble intakes still sitting in the
+  backlog root. So either (a) land this gate now and accept that the Bubble
+  track pauses until the Android-seam policy ticket lands, (b) land the
+  Android-seam policy first and this gate after, or (c) land this gate with the
+  Bubble family explicitly recorded as known debt it does not yet enforce
+  against. My recommendation is (b) — the gate is correct and cheap, but
+  enforcing a contract nobody can satisfy converts a silent quality hole into a
+  loud delivery stall. Everything else in this ticket is firm.

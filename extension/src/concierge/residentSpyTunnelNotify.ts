@@ -4,7 +4,7 @@
 import { EditInPlaceMessageState } from './editInPlaceMessageSync';
 import { InlineKeyboardButton } from '../notify/telegramClient';
 
-export const RESIDENT_SPY_TUNNEL_NOTIFY_FORMAT_VERSION = 3;
+export const RESIDENT_SPY_TUNNEL_NOTIFY_FORMAT_VERSION = 4;
 
 export function buildResidentSpyMiniAppUrl(baseUrl: string, token: string): string {
   const base = baseUrl.replace(/\/$/, '');
@@ -22,15 +22,31 @@ export function consoleUrlFromLiveUrl(liveUrl: string): string {
   return parsed.toString();
 }
 
+/**
+ * BL-716 dns-05: one-tap Bubble re-pair link built from the same live tunnel
+ * URL already carrying the bridge token in its query string. Bubble
+ * registers this custom scheme in its manifest; the near-term discovery
+ * channel picked for the ticket (deep link over the existing Telegram
+ * notify) rather than a stable hostname or a polled discovery document.
+ */
+export function buildBubblePairingDeepLink(liveUrl: string): string {
+  const parsed = new URL(liveUrl);
+  const token = parsed.searchParams.get('token') ?? parsed.searchParams.get('bearer') ?? '';
+  return `swarmforge-bubble://pair?url=${encodeURIComponent(parsed.origin)}&token=${encodeURIComponent(token)}`;
+}
+
 export interface ResidentSpyTunnelUrls {
   liveUrl: string;
   consoleUrl: string;
+  pairingDeepLink: string;
 }
 
 export function buildResidentSpyTunnelUrls(baseUrl: string, token: string): ResidentSpyTunnelUrls {
+  const liveUrl = buildResidentSpyMiniAppUrl(baseUrl, token);
   return {
-    liveUrl: buildResidentSpyMiniAppUrl(baseUrl, token),
+    liveUrl,
     consoleUrl: buildConsoleMiniAppUrl(baseUrl, token),
+    pairingDeepLink: buildBubblePairingDeepLink(liveUrl),
   };
 }
 
@@ -43,12 +59,17 @@ export function formatResidentSpyTunnelTopicMessage(botUsername?: string): strin
     'That opens inside Telegram with fullscreen support.',
     '',
     'Browser fallback: tap the button below.',
+    '',
+    'Bubble pairing stale? Tap "Update Bubble pairing" to re-pair without hunting logs.',
   ].join('\n');
 }
 
 /** Group/forum topics cannot use web_app buttons — url opens the system browser. */
 export function buildResidentSpyTunnelTopicButtons(urls: ResidentSpyTunnelUrls): InlineKeyboardButton[][] {
-  return [[{ text: 'Open in browser', url: urls.consoleUrl }]];
+  return [
+    [{ text: 'Open in browser', url: urls.consoleUrl }],
+    [{ text: 'Update Bubble pairing', url: urls.pairingDeepLink }],
+  ];
 }
 
 /** web_app buttons work only in a private chat with the bot. */
@@ -56,6 +77,7 @@ export function buildResidentSpyTunnelPrivateWebAppButtons(urls: ResidentSpyTunn
   return [
     [{ text: 'Open console', webAppUrl: urls.consoleUrl }],
     [{ text: 'Live screen', webAppUrl: urls.liveUrl }],
+    [{ text: 'Update Bubble pairing', url: urls.pairingDeepLink }],
   ];
 }
 
@@ -107,7 +129,7 @@ export async function syncResidentSpyTunnelUrl(
   options: { botUsername?: string } = {}
 ): Promise<{ state: ResidentSpyTunnelNotifyState; outcome: ResidentSpyTunnelNotifyOutcome }> {
   const consoleUrl = consoleUrlFromLiveUrl(liveUrl);
-  const urls: ResidentSpyTunnelUrls = { liveUrl, consoleUrl };
+  const urls: ResidentSpyTunnelUrls = { liveUrl, consoleUrl, pairingDeepLink: buildBubblePairingDeepLink(liveUrl) };
   if (!shouldNotifyResidentSpyTunnel(prevState, urls)) {
     return { state: prevState ?? {}, outcome: 'skipped-unchanged' };
   }

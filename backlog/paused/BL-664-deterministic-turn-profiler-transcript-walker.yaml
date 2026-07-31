@@ -5,7 +5,7 @@ type: feature
 status: todo
 epic: swarm-behaviour-trends
 severity: medium
-priority: 06
+priority: 1
 direction: human-requested
 depends_on: []
 assigned_to: specifier
@@ -59,3 +59,9 @@ description: |
   rotate/compact (state the coverage window); single-seat data so far
   (transit-heavy roles will differ); regex-level extraction needs replacing
   with real JSONL parsing.
+
+notes: |
+  Human via Let's Talk 2026-07-30 evening: prioritize this. Raised priority
+  06 → 1. Keep paused under WIP depth 1 while BL-723 (priority 0 queue-jump)
+  finishes; pull next after that review lands. Do not invent a second intake —
+  this ticket already owns ceremony-vs-effective-work measurement.

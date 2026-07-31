@@ -6,8 +6,8 @@ severity: low
 status: todo
 epic: code-quality-gates
 assigned_to: specifier
-priority: 21
-direction: normal
+priority: 0
+direction: queue-jump
 depends_on: []
 mutation_cost: low
 source: |
@@ -36,6 +36,8 @@ source: |
   this has been silently drifting since at least BL-456 landed.
 
 notes: |
+  Human 2026-07-31 Let's Talk: queue-jump for today's live shift — pilot-process hardening before more /pilot safe volume.
+
   Pilot-process half of the BL-756 documenter-lens shortfall (shared across
   all 10 of tonight's orphaned docs).
 

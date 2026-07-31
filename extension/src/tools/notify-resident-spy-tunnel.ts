@@ -19,6 +19,7 @@ import {
 import { createForumTopic, deleteMessage, editForumTopic, editMessageText, getBotUsername, sendTelegramMessage, setChatMenuButton } from '../notify/telegramClient';
 import {
   ResidentSpyTunnelNotifyState,
+  buildBubblePairingDeepLink,
   buildResidentSpyTunnelPrivateWebAppButtons,
   consoleUrlFromLiveUrl,
   syncResidentSpyTunnelUrl,
@@ -189,6 +190,7 @@ export async function notifyResidentSpyTunnelUrl(
     const privateButtons = buildResidentSpyTunnelPrivateWebAppButtons({
       liveUrl: fullUrl,
       consoleUrl,
+      pairingDeepLink: buildBubblePairingDeepLink(fullUrl),
     });
     const dm = await sendTelegramMessage(
       token,
