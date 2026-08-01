@@ -1,0 +1,121 @@
+id: BL-663
+title: "promote_and_route enforces EVERY promotion gate — three different gates bypassed in 48h (approval/assignee, expedite lane, spec-stage-first), each caught by a human, none by machinery"
+milestone: M8
+type: defect
+status: todo
+epic: swarm-reliability
+severity: high
+priority: 04
+direction: human-requested
+depends_on: []
+assigned_to: coder
+mutation_cost: medium
+human_approval: approved
+approval_context: >
+  Hydrate batch 2026-07-28: materializes the described three-gate acceptance
+  into APS Gherkin, one fixture per gate plus a non-vacuity compliant-pass
+  scenario, per the ticket's own "Shape" and "Acceptance" sections.
+invariants:
+  - "A promotion is refused unless every gate passes — human_approval, assignee/spec-stage, Article 3.2.4 expedite ordering, depth, orthogonality, hold/park markers — on EVERY entry into backlog/active/ these scripts own: promote_and_route_next.sh's by-name mode AND its auto-pick mode, and route_backlog_to_coder.sh invoked on its own."
+  - "assigned_to is never silently rewritten at promote OR route time: a reroute is an explicit, logged decision, never a side effect — binding BOTH rewrite sites (promote_and_route_next.sh and route_backlog_to_coder.sh), not only the promote commit."
+
+required_wiring:
+  - "swarmforge/scripts/promote_and_route_next.sh::promotion_gates::the auto-pick AND by-name promotion path must CALL the gate, not merely ship it — all recorded instances entered here"
+  - "swarmforge/scripts/route_backlog_to_coder.sh::promotion_gates::the second, independent assigned_to rewrite site — routing invoked on its own must not bypass the gate"
+
+source: |
+  .swarmforge/operator/INTAKE-promote-and-route-respects-all-gates.md
+  (operator session, 2026-07-26, on the human's go — first intake under the
+  operator-files-intakes agreement; archived to operator/archive/ on drain).
+  Three recorded instances, none caught by machinery:
+  1. Historic standing watch: promote_and_route_next ignores
+     `human_approval` and `assigned_to` (operator memo, pre-dating this week).
+  2. 2026-07-26 05:00 (commit near 615acc022, corrected 15e39fb50):
+     coordinator promoted BL-572 (feature/medium) while BL-647/BL-648
+     (defect/high) sat in paused/ — a direct Article 3.2.4 expedite-lane
+     violation, unattended. BL-647 was later repriced to 01 and the
+     corrected pick verified.
+  3. 2026-07-26 ~08:31 (de5b5d323): promoting BL-647 the coordinator
+     FLIPPED `assigned_to: specifier -> coder` inside the promote commit
+     and routed straight to coder with no `.feature` written — skipping the
+     spec stage the ticket's own acceptance required.
+  4. 2026-08-01 (RECURRENCE, recorded by the operator session): BL-680
+     (feature) was promoted while eligible approved defect/high tickets sat
+     in paused/ — the same Article 3.2.4 lane violation as instance 2,
+     five days after this ticket was filed to stop it. Confirms the defect
+     is live and unattended-recurring, not historical.
+
+description: |
+  ## Why now
+
+  Each bypass so far was cheap because a human was watching. The swarm now
+  runs unattended shifts (cron night window; les 3x8 in BL-660): an
+  unattended lane violation that ROUTES is a night lost to the wrong work;
+  an unattended spec-skip is a guaranteed architect bounce round. A gate
+  that exists and is skipped is broken, not missing (BL-635's taxonomy).
+
+  ## Shape
+
+  One enforcement layer on the promotion path (promote_and_route_next.sh /
+  route_backlog_to_coder.sh / whatever single chokepoint the coder
+  identifies), refusing with a named reason per gate:
+  - human_approval: pending/amending never promotes.
+  - assignee/spec-stage: a ticket whose assigned_to is specifier (or whose
+    acceptance delegates scenarios to the spec stage) routes to the
+    SPECIFIER, never to coder; no silent assigned_to rewrite.
+  - expedite lane: among eligible candidates, defect severity critical/high
+    beats every non-expedited ticket regardless of priority number
+    (Article 3.2.4, fails closed on missing severity).
+  - existing gates (depth cap, orthogonality, hold/park markers) run
+    through the same chokepoint so no future auto-picker can skip them.
+
+  ## Live chokepoint — verified by the specifier 2026-08-01, read before building
+
+  The chokepoint is NOT open-ended: it is these two scripts, and the survey
+  below is what the gate must change. Verified against the working tree at
+  spec time — re-confirm at your commit, do not trust these line numbers
+  blindly.
+
+  - `swarmforge/scripts/promote_and_route_next.sh`
+    - `pick_candidate()` filters on do-not-promote / epic / blocked ONLY.
+      `human_approval` and `severity` appear NOWHERE in either script
+      (grepped, zero hits) — the approval gate and the Article 3.2.4
+      expedite lane are absent, not merely buggy.
+    - `candidate_sort_line()` sorts by numeric `priority` then id. No
+      expedited bucket, so a feature with a better priority number always
+      beats an approved defect/high. This is instances 2 and 4 exactly.
+    - ~L200: `sed -i 's/^assigned_to:.*/assigned_to: coder/'` — the silent
+      rewrite of instance 3, mechanized. Fires on every promotion.
+    - TWO invocation modes, and the by-name mode is the WEAKER one: with an
+      explicit `BL-id` argument `pick_candidate` skips even the
+      `is_buildable` check the auto-pick path applies. Both modes are in
+      scope (invariant 1); gating only auto-pick leaves the wider hole open.
+    - Already enforced, keep working: the depth cap (`ACTIVE_COUNT >= CAP`)
+      and hold/ exclusion (hold/ is a sibling dir, never scanned).
+      Orthogonality is absent — nothing compares scope against active items.
+  - `swarmforge/scripts/route_backlog_to_coder.sh`
+    - ~L59: `perl -pi -e 's/^assigned_to:.*/assigned_to: coder/'` — a SECOND,
+      independent rewrite site. Fixing only promote_and_route_next.sh leaves
+      instance 3 reproducible whenever routing is invoked on its own.
+
+  ## Gate entry point must be greppable
+
+  Name the gate's entry point so that the literal string `promotion_gates`
+  appears at BOTH call sites (e.g. a `promotion_gates_cli.bb` / a
+  `promotion_gates.sh` invoked from each script). `required_wiring` on this
+  ticket is a fixed-string check for `promotion_gates` in those two files at
+  the commit you send to QA — a gate library that is built but not called
+  refuses the handoff, by design. Shape of the layer is otherwise yours.
+
+  Acceptance: one fixture PER GATE — instances 2 and 3 above are ready-made
+  fixtures with commit shas. Non-vacuity: a compliant promotion (approved,
+  correctly-laned, specifier-first) passes unchanged.
+
+  Refusals must name the failing gate (the scenarios assert the reason, not
+  just the refusal): a silent skip is indistinguishable from "no candidate"
+  and is what made instances 1-4 invisible to machinery.
+
+  On landing, retire the standing operator watch memo
+  (promote-and-route-next-skips-approval-and-assignee-gates).
+
+acceptance: specs/features/BL-663-promote-and-route-enforces-every-promotion-gate.feature

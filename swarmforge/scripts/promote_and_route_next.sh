@@ -6,11 +6,18 @@
 #   promote_and_route_next.sh [BL-id] [project-root]
 #
 # Gates:
-#   - aborts if active yaml count >= effective depth cap
-#   - skips hold/; prefers buildable paused (acceptance: or matching feature
-#     file) in priority/id order
-#   - never promotes epics tagged do-not-promote in notes
-#   - sets assigned_to: coder and calls route_backlog_to_coder.sh
+#   - never promotes epics tagged do-not-promote in notes, blocked-status, or
+#     epic-type items
+#   - prefers buildable paused (acceptance: or matching feature file) in
+#     priority/id order, but see promotion_gates below for the real ranking
+#   - promotion_gates (BL-663; promotion_gates_cli.bb / promotion_gates_lib.bb)
+#     is the one chokepoint for: human_approval, Article 3.2.4 expedite
+#     ordering, active_backlog_max_depth, orthogonality, and the hold marker —
+#     every promotion (auto-pick AND by-name) is refused with a named reason
+#     when any of these do not hold
+#   - assignee/spec-stage routing also goes through promotion_gates:
+#     assigned_to: specifier is never rewritten and routes to the specifier;
+#     every other ticket routes to coder via route_backlog_to_coder.sh
 #
 # Coordinator-owned intake: the daemon may nudge this script; it must not
 # git-mv paused→active itself (no BL-226 receive-path auto-promote).
@@ -24,9 +31,10 @@ usage() {
 Usage: promote_and_route_next.sh [BL-id] [project-root]
        promote_and_route_next.sh [project-root]
 
-Promotes one eligible backlog/paused/*.yaml into backlog/active/ (under the
-effective depth cap), sets assigned_to: coder, and routes via
-route_backlog_to_coder.sh.
+Promotes one eligible backlog/paused/*.yaml into backlog/active/, subject to
+every promotion_gates gate (human_approval, expedite lane, depth,
+orthogonality, hold marker), then routes via route_backlog_to_coder.sh —
+to the specifier when assigned_to: specifier, to coder otherwise.
 EOF
 }
 
@@ -61,6 +69,14 @@ if [[ ! -d "$PAUSED_DIR" ]]; then
   exit 1
 fi
 
+# Create early, before ACTIVE_COUNT below: `find` on a missing dir exits
+# non-zero, and under `set -o pipefail` that silently kills this whole
+# script via errexit (2>/dev/null hides the real "No such file or
+# directory" cause) — exactly the invisible-refusal failure mode BL-663
+# exists to close. A fresh checkout with no promotion yet has no
+# backlog/active/ at all.
+mkdir -p "$ACTIVE_DIR"
+
 # Effective depth cap (Article 3.5 / BL-432 folds auto-throttle when present).
 CAP=""
 if [[ -f "$SCRIPT_DIR/effective_backlog_depth_cli.bb" ]]; then
@@ -75,7 +91,7 @@ fi
 
 ACTIVE_COUNT="$(find "$ACTIVE_DIR" -maxdepth 1 -name '*.yaml' -type f 2>/dev/null | wc -l | tr -d '[:space:]')"
 if (( ACTIVE_COUNT >= CAP )); then
-  echo "Error: active count $ACTIVE_COUNT >= cap $CAP — no open slot" >&2
+  echo "Error: active_backlog_max_depth gate: active count $ACTIVE_COUNT >= cap $CAP — no open slot" >&2
   exit 2
 fi
 
@@ -115,33 +131,13 @@ is_buildable() {
   return 1
 }
 
-ticket_priority() {
-  local f="$1" raw
-  raw="$(awk -F': *' '/^priority:[[:space:]]*/{print $2; exit}' "$f" 2>/dev/null | tr -d '\r')"
-  if [[ "$raw" =~ ^[0-9]+$ ]]; then
-    printf '%d' "$((10#$raw))"
-  else
-    printf '%d' 999999
-  fi
-}
-
-ticket_id() {
-  local f="$1" id
-  id="$(grep -E '^id:' "$f" | head -1 | awk '{print $2}' | tr -d '\r')"
-  if [[ -n "$id" ]]; then
-    printf '%s' "$id"
-  else
-    basename "$f" .yaml
-  fi
-}
-
-candidate_sort_line() {
-  local f="$1"
-  printf '%s\t%s\t%s\n' "$(ticket_priority "$f")" "$(ticket_id "$f")" "$f"
-}
-
-pick_lowest_sort_line() {
-  sort -t $'\t' -k1,1n -k2,2 <<<"$1" | head -1 | cut -f3-
+# promotion_gates: the BL-663 chokepoint (promotion_gates_cli.bb) is the ONE
+# place human_approval / Article 3.2.4 expedite ordering / depth /
+# orthogonality / hold marker are decided — both invocation modes below call
+# it, never a locally-reimplemented check.
+gates_evaluate() {
+  local file="$1" held="$2"
+  bb "$SCRIPT_DIR/promotion_gates_cli.bb" evaluate "$ROOT" "$file" "$held" "$CAP"
 }
 
 pick_candidate() {
@@ -150,15 +146,26 @@ pick_candidate() {
   local other=()
 
   if [[ -n "$ITEM" ]]; then
-    f="$(find "$PAUSED_DIR" -maxdepth 1 -name "${ITEM}*.yaml" -type f 2>/dev/null | head -1)"
-    if [[ -z "$f" || ! -f "$f" ]]; then
-      echo "Error: no paused yaml for $ITEM" >&2
+    local located held
+    located="$(bb "$SCRIPT_DIR/promotion_gates_cli.bb" locate "$ROOT" "$ITEM")" || {
+      echo "Error: no paused or held yaml for $ITEM" >&2
       return 1
-    fi
+    }
+    f="${located%%$'\t'*}"
+    held="${located##*$'\t'}"
     if is_do_not_promote "$f" || is_epic_type "$f" || is_blocked_status "$f"; then
       echo "Error: $ITEM is do-not-promote, epic, or blocked" >&2
       return 1
     fi
+    local held_bool="false"
+    [[ "$held" == "hold" ]] && held_bool="true"
+    local verdict
+    verdict="$(gates_evaluate "$f" "$held_bool")" || {
+      local gate="${verdict#REFUSE|}"; gate="${gate%%|*}"
+      local reason="${verdict##*|}"
+      echo "Error: $gate gate: $reason" >&2
+      return 1
+    }
     echo "$f"
     return 0
   fi
@@ -170,19 +177,24 @@ pick_candidate() {
     is_blocked_status "$f" && continue
     # Never promote out of hold/ (hold is a sibling folder, not under paused)
     if is_buildable "$f"; then
-      buildable+=("$(candidate_sort_line "$f")")
+      buildable+=("$f")
     else
-      other+=("$(candidate_sort_line "$f")")
+      other+=("$f")
     fi
   done < <(find "$PAUSED_DIR" -maxdepth 1 -name '*.yaml' -type f 2>/dev/null | sort)
 
+  local picked
   if ((${#buildable[@]} > 0)); then
-    pick_lowest_sort_line "$(printf '%s\n' "${buildable[@]}")"
-    return 0
+    if picked="$(bb "$SCRIPT_DIR/promotion_gates_cli.bb" select "$ROOT" "$CAP" "${buildable[@]}")"; then
+      echo "$picked"
+      return 0
+    fi
   fi
   if ((${#other[@]} > 0)); then
-    pick_lowest_sort_line "$(printf '%s\n' "${other[@]}")"
-    return 0
+    if picked="$(bb "$SCRIPT_DIR/promotion_gates_cli.bb" select "$ROOT" "$CAP" "${other[@]}")"; then
+      echo "$picked"
+      return 0
+    fi
   fi
   echo "Error: no eligible paused ticket" >&2
   return 1
@@ -193,34 +205,40 @@ BASE="$(basename "$SRC")"
 DEST="$ACTIVE_DIR/$BASE"
 ID="$(grep -E '^id:' "$SRC" | head -1 | awk '{print $2}' | tr -d '\r')"
 
-mkdir -p "$ACTIVE_DIR"
 git -C "$ROOT" mv "$SRC" "$DEST"
 
-# assigned_to: coder
-if grep -qE '^assigned_to:' "$DEST"; then
-  sed -i 's/^assigned_to:.*/assigned_to: coder/' "$DEST"
-else
-  printf '\nassigned_to: coder\n' >> "$DEST"
+# promotion_gates: assignee/spec-stage routing decision — assigned_to:
+# specifier is never rewritten (BL-663 instance 3); every other value is
+# corrected to coder only when it does not already read coder.
+ROUTE_DECISION="$(bb "$SCRIPT_DIR/promotion_gates_cli.bb" route-target "$ROOT" "$DEST")"
+ROUTE_ROLE="${ROUTE_DECISION%% *}"
+ROUTE_FLAG="${ROUTE_DECISION##* }"
+if [[ "$ROUTE_FLAG" == "REWRITE" ]]; then
+  if grep -qE '^assigned_to:' "$DEST"; then
+    sed -i "s/^assigned_to:.*/assigned_to: ${ROUTE_ROLE}/" "$DEST"
+  else
+    printf '\nassigned_to: %s\n' "$ROUTE_ROLE" >> "$DEST"
+  fi
 fi
 
 # Commit via integrity helper when available
 if [[ -f "$SCRIPT_DIR/commit_integrity_cli.bb" ]]; then
   bb "$SCRIPT_DIR/commit_integrity_cli.bb" "$ROOT" \
-    --message "Promote ${ID}: paused → active for coder" \
+    --message "Promote ${ID}: paused → active for ${ROUTE_ROLE}" \
     --path "backlog/paused/$BASE" \
     --path "backlog/active/$BASE" \
     || {
       git -C "$ROOT" add -A "backlog/active/$BASE"
       git -C "$ROOT" add -u "backlog/paused/$BASE" 2>/dev/null || true
-      git -C "$ROOT" commit -m "Promote ${ID}: paused → active for coder"
+      git -C "$ROOT" commit -m "Promote ${ID}: paused → active for ${ROUTE_ROLE}"
     }
 else
   git -C "$ROOT" add -A "backlog/active/$BASE"
   git -C "$ROOT" add -u "backlog/paused/$BASE" 2>/dev/null || true
-  git -C "$ROOT" commit -m "Promote ${ID}: paused → active for coder"
+  git -C "$ROOT" commit -m "Promote ${ID}: paused → active for ${ROUTE_ROLE}"
 fi
 
-echo "Promoted $BASE → backlog/active/ (assigned_to: coder)"
+echo "Promoted $BASE → backlog/active/ (assigned_to: ${ROUTE_ROLE})"
 "$SCRIPT_DIR/route_backlog_to_coder.sh" "$ID" "$ROOT"
 
 # Best-effort BL-464 stage sync
