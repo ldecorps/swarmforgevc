@@ -1,0 +1,84 @@
+id: BL-776
+title: "EPIC — Bubble voice barge-in: interrupt Bubble mid-speech and re-steer by voice; do not promote directly; tracks children"
+milestone: M8
+status: todo
+type: epic
+epic: bubble-voice-barge-in
+priority: 13
+depends_on: [BL-769]
+mutation_cost: high
+decomposes_into: [BL-777]
+remaining_slices:
+  - "Slice B — mic state handoff and rapid re-listen: after an abort, the mic returns to listening fast enough to catch the instruction that caused the barge-in, with no stuck or doubled session."
+  - "Slice C — hands-free listening DURING agent execution, so the human can re-steer before the original response returns. Includes whether that window is always-on or bounded."
+  - "Slice D — voice mode switching in both directions (hands-free to push-to-talk and back) by spoken command, without opening settings."
+  - "Slice E — task lifecycle for an interruption: canceled, paused or superseded, made explicit, with a safe cancel boundary for side-effecting work and behaviour during remote tool execution."
+  - "Slice F — race and reliability sweep across speech, listening and execution states: no overlapping audio, no duplicate responses, no stuck mic."
+
+description: |
+  ## Why this epic exists
+
+  Bubble turns the mic off while it is speaking or processing, so the human
+  cannot cut in during long spoken output or while the agent is off doing a
+  task. When priorities change mid-flight there is no way to say so. The human
+  reports this has happened more than once — it is a recurring workflow gap,
+  not a preference.
+
+  The outcome wanted: interrupt active speech at any moment by voice, have
+  playback stop quickly and reliably, be listened to immediately afterwards,
+  and be able to cancel, redirect or replace the in-flight task safely.
+  Hands-free keeps listening while the agent is processing; push-to-talk stays
+  manual by design.
+
+  ## Open questions and the defaults taken
+
+  Eight questions came in with the intake. Slice A takes a default on the three
+  that shape it and defers the rest to the slice that owns them.
+
+  1. *Wake phrase, keyword, or pure VAD overlap?* — **Pure VAD overlap, in
+     hands-free only.** A wake phrase would defeat the request: the point is to
+     cut in at any moment, and requiring a prefix reintroduces the turn-taking
+     the human is trying to escape. This is the single most reversible-looking
+     but most load-bearing default in the epic, and the one most worth the
+     human's amendment if it is wrong.
+  2. *Max stop latency?* — **300 ms** from detected speech onset to silence.
+     Fast enough to feel like an interruption rather than a delay; loose enough
+     to survive a real audio pipeline.
+  3. *Always-on listening during execution, or bounded windows?* — slice C.
+  4. *Canonical mode-switch phrases, and match strictness?* — slice D.
+  5. *Confirmation before a mode switch?* — slice D.
+  6. *Safe cancel boundary for side-effecting work?* — slice E.
+  7. *Verbal confirmation before abandoning a task?* — slice E.
+  8. *Interruption during remote tool execution?* — slice E.
+
+  ## The risk this epic carries
+
+  Barge-in is a concurrency problem wearing an audio costume: playback,
+  capture, detection and task execution are four state machines that must not
+  overlap or deadlock. The intake's own acceptance shape names the failure mode
+  precisely — "no stuck mic states, overlapping audio, or duplicate responses".
+  Slices are ordered so that each one leaves the audio state machine in a
+  provably clean state before the next adds to it, and slice F sweeps for races
+  across the whole surface at the end rather than trusting per-slice tests.
+
+  ## Out of scope for the whole epic
+
+  - Push-to-talk gaining automatic interruption. It stays manual by design.
+  - Any change to what the agent does with an instruction — only to when it can
+    be given one.
+
+source: |
+  backlog/INTAKE-voice-barge-in-to-interrupt-and-resteer-bubble-speech.md
+  (human intake, drained 2026-08-01). Human disposition 2026-08-01 via Let's
+  Talk answering the specifier's 2026-07-30 role_ask: "Mint epic + slice A for
+  each, human_approval pending (I pick defaults, you amend)."
+
+notes: |
+  ## Why the epic depends on BL-769
+
+  Every slice is Android — `TalkEngine.kt`, `ReplyAudioPlayer.kt`,
+  `HoldMusicPlayer.kt`. Until BL-769's JVM unit seam lands, an Android ticket's
+  acceptance contract runs zero scenarios; five tickets have already shipped
+  that way. For this epic that is worse than usual: the defects it must prevent
+  are races, which are exactly what a manual procedure is worst at catching.
+  Children must not be promoted before BL-769.

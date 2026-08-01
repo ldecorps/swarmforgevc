@@ -1,0 +1,98 @@
+id: BL-775
+title: "Bubble Live Screen shell — a native, read-only Live Screen fed by the existing /resident-pane snapshot"
+milestone: M8
+type: feature
+status: todo
+epic: bubble-live-screen
+human_approval: pending
+assigned_to: none
+priority: 14
+direction: human-requested
+depends_on: [BL-769]
+mutation_cost: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-775-bubble-live-screen-shell.feature
+
+invariants:
+  - "Both surfaces render the same snapshot: Bubble's Live Screen reads /resident-pane and derives nothing the Mini App does not derive from the same payload, so parity cannot silently drift."
+  - "This slice is read-only: no code path from the Live Screen reaches a bridge endpoint that mutates swarm state."
+  - "Whenever the bridge supplies a failure reason, the Live Screen displays that reason; a bare status code is never the whole message."
+
+required_wiring:
+  - "android/app/src/main/java/com/swarmforge/floatcompanion/BridgeClient.kt::resident-pane::Bubble fetches the live pane snapshot from the existing bridge endpoint; a screen with no fetch renders nothing"
+  - "android/app/src/main/java/com/swarmforge/floatcompanion/MainActivity.kt::LiveScreen::a navigation entry actually opens the Live Screen; an Activity nothing launches is unreachable (the BL-419 shape)"
+
+description: |
+  ## What
+
+  Give Bubble a native Live Screen: a navigation entry from the main screen, a
+  screen that fetches `/resident-pane` through `BridgeClient` using the existing
+  paired token, and a read-only render of the roles the bridge reports, in the
+  canonical Live Screen order.
+
+  Bubble's `BridgeClient` today speaks only `/lets-talk/*`. This slice adds one
+  authenticated GET alongside those — it does not change the bridge, the
+  endpoint, or its payload.
+
+  ## Why read-only, and why the Mini App is untouched
+
+  The migration is parity-first. Actions are slice C and deprecation is slice D;
+  attempting them together would mean cutting over before parity is
+  demonstrable. Slice A is purely additive, so the worst case if it is wrong is
+  a screen nobody opens — not a broken operator path.
+
+  ## Approach
+
+  1. Add an authenticated `/resident-pane` fetch to `BridgeClient`, reusing the
+     existing auth header and the existing friendly-failure mapping.
+  2. Add the Live Screen surface plus its navigation entry from `MainActivity`.
+  3. Order roles with the same canonical order the server already publishes —
+     read it from the snapshot, do not re-declare a role list in Kotlin, or the
+     two orders will drift the first time the pipeline changes.
+  4. Put the parsing and ordering logic on the pure-logic side of BL-769's JVM
+     seam, so scenarios 02 and 03 are covered by real unit tests rather than a
+     manual procedure. This is the whole reason this ticket depends on BL-769.
+
+  ## Out of scope
+
+  - Any control, keystroke, or write action from the Live Screen (slice C; see
+    also BL-569, which the epic notes recommend folding in there).
+  - Deprecating, redirecting or flagging off the Mini App Live Screen (slice D).
+  - Changing `/resident-pane` or any other bridge contract.
+  - Refresh cadence tuning and offline caching beyond what is needed to render.
+
+approval_context: >
+  Defaults I picked, all amendable:
+
+  (1) **Native Kotlin, not a WebView-backed staged migration.** A WebView would
+  carry the very webview constraints this migration exists to escape, and Bubble
+  already talks to the bridge natively.
+
+  (2) **Read-only first, Mini App untouched.** Nothing is deprecated in this
+  slice, so there is no cutover risk to weigh; the dual-run gate is slice D.
+
+  (3) **Depends on BL-769.** Without the JVM unit seam this ticket's acceptance
+  contract would run zero scenarios, which has already happened on five shipped
+  Android tickets. That means it will not start until BL-769 lands. If you want
+  Live Screen in Bubble sooner than that, the honest options are to expedite
+  BL-769 or to accept a manual-procedure-only contract for this slice — tell me
+  which and I will amend.
+
+  The judgement worth your eye: **BL-569** builds a principal-gated remote
+  keyboard into the Mini App Live Screen. That is this epic's slice C on the
+  surface we are retiring. I have not touched BL-569 — but if you agree, it
+  should be folded into this epic rather than built twice.
+
+source: |
+  backlog/INTAKE-migrate-live-screen-from-mini-app-to-bubble.md, slice A.
+  Human disposition 2026-08-01 via Let's Talk: "Mint epic + slice A for each,
+  human_approval pending (I pick defaults, you amend)."
+
+notes: |
+  ## e2e procedure for QA
+
+  With a live swarm and a paired Bubble build: open Live Screen from the main
+  navigation and confirm the role list matches what the Mini App Live Screen
+  shows for the same swarm at the same moment. Then stop the swarm and confirm
+  the screen states the reason rather than a bare code; then point Bubble at a
+  bad token and confirm the same. Confirm no control affordance is present.
