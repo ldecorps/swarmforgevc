@@ -353,7 +353,8 @@ const DOMAINS = [
   require('./bl764FrontDeskEatsHostBridgeUpdatesSteps'),
   require('./bl729CommitClaimCheckSteps'),
   require('./bl680ConsolidationAuthoritySteps'),
-  require('./bl771PricingTableSharedTmpdirSteps')
+  require('./bl771PricingTableSharedTmpdirSteps'),
+  require('./bl720EnvRestoreGuardSteps')
 ];
 
 function registerSteps(registry) {
