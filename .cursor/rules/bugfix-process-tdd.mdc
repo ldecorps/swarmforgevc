@@ -1,0 +1,45 @@
+---
+description: Bug fixes — analyse, fix the process (not hacks), TDD, CC ≤ 6
+alwaysApply: true
+---
+
+# Bug fixes: process over patches
+
+When fixing a bug (after an explicit implement/fix request):
+
+## 1. Analyse first
+
+- Reproduce or pin evidence (logs, PIDs, failing test, message path).
+- Name the **root cause** (wrong invariant, missing guard, stolen ownership) — not only the symptom.
+- Prefer one durable explanation over a pile of coincidences.
+
+## 2. Fix the process, not a one-off hack
+
+- Change the system so the class of failure cannot recur (defaults, ownership, CLI contracts, supervisors).
+- **Do not** ship kill-PID / bounce / clear-sticky / “try again” as the fix unless the user **clearly** asks for an immediate ops unblock only.
+- Ops unblocks (if needed to restore service) are temporary; the code/process change is the deliverable.
+
+## 3. TDD the change
+
+1. Write a failing test that locks the bug (or the missing guard).
+2. Implement the smallest process fix that turns it green.
+3. Refactor only while green; keep coverage of the regression.
+
+## 4. Cyclomatic complexity ≤ 6
+
+- New or edited functions must stay at **max cyclomatic complexity ≤ 6**.
+- Extract pure helpers / early returns / lookup tables instead of nesting `if`/`switch` chains.
+- Prefer small named predicates over boolean soup.
+
+## Anti-patterns
+
+```text
+❌ Kill stray process and call it fixed
+❌ Clear state / restart services with no code change
+❌ Giant function that handles every case inline (CC > 6)
+❌ “Fix” without a regression test
+
+✅ Default/ownership so the bad path cannot start
+✅ CLI/API rejects the foot-gun (--help must not poll)
+✅ Failing test → green → ship
+```
