@@ -16,6 +16,7 @@ function mkDeps(overrides) {
     readAcceptanceDeclaration: () => 'specs/features/fixture.feature',
     resolveFeatureFilePath: () => '/repo/specs/features/fixture.feature',
     runAcceptance: async () => ({ success: true, output: 'ok' }),
+    checkCommitClaims: () => ({ checked: true, commitsChecked: 3 }),
     moveTicketToDone: () => {
       calls.move += 1;
       return { moved: true, destination: '/repo/backlog/done/BL-FIX-fixture.yaml' };
@@ -217,7 +218,86 @@ test('landPilotedTicket lands and writes a receipt naming the feature file, comm
   assert.equal(receipt.landedCommit, 'abc1234567');
   assert.equal(receipt.result, 'passed');
   assert.equal(receipt.landedAt, '2026-07-31T00:00:00.000Z');
+  assert.equal(receipt.commitClaimsChecked, 3);
   assert.deepEqual(outcome.receipt, receipt);
+});
+
+// ── landPilotedTicket: BL-729 commit-claim checking ─────────────────────
+
+test('landPilotedTicket refuses a land whose commit claims an unsupported change, naming the commit, identifier, and sentence', async () => {
+  const { deps, calls } = mkDeps({
+    checkCommitClaims: () => ({
+      checked: true,
+      commitsChecked: 2,
+      unsupported: { commit: '6a2e4aaf6d', identifier: 'deliver!', sentence: 'restore the deliver! close paren' },
+    }),
+  });
+  const outcome = await landPilotedTicket('BL-FIX', deps);
+  assert.equal(outcome.landed, false);
+  assert.equal(outcome.reasonKind, 'claim-unsupported');
+  assert.equal(outcome.claimCommit, '6a2e4aaf6d');
+  assert.equal(outcome.claimIdentifier, 'deliver!');
+  assert.equal(outcome.claimSentence, 'restore the deliver! close paren');
+  assert.match(outcome.reason, /6a2e4aaf6d/);
+  assert.match(outcome.reason, /deliver!/);
+  assert.equal(calls.move, 0);
+  assert.equal(calls.writeReceipt, 0);
+});
+
+test('landPilotedTicket checks claims only after a green contract, never before', async () => {
+  let claimsCheckCalled = false;
+  const { deps } = mkDeps({
+    runAcceptance: async () => ({
+      success: false,
+      output: 'Scenario "S": no step handler matched "Given an unhandled step"\n',
+    }),
+    checkCommitClaims: () => {
+      claimsCheckCalled = true;
+      return { checked: true, commitsChecked: 1 };
+    },
+  });
+  const outcome = await landPilotedTicket('BL-FIX', deps);
+  assert.equal(outcome.landed, false);
+  assert.equal(outcome.reasonKind, 'contract-failed');
+  assert.equal(claimsCheckCalled, false);
+});
+
+test('landPilotedTicket lands with a warning and records zero commits checked when the run history cannot be resolved (fails open)', async () => {
+  const { deps, calls } = mkDeps({
+    checkCommitClaims: () => ({ checked: false }),
+  });
+  let receipt;
+  deps.writeReceipt = (ticketId, r) => {
+    calls.writeReceipt += 1;
+    receipt = r;
+  };
+  const outcome = await landPilotedTicket('BL-FIX', deps);
+  assert.equal(outcome.landed, true);
+  assert.ok(Array.isArray(outcome.warnings) && outcome.warnings.length > 0);
+  assert.match(outcome.warnings[0], /not checked/);
+  assert.equal(receipt.commitClaimsChecked, 0);
+});
+
+test('landPilotedTicket lands with no warnings field when every commit claim was checked and supported', async () => {
+  const { deps } = mkDeps({
+    checkCommitClaims: () => ({ checked: true, commitsChecked: 5 }),
+  });
+  const outcome = await landPilotedTicket('BL-FIX', deps);
+  assert.equal(outcome.landed, true);
+  assert.equal(outcome.warnings, undefined);
+});
+
+test('landPilotedTicket never moves or writes a receipt when the commit-claim check refuses the land', async () => {
+  const { deps, calls } = mkDeps({
+    checkCommitClaims: () => ({
+      checked: true,
+      commitsChecked: 1,
+      unsupported: { commit: 'abc1234567', identifier: 'frobnicate!', sentence: 'restore the frobnicate! guard' },
+    }),
+  });
+  await landPilotedTicket('BL-FIX', deps);
+  assert.equal(calls.move, 0);
+  assert.equal(calls.writeReceipt, 0);
 });
 
 // ── landPilotedTicket: scenario 04 (refused land changes nothing) ──────

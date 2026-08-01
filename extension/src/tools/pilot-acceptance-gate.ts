@@ -23,9 +23,12 @@ import {
   AcceptanceRunResult,
   AcceptanceReceipt,
 } from './pilotAcceptanceGate';
+import { resolveRunCommits, checkCommitClaims, RunCommit } from './commitClaimGitReader';
 import { findBacklogFilePath, markDone, BacklogMoveResult } from '../panel/backlogWriter';
 import { parseBacklogYaml } from '../panel/backlogReader';
 import { makeArgsGuardedMain, printJsonToStdout, runCliMain } from './swarm-metrics';
+
+export { resolveRunCommits, checkCommitClaims, RunCommit };
 
 // Exported (like this codebase's other tools/ CLIs) so it runs in-process
 // under coverage instead of only via the compiled CLI's subprocess.
@@ -80,6 +83,7 @@ export function buildDeps(repoRoot: string): PilotAcceptanceGateDeps {
     readAcceptanceDeclaration: (ticketId) => readAcceptanceDeclaration(repoRoot, ticketId),
     resolveFeatureFilePath: (declaration) => resolveFeatureFilePath(repoRoot, declaration),
     runAcceptance: (featureFilePath) => runAcceptance(repoRoot, featureFilePath),
+    checkCommitClaims: () => checkCommitClaims(repoRoot),
     moveTicketToDone: (ticketId) => moveTicketToDone(repoRoot, ticketId),
     writeReceipt: (ticketId, receipt) => writeReceipt(repoRoot, ticketId, receipt),
     getLandedCommit: () => getLandedCommit(repoRoot),
