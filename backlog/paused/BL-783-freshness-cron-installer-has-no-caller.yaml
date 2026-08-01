@@ -10,8 +10,7 @@ direction: aligned
 depends_on: []
 assigned_to: unassigned
 mutation_cost: low
-human_approval: pending
-
+human_approval: approved
 invariants:
   - "The freshness cron is present on any host where the swarm has been started — no operator step, no how-to instruction, and no manual invocation stands between shipping the checker and it running."
 
