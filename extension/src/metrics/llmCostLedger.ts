@@ -26,7 +26,6 @@ export type LlmInvocationTrigger =
   | 'chase_nudge'
   | 'open_slot_nudge'
   | 'operator_cmd'
-  | 'babysit_tick'
   | 'rotation_wake'
   | 'human_chat'
   | 'reap'

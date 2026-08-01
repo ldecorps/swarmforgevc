@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Pack-aware LLM provider routing for ancillary launchers (Operator, Concierge,
-# Babysitter). Resolves the active swarm pack from SWARMFORGE_PACK or
+# Pack-aware LLM provider routing for ancillary launchers (Operator, Concierge).
+# babysitterd (BL-611) is a deterministic daemon with no LLM and does not use
+# this routing. Resolves the active swarm pack from SWARMFORGE_PACK or
 # .swarmforge/swarm-identity, then routes EVERY ancillary LLM through that
 # pack's vendor — never a fallback to a different provider the operator may
 # have exhausted.

@@ -11,7 +11,7 @@ Feature: babysitterd is a deterministic daemon managed by the swarm lifecycle
   # daemon.
 
   Background:
-    Given SWARMFORGE_SKIP_BABYSITTER is not set
+    Given SWARMFORGE_SKIP_BABYSITTERD is not set
 
   # BL-611 lifecycle-start-stop-01
   Scenario: start-swarm brings up babysitterd and stop-swarm cleans it up

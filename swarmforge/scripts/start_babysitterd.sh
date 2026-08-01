@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# start_babysitterd.sh — idempotent start of babysitterd (BL-611).
+#
+# Refuses a second start while a live pidfile exists, leaving the original
+# process running. Called from start_ancillary_services.sh at swarm launch
+# and from swarm_ensure.bb's babysitter-start-cmd for repair.
+#
+# Usage: start_babysitterd.sh <project-root>
+set -euo pipefail
+
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+  cat <<'EOF'
+start_babysitterd.sh — idempotent start of babysitterd (BL-611).
+
+Stop: stop_ancillary_services.sh / ./stop-swarm.sh
+
+Usage: start_babysitterd.sh <project-root>
+EOF
+  exit 0
+fi
+
+ROOT="$(cd "${1:?usage: start_babysitterd.sh <project-root>}" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DIR="$ROOT/.swarmforge/babysitterd"
+PIDFILE="$DIR/babysitterd.pid"
+mkdir -p "$DIR"
+
+if [[ -f "$PIDFILE" ]] && kill -0 "$(cat "$PIDFILE" 2>/dev/null)" 2>/dev/null; then
+  echo "babysitterd already running (pid $(cat "$PIDFILE"))"
+  exit 0
+fi
+
+setsid nohup bash "$SCRIPT_DIR/babysitterd.sh" "$ROOT" >/dev/null 2>&1 &
+disown
+
+for _ in 1 2 3 4 5; do
+  sleep 0.2
+  if [[ -f "$PIDFILE" ]] && kill -0 "$(cat "$PIDFILE" 2>/dev/null)" 2>/dev/null; then
+    echo "babysitterd started (pid $(cat "$PIDFILE"))"
+    exit 0
+  fi
+done
+
+echo "WARN: babysitterd did not confirm a live pidfile after start" >&2
+exit 1
