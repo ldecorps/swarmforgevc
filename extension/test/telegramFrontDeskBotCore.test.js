@@ -5502,6 +5502,26 @@ test('cursor bridge: Bubble message is forwarded when bubbleTopicId matches', as
   assert.equal(forwarded.length, 1);
 });
 
+test('cursor bridge: Bubble exclusion works even when no cursorBridgeTopicId adapter is wired at all (Bubble-only deployment)', async () => {
+  const forwarded = [];
+  const update = mkUpdate({ fromId: PRINCIPAL_ID, topicId: 11810, text: 'lets talk' });
+  const result = await pollAndForward(
+    0,
+    PRINCIPAL_ID,
+    cursorBridgePollAdapters({
+      cursorBridgeTopicId: undefined,
+      bubbleTopicId: async () => 11810,
+      getUpdates: async () => ({ success: true, updates: [update] }),
+      forwardCursorBridgeUpdate: async (u) => {
+        forwarded.push(u);
+        return true;
+      },
+    })
+  );
+  assert.equal(result.posted, 1);
+  assert.equal(forwarded.length, 1);
+});
+
 test('cursor bridge: forward failure parks as failed (does not drop/advance past)', async () => {
   const result = await pollAndForward(
     0,
@@ -5559,6 +5579,17 @@ test('BL-764: decideCursorBridgeExclusion resolves a callback_query topic via th
 
   const unrelatedUpdate = mkCallbackUpdate({ fromId: PRINCIPAL_ID, data: 'approve:BL-123', topicId: 7 });
   assert.equal(decideCursorBridgeExclusion(unrelatedUpdate, [8435, undefined]), 'not-applicable');
+});
+
+test('decideCursorBridgeExclusion never throws on a non-callback update (no callback_query field at all)', () => {
+  assert.equal(decideCursorBridgeExclusion({ update_id: 1 }, [8435]), 'not-applicable');
+});
+
+test('decideCursorBridgeExclusion never throws when callback_query is present but carries no message at all', () => {
+  assert.equal(
+    decideCursorBridgeExclusion({ update_id: 1, callback_query: { id: 'cb1', data: 'approve:BL-1' } }, [8435]),
+    'not-applicable'
+  );
 });
 
 test('cursor bridge: a Host callback_query is forwarded (posted) when forwardCursorBridgeUpdate is wired, and never reaches the approve/reject dispatch', async () => {

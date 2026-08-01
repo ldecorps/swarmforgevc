@@ -1,7 +1,11 @@
 // Edit-in-place busy/idle cue on Cursor Remote (no topic-icon churn —
 // Telegram always posts a service message for icon edits).
 
-import { syncEditInPlaceMessage, type EditInPlaceMessageState } from '../concierge/editInPlaceMessageSync';
+import {
+  syncEditInPlaceMessage,
+  type EditInPlaceMessageResult,
+  type EditInPlaceMessageState,
+} from '../concierge/editInPlaceMessageSync';
 import { editMessageText, sendTelegramMessage, type TelegramPostFn } from '../notify/telegramClient';
 import type { CursorBridgePersistedState } from './telegramCursorBridgeCore';
 
@@ -27,6 +31,37 @@ export interface SyncLivenessStatusDeps {
   telegramPostFn?: TelegramPostFn;
 }
 
+/** Default postMessage adapter — goes through the injectable Telegram transport seam, never a real network call under test. */
+function defaultLivenessPostMessage(deps: SyncLivenessStatusDeps): (topicId: number, text: string) => Promise<number | undefined> {
+  return (id, body) =>
+    sendTelegramMessage(deps.botToken, deps.chatId, body, undefined, deps.telegramPostFn, id).then((r) =>
+      r.success ? r.messageId : undefined
+    );
+}
+
+/** Default editMessage adapter — mirrors defaultLivenessPostMessage's transport seam. */
+function defaultLivenessEditMessage(deps: SyncLivenessStatusDeps): (topicId: number, messageId: number, text: string) => Promise<boolean> {
+  return (id, messageId, body) =>
+    editMessageText(deps.botToken, deps.chatId, messageId, body, undefined, deps.telegramPostFn).then((r) => r.success);
+}
+
+/** Persist the freshly-synced identity, or (a one-time backfill) an unchanged one that had no prior identity recorded. */
+export function applyLivenessSyncResult(deps: SyncLivenessStatusDeps, result: EditInPlaceMessageResult): void {
+  if (result.outcome === 'posted' || result.outcome === 'edited') {
+    deps.state.livenessStatus = result.state;
+    deps.persistState();
+    return;
+  }
+  const isBackfill =
+    result.outcome === 'skipped-unchanged' &&
+    deps.state.livenessStatus === undefined &&
+    result.state.messageId !== undefined;
+  if (isBackfill) {
+    deps.state.livenessStatus = result.state;
+    deps.persistState();
+  }
+}
+
 /**
  * Post or edit the standing liveness line on Cursor Remote.
  * Best-effort: Telegram failures leave the prior identity for a later retry.
@@ -38,18 +73,8 @@ export async function syncCursorBridgeLivenessStatus(deps: SyncLivenessStatusDep
   }
   const queuedCount = deps.state.pendingPrompts?.length ?? 0;
   const text = formatCursorBridgeLivenessLine(deps.busy, queuedCount);
-  const postMessage =
-    deps.postMessage ??
-    ((id, body) =>
-      sendTelegramMessage(deps.botToken, deps.chatId, body, undefined, deps.telegramPostFn, id).then((r) =>
-        r.success ? r.messageId : undefined
-      ));
-  const editMessage =
-    deps.editMessage ??
-    ((id, messageId, body) =>
-      editMessageText(deps.botToken, deps.chatId, messageId, body, undefined, deps.telegramPostFn).then(
-        (r) => r.success
-      ));
+  const postMessage = deps.postMessage ?? defaultLivenessPostMessage(deps);
+  const editMessage = deps.editMessage ?? defaultLivenessEditMessage(deps);
 
   const adapters = {
     ensureTopic: async () => topicId,
@@ -62,13 +87,5 @@ export async function syncCursorBridgeLivenessStatus(deps: SyncLivenessStatusDep
     // Message gone (manual delete / remint) — post a fresh line.
     result = await syncEditInPlaceMessage(text, { topicId }, adapters);
   }
-  if (result.outcome === 'posted' || result.outcome === 'edited' || result.outcome === 'skipped-unchanged') {
-    if (result.outcome !== 'skipped-unchanged') {
-      deps.state.livenessStatus = result.state;
-      deps.persistState();
-    } else if (deps.state.livenessStatus === undefined && result.state.messageId !== undefined) {
-      deps.state.livenessStatus = result.state;
-      deps.persistState();
-    }
-  }
+  applyLivenessSyncResult(deps, result);
 }
