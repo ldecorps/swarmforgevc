@@ -8,7 +8,7 @@ human_approval: approved
 priority: 00
 direction: human-requested
 depends_on: []
-assigned_to: specifier
+assigned_to: coder
 mutation_cost: medium
 
 invariants:
