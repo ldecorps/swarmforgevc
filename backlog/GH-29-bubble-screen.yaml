@@ -19,3 +19,12 @@ specifier_disposition: |
   the specifier's slot has been held since 2026-07-30 by the three-intake
   disposition question (see the INTAKE-*.md footers). Ask this the moment
   that slot clears, or the human can just answer it directly.
+
+  2026-08-01 — the 07-30 question was answered and those three intakes were
+  drained (BL-772..777), but the freed slot went to a different question (what
+  a stray priority-00 note reading "use staging please" meant). GH-29 is
+  therefore STILL unasked and is FIRST in line for the next free slot. On
+  reflection GH-29 was the better use of it — do not repeat that ordering.
+  The question to ask, unchanged: does "drop-down agents" mean a role picker
+  on a Bubble note-composer screen, and do amend/remove act on a queued
+  handoff or on an approval-style card?
