@@ -1,5 +1,11 @@
 %% BL-247: current swarm parcel flow (2026-07-10), matching
 %% swarmforge/PIPELINE.md and swarmforge/swarmforge.conf's window lines.
+%% BL-663 (2026-08-01): promotion (both auto-pick and by-name) and routing
+%% invoked on its own now go through one promotion_gates chokepoint
+%% (promotion_gates_lib.bb / promotion_gates_cli.bb) enforcing human_approval,
+%% Article 3.2.4 expedite lane, active_backlog_max_depth, orthogonality, the
+%% hold marker, and assignee/spec-stage routing (no silent assigned_to
+%% rewrite) — a refusal names the failing gate.
 %% cleaner and hardender are batch-mode roles (consume all queued
 %% equal-priority handoffs as one batch); every other pipeline role is
 %% task-mode (one handoff at a time). The coordinator sits outside the
@@ -27,7 +33,7 @@ flowchart LR
 
   ROOT -->|drain: spec ambiguous items,\nwrite prose+Gherkin spec| SPEC
   SPEC -->|places spec| PAUSED
-  PAUSED -->|promote (respecting\nactive_backlog_max_depth\nand orthogonality)| COORD
+  PAUSED -->|promote (promotion_gates:\nhuman_approval, expedite lane,\ndepth, orthogonality, hold marker)| COORD
   COORD -->|promotes into| ACTIVE
   COORD -->|routes first parcel| SPEC
   SPEC -->|git_handoff\npriority 00| CODER
