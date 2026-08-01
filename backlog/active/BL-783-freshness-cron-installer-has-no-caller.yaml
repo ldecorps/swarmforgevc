@@ -8,7 +8,7 @@ severity: high
 priority: 03
 direction: aligned
 depends_on: []
-assigned_to: unassigned
+assigned_to: coder
 mutation_cost: low
 human_approval: approved
 invariants:
