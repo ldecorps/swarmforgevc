@@ -1,0 +1,174 @@
+id: BL-769
+title: "DEFECT — Bubble has no test seam of any kind, so every Android ticket must choose between an inert acceptance contract and none at all"
+milestone: M8
+type: defect
+severity: high
+status: todo
+epic: code-quality-gates
+human_approval: pending
+assigned_to: none
+priority: 1
+direction: normal
+depends_on: []
+mutation_cost: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-769-android-pure-logic-jvm-unit-seam.feature
+
+invariants:
+  - "Every Bubble behavior lands on one side of a stated line: pure logic is covered by the JVM unit suite, device-surface behavior is verified by a recorded manual procedure — none is left with neither."
+  - "The JVM unit suite runs with no emulator and no connected device, so it is reachable on this host and in CI."
+
+required_wiring:
+  - "android/app/build.gradle.kts::testImplementation::the JVM unit source set is wired into the Gradle build; a test directory no build compiles is a dark module (the BL-419 shape)"
+
+approval_context: >
+  This ticket exists because eleven raw Bubble intakes and BL-761 are all parked
+  on one unanswered question, and it is costing real work: BL-716 landed on
+  2026-08-01 as the fifth shipped ticket whose acceptance contract runs zero
+  scenarios. BL-761's own approval_context recommended settling this FIRST and
+  landing its gate after; that is what this is.
+
+  The decision is how Kotlin gets tested, and there are three answers.
+
+  (a) **Robolectric** — test the code as it is written today. Android framework
+  types work inside a JVM test, so `PairingDeepLink.parse(Uri)` needs no change.
+  Cost: a substantial test-only dependency and a markedly slower suite.
+
+  (b) **Plain JUnit, framework types pushed to the edge** — `PairingDeepLink`
+  parses a `String`; the Activity does the `Uri` conversion. Add `org.json` as a
+  test dependency (the android.jar stub throws in unit tests). Cost: a small
+  refactor at each entangled site. This is my recommendation: it is the rule
+  `engineering.prompt` already applies to the VS Code API and the webview —
+  keep the unsuitable surface a thin edge and put the logic behind it — and it
+  keeps the suite fast enough to run on every parcel.
+
+  (c) Both, (b) now and Robolectric later if something genuinely needs it.
+
+  Second, smaller call: whether the policy half — naming the Android device
+  surface environmentally unsuitable in `local-engineering.prompt` — lands in
+  this parcel (my preference, so the rule and the seam that makes it followable
+  arrive together) or as its own follow-up.
+
+description: |
+  ## What
+
+  `android/app/src/` contains exactly one source set: `main`. There is no
+  `test/`, no `androidTest/`, and `build.gradle.kts` declares no
+  `testImplementation` of any kind. No test in this repository executes a single
+  line of Bubble's Kotlin.
+
+  The Node acceptance runner cannot reach Kotlin either, so a Bubble ticket's
+  Gherkin has nowhere to bind. That is not a hypothesis: five shipped tickets
+  now carry feature files whose every scenario fails "no step handler matched"
+  (BL-696, BL-706, BL-707, BL-716, BL-718 — measured, table in BL-761).
+
+  ## Why this is the blocking item
+
+  Eleven raw Bubble intakes sit in the backlog root carrying a specifier
+  disposition of "NOT drained, sequenced behind BL-761", each naming the same
+  resume point: *once the Android-seam policy is settled, spec these*. BL-761
+  itself is `human_approval: approved` but recommends landing this policy first,
+  because its gate would otherwise make every Bubble ticket unlandable. Nothing
+  in the backlog delivers that policy. This ticket is it.
+
+  ## What is actually testable (verified, not assumed)
+
+  Read at source on `main` @ `e94b88436`:
+
+  - `BridgeClient.kt` imports only `java.net.*`, `java.io.*` and
+    `org.json.JSONObject`. Its failure classification — the BL-716 defect, where
+    an `UnknownHostException` had to stop reading as a healthy recording state —
+    is ordinary JVM logic. `org.json` is stubbed in Android unit tests and
+    throws unless added as a test dependency; that is a one-line fix, not a
+    blocker.
+  - `PairingDeepLink.parse(uri: Uri)` takes `android.net.Uri`, a framework type
+    that is stubbed in a plain JVM test. Its body is string work: scheme check,
+    host check, two query parameters. It is testable the moment the `Uri` is
+    converted at the caller (option b) or Robolectric supplies it (option a).
+  - `CompanionPrefs`, `TalkEngine`'s phase transitions, and the turn-failure
+    routing are the same shape: real decisions wrapped in framework types.
+
+  Genuinely not testable here, and the surface to name as environmentally
+  unsuitable: Activities and Services as running components, the overlay window,
+  audio capture and playback, and real network I/O against a live tunnel.
+
+  The Android SDK is present on this host (`.swarmforge/android-sdk`,
+  platform 34) and `android/gradlew` exists, so a JVM unit source set runs today
+  without new infrastructure. Emulator-backed instrumented tests are a different
+  and much larger question — see Out of scope.
+
+  ## Scope
+
+  - `android/app/build.gradle.kts` — a `test` source set with JUnit (and
+    `org.json`), plus whatever `testOptions` the chosen option needs.
+  - `android/app/src/test/java/com/swarmforge/floatcompanion/` — the first real
+    tests: pairing deep-link parsing, and bridge failure classification.
+  - The minimum refactor to make those two reachable under the chosen option —
+    not a sweep of every file.
+  - `swarmforge/constitution/articles/local-engineering.prompt` — specifier-owned
+    (approval-gated, see approval_context): name the Android device surface as
+    environmentally unsuitable alongside the VS Code API, the webview and live
+    tmux, and state where Bubble behavior is verified instead.
+  - `docs/how-to/` — how to run the JVM unit suite, and which side of the line a
+    new Bubble behavior belongs on.
+  - `specs/pipeline/steps/` — this feature file's own handlers, in this parcel.
+
+  ## Out of scope
+
+  - **Instrumented / `androidTest` tests on an emulator.** A far larger cost with
+    its own infrastructure question, and not needed to unblock anything parked.
+    If the answer turns out to be "device behavior needs an emulator in CI", that
+    is its own ticket, taken with this seam already in place.
+  - **BL-761's pre-QA gate.** This ticket is its prerequisite, not its
+    replacement. Landing this does not land that.
+  - **Retro-fixing the five shipped inert contracts.** BL-761's burn-down
+    sibling owns those; BL-718's is BL-726.
+  - **Draining the eleven parked Bubble intakes.** They unblock when this lands;
+    speccing them is the specifier's next root-drain pass, not this parcel.
+
+  ## e2e procedure for QA
+
+  1. From `android/`: `./gradlew :app:testDebugUnitTest` — passes, with no
+     emulator running and no device attached (`adb devices` empty).
+  2. Break a pure function under test (e.g. make `PairingDeepLink` accept any
+     scheme) and re-run: the suite fails, naming that test. Restore.
+  3. Confirm the suite is quick enough to run on every parcel; if the chosen
+     option made it slow, that is a finding worth raising rather than absorbing.
+  4. Read `local-engineering.prompt`: the Android device surface is named
+     environmentally unsuitable, and the article says where Bubble behavior is
+     verified instead.
+  5. Take one parked root intake (say `INTAKE-bubble-double-tap-expands.md`) and
+     confirm its resume point is now answerable — not that it is specced, only
+     that the blocking question has an answer to point at.
+
+source: |
+  Specifier, 2026-08-01, on finding the backlog-root drain blocked. Eleven root
+  intakes carry "NOT drained, sequenced behind BL-761" dispositions written
+  2026-07-31, all naming the Android-seam policy as their resume point; BL-761's
+  `approval_context` names the same decision as its own sequencing hazard and
+  recommends settling it first. No ticket delivered it. Prompted by QA's
+  2026-08-01 note that BL-716 had landed as the fifth shipped ticket carrying an
+  unrunnable acceptance contract.
+
+notes: |
+  Typed `defect` rather than `feature`, deliberately, and it is arguable: nothing
+  regressed, the seam never existed. It is filed as a defect because the
+  consequence is a broken verification signal — five tickets have shipped with
+  contracts that assert nothing, and the pipeline reported them green — which is
+  the same reasoning BL-761 is typed on. Severity `high` for the same reason,
+  and because the expedite lane is the honest way to reflect that eleven intakes
+  and one approved ticket are queued behind it. A reviewer who thinks `feature` /
+  `medium` is the truer read should say so rather than quietly re-type it.
+
+  The two declared invariants are review properties more than property-test
+  candidates: the first is a completeness claim over a policy the architect
+  checks the parcel against, the second is a fact about the suite that QA's e2e
+  step 1 demonstrates directly. If the coder can find a way to encode either
+  executably, better — but a stated non-encodability reason recorded in the
+  parcel is the expected outcome here (BL-654's second branch), not a gap.
+
+  Specifier 2026-08-01: IR-DRY reports one medium-confidence possible-synonym
+  finding, reviewed and kept — "it completes and reports a passing result"
+  against "it reports a failing result". Scenario 02 exists precisely to assert
+  the opposite of scenario 01; collapsing them would delete the load-bearing
+  check.

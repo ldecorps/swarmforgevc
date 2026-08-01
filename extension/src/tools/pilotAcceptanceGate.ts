@@ -18,6 +18,18 @@
  *    encoding.)
  * 3. A refused land is inert: no yaml move, no receipt, no other durable
  *    write.
+ *
+ * BL-729 adds a second refusal reason to the same landing path: a claim in a
+ * run commit's own message ("restores `deliver!`") that the commit's own
+ * patch does not support. Declared invariants:
+ * 1. A commit's verdict is computed from that commit alone - its own message
+ *    and its own patch - so the same commit yields the same verdict on any
+ *    checkout, regardless of what sibling branches contain.
+ * 2. Every non-merge commit the run authored is judged or explicitly
+ *    reported unreadable; none is skipped, sampled, or assumed clean.
+ * 3. A refused land is inert for every refusal reason, not only the
+ *    acceptance-contract one BL-727 already covers (shared with invariant 3
+ *    above - one behavior, not two).
  */
 import * as fs from 'fs';
 import * as path from 'path';
@@ -34,12 +46,28 @@ export interface AcceptanceReceipt {
   landedCommit: string;
   result: 'passed';
   landedAt: string;
+  commitClaimsChecked: number;
 }
+
+export interface UnsupportedCommitClaim {
+  commit: string;
+  identifier: string;
+  sentence: string;
+}
+
+// `checked: false` is the BL-729 fails-OPEN case: the run's own commit range
+// could not be resolved (no merge-base, an unreadable patch). `checked:
+// true` always reports how many commits were judged; `unsupported` is only
+// present when one of them made an unsupported claim.
+export type CommitClaimsCheckOutcome =
+  | { checked: true; commitsChecked: number; unsupported?: UnsupportedCommitClaim }
+  | { checked: false };
 
 export interface PilotAcceptanceGateDeps {
   readAcceptanceDeclaration: (ticketId: string) => string | undefined;
   resolveFeatureFilePath: (acceptanceDeclaration: string) => string | undefined;
   runAcceptance: (featureFilePath: string) => Promise<AcceptanceRunResult> | AcceptanceRunResult;
+  checkCommitClaims: () => CommitClaimsCheckOutcome;
   moveTicketToDone: (ticketId: string) => BacklogMoveResult;
   writeReceipt: (ticketId: string, receipt: AcceptanceReceipt) => void;
   getLandedCommit: () => string;
@@ -50,14 +78,18 @@ export interface PilotLandSuccess {
   landed: true;
   destination: string;
   receipt: AcceptanceReceipt;
+  warnings?: string[];
 }
 
 export interface PilotLandRefusal {
   landed: false;
-  reasonKind: 'no-contract' | 'contract-failed' | 'move-failed';
+  reasonKind: 'no-contract' | 'contract-failed' | 'claim-unsupported' | 'move-failed';
   reason: string;
   unmatchedStep?: string;
   failingScenario?: string;
+  claimCommit?: string;
+  claimIdentifier?: string;
+  claimSentence?: string;
 }
 
 export type PilotLandOutcome = PilotLandSuccess | PilotLandRefusal;
@@ -131,9 +163,38 @@ async function runContract(
   };
 }
 
-// Step 3: a green contract's only remaining ways to not land - the move
-// itself failing - versus the landed outcome with its written receipt.
-function moveAndRecordReceipt(ticketId: string, declaration: string, deps: PilotAcceptanceGateDeps): PilotLandOutcome {
+// Step 3: a run commit whose message claims a change its own patch does not
+// support refuses the land before anything moves - the precise BL-636 gap
+// (a described fix was indistinguishable from a made fix). `checked: false`
+// (history unreadable) is not a refusal: it falls through to land, carrying
+// a warning instead.
+function checkClaims(deps: PilotAcceptanceGateDeps): { refusal: PilotLandRefusal } | { claimsCheck: CommitClaimsCheckOutcome } {
+  const claimsCheck = deps.checkCommitClaims();
+  if (claimsCheck.checked && claimsCheck.unsupported) {
+    const { commit, identifier, sentence } = claimsCheck.unsupported;
+    return {
+      refusal: {
+        landed: false,
+        reasonKind: 'claim-unsupported',
+        reason: `commit ${commit} claims a change to "${identifier}" that its own patch does not support (claimed in: "${sentence}")`,
+        claimCommit: commit,
+        claimIdentifier: identifier,
+        claimSentence: sentence,
+      },
+    };
+  }
+  return { claimsCheck };
+}
+
+// Step 4: a green contract with every claim supported (or unreadable
+// history) has only the move itself left to fail - versus the landed
+// outcome with its written receipt.
+function moveAndRecordReceipt(
+  ticketId: string,
+  declaration: string,
+  deps: PilotAcceptanceGateDeps,
+  claimsCheck: CommitClaimsCheckOutcome
+): PilotLandOutcome {
   // Captured before the move: if getLandedCommit() itself fails (e.g. no
   // HEAD yet), nothing has moved or been written yet either.
   const landedCommit = deps.getLandedCommit();
@@ -153,9 +214,15 @@ function moveAndRecordReceipt(ticketId: string, declaration: string, deps: Pilot
     landedCommit,
     result: 'passed',
     landedAt: deps.now(),
+    commitClaimsChecked: claimsCheck.checked ? claimsCheck.commitsChecked : 0,
   };
   deps.writeReceipt(ticketId, receipt);
-  return { landed: true, destination: move.destination, receipt };
+
+  const outcome: PilotLandSuccess = { landed: true, destination: move.destination, receipt };
+  if (!claimsCheck.checked) {
+    outcome.warnings = ['commit claims were not checked: the run\'s own commit history could not be resolved'];
+  }
+  return outcome;
 }
 
 export async function landPilotedTicket(ticketId: string, deps: PilotAcceptanceGateDeps): Promise<PilotLandOutcome> {
@@ -169,7 +236,12 @@ export async function landPilotedTicket(ticketId: string, deps: PilotAcceptanceG
     return contractFailure.refusal;
   }
 
-  return moveAndRecordReceipt(ticketId, contract.declaration, deps);
+  const claims = checkClaims(deps);
+  if ('refusal' in claims) {
+    return claims.refusal;
+  }
+
+  return moveAndRecordReceipt(ticketId, contract.declaration, deps, claims.claimsCheck);
 }
 
 // Pure, fs-based: an acceptance declaration is executable only when it

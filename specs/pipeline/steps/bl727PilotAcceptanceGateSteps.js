@@ -59,6 +59,11 @@ function baseDeps(ctx) {
     resolveFeatureFilePath: (declaration) =>
       ctx.resolveOverride ? ctx.resolveOverride(declaration) : resolveFeatureFilePath(ctx.repoRootFixture, declaration),
     runAcceptance: async () => ctx.acceptanceRunResult,
+    // BL-729 added a second refusal reason to this same landing path; this
+    // feature is about the FIRST one (acceptance-contract execution), so
+    // every claim here is unconditionally supported - never the axis under
+    // test in bl727PilotAcceptanceGateSteps.js.
+    checkCommitClaims: () => ({ checked: true, commitsChecked: 0 }),
     moveTicketToDone: () => {
       ctx.calls.move += 1;
       return { moved: true, destination: path.join(ctx.repoRootFixture, 'backlog', 'done', `${ctx.ticketId}-fixture.yaml`) };

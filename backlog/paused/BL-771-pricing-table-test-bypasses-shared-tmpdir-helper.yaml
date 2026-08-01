@@ -1,0 +1,114 @@
+id: BL-771
+title: "DEFECT — the raw-mkdtemp guard has been red on main since 2026-07-28: pricingTable.test.js:92 allocates its temp root directly"
+milestone: M8
+type: defect
+severity: high
+status: todo
+epic: code-quality-gates
+human_approval: pending
+assigned_to: none
+priority: 0
+direction: normal
+depends_on: []
+mutation_cost: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-771-pricing-table-test-bypasses-shared-tmpdir-helper.feature
+
+invariants:
+  - "The raw-mkdtemp migration guard finds zero call sites across the real extension/test tree; what counts as fixed is what the guard REPORTS, never a file list copied out of a bounce note."
+  - "The guard is not weakened to reach that state: no path is added to SELF_EXEMPT_RELATIVE_PATHS and RAW_MKDTEMP_PATTERN is not narrowed."
+
+required_wiring:
+  - "extension/test/pricingTable.test.js::helpers/tmpDir::the fixture repo root is allocated through the shared mkTmpDir helper, not fs.mkdtempSync"
+
+description: |
+  ## What
+
+  `extension/test/pricingTable.test.js:92` allocates its fixture repo root with
+  a raw `fs.mkdtempSync(path.join(os.tmpdir(), 'bl627-unpriced-'))`. BL-420's
+  migration guard (`extension/test/tmpDirMigrationGuard.test.js`) walks the real
+  `extension/test/` tree and asserts zero such call sites, so that guard test
+  FAILS on `main` today. Verified 2026-08-01 by running the scanner and the
+  guard suite against `main`'s content: 1 violation, 1 failed test file.
+
+  Fix: allocate that root through the shared `mkTmpDir` helper
+  (`extension/test/helpers/tmpDir.js`), exactly as BL-714 did for the four
+  bridge tests. Mechanical; no product behavior change.
+
+  ## Why this is not just "one more site"
+
+  It has been red since `9b3e1f74a` (BL-627, 2026-07-28 23:54) — three days.
+  BL-714 landed the following day (2026-07-30) declaring the invariant "every
+  extension/test file that creates a temp directory uses the shared mkTmpDir
+  helper; the raw-mkdtemp migration guard finds zero call sites outside its
+  documented exemptions" — and shipped with that invariant unmet, because it
+  migrated the four files its bounce evidence named instead of the set the
+  guard reports. This is the sampled-not-swept failure again, so this ticket's
+  first invariant makes the guard's own output the definition of done.
+
+  The gap that let it persist is worth naming: QA's 2026-08-01 pass
+  (`backlog/evidence/BL-716-qa-pass-20260801.md`) correctly saw the failure and
+  correctly judged it out of BL-716's scope — but attributed it to "BL-714",
+  which is CLOSED in `backlog/done/`. A pre-existing failure charged to a
+  closed ticket has no owner and no wake-up, so it simply stayed red. This
+  ticket is that owner.
+
+  ## Approach
+
+  1. Swap the one call site to `mkTmpDir('bl627-unpriced-')`. Cleanup already
+     happens in the shared per-test `afterEach` sweep, so the local
+     `finally { fs.rmSync(...) }` may stay (harmless — the sweep tolerates an
+     already-removed path) or go; the test must still leave no temp root behind.
+  2. Re-run the guard and fix whatever it reports — do not stop at this file.
+  3. Scenario 02 asserts nobody bought the green by widening the exemption list.
+     `SELF_EXEMPT_RELATIVE_PATHS` is currently module-private in
+     `extension/test/helpers/rawMkdtempGuard.js`; export it (alongside the
+     existing `RAW_MKDTEMP_PATTERN`) so a step handler can assert its contents.
+     That export is in scope; nothing else in the guard changes.
+
+  ## Out of scope
+
+  - The `CURSOR_API_KEY` leak failing `bridgeServer.test.js` /
+    `pausedPagerBridge.test.js` — separately ticketed as BL-720.
+  - `extension/test/cursorBridgeInboundQueue.test.js`, which also trips the
+    guard on this checkout: it is UNTRACKED local work-in-progress, on no
+    branch, so it is not a main defect. Surfaced here, not swept — see notes.
+  - Any change to how the guard decides (pattern, walk, fixtures skip).
+  - Speeding or re-scoping the hardening gates generally.
+
+  ## STEERING note
+
+  Operational blocker: a quality gate every ticket must pass is red on `main`,
+  and each hardener and QA pass pays to rediscover and reason past it. The
+  Bubble/phone freeze does not apply — this is test-harness hygiene.
+
+approval_context: >
+  There is no design choice in this ticket and nothing to weigh up: it is a
+  one-line swap to an existing shared helper, plus exporting one constant so the
+  "nobody widened the exemption list" check can be written. Approving it unblocks
+  a gate that has been red on main since 2026-07-28 and that every hardener and
+  QA pass currently has to reason around by hand.
+
+  The one judgement worth your eye is severity `high` rather than `medium`: the
+  defect itself is trivial, but its effect is that the full unit suite does not
+  come back green for anyone, which is what let it sit for three days attributed
+  to an already-closed ticket.
+
+source: |
+  hardender notes 2026-08-01 (handoffs 000502 to specifier, 000503 to
+  coordinator): "pricingTable.test.js:92 raw mkdtempSync, 5th BL-714-class
+  site, ticket it". Confirmed by the specifier the same day against main:
+  `findRawMkdtempCallSites` reports the site, `npx vitest run
+  test/tmpDirMigrationGuard.test.js` fails 1/10. Prior context: BL-714
+  (done), BL-420 (the guard), BL-627 `9b3e1f74a` (introduced the site).
+
+notes: |
+  ## Untracked file that also trips the guard on this checkout
+
+  Running the scanner on the master checkout reports TWO violations:
+  `pricingTable.test.js:92` (on main — this ticket) and
+  `extension/test/cursorBridgeInboundQueue.test.js:13`, which is untracked
+  (`git status` shows `??`) and on no branch. Per the constitution's clean-up
+  rule it is surfaced, not swept: whoever owns that work-in-progress should
+  allocate through `mkTmpDir` before committing it, or the guard goes red again
+  the moment it lands. Do not delete it as part of this parcel.

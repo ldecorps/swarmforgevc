@@ -1,0 +1,88 @@
+id: BL-774
+title: "EPIC — Bubble Live Screen: move the operator Live Screen off the Telegram Mini App onto Bubble; do not promote directly; tracks children"
+milestone: M8
+status: todo
+type: epic
+epic: bubble-live-screen
+priority: 14
+depends_on: [BL-769]
+mutation_cost: high
+decomposes_into: [BL-775]
+remaining_slices:
+  - "Slice B — read-model rendering parity: every status block the Mini App Live Screen shows today renders in Bubble, at or better than its current refresh behaviour."
+  - "Slice C — action wiring parity: the controls the Mini App Live Screen offers produce the same canonical side effects when driven from Bubble."
+  - "Slice D — cutover guard and Mini App deprecation path: dual-run period, the gate that ends it, and what the Mini App route does afterwards (redirect, deprecate, or remove behind a flag)."
+  - "Slice E — verification pass across operator scenarios, including approvals, questions and control callbacks continuing to work through the transition."
+
+description: |
+  ## Why this epic exists
+
+  Live Screen — the resident-pane view served by `bridgeServer.ts` at
+  `/resident-pane` and rendered in the Telegram Mini App — is today bound to
+  Mini App hosting and Telegram webview constraints. Operator flow is split
+  across surfaces, which costs attention and control friction. Product
+  direction is one phone surface, and that surface is Bubble.
+
+  The outcome wanted is parity first, then cutover: Live Screen fully available
+  in Bubble with equivalent or better usability, no loss of core actions,
+  status visibility or response speed, and the Mini App route retired or
+  reduced to a clear fallback.
+
+  ## The boundary this epic must respect
+
+  Local engineering rule 5 names two phone-viewable surfaces that are not
+  interchangeable: the static backlog-dashboard PWA (a git-SHA-reproducible
+  projection, no auth, no write path) and the LIVE holistic UI (token auth,
+  live endpoints, control actions). Live Screen is unambiguously the second —
+  it reads live pane state and, in later slices, writes control actions. No
+  slice of this epic may route Live Screen data through the static PWA.
+
+  ## Open questions and the defaults taken
+
+  1. *Native UI only, or a staged WebView-backed migration?* — **Native**, from
+     slice A. A WebView would carry the webview constraints this migration
+     exists to escape, and Bubble already speaks to the bridge natively through
+     `BridgeClient.kt`.
+  2. *Deprecation plan and timeline for the Mini App Live Screen?* — **Deferred
+     to slice D, deliberately.** Nothing is deprecated until parity is proven;
+     slice A explicitly leaves the Mini App untouched.
+  3. *Which checks confirm migration success?* — parity is asserted per slice
+     against the same `/resident-pane` snapshot both surfaces read, so the two
+     cannot silently diverge. Slice E adds the operator-scenario sweep.
+  4. *Dual-run period and cutover gate?* — **Yes, dual-run**, gated in slice D.
+     Slices A–C are additive: Bubble gains Live Screen while the Mini App keeps
+     working.
+
+  ## Out of scope for the whole epic
+
+  - Re-architecting the bridge protocols. Existing contracts are reused; a
+    contract change must be its own ticket with its own justification.
+  - Any feature beyond parity and migration safety.
+
+source: |
+  backlog/INTAKE-migrate-live-screen-from-mini-app-to-bubble.md (human intake,
+  drained 2026-08-01). Human disposition 2026-08-01 via Let's Talk answering
+  the specifier's 2026-07-30 role_ask: "Mint epic + slice A for each,
+  human_approval pending (I pick defaults, you amend)."
+
+notes: |
+  ## Overlap the human should be aware of
+
+  **BL-569** (`live screen interactive pane input`, `status: needs_design`,
+  approved, paused) adds a principal-gated remote keyboard to the Live Screen
+  *in the Mini App*. It is slice C of this epic wearing different clothes. If
+  BL-569 is built on the Mini App and Live Screen then moves to Bubble, that
+  work is paid for twice. Recommendation: fold BL-569 into this epic's slice C
+  rather than building it on a surface scheduled for retirement — but that is
+  a human call, and BL-569 is not touched by this ticket.
+
+  Two further raw intakes in the backlog root also describe Live Screen content
+  in Bubble — `INTAKE-bubble-host-agent-thinking-live-screen.md` and
+  `INTAKE-bubble-live-screen-coordinator-resident.md`. Both belong to this
+  epic when they are drained; they are among the intakes waiting on BL-769.
+
+  ## Why the epic depends on BL-769
+
+  Every slice is Android. Until BL-769's JVM unit seam lands, an Android
+  ticket's acceptance contract runs zero scenarios — five tickets have already
+  shipped that way. This epic's children must not be promoted before it.

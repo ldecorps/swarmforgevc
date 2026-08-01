@@ -13,6 +13,8 @@ const {
   moveTicketToDone,
   writeReceipt,
   getLandedCommit,
+  resolveRunCommits,
+  checkCommitClaims,
   main,
 } = require('../out/tools/pilot-acceptance-gate');
 
@@ -29,6 +31,26 @@ function initGitRepo(root, { commit = true } = {}) {
     execFileSync('git', ['add', '.'], { cwd: root });
     execFileSync('git', ['commit', '-q', '-m', 'init'], { cwd: root });
   }
+}
+
+// BL-729's claim check is judged against `main` specifically (never
+// whatever the local git default happens to be - this sandbox defaults to
+// `master`), so these fixtures create the base branch by that exact name.
+function initGitRepoOnMain(root) {
+  execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: root });
+  execFileSync('git', ['config', 'user.email', 'test@example.com'], { cwd: root });
+  execFileSync('git', ['config', 'user.name', 'Test'], { cwd: root });
+  fs.writeFileSync(path.join(root, 'README.md'), 'x', 'utf8');
+  execFileSync('git', ['add', '.'], { cwd: root });
+  execFileSync('git', ['commit', '-q', '-m', 'init'], { cwd: root });
+}
+
+function commitFile(root, relPath, content, message) {
+  fs.mkdirSync(path.dirname(path.join(root, relPath)), { recursive: true });
+  fs.writeFileSync(path.join(root, relPath), content, 'utf8');
+  execFileSync('git', ['add', relPath], { cwd: root });
+  execFileSync('git', ['commit', '-q', '-m', message], { cwd: root });
+  return execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
 }
 
 function writeTicketYaml(root, ticketId, extraFields) {
@@ -182,6 +204,91 @@ test('getLandedCommit throws (fails loud) when the repo has no commit yet', () =
   assert.throws(() => getLandedCommit(root));
 });
 
+// ── resolveRunCommits / checkCommitClaims: real git wiring (BL-729) ─────
+
+test('resolveRunCommits resolves the run branch\'s own non-merge commits, oldest first, excluding main itself', () => {
+  const root = mkRepo();
+  initGitRepoOnMain(root);
+  execFileSync('git', ['checkout', '-q', '-b', 'run-branch'], { cwd: root });
+  const sha1 = commitFile(root, 'a.txt', 'a', 'first run commit');
+  const sha2 = commitFile(root, 'b.txt', 'b', 'second run commit');
+
+  const commits = resolveRunCommits(root);
+
+  assert.equal(commits.length, 2);
+  assert.equal(commits[0].sha, sha1);
+  assert.equal(commits[1].sha, sha2);
+  assert.match(commits[0].message, /first run commit/);
+  assert.match(commits[0].patchText, /a\.txt/);
+});
+
+test('resolveRunCommits excludes a merge commit that brought main into the run branch', () => {
+  const root = mkRepo();
+  initGitRepoOnMain(root);
+  execFileSync('git', ['checkout', '-q', '-b', 'run-branch'], { cwd: root });
+  commitFile(root, 'a.txt', 'a', 'run commit before merge');
+  execFileSync('git', ['checkout', '-q', 'main'], { cwd: root });
+  commitFile(root, 'main-only.txt', 'm', 'advance main independently');
+  execFileSync('git', ['checkout', '-q', 'run-branch'], { cwd: root });
+  execFileSync('git', ['merge', '-q', '--no-edit', 'main'], { cwd: root });
+
+  const commits = resolveRunCommits(root);
+
+  assert.equal(commits.length, 1);
+  assert.match(commits[0].message, /run commit before merge/);
+});
+
+test('resolveRunCommits returns undefined (fails open, never throws) when main does not exist', () => {
+  const root = mkRepo();
+  initGitRepo(root); // default branch here, deliberately not named "main"
+  assert.equal(resolveRunCommits(root), undefined);
+});
+
+test('checkCommitClaims refuses on a real unsupported claim: the commit message names an identifier its own patch never touches', () => {
+  const root = mkRepo();
+  initGitRepoOnMain(root);
+  execFileSync('git', ['checkout', '-q', '-b', 'run-branch'], { cwd: root });
+  const badSha = commitFile(root, 'unrelated.txt', 'x', 'Restore `deliver!` close paren dropped by BL-611.');
+
+  const outcome = checkCommitClaims(root);
+
+  assert.equal(outcome.checked, true);
+  assert.equal(outcome.commitsChecked, 1);
+  assert.equal(outcome.unsupported.commit, badSha);
+  assert.equal(outcome.unsupported.identifier, 'deliver!');
+});
+
+test('checkCommitClaims lands clean (no unsupported claim) when the commit message and patch agree, and reports the real commit count', () => {
+  const root = mkRepo();
+  initGitRepoOnMain(root);
+  execFileSync('git', ['checkout', '-q', '-b', 'run-branch'], { cwd: root });
+  commitFile(root, 'src/deliver.ts', 'export function deliver_bang() {}', 'Add deliver_bang to the module.');
+  commitFile(root, 'docs/notes.md', 'notes', 'Document the change.');
+
+  const outcome = checkCommitClaims(root);
+
+  assert.equal(outcome.checked, true);
+  assert.equal(outcome.commitsChecked, 2);
+  assert.equal(outcome.unsupported, undefined);
+});
+
+test('checkCommitClaims regression: the real BL-636 shape - deliver! unsupported, a backticked co-claim actually in the patch is supported', () => {
+  const root = mkRepo();
+  initGitRepoOnMain(root);
+  execFileSync('git', ['checkout', '-q', '-b', 'run-branch'], { cwd: root });
+  const sha = commitFile(
+    root,
+    'extension/src/panel/roleMailRow.ts',
+    'export function roleMailRow() { /* role-mail-row role-mail-row */ }',
+    'Restore a `deliver!` close paren dropped by BL-611, and wire `role-mail-row` through the renderer.'
+  );
+
+  const outcome = checkCommitClaims(root);
+
+  assert.equal(outcome.unsupported.commit, sha);
+  assert.equal(outcome.unsupported.identifier, 'deliver!');
+});
+
 // ── runAcceptance: real dynamic require of specs/pipeline/runnerAdapter.js
 // under the given repoRoot - proves the wiring is live (repoRoot-derived,
 // not a hardcoded path to THIS project's own pipeline), and drives its own
@@ -312,6 +419,68 @@ test('main(): lands in-process on a green run, moving the yaml and writing a rec
   assert.equal(receipt.result, 'passed');
   assert.match(receipt.landedAt, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
   assert.equal(receipt.landedCommit, output.receipt.landedCommit);
+});
+
+// End-to-end (BL-729): a green acceptance contract still refuses the land
+// when the run's own commit history carries an unsupported claim - the
+// ticket's own e2e QA procedure, step 2.
+test('main(): refuses in-process, writing nothing, when a run commit claims a change its own patch does not support', async () => {
+  const root = mkRepo();
+  initGitRepoOnMain(root);
+  fs.mkdirSync(path.join(root, 'specs', 'features'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'specs', 'features', 'fixture.feature'), 'Feature: fixture\n', 'utf8');
+  fs.mkdirSync(path.join(root, 'specs', 'pipeline'), { recursive: true });
+  fs.writeFileSync(
+    path.join(root, 'specs', 'pipeline', 'runnerAdapter.js'),
+    "module.exports = { runPipeline: () => Promise.resolve({ success: true, output: 'ok' }) };",
+    'utf8'
+  );
+  writeTicketYaml(root, 'BL-FIX', ['acceptance: specs/features/fixture.feature']);
+  execFileSync('git', ['add', '.'], { cwd: root });
+  execFileSync('git', ['commit', '-q', '-m', 'seed fixture and ticket'], { cwd: root });
+  execFileSync('git', ['checkout', '-q', '-b', 'run-branch'], { cwd: root });
+  commitFile(root, 'unrelated.txt', 'x', 'Restore `frobnicate!` guard dropped earlier.');
+
+  const { exitCode, output } = await runCli(['BL-FIX'], root);
+
+  assert.equal(exitCode, 1);
+  assert.equal(output.landed, false);
+  assert.equal(output.reasonKind, 'claim-unsupported');
+  assert.equal(output.claimIdentifier, 'frobnicate!');
+  assert.equal(fs.existsSync(path.join(root, 'backlog', 'active', 'BL-FIX-fixture.yaml')), true);
+  assert.equal(fs.existsSync(path.join(root, 'backlog', 'done', 'BL-FIX-fixture.yaml')), false);
+  assert.equal(fs.existsSync(path.join(root, '.swarmforge', 'expedite', 'BL-FIX')), false);
+});
+
+// Amending the message (the ticket's prescribed remedy) then re-running
+// lands cleanly on the very same underlying diff - e2e QA procedure, step 3.
+test('main(): a claim-refused land now succeeds once the claiming sentence is amended out of the message, same diff throughout', async () => {
+  const root = mkRepo();
+  initGitRepoOnMain(root);
+  fs.mkdirSync(path.join(root, 'specs', 'features'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'specs', 'features', 'fixture.feature'), 'Feature: fixture\n', 'utf8');
+  fs.mkdirSync(path.join(root, 'specs', 'pipeline'), { recursive: true });
+  fs.writeFileSync(
+    path.join(root, 'specs', 'pipeline', 'runnerAdapter.js'),
+    "module.exports = { runPipeline: () => Promise.resolve({ success: true, output: 'ok' }) };",
+    'utf8'
+  );
+  writeTicketYaml(root, 'BL-FIX', ['acceptance: specs/features/fixture.feature']);
+  execFileSync('git', ['add', '.'], { cwd: root });
+  execFileSync('git', ['commit', '-q', '-m', 'seed fixture and ticket'], { cwd: root });
+  execFileSync('git', ['checkout', '-q', '-b', 'run-branch'], { cwd: root });
+  commitFile(root, 'unrelated.txt', 'x', 'Restore `frobnicate!` guard dropped earlier.');
+
+  const refused = await runCli(['BL-FIX'], root);
+  assert.equal(refused.output.landed, false);
+  assert.equal(refused.output.reasonKind, 'claim-unsupported');
+
+  execFileSync('git', ['commit', '-q', '--amend', '-m', 'Touch an unrelated file (frobnicate follow-up tracked separately).'], { cwd: root });
+  const landed = await runCli(['BL-FIX'], root);
+
+  assert.equal(landed.exitCode, undefined);
+  assert.equal(landed.output.landed, true);
+  assert.equal(landed.output.receipt.commitClaimsChecked, 1);
 });
 
 test('main(): a git wiring failure (no HEAD yet) crashes loudly instead of silently landing', async () => {
