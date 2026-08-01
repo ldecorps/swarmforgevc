@@ -461,6 +461,135 @@
              (not (mono-router-lib/suppress-dormant-note-delivery-wake?
                    {:parcel-type "note" :chase-action :wake-own-session})))
 
+;; ── BL-651: starvation-bounded rotate preference ──────────────────────────
+
+(assert= "rotation_starve_after_ms parses a positive value"
+         600000
+         (mono-router-lib/parse-rotation-starve-after-ms
+          "config rotation_starve_after_ms 600000\n"))
+(assert= "absent line degrades to default"
+         mono-router-lib/default-rotation-starve-after-ms
+         (mono-router-lib/parse-rotation-starve-after-ms "config rotation router\n"))
+(assert= "malformed value degrades to default"
+         mono-router-lib/default-rotation-starve-after-ms
+         (mono-router-lib/parse-rotation-starve-after-ms
+          "config rotation_starve_after_ms abc\n"))
+(assert= "zero degrades to default"
+         mono-router-lib/default-rotation-starve-after-ms
+         (mono-router-lib/parse-rotation-starve-after-ms
+          "config rotation_starve_after_ms 0\n"))
+(assert= "negative degrades to default"
+         mono-router-lib/default-rotation-starve-after-ms
+         (mono-router-lib/parse-rotation-starve-after-ms
+          "config rotation_starve_after_ms -1\n"))
+(assert= "the literal off disables the age input"
+         :off
+         (mono-router-lib/parse-rotation-starve-after-ms
+          "config rotation_starve_after_ms off\n"))
+(assert= "default is 10 minutes, below flow-watchdog-lib's 15-minute warn default"
+         600000
+         mono-router-lib/default-rotation-starve-after-ms)
+
+(let [now-ms (.toEpochMilli (java.time.Instant/parse "2026-08-01T12:00:00Z"))]
+  (assert= "oldest-actionable-waited-ms picks the OLDEST parcel's age, not the newest"
+           (* 12 60000)
+           (mono-router-lib/oldest-actionable-waited-ms
+            [{:enqueued-at "2026-08-01T11:48:00Z" :created-at "2026-08-01T11:48:00Z"}
+             {:enqueued-at "2026-08-01T11:59:00Z" :created-at "2026-08-01T11:59:00Z"}]
+            now-ms))
+  (assert= "falls back to created_at when enqueued_at is absent"
+           (* 12 60000)
+           (mono-router-lib/oldest-actionable-waited-ms
+            [{:enqueued-at nil :created-at "2026-08-01T11:48:00Z"}]
+            now-ms))
+  (assert= "empty coll -> nil, never zero"
+           nil
+           (mono-router-lib/oldest-actionable-waited-ms [] now-ms))
+  (assert= "no parseable age source anywhere -> nil, fails closed"
+           nil
+           (mono-router-lib/oldest-actionable-waited-ms
+            [{:enqueued-at nil :created-at nil}]
+            now-ms))
+  (assert= "one parseable source among unparseable ones still resolves"
+           (* 12 60000)
+           (mono-router-lib/oldest-actionable-waited-ms
+            [{:enqueued-at "not-a-timestamp" :created-at nil}
+             {:enqueued-at "2026-08-01T11:48:00Z" :created-at "2026-08-01T11:48:00Z"}]
+            now-ms)))
+
+;; preferred-rotate-target's starve override
+(assert= "starved dormant role beats a fresher same-priority home role"
+         "documenter"
+         (mono-router-lib/preferred-rotate-target
+          [{:role "documenter" :best-priority 0 :newest-created-at "2026-08-01T11:48:00Z"
+            :actionable? true :oldest-actionable-waited-ms 720000}
+           {:role "coder" :best-priority 0 :newest-created-at "2026-08-01T11:59:00Z"
+            :actionable? true :oldest-actionable-waited-ms 60000}]
+          600000))
+(assert= "below the threshold, BL-636 newest-first ordering is unchanged"
+         "coder"
+         (mono-router-lib/preferred-rotate-target
+          [{:role "documenter" :best-priority 0 :newest-created-at "2026-08-01T11:57:00Z"
+            :actionable? true :oldest-actionable-waited-ms 180000}
+           {:role "coder" :best-priority 0 :newest-created-at "2026-08-01T11:59:00Z"
+            :actionable? true :oldest-actionable-waited-ms 60000}]
+          600000))
+(assert= "exactly at the threshold counts as starved (>= boundary, mirrors note-aged?)"
+         "documenter"
+         (mono-router-lib/preferred-rotate-target
+          [{:role "documenter" :best-priority 0 :newest-created-at "2026-08-01T11:50:00Z"
+            :actionable? true :oldest-actionable-waited-ms 600000}
+           {:role "coder" :best-priority 0 :newest-created-at "2026-08-01T11:59:00Z"
+            :actionable? true :oldest-actionable-waited-ms 60000}]
+          600000))
+(assert= "one second short of the threshold is not starved"
+         "coder"
+         (mono-router-lib/preferred-rotate-target
+          [{:role "documenter" :best-priority 0 :newest-created-at "2026-08-01T11:50:00Z"
+            :actionable? true :oldest-actionable-waited-ms 599999}
+           {:role "coder" :best-priority 0 :newest-created-at "2026-08-01T11:59:00Z"
+            :actionable? true :oldest-actionable-waited-ms 60000}]
+          600000))
+(assert= "two starved queues in the same band drain oldest first"
+         "cleaner"
+         (mono-router-lib/preferred-rotate-target
+          [{:role "cleaner" :best-priority 0 :newest-created-at "2026-08-01T11:20:00Z"
+            :actionable? true :oldest-actionable-waited-ms 2400000}
+           {:role "documenter" :best-priority 0 :newest-created-at "2026-08-01T11:48:00Z"
+            :actionable? true :oldest-actionable-waited-ms 720000}]
+          600000))
+(assert= "starve never crosses into a worse priority band (constraint 4: age breaks ties, never inverts priority)"
+         "coder"
+         (mono-router-lib/preferred-rotate-target
+          [{:role "documenter" :best-priority 50 :newest-created-at "2026-08-01T11:48:00Z"
+            :actionable? true :oldest-actionable-waited-ms 720000}
+           {:role "coder" :best-priority 0 :newest-created-at "2026-08-01T11:59:00Z"
+            :actionable? true :oldest-actionable-waited-ms 60000}]
+          600000))
+(assert= "rotation_starve_after_ms :off reproduces BL-636 ordering byte-for-byte"
+         "coder"
+         (mono-router-lib/preferred-rotate-target
+          [{:role "documenter" :best-priority 0 :newest-created-at "2026-08-01T11:48:00Z"
+            :actionable? true :oldest-actionable-waited-ms 720000}
+           {:role "coder" :best-priority 0 :newest-created-at "2026-08-01T11:59:00Z"
+            :actionable? true :oldest-actionable-waited-ms 60000}]
+          :off))
+(assert= "omitting starve-after-ms entirely (arity-1, every pre-BL-651 caller) is unaffected"
+         "coder"
+         (mono-router-lib/preferred-rotate-target
+          [{:role "documenter" :best-priority 0 :newest-created-at "2026-08-01T11:48:00Z"
+            :actionable? true :oldest-actionable-waited-ms 720000}
+           {:role "coder" :best-priority 0 :newest-created-at "2026-08-01T11:59:00Z"
+            :actionable? true :oldest-actionable-waited-ms 60000}]))
+(assert= "a row missing :oldest-actionable-waited-ms is never treated as infinitely starved"
+         "coder"
+         (mono-router-lib/preferred-rotate-target
+          [{:role "documenter" :best-priority 0 :newest-created-at "2026-08-01T11:48:00Z"
+            :actionable? true}
+           {:role "coder" :best-priority 0 :newest-created-at "2026-08-01T11:59:00Z"
+            :actionable? true :oldest-actionable-waited-ms 60000}]
+          600000))
+
 (when (seq @failures)
   (binding [*out* *err*]
     (doseq [f @failures] (println f)))

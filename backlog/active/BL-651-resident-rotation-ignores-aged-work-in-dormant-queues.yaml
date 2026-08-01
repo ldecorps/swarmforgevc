@@ -1,0 +1,248 @@
+id: BL-651
+title: "Mono-router rotation: the resident's idle loop prefers its HOME queue over the oldest aged parcel elsewhere — BL-576 ages notes into rotation, but no rule says 'an aged git_handoff in a dormant queue beats resuming home'"
+milestone: M8
+type: feature
+status: todo
+epic: swarm-reliability
+human_approval: approved
+severity: medium
+priority: 0
+direction: queue-jump
+depends_on: []
+assigned_to: coder
+mutation_cost: medium
+required_stages: [coder, architect, qa]
+stage_skip_reasons: { cleaner: "bounded rotation-decision change in dispatch bb code", hardender: "bb outside the Stryker mutate scope; thrash/non-vacuity fixtures run in the acceptance gate", documenter: "behaviour documented in-ticket; no human-facing doc surface" }
+
+approval_context: >
+  Proposed by the COORDINATOR, 2026-07-25 ~22:00, answering the operator's
+  direct question about a broadcast aging in the cleaner's inbox while the
+  swarm was demonstrably healthy. Filed on its behalf by the operator-session,
+  verbatim diagnosis below; the coordinator explicitly declined to act on it
+  itself ("hand-injecting a rotation command would bypass the pack's designed
+  transport") and recommended a ticket. Approve to have the specifier design
+  the aged-work rotation rule; reject if the current home-first bias is the
+  intended trade.
+
+source: |
+  ## The coordinator's own diagnosis (pane, 2026-07-25)
+
+  > "The resident keeps returning 'home' to coder/specifier and picking up
+  > side-work instead of rotating out to drain the oldest waiting queue.
+  > That's a structural gap in this mono-router pack, not a bug in any one
+  > role — nothing currently prioritizes 'rotate to whoever has the oldest
+  > aged item' over 'check my own home queue again'. […] The aged-note-
+  > rotation logic (BL-576) accounts for dormant-role NOTES aging in, but
+  > there's no equivalent 'aged git_handoff elsewhere beats resuming home'
+  > rule for the resident's own idle/root-intake loop."
+
+  ## The live evidence trail, same evening
+
+  ```
+  21:29  QA broadcast 000808 (merge-up) lands in 5 role inboxes
+  21:36  relaunch; resident works specifier (BL-633), then coder
+  21:44  ⚠️ WARN flow-stall: 000808 aged 15m in cleaner new - rotate
+  ~22:00 cleaner's copy still unconsumed; swarm healthy throughout
+  ```
+
+  Two alarms fired about this wait tonight and BOTH were about the observers,
+  not the cause: BL-650 fixes the watchdog's wall-clock age, BL-647 the
+  operator's dead-agent noise. This ticket is the CAUSE: rotation never chose
+  the cleaner, because nothing weighs a dormant queue's age against home.
+
+description: |
+  ## Why feature, not defect
+
+  BL-576 shipped exactly what it specified — aged NOTES pull the resident to
+  dormant roles. The git_handoff/idle-loop equivalent was never specified
+  anywhere, so nothing is broken. Same taxonomy call as BL-649 the same
+  evening.
+
+  ## Shape (specifier refines; the coordinator's framing is the spec seed)
+
+  The resident's idle decision — today "check home, else wait" — gains one
+  input: the oldest actionable parcel age across ALL dormant role queues.
+  When that age crosses a threshold, rotate to that role instead of resuming
+  home. Threshold coherent with BL-650's rotation-aware watchdog thresholds:
+  the ROTATION threshold should be comfortably BELOW the watchdog's WARN
+  threshold, so the swarm drains a queue before the human is ever alarmed
+  about it.
+
+  ## Constraints
+
+  1. Respect the pack's transport: the fix lives in the idle/rotation
+     decision (dispatch-side), never as out-of-band injected rotation
+     commands — the coordinator's own restraint tonight is the precedent.
+  2. Batch-mode roles (cleaner, hardender) drain as batches once rotated to;
+     no per-parcel thrash.
+  3. In-flight work is never preempted ([[inflight-coder-task-cannot-be-
+     preempted]]): the rule applies at IDLE decision points only.
+  4. Priority still outranks age at equal actionability; age breaks ties and
+     bounds starvation, it does not invert the priority order.
+
+spec: |
+  ## The rule (specifier, 2026-08-01)
+
+  The rotation preference gains ONE input: how long a role's OLDEST
+  actionable parcel has already waited. Ordering becomes:
+
+  1. best (lowest) handoff priority band — unchanged, never inverted;
+  2. inside that band, if any candidate has waited past
+     `rotation_starve_after_ms`, the OLDEST such candidate wins;
+  3. otherwise BL-636's newest-first ordering, byte-for-byte unchanged.
+
+  `config rotation_starve_after_ms <ms>` — default `600000` (10 min), which
+  sits below the default `flow_watchdog_warn_ms` (900000 / 15 min) as the
+  ticket's Shape requires. The literal `off` disables the age input entirely
+  and restores BL-636 ordering; anything absent or unparseable degrades to
+  the default, exactly as `note_actionable_after_ms` already does.
+
+  ## Live integration layer (verified 2026-08-01, before scoping)
+
+  - Pure decision: `swarmforge/scripts/mono_router_lib.bb`
+    `preferred-rotate-target` (today: priority band, then newest-created-at).
+  - Row builder that feeds it: `swarmforge/scripts/handoffd.bb`
+    `role-mail-row` — it computes `:newest-created-at` and `:best-priority`
+    today and must additionally supply the oldest actionable parcel's age,
+    or the pure rule can never fire in production (hence `required_wiring`).
+  - Rotation is reached via `chase-rotate-to!` → `should-rotate-resident?`;
+    all of its refusals (busy pane, recent churn, 30s cooldown, one rotation
+    per sweep, `not-preferred`) stay exactly as they are. This ticket changes
+    WHICH role is preferred, never whether the resident may be interrupted.
+  - Wiring proof precedent: BL-636 drove the real lib via `bb -e` AND the
+    real `handoffd.bb --print-preferred-rotate-target` seam through
+    `swarmforge/scripts/test/test_handoffd_priority_rotate_wiring.sh`.
+    Hand-built score rows alone are NOT sufficient (the BL-576 F1
+    anti-pattern) — scenario 07 exists to force the live seam.
+
+acceptance: specs/features/BL-651-aged-work-rotation.feature
+
+invariants:
+  - "The age input can only change WHICH role is preferred at an idle decision point — it can never cause a rotation that the existing busy / recent-churn / cooldown / one-rotation-per-sweep gates would have refused, so work in flight is never preempted."
+  - "Every parcel age used by a rotation decision is derived from that parcel's own headers (`enqueued_at`, else `created_at`) — never file or directory mtime, at any site."
+  - "With `rotation_starve_after_ms off`, the preferred rotate target is identical to BL-636's for every input: the rule is a pure additive override, never a rewrite of the existing ordering."
+
+required_wiring:
+  - "swarmforge/scripts/handoffd.bb::starve::role-mail-row must compute and pass the oldest-actionable-parcel age; without this call site the pure ordering rule never fires in production"
+  - "swarmforge/swarmforge.conf::rotation_starve_after_ms::the documented operator config surface (documenter stage is skipped on this ticket, so the conf comment block is the only place an operator can discover the knob)"
+
+qa_e2e_procedure: |
+  With a live mono-router swarm (`config rotation router`) and NO control
+  pause active (`.swarmforge/operator/control-pause.json` absent or
+  `active:false` — a pause freezes the whole chase sweep by design, BL-617,
+  and would invalidate the run):
+
+  1. Note the resident's current identity
+     (`.swarmforge/mono-router-active-role`) and let it settle at home.
+  2. Enqueue a `git_handoff` (priority `00`) to a dormant role, e.g.
+     documenter, via `swarm_handoff.sh`, and immediately enqueue a SECOND,
+     newer `git_handoff` at priority `00` to the home role.
+  3. Watch `.swarmforge/daemon/handoffd.log`. Before the threshold, expect
+     the home role to be served (`chase-rotate` naming home / no rotate).
+  4. After `rotation_starve_after_ms` (10 min by default) elapses on the
+     dormant parcel, expect `chase-rotate documenter` — and expect it BEFORE
+     any `flow-watchdog-alarm ⚠️ WARN flow-stall` line names that parcel.
+  5. Confirm no rotation landed while the resident pane showed a busy footer
+     (`chase-rotate-skip-busy` is the correct line to see in that window).
+
+out_of_scope: |
+  - The flow-watchdog's clock and thresholds (BL-650).
+  - Multi-resident assignment (BL-645 stereo epic) — this rule must not
+    assume a single resident, but designing for two is the epic's job.
+  - Preemption of in-flight work.
+  - CROSS-BAND starvation: a priority-50 parcel sitting behind a queue that
+    keeps receiving priority-00 work is still not served. Constraint 4
+    forbids inverting the priority order, so this is a deliberate, bounded
+    limit of the rule, not an oversight.
+  - The resident-side idle path (`ready_for_next.sh` printing NO_TASK at
+    home). The daemon's chase sweep is the engine that actually rotates —
+    verified rotating 400 times on 2026-08-01 alone — and it runs whether or
+    not the resident re-polls. A resident-side `ROTATE_TO` twin would be
+    redundant machinery for this slice.
+  - `note_actionable_after_ms` (20 min) exceeding `flow_watchdog_warn_ms`
+    (15 min), which means an aged NOTE necessarily alarms the human before
+    the swarm is allowed to rotate for it. Changing BL-576's default trades
+    broadcast-thrash protection for alarm quiet — a human call, raised as
+    its own ticket (BL-780), not folded in here.
+
+notes: |
+  Fifth rotation-related finding of 2026-07-25, and the only one that is a
+  CAUSE rather than an observer: 647 (event producer), 650 (alarm clock) and
+  the two starvations (646's cousin gaps, 648's relaunch resume) all watch or
+  recover; this one decides. The coordinator's conduct is worth recording:
+  it diagnosed the gap, named the shipped precedent (BL-576), refused to
+  bypass the transport, and asked for governance — which is exactly the
+  contract holding under pressure.
+
+  ## 2026-08-01 JumpQ (human, Let's Talk evening)
+
+  Human asked to queue-jump THIS ticket (the already-filed cause) after the
+  same mono-router home-vs-dormant-queue starve reproduced **twice today**.
+  Retagged `direction: queue-jump`, `priority: 0`. Slot is full with BL-663
+  (active, high-severity defect mid-pipeline) — promote BL-651 next when that
+  slot frees; do not displace BL-663. Specifier: fold the live fixtures below
+  into acceptance (same shape as the 2026-07-25 cleaner broadcast case).
+
+  Live evidence: `backlog/evidence/BL-651-live-starve-20260801.md`.
+
+  ### Occurrence 1 — afternoon idle (≈15:30–17:00 BST)
+
+  BL-663 in flight; coder+coordinator panes looked quiet. Babysitter logged
+  repeating CRIT half-launch/exit (false: Claude is grandchild under
+  sh→zsh→claude, `ps --ppid` only sees zsh). Operator kept saying green /
+  idle-correct. No commit on main after the 15:09 BL-663 spec land.
+
+  ### Occurrence 2 — evening dormant documenter (from 17:04 BST)
+
+  Hardener finished BL-663 bounce fix and sent git_handoff
+  `000512_from_hardender_to_documenter` into documenter's `inbox/new/` at
+  16:04Z / 17:04 BST. Parcel still unconsumed >60m later while the mono-router
+  resident sat at coder home and coordinator idle. Babysitter starve check
+  suppressed (`pend>0` from that dormant-queue parcel). Operator 16:46Z:
+  "idle-correct (dormant downstream seats)" / inboxes empty — wrong; the
+  worktree documenter new/ held real work. Same CAUSE as this ticket: no rule
+  makes an aged git_handoff in a dormant queue beat resuming home.
+
+  ### Specifier's audit of the 2026-08-01 evidence (correction, before spec)
+
+  Checked both occurrences against `.swarmforge/daemon/handoffd.log` rather
+  than taking the attribution on trust. Neither was caused by this ticket's
+  gap, and both had already-known causes:
+
+  - Rotation worked all day: 400 `chase-rotate` lines on 2026-08-01, the last
+    at 15:59:25Z (`architect`), including `chase-rotate documenter` at
+    15:14:26Z — the exact mechanism the ticket says is missing, firing.
+  - **Occurrence 2 was a control pause, not a starve.**
+    `.swarmforge/operator/control-pause.json` was written at 16:00:06Z
+    (`active:true, untilMs 2026-08-02T08:00Z`); the hardener→documenter
+    parcel was enqueued 16:04:51Z, ~4m45s INTO the pause. From 16:00Z the log
+    shows 3660 `poll-skip-paused` lines and zero chase entries: BL-617
+    deliberately suppresses delivery, chase, rotation, dispatch-gap and
+    open-slot sweeps while a pause is active, while the flow watchdog
+    deliberately keeps alarming. The 17:05:03Z `⚠️ WARN flow-stall … - rotate`
+    is that design meeting a paused swarm — it names an action the paused
+    daemon cannot take and never mentions the pause. Filed as BL-779.
+  - **Occurrence 1 was observer noise**, as the evidence file itself half
+    says: the babysitter's `ps --ppid` depth-1 CRIT (BL-647 family), during a
+    window in which the swarm was in fact rotating (15:14 / 15:19 / 15:33 /
+    15:59).
+
+  This does NOT retire the ticket: the structural gap it names is real and
+  still unfixed in `preferred-rotate-target` — at equal priority the NEWEST
+  parcel wins, so a queue that keeps receiving fresher mail (on this pack,
+  home/coder) can outrank an older dormant parcel for as long as the fresh
+  mail keeps arriving, with nothing bounding the wait. That is what the spec
+  above fixes. The honest scope note is that it would not have prevented
+  either of today's two occurrences, and the human should know that before
+  judging the fix by them.
+
+  ### DRY disposition of the feature file
+
+  `gherkin-ir-dry-checker` reports 21 findings, all of one family: the same
+  step template instantiated with different role / priority / wait values,
+  plus each concrete variant against its Scenario Outline placeholder twin.
+  That is a parameterized step doing its job, not wording drift — no
+  accidental synonyms, no exact duplicates. Hoisting the
+  `home role "coder" … waited "1m"` Given into `Background:` would reach
+  scenarios 05/06/07, where a competing home queue changes what is being
+  asserted, so it is not meaning-preserving and was not done.
