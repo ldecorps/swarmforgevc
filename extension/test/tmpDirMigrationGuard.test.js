@@ -1,7 +1,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { findRawMkdtempLines, findRawMkdtempCallSites } = require('./helpers/rawMkdtempGuard');
+const { findRawMkdtempLines, findRawMkdtempCallSites, SELF_EXEMPT_RELATIVE_PATHS } = require('./helpers/rawMkdtempGuard');
 const { mkTmpDir } = require('./helpers/tmpDir');
 
 // BL-420: the regression guard's own tests. findRawMkdtempLines is the pure
@@ -94,6 +94,20 @@ test('finds violations nested several directories deep, not just at the top leve
   fs.writeFileSync(offender, "fs.mkdtempSync(path.join(os.tmpdir(), 'x-'));\n");
 
   assert.deepEqual(findRawMkdtempCallSites(root), [{ file: offender, line: 1 }]);
+});
+
+// ── BL-771 shared-tmpdir-helper-02: the guard was not weakened to go green ─
+// Pins the exempt list to exactly its three documented, load-bearing entries
+// (tmpDir.js's own real call site plus this guard's two fixture-string test
+// files) - a green migration-complete gate bought by widening this list
+// instead of migrating the offending file would be a false pass.
+
+test('the exempt list is exactly the three documented paths - nothing was added to buy a green scan', () => {
+  assert.deepEqual(SELF_EXEMPT_RELATIVE_PATHS, [
+    'helpers/tmpDir.js',
+    'tmpDirMigrationGuard.test.js',
+    'tmpDirMigrationGuard.property.test.js',
+  ]);
 });
 
 // ── BL-420 test-helpers-clean-up-tmp-dirs-03: the actual migration-complete gate ──

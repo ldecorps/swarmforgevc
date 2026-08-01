@@ -1,6 +1,5 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
 const {
   estimateCostUsd,
@@ -10,6 +9,7 @@ const {
   collectReferencedClaudeModels,
   assertPricingCoverage,
 } = require('../out/metrics/pricingTable');
+const { mkTmpDir } = require('./helpers/tmpDir');
 
 const REPO_ROOT = path.join(__dirname, '..', '..');
 
@@ -89,7 +89,7 @@ test('the table includes the models actually observed in this session\'s transcr
 });
 
 test('BL-627: an unpriced model referenced by a fixture conf fails loud and names it', () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bl627-unpriced-'));
+  const root = mkTmpDir('bl627-unpriced-');
   try {
     fs.mkdirSync(path.join(root, 'swarmforge', 'packs'), { recursive: true });
     fs.writeFileSync(
