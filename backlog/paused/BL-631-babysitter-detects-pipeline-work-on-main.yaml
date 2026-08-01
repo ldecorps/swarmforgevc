@@ -8,7 +8,7 @@ human_approval: approved
 severity: medium
 priority: 05
 direction: human-requested
-depends_on: []
+depends_on: [BL-611]
 assigned_to: specifier
 mutation_cost: medium
 invariants:
@@ -143,3 +143,33 @@ notes: |
   2026-08-01 Let's Talk (human): severity high → medium so the JumpQ
   pilot-process batch can clear the high tier; board/guard family, not a live
   outage.
+
+  2026-08-01 specifier — acceptance reworked against the shipped babysitterd
+  contract, on the coder's report (finding 4 of
+  `backlog/evidence/BL-611-coder-findings.md`). The old scenario 03 asserted a
+  critical finding "reaches the wake queue in the same shape as a claim-progress
+  finding". There is no wake queue: BL-611 deleted its consumer
+  (`babysitter_runtime.bb`) AND its producer side in `handoffd.bb`. The ticket
+  would have been unimplementable as written.
+
+  The real contract, from `swarmforge/scripts/babysitterd_sweep_lib.bb`:
+  findings are `{:key :severity ("CRIT"|"WARN") :message}`, produced fresh by a
+  pure `check-*` fn on every sweep and never persisted; what dedups is the
+  NUDGE, via `nudge-eligible?` then `decide-nudges`, keyed on `:key` against
+  `last-nudged-ms-by-key` in `.swarmforge/babysitterd/nudge-dedup.json`.
+
+  That reshapes two scenarios and adds two:
+
+  - 03 now asserts finding SHAPE and nudge-eligibility, not queue membership.
+  - The old 04 ("no new finding is produced for that same sha") was wrong in
+    kind — findings are recomputed every sweep by design. It becomes 05: the
+    finding recurs, the NUDGE does not.
+  - 04 and 06 are new, and are not scope growth: they pin the declared
+    invariant. Dedup keyed on a static check name would let the first offending
+    commit permanently mask every later one, which is exactly the "no role,
+    path, or timing is exempt" property failing. So the key must carry the sha
+    (04), and a second offending commit must nudge while the first is still
+    deduped (06).
+
+  Depends on BL-611 accordingly — this check is a `check-*` in a lib BL-611
+  creates. Do not promote before BL-611 lands on `main`.
