@@ -5,35 +5,222 @@ type: defect
 severity: low
 status: todo
 epic: swarm-reliability
-assigned_to: specifier
+human_approval: pending
+assigned_to: coder
 priority: 0
 direction: queue-jump
 depends_on: []
 mutation_cost: low
+acceptance: specs/features/BL-729-commit-claims-match-their-own-diff.feature
+
+invariants:
+  - "A commit's verdict is computed from that commit alone — its own message and its own patch — so the same commit yields the same verdict on any checkout, at any later time, regardless of what sibling branches contain."
+  - "Every non-merge commit the run authored is judged or explicitly reported unreadable; none is skipped, sampled, or assumed clean."
+  - "A refused land is inert — no yaml move, no receipt, no other durable write — for every refusal reason, not only the acceptance-contract one that already exists."
+
+required_wiring:
+  - "extension/src/tools/pilotAcceptanceGate.ts::checkCommitClaims::the check must be called from landPilotedTicket itself; a claim-checker module with no call site on the landing path gates nothing (the BL-419 shape)"
+  - "extension/src/tools/pilot-acceptance-gate.ts::checkCommitClaims::the CLI must supply the real git-backed deps; a pure checker wired only to test fakes is dark in production"
+
 source: |
   Found during BL-723 (pilot-tonight quality review), coder viewpoint pass,
   2026-07-30. Companion remaining-work ticket: BL-728.
 
 notes: |
-  Human 2026-07-31 Let's Talk: queue-jump for today's live shift — pilot-process hardening before more /pilot safe volume.
+  Human 2026-07-31 Let's Talk: queue-jump for today's live shift — pilot-process
+  hardening before more /pilot safe volume.
 
   Pilot-process half of the BL-636 shortfall pair.
+
+  **Specifier 2026-08-01 — the design was measured, not assumed.** The obvious
+  reading of this ticket ("a commit message must not name code its diff never
+  touches") was implemented as a throwaway probe and run over real history
+  before speccing, because a refusing gate with a high false-positive rate is
+  worse than no gate: agents route around noise.
+
+  | rule | flagged / commits | catches BL-636? |
+  |---|---|---|
+  | every code-shaped token in the message must appear in the patch | 12 / 120 (10%) | yes |
+  | …only when a change verb is attached to it in the same sentence | 6 / 120 (5%) | yes |
+
+  The bare rule's flags were inspected one by one and were **legitimate**, not
+  defects: tools named as verification (`run_acceptance.sh`, `runtime.js`),
+  protocol vocabulary (`git_handoff`, `required_wiring`), and symbols
+  referenced for context (`processCallbackQuery` in fbd2dc12bb, named only to
+  explain which branch went untested). Merge commits flagged mechanically —
+  `git show` prints no combined diff for them — which is why they are excluded
+  by scenario 03 rather than by taste.
+
+  Verb-scoping halves the noise and still names exactly `deliver!` on
+  6a2e4aaf6d, the defect commit. The 5% residual is still legitimate mentions;
+  its remedy is deliberately cheap — reword the sentence, or amend the message
+  — and both are available at land time on the pilot's own branch. That
+  residual tax is the one open decision; see approval_context.
+
+  Control measurement, for whoever re-derives this: on 6a2e4aaf6d the token
+  `deliver!` occurs once in the message and zero times in the patch, while
+  `role-mail-row` — the other identifier that message claims — occurs 11 times
+  in the patch. The signal is real and it is sharp.
 
 description: |
   ## What
 
-  BL-636's landing commit message described restoring a dropped close-paren
-  in handoffd.bb; the actual diff never touched that file. On a live pipeline,
-  the architect (or QA, per "Forwarded Commits Carry Their Lineage" and
-  general diff-review discipline) reviews the actual changed files against
-  the commit's own claims before approving — that check either didn't happen
-  in the pilot, or happened without cross-referencing the stated fix against
-  `git show --stat`.
+  BL-636's landing commit (`6a2e4aaf6d`) says it restores "a deliver! close
+  paren dropped by BL-611 that blocked one-shot handoffd flags under streaming
+  eval". The token `deliver!` appears nowhere in that commit's own patch. The
+  repair existed only on `79c5d09b8`, an unmerged commit on the sibling branch
+  `expedite/BL-571`. The message described work the pilot had *seen*, not work
+  it had *landed*.
 
-  ## Question to answer
+  Nothing between the agent writing that sentence and the ticket reaching
+  `backlog/done/` cross-referenced the message against the diff, so a described
+  fix was indistinguishable from a made fix — the same substitution BL-727
+  found for acceptance contracts (asserted, never executed), one layer over.
 
-  Which hat is supposed to catch "commit message claims X, diff shows
-  not-X"? Is this implicitly covered by existing bounce/review discipline, or
-  does it need an explicit checklist item (e.g. in the architect or QA bounce
-  evidence contract, Article 4.4) naming "commit message matches diff" as a
-  check? Harden `/pilot` (or the constitution) accordingly.
+  ## The question this ticket asked, answered
+
+  *Which hat is supposed to catch "commit message claims X, diff shows not-X" —
+  and is an explicit Article 4.4 checklist item the fix?*
+
+  **No, a checklist item is not the fix, and the measurement is why.** A prose
+  duty ("cross-reference the message against the diff") is exactly the class of
+  obligation BL-727 and BL-761 both found unenforceable: an agent asserting it
+  did the check is indistinguishable from an agent that didn't. Adding a line to
+  Article 4.4 would have caught BL-636 only if the pilot had read, believed and
+  executed it — and the pilot was already under a "quality over speed, gate
+  discipline" instruction when it wrote that message.
+
+  The fix is a machine check on the path where the defect occurred: the pilot's
+  land. `/pilot` already has exactly one landing path (BL-727) and it already
+  refuses. This ticket gives it a second refusal reason.
+
+  ## The fix
+
+  `landPilotedTicket` gains a step between "the acceptance contract passed" and
+  "move the yaml". For every non-merge commit the run authored on its branch:
+
+  1. Take the commit's message body, minus trailers (`Co-authored-by:`,
+     `Signed-off-by:`, `By <role>.`) and ticket ids (`BL-###`, `GH-###`).
+  2. Split it into sentences. In each sentence that attaches a **change verb**
+     to code — restore, fix, add, remove, delete, drop, rename, revert, correct,
+     replace, extract, introduce, wire, close (and their inflections) — collect
+     the **code-shaped tokens**: a backticked span; a lowercase identifier
+     ending `!` or `?`; `snake_case`; `camelCase`; or a path/filename ending in
+     a known source extension.
+  3. Refuse the land if any such token is absent from that commit's **own patch
+     text** — added, removed and context lines, plus the changed-path list. A
+     token that appears anywhere in the patch is supported; the check asks
+     "did this commit go near what it claims", not "did it change that exact
+     line".
+  4. Name, in the refusal: the commit, the token, and the sentence that claimed
+     it. The remedy is either to make the change or to amend the message, and
+     the refusal should read that way.
+
+  Context lines count deliberately. It is what keeps "callers of `runSweep` are
+  unaffected" from refusing a land while still catching `deliver!`, which occurs
+  nowhere in its commit at all.
+
+  ## Posture
+
+  - An unsupported claim fails **CLOSED** — the land is refused.
+  - History the gate cannot read (no resolvable commit range, an unreadable
+    patch) fails **OPEN**: land proceeds, carrying a warning that no claim was
+    checked. Same split BL-727 and BL-761 already use — a contract that is
+    merely absent is a defect; infrastructure trouble is not.
+  - A refused land stays inert (invariant 3). The new refusal must not become
+    the one path that half-writes.
+
+  ## Scope
+
+  - `extension/src/tools/commitClaimCheck.ts` — new, pure: given a commit
+    message and that commit's patch text, return the unsupported claims. No
+    git, no fs.
+  - `extension/src/tools/pilotAcceptanceGate.ts` — the call site
+    (`checkCommitClaims` on `PilotAcceptanceGateDeps`), a fourth
+    `reasonKind: 'claim-unsupported'`, and the receipt field recording how many
+    commits were checked. The function name is fixed by `required_wiring`.
+  - `extension/src/tools/pilot-acceptance-gate.ts` — the real deps: resolve the
+    run's own non-merge commits (merge-base with `main` … `HEAD`) and read each
+    one's patch.
+  - `extension/test/` — unit tests plus the property tests the three declared
+    invariants require.
+  - `specs/features/BL-729-commit-claims-match-their-own-diff.feature` and its
+    handlers in `specs/pipeline/steps/`, in this parcel.
+
+  ## Constraints
+
+  - **The run's commits, not HEAD.** A pilot run commits per stage and the land
+    commit is written *after* the gate runs — checking only `HEAD` would judge a
+    bookkeeping commit and skip every commit where claims actually live. BL-694
+    is the worked example: `2b17ca856`, `eb0abfed2`, then the QA-land commit.
+  - **Judged per commit, never against the worktree or another branch.** This is
+    invariant 1 and it is the precise thing BL-636 got wrong: `deliver!` was
+    real, on a branch this run never merged.
+  - **Step text must not collide.** Register this feature file's handlers with
+    `defineScoped(..., 'a piloted ticket lands only when each commit''s claims
+    match its own diff')`. Text like "the land is completed" is generic enough
+    to win first-match for another ticket's feature (BL-425).
+  - **No escape hatch in the commit itself.** A trailer the pilot can write to
+    suppress its own check is not a gate. The remedy for a false positive is to
+    amend the message — cheap, on the pilot's own branch, before the land.
+
+  ## Out of scope
+
+  - **The ordinary pipeline.** This closes the `/pilot` path, where the defect
+    happened. Whether the live pipeline needs the same check at the pre-QA gate
+    (beside BL-531's declared-wiring and BL-761's acceptance-contract findings)
+    is a real question and deserves its own ticket — the family convention is
+    one ticket per path (BL-727 pilot / BL-761 ordinary), and the same
+    measurement would have to be redone against merge-commit-heavy live history
+    before assuming the grammar transfers. File it; do not widen this slice.
+  - **`expedite_cli.bb`.** The automated expeditor still classifies stages from
+    self-reported `verdict.json` and is untouched here, exactly as BL-727 left
+    it.
+  - **Re-checking already-landed commits.** No retro-sweep over `backlog/done/`.
+    BL-636's own discrepancy is already owned by BL-728, which verifies the
+    underlying `deliver!` bug independently of any commit message.
+
+  ## e2e procedure for QA
+
+  1. `bash specs/pipeline/scripts/run_acceptance.sh specs/features/BL-729-commit-claims-match-their-own-diff.feature`
+     — all scenarios green (run after `npm run compile`; `extension/out/` is
+     gitignored).
+  2. In a scratch branch, commit a message claiming `restore the frobnicate!
+     guard` with a diff touching an unrelated file, then run
+     `node extension/out/tools/pilot-acceptance-gate.js <fixture-ticket>`:
+     refused, naming the commit, `frobnicate!`, and the sentence. Confirm the
+     yaml did not move and no `acceptance-receipt.json` was written.
+  3. `git commit --amend` the sentence to drop the claim; re-run: lands, and the
+     receipt records the commit count checked.
+  4. Put the offending claim in the *first* of three commits and re-run: still
+     refused, naming that first commit (not the tip).
+  5. Merge `main` into the branch and re-run: the merge commit's generated
+     message is not judged.
+  6. Regression against the real thing: check out `6a2e4aaf6d` and confirm the
+     checker reports `deliver!` unsupported; confirm the same run reports
+     `role-mail-row` as supported (it occurs 11 times in that patch) — a checker
+     that flags both is over-firing and is not this gate.
+
+approval_context: >
+  One decision, and it is about noise rather than correctness. Verb-scoped claim
+  checking flags 6 of the last 120 non-merge commits on main, and on inspection
+  every one of those six is a legitimate mention rather than a false claim
+  (`required_wiring` in a yaml edit, `composePilotExpeditorPrompt` named in a
+  bounce write-up, a `.sent.json` fragment). So the gate as specced will,
+  roughly once per twenty commits, refuse a land that deserved to pass, and the
+  author's remedy is to reword the sentence or `git commit --amend`. That is a
+  real tax on a `severity: low` defect, and it is the whole of what needs
+  signing off. Options: (a) ship it refusing, as specced — my recommendation,
+  because the remedy is seconds long, it runs only on the pilot path, and a
+  reporting-only gate is precisely the unenforceable prose duty this ticket
+  exists to replace; (b) ship it reporting-only, recording unsupported claims in
+  the receipt without refusing — cheaper on authors, but then nothing stops the
+  next BL-636, and the ticket delivers a worksheet rather than a gate; (c)
+  narrow the grammar further (paths and backticked spans only) — this drops to
+  near-zero false positives but stops catching BL-636 itself, since `deliver!`
+  was neither. Everything else here is firm. Amending later is cheap and
+  in-policy: (a) → (b) is a one-line behavior flip plus edits to scenarios 01,
+  02 and 05, reachable through the normal in-flight spec amendment path, so this
+  ticket is being forwarded to the coder rather than parked on the tap — the
+  human's 2026-08-01 steering was explicitly to restore a safe /pilot resume
+  path sooner.
