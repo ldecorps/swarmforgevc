@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=7a8d63d3b709acead1feee71780051b6b6fd04f5b0c341606033aa2f3a36464b
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-01T11:28:38.534313203Z","feature_name":"A test restores every process.env key it touches","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-720-tests-restore-every-env-key-they-touch.feature","background_hash":"098f5ef43536c9e85e452f708d2d9c9c91373d2f7f0929380883ed681cbf1c99","implementation_hash":"unknown","scenarios":[{"index":0,"name":"a test restores whatever the key held before it ran","scenario_hash":"d3a720338da6c3500d1c8cfd962d904c58e77d62b5523a17bae08d28659d7851","mutation_count":4,"result":{"Total":4,"Killed":4,"Survived":0,"Errors":0},"tested_at":"2026-08-01T11:28:38.534313203Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: A test restores every process.env key it touches
 
   vitest.config.mjs runs pool: 'forks' with isolate: false — a deliberate BL-445
