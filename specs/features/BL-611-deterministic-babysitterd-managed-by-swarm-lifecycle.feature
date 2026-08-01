@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=2dc8a607986189acaa8f288735915415e589636a7f6f9774a0b649347a288bd0
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-01T20:50:26.810125774Z","feature_name":"babysitterd is a deterministic daemon managed by the swarm lifecycle","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-611-deterministic-babysitterd-managed-by-swarm-lifecycle.feature","background_hash":"fc342cc04a5534c575c9e72dbf49be1e12a3b736a058f0b7b8e0b4aa4847f49d","implementation_hash":"unknown","scenarios":[{"index":3,"name":"swarm ensure restarts a dead babysitterd and leaves a live one alone","scenario_hash":"8ab7e90399279ea473161df1a4eb6dcc5ab713c1a7e27db915f9df85f56a32be","mutation_count":4,"result":{"Total":4,"Killed":4,"Survived":0,"Errors":0},"tested_at":"2026-08-01T20:50:26.810125774Z"},{"index":4,"name":"each sweep check fires on its degraded snapshot and stays quiet on green","scenario_hash":"41af43102d6d1be1febf6f4c5e26df1957a9f058789686c1ae744aaa122fdfeb","mutation_count":16,"result":{"Total":16,"Killed":16,"Survived":0,"Errors":0},"tested_at":"2026-08-01T20:50:26.810125774Z"},{"index":13,"name":"nudge eligibility follows severity except for the stuck-* WARN carve-out","scenario_hash":"cc62ae304e21858c2ed4b6087bed9e6ec0ef37f5ece79254348176ce0fcde1a0","mutation_count":6,"result":{"Total":6,"Killed":6,"Survived":0,"Errors":0},"tested_at":"2026-08-01T20:50:26.810125774Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: babysitterd is a deterministic daemon managed by the swarm lifecycle
 
   # BL-611: the LLM-based babysitter role never behaved right at deterministic
