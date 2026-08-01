@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=7f22450f14b875efdccf86dc7ef064874650968a1e437d8ae66e54c5839b7111
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-01T09:48:52.331548395Z","feature_name":"the specifier may merge and split intakes, not only drain them one to one","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-680-specifier-consolidation-authority.feature","background_hash":"cde48f59ccbcfb5aab84be3ffa09b02047c8e416a2fc7ddc074f29bf30fc0427","implementation_hash":"unknown","scenarios":[{"index":4,"name":"the prompt bounds what consolidation may touch and produce","scenario_hash":"d61c6d0d9cb0926f9dd3a724c775bca5e62d740e4a3abaa3a602134bc3bfef68","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-08-01T09:48:52.331548395Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: the specifier may merge and split intakes, not only drain them one to one
 
   specifier.prompt's intake contract says "the moment you turn ONE of these
