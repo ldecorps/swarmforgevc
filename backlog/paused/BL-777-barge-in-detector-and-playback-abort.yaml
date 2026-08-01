@@ -1,0 +1,109 @@
+id: BL-777
+title: "Barge-in detector and playback abort — speaking over Bubble in hands-free mode stops it within 300ms and reopens the mic"
+milestone: M8
+type: feature
+status: todo
+epic: bubble-voice-barge-in
+human_approval: pending
+assigned_to: none
+priority: 13
+direction: human-requested
+depends_on: [BL-769]
+mutation_cost: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-777-barge-in-detector-and-playback-abort.feature
+
+invariants:
+  - "Playback and capture are never both live except during the detection overlap this slice introduces, and that overlap always terminates: every barge-in path ends with playback stopped."
+  - "At most one listening session exists at any instant, on every path including repeated and concurrent barge-ins; the mic is never left open with nothing consuming it and never left closed after an abort."
+  - "Barge-in detection is active in hands-free mode only; in push-to-talk no audio input can abort playback."
+
+required_wiring:
+  - "android/app/src/main/java/com/swarmforge/floatcompanion/TalkEngine.kt::bargeIn::the detector is driven from the live talk loop, not only from tests (the BL-419 shape)"
+  - "android/app/src/main/java/com/swarmforge/floatcompanion/ReplyAudioPlayer.kt::abort::playback exposes a prompt abort the detector actually calls"
+
+description: |
+  ## What
+
+  In hands-free mode, keep capture open while Bubble speaks, detect human
+  speech overlapping the playback, and abort that playback within 300 ms of
+  onset, leaving exactly one listening session open and ready for the
+  instruction that prompted the interruption.
+
+  Push-to-talk is unchanged: no audio input aborts playback there.
+
+  ## What this slice deliberately does not do
+
+  It does not decide the fate of the in-flight task. After an abort the human
+  is listened to; whether the previous task is canceled, paused or superseded
+  is slice E, and it needs the safe-cancel-boundary answer that slice owns.
+  Shipping abort without task semantics is safe because aborting playback has
+  no side effect beyond silence — the task continues exactly as it does today.
+
+  It also does not add listening during agent *execution* (slice C) or voice
+  mode switching (slice D).
+
+  ## Approach
+
+  1. Detection is **pure VAD overlap** — energy/onset over a threshold, no wake
+     phrase, no keyword. See approval_context: this is the load-bearing default.
+  2. Detection must reject Bubble's own output. Whatever the mechanism
+     (echo cancellation, output gating, or reference-signal subtraction), the
+     self-trigger case is scenario 02's third row and is not optional — a
+     detector that hears itself makes the feature unusable rather than merely
+     imperfect.
+  3. Put the detector's decision logic — onset threshold, mode gating, session
+     bookkeeping — on the pure-logic side of BL-769's JVM seam, driven by
+     synthetic sample frames. Only the audio device binding stays on the
+     device-surface side with a recorded manual procedure. The invariants here
+     are about state-machine correctness under concurrency, and a manual
+     procedure cannot demonstrate those.
+  4. The 300 ms budget is asserted against a pinned fixture clock, never a real
+     one (engineering rules: no real timers in the unit suite).
+
+  ## Out of scope
+
+  - Task cancel/redirect/supersede semantics and confirmations (slice E).
+  - Continuous listening while the agent is processing (slice C).
+  - Voice mode switching by command (slice D).
+  - Any change to push-to-talk behaviour.
+
+approval_context: >
+  One default here genuinely matters, and it is the first open question from
+  your intake.
+
+  **Pure VAD overlap, no wake phrase.** I chose this because requiring a prefix
+  to interrupt reintroduces exactly the turn-taking you asked to escape — you
+  would have to say "hey Bubble" and wait, which is not an interruption. The
+  cost is that a detector without a keyword can false-trigger on a nearby
+  conversation, and it has to reliably not hear Bubble's own voice. If you would
+  rather trade responsiveness for precision, say so and I will amend this slice
+  to keyword-gated barge-in; it changes the detector but not the shape of the
+  work.
+
+  **300 ms stop latency** is my number, not yours — fast enough to feel like an
+  interruption, loose enough to survive a real audio pipeline. Easy to amend.
+
+  Two things I deliberately did NOT decide, because they need answers I do not
+  have: what happens to the task you interrupted (cancel, pause, or supersede)
+  and where the safe boundary is when it has already caused side effects. Those
+  are slice E. This slice stops the speech and listens; it changes nothing about
+  the work in flight, which is why it is safe to ship first.
+
+  **Depends on BL-769.** These invariants are concurrency properties, and a
+  manual test procedure is worst precisely at catching races — so this should
+  not start until Bubble has a real unit seam.
+
+source: |
+  backlog/INTAKE-voice-barge-in-to-interrupt-and-resteer-bubble-speech.md,
+  slice A. Human disposition 2026-08-01 via Let's Talk: "Mint epic + slice A
+  for each, human_approval pending (I pick defaults, you amend)."
+
+notes: |
+  ## e2e procedure for QA
+
+  On a device with a Bubble build, hands-free: ask something that produces a
+  long spoken reply, speak over it, and confirm the speech stops promptly and
+  the mic is listening — repeat five times to shake out a stuck mic. Then let a
+  full reply play with the room quiet and confirm Bubble never aborts itself.
+  Then switch to push-to-talk and confirm speaking over playback does nothing.

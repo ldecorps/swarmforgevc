@@ -5,8 +5,8 @@ type: defect
 severity: high
 status: todo
 epic: swarmforge-console
-human_approval: pending
-assigned_to: none
+human_approval: approved
+assigned_to: coder
 priority: 1
 direction: queue-jump
 depends_on: []

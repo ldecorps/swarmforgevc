@@ -1,0 +1,85 @@
+id: BL-772
+title: "EPIC — Question attention path: a swarm question reaches the human wherever they are, and is answerable there; do not promote directly; tracks children"
+milestone: M8
+status: todo
+type: epic
+epic: question-attention-path
+priority: 12
+depends_on: []
+mutation_cost: medium
+decomposes_into: [BL-773]
+remaining_slices:
+  - "Slice B — Telegram answer controls and canonical relay for coordinator asks: confirm the tap/free-text paths behave for the coordinator exactly as they do for the specifier, and that a superseded ask's buttons stop being live."
+  - "Slice C — Bubble announces a waiting question and speaks a nudge to answer in Telegram. Android surface; depends on BL-769's JVM unit seam."
+  - "Slice D — pending-question lifecycle: stale/superseded closure on Telegram, and a single source of truth for 'is a question outstanding' across role-awaiting, the Cursor bridge queue, and the approvals path."
+  - "Slice E — escalation ladder for an unanswered question. Do NOT build a second timer: extend BL-584's stale-approval email escalation to cover role asks."
+
+description: |
+  ## Why this epic exists
+
+  A coordinator question arrived through cloud remote control while the human
+  was not watching that surface. The coordinator flow blocked waiting for an
+  answer, and no cross-channel alert existed to pull attention to it. Silent
+  waiting stalls the whole operator and coordinator path.
+
+  The requested outcome is that a question raised by the swarm has a
+  *guaranteed attention path*: it surfaces where the human already watches
+  (Telegram), it is answerable there with one tap when options exist, Bubble
+  nudges when one is outstanding, and the answer returns through the existing
+  canonical channel.
+
+  ## The constraint that shapes every slice
+
+  "Answers must route back through the existing flow without creating a second
+  decision system." This project already has the mechanism — `role_ask.bb`
+  writes `.swarmforge/operator/role-awaiting/<role>.json`, the front-desk bot
+  posts it to that role's own Telegram topic with tappable options and a
+  free-text fallback, and the answer lands in
+  `.swarmforge/operator/role-answers/<role>.json` and is delivered to the role
+  as a `note`. Every slice here EXTENDS that path. None of them invents a
+  parallel one.
+
+  ## Open design questions and the defaults taken
+
+  These were the intake's five open questions. Slice A takes a default for each
+  so work can start; the human amends on the slice, not here.
+
+  1. *Single standing topic, or per-role routing?* — **Per-role**, reusing the
+     existing role-topic map. A standing "questions" topic would be a second
+     routing system next to the one already shipped.
+  2. *Poll first, or inline buttons?* — **Inline buttons**, because that is what
+     `role_ask.bb` and the approval taps already use, and taps already record.
+  3. *Bubble alert cadence?* — **One-shot on the not-pending → pending
+     transition** (slice C). Reminders belong to the escalation ladder, not the
+     announce path.
+  4. *Auto-escalate after a timeout?* — **Yes, but not a new timer**: slice E
+     extends BL-584's stale-approval email escalation to role asks.
+  5. *How are stale/superseded questions closed?* — **Slice D**, together with
+     the single-source-of-truth question about what "outstanding" means.
+
+  ## Out of scope for the whole epic
+
+  - Re-architecting the Cursor bridge prompt queue (BL-767 owns origin-topic
+    answering for queued bridge prompts).
+  - Any change to what the coordinator decides — only to how it asks.
+
+source: |
+  backlog/INTAKE-coordinator-questions-surface-via-telegram-and-bubble.md
+  (human intake, drained 2026-08-01). Disposition chosen by the human on
+  2026-08-01 via Let's Talk, answering the specifier's 2026-07-30 role_ask:
+  "Mint epic + slice A for each, human_approval pending (I pick defaults, you
+  amend)."
+
+notes: |
+  ## Verified before speccing, 2026-08-01
+
+  `role_ask.bb` is role-generic by construction (`--role <role>`, per-role
+  pending file) but is wired into exactly ONE role prompt — the specifier's.
+  `grep -rn 'operator_ask\|role_ask' swarmforge/roles/*.prompt` returns the
+  specifier and the operator only. The coordinator therefore has no ask path
+  at all, which is why its question could only appear on the remote-control
+  surface. Slice A is that missing wiring, not a new mechanism.
+
+  The mechanism itself is proven end to end: the specifier's own 2026-07-30
+  question was posted, answered by tap on 2026-08-01, and delivered back as a
+  `note` — that round trip is what this epic generalises.
