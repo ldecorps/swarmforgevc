@@ -6,8 +6,8 @@ status: todo
 epic: swarm-reliability
 human_approval: approved
 severity: medium
-priority: 06
-direction: swarm-proposed
+priority: 0
+direction: queue-jump
 depends_on: []
 assigned_to: specifier
 mutation_cost: medium
@@ -105,3 +105,32 @@ notes: |
   it diagnosed the gap, named the shipped precedent (BL-576), refused to
   bypass the transport, and asked for governance — which is exactly the
   contract holding under pressure.
+
+  ## 2026-08-01 JumpQ (human, Let's Talk evening)
+
+  Human asked to queue-jump THIS ticket (the already-filed cause) after the
+  same mono-router home-vs-dormant-queue starve reproduced **twice today**.
+  Retagged `direction: queue-jump`, `priority: 0`. Slot is full with BL-663
+  (active, high-severity defect mid-pipeline) — promote BL-651 next when that
+  slot frees; do not displace BL-663. Specifier: fold the live fixtures below
+  into acceptance (same shape as the 2026-07-25 cleaner broadcast case).
+
+  Live evidence: `backlog/evidence/BL-651-live-starve-20260801.md`.
+
+  ### Occurrence 1 — afternoon idle (≈15:30–17:00 BST)
+
+  BL-663 in flight; coder+coordinator panes looked quiet. Babysitter logged
+  repeating CRIT half-launch/exit (false: Claude is grandchild under
+  sh→zsh→claude, `ps --ppid` only sees zsh). Operator kept saying green /
+  idle-correct. No commit on main after the 15:09 BL-663 spec land.
+
+  ### Occurrence 2 — evening dormant documenter (from 17:04 BST)
+
+  Hardener finished BL-663 bounce fix and sent git_handoff
+  `000512_from_hardender_to_documenter` into documenter's `inbox/new/` at
+  16:04Z / 17:04 BST. Parcel still unconsumed >60m later while the mono-router
+  resident sat at coder home and coordinator idle. Babysitter starve check
+  suppressed (`pend>0` from that dormant-queue parcel). Operator 16:46Z:
+  "idle-correct (dormant downstream seats)" / inboxes empty — wrong; the
+  worktree documenter new/ held real work. Same CAUSE as this ticket: no rule
+  makes an aged git_handoff in a dormant queue beat resuming home.
