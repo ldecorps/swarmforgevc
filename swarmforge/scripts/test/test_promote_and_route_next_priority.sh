@@ -21,6 +21,10 @@ mkdir -p "$ROOT/backlog/paused" "$ROOT/backlog/active" "$ROOT/specs/features" "$
 
 cp "$HELPER" "$ROOT/swarmforge/scripts/promote_and_route_next.sh"
 chmod +x "$ROOT/swarmforge/scripts/promote_and_route_next.sh"
+# promotion_gates (BL-663): the chokepoint promote_and_route_next.sh now
+# shells out to for every gate decision — must travel with the copy.
+cp "$SCRIPTS/promotion_gates_cli.bb" "$ROOT/swarmforge/scripts/promotion_gates_cli.bb"
+cp "$SCRIPTS/promotion_gates_lib.bb" "$ROOT/swarmforge/scripts/promotion_gates_lib.bb"
 
 cat > "$ROOT/swarmforge/scripts/route_backlog_to_coder.sh" <<'EOF'
 #!/usr/bin/env bash
