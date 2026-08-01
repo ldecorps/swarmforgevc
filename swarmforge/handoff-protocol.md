@@ -487,6 +487,54 @@ Rules:
 
 This prevents agents from sending corrupted or ambiguous SHA abbreviations.
 
+## Duplicate-Chain Guard (BL-760)
+
+`swarm_handoff.sh` refuses a `git_handoff` send when the same ticket already
+has a live parcel sitting in **another role's** mailbox. This is the
+send-time backstop for the BL-727 incident, where a mono-router resident
+rotated home to coder after a completed stage, found the ticket still in
+`backlog/active/`, and re-entered a stage it had already forwarded — forking
+one ticket into two concurrent pipeline chains under two different task
+names for eight hours.
+
+The guard is a sibling of the closed-ticket check (`ticket_close_guard_lib.bb`):
+both live in `validate`'s error `cond->` in `swarm_handoff.bb`, and both skip
+silently when the task name has no extractable ticket id (tracer bullets,
+ad-hoc tasks).
+
+Mechanics (`duplicate_chain_guard_lib.bb`):
+
+- **Ticket identity is exact-id equality**, via
+  `pipeline-stage-lib/extract-ticket-id` — never a prefix/substring match, so
+  `BL-90` can never block a send for `BL-901`.
+- Every other role's `new/` and `in_process/` mailboxes are scanned for a
+  `git_handoff` parcel resolving to the same ticket id. Order is
+  deterministic (`roles.tsv` order, then `new/` before `in_process/`, then
+  filename order), so a genuine duplicate reports the same blocker every
+  time.
+- **The sender's own mailbox is excluded.** The sender is the holder, and its
+  inbound parcel is by definition the one it is acting on — this is what
+  keeps every ordinary forward legal.
+- If a blocking parcel is found, the send is refused. Nothing is written to
+  the sender's outbox or sent mailbox, no parcel reaches any recipient inbox,
+  and no wake is injected.
+
+Refusal message names the ticket, the blocking role, the blocking parcel's
+filename, and the command to clear a genuinely stale blocker:
+
+```text
+Cannot send git_handoff for BL-901: a live parcel for this ticket already
+exists at documenter (00_20260801T...handoff). If that parcel is genuinely
+stale, clear it first: redo_from.sh BL-901 <stage>
+```
+
+The gate blocks rather than warns: the failure it backstops is silent by
+construction (the fork ran for eight hours before an architect happened to
+notice), and an advisory warning on a send nobody is watching would have
+changed nothing. Because blocking can wedge a ticket if a stale parcel is
+left behind, the refusal always names the `redo_from.sh` command that clears
+it.
+
 ## QA-Edge Durability Gate (BL-531)
 
 When `swarm_handoff.sh` sends a `git_handoff` to QA, it runs a durability gate
