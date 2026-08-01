@@ -1026,6 +1026,16 @@
    (try (slurp (str (backlog-depth-lib/conf-file-path project-root)))
         (catch Exception _ nil))))
 
+(defn- rotation-starve-after-ms
+  "BL-651: the effective config's rotation_starve_after_ms, resolved the
+   same way as note-actionable-after-ms above — via
+   backlog-depth-lib/conf-file-path, never the tracked default file
+   directly."
+  []
+  (mono-router-lib/parse-rotation-starve-after-ms
+   (try (slurp (str (backlog-depth-lib/conf-file-path project-root)))
+        (catch Exception _ nil))))
+
 (defn- handoff-envelope
   "The full {:headers :body} shape ambulance-lib/parcel-held? needs (task:/
    message:/body attribution) - handoff-header-field above only ever reads
@@ -1043,7 +1053,12 @@
    as before regardless of which ticket it names.
    BL-636: :best-priority is the lowest parseable priority among the same
    actionable set (held + git_handoff + aged notes) — a role ranks by its
-   best parcel, not by whichever parcel happens to be newest."
+   best parcel, not by whichever parcel happens to be newest.
+   BL-651: :oldest-actionable-waited-ms is how long, in ms, the OLDEST
+   actionable parcel has waited — age source is the parcel's own
+   enqueued_at/created_at header, never file mtime (mono-router-lib/
+   oldest-actionable-waited-ms), so the pure starve rule in
+   preferred-rotate-target can fire in production."
   [role role-info]
   (let [new-dir (str (handoff-lib/mailbox-dir role-info :new))
         ip-dir (str (handoff-lib/mailbox-dir role-info :in_process))
@@ -1069,10 +1084,16 @@
                    "")
         best-priority (mono-router-lib/best-priority-rank
                        (map #(handoff-header-field (:filePath %) "priority")
-                            actionable-parcels))]
+                            actionable-parcels))
+        oldest-waited-ms (mono-router-lib/oldest-actionable-waited-ms
+                          (map #(hash-map :enqueued-at (handoff-header-field (:filePath %) "enqueued_at")
+                                          :created-at (handoff-header-field (:filePath %) "created_at"))
+                               actionable-parcels)
+                          now-ms)]
     {:role role
      :newest-created-at newest
      :best-priority best-priority
+     :oldest-actionable-waited-ms oldest-waited-ms
      :actionable? (mono-router-lib/actionable-mail?
                    {:in-process-count (count held)
                     :git-handoff-count (count git-hfs)
@@ -1081,12 +1102,13 @@
 (defn preferred-mono-rotate-role
   "At most one dormant role may rotate the resident per decision — the one
    with the best (lowest) handoff priority among actionable mail; at equal
-   priority, newest wins (BL-636). A note aged past
-   `note_actionable_after_ms` qualifies; fresh broadcast notes still
-   don't (BL-576)."
+   priority, the OLDEST row past `rotation_starve_after_ms` wins, else
+   newest wins (BL-636/BL-651). A note aged past `note_actionable_after_ms`
+   qualifies; fresh broadcast notes still don't (BL-576)."
   [roles]
   (mono-router-lib/preferred-rotate-target
-   (map (fn [[role ri]] (role-mail-row role ri)) roles)))
+   (map (fn [[role ri]] (role-mail-row role ri)) roles)
+   (rotation-starve-after-ms)))
 
 (defn resident-pane-busy?
   "True when the mono-router resident pane shows a busy footer — do not
