@@ -1,0 +1,189 @@
+id: BL-785
+title: "Once BL-783 auto-installs the freshness cron, a deliberately stopped swarm resurrects itself: the checker restarts on staleness alone and no stop path clears the cron"
+milestone: M8
+type: defect
+status: todo
+epic: swarm-reliability
+severity: high
+priority: 03
+direction: aligned
+depends_on: [BL-783]
+assigned_to: unassigned
+mutation_cost: low
+human_approval: pending
+invariants:
+  - "The freshness checker restarts a watched daemon if and only if that daemon's stop was NOT deliberate — a crash or freeze is always restarted, a stop the operator or the swarm itself asked for is never undone."
+  - "The deliberate-stop record is readable with every bb/node/swarm process dead — BL-675's share-no-fate property must survive this change, so nothing here may require asking a live process whether the stop was intentional."
+
+approval_context: >
+  This is the first defect BL-783 CREATES rather than one it fixes, so the
+  ordering matters more than usual: BL-783 is in flight right now, and the
+  window between it landing and this landing is a window where ./stop-swarm.sh
+  does not durably stop the swarm on any host that has started it.
+
+  Severity high on two grounds. First, every deliberate stop path becomes
+  non-durable — including the operator's night pause and cooldown handling,
+  which are the mechanisms that exist to stop token burn. Second, and worse,
+  handoffd's own endless-loop circuit breaker calls kill_all_swarm.sh
+  (pipeline-only), which kills handoffd; the freshness cron restarts it
+  roughly two minutes later. A safety mechanism that undoes itself is the
+  shape of defect that reads as fine in every test and only shows up when it
+  is needed.
+
+  Not critical: no data loss, the pipeline agents stay dead (their tmux
+  sessions are gone), and a human can clear the crontab line by hand. The
+  failure is durability of a stop, not a swarm-down.
+
+  Two decisions worth the human's eye rather than mine. (1) Whether to hold
+  BL-783's merge until this lands beside it, versus letting BL-783 land and
+  accepting the window — the specifier's read is let it land, because the
+  watchdog being dark is the larger standing risk and the window is closable
+  by hand. (2) Whether the pipeline-only stop should suppress handoffd's
+  restart at all, or only the full-stack stop should. The acceptance below
+  says both, because both kill a watched daemon on purpose; if the human
+  wants the pipeline-only path left watched, say so and the contract narrows
+  to one scenario.
+
+source: |
+  Coder finding #3 on BL-783, 2026-08-01, in
+  `backlog/evidence/BL-783-coder-findings.md` (parcel commit 4a2901cb5),
+  raised to the specifier as a note rather than fixed in place because
+  BL-783's `out_of_scope` explicitly protects "the checker's own
+  restart/announce behaviour, which BL-675 built and tested".
+
+  Verified independently on `main` at 2026-08-01 before speccing:
+
+  1. **The checker has no stop-awareness.** `process_daemon` in
+     `swarmforge/scripts/daemon_log_freshness_check.sh` compares the newest
+     heartbeat line's age against the daemon's threshold and, on violation,
+     kills via pid file and re-runs the daemon's own start script. The only
+     thing that can suppress a restart is `FRESHNESS_COOL_OFF_SECS` (default
+     300s), and that only suppresses a SECOND restart inside the window — the
+     first one always fires. Nothing anywhere asks WHY the log went stale.
+
+  2. **No stop path touches the cron.** `grep -l
+     'swarmforge-BL-675-freshness-check'` across the repo returns exactly two
+     files: the installer and its own test. `stop-swarm.sh`,
+     `swarmforge/scripts/kill_pipeline_swarm.sh` and
+     `swarmforge/scripts/stop_ancillary_services.sh` contain no `crontab`,
+     `freshness`, or `install_freshness_cron` reference at all.
+
+  3. **Both stop paths kill a watched daemon.** `daemon_log_freshness.conf`
+     watches `handoffd` (threshold 120s) and `babysitterd` (600s).
+     `kill_pipeline_swarm.sh` signals `handoffd-supervisor.pid` and
+     `handoffd.pid` and reaps stray `handoffd.bb` for the root;
+     `stop_ancillary_services.sh` signals `babysitter/runtime.pid`.
+     `stop-swarm.sh` runs both.
+
+  So with the cron installed, a full-stack stop is undone within about 2
+  minutes for handoffd and about 10 for babysitterd, and each resurrected
+  daemon then writes fresh heartbeats and stays up indefinitely. The
+  operator's only recourse is editing the crontab by hand.
+
+  **Why this was invisible until now.** BL-675 shipped the checker in a state
+  where nothing ever installed the cron (that is BL-783's entire subject), so
+  the checker has never run on this host. The restart-on-staleness behaviour
+  was correct in isolation and remains correct for its intended case; it is
+  the pairing with an always-installed cron that turns it into a resurrection
+  loop. Neither ticket alone is wrong — the defect lives in the seam.
+
+description: |
+  Teach the freshness checker the difference between a daemon that DIED and a
+  daemon that was deliberately STOPPED, so that a stop the operator (or the
+  swarm itself) asked for stays stopped, while a crash or freeze is still
+  killed and restarted exactly as BL-675 built it.
+
+  The mechanism is deliberately not specified here. Two shapes are obviously
+  available — a durable per-daemon "stopped on purpose" record that the stop
+  paths write and the checker consults, or uninstalling the cron line on stop
+  and reinstalling on start — and either can satisfy the contract below. The
+  architect should pick on the merits; the acceptance criteria are written so
+  they do not favour one.
+
+  Four things this must get right:
+
+  1. **Per-daemon, not per-cron.** The pipeline-only stop
+     (`kill_pipeline_swarm.sh`) kills handoffd but deliberately leaves
+     babysitterd alone. Suppressing the whole cron in that case would silently
+     unwatch a babysitterd that is still running and could still freeze — the
+     exact blackout BL-675 was filed for. The suppression must be scoped to
+     the daemons the stop path actually stopped.
+
+  2. **A crash must still be restarted.** This is the load-bearing
+     regression risk. The checker's existing behaviour for an unannounced
+     death or freeze — kill via pid file, restart via the daemon's own start
+     script, append the incident record BEFORE announcing, then announce — is
+     unchanged and must be proven unchanged.
+
+  3. **Share no fate.** BL-675's declared property is that the checker
+     functions with bb, node and every swarm daemon dead. Whatever records the
+     deliberate stop must be readable in that state — a file on disk, not a
+     query to a process, a socket, or a daemon's status endpoint.
+
+  4. **Starting re-arms it.** After a deliberate stop, the next swarm start
+     must return the affected daemons to watched. A suppression that outlives
+     the stop is the same silent-no-watchdog outcome as BL-783's, arrived at
+     from the other direction — and it would be worse, because the crontab
+     line would be present, making the host look watched.
+
+  Note for the implementer: `stop_ancillary_services.sh` already touches
+  transient `stop` files (`.swarmforge/babysitter/stop`,
+  `.swarmforge/operator/*.stop`) and REMOVES them before it exits. Those are
+  handshake files for a running supervisor, not a durable record of intent —
+  do not mistake one for the marker this ticket needs.
+
+acceptance: |
+  Specifier writes the Gherkin when this is approved and promoted. Minimum
+  behaviour:
+
+  1. After a full-stack stop, a checker run that observes both watched
+     daemons' heartbeat logs as stale restarts neither, and neither daemon is
+     running afterwards.
+
+  2. After a pipeline-only stop, a checker run that observes handoffd's log
+     stale does not restart handoffd; a babysitterd that was left running and
+     then freezes IS still killed and restarted by the same run. One scenario,
+     both halves, so a blanket suppression cannot pass it.
+
+  3. With no stop having been requested, a watched daemon whose heartbeat log
+     is stale is killed and restarted exactly as today, the incident record is
+     appended before the announce, and the announce carries the existing
+     FRESHNESS_VIOLATION text. This is the no-regression scenario for BL-675
+     and must fail if the suppression is applied unconditionally.
+
+  4. Stop, then start, then a stale heartbeat: the daemon is killed and
+     restarted. The start path re-arms watching, and the proof is the restart
+     happening, not the absence of a marker file.
+
+  5. The deliberate-stop determination is made with no swarm process alive:
+     the checker run in scenarios 1, 2 and 4 executes against a fixture root
+     with no handoffd, babysitterd, bb or node process running, and reaches
+     the right verdict from durable state alone.
+
+  6. Stop called twice in a row, and stop called when nothing was running,
+     both leave the same state as one stop of a running swarm — the stop
+     paths are already idempotent and must stay so.
+
+out_of_scope: |
+  - Installing the cron on start, its idempotence, and the multi-root
+    clobber fix — that is BL-783, which this depends on.
+  - Which daemons are watched and their thresholds — that is BL-784.
+  - The checker's announce transport, the cool-off window, and the incident
+    record format. Untouched; scenario 3 exists to prove they stay untouched.
+  - Replacing cron with a supervisor or systemd unit. BL-783 already ruled
+    this out and the ruling stands: cron's independence from the swarm's
+    process tree is the property being protected here, not the one being
+    questioned.
+  - Making the checker aware of WHY a daemon died beyond the deliberate/not
+    distinction — no crash classification, no backoff policy, no restart
+    budget. One bit is the whole ticket.
+
+notes: |
+  The general lesson, worth carrying into review rather than just fixing:
+  BL-675 and BL-783 are each individually correct and jointly produce a
+  resurrection loop. The seam was invisible because BL-675's mechanism had
+  never executed — a dark mechanism cannot interact with anything, so the
+  interaction only became reachable at the moment BL-783 made it live. Any
+  ticket that turns on a previously-dark mechanism should be read for what it
+  newly lets that mechanism collide with, not only for whether the wiring
+  works.
