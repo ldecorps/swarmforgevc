@@ -119,3 +119,6 @@ description: |
   (promote-and-route-next-skips-approval-and-assignee-gates).
 
 acceptance: specs/features/BL-663-promote-and-route-enforces-every-promotion-gate.feature
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-01, by: architect, blamed: coder, class: invariant-unencoded, commit: 0021246ef3, evidence: backlog/evidence/BL-663-bounce-architect-20260801.md }
