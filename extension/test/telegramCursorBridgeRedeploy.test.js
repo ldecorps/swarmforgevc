@@ -18,10 +18,13 @@ function mkRoot() {
   return root;
 }
 
-test('parseRedeployCommand accepts /redeploy only', () => {
+test('parseRedeployCommand accepts /redeploy and /r only', () => {
   assert.equal(parseRedeployCommand('/redeploy'), true);
   assert.equal(parseRedeployCommand('  /REDEPLOY  '), true);
+  assert.equal(parseRedeployCommand('/r'), true);
+  assert.equal(parseRedeployCommand(' /R '), true);
   assert.equal(parseRedeployCommand('/redeploy now'), false);
+  assert.equal(parseRedeployCommand('/r now'), false);
   assert.equal(parseRedeployCommand('/expedite'), false);
 });
 

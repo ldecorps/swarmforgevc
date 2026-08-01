@@ -862,12 +862,20 @@ export interface PollAdapters {
   // pair) because there is no separate pending-thread indirection here: the
   // onboarder always replies in the topic it was addressed in.
   handleOnboarderMessage?: (topicId: number, text: string, updateId: number) => Promise<boolean>;
-  // Cursor Remote topic — owned exclusively by telegram-cursor-bridge.js.
+  // Cursor Remote / Bubble topics — owned exclusively by telegram-cursor-bridge.js.
   // Optional so fixtures pre-dating the bridge keep working; when wired,
-  // every inbound message in that topic is a deliberate drop here, never
-  // SUP/Operator routing (even if telegram-topic-map.json still names a
-  // stale SUP binding for the same forum topic id).
+  // every inbound message in those topics is forwarded (preferred) or dropped
+  // (legacy), never SUP/Operator routing (even if telegram-topic-map.json still
+  // names a stale SUP binding for the same forum topic id).
   cursorBridgeTopicId?: () => Promise<number | undefined>;
+  /** Standing Bubble topic id — same ownership as Host / Cursor Remote. */
+  bubbleTopicId?: () => Promise<number | undefined>;
+  /**
+   * Dual-poller fix: append the raw Telegram update for the Host bridge to
+   * consume. When present, Host/Bubble/poll_answer updates are forwarded
+   * (posted) instead of silently dropped.
+   */
+  forwardCursorBridgeUpdate?: (update: TelegramUpdate) => Promise<boolean>;
 }
 
 // BL-389: the keystone fix. A DROP is a DECISION (the code looked at the
@@ -1745,9 +1753,14 @@ async function processPollAnswer(
 // ordinary message path, for the same structural reason as callback_query.
 async function processUpdate(update: TelegramUpdate, principalUserId: string, adapters: PollAdapters): Promise<UpdateDeliveryOutcome> {
   if (update.callback_query) {
+    const cursorBridgeOutcome = await attemptCursorBridgeTopicExclusion(update, adapters);
+    if (cursorBridgeOutcome) {
+      return cursorBridgeOutcome;
+    }
     return processCallbackQuery(update.callback_query, principalUserId, update.update_id, adapters);
   }
   if (update.poll_answer) {
+    await attemptCursorBridgePollAnswerForward(update, adapters);
     return processPollAnswer(update.poll_answer, principalUserId, update.update_id, adapters);
   }
   return processMessageUpdate(update, principalUserId, adapters);
@@ -2170,23 +2183,41 @@ async function attemptSideChannelDelivery(
 
 export function decideCursorBridgeExclusion(
   update: TelegramUpdate,
-  cursorBridgeTopicId: number | undefined
+  ownedTopicIds: Array<number | undefined>
 ): 'not-applicable' | 'drop' {
-  return isCursorBridgeTopic(topicIdOf(update), cursorBridgeTopicId) ? 'drop' : 'not-applicable';
+  const topicId =
+    topicIdOf(update) ?? update.callback_query?.message?.message_thread_id;
+  return ownedTopicIds.some((id) => isCursorBridgeTopic(topicId, id)) ? 'drop' : 'not-applicable';
 }
 
 async function attemptCursorBridgeTopicExclusion(
   update: TelegramUpdate,
   adapters: PollAdapters
 ): Promise<UpdateDeliveryOutcome | undefined> {
-  if (!adapters.cursorBridgeTopicId) {
+  if (!adapters.cursorBridgeTopicId && !adapters.bubbleTopicId) {
     return undefined;
   }
-  const cursorTopicId = await adapters.cursorBridgeTopicId();
-  if (decideCursorBridgeExclusion(update, cursorTopicId) !== 'drop') {
+  const cursorTopicId = adapters.cursorBridgeTopicId ? await adapters.cursorBridgeTopicId() : undefined;
+  const bubbleTopicId = adapters.bubbleTopicId ? await adapters.bubbleTopicId() : undefined;
+  if (decideCursorBridgeExclusion(update, [cursorTopicId, bubbleTopicId]) !== 'drop') {
     return undefined;
+  }
+  if (adapters.forwardCursorBridgeUpdate) {
+    const ok = await adapters.forwardCursorBridgeUpdate(update);
+    return ok ? 'posted' : 'failed';
   }
   return 'dropped';
+}
+
+async function attemptCursorBridgePollAnswerForward(
+  update: TelegramUpdate,
+  adapters: PollAdapters
+): Promise<void> {
+  if (!update.poll_answer || !adapters.forwardCursorBridgeUpdate) {
+    return;
+  }
+  // poll_answer has no topic id — fan out so Host bridge can match its pending polls.
+  await adapters.forwardCursorBridgeUpdate(update);
 }
 
 async function processMessageUpdate(update: TelegramUpdate, principalUserId: string, adapters: PollAdapters): Promise<UpdateDeliveryOutcome> {

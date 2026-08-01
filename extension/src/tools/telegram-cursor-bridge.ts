@@ -6,10 +6,19 @@
  */
 import * as path from 'path';
 import { createLiveCursorBridgeAgentSession } from '../bridge/cursorBridgeAgentSession';
+import {
+  CURSOR_BRIDGE_CLI_USAGE,
+  parseCursorBridgeCliArgs,
+} from './telegramCursorBridgeCore';
 import { requiredEnv, runCursorBridgeApp } from './telegramCursorBridgeLive';
 
 export async function main(): Promise<void> {
-  const repoRoot = path.resolve(process.argv[2] ?? process.cwd());
+  const parsed = parseCursorBridgeCliArgs(process.argv.slice(2));
+  if (parsed.kind === 'help') {
+    console.log(CURSOR_BRIDGE_CLI_USAGE);
+    return;
+  }
+  const repoRoot = path.resolve(parsed.repoRootArg ?? process.cwd());
   await runCursorBridgeApp(
     {
       repoRoot,

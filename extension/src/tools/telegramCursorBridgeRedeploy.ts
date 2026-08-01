@@ -4,9 +4,9 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { spawn } from 'child_process';
 
-/** Parse `/redeploy` (case-insensitive, no args). */
+/** Parse `/redeploy` or `/r` (case-insensitive, no args). */
 export function parseRedeployCommand(text: string): boolean {
-  return /^\/redeploy\s*$/i.test(text.trim());
+  return /^\/(?:redeploy|r)\s*$/i.test(text.trim());
 }
 
 export function redeployScriptPath(repoRoot: string): string {

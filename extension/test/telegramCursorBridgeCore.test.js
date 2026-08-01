@@ -31,6 +31,8 @@ const {
   isCursorConnectionFailure,
   shouldResetCursorAgentSession,
   isCursorResourceExhausted,
+  parseCursorBridgeCliArgs,
+  shouldUseCursorBridgeInboundQueue,
 } = require('../out/tools/telegramCursorBridgeCore');
 const { TELEGRAM_PHOTO_DEFAULT_PROMPT } = require('../out/bridge/cursorBridgeTelegramMedia');
 
@@ -125,6 +127,46 @@ test('cursor bridge: isScopedToCursorTopic rejects the wrong chat or topic', () 
   );
   assert.equal(
     isScopedToCursorTopic({ chatId: CHAT_ID, topicId: 5 }, CHAT_ID, CURSOR_TOPIC_ID),
+    false
+  );
+});
+
+// Live.js already passes a topics bag; a bare number must keep working too.
+const BUBBLE_TOPIC_ID = 11810;
+const TOPICS = { cursorTopicId: CURSOR_TOPIC_ID, bubbleTopicId: BUBBLE_TOPIC_ID };
+
+test('cursor bridge: decideInboundAction accepts the Live topics bag for Host', () => {
+  assert.deepEqual(
+    decideInboundAction(event('hello from host'), PRINCIPAL_ID, CHAT_ID, TOPICS),
+    { action: 'prompt', text: 'hello from host' }
+  );
+});
+
+test('cursor bridge: decideInboundAction accepts the Live topics bag for Bubble', () => {
+  assert.deepEqual(
+    decideInboundAction(event('hello from bubble', { topicId: BUBBLE_TOPIC_ID }), PRINCIPAL_ID, CHAT_ID, TOPICS),
+    { action: 'prompt', text: 'hello from bubble' }
+  );
+});
+
+test('cursor bridge: topics bag still ignores an unbound / foreign topic', () => {
+  assert.deepEqual(
+    decideInboundAction(event('nope', { topicId: 999 }), PRINCIPAL_ID, CHAT_ID, TOPICS),
+    { action: 'ignore' }
+  );
+});
+
+test('cursor bridge: isScopedToCursorTopic accepts a topics bag (Host or Bubble)', () => {
+  assert.equal(
+    isScopedToCursorTopic({ chatId: CHAT_ID, topicId: CURSOR_TOPIC_ID }, CHAT_ID, TOPICS),
+    true
+  );
+  assert.equal(
+    isScopedToCursorTopic({ chatId: CHAT_ID, topicId: BUBBLE_TOPIC_ID }, CHAT_ID, TOPICS),
+    true
+  );
+  assert.equal(
+    isScopedToCursorTopic({ chatId: CHAT_ID, topicId: 5 }, CHAT_ID, TOPICS),
     false
   );
 });
@@ -807,4 +849,34 @@ test('cursor bridge: agent-run heartbeat interval stays inside the supervisor st
 
 test('cursor bridge: CURSOR_BRIDGE_SUBJECT_ID is the standing topic-map subject', () => {
   assert.equal(CURSOR_BRIDGE_SUBJECT_ID, 'CURSOR_REMOTE');
+});
+
+test('parseCursorBridgeCliArgs: --help / -h never treat help as a repo root', () => {
+  assert.deepEqual(parseCursorBridgeCliArgs(['--help']), { kind: 'help' });
+  assert.deepEqual(parseCursorBridgeCliArgs(['-h']), { kind: 'help' });
+  assert.deepEqual(parseCursorBridgeCliArgs(['--help', '/tmp/repo']), { kind: 'help' });
+  assert.deepEqual(parseCursorBridgeCliArgs(['/tmp/repo', '-h']), { kind: 'help' });
+});
+
+test('parseCursorBridgeCliArgs: first positional is repo root; empty falls back to caller cwd', () => {
+  assert.deepEqual(parseCursorBridgeCliArgs(['/tmp/swarm']), { kind: 'run', repoRootArg: '/tmp/swarm' });
+  assert.deepEqual(parseCursorBridgeCliArgs([]), { kind: 'run', repoRootArg: undefined });
+});
+
+test('shouldUseCursorBridgeInboundQueue: shared token defaults to queue (never steal getUpdates)', () => {
+  assert.equal(shouldUseCursorBridgeInboundQueue({}), true);
+  assert.equal(shouldUseCursorBridgeInboundQueue({ TELEGRAM_BOT_TOKEN: 'shared' }), true);
+  assert.equal(shouldUseCursorBridgeInboundQueue({ CURSOR_BRIDGE_INBOUND_QUEUE: '1' }), true);
+});
+
+test('shouldUseCursorBridgeInboundQueue: exclusive CURSOR_BRIDGE_BOT_TOKEN owns getUpdates unless forced', () => {
+  assert.equal(shouldUseCursorBridgeInboundQueue({ CURSOR_BRIDGE_BOT_TOKEN: 'exclusive' }), false);
+  assert.equal(
+    shouldUseCursorBridgeInboundQueue({
+      CURSOR_BRIDGE_BOT_TOKEN: 'exclusive',
+      CURSOR_BRIDGE_INBOUND_QUEUE: '1',
+    }),
+    true
+  );
+  assert.equal(shouldUseCursorBridgeInboundQueue({ CURSOR_BRIDGE_INBOUND_QUEUE: '0' }), false);
 });

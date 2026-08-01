@@ -5458,3 +5458,85 @@ test('cursor bridge: a message in an unrelated topic is unaffected by the Cursor
   );
   assert.equal(result.posted, 1);
 });
+
+// Dual-poller fix: front desk owns getUpdates and FORWARDS Host/Bubble updates
+// to the cursor bridge queue instead of silently dropping them (offset still advances).
+test('cursor bridge: Host message is forwarded (posted) when forwardCursorBridgeUpdate is wired', async () => {
+  const forwarded = [];
+  const update = mkUpdate({ fromId: PRINCIPAL_ID, topicId: 8435, text: 'advertise bubble url' });
+  const result = await pollAndForward(
+    0,
+    PRINCIPAL_ID,
+    cursorBridgePollAdapters({
+      getUpdates: async () => ({ success: true, updates: [update] }),
+      forwardCursorBridgeUpdate: async (u) => {
+        forwarded.push(u);
+        return true;
+      },
+    })
+  );
+  assert.equal(result.posted, 1);
+  assert.equal(result.dropped, 0);
+  assert.equal(forwarded.length, 1);
+  assert.equal(forwarded[0].update_id, update.update_id);
+});
+
+test('cursor bridge: Bubble message is forwarded when bubbleTopicId matches', async () => {
+  const forwarded = [];
+  const update = mkUpdate({ fromId: PRINCIPAL_ID, topicId: 11810, text: 'lets talk' });
+  const result = await pollAndForward(
+    0,
+    PRINCIPAL_ID,
+    cursorBridgePollAdapters({
+      cursorBridgeTopicId: async () => 8435,
+      bubbleTopicId: async () => 11810,
+      getUpdates: async () => ({ success: true, updates: [update] }),
+      forwardCursorBridgeUpdate: async (u) => {
+        forwarded.push(u);
+        return true;
+      },
+    })
+  );
+  assert.equal(result.posted, 1);
+  assert.equal(forwarded.length, 1);
+});
+
+test('cursor bridge: forward failure parks as failed (does not drop/advance past)', async () => {
+  const result = await pollAndForward(
+    0,
+    PRINCIPAL_ID,
+    cursorBridgePollAdapters({
+      getUpdates: async () => ({
+        success: true,
+        updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 8435, text: 'keep me' })],
+      }),
+      forwardCursorBridgeUpdate: async () => false,
+    })
+  );
+  assert.equal(result.failed, 1);
+  assert.equal(result.dropped, 0);
+  assert.equal(result.posted, 0);
+});
+
+test('cursor bridge: poll_answer is forwarded when forward adapter is wired', async () => {
+  const forwarded = [];
+  const update = {
+    update_id: 9001,
+    poll_answer: { poll_id: 'p1', user: { id: Number(PRINCIPAL_ID) }, option_ids: [0] },
+  };
+  const result = await pollAndForward(
+    0,
+    PRINCIPAL_ID,
+    cursorBridgePollAdapters({
+      getUpdates: async () => ({ success: true, updates: [update] }),
+      forwardCursorBridgeUpdate: async (u) => {
+        forwarded.push(u);
+        return true;
+      },
+    })
+  );
+  assert.equal(forwarded.length, 1);
+  assert.equal(forwarded[0].poll_answer.poll_id, 'p1');
+  // Front desk has no pending poll for this id — still a deliberate drop after forward.
+  assert.ok(result.dropped + result.posted >= 1);
+});

@@ -200,3 +200,47 @@ test('the compiled telegram-cursor-bridge CLI runs standalone as a subprocess an
   assert.notEqual(result.exitCode, 0);
   assert.match(result.stderr, /TELEGRAM_BOT_TOKEN/);
 });
+
+test('telegram-cursor-bridge --help exits 0 without Telegram env and without starting the app', async () => {
+  const previousRun = live.runCursorBridgeApp;
+  let started = 0;
+  live.runCursorBridgeApp = async () => {
+    started += 1;
+  };
+  try {
+    const result = await runCli('--help', {});
+    assert.equal(result.exitCode, 0);
+    assert.equal(result.thrown, undefined);
+    assert.equal(started, 0);
+  } finally {
+    live.runCursorBridgeApp = previousRun;
+  }
+});
+
+test('telegram-cursor-bridge -h exits 0 without starting the app', async () => {
+  const previousRun = live.runCursorBridgeApp;
+  let started = 0;
+  live.runCursorBridgeApp = async () => {
+    started += 1;
+  };
+  try {
+    const result = await runCli('-h', {
+      TELEGRAM_BOT_TOKEN: 'tok',
+      TELEGRAM_CHAT_ID: '-100',
+      TELEGRAM_PRINCIPAL_USER_ID: '42',
+    });
+    assert.equal(result.exitCode, 0);
+    assert.equal(started, 0);
+  } finally {
+    live.runCursorBridgeApp = previousRun;
+  }
+});
+
+test('compiled CLI --help exits 0 with empty Telegram env (subprocess)', () => {
+  const result = runCliSubprocess(['--help'], {
+    TELEGRAM_BOT_TOKEN: '',
+    TELEGRAM_CHAT_ID: '',
+    TELEGRAM_PRINCIPAL_USER_ID: '',
+  });
+  assert.equal(result.exitCode, 0);
+});

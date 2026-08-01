@@ -12,13 +12,18 @@ import {
   type InlineKeyboardButton,
   type TelegramMessage,
   type TelegramPollAnswer,
+  type TelegramPostFn,
   type TelegramUpdate,
 } from '../notify/telegramClient';
 import { nextUpdateOffset } from './telegramTopicDecisions';
+import { drainCursorBridgeInboundUpdates } from './cursorBridgeInboundQueue';
 import {
   CURSOR_BRIDGE_TOPIC_NAME,
+  BUBBLE_SUBJECT_ID,
+  BUBBLE_TOPIC_NAME,
   AGENT_RUN_HEARTBEAT_INTERVAL_MS,
   decideEnsureCursorTopicAction,
+  decideEnsureBubbleTopicAction,
   decideInboundAction,
   decidePollBackoffMs,
   formatHelpMessage,
@@ -26,6 +31,7 @@ import {
   gateBusy,
   isAuthorizedPrincipal,
   shouldResetCursorAgentSession,
+  shouldUseCursorBridgeInboundQueue,
   parseCursorBridgeState,
   type CursorBridgeQueuedPrompt,
   type CursorBridgePersistedState,
@@ -45,6 +51,7 @@ import {
   writeOperatorBounceSentinel,
   runOperatorStop,
 } from './telegramCursorOperatorExec';
+import { syncCursorBridgeLivenessStatus } from './telegramCursorBridgeLiveness';
 import {
   probeSwarmLiveness,
   isSwarmLive,
@@ -411,6 +418,10 @@ function reuseCursorTopicFromMap(state: CursorBridgePersistedState, topicId: num
   return { ...state, cursorTopicId: topicId };
 }
 
+function reuseBubbleTopicFromMap(state: CursorBridgePersistedState, topicId: number): CursorBridgePersistedState {
+  return { ...state, bubbleTopicId: topicId };
+}
+
 async function createCursorRemoteTopic(
   token: string,
   chatId: string,
@@ -426,6 +437,23 @@ async function createCursorRemoteTopic(
   const nextMap = { ...topicMap, [String(created.messageThreadId)]: 'CURSOR_REMOTE' };
   writeJsonFile(topicMapPath, nextMap);
   return { ...state, cursorTopicId: created.messageThreadId };
+}
+
+async function createBubbleTopic(
+  token: string,
+  chatId: string,
+  topicMapPath: string,
+  topicMap: Record<string, string>,
+  state: CursorBridgePersistedState,
+  createTopic: typeof createForumTopicWithRateLimitRetry
+): Promise<CursorBridgePersistedState> {
+  const created = await createTopic(token, chatId, BUBBLE_TOPIC_NAME);
+  if (!created.success || created.messageThreadId === undefined) {
+    throw new Error(created.error ?? 'createForumTopic failed');
+  }
+  const nextMap = { ...topicMap, [String(created.messageThreadId)]: BUBBLE_SUBJECT_ID };
+  writeJsonFile(topicMapPath, nextMap);
+  return { ...state, bubbleTopicId: created.messageThreadId };
 }
 
 export async function ensureCursorTopic(
@@ -444,6 +472,24 @@ export async function ensureCursorTopic(
     return reuseCursorTopicFromMap(state, action.topicId);
   }
   return createCursorRemoteTopic(token, chatId, topicMapPath, topicMap, state, createTopic);
+}
+
+export async function ensureBubbleTopic(
+  token: string,
+  chatId: string,
+  topicMapPath: string,
+  state: CursorBridgePersistedState,
+  createTopic: typeof createForumTopicWithRateLimitRetry = createForumTopicWithRateLimitRetry
+): Promise<CursorBridgePersistedState> {
+  if (state.bubbleTopicId !== undefined) {
+    return state;
+  }
+  const topicMap = loadTopicMap(topicMapPath);
+  const action = decideEnsureBubbleTopicAction(topicMap);
+  if (action.kind === 'reuse') {
+    return reuseBubbleTopicFromMap(state, action.topicId);
+  }
+  return createBubbleTopic(token, chatId, topicMapPath, topicMap, state, createTopic);
 }
 
 export async function promptWithHeartbeat(
@@ -479,6 +525,8 @@ export interface CursorBridgeHandlerContext {
   post: PostChunksFn;
   persistState: () => void;
   syncAgentIdFromSession: () => void;
+  /** Telegram transport seam for the liveness cue — never a real network call under test. */
+  telegramPostFn?: TelegramPostFn;
 }
 
 export async function runPromptWithActiveRunRecovery(
@@ -607,9 +655,25 @@ async function handlePromptInboundAction(
       await postInboundReply(ctx, topicId, `Error: ${detail}`, replyToMessageId);
     } finally {
       endActiveRun();
+      await syncCursorBridgeLivenessStatus({
+        botToken: ctx.botToken,
+        chatId: ctx.chatId,
+        state: ctx.state,
+        busy: false,
+        persistState: ctx.persistState,
+        telegramPostFn: ctx.telegramPostFn,
+      });
       await continueOperatorBatchAfterPrompt(ctx, topicId, resetAgent);
     }
   })();
+  await syncCursorBridgeLivenessStatus({
+    botToken: ctx.botToken,
+    chatId: ctx.chatId,
+    state: ctx.state,
+    busy: true,
+    persistState: ctx.persistState,
+    telegramPostFn: ctx.telegramPostFn,
+  });
   return true;
 }
 
@@ -1152,9 +1216,10 @@ export async function handleInboundDecision(
   decision: InboundDecision,
   ctx: CursorBridgeHandlerContext,
   replyToMessageId: number | undefined,
-  resetAgent: () => Promise<void>
+  resetAgent: () => Promise<void>,
+  replyTopicId?: number
 ): Promise<boolean> {
-  const topicId = ctx.state.cursorTopicId;
+  const topicId = replyTopicId ?? ctx.state.cursorTopicId;
   if (decision.action === 'ignore') {
     return ctx.busy;
   }
@@ -1199,8 +1264,17 @@ export interface CursorBridgeLoopDeps {
   agentSession: CursorBridgeAgentSessionDeps;
   getUpdates?: typeof getTelegramUpdates;
   pollTimeoutSeconds?: number;
+  /**
+   * When true (shared-token / dual-poller mode), drain `.swarmforge/operator/cursor-bridge-inbound.jsonl`
+   * written by the front desk instead of calling Telegram getUpdates.
+   */
+  useInboundQueue?: boolean;
+  /** Idle wait when the inbound queue is empty (default 1000ms). */
+  inboundQueueIdleMs?: number;
   onPollFailure?: (failures: number) => Promise<void>;
   post?: PostChunksFn;
+  /** Telegram transport seam for the liveness cue — never a real network call under test. */
+  telegramPostFn?: TelegramPostFn;
 }
 
 async function handleFailedPoll(
@@ -1316,6 +1390,7 @@ async function processQueuedPollAnswer(
       post: handlerCtx.post,
       persistState: handlerCtx.persistState,
       syncAgentIdFromSession: handlerCtx.syncAgentIdFromSession,
+      telegramPostFn: deps.telegramPostFn,
     },
     selected.replyToMessageId,
     handlerCtx.resetAgent
@@ -1374,9 +1449,11 @@ async function processChoicePollAnswer(
       post: handlerCtx.post,
       persistState: handlerCtx.persistState,
       syncAgentIdFromSession: handlerCtx.syncAgentIdFromSession,
+      telegramPostFn: deps.telegramPostFn,
     },
     undefined,
-    handlerCtx.resetAgent
+    handlerCtx.resetAgent,
+    holder.state.bubbleTopicId ?? holder.state.cursorTopicId
   );
 }
 
@@ -1401,7 +1478,10 @@ async function processInboundUpdates(
       inbound,
       deps.principalUserId,
       deps.chatId,
-      holder.state.cursorTopicId,
+      {
+        cursorTopicId: holder.state.cursorTopicId,
+        bubbleTopicId: holder.state.bubbleTopicId,
+      },
       pending
     );
     if (inbound.kind === 'callback' && inbound.callbackQueryId) {
@@ -1413,15 +1493,24 @@ async function processInboundUpdates(
         pushQueuedPrompt(holder.state, rawDecision.text, rawDecision.photoFileIds, inbound.messageId, Date.now())
       );
       writeJsonFile(deps.statePath, holder.state);
-      if (holder.state.cursorTopicId !== undefined) {
+      const queueAckTopicId = inbound.topicId ?? holder.state.cursorTopicId;
+      if (queueAckTopicId !== undefined) {
         await handlerCtx.post(
           deps.botToken,
           deps.chatId,
-          holder.state.cursorTopicId,
+          queueAckTopicId,
           `Busy — question queued (${holder.state.pendingPrompts?.length ?? 0} waiting). I will ask you to pick one when ready.`,
           inbound.messageId
         );
       }
+      await syncCursorBridgeLivenessStatus({
+        botToken: deps.botToken,
+        chatId: deps.chatId,
+        state: holder.state,
+        busy: true,
+        persistState: () => writeJsonFile(deps.statePath, holder.state),
+        telegramPostFn: deps.telegramPostFn,
+      });
       continue;
     }
     const decision = gateBusy(rawDecision, bridgeBusy);
@@ -1440,15 +1529,25 @@ async function processInboundUpdates(
         post: handlerCtx.post,
         persistState: handlerCtx.persistState,
         syncAgentIdFromSession: handlerCtx.syncAgentIdFromSession,
+        telegramPostFn: deps.telegramPostFn,
       },
       inbound.messageId,
-      handlerCtx.resetAgent
+      handlerCtx.resetAgent,
+      inbound.topicId
     );
   }
   holder.state = clearQueuedPollIfStale(holder.state);
   if (!holder.busy && !isActiveRunInFlight()) {
     await postQueueSelectionPoll(deps, holder, handlerCtx.post);
   }
+  await syncCursorBridgeLivenessStatus({
+    botToken: deps.botToken,
+    chatId: deps.chatId,
+    state: holder.state,
+    busy: holder.busy || isActiveRunInFlight(),
+    persistState: () => writeJsonFile(deps.statePath, holder.state),
+    telegramPostFn: deps.telegramPostFn,
+  });
 }
 
 export async function runCursorBridgePollOnce(
@@ -1457,15 +1556,31 @@ export async function runCursorBridgePollOnce(
   busy: boolean,
   pollFailures: number
 ): Promise<{ state: CursorBridgePersistedState; busy: boolean; pollFailures: number }> {
-  const getUpdates = deps.getUpdates ?? getTelegramUpdates;
-  const timeout =
-    busy || isActiveRunInFlight()
-      ? BUSY_POLL_TIMEOUT_SECONDS
-      : (deps.pollTimeoutSeconds ?? POLL_TIMEOUT_SECONDS);
-  const poll = await getUpdates(deps.botToken, state.updateOffset, timeout);
-  if (!poll.success) {
-    await handleFailedPoll(deps, pollFailures);
-    return { state, busy, pollFailures: pollFailures + 1 };
+  let updates: TelegramUpdate[];
+  let nextOffset = state.updateOffset;
+
+  if (deps.useInboundQueue) {
+    const drained = drainCursorBridgeInboundUpdates(deps.opDir);
+    updates = drained as TelegramUpdate[];
+    if (updates.length === 0) {
+      await sleep(deps.inboundQueueIdleMs ?? 1000);
+    } else {
+      const maxId = Math.max(...updates.map((u) => u.update_id));
+      nextOffset = Math.max(state.updateOffset, maxId + 1);
+    }
+  } else {
+    const getUpdates = deps.getUpdates ?? getTelegramUpdates;
+    const timeout =
+      busy || isActiveRunInFlight()
+        ? BUSY_POLL_TIMEOUT_SECONDS
+        : (deps.pollTimeoutSeconds ?? POLL_TIMEOUT_SECONDS);
+    const poll = await getUpdates(deps.botToken, state.updateOffset, timeout);
+    if (!poll.success) {
+      await handleFailedPoll(deps, pollFailures);
+      return { state, busy, pollFailures: pollFailures + 1 };
+    }
+    updates = poll.updates;
+    nextOffset = nextUpdateOffset(poll.updates, state.updateOffset);
   }
 
   const freshest = parseCursorBridgeState(loadJsonFile(deps.statePath));
@@ -1473,14 +1588,14 @@ export async function runCursorBridgePollOnce(
     state: {
       ...state,
       ...(freshest.pendingChoicePolls ? { pendingChoicePolls: freshest.pendingChoicePolls } : {}),
-      updateOffset: nextUpdateOffset(poll.updates, state.updateOffset),
+      updateOffset: nextOffset,
     },
     busy,
   };
   writeJsonFile(deps.statePath, holder.state);
   writePollHeartbeat(deps.opDir);
 
-  await processInboundUpdates(deps, poll.updates, holder, makePollHandlerContext(deps, holder));
+  await processInboundUpdates(deps, updates, holder, makePollHandlerContext(deps, holder));
 
   return { state: holder.state, busy: holder.busy, pollFailures: 0 };
 }
@@ -1494,10 +1609,12 @@ export interface CursorBridgeCliEnv {
   shouldContinue?: () => boolean;
   loopOverrides?: Partial<CursorBridgeLoopDeps>;
   post?: PostChunksFn;
+  /** Telegram transport seam for the liveness cue — never a real network call under test. */
+  telegramPostFn?: TelegramPostFn;
 }
 
 export async function runCursorBridgeBootIfConfigured(
-  env: Pick<CursorBridgeCliEnv, 'bootPrompt' | 'botToken' | 'chatId' | 'post'>,
+  env: Pick<CursorBridgeCliEnv, 'bootPrompt' | 'botToken' | 'chatId' | 'post' | 'telegramPostFn'>,
   ctx: {
     repoRoot: string;
     state: CursorBridgePersistedState;
@@ -1527,6 +1644,7 @@ export async function runCursorBridgeBootIfConfigured(
       post,
       persistState: ctx.persistState,
       syncAgentIdFromSession: ctx.syncAgentIdFromSession,
+      telegramPostFn: env.telegramPostFn,
     },
     undefined,
     ctx.resetAgent
@@ -1573,6 +1691,18 @@ export async function runCursorBridgeApp(
     } catch {
       // Startup announce is best-effort; keep the bridge running if Telegram is transiently unavailable.
     }
+    try {
+      await syncCursorBridgeLivenessStatus({
+        botToken: env.botToken,
+        chatId: env.chatId,
+        state,
+        busy: false,
+        persistState: () => writeJsonFile(statePath, state),
+        telegramPostFn: env.telegramPostFn,
+      });
+    } catch {
+      // Liveness line is best-effort at boot.
+    }
   }
 
   const persistState = () => writeJsonFile(statePath, state);
@@ -1605,6 +1735,11 @@ export async function runCursorBridgeApp(
     statePath,
     topicMapPath,
     agentSession,
+    // Shared-token mode: front desk owns getUpdates; we drain its inbound queue.
+    // Default is queue when CURSOR_BRIDGE_BOT_TOKEN is unset — never steal updates
+    // if someone launches the CLI without start_cursor_bridge.sh.
+    useInboundQueue: shouldUseCursorBridgeInboundQueue(process.env),
+    telegramPostFn: env.telegramPostFn,
     ...env.loopOverrides,
   };
 
@@ -1629,6 +1764,7 @@ export async function bootstrapCursorBridgeState(
   fs.mkdirSync(opDir, { recursive: true });
   let state = parseCursorBridgeState(loadJsonFile(statePath));
   state = await ensureCursorTopic(botToken, chatId, topicMapPath, state);
+  state = await ensureBubbleTopic(botToken, chatId, topicMapPath, state);
   writeJsonFile(statePath, state);
   return state;
 }
