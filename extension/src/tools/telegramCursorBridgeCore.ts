@@ -45,6 +45,12 @@ export interface CursorBridgeChoicePoll {
   createdAtMs: number;
 }
 
+export interface CursorBridgeLivenessStatusState {
+  topicId?: number;
+  messageId?: number;
+  renderedText?: string;
+}
+
 export interface CursorBridgePersistedState {
   updateOffset: number;
   cursorTopicId?: number;
@@ -54,6 +60,8 @@ export interface CursorBridgePersistedState {
   pendingPrompts?: CursorBridgeQueuedPrompt[];
   pendingPromptPoll?: CursorBridgeQueuedPromptPoll;
   pendingChoicePolls?: CursorBridgeChoicePoll[];
+  /** Edit-in-place Host liveness line identity. */
+  livenessStatus?: CursorBridgeLivenessStatusState;
 }
 
 export interface CursorBridgeInboundEvent {
@@ -119,6 +127,11 @@ export function decideEnsureCursorTopicAction(topicMap: Record<string, string>):
   return existingTopicId !== undefined ? { kind: 'reuse', topicId: existingTopicId } : { kind: 'create' };
 }
 
+export function decideEnsureBubbleTopicAction(topicMap: Record<string, string>): EnsureCursorTopicAction {
+  const existingTopicId = topicForSubject(topicMap, BUBBLE_SUBJECT_ID);
+  return existingTopicId !== undefined ? { kind: 'reuse', topicId: existingTopicId } : { kind: 'create' };
+}
+
 export function cursorBridgeTopicIdFromMap(topicMap: Record<string, string>): number | undefined {
   return topicForSubject(topicMap, CURSOR_BRIDGE_SUBJECT_ID);
 }
@@ -127,8 +140,40 @@ export function bubbleTopicIdFromMap(topicMap: Record<string, string>): number |
   return topicForSubject(topicMap, BUBBLE_SUBJECT_ID);
 }
 
+/** Topics the Host / Bubble bridge owns. Live passes this bag into decideInboundAction. */
+export type CursorBridgeTopicScope = {
+  cursorTopicId?: number;
+  bubbleTopicId?: number;
+};
+
+export function normalizeCursorBridgeTopicScope(
+  topics: CursorBridgeTopicScope | number | undefined
+): CursorBridgeTopicScope {
+  if (topics === undefined || topics === null) {
+    return {};
+  }
+  if (typeof topics === 'number') {
+    return { cursorTopicId: topics };
+  }
+  return {
+    ...(typeof topics.cursorTopicId === 'number' ? { cursorTopicId: topics.cursorTopicId } : {}),
+    ...(typeof topics.bubbleTopicId === 'number' ? { bubbleTopicId: topics.bubbleTopicId } : {}),
+  };
+}
+
 export function isCursorBridgeTopic(topicId: number | undefined, cursorBridgeTopicId: number | undefined): boolean {
   return cursorBridgeTopicId !== undefined && topicId === cursorBridgeTopicId;
+}
+
+export function isOwnedCursorBridgeTopic(
+  topicId: number | undefined,
+  topics: CursorBridgeTopicScope | number | undefined
+): boolean {
+  if (topicId === undefined) {
+    return false;
+  }
+  const scope = normalizeCursorBridgeTopicScope(topics);
+  return topicId === scope.cursorTopicId || topicId === scope.bubbleTopicId;
 }
 
 // The front desk and cursor bridge share one Telegram forum chat but use
@@ -136,17 +181,20 @@ export function isCursorBridgeTopic(topicId: number | undefined, cursorBridgeTop
 // topic so the concierge never routes or replies there.
 export function frontDeskTopicMapWithoutCursorBridge(
   topicMap: Record<string, string>,
-  cursorBridgeTopicId: number | undefined
+  cursorBridgeTopicId: number | undefined,
+  extraTopicIds: Array<number | undefined> = []
 ): Record<string, string> {
-  if (cursorBridgeTopicId === undefined) {
-    return topicMap;
-  }
-  const key = String(cursorBridgeTopicId);
-  if (!(key in topicMap)) {
+  const stripKeys = new Set(
+    [cursorBridgeTopicId, ...extraTopicIds].filter((id): id is number => typeof id === 'number').map(String)
+  );
+  const matchedKeys = Object.keys(topicMap).filter((key) => stripKeys.has(key));
+  if (matchedKeys.length === 0) {
     return topicMap;
   }
   const next = { ...topicMap };
-  delete next[key];
+  for (const key of matchedKeys) {
+    delete next[key];
+  }
   return next;
 }
 
@@ -168,6 +216,52 @@ export function parseCommand(text: string): 'new' | 'status' | 'help' | 'update'
     return 'queue';
   }
   return undefined;
+}
+
+/** CLI argv after `node` + script path (i.e. `process.argv.slice(2)`). */
+export type CursorBridgeCliParse =
+  | { kind: 'help' }
+  | { kind: 'run'; repoRootArg: string | undefined };
+
+/**
+ * Parse Host/Cursor Remote bridge CLI args. `--help` / `-h` must never be
+ * treated as a repo root — that used to start a second getUpdates poller.
+ */
+export function parseCursorBridgeCliArgs(argvTail: string[]): CursorBridgeCliParse {
+  const args = argvTail ?? [];
+  if (args.some((a) => a === '--help' || a === '-h')) {
+    return { kind: 'help' };
+  }
+  const repoRootArg = args.find((a) => a.length > 0 && !a.startsWith('-'));
+  return { kind: 'run', repoRootArg };
+}
+
+export const CURSOR_BRIDGE_CLI_USAGE =
+  'Usage: node telegram-cursor-bridge.js <repo-root>\n' +
+  'Telegram ↔ Cursor SDK remote control. Prefer start_cursor_bridge.sh.\n' +
+  'Shared TELEGRAM_BOT_TOKEN with front desk: drains inbound queue (no getUpdates).\n';
+
+/**
+ * When the Host bridge shares the front-desk bot token it must not call
+ * getUpdates. Default to inbound-queue mode unless an exclusive
+ * CURSOR_BRIDGE_BOT_TOKEN is configured (or the flag explicitly forces).
+ */
+export function shouldUseCursorBridgeInboundQueue(env: {
+  CURSOR_BRIDGE_INBOUND_QUEUE?: string;
+  CURSOR_BRIDGE_BOT_TOKEN?: string;
+  TELEGRAM_BOT_TOKEN?: string;
+}): boolean {
+  const flag = env.CURSOR_BRIDGE_INBOUND_QUEUE?.trim();
+  if (flag === '1') {
+    return true;
+  }
+  if (flag === '0') {
+    return false;
+  }
+  if (env.CURSOR_BRIDGE_BOT_TOKEN?.trim()) {
+    return false;
+  }
+  return true;
 }
 
 function decideCommandAction(cmd: 'new' | 'status' | 'help' | 'update' | 'queue'): CursorBridgeDecision {
@@ -271,9 +365,11 @@ function decideGatedOperatorVerb(
 export function isScopedToCursorTopic(
   event: Pick<CursorBridgeInboundEvent, 'chatId' | 'topicId'>,
   chatId: string | number,
-  cursorTopicId: number | undefined
+  cursorTopicId: CursorBridgeTopicScope | number | undefined
 ): boolean {
-  return String(event.chatId) === String(chatId) && cursorTopicId !== undefined && event.topicId === cursorTopicId;
+  return (
+    String(event.chatId) === String(chatId) && isOwnedCursorBridgeTopic(event.topicId, cursorTopicId)
+  );
 }
 
 export function isAuthorizedPrincipal(fromId: string | number, principalUserId: string | number): boolean {
@@ -286,7 +382,7 @@ function decideInboundGate(
   event: CursorBridgeInboundEvent,
   principalUserId: string | number,
   chatId: string | number,
-  cursorTopicId: number | undefined
+  cursorTopicId: CursorBridgeTopicScope | number | undefined
 ): CursorBridgeDecision | undefined {
   if (!isScopedToCursorTopic(event, chatId, cursorTopicId)) {
     return { action: 'ignore' };
@@ -346,7 +442,7 @@ export function decideInboundAction(
   event: CursorBridgeInboundEvent,
   principalUserId: string | number,
   chatId: string | number,
-  cursorTopicId: number | undefined,
+  cursorTopicId: CursorBridgeTopicScope | number | undefined,
   pending: PendingOperatorConfirm = undefined
 ): CursorBridgeDecision {
   const gated = decideInboundGate(event, principalUserId, chatId, cursorTopicId);
@@ -478,6 +574,24 @@ function parseOptionalNonEmptyString(value: unknown): string | undefined {
   return typeof value === 'string' && value.length > 0 ? value : undefined;
 }
 
+function assignIfDefined<T extends object, K extends keyof T>(target: T, key: K, value: T[K] | undefined): void {
+  if (value !== undefined) {
+    target[key] = value;
+  }
+}
+
+function parseLivenessStatus(value: unknown): CursorBridgeLivenessStatusState | undefined {
+  if (typeof value !== 'object' || value === null) {
+    return undefined;
+  }
+  const record = value as Record<string, unknown>;
+  const result: CursorBridgeLivenessStatusState = {};
+  assignIfDefined(result, 'topicId', parseOptionalTopicId(record.topicId));
+  assignIfDefined(result, 'messageId', parseOptionalTopicId(record.messageId));
+  assignIfDefined(result, 'renderedText', parseOptionalNonEmptyString(record.renderedText));
+  return Object.keys(result).length > 0 ? result : undefined;
+}
+
 function parseOptionalStringArray(value: unknown): string[] | undefined {
   if (!Array.isArray(value)) {
     return undefined;
@@ -570,6 +684,10 @@ function buildPersistedState(record: Record<string, unknown>): CursorBridgePersi
     if (pendingChoicePolls.length > 0) {
       state.pendingChoicePolls = pendingChoicePolls;
     }
+  }
+  const livenessStatus = parseLivenessStatus(record.livenessStatus);
+  if (livenessStatus) {
+    state.livenessStatus = livenessStatus;
   }
   return state;
 }

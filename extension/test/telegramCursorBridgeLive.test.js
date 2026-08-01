@@ -7,6 +7,7 @@ const { createMockCursorBridgeAgentSession } = require('../out/bridge/cursorBrid
 const {
   bootstrapCursorBridgeState,
   ensureCursorTopic,
+  ensureBubbleTopic,
   handleInboundDecision,
   inboundEventOf,
   loadJsonFile,
@@ -32,6 +33,12 @@ function mkRoot() {
   return root;
 }
 
+// Liveness sync's default postMessage/editMessage call sendTelegramMessage /
+// editMessageText with no postFn override, which falls through to a real
+// network call. Every test gets this no-op stub by default so the liveness
+// cue never reaches api.telegram.org.
+const NOOP_TELEGRAM_POST_FN = async () => ({ ok: true, status: 200, json: {} });
+
 function mkCtx(overrides = {}) {
   const root = overrides.root ?? mkRoot();
   const posts = overrides.posts ?? [];
@@ -56,6 +63,7 @@ function mkCtx(overrides = {}) {
     }),
     persistState: overrides.persistState ?? (() => {}),
     syncAgentIdFromSession: overrides.syncAgentIdFromSession ?? (() => {}),
+    telegramPostFn: overrides.telegramPostFn ?? NOOP_TELEGRAM_POST_FN,
     root,
     posts,
   };
@@ -75,6 +83,7 @@ function mkPollDeps(root, overrides = {}) {
     statePath,
     topicMapPath,
     agentSession: overrides.session ?? createMockCursorBridgeAgentSession(root),
+    telegramPostFn: NOOP_TELEGRAM_POST_FN,
     ...overrides.deps,
   };
 }
@@ -505,15 +514,236 @@ test('runCursorBridgePollOnce processes authorized prompt updates', async () => 
   assert.ok(next.state.updateOffset >= 10);
 });
 
+test('runCursorBridgePollOnce in inbound-queue mode drains forwarded Host updates without getUpdates', async () => {
+  const { appendCursorBridgeInboundUpdate } = require('../out/tools/cursorBridgeInboundQueue');
+  const root = mkRoot();
+  const opDir = path.join(root, '.swarmforge', 'operator');
+  const statePath = path.join(opDir, 'cursor-bridge-state.json');
+  const topicMapPath = path.join(opDir, 'cursor-bridge-topic-map.json');
+  writeJsonFile(statePath, { updateOffset: 0, cursorTopicId: 55 });
+  appendCursorBridgeInboundUpdate(opDir, {
+    update_id: 77,
+    message: {
+      message_id: 9,
+      text: 'advertise bubble base url on start',
+      from: { id: 42 },
+      chat: { id: -100 },
+      message_thread_id: 55,
+    },
+  });
+  const session = createMockCursorBridgeAgentSession(root);
+  const posts = [];
+  let getUpdatesCalls = 0;
+  const next = await runCursorBridgePollOnce(
+    {
+      repoRoot: root,
+      botToken: 'token',
+      chatId: '-100',
+      principalUserId: '42',
+      opDir,
+      statePath,
+      topicMapPath,
+      agentSession: session,
+      useInboundQueue: true,
+      post: async (_t, _c, _topic, text) => {
+        posts.push(text);
+      },
+      getUpdates: async () => {
+        getUpdatesCalls += 1;
+        return { success: true, updates: [] };
+      },
+    },
+    { updateOffset: 0, cursorTopicId: 55 },
+    false,
+    0
+  );
+  assert.equal(getUpdatesCalls, 0);
+  assert.equal(next.pollFailures, 0);
+  assert.equal(next.busy, true);
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.ok(posts.some((p) => /advertise bubble base url/i.test(p)));
+});
+
+test('runCursorBridgePollOnce in inbound-queue mode with an empty queue does not advance the offset or call getUpdates', async () => {
+  const root = mkRoot();
+  const opDir = path.join(root, '.swarmforge', 'operator');
+  const statePath = path.join(opDir, 'cursor-bridge-state.json');
+  const topicMapPath = path.join(opDir, 'cursor-bridge-topic-map.json');
+  writeJsonFile(statePath, { updateOffset: 30, cursorTopicId: 55 });
+  const session = createMockCursorBridgeAgentSession(root);
+  let getUpdatesCalls = 0;
+  const next = await runCursorBridgePollOnce(
+    {
+      repoRoot: root,
+      botToken: 'token',
+      chatId: '-100',
+      principalUserId: '42',
+      opDir,
+      statePath,
+      topicMapPath,
+      agentSession: session,
+      useInboundQueue: true,
+      inboundQueueIdleMs: 5,
+      post: async () => {},
+      getUpdates: async () => {
+        getUpdatesCalls += 1;
+        return { success: true, updates: [] };
+      },
+    },
+    { updateOffset: 30, cursorTopicId: 55 },
+    false,
+    0
+  );
+  assert.equal(getUpdatesCalls, 0);
+  assert.equal(next.state.updateOffset, 30);
+  assert.equal(next.pollFailures, 0);
+});
+
+test('runCursorBridgePollOnce in inbound-queue mode advances the offset past the HIGHEST drained update_id, not just the count', async () => {
+  const { appendCursorBridgeInboundUpdate } = require('../out/tools/cursorBridgeInboundQueue');
+  const root = mkRoot();
+  const opDir = path.join(root, '.swarmforge', 'operator');
+  const statePath = path.join(opDir, 'cursor-bridge-state.json');
+  const topicMapPath = path.join(opDir, 'cursor-bridge-topic-map.json');
+  writeJsonFile(statePath, { updateOffset: 0, cursorTopicId: 55 });
+  // Out-of-order ids on disk (append order is not id order) — the offset
+  // must track the MAX id seen, not the last one appended or the count.
+  appendCursorBridgeInboundUpdate(opDir, { update_id: 50, message: { message_id: 1, text: '/status', from: { id: 42 }, chat: { id: -100 }, message_thread_id: 55 } });
+  appendCursorBridgeInboundUpdate(opDir, { update_id: 120, message: { message_id: 2, text: '/status', from: { id: 42 }, chat: { id: -100 }, message_thread_id: 55 } });
+  appendCursorBridgeInboundUpdate(opDir, { update_id: 90, message: { message_id: 3, text: '/status', from: { id: 42 }, chat: { id: -100 }, message_thread_id: 55 } });
+  const session = createMockCursorBridgeAgentSession(root);
+  const next = await runCursorBridgePollOnce(
+    {
+      repoRoot: root,
+      botToken: 'token',
+      chatId: '-100',
+      principalUserId: '42',
+      opDir,
+      statePath,
+      topicMapPath,
+      agentSession: session,
+      useInboundQueue: true,
+      post: async () => {},
+      getUpdates: async () => ({ success: true, updates: [] }),
+    },
+    { updateOffset: 0, cursorTopicId: 55 },
+    false,
+    0
+  );
+  assert.equal(next.state.updateOffset, 121);
+});
+
+test('runCursorBridgePollOnce in inbound-queue mode never regresses the offset when drained ids are all below the current offset (redelivery)', async () => {
+  const { appendCursorBridgeInboundUpdate } = require('../out/tools/cursorBridgeInboundQueue');
+  const root = mkRoot();
+  const opDir = path.join(root, '.swarmforge', 'operator');
+  const statePath = path.join(opDir, 'cursor-bridge-state.json');
+  const topicMapPath = path.join(opDir, 'cursor-bridge-topic-map.json');
+  writeJsonFile(statePath, { updateOffset: 500, cursorTopicId: 55 });
+  appendCursorBridgeInboundUpdate(opDir, { update_id: 12, message: { message_id: 1, text: '/status', from: { id: 42 }, chat: { id: -100 }, message_thread_id: 55 } });
+  const session = createMockCursorBridgeAgentSession(root);
+  const next = await runCursorBridgePollOnce(
+    {
+      repoRoot: root,
+      botToken: 'token',
+      chatId: '-100',
+      principalUserId: '42',
+      opDir,
+      statePath,
+      topicMapPath,
+      agentSession: session,
+      useInboundQueue: true,
+      post: async () => {},
+      getUpdates: async () => ({ success: true, updates: [] }),
+    },
+    { updateOffset: 500, cursorTopicId: 55 },
+    false,
+    0
+  );
+  assert.equal(next.state.updateOffset, 500);
+});
+
+test('runCursorBridgePollOnce in inbound-queue mode, busy-queued reply acks the SPECIFIC inbound topic (Bubble), not always Cursor Remote', async () => {
+  const { appendCursorBridgeInboundUpdate } = require('../out/tools/cursorBridgeInboundQueue');
+  const root = mkRoot();
+  const opDir = path.join(root, '.swarmforge', 'operator');
+  const statePath = path.join(opDir, 'cursor-bridge-state.json');
+  const topicMapPath = path.join(opDir, 'cursor-bridge-topic-map.json');
+  writeJsonFile(statePath, { updateOffset: 0, cursorTopicId: 55, bubbleTopicId: 91 });
+  appendCursorBridgeInboundUpdate(opDir, {
+    update_id: 200,
+    message: {
+      message_id: 4,
+      text: 'another question while busy',
+      from: { id: 42 },
+      chat: { id: -100 },
+      message_thread_id: 91,
+    },
+  });
+  const session = createMockCursorBridgeAgentSession(root);
+  const postCalls = [];
+  await runCursorBridgePollOnce(
+    {
+      repoRoot: root,
+      botToken: 'token',
+      chatId: '-100',
+      principalUserId: '42',
+      opDir,
+      statePath,
+      topicMapPath,
+      agentSession: session,
+      useInboundQueue: true,
+      post: async (_t, _c, topicId, text) => {
+        postCalls.push({ topicId, text });
+      },
+      getUpdates: async () => ({ success: true, updates: [] }),
+      telegramPostFn: async () => ({ ok: true, status: 200, json: { ok: true, result: { message_id: 777 } } }),
+    },
+    { updateOffset: 0, cursorTopicId: 55, bubbleTopicId: 91 },
+    // Already busy — this update must be queued and acked in place, not run.
+    true,
+    0
+  );
+  assert.ok(postCalls.some((c) => c.topicId === 91 && c.text.includes('question queued (1 waiting)')));
+  assert.ok(!postCalls.some((c) => c.topicId === 55));
+  // The liveness cue for this queued-while-busy path must render as busy,
+  // and its identity must actually reach disk (not a no-op persist).
+  const persisted = loadJsonFile(statePath);
+  assert.equal(persisted.livenessStatus?.renderedText, 'Bridge: busy · 1 waiting');
+});
+
 test('bootstrapCursorBridgeState persists topic id', async () => {
   const root = mkRoot();
   const opDir = path.join(root, '.swarmforge', 'operator');
   const statePath = path.join(opDir, 'cursor-bridge-state.json');
   const topicMapPath = path.join(opDir, 'cursor-bridge-topic-map.json');
-  writeJsonFile(topicMapPath, { '77': 'CURSOR_REMOTE' });
+  writeJsonFile(topicMapPath, { '77': 'CURSOR_REMOTE', '7801': 'BUBBLE' });
   const state = await bootstrapCursorBridgeState(root, 'token', '-100', statePath, topicMapPath);
   assert.equal(state.cursorTopicId, 77);
+  assert.equal(state.bubbleTopicId, 7801);
   assert.deepEqual(loadJsonFile(statePath), state);
+});
+
+test('ensureBubbleTopic creates topic when map is empty', async () => {
+  const root = mkRoot();
+  const mapPath = path.join(root, 'topic-map.json');
+  const next = await ensureBubbleTopic(
+    'token',
+    '-100',
+    mapPath,
+    { updateOffset: 0 },
+    async () => ({ success: true, messageThreadId: 456 })
+  );
+  assert.equal(next.bubbleTopicId, 456);
+  assert.deepEqual(loadTopicMap(mapPath), { '456': 'BUBBLE' });
+});
+
+test('ensureBubbleTopic reuses mapped topic id', async () => {
+  const root = mkRoot();
+  const mapPath = path.join(root, 'topic-map.json');
+  writeJsonFile(mapPath, { '99': 'BUBBLE' });
+  const next = await ensureBubbleTopic('token', '-100', mapPath, { updateOffset: 0 });
+  assert.equal(next.bubbleTopicId, 99);
 });
 
 test('writePollHeartbeat writes heartbeat json', () => {
@@ -636,7 +866,7 @@ test('runCursorBridgeLoop stops when shouldContinue returns false', async () => 
 test('runCursorBridgeApp runs boot prompt and a single poll when configured', async () => {
   const root = mkRoot();
   const topicMapPath = path.join(root, '.swarmforge', 'operator', 'cursor-bridge-topic-map.json');
-  writeJsonFile(topicMapPath, { '9': 'CURSOR_REMOTE' });
+  writeJsonFile(topicMapPath, { '9': 'CURSOR_REMOTE', '91': 'BUBBLE' });
   const session = createMockCursorBridgeAgentSession(root);
   let getUpdateCalls = 0;
   await runCursorBridgeApp(
@@ -647,7 +877,9 @@ test('runCursorBridgeApp runs boot prompt and a single poll when configured', as
       principalUserId: '42',
       bootPrompt: 'wake',
       post: async () => {},
+      telegramPostFn: NOOP_TELEGRAM_POST_FN,
       loopOverrides: {
+        useInboundQueue: false,
         getUpdates: async () => {
           getUpdateCalls += 1;
           return { success: true, updates: [] };
@@ -663,7 +895,7 @@ test('runCursorBridgeApp runs boot prompt and a single poll when configured', as
 test('runCursorBridgeApp posts a ready message on startup', async () => {
   const root = mkRoot();
   const topicMapPath = path.join(root, '.swarmforge', 'operator', 'cursor-bridge-topic-map.json');
-  writeJsonFile(topicMapPath, { '9': 'CURSOR_REMOTE' });
+  writeJsonFile(topicMapPath, { '9': 'CURSOR_REMOTE', '91': 'BUBBLE' });
   const posts = [];
   await runCursorBridgeApp(
     {
@@ -674,11 +906,43 @@ test('runCursorBridgeApp posts a ready message on startup', async () => {
       post: async (_token, _chatId, _topicId, text) => {
         posts.push(text);
       },
+      telegramPostFn: NOOP_TELEGRAM_POST_FN,
       shouldContinue: () => false,
     },
     createMockCursorBridgeAgentSession(root)
   );
   assert.ok(posts.includes(BRIDGE_READY_MESSAGE));
+});
+
+test('runCursorBridgeApp posts the boot liveness cue as idle (never busy) and persists its identity', async () => {
+  const root = mkRoot();
+  const statePath = path.join(root, '.swarmforge', 'operator', 'cursor-bridge-state.json');
+  const topicMapPath = path.join(root, '.swarmforge', 'operator', 'cursor-bridge-topic-map.json');
+  writeJsonFile(topicMapPath, { '9': 'CURSOR_REMOTE', '91': 'BUBBLE' });
+  const liveTexts = [];
+  const telegramPostFn = async (url, body) => {
+    const parsed = JSON.parse(body);
+    if (/sendMessage$/.test(url)) {
+      liveTexts.push(parsed.text);
+      return { ok: true, status: 200, json: { ok: true, result: { message_id: 555 } } };
+    }
+    return { ok: true, status: 200, json: { ok: true, result: {} } };
+  };
+  await runCursorBridgeApp(
+    {
+      repoRoot: root,
+      botToken: 'tok',
+      chatId: '-100',
+      principalUserId: '42',
+      post: async () => {},
+      telegramPostFn,
+      shouldContinue: () => false,
+    },
+    createMockCursorBridgeAgentSession(root)
+  );
+  assert.ok(liveTexts.includes('Bridge: idle'));
+  const persisted = loadJsonFile(statePath);
+  assert.equal(persisted.livenessStatus.messageId, 555);
 });
 
 test('runCursorBridgeBootIfConfigured is a no-op without boot prompt', async () => {
@@ -1448,6 +1712,88 @@ test('runCursorBridgePollOnce runs selected queued prompt from poll_answer', asy
   assert.ok(posts.some((text) => text.includes('queued follow-up')));
 });
 
+test('runCursorBridgePollOnce routes a choice-poll answer reply to the Bubble topic, never Cursor Remote', async () => {
+  const root = mkRoot();
+  const deps = mkPollDeps(root);
+  const postCalls = [];
+  const initialState = {
+    updateOffset: 80,
+    cursorTopicId: 55,
+    bubbleTopicId: 91,
+    pendingChoicePolls: [
+      { pollId: 'poll-choice-1', question: 'Which one?', options: ['a', 'b'], createdAtMs: Date.now() },
+    ],
+  };
+  const next = await runCursorBridgePollOnce(
+    {
+      ...deps,
+      post: async (_t, _c, topicId, text) => {
+        postCalls.push({ topicId, text });
+      },
+      getUpdates: async () => ({
+        success: true,
+        updates: [
+          {
+            update_id: 81,
+            poll_answer: {
+              poll_id: 'poll-choice-1',
+              option_ids: [0],
+              user: { id: 42 },
+            },
+          },
+        ],
+      }),
+    },
+    initialState,
+    false,
+    0
+  );
+  assert.equal(next.busy, true);
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.ok(postCalls.some((c) => c.topicId === 91 && c.text.includes('Agent started')));
+  assert.ok(!postCalls.some((c) => c.topicId === 55));
+});
+
+test('runCursorBridgePollOnce routes a choice-poll answer reply to Cursor Remote when no Bubble topic is bound', async () => {
+  const root = mkRoot();
+  const deps = mkPollDeps(root);
+  const postCalls = [];
+  const initialState = {
+    updateOffset: 80,
+    cursorTopicId: 55,
+    pendingChoicePolls: [
+      { pollId: 'poll-choice-2', question: 'Which one?', options: ['a', 'b'], createdAtMs: Date.now() },
+    ],
+  };
+  const next = await runCursorBridgePollOnce(
+    {
+      ...deps,
+      post: async (_t, _c, topicId, text) => {
+        postCalls.push({ topicId, text });
+      },
+      getUpdates: async () => ({
+        success: true,
+        updates: [
+          {
+            update_id: 81,
+            poll_answer: {
+              poll_id: 'poll-choice-2',
+              option_ids: [0],
+              user: { id: 42 },
+            },
+          },
+        ],
+      }),
+    },
+    initialState,
+    false,
+    0
+  );
+  assert.equal(next.busy, true);
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.ok(postCalls.some((c) => c.topicId === 55 && c.text.includes('Agent started')));
+});
+
 test('runCursorBridgePollOnce uses default postChunks when post override is omitted', async () => {
   const root = mkRoot();
   const deps = mkPollDeps(root);
@@ -1843,7 +2189,7 @@ test('runCursorBridgePollOnce leaves busy false after prompt completes', async (
 test('runCursorBridgeApp starts idle so the first poll can accept prompts', async () => {
   const root = mkRoot();
   const topicMapPath = path.join(root, '.swarmforge', 'operator', 'cursor-bridge-topic-map.json');
-  writeJsonFile(topicMapPath, { '9': 'CURSOR_REMOTE' });
+  writeJsonFile(topicMapPath, { '9': 'CURSOR_REMOTE', '91': 'BUBBLE' });
   const session = createMockCursorBridgeAgentSession(root);
   let polls = 0;
   let prompted = false;
@@ -1858,7 +2204,9 @@ test('runCursorBridgeApp starts idle so the first poll can accept prompts', asyn
       botToken: 'tok',
       chatId: '-100',
       principalUserId: '42',
+      telegramPostFn: NOOP_TELEGRAM_POST_FN,
       loopOverrides: {
+        useInboundQueue: false,
         post: async () => {},
         getUpdates: async () => {
           polls += 1;
@@ -1891,7 +2239,7 @@ test('runCursorBridgeApp resetAgent during poll persists session state', async (
   const root = mkRoot();
   const topicMapPath = path.join(root, '.swarmforge', 'operator', 'cursor-bridge-topic-map.json');
   const statePath = path.join(root, '.swarmforge', 'operator', 'cursor-bridge-state.json');
-  writeJsonFile(topicMapPath, { '9': 'CURSOR_REMOTE' });
+  writeJsonFile(topicMapPath, { '9': 'CURSOR_REMOTE', '91': 'BUBBLE' });
   writeJsonFile(statePath, { updateOffset: 0, cursorTopicId: 9, agentId: 'old-agent' });
   const session = mkMemoryOnlyAgentSession('old-agent');
   let polls = 0;
@@ -1902,7 +2250,9 @@ test('runCursorBridgeApp resetAgent during poll persists session state', async (
       chatId: '-100',
       principalUserId: '42',
       post: async () => {},
+      telegramPostFn: NOOP_TELEGRAM_POST_FN,
       loopOverrides: {
+        useInboundQueue: false,
         post: async () => {},
         getUpdates: async () => {
           polls += 1;
@@ -1934,7 +2284,7 @@ test('runCursorBridgeApp boot persists state after active-run recovery reset', a
   const root = mkRoot();
   const topicMapPath = path.join(root, '.swarmforge', 'operator', 'cursor-bridge-topic-map.json');
   const statePath = path.join(root, '.swarmforge', 'operator', 'cursor-bridge-state.json');
-  writeJsonFile(topicMapPath, { '9': 'CURSOR_REMOTE' });
+  writeJsonFile(topicMapPath, { '9': 'CURSOR_REMOTE', '91': 'BUBBLE' });
   const session = mkMemoryOnlyAgentSession('mock-agent-1');
   let calls = 0;
   session.promptAgent = async (prompt) => {
@@ -1959,6 +2309,7 @@ test('runCursorBridgeApp boot persists state after active-run recovery reset', a
       principalUserId: '42',
       bootPrompt: 'remember the code word THETA',
       post: async () => {},
+      telegramPostFn: NOOP_TELEGRAM_POST_FN,
       loopOverrides: {
         getUpdates: async () => ({ success: true, updates: [] }),
       },
@@ -1976,7 +2327,7 @@ test('runCursorBridgeApp boot persists state after active-run recovery reset', a
 test('runCursorBridgeApp default shouldContinue falls back to endless polling hook', async () => {
   const root = mkRoot();
   const topicMapPath = path.join(root, '.swarmforge', 'operator', 'cursor-bridge-topic-map.json');
-  writeJsonFile(topicMapPath, { '9': 'CURSOR_REMOTE' });
+  writeJsonFile(topicMapPath, { '9': 'CURSOR_REMOTE', '91': 'BUBBLE' });
   const session = createMockCursorBridgeAgentSession(root);
   let polls = 0;
   await assert.rejects(
@@ -1988,8 +2339,10 @@ test('runCursorBridgeApp default shouldContinue falls back to endless polling ho
           chatId: '-100',
           principalUserId: '42',
           post: async () => {},
+          telegramPostFn: NOOP_TELEGRAM_POST_FN,
           shouldContinue: undefined,
           loopOverrides: {
+            useInboundQueue: false,
             post: async () => {},
             getUpdates: async () => {
               polls += 1;
@@ -2007,7 +2360,7 @@ test('runCursorBridgeApp default shouldContinue falls back to endless polling ho
 test('bootstrapCursorBridgeState mkdirSync uses .swarmforge/operator not repo-root operator', async () => {
   const root = mkTmpDir('sfvc-bootstrap-mkdir-');
   const externalState = path.join(root, 'external-state.json');
-  writeJsonFile(externalState, { updateOffset: 0, cursorTopicId: 88 });
+  writeJsonFile(externalState, { updateOffset: 0, cursorTopicId: 88, bubbleTopicId: 89 });
   await bootstrapCursorBridgeState(
     root,
     'token',
@@ -2024,11 +2377,12 @@ test('bootstrapCursorBridgeState writes state under .swarmforge/operator', async
   const opDir = path.join(root, '.swarmforge', 'operator');
   const statePath = path.join(opDir, 'cursor-bridge-state.json');
   const topicMapPath = path.join(opDir, 'cursor-bridge-topic-map.json');
-  writeJsonFile(topicMapPath, { '88': 'CURSOR_REMOTE' });
+  writeJsonFile(topicMapPath, { '88': 'CURSOR_REMOTE', '8901': 'BUBBLE' });
   const state = await bootstrapCursorBridgeState(root, 'token', '-100', statePath, topicMapPath);
   assert.ok(fs.existsSync(path.join(root, '.swarmforge', 'operator', 'cursor-bridge-state.json')));
   assert.deepEqual(loadJsonFile(path.join(root, '.swarmforge', 'operator', 'cursor-bridge-state.json')), state);
   assert.equal(state.cursorTopicId, 88);
+  assert.equal(state.bubbleTopicId, 8901);
 });
 
 test('handleInboundDecision starts expedite and posts confirmation', async () => {

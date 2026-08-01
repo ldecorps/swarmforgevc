@@ -7,6 +7,8 @@
 #
 # Env: see cursor_bridge_supervisor.bb and swarm.env (sourced below).
 #   CURSOR_BRIDGE_LAUNCH_DRYRUN=1    print command, start nothing
+#   CURSOR_BRIDGE_INBOUND_QUEUE=0|1  force disable/enable shared-token queue mode
+#                                    (default: enabled when CURSOR_BRIDGE_BOT_TOKEN is unset)
 set -euo pipefail
 
 if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
@@ -52,6 +54,11 @@ if [[ "${CURSOR_BRIDGE_LAUNCH_DRYRUN:-}" == "1" ]]; then
 fi
 
 export TELEGRAM_BOT_TOKEN="${CURSOR_BRIDGE_BOT_TOKEN:-${TELEGRAM_BOT_TOKEN:?set CURSOR_BRIDGE_BOT_TOKEN or TELEGRAM_BOT_TOKEN}}"
+# Shared group bot with the front desk: do not compete on getUpdates — drain
+# the front-desk inbound queue instead (see cursorBridgeInboundQueue.ts).
+if [[ -z "${CURSOR_BRIDGE_BOT_TOKEN:-}" ]]; then
+  export CURSOR_BRIDGE_INBOUND_QUEUE="${CURSOR_BRIDGE_INBOUND_QUEUE:-1}"
+fi
 : "${TELEGRAM_CHAT_ID:?TELEGRAM_CHAT_ID is not set}"
 : "${TELEGRAM_PRINCIPAL_USER_ID:?TELEGRAM_PRINCIPAL_USER_ID is not set}"
 

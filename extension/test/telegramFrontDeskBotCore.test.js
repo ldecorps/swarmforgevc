@@ -11,6 +11,7 @@ const {
   resolveReplyDelivery,
   decideUpdateAction,
   pollAndForward,
+  decideCursorBridgeExclusion,
   parseNextSseRecord,
   relaySseReplies,
   DEFAULT_SUBJECT_KEY,
@@ -5457,4 +5458,223 @@ test('cursor bridge: a message in an unrelated topic is unaffected by the Cursor
     })
   );
   assert.equal(result.posted, 1);
+});
+
+// Dual-poller fix: front desk owns getUpdates and FORWARDS Host/Bubble updates
+// to the cursor bridge queue instead of silently dropping them (offset still advances).
+test('cursor bridge: Host message is forwarded (posted) when forwardCursorBridgeUpdate is wired', async () => {
+  const forwarded = [];
+  const update = mkUpdate({ fromId: PRINCIPAL_ID, topicId: 8435, text: 'advertise bubble url' });
+  const result = await pollAndForward(
+    0,
+    PRINCIPAL_ID,
+    cursorBridgePollAdapters({
+      getUpdates: async () => ({ success: true, updates: [update] }),
+      forwardCursorBridgeUpdate: async (u) => {
+        forwarded.push(u);
+        return true;
+      },
+    })
+  );
+  assert.equal(result.posted, 1);
+  assert.equal(result.dropped, 0);
+  assert.equal(forwarded.length, 1);
+  assert.equal(forwarded[0].update_id, update.update_id);
+});
+
+test('cursor bridge: Bubble message is forwarded when bubbleTopicId matches', async () => {
+  const forwarded = [];
+  const update = mkUpdate({ fromId: PRINCIPAL_ID, topicId: 11810, text: 'lets talk' });
+  const result = await pollAndForward(
+    0,
+    PRINCIPAL_ID,
+    cursorBridgePollAdapters({
+      cursorBridgeTopicId: async () => 8435,
+      bubbleTopicId: async () => 11810,
+      getUpdates: async () => ({ success: true, updates: [update] }),
+      forwardCursorBridgeUpdate: async (u) => {
+        forwarded.push(u);
+        return true;
+      },
+    })
+  );
+  assert.equal(result.posted, 1);
+  assert.equal(forwarded.length, 1);
+});
+
+test('cursor bridge: Bubble exclusion works even when no cursorBridgeTopicId adapter is wired at all (Bubble-only deployment)', async () => {
+  const forwarded = [];
+  const update = mkUpdate({ fromId: PRINCIPAL_ID, topicId: 11810, text: 'lets talk' });
+  const result = await pollAndForward(
+    0,
+    PRINCIPAL_ID,
+    cursorBridgePollAdapters({
+      cursorBridgeTopicId: undefined,
+      bubbleTopicId: async () => 11810,
+      getUpdates: async () => ({ success: true, updates: [update] }),
+      forwardCursorBridgeUpdate: async (u) => {
+        forwarded.push(u);
+        return true;
+      },
+    })
+  );
+  assert.equal(result.posted, 1);
+  assert.equal(forwarded.length, 1);
+});
+
+test('cursor bridge: forward failure parks as failed (does not drop/advance past)', async () => {
+  const result = await pollAndForward(
+    0,
+    PRINCIPAL_ID,
+    cursorBridgePollAdapters({
+      getUpdates: async () => ({
+        success: true,
+        updates: [mkUpdate({ fromId: PRINCIPAL_ID, topicId: 8435, text: 'keep me' })],
+      }),
+      forwardCursorBridgeUpdate: async () => false,
+    })
+  );
+  assert.equal(result.failed, 1);
+  assert.equal(result.dropped, 0);
+  assert.equal(result.posted, 0);
+});
+
+test('cursor bridge: poll_answer is forwarded when forward adapter is wired', async () => {
+  const forwarded = [];
+  const update = {
+    update_id: 9001,
+    poll_answer: { poll_id: 'p1', user: { id: Number(PRINCIPAL_ID) }, option_ids: [0] },
+  };
+  const result = await pollAndForward(
+    0,
+    PRINCIPAL_ID,
+    cursorBridgePollAdapters({
+      getUpdates: async () => ({ success: true, updates: [update] }),
+      forwardCursorBridgeUpdate: async (u) => {
+        forwarded.push(u);
+        return true;
+      },
+    })
+  );
+  assert.equal(forwarded.length, 1);
+  assert.equal(forwarded[0].poll_answer.poll_id, 'p1');
+  // Front desk has no pending poll for this id — still a deliberate drop after forward.
+  assert.ok(result.dropped + result.posted >= 1);
+});
+
+// BL-764 D3: a callback_query (button tap) carries no top-level
+// message_thread_id — topicIdOf(update) only reads update.message, so
+// decideCursorBridgeExclusion falls back to
+// update.callback_query.message.message_thread_id. Before this coverage
+// that fallback branch was reachable in production (processUpdate checks
+// attemptCursorBridgeTopicExclusion before dispatching callback_query at
+// all) but exercised by zero tests — a bridge-owned-topic button tap could
+// have silently reached SUP/Operator's approve/reject/amend dispatch with
+// nothing catching a regression.
+
+test('BL-764: decideCursorBridgeExclusion resolves a callback_query topic via the message.message_thread_id fallback, since topicIdOf does not read callback_query at all', () => {
+  const ownedUpdate = mkCallbackUpdate({ fromId: PRINCIPAL_ID, data: 'approve:BL-123', topicId: 8435 });
+  assert.equal(topicIdOf(ownedUpdate), undefined, 'topicIdOf only reads update.message — sanity check the fallback is actually needed');
+  assert.equal(decideCursorBridgeExclusion(ownedUpdate, [8435, undefined]), 'drop');
+
+  const unrelatedUpdate = mkCallbackUpdate({ fromId: PRINCIPAL_ID, data: 'approve:BL-123', topicId: 7 });
+  assert.equal(decideCursorBridgeExclusion(unrelatedUpdate, [8435, undefined]), 'not-applicable');
+});
+
+test('decideCursorBridgeExclusion never throws on a non-callback update (no callback_query field at all)', () => {
+  assert.equal(decideCursorBridgeExclusion({ update_id: 1 }, [8435]), 'not-applicable');
+});
+
+test('decideCursorBridgeExclusion never throws when callback_query is present but carries no message at all', () => {
+  assert.equal(
+    decideCursorBridgeExclusion({ update_id: 1, callback_query: { id: 'cb1', data: 'approve:BL-1' } }, [8435]),
+    'not-applicable'
+  );
+});
+
+test('cursor bridge: a Host callback_query is forwarded (posted) when forwardCursorBridgeUpdate is wired, and never reaches the approve/reject dispatch', async () => {
+  const forwarded = [];
+  const update = mkCallbackUpdate({ fromId: PRINCIPAL_ID, data: 'approve:BL-123', topicId: 8435 });
+  const result = await pollAndForward(
+    0,
+    PRINCIPAL_ID,
+    cursorBridgePollAdapters({
+      getUpdates: async () => ({ success: true, updates: [update] }),
+      forwardCursorBridgeUpdate: async (u) => {
+        forwarded.push(u);
+        return true;
+      },
+      answerCallbackQuery: async () => {
+        throw new Error('answerCallbackQuery must never be called for a bridge-owned-topic callback_query');
+      },
+      recordApprovalReply: async () => {
+        throw new Error('recordApprovalReply must never be called for a bridge-owned-topic callback_query');
+      },
+    })
+  );
+  assert.equal(result.posted, 1);
+  assert.equal(result.dropped, 0);
+  assert.equal(forwarded.length, 1);
+  assert.equal(forwarded[0].callback_query.data, 'approve:BL-123');
+});
+
+test('cursor bridge: a Bubble callback_query is forwarded when bubbleTopicId matches, and never reaches the approve/reject dispatch', async () => {
+  const forwarded = [];
+  const update = mkCallbackUpdate({ fromId: PRINCIPAL_ID, data: 'reject:BL-123', topicId: 11810 });
+  const result = await pollAndForward(
+    0,
+    PRINCIPAL_ID,
+    cursorBridgePollAdapters({
+      cursorBridgeTopicId: async () => 8435,
+      bubbleTopicId: async () => 11810,
+      getUpdates: async () => ({ success: true, updates: [update] }),
+      forwardCursorBridgeUpdate: async (u) => {
+        forwarded.push(u);
+        return true;
+      },
+      answerCallbackQuery: async () => {
+        throw new Error('answerCallbackQuery must never be called for a bridge-owned-topic callback_query');
+      },
+      recordRejectionReply: async () => {
+        throw new Error('recordRejectionReply must never be called for a bridge-owned-topic callback_query');
+      },
+    })
+  );
+  assert.equal(result.posted, 1);
+  assert.equal(forwarded.length, 1);
+});
+
+test('cursor bridge: a callback_query forward failure parks as failed (does not drop/advance past), and never reaches the approve/reject dispatch', async () => {
+  const update = mkCallbackUpdate({ fromId: PRINCIPAL_ID, data: 'approve:BL-123', topicId: 8435 });
+  const result = await pollAndForward(
+    0,
+    PRINCIPAL_ID,
+    cursorBridgePollAdapters({
+      getUpdates: async () => ({ success: true, updates: [update] }),
+      forwardCursorBridgeUpdate: async () => false,
+      answerCallbackQuery: async () => {
+        throw new Error('answerCallbackQuery must never be called for a bridge-owned-topic callback_query');
+      },
+    })
+  );
+  assert.equal(result.failed, 1);
+  assert.equal(result.dropped, 0);
+  assert.equal(result.posted, 0);
+});
+
+test('cursor bridge: a callback_query in a bridge-owned topic is an explicit drop when no forward adapter is wired, and never reaches the approve/reject dispatch', async () => {
+  const update = mkCallbackUpdate({ fromId: PRINCIPAL_ID, data: 'approve:BL-123', topicId: 8435 });
+  const result = await pollAndForward(
+    0,
+    PRINCIPAL_ID,
+    cursorBridgePollAdapters({
+      getUpdates: async () => ({ success: true, updates: [update] }),
+      answerCallbackQuery: async () => {
+        throw new Error('answerCallbackQuery must never be called for a bridge-owned-topic callback_query');
+      },
+    })
+  );
+  assert.equal(result.dropped, 1);
+  assert.equal(result.posted, 0);
+  assert.equal(result.failed, 0);
 });

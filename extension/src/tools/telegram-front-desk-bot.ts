@@ -132,7 +132,8 @@ import {
   closeApprovalAskForBacklogId,
   roleFromAskThreadId,
 } from './telegramFrontDeskBotCore';
-import { cursorBridgeTopicIdFromMap, frontDeskTopicMapWithoutCursorBridge } from './telegramCursorBridgeCore';
+import { cursorBridgeTopicIdFromMap, bubbleTopicIdFromMap, frontDeskTopicMapWithoutCursorBridge } from './telegramCursorBridgeCore';
+import { appendCursorBridgeInboundUpdate } from './cursorBridgeInboundQueue';
 import { backlogForTopic } from '../concierge/topicRouter';
 import { recordApprovalReply, recordRejectionReply, recordAmendReply, readRecordedVerdict, readApprovalCloseVerdict } from '../concierge/pendingApprovalReply';
 import { reconcileDecidedApprovalAskCloses } from '../concierge/decidedApprovalAskCloseReconcile';
@@ -250,7 +251,7 @@ function cursorBridgeStatePath(targetPath: string): string {
   return path.join(targetPath, '.swarmforge', 'operator', 'cursor-bridge-state.json');
 }
 
-// Cursor Remote forum topic id — read from the bridge's own map, falling
+// Cursor Remote + Bubble forum topic ids — read from the bridge's own map, falling
 // back to persisted poll state when the map is not written yet.
 export function readCursorBridgeTopicId(targetPath: string): number | undefined {
   try {
@@ -270,12 +271,31 @@ export function readCursorBridgeTopicId(targetPath: string): number | undefined 
   }
 }
 
-// Front-desk routing map with any stale SUP binding on the cursor topic
-// stripped (and persisted when a collision is found).
+export function readBubbleTopicId(targetPath: string): number | undefined {
+  try {
+    const map = JSON.parse(fs.readFileSync(cursorBridgeTopicMapPath(targetPath), 'utf8')) as Record<string, string>;
+    const fromMap = bubbleTopicIdFromMap(map);
+    if (fromMap !== undefined) {
+      return fromMap;
+    }
+  } catch {
+    // fall through to state file
+  }
+  try {
+    const state = JSON.parse(fs.readFileSync(cursorBridgeStatePath(targetPath), 'utf8')) as { bubbleTopicId?: number };
+    return typeof state.bubbleTopicId === 'number' ? state.bubbleTopicId : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+// Front-desk routing map with any stale SUP binding on the cursor / Bubble
+// topics stripped (and persisted when a collision is found).
 function readFrontDeskTopicMap(targetPath: string): Record<string, string> {
   const raw = readTopicMap(targetPath);
   const cursorTopicId = readCursorBridgeTopicId(targetPath);
-  const scrubbed = frontDeskTopicMapWithoutCursorBridge(raw, cursorTopicId);
+  const bubbleTopicId = readBubbleTopicId(targetPath);
+  const scrubbed = frontDeskTopicMapWithoutCursorBridge(raw, cursorTopicId, [bubbleTopicId]);
   if (Object.keys(scrubbed).length !== Object.keys(raw).length) {
     writeTopicMap(targetPath, scrubbed);
   }
@@ -1977,6 +1997,15 @@ function buildPollAdapters(
     postToBridge: (subjectId, text, updateId) => postToBridge(bridgeUrl, controlToken, subjectId, text, updateId),
     subjectForTopic: (topicId) => subjectForTopic(readFrontDeskTopicMap(targetPath), topicId),
     cursorBridgeTopicId: () => Promise.resolve(readCursorBridgeTopicId(targetPath)),
+    bubbleTopicId: () => Promise.resolve(readBubbleTopicId(targetPath)),
+    forwardCursorBridgeUpdate: async (update) => {
+      try {
+        appendCursorBridgeInboundUpdate(path.join(targetPath, '.swarmforge', 'operator'), update as { update_id?: number } & Record<string, unknown>);
+        return true;
+      } catch {
+        return false;
+      }
+    },
     openSubjectAndRecord: (topicId, text, updateId) => openSubjectAndRecord(targetPath, topicId, text, updateId),
     backlogForTopic: (topicId) => backlogForTopic(readBacklogTopicMap(targetPath), topicId),
     postOperatorContext: (backlogId, text, updateId) => postOperatorContext(targetPath, backlogId, text, updateId),

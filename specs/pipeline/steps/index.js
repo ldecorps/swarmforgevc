@@ -349,7 +349,8 @@ const DOMAINS = [
   require('./bl630PushSweepQaGateSteps'),
   require('./bl714HardeningGatesBlockedSteps'),
   require('./bl723PilotReviewSteps'),
-  require('./bl727PilotAcceptanceGateSteps')
+  require('./bl727PilotAcceptanceGateSteps'),
+  require('./bl764FrontDeskEatsHostBridgeUpdatesSteps')
 ];
 
 function registerSteps(registry) {
