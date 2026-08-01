@@ -8,7 +8,7 @@ human_approval: approved
 priority: 00
 direction: human-requested
 depends_on: []
-assigned_to: specifier
+assigned_to: coder
 mutation_cost: medium
 
 invariants:
@@ -115,3 +115,6 @@ notes: |
   the same commit. A live `.feature` with no handlers makes
   `specs/pipeline/runtime.js` throw and fails the acceptance gate for every
   parcel in flight.
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-01, by: architect, blamed: coder, class: invariant-unencoded, commit: 29574c6286, evidence: backlog/evidence/BL-680-specifier-consolidation-authority-bounce-20260801.md }

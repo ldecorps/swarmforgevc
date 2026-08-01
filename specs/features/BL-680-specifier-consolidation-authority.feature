@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=7f22450f14b875efdccf86dc7ef064874650968a1e437d8ae66e54c5839b7111
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-01T09:48:52.331548395Z","feature_name":"the specifier may merge and split intakes, not only drain them one to one","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-680-specifier-consolidation-authority.feature","background_hash":"cde48f59ccbcfb5aab84be3ffa09b02047c8e416a2fc7ddc074f29bf30fc0427","implementation_hash":"unknown","scenarios":[{"index":4,"name":"the prompt bounds what consolidation may touch and produce","scenario_hash":"d61c6d0d9cb0926f9dd3a724c775bca5e62d740e4a3abaa3a602134bc3bfef68","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-08-01T09:48:52.331548395Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: the specifier may merge and split intakes, not only drain them one to one
 
   specifier.prompt's intake contract says "the moment you turn ONE of these
@@ -35,6 +40,7 @@ Feature: the specifier may merge and split intakes, not only drain them one to o
     Then it instructs that one intake may become several tickets
     And it instructs that the intake archives once pointing at every resulting ticket
     And it instructs stating which part of the intake went to which ticket
+    And it instructs that each resulting ticket records which intake it came from
 
   # BL-680 consolidation-authority-03
   Scenario: the prompt requires every human sentence to survive a consolidation
@@ -69,3 +75,15 @@ Feature: the specifier may merge and split intakes, not only drain them one to o
     When it is split into three tickets
     Then each mechanism is named in exactly one resulting ticket
     And the archived intake points at all three
+
+  # BL-680 consolidation-authority-08
+  Scenario: a split that would drop a shared quoted directive is refused rather than trimmed
+    Given one intake quoting a shared operator directive alongside three separable mechanisms
+    When it is split into three tickets
+    Then the shared quoted directive appears verbatim on every resulting ticket
+
+  # BL-680 consolidation-authority-09
+  Scenario: each resulting ticket from a split independently names the intake it came from
+    Given one intake proposing three separable mechanisms
+    When it is split into three tickets
+    Then every resulting ticket records the source intake id on its own
