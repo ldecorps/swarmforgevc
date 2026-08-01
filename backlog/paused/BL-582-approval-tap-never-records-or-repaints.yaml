@@ -5,7 +5,7 @@ type: defect
 status: todo
 epic: swarm-reliability
 human_approval: approved
-severity: high
+severity: medium
 priority: 15
 direction: human-requested
 depends_on: []
@@ -198,6 +198,10 @@ out_of_scope: |
     investigation shows it shares the broken code path.
 
 notes: |
+  2026-08-01 Let's Talk (human): severity high → medium so the JumpQ
+  pilot-process batch can clear the high tier; observability of approve
+  failures, not a standing outage.
+
   QA: reproduce by hand against the live bot - post an ask, tap Approve, and
   confirm both the yaml write and the repaint. A fixture-only pass is not
   sufficient here: every unit-level guard already passes today while the live

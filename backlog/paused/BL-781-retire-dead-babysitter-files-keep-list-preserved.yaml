@@ -1,0 +1,124 @@
+id: BL-781
+title: "BL-611's KEEP list preserved three dead babysitter files, and scenario 15 allowlists exactly the two that contradict it — 'no wake runtime remains' is vacuous"
+milestone: M8
+type: defect
+status: todo
+epic: swarm-reliability
+severity: low
+priority: 40
+direction: aligned
+depends_on: [BL-611]
+assigned_to: unassigned
+mutation_cost: low
+human_approval: approved
+approval_context: >
+  Low severity because nothing misbehaves at runtime — all three files are
+  provably uncalled. What is real is the acceptance integrity: BL-611's
+  scenario 15 asserts "no babysitter.prompt role, LLM launch path, or wake
+  runtime remains", and it passes only because the two surviving wake-runtime
+  files are named in the step handler's allowlist. A future reader trusts that
+  green.
+
+  Needs sign-off on one thing only: deleting `babysitter_lib.bb` and
+  `babysitter_enqueue_wake.sh` rather than keeping them as salvage. The
+  specifier's position is delete — their sole purpose was feeding an LLM
+  babysitter that BL-611 retired, and BL-611 also removed both ends of the
+  wake queue they serve. Everything else here is mechanical.
+
+source: |
+  Reported by the coder on 2026-08-01 in
+  `backlog/evidence/BL-611-coder-findings.md` (finding 1 and finding 3), and
+  extended by the specifier's own audit of the full KEEP list, which found a
+  second dead wake-queue file the coder had not flagged.
+
+  BL-611's ticket carries a RECYCLE/KEEP audit whose KEEP list is introduced
+  with "Zero agent references by inspection". Verified at the coder's tip
+  5f9a79511, that claim is wrong for three of its entries:
+
+  1. **`swarmforge/scripts/babysitter_lib.bb`** (111 lines) — its entire
+     content is LLM-wake scheduling for the retired agent
+     (`next-observe-due?`, `should-fire-observe?`, `format-wake-message`),
+     including message text like "Telegram the glitch" and "do NOT restart the
+     swarm". Callers at 5f9a79511: its own test runner and the scenario-15
+     allowlist. Nothing else. Its one mention of `babysitter_nudge_resident.bb`
+     is inside a message string, not a call.
+
+  2. **`swarmforge/scripts/babysitter_enqueue_wake.sh`** — pushes events onto
+     the wake queue. BL-611 deleted that queue's only consumer
+     (`babysitter_runtime.bb`) AND its producer side in `handoffd.bb`, so the
+     script now writes to a queue nobody reads or fills. Zero callers at
+     5f9a79511 outside the allowlist. NOT flagged by the coder; found by
+     grepping every KEEP entry for live callers.
+
+  3. **`swarmforge/scripts/babysitter_assess.bb`** — calls five symbols that do
+     not exist in `babysitter_assess_lib.bb`
+     (`babysitter-assess-lib/assess-agent`, `mono-router-standing-roles`,
+     `summarize-assess`, `format-assess-report`, `format-telegram-glitch`), so
+     it fails on any invocation. Zero callers. The coder verified this predates
+     BL-611 entirely. The KEEP list names "`babysitter_assess_lib.bb` +
+     `babysitter_assess.bb`" as one unit, conflating a live library with a
+     broken CLI over it — only the `_lib.bb` half is real.
+
+  The coder kept all three rather than deleting on a factual-error theory,
+  which was the right call for an in-flight parcel against an explicit and
+  recent KEEP list. The specifier ratifies that call and takes the correction
+  here instead. `babysitter_nudge_lib.bb` and `babysitter_nudge_resident.bb`
+  were audited too and are genuinely live — they stay.
+
+description: |
+  Delete the three dead files, their dedicated test runners, and their entries
+  in the scenario-15 allowlist, so BL-611's "no wake runtime remains"
+  assertion is enforced by the scan rather than exempted from it.
+
+  The point of this ticket is NOT tidiness. It is that the allowlist and the
+  assertion contradict each other: the scan is told to ignore precisely the
+  files that would falsify it. Removing the files lets the allowlist entries
+  go too, and scenario 15 starts meaning what it says.
+
+  Do this as deletion, not repair. `babysitter_assess.bb` in particular is
+  tempting to fix — resist it. Its working half (`babysitter_assess_lib.bb`)
+  is already wired into `babysitter_check.bb` as the BL-528 claim-risk scan;
+  the broken CLI wrapper has no consumer and reviving one is new scope.
+
+  Sequence after BL-611 lands on `main`. Running these concurrently would put
+  two parcels in the same file family.
+
+acceptance: |
+  Specifier writes the Gherkin when this is approved and promoted. Minimum
+  behaviour:
+
+  1. `swarmforge/scripts/babysitter_lib.bb`,
+     `swarmforge/scripts/babysitter_enqueue_wake.sh`, and
+     `swarmforge/scripts/babysitter_assess.bb` are absent from the tree, as
+     are the test runners whose only subject is a deleted file.
+  2. The scenario-15 allowlist in
+     `specs/pipeline/steps/bl611BabysitterdLifecycleSteps.js` no longer names
+     any of the three, and BL-611 scenario 15 still passes — now because no
+     wake runtime remains, not because it is exempted.
+  3. `babysitter_assess_lib.bb`, `babysitter_nudge_lib.bb`, and
+     `babysitter_nudge_resident.bb` survive untouched, and every suite that
+     exercises them still passes.
+  4. `./start-swarm.sh`, `./stop-swarm.sh`, `./swarm ensure`, and
+     `./swarm status` run clean — no reference to a deleted file, which is
+     BL-611 scenario 16's standing contract.
+  5. A repo-wide grep for each deleted filename returns no live caller — the
+     deletion is proven by absence of callers, not by the suite staying green.
+
+out_of_scope: |
+  - Fixing or reviving `babysitter_assess.bb`'s undefined symbols. Delete it.
+  - `babysitter_assess_lib.bb`'s own behaviour (the live BL-528 claim-risk
+    scan) — untouched here.
+  - Any change to the babysitterd sweep, its checks, or its nudge path.
+  - Re-litigating BL-611's KEEP/RECYCLE split beyond these three entries.
+
+notes: |
+  Audit method, so a reviewer can re-run it rather than trust this ticket:
+  for each KEEP-list entry, `git grep -l <name> <commit> -- ':!backlog/'
+  ':!docs/'` and discard hits that are the file itself, its own test runner,
+  or the step-handler allowlist. What remains is the live caller set. It was
+  empty for these three and non-empty for the rest.
+
+  Ratified in the same pass, needing no ticket: the coder's other judgment
+  call on BL-611 (`kill_all_swarm.sh` signalling babysitterd's pidfile while
+  `kill_pipeline_swarm.sh` stays pipeline-only per BL-637). See BL-611's
+  `notes:` for the reasoning.

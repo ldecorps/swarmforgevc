@@ -5,7 +5,7 @@ type: defect
 status: todo
 epic: swarm-reliability
 human_approval: approved
-severity: high
+severity: medium
 priority: 06
 direction: human-requested
 depends_on: []
@@ -118,6 +118,9 @@ out_of_scope: |
   - Fixing BL-590's own defects. Operator ruled fix-forward 2026-07-25.
 
 notes: |
+  2026-08-01 Let's Talk (human): severity high → medium so the JumpQ
+  pilot-process batch can clear the high tier; commit guard, not a live outage.
+
   If an override is provided at all beyond `--no-verify`, it must be explicit
   and logged — never a silent env var that quietly becomes the normal way to
   commit. Same constraint BL-629 puts on its own override.

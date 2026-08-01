@@ -10,8 +10,7 @@ direction: aligned
 depends_on: []
 assigned_to: unassigned
 mutation_cost: low
-human_approval: pending
-
+human_approval: approved
 approval_context: >
   A one-line default change with a real trade-off only the human should make,
   surfaced by the specifier on 2026-08-01 while speccing BL-651 (whose Shape

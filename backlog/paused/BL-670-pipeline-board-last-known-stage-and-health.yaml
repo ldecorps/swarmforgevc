@@ -4,7 +4,7 @@ milestone: M8
 type: defect
 status: todo
 epic: pipeline-board
-severity: high
+severity: medium
 priority: 07
 direction: human-requested
 depends_on: []
@@ -79,3 +79,8 @@ description: |
   precedent) rather than riding as a duplicate.
 
 acceptance: specs/features/BL-670-pipeline-board-last-known-stage-and-health.feature
+
+notes: |
+  2026-08-01 Let's Talk (human): severity high → medium so the JumpQ
+  pilot-process batch can clear the high tier; board semantics/layout,
+  not a live outage.
