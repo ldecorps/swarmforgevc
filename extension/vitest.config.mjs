@@ -24,7 +24,11 @@ export default defineConfig({
     // dir the shared test/helpers/tmpDir.js handed out during that file's
     // tests - the single place cleanup happens instead of ~147 hand-rolled
     // variants, and it fires on the throw path too (afterEach always runs).
-    setupFiles: ['./test/helpers/tmpDirSetup.js'],
+    // BL-720: registers a per-test process.env before/after guard (see
+    // envRestoreGuardSetup.js) alongside BL-420's tmp-dir sweep above - both
+    // are per-file setupFiles so both re-register for every test file even
+    // though isolate:false keeps them in the same worker.
+    setupFiles: ['./test/helpers/tmpDirSetup.js', './test/helpers/envRestoreGuardSetup.js'],
     // BL-422: an unbounded `vitest run` sizes its worker pool to the CPU
     // count (20 on the reference host) with no per-worker heap limit - one
     // run ballooned four workers to ~13GB and drove the kernel OOM-killer

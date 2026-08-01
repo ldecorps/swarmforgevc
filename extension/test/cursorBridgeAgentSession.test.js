@@ -348,6 +348,7 @@ test('cursorBridgeAgentSession: live session recovers from authentication error'
   const originalCreate = sdk.Agent.create;
   const originalResume = sdk.Agent.resume;
   let creates = 0;
+  const prevKey = process.env.CURSOR_API_KEY;
   process.env.CURSOR_API_KEY = 'test-key';
   fs.writeFileSync(
     path.join(root, '.swarmforge', 'operator', 'cursor-bridge-state.json'),
@@ -371,7 +372,8 @@ test('cursorBridgeAgentSession: live session recovers from authentication error'
   } finally {
     sdk.Agent.create = originalCreate;
     sdk.Agent.resume = originalResume;
-    delete process.env.CURSOR_API_KEY;
+    if (prevKey === undefined) delete process.env.CURSOR_API_KEY;
+    else process.env.CURSOR_API_KEY = prevKey;
   }
 });
 
@@ -380,6 +382,7 @@ test('cursorBridgeAgentSession: live session recovers from active-run conflict',
   const sdk = require('@cursor/sdk');
   const originalCreate = sdk.Agent.create;
   let calls = 0;
+  const prevKey = process.env.CURSOR_API_KEY;
   process.env.CURSOR_API_KEY = 'test-key';
   sdk.Agent.create = async () => {
     calls += 1;
@@ -402,7 +405,8 @@ test('cursorBridgeAgentSession: live session recovers from active-run conflict',
     assert.ok(calls >= 2);
   } finally {
     sdk.Agent.create = originalCreate;
-    delete process.env.CURSOR_API_KEY;
+    if (prevKey === undefined) delete process.env.CURSOR_API_KEY;
+    else process.env.CURSOR_API_KEY = prevKey;
   }
 });
 
@@ -623,6 +627,7 @@ test('cursorBridgeAgentSession: live session resumes agentId from persisted stat
   const sdk = require('@cursor/sdk');
   const originalCreate = sdk.Agent.create;
   const originalResume = sdk.Agent.resume;
+  const prevKey = process.env.CURSOR_API_KEY;
   process.env.CURSOR_API_KEY = 'test-key';
   let resumedId;
   sdk.Agent.create = async () => {
@@ -644,7 +649,8 @@ test('cursorBridgeAgentSession: live session resumes agentId from persisted stat
   } finally {
     sdk.Agent.create = originalCreate;
     sdk.Agent.resume = originalResume;
-    delete process.env.CURSOR_API_KEY;
+    if (prevKey === undefined) delete process.env.CURSOR_API_KEY;
+    else process.env.CURSOR_API_KEY = prevKey;
   }
 });
 
@@ -653,6 +659,7 @@ test('cursorBridgeAgentSession: live session honors CURSOR_BRIDGE_MODEL override
   const sdk = require('@cursor/sdk');
   const originalCreate = sdk.Agent.create;
   const prevModel = process.env.CURSOR_BRIDGE_MODEL;
+  const prevKey = process.env.CURSOR_API_KEY;
   process.env.CURSOR_API_KEY = 'test-key';
   process.env.CURSOR_BRIDGE_MODEL = 'custom-model';
   let capturedModel;
@@ -669,7 +676,8 @@ test('cursorBridgeAgentSession: live session honors CURSOR_BRIDGE_MODEL override
     sdk.Agent.create = originalCreate;
     if (prevModel === undefined) delete process.env.CURSOR_BRIDGE_MODEL;
     else process.env.CURSOR_BRIDGE_MODEL = prevModel;
-    delete process.env.CURSOR_API_KEY;
+    if (prevKey === undefined) delete process.env.CURSOR_API_KEY;
+    else process.env.CURSOR_API_KEY = prevKey;
   }
 });
 
@@ -677,6 +685,7 @@ test('cursorBridgeAgentSession: live session reuses cached agent across prompts'
   const root = mkRoot();
   const sdk = require('@cursor/sdk');
   const originalCreate = sdk.Agent.create;
+  const prevKey = process.env.CURSOR_API_KEY;
   process.env.CURSOR_API_KEY = 'test-key';
   let creates = 0;
   sdk.Agent.create = async () => {
@@ -692,7 +701,8 @@ test('cursorBridgeAgentSession: live session reuses cached agent across prompts'
     assert.equal(session.readAgentId(), 'agent-live-99');
   } finally {
     sdk.Agent.create = originalCreate;
-    delete process.env.CURSOR_API_KEY;
+    if (prevKey === undefined) delete process.env.CURSOR_API_KEY;
+    else process.env.CURSOR_API_KEY = prevKey;
   }
 });
 
@@ -700,6 +710,7 @@ test('cursorBridgeAgentSession: live session propagates non-conflict agent error
   const root = mkRoot();
   const sdk = require('@cursor/sdk');
   const originalCreate = sdk.Agent.create;
+  const prevKey = process.env.CURSOR_API_KEY;
   process.env.CURSOR_API_KEY = 'test-key';
   let creates = 0;
   sdk.Agent.create = async () => {
@@ -719,7 +730,8 @@ test('cursorBridgeAgentSession: live session propagates non-conflict agent error
     assert.equal(creates, 1);
   } finally {
     sdk.Agent.create = originalCreate;
-    delete process.env.CURSOR_API_KEY;
+    if (prevKey === undefined) delete process.env.CURSOR_API_KEY;
+    else process.env.CURSOR_API_KEY = prevKey;
   }
 });
 
@@ -728,6 +740,7 @@ test('cursorBridgeAgentSession: live session recovers active-run conflict from p
   const sdk = require('@cursor/sdk');
   const originalCreate = sdk.Agent.create;
   let calls = 0;
+  const prevKey = process.env.CURSOR_API_KEY;
   process.env.CURSOR_API_KEY = 'test-key';
   sdk.Agent.create = async () => {
     calls += 1;
@@ -750,7 +763,8 @@ test('cursorBridgeAgentSession: live session recovers active-run conflict from p
     assert.ok(calls >= 2);
   } finally {
     sdk.Agent.create = originalCreate;
-    delete process.env.CURSOR_API_KEY;
+    if (prevKey === undefined) delete process.env.CURSOR_API_KEY;
+    else process.env.CURSOR_API_KEY = prevKey;
   }
 });
 
@@ -758,6 +772,7 @@ test('cursorBridgeAgentSession: live resetSession clears persisted agentId', asy
   const root = mkRoot();
   const sdk = require('@cursor/sdk');
   const originalCreate = sdk.Agent.create;
+  const prevKey = process.env.CURSOR_API_KEY;
   process.env.CURSOR_API_KEY = 'test-key';
   sdk.Agent.create = async () => mockSdkAgent('persist me');
   try {
@@ -775,7 +790,8 @@ test('cursorBridgeAgentSession: live resetSession clears persisted agentId', asy
     assert.equal(persisted.updateOffset, 0);
   } finally {
     sdk.Agent.create = originalCreate;
-    delete process.env.CURSOR_API_KEY;
+    if (prevKey === undefined) delete process.env.CURSOR_API_KEY;
+    else process.env.CURSOR_API_KEY = prevKey;
   }
 });
 
