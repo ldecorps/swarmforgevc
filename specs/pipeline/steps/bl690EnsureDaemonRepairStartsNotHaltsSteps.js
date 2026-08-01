@@ -210,7 +210,7 @@ function runEnsure(fixture, extraEnv = {}) {
     SWARM_ENSURE_EXTENSION_BOUNCE_CMD: fixture.extFake,
     SWARMFORGE_SKIP_OPERATOR: '1',
     SWARMFORGE_SKIP_FRONT_DESK: '1',
-    SWARMFORGE_SKIP_BABYSITTER: '1',
+    SWARMFORGE_SKIP_BABYSITTERD: '1',
     HANDOFFD_BB: fixture.handoffdBbOk,
     HANDOFFD_SUPERVISOR_BB: fixture.supervisorBbOk,
     PID_WAIT_ATTEMPTS: '5',

@@ -9,8 +9,13 @@ severity: high
 priority: 05
 direction: human-requested
 depends_on: []
-assigned_to: specifier
+assigned_to: coder
 mutation_cost: medium
+required_wiring:
+  - "swarmforge/scripts/start_ancillary_services.sh::babysitterd::start-swarm must actually start the daemon — the whole defect is that the only working sweep is wired into no start path"
+  - "swarmforge/scripts/stop_ancillary_services.sh::babysitterd::stop-swarm must stop it by pidfile, like the other daemons"
+  - "swarmforge/scripts/kill_all_swarm.sh::babysitterd::the nuclear path must signal its pidfile (handoffd's signal_pid_file pattern); today this file has no babysitter reference at all"
+  - "swarmforge/scripts/swarm_ensure.bb::babysitterd::./swarm ensure must verify pid-alive and restart the DAEMON — today its babysitter component points at the retired LLM hawk"
 approval_context: >
   Hydrate batch 2026-07-28: materializes the already-approved prose acceptance
   (A-G, 1-7 with 6b/6c/6d) into APS Gherkin, unchanged in substance; the
@@ -97,8 +102,8 @@ description: |
     (+ its core/test), `start-swarm.sh`/`stop-swarm.sh` help text — update to
     the daemon; front-desk must not offer to launch an agent babysitter.
   - Runtime state `.swarmforge/babysitter/` — the daemon uses the pidfile/log/
-    state layout from the prototype; specifier picks the final dir name, but
-    stale hawk state must not be mistaken for daemon state.
+    state layout from the prototype; stale hawk state must not be mistaken for
+    daemon state. SPECIFIER'S CALL, now settled (see "Names pinned" below).
 
   ## Sweep checks (from the running prototype — keep all eight)
 
@@ -156,7 +161,15 @@ description: |
 
   ## Nudge contract (the part the LLM version got wrong — pin it in Gherkin)
 
-  - Only CRIT findings nudge the coordinator; WARN/OK stay in the log.
+  - CRIT findings nudge the coordinator, and so does a `stuck-*` WARN. Every
+    other WARN, and OK, stay in the log.
+    CORRECTED 2026-08-01 (specifier): this line read "Only CRIT findings nudge"
+    until now, which contradicted the prototype and acceptance scenario
+    `nudge-eligibility-13`. The prototype grew a deliberate carve-out on
+    2026-07-26 (`babysitter_check.sh:197`, comment "INCIDENT CONTAINMENT") after
+    stuck-parcel WARNs went silently unactioned. The Gherkin already pinned the
+    carve-out; this prose had not caught up. The FEATURE FILE IS THE CONTRACT —
+    build the carve-out, not the old prose.
   - Nudge = a typed message + Enter into the coordinator pane (typed messages
     submit; remote-app draft overlays do not — verified 2026-07-24).
   - Deduped per finding-key with a cooldown (default 30 min) so a persistent
@@ -265,6 +278,63 @@ description: |
   `extension/src/tools/notify-babysitter.ts`. Both may serve the deterministic daemon
   just as well as the agent. Specifier's call.
 
+  ## NAMES AND OPEN CALLS PINNED 2026-08-01 (specifier)
+
+  Four decisions this ticket explicitly deferred to the specifier. Settled here so
+  the coder builds one shape, not a guess. All four sit inside the already-approved
+  scope; none adds work beyond what the ticket already required.
+
+  ### 1. Names — daemon, sweep, state dir
+
+  ```
+  swarmforge/scripts/babysitterd.sh        the loop daemon
+  swarmforge/scripts/babysitter_check.sh   the sweep (one pass; --nudge to nudge)
+  .swarmforge/babysitterd/                 pidfile, log, dedup/streak state
+  ```
+
+  `babysitterd.sh` is not a free choice: `stack_survivor_scan.sh:37` already
+  pattern-matches `*babysitterd.sh*` when scanning for stack survivors, so any other
+  name silently breaks a check that already ships. The state dir is deliberately
+  `.swarmforge/babysitterd/`, NOT the hawk's `.swarmforge/babysitter/` — that is how
+  "stale hawk state must not be mistaken for daemon state" is enforced rather than
+  merely asked for. The hawk's directory is left for `stop_ancillary_services.sh`'s
+  removal path to clear; the daemon must never read it.
+
+  ### 2. `SWARMFORGE_SKIP_BABYSITTER` -> `SWARMFORGE_SKIP_BABYSITTERD` (rename, not reuse)
+
+  Of the two options the ticket allows, take the RENAME. Reuse fails in the one
+  direction that matters: this host's `.swarmforge/swarm.env` already carries
+  `SWARMFORGE_SKIP_BABYSITTER=1` with the reason "cost > value for this project" —
+  written about a paid LLM agent. Reusing the slot means the machine this ticket
+  was filed from boots with the new free daemon disabled, reproducing the exact
+  defect ("the working sweep is running nowhere") under a new name. A rename fails
+  safe: the stale line stops matching anything and the daemon starts.
+
+  The runbook must state that `SWARMFORGE_SKIP_BABYSITTER` is now inert and that the
+  `.swarmforge/swarm.env` line setting it is stale and should be deleted by hand
+  (`.swarmforge/` is untracked runtime state — the parcel cannot edit it).
+
+  This supersedes the 2026-07-24 line above saying "the `SWARMFORGE_SKIP_BABYSITTER=1`
+  env skip carries over unchanged"; that predates the 2026-07-25 discovery of the
+  problem and is no longer the instruction.
+
+  ### 3. `extension/src/tools/notify-babysitter.ts` — REMOVE
+
+  Consistent with `out_of_scope` ("Telegram/topic surfaces for findings ... If wanted
+  later, separate ticket") and with the nudge contract: findings go to the log and,
+  when CRIT or `stuck-*`, to the coordinator pane. There is no Telegram surface in
+  this ticket for it to serve.
+
+  ### 4. `backlog/topics/BABYSITTER.json` — KEEP, untouched
+
+  A durable topic record is history, not runtime state: nothing in this parcel reads
+  it, and deleting the file does not close the Telegram topic it records, so removal
+  buys nothing and loses the record of a topic that still exists upstream. Leave the
+  file exactly as-is. The daemon must not post to that topic (decision 3). This is
+  the one deliberate exception to acceptance scenario 15's "the only matches are the
+  deterministic daemon, its salvaged pure libraries, docs, and history" — the record
+  IS history, and is covered by that clause.
+
   ## OPERATOR RULING 2026-07-25 (second): "il faut eradiquer l'agent babysitter -
   ## c'est maintenant un demon"
 
@@ -371,3 +441,46 @@ notes: |
     start/stop/ensure it, where the log/state live, and the env skip; plus the
     coordinator-facing doc line about "babysitter health sweep:" messages.
 
+
+  ## 2026-08-01 specifier — disposition of the coder's five findings
+
+  Recorded from `backlog/evidence/BL-611-coder-findings.md`. NO REBUILD IS
+  REQUIRED FOR THIS PARCEL — every judgment call the coder made is ratified as
+  made. This section is provenance, so a later reader is not left guessing why
+  a KEEP-listed file survived.
+
+  1. **`babysitter_lib.bb` KEEP-list claim is wrong — ratified as kept here,
+     corrected in BL-781.** The coder is right: the file is LLM-wake scheduling
+     for the retired agent, with zero production callers. The specifier's own
+     audit of the full KEEP list found a SECOND dead wake-queue file the coder
+     did not flag, `babysitter_enqueue_wake.sh`, whose queue BL-611 removes at
+     both ends. Keeping both allowlisted makes scenario 15's "no wake runtime
+     remains" vacuous for exactly the files that contradict it. That is a real
+     acceptance defect and it is now BL-781 — deliberately NOT folded into this
+     parcel, which is already at hardender with mutation evidence produced.
+     Destabilising it for three inert files would cost more than it buys.
+
+  2. **`kill_all_swarm.sh` signalling babysitterd's pidfile — RATIFIED.** The
+     narrow, additive change to the legacy-alias file only, leaving
+     `kill_pipeline_swarm.sh` untouched and every BL-637 scenario passing, is
+     the right call. It also restores the distinction the two names always
+     implied: "kill all" reaches ancillaries, "kill pipeline" does not. BL-637's
+     pipeline-only boundary is intact where it is tested. No revert.
+
+  3. **`babysitter_assess.bb` broken and uncalled — out of scope here, agreed.**
+     Confirmed independently: zero callers, and the symbols it calls do not
+     exist. Folded into BL-781 as a deletion (not a repair) since it is the same
+     file family and the same root cause, an inaccurate KEEP list.
+
+  4. **BL-631's wake-queue presumption — fixed at the source.** BL-631 is
+     paused, so its acceptance was reworked directly against this ticket's
+     shipped contract (findings assembled fresh each sweep; dedup on the NUDGE
+     via `decide-nudges`, keyed on `:key`). It now also declares
+     `depends_on: [BL-611]`. Nothing for this parcel to do.
+
+  5. **Two suites false-fail on a live-swarm host — ticketed BL-782.** Verified
+     independently and sharpened: both files apply correct root-scoping on one
+     line and drop it on the adjacent one
+     (`kill_pipeline_swarm.sh` :230 scoped vs :271 unscoped;
+     `expedite_cli.bb` `pids-matching` call site :169 scoped vs :165-168 bare).
+     Pre-existing, not a BL-611 regression, and not this parcel's to fix.

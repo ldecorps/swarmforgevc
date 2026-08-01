@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Stop operator runtime, Telegram front desk, babysitter, and remote tunnels.
+# Stop operator runtime, Telegram front desk, babysitterd, and remote tunnels.
 #
 # Paired with start_ancillary_services.sh and stop-swarm.sh (full-stack stop).
 # Idempotent — safe when nothing is running.
@@ -10,7 +10,8 @@ set -euo pipefail
 ROOT="$(cd "${1:-.}" && pwd)"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OP_DIR="$ROOT/.swarmforge/operator"
-BB_DIR="$ROOT/.swarmforge/babysitter"
+BB_DIR="$ROOT/.swarmforge/babysitterd"
+LEGACY_BB_DIR="$ROOT/.swarmforge/babysitter"
 
 log() {
   printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*"
@@ -65,19 +66,26 @@ stop_front_desk_children() {
 
 log "stop_ancillary_services begin root=$ROOT"
 
-# Babysitter first — it can relaunch or wake agents while we tear down.
-if [[ -d "$BB_DIR" || -f "$SCRIPT_DIR/start_babysitter.sh" ]]; then
-  log "stopping babysitter"
-  mkdir -p "$BB_DIR"
-  touch "$BB_DIR/stop" 2>/dev/null || true
-  sleep 0.5
-  signal_pid_file "$BB_DIR/runtime.pid"
-  sock="$BB_DIR/babysitter-tmux.sock"
+# babysitterd (BL-611) first — signal its pidfile like the other daemons.
+log "stopping babysitterd"
+signal_pid_file "$BB_DIR/babysitterd.pid"
+
+# Legacy LLM hawk cleanup (retired — BL-611: the babysitter is now ONLY the
+# deterministic daemon above). Best-effort teardown of any leftover
+# process/socket from before this ticket shipped; babysitterd never reads
+# this directory, so this is migration hygiene only, not part of its
+# lifecycle.
+if [[ -d "$LEGACY_BB_DIR" ]]; then
+  log "clearing legacy babysitter hawk state"
+  touch "$LEGACY_BB_DIR/stop" 2>/dev/null || true
+  sleep 0.3
+  signal_pid_file "$LEGACY_BB_DIR/runtime.pid"
+  sock="$LEGACY_BB_DIR/babysitter-tmux.sock"
   if [[ -S "$sock" ]]; then
     tmux -S "$sock" kill-server 2>/dev/null || true
     rm -f "$sock"
   fi
-  rm -f "$BB_DIR/stop" "$BB_DIR/enabled" "$BB_DIR/socket.path" 2>/dev/null || true
+  rm -f "$LEGACY_BB_DIR/stop" "$LEGACY_BB_DIR/enabled" "$LEGACY_BB_DIR/socket.path" 2>/dev/null || true
 fi
 
 # Front desk (graceful stop file — bridge + bot are children).

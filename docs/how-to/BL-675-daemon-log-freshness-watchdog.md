@@ -18,7 +18,17 @@ Thresholds and paths live in one place:
 Both daemons emit a timestamped, content-free `heartbeat` line on every loop
 tick, so a healthy quiet period (cooldown pause, no work) never looks dead.
 
-## Install (once per host)
+## Install
+
+**Automatic (BL-783).** `start_ancillary_services.sh` — the lifecycle start
+path every `./swarm` launch runs — calls `install_freshness_cron.sh` for you
+after babysitterd starts. There is no operator step: the cron is present on
+any host where the swarm has ever been started. Set
+`SWARMFORGE_SKIP_FRESHNESS_CRON=1` to opt out. A host with no `crontab`
+command, or a read-only crontab, does not fail the swarm start — it prints a
+`WARN:` line naming what will not be watched and carries on.
+
+**Manual (repair or a bare install without starting the swarm)**:
 
 ```bash
 swarmforge/scripts/install_freshness_cron.sh /path/to/project-root
@@ -26,7 +36,11 @@ swarmforge/scripts/install_freshness_cron.sh /path/to/project-root
 
 That installs an idempotent crontab line (every 2 minutes) that runs
 `daemon_log_freshness_check.sh` with `FRESHNESS_ROOT` set. Re-running the
-installer replaces any prior BL-675 line; it never stacks duplicates.
+installer replaces any prior line for that same root; it never stacks
+duplicates. The marker is root-scoped
+(`# swarmforge-BL-675-freshness-check root=[/path/to/project-root]`), so two
+project roots on the same host each keep their own line — installing for one
+root never removes a sibling root's line.
 
 Requires `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` in
 `.swarmforge/telegram.env` or `.swarmforge/operator/telegram.env` for
@@ -73,7 +87,13 @@ FRESHNESS_NOW_EPOCH=$(date +%s) \
 
 ```bash
 bash swarmforge/scripts/test/test_daemon_log_freshness.sh
+bash swarmforge/scripts/test/test_start_ancillary_services_freshness_cron.sh
 ```
+
+The first covers the checker itself; the second (BL-783) runs the real
+`start_ancillary_services.sh` against fixture roots with a fake `crontab` on
+PATH and reads back the installed line — proving the auto-install wiring
+behaviourally, not by grepping the start script for a substring.
 
 Acceptance feature: `specs/features/BL-675-daemon-log-freshness.feature`.
 

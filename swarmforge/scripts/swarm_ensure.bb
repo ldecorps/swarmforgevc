@@ -3,12 +3,18 @@
 ;; BL-145 / full-stack ensure: `./swarm ensure` brings a swarm to a
 ;; known-good state in one idempotent command. It checks and repairs, in
 ;; order: the extension host, every configured agent pane, the handoff
-;; daemon, the operator runtime, the babysitter hawk (when enabled), and
+;; daemon, the operator runtime, babysitterd, and
 ;; (when Telegram is configured) the front-desk supervisor that owns the
 ;; Telegram bridge + Front Desk Bot.
 ;; Each component reports HEALTHY, FIXED (naming the repair), or FAILED -
 ;; never silently. A failed repair does not abort the remaining checks.
 ;; Exit status is non-zero if anything could not be brought to health.
+;;
+;; babysitterd (BL-611): the deterministic health-sweep daemon, managed like
+;; every other daemon here — verify pid-alive, restart via
+;; start_babysitterd.sh if not. Enabled by default (like operator/front-desk),
+;; not gated on a prior "enabled" marker — the whole point of BL-611 is that
+;; the sweep is wired into the swarm lifecycle rather than opt-in.
 ;;
 ;; Usage: swarm_ensure.bb <project-root>
 ;;
@@ -23,9 +29,9 @@
 ;;     start_handoff_daemon.sh (BL-690: a START action, never
 ;;     handoffd_supervisor.bb's --check-once probe, which can alarm-and-halt!)
 ;;   SWARM_ENSURE_OPERATOR_CMD / SWARM_ENSURE_FRONT_DESK_CMD
-;;   SWARM_ENSURE_BABYSITTER_CMD
+;;   SWARM_ENSURE_BABYSITTERD_CMD
 ;;   SWARMFORGE_SKIP_OPERATOR=1 / SWARMFORGE_SKIP_FRONT_DESK=1
-;;   SWARMFORGE_SKIP_BABYSITTER=1
+;;   SWARMFORGE_SKIP_BABYSITTERD=1
 
 (ns swarm-ensure
   (:require [babashka.fs :as fs]
@@ -87,9 +93,9 @@
   (or (System/getenv "SWARM_ENSURE_FRONT_DESK_CMD")
       (str "bash " (fs/path script-dir "launch_front_desk.sh") " " project-root)))
 
-(def babysitter-start-cmd
-  (or (System/getenv "SWARM_ENSURE_BABYSITTER_CMD")
-      (str "bash " (fs/path script-dir "start_babysitter.sh") " " project-root)))
+(def babysitterd-start-cmd
+  (or (System/getenv "SWARM_ENSURE_BABYSITTERD_CMD")
+      (str "bash " (fs/path script-dir "start_babysitterd.sh") " " project-root)))
 
 ;; ── pure decision ────────────────────────────────────────────────────────────
 
@@ -289,9 +295,7 @@
 
 (defn front-desk-pid-file [] (fs/path state-dir "operator" "front-desk-supervisor.pid"))
 
-(defn babysitter-pid-file [] (fs/path state-dir "babysitter" "runtime.pid"))
-
-(defn babysitter-enabled-file [] (fs/path state-dir "babysitter" "enabled"))
+(defn babysitterd-pid-file [] (fs/path state-dir "babysitterd" "babysitterd.pid"))
 
 (defn operator-pid []
   (when (fs/exists? (operator-pid-file))
@@ -307,15 +311,15 @@
 (defn front-desk-healthy? []
   (pid-alive? (front-desk-pid)))
 
-(defn babysitter-pid []
-  (when (fs/exists? (babysitter-pid-file))
-    (parse-long (str/trim (slurp (str (babysitter-pid-file)))))))
+(defn babysitterd-pid []
+  (when (fs/exists? (babysitterd-pid-file))
+    (parse-long (str/trim (slurp (str (babysitterd-pid-file)))))))
 
-(defn babysitter-healthy? []
-  (pid-alive? (babysitter-pid)))
+(defn babysitterd-healthy? []
+  (pid-alive? (babysitterd-pid)))
 
-(defn ensure-babysitter! []
-  (sh! babysitter-start-cmd))
+(defn ensure-babysitterd! []
+  (sh! babysitterd-start-cmd))
 
 (defn ensure-operator! []
   (sh! operator-start-cmd))
@@ -346,13 +350,11 @@
        (or (telegram-configured?)
            (fs/exists? (front-desk-pid-file)))))
 
-(defn babysitter-enabled?
-  "Repair babysitter only when it was previously enabled or a runtime pid
-   file exists — not merely because the start script is present."
+(defn babysitterd-enabled?
+  "Enabled by default, like operator/front-desk — BL-611's whole point is
+   that the sweep is a standard managed daemon, not opt-in behind a marker."
   []
-  (and (not= "1" (System/getenv "SWARMFORGE_SKIP_BABYSITTER"))
-       (or (fs/exists? (babysitter-enabled-file))
-           (fs/exists? (babysitter-pid-file)))))
+  (not= "1" (System/getenv "SWARMFORGE_SKIP_BABYSITTERD")))
 
 ;; ── launch-contract component (BL-530) ──────────────────────────────────────
 ;; A pack that names a non-default coordinator_agent (aider, codex, ...) must
@@ -585,11 +587,11 @@
         front-desk-result (when (front-desk-enabled?)
                             (ensure-component! "front-desk" front-desk-healthy? ensure-front-desk!
                                                 "restarted the Telegram front desk (bridge + bot)"))
-        babysitter-result (when (babysitter-enabled?)
-                            (ensure-component! "babysitter" babysitter-healthy? ensure-babysitter!
-                                                "restarted the babysitter runtime"))
+        babysitterd-result (when (babysitterd-enabled?)
+                             (ensure-component! "babysitterd" babysitterd-healthy? ensure-babysitterd!
+                                                 "restarted babysitterd"))
         results (concat [extension-result] role-results [daemon-result launch-contract-check]
-                        (remove nil? [operator-result front-desk-result babysitter-result]))]
+                        (remove nil? [operator-result front-desk-result babysitterd-result]))]
     (doseq [r results] (println (report-line r)))
     (System/exit (if (some #(= :failed (:status %)) results) 1 0))))
 
