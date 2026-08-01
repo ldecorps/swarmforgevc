@@ -10,7 +10,7 @@ direction: aligned
 depends_on: []
 assigned_to: unassigned
 mutation_cost: medium
-human_approval: pending
+human_approval: approved
 invariants:
   - "The concurrency Stryker actually runs at is never higher than the launching host's free RAM can hold at the declared per-worker peak minus the reserve — on every mutation entry point, not only the default config."
   - "An explicitly pinned concurrency always wins over the computed one, and whichever value is used is printed at launch — an adaptive number that is invisible is harder to debug than a wrong constant."

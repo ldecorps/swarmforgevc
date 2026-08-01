@@ -10,7 +10,7 @@ direction: aligned
 depends_on: [BL-783]
 assigned_to: unassigned
 mutation_cost: low
-human_approval: pending
+human_approval: approved
 invariants:
   - "The freshness checker restarts a watched daemon if and only if that daemon's stop was NOT deliberate — a crash or freeze is always restarted, a stop the operator or the swarm itself asked for is never undone."
   - "The deliberate-stop record is readable with every bb/node/swarm process dead — BL-675's share-no-fate property must survive this change, so nothing here may require asking a live process whether the stop was intentional."
@@ -79,6 +79,15 @@ source: |
   minutes for handoffd and about 10 for babysitterd, and each resurrected
   daemon then writes fresh heartbeats and stays up indefinitely. The
   operator's only recourse is editing the crontab by hand.
+
+  **It lands on a live standing directive.** The human's continuous-shifts
+  directive (`.swarmforge/operator/INTAKE-continuous-shifts-until-revoked.md`,
+  armed 2026-07-31, active until revoked) removes the scheduled stop entirely
+  and documents the revoke path as, optionally, `./stop-swarm.sh` for
+  lights-out. That is exactly the command this defect makes non-durable — so
+  the first time the human revokes continuous shifts and asks for lights-out,
+  the swarm comes back on its own within about two minutes and the only clue
+  is a crontab line nobody was told to look at.
 
   **Why this was invisible until now.** BL-675 shipped the checker in a state
   where nothing ever installed the cron (that is BL-783's entire subject), so
