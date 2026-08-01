@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=badb64c800a7b82027ca18c09f9aa9ec9b3abc9fc62a3e29bcb3587ef85d066f
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-01T08:14:19.825256287Z","feature_name":"a piloted ticket lands only when each commit's claims match its own diff","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-729-commit-claims-match-their-own-diff.feature","background_hash":"f4ae1c97a891965f5618bc95b572415bf946a63beac934fc360f99d033ae0c51","implementation_hash":"unknown","scenarios":[{"index":0,"name":"a message is judged on what it claims to have changed, not on what it mentions","scenario_hash":"b75890b6f1a99604f5c6dbb46ffff22a3ee9eecc4404aa8b083202b479b899b7","mutation_count":9,"result":{"Total":9,"Killed":9,"Survived":0,"Errors":0},"tested_at":"2026-08-01T08:14:16.533610512Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: a piloted ticket lands only when each commit's claims match its own diff
 
   # BL-729: BL-636's landing commit message said it restored a `deliver!` close
