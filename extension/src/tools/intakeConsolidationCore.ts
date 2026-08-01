@@ -47,16 +47,33 @@ export type SplitPart = {
   mechanism: string;
 };
 
+export type SplitResultPart = SplitPart & {
+  // Invariant 1 (BL-680), split side: every directive from the source
+  // intake, broadcast onto every resulting ticket. A directive shared across
+  // mechanisms (e.g. "notify the operator before cutover") can't be safely
+  // assigned to just one sub-ticket, so splitIntake carries the full source
+  // list on each part rather than guessing an owner - that keeps "appears
+  // verbatim in at least one resulting ticket" true no matter which part an
+  // auditor reads.
+  directives: string[];
+  // Invariant 3 (BL-680), split side: the back-reference to the source
+  // intake, recorded on EACH resulting ticket independently - not only
+  // recoverable by reading the wrapping SplitResult. Mirrors MergedTicket's
+  // ticket-names-its-sources direction for the 1:N case.
+  sourceIntakeId: string;
+};
+
 export type SplitResult = {
   sourceIntakeId: string;
-  parts: SplitPart[];
+  parts: SplitResultPart[];
 };
 
 // Invariant 3 (BL-680): "the intake-to-ticket mapping is total in both
 // directions" - every mechanism the source intake proposed is named in
-// EXACTLY one resulting ticket, and the archived intake (sourceIntakeId)
-// points at every resulting ticket id via `parts`.
-export function splitIntake(sourceIntakeId: string, parts: SplitPart[]): SplitResult {
+// EXACTLY one resulting ticket, the archived intake (sourceIntakeId) points
+// at every resulting ticket id via `parts`, and (see SplitResultPart above)
+// every resulting ticket names the intake it came from on its own.
+export function splitIntake(sourceIntakeId: string, directives: string[], parts: SplitPart[]): SplitResult {
   if (parts.length < 2) {
     throw new Error('splitIntake requires at least two resulting tickets');
   }
@@ -68,7 +85,10 @@ export function splitIntake(sourceIntakeId: string, parts: SplitPart[]): SplitRe
   if (new Set(ticketIds).size !== ticketIds.length) {
     throw new Error('splitIntake requires distinct resulting ticket ids');
   }
-  return { sourceIntakeId, parts: parts.slice() };
+  return {
+    sourceIntakeId,
+    parts: parts.map((p) => ({ ...p, directives: directives.slice(), sourceIntakeId })),
+  };
 }
 
 // Invariant 2 (BL-680): "Consolidation reads and writes spec-time artifacts

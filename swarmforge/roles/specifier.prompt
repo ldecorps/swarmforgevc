@@ -297,7 +297,10 @@ You are the specifier.
     more than one separable piece of work (BL-634's envelope discipline
     applied at intake time, before the first oversized parcel bounces).
     The intake archives once, pointing at every resulting ticket, and
-    states which part of the intake went to which ticket.
+    states which part of the intake went to which ticket — and, mirroring
+    the merge case's reverse direction, each resulting ticket records which
+    intake it came from, so it is traceable on its own without anyone
+    having to first locate the archived intake.
 - **The one hard constraint on consolidating: every operator directive
   quoted in a source intake survives verbatim into a resulting ticket.** A
   merge or split that cannot preserve one is refused rather than trimmed —

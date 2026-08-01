@@ -30,7 +30,7 @@ test('mergeIntakes refuses fewer than two sources', () => {
 // ── splitIntake (1:N) ───────────────────────────────────────────────────
 
 test('splitIntake maps every part onto its own ticket and points the intake at all of them', () => {
-  const result = splitIntake('INTAKE-X', [
+  const result = splitIntake('INTAKE-X', [], [
     { ticketId: 'BL-901', mechanism: 'walker' },
     { ticketId: 'BL-902', mechanism: 'telemetry' },
     { ticketId: 'BL-903', mechanism: 'burn meter' },
@@ -46,10 +46,30 @@ test('splitIntake maps every part onto its own ticket and points the intake at a
   );
 });
 
+test('splitIntake broadcasts every source directive onto every resulting ticket', () => {
+  const result = splitIntake('INTAKE-X', ['notify the operator before cutover'], [
+    { ticketId: 'BL-901', mechanism: 'walker' },
+    { ticketId: 'BL-902', mechanism: 'telemetry' },
+  ]);
+  for (const part of result.parts) {
+    assert.deepEqual(part.directives, ['notify the operator before cutover']);
+  }
+});
+
+test('splitIntake records the source intake id on each resulting ticket, not only on the wrapper', () => {
+  const result = splitIntake('INTAKE-X', [], [
+    { ticketId: 'BL-901', mechanism: 'walker' },
+    { ticketId: 'BL-902', mechanism: 'telemetry' },
+  ]);
+  for (const part of result.parts) {
+    assert.equal(part.sourceIntakeId, 'INTAKE-X');
+  }
+});
+
 test('splitIntake refuses a mechanism named in more than one resulting ticket', () => {
   assert.throws(
     () =>
-      splitIntake('INTAKE-X', [
+      splitIntake('INTAKE-X', [], [
         { ticketId: 'BL-901', mechanism: 'walker' },
         { ticketId: 'BL-902', mechanism: 'walker' },
       ]),
@@ -60,7 +80,7 @@ test('splitIntake refuses a mechanism named in more than one resulting ticket', 
 test('splitIntake refuses a duplicate resulting ticket id', () => {
   assert.throws(
     () =>
-      splitIntake('INTAKE-X', [
+      splitIntake('INTAKE-X', [], [
         { ticketId: 'BL-901', mechanism: 'walker' },
         { ticketId: 'BL-901', mechanism: 'telemetry' },
       ]),
@@ -69,8 +89,8 @@ test('splitIntake refuses a duplicate resulting ticket id', () => {
 });
 
 test('splitIntake refuses fewer than two resulting tickets', () => {
-  assert.throws(() => splitIntake('INTAKE-X', [{ ticketId: 'BL-901', mechanism: 'walker' }]), /at least two/);
-  assert.throws(() => splitIntake('INTAKE-X', []), /at least two/);
+  assert.throws(() => splitIntake('INTAKE-X', [], [{ ticketId: 'BL-901', mechanism: 'walker' }]), /at least two/);
+  assert.throws(() => splitIntake('INTAKE-X', [], []), /at least two/);
 });
 
 // ── isConsolidationTarget (spec-time-only bound) ────────────────────────

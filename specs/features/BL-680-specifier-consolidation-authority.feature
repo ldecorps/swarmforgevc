@@ -35,6 +35,7 @@ Feature: the specifier may merge and split intakes, not only drain them one to o
     Then it instructs that one intake may become several tickets
     And it instructs that the intake archives once pointing at every resulting ticket
     And it instructs stating which part of the intake went to which ticket
+    And it instructs that each resulting ticket records which intake it came from
 
   # BL-680 consolidation-authority-03
   Scenario: the prompt requires every human sentence to survive a consolidation
@@ -69,3 +70,15 @@ Feature: the specifier may merge and split intakes, not only drain them one to o
     When it is split into three tickets
     Then each mechanism is named in exactly one resulting ticket
     And the archived intake points at all three
+
+  # BL-680 consolidation-authority-08
+  Scenario: a split that would drop a shared quoted directive is refused rather than trimmed
+    Given one intake quoting a shared operator directive alongside three separable mechanisms
+    When it is split into three tickets
+    Then the shared quoted directive appears verbatim on every resulting ticket
+
+  # BL-680 consolidation-authority-09
+  Scenario: each resulting ticket from a split independently names the intake it came from
+    Given one intake proposing three separable mechanisms
+    When it is split into three tickets
+    Then every resulting ticket records the source intake id on its own

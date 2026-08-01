@@ -5,11 +5,15 @@
 // against the real, already-amended specifier.prompt - same "read the live
 // file, assert on its literal content" pattern bl633InvariantsSectionSteps.js
 // and bl654InvariantPropertyTestSteps.js established for governance/prose
-// tickets. Scenarios 06-07 drive the REAL compiled mergeIntakes/splitIntake
-// (extension/out/tools/intakeConsolidationCore.js) in-process, so the two
+// tickets. Scenarios 06-09 drive the REAL compiled mergeIntakes/splitIntake
+// (extension/out/tools/intakeConsolidationCore.js) in-process, so the
 // traceability scenarios exercise actual behavior, not a stub of the outcome
 // (the same posture bl729CommitClaimCheckSteps.js established for a real
-// pure module driven from Gherkin).
+// pure module driven from Gherkin). 08-09 were added on the architect's
+// 2026-08-01 bounce, which found invariants 1 and 3 encoded only for the
+// merge (N:1) path - 06-07 cover the merge/split forward behavior that
+// already existed; 08 covers split-side directive preservation and 09 the
+// split-side reverse ticket-names-its-intake pointer.
 const path = require('node:path');
 const fs = require('node:fs');
 
@@ -81,6 +85,10 @@ function registerSteps(registry) {
     requireIncludes(ctx.bl680Text, 'states which part of the intake went to which ticket', 'the specifier prompt');
   });
 
+  registry.define(/^it instructs that each resulting ticket records which intake it came from$/, (ctx) => {
+    requireIncludes(ctx.bl680Text, 'each resulting ticket records which intake it came from', 'the specifier prompt');
+  });
+
   // ── Scenario 03: the human-sentence hard constraint ──────────────────────
   registry.define(/^it instructs that every operator directive quoted in a source intake survives verbatim$/, (ctx) => {
     requireIncludes(ctx.bl680Text, 'every operator directive quoted in a source intake survives verbatim', 'the specifier prompt');
@@ -142,6 +150,7 @@ function registerSteps(registry) {
   // ── Scenario 07: a split maps every mechanism onto exactly one ticket ───
   registry.define(/^one intake proposing three separable mechanisms$/, (ctx) => {
     ctx.bl680SourceIntakeId = 'INTAKE-gamma';
+    ctx.bl680Directives = [];
     ctx.bl680Parts = [
       { ticketId: 'BL-901', mechanism: 'turn profiler' },
       { ticketId: 'BL-902', mechanism: 'context-telemetry producer' },
@@ -150,7 +159,7 @@ function registerSteps(registry) {
   });
 
   registry.define(/^it is split into three tickets$/, (ctx) => {
-    ctx.bl680Split = splitIntake(ctx.bl680SourceIntakeId, ctx.bl680Parts);
+    ctx.bl680Split = splitIntake(ctx.bl680SourceIntakeId, ctx.bl680Directives || [], ctx.bl680Parts);
   });
 
   registry.define(/^each mechanism is named in exactly one resulting ticket$/, (ctx) => {
@@ -172,6 +181,36 @@ function registerSteps(registry) {
     for (const ticketId of expectedTicketIds) {
       if (!resultTicketIds.includes(ticketId)) {
         throw new Error(`expected the archived intake to point at resulting ticket "${ticketId}"`);
+      }
+    }
+  });
+
+  // ── Scenario 08: a split preserves a shared directive on every ticket ───
+  registry.define(/^one intake quoting a shared operator directive alongside three separable mechanisms$/, (ctx) => {
+    ctx.bl680SourceIntakeId = 'INTAKE-delta';
+    ctx.bl680Directives = ['notify the operator before cutover'];
+    ctx.bl680Parts = [
+      { ticketId: 'BL-911', mechanism: 'turn profiler' },
+      { ticketId: 'BL-912', mechanism: 'context-telemetry producer' },
+      { ticketId: 'BL-913', mechanism: "budget governor's burn meter" },
+    ];
+  });
+
+  registry.define(/^the shared quoted directive appears verbatim on every resulting ticket$/, (ctx) => {
+    for (const directive of ctx.bl680Directives) {
+      for (const part of ctx.bl680Split.parts) {
+        if (!part.directives.includes(directive)) {
+          throw new Error(`expected resulting ticket "${part.ticketId}" to carry the verbatim directive "${directive}"`);
+        }
+      }
+    }
+  });
+
+  // ── Scenario 09: each resulting ticket names its source intake on its own ──
+  registry.define(/^every resulting ticket records the source intake id on its own$/, (ctx) => {
+    for (const part of ctx.bl680Split.parts) {
+      if (part.sourceIntakeId !== ctx.bl680SourceIntakeId) {
+        throw new Error(`expected resulting ticket "${part.ticketId}" to independently record source intake "${ctx.bl680SourceIntakeId}"`);
       }
     }
   });
