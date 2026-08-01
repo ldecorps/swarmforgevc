@@ -1,0 +1,139 @@
+id: BL-778
+title: "test_rule_proposal.sh asserts \"^HANDOFF QUEUED:\" — a string swarm_handoff.bb has never printed — so the whole BL-035 rule_proposal suite aborts at scenario 01 and none of it has ever run"
+milestone: M8
+type: defect
+severity: medium
+status: todo
+epic: swarm-reliability
+priority: 15
+direction: normal
+depends_on: []
+assigned_to:
+mutation_cost: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+invariants:
+  - "No success assertion in this test can pass when swarm_handoff.bb exits non-zero, prints no success line, or queues no parcel — widening a stale literal must not make the check vacuous."
+  - "Every stdout literal this test asserts is a string swarm_handoff.bb can actually emit at the commit under test."
+
+acceptance: specs/features/BL-778-rule-proposal-test-asserts-stale-queue-grammar.feature
+
+source: |
+  Coordinator `note` to specifier 2026-08-01T13:15:33Z: "Ticket needed -
+  test_rule_proposal.sh 01/03b/04 assert stale QUEUED: fmt". Verified
+  directly by the specifier at commit d405cb1b3 before speccing (see
+  Evidence below) — the note's diagnosis is correct, and the blast radius
+  is larger than the three named assertions.
+
+description: |
+  ## What
+
+  `swarmforge/scripts/test/test_rule_proposal.sh` asserts
+  `grep -q "^HANDOFF QUEUED:"` at three sites — lines 77 (scenario 01), 119
+  (scenario 03b) and 191 (scenario 04). `swarm_handoff.bb` has never printed
+  that string. Its only success outputs are:
+
+  - `HANDOFF DELIVERED:<file>`                                (line 607)
+  - `HANDOFF QUEUED (mailbox only, no tmux inject):<file>`    (line 614)
+  - `HANDOFF QUEUED (daemon backup will deliver):<file>`      (line 621)
+
+  The anchored literal `^HANDOFF QUEUED:` matches none of them, so the
+  assertion fails for *every possible success*.
+
+  ## Blast radius — larger than the three assertion lines
+
+  The file runs under `set -euo pipefail`, and the first stale assertion is
+  the very first check in the file (line 77). It aborts there. Scenarios
+  **02, 03, 03b and 04 never execute at all** — including scenarios 02 and 03,
+  whose own assertions are correct. So BL-035's entire rule_proposal
+  acceptance suite (valid-proposal delivery, validation-gate rejection,
+  durable audit log, control-character JSON escaping, existing-type
+  regression) has never run since the message string changed.
+
+  Nothing surfaced it because there is no runner that globs
+  `swarmforge/scripts/test/` — that missing discovery sweep is BL-724, which
+  predicted exactly this class and scopes itself out of "rewriting the 169
+  existing shell tests". This ticket is one such rewrite; the two are
+  independent and either can land first.
+
+  ## Evidence (specifier, 2026-08-01, commit d405cb1b3)
+
+  Ran the test on `main`:
+
+      FAIL: 01: valid rule_proposal was not queued; got: HANDOFF QUEUED
+      (daemon backup will deliver):/tmp/tmp.w8Qhj1gzyj/.worktrees/coder/
+      .swarmforge/handoffs/outbox/50_...from_coder_to_specifier.handoff
+
+  The send SUCCEEDED; only the assertion is wrong. Two sibling tests already
+  assert the real grammar correctly and are the reference for what right
+  looks like: `test_mailbox_only_delivery.sh:62`
+  (`"HANDOFF QUEUED (mailbox only"`) and
+  `test_swarm_handoff_daemon_backup.sh:68`
+  (`"HANDOFF QUEUED (daemon backup will deliver):"`).
+
+  ## Which success line the fixture actually produces, and why it is fragile
+
+  The run above landed on the daemon-backup path via
+  `HANDOFF SYNC INJECT FAILED: tmux socket file missing`. That is a fixture
+  accident, not intent: the fixture writes `.swarmforge/tmux-socket` into
+  `$ROOT` but the handoff runs with cwd `$ROOT/.worktrees/coder`, whose own
+  `.swarmforge/` has only `roles.tsv`. So the socket pointer is never found.
+
+  Worse, which of the three success lines appears is decided by ambient
+  environment the test never scrubs — `SWARMFORGE_MAILBOX_ONLY`,
+  `SWARMFORGE_SKIP_SYNC_INJECT`, `SWARMFORGE_SKIP_DAEMON`. A leaked
+  `SWARMFORGE_SKIP_DAEMON=1` makes `swarm_handoff.bb` **exit 1**, which under
+  `set -e` aborts the test with an unrelated-looking error. Per the shared
+  Engineering Rules ("Shell tests: `env -u ...` before fixture confs"), the
+  test must pin the delivery mode it means to exercise rather than assert
+  whichever line the ambient environment happens to produce.
+
+  ## Why this is not just "loosen the grep"
+
+  A bare `grep -q "HANDOFF QUEUED"` would go green, and would also go green
+  for reasons that are not a successful send. The assertions must stay
+  non-vacuous: a rejected draft, a silent failure, or a send that queues no
+  parcel must all still fail the check that guards them. Scenario 04 is the
+  sharpest case — its stdout grep is its *only* assertion, with no
+  inbox/outbox check behind it, so if that grep is widened past the point of
+  discrimination scenario 04 stops testing anything.
+
+  ## Scope
+
+  - `swarmforge/scripts/test/test_rule_proposal.sh` only.
+  - Fix the three stale assertions so they match the grammar the tool emits.
+  - Pin the delivery mode (scrub the ambient delivery-mode variables and set
+    the one the fixture intends) so the verdict is environment-independent.
+  - Keep every assertion non-vacuous, per the declared invariants.
+  - Prove the whole file green end to end, and prove non-vacuity by
+    demonstrating each guarded assertion still fails when the send does not
+    succeed.
+
+  ## Out of scope
+
+  - Any change to `swarm_handoff.bb` — its output grammar is correct and
+    three other tests depend on it. The test is what is wrong.
+  - The shell-test discovery sweep (BL-724).
+  - Auditing the other 168 shell tests for the same class of stale literal.
+    If the coder notices further instances while here, file them; do not
+    fix them in this parcel.
+
+notes: |
+  No `human_approval` gate: the correct behaviour is not a judgement call —
+  the test must assert a string the tool actually prints — so there is
+  nothing for the human to sign off, and the approval queue is currently a
+  live bottleneck. Matches the convention on its immediate siblings BL-724,
+  BL-748 and BL-749, none of which carry the field.
+
+  Sequencing against BL-724: independent. BL-724 makes such tests *visible*;
+  this makes this one *correct*. If BL-724 lands first, this test starts
+  reporting red loudly, which is the desired outcome either way.
+
+  QA e2e procedure: from a clean master checkout run
+  `bash swarmforge/scripts/test/test_rule_proposal.sh` and require `ALL PASS`
+  with exit 0. Then re-run it three more times, each with one of
+  `SWARMFORGE_MAILBOX_ONLY=1`, `SWARMFORGE_SKIP_SYNC_INJECT=1`,
+  `SWARMFORGE_SKIP_DAEMON=1` exported, and require the same verdict every
+  time. Finally, confirm non-vacuity: with a temporary local edit making
+  `swarm_handoff.bb` print nothing on success, the test must fail naming
+  assertion 01 — revert that edit before reporting.
