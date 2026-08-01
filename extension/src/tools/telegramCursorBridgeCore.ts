@@ -184,24 +184,18 @@ export function frontDeskTopicMapWithoutCursorBridge(
   cursorBridgeTopicId: number | undefined,
   extraTopicIds: Array<number | undefined> = []
 ): Record<string, string> {
-  const stripIds = [cursorBridgeTopicId, ...extraTopicIds].filter(
-    (id): id is number => typeof id === 'number'
+  const stripKeys = new Set(
+    [cursorBridgeTopicId, ...extraTopicIds].filter((id): id is number => typeof id === 'number').map(String)
   );
-  if (stripIds.length === 0) {
+  const matchedKeys = Object.keys(topicMap).filter((key) => stripKeys.has(key));
+  if (matchedKeys.length === 0) {
     return topicMap;
   }
-  let next: Record<string, string> | undefined;
-  for (const id of stripIds) {
-    const key = String(id);
-    if (!(key in (next ?? topicMap))) {
-      continue;
-    }
-    if (!next) {
-      next = { ...topicMap };
-    }
+  const next = { ...topicMap };
+  for (const key of matchedKeys) {
     delete next[key];
   }
-  return next ?? topicMap;
+  return next;
 }
 
 export function parseCommand(text: string): 'new' | 'status' | 'help' | 'update' | 'queue' | undefined {
@@ -580,22 +574,22 @@ function parseOptionalNonEmptyString(value: unknown): string | undefined {
   return typeof value === 'string' && value.length > 0 ? value : undefined;
 }
 
+function assignIfDefined<T extends object, K extends keyof T>(target: T, key: K, value: T[K] | undefined): void {
+  if (value !== undefined) {
+    target[key] = value;
+  }
+}
+
 function parseLivenessStatus(value: unknown): CursorBridgeLivenessStatusState | undefined {
   if (typeof value !== 'object' || value === null) {
     return undefined;
   }
   const record = value as Record<string, unknown>;
-  const topicId = parseOptionalTopicId(record.topicId);
-  const messageId = parseOptionalTopicId(record.messageId);
-  const renderedText = parseOptionalNonEmptyString(record.renderedText);
-  if (topicId === undefined && messageId === undefined && renderedText === undefined) {
-    return undefined;
-  }
-  return {
-    ...(topicId !== undefined ? { topicId } : {}),
-    ...(messageId !== undefined ? { messageId } : {}),
-    ...(renderedText !== undefined ? { renderedText } : {}),
-  };
+  const result: CursorBridgeLivenessStatusState = {};
+  assignIfDefined(result, 'topicId', parseOptionalTopicId(record.topicId));
+  assignIfDefined(result, 'messageId', parseOptionalTopicId(record.messageId));
+  assignIfDefined(result, 'renderedText', parseOptionalNonEmptyString(record.renderedText));
+  return Object.keys(result).length > 0 ? result : undefined;
 }
 
 function parseOptionalStringArray(value: unknown): string[] | undefined {

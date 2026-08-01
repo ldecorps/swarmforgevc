@@ -87,6 +87,7 @@ const {
   roleAnswerFilePointerPath,
   composeRoleAnswerNoteMessage,
   enqueueRoleAnswerNote,
+  readBubbleTopicId,
   main,
 } = require('../out/tools/telegram-front-desk-bot');
 const { readRecord: readTopicRecord } = require('../out/concierge/blTopicStore');
@@ -515,6 +516,64 @@ test('BL-346 standing-operator-topic-01: creates the Operator topic and binds it
   assert.equal(calls.length, 1);
   const map = readTopicMapFixture(root);
   assert.equal(map['42'], 'OPERATOR');
+});
+
+// ── readBubbleTopicId (BL-764: Bubble gets its own topic id, mirroring
+// readCursorBridgeTopicId's map-then-state-file precedence) ─────────────
+
+function cursorBridgeTopicMapFixturePath(root) {
+  return path.join(root, '.swarmforge', 'operator', 'cursor-bridge-topic-map.json');
+}
+
+function writeCursorBridgeTopicMapFixture(root, map) {
+  fs.mkdirSync(path.dirname(cursorBridgeTopicMapFixturePath(root)), { recursive: true });
+  fs.writeFileSync(cursorBridgeTopicMapFixturePath(root), JSON.stringify(map));
+}
+
+function cursorBridgeStateFixturePath(root) {
+  return path.join(root, '.swarmforge', 'operator', 'cursor-bridge-state.json');
+}
+
+function writeCursorBridgeStateFixture(root, state) {
+  fs.mkdirSync(path.dirname(cursorBridgeStateFixturePath(root)), { recursive: true });
+  fs.writeFileSync(cursorBridgeStateFixturePath(root), JSON.stringify(state));
+}
+
+test('readBubbleTopicId reads the BUBBLE binding from the topic map when present', () => {
+  const root = mkTmpRoot();
+  writeCursorBridgeTopicMapFixture(root, { '77': 'BUBBLE', '78': 'CURSOR_REMOTE' });
+  assert.equal(readBubbleTopicId(root), 77);
+});
+
+test('readBubbleTopicId falls back to the persisted state file when the topic map has no BUBBLE binding', () => {
+  const root = mkTmpRoot();
+  writeCursorBridgeTopicMapFixture(root, { '78': 'CURSOR_REMOTE' });
+  writeCursorBridgeStateFixture(root, { bubbleTopicId: 99 });
+  assert.equal(readBubbleTopicId(root), 99);
+});
+
+test('readBubbleTopicId falls back to the state file when the topic map file does not exist at all', () => {
+  const root = mkTmpRoot();
+  writeCursorBridgeStateFixture(root, { bubbleTopicId: 55 });
+  assert.equal(readBubbleTopicId(root), 55);
+});
+
+test('readBubbleTopicId returns undefined when the state file has no numeric bubbleTopicId', () => {
+  const root = mkTmpRoot();
+  writeCursorBridgeStateFixture(root, { bubbleTopicId: 'not-a-number' });
+  assert.equal(readBubbleTopicId(root), undefined);
+});
+
+test('readBubbleTopicId returns undefined (never throws) when neither the topic map nor the state file exist', () => {
+  const root = mkTmpRoot();
+  assert.equal(readBubbleTopicId(root), undefined);
+});
+
+test('readBubbleTopicId returns undefined (never throws) when the topic map file is malformed JSON and there is no state file', () => {
+  const root = mkTmpRoot();
+  fs.mkdirSync(path.dirname(cursorBridgeTopicMapFixturePath(root)), { recursive: true });
+  fs.writeFileSync(cursorBridgeTopicMapFixturePath(root), '{not json');
+  assert.equal(readBubbleTopicId(root), undefined);
 });
 
 // ── openSubjectAndRecord idempotency (BL-389 rework, architect bounce) ──

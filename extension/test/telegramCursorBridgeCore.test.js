@@ -33,6 +33,11 @@ const {
   isCursorResourceExhausted,
   parseCursorBridgeCliArgs,
   shouldUseCursorBridgeInboundQueue,
+  CURSOR_BRIDGE_CLI_USAGE,
+  BUBBLE_TOPIC_NAME,
+  decideEnsureBubbleTopicAction,
+  normalizeCursorBridgeTopicScope,
+  isOwnedCursorBridgeTopic,
 } = require('../out/tools/telegramCursorBridgeCore');
 const { TELEGRAM_PHOTO_DEFAULT_PROMPT } = require('../out/bridge/cursorBridgeTelegramMedia');
 
@@ -101,6 +106,18 @@ test('cursor bridge: front desk topic map is unchanged when the cursor topic id 
 test('cursor bridge: front desk topic map ignores a literal undefined topic key when unbound', () => {
   const map = { undefined: 'SUP-12', '2286': 'BACKLOG' };
   assert.deepEqual(frontDeskTopicMapWithoutCursorBridge(map, undefined), map);
+});
+
+test('cursor bridge: front desk topic map strips BOTH the cursor and an extra (Bubble) stale binding — not just the last one processed', () => {
+  // Regression guard: a naive re-copy-from-original per matched id would
+  // reset the accumulator on the second strip and silently resurrect the
+  // first one. Two real stale bindings must both end up gone.
+  const scrubbed = frontDeskTopicMapWithoutCursorBridge(
+    { '8435': 'SUP-12', '9001': 'SUP-34', '2286': 'BACKLOG' },
+    8435,
+    [9001]
+  );
+  assert.deepEqual(scrubbed, { '2286': 'BACKLOG' });
 });
 
 // ── guard order ──────────────────────────────────────────────────────────
@@ -672,6 +689,63 @@ test('cursor bridge: parseCursorBridgeState accepts bubbleTopicId', () => {
   );
 });
 
+test('cursor bridge: parseCursorBridgeState reads a well-formed livenessStatus in full', () => {
+  assert.deepEqual(
+    parseCursorBridgeState({
+      updateOffset: 1,
+      livenessStatus: { topicId: 7, messageId: 99, renderedText: 'Bridge: idle' },
+    }),
+    { updateOffset: 1, livenessStatus: { topicId: 7, messageId: 99, renderedText: 'Bridge: idle' } }
+  );
+});
+
+test('cursor bridge: parseCursorBridgeState drops a present-but-malformed livenessStatus (not an object) rather than defaulting it silently to garbage', () => {
+  assert.deepEqual(parseCursorBridgeState({ updateOffset: 1, livenessStatus: 'not-an-object' }), {
+    updateOffset: 1,
+  });
+  assert.deepEqual(parseCursorBridgeState({ updateOffset: 1, livenessStatus: null }), { updateOffset: 1 });
+  assert.deepEqual(parseCursorBridgeState({ updateOffset: 1, livenessStatus: 42 }), { updateOffset: 1 });
+});
+
+test('cursor bridge: parseCursorBridgeState omits livenessStatus entirely when every one of its fields is invalid', () => {
+  const state = parseCursorBridgeState({
+    updateOffset: 1,
+    livenessStatus: { topicId: 'nope', messageId: 'nope', renderedText: '' },
+  });
+  assert.deepEqual(state, { updateOffset: 1 });
+  assert.equal('livenessStatus' in state, false);
+});
+
+test('cursor bridge: parseCursorBridgeState keeps only the valid fields of a partially-malformed livenessStatus', () => {
+  const state = parseCursorBridgeState({
+    updateOffset: 1,
+    livenessStatus: { topicId: 7, messageId: 'not-a-number', renderedText: 42 },
+  });
+  assert.deepEqual(state.livenessStatus, { topicId: 7 });
+  assert.equal('messageId' in state.livenessStatus, false);
+  assert.equal('renderedText' in state.livenessStatus, false);
+});
+
+test('cursor bridge: parseCursorBridgeState keeps a valid messageId alone (invalid topicId is a dropped key, not an undefined value)', () => {
+  const state = parseCursorBridgeState({
+    updateOffset: 1,
+    livenessStatus: { topicId: 'nope', messageId: 99, renderedText: '' },
+  });
+  assert.deepEqual(state.livenessStatus, { messageId: 99 });
+  assert.equal('topicId' in state.livenessStatus, false);
+  assert.equal('renderedText' in state.livenessStatus, false);
+});
+
+test('cursor bridge: parseCursorBridgeState keeps a valid renderedText alone', () => {
+  const state = parseCursorBridgeState({
+    updateOffset: 1,
+    livenessStatus: { topicId: 'nope', messageId: 'nope', renderedText: 'Bridge: busy' },
+  });
+  assert.deepEqual(state.livenessStatus, { renderedText: 'Bridge: busy' });
+  assert.equal('topicId' in state.livenessStatus, false);
+  assert.equal('messageId' in state.livenessStatus, false);
+});
+
 test('cursor bridge: parseCursorBridgeState defaults missing fields safely', () => {
   assert.deepEqual(parseCursorBridgeState(null), { updateOffset: 0 });
   assert.deepEqual(parseCursorBridgeState(undefined), { updateOffset: 0 });
@@ -863,6 +937,33 @@ test('parseCursorBridgeCliArgs: first positional is repo root; empty falls back 
   assert.deepEqual(parseCursorBridgeCliArgs([]), { kind: 'run', repoRootArg: undefined });
 });
 
+test('parseCursorBridgeCliArgs: skips a blank leading arg to find the real positional', () => {
+  assert.deepEqual(parseCursorBridgeCliArgs(['', '/tmp/swarm']), { kind: 'run', repoRootArg: '/tmp/swarm' });
+});
+
+test('parseCursorBridgeCliArgs: a nullish argv tail falls back to no positional, never a stray sentinel', () => {
+  assert.deepEqual(parseCursorBridgeCliArgs(undefined), { kind: 'run', repoRootArg: undefined });
+});
+
+test('parseCursorBridgeCliArgs: skips a non-help flag to find the positional after it', () => {
+  assert.deepEqual(parseCursorBridgeCliArgs(['--verbose', '/tmp/swarm']), {
+    kind: 'run',
+    repoRootArg: '/tmp/swarm',
+  });
+  // A lone unrecognized flag with no positional after it never matches the
+  // find predicate — falls back to undefined (caller cwd), not the flag text.
+  assert.deepEqual(parseCursorBridgeCliArgs(['--verbose']), { kind: 'run', repoRootArg: undefined });
+});
+
+test('CURSOR_BRIDGE_CLI_USAGE documents the CLI invocation and shared-token queue behavior', () => {
+  assert.equal(
+    CURSOR_BRIDGE_CLI_USAGE,
+    'Usage: node telegram-cursor-bridge.js <repo-root>\n' +
+      "Telegram ↔ Cursor SDK remote control. Prefer start_cursor_bridge.sh.\n" +
+      'Shared TELEGRAM_BOT_TOKEN with front desk: drains inbound queue (no getUpdates).\n'
+  );
+});
+
 test('shouldUseCursorBridgeInboundQueue: shared token defaults to queue (never steal getUpdates)', () => {
   assert.equal(shouldUseCursorBridgeInboundQueue({}), true);
   assert.equal(shouldUseCursorBridgeInboundQueue({ TELEGRAM_BOT_TOKEN: 'shared' }), true);
@@ -879,4 +980,74 @@ test('shouldUseCursorBridgeInboundQueue: exclusive CURSOR_BRIDGE_BOT_TOKEN owns 
     true
   );
   assert.equal(shouldUseCursorBridgeInboundQueue({ CURSOR_BRIDGE_INBOUND_QUEUE: '0' }), false);
+});
+
+test('shouldUseCursorBridgeInboundQueue: whitespace-only env values trim to their empty/absent behavior', () => {
+  // A whitespace-only flag is neither '1' nor '0' — falls through to the
+  // exclusive-token default, same as the flag being unset entirely.
+  assert.equal(shouldUseCursorBridgeInboundQueue({ CURSOR_BRIDGE_INBOUND_QUEUE: '  ' }), true);
+  assert.equal(
+    shouldUseCursorBridgeInboundQueue({ CURSOR_BRIDGE_INBOUND_QUEUE: '  ', CURSOR_BRIDGE_BOT_TOKEN: 'excl' }),
+    false
+  );
+  // A whitespace-only bot token trims to empty (falsy) — must not count as
+  // "exclusive token configured".
+  assert.equal(shouldUseCursorBridgeInboundQueue({ CURSOR_BRIDGE_BOT_TOKEN: '   ' }), true);
+});
+
+test('shouldUseCursorBridgeInboundQueue: a padded flag value is trimmed before comparing, not compared raw', () => {
+  // '1' padded with whitespace only reads as forced-on once trimmed. Paired
+  // with an exclusive bot token (which alone would answer false), this only
+  // stays true if the raw ' 1 ' is actually trimmed to '1' before the
+  // comparison — if the .trim() call were dropped, ' 1 ' would never equal
+  // '1' and this would fall through to the (here, false) token default.
+  assert.equal(
+    shouldUseCursorBridgeInboundQueue({ CURSOR_BRIDGE_INBOUND_QUEUE: ' 1 ', CURSOR_BRIDGE_BOT_TOKEN: 'excl' }),
+    true
+  );
+  assert.equal(shouldUseCursorBridgeInboundQueue({ CURSOR_BRIDGE_INBOUND_QUEUE: ' 0 ' }), false);
+});
+
+test('cursor bridge: BUBBLE_TOPIC_NAME is the standing Bubble topic title', () => {
+  assert.equal(BUBBLE_TOPIC_NAME, 'Bubble');
+});
+
+test('decideEnsureBubbleTopicAction: reuses an existing BUBBLE binding by its exact topic id', () => {
+  assert.deepEqual(decideEnsureBubbleTopicAction({ '55': 'BUBBLE', '56': 'CURSOR_REMOTE' }), {
+    kind: 'reuse',
+    topicId: 55,
+  });
+});
+
+test('decideEnsureBubbleTopicAction: creates when no BUBBLE binding exists', () => {
+  assert.deepEqual(decideEnsureBubbleTopicAction({ '56': 'CURSOR_REMOTE' }), { kind: 'create' });
+  assert.deepEqual(decideEnsureBubbleTopicAction({}), { kind: 'create' });
+});
+
+test('normalizeCursorBridgeTopicScope: undefined and null both normalize to an empty scope', () => {
+  assert.deepEqual(normalizeCursorBridgeTopicScope(undefined), {});
+  assert.deepEqual(normalizeCursorBridgeTopicScope(null), {});
+  assert.deepEqual(Object.keys(normalizeCursorBridgeTopicScope(null)), []);
+});
+
+test('normalizeCursorBridgeTopicScope: a bare number is treated as the cursor topic id only', () => {
+  assert.deepEqual(normalizeCursorBridgeTopicScope(7501), { cursorTopicId: 7501 });
+});
+
+test('normalizeCursorBridgeTopicScope: keeps only numeric fields, dropping non-number ids entirely (no key, not just undefined)', () => {
+  const scope = normalizeCursorBridgeTopicScope({ cursorTopicId: 'nope', bubbleTopicId: 55 });
+  assert.deepEqual(scope, { bubbleTopicId: 55 });
+  assert.equal('cursorTopicId' in scope, false);
+});
+
+test('normalizeCursorBridgeTopicScope: an empty object normalizes to an empty scope (no keys at all)', () => {
+  assert.deepEqual(Object.keys(normalizeCursorBridgeTopicScope({})), []);
+});
+
+test('isOwnedCursorBridgeTopic: matches either the cursor or bubble topic id, and only those', () => {
+  const topics = { cursorTopicId: 7501, bubbleTopicId: 55 };
+  assert.equal(isOwnedCursorBridgeTopic(7501, topics), true);
+  assert.equal(isOwnedCursorBridgeTopic(55, topics), true);
+  assert.equal(isOwnedCursorBridgeTopic(999, topics), false);
+  assert.equal(isOwnedCursorBridgeTopic(undefined, topics), false);
 });

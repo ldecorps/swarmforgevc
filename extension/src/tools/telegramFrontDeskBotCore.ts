@@ -2190,23 +2190,31 @@ export function decideCursorBridgeExclusion(
   return ownedTopicIds.some((id) => isCursorBridgeTopic(topicId, id)) ? 'drop' : 'not-applicable';
 }
 
+function hasCursorBridgeTopicAdapter(adapters: Pick<PollAdapters, 'cursorBridgeTopicId' | 'bubbleTopicId'>): boolean {
+  return Boolean(adapters.cursorBridgeTopicId) || Boolean(adapters.bubbleTopicId);
+}
+
+async function resolveViaAdapter(getter: (() => Promise<number | undefined>) | undefined): Promise<number | undefined> {
+  return getter ? getter() : undefined;
+}
+
 async function attemptCursorBridgeTopicExclusion(
   update: TelegramUpdate,
   adapters: PollAdapters
 ): Promise<UpdateDeliveryOutcome | undefined> {
-  if (!adapters.cursorBridgeTopicId && !adapters.bubbleTopicId) {
+  if (!hasCursorBridgeTopicAdapter(adapters)) {
     return undefined;
   }
-  const cursorTopicId = adapters.cursorBridgeTopicId ? await adapters.cursorBridgeTopicId() : undefined;
-  const bubbleTopicId = adapters.bubbleTopicId ? await adapters.bubbleTopicId() : undefined;
+  const cursorTopicId = await resolveViaAdapter(adapters.cursorBridgeTopicId);
+  const bubbleTopicId = await resolveViaAdapter(adapters.bubbleTopicId);
   if (decideCursorBridgeExclusion(update, [cursorTopicId, bubbleTopicId]) !== 'drop') {
     return undefined;
   }
-  if (adapters.forwardCursorBridgeUpdate) {
-    const ok = await adapters.forwardCursorBridgeUpdate(update);
-    return ok ? 'posted' : 'failed';
+  if (!adapters.forwardCursorBridgeUpdate) {
+    return 'dropped';
   }
-  return 'dropped';
+  const ok = await adapters.forwardCursorBridgeUpdate(update);
+  return ok ? 'posted' : 'failed';
 }
 
 async function attemptCursorBridgePollAnswerForward(

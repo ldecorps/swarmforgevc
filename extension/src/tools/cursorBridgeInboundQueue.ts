@@ -19,6 +19,22 @@ export function appendCursorBridgeInboundUpdate(opDir: string, update: { update_
 }
 
 /**
+ * A single queue line, parsed and validated - undefined for blank/malformed/
+ * id-less lines. No separate blank-line check: JSON.parse throws on an empty
+ * or whitespace-only string exactly like it does on any other malformed
+ * input, so the catch below already covers it - a dedicated trim/blank guard
+ * would be dead code ahead of an identical fallback.
+ */
+function parseCursorBridgeInboundLine(line: string): ({ update_id: number } & Record<string, unknown>) | undefined {
+  try {
+    const parsed = JSON.parse(line) as { update_id?: unknown } & Record<string, unknown>;
+    return typeof parsed.update_id === 'number' ? (parsed as { update_id: number } & Record<string, unknown>) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * Drain via atomic rename rather than read-then-truncate: a truncating write
  * issued after the read has a window where a concurrent appendFileSync lands
  * in the file just before it gets overwritten with '' — that update is lost.
@@ -48,17 +64,9 @@ export function drainCursorBridgeInboundUpdates(opDir: string): Array<{ update_i
   }
   const out: Array<{ update_id: number } & Record<string, unknown>> = [];
   for (const line of raw.split('\n')) {
-    const trimmed = line.trim();
-    if (!trimmed) {
-      continue;
-    }
-    try {
-      const parsed = JSON.parse(trimmed) as { update_id?: unknown } & Record<string, unknown>;
-      if (typeof parsed.update_id === 'number') {
-        out.push(parsed as { update_id: number } & Record<string, unknown>);
-      }
-    } catch {
-      // skip malformed
+    const parsed = parseCursorBridgeInboundLine(line);
+    if (parsed) {
+      out.push(parsed);
     }
   }
   return out;
