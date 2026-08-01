@@ -301,3 +301,13 @@ notes: |
   and the PWA-vs-MiniApp ruling live in the operator session of 2026-07-26;
   the one-line version: the corpus is 8.6 MB of text, the phone can carry
   all of it, and nothing about reading it should ever cost a token.
+
+  2026-08-01 operator affirmation (Let's Talk): bidirectional browse is the
+  point — milestones→tickets→Gherkin AND docs/how-to→related tickets /
+  milestones. Static email-body twin (no JS) lives at
+  docs/design/BL-659-traceability-explorer-email-mock.html so phone mail
+  review and specifier/coder both keep the same contract.
+
+  2026-08-01 operator asked for a Bubble-facing picture of the FLOW / Kanban
+  analytics root (CFD, cycle time, aging WIP, throughput). Persisted at
+  docs/design/bubble-kanban-flow-screen-mock.png and emailed for phone review.

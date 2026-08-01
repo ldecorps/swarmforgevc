@@ -108,5 +108,7 @@ notes: |
   its id here.
 
   The intake also notes a picture mock of the Canary hop journey was emailed for
-  phone review on 2026-07-31. Whoever specs the report slice should look at it
-  before designing the end report, rather than inventing a second layout.
+  phone review on 2026-07-31. Persisted in-repo (2026-08-01) at
+  `docs/design/bubble-canary-journey-mock.png`. Whoever specs the report slice
+  should look at it before designing the end report, rather than inventing a
+  second layout.
