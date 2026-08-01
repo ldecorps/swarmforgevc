@@ -106,5 +106,5 @@ test('isConsolidationTarget refuses anything under the active backlog', () => {
 
 test('isConsolidationTarget refuses paths outside both allowed roots', () => {
   assert.equal(isConsolidationTarget('backlog/done/BL-042-shipped.yaml'), false);
-  assert.equal(isConsolidationTarget('backlog/hold/BL-590-onboarding-facilitator-agent.yaml'), false);
+  assert.equal(isConsolidationTarget('backlog/hold/BL-590-onboarding-agent.yaml'), false);
 });
