@@ -10,8 +10,7 @@ direction: aligned
 depends_on: [BL-783]
 assigned_to: unassigned
 mutation_cost: medium
-human_approval: pending
-
+human_approval: approved
 invariants:
   - "Every long-running loop daemon the swarm starts has a row in daemon_log_freshness.conf — a daemon can be added to a start path only by also declaring how it is watched."
   - "A watched daemon writes a timestamped heartbeat on every loop tick regardless of whether it did any work, so log freshness measures liveness and never work volume."
