@@ -1,0 +1,135 @@
+id: BL-783
+title: "BL-675's freshness watchdog has never run: nothing calls install_freshness_cron.sh, so the share-no-fate check answering a 65-minute blackout is dark on this host"
+milestone: M8
+type: defect
+status: todo
+epic: swarm-reliability
+severity: high
+priority: 03
+direction: aligned
+depends_on: []
+assigned_to: unassigned
+mutation_cost: low
+human_approval: pending
+
+invariants:
+  - "The freshness cron is present on any host where the swarm has been started — no operator step, no how-to instruction, and no manual invocation stands between shipping the checker and it running."
+
+approval_context: >
+  Severity high, and the specifier wants to be explicit about why, given the
+  expedite lane is already carrying a queue the human has twice asked to
+  unblock.
+
+  This is not a board or reporting defect. BL-675 was itself filed at severity
+  high on 2026-07-26 after both watchdog loops froze with their processes alive
+  and nothing delivered, chased, warned, or swept for ~65 minutes — the human
+  noticed only through the ABSENCE of nudges. BL-675 shipped on 2026-07-28 and
+  has not executed once since. handoffd and babysitterd are unwatched right
+  now, on this host, as this ticket is written.
+
+  If the human would rather this wait behind the JumpQ batch, re-tier it — the
+  facts are recorded here either way and the decision is theirs. What should
+  not happen is it sitting at medium because the queue is crowded.
+
+source: |
+  Coordinator note to the specifier, 2026-08-01 19:43Z: "Ticket needed -
+  cursor_bridge_supervisor unwatched by BL-675 + cron absent". The
+  cursor_bridge_supervisor half is BL-784. This ticket is the "cron absent"
+  half, which the specifier's verification found to be the larger of the two.
+
+  Verified on `main` at 2026-08-01:
+
+  1. **No caller.** `git grep install_freshness_cron` outside the installer
+     itself returns exactly two hits: its own test
+     (`swarmforge/scripts/test/test_daemon_log_freshness.sh`) and a how-to
+     (`docs/how-to/BL-675-daemon-log-freshness-watchdog.md`) that tells a human
+     to run it by hand. No start script, lifecycle script, or ensure path calls
+     it.
+  2. **Not installed.** The live crontab contains only the operator's two shift
+     starters. The installer's own marker line,
+     `# swarmforge-BL-675-freshness-check`, is absent.
+  3. **Never executed.** `.swarmforge/daemon/freshness-check.cron.log` — which
+     the installer's cron line creates on first run — does not exist. Neither
+     does any freshness incident record.
+
+  So all three watched-daemon rows are inert, not just the missing one.
+
+  **Why the gate did not catch it.** BL-675 declared `required_wiring`:
+
+  ```
+  swarmforge/scripts/install_freshness_cron.sh::freshness_check::the installer
+  must reference the checker it schedules
+  ```
+
+  That asserts the installer names the checker — a self-consistency property,
+  which was true and stayed true. The wiring that actually mattered is the
+  opposite direction: something must call the INSTALLER. BL-531's gate checks
+  the paths a ticket declares; it cannot know the ticket declared the wrong
+  relationship. This is the BL-419 shape once more — mechanism shipped,
+  unit-tested, green, and wired into zero of the places it was filed to fix.
+
+description: |
+  Make the freshness cron install itself as part of starting the swarm, so the
+  checker runs on any host where the swarm has ever been started, with no human
+  step in between.
+
+  `install_freshness_cron.sh` is already idempotent and safe to re-run — it
+  strips any prior marked line before appending — so the fix is calling it from
+  the lifecycle start path rather than writing anything new. The natural home
+  is alongside the other ancillary daemons, which is also where BL-611 wires
+  babysitterd.
+
+  Three things this must get right, because each is a way to ship it dark
+  again:
+
+  1. **Failure must be loud, but must not abort the start.** A host with no
+     crontab, no cron daemon, or a read-only crontab must not fail the swarm
+     launch — but it must say so unmistakably, because the outcome in that case
+     is exactly today's silent no-watchdog state. Print the reason and carry on.
+  2. **The verification is behavioural, not textual.** A test asserting the
+     start script CONTAINS the string `install_freshness_cron.sh` proves
+     nothing — it is the same class of evidence as BL-675's own misaimed
+     wiring declaration. The e2e must run the start path against a fixture root
+     and then read back the installed crontab line.
+  3. **Non-root-specific.** The installed line carries `FRESHNESS_ROOT=<root>`,
+     so two swarms on one host must each install their own line without
+     clobbering the other. The installer's current filter strips by marker
+     alone, which would remove a sibling root's line — check this and fix it
+     here if so.
+
+  Once this lands, the two existing rows are live and BL-784 can extend
+  coverage to the unwatched daemons.
+
+acceptance: |
+  Specifier writes the Gherkin when this is approved and promoted. Minimum
+  behaviour:
+
+  1. Starting the swarm on a host with no freshness cron line installs one,
+     and the installed line is read back from the crontab and names the root
+     that was started.
+  2. Starting the swarm again does not duplicate the line — the installer's
+     idempotence is exercised through the start path, not just directly.
+  3. A host where crontab installation fails (no cron, read-only crontab)
+     still completes the swarm start, and the failure reason appears in the
+     start output naming what will not be watched.
+  4. Two different project roots each hold their own installed line
+     simultaneously; installing for root B does not remove root A's line.
+  5. After a start, the checker's own log path exists and grows — the proof is
+     the checker having run, not the crontab line being present.
+
+out_of_scope: |
+  - Which daemons are watched, and their thresholds — that is BL-784 and the
+    `daemon_log_freshness.conf` rows.
+  - The checker's own restart/announce behaviour, which BL-675 built and tested.
+  - Replacing cron with a supervisor or systemd unit. Cron survived every
+    incident this week and that is BL-675's declared share-no-fate property;
+    do not relitigate it here.
+  - Retroactively auditing other tickets' `required_wiring` declarations for
+    the same misaimed shape — worth doing, not this slice.
+
+notes: |
+  Worth carrying into review as a general lesson, not just fixing here: a
+  `required_wiring` entry pointing INTO the new mechanism ("the installer
+  references its checker") is nearly always the wrong direction. The one that
+  catches dark code points INTO the existing system ("a start path references
+  the installer"). BL-675 declared the former and passed.
