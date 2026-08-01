@@ -356,7 +356,9 @@ const DOMAINS = [
   require('./bl771PricingTableSharedTmpdirSteps'),
   require('./bl720EnvRestoreGuardSteps'),
   require('./bl760DuplicateChainGuardSteps'),
-  require('./bl663PromotionGatesSteps')
+  require('./bl663PromotionGatesSteps'),
+  require('./bl651AgedWorkRotationSteps'),
+  require('./bl611BabysitterdLifecycleSteps')
 ];
 
 function registerSteps(registry) {

@@ -1,0 +1,84 @@
+id: BL-780
+title: "note_actionable_after_ms (20m) is longer than flow_watchdog_warn_ms (15m): an aged note ALWAYS alarms the human before the swarm is allowed to rotate for it"
+milestone: M8
+type: defect
+status: todo
+epic: swarm-reliability
+severity: low
+priority: 30
+direction: aligned
+depends_on: []
+assigned_to: unassigned
+mutation_cost: low
+human_approval: approved
+approval_context: >
+  A one-line default change with a real trade-off only the human should make,
+  surfaced by the specifier on 2026-08-01 while speccing BL-651 (whose Shape
+  requires the rotation threshold to sit "comfortably BELOW the watchdog's
+  WARN threshold"). BL-651 meets that for git_handoffs; notes cannot, because
+  BL-576's 20-minute actionability gate outlives the 15-minute warn tier.
+  THE CHOICE: (a) lower `note_actionable_after_ms` toward ~10 min — the swarm
+  drains broadcast notes before the human is alarmed, at the cost of BL-576's
+  thrash-protection window; (b) raise `flow_watchdog_warn_ms` above the note
+  gate — quieter alarms, slower human notice of a real stall; (c) leave both
+  and accept that every aged note alarms first. Approve with the letter you
+  want; reject to keep (c) explicitly.
+
+source: |
+  Specifier, 2026-08-01, while writing BL-651's spec. Verified against the
+  live effective config rather than the tracked defaults:
+  `flow_watchdog_lib.bb/read-thresholds` → `{:warn-ms 900000,
+  :escalate-ms 3600000}`; `mono_router_lib.bb/default-note-actionable-after-ms`
+  → 1200000. The active pack conf (`swarmforge/packs/mono-router.conf`, per
+  `.swarmforge/swarm-identity`) overrides none of the three.
+
+description: |
+  ## The defect
+
+  Two thresholds govern the same waiting parcel and they are ordered the
+  wrong way round:
+
+  - `note_actionable_after_ms` = 20 min — before this, the chase sweep is
+    forbidden to rotate the resident for a note in a dormant queue
+    (BL-576, protecting against QA's five-role merge-up broadcast thrashing
+    the resident through five rotations).
+  - `flow_watchdog_warn_ms` = 15 min — after this, the human is alarmed that
+    the parcel is stalled.
+
+  So for the whole 15–20 minute window the system alarms a human about a
+  parcel it is itself refusing to act on, and every note that ages into
+  actionability has already produced a warn. BL-651's Shape names the
+  intended relationship explicitly ("the swarm drains a queue before the
+  human is ever alarmed about it"); this is the one parcel type where the
+  current defaults make that impossible.
+
+  ## Shape
+
+  Whichever option the human picks, the durable part is the ORDERING, not
+  the numbers: every threshold that gates rotating for a parcel must be
+  lower than the threshold that alarms a human about that same parcel, and
+  a config that inverts them should say so loudly at daemon start rather
+  than silently produce guaranteed-noisy alarms.
+
+acceptance: |
+  Specifier writes the Gherkin when this is approved and promoted. Minimum
+  behaviour:
+
+  1. Defaults as shipped satisfy: every rotation-actionability threshold <
+     `flow_watchdog_warn_ms`.
+  2. A conf that inverts the ordering is reported once at daemon start,
+     naming both values — never silently accepted.
+  3. BL-576's broadcast-thrash protection still holds at whatever the new
+     value is: a five-role merge-up broadcast still drains at most one role
+     per sweep with `ROTATE_HOME` between drains.
+
+out_of_scope: |
+  - BL-651's own `rotation_starve_after_ms` (already specced below warn).
+  - The watchdog's tier logic and escalate tier (BL-650 / BL-577).
+  - Clamping a bad config automatically — report, do not silently rewrite an
+    operator's number.
+
+notes: |
+  Orthogonal to BL-651 in behaviour but adjacent in files
+  (`mono_router_lib.bb`), so do not run the two concurrently — sequence this
+  after BL-651 lands.

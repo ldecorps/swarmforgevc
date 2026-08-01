@@ -1,0 +1,92 @@
+id: BL-779
+title: "A control pause freezes chase/rotation but the flow-watchdog alarm never says so — a paused swarm alarms '⚠️ WARN flow-stall … - rotate' and reads to a human as a starve"
+milestone: M8
+type: defect
+status: todo
+epic: swarm-reliability
+severity: medium
+priority: 20
+direction: aligned
+depends_on: []
+assigned_to: unassigned
+mutation_cost: low
+human_approval: approved
+approval_context: >
+  Found by the specifier on 2026-08-01 while auditing the live evidence
+  attached to BL-651's queue-jump: the "starve" the human queue-jumped for
+  was a control pause the operator had set four minutes earlier. The fix
+  proposed is observability only (say "paused until X" in the alarm and in
+  the operator/babysitter idle verdict), NOT changing what a pause freezes —
+  BL-617 froze chase/rotation deliberately and that stays. Approve if the
+  alarm should name the pause; reject if a paused swarm alarming as if it
+  were stalled is the intended posture.
+
+source: |
+  Specifier audit of `.swarmforge/daemon/handoffd.log`, 2026-08-01, while
+  speccing BL-651. Full trail in
+  `backlog/evidence/BL-651-live-starve-20260801.md` plus BL-651's own notes.
+
+  - 16:00:06Z `.swarmforge/operator/control-pause.json` written
+    (`{"active":true,"untilMs":1785657600000}` → 2026-08-02T08:00Z).
+  - 16:04:51Z hardener→documenter `git_handoff` (BL-663) lands in the
+    documenter worktree `inbox/new/` — sync-delivered by the sender's own
+    `swarm_handoff.sh`, i.e. parcels STILL ARRIVE during a pause.
+  - 16:00Z→17:41Z: 3660 `poll-skip-paused`, zero chase/rotate lines. BL-617
+    suppresses delivery, chase, dispatch-gap, unassigned-active and
+    open-slot sweeps while a pause is active. Working as designed.
+  - 17:05:03Z `flow-watchdog-alarm ⚠️ WARN flow-stall: parcel … aged 1h0m in
+    documenter new - rotate.` The watchdog runs UNCONDITIONALLY through a
+    pause (also deliberate, BL-577), so it advises "rotate" — an action the
+    paused daemon is forbidden to take — and says nothing about the pause.
+  - Downstream cost: the human read it as a rotation starve, queue-jumped
+    BL-651 for it, and the operator/babysitter sweeps reported
+    "idle-correct" without ever naming the pause either.
+
+description: |
+  ## The defect
+
+  A pause makes the swarm intentionally silent, but nothing that speaks to
+  the human during a pause says the swarm is paused. The one component that
+  keeps talking — the flow watchdog — describes the symptom of the pause as
+  a stall and prescribes an action (`- rotate`) that cannot happen until the
+  pause lifts. Every observer above it inherits the confusion.
+
+  ## Shape
+
+  While `pause-active?` holds (`backlog_depth_lib.bb`, marker
+  `.swarmforge/operator/control-pause.json`):
+
+  1. The flow-watchdog alarm text says the swarm is paused and until when,
+     and drops the action verb it cannot deliver (`- rotate` / `- nudge`).
+     The alarm itself is NOT suppressed: a parcel aging inside a long pause
+     is exactly what a human should still see.
+  2. Whatever the operator/babysitter idle verdict is derived from, a live
+     pause is stated in it rather than reported as green/idle-correct.
+
+  Deliberately NOT in this ticket: changing what a pause freezes. BL-617's
+  suppression list and BL-577's unconditional watchdog both stay as they are.
+
+acceptance: |
+  Specifier writes the Gherkin when this is approved and promoted. Minimum
+  behaviour:
+
+  1. Parcel ages past warn while a pause with an `untilMs` is active → the
+     alarm names the pause and its end time, and carries no rotate/nudge verb.
+  2. Same parcel, no pause active → today's alarm text is unchanged, verb
+     included (non-vacuity).
+  3. An "until I resume" pause (`untilMs` absent) → the alarm says paused
+     with no end time rather than fabricating one.
+  4. The alarm still fires during a pause — pause is never a mute.
+
+out_of_scope: |
+  - Changing which sweeps a pause freezes (BL-617).
+  - Suppressing alarms during a pause.
+  - The babysitter's `ps --ppid` depth-1 false CRIT (BL-647 family).
+  - Rotation ordering itself (BL-651).
+
+notes: |
+  Sibling of BL-651, not a duplicate: BL-651 decides WHO the resident should
+  be; this one is about telling the human why nobody is deciding at all.
+  Orthogonal file scopes — BL-651 touches `mono_router_lib.bb` /
+  `handoffd.bb` `role-mail-row`; this one touches `flow_watchdog_lib.bb`'s
+  alarm text plus whatever the operator idle verdict reads.

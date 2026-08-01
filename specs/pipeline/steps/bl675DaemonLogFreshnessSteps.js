@@ -71,7 +71,7 @@ function registerSteps(registry) {
     const output = ctx.output || runFreshnessSuite(ctx);
     expectLine(
       output,
-      'PASS: 01: babysitter_runtime heartbeats every tick with no work',
+      'PASS: 01: babysitterd heartbeats every tick with no work',
       '01'
     );
   });
@@ -95,7 +95,7 @@ function registerSteps(registry) {
       if (daemon === 'handoffd') {
         expectLine(output, 'PASS: 02a: stale handoffd restarts through start_handoff_daemon.sh', '02-handoffd');
       } else {
-        expectLine(output, 'PASS: 02b: stale babysitterd restarts through start_babysitter.sh', '02-babysitterd');
+        expectLine(output, 'PASS: 02b: stale babysitterd restarts through start_babysitterd.sh', '02-babysitterd');
       }
     }
   );
@@ -116,7 +116,7 @@ function registerSteps(registry) {
           );
         }
       } else {
-        expectLine(output, 'PASS: 02b: stale babysitterd restarts through start_babysitter.sh', 'record-babysitterd');
+        expectLine(output, 'PASS: 02b: stale babysitterd restarts through start_babysitterd.sh', 'record-babysitterd');
       }
     }
   );

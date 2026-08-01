@@ -1,0 +1,345 @@
+#!/usr/bin/env bb
+;; babysitter_check.bb — thin I/O gatherer + CLI for babysitterd (BL-611).
+;;
+;; Ports the deterministic prototype (.swarmforge/operator/babysitter_check.sh,
+;; untracked) into the repo: this file does ALL the tmux/ps/find/meminfo/file
+;; gathering, builds a snapshot, hands it to babysitterd_sweep_lib/assemble-
+;; findings (pure, unit-tested separately), prints the findings, and — with
+;; --nudge — sends eligible findings to the coordinator via
+;; babysitter_nudge_lib/nudge-resident! (never raw tmux send-keys).
+;;
+;; Usage:
+;;   bb babysitter_check.bb <project-root> [--nudge]
+;;
+;; Invoked as `babysitter_check.sh <project-root> [--nudge]` (the pinned CLI
+;; name — see swarmforge/scripts/babysitter_check.sh, a one-line exec shim).
+;;
+;; State (BL-611: distinct from the retired hawk's .swarmforge/babysitter/, so
+;; stale hawk state is never mistaken for daemon state):
+;;   .swarmforge/babysitterd/pane-hash-<role>   last 3 stable content hashes
+;;   .swarmforge/babysitterd/streak             swarm-starved idle-sweep streak
+;;   .swarmforge/babysitterd/nudge-dedup.json    {finding-key -> last-nudged-ms}
+;;
+;; Exit 0 always — a monitor, never a gate.
+
+(ns babysitter-check
+  (:require [babashka.fs :as fs]
+            [babashka.process :as process]
+            [cheshire.core :as json]
+            [clojure.string :as str]))
+
+(def script-dir (str (fs/parent (fs/canonicalize *file*))))
+(load-file (str (fs/path script-dir "babysitterd_sweep_lib.bb")))
+(load-file (str (fs/path script-dir "babysitter_assess_lib.bb")))
+(load-file (str (fs/path script-dir "babysitter_nudge_lib.bb")))
+
+(defn usage []
+  (binding [*out* *err*]
+    (println "Usage: babysitter_check.bb <project-root> [--nudge]"))
+  (System/exit 1))
+
+(def args (vec *command-line-args*))
+(def project-root
+  (or (first (remove #(str/starts-with? % "-") args)) (usage)))
+(def nudge? (boolean (some #{"--nudge"} args)))
+
+(def state-dir (fs/path project-root ".swarmforge"))
+(def babysitterd-dir (fs/path state-dir "babysitterd"))
+(def streak-file (fs/path babysitterd-dir "streak"))
+(def dedup-file (fs/path babysitterd-dir "nudge-dedup.json"))
+
+(def stuck-min 30)
+(def heartbeat-max-secs 300)
+(def mem-floor-mb 1500)
+(def nudge-cooldown-ms (* 30 60 1000))
+(def rotate-grace-min 10)
+(def pending-max-age-min 120)
+
+(defn now-ms [] (System/currentTimeMillis))
+(defn now-iso [] (str (java.time.Instant/now)))
+
+(defn sh! [& args]
+  (apply process/sh {:continue true} args))
+
+;; ── tmux socket + roles ──────────────────────────────────────────────────
+
+(defn read-tmux-socket []
+  (let [f (fs/path state-dir "tmux-socket")]
+    (when (fs/exists? f)
+      (let [s (str/trim (slurp (str f)))]
+        (when (fs/exists? s) s)))))
+
+(defn parse-roles-tsv []
+  (let [f (fs/path state-dir "roles.tsv")]
+    (if (fs/exists? f)
+      (->> (str/split-lines (slurp (str f)))
+           (remove str/blank?)
+           (map (fn [line]
+                  (let [cols (str/split line #"\t" -1)]
+                    {:role (get cols 0) :session (get cols 3)})))
+           (remove #(str/blank? (:session %)))
+           vec)
+      [])))
+
+(defn pane-exists? [socket session]
+  (and socket (zero? (:exit (sh! "tmux" "-S" socket "has-session" "-t" session)))))
+
+(defn pane-pid [socket session]
+  (when (and socket (pane-exists? socket session))
+    (let [r (sh! "tmux" "-S" socket "list-panes" "-t" (str session ":0.0") "-F" "#{pane_pid}")]
+      (when (zero? (:exit r))
+        (parse-long (str/trim (first (str/split-lines (:out r)))))))))
+
+(defn claude-process-line [pane-pid]
+  (when pane-pid
+    (let [r (sh! "ps" "--ppid" (str pane-pid) "-o" "pid=,args=")]
+      (when (zero? (:exit r))
+        (->> (str/split-lines (:out r))
+             (filter #(str/includes? % "claude "))
+             first)))))
+
+(defn capture-pane [socket session]
+  (when (and socket (pane-exists? socket session))
+    (:out (sh! "tmux" "-S" socket "capture-pane" "-p" "-S" "-40" "-t" (str session ":0.0")))))
+
+(def menu-pattern #"Do you want|Do you trust|❯ 1\.|\(y/n\)|Enter to confirm|to select")
+
+(defn strip-spinner [text]
+  (->> (str/split-lines (str text))
+       (remove #(re-find #"✻|✽|✶|✳|·|tokens|for [0-9]+m?[0-9]*s" %))
+       (str/join "\n")))
+
+(defn sha1-hex [s]
+  (let [d (java.security.MessageDigest/getInstance "SHA-1")]
+    (->> (.digest d (.getBytes (str s) "UTF-8"))
+         (map #(format "%02x" %))
+         (apply str))))
+
+(defn read-hash-history [role]
+  (let [f (fs/path babysitterd-dir (str "pane-hash-" role))]
+    (if (fs/exists? f)
+      (vec (remove str/blank? (str/split-lines (slurp (str f)))))
+      [])))
+
+(defn append-hash-history! [role stable-hash]
+  (fs/create-dirs babysitterd-dir)
+  (let [f (fs/path babysitterd-dir (str "pane-hash-" role))
+        history (conj (read-hash-history role) stable-hash)
+        trimmed (vec (take-last 3 history))]
+    (spit (str f) (str (str/join "\n" trimmed) "\n"))
+    trimmed))
+
+(defn gather-role [socket {:keys [role session]}]
+  (let [exists? (pane-exists? socket session)
+        pid (when exists? (pane-pid socket session))
+        claude-line (claude-process-line pid)
+        has-claude? (boolean claude-line)
+        has-rc? (boolean (and claude-line (str/includes? claude-line "--remote-control")))
+        pane-text (or (capture-pane socket session) "")
+        menu? (boolean (re-find menu-pattern pane-text))
+        busy? (babysitterd-sweep-lib/classify-pane-busy? pane-text)
+        stable-hash (sha1-hex (strip-spinner pane-text))
+        history (append-hash-history! role stable-hash)]
+    {:role role :pane-exists? exists? :has-claude-process? has-claude?
+     :has-remote-control? has-rc? :menu-blocked? menu? :busy? busy?
+     :hash-history history :pane-text pane-text}))
+
+;; ── handoffd / dead-letters / stuck parcels ──────────────────────────────
+
+(defn proc-alive? [pattern]
+  (zero? (:exit (sh! "pgrep" "-f" pattern))))
+
+(defn file-age-secs [path]
+  (when (fs/exists? path)
+    (let [mtime-ms (fs/file-time->millis (fs/last-modified-time path))]
+      (quot (- (now-ms) mtime-ms) 1000))))
+
+(defn file-age-min [path]
+  (when-let [secs (file-age-secs path)] (quot secs 60)))
+
+(defn count-failed-box []
+  (let [d (fs/path state-dir "handoffs" "failed")]
+    (if (fs/directory? d) (count (fs/list-dir d)) 0)))
+
+(defn worktree-mailbox-dirs []
+  (let [wt (fs/path project-root ".worktrees")]
+    (if (fs/directory? wt)
+      (->> (fs/list-dir wt)
+           (map #(fs/path % ".swarmforge" "handoffs"))
+           (filter fs/directory?)
+           vec)
+      [])))
+
+(defn all-mailbox-dirs []
+  (into [(fs/path state-dir "handoffs")] (worktree-mailbox-dirs)))
+
+(defn glob-handoffs [rel-glob]
+  (mapcat (fn [mailbox]
+            (try (map str (fs/glob mailbox rel-glob)) (catch Exception _ [])))
+          (all-mailbox-dirs)))
+
+(defn stuck-parcels []
+  (->> (glob-handoffs "inbox/in_process/*.handoff")
+       (keep (fn [p]
+               (when-let [age-min (file-age-min p)]
+                 (when (> age-min stuck-min)
+                   {:name (fs/file-name p) :age-min age-min}))))
+       vec))
+
+(defn pending-claims []
+  (->> (glob-handoffs "inbox/new/*.handoff")
+       (keep (fn [p]
+               (when-let [age-min (file-age-min p)]
+                 {:abandoned? false :age-min age-min})))
+       vec))
+
+;; ── in-process claims for check 10, owner-busy? aware (6d-10) ────────────
+
+(defn owning-role-for-path [path]
+  (let [m (re-find #"\.worktrees/([^/]+)/\.swarmforge/handoffs" (str path))]
+    (when m (second m))))
+
+(defn in-process-claims [busy-by-role]
+  (->> (glob-handoffs "inbox/in_process/*.handoff")
+       (keep (fn [p]
+               (when-let [age-min (file-age-min p)]
+                 (let [role (owning-role-for-path p)]
+                   {:age-min age-min
+                    :owner-busy? (boolean (get busy-by-role role false))}))))
+       vec))
+
+;; ── memory floor ──────────────────────────────────────────────────────────
+
+(defn meminfo-path []
+  (or (System/getenv "BABYSITTER_MEMINFO_PATH") "/proc/meminfo"))
+
+(defn available-mem-mb []
+  (let [meminfo (try (slurp (meminfo-path)) (catch Exception _ ""))
+        m (re-find #"MemAvailable:\s+(\d+)" meminfo)]
+    (when m (quot (parse-long (second m)) 1024))))
+
+;; ── pause + rotate-note gathering ─────────────────────────────────────────
+
+(defn read-pause []
+  (let [f (fs/path state-dir "operator" "control-pause.json")]
+    (if (fs/exists? f)
+      (let [obj (try (json/parse-string (slurp (str f)) true) (catch Exception _ nil))]
+        {:active? (boolean (:active obj)) :until-ms (:untilMs obj)})
+      {:active? false :until-ms nil})))
+
+(defn active-role-marker-mtime-ms []
+  (let [f (fs/path state-dir "mono-router-active-role")]
+    (when (fs/exists? f) (fs/file-time->millis (fs/last-modified-time f)))))
+
+(defn active-role-marker []
+  (let [f (fs/path state-dir "mono-router-active-role")]
+    (when (fs/exists? f) (str/trim (slurp (str f))))))
+
+(def rotate-pattern #"rotate_to_role\.sh ([A-Za-z]+)|[Rr]otate to ([A-Za-z]+)")
+
+(defn newest-rotate-note []
+  (let [now (now-ms)
+        four-hours-ms (* 4 60 60 1000)
+        candidates (concat (glob-handoffs "inbox/completed/*.handoff")
+                           (glob-handoffs "inbox/done/*.handoff"))]
+    (->> candidates
+         (keep (fn [p]
+                 (let [mtime-ms (fs/file-time->millis (fs/last-modified-time p))]
+                   (when (<= (- now mtime-ms) four-hours-ms)
+                     (let [content (try (slurp p) (catch Exception _ ""))
+                           m (re-find rotate-pattern content)]
+                       (when m
+                         {:path p :mtime-ms mtime-ms
+                          :target (or (nth m 1 nil) (nth m 2 nil))}))))))
+         (sort-by :mtime-ms >)
+         first)))
+
+(defn gather-rotate-note []
+  (when-let [{:keys [path mtime-ms target]} (newest-rotate-note)]
+    (let [active-role-file-mtime (active-role-marker-mtime-ms)]
+      {:note-name (fs/file-name path)
+       :note-target target
+       :note-age-min (quot (- (now-ms) mtime-ms) 60000)
+       :grace-min rotate-grace-min
+       :note-mtime-ms mtime-ms
+       :active-role-file-mtime-ms (or active-role-file-mtime 0)
+       :active-role (or (active-role-marker) "")})))
+
+;; ── nudge-dedup persisted state ───────────────────────────────────────────
+
+(defn read-dedup-state []
+  (if (fs/exists? dedup-file)
+    (try (json/parse-string (slurp (str dedup-file)) true) (catch Exception _ {}))
+    {}))
+
+(defn write-dedup-state! [m]
+  (fs/create-dirs babysitterd-dir)
+  (spit (str dedup-file) (json/generate-string m)))
+
+(defn read-streak []
+  (if (fs/exists? streak-file)
+    (or (parse-long (str/trim (slurp (str streak-file)))) 0)
+    0))
+
+(defn write-streak! [n]
+  (fs/create-dirs babysitterd-dir)
+  (spit (str streak-file) (str n "\n")))
+
+;; ── main ──────────────────────────────────────────────────────────────────
+
+(defn -main []
+  (let [socket (read-tmux-socket)
+        role-rows (parse-roles-tsv)
+        roles (mapv (partial gather-role socket) role-rows)
+        busy-by-role (into {} (map (juxt :role :busy?) roles))
+        any-pane-busy? (boolean (some :busy? roles))
+        pause (read-pause)
+        claim-risks (try (babysitter-assess-lib/scan-claim-risks project-root)
+                          (catch Exception _ []))
+        snapshot
+        {:now-ms (now-ms)
+         :roles (mapv #(dissoc % :pane-text) roles)
+         :handoffd-alive? (proc-alive? "handoffd\\.bb")
+         :handoffd-supervisor-alive? (proc-alive? "handoffd_supervisor\\.bb")
+         :handoffd-log-age-secs (file-age-secs (fs/path state-dir "daemon" "handoffd.log"))
+         :handoffd-max-age-secs heartbeat-max-secs
+         :failed-count (count-failed-box)
+         :stuck-parcels (stuck-parcels)
+         :available-mb (or (available-mem-mb) 999999)
+         :mem-floor-mb mem-floor-mb
+         :claim-risks claim-risks
+         :rotate-note (gather-rotate-note)
+         :pause pause
+         :active-ticket-count (count (fs/glob (fs/path project-root "backlog" "active") "*.yaml"))
+         :any-pane-busy? any-pane-busy?
+         :prev-streak (read-streak)
+         :pending-claims (pending-claims)
+         :in-process-claims (in-process-claims busy-by-role)
+         :pending-max-age-min pending-max-age-min}
+        {:keys [findings new-streak]} (babysitterd-sweep-lib/assemble-findings snapshot)
+        ts (now-iso)]
+    (write-streak! new-streak)
+    (if (empty? findings)
+      (println (str ts " OK all checks green"))
+      (doseq [f findings]
+        (println (babysitterd-sweep-lib/format-finding-line f ts))))
+    (when nudge?
+      (when (seq findings)
+        (let [dedup-state (read-dedup-state)
+              {:keys [to-nudge new-dedup-state]}
+              (babysitterd-sweep-lib/decide-nudges findings
+                                                   {:last-nudged-ms-by-key dedup-state
+                                                    :now-ms (now-ms)
+                                                    :cooldown-ms nudge-cooldown-ms})]
+          (when (seq to-nudge)
+            (let [message (babysitterd-sweep-lib/format-nudge-message to-nudge)
+                  result (babysitter-nudge-lib/nudge-resident! project-root "coordinator" message)]
+              (case (:status result)
+                :nudged (do (write-dedup-state! new-dedup-state)
+                            (println (str ts " NUDGED coordinator: " (count to-nudge) " finding(s)")))
+                :skip-busy (println (str ts " NUDGE-SKIP coordinator busy — " (:detail result)))
+                :no-target (println (str ts " NUDGE-SKIP " (:detail result)))
+                (println (str ts " NUDGE-FAILED " (:detail result)))))))))
+    (System/exit 0)))
+
+(-main)

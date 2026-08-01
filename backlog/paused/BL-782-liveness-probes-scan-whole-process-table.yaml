@@ -1,0 +1,138 @@
+id: BL-782
+title: "two teardown/liveness probes scan the whole process table, so BL-637's and BL-567's own suites fail on any host running a swarm — red that means nothing"
+milestone: M8
+type: defect
+status: todo
+epic: code-quality-gates
+severity: medium
+priority: 25
+direction: aligned
+depends_on: []
+assigned_to: unassigned
+mutation_cost: low
+human_approval: pending
+
+invariants:
+  - "Every liveness/survivor probe in a teardown or audit path matches only processes belonging to the project root under test — a process from another root, or from the operator's own tooling, can never be counted as a survivor."
+
+approval_context: >
+  Medium, not high: nothing is broken in production teardown — the probes work
+  correctly on a quiet host, and the fix is scoping a match that is already
+  scoped correctly on the adjacent line in both files.
+
+  It is not low either. Two suites currently fail for environmental reasons on
+  the host that actually runs the swarm, and the failures look exactly like
+  regressions. A role that trusts them bounces work that is fine; a role that
+  learns to ignore them stops reading real red in those files. Both outcomes
+  cost more than the fix.
+
+source: |
+  Reported by the coder on 2026-08-01 in
+  `backlog/evidence/BL-611-coder-findings.md` (finding 5), verified
+  independently by the specifier against the live files on `main`.
+
+  `swarmforge/scripts/test/test_lifecycle_script_scope.sh` (BL-637, test 02)
+  and `swarmforge/scripts/test/test_expedite_cli.sh` (BL-567, most cases) fail
+  when run on a host with a live swarm. The coder confirmed both reproduce
+  against the unmodified scripts — pre-existing, not a BL-611 regression.
+
+  The mechanism is the same in both, and in both the correct idiom is already
+  present one or two lines away:
+
+  **`swarmforge/scripts/kill_pipeline_swarm.sh`** — line 230 scopes its scan to
+  the root under test:
+
+  ```sh
+  pgrep -fl "handoffd\.bb.*$ROOT"
+  ```
+
+  and then line 271, the closing survivor check, drops the scoping entirely:
+
+  ```sh
+  remaining="$(pgrep -fl 'handoffd\.bb|copilot.*SwarmForge' 2>/dev/null | grep -v pgrep || true)"
+  ```
+
+  So a real `handoffd.bb` serving the actual swarm — a different root, doing
+  nothing wrong — is reported as a fixture survivor.
+
+  **`swarmforge/scripts/expedite_cli.bb`** — `pids-matching` (line 136) reads
+  the whole table via `ps -eo pid=,args=` and excludes only its own pid. Its
+  own docstring says the exclusion exists "so the audit cannot invent phantom
+  survivors", which is the right instinct applied one case too narrowly. At the
+  call sites, line 169 scopes properly:
+
+  ```clojure
+  :role-agents (count (pids-matching (str project-root "/.swarmforge/launch/")))
+  ```
+
+  while lines 165-168 pass bare names — `"handoffd.bb"`,
+  `"handoffd_supervisor.bb"`, `"babysitterd.sh"`, `"--remote-control Operator"`
+  — each of which matches any swarm on the host. `"babysitterd.sh"` also
+  matches the operator's standing `.swarmforge/operator/babysitterd.sh`
+  prototype, and `"--remote-control Operator"` matches the operator agent by
+  design.
+
+description: |
+  Scope both probes to the project root they are auditing, so a process
+  belonging to another root — or to the operator's own tooling — can never be
+  counted as a survivor.
+
+  Neither file needs a new idiom invented for it. Each already contains the
+  scoped form; the fix is to apply it consistently:
+
+  - `kill_pipeline_swarm.sh:271` scopes like `:230` does, against `$ROOT`.
+  - `expedite_cli.bb`'s `pids-matching` call sites at 165-168 pass root-scoped
+    needles the way 169 already does. Prefer scoping at the call site over
+    baking a root into `pids-matching`, so the function stays a pure
+    argv-matcher.
+
+  Two details worth getting right rather than rediscovering:
+
+  1. `--remote-control Operator` may have no root in its argv to scope against.
+    If so, that probe cannot be made root-specific by pattern alone — say so in
+    the code and decide deliberately whether the operator agent belongs in a
+    teardown survivor check at all. Do not fake a scope that does not exist.
+  2. `grep -v pgrep` at :271 is a self-match guard. The project's idiom for
+    that is the bracket trick (`[h]andoffd`, quoted, sole copy in the line),
+    which does not depend on a second process to filter. Use it while in there.
+
+  The verification bar is behavioural: both suites must pass on a host with a
+  live swarm running, which is the condition that exposes the defect. A green
+  run on a quiet host proves nothing here and must not be offered as evidence.
+
+acceptance: |
+  Specifier writes the Gherkin when this is approved and promoted. Minimum
+  behaviour:
+
+  1. `test_lifecycle_script_scope.sh` passes with a real `handoffd.bb` for a
+     different project root alive throughout the run.
+  2. `test_expedite_cli.sh` passes with a real `handoffd.bb`,
+     `handoffd_supervisor.bb`, and a `babysitterd.sh` for a different root
+     alive throughout the run.
+  3. Both still FAIL when a genuine survivor belonging to the root under test
+     is left running — the scoping must not be so tight it stops detecting the
+     thing these probes exist to detect. This is the scenario that proves the
+     fix is a narrowing and not a defeat.
+  4. `kill_pipeline_swarm.sh`'s teardown behaviour on its own root is
+     unchanged, and every existing BL-637 scenario still passes.
+  5. The operator-agent probe either scopes to the root under test, or
+     documents in the code why it cannot and what it therefore means.
+
+out_of_scope: |
+  - BL-637's pipeline-only lifecycle boundary — unchanged; this ticket only
+    fixes how the survivor check MATCHES, never what it kills.
+  - BL-611's addition of a babysitterd pidfile signal to `kill_all_swarm.sh`.
+  - Making the suites runnable concurrently with a live swarm in any broader
+    sense (shared ports, sockets, fixture roots) — process-table matching only.
+  - The `EXPEDITE_PROBE_FILE` seam, which already exists and works.
+
+notes: |
+  This is the same class as the standing operator lesson about `pgrep`/`pkill`
+  self-matching, one layer out: there the risk is a probe matching ITSELF, here
+  it is a probe matching a NEIGHBOUR. Both produce a survivor that was never a
+  survivor.
+
+  The declared invariant is deliberately phrased over all probes, not just
+  these two — if a third unscoped probe turns up during the pass, it is in
+  scope, and the architect should read the slice against the property rather
+  than against the two named sites.

@@ -250,18 +250,35 @@
 
 (defn preferred-rotate-target
   "Among mailbox score rows, the actionable role with the best (lowest)
-   :best-priority; at equal priority, newest :newest-created-at wins.
-   sort-by is stable, so newest-first survives inside each priority band.
-   Rows that omit :best-priority (legacy callers) rank as
-   missing-priority-rank and therefore keep pure newest-first behaviour."
-  [rows]
-  (some->> rows
-           (filter :actionable?)
-           (sort-by :newest-created-at)
-           reverse
-           (sort-by #(or (:best-priority %) missing-priority-rank))
-           first
-           :role))
+   :best-priority; at equal priority, newest :newest-created-at wins (BL-636)
+   UNLESS BL-651's starve override fires: when starve-after-ms is a number
+   (not nil, not :off) and at least one row in the BEST priority band has
+   waited (:oldest-actionable-waited-ms) at or past that threshold, the
+   OLDEST such row wins instead — the override never reaches into a worse
+   priority band (ticket constraint 4: age breaks ties, it never inverts
+   priority). sort-by is stable, so newest-first survives inside each
+   priority band when the override does not fire. Rows that omit
+   :best-priority (legacy callers) rank as missing-priority-rank and
+   therefore keep pure newest-first behaviour; omitting starve-after-ms
+   (the arity-1 call every pre-BL-651 caller still makes) reproduces BL-636
+   ordering byte-for-byte."
+  [rows & [starve-after-ms]]
+  (let [ordered (->> rows
+                      (filter :actionable?)
+                      (sort-by :newest-created-at)
+                      reverse
+                      (sort-by #(or (:best-priority %) missing-priority-rank)))]
+    (when (seq ordered)
+      (let [best-band (or (:best-priority (first ordered)) missing-priority-rank)
+            band-rows (filter #(= best-band (or (:best-priority %) missing-priority-rank)) ordered)
+            starved (when (number? starve-after-ms)
+                      (filter #(and (:oldest-actionable-waited-ms %)
+                                    (>= (:oldest-actionable-waited-ms %) starve-after-ms))
+                              band-rows))]
+        (:role
+         (if (seq starved)
+           (apply max-key #(or (:oldest-actionable-waited-ms %) 0) starved)
+           (first ordered)))))))
 
 ;; ── BL-550: non-home resident strands after a merge-up note ────────────────
 ;; QA's merge-up note broadcasts to all 5 pipeline roles at once. On the full
@@ -381,3 +398,62 @@
   (boolean
    (and (= "note" parcel-type)
         (= :rotate chase-action))))
+
+;; ── BL-651: starvation-bounded rotate preference ────────────────────────────
+;; preferred-rotate-target orders candidates by priority band then newest-
+;; first (BL-636), but nothing weighed how LONG a role's oldest actionable
+;; parcel had already waited — a queue that keeps receiving fresher mail at
+;; the same priority (on this pack, normally home/coder) could outrank an
+;; older dormant parcel for as long as the fresh mail kept arriving, with
+;; nothing bounding the wait. rotation_starve_after_ms bounds that: INSIDE
+;; the best priority band only (ticket constraint 4 — age never inverts
+;; priority), a row whose oldest actionable parcel has waited at or past the
+;; threshold wins over a fresher row in the same band, oldest-first.
+
+(def default-rotation-starve-after-ms
+  "How long a role's oldest actionable parcel may wait before its age begins
+   to outrank a fresher same-priority parcel elsewhere. 10 minutes —
+   deliberately below flow-watchdog-lib/default-warn-ms (15 minutes) so a
+   dormant queue drains before the human is ever alarmed about it (the
+   ticket's own Shape requirement). Tracked here as the single source of
+   truth, mirroring default-note-actionable-after-ms — swarmforge.conf
+   documents this default as a COMMENTED line rather than duplicating the
+   literal value, so the two cannot drift apart."
+  600000)
+
+(defn parse-rotation-starve-after-ms
+  "Pure: `config rotation_starve_after_ms <ms-or-off>` from conf text. The
+   literal `off` disables the age input entirely — preferred-rotate-target
+   then reproduces BL-636 ordering byte-for-byte (a pure additive override,
+   never a rewrite of the existing ordering). A positive integer sets the
+   threshold in ms. Absent, blank, zero, negative, and anything else
+   unparseable all degrade to the default — never throw, never silently
+   disable the starve check on a typo (mirrors
+   parse-note-actionable-after-ms's degrade-to-default failure mode)."
+  [conf-text]
+  (if-let [line (some (fn [l] (when (str/starts-with? l "config rotation_starve_after_ms") l))
+                       (str/split-lines (or conf-text "")))]
+    (let [value (str/trim (subs line (count "config rotation_starve_after_ms")))]
+      (if (= "off" value)
+        :off
+        (let [n (some->> (re-find #"-?\d+" value) parse-long)]
+          (if (and n (pos? n)) n default-rotation-starve-after-ms))))
+    default-rotation-starve-after-ms))
+
+(defn oldest-actionable-waited-ms
+  "Pure: among a coll of {:enqueued-at :created-at} age sources (one per
+   actionable parcel in a role's mailbox), the wait in ms (from now-ms) of
+   the OLDEST parcel — the same enqueued_at-else-created_at, never-file-
+   mtime rule as note-aged?/parse-instant-ms, so a worktree hot-sync
+   touching the file can never reset a parcel's wait. nil when the coll is
+   empty or no parcel in it has a parseable age source — fails closed, an
+   unknown age can never win a starve comparison in preferred-rotate-target
+   (a nil :oldest-actionable-waited-ms is filtered out there, never
+   defaulted to zero or infinity)."
+  [age-sources now-ms]
+  (some->> (seq age-sources)
+           (keep (fn [{:keys [enqueued-at created-at]}]
+                   (or (parse-instant-ms enqueued-at) (parse-instant-ms created-at))))
+           seq
+           (apply min)
+           (- now-ms)))
