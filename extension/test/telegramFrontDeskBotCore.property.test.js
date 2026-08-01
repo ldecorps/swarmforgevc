@@ -3,6 +3,8 @@ const fc = require('fast-check');
 const {
   composeAskButtons,
   decideCallbackQueryAction,
+  decideCursorBridgeExclusion,
+  pollAndForward,
   recordApprovalDecisionAndClose,
   roleAskThreadId,
   roleFromAskThreadId,
@@ -182,5 +184,89 @@ test('property: a threadId without the role-ask prefix (a real Operator SUP-### 
       assert.equal(roleFromAskThreadId(threadId), undefined);
     }),
     { numRuns: 300 }
+  );
+});
+
+// BL-764 invariant #2: "An inbound update addressed to a bridge-owned topic
+// is either forwarded to that bridge or explicitly dropped with a recorded
+// reason - never routed to SUP/Operator, and never silently discarded."
+// decideCursorBridgeExclusion is the pure gate; pollAndForward is where a
+// wrongly-routed update would actually reach SUP/Operator. This drives
+// arbitrary Host/Bubble topic configurations and arbitrary candidate topic
+// ids through the gate (generalizing past the handful of fixed topic ids
+// telegramFrontDeskBotCore.test.js pins), then drives an owned-topic update
+// through the real poll loop with the SUP/Operator adapters (postToBridge,
+// openSubjectAndRecord, postOperatorContext) wired to throw if invoked -
+// a misroute fails the run loudly instead of passing silently. Runs ONLY
+// via `npm run test:properties`.
+const CB_PRINCIPAL_ID = 111;
+function cbUpdate(topicId) {
+  return {
+    update_id: 1,
+    message: { message_id: 1, chat: { id: 1 }, from: { id: CB_PRINCIPAL_ID }, message_thread_id: topicId, text: 'hi' },
+  };
+}
+const ownedTopicsArb = fc.record({
+  cursorTopicId: fc.option(fc.integer({ min: 1, max: 100000 }), { nil: undefined }),
+  bubbleTopicId: fc.option(fc.integer({ min: 1, max: 100000 }), { nil: undefined }),
+});
+const candidateTopicIdArb = fc.oneof(fc.integer({ min: 1, max: 100000 }), fc.constant(undefined));
+
+test('property: decideCursorBridgeExclusion drops iff the update topic is owned (Host or Bubble), for any owned-topic combination', () => {
+  fc.assert(
+    fc.property(ownedTopicsArb, candidateTopicIdArb, (owned, topicId) => {
+      const decision = decideCursorBridgeExclusion(cbUpdate(topicId), [owned.cursorTopicId, owned.bubbleTopicId]);
+      const isOwned = topicId !== undefined && (topicId === owned.cursorTopicId || topicId === owned.bubbleTopicId);
+      assert.equal(decision, isOwned ? 'drop' : 'not-applicable');
+    }),
+    { numRuns: 300 }
+  );
+});
+
+const forwardModeArb = fc.constantFrom('wired-ok', 'wired-fail', 'unwired');
+
+test('property: pollAndForward never routes an owned-topic update to SUP/Operator, for any Host/Bubble topic and any forward outcome', async () => {
+  await fc.assert(
+    fc.asyncProperty(ownedTopicsArb, forwardModeArb, async (owned, forwardMode) => {
+      fc.pre(owned.cursorTopicId !== undefined || owned.bubbleTopicId !== undefined);
+      const targetTopicId = owned.cursorTopicId ?? owned.bubbleTopicId;
+      const forwarded = [];
+      const adapters = {
+        chatId: '1',
+        cursorBridgeTopicId: async () => owned.cursorTopicId,
+        bubbleTopicId: async () => owned.bubbleTopicId,
+        getUpdates: async () => ({ success: true, updates: [cbUpdate(targetTopicId)] }),
+        subjectForTopic: () => 'SUP-12',
+        backlogForTopic: () => undefined,
+        postToBridge: async () => {
+          throw new Error('SUP/Operator postToBridge must never be called for an owned topic');
+        },
+        openSubjectAndRecord: async () => {
+          throw new Error('SUP/Operator openSubjectAndRecord must never open a subject for an owned topic');
+        },
+        postOperatorContext: async () => {
+          throw new Error('SUP/Operator postOperatorContext must never be called for an owned topic');
+        },
+        ...(forwardMode === 'unwired'
+          ? {}
+          : {
+              forwardCursorBridgeUpdate: async (u) => {
+                forwarded.push(u);
+                return forwardMode === 'wired-ok';
+              },
+            }),
+      };
+      const result = await pollAndForward(0, CB_PRINCIPAL_ID, adapters);
+      if (forwardMode === 'wired-ok') {
+        assert.equal(result.posted, 1, 'a successfully forwarded update must be counted posted');
+        assert.equal(forwarded.length, 1);
+      } else if (forwardMode === 'wired-fail') {
+        assert.equal(result.failed, 1, 'a failed forward must be counted failed, not silently dropped');
+      } else {
+        assert.equal(result.dropped, 1, 'an unwired bridge topic must be an explicit, counted drop');
+      }
+      assert.equal(result.posted + result.dropped + result.failed, 1, 'exactly one outcome recorded for the one update - never lost, never double-counted');
+    }),
+    { numRuns: 150 }
   );
 });
