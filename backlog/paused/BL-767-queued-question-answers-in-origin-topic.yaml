@@ -1,0 +1,195 @@
+id: BL-767
+title: "DEFECT — a question queued while the bridge is busy is answered in the Cursor Remote topic, not the topic it was asked in"
+milestone: M8
+type: defect
+severity: medium
+status: todo
+epic: swarmforge-console
+human_approval: pending
+assigned_to: none
+priority: 2
+direction: normal
+depends_on: [BL-764]
+mutation_cost: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-767-queued-question-answers-in-origin-topic.feature
+
+invariants:
+  - "A queued prompt is answered in exactly one topic: the one it was asked in, or the Cursor Remote topic when no origin was recorded — never both, never neither."
+  - "A bridge state file written before this change still parses and still drains; a missing origin topic is a fallback, never a parse failure and never a dropped prompt."
+
+required_wiring:
+  - "extension/src/tools/telegramCursorBridgeCore.ts::originTopicId::the persisted queued-prompt and choice-poll records carry the topic the interaction started in; a field nothing writes routes nothing"
+  - "extension/src/tools/telegramCursorBridgeLive.ts::originTopicId::the deferred-reply paths read that field instead of falling back to state.cursorTopicId"
+
+approval_context: >
+  Two calls, both cheap to reverse, neither blocking the main fix.
+
+  First, the busy cue. BL-764 ships a standing edit-in-place "busy / N waiting"
+  line, and `telegramCursorBridgeLiveness.ts:33` renders it only on Cursor
+  Remote. If a Bubble-asked question is going to be answered in Bubble, the cue
+  that says it is still waiting arguably belongs there too — but that means a
+  second standing line of furniture in a second topic, edited on every state
+  change. Scenario 03 of the feature file assumes yes (cue follows the queued
+  work). Say so if you would rather keep one cue on Cursor Remote and have
+  Bubble stay quiet between ack and answer, and I will drop that scenario and
+  the third scope bullet; nothing else in the ticket depends on it.
+
+  Second, severity. I set `medium`, not `high`: the answer is not lost, it is
+  posted to a sibling topic in the same Telegram group, and only on the busy
+  path. It is `high` if you read "the phone surface goes quiet after
+  acknowledging me" as the same class of fault BL-764 was filed for — which is
+  a fair reading, since this reproduces BL-764's symptom on the peer BL-764
+  just created. Your call; the expedite lane follows it.
+
+  The rest is firm.
+
+description: |
+  ## What
+
+  When the Cursor Remote bridge is already working a turn, a question typed into
+  a bridge-owned topic is queued and acknowledged where it was typed — but its
+  eventual answer is posted to the Cursor Remote topic regardless of where it
+  came from. Ask from the Bubble topic while the bridge is busy and you get
+  "Busy — question queued (1 waiting)" in Bubble, then silence there while the
+  answer appears in Cursor Remote.
+
+  BL-764 made the front desk forward Bubble-topic updates to the bridge instead
+  of dropping them, so Bubble is now a full peer of Cursor Remote on the way IN.
+  The way OUT was never made symmetric. This is BL-764's own symptom — a topic
+  that reads as dead while every process reports healthy — reproduced on the
+  peer BL-764 created.
+
+  ## Root cause
+
+  The bridge's persisted records keep *what* was asked and drop *where*.
+  `CursorBridgeQueuedPrompt` (`telegramCursorBridgeCore.ts:28-34`) and
+  `CursorBridgeChoicePoll` (`:41-46`) carry no topic id, so every path that
+  replies later has nothing to route by and guesses.
+
+  ## Verified sites (read at source on `main` @ `8978215ac`)
+
+  Correct today, and the regression surface for this fix:
+
+  - `telegramCursorBridgeLive.ts:1676` — the queue acknowledgement uses
+    `inbound.topicId ?? state.cursorTopicId`, so the ack itself lands in the
+    right topic. That is why the failure reads as "it heard me, then forgot me".
+  - `:1698` — the ordinary (not-busy) inbound reply passes `inbound.topicId` as
+    `handleInboundDecision`'s `replyTopicId`. Live replies are already correct.
+  - `handleQueueInboundAction` (`:1139-1140`) posts the `/queue` dequeue poll to
+    the originating topic, and `attemptCursorBridgePollAnswerForward`
+    (`telegramFrontDeskBotCore.ts:2211-2220`) fans poll answers out without
+    needing a topic. The `/queue` path is already topic-correct end to end.
+
+  Wrong today:
+
+  - `:1449` — `runNextQueuedPrompt` calls `handleInboundDecision` with no
+    `replyTopicId`, so `:1321` falls back to `state.cursorTopicId`. **This is
+    the live defect**: every drained queued question answers on Cursor Remote.
+  - `:1615` / `:1620` — a choice-poll answer arriving while busy is queued with
+    no origin (same fallback as above), and the same answer arriving while idle
+    is routed to `state.bubbleTopicId ?? state.cursorTopicId` — hardcoded
+    Bubble-first. So one choice poll answers in Bubble when the bridge is idle
+    and in Cursor Remote when it is busy, whichever topic it was posted in.
+  - `telegramCursorBridgeLiveness.ts:33` — the busy cue is rendered only on
+    `state.cursorTopicId` (see approval_context).
+
+  Dark, so fix for consistency but do not claim a user-visible repair:
+
+  - `:1508` — `processQueuedPollAnswer` has the same missing-topic bug, but
+    nothing in production ever assigns `state.pendingPromptPoll`: it is parsed
+    (`telegramCursorBridgeCore.ts:667-669`) and cleared in five places
+    (`Live.ts:356,413,1195,1446,1494`) and written in none. The handler cannot
+    fire today. Recorded because a reviewer reading `:1508` will otherwise
+    reasonably assume it is live — see Out of scope for its disposition.
+
+  ## The fix
+
+  Record the origin topic on the persisted record at the moment the interaction
+  is deferred, and read it back at every deferred reply. Prefer the recorded
+  topic, fall back to `state.cursorTopicId` when it is absent (old state files,
+  and the boot-prompt path which legitimately has no origin). The field is named
+  `originTopicId` by contract, not by preference — `required_wiring` greps for
+  it, so renaming it means amending this ticket in the same parcel.
+
+  ## Scope
+
+  - `extension/src/tools/telegramCursorBridgeCore.ts` — `originTopicId` on
+    `CursorBridgeQueuedPrompt` and `CursorBridgeChoicePoll`, and tolerant
+    parsing of records that lack it.
+  - `extension/src/tools/telegramCursorBridgeLive.ts` — record it at
+    `:1615`/`:1674`, read it at `:1449`/`:1508`/`:1620`.
+  - `extension/src/tools/telegramCursorBridgeLiveness.ts` — render the busy cue
+    in the topic holding the queued work (approval-gated; see approval_context).
+  - `specs/pipeline/steps/` — this feature file's own handlers, in this parcel.
+    Register them with `defineScoped(..., 'Queued bridge questions answer in the
+    topic they were asked in')`: "the answer is posted to the Cursor Remote
+    topic" is generic enough to win for another feature under the global
+    first-match registry (BL-425).
+
+  ## Out of scope
+
+  - **BL-764's inbound fan-out.** That queue is the way in and is working; this
+    ticket only touches the way out. Do not re-open the front desk's forwarding
+    or `cursor-bridge-inbound.jsonl`.
+  - **Deciding the fate of `pendingPromptPoll` / `processQueuedPollAnswer`.**
+    Wiring a producer for it is a feature (a "choose which queued question runs
+    next" poll that was evidently designed and never connected); deleting it is
+    a cleanup. Either way it is a separate ticket with its own acceptance —
+    fixing its topic routing here does not decide it, and this ticket must not
+    be read as having done so.
+  - **The Bubble Android app.** Nothing in `android/` changes; the Bubble topic
+    here is the Telegram topic, not the phone client.
+
+  ## e2e procedure for QA
+
+  1. With Cursor Remote and Bubble topics both configured, start a long turn so
+     the bridge is busy.
+  2. Type a question in the Bubble topic: the queue ack appears in Bubble.
+  3. When the turn finishes: the answer appears in the Bubble topic, and no
+     answer to it appears in Cursor Remote.
+  4. Repeat from the Cursor Remote topic: the answer appears there (regression).
+  5. Hand-edit `cursor-bridge-state.json` to hold a queued prompt with no
+     `originTopicId`, restart the bridge: it drains to Cursor Remote and does
+     not crash or drop the prompt.
+  6. Answer a choice poll posted in the Cursor Remote topic while the bridge is
+     idle: the reply lands in Cursor Remote. (Today it lands in Bubble.)
+  7. `/queue` from each topic still posts its dequeue poll in that topic.
+
+source: |
+  Architect `note` to specifier + coordinator, 2026-08-01, raised while
+  forwarding BL-764 and deliberately not bounced — the behavior is outside
+  BL-764's declared invariants and acceptance scenarios. Recorded under
+  "Not bounced" in
+  `backlog/evidence/BL-764-front-desk-eats-host-bridge-updates-bounce-20260801.md`.
+
+  The architect's note suggested this was a `postQueueSelectionPoll` /
+  `processQueuedPollAnswer` problem and a likely BL-765 follow-up. Both were
+  checked before speccing: `postQueueSelectionPoll` exists nowhere in the repo,
+  `processQueuedPollAnswer` is dark (no producer), and BL-765 is remote config
+  and the hold-music catalog — a different subject. The real live site is
+  `runNextQueuedPrompt`. The architect was right that there is a defect here
+  and right not to bounce BL-764 for it; the mechanism named in the note is not
+  the one that fires.
+
+notes: |
+  Severity `medium`, deliberately: the answer is misrouted to a sibling topic in
+  the same Telegram group rather than lost, and only on the busy path. See
+  approval_context — the human may reasonably call it `high`, and the Article
+  3.2.4 expedite lane follows whatever `severity:` ends up saying.
+
+  Both declared invariants are property-shaped and want property tests rather
+  than more example scenarios (BL-654): the first sweeps (origin topic recorded
+  or absent) x (drain path) and asserts exactly-one-topic; the second sweeps
+  arbitrary persisted records with and without `originTopicId` through the
+  parser. Note the first invariant is the one BL-590 would have caught early —
+  "exactly one" is a property over all four deferred-reply sites, not a fact
+  about any one of them.
+
+  Specifier 2026-08-01: IR-DRY reports five medium-confidence findings on the
+  feature file, all reviewed and kept. Three are the `<origin>` placeholder
+  substituting to a literal that another scenario also uses — that is one step
+  resolving to one handler, which is the point. The other two pair an assertion
+  against its negation ("the answer is posted to" vs "no answer is posted to")
+  and a count transition ("1 waiting" vs "0 waiting") inside a single scenario;
+  in both, the difference is the behavior under test.
