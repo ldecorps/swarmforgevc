@@ -215,6 +215,58 @@ LINE_COUNT="$(grep -c 'swarmforge-BL-675-freshness-check' "$CRONTAB_STORE" || tr
 check "installer is idempotent (one marker line)" '[[ "$LINE_COUNT" -eq 1 ]]'
 pass "installer schedules freshness_check idempotently"
 
+# ── BL-783: two roots on one host must not clobber each other's line ──────
+ROOT_A="$(make_root)"
+ROOT_B="$(make_root)"
+MULTI_CRON="$ROOT_A/bin"
+mkdir -p "$MULTI_CRON"
+MULTI_STORE="$ROOT_A/multi-crontab.txt"
+: > "$MULTI_STORE"
+cat > "$MULTI_CRON/crontab" <<'EOF'
+#!/usr/bin/env bash
+store="${CRONTAB_STORE:?}"
+if [[ "${1:-}" == "-l" ]]; then
+  cat "$store" 2>/dev/null || true
+  exit 0
+fi
+cat > "$store"
+EOF
+chmod +x "$MULTI_CRON/crontab"
+PATH="$MULTI_CRON:$PATH" CRONTAB_STORE="$MULTI_STORE" bash "$INSTALLER" "$ROOT_A" >/dev/null
+PATH="$MULTI_CRON:$PATH" CRONTAB_STORE="$MULTI_STORE" bash "$INSTALLER" "$ROOT_B" >/dev/null
+check "BL-783: root A's line survives installing root B" \
+  "grep -qF \"FRESHNESS_ROOT=$ROOT_A \" \"\$MULTI_STORE\""
+check "BL-783: root B's line is present too" \
+  "grep -qF \"FRESHNESS_ROOT=$ROOT_B \" \"\$MULTI_STORE\""
+check "BL-783: exactly two freshness lines total (no cross-root clobber)" \
+  '[[ "$(grep -c "swarmforge-BL-675-freshness-check" "$MULTI_STORE" || true)" -eq 2 ]]'
+# Re-installing root A must replace only root A's own line, not root B's.
+PATH="$MULTI_CRON:$PATH" CRONTAB_STORE="$MULTI_STORE" bash "$INSTALLER" "$ROOT_A" >/dev/null
+check "BL-783: re-installing root A leaves root B's line intact" \
+  "grep -qF \"FRESHNESS_ROOT=$ROOT_B \" \"\$MULTI_STORE\""
+check "BL-783: re-installing root A still yields exactly two lines total" \
+  '[[ "$(grep -c "swarmforge-BL-675-freshness-check" "$MULTI_STORE" || true)" -eq 2 ]]'
+pass "BL-783: multi-root crontab install does not clobber a sibling root's line"
+
+# ── BL-783: no crontab command → loud, non-zero, names what won't be watched ─
+ROOT="$(make_root)"
+BASH_BIN="$(command -v bash)"
+NO_CRONTAB_BIN="$ROOT/no-crontab-bin"
+mkdir -p "$NO_CRONTAB_BIN"
+for tool in dirname chmod; do
+  ln -sf "$(command -v "$tool")" "$NO_CRONTAB_BIN/$tool"
+done
+set +e
+NO_CRONTAB_OUT="$(PATH="$NO_CRONTAB_BIN" "$BASH_BIN" "$INSTALLER" "$ROOT" 2>&1)"
+NO_CRONTAB_RC=$?
+set -e
+check "BL-783: missing crontab command exits non-zero" '[[ "$NO_CRONTAB_RC" -ne 0 ]]'
+check "BL-783: missing crontab command names the root that will not be watched" \
+  "printf '%s' \"\$NO_CRONTAB_OUT\" | grep -qF \"$ROOT\""
+check "BL-783: missing crontab command says the watchdog will NOT run" \
+  'printf "%s" "$NO_CRONTAB_OUT" | grep -q "will NOT run"'
+pass "BL-783: absent crontab command fails loud and names what is unwatched"
+
 # ── hardening (mutation_cost: low): work≠liveness, missing log, record-before-announce, pid guard ─
 ROOT="$(make_root)"
 NOW=1700000000
