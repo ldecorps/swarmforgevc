@@ -1,0 +1,139 @@
+id: BL-784
+title: "six long-running supervisors are absent from daemon_log_freshness.conf, and none of them heartbeats — registering one as-is would restart a healthy daemon for being quiet"
+milestone: M8
+type: defect
+status: todo
+epic: swarm-reliability
+severity: medium
+priority: 20
+direction: aligned
+depends_on: [BL-783]
+assigned_to: unassigned
+mutation_cost: medium
+human_approval: pending
+
+invariants:
+  - "Every long-running loop daemon the swarm starts has a row in daemon_log_freshness.conf — a daemon can be added to a start path only by also declaring how it is watched."
+  - "A watched daemon writes a timestamped heartbeat on every loop tick regardless of whether it did any work, so log freshness measures liveness and never work volume."
+
+approval_context: >
+  Medium, and deliberately behind BL-783: until something installs the cron,
+  adding rows to this conf changes nothing observable. Promoting this first
+  would produce a green ticket and a still-dark watchdog.
+
+  One decision needs sign-off: the scope. The coordinator reported ONE unwatched
+  daemon (`cursor_bridge_supervisor`); verification found six, and the ticket is
+  written to close the class with a guard rather than to add one row. That is a
+  bigger parcel — the alternative is one row now and the same discovery again
+  later, five more times. The specifier's position is close the class; the
+  guard is what stops it recurring. Say if you would rather have the single row.
+
+source: |
+  Coordinator note to the specifier, 2026-08-01 19:43Z: "Ticket needed -
+  cursor_bridge_supervisor unwatched by BL-675 + cron absent". The cron half is
+  BL-783.
+
+  Verified on `main` at 2026-08-01. `daemon_log_freshness.conf` carries two
+  rows — `handoffd` and `babysitterd`. Every other long-running loop daemon in
+  `swarmforge/scripts/` is unregistered:
+
+  ```
+  cursor_bridge_supervisor.bb       (reported)
+  handoffd_supervisor.bb
+  front_desk_supervisor.bb
+  negotiation_relay_supervisor.bb
+  onboarder_supervisor.bb
+  bridge_headless_supervisor.bb
+  ```
+
+  Each runs a `Thread/sleep` loop. `handoffd_supervisor` is a particularly bad
+  omission: BL-675 exists because handoffd futex-hung, and the supervisor meant
+  to catch that is itself unwatched.
+
+  **The trap, and why a conf row alone is wrong.** `cursor_bridge_supervisor.bb`
+  writes to its log only on start, stop, `tick-error`, and state transitions
+  such as `"stalled"` (`:123`, `:177`, `:180`, `:185`). Its `-main` loop
+  (`:170-185`) calls `tick!` every interval and logs nothing when all is well.
+  A healthy supervisor is therefore SILENT, and a log-freshness checker pointed
+  at it would kill and restart a daemon that is working perfectly.
+
+  This is exactly BL-675's own third invariant — "Quiet is never dead: each
+  watched daemon emits a timestamped heartbeat every loop tick independent of
+  work volume". The two registered daemons satisfy it; none of the six do. So
+  the missing rows are a symptom, and the missing heartbeats are the defect.
+
+  Note the layering, which is easy to misread: `cursor_bridge_supervisor`
+  already HAS heartbeat logic (`cursor-bridge-heartbeat.json`, `:38`, `:76`),
+  but that is the INNER one — the supervisor watching the bridge. Nothing
+  watches the supervisor. Do not mistake the inner heartbeat for coverage.
+
+description: |
+  Give every long-running daemon a per-tick heartbeat, register each in
+  `daemon_log_freshness.conf`, and add a guard that fails when a daemon has a
+  start script and a pidfile but no row — so the next daemon added cannot
+  silently go unwatched.
+
+  Order matters within the parcel: heartbeat first, row second. A row added
+  before its daemon heartbeats is a scheduled restart of a healthy process.
+
+  Per daemon, the row needs a threshold chosen from that daemon's own loop
+  interval — not copied from handoffd's 120s. A daemon sleeping 60s between
+  ticks needs a threshold comfortably above 60s or it will flap. State the
+  interval each threshold was derived from, in the conf, next to the row.
+
+  The guard is the durable half and the reason this is one ticket rather than
+  six. It must fail closed: an unrecognised daemon is unwatched until declared,
+  never assumed fine. Because the guard fails for all six today, they land
+  together — the coder may sequence them internally but cannot land a subset
+  green.
+
+  `cursor_bridge_supervisor` already has the paths a row needs:
+  pid `<op-dir>/cursor-bridge-supervisor.pid`, log
+  `<op-dir>/cursor-bridge-supervisor.log`, start script
+  `start_cursor_bridge.sh`.
+
+  Do not extend the conf's field format. It is `name|threshold_secs|
+  log_relpath|pid_relpath|start_script`, and every daemon here fits it.
+
+acceptance: |
+  Specifier writes the Gherkin when this is approved and promoted. Minimum
+  behaviour:
+
+  1. Each of the six daemons writes a timestamped heartbeat line to its own log
+     on a loop tick where it does no work at all — the tick that today produces
+     silence.
+  2. Each has a row in `daemon_log_freshness.conf` whose threshold exceeds its
+     own loop interval, and the interval the threshold was derived from is
+     recorded beside it.
+  3. A healthy daemon left running across several thresholds' worth of idle
+     time is never restarted by the checker. This is the scenario that would
+     have caught a row-without-heartbeat and it must be present.
+  4. A daemon whose loop is wedged — process alive, no heartbeat — IS detected
+     and restarted, per BL-675's existing checker behaviour.
+  5. The guard fails when a daemon with a start script and a pidfile has no
+     conf row, and names the daemon. A fixture daemon added without a row makes
+     it fail; adding the row makes it pass.
+  6. The guard fails closed on a daemon it cannot classify, rather than
+     defaulting to watched-or-fine.
+
+out_of_scope: |
+  - Installing the cron — BL-783. Without that this ticket is inert, which is
+    why it depends on it.
+  - The checker's restart, announce, and incident-record behaviour, all built
+    and tested by BL-675.
+  - The inner bridge heartbeat (`cursor-bridge-heartbeat.json`) and the
+    supervisor's own restart policy over the bridge — a different layer,
+    working as designed.
+  - Deciding whether conditionally-started daemons (onboarder,
+    negotiation_relay) should always run. Watch them when started; their
+    lifecycle is someone else's ticket.
+
+notes: |
+  If the coder finds a seventh loop daemon while wiring the guard, it is in
+  scope — the invariant is over the class, not over the six names listed. That
+  list is evidence of the gap, not its boundary.
+
+  The architect should read this slice against both declared invariants as
+  distinct passes: "every daemon has a row" and "every watched daemon
+  heartbeats on an idle tick" fail in different places, and a slice can satisfy
+  the first while quietly breaking the second.

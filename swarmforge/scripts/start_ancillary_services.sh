@@ -11,6 +11,7 @@
 #   SWARMFORGE_SKIP_FRONT_DESK=1
 #   SWARMFORGE_SKIP_ONBOARDER=1
 #   SWARMFORGE_SKIP_BABYSITTERD=1
+#   SWARMFORGE_SKIP_FRESHNESS_CRON=1
 #   SWARMFORGE_SKIP_TUNNEL=1
 #   SWARMFORGE_SKIP_RESIDENT_SPY_TUNNEL=1
 set -euo pipefail
@@ -87,6 +88,15 @@ else
   echo "Starting babysitterd..."
   if ! bash "$SCRIPT_DIR/start_babysitterd.sh" "$ROOT"; then
     echo "WARN: babysitterd failed to start; run './swarm ensure' after fixing." >&2
+  fi
+fi
+
+if [[ "${SWARMFORGE_SKIP_FRESHNESS_CRON:-}" == "1" ]]; then
+  echo "Skipping freshness cron install (SWARMFORGE_SKIP_FRESHNESS_CRON=1)."
+else
+  echo "Installing freshness cron..."
+  if ! bash "$SCRIPT_DIR/install_freshness_cron.sh" "$ROOT"; then
+    echo "WARN: freshness cron install failed; the daemon-log freshness watchdog (handoffd/babysitterd staleness) will NOT be watched until this is fixed — run: bash $SCRIPT_DIR/install_freshness_cron.sh $ROOT" >&2
   fi
 fi
 
