@@ -5,7 +5,7 @@ type: defect
 status: todo
 epic: swarm-reliability
 human_approval: approved
-severity: high
+severity: medium
 priority: 05
 direction: human-requested
 depends_on: []
@@ -139,3 +139,7 @@ notes: |
   deterministic layer, and it is what makes the finding trustworthy enough to
   act on. See [[babysitter-daemon-deterministic-health-sweeps]] context: the
   daemon runs 5-minute sweeps and CRIT findings nudge the coordinator.
+
+  2026-08-01 Let's Talk (human): severity high → medium so the JumpQ
+  pilot-process batch can clear the high tier; board/guard family, not a live
+  outage.
