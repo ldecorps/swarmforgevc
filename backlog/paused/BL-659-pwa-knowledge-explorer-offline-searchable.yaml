@@ -307,3 +307,7 @@ notes: |
   milestones. Static email-body twin (no JS) lives at
   docs/design/BL-659-traceability-explorer-email-mock.html so phone mail
   review and specifier/coder both keep the same contract.
+
+  2026-08-01 operator asked for a Bubble-facing picture of the FLOW / Kanban
+  analytics root (CFD, cycle time, aging WIP, throughput). Persisted at
+  docs/design/bubble-kanban-flow-screen-mock.png and emailed for phone review.

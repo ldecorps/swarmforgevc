@@ -11,6 +11,7 @@ in-repo so emailed review copies cannot be the only source of truth.
 | `bubble-canary-journey-mock.png` | Canary hop journey — BL-770 |
 | `bubble-health-trends-screen-mock.png` | Health trends layout v1 — `INTAKE-bubble-swarm-health-trends-screen.md` |
 | `bubble-health-trends-REAL-data-mock.png` | Health trends with 2026-07-31 live numbers — same intake |
+| `bubble-kanban-flow-screen-mock.png` | FLOW / Kanban analytics (CFD, cycle, aging WIP) — BL-659 FLOW root |
 
 Copied from Cursor session assets into this folder on 2026-08-01 so they
 survive beyond chat/email.
