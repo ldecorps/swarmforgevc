@@ -63,4 +63,4 @@ function findRawMkdtempCallSites(testDir) {
   return violations;
 }
 
-module.exports = { findRawMkdtempLines, findRawMkdtempCallSites, RAW_MKDTEMP_PATTERN };
+module.exports = { findRawMkdtempLines, findRawMkdtempCallSites, RAW_MKDTEMP_PATTERN, SELF_EXEMPT_RELATIVE_PATHS };
