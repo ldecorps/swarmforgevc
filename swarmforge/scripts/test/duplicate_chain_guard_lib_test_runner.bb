@@ -120,6 +120,41 @@
   (assert-nil "a note (no task header) never counts as a blocking git_handoff"
               (duplicate-chain-guard-lib/blocking-parcel root "BL-901" "coder")))
 
+;; ── blocking-parcel: determinism — roles.tsv order picks the blocker ────
+;; (docstring's own claim: "a genuine duplicate reports the same blocker
+;; every time" — untested until now, so a role-order or state-order mutant
+;; would have survived silently.)
+
+(let [root (mk-root)]
+  (write-roles! root)
+  ;; roles.tsv order is coder, cleaner, architect, documenter, QA, coordinator —
+  ;; architect precedes documenter, so a blocker in both must report architect.
+  (write-handoff! root "documenter" :new "20_documenter_blocker.handoff" {:task "BL-901"})
+  (write-handoff! root "architect" :new "20_architect_blocker.handoff" {:task "BL-901"})
+  (let [block (duplicate-chain-guard-lib/blocking-parcel root "BL-901" "coder")]
+    (assert= "earlier role in roles.tsv order wins over a later one"
+             "architect" (:role block))))
+
+;; ── blocking-parcel: determinism — new/ is checked before in_process/ ───
+
+(let [root (mk-root)]
+  (write-roles! root)
+  (write-handoff! root "documenter" :in_process "10_inprocess_blocker.handoff" {:task "BL-901"})
+  (write-handoff! root "documenter" :new "20_new_blocker.handoff" {:task "BL-901"})
+  (let [block (duplicate-chain-guard-lib/blocking-parcel root "BL-901" "coder")]
+    (assert= "new/ is reported over in_process/ within the same role"
+             "20_new_blocker.handoff" (some-> (:file block) fs/file-name))))
+
+;; ── blocking-parcel: determinism — filename order within a mailbox ──────
+
+(let [root (mk-root)]
+  (write-roles! root)
+  (write-handoff! root "documenter" :new "30_second_blocker.handoff" {:task "BL-901"})
+  (write-handoff! root "documenter" :new "10_first_blocker.handoff" {:task "BL-901"})
+  (let [block (duplicate-chain-guard-lib/blocking-parcel root "BL-901" "coder")]
+    (assert= "the lexicographically-first filename is reported"
+             "10_first_blocker.handoff" (some-> (:file block) fs/file-name))))
+
 ;; ── refusal-message ──────────────────────────────────────────────────────
 
 (let [root (mk-root)]
@@ -130,7 +165,16 @@
     (assert-includes "refusal names the ticket" msg "BL-901")
     (assert-includes "refusal names the blocking role" msg "documenter")
     (assert-includes "refusal names the blocking filename" msg "20_blocker.handoff")
-    (assert-includes "refusal names the abandon command" msg "redo_from.sh")))
+    (assert-includes "refusal names the abandon command" msg "redo_from.sh")
+    ;; Exact text, not just substrings — substring-only checks pass even if the
+    ;; format args are reordered (e.g. ticket-id and role swapped), since both
+    ;; values still appear *somewhere* in the message. This pins each value to
+    ;; its position, closing that mutant class.
+    (assert= "refusal message is the exact expected text"
+             (str "Cannot send git_handoff for BL-901: a live parcel for this ticket "
+                  "already exists at documenter (20_blocker.handoff). If that parcel "
+                  "is genuinely stale, clear it first: redo_from.sh BL-901 <stage>")
+             msg)))
 
 (if (seq @failures)
   (do
