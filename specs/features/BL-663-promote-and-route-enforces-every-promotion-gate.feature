@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=ff6e546165f8509bbf1e49b973bbb65f642b7b33f30beba755c4435bfdc19a67
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-01T15:05:04.544532721Z","feature_name":"promote_and_route enforces every promotion gate at one chokepoint","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-663-promote-and-route-enforces-every-promotion-gate.feature","background_hash":"74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b","implementation_hash":"unknown","scenarios":[{"index":3,"name":"depth, orthogonality, and hold markers are enforced through the same chokepoint","scenario_hash":"b0edbe7c28423970cf6b6101f59e6440baace2ad1263104e0d7da891c39942b2","mutation_count":3,"result":{"Total":3,"Killed":3,"Survived":0,"Errors":0},"tested_at":"2026-08-01T15:05:04.544532721Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: promote_and_route enforces every promotion gate at one chokepoint
 
   # BL-663: three different promotion gates were bypassed in 48 hours, each
