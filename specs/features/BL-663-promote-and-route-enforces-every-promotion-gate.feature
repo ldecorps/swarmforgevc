@@ -5,9 +5,11 @@ Feature: promote_and_route enforces every promotion gate at one chokepoint
   # ignored (standing watch), an Article 3.2.4 expedite-lane violation
   # (BL-572 promoted over BL-647/BL-648), and assigned_to silently flipped
   # specifier -> coder at promote time, skipping the spec stage (BL-647,
-  # de5b5d323). The swarm now runs unattended shifts, so a skipped gate is a
-  # night lost, not a caught mistake. One enforcement layer, every gate,
-  # refusing with a named reason.
+  # de5b5d323). It recurred a fourth time on 2026-08-01. The swarm now runs
+  # unattended shifts, so a skipped gate is a night lost, not a caught
+  # mistake. One enforcement layer, every gate, refusing with a NAMED reason —
+  # an unnamed refusal is indistinguishable from "no candidate", which is what
+  # kept all four instances invisible to machinery.
 
   # BL-663 pending-approval-never-promotes-01
   Scenario: a ticket with pending human_approval is refused promotion
@@ -33,22 +35,36 @@ Feature: promote_and_route enforces every promotion gate at one chokepoint
 
   # BL-663 existing-gates-still-enforced-04
   Scenario Outline: depth, orthogonality, and hold markers are enforced through the same chokepoint
-    Given a paused ticket that would violate the <existing gate>
+    Given a paused ticket blocked by the <gate> gate
     When promote_and_route evaluates it as a promotion candidate
     Then the ticket is not promoted
-    And the refusal names the <existing gate> as the reason
+    And the refusal names the <gate> gate as the reason
 
     Examples:
-      | existing gate            |
+      | gate                     |
       | active_backlog_max_depth |
-      | orthogonality overlap    |
-      | a hold marker            |
+      | orthogonality            |
+      | hold marker              |
 
   # BL-663 compliant-promotion-passes-unchanged-05
   Scenario: a fully compliant promotion passes unchanged
-    Given a paused ticket with human_approval approved
+    Given a paused ticket whose human_approval is approved
     And its assigned_to correctly reflects the spec-stage-first routing
     And it is the correctly-laned next candidate under Article 3.2.4
     And it violates no depth, orthogonality, or hold gate
     When promote_and_route evaluates it as a promotion candidate
     Then the ticket is promoted and routed exactly as today
+
+  # BL-663 promotion-by-name-obeys-the-same-gates-06
+  Scenario: promoting a named ticket directly obeys the same gates as auto-selection
+    Given a paused ticket whose human_approval is pending
+    When promote_and_route is asked to promote that ticket by name
+    Then the ticket is not promoted
+    And the refusal names the human_approval gate as the reason
+
+  # BL-663 routing-alone-does-not-rewrite-the-assignee-07
+  Scenario: routing an active ticket on its own does not rewrite its assignee
+    Given an active ticket whose assigned_to is specifier
+    When the routing step is invoked on its own, outside a promotion
+    Then assigned_to is not silently rewritten to coder as a side effect of the routing step
+    And the ticket is routed to the specifier

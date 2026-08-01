@@ -119,6 +119,17 @@ slice, pull **BL-758** (`direction: queue-jump`, `priority: 1`) — inject each
 pipeline role's real prompt at hat change instead of one mega-brief. Same
 batch, gates first, root staffing shape second. Still live swarm only.
 
+**Human directive 2026-08-01 (Let's Talk, morning) — the SECOND ask.** "When
+BL-764 leaves `active/`, promote the JumpQ pilot-process slice next... Do not
+keep pulling Bubble/adopt or ordinary paused work ahead of that hardening."
+BL-764 closed to `backlog/done/M8/` earlier today, so the gate the human named
+has opened. This file's own Classification rule says an item the human has to
+ask for **twice** is a defect in THIS FILE, not a queue working as intended —
+so it is escalated as a steering review below rather than passed to the
+coordinator as one more promotion hint. The raw intake
+(`INTAKE-resume-jumpq-pilot-process-after-bl764.md`) is drained into this
+section; its substance is carried here in full.
+
 **Human directive 2026-07-31 (Cursor, evening):** **continuous shifts until
 revoked.** Keep the pack up across former day/night boundaries — no scheduled
 `night-stop` / `day-shift-end`. Crontab ensure-up only (09:00 + 17:00). State:
@@ -151,6 +162,14 @@ Every ticket in `backlog/active/` and `backlog/paused/` carries a
   a lie, since it is a UX feature and not a defect. The honest fix is that the
   policy was missing a value, not that the ticket was mislabelled. Do not
   launder a human request through `expedite`; tag it for what it is.)
+- `queue-jump` — a batch the human named explicitly and asked to be pulled
+  ahead of ordinary paused work. Semantically a sub-case of `human-requested`,
+  minted 2026-07-31 for the BL-723 pilot-process batch and used on 20 paused
+  tickets before this file ever defined it. **It ranks alongside
+  `human-requested`: ahead of `aligned` and `non-aligned`, and NOT ahead of an
+  Article 3.2.4 expedited defect.** That last clause is a constitutional limit,
+  not a preference — see the 2026-08-01 review row for why it matters and what
+  it costs.
 - If the human has to ask for the same ticket twice, treat that as a DEFECT IN
   THIS FILE, not as a queue working as intended. Escalate it as a steering
   review, not as a promotion decision.
@@ -176,6 +195,15 @@ Rules:
   ticket, and only when no orthogonal `aligned`/`expedite` candidate exists.
   All other slots pull `expedite` first (bugs-first), then `aligned`, by
   priority.
+- **Full rank order** (apply top to bottom; within a tier, ticket `priority:`
+  ascending, orthogonality applied at every tier):
+  1. Article 3.2.4 expedited defects — `type: defect` with `severity: critical`
+     or `high`. Constitutional; STEERING cannot reorder this tier.
+  2. `queue-jump` / `human-requested` — work the human named explicitly.
+  3. `aligned`.
+  4. `non-aligned`, one slot only, per the Direction lane above.
+  A ticket with no `severity:` is NOT expedited: the lane fails closed
+  (Article 3.2.4) and the ticket is surfaced for triage, never guessed upward.
 - **Orthogonality:** the Concurrent Work Orthogonality rule (constitution,
   workflow article) is unchanged and applies within the lane.
 - **Definition of Ready** (a ticket may not be promoted unless all hold):
@@ -199,6 +227,76 @@ Rules:
 |---|---|---|
 | 2026-07-06 | declare `reliability-first` | 5-parcel QA compile bounce (2026-07-06); open BUG tickets: BL-107, BL-125, BL-126, BL-127, BL-135, BL-136, BL-137 |
 | 2026-07-13 | **retire `reliability-first` (target met); declare NONE pending the human; add `human-requested` class; reclass BL-322** | Triggered by an explicit operator request (the human asked for BL-322 TWICE) and by the scheduled weekly review falling due. All 10 tickets of the declared prioritized slice are closed (BL-107/115/116/125/126/127/131/135/136/137) — declared open-bug count 7 → 0. At review time `active/` + `paused/` held ZERO `aligned` and ZERO `expedite` candidates: every remaining ticket (BL-324, BL-101, BL-322) was `non-aligned`, so the one-slot non-aligned lane (held by BL-324) made BL-322 structurally unpullable. The direction had nothing left to prefer and was purely blocking. |
+| 2026-08-01 | **define `queue-jump` (in use since 2026-07-31, never defined); escalate the JumpQ batch's starvation to the human — NOT resolvable in this file** | Triggered by the human asking for the JumpQ pilot-process batch a SECOND time (2026-07-31 morning, then 2026-08-01 morning), which this file's own rule classifies as a defect here. Findings below. |
+
+### 2026-08-01 review — why the JumpQ batch is not moving
+
+The coordinator is not obviously at fault, and neither is the human. Three
+facts compose into starvation:
+
+1. **The batch is low/medium severity.** The BL-723 pilot-process tickets are
+   `type: defect` with `severity: low` or `medium` (sampled: BL-735 `low`),
+   and BL-758 is `medium`. Under Article 3.2.4 they are **not** expedited.
+2. **Fifteen `severity: high` defects already sit in `paused/` reading
+   `human_approval: approved`** — BL-536, BL-582, BL-586, BL-611, BL-622,
+   BL-631, BL-632, BL-638, BL-640, BL-650, BL-663, BL-670, BL-685, BL-761 and
+   GH-26 (four more high-severity tickets carry no approval field at all).
+   Every one of them outranks the whole JumpQ batch constitutionally.
+3. **The pack runs one ticket at a time.** `active_backlog_max_depth` is `1` —
+   the mono-router pack's own configured cap, not an Article 3.5 health
+   throttle. Verify with `effective_backlog_depth_cli.bb`, never by grepping
+   the conf.
+
+At one slot, with fifteen approved high-severity defects queued ahead by
+constitutional rule, the batch the human asked for twice is unreachable for as
+long as that queue takes to drain — and high-severity defects keep arriving
+(BL-771, BL-720 and BL-760 each took the slot legitimately since BL-764
+closed). This is starvation by construction, not by a coordinator picking
+wrongly on any single promotion.
+
+**A separate, compounding defect:** `promote_and_route_next.sh` does not
+enforce the ordering gates at all — BL-680, a `type: feature`, was promoted
+over eight eligible high-severity defects on 2026-08-01. That is tracked as
+**BL-663** (itself one of the fifteen). So today's promotions are not even
+reliably following tier 1; the JumpQ batch loses to whatever the script picks.
+
+**What STEERING can and cannot do.** It can rank `queue-jump` above ordinary
+paused work — done above. It **cannot** rank it above an Article 3.2.4
+expedited defect: the constitution is superior to this file, and laundering the
+batch upward by inflating its `severity:` is explicitly forbidden by the
+`human-requested` rule ("Do not launder a human request through `expedite`;
+tag it for what it is"). So the specifier will not silently reorder it.
+
+**This needs a human decision.** Four honest options, none of which the
+specifier should pick unilaterally:
+
+- **(a) Accept the queue.** The fifteen approved high-severity defects drain
+  first. At one slot this is likely weeks, and the pilot close gates the batch
+  exists to harden stay open that whole time.
+- **(b) Raise the cap.** `active_backlog_max_depth` > 1 lets a `queue-jump`
+  slot run beside the expedite lane where scope is orthogonal. Costs
+  concurrency risk on a pack designed to be serial; the cap is pack config, so
+  this is an operator decision, not a backlog one.
+- **(c) Amend Article 3.2.4** so an explicitly human-named batch ranks
+  alongside expedited defects. The clean fix if the human wants their own
+  requests to genuinely outrank routine severity triage; it is a constitution
+  amendment (Article 5), routed through the specifier.
+- **(d) Re-triage the batch honestly.** If some pilot-process tickets really
+  are high severity — a close gate that lets bad work land is arguably a
+  high-severity defect — raise those specific ones on their merits, with a
+  written rationale each. This is legitimate; blanket-raising all twenty is not.
+
+Queued as the specifier's next `role_ask` the moment the slot frees (currently
+held by the unresolved "use staging please" question from 2026-08-01 05:53).
+This escalation takes the slot ahead of `GH-29`, which was previously first in
+line, because the human has asked for it twice.
+
+**Until the human answers, the coordinator's instruction is unchanged and
+narrow:** promote by the Full rank order above. Concretely — when a slot opens
+and no orthogonal Article 3.2.4 expedited defect is eligible, the slot goes to
+the JumpQ batch (priority-0 pilot-process tickets first, then BL-758), ahead of
+any ordinary paused or Bubble/adopt work. That is the most of the human's
+directive that can be honored without a constitutional change.
 
 ## Next pulls (as of the 2026-07-13 review)
 
