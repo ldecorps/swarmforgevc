@@ -159,28 +159,9 @@
                         :created-epoch-sec (:created-epoch-sec s)
                         :now-ms now}))
                     sessions))]
-    ;; Also surface babysitter LLM if present (outside roles.tsv).
-    (let [bb-sock (fs/path state-dir "babysitter" "babysitter-tmux.sock")
-          bb-sessions (when (fs/exists? bb-sock)
-                        (tmux-sessions (str bb-sock)))
-          bb (some #(when (= "babysitter" (:name %)) %) bb-sessions)
-          bb-row (when bb
-                   (swarm-status-lib/agent-status-row
-                    {:role "babysitter"
-                     :session "babysitter"
-                     :agent "aider"
-                     :alive? true
-                     :created-epoch-sec (:created-epoch-sec bb)
-                     :now-ms now}))
-          bb-down (when (and (fs/exists? (fs/path state-dir "babysitter" "enabled"))
-                             (not bb))
-                    (swarm-status-lib/agent-status-row
-                     {:role "babysitter"
-                      :session "babysitter"
-                      :agent "aider"
-                      :alive? false
-                      :now-ms now}))]
-      (vec (concat rows (remove nil? [bb-row bb-down]))))))
+    ;; BL-611: babysitterd is a daemon, not an agent pane — it reports via
+    ;; gather-daemons below, not here. No row for the retired LLM hawk.
+    (vec rows)))
 
 (defn daemon-from-pid
   [name path & {:keys [detail]}]
@@ -200,11 +181,11 @@
 (defn gather-daemons []
   (let [op (fs/path state-dir "operator")
         daemon (fs/path state-dir "daemon")
-        bb (fs/path state-dir "babysitter")]
+        bb (fs/path state-dir "babysitterd")]
     [(daemon-from-pid "handoffd" (fs/path daemon "handoffd.pid"))
      (daemon-from-pid "handoffd-supervisor" (fs/path daemon "handoffd-supervisor.pid"))
      (daemon-from-pid "operator-runtime" (fs/path op "runtime.pid"))
-     (daemon-from-pid "babysitter-runtime" (fs/path bb "runtime.pid"))
+     (daemon-from-pid "babysitterd" (fs/path bb "babysitterd.pid"))
      (daemon-from-pid "cloudflare-tunnel" (fs/path op "tunnel.pid"))]))
 
 (defn read-json [path]

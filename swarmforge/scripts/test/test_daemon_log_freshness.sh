@@ -10,7 +10,7 @@ SRC="$(cd "$SCRIPT_DIR/.." && pwd)"
 CHECKER="$SRC/daemon_log_freshness_check.sh"
 INSTALLER="$SRC/install_freshness_cron.sh"
 CONF="$SRC/daemon_log_freshness.conf"
-BABYSITTER_RT="$SRC/babysitter_runtime.bb"
+BABYSITTERD_SH="$SRC/babysitterd.sh"
 
 fail=0
 note() { printf '%s\n' "$*"; }
@@ -30,7 +30,7 @@ make_root() {
   local d
   d="$(mktemp -d)"
   register_tmp_dir "$d"
-  mkdir -p "$d/.swarmforge/daemon" "$d/.swarmforge/babysitter" "$d/bin" "$d/announces" "$d/kills" "$d/starts"
+  mkdir -p "$d/.swarmforge/daemon" "$d/.swarmforge/babysitterd" "$d/bin" "$d/announces" "$d/kills" "$d/starts"
   printf '%s' "$d"
 }
 
@@ -48,15 +48,14 @@ run_checker() {
   /bin/sh "$CHECKER"
 }
 
-# ── 01: babysitter heartbeats every tick with no work ─────────────────────
+# ── 01: babysitterd heartbeats every tick with no work ────────────────────
 ROOT="$(make_root)"
-date -u +%Y-%m-%dT%H:%M:%SZ > "$ROOT/.swarmforge/babysitter/enabled"
 for _ in 1 2 3; do
-  bb "$BABYSITTER_RT" "$ROOT" --tick-once >/dev/null
+  bash "$BABYSITTERD_SH" "$ROOT" --tick-once >/dev/null
 done
-HB_COUNT="$(grep -cE '[[:space:]]heartbeat([[:space:]]|$)' "$ROOT/.swarmforge/babysitter/runtime.log" || true)"
+HB_COUNT="$(grep -cE '[[:space:]]heartbeat([[:space:]]|$)' "$ROOT/.swarmforge/babysitterd/babysitterd.log" || true)"
 check "daemon-log-freshness-01: three ticks yield three heartbeat lines" '[[ "$HB_COUNT" -eq 3 ]]'
-pass "01: babysitter_runtime heartbeats every tick with no work"
+pass "01: babysitterd heartbeats every tick with no work"
 
 # ── 02a: stale handoffd heartbeat → kill + restart via start script + record + announce ─
 ROOT="$(make_root)"
@@ -65,10 +64,10 @@ NOW=1700000000
 STALE_TS="$(date -u -d "@$((NOW - 200))" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
   || date -u -r $((NOW - 200)) +%Y-%m-%dT%H:%M:%SZ)"
 printf '%s heartbeat\n' "$STALE_TS" > "$ROOT/.swarmforge/daemon/handoffd.log"
-# Fresh babysitter so only handoffd trips
+# Fresh babysitterd so only handoffd trips
 FRESH_TS="$(date -u -d "@$NOW" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
   || date -u -r "$NOW" +%Y-%m-%dT%H:%M:%SZ)"
-printf '%s heartbeat\n' "$FRESH_TS" > "$ROOT/.swarmforge/babysitter/runtime.log"
+printf '%s heartbeat\n' "$FRESH_TS" > "$ROOT/.swarmforge/babysitterd/babysitterd.log"
 # Disposable child — never the test pid
 sleep 120 &
 FAKE_PID=$!
@@ -93,18 +92,18 @@ STALE_TS="$(date -u -d "@$((NOW - 700))" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
 FRESH_TS="$(date -u -d "@$NOW" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
   || date -u -r "$NOW" +%Y-%m-%dT%H:%M:%SZ)"
 printf '%s heartbeat\n' "$FRESH_TS" > "$ROOT/.swarmforge/daemon/handoffd.log"
-printf '%s heartbeat\n' "$STALE_TS" > "$ROOT/.swarmforge/babysitter/runtime.log"
+printf '%s heartbeat\n' "$STALE_TS" > "$ROOT/.swarmforge/babysitterd/babysitterd.log"
 sleep 120 &
 FAKE_PID=$!
-echo "$FAKE_PID" > "$ROOT/.swarmforge/babysitter/runtime.pid"
+echo "$FAKE_PID" > "$ROOT/.swarmforge/babysitterd/babysitterd.pid"
 run_checker "$ROOT" "$NOW"
 kill "$FAKE_PID" 2>/dev/null || true
 check "02b: babysitterd kill invoked" 'grep -qx "$FAKE_PID" "$ROOT/kills.log"'
-check "02b: babysitterd restarted via start_babysitter.sh" \
-  'grep -q "start_babysitter.sh" "$ROOT/starts.log"'
+check "02b: babysitterd restarted via start_babysitterd.sh" \
+  'grep -q "start_babysitterd.sh" "$ROOT/starts.log"'
 check "02b: durable record names babysitterd" \
   'grep -q "daemon=babysitterd" "$ROOT/.swarmforge/daemon/freshness-incidents.log" && grep -q "action=restart" "$ROOT/.swarmforge/daemon/freshness-incidents.log"'
-pass "02b: stale babysitterd restarts through start_babysitter.sh"
+pass "02b: stale babysitterd restarts through start_babysitterd.sh"
 
 # ── 03: quiet but heartbeating handoffd is never restarted ────────────────
 ROOT="$(make_root)"
@@ -114,7 +113,7 @@ FRESH_TS="$(date -u -d "@$NOW" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
 {
   printf '%s heartbeat\n' "$FRESH_TS"
 } > "$ROOT/.swarmforge/daemon/handoffd.log"
-printf '%s heartbeat\n' "$FRESH_TS" > "$ROOT/.swarmforge/babysitter/runtime.log"
+printf '%s heartbeat\n' "$FRESH_TS" > "$ROOT/.swarmforge/babysitterd/babysitterd.log"
 run_checker "$ROOT" "$NOW"
 check "03: no kills" '[[ ! -f "$ROOT/kills.log" ]]'
 check "03: no starts" '[[ ! -f "$ROOT/starts.log" ]]'
@@ -130,7 +129,7 @@ STALE_TS="$(date -u -d "@$((NOW - 200))" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
 FRESH_TS="$(date -u -d "@$NOW" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
   || date -u -r "$NOW" +%Y-%m-%dT%H:%M:%SZ)"
 printf '%s heartbeat\n' "$STALE_TS" > "$ROOT/.swarmforge/daemon/handoffd.log"
-printf '%s heartbeat\n' "$FRESH_TS" > "$ROOT/.swarmforge/babysitter/runtime.log"
+printf '%s heartbeat\n' "$FRESH_TS" > "$ROOT/.swarmforge/babysitterd/babysitterd.log"
 sleep 120 &
 FAKE_PID=$!
 echo "$FAKE_PID" > "$ROOT/.swarmforge/daemon/handoffd.pid"
@@ -155,7 +154,7 @@ NOW=1700000000
 FRESH_TS="$(date -u -d "@$((NOW - 10))" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
   || date -u -r $((NOW - 10)) +%Y-%m-%dT%H:%M:%SZ)"
 printf '%s heartbeat\n' "$FRESH_TS" > "$ROOT/.swarmforge/daemon/handoffd.log"
-printf '%s heartbeat\n' "$FRESH_TS" > "$ROOT/.swarmforge/babysitter/runtime.log"
+printf '%s heartbeat\n' "$FRESH_TS" > "$ROOT/.swarmforge/babysitterd/babysitterd.log"
 run_checker "$ROOT" "$NOW"
 check "05: no kills" '[[ ! -f "$ROOT/kills.log" ]]'
 check "05: no starts" '[[ ! -f "$ROOT/starts.log" ]]'
@@ -171,7 +170,7 @@ STALE_TS="$(date -u -d "@$((NOW - 200))" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
 FRESH_TS="$(date -u -d "@$NOW" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
   || date -u -r "$NOW" +%Y-%m-%dT%H:%M:%SZ)"
 printf '%s heartbeat\n' "$STALE_TS" > "$ROOT/.swarmforge/daemon/handoffd.log"
-printf '%s heartbeat\n' "$FRESH_TS" > "$ROOT/.swarmforge/babysitter/runtime.log"
+printf '%s heartbeat\n' "$FRESH_TS" > "$ROOT/.swarmforge/babysitterd/babysitterd.log"
 # Prior restart 60s ago (inside 300s cool-off)
 printf 'epoch=%s daemon=handoffd age_secs=200 threshold=120 action=restart\n' "$((NOW - 60))" \
   > "$ROOT/.swarmforge/daemon/freshness-incidents.log"
@@ -224,7 +223,7 @@ FRESH_TS="$(date -u -d "@$NOW" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
 # Recent WORK lines only — no heartbeat token. Must still trip (process-liveness lie class).
 printf '%s delivered parcel-1\n%s chase-sweep done\n' "$FRESH_TS" "$FRESH_TS" \
   > "$ROOT/.swarmforge/daemon/handoffd.log"
-printf '%s heartbeat\n' "$FRESH_TS" > "$ROOT/.swarmforge/babysitter/runtime.log"
+printf '%s heartbeat\n' "$FRESH_TS" > "$ROOT/.swarmforge/babysitterd/babysitterd.log"
 sleep 120 &
 FAKE_PID=$!
 echo "$FAKE_PID" > "$ROOT/.swarmforge/daemon/handoffd.pid"
@@ -240,7 +239,7 @@ FRESH_TS="$(date -u -d "@$NOW" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
   || date -u -r "$NOW" +%Y-%m-%dT%H:%M:%SZ)"
 # Missing handoffd log entirely
 rm -f "$ROOT/.swarmforge/daemon/handoffd.log"
-printf '%s heartbeat\n' "$FRESH_TS" > "$ROOT/.swarmforge/babysitter/runtime.log"
+printf '%s heartbeat\n' "$FRESH_TS" > "$ROOT/.swarmforge/babysitterd/babysitterd.log"
 sleep 120 &
 FAKE_PID=$!
 echo "$FAKE_PID" > "$ROOT/.swarmforge/daemon/handoffd.pid"
@@ -257,7 +256,7 @@ STALE_TS="$(date -u -d "@$((NOW - 200))" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
 FRESH_TS="$(date -u -d "@$NOW" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
   || date -u -r "$NOW" +%Y-%m-%dT%H:%M:%SZ)"
 printf '%s heartbeat\n' "$STALE_TS" > "$ROOT/.swarmforge/daemon/handoffd.log"
-printf '%s heartbeat\n' "$FRESH_TS" > "$ROOT/.swarmforge/babysitter/runtime.log"
+printf '%s heartbeat\n' "$FRESH_TS" > "$ROOT/.swarmforge/babysitterd/babysitterd.log"
 sleep 120 &
 FAKE_PID=$!
 echo "$FAKE_PID" > "$ROOT/.swarmforge/daemon/handoffd.pid"
@@ -282,7 +281,7 @@ STALE_TS="$(date -u -d "@$((NOW - 200))" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
 FRESH_TS="$(date -u -d "@$NOW" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
   || date -u -r "$NOW" +%Y-%m-%dT%H:%M:%SZ)"
 printf '%s heartbeat\n' "$STALE_TS" > "$ROOT/.swarmforge/daemon/handoffd.log"
-printf '%s heartbeat\n' "$FRESH_TS" > "$ROOT/.swarmforge/babysitter/runtime.log"
+printf '%s heartbeat\n' "$FRESH_TS" > "$ROOT/.swarmforge/babysitterd/babysitterd.log"
 echo "1" > "$ROOT/.swarmforge/daemon/handoffd.pid"
 # Default kill path (no FRESHNESS_KILL_CMD) must refuse pid 1
 FRESHNESS_ROOT="$ROOT" \
@@ -295,11 +294,11 @@ FRESHNESS_START_CMD="printf started\\\\n >> \"$ROOT/starts.log\"" \
 check "harden: refuses to kill pid 1" 'grep -q "refusing to kill protected pid=1" "$ROOT/stderr.log"'
 pass "harden: protected-pid guard"
 
-# ── wiring: handoffd + babysitter emit heartbeat ─────────────────────────
+# ── wiring: handoffd + babysitterd emit heartbeat ────────────────────────
 check "required_wiring: handoffd.bb mentions heartbeat" \
   'grep -q "heartbeat" "$SRC/handoffd.bb"'
-check "required_wiring: babysitter_runtime.bb defines emit-heartbeat!" \
-  'grep -q "emit-heartbeat!" "$SRC/babysitter_runtime.bb"'
+check "required_wiring: babysitterd.sh emits a heartbeat line every tick" \
+  'grep -q "heartbeat" "$SRC/babysitterd.sh"'
 check "required_wiring: handoffd logs heartbeat every cycle (every-cycles=1)" \
   'grep -q "heartbeat-log-every-cycles 1" "$SRC/handoffd.bb"'
 

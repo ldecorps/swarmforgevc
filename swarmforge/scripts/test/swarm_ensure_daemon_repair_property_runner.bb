@@ -150,7 +150,7 @@
                      "SWARM_ENSURE_EXTENSION_BOUNCE_CMD" (str (fs/path fake-bin "fake_ext.sh"))
                      "SWARMFORGE_SKIP_OPERATOR" "1"
                      "SWARMFORGE_SKIP_FRONT_DESK" "1"
-                     "SWARMFORGE_SKIP_BABYSITTER" "1"
+                     "SWARMFORGE_SKIP_BABYSITTERD" "1"
                      "HANDOFFD_BB" handoffd-bb
                      "HANDOFFD_SUPERVISOR_BB" supervisor-bb
                      "PID_WAIT_ATTEMPTS" "5"})

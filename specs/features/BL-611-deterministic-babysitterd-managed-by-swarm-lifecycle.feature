@@ -11,7 +11,7 @@ Feature: babysitterd is a deterministic daemon managed by the swarm lifecycle
   # daemon.
 
   Background:
-    Given SWARMFORGE_SKIP_BABYSITTER is not set
+    Given SWARMFORGE_SKIP_BABYSITTERD is not set
 
   # BL-611 lifecycle-start-stop-01
   Scenario: start-swarm brings up babysitterd and stop-swarm cleans it up
@@ -98,6 +98,17 @@ Feature: babysitterd is a deterministic daemon managed by the swarm lifecycle
     Given the only pending-looking parcels are abandoned or older than 120 minutes
     When the sweep runs
     Then those parcels do not suppress the swarm-starved finding
+
+  # BL-611 planned-pause-suppresses-starvation-checks-17
+  Scenario: a planned pause suppresses the starvation checks but an overdue resume is CRIT
+    Given a control-pause record marked active whose untilMs has not yet passed
+    And a snapshot that would otherwise produce a swarm-starved and a rotate-unhonored finding
+    When the sweep runs
+    Then no swarm-starved finding is produced
+    And no rotate-unhonored finding is produced
+    Given a control-pause record still marked active whose untilMs expired more than 15 minutes ago
+    When the sweep runs
+    Then a resume-overdue CRIT finding is produced
 
   # BL-611 busy-detection-survives-truncation-6d-09
   Scenario: busy detection survives an 80-column truncated pane capture

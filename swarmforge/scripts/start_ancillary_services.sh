@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Start operator runtime, Telegram front desk, babysitter, and remote tunnels.
+# Start operator runtime, Telegram front desk, babysitterd, and remote tunnels.
 #
 # Best-effort: a failed ancillary must never abort an otherwise successful swarm
 # launch. Pair with `./swarm ensure` for idempotent repair.
@@ -10,7 +10,7 @@
 #   SWARMFORGE_SKIP_OPERATOR=1
 #   SWARMFORGE_SKIP_FRONT_DESK=1
 #   SWARMFORGE_SKIP_ONBOARDER=1
-#   SWARMFORGE_SKIP_BABYSITTER=1
+#   SWARMFORGE_SKIP_BABYSITTERD=1
 #   SWARMFORGE_SKIP_TUNNEL=1
 #   SWARMFORGE_SKIP_RESIDENT_SPY_TUNNEL=1
 set -euo pipefail
@@ -81,12 +81,12 @@ else
   echo "Onboarder skipped (set TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)."
 fi
 
-if [[ "${SWARMFORGE_SKIP_BABYSITTER:-}" == "1" ]]; then
-  echo "Skipping babysitter (SWARMFORGE_SKIP_BABYSITTER=1)."
-elif [[ -f "$SCRIPT_DIR/start_babysitter.sh" ]]; then
-  echo "Starting babysitter..."
-  if ! bash "$SCRIPT_DIR/start_babysitter.sh" "$ROOT"; then
-    echo "WARN: babysitter failed to start." >&2
+if [[ "${SWARMFORGE_SKIP_BABYSITTERD:-}" == "1" ]]; then
+  echo "Skipping babysitterd (SWARMFORGE_SKIP_BABYSITTERD=1)."
+else
+  echo "Starting babysitterd..."
+  if ! bash "$SCRIPT_DIR/start_babysitterd.sh" "$ROOT"; then
+    echo "WARN: babysitterd failed to start; run './swarm ensure' after fixing." >&2
   fi
 fi
 

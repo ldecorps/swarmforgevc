@@ -53,7 +53,7 @@ Options:
                     --hard + git clean -fd) before launching.
 
 Provider packs: use ./start-swarm-qwen.sh, ./start-swarm-gpt.sh, etc.
-Skip ancillaries: SWARMFORGE_SKIP_OPERATOR=1 SWARMFORGE_SKIP_BABYSITTER=1 ...
+Skip ancillaries: SWARMFORGE_SKIP_OPERATOR=1 SWARMFORGE_SKIP_BABYSITTERD=1 ...
 EOF
       exit 0
       ;;
