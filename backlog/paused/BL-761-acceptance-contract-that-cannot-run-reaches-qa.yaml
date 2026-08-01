@@ -1,5 +1,5 @@
 id: BL-761
-title: "Four shipped tickets carry acceptance feature files no step handler has ever matched, and the ordinary pipeline has no gate that would notice"
+title: "Five shipped tickets carry acceptance feature files no step handler has ever matched, and the ordinary pipeline has no gate that would notice"
 milestone: M8
 type: defect
 severity: high
@@ -9,7 +9,7 @@ human_approval: approved
 assigned_to: specifier
 priority: 3
 direction: normal
-depends_on: []
+depends_on: [BL-769]
 mutation_cost: low
 acceptance: specs/features/BL-761-acceptance-contract-must-be-runnable.feature
 
@@ -35,15 +35,41 @@ notes: |
   | BL-696 miniapp-lets-talk-cursor-audio | done/ | 3 / 5 |
   | BL-706 lets-talk-floating-minimized-chat | done/ | 0 / 4 |
   | BL-707 android-floating-overlay-companion | done/ | 0 / 6 |
+  | BL-716 bubble-lets-talk-tunnel-hostname-dns | done/ | 0 / 5 |
   | BL-718 bubble-talk-mirror-chunks-and-fails-loudly | done/ | 0 / 6 |
   | BL-697 lets-talk-hands-free-listening | paused/ | 0 / 6 |
-  | BL-716 bubble-lets-talk-tunnel-hostname-dns | paused/ | 0 / 5 |
   | BL-717 bubble-silent-return-after-hold-music | paused/ | 0 / 8 |
 
-  Every failure is `runtime.js:24` — "no step handler matched". The three
+  Every failure is `runtime.js:24` — "no step handler matched". The two
   paused rows are NOT defects: an unbuilt ticket legitimately has no handlers
   yet, and they are listed only to show the pattern is the whole family rather
-  than one bad ticket. The four `done/` rows are the defect: they landed.
+  than one bad ticket. The five `done/` rows are the defect: they landed.
+
+  **Updated 2026-08-01 — BL-716 moved paused/ → done/, and the count of shipped
+  tickets carrying this gap went from four to five.** BL-716 landed on
+  2026-08-01 still at 0 / 5, every scenario failing "no step handler matched"
+  on `Given the Bubble companion is paired to a bridge base URL`. Neither the
+  architect nor QA bounced it: both independently ran the contract, both
+  recorded the 0 / 5, and both reasoned that bouncing recreates at an earlier
+  gate exactly the delivery stall this ticket's `approval_context` warns
+  against, so both forwarded and QA routed a `note` here instead
+  (`backlog/evidence/BL-716-qa-pass-20260801.md`). Re-measured independently by
+  the specifier on 2026-08-01 after `npm run compile`: still 0 / 5, same class.
+
+  That is the trend line this ticket exists to stop, and it is worth reading
+  plainly: the gap is no longer a fixed set of four historical tickets. It is
+  an open drain that every Bubble/Android ticket flows through, and each new
+  landing widens it while the fix stays paused. Note also that the reasoning
+  which let BL-716 through is *sound* — the reviewers were right that a bounce
+  helps nobody while no Android seam exists — which is precisely why a gate,
+  not more reviewer diligence, is the fix.
+
+  A compile step is a prerequisite of the measurement: `extension/out/` is
+  gitignored, and without `npm run compile` the step registry fails to load
+  (`Cannot find module .../out/tools/pilotAcceptanceGate`) and every feature
+  file fails for that unrelated reason. The gate this ticket builds must not
+  mistake that infrastructure failure for an unrunnable contract — it is
+  exactly the fail-OPEN case the third invariant names.
 
   Specifier 2026-07-31: IR-DRY reports three medium-confidence possible-synonym
   findings, all reviewed and kept. Two pair the gate's PASS precondition against
@@ -55,7 +81,7 @@ notes: |
 description: |
   ## What
 
-  Four tickets are in `backlog/done/` whose declared `acceptance:` feature file
+  Five tickets are in `backlog/done/` whose declared `acceptance:` feature file
   cannot execute a single scenario end to end. `specs/pipeline/runtime.js`
   throws "no step handler matched" on the first step of each. The contracts were
   read and mapped by eye, never run — the same substitution BL-727 documents for
@@ -110,7 +136,7 @@ description: |
     — the registry is global and first-match, and an unscoped registration of
     text this generic will silently win for some other ticket's feature.
     Scenario 03 exists to prove the gate itself honours that scoping.
-  - **Do not "fix" the four shipped tickets here.** Their contracts are debt
+  - **Do not "fix" the five shipped tickets here.** Their contracts are debt
     with a separate owner (see Out of scope). This ticket lands the gate; it
     does not retro-run it over `done/`.
 
@@ -126,11 +152,14 @@ description: |
 
   ## Out of scope
 
-  - **Clearing the four shipped tickets' inert contracts.** BL-718's is already
-    owned by BL-726. BL-696, BL-706 and BL-707 need an equivalent; file it as
-    the burn-down sibling rather than widening this slice. Until that lands,
-    those tickets stay in `done/` with unrunnable contracts — stated plainly
-    rather than quietly grandfathered.
+  - **Clearing the five shipped tickets' inert contracts.** BL-718's is already
+    owned by BL-726. BL-696, BL-706, BL-707 and BL-716 need an equivalent; file
+    it as the burn-down sibling rather than widening this slice. Until that
+    lands, those tickets stay in `done/` with unrunnable contracts — stated
+    plainly rather than quietly grandfathered. The set is open-ended by
+    construction: it grows by one every time a Bubble ticket lands, so the
+    burn-down sibling should be scoped to whatever is in `done/` when it runs,
+    not to a list frozen at four or five.
   - **Deciding where Android device behavior's contract lives.** The reason the
     Bubble family is the worst-hit is that this repo has no testable seam for
     Android at all: no `test`/`androidTest` source set, no JVM unit suite, and a
@@ -163,12 +192,22 @@ approval_context: >
   this gate lands, every Bubble/Android ticket becomes unlandable, because there
   is currently no way to write an executable acceptance contract for Android
   device behavior — no Kotlin test source set exists, and the acceptance runner
-  is Node and cannot reach Kotlin. BL-697, BL-716 and BL-717 are already paused
-  and would be caught, as would the four Bubble intakes still sitting in the
-  backlog root. So either (a) land this gate now and accept that the Bubble
+  is Node and cannot reach Kotlin. BL-697 and BL-717 are already paused and
+  would be caught, as would the fifteen Bubble-family items now sitting in the
+  backlog root (fourteen `INTAKE-*.md` plus `GH-29-bubble-screen.yaml`; there
+  were four on 2026-07-31). Re-stated 2026-08-01: BL-716 was in that paused set
+  until it landed carrying the gap, which is the concrete cost of leaving this
+  decision open — the queue this gate would stall is growing faster than the
+  gap it would catch. So either (a) land this gate now and accept that the Bubble
   track pauses until the Android-seam policy ticket lands, (b) land the
   Android-seam policy first and this gate after, or (c) land this gate with the
   Bubble family explicitly recorded as known debt it does not yet enforce
   against. My recommendation is (b) — the gate is correct and cheap, but
   enforcing a contract nobody can satisfy converts a silent quality hole into a
   loud delivery stall. Everything else in this ticket is firm.
+
+  Update 2026-08-01: option (b) is now actionable — the Android-seam policy has
+  a ticket, BL-769, recorded here as `depends_on`. It was missing entirely until
+  today, which is why this decision stayed open long enough for BL-716 to land
+  as the fifth casualty. Approving BL-769 and letting it land first IS choice
+  (b); no separate answer is needed here.

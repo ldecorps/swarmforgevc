@@ -1,0 +1,156 @@
+id: BL-768
+title: "DEFECT — the bounce natural-key property fails on 2.6% of runs because its generator reaches one near-collision category only by luck"
+milestone: M8
+type: defect
+severity: medium
+status: todo
+epic: swarm-reliability
+assigned_to: none
+priority: 3
+direction: normal
+depends_on: []
+mutation_cost: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-768-bounce-key-pair-generator-coverage.feature
+
+invariants:
+  - "The coverage guard is satisfied by how pairs are constructed, not by how many are drawn: every category is reached at fast-check's default run count, for every seed."
+  - "The restructured generator does not weaken the property — it still fails when the natural key is made coarser than its five components (pooling distinct bounces) or finer (breaking idempotency)."
+
+required_wiring:
+  - "extension/test/bounceNaturalKey.property.test.js::bounceKeyPairArb::the property test consumes the extracted generator; two copies would drift and the acceptance scenarios would then gate a module the suite does not actually run"
+
+description: |
+  ## What
+
+  `extension/test/bounceNaturalKey.property.test.js` ends each property run with
+  `assertPairCoverage`, which fails the test if the generator did not reach all
+  five near-collision categories — the correct guard against a vacuous property
+  (engineering.prompt's generator-reach rule). But the generator reaches those
+  categories by chance, and one of them is rare, so `npm run test:properties`
+  goes red at random with `generator never reached: differs only in
+  time-of-day`.
+
+  ## Measured, not estimated
+
+  Specifier 2026-08-01, replaying the exact `pairArb` from the test file over
+  4000 independent 100-draw batches (fast-check's default `numRuns`):
+
+  | category | batches that missed it |
+  |---|---|
+  | differs only in time-of-day | 2.45% |
+  | differs only in producingRole/ticketType | 0.10% |
+  | differs only in `by` | 0.03% |
+  | identical in every key component | 0.00% |
+  | differs in a key component | 0.00% |
+
+  **2.57% of runs miss at least one category** — about 1 in 39. That matches
+  the field report: the architect hit it once during BL-764's pass, re-ran the
+  file in isolation, and it passed.
+
+  ## Why it is rare
+
+  `pairArb` derives `b` from `a` by perturbing a random `fc.subarray` of eight
+  fields. "Differs only in time-of-day" needs the subarray to include
+  `timeOfDay`, to draw a *different* time (2 in 3), and to leave all five key
+  components equal — either by excluding each of them or by redrawing the same
+  value. Deriving `b` from `a` was itself the previous fix for this shape (the
+  test's own comment records that independent draws reached the state on "well
+  under 1% of draws"); it raised the rate to ~97.4% and stopped there.
+
+  ## The fix
+
+  Make the five categories first-class in the generator instead of emergent:
+  draw the category, then construct a pair that satisfies it, with the existing
+  free-form perturbation kept as one further arm so the general sweep is not
+  lost. `assertPairCoverage` stays exactly as it is — it becomes a guard that
+  the construction still works, rather than a lottery ticket.
+
+  Extract the generator, the category predicates and the guard into
+  `extension/test/support/bounceKeyPairArb.js` so the property test and this
+  ticket's acceptance step handlers drive one implementation, not two.
+
+  ## Explicitly rejected: just raise `numRuns`
+
+  Measured at `numRuns: 500` over 1500 batches: 0 misses. So a one-line bump
+  looks like a fix and would be green today. It is rejected anyway — the margin
+  is a property of the current domain sizes (three tickets, three commits, three
+  days, three times of day), so any later edit to those `constantFrom` lists
+  silently moves the flake rate back up with nothing to catch it. The
+  measurement is recorded here so the next person does not re-derive it and
+  reach the opposite conclusion.
+
+  Reviewers: a diff that only changes `numRuns`, only widens a domain, or
+  weakens `assertPairCoverage`/`PAIR_CATEGORIES` does not satisfy this ticket.
+
+  ## Scope
+
+  - `extension/test/support/bounceKeyPairArb.js` — new: `pairArb` with
+    category-targeted arms, `PAIR_CATEGORIES`, `classifyPair`,
+    `assertPairCoverage`.
+  - `extension/test/bounceNaturalKey.property.test.js` — consume it; the three
+    existing properties and their assertions are unchanged.
+  - `specs/pipeline/steps/` — this feature file's own handlers, in this parcel.
+    Register with `defineScoped(..., 'The bounce-key pair generator reaches
+    every near-collision it claims to test')`: "every category is reached in
+    every sample" is generic enough to win for another feature under the global
+    first-match registry (BL-425).
+
+  ## Out of scope
+
+  - **`bounceNaturalKey` itself and the five key components.** The property is
+    correct and is not under review; only the generator feeding it is.
+  - **The other two pre-existing suite flakes** — BL-714 (raw `mkdtemp` bypass)
+    and BL-720 (`CURSOR_API_KEY` unset leaking across a worker). Same family of
+    symptom, unrelated causes, already ticketed.
+  - **A repo-wide audit of every property test's generator reach.** Worth doing
+    and cheaply derived from this ticket's measurement method, but it is a sweep
+    and belongs in its own ticket rather than widening this one.
+
+  ## e2e procedure for QA
+
+  1. `npm run test:properties` from `extension/`: green.
+  2. Run `extension/test/bounceNaturalKey.property.test.js` 40 times
+     consecutively under the properties config: 40 green, no
+     `generator never reached` failure. (At the current rate, 40 runs would be
+     expected to produce roughly one failure.)
+  3. Sample 100 pairs at 50 different seeds and confirm all five categories
+     appear in every sample — the acceptance scenarios do this; re-run them
+     independently.
+  4. Non-vacuity, by hand: drop `by` from `bounceNaturalKey`'s key components in
+     `out/quality/qaBounce.js` — the property must fail. Restore it. Then add
+     the full `at` (not just its date) to the key — the property must fail
+     again. Restore, re-run clean.
+
+source: |
+  Architect, 2026-08-01, during BL-764's pass: `npm run test:properties`
+  returned 33/34 files and 100/101 tests, the one failure being this file.
+  Correctly judged pre-existing and unrelated to BL-764's diff, re-run clean in
+  isolation, and flagged to the coordinator by `note` rather than bounced.
+  Coordinator forwarded it here for a ticket.
+
+notes: |
+  Severity `medium`: the flake fails LOUD and never green — it cannot let a
+  defect through, which is why it is not `high`. What it costs is
+  reproducibility of the properties gate and, over time, the reflex to re-run a
+  red properties suite instead of reading it, which is exactly how a real
+  failure gets waved past.
+
+  The first declared invariant is the one this ticket exists to establish and is
+  directly measurable, so the coder's property test for it should assert
+  category coverage across many seeds at the default run count — not a single
+  sampled run. The second is a non-vacuity claim the architect reviews against
+  (see the QA procedure's step 4 for how to demonstrate it); it is the guard
+  against "fixing" the flake by weakening what the property asserts.
+
+  Specifier 2026-08-01: the measurement script is scratch and was not committed;
+  it replays `pairArb` verbatim against `out/quality/qaBounce`'s
+  `bounceAttribution` and counts missed categories per batch. Any reviewer can
+  rebuild it from the test file in a few minutes, and the extracted
+  `bounceKeyPairArb.js` this ticket asks for makes it a two-line exercise.
+
+  IR-DRY reports one medium-confidence possible-synonym finding, reviewed and
+  kept: "every category is reached in every sample" (scenario 02, all five
+  categories across 50 samples) against "the <category> category is reached"
+  (scenario 01, one category in one sample). Different quantifiers, different
+  handlers — the difference is the behavior under test.
