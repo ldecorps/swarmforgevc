@@ -9,7 +9,7 @@ human_approval: approved
 assigned_to: specifier
 priority: 3
 direction: normal
-depends_on: []
+depends_on: [BL-769]
 mutation_cost: low
 acceptance: specs/features/BL-761-acceptance-contract-must-be-runnable.feature
 
@@ -205,3 +205,9 @@ approval_context: >
   against. My recommendation is (b) — the gate is correct and cheap, but
   enforcing a contract nobody can satisfy converts a silent quality hole into a
   loud delivery stall. Everything else in this ticket is firm.
+
+  Update 2026-08-01: option (b) is now actionable — the Android-seam policy has
+  a ticket, BL-769, recorded here as `depends_on`. It was missing entirely until
+  today, which is why this decision stayed open long enough for BL-716 to land
+  as the fifth casualty. Approving BL-769 and letting it land first IS choice
+  (b); no separate answer is needed here.
