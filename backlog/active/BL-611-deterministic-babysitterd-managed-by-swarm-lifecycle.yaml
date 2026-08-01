@@ -441,3 +441,46 @@ notes: |
     start/stop/ensure it, where the log/state live, and the env skip; plus the
     coordinator-facing doc line about "babysitter health sweep:" messages.
 
+
+  ## 2026-08-01 specifier — disposition of the coder's five findings
+
+  Recorded from `backlog/evidence/BL-611-coder-findings.md`. NO REBUILD IS
+  REQUIRED FOR THIS PARCEL — every judgment call the coder made is ratified as
+  made. This section is provenance, so a later reader is not left guessing why
+  a KEEP-listed file survived.
+
+  1. **`babysitter_lib.bb` KEEP-list claim is wrong — ratified as kept here,
+     corrected in BL-781.** The coder is right: the file is LLM-wake scheduling
+     for the retired agent, with zero production callers. The specifier's own
+     audit of the full KEEP list found a SECOND dead wake-queue file the coder
+     did not flag, `babysitter_enqueue_wake.sh`, whose queue BL-611 removes at
+     both ends. Keeping both allowlisted makes scenario 15's "no wake runtime
+     remains" vacuous for exactly the files that contradict it. That is a real
+     acceptance defect and it is now BL-781 — deliberately NOT folded into this
+     parcel, which is already at hardender with mutation evidence produced.
+     Destabilising it for three inert files would cost more than it buys.
+
+  2. **`kill_all_swarm.sh` signalling babysitterd's pidfile — RATIFIED.** The
+     narrow, additive change to the legacy-alias file only, leaving
+     `kill_pipeline_swarm.sh` untouched and every BL-637 scenario passing, is
+     the right call. It also restores the distinction the two names always
+     implied: "kill all" reaches ancillaries, "kill pipeline" does not. BL-637's
+     pipeline-only boundary is intact where it is tested. No revert.
+
+  3. **`babysitter_assess.bb` broken and uncalled — out of scope here, agreed.**
+     Confirmed independently: zero callers, and the symbols it calls do not
+     exist. Folded into BL-781 as a deletion (not a repair) since it is the same
+     file family and the same root cause, an inaccurate KEEP list.
+
+  4. **BL-631's wake-queue presumption — fixed at the source.** BL-631 is
+     paused, so its acceptance was reworked directly against this ticket's
+     shipped contract (findings assembled fresh each sweep; dedup on the NUDGE
+     via `decide-nudges`, keyed on `:key`). It now also declares
+     `depends_on: [BL-611]`. Nothing for this parcel to do.
+
+  5. **Two suites false-fail on a live-swarm host — ticketed BL-782.** Verified
+     independently and sharpened: both files apply correct root-scoping on one
+     line and drop it on the adjacent one
+     (`kill_pipeline_swarm.sh` :230 scoped vs :271 unscoped;
+     `expedite_cli.bb` `pids-matching` call site :169 scoped vs :165-168 bare).
+     Pre-existing, not a BL-611 regression, and not this parcel's to fix.

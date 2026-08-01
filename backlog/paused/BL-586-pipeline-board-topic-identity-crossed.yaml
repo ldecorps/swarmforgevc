@@ -10,7 +10,7 @@ approval_context: >
   into APS Gherkin, unchanged in substance. Status stays needs_design — the
   reuse-or-create/collision-guard mechanics are firmed up by the coder per
   the description's "Design directions", not settled here.
-severity: high
+severity: medium
 priority: 12
 direction: human-requested
 depends_on: []
@@ -94,3 +94,8 @@ out_of_scope: |
   - The board's rendering/matrix redesign (BL-585) and every-in-flight
     scope (BL-564 cluster 2) — identity plumbing only here.
   - Support-thread (SUP-*) machinery.
+
+notes: |
+  2026-08-01 Let's Talk (human): severity high → medium so the JumpQ
+  pilot-process batch can clear the high tier; board identity, not a live
+  outage.
