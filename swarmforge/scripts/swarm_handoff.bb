@@ -11,6 +11,7 @@
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "backlog_depth_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "pipeline_stage_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "ticket_close_guard_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "duplicate_chain_guard_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "pre_qa_gate_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "pre_qa_gate_gather_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "coordinator_config_lib.bb")))
@@ -215,7 +216,7 @@
         (conj (mapv pre-qa-gate-lib/format-finding-line findings) pre-qa-gate-remedy)
         []))))
 
-(defn validate [headers ordered]
+(defn validate [headers ordered sender]
   (let [type (get headers "type")
         to (get headers "to")
         priority (get headers "priority")
@@ -266,6 +267,9 @@
             [nil (format "Header 'commit' must be exactly 10 hexadecimal characters; got '%s'." commit)]
             :else (canonical-commit commit))
           [nil nil])
+        dup-chain-block
+        (when (and (= "git_handoff" type) (not (str/blank? task-name)))
+          (duplicate-chain-guard-lib/blocking-parcel (project-root) task-name sender))
         git-errors (cond-> []
                      (= "git_handoff" type)
                      (into (cond-> []
@@ -278,6 +282,11 @@
                                    (project-root) task-name))
                              (conj (format "Cannot send git_handoff for closed ticket %s (backlog/done/)."
                                            (pipeline-stage-lib/extract-ticket-id task-name)))
+                             ;; BL-760 duplicate-chain-errors: refuses a git_handoff when the
+                             ;; same ticket already has a live parcel in another role's mailbox
+                             ;; (see duplicate_chain_guard_lib.bb).
+                             dup-chain-block
+                             (conj (duplicate-chain-guard-lib/refusal-message dup-chain-block))
                              (and (not (str/blank? task-name)) canonical)
                              (into (pre-qa-gate-errors type to task-name canonical))))
                      (and (not= "git_handoff" type) (not (str/blank? commit)))
@@ -580,7 +589,7 @@
       (when-not (role-known? sender)
         (exit! 1 (str "Unknown sender role: " sender)))
       (let [{:keys [headers ordered errors]} (parse-draft draft)
-            validation (validate headers ordered)
+            validation (validate headers ordered sender)
             all-errors (vec (concat errors (:errors validation)))]
         (when (seq all-errors)
           (error-report draft all-errors)
