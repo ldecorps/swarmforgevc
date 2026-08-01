@@ -19,9 +19,12 @@ invariants:
   - "A hostname change on the host side has an operator-visible path to update the phone (settings, pairing, or Telegram) — silent stale prefs are not the steady state."
 
 required_wiring:
-  - "android companion BridgeClient / TalkEngine::DNS or connect failure::surface error and leave recording"
-  - "operator tunnel publish or pairing path::fresh trycloudflare or named-tunnel URL reaches the phone"
-  - "specs/features/BL-716-bubble-lets-talk-tunnel-hostname-dns.feature::acceptance"
+  - "android/app/src/main/java/com/swarmforge/floatcompanion/BridgeClient.kt::connectionFailure = true::a DNS/connect/dead-tunnel-edge failure is flagged as a connection failure, not folded into the generic turn-failed path"
+  - "android/app/src/main/java/com/swarmforge/floatcompanion/TalkEngine.kt::applyTurnFailure(result)::both the text and audio turn paths route failures through the handler that leaves the fake-healthy recording state"
+  - "android/app/src/main/java/com/swarmforge/floatcompanion/MainActivity.kt::applyPairingDeepLinkIfPresent(intent)::the pairing deep link is consumed on launch and on new intent, not merely parsed by a dark module"
+  - "android/app/src/main/AndroidManifest.xml::swarmforge-bubble::the pair deep-link scheme is registered so a tap in the operator notify actually reaches Bubble"
+  - "extension/src/tools/notify-resident-spy-tunnel.ts::buildBubblePairingDeepLink(fullUrl)::the operator DM carries a re-pair link built from the live tunnel URL"
+  - "extension/src/concierge/residentSpyTunnelNotify.ts::url: urls.pairingDeepLink::the notify buttons surface that link instead of leaving it unreferenced"
 
 description: |
   ## What
@@ -87,6 +90,14 @@ notes: |
   `kirk-appeared-olympics-northwest.trycloudflare.com`. Recovery was manual
   re-pair only. Sibling adopt ticket for unrelated hand bounce-meta /
   always-on script work: BL-763 — do not close this ticket from that parcel.
+
+  Spec amendment 2026-08-01 (specifier, after a documenter note): the original
+  `required_wiring:` entries were prose, not `path::pattern`, so the pre-QA
+  gate refused the documenter's send to QA — two entries named no real path
+  and the third named the feature file with a pattern it does not contain.
+  Replaced with six real call sites, each verified against documenter tip
+  f84c1f63f (`pre_qa_gate.sh` now reports OK). No code change is required by
+  this amendment: merge `main`, re-read the ticket, re-send to QA.
 bounce_count: 1
 bounce_history:
   - { at: 2026-07-31, by: architect, blamed: coder, class: acceptance, commit: d255a73b2, evidence: backlog/evidence/BL-716-bubble-lets-talk-tunnel-hostname-dns-bounce-20260731.md }
