@@ -1,0 +1,112 @@
+id: BL-770
+title: "EPIC — Workflow Canary: refactor the tracer bullet into a named, recorded, operator-run preflight; do not promote directly; tracks children"
+milestone: M8
+status: todo
+type: epic
+epic: workflow-canary
+human_approval: pending
+priority: 2
+depends_on: []
+decomposes_into: []
+mutation_cost: medium
+
+remaining_slices:
+  - "Rename tracer bullet -> Workflow Canary across the launcher, the trace-hop CLI, the per-role 'Tracer Bullet Participation' prompt blocks, tests and docs; kill the dual vocabulary. Behavior equivalent."
+  - "One operator verb to seed and watch a Canary through the live chain of whatever pack is configured, not a harness-only story."
+  - "Durable per-hop record (role, timestamps, decision, dwell, handoff latency, retries) plus a human-readable end report: pass when every expected role hopped forward, fail naming the hop that stalled."
+  - "How-to: when to run the Canary, and specifically that it is the preflight before a deliberate full-pack restart."
+
+acceptance:
+  none: "tracker only — see decomposes_into children for acceptance"
+
+approval_context: >
+  The human locked six decisions in the intake and explicitly asked the
+  specifier to weigh in on five open ones. Here are my answers; each is a
+  default I will spec against unless you say otherwise, and none is expensive
+  to change before slice A starts.
+
+  1. **Seed shape** — keep the existing note-carrying parcel, renamed
+     (`CANARY <id>` where the prompts say `TRACE <id>`). Not a backlog YAML
+     ticket: a real ticket would pollute the backlog and every count derived
+     from it. Not note-only-to-one-role either — it must traverse. This follows
+     your locked decision 4 (refactor, do not invent a parallel system).
+
+  2. **mono-router as well as full pack** — neither, as a special case. Derive
+     the expected chain from the configured pack, so the Canary is correct on
+     whatever is running. That is less work than full-pack-only plus a caveat,
+     and mono-router is the pack actually running here today.
+
+  3. **Report location** — `.swarmforge/canary/<run-id>/` for the per-hop log
+     and the end report; not `backlog/evidence/`, which is ticket evidence and
+     a Canary is deliberately not a ticket. That directory is gitignored
+     runtime state, which is the right home for a run artifact; the health
+     screen reads it locally when that lands.
+
+  4. **"tracer bullet" compatibility window** — rename prompts, scripts, docs
+     and tests completely; leave the string untouched wherever it appears in
+     already-written evidence and history, which we never rewrite. Keep a CLI
+     alias for one milestone so a muscle-memory invocation still works.
+
+  5. **Scheduled / periodic Canary** — out of scope for v1, on-demand only.
+     Your locked decision 1 frames this as a preflight, and BL-121 already owns
+     cadence-based transport canaries; putting a schedule on this one is the
+     fastest way to blur the distinction decision 6 asks us to keep sharp.
+
+  If those five look right, approving this mints slice A (the rename) against
+  them. If any is wrong, say which — I would rather re-answer now than respec a
+  slice later.
+
+description: |
+  ## What
+
+  The tracer bullet already exists — launcher harness, `trace-hop` CLI, a
+  per-role "Tracer Bullet Participation" prompt block, and docs. It works and it
+  is stale: humans now say "Canary" for the same job, the story is scattered
+  across four surfaces, and there is no single operator verb or readable report.
+
+  This epic renames and reshapes it into a first-class **Workflow Canary**: a
+  work item that every pipeline role takes, does nothing product-wise with,
+  hands on, and **records** — so that "is the live workflow healthy end to end?"
+  is answered by evidence rather than by anecdote.
+
+  ## Why now
+
+  The operator wants a recorded Canary pass as the preflight before a deliberate
+  full-pack restart. A restart that discovers a broken hop after the fact is
+  expensive; a Canary that names the stalled hop is cheap.
+
+  ## Not the delivery canary
+
+  BL-121's canary injector is a different instrument: synthetic handoff delivery
+  measuring transport health. This one is the workflow / role-chain Canary,
+  measuring whether agents take work and pass it on. They must stay distinct in
+  naming and in docs — conflating them was called out by the human directly, and
+  is the single easiest way for this epic to make operators worse off.
+
+  ## Constraints carried from the intake (locked by the human 2026-07-31)
+
+  - The Canary implements nothing of product value. A green Canary requires no
+    product code change.
+  - Every hop leaves a durable trace; the end report is readable by a human.
+  - Refactor the existing surfaces; do not stand up a second parallel system.
+  - Epic-shaped, not one orphan ticket that renames nothing.
+
+source: |
+  `backlog/INTAKE-workflow-canary-from-tracer-bullet.md` (human via Let's Talk /
+  Cursor 2026-07-31, capture-only, explicitly asking for specifier disposition
+  before minting). Drained 2026-08-01; raw intake removed from the backlog root
+  in the same commit.
+
+notes: |
+  UMBRELLA / tracking item (type: epic), NOT directly promotable — the
+  coordinator promotes CHILD slices, never this. Children carry
+  `epic: workflow-canary` and get listed in `decomposes_into`.
+
+  `decomposes_into` is deliberately empty: the four `remaining_slices` above are
+  described but not yet ticketed, because slice A's shape depends on the five
+  answers in `approval_context`. On approval I spec slice A (the rename) and add
+  its id here.
+
+  The intake also notes a picture mock of the Canary hop journey was emailed for
+  phone review on 2026-07-31. Whoever specs the report slice should look at it
+  before designing the end report, rather than inventing a second layout.
