@@ -37,6 +37,7 @@ import {
   type CursorBridgePersistedState,
   type CursorBridgeChoicePoll,
   type CursorBridgeInboundEvent,
+  type EnsureCursorTopicAction,
 } from './telegramCursorBridgeCore';
 import {
   formatOperatorConfirmPrompt,
@@ -414,46 +415,34 @@ export async function postChunks(
   }
 }
 
-function reuseCursorTopicFromMap(state: CursorBridgePersistedState, topicId: number): CursorBridgePersistedState {
-  return { ...state, cursorTopicId: topicId };
-}
+type BridgeTopicStateKey = 'cursorTopicId' | 'bubbleTopicId';
 
-function reuseBubbleTopicFromMap(state: CursorBridgePersistedState, topicId: number): CursorBridgePersistedState {
-  return { ...state, bubbleTopicId: topicId };
-}
-
-async function createCursorRemoteTopic(
+async function ensureNamedTopic(
+  stateKey: BridgeTopicStateKey,
+  subjectId: string,
+  topicName: string,
+  decideAction: (topicMap: Record<string, string>) => EnsureCursorTopicAction,
   token: string,
   chatId: string,
   topicMapPath: string,
-  topicMap: Record<string, string>,
   state: CursorBridgePersistedState,
   createTopic: typeof createForumTopicWithRateLimitRetry
 ): Promise<CursorBridgePersistedState> {
-  const created = await createTopic(token, chatId, CURSOR_BRIDGE_TOPIC_NAME);
+  if (state[stateKey] !== undefined) {
+    return state;
+  }
+  const topicMap = loadTopicMap(topicMapPath);
+  const action = decideAction(topicMap);
+  if (action.kind === 'reuse') {
+    return { ...state, [stateKey]: action.topicId };
+  }
+  const created = await createTopic(token, chatId, topicName);
   if (!created.success || created.messageThreadId === undefined) {
     throw new Error(created.error ?? 'createForumTopic failed');
   }
-  const nextMap = { ...topicMap, [String(created.messageThreadId)]: 'CURSOR_REMOTE' };
+  const nextMap = { ...topicMap, [String(created.messageThreadId)]: subjectId };
   writeJsonFile(topicMapPath, nextMap);
-  return { ...state, cursorTopicId: created.messageThreadId };
-}
-
-async function createBubbleTopic(
-  token: string,
-  chatId: string,
-  topicMapPath: string,
-  topicMap: Record<string, string>,
-  state: CursorBridgePersistedState,
-  createTopic: typeof createForumTopicWithRateLimitRetry
-): Promise<CursorBridgePersistedState> {
-  const created = await createTopic(token, chatId, BUBBLE_TOPIC_NAME);
-  if (!created.success || created.messageThreadId === undefined) {
-    throw new Error(created.error ?? 'createForumTopic failed');
-  }
-  const nextMap = { ...topicMap, [String(created.messageThreadId)]: BUBBLE_SUBJECT_ID };
-  writeJsonFile(topicMapPath, nextMap);
-  return { ...state, bubbleTopicId: created.messageThreadId };
+  return { ...state, [stateKey]: created.messageThreadId };
 }
 
 export async function ensureCursorTopic(
@@ -463,15 +452,17 @@ export async function ensureCursorTopic(
   state: CursorBridgePersistedState,
   createTopic: typeof createForumTopicWithRateLimitRetry = createForumTopicWithRateLimitRetry
 ): Promise<CursorBridgePersistedState> {
-  if (state.cursorTopicId !== undefined) {
-    return state;
-  }
-  const topicMap = loadTopicMap(topicMapPath);
-  const action = decideEnsureCursorTopicAction(topicMap);
-  if (action.kind === 'reuse') {
-    return reuseCursorTopicFromMap(state, action.topicId);
-  }
-  return createCursorRemoteTopic(token, chatId, topicMapPath, topicMap, state, createTopic);
+  return ensureNamedTopic(
+    'cursorTopicId',
+    'CURSOR_REMOTE',
+    CURSOR_BRIDGE_TOPIC_NAME,
+    decideEnsureCursorTopicAction,
+    token,
+    chatId,
+    topicMapPath,
+    state,
+    createTopic
+  );
 }
 
 export async function ensureBubbleTopic(
@@ -481,15 +472,17 @@ export async function ensureBubbleTopic(
   state: CursorBridgePersistedState,
   createTopic: typeof createForumTopicWithRateLimitRetry = createForumTopicWithRateLimitRetry
 ): Promise<CursorBridgePersistedState> {
-  if (state.bubbleTopicId !== undefined) {
-    return state;
-  }
-  const topicMap = loadTopicMap(topicMapPath);
-  const action = decideEnsureBubbleTopicAction(topicMap);
-  if (action.kind === 'reuse') {
-    return reuseBubbleTopicFromMap(state, action.topicId);
-  }
-  return createBubbleTopic(token, chatId, topicMapPath, topicMap, state, createTopic);
+  return ensureNamedTopic(
+    'bubbleTopicId',
+    BUBBLE_SUBJECT_ID,
+    BUBBLE_TOPIC_NAME,
+    decideEnsureBubbleTopicAction,
+    token,
+    chatId,
+    topicMapPath,
+    state,
+    createTopic
+  );
 }
 
 export async function promptWithHeartbeat(
