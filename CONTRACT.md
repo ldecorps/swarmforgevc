@@ -1,6 +1,6 @@
 # SwarmForge Onboarding Contract
 
-Agreement: proposed
+Agreement: agreed
 
 ## Scope
 - Deliver the seed vision: Milestone 1 MVP: a developer can select a target repo, launch a swarm, watch every agent in live interactive tiles inside VS Code, occasionally nudge an agent, and end up with a pull request to review, without leaving the editor. This repo is dogfooding itself: the swarm building SwarmForge VC is the same swarm the extension will let others run. Later milestones (already underway) extend this into a full remote-control surface: Telegram/Bubble messaging, pipeline board, model routing, swarm intelligence layer, backlog governance.
