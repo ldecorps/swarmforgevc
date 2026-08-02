@@ -163,6 +163,11 @@ remaining_slices: |
   - Fan-in verification at the parallel/singleton boundary.
   - Provider pack for the second resident (largely existing conf work).
   - Failure modes: one resident dies, one provider rate-limits, one resident wedges.
+  - Two-lane observability (added 2026-08-02 from the 07-30 intake): the board shows
+    each resident's role and dwell timer separately, so a long stage in one lane does
+    not read as the whole swarm being stuck while the other lane is fine.
+  - Cost and pane count documented against mono-router and classic, so the operator
+    can choose the pack on numbers rather than on feel.
 
 out_of_scope: |
   - Cost-only provider mixing. That is a conf edit available today and should not
@@ -181,3 +186,44 @@ notes: |
   Re-measure the 11:1 ratio over a full week before sizing anything on it. 2026-07-25
   was atypical: one ticket bounced six times, which inflates front-half dwell and
   starves the back half of samples.
+
+  ## 2026-08-02 — `backlog/INTAKE-stereo-router-two-residents.md` drained into this epic
+
+  The operator raised the same idea a second time on 2026-07-30 via Let's Talk,
+  five days after this epic was written, from a live observation rather than from
+  the dwell data. That capture is folded in here and the root intake removed; it
+  minted no ticket of its own because this epic already IS that ticket.
+
+  What triggered it, in the operator's words: the hardener (or any single resident
+  persona) "ran ~50+ minutes on mutation / Gherkin work", and "meanwhile the whole
+  workflow waited — only one resident path, so one slow stage pushes everything back
+  by that wall clock". Framed as capacity, not an outage: "Babysitter correctly
+  reports 'healthy / working' — so this is not a stuck-agent outage; it is **serial
+  capacity**." The wanted shape: "Keep a lean pack (not full classic seven seats),
+  but allow **two concurrent resident lanes**."
+
+  That confirms the epic's premise from a second direction, and adds two things this
+  epic did not have, both now in `remaining_slices`:
+
+  - **Observability of two lanes.** The operator's requirement verbatim: the board
+    "must show two resident roles / two dwell timers so '51 minutes on hardener' does
+    not look like the whole swarm is stuck when the other lane is fine." Nothing in
+    the original epic covered this, and without it stereo makes the existing dwell
+    signal actively misleading rather than merely incomplete.
+  - **Cost / pane count documented vs mono-router and classic**, as an acceptance
+    item rather than only as the description's aside about provider mixing.
+
+  Two of the intake's design questions are also still open here and should be settled
+  when the epic is sliced, not during implementation:
+
+  - Can both residents ever touch the same `BL-###` at once, or is it a hard rule of
+    one ticket → one resident? (The epic partitions worktrees by resident, which
+    implies the hard rule, but never states it.)
+  - Is stereo a new `stereo-router` pack, or a flag on mono-router (`residents=2`)?
+    Acceptance item 6 requires rollback to be a conf change, which constrains this
+    answer without deciding it.
+
+  The intake's remaining questions — isolation, routing, merge/QA ownership, and the
+  depth-cap interaction — are already answered above (worktree partitioning, resident
+  identity + assignment, singleton QA per BL-247, and depth derived from resident
+  count), so they are not repeated as open.
