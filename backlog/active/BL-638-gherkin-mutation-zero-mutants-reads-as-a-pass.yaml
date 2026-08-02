@@ -1,0 +1,251 @@
+id: BL-638
+title: "Gherkin acceptance mutation reports `Total 0` as a pass for any feature without a Scenario Outline — and stamps the file so later runs skip it"
+milestone: M8
+type: defect
+status: todo
+epic: code-quality-gates
+human_approval: pending
+severity: high
+priority: 05
+direction: human-requested
+depends_on: []
+assigned_to: specifier
+mutation_cost: medium
+invariants:
+  - "A mutation run that generated zero mutants never reports a pass and never stamps the feature as covered — for any feature shape."
+
+approval_context: >
+  RE-APPROVAL REQUESTED — specifier, 2026-08-02. Previously approved; flipped
+  back to pending because the acceptance contract materially changed on
+  evidence, and one factual premise of this ticket turned out to be wrong.
+
+  What needs your sign-off, specifically:
+
+  (1) Old scenario 02 asserted that after a zero-mutant run stamps a feature,
+  adding a Scenario Outline later would still be suppressed. I tested that
+  against the real vendored mutator and it is FALSE — the stamp is a SHA-256
+  of the feature text with metadata stripped, so adding an outline necessarily
+  invalidates it and the gate re-arms on its own. Old scenario 02 therefore
+  PASSED before any code was written — a vacuous acceptance criterion, the
+  exact "green while proving nothing" failure this ticket exists to kill. It
+  is replaced by scenario 02 (an already-stamped, UNCHANGED outline-free
+  feature must still report inapplicable on re-run — this genuinely fails
+  today) and kept as scenario 07 as a regression guard, since the fix must not
+  break the re-arming that already works.
+
+  (2) `severity: high` may now be over-priced and is left unchanged pending
+  your call. The notes justify high partly on the gate going "permanently
+  silent for that file" — that specific claim is disproven; suppression lasts
+  only while the feature text is unchanged. Defect 1 (a zero-mutant run reads
+  as a clean pass and exits 0, across 60% of the corpus) is fully confirmed
+  and is reason enough for high on its own, so I have not lowered it
+  unilaterally. Amend to medium if you disagree.
+
+  Evidence for both: backlog/evidence/BL-638-specifier-stamp-probe-20260802.md.
+
+  Unchanged from the earlier approval: the ticket's intent, its invariant, and
+  scenarios 01/03/04/05/06.
+
+source: |
+  BL-567 hardener pass, 2026-07-25. Ran the BL-113 Gherkin acceptance mutation gate
+  against `specs/features/BL-567-expeditor-offline-single-ticket-pipeline.feature`
+  exactly as the hardener role prescribes:
+
+  ```
+  specs/pipeline/scripts/run_gherkin_mutation.sh <feature> <work-dir> <steps> full
+  ->  rc=0
+      Total 0 | Killed 0 | Survived 0 | Errors 0
+      manifest: {"scenarios":[], "implementation_hash":"unknown"}
+  ```
+
+  **Zero mutants were generated, and the run exits 0.** `discover` in
+  `swarmforge/vendor/aps/bb/src/aps/mutation.clj` iterates
+  `(:examples scenario)` — it mutates **Examples-table cells only**. A feature with
+  no `Scenario Outline:` gives it nothing to work with.
+
+  Measured exposure across the corpus (structural match on `^\s*Scenario Outline:`,
+  not a prose mention):
+
+  ```
+  total feature files                356
+  with NO real Scenario Outline      216   (60%)
+  already carrying a mutation-stamp   71
+  stamped AND outline-free             1
+  ```
+
+  So 60% of features cannot be mutation-tested by this gate at all, and the gate
+  says nothing about it.
+
+description: |
+  ## Two defects, and the second is worse
+
+  **1. `Total 0` is indistinguishable from a clean sweep.** `rc=0`, no survivors, no
+  errors. A hardener following the role prompt gets a green result and moves on. This
+  is the same shape as the recorded repo-wide Stryker 0-kill, where a gate reported
+  success while testing nothing.
+
+  **2. It writes a `# mutation-stamp` into the feature file, so the next run SKIPS.**
+  From `hardender.prompt`: a completed run re-run immediately is a no-op while the
+  `# mutation-stamp` hash still matches, and a genuine re-mutation happens only with
+  `hard`/`full` or after the stamp changes.
+
+  A zero-mutant run therefore **records the file as covered on the strength of
+  having proved nothing**, and every subsequent unchanged run silently reports a
+  pass too — now via the skip path rather than the discovery path, but equally
+  green and equally empty.
+
+  > **SPECIFIER CORRECTION, 2026-08-02 — one sentence of this ticket was wrong.**
+  > The original text continued: *"Adding a Scenario Outline later does not help
+  > while the stamp still matches. That is the load-bearing half: ... defect 2
+  > makes the gate permanently silent for that file."* Tested against the real
+  > vendored mutator: **that is false.** The stamp is `sha256` of the feature text
+  > with mutation metadata stripped, so adding a Scenario Outline necessarily
+  > changes the text, invalidates the stamp, and the gate re-arms by itself
+  > (probe STEP4: stamp invalid, 0 scenarios skipped, 4 mutants generated).
+  > Defect 2 is real but NARROWER than stated: suppression persists only while
+  > the feature text is unchanged; it is not permanent, and it does not survive
+  > someone adding an outline. Defect 1 is confirmed exactly as written and is
+  > the load-bearing half. Evidence:
+  > `backlog/evidence/BL-638-specifier-stamp-probe-20260802.md`.
+
+  The manifest compounds it — BL-502 says the manifest records only CLEAN scenarios
+  (zero survivors AND zero errors). With zero mutants, `scenarios: []` is written,
+  and `implementation_hash` is literally `"unknown"`. A manifest asserting nothing,
+  in a shape that looks like a record of a completed run.
+
+  ## Not a BL-567 problem
+
+  BL-567 avoided Scenario Outlines deliberately: they are what produce the
+  unreferenced-`Examples`-column lint finding and the shared-cell mutation survivor
+  that has recurred five times in this repo. Avoiding a known trap should not
+  silently disable a quality gate.
+
+  ## Shape
+
+  Specifier decides; the load-bearing parts:
+
+  1. **A zero-mutant run must not read as a pass.** Distinguish "nothing to mutate"
+     from "everything mutated and killed" in the exit status, the summary line, and
+     the manifest. `Errors 0` with `Total 0` should be its own outcome — call it
+     `inapplicable` or similar — never a silent success.
+  2. **A zero-mutant run must not write a suppressing stamp.** Either no stamp, or a
+     stamp that records `inapplicable` so a later run with outlines present is NOT
+     skipped. The specifier should confirm the stamp-comparison path treats it
+     correctly rather than assume.
+  3. **Widen what the mutator can mutate, or say plainly that it cannot.** The
+     vendored APS parser/mutator is PINNED and `engineering.prompt` forbids modifying
+     or reimplementing it, so this is deliberately NOT "make the mutator handle plain
+     scenarios". Options for the specifier: mutate step ARGUMENTS outside Examples
+     tables in our own wrapper; or accept the limit and make the hardener's duty
+     explicit about what to do instead.
+  4. **The hardener needs a stated fallback.** BL-567's hardener built
+     `swarmforge/scripts/test/expedite_mutation_sweep.sh` (41 mutants, hand-authored,
+     all killed) because the standard gates could not see babashka code. That worked,
+     but it was invented under pressure. The role prompt should say what a hardener
+     does when a gate is inapplicable — the current prompt has no branch for it.
+
+  ## Also unaddressed by any gate, and worth the specifier's ruling
+
+  Stryker mutates `extension/out/` — JavaScript. Every `.bb` script in
+  `swarmforge/scripts/` (the daemons, the router, the handoff libs, the expeditor) has
+  **no mutation coverage at all**, and no CRAP tooling either. That is a much larger
+  hole than this ticket, and the specifier should say whether it belongs here, in a
+  sibling, or in an epic.
+
+  ## Specifier rulings, 2026-08-02
+
+  The "Shape" section above asks for four decisions and the section above this one
+  asks for a fifth. Answering all five so the coder does not have to re-litigate:
+
+  **R1 — Shape item 3, "widen the mutator vs say plainly that it cannot":
+  ACCEPT THE LIMIT. Do not build wrapper-level mutation of step arguments.**
+  Three reasons. The vendored APS mutator is pinned and `out_of_scope` already
+  forbids touching it. Building a second, home-grown mutation engine in our
+  wrapper is a new capability, not a defect fix, and would blow this slice's size
+  envelope (BL-634). And the ticket's own invariant is about a run never
+  REPORTING a pass it did not earn — honest reporting, not more mutants. A gate
+  that says "inapplicable" out loud is a complete fix for that invariant. If
+  widening is wanted later it is its own ticket, and should be argued on its own
+  merits rather than smuggled in here. Note this ruling is what the already-
+  approved scenario set implies: it contains a hardener-fallback scenario (05)
+  and no widening scenario.
+
+  **R2 — Shape item 4, the hardener's stated fallback: IN SCOPE, here.**
+  Scenario 05. The hardener prompt currently has no branch for an inapplicable
+  gate, which is why BL-567's hardener invented `expedite_mutation_sweep.sh`
+  under pressure. R1 makes this mandatory rather than optional: if we are
+  accepting that the gate cannot see 60% of the corpus, the role prompt must say
+  what a hardener does instead, or we have just made the silence official.
+
+  **R3 — Shape item 2, "confirm the stamp-comparison path rather than assume":
+  CONFIRMED BY EXPERIMENT, and it changed the ticket.** See the SPECIFIER
+  CORRECTION above and the evidence file. The coder should read the evidence
+  file before starting — it records exactly which vendored functions decide the
+  stamp, the skip, and the exit status, with a reproducible probe.
+
+  **R4 — the `.bb` mutation-coverage hole: NOT here, and it is ALREADY TICKETED
+  as BL-472** (`backlog/paused/BL-472-wire-babashka-hardening-toolchain.yaml`).
+  `engineering.prompt` already documents this gap in its tool table and names
+  BL-472 as the deliberately-deferred tracker for pinning, installing and wiring
+  `.bb` mutation/CRAP/DRY tooling. No new sibling or epic is needed; this ticket
+  simply must not absorb it. Left as a prose cross-reference deliberately: it is
+  not a `depends_on` (neither ticket blocks the other) and the schema has no
+  related-ticket field worth minting for one link.
+
+  **R5 — where the fix goes: `specs/pipeline/scripts/run_gherkin_mutation.sh`,
+  our own wrapper.** Verified as the live path: it is the script the hardener
+  role prompt invokes, and nothing outside `swarmforge/vendor/aps/` reads or
+  writes a `# mutation-stamp` (grepped). Two constraints the coder needs up
+  front, both verified rather than assumed:
+
+  - The wrapper currently ends in `exec bb gherkin-mutator ...`, which replaces
+    the process and makes post-processing impossible. `exec` has to go so the
+    wrapper can inspect the run and decide the outcome.
+  - The wrapper cannot prevent the stamp being written. `write-stamp?` is
+    computed inside the vendored CLI as `Survived == 0 && Errors == 0`, which is
+    trivially true at `Total 0`, and there is no flag to suppress it. So the
+    wrapper must correct the feature file AFTER the vendored tool returns —
+    remove or mark the stamp it just wrote — rather than stop it being written.
+
+  The `--json` report is the seam to key off: it carries `Total` and, when
+  positive, `SkippedScenarios`/`SkippedMutations`, so both flavours of a green
+  `Total 0` (nothing discovered, and everything skipped) are distinguishable
+  from a real clean sweep.
+
+acceptance: specs/features/BL-638-gherkin-mutation-zero-mutants-reads-as-a-pass.feature
+
+out_of_scope: |
+  - Modifying or reimplementing the vendored APS parser/mutator. PINNED, and
+    `engineering.prompt` forbids it. Any widening happens in our own wrapper.
+  - Retro-running mutation over the 216 outline-free features. Fix the gate first;
+    a backfill sweep is its own ticket once the gate can report honestly.
+  - Removing the stamp mechanism. It is a legitimate cost control for expensive runs;
+    the defect is that a zero-mutant run participates in it.
+  - Mutation coverage for `.bb` code. Named in the description as a bigger hole for
+    the specifier to place, not silently folded in here.
+
+notes: |
+  Priced `severity: high` despite nothing being broken at runtime: this is a **quality
+  gate reporting success while testing nothing**, on 60% of the corpus, and it
+  suppresses its own future runs. A gate that cannot fail is worse than an absent one,
+  because the absent one does not stop anyone looking.
+
+  Specifier, 2026-08-02: half of that pricing rationale is disproven — see the
+  SPECIFIER CORRECTION in `description`. Suppression is not permanent; it lasts
+  only while the feature text is unchanged. `severity: high` is deliberately LEFT
+  UNCHANGED rather than lowered unilaterally, because the surviving half — a gate
+  reporting a clean pass while testing nothing, on 216 of 356 feature files — is
+  sufficient grounds for high on its own. Flagged to the human for re-pricing in
+  `approval_context`; amend to medium if they disagree.
+
+  Precedent for the failure mode, same repo: `bl446-stryker-zero-kill-repo-wide` —
+  Stryker reporting zero kills repo-wide, which also recurs via a stale incremental
+  cache. Two gates, same shape: silence read as health.
+
+  Working substitute to copy from if useful:
+  `swarmforge/scripts/test/expedite_mutation_sweep.sh` — 41 surgical mutants, each a
+  single edit a correct suite must reject, with survivors reported as test gaps. Note
+  it deliberately includes mutants nobody wrote a test for; a sweep that only
+  re-checks existing assertions is a non-vacuity proof, not hardening. It found two
+  real gaps on its first run, one of which was a test that had been green for hours
+  while proving nothing.

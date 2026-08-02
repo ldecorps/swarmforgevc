@@ -1,0 +1,200 @@
+id: BL-787
+title: "DEFECT — Stamp the hand Bubble named-tunnel path (fixed URL + idle keepalive); ticket-less in the master tree since 2026-08-02"
+milestone: M8
+type: defect
+severity: medium
+status: todo
+epic: swarmforge-console
+human_approval: pending
+priority: 2
+direction: queue-jump
+depends_on: []
+mutation_cost: low
+required_stages: [specifier, coder, cleaner, architect, hardender, documenter, qa]
+assigned_to: none
+
+invariants:
+  - "The launcher never writes tunnel state and never sends a pairing notification for a base URL it has not observed the tunnel actually serving — process liveness alone is never treated as edge readiness."
+  - "No tracked file supplies an operator-specific hostname, zone, or account as a default: named-mode identity comes only from the environment or the gitignored operator config, and its absence fails loud."
+  - "Every background process the launcher starts has a pidfile that the ancillary stop path signals."
+
+required_wiring:
+  - "swarmforge/scripts/launch_resident_spy_tunnel.sh::start_named_tunnel::named mode is reachable from the real launcher, not a helper nobody calls"
+  - "swarmforge/scripts/stop_ancillary_services.sh::resident-spy-caffeinate.pid::the keepalive the launcher starts is torn down by the real stop path"
+  - "docs/index.md::named-tunnel::the how-to is linked from the docs index, not orphaned (BL-756)"
+  - "specs/features/BL-787-bubble-named-tunnel-fixed-url.feature::Scenario::acceptance contract exists"
+
+approval_context: >
+  This adopts work the human already did by hand and is using in production
+  right now (Bubble is paired to a fixed hostname today). Two things need
+  sign-off because the spec CHANGES that hand work rather than rubber-stamping
+  it:
+
+  1. The tracked scripts currently default to the operator's own domain
+  (a `bubble.<operator-domain>` hostname and its zone) when nothing is
+  configured. The spec removes those defaults: named mode with no configured
+  hostname must fail loud pointing at the setup script. The concrete domain
+  stays in the `.example` config and the how-to, as documentation.
+
+  2. The launcher currently treats "the tunnel process is still alive after
+  the wait window" as ready, then writes state and notifies a URL that may
+  never have reached the Cloudflare edge — which is the BL-716 dead-hostname
+  symptom re-created from the inside. The spec makes that path fail instead.
+
+  If the human wants either behaviour kept as-is, say so on this ticket and
+  the corresponding scenario (named-02 / named-03) comes out before promotion.
+
+description: |
+  ## What
+
+  A Cloudflare **named** tunnel mode for the resident-spy tunnel launcher, so
+  Bubble reaches the bridge on a hostname the operator owns instead of a fresh
+  `*.trycloudflare.com` name on every cloudflared restart. Quick tunnels remain
+  the default; named mode engages only when configured.
+
+  The work already exists in the master working tree, unticketed and unreviewed
+  (surfaced by the coder 2026-08-02, cf BL-763):
+
+  - `swarmforge/scripts/launch_resident_spy_tunnel.sh` (modified) — named vs
+    quick start paths, readiness wait, `mode` field in the tunnel state file,
+    and a detached macOS idle-sleep keepalive with its own pidfile.
+  - `swarmforge/scripts/stop_ancillary_services.sh` (modified) — signals the
+    keepalive pidfile.
+  - `swarmforge/scripts/setup_bubble_named_tunnel.sh` (untracked) — one-shot
+    operator setup: login, create tunnel, route DNS, write cloudflared config
+    and the gitignored operator env file.
+  - `swarmforge/scripts/check_bubble_named_tunnel_dns.sh` (untracked) — DNS
+    readiness preflight.
+  - `swarmforge/config/named-tunnel.env.example` (untracked) — example config.
+  - `swarmforge/scripts/test/test_launch_resident_spy_named_tunnel.sh`
+    (untracked) — named vs quick wiring test with stubbed binaries.
+  - `docs/how-to/named-tunnel-bubble-musicalsifu.md` (untracked) — the how-to.
+
+  ## Why stamp this now
+
+  Per BL-506, ticket-less functional work is retroactively ticketed or
+  reverted; per BL-709/BL-763 the cheap honest path is adopt + review, not a
+  silent commit past QA. This code is live on the operator's phone today, so
+  reverting it would take the phone down; adopt is the right fork.
+
+  ## Scope
+
+  Adopt the files above **with two corrections** the review must not wave
+  through — they are the reason this is a defect ticket and not a plain
+  commit:
+
+  1. **No operator-specific default.** The launcher and setup script currently
+     fall back to the operator's own hostname/zone when nothing is set. A
+     tracked script must not carry one operator's domain as a default. Named
+     mode with no hostname in the environment or the gitignored operator
+     config must exit non-zero naming the setup script. The concrete values
+     stay in `named-tunnel.env.example` and the how-to.
+
+  2. **Readiness is observed, never inferred from liveness.** The launcher's
+     named-mode wait currently ends with "process still alive after the window
+     → treat as ready", then writes tunnel state and sends the Telegram
+     pairing notification. That publishes a URL that may resolve to nothing —
+     the exact BL-716 symptom, manufactured locally. If no edge registration
+     was observed, fail: no state write, no notification, non-zero exit,
+     pointing at the tunnel log.
+
+  Also in scope: link the how-to from `docs/index.md` (BL-756 orphan lesson),
+  and run the shell test and record its output in evidence.
+
+  ## Out of scope
+
+  - Discovery of rotating quick-tunnel hostnames — that was BL-716 (done);
+    this ticket does not re-open or re-close it. Quick mode stays the default
+    and a phone paired to a stale quick hostname still fails the same way.
+  - The bridge `/lets-talk/meta` bounce path and the Cursor Remote always-on
+    contract — BL-763.
+  - The 2026-08-02 pairing / client-logs hotfix (Android `AppLog`,
+    `PairingSave`, the bridge `/pair` page and APK serving, the
+    `pairingHttpsUrl` notify change) — still ticket-less, see notes.
+  - Automatic shell-test discovery — BL-724.
+  - Lid-closed / clamshell sleep, which needs `sudo pmset` and is deliberately
+    not attempted.
+
+  ## STEERING note
+
+  Adopt-and-review of live operator work. Queue-jump so it does not rot, but
+  do not displace priority-0 evidence-gate work unless the human says so.
+
+acceptance: specs/features/BL-787-bubble-named-tunnel-fixed-url.feature
+
+source: |
+  Coder `note` 2026-08-02 (priority 00): "Untracked named-tunnel scripts, no
+  ticket, in coder tree (cf BL-763)". The three scripts reached the coder
+  worktree through the `swarmforge/scripts` hot-sync (BL-373), which is why a
+  build role saw operator-authored files it had no ticket for. Sibling of
+  BL-716 (rotating-hostname discovery, done), BL-762 (bedtime keeps the phone
+  reachable) and BL-763 (bounce meta + always-on).
+
+notes: |
+  ## Severity rationale
+
+  `medium`. Unreviewed functional code in the tree can become an ancestor of
+  an unrelated QA approval (BL-506), and the launcher can currently publish a
+  URL it never verified — but nothing is swarm-down or losing data, and the
+  path works for the operator today.
+
+  ## Acceptance contract is runnable (BL-761)
+
+  These scenarios drive the real scripts with stubbed `cloudflared`,
+  keepalive and `dig` binaries on PATH — no live Cloudflare account, no
+  network. The untracked
+  `swarmforge/scripts/test/test_launch_resident_spy_named_tunnel.sh` already
+  proves that shape for named-01, quick-01 and the keepalive outline; named-02,
+  named-03, keepalive-02, setup-01 and setup-02 are new and land with this
+  parcel. Nothing here needs an Android device or a real domain, so this is not
+  the BL-769 inert-contract situation.
+
+  ## IR-DRY findings — reviewed, deliberately kept
+
+  The vendored IR-DRY checker reports three medium-confidence findings on the
+  feature file; each is a real difference in assertion, not accidental drift,
+  so none was normalized:
+
+  - `zone nameservers are Cloudflare-backed` vs `are not` — opposite
+    preconditions for setup-02 and setup-01.
+  - state file records mode `"named"` vs `"quick"` — the two modes are what
+    the ticket is about; folding them into one outline would hide that named
+    mode prints a configured URL while quick mode reads one out of the log.
+  - setup script `runs twice` vs `runs without the pending-DNS override` —
+    idempotence versus refusal.
+
+  ## Adjacent ticket-less work NOT covered here
+
+  The 2026-08-02 master tree carries at least two further unticketed bodies
+  the specifier has not yet triaged, both recorded only in their own how-to
+  and evidence files:
+
+  - Bubble pairing / client logs: `AppLog.kt`, `PairingSave.kt`, the Android
+    test dir, the bridge `/pair` page + pre-auth APK download, and
+    `residentSpyTunnelNotify`'s `pairingHttpsUrl`
+    (`docs/how-to/hotfix-2026-08-02-bubble-client-logs-and-pairing.md`).
+  - Mac host-switch freshness/bridge changes across
+    `daemon_log_freshness_check.sh`, `install_freshness_cron.sh`,
+    `front_desk_supervisor.bb`, `handoffd.bb`, `remote_control_health_lib.bb`
+    and the Stryker configs
+    (`docs/how-to/hotfix-2026-08-02-mac-host-switch-freshness-bridge.md`).
+
+  Both need the same BL-506 disposition (adopt-and-review or revert) in a
+  dedicated triage pass, in the shape of the 2026-07-31 review that produced
+  BL-763..BL-766. Deliberately not folded in here: this ticket stays the size
+  of one slice (BL-634).
+
+  ## e2e procedure for QA
+
+  1. With the operator config absent, run the launcher with named mode
+     requested — expect a non-zero exit naming the setup script, no
+     `resident-spy-tunnel.json` written, no Telegram post.
+  2. With operator config present and a stubbed cloudflared that never logs a
+     registration, run the launcher — expect non-zero, no state, no post.
+  3. With the real named tunnel configured, run the launcher — expect the
+     fixed `https://<hostname>` printed, state `mode: named`, and the phone
+     reaching `/resident-spy` on that URL.
+  4. Run the ancillary stop path; confirm both the cloudflared and keepalive
+     pidfiles are signalled and no process survives under either.
+  5. Remove the operator config and run the launcher again — expect the quick
+     tunnel default, state `mode: quick`, unchanged from before this ticket.

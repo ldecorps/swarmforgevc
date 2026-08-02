@@ -28,3 +28,28 @@ specifier_disposition: |
   The question to ask, unchanged: does "drop-down agents" mean a role picker
   on a Bubble note-composer screen, and do amend/remove act on a queued
   handoff or on an approval-style card?
+
+  2026-08-02 — ASKED at last. The slot was free after the BL-638 spec parcel,
+  and per the 08-01 note GH-29 took it ahead of anything else. Question posted
+  to the specifier Telegram topic with three tappable options:
+    1. Role picker; amend/remove a QUEUED handoff
+    2. Role picker; amend/remove an APPROVAL card
+    3. Role picker; amend/remove BOTH
+  (free-text reply always available, so a fourth reading is not foreclosed).
+
+  RESUME CONTEXT — for whoever holds the specifier hat when the answer lands,
+  which on a mono-router pack is likely a later rotation, not this session:
+  the answer arrives either live in the specifier pane or as a `note` from
+  `ready_for_next.sh`. On receipt, drain GH-29 straight into a spec —
+  do NOT re-ask. Everything except these two forks is already settled:
+    - it is a Bubble screen (native Android, `android/`), not the LIVE
+      holistic UI and emphatically not the static PWA, which has no write
+      path at all (local-engineering Architecture Rule 5);
+    - it composes a `note`, and a note's `message` is ONE line, 80 chars max
+      (handoff-protocol) — that cap is a real UI constraint for the composer
+      and should be stated in the spec, not discovered by the coder;
+    - the role list is the pipeline roles the swarm actually runs.
+  Still open beyond the asked question, and worth folding into the same spec
+  once the shape is known: whether "remove" means un-queueing a delivered
+  parcel (which the mailbox may not support idempotently) or only discarding
+  an unsent draft. Prefer the draft-only reading if the human does not say.

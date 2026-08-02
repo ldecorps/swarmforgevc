@@ -123,3 +123,60 @@ Human constraint: **red stays active listening** (hot mic to the model). Passive
 - Dual Telegram poller / Bubble topic twin work (separate track).
 - Painting the bubble teal before PassiveWake exists (resource reserved only).
 
+
+## specifier_disposition
+
+**2026-08-02 — NOT drained. Parked with the other Bubble intakes, same blocker.**
+
+This intake carried no disposition footer while every sibling did, which made it
+look neglected rather than parked. It is not: it inherits exactly the block the
+other Bubble screen intakes carry. The repo cannot yet write an *executable*
+acceptance contract for Android behavior, and speccing Gherkin no runner can
+execute is the defect BL-761 exists to stop.
+
+**Resume point:** BL-769 (Android pure-logic JVM unit seam) must *ship*, not
+merely be promoted. Verify that against `main` when resuming rather than
+assuming it — as of today an `android/app/src/test/` directory exists in the
+master working tree but is **untracked and ticket-less**, so it is hand work in
+progress, not a landed seam. Its BL-506 disposition is itself still open (see
+BL-787's notes on the untriaged 2026-08-02 bodies).
+
+**Also needs the question slot.** Open choice 5 in this intake — one short local
+reprompt before session end, or silent close only (v1 = silent close) — is the
+human's to settle, and `role_ask.bb` permits one pending question per role. The
+slot is currently held by GH-29 (asked 2026-08-02). The intake's own default
+(silent close) is a reasonable v1 if the human never rules otherwise.
+
+**Related, already minted:** BL-776 (EPIC — Bubble voice barge-in) and BL-777
+(barge-in detector and playback abort) cover the sibling barge-in intake this
+one points at. This intake owns the wake → active → silence-end state machine
+around that, and is not superseded by it.
+
+---
+
+## Specifier disposition 2026-08-02 — NOT drained, same blocker as the sibling intakes
+
+Read and assessed. Held for the same reason the four sibling Bubble intakes
+were held on 2026-07-31, re-verified today: this repository still has no
+settled policy for where Android device behaviour's acceptance contract lives.
+Speccing this today would mean writing one more inert feature file — every
+scenario failing "no step handler matched" — which is exactly the defect
+BL-761 and BL-769 exist to stop.
+
+Re-checked 2026-08-02, and one thing HAS changed: a JVM unit seam now exists
+in the tree, hand-built by the Bubble pairing hotfix (`junit` in
+`android/app/build.gradle.kts`, plus `PairingSaveTest.kt`). So "can a JVM test
+run here at all" is now answered YES by demonstration. That does **not**
+unblock this intake, because the missing piece was never the mechanism — it is
+the POLICY naming the Android device surface as environmentally unsuitable and
+stating where Bubble behaviour is verified instead. BL-769 has been amended to
+narrow onto exactly that, and remains the keystone.
+
+Resume point: once BL-769 lands its policy, spec this against it.
+
+**Split hint for whoever drains this.** The blocker covers Android *device*
+behaviour only. If this intake contains a slice that lives on the bridge, the
+extension host, or `.swarmforge/` state — data, endpoints, or projections the
+phone merely renders — that slice is testable in the Node runner today and is
+NOT blocked. Split it out and spec it rather than holding the whole intake
+behind BL-769.

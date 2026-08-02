@@ -5,7 +5,7 @@ type: defect
 severity: medium
 status: todo
 epic: swarmforge-console
-human_approval: pending
+human_approval: approved
 assigned_to: none
 priority: 2
 direction: normal
