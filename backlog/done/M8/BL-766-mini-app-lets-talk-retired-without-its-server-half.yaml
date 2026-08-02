@@ -6,7 +6,7 @@ severity: high
 status: todo
 epic: swarmforge-console
 human_approval: approved
-assigned_to: none
+assigned_to: coder
 priority: 1
 direction: queue-jump
 depends_on: []
@@ -104,3 +104,6 @@ notes: |
   `/lets-talk` and confirm the body matches what the steps assert; run
   `npm run crap:lets-talk-cursor-bridge` and confirm every Let's Talk source the
   bridge still serves appears in the report.
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-02, by: architect, blamed: coder, class: compile, commit: 9ef5931ced, evidence: backlog/evidence/BL-766-mini-app-lets-talk-retired-without-its-server-half-bounce-20260802.md }
