@@ -37,7 +37,7 @@ Reviewed commit: `9ef5931ced4845365b769211c042495fd03468ad`
 - Property-testing pass (undeclared properties on touched pure modules): no
   gap — the only new pure module already carries its own property test above.
 
-## D1 — BLOCKING: BL-766's own required gate cannot execute (class: behavior, blamed role: coder)
+## D1 — BLOCKING: BL-766's own required gate cannot execute (class: compile, blamed role: coder)
 
 `extension/src/bridge/letsTalkChiptunes.ts` (already committed on this branch's
 ancestry via `f175bc56`, "Park local WIP for host switch...", predating this
