@@ -1,0 +1,65 @@
+{
+  "name" : "Same-model stage seats bypass tier filtering",
+  "scenarios" : [ {
+    "name" : "A medium-cost ticket may be claimed by the easy-tier seat when both seats share the same model",
+    "steps" : [ {
+      "keyword" : "Given",
+      "text" : "a ticket whose mutation_cost is medium"
+    }, {
+      "keyword" : "And",
+      "text" : "both coder seats are idle"
+    }, {
+      "keyword" : "When",
+      "text" : "the easy-tier seat polls for work"
+    }, {
+      "keyword" : "Then",
+      "text" : "that seat may claim the ticket"
+    } ],
+    "examples" : [ ]
+  }, {
+    "name" : "A high-cost ticket may be claimed by the easy-tier seat when both seats share the same model and the hard seat is busy",
+    "steps" : [ {
+      "keyword" : "Given",
+      "text" : "a ticket whose mutation_cost is high"
+    }, {
+      "keyword" : "And",
+      "text" : "the hard-tier seat is busy"
+    }, {
+      "keyword" : "And",
+      "text" : "the easy-tier seat is idle"
+    }, {
+      "keyword" : "When",
+      "text" : "the easy-tier seat polls for work"
+    }, {
+      "keyword" : "Then",
+      "text" : "that seat may claim the ticket"
+    } ],
+    "examples" : [ ]
+  }, {
+    "name" : "Tier filtering applies when the two seats declare different models",
+    "steps" : [ {
+      "keyword" : "Given",
+      "text" : "the two coder seats declare different models"
+    }, {
+      "keyword" : "And",
+      "text" : "a ticket whose mutation_cost is high"
+    }, {
+      "keyword" : "And",
+      "text" : "the hard-tier seat is busy"
+    }, {
+      "keyword" : "And",
+      "text" : "the easy-tier seat is idle"
+    }, {
+      "keyword" : "When",
+      "text" : "the easy-tier seat polls for work"
+    }, {
+      "keyword" : "Then",
+      "text" : "that seat must not claim the ticket"
+    } ],
+    "examples" : [ ]
+  } ],
+  "background" : [ {
+    "keyword" : "Given",
+    "text" : "a coder stage with two seats both declared for the same model"
+  } ]
+}
