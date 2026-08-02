@@ -1,0 +1,223 @@
+id: BL-788
+title: "DEFECT — Adopt the 2026-08-02 Bubble pairing + client-logs hotfix under review; ticket-less in the master tree, and it changed the app's install identity"
+milestone: M8
+type: defect
+severity: medium
+status: todo
+epic: swarmforge-console
+human_approval: pending
+priority: 2
+direction: queue-jump
+depends_on: []
+mutation_cost: low
+required_stages: [specifier, coder, cleaner, architect, hardender, documenter, qa]
+assigned_to: none
+
+invariants:
+  - "No pre-auth bridge route ever reads a file outside `.swarmforge/operator/public/`, however the request path is spelled or encoded."
+  - "The package id the bridge hands the phone in a pairing intent is the id the shipped build actually installs under — no tracked file names one while the build declares another."
+  - "A pairing save never overwrites a stored credential with a blank one; absent input leaves the stored value standing."
+
+required_wiring:
+  - "extension/src/bridge/bridgeServer.ts::swarmforge-float-companion::the pre-auth APK route is in the real bridge, not a helper nobody calls"
+  - "extension/src/bridge/bridgeServer.ts::intent://pair::the pairing intent link is emitted by the real bridge"
+  - "specs/features/BL-788-bubble-pairing-client-logs-adopt.feature::Scenario::acceptance contract exists"
+  - "docs/index.md::hotfix-2026-08-02-bubble-client-logs-and-pairing::the how-to is linked from the docs index, not orphaned (BL-756)"
+
+approval_context: >
+  This adopts work the human did by hand on 2026-08-02 and is running on the
+  phone today, so reverting it would take Bubble down; adopt-and-review is the
+  right fork (BL-506, BL-709, BL-763). Three things need sign-off because the
+  review is being asked to CHANGE the hand work, not rubber-stamp it:
+
+  1. The build now installs under a NEW applicationId
+  (`com.swarmforge.floatcompanion` -> `com.swarmforge.bubble`). That is an app
+  IDENTITY change: every existing install is orphaned rather than upgraded, and
+  the old package lingers on the device until manually removed. It was done to
+  escape a signing-key clash after the Linux -> Mac host switch. Confirm this
+  is intended as permanent, because reverting it later orphans installs a
+  second time.
+
+  2. `release` builds are signed with the DEBUG signing config. For a
+  sideloaded internal app that may be deliberate, but a release build carrying
+  a debug key should be a recorded decision, not an accident of the hotfix.
+  Say which it is; the spec currently asks the review to make it explicit
+  rather than silently keep it.
+
+  3. Local-engineering Architecture Rule 7 currently says the
+  `floatcompanion` package id "may stay". After change 1 that parenthetical is
+  factually stale. The specifier owns that article; correcting it is in scope
+  here, but the human should confirm the rename is the intended end state
+  first.
+
+description: |
+  ## What
+
+  The 2026-08-02 Mac-host hotfix shipped a working Bubble pairing and
+  client-log path by hand. It is functional and in production, but it is
+  ticket-less, unreviewed, and partly untracked. This ticket adopts it through
+  the normal chain, with corrections.
+
+  In the master working tree (2026-08-02):
+
+  - `android/.../AppLog.kt` (untracked) — ring buffer + logcat tag
+    `SwarmForgeBubble`, Settings "Copy logs", instrumentation on the pair,
+    session and turn paths.
+  - `android/.../PairingSave.kt` (untracked) — the pairing merge decision.
+  - `android/app/src/test/.../PairingSaveTest.kt` (untracked) — six JVM unit
+    tests over `PairingSave.merge`.
+  - `android/app/build.gradle.kts` (modified) — `testImplementation` JUnit,
+    `applicationId` -> `com.swarmforge.bubble`, versionCode 24 -> 28,
+    versionName -> `0.3.12-pairing-persist`, v1+v2 signing, and a `release`
+    buildType signed with the debug config.
+  - `AndroidManifest.xml`, `MainActivity.kt`, `BridgeClient.kt`,
+    `CompanionPrefs.kt`, `PairingDeepLink.kt`, `TalkEngine.kt`,
+    `TalkPanelActivity.kt`, `dialog_settings.xml`, `strings.xml` (modified).
+  - `extension/src/bridge/bridgeServer.ts` (modified) — pre-auth `/pair` page
+    using `intent://` with copy fallbacks instead of a custom-scheme
+    auto-redirect, and a pre-auth APK route.
+  - `extension/src/concierge/residentSpyTunnelNotify.ts`,
+    `extension/src/tools/notify-resident-spy-tunnel.ts` and their test
+    (modified) — `pairingHttpsUrl`.
+  - `docs/how-to/hotfix-2026-08-02-bubble-client-logs-and-pairing.md` and
+    `backlog/evidence/hotfix-2026-08-02-bubble-client-logs-and-pairing.md`
+    (untracked).
+
+  ## Why now
+
+  BL-787's notes named this body as needing its own BL-506 disposition pass and
+  deliberately did not fold it in. This is that pass. Unreviewed functional code
+  in the tree becomes an ancestor of unrelated QA approvals, and this body is
+  large and touches an externally reachable route.
+
+  ## Scope — adopt, with these corrections
+
+  1. **Make the signing decision explicit.** `release` currently uses the debug
+     signing config. Either keep it with a comment stating why (sideloaded
+     internal distribution) or give release its own config. Silent debug-signed
+     releases are not acceptable either way.
+
+  2. **Correct the stale package id in the how-to.** The how-to's table still
+     documents `package=com.swarmforge.floatcompanion` for the `intent://`
+     button while the shipped bridge and build now use
+     `com.swarmforge.bubble`. A pairing how-to that names the wrong package is
+     a broken instruction.
+
+  3. **Update local-engineering Architecture Rule 7.** Its parenthetical that
+     the `floatcompanion` package id "may stay" is stale once the applicationId
+     is `com.swarmforge.bubble`. Specifier-owned file; approval-gated (see
+     approval_context).
+
+  4. **Pin the pre-auth routes with the acceptance contract.** The `/pair` page
+     and the APK route are unauthenticated and publicly reachable over the named
+     tunnel. The traversal defence already present (`path.basename` plus an
+     anchored `^swarmforge-float-companion[\w.\-]*\.apk$` pattern) is sound on
+     reading — this ticket does not allege a hole. It pins that behaviour under
+     test so a later edit cannot quietly widen it, and asks the architect to
+     confirm the exposure itself (any file the operator drops in the public
+     directory matching that glob is world-readable through the tunnel) is
+     intended.
+
+  5. **Link the how-to from `docs/index.md`** (BL-756 orphan lesson).
+
+  ## Out of scope
+
+  - The named-tunnel launcher body — BL-787.
+  - The Mac host-switch freshness/bridge body — BL-789.
+  - Extending the Android test seam beyond what is already written, and the
+    Android-seam POLICY itself — BL-769. This ticket adopts the seam files that
+    already exist because they are inseparable from the pairing code they test;
+    it does not settle where Android behaviour is verified in general. See
+    notes.
+  - A shared release keystore so host switches stop forcing uninstall — a real
+    follow-up named in the hotfix evidence, deliberately not attempted here.
+  - Publishing a rebuilt APK. The tree is at `0.3.12-pairing-persist`; whether
+    that is published is an operator action, not a pipeline one.
+
+  ## STEERING note
+
+  Adopt-and-review of live operator work, same posture as BL-787. Queue-jump so
+  it does not rot, but do not displace priority-0/1 work — in particular do not
+  displace BL-769, which unblocks eleven intakes.
+
+acceptance: specs/features/BL-788-bubble-pairing-client-logs-adopt.feature
+
+source: |
+  BL-787 notes, "Adjacent ticket-less work NOT covered here", first bullet:
+  the 2026-08-02 Bubble pairing / client-logs body, recorded only in
+  `docs/how-to/hotfix-2026-08-02-bubble-client-logs-and-pairing.md` and
+  `backlog/evidence/hotfix-2026-08-02-bubble-client-logs-and-pairing.md`.
+  Surfaced again by the coder's BL-506 note 2026-08-02 20:30Z. Sibling of
+  BL-787 (named tunnel), BL-763 (bounce meta + always-on) and BL-769 (Android
+  test seam).
+
+notes: |
+  ## Severity rationale
+
+  `medium`. Live, working, and useful — but unreviewed code in the tree can
+  become an ancestor of an unrelated QA approval (BL-506), and this body
+  changed the app's install identity and touched two unauthenticated,
+  publicly-reachable routes. Nothing is swarm-down or losing data.
+
+  ## Acceptance contract is runnable (BL-761/BL-769)
+
+  Every scenario drives Node code — the bridge's pairing page, its APK route,
+  and the tunnel notifier — through the existing acceptance runner. There are
+  deliberately NO scenarios for Android device behaviour: `AppLog`'s Settings
+  button, the overlay, and the deep-link apply path cannot bind to a step
+  handler in this repository today, and writing them would manufacture exactly
+  the inert contract BL-761 and BL-769 exist to stop.
+
+  The Kotlin side is not left unverified, it is verified elsewhere:
+  `PairingSaveTest.kt`'s six JVM unit tests over `PairingSave.merge` run under
+  gradle. The hardener should run them and record the output in evidence rather
+  than translating them into Gherkin.
+
+  ## Relationship to BL-769 — read before scoping
+
+  BL-769 was written to create Bubble's first JVM unit seam, and gave that as
+  the reason eleven Bubble intakes are blocked. Part of that seam now EXISTS,
+  hand-built in this body: `build.gradle.kts` gained
+  `testImplementation("junit:junit:4.13.2")` and `android/app/src/test/`
+  gained a real test class.
+
+  This ticket adopts those two files because they are inseparable from the
+  `PairingSave` code they cover. BL-769 has been amended to narrow to what is
+  genuinely still missing — the seam POLICY in `local-engineering.prompt`,
+  extending coverage to `BridgeClient` and `PairingDeepLink`, and wiring the
+  gradle unit run into the pipeline gate so those tests actually gate a parcel.
+  Neither ticket should re-create the other's files.
+
+  ## IR-DRY findings — reviewed, deliberately kept
+
+  Two medium-confidence `possible-synonym` findings remain, both benign:
+
+  - The APK request step's literal-filename instance versus its
+    `<requested>` placeholder form. These are the SAME step pattern, so one
+    handler serves both — this is the DRY-correct outcome, and the checker is
+    reporting the parameterized step matching its own literal instance.
+  - That same request step versus the Background's "operator public directory
+    contains <file>". Different concepts (setup versus action) that merely
+    share the filename token.
+
+  An earlier draft phrased the download scenario as "requests the published APK
+  by name", which read as one finding but genuinely needed a second handler for
+  the same action; it was normalized away.
+
+  ## e2e procedure for QA
+
+  1. Start the bridge; request `/pair?token=<valid>` unauthenticated. Expect the
+     page to render, to contain an `intent://` link whose `package=` equals the
+     `applicationId` in `android/app/build.gradle.kts`, and to offer copy
+     fallbacks for URL and token. Confirm it does not auto-navigate.
+  2. Request the published APK filename unauthenticated: expect 200, content
+     type `application/vnd.android.package-archive`, `cache-control: no-store`.
+  3. Request `/swarmforge-float-companion/../../../../etc/passwd.apk` and a
+     percent-encoded traversal variant: expect 404 both times, and confirm no
+     read outside `.swarmforge/operator/public/`.
+  4. Run the Android JVM unit tests under `android/` via gradle; expect
+     `PairingSaveTest`'s six tests green. Record the output in evidence.
+  5. Grep the repository for `com.swarmforge.floatcompanion`: expect it only
+     where it is still correct (the gradle `namespace`, historical prose), never
+     as the install id in a pairing instruction.
+  6. Confirm `docs/index.md` links the hotfix how-to.

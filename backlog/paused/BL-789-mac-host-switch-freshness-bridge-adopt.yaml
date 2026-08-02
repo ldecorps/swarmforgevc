@@ -1,0 +1,189 @@
+id: BL-789
+title: "DEFECT — Adopt the 2026-08-02 Mac host-switch freshness + bridge hotfix under review; ticket-less in the master tree"
+milestone: M8
+type: defect
+severity: medium
+status: todo
+epic: swarm-reliability
+human_approval: pending
+priority: 2
+direction: queue-jump
+depends_on: []
+mutation_cost: low
+required_stages: [specifier, coder, cleaner, architect, hardender, documenter, qa]
+assigned_to: none
+
+invariants:
+  - "A daemon the operator has deliberately disabled is never restarted by the freshness path, however often that path runs."
+  - "The freshness path resolves every binary it invokes from a PATH it establishes itself, never from whatever PATH its caller happened to have."
+  - "A liveness heartbeat is emitted before long work as well as after it, so a slow cycle is never indistinguishable from a wedged one."
+
+required_wiring:
+  - "swarmforge/scripts/daemon_log_freshness_check.sh::SWARMFORGE_SKIP_BABYSITTERD::the skip is honoured in the real checker, not only in start_ancillary_services.sh"
+  - "swarmforge/scripts/install_freshness_cron.sh::PATH=::the crontab line the installer writes carries its own PATH"
+  - "swarmforge/scripts/front_desk_supervisor.bb::adopt::the adopt path is in the real supervisor"
+  - "specs/features/BL-789-mac-host-switch-freshness-bridge-adopt.feature::Scenario::acceptance contract exists"
+
+approval_context: >
+  This adopts overnight operator work that is running on this host now, so the
+  posture is adopt-and-review rather than revert (BL-506). One item needs an
+  explicit decision rather than a rubber stamp:
+
+  The hotfix also dropped Stryker concurrency from 8 to 1 (and 12 to 1 in the
+  two Let's Talk configs) because this Mac is much slower than the previous
+  Linux host. The hotfix's own how-to calls that "performance tuning, not this
+  hotfix" and excludes it. It is nonetheless ticket-less in the tree, and
+  leaving it out of this ticket leaves it ticket-less. It is folded in here,
+  named separately so the review can split it out if it disagrees. Confirm
+  whether concurrency 1 is the intended steady state for this host or a
+  temporary measure that should carry an expiry note.
+
+description: |
+  ## What
+
+  After the Linux (`carillon`) -> Mac host switch, overnight operations showed
+  three false or misleading failure modes while the mono-router pack was
+  otherwise advancing tickets. The operator fixed all three by hand on
+  2026-08-02. The fixes work and are live; they are ticket-less and unreviewed.
+
+  The three faults, as diagnosed in the hotfix how-to:
+
+  1. **handoffd reported DOWN forever.** The freshness cron tried to restart it
+     every cool-off window, but cron's PATH is `/usr/bin:/bin`, so the start
+     script's `nohup bb ...` failed with `bb: No such file or directory` and
+     never claimed the pidfile.
+  2. **babysitterd restart spam.** `.swarmforge/swarm.env` sets
+     `SWARMFORGE_SKIP_BABYSITTERD=1`, which `start_ancillary_services.sh`
+     honours but the freshness checker did not. Cron restarted a deliberately
+     disabled daemon on every pass and warned each time.
+  3. **Bridge EADDRINUSE crash loop.** An orphan `start-bridge-headless` held
+     `127.0.0.1:8765` while the supervisor's tracked pid was dead, producing a
+     spawn -> EADDRINUSE -> give-up -> re-arm cycle. The bridge usually stayed up
+     via the orphan, so the log looked catastrophic while the system was fine.
+
+  Telegram announces from the checker also reported `TELEGRAM_* unset`, because
+  cron never loaded `swarm.env` or the fleet credentials.
+
+  ## In the master working tree (2026-08-02, all modified, none ticketed)
+
+  - `swarmforge/scripts/install_freshness_cron.sh` — bake a PATH (including
+    the interpreter's directory) into the crontab line.
+  - `swarmforge/scripts/daemon_log_freshness_check.sh` — prepend that PATH,
+    source `.swarmforge/swarm.env`, honour `SWARMFORGE_SKIP_BABYSITTERD`, and
+    fall back to fleet `telegram.json` for announces.
+  - `swarmforge/scripts/front_desk_supervisor.bb` — on bridge spawn, adopt a
+    healthy `start-bridge-headless` listener already on our port; otherwise
+    free non-bridge listeners, then spawn.
+  - `swarmforge/scripts/handoffd.bb` — emit the BL-675 heartbeat at cycle
+    START as well as end, so slow Mac cycles (>120s) stop looking wedged.
+  - `swarmforge/scripts/remote_control_health_lib.bb` — related health
+    reporting.
+  - `swarmforge/scripts/test/test_daemon_log_freshness.sh` — extended.
+  - `docs/how-to/BL-675-daemon-log-freshness-watchdog.md` — updated.
+  - `docs/how-to/hotfix-2026-08-02-mac-host-switch-freshness-bridge.md`
+    (untracked) — the hotfix record.
+  - `extension/stryker*.config.json` — concurrency lowered for this host; see
+    approval_context.
+
+  ## Why now
+
+  BL-787's notes named this body as needing its own BL-506 disposition and
+  deliberately did not fold it in. This is that pass. It matters more than most
+  adopt tickets because the code IS the swarm's health-reporting path: while it
+  was wrong, the swarm's own liveness signals were lying in both directions —
+  reporting a healthy daemon as down, and spamming restarts at a daemon nobody
+  wanted running.
+
+  ## Scope
+
+  Adopt the files above. Corrections the review must not wave through:
+
+  1. **The skip must be honoured wherever the decision is made, not patched at
+     one call site.** `start_ancillary_services.sh` already honoured
+     `SWARMFORGE_SKIP_BABYSITTERD`; the checker learned it separately. Confirm
+     there is now one predicate both consult, or state plainly why two are
+     correct.
+  2. **Adoption must verify health, not just a listening socket.** Adopting
+     whatever holds the port is how an unrelated process becomes "the bridge".
+     The scenarios pin adopt-when-healthy and free-when-not as distinct paths.
+  3. **Decide the Stryker concurrency question** (see approval_context).
+  4. **Link the hotfix how-to from `docs/index.md`** (BL-756 orphan lesson).
+
+  ## Out of scope
+
+  - The named-tunnel launcher body, including
+    `stop_ancillary_services.sh`'s keepalive pidfile line — BL-787 owns that
+    file and names it in its own required_wiring. Do not touch it here.
+  - The Bubble pairing / client-logs body — BL-788.
+  - The Bubble 401 dual-use bearer fix for older APKs — named as out of scope
+    by the hotfix how-to itself, still unticketed, and deliberately not folded
+    in here (it is a bridge auth change, not a freshness one).
+  - A shared release keystore — BL-788's out-of-scope note.
+
+  ## STEERING note
+
+  Adopt-and-review of live operator work, same posture as BL-787 and BL-788.
+  Queue-jump so it does not rot, but do not displace BL-769.
+
+acceptance: specs/features/BL-789-mac-host-switch-freshness-bridge-adopt.feature
+
+source: |
+  BL-787 notes, "Adjacent ticket-less work NOT covered here", second bullet:
+  the Mac host-switch freshness/bridge body, recorded only in
+  `docs/how-to/hotfix-2026-08-02-mac-host-switch-freshness-bridge.md`.
+  Sibling of BL-787 (named tunnel) and BL-788 (Bubble pairing / client logs).
+
+notes: |
+  ## Severity rationale
+
+  `medium`. Nothing is swarm-down or losing data — the swarm kept advancing
+  tickets throughout. But this is the health-signalling path itself, and while
+  it was wrong it produced false alarms in both directions, which is how a real
+  outage gets missed. Unreviewed, it also risks becoming an ancestor of an
+  unrelated QA approval (BL-506).
+
+  ## Acceptance contract is runnable (BL-761)
+
+  Every scenario drives the real shell and Babashka scripts with stubbed
+  binaries on PATH, in the shape BL-787's contract already uses — no cron
+  installation, no live daemons, no network, no sudo. The shell test
+  `swarmforge/scripts/test/test_daemon_log_freshness.sh` already exists and was
+  extended by this hotfix; it is the natural home for the checker-side
+  assertions, with the acceptance runner driving the observable behaviour.
+
+  Per engineering.prompt's tool table, `.bb` scripts have no mutation/CRAP/DRY
+  gate in this project — `swarmforge/scripts/test/` is the real gate for
+  `front_desk_supervisor.bb` and `handoffd.bb`. The hardener should not be
+  asked for mutation numbers on those two files (BL-472 tracks wiring that up).
+
+  ## IR-DRY findings — reviewed, deliberately kept
+
+  Three medium-confidence `possible-synonym` findings, each a real difference
+  in assertion rather than accidental drift:
+
+  - "a healthy bridge process is listening" versus "an unrelated process is
+    listening" — opposite preconditions, and the whole point of the adopt
+    change.
+  - "a bridge process is spawned" versus "no second bridge process is spawned"
+    — opposite assertions; folding them would erase the distinction the
+    EADDRINUSE loop was caused by.
+  - "the freshness check runs" versus "runs mid-cycle" — the heartbeat
+    scenario specifically needs the check to land while a cycle is in flight.
+
+  ## e2e procedure for QA
+
+  1. `bash swarmforge/scripts/test/test_daemon_log_freshness.sh` — green.
+  2. Install the freshness cron into a fixture root; inspect the written
+     crontab line for a `PATH=` containing the interpreter's directory and for
+     the project root. Do not install into the live crontab.
+  3. Run the checker with `PATH=/usr/bin:/bin` and a stub interpreter reachable
+     only outside it: expect the interpreter resolved and no spurious
+     down-report.
+  4. With `SWARMFORGE_SKIP_BABYSITTERD=1`, run the checker: expect no restart
+     attempt and no warning. Flip to `0`: expect the attempt.
+  5. With a stub healthy listener on the bridge port and a dead tracked pid,
+     take one supervisor turn: expect adoption and exactly one bridge process.
+     Repeat with an unrelated listener: expect the port freed and a spawn.
+  6. Confirm `docs/index.md` links the hotfix how-to.
+  7. Confirm `stop_ancillary_services.sh` is untouched by this parcel (BL-787
+     owns it).

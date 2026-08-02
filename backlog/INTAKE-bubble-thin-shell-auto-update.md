@@ -108,3 +108,32 @@ Open questions the human did not fully lock:
 - Minimum shell surface if remote bundle missing (Talk-only?).
 - How shell APK is distributed (local bridge download, GitHub release, other).
 - Versioning scheme for UI bundle vs APK (`bubble-config` flags vs semver).
+
+---
+
+## Specifier disposition 2026-08-02 — NOT drained, same blocker as the sibling intakes
+
+Read and assessed. Held for the same reason the four sibling Bubble intakes
+were held on 2026-07-31, re-verified today: this repository still has no
+settled policy for where Android device behaviour's acceptance contract lives.
+Speccing this today would mean writing one more inert feature file — every
+scenario failing "no step handler matched" — which is exactly the defect
+BL-761 and BL-769 exist to stop.
+
+Re-checked 2026-08-02, and one thing HAS changed: a JVM unit seam now exists
+in the tree, hand-built by the Bubble pairing hotfix (`junit` in
+`android/app/build.gradle.kts`, plus `PairingSaveTest.kt`). So "can a JVM test
+run here at all" is now answered YES by demonstration. That does **not**
+unblock this intake, because the missing piece was never the mechanism — it is
+the POLICY naming the Android device surface as environmentally unsuitable and
+stating where Bubble behaviour is verified instead. BL-769 has been amended to
+narrow onto exactly that, and remains the keystone.
+
+Resume point: once BL-769 lands its policy, spec this against it.
+
+**Split hint for whoever drains this.** The blocker covers Android *device*
+behaviour only. If this intake contains a slice that lives on the bridge, the
+extension host, or `.swarmforge/` state — data, endpoints, or projections the
+phone merely renders — that slice is testable in the Node runner today and is
+NOT blocked. Split it out and spec it rather than holding the whole intake
+behind BL-769.

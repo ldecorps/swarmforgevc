@@ -172,3 +172,41 @@ notes: |
   against "it reports a failing result". Scenario 02 exists precisely to assert
   the opposite of scenario 01; collapsing them would delete the load-bearing
   check.
+
+  ## AMENDED — specifier 2026-08-02: part of this seam now exists, hand-built
+
+  This ticket's premise — "`android/app/src/` contains exactly one source set:
+  `main`. There is no `test/` ... and `build.gradle.kts` declares no
+  `testImplementation` of any kind" — was true when written and is now FALSE.
+  The 2026-08-02 Bubble pairing hotfix built part of the seam by hand, and it
+  sits in the master working tree:
+
+  - `android/app/build.gradle.kts` gained `testImplementation("junit:junit:4.13.2")`.
+  - `android/app/src/test/java/com/swarmforge/floatcompanion/PairingSaveTest.kt`
+    exists, with six JVM unit tests over `PairingSave.merge` — pure logic, no
+    framework types, exactly the shape this ticket predicted was reachable.
+
+  **Those two files are adopted by BL-788**, not by this ticket, because they
+  are inseparable from the `PairingSave` production code they cover. Do not
+  re-create them here and do not assume they are absent.
+
+  What remains genuinely missing, and is what this ticket now delivers:
+
+  1. **The policy.** `local-engineering.prompt` still does not name the Android
+    device surface as environmentally unsuitable, nor state where Bubble
+    behaviour is verified instead. This is the part eleven intakes are actually
+    blocked on — a place to put their contract — and no hand fix supplied it.
+  2. **Coverage beyond one class.** `BridgeClient`'s failure classification
+    (the BL-716 defect) and `PairingDeepLink.parse` are still untested, and
+    `org.json` still needs adding as a test dependency before `BridgeClient`
+    can be reached.
+  3. **The gate.** Nothing runs the gradle unit suite as part of a parcel, so
+    those six tests gate nothing today. Until the run is wired in, the seam is
+    a convenience for whoever remembers to invoke it, not a verification
+    signal.
+
+  The practical effect is that this ticket got cheaper, not less necessary: the
+  "can a JVM test even run here" question is answered YES by demonstration, so
+  the option choice in `approval_context` should be re-read in that light before
+  promotion. Its status as the keystone blocking the eleven root intakes is
+  unchanged — item 1 is the blocker, and it is untouched.
