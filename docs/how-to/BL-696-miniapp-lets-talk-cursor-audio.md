@@ -150,6 +150,14 @@ npm run test:properties                    # BL-696 invariant property tests
 npm run mutation:lets-talk-cursor-bridge   # hardener: scoped Stryker (includes Pilot)
 ```
 
+Retire this surface as a whole or not at all (BL-766): dropping the `/lets-talk`
+route, the console entry, and a source file's `crap:lets-talk-cursor-bridge`
+scope entry are one change, never three independent ones. A source the bridge
+still serves must stay in the CRAP gate scope above; `extension/src/bridge/letsTalkGateScope.ts`
+(property-tested in `letsTalkGateScope.property.test.js`) and
+`specs/features/BL-766-mini-app-lets-talk-retired-without-its-server-half.feature`
+check this against the real bridge source and route table.
+
 ### Cursor Remote `/pilot` (operator)
 
 On the Cursor Remote Telegram topic, `/pilot [BL-xxx]` asks the **Cursor bridge
