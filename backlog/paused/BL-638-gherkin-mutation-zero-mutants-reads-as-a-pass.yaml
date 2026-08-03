@@ -4,7 +4,7 @@ milestone: M8
 type: defect
 status: todo
 epic: code-quality-gates
-human_approval: pending
+human_approval: approved
 severity: high
 priority: 05
 direction: human-requested

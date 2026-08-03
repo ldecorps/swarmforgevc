@@ -1,0 +1,146 @@
+id: BL-793
+title: "Bubble note composer, slice B — the Notes page: page two of the expanded Bubble's pager, one swipe from Let's Talk"
+milestone: M8
+type: feature
+status: todo
+epic: bubble-note-composer
+human_approval: pending
+assigned_to: none
+priority: 12
+direction: human-requested
+depends_on: [BL-769, BL-790]
+mutation_cost: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-793-bubble-notes-page.feature
+
+invariants:
+  - "Let's Talk is the page the expanded Bubble opens on, in every entry path — no state, no prior swipe, and no send outcome leaves the pager opening on Notes."
+  - "No text the human can enter is sent to the bridge if it would exceed the note message limit or span more than one line; the refusal happens on the device, before any request."
+  - "Whenever the bridge supplies a failure reason, the Notes page displays that reason; a bare HTTP status code is never the whole message."
+
+required_wiring:
+  - "android/app/src/main/java/com/swarmforge/floatcompanion/BridgeClient.kt::/agent-notes::Bubble actually posts the composed note to BL-790's endpoint; a page with no send call is a dead form (the BL-419 shape)"
+  - "android/app/src/main/java/com/swarmforge/floatcompanion/TalkPanelActivity.kt::Notes::the Notes page is reachable from the expanded panel's pager; a page nothing can swipe to is unreachable"
+
+description: |
+  ## What
+
+  Turn the expanded Bubble into a two-page horizontal pager. Page one is Let's
+  Talk, unchanged and still the default. Page two is **Notes**: a role picker
+  at the top, a short text box, one big Send, and pager dots so the human can
+  see which page they are on.
+
+  Send calls BL-790's `POST /agent-notes`. This slice adds no server behaviour.
+
+  ## The human's locked decisions this slice implements
+
+  From `backlog/INTAKE-bubble-send-notes-swipe-screen.md`, 2026-07-31 — the
+  intake says *"do not silently drop these without asking"*:
+
+  - **1. Navigation.** Horizontal pager; page one Let's Talk, page two Send
+    notes; swipe left or right between them.
+  - **2. Default.** The expanded Bubble opens on Let's Talk. Never on Notes.
+  - **3. Agent set.** The picker lists every declared role, awake or not.
+  - **5. Layout.** Picker at top, short text box, one big Send. After Send:
+    clear the box, keep the same role selected, show a brief confirmation
+    naming the role.
+  - **7. Page dots.** Small pager dots so talk vs notes is obvious.
+  - **9. Note length.** Short, in the spirit of the mailbox note limit.
+
+  Decision 5's *"under that: pending list with Amend and Remove"* is
+  deliberately NOT in this slice — it is slice C. Scenario 07 asserts those
+  controls are absent, so the boundary is checkable rather than merely
+  intended.
+
+  ## Approach
+
+  1. **Pager, not a new Activity.** The human asked for a swipe inside the
+     expanded panel, not a separate screen off the main navigation. Let's Talk
+     keeps its current behaviour as page one; do not restructure it beyond what
+     hosting it in a pager requires.
+
+  2. **The role list comes from the swarm's roster, not from Kotlin.** Read it
+     from the bridge (`GET /agents`, already authenticated and already derived
+     from `.swarmforge/roles.tsv`). A role list re-declared in Kotlin will
+     drift the first time the pack changes. Dormant roles are offered exactly
+     like awake ones.
+
+  3. **The message limit is re-asserted on the device.** BL-790's endpoint
+     enforces it, but the human should see the constraint while typing rather
+     than discover it as a rejection. Refuse empty messages, over-budget
+     messages, and messages containing a line break, stating which rule was
+     broken — before any request goes out.
+
+  4. **Failures state a reason.** Unreachable host, rejected token and a
+     refused queue write read differently. Reuse `BridgeClient`'s existing
+     friendly-failure mapping; a bare status code is never the whole message.
+
+  5. **Put the message validation, the roster parsing and the pager's
+     default-page rule on the pure-logic side of BL-769's JVM seam**, so
+     scenarios 01, 03 and 05 are covered by real unit tests rather than a
+     manual procedure. That is the whole reason this ticket depends on BL-769.
+
+  ## Out of scope
+
+  - The pending list, amend, and withdraw (slices C and D).
+  - Any change to the bridge, including BL-790's endpoint contract.
+  - Any change to Let's Talk's own behaviour beyond hosting it as page one.
+  - Send-to-all-roles broadcast (locked decision 8).
+  - Additional pager pages — the other Bubble screen intakes describe
+    "complementary swipe pages later"; this slice establishes the pager, it
+    does not populate it.
+
+approval_context: >
+  This slice is new — it is the device half of what you approved this morning
+  as one bundled ticket. Splitting it out is what lets the bridge half (BL-790)
+  proceed now instead of waiting on BL-769's Android test seam.
+
+
+  Everything here is your own locked decision from the 2026-07-31 intake, so
+  there is little of mine to sign off. The two calls that are mine:
+
+
+  (1) **The pending list is not in this slice.** Your locked layout puts it
+  under the Send button, so this page will look incomplete until slice C lands.
+  I kept it out because the pending list needs a read model that does not exist
+  yet, and bundling it would make this ticket large by this repo's own p90
+  measure (BL-634). Tell me if you would rather wait and get the whole page at
+  once.
+
+
+  (2) **Depends on BL-769.** Without the JVM unit seam this ticket's acceptance
+  contract would run zero scenarios — which has already happened on five
+  shipped Android tickets. If you want the Notes page sooner, the honest
+  options are to expedite BL-769 or to accept a manual-procedure-only contract
+  for this slice. Tell me which.
+
+source: |
+  Slice B of epic `bubble-note-composer` (GH-29). From
+  `backlog/INTAKE-bubble-send-notes-swipe-screen.md` (human via Let's Talk /
+  Cursor 2026-07-31 — locked decisions 1, 2, 3, 5, 7 and 9 land here), merged
+  with `backlog/GH-29-bubble-screen.yaml` (GitHub issue 29). Both drained
+  2026-08-03.
+
+notes: |
+  ## e2e procedure for QA
+
+  With a live swarm and a paired Bubble build:
+
+  1. Expand the Bubble from a cold start. Confirm it opens on Let's Talk.
+     Repeat after having previously swiped to Notes and after having sent a
+     note — confirm it still opens on Let's Talk every time.
+  2. Swipe to Notes and back. Confirm both directions work and that the pager
+     dots track the current page.
+  3. Open the role picker. Confirm it lists exactly the roles in
+     `.swarmforge/roles.tsv`, including roles with no running session. Add or
+     remove a role from the running pack and confirm the picker follows.
+  4. Send a short note to a dormant role. Confirm the parcel lands in that
+     role's `inbox/new/`, that the text box clears, that the same role stays
+     selected, and that the confirmation names the role.
+  5. Enter an over-budget message, then one containing a line break, then an
+     empty one. Confirm each is refused on the device with a stated reason and
+     that no request reaches the bridge.
+  6. Point Bubble at a bad token, then at a stopped bridge. Confirm the page
+     states the reason in each case rather than a bare code, and that neither
+     reports the note as queued.
+  7. Confirm no amend or withdraw control is present anywhere on the page.
