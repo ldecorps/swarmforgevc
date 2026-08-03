@@ -5,7 +5,7 @@ type: defect
 severity: high
 status: todo
 epic: unit-suite-speed
-human_approval: pending
+human_approval: approved
 assigned_to: none
 priority: 00
 direction: human-requested
