@@ -151,3 +151,6 @@ notes: |
      role's `inbox/new` while resident is at home with empty mail — expect
      rotate to that role (or redirect onto a preferred held claim if one
      exists), never a standing `chase-rotate-skip-broadcast` loop.
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-03, by: architect, blamed: coder, class: acceptance, commit: 9172fda839, evidence: backlog/evidence/BL-795-mono-router-starvation-hand-fix-adopt-bounce-20260803.md }
