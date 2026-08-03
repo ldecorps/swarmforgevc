@@ -1,9 +1,15 @@
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const { mkTmpDir } = require('./helpers/tmpDir');
 const {
   assertRecordPassed,
   assertTestCountNotShrunk,
   buildDurationProfile,
   formatDurationProfileMarkdown,
+  parseArgs,
+  runBuildProfile,
+  main,
   OPERATIONAL_CEILING_MS,
 } = require('../out/tools/build-test-duration-profile');
 
@@ -116,4 +122,129 @@ test('formatDurationProfileMarkdown records the run result and wall-clock durati
   assert.match(text, /result \*\*pass\*\*/);
   assert.match(text, /438 test files/);
   assert.match(text, /326\.5s wall-clock/);
+});
+
+// ── parseArgs (BL-233 CLI thin-wrapper split) ────────────────────────────
+
+test('parseArgs returns the three positional paths when all are given', () => {
+  assert.deepEqual(parseArgs(['report.json', 'durations.jsonl', 'out.md']), {
+    reportPath: 'report.json',
+    durationsJsonlPath: 'durations.jsonl',
+    outputPath: 'out.md',
+  });
+});
+
+test('parseArgs returns null when any positional arg is missing', () => {
+  assert.equal(parseArgs([]), null);
+  assert.equal(parseArgs(['report.json']), null);
+  assert.equal(parseArgs(['report.json', 'durations.jsonl']), null);
+});
+
+// ── runBuildProfile (the real orchestration, in-process) ────────────────
+
+function writeVitestReport(reportPath, entries) {
+  fs.writeFileSync(
+    reportPath,
+    JSON.stringify({
+      testResults: entries.map((e) => ({ name: e.file, startTime: 0, endTime: e.durationMs })),
+    })
+  );
+}
+
+function writeDurationsJsonl(durationsPath, records) {
+  fs.writeFileSync(durationsPath, records.map((r) => JSON.stringify(r)).join('\n') + '\n');
+}
+
+test('runBuildProfile writes a profile document from a real passing record and report', () => {
+  const dir = mkTmpDir('sfvc-build-test-duration-profile-');
+  const reportPath = path.join(dir, 'report.json');
+  const durationsPath = path.join(dir, 'durations.jsonl');
+  const outputPath = path.join(dir, 'profile.md');
+  writeVitestReport(reportPath, [
+    { file: path.join(dir, 'test/a.test.js'), durationMs: 10 },
+    { file: path.join(dir, 'test/b.test.js'), durationMs: 200 },
+  ]);
+  writeDurationsJsonl(durationsPath, [{ finished_at: 'x', test_count: 2, result: 'pass', duration_ms: 210 }]);
+
+  runBuildProfile({ reportPath, durationsJsonlPath: durationsPath, outputPath });
+
+  const written = fs.readFileSync(outputPath, 'utf8');
+  const bIndex = written.indexOf('test/b.test.js');
+  const aIndex = written.indexOf('test/a.test.js');
+  assert.ok(bIndex >= 0 && aIndex >= 0 && bIndex < aIndex);
+});
+
+test('runBuildProfile refuses to build a profile from a failing latest record', () => {
+  const dir = mkTmpDir('sfvc-build-test-duration-profile-');
+  const reportPath = path.join(dir, 'report.json');
+  const durationsPath = path.join(dir, 'durations.jsonl');
+  const outputPath = path.join(dir, 'profile.md');
+  writeVitestReport(reportPath, [{ file: path.join(dir, 'test/a.test.js'), durationMs: 10 }]);
+  writeDurationsJsonl(durationsPath, [{ finished_at: 'x', test_count: 1, result: 'fail', duration_ms: 10 }]);
+
+  assert.throws(() => runBuildProfile({ reportPath, durationsJsonlPath: durationsPath, outputPath }), /non-passing/);
+  assert.equal(fs.existsSync(outputPath), false);
+});
+
+test('runBuildProfile refuses when the latest record shrank the test count from the previous one', () => {
+  const dir = mkTmpDir('sfvc-build-test-duration-profile-');
+  const reportPath = path.join(dir, 'report.json');
+  const durationsPath = path.join(dir, 'durations.jsonl');
+  const outputPath = path.join(dir, 'profile.md');
+  writeVitestReport(reportPath, [{ file: path.join(dir, 'test/a.test.js'), durationMs: 10 }]);
+  writeDurationsJsonl(durationsPath, [
+    { finished_at: 'x', test_count: 5, result: 'pass', duration_ms: 10 },
+    { finished_at: 'y', test_count: 4, result: 'pass', duration_ms: 10 },
+  ]);
+
+  assert.throws(() => runBuildProfile({ reportPath, durationsJsonlPath: durationsPath, outputPath }), /fell from 5 to 4/);
+  assert.equal(fs.existsSync(outputPath), false);
+});
+
+// ── main() - runs in-process against real files (CLI thin-wrapper rule) ──
+//
+// Stubs process.argv/console.log/process.exitCode the same way this
+// codebase's other CLI tests do (see coChangeReportCli.test.js's runCli),
+// so main()'s own dispatch (usage-on-missing-args vs. delegate to
+// runBuildProfile) is exercised in-process rather than left coverage-
+// invisible behind a subprocess-only smoke test.
+async function runMain(args) {
+  const previousArgv = process.argv;
+  const previousExitCode = process.exitCode;
+  const previousWrite = process.stderr.write;
+  const stderrWrites = [];
+  process.stderr.write = (chunk) => {
+    stderrWrites.push(chunk.toString());
+    return true;
+  };
+  process.exitCode = undefined;
+  try {
+    process.argv = ['node', 'build-test-duration-profile.js', ...args];
+    await main();
+    return { stderr: stderrWrites.join(''), exitCode: process.exitCode };
+  } finally {
+    process.stderr.write = previousWrite;
+    process.argv = previousArgv;
+    process.exitCode = previousExitCode;
+  }
+}
+
+test('main writes the profile document when given real paths', async () => {
+  const dir = mkTmpDir('sfvc-build-test-duration-profile-main-');
+  const reportPath = path.join(dir, 'report.json');
+  const durationsPath = path.join(dir, 'durations.jsonl');
+  const outputPath = path.join(dir, 'profile.md');
+  writeVitestReport(reportPath, [{ file: path.join(dir, 'test/a.test.js'), durationMs: 10 }]);
+  writeDurationsJsonl(durationsPath, [{ finished_at: 'x', test_count: 1, result: 'pass', duration_ms: 10 }]);
+
+  const { exitCode } = await runMain([reportPath, durationsPath, outputPath]);
+
+  assert.equal(exitCode, undefined);
+  assert.match(fs.readFileSync(outputPath, 'utf8'), /test\/a\.test\.js/);
+});
+
+test('main prints usage and exits 1 when a required arg is missing', async () => {
+  const { stderr, exitCode } = await runMain(['report.json']);
+  assert.match(stderr, /^Usage: node build-test-duration-profile\.js/);
+  assert.equal(exitCode, 1);
 });

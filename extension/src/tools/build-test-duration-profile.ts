@@ -14,7 +14,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { extractFileDurations, FileDuration, VitestJsonReport } from './check-suite-file-budget';
-import { runCliMain } from './swarm-metrics';
+import { makeArgsGuardedMain, runCliMain } from './swarm-metrics';
 
 export interface DurationRecord {
   finished_at: string;
@@ -108,15 +108,29 @@ export function formatDurationProfileMarkdown(record: DurationRecord, profile: D
   return lines.join('\n') + '\n';
 }
 
-export function main(): void {
-  const [reportPath, durationsJsonlPath, outputPath] = process.argv.slice(2);
-  if (!reportPath || !durationsJsonlPath || !outputPath) {
-    process.stderr.write('Usage: node build-test-duration-profile.js <vitest-json-report-path> <test-durations-jsonl-path> <output-md-path>\n');
-    process.exitCode = 1;
-    return;
-  }
+export interface BuildProfileCliArgs {
+  reportPath: string;
+  durationsJsonlPath: string;
+  outputPath: string;
+}
+
+const USAGE = 'Usage: node build-test-duration-profile.js <vitest-json-report-path> <test-durations-jsonl-path> <output-md-path>\n';
+
+// Pure - same "keep main() a thin dispatcher over a testable pure helper"
+// split this codebase's other CLIs already established (co-change-report.ts),
+// so a subprocess-only test would never leave this logic coverage-invisible.
+export function parseArgs(argv: string[]): BuildProfileCliArgs | null {
+  const [reportPath, durationsJsonlPath, outputPath] = argv;
+  return reportPath && durationsJsonlPath && outputPath ? { reportPath, durationsJsonlPath, outputPath } : null;
+}
+
+// The real orchestration, callable in-process with real (or tmp-fixture)
+// file paths - no process.argv/CLI wiring here, so a direct in-process test
+// exercises the exact same branches (read/assert/build/write) a subprocess
+// invocation would, without needing to spawn a child process to do it.
+export function runBuildProfile(args: BuildProfileCliArgs): void {
   const records: DurationRecord[] = fs
-    .readFileSync(durationsJsonlPath, 'utf8')
+    .readFileSync(args.durationsJsonlPath, 'utf8')
     .trim()
     .split('\n')
     .filter(Boolean)
@@ -126,11 +140,15 @@ export function main(): void {
   assertRecordPassed(current);
   assertTestCountNotShrunk(previous, current);
 
-  const report = JSON.parse(fs.readFileSync(reportPath, 'utf8')) as VitestJsonReport;
+  const report = JSON.parse(fs.readFileSync(args.reportPath, 'utf8')) as VitestJsonReport;
   const profile = buildDurationProfile(extractFileDurations(report));
-  fs.writeFileSync(outputPath, formatDurationProfileMarkdown(current, profile));
-  console.log(`wrote ${outputPath} (${profile.entries.length} files, ${profile.poles.length} poles)`);
+  fs.writeFileSync(args.outputPath, formatDurationProfileMarkdown(current, profile));
+  console.log(`wrote ${args.outputPath} (${profile.entries.length} files, ${profile.poles.length} poles)`);
 }
+
+export const main = makeArgsGuardedMain(parseArgs, USAGE, async (args) => {
+  runBuildProfile(args);
+});
 
 if (require.main === module) {
   runCliMain(main);
