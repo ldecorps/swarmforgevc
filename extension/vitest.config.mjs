@@ -1,3 +1,4 @@
+import * as os from 'node:os';
 import { createRequire } from 'node:module';
 import { defineConfig, configDefaults } from 'vitest/config';
 
@@ -13,7 +14,13 @@ import { defineConfig, configDefaults } from 'vitest/config';
 // always run `tsc` before Vitest (see package.json), so out/ already exists
 // by the time this config loads.
 const require = createRequire(import.meta.url);
-const { MAX_WORKERS, PER_WORKER_HEAP_MB } = require('./out/tools/vitest-worker-memory-budget');
+const { PER_WORKER_HEAP_MB, resolveWorkerPoolSize } = require('./out/tools/vitest-worker-memory-budget');
+// BL-792: MAX_WORKERS is a ceiling tuned for the 15360MB reference incident
+// host, not a promise that every host running this suite has that much RAM.
+// resolveWorkerPoolSize shrinks the actual fork count to what THIS host's
+// real RAM can safely hold (still capped at MAX_WORKERS, still floored at
+// 1) - unchanged on a well-provisioned host, smaller on a tighter one.
+const WORKER_POOL_SIZE = resolveWorkerPoolSize(os.totalmem() / (1024 * 1024));
 
 export default defineConfig({
   test: {
@@ -40,7 +47,7 @@ export default defineConfig({
     pool: 'forks',
     poolOptions: {
       forks: {
-        maxForks: MAX_WORKERS,
+        maxForks: WORKER_POOL_SIZE,
         execArgv: [`--max-old-space-size=${PER_WORKER_HEAP_MB}`],
         // BL-445: profiling (not guessing) found the suite's real pole wasn't
         // test-execution parallelism (MAX_WORKERS above) - it was Vitest's
