@@ -172,7 +172,12 @@
              (mono-router-lib/actionable-mail? {:in-process-count 1 :git-handoff-count 0}))
 (assert-true "git_handoff in new is actionable"
              (mono-router-lib/actionable-mail? {:in-process-count 0 :git-handoff-count 1}))
+(assert-true "rule_proposal in new is immediately actionable (directed, not broadcast)"
+             (mono-router-lib/actionable-mail?
+              {:in-process-count 0 :git-handoff-count 0 :rule-proposal-count 1}))
 (assert-true "empty mailbox is not actionable"
+             (not (mono-router-lib/actionable-mail? {:in-process-count 0 :git-handoff-count 0})))
+(assert-true "rule-proposal-count absent behaves as before (no regression)"
              (not (mono-router-lib/actionable-mail? {:in-process-count 0 :git-handoff-count 0})))
 
 (assert= "newest actionable role wins when priorities equal/absent"

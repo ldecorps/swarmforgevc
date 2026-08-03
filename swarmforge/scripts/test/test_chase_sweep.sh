@@ -128,15 +128,19 @@ grep -q "^escalation coder false$" "$ROOT/calls.log" \
   && fail "05b: a stuck nudge must NOT clear the escalation edge (got: $(cat "$ROOT/calls.log"))"
 pass "05b: a stuck nudge does not clear on-stuck-escalation! (no email re-arm)"
 
-# ── 06: in_process work stuck across maxChases nudges escalates to alert, never nudges again ─
+# ── 06: in_process work stuck across maxChases nudges escalates AND keeps waking ─
+# 2026-08-03: mono-router dormant holders starved forever once alert armed and
+# wakes stopped. Escalation must still fire; resume attempts must continue.
 make_fixture
 write_handoff "$ROOT/inbox/in_process/00_item.handoff"
 python3 -c "import json; json.dump({'nudgeCount': 3}, open('$ROOT/inbox/in_process/00_item.handoff.nudge','w'))"
 run_sweep "alive" $(( NOW_MS - (STUCK_TIMEOUT_S + 100) * 1000 ))
 
-grep -q "wake-up" "$ROOT/calls.log" && fail "06: an alert-exhausted in_process item must not be nudged again"
 grep -q "^escalation coder true$" "$ROOT/calls.log" || fail "06: exhausted in_process work did not escalate"
-pass "06: in_process work exhausted across maxChases nudges escalates (no further nudge)"
+grep -q "^wake-up coder$" "$ROOT/calls.log" || fail "06: alert must keep attempting resume (got: $(cat "$ROOT/calls.log"))"
+NUDGE_AFTER="$(python3 -c "import json; print(json.load(open('$ROOT/inbox/in_process/00_item.handoff.nudge'))['nudgeCount'])")"
+[[ "$NUDGE_AFTER" == "4" ]] || fail "06: expected nudgeCount to advance on post-alert resume (got $NUDGE_AFTER)"
+pass "06: in_process work exhausted across maxChases escalates and keeps waking"
 
 # ── 07: an item with recent activity is chased once, then backed off (not re-chased immediately) ─
 make_fixture

@@ -1025,13 +1025,16 @@
    ambulance never retracts a mid-turn claim, so it stays actionable exactly
    as before regardless of which ticket it names.
    BL-636: :best-priority is the lowest parseable priority among the same
-   actionable set (held + git_handoff + aged notes) — a role ranks by its
-   best parcel, not by whichever parcel happens to be newest.
+   actionable set (held + git_handoff + rule_proposal + aged notes) — a role
+   ranks by its best parcel, not by whichever parcel happens to be newest.
    BL-651: :oldest-actionable-waited-ms is how long, in ms, the OLDEST
    actionable parcel has waited — age source is the parcel's own
    enqueued_at/created_at header, never file mtime (mono-router-lib/
    oldest-actionable-waited-ms), so the pure starve rule in
-   preferred-rotate-target can fire in production."
+   preferred-rotate-target can fire in production.
+   rule_proposal joins git_handoff as immediately actionable (2026-08-03):
+   directed Article 5.1 mail must rotate the resident, not sit forever
+   behind chase-rotate-skip-broadcast."
   [role role-info]
   (let [new-dir (str (handoff-lib/mailbox-dir role-info :new))
         ip-dir (str (handoff-lib/mailbox-dir role-info :in_process))
@@ -1040,6 +1043,7 @@
         news (remove #(ambulance-lib/parcel-held? ambulance (handoff-envelope (:filePath %)))
                      (chase-sweep-lib/scan-inbox-new new-dir))
         git-hfs (filterv #(= "git_handoff" (handoff-header-field (:filePath %) "type")) news)
+        rule-props (filterv #(= "rule_proposal" (handoff-header-field (:filePath %) "type")) news)
         note-fs (filterv #(= "note" (handoff-header-field (:filePath %) "type")) news)
         now-ms (System/currentTimeMillis)
         threshold-ms (note-actionable-after-ms)
@@ -1049,7 +1053,7 @@
                                :now-ms now-ms
                                :threshold-ms threshold-ms})
                             note-fs)
-        actionable-parcels (concat held git-hfs aged-notes)
+        actionable-parcels (concat held git-hfs rule-props aged-notes)
         newest (or (->> actionable-parcels
                         (keep #(handoff-header-field (:filePath %) "created_at"))
                         sort
@@ -1070,6 +1074,7 @@
      :actionable? (mono-router-lib/actionable-mail?
                    {:in-process-count (count held)
                     :git-handoff-count (count git-hfs)
+                    :rule-proposal-count (count rule-props)
                     :aged-note-count (count aged-notes)})}))
 
 (defn preferred-mono-rotate-role
@@ -1102,36 +1107,73 @@
           (chase-sweep-lib/pane-recently-active?
            activity-role now-ms chase-resident-recent-activity-ms)))))
 
-(defn chase-rotate-to! [socket roles role]
+(defn- attempt-resident-rotate!
+  "Shared gate+rotate for chase. Returns the rotate-resident-to! result map,
+   or {:ok false :reason ...} when the busy/cooldown/already-active gate
+   refuses. Logs the same chase-rotate-* lines the single-target path used."
+  [socket target-role]
+  (let [gate (mono-router-lib/should-rotate-resident?
+              {:active-role (handoff-lib/read-mono-router-active-role)
+               :target-role target-role
+               :resident-busy? (resident-pane-busy? socket)
+               :last-rotate-at-ms @last-chase-rotate-at-ms
+               :now-ms (System/currentTimeMillis)
+               :cooldown-ms mono-router-lib/default-rotate-cooldown-ms})]
+    (if (not= gate :rotate)
+      (do (log! (str "chase-rotate-" (name gate)) target-role)
+          {:ok false :reason (name gate)})
+      (let [result (handoff-lib/rotate-resident-to! target-role)]
+        (when (:ok result)
+          (reset! last-chase-rotate-at-ms (System/currentTimeMillis))
+          (log! "chase-rotate" target-role))
+        (when-not (:ok result)
+          (log! "chase-rotate-error" target-role (str (:reason result))))
+        result))))
+
+;; BL-795/BL-654: invariant 2 ("a chase poke at a non-preferred role
+;; redirects the resident onto the preferred actionable role rather than
+;; returning not-preferred and dropping the rotate") has no executable
+;; property-test encoding. The decision itself (preferred truthy and
+;; different from the polled role -> redirect) is two lines of pure boolean
+;; logic, but it is inlined in chase-rotate-to! below, which is otherwise
+;; entirely IO: preferred-mono-rotate-role/role-mail-row scan the real
+;; mailbox filesystem and ambulance state, and attempt-resident-rotate!
+;; captures the live resident tmux pane over a real socket and performs the
+;; actual rotation. Extracting the decision into a standalone pure function
+;; to make it property-testable would be a structural change to this
+;; adopted-as-is hand fix (BL-795's scope is explicitly "adopt the files
+;; above as-is for the three invariants", not redesign them), and the
+;; Babashka toolchain has no property-test framework wired for this
+;; daemon-control-flow layer regardless (Engineering Rules: Babashka
+;; mutation/CRAP/DRY tooling not wired; the .bb unit-test suite is the real
+;; gate). The invariant is instead encoded as a real-fixture integration
+;; test: test_handoffd_rule_proposal_rotate_wiring.sh scenario C drives the
+;; actual handoffd.bb --print-preferred-rotate-target path and proves the
+;; PRECONDITION this redirect depends on (an in_process priority-00 claim
+;; outranks a rule_proposal priority-50) resolves correctly through the real
+;; system, matching this project's established pattern for daemon-level
+;; behavior (see this ticket's own e2e QA procedure).
+(defn chase-rotate-to!
+  "Rotate the mono-router resident onto `role` when that role's mail is the
+   preferred actionable target. When another role is preferred, REDIRECT to
+   that preferred role instead of returning not-preferred and dropping the
+   poke (2026-08-03: hardender held in_process while chase burned cycles on
+   specifier's skip-not-preferred / skip-broadcast — preferred was never
+   acted on because only the poked role could land a rotate)."
+  [socket roles role]
   (let [preferred (preferred-mono-rotate-role roles)
         row (role-mail-row role (get roles role))]
     (cond
+      (and preferred (not= preferred role))
+      (do (log! "chase-rotate-redirect" role preferred)
+          (attempt-resident-rotate! socket preferred))
+
       (not (:actionable? row))
       (do (log! "chase-rotate-skip-broadcast" role)
           {:ok false :reason "broadcast"})
 
-      (and preferred (not= preferred role))
-      (do (log! "chase-rotate-skip-not-preferred" role preferred)
-          {:ok false :reason "not-preferred"})
-
       :else
-      (let [gate (mono-router-lib/should-rotate-resident?
-                  {:active-role (handoff-lib/read-mono-router-active-role)
-                   :target-role role
-                   :resident-busy? (resident-pane-busy? socket)
-                   :last-rotate-at-ms @last-chase-rotate-at-ms
-                   :now-ms (System/currentTimeMillis)
-                   :cooldown-ms mono-router-lib/default-rotate-cooldown-ms})]
-        (if (not= gate :rotate)
-          (do (log! (str "chase-rotate-" (name gate)) role)
-              {:ok false :reason (name gate)})
-          (let [result (handoff-lib/rotate-resident-to! role)]
-            (when (:ok result)
-              (reset! last-chase-rotate-at-ms (System/currentTimeMillis))
-              (log! "chase-rotate" role))
-            (when-not (:ok result)
-              (log! "chase-rotate-error" role (str (:reason result))))
-            result))))))
+      (attempt-resident-rotate! socket role))))
 
 (defn chase-poke-and-notify!
   "Shared chase wake/resume path. Gating is scoped to the pane the poke
@@ -1140,8 +1182,10 @@
    per sweep; pokes at a role's own standing pane (classic packs) are
    gated only by that pane's own busy state. The per-sweep resident budget
    is consumed ONLY when a wake or rotate actually lands — a refused
-   rotate (broadcast/not-preferred/cooldown) leaves the budget for the
-   next role in the same sweep (architect starvation, 2026-07-23).
+   rotate (broadcast/cooldown) leaves the budget for the
+   next role in the same sweep (architect starvation, 2026-07-23). A
+   not-preferred poke now REDIRECTS to the preferred role (chase-rotate-to!)
+   rather than consuming nothing and dropping the opportunity.
    Returns true only when a wake or successful rotate was performed."
   [socket roles role resident-wake-suppressed? notify-fn!]
   (let [action (chase-poke-action roles socket role)
