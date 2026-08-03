@@ -436,3 +436,14 @@ You are the hardender.
   a `--help` probe archived both batch items, including a not-yet-worked
   BL-633 handoff, before merge/implement/forward; only the git-based forward
   saved the ticket. Fail-fast arg rejection is tracked as BL-652.)
+
+## Mutation cooldown gate on a host without nproc (rule_proposal 2026-08-03, accepted)
+- On macOS the host has no `nproc`; until BL-797 lands,
+  `mutation_cooldown_gate.bb` crashes at its first core probe (babashka
+  `process/sh` throws on a missing binary, so the sysctl fallback never runs).
+- Workaround: export `SWARMFORGE_MUTATION_GATE_FORCE_CORES=<cores>` (e.g. from
+  `sysctl -n hw.ncpu`) before invoking the gate, and report recurrence rather
+  than re-diagnosing.
+- The underlying fix — a missing probe degrades to the documented fallback
+  chain instead of crashing — is ticketed as BL-797; drop this workaround note
+  when it lands.
