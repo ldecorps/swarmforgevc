@@ -35,6 +35,11 @@ android {
     buildFeatures {
         viewBinding = true
     }
+    testOptions {
+        unitTests {
+            isReturnDefaultValues = true
+        }
+    }
 }
 
 dependencies {
@@ -43,4 +48,10 @@ dependencies {
     implementation("com.google.android.material:material:1.12.0")
     implementation("androidx.constraintlayout:constraintlayout:2.1.4")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+
+    // BL-769: JVM unit suite for Bubble's pure logic — no emulator, no device.
+    testImplementation("junit:junit:4.13.2")
+    // android.jar's org.json is a stub that throws at runtime; a real jar is
+    // needed on the unit test classpath for BridgeClient to load and run.
+    testImplementation("org.json:json:20240303")
 }

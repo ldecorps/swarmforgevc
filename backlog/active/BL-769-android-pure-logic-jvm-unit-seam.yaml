@@ -6,7 +6,7 @@ severity: high
 status: todo
 epic: code-quality-gates
 human_approval: approved
-assigned_to: none
+assigned_to: coder
 priority: 1
 direction: normal
 depends_on: []
