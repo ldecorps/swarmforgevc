@@ -1,0 +1,137 @@
+id: BL-797
+title: "DEFECT — mutation_cooldown_gate.bb crashes when a host probe binary is missing (macOS nproc) instead of degrading to its documented fallbacks"
+milestone: M8
+type: defect
+severity: high
+status: todo
+epic: swarm-reliability
+human_approval: pending
+priority: 2
+direction: queue-jump
+depends_on: []
+mutation_cost: low
+required_stages: [specifier, coder, cleaner, architect, hardender, documenter, qa]
+assigned_to: none
+
+invariants:
+  - "A missing or failing host probe binary never crashes the gate: every probe degrades to its documented fallback (nproc -> sysctl -> default 4 cores; uptime -> 0.0 load), whatever combination is absent."
+
+required_wiring:
+  - "swarmforge/scripts/mutation_cooldown_gate.bb::real-core-count::the guard is in the real probe path, not a test-only shim"
+  - "swarmforge/scripts/test/test_mutation_cooldown_gate.sh::nproc::a missing-probe regression test drives the real script"
+  - "specs/features/BL-797-mutation-gate-probe-crash-fallback.feature::Scenario::acceptance contract exists"
+
+approval_context: >
+  Source is a hardener rule_proposal (2026-08-03) after the gate crashed
+  outright during BL-792 hardening on this Mac. The accepted role-prompt rule
+  documents the SWARMFORGE_MUTATION_GATE_FORCE_CORES workaround; this ticket
+  is the underlying fix. One decision to confirm: severity `high` (the gate
+  crashes on every mutation pass on the current production host without the
+  manual workaround). Downgrade to medium if you consider the documented
+  workaround sufficient containment.
+
+description: |
+  ## What
+
+  `swarmforge/scripts/mutation_cooldown_gate.bb` probes host cores and load
+  by shelling out (`nproc`, then `sysctl -n hw.ncpu`, defaulting to 4;
+  `uptime`, defaulting to 0.0). The code checks `:exit` — but babashka's
+  `process/sh` THROWS when the binary does not exist at all, so on macOS
+  (no `nproc`) the gate dies with an unhandled exception at the first probe
+  and none of its fallbacks ever run. The fallback chain is dead code on
+  exactly the hosts it was written for; line 84's own comment says "never
+  crash the gate over a probe failure".
+
+  The same unguarded shell-out pattern sits in `real-load-avg` (`uptime`)
+  and, one level down, the `sysctl` fallback itself — any of them crashes
+  the gate the same way on a host missing that binary.
+
+  ## Wanted behaviour
+
+  A probe whose binary is missing behaves exactly like a probe that returned
+  nonzero: the gate moves to the next fallback and always prints its
+  DECISION / probe-report lines. The existing force-env seams
+  (SWARMFORGE_MUTATION_GATE_FORCE_CORES / _FORCE_LOAD_AVG) keep working
+  unchanged.
+
+  ## Why now
+
+  Crashed outright during BL-792 hardening on this Mac (the current
+  production host); every future mutation pass here hits it unless the
+  operator exports the force-cores workaround by hand. Reported by the
+  hardener as a rule_proposal; the workaround is now documented in
+  swarmforge/roles/hardender.prompt, and this ticket removes the need for it.
+
+  ## Scope
+
+  Guard the probe shell-outs in `mutation_cooldown_gate.bb` so a spawn
+  failure degrades to the documented fallback chain, and extend
+  `swarmforge/scripts/test/test_mutation_cooldown_gate.sh` to cover the
+  missing-binary paths. Nothing else: same decisions, same output format,
+  same conf handling, same seams.
+
+  ## Out of scope
+
+  - Changing the fallback chain, default core count, or busy formula.
+  - The same pattern in OTHER .bb scripts — if the coder or a reviewer finds
+    sibling unguarded probes elsewhere, that is a new ticket, not scope
+    creep here (this gate is the one crashing a pipeline stage today).
+  - The Stryker host-concurrency question (BL-786).
+
+acceptance: specs/features/BL-797-mutation-gate-probe-crash-fallback.feature
+
+source: |
+  Hardener rule_proposal, 2026-08-03T12:22:02Z (scope role:hardender):
+  "mutation_cooldown_gate.bb crashes when nproc is missing (macOS) instead
+  of using its sysctl fallback, since process/sh throws rather than
+  returning nonzero. Catch the exception so the fallback runs." Rationale:
+  crashed during BL-792 hardening; worked around via
+  SWARMFORGE_MUTATION_GATE_FORCE_CORES; same class as the load-avg lessons.
+  Accepted by the specifier as (a) a workaround rule appended to
+  swarmforge/roles/hardender.prompt and (b) this fix ticket.
+
+notes: |
+  ## Severity rationale
+
+  `high`: a live, recurring fault in the pipeline's own machinery — the
+  hardening stage's gate crashes on every mutation pass on the current
+  production host (macOS has no nproc), and each occurrence needs a manual
+  env-var intervention. It fails loud rather than silently mis-deciding,
+  which is why this is not critical. See approval_context for the
+  confirm-or-downgrade ask.
+
+  ## Acceptance contract is runnable (BL-761)
+
+  All four scenarios drive the real `.bb` script through a controlled PATH
+  of stub probes plus the gate's own documented force-env seams — no
+  dependence on the test host's real core count or ambient load
+  (engineering.prompt). The gate's stdout makes everything observable
+  directly: `DECISION:`, `cores: %d`, `load_avg: %.2f`. Natural home:
+  `swarmforge/scripts/test/test_mutation_cooldown_gate.sh`, which already
+  exists. Per engineering.prompt's tool table, `.bb` bodies gate on their
+  shell/unit tests — no mutation/CRAP numbers should be asked of this file
+  (BL-472 tracks the .bb toolchain).
+
+  ## IR-DRY findings — reviewed, deliberately kept
+
+  Five findings, all parameterization rather than drift: "it reports
+  4/8/16 cores" is one step pattern with the value under test (three
+  near-duplicates), and the absence Givens name genuinely different
+  missing-binary combinations (two possible-synonyms). A Scenario Outline
+  was considered and rejected: the setups differ structurally (absent
+  probe vs stub probe vs forced seam), so an outline would need a compound
+  setup-description placeholder, which the explicit-KNOWN_VALUES rule for
+  outline handlers forbids.
+
+  ## e2e procedure for QA
+
+  1. `bash swarmforge/scripts/test/test_mutation_cooldown_gate.sh` — green,
+     including the new missing-probe cases.
+  2. On this Mac, in a shell with NO SWARMFORGE_MUTATION_GATE_FORCE_* vars
+     set, run the gate against any tracked file: it prints a DECISION line
+     and a cores figure (sysctl's), exit 0 — no stack trace.
+  3. With PATH stripped to a fixture dir containing neither nproc nor
+     sysctl: DECISION printed, `cores: 4`.
+  4. With `uptime` also absent: DECISION printed, `load_avg: 0.00`.
+  5. `SWARMFORGE_MUTATION_GATE_FORCE_CORES=16` with all probes absent:
+     `cores: 16` — the workaround seam is intact.

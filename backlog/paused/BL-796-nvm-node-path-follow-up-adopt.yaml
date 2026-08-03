@@ -1,0 +1,201 @@
+id: BL-796
+title: "DEFECT — Adopt the 2026-08-03 nvm-node PATH follow-up (operator_path_lib.sh); untracked and ticket-less in the master tree"
+milestone: M8
+type: defect
+severity: medium
+status: todo
+epic: swarm-reliability
+human_approval: pending
+priority: 2
+direction: queue-jump
+depends_on: [BL-789]
+mutation_cost: low
+required_stages: [specifier, coder, cleaner, architect, hardender, documenter, qa]
+assigned_to: none
+
+invariants:
+  - "Every daemon these scripts launch inherits a PATH on which both bb and node resolve, however minimal the caller's PATH was."
+  - "Sourcing the PATH lib changes nothing but PATH — no working-directory, shell-option, or other environment mutation leaks into the sourcing script."
+  - "A binary the caller's PATH already resolves is never shadowed by a different installation the helpers discover."
+
+required_wiring:
+  - "swarmforge/scripts/start_handoff_daemon.sh::operator_path_lib.sh::the real daemon start path prepends before nohup, not only the checker"
+  - "swarmforge/scripts/daemon_log_freshness_check.sh::swarmforge_prepend_operator_bins::the checker establishes its own PATH via the shared lib"
+  - "swarmforge/scripts/install_freshness_cron.sh::swarmforge_nvm_node_bin_dir::the crontab PATH bakes a node dir even when node is nvm-only"
+  - "specs/features/BL-796-nvm-node-path-follow-up-adopt.feature::Scenario::acceptance contract exists"
+
+approval_context: >
+  Adopt-and-review of live operator work (BL-506), same fork as
+  BL-787..BL-789 and BL-795. Unlike BL-795 this is NOT a pure stamp — two
+  corrections are folded in and need explicit sign-off:
+
+  1. The spec pins the no-alias nvm fallback to newest-by-VERSION-ORDER
+  (scenario 05: v22.1.0 beats v9.11.2). The hand lib picks the
+  lexicographically last directory (`ls | tail -1`), which would resolve
+  v9.11.2 over v22.1.0. Single-version hosts never see the difference —
+  this host has one version installed, which is why it works live — but
+  the contract should pin the correct order before a second version lands.
+
+  2. install_freshness_cron.sh reimplements the lib's bb/node/nvm
+  resolution inline while building CRON_PATH, giving two resolvers for one
+  question (the BL-789 "one predicate" correction, recurred). The review
+  must converge on one resolver — e.g. a lib function that PRINTS the
+  resolved PATH so the installer can bake it and the runtime prepend can
+  consume it — or state plainly why two are correct.
+
+description: |
+  ## What
+
+  The 2026-08-02 Mac host-switch hotfix (BL-789's body) baked a cron PATH
+  that found `bb` but not nvm-only `node`. The freshness cron then restarted
+  handoffd with that PATH, and every `process/sh ["node" ...]` sweep failed
+  with "Cannot run program \"node\" ... No such file or directory" — the
+  daemon looked alive while its node-driven sweeps silently did nothing.
+
+  The operator fixed it by hand on 2026-08-03: a new shared POSIX-sh lib,
+  `operator_path_lib.sh` (an nvm node-bin resolver plus an operator-bins
+  PATH prepend), sourced from the three start paths. The fix works and is
+  live; the lib is UNTRACKED (never committed) and the wiring hunks are
+  ticket-less in the master tree.
+
+  ## In the master working tree (2026-08-03, none ticketed)
+
+  - `swarmforge/scripts/operator_path_lib.sh` — NEW, untracked. Two shared
+    helpers: `swarmforge_nvm_node_bin_dir` (resolve an nvm-installed node's
+    bin dir, preferring `~/.nvm/alias/default`) and
+    `swarmforge_prepend_operator_bins` (prepend operator bins + resolved
+    bb/node dirs onto PATH).
+  - `swarmforge/scripts/start_handoff_daemon.sh` — source + prepend before
+    the `nohup bb handoffd` launch, so any restart path hands handoffd a
+    PATH with node. (This file is NOT in BL-789's list — its whole
+    modification belongs to this ticket.)
+  - `swarmforge/scripts/daemon_log_freshness_check.sh` — ONLY the
+    source-the-lib + `swarmforge_prepend_operator_bins` hunk near the top.
+    The rest of that file's uncommitted diff (swarm.env, babysitterd skip,
+    fleet telegram fallback) is BL-789's body — not this ticket's.
+  - `swarmforge/scripts/install_freshness_cron.sh` — ONLY the node/nvm
+    additions to the baked `CRON_PATH` and the lib sourcing. The bb-PATH
+    bake itself is BL-789's body.
+  - `docs/how-to/hotfix-2026-08-02-mac-host-switch-freshness-bridge.md` —
+    the "Follow-up 2026-08-03 — nvm node on PATH" section only; the rest of
+    the doc is BL-789's.
+
+  ## Why now
+
+  Same posture as its siblings: unreviewed live operator work risks becoming
+  an ancestor of an unrelated QA approval (BL-506), and this body sits on the
+  same health path BL-789 guards — while it was wrong, handoffd looked
+  healthy while doing none of its node-driven sweeps. The lib being untracked
+  is the sharpest edge: a fresh clone or another host runs the three tracked
+  scripts, each `source`s a file that does not exist, and under `set -eu`
+  they die at the source line — the freshness/restart path is broken at boot
+  on any checkout except this one master tree.
+
+  ## Scope
+
+  Adopt the files above (track the lib, keep the three wiring hunks and the
+  how-to section), with the two corrections named in approval_context:
+  version-order fallback and one-resolver convergence. Extend
+  `swarmforge/scripts/test/test_daemon_log_freshness.sh` (or a sibling shell
+  test) to cover the checker/start-script/installer assertions.
+
+  ## Out of scope
+
+  - Everything in BL-789's own list (the 2026-08-02 hunks in the two shared
+    files, front_desk_supervisor.bb, handoffd.bb heartbeat,
+    remote_control_health_lib.bb, the Stryker concurrency question).
+  - BL-787's files (tunnel launcher, stop_ancillary_services.sh) and
+    BL-788's Bubble body.
+  - Making handoffd itself resolve node lazily or degrade gracefully when
+    node is absent — that is a daemon-behaviour change, not a start-path
+    PATH fix; ticket separately if wanted.
+
+  ## STEERING note
+
+  Sibling of BL-787/BL-788/BL-789/BL-795. Queue-jump so it does not rot,
+  but it MUST NOT be active concurrently with BL-789: both tickets carry
+  hunks in the same two files (`daemon_log_freshness_check.sh`,
+  `install_freshness_cron.sh`), so they fail Concurrent Work Orthogonality.
+  depends_on pins the order — BL-789 lands the 2026-08-02 base first, then
+  this ticket adopts the 2026-08-03 delta on top.
+
+acceptance: specs/features/BL-796-nvm-node-path-follow-up-adopt.feature
+
+source: |
+  Coordinator note 2026-08-03 ("operator_path_lib.sh ticket-less/unwired;
+  spec new ticket (BL-787-family)"). The body is recorded in
+  `docs/how-to/hotfix-2026-08-02-mac-host-switch-freshness-bridge.md`,
+  section "Follow-up 2026-08-03 — nvm node on PATH", and in the lib's own
+  header comment.
+
+notes: |
+  ## Severity rationale
+
+  `medium`, matching BL-789 and for the same reason: nothing is swarm-down
+  today — the fix is live and working on this host. But the body sits on the
+  health-signalling path, its failure mode is silent (a daemon that looks
+  alive while its sweeps fail), and the untracked lib means every OTHER
+  checkout has a freshness path that dies at a missing `source`. Unreviewed,
+  it also risks becoming an ancestor of an unrelated approval (BL-506).
+
+  ## Acceptance contract is runnable (BL-761)
+
+  Every scenario drives the real lib and scripts with a fixture project
+  root, a fake `~/.nvm` tree, and stub binaries on PATH — no cron
+  installation, no live daemons, no network, no sudo. Same harness shape as
+  BL-789's contract; `swarmforge/scripts/test/test_daemon_log_freshness.sh`
+  already exists and is the natural home for the checker-side assertions.
+  Scenarios 04–06 drive `operator_path_lib.sh` directly — it is a plain
+  POSIX-sh testable module. Per engineering.prompt's tool table, shell
+  bodies gate on their shell tests; no mutation/CRAP numbers should be
+  asked of the `.sh` files beyond the normal suite.
+
+  ## Scenario 05 pins a correction, not current behaviour
+
+  The hand lib's no-alias fallback is `ls -1d "$_base"/v* | tail -n 1` —
+  lexicographic, so v9.11.2 sorts after v22.1.0. Scenario 05 deliberately
+  pins newest-by-version-order instead. The coder should expect a red
+  acceptance run against the unmodified hand lib; that red is the point.
+  The same lexicographic tail also sits in the alias prefix-match branch
+  (`v22*` matching multiple v22.x) — same fix applies.
+
+  ## IR-DRY findings — reviewed, deliberately kept
+
+  Three medium-confidence `possible-synonym` findings, each a real
+  difference in meaning rather than accidental drift:
+
+  - "the resolved bin directory belongs to version v22.1.0" versus
+    "...v9.11.2" — one step pattern with a parameterized version; the two
+    scenarios assert opposite winners under opposite preconditions
+    (alias present versus absent).
+  - "the launched daemon inherits a PATH..." versus "the restart command
+    inherits a PATH..." — two distinct call sites (start script versus
+    freshness restart); the wiring existing in BOTH is the ticket's point.
+  - "the crontab entry sets a PATH containing the resolved nvm node bin
+    directory" versus "the nvm node bin directory is resolved" — a Then
+    assertion about installer output versus the When action that exercises
+    the resolver; different sections, different meaning.
+
+  ## e2e procedure for QA
+
+  1. `git ls-files --error-unmatch swarmforge/scripts/operator_path_lib.sh`
+     succeeds on the parcel — the lib is tracked, the core defect gone.
+  2. `bash swarmforge/scripts/test/test_daemon_log_freshness.sh` — green.
+  3. Fixture root + fake nvm tree with v9.11.2 and v22.1.0, node absent
+     from PATH: run the cron installer against a stub crontab; the written
+     line's `PATH=` contains the v22.1.0 bin dir (version order, not
+     lexicographic). Do not touch the live crontab.
+  4. Run the checker with `PATH=/usr/bin:/bin` and a stub
+     `FRESHNESS_START_CMD` that records `command -v node`: the restart
+     resolves node.
+  5. Run `start_handoff_daemon.sh` with a PATH resolving bb but not node,
+     `HANDOFFD_BB` pointed at a stub that records its environment: the
+     launched process resolves node.
+  6. With `~/.nvm/alias/default` naming v9.11.2, the resolver returns the
+     v9.11.2 bin; with the alias removed, the v22.1.0 bin.
+  7. Diff-audit: the parcel's hunks in `daemon_log_freshness_check.sh` and
+     `install_freshness_cron.sh` are confined to the 2026-08-03 delta;
+     BL-789's 2026-08-02 hunks arrive via its own landed parcel (depends_on
+     order), never re-authored here.
+  8. Source the lib in a bare `sh -eu` shell and diff `env` before/after:
+     only PATH changed.

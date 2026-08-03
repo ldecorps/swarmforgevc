@@ -382,7 +382,13 @@
             action (decide-stuck-action ((:get-last-activity-ms adapters) role) nudge-count now-ms config)]
         (case action
           "nudge" (apply-stuck-nudge! role held adapters now-ms)
-          "alert" ((:on-stuck-escalation! adapters) role true)
+          ;; Alert arms escalation AND keeps attempting resume. Stopping wakes
+          ;; at maxChases left mono-router dormant holders permanently starved
+          ;; once chase-escalations.json flipped true (2026-08-03 hardender
+          ;; in_process) — standing-pane packs can absorb the continued wake;
+          ;; dormant rotate targets have no human-attachable session.
+          "alert" (do ((:on-stuck-escalation! adapters) role true)
+                      (apply-stuck-nudge! role held adapters now-ms))
           (do (clear-stale-nudge-counts! held)
               ((:on-stuck-escalation! adapters) role false)
               ;; BL-528: even when pane-activity looks healthy, check whether
