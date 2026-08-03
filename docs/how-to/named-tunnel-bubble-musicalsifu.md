@@ -58,6 +58,14 @@ dig +short NS musicalsifu.com
 
 ## One-time tunnel create
 
+Neither script below ships an operator-specific default (BL-787): export the
+zone and hostname first, or each exits non-zero naming the missing variable.
+
+```bash
+export SWARMFORGE_NAMED_TUNNEL_ZONE=musicalsifu.com
+export SWARMFORGE_NAMED_TUNNEL_HOSTNAME=bubble.musicalsifu.com
+```
+
 Check DNS readiness anytime:
 
 ```bash
@@ -187,6 +195,7 @@ and `cloudflared` / the bridge go dark with it.
 
 | Symptom | Check |
 |---------|--------|
+| `no zone/hostname configured` | Export `SWARMFORGE_NAMED_TUNNEL_ZONE` / `SWARMFORGE_NAMED_TUNNEL_HOSTNAME` first — no default ships in the tracked scripts (BL-787) |
 | `setup_…` exit 2, NS not Cloudflare | Finish GoDaddy → Cloudflare NS cutover |
 | `cert.pem` missing | `cloudflared tunnel login` |
 | Named mode dies immediately | `~/.cloudflared/config.yml`, credentials JSON, `tunnel list` |
