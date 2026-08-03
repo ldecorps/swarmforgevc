@@ -129,3 +129,6 @@ notes: |
   5. Confirm by diff that no test file was deleted, no test was skipped, no
      exclude glob was widened, and that neither `SUITE_DURATION_BUDGET_MS` nor
      BL-378's per-file budget was raised.
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-03, by: hardender, blamed: coder, class: acceptance, commit: e3b6b5c8f6, evidence: backlog/evidence/BL-792-unit-suite-green-and-profiled-bounce-20260803.md }

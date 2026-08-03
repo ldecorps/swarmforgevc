@@ -51,6 +51,7 @@ here.
 - [GitHub Auto-Intake Scheduler](how-to/github-auto-intake-scheduler.md)
 - [/pilot's acceptance-contract landing gate](how-to/BL-727-pilot-acceptance-contract-gate.md)
 - [Sharing one Telegram bot between the front desk and the Cursor bridge](how-to/BL-764-front-desk-shared-token-bridge-fanout.md)
+- [Named tunnel Bubble — fixed URL on a Cloudflare zone you own](how-to/named-tunnel-bubble-musicalsifu.md)
 
 ## Reference
 
@@ -60,6 +61,7 @@ here.
 - [docs-tree.json schema](reference/docs-tree-schema.md)
 - [backlog.json schema](reference/backlog-dashboard-schema.md)
 - [Mutation-run worker RSS measurement report](reference/BL-427-mutation-worker-rss-measurement.md)
+- [Unit suite per-file duration profile (BL-792 baseline)](reference/BL-792-test-duration-profile.md) — the green-run measurement slice B's speed cuts are specced against.
 - [BL-007 Spec: Backlog Panel](reference/specs/BL-007-spec.md)
 - [BL-008 Spec: Named runs](reference/specs/BL-008-spec.md)
 - [BL-009 Spec: Hardened Message Bus](reference/specs/BL-009-spec.md)

@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=f609829451c2e2a1e7964693b82a69d3f4655203a6008831f7d862c859b337cc
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-03T15:51:20.075503Z","feature_name":"Bubble reaches the bridge on a fixed named-tunnel URL","feature_path":"/Users/ldecorps/projects/swarmforgevc/.worktrees/hardender/specs/features/BL-787-bubble-named-tunnel-fixed-url.feature","background_hash":"fe2bf8dd097b87905c78aaa2d98517eeb286c0030be5a66b6ba0e9d5f8a78a95","implementation_hash":"unknown","scenarios":[{"index":4,"name":"the idle-sleep keepalive starts unless it is skipped","scenario_hash":"22b72a2ca0ca0c414300177f3acd13708818376163e69efaa8ff30b99762c47e","mutation_count":4,"result":{"Total":4,"Killed":4,"Survived":0,"Errors":0},"tested_at":"2026-08-03T15:51:20.075503Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: Bubble reaches the bridge on a fixed named-tunnel URL
   The resident-spy tunnel launcher gains a named-tunnel mode: a hostname the
   operator owns, routed through Cloudflare to the local bridge port, so the

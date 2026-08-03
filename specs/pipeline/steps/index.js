@@ -359,7 +359,9 @@ const DOMAINS = [
   require('./bl760DuplicateChainGuardSteps'),
   require('./bl663PromotionGatesSteps'),
   require('./bl651AgedWorkRotationSteps'),
-  require('./bl611BabysitterdLifecycleSteps')
+  require('./bl611BabysitterdLifecycleSteps'),
+  require('./bl792UnitSuiteGreenAndProfiledSteps'),
+  require('./bl787BubbleNamedTunnelFixedUrlSteps')
 ];
 
 function registerSteps(registry) {
