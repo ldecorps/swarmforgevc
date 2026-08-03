@@ -68,7 +68,7 @@ NS="$(dig +short NS "$ZONE_ROOT" 2>/dev/null | tr '\n' ' ')"
 DNS_READY=0
 if printf '%s' "$NS" | grep -qi cloudflare; then
   DNS_READY=1
-  info "NS look Cloudflare-backed: $NS"
+  info "NS looks Cloudflare-backed: $NS"
 else
   info "DNS for $ZONE_ROOT is NOT on Cloudflare yet. Current NS: $NS"
   if [[ "$ALLOW_PENDING_DNS" -ne 1 ]]; then
