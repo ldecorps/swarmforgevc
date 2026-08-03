@@ -11,7 +11,7 @@ direction: queue-jump
 depends_on: []
 mutation_cost: low
 required_stages: [specifier, coder, cleaner, architect, hardender, documenter, qa]
-assigned_to: none
+assigned_to: coder
 
 invariants:
   - "A directed rule_proposal in a role's inbox/new is immediately actionable for mono-router rotation — the same class as git_handoff — and never sits forever behind chase-rotate-skip-broadcast."
