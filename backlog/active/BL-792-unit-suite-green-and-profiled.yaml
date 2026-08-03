@@ -1,0 +1,131 @@
+id: BL-792
+title: "Unit suite slice A — make `npm test` complete green and publish a per-file profile, so the cut targets measured poles"
+milestone: M8
+type: defect
+severity: high
+status: todo
+epic: unit-suite-speed
+human_approval: approved
+assigned_to: none
+priority: 00
+direction: human-requested
+depends_on: []
+mutation_cost: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-792-unit-suite-green-and-profiled.feature
+
+invariants:
+  - "No run is made green by removing test coverage: the recorded test_count never falls below the previous recorded run, and no test file is deleted, skipped, or added to an exclude glob."
+  - "The declared suite duration budget may fall but never rise — no change in this slice raises SUITE_DURATION_BUDGET_MS or the per-file budget."
+  - "A failing run is never used as a baseline or as evidence about where the suite's time goes; every duration this slice reports comes from a run that passed."
+
+description: |
+  ## What
+
+  `npm test` in `extension/` currently records `result: fail` at 169.5s across
+  438 test files, with workers terminated mid-run. Every recorded run since
+  2026-07-07 has failed.
+
+  Make it complete **green**, and publish a **per-file duration profile** of
+  that green run. Those two things, and nothing else.
+
+  ## Why this comes before any speed work
+
+  169.5s is the wall-clock of a run in which workers died and their work was
+  redone. It is not a measurement of how long the tests take. Optimising
+  against it would be optimising noise — and the intake's own success criterion
+  3 says profile first. Whatever the green number turns out to be is the
+  baseline the epic's slice B cuts from.
+
+  It is entirely possible the green run already lands near the 13s ceiling. If
+  it does, say so plainly in the profile; that is a result, not a failure to
+  find work.
+
+  ## Prime suspect, to be confirmed or killed — not assumed
+
+  `isolate: false` (BL-445) means a fork does not reset its module registry
+  between test files. `PER_WORKER_HEAP_MB = 1280` across `MAX_WORKERS = 6`
+  (BL-422) is a hard per-fork ceiling. At 438 files each fork now accumulates
+  roughly 73 files' worth of modules against that ceiling, and a fork that hits
+  it is terminated — which is the observed symptom.
+
+  Confirm it against a real run (worker heap over time, or the termination
+  reason the pool reports) before acting on it. If it is wrong, say so and
+  report what the run actually shows.
+
+  **Neither knob may simply be reverted.** BL-445's `isolate: false` is what
+  made the suite fast in the first place; BL-422's cap is what stopped an
+  unbounded run driving the kernel OOM killer into a spiral that killed swarm
+  agents twice in one day. A fix that re-opens either incident is not a fix.
+
+  ## The profile this slice must publish
+
+  A per-file report of the green run: every test file that ran, with its own
+  measured duration, slowest first. If the green run is over the 13s ceiling,
+  the report must name the files accounting for the bulk of the time — that
+  named set is slice B's entire input, and slice B cannot be specced without
+  it.
+
+  ## Out of scope
+
+  - Any speed optimisation beyond what making the run green requires. Cutting
+    the poles is slice B, and it is deliberately not specced until this
+    slice's profile exists.
+  - Deleting, skipping, or excluding any test.
+  - Raising `SUITE_DURATION_BUDGET_MS` or BL-378's per-file 7s budget.
+  - New gates or ratchets to prevent re-regression (slice C).
+  - Gherkin/acceptance wall-clock, and the Android JVM suite.
+
+approval_context: >
+  Defaults I picked, all amendable.
+
+
+  (1) **Green-and-profiled is the whole slice.** No speed work beyond what
+  greenness requires. I know the ask was a number; the reason is in the epic's
+  approval_context — the 169.5s figure comes from a run in which workers died,
+  so it is not a measurement of test work. Slice B cuts, against a real
+  profile.
+
+
+  (2) **`type: defect`, `severity: high`.** Every recorded run since 2026-07-07
+  is a failure, which means the suite's failures currently carry no signal —
+  a real regression and worker-termination noise look identical in that log.
+  That is a broken safety signal, so it takes the Article 3.2.4 expedite lane
+  rather than queueing behind features.
+
+
+  (3) **The profile is a committed artifact, not console output.** Slice B and
+  slice C both need to read it, and a number that scrolled past in a terminal
+  is not available to the next parcel.
+
+
+  (4) **The prime suspect is stated but not assumed.** If profiling shows the
+  worker-heap theory is wrong, report what the run actually shows — I would
+  rather be corrected here than have the coder implement my guess.
+
+source: |
+  backlog/INTAKE-unit-suite-under-13s.md (human via Cursor, 2026-08-03
+  ~07:38 CEST). Slice A of epic `unit-suite-speed` (BL-791). Coordinator
+  note 2026-08-03: "ABSOLUTE PRIORITY: drain INTAKE-unit-suite-under-13s.md
+  first. BL-638 parked."
+
+notes: |
+  ## e2e procedure for QA
+
+  On an otherwise-idle host (check `uptime` load first — a loaded host makes
+  every number here meaningless):
+
+  1. Run `npm test` in `extension/` to completion. Confirm it exits green and
+     that no worker-termination message appears in the output.
+  2. Read the newly appended row in `extension/.test-durations.jsonl`. Confirm
+     `result` is `pass`, that `duration_ms` is present, and that `test_count`
+     is not lower than the previous row's 438.
+  3. Read the per-file duration report the run produced. Confirm every test
+     file that ran appears with its own duration and that the list is ordered
+     slowest first.
+  4. If the recorded duration is over 13000ms, confirm the report names the
+     files accounting for the bulk of the run, each with its measured duration
+     — that named set is what slice B will be specced against.
+  5. Confirm by diff that no test file was deleted, no test was skipped, no
+     exclude glob was widened, and that neither `SUITE_DURATION_BUDGET_MS` nor
+     BL-378's per-file budget was raised.
