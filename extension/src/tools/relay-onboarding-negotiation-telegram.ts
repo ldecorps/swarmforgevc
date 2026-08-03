@@ -58,7 +58,6 @@ import { runObject, runApprove } from './negotiate-onboarding-contract';
 import { makeArgsGuardedMain, printJsonToStdout, runCliMain } from './swarm-metrics';
 import { runContainedLoop } from './telegramFrontDeskBotCore';
 import { atomicWrite } from '../util/atomicWrite';
-import { tryRealpath } from '../util/pathContainment';
 
 const POLL_TIMEOUT_SECONDS = 25;
 const LOOP_RESTART_DELAY_MS = 5000;
@@ -241,6 +240,14 @@ export function isTestFixtureRoot(targetRepoPath: string): boolean {
   const canonicalTmp = tryRealpath(tmpDir);
   const canonicalRoot = tryRealpath(targetRepoPath);
   return canonicalRoot.startsWith(canonicalTmp);
+}
+
+function tryRealpath(p: string): string {
+  try {
+    return fs.realpathSync(p);
+  } catch {
+    return p;
+  }
 }
 
 // The launcher's own idempotent pid-alive guard (launch_negotiation_relay.sh)

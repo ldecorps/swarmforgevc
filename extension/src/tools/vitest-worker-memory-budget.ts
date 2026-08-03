@@ -45,18 +45,3 @@ export function computeWorkerMemoryBudget({ maxWorkers, perWorkerHeapMB, hostRam
   const budgetMB = hostRamMB * SAFE_HOST_RAM_FRACTION;
   return { totalMB, withinBudget: totalMB <= budgetMB };
 }
-
-// BL-792: MAX_WORKERS/PER_WORKER_HEAP_MB were sized against the reference
-// 15360MB incident host and never actually checked against the REAL host's
-// RAM anywhere - computeWorkerMemoryBudget above was exercised only by this
-// module's own unit tests with a hardcoded 15360MB. A host with less RAM
-// (this project's own dev/swarm box measures ~8192MB, shared with several
-// resident swarm-agent processes) silently runs the full 6-worker x 1280MB
-// footprint anyway, which does not fit: 6*1280=7680MB against a 4096MB safe
-// budget on an 8192MB host. Neither cap is changed here - this derives how
-// many of MAX_WORKERS actually fit the CALLER's real hostRamMB, capped at
-// MAX_WORKERS and floored at 1 (a pool must always have at least one worker).
-export function resolveWorkerPoolSize(hostRamMB: number, ceiling: number = MAX_WORKERS, perWorkerHeapMB: number = PER_WORKER_HEAP_MB): number {
-  const safeCount = Math.floor((hostRamMB * SAFE_HOST_RAM_FRACTION) / perWorkerHeapMB);
-  return Math.max(1, Math.min(ceiling, safeCount));
-}
