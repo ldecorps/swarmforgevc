@@ -11,7 +11,7 @@ direction: queue-jump
 depends_on: []
 mutation_cost: low
 required_stages: [specifier, coder, cleaner, architect, hardender, documenter, qa]
-assigned_to: none
+assigned_to: coder
 
 invariants:
   - "The launcher never writes tunnel state and never sends a pairing notification for a base URL it has not observed the tunnel actually serving — process liveness alone is never treated as edge readiness."

@@ -1,0 +1,153 @@
+id: BL-795
+title: "DEFECT — Stamp the 2026-08-03 mono-router self-starvation hand fix (rule_proposal rotate + chase redirect + alert keeps waking); ticket-less in the master tree"
+milestone: M8
+type: defect
+severity: high
+status: todo
+epic: swarm-reliability
+human_approval: approved
+priority: 1
+direction: queue-jump
+depends_on: []
+mutation_cost: low
+required_stages: [specifier, coder, cleaner, architect, hardender, documenter, qa]
+assigned_to: coder
+
+invariants:
+  - "A directed rule_proposal in a role's inbox/new is immediately actionable for mono-router rotation — the same class as git_handoff — and never sits forever behind chase-rotate-skip-broadcast."
+  - "A chase poke at a non-preferred role redirects the resident onto the preferred actionable role rather than returning not-preferred and dropping the rotate."
+  - "Once stuck in_process work arms the chase alert / escalation, resume attempts continue; escalation does not permanently abandon a dormant mono-router holder."
+
+required_wiring:
+  - "swarmforge/scripts/mono_router_lib.bb::actionable-mail?::rule-proposal-count makes a mailbox actionable"
+  - "swarmforge/scripts/handoffd.bb::role-mail-row::rule_proposal parcels join the actionable set"
+  - "swarmforge/scripts/handoffd.bb::chase-rotate-to!::redirects to preferred-mono-rotate-role when the poked role is not preferred"
+  - "swarmforge/scripts/chase_sweep_lib.bb::sweep-in-process!::alert still applies a stuck nudge after on-stuck-escalation!"
+  - "swarmforge/scripts/test/test_handoffd_rule_proposal_rotate_wiring.sh::--print-preferred-rotate-target::wiring test exists and is runnable"
+  - "specs/features/BL-795-mono-router-starvation-hand-fix.feature::Scenario::acceptance contract exists"
+
+approval_context: >
+  Operator asked (2026-08-03, Cursor) that the hand starvation fixes be
+  stamped by the swarm rather than committed past review — same BL-506 /
+  BL-709 / BL-763 adopt-and-review fork as BL-787..BL-789. The three
+  invariants above are the behaviour that stopped the live starve; keep
+  them. No behaviour corrections are being asked against the hand work:
+  this is a pure stamp of a verified live fix, not a change-the-hand-work
+  ticket. Amend only if review finds a regression against BL-576's
+  fresh-note broadcast-thrash guard (fresh notes must stay non-actionable).
+
+description: |
+  ## What
+
+  Three coupled gaps let the mono-router starve itself with real work in
+  flight (live on 2026-08-03 while BL-787 was at hardener):
+
+  1. **`rule_proposal` was not actionable** for rotation. Specifier mail
+     of type `rule_proposal` sat in `inbox/new` forever as
+     `chase-rotate-skip-broadcast`, because `actionable-mail?` /
+     `role-mail-row` only counted `in_process`, `git_handoff`, and aged
+     `note` (BL-576). A directed Article 5.1 parcel is not a broadcast.
+
+  2. **`not-preferred` dropped the poke.** When chase poked a role that
+     was not `preferred-mono-rotate-role`, it logged
+     `chase-rotate-skip-not-preferred` and returned without rotating.
+     The preferred role (hardender holding `in_process`) was never
+     reached from those pokes.
+
+  3. **`alert` stopped waking.** After `maxChases`, `decide-stuck-action`
+     returned `"alert"`, armed `chase-escalations.json`, and applied no
+     further nudge. On mono-router dormant holders there is no
+     human-attachable standing pane — escalation without continued wake
+     is permanent abandonment.
+
+  The hand fix is already in the master working tree and was used to
+  recover the live swarm. Evidence:
+  `backlog/evidence/hotfix-2026-08-03-mono-router-starvation.md`.
+
+  Files:
+
+  - `swarmforge/scripts/mono_router_lib.bb` (modified) — `actionable-mail?`
+  - `swarmforge/scripts/handoffd.bb` (modified) — `role-mail-row`,
+    `chase-rotate-to!` redirect via `attempt-resident-rotate!`
+  - `swarmforge/scripts/chase_sweep_lib.bb` (modified) — alert keeps
+    nudging
+  - `swarmforge/scripts/test/mono_router_lib_test_runner.bb` (modified)
+  - `swarmforge/scripts/test/test_chase_sweep.sh` (modified) — scenario 06
+  - `swarmforge/scripts/test/test_handoffd_rule_proposal_rotate_wiring.sh`
+    (untracked) — wiring test through `--print-preferred-rotate-target`
+
+  ## Why stamp this now
+
+  Per BL-506, ticket-less functional work is retroactively ticketed or
+  reverted. This code is what is keeping the swarm from re-starving the
+  same way; silent commit past QA would make it an ancestor of unrelated
+  approvals. Adopt + review is the honest path (BL-709 / BL-763).
+
+  ## Scope
+
+  Adopt the files above as-is for the three invariants. Do **not** fold in:
+
+  - The 2026-08-02 start-of-cycle heartbeat pulse also present in
+    `handoffd.bb` — that is BL-789.
+  - Stale `assigned_to` / zombie sender `in_process` after a successful
+    forward — that is BL-794.
+  - Fresh-note ageing (BL-576) — must stay non-actionable; the wiring
+    test already asserts a fresh note alone is not preferred.
+
+  Also in scope: acceptance feature under
+  `specs/features/BL-795-mono-router-starvation-hand-fix.feature`, and
+  recording the three existing shell/bb test runs in evidence.
+
+  ## Out of scope
+
+  - BL-794 stale-holder after successful git_handoff forward.
+  - BL-789 Mac host-switch freshness / heartbeat / Stryker concurrency.
+  - Standing-pane vs dormant-holder product design beyond "alert must
+    keep attempting resume on dormant holders".
+
+  ## STEERING note
+
+  Queue-jump / priority 1: the swarm was fully idle with held work and
+  depth 1. Do not let this rot behind feature work. Severity `high` so
+  Article 3.2.4 can expedite once the active slot frees (or via
+  expeditor if the human chooses to stop the stack — BL-567 — because
+  this is handoffd/rotation machinery).
+
+acceptance: specs/features/BL-795-mono-router-starvation-hand-fix.feature
+
+source: |
+  Operator (Cursor Auto, 2026-08-03 evening): diagnosed live starve while
+  BL-787 was at hardener; hand-fixed the three gaps; recovered resident
+  onto hardender; then asked "I want those changes to be stamped by the
+  swarm." Sibling of BL-576 (aged notes), BL-651 (prior starve evidence),
+  BL-794 (stale holder).
+
+notes: |
+  ## Severity rationale
+
+  `high`. The pipeline had real work mid-harden and the resident sat idle
+  at home with depth cap 1 — a full self-starve, not a cosmetic board lie.
+  Article 3.2.4 expedite lane is intentional; flip down only if review
+  finds the live risk was already closed by something else.
+
+  ## Acceptance is runnable offline
+
+  The existing shell/bb tests drive real `handoffd.bb` /
+  `mono_router_lib.bb` / `chase_sweep_lib.bb` against temp fixtures — no
+  live swarm required. Specifier should pin those behaviours in Gherkin
+  and keep the wiring test on the `--print-preferred-rotate-target` path
+  so a hand-built score row cannot stay green while production starves.
+
+  ## e2e procedure for QA
+
+  1. Run `bb swarmforge/scripts/test/mono_router_lib_test_runner.bb` —
+     rule_proposal actionable assertions green.
+  2. Run `bash swarmforge/scripts/test/test_chase_sweep.sh` — scenario 06
+     escalates AND keeps waking.
+  3. Run `bash swarmforge/scripts/test/test_handoffd_rule_proposal_rotate_wiring.sh`
+     — A/B/C (rule_proposal preferred; fresh note not; in_process beats
+     rule_proposal).
+  4. On a live mono-router: drop a directed `rule_proposal` into a dormant
+     role's `inbox/new` while resident is at home with empty mail — expect
+     rotate to that role (or redirect onto a preferred held claim if one
+     exists), never a standing `chase-rotate-skip-broadcast` loop.

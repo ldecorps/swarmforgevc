@@ -217,12 +217,16 @@
 (def default-rotate-cooldown-ms 30000)
 
 (defn actionable-mail?
-  "True when a role holds in_process work, new git_handoff mail, or a note
-   that has aged past the BL-576 threshold. Fresh notes never qualify —
-   that broadcast-thrash protection is unchanged."
-  [{:keys [in-process-count git-handoff-count aged-note-count]}]
+  "True when a role holds in_process work, new git_handoff mail, a directed
+   rule_proposal, or a note that has aged past the BL-576 threshold. Fresh
+   notes never qualify — that broadcast-thrash protection is unchanged.
+   rule_proposal is immediately actionable (like git_handoff): it is a
+   directed Article 5.1 parcel, never a multi-role broadcast; excluding it
+   left specifier mailboxes permanently non-rotatable (2026-08-03 starve)."
+  [{:keys [in-process-count git-handoff-count rule-proposal-count aged-note-count]}]
   (or (pos? (or in-process-count 0))
       (pos? (or git-handoff-count 0))
+      (pos? (or rule-proposal-count 0))
       (pos? (or aged-note-count 0))))
 
 ;; BL-636: handoff-protocol.md priority scale is two digits 00-99, lower
