@@ -320,6 +320,11 @@ Every delivered `rule_proposal` is appended as one JSON line to
 proposer, and delivery timestamp) for durable audit, regardless of the
 specifier's eventual accept/reject decision.
 
+Under a mono-router pack, a `rule_proposal` sitting in a dormant role's
+mailbox is immediately actionable for chase-sweep rotation — it never waits
+out the `note` aging threshold. See "Mono-router rule_proposal actionability
+and chase redirect (BL-795)" below.
+
 ## `swarm_handoff.sh`
 
 `swarm_handoff.sh` should be the strict outbound protocol gate.
@@ -893,6 +898,59 @@ Read at daemon startup via the effective config (BL-216); absent, malformed,
 zero, or negative values degrade to default. Cannot be disabled (zero/negative
 would reinstate broadcast thrash). For tuning and live investigation, see
 `docs/how-to/BL-576-aged-note-actionability-mono-router.md`.
+
+### Mono-router rule_proposal actionability and chase redirect (BL-795)
+
+Three coupled chase-sweep gaps let a mono-router pack starve itself with real
+work in flight (observed live 2026-08-03: the resident sat idle at home while
+hardener held `in_process` work, because none of the pokes chase sent could
+reach it). All three are fixed together and are one invariant set, not
+independent tunables:
+
+1. **`rule_proposal` is immediately actionable**, joining `git_handoff` (never
+   the `note_actionable_after_ms` aging path `note` uses). A directed Article
+   5.1 `rule_proposal` parcel is addressed to one role, not a broadcast, so it
+   never needs the BL-576 broadcast-thrash protection — leaving it out meant a
+   `rule_proposal` sitting in a dormant role's `inbox/new` logged
+   `chase-rotate-skip-broadcast` forever. `actionable-mail?`
+   (`mono_router_lib.bb`) and `role-mail-row` (`handoffd.bb`) both count
+   `rule_proposal` mail alongside `in_process`/`git_handoff`/aged-note counts,
+   and it participates in the same BL-636 best-priority ranking as any other
+   actionable parcel.
+2. **A chase poke at a non-preferred role redirects instead of dropping.**
+   Previously, when chase polled a role that was not
+   `preferred-mono-rotate-role`, `chase-rotate-to!` logged
+   `chase-rotate-skip-not-preferred` and returned without rotating — so if the
+   preferred role's own poke was itself gated (busy/cooldown) that sweep, the
+   preferred role's actionable work was never reached from any poke. Now a
+   non-preferred poke immediately attempts to rotate onto the preferred role
+   instead (`chase-rotate-redirect` log line), sharing the same gate+rotate
+   path (`attempt-resident-rotate!`) the direct-poke case already used.
+3. **An exhausted `alert` keeps attempting a resume wake**, instead of
+   permanently abandoning a dormant holder. Once `decide-stuck-action` returns
+   `"alert"` after `maxChases`, `sweep-in-process!` (`chase_sweep_lib.bb`) still
+   arms `chase-escalations.json` (so the human alert fires), but now also keeps
+   applying the same stuck nudge every sweep afterward — a standing-pane pack
+   can absorb the continued wake harmlessly, and a dormant mono-router rotate
+   target has no human-attachable session to fall back to, so stopping the
+   wake at escalation time was a silent permanent stall, not a safety measure.
+
+None of the three change the BL-576 fresh-note broadcast-thrash guard — a
+fresh `note` alone is still non-actionable until it ages in.
+
+**Observing it:** `chase-rotate-redirect <polled-role> <preferred-role>` in
+`handoffd.log` marks case 2 firing; a `rule_proposal` no longer producing
+`chase-rotate-skip-broadcast` marks case 1; repeated stuck-nudge log lines
+after the escalation alert has already fired marks case 3.
+
+**Verifying the wiring:**
+`bash swarmforge/scripts/test/test_handoffd_rule_proposal_rotate_wiring.sh`
+drives the real `--print-preferred-rotate-target` path against fixture
+mailboxes (scenario A: `rule_proposal` alone is preferred; B: a fresh `note`
+alone is not; C: `in_process` outranks a `rule_proposal`). See
+`backlog/evidence/hotfix-2026-08-03-mono-router-starvation.md` for the
+original live incident and `backlog/evidence/BL-795-hardener-verify-pass.md`
+for the full adoption test run.
 
 ### Dispatch-gap sweep
 

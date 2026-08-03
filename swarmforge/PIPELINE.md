@@ -131,6 +131,21 @@ chase sweep will rotate the resident to that dormant role to drain it.
 for how to tune `note_actionable_after_ms` (default 1200000 ms / 20 minutes) for
 your workflow.
 
+### `rule_proposal` is immediately actionable, chase redirects to preferred (BL-795)
+
+Unlike a plain `note`, a directed `rule_proposal` (Article 5.1) is actionable
+for mono-router rotation the moment it lands — it never waits out
+`note_actionable_after_ms`, because it targets one role, not a broadcast. If
+you send a `rule_proposal` to a dormant specifier, expect the resident to
+rotate to it on the next chase sweep, not in ~20 minutes.
+
+Also: a chase poke that lands on a role other than the currently-preferred one
+now redirects the resident onto the preferred role instead of dropping the
+poke, and a stuck-holder alert keeps attempting a resume wake after it fires
+rather than abandoning a dormant holder for good. Full mechanics:
+`swarmforge/handoff-protocol.md` ("Mono-router rule_proposal actionability and
+chase redirect (BL-795)").
+
 ### Non-home role after QA merge-up (BL-550)
 
 On mono-router packs with `config rotation router`, QA's merge-up `note` is
