@@ -21,25 +21,6 @@ export function parsePilotTicket(text: string, defaultTicket = 'BL-696'): string
   return normalizeExpediteTicket(match[1], defaultTicket);
 }
 
-export type PilotSafeCommand = { kind: 'start' } | { kind: 'list' };
-
-// BL-792: pilotSafeDefects.test.js already specified this parser's full
-// contract (BL-722's own test, landed ahead of this piece of BL-722's
-// wiring) but the function itself was never added, so every run since has
-// failed on a plain missing-export TypeError - not a behavior regression.
-// Scoped to exactly what that test asserts; dispatching a real incoming
-// `/pilot safe` command to listSafePilotDefects/pickSafePilotDefect stays
-// BL-722's own wiring work, not part of this fix.
-/** Parse `/pilot safe`, `/pilot safe --list`, `/pilot safe list` (case-insensitive). */
-export function parsePilotSafeCommand(text: string): PilotSafeCommand | undefined {
-  const trimmed = text.trim();
-  const match = trimmed.match(/^\/pilot\s+safe(?:\s+(--list|list))?\s*$/i);
-  if (!match) {
-    return undefined;
-  }
-  return match[1] ? { kind: 'list' } : { kind: 'start' };
-}
-
 export function formatPilotStartMessage(ticket: string): string {
   return [
     `🧭 Pilot ${ticket} started.`,

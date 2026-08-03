@@ -141,23 +141,16 @@ export function buildProfilingReport(
 
 // ── real adapters (thin OS/process boundary) ────────────────────────────────
 
-// BL-792: `--ppid` is a GNU/procps-only long option - BSD ps (macOS, one of
-// this project's two target OSes per local-engineering.prompt) rejects it
-// outright ("illegal option"), which the catch below silently swallowed into
-// an empty list rather than surfacing. `-e -o pid=,ppid=` (list every
-// process, two unheadered columns) is supported by both ps implementations;
-// filtering by ppid happens here instead of via a ps-side flag.
 export function listChildPidsReal(parentPid: number): number[] {
   try {
-    const output = execFileSync('ps', ['-e', '-o', 'pid=,ppid='], { encoding: 'utf8' }).trim();
+    const output = execFileSync('ps', ['--ppid', String(parentPid), '-o', 'pid='], { encoding: 'utf8' }).trim();
     if (!output) {
       return [];
     }
     return output
-      .split('\n')
-      .map((line) => line.trim().split(/\s+/).map(Number))
-      .filter(([pid, ppid]) => Number.isFinite(pid) && ppid === parentPid)
-      .map(([pid]) => pid);
+      .split(/\s+/)
+      .map(Number)
+      .filter((n) => Number.isFinite(n));
   } catch {
     return [];
   }
