@@ -1,6 +1,7 @@
 const assert = require('node:assert/strict');
 const {
   computeWorkerMemoryBudget,
+  resolveWorkerPoolSize,
   MAX_WORKERS,
   PER_WORKER_HEAP_MB,
   SAFE_HOST_RAM_FRACTION,
@@ -59,4 +60,32 @@ test('PER_WORKER_HEAP_MB is an explicit finite per-worker heap cap', () => {
 test('the exported caps themselves stay within the safe budget on the reference 15360MB host', () => {
   const result = computeWorkerMemoryBudget({ maxWorkers: MAX_WORKERS, perWorkerHeapMB: PER_WORKER_HEAP_MB, hostRamMB: 15360 });
   assert.equal(result.withinBudget, true);
+});
+
+// ── resolveWorkerPoolSize (pure) - BL-792 ───────────────────────────────────
+// MAX_WORKERS/PER_WORKER_HEAP_MB were never actually checked against a REAL
+// host's RAM anywhere in the production path (only against a hardcoded
+// 15360MB in this file's own tests above) - a smaller real host silently ran
+// the full footprint anyway. resolveWorkerPoolSize is what vitest.config.mjs
+// now calls instead of reading MAX_WORKERS directly.
+
+test('on the 15360MB reference host, resolves to the full MAX_WORKERS ceiling (unchanged behavior)', () => {
+  assert.equal(resolveWorkerPoolSize(15360), MAX_WORKERS);
+});
+
+test('on an 8192MB host, shrinks below the ceiling to fit the safe budget', () => {
+  // floor(8192 * 0.5 / 1280) = 3
+  assert.equal(resolveWorkerPoolSize(8192), 3);
+});
+
+test('never resolves below 1, even on a host too small to fit even one worker heap', () => {
+  assert.equal(resolveWorkerPoolSize(100), 1);
+});
+
+test('never resolves above the ceiling, even on a host with abundant RAM', () => {
+  assert.equal(resolveWorkerPoolSize(100000), MAX_WORKERS);
+});
+
+test('respects an explicit ceiling/perWorkerHeapMB override rather than only the module defaults', () => {
+  assert.equal(resolveWorkerPoolSize(4096, 2, 1024), 2);
 });
