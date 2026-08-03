@@ -55,4 +55,22 @@ class BridgeClientTest {
 
         assertNotEquals(rawDump, message)
     }
+
+    // BL-769 hardening: the `when` branches only cover IOException and its
+    // subtypes; a non-IOException (e.g. a malformed-JSON response surfacing
+    // as JSONException) falls through to the generic else branch, which was
+    // otherwise unreached by any test.
+    @Test
+    fun `falls back to a message naming the exception class for a non-io exception`() {
+        val message = BridgeClient.friendlyConnectionMessage(IllegalStateException("boom"))
+
+        assertEquals("Connection error: boom", message)
+    }
+
+    @Test
+    fun `falls back to the exception class name when a non-io exception has no message`() {
+        val message = BridgeClient.friendlyConnectionMessage(IllegalStateException())
+
+        assertEquals("Connection error: IllegalStateException", message)
+    }
 }

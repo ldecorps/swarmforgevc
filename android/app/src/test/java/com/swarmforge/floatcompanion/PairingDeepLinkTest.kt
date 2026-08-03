@@ -53,6 +53,13 @@ class PairingDeepLinkTest {
         assertNull(PairingDeepLink.parse("swarmforge-bubble://pair?url=%20&token=abc123"))
     }
 
+    // BL-769 hardening: symmetric to the blank-url case above — only the url
+    // side of the blank check was exercised.
+    @Test
+    fun `rejects a link with a blank token param`() {
+        assertNull(PairingDeepLink.parse("swarmforge-bubble://pair?url=https://tunnel.example&token=%20"))
+    }
+
     @Test
     fun `rejects an unparsable link`() {
         assertNull(PairingDeepLink.parse("not a uri at all ::"))
