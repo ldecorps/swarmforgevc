@@ -1,0 +1,144 @@
+id: BL-791
+title: "EPIC — Bring the extension unit suite back under 13 seconds, and keep it there"
+milestone: M8
+status: todo
+type: epic
+epic: unit-suite-speed
+human_approval: pending
+priority: 00
+direction: human-requested
+depends_on: []
+mutation_cost: medium
+decomposes_into: [BL-792]
+
+remaining_slices:
+  - "Slice B — cut the measured poles: reduce the run to under the 13s operational ceiling (prefer under the 10s budget already in code) by fixing what slice A's per-file profile actually names. Scope is written only once that profile exists; writing it now would be guessing."
+  - "Slice C — hold the line: whatever gate or ratchet is needed so the suite cannot silently walk back up. BL-378's per-file 7s budget and BL-445's suite ratchet both already exist — this slice is about why they did not stop a 25s-to-169s regression, not about inventing a third one."
+
+description: |
+  ## What the human asked for
+
+  Operator, 2026-08-03, absolute priority: bring `npm test` in `extension/`
+  under **13 seconds** wall-clock, without deleting tests, dropping coverage,
+  or raising the budget to hide the number. 13s is the operational ceiling;
+  the 10s `SUITE_DURATION_BUDGET_MS` already in code stays the ratchet.
+
+  ## What is actually measured today
+
+  `extension/.test-durations.jsonl`, latest row:
+
+  ```
+  {"finished_at":"2026-08-03T05:42:29.650Z","test_count":438,
+   "result":"fail","duration_ms":169507}
+  ```
+
+  Two facts in that row matter equally, and only one of them is in the
+  headline:
+
+  1. **169.5s against a 10s budget.** File count has grown ~100 (July) →
+     ~273 (BL-445 era) → **438**.
+  2. **`result: fail`** — workers terminated mid-run. Every recorded run since
+     2026-07-07 is a `fail`; the last `pass` rows are from 2026-07-07 at 99
+     files and 82–136s.
+
+  ## Why the epic starts by measuring rather than cutting
+
+  169.5s is not a profile of test work. It is the wall-clock of a run in which
+  workers died. Nobody — not the operator, not the specifier — currently knows
+  how much of it is tests and how much is worker death and redone files. Cutting
+  against that number is cutting against noise, which is precisely what the
+  intake's own success criterion 3 ("profile first ... do not hit the number by
+  deleting tests") forbids.
+
+  So slice A (BL-792) makes the run **green and profiled**. It may well be that
+  a green run is already far under 169.5s — in which case slice B is small or
+  unnecessary, and the epic closes early. That is a good outcome, not a wasted
+  slice.
+
+  ## The prime suspect, named so slice A does not start from zero
+
+  Two individually-correct decisions appear to collide at 438 files:
+
+  - **BL-445 set `isolate: false`** (`vitest.config.mjs`). A worker no longer
+    resets its module registry between test files — the change that cut the
+    suite to ~25s and the reason it was worth making.
+  - **BL-422 capped each worker at `PER_WORKER_HEAP_MB = 1280` across
+    `MAX_WORKERS = 6`** forks, after an unbounded run drove the kernel OOM
+    killer into a spiral that killed swarm agents twice in one day.
+
+  With isolation off, one fork now accumulates the modules of roughly
+  `438 / 6 ≈ 73` test files with no reset, against a hard 1280MB ceiling. A
+  worker that hits it is terminated — which is exactly the observed failure,
+  and would also explain a superlinear 1.6x-files → 6.8x-time blowup.
+
+  This is a **suspect, not a finding**. Slice A confirms or refutes it against a
+  real run. Neither BL-445's isolation nor BL-422's cap may simply be reverted:
+  each was load-bearing, and undoing either re-opens the incident it closed.
+
+  ## Out of scope for the whole epic
+
+  - Gherkin / acceptance pipeline wall-clock — a separate surface with its own
+    budget.
+  - Android JVM unit tests (BL-769's suite) — not this suite.
+  - Raising `SUITE_DURATION_BUDGET_MS`, or any other change whose effect is to
+    make the number look better without the run being faster.
+  - Deleting, skipping, or excluding tests to reach the target.
+
+approval_context: >
+  Your 2026-08-03 absolute-priority request, specced. Firm, because you said
+  it: under 13s, no deleted tests, no dropped coverage, no raised budget,
+  profile before cutting.
+
+
+  Two calls of mine that need your eye.
+
+
+  (1) **Slice A measures before slice B cuts.** I know you asked for a number,
+  not a report, and I have not slowed this down for ceremony: the last recorded
+  run FAILED with workers being terminated, so 169.5s is not a measurement of
+  test work at all. Slice A is bounded — make it green, publish the per-file
+  profile — and it is genuinely possible that a green run already lands near
+  the ceiling, which would make slice B small or unnecessary. If you would
+  rather I spec one all-in ticket against the 169.5s number, say so and I will.
+
+
+  (2) **I have named a prime suspect but not a fix.** `isolate: false`
+  (BL-445, the change that made the suite fast) plus a hard 1280MB per-worker
+  heap cap (BL-422, the change that stopped the OOM spiral killing agents) look
+  like they collide at 438 files: no module-registry reset means one fork
+  accumulates ~73 files' modules into a fixed ceiling. If that is right, the
+  fix is neither "turn isolation back on" nor "raise the cap" — both re-open a
+  closed incident — and slice B will have to be cleverer than either. Slice A
+  confirms or kills the theory before anyone spends effort on it.
+
+
+  Priority 00 on both tickets, per your "absolute — do not park behind medium
+  adoption tickets".
+
+source: |
+  backlog/INTAKE-unit-suite-under-13s.md (human via Cursor, 2026-08-03
+  ~07:38 CEST), drained 2026-08-03. Coordinator note the same morning:
+  "ABSOLUTE PRIORITY: drain INTAKE-unit-suite-under-13s.md first. BL-638
+  parked."
+
+notes: |
+  ## Prior art this epic must not repeat
+
+  - **BL-445** (done) — cut the suite to ~25s at ~273 files via `isolate:false`
+    and delivered the 10s budget verdict. The suite has since regressed hard.
+  - **BL-362 / BL-363** — earlier spawn-tax cuts from a ~13s baseline: real
+    timers and repeated engine boots in the two slowest files.
+  - **BL-378** — the per-file 7s hard budget
+    (`extension/scripts/check-suite-file-budget.ts`).
+  - **BL-078 / BL-252** — suite-duration trend recording.
+
+  Three of those five are gates that already exist and did not prevent this
+  regression. Slice C's question is why, and it is a more interesting question
+  than "add another gate".
+
+  ## Why this is a correctness risk, not just a slowness one
+
+  Every recorded run since 2026-07-07 is `result: fail`. A suite that always
+  fails is a suite whose failures carry no signal — a real regression and
+  worker-termination noise are indistinguishable in that log. Slice A restores
+  the signal, which is worth landing even if the wall-clock never moves.
