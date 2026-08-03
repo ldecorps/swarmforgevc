@@ -51,6 +51,7 @@ here.
 - [GitHub Auto-Intake Scheduler](how-to/github-auto-intake-scheduler.md)
 - [/pilot's acceptance-contract landing gate](how-to/BL-727-pilot-acceptance-contract-gate.md)
 - [Sharing one Telegram bot between the front desk and the Cursor bridge](how-to/BL-764-front-desk-shared-token-bridge-fanout.md)
+- [Named tunnel Bubble — fixed URL on a Cloudflare zone you own](how-to/named-tunnel-bubble-musicalsifu.md)
 
 ## Reference
 

@@ -132,5 +132,7 @@ if [[ -f "$SCRIPT_DIR/operator_tunnel.sh" ]]; then
   bash "$SCRIPT_DIR/operator_tunnel.sh" stop "$ROOT" 2>/dev/null || true
 fi
 signal_pid_file "$OP_DIR/resident-spy-cloudflared.pid"
+# Paired with launch_resident_spy_tunnel.sh ensure_tunnel_caffeinate (macOS idle).
+signal_pid_file "$OP_DIR/resident-spy-caffeinate.pid"
 
 log "stop_ancillary_services done"
