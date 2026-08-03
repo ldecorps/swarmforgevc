@@ -1,0 +1,138 @@
+id: GH-29
+title: "EPIC — Bubble note composer: send a note to a chosen swarm role from the phone, and amend or withdraw it while it is still queued"
+milestone: M8
+status: todo
+type: epic
+epic: bubble-note-composer
+human_approval: pending
+priority: 12
+direction: human-requested
+depends_on: [BL-769]
+mutation_cost: medium
+decomposes_into: [BL-790]
+
+remaining_slices:
+  - "Slice B — queued-note read model and withdraw: Bubble lists the notes it queued that the recipient has not yet dequeued, and can withdraw one. A note already dequeued is refused with a stated reason, never silently withdrawn."
+  - "Slice C — amend a queued note: replace the message, and/or re-target the recipient role, of a note that has not yet been dequeued, under the same not-yet-dequeued guard as slice B."
+
+description: |
+  ## What the human asked for
+
+  GitHub issue 29, in full: *"Send note to Drop-down Agents / Can also do /
+  Amend note / Remove note."*
+
+  Four words carried two genuine forks, so this sat undrained from 2026-07-31
+  until the human answered on 2026-08-03:
+
+  > **role picker; amend/remove act on a QUEUED (undelivered) handoff.**
+
+  That settles both. "Drop-down agents" is a **role picker** on a note-composer
+  screen. Amend and remove act on a **real queued handoff** — not on an unsent
+  local draft, and not on an approval-style card.
+
+  ## What "queued (undelivered)" means operationally
+
+  A handoff is amendable/withdrawable exactly while its recipient has not yet
+  picked it up: the parcel is still sitting in the mailbox queue with no
+  `dequeued_at` stamped on its envelope. Once `ready_for_next.sh` moves it into
+  `in_process/`, the role may already be acting on it and the window has shut.
+
+  That window is short and inherently racy, so the guard in slices B and C
+  **fails closed**: if the parcel cannot be shown to still be un-dequeued, the
+  operation is refused with a stated reason rather than attempted. An amend or
+  withdraw that half-lands on a parcel a role is already working is worse than
+  one that never lands.
+
+  ## The surface, and the boundary it must respect
+
+  This is **Bubble** — the native Android app under `android/`. Local
+  engineering rule 5 names two phone-viewable surfaces that are not
+  interchangeable, and this one is unambiguous: composing and queueing a
+  handoff is a **write path**, so it rides the authenticated bridge
+  (`bridgeServer.ts`) that Bubble already speaks to. It emphatically may not
+  ride the static backlog-dashboard PWA, which has no auth and no write path
+  at all.
+
+  ## The constraint the coder must not discover the hard way
+
+  A `note`'s `message:` is a **single line, 80 characters maximum**
+  (`swarmforge/handoff-protocol.md`). That is not an implementation detail to
+  be found during coding — it is the composer's central UI constraint, and it
+  is what scenario 04 of slice A exists to pin down.
+
+  ## Out of scope for the whole epic
+
+  - Any handoff type other than `note`. This composer does not send
+    `git_handoff`, and must not: forwarding a parcel is a pipeline role's
+    judgement, not an operator button.
+  - Changing `swarm_handoff.bb`, the handoff grammar, or the mailbox layout.
+    A note is queued by shelling to the real tool, exactly as
+    `enqueueRoleAnswerNote` already does.
+  - Any equivalent surface on the Telegram Mini App. This is Bubble.
+
+approval_context: >
+  Your issue 29, specced against your 2026-08-03 answer (role picker;
+  amend/remove act on a queued handoff). Firm, because you said it: the picker
+  is a role picker, and amend/remove act on a real queued handoff rather than
+  a local draft.
+
+
+  Three calls of mine that need your eye.
+
+
+  (1) **Three slices, not one.** Send (BL-790) ships first and is useful alone;
+  withdraw and amend both need a "which of my notes is still un-dequeued"
+  read model, so they follow once send exists. If you want all three in one
+  parcel, say so and I will merge them — but it would be a large slice by this
+  repo's own p90 measure (BL-634).
+
+
+  (2) **The window is un-dequeued only, and the guard fails closed.** Once a
+  role has picked a note up, amend and withdraw are refused with a reason.
+  The alternative — clawing a parcel back out of `in_process/` — races a role
+  that may already be acting on it, and the mailbox has no idempotent undo for
+  that.
+
+
+  (3) **`note` only, never `git_handoff`.** A phone button that forwards a
+  parcel down the pipeline would let an operator skip a quality gate by
+  accident. Tell me if you want that anyway and I will spec it with its own
+  guards.
+
+
+  One consequence you should know about rather than discover: an automated
+  sender cannot stamp its own identity on a handoff — `swarm_handoff.bb` takes
+  `from:` from `SWARMFORGE_ROLE`, so a bridge-originated note arrives stamped
+  **from coordinator** (the precedent `enqueueRoleAnswerNote` set). That is
+  exactly how a stray priority-00 note reading "use staging please" became
+  unattributable in 2026-08-01. BL-790 therefore reserves a short `op: `
+  prefix so a role can tell an operator note from a real coordinator note at a
+  glance, at the cost of four of the human's 80 characters. Say the word if
+  you would rather have the four characters back.
+
+source: |
+  GitHub issue https://github.com/ldecorps/swarmforgevc/issues/29, seeded into
+  the backlog root as `backlog/GH-29-bubble-screen.yaml` by
+  `.github/workflows/swarm-intake.yml`.
+
+  Not drained 2026-07-31 / 2026-08-01 — the two forks above needed a human
+  answer and the specifier's single `role_ask` slot was held. Asked 2026-08-02
+  with three tappable options; answered 2026-08-03 with option 1, relayed as
+  a priority-00 note from coder: "GH-29: role picker; amend/remove act on a
+  QUEUED (undelivered) handoff."
+
+notes: |
+  ## Why the epic depends on BL-769
+
+  Every slice is Android. Until BL-769's JVM unit seam lands, an Android
+  ticket's acceptance contract runs zero scenarios — five tickets have already
+  shipped that way. This epic's children must not be promoted before it, for
+  the same reason BL-774's must not.
+
+  ## Relationship to the Bubble Live Screen epic (BL-774)
+
+  Both epics add native Bubble screens against the same bridge and both wait
+  on BL-769, but they do not overlap: BL-774 is a read-only view of
+  `/resident-pane`, this one is a write path that queues handoffs. Whichever
+  lands second inherits the navigation pattern the first established; neither
+  blocks the other.

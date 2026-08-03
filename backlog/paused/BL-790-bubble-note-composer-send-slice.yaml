@@ -1,0 +1,150 @@
+id: BL-790
+title: "Bubble note composer, slice A — pick a role, type a one-line note, queue it through swarm_handoff.bb"
+milestone: M8
+type: feature
+status: todo
+epic: bubble-note-composer
+human_approval: pending
+assigned_to: none
+priority: 12
+direction: human-requested
+depends_on: [BL-769]
+mutation_cost: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-790-bubble-note-composer-send.feature
+
+invariants:
+  - "Every note this slice queues is written by shelling to swarm_handoff.bb; no code path in the slice writes a handoff file into a mailbox directory directly."
+  - "No text the human can enter produces a handoff draft whose message header exceeds 80 characters or spans more than one line — the composer refuses it before any send is attempted."
+  - "Whenever the bridge supplies a failure reason, the composer displays that reason; a bare HTTP status code is never the whole message."
+
+required_wiring:
+  - "extension/src/bridge/bridgeServer.ts::/agent-notes::the send endpoint is routed by the live request handler, not merely defined in a module nothing dispatches to"
+  - "android/app/src/main/java/com/swarmforge/floatcompanion/BridgeClient.kt::/agent-notes::Bubble actually posts the composed note; a screen with no send call is a dead form (the BL-419 shape)"
+  - "android/app/src/main/java/com/swarmforge/floatcompanion/MainActivity.kt::NoteComposer::a navigation entry actually opens the composer; an Activity nothing launches is unreachable"
+
+description: |
+  ## What
+
+  Give Bubble a note composer: a navigation entry from the main screen, a role
+  picker, a one-line message field, and a send that queues a real `type: note`
+  handoff for the picked role.
+
+  Sending only. Amend and withdraw of a still-queued note are slices B and C of
+  this epic and must not appear on this screen — scenario 06 asserts their
+  absence, so that boundary is checkable rather than merely intended.
+
+  ## Approach
+
+  1. **Role picker reads the roster the bridge already publishes.** The
+     authenticated `GET /agents` endpoint already returns
+     `{ role, displayName, ... }` derived from `.swarmforge/roles.tsv` — the
+     roster the swarm actually runs. Read it; do not re-declare a role list in
+     Kotlin, or the picker will drift the first time the pack changes.
+
+  2. **One new authenticated endpoint, `POST /agent-notes`.** Body names the
+     recipient role and the message. The namespace is resource-shaped on
+     purpose: slice B's list/withdraw and slice C's amend extend the same path
+     rather than minting a second vocabulary.
+
+  3. **The handler queues by shelling to `swarm_handoff.bb`** with a draft of
+     `type: note` / `to: <role>` / `priority: 00` / `message: <text>`, under
+     `SWARMFORGE_ROLE=coordinator`. This is not a new precedent — it is exactly
+     what `enqueueRoleAnswerNote` in `telegram-front-desk-bot.ts` already does,
+     for exactly the same reason: the constitution forbids hand-writing a file
+     into `inbox/new/`, and a bridge process holds no pipeline role of its own.
+     Reuse that path rather than growing a second one.
+
+  4. **The message budget is 76 characters, and the composer owns enforcing
+     it.** A note's `message:` is one line, 80 characters maximum
+     (`handoff-protocol.md`). Four of those are reserved for an `op: ` prefix
+     the handler prepends (see below), leaving the human 76. The composer
+     refuses — before any network call — a message that is empty, that exceeds
+     the budget, or that contains a line break or control character. Refusal
+     states which rule was broken. The server re-checks; a client-side-only
+     limit is a suggestion, not a constraint.
+
+  5. **The `op: ` prefix exists so the note is attributable.** Because
+     `swarm_handoff.bb` stamps `from:` from `SWARMFORGE_ROLE`, an
+     operator-composed note would otherwise arrive indistinguishable from one
+     the coordinator wrote — the precise confusion that made a stray
+     priority-00 "use staging please" note unattributable on 2026-08-01. The
+     prefix costs four characters and buys a receiving role the ability to tell
+     the two apart at a glance.
+
+  6. **Failures state a reason.** Unreachable host, rejected token, and a
+     refused queue write are three different problems and read differently.
+     Reuse `BridgeClient`'s existing friendly-failure mapping; a bare status
+     code is never the whole message.
+
+  7. **Put the message validation and the roster parsing on the pure-logic side
+     of BL-769's JVM seam**, so scenarios 02 and 04 are covered by real unit
+     tests rather than a manual procedure. That is the whole reason this ticket
+     depends on BL-769.
+
+  ## Out of scope
+
+  - Listing, amending, or withdrawing a queued note (slices B and C).
+  - Any handoff type other than `note` — never `git_handoff`.
+  - Changing `swarm_handoff.bb`, the handoff grammar, or the mailbox layout.
+  - Changing `GET /agents` or any other existing bridge contract.
+  - Delivery confirmation beyond "the queue accepted it". Whether the role has
+    since woken is slice B's read model, not this one's.
+
+approval_context: >
+  Defaults I picked, all amendable.
+
+
+  (1) **`POST /agent-notes`, a new authenticated endpoint**, rather than
+  extending `/lets-talk/*`. Let's Talk is a conversation with the host agent;
+  this queues a parcel for a pipeline role. Different thing, different path,
+  and slices B and C extend this one.
+
+
+  (2) **Priority `00` on every note the composer sends.** An operator typing a
+  note to a role by hand is, by construction, the blocking-decision lane the
+  `00` priority exists for. Tell me if you would rather choose the priority per
+  note and I will add the control.
+
+
+  (3) **76 characters, with a reserved `op: ` prefix.** The full rationale is
+  in the epic's approval_context: without the prefix an operator note is
+  indistinguishable from a coordinator note, which has already caused real
+  confusion. Say the word and I will give you the four characters back.
+
+
+  (4) **Empty messages are refused.** A note with no message wakes a role for
+  nothing.
+
+
+  The judgement worth your eye: this slice cannot start until **BL-769** lands,
+  because without the JVM unit seam its acceptance contract would run zero
+  scenarios — which has already happened on five shipped Android tickets. If
+  you want the composer sooner, the honest options are to expedite BL-769 or to
+  accept a manual-procedure-only contract for this slice. Tell me which.
+
+source: |
+  backlog/GH-29-bubble-screen.yaml (GitHub issue 29), drained 2026-08-03 after
+  the human answered the specifier's 2026-08-02 role_ask with option 1:
+  "role picker; amend/remove act on a QUEUED (undelivered) handoff."
+  Slice A of epic `bubble-note-composer` (GH-29).
+
+notes: |
+  ## e2e procedure for QA
+
+  With a live swarm and a paired Bubble build:
+
+  1. Open the note composer from Bubble's main navigation. Confirm the role
+     picker lists exactly the roles in `.swarmforge/roles.tsv` — add or remove
+     a role from the running pack and confirm the picker follows.
+  2. Send a short note to a role that is currently dormant. Confirm a
+     `type: note` parcel appears in that role's `inbox/new/`, that its
+     `message:` carries the `op: ` prefix and the typed text, and that the
+     role drains it on its next `ready_for_next.sh`.
+  3. Type 77+ characters, then a message containing a line break, then an empty
+     one. Confirm each is refused on the device with a stated reason and that
+     no parcel is queued for any of them.
+  4. Point Bubble at a bad token, then at a stopped bridge. Confirm the
+     composer states the reason in each case rather than a bare code, and that
+     neither reports the note as queued.
+  5. Confirm no amend or withdraw affordance is present anywhere on the screen.
