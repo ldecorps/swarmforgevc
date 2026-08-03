@@ -107,7 +107,7 @@ class MainActivity : AppCompatActivity() {
      */
     private fun applyPairingDeepLinkIfPresent(intent: Intent): Boolean {
         val data = intent.data ?: return false
-        val pairing = PairingDeepLink.parse(data) ?: return false
+        val pairing = PairingDeepLink.parse(data.toString()) ?: return false
         CompanionPrefs.save(this, pairing.baseUrl, pairing.token, sync = true)
         Toast.makeText(this, "Bubble pairing updated", Toast.LENGTH_SHORT).show()
         return true

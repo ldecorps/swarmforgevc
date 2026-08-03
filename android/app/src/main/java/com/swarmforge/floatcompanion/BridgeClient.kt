@@ -32,8 +32,14 @@ object BridgeClient {
     /** Cloudflare quick-tunnel edge codes for "origin (this bridge) is gone". */
     private val TUNNEL_DEAD_HTTP_CODES = setOf(521, 522, 523, 524, 530)
 
-    /** BL-716: a clear, non-raw message for DNS/connect failures — never the exception dump. */
-    private fun friendlyConnectionMessage(e: Exception): String = when (e) {
+    /**
+     * BL-716: a clear, non-raw message for DNS/connect failures — never the exception dump.
+     *
+     * BL-769: internal (not private) so the JVM unit suite can exercise the
+     * classification directly — this is the pure logic behind the BL-716 defect
+     * where an unresolvable host had to stop reading as a healthy state.
+     */
+    internal fun friendlyConnectionMessage(e: Exception): String = when (e) {
         is UnknownHostException -> "Can't find the bridge host — pairing URL may be stale."
         is SocketTimeoutException -> "Bridge connection timed out — the tunnel may be down."
         is ConnectException -> "Can't connect to the bridge — the tunnel may be down."
