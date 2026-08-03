@@ -1,0 +1,75 @@
+id: BL-799
+title: "DEFECT — record-bounce.js --role enum omits specifier: a BL-635 spec-gap send-back cannot be recorded in the bounce ledger"
+milestone: M8
+type: defect
+severity: low
+status: todo
+epic: code-quality-gates
+human_approval: pending
+assigned_to: none
+priority: 60
+direction: swarm-proposed
+depends_on: []
+mutation_cost: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+invariants:
+  - "Every failure class in Article 4.4 has a recordable producing role: a spec-gap send-back naming specifier as producer appends a ledger row instead of being rejected."
+
+approval_context: >
+  Tiny ledger-completeness fix, filed at the back of the queue. Severity
+  low: the send-back itself is never blocked (BL-635 is explicitly
+  best-effort), only its telemetry is lost. Reject if specifier-produced
+  bounces are considered not worth tracking.
+
+description: |
+  ## What
+
+  `extension/out/tools/record-bounce.js` (source under
+  `extension/src/tools/`) validates `--role` (the PRODUCING role) against
+  `coder|cleaner|architect|hardender|documenter` — `specifier` is missing,
+  while `--class` accepts `spec-gap` and `--by` accepts `specifier`. So the
+  exact recording that specifier.prompt's "Recording A Send-Back (BL-635)"
+  mandates — a spec defect produced by the specifier, remediated and routed
+  back for a rebuild — is unrecordable: the CLI prints usage and exits.
+
+  Observed live 2026-08-03 on BL-795: the coder raised an Article 4.4
+  spec-gap note (acceptance path named a nonexistent feature file — a
+  specifier-produced defect), the specifier remediated (commit a110614377,
+  evidence backlog/evidence/BL-795-bounce-20260803.md) and tried to record
+  it; the CLI rejected `--role specifier`. Per BL-635 the send-back
+  proceeded anyway; the ledger row is simply missing.
+
+  ## Fix shape
+
+  Add `specifier` to the producing-role enum (and any downstream
+  aggregation that groups by producing role), with the usage text updated.
+  Do not widen `--by` (already complete) or add QA as a producer here —
+  QA-produced defects have no downstream bouncer in the chain.
+
+  ## Out of scope
+
+  - Backfilling the missing BL-795 ledger row (note it in the parcel's
+    evidence if trivially safe, else skip).
+  - Any change to bounce routing rules (Article 4.3/4.4).
+
+acceptance: specs/features/BL-799-record-bounce-specifier-producer.feature.draft
+
+source: |
+  Specifier, 2026-08-03, while remediating the BL-795 spec-gap send-back:
+
+  $ node extension/out/tools/record-bounce.js --ticket BL-795 \
+      --role specifier --type defect --class spec-gap \
+      --commit a110614377 --by specifier \
+      --evidence backlog/evidence/BL-795-bounce-20260803.md
+  Usage: record-bounce.js --ticket <id> --role <producingRole> ...
+    --role: coder|cleaner|architect|hardender|documenter
+
+notes: |
+  ## e2e procedure for QA
+
+  1. Run record-bounce with --role specifier --class spec-gap against a
+     temp ledger path; assert exit 0 and a row naming specifier as
+     producer.
+  2. Run with no arguments; assert the usage text lists specifier among
+     producing roles.
