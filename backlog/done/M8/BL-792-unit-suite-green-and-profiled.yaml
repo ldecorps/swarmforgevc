@@ -6,7 +6,7 @@ severity: high
 status: todo
 epic: unit-suite-speed
 human_approval: approved
-assigned_to: none
+assigned_to: coder
 priority: 00
 direction: human-requested
 depends_on: []
