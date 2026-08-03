@@ -1,0 +1,169 @@
+id: BL-790
+title: "Bubble note composer, slice A — the bridge send path: queue a short priority-00 note into a chosen role's mailbox"
+milestone: M8
+type: feature
+status: todo
+epic: bubble-note-composer
+human_approval: pending
+assigned_to: none
+priority: 12
+direction: human-requested
+depends_on: []
+mutation_cost: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-790-bridge-queues-a-note-for-a-role.feature
+
+invariants:
+  - "Every note this slice queues is written by shelling to swarm_handoff.bb; no code path in the slice writes a handoff file into a mailbox directory directly."
+  - "No request body the caller can send produces a handoff draft whose message header exceeds 80 characters or spans more than one line — the endpoint refuses it before any draft is written."
+  - "A refused request queues nothing: no partial draft, no orphaned temp file, and no parcel in any mailbox."
+
+required_wiring:
+  - "extension/src/bridge/bridgeServer.ts::/agent-notes::the send endpoint is routed by the live request handler, not merely defined in a module nothing dispatches to"
+
+description: |
+  ## What
+
+  One new authenticated bridge endpoint, `POST /agent-notes`: the caller names
+  a declared swarm role and a short message, and the handler queues a real
+  `type: note` parcel at priority `00` into that role's mailbox.
+
+  The bridge half only. The Bubble Notes page that calls it is slice B
+  (BL-793).
+
+  ## Why this half is split out, and what that costs
+
+  The device half is blocked on BL-769's Android test seam; this half is not.
+  It is plain Node and testable today, and the prior specifier disposition on
+  the source intake explicitly asked for exactly this split rather than holding
+  the whole request behind BL-769.
+
+  The cost, stated plainly: **this endpoint has no caller until BL-793 lands.**
+  That is the BL-419 dark-mechanism shape, and it is accepted here only because
+  BL-793 is a named, ticketed, immediate consumer — not a hoped-for one. If
+  BL-793 is dropped or deferred indefinitely, this slice should be reverted
+  rather than left dark.
+
+  ## Approach
+
+  1. **The recipient must be a declared role.** `.swarmforge/roles.tsv` is the
+     roster the swarm actually runs, and the bridge already parses it for
+     `GET /agents`. Validate against that; a role the swarm does not declare is
+     refused. **A dormant role is valid** — the human's locked decision 3 is
+     that notes to sleeping agents are fine, they pick up when they wake.
+
+  2. **Queue by shelling to `swarm_handoff.bb`** with a draft of
+     `type: note` / `to: <role>` / `priority: 00` / `message: <text>`, under
+     `SWARMFORGE_ROLE=coordinator`. This is not a new precedent — it is exactly
+     what `enqueueRoleAnswerNote` in `telegram-front-desk-bot.ts` already does,
+     for exactly the same reason: the constitution forbids hand-writing a file
+     into `inbox/new/`, and a bridge process holds no pipeline role of its own.
+     Reuse that path rather than growing a second one.
+
+  3. **Priority `00`, always.** The human's locked decision 4: bubble-sent
+     notes sit in the same band as Telegram human steering, so they outrank
+     ordinary pipeline handoffs. Not caller-selectable in this slice.
+
+  4. **The message budget is enforced server-side.** A note's `message:` is one
+     line, 80 characters maximum (`handoff-protocol.md`) — the human's locked
+     decision 9 made concrete. Reserve a short prefix for operator attribution
+     (see 5), leaving the human the remainder. Refuse — before writing any
+     draft — a message that is empty, over budget, or containing a line break
+     or control character, stating which rule was broken. Slice B re-asserts
+     the same limit on the device so the human sees it while typing, but the
+     server is what enforces it: a client-side-only limit is a suggestion.
+
+  5. **The queued note must be attributable to the operator.** Because
+     `swarm_handoff.bb` stamps `from:` from `SWARMFORGE_ROLE`, an
+     operator-composed note would otherwise arrive indistinguishable from one
+     the coordinator wrote — the precise confusion that made a stray
+     priority-00 "use staging please" note unattributable on 2026-08-01. A
+     short prefix on the message is the cheapest fix; any equivalent that a
+     receiving role can see at a glance is acceptable.
+
+  6. **Authentication is the existing one.** No new auth scheme; an
+     unauthenticated caller queues nothing.
+
+  7. **The namespace is resource-shaped on purpose.** Slice C's pending list
+     and withdraw, and slice D's amend, extend `/agent-notes` rather than
+     minting a second vocabulary.
+
+  ## Out of scope
+
+  - Any Bubble / Android code (slice B, BL-793).
+  - Listing, amending, or withdrawing a queued note (slices C and D).
+  - Any handoff type other than `note` — never `git_handoff`.
+  - Send-to-all-roles broadcast.
+  - Caller-selectable priority.
+  - Changing `swarm_handoff.bb`, the handoff grammar, the mailbox layout, or
+    `GET /agents`.
+
+approval_context: >
+  **Re-flagged for approval — this changed materially after you approved it.**
+  You approved an earlier version that bundled the bridge and the Bubble screen
+  into one ticket behind BL-769, and that put the screen off the main
+  navigation rather than on the pager page you locked in your 2026-07-31
+  intake. This slice is now the bridge half alone; the device half is BL-793.
+
+
+  Defaults I picked, all amendable.
+
+
+  (1) **`POST /agent-notes`, a new authenticated endpoint**, rather than
+  extending `/lets-talk/*`. Let's Talk is a conversation with the host agent;
+  this queues a parcel for a pipeline role. Different thing, different path,
+  and slices C and D extend this one.
+
+
+  (2) **Priority `00` fixed, not caller-selectable** — your locked decision 4.
+
+
+  (3) **A short attribution prefix costs a few of your 80 characters.**
+  Rationale is in the epic's approval_context. Say the word and I will give
+  them back.
+
+
+  (4) **Empty messages are refused.** A note with no message wakes a role for
+  nothing.
+
+
+  The judgement worth your eye: this slice ships an endpoint that **nothing
+  calls** until BL-793 lands. I think that is the right trade — the alternative
+  is parking the whole request behind BL-769's Android seam, which is what the
+  previous disposition on your intake argued against — but a dark mechanism is
+  exactly the failure BL-419 is named for, so it should be your call, not mine.
+
+source: |
+  Slice A of epic `bubble-note-composer` (GH-29). Two merged sources:
+  `backlog/GH-29-bubble-screen.yaml` (GitHub issue 29, answered by the human
+  2026-08-03) and `backlog/INTAKE-bubble-send-notes-swipe-screen.md` (human
+  via Let's Talk / Cursor 2026-07-31, locked decisions 3, 4 and 9 land here).
+  Both drained 2026-08-03.
+
+notes: |
+  ## IR-DRY findings reviewed and kept
+
+  The feature file's IR-DRY report leaves three `possible-synonym` findings.
+  All three were reviewed and are genuine semantic distinctions, not accidental
+  drift: a parameterized send versus a concrete one, a specific refusal reason
+  versus a parameterized one, and a declared role versus an undeclared one.
+  Do not "normalize" them away.
+
+  ## e2e procedure for QA
+
+  With a live swarm:
+
+  1. `POST /agent-notes` with a valid token, a declared role that is currently
+     dormant, and a short message. Confirm a `type: note` parcel appears in
+     that role's `inbox/new/` at priority `00`, that its `message:` carries
+     both the operator attribution and the typed text, and that the role drains
+     it on its next `ready_for_next.sh`.
+  2. Repeat with a message over the budget, one containing a line break, and an
+     empty one. Confirm each is refused with a stated reason and that no parcel
+     — and no stray draft file under `tmp/` — is left behind for any of them.
+  3. Repeat with a role name the swarm does not declare. Confirm refusal with a
+     stated reason and nothing queued.
+  4. Repeat with no token and with a bad token. Confirm rejection and nothing
+     queued.
+  5. Confirm `GET /agents` still answers exactly as before — this slice changes
+     no existing contract.
