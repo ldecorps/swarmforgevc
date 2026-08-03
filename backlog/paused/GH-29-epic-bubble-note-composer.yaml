@@ -4,16 +4,16 @@ milestone: M8
 status: todo
 type: epic
 epic: bubble-note-composer
-human_approval: approved
+human_approval: pending
 priority: 12
 direction: human-requested
-depends_on: [BL-769]
+depends_on: []
 mutation_cost: medium
-decomposes_into: [BL-790]
+decomposes_into: [BL-790, BL-793]
 
 remaining_slices:
-  - "Slice B — queued-note read model and withdraw: Bubble lists the notes it queued that the recipient has not yet dequeued, and can withdraw one. A note already dequeued is refused with a stated reason, never silently withdrawn."
-  - "Slice C — amend a queued note: replace the message, and/or re-target the recipient role, of a note that has not yet been dequeued, under the same not-yet-dequeued guard as slice B."
+  - "Slice C — pending list and withdraw: the Notes page lists the notes still waiting (queued / unclaimed) for the picked role, and can withdraw one. A note already claimed is refused with a stated reason, never silently withdrawn."
+  - "Slice D — amend a pending note: change the message of a note still waiting, under the same unclaimed guard as slice C. May merge into slice C if that slice's shape turns out small."
 
 description: |
   ## What the human asked for
@@ -21,27 +21,81 @@ description: |
   GitHub issue 29, in full: *"Send note to Drop-down Agents / Can also do /
   Amend note / Remove note."*
 
-  Four words carried two genuine forks, so this sat undrained from 2026-07-31
-  until the human answered on 2026-08-03:
+  Those four words were not enough to spec, and the specifier refused to guess.
+  Two things then filled the gap, and this epic is built on both:
 
-  > **role picker; amend/remove act on a QUEUED (undelivered) handoff.**
+  1. **`backlog/INTAKE-bubble-send-notes-swipe-screen.md`** (human via Let's
+     Talk / Cursor, 2026-07-31) — the drained conversation, which locks nine
+     decisions verbatim below. It says explicitly: *"Prefer enriching or
+     promoting GH-29 over minting a twin."* This epic is that enrichment; the
+     intake is merged into it, not tracked separately.
+  2. **The human's 2026-08-03 answer** to the specifier's role_ask: *"role
+     picker; amend/remove act on a QUEUED (undelivered) handoff."* — which
+     settles the two forks the intake had left open.
 
-  That settles both. "Drop-down agents" is a **role picker** on a note-composer
-  screen. Amend and remove act on a **real queued handoff** — not on an unsent
-  local draft, and not on an approval-style card.
+  ## Human decisions locked 2026-07-31 — carried verbatim
 
-  ## What "queued (undelivered)" means operationally
+  The intake states: *"Specifier may challenge or refine; do not silently drop
+  these without asking."* They are reproduced here in full so they cannot be
+  lost when the intake is archived.
 
-  A handoff is amendable/withdrawable exactly while its recipient has not yet
-  picked it up: the parcel is still sitting in the mailbox queue with no
-  `dequeued_at` stamped on its envelope. Once `ready_for_next.sh` moves it into
+  1. **Navigation.** Expanded Bubble becomes a small horizontal pager. Page one
+     is Let's Talk. Page two is Send notes. Swipe left or right between them.
+  2. **Default.** Welcome / default page stays Let's Talk. Never open on notes
+     by default (for now).
+  3. **Agent set.** Drop-down lists every declared swarm role, whether or not
+     that role is currently active / awake. Notes to sleeping agents are fine;
+     they pick up when they wake.
+  4. **Priority.** Bubble-sent notes use priority `00` (same band as Telegram
+     human steering), so they outrank ordinary pipeline handoffs (~`50`).
+     Priority decides order, not parcel type alone. Already-claimed
+     `in_process` work still finishes first; a note is next-look guidance, not
+     a hard mid-turn interrupt.
+  5. **Layout (sparse).** Agent picker at top. Short text box. One big Send.
+     Under that: pending list with Amend and Remove. After Send: clear the box,
+     keep the same agent selected, brief confirmation (e.g. sent to that role).
+  6. **Pending scope.** Amend / Remove apply only to notes still waiting
+     (queued / unclaimed), not ones already claimed.
+  7. **Page dots.** Small pager dots so talk vs notes is obvious.
+  8. **Out for v1.** No "send to all roles" in version one.
+  9. **Note length.** Keep notes short, in the spirit of today's mailbox note
+     message limit — long essays fight the overlay and the agents.
+
+  Decisions 1, 2, 5, 7 land in slice B (BL-793). Decisions 3, 4, 9 land in
+  slice A (BL-790) and are re-asserted on the device in slice B. Decision 6 is
+  the whole premise of slices C and D. Decision 8 is honoured by omission
+  throughout.
+
+  ## What "queued / unclaimed" means operationally
+
+  A note is amendable/withdrawable exactly while its recipient has not yet
+  claimed it: the parcel is still in the mailbox queue with no `dequeued_at`
+  stamped on its envelope. Once `ready_for_next.sh` moves it into
   `in_process/`, the role may already be acting on it and the window has shut.
 
-  That window is short and inherently racy, so the guard in slices B and C
-  **fails closed**: if the parcel cannot be shown to still be un-dequeued, the
+  That window is short and inherently racy, so the guard in slices C and D
+  **fails closed**: if the parcel cannot be shown to still be unclaimed, the
   operation is refused with a stated reason rather than attempted. An amend or
   withdraw that half-lands on a parcel a role is already working is worse than
   one that never lands.
+
+  ## Why the split is bridge-first, device-second
+
+  The prior specifier disposition on the intake left a split hint, and it is
+  the right one: *"The blocker covers Android device behaviour only. If this
+  intake contains a slice that lives on the bridge ... that slice is testable
+  in the Node runner today and is NOT blocked. Split it out and spec it rather
+  than holding the whole intake behind BL-769."*
+
+  So slice A is the **bridge send path** — no Android, no BL-769 dependency,
+  real Node tests today. Slice B is the **Bubble Notes page**, which is device
+  behaviour and does wait on BL-769's test seam.
+
+  The cost of that split is honest and must be stated: **slice A ships an
+  endpoint with no caller until slice B lands** — the BL-419 dark-mechanism
+  shape. It is accepted here only because slice B is a named, ticketed,
+  immediate consumer rather than a hoped-for one, and because the alternative
+  is parking the entire epic behind BL-769 for no engineering benefit.
 
   ## The surface, and the boundary it must respect
 
@@ -56,48 +110,55 @@ description: |
   ## The constraint the coder must not discover the hard way
 
   A `note`'s `message:` is a **single line, 80 characters maximum**
-  (`swarmforge/handoff-protocol.md`). That is not an implementation detail to
-  be found during coding — it is the composer's central UI constraint, and it
-  is what scenario 04 of slice A exists to pin down.
+  (`swarmforge/handoff-protocol.md`). That is decision 9 made concrete, and it
+  is what slice A's scenario 04 and slice B's scenario 05 exist to pin down.
 
   ## Out of scope for the whole epic
 
   - Any handoff type other than `note`. This composer does not send
     `git_handoff`, and must not: forwarding a parcel is a pipeline role's
     judgement, not an operator button.
+  - Send-to-all-roles broadcast (decision 8).
+  - Hard interrupt of an agent mid-turn (decision 4 — a note is next-look
+    guidance; barge-in is BL-776's epic).
   - Changing `swarm_handoff.bb`, the handoff grammar, or the mailbox layout.
     A note is queued by shelling to the real tool, exactly as
     `enqueueRoleAnswerNote` already does.
-  - Any equivalent surface on the Telegram Mini App. This is Bubble.
+  - Changing Telegram steering behaviour, or building any equivalent surface
+    on the Telegram Mini App.
 
 approval_context: >
-  Your issue 29, specced against your 2026-08-03 answer (role picker;
-  amend/remove act on a queued handoff). Firm, because you said it: the picker
-  is a role picker, and amend/remove act on a real queued handoff rather than
-  a local draft.
+  **Re-flagged for approval — this changed materially after you approved it.**
+  You approved an earlier version of this epic this morning. I then found
+  `INTAKE-bubble-send-notes-swipe-screen.md`, which is the drained conversation
+  behind issue 29 and locks nine decisions I had not seen. My first draft
+  contradicted decision 1: I had specced a separate screen off the main
+  navigation, where you asked for page two of a horizontal pager inside the
+  expanded Bubble, with Let's Talk staying the default. That is now fixed, all
+  nine decisions are carried verbatim above, and the intake is merged into this
+  epic rather than left as a duplicate.
 
 
-  Three calls of mine that need your eye.
+  Firm, because you said it: role picker over every declared role awake or not;
+  amend/remove act on a real queued handoff, not a local draft; priority 00;
+  Let's Talk stays the default page; no send-to-all in v1.
 
 
-  (1) **Three slices, not one.** Send (BL-790) ships first and is useful alone;
-  withdraw and amend both need a "which of my notes is still un-dequeued"
-  read model, so they follow once send exists. If you want all three in one
-  parcel, say so and I will merge them — but it would be a large slice by this
-  repo's own p90 measure (BL-634).
+  Two calls of mine that need your eye.
 
 
-  (2) **The window is un-dequeued only, and the guard fails closed.** Once a
-  role has picked a note up, amend and withdraw are refused with a reason.
-  The alternative — clawing a parcel back out of `in_process/` — races a role
-  that may already be acting on it, and the mailbox has no idempotent undo for
-  that.
+  (1) **Bridge first, device second — and slice A is dark until slice B.**
+  Splitting the send path onto the bridge means real tests today instead of
+  parking everything behind BL-769's Android seam, which is what the previous
+  disposition on your intake recommended. The honest cost: slice A ships an
+  endpoint nothing calls until slice B lands. I think that trade is right
+  because slice B is ticketed and immediate, but it is your call.
 
 
-  (3) **`note` only, never `git_handoff`.** A phone button that forwards a
-  parcel down the pipeline would let an operator skip a quality gate by
-  accident. Tell me if you want that anyway and I will spec it with its own
-  guards.
+  (2) **Four slices.** Send path, Notes page, pending-list + withdraw, amend.
+  Slices C and D may merge if the pending list turns out small. If you want
+  fewer, larger tickets, say so — I have kept them at this size because a
+  merged version would be large by this repo's own p90 measure (BL-634).
 
 
   One consequence you should know about rather than discover: an automated
@@ -105,34 +166,50 @@ approval_context: >
   `from:` from `SWARMFORGE_ROLE`, so a bridge-originated note arrives stamped
   **from coordinator** (the precedent `enqueueRoleAnswerNote` set). That is
   exactly how a stray priority-00 note reading "use staging please" became
-  unattributable in 2026-08-01. BL-790 therefore reserves a short `op: `
-  prefix so a role can tell an operator note from a real coordinator note at a
-  glance, at the cost of four of the human's 80 characters. Say the word if
-  you would rather have the four characters back.
+  unattributable on 2026-08-01. Slice A therefore makes the queued note
+  distinguishable from a real coordinator note, at the cost of a few of your 80
+  characters. Say the word if you would rather have them back.
 
 source: |
-  GitHub issue https://github.com/ldecorps/swarmforgevc/issues/29, seeded into
-  the backlog root as `backlog/GH-29-bubble-screen.yaml` by
-  `.github/workflows/swarm-intake.yml`.
+  Two sources, merged into this one epic (BL-680 consolidation):
 
-  Not drained 2026-07-31 / 2026-08-01 — the two forks above needed a human
-  answer and the specifier's single `role_ask` slot was held. Asked 2026-08-02
-  with three tappable options; answered 2026-08-03 with option 1, relayed as
-  a priority-00 note from coder: "GH-29: role picker; amend/remove act on a
-  QUEUED (undelivered) handoff."
+  1. GitHub issue https://github.com/ldecorps/swarmforgevc/issues/29, seeded
+     into the backlog root as `backlog/GH-29-bubble-screen.yaml` by
+     `.github/workflows/swarm-intake.yml`. Not drained 2026-07-31 / 2026-08-01
+     for lack of detail; asked 2026-08-02 via role_ask with three tappable
+     options; answered 2026-08-03 with option 1, relayed as a priority-00 note
+     from coder: "GH-29: role picker; amend/remove act on a QUEUED
+     (undelivered) handoff."
+  2. `backlog/INTAKE-bubble-send-notes-swipe-screen.md` (human via Let's Talk /
+     Cursor, 2026-07-31) — the drained conversation for the same request,
+     which itself asked to enrich GH-29 rather than mint a twin. Held
+     2026-07-31 and 2026-08-02 behind the Android acceptance-seam question;
+     merged here 2026-08-03 and archived.
 
 notes: |
-  ## Why the epic depends on BL-769
+  ## Open questions the intake asked the specifier to weigh in on, and the answers taken
 
-  Every slice is Android. Until BL-769's JVM unit seam lands, an Android
-  ticket's acceptance contract runs zero scenarios — five tickets have already
-  shipped that way. This epic's children must not be promoted before it, for
-  the same reason BL-774's must not.
+  - *Pending-list source of truth — only notes this UI sent, or all pending
+    notes for that role?* → **All pending notes for the picked role.** A list
+    that hides notes another surface queued would show the human a false
+    picture of what that role is about to see. Slice C's call; flagged here so
+    it is not re-litigated.
+  - *Does amend rewrite the parcel in place or replace it?* → deferred to
+    slice D, where the mailbox's actual idempotency guarantees can be checked
+    rather than assumed.
+  - *Bridge or local enqueue path from the companion?* → **Bridge.** Bubble has
+    no filesystem access to `.swarmforge/`, and the authenticated bridge is
+    already the write path it speaks (local engineering rule 5).
+  - *Page naming — "Notes" vs "Steer" vs other?* → **Notes**, matching the
+    human's own wording throughout the intake.
+  - *Is GH-29 promoted in place or closed for a BL ticket?* → **Promoted in
+    place.** GH-29 is this epic, so issue 29 keeps a live pointer.
 
   ## Relationship to the Bubble Live Screen epic (BL-774)
 
-  Both epics add native Bubble screens against the same bridge and both wait
-  on BL-769, but they do not overlap: BL-774 is a read-only view of
-  `/resident-pane`, this one is a write path that queues handoffs. Whichever
-  lands second inherits the navigation pattern the first established; neither
-  blocks the other.
+  Both epics add native Bubble surfaces against the same bridge and both have
+  a device slice waiting on BL-769, but they do not overlap: BL-774 is a
+  read-only view of `/resident-pane`, this one is a write path that queues
+  handoffs. The intake calls the other Bubble screens "complementary swipe
+  pages later" — so whichever lands second inherits the pager this epic's
+  slice B establishes. Neither blocks the other.
