@@ -540,14 +540,15 @@ changed nothing. Because blocking can wedge a ticket if a stale parcel is
 left behind, the refusal always names the `redo_from.sh` command that clears
 it.
 
-## QA-Edge Durability Gate (BL-531)
+## QA-Edge Durability Gate (BL-531, BL-761)
 
 When `swarm_handoff.sh` sends a `git_handoff` to QA, it runs a durability gate
-to ensure the parcel satisfies two machine-checkable criteria before allowing
+to ensure the parcel satisfies three machine-checkable criteria before allowing
 the send. This gate sits at the final quality chokepoint where parcels are most
 expensive to bounce and where the work is complete by contract. A refusal
 prevents the parcel from reaching QA, so the author can remedy the issue
-immediately (merge a dropped commit or land a required wiring) and re-send.
+immediately (merge a dropped commit, land a required wiring, or make the
+declared acceptance contract actually run) and re-send.
 
 ### Gate Scope
 
@@ -646,6 +647,53 @@ PRE_QA_GATE_FAIL manifest <ticket-id> malformed required_wiring entry: ...
   remedy: fix the entry in the ticket and re-send
 ```
 
+### Check D — Acceptance Contract Cannot Run (BL-761)
+
+A ticket may declare an `acceptance:` feature file that reads as covered by
+eye but has never actually been run: no step handler resolves one or more of
+its steps, so `specs/pipeline/runtime.js` would throw "no step handler
+matched" the moment anyone ran it. This is the same substitution BL-727 names
+for the offline pilot's `verdict.json` — an *assertion* of coverage
+standing in for a *run* — closed here at the ordinary pipeline's QA edge.
+
+The gate resolves the ticket's declared `acceptance:` value **at the commit
+cited in the handoff** (never the sender's working tree — a later commit may
+have deleted the handler that made the contract runnable when it was cited),
+parses it with the same vendored APS parser `runnerAdapter.js` uses, and
+resolves every step of every scenario — substituting each Scenario Outline
+example row first — against the step registry as it existed at that same
+commit. It never reimplements Gherkin parsing or step matching: a second
+parser or matcher would let the gate's verdict diverge from the runner's,
+which is exactly what it exists to prevent.
+
+Three outcomes:
+- **Declaration unreadable** — the `acceptance:` field is absent, blank,
+  inline Gherkin instead of a path, or names a file that does not exist at
+  the cited commit. This fails **CLOSED**: one finding, and the unresolved
+  steps are never consulted (there is nothing to resolve them against).
+- **Registry cannot be loaded** — infrastructure trouble at the cited commit
+  (the vendored parser is missing, `specs/pipeline` cannot be listed there, or
+  the materialized registry fails to `require()` — most commonly because
+  `extension/out/` was never compiled). This fails **OPEN**: a
+  `PRE_QA_GATE WARNING`, never a finding, and the send is not blocked.
+- **Both readable and loadable** — one finding per unresolved step, in the
+  order gathered, naming the scenario (and Scenario Outline example row when
+  applicable) and the step text that matched no handler. Zero unresolved
+  steps is a clean pass: no findings, no warnings.
+
+The gate stops the send and prints each finding as:
+```
+PRE_QA_GATE_FAIL acceptance-contract <ticket-id> scenario "<name>": no step handler matched "<step text>"
+PRE_QA_GATE_FAIL acceptance-contract <ticket-id> scenario "<name>" [example row <n>]: no step handler matched "<step text>"
+PRE_QA_GATE_FAIL acceptance-contract <ticket-id> acceptance: declaration is unreadable at the cited commit (absent, inline Gherkin, or naming a feature file that does not exist there)
+```
+
+Example: A ticket's feature file has one scenario whose second step
+("`Given the Bubble companion is paired to a bridge base URL`") has no
+registered handler at the cited commit. The gate reports that scenario and
+step text as an `acceptance-contract` finding and refuses the send; the
+author registers the handler (or fixes the `acceptance:` path) and re-sends.
+
 ### Refusal Contract
 
 Every refusal is machine-greppable and stable:
@@ -653,9 +701,10 @@ Every refusal is machine-greppable and stable:
 PRE_QA_GATE_FAIL <class> <ticket-id> <detail>
 ```
 
-where `<class>` is one of `ancestry`, `wiring`, or `manifest`. A gate failure
-prints one line per finding, with details and remedies. The parcel is NOT
-written to QA's inbox, so it must be re-sent after fixing.
+where `<class>` is one of `ancestry`, `wiring`, `manifest`, or
+`acceptance-contract`. A gate failure prints one line per finding, with
+details and remedies. The parcel is NOT written to QA's inbox, so it must be
+re-sent after fixing.
 
 The two remedies for ancestry findings are:
 1. Merge the stranded commit into your branch and re-send.
