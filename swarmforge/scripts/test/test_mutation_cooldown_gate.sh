@@ -121,4 +121,49 @@ OUT="$(SWARMFORGE_MUTATION_GATE_FORCE_LOAD_AVG=0.1 SWARMFORGE_MUTATION_GATE_FORC
 echo "$OUT" | grep -q "^DECISION: run$" || fail "07: expected run for a file with no history on main; got: $OUT"
 pass "07: a file the parcel newly introduces (no history on main) is eligible to run, not skipped (BL-463)"
 
+# ── BL-797: missing host probe binaries degrade to their documented ─────────
+# fallbacks instead of crashing the gate. babashka's process/sh THROWS for a
+# binary that does not exist at all (distinct from a binary that exists and
+# exits nonzero), so these drive the real gate under a PATH restricted to a
+# throwaway fixture dir - never the real host's PATH, so the scenarios are
+# deterministic regardless of what this test machine actually has installed.
+# Stub probe scripts use an absolute `#!/bin/bash` shebang (never
+# `#!/usr/bin/env bash`) because under a PATH this narrow, `env` itself
+# cannot resolve `bash` by searching a PATH that doesn't contain it.
+BB_BIN="$(command -v bb)"
+GIT_BIN="$(command -v git)"
+
+FAKE_BIN_SYSCTL_ONLY="$ROOT/fakebin-sysctl-only"
+mkdir -p "$FAKE_BIN_SYSCTL_ONLY"
+ln -sf "$GIT_BIN" "$FAKE_BIN_SYSCTL_ONLY/git"
+printf '#!/bin/bash\necho 8\n' > "$FAKE_BIN_SYSCTL_ONLY/sysctl"
+chmod +x "$FAKE_BIN_SYSCTL_ONLY/sysctl"
+
+# ── 08: missing nproc falls back to sysctl instead of crashing ──────────────
+OUT="$(PATH="$FAKE_BIN_SYSCTL_ONLY" SWARMFORGE_MUTATION_GATE_FORCE_LOAD_AVG=0.1 "$BB_BIN" "$GATE" "$ROOT" "$NEW_FILE")"
+echo "$OUT" | grep -q "^DECISION:" || fail "08: expected the gate to print a DECISION line, not crash, with nproc missing; got: $OUT"
+echo "$OUT" | grep -q "cores: 8" || fail "08: expected the sysctl fallback (8 cores) when nproc is missing; got: $OUT"
+pass "08: a missing nproc falls back to sysctl without crashing (BL-797)"
+
+FAKE_BIN_NONE="$ROOT/fakebin-none"
+mkdir -p "$FAKE_BIN_NONE"
+ln -sf "$GIT_BIN" "$FAKE_BIN_NONE/git"
+
+# ── 09: missing nproc AND sysctl falls back to the default core count ───────
+OUT="$(PATH="$FAKE_BIN_NONE" SWARMFORGE_MUTATION_GATE_FORCE_LOAD_AVG=0.1 "$BB_BIN" "$GATE" "$ROOT" "$NEW_FILE")"
+echo "$OUT" | grep -q "^DECISION:" || fail "09: expected the gate to print a DECISION line, not crash, with nproc and sysctl missing; got: $OUT"
+echo "$OUT" | grep -q "cores: 4" || fail "09: expected the last-resort default (4 cores) when nproc and sysctl are both missing; got: $OUT"
+pass "09: missing nproc and sysctl both fall back to the default core count without crashing (BL-797)"
+
+# ── 10: missing uptime degrades to an idle (0.0) load average ───────────────
+OUT="$(PATH="$FAKE_BIN_NONE" SWARMFORGE_MUTATION_GATE_FORCE_CORES=4 "$BB_BIN" "$GATE" "$ROOT" "$NEW_FILE")"
+echo "$OUT" | grep -q "^DECISION:" || fail "10: expected the gate to print a DECISION line, not crash, with uptime missing; got: $OUT"
+echo "$OUT" | grep -q "load_avg: 0.00" || fail "10: expected load_avg 0.00 when uptime is missing; got: $OUT"
+pass "10: a missing uptime probe degrades to an idle load average without crashing (BL-797)"
+
+# ── 11: the forced core-count seam still bypasses probes entirely ───────────
+OUT="$(PATH="$FAKE_BIN_NONE" SWARMFORGE_MUTATION_GATE_FORCE_CORES=16 SWARMFORGE_MUTATION_GATE_FORCE_LOAD_AVG=0.1 "$BB_BIN" "$GATE" "$ROOT" "$NEW_FILE")"
+echo "$OUT" | grep -q "cores: 16" || fail "11: expected the forced core count to bypass probes entirely with all probes missing; got: $OUT"
+pass "11: the forced core-count seam bypasses probes entirely even when every probe binary is missing (BL-797)"
+
 echo "ALL PASS"

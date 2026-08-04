@@ -363,7 +363,8 @@ const DOMAINS = [
   require('./bl792UnitSuiteGreenAndProfiledSteps'),
   require('./bl787BubbleNamedTunnelFixedUrlSteps'),
   require('./bl795MonoRouterStarvationHandFixSteps'),
-  require('./bl769AndroidPureLogicJvmUnitSeamSteps')
+  require('./bl769AndroidPureLogicJvmUnitSeamSteps'),
+  require('./bl797MutationGateProbeCrashFallbackSteps')
 ];
 
 function registerSteps(registry) {
