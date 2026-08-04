@@ -49,6 +49,9 @@ only skips the Telegram send.
 
 ## What happens on a stale heartbeat
 
+0. **Check for a deliberate stop** (BL-785, below). If this daemon was stopped
+   on purpose, the checker returns without touching it — a stale heartbeat is
+   the expected state, not a violation.
 1. **Kill** the pid named in that daemon's pid file (never pid 1 / the checker).
 2. **Restart** via that daemon's own start script (never a reimplemented launch).
 3. **Append** a durable incident line to
@@ -57,6 +60,36 @@ only skips the Telegram send.
    `FRESHNESS_VIOLATION` (for composition with BL-653 escalation).
 
 If the announce fails, the incident file is the surviving artifact.
+
+## Deliberate stop does not get resurrected (BL-785)
+
+The cron is unconditional once installed — it has no way to tell "operator
+asked for this" from "the daemon died" apart from a durable marker the stop
+and start paths maintain for it.
+
+**The marker.** `swarmforge/scripts/freshness_stop_marker_lib.sh` manages one
+file per watched daemon under `.swarmforge/daemon/freshness-stopped/`
+(`<daemon-name>.stopped`). File existence only — the checker never asks a
+live process, so the verdict holds with bb, node, and every swarm daemon
+dead (BL-675's share-no-fate property, preserved).
+
+| Path | Writes (marks stopped) | Clears (re-arms) |
+|---|---|---|
+| handoffd | `kill_pipeline_swarm.sh` | `start_handoff_daemon.sh` |
+| babysitterd | `stop_ancillary_services.sh` | `start_babysitterd.sh` |
+
+`./stop-swarm.sh` runs both stop scripts (full-stack stop), so it marks both
+daemons. The pipeline-only stop (`kill_pipeline_swarm.sh` alone, including
+handoffd's own endless-loop circuit breaker) marks only handoffd —
+babysitterd, which that path deliberately leaves running, stays watched.
+
+**Re-arming.** Starting a daemon clears its own marker before anything else,
+so a deliberate stop never outlives the next start — the crontab line and
+the watched state stay in sync.
+
+**A crash is unaffected.** With no marker present, an unannounced death or
+freeze is killed and restarted exactly as above; the marker check only ever
+suppresses a restart, never triggers one.
 
 ## Cool-off
 
@@ -88,12 +121,17 @@ FRESHNESS_NOW_EPOCH=$(date +%s) \
 ```bash
 bash swarmforge/scripts/test/test_daemon_log_freshness.sh
 bash swarmforge/scripts/test/test_start_ancillary_services_freshness_cron.sh
+bash swarmforge/scripts/test/test_freshness_stop_marker_lib.sh
+bash swarmforge/scripts/test/test_bl785_freshness_deliberate_stop.sh
 ```
 
 The first covers the checker itself; the second (BL-783) runs the real
 `start_ancillary_services.sh` against fixture roots with a fake `crontab` on
 PATH and reads back the installed line — proving the auto-install wiring
-behaviourally, not by grepping the start script for a substring.
+behaviourally, not by grepping the start script for a substring. The third
+(BL-785) is a unit test of the marker library in isolation; the fourth drives
+the real stop/start/checker scripts together against fixture roots to prove
+the scenarios in "Deliberate stop does not get resurrected" above.
 
 Acceptance feature: `specs/features/BL-675-daemon-log-freshness.feature`.
 
