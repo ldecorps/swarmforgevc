@@ -211,3 +211,6 @@ approval_context: >
   today, which is why this decision stayed open long enough for BL-716 to land
   as the fifth casualty. Approving BL-769 and letting it land first IS choice
   (b); no separate answer is needed here.
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-04, by: QA, blamed: coder, class: unit, commit: 52ebaaaa, evidence: backlog/evidence/BL-761-acceptance-contract-that-cannot-run-reaches-qa-bounce-20260804.md }
