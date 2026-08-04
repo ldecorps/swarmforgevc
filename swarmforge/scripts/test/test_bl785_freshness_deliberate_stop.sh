@@ -162,6 +162,36 @@ check "04c: post-re-arm stale heartbeat is restarted (not suppressed)" \
   'grep -q "start_handoff_daemon.sh" "$ROOT/starts.log"'
 pass "04: real start_handoff_daemon.sh re-arms watching; the proof is the restart happening"
 
+# ── 04-babysitterd: same re-arm proof via the real babysitterd start script ─
+# Scenario Outline 04 covers both watched daemons; 04a-04c above proved it
+# for handoffd via the real (bb-based) start script, this proves the same
+# wiring for babysitterd via its real (plain-bash) start script.
+#
+# start_babysitterd.sh's own pidfile-confirmation loop is unreliable on this
+# host (macOS has no `setsid`, so its background daemon spawn silently
+# no-ops and the script exits 1) — a pre-existing BL-611 defect, out of
+# scope here. freshness_clear_stopped runs unconditionally before that spawn
+# attempt, so `|| true` decouples this ticket's re-arm proof from it.
+ROOT="$(make_root)"
+freshness_mark_stopped "$ROOT" "babysitterd"
+check "04d: marker present immediately after a deliberate stop (babysitterd)" \
+  'freshness_is_stopped "$ROOT" "babysitterd"'
+bash "$START_BABYSITTERD" "$ROOT" >/dev/null 2>&1 || true
+check "04e: the real start script re-armed babysitterd (marker cleared)" \
+  '! freshness_is_stopped "$ROOT" "babysitterd"'
+REAL_BABYSITTERD_PID="$(cat "$ROOT/.swarmforge/babysitterd/babysitterd.pid" 2>/dev/null || true)"
+[[ -n "$REAL_BABYSITTERD_PID" ]] && kill "$REAL_BABYSITTERD_PID" 2>/dev/null || true
+# Now a stale heartbeat after re-arm: normal restart must fire.
+printf '%s heartbeat\n' "$FRESH" > "$ROOT/.swarmforge/daemon/handoffd.log"
+printf '%s heartbeat\n' "$STALE_BABYSITTERD" > "$ROOT/.swarmforge/babysitterd/babysitterd.log"
+sleep 120 & FAKE_PID=$!
+echo "$FAKE_PID" > "$ROOT/.swarmforge/babysitterd/babysitterd.pid"
+run_checker "$ROOT" "$NOW"
+kill "$FAKE_PID" 2>/dev/null || true
+check "04f: post-re-arm stale heartbeat is restarted (not suppressed, babysitterd)" \
+  'grep -q "start_babysitterd.sh" "$ROOT/starts.log"'
+pass "04-babysitterd: real start_babysitterd.sh re-arms watching; the proof is the restart happening"
+
 # ── 05: deliberate-stop verdict needs no live swarm process ────────────────
 # The checker run in 01/02/04c above already executed against fixtures with
 # no live bb/node/handoffd/babysitterd process besides the test's own
