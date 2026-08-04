@@ -12,9 +12,22 @@ const fs = require('node:fs');
 const os = require('node:os');
 const { execFileSync, spawnSync } = require('node:child_process');
 
-const SWARMFORGE_SCRIPTS = path.join(__dirname, '..', '..', '..', 'swarmforge', 'scripts');
+const REPO_ROOT = path.join(__dirname, '..', '..', '..');
+const SWARMFORGE_SCRIPTS = path.join(REPO_ROOT, 'swarmforge', 'scripts');
 const SWARM_HANDOFF = path.join(SWARMFORGE_SCRIPTS, 'swarm_handoff.bb');
 const REQUIRED_STAGES_LIB = path.join(SWARMFORGE_SCRIPTS, 'required_stages_lib.bb');
+const {
+  writeAcceptanceContractFixture,
+  DEFAULT_FEATURE_PATH: ACCEPTANCE_FEATURE_PATH
+} = require('../../../extension/test/helpers/acceptanceContractFixture');
+
+// BL-761: every send in this file reuses the ONE commit captured below as
+// `ctx.commit` - the acceptance-contract gate (the third pre-QA finding,
+// sharing this same findings-for-git-handoff entry point) judges a
+// ticket's declared acceptance: file AT that cited commit, so a resolvable,
+// fully-covered contract has to be part of the very first commit, not
+// added later - this suite tests required-stages routing, not acceptance
+// contracts, and must stay orthogonal to a gate added afterward.
 
 const CANONICAL_CHAIN = ['coder', 'cleaner', 'architect', 'hardender', 'documenter', 'QA'];
 const CHAIN_HOPS = [
@@ -66,6 +79,7 @@ function ensureFixture(ctx) {
   const targetPath = fs.mkdtempSync(path.join(os.tmpdir(), 'aps-bl606-'));
   git(targetPath, ['init', '-q']);
   fs.writeFileSync(path.join(targetPath, 'README.md'), 'x');
+  writeAcceptanceContractFixture(targetPath);
   git(targetPath, ['add', '.']);
   git(targetPath, ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '-m', 'init']);
   ctx.commit = execFileSync('git', ['-C', targetPath, 'rev-parse', '--short=10', 'HEAD'], { encoding: 'utf8' }).trim();
@@ -85,7 +99,7 @@ function writeTicket(ctx, ticketId, extraLines) {
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(
     path.join(dir, `${ticketId}-demo.yaml`),
-    `id: ${ticketId}\ntitle: "demo"\nstatus: active\n${extraLines || ''}`
+    `id: ${ticketId}\ntitle: "demo"\nstatus: active\nacceptance: ${ACCEPTANCE_FEATURE_PATH}\n${extraLines || ''}`
   );
 }
 

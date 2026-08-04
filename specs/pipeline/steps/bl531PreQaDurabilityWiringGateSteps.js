@@ -19,8 +19,18 @@ const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const SCRIPTS_DIR = path.join(REPO_ROOT, 'swarmforge', 'scripts');
 const SWARM_HANDOFF = path.join(SCRIPTS_DIR, 'swarm_handoff.bb');
 const PRE_QA_GATE_CLI = path.join(SCRIPTS_DIR, 'pre_qa_gate_cli.bb');
+const { writeAcceptanceContractFixture: writeSharedAcceptanceContractFixture } =
+  require('../../../extension/test/helpers/acceptanceContractFixture');
 
 const TICKET_ID = 'BL-999';
+
+// BL-761: this fixture's ticket now always declares a resolvable acceptance
+// contract (a trivial feature file every one of its own steps resolves), so
+// the acceptance-contract gate (the third pre-QA finding, sharing this same
+// findings-for-git-handoff entry point) never fires here - this suite tests
+// lineage/wiring, not acceptance contracts, and must stay orthogonal to a
+// gate added afterward.
+const ACCEPTANCE_FEATURE_PATH = 'specs/features/bl999-fixture.feature';
 
 function mkTmp(prefix) {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
@@ -56,7 +66,7 @@ function writeRoles(ctx) {
 }
 
 function writeTicketYaml(ctx, { requiredWiring, abandonedCommits } = {}) {
-  let content = `id: ${TICKET_ID}\ntitle: pre-qa-gate fixture ticket\nstatus: active\n`;
+  let content = `id: ${TICKET_ID}\ntitle: pre-qa-gate fixture ticket\nstatus: active\nacceptance: ${ACCEPTANCE_FEATURE_PATH}\n`;
   if (requiredWiring && requiredWiring.length) {
     content += `required_wiring:\n${requiredWiring.map((e) => `  - "${e}"`).join('\n')}\n`;
   }
@@ -66,6 +76,21 @@ function writeTicketYaml(ctx, { requiredWiring, abandonedCommits } = {}) {
   fs.writeFileSync(ctx.ticketYamlPath, content);
   git(ctx.root, ['add', '-A']);
   git(ctx.root, ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '-m', 'update BL-999 ticket yaml']);
+}
+
+// BL-761: makes the fixture's declared acceptance: contract resolvable and
+// fully covered, so the acceptance-contract gate finds nothing to say about
+// it - committed once in Background, alongside (never instead of) the
+// ticket yaml itself, so every cited commit this suite ever uses carries a
+// clean contract. Thin wrapper over the shared builder
+// (extension/test/helpers/acceptanceContractFixture.js) so this suite's own
+// BL-999 feature name/path stay local while the fixture-writing itself is
+// not copy-pasted per suite.
+function writeAcceptanceContractFixture(ctx) {
+  writeSharedAcceptanceContractFixture(ctx.root, {
+    featurePath: ACCEPTANCE_FEATURE_PATH,
+    featureTitle: 'BL-999 fixture contract'
+  });
 }
 
 function runSwarmHandoff(ctx, draftContent, { role = 'coder', cwd = ctx.coderWt } = {}) {
@@ -102,6 +127,7 @@ function registerSteps(registry) {
     ctx.coderWt = path.join(ctx.root, 'coder-wt');
     git(ctx.root, ['-c', 'user.email=t@t', '-c', 'user.name=t', 'worktree', 'add', '-q', '-b', 'swarmforge-coder', ctx.coderWt]);
     writeRoles(ctx);
+    writeAcceptanceContractFixture(ctx);
     writeTicketYaml(ctx);
     ctx.citedCommit = gitOut(ctx.root, ['rev-parse', '--short=10', 'HEAD']);
   });

@@ -13,6 +13,10 @@ const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const SWARMFORGE_SCRIPTS = path.join(REPO_ROOT, 'swarmforge', 'scripts');
 const SWARM_HANDOFF = path.join(SWARMFORGE_SCRIPTS, 'swarm_handoff.bb');
 const HANDOFF_PROTOCOL = path.join(REPO_ROOT, 'swarmforge', 'handoff-protocol.md');
+const {
+  writeAcceptanceContractFixture,
+  DEFAULT_FEATURE_PATH: ACCEPTANCE_FEATURE_PATH
+} = require('../../../extension/test/helpers/acceptanceContractFixture');
 
 const CANONICAL_CHAIN = ['coder', 'cleaner', 'architect', 'hardender', 'documenter', 'QA'];
 
@@ -44,11 +48,20 @@ function writeRolesTsv(root) {
   fs.writeFileSync(path.join(root, '.swarmforge', 'roles.tsv'), roles.map((r) => r.join('\t')).join('\n') + '\n');
 }
 
+// BL-761: every send in this file reuses the ONE commit captured below as
+// `ctx.commit` - the acceptance-contract gate (the third pre-QA finding,
+// sharing this same findings-for-git-handoff entry point) judges a
+// ticket's declared acceptance: file AT that cited commit, so a resolvable,
+// fully-covered contract has to be part of the very first commit, not
+// added later - this suite tests required-stages routing, not acceptance
+// contracts, and must stay orthogonal to a gate added afterward.
+
 function ensureFixture(ctx) {
   if (ctx.targetPath) return ctx.targetPath;
   const targetPath = fs.mkdtempSync(path.join(os.tmpdir(), 'aps-bl623-'));
   git(targetPath, ['init', '-q']);
   fs.writeFileSync(path.join(targetPath, 'README.md'), 'x');
+  writeAcceptanceContractFixture(targetPath);
   git(targetPath, ['add', '.']);
   git(targetPath, ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '-m', 'init']);
   ctx.commit = execFileSync('git', ['-C', targetPath, 'rev-parse', '--short=10', 'HEAD'], { encoding: 'utf8' }).trim();
@@ -68,7 +81,7 @@ function writeTicket(ctx, ticketId, extraLines) {
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(
     path.join(dir, `${ticketId}-demo.yaml`),
-    `id: ${ticketId}\ntitle: "demo"\nstatus: active\n${extraLines || ''}`
+    `id: ${ticketId}\ntitle: "demo"\nstatus: active\nacceptance: ${ACCEPTANCE_FEATURE_PATH}\n${extraLines || ''}`
   );
 }
 

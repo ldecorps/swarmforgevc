@@ -17,11 +17,13 @@
 (ns pre-qa-gate-gather-lib
   (:require [babashka.fs :as fs]
             [babashka.process :as process]
+            [cheshire.core :as json]
             [clojure.string :as str]))
 
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "pre_qa_gate_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "pipeline_stage_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "handoff_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "acceptance_contract_gate_lib.bb")))
 
 ;; ── small git helpers ────────────────────────────────────────────────────
 
@@ -227,6 +229,138 @@
                     (when (git-ok? res) [path (:out res)]))))
           paths)))
 
+;; ── acceptance-contract fact-gathering (BL-761) ──────────────────────────
+;; Both the feature file text and the step registry that judges it are read
+;; AT THE CITED COMMIT, never the sender's working tree - a later commit may
+;; have deleted the handler that made the contract runnable when it was cited
+;; (BL-761 unrunnable-contract-refused-04). The step-matching itself is never
+;; reimplemented here: it runs the real specs/pipeline/stepRegistry.js and
+;; specs/pipeline/runtime.js (materialized at the cited commit) through
+;; specs/pipeline/scripts/resolve_contract_steps.js, the same shell-to-JS
+;; pattern gather-wiring-facts already uses for `git show`, extended to a
+;; whole subtree so `require()` sees a real directory.
+
+(defn- feature-text-at-commit
+  "The declared acceptance: value's file content at cited-commit, or nil when
+   the declaration is blank, spans multiple lines (inline Gherkin instead of
+   a path - BL-761 absent-contract-fails-closed-05), or does not resolve to a
+   real file at that commit."
+  [project-root cited-commit raw-declaration]
+  (when (and raw-declaration (not (str/blank? raw-declaration)) (not (str/includes? raw-declaration "\n")))
+    (let [res (run-git project-root ["show" (str cited-commit ":" raw-declaration)])]
+      (when (git-ok? res) (:out res)))))
+
+(defn- parse-feature-ir!
+  "Parses feature-text with the vendored APS parser - the SAME tool
+   runnerAdapter.js's parseFeatureFile shells to (`bb gherkin-parser`),
+   never a second Gherkin parser (BL-761 constraint). Returns the resulting
+   IR json file's path; :vendor-missing when the parser tool itself is not
+   present on this checkout (infrastructure trouble, never the ticket's
+   fault - fails OPEN, distinct from every other case here); or nil when the
+   tool ran but the text is not parseable Gherkin (this gate treats THAT the
+   same as an unreadable declaration: a feature file this repo's own runner
+   could never execute either - the ticket's own contract is broken, not the
+   tooling)."
+  [project-root feature-text]
+  (let [vendor-dir (str (fs/path project-root "swarmforge" "vendor" "aps"))]
+    (if-not (fs/exists? vendor-dir)
+      :vendor-missing
+      (let [tmp-dir (str (fs/create-temp-dir))
+            feature-path (str (fs/path tmp-dir "contract.feature"))
+            ir-path (str (fs/path tmp-dir "ir.json"))]
+        (spit feature-path feature-text)
+        (let [res (process/sh {:continue true :dir vendor-dir} "bb" "gherkin-parser" feature-path ir-path)]
+          (when (and (git-ok? res) (fs/exists? ir-path))
+            ir-path))))))
+
+(defn- list-tracked-paths-at-commit [project-root cited-commit subpath]
+  (let [res (run-git project-root ["ls-tree" "-r" "--name-only" cited-commit "--" subpath])]
+    (when (git-ok? res) (remove str/blank? (str/split-lines (:out res))))))
+
+(defn- materialize-pipeline-tree-at-commit!
+  "Writes every tracked file under specs/pipeline, as it existed at
+   cited-commit, into a fresh temp directory that mirrors the repo root
+   layout (so a step file's own relative requires resolve exactly as they
+   would in a real checkout), then symlinks node_modules and extension from
+   THIS checkout in as best-effort infrastructure - neither is ever pinned
+   to the cited commit (node_modules is not tracked in git at all;
+   extension/out/ is compiled output, gitignored). A step file that reaches
+   for either sees today's build; a build that was never compiled fails to
+   require(), which is exactly the fail-OPEN infrastructure case this gate
+   must never mistake for an unrunnable contract. Returns the materialized
+   specs/pipeline dir (absolute path), or nil when the commit's own tree
+   cannot even be listed - the caller treats that the same as an unloadable
+   registry."
+  [project-root cited-commit]
+  (when-let [paths (list-tracked-paths-at-commit project-root cited-commit "specs/pipeline")]
+    (let [tmp-root (str (fs/create-temp-dir))]
+      (doseq [path paths]
+        (let [res (run-git project-root ["show" (str cited-commit ":" path)])]
+          (when (git-ok? res)
+            (let [dest (fs/path tmp-root path)]
+              (fs/create-dirs (fs/parent dest))
+              (spit (str dest) (:out res))))))
+      (doseq [sibling ["node_modules" "extension"]]
+        (let [target (fs/path project-root sibling)]
+          (when (fs/exists? target)
+            (fs/create-sym-link (fs/path tmp-root sibling) (fs/canonicalize target)))))
+      (str (fs/path tmp-root "specs" "pipeline")))))
+
+(defn- run-contract-step-resolver
+  "Shells specs/pipeline/scripts/resolve_contract_steps.js (this checkout's
+   own copy - a stable tool, like the vendored parser above, not part of the
+   cited commit's contract) against the materialized registry tree. Always
+   returns {:loadable bool :unresolved [...] :error (string|nil)} - a
+   resolver crash or unparseable output is folded into :loadable false so
+   the caller has one fail-open path, not several."
+  [project-root pipeline-dir ir-path]
+  (let [script (str (fs/path project-root "specs" "pipeline" "scripts" "resolve_contract_steps.js"))
+        res (process/sh {:continue true} "node" script pipeline-dir ir-path)]
+    (if-not (git-ok? res)
+      {:loadable false :error (str/trim (str "resolver exited " (:exit res) ": " (:err res)))}
+      (try
+        (let [{:keys [loadable unresolved error]} (json/parse-string (:out res) true)]
+          {:loadable (boolean loadable) :unresolved unresolved :error error})
+        (catch Exception e
+          {:loadable false :error (str "could not parse resolver output: " (.getMessage e))})))))
+
+(defn gather-acceptance-contract-facts
+  "ticket-id's declared acceptance: contract, judged at cited-commit ->
+   {:declaration-readable? bool :registry-loadable? bool
+   :registry-load-error (string|nil) :unresolved-steps [...]}, the exact
+   shape acceptance-contract-gate-lib/evaluate expects (minus :ticket-id,
+   which the caller merges in). yaml-content nil (no ticket yaml on this
+   checkout) is the caller's job to warn about - this function is only
+   called when yaml-content is present."
+  [project-root cited-commit yaml-content]
+  (let [raw-declaration (read-yaml-field yaml-content "acceptance")
+        feature-text (feature-text-at-commit project-root cited-commit raw-declaration)
+        parse-result (when feature-text (parse-feature-ir! project-root feature-text))]
+    (cond
+      (nil? feature-text)
+      {:declaration-readable? false}
+
+      (= :vendor-missing parse-result)
+      {:declaration-readable? true :registry-loadable? false
+       :registry-load-error "the vendored APS parser (swarmforge/vendor/aps) is not present on this checkout"}
+
+      (nil? parse-result)
+      {:declaration-readable? false}
+
+      :else
+      (let [ir-path parse-result
+            pipeline-dir (materialize-pipeline-tree-at-commit! project-root cited-commit)]
+        (if-not pipeline-dir
+          {:declaration-readable? true :registry-loadable? false
+           :registry-load-error "specs/pipeline could not be listed at the cited commit"}
+          (let [{:keys [loadable unresolved error]} (run-contract-step-resolver project-root pipeline-dir ir-path)]
+            (if-not loadable
+              {:declaration-readable? true :registry-loadable? false :registry-load-error error}
+              {:declaration-readable? true :registry-loadable? true
+               :unresolved-steps (mapv (fn [{:keys [scenario exampleIndex stepText]}]
+                                          {:scenario scenario :example-index exampleIndex :step-text stepText})
+                                        unresolved)})))))))
+
 ;; ── top-level: gather + evaluate for a git_handoff draft ─────────────────
 
 (defn findings-for-git-handoff
@@ -262,6 +396,12 @@
                        :no-dropped-work-set (:no-dropped-work-set ancestry)
                        :wiring-entries wiring-entries
                        :file-contents file-contents
-                       :abandoned-commits abandoned-commits})]
-          {:findings (vec (concat (:findings result) field-level-manifest-finding))
-           :warnings (vec (concat (:warnings ancestry) ticket-warnings))})))))
+                       :abandoned-commits abandoned-commits})
+              acceptance-result
+              (if yaml-content
+                (acceptance-contract-gate-lib/evaluate
+                 (assoc (gather-acceptance-contract-facts project-root cited-commit yaml-content)
+                        :ticket-id ticket-id))
+                {:findings [] :warnings []})]
+          {:findings (vec (concat (:findings result) field-level-manifest-finding (:findings acceptance-result)))
+           :warnings (vec (concat (:warnings ancestry) ticket-warnings (:warnings acceptance-result)))})))))
