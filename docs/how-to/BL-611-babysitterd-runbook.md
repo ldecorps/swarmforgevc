@@ -16,18 +16,19 @@ tracked version is the only one that should be running.
 ## What it checks
 
 Each sweep evaluates a snapshot (tmux sessions, `ps`, file listings/ages, pane
-captures, `/proc/meminfo`) against these checks, in `babysitterd_sweep_lib.bb`:
+captures, an available-memory reading) against these checks, in
+`babysitterd_sweep_lib.bb`:
 
 | # | Check | Fires when |
 |---|---|---|
-| 1 | live-session-per-role | a role pane has no live `claude` process (via `ps --ppid`, never `pane_current_command`, which lies with a live child) |
+| 1 | live-session-per-role | a role pane has no live `claude` process (via a single `ps -eo pid=,ppid=,args=` snapshot filtered in-process by ppid — portable across GNU and BSD/macOS `ps`, never `pane_current_command`, which lies with a live child); if the `ps` gather itself fails outright, this reports `UNAVAILABLE` for that role rather than a false "no process" CRIT |
 | 2 | remote-control-flag | a live process is missing `--remote-control` |
 | 3 | handoffd-supervisor-fresh | handoffd/its supervisor is down, or `handoffd.log` is older than 5 minutes |
 | 4 | dead-letter-nonempty | `.swarmforge/handoffs/failed/` is non-empty |
 | 5 | stuck-in-process | an `inbox/in_process/` parcel is older than 30 minutes, in master **or** any worktree mailbox |
 | 6 | menu-blocked-pane | a pane capture shows an interactive menu/dialog (report only — never picks an option) |
 | 7 | busy-but-frozen | busy footer present but the spinner-stripped content hash is unchanged across 3 consecutive sweeps |
-| 8 | memory-floor | available memory is below the configured floor |
+| 8 | memory-floor | available memory is below the configured floor; reports `UNAVAILABLE` (never a fabricated OK or CRIT) when no memory facility on the host is readable |
 | 9 | rotate-not-honored | the newest completed parcel's rotate instruction is older than a 10-minute grace period, its target differs from `.swarmforge/mono-router-active-role`, and the note is newer than that file's mtime (suppresses a false positive when the persona changed *after* the note completed) |
 | 10 | swarm-starved | active tickets exist, zero pending/in-process parcels across every mailbox, no pane shows a busy footer, sustained for **2 consecutive sweeps**; pending never counts abandoned or >120-minute-old parcels |
 | 11 | claim-risk | the salvaged `babysitter_assess_lib.bb` scan (a role heading for bounce/halt with HEAD unchanged) |
@@ -62,6 +63,11 @@ treat it as a trusted, deterministic report — not something to re-verify from
 scratch.
 
 ## Start / stop / ensure
+
+The spawn detaches via `setsid` when it is on `PATH` (Linux), and falls back
+to plain `nohup`+`disown` when it is not (macOS ships no `setsid`) — the same
+detachment `start_handoff_daemon.sh` already relies on. Either path survives
+the launching shell exiting.
 
 Managed by the same lifecycle as every other swarm daemon — no separate
 command:
@@ -119,6 +125,30 @@ If your `.swarmforge/swarm.env` (untracked, host-local) still sets
 `SWARMFORGE_SKIP_BABYSITTER=1`, that line is now a no-op and should be deleted
 by hand — nothing in this parcel can edit it for you.
 
+**macOS hosts specifically**: if `.swarmforge/swarm.env` sets
+`SWARMFORGE_SKIP_BABYSITTERD=1` (trailing `d`) under a stale rationale carried
+over from the old paid LLM hawk (e.g. "cost > value"), that reasoning does not
+apply to the free deterministic daemon. Since BL-802 (below), babysitterd runs
+correctly on macOS — clearing that line by hand is what turns the sweep back
+on for this host.
+
+## macOS portability (BL-802)
+
+The gathering layer reads whatever memory facility the host actually has:
+`/proc/meminfo` first (or `BABYSITTER_MEMINFO_PATH`, the existing hermetic
+test seam — unchanged), falling back to parsing macOS `vm_stat` when neither
+`/proc/meminfo` nor the override path is readable. If neither facility yields
+a reading, `available-mem-mb` is `nil` and the memory-floor check reports
+`UNAVAILABLE` rather than fabricating a reading — the old behavior silently
+defaulted to 999999MB available, which masked real low-memory conditions as
+OK.
+
+Both the pane process gather and the memory-floor gather now distinguish "the
+gather tool itself failed" from "the thing being checked for is genuinely
+absent" — a failed gather reports `UNAVAILABLE` in the log; it is never
+nudge-eligible (`UNAVAILABLE` is neither `CRIT` nor a `stuck-*` `WARN`), so it
+never produces a false CRIT nudge and never silently passes as OK.
+
 ## Verify
 
 ```bash
@@ -131,10 +161,5 @@ bash swarmforge/scripts/test/test_babysitterd_lifecycle.sh
 Acceptance feature:
 [`specs/features/BL-611-deterministic-babysitterd-managed-by-swarm-lifecycle.feature`](../../specs/features/BL-611-deterministic-babysitterd-managed-by-swarm-lifecycle.feature).
 
-## Known gap
-
-The start path (`start_babysitterd.sh`) spawns via `setsid`, and the
-gathering layer uses `ps --ppid` and reads `/proc/meminfo` — all Linux-only.
-On macOS these fail; portability (portable spawn, a `ps` dialect that works on
-both, and a memory facility) is tracked separately as BL-802
-(`depends_on: [BL-611]`), not fixed here.
+The BL-802 macOS-portability behavior above has its own acceptance feature:
+[`specs/features/BL-802-babysitterd-macos-portability.feature`](../../specs/features/BL-802-babysitterd-macos-portability.feature).

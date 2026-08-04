@@ -90,13 +90,25 @@
       (when (zero? (:exit r))
         (parse-long (str/trim (first (str/split-lines (:out r)))))))))
 
-(defn claude-process-line [pane-pid]
-  (when pane-pid
-    (let [r (sh! "ps" "--ppid" (str pane-pid) "-o" "pid=,args=")]
-      (when (zero? (:exit r))
-        (->> (str/split-lines (:out r))
-             (filter #(str/includes? % "claude "))
-             first)))))
+;; BL-802: `ps --ppid` is GNU-only (BSD/macOS ps rejects it outright). A
+;; single `ps -eo pid=,ppid=,args=` snapshot works on both dialects — filter
+;; by ppid in-process instead of asking ps to filter. One snapshot covers
+;; every role's pane (see ps-snapshot below), so this only ever parses text,
+;; never shells out itself.
+(def ^:private ps-line-pattern #"^\s*(\d+)\s+(\d+)\s+(.*)$")
+
+(defn ps-snapshot []
+  (let [r (sh! "ps" "-eo" "pid=,ppid=,args=")]
+    (when (zero? (:exit r)) (:out r))))
+
+(defn claude-process-line [pane-pid ps-output]
+  (when (and pane-pid ps-output)
+    (->> (str/split-lines ps-output)
+         (keep (fn [line]
+                 (when-let [[_ _pid ppid args] (re-find ps-line-pattern line)]
+                   (when (= (str pane-pid) ppid) args))))
+         (filter #(str/includes? % "claude "))
+         first)))
 
 (defn capture-pane [socket session]
   (when (and socket (pane-exists? socket session))
@@ -129,10 +141,13 @@
     (spit (str f) (str (str/join "\n" trimmed) "\n"))
     trimmed))
 
-(defn gather-role [socket {:keys [role session]}]
+(defn gather-role [socket ps-output {:keys [role session]}]
   (let [exists? (pane-exists? socket session)
         pid (when exists? (pane-pid socket session))
-        claude-line (claude-process-line pid)
+        ;; A pane whose pid we need but whose ps snapshot failed to gather at
+        ;; all is a tooling failure, not evidence the claude process is gone.
+        gather-failed? (boolean (and pid (nil? ps-output)))
+        claude-line (claude-process-line pid ps-output)
         has-claude? (boolean claude-line)
         has-rc? (boolean (and claude-line (str/includes? claude-line "--remote-control")))
         pane-text (or (capture-pane socket session) "")
@@ -141,6 +156,7 @@
         stable-hash (sha1-hex (strip-spinner pane-text))
         history (append-hash-history! role stable-hash)]
     {:role role :pane-exists? exists? :has-claude-process? has-claude?
+     :process-gather-failed? gather-failed?
      :has-remote-control? has-rc? :menu-blocked? menu? :busy? busy?
      :hash-history history :pane-text pane-text}))
 
@@ -209,14 +225,39 @@
        vec))
 
 ;; ── memory floor ──────────────────────────────────────────────────────────
+;; BL-802: /proc/meminfo is Linux-only. Try it first (BABYSITTER_MEMINFO_PATH
+;; overrides it — the existing hermetic test seam, unchanged), then fall back
+;; to macOS's vm_stat. nil only when neither facility yields a reading —
+;; available-mem-mb's nil-means-truly-unavailable contract is unchanged.
 
 (defn meminfo-path []
   (or (System/getenv "BABYSITTER_MEMINFO_PATH") "/proc/meminfo"))
 
-(defn available-mem-mb []
+(defn read-proc-meminfo-mb []
   (let [meminfo (try (slurp (meminfo-path)) (catch Exception _ ""))
         m (re-find #"MemAvailable:\s+(\d+)" meminfo)]
     (when m (quot (parse-long (second m)) 1024))))
+
+(def ^:private vm-stat-page-size-pattern #"page size of (\d+) bytes")
+
+(defn- vm-stat-count [text label]
+  (some-> (re-find (re-pattern (str (java.util.regex.Pattern/quote label) ":\\s+(\\d+)\\.")) text)
+          second parse-long))
+
+(defn parse-vm-stat-available-mb [text]
+  (when-let [page-size (some-> (re-find vm-stat-page-size-pattern text) second parse-long)]
+    (let [free (vm-stat-count text "Pages free")
+          inactive (vm-stat-count text "Pages inactive")
+          speculative (vm-stat-count text "Pages speculative")]
+      (when (and free inactive speculative)
+        (quot (* page-size (+ free inactive speculative)) (* 1024 1024))))))
+
+(defn read-vm-stat-mb []
+  (let [r (sh! "vm_stat")]
+    (when (zero? (:exit r)) (parse-vm-stat-available-mb (:out r)))))
+
+(defn available-mem-mb []
+  (or (read-proc-meminfo-mb) (read-vm-stat-mb)))
 
 ;; ── pause + rotate-note gathering ─────────────────────────────────────────
 
@@ -290,7 +331,8 @@
 (defn -main []
   (let [socket (read-tmux-socket)
         role-rows (parse-roles-tsv)
-        roles (mapv (partial gather-role socket) role-rows)
+        ps-output (ps-snapshot)
+        roles (mapv (partial gather-role socket ps-output) role-rows)
         busy-by-role (into {} (map (juxt :role :busy?) roles))
         any-pane-busy? (boolean (some :busy? roles))
         pause (read-pause)
@@ -305,7 +347,10 @@
          :handoffd-max-age-secs heartbeat-max-secs
          :failed-count (count-failed-box)
          :stuck-parcels (stuck-parcels)
-         :available-mb (or (available-mem-mb) 999999)
+         ;; BL-802: nil (truly unavailable) flows through unmasked — no
+         ;; fabricated default that would silently suppress a real low-memory
+         ;; finding. check-memory-floor reports UNAVAILABLE on nil.
+         :available-mb (available-mem-mb)
          :mem-floor-mb mem-floor-mb
          :claim-risks claim-risks
          :rotate-note (gather-rotate-note)

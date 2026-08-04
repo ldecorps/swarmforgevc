@@ -17,6 +17,15 @@
 ;;      format-nudge-message's output is fully and only a function of the
 ;;      input findings' own :message text - no other action vocabulary
 ;;      (respawn/pick-menu/move-parcel) is ever introduced.
+;;   P3 (BL-802) gather-failure-reports-unavailable-never-crit-or-silent-ok -
+;;      the BL-802 declared invariant: on every host, a check that cannot
+;;      gather its inputs (ps errored on an unsupported dialect; no memory
+;;      facility resolved) reports its own unavailability - never a CRIT/WARN
+;;      about the swarm from that failed gather, and never a nil finding (the
+;;      silent-OK shape). Covers both checks BL-802 made fallible on macOS:
+;;      check-live-session's process gather and check-memory-floor's memory
+;;      gather. Also asserts the successful-gather branch is unchanged from
+;;      pre-BL-802 semantics, across randomized available-mb/floor-mb pairs.
 ;;
 ;; NOTE on toolchain (per swarmforge's engineering article, "Babashka/Clojure
 ;; (swarm scripts)"): the BL-654 role contract's "*.property.test.js /
@@ -141,6 +150,62 @@
                    (not (re-find #"(?i)press|select option|respawn|kill -|restart the|answer the menu" msg)))
       (assert-true "nudge message is exactly the fixed envelope around the findings' own messages"
                    (= msg (sw/format-nudge-message to-nudge))))))
+
+;; ── P3 (BL-802): gather-failure-reports-unavailable-never-crit-or-silent-ok ─
+(def ^:private crit-or-warn #{"CRIT" "WARN"})
+(def p3-branches-hit (atom #{}))
+
+(defn- gen-live-session-case []
+  (let [gather-failed? (rbool)
+        has-claude? (rbool)]
+    (swap! p3-branches-hit conj (if gather-failed? :process-gather-failed :process-gather-ok))
+    {:gather-failed? gather-failed? :has-claude? has-claude?
+     :result (sw/check-live-session {:role "coder" :pane-exists? true
+                                      :has-claude-process? has-claude?
+                                      :process-gather-failed? gather-failed?})}))
+
+(dotimes [_ 300]
+  (let [{:keys [gather-failed? has-claude? result]} (gen-live-session-case)]
+    (if gather-failed?
+      (do
+        (assert-true "a failed process gather never produces a CRIT/WARN about the swarm (cry-wolf)"
+                     (not (contains? crit-or-warn (:severity result))))
+        (assert-true "a failed process gather is never silently folded into OK (a nil finding)"
+                     (some? result)))
+      ;; unchanged pre-BL-802 semantics once the gather actually succeeded
+      (if has-claude?
+        (assert-true "a successful gather finding a live claude process still produces no finding" (nil? result))
+        (assert-true "a successful gather finding NO claude process is still the real half-launch CRIT"
+                     (and result (= "CRIT" (:severity result)) (str/starts-with? (:key result) "proc-")))))))
+
+(defn- gen-memory-case []
+  (let [gather-failed? (rbool)
+        floor-mb (+ 500 (rint 2000))
+        available-mb (when-not gather-failed? (rint 6000))]
+    (swap! p3-branches-hit conj (if gather-failed? :memory-gather-failed :memory-gather-ok))
+    {:gather-failed? gather-failed? :available-mb available-mb :floor-mb floor-mb
+     :result (sw/check-memory-floor {:available-mb available-mb :floor-mb floor-mb})}))
+
+(dotimes [_ 300]
+  (let [{:keys [gather-failed? available-mb floor-mb result]} (gen-memory-case)]
+    (if gather-failed?
+      (do
+        (assert-true "a failed memory gather never produces a CRIT/WARN about the swarm (cry-wolf)"
+                     (not (contains? crit-or-warn (:severity result))))
+        (assert-true "a failed memory gather is never silently folded into OK (a nil finding)"
+                     (some? result)))
+      ;; unchanged pre-BL-802 semantics once a reading was actually gathered
+      (if (< (long available-mb) (long floor-mb))
+        (assert-true "a successful below-floor reading is still CRIT memory"
+                     (and result (= "CRIT" (:severity result))))
+        (assert-true "a successful at-or-above-floor reading still produces no finding" (nil? result))))))
+
+(assert-true "P3 generator reached both a failed and a successful process gather"
+             (and (contains? @p3-branches-hit :process-gather-failed)
+                  (contains? @p3-branches-hit :process-gather-ok)))
+(assert-true "P3 generator reached both a failed and a successful memory gather"
+             (and (contains? @p3-branches-hit :memory-gather-failed)
+                  (contains? @p3-branches-hit :memory-gather-ok)))
 
 (when (seq @failures)
   (binding [*out* *err*]
