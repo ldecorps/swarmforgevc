@@ -105,10 +105,21 @@ function ancillarySkipEnv() {
   };
 }
 
+// These scenarios test that babysitterd actually starts, so an ambient
+// SWARMFORGE_SKIP_BABYSITTERD=1 exported into the calling shell (routine on
+// an agent worktree pane, which disables babysitterd for its own safety)
+// must not leak into the scripts under test — same scrub bl461's runEnsure()
+// applies to ambient Telegram creds/skip flags.
+function withoutAmbientBabysitterSkip(env) {
+  const scrubbed = { ...env };
+  delete scrubbed.SWARMFORGE_SKIP_BABYSITTERD;
+  return scrubbed;
+}
+
 function runStartAncillary(root) {
   return spawnSync('bash', [START_ANCILLARY_SH, root], {
     encoding: 'utf8',
-    env: { ...process.env, ...ancillarySkipEnv() },
+    env: { ...withoutAmbientBabysitterSkip(process.env), ...ancillarySkipEnv() },
   });
 }
 
@@ -508,7 +519,7 @@ function registerSteps(registry) {
   registry.defineScoped(/^\.\/swarm ensure runs$/, (ctx) => {
     const st = ensureState(ctx);
     const env = {
-      ...process.env,
+      ...withoutAmbientBabysitterSkip(process.env),
       SWARM_ENSURE_EXTENSION_CHECK_CMD: 'true',
       SWARM_ENSURE_SUPERVISOR_CMD: 'true',
       SWARM_ENSURE_OPERATOR_CMD: 'true',
