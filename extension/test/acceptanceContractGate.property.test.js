@@ -3,12 +3,12 @@
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const fs = require('node:fs');
-const os = require('node:os');
 const { execFileSync } = require('node:child_process');
 const fc = require('fast-check');
 const { findUnresolvedSteps, exampleCases } = require('../../specs/pipeline/scripts/resolve_contract_steps');
 const { createStepRegistry } = require('../../specs/pipeline/stepRegistry');
 const { scenarioSteps, substitute } = require('../../specs/pipeline/runtime');
+const { mkTmpDir } = require('./helpers/tmpDir');
 
 // BL-761 declared invariants (backlog/active/BL-761-acceptance-contract-that-cannot-run-reaches-qa.yaml):
 // 1. The gate's verdict comes from the same parser and step registry the
@@ -164,7 +164,7 @@ function caseToEdn(c) {
 }
 
 function evaluateAllInBb(cases) {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'aps-bl761-prop-'));
+  const tmp = mkTmpDir('aps-bl761-prop-');
   const casesPath = path.join(tmp, 'cases.edn');
   const outPath = path.join(tmp, 'out.txt');
   fs.writeFileSync(casesPath, `[${cases.map(caseToEdn).join(' ')}]`);
