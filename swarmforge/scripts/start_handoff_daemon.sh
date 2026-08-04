@@ -18,6 +18,7 @@ fi
 
 WORKING_DIR="${1:?usage: start_handoff_daemon.sh <project-root>}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/freshness_stop_marker_lib.sh"
 DAEMON_DIR="$WORKING_DIR/.swarmforge/daemon"
 HANDOFFD_LOG="$DAEMON_DIR/handoffd.log"
 HANDOFFD_BB="${HANDOFFD_BB:-$SCRIPT_DIR/handoffd.bb}"
@@ -30,6 +31,10 @@ if [[ "${SWARMFORGE_SKIP_DAEMON:-}" == "1" ]]; then
 fi
 
 mkdir -p "$DAEMON_DIR"
+# BL-785: starting re-arms watching — a deliberate stop must not outlive the
+# next start, or the crontab line would be present while the daemon it
+# watches is silently unwatched.
+freshness_clear_stopped "$WORKING_DIR" "handoffd"
 AUDIT_LOG="$DAEMON_DIR/daemon-start-audit.log"
 
 audit() {

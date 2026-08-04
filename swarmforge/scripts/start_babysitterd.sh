@@ -21,9 +21,13 @@ fi
 
 ROOT="$(cd "${1:?usage: start_babysitterd.sh <project-root>}" && pwd)"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/freshness_stop_marker_lib.sh"
 DIR="$ROOT/.swarmforge/babysitterd"
 PIDFILE="$DIR/babysitterd.pid"
 mkdir -p "$DIR"
+# BL-785: starting re-arms watching — a deliberate stop must not outlive the
+# next start.
+freshness_clear_stopped "$ROOT" "babysitterd"
 
 if [[ -f "$PIDFILE" ]] && kill -0 "$(cat "$PIDFILE" 2>/dev/null)" 2>/dev/null; then
   echo "babysitterd already running (pid $(cat "$PIDFILE"))"

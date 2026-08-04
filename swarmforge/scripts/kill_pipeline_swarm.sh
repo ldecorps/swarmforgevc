@@ -71,6 +71,7 @@ AUDIT="$DAEMON_DIR/kill-all-audit.log"
 # fixture, matched and killed the live swarm's real socket 5 times in one
 # session - see swarmforge/scripts/test/test_swarm_socket_not_in_tmp.sh.)
 source "$SCRIPT_DIR/project_socket_id_lib.sh"
+source "$SCRIPT_DIR/freshness_stop_marker_lib.sh"
 SOCKET_GLOB="$ROOT/.swarmforge/tmux/"*.sock
 LEGACY_PROJECT_SOCKET_ID="$(project_socket_id "$ROOT")"
 # Test-only override, matching swarmforge.sh's own SWARMFORGE_CONFIG
@@ -214,6 +215,10 @@ reap_orphaned_pane_descendants "$PANE_DESCENDANT_PIDS"
 signal_pid_file "$DAEMON_DIR/handoffd-supervisor.pid"
 signal_pid_file "$DAEMON_DIR/handoffd.pid"
 rm -f "$DAEMON_DIR/stop"
+# BL-785: record that handoffd was stopped ON PURPOSE, so the BL-675
+# freshness cron does not resurrect it. Pipeline-only scope: never marks
+# babysitterd, which this script deliberately leaves running.
+freshness_mark_stopped "$ROOT" "handoffd"
 if [[ -f "$DAEMON_DIR/handoffd.status.json" ]]; then
   if grep -q '"state":"halted"' "$DAEMON_DIR/handoffd.status.json" 2>/dev/null; then
     rm -f "$DAEMON_DIR/handoffd.status.json"

@@ -12,6 +12,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OP_DIR="$ROOT/.swarmforge/operator"
 BB_DIR="$ROOT/.swarmforge/babysitterd"
 LEGACY_BB_DIR="$ROOT/.swarmforge/babysitter"
+source "$SCRIPT_DIR/freshness_stop_marker_lib.sh"
 
 log() {
   printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*"
@@ -69,6 +70,9 @@ log "stop_ancillary_services begin root=$ROOT"
 # babysitterd (BL-611) first — signal its pidfile like the other daemons.
 log "stopping babysitterd"
 signal_pid_file "$BB_DIR/babysitterd.pid"
+# BL-785: record that babysitterd was stopped ON PURPOSE, so the BL-675
+# freshness cron does not resurrect it.
+freshness_mark_stopped "$ROOT" "babysitterd"
 
 # Legacy LLM hawk cleanup (retired — BL-611: the babysitter is now ONLY the
 # deterministic daemon above). Best-effort teardown of any leftover
