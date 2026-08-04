@@ -141,37 +141,7 @@ description: |
   handshake files for a running supervisor, not a durable record of intent —
   do not mistake one for the marker this ticket needs.
 
-acceptance: |
-  Specifier writes the Gherkin when this is approved and promoted. Minimum
-  behaviour:
-
-  1. After a full-stack stop, a checker run that observes both watched
-     daemons' heartbeat logs as stale restarts neither, and neither daemon is
-     running afterwards.
-
-  2. After a pipeline-only stop, a checker run that observes handoffd's log
-     stale does not restart handoffd; a babysitterd that was left running and
-     then freezes IS still killed and restarted by the same run. One scenario,
-     both halves, so a blanket suppression cannot pass it.
-
-  3. With no stop having been requested, a watched daemon whose heartbeat log
-     is stale is killed and restarted exactly as today, the incident record is
-     appended before the announce, and the announce carries the existing
-     FRESHNESS_VIOLATION text. This is the no-regression scenario for BL-675
-     and must fail if the suppression is applied unconditionally.
-
-  4. Stop, then start, then a stale heartbeat: the daemon is killed and
-     restarted. The start path re-arms watching, and the proof is the restart
-     happening, not the absence of a marker file.
-
-  5. The deliberate-stop determination is made with no swarm process alive:
-     the checker run in scenarios 1, 2 and 4 executes against a fixture root
-     with no handoffd, babysitterd, bb or node process running, and reaches
-     the right verdict from durable state alone.
-
-  6. Stop called twice in a row, and stop called when nothing was running,
-     both leave the same state as one stop of a running swarm — the stop
-     paths are already idempotent and must stay so.
+acceptance: specs/features/BL-785-freshness-deliberate-stop.feature
 
 out_of_scope: |
   - Installing the cron on start, its idempotence, and the multi-root
@@ -188,6 +158,26 @@ out_of_scope: |
     budget. One bit is the whole ticket.
 
 notes: |
+  ## 2026-08-04 in-flight spec amendment (documenter spec-gap note 000009)
+
+  The original `acceptance:` was the prose line "Specifier writes the Gherkin
+  when this is approved and promoted" plus six minimum-behaviour criteria —
+  the materialization never happened, caught by the documenter while holding
+  the parcel. The feature file now referenced above encodes those six criteria
+  1:1 as scenarios `BL-785 freshness-deliberate-stop-01..06` (04 and 06 as
+  outlines), written to the BUILT behaviour. Human approval on this ticket
+  explicitly anticipated the specifier writing the Gherkin post-approval, so
+  `human_approval: approved` stands. Step handlers for these scenarios must
+  land in the same parcel (BL-233) — that is coder work, notified alongside
+  the holder.
+
+  IR-DRY findings on the feature file: four medium-confidence, all reviewed
+  and kept. "full-stack" vs "pipeline-only" stop are opposite preconditions
+  (the per-daemon scoping IS the ticket); the generic "a watched daemon" in
+  the no-regression scenario is daemon-agnostic by design; the parameterized
+  "<daemon>'s heartbeat log is stale" reuses one step shape the specific
+  scenarios share.
+
   The general lesson, worth carrying into review rather than just fixing:
   BL-675 and BL-783 are each individually correct and jointly produce a
   resurrection loop. The seam was invisible because BL-675's mechanism had
