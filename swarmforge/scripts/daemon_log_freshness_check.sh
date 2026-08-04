@@ -21,6 +21,8 @@
 set -eu
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+# shellcheck disable=SC1091
+. "$SCRIPT_DIR/freshness_stop_marker_lib.sh"
 ROOT=${FRESHNESS_ROOT:?FRESHNESS_ROOT is required}
 CONF=${FRESHNESS_CONF:-"$SCRIPT_DIR/daemon_log_freshness.conf"}
 NOW=${FRESHNESS_NOW_EPOCH:-$(date +%s)}
@@ -158,6 +160,15 @@ process_daemon() {
   log_rel=$3
   pid_rel=$4
   start_name=$5
+
+  # BL-785: a deliberate stop (kill_pipeline_swarm.sh for handoffd,
+  # stop_ancillary_services.sh for babysitterd) leaves this daemon watched
+  # but suppressed - a stale heartbeat is the expected, intentional state,
+  # not a violation. Checked first and from durable state alone, so the
+  # verdict holds with every bb/node/swarm process dead.
+  if freshness_is_stopped "$ROOT" "$name"; then
+    return 0
+  fi
 
   log_path="$ROOT/$log_rel"
   pid_path="$ROOT/$pid_rel"
