@@ -127,6 +127,9 @@
 (assert= "parse-max-attempts: unrelated config lines are ignored"
          3 (provider-auth-observe-lib/parse-max-attempts "config active_backlog_max_depth 5\n"))
 
+(assert= "parse-max-attempts: present-but-non-numeric value degrades to default (never nil, never a crash)"
+         3 (provider-auth-observe-lib/parse-max-attempts "config auth_respawn_max_attempts abc\n"))
+
 ;; ── format-* helpers ───────────────────────────────────────────────────────
 
 (assert-true "format-alert-reason names the role and BL-536"
