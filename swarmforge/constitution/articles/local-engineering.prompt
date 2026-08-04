@@ -23,7 +23,8 @@ shared article remains in force.
 - The extension host owns all I/O: tmux, `.swarmforge/` files, git. The webview
   is presentation plus forwarded user input.
 - Prefer small, testable modules (see shared Design And Testability — the
-  webview and VS Code API surface are the unsuitable boundary).
+  webview and VS Code API surface are the unsuitable boundary; for Bubble,
+  the Android device surface — see "Testability Boundary — Bubble" below).
 - Command IDs namespaced under `swarmforge.` (swarmforge.run, swarmforge.stop,
   swarmforge.setTarget, swarmforge.initTarget).
 
@@ -85,6 +86,35 @@ shared article remains in force.
    host-agent backend AND a shim plan. Dual-name shims belong at adapter
    edges when a real second incarnation lands — never as a vocabulary chore.
    (Human directive 2026-07-30, `backlog/INTAKE-messaging-host-agent-interface-vs-incarnation.md`.)
+
+## Testability Boundary — Bubble (Android) (BL-769)
+Per the shared Design And Testability rule, this project's environmentally
+unsuitable boundary includes — alongside the VS Code Extension API surface,
+the webview execution context, and live tmux/PTY interaction — the **Android
+device surface**: Activities and Services as running components, the overlay
+window, audio capture and playback, and real network I/O against a live
+tunnel.
+
+Every Bubble behavior lands on one side of a stated line — none is left with
+neither:
+- **Pure logic** (no `android.*` framework type in the function's own
+  signature: parsing, classification, data transforms) is covered by the
+  plain-JUnit JVM unit suite under `android/app/src/test/`, run via
+  `./gradlew :app:testDebugUnitTest` with no emulator and no connected
+  device. Push framework types to the thin device edge (e.g. the Activity
+  converts `android.net.Uri` to `String` before calling the parser) — the
+  same thin-edge rule this article already applies to the VS Code API and
+  the webview. Robolectric and emulator-backed `androidTest` are
+  deliberately not adopted; introducing either is its own ticket, never a
+  drive-by test dependency.
+- **Device-surface behavior** is verified by a recorded manual procedure
+  noted in the ticket. The Node acceptance runner cannot execute Kotlin:
+  never ship a Bubble feature file whose scenarios have no runnable binding —
+  bind them to step handlers that drive the gradle unit suite (as
+  BL-769's do), or record the manual procedure the ticket will be verified
+  by.
+
+How-to: `docs/how-to/BL-769-android-jvm-unit-suite.md`.
 
 ## Diagrams (this project)
 Per the shared Diagrams rule, the diagrams this project maintains are:
