@@ -101,6 +101,7 @@ function ancillarySkipEnv() {
     SWARMFORGE_SKIP_ONBOARDER: '1',
     SWARMFORGE_SKIP_TUNNEL: '1',
     SWARMFORGE_SKIP_RESIDENT_SPY_TUNNEL: '1',
+    SWARMFORGE_SKIP_FRESHNESS_CRON: '1',
   };
 }
 
@@ -283,7 +284,10 @@ function isAllowedBabysitterMatch(relPath) {
       'swarmforge/scripts/swarm_status.bb',
       'swarmforge/scripts/stack_survivor_scan.sh',
       'swarmforge/scripts/daemon_log_freshness.conf',
+      'swarmforge/scripts/daemon_log_freshness_check.sh',
+      'swarmforge/scripts/freshness_stop_marker_lib.sh',
       'swarmforge/scripts/ancillary_provider_lib.sh',
+      'swarmforge/roles/coordinator.prompt',
       'start-swarm.sh',
       'stop-swarm.sh',
       'swarm-kill',
