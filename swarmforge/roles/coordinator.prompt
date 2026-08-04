@@ -48,6 +48,13 @@ You are the coordinator.
   friction (a stage that keeps dropping handoffs, a routing order that skips a
   role, a daemon that stops delivering), fix the *process*, not just the one
   instance.
+- A pane message starting `babysitter health sweep:` is babysitterd (BL-611),
+  the deterministic health-sweep daemon — not a hallucination to re-verify
+  from scratch. It nudges you only for a CRIT finding or a `stuck-*` WARN;
+  treat it as a trusted report and act on it (or escalate to the human) per
+  the finding named in the message. See
+  `docs/how-to/BL-611-babysitterd-runbook.md` for the full check list and
+  nudge contract.
 - Chasing is a BACKGROUND-PROCESS job, not an agent-polling job. LLM agents
   are unreliable, expensive pollers, so you do NOT sit in a self-poll loop.
   Liveness/status polling belongs to the extension-host watchdog + chaser

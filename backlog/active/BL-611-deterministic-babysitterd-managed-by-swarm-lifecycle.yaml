@@ -484,3 +484,23 @@ notes: |
      (`kill_pipeline_swarm.sh` :230 scoped vs :271 unscoped;
      `expedite_cli.bb` `pids-matching` call site :169 scoped vs :165-168 bare).
      Pre-existing, not a BL-611 regression, and not this parcel's to fix.
+
+  ## 2026-08-04 specifier — disposition of the coder's macOS setsid finding
+
+  While resuming this parcel on the Mac (post host-switch park b8597ed3), the
+  coder reported that `start_babysitterd.sh:37` spawns via `setsid`, which
+  macOS lacks — the start path always fails on the current host. Specifier
+  audit found two more Linux-isms in the gathering layer: `ps --ppid`
+  (babysitter_check.bb:95, macOS ps rejects it) and /proc/meminfo
+  (babysitter_check.bb:213-218, absent on macOS).
+
+  DISPOSITION: NO CHANGE TO THIS PARCEL. The out_of_scope line "Windows/mac
+  portability beyond the current Linux swarm host" was approved when the swarm
+  host was Linux; its premise is stale since the 2026-08-02 host switch, but
+  this parcel is hardened and one stage from QA, its feature file pins nothing
+  about spawn mechanics, and adding three new behaviours now would re-open
+  hardening — the same trade refused for finding #1 above (BL-781). The full
+  macOS portability set (portable spawn, ps dialect, memory facility) is
+  BL-802 in backlog/paused/, `depends_on: [BL-611]` so the two never edit the
+  same files concurrently. Reviewers of THIS parcel: the spawn failing on this
+  Mac is known, ticketed, and not a bounce reason against this contract.

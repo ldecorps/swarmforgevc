@@ -10,7 +10,11 @@ restarts wedged sweep daemons from outside bb/node/the swarm.
 | Daemon | Log | Threshold | Start script |
 |---|---|---|---|
 | handoffd | `.swarmforge/daemon/handoffd.log` | 120s | `start_handoff_daemon.sh` |
-| babysitterd | `.swarmforge/babysitter/runtime.log` | 600s | `start_babysitter.sh` |
+| babysitterd | `.swarmforge/babysitterd/babysitterd.log` | 600s | `start_babysitterd.sh` |
+
+(BL-611 ported babysitterd into the tracked repo and moved its state from
+`.swarmforge/babysitter/` to `.swarmforge/babysitterd/` — see
+[the babysitterd runbook](BL-611-babysitterd-runbook.md).)
 
 Thresholds and paths live in one place:
 `swarmforge/scripts/daemon_log_freshness.conf`.
