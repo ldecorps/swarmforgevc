@@ -1,0 +1,78 @@
+id: BL-805
+title: "rotate_to_role rotates away over an unfinished in_process parcel — stuck-WARN noise + false resume on return rotation"
+milestone: M8
+type: defect
+status: todo
+epic: swarm-reliability
+assigned_to:
+human_approval: pending
+severity: medium
+priority: 3
+mutation_cost: low
+direction: swarm-surfaced
+depends_on: []
+source: "Coordinator note 2026-08-04 (handoff 20260804T203947Z_000102): 'coder must done_with_current before rotate (stuck-in-process WARN)'."
+
+invariants:
+  - "The gate blocks only resident-invoked rotation (the rotate_to_role entry); daemon-initiated rotation (handoff_lib/rotate-resident-to!, the path handoffd chase calls directly) is never blocked by a stuck parcel."
+  - "Only real parcels gate: a file blocks rotation only if it matches the departing role's inbox/in_process/*.handoff — claim-progress sidecars and any other droppings never block."
+
+required_wiring:
+  - "swarmforge/scripts/rotate_to_role.bb::in_process::the gate must run in the resident-invoked entry, not only in a lib function"
+
+approval_context: >
+  Structural backstop for a rule that today exists only as prompt text: the
+  pack prompts were amended (commit 897df660) to require done_with_current.sh
+  before rotate_to_role.sh, but prompt checklists get skipped — that is the
+  same trusting-the-model failure BL-685's intake called out. One design
+  choice needs sign-off: on a stuck parcel the resident-invoked rotate
+  REFUSES (fail closed, with a force-override env seam), while the daemon's
+  own rotation path stays ungated (fail open) so chase-driven drain can
+  never deadlock on the very parcel it is draining. Confirm that split, or
+  amend.
+
+notes: |
+  WHAT / WHY: the mono-router resident forwards its work
+  (swarm_handoff.sh), then rotates to the next role. Nothing completes the
+  parcel it RECEIVED, so the handoff file stays in the departing role's
+  inbox/in_process/. Two observable faults follow: (1) after 30 minutes the
+  babysitter's stuck-in-process check fires a WARN for a parcel that is
+  actually finished — recurring monitor noise (sibling of BL-804's false
+  CRITs); (2) on the next rotation back into that role, ready_for_next.sh
+  checks in_process/ FIRST and resumes the already-forwarded parcel — a
+  wasted turn and a duplicate-forward risk (a re-sent git_handoff carries a
+  new id, so mailbox dequeue idempotency does not catch it).
+
+  Live integration points (verified 2026-08-04): the resident-invoked path
+  is rotate_to_role.sh -> rotate_to_role.bb -> handoff_lib/respawn-as!.
+  The daemon path is handoffd.bb attempt-resident-rotate! ->
+  handoff_lib/rotate-resident-to! directly — it never goes through
+  rotate_to_role.bb, so gating the .bb entry leaves the daemon path
+  untouched by construction (invariant 1). The departing role is the
+  .swarmforge/mono-router-active-role marker; master-resident roles'
+  mailboxes live under .swarmforge/handoffs/<role>/inbox/, worktree roles'
+  under .worktrees/<role>/.swarmforge/handoffs/inbox/.
+
+  CONSTRAINTS (not prescriptions):
+  - Refusal is loud and instructive: nonzero exit, message naming
+    done_with_current.sh, pane NOT respawned.
+  - Force override via an env seam (for emergencies and tests), which
+    rotates anyway but warns, naming the parcel left behind.
+  - Fail open when the departing role cannot be determined (missing/blank
+    active-role marker): rotate rather than strand the resident.
+  - Test isolation per engineering rules: env-seamed paths, no live
+    .swarmforge, no real timers; scenario 04's handler drives
+    rotate-resident-to! (or its extracted decision seam) in-process,
+    never a live tmux respawn.
+
+  The three "inbox in_process contains ..." Given steps are one
+  parameterized step family over distinct box states (handoff file / no
+  files / sidecar only) — IR-DRY's possible-synonym findings are resolved
+  by a single step definition, not divergent wording.
+
+  QA e2e: on a scratch fixture root, place a *.handoff in the departing
+  role's in_process, invoke rotate_to_role.sh, verify refusal + no
+  respawn; complete the parcel (done_with_current.sh), re-invoke, verify
+  rotation proceeds. Verify a claim-progress-only box does not block.
+
+acceptance: specs/features/BL-805-rotate-gate-on-unfinished-in-process-parcel.feature
