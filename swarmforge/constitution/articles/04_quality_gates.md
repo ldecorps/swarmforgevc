@@ -42,6 +42,16 @@
   **remediation pointer** (file, function, scenario/property id) — plus the
   blocked-check list. A full sweep that found nothing records an explicit NONE
   and forwards.
+- **A clean pass leaves a commit, or it is indistinguishable from a skipped
+  stage.** The explicit-NONE inventory of a clean pass is COMMITTED to the
+  reviewing role's own branch as
+  `backlog/evidence/<ticket>-<role>-pass-<YYYYMMDD>.md`, and the forward names
+  THAT commit — never the bare received hash. A review stage that forwards
+  exactly the commit it received leaves no trace in the parcel's lineage (a
+  fast-forward merge creates no commit), so downstream audit cannot tell a
+  completed pass from a stage that never ran: BL-536 (2026-08-04) burned a
+  full QA bounce + re-entry cycle re-running architect and hardener passes
+  that had in fact run but committed nothing. Mechanical gate: BL-806.
 - **One bounce, many owners.** When one inventory blames several stages, the
   single `git_handoff` goes to the EARLIEST blamed role (4.3) and the inventory
   travels with the parcel; any stage that later holds that parcel must clear
