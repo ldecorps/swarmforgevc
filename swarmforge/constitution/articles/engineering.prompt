@@ -21,6 +21,17 @@
     (BL-472), deliberately deferred — not an active gate. (BL-433 hardening
     surfaced this; the tool table previously implied real `.bb` coverage that
     never existed.)
+  - Kotlin/Android (Bubble, `android/`): mutation/CRAP/DRY tooling is NOT
+    wired for `.kt` — Stryker is TS-only, and the jscpd/CRAP quality scripts
+    are scoped to `extension/src` — the same documented gap as Babashka
+    above. The actual gate for Bubble Kotlin is the JVM unit suite
+    (`android/gradlew :app:testDebugUnitTest`; see the local article's
+    "Testability Boundary — Bubble"). A `.kt` hardening pass applies the
+    degraded unit-test-gap fallback and must record that it did — never
+    imply mutation/CRAP/DRY ran. No Kotlin mutation/CRAP/DRY tool is pinned
+    today; wiring one (e.g. pitest) is a future item to ticket if Bubble's
+    Kotlin surface grows, not an active gate. (Hardener rule_proposal
+    2026-08-04, surfaced by BL-769 hardening.)
 - APS tools (`gherkin-parser`, `gherkin-mutator`, IR-DRY checker) come from
   `github.com/unclebob/Acceptance-Pipeline-Specification` pinned at
   `accaa33d503340c56513ef387258f8da929ba902`. Prefer the Babashka APS tools;

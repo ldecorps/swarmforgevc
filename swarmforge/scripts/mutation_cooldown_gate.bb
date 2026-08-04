@@ -59,10 +59,21 @@
       (* 1000 (parse-long (str/trim out)))
       0)))
 
+(defn safe-probe-sh
+  "process/sh, but a probe binary that is missing entirely - which throws
+   rather than returning a nonzero exit - is treated exactly like any other
+   probe failure (BL-797): {:exit 1}, so the caller's existing fallback
+   chain runs unchanged instead of the gate crashing outright."
+  [& args]
+  (try
+    (apply process/sh args)
+    (catch Exception _
+      {:exit 1 :out ""})))
+
 (defn real-load-avg []
   (if-let [forced (System/getenv "SWARMFORGE_MUTATION_GATE_FORCE_LOAD_AVG")]
     (parse-double forced)
-    (let [{:keys [exit out]} (process/sh "uptime")]
+    (let [{:keys [exit out]} (safe-probe-sh "uptime")]
       (if (zero? exit)
         ;; Matches both "load average: 1.20, 1.35, 1.40" (Linux/WSL) and
         ;; "load averages: 1.20 1.35 1.40" (macOS/BSD) - first number after
@@ -75,10 +86,10 @@
 (defn real-core-count []
   (if-let [forced (System/getenv "SWARMFORGE_MUTATION_GATE_FORCE_CORES")]
     (parse-long forced)
-    (let [nproc (process/sh "nproc")]
+    (let [nproc (safe-probe-sh "nproc")]
       (if (zero? (:exit nproc))
         (parse-long (str/trim (:out nproc)))
-        (let [sysctl (process/sh "sysctl" "-n" "hw.ncpu")]
+        (let [sysctl (safe-probe-sh "sysctl" "-n" "hw.ncpu")]
           (if (zero? (:exit sysctl))
             (parse-long (str/trim (:out sysctl)))
             4)))))) ; last-resort default; never crash the gate over a probe failure
