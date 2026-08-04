@@ -504,3 +504,6 @@ notes: |
   BL-802 in backlog/paused/, `depends_on: [BL-611]` so the two never edit the
   same files concurrently. Reviewers of THIS parcel: the spawn failing on this
   Mac is known, ticketed, and not a bounce reason against this contract.
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-04, by: QA, blamed: coder, class: acceptance, commit: 49b98cc2, evidence: backlog/evidence/BL-611-bounce-20260804.md }
