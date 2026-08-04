@@ -1,0 +1,95 @@
+id: BL-806
+title: "Review-role forward names the bare received commit — clean pass leaves no trace in lineage (swarm_handoff gate)"
+milestone: M8
+type: defect
+status: todo
+epic: swarm-reliability
+assigned_to:
+human_approval: pending
+severity: medium
+priority: 11
+mutation_cost: low
+direction: swarm-surfaced
+depends_on: []
+source: "QA note 20260804T224225Z_000026 ('BL-536: architect+hardener stages missing from chain — check rotation logic') + backlog/evidence/BL-536-provider-auth-error-auto-respawn-bounce-20260805.md. Investigation: backlog/evidence/BL-536-rotation-check-20260805.md."
+
+invariants:
+  - "A forward-direction git_handoff accepted from a review role (cleaner, architect, hardender, documenter) never names exactly the commit that role received for the same task, unless the draft carries a reroute_reason."
+  - "The gate's refusal surface is exactly review-role forward-direction git_handoffs: bounces (backward direction), marked detours (reroute_reason), notes, rule_proposals, and non-review senders pass through untouched."
+
+required_wiring:
+  - "swarmforge/scripts/swarm_handoff.bb::review-forward-evidence::the same-commit refusal must run in the live validate/send path alongside the existing ticket-close, duplicate-chain (BL-760) and pre-QA (BL-531) gates — not only in a lib function"
+
+approval_context: >
+  Structural backstop for the Article 4.4 amendment landed with this spec: a
+  clean review pass must commit its explicit-NONE evidence and forward THAT
+  commit. BL-536 (2026-08-04) proved prompt text alone fails — architect and
+  hardener both ran their passes but fast-forward-merged and forwarded the
+  bare received hash, so QA's ancestry audit could not tell the passes
+  happened, and a full bounce + re-entry cycle was burned re-running them.
+  Two scope decisions need sign-off: (1) the gate covers the four
+  forward-chain review roles only — QA's send paths (approval to
+  coordinator, integration on main) are excluded this slice to avoid
+  entangling integration mechanics; (2) bounce-direction sends naming the
+  bare received hash stay ungated this slice (bounce evidence discipline is
+  already enforced by 4.4 + record-bounce), noted as a possible follow-up.
+  Confirm both, or amend.
+
+notes: |
+  WHAT / WHY: on BL-536's first pass, architect and hardener each rotated
+  in, fast-forward-merged the received commit 12ec1b6209 (no commit
+  created), committed nothing (no explicit-NONE evidence per Article 4.4),
+  and forwarded the same hash. The parcel reached QA with an ancestry that
+  jumps coder -> cleaner-merge -> documenter, indistinguishable from two
+  skipped stages. QA bounced (correctly, on the record it had), a re-entry
+  cycle re-ran both passes, and a rotation-logic investigation was opened —
+  all avoidable if the bare same-commit forward had been refused at send
+  time. Rotation logic itself was exonerated (reflogs prove both stages
+  ran; see backlog/evidence/BL-536-rotation-check-20260805.md).
+
+  OUTCOME: swarm_handoff.bb refuses a forward-direction git_handoff from a
+  review role (cleaner, architect, hardender, documenter) whose commit:
+  equals the commit that role received for the same task. The refusal
+  message names Article 4.4 pass evidence (commit your explicit-NONE
+  inventory to your branch and forward that commit) and, for the
+  cannot-fix onward-route case (BL-425), names reroute_reason as the
+  marked-detour exemption.
+
+  Live integration points (verified 2026-08-05): swarm_handoff.bb already
+  runs a per-draft error pipeline — ticket-close guard, BL-760
+  duplicate-chain guard, BL-531 pre-QA gate — around line 275-292; the new
+  check belongs beside them. Direction comes from the existing
+  required_stages_lib/routes-forward? predicate (already used by
+  route-required-stages to distinguish forwards from bounces without
+  trusting draft headers, BL-606). reroute_reason and rejection_reason are
+  already allowed draft fields. The received commit for a task is read
+  from the SENDER's own in_process box (ready_for_next moves new ->
+  in_process before work starts; the parcel is completed only after the
+  forward is sent, per the 897df660 pack rule): match parcels by task
+  field, take the newest when several match (batch roles hold several).
+
+  CONSTRAINTS (not prescriptions):
+  - Fail open when no received git_handoff for the task exists in the
+    sender's in_process box (initiating sends, drained boxes), when the
+    box cannot be read, or when the sender role has no mailbox — the gate
+    must never strand a legitimate send.
+  - Refusal is loud and instructive: the error names the ticket, the
+    received hash, Article 4.4 evidence, and the reroute_reason exemption.
+  - Comparison is on the validated 10-hex commit field, string equality —
+    no git subprocess needed for the refusal decision.
+  - Test isolation per engineering rules: env-seamed roots, fixture
+    mailboxes, no live .swarmforge, no real timers.
+
+  The repeated "in_process box holds a git_handoff ... naming the received
+  commit" Given steps are one parameterized step family over (role, task,
+  commit relation) — IR-DRY possible-synonym findings resolve to a single
+  step definition, not divergent wording.
+
+  QA e2e: on a scratch fixture root, seed architect's in_process with a
+  git_handoff for a task naming commit X; submit a forward draft to
+  hardender naming X -> refused, inbox empty; commit an evidence file on
+  the fixture branch, submit a draft naming the new hash -> delivered;
+  re-submit the X draft with reroute_reason -> delivered; drain the
+  in_process box and submit naming X -> delivered (fail open).
+
+acceptance: specs/features/BL-806-review-forward-evidence-gate.feature
