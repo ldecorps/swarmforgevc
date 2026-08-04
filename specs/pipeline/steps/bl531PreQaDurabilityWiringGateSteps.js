@@ -22,6 +22,15 @@ const PRE_QA_GATE_CLI = path.join(SCRIPTS_DIR, 'pre_qa_gate_cli.bb');
 
 const TICKET_ID = 'BL-999';
 
+// BL-761: this fixture's ticket now always declares a resolvable acceptance
+// contract (a trivial feature file every one of its own steps resolves), so
+// the acceptance-contract gate (the third pre-QA finding, sharing this same
+// findings-for-git-handoff entry point) never fires here - this suite tests
+// lineage/wiring, not acceptance contracts, and must stay orthogonal to a
+// gate added afterward.
+const ACCEPTANCE_FEATURE_PATH = 'specs/features/bl999-fixture.feature';
+const ACCEPTANCE_STEP_TEXT = 'the fixture step is known';
+
 function mkTmp(prefix) {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
 }
@@ -56,7 +65,7 @@ function writeRoles(ctx) {
 }
 
 function writeTicketYaml(ctx, { requiredWiring, abandonedCommits } = {}) {
-  let content = `id: ${TICKET_ID}\ntitle: pre-qa-gate fixture ticket\nstatus: active\n`;
+  let content = `id: ${TICKET_ID}\ntitle: pre-qa-gate fixture ticket\nstatus: active\nacceptance: ${ACCEPTANCE_FEATURE_PATH}\n`;
   if (requiredWiring && requiredWiring.length) {
     content += `required_wiring:\n${requiredWiring.map((e) => `  - "${e}"`).join('\n')}\n`;
   }
@@ -66,6 +75,31 @@ function writeTicketYaml(ctx, { requiredWiring, abandonedCommits } = {}) {
   fs.writeFileSync(ctx.ticketYamlPath, content);
   git(ctx.root, ['add', '-A']);
   git(ctx.root, ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '-m', 'update BL-999 ticket yaml']);
+}
+
+// BL-761: makes the fixture's declared acceptance: contract resolvable and
+// fully covered, so the acceptance-contract gate finds nothing to say about
+// it - committed once in Background, alongside (never instead of) the
+// ticket yaml itself, so every cited commit this suite ever uses carries a
+// clean contract.
+function writeAcceptanceContractFixture(ctx) {
+  fs.mkdirSync(path.join(ctx.root, 'specs', 'pipeline', 'steps'), { recursive: true });
+  fs.copyFileSync(path.join(REPO_ROOT, 'specs', 'pipeline', 'stepRegistry.js'), path.join(ctx.root, 'specs', 'pipeline', 'stepRegistry.js'));
+  fs.copyFileSync(path.join(REPO_ROOT, 'specs', 'pipeline', 'runtime.js'), path.join(ctx.root, 'specs', 'pipeline', 'runtime.js'));
+  fs.writeFileSync(
+    path.join(ctx.root, 'specs', 'pipeline', 'steps', 'index.js'),
+    `'use strict';\nfunction registerSteps(registry) { registry.define(/^${ACCEPTANCE_STEP_TEXT}$/, () => {}); }\nmodule.exports = { registerSteps };\n`
+  );
+  const featurePath = path.join(ctx.root, ACCEPTANCE_FEATURE_PATH);
+  fs.mkdirSync(path.dirname(featurePath), { recursive: true });
+  fs.writeFileSync(featurePath, `Feature: BL-999 fixture contract\n\n  Scenario: covered\n    Given ${ACCEPTANCE_STEP_TEXT}\n`);
+  fs.mkdirSync(path.join(ctx.root, 'swarmforge', 'vendor'), { recursive: true });
+  fs.symlinkSync(path.join(REPO_ROOT, 'swarmforge', 'vendor', 'aps'), path.join(ctx.root, 'swarmforge', 'vendor', 'aps'), 'dir');
+  fs.mkdirSync(path.join(ctx.root, 'specs', 'pipeline', 'scripts'), { recursive: true });
+  fs.copyFileSync(
+    path.join(REPO_ROOT, 'specs', 'pipeline', 'scripts', 'resolve_contract_steps.js'),
+    path.join(ctx.root, 'specs', 'pipeline', 'scripts', 'resolve_contract_steps.js')
+  );
 }
 
 function runSwarmHandoff(ctx, draftContent, { role = 'coder', cwd = ctx.coderWt } = {}) {
@@ -102,6 +136,7 @@ function registerSteps(registry) {
     ctx.coderWt = path.join(ctx.root, 'coder-wt');
     git(ctx.root, ['-c', 'user.email=t@t', '-c', 'user.name=t', 'worktree', 'add', '-q', '-b', 'swarmforge-coder', ctx.coderWt]);
     writeRoles(ctx);
+    writeAcceptanceContractFixture(ctx);
     writeTicketYaml(ctx);
     ctx.citedCommit = gitOut(ctx.root, ['rev-parse', '--short=10', 'HEAD']);
   });
