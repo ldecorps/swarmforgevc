@@ -19,6 +19,8 @@ const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const SCRIPTS_DIR = path.join(REPO_ROOT, 'swarmforge', 'scripts');
 const SWARM_HANDOFF = path.join(SCRIPTS_DIR, 'swarm_handoff.bb');
 const PRE_QA_GATE_CLI = path.join(SCRIPTS_DIR, 'pre_qa_gate_cli.bb');
+const { writeAcceptanceContractFixture: writeSharedAcceptanceContractFixture } =
+  require('../../../extension/test/helpers/acceptanceContractFixture');
 
 const TICKET_ID = 'BL-999';
 
@@ -29,7 +31,6 @@ const TICKET_ID = 'BL-999';
 // lineage/wiring, not acceptance contracts, and must stay orthogonal to a
 // gate added afterward.
 const ACCEPTANCE_FEATURE_PATH = 'specs/features/bl999-fixture.feature';
-const ACCEPTANCE_STEP_TEXT = 'the fixture step is known';
 
 function mkTmp(prefix) {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
@@ -81,25 +82,15 @@ function writeTicketYaml(ctx, { requiredWiring, abandonedCommits } = {}) {
 // fully covered, so the acceptance-contract gate finds nothing to say about
 // it - committed once in Background, alongside (never instead of) the
 // ticket yaml itself, so every cited commit this suite ever uses carries a
-// clean contract.
+// clean contract. Thin wrapper over the shared builder
+// (extension/test/helpers/acceptanceContractFixture.js) so this suite's own
+// BL-999 feature name/path stay local while the fixture-writing itself is
+// not copy-pasted per suite.
 function writeAcceptanceContractFixture(ctx) {
-  fs.mkdirSync(path.join(ctx.root, 'specs', 'pipeline', 'steps'), { recursive: true });
-  fs.copyFileSync(path.join(REPO_ROOT, 'specs', 'pipeline', 'stepRegistry.js'), path.join(ctx.root, 'specs', 'pipeline', 'stepRegistry.js'));
-  fs.copyFileSync(path.join(REPO_ROOT, 'specs', 'pipeline', 'runtime.js'), path.join(ctx.root, 'specs', 'pipeline', 'runtime.js'));
-  fs.writeFileSync(
-    path.join(ctx.root, 'specs', 'pipeline', 'steps', 'index.js'),
-    `'use strict';\nfunction registerSteps(registry) { registry.define(/^${ACCEPTANCE_STEP_TEXT}$/, () => {}); }\nmodule.exports = { registerSteps };\n`
-  );
-  const featurePath = path.join(ctx.root, ACCEPTANCE_FEATURE_PATH);
-  fs.mkdirSync(path.dirname(featurePath), { recursive: true });
-  fs.writeFileSync(featurePath, `Feature: BL-999 fixture contract\n\n  Scenario: covered\n    Given ${ACCEPTANCE_STEP_TEXT}\n`);
-  fs.mkdirSync(path.join(ctx.root, 'swarmforge', 'vendor'), { recursive: true });
-  fs.symlinkSync(path.join(REPO_ROOT, 'swarmforge', 'vendor', 'aps'), path.join(ctx.root, 'swarmforge', 'vendor', 'aps'), 'dir');
-  fs.mkdirSync(path.join(ctx.root, 'specs', 'pipeline', 'scripts'), { recursive: true });
-  fs.copyFileSync(
-    path.join(REPO_ROOT, 'specs', 'pipeline', 'scripts', 'resolve_contract_steps.js'),
-    path.join(ctx.root, 'specs', 'pipeline', 'scripts', 'resolve_contract_steps.js')
-  );
+  writeSharedAcceptanceContractFixture(ctx.root, {
+    featurePath: ACCEPTANCE_FEATURE_PATH,
+    featureTitle: 'BL-999 fixture contract'
+  });
 }
 
 function runSwarmHandoff(ctx, draftContent, { role = 'coder', cwd = ctx.coderWt } = {}) {

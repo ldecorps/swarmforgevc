@@ -16,6 +16,10 @@ const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const SWARMFORGE_SCRIPTS = path.join(REPO_ROOT, 'swarmforge', 'scripts');
 const SWARM_HANDOFF = path.join(SWARMFORGE_SCRIPTS, 'swarm_handoff.bb');
 const REQUIRED_STAGES_LIB = path.join(SWARMFORGE_SCRIPTS, 'required_stages_lib.bb');
+const {
+  writeAcceptanceContractFixture,
+  DEFAULT_FEATURE_PATH: ACCEPTANCE_FEATURE_PATH
+} = require('../../../extension/test/helpers/acceptanceContractFixture');
 
 // BL-761: every send in this file reuses the ONE commit captured below as
 // `ctx.commit` - the acceptance-contract gate (the third pre-QA finding,
@@ -24,28 +28,6 @@ const REQUIRED_STAGES_LIB = path.join(SWARMFORGE_SCRIPTS, 'required_stages_lib.b
 // fully-covered contract has to be part of the very first commit, not
 // added later - this suite tests required-stages routing, not acceptance
 // contracts, and must stay orthogonal to a gate added afterward.
-const ACCEPTANCE_FEATURE_PATH = 'specs/features/bl900-fixture.feature';
-const ACCEPTANCE_STEP_TEXT = 'the fixture step is known';
-
-function writeAcceptanceContractFixture(targetPath) {
-  fs.mkdirSync(path.join(targetPath, 'specs', 'pipeline', 'steps'), { recursive: true });
-  fs.copyFileSync(path.join(REPO_ROOT, 'specs', 'pipeline', 'stepRegistry.js'), path.join(targetPath, 'specs', 'pipeline', 'stepRegistry.js'));
-  fs.copyFileSync(path.join(REPO_ROOT, 'specs', 'pipeline', 'runtime.js'), path.join(targetPath, 'specs', 'pipeline', 'runtime.js'));
-  fs.writeFileSync(
-    path.join(targetPath, 'specs', 'pipeline', 'steps', 'index.js'),
-    `'use strict';\nfunction registerSteps(registry) { registry.define(/^${ACCEPTANCE_STEP_TEXT}$/, () => {}); }\nmodule.exports = { registerSteps };\n`
-  );
-  const featurePath = path.join(targetPath, ACCEPTANCE_FEATURE_PATH);
-  fs.mkdirSync(path.dirname(featurePath), { recursive: true });
-  fs.writeFileSync(featurePath, `Feature: BL-900 fixture contract\n\n  Scenario: covered\n    Given ${ACCEPTANCE_STEP_TEXT}\n`);
-  fs.mkdirSync(path.join(targetPath, 'swarmforge', 'vendor'), { recursive: true });
-  fs.symlinkSync(path.join(REPO_ROOT, 'swarmforge', 'vendor', 'aps'), path.join(targetPath, 'swarmforge', 'vendor', 'aps'), 'dir');
-  fs.mkdirSync(path.join(targetPath, 'specs', 'pipeline', 'scripts'), { recursive: true });
-  fs.copyFileSync(
-    path.join(REPO_ROOT, 'specs', 'pipeline', 'scripts', 'resolve_contract_steps.js'),
-    path.join(targetPath, 'specs', 'pipeline', 'scripts', 'resolve_contract_steps.js')
-  );
-}
 
 const CANONICAL_CHAIN = ['coder', 'cleaner', 'architect', 'hardender', 'documenter', 'QA'];
 const CHAIN_HOPS = [
