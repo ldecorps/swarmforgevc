@@ -4,13 +4,20 @@ milestone: M8
 type: defect
 status: todo
 epic: swarm-reliability
-assigned_to: specifier
+assigned_to:
 human_approval: approved
 severity: high
 priority: 2
 mutation_cost: medium
 direction: swarm-surfaced
-depends_on: [BL-535]
+depends_on: []
+
+invariants:
+  - "For a persisting auth-class failure, respawn attempts per role are bounded by the configured attempt cap across ALL observe ticks — repeated 401s never produce an unbounded respawn/token-burn loop."
+  - "Once a role's failure episode reaches the attempt cap, further observe ticks are quiet for that episode: no additional respawns and no duplicate operator alerts."
+
+required_wiring:
+  - "swarmforge/scripts/handoffd.bb::provider-auth::live standing-role observe path must consult auth-class detection — the helpers exist unwired today (BL-419 shape)"
 source: "SRE incident 2026-07-19 — AuthenticationError left standing roles idle while handoffd stayed healthy."
 
 approval_context: >
@@ -26,5 +33,39 @@ notes: |
   OUTCOME: standing-role observe (or ensure tick) that on auth-class text
   respawns the role via provider-respawn-env-args (CLI-forced remap), alerts
   after N failures, never busy-loops token burn on repeated 401.
+
+  SPECIFIER PASS 2026-08-04 (spec settlement; feature file DRY-normalized,
+  lint + IR-DRY clean):
+  - Integration point (verified live): handoffd.bb's chase sweep ->
+    observe-standing-role-loops! / observe-pane-loop! (~line 970) already
+    captures standing-role scrollback each sweep — wire auth-class observe
+    there, NOT the TS inboxChaser (dead-in-production for chase decisions,
+    BL-146). Respawn reuses the existing swarm_ensure.bb
+    provider-respawn-env-args machinery (already called by its respawn path).
+  - Attempt cap: configurable via swarmforge.conf (suggested key
+    auth_respawn_max_attempts), default 3. Attempts tracked per role per
+    failure episode; an observation with no auth-class text ends the episode
+    and resets the count.
+  - Alert: reuse the operator alert channel handoffd already uses
+    (Telegram operator topic + email, the endless-loop-breaker path);
+    alert once per episode when the cap is reached.
+  - Dependency verification: BL-535 sits in backlog/hold/, but its FIRST
+    slice already landed on main and is everything this ticket needs
+    (provider_compat_lib.bb incl. provider-auth-error-text?,
+    swarm_ensure.bb provider-respawn-env-args, agent_runtime_lib.bb
+    classify-provider-error). The held remainder (refuse-start on mismatch,
+    launch-script regen) is orthogonal — EXCEPT that BL-535's own
+    "remaining slices" list nominally names this auth-observe scope, while
+    BL-536's human approval (2026-07-28 hydrate batch) postdates the
+    BL-535 hold (~2026-07-19). Contradiction raised to the human via
+    role_ask 2026-08-04; the human answered the same day: "Clear
+    depends_on — BL-536 eligible". Edge cleared (was [BL-535]); BL-536
+    is eligible for promotion independently of the BL-535 hold.
+  - QA e2e: on a scratch tmux socket (env seam — never the live swarm
+    socket), start a throwaway session printing a known auth-class line
+    (e.g. "AuthenticationError: Invalid API key"); run one observe tick
+    against it with the respawn command seamed to a fixture script; verify
+    (1) respawn invoked with provider-compat env args, (2) a healthy pane
+    is untouched, (3) at the cap: alert recorded once, no further respawns.
 
 acceptance: specs/features/BL-536-provider-auth-error-auto-respawn.feature

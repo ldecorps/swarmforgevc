@@ -1,0 +1,56 @@
+id: BL-803
+title: "promote_and_route_next.sh sed -i is GNU-only: BSD/macOS host dies mid-promote"
+milestone: M8
+type: defect
+status: todo
+epic: swarm-reliability
+assigned_to:
+human_approval: approved
+severity: high
+priority: 2
+mutation_cost: low
+direction: swarm-surfaced
+depends_on: []
+source: "Coder note 2026-08-04 (handoff 20260804T153511Z_000045); live instance recorded in BL-802 promote commit 275a8ebb ('manual completion after promote_and_route_next.sh sed -i macOS incompatibility')."
+
+approval_context: >
+  New defect spec from a coder-reported, production-confirmed fault: the
+  coordinator's auto-promotion path breaks on this macOS host, forcing
+  manual promote completion. One-site fix (line 218), one Scenario Outline
+  (bsd/gnu). Severity high because it degrades the pipeline's intake path
+  on the primary host. Needs a human look before autopilot picks it up.
+
+notes: |
+  WHAT / WHY: promote_and_route_next.sh:218 runs
+  `sed -i "s/^assigned_to:.*/assigned_to: ${ROUTE_ROLE}/" "$DEST"`.
+  GNU sed accepts `-i` with no operand; BSD/macOS sed requires a suffix
+  operand, so it consumes the expression as the backup suffix and fails.
+  Under `set -euo pipefail` (line 25) the script exits at that point —
+  AFTER `git mv paused -> active` (line 208), BEFORE the promotion commit
+  (~line 226) and the route step (line 242). Net effect on macOS: every
+  auto-promotion that needs an assigned_to rewrite strands a half-promoted,
+  uncommitted, unrouted ticket; the coordinator completes promotion by hand
+  (BL-802, commit 275a8ebb; also the likely root cause of the recurring
+  manual-promotion pattern observed 2026-08-04).
+
+  CONSTRAINTS (not prescriptions):
+  - The in-place edit must be BSD/GNU portable (e.g. temp file + mv, or an
+    explicit suffix handled for both flavors); plain POSIX/bash only — no
+    new dependencies.
+  - Verified single site: line 218 is the only GNU-only `sed -i` in
+    swarmforge/scripts/*.sh (audit 2026-08-04). Keep the slice to this
+    script; babysitterd's GNU-isms (setsid, ps --ppid, /proc/meminfo) are
+    BL-802's scope — orthogonal, no depends_on either way.
+  - Out of scope (possible follow-up if wanted): making the whole
+    promote atomic under ANY mid-script failure (rollback of the git mv).
+    This slice removes the one known trigger.
+
+  QA e2e: on this macOS host against a fixture backlog root (env-seamed
+  paths — never the live backlog), run promote_and_route_next.sh and
+  verify in one pass: ticket lands in backlog/active with assigned_to
+  rewritten to coder, the promotion commit exists, the Work route to coder
+  is sent, and no manual completion is needed. Scenario Outline handlers
+  must validate <sed_flavor> against explicit KNOWN_VALUES (bsd, gnu) per
+  the acceptance-pipeline rules.
+
+acceptance: specs/features/BL-803-promote-route-sed-bsd-portability.feature

@@ -226,4 +226,28 @@ pass "H: memory floor check reports UNAVAILABLE (never CRIT/OK) when every memor
 rm -f "$FAKE_BIN/vm_stat"
 rm -rf "$ROOT"
 
+# ── I: vm_stat exits 0 but its output is malformed (missing an expected page
+# count line) — UNAVAILABLE, never a crash and never a fabricated CRIT/OK.
+# BL-802's parse-vm-stat-available-mb only yields a reading when page size AND
+# every page count it needs parse; this proves a present-but-unparseable
+# facility degrades exactly like an absent one, not a Long/parseLong crash on
+# nil that would take the whole sweep down.
+ROOT="$(make_root)"
+cat > "$FAKE_BIN/vm_stat" <<'VMSTAT'
+#!/usr/bin/env bash
+cat <<'OUT'
+Mach Virtual Memory Statistics: (page size of 4096 bytes)
+Pages active:                            640194.
+Pages wired down:                        471968.
+OUT
+VMSTAT
+chmod +x "$FAKE_BIN/vm_stat"
+I_OUT="$(PATH="$FAKE_BIN:$PATH" BABYSITTER_MEMINFO_PATH="$ROOT/no-such-meminfo" bash "$CHECK_SH" "$ROOT")"
+grep -q "UNAVAILABLE \[memory\]" <<< "$I_OUT" || fail "I: expected memory check UNAVAILABLE when vm_stat output is malformed; got: $I_OUT"
+grep -q "CRIT \[memory\]" <<< "$I_OUT" && fail "I: expected no fabricated memory CRIT from malformed vm_stat output; got: $I_OUT"
+grep -q "^OK all checks green" <<< "$I_OUT" && fail "I: a malformed vm_stat gather must never be silently folded into OK; got: $I_OUT"
+pass "I: memory floor check reports UNAVAILABLE (never a crash, CRIT, or silent OK) when vm_stat's own output is malformed"
+rm -f "$FAKE_BIN/vm_stat"
+rm -rf "$ROOT"
+
 echo "ALL PASS"

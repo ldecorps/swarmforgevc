@@ -5,10 +5,10 @@ type: defect
 severity: high
 status: todo
 epic: swarm-reliability
-human_approval: pending
+human_approval: approved
 priority: 05
 depends_on: [BL-611]
-assigned_to: none
+assigned_to: coder
 mutation_cost: low
 
 invariants:
@@ -93,7 +93,7 @@ description: |
   actually turns the sweep back on (.swarmforge/ is untracked; the parcel
   cannot edit it).
 
-acceptance: specs/features/BL-802-babysitterd-macos-portability.feature.draft
+acceptance: specs/features/BL-802-babysitterd-macos-portability.feature
 out_of_scope: |
   - Windows portability (unchanged from BL-611; the swarm substrate is tmux).
   - Portability of other daemons or test harnesses that use setsid
