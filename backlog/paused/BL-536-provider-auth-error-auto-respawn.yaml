@@ -10,7 +10,7 @@ severity: high
 priority: 2
 mutation_cost: medium
 direction: swarm-surfaced
-depends_on: [BL-535]
+depends_on: []
 
 invariants:
   - "For a persisting auth-class failure, respawn attempts per role are bounded by the configured attempt cap across ALL observe ticks — repeated 401s never produce an unbounded respawn/token-burn loop."
@@ -58,8 +58,9 @@ notes: |
     "remaining slices" list nominally names this auth-observe scope, while
     BL-536's human approval (2026-07-28 hydrate batch) postdates the
     BL-535 hold (~2026-07-19). Contradiction raised to the human via
-    role_ask 2026-08-04: clear the depends_on edge vs. hold BL-536
-    alongside BL-535. Do not promote until answered.
+    role_ask 2026-08-04; the human answered the same day: "Clear
+    depends_on — BL-536 eligible". Edge cleared (was [BL-535]); BL-536
+    is eligible for promotion independently of the BL-535 hold.
   - QA e2e: on a scratch tmux socket (env seam — never the live swarm
     socket), start a throwaway session printing a known auth-class line
     (e.g. "AuthenticationError: Invalid API key"); run one observe tick
