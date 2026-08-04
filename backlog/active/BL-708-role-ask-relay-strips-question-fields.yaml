@@ -10,7 +10,7 @@ direction: expedite
 depends_on: []
 mutation_cost: medium
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
-assigned_to: none
+assigned_to: coder
 
 invariants:
   - "Every field a producer writes into telegram-reply-outbox.jsonl that a front-desk delivery path reads is carried through the bridge relay unchanged — the relay never narrows a record to a shape that changes which delivery path handles it."
