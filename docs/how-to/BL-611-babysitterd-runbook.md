@@ -1,0 +1,140 @@
+# BL-611: babysitterd — the deterministic health-sweep daemon
+
+**One babysitter exists: the daemon.** The earlier LLM-agent babysitter (a
+Telegram-topic `claude` session asked to do deterministic health checking)
+never behaved right and has been fully removed — no `babysitter.prompt` role,
+no LLM launch path, no wake runtime. `babysitterd` replaces it: a shell/bb
+loop that runs the same checks as a pure, unit-tested function over a
+snapshot, and reports by nudging the coordinator's pane — never by acting on
+the swarm itself.
+
+This also supersedes the operator's private prototype
+(`.swarmforge/operator/babysitter_check.sh` + `babysitterd.sh`, untracked and
+gitignored). That copy should be stopped once this daemon is live; the
+tracked version is the only one that should be running.
+
+## What it checks
+
+Each sweep evaluates a snapshot (tmux sessions, `ps`, file listings/ages, pane
+captures, `/proc/meminfo`) against these checks, in `babysitterd_sweep_lib.bb`:
+
+| # | Check | Fires when |
+|---|---|---|
+| 1 | live-session-per-role | a role pane has no live `claude` process (via `ps --ppid`, never `pane_current_command`, which lies with a live child) |
+| 2 | remote-control-flag | a live process is missing `--remote-control` |
+| 3 | handoffd-supervisor-fresh | handoffd/its supervisor is down, or `handoffd.log` is older than 5 minutes |
+| 4 | dead-letter-nonempty | `.swarmforge/handoffs/failed/` is non-empty |
+| 5 | stuck-in-process | an `inbox/in_process/` parcel is older than 30 minutes, in master **or** any worktree mailbox |
+| 6 | menu-blocked-pane | a pane capture shows an interactive menu/dialog (report only — never picks an option) |
+| 7 | busy-but-frozen | busy footer present but the spinner-stripped content hash is unchanged across 3 consecutive sweeps |
+| 8 | memory-floor | available memory is below the configured floor |
+| 9 | rotate-not-honored | the newest completed parcel's rotate instruction is older than a 10-minute grace period, its target differs from `.swarmforge/mono-router-active-role`, and the note is newer than that file's mtime (suppresses a false positive when the persona changed *after* the note completed) |
+| 10 | swarm-starved | active tickets exist, zero pending/in-process parcels across every mailbox, no pane shows a busy footer, sustained for **2 consecutive sweeps**; pending never counts abandoned or >120-minute-old parcels |
+| 11 | claim-risk | the salvaged `babysitter_assess_lib.bb` scan (a role heading for bounce/halt with HEAD unchanged) |
+| — | planned-pause awareness | while `.swarmforge/operator/control-pause.json` marks an active pause, checks 9 and 10 are suppressed (planned quiet is not starvation) |
+| 12 | resume-overdue | a pause is still marked active but its `untilMs` expired more than 15 minutes ago (the auto-resume sweep itself failed) |
+
+Every check is a pure function over a snapshot struct — no tmux/fs/sleep in
+the test path. `swarmforge/scripts/test/babysitterd_sweep_lib_test_runner.bb`
+and `..._property_runner.bb` drive it with fixtures.
+
+**The daemon never fixes anything.** No respawns, no menu picks, no parcel
+moves — apart from typing the nudge line into the coordinator's pane, it is
+read-only. Judgment stays with the coordinator/human.
+
+## What a nudge looks like
+
+A CRIT finding, or a `stuck-*` WARN, gets typed (with a trailing Enter — typed
+messages submit, draft overlays do not) into the coordinator's pane as:
+
+```
+babysitter health sweep: <finding 1 message> ; <finding 2 message> ; ... — investigate and take the minimal correct action (or tell the human).
+```
+
+Every other WARN, and every OK, stays in the log only. Each finding is deduped
+by its key with a 30-minute cooldown, so a persistent condition nudges once,
+not every sweep. If the coordinator pane/process is down, the daemon logs
+`NUDGE-SKIP` — it never nudges into a dead pane and never falls back to acting
+on the swarm itself.
+
+If you see a coordinator pane message starting `babysitter health sweep:`,
+treat it as a trusted, deterministic report — not something to re-verify from
+scratch.
+
+## Start / stop / ensure
+
+Managed by the same lifecycle as every other swarm daemon — no separate
+command:
+
+- `start_ancillary_services.sh` starts it (`start_babysitterd.sh`), unless
+  `SWARMFORGE_SKIP_BABYSITTERD=1` is set.
+- `stop_ancillary_services.sh` / `./stop-swarm.sh` stop it by pidfile, the
+  same pattern as the other daemons.
+- `kill_all_swarm.sh` (the nuclear path) signals its pidfile too.
+- `./swarm ensure` verifies pid-alive and restarts it via
+  `start_babysitterd.sh` if not — same posture as the `rc:<role>` component.
+  Override the repair command with `SWARM_ENSURE_BABYSITTERD_CMD`.
+- `./swarm status` reports a `babysitterd` row (from its pidfile) and no
+  longer reports anything for the retired agent-based babysitter.
+
+A second `start_babysitterd.sh` while a live pidfile exists is refused; the
+original process is left running.
+
+## Where the log and state live
+
+```
+.swarmforge/babysitterd/babysitterd.pid       daemon pidfile
+.swarmforge/babysitterd/babysitterd.log       bounded ~2000 lines; one heartbeat line per tick
+.swarmforge/babysitterd/streak                swarm-starved idle-sweep streak
+.swarmforge/babysitterd/nudge-dedup.json      {finding-key -> last-nudged-ms}
+.swarmforge/babysitterd/pane-hash-<role>      last 3 stable content hashes (check 7)
+```
+
+This is deliberately **not** `.swarmforge/babysitter/` (no `d`) — that
+directory belonged to the retired LLM hawk. Keeping the state dirs distinct
+means stale hawk state is never mistaken for daemon state; the daemon never
+reads the old directory. `stop_ancillary_services.sh` best-effort clears any
+leftover hawk process/socket it finds there as migration hygiene, not as part
+of the daemon's own lifecycle.
+
+The heartbeat line lets `daemon_log_freshness.conf` (BL-675) tell "quiet but
+alive" from "wedged" — see
+[Daemon log-freshness watchdog](BL-675-daemon-log-freshness-watchdog.md),
+which also restarts babysitterd if its log goes stale.
+
+## The env skip flipped meaning
+
+`SWARMFORGE_SKIP_BABYSITTER` (no trailing `d`) is now **inert** — it is the
+old LLM hawk's skip flag and nothing reads it anymore. The current flag is
+**`SWARMFORGE_SKIP_BABYSITTERD`**.
+
+This was a deliberate rename, not a reuse of the old slot: reusing
+`SWARMFORGE_SKIP_BABYSITTER` would mean any host whose `.swarmforge/swarm.env`
+already sets it (e.g. with a comment like "cost > value for this project",
+written about the paid LLM agent) would silently boot with the new, free
+deterministic daemon disabled too — reproducing the exact defect this ticket
+fixes, under a new name.
+
+If your `.swarmforge/swarm.env` (untracked, host-local) still sets
+`SWARMFORGE_SKIP_BABYSITTER=1`, that line is now a no-op and should be deleted
+by hand — nothing in this parcel can edit it for you.
+
+## Verify
+
+```bash
+bash swarmforge/scripts/test/babysitterd_sweep_lib_test_runner.bb
+bash swarmforge/scripts/test/babysitterd_sweep_lib_property_runner.bb
+bash swarmforge/scripts/test/test_babysitter_check.sh
+bash swarmforge/scripts/test/test_babysitterd_lifecycle.sh
+```
+
+Acceptance feature:
+[`specs/features/BL-611-deterministic-babysitterd-managed-by-swarm-lifecycle.feature`](../../specs/features/BL-611-deterministic-babysitterd-managed-by-swarm-lifecycle.feature).
+
+## Known gap
+
+The start path (`start_babysitterd.sh`) spawns via `setsid`, and the
+gathering layer uses `ps --ppid` and reads `/proc/meminfo` — all Linux-only.
+On macOS these fail; portability (portable spawn, a `ps` dialect that works on
+both, and a memory facility) is tracked separately as BL-802
+(`depends_on: [BL-611]`), not fixed here.
