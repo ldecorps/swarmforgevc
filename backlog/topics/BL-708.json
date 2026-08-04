@@ -1,0 +1,1 @@
+{"id":"BL-708","messages":[{"seq":0,"ts":1785853032426,"author":"swarm","type":"outbound","text":"BL-708 🎵 in progress — DEFECT — role_ask questions never reach Telegram: the bridge relay strips roleQuestion/agentQuestion/options"}]}
