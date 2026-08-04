@@ -133,7 +133,9 @@ behaviourally, not by grepping the start script for a substring. The third
 the real stop/start/checker scripts together against fixture roots to prove
 the scenarios in "Deliberate stop does not get resurrected" above.
 
-Acceptance feature: `specs/features/BL-675-daemon-log-freshness.feature`.
+Acceptance feature: `specs/features/BL-675-daemon-log-freshness.feature`. The
+deliberate-stop behaviour above has its own feature file,
+`specs/features/BL-785-freshness-deliberate-stop.feature`.
 
 ## Live e2e (operator)
 
