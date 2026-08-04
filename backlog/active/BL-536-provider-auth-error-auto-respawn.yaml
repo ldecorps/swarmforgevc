@@ -69,3 +69,6 @@ notes: |
     is untouched, (3) at the cap: alert recorded once, no further respawns.
 
 acceptance: specs/features/BL-536-provider-auth-error-auto-respawn.feature
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-04, by: QA, blamed: architect, class: behavior, commit: 096220336b, evidence: backlog/evidence/BL-536-provider-auth-error-auto-respawn-bounce-20260805.md }
