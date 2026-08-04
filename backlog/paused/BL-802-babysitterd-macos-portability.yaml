@@ -1,0 +1,143 @@
+id: BL-802
+title: "DEFECT — babysitterd cannot run on the current macOS swarm host: setsid-only spawn, GNU-only ps --ppid pane gather, /proc/meminfo-only memory floor"
+milestone: M8
+type: defect
+severity: high
+status: todo
+epic: swarm-reliability
+human_approval: pending
+priority: 05
+depends_on: [BL-611]
+assigned_to: none
+mutation_cost: low
+
+invariants:
+  - "On every supported host (macOS and Linux), a sweep check that cannot gather its inputs reports its own unavailability in the log — it never raises a CRIT/WARN about the swarm from a failed or missing gather, and never silently records OK."
+
+approval_context: >
+  Found by the coder while resuming the BL-611 parcel on this Mac (note
+  2026-08-04). BL-611's approved out_of_scope excluded mac portability "beyond
+  the current Linux swarm host" — the swarm host has since BECOME a Mac, so the
+  exclusion's premise is gone, but rewriting a hardened in-flight parcel's
+  approved contract is worse than a follow-up defect. Needs sign-off on two
+  calls: (1) macOS is a supported swarm host for the babysitterd family
+  (matching where the swarm actually runs; Windows stays out); (2) severity
+  high, argued in notes, despite the daemon being hand-skipped in swarm.env on
+  this host today — the skip hides the fault, it does not remove it.
+
+source: |
+  Coder note 2026-08-04 (from the resumed BL-611 parcel): "macOS lacks setsid;
+  start_babysitterd.sh spawn always fails there (BL-611)." Specifier audit of
+  the ported gathering layer found two more Linux-isms beyond the spawn:
+  babysitter_check.bb:95 gathers pane children with `ps --ppid` (GNU procps
+  syntax; BSD/macOS ps rejects it) and babysitter_check.bb:213-218 reads
+  /proc/meminfo (absent on macOS; the check goes silently inert).
+
+description: |
+  ## Problem
+
+  BL-611 ported babysitterd — the swarm's only deterministic health sweep —
+  assuming the Linux host it was prototyped on. The swarm now runs on a Mac
+  (the 2026-08-02 host switch), where three of its load-bearing pieces fail:
+
+  1. **Spawn**: `start_babysitterd.sh:37` detaches via `setsid`, which macOS
+     does not ship. The start path exits WARN with no daemon — reproducing on
+     this host the exact defect BL-611 was filed for ("the only working sweep
+     is wired into no start path").
+  2. **Pane process check (sweep check #1)**: `babysitter_check.bb:95` runs
+     `ps --ppid <pid> -o pid=,args=`. macOS ps rejects `--ppid`, so the
+     per-pane live-process gather fails on every pane. A failed gather must
+     not surface as dead-pane findings — that is the cry-wolf failure BL-611's
+     first invariant forbids.
+  3. **Memory floor (sweep check #8)**: `babysitter_check.bb:213-218` reads
+     /proc/meminfo, absent on macOS. The check silently never fires — a false
+     negative on the very host where orphaned vitest/stryker workers already
+     forced Stryker concurrency down to 1 (BL-789 approval_context).
+
+  Fixing only the spawn would be worse than leaving the daemon down: it would
+  start a sweep whose checks error or go silent. All three land together.
+
+  ## Wanted behaviour (behaviour, not mechanism)
+
+  - Starting babysitterd succeeds and survives the launcher's exit on both
+    supported hosts, with and without setsid on PATH. How detachment is
+    achieved without setsid is the implementer's call.
+  - The per-pane process gather returns a pane's live children on both ps
+    dialects (GNU and BSD). Mechanism is the implementer's call.
+  - The memory-floor check reads available memory from whatever facility the
+    host actually has, keeping the existing fixture seam
+    (BABYSITTER_MEMINFO_PATH or a successor) so tests stay hermetic.
+  - Per the invariant: any gather that fails outright logs the check as
+    unavailable rather than raising findings or passing silently.
+
+  ## Why this is not a BL-611 amendment
+
+  BL-611 is in flight, already hardened, parked-and-resumed for the host
+  switch, one stage from QA. Its human-approved contract explicitly excluded
+  mac portability, and its feature file pins nothing about spawn mechanics, so
+  the parcel passes its contract honestly on this host. Folding three new
+  behaviours plus scenarios into it now would re-open hardening — the same
+  trade already refused on 2026-08-01 when the coder's KEEP-list finding was
+  split out to BL-781 rather than destabilise the parcel. Sequenced with
+  depends_on: [BL-611] so the two never edit the same files concurrently.
+
+  ## The swarm.env angle (runbook material, not code)
+
+  This host's .swarmforge/swarm.env sets SWARMFORGE_SKIP_BABYSITTERD=1 under
+  the comment "Babysitter disabled: cost > value for this project" — a
+  rationale written about the retired PAID LLM hawk, hand-carried across the
+  BL-611 rename onto the FREE deterministic daemon. This is the exact
+  stale-skip failure BL-611's rename decision existed to prevent, reintroduced
+  during the host migration. The runbook's existing stale-skip callout gains
+  one line: after this ticket lands, clearing that line on this host is what
+  actually turns the sweep back on (.swarmforge/ is untracked; the parcel
+  cannot edit it).
+
+acceptance: specs/features/BL-802-babysitterd-macos-portability.feature.draft
+out_of_scope: |
+  - Windows portability (unchanged from BL-611; the swarm substrate is tmux).
+  - Portability of other daemons or test harnesses that use setsid
+    (handoffd wiring tests already guard with `command -v setsid`); this
+    ticket is the babysitterd family only.
+  - Any change to what the checks MEAN or when they fire (thresholds, streaks,
+    suppression rules) — BL-611's contract stands; this ticket only makes the
+    gathering and spawn work where the swarm runs.
+  - Editing .swarmforge/swarm.env (untracked runtime state; runbook note only).
+
+notes: |
+  ## Severity rationale
+
+  `high`: the swarm's only deterministic health sweep cannot start on the only
+  live swarm host, and two of its checks would error or go silently inert if
+  it did — a broken health signal on the production host, the same family and
+  severity as BL-611 itself and BL-637. It is latent rather than live today
+  only because swarm.env hand-skips the daemon; the skip's own comment is
+  stale (see description), so "deliberately disabled" overstates the intent
+  behind it.
+
+  ## IR-DRY findings — reviewed, deliberately kept
+
+  Two medium-confidence possible-synonym findings, both real distinctions:
+  - "a setsid stub is resolvable on PATH" versus "setsid is not resolvable on
+    PATH" — opposite preconditions; the with/without-setsid pair IS the
+    behaviour under test (same shape BL-789 kept).
+  - "the sweep runs the memory floor check" (When, action) versus "the memory
+    floor check <outcome>" (Then, parameterized assertion) — different step
+    roles, not duplicates.
+
+  ## e2e procedure for QA
+
+  All on this Mac host (the point of the ticket):
+  1. Targeted shell/bb tests for the babysitterd family — green.
+  2. In a fixture root WITHOUT setsid reachable on PATH:
+     `start_babysitterd.sh <root>` → exit 0, live pidfile, daemon survives
+     the invoking shell exiting; then stop via stop_ancillary_services.sh
+     path and confirm the pidfile clears.
+  3. Same start in a fixture with a setsid stub on PATH → same outcome
+     (Linux parity).
+  4. Run one sweep pass against a live pane fixture: check #1 reports the
+     pane's live process (no gather-failure findings in the log).
+  5. Memory floor: with the fixture seam pointing at a below-floor snapshot,
+     the finding fires; above-floor, quiet; with every memory facility seam
+     absent, the log records the check unavailable and no finding is raised.
+  6. Confirm the runbook carries the swarm.env stale-skip line for this host.
