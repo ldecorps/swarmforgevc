@@ -5,13 +5,13 @@ type: defect
 severity: high
 status: todo
 epic: swarm-reliability
-human_approval: pending
+human_approval: approved
 priority: 2
 direction: queue-jump
 depends_on: []
 mutation_cost: low
 required_stages: [specifier, coder, cleaner, architect, hardender, documenter, qa]
-assigned_to: none
+assigned_to: coder
 
 invariants:
   - "A missing or failing host probe binary never crashes the gate: every probe degrades to its documented fallback (nproc -> sysctl -> default 4 cores; uptime -> 0.0 load), whatever combination is absent."
