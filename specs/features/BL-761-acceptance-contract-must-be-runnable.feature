@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=74360926d94e7cb080df13517eb4503ad8216c4f85c8732e4407695db54f2f49
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-04T04:20:55.230800Z","feature_name":"a parcel reaches QA only with an acceptance contract that can actually run","feature_path":"/Users/ldecorps/projects/swarmforgevc/.worktrees/hardender/specs/features/BL-761-acceptance-contract-must-be-runnable.feature","background_hash":"3b44bce9a0aaa0eb83808b43efa51825b98adf850490cc69154720a20349275e","implementation_hash":"unknown","scenarios":[{"index":0,"name":"a declared contract is judged by whether every step resolves","scenario_hash":"f2ddc88335a28177aeca283ce4a0f7f6dda75d321d2f0bc34da275b60359a1d3","mutation_count":6,"result":{"Total":6,"Killed":6,"Survived":0,"Errors":0},"tested_at":"2026-08-04T04:20:55.230800Z"},{"index":4,"name":"a contract that cannot be read at all fails closed","scenario_hash":"d1d2f70d1cb6f962efffe7213a1c3f07cc27add390edd1a21d241a6f30ab4076","mutation_count":3,"result":{"Total":3,"Killed":3,"Survived":0,"Errors":0},"tested_at":"2026-08-04T04:20:55.230800Z"},{"index":5,"name":"drafts and edges the gate does not own are not checked","scenario_hash":"22e825675a7e70ff9fa9cc02239420ca315f5cdbdcbd8fcd91c504bcfa892e5d","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-08-04T04:20:55.230800Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: a parcel reaches QA only with an acceptance contract that can actually run
 
   # BL-761: four SHIPPED tickets carry acceptance feature files whose steps no
