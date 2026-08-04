@@ -122,8 +122,8 @@ by hand — nothing in this parcel can edit it for you.
 ## Verify
 
 ```bash
-bash swarmforge/scripts/test/babysitterd_sweep_lib_test_runner.bb
-bash swarmforge/scripts/test/babysitterd_sweep_lib_property_runner.bb
+bb swarmforge/scripts/test/babysitterd_sweep_lib_test_runner.bb
+bb swarmforge/scripts/test/babysitterd_sweep_lib_property_runner.bb
 bash swarmforge/scripts/test/test_babysitter_check.sh
 bash swarmforge/scripts/test/test_babysitterd_lifecycle.sh
 ```
