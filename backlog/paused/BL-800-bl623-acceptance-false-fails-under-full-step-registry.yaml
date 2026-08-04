@@ -1,0 +1,158 @@
+id: BL-800
+title: "BL-623's acceptance false-fails under the full step registry: BL-606's generic 'the parcel is delivered to (.+)' shadows BL-623's exact step"
+milestone: M8
+type: defect
+severity: high
+status: todo
+epic: swarm-reliability
+priority: 10
+direction: normal
+mutation_cost: low
+acceptance: specs/features/BL-623-routing-skip-trail-records-actual-hop.feature
+
+invariants:
+  - "For BL-623's feature, the focused entry point (specs/pipeline/steps/bl623Only.js) and the full registry (specs/pipeline/steps/index.js) resolve every step of every scenario to the same handler."
+
+source: |
+  Architect note during the BL-761 review, 2026-08-04 (handoff
+  20260804T034945Z_000012_from_architect): "Pre-existing (not BL-761): BL-623
+  scen 02/04 fail on baseline too, needs ticket." Routed to the specifier by
+  the coordinator (20260804T035024Z_000082_from_coordinator). Reproduced and
+  root-caused by the specifier the same day.
+
+notes: |
+  ## Reproduction (specifier, 2026-08-04, architect worktree and main both)
+
+  Under the FULL steps registry (the default entry point) scenarios 02 and 04
+  fail; under the focused entry they pass. `npm run compile` first —
+  `extension/out/` is gitignored and `steps/index.js` cannot load without it:
+
+      node specs/pipeline/cli.js \
+        specs/features/BL-623-routing-skip-trail-records-actual-hop.feature \
+        ./tmp/bl623-full
+      # -> 5/7: scenarios 02 and 04 fail with
+      #    'failed at step "Then the parcel is delivered to QA":
+      #     Cannot read properties of undefined (reading 'to')'
+
+      node specs/pipeline/cli.js \
+        specs/features/BL-623-routing-skip-trail-records-actual-hop.feature \
+        ./tmp/bl623-focused specs/pipeline/steps/bl623Only.js
+      # -> 7/7 pass
+
+  ## Root cause
+
+  Two unscoped registrations match the step text "the parcel is delivered to
+  QA":
+
+  - `specs/pipeline/steps/bl606RequiredStagesRoutingSteps.js:407` —
+    `/^the parcel is delivered to (.+)$/`, whose handler asserts on
+    `ctx.bounceHandoff.to` (it belongs to BL-606's bounce scenarios).
+  - `specs/pipeline/steps/bl623RoutingSkipTrailSteps.js:275` —
+    `/^the parcel is delivered to QA$/`, asserting on `ctx.lastHandoff.to`.
+
+  `stepRegistry.js` resolution is first-match in registration order for
+  unscoped definitions, and `steps/index.js` loads bl606 (line 314) before
+  bl623 (line 315). So BL-606's generic pattern wins BL-623's step text; its
+  handler dereferences `ctx.bounceHandoff`, which BL-623's scenarios 02/04
+  never set (no bounce is sent), and throws. Scenarios 01/03/05/06/07 do not
+  use this step text, so they pass either way.
+
+  Latent since BL-623 landed: BL-606's generic pattern (4e0d1f2b, 2026-07-23)
+  predates BL-623's steps (be1db5d7, 2026-07-30), so BL-623's exact-match
+  handler has NEVER won under the full registry. BL-623's QA pass ran the
+  focused `bl623Only.js` entry (backlog/evidence/BL-623-qa-pass-pilot-20260730.md),
+  which exists precisely to avoid loading the full index — the collision was
+  never exercised until the BL-761 architect pass ran the feature through the
+  default entry point.
+
+  ## Severity rationale
+
+  `high`: a done ticket's durable acceptance contract false-fails on a clean
+  baseline under the standard entry point — a broken verification signal. It
+  masks real regressions of the BL-606/BL-623 routing-visibility guarantee
+  (a red run is indistinguishable from the known false red) and taxes every
+  review pass that runs the feature the default way (it already cost the
+  BL-761 architect pass a triage cycle).
+
+  ## Scheduling note for the coordinator
+
+  BL-761 (active) also works under `specs/pipeline/steps/` (its own new steps
+  file plus an index.js registration line). This ticket edits existing steps
+  files in the same directory; file-level overlap is at most `steps/index.js`.
+  Safe to promote after BL-761 lands; if promoted alongside, that one file is
+  the only merge point.
+
+  ## e2e procedure for QA
+
+  1. `npm run compile` (prerequisite: full registry needs `extension/out/`).
+  2. Run the BL-623 feature through the DEFAULT entry point (no steps-module
+     argument): 7/7 pass.
+  3. Run it through `specs/pipeline/steps/bl623Only.js`: still 7/7 pass.
+  4. Run BL-606's feature (`specs/features/BL-606-*.feature`) through the
+     default entry point: still green — the fix must not steal the generic
+     pattern's matches from the feature that owns it.
+  5. Confirm the coder-authored property test for the declared invariant
+     exists and is non-vacuous (it must enumerate BL-623's scenarios' steps
+     and compare resolution across both entry points, not spot-check the two
+     steps that happened to fail).
+
+description: |
+  ## What
+
+  Running BL-623's durable acceptance contract
+  (specs/features/BL-623-routing-skip-trail-records-actual-hop.feature)
+  through the standard full-registry entry point fails scenarios 02
+  (rewrite-branch-still-records-02) and 04 (skipped-required-stage-visible-04)
+  on a clean baseline. The production routing/skip-recording behavior is
+  fine — the same scenarios pass under the focused bl623Only.js entry. The
+  defect is in the acceptance harness: BL-606's earlier, unscoped generic step
+  pattern shadows BL-623's exact one (see notes for the full chain).
+
+  ## Why it matters
+
+  Feature files are the durable contract that outlives the ticket (BL-111).
+  A contract that is red on baseline under the default runner stops guarding
+  anything: reviewers either burn a cycle re-diagnosing the known false red or
+  learn to ignore the file — and a real regression of the visibility guarantee
+  BL-623 pinned (which stages ran vs were skipped is answerable from the
+  recorded trail) would look identical to the noise.
+
+  ## The fix
+
+  Make BL-623's feature resolve every one of its steps to its own handlers
+  under the full registry, without changing what any other feature's steps
+  resolve to. The registry already carries the designed mechanism for exactly
+  this collision class: `defineScoped` (stepRegistry.js, BL-425) lets a steps
+  file pin a registration to its own feature name rather than touching
+  whichever unscoped registration currently wins that text for other
+  features. BL-761's in-flight spec independently names this hazard class for
+  its own steps ("an unscoped registration of text this generic will silently
+  win for some other ticket's feature"). Choosing which registrations to
+  scope — BL-623's exact pattern, BL-606's generic one, or both — is the
+  implementer's call, bounded by the invariant and by e2e step 4 (BL-606's
+  feature stays green).
+
+  Per engineering.prompt ("ordered-dispatch branches need overlap tests"),
+  the parcel carries the invariant's property test: both entry points resolve
+  every BL-623 step to the same handler.
+
+  ## Scope
+
+  - `specs/pipeline/steps/bl623RoutingSkipTrailSteps.js` and/or
+    `specs/pipeline/steps/bl606RequiredStagesRoutingSteps.js` — the colliding
+    registrations.
+  - A test pinning the invariant (property test over BL-623's steps'
+    resolution under both entry points).
+
+  ## Out of scope
+
+  - Changing `stepRegistry.js` dispatch semantics (first-match order, scoping
+    rules). The mechanism is sound and other features depend on it.
+  - A repo-wide cross-feature shadowing audit. The registry's own design
+    comment says two features may legitimately register the same generic
+    text; a global no-shadowing rule would fight that design. If a standing
+    audit is wanted, ticket it separately.
+  - Retro-fixing other features' latent collisions, if any exist — same
+    reasoning; this slice repairs the one contract known to be red.
+  - The acceptance contract itself: the feature file's scenarios are correct
+    as written and do not change here.
