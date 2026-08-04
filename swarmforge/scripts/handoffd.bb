@@ -30,6 +30,9 @@
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "loop_detect_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "push_sweep_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "flow_watchdog_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "provider_compat_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "provider_respawn_env_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "provider_auth_observe_lib.bb")))
 
 (def poll-ms 1000)
 (def wake-message agent-runtime-lib/default-wake-chat-message)
@@ -69,6 +72,13 @@
 ;; loses strikes is safe (the spin re-arms within two chase observations).
 (def loop-detect-states (atom {}))
 (def loop-halt-triggered? (atom false))
+
+;; BL-536: per-role auth-class failure episode state (provider_auth_observe_
+;; lib.bb's {:attempts :alerted} shape). Same in-memory-atom rationale as
+;; loop-detect-states above - a daemon restart losing an in-flight episode's
+;; attempt count is safe; the next auth-class observation just starts a
+;; fresh episode.
+(def auth-observe-states (atom {}))
 
 (defn usage []
   (binding [*out* *err*]
@@ -980,6 +990,97 @@
         (let [pane (try (capture-pane-lines socket session 20) (catch Exception _ ""))]
           (observe-pane-loop! role pane))))))
 
+;; ── BL-536: auth-class pane observe/respawn - SRE 2026-07-19 ───────────────
+;; classify-provider-error already maps "Invalid API key" to :auth and
+;; provider-compat-lib/provider-auth-error-text? already recognizes the same
+;; text, but nothing observed pane scrollback for it and healed a standing
+;; role wedged behind a credential error. Wired into the SAME chase-sweep!
+;; cadence as observe-standing-role-loops! above (not the TS inboxChaser,
+;; dead-in-production for chase decisions per BL-146). Respawn reuses
+;; swarm_ensure.bb's own provider-respawn-env-args machinery, extracted into
+;; provider_respawn_env_lib.bb so this daemon process can call it without
+;; load-file'ing swarm_ensure.bb itself (which runs a full ensure sweep and
+;; System/exit as a side effect of being loaded).
+
+(defn- auth-respawn-max-attempts
+  "BL-536: the effective config's auth_respawn_max_attempts — resolved via
+   backlog-depth-lib/conf-file-path (whatever pack swarm-identity recorded
+   at launch), never the tracked default file directly (same resolution as
+   note-actionable-after-ms/rotation-starve-after-ms below)."
+  []
+  (provider-auth-observe-lib/parse-max-attempts
+   (try (slurp (str (backlog-depth-lib/conf-file-path project-root)))
+        (catch Exception _ nil))))
+
+(defn do-auth-respawn!
+  "BL-536: force-relaunch a role's persisted launch script with provider-
+   compat env args after an auth-class failure was observed in its pane.
+   Mirrors do-respawn!'s busy precheck exactly — never types/respawns into a
+   pane showing Claude Code's busy footer."
+  [role-info socket]
+  (let [session (:session role-info)
+        role (:role role-info)
+        pane (try (capture-pane-text socket session) (catch Exception _ ""))]
+    (if (chase-sweep-lib/actively-processing? pane)
+      (log! "auth-respawn-skip-busy" role)
+      (let [launch-script (fs/path state-dir "launch" (str role ".sh"))
+            env-args (provider-respawn-env-lib/provider-respawn-env-args state-dir role)]
+        (log! "auth-respawn" role (str launch-script))
+        (apply tmux! (concat ["-S" socket "respawn-pane" "-k"]
+                             env-args
+                             ["-t" session (str "zsh '" launch-script "'")]))))))
+
+(defn send-auth-persist-alert!
+  "BL-536: reuses the same operator alert channel the endless-loop breaker
+   uses (Telegram OPERATOR topic + email) — but never halts the swarm or
+   kills sessions; this is a notify-only alert."
+  [role max-attempts]
+  (let [reply-outbox (fs/path state-dir "operator" "telegram-reply-outbox.jsonl")
+        subject (provider-auth-observe-lib/format-email-subject role)
+        tg-text (provider-auth-observe-lib/format-telegram-alert role max-attempts)
+        reason (provider-auth-observe-lib/format-alert-reason role max-attempts)]
+    (log! "auth-persist-alert" role reason)
+    (try
+      (fs/create-dirs (fs/parent reply-outbox))
+      (spit (str reply-outbox)
+            (str (json/generate-string {"threadId" "OPERATOR" "text" tg-text}) "\n")
+            :append true)
+      (log! "auth-persist-telegram" role)
+      (catch Exception e (log! "auth-persist-telegram-error" (.getMessage e))))
+    (try
+      (daemon-alarm-lib/send-configured-email!
+       project-root conf-file subject reason
+       {:already-warned?! (fn [] @escalation-email-missing-key-warned?)
+        :log-warning! (fn [msg] (log! "email-misconfigured" msg))
+        :mark-warned! (fn [] (reset! escalation-email-missing-key-warned? true))})
+      (log! "auth-persist-email" role)
+      (catch Exception e (log! "auth-persist-email-error" (.getMessage e))))))
+
+(defn observe-pane-auth!
+  "Feed one pane snapshot into provider-auth-observe-lib; act on the result."
+  [role-info socket pane]
+  (let [role (:role role-info)
+        prev (get @auth-observe-states role)
+        max-attempts (auth-respawn-max-attempts)
+        decision (provider-auth-observe-lib/decide-auth-observation
+                  prev pane {:max-attempts max-attempts})]
+    (swap! auth-observe-states assoc role (:state decision))
+    (case (:action decision)
+      :respawn (do-auth-respawn! role-info socket)
+      :alert (send-auth-persist-alert! role max-attempts)
+      :none nil)))
+
+(defn observe-standing-role-auth!
+  "Walk every role that still has a live tmux session and feed its pane into
+   the auth-class observer. Same live-session gate and 20-line scrollback
+   window as observe-standing-role-loops! above."
+  [roles socket]
+  (doseq [[role role-info] roles]
+    (let [session (:session role-info)]
+      (when (and session (handoff-lib/session-exists? socket session))
+        (let [pane (try (capture-pane-lines socket session 20) (catch Exception _ ""))]
+          (observe-pane-auth! role-info socket pane))))))
+
 (def last-chase-rotate-at-ms (atom 0))
 
 (defn- handoff-header-field [file-path field]
@@ -1389,6 +1490,9 @@
                     (halt-for-claim-progress! role progress))}]
     (chase-sweep-lib/run-sweep! (role-inboxes-for-chase roles) now-ms chase-sweep-config adapters)
     (observe-standing-role-loops! roles socket)
+    (try
+      (observe-standing-role-auth! roles socket)
+      (catch Exception e (log! "auth-observe-error" (.getMessage e))))
     (write-chase-status! now-ms)))
 
 ;; ── BL-222: dispatch-gap sweep - the daemon's third duty ────────────────────
