@@ -4646,9 +4646,11 @@ test('BL-607: a roleQuestion record with no options falls back to a plain messag
   assert.deepEqual(posted, []);
 });
 
-test('BL-607: a roleQuestion for a role absent from role-topic-map.json (roleTopicIdFor resolves undefined) degrades to dropping the question, never crashes or posts to nowhere', async () => {
+test('BL-708: a roleQuestion for a role absent from role-topic-map.json (roleTopicIdFor resolves undefined) drops the question - never crashes, never posts to nowhere - but surfaces a trace naming the role BEFORE the record is acked', async () => {
   const posted = [];
   const sentReplies = [];
+  const acked = [];
+  const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
   await relaySseReplies(
     '',
     {
@@ -4662,12 +4664,36 @@ test('BL-607: a roleQuestion for a role absent from role-topic-map.json (roleTop
       },
       roleTopicIdFor: async () => undefined,
       resolveDelivery: () => ({ kind: 'undeliverable' }),
-      ackReply: async () => {},
+      ackReply: async (id) => acked.push(id),
     },
     new Set()
   );
   assert.deepEqual(posted, []);
   assert.deepEqual(sentReplies, []);
+  assert.equal(errorSpy.mock.calls.length, 1, 'an undeliverable roleQuestion must leave exactly one surfaced trace');
+  assert.match(errorSpy.mock.calls[0][0], /nobody/, 'the trace must name the role the question could not be delivered to');
+  assert.deepEqual(acked, ['r1'], 'still acked - the bridge cannot tell "decided to drop" from "never seen" and would replay it every reconnect');
+  errorSpy.mockRestore();
+});
+
+test('BL-708: the undeliverable-roleQuestion trace is surfaced strictly BEFORE the ackReply call - never a silent ack that reads as delivered', async () => {
+  const order = [];
+  const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => order.push('trace'));
+  await relaySseReplies(
+    '',
+    {
+      readChunk: mkChunkReader([
+        'event: telegram-reply\ndata: {"id":"r1","threadId":"role-ask-nobody","text":"which environment?","roleQuestion":"nobody"}\n\n',
+      ]),
+      sendReply: async () => {},
+      roleTopicIdFor: async () => undefined,
+      resolveDelivery: () => ({ kind: 'undeliverable' }),
+      ackReply: async () => order.push('ack'),
+    },
+    new Set()
+  );
+  assert.deepEqual(order, ['trace', 'ack']);
+  errorSpy.mockRestore();
 });
 
 test('BL-607: a roleQuestion record is never delivered through deliverAgentQuestion\'s Agent Questions topic path, even when both adapters are wired', async () => {

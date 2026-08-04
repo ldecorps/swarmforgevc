@@ -2820,9 +2820,15 @@ async function deliverAgentQuestion(threadId: string, text: string, options: Ask
 // from role-topic-map.json (roleTopicIdFor resolves undefined - unknown
 // role, or the map itself missing/unparseable) degrades to dropping the
 // question rather than posting to nowhere or crashing the relay.
+// BL-708: that drop must leave a surfaced trace naming the role BEFORE
+// relayOneRecord acks the record - an undeliverable question acked in
+// silence reads, to anyone watching counters, as delivered. This is what
+// turned BL-607's original relay-narrowing bug into six days of unnoticed
+// silence: the relay's cursor kept advancing while zero questions landed.
 async function deliverRoleQuestion(role: string, text: string, options: AskOption[] | undefined, adapters: ReplyRelayAdapters): Promise<void> {
   const topicId = await adapters.roleTopicIdFor?.(role);
   if (topicId === undefined) {
+    console.error(`telegramFrontDeskBotCore: undeliverable roleQuestion for role "${role}" - no Telegram topic mapped; dropping without delivery`);
     return;
   }
   await deliverAskMessage(topicId, roleAskThreadId(role), text, options, adapters);

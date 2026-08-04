@@ -6,6 +6,7 @@ const {
   decideCursorBridgeExclusion,
   pollAndForward,
   recordApprovalDecisionAndClose,
+  relaySseReplies,
   roleAskThreadId,
   roleFromAskThreadId,
   ROLE_ASK_THREAD_PREFIX,
@@ -268,5 +269,92 @@ test('property: pollAndForward never routes an owned-topic update to SUP/Operato
       assert.equal(result.posted + result.dropped + result.failed, 1, 'exactly one outcome recorded for the one update - never lost, never double-counted');
     }),
     { numRuns: 150 }
+  );
+});
+
+// BL-708 invariant #2 (coder-authored, ticket-declared): "A question record
+// the front desk cannot deliver leaves a surfaced trace (log line or
+// counter) before its id is acked - never a silent ack that reads as
+// delivered." deliverRoleQuestion (relayOneRecord's roleQuestion branch) is
+// the only place a roleQuestion record can become undeliverable -
+// roleTopicIdFor resolving undefined for a role absent from
+// role-topic-map.json - and relayOneRecord always acks afterward regardless
+// (the bridge cannot distinguish "decided to drop" from "never seen"; see
+// deliverRoleQuestion's own comment). This property drives arbitrary role
+// names and arbitrary roleTopicIdFor outcomes (mapped vs unmapped, and an
+// arbitrary topic id when mapped) through the real relaySseReplies wiring
+// and asserts: whenever the role is unmapped, exactly one console.error
+// trace naming that role fires strictly before ackReply; whenever it is
+// mapped, no trace ever fires and delivery proceeds before the ack.
+// telegramFrontDeskBotCore.test.js pins this at one fixed role name
+// ("nobody"); this generalizes across role names fast-check constructs.
+//
+// Non-vacuous: removing the console.error call from deliverRoleQuestion's
+// undefined-topicId branch fails this property on the first unmapped case
+// generated - confirmed manually before restoring the fix.
+//
+// Generator reach: mappedArb independently forces both the unmapped branch
+// (no topic id) and the mapped branch (an arbitrary topic id) on every run,
+// so both of deliverRoleQuestion's two outcomes are reachable by
+// construction, not by sampling luck. Runs ONLY via `npm run test:properties`.
+function mkSingleChunkReader(chunk) {
+  let sent = false;
+  return async () => {
+    if (sent) {
+      return { done: true, chunk: '' };
+    }
+    sent = true;
+    return { done: false, chunk };
+  };
+}
+
+const undeliverableRoleArb = fc.stringMatching(/^[A-Za-z0-9_-]{1,20}$/);
+const mappedArb = fc.boolean();
+const topicIdArb = fc.integer({ min: 1, max: 100000 });
+
+test('property: an undeliverable roleQuestion always surfaces exactly one trace naming the role BEFORE ackReply; a deliverable one never traces at all', async () => {
+  await fc.assert(
+    fc.asyncProperty(undeliverableRoleArb, mappedArb, topicIdArb, async (role, mapped, topicId) => {
+      const order = [];
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {
+        order.push('trace');
+      });
+      const record = { id: 'r1', threadId: `role-ask-${role}`, text: 'which environment?', roleQuestion: role };
+      const sse = `event: telegram-reply\ndata: ${JSON.stringify(record)}\n\n`;
+      try {
+        await relaySseReplies(
+          '',
+          {
+            readChunk: mkSingleChunkReader(sse),
+            sendReply: async () => {
+              order.push('send');
+            },
+            roleTopicIdFor: async () => (mapped ? topicId : undefined),
+            resolveDelivery: () => {
+              throw new Error('resolveDelivery must never be consulted for a roleQuestion record');
+            },
+            ackReply: async () => {
+              order.push('ack');
+            },
+          },
+          new Set()
+        );
+
+        // Read the spy's recorded calls BEFORE mockRestore() below - restore
+        // also clears mock.calls (same as mockReset), so asserting on it
+        // afterward would always see zero calls regardless of what happened.
+        if (mapped) {
+          assert.equal(errorSpy.mock.calls.length, 0, 'a deliverable roleQuestion must never surface an undeliverable trace');
+          assert.deepEqual(order, ['send', 'ack']);
+        } else {
+          assert.equal(errorSpy.mock.calls.length, 1, 'an undeliverable roleQuestion must leave exactly one surfaced trace');
+          assert.match(errorSpy.mock.calls[0][0], new RegExp(role), 'the trace must name the role the question could not be delivered to');
+          assert.deepEqual(order, ['trace', 'ack'], 'the trace must fire strictly before the ack - never a silent ack that reads as delivered');
+        }
+      } finally {
+        errorSpy.mockRestore();
+      }
+    }),
+    { numRuns: 200 }
   );
 });
