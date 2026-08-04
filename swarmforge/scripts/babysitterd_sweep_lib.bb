@@ -17,11 +17,18 @@
 ;; ── check 1: live-session-per-role ──────────────────────────────────────────
 
 (defn check-live-session
-  [{:keys [role pane-exists? has-claude-process?]}]
+  [{:keys [role pane-exists? has-claude-process? process-gather-failed?]}]
   (cond
     (not pane-exists?)
     {:key (str "pane-" role) :severity "CRIT"
      :message (str "swarmforge-" role ": tmux session missing")}
+
+    ;; BL-802: the process gather itself failed (e.g. ps errored on an
+    ;; unsupported dialect) — report the check unavailable, never the
+    ;; half-launch CRIT below, which is a claim about a REAL absence.
+    process-gather-failed?
+    {:key (str "proc-gather-" role) :severity "UNAVAILABLE"
+     :message (str "swarmforge-" role ": pane process gather unavailable this sweep (ps failed) — live-process check skipped")}
 
     (not has-claude-process?)
     {:key (str "proc-" role) :severity "CRIT"
@@ -97,9 +104,19 @@
 
 (defn check-memory-floor
   [{:keys [available-mb floor-mb]}]
-  (when (< (long (or available-mb 0)) (long (or floor-mb 0)))
+  (cond
+    ;; BL-802: no readable memory facility this sweep (nil, distinct from a
+    ;; genuinely low reading of 0) — report unavailable, never a fabricated
+    ;; CRIT or a silent pass-through as OK.
+    (nil? available-mb)
+    {:key "memory" :severity "UNAVAILABLE"
+     :message "memory floor check unavailable this sweep — no readable memory facility (BABYSITTER_MEMINFO_PATH unset, /proc/meminfo absent, vm_stat unavailable)"}
+
+    (< (long available-mb) (long (or floor-mb 0)))
     {:key "memory" :severity "CRIT"
-     :message (str "only " available-mb "MB available (< " floor-mb "MB) — check for orphaned vitest/stryker workers (free -h FIRST)")}))
+     :message (str "only " available-mb "MB available (< " floor-mb "MB) — check for orphaned vitest/stryker workers (free -h FIRST)")}
+
+    :else nil))
 
 ;; ── check 11: claim-progress risk scan (BL-528 salvage) ──────────────────────
 

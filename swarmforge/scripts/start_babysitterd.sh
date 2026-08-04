@@ -34,7 +34,14 @@ if [[ -f "$PIDFILE" ]] && kill -0 "$(cat "$PIDFILE" 2>/dev/null)" 2>/dev/null; t
   exit 0
 fi
 
-setsid nohup bash "$SCRIPT_DIR/babysitterd.sh" "$ROOT" >/dev/null 2>&1 &
+# BL-802: macOS ships no setsid. Prefer it when present (existing Linux
+# behavior, unchanged); fall back to nohup+disown alone, which is the same
+# detachment start_handoff_daemon.sh already relies on with no setsid at all.
+if command -v setsid >/dev/null 2>&1; then
+  setsid nohup bash "$SCRIPT_DIR/babysitterd.sh" "$ROOT" >/dev/null 2>&1 &
+else
+  nohup bash "$SCRIPT_DIR/babysitterd.sh" "$ROOT" >/dev/null 2>&1 &
+fi
 disown
 
 for _ in 1 2 3 4 5; do

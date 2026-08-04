@@ -108,4 +108,122 @@ grep -q "NUDGE-SKIP" <<< "$OUT" || fail "D: expected NUDGE-SKIP; got: $OUT"
 pass "D: no swarm running skips the nudge and logs NUDGE-SKIP with zero keystrokes"
 rm -rf "$ROOT"
 
+# ── E: pane process gather works on a BSD-style ps (rejects --ppid) ────────
+ROOT="$(make_root)"
+SOCK="$ROOT/fake.sock"; touch "$SOCK"
+echo "$SOCK" > "$ROOT/.swarmforge/tmux-socket"
+mkdir -p "$ROOT/.worktrees/coder"
+printf 'coder\tcoder\t%s\tswarmforge-coder\tCoder\tclaude\ttask\n' "$ROOT/.worktrees/coder" \
+  > "$ROOT/.swarmforge/roles.tsv"
+
+cat > "$FAKE_BIN/tmux" <<'TMUX'
+#!/usr/bin/env bash
+for arg in "$@"; do
+  if [[ "$arg" == "has-session" ]]; then exit 0; fi
+  if [[ "$arg" == "list-panes" ]]; then echo "222"; exit 0; fi
+  if [[ "$arg" == "capture-pane" ]]; then printf '%%\n'; exit 0; fi
+done
+exit 0
+TMUX
+chmod +x "$FAKE_BIN/tmux"
+
+# BSD ps (macOS): rejects --ppid outright, but supports -eo pid=,ppid=,args=.
+cat > "$FAKE_BIN/ps" <<'PS'
+#!/usr/bin/env bash
+for arg in "$@"; do
+  if [[ "$arg" == "--ppid" ]]; then
+    echo "ps: illegal option -- -" >&2
+    exit 1
+  fi
+done
+cat <<'ROWS'
+  111     1 /sbin/launchd
+  222   111 /bin/bash pane-shell
+  333   222 claude --remote-control fake
+ROWS
+PS
+chmod +x "$FAKE_BIN/ps"
+
+OUT="$(run_check "$ROOT")"
+grep -q "CRIT \[proc-coder\]" <<< "$OUT" && fail "E: expected no half-launch CRIT for coder; got: $OUT"
+grep -q "UNAVAILABLE \[proc-gather-coder\]" <<< "$OUT" && fail "E: expected no gather-unavailable line when ps succeeded via BSD syntax; got: $OUT"
+grep -q "OK all checks green" <<< "$OUT" || fail "E: expected a fully green sweep once the BSD-syntax ps gather finds the live claude process; got: $OUT"
+pass "E: pane process gather correctly finds a live claude process via BSD-syntax ps (no --ppid)"
+rm -rf "$ROOT"
+
+# ── F: ps gather fails entirely — reported unavailable, never cry-wolf CRIT ─
+ROOT="$(make_root)"
+SOCK="$ROOT/fake.sock"; touch "$SOCK"
+echo "$SOCK" > "$ROOT/.swarmforge/tmux-socket"
+mkdir -p "$ROOT/.worktrees/coder"
+printf 'coder\tcoder\t%s\tswarmforge-coder\tCoder\tclaude\ttask\n' "$ROOT/.worktrees/coder" \
+  > "$ROOT/.swarmforge/roles.tsv"
+
+cat > "$FAKE_BIN/tmux" <<'TMUX'
+#!/usr/bin/env bash
+for arg in "$@"; do
+  if [[ "$arg" == "has-session" ]]; then exit 0; fi
+  if [[ "$arg" == "list-panes" ]]; then echo "222"; exit 0; fi
+  if [[ "$arg" == "capture-pane" ]]; then printf '%%\n'; exit 0; fi
+done
+exit 0
+TMUX
+chmod +x "$FAKE_BIN/tmux"
+
+cat > "$FAKE_BIN/ps" <<'PS'
+#!/usr/bin/env bash
+echo "ps: broken in this fixture" >&2
+exit 1
+PS
+chmod +x "$FAKE_BIN/ps"
+
+OUT="$(run_check "$ROOT")"
+grep -q "CRIT \[proc-coder\]" <<< "$OUT" && fail "F: expected NO half-launch CRIT from a failed ps gather (cry-wolf); got: $OUT"
+grep -q "UNAVAILABLE \[proc-gather-coder\]" <<< "$OUT" || fail "F: expected the process gather to be reported UNAVAILABLE; got: $OUT"
+grep -q "^OK all checks green" <<< "$OUT" && fail "F: a failed gather must never be silently folded into the all-clear OK line; got: $OUT"
+pass "F: a failed ps gather reports UNAVAILABLE, never a cry-wolf CRIT or a silent OK"
+rm -rf "$ROOT"
+
+# ── G: memory floor falls back to vm_stat when no meminfo facility exists ──
+ROOT="$(make_root)"
+cat > "$FAKE_BIN/vm_stat" <<'VMSTAT'
+#!/usr/bin/env bash
+cat <<'OUT'
+Mach Virtual Memory Statistics: (page size of 4096 bytes)
+Pages free:                                 100.
+Pages active:                            640194.
+Pages inactive:                             100.
+Pages speculative:                            0.
+Pages wired down:                        471968.
+OUT
+VMSTAT
+chmod +x "$FAKE_BIN/vm_stat"
+# BABYSITTER_MEMINFO_PATH points at a nonexistent fixture (not merely unset)
+# so this is deterministic on a Linux host where a real /proc/meminfo exists
+# too — the seam always wins over the literal default when set, per
+# meminfo-path's existing "env var or /proc/meminfo" contract.
+G_OUT="$(PATH="$FAKE_BIN:$PATH" BABYSITTER_MEMINFO_PATH="$ROOT/no-such-meminfo" bash "$CHECK_SH" "$ROOT")"
+grep -q "CRIT \[memory\]" <<< "$G_OUT" || fail "G: expected a memory CRIT via vm_stat fallback (200 low pages); got: $G_OUT"
+pass "G: memory floor check falls back to vm_stat when no proc-meminfo-style facility exists"
+rm -f "$FAKE_BIN/vm_stat"
+rm -rf "$ROOT"
+
+# ── H: every memory facility absent — UNAVAILABLE, never CRIT or silent OK ──
+ROOT="$(make_root)"
+# Shadow (not strip) a real vm_stat: a failing stub earlier on PATH always
+# wins the lookup without also removing unrelated tools (dirname, mkdir, ...)
+# that happen to live in the same system directory as the real vm_stat.
+cat > "$FAKE_BIN/vm_stat" <<'VMSTAT'
+#!/usr/bin/env bash
+exit 1
+VMSTAT
+chmod +x "$FAKE_BIN/vm_stat"
+H_OUT="$(PATH="$FAKE_BIN:$PATH" BABYSITTER_MEMINFO_PATH="$ROOT/no-such-meminfo" bash "$CHECK_SH" "$ROOT")"
+grep -q "UNAVAILABLE \[memory\]" <<< "$H_OUT" || fail "H: expected memory check UNAVAILABLE when every facility is absent; got: $H_OUT"
+grep -q "CRIT \[memory\]" <<< "$H_OUT" && fail "H: expected no fabricated memory CRIT when every facility is absent; got: $H_OUT"
+grep -q "^OK all checks green" <<< "$H_OUT" && fail "H: a failed memory gather must never be silently folded into OK; got: $H_OUT"
+pass "H: memory floor check reports UNAVAILABLE (never CRIT/OK) when every memory facility is absent"
+rm -f "$FAKE_BIN/vm_stat"
+rm -rf "$ROOT"
+
 echo "ALL PASS"

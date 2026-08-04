@@ -32,6 +32,23 @@
              (let [f (sw/check-live-session {:role "coder" :pane-exists? true :has-claude-process? false})]
                (and f (= "CRIT" (:severity f)) (= "proc-coder" (:key f)))))
 
+;; BL-802: a failed process gather (e.g. ps errored on an unsupported dialect)
+;; must never be reported as the real half-launch CRIT above — that would be
+;; a cry-wolf false positive from a tooling failure, not a swarm defect.
+(assert-true "failed process gather is UNAVAILABLE proc-gather-<role>, never CRIT"
+             (let [f (sw/check-live-session {:role "coder" :pane-exists? true
+                                              :has-claude-process? false
+                                              :process-gather-failed? true})]
+               (and f (= "UNAVAILABLE" (:severity f)) (= "proc-gather-coder" (:key f)))))
+(assert-true "a missing pane still wins over a gather-failed flag (pane check runs first)"
+             (let [f (sw/check-live-session {:role "coder" :pane-exists? false
+                                              :has-claude-process? false
+                                              :process-gather-failed? true})]
+               (and f (= "CRIT" (:severity f)) (= "pane-coder" (:key f)))))
+(assert-nil "gather-failed? false with a live process still produces no finding"
+            (sw/check-live-session {:role "coder" :pane-exists? true :has-claude-process? true
+                                     :process-gather-failed? false}))
+
 ;; ── check 2: remote-control-flag ─────────────────────────────────────────────
 (assert-nil "green role (rc flag present) produces no rc finding"
             (sw/check-remote-control {:role "coder" :pane-exists? true :has-claude-process? true :has-remote-control? true}))
@@ -93,6 +110,13 @@
 (assert-true "memory below floor is CRIT memory"
              (let [f (sw/check-memory-floor {:available-mb 800 :floor-mb 1500})]
                (and f (= "CRIT" (:severity f)) (= "memory" (:key f)))))
+
+;; BL-802: no readable memory facility (available-mb nil, e.g. /proc/meminfo
+;; absent on macOS and no other facility resolved) must report UNAVAILABLE,
+;; never a fabricated CRIT/OK from a substituted default value.
+(assert-true "nil available-mb (no facility) is UNAVAILABLE memory, never CRIT or OK"
+             (let [f (sw/check-memory-floor {:available-mb nil :floor-mb 1500})]
+               (and f (= "UNAVAILABLE" (:severity f)) (= "memory" (:key f)))))
 
 ;; ── check 11: claim-progress risk scan (BL-528 salvage) ─────────────────────
 (assert-true "critical claim-risk assessment maps to CRIT"
