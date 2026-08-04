@@ -148,6 +148,45 @@ export interface ReplyOutboxEntry {
   options?: AskOption[];
 }
 
+// BL-708 hardening: split out of the forEach body below so the delivery-
+// routing fields (BL-320/BL-440/BL-708) each stay a single small branch
+// instead of stacking five in one function - a behavior-preserving split,
+// same fields, same conditions, CRAP computed per function.
+function applyOptionalOutboxFields(entry: ReplyOutboxEntry, parsed: Record<string, unknown>): void {
+  if (parsed.retractsPendingQuestion === true) {
+    entry.retractsPendingQuestion = true;
+  }
+  if (typeof parsed.roleQuestion === 'string') {
+    entry.roleQuestion = parsed.roleQuestion;
+  }
+  if (parsed.agentQuestion === true) {
+    entry.agentQuestion = true;
+  }
+  if (Array.isArray(parsed.options)) {
+    entry.options = parsed.options as AskOption[];
+  }
+}
+
+// Parses one outbox line into an entry, or undefined for a malformed line
+// or one missing the required threadId/text fields - the two "skip this
+// line" cases readNewReplyOutboxEntries' loop below no longer needs to
+// know apart from each other.
+function parseReplyOutboxLine(line: string, fallbackId: string): ReplyOutboxEntry | undefined {
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = JSON.parse(line) as Record<string, unknown>;
+  } catch {
+    return undefined;
+  }
+  if (typeof parsed.threadId !== 'string' || typeof parsed.text !== 'string') {
+    return undefined;
+  }
+  const id = typeof parsed.id === 'string' ? parsed.id : fallbackId;
+  const entry: ReplyOutboxEntry = { id, threadId: parsed.threadId, text: parsed.text };
+  applyOptionalOutboxFields(entry, parsed);
+  return entry;
+}
+
 // Reads reply-outbox lines strictly AFTER sinceIndex (the count of lines
 // already delivered) - the bridge's own "what's new since I last checked"
 // cursor, mirroring the SSE poll loop's existing lastSnapshot diff
@@ -164,27 +203,9 @@ export function readNewReplyOutboxEntries(targetPath: string, sinceIndex: number
   const lines = content.split('\n').filter((l) => l.trim().length > 0);
   const entries: ReplyOutboxEntry[] = [];
   lines.slice(sinceIndex).forEach((line, offset) => {
-    try {
-      const parsed = JSON.parse(line) as Record<string, unknown>;
-      if (typeof parsed.threadId === 'string' && typeof parsed.text === 'string') {
-        const id = typeof parsed.id === 'string' ? parsed.id : `legacy-${sinceIndex + offset}`;
-        const entry: ReplyOutboxEntry = { id, threadId: parsed.threadId, text: parsed.text };
-        if (parsed.retractsPendingQuestion === true) {
-          entry.retractsPendingQuestion = true;
-        }
-        if (typeof parsed.roleQuestion === 'string') {
-          entry.roleQuestion = parsed.roleQuestion;
-        }
-        if (parsed.agentQuestion === true) {
-          entry.agentQuestion = true;
-        }
-        if (Array.isArray(parsed.options)) {
-          entry.options = parsed.options as AskOption[];
-        }
-        entries.push(entry);
-      }
-    } catch {
-      // skip a malformed line rather than crash the whole poll
+    const entry = parseReplyOutboxLine(line, `legacy-${sinceIndex + offset}`);
+    if (entry) {
+      entries.push(entry);
     }
   });
   return { entries, totalLines: lines.length };
