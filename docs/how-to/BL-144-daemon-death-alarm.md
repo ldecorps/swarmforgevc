@@ -13,6 +13,12 @@ SwarmForge: daemon died, swarm halted
 
 The email contains:
 - A reference to the **failure log** — a file under `.swarmforge/daemon/` that captures why the daemon stopped
+- As of BL-813, the failure log itself **attached** to the email — an
+  off-box operator can read the crash directly without SSH-ing into the
+  target machine. Attaching is best-effort: if building the attachment fails
+  (e.g. an oversized or unencodable log), the email still sends with the
+  path-only body and the halt still proceeds — a broken attachment never
+  blocks BL-144's alarm-and-halt.
 - The **recovery command** — a single line to run after you've fixed the daemon
 
 Example email:
@@ -119,4 +125,5 @@ The daemon is part of SwarmForge's reliability layer. If deaths are frequent:
 - **BL-146** — Single-daemon consolidation: explains how the daemon owns both delivery and liveness.
 - **BL-145** — Swarmforge ensure command: details on `swarmforge ensure` recovery.
 - **BL-690** — Fixed ensure's daemon repair to start the daemon instead of running the halt-authority probe; see the note under Recovery Steps above.
+- **BL-813** — Attached the failure log to the death email (see above) and hardened `ambulance_lib.bb`'s `ticket-has-file?` against the active→done glob-then-vanish race that caused this incident's crash.
 - **Daemon Status** — `.swarmforge/daemon/handoffd.status.json` tracks the daemon's health state in real time.

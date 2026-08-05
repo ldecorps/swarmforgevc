@@ -109,6 +109,19 @@ folded into the pause gate.
 dispatch filter, not a depth change, so releasing it has no cap to restore and
 cannot leave a throttle stuck on.
 
+## Race safety (BL-813)
+
+The fail-safe check inside `describe-status`/`read-ambulance-state` —
+confirming the marker's named ticket still has a YAML file under
+`backlog/` — globs the backlog tree and then reads each candidate. A ticket
+that moves (e.g. `active/` → `done/`) between the glob listing it and the
+read can vanish out from under that read; this no longer crashes the
+daemon. Each candidate's read is independently guarded, so a vanished entry
+is just skipped, and the predicate falls through to its existing degrade
+path (`{:active false :reason "ticket ... has no YAML file under
+backlog/"}`) exactly as if the ticket had never existed — never a thrown
+exception. See BL-144's death-alarm doc for the incident this fixed.
+
 ## Known cost of this slice
 
 The perimeter — flow-watchdog quiet for held parcels, the coordinator's
