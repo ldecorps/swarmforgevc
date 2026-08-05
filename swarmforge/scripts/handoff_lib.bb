@@ -37,17 +37,59 @@
       (str/trim (:out result))
       (System/getProperty "user.dir"))))
 
+;; BL-812: handoffd receives its project root on argv, but every
+;; target-root-scoped read below used to shell `git rev-parse
+;; --git-common-dir` from process cwd. handoffd's own cwd is not guaranteed
+;; to be the project root (observed live: launcher home dir) - under that
+;; mismatch, target-root silently resolved to the WRONG project, so the
+;; resident looked absent, chase degraded to waking a session mono-router
+;; never creates, and the swarm starved forever.
+;;
+;; explicit-project-root is a plain atom (process-wide), not a `binding` -
+;; handoffd installs a shutdown-hook thread (joins the main thread) and runs
+;; sweeps that a thread-local dynamic var would not be visible from. Set
+;; once at daemon startup via set-project-root!; unset (nil) is the default
+;; and preserves every existing caller's git-common-dir behavior exactly -
+;; rotate_to_role.bb, operator_runtime.bb and operator_lib.bb call these same
+;; functions from a role's linked worktree and rely on that fallback.
+;;
+;; BL-654 declared-invariant coverage (backlog/evidence/BL-812-coder-pass.md
+;; has the full record): invariant 1 (this override always wins over cwd) is
+;; a property test - bl812_project_root_override_property_runner.bb.
+;; Invariants 2 (a dormant role's actionable mail always produces a rotate/
+;; wake, never unbounded chase-wake-error) and 3 (wake-session's remap is
+;; cwd-identical) are stated-reason: both reduce to functions this ticket
+;; does not touch (chase-rotate-to!/chase-poke-and-notify!'s real-tmux/
+;; real-mailbox decision logic; resolve-wake-session's pre-existing pure
+;; remap) composed with this override, which invariant 1 already proves
+;; cwd-invariant - encoded instead via the real-fixture acceptance scenarios
+;; 03/04.
+(defonce explicit-project-root (atom nil))
+
+(defn set-project-root!
+  "Process-wide override for target-root. handoffd calls this once at startup
+   with its own argv project-root so every root-scoped read below (roles.tsv,
+   tmux-socket, launch scripts, mono-router-active-role) resolves against the
+   daemon's real project regardless of its process cwd. Pass nil/blank to
+   clear the override and restore the git-common-dir fallback (tests reset
+   between cases this way)."
+  [root]
+  (reset! explicit-project-root (when-not (str/blank? root) (str root))))
+
 (defn target-root
-  "Resolves the target project's root, shared across every role's worktree,
-   via git's common gitdir (stable from a linked worktree or the main
-   checkout alike). Target-root-scoped state — roles.tsv, the daemon dir, and
-   the BL-069 bounce-drain sentinel — lives here, distinct from the
-   per-worktree handoff state under (worktree-root)."
+  "Resolves the target project's root, shared across every role's worktree.
+   Prefers an explicit root set via set-project-root! (handoffd's argv
+   project-root); falls back to git's common gitdir (stable from a linked
+   worktree or the main checkout alike) when no explicit root is set.
+   Target-root-scoped state — roles.tsv, the daemon dir, and the BL-069
+   bounce-drain sentinel — lives here, distinct from the per-worktree
+   handoff state under (worktree-root)."
   []
-  (let [result (sh/sh "git" "rev-parse" "--git-common-dir")]
-    (if (zero? (:exit result))
-      (str (fs/parent (fs/absolutize (str/trim (:out result)))))
-      (worktree-root))))
+  (or @explicit-project-root
+      (let [result (sh/sh "git" "rev-parse" "--git-common-dir")]
+        (if (zero? (:exit result))
+          (str (fs/parent (fs/absolutize (str/trim (:out result)))))
+          (worktree-root)))))
 
 (defn bounce-drain-sentinel []
   (fs/path (target-root) ".swarmforge" "bounce-drain.json"))
