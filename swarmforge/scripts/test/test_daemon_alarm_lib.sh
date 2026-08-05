@@ -80,6 +80,30 @@ grep -q "Failure log: $ROOT/failure.log" "$ROOT/email-text.txt" || fail "02: ema
 grep -q "run: ./swarm ensure" "$ROOT/email-text.txt" || fail "02: email did not name the recovery command"
 pass "02: exactly one alarm email sent, naming the failure log path and recovery command"
 
+# ── BL-813 attach-01: the death alarm email carries exactly one attachment
+#    whose bytes match the written failure log byte-for-byte ────────────────
+ATTACH_COUNT="$(python3 -c "import json; print(len(json.load(open('$ROOT/email-attachments.json'))))")"
+[[ "$ATTACH_COUNT" -eq 1 ]] || fail "BL-813 attach-01: expected exactly 1 attachment, got $ATTACH_COUNT"
+
+ATTACH_FILENAME="$(python3 -c "import json; print(json.load(open('$ROOT/email-attachments.json'))[0]['filename'])")"
+[[ "$ATTACH_FILENAME" == "failure.log" ]] || fail "BL-813 attach-01: expected attachment filename 'failure.log', got '$ATTACH_FILENAME'"
+
+if ! python3 - "$ROOT/email-attachments.json" "$ROOT/failure.log" <<'PYEOF'
+import base64
+import json
+import sys
+
+attachments_path, failure_log_path = sys.argv[1], sys.argv[2]
+att = json.load(open(attachments_path))[0]
+decoded = base64.b64decode(att["base64"])
+expected = open(failure_log_path, "rb").read()
+assert decoded == expected, "decoded attachment bytes did not match the failure-log file bytes"
+PYEOF
+then
+  fail "BL-813 attach-01: decoded attachment bytes did not match the written failure-log content"
+fi
+pass "BL-813 attach-01: the death alarm email carries exactly one attachment whose bytes match the written failure log"
+
 # ── 03: the swarm is halted (adapter invoked) before status is written ───────
 grep -q "^halt-swarm" "$ROOT/calls.log" || fail "03: halt-swarm! was never invoked"
 pass "03: halt-swarm! invoked as part of the orchestration"

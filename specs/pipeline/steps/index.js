@@ -374,7 +374,8 @@ const DOMAINS = [
   require('./bl804BabysitterMonoRouterTopologyAwarenessSteps'),
   require('./bl805RotateGateOnUnfinishedInProcessParcelSteps'),
   require('./bl638GherkinMutationZeroMutantsSteps'),
-  require('./bl812HandoffdCwdWakeRemapSteps')
+  require('./bl812HandoffdCwdWakeRemapSteps'),
+  require('./bl813DeathAlarmAttachAndAmbulanceRaceSteps')
 ];
 
 function registerSteps(registry) {
