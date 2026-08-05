@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=0cd8a1a4d567c79a0593487ef02e26a8b1e45ea1e792c7fa5879998984df25b8
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-05T03:37:46.659651Z","feature_name":"BL-804 babysitter health sweep is mono-router topology aware","feature_path":"/Users/ldecorps/projects/swarmforgevc/.worktrees/hardender/specs/features/BL-804-babysitter-mono-router-topology-awareness.feature","background_hash":"5e89644ea894c7b8bbc72def9f413d4f58005911e4c6c49f8291403ed1ea7cf4","implementation_hash":"unknown","scenarios":[{"index":2,"name":"a missing required session is still CRIT under router mode","scenario_hash":"3dad99a73a7b732ebb846c865df77a20572964b5599a4eacb67ad62ecf076d43","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-08-05T03:37:46.659651Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-804 babysitter health sweep is mono-router topology aware
 
   Under `config rotation router` only two sessions stand: the resident
