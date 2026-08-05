@@ -1,0 +1,163 @@
+id: BL-812
+title: "DEFECT — handoffd cwd outside the project breaks mono-router wake remap: chase injects into missing dormant sessions forever and the swarm starves"
+milestone: M8
+type: defect
+status: todo
+epic: swarm-reliability
+human_approval: approved
+severity: high
+priority: 0
+direction: human-requested
+depends_on: []
+assigned_to: coder
+mutation_cost: low
+required_stages: [specifier, coder, cleaner, architect, hardender, documenter, qa]
+
+required_wiring:
+  - "swarmforge/scripts/handoff_lib.bb::set-project-root!::the explicit root seam must exist in the library whose target-root reads are cwd-derived today"
+  - "swarmforge/scripts/handoffd.bb::handoff-lib/set-project-root!::handoffd must actually set its argv project-root into handoff-lib at startup; a seam that exists but is never set from the daemon is this ticket's exact failure mode rebuilt"
+
+invariants:
+  - "Wake remap and resident rotation resolve project-scoped paths from handoffd's argv project-root (or an explicit equivalent), never from process cwd."
+  - "A dormant mono-router role with actionable inbox/new mail produces a resident rotate or a wake on the resident session — never unbounded chase-wake-error against swarmforge-<dormant>."
+  - "wake-session remaps identically whether handoffd's cwd is the project root or an unrelated directory."
+
+approval_context: >
+  Human queue-jump 2026-08-05 ~13:56 CEST: "Qjumps alors, on ne peut pas se
+  permettre d'avoir une swarm qui passe son temps à ne rien faire." Live starve
+  recurred after architect cleared — same cwd bug, now hardender/documenter.
+  Approved and priority 0 by human order. Specifier may amend scenario detail
+  but not severity/priority without asking.
+
+source: |
+  backlog/INTAKE-mono-router-chase-cwd-starves-dormant-roles.md (human via
+  Cursor 2026-08-05 ~12:40 CEST; archived to this ticket on mint). Live
+  recurrence confirmed ~13:30–13:50 CEST with chase-wake-error hardender /
+  documenter while resident idled at coder NO_TASK; handoffd pid cwd still
+  /Users/ldecorps.
+
+description: |
+  ## What
+
+  handoffd is invoked as `bb handoffd.bb <project-root>` but often runs with
+  process cwd = the launcher's home (verified live: cwd `/Users/ldecorps`).
+  Mailbox delivery uses argv `project-root` and works. Wake remap does not:
+  `handoff_lib/target-root` runs `git rev-parse --git-common-dir` from **cwd**,
+  so `mono-router-resident-session` / `tmux-socket` / `wake-session` miss the
+  real `.swarmforge/`. Resident looks absent → chase degrades to
+  `:wake-own-session` → inject targets `swarmforge-architect` (etc.) which do
+  not exist under mono-router → unbounded `chase-wake-error … tmux
+  send-literal failed`. Depth cap 1 then blocks all promotion while the
+  mid-pipeline ticket sits in a dormant mailbox → full swarm starve.
+
+  ## Fix posture (specifier owns the contract; coder implements)
+
+  Every handoffd caller of `wake-session`, `mono-router-resident-session`,
+  `tmux-socket`, and `rotate-resident-to!` must resolve project-scoped state
+  from the daemon's argv project-root (binding, parameter, or equivalent) —
+  not from cwd-dependent `target-root` alone. Acceptance must prove the live
+  failure mode (cwd ≠ project-root), not only the pure remap table that
+  already passes when cwd is correct.
+
+  ## Live evidence (2026-08-05)
+
+  - BL-638 architect parcel waiting from 08:56:59Z while resident at coder
+    NO_TASK; ~600+ `chase-wake-error architect`.
+  - After manual rotate to architect, same storm on hardender/documenter once
+    architect forwarded (parcel 11:17:00Z); handoffd cwd still home.
+  - `lsof -p <handoffd-pid> -d cwd` → `/Users/ldecorps`.
+  - From project cwd, `wake-session` remaps architect→coder and
+    `rotate-resident-to!` succeeds; inject at `swarmforge-architect` fails
+    with `can't find pane: swarmforge-architect`.
+
+acceptance: specs/features/BL-812-handoffd-cwd-breaks-mono-router-wake-remap.feature
+
+out_of_scope: |
+  - Host-bridge queue poll/clear/TTL (BL-810/811) — unrelated misdiagnosis.
+  - Replacing mono-router with a full 7-pane pack.
+  - Closing or re-routing BL-638 (held under ambulance during this jump).
+
+notes: |
+  Queue-jump: human 2026-08-05. Ambulance engaged for BL-812 while BL-638
+  mid-pipeline parcels are held in place. Specifier: refine feature scenarios
+  if needed, then hand to coder same shift — do not re-triage priority.
+
+  ## Specifier probe (2026-08-05, before speccing)
+
+  Root cause confirmed by running the real call, not inferred from the report:
+
+    $ cd /Users/ldecorps && bb -cp <repo>/swarmforge/scripts -e '(require ...)'
+      target-root:      /Users/ldecorps          # NOT the project
+      roles-tsv-path:   /Users/ldecorps/.swarmforge/roles.tsv   # absent
+      resident-session: nil
+      home-role:        nil
+
+    $ cd <repo> && (same)
+      target-root:      /Users/ldecorps/projects/swarmforgevc
+      resident-session: "swarmforge-coder"
+      home-role:        "coder"
+
+  `handoff_lib/target-root` (handoff_lib.bb:40) shells `git rev-parse
+  --git-common-dir` from cwd; outside a repo it falls through worktree-root to
+  `user.dir`. handoffd has the correct root on argv (handoffd.bb:88) and uses
+  it for delivery and socket-file — but never hands it to handoff-lib, so
+  every library read below resolves against the wrong root.
+
+  ## Cwd-dependent reads handoffd actually calls (coder's fix inventory)
+
+  In handoff_lib.bb, all routed through `target-root`:
+    - roles-tsv-path -> mono-router-resident-session (:452), mono-router-home-role
+    - mono-router-active-role-path -> read/write-mono-router-active-role
+    - tmux-socket (:371), launch-script-path (:375)
+    - load-role-info / load-all-roles (:224, :245)
+    - wake-session (:543) and rotate-resident-to! (:617) transitively
+
+  Live handoffd call sites: wake-session at 313, 322, 335, 363, 1294, 1415,
+  1478, 2366; mono-router-resident-session at 344, 1196, 1298, 1416;
+  read-mono-router-active-role at 348, 1217, 1370; mono-router-home-role at
+  1205; rotate-resident-to! at 1226.
+
+  ## Two design constraints the fix must respect
+
+  1. **Process-wide, not thread-local.** handoffd installs a shutdown hook
+     thread (handoffd.bb:2497) that joins the main thread. A Clojure `binding`
+     is thread-local and would not be seen there, nor by any future sweep
+     thread. Set the root process-wide (root-var mutation or an atom), once,
+     at daemon startup.
+  2. **The cwd fallback must survive.** rotate_to_role.bb, operator_runtime.bb
+     and operator_lib.bb call these same functions from a role's linked
+     worktree and rely on `--git-common-dir` resolving to the main checkout.
+     Setting no explicit root must keep today's behaviour exactly — that is
+     scenario -05, and it is a regression guard, not a nicety.
+
+  ## IR-DRY dispositions (checker run 2026-08-05, 2 findings, both kept)
+
+  - near-duplicate, scenario -03 steps 1/2: the two steps differ ONLY by cwd;
+    that difference IS the assertion (same input, two cwds, one answer).
+    Normalizing would delete the behaviour. Deliberate.
+  - possible-synonym, `it resolves to <expected_value>` (-01) vs `it resolves
+    to swarmforge-coder` (-05): same concept, and already worded so a single
+    handler regex `it resolves to (.+)` serves both. No edit needed.
+
+  ## Slice scoping (BL-233)
+
+  All five scenarios describe behaviour built in THIS parcel — the coder wires
+  a step handler for each in the same commit, or the acceptance runner
+  hard-fails on the unhandled ones.
+
+e2e_qa_procedure: |
+  QA verifies the live failure mode, not just the fixture:
+
+  1. Confirm the daemon is the cwd-vulnerable shape: `lsof -p $(pgrep -f
+     handoffd.bb | head -1) -d cwd` — note the cwd, whatever it is.
+  2. From a directory that is NOT the project root, resolve the resident
+     session through handoff-lib with the project root set explicitly the way
+     handoffd sets it. Expect `swarmforge-coder`, not nil.
+  3. With a parcel sitting in a dormant role's inbox/new and the resident at
+     coder, watch one chase sweep in the handoffd log: expect a chase-rotate
+     (or a wake on the resident session) and ZERO `chase-wake-error … tmux
+     send-literal failed` naming `swarmforge-<dormant>`.
+  4. Regression guard: from a role worktree run `rotate_to_role.sh coder` with
+     no explicit root set and confirm it still resolves the main checkout.
+  5. Restart handoffd from the project root too, and confirm behaviour is
+     identical to step 3 — the whole point is cwd-invariance.

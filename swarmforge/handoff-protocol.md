@@ -910,6 +910,36 @@ resolve the wrong pane, so rotation can print success while the resident
 stays on the old role. The same OpenRouter `-e` injection as chase/ensure
 applies on rotate and idle-clear respawn.
 
+### Mono-router wake/rotate resolves from handoffd's project root, not cwd (BL-812)
+
+`handoffd.bb` is launched as `bb handoffd.bb <project-root>`, but its process
+`cwd` is not guaranteed to equal that argv root — observed live with `cwd`
+sitting at the launcher's home directory. Every root-scoped read in
+`handoff_lib.bb` (`roles-tsv-path`, `mono-router-resident-session`,
+`tmux-socket`, `launch-script-path`, `mono-router-active-role-path`, and
+transitively `wake-session` / `rotate-resident-to!`) went through
+`target-root`, which shelled `git rev-parse --git-common-dir` from `cwd`. Under
+the mismatch, `target-root` silently resolved to the wrong project: the
+resident looked absent, chase degraded to `:wake-own-session`, and inject
+targeted a session mono-router never creates (`swarmforge-architect` etc.),
+producing an unbounded `chase-wake-error … tmux send-literal failed` storm
+while the real parcel sat in a dormant mailbox — a full swarm starve.
+
+`handoff_lib.bb` now exposes `set-project-root!`, a process-wide `atom`
+override (not a `binding` — a thread-local dynamic var would not be visible to
+the shutdown-hook thread or any sweep thread). `handoffd.bb` calls it once at
+startup, immediately after parsing `project-root` from argv and before any
+handoff-lib call executes, so every root-scoped read resolves against the
+daemon's real project regardless of its process `cwd`. `target-root` prefers
+the explicit override and falls back to the pre-existing `git-common-dir`
+lookup when no override is set — the fallback is deliberately preserved
+byte-for-byte, because `rotate_to_role.bb`, `operator_runtime.bb`, and
+`operator_lib.bb` call these same functions from a role's linked worktree and
+rely on it.
+
+Acceptance: `specs/features/BL-812-handoffd-cwd-breaks-mono-router-wake-remap.feature`.
+E2e: `swarmforge/scripts/test/test_handoffd_bl812_cwd_invariant_root_resolution.sh`.
+
 ### Mono-router resident-invoked rotation gate on unfinished in_process (BL-805)
 
 The resident forwards its work (`swarm_handoff.sh`), then rotates. Nothing

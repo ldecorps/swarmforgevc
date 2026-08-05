@@ -1,0 +1,195 @@
+id: BL-809
+title: "worktree-head-commit-10 never captures stdout, so it leaks the hash to the console AND returns nil on every call — three claim-risk severities are unreachable in production"
+milestone: M8
+type: defect
+status: todo
+epic: swarm-reliability
+human_approval: pending
+severity: high
+priority: 15
+direction: swarm-surfaced
+depends_on: []
+assigned_to: none
+mutation_cost: low
+invariants:
+  - "When git answers a HEAD read successfully, the assessment never sees a blank head — a blank head means git actually failed."
+  - "A claim-risk sweep writes nothing to stdout except its own assessment output."
+
+approval_context: >
+  Flagging the severity, because the coder reported this as a stdout leak and
+  I am speccing it as `high`.
+
+  The leak is real and is the visible half. The half nobody had seen: the same
+  missing option means the function returns `nil` even when git SUCCEEDS, and
+  the production entry point relies on exactly that fallback. So
+  `head-unchanged?` is permanently false and three of the claim-risk
+  severities — `watch`, `warn-uncommitted`, `warn-fixture-droppings` — cannot
+  fire at all. The babysitter's HEAD-based stall detection has been dark, not
+  noisy.
+
+  Both halves are confirmed by running the real call rather than reading it;
+  the transcript is in `description`. Amend down if you read a silently
+  disabled stall detector as smaller than I have.
+
+  Note this is the third health-signal defect in this family today (BL-804,
+  BL-807, and this) — all the same shape, a signal that looks live and is not.
+
+source: |
+  Coder note to specifier, 2026-08-05T03:15:01Z:
+  "babysitter_assess_lib.bb:39 git rev-parse leaks raw stdout each sweep".
+
+  Found incidentally during unrelated work, pre-existing, not introduced by the
+  parcel the coder was holding.
+
+description: |
+  ## What was reported, and what is actually wrong
+
+  `worktree-head-commit-10` in `swarmforge/scripts/babysitter_assess_lib.bb`
+  (line 37) runs:
+
+  ```clojure
+  (process/shell {:dir worktree-dir :err :string} "git" "rev-parse" "--short=10" "HEAD")
+  ```
+
+  `:err :string` is set; `:out :string` is not. `process/shell` inherits stdout
+  by default, so two things follow from that one omission:
+
+  1. **The reported leak.** The raw hash is written straight to the daemon's
+     console on every sweep.
+  2. **The unreported defect.** `(:out result)` is not a string but a
+     `NullInputStream`, so `(str/trim out)` throws `ClassCastException` into
+     the bare `(catch Exception _ nil)`. **The function returns `nil` on every
+     call, including when git exits 0.**
+
+  Run directly rather than inferred:
+
+  ```
+  (process/shell {:dir "." :err :string} "git" "rev-parse" "--short=10" "HEAD")
+    => prints  6bcea2b9c6   to stdout
+       exit = 0
+       out  = #object[java.lang.ProcessBuilder$NullInputStream ...]
+    (str/trim out) => ClassCastException:
+       java.lang.ProcessBuilder$NullInputStream cannot be cast to CharSequence
+  ```
+
+  ## The fallback is the production path
+
+  `assess-one-claim` (line 89) reads:
+
+  ```clojure
+  head (or head-commit (worktree-head-commit-10 worktree-path))
+  ```
+
+  `scan-claim-risks` (line 157) — the production entry point — constructs its
+  argument map **without** `:head-commit`. So the broken fallback is what
+  actually runs, and `head` is always `nil`.
+
+  Everything downstream of `head` collapses from there:
+
+  - `head-unchanged?` is `(and (not (str/blank? head)) ...)`; `str/blank?` of
+    `nil` is true, so `head-unchanged?` is **always false**.
+  - `untracked-list` takes its `else` branch, so `list-untracked-files` is
+    **never called** and `untracked` is always 0.
+  - In the severity `cond`, every branch guarded by `head-unchanged?` is
+    unreachable: `:warn-fixture-droppings`, `:warn-uncommitted`, and `:watch`.
+
+  Three of the seven outcomes cannot occur. Only the reclaims-driven
+  severities (`:halt-imminent`, `:critical`, `:warn`) survive. The check that
+  notices "this role has held a claim for most of its timeout and its HEAD has
+  not moved" — the actual stall detector — has never fired.
+
+  ## There is a correct version of this function in the repo already
+
+  `swarmforge/scripts/handoffd.bb` (line 1330) does the identical job
+  correctly: `process/sh`, which captures stdout by default, returning `""`
+  rather than `nil` on failure. The fix is not a design question.
+
+  ## Specifier rulings
+
+  **R1 — copy the working implementation's posture, do not invent one.** Match
+  `handoffd.bb`'s version: capture stdout, return the trimmed hash on exit 0,
+  and degrade to a blank on any failure. Whether that is `process/sh` or
+  `process/shell` with `{:out :string :err :string}` is the coder's call; the
+  observable contract is scenarios 01 and 06.
+
+  **R2 — the acceptance is about the restored SEVERITIES, not the hash.** A
+  fix that makes the function return a string while leaving the stall
+  detection unexercised would satisfy the reported symptom and miss the point
+  of the ticket. Scenarios 03 and 04 exist to prove `watch`,
+  `warn-uncommitted` and `warn-fixture-droppings` are reachable again, and
+  that `list-untracked-files` is genuinely called. Scenario 05 keeps the true
+  negative: a claim whose HEAD moved is still not a stall.
+
+  **R3 — keep the degrade-on-failure catch, but stop it hiding type errors.**
+  The sweep must not crash when a worktree is missing, so the broad catch
+  stays (scenario 06). What must change is that a bug of this kind is caught
+  by a test rather than by someone noticing console noise: the unit test for
+  this function must run against a real git worktree and assert a NON-blank
+  result on success. A test that only asserts "does not throw" would have
+  passed throughout this defect's entire life.
+
+  **R4 — do not merge the two copies in this ticket.** `handoffd.bb`'s version
+  is private to its namespace and takes a different argument shape (`roles` +
+  `role` rather than a directory). Unifying them is a refactor across two
+  daemons riding on a defect fix. If it is worth doing it is its own cleanup
+  ticket; here, the correct one is the reference to copy from, not to share.
+
+acceptance: specs/features/BL-809-worktree-head-read-leaks-stdout-and-always-returns-nil.feature
+
+out_of_scope: |
+  - Unifying this function with `handoffd.bb`'s equivalent. See R4.
+  - Changing the claim-risk severity thresholds, the idle timeout, or the
+    fixture-droppings list. This ticket restores reachability of the existing
+    outcomes; it does not re-tune them.
+  - Auditing what the dark stall detector would have caught historically. Not
+    recoverable and not actionable.
+  - Other `process/shell` call sites. If the same missing-`:out` pattern
+    exists elsewhere it is worth a separate sweep ticket rather than an
+    open-ended widening of this one.
+
+notes: |
+  Third health-signal defect surfaced in this family on 2026-08-05, alongside
+  BL-807 (stuck-in-process WARN ignoring liveness) and BL-804 (babysitter
+  router false CRITs, closed). All three share a shape worth naming: a signal
+  that reads as live and is not — two crying wolf, this one silent. Worth a
+  look at whether the babysitter's checks need a general "this check has never
+  fired" audit, but that is an observation for the coordinator, not scope here.
+
+  Priority 15 puts it ahead of BL-807 (20) and BL-808 (30) in the same epic:
+  it is the cheapest of the three to fix and the only one where a live
+  detector is fully dark rather than merely noisy.
+
+  Per `engineering.prompt`, Babashka has no wired mutation/CRAP/DRY tooling
+  (BL-472 tracks that gap), so the gate here is the unit suite under
+  `swarmforge/scripts/test/`. R3 is specifically a constraint on how that test
+  is written: real git worktree, assert non-blank on success.
+
+  ## E2E QA procedure (specifier, 2026-08-05)
+
+  1. **The leak is gone (scenario 02).** Run a real claim-risk sweep with the
+     daemon's stdout captured to a file. Confirm no bare 10-character hash
+     line appears. Today this reproduces on every sweep.
+
+  2. **The read works (scenario 01).** Against a real role worktree, confirm
+     the function returns that worktree's actual `git rev-parse --short=10
+     HEAD` value — compare the two directly. A nil or blank return on a
+     healthy worktree is the defect.
+
+  3. **The stall detector fires again (scenarios 03, 04).** Construct a
+     claim-progress sidecar whose `claimCommit` equals the worktree's current
+     HEAD, aged past three quarters of its idle timeout. Confirm the
+     assessment reports `watch` with a clean tree; with an ordinary untracked
+     file present, confirm `warn-uncommitted` AND a non-zero untracked count;
+     with only fixture droppings (`calls.log`, `email-text.txt`,
+     `failure.log`, `status.json`), confirm `warn-fixture-droppings`. None of
+     these three can be produced today — that is the check that matters.
+     Clean up every file and sidecar the procedure created.
+
+  4. **The true negative survives (scenario 05).** With `claimCommit` set to
+     any commit other than current HEAD, confirm no stall severity is
+     reported. A fix that makes everything look stalled is as wrong as one
+     that makes nothing look stalled.
+
+  5. **Degradation still holds (scenario 06).** Point a role's worktree path
+     at a directory that is not a git repository. Confirm the sweep completes,
+     assesses the other claims, and does not raise.
