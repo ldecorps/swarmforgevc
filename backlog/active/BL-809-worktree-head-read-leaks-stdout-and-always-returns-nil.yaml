@@ -4,12 +4,12 @@ milestone: M8
 type: defect
 status: todo
 epic: swarm-reliability
-human_approval: pending
+human_approval: approved
 severity: high
 priority: 15
 direction: swarm-surfaced
 depends_on: []
-assigned_to: none
+assigned_to: coder
 mutation_cost: low
 invariants:
   - "When git answers a HEAD read successfully, the assessment never sees a blank head — a blank head means git actually failed."
