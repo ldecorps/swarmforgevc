@@ -30,12 +30,14 @@ export interface CursorBridgeQueuedPrompt {
   text: string;
   photoFileIds?: string[];
   replyToMessageId?: number;
+  originTopicId?: number;
   createdAtMs: number;
 }
 
 export interface CursorBridgeQueuedPromptPoll {
   pollId: string;
   itemIds: string[];
+  clearAllOptionIndex?: number;
 }
 
 export interface CursorBridgeChoicePoll {
@@ -618,6 +620,9 @@ function parseQueuedPrompt(value: unknown): CursorBridgeQueuedPrompt | undefined
   if (typeof value.replyToMessageId === 'number') {
     queued.replyToMessageId = value.replyToMessageId;
   }
+  if (typeof value.originTopicId === 'number') {
+    queued.originTopicId = value.originTopicId;
+  }
   return queued;
 }
 
@@ -630,7 +635,11 @@ function parseQueuedPromptPoll(value: unknown): CursorBridgeQueuedPromptPoll | u
   if (!pollId || !itemIds || itemIds.length === 0) {
     return undefined;
   }
-  return { pollId, itemIds };
+  const poll: CursorBridgeQueuedPromptPoll = { pollId, itemIds };
+  if (typeof value.clearAllOptionIndex === 'number' && value.clearAllOptionIndex >= 0) {
+    poll.clearAllOptionIndex = value.clearAllOptionIndex;
+  }
+  return poll;
 }
 
 function parseChoicePoll(value: unknown): CursorBridgeChoicePoll | undefined {
@@ -723,8 +732,10 @@ export function formatHelpMessage(): string {
     '/reexpedite [BL-xxx] — checkpoint main WIP and restart a divergent expedite',
     '/redeploy — soft confirm, then compile and restart this bridge (reloads swarm.env)',
     '/redeploy miniapp — soft confirm, then bounce the headless mini app bridge',
+    '/pause — soft confirm; freeze new promotion until /resume (in-flight continues; useful on flaky data)',
+    '/resume — soft confirm; allow promotion again',
     '/syncenv /compile /pull — soft confirm (one Confirm tap)',
-    '/restart /bounce [swarm|extension|bridge|all] /ensure — hard confirm',
+    '/stop /start /restart /bounce [swarm|extension|bridge|all] /ensure — hard confirm',
     '/doctor /tunnel — read-only checks',
     '/confirm-off — clear a pending Confirm',
     '/log [expedite|redeploy|bridge] — tail the active or named operator log',

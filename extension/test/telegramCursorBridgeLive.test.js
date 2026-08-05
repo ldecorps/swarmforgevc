@@ -25,6 +25,7 @@ const {
   writeJsonFile,
   writePollHeartbeat,
   BRIDGE_READY_MESSAGE,
+  QUEUED_PROMPT_TTL_MS,
 } = require('../out/tools/telegramCursorBridgeLive');
 
 function mkRoot() {
@@ -1710,6 +1711,133 @@ test('runCursorBridgePollOnce runs selected queued prompt from poll_answer', asy
   assert.equal(persisted.pendingPromptPoll, undefined);
   assert.ok(posts.some((text) => text.includes('Agent started')));
   assert.ok(posts.some((text) => text.includes('queued follow-up')));
+});
+
+test('runCursorBridgePollOnce clear-all poll option empties queue without starting a run', async () => {
+  const root = mkRoot();
+  const deps = mkPollDeps(root);
+  const posts = [];
+  let prompted = false;
+  deps.agentSession.promptAgent = async () => {
+    prompted = true;
+    return { replyText: 'should not run', agentId: deps.agentSession.readAgentId() };
+  };
+  const initialState = {
+    updateOffset: 80,
+    cursorTopicId: 55,
+    pendingPrompts: [
+      { id: 'qp-1', text: 'queued first', createdAtMs: Date.now() },
+      { id: 'qp-2', text: 'queued second', createdAtMs: Date.now() },
+    ],
+    pendingPromptPoll: { pollId: 'poll-queue-1', itemIds: ['qp-1', 'qp-2'], clearAllOptionIndex: 2 },
+  };
+  const next = await runCursorBridgePollOnce(
+    {
+      ...deps,
+      post: async (_t, _c, _topic, text) => {
+        posts.push(text);
+      },
+      getUpdates: async () => ({
+        success: true,
+        updates: [
+          {
+            update_id: 81,
+            poll_answer: {
+              poll_id: 'poll-queue-1',
+              option_ids: [2],
+              user: { id: 42 },
+            },
+          },
+        ],
+      }),
+    },
+    initialState,
+    false,
+    0
+  );
+  assert.equal(next.busy, false);
+  const persisted = loadJsonFile(deps.statePath);
+  assert.equal((persisted.pendingPrompts ?? []).length, 0);
+  assert.equal(persisted.pendingPromptPoll, undefined);
+  assert.equal(prompted, false);
+  assert.ok(posts.some((text) => text.includes('Cleared 2 queued questions')));
+});
+
+test('runCursorBridgePollOnce reposts selection poll when outstanding poll is missing newer queued items', async () => {
+  const root = mkRoot();
+  const deps = mkPollDeps(root);
+  const telegramClient = require('../out/notify/telegramClient');
+  const originalSendPoll = telegramClient.sendTelegramPoll;
+  const sentPolls = [];
+  telegramClient.sendTelegramPoll = async (_token, _chatId, question, options) => {
+    sentPolls.push({ question, options });
+    return { success: true, pollId: 'poll-queue-refreshed' };
+  };
+  try {
+    const initialState = {
+      updateOffset: 90,
+      cursorTopicId: 55,
+      pendingPrompts: [
+        { id: 'qp-1', text: 'first queued', createdAtMs: Date.now() },
+        { id: 'qp-2', text: 'second queued', createdAtMs: Date.now() },
+      ],
+      // Stale outstanding poll from before the second question arrived — the
+      // prior anyAlive guard starved a refresh here.
+      pendingPromptPoll: { pollId: 'poll-queue-stale', itemIds: ['qp-1'], clearAllOptionIndex: 1 },
+    };
+    writeJsonFile(deps.statePath, initialState);
+    await runCursorBridgePollOnce(
+      {
+        ...deps,
+        post: async () => {},
+        getUpdates: async () => ({ success: true, updates: [] }),
+      },
+      initialState,
+      false,
+      0
+    );
+  } finally {
+    telegramClient.sendTelegramPoll = originalSendPoll;
+  }
+  assert.equal(sentPolls.length, 1);
+  assert.match(sentPolls[0].question, /2 queued/);
+  assert.equal(sentPolls[0].options.length, 3); // two questions + clear-all
+  assert.equal(sentPolls[0].options[2], 'Clear all queued questions');
+  const persisted = loadJsonFile(deps.statePath);
+  assert.equal(persisted.pendingPromptPoll.pollId, 'poll-queue-refreshed');
+  assert.deepEqual(persisted.pendingPromptPoll.itemIds, ['qp-1', 'qp-2']);
+  assert.equal(persisted.pendingPromptPoll.clearAllOptionIndex, 2);
+});
+
+test('runCursorBridgePollOnce sweeps queued prompts older than 72h and posts a receipt', async () => {
+  const root = mkRoot();
+  const deps = mkPollDeps(root);
+  const posts = [];
+  const now = Date.now();
+  const initialState = {
+    updateOffset: 80,
+    cursorTopicId: 55,
+    pendingPrompts: [
+      { id: 'qp-old', text: 'stale prompt', createdAtMs: now - QUEUED_PROMPT_TTL_MS - 1 },
+      { id: 'qp-fresh', text: 'fresh prompt', createdAtMs: now - 1_000 },
+    ],
+  };
+  await runCursorBridgePollOnce(
+    {
+      ...deps,
+      post: async (_t, _c, _topic, text) => {
+        posts.push(text);
+      },
+      getUpdates: async () => ({ success: true, updates: [] }),
+    },
+    initialState,
+    false,
+    0
+  );
+  const persisted = loadJsonFile(deps.statePath);
+  assert.deepEqual((persisted.pendingPrompts ?? []).map((p) => p.id), ['qp-fresh']);
+  assert.ok(posts.some((text) => text.includes('Dropped 1 queued question older than 72h')));
+  assert.ok(posts.some((text) => text.includes('stale prompt')));
 });
 
 test('runCursorBridgePollOnce routes a choice-poll answer reply to the Bubble topic, never Cursor Remote', async () => {
