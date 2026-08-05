@@ -910,6 +910,51 @@ resolve the wrong pane, so rotation can print success while the resident
 stays on the old role. The same OpenRouter `-e` injection as chase/ensure
 applies on rotate and idle-clear respawn.
 
+### Mono-router resident-invoked rotation gate on unfinished in_process (BL-805)
+
+The resident forwards its work (`swarm_handoff.sh`), then rotates. Nothing
+completes the parcel it *received* until it runs `done_with_current.sh` —
+skip that step and the handoff file sits in the departing role's
+`inbox/in_process/`. Left there it caused two faults: the babysitterd
+stuck-in-process check (row 5 above) fired a false WARN after 30 minutes for
+a parcel that was actually finished, and on the next rotation back into that
+role, `ready_for_next.sh` checked `in_process/` first and resumed the
+already-forwarded parcel — a wasted turn and a duplicate-forward risk.
+
+Pack prompts have said "run `done_with_current.sh` before you rotate" since
+commit `897df660`, but a prompt checklist step is a rule the model can skip.
+BL-805 adds a structural backstop at the only resident-invoked rotation
+entry point: `rotate_to_role.sh` → `rotate_to_role.bb` →
+`handoff-lib/respawn-as!`. Before respawning the pane, `respawn-as!` checks
+the departing role's own `inbox/in_process/` (the role read from
+`.swarmforge/mono-router-active-role`) for a real `*.handoff` file:
+
+- **A real parcel is still there** → refusal: nonzero exit, the pane is
+  never respawned, and the message names `done_with_current.sh` as the fix.
+- **Only sidecars are there** (`.claim-progress.json`, `.nudge`, or any
+  filename that merely contains the substring `.handoff` without being a
+  true `*.handoff` parcel file) → rotation proceeds normally; sidecars never
+  block.
+- **The departing role can't be determined** (marker file missing, blank, or
+  naming a role absent from `roles.tsv`) → fails **open** (rotates) rather
+  than guessing an identity and gating on the wrong mailbox.
+
+**Force override:** set `SWARMFORGE_ROTATE_FORCE=1` to rotate anyway over a
+real stuck parcel — for emergencies and tests. The gate still warns loudly on
+stdout, naming the parcel left behind, so the override is never silent.
+
+**Daemon rotation is deliberately never gated.** `handoffd.bb`'s own chase
+sweep calls `handoff-lib/rotate-resident-to!` *directly*, bypassing
+`respawn-as!` and this gate entirely — gating the daemon path would risk
+deadlocking chase-driven drain on the very parcel it is trying to clear. The
+decision logic itself is a pure function
+(`mono_router_lib.bb/rotate-gate-decision`) fed an already-`*.handoff`-
+filtered blocking-file argument, so this split is enforced by which caller
+feeds it, not by a runtime flag.
+
+Acceptance: `specs/features/BL-805-rotate-gate-on-unfinished-in-process-parcel.feature`.
+E2e: `swarmforge/scripts/test/test_rotate_to_role_stuck_parcel_gate.sh`.
+
 ### Mono-router aged-note actionability (BL-576)
 
 Under `config rotation router`, the handoff daemon's chase sweep decides which

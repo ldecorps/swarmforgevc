@@ -25,7 +25,7 @@ captures, an available-memory reading) against these checks, in
 | 2 | remote-control-flag | a live process is missing `--remote-control` |
 | 3 | handoffd-supervisor-fresh | handoffd/its supervisor is down, or `handoffd.log` is older than 5 minutes |
 | 4 | dead-letter-nonempty | `.swarmforge/handoffs/failed/` is non-empty |
-| 5 | stuck-in-process | an `inbox/in_process/` parcel is older than 30 minutes, in master **or** any worktree mailbox |
+| 5 | stuck-in-process | an `inbox/in_process/` parcel is older than 30 minutes, in master **or** any worktree mailbox — under mono-router, most of what used to trip this was the resident forwarding then rotating without completing the received parcel; BL-805 (see `swarmforge/handoff-protocol.md`) closes that at the source by refusing resident-invoked rotation over an undrained `in_process`, so this check now mostly catches genuine stalls |
 | 6 | menu-blocked-pane | a pane capture shows an interactive menu/dialog (report only — never picks an option) |
 | 7 | busy-but-frozen | busy footer present but the spinner-stripped content hash is unchanged across 3 consecutive sweeps |
 | 8 | memory-floor | available memory is below the configured floor; reports `UNAVAILABLE` (never a fabricated OK or CRIT) when no memory facility on the host is readable |
