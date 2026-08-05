@@ -174,6 +174,26 @@ The daemon never grows a second topology parser: this is a call site for the
 same `mono_router_lib` resolution `handoffd` already uses, not a
 reimplementation.
 
+## Claim-risk stall detection restored (BL-809)
+
+`babysitter_assess_lib.bb`'s `worktree-head-commit-10` (the HEAD read check 11
+scans with) used `process/shell` without `:out :string`, which inherits
+stdout instead of capturing it — leaking the raw 10-char hash to the console
+on every sweep — and left `:out` a `NullInputStream`, so trimming it threw
+into the broad `catch` and the function returned `nil` even when `git`
+succeeded. `scan-claim-risks`, the production entry point, always hits that
+fallback, so `head` was permanently `nil`: `head-unchanged?` was always
+false, and three of the seven claim-risk severities — `:watch`,
+`:warn-uncommitted`, `:warn-fixture-droppings` — could never fire.
+`list-untracked-files` had the identical bug on the same call path.
+
+Both now use `process/sh` (captures stdout by default, matching
+`handoffd.bb`'s already-correct equivalent) and degrade to `""` / `[]` on
+failure instead of `nil`. The stdout leak is gone, and the stall detector — a
+role holding a claim past its idle timeout with HEAD unmoved — can fire
+again. Row 11 above is otherwise unchanged: same trigger, same nudge path,
+now actually reachable.
+
 ## Verify
 
 ```bash
@@ -192,3 +212,7 @@ The BL-802 macOS-portability behavior above has its own acceptance feature:
 The BL-804 mono-router topology-awareness behavior above has its own
 acceptance feature:
 [`specs/features/BL-804-babysitter-mono-router-topology-awareness.feature`](../../specs/features/BL-804-babysitter-mono-router-topology-awareness.feature).
+
+The BL-809 claim-risk stall-detection fix above has its own acceptance
+feature:
+[`specs/features/BL-809-worktree-head-read-leaks-stdout-and-always-returns-nil.feature`](../../specs/features/BL-809-worktree-head-read-leaks-stdout-and-always-returns-nil.feature).
