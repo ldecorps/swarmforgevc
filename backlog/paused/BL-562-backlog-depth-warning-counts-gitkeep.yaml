@@ -6,7 +6,7 @@ status: todo
 epic: swarm-reliability
 assigned_to: specifier
 severity: high
-priority: 20
+priority: 99
 mutation_cost: low
 direction: swarm-surfaced
 depends_on: []

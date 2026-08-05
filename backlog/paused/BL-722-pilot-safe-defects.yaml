@@ -5,7 +5,7 @@ type: feature
 status: todo
 epic: swarmforge-console
 human_approval: approved
-priority: 0
+priority: 1
 direction: queue-jump
 depends_on: []
 mutation_cost: low

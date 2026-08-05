@@ -4,7 +4,7 @@ milestone: M8
 status: todo
 type: epic
 epic: bubble-voice-barge-in
-priority: 13
+priority: 83
 depends_on: [BL-769]
 mutation_cost: high
 decomposes_into: [BL-777]

@@ -5,7 +5,7 @@ type: feature
 status: todo
 epic: swarm-reliability
 assigned_to: specifier
-priority: 8
+priority: 49
 mutation_cost: medium
 direction: human-requested
 depends_on: []

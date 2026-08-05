@@ -5,7 +5,7 @@ type: defect
 status: todo
 epic: code-quality-gates
 severity: medium
-priority: 25
+priority: 116
 direction: aligned
 depends_on: []
 assigned_to: unassigned
