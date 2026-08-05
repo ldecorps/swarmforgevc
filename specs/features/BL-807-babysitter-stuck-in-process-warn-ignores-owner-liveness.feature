@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=ff8c57c641b05c4ac9ecf7a530eaaf70ef1f31c61e88627169893542fc453b6e
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-05T21:52:42.987540Z","feature_name":"the stuck-in-process check reads owner liveness, and can see every mailbox","feature_path":"/Users/ldecorps/projects/swarmforgevc/.worktrees/hardender/specs/features/BL-807-babysitter-stuck-in-process-warn-ignores-owner-liveness.feature","background_hash":"6912d96bd15ecf95fe7e4ee21b49c9ab6c545662efee6c07cc5e808209091afd","implementation_hash":"unknown","scenarios":[{"index":3,"name":"a parcel below the stuck threshold never warns, whatever the owner is doing","scenario_hash":"c40c04cb10450b8a464f5af5648b7b86c6fe80fae99c63f33f28ba0c1b48dade","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-08-05T21:52:42.987540Z"},{"index":4,"name":"the check sees every mailbox shape, and reads owner liveness for each","scenario_hash":"cd201e999b178ab6737cedd0311cbab40117ec984fbc889777289451c8922117","mutation_count":20,"result":{"Total":20,"Killed":20,"Survived":0,"Errors":0},"tested_at":"2026-08-05T21:52:42.987540Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: the stuck-in-process check reads owner liveness, and can see every mailbox
 
   # BL-807: babysitter check 5 (stuck-in-process) is a pure file-age test —
