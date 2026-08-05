@@ -107,6 +107,23 @@
                     (= "WARN" (:severity (first fs)))
                     (str/starts-with? (:key (first fs)) "stuck-"))))
 
+;; BL-807: the sweep already classifies the owning role's pane busy/idle
+;; (check 10 threads the same signal in as owner-busy?) — check 5 must
+;; consult it too, so a long-but-honestly-worked parcel never nudges a live
+;; agent mid-parcel.
+(assert= "a stuck parcel with a busy owner raises no stuck warning at all (BL-807 scenario 01)"
+         []
+         (sw/check-stuck-in-process [{:name "000123_from_coder" :age-min 45 :owner-busy? true}]))
+(assert-true "a stuck parcel with an idle owner still raises the warning, unchanged (BL-807 scenario 02)"
+             (let [fs (sw/check-stuck-in-process [{:name "000123_from_coder" :age-min 45 :owner-busy? false}])]
+               (and (= 1 (count fs))
+                    (= "WARN" (:severity (first fs)))
+                    (= "stuck-000123_from_coder" (:key (first fs))))))
+(assert-true "a mix of busy and idle owners suppresses only the busy one's warning"
+             (let [fs (sw/check-stuck-in-process [{:name "busy-owner" :age-min 60 :owner-busy? true}
+                                                   {:name "idle-owner" :age-min 60 :owner-busy? false}])]
+               (= ["stuck-idle-owner"] (mapv :key fs))))
+
 ;; ── check 6: menu-blocked-pane ───────────────────────────────────────────────
 (assert-nil "no menu block produces no finding"
             (sw/check-menu-blocked {:role "coder" :menu-blocked? false}))
