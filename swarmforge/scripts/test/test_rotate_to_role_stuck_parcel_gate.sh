@@ -137,4 +137,42 @@ echo "$OUT" | grep -qi "WARNING" || fail "05: force override must warn loudly, g
 echo "$OUT" | grep -q "stuck5" || fail "05: warning must name the stuck parcel left behind, got: $OUT"
 pass "05: an explicit force override rotates anyway with a loud warning naming the stuck parcel"
 
+# ── 06/07/08: fail-open when the departing role cannot be determined ───────
+# The ticket's CONSTRAINTS require rotation to proceed (never strand the
+# resident) whenever departing-role-blocking-handoff cannot resolve a real
+# departing role - missing marker, blank marker, or a marker naming a role
+# absent from roles.tsv. Each case below leaves a REAL stuck parcel sitting
+# in coder's in_process (the same fixture 01 refuses on) so a pass here only
+# happens via the fail-open guard clauses, never because nothing was there
+# to block on.
+rm -f "$CODER_WT/.swarmforge/handoffs/inbox/in_process"/*.handoff
+echo "coder" > "$ROOT/.swarmforge/mono-router-active-role"
+
+queue_stuck_parcel stuck6
+rm -f "$ROOT/.swarmforge/mono-router-active-role"
+: > "$TMUX_LOG"
+OUT="$(run_rotate cleaner 2>&1)"
+grep -q "respawn-pane" "$TMUX_LOG" || fail "06: missing active-role marker wrongly blocked rotation, log: $(cat "$TMUX_LOG")"
+pass "06: fail-open when the active-role marker file is missing"
+rm -f "$CODER_WT/.swarmforge/handoffs/inbox/in_process"/*.handoff
+echo "coder" > "$ROOT/.swarmforge/mono-router-active-role"
+
+queue_stuck_parcel stuck7
+printf '   \n' > "$ROOT/.swarmforge/mono-router-active-role"
+: > "$TMUX_LOG"
+OUT="$(run_rotate cleaner 2>&1)"
+grep -q "respawn-pane" "$TMUX_LOG" || fail "07: blank active-role marker wrongly blocked rotation, log: $(cat "$TMUX_LOG")"
+pass "07: fail-open when the active-role marker is blank"
+rm -f "$CODER_WT/.swarmforge/handoffs/inbox/in_process"/*.handoff
+echo "coder" > "$ROOT/.swarmforge/mono-router-active-role"
+
+queue_stuck_parcel stuck8
+echo "nonexistent-role" > "$ROOT/.swarmforge/mono-router-active-role"
+: > "$TMUX_LOG"
+OUT="$(run_rotate cleaner 2>&1)"
+grep -q "respawn-pane" "$TMUX_LOG" || fail "08: unknown-role active-role marker wrongly blocked rotation, log: $(cat "$TMUX_LOG")"
+pass "08: fail-open when the active-role marker names a role absent from roles.tsv"
+rm -f "$CODER_WT/.swarmforge/handoffs/inbox/in_process"/*.handoff
+echo "coder" > "$ROOT/.swarmforge/mono-router-active-role"
+
 echo "test_rotate_to_role_stuck_parcel_gate: ALL CHECKS PASSED"
