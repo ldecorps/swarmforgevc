@@ -5,7 +5,8 @@
 ;; dir, no live swarm). Modeled on backlog_depth_test_runner.bb's own split.
 (ns ambulance-lib-test-runner
   (:require [babashka.fs :as fs]
-            [cheshire.core :as json]))
+            [cheshire.core :as json]
+            [clojure.string :as str]))
 
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) ".." "ambulance_lib.bb")))
 
@@ -114,6 +115,38 @@
   (assert= "ticket-has-file?: no backlog/ dir at all degrades to false, not a crash"
            false
            (ambulance-lib/ticket-has-file? root "BL-654")))
+
+;; BL-813: fs/glob lists a path, then the file is moved/deleted before this
+;; code slurps it - the exact race that crashed handoffd on BL-812 (promoted
+;; active/ -> done/ mid-poll). with-redefs calls the REAL glob first (real
+;; matches), deletes the matched file, THEN returns the now-stale match list -
+;; reproducing "glob saw it, slurp won't" deterministically, no real race.
+(let [root (mk-tmp)
+      real-glob fs/glob]
+  (write-ticket! root "active" "BL-812")
+  (with-redefs [fs/glob (fn [dir pattern]
+                          (let [matches (real-glob dir pattern)]
+                            (doseq [p matches] (fs/delete-if-exists p))
+                            matches))]
+    (assert= "BL-813: ticket-has-file? does not throw when a globbed yaml vanishes mid-read; degrades to false"
+             false
+             (ambulance-lib/ticket-has-file? root "BL-812"))))
+
+;; BL-813: same race, but a DIFFERENT non-vanishing file for the same ticket
+;; still gets found - the fix skips only the vanished glob entry, not the
+;; whole search.
+(let [root (mk-tmp)
+      real-glob fs/glob]
+  (write-ticket! root "active" "BL-812")
+  (write-ticket! root "hold" "BL-812")
+  (with-redefs [fs/glob (fn [dir pattern]
+                          (let [matches (real-glob dir pattern)]
+                            (doseq [p matches :when (str/includes? (str p) "/active/")]
+                              (fs/delete-if-exists p))
+                            matches))]
+    (assert= "BL-813: a vanished glob entry is skipped, but a surviving copy of the same ticket elsewhere is still found"
+             true
+             (ambulance-lib/ticket-has-file? root "BL-812"))))
 
 ;; ── read-ambulance-state / describe-status (fixture-based fs I/O) ─────────
 ;; ambulance-hold-08: every one of these degrades to mode OFF.
