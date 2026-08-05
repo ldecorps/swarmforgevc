@@ -129,10 +129,18 @@ function initFixture(ctx) {
   fs.chmodSync(routeStub, 0o755);
 
   ctx.ticketId = TICKET_ID;
+  const fixturePath = path.join(ctx.root, 'backlog', 'paused', `${TICKET_ID}-fixture.yaml`);
   fs.writeFileSync(
-    path.join(ctx.root, 'backlog', 'paused', `${TICKET_ID}-fixture.yaml`),
+    fixturePath,
     `id: ${TICKET_ID}\ntitle: "fixture ${TICKET_ID}"\nstatus: paused\npriority: 50\nassigned_to:\n`,
   );
+  // Real backlog ticket files are 0644 (git checkout default). `mktemp`
+  // defaults to 0600 -- pin the fixture to 0644 so a regression from
+  // `cat "$SED_TMP" > "$DEST"` (preserves $DEST's mode) back to
+  // `mv "$SED_TMP" "$DEST"` (adopts the temp file's 0600) is observable
+  // rather than accidentally matching whatever mode fs.writeFileSync chose.
+  fs.chmodSync(fixturePath, 0o644);
+  ctx.originalMode = fs.statSync(fixturePath).mode & 0o777;
 
   git(ctx.root, ['add', 'backlog', 'swarmforge']);
   git(ctx.root, ['commit', '-q', '-m', 'seed fixture paused ticket']);
@@ -186,6 +194,14 @@ function registerSteps(registry) {
       const content = fs.readFileSync(dest, 'utf8');
       if (!/^assigned_to:\s*coder\s*$/m.test(content)) {
         throw new Error(`expected assigned_to: coder, got content:\n${content}`);
+      }
+      const mode = fs.statSync(dest).mode & 0o777;
+      if (mode !== ctx.originalMode) {
+        throw new Error(
+          `expected ${ctx.ticketId}'s mode bits to survive the assigned_to rewrite ` +
+            `(${ctx.originalMode.toString(8)} -> ${mode.toString(8)}); the sed fix must edit ` +
+            'in place (cat > $DEST), not mv a fresh mktemp file (0600) over it',
+        );
       }
     },
     FEATURE_NAME,
