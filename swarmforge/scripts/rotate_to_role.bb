@@ -9,6 +9,15 @@
 ;; Usage: rotate_to_role.bb <role>
 ;;   <role> is the `to:` of the handoff you just sent (forward or bounce), or
 ;;   the pipeline's intake role to return home after a parcel finishes.
+;;
+;; BL-805: this IS the resident-invoked rotation entry the gate below refers
+;; to. -main's call into handoff-lib/respawn-as! (handoff_lib.bb) is
+;; unconditional, and respawn-as! itself refuses to respawn the pane while
+;; the departing role's own inbox/in_process still holds a real, undrained
+;; *.handoff parcel - run done_with_current.sh first, or set
+;; SWARMFORGE_ROTATE_FORCE=1 to override. handoffd's own daemon-driven
+;; rotation calls handoff-lib/rotate-resident-to! directly and never passes
+;; through this entry, so it is never subject to this gate.
 
 (ns rotate-to-role
   (:require [babashka.fs :as fs]
