@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=05eb7f8138b9e1c531a0c4b0eefae92943e82e4f524681cc8152510863310027
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-05T19:17:59.806260Z","feature_name":"the claim-risk sweep can actually read a worktree's HEAD","feature_path":"/Users/ldecorps/projects/swarmforgevc/.worktrees/hardender/specs/features/BL-809-worktree-head-read-leaks-stdout-and-always-returns-nil.feature","background_hash":"ba666dd9b3ce948cb805cb328e7be96a77af685df61cbb8a1c61e571f43b93c8","implementation_hash":"unknown","scenarios":[{"index":2,"name":"a claim whose HEAD has not moved reaches its stall severity","scenario_hash":"dca349ffcffd4b2a3c4fb0655f960dd94bb123c834d89147d0bca18311e3506f","mutation_count":6,"result":{"Total":6,"Killed":6,"Survived":0,"Errors":0},"tested_at":"2026-08-05T19:17:59.806260Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: the claim-risk sweep can actually read a worktree's HEAD
 
   # BL-809: worktree-head-commit-10 in babysitter_assess_lib.bb passes

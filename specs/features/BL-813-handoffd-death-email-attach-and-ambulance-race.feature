@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-05T17:35:57.129015Z","feature_name":"BL-813 handoffd death alarm attaches its failure log","feature_path":"/Users/ldecorps/projects/swarmforgevc/.worktrees/hardender/specs/features/BL-813-handoffd-death-email-attach-and-ambulance-race.feature","background_hash":"b4b24d1381c3825f83f474fd626a4ed04ec63ef52d3a2d556db6e9006ab5feba","implementation_hash":"unknown","scenarios":[],"outcome":"inapplicable"}
+# acceptance-mutation-manifest-end
+
 Feature: BL-813 handoffd death alarm attaches its failure log
   A handoffd daemon death must remain an alarm-and-halt event, not an
   auto-restart. The death alarm also has to carry enough evidence for an
