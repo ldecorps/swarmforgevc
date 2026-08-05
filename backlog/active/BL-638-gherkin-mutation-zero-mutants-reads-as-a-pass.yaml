@@ -9,10 +9,13 @@ severity: high
 priority: 21
 direction: human-requested
 depends_on: []
-assigned_to: specifier
+assigned_to: coder
 mutation_cost: medium
 invariants:
   - "A mutation run that generated zero mutants never reports a pass and never stamps the feature as covered — for any feature shape."
+required_wiring:
+  - "specs/pipeline/scripts/run_gherkin_mutation.sh::inapplicable::R5 names this wrapper as the live path where the outcome is decided; a fix landing anywhere else is not the path the hardener invokes."
+  - "swarmforge/roles/hardender.prompt::inapplicable::scenario 05 / R2 — the wrapper's new inapplicable outcome is inert unless the hardener prompt names the fallback for it. Neither file contains the string today (grepped 2026-08-05), so this gate is non-vacuous."
 
 approval_context: >
   RE-APPROVAL REQUESTED — specifier, 2026-08-02. Previously approved; flipped
@@ -212,6 +215,36 @@ description: |
   `Total 0` (nothing discovered, and everything skipped) are distinguishable
   from a real clean sweep.
 
+  **R6 — scenario 05: the line to replace is already there, and it is the
+  defect in prose form.** `swarmforge/roles/hardender.prompt` (BL-113 bullet)
+  currently reads: *"a plain `Scenario:` has no example values to mutate — skip
+  it, nothing to run"*. So the prompt does have a branch for this case; the
+  branch is **"skip it"**, with no fallback and no obligation to record that
+  the gate said nothing. That sentence is what scenario 05 requires replacing —
+  not a gap to fill from scratch. Whatever the wrapper names the outcome, that
+  bullet must tell a hardener what to DO when it sees it, in words that are
+  actionable without re-deriving this ticket. Neither that file nor the wrapper
+  contains the string `inapplicable` today (grepped 2026-08-05), which is what
+  makes the `required_wiring` gate on both files non-vacuous.
+
+  On the word itself: Shape item 1 above says "call it `inapplicable` or
+  similar", but the human-approved scenarios 01/02/04/06 all say *"reported as
+  inapplicable"* in as many words, so the latitude that phrase once offered is
+  spent — the approved acceptance contract fixes the term. `required_wiring`
+  keys on that literal for exactly that reason; it is not an extra constraint
+  invented at handoff time. Renaming the outcome now is a spec amendment, not a
+  coder's choice: send it back as a `spec-gap` note rather than picking a
+  synonym and leaving the scenarios reading false.
+
+  **Default level is `soft`, and scenario 02 depends on it.** The wrapper's
+  4th argument defaults to `soft` and the hardener prompt invokes it with
+  `soft`; the ticket's `source:` block used `full` only to force a clean
+  reproduction. The feature file says "at the default level" throughout, so
+  read that as `soft` — that is precisely what makes scenario 02 (already
+  stamped, text unchanged, must STILL report inapplicable) exercise the skip
+  path rather than the discovery path. Do not quietly satisfy the scenarios at
+  `full` only.
+
 acceptance: specs/features/BL-638-gherkin-mutation-zero-mutants-reads-as-a-pass.feature
 
 out_of_scope: |
@@ -241,6 +274,53 @@ notes: |
   Precedent for the failure mode, same repo: `bl446-stryker-zero-kill-repo-wide` —
   Stryker reporting zero kills repo-wide, which also recurs via a stale incremental
   cache. Two gates, same shape: silence read as health.
+
+  ## E2E QA procedure (specifier, 2026-08-05)
+
+  Run in the QA worktree against the REAL vendored mutator — no fakes, no
+  stubbed report. Use `./tmp/` in the worktree for every work dir, and leave no
+  stamped or mutated feature copies behind.
+
+  1. **Inapplicable path (scenarios 01, 04, 06).** Run the wrapper at the
+     DEFAULT level (omit the 4th argument — see the "default level is soft"
+     note in `description`) against this ticket's own feature file, which is
+     deliberately outline-free and so is a live instance of the defect:
+
+     ```
+     specs/pipeline/scripts/run_gherkin_mutation.sh \
+       specs/features/BL-638-gherkin-mutation-zero-mutants-reads-as-a-pass.feature \
+       ./tmp/bl638-qa-1
+     ```
+
+     Confirm all three: the summary line names the outcome inapplicable rather
+     than a pass; the exit status is distinguishable from a clean sweep; and the
+     embedded manifest is NOT left recording an empty scenario list beside an
+     `implementation_hash` of `"unknown"` as though a run had completed.
+
+  2. **Re-run on unchanged text (scenario 02).** Repeat step 1 byte-for-byte
+     into a fresh work dir, with the feature file untouched in between. Confirm
+     the second run reports the SAME inapplicable outcome and the same exit
+     status as the first. A stamp-driven green skip here is a fail — that is
+     the exact defect, arriving by the other road.
+
+  3. **Normal path unchanged (scenario 03).** Run the wrapper against a feature
+     that really does carry `Scenario Outline:` — select it by structural grep
+     (`^\s*Scenario Outline:`), never a prose mention. Confirm mutants are
+     generated and that pass/fail behaviour and exit status match what they were
+     BEFORE this ticket. Compare against the pre-fix behaviour explicitly; "it
+     exited 0" is not the check.
+
+  4. **Re-arming still works (scenario 07).** Copy the step-1 feature into
+     `./tmp/`, add a `Scenario Outline:` with an `Examples:` table, and run the
+     wrapper against the copy. Confirm mutants are actually generated
+     (`Total` > 0) — the fix must not break the self-invalidating stamp that
+     already works today. Delete the copy afterwards.
+
+  5. **Hardener fallback (scenario 05).** Read `swarmforge/roles/hardender.prompt`
+     and confirm the BL-113 bullet no longer ends at "skip it, nothing to run"
+     but names an action a hardener can take when the gate reports inapplicable.
+     Prose presence is the whole check; there is no runtime assertion for this
+     one, which is why it is also declared in `required_wiring`.
 
   Working substitute to copy from if useful:
   `swarmforge/scripts/test/expedite_mutation_sweep.sh` — 41 surgical mutants, each a
