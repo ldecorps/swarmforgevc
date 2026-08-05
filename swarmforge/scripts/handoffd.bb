@@ -88,6 +88,15 @@
 (def project-root
   (or (first *command-line-args*) (usage)))
 
+;; BL-812: handoffd's process cwd is not guaranteed to be project-root (seen
+;; live: launcher home dir) - without this, every handoff-lib target-root
+;; read (roles.tsv, tmux-socket, launch scripts, mono-router-active-role)
+;; silently resolved against the WRONG root via git-common-dir-from-cwd, so
+;; wake remap and resident rotation missed the real .swarmforge/ and chase
+;; degraded to injecting into sessions mono-router never creates. Set once,
+;; before any handoff-lib call below reads target-root.
+(handoff-lib/set-project-root! project-root)
+
 ;; BL-406: refuse to run at all against a throwaway test/temp project root
 ;; unless the caller explicitly opts in - checked here, before this daemon
 ;; claims a pid file, loads roles, or starts a single sweep, so a leaked

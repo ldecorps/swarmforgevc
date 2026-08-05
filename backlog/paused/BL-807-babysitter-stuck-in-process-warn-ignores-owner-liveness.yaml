@@ -1,0 +1,202 @@
+id: BL-807
+title: "Babysitter stuck-in-process WARN ignores the owner-liveness signal the same sweep already computes — and cannot see master-mailbox parcels at all"
+milestone: M8
+type: defect
+status: todo
+epic: swarm-reliability
+human_approval: approved
+severity: high
+priority: 20
+direction: swarm-surfaced
+depends_on: []
+assigned_to: none
+mutation_cost: low
+invariants:
+  - "A stuck-in-process warning is never raised for a parcel whose owning role the same sweep classifies busy — for any mailbox shape, role, or parcel age."
+
+approval_context: >
+  Two things worth your call, specifier 2026-08-05.
+
+  (1) SCOPE — one ticket or two. Investigating the reported false positives
+  turned up a second defect in the same check, pointing the opposite way: it
+  cannot see master-mailbox parcels at all, so a genuinely abandoned specifier
+  or coordinator parcel never warns. I have kept both in one ticket because
+  they are one function's correctness and fixing either alone leaves the health
+  signal half-broken — a check trusted not to cry wolf that is also blind on
+  two roles is arguably worse than today. Split it if you would rather ship the
+  false-positive fix first; the acceptance file separates cleanly at scenario
+  05.
+
+  (2) SEVERITY high. Nothing is down and the swarm keeps working, so this is
+  not obviously high. My reasoning: it is a broken health signal in both
+  directions at once, and `stuck-` is the ONE warning class that escalates to a
+  pane nudge, so the false positives actively interrupt live agents mid-parcel
+  rather than only adding log noise. Amend to medium if you read the blast
+  radius as smaller.
+
+  Both defects are confirmed by direct probe rather than inference — the
+  reproductions are in `description`, and the second one was run against this
+  repo's live state.
+
+source: |
+  Coordinator note to specifier, 2026-08-05T05:08:31Z:
+  "Babysitter stuck-in-process WARN false-positives on live long parcels".
+
+description: |
+  ## Defect 1 — the check has no liveness input, and the sweep already has one
+
+  `stuck-parcels` in `swarmforge/scripts/babysitter_check.bb` (line 234) is a
+  pure file-age test: every `inbox/in_process/*.handoff` older than `stuck-min`
+  (line 52, hardcoded `30`) becomes a finding. Nothing about the owning role is
+  consulted. `check-stuck-in-process` in
+  `swarmforge/scripts/babysitterd_sweep_lib.bb` (line 88) then turns each one
+  into a `WARN`.
+
+  The signal it needs is already computed in the same sweep, on the same tick.
+  Line 373 of `babysitter_check.bb` builds `busy-by-role` from live pane
+  classification (`classify-pane-busy?` on pane text), and line 408 threads it
+  into `in-process-claims` so that **check 10** can ask `owner-busy?` and
+  conclude there is motion. Line 395 calls `(stuck-parcels)` with no arguments.
+
+  So a single sweep can simultaneously decide "there is motion in this
+  in-process claim" (check 10, via `motion-in-process?`) and "this in-process
+  parcel is stuck" (check 5) — about the same parcel. That internal
+  contradiction is the defect, and it is why scenario 03 asserts the two
+  signals must not disagree.
+
+  **Why this is not just log noise.** `nudge-eligible?`
+  (`babysitterd_sweep_lib.bb` line 224) makes every `CRIT` eligible plus
+  exactly one class of `WARN`: keys starting with `stuck-`. So this is the only
+  warning that escalates to a nudge, and a false positive pokes a live agent's
+  pane mid-parcel. Long parcels are normal here — mutation runs, full suites,
+  and under mono-router one resident works one parcel at a time — so 30 minutes
+  of honest work trips it.
+
+  ## Defect 2 — the check is blind to master-resident roles
+
+  Found while confirming defect 1, and pointing the opposite way. The two
+  mailbox layouts are not the same shape:
+
+  ```
+  worktree roles:  .worktrees/<role>/.swarmforge/handoffs/inbox/in_process/*.handoff   (flat)
+  master roles:    .swarmforge/handoffs/<role>/inbox/in_process/*.handoff              (role-nested)
+  ```
+
+  `glob-handoffs` (line 228) applies the single relative glob
+  `inbox/in_process/*.handoff` to every mailbox dir, which matches the flat
+  worktree shape and never matches the role-nested master shape. Probed against
+  this repo's live state on 2026-08-05, with one real parcel in_process:
+
+  ```
+  (fs/glob ".swarmforge/handoffs"   "inbox/in_process/*.handoff")  => []
+  (fs/glob ".swarmforge/handoffs" "**/inbox/in_process/*.handoff")
+    => [.swarmforge/handoffs/specifier/inbox/in_process/20_...handoff]
+  ```
+
+  So an abandoned **specifier** or **coordinator** parcel raises no warning,
+  ever. That is the mirror of defect 1 and the reason both belong together:
+  today the check cries wolf about roles it can see and stays silent about the
+  ones it cannot.
+
+  `owning-role-for-path` (line 251) has the matching gap — it regexes
+  `.worktrees/([^/]+)/.swarmforge/handoffs` and returns `nil` for a master
+  path. Moot today because those paths are never globbed; it stops being moot
+  the moment defect 2 is fixed, so the liveness gate must resolve the owning
+  role for master-mailbox paths too (scenario 05, `role-nested master` +
+  `busy`). Fixing the glob without this would convert defect 2 into fresh
+  instances of defect 1 on the specifier and coordinator.
+
+  ## Specifier rulings
+
+  **R1 — gate on the existing busy signal; do not invent a liveness
+  mechanism.** Pass the `busy-by-role` map that line 373 already builds into
+  `stuck-parcels`, exactly as line 408 already does for check 10, and suppress
+  the finding while the owning role's pane is busy. No new probe, no new state
+  file, no heartbeat. The correct fix here is wiring a signal that exists to a
+  check that ignores it.
+
+  **R2 — do not raise or make configurable the 30-minute threshold.** It is
+  tempting and it is wrong: a longer threshold delays true positives without
+  ever eliminating false ones, because there is no age at which "busy" stops
+  meaning healthy. Scenario 04 pins that the threshold keeps governing young
+  parcels unchanged. If a threshold change is wanted later it is its own
+  ticket, argued on its own evidence.
+
+  **R3 — do not track last-motion timestamps.** A per-parcel motion clock
+  ("warn when the owner has been idle for N minutes with the parcel held") is a
+  better check and a bigger one: new durable state, new staleness questions,
+  outside this defect's envelope (BL-634). Busy-now suppression is sufficient
+  for the reported symptom. Note this deliberately leaves one gap unclosed: a
+  role that is busy on something *else* while a parcel rots in its in_process
+  still suppresses. Accepted here as the strictly better of two wrong answers,
+  and named so nobody has to rediscover it.
+
+  **R4 — widen the glob, do not special-case the master path.** Matching the
+  in_process directory at any depth beneath a mailbox root covers both layouts
+  with one rule and will not need revisiting if a third layout appears. The
+  hazard a widened glob introduces is double-counting, which scenario 06 pins
+  directly.
+
+  **R5 — where the fix goes.** `swarmforge/scripts/babysitter_check.bb` for the
+  glob, the role resolution, and the call-site wiring; the finding-suppression
+  decision belongs in `swarmforge/scripts/babysitterd_sweep_lib.bb` beside the
+  other pure decision functions, where it is unit-testable without a live
+  tmux. Verified as the live path: `babysitterd.bb` drives this sweep, and
+  `babysitterd_sweep_lib.bb` already carries `nudge-eligible?` and
+  `decide-nudges` in exactly that shape.
+
+acceptance: specs/features/BL-807-babysitter-stuck-in-process-warn-ignores-owner-liveness.feature
+
+required_wiring:
+  - "swarmforge/scripts/babysitter_check.bb::stuck-parcels busy-by-role::the suppression logic is inert unless the call site actually passes the liveness map. A lib-level gate that is never handed real busy data is the BL-419 shape — green unit tests, unchanged production behaviour."
+
+out_of_scope: |
+  - Changing `stuck-min` (30m), or making it configurable. See R2.
+  - Per-parcel last-motion tracking or any new durable state. See R3.
+  - Redefining what makes a pane busy. This ticket consumes
+    `classify-pane-busy?` as it stands; changing it would move every check that
+    depends on it, not just this one.
+  - The other babysitter checks. Only check 5 is wrong here; check 10 is the
+    worked example being copied from.
+  - Retro-auditing past false-positive nudges. Fix the check; the history is
+    not actionable.
+
+notes: |
+  Sibling defects in the same family, both closed 2026-08-05: BL-804
+  (babysitter router false CRITs) and BL-805 (rotate gate on an undrained
+  in_process parcel). Same shape recurring — a health signal derived from file
+  state without asking whether anyone is actually working. Worth the coder
+  reading both before starting; BL-805 in particular establishes that an
+  undrained in_process parcel is a real failure mode, which is exactly the true
+  positive this ticket must preserve while killing the false one.
+
+  The `.bb` testability caveat applies: per `engineering.prompt`, Babashka has
+  no wired mutation/CRAP/DRY tooling (BL-472 tracks that gap), so the real gate
+  for this change is the unit suite under `swarmforge/scripts/test/` — see
+  `babysitterd_sweep_lib_test_runner.bb`, which already covers the sweep's
+  decision functions and is where the suppression decision should land.
+
+  ## E2E QA procedure (specifier, 2026-08-05)
+
+  1. **False positive is gone (scenarios 01, 03).** With a parcel genuinely
+     in_process and its owning role's pane actively working, let a real sweep
+     run past the 30-minute mark. Confirm no `stuck-` WARN and no nudge to that
+     pane. Cross-check the same sweep's check-10 motion signal agrees.
+
+  2. **True positive survives (scenario 02).** Leave a parcel in_process for a
+     role whose pane is idle, past the threshold. Confirm the `stuck-` WARN
+     still fires and is still nudge-eligible. This is the check earning its
+     keep; a fix that silences it is a fail.
+
+  3. **Master mailbox is visible (scenario 05).** Place an aged in_process
+     parcel under `.swarmforge/handoffs/specifier/inbox/in_process/` with the
+     specifier idle, and confirm it warns — this raises nothing today. Then
+     with the specifier's pane busy, confirm it does not.
+
+  4. **Worktree mailboxes did not regress (scenario 05, flat rows).** Same two
+     checks against a `.worktrees/<role>/.swarmforge/handoffs/` parcel. The
+     widened glob must not lose the layout that already worked.
+
+  5. **No double-count (scenario 06).** With exactly one aged in_process parcel
+     anywhere, confirm exactly one finding names it. Run with both a master and
+     a worktree parcel present to confirm the counts stay separate.

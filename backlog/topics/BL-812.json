@@ -1,0 +1,1 @@
+{"id":"BL-812","messages":[{"seq":0,"ts":1785931054516,"author":"swarm","type":"outbound","text":"BL-812 🎵 in progress — DEFECT — handoffd cwd outside the project breaks mono-router wake remap: chase injects into missing dormant sessions forever and the swarm starves"}]}
