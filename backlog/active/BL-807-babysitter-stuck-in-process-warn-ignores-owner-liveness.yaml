@@ -9,7 +9,7 @@ severity: high
 priority: 20
 direction: swarm-surfaced
 depends_on: []
-assigned_to: none
+assigned_to: coder
 mutation_cost: low
 invariants:
   - "A stuck-in-process warning is never raised for a parcel whose owning role the same sweep classifies busy — for any mailbox shape, role, or parcel age."
