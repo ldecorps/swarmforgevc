@@ -11,6 +11,16 @@
 #   level: full | hard | soft (default soft, per hardender.prompt's
 #          soft-Gherkin-mutation duty - skips re-testing scenarios whose
 #          Gherkin text is unchanged, regardless of implementation changes)
+#
+# BL-638: the vendored CLI reports `Total 0` both when a feature has no
+# Scenario Outline (nothing was ever discovered) and, on a soft re-run, when
+# every mutation was reused from a valid stamp - both exit 0 with no
+# survivors/errors, indistinguishable from a real clean sweep. finalize_
+# gherkin_mutation.js classifies the captured report after the vendored tool
+# returns and corrects the feature file when nothing was ever discovered, so
+# this can no longer `exec` (the process must survive to post-process).
+# Exit codes: 0 = real pass, 1 = fail (survivors/errors), 2 = inapplicable
+# (nothing to mutate - never a silent pass).
 
 set -euo pipefail
 
@@ -33,10 +43,15 @@ mkdir -p "$WORK_DIR"
 WORK_DIR="$(cd "$WORK_DIR" && pwd)"
 
 cd "$VENDOR_DIR"
-exec bb gherkin-mutator \
+set +e
+RAW_OUTPUT="$(bb gherkin-mutator \
   --feature "$FEATURE_FILE" \
   --work-dir "$WORK_DIR" \
   --runner-worker "node $PIPELINE_DIR/mutationWorker.js $STEPS_MODULE" \
   --level "$LEVEL" \
   --status-interval 1s \
-  --json
+  --json)"
+BB_EXIT=$?
+set -e
+
+printf '%s' "$RAW_OUTPUT" | node "$SCRIPT_DIR/finalize_gherkin_mutation.js" "$FEATURE_FILE" "$BB_EXIT"

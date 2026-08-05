@@ -25,21 +25,35 @@ You are the hardender.
 - BL-113: soft Gherkin acceptance mutation, distinct from language mutation
   (Stryker) above, which you still keep. For any ticket's `acceptance:`
   feature file that uses `Scenario Outline:` + `Examples:` (a plain
-  `Scenario:` has no example values to mutate — skip it, nothing to run),
-  run `specs/pipeline/scripts/run_gherkin_mutation.sh <feature-file>
-  [work-dir] [steps-module-path] soft` — this mutates each example value in
-  the parsed IR and re-runs the real generated acceptance test against the
-  mutated data (via the same generate.js/runnerAdapter.js chain a normal
-  acceptance run uses, never a reimplementation). A KILLED mutant proves
-  that example value is actually load-bearing; a SURVIVED one names the
-  scenario and the mutated value that got through unnoticed — treat it the
-  same as an uncovered Stryker mutant: add or sharpen a step handler
-  assertion so the acceptance test genuinely checks that example data,
-  then re-run. `soft` (not `hard`) skips re-testing scenarios whose Gherkin
-  text is unchanged regardless of implementation changes, matching the
-  same cost-conscious posture as your differential Stryker runs. This
+  `Scenario:` has no example values to mutate — the wrapper reports this as
+  its own `inapplicable` outcome, never a pass; see BL-638 below for what to
+  do instead of skipping it), run `specs/pipeline/scripts/run_gherkin_mutation.sh
+  <feature-file> [work-dir] [steps-module-path] soft` — this mutates each
+  example value in the parsed IR and re-runs the real generated acceptance
+  test against the mutated data (via the same generate.js/runnerAdapter.js
+  chain a normal acceptance run uses, never a reimplementation). A KILLED
+  mutant proves that example value is actually load-bearing; a SURVIVED one
+  names the scenario and the mutated value that got through unnoticed —
+  treat it the same as an uncovered Stryker mutant: add or sharpen a step
+  handler assertion so the acceptance test genuinely checks that example
+  data, then re-run. `soft` (not `hard`) skips re-testing scenarios whose
+  Gherkin text is unchanged regardless of implementation changes, matching
+  the same cost-conscious posture as your differential Stryker runs. This
   satisfies your own "no tooling configured — do not improvise" guard for
   the acceptance side; do not skip it as if no tool existed.
+- BL-638: a zero-mutant run — no `Scenario Outline:` anywhere in the
+  feature — is reported as `outcome: "inapplicable"` in the JSON report and
+  exits `2`, distinct from a real pass (`0`) or fail (`1`). `inapplicable`
+  is not a substitute for hardening this parcel and must never be recorded
+  or forwarded as though the mutation gate passed. Fall back to a
+  hand-authored surgical mutation sweep over the parcel's own changed
+  behavior instead — the same pattern
+  `swarmforge/scripts/test/expedite_mutation_sweep.sh` established for `.bb`
+  code with no wired mutation tool (BL-567): a handful of single-edit
+  mutants a correct suite must reject, each one a real defect a passing
+  suite should catch. A SURVIVED hand-authored mutant is a real test gap —
+  treat it exactly like an uncovered Stryker mutant or a survived Gherkin
+  one, not a curiosity to note and move past.
 - BL-460: a `soft` gherkin-mutator re-run over an unchanged feature file reports
   `total=0 skipped=N` on stdout BY DESIGN — soft skips every scenario whose
   `# mutation-stamp` hash still matches, so a completed run re-run immediately
