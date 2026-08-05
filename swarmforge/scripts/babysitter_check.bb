@@ -231,12 +231,39 @@
             (try (map str (fs/glob mailbox rel-glob)) (catch Exception _ [])))
           (all-mailbox-dirs)))
 
-(defn stuck-parcels []
-  (->> (glob-handoffs "inbox/in_process/*.handoff")
+;; ── owning-role resolution, both mailbox shapes (BL-807 R4/R5) ───────────
+;; Worktree roles are flat (<worktree>/.swarmforge/handoffs/inbox/...);
+;; master-resident roles nest a role segment
+;; (.swarmforge/handoffs/<role>/inbox/...) since they share one physical
+;; checkout (handoff_lib.bb/mailbox-base-dir). The master pattern requires
+;; a literal "/inbox/" after the captured segment, so it never matches the
+;; flat legacy .swarmforge/handoffs/inbox/... path (no role segment there)
+;; or a worktree path (no extra segment between "handoffs" and "inbox").
+
+(def ^:private worktree-owner-pattern #"\.worktrees/([^/]+)/\.swarmforge/handoffs")
+(def ^:private master-owner-pattern #"\.swarmforge/handoffs/([^/]+)/inbox/")
+
+(defn owning-role-for-path [path]
+  (let [s (str path)]
+    (or (second (re-find worktree-owner-pattern s))
+        (second (re-find master-owner-pattern s)))))
+
+;; BL-807 R4: match the in_process directory at any depth beneath a mailbox
+;; root — "{,**/}" is the zero-or-more-segments alternation, covering both
+;; the flat worktree shape and the role-nested master shape with one rule,
+;; each real file matched exactly once (verified: babashka.fs's "**" alone
+;; requires at least one segment, so the empty alternative is what makes the
+;; flat/zero-segment case match too — union, not double-count).
+(def stuck-in-process-glob "{,**/}inbox/in_process/*.handoff")
+
+(defn stuck-parcels [busy-by-role]
+  (->> (glob-handoffs stuck-in-process-glob)
        (keep (fn [p]
                (when-let [age-min (file-age-min p)]
                  (when (> age-min stuck-min)
-                   {:name (fs/file-name p) :age-min age-min}))))
+                   (let [role (owning-role-for-path p)]
+                     {:name (fs/file-name p) :age-min age-min
+                      :owner-busy? (boolean (get busy-by-role role false))})))))
        vec))
 
 (defn pending-claims []
@@ -247,10 +274,6 @@
        vec))
 
 ;; ── in-process claims for check 10, owner-busy? aware (6d-10) ────────────
-
-(defn owning-role-for-path [path]
-  (let [m (re-find #"\.worktrees/([^/]+)/\.swarmforge/handoffs" (str path))]
-    (when m (second m))))
 
 (defn in-process-claims [busy-by-role]
   (->> (glob-handoffs "inbox/in_process/*.handoff")
@@ -392,7 +415,7 @@
          :handoffd-log-age-secs (file-age-secs (fs/path state-dir "daemon" "handoffd.log"))
          :handoffd-max-age-secs heartbeat-max-secs
          :failed-count (count-failed-box)
-         :stuck-parcels (stuck-parcels)
+         :stuck-parcels (stuck-parcels busy-by-role)
          ;; BL-802: nil (truly unavailable) flows through unmasked — no
          ;; fabricated default that would silently suppress a real low-memory
          ;; finding. check-memory-floor reports UNAVAILABLE on nil.
