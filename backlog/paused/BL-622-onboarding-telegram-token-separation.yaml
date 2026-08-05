@@ -6,7 +6,7 @@ status: todo
 epic: fleet-topology
 human_approval: approved
 severity: high
-priority: 10
+priority: 61
 direction: operator-reported
 depends_on: []
 assigned_to: coder

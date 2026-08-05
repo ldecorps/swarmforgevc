@@ -5,7 +5,7 @@ type: defect
 severity: high
 status: todo
 epic: swarm-reliability
-priority: 10
+priority: 65
 direction: normal
 mutation_cost: low
 acceptance: specs/features/BL-623-routing-skip-trail-records-actual-hop.feature

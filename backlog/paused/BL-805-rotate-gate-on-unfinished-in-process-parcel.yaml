@@ -5,9 +5,9 @@ type: defect
 status: todo
 epic: swarm-reliability
 assigned_to:
-human_approval: pending
+human_approval: approved
 severity: medium
-priority: 3
+priority: 11
 mutation_cost: low
 direction: swarm-surfaced
 depends_on: []
