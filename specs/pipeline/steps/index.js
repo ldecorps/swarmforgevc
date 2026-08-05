@@ -370,7 +370,8 @@ const DOMAINS = [
   require('./bl708RoleAskRelayStripsQuestionFieldsSteps'),
   require('./bl802BabysitterdMacosPortabilitySteps'),
   require('./bl536ProviderAuthErrorAutoRespawnSteps'),
-  require('./bl803PromoteRouteSedBsdPortabilitySteps')
+  require('./bl803PromoteRouteSedBsdPortabilitySteps'),
+  require('./bl804BabysitterMonoRouterTopologyAwarenessSteps')
 ];
 
 function registerSteps(registry) {

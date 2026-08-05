@@ -49,6 +49,25 @@
             (sw/check-live-session {:role "coder" :pane-exists? true :has-claude-process? true
                                      :process-gather-failed? false}))
 
+;; BL-804: mono-router topology awareness — should-stand? suppresses ONLY
+;; the absence branch; every other branch is unaffected regardless of its
+;; value (invariant 3), and omitting the key entirely reproduces pre-BL-804
+;; behavior byte-for-byte (every existing assertion above never sets it).
+(assert-nil "a dormant role's missing session is suppressed (should-stand? false)"
+            (sw/check-live-session {:role "specifier" :pane-exists? false
+                                     :has-claude-process? false :should-stand? false}))
+(assert-true "a required (should-stand? true) role's missing session is still CRIT"
+             (let [f (sw/check-live-session {:role "coder" :pane-exists? false
+                                              :has-claude-process? false :should-stand? true})]
+               (and f (= "CRIT" (:severity f)) (= "pane-coder" (:key f)))))
+(assert-true "should-stand? false never suppresses a check on a PRESENT pane (invariant 3)"
+             (let [f (sw/check-live-session {:role "specifier" :pane-exists? true
+                                              :has-claude-process? false :should-stand? false})]
+               (and f (= "CRIT" (:severity f)) (= "proc-specifier" (:key f)))))
+(assert-nil "should-stand? false with a present, healthy pane still produces no finding"
+            (sw/check-live-session {:role "specifier" :pane-exists? true
+                                     :has-claude-process? true :should-stand? false}))
+
 ;; ── check 2: remote-control-flag ─────────────────────────────────────────────
 (assert-nil "green role (rc flag present) produces no rc finding"
             (sw/check-remote-control {:role "coder" :pane-exists? true :has-claude-process? true :has-remote-control? true}))
