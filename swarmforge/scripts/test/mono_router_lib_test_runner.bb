@@ -65,6 +65,24 @@
          (mono-router-lib/rotate-viable?
           {:resident-alive? false :launch-script-present? false}))
 
+;; BL-805: resident-invoked rotation gate decision - pure over already-
+;; filtered inputs (callers resolve blocking-file via handoff-lib's
+;; *.handoff-only listing before calling this).
+(assert= "rotate-gate: no blocking file proceeds"
+         :proceed
+         (mono-router-lib/rotate-gate-decision {:blocking-file nil :force? false}))
+(assert= "rotate-gate: no blocking file proceeds even if force is set"
+         :proceed
+         (mono-router-lib/rotate-gate-decision {:blocking-file nil :force? true}))
+(assert= "rotate-gate: blocking file refuses without force"
+         :refuse
+         (mono-router-lib/rotate-gate-decision
+          {:blocking-file "/wt/.swarmforge/handoffs/inbox/in_process/00_x.handoff" :force? false}))
+(assert= "rotate-gate: blocking file with force proceeds-forced"
+         :proceed-forced
+         (mono-router-lib/rotate-gate-decision
+          {:blocking-file "/wt/.swarmforge/handoffs/inbox/in_process/00_x.handoff" :force? true}))
+
 (let [sum (mono-router-lib/summarize-topology
            roles
            [{:role "coder" :alive? false}

@@ -371,7 +371,8 @@ const DOMAINS = [
   require('./bl802BabysitterdMacosPortabilitySteps'),
   require('./bl536ProviderAuthErrorAutoRespawnSteps'),
   require('./bl803PromoteRouteSedBsdPortabilitySteps'),
-  require('./bl804BabysitterMonoRouterTopologyAwarenessSteps')
+  require('./bl804BabysitterMonoRouterTopologyAwarenessSteps'),
+  require('./bl805RotateGateOnUnfinishedInProcessParcelSteps')
 ];
 
 function registerSteps(registry) {
