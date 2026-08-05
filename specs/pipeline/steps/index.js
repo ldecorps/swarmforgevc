@@ -369,7 +369,8 @@ const DOMAINS = [
   require('./bl785FreshnessDeliberateStopSteps'),
   require('./bl708RoleAskRelayStripsQuestionFieldsSteps'),
   require('./bl802BabysitterdMacosPortabilitySteps'),
-  require('./bl536ProviderAuthErrorAutoRespawnSteps')
+  require('./bl536ProviderAuthErrorAutoRespawnSteps'),
+  require('./bl803PromoteRouteSedBsdPortabilitySteps')
 ];
 
 function registerSteps(registry) {

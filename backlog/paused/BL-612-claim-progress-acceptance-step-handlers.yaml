@@ -6,7 +6,7 @@ status: paused
 epic: swarm-reliability
 assigned_to:
 severity: medium
-priority: 30
+priority: 127
 mutation_cost: medium
 direction: swarm-proposed
 depends_on: []

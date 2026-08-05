@@ -5,7 +5,7 @@ type: defect
 status: todo
 epic: pipeline-board
 severity: medium
-priority: 07
+priority: 48
 direction: human-requested
 depends_on: []
 assigned_to: specifier

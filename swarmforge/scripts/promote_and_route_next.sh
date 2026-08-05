@@ -215,7 +215,15 @@ ROUTE_ROLE="${ROUTE_DECISION%% *}"
 ROUTE_FLAG="${ROUTE_DECISION##* }"
 if [[ "$ROUTE_FLAG" == "REWRITE" ]]; then
   if grep -qE '^assigned_to:' "$DEST"; then
-    sed -i "s/^assigned_to:.*/assigned_to: ${ROUTE_ROLE}/" "$DEST"
+    # `sed -i` takes a mandatory suffix operand on BSD/macOS but forbids one
+    # (with no space) on GNU — no single invocation satisfies both. Route
+    # through a temp file and `cat` back in place instead: identical output
+    # on both sed flavors, and writing into the existing $DEST (rather than
+    # `mv`-ing a fresh mktemp file over it) keeps its original mode bits.
+    SED_TMP="$(mktemp)"
+    sed "s/^assigned_to:.*/assigned_to: ${ROUTE_ROLE}/" "$DEST" > "$SED_TMP"
+    cat "$SED_TMP" > "$DEST"
+    rm -f "$SED_TMP"
   else
     printf '\nassigned_to: %s\n' "$ROUTE_ROLE" >> "$DEST"
   fi

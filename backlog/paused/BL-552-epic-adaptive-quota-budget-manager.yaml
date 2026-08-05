@@ -4,7 +4,7 @@ milestone: M8
 status: todo
 type: epic
 epic: quota-budget-manager
-priority: 20
+priority: 98
 depends_on: [BL-545]
 decomposes_into: [BL-553, BL-619]
 human_approval: approved

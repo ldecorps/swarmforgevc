@@ -6,7 +6,7 @@ severity: medium
 status: todo
 epic: swarm-reliability
 assigned_to: specifier
-priority: 1
+priority: 2
 direction: queue-jump
 depends_on: []
 mutation_cost: medium

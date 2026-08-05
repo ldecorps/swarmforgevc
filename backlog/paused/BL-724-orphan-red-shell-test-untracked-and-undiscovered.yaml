@@ -5,7 +5,7 @@ type: defect
 severity: medium
 status: todo
 epic: swarm-reliability
-priority: 20
+priority: 106
 depends_on: []
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]

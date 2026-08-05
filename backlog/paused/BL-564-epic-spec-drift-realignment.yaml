@@ -4,7 +4,7 @@ milestone: M8
 status: todo
 type: epic
 epic: spec-drift-realignment
-priority: 05
+priority: 18
 direction: human
 human_approval: approved
 depends_on: []
