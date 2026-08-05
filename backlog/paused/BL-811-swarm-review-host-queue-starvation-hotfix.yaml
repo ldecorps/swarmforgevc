@@ -194,14 +194,33 @@ notes: |
   - Execute manual Telegram E2E for select-run, clear-all, TTL expiry receipt,
     and fan-out vote delivery.
 
-  ## BL-810's disposition — open with the human (specifier, 2026-08-05)
+  ## BL-810's disposition — ANSWERED by the human (2026-08-06)
 
-  The hotfix under review implements what BL-810 specs. BL-810 is still
-  `paused/`, `status: todo`, never promoted. If it is promoted and built, the
-  coder will find the work already in main and the no-op rule kills the
-  parcel. Question raised with the human via `role_ask`; until answered, the
-  coordinator should NOT promote BL-810. This ticket is correct under either
-  answer, which is why it no longer depends on it.
+  The question raised via `role_ask` on 2026-08-05 has been answered:
+  **"Close BL-810 as satisfied by the hotfix; BL-811 is its verification
+  gate."** The alternatives — hold BL-810 paused until this ticket lands, or
+  revert the hotfix and rebuild it through the pipeline — were declined.
+
+  So BL-810 is closed (`status: done`, `closed_as: satisfied-by-hotfix`,
+  `closed_by_commit: 2b8d19d1`) and the coordinator moves it to
+  `backlog/done/M8/` as bookkeeping. It is never promoted; there is no parcel
+  for it and no merge to do.
+
+  **What that puts on THIS ticket.** BL-810's closure records only that the
+  code landed. Every check that would have run had it gone through the
+  pipeline now runs here, and nowhere else:
+
+  - The ten scenarios in the shared feature file have no step handlers. Until
+    this ticket writes them, the acceptance contract for BL-810's behaviour
+    has never executed — not once, in any form.
+  - D1 and D2 under `review_findings` are unreviewed defects in shipped,
+    live code.
+  - No coder, cleaner, architect, hardener, documenter or QA pass exists for
+    any of it.
+
+  This ticket is therefore the only quality gate the feature will ever get.
+  Treat a green run here as the real verdict, and a bounce here as a defect
+  already in production — not as pre-release rework.
 
   ## E2E QA procedure (specifier, 2026-08-05)
 

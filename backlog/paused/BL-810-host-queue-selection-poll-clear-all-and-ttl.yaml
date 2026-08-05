@@ -2,7 +2,10 @@ id: BL-810
 title: "Host question queue: auto-present the selection poll on idle, add clear-all, and drop questions older than 72h with a receipt"
 milestone: M8
 type: feature
-status: todo
+status: done
+closed_as: satisfied-by-hotfix
+closed_by_commit: 2b8d19d1
+verified_by: BL-811
 epic: swarmforge-console
 human_approval: approved
 priority: 25
@@ -157,6 +160,42 @@ out_of_scope: |
     human prompts are presented, expired, and drained.
 
 notes: |
+  ## CLOSED 2026-08-06 — satisfied by an operator hotfix, NOT built by the pipeline
+
+  Human ruling, via the specifier's `role_ask` (asked 2026-08-05, answered):
+  **"Close BL-810 as satisfied by the hotfix; BL-811 is its verification
+  gate."** The other two options offered — leave it paused until BL-811 lands,
+  or revert the hotfix and build it properly through the pipeline — were not
+  chosen.
+
+  What that means, stated plainly so nobody later reads `status: done` as more
+  than it is:
+
+  - The implementation of this spec is in `main` at commit `2b8d19d1`
+    ("Operator hotfix: Host queue starvation, pending swarm review under
+    BL-811"), written by the human in Cursor and committed by the specifier so
+    it stopped blocking build-sync and could be reviewed.
+  - It did **not** pass through coder → cleaner → architect → hardender →
+    documenter → QA. No stage of this project's quality chain has approved it.
+  - This ticket's ten acceptance scenarios
+    (`specs/features/BL-810-host-queue-selection-poll-clear-all-and-ttl.feature`)
+    still have **no step handlers**, so the contract has never executed.
+    Writing those handlers and running them is scope carried by **BL-811**,
+    along with the two defects the specifier found reading the hotfix (D1, a
+    vote retraction that can wipe the whole queue, is high severity).
+  - So: the code exists, the verification does not yet. **BL-811 is the gate.**
+    Read this ticket as "spec delivered, implementation landed out-of-band" and
+    BL-811 as the record of whether it is actually correct.
+
+  Both this feature file and BL-811's `acceptance:` point at the same file —
+  deliberately. It is one contract; BL-811 is the ticket that makes it run.
+
+  Coordinator: this closure is a file move only (`backlog/paused/` →
+  `backlog/done/M8/`). There is nothing to merge — the code is already on
+  `main` — and no promotion of this ticket should happen.
+
+  ## Original spec notes (unchanged, kept for the record)
+
   Sibling: BL-767 (approved, paused) — a queued answer landing in the Cursor
   Remote topic rather than its origin topic. Its own out-of-scope note
   anticipated this "choose which queued question runs next" feature as
