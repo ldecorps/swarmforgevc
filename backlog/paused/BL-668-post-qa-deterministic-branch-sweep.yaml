@@ -5,7 +5,7 @@ type: feature
 status: todo
 epic: deterministic-transit-assist
 severity: medium
-priority: 08
+priority: 57
 direction: human-requested
 depends_on: []
 assigned_to: specifier

@@ -5,7 +5,7 @@ type: feature
 status: todo
 epic: swarmforge-console
 severity: medium
-priority: 15
+priority: 95
 direction: human-requested
 depends_on: []
 assigned_to:

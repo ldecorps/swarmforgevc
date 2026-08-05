@@ -6,7 +6,7 @@ status: needs_design
 epic: swarm-reliability
 human_approval: approved
 severity: low
-priority: 30
+priority: 118
 direction: human-requested
 depends_on: []
 assigned_to: specifier
