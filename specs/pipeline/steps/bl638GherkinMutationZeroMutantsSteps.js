@@ -12,6 +12,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
+const { readManifest } = require('../gherkinMutationOutcome');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const WRAPPER = path.join(REPO_ROOT, 'specs', 'pipeline', 'scripts', 'run_gherkin_mutation.sh');
@@ -48,15 +49,6 @@ const ADDED_OUTLINE = [
 
 function freshDir(prefix) {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
-}
-
-function readManifest(featureText) {
-  const lines = featureText.split('\n');
-  const begin = lines.findIndex((l) => l.trim() === '# acceptance-mutation-manifest-begin');
-  if (begin === -1) return null;
-  const end = lines.findIndex((l, i) => i > begin && l.trim() === '# acceptance-mutation-manifest-end');
-  const jsonLines = lines.slice(begin + 1, end).map((l) => l.replace(/^\s*#\s?/, ''));
-  return JSON.parse(jsonLines.join(''));
 }
 
 function runWrapper(featurePath) {
