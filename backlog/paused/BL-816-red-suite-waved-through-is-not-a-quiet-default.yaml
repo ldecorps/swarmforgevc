@@ -4,7 +4,7 @@ milestone: M8
 type: chore
 status: todo
 epic: code-quality-gates
-human_approval: pending
+human_approval: approved
 priority: 30
 direction: human-requested
 depends_on: []
