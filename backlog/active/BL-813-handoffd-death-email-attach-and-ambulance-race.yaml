@@ -1,0 +1,58 @@
+id: BL-813
+title: "handoffd death email must attach failure log; ambulance ticket-has-file? must not crash on active→done race"
+milestone: M8
+type: defect
+status: todo
+epic: swarm-reliability
+human_approval: approved
+severity: high
+priority: 5
+direction: human-requested
+depends_on: []
+assigned_to: specifier
+mutation_cost: low
+invariants:
+  - "A handoffd death alarm email always carries the written handoffd-failure-*.log as an attachment when email is configured, so an off-box operator can read the crash without SSH."
+  - "ticket-has-file? never throws on a vanished glob entry; ambulance degrade-to-off remains the failure mode."
+  - "BL-144 no-auto-restart / alarm-and-halt posture is unchanged."
+
+approval_context: >
+  Human 2026-08-05: handoffd died; death email named an on-disk path the
+  operator cannot open off-box. Asked Host to pass the crash to specifier
+  and (separately) to attach the failure log to the email next time. Host
+  drafted evidence + this ticket; specifier has the last word on scenario
+  shape and whether to split attach vs ambulance harden.
+
+source: |
+  Human via Host (Cursor/Telegram), 2026-08-05 after
+  .swarmforge/daemon/handoffd-failure-20260805T141124Z.log.
+
+  Evidence:
+  - backlog/evidence/handoffd-crash-ambulance-race-20260805.md
+  - Failure log on disk (same stamp)
+
+description: |
+  ## What happened
+
+  handoffd exited with FileNotFoundException in ambulance_lib.bb
+  ticket-has-file? while slurping a globbed path under backlog/active/ for
+  BL-812 — the ticket had just been moved to done/M8. Supervisor BL-144
+  wrote the failure log, emailed a path-only alarm, and halted the swarm.
+
+  ## Operator need
+
+  Off-box: cannot read the box path. Death email must attach the failure
+  log (Resend attachments already used for briefing diagrams via BL-286;
+  death path does not thread them today).
+
+  ## Host-suggested code touchpoints (not binding)
+
+  - swarmforge/scripts/daemon_alarm_lib.bb — alarm-and-halt!
+  - swarmforge/scripts/handoffd_supervisor.bb — send-configured-alarm-email!
+  - swarmforge/scripts/ambulance_lib.bb — ticket-has-file? try/catch per slurp
+  - swarmforge/scripts/test/test_daemon_alarm_lib.sh
+  - swarmforge/scripts/test/ambulance_lib_test_runner.bb
+
+  Specifier: accept, reshape, or split; write/amend Gherkin; then route.
+
+acceptance: specs/features/BL-813-handoffd-death-email-attach-and-ambulance-race.feature
