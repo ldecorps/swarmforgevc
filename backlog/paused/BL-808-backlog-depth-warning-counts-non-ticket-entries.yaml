@@ -1,0 +1,174 @@
+id: BL-808
+title: "swarm_handoff.bb's backlog depth warning counts directory entries, not tickets — the tracked .gitkeep reads as an active ticket on every handoff"
+milestone: M8
+type: defect
+status: todo
+epic: swarm-reliability
+human_approval: pending
+severity: medium
+priority: 30
+direction: swarm-surfaced
+depends_on: []
+assigned_to: none
+mutation_cost: low
+invariants:
+  - "The active-ticket count behind the depth warning equals the count the promotion gate uses — no entry in backlog/active/ is a ticket to one and not the other."
+
+approval_context: >
+  Routine defect, one line of cause; flagging only because the fix location is
+  a judgement call and I have ruled on it rather than asking.
+
+  R1 puts the shared counter in `backlog_depth_lib.bb` rather than inlining a
+  `.yaml` filter at the call site. That lib exists precisely because these two
+  call sites were copy-pasted and diverged once already (BL-216 unified the
+  max-depth READ between them and left the active COUNT un-unified — which is
+  exactly where they diverged again). Inlining a filter would fix today's
+  symptom and leave the next divergence available. Say so if you would rather
+  have the one-line fix.
+
+  Priced `medium`, not `high`: every authoritative gate — promotion, chase
+  sweep, babysitter, expeditor — already counts correctly, so nothing stalls
+  and nothing is mis-promoted. The cost is a false alarm on every handoff send,
+  which is real but contained.
+
+source: |
+  Coordinator note to specifier, 2026-08-05T05:09:12Z:
+  "swarm_handoff.bb check-backlog-depth counts .gitkeep as active ticket".
+
+  Observed live in the same session while sending three unrelated handoffs —
+  every send printed "WARNING: Active backlog depth exceeded (active=2, max=1)"
+  with exactly one ticket in `backlog/active/`.
+
+description: |
+  ## The defect
+
+  `check-backlog-depth` in `swarmforge/scripts/swarm_handoff.bb` (line 186)
+  computes:
+
+  ```clojure
+  active-count (count (fs/list-dir active-dir))
+  ```
+
+  `fs/list-dir` returns every directory entry. `backlog/active/` contains a
+  tracked `.gitkeep` placeholder, so the count is always one higher than the
+  number of tickets. Verified live on 2026-08-05: one ticket active, cap 1,
+  and every handoff send printed `active=2, max=1`.
+
+  The warning is therefore off by one at every cap, which matters most exactly
+  where the cap is tightest — Article 3.5 throttling to `1` (degraded) makes a
+  single legitimate ticket warn permanently, and throttling to `0` (severe)
+  warns on an empty backlog.
+
+  ## It is the only site that gets this wrong
+
+  Every other place that counts active tickets already filters to `*.yaml`:
+
+  ```
+  swarmforge/scripts/promotion_gates_lib.bb:195   active-count -> active-yaml-files
+  swarmforge/scripts/chase_sweep_lib.bb:753,815   filter ends-with ".yaml"
+  swarmforge/scripts/chase_sweep_lib.bb           count-backlog-yaml
+  swarmforge/scripts/babysitter_check.bb:404      fs/glob "*.yaml"
+  swarmforge/scripts/expedite_cli.bb:196          fs/glob "*.yaml"
+  swarmforge/scripts/swarm_handoff.bb:395         fs/glob "**.yaml"   <- same file!
+  ```
+
+  `swarm_handoff.bb` itself globs `**.yaml` correctly 200 lines below the
+  defect. So this is a lone outlier, not a systemic convention problem — which
+  is what bounds the blast radius and keeps this `medium`.
+
+  **The promotion gate is NOT affected.** `under-depth-cap?` is fed by
+  `promotion_gates_lib/active-count`, which counts yaml files. Nothing is
+  blocked from promotion and nothing is over-promoted; the damage is confined
+  to a spurious line on stderr.
+
+  ## Why it is still worth fixing rather than tolerating
+
+  A control that cries wolf on every single send trains every reader — agent
+  and human — to filter it out, and it is the only signal that an operator has
+  that the cap is actually breached. A warning nobody reads is the same as an
+  absent one, with the added cost of looking like coverage.
+
+  ## Specifier rulings
+
+  **R1 — the counter goes in `backlog_depth_lib.bb`, shared, not inlined.**
+  That lib's own header documents why: BL-216 found these two call sites
+  (`swarm_handoff.bb`'s warning and `ready_for_next.bb`'s auto-promote gate)
+  "copy-pasted with the identical bug" and unified the max-depth READ so they
+  "cannot diverge again" — but left the active-COUNT un-unified, and that is
+  precisely where they diverged again. Add `count-active-tickets` beside
+  `depth-exceeded?`, and have the warning call it.
+
+  The name is fixed by `required_wiring` so the gate can check the call site is
+  real. If a different name is genuinely better, send a `spec-gap` note rather
+  than renaming and leaving the declaration stale.
+
+  **R2 — filter by kind, never blocklist `.gitkeep`.** Select `*.yaml`; do not
+  write an exclusion for the one placeholder that happens to be there today. A
+  name-based exclusion passes the reported symptom and fails the next stray
+  file. Scenario 02 pins this with entries no `.gitkeep` blocklist would catch.
+
+  **R3 — do not consolidate the other five counting sites.** They are already
+  correct, and sweeping them into the new helper is a refactor riding a defect
+  fix — a different change with a different risk profile, touching the chase
+  sweep and the expeditor. If the duplication is worth removing it is its own
+  cleanup ticket. Fix the one broken site.
+
+  **R4 — leave `.gitkeep` in place.** Deleting it to dodge the count would let
+  git drop the empty directory, which several scripts assume exists. The
+  placeholder is correct; the counter is wrong.
+
+acceptance: specs/features/BL-808-backlog-depth-warning-counts-non-ticket-entries.feature
+
+required_wiring:
+  - "swarmforge/scripts/swarm_handoff.bb::backlog-depth-lib/count-active-tickets::R1 — a shared counter added to the lib but never called from check-backlog-depth leaves the false alarm exactly as it is. The call site is the whole fix."
+
+out_of_scope: |
+  - The other five active-counting sites. Already correct; see R3.
+  - Removing or relocating the `.gitkeep` placeholder. See R4.
+  - Changing `active_backlog_max_depth`, the throttle, or any promotion
+    behaviour. This ticket changes what gets counted, never what the count
+    means or what is done about it.
+  - The warning's wording, severity, or destination. Only its arithmetic is
+    wrong.
+
+notes: |
+  Found alongside BL-807 in the same coordinator hand-off batch; both are
+  swarm-reliability health-signal defects and both were confirmed by probe
+  rather than inference. They are independent — different files, different
+  mechanisms, no shared code — so no `depends_on` between them, and they can
+  run in either order or concurrently under the orthogonality rule.
+
+  Per `engineering.prompt`, Babashka has no wired mutation/CRAP/DRY tooling
+  (BL-472 tracks that gap), so the real gate here is the unit suite under
+  `swarmforge/scripts/test/`. The pure predicates in `backlog_depth_lib.bb`
+  already have coverage there; `count-active-tickets` should join them, with
+  the impure directory read kept thin enough to test over a fixture dir.
+
+  ## E2E QA procedure (specifier, 2026-08-05)
+
+  1. **The reported symptom is gone (scenario 01, row 1).** With exactly one
+     ticket in `backlog/active/` alongside `.gitkeep` and the effective cap at
+     1, send any handoff. Confirm no depth warning on stderr. This is a live
+     reproduction today — the same command prints `active=2, max=1` before the
+     fix.
+
+  2. **A real breach still warns, with the right number (scenarios 01 row 2,
+     03).** Add a second ticket yaml to `backlog/active/`, send a handoff, and
+     confirm the warning fires and reports `active=2` — not `3`. Remove the
+     extra ticket afterwards; do not leave the active backlog over cap.
+
+  3. **Filtered by kind, not by name (scenario 02).** Drop a `README.md` and an
+     empty subdirectory into `backlog/active/` beside one ticket at cap 1.
+     Confirm silence. A fix that special-cased `.gitkeep` fails here, which is
+     the point of the scenario.
+
+  4. **Sentinel and empty cases (scenario 01, rows 3-4).** With the cap at `-1`
+     confirm silence regardless of ticket count; with the cap at `0` and no
+     ticket yamls present confirm silence rather than a warning triggered by
+     `.gitkeep` alone.
+
+  5. **The two counters agree (scenario 04).** For 0, 1 and 2 active tickets,
+     compare the warning's count against
+     `promotion_gates_lib/active-count` for the same directory. Equal in every
+     case. This is the invariant, and it is the check that would have caught
+     both this defect and the BL-216 divergence before it.
