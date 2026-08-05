@@ -32,6 +32,7 @@
 (load-file (str (fs/path script-dir "babysitterd_sweep_lib.bb")))
 (load-file (str (fs/path script-dir "babysitter_assess_lib.bb")))
 (load-file (str (fs/path script-dir "babysitter_nudge_lib.bb")))
+(load-file (str (fs/path script-dir "mono_router_lib.bb")))
 
 (defn usage []
   (binding [*out* *err*]
@@ -80,6 +81,42 @@
            (remove #(str/blank? (:session %)))
            vec)
       [])))
+
+;; ── BL-804: mono-router topology awareness ──────────────────────────────
+;; Same resolution as handoffd.bb's rotation-router-mode? (~line 1353):
+;; swarm-identity rotation key, else the identity-recorded active pack conf,
+;; else the tracked default swarmforge/swarmforge.conf — via mono_router_lib
+;; (rotation-router-from-identity?, conf-rotation-router?), never a second
+;; parser of identity/conf text (invariant 2). script-dir is this file's OWN
+;; location (mirrors handoffd.bb's conf-file), not project-root — a launch-
+;; time --pack/SWARMFORGE_CONFIG override is still honored via the identity-
+;; recorded conf path, same as handoffd.
+
+(def default-conf-file (str (fs/path script-dir ".." "swarmforge.conf")))
+
+(defn rotation-router-mode? []
+  (let [identity-path (fs/path state-dir "swarm-identity")
+        identity-text (when (fs/exists? identity-path) (slurp (str identity-path)))
+        conf-path (or (get (mono-router-lib/parse-identity-map (or identity-text ""))
+                           "active_backlog_max_depth_conf_path")
+                      default-conf-file)
+        conf-text (when (and conf-path (fs/exists? conf-path))
+                    (slurp conf-path))]
+    (boolean
+     (or (mono-router-lib/rotation-router-from-identity? identity-text)
+         (mono-router-lib/conf-rotation-router? conf-text)))))
+
+(defn should-stand-role?
+  "Whether `role` (a roles.tsv role name) is expected to have a standing tmux
+   session. Under rotation router, derived purely from topology
+   (mono-router-lib/should-have-standing-session? — resident + coordinator
+   only, invariant 1: never a hardcoded per-role list). Outside router mode
+   every role is expected to stand, unchanged from pre-BL-804 behavior
+   (scenario 05)."
+  [rotation-router? ordered-roles role]
+  (if rotation-router?
+    (mono-router-lib/should-have-standing-session? ordered-roles role)
+    true))
 
 (defn pane-exists? [socket session]
   (and socket (zero? (:exit (sh! "tmux" "-S" socket "has-session" "-t" session)))))
@@ -338,6 +375,15 @@
         pause (read-pause)
         claim-risks (try (babysitter-assess-lib/scan-claim-risks project-root)
                           (catch Exception _ []))
+        ;; BL-804: resolve topology ONCE per sweep, then stamp each role's
+        ;; :should-stand? — the sweep lib's check-live-session only ever sees
+        ;; the resolved boolean, never a role name, so suppression can never
+        ;; be hardcoded per role (invariant 1).
+        rotation-router? (rotation-router-mode?)
+        ordered-roles (mapv :role role-rows)
+        roles (mapv #(assoc % :should-stand?
+                             (should-stand-role? rotation-router? ordered-roles (:role %)))
+                    roles)
         snapshot
         {:now-ms (now-ms)
          :roles (mapv #(dissoc % :pane-text) roles)

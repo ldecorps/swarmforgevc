@@ -26,6 +26,22 @@
 ;;      check-live-session's process gather and check-memory-floor's memory
 ;;      gather. Also asserts the successful-gather branch is unchanged from
 ;;      pre-BL-802 semantics, across randomized available-mb/floor-mb pairs.
+;;   P4 (BL-804) topology-suppression-role-name-blind-and-presence-always-
+;;      checked - the two BL-804 invariants this pure layer can encode
+;;      (invariant 2, the shared-resolution rule, is a code-structure
+;;      constraint on babysitter_check.bb's call site, not a runtime
+;;      property of this pure module — no executable encoding here; see the
+;;      ticket handoff notes for the stated reason):
+;;        (a) invariant 1, suppression is derived from topology, never
+;;            hardcoded per role: across RANDOM role-name strings (never a
+;;            fixed roster like "specifier"/"cleaner") crossed with random
+;;            should-stand?, a missing pane's finding presence tracks
+;;            should-stand? alone — the role name never enters the decision.
+;;        (b) invariant 3, a pane that exists is always checked: across
+;;            random should-stand? values, a PRESENT pane's finding (or lack
+;;            of one) is identical regardless of should-stand? — topology
+;;            suppression never reaches the process/menu/frozen/remote-
+;;            control checks once the pane is confirmed present.
 ;;
 ;; NOTE on toolchain (per swarmforge's engineering article, "Babashka/Clojure
 ;; (swarm scripts)"): the BL-654 role contract's "*.property.test.js /
@@ -206,6 +222,55 @@
 (assert-true "P3 generator reached both a failed and a successful memory gather"
              (and (contains? @p3-branches-hit :memory-gather-failed)
                   (contains? @p3-branches-hit :memory-gather-ok)))
+
+;; ── P4 (BL-804): topology-suppression-role-name-blind-and-presence-always-checked ─
+(def p4-branches-hit (atom #{}))
+
+(defn- rand-role-name []
+  ;; Deliberately NOT drawn from any real roster (coder/specifier/cleaner/…)
+  ;; — a random alphabetic string proves suppression tracks should-stand?
+  ;; alone, never a hardcoded role-name list (invariant 1).
+  (apply str "role-" (repeatedly (+ 3 (rint 8)) #(char (+ 97 (rint 26))))))
+
+(defn- gen-absence-case []
+  (let [should-stand? (rbool)
+        role (rand-role-name)]
+    (swap! p4-branches-hit conj (if should-stand? :absence-required :absence-dormant))
+    {:should-stand? should-stand?
+     :result (sw/check-live-session {:role role :pane-exists? false
+                                      :has-claude-process? false
+                                      :should-stand? should-stand?})}))
+
+(dotimes [_ 300]
+  (let [{:keys [should-stand? result]} (gen-absence-case)]
+    (if should-stand?
+      (assert-true "a missing session with should-stand? true is still CRIT, for ANY role name"
+                   (and result (= "CRIT" (:severity result))))
+      (assert-true "a missing session with should-stand? false is suppressed, for ANY role name"
+                   (nil? result)))))
+
+(defn- gen-presence-case []
+  (let [role (rand-role-name)
+        has-claude? (rbool)]
+    (swap! p4-branches-hit conj (if has-claude? :presence-healthy :presence-half-launch))
+    {:result-stand (sw/check-live-session {:role role :pane-exists? true
+                                            :has-claude-process? has-claude?
+                                            :should-stand? true})
+     :result-no-stand (sw/check-live-session {:role role :pane-exists? true
+                                               :has-claude-process? has-claude?
+                                               :should-stand? false})}))
+
+(dotimes [_ 300]
+  (let [{:keys [result-stand result-no-stand]} (gen-presence-case)]
+    (assert-true "should-stand? never changes the outcome once the pane is confirmed present (invariant 3)"
+                 (= result-stand result-no-stand))))
+
+(assert-true "P4 generator reached both a required and a dormant missing-session case"
+             (and (contains? @p4-branches-hit :absence-required)
+                  (contains? @p4-branches-hit :absence-dormant)))
+(assert-true "P4 generator reached both a healthy and a half-launch present-pane case"
+             (and (contains? @p4-branches-hit :presence-healthy)
+                  (contains? @p4-branches-hit :presence-half-launch)))
 
 (when (seq @failures)
   (binding [*out* *err*]

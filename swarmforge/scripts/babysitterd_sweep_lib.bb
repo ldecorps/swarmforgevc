@@ -17,8 +17,20 @@
 ;; ── check 1: live-session-per-role ──────────────────────────────────────────
 
 (defn check-live-session
-  [{:keys [role pane-exists? has-claude-process? process-gather-failed?]}]
+  ;; BL-804: should-stand? is topology-derived (mono_router_lib, via the
+  ;; babysitter_check.bb gatherer) and defaults to true so every pre-BL-804
+  ;; caller — classic packs, and every existing test that never mentions
+  ;; the key — keeps CRIT-ing a missing session exactly as before. It is
+  ;; consulted ONLY on the absence branch: once pane-exists? is true, the
+  ;; process/menu/frozen/remote-control checks below (and their sibling
+  ;; check-* fns) run unconditionally, so topology suppression can never
+  ;; skip a check on a session that is actually present.
+  [{:keys [role pane-exists? has-claude-process? process-gather-failed? should-stand?]
+    :or {should-stand? true}}]
   (cond
+    (and (not pane-exists?) (not should-stand?))
+    nil
+
     (not pane-exists?)
     {:key (str "pane-" role) :severity "CRIT"
      :message (str "swarmforge-" role ": tmux session missing")}
@@ -246,7 +258,9 @@
        " — investigate and take the minimal correct action (or tell the human)."))
 
 ;; ── assemble-findings: the single pure entry point ──────────────────────────
-;; snapshot keys: :roles (seq of per-role maps for checks 1/2/6/7),
+;; snapshot keys: :roles (seq of per-role maps for checks 1/2/6/7 — each may
+;; carry :should-stand? (BL-804), topology-derived by the gatherer and
+;; defaulting to true when absent),
 ;; :handoffd-alive? :handoffd-supervisor-alive? :handoffd-log-age-secs
 ;; :handoffd-max-age-secs, :failed-count, :stuck-parcels, :available-mb
 ;; :mem-floor-mb, :claim-risks (pre-scanned assessments), :rotate-note (or nil),
