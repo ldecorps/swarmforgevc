@@ -52,8 +52,11 @@
 ;;      owning-role-for-path) — the shape/role RESOLUTION itself is I/O-
 ;;      layer plumbing with no pure-function form to property-test here
 ;;      (same carve-out shape as P4's invariant 2); it is covered instead by
-;;      test_babysitter_check.sh's real-fixture scenarios (master-nested and
-;;      flat-worktree mailboxes, both an idle and a busy owner). This
+;;      the BL-807 acceptance feature's step handlers
+;;      (specs/pipeline/steps/bl807BabysitterStuckInProcessOwnerLivenessSteps.js),
+;;      which drive the real babysitter_check.sh CLI against both a
+;;      role-nested master mailbox and a flat worktree mailbox, each with an
+;;      idle and a busy owner (scenario 05). This
 ;;      generator proves the part that IS a runtime property of this pure
 ;;      module: across arbitrary parcel names (standing in for any role's
 ;;      or shape's resulting filename) and arbitrary ages (all past the
