@@ -84,11 +84,19 @@
      :message (str failed-count " parcel(s) in handoffs/failed/ dead-letter box")}))
 
 ;; ── check 5: stuck-in-process ─────────────────────────────────────────────────
+;; BL-807 R1: gate on the busy signal the sweep already computes for check 10
+;; (owner-busy?, threaded in by the gatherer's busy-by-role map) — a stuck
+;; parcel whose owning role's pane is busy is suppressed, never warned. Age
+;; and mailbox shape play no further role here: every item this function
+;; receives was already past the stuck threshold by the gatherer (R2), and
+;; the gatherer resolves the owning role for every mailbox shape (R4/R5) —
+;; this decision only ever consumes the resolved :owner-busy? boolean.
 
 (defn check-stuck-in-process
   [stuck-parcels]
   (vec
-   (for [{:keys [name age-min]} (or stuck-parcels [])]
+   (for [{:keys [name age-min owner-busy?]} (or stuck-parcels [])
+         :when (not owner-busy?)]
      {:key (str "stuck-" (subs (str name) 0 (min 40 (count (str name)))))
       :severity "WARN"
       :message (str "in_process parcel older than 30m (age=" age-min "m): " name)})))
