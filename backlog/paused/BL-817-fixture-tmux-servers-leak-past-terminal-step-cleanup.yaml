@@ -1,0 +1,190 @@
+id: BL-817
+title: "Six step handlers start tmux servers with terminal-step cleanup only, so a mutation pass leaks them — adopt BL-458's shared reaper"
+milestone: M8
+type: defect
+status: todo
+epic: code-quality-gates
+human_approval: pending
+severity: medium
+priority: 20
+direction: swarm-proposed
+depends_on: []
+assigned_to: none
+mutation_cost: medium
+invariants:
+  - "No tmux server started by an acceptance step handler outlives the run that started it, whatever ends the scenario — pass, thrown assertion, killed mutant, or signal."
+  - "Fixture reaping is decided by socket path alone: a server whose socket is under a repo .swarmforge/ path is never killed, however its session is named."
+  - "Reaping is idempotent — a fixture whose server already exited reaps cleanly, never as an error."
+
+approval_context: >
+  Raised as a `rule_proposal` by the hardener (scope `role:hardender`,
+  2026-08-05) after its BL-807 pass: 22 Gherkin mutations, 5 leaked tmux
+  servers, and the observation that the same cleanup idiom recurs in "6+
+  sibling step-handler files repo-wide".
+
+  The specifier accepted the observation and verified it, but is deliberately
+  NOT accepting the proposed remedy as the whole answer. The proposal asked
+  that the hardener scan for and reap leaked servers after each mutation pass
+  — that treats the symptom every pass, forever, by hand. BL-458 already built
+  the cure and these six files simply never adopted it.
+
+  So the disposition is split, and this ticket is the durable half:
+
+  - The hardener prompt HAS been amended (accepted, committed) — its existing
+    "leave no orphaned processes" check named only `pgrep -fl 'node
+    --test|stryker'`, which provably cannot match a leaked tmux server. That
+    gap is real and worth closing today. The amendment is explicitly marked a
+    stopgap to be deleted when this ticket lands.
+  - This ticket removes the need for it.
+
+  Needs human approval because it edits six acceptance step handlers and adds
+  a new repo-wide gate — low risk individually, but it touches the harness
+  every other ticket's acceptance run depends on.
+
+source: |
+  `rule_proposal` handoff from hardender to specifier,
+  2026-08-05T21:56:46Z, scope `role:hardender`.
+
+  body: "After a BL-113 Gherkin mutation pass on a tmux-fixture Outline, scan
+  for/reap leaked fixture tmux servers - mutants fail-early, skipping the
+  handler's cleanup() - not just node/stryker."
+
+  rationale: "BL-807 pass: 22 mutations, several failed before reaching
+  cleanup(), leaked 5 tmux servers. Manual-cleanup-only-at-last-step idiom
+  recurs in 6+ sibling step-handler files repo-wide."
+
+description: |
+  ## The leak, verified rather than taken on trust
+
+  Two leaked fixture servers were still alive on the host when this ticket was
+  written, hours after the BL-807 pass that spawned them:
+
+  ```
+  61096 tmux -S /var/folders/.../tmp.NvLjaRF9/bl647.sock new-session -d -s swarmforge-coder
+  62945 tmux -S /var/folders/.../tmp.yVt4bNQR/bl647.sock new-session -d -s swarmforge-coder
+  ```
+
+  `specs/pipeline/steps/bl647RotationRouterLivenessSteps.js` starts them in
+  `startTmuxSessions()` (line 100) and kills them in `cleanup(ctx)` (line 149),
+  which is called from five terminal Then steps and nowhere else. A mutant that
+  fails an assertion before reaching one of those steps never runs cleanup, and
+  the server — detached, on its own socket — outlives the whole run.
+
+  ## The cure already exists and was written for exactly this
+
+  BL-458 built `specs/pipeline/steps/lib/fixtureReaper.js` after four fixture
+  mini-swarms survived ~18h and ~1.45 GB following an interrupted run. Its
+  header names the very idiom at fault: "their only cleanup was inline teardown
+  inside terminal Then steps, so any assertion that threw first — or the runner
+  being killed — leaked the whole tree permanently."
+
+  `track(root)` registers a fixture root; `exit`/`SIGINT`/`SIGTERM` handlers are
+  installed once and reap every still-tracked root; `reap()` is idempotent
+  against a scenario's own inline teardown. It ALREADY kills tmux servers — it
+  reads `<root>/.swarmforge/tmux-socket` and runs `tmux -S <sock> kill-server`
+  (lines 87-91).
+
+  Adoption is close to free for these files, because they already write that
+  exact pointer file. `bl647RotationRouterLivenessSteps.js:106` writes
+  `<target>/.swarmforge/tmux-socket` today.
+
+  ## Who has and has not adopted it
+
+  Classified by whether the file both spawns a tmux server and requires
+  `fixtureReaper` (verified at spec time, 2026-08-06):
+
+  ```
+  REAPED    bl458AcceptanceFixtureProcessLeakSteps.js
+  REAPED    roleLifecycleParkUnneededSteps.js
+
+  HANDROLL  alwaysOnOperatorPresenceSteps.js
+  HANDROLL  bl486ReapOrphanedAgentProcessesSteps.js
+  HANDROLL  bl647RotationRouterLivenessSteps.js
+  HANDROLL  bl804BabysitterMonoRouterTopologyAwarenessSteps.js
+  HANDROLL  controlLossIsNotAgentDeathSteps.js
+  HANDROLL  tmuxDoubleAnswersInProcessSteps.js
+  ```
+
+  Six, matching the hardener's count. Five of the six already write a
+  `tmux-socket` pointer; `tmuxDoubleAnswersInProcessSteps.js` writes neither a
+  pointer nor a `kill-server` call, so establish what it actually leaves behind
+  before assuming the same fix fits it.
+
+  ## The guardrail is not optional
+
+  These fixtures name their sessions `swarmforge-coder` — character-identical to
+  the live swarm's session name. Anything that reaps by session name kills the
+  running swarm, and the operator with it. The only safe discriminator is the
+  socket path: fixture sockets live under the OS temp dir, every real server's
+  socket lives under a repo `.swarmforge/` path
+  (`.swarmforge/tmux/*.sock`, `.swarmforge/operator/operator-tmux.sock`). This
+  is the same class of guardrail BL-413 and BL-458 already carry, and invariant
+  2 is what holds it.
+
+  ## What to build
+
+  1. The six files adopt `fixtureReaper.track()` — registered BEFORE the server
+     is spawned, so a crash mid-launch is covered too (the ordering
+     `fixtureReaperAbnormalExitHarness.js` already models). Existing inline
+     `cleanup()` calls stay; `reap()` is idempotent by design.
+  2. A gate that fails when a step handler starts a tmux server without shared
+     reaper coverage, so the idiom cannot return a seventh time. Scenario 04 is
+     that gate; a static scan over `specs/pipeline/steps/*.js` is sufficient and
+     is what makes this cheap to keep.
+  3. Delete the stopgap bullet from `swarmforge/roles/hardender.prompt` once 1
+     and 2 are green — it names this ticket and says to drop it. Leaving a
+     stale manual instruction behind is its own small defect.
+
+  The acceptance contract is parked as `.feature.draft` (BL-233): nothing under
+  `specs/pipeline/steps/` matches its steps yet, and `runtime.js` throws on the
+  first unmatched step, so shipping it live would hard-fail every acceptance run
+  in the repo. Rename it to `.feature` and repoint this ticket's `acceptance:`
+  in the SAME parcel as the step handlers — not before.
+
+acceptance: specs/features/BL-817-fixture-tmux-servers-reaped-on-abnormal-scenario-end.feature.draft
+
+required_wiring:
+  - "specs/pipeline/steps/bl647RotationRouterLivenessSteps.js::fixtureReaper::the file whose leak was actually observed must be one of the adopters, not merely a cited example."
+  - "specs/pipeline/steps/index.js::bl817::the new gate's step module must be registered, or runtime.js throws on scenario 01."
+
+out_of_scope: |
+  - Rewriting `fixtureReaper.js` itself. It already does this job; six callers
+    never called it. Changing the primitive is not the fix.
+  - The orphan reaper's own /tmp sweep behaviour (BL-458 scenarios 01 and 03,
+    BL-413's boundary). Unchanged here.
+  - Non-tmux fixture leaks (front-desk supervisor/bridge/bot trees). Already
+    covered by `track()`; this ticket only closes the tmux half in the six
+    files that opted out of both.
+  - Making the unit suite green (BL-815, BL-816). Separate tickets.
+
+notes: |
+  Sibling context: BL-458 (the shared reaper), BL-413 (sandbox sweep boundary),
+  BL-486 (orphaned agent process reaping) — and BL-807, whose hardening pass
+  surfaced this.
+
+  A property test suits invariant 2 better than more example rows: generate
+  socket paths across temp-dir and repo-`.swarmforge/` shapes and assert the
+  kill decision, rather than enumerating three locations and hoping the fourth
+  shape nobody wrote down behaves.
+
+  ## E2E QA procedure (specifier, 2026-08-06)
+
+  1. **Reproduce the leak first, on the unfixed code.** Run a Gherkin mutation
+     pass over `bl647RotationRouterLivenessSteps.js`'s Outline. Before the fix,
+     `pgrep -afl tmux` shows surviving `bl647.sock` servers afterwards. That
+     count going to zero after the fix is the whole test — do not accept a
+     green unit suite as a substitute for seeing it.
+
+  2. **Kill the runner mid-scenario.** Start an acceptance run touching one of
+     the six files and SIGTERM it partway. Confirm no fixture tmux server
+     survives, for each of the six.
+
+  3. **Confirm the live swarm is untouched** — the check that matters most.
+     With the swarm and operator running, run the full acceptance suite and
+     then confirm `tmux -S .swarmforge/tmux/*.sock has-session` and the
+     operator socket both still answer. A fix that reaps by session name passes
+     steps 1 and 2 and fails here by taking the swarm down.
+
+  4. **Gate catches a regression.** Add a throwaway step handler that spawns a
+     tmux server without `track()`, confirm the scenario-04 gate names it, then
+     remove it.

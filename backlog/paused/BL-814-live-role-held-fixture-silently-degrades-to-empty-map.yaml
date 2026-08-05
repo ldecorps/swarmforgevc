@@ -126,7 +126,7 @@ description: |
   fails and never catches the next BL-655/BL-805 recurrence. Copy what is
   actually depended on.
 
-acceptance: specs/features/BL-814-live-role-held-fixture-loud-degrade.feature
+acceptance: specs/features/BL-814-live-role-held-fixture-loud-degrade.feature.draft
 
 required_wiring:
   - "extension/test/readLiveRoleHeldTicketsCli.test.js::mono_router_lib.bb::the fixture copy list must actually carry BL-805's new dependency, or the two BL-487 tests stay red."
