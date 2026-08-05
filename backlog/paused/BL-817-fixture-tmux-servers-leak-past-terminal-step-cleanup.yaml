@@ -4,7 +4,7 @@ milestone: M8
 type: defect
 status: todo
 epic: code-quality-gates
-human_approval: pending
+human_approval: approved
 severity: medium
 priority: 20
 direction: swarm-proposed
@@ -137,9 +137,11 @@ description: |
 
   The acceptance contract is parked as `.feature.draft` (BL-233): nothing under
   `specs/pipeline/steps/` matches its steps yet, and `runtime.js` throws on the
-  first unmatched step, so shipping it live would hard-fail every acceptance run
-  in the repo. Rename it to `.feature` and repoint this ticket's `acceptance:`
-  in the SAME parcel as the step handlers — not before.
+  first unmatched step. Scope of that throw, checked rather than assumed —
+  `run_acceptance.sh` takes ONE feature file, so a handler-less file fails a run
+  aimed at it, not every acceptance run in the repo. Rename it to `.feature` and
+  repoint this ticket's `acceptance:` in the SAME parcel as the step handlers —
+  not before.
 
 acceptance: specs/features/BL-817-fixture-tmux-servers-reaped-on-abnormal-scenario-end.feature.draft
 
