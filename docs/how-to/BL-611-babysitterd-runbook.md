@@ -25,7 +25,7 @@ captures, an available-memory reading) against these checks, in
 | 2 | remote-control-flag | a live process is missing `--remote-control` |
 | 3 | handoffd-supervisor-fresh | handoffd/its supervisor is down, or `handoffd.log` is older than 5 minutes |
 | 4 | dead-letter-nonempty | `.swarmforge/handoffs/failed/` is non-empty |
-| 5 | stuck-in-process | an `inbox/in_process/` parcel is older than 30 minutes, in master **or** any worktree mailbox — under mono-router, most of what used to trip this was the resident forwarding then rotating without completing the received parcel; BL-805 (see `swarmforge/handoff-protocol.md`) closes that at the source by refusing resident-invoked rotation over an undrained `in_process`, so this check now mostly catches genuine stalls |
+| 5 | stuck-in-process | an `inbox/in_process/` parcel is older than 30 minutes, in master **or** any worktree mailbox, **and** its owning role's pane is not busy (BL-807, below) — under mono-router, most of what used to trip this was the resident forwarding then rotating without completing the received parcel; BL-805 (see `swarmforge/handoff-protocol.md`) closes that at the source by refusing resident-invoked rotation over an undrained `in_process`, so this check now mostly catches genuine stalls |
 | 6 | menu-blocked-pane | a pane capture shows an interactive menu/dialog (report only — never picks an option) |
 | 7 | busy-but-frozen | busy footer present but the spinner-stripped content hash is unchanged across 3 consecutive sweeps |
 | 8 | memory-floor | available memory is below the configured floor; reports `UNAVAILABLE` (never a fabricated OK or CRIT) when no memory facility on the host is readable |
@@ -193,6 +193,43 @@ failure instead of `nil`. The stdout leak is gone, and the stall detector — a
 role holding a claim past its idle timeout with HEAD unmoved — can fire
 again. Row 11 above is otherwise unchanged: same trigger, same nudge path,
 now actually reachable.
+
+## Stuck-in-process now gates on owner liveness, and sees every mailbox (BL-807)
+
+Check 5 used to be a pure file-age test: it never consulted whether the owning
+role was actually working, even though the same sweep already builds a
+`busy-by-role` map (from live pane classification) for check 10's
+`owner-busy?` gate. That let the same sweep decide "there is motion here"
+(check 10) and "this is stuck" (check 5) about the same parcel — and because
+`stuck-*` is the one `WARN` class that escalates to a coordinator-pane nudge,
+a false positive interrupted a live agent mid-parcel rather than just adding
+log noise. Long-running parcels (mutation runs, full suites, one resident
+working one parcel at a time under mono-router) routinely cross the 30-minute
+mark honestly.
+
+`stuck-parcels` (`babysitter_check.bb`) now takes the same `busy-by-role` map
+check 10 already receives, resolves the owning role for each aged
+`in_process` parcel, and attaches `:owner-busy?` to the finding.
+`check-stuck-in-process` (`babysitterd_sweep_lib.bb`) skips any finding where
+`:owner-busy?` is true — the parcel is still stuck if the owning role goes
+idle before the next sweep, but never warns while there is motion. The
+30-minute threshold itself is unchanged (raising it would only delay true
+positives, never eliminate false ones), and no new durable state or
+last-motion timestamp was added — this is busy-now suppression only, so a
+role that is busy on something *else* while a different parcel rots in its
+`in_process` still suppresses that finding.
+
+Separately, the glob that finds `in_process` parcels only matched the flat
+worktree mailbox shape (`.worktrees/<role>/.swarmforge/handoffs/inbox/...`)
+and was blind to the role-nested master shape
+(`.swarmforge/handoffs/<role>/inbox/...`) that the specifier and coordinator
+use — an abandoned specifier or coordinator parcel raised no warning, ever.
+The glob (`"{,**/}inbox/in_process/*.handoff"`) and `owning-role-for-path`'s
+regex resolution now cover both shapes with one rule, each real parcel
+matched — and counted — exactly once.
+
+Acceptance feature:
+[`specs/features/BL-807-babysitter-stuck-in-process-warn-ignores-owner-liveness.feature`](../../specs/features/BL-807-babysitter-stuck-in-process-warn-ignores-owner-liveness.feature).
 
 ## Verify
 

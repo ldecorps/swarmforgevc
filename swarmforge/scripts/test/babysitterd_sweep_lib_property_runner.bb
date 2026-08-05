@@ -42,6 +42,27 @@
 ;;            of one) is identical regardless of should-stand? — topology
 ;;            suppression never reaches the process/menu/frozen/remote-
 ;;            control checks once the pane is confirmed present.
+;;   P5 (BL-807) stuck-warning-never-fires-while-owner-busy - the ticket's
+;;      declared invariant: "a stuck-in-process warning is never raised for
+;;      a parcel whose owning role the same sweep classifies busy — for any
+;;      mailbox shape, role, or parcel age." check-stuck-in-process is
+;;      deliberately blind to mailbox shape and role name by design (R1: it
+;;      consumes only the already-resolved :owner-busy? boolean
+;;      babysitter_check.bb computes from busy-by-role + the widened
+;;      owning-role-for-path) — the shape/role RESOLUTION itself is I/O-
+;;      layer plumbing with no pure-function form to property-test here
+;;      (same carve-out shape as P4's invariant 2); it is covered instead by
+;;      the BL-807 acceptance feature's step handlers
+;;      (specs/pipeline/steps/bl807BabysitterStuckInProcessOwnerLivenessSteps.js),
+;;      which drive the real babysitter_check.sh CLI against both a
+;;      role-nested master mailbox and a flat worktree mailbox, each with an
+;;      idle and a busy owner (scenario 05). This
+;;      generator proves the part that IS a runtime property of this pure
+;;      module: across arbitrary parcel names (standing in for any role's
+;;      or shape's resulting filename) and arbitrary ages (all past the
+;;      stuck threshold, which is the gatherer's job, not this function's —
+;;      every age value here is a candidate the invariant must hold for),
+;;      the emitted WARN set is determined by :owner-busy? alone.
 ;;
 ;; NOTE on toolchain (per swarmforge's engineering article, "Babashka/Clojure
 ;; (swarm scripts)"): the BL-654 role contract's "*.property.test.js /
@@ -271,6 +292,41 @@
 (assert-true "P4 generator reached both a healthy and a half-launch present-pane case"
              (and (contains? @p4-branches-hit :presence-healthy)
                   (contains? @p4-branches-hit :presence-half-launch)))
+
+;; ── P5 (BL-807): stuck-warning-never-fires-while-owner-busy ─────────────────
+(def p5-branches-hit (atom #{}))
+
+(defn- rand-parcel-name [idx]
+  ;; index-prefixed so two random draws in the same batch can never collide,
+  ;; keeping the busy/idle -> warned/suppressed mapping unambiguous below.
+  (apply str "p" idx "-" (repeatedly (+ 5 (rint 20)) #(char (+ 97 (rint 26))))))
+
+(defn- gen-stuck-parcel [idx]
+  (let [owner-busy? (rbool)
+        ;; Arbitrary age, always past the 30m stuck-min a real gatherer
+        ;; would have already filtered on — proves age plays no further
+        ;; role in this function's own suppression decision.
+        age-min (+ 31 (rint 2000))]
+    (swap! p5-branches-hit conj (if owner-busy? :owner-busy :owner-idle))
+    {:name (rand-parcel-name idx) :age-min age-min :owner-busy? owner-busy?}))
+
+(dotimes [_ 300]
+  (let [n (inc (rint 8))
+        parcels (mapv gen-stuck-parcel (range n))
+        findings (sw/check-stuck-in-process parcels)
+        warned-keys (set (map :key findings))]
+    (doseq [{:keys [name owner-busy?]} parcels]
+      (if owner-busy?
+        (assert-true (str "busy owner suppresses the stuck warning for " name)
+                     (not (contains? warned-keys (str "stuck-" name))))
+        (assert-true (str "idle owner still warns for " name)
+                     (contains? warned-keys (str "stuck-" name)))))
+    (assert-true "check-stuck-in-process emits exactly one finding per non-busy parcel, never more"
+                 (= (count findings) (count (remove :owner-busy? parcels))))))
+
+(assert-true "P5 generator reached both a busy-owner and an idle-owner stuck parcel"
+             (and (contains? @p5-branches-hit :owner-busy)
+                  (contains? @p5-branches-hit :owner-idle)))
 
 (when (seq @failures)
   (binding [*out* *err*]
