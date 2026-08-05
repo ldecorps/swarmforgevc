@@ -341,9 +341,14 @@
 ;; be spam once the operator has already been told once.
 (def missing-key-warned? (atom false))
 
-(defn send-configured-alarm-email! [subject text]
+;; BL-813: takes attachments (daemon_alarm_lib.bb's alarm-and-halt! now
+;; calls send-email! with 3 args) and threads them into the attachment-
+;; capable 7-arg send-configured-email! form (html nil - this alarm has no
+;; html body), so the death email actually carries the failure log instead
+;; of only naming its on-disk path.
+(defn send-configured-alarm-email! [subject text attachments]
   (daemon-alarm-lib/send-configured-email!
-   project-root conf-file subject text
+   project-root conf-file subject text nil attachments
    {:already-warned?! (fn [] @missing-key-warned?)
     :log-warning! (fn [msg] (log! "email-misconfigured" msg))
     :mark-warned! (fn [] (reset! missing-key-warned? true))}))
