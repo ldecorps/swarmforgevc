@@ -44,12 +44,22 @@
    exact id. A marker naming a ticket with no file anywhere would hold
    EVERYTHING forever - precisely the deadlock the operator ruled out - so
    the read side (read-ambulance-state below) treats that as mode OFF rather
-   than trusting the marker."
+   than trusting the marker.
+
+   BL-813: fs/glob lists a path, then this fn slurps it - a file that moves
+   or is deleted between those two steps (e.g. a ticket promoted active/ ->
+   done/ mid-poll) threw FileNotFoundException and crashed the daemon. Each
+   candidate's slurp+field-read is now its own try/catch: a vanished entry
+   just doesn't match (`some` moves on to the next glob hit, or to false),
+   never a crash."
   [project-root ticket-id]
   (let [backlog-dir (fs/path project-root "backlog")]
     (boolean
      (and (fs/exists? backlog-dir)
-          (some #(= ticket-id (read-yaml-field (slurp (str %)) "id"))
+          (some (fn [path]
+                  (try
+                    (= ticket-id (read-yaml-field (slurp (str path)) "id"))
+                    (catch Exception _ false)))
                 (fs/glob backlog-dir "**.yaml"))))))
 
 (defn- read-raw-marker

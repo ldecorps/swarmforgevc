@@ -241,12 +241,32 @@
      (warn-missing-key-if-needed! result warn-adapters)
      result)))
 
+;; BL-813: the death alarm named an on-disk path an off-box operator cannot
+;; open. This turns the failure-log content this process JUST WROTE into the
+;; one {:filename :content-id :base64} descriptor send-alarm-email!'s
+;; :attachments already knows how to carry (BL-286) - encoding the exact
+;; in-memory `content` string, never re-slurping the file (the whole point
+;; of this ticket is that a file on disk can vanish out from under a
+;; reader - see ambulance_lib.bb's ticket-has-file? fix above).
+(defn build-failure-attachment
+  [{:keys [failure-log-path content]}]
+  {:filename (str (fs/file-name failure-log-path))
+   :content-id "handoffd-failure-log"
+   :base64 (.encodeToString (java.util.Base64/getEncoder) (.getBytes ^String content "UTF-8"))})
+
 (defn alarm-and-halt!
   "Orchestrates the whole daemon-death response through injected adapters -
    testable with fakes for every side effect (BL-144 non-behavioral gate: no
    real timers, no real process kills, no real network in unit tests). Robust
    to a messy death (nil/partial status, empty log tail, no role counts):
-   every adapter call is given already-defaulted inputs."
+   every adapter call is given already-defaulted inputs.
+
+   BL-813: send-email! is now a 3-arg adapter (subject text attachments) -
+   attachments is a seq carrying the just-written failure log, built by
+   build-failure-attachment above. Building it is wrapped in try/catch: a
+   failure there (e.g. huge log content, encoding error) degrades to no
+   attachment rather than ever preventing halt-swarm! below - BL-144's
+   alarm-and-halt posture must survive an attachment-building bug."
   [{:keys [reason status now-iso! log-tail! role-counts! write-failure-log! send-email! halt-swarm! write-status!]}]
   (let [died-at (now-iso!)
         log-tail (or (log-tail!) [])
@@ -258,9 +278,12 @@
                                       :last-incident (:last_incident status)
                                       :role-counts role-counts})
         failure-log-path (write-failure-log! content)
+        attachments (try
+                      [(build-failure-attachment {:failure-log-path failure-log-path :content content})]
+                      (catch Exception _ nil))
         {:keys [subject text]} (build-alarm-email {:failure-log-path failure-log-path
                                                      :ensure-command "./swarm ensure"})
-        email-result (send-email! subject text)]
+        email-result (send-email! subject text attachments)]
     (halt-swarm!)
     (write-status! (assoc status
                           :state "halted"
