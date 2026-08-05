@@ -254,5 +254,11 @@ Both mutating scripts back up the working copy and restore from that — they do
   declared gate ran, in order, with evidence captured and no verdict invented. Whether
   a stage's *output* is good belongs to the stage agents.
 - **The Gherkin mutation gate is inapplicable** to this feature and to any feature
-  without Scenario Outlines: zero mutants, `Total 0` reads as a pass, and a stamp is
-  written that suppresses later runs. Repo-wide, not specific to this tool.
+  without Scenario Outlines: zero mutants can be discovered from a plain `Scenario:`.
+  Repo-wide, not specific to this tool. As of BL-638, `run_gherkin_mutation.sh`
+  reports this honestly — a zero-mutant run exits `2` with outcome `inapplicable`,
+  distinct from a real pass (`0`) or fail (`1`), and does not write a suppressing
+  stamp — rather than the prior behavior of `Total 0` reading as an indistinguishable
+  clean-sweep pass. The hardener's fallback for an inapplicable feature is a
+  hand-authored surgical mutation sweep over the parcel's own changed behavior, the
+  same pattern `expedite_mutation_sweep.sh` above already uses for `.bb` code.
