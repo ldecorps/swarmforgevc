@@ -79,6 +79,24 @@
     :else
     {:viable? true}))
 
+(defn rotate-gate-decision
+  "BL-805: pure decide for the RESIDENT-INVOKED rotation entry only
+   (rotate_to_role.bb -> handoff-lib/respawn-as!). The daemon's own
+   rotate-resident-to! call (handoffd.bb chase) never routes through this -
+   gating it would risk deadlocking chase-driven drain on the very parcel
+   it is trying to clear (invariant: daemon rotation always fails open).
+   blocking-file = the departing role's inbox/in_process/*.handoff path, or
+   nil when that box holds no real parcel (missing, empty, or holding only
+   claim-progress/nudge/chase sidecars - callers pass handoff-lib's already
+   *.handoff-filtered result, so a sidecar alone never reaches here).
+   Returns :proceed, :proceed-forced (blocked, but the force override is
+   set), or :refuse (blocked, no override)."
+  [{:keys [blocking-file force?]}]
+  (cond
+    (nil? blocking-file) :proceed
+    force? :proceed-forced
+    :else :refuse))
+
 (defn summarize-topology
   "For reporting: count actions across roles with {:role :alive?}."
   [ordered-roles role-alive-rows]

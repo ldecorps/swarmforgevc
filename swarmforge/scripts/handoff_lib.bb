@@ -18,6 +18,15 @@
 ;; thread project-root/ambulance state through by hand.
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "ambulance_lib.bb")))
 
+;; BL-805: mono-router-lib is also a leaf dependency (pure, no load-file of
+;; its own) - loaded here so respawn-as! below can gate the resident-invoked
+;; rotation entry via its pure rotate-gate-decision without every caller
+;; (just rotate_to_role.bb today) needing its own load-file. handoffd.bb
+;; already load-files both this file and mono_router_lib.bb directly - a
+;; second load-file here just re-evaluates the same defns, same as the
+;; ambulance-lib double-load above.
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "mono_router_lib.bb")))
+
 (defn worktree-root
   "Handoff state lives at the worktree root even when invoked from a
    subdirectory; the daemon only delivers to worktree-root inboxes (BL-056).
@@ -484,6 +493,35 @@
         (mono-router-home-role)
         "coder")))
 
+;; ── BL-805: resident-invoked rotation gate ──────────────────────────────────
+(def rotate-force-env-var
+  "Force-override env seam for the resident-invoked rotation gate below -
+   emergencies and tests only. Set to \"1\" to rotate anyway over a stuck
+   in_process parcel; the gate still warns loudly, naming what was left
+   behind (see respawn-as!)."
+  "SWARMFORGE_ROTATE_FORCE")
+
+(defn rotate-force-override? []
+  (= "1" (System/getenv rotate-force-env-var)))
+
+(defn departing-role-blocking-handoff
+  "The currently-active (about-to-depart) role's own inbox/in_process/
+   *.handoff file, if any - what the resident-invoked rotation gate refuses
+   on. Deliberately reads the RAW active-role marker (not
+   read-mono-router-active-role's home-role fallback): fails OPEN (returns
+   nil, so rotation proceeds) whenever the departing role can't actually be
+   determined - missing/blank marker, or no roles.tsv row for it - rather
+   than guessing an identity and gating on the wrong role's mailbox. handoff-
+   files already filters to real *.handoff parcels only, so a lone claim-
+   progress/nudge/chase sidecar never blocks."
+  []
+  (let [marker-path (mono-router-active-role-path)]
+    (when (fs/exists? marker-path)
+      (let [role (str/trim (slurp (str marker-path)))]
+        (when-not (str/blank? role)
+          (when-let [role-info (load-role-info role)]
+            (first (handoff-files (mailbox-dir role-info :in_process)))))))))
+
 (defn session-exists?
   "True when tmux has a live session of this name on the project socket."
   [socket session]
@@ -614,23 +652,53 @@
    target-role first (best-effort; proceeds after timeout with a loud warning
    so a fresh role never boots to an inbox handoffd merely hasn't reached yet).
    The target role's launch script must already exist - the router-mode
-   launcher pre-generates every pipeline role's <role>.sh at startup."
+   launcher pre-generates every pipeline role's <role>.sh at startup.
+
+   BL-805: this is the RESIDENT-INVOKED rotation entry (the only caller of
+   respawn-as!, via rotate_to_role.bb), so it first gates on the departing
+   role's own in_process box - a real unfinished parcel there refuses the
+   rotation (loud, nonzero exit, pane never respawned) unless the
+   rotate-force-env-var override is set, in which case it warns loudly,
+   naming what was left behind, and proceeds. rotate-resident-to! itself
+   stays ungated: handoffd.bb's daemon-driven chase calls it directly and
+   must never be able to deadlock on the very parcel it is trying to drain."
   [target-role]
-  (let [result (rotate-resident-to! target-role)]
-    (when-not (:ok result)
-      (binding [*out* *err*]
-        (case (:reason result)
-          "no-resident-session"
-          (println "rotate: could not resolve mono-router resident session")
-          "no-launch-script"
-          (println (str "rotate: no launch script for role '" target-role
-                        "' - is this swarm a mono-router (config rotation router) launch?"))
-          (println (str "rotate: failed for '" target-role "': " (:reason result)))))
-      (System/exit (case (:reason result)
-                     "no-resident-session" 4
-                     "no-launch-script" 3
-                     1)))
-    result))
+  (let [blocking-file (departing-role-blocking-handoff)
+        decision (mono-router-lib/rotate-gate-decision
+                  {:blocking-file (some-> blocking-file str)
+                   :force? (rotate-force-override?)})
+        do-respawn! (fn []
+                      (let [result (rotate-resident-to! target-role)]
+                        (when-not (:ok result)
+                          (binding [*out* *err*]
+                            (case (:reason result)
+                              "no-resident-session"
+                              (println "rotate: could not resolve mono-router resident session")
+                              "no-launch-script"
+                              (println (str "rotate: no launch script for role '" target-role
+                                            "' - is this swarm a mono-router (config rotation router) launch?"))
+                              (println (str "rotate: failed for '" target-role "': " (:reason result)))))
+                          (System/exit (case (:reason result)
+                                         "no-resident-session" 4
+                                         "no-launch-script" 3
+                                         1)))
+                        result))]
+    (case decision
+      :refuse
+      (do (binding [*out* *err*]
+            (println (str "rotate: refused - in_process still holds an unfinished parcel: " blocking-file
+                          ". Run done_with_current.sh to complete it first, or set "
+                          rotate-force-env-var "=1 to override.")))
+          (System/exit 5))
+
+      :proceed-forced
+      (do (binding [*out* *err*]
+            (println (str "rotate: WARNING " rotate-force-env-var
+                          " override set - rotating over unfinished parcel left behind: " blocking-file)))
+          (do-respawn!))
+
+      :proceed
+      (do-respawn!))))
 
 ;; ── BL-365: durable install ──────────────────────────────────────────────
 ;; A bare `spit` + `fs/move` pair is atomic in ORDERING (the rename is one
