@@ -373,6 +373,7 @@ const DOMAINS = [
   require('./bl803PromoteRouteSedBsdPortabilitySteps'),
   require('./bl804BabysitterMonoRouterTopologyAwarenessSteps'),
   require('./bl805RotateGateOnUnfinishedInProcessParcelSteps'),
+  require('./bl809WorktreeHeadReadSteps'),
   require('./bl638GherkinMutationZeroMutantsSteps'),
   require('./bl812HandoffdCwdWakeRemapSteps'),
   require('./bl813DeathAlarmAttachAndAmbulanceRaceSteps')
