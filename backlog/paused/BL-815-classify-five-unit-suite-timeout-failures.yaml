@@ -1,0 +1,150 @@
+id: BL-815
+title: "Classify the five unit-suite timeout failures on a quiet host, then ticket what survives isolation"
+milestone: M8
+type: defect
+status: todo
+epic: swarm-reliability
+human_approval: pending
+severity: medium
+priority: 20
+direction: human-requested
+depends_on: []
+assigned_to: none
+mutation_cost: low
+invariants:
+  - "Every failure in the inventory ends the slice with a recorded classification and the isolation evidence behind it; none is left as an unexamined 'environmental'."
+
+approval_context: >
+  Split 2 of 3 from `backlog/INTAKE-unit-suite-failing-tests-analysis.md`
+  (human via Cursor, 2026-08-05). Siblings: BL-814 (the confirmed BL-487
+  regression) and BL-816 (the process gate).
+
+  WHY THIS IS ANALYSIS-ONLY AND NOT A FIX TICKET. Your decision 2 said do not
+  dismiss as environmental without isolation proof — and the corollary is
+  that I cannot spec a fix for these five without that proof either. All five
+  are `Test timed out in 20000ms`. On a host at load average 76-250 (4 cores)
+  a timeout carries no information: it is consistent with a real slowdown, a
+  genuine hang, and a perfectly healthy test that never got scheduled. Guessing
+  which, and speccing a fix from the guess, is exactly the reflex you are
+  asking the swarm to stop.
+
+  So this slice buys the measurement. It ends with a committed classification
+  and, per your decision 1's 1:N permission, whatever fix tickets the evidence
+  actually justifies.
+
+  SEVERITY medium, DELIBERATELY, AND NOT AS A DOWNGRADE. Your decision 4 left
+  flake severity to me but forbade it vanishing into "noted, not bouncing".
+  The confirmed regression carries `high` and is BL-814. These five are
+  unclassified, which is not the same as benign — the invariant above is what
+  stops "unclassified" becoming a permanent resting place. If isolation
+  promotes any of them to a real regression, its own fix ticket gets its own
+  severity on the evidence.
+
+  ONE THING TO CONFIRM. The intake says a quiet host. This box has been in the
+  250+ band for days under continuous 3-shift operation, so "quiet" may mean
+  pausing shifts for the duration of the run. I have not assumed authority to
+  do that. If the measurement needs a shift pause, that is your call.
+
+source: |
+  backlog/INTAKE-unit-suite-failing-tests-analysis.md — raw intake, human via
+  Cursor, 2026-08-05 ~09:30 CEST. Rows 1-2 and 5-7 of its measured failure
+  table. Drained as a 1:N split (BL-814 + this + BL-816) per its decision 1.
+
+description: |
+  ## The five unclassified failures
+
+  From the full-suite run of 2026-08-05 (`/tmp/vitest_full.log`, ~432s,
+  4 files / 7 tests failed, plus 119 `[vitest-worker] Timeout calling
+  "onTaskUpdate"` errors). Rows 3-4 of the intake's table are root-caused and
+  split to BL-814; these five are not:
+
+  ```
+  1  dependencyGateCliReportsAndScope.test.js   identical fixture -> byte-identical reports
+  2  dependencyGateCliStorageGlobals.test.js    bare localStorage.setItem global reference
+  5  renderBriefingDiagramsCli.test.js          renders exactly the two maintained diagrams
+  6  renderBriefingDiagramsCli.test.js          main() in-process against the real repo
+  7  renderBriefingDiagramsCli.test.js          compiled CLI standalone as a subprocess
+  ```
+
+  All five: `Test timed out in 20000ms`. Both files in rows 1-2 shell out to a
+  real dependency-checker subprocess; all three in rows 5-7 render real
+  diagrams, one of them as a subprocess. Subprocess-heavy tests are precisely
+  the ones a saturated host starves — which is a hypothesis to test, not a
+  verdict to assume.
+
+  ## What this slice delivers
+
+  An evidence file at `backlog/evidence/BL-815-unit-suite-timeout-classification-<YYYYMMDD>.md`
+  recording, for each of the five:
+
+  - **what production seam it guards** and which ticket introduced it;
+  - **the isolation result**: run alone, on a host whose load is recorded
+    alongside the result — a number, not an adjective;
+  - **a classification**: real regression / real slowdown past the 20s budget /
+    load-induced starvation / suite-infra (worker RPC);
+  - **the consequence**: a fix ticket id, or an explicit argued reason none is
+    needed.
+
+  Then the fix tickets that classification justifies, minimally scoped.
+
+  ## Constraints inherited from the intake, unchanged
+
+  Do not make these green by raising the 20s budget, skipping, widening
+  exclude globs, or deleting coverage. If a test genuinely needs more than 20s
+  for a defensible measured reason, that is a finding to record and ticket with
+  the measurement attached — not an edit to make the red go away.
+
+  Also record the 119 `onTaskUpdate` worker-RPC errors: whether they are a
+  consequence of the same saturation, or an independent suite-infra defect.
+  They are noise that makes every other signal harder to read, which is its own
+  cost even when nothing is failing.
+
+acceptance: specs/features/BL-815-unit-suite-timeout-classification.feature.draft
+
+out_of_scope: |
+  - The BL-487 `{}` regression and the fixture that missed it. BL-814.
+  - The process question of parcels proceeding past a red `npm test`. BL-816.
+  - Cutting unit-suite duration (BL-791 slice B) — still blocked on a
+    trustworthy green baseline, which is partly what this slice buys.
+  - Fixing the host's sustained overload / duplicate supervisors. Related
+    cause, separate tickets if the evidence warrants them.
+  - Android JVM suite, property suite, acceptance wall-clock.
+
+notes: |
+  Sibling tickets from the same intake: BL-814, BL-816.
+
+  ## Why the acceptance is a `.feature.draft`, not a live feature file
+
+  This slice's deliverable is a committed measurement, not new runtime
+  behaviour, so there is nothing for a step handler to drive. Shipping a live
+  `.feature` here would hand the acceptance runner scenarios with no handlers
+  and hard-fail the hardener's gate for no benefit (BL-233). The draft
+  companion preserves the intended shape; the QA procedure below is the real
+  verification, and it is a reading task, not an automated one.
+
+  If classification promotes a failure to a real regression, THAT fix ticket
+  gets a live feature file of its own — which is the right place for one.
+
+  ## E2E QA procedure (specifier, 2026-08-05)
+
+  1. **Record the host first.** `uptime` and core count, captured in the
+     evidence file before any test runs. A classification with no load number
+     next to it is not evidence and should be bounced.
+
+  2. **Run each of the five alone**, not just the four files — rows 5-7 share
+     a file, and "the file passes" does not establish that each test passes
+     when it is not competing with its siblings.
+
+  3. **Re-run the full suite** on the same host state and confirm the failing
+     set matches the inventory. If it differs, the inventory is updated with
+     both runs recorded — the intake is explicit that the measured set is
+     authoritative and that an eighth failure is not to be invented.
+
+  4. **Check each classification against its own evidence.** A row classified
+     "load-induced" must show a passing isolated run AND a recorded high load
+     for the failing one. A row that fails in isolation on a quiet host is a
+     defect and must have a fix ticket id in the consequence column.
+
+  5. **Confirm nothing was made green by budget.** Diff the slice for changed
+     timeout values, skips, and exclude globs. Any of those without a recorded
+     measured cause fails this ticket outright.

@@ -1,0 +1,158 @@
+id: BL-816
+title: "A parcel that observes a red unit suite must record a decision, not proceed quietly"
+milestone: M8
+type: chore
+status: todo
+epic: code-quality-gates
+human_approval: pending
+priority: 30
+direction: human-requested
+depends_on: []
+assigned_to: none
+mutation_cost: low
+invariants:
+  - "A role that observes a red suite and forwards anyway leaves a durable record of that decision; silence is never a valid disposition."
+
+approval_context: >
+  Split 3 of 3 from `backlog/INTAKE-unit-suite-failing-tests-analysis.md`
+  (human via Cursor, 2026-08-05). Siblings: BL-814, BL-815.
+
+  YOUR META ASK, ANSWERED DIRECTLY. You asked whether a process/gate change is
+  warranted, or whether Article 4 already forbids this and the gap is
+  enforcement. My reading: **it is enforcement, but not only enforcement, and
+  the honest answer is that the rule is thinner than it looks.**
+
+  Article 4.4 requires a complete review inventory and says a check that
+  cannot run is recorded BLOCKED BY, never assumed clean. A red suite waved
+  through as "environmental" is neither run-clean nor recorded blocked — it is
+  a third state the article does not name, and that unnamed state is where
+  these dispositions have been living. So there IS a real gap: not permission
+  to ignore a red suite, but the absence of any obligation to SAY that you
+  did.
+
+  WHAT I AM PROPOSING, AND WHAT I AM NOT. Not a hard block. A gate that
+  refuses every forward on a red suite would, on a host that has sat at load
+  250 for days, halt the swarm on exactly the noise BL-815 is being spent to
+  characterise — and we do not yet know how much of that red is real. What I
+  am proposing is that the disposition become a recorded artefact: observed,
+  classified, and attributed, in the evidence file the role already writes.
+  Cheap, and it converts an invisible default into a visible choice.
+
+  Kept a separate small ticket, not stuffed into a product fix, per your
+  decision 5.
+
+  ONE OPEN CHOICE FOR YOU. Whether this stays a constitutional obligation
+  (Article 4.4 amendment, enforced by reviewers) or also gets a mechanical
+  check in the pre-QA gate. I have specced the former and left the latter as
+  a named follow-up, because a mechanical check needs a trustworthy green
+  baseline to key off and BL-815 has not delivered one yet. Say if you want
+  both now.
+
+source: |
+  backlog/INTAKE-unit-suite-failing-tests-analysis.md — raw intake, human via
+  Cursor, 2026-08-05 ~09:30 CEST, goal 4 and decision 5 ("Meta ask"). Drained
+  as a 1:N split (BL-814 + BL-815 + this) per its decision 1.
+
+  Human's words, kept verbatim because the rule has to answer them:
+
+    "Surface the meta-defect: QA/hardener/coder parcels that observe a red
+    `npm test` and proceed with 'unrelated / environmental, not bouncing'
+    leave the safety signal broken."
+
+description: |
+  ## The pattern
+
+  Recorded instances, both in committed bounce evidence:
+
+  ```
+  BL-536 QA evidence 2026-08-05   7 files / 11 tests failing, dismissed as
+                                  host load (load avg 254), not ticketed
+  BL-761 QA evidence 2026-08-04   3 fails + vitest worker timeouts, some pass
+                                  in isolation, one deterministic
+  ```
+
+  In both, a role saw a red suite, judged it environmental, and forwarded. The
+  judgement may even have been right. The defect is that it was never written
+  down as a judgement, so a real regression and worker-termination noise leave
+  identical traces — nothing. BL-814 is what that costs: a deterministic
+  assertion failure sat in the red set for at least a day, waved through
+  twice, while being trivially reproducible in five seconds.
+
+  ## What changes
+
+  Article 4.4 already says a check that cannot run is recorded BLOCKED BY and
+  never assumed clean. Extend that to the case where a check RAN and came back
+  red and the role proceeds anyway. Such a role must record, in the evidence
+  file it is already writing:
+
+  - the failing set it observed (files and test names, not "some failures");
+  - the host load average at the time;
+  - its classification and the reason;
+  - and, when it judges a failure environmental, either a passing isolated
+    re-run or an explicit statement that it did not attempt one.
+
+  Forwarding stays permitted. Silence stops being permitted.
+
+  ## Why not a hard block
+
+  Stated so nobody re-opens it as an oversight: a gate that refuses to forward
+  on any red suite would halt the pipeline on the same unclassified noise
+  BL-815 exists to measure, on a host that has been saturated for days. That
+  trades a quiet failure for a loud outage without knowing which of the two
+  the red actually is. Revisit once BL-815 delivers a trustworthy baseline —
+  named as a follow-up below, deliberately not scoped here.
+
+  ## Scope
+
+  Amend `swarmforge/constitution/articles/` — Article 4.4's inventory rule is
+  the natural home, since this is the same "run-or-blocked, never
+  assumed-clean" principle applied to a third state it does not currently
+  name. Prompt files for the roles that run the suite (QA, hardener) get the
+  corresponding line.
+
+acceptance: specs/features/BL-816-red-suite-disposition-recorded.feature.draft
+
+out_of_scope: |
+  - Fixing any actual failing test. BL-814 and BL-815.
+  - A mechanical pre-QA gate that reads suite state and blocks the forward.
+    Named as a follow-up; needs BL-815's baseline first.
+  - Changing the unit suite's timeout budgets or duration. BL-791.
+  - Host overload and duplicate supervisors.
+
+notes: |
+  Sibling tickets from the same intake: BL-814, BL-815.
+
+  Follow-up deliberately not scoped here: a mechanical check in the pre-QA
+  gate that refuses a documenter->QA forward when the recorded suite state is
+  red and no disposition is present. Ticket it once BL-815 has established
+  what a trustworthy green baseline looks like.
+
+  ## Why the acceptance is a `.feature.draft`
+
+  This ticket amends constitution and prompt text; there is no runtime
+  behaviour for a step handler to drive, so a live `.feature` would hand the
+  acceptance runner unhandled scenarios and hard-fail the hardener's gate
+  (BL-233). Verification is the QA procedure below plus the committed article
+  diff.
+
+  ## E2E QA procedure (specifier, 2026-08-05)
+
+  1. **The rule is where it belongs.** Confirm the amendment lands in the
+     Article 4.4 inventory rule and reads as an extension of run-or-blocked,
+     not as a new parallel rule someone must remember separately.
+
+  2. **The role prompts carry it.** QA and hardener prompts name the
+     obligation at the point where they run the suite, not only in the
+     constitution — a rule only in the constitution is a rule read once at
+     boot.
+
+  3. **Dogfood it against the two recorded instances.** Take the BL-536 and
+     BL-761 evidence files and check the new rule against them: would each
+     have been rejected as incomplete? If the answer is no for either, the
+     rule is too weak and does not close the gap it was written for. This is
+     the check that matters most — the others are placement.
+
+  4. **Confirm forwarding is still permitted.** A role that records a
+     complete disposition and forwards must pass. If the amendment is
+     readable as a hard block, it has overshot what this ticket asked for and
+     should be bounced.

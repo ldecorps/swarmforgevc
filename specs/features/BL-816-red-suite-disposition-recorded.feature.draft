@@ -1,0 +1,57 @@
+Feature: a red suite observed by a reviewing role is dispositioned, never passed over in silence
+
+  # BL-816 — DRAFT, deliberately not executable.
+  #
+  # This ticket amends constitution and role-prompt text; there is no runtime
+  # behaviour for a step handler to drive. A live .feature here would hand the
+  # acceptance runner unhandled scenarios and hard-fail the hardener's gate
+  # (BL-233). Verification is the ticket's QA procedure plus the article diff.
+  #
+  # Kept because the shape is the contract: what a role owes when the suite is
+  # red and it forwards anyway.
+
+  Background:
+    Given a reviewing role that ran the unit suite as part of its pass
+
+  # BL-816 red-suite-requires-a-disposition-01
+  Scenario: forwarding past a red suite requires a recorded disposition
+    Given the suite came back red
+    And the role judges the failures unrelated to its parcel
+    When the role forwards the parcel
+    Then its evidence file records the failing set by file and test name
+    And its evidence file records the host load average at the time
+    And its evidence file records a classification and the reason for it
+
+  # BL-816 silence-is-not-a-disposition-02
+  Scenario: a forward with no disposition is incomplete
+    Given the suite came back red
+    And the role's evidence file records no disposition for it
+    When the pass is reviewed
+    Then the pass is treated as incomplete
+
+  # BL-816 environmental-claim-carries-its-basis-03
+  Scenario Outline: calling a failure environmental carries its basis
+    Given the suite came back red
+    And the role classifies a failure as environmental
+    And the role <isolation-disposition>
+    When the pass is reviewed
+    Then the pass is treated as <verdict>
+
+    Examples:
+      | isolation-disposition                        | verdict    |
+      | records a passing isolated re-run            | complete   |
+      | states explicitly that it attempted none     | complete   |
+      | records nothing about isolation at all       | incomplete |
+
+  # BL-816 forwarding-stays-permitted-04
+  Scenario: a complete disposition permits the forward
+    Given the suite came back red
+    And the role recorded a complete disposition
+    When the role forwards the parcel
+    Then the forward is permitted
+
+  # BL-816 green-suite-needs-no-disposition-05
+  Scenario: a green suite carries no extra obligation
+    Given the suite came back green
+    When the role forwards the parcel
+    Then no disposition is required
