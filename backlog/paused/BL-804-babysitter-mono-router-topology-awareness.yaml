@@ -1,0 +1,89 @@
+id: BL-804
+title: "babysitter_check.bb has no mono-router awareness: 6 false pane-missing CRITs per sweep"
+milestone: M8
+type: defect
+status: todo
+epic: swarm-reliability
+assigned_to:
+human_approval: pending
+severity: high
+priority: 2
+mutation_cost: low
+direction: swarm-surfaced
+depends_on: []
+source: "Coordinator note 2026-08-04 (handoff 20260804T201348Z_000100): 'babysitter_check.bb has no mono-router awareness: 6 false CRIT/sweep'."
+
+invariants:
+  - "Suppression is derived from topology, never hardcoded per role: a session-missing finding is suppressed only because the resolved topology says that session should not stand; the resident session, the coordinator session, and — under any non-router rotation — every roles.tsv session still CRIT when missing."
+  - "There is exactly one resolution of 'is this swarm rotation-router and which sessions must stand', shared with handoffd (swarm-identity rotation key, else the identity-recorded active pack conf, else swarmforge/swarmforge.conf, via mono_router_lib); the babysitter never grows a private second parser of conf or identity."
+  - "A pane that exists is always checked: topology suppression applies only to absence findings — it never skips process/menu/frozen/remote-control checks on a session that is actually present."
+
+approval_context: >
+  New defect spec from the coordinator's own health-noise report. One real
+  design choice was made and needs sign-off: dormant-role absent sessions
+  under router mode are fully SUPPRESSED (no finding at all), rather than
+  downgraded to an INFO/WARN line each sweep. Rationale: the mono-router
+  overlay already declares dormant-role absence "EXPECTED under this pack
+  and not a health failure", and any recurring per-sweep line for a
+  designed state is noise that re-creates the alarm-fatigue problem at a
+  lower volume. Live panes and required sessions keep full checks
+  (invariant 3). Confirm suppression over downgrade, or amend.
+
+notes: |
+  WHAT / WHY: babysitter_check.bb builds its per-role snapshot from every
+  roles.tsv row (8 roles) and babysitterd_sweep_lib/check-live-session
+  emits a CRIT for every missing tmux session. Under the live mono-router
+  topology only two sessions stand (resident swarmforge-coder +
+  swarmforge-coordinator), so every sweep emits 6 false
+  "pane-<role>: tmux session missing" CRITs (specifier, cleaner,
+  architect, hardender, documenter, QA). Because CRITs are nudge-eligible,
+  the --nudge path re-sends this noise to the coordinator every 30-minute
+  dedup window, burning coordinator turns and drowning real findings
+  (alarm fatigue on the swarm's primary health signal — hence severity
+  high: a broken safety/health signal).
+
+  Verified on the live install 2026-08-04: roles.tsv lists 8 sessions,
+  tmux shows only swarmforge-coder + swarmforge-coordinator,
+  .swarmforge/swarm-identity records `rotation	router`, and the tracked
+  swarmforge/swarmforge.conf has NO active rotation line — so an
+  implementation that parses only swarmforge.conf would fail on this very
+  host. handoffd already solves resolution correctly:
+  handoffd.bb rotation-router-mode? (~line 1252) resolves identity
+  rotation key -> identity-recorded active pack conf path ->
+  swarmforge/swarmforge.conf, via mono_router_lib
+  (rotation-router-from-identity?, conf-rotation-router?), and
+  mono_router_lib/should-have-standing-session? already encodes "only
+  resident + coordinator stand". The babysitter consults none of it.
+
+  CONSTRAINTS (not prescriptions):
+  - Keep babysitterd_sweep_lib pure: the gathering layer
+    (babysitter_check.bb) resolves topology and passes it in the snapshot;
+    no tmux/fs/clock reads enter the sweep lib.
+  - Reuse the existing shared resolution (invariant 2) — the fix is a
+    call site for mono_router_lib, never a re-implementation.
+  - Non-router packs are behavior-unchanged (scenario 06); the resident
+    session identity comes from the same rule handoffd uses
+    (handoff_lib/parse-mono-router-resident-session: first
+    non-coordinator roles.tsv session).
+  - Out of scope: the dormant-role pane-hash-<role> history files the
+    gatherer appends for absent panes (harmless; busy? is false on empty
+    text so no finding can arise), and any prevention/detection work on
+    stranded residents (BL-685's domain).
+
+  Scenario Outline handlers must validate <required-session> against
+  explicit KNOWN_VALUES (resident, coordinator) per the acceptance-pipeline
+  rules; scenario 05's cleaner step shares the same parameterized step
+  family (deliberate — one step definition, IR-DRY resolved by
+  unification, not divergent wording).
+
+  QA e2e: on this live macOS install (identity rotation=router, only
+  coder+coordinator sessions up), run
+  `swarmforge/scripts/babysitter_check.sh "$PWD"` and verify in one pass:
+  zero pane-/proc- findings name specifier/cleaner/architect/hardender/
+  documenter/QA; with resident+coordinator alive and other checks green
+  the output is `OK all checks green`. Before-fix baseline shows the 6
+  CRITs; after-fix they are gone. Then against a scratch fixture root
+  (never the live .swarmforge) with identity rotation=router and no
+  resident session, verify the resident-missing CRIT still fires.
+
+acceptance: specs/features/BL-804-babysitter-mono-router-topology-awareness.feature
