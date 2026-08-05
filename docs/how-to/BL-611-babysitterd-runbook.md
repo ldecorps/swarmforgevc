@@ -21,7 +21,7 @@ captures, an available-memory reading) against these checks, in
 
 | # | Check | Fires when |
 |---|---|---|
-| 1 | live-session-per-role | a role pane has no live `claude` process (via a single `ps -eo pid=,ppid=,args=` snapshot filtered in-process by ppid — portable across GNU and BSD/macOS `ps`, never `pane_current_command`, which lies with a live child); if the `ps` gather itself fails outright, this reports `UNAVAILABLE` for that role rather than a false "no process" CRIT |
+| 1 | live-session-per-role | a role pane has no live `claude` process (via a single `ps -eo pid=,ppid=,args=` snapshot filtered in-process by ppid — portable across GNU and BSD/macOS `ps`, never `pane_current_command`, which lies with a live child); if the `ps` gather itself fails outright, this reports `UNAVAILABLE` for that role rather than a false "no process" CRIT. Missing-session CRITs are mono-router topology aware (BL-804, below) — a dormant role's absent session under router mode is not a finding at all |
 | 2 | remote-control-flag | a live process is missing `--remote-control` |
 | 3 | handoffd-supervisor-fresh | handoffd/its supervisor is down, or `handoffd.log` is older than 5 minutes |
 | 4 | dead-letter-nonempty | `.swarmforge/handoffs/failed/` is non-empty |
@@ -149,6 +149,31 @@ absent" — a failed gather reports `UNAVAILABLE` in the log; it is never
 nudge-eligible (`UNAVAILABLE` is neither `CRIT` nor a `stuck-*` `WARN`), so it
 never produces a false CRIT nudge and never silently passes as OK.
 
+## Mono-router topology awareness (BL-804)
+
+Under `config rotation router` only two sessions stand: the resident (first
+non-coordinator `roles.tsv` session) and the coordinator. Before this fix,
+check 1 CRIT'd on every dormant role's absent session anyway — 6 false
+CRITs per sweep on a live mono-router install (specifier, cleaner,
+architect, hardender, documenter, QA) — and because CRITs are nudge-eligible,
+that noise re-hit the coordinator's pane every 30-minute dedup window.
+
+`babysitter_check.bb` now resolves rotation-router mode the same way
+`handoffd.bb` does — swarm-identity rotation key, else the identity-recorded
+active pack conf, else the tracked `swarmforge/swarmforge.conf` — via
+`mono_router_lib.bb` (`rotation-router-from-identity?`,
+`conf-rotation-router?`), and stamps each role's `:should-stand?` from
+`mono-router-lib/should-have-standing-session?`. `check-live-session` in
+`babysitterd_sweep_lib.bb` suppresses a missing-session finding only when the
+gatherer says that role should not stand; a present pane is always fully
+checked (process/menu/frozen/remote-control), and a required session
+(resident or coordinator) still CRITs if missing. Non-router packs are
+unchanged — every role is expected to stand, exactly as before BL-804.
+
+The daemon never grows a second topology parser: this is a call site for the
+same `mono_router_lib` resolution `handoffd` already uses, not a
+reimplementation.
+
 ## Verify
 
 ```bash
@@ -163,3 +188,7 @@ Acceptance feature:
 
 The BL-802 macOS-portability behavior above has its own acceptance feature:
 [`specs/features/BL-802-babysitterd-macos-portability.feature`](../../specs/features/BL-802-babysitterd-macos-portability.feature).
+
+The BL-804 mono-router topology-awareness behavior above has its own
+acceptance feature:
+[`specs/features/BL-804-babysitter-mono-router-topology-awareness.feature`](../../specs/features/BL-804-babysitter-mono-router-topology-awareness.feature).
