@@ -14,7 +14,9 @@ export type CursorBridgeLivenessStatus = EditInPlaceMessageState;
 /** One-line standing cue; change-gated so Telegram is not spammed. */
 export function formatCursorBridgeLivenessLine(busy: boolean, queuedCount = 0): string {
   if (!busy) {
-    return queuedCount > 0 ? `Bridge: idle · ${queuedCount} waiting` : 'Bridge: idle';
+    // When idle with a queue, the selection poll is the actionable surface —
+    // keep this line a simple idle cue rather than a second "N waiting" banner.
+    return 'Bridge: idle';
   }
   return queuedCount > 0 ? `Bridge: busy · ${queuedCount} waiting` : 'Bridge: busy';
 }
