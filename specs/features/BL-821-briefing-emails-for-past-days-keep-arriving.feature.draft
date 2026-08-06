@@ -1,0 +1,94 @@
+Feature: Briefing emails are sent once, and only inside the allowed date window
+
+  # BL-821. Two independent legs. Leg A: a successful send persists .sent.json
+  # to the shared durable store, so a pull, a second host, or a fresh worktree
+  # cannot re-mail history. Leg B: the ordinary sweep only mails briefings dated
+  # today or yesterday (UTC), so a stale marker cannot dump the archive. A
+  # briefing suppressed by the window is reported, never silently skipped.
+  #
+  # PARKED AS .feature.draft per BL-233: this slice is not built, so a live
+  # *.feature here would have no step handlers and would hard-fail the
+  # acceptance runner for every other ticket. The coder renames this to
+  # .feature and lands its step handlers in the same parcel.
+
+  Background:
+    Given a briefings directory and a sent-marker the sweep reads
+
+  # BL-821 successful-send-persists-marker-durably-01
+  Scenario: a successful send persists the marker to the durable store
+    Given an unsent briefing dated today
+    When the sweep mails it successfully
+    Then the briefing is recorded as sent in the durable store
+    And a fresh checkout of that store already lists it as sent
+
+  # BL-821 failed-send-does-not-mark-sent-02
+  Scenario: a failed send leaves the briefing unsent
+    Given an unsent briefing dated today
+    When the sweep tries to mail it and the send fails
+    Then the briefing is not recorded as sent in the durable store
+    And the next sweep tries it again
+
+  # BL-821 stale-marker-does-not-remail-archive-03
+  Scenario: a checkout with a stale marker does not re-mail the archive
+    Given a checkout whose marker is missing every briefing older than yesterday
+    And those older briefing files are present on disk
+    When the sweep runs
+    Then none of those older briefings is mailed
+
+  # BL-821 window-admits-today-and-yesterday-04
+  Scenario Outline: only briefings dated today or yesterday are mailed
+    Given an unsent briefing dated <briefing date>
+    When the sweep runs
+    Then the briefing is <disposition>
+
+    Examples:
+      | briefing date       | disposition |
+      | today               | mailed      |
+      | yesterday           | mailed      |
+      | two days ago        | suppressed  |
+      | a month ago         | suppressed  |
+
+  # BL-821 window-is-utc-05
+  Scenario: the window is evaluated in UTC, not host local time
+    Given a host whose local date differs from the UTC date
+    And an unsent briefing dated today in UTC
+    When the sweep runs
+    Then the briefing is mailed
+    And the window decision used the UTC date
+
+  # BL-821 suppressed-briefing-is-reported-06
+  Scenario: a briefing held back by the window says so
+    Given an unsent briefing dated two days ago
+    When the sweep runs
+    Then the sweep reports that briefing as suppressed for being outside the window
+    And that report is distinguishable from having generated no briefing at all
+
+  # BL-821 mailed-once-across-hosts-07
+  Scenario: two hosts sharing the durable store mail a briefing once
+    Given two hosts running the sweep against the same durable store
+    And an unsent briefing dated today
+    When both hosts run their sweep
+    Then the briefing is mailed exactly once
+
+  # BL-821 marker-commit-carries-only-the-marker-08
+  Scenario: persisting the marker does not carry unrelated changes
+    Given unrelated modified files in the working tree
+    And an unsent briefing dated today
+    When the sweep mails it successfully
+    Then only the marker is committed to the durable store
+    And the unrelated modified files remain uncommitted
+
+  # BL-821 non-dated-briefing-name-decided-deliberately-09
+  Scenario: a briefing whose name is not a plain date is decided, not crashed on
+    Given an unsent briefing file whose name carries a suffix beyond the date
+    When the sweep runs
+    Then the window predicate reaches a definite decision for that file
+    And the sweep does not fail
+
+  # BL-821 no-unbounded-catchup-without-operator-action-10
+  Scenario: the ordinary sweep never performs unbounded catch-up
+    Given a marker listing nothing at all
+    And a long history of briefing files on disk
+    When the sweep runs
+    Then only briefings inside the window are mailed
+    And mailing the rest requires an explicit one-shot operator action
