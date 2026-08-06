@@ -2,7 +2,8 @@ id: BL-562
 title: "Backlog-depth WARNING counts .gitkeep as an active ticket, so it fires permanently under any cap of 1"
 milestone: M8
 type: defect
-status: todo
+status: superseded
+superseded_by: BL-808
 epic: swarm-reliability
 assigned_to: specifier
 severity: high
