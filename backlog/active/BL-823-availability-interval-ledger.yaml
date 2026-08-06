@@ -4,11 +4,11 @@ milestone: M8
 type: feature
 status: todo
 epic: swarm-reliability
-human_approval: pending
+human_approval: approved
 priority: 53
 direction: human-requested
 depends_on: []
-assigned_to: specifier
+assigned_to: coder
 mutation_cost: medium
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 
