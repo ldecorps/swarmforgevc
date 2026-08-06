@@ -699,7 +699,7 @@
             :resolved-via "global"}
            (flow-watchdog-lib/resolve-thresholds
             {:from "coder" :to "cleaner" :type "note"} (:specs table) global))
-  (assert= "BL-835: a ~90s parcel on that sub-floor route does not WARN under the global pair"
+  (assert= "BL-835: sub-floor samples do not WARN a 90s parcel under global 15m"
            :none
            (flow-watchdog-lib/decide-tier
             {:age-ms 90000
@@ -707,6 +707,70 @@
              :escalate-ms flow-watchdog-lib/default-escalate-ms
              :highest-tier-alarmed nil
              :snoozed? false})))
+
+;; threshold-table-stale? (pure): must be true for missing/malformed
+;; :calibratedAt, false just under the recalibration window, and true again
+;; once that window has elapsed. Nothing above exercises this directly - the
+;; single run-sweep! calls below only ever see the nil-calibratedAt (always
+;; stale) branch, which would stay green even if the elapsed-time clause were
+;; deleted outright and the table never recalibrated again.
+(assert= "threshold-table-stale? is true when calibratedAt is absent"
+         true
+         (flow-watchdog-lib/threshold-table-stale? {} 1000000))
+
+(assert= "threshold-table-stale? is true when calibratedAt is not a number"
+         true
+         (flow-watchdog-lib/threshold-table-stale? {:calibratedAt "oops"} 1000000))
+
+(assert= "threshold-table-stale? is false just under the recalibration window"
+         false
+         (flow-watchdog-lib/threshold-table-stale?
+          {:calibratedAt 1000000}
+          (+ 1000000 (dec flow-watchdog-lib/threshold-recalibration-ms))))
+
+(assert= "threshold-table-stale? is true exactly at the recalibration window (boundary)"
+         true
+         (flow-watchdog-lib/threshold-table-stale?
+          {:calibratedAt 1000000}
+          (+ 1000000 flow-watchdog-lib/threshold-recalibration-ms)))
+
+;; read-threshold-table / write-threshold-table! round trip (fs I/O): nothing
+;; above ever reads back a table this suite itself wrote - run-sweep!'s single
+;; calls only ever see the freshly-computed in-memory table, never the
+;; JSON-persisted-then-reread one, so cheshire's keywordized JSON object keys
+;; being normalised back to string spec keys (and nested :warn-ms/:escalate-ms
+;; staying numbers, not strings) is untested. A broken normalisation would not
+;; crash (resolve-thresholds' (number? ...) guard just falls through to
+;; global, per the never-disable invariant) - it would silently defeat
+;; calibration while looking healthy, exactly the failure mode this ticket
+;; exists to catch.
+(let [daemon-dir (mk-tmp)
+      written {:calibratedAt 555 :warnPercentile 67 :escalatePercentile 97
+               :minSamples 8 :sampleCount 10
+               :specs {"cleaner->architect|git_handoff"
+                       {:warn-ms 1200000 :escalate-ms 7200000 :n 10 :source "exact"}}}
+      _ (flow-watchdog-lib/write-threshold-table! daemon-dir written)
+      read-back (flow-watchdog-lib/read-threshold-table daemon-dir)
+      entry (get-in read-back [:specs "cleaner->architect|git_handoff"])]
+  (assert= "read-threshold-table round-trips calibratedAt"
+           555
+           (:calibratedAt read-back))
+  (assert= "read-threshold-table normalises spec keys back to strings"
+           true
+           (contains? (:specs read-back) "cleaner->architect|git_handoff"))
+  (assert= "read-threshold-table keeps per-spec warn-ms/escalate-ms as numbers, not strings"
+           {:warn-ms 1200000 :escalate-ms 7200000 :n 10 :source "exact"}
+           entry)
+  (assert= "resolve-thresholds accepts the round-tripped entry (numeric guard passes)"
+           {:warn-ms 1200000 :escalate-ms 7200000 :resolved-via "cleaner->architect|git_handoff"}
+           (flow-watchdog-lib/resolve-thresholds
+            {:from "cleaner" :to "architect" :type "git_handoff"}
+            (:specs read-back)
+            {:warn-ms 900000 :escalate-ms 3600000})))
+
+(assert= "read-threshold-table degrades to {} for a missing file, never a crash"
+         {}
+         (:specs (flow-watchdog-lib/read-threshold-table (mk-tmp))))
 
 ;; End-to-end: a calibrated warn ABOVE the parcel's age suppresses the alarm
 ;; that the flat global 60s warn would have fired — proving resolution is
