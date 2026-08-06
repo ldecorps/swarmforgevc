@@ -78,7 +78,7 @@ export async function main(): Promise<void> {
     return;
   }
 
-  writeControlPauseState(projectRoot, { active: true, untilMs: decision.untilMs });
+  writeControlPauseState(projectRoot, { active: true, untilMs: decision.untilMs }, 'apply-cooldown-pause');
   writeCooldownWindowMarker(projectRoot, decision.windowStartMs);
 
   const token = process.env.TELEGRAM_BOT_TOKEN;

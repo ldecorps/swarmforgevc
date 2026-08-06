@@ -42,6 +42,7 @@ import { parkToHold, reinstateFromHold } from '../panel/backlogWriter';
 import { engageOperatorAmbulance, releaseOperatorAmbulance } from './telegramOperatorAmbulance';
 import { isPipelineEmpty } from './telegram-front-desk-bot';
 import { decideDrainOutcome } from './telegramControlCore';
+import { appendAvailabilityRecord } from '../metrics/availabilityLedgerStore';
 
 function bounceSentinelPath(repoRoot: string): string {
   return path.join(repoRoot, '.swarmforge', 'bounce');
@@ -200,15 +201,19 @@ function controlPausePath(repoRoot: string): string {
   return path.join(repoRoot, '.swarmforge', 'operator', 'control-pause.json');
 }
 
+// BL-823: source defaults the same way as its twin, writeControlPauseState -
+// see that function's comment.
 /** Twin of Control writeControlPauseState — freezes promotion, not process kill. */
 export function writeOperatorPauseState(
   repoRoot: string,
-  state: { active: boolean; untilMs?: number }
+  state: { active: boolean; untilMs?: number },
+  source: string = 'writeOperatorPauseState'
 ): void {
   const payload = state.active
     ? { active: true, ...(state.untilMs !== undefined ? { untilMs: state.untilMs } : {}) }
     : { active: false };
   atomicWrite(controlPausePath(repoRoot), JSON.stringify(payload));
+  appendAvailabilityRecord(repoRoot, state.active ? 'pause-start' : 'pause-end', 'control-pause', source);
 }
 
 export function readOperatorPauseState(repoRoot: string): { active: boolean; untilMs?: number } {
@@ -612,14 +617,14 @@ export function executeOperatorVerb(
     return executeAmbulance(repoRoot, args);
   }
   if (v === '/pause') {
-    writeOperatorPauseState(repoRoot, { active: true });
+    writeOperatorPauseState(repoRoot, { active: true }, 'telegramCursorOperatorExec:pause');
     return {
       text: 'pause: new work will not be promoted until /resume. In-flight work continues.',
       wroteBounceSentinel: false,
     };
   }
   if (v === '/resume') {
-    writeOperatorPauseState(repoRoot, { active: false });
+    writeOperatorPauseState(repoRoot, { active: false }, 'telegramCursorOperatorExec:resume');
     return { text: 'resume: new work will be promoted again.', wroteBounceSentinel: false };
   }
   if (v === '/start') {

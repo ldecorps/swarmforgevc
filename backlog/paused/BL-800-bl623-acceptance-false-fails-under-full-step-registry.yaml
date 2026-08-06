@@ -8,6 +8,7 @@ epic: swarm-reliability
 priority: 65
 direction: normal
 mutation_cost: low
+human_approval: approved
 acceptance: specs/features/BL-623-routing-skip-trail-records-actual-hop.feature
 
 invariants:

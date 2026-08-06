@@ -1,0 +1,187 @@
+id: BL-825
+title: "Bubble thin shell, slice A — the UI bundle resolver: decide which bundle to render from what the bridge served, what is cached, and which shell is installed, and never lose the Talk surface"
+milestone: M8
+type: feature
+status: todo
+epic: bubble-thin-shell
+human_approval: pending
+priority: 88
+direction: human-requested
+assigned_to: none
+depends_on: [BL-765, BL-769]
+mutation_cost: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+approval_context: >
+  This slice inherits BL-824's architecture decision (WebView over a
+  bridge-served HTML bundle) — approve or amend that there, not here.
+
+  What is specific to this slice and worth the human's eye: what Bubble shows
+  when the remote half is unusable. Three states are specced — stale (rendering
+  a cached bundle the bridge could not confirm), shell-behind (the host served
+  a bundle this APK is too old to render), and bare (no bundle at all, native
+  Talk only). The human is the person who will be looking at one of these on a
+  phone, away from the desk, when something is wrong — so whether three
+  distinct states is the right amount of honesty, or too much, is their call.
+
+  Locked decision 5 from the intake is load-bearing here: no state may pretend
+  to be up to date when it is not.
+
+source: |
+  Slice A of BL-824, drained from
+  `backlog/INTAKE-bubble-thin-shell-auto-update.md` (human via Let's Talk /
+  Cursor, 2026-07-31). The intake's "Acceptance shape to refine" items 1, 2, 4
+  and 5 are this slice; items 3 (APK update prompt) is slice C.
+
+  The intake's own framing of the problem this slice sits under:
+
+  > New Bubble builds today mean sideload / reinstall. Human is often away from
+  > desk; reinstall friction kills the update loop. Chiptunes already prove
+  > remote refresh works; the app UI does not yet generalize that pattern.
+
+description: |
+  ## What
+
+  One pure-logic resolver in the Bubble shell that answers a single question on
+  every open/expand and pair/resume: **which UI bundle do we render right now?**
+
+  Its inputs are what the bridge served (a versioned bundle manifest, or
+  nothing if the bridge is unreachable), what is in the local cache (a
+  previously fetched bundle, or nothing), and the installed shell's own
+  version. Its output is one of four outcomes, each with a state the UI can
+  render honestly:
+
+  | outcome | when | what the human sees |
+  | --- | --- | --- |
+  | **fresh** | served bundle parses, is schema-valid, is newer than cached, and its `minShellVersion` is satisfied | the new content, no reinstall |
+  | **cached** | nothing newer was served, or the served bundle was rejected | the last known-good bundle, presented as current |
+  | **stale** | the bridge could not be reached at all, and a cached bundle exists | the cached bundle, explicitly marked as unconfirmed |
+  | **bare** | no usable bundle exists from either source | the native Talk surface, with a plain statement that screens are unavailable |
+
+  Plus one refusal that cuts across the table: a served bundle whose
+  `minShellVersion` exceeds the installed shell is **never rendered**, even when
+  it is the newest thing available. It resolves to `cached` if a compatible
+  cached bundle exists and to `bare` otherwise, and carries a shell-behind
+  reason so slice C can turn it into an actionable update prompt. Rendering a
+  bundle the shell cannot honour is how a remote-UI app bricks itself on a
+  phone the human cannot easily reach.
+
+  ## Why this is the first slice
+
+  It is the whole decision, with none of the rendering. Every later slice — the
+  actual remote pager pages (B), the APK update prompt (C) — consumes this
+  resolver's outcome. Building it first means the failure modes that matter on
+  a phone (bad payload, dead tunnel, old APK) are settled and tested before any
+  screen depends on them, rather than discovered on the human's device.
+
+  It is also the largest testable surface in the epic that needs no device:
+  version comparison, schema validation, cache-vs-fetch choice, minimum-shell
+  gate and degraded-state classification are all pure Kotlin, so this slice
+  carries real gates rather than the degraded unit-test-gap fallback.
+
+  ## Scope
+
+  - **Android (pure logic, JVM unit suite).** The resolver itself, its bundle
+    manifest model, semver-style version comparison, whole-payload schema
+    validation, and the four-outcome classification above. No `android.*` type
+    in the resolver's own signature — the caller converts before calling, the
+    same thin-edge rule the constitution applies to the VS Code API.
+  - **Android (thin device edge).** `BridgeClient` gains the manifest fetch and
+    the cache read/write, and calls the resolver on pair/resume. The edge stays
+    thin enough that its own logic is trivial; the decision lives in the
+    resolver.
+  - **Bridge.** A versioned bundle manifest route served alongside the existing
+    `bubble-config.json` and `chiptunes.json` — same shape, same fallback
+    posture, deliberately a sibling rather than a new mechanism.
+
+  ## Reuse, do not reinvent (BL-765)
+
+  BL-765 already establishes the remote-payload posture Bubble uses: versioned
+  document, validated whole before use, rejected whole on schema mismatch,
+  bundled defaults on absence. This slice must follow that posture and reuse its
+  fetch/validate/fallback machinery rather than growing a parallel one. If
+  BL-765's code cannot be reused as-is, say so in the parcel and extract the
+  shared part — do not clone it.
+
+  ## Not the static PWA
+
+  Local engineering rule 5: this is the LIVE surface. The bundle manifest is
+  served by the authenticated bridge, never through `pwa/`.
+
+acceptance: specs/features/BL-825-bubble-remote-ui-bundle-resolution.feature
+
+invariants:
+  - "Bubble always presents a usable native Talk surface: every resolver outcome, including every rejection and every failure path, still leaves the human able to talk."
+  - "A bundle is applied whole or not at all: no partially-validated bundle is ever rendered, and a rejected bundle always leaves the last known-good cached bundle intact and renderable."
+  - "The rendered state is never more confident than the evidence: a bundle the bridge did not confirm this session is reported stale, and a bundle the shell cannot honour is never rendered as if it were."
+
+required_wiring:
+  - "extension/src/bridge/letsTalkRoutes.ts::ui-bundle::the manifest route must actually be served, not merely implemented alongside its siblings"
+  - "android/app/src/main/java/com/swarmforge/floatcompanion/BridgeClient.kt::resolveUiBundle::the resolver must have a real caller on the pair/resume path, not only unit tests"
+
+verification: |
+  ## Runnable gate (pure logic)
+
+  `specs/features/BL-825-bubble-remote-ui-bundle-resolution.feature` binds to
+  the gradle JVM unit suite through the BL-769 seam
+  (`specs/pipeline/steps/lib/androidGradle.js`). Its Scenario Outline names six
+  resolver decisions; the coder writes the step-handler file in THIS parcel with
+  an explicit KNOWN_VALUES map from each decision to the real test class and
+  test-name substring that covers it — no passthrough check (BL-233: a feature
+  file whose scenarios have no handler hard-fails the runner).
+
+  Hardener note, per the constitution's Startup Tools table: no Kotlin
+  mutation/CRAP/DRY tool is pinned in this project. The `.kt` half of this
+  parcel runs the degraded unit-test-gap fallback and must record that it did;
+  the TypeScript bridge half is in normal Stryker/jscpd/CRAP scope and is not
+  exempt.
+
+  ## Recorded manual procedure (device surface)
+
+  The WebView render, the overlay and a real fetch over a live tunnel are
+  device surface per the constitution's Testability Boundary — Bubble. QA
+  verifies them by running this procedure against a paired phone and recording
+  the result in the ticket:
+
+  1. With Bubble paired and open, change a remote-only asset in the bundle on
+     the host and redeploy the bridge. Collapse and reopen Bubble.
+     **Expect:** the new content, no reinstall prompt, no APK step.
+  2. Reopen again with nothing changed on the host.
+     **Expect:** the cached bundle, no refetch churn, no flicker of a
+     degraded state.
+  3. Serve a deliberately malformed bundle. Reopen Bubble.
+     **Expect:** the previous bundle still rendering, unchanged; the malformed
+     one discarded whole.
+  4. Stop the bridge. Reopen Bubble.
+     **Expect:** the cached bundle rendering, explicitly marked stale, and Talk
+     still working.
+  5. Clear app data so no cache exists, with the bridge still down. Open Bubble.
+     **Expect:** the native Talk surface, a plain statement that screens are
+     unavailable, and no crash loop.
+  6. Serve a bundle whose `minShellVersion` is above the installed shell.
+     Reopen Bubble.
+     **Expect:** that bundle NOT rendered; the compatible cached bundle or the
+     bare state instead, carrying the shell-behind reason.
+  7. Confirm chiptunes and `bubble-config.json` still refresh as they do today
+     (BL-765 regression check).
+
+out_of_scope: |
+  - Rendering actual remote pager screens. That is slice B; this slice decides
+    which bundle wins, and the pager still shows today's native pages.
+  - The APK update prompt, its download/install flow, and how the binary is
+    distributed. Slice C, and the distribution question is the human's ruling
+    to make there.
+  - Migrating Talk, the mic pipeline, the overlay window or the collapsed-bubble
+    gestures to remote UI. Those are the thin shell and stay native.
+  - Changing BL-765's config or catalog behaviour. Reuse it, do not re-open it.
+  - Any signed/verified-payload scheme beyond schema validation. Worth doing,
+    not in this slice; ticket it separately if the architect wants it before
+    slice B.
+
+notes: |
+  The four-outcome table is deliberately more explicit than "fetch or fall
+  back". The intake's locked decision 5 — "out of pretending" — is about APK
+  OTA, but the same honesty applies one level down: a phone rendering a cached
+  bundle during a tunnel outage must not look identical to one rendering a
+  confirmed-current bundle, or the human will trust a stale screen during
+  exactly the incident where that screen is their only view of the swarm.

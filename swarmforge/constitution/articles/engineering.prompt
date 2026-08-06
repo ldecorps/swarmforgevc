@@ -74,6 +74,13 @@
 - **Stub `process.cwd()` / `os.homedir()`** — never `process.chdir()` or
   `process.env.HOME` overlays in worker-thread mutation runs.
 - Shell tests: `env -u SWARMFORGE_CONFIG` (and cred vars) before fixture confs.
+- Target **stock macOS `/bin/bash` 3.2**, not Homebrew bash: under `set -u` it
+  raises `unbound variable` expanding `"${arr[@]}"` on an EMPTY array (fixed
+  only in 4.4). Write `${arr[@]+"${arr[@]}"}`, which is safe empty AND keeps
+  spaces in elements. This bites hardest in an EXIT trap under `set -euo
+  pipefail`, where it turns a FULLY PASSING suite into exit 1 — a green run
+  that lies to every gate trusting the exit code (BL-801; measured 2026-08-06:
+  3 of 4 sampled shell suites).
 - Never target the test process with `kill()`; never use `chmod` for failure
   simulation; never diff shared globals (`/tmp`, `ps` broad patterns, live
   runtime paths). Redirect live paths through env seams; missing seam = add one
