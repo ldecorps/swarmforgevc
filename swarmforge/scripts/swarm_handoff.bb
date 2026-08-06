@@ -184,14 +184,15 @@
    (fn [object] (str/trim (:out (command "." "git" "rev-parse" "--short=10" object))))))
 
 (defn- check-backlog-depth []
+  ;; BL-808: count tickets via the shared counter, never raw list-dir
+  ;; (which counted the tracked .gitkeep as an active ticket).
   (let [project-root (project-root)
         active-dir (fs/path project-root "backlog" "active")
-        max-depth (backlog-depth-lib/read-max-depth project-root)]
-    (when (fs/exists? active-dir)
-      (let [active-count (count (fs/list-dir active-dir))]
-        (when (backlog-depth-lib/depth-exceeded? active-count max-depth)
-          (binding [*out* *err*]
-            (println (format "WARNING: Active backlog depth exceeded (active=%d, max=%d). Coordinator should promote paused items." active-count max-depth))))))))
+        max-depth (backlog-depth-lib/read-max-depth project-root)
+        active-count (backlog-depth-lib/count-active-tickets active-dir)]
+    (when (backlog-depth-lib/depth-exceeded? active-count max-depth)
+      (binding [*out* *err*]
+        (println (format "WARNING: Active backlog depth exceeded (active=%d, max=%d). Coordinator should promote paused items." active-count max-depth))))))
 
 (def pre-qa-gate-remedy
   "Merge the named commit / land the named wiring and re-forward, or record a deliberately dropped commit under abandoned_commits:.")

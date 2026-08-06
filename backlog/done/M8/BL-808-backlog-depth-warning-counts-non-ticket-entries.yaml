@@ -11,6 +11,7 @@ direction: swarm-surfaced
 depends_on: []
 assigned_to: none
 mutation_cost: low
+supersedes: BL-562
 invariants:
   - "The active-ticket count behind the depth warning equals the count the promotion gate uses — no entry in backlog/active/ is a ticket to one and not the other."
 
