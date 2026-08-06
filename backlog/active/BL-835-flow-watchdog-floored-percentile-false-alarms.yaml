@@ -198,3 +198,6 @@ notes: |
   swarmforge.conf, Specification.MD). That is named scope, not BL-506
   ticket-less content — the ticket declares it above and the fix cannot exist
   without it.
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-06, by: architect, blamed: coder, class: behavior, commit: 5306a43265, evidence: backlog/evidence/BL-835-architect-bounce-20260806.md }
