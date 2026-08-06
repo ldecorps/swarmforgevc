@@ -1,0 +1,246 @@
+id: BL-650
+title: "flow-watchdog measures parcel age in WALL-CLOCK time: every swarm stop, cooldown night and rotation wait counts as delay, so tomorrow's 07:00 cooldown lift fires an ESCALATE storm over parcels with zero active-time age"
+milestone: M8
+type: defect
+status: todo
+epic: swarm-reliability
+human_approval: approved
+severity: high
+priority: 54
+direction: human-requested
+depends_on: [BL-823]
+assigned_to: coder
+mutation_cost: medium
+required_stages: [coder, architect, qa]
+stage_skip_reasons: { cleaner: "bounded single-lib bb change (flow_watchdog_lib + config resolution)", hardender: "bb code sits outside the Stryker mutate scope; the clock property tests run in the unit gate", documenter: "alarm-text change is specified in-ticket; no runbook surface" }
+
+approval_context: >
+  Operator, 2026-07-25 ~22:00, after a WARN flow-stall reached their Telegram
+  for a parcel that was queued behind a single-resident rotation with the
+  swarm having been STOPPED for 6 of the 15 counted minutes. Asked "il ne
+  décompte pas le temps en temps actif ?" — measured answer: no — then
+  "go for it".
+
+  Hydrate batch 2026-07-28: materializes the already-approved prose acceptance
+  into APS Gherkin, unchanged in substance.
+
+source: |
+  ## The live alarm that exposed it (2026-07-25 21:44)
+
+  ```
+  ⚠️ WARN flow-stall: parcel 20260725T202729Z_000808_from_QA
+     (QA->coder,cleaner,architect,hardender,documenter, note)
+     aged 15m in cleaner new - rotate.
+  ```
+
+  Reality behind those 15 minutes:
+  - parcel created 21:29, swarm STOPPED 21:30-21:36 (operator-ruled window
+    boundary) — 6 of the 15 minutes were swarm-down;
+  - after restart, the single mono-router resident was legitimately working
+    specifier-then-coder; `cleaner` is DORMANT BY DESIGN under rotation. A
+    5-recipient broadcast necessarily waits in 4 inboxes while the resident
+    serialises. Nothing was stalled; the pipeline was doing exactly its job.
+
+  ## Where the clock is wrong, precisely
+
+  `swarmforge/scripts/flow_watchdog_lib.bb`:
+
+  - `:89-97 parcel-age-ms` — age = `now-ms − (enqueued_at || created_at)`.
+    Pure wall clock. No subtraction of stop intervals or pauses.
+  - `:40-42` — `default-warn-ms` 15 min (`flow_watchdog_warn_ms 900000`),
+    calibrated for a PARALLEL pack where 15 min in `new/` means dispatch is
+    broken. Under depth-1 rotation, 15 min is a NOMINAL rotation wait.
+  - `:113-127 decide-tier` — by deliberate structural constraint, `snoozed?`
+    is the ONLY mute: "never a role/type/dormancy branch". The dormancy
+    knowledge it does have (`:live-session?`) only picks the VERB
+    (rotate vs nudge), never the tier.
+
+  ## The half-insight already in the code — build on it, it names the principle
+
+  `parcel-age-ms` PREFERS `enqueued_at` over `created_at`, precisely so a
+  redelivered parcel reads fresh in its new mailbox: the author understood
+  "aged" must mean "aged HERE". The missing second step is "aged here WHILE
+  SOMEONE COULD PROCESS IT". This ticket is that second step.
+
+  ## The predictable storm this is racing
+
+  The nightly cooldown pauses the swarm 19:00-07:00. Any parcel resting in a
+  mailbox overnight accrues ~11-12h of wall age against a 15m warn and an
+  escalate threshold. **At the 07:00 auto-resume, the watchdog's first sweep
+  fires ESCALATE on all of them at once** — maximum-severity alarms, on the
+  human's Telegram, about parcels whose ACTIVE age is zero seconds. The same
+  desensitisation argument as BL-647: a channel that opens every morning with
+  false 🚨 cannot carry a real one.
+
+description: |
+  ## Shape
+
+  1. **Active-time clock.** Effective age = wall age minus intervals in which
+     the swarm could not process: control/cooldown pauses, stop-to-start
+     gaps, AND **provider outages independent of the swarm** (operator
+     ruling 2026-07-26, after a 529 storm hit the architect mid-review:
+     "il faut tenir compte des outages indépendants de la swarm dans les
+     calculs de temps effectifs").
+
+     **CORRECTION 2026-08-06 (specifier, measured — this ticket's original
+     premise was wrong).** The ticket asserted "the sources are already
+     durable". Two of its three interval classes have NO durable interval
+     record to read. Measured at 7428b932:
+     - **Control/cooldown pauses.** `control-pause.json` is a CURRENT-STATE
+       marker, not a transition log: the payload is `{active, untilMs?}`
+       (`writeOperatorPauseState`, telegramCursorOperatorExec.ts:204-212) and
+       resume OVERWRITES it with `{active:false}`. There is no start stamp and
+       no history — after the 07:00 resume the overnight interval is simply
+       gone from that file. Pause start/end are inferable only by scraping
+       `handoffd`'s free-text daemon log for `cooldown-sweep` /
+       `pause-auto-resume` decision records, which are multi-line JSON (only
+       the first line carries a timestamp) in a log that ROTATES on every
+       daemon restart.
+     - **Stop-to-start gaps.** There is no kill-all audit: `kill_all_swarm.sh`
+       writes no durable record at all. A stop is inferable only as the hole
+       between the last `heartbeat` line of one rotated daemon log and the
+       first line of the next — which also cannot distinguish a clean stop
+       from a daemon crash.
+     - **Provider outages.** This class DOES have real machinery, as
+       originally claimed (`classify-provider-error`, PROVIDER_LIMIT/AVAILABLE
+       records across operator_lib.bb, agent_runtime_lib.bb,
+       provider_auth_observe_lib.bb, provider_compat_lib.bb).
+
+     Consequence, and why this is load-bearing rather than pedantic: the
+     ticket's own fallback rule ("unproven gap counts AGAINST the swarm")
+     applied to unreconstructable pause intervals REPRODUCES the exact bug
+     this ticket exists to fix — scenario 02 (overnight cooldown resume fires
+     nothing) cannot hold if the cooldown interval cannot be proven.
+
+     **RESOLVED 2026-08-06 by human ruling.** The question (append-only
+     interval ledger vs a scraper over the rotated logs) was put to the human,
+     who ruled: "Prerequisite ticket: a small append-only interval ledger
+     written at each pause/stop transition ships first, BL-650 depends_on it
+     (my recommendation — reliable, and BL-650 is already 10 scenarios)."
+
+     So: the ledger is **BL-823**, this ticket now carries
+     `depends_on: [BL-823]`, and the scraper option is rejected. Implementation
+     of THIS ticket starts once BL-823 has landed and the ledger it writes is
+     available to read. BL-823 records and exposes the intervals with explicit
+     provenance; this ticket does all the subtraction and is still the only
+     place any threshold or alarm changes.
+
+     **UNBLOCKED 2026-08-06 — BL-823 has landed. Read this before starting.**
+     Verified against the `main` ref (not a working tree — `swarmforge/scripts/`
+     is hot-synced, so the checkout is not evidence):
+
+     - **The reader is `swarmforge/scripts/availability_ledger_lib.bb`**, loaded
+       by `load-file` and referred to as `availability-ledger-lib/…`, the same
+       way `flow_watchdog_lib.bb` already loads its own siblings. Its own header
+       names this ticket as its consumer: "that is BL-650, which depends on this
+       ticket and will call `fold` below as its own entry point." Use `fold`.
+     - **`(fold state-dir)`** returns a vector of
+       `{:start-ms :end-ms :class :provenance}`. Do not re-read
+       `.swarmforge/telemetry/availability-YYYY-MM.jsonl` yourself; the lib is
+       the sole reader and this ticket must not become a second one.
+     - **`:class` is `"control-pause"` or `"swarm-stop"` — those two only.**
+       The ledger does NOT carry provider outages. That third interval class
+       still comes from the provider machinery named in the paragraph below
+       (`classify-provider-error`, PROVIDER_LIMIT/AVAILABLE records), stays its
+       own class, and is still never merged into swarm downtime.
+     - **`:provenance` has THREE values, not the two this ticket first named:**
+       `"proven"` (both ends are real records), `"inferred"` (the closing stop
+       was heartbeat-synthesized), and `"open"` (no closing record exists yet,
+       so `:end-ms` is **nil**, never a guessed timestamp).
+
+     **Ruling on `open` intervals** (specifier, 2026-08-06 — the ticket's
+     invariant 1 already anticipates "still-open", but never said what to do
+     with one):
+
+     - An open **`control-pause`** is subtracted from its `:start-ms` to the
+       sweep's own now. A pause with no end record is a pause that is happening
+       RIGHT NOW — that is a currently-true fact the sweep can act on, not a
+       guess, and it is precisely the case this ticket exists to fix. Not
+       subtracting it would let a live pause accrue age and fire the storm.
+     - An open **`swarm-stop`** subtracts **nothing**. If the swarm were
+       genuinely stopped the watchdog would not be sweeping, so an open stop
+       observed at sweep time is a stale record from an ungraceful exit. The
+       ticket's own fail-toward-wall-clock rule applies: an unproven gap counts
+       against the swarm, and the alarm text says so.
+
+     Both rulings sit inside invariant 2 unchanged: evidence decides, and its
+     absence subtracts nothing.
+
+     Unchanged by the correction: provider outages derive from
+     SIGNATURE-BACKED evidence only — timestamped retry/error lines in role
+     transcripts and pane scrollback ("529 Overloaded · attempt N/M",
+     "temporarily unavailable"), the classify-provider-error machinery, and
+     PROVIDER_LIMIT/AVAILABLE cooldown records. Track outage intervals PER
+     PROVIDER and as their OWN interval class, never merged into swarm
+     downtime — the swarm's chosen sleep and Anthropic's bad hour are
+     different facts, and FLOW/COST reporting must be able to show "swarm
+     availability" and "provider availability" separately. If interval
+     reconstruction is unreliable for a period, fail toward wall clock —
+     an unproven gap counts AGAINST the swarm (over-alarming is the safe
+     direction) but say so in the alarm text.
+  2. **Rotation-aware thresholds, NOT a dormancy mute.** Under a `rotation
+     router` pack the warn/escalate defaults must reflect that a parcel waits
+     its rotation turn — pack-aware threshold RESOLUTION (config in,
+     `decide-tier` untouched) preserves the deliberate structural guarantee
+     that `decide-tier` never grows a role/type/dormancy branch. `snoozed?`
+     stays the only mute.
+  3. **The unsuppressable invariant is preserved.** This ticket changes what
+     the clock measures, never whether the alarm may speak. A parcel genuinely
+     ignored while the swarm is ACTIVE alarms exactly as loudly as today.
+
+  ## Relation to BL-647 — same family, deliberately separate
+
+  Same root class: an observer written before the rotation router existed and
+  never told about it. Different mechanism — BL-647 fixes an event PRODUCER
+  (dead-agent-events), this fixes an alarm CLOCK and its thresholds. Kept as
+  two parcels because today's post-mortem measured what oversized parcels
+  cost; a reviewer should hold one property per parcel, and each carries its
+  own non-vacuity fixture.
+
+acceptance: specs/features/BL-650-flow-watchdog-wall-clock-age-must-be-active-time.feature
+
+# BL-633. Three properties the ten scenarios cannot express — each one derived
+# from prose the human already approved, none adding new behaviour. Per BL-654
+# the coder carries an executable property test for each, in this parcel.
+invariants:
+  - "Effective age never exceeds wall age and is never negative, for ANY set of subtracted intervals — overlapping, nested, zero-length, out-of-order, or still-open — and no interval is ever double-subtracted."
+  - "An interval is subtracted only where signature-backed durable evidence proves it: for EVERY interval class, absent or unreliable evidence subtracts nothing and that span falls back to wall clock."
+  - "Once a tier has fired for a parcel, no later sweep regresses it to a lower tier — a retroactively discovered interval never un-fires or re-fires an alarm that already spoke."
+
+out_of_scope: |
+  - Muting alarms during a pause. Deliberately the opposite of this ticket:
+    the alarm may always speak; only its clock changes. The unsuppressable
+    posture (`flow_watchdog_lib.bb:278`) is a shipped invariant.
+  - BL-647's dead-agent-events producer. Same family, separate mechanism,
+    separate parcel — see description.
+  - Redesigning enqueued_at/created_at semantics. The existing preference is
+    correct and is this ticket's own foundation.
+
+notes: |
+  Fourth rotation-blindness finding of 2026-07-25, and the day's recurring
+  shape once more: the watchdog is well-built (fails closed on unparseable
+  headers, re-alarms only on tier change, durable state, deliberate
+  structural constraints) and still wrong, because one input — what time
+  actually counts — was never questioned when the rotation pack became the
+  default. The enqueued_at preference shows the author was one step from the
+  right abstraction; this ticket takes the step.
+
+  ## Urgency framing is stale, the defect is not (specifier, 2026-08-06)
+
+  This ticket's "predictable storm this is racing" is the nightly 19:00-07:00
+  cooldown. That cooldown is currently DISABLED by standing human directive:
+  `.swarmforge/operator/continuous-shifts.json` is armed since 2026-08-04
+  (`mode: three-shifts-until-revoked`, `cooldownWindowEnabled: false`,
+  `scheduledStop: false`), and swarmforge.conf configures no cooldown window.
+  The `cooldown-sweep` still ticks but decides `none`. So scenario 02's
+  trigger cannot currently fire, and the `severity: high` was set on
+  2026-07-25 while the cooldown was live.
+
+  The DEFECT is untouched by that: wall-clock age still over-counts
+  stop-to-start gaps and provider outages, both of which still happen (the
+  2026-08-05 handoffd outage is a live example, and host relaunches recur).
+  What changes is only which interval class carries the urgency — the
+  stop/outage classes now do, and the cooldown class is dormant until the
+  human revokes continuous shifts. Worth weighing when ruling on the
+  ledger-vs-scraper question, since the ledger's value is highest exactly for
+  the two classes that have no record today.
