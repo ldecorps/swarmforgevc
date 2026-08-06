@@ -175,3 +175,23 @@ notes: |
   actually counts — was never questioned when the rotation pack became the
   default. The enqueued_at preference shows the author was one step from the
   right abstraction; this ticket takes the step.
+
+  ## Urgency framing is stale, the defect is not (specifier, 2026-08-06)
+
+  This ticket's "predictable storm this is racing" is the nightly 19:00-07:00
+  cooldown. That cooldown is currently DISABLED by standing human directive:
+  `.swarmforge/operator/continuous-shifts.json` is armed since 2026-08-04
+  (`mode: three-shifts-until-revoked`, `cooldownWindowEnabled: false`,
+  `scheduledStop: false`), and swarmforge.conf configures no cooldown window.
+  The `cooldown-sweep` still ticks but decides `none`. So scenario 02's
+  trigger cannot currently fire, and the `severity: high` was set on
+  2026-07-25 while the cooldown was live.
+
+  The DEFECT is untouched by that: wall-clock age still over-counts
+  stop-to-start gaps and provider outages, both of which still happen (the
+  2026-08-05 handoffd outage is a live example, and host relaunches recur).
+  What changes is only which interval class carries the urgency — the
+  stop/outage classes now do, and the cooldown class is dormant until the
+  human revokes continuous shifts. Worth weighing when ruling on the
+  ledger-vs-scraper question, since the ledger's value is highest exactly for
+  the two classes that have no record today.
