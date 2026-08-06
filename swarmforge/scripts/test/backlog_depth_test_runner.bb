@@ -92,6 +92,38 @@
     (swap! created-temp-dirs conj d)
     d))
 
+;; ── count-active-tickets (BL-808) ─────────────────────────────────────────
+
+(let [root (mk-tmp)
+      active (str (fs/path root "backlog" "active"))]
+  (assert= "count-active-tickets: a missing directory degrades to 0, never throws"
+           0
+           (backlog-depth-lib/count-active-tickets active)))
+
+(let [root (mk-tmp)
+      active (str (fs/path root "backlog" "active"))]
+  (fs/create-dirs active)
+  (assert= "count-active-tickets: an empty directory is 0"
+           0
+           (backlog-depth-lib/count-active-tickets active))
+  (spit (str (fs/path active ".gitkeep")) "")
+  (assert= "count-active-tickets: .gitkeep alone is not a ticket"
+           0
+           (backlog-depth-lib/count-active-tickets active))
+  (spit (str (fs/path active "BL-1-demo.yaml")) "id: BL-1\n")
+  (assert= "count-active-tickets: .gitkeep + one yaml counts 1"
+           1
+           (backlog-depth-lib/count-active-tickets active))
+  (spit (str (fs/path active "BL-2-demo.yaml")) "id: BL-2\n")
+  (assert= "count-active-tickets: .gitkeep + two yamls counts 2"
+           2
+           (backlog-depth-lib/count-active-tickets active))
+  (spit (str (fs/path active "notes.md")) "not a ticket\n")
+  (fs/create-dirs (fs/path active "subdir"))
+  (assert= "count-active-tickets: stray .md and nested dirs are never counted (filter by kind, not .gitkeep blocklist)"
+           2
+           (backlog-depth-lib/count-active-tickets active)))
+
 (let [root (mk-tmp)]
   (fs/create-dirs (fs/path root "swarmforge"))
   (spit (str (fs/path root "swarmforge" "swarmforge.conf")) "config active_backlog_max_depth -1\n")

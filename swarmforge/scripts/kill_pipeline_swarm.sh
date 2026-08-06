@@ -72,6 +72,8 @@ AUDIT="$DAEMON_DIR/kill-all-audit.log"
 # session - see swarmforge/scripts/test/test_swarm_socket_not_in_tmp.sh.)
 source "$SCRIPT_DIR/project_socket_id_lib.sh"
 source "$SCRIPT_DIR/freshness_stop_marker_lib.sh"
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/availability_ledger_lib.sh"
 SOCKET_GLOB="$ROOT/.swarmforge/tmux/"*.sock
 LEGACY_PROJECT_SOCKET_ID="$(project_socket_id "$ROOT")"
 # Test-only override, matching swarmforge.sh's own SWARMFORGE_CONFIG
@@ -159,6 +161,10 @@ reap_orphaned_pane_descendants() {
 
 mkdir -p "$DAEMON_DIR"
 log "kill_all_swarm begin root=$ROOT sweep_inbox=$SWEEP_INBOX reset_worktrees=$RESET_WORKTREES"
+# BL-823: a stop with no durable record is the interval class BL-650 most
+# needs - this is the single choke point every stop path funnels through
+# (kill_all_swarm.sh is a shim over this script; stop-swarm.sh calls it too).
+availability_record "$ROOT" "stop" "swarm-stop" "kill_pipeline_swarm.sh"
 
 # Captured BEFORE any teardown below - pgrep -P only sees live parent/child
 # links, so this MUST run while the swarm's own process tree is still intact.

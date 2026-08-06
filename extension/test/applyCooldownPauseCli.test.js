@@ -6,6 +6,7 @@ const { execFileSync } = require('node:child_process');
 const { main } = require('../out/tools/apply-cooldown-pause');
 const { controlPauseStatePath, readControlPauseState } = require('../out/tools/telegram-front-desk-bot');
 const { cooldownWindowMarkerPath, readCooldownWindowMarker } = require('../out/tools/cooldownWindowState');
+const { availabilityLedgerFileForMonth } = require('../out/metrics/availabilityLedgerStore');
 
 const CLI = path.join(__dirname, '..', 'out', 'tools', 'apply-cooldown-pause.js');
 const TOPIC_MAP_PATH = (root) => path.join(root, '.swarmforge', 'operator', 'telegram-topic-map.json');
@@ -102,6 +103,21 @@ test('BL-617 window-open-applies-timed-pause-01: applies a timed pause via the e
   assert.equal(result.decision, 'apply-pause');
   assert.equal(result.untilMs, localMs(25, '07:00'));
   assert.deepEqual(readControlPauseState(root), { active: true, untilMs: localMs(25, '07:00') });
+});
+
+test('BL-823: applying a cooldown pause appends a control-pause record sourced from apply-cooldown-pause', async () => {
+  const root = mkFixture({});
+  await runCli(root, ['--now', String(localMs(24, '19:03'))], DELIVER_ENV);
+  const month = new Date().toISOString().slice(0, 7);
+  const filePath = availabilityLedgerFileForMonth(root, month);
+  const [record] = fs
+    .readFileSync(filePath, 'utf8')
+    .split('\n')
+    .filter((l) => l.length > 0)
+    .map((l) => JSON.parse(l));
+  assert.equal(record.event, 'pause-start');
+  assert.equal(record.class, 'control-pause');
+  assert.equal(record.source, 'apply-cooldown-pause');
 });
 
 test('BL-617: --dry-run reports the decision without writing any state', async () => {

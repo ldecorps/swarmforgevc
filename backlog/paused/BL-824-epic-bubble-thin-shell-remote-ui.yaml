@@ -1,0 +1,188 @@
+id: BL-824
+title: "EPIC — Bubble thin shell + remote UI: screens ship over the bridge and the APK changes only when the shell does; do not promote directly; tracks children"
+milestone: M8
+status: todo
+type: epic
+epic: bubble-thin-shell
+priority: 88
+direction: human-requested
+depends_on: [BL-765, BL-769]
+mutation_cost: high
+decomposes_into: [BL-825]
+human_approval: approved
+approval_context: >
+  Two things need the human's sign-off before a coder starts, both flagged by
+  the intake itself as "open questions the human did not fully lock".
+
+  (1) The remote-UI technology. The intake offered "WebView shell, remote
+  compose bundle, or specifier-chosen equivalent". I have chosen a WebView
+  rendering a bridge-served HTML bundle, and slice BL-825 is specced against
+  that choice — see "The remote-UI technology choice" below for the reasoning
+  and what I am trading away. This is the one decision that is expensive to
+  reverse after slice A, so it is worth a look now rather than at review.
+
+  (2) APK distribution is DEFERRED, not decided. How the shell binary reaches
+  the phone (bridge-hosted download, GitHub release, other) is the human's
+  call, is not needed for slice A, and is scoped to slice C. Flagging so its
+  absence from slice A reads as deliberate.
+
+  The five decisions the human DID lock on 2026-07-31 (auto-update for most of
+  the app, thin native shell, generalize the chiptunes path, APK only when the
+  shell itself changes, no pretending about silent OTA) are carried through
+  unchanged and none has been silently dropped.
+
+source: |
+  Drained from `backlog/INTAKE-bubble-thin-shell-auto-update.md` (human via
+  Let's Talk / Cursor, 2026-07-31; picture-free capture, "specifier should
+  weigh in").
+
+  ## Why it sat undrained until today
+
+  The intake carries a specifier disposition dated 2026-08-02 holding it — and
+  its four sibling Bubble screen intakes — behind a single blocker: this repo
+  had no settled policy for where Android device behaviour's acceptance
+  contract lives, so speccing it would have produced one more inert feature
+  file whose every scenario fails "no step handler matched". That disposition
+  named its own resume point:
+
+  > Resume point: once BL-769 lands its policy, spec this against it.
+
+  **That condition is now met.** `BL-769-android-pure-logic-jvm-unit-seam` and
+  `BL-761-acceptance-contract-that-cannot-run-reaches-qa` are both in
+  `backlog/done/M8/`; the policy is in the constitution as local-engineering's
+  "Testability Boundary — Bubble (Android) (BL-769)"; the JVM unit suite,
+  its gradle task and its step-handler seam
+  (`specs/pipeline/steps/lib/androidGradle.js`) all exist and run. So this
+  epic — and the nine sibling Bubble intakes still at the backlog root — are
+  unblocked for the first time.
+
+  ## The human's locked decisions (2026-07-31), verbatim in substance
+
+  1. **Auto update for most of the app.** Opening Bubble should pick up new
+     version content without a manual reinstall for ordinary updates.
+  2. **Thin shell.** Keep a bare-minimum installed native companion: overlay
+     window, mic / talk engine hooks, permissions, bridge reachability, and
+     enough glue to fetch and show remote UI.
+  3. **Generalize the chiptunes path.** Catalogs/config already refresh from
+     the bridge; extend that pattern to most screens / soft updates so they
+     "just arrive" on the phone when the host serves a newer bundle.
+  4. **APK only when needed.** Native shell changes (new permissions, overlay
+     behavior, mic pipeline, install glue) still require an APK bump; human
+     accepts that rare path. Prefer a clear "shell update available" prompt
+     when the binary must change — not hunting an APK by hand.
+  5. **Out of pretending.** Do not claim Play-silent full binary OTA if the
+     distribute path is sideload; be honest about confirm-for-APK vs
+     auto-for-remote-UI.
+
+description: |
+  ## Why this epic exists
+
+  Bubble is the always-on operator surface and the slowest thing in the loop to
+  change: a UI tweak today means build, sideload, reinstall — while the human
+  is usually away from the desk, which is precisely when Bubble matters. The
+  pager of screens is about to grow sharply (Notes, Control, Live, Pipeline,
+  Health, clarification sheet are all queued as intakes or tickets), so
+  APK-per-change does not scale.
+
+  The pattern that fixes it already exists and is proven in this codebase:
+  BL-765 serves `bubble-config.json` and `chiptunes.json` from the bridge, and
+  Bubble applies them on pair/resume with bundled fallbacks. This epic
+  generalizes that same path from *config and catalogs* to *screens*.
+
+  The split it establishes is the point: **rare native/platform change vs
+  frequent product-UI change.** Once the shell is thin and the UI is remote,
+  every later Bubble screen ticket ships at bridge-redeploy cost instead of
+  APK-reinstall cost. That is why the intake calls it a strong candidate to
+  sequence before the screen batch, and why this epic outranks BL-774.
+
+  ## The remote-UI technology choice — WebView over a bridge-served HTML bundle
+
+  The intake delegated this ("specifier-chosen equivalent"). Choosing:
+
+  - **The bridge already serves HTML read models.** `bridgeServer.ts` serves
+    the holistic UI (`holisticUiHtml.ts`) and Mini-App-style routes such as
+    `/pipeline-board`. The intake's own Related section anticipates this:
+    "remote UI may reuse bridge HTML/read models already served for Mini App".
+    A WebView bundle reuses that investment; a remote Compose bundle would
+    duplicate every read model in a second rendering stack.
+  - **Remote Compose means dynamic code loading**, which is a materially
+    larger security surface (executable payload into an installed app, over a
+    tunnel) and a Play-policy hazard the human has not asked to take on.
+    HTML+CSS+JS in a WebView is content, not delivered bytecode.
+  - **It keeps the shell genuinely thin.** The native side keeps only what the
+    intake's decision 2 names: overlay window, mic/talk engine, permissions,
+    bridge reachability, and the glue to fetch and show remote UI.
+
+  What this trades away, stated plainly so the architect and the human can
+  weigh it: WebView screens will not feel as native as Compose ones —
+  scrolling, transitions and gesture handling are the usual casualties — and
+  the collapsed-bubble gestures and the Talk surface must therefore stay
+  native. That is not a workaround; it is the boundary. Any screen whose value
+  depends on native feel or on the mic pipeline stays in the shell, and the
+  epic must not quietly migrate those.
+
+  Local engineering rule 5 applies and is not in tension here: this remote UI
+  is unambiguously the **LIVE** surface (token auth, live endpoints, control
+  actions), never the static PWA. No slice may route Bubble screen data
+  through `pwa/`.
+
+  ## The boundary this epic must respect (BL-769)
+
+  Every slice lands on one side of the stated line. Bundle resolution — version
+  comparison, schema validation, cache-vs-fetch decision, minimum-shell gate,
+  degraded-state classification — is **pure logic** with no `android.*` type in
+  its own signature, so it is covered by the JVM unit suite under
+  `android/app/src/test/` and is bindable in the Node acceptance runner today.
+  The WebView render itself, the overlay, and a real fetch over a live tunnel
+  are **device surface**, verified by the recorded manual procedure each slice
+  carries. No slice may ship a feature file whose scenarios have no runnable
+  binding.
+
+  ## What "up to date" must never cost
+
+  The single non-negotiable across every slice: Bubble must stay usable when
+  the remote half is missing, stale, malformed or version-incompatible. The
+  human's phone is the escalation path of last resort — a Bubble that renders
+  a blank screen because a bundle failed to parse is worse than a Bubble that
+  never had remote UI at all. Every slice degrades to the native Talk surface.
+
+remaining_slices:
+  - "Slice B — remote screen hosting: the bridge serves a versioned UI bundle containing the actual pager screens, and the pager renders remote pages alongside the native Talk page, with per-screen native/remote placement recorded."
+  - "Slice C — shell update path: minimum-shell-version enforcement becomes an actionable prompt that can download and install a new APK with user confirm (sideload-safe), plus the human's ruling on how the binary is distributed. Honest about confirm-for-APK vs auto-for-remote-UI (locked decision 5)."
+  - "Slice D — soft-update vs shell-update documentation and operator how-to: what updates silently, what prompts, what to do when the tunnel is down, and how to force a refresh."
+  - "Slice E — sequencing pass over the queued Bubble screen intakes: for each of the nine still at the backlog root, record whether it ships as a remote page (inherits auto-update) or must stay native in the shell, and correct its ticket's scope accordingly."
+
+invariants:
+  - "Bubble always presents a usable native Talk surface: no state of the remote half — absent, stale, malformed, or version-incompatible — ever leaves the app with no way to reach the human's voice path."
+  - "A UI bundle is applied whole or not at all; a rejected bundle always leaves the last known-good cached bundle intact and rendering."
+
+out_of_scope: |
+  - Full Play Store publication. Explicitly deferred by the intake unless the
+    human asks.
+  - Silent full-binary OTA. Locked decision 5 forbids claiming it while the
+    distribute path is sideload; slice C prompts and confirms instead.
+  - Migrating the collapsed-bubble gestures, the mic/talk engine, or the
+    overlay window to remote UI. These are the thin shell, by decision 2 and
+    by the WebView trade-off recorded above.
+  - Rewriting the nine queued Bubble screen intakes before this architecture
+    lands. Slice E records their placement; it does not re-spec them.
+  - BL-765's config and catalog path itself. This epic depends on it and must
+    not regress it, but does not re-open it.
+
+notes: |
+  Consolidation record (BL-680). This epic drains ONE root intake,
+  `INTAKE-bubble-thin-shell-auto-update.md`, 1:1 — no merge, no split. The
+  nine sibling Bubble intakes at the backlog root are deliberately NOT folded
+  in: they are screen features, this is the architecture that determines how
+  screens ship, and merging them would mint an oversized ticket against the
+  BL-634 envelope. Their sequencing dependency on this epic is recorded as
+  slice E rather than by rewriting them.
+
+  Every operator directive quoted in the source intake survives verbatim in
+  substance into this epic's `source:` block (the five locked decisions), per
+  the consolidation constraint the specifier prompt states and BL-681 is
+  ratifying.
+
+  Why BL-774 (priority 86) is outranked at 88: the intake's own assessment —
+  "it multiplies every later Bubble ticket's ship cost if skipped". Live
+  Screen is one of the screens whose ship cost this changes.

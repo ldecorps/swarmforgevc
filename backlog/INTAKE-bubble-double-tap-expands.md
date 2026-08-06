@@ -103,3 +103,39 @@ Resume point: once the Android-seam policy is settled (where device behavior
 is verified, given it cannot ride the Node acceptance runner), spec these
 against it. The behavior captured above is clear and needs no further
 questions — only a place to put its contract.
+
+---
+
+## Specifier disposition 2026-08-06 — BL-769 blocker cleared, but a design conflict needs the human
+
+The 2026-07-31 blocker above is GONE: BL-769 and BL-761 are in
+`backlog/done/M8/`, the Android testability policy is in the constitution, and
+the gradle JVM seam runs. This intake is drainable.
+
+It is not drained yet because probing the code surfaced a conflict between two
+of the requested verbs that the intake does not resolve.
+
+**Measured** (`OverlayService.kt:355-430`): the collapsed bubble runs one
+hand-rolled touch state machine — `moved` / `longPressFired` / `touchSlop * 2`
+/ `ViewConfiguration.getLongPressTimeout()` — and `ACTION_UP` with `!moved`
+calls `onTap()` immediately. There is no double-tap concept anywhere in it.
+
+**The conflict.** Requested outcome 1 (double-tap expands) and requested
+outcome 4 (single tap when idle starts the mic) cannot both be instant. A tap
+is not known to be single until the double-tap window (~300 ms) has expired,
+so from idle either:
+
+- the mic start waits out that window and push-to-talk feels late — against
+  the intake's own "simple push-to-talk rhythm: open mic → speak → tap to
+  send"; or
+- the mic starts on tap 1, and a fast second tap hits requested outcome 5
+  (stop and send) instead of expanding — so double-tap-to-expand simply never
+  fires from idle, which is the state you would most often expand from.
+
+Note this does NOT affect the recording state: once recording, a tap can send
+immediately, because there is no competing idle-tap meaning to disambiguate.
+
+Asked of the human 2026-08-06 via `role_ask.bb`. Resume here with the answer;
+no other question is open on this intake, and the rest of its verbs (drag
+unchanged, long-press pause/resume unchanged, permission prompt as today) are
+clear and need no further input.

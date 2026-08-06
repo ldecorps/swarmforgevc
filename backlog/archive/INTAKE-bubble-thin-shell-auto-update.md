@@ -137,3 +137,35 @@ extension host, or `.swarmforge/` state — data, endpoints, or projections the
 phone merely renders — that slice is testable in the Node runner today and is
 NOT blocked. Split it out and spec it rather than holding the whole intake
 behind BL-769.
+
+---
+
+## DRAINED 2026-08-06 — BL-824 (epic) + BL-825 (slice A)
+
+The 2026-08-02 disposition above held this intake behind BL-769's Android
+testability policy and named its own resume point: "once BL-769 lands its
+policy, spec this against it." BL-769 and BL-761 are now in `backlog/done/M8/`,
+the policy is in the constitution (local-engineering, "Testability Boundary —
+Bubble (Android)"), and the JVM unit seam runs. Blocker cleared, intake drained.
+
+- `backlog/paused/BL-824-epic-bubble-thin-shell-remote-ui.yaml` — the epic.
+  Carries all five of the human's locked 2026-07-31 decisions, the WebView
+  remote-UI choice with its trade-off stated, and slices B–E.
+- `backlog/paused/BL-825-bubble-remote-ui-bundle-resolution.yaml` — slice A,
+  the bundle resolver, with `specs/features/BL-825-…feature` bound to the
+  BL-769 gradle seam plus a recorded manual procedure for the device surface.
+
+1:1 drain — no merge, no split. The nine sibling Bubble intakes still at the
+backlog root are unblocked by the same BL-769 landing but are NOT folded in:
+they are screen features, this is the architecture that decides how screens
+ship. Their placement (remote page vs native shell) is BL-824 slice E.
+
+Open questions this intake listed, and where each went:
+- WebView vs other remote-UI tech → **decided** in BL-824 (WebView + bridge
+  HTML bundle), approved by the human 2026-08-06.
+- Cache / pin policy when the tunnel is down → **BL-825**, the `stale` outcome.
+- Minimum shell surface if the remote bundle is missing → **BL-825**, the
+  `bare` outcome: native Talk.
+- How the shell APK is distributed → **deferred to slice C**, human's ruling.
+- Versioning scheme for UI bundle vs APK → **BL-825**, `minShellVersion` on
+  the bundle manifest against the installed shell version.

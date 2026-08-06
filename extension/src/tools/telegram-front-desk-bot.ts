@@ -167,6 +167,7 @@ import { IconStickerLookup, StandingTopicTarget, ROLE_TOPIC_ICON, RoleTopicIconR
 import { computeRoleGateStatesLive, RoleGateState } from '../bridge/gateSnapshot';
 import { computeCurrentHolders } from '../bridge/holisticProjections';
 import { readRoleHoldingWindows, TicketHoldingWindow } from '../metrics/ticketHoldingWindows';
+import { appendAvailabilityRecord } from '../metrics/availabilityLedgerStore';
 import { parseRolesTsv, invertTicketStageToRoleHeldTickets } from '../swarm/swarmState';
 import { wrapPipelineBoardHtml } from '../concierge/pipelineBoard';
 import { readTmuxSocket, readSwarmRoles, paneTarget, getPaneBaseIndex, capturePane, sendKeys } from '../swarm/tmuxClient';
@@ -1193,8 +1194,15 @@ export function readControlPauseState(targetPath: string): PauseState {
   }
 }
 
-export function writeControlPauseState(targetPath: string, state: PauseState): void {
+// BL-823: source names the emitting call site for audit - control pauses
+// and cooldown pauses share the "control-pause" ledger class and are told
+// apart by source, never a second class. Optional with a generic default so
+// every pre-existing caller (this bot's own two, plus apply-cooldown-pause.ts
+// and resume-expired-pauses.ts) keeps working; production call sites below
+// pass their own distinguishing source.
+export function writeControlPauseState(targetPath: string, state: PauseState, source: string = 'writeControlPauseState'): void {
   atomicWrite(controlPauseStatePath(targetPath), JSON.stringify(state.active ? { active: true, untilMs: state.untilMs } : { active: false }));
+  appendAvailabilityRecord(targetPath, state.active ? 'pause-start' : 'pause-end', 'control-pause', source);
 }
 
 // BL-423: the pending stop/restart confirm marker - armed by
@@ -1808,7 +1816,7 @@ export async function applyPause(
   durationMs: number | undefined,
   postFn?: TelegramPostFn
 ): Promise<void> {
-  writeControlPauseState(targetPath, { active: true, untilMs: durationMs !== undefined ? Date.now() + durationMs : undefined });
+  writeControlPauseState(targetPath, { active: true, untilMs: durationMs !== undefined ? Date.now() + durationMs : undefined }, 'telegram-front-desk-bot:pause');
   const label = durationMs !== undefined ? humanizePauseDurationMs(durationMs) : 'until you resume';
   await postControlMessage(
     botToken,
@@ -1837,7 +1845,7 @@ export async function resumeNow(
   postFn?: TelegramPostFn,
   nowMs: number = Date.now()
 ): Promise<void> {
-  writeControlPauseState(targetPath, { active: false });
+  writeControlPauseState(targetPath, { active: false }, 'telegram-front-desk-bot:resume');
   const { config } = readCooldownConfigFromDisk(targetPath);
   if (config?.enabled && isWithinWindow(localMinutesOfDay(nowMs), config.startLocal, config.endLocal)) {
     writeCooldownWindowMarker(targetPath, currentWindowStartMs(nowMs, config.startLocal));
