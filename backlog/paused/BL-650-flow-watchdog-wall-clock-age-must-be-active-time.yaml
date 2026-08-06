@@ -8,7 +8,7 @@ human_approval: approved
 severity: high
 priority: 54
 direction: human-requested
-depends_on: []
+depends_on: [BL-822]
 assigned_to: specifier
 mutation_cost: medium
 required_stages: [coder, architect, qa]
@@ -110,12 +110,20 @@ description: |
      ticket's own fallback rule ("unproven gap counts AGAINST the swarm")
      applied to unreconstructable pause intervals REPRODUCES the exact bug
      this ticket exists to fix — scenario 02 (overnight cooldown resume fires
-     nothing) cannot hold if the cooldown interval cannot be proven. Resolving
-     this is a live question with the human (specifier, 2026-08-06): add a
-     small append-only interval ledger written at each transition point, or
-     have this ticket build a scraper over the rotated logs. **Do not start
-     implementation until that is answered** — the answer decides whether this
-     ticket gains a `depends_on` prerequisite.
+     nothing) cannot hold if the cooldown interval cannot be proven.
+
+     **RESOLVED 2026-08-06 by human ruling.** The question (append-only
+     interval ledger vs a scraper over the rotated logs) was put to the human,
+     who ruled: "Prerequisite ticket: a small append-only interval ledger
+     written at each pause/stop transition ships first, BL-650 depends_on it
+     (my recommendation — reliable, and BL-650 is already 10 scenarios)."
+
+     So: the ledger is **BL-822**, this ticket now carries
+     `depends_on: [BL-822]`, and the scraper option is rejected. Implementation
+     of THIS ticket starts once BL-822 has landed and the ledger it writes is
+     available to read. BL-822 records and exposes the intervals with explicit
+     `proven | inferred` provenance; this ticket does all the subtraction and
+     is still the only place any threshold or alarm changes.
 
      Unchanged by the correction: provider outages derive from
      SIGNATURE-BACKED evidence only — timestamped retry/error lines in role

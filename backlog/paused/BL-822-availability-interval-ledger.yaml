@@ -1,0 +1,190 @@
+id: BL-822
+title: "Pause and stop intervals leave no durable record: control-pause.json is a current-state marker that resume overwrites, and a stop writes nothing at all — so effective-time arithmetic has nothing to read"
+milestone: M8
+type: feature
+status: todo
+epic: swarm-reliability
+human_approval: pending
+priority: 53
+direction: human-requested
+depends_on: []
+assigned_to: specifier
+mutation_cost: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+approval_context: >
+  Human ruling 2026-08-06, answering the specifier's ledger-vs-scraper question
+  on BL-650: "Prerequisite ticket: a small append-only interval ledger written
+  at each pause/stop transition ships first, BL-650 depends_on it (my
+  recommendation — reliable, and BL-650 is already 10 scenarios)." That settles
+  the mechanism (ledger, not a scraper over rotated free-text logs) and the
+  sequencing (this ships first). FIRM — do not re-litigate.
+
+  ONE point needs sign-off because it goes beyond the ruling's literal words.
+  A pure transition ledger records only GRACEFUL stops. An ungraceful stop
+  (kill -9, host reboot, daemon crash — the 2026-08-05 handoffd outage class,
+  which is precisely the interval class BL-650's own notes now say carries the
+  urgency) writes no transition record, so its interval would stay
+  unreconstructable and fall back to wall clock. Scenarios 03/04 therefore add
+  ONE record type beyond the ruling: at START, if the previous record is not a
+  stop, the ledger closes the open interval at `.swarmforge/daemon/handoffd.heartbeat`
+  (an already-existing single-value file, handoffd.bb:2649) and marks that
+  interval `inferred` rather than `proven`. This adds no new heartbeat
+  machinery and no scraper — it reads one existing file at one existing moment.
+  With no heartbeat file, nothing is emitted and the span falls back to wall
+  clock (scenario 04). If the human prefers strictly-graceful-only, drop
+  scenarios 03/04 and this ticket still satisfies the ruling.
+
+source: |
+  ## Why this ticket exists
+
+  BL-650 ("flow-watchdog measures parcel age in WALL-CLOCK time") was specced
+  on the premise that the intervals it wants to subtract are already durably
+  recorded. The specifier measured that premise on 2026-08-06 at 7428b932 and
+  it is FALSE for two of the three interval classes:
+
+  - **Control/cooldown pauses.** `.swarmforge/operator/control-pause.json` is a
+    CURRENT-STATE marker, not a transition log. The payload is
+    `{active, untilMs?}` and resume OVERWRITES it with `{active:false}`
+    (`writeOperatorPauseState`, telegramCursorOperatorExec.ts:203-212, and its
+    twin `writeControlPauseState` in telegram-front-desk-bot.ts). There is no
+    start stamp and no history: after a resume the interval is simply gone.
+  - **Stop-to-start gaps.** No kill-all audit exists. `kill_all_swarm.sh` is a
+    shim over `kill_pipeline_swarm.sh` and writes no durable record; neither
+    does `stop-swarm.sh`. A stop is inferable only as the hole between rotated
+    daemon logs — which cannot distinguish a clean stop from a crash.
+  - **Provider outages.** This third class DOES already have real machinery
+    (`classify-provider-error`, PROVIDER_LIMIT/AVAILABLE records) and is
+    therefore OUT OF SCOPE here.
+
+  Left unfixed, BL-650's fallback rule ("an unproven gap counts AGAINST the
+  swarm") applied to unreconstructable pause intervals REPRODUCES the very bug
+  BL-650 exists to fix. The human ruled the ledger ships first as its own
+  ticket; BL-650 now `depends_on: [BL-822]`.
+
+  ## The choke points are already narrow — this ticket adds no new ones
+
+  Every pause transition in the codebase already funnels through exactly two
+  twin writer functions, and that single-writer discipline is already stated in
+  the code (`apply-cooldown-pause.ts:12`: "reuses writeControlPauseState —
+  never a second writer implementation"):
+
+  - `writeControlPauseState` (telegram-front-desk-bot.ts:1811 pause, :1840
+    resume; apply-cooldown-pause.ts:81 cooldown pause; resume-expired-pauses.ts:56
+    auto-resume)
+  - `writeOperatorPauseState` (telegramCursorOperatorExec.ts:615 pause, :622 resume)
+
+  Appending inside those two functions captures every pause transition without
+  hunting call sites.
+
+description: |
+  ## Shape
+
+  Record, in one durable append-only place, the intervals during which the
+  swarm could not process work. This ticket RECORDS and EXPOSES those
+  intervals. It never subtracts them from anything and changes no alarm — that
+  is BL-650's job, and it depends on this.
+
+  1. **The ledger.** `.swarmforge/telemetry/availability-<YYYY-MM>.jsonl`,
+     one JSON object per line, append-only. This directory and the monthly
+     `<name>-YYYY-MM.jsonl` filename are the ESTABLISHED convention here
+     (`llm-cost-2026-08.jsonl`, `chaser-2026-08.jsonl`) — follow it rather than
+     inventing a new home. Mirror `swarmforge/scripts/llm_cost_ledger_lib.bb`'s
+     shape exactly: a pure record builder plus a thin `spit ... :append true`
+     IO function whose failure never blocks the real work.
+
+     Record: `{ts, event, class, source}` where `event` is
+     `pause-start | pause-end | stop | start`, `class` is
+     `control-pause | swarm-stop`, and `source` names the emitting call site
+     for audit. Control pauses and cooldown pauses share the `control-pause`
+     class — BL-650 treats them as one class — and are told apart by `source`.
+
+  2. **The writers.** All existing choke points; no new ones:
+     - the two pause twins above append on every state change;
+     - `kill_pipeline_swarm.sh` and `stop-swarm.sh` append a `stop`;
+     - `start-swarm.sh` appends a `start`.
+     A ledger write failure NEVER blocks or fails the pause/stop/start it
+     observes (invariant 1).
+
+  3. **The ungraceful-stop close.** At `start`, if the last record is not a
+     `stop`, read `.swarmforge/daemon/handoffd.heartbeat` (a single-value
+     last-tick file already written every cycle by handoffd.bb:2649) and append
+     a synthetic `stop` stamped at that tick, marked `inferred`. No heartbeat
+     file, or one older than the last `start`, emits nothing at all — that span
+     falls back to wall clock, per BL-650's own safe direction. This is the one
+     element beyond the human's literal ruling; see `approval_context`.
+
+  4. **The reader.** A Babashka fold (the consumer, `flow_watchdog_lib.bb`, is
+     Babashka) turning records into
+     `{start-ms, end-ms, class, provenance}` intervals, where `provenance` is
+     `proven` (both ends carry real records) or `inferred` (end synthesized
+     from the heartbeat). It spans month files, tolerates duplicate,
+     out-of-order and corrupt lines by SKIPPING them, and never guesses a
+     missing timestamp. An interval still open (a pause with no resume yet) is
+     returned open-ended for the caller to decide. The reader does arithmetic
+     on intervals only — never on parcel ages.
+
+  ## Deliberately small
+
+  One ledger, two writer helpers (one TS, one shell), one bb reader. It is
+  scoped this way because BL-650 is already ten scenarios and the human's
+  ruling was explicit that this ships as the *small* prerequisite.
+
+acceptance: specs/features/BL-822-availability-interval-ledger.feature
+
+# BL-633. Three properties no enumeration of the eight scenarios can express.
+invariants:
+  - "A ledger write failure never blocks, fails, or alters the operation it observes — every pause, stop and start completes exactly as it does today whether or not the ledger is writable."
+  - "The ledger is append-only: no writer ever rewrites, reorders, or deletes an existing record, and the reader tolerates duplicate, out-of-order and corrupt lines without ever inventing a record that is not there."
+  - "Every interval the reader emits carries explicit provenance, and an interval whose end is not evidenced is emitted open or omitted — never closed with a guessed timestamp."
+
+# BL-531: this ticket builds a mechanism whose value depends entirely on the
+# call sites existing. Without these, it ships a lib nothing calls (the BL-419
+# shape). The pre-QA gate refuses the handoff to QA if any is absent.
+required_wiring:
+  - "extension/src/tools/telegram-front-desk-bot.ts::appendAvailabilityRecord::the Control pause twin; unwired, every cooldown and control pause interval stays unrecorded"
+  - "extension/src/tools/telegramCursorOperatorExec.ts::appendAvailabilityRecord::the Operator pause twin; unwired, operator pauses stay unrecorded"
+  - "swarmforge/scripts/kill_pipeline_swarm.sh::availability_record::a stop with no record is the interval class BL-650 most needs"
+  - "start-swarm.sh::availability_record::the start record closes the stop interval and triggers the heartbeat-inferred close"
+
+out_of_scope: |
+  - Subtracting these intervals from anything, changing any threshold, or
+    touching flow_watchdog_lib.bb. That is BL-650, which depends on this.
+  - Provider-outage intervals. That class already has real machinery
+    (classify-provider-error, PROVIDER_LIMIT/AVAILABLE) and BL-650 tracks it
+    as its own separate class — this ledger covers only the two classes with
+    no record today.
+  - A scraper over rotated handoffd logs. Explicitly rejected by the human's
+    2026-08-06 ruling in favour of this ledger.
+  - Muting or suppressing any alarm. The unsuppressable posture
+    (flow_watchdog_lib.bb:278) is untouched here and in BL-650.
+  - Retroactively reconstructing intervals from before this ledger exists.
+    The ledger starts empty; earlier spans fall back to wall clock.
+
+notes: |
+  Sequencing: this ticket must land before BL-650, which now carries
+  `depends_on: [BL-822]`. BL-650 was moved out of `backlog/hold/` back to
+  `backlog/paused/` when this ticket was written — the question that held it
+  is answered, and the dependency now enforces the order.
+
+  Not a duplicate of BL-819 (checked at spec time). BL-819 is a *ticket
+  lifecycle* ledger — one record per ticket's journey (stages, dwell, bounces,
+  close outcome), coordinator-owned under `.swarmforge/lean/`, epic
+  `lean-aware-coordinator`. This is a *swarm availability* ledger — when the
+  swarm as a whole could not process anything, under `.swarmforge/telemetry/`,
+  epic `swarm-reliability`. Different subject, owner, and consumer; both happen
+  to be append-only JSONL. Do not merge them.
+
+  They do have one real adjacency worth knowing: BL-819's per-stage DWELL
+  figures are wall-clock too, so a ticket sitting through a swarm stop
+  over-counts its dwell in exactly the way BL-650 describes for parcel age.
+  This ledger is therefore a plausible shared primitive later. Deliberately NOT
+  wired as a dependency — BL-819 ships fine without it, and coupling two
+  unrelated epics on a hunch is how slices get oversized.
+
+  Urgency: BL-650's headline trigger (the 19:00-07:00 nightly cooldown storm)
+  is currently dormant — `.swarmforge/operator/continuous-shifts.json` has been
+  armed since 2026-08-04 with `cooldownWindowEnabled: false`. What carries the
+  urgency now is the stop-to-start class, which is exactly the class with no
+  record at all today, and exactly what the heartbeat-inferred close in point 3
+  exists to cover.
