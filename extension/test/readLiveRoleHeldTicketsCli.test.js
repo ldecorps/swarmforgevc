@@ -2,7 +2,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { mkTmpDir } = require('./helpers/tmpDir');
-const { readLiveRoleHeldTickets } = require('../out/tools/telegram-front-desk-bot');
+const { readLiveRoleHeldTickets, RoleHeldTicketsComputationFailedError } = require('../out/tools/telegram-front-desk-bot');
 
 // BL-487: the REAL pipeline_stage_cli.bb `report` subprocess, never mocked,
 // per this codebase's own dependencyGateCli*.test.js precedent. Mirrors
@@ -14,15 +14,24 @@ const { readLiveRoleHeldTickets } = require('../out/tools/telegram-front-desk-bo
 // instead of this actual repo's own live, ever-changing swarm state).
 const REAL_SCRIPTS_DIR = path.join(__dirname, '..', '..', 'swarmforge', 'scripts');
 
-function mkFixtureRoot() {
+// BL-814: the full, minimal set of load-file dependencies
+// pipeline_stage_cli.bb's `report` actually needs to run. Deleting any one
+// of these must still break the fixture (proves this list was not widened
+// to "everything in the directory" - it is exactly what is depended on).
+// Recurrence history: BL-655 added ambulance_lib.bb, BL-805 added
+// mono_router_lib.bb - both times this copy list went stale and the
+// fixture missed it, because the failure it produced was a passing-shaped
+// {} rather than an error (see BL-814).
+const REQUIRED_SCRIPT_FILES = ['pipeline_stage_cli.bb', 'pipeline_stage_lib.bb', 'handoff_lib.bb', 'ambulance_lib.bb', 'mono_router_lib.bb'];
+
+function mkFixtureRoot(omit) {
   const root = mkTmpDir('bl487-live-role-held-');
   const scriptsDir = path.join(root, 'swarmforge', 'scripts');
   fs.mkdirSync(scriptsDir, { recursive: true });
-  // BL-655: handoff_lib.bb now load-files ambulance_lib.bb too - omitting it
-  // here does not throw loudly, it makes the real `bb` subprocess fail and
-  // readLiveRoleHeldTickets silently degrade to {} (a missed-consumer
-  // regression this exact copy-the-real-scripts fixture exists to catch).
-  for (const name of ['pipeline_stage_cli.bb', 'pipeline_stage_lib.bb', 'handoff_lib.bb', 'ambulance_lib.bb']) {
+  for (const name of REQUIRED_SCRIPT_FILES) {
+    if (name === omit) {
+      continue;
+    }
     fs.copyFileSync(path.join(REAL_SCRIPTS_DIR, name), path.join(scriptsDir, name));
   }
   return root;
@@ -86,33 +95,49 @@ test('BL-487: no roles.tsv / no active ticket at all degrades to an empty map, n
   assert.deepEqual(result, {});
 });
 
-test('BL-487: a fixture root with no swarmforge/scripts at all (the real CLI missing) degrades gracefully to an empty map', async () => {
+// BL-814: a fixture root with no swarmforge/scripts at all means the real
+// CLI can never run - "the computation did not run", not "it ran and found
+// nothing". Previously this degraded to a passing-shaped {}; it must now
+// surface loudly instead.
+test('BL-814: a fixture root with no swarmforge/scripts at all (the real CLI missing) surfaces a computation failure, not an empty map', async () => {
   const root = mkTmpDir('bl487-no-scripts-');
 
-  const result = await readLiveRoleHeldTickets(root);
-
-  assert.deepEqual(result, {});
+  await assert.rejects(() => readLiveRoleHeldTickets(root), RoleHeldTicketsComputationFailedError);
 });
 
-// BL-487 hardening: the function's own docstring names THREE tolerated
-// failure modes - "bb missing, a torn/non-JSON stdout, a script error" -
-// but every test above only exercises a non-zero bb EXIT (the missing-
-// script-file case above genuinely exits non-zero with stderr, since `bb
-// <nonexistent path>` errors immediately - confirmed empirically). None
-// drove the exit-0-but-garbage-stdout path, so the JSON.parse(stdout)
-// call inside the try/catch was never actually reached with a failing
-// parse - only ever with well-formed JSON or never at all. Per
+// BL-487 hardening, extended by BL-814: the function's own docstring names
+// THREE tolerated-turned-loud failure modes - "bb missing, a torn/non-JSON
+// stdout, a script error" - but the test above only exercises a non-zero bb
+// EXIT (the missing-script-file case genuinely exits non-zero with stderr,
+// since `bb <nonexistent path>` errors immediately - confirmed
+// empirically). This drives the exit-0-but-garbage-stdout path, so the
+// JSON.parse(stdout) call is reached with a failing parse - independent of
+// any process/exit failure - and must surface loudly too, per
 // engineering.prompt's CLI-failure-path rule (a wiring test over a
-// shelled-out CLI must drive its documented failure contract, not only
-// the happy path), replace the real pipeline_stage_cli.bb with a fake
-// script that exits 0 but prints non-JSON garbage, proving the parse
-// failure alone - independent of any process/exit failure - still
-// degrades gracefully rather than throwing into the concierge tick.
-test('BL-487: a CLI that exits 0 but prints non-JSON garbage degrades gracefully to an empty map, never throws', async () => {
+// shelled-out CLI must drive its documented failure contract, not only the
+// happy path).
+test('BL-814: a CLI that exits 0 but prints non-JSON garbage surfaces a computation failure, never a silent empty map', async () => {
   const root = mkFixtureRoot();
   fs.writeFileSync(path.join(root, 'swarmforge', 'scripts', 'pipeline_stage_cli.bb'), '(println "not valid json {")\n');
 
-  const result = await readLiveRoleHeldTickets(root);
-
-  assert.deepEqual(result, {});
+  await assert.rejects(() => readLiveRoleHeldTickets(root), RoleHeldTicketsComputationFailedError);
 });
+
+// ── BL-814: failed-computation-is-loud ─────────────────────────────────────
+// Mirrors the acceptance feature's Scenario Outline exactly: deleting any
+// ONE of the fixture's non-leaf load-file dependencies makes the real `bb`
+// subprocess fail (FileNotFoundException at the load-file site), and that
+// failure must surface rather than degrade to a passing-shaped {}. Also
+// proves the fixture's copy list is minimal - not padded with unused files -
+// since removing any of these three genuinely breaks the real computation.
+for (const missingDependency of ['mono_router_lib.bb', 'ambulance_lib.bb', 'handoff_lib.bb']) {
+  test(`BL-814: a fixture missing ${missingDependency} surfaces the failure instead of reporting an ordinary empty map`, async () => {
+    const root = mkFixtureRoot(missingDependency);
+    const coderWorktree = path.join(root, 'coder-worktree');
+    writeRolesTsv(root, [['coder', 'coder', coderWorktree, 'session', 'Coder', 'claude']]);
+    writeActiveTicket(root, 'BL-900');
+    writeInProcessHandoff(root, coderWorktree, 'BL-900-board-freshness-fixture');
+
+    await assert.rejects(() => readLiveRoleHeldTickets(root), RoleHeldTicketsComputationFailedError);
+  });
+}
