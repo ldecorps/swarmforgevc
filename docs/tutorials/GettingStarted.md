@@ -130,9 +130,12 @@ This idempotent command checks and repairs:
 5. **Front desk (Telegram bridge + bot)** — Checked only when
    `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, and `TELEGRAM_PRINCIPAL_USER_ID`
    are all set in the launching shell, or a prior front-desk pid file already
-   exists (so a previously-enabled desk still gets repaired). Otherwise it is
-   omitted, not reported failed. Skip explicitly with
-   `SWARMFORGE_SKIP_FRONT_DESK=1`.
+   exists (so a previously-enabled desk is eligible for repair). Otherwise it
+   is omitted, not reported failed. A stale pid file alone never bypasses this
+   swarm's own credential resolution, though (BL-622): repair is refused and
+   reported FAILED if this swarm has no fleet creds of its own and is not the
+   recorded primary root — never a silent relaunch on an inherited token. Skip
+   explicitly with `SWARMFORGE_SKIP_FRONT_DESK=1`.
 
 For each component, it reports one of:
 - **HEALTHY** — No repair needed.

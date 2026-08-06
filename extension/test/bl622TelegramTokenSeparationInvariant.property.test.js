@@ -2,7 +2,6 @@ const assert = require('node:assert/strict');
 const fc = require('fast-check');
 const fs = require('node:fs');
 const path = require('node:path');
-const os = require('node:os');
 const { execFileSync } = require('node:child_process');
 const { mkTmpDir } = require('./helpers/tmpDir');
 
@@ -113,7 +112,7 @@ test('property: env-fallback token resolution is refused iff this is not the rec
         if (primaryRecordState === 'matches') {
           writePrimaryRoot(fleetHome, projectRoot);
         } else if (primaryRecordState === 'differs') {
-          otherPrimaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bl622-prop-other-primary-'));
+          otherPrimaryRoot = mkTmpDir('bl622-prop-other-primary-');
           writePrimaryRoot(fleetHome, otherPrimaryRoot);
         }
         if (hasOwnCredsFile) {
