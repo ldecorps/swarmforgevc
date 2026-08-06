@@ -7,7 +7,7 @@ severity: medium
 epic: swarm-reliability
 priority: 20
 direction: human-requested
-human_approval: pending
+human_approval: approved
 depends_on: []
 mutation_cost: low
 
