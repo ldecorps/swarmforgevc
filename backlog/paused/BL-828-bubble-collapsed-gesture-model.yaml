@@ -1,0 +1,252 @@
+id: BL-828
+title: "Bubble collapsed-bubble gesture model: double-tap expands, tap opens the mic, tap again sends — the idle tap deferred one double-tap window so expand stays deliberate"
+milestone: M8
+type: feature
+status: todo
+epic: swarmforge-console
+human_approval: pending
+priority: 70
+direction: human-requested
+assigned_to: none
+depends_on: [BL-769]
+mutation_cost: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+approval_context: >
+  The human already answered the one blocking question on 2026-08-06: "Delay
+  the idle tap ~300ms so double-tap can expand (mic starts slightly late)."
+  That ruling is carried through exactly as given and is not up for review here.
+
+  Two consequences of that ruling need a look, because the intake did not state
+  them and I decided them:
+
+  (1) The deferral applies to the IDLE tap only. A tap while RECORDING still
+  sends immediately — the human's answer named the idle tap specifically, and a
+  deferred send would put a 300 ms lag on the end of every spoken turn, which
+  is the one place the rhythm is felt. Consequence: a fast double-tap while
+  recording SENDS the turn and THEN expands the panel. Nothing is lost and
+  expand still works, but the send is not retracted by the second tap. If the
+  human would rather the double-tap swallow the send, say so — it is a one-line
+  change in the decider, but it costs every single send 300 ms.
+
+  (2) The slice extracts the WHOLE collapsed-bubble gesture arbitration into a
+  pure-logic decider, not just the new double-tap part. The intake hinted
+  low–medium cost and this is the medium end. The reason is in "Why the whole
+  state machine moves" below: half-extracting leaves the intake's own
+  acceptance item 5 (dragging must not count as a tap) with no runnable
+  contract, and that is precisely the regression this change is most likely to
+  cause.
+
+source: |
+  Drained from `backlog/INTAKE-bubble-double-tap-expands.md` (human via Cursor,
+  2026-07-30), plus the human's 2026-08-06 answer to the specifier's clarifying
+  question.
+
+  The human's requested outcome, verbatim in substance:
+
+  > Collapsed-bubble gesture model: **Double-tap** -> expand the Let's Talk
+  > panel. **Single tap** -> open the mic (start recording a turn). **Another
+  > single tap** (while recording) -> stop and **send** the question.
+  >
+  > A single tap opens the talk panel — expand is too easy over other apps.
+  > Push-to-talk from the compact bubble requires opening the panel first.
+  > Human wants deliberate expand (double-tap) and a two-tap talk loop on the
+  > bubble itself: tap to speak, tap again to send.
+  >
+  > Drag / move / drag-to-X teardown unchanged; double-tap must not fight drag
+  > (ignore expand if the finger clearly moved).
+  >
+  > If mic permission is missing -> prompt / toast as today; do not pretend to
+  > record.
+  >
+  > Long-press pause / resume behavior unchanged (and should not be confused
+  > with the tap mic/send loop).
+  >
+  > How-to line updated, e.g.: "Tap to talk / tap again to send; double-tap to
+  > expand; long-press to pause / resume."
+
+  And the human's ruling on the conflict the specifier raised 2026-08-06:
+
+  > Delay the idle tap ~300ms so double-tap can expand (mic starts slightly
+  > late)
+
+  ## Why it sat undrained
+
+  Two blockers in sequence, both now cleared. The 2026-07-31 disposition held
+  it because the repo had no way to write a runnable acceptance contract for
+  Android behaviour — BL-769 and BL-761 are now in `backlog/done/M8/` and the
+  policy is in the constitution. The 2026-08-06 disposition then held it on the
+  design conflict above, which the human has now ruled on.
+
+description: |
+  ## Measured, at `android/app/src/main/java/com/swarmforge/floatcompanion/`
+
+  `OverlayService.attachDrag` (lines 348–430) is one hand-rolled touch state
+  machine written inline in a `setOnTouchListener` lambda. It closes over
+  `moved` / `longPressFired` / `downX` / `downY` / `startX` / `startY`, uses
+  `ViewConfiguration.get(view.context).scaledTouchSlop * 2` and
+  `ViewConfiguration.getLongPressTimeout()`, and posts its long-press through
+  the real `mainHandler`. On `ACTION_UP` with `!moved && !longPressFired` it
+  calls `onTap()` — which today is `mainHandler.post { openTalkPanel() }`
+  (line 207). There is no double-tap concept anywhere in it, and no part of it
+  is reachable without a real `MotionEvent`, a real `View` and a real `Handler`.
+
+  The talk verbs already exist and do not need rebuilding.
+  `TalkEngine.onRecordClicked()` (line 218) is exactly the requested two-tap
+  loop: `READY`/`ERROR` -> `startRecording(auto = false)`, `RECORDING` ->
+  `stopRecording(manual = true)`. So the bubble's resolved tap action routes to
+  that existing entry point rather than to a second, parallel recording path.
+
+  Mic-permission failure also already has a path: `startRecording` calls
+  `recorder?.start(handsFree)`, and on `false` sets the `no_audio` string,
+  stays in `Phase.READY` and publishes. It does not pretend to record. What is
+  missing is VISIBILITY: that failure surfaces as panel reply text, and the
+  whole point of this ticket is that the human never opened the panel. From the
+  collapsed bubble a failed mic start currently produces no visible signal at
+  all.
+
+  ## What changes
+
+  ### The gesture model
+
+  From the collapsed bubble:
+
+  1. **Tap while idle** (READY / ERROR): the action is HELD for one double-tap
+     window. If no second tap arrives, the mic opens and recording starts; the
+     bubble stays collapsed and shows the recording phase as it does today.
+  2. **A second tap inside that window**: the panel expands, and the held mic
+     start is cancelled — it must never also fire.
+  3. **Tap while RECORDING**: stop and send, immediately, with no deferral. A
+     second tap inside the window then expands the panel; the send is not
+     retracted (see approval_context).
+  4. **Single tap no longer expands.** The `onTap` -> `openTalkPanel()` wiring
+     at line 207 is replaced by the decider's resolved action.
+  5. **Drag, long-press and drag-to-teardown are unchanged**, and a pointer
+     that exceeds touch slop is a drag — never a tap and never half of a
+     double-tap.
+
+  The window is the platform's own `ViewConfiguration.getDoubleTapTimeout()`
+  (300 ms default), read the same way the existing code reads
+  `getLongPressTimeout()` — not a hardcoded 300.
+
+  ### Why the whole state machine moves
+
+  The new behaviour is not an addition to the existing arbitration, it is a
+  change to when the existing arbitration is allowed to conclude. A tap now has
+  a pending state that outlives `ACTION_UP`, and every other gesture outcome
+  becomes a thing that can cancel it. Bolting a double-tap timer onto the
+  lambda would leave the interesting decisions — does this cancel the pending
+  tap, is this a drag or the second half of a double-tap — inside a closure
+  that cannot be reached without a device.
+
+  So the arbitration moves behind a pure-logic decider, per the constitution's
+  Testability Boundary — Bubble. It takes normalized pointer events (kind,
+  x, y, timestamp), the gesture config (touch slop, long-press timeout,
+  double-tap timeout), and the current talk phase; it returns the effects to
+  perform (begin drag, move to, show/hide the remove zone, toggle pause,
+  teardown, magnet to edge, expand, start mic, send) and the timers to arm or
+  cancel. No `android.*` type appears in its own signature and it reads no
+  wall clock — the caller passes the timestamp.
+
+  `OverlayService` keeps the device edge and only the device edge: it converts
+  `MotionEvent` to normalized events, and performs the returned effects against
+  `WindowManager`, the haptics, `TalkEngine` and the panel.
+
+  ### The one visibility fix that comes with it
+
+  A tap that fails to open the mic must say so from the collapsed bubble — a
+  toast, since there is no panel to read. Silently doing nothing on a tap is
+  indistinguishable from a dead bubble, and this ticket makes tapping the
+  bubble the primary way to talk, so that failure mode goes from rare to
+  routine. This is the same posture as the constitution's guardrail that a
+  console screen must display the failure reason it was sent.
+
+acceptance: specs/features/BL-828-bubble-collapsed-gesture-model.feature
+
+invariants:
+  - "Every completed gesture resolves to exactly one outcome, exactly once: a held tap either fires its action or is cancelled by a superseding gesture, never both and never neither, so no input can leave the bubble silently inert or fire two actions from one touch."
+  - "Every gesture that produces drag, long-press pause/resume or drag-to-teardown today produces exactly that after the change, and no such gesture can resolve as a tap, an expand or a mic action."
+
+required_wiring:
+  - "android/app/src/main/java/com/swarmforge/floatcompanion/OverlayService.kt::BubbleGestureDecider::the live touch listener must route through the decider, not keep its own inline arbitration"
+  - "android/app/src/main/java/com/swarmforge/floatcompanion/OverlayService.kt::onRecordClicked::the bubble's resolved mic/send action must reach the existing TalkEngine entry point, not a second recording path"
+
+verification: |
+  ## Runnable gate (pure logic)
+
+  `specs/features/BL-828-bubble-collapsed-gesture-model.feature` binds to the
+  gradle JVM unit suite through the BL-769 seam
+  (`specs/pipeline/steps/lib/androidGradle.js`). Its Scenario Outline names
+  eight arbitration decisions; the coder writes the step-handler file in THIS
+  parcel with an explicit KNOWN_VALUES map from each decision to the real test
+  class and test-name substring covering it — no passthrough check (BL-233).
+
+  The decider's tests pass timestamps explicitly and must not sleep or use a
+  real `Handler`: the double-tap window is exercised by advancing the passed
+  timestamp, never by waiting 300 ms (constitution: Test Speed And Isolation).
+
+  Hardener note: no Kotlin mutation/CRAP/DRY tool is pinned in this project
+  (constitution, Startup Tools). This parcel's production change is `.kt`-only,
+  so it runs the degraded unit-test-gap fallback and must record that it did.
+
+  ## Recorded manual procedure (device surface)
+
+  Real touch, the overlay window and the mic are device surface. QA verifies on
+  a paired phone and records the result in the ticket:
+
+  1. Double-tap the collapsed bubble. **Expect:** the Let's Talk panel opens,
+     and no recording started or was sent.
+  2. Single-tap the collapsed bubble once and wait. **Expect:** the panel does
+     NOT open; the mic opens shortly after the tap and the bubble shows the
+     recording phase.
+  3. From step 2's recording state, tap once. **Expect:** the turn is sent, as
+     the panel's stop-recording does today.
+  4. Tap, speak, tap — three times in a row. **Expect:** three turns, no panel
+     opened at any point.
+  5. Long-press the bubble. **Expect:** pause/resume toggles exactly as today,
+     with its haptic, and no mic or expand action fires.
+  6. Drag the bubble a short distance and release. **Expect:** it moves and
+     magnets to the edge; no expand, no mic.
+  7. Drag the bubble onto the remove zone. **Expect:** teardown, as today.
+  8. Drag rapidly twice in quick succession. **Expect:** no expand — a drag is
+     never half of a double-tap.
+  9. Revoke the microphone permission, then single-tap the collapsed bubble.
+     **Expect:** a visible toast saying it cannot record; no silent no-op, and
+     the bubble does not show a recording phase.
+  10. From the expanded panel, collapse back to the bubble. **Expect:** the
+      panel's own Record/Stop still work, and the collapsed gestures behave as
+      in steps 1–3 (intake acceptance item 6).
+
+out_of_scope: |
+  - Hey-bubble offline wake, barge-in, and silence-to-passive. Those intakes
+    also open the mic and will have to be arbitrated against these gestures,
+    but that coordination is theirs to do against this decider once it exists —
+    not this slice's job.
+  - Hands-free re-arm timing. BL-826 owns the quiet-tail gate; this ticket does
+    not touch `scheduleHandsFreeListen` or any hands-free path.
+  - Typed-turn UX inside the expanded panel, hold music, mute, playlist, and
+    remote capability flags.
+  - Mini App minimize bubble (BL-706) — Android overlay only.
+  - Making the double-tap window configurable. It is the platform value; a
+    preference for it is a separate ask nobody has made.
+
+notes: |
+  Consolidation record (BL-680). Drains ONE root intake 1:1 —
+  `backlog/INTAKE-bubble-double-tap-expands.md`. Deliberately NOT merged with
+  the other Bubble intakes still at the root: the four screen intakes
+  (live-screen, pipeline-board, health-trends, host-agent-thinking) are remote
+  UI under the BL-824 thin-shell epic and share no code with the native overlay
+  touch path, and `INTAKE-bubble-hey-bubble-offline-wake-and-session-listen.md`
+  is new voice capability whose gestures must be arbitrated against this
+  decider AFTER it exists, not designed blind alongside it.
+
+  Epic: `swarmforge-console`, matching BL-707, the shipped overlay companion
+  this changes. It is not thin-shell work — the collapsed bubble and its touch
+  handling stay native on both sides of BL-824.
+
+  **Orthogonality note for the coordinator.** Do not run this concurrently with
+  BL-826. Both live in `floatcompanion/`; BL-826 edits `TalkEngine.kt`'s
+  re-arm paths and this one adds a call into `TalkEngine.onRecordClicked` from
+  `OverlayService.kt`. The file overlap is small but real, and BL-826 is a
+  high-severity live defect that should not be made to rebase around a UX
+  change.
