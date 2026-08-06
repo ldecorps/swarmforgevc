@@ -8,7 +8,7 @@ human_approval: approved
 severity: high
 priority: 85
 direction: human-requested
-assigned_to: none
+assigned_to: coder
 depends_on: [BL-769]
 mutation_cost: medium
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
