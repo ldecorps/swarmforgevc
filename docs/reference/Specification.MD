@@ -1,6 +1,19 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 6, 2026 (BL-622: a swarm without its own Telegram
+**Last Updated:** August 6, 2026 (BL-823: two of the intervals during which
+the swarm cannot process work had no durable record — a control/cooldown
+pause is a current-state marker that resume overwrites, and a stop writes
+nothing at all. A new append-only ledger
+(`.swarmforge/telemetry/availability-<YYYY-MM>.jsonl`) records both,
+written by the two existing TS pause twins and a new shell twin
+(`kill_pipeline_swarm.sh`/`start-swarm.sh`), with an ungraceful-stop (crash,
+`kill -9`, reboot) closed at start from the daemon's last heartbeat tick and
+marked `inferred` rather than `proven`. This ticket only records and exposes
+intervals as `{start-ms, end-ms, class, provenance}` via a new Babashka
+reader (`availability_ledger_lib.bb`'s `fold`) — it subtracts nothing and
+changes no alarm; BL-650, which now `depends_on: [BL-823]`, is the first
+consumer. See the new "Swarm Availability Ledger (BL-823)" section below);
+August 6, 2026 (BL-622: a swarm without its own Telegram
 creds now gets a loud front-desk refusal instead of silently inheriting
 whatever `TELEGRAM_BOT_TOKEN` the launching shell happens to export — the
 root cause of the 2026-07-24 incident where a second checkout's rival
@@ -1017,6 +1030,85 @@ showed 9/42 unkillable survivors purely from this fixed residue.
   human-facing command or setting; this is internal mutation-gate tooling
   that only changes what the hardener's own gate reports.
 
+## Swarm Availability Ledger (BL-823)
+
+Two of the intervals during which the swarm cannot process work have never
+had a durable record: a control/cooldown pause (`.swarmforge/operator/control-pause.json`
+is a *current-state* marker — resume overwrites it, leaving no history) and a
+stop-to-start gap (`kill_pipeline_swarm.sh` / `stop-swarm.sh` write nothing at
+all). This ledger records both, append-only, so a future consumer can tell a
+genuine flow stall apart from a span when the swarm simply wasn't running.
+
+**This ticket only records and exposes intervals — it never subtracts them
+from anything, and it changes no alarm.** The Flow Watchdog above still
+measures parcel age in wall-clock time unchanged; wiring the ledger into that
+math is BL-650's job, and BL-650 `depends_on: [BL-823]`.
+
+### Storage
+
+`.swarmforge/telemetry/availability-<YYYY-MM>.jsonl` — append-only, one JSON
+object per line, monthly files (the same convention `llm_cost_ledger_lib.bb`
+already uses for `llm-cost-<YYYY-MM>.jsonl`):
+
+```json
+{"ts":"2026-08-06T19:00:03Z","event":"pause-start","class":"control-pause","source":"telegram-front-desk-bot:pause"}
+```
+
+- `event` — `pause-start` \| `pause-end` \| `stop` \| `start`
+- `class` — `control-pause` (covers both a human/Telegram pause and a
+  cooldown-window pause — BL-650 treats them as one class) or `swarm-stop`
+- `source` — names the emitting call site, for audit
+
+### Writers
+
+Every pause/stop/start transition already funnels through one of two
+existing choke points; the ledger appends inside those, adding no new call
+sites to hunt down:
+
+- **TS** — `extension/src/metrics/availabilityLedgerStore.ts`'s
+  `appendAvailabilityRecord`, called from both pause twins on every
+  transition: `writeControlPauseState` (`telegram-front-desk-bot.ts` — used
+  by a human `/pause`/`/resume`, the BL-617 cooldown window, and the
+  auto-resume sweep) and `writeOperatorPauseState`
+  (`telegramCursorOperatorExec.ts`).
+- **Shell** — `swarmforge/scripts/availability_ledger_lib.sh`'s
+  `availability_record`, called from `kill_pipeline_swarm.sh` (a `stop`) and
+  `start-swarm.sh` (a `start`).
+
+**A ledger write failure never blocks, fails, or alters the transition it
+observes** — both writers swallow their own errors.
+
+### The ungraceful-stop close
+
+A `kill -9`, host reboot, or daemon crash writes no `stop` record — the
+class of gap the 2026-08-05 handoffd outage belongs to. To avoid that
+interval staying open forever, `start-swarm.sh` calls
+`availability_close_ungraceful_stop` before recording its own `start`: if the
+ledger's last record isn't already a `stop`, it reads the daemon's last tick
+from `.swarmforge/daemon/handoffd.heartbeat` (an existing single-value file,
+already written every cycle) and appends a synthetic `stop` at that
+timestamp, sourced `heartbeat-inferred`. No heartbeat file (or one no newer
+than the last `start`) emits nothing — that span is left to fall back to
+wall clock, the same safe default BL-650 already uses everywhere else.
+
+### The reader
+
+`swarmforge/scripts/availability_ledger_lib.bb`'s `fold` turns records into
+`{:start-ms :end-ms :class :provenance}` intervals — `provenance` is
+`"proven"` (both ends are real records), `"inferred"` (closed via the
+heartbeat), or `"open"` (no closing record yet; `:end-ms` is `nil`, never a
+guessed timestamp). It spans month-file boundaries and skips blank,
+malformed, or unparseable-timestamp lines rather than crashing the fold or
+inventing a record. This is BL-823's only reader; nothing calls `fold` yet —
+that first caller is BL-650.
+
+### See Also
+
+- **BL-617** — Nightly Cooldown Window: its `writeControlPauseState` writer
+  now also appends to this ledger on every pause/resume.
+- **BL-650** (not yet built, `depends_on: [BL-823]`) — the flow watchdog fix
+  that will subtract these intervals from parcel-age math.
+
 ## Flow Watchdog (BL-577)
 
 The flow watchdog detects when a parcel stalls in any mailbox without progressing through the pipeline. Unlike the agent heartbeat (which monitors *liveness*) or message chasing (which monitors *delivery*), the flow watchdog monitors *flow* — whether work is moving through the handoff system.
@@ -1111,6 +1203,7 @@ The flow watchdog is a pure decision core (`swarmforge/scripts/flow_watchdog_lib
 - **BL-349** — Stuck-Role Escalation Email: agent liveness alarm (different from flow monitoring)
 - **BL-537** — Session heal: auto-recovery for hung sessions (one class of flow-stall cause)
 - **BL-576** — Aged-Note Actionability: fixing a specific flow-stall root cause (prescriptive actions for old notes)
+- **BL-823** — Swarm Availability Ledger: records pause and stop-to-start intervals this watchdog still measures in raw wall-clock time; BL-650 (not yet built) will subtract them here
 
 ## Per-Agent Lifecycle Control
 
