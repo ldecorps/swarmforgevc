@@ -80,10 +80,45 @@ description: |
      gaps, AND **provider outages independent of the swarm** (operator
      ruling 2026-07-26, after a 529 storm hit the architect mid-review:
      "il faut tenir compte des outages indépendants de la swarm dans les
-     calculs de temps effectifs"). The sources are already durable —
-     `control-pause.json` transitions are timestamped, stops/starts are in
-     the kill-all audit and launch logs, and provider outages derive from
-     SIGNATURE-BACKED evidence only: timestamped retry/error lines in role
+     calculs de temps effectifs").
+
+     **CORRECTION 2026-08-06 (specifier, measured — this ticket's original
+     premise was wrong).** The ticket asserted "the sources are already
+     durable". Two of its three interval classes have NO durable interval
+     record to read. Measured at 7428b932:
+     - **Control/cooldown pauses.** `control-pause.json` is a CURRENT-STATE
+       marker, not a transition log: the payload is `{active, untilMs?}`
+       (`writeOperatorPauseState`, telegramCursorOperatorExec.ts:204-212) and
+       resume OVERWRITES it with `{active:false}`. There is no start stamp and
+       no history — after the 07:00 resume the overnight interval is simply
+       gone from that file. Pause start/end are inferable only by scraping
+       `handoffd`'s free-text daemon log for `cooldown-sweep` /
+       `pause-auto-resume` decision records, which are multi-line JSON (only
+       the first line carries a timestamp) in a log that ROTATES on every
+       daemon restart.
+     - **Stop-to-start gaps.** There is no kill-all audit: `kill_all_swarm.sh`
+       writes no durable record at all. A stop is inferable only as the hole
+       between the last `heartbeat` line of one rotated daemon log and the
+       first line of the next — which also cannot distinguish a clean stop
+       from a daemon crash.
+     - **Provider outages.** This class DOES have real machinery, as
+       originally claimed (`classify-provider-error`, PROVIDER_LIMIT/AVAILABLE
+       records across operator_lib.bb, agent_runtime_lib.bb,
+       provider_auth_observe_lib.bb, provider_compat_lib.bb).
+
+     Consequence, and why this is load-bearing rather than pedantic: the
+     ticket's own fallback rule ("unproven gap counts AGAINST the swarm")
+     applied to unreconstructable pause intervals REPRODUCES the exact bug
+     this ticket exists to fix — scenario 02 (overnight cooldown resume fires
+     nothing) cannot hold if the cooldown interval cannot be proven. Resolving
+     this is a live question with the human (specifier, 2026-08-06): add a
+     small append-only interval ledger written at each transition point, or
+     have this ticket build a scraper over the rotated logs. **Do not start
+     implementation until that is answered** — the answer decides whether this
+     ticket gains a `depends_on` prerequisite.
+
+     Unchanged by the correction: provider outages derive from
+     SIGNATURE-BACKED evidence only — timestamped retry/error lines in role
      transcripts and pane scrollback ("529 Overloaded · attempt N/M",
      "temporarily unavailable"), the classify-provider-error machinery, and
      PROVIDER_LIMIT/AVAILABLE cooldown records. Track outage intervals PER
@@ -115,6 +150,14 @@ description: |
 
 acceptance: specs/features/BL-650-flow-watchdog-wall-clock-age-must-be-active-time.feature
 
+# BL-633. Three properties the ten scenarios cannot express — each one derived
+# from prose the human already approved, none adding new behaviour. Per BL-654
+# the coder carries an executable property test for each, in this parcel.
+invariants:
+  - "Effective age never exceeds wall age and is never negative, for ANY set of subtracted intervals — overlapping, nested, zero-length, out-of-order, or still-open — and no interval is ever double-subtracted."
+  - "An interval is subtracted only where signature-backed durable evidence proves it: for EVERY interval class, absent or unreliable evidence subtracts nothing and that span falls back to wall clock."
+  - "Once a tier has fired for a parcel, no later sweep regresses it to a lower tier — a retroactively discovered interval never un-fires or re-fires an alarm that already spoke."
+
 out_of_scope: |
   - Muting alarms during a pause. Deliberately the opposite of this ticket:
     the alarm may always speak; only its clock changes. The unsuppressable
@@ -132,3 +175,23 @@ notes: |
   actually counts — was never questioned when the rotation pack became the
   default. The enqueued_at preference shows the author was one step from the
   right abstraction; this ticket takes the step.
+
+  ## Urgency framing is stale, the defect is not (specifier, 2026-08-06)
+
+  This ticket's "predictable storm this is racing" is the nightly 19:00-07:00
+  cooldown. That cooldown is currently DISABLED by standing human directive:
+  `.swarmforge/operator/continuous-shifts.json` is armed since 2026-08-04
+  (`mode: three-shifts-until-revoked`, `cooldownWindowEnabled: false`,
+  `scheduledStop: false`), and swarmforge.conf configures no cooldown window.
+  The `cooldown-sweep` still ticks but decides `none`. So scenario 02's
+  trigger cannot currently fire, and the `severity: high` was set on
+  2026-07-25 while the cooldown was live.
+
+  The DEFECT is untouched by that: wall-clock age still over-counts
+  stop-to-start gaps and provider outages, both of which still happen (the
+  2026-08-05 handoffd outage is a live example, and host relaunches recur).
+  What changes is only which interval class carries the urgency — the
+  stop/outage classes now do, and the cooldown class is dormant until the
+  human revokes continuous shifts. Worth weighing when ruling on the
+  ledger-vs-scraper question, since the ledger's value is highest exactly for
+  the two classes that have no record today.
