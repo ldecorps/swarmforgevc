@@ -2655,19 +2655,39 @@ export function readRepoBaseUrl(targetPath: string): string | undefined {
 // + cross-role reconciliation + stale-id filtering (pipeline_stage_lib.bb)
 // instead of duplicating that logic in a second language - the exact
 // async-exec + JSON.parse(stdout) pattern openSubject above already
-// established for a sibling .bb script. Tolerant of any failure (bb
-// missing, a torn/non-JSON stdout, a script error) - degrades to "no
-// role-held ticket known this tick" exactly like readTicketStageMap's own
-// missing/corrupt-file tolerance, never throws into the tick loop.
-export async function readLiveRoleHeldTickets(targetPath: string): Promise<Record<string, string[]>> {
-  try {
-    const cli = path.join(targetPath, 'swarmforge', 'scripts', 'pipeline_stage_cli.bb');
-    const { stdout } = await execFileAsync('bb', [cli, targetPath, 'report']);
-    const stageMap = JSON.parse(stdout) as Record<string, string>;
-    return invertTicketStageToRoleHeldTickets(stageMap);
-  } catch {
-    return {};
+// established for a sibling .bb script.
+//
+// BL-814: a failed computation (bb missing, a torn/non-JSON stdout, a
+// script error - e.g. a missing load-file dependency, observed twice via
+// BL-655/BL-805) used to be swallowed and reported as `{}`, which is
+// exactly what "no role holds a ticket" looks like - the live board then
+// renders confidently blank instead of visibly broken. This now throws
+// RoleHeldTicketsComputationFailedError instead, so a failed run is never
+// indistinguishable from a genuinely empty one. The sole production caller
+// (syncBoardIfWired in conciergeTick.ts) catches this, logs it, and keeps
+// the prior tick's board state rather than blanking it.
+export class RoleHeldTicketsComputationFailedError extends Error {
+  constructor(cause: unknown) {
+    super(`readLiveRoleHeldTickets: pipeline_stage_cli.bb report did not produce a result: ${cause instanceof Error ? cause.message : String(cause)}`);
+    this.name = 'RoleHeldTicketsComputationFailedError';
   }
+}
+
+export async function readLiveRoleHeldTickets(targetPath: string): Promise<Record<string, string[]>> {
+  const cli = path.join(targetPath, 'swarmforge', 'scripts', 'pipeline_stage_cli.bb');
+  let stdout: string;
+  try {
+    ({ stdout } = await execFileAsync('bb', [cli, targetPath, 'report']));
+  } catch (err) {
+    throw new RoleHeldTicketsComputationFailedError(err);
+  }
+  let stageMap: Record<string, string>;
+  try {
+    stageMap = JSON.parse(stdout) as Record<string, string>;
+  } catch (err) {
+    throw new RoleHeldTicketsComputationFailedError(err);
+  }
+  return invertTicketStageToRoleHeldTickets(stageMap);
 }
 
 function buildConciergeTickAdapters(targetPath: string, botToken: string, chatId: string): ConciergeTickAdapters {
