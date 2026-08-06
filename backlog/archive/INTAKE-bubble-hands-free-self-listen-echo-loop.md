@@ -70,3 +70,34 @@ Resume point: once the Android-seam policy is settled (where device behavior
 is verified, given it cannot ride the Node acceptance runner), spec these
 against it. The behavior captured above is clear and needs no further
 questions — only a place to put its contract.
+
+---
+
+## DRAINED 2026-08-06 — BL-826
+
+The 2026-07-31 disposition above named its resume point: "once the Android-seam
+policy is settled … spec these against it." BL-769 and BL-761 are now in
+`backlog/done/M8/` and the policy is in the constitution as local-engineering's
+"Testability Boundary — Bubble (Android)". Blocker cleared, intake drained.
+
+- `backlog/paused/BL-826-bubble-hands-free-self-listen-echo-loop.yaml` —
+  `type: defect`, `severity: high`, with
+  `specs/features/BL-826-…feature` bound to the BL-769 gradle JVM seam plus a
+  recorded manual procedure for the device surface.
+
+Probed before speccing: the account here is accurate and the code is slightly
+worse than described. `HANDS_FREE_POST_SPEECH_MS = 400L`, and the auto-submit
+rule (`MIN_RECORD_MS = 400L`, `HANDS_FREE_SILENCE_MS = 2500L`) means Bubble's
+own tail need only hold the mic 400 ms and then go quiet 2.5 s to be submitted
+as a human turn. `onPlaybackDone()` also fires from `Phase.THINKING`, so a
+re-arm can be scheduled where no playback ever started — the ticket's gate
+covers that path too.
+
+Of the six guardrails this intake asked the specifier to pick from, BL-826
+takes 1–4 (adaptive re-arm, quiet-tail gate, post-arm settle window, acoustic
+echo hardening) and defers 5 (transcript match backstop) and 6 (speaker ID),
+both recorded in the ticket's `out_of_scope` with the reasoning. The conflict
+note against barge-in is honoured: BL-826 is priority 85, ahead of BL-777.
+
+1:1 drain — deliberately not merged with the "hey bubble" wake intake, which is
+new capability rather than a defect in shipped behaviour.
