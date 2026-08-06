@@ -16,7 +16,15 @@
 ;;                                           (default the real $HOME)
 ;;
 ;; Prints one JSON line: {"swarmName":..., "botToken":..., "chatId":...,
-;; "bridgePort":...}
+;; "bridgePort":..., "refused":..., "reason":...}
+;;
+;; BL-622: botToken/chatId are null and refused is true when this
+;; project-root/swarm-name resolves no usable token (not the recorded
+;; primary root, no per-swarm creds file) - reason then carries the one
+;; loud, actionable line. Read-only: never writes the primary-root record
+;; itself (that is `ensure-primary-root-recorded!`, called only from
+;; front_desk_supervisor.bb's real launch path) - this stays a pure debug
+;; probe with no side effects on the fleet state it reports on.
 
 (ns fleet-telegram-creds-cli
   (:require [babashka.fs :as fs]
@@ -40,13 +48,15 @@
     (let [swarm-name (swarm-identity-lib/own-swarm-name project-root)
           fleet-home-dir (or (System/getenv "SWARMFORGE_FLEET_HOME") (System/getProperty "user.home"))
           resolved (fleet-telegram-creds-lib/resolve-telegram-creds
-                    fleet-home-dir swarm-name
+                    fleet-home-dir project-root swarm-name
                     {"TELEGRAM_BOT_TOKEN" (System/getenv "TELEGRAM_BOT_TOKEN")
                      "TELEGRAM_CHAT_ID" (System/getenv "TELEGRAM_CHAT_ID")}
                     (env-long "BRIDGE_PORT" 8765))]
       (println (json/generate-string {:swarmName swarm-name
                                        :botToken (:bot-token resolved)
                                        :chatId (:chat-id resolved)
-                                       :bridgePort (:bridge-port resolved)})))))
+                                       :bridgePort (:bridge-port resolved)
+                                       :refused (boolean (:refused? resolved))
+                                       :reason (:reason resolved)})))))
 
 (-main *command-line-args*)

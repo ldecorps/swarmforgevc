@@ -11,7 +11,19 @@
 # Env (secrets never written into the repo - the SAME posture as
 # RESEND_API_KEY; the bridge token is the one exception, machine-local
 # and persisted under the gitignored .swarmforge/ tree, never the repo):
-#   TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID / TELEGRAM_PRINCIPAL_USER_ID   required (operator-provided)
+#   TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID   optional here - the bot's actual
+#                                 token/chat come from front_desk_supervisor.bb's
+#                                 own resolution (this swarm's fleet creds file,
+#                                 or - only for the recorded primary root -
+#                                 these env vars; BL-622). Not hard-required by
+#                                 THIS script: a swarm with its own creds file
+#                                 must still be able to launch from a shell with
+#                                 no ambient Telegram env at all (e.g. swarm_ensure's
+#                                 stale-pid-file repair path), and a swarm with
+#                                 neither is refused loudly by the supervisor
+#                                 itself, not by a generic "not set" error here.
+#   TELEGRAM_PRINCIPAL_USER_ID   required (operator-provided; unrelated to token
+#                                 separation - the bot's own CLI validates it)
 #   BRIDGE_PORT                   fixed port the bridge listens on (default 8765)
 #   FRONT_DESK_LAUNCH_DRYRUN=1    print the assembled bridge + bot commands, start nothing
 set -euo pipefail
@@ -80,8 +92,6 @@ if [[ "${FRONT_DESK_LAUNCH_DRYRUN:-}" == "1" ]]; then
   exit 0
 fi
 
-: "${TELEGRAM_BOT_TOKEN:?TELEGRAM_BOT_TOKEN is not set}"
-: "${TELEGRAM_CHAT_ID:?TELEGRAM_CHAT_ID is not set}"
 : "${TELEGRAM_PRINCIPAL_USER_ID:?TELEGRAM_PRINCIPAL_USER_ID is not set}"
 
 # A missing compiled entrypoint is a hard error here (unlike BL-275's own
@@ -112,6 +122,7 @@ fi
 rm -f "$OP_DIR/front-desk-supervisor.stop"
 
 BRIDGE_PORT="$BRIDGE_PORT" nohup bb "$SUPERVISOR_BB" "$ROOT" >> "$LOG" 2>&1 &
+supervisor_launcher_pid=$!
 
 claimed=0
 for (( attempt = 1; attempt <= PID_WAIT_ATTEMPTS; attempt++ )); do
@@ -121,11 +132,23 @@ for (( attempt = 1; attempt <= PID_WAIT_ATTEMPTS; attempt++ )); do
       claimed=1; break
     fi
   fi
+  # BL-622: a refused resolution (no own creds and not the recorded primary
+  # root, or a duplicate-token conflict) exits fast and on purpose WITHOUT
+  # ever claiming the pid file - stop waiting out the full timeout once the
+  # supervisor process itself has already exited, so a refusal reports in
+  # under a second rather than PID_WAIT_ATTEMPTS * 0.1s.
+  if ! kill -0 "$supervisor_launcher_pid" 2>/dev/null; then
+    break
+  fi
   sleep 0.1
 done
 
 if [[ "$claimed" -ne 1 ]]; then
   echo "launch_front_desk: supervisor failed to claim its own pid file under $OP_DIR" >&2
+  if [[ -f "$LOG" ]]; then
+    echo "launch_front_desk: last lines of $LOG:" >&2
+    tail -n 5 "$LOG" >&2
+  fi
   exit 1
 fi
 
