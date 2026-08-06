@@ -183,3 +183,61 @@ it. BL-824's slice E tracks the remaining placement work.
 
 **No question is pending on this file.** Nothing here needs the human before it
 can be drained.
+
+---
+
+## DRAINED 2026-08-06 — split 1:3 along the BL-824 thin-shell boundary
+
+Both blockers this file recorded are gone: BL-769/BL-761 landed the Android
+acceptance-seam policy, and the human ruled how a Bubble screen is built
+("Remote HTML for all 4, and flip BL-775 to remote"). Drained into the
+**question-attention-path** epic (BL-772) rather than a new epic of its own,
+because this file explicitly asked for that — "prefer one coherent epic that
+covers both surfaces rather than minting conflicting twins; do not silently
+drop Telegram if that intake still stands". BL-772 already covers Telegram,
+and its slice C is retired as superseded rather than reworded.
+
+The split follows BL-824's locked decision 2: the collapsed bubble and the
+overlay are thin-shell native, pages and sheets are remote.
+
+- `backlog/paused/BL-836-pending-clarification-read-and-answer-over-the-bridge.yaml`
+  — the bridge half both phone halves need: a route to read the waiting
+  question and a route to answer it, reusing the front desk's own pending
+  record and delivery legs. On neither side of the phone boundary, testable in
+  the Node runner today, so it is the one slice that is unblocked right now.
+  Carries locked decision 4 (canonical answer channel, no second decision
+  system) and the server half of locked decision 2 (clear when done).
+- `backlog/paused/BL-837-collapsed-bubble-pulses-while-a-clarification-waits.yaml`
+  — the attention pulse. NATIVE, by locked decision 2. Carries locked decision
+  1 (blink an attention colour, amber, distinct from recording red and Let's
+  Talk green, hue tunable by the specifier), locked decision 2 (stops when
+  answered / cancelled / superseded — no zombie blink) and locked decision 6
+  (reliability over chrome).
+- `backlog/paused/BL-838-bubble-question-sheet-answer-or-discuss-further.yaml`
+  — the question sheet. REMOTE HTML page riding BL-829's pager. Carries locked
+  decision 3 (who asked, question text, given choices, plus discuss it
+  further), locked decision 4, locked decision 5 (discuss further does not fake
+  an option pick) and locked decision 7's exclusions.
+
+No operator directive in this file was dropped: all seven locked decisions
+survive verbatim in substance across the three tickets, per the consolidation
+constraint (BL-680/BL-681).
+
+Open questions this file listed, and where each went:
+- *Pulse cadence and accessibility (reduce-motion)* → **BL-837**: a slow pulse,
+  and steady colour rather than none when animations are disabled.
+- *Expand gesture vs dedicated tap target, with the double-tap intake pending*
+  → **not decided here**. BL-828 owns the gesture model; BL-837 changes the
+  bubble's appearance only and adds no gesture, so they do not collide.
+- *Whether discuss-further keeps the blink* → **BL-838**: yes, until a real
+  answer is submitted. This file's own proposal, adopted.
+- *Multi-role: show one, or a short queue* → **BL-836**: v1 offers the
+  longest-waiting one. A queue is a later slice.
+- *Voice nudge in addition to the blink* → **out of v1**, kept as BL-772
+  slice F rather than folded into BL-837.
+- *Native sheet vs WebView* → **BL-838**: remote HTML page, extending the
+  human's four-screen ruling to this sheet. Flagged for approval on that
+  ticket, since this file was not in that cluster.
+
+Also updated: BL-824 slice E records this intake as placed (it was one of the
+three still-to-place stragglers), and BL-772 gains BL-836/837/838 as children.

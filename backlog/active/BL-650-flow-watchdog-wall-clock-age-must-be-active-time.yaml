@@ -9,7 +9,7 @@ severity: high
 priority: 54
 direction: human-requested
 depends_on: [BL-823]
-assigned_to: specifier
+assigned_to: coder
 mutation_cost: medium
 required_stages: [coder, architect, qa]
 stage_skip_reasons: { cleaner: "bounded single-lib bb change (flow_watchdog_lib + config resolution)", hardender: "bb code sits outside the Stryker mutate scope; the clock property tests run in the unit gate", documenter: "alarm-text change is specified in-ticket; no runbook surface" }
@@ -122,8 +122,49 @@ description: |
      `depends_on: [BL-823]`, and the scraper option is rejected. Implementation
      of THIS ticket starts once BL-823 has landed and the ledger it writes is
      available to read. BL-823 records and exposes the intervals with explicit
-     `proven | inferred` provenance; this ticket does all the subtraction and
-     is still the only place any threshold or alarm changes.
+     provenance; this ticket does all the subtraction and is still the only
+     place any threshold or alarm changes.
+
+     **UNBLOCKED 2026-08-06 — BL-823 has landed. Read this before starting.**
+     Verified against the `main` ref (not a working tree — `swarmforge/scripts/`
+     is hot-synced, so the checkout is not evidence):
+
+     - **The reader is `swarmforge/scripts/availability_ledger_lib.bb`**, loaded
+       by `load-file` and referred to as `availability-ledger-lib/…`, the same
+       way `flow_watchdog_lib.bb` already loads its own siblings. Its own header
+       names this ticket as its consumer: "that is BL-650, which depends on this
+       ticket and will call `fold` below as its own entry point." Use `fold`.
+     - **`(fold state-dir)`** returns a vector of
+       `{:start-ms :end-ms :class :provenance}`. Do not re-read
+       `.swarmforge/telemetry/availability-YYYY-MM.jsonl` yourself; the lib is
+       the sole reader and this ticket must not become a second one.
+     - **`:class` is `"control-pause"` or `"swarm-stop"` — those two only.**
+       The ledger does NOT carry provider outages. That third interval class
+       still comes from the provider machinery named in the paragraph below
+       (`classify-provider-error`, PROVIDER_LIMIT/AVAILABLE records), stays its
+       own class, and is still never merged into swarm downtime.
+     - **`:provenance` has THREE values, not the two this ticket first named:**
+       `"proven"` (both ends are real records), `"inferred"` (the closing stop
+       was heartbeat-synthesized), and `"open"` (no closing record exists yet,
+       so `:end-ms` is **nil**, never a guessed timestamp).
+
+     **Ruling on `open` intervals** (specifier, 2026-08-06 — the ticket's
+     invariant 1 already anticipates "still-open", but never said what to do
+     with one):
+
+     - An open **`control-pause`** is subtracted from its `:start-ms` to the
+       sweep's own now. A pause with no end record is a pause that is happening
+       RIGHT NOW — that is a currently-true fact the sweep can act on, not a
+       guess, and it is precisely the case this ticket exists to fix. Not
+       subtracting it would let a live pause accrue age and fire the storm.
+     - An open **`swarm-stop`** subtracts **nothing**. If the swarm were
+       genuinely stopped the watchdog would not be sweeping, so an open stop
+       observed at sweep time is a stale record from an ungraceful exit. The
+       ticket's own fail-toward-wall-clock rule applies: an unproven gap counts
+       against the swarm, and the alarm text says so.
+
+     Both rulings sit inside invariant 2 unchanged: evidence decides, and its
+     absence subtracts nothing.
 
      Unchanged by the correction: provider outages derive from
      SIGNATURE-BACKED evidence only — timestamped retry/error lines in role

@@ -805,6 +805,357 @@
            #{:age-ms :warn-ms :escalate-ms :highest-tier-alarmed :snoozed?}
            flow-watchdog-lib/tier-decision-input-keys))
 
+;; ── BL-650: active-time clock (evaluate-effective-age) ──────────────────────
+
+(assert= "evaluate-effective-age: nil age source (neither header parses) fails closed"
+         {:effective-age-ms nil :wall-age-ms nil :outage-intervals [] :unreconstructable? false}
+         (flow-watchdog-lib/evaluate-effective-age
+          {:enqueued-at "not-a-date" :created-at nil :now-ms 999
+           :ledger-intervals [] :provider-evidence []}))
+
+;; BL-650 stop-interval-not-counted-01: 1m before stop, 6m stopped, 8m active
+;; => wall 15m, effective 9m.
+(let [now-ms (* 1784900000 1000)
+      enqueued-ms (- now-ms (* 15 60 1000))
+      stop-start-ms (+ enqueued-ms (* 1 60 1000))
+      stop-end-ms (+ stop-start-ms (* 6 60 1000))
+      eff (flow-watchdog-lib/evaluate-effective-age
+           {:enqueued-at (iso (quot enqueued-ms 1000)) :now-ms now-ms
+            :ledger-intervals [{:start-ms stop-start-ms :end-ms stop-end-ms
+                                 :class "swarm-stop" :provenance "proven"}]
+            :provider-evidence []})]
+  (assert= "acceptance-01 (BL-650): a swarm-stop interval is subtracted from effective age"
+           (* 9 60 1000)
+           (:effective-age-ms eff))
+  (assert= "acceptance-01 (BL-650): wall age is untouched at 15m"
+           (* 15 60 1000)
+           (:wall-age-ms eff))
+  (assert= "acceptance-01 (BL-650): no warn at the wall-clock 15m mark once effective age is used"
+           :none
+           (flow-watchdog-lib/decide-tier
+            {:age-ms (:effective-age-ms eff) :warn-ms (* 15 60 1000) :escalate-ms (* 60 60 1000)
+             :highest-tier-alarmed nil :snoozed? false})))
+
+;; BL-650 overnight-cooldown-resume-no-storm-02: parcel enqueued at pause
+;; start, swarm paused all night, sweep immediately at resume => effective
+;; age ~ 0.
+(let [now-ms (* 1784900000 1000)
+      pause-start-ms (- now-ms (* 12 60 60 1000))
+      eff (flow-watchdog-lib/evaluate-effective-age
+           {:enqueued-at (iso (quot pause-start-ms 1000)) :now-ms now-ms
+            :ledger-intervals [{:start-ms pause-start-ms :end-ms now-ms
+                                 :class "control-pause" :provenance "proven"}]
+            :provider-evidence []})]
+  (assert= "acceptance-02 (BL-650): a full-night control-pause zeroes effective age"
+           0
+           (:effective-age-ms eff))
+  (assert= "acceptance-02 (BL-650): wall age still shows the full 12h"
+           (* 12 60 60 1000)
+           (:wall-age-ms eff))
+  (assert= "acceptance-02 (BL-650): nothing fires at resume - effective age is 0"
+           :none
+           (flow-watchdog-lib/decide-tier
+            {:age-ms (:effective-age-ms eff) :warn-ms (* 15 60 1000) :escalate-ms (* 60 60 1000)
+             :highest-tier-alarmed nil :snoozed? false})))
+
+;; BL-650: an OPEN control-pause (no resume yet) subtracts up to now - a
+;; currently-true fact, not a guess - and is NOT flagged unreconstructable.
+(let [now-ms (* 1784900000 1000)
+      pause-start-ms (- now-ms (* 5 60 1000))
+      eff (flow-watchdog-lib/evaluate-effective-age
+           {:enqueued-at (iso (quot pause-start-ms 1000)) :now-ms now-ms
+            :ledger-intervals [{:start-ms pause-start-ms :end-ms nil
+                                 :class "control-pause" :provenance "open"}]
+            :provider-evidence []})]
+  (assert= "BL-650: an open control-pause subtracts from its start to now"
+           0
+           (:effective-age-ms eff))
+  (assert= "BL-650: an open control-pause is NOT flagged unreconstructable"
+           false
+           (:unreconstructable? eff)))
+
+;; BL-650 unreconstructable-interval-degrades-to-wall-clock-05: an OPEN
+;; swarm-stop subtracts nothing and is flagged.
+(let [now-ms (* 1784900000 1000)
+      stop-start-ms (- now-ms (* 20 60 1000))
+      eff (flow-watchdog-lib/evaluate-effective-age
+           {:enqueued-at (iso (quot stop-start-ms 1000)) :now-ms now-ms
+            :ledger-intervals [{:start-ms stop-start-ms :end-ms nil
+                                 :class "swarm-stop" :provenance "open"}]
+            :provider-evidence []})]
+  (assert= "acceptance-05 (BL-650): an open swarm-stop subtracts nothing - falls back to wall clock"
+           (:wall-age-ms eff)
+           (:effective-age-ms eff))
+  (assert= "acceptance-05 (BL-650): an open swarm-stop is flagged unreconstructable"
+           true
+           (:unreconstructable? eff))
+  (let [text (flow-watchdog-lib/format-alarm-text
+              {:id "p" :from "a" :to "b" :type "note" :age-ms (:effective-age-ms eff)
+               :wall-age-ms (:wall-age-ms eff) :role "coder" :mailbox :new :verb :rotate
+               :tier :warn :unreconstructable? (:unreconstructable? eff)})]
+    (assert= "acceptance-05 (BL-650): alarm text flags the unreconstructable interval"
+             true
+             (clojure.string/includes? text "could not be reconstructed"))))
+
+;; ── BL-650: format-alarm-text stays byte-identical for pre-existing callers ─
+
+(assert= "BL-650: format-alarm-text with no new keys is unchanged from before"
+         "⚠️ WARN flow-stall: parcel x (a->b, note) aged 1m in cleaner in_process - investigate."
+         (flow-watchdog-lib/format-alarm-text
+          {:id "x" :from "a" :to "b" :type "note" :age-ms 60000 :role "cleaner"
+           :mailbox :in_process :verb :investigate :tier :warn}))
+
+;; ── BL-650 alarm-text-states-clock-and-outage-07 ────────────────────────────
+
+(let [now-ms (* 1784900000 1000)
+      enqueued-ms (- now-ms (* 15 60 1000))
+      outage-start-ms (+ enqueued-ms (* 3 60 1000))
+      outage-end-ms (+ outage-start-ms (* 6 60 1000))
+      eff (flow-watchdog-lib/evaluate-effective-age
+           {:enqueued-at (iso (quot enqueued-ms 1000)) :now-ms now-ms
+            :ledger-intervals []
+            :provider-evidence [{:ts-ms outage-start-ms :provider "anthropic" :text "529 Overloaded attempt 1/5"}
+                                 {:ts-ms outage-end-ms :provider "anthropic" :text "529 Overloaded attempt 5/5"}]})]
+  (assert= "acceptance-07 (BL-650): a 6m provider outage inside a 15m wall span leaves 9m effective"
+           (* 9 60 1000)
+           (:effective-age-ms eff))
+  (let [text (flow-watchdog-lib/format-alarm-text
+              {:id "p7" :from "cleaner" :to "architect" :type "note"
+               :age-ms (:effective-age-ms eff) :wall-age-ms (:wall-age-ms eff)
+               :role "architect" :mailbox :new :verb :investigate :tier :warn
+               :outage-intervals (:outage-intervals eff)})]
+    (assert= "acceptance-07: alarm text reads both active and wall age"
+             true
+             (and (clojure.string/includes? text "9m") (clojure.string/includes? text "15m")))
+    (assert= "acceptance-07: alarm text names the subtracted provider-outage interval"
+             true
+             (clojure.string/includes? text "anthropic"))))
+
+;; ── BL-650 provider-outage-interval-tracked-per-provider-08 ─────────────────
+
+(assert= "provider-outage-intervals groups per provider, never merging distinct providers"
+         2
+         (count (flow-watchdog-lib/provider-outage-intervals
+                 [{:ts-ms 1000 :provider "anthropic" :text "529"}
+                  {:ts-ms 1500 :provider "anthropic" :text "529"}
+                  {:ts-ms 1200 :provider "openai" :text "503"}])))
+
+(assert= "provider-outage-intervals starts a new interval once the gap exceeds max-gap-ms"
+         2
+         (count (flow-watchdog-lib/provider-outage-intervals
+                 [{:ts-ms 0 :provider "anthropic" :text "529"}
+                  {:ts-ms 1000000 :provider "anthropic" :text "529"}]
+                 600000)))
+
+(assert= "acceptance-08 (BL-650): no evidence for a provider subtracts nothing - falls back to wall clock"
+         true
+         (let [now-ms (* 1784900000 1000)
+               enqueued-ms (- now-ms (* 10 60 1000))
+               eff (flow-watchdog-lib/evaluate-effective-age
+                    {:enqueued-at (iso (quot enqueued-ms 1000)) :now-ms now-ms
+                     :ledger-intervals [] :provider-evidence []})]
+           (= (:wall-age-ms eff) (:effective-age-ms eff))))
+
+(let [now-ms (* 1784900000 1000)
+      enqueued-ms (- now-ms (* 15 60 1000))
+      swarm-stop-start (+ enqueued-ms (* 1 60 1000))
+      swarm-stop-end (+ swarm-stop-start (* 2 60 1000))
+      outage-start (+ enqueued-ms (* 5 60 1000))
+      outage-end (+ outage-start (* 2 60 1000))
+      eff (flow-watchdog-lib/evaluate-effective-age
+           {:enqueued-at (iso (quot enqueued-ms 1000)) :now-ms now-ms
+            :ledger-intervals [{:start-ms swarm-stop-start :end-ms swarm-stop-end
+                                 :class "swarm-stop" :provenance "proven"}]
+            :provider-evidence [{:ts-ms outage-start :provider "anthropic" :text "529"}
+                                 {:ts-ms outage-end :provider "anthropic" :text "529"}]})]
+  (assert= "acceptance-08 (BL-650): a non-overlapping provider-outage and swarm-stop subtract independently"
+           (* 11 60 1000) ;; 15m wall - 2m stop - 2m outage
+           (:effective-age-ms eff)))
+
+;; ── BL-650: merge-and-sum-ms (no double subtraction, invariant 1) ───────────
+
+(assert= "merge-and-sum-ms sums disjoint intervals"
+         2000
+         (flow-watchdog-lib/merge-and-sum-ms
+          [{:start-ms 0 :end-ms 1000} {:start-ms 2000 :end-ms 3000}] 0 10000))
+
+(assert= "merge-and-sum-ms merges overlapping intervals instead of double-counting"
+         800
+         (flow-watchdog-lib/merge-and-sum-ms
+          [{:start-ms 100 :end-ms 600} {:start-ms 400 :end-ms 900}] 0 1000))
+
+(assert= "merge-and-sum-ms merges a nested interval into its container"
+         500
+         (flow-watchdog-lib/merge-and-sum-ms
+          [{:start-ms 0 :end-ms 500} {:start-ms 100 :end-ms 300}] 0 1000))
+
+(assert= "merge-and-sum-ms tolerates out-of-order input (sorts internally)"
+         800
+         (flow-watchdog-lib/merge-and-sum-ms
+          [{:start-ms 400 :end-ms 900} {:start-ms 100 :end-ms 600}] 0 1000))
+
+(assert= "merge-and-sum-ms ignores a zero-length interval"
+         0
+         (flow-watchdog-lib/merge-and-sum-ms [{:start-ms 500 :end-ms 500}] 0 1000))
+
+(assert= "merge-and-sum-ms clips an interval extending past the span"
+         200
+         (flow-watchdog-lib/merge-and-sum-ms [{:start-ms 800 :end-ms 1500}] 0 1000))
+
+(assert= "merge-and-sum-ms clips an interval starting before the span"
+         200
+         (flow-watchdog-lib/merge-and-sum-ms [{:start-ms -500 :end-ms 200}] 0 1000))
+
+(assert= "merge-and-sum-ms ignores an interval entirely outside the span"
+         0
+         (flow-watchdog-lib/merge-and-sum-ms [{:start-ms 2000 :end-ms 3000}] 0 1000))
+
+;; ── BL-650 rotation-pack-threshold-vs-parallel-pack-06 ──────────────────────
+
+(assert= "parse-router-warn-ms parses a positive value"
+         1200000
+         (flow-watchdog-lib/parse-router-warn-ms "config flow_watchdog_router_warn_ms 1200000"))
+
+(assert= "parse-router-warn-ms falls back to the router default when absent"
+         flow-watchdog-lib/default-router-warn-ms
+         (flow-watchdog-lib/parse-router-warn-ms "config mutation_cooldown_days 3"))
+
+(assert= "parse-router-escalate-ms falls back to the router default when absent"
+         flow-watchdog-lib/default-router-escalate-ms
+         (flow-watchdog-lib/parse-router-escalate-ms nil))
+
+(let [root (mk-tmp)]
+  (fs/create-dirs (fs/path root "swarmforge"))
+  (spit (str (fs/path root "swarmforge" "swarmforge.conf"))
+        "config rotation router\nconfig flow_watchdog_warn_ms 60000\nconfig flow_watchdog_escalate_ms 240000\n")
+  (assert= "read-pack-aware-global-thresholds uses the router pair under `config rotation router`"
+           {:warn-ms flow-watchdog-lib/default-router-warn-ms :escalate-ms flow-watchdog-lib/default-router-escalate-ms}
+           (flow-watchdog-lib/read-pack-aware-global-thresholds root)))
+
+(let [root (mk-tmp)]
+  (fs/create-dirs (fs/path root "swarmforge"))
+  (spit (str (fs/path root "swarmforge" "swarmforge.conf"))
+        "config flow_watchdog_warn_ms 60000\nconfig flow_watchdog_escalate_ms 240000\n")
+  (assert= "read-pack-aware-global-thresholds keeps the plain pair with no rotation directive (parallel/all-resident)"
+           {:warn-ms 60000 :escalate-ms 240000}
+           (flow-watchdog-lib/read-pack-aware-global-thresholds root)))
+
+(let [root (mk-tmp)]
+  (fs/create-dirs (fs/path root "swarmforge"))
+  (spit (str (fs/path root "swarmforge" "swarmforge.conf"))
+        "config rotation sequential\nconfig flow_watchdog_warn_ms 60000\nconfig flow_watchdog_escalate_ms 240000\n")
+  (assert= "read-pack-aware-global-thresholds keeps the plain pair under `config rotation sequential` (mono-rotate, not router)"
+           {:warn-ms 60000 :escalate-ms 240000}
+           (flow-watchdog-lib/read-pack-aware-global-thresholds root)))
+
+;; End-to-end acceptance-06: the SAME nominal-rotation-wait parcel (wall age
+;; just past the plain 15m default-warn-ms) does not warn under a
+;; rotation-router pack, but still warns under a parallel/all-resident pack.
+(let [now-ms (* 1784900000 1000)
+      enqueued-ms (- now-ms flow-watchdog-lib/default-warn-ms 1000)
+      router-root (mk-tmp)
+      parallel-root (mk-tmp)
+      new-dir-for (fn [root] (fs/path root "cleaner" "inbox" "new"))
+      daemon-dir-for (fn [root] (fs/path root ".swarmforge" "daemon"))]
+  (fs/create-dirs (fs/path router-root "swarmforge"))
+  (spit (str (fs/path router-root "swarmforge" "swarmforge.conf")) "config rotation router\n")
+  (fs/create-dirs (fs/path parallel-root "swarmforge"))
+  (spit (str (fs/path parallel-root "swarmforge" "swarmforge.conf")) "")
+  (doseq [root [router-root parallel-root]]
+    (write-handoff! (str (fs/path (new-dir-for root) "p06.handoff"))
+                     [["id" "p06"] ["from" "QA"] ["to" "cleaner"] ["type" "note"]
+                      ["enqueued_at" (iso (quot enqueued-ms 1000))]]))
+  (let [router-alarms (atom [])
+        parallel-alarms (atom [])]
+    (flow-watchdog-lib/run-sweep!
+     [{:role "cleaner" :new-dir (new-dir-for router-root)
+       :in-process-dir (fs/path router-root "cleaner" "inbox" "in_process")}]
+     now-ms (str router-root) (daemon-dir-for router-root)
+     {:live-session? (fn [_role] false) :emit-alarm! (fn [text] (swap! router-alarms conj text))})
+    (flow-watchdog-lib/run-sweep!
+     [{:role "cleaner" :new-dir (new-dir-for parallel-root)
+       :in-process-dir (fs/path parallel-root "cleaner" "inbox" "in_process")}]
+     now-ms (str parallel-root) (daemon-dir-for parallel-root)
+     {:live-session? (fn [_role] false) :emit-alarm! (fn [text] (swap! parallel-alarms conj text))})
+    (assert= "acceptance-06: a nominal rotation wait does NOT warn under a rotation-router pack"
+             0
+             (count @router-alarms))
+    (assert= "acceptance-06: the identical wall age still warns under a parallel/all-resident pack"
+             1
+             (count @parallel-alarms))))
+
+;; ── BL-650 scenarios 09/10: mono-router detour vs orphaned claim ────────────
+;; Neither needs new mechanism - both prove the active-time clock still
+;; carries decide-tier's unsuppressable-by-design guarantee: a short active
+;; detour never alarms, and active time crossing warn always does, regardless
+;; of in_process/live-session status.
+
+(let [now-ms (* 1784900000 1000)
+      enqueued-ms (- now-ms (* 2 60 1000))
+      eff (flow-watchdog-lib/evaluate-effective-age
+           {:enqueued-at (iso (quot enqueued-ms 1000)) :now-ms now-ms
+            :ledger-intervals [] :provider-evidence []})]
+  (assert= "acceptance-09 (BL-650): a short legitimate detour does not alarm"
+           :none
+           (flow-watchdog-lib/decide-tier
+            {:age-ms (:effective-age-ms eff) :warn-ms flow-watchdog-lib/default-warn-ms
+             :escalate-ms flow-watchdog-lib/default-escalate-ms
+             :highest-tier-alarmed nil :snoozed? false})))
+
+(let [now-ms (* 1784900000 1000)
+      enqueued-ms (- now-ms (+ flow-watchdog-lib/default-warn-ms 1000))
+      eff (flow-watchdog-lib/evaluate-effective-age
+           {:enqueued-at (iso (quot enqueued-ms 1000)) :now-ms now-ms
+            :ledger-intervals [] :provider-evidence []})]
+  (assert= "acceptance-10 (BL-650): an orphaned in_process claim still alarms once active time crosses warn"
+           :warn
+           (flow-watchdog-lib/decide-tier
+            {:age-ms (:effective-age-ms eff) :warn-ms flow-watchdog-lib/default-warn-ms
+             :escalate-ms flow-watchdog-lib/default-escalate-ms
+             :highest-tier-alarmed nil :snoozed? false})))
+
+;; ── BL-650 run-sweep! wiring: ledger fold from real fs state ────────────────
+
+(defn write-ledger-record! [root month line]
+  ;; run-sweep! reads via state-dir = (fs/parent daemon-dir) = root/.swarmforge
+  ;; (daemon-dir itself is root/.swarmforge/daemon) - write to that same
+  ;; root/.swarmforge/telemetry, not root/telemetry.
+  (let [dir (availability-ledger-lib/telemetry-dir (fs/path root ".swarmforge"))]
+    (fs/create-dirs dir)
+    (spit (str (fs/path dir (str "availability-" month ".jsonl"))) (str line "\n") :append true)))
+
+(let [root (mk-sweep-fixture!)
+      daemon-dir (fs/path root ".swarmforge" "daemon")
+      new-dir (fs/path root "cleaner" "inbox" "new")
+      now-ms (* 1784900000 1000)
+      enqueued-ms (- now-ms (* 20 60 1000))
+      stop-start-ms (+ enqueued-ms (* 1 60 1000))
+      stop-end-ms (+ stop-start-ms (* 18 60 1000)) ;; 18m real stop
+      alarms (atom [])]
+  (write-ledger-record! root "2026-07"
+                         (json/generate-string {:ts (iso (quot stop-start-ms 1000)) :event "stop"
+                                                 :class "swarm-stop" :source "kill_pipeline_swarm.sh"}))
+  (write-ledger-record! root "2026-07"
+                         (json/generate-string {:ts (iso (quot stop-end-ms 1000)) :event "start"
+                                                 :class "swarm-stop" :source "start-swarm.sh"}))
+  (write-handoff! (str (fs/path new-dir "pledger.handoff"))
+                   [["id" "pledger"] ["from" "specifier"] ["to" "cleaner"] ["type" "note"]
+                    ["enqueued_at" (iso (quot enqueued-ms 1000))]])
+  (flow-watchdog-lib/run-sweep!
+   [{:role "cleaner" :new-dir new-dir :in-process-dir (fs/path root "cleaner" "inbox" "in_process")}]
+   now-ms (str root) daemon-dir
+   {:live-session? (fn [_role] false) :emit-alarm! (fn [text] (swap! alarms conj text))})
+  ;; wall 20m minus an 18m real stop leaves 2m effective: crosses
+  ;; mk-sweep-fixture!'s 1m warn but stays under its 4m escalate. Wall clock
+  ;; alone (20m) would have crossed escalate outright - proof the REAL
+  ;; on-disk ledger, not just a hand-built fixture map, is what downgraded it.
+  (assert= "run-sweep! reads the REAL on-disk availability ledger and subtracts a real swarm-stop"
+           1
+           (count @alarms))
+  (assert= "the fired alarm is WARN, not the ESCALATE wall-clock-alone would have fired"
+           true
+           (clojure.string/includes? (first @alarms) "⚠️ WARN")))
+
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (seq @failures)
   (do
