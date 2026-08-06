@@ -1,0 +1,126 @@
+id: BL-839
+title: "The daemons execute the master checkout's working tree, and nothing checks it matches main: BL-835's shipped fix was silently reverted out of production while its ticket sat closed in done/"
+milestone: M8
+type: defect
+severity: high
+status: todo
+epic: swarm-reliability
+human_approval: pending
+assigned_to: none
+priority: 40
+direction: agent-found
+depends_on: []
+mutation_cost: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-839-master-checkout-drift-from-main-on-daemon-executed-scripts.feature
+
+approval_context: >
+  Severity is `high` and worth a challenge, since nothing is visibly broken.
+  The argument: a QA-approved fix that is closed in `backlog/done/` was not in
+  effect in the running system, and no signal anywhere said so. That is a
+  silent failure of the guarantee the whole pipeline exists to provide — "QA
+  approved it" stops meaning "it is running". Not `critical`: the swarm is up,
+  nothing is lost, and the specific reverted behaviour (BL-835's reject gate)
+  degrades to over-alarming rather than to silence.
+
+  The scope I chose is a DETECTOR, not a repairer. Auto-restoring the master
+  checkout would be a process that discards a human's or another role's
+  uncommitted work without asking, which is the exact failure mode the
+  constitution's "surfaced, not swept" rule exists to prevent. If the human
+  wants an auto-repair verb on top, that is a separate slice.
+
+invariants:
+  - "The check never writes: no state of the master checkout — dirty, staged, conflicted, detached — is ever modified, staged, reverted or discarded by the act of checking it."
+  - "A check that cannot run reports that it could not run: inability to resolve main, read the tree, or list the executed paths is never reported as no-drift."
+
+description: |
+  ## The defect
+
+  The swarm's daemons run out of the master checkout's WORKING TREE, not out of
+  a committed ref. `pgrep` shows the live process as
+  `bb <repo>/swarmforge/scripts/handoffd.bb`, and that path resolves to whatever
+  bytes happen to be on disk. So the master checkout *is* production — and
+  nothing anywhere compares it to `main`.
+
+  ## How it presented (2026-08-06, found while scoping BL-650)
+
+  BL-835 shipped a fix to `flow_watchdog_lib.bb`: `min-warn-ms` became a REJECT
+  GATE (a sub-gate raw percentile is not calibrated at all) instead of a FLOOR
+  (which clamped it up to 60s and false-alarmed WARN on healthy ~1-minute hops).
+  It was reviewed, hardened, QA-approved, landed on `main`, and closed into
+  `backlog/done/`.
+
+  At 20:19 the master checkout's copy of that file was reverted to the
+  pre-BL-835 floor-clamp text, and the reversion was left STAGED. Measured:
+
+  - `git show main:swarmforge/scripts/flow_watchdog_lib.bb` contains
+    `"BL-835: a REJECT GATE, not a floor…"`.
+  - The file on disk — the one `handoffd.bb` loads — contains
+    `"Floor under a calibrated warn so sub-minute clock noise never fires."`
+  - `git diff --stat main` over BL-835's paths: 13 files, 1096 deletions. The
+    whole parcel — the lib, its acceptance step handler, its property runner,
+    its test-runner assertions, its `swarmforge.conf` comment, its
+    `Specification.MD` entry and all six evidence files — staged for removal.
+
+  Two silent consequences, both live:
+
+  1. **The fix is not in effect.** Any daemon restart loads the pre-BL-835 code.
+     The false-alarm defect BL-835 exists to fix is back, with its ticket
+     sitting in `done/`.
+  2. **One `git commit -a` from the master checkout lands the reversion on
+     `main`.** It is already staged; nothing stands between it and history.
+
+  ## Why the existing guard does not cover this
+
+  BL-373 fixed the sibling case and fixed it correctly: the launcher's worktree
+  sync now never overwrites a path the destination worktree's own git index
+  tracks, so the ROLE worktrees are protected — they get
+  `flow_watchdog_lib.bb` from git, not from master's disk. Verified in
+  `sync_worktree_scripts_lib.bb`'s `should-copy?`.
+
+  That protection is exactly inverted for the master checkout: it is not a sync
+  DESTINATION, it is the sync SOURCE and the daemon's own execution root. Being
+  git-tracked protects a role worktree; it protects the master checkout from
+  nothing, because nothing ever re-delivers content there.
+
+  ## Scope
+
+  A drift check over the daemon-executed script paths in the master checkout,
+  comparing on-disk content against `main`, reporting into the channel the swarm
+  already alarms on. Report only — see `approval_context` for why not repair.
+
+  "Daemon-executed" is the set that matters and should be derived, not
+  hand-listed: the scripts the running daemons load. Whatever the coder picks,
+  a ticket YAML changing under `backlog/` is NOT drift — that tree is edited by
+  design, and flagging it would make the check noise.
+
+out_of_scope: |
+  - Repairing the drift. Deliberate: an auto-restore discards uncommitted work
+    without asking, which is the "surfaced, not swept" failure. Its own slice
+    if the human wants it.
+  - Cleaning up the specific 2026-08-06 BL-835 reversion. That is a one-off
+    operator action, reported separately; this ticket is the durable detector,
+    and it must not be closed by tidying the incident that revealed it.
+  - Moving the daemons off the working tree onto a committed ref. A much larger
+    change to how the swarm boots, and a different ticket if it is wanted.
+  - Re-opening BL-835 or BL-373. Both are correct; this is the gap between them.
+
+notes: |
+  ## Verified before speccing (2026-08-06)
+
+  - Live daemon path: `bb /Users/ldecorps/projects/swarmforgevc/swarmforge/scripts/handoffd.bb`
+    (pid 44884, started 15:48:04) — the master checkout, not a committed ref.
+  - `flow_watchdog_lib.bb` on disk mtime 20:19:17, content pre-BL-835; `main`
+    content post-BL-835. Divergence confirmed in both directions.
+  - `swarmforge.conf`'s divergence is BL-835's own comment being reverted, NOT
+    an operator setting — checked line by line so this ticket does not
+    mis-attribute an intentional local config to the reversion.
+  - `sync_worktree_scripts_lib.bb::should-copy?` confirms role worktrees are
+    protected and the master checkout is not.
+
+  ## Related, deliberately not merged
+
+  Same 2026-08-06 root event as the incident where a bounce-hygiene revert
+  during BL-835's run collaterally undid BL-823's already-landed close-to-done
+  commit (fixed in 712723f4). That one was caught by a human reading the log;
+  this ticket is about the case nobody happens to read.
