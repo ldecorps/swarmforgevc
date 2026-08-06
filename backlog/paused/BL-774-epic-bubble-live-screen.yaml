@@ -7,10 +7,9 @@ epic: bubble-live-screen
 priority: 86
 depends_on: [BL-769]
 mutation_cost: high
-decomposes_into: [BL-775]
+decomposes_into: [BL-775, BL-569]
 remaining_slices:
-  - "Slice B — read-model rendering parity: every status block the Mini App Live Screen shows today renders in Bubble, at or better than its current refresh behaviour."
-  - "Slice C — action wiring parity: the controls the Mini App Live Screen offers produce the same canonical side effects when driven from Bubble."
+  - "Slice B — read-model rendering parity: every status block the Mini App Live Screen shows today renders in Bubble, at or better than its current refresh behaviour. Much reduced by the 2026-08-06 remote-HTML ruling: both surfaces now render one bridge-side Live Screen, so parity is largely structural rather than a per-block port."
   - "Slice D — cutover guard and Mini App deprecation path: dual-run period, the gate that ends it, and what the Mini App route does afterwards (redirect, deprecate, or remove behind a flag)."
   - "Slice E — verification pass across operator scenarios, including approvals, questions and control callbacks continuing to work through the transition."
 
@@ -39,10 +38,24 @@ description: |
 
   ## Open questions and the defaults taken
 
-  1. *Native UI only, or a staged WebView-backed migration?* — **Native**, from
-     slice A. A WebView would carry the webview constraints this migration
-     exists to escape, and Bubble already speaks to the bridge natively through
-     `BridgeClient.kt`.
+  1. *Native UI only, or a staged WebView-backed migration?* — **Remote HTML in
+     the Bubble UI bundle**, by human directive 2026-08-06: "Remote HTML for all
+     4, and flip BL-775 to remote."
+
+     This REVERSES the specifier default that stood here from 2026-08-01
+     ("Native, from slice A. A WebView would carry the webview constraints this
+     migration exists to escape"). That default contradicted BL-824's
+     human-locked decision that the APK changes only when the thin shell itself
+     changes — a native screen changes the APK. A specifier default does not
+     outrank a human ruling, so it was asked rather than assumed, and the human
+     ruled for remote.
+
+     Three consequences worth carrying: slice A now depends on BL-829 (the
+     remote page host) rather than on a Kotlin screen; the Live Screen the
+     bridge already renders becomes the page rather than something to
+     re-implement, which shrinks slice A sharply; and this epic's acceptance
+     contracts move from the degraded Kotlin gate onto the Node acceptance
+     runner.
   2. *Deprecation plan and timeline for the Mini App Live Screen?* — **Deferred
      to slice D, deliberately.** Nothing is deprecated until parity is proven;
      slice A explicitly leaves the Mini App untouched.
@@ -66,15 +79,26 @@ source: |
   human_approval pending (I pick defaults, you amend)."
 
 notes: |
-  ## Overlap the human should be aware of
+  ## The BL-569 overlap, RESOLVED 2026-08-06
 
-  **BL-569** (`live screen interactive pane input`, `status: needs_design`,
-  approved, paused) adds a principal-gated remote keyboard to the Live Screen
-  *in the Mini App*. It is slice C of this epic wearing different clothes. If
-  BL-569 is built on the Mini App and Live Screen then moves to Bubble, that
-  work is paid for twice. Recommendation: fold BL-569 into this epic's slice C
-  rather than building it on a surface scheduled for retirement — but that is
-  a human call, and BL-569 is not touched by this ticket.
+  This epic used to warn that **BL-569** (`live screen interactive pane input`,
+  human-approved, priority 96, `status: needs_design`) — a principal-gated
+  remote keyboard on the Live Screen *in the Mini App* — was slice C wearing
+  different clothes, and would be paid for twice if Live Screen then moved to
+  Bubble natively.
+
+  **The human's remote-HTML ruling dissolves that.** Both surfaces now render
+  the same bridge-side Live Screen, so BL-569's keyboard lands on the Mini App
+  and on Bubble at once; it is not duplicate work and there is nothing to fold.
+  BL-569 is therefore recorded as this epic's **slice C** in `decomposes_into`
+  and amended for the Bubble principal, rather than a second steer ticket being
+  minted alongside it.
+
+  That also discharges the steer directive from
+  `INTAKE-bubble-live-screen-coordinator-resident.md` ("a text input (+
+  deliberate send) that steers that agent as if the human typed into the tmux
+  pane... human wants the capability locked in"), which is recorded on BL-569
+  rather than on BL-775 — BL-775 stays read-only.
 
   Two further raw intakes in the backlog root also describe Live Screen content
   in Bubble — `INTAKE-bubble-host-agent-thinking-live-screen.md` and

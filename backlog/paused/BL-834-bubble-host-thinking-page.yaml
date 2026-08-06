@@ -1,0 +1,168 @@
+id: BL-834
+title: "Bubble Host page — watch the host agent think while it works, as a remote HTML page over the activity feed, with a quiet state that cannot be mistaken for a broken one"
+milestone: M8
+type: feature
+status: todo
+epic: bubble-screens
+human_approval: approved
+assigned_to: none
+priority: 83
+direction: human-requested
+depends_on: [BL-829, BL-833]
+mutation_cost: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-834-bubble-host-thinking-page.feature
+
+invariants:
+  - "Watching never steers: opening, scrolling, closing or reopening this page has no effect on the host agent's session, its turn, or its reply."
+  - "A quiet host and an unreachable feed are never rendered as each other, and neither is ever rendered as a perpetual spinner."
+  - "The page shows the feed and nothing else: it renders no activity line the feed does not hold, and summarizes nothing into words the host did not emit."
+
+required_wiring:
+  - "extension/src/bridge/letsTalkRoutes.ts::bubbleHostPage::the Host page must be registered in the served UI bundle manifest, or the pager can never open it (the BL-419 shape)"
+  - "extension/src/bridge/bridgeServer.ts::hostActivityStream::the page must attach to the live push channel; a page that fetches once and stops is not the live view this ticket exists to build"
+
+description: |
+  ## What
+
+  The phone equivalent of staring at a tmux pane while the host agent works: a
+  Bubble pager page showing the host agent's activity as it happens — reasoning,
+  status, tool and hat steps — rather than a summary after the turn ends.
+
+  BL-833 builds the feed. This is the page that renders it.
+
+  ## The human's framing, which the design follows
+
+  > On the laptop they can watch a pane; on the phone there is no equivalent.
+  > Without that pane, trust and steering stay late: you only intervene after a
+  > wrong path has already burned tokens.
+
+  That is why "as close to live as the pipe allows" is a requirement and not a
+  nice-to-have, and why a page that shows the same content one turn later would
+  miss the point entirely.
+
+  ## Scope
+
+  - **Live by push, seeded by catch-up.** On open, the page reads the buffered
+    feed so the human sees what has already happened this session, then attaches
+    to the live stream. It does not poll on a timer; BL-833 already pushes.
+  - **Scrollable session history, newest easy to find.** The current session's
+    lines are scrollable. New activity arriving while the human is scrolled back
+    must not yank the view — but returning to the newest must be one obvious
+    action, not a scroll to the bottom of a long list.
+  - **Three honest states.** *Working* (a session is active and lines are
+    arriving), *quiet* (no host session — stated plainly), and *unreachable*
+    (the feed could not be read — stated with its reason). The intake is
+    explicit that quiet must not be "a spinner forever, not a tunnel-error
+    lookalike", and these three exist so quiet and unreachable can never be
+    confused for one another.
+  - **Reconnect on return.** Leaving the page and coming back re-seeds from the
+    buffer and re-attaches. Nothing about that touches the host agent.
+
+  ## The specifier calls the human left open
+
+  - **Page name:** the pager tab reads **Host**; the page heading reads "Host
+    agent". The intake explicitly left this open ("name bikeshed OK: Host pane /
+    Thinking / Agent live").
+  - **First slice covers any host agent session**, not only Let's Talk turns —
+    the intake's open question 2. BL-833's feed is keyed by host session
+    regardless of what started it, so restricting the page to one entry point
+    would be extra work that removes capability.
+  - **Native list vs WebView** — the intake's open question 3 — is already
+    answered by the human's 2026-08-06 ruling: remote HTML, like every other
+    Bubble screen.
+  - **Barge-in and stop affordances** — the intake's open question 4 — stay off
+    this page in version one. This page is a window, and its first invariant says
+    so. The talk panel keeps the steering.
+  - **Pager order:** Talk (native, first), Live, Pipeline, Health, **Host**.
+
+  ## Requirement 6, satisfied rather than deferred
+
+  The intake lists "jump back to talk / mic from that screen without losing the
+  feed" as optional and out of slice 1 if costly. It is not costly: the pager
+  swipe already returns to the native Talk page, and this page re-seeds and
+  re-attaches on return. So the capability is met by the pager rather than by a
+  control on the page, and no separate affordance is built for it.
+
+out_of_scope: |
+  - The activity feed itself. BL-833, which this depends on.
+  - Barge-in, stop, or re-steering the host agent from this page. The talk panel
+    owns steering; this page is a window.
+  - Streaming raw model tokens or a full transcript view.
+  - Watching swarm role panes (coder, specifier, ...). The intake is explicit:
+    host agent only. Swarm panes are BL-775's Live page.
+  - Replacing Let's Talk voice replies with the activity feed.
+  - Cloning tmux chrome. The intake's words: "intent is equivalent visibility,
+    not a terminal emulator unless that proves cheapest."
+  - Any dependency on the Telegram Mini App Live Screen, which the intake's
+    acceptance shape rules out explicitly.
+
+approval_context: >
+  The call worth a look is that **this page has no stop button** in version one.
+  The intake's own open question 4 asks whether barge-in should sit here or stay
+  on the talk panel, and the case for putting it here is real: the moment you see
+  the agent go the wrong way is the moment you want to stop it, and swiping to
+  another page first is friction at exactly the wrong time.
+
+  It is kept off anyway, for one reason: a control on this page changes what the
+  page is, from a window into a cockpit, and the honest three-state rendering
+  this ticket is mostly about gets much harder once an action can be in flight.
+  If the human wants stop-from-here, it is a good follow-up ticket and should be
+  specced as one rather than smuggled into the first version.
+
+source: |
+  Drained 2026-08-06 from
+  `backlog/INTAKE-bubble-host-agent-thinking-live-screen.md` (human via Let's
+  Talk / Cursor, 2026-07-30). 1:N split with BL-833, taken at the intake's own
+  suggestion.
+
+  The intake's requested outcomes for the screen, carried verbatim in substance:
+
+  > 1. A dedicated Bubble screen reachable from the talk panel or Bubble
+  >    navigation.
+  > 2. While the host agent is active, the screen shows a live-updating feed of
+  >    what it is doing: reasoning / status / tool or hat steps — whatever the
+  >    host can stream without inventing a fake transcript.
+  > 3. Latency target: as near real-time as practical (stream or short polls);
+  >    not "dump the full thought only when the reply is ready."
+  > 4. When the agent is idle / swarm asleep / no host bound: clear empty or
+  >    "host quiet" state — not a spinner forever, not a tunnel-error lookalike.
+  > 5. Scrollable history for the current session so the human can catch up if
+  >    they glanced away; newest activity stays easy to find.
+  > 6. Optional later: jump back to talk / mic from that screen without losing
+  >    the feed (out of slice 1 if costly).
+
+  And from its acceptance shape: "Closing the screen does not kill the host
+  agent; reopening resumes or reconnects to the live feed for the active
+  session." That is this ticket's first invariant.
+
+  Technology settled by human directive 2026-08-06: "Remote HTML for all 4, and
+  flip BL-775 to remote".
+
+verification: |
+  ## Runnable gate
+
+  This page is TypeScript and HTML on the bridge, so
+  `specs/features/BL-834-bubble-host-thinking-page.feature` runs in the Node
+  acceptance runner and the parcel sits in normal Stryker/jscpd/CRAP scope. The
+  coder writes its step handlers in THIS parcel (BL-233).
+
+  ## Recorded manual procedure (device surface)
+
+  The WebView render is device surface and BL-829 owns its verification. QA
+  confirms only that this page opens from the Bubble pager on a paired phone,
+  that lines appear while a turn is running, and that swiping back to Talk and
+  returning re-attaches without losing the session's history.
+
+notes: |
+  ## e2e procedure for QA
+
+  With a live bridge and a host agent bound: open Host from the Bubble pager
+  while no turn is running and confirm it states the host is quiet. Start a
+  turn and confirm lines appear while it is still running, before any reply.
+  Scroll back mid-turn and confirm arriving lines do not yank the view, and that
+  returning to the newest is one obvious action. Swipe to Talk and back, and
+  confirm the session's earlier lines are still there and new ones resume. Stop
+  the bridge and confirm the page states the feed is unreachable with its
+  reason — visibly different from the quiet state. Throughout, confirm the host
+  agent's turn completes normally: nothing done on this page may affect it.

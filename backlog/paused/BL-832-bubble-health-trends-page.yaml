@@ -1,0 +1,194 @@
+id: BL-832
+title: "Bubble Health page — traverse time, rework, bottleneck stage and velocity over a recent window, as a remote HTML page reading the computations the bridge already performs"
+milestone: M8
+type: feature
+status: todo
+epic: bubble-screens
+human_approval: approved
+assigned_to: none
+priority: 84
+direction: human-requested
+depends_on: [BL-829]
+mutation_cost: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-832-bubble-health-trends-page.feature
+
+invariants:
+  - "Every figure is read from the computation the bridge and CLI already use for it: the page never re-derives a metric, and there is never a second formula for the same number."
+  - "Every readout states the window it actually covers, so a figure is never presented as covering a period its computation did not use."
+  - "Absent data reads as absent: where a window holds no observations the page says so, and never shows a zero that looks like health."
+
+required_wiring:
+  - "extension/src/bridge/letsTalkRoutes.ts::bubbleHealthPage::the Health page must be registered in the served UI bundle manifest, or the pager can never open it (the BL-419 shape)"
+  - "extension/src/bridge/bridgeServer.ts::health-trends::the health payload route must actually be served, not merely implemented alongside its siblings"
+
+description: |
+  ## What
+
+  A Bubble pager page answering one question: **has the swarm been working well
+  lately, and where is the waste?** Glanceable numbers over a recent window, so
+  the operator can see what to optimize without a laptop.
+
+  ## What already exists, measured 2026-08-06
+
+  Every metric this page needs is already computed in `extension/src/metrics/`
+  and reachable over the bridge. This page is a reader, not a metrics engine:
+
+  | readout | existing computation |
+  | --- | --- |
+  | traverse time | `computeCycleTime` (`deliveryMetrics.ts`), served at `/metrics` |
+  | rework / bounces | `bounceStore.ts` and `qaBounceStore.ts`, with `diagnoseReworkSignal` (`reworkDiagnosis.ts`) for the rate-vs-baseline verdict |
+  | bottleneck stage | `nameBottleneck` (`stageDwell.ts`), served at `/stage-dwell` |
+  | velocity | `computeVelocity` (`deliveryMetrics.ts`) |
+
+  Those four are version one. They are chosen because each one has an action
+  behind it — the human's instruction was explicit: "Do not invent vanity charts
+  with no action story."
+
+  ## The window question, answered honestly
+
+  The human's mental model is "about two weeks". The existing computations do
+  **not** all window that way: `computeVelocity` rolls over
+  `DEFAULT_VELOCITY_ROLLING_WINDOW_DAYS = 7` days, while `computeCycleTime` uses
+  `DEFAULT_CYCLE_TIME_RECENT_WINDOW = 20` — a count of recent tickets, not a
+  span of days.
+
+  There are two ways to reconcile that and only one of them is honest. Rewriting
+  each computation to take a uniform 14-day window would give the page a tidy
+  header and would mean the phone's number stops matching the bridge's and the
+  CLI's for the same metric — the exact drift this ticket's first invariant
+  exists to prevent.
+
+  So: **each readout is shown over the window its own computation actually uses,
+  and states that window on the readout itself.** Where a computation already
+  accepts a window parameter, the page asks it for 14 days. Where it does not,
+  the page shows what it produces and labels it truthfully ("last 20 tickets",
+  "7-day rolling"). The page header therefore describes a recent period, not a
+  single uniform fortnight, because a single uniform fortnight is not what the
+  swarm currently computes.
+
+  Making the windows uniform is a real improvement and a legitimate follow-up —
+  but it is a change to the metrics themselves, owned by whoever changes them
+  for every consumer at once, not a thing a phone page does to its own copy.
+
+  ## The specifier calls the human left open
+
+  - **Page title:** **Health**. Short, fits a pager tab, and it is what the
+    human called it first.
+  - **Window default and selectability:** 14 days where a computation takes a
+    window; not user-selectable in version one. Selectability is BL-830 slice F.
+  - **Layout:** number-first. Each readout is a large current figure with its
+    window and, where the existing computation already supplies a trend or
+    verdict, a short direction line beside it. No charts in version one — a
+    sparkline on a collapsed-Bubble-sized page carries less than the number and
+    its direction, and the human's "dashboard" framing is satisfied by density,
+    not by drawing.
+  - **Bounce and traverse time: one card or two?** Two readouts, adjacent, with
+    the rework verdict as the direction line on the bounce readout. The human
+    noted they are linked; showing them adjacent makes the link visible without
+    fusing two independently-computed numbers into one figure that belongs to
+    neither.
+  - **Bounce split:** by bouncing role, because the existing signal already
+    splits that way. The human's own instruction: "do not pool QA and architect
+    into one misleading number if we already split".
+  - **Pager order:** Talk (native, first), Live, Pipeline, **Health**, Host
+    thinking. Health is a periodic check, not a live glance.
+
+  ## The locked human decisions this page must honour
+
+  Carried verbatim in substance from
+  `backlog/INTAKE-bubble-swarm-health-trends-screen.md` (human via Let's Talk /
+  Cursor, 2026-07-31):
+
+  1. **Another Bubble screen.** Same expanded-Bubble pager family as the other
+     evening intakes, not a separate app.
+  2. **Window.** Roughly the past two weeks as the working mental model;
+     specifier picks the default and whether the human can change it in v1.
+  3. **Core questions to answer.** At least: average (or median / p85) time for
+     a ticket to traverse the swarm; bounce-back volume / rate, because more
+     bounces inflate traverse time; and other meaningful metrics for "what could
+     be improved", proposed from existing instruments. Do not invent vanity
+     charts with no action story.
+  4. **Purpose.** Optimization and efficiency visibility — not live in-flight
+     placement (that is Pipeline) and not start/stop (that is Control).
+  5. **Name flexible.** "Health", "Trends", "Metrics", or similar.
+  6. **Reuse existing metric sources.** Bridge `/metrics`, `/stage-dwell`,
+     cost-health / rework sidecars, briefing fields — Bubble reads, does not
+     re-derive conflicting numbers.
+
+  Design mocks the human emailed for this screen are in the repo:
+  `docs/design/bubble-health-trends-screen-mock.png` (layout v1) and
+  `docs/design/bubble-health-trends-REAL-data-mock.png` (same layout with live
+  telemetry from 2026-07-31).
+
+out_of_scope: |
+  - Making the windows uniform across the underlying computations. A real
+    improvement, owned by whoever changes those metrics for every consumer at
+    once; this page must not fork them.
+  - Building a metrics warehouse or long-term analytics store. The human put
+    this out of scope explicitly.
+  - Cost and burn readouts. They exist (`/cost-telemetry`, `/burn-rate`) and are
+    a legitimate later addition, but version one stays on the four readouts with
+    a clear action behind each.
+  - Canary pass rate. BL-830 slice G, once Canary lands a pass-rate signal.
+  - A user-selectable window. BL-830 slice F.
+  - Drilling from a figure into the tickets behind it, or any git-blame view.
+  - Replacing Pipeline (in-flight placement) or Control (verbs).
+
+approval_context: >
+  The judgement worth the human's eye is the window, because it is the one place
+  this ticket does not give them what they asked for as they asked for it. They
+  said "about two weeks"; the page instead labels each readout with the window
+  its own computation genuinely uses, because the alternative — forcing a uniform
+  fortnight into every metric — would make the phone's numbers disagree with the
+  bridge's and the CLI's for the same metric. If the human would rather have one
+  uniform window and accept changing those computations for every consumer, that
+  is a legitimate ruling and a different (larger) ticket; say so and it will be
+  specced.
+
+  Also chosen and amendable: the page title (Health), four readouts rather than
+  more, number-first with no charts in version one, and bounce split by bouncing
+  role rather than pooled.
+
+source: |
+  Drained 2026-08-06 from
+  `backlog/INTAKE-bubble-swarm-health-trends-screen.md` (human via Let's Talk /
+  Cursor, 2026-07-31; "human asked for intake so the specifier can weigh in —
+  not a pre-minted ticket"). 1:1, no merge, no split.
+
+  Technology settled by human directive 2026-08-06: "Remote HTML for all 4, and
+  flip BL-775 to remote". This page is remote HTML in the UI bundle; it does not
+  change the APK.
+
+  The 2026-08-01 specifier disposition on that intake promised that its decision
+  6 would become an explicit ticket invariant at mint time. It is this ticket's
+  first invariant, discharging that promise.
+
+verification: |
+  ## Runnable gate
+
+  This page is TypeScript and HTML on the bridge, so
+  `specs/features/BL-832-bubble-health-trends-page.feature` runs in the Node
+  acceptance runner and the parcel sits in normal Stryker/jscpd/CRAP scope. The
+  coder writes its step handlers in THIS parcel (BL-233).
+
+  The first invariant is checkable rather than aspirational: for each readout,
+  a test asserts the page's figure equals what the named existing computation
+  returns for the same inputs, so a second formula fails the gate rather than
+  merely violating a principle.
+
+  ## Recorded manual procedure (device surface)
+
+  The WebView render is device surface and BL-829 owns its verification. QA
+  confirms only that this page opens from the Bubble pager on a paired phone and
+  that every readout is legible at phone width without horizontal scrolling.
+
+notes: |
+  ## e2e procedure for QA
+
+  With a swarm that has closed several tickets recently: open Health from the
+  Bubble pager and compare each figure against the same metric from the bridge
+  route or CLI that computes it — they must agree exactly, not approximately.
+  Confirm each readout names its own window. Then point the page at a fresh or
+  empty swarm and confirm each readout says it has no observations rather than
+  showing zero.

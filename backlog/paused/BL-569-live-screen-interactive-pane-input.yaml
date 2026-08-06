@@ -79,6 +79,67 @@ description: |
     back to another pane (wake-session remap is for wakes, NOT for raw
     human keys — a remap here would type into the wrong agent).
 
+  ## AMENDMENT 2026-08-06 — this now lands on Bubble too, and the principal
+  ## gate must generalize
+
+  Two rulings changed this ticket's surface without changing its substance.
+
+  **1. It is no longer duplicate work.** BL-774 flagged this ticket as at risk
+  of being paid for twice: it builds a keyboard on the Resident Spy Mini App
+  while Live Screen migrates to Bubble. The human ruled on 2026-08-06 — "Remote
+  HTML for all 4, and flip BL-775 to remote" — so Bubble's Live page is the SAME
+  bridge-served Live Screen the Mini App renders, not a native re-implementation.
+  One keyboard therefore lands on both surfaces. This ticket is now recorded as
+  BL-774's slice C in that epic's `decomposes_into`.
+
+  **2. The principal gate must cover the Bubble principal, not only Telegram.**
+  The security bar above is written entirely in Telegram terms: validate Mini App
+  `initData` by HMAC and require `user.id == TELEGRAM_PRINCIPAL_USER_ID`. Bubble
+  is not Telegram — it authenticates as a paired device against the bridge's
+  device registry, and has no `initData` to present. So the design must state ONE
+  authorization rule with two acceptable proofs of the same single principal:
+
+  - Telegram Mini App: `initData` HMAC-verified per request, principal user id.
+  - Bubble: the paired device's control-scoped credential, with the same
+    freshness and rate/size limits.
+
+  Everything else in the security bar binds unchanged and binds to both:
+  default-OFF conf flag, append-only audit log recording which proof was used,
+  rate/size limits, no wake-session remap, and rejection when the named session
+  does not exist. The audit log's actor field must distinguish the two proofs —
+  "the principal typed this" is not a sufficient record when two devices can be
+  the principal.
+
+  Note that BL-522 deliberately pins by test that the read `?token=` unlocks no
+  other route. The Bubble proof must not weaken that: a read-scoped device token
+  is NOT a control credential, and the step-up requirement is the same one the
+  bridge already applies to other control actions.
+
+  **The steer directive this now carries.** From
+  `backlog/INTAKE-bubble-live-screen-coordinator-resident.md` (human via Let's
+  Talk / Cursor, 2026-07-31), locked decision 5, routed here rather than to
+  BL-775 so that BL-775 stays read-only:
+
+  > **Steer.** On full-screen pane: a text input (+ deliberate send) that steers
+  > that agent as if the human typed into the tmux pane. New versus today's Mini
+  > App. Specifier should pick confirm-before-send vs single deliberate send;
+  > human wants the capability locked in.
+
+  That open choice is already answered better by this ticket than a fresh pick
+  would be: the ARMED-state design above (explicit arm, visible armed indicator,
+  disarm on blur/restore/idle) is neither a confirm dialog nor a bare send
+  button, and it exists because a pocket tap must not be able to type into a
+  running agent's pane. Keep it.
+
+  The hard human constraint recorded above — the pane header (ticket id + title,
+  role, model, entered-ago, RESIDENT/role badge) stays visible and the armed
+  strip may not cover it — now binds on Bubble's full-screen pane view as well,
+  where screen height is scarcer and the temptation to displace it is greater.
+  BL-775 specs that same header, so the two must be designed against each other:
+  BL-775's tap-to-fullscreen and this ticket's tap-to-arm are the gesture
+  collision this ticket already flags, and it must be resolved against the phone
+  page, not only against the Mini App.
+
   ## Interaction with BL-568
 
   Complementary, not competing: BL-568 automates the structured-menu case

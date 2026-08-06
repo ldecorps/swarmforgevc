@@ -8,7 +8,7 @@ priority: 88
 direction: human-requested
 depends_on: [BL-765, BL-769]
 mutation_cost: high
-decomposes_into: [BL-825]
+decomposes_into: [BL-825, BL-829]
 human_approval: approved
 approval_context: >
   Two things need the human's sign-off before a coder starts, both flagged by
@@ -84,10 +84,26 @@ description: |
   Health, clarification sheet are all queued as intakes or tickets), so
   APK-per-change does not scale.
 
-  The pattern that fixes it already exists and is proven in this codebase:
-  BL-765 serves `bubble-config.json` and `chiptunes.json` from the bridge, and
-  Bubble applies them on pair/resume with bundled fallbacks. This epic
-  generalizes that same path from *config and catalogs* to *screens*.
+  The pattern that fixes it exists on the BRIDGE side only, and this epic must
+  build the phone half. Correcting an overstatement in this epic's first draft
+  (specifier, 2026-08-06, verified against the code): BL-765 does serve
+  `bubble-config.json` and `chiptunes.json`, but **Bubble never fetches
+  them**. `BridgeClient.kt`'s entire network surface is
+  `/lets-talk/new-session` and `/lets-talk/turn` — there is no other HTTP call
+  site in `android/app/` and no second HTTP client. So "Bubble applies them on
+  pair/resume with bundled fallbacks", as originally written here, is not true
+  today.
+
+  What survives the correction is the server-side precedent — versioned
+  bridge-served payloads with rollback already exist — and the fetch/apply path
+  on the device is NEW WORK owned by slice A, not a proven path being reused.
+  BL-825's `required_wiring` already encodes this correctly (`resolveUiBundle`
+  must have a real caller on the pair/resume path, not only unit tests), so the
+  gate was never at risk; only this justification was. The architect should
+  weigh slice A as building a device fetch path from scratch.
+
+  This epic generalizes the bridge-side path from *config and catalogs* to
+  *screens*.
 
   The split it establishes is the point: **rare native/platform change vs
   frequent product-UI change.** Once the shell is thin and the UI is remote,
@@ -147,10 +163,9 @@ description: |
   never had remote UI at all. Every slice degrades to the native Talk surface.
 
 remaining_slices:
-  - "Slice B — remote screen hosting: the bridge serves a versioned UI bundle containing the actual pager screens, and the pager renders remote pages alongside the native Talk page, with per-screen native/remote placement recorded."
   - "Slice C — shell update path: minimum-shell-version enforcement becomes an actionable prompt that can download and install a new APK with user confirm (sideload-safe), plus the human's ruling on how the binary is distributed. Honest about confirm-for-APK vs auto-for-remote-UI (locked decision 5)."
   - "Slice D — soft-update vs shell-update documentation and operator how-to: what updates silently, what prompts, what to do when the tunnel is down, and how to force a refresh."
-  - "Slice E — sequencing pass over the queued Bubble screen intakes: for each of the nine still at the backlog root, record whether it ships as a remote page (inherits auto-update) or must stay native in the shell, and correct its ticket's scope accordingly."
+  - "Slice E — placement pass over the REMAINING Bubble intakes. Partly discharged 2026-08-06: the human ruled 'Remote HTML for all 4, and flip BL-775 to remote', which settled the four screen intakes (BL-775, BL-831, BL-832, BL-833+BL-834) and made slice B a real ticket (BL-829). Still to place: the Control page, the clarification blink/answer sheet, and the 'hey bubble' offline wake — the latter two straddle the boundary, since the collapsed-bubble pulse and on-device wake word are thin-shell native by locked decision 2 while their sheets and panels are candidates for remote pages."
 
 invariants:
   - "Bubble always presents a usable native Talk surface: no state of the remote half — absent, stale, malformed, or version-incompatible — ever leaves the app with no way to reach the human's voice path."

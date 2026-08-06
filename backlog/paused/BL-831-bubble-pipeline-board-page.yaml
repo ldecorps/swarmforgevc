@@ -1,0 +1,148 @@
+id: BL-831
+title: "Bubble Pipeline page — the in-flight agent x ticket grid as a remote HTML page, with a blurb per ticket on the main view and a tap-through detail sheet carrying the spec and its Gherkin"
+milestone: M8
+type: feature
+status: todo
+epic: bubble-screens
+human_approval: pending
+assigned_to: none
+priority: 85
+direction: human-requested
+depends_on: [BL-829]
+mutation_cost: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-831-bubble-pipeline-board-page.feature
+
+invariants:
+  - "One board read model: every cell, mark and stage placement the page shows comes from the computation the existing Pipeline board already uses, and the page derives no stage of its own."
+  - "The main view is sufficient to know what is in flight: every in-flight ticket it lists carries its blurb there, and the detail sheet is never required to learn what a ticket is about."
+
+required_wiring:
+  - "extension/src/bridge/letsTalkRoutes.ts::bubblePipelinePage::the Pipeline page must be registered in the served UI bundle manifest, or the pager can never open it (the BL-419 shape)"
+  - "extension/src/bridge/pipelineGridLive.ts::blurb::the board read model must actually produce the per-ticket blurb the page renders; a blurb the page derives for itself is a second read model"
+
+description: |
+  ## What
+
+  A Bubble pager page showing the in-flight pipeline board: **agents as rows,
+  in-flight tickets as columns, a mark in the cell where each ticket currently
+  sits.** Below the grid, on the same main view, a short description for each
+  in-flight ticket. Tapping a ticket opens a detail sheet with the fuller spec
+  and its Gherkin.
+
+  ## What already exists, measured 2026-08-06
+
+  The bridge already serves `/pipeline-board` and renders `pipelineGridUiHtml.ts`
+  (177 lines, refreshing every 2000 ms) from `capturePipelineGridLive`. The grid
+  itself is therefore a packaging job, and the human's instruction that Bubble
+  "should reuse the same read model, not invent a second board" is satisfied by
+  construction rather than by discipline.
+
+  Two things genuinely do not exist and are the real work of this ticket:
+
+  1. **The blurb.** The board payload carries ids and stage placement, not a
+     description. The read model must produce one.
+  2. **The detail sheet.** Nothing today serves a ticket's spec body or its
+     linked feature text to a client.
+
+  ## The specifier calls the human left open
+
+  - **Blurb source.** The blurb is the **first sentence of the ticket's
+    `description:`**, bounded in length, falling back to the ticket `title` when
+    a ticket has no `description:`. The title is always shown as the ticket's
+    label in any case, so the blurb adds information rather than repeating it.
+    A dedicated `summary:` field in the backlog schema was considered and
+    rejected: a display concern should not add a field every future ticket must
+    fill and every existing ticket lacks.
+  - **Detail sheet content.** The ticket's own substance rendered as readable
+    sections — description, invariants, out of scope — plus the text of the
+    feature file its `acceptance:` names, when that file exists. Not a raw YAML
+    dump, and not a general markdown engine; sections of plain text with their
+    headings.
+  - **Small-screen width.** The grid scrolls horizontally. Under the mono-router
+    shape the column set is small, and horizontally scrolling a grid is honest
+    where reflowing it into something that is no longer a grid is not.
+  - **Pager order.** Talk (native, first), then Live, **Pipeline**, Health, Host
+    thinking. Pipeline sits third: it answers "what is in flight" which is
+    checked often, but less urgently than the live panes.
+
+  ## The locked human decisions this page must honour
+
+  Carried verbatim in substance from `backlog/INTAKE-bubble-pipeline-board.md`
+  (human via Let's Talk / Cursor, 2026-07-31):
+
+  1. **Navigation.** Pipeline board is another expanded-Bubble pager page (same
+     family as Talk / Notes / Control / Live).
+  2. **Grid.** Agents as rows. In-flight tickets as columns. Mark at the cell
+     where that ticket currently sits (which agent). Roughly today's board
+     semantics.
+  3. **Main screen blurbs.** Below or with the grid, still on the main Pipeline
+     view: a short description for each in-flight ticket shown. Human must not
+     need the popup to know what the ticket is about.
+  4. **Detail popup.** Tap a ticket (cell or blurb) → popup / sheet with fuller
+     detail: ticket spec / body, and Gherkins / acceptance features as
+     available. "Hyperlink" in the human's words = tappable ticket → detail, not
+     a raw URL dump.
+  5. **Mini App retirement.** For surfaces we port to Bubble: remove from Mini
+     App once Bubble has the functionality. Sequencing of that removal is later,
+     not a gate on landing Bubble.
+  6. **Out of version one.** Redesigning the whole backlog dashboard; editing
+     tickets in place; replacing the Telegram board pin on day one.
+
+out_of_scope: |
+  - Removing or redirecting the Mini App `/pipeline-board` route, and the fate of
+    the Telegram board pin. BL-830 slice E, later; dual-run is fine and the human
+    said so explicitly.
+  - Editing tickets, approving them, or any write action from this page.
+  - Redesigning the backlog dashboard or the static PWA projection.
+  - Changing what the board read model considers a stage. If the existing
+    placement is wrong, that is its own defect ticket, not a fix inside a page.
+  - The remote page host itself. BL-829.
+
+approval_context: >
+  The four specifier calls above (blurb source, detail sheet content,
+  horizontal scroll, pager order) are all amendable and none is expensive to
+  reverse.
+
+  The one with a real trade-off is the detail sheet: serving a ticket's spec
+  body and its feature text to the phone means the bridge reads backlog YAML and
+  `specs/features/` files on request. That is new read surface on an
+  authenticated endpoint, and it is worth the human knowing it exists rather
+  than discovering it. It is read-only and scoped to tickets the board already
+  reports as in flight.
+
+source: |
+  Drained 2026-08-06 from `backlog/INTAKE-bubble-pipeline-board.md` (human via
+  Let's Talk / Cursor, 2026-07-31; "human asked for intake so the specifier can
+  weigh in — not a pre-minted ticket"). 1:1, no merge, no split.
+
+  Technology settled by human directive 2026-08-06: "Remote HTML for all 4, and
+  flip BL-775 to remote". This page is remote HTML in the UI bundle; it does not
+  change the APK.
+
+verification: |
+  ## Runnable gate
+
+  This page is TypeScript and HTML on the bridge, so
+  `specs/features/BL-831-bubble-pipeline-board-page.feature` runs in the Node
+  acceptance runner and the parcel sits in normal Stryker/jscpd/CRAP scope. The
+  coder writes its step handlers in THIS parcel (BL-233).
+
+  ## Recorded manual procedure (device surface)
+
+  The WebView render is device surface and BL-829 owns its verification. QA
+  confirms only that this page opens from the Bubble pager on a paired phone,
+  that the grid scrolls horizontally without the page scrolling with it, and
+  that the detail sheet opens and closes without losing the grid behind it.
+
+notes: |
+  ## e2e procedure for QA
+
+  With a live swarm holding at least one in-flight ticket: open Pipeline from
+  the Bubble pager and confirm the grid's marks match what the Mini App
+  `/pipeline-board` shows for the same swarm at the same moment. Confirm each
+  listed in-flight ticket has a blurb visible without opening anything. Tap one
+  and confirm the sheet shows its spec sections and, for a ticket whose
+  `acceptance:` names a feature file that exists, that file's scenarios. Then
+  close every active ticket (or point at an idle swarm) and confirm the page
+  states that nothing is in flight rather than showing the last grid.
