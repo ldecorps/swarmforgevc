@@ -152,6 +152,22 @@
                  [(rec "pause-end" "control-pause" "telegram-front-desk-bot:resume" "2026-08-06T00:10:00Z")])
   (assert= "orphan pause-end: no interval" [] (availability-ledger-lib/fold root)))
 
+;; ── an unrecognized-but-well-formed event is skipped, never disturbing
+;;    open state (fold-intervals' own comment: "never a crash on a
+;;    forward-compatible record shape"). A hand-authored mutant that made
+;;    this branch reset open-pause/open-stop instead of passing them
+;;    through unchanged would silently drop the still-open pause below -
+;;    this pins that it does not.
+(let [root (mk-root)]
+  (write-ledger! root "2026-08"
+                 [(rec "pause-start" "control-pause" "telegram-front-desk-bot:pause" "2026-08-06T00:00:00Z")
+                  (rec "provider-outage" "provider" "classify-provider-error" "2026-08-06T00:05:00Z")])
+  (let [intervals (availability-ledger-lib/fold root)]
+    (assert= "unrecognized event: the open pause survives untouched" 1 (count intervals))
+    (let [i (first intervals)]
+      (assert= "unrecognized event: class control-pause" "control-pause" (:class i))
+      (assert= "unrecognized event: provenance open" "open" (:provenance i)))))
+
 (if (seq @failures)
   (do
     (doseq [f @failures] (binding [*out* *err*] (println f)))

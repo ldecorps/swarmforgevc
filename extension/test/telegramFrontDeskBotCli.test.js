@@ -1488,6 +1488,17 @@ test('BL-823: a ledger write failure never blocks writeControlPauseState from co
   assert.deepEqual(readControlPauseState(root), { active: true, untilMs: 1000 });
 });
 
+// BL-823: a caller that omits the source argument entirely (every
+// pre-BL-823 call site, until each was given its own distinguishing
+// source) still records a real, named source - never a blank or undefined
+// one - so the ledger never carries an unattributable record.
+test('BL-823: writeControlPauseState with no source argument records the function-name default', () => {
+  const root = mkTmpRoot();
+  writeControlPauseState(root, { active: true, untilMs: 1000 });
+  const [record] = readLedgerLines(root);
+  assert.equal(record.source, 'writeControlPauseState');
+});
+
 // ── readPendingControlConfirm / writePendingControlConfirm (BL-423) ───────
 
 test('readPendingControlConfirm is undefined when no marker has ever been written', () => {
@@ -1821,6 +1832,9 @@ test('BL-423: applyPause writes a timed pause marker and announces it with a Res
   const body = JSON.parse(calls[0].body);
   assert.match(body.text, /Paused - new work will not be promoted for 15 min/);
   assert.deepEqual(body.reply_markup.inline_keyboard, [[{ text: 'Resume now', callback_data: 'control:resume-now' }]]);
+  // BL-823: applyPause names its own distinguishing source.
+  const [ledgerRecord] = readLedgerLines(root);
+  assert.equal(ledgerRecord.source, 'telegram-front-desk-bot:pause');
 });
 
 test('BL-423: applyPause with no duration writes an "until I resume" pause (no untilMs, no auto-expiry)', async () => {
@@ -1839,6 +1853,9 @@ test('BL-423: resumeNow clears the pause marker and announces it', async () => {
   await resumeNow(root, 'fake-token', 'fake-chat', 900, postFn);
   assert.deepEqual(readControlPauseState(root), { active: false });
   assert.match(JSON.parse(calls[0].body).text, /Resumed/);
+  // BL-823: resumeNow names its own distinguishing source.
+  const ledgerLines = readLedgerLines(root);
+  assert.equal(ledgerLines[ledgerLines.length - 1].source, 'telegram-front-desk-bot:resume');
 });
 
 // ── BL-617: resumeNow consumes an open cooldown window's application ──────

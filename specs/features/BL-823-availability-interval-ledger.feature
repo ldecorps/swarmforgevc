@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=11a0cc9cedf486e47db764021502494f8e9e076f05f17e022bb80c12da2580b2
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-06T14:37:49.354317Z","feature_name":"Append-only swarm availability interval ledger","feature_path":"/Users/ldecorps/projects/swarmforgevc/.worktrees/hardender/specs/features/BL-823-availability-interval-ledger.feature","background_hash":"0d5874f786e0486f7d54772958ef2eb363f49d893d6b556d59797658e8e6a3ae","implementation_hash":"unknown","scenarios":[{"index":0,"name":"Every pause writer twin appends its transition","scenario_hash":"118b81f258c5df87806892fd019fb715ed54a760149b27d53df33826b54028b4","mutation_count":12,"result":{"Total":12,"Killed":12,"Survived":0,"Errors":0},"tested_at":"2026-08-06T14:37:40.715245Z"},{"index":4,"name":"A ledger write failure never blocks the operation it observes","scenario_hash":"5624b47861704249626f7a310278bc2c4e861065e8f64ebdb7a5e59f82d7d0eb","mutation_count":3,"result":{"Total":3,"Killed":3,"Survived":0,"Errors":0},"tested_at":"2026-08-06T14:37:40.715245Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: Append-only swarm availability interval ledger
 
   Two of the three interval classes BL-650 needs to subtract have no durable

@@ -127,6 +127,17 @@ test('BL-823: writeOperatorPauseState appends a record naming an explicit source
   assert.equal(record.source, 'explicit-source');
 });
 
+// BL-823: a caller that omits the source argument entirely still records a
+// real, named source - never a blank or undefined one - so the ledger
+// never carries an unattributable record. Twin of the same-named test in
+// telegramFrontDeskBotCli.test.js for writeControlPauseState.
+test('BL-823: writeOperatorPauseState with no source argument records the function-name default', () => {
+  const root = mkTmpDir('bl823-operator-pause-default-source-');
+  writeOperatorPauseState(root, { active: true, untilMs: 99 });
+  const [record] = readLedgerLines(root);
+  assert.equal(record.source, 'writeOperatorPauseState');
+});
+
 // BL-823 scenario 05 (control pause, operator side): a ledger write failure
 // never blocks the operator pause state write it observes.
 test('BL-823: a ledger write failure never blocks writeOperatorPauseState from completing', () => {
