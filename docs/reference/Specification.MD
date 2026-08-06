@@ -1,6 +1,34 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 6, 2026 (BL-811: high-severity swarm review of the
+**Last Updated:** August 6, 2026 (BL-622: a swarm without its own Telegram
+creds now gets a loud front-desk refusal instead of silently inheriting
+whatever `TELEGRAM_BOT_TOKEN` the launching shell happens to export — the
+root cause of the 2026-07-24 incident where a second checkout's rival
+`getUpdates` poller stole ~9h of the primary swarm's inbound (BL-436 shipped
+per-swarm creds files but never required them, and `swarm_identity_lib.bb`
+defaults an unset swarm name to `"primary"`, so a bare checkout resolved the
+primary's identity — and token — by default). `fleet_telegram_creds_lib.bb`'s
+`resolve-telegram-creds` now reserves ambient-env fallback for the ONE
+recorded primary root (`~/.swarmforge/fleet/primary/root`, written once by
+`ensure-primary-root-recorded!` on that root's first primary launch — moving
+the primary is a deliberate operator edit of that file, never automatic);
+every other swarm without its own fleet creds file gets `:refused? true` and
+a `:reason` naming the exact provisioning command, never a nil token that
+looks like a merely-unconfigured desk. A second, independent
+`conflicting-swarm` check refuses launch when the resolved token happens to
+equal another fleet swarm's own recorded token (two swarms, one token, still
+exactly one poller). `front_desk_supervisor.bb` and `onboarder_supervisor.bb`
+now honor this refusal at the actual launch choke point — exiting loud (log
+and stderr) before ever claiming a pid file or spawning a poller — replacing
+the old blunt `TELEGRAM_BOT_TOKEN:?not set` gate in `launch_front_desk.sh`,
+which only checked that *some* token was present, never that it was *this
+swarm's own*; that gate is now silent on the token entirely and lets the
+supervisor's own resolution decide, so `swarm_ensure.bb`'s stale-pid-file
+repair path (previously enough on its own to re-enable a desk) can no longer
+resurrect one this swarm cannot legitimately resolve. See the updated
+[GettingStarted.md](../tutorials/GettingStarted.md) troubleshooting note and
+[BL-439 FES bring-up how-to](../how-to/BL-439-fes-second-swarm-bringup.md));
+August 6, 2026 (BL-811: high-severity swarm review of the
 Host queue starvation hotfix (BL-810, landed direct to `main` as an operator
 fix under BL-506). Confirmed and fixed D1 — a vote retraction (Telegram
 sends `option_ids: []`) against a poll persisted by a pre-hotfix build (no
