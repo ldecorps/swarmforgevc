@@ -87,7 +87,14 @@ printf '%s' "$D2" > "$FLEET_HOME_2/.swarmforge/fleet/primary/root"
 BRIDGE_TOKEN=fake-token TELEGRAM_BOT_TOKEN=recorded-primary-token TELEGRAM_CHAT_ID=recorded-primary-chat \
   TELEGRAM_PRINCIPAL_USER_ID=1 SWARMFORGE_FLEET_HOME="$FLEET_HOME_2" \
   bb "$D2/front_desk_supervisor.bb" "$D2" --check-once >/dev/null 2>&1 || true
-sleep 0.3
+# Poll rather than a fixed sleep - the bot child process writes
+# received-env.json asynchronously after the supervisor's own --check-once
+# exits, and a flat sleep is racy under host load (same pattern
+# launch_front_desk.sh's own pid-claim wait loop already uses).
+for (( attempt = 1; attempt <= 30; attempt++ )); do
+  [[ -f "$D2/.swarmforge/operator/received-env.json" ]] && break
+  sleep 0.1
+done
 
 check "02: the recorded primary root still resolves the ambient token" \
   "grep -q 'recorded-primary-token' \"$D2/.swarmforge/operator/received-env.json\""
