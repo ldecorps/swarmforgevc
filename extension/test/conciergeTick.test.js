@@ -2450,6 +2450,36 @@ test('BL-487: an ASYNC readRoleHeldTickets (a Promise-returning adapter) is prop
   assert.ok(row, `expected BL-1 to be a board row from the awaited async adapter, got:\n${posted[0]}`);
 });
 
+// BL-814: readLiveRoleHeldTickets now throws (RoleHeldTicketsComputationFailed
+// Error) instead of silently returning {} when the underlying bb subprocess
+// fails - a failed computation must never look like a genuinely empty one.
+// syncBoardIfWired is the sole production caller; it must catch that throw,
+// never let it escape into the tick loop, and never let the failure
+// overwrite a previously-good board with a blank one.
+test('BL-814: a rejecting readRoleHeldTickets does not crash the tick and leaves the prior board state untouched', async () => {
+  const { adapters, setFolders, state } = fakeAdapters();
+  const posted = [];
+  adapters.boardAdapters.postMessage = async (topicId, text) => {
+    posted.push(text);
+    return { messageId: 1 };
+  };
+  adapters.boardAdapters.ensureBoardTopic = async () => ({ topicId: 900 });
+  setFolders(folders({ active: [{ id: 'BL-1', title: 'held ticket' }] }));
+  adapters.readRoleHeldTickets = () => ({ coder: ['BL-1'] });
+
+  await runConciergeTick(adapters);
+  assert.equal(posted.length, 1);
+  const boardAfterFirstTick = state.pipelineBoard;
+  assert.ok(hasRowFor(posted[0], 'BL-1'), `expected BL-1 on the board after the first tick, got:\n${posted[0]}`);
+
+  adapters.readRoleHeldTickets = () => Promise.reject(new Error('pipeline_stage_cli.bb report exited 1'));
+
+  await runConciergeTick(adapters);
+
+  assert.equal(posted.length, 1, 'expected no new board post on a failed computation - the prior post stands');
+  assert.deepEqual(state.pipelineBoard, boardAfterFirstTick, 'expected the prior tick\'s board state to be left untouched');
+});
+
 // ── BL-465: root-intake / recently-closed / GitHub link list wiring ──────
 
 test('BL-465: omitting readRootIntakeFiles/readRepoBaseUrl entirely leaves the board tick unaffected - existing fixtures built before these fields existed keep working unchanged', async () => {
