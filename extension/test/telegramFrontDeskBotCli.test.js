@@ -29,8 +29,8 @@ const {
   controlDrainTimeoutMs,
   controlRestartAckTimeoutMs,
   controlPauseStatePath,
-  readControlPauseState,
   writeControlPauseState,
+  readControlPauseState,
   pendingControlConfirmPath,
   readPendingControlConfirm,
   writePendingControlConfirm,
@@ -100,6 +100,7 @@ const {
   findProcessedOnboardingUpdate,
 } = require('../out/onboarding/onboarderStateStore');
 const { createOnboardingState } = require('../out/onboarding/onboarderState');
+const { availabilityLedgerFileForMonth } = require('../out/metrics/availabilityLedgerStore');
 
 // parseNextSseRecord's own tests live in telegramFrontDeskBotCore.test.js -
 // its implementation moved there (the testable core); this file re-exports
@@ -1438,6 +1439,53 @@ test('writeControlPauseState/readControlPauseState round-trips an explicit inact
   writeControlPauseState(root, { active: true, untilMs: 1000 });
   writeControlPauseState(root, { active: false });
   assert.deepEqual(readControlPauseState(root), { active: false });
+});
+
+// ── BL-823: writeControlPauseState also appends to the availability ledger ─
+
+function readLedgerLines(root) {
+  const month = new Date().toISOString().slice(0, 7);
+  const filePath = availabilityLedgerFileForMonth(root, month);
+  if (!fs.existsSync(filePath)) {
+    return [];
+  }
+  return fs
+    .readFileSync(filePath, 'utf8')
+    .split('\n')
+    .filter((l) => l.length > 0)
+    .map((l) => JSON.parse(l));
+}
+
+test('BL-823: writeControlPauseState({active:true}) appends a pause-start control-pause record naming its source', () => {
+  const root = mkTmpRoot();
+  writeControlPauseState(root, { active: true, untilMs: 1000 }, 'test-source');
+  const [record] = readLedgerLines(root);
+  assert.equal(record.event, 'pause-start');
+  assert.equal(record.class, 'control-pause');
+  assert.equal(record.source, 'test-source');
+});
+
+test('BL-823: writeControlPauseState({active:false}) appends a pause-end control-pause record naming its source', () => {
+  const root = mkTmpRoot();
+  writeControlPauseState(root, { active: true, untilMs: 1000 }, 'test-source-a');
+  writeControlPauseState(root, { active: false }, 'test-source-b');
+  const lines = readLedgerLines(root);
+  assert.equal(lines.length, 2);
+  assert.equal(lines[1].event, 'pause-end');
+  assert.equal(lines[1].source, 'test-source-b');
+});
+
+// BL-823 scenario 05 (control pause): a ledger write failure never blocks
+// the pause state write it observes - real EISDIR, not mocked (see
+// availabilityLedgerStore.test.js's own EISDIR test for the same convention).
+test('BL-823: a ledger write failure never blocks writeControlPauseState from completing', () => {
+  const root = mkTmpRoot();
+  const month = new Date().toISOString().slice(0, 7);
+  fs.mkdirSync(availabilityLedgerFileForMonth(root, month), { recursive: true });
+  assert.doesNotThrow(() => {
+    writeControlPauseState(root, { active: true, untilMs: 1000 }, 'test-source');
+  });
+  assert.deepEqual(readControlPauseState(root), { active: true, untilMs: 1000 });
 });
 
 // ── readPendingControlConfirm / writePendingControlConfirm (BL-423) ───────

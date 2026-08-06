@@ -381,7 +381,8 @@ const DOMAINS = [
   require('./bl810HostQueuePollClearAllTtlSteps'),
   require('./bl814LiveRoleHeldLoudDegradeSteps'),
   require('./bl808BacklogDepthWarningCountsNonTicketEntriesSteps'),
-  require('./bl622OnboardingTelegramTokenSeparationSteps')
+  require('./bl622OnboardingTelegramTokenSeparationSteps'),
+  require('./bl823AvailabilityIntervalLedgerSteps')
 ];
 
 function registerSteps(registry) {

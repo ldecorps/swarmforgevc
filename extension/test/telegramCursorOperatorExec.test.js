@@ -12,6 +12,20 @@ const {
   releaseEnsureLock,
   runOperatorStart,
 } = require('../out/tools/telegramCursorOperatorExec');
+const { availabilityLedgerFileForMonth } = require('../out/metrics/availabilityLedgerStore');
+
+function readLedgerLines(root) {
+  const month = new Date().toISOString().slice(0, 7);
+  const filePath = availabilityLedgerFileForMonth(root, month);
+  if (!fs.existsSync(filePath)) {
+    return [];
+  }
+  return fs
+    .readFileSync(filePath, 'utf8')
+    .split('\n')
+    .filter((l) => l.length > 0)
+    .map((l) => JSON.parse(l));
+}
 
 test('BL-702: syncenv reports presence without values', () => {
   const root = mkTmpDir('bl702-syncenv-');
@@ -89,6 +103,40 @@ test('BL-702: writeOperatorPauseState round-trip', () => {
   assert.deepEqual(readOperatorPauseState(root), { active: true, untilMs: 99 });
   writeOperatorPauseState(root, { active: false });
   assert.deepEqual(readOperatorPauseState(root), { active: false });
+});
+
+// ── BL-823: writeOperatorPauseState also appends to the availability ledger ─
+
+test('BL-823: /pause and /resume via executeOperatorVerb each append their own control-pause record naming source', () => {
+  const root = mkTmpDir('bl823-operator-pause-');
+  executeOperatorVerb(root, '/pause');
+  executeOperatorVerb(root, '/resume');
+  const lines = readLedgerLines(root);
+  assert.equal(lines.length, 2);
+  assert.equal(lines[0].event, 'pause-start');
+  assert.equal(lines[0].class, 'control-pause');
+  assert.equal(lines[0].source, 'telegramCursorOperatorExec:pause');
+  assert.equal(lines[1].event, 'pause-end');
+  assert.equal(lines[1].source, 'telegramCursorOperatorExec:resume');
+});
+
+test('BL-823: writeOperatorPauseState appends a record naming an explicit source', () => {
+  const root = mkTmpDir('bl823-operator-pause-source-');
+  writeOperatorPauseState(root, { active: true, untilMs: 99 }, 'explicit-source');
+  const [record] = readLedgerLines(root);
+  assert.equal(record.source, 'explicit-source');
+});
+
+// BL-823 scenario 05 (control pause, operator side): a ledger write failure
+// never blocks the operator pause state write it observes.
+test('BL-823: a ledger write failure never blocks writeOperatorPauseState from completing', () => {
+  const root = mkTmpDir('bl823-operator-pause-eisdir-');
+  const month = new Date().toISOString().slice(0, 7);
+  fs.mkdirSync(availabilityLedgerFileForMonth(root, month), { recursive: true });
+  assert.doesNotThrow(() => {
+    writeOperatorPauseState(root, { active: true, untilMs: 99 });
+  });
+  assert.deepEqual(readOperatorPauseState(root), { active: true, untilMs: 99 });
 });
 
 test('BL-703: autopilot dry and land dry via execute', () => {
