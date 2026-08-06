@@ -10,6 +10,11 @@
 ;; compare against -1 as a real cap. ONE shared reader here, used by both
 ;; call sites, so they cannot diverge again.
 ;;
+;; BL-808: the active COUNT was left out of that consolidation. The warning
+;; kept using (count (fs/list-dir ...)), which counted the tracked .gitkeep
+;; as a ticket. count-active-tickets below is the shared counter; the
+;; warning must call it (required_wiring), not re-inline a yaml filter.
+;;
 ;; Loaded via load-file, not required on a classpath:
 ;;   (load-file (str (fs/path (fs/parent *file*) "backlog_depth_lib.bb")))
 ;; and referred to as backlog-depth-lib/foo.
@@ -67,6 +72,18 @@
    regardless of active-count."
   [active-count max-depth]
   (or (no-limit? max-depth) (< active-count max-depth)))
+
+(defn count-active-tickets
+  "BL-808: count ticket yaml files in a backlog folder (typically
+   backlog/active/). Filters by kind — *.yaml regular files only — never
+   by blocklisting a placeholder name. A missing directory degrades to 0
+   (never throws), matching chase_sweep_lib/count-backlog-yaml."
+  [dir]
+  (if-not (fs/exists? dir)
+    0
+    (->> (fs/list-dir dir)
+         (filter #(and (fs/regular-file? %) (str/ends-with? (fs/file-name %) ".yaml")))
+         count)))
 
 (def default-conf-relpath
   "The tracked default config - used both as the historical BL-216 fallback

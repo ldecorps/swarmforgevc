@@ -5,6 +5,7 @@ const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { main } = require('../out/tools/resume-expired-pauses');
 const { controlPauseStatePath, readControlPauseState } = require('../out/tools/telegram-front-desk-bot');
+const { availabilityLedgerFileForMonth } = require('../out/metrics/availabilityLedgerStore');
 
 const CLI = path.join(__dirname, '..', 'out', 'tools', 'resume-expired-pauses.js');
 const TOPIC_MAP_PATH = (root) => path.join(root, '.swarmforge', 'operator', 'telegram-topic-map.json');
@@ -84,6 +85,21 @@ test('BL-423: an expired timed pause auto-resumes - the marker clears and the re
   assert.equal(result.resumed, true);
   assert.equal(result.announced, true);
   assert.deepEqual(readControlPauseState(root), { active: false });
+});
+
+test('BL-823: an expired pause auto-resume appends a pause-end record sourced from resume-expired-pauses', async () => {
+  const root = mkFixture({ active: true, untilMs: Date.now() - 1000 }, true);
+  await runCli(root, DELIVER_ENV);
+  const month = new Date().toISOString().slice(0, 7);
+  const filePath = availabilityLedgerFileForMonth(root, month);
+  const [record] = fs
+    .readFileSync(filePath, 'utf8')
+    .split('\n')
+    .filter((l) => l.length > 0)
+    .map((l) => JSON.parse(l));
+  assert.equal(record.event, 'pause-end');
+  assert.equal(record.class, 'control-pause');
+  assert.equal(record.source, 'resume-expired-pauses');
 });
 
 test('BL-423: a timed pause not yet due is left completely untouched', async () => {

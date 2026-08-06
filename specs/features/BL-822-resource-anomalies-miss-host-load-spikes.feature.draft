@@ -1,0 +1,49 @@
+Feature: resource health anomalies catch host load spikes, not only per-role RSS/CPU trends
+
+  # BL-822 — DRAFT for specifier polish before promoting to a live .feature.
+  #
+  # Diagnosis (2026-08-06): resourceSamplesObserved was true and
+  # resourceAnomalies was [] while uptime load sat at 78–101 on 4 cores,
+  # suiteDurationTrend.warn was true (~415s), and three QA full-suite runs
+  # failed on vitest-worker timeouts. computeResourceAnomalies only trends
+  # per-role RSS/CPU (≥10% hour-over-hour); sampleProcessStats never reads
+  # load average. This is the coverage gap BL-350 deferred.
+
+  Background:
+    Given resource sampling is running headlessly
+    And per-role RSS and CPU trends are available to the cost-health sidecar
+
+  # BL-822 host-load-spike-is-not-resource-quiet-01
+  Scenario: a sustained host load well above core count is not rendered as resource-quiet
+    Given the host has N cores
+    And the recorded host load average is many times N for the briefing window
+    And no per-role RSS or CPU trend crosses the existing anomaly threshold
+    When the cost-health sidecar is built for that day
+    Then resource samples are reported as observed
+    And the sidecar does not claim that no resource anomalies were found
+
+  # BL-822 quiet-host-still-reports-none-found-02
+  Scenario: a genuinely quiet host still reports none found
+    Given the host load average is within a normal band for its core count
+    And no per-role RSS or CPU trend is anomalous
+    When the cost-health sidecar is built for that day
+    Then resource samples are reported as observed
+    And the sidecar reports that no resource anomalies were found
+
+  # BL-822 role-anomalies-remain-additive-03
+  Scenario: a per-role RSS or CPU anomaly still surfaces when only that signal trips
+    Given the host load average is within a normal band for its core count
+    And one role's RSS or CPU trend crosses the existing anomaly threshold
+    When the cost-health sidecar is built for that day
+    Then that role appears among the resource anomalies
+
+  # BL-822 suite-duration-warn-corroboration-04
+  # Pins the observed 2026-08-06 shape: suite-duration warn alone must not be
+  # the only automated signal when host load was the shared cause. Exact
+  # coupling (same field vs sibling) is a specifier ruling; the outcome is that
+  # the cost-health section is not resource-quiet on that day.
+  Scenario: a load-driven suite-duration warn day is not resource-quiet in the sidecar
+    Given suiteDurationTrend.warn is true for the briefing day
+    And the recorded host load average for that day is many times the core count
+    When the cost-health sidecar is built for that day
+    Then the sidecar does not claim that no resource anomalies were found

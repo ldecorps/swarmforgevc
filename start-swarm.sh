@@ -26,6 +26,8 @@ START_ANCILLARY="$SCRIPT_DIR/swarmforge/scripts/start_ancillary_services.sh"
 # shellcheck disable=SC1091
 source "$SCRIPT_DIR/swarmforge/scripts/harness_env_scrub.sh"
 scrub_harness_env
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/swarmforge/scripts/availability_ledger_lib.sh"
 
 CLEAN=0
 TARGET=""
@@ -267,6 +269,15 @@ PACK="$(resolve_launch_pack)"
 WANT="$(expected_session_count)"
 echo "Launching headless swarm (pack=${PACK:-default}, expecting $WANT sessions) ..."
 mkdir -p "$TARGET/.swarmforge"
+
+# BL-823: the start record closes the stop interval and triggers the
+# heartbeat-inferred close. stop_existing above may have torn down a live
+# swarm without going through kill_pipeline_swarm.sh's own "stop" record
+# (an ungraceful stop from the ledger's perspective) - close-ungraceful-stop
+# runs FIRST, against the ledger's prior state, before this start is
+# recorded.
+availability_close_ungraceful_stop "$TARGET" "$TARGET/.swarmforge/daemon/handoffd.heartbeat"
+availability_record "$TARGET" "start" "swarm-stop" "start-swarm.sh"
 
 LAUNCH_ARGS=("$TARGET")
 if [[ -n "$PACK" ]]; then
