@@ -1647,7 +1647,9 @@
   (vec (for [[role role-info] roles]
          {:role role
           :new-dir (handoff-lib/mailbox-dir role-info :new)
-          :in-process-dir (handoff-lib/mailbox-dir role-info :in_process)})))
+          :in-process-dir (handoff-lib/mailbox-dir role-info :in_process)
+          :completed-dir (handoff-lib/mailbox-dir role-info :completed)
+          :abandoned-dir (handoff-lib/mailbox-dir role-info :abandoned)})))
 
 (defn flow-watchdog-live-session? [roles socket role]
   (boolean
