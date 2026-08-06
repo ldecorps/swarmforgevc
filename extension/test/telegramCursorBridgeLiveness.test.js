@@ -8,7 +8,8 @@ const { parseCursorBridgeState } = require('../out/tools/telegramCursorBridgeCor
 
 test('liveness line: idle and busy copy', () => {
   assert.equal(formatCursorBridgeLivenessLine(false, 0), 'Bridge: idle');
-  assert.equal(formatCursorBridgeLivenessLine(false, 2), 'Bridge: idle · 2 waiting');
+  // Idle cue stays plain — the queue selection poll is the "N waiting" surface.
+  assert.equal(formatCursorBridgeLivenessLine(false, 2), 'Bridge: idle');
   assert.equal(formatCursorBridgeLivenessLine(true, 0), 'Bridge: busy');
   assert.equal(formatCursorBridgeLivenessLine(true, 1), 'Bridge: busy · 1 waiting');
 });
@@ -141,7 +142,7 @@ test('liveness sync: no-op (never calls Telegram) when the state has no cursorTo
   assert.equal(state.livenessStatus, undefined);
 });
 
-test('liveness sync: includes the queued-prompt count from state.pendingPrompts in the posted text', async () => {
+test('liveness sync: idle stays a plain cue even when pendingPrompts exist (poll is the queue surface)', async () => {
   const state = { updateOffset: 0, cursorTopicId: 7, pendingPrompts: ['a', 'b', 'c'] };
   const posts = [];
   await syncCursorBridgeLivenessStatus({
@@ -156,7 +157,25 @@ test('liveness sync: includes the queued-prompt count from state.pendingPrompts 
     },
     editMessage: async () => true,
   });
-  assert.deepEqual(posts, [{ topicId: 7, text: 'Bridge: idle · 3 waiting' }]);
+  assert.deepEqual(posts, [{ topicId: 7, text: 'Bridge: idle' }]);
+});
+
+test('liveness sync: busy line still includes the queued-prompt count', async () => {
+  const state = { updateOffset: 0, cursorTopicId: 7, pendingPrompts: ['a', 'b'] };
+  const posts = [];
+  await syncCursorBridgeLivenessStatus({
+    botToken: 't',
+    chatId: 'c',
+    state,
+    busy: true,
+    persistState: () => {},
+    postMessage: async (topicId, text) => {
+      posts.push({ topicId, text });
+      return 1;
+    },
+    editMessage: async () => true,
+  });
+  assert.deepEqual(posts, [{ topicId: 7, text: 'Bridge: busy · 2 waiting' }]);
 });
 
 test('liveness sync: default postMessage/editMessage go through the injected telegramPostFn transport seam, never a real network call', async () => {

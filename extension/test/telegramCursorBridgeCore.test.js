@@ -829,8 +829,10 @@ test('cursor bridge: formatHelpMessage mentions all operator commands', () => {
       '/reexpedite [BL-xxx] — checkpoint main WIP and restart a divergent expedite',
       '/redeploy — soft confirm, then compile and restart this bridge (reloads swarm.env)',
       '/redeploy miniapp — soft confirm, then bounce the headless mini app bridge',
+      '/pause — soft confirm; freeze new promotion until /resume (in-flight continues; useful on flaky data)',
+      '/resume — soft confirm; allow promotion again',
       '/syncenv /compile /pull — soft confirm (one Confirm tap)',
-      '/restart /bounce [swarm|extension|bridge|all] /ensure — hard confirm',
+      '/stop /start /restart /bounce [swarm|extension|bridge|all] /ensure — hard confirm',
       '/doctor /tunnel — read-only checks',
       '/confirm-off — clear a pending Confirm',
       '/log [expedite|redeploy|bridge] — tail the active or named operator log',
@@ -846,6 +848,9 @@ test('cursor bridge: formatHelpMessage mentions all operator commands', () => {
   assert.match(help, /\/expedite/i);
   assert.match(help, /\/reexpedite/i);
   assert.match(help, /\/redeploy/i);
+  assert.match(help, /\/pause/i);
+  assert.match(help, /\/resume/i);
+  assert.match(help, /\/stop/i);
   assert.match(help, /\/log/i);
 });
 

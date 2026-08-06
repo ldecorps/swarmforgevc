@@ -1,0 +1,71 @@
+Feature: every unit-suite failure leaves the inventory with a classification and its evidence
+
+  # BL-815 — DRAFT, deliberately not executable.
+  #
+  # This slice's deliverable is a committed measurement, not new runtime
+  # behaviour, so no step handler can drive these scenarios. Shipping them as
+  # a live .feature would hand the acceptance runner scenarios with no
+  # handlers and hard-fail the hardener's gate for no benefit (BL-233). The
+  # real verification is the QA procedure in the ticket.
+  #
+  # Kept because the shape is the contract: what "classified" has to mean
+  # before a failure may leave the inventory.
+
+  Background:
+    Given the measured failing set from the 2026-08-05 full-suite run
+
+  # BL-815 classification-requires-isolation-evidence-01
+  Scenario Outline: a failure is classified only against a recorded isolation run
+    Given a failing test classified as <classification>
+    When the evidence file is reviewed
+    Then the isolation run result is recorded for that test
+    And the host load average at the time of the run is recorded
+    And <consequence> is recorded for that test
+
+    Examples:
+      | classification         | consequence           |
+      | real regression        | a fix ticket id       |
+      | real slowdown          | a fix ticket id       |
+      | load-induced           | an argued no-fix note |
+      | suite-infra            | an argued no-fix note |
+
+  # BL-815 environmental-needs-a-passing-isolated-run-02
+  Scenario: calling a failure environmental requires it to pass alone
+    Given a failing test classified as load-induced
+    When the evidence file is reviewed
+    Then that test is recorded as passing when run in isolation
+    And the load average of the failing run is recorded as well above the core count
+
+  # BL-815 isolated-failure-is-a-defect-03
+  Scenario: a failure that survives isolation is a defect and gets a ticket
+    Given a failing test that still fails when run alone on a quiet host
+    When the evidence file is reviewed
+    Then that test is classified as a real regression
+    And a fix ticket id is recorded for it
+
+  # BL-815 no-green-by-budget-04
+  Scenario Outline: a budget widened without a measured cause is rejected
+    Given the slice changed <artefact>
+    And no measured cause is recorded for the change
+    When the change is reviewed
+    Then the change is rejected
+
+    Examples:
+      | artefact             |
+      | a per-test timeout   |
+      | a skip annotation    |
+      | an exclude glob      |
+
+  # BL-815 budget-widened-with-cause-is-allowed-05
+  Scenario: a budget widened with a measured cause is allowed
+    Given the slice changed a per-test timeout
+    And a measured cause is recorded for the change
+    When the change is reviewed
+    Then the change is accepted
+
+  # BL-815 inventory-is-complete-06
+  Scenario: no failure leaves the inventory unexamined
+    Given the measured failing set
+    When the evidence file is reviewed
+    Then every test in the set carries a classification
+    And none is recorded as environmental without its isolation evidence

@@ -1,0 +1,199 @@
+id: BL-814
+title: "DEFECT — a new load-file dependency silently degrades readLiveRoleHeldTickets to {}, and the fixture that exists to catch it has now missed it twice"
+milestone: M8
+type: defect
+status: todo
+epic: swarm-reliability
+human_approval: approved
+severity: high
+priority: 10
+direction: human-requested
+depends_on: []
+assigned_to: none
+mutation_cost: low
+invariants:
+  - "A copy-real-scripts fixture whose dependency set is incomplete fails loudly; it never reports a passing-shaped empty result."
+  - "readLiveRoleHeldTickets distinguishes 'no role holds a ticket' from 'the computation did not run'."
+
+approval_context: >
+  Split 1 of 3 from `backlog/INTAKE-unit-suite-failing-tests-analysis.md`
+  (human via Cursor, 2026-08-05). Siblings: BL-815 (classify the five
+  timeout failures) and BL-816 (the waved-through-red-suite process gate).
+
+  This is the one failure in that intake that is already fully diagnosed, so
+  it is split out to move now rather than wait behind the analysis slice.
+  Your decision 1 said analyse first — this is that analysis, done, with the
+  root cause proven rather than theorised.
+
+  YOUR PRIME SUSPECT WAS RIGHT, AND I PROVED IT RATHER THAN ASSUMING IT.
+  The intake named the theory: "another transitive `.bb` dependency landed
+  after `ambulance_lib.bb` was added to the fixture copy list, and the
+  fixture was not updated." Confirmed. It is `mono_router_lib.bb`, added to
+  `handoff_lib.bb:28` by BL-805. Proof is in the description.
+
+  NOT ENVIRONMENTAL, AND THE MEASUREMENT SAYS SO. Run in isolation on this
+  host at load average 76 (a 4-core box), the file completed in 5.3s and
+  failed by strict deep-equal, not timeout. Per your decision 2 that settles
+  it: a failure that still fails alone is a defect. `severity: high` per your
+  decision 4 — this is the BL-487 `{}` path you specifically named.
+
+  ONE THING I ADDED BEYOND THE FIX. Restoring the copy list turns the suite
+  green in one line, and I do not think that is enough to ship. This exact
+  fixture has now silently degraded TWICE — BL-655 added `ambulance_lib.bb`,
+  BL-805 added `mono_router_lib.bb` — and both times the symptom was a
+  passing-shaped `{}` rather than an error. Scenario 03 requires the loud
+  failure. Say the word if you want the one-line fix alone and the hardening
+  deferred to its own ticket.
+
+source: |
+  backlog/INTAKE-unit-suite-failing-tests-analysis.md — raw intake, human via
+  Cursor, 2026-08-05 ~09:30 CEST. Rows 3 and 4 of its measured failure table.
+  Drained as a 1:N split (this ticket + BL-815 + BL-816), which the intake's
+  decision 1 explicitly permits.
+
+description: |
+  ## The failure
+
+  Two tests in `extension/test/readLiveRoleHeldTicketsCli.test.js` fail with a
+  strict deep-equal, expecting `{ coder: ['BL-900'] }` and receiving `{}`:
+
+  ```
+  BL-487: reports a role-held ticket computed LIVE from the real in_process mailbox
+  BL-487: a stale/absent ticket-stage-map.json cache is irrelevant
+  ```
+
+  ## Root cause, proven
+
+  The test builds a fixture by copying the real `.bb` scripts plus their
+  `load-file` dependencies into an isolated tree, then runs the REAL
+  `pipeline_stage_cli.bb report` subprocess against it. Its copy list is:
+
+  ```js
+  ['pipeline_stage_cli.bb', 'pipeline_stage_lib.bb', 'handoff_lib.bb', 'ambulance_lib.bb']
+  ```
+
+  BL-805 added a new leaf dependency to `handoff_lib.bb`:
+
+  ```clojure
+  ;; handoff_lib.bb:28  (BL-805)
+  (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "mono_router_lib.bb")))
+  ```
+
+  `mono_router_lib.bb` is not in the copy list. Running the real CLI against a
+  fixture built each way:
+
+  ```
+  without mono_router_lib.bb:
+    java.io.FileNotFoundException: .../mono_router_lib.bb (No such file or directory)
+    Location: .../handoff_lib.bb:28:1
+  with mono_router_lib.bb:
+    loads cleanly
+  ```
+
+  The subprocess dies, and `readLiveRoleHeldTickets` swallows the failure and
+  returns `{}` — which is indistinguishable from the legitimate "no role is
+  holding a ticket" answer. The test file's own BL-655 comment predicted this
+  exact mode in advance:
+
+  > omitting it here does not throw loudly, it makes the real `bb` subprocess
+  > fail and readLiveRoleHeldTickets silently degrade to `{}` (a
+  > missed-consumer regression this exact copy-the-real-scripts fixture exists
+  > to catch).
+
+  ## Why this is high severity, not a test-only annoyance
+
+  The silent degrade is in `readLiveRoleHeldTickets` — production code behind
+  the live board's role-held view (BL-487). Any runtime condition that makes
+  that subprocess fail (a missing dep, a bb upgrade, a permissions problem)
+  renders the board confidently blank rather than visibly broken. The test
+  fixture is how we find out; it found out, and the finding was waved through
+  twice as load noise.
+
+  ## The two-part fix
+
+  1. **Restore the fixture.** Add `mono_router_lib.bb` to the copy list so the
+     two BL-487 tests pass again.
+  2. **Make the degrade loud.** A failed computation must not return a
+     legitimate-looking empty map. Distinguish "ran, found nothing" from "did
+     not run" and surface the latter. Scenario 03 is the contract; the shape
+     of the signal (throw, error result, logged-and-flagged) is the coder's
+     design call, but a bare `{}` on subprocess failure is not acceptable.
+
+  ## What this ticket must NOT do
+
+  Do not make the suite green by widening the copy list to every `.bb` in the
+  directory. That trades a loud, specific failure for a fixture that never
+  fails and never catches the next BL-655/BL-805 recurrence. Copy what is
+  actually depended on.
+
+acceptance: specs/features/BL-814-live-role-held-fixture-loud-degrade.feature.draft
+
+required_wiring:
+  - "extension/test/readLiveRoleHeldTicketsCli.test.js::mono_router_lib.bb::the fixture copy list must actually carry BL-805's new dependency, or the two BL-487 tests stay red."
+  - "specs/pipeline/steps/index.js::bl814LiveRoleHeldLoudDegradeSteps::the acceptance contract must execute; an unregistered step module means runtime.js throws on scenario 01."
+
+out_of_scope: |
+  - The five timeout failures (rows 1-2 and 5-7 of the intake's table). They
+    need quiet-host isolation runs and are BL-815.
+  - The process question of parcels proceeding past a red `npm test`. BL-816.
+  - Cutting unit-suite duration (BL-791 slice B).
+  - Fixing the host's sustained overload / duplicate supervisors.
+
+notes: |
+  Sibling tickets from the same intake: BL-815, BL-816.
+
+  Recurrence history worth keeping in front of whoever fixes this — the same
+  fixture, the same silent shape, twice:
+
+  ```
+  BL-655   handoff_lib.bb gains ambulance_lib.bb    fixture not updated -> {}
+  BL-805   handoff_lib.bb gains mono_router_lib.bb  fixture not updated -> {}
+  ```
+
+  That is the argument for scenario 03. A third recurrence is a matter of
+  when, and the only thing that changes the outcome is the failure being loud.
+
+  ## IR-DRY disposition (specifier, 2026-08-05)
+
+  The checker raises two medium-confidence findings on this feature file, both
+  deliberately kept:
+
+  - `the failure is surfaced to the caller` vs `no failure is surfaced to the
+    caller` (scenarios 03/04)
+  - `role "coder" holds active ticket "BL-900" ...` vs `no role holds an
+    active ticket ...` (scenarios 01/02/03 vs 04)
+
+  Both are positive/negative polarity pairs, and the distinction each draws IS
+  the behaviour under test — collapsing either would delete the contract. The
+  checker's own guidance is to normalize only when the differing wording is
+  accidental drift; it is not. No change made.
+
+  Background was also left minimal on purpose: the "carries every load-file
+  dependency" Given cannot move into it, because scenario 03 asserts the
+  opposite and a Background carrying it would contradict that scenario.
+
+  ## E2E QA procedure (specifier, 2026-08-05)
+
+  1. **Reproduce before fixing.** On any host, run
+     `npx vitest run test/readLiveRoleHeldTicketsCli.test.js` from
+     `extension/`. Confirm 2 failed / 3 passed with deep-equal `{}`, and note
+     the duration — it completes in seconds. A timeout instead means you are
+     looking at a different failure; stop and say so.
+
+  2. **Confirm the mechanism directly, not through the test.** Copy the four
+     currently-listed `.bb` files into an empty fixture tree and run
+     `bb <fixture>/swarmforge/scripts/pipeline_stage_cli.bb report <fixture>`.
+     Confirm `FileNotFoundException` naming `mono_router_lib.bb` at
+     `handoff_lib.bb:28`. Add the fifth file and confirm it loads.
+
+  3. **After the fix**: both BL-487 tests green, and step 2's five-file
+     fixture still the minimal set — deleting any one of the five must still
+     break it. That is what proves the copy list was not widened to
+     everything.
+
+  4. **The loud-degrade contract (scenario 03).** Delete one dependency from
+     the fixture and confirm `readLiveRoleHeldTickets` surfaces a failure
+     rather than returning `{}`. Then confirm the genuinely-empty case — a
+     valid fixture with no role holding a ticket — still returns an empty
+     result without raising. Both halves, or the change has just traded one
+     indistinguishable case for another.

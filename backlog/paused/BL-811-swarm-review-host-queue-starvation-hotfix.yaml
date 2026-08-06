@@ -1,0 +1,250 @@
+id: BL-811
+title: "Swarm review: high-severity verification of Host queue starvation hotfix"
+milestone: M8
+type: defect
+status: todo
+epic: swarm-reliability
+human_approval: approved
+severity: high
+priority: 10
+direction: human-requested
+depends_on: []
+assigned_to: none
+mutation_cost: medium
+invariants:
+  - "No queued Host question can wait indefinitely behind stale queue state, stale poll state, or expired items."
+  - "Queue departures remain explicit and auditable: run-by-selection, clear-all, or TTL drop receipt."
+  - "The poll-answer path remains live over the existing front-desk fan-out; no dark producer/consumer pair is introduced."
+
+approval_context: >
+  Human asked for a high-severity ticket to have the swarm review the hotfix
+  that addressed queue starvation in the Host bridge path. This ticket is the
+  explicit review gate and not a feature extension.
+
+  SPECIFIER PASS 2026-08-05 — what changed since the human wrote this, and
+  why. The human's goals, out_of_scope and notes are carried through
+  unchanged. Three things had to change for the ticket to be executable at
+  all; none of them widen what the human asked for.
+
+  (1) THE ACCEPTANCE CONTRACT HAD NO STEP HANDLERS. `acceptance:` points at
+  BL-810's feature file, which is live in `specs/features/` with ten
+  scenarios and zero handlers — nothing under `specs/pipeline/steps/` matches
+  it. `specs/pipeline/runtime.js:24` throws on the first unmatched step, so
+  as written this ticket hard-fails its own acceptance gate before reviewing
+  anything (BL-233). Wiring those handlers is now explicitly in scope and
+  pinned by `required_wiring`. That is real build work, not review work, and
+  it is the one thing here that must be written rather than checked.
+
+  (2) `required_wiring` WOULD HAVE FAILED CLOSED. The gate
+  (`pre_qa_gate_lib.bb`) parses each entry as `path::pattern[::why]` and
+  greps `path` for `pattern` as a LITERAL substring. The human's fourth entry
+  had no `::` at all (unparseable → fail closed), and the third used
+  `parseQueuedPrompt/parseQueuedPromptPoll`, a literal that appears nowhere
+  in the file. Both are rewritten to real literals, verified present at this
+  commit. Same intent, now enforceable.
+
+  (3) TWO DEFECTS FOUND AT SPEC TIME, listed under `review_findings` below.
+  D1 is a live queue-wipe path and is the reason `severity: high` is
+  correct rather than generous. Finding these is review goal 4; fixing them
+  is in scope per the human's own "open follow-up tickets with minimal,
+  targeted scope" — they are targeted enough to belong here.
+
+  `depends_on: BL-810` was dropped: the hotfix under review IS BL-810's
+  implementation, already in the tree, so this ticket cannot wait on BL-810
+  reaching done. BL-810's disposition is a separate question raised with the
+  human (see notes); this ticket is correct either way.
+
+source: |
+  Human request in Cursor chat, 2026-08-05.
+
+  Hotfix under review:
+  - extension/src/tools/telegramCursorBridgeLive.ts
+  - extension/src/tools/telegramCursorBridgeCore.ts
+  - extension/test/telegramCursorBridgeLive.test.js
+
+  Committed to main by the specifier on 2026-08-05 as an operator hotfix
+  under review by this ticket, because leaving it uncommitted in the master
+  checkout blocked build-sync and put the human's live fix one hot-sync away
+  from a phantom revert. Committing it is what makes it reviewable; this
+  ticket is the gate it has not yet passed.
+
+description: |
+  The Host queue starvation hotfix was applied quickly and now needs a
+  high-severity swarm review focused on regressions, queue safety, and
+  fan-out correctness under real operating conditions.
+
+  Review goals:
+  1. Verify starvation is actually removed in production-like flow, not only in
+     unit tests.
+  2. Validate clear-all and TTL behavior cannot silently lose prompts or trigger
+     unintended runs.
+  3. Confirm poll_answer handling still rides the existing front-desk fan-out
+     end-to-end.
+  4. Identify any follow-up defects that should be split into separate tickets.
+
+  ## What is actually in the tree
+
+  The hotfix landed six behaviours. Compile is clean and the three touched
+  suites are green (243 tests) as of the reviewed commit — so the review is
+  not chasing a red build, it is checking whether green means correct.
+
+  ```
+  QUEUED_PROMPT_TTL_MS = 72h          new named constant (BL-810 R4)
+  sweepExpiredQueuedPrompts           TTL sweep + receipt, per origin topic
+  clearAllOptionIndex                 clear-all as a trailing poll option
+  originTopicId                       queued item remembers where it was asked
+  presentQueueSelectionPollAfterIdle  re-read queue from disk on idle
+  clearQueuedPollIfStale (rewritten)  drop a poll whose head no longer matches
+  ```
+
+  The rewritten `clearQueuedPollIfStale` is the starvation fix proper: the old
+  version kept an outstanding poll alive while ANY listed item survived, so
+  items queued after the poll went out could wait behind it indefinitely. The
+  new version drops the poll whenever the head of the queue has moved. That is
+  the claim review goal 1 must confirm against real flow, not just the unit
+  test that asserts it.
+
+  ## Scope this ticket carries beyond pure review
+
+  Two things must be BUILT here, both consequences of the above:
+
+  - **Step handlers for BL-810's ten scenarios**, in a new
+    `specs/pipeline/steps/bl810HostQueuePollClearAllTtlSteps.js` registered in
+    `specs/pipeline/steps/index.js`. Without them the acceptance contract this
+    ticket is verified against cannot execute at all.
+  - **Fixes for the `review_findings` below**, which are defects in the
+    hotfix itself.
+
+  Everything else is verification, and the human's "review ticket, not a
+  rewrite ticket" note governs it: confirm or refute, do not redesign.
+
+review_findings: |
+  Found by the specifier while reading the hotfix, before the pipeline saw
+  it. Each is a lead the reviewing roles must CONFIRM OR REFUTE — not a
+  finding to take on trust.
+
+  ### D1 — a vote retraction can wipe the entire queue (high)
+
+  `telegramCursorBridgeLive.ts`, `processQueuedPollAnswer`:
+
+  ```ts
+  const selectedIndex = pollAnswer.option_ids?.[0];
+  if (typeof selectedIndex !== 'number' || selectedIndex < 0 || ...) {
+    if (selectedIndex === pendingPoll.clearAllOptionIndex) {   // <-- here
+  ```
+
+  Telegram sends `option_ids: []` when a human RETRACTS a vote in a
+  non-anonymous poll, so `selectedIndex` is `undefined`. For any outstanding
+  poll whose `clearAllOptionIndex` is also `undefined`, `undefined ===
+  undefined` is true and the whole queue is cleared.
+
+  That is not hypothetical on this deploy. `parseQueuedPromptPoll` only sets
+  `clearAllOptionIndex` when the persisted value is a number, and
+  `clearQueuedPollIfStale` treats `clearAllOptionIndex === undefined` as
+  acceptable rather than stale — so a poll posted by the PRE-hotfix build
+  survives the upgrade with the field absent, and the first retraction
+  against it empties the queue. Directly violates invariant 2: the departure
+  is receipted, but nobody chose it.
+
+  Fix shape: require `clearAllOptionIndex` to be a number before comparing.
+  Confirm the receipt still names what went.
+
+  ### D2 — two changes ride along with no ticket of their own (medium)
+
+  Outside BL-810's stated scope and outside this ticket's:
+
+  - `telegramCursorBridgeCore.ts`, `formatHelpMessage` — new `/pause` and
+    `/resume` lines, and `/stop` / `/start` added to the hard-confirm line.
+    Help text advertising commands whose implementation this review has not
+    checked.
+  - `telegramCursorBridgeLiveness.ts`, `formatCursorBridgeLivenessLine` — the
+    idle line no longer shows `· N waiting`. Defensible (the poll is now the
+    actionable surface) but it is a deliberate UX change, not a starvation
+    fix.
+
+  Neither is wrong on its face and neither should be reverted blind. The
+  reviewing role must decide, per "An Approval Authorizes Only Its Ticket's
+  Work" (BL-506): confirm each is intended and record it here, or split it
+  to its own ticket. Do not let them land unexamined simply because they
+  arrived in the same diff.
+
+acceptance: specs/features/BL-810-host-queue-selection-poll-clear-all-and-ttl.feature
+
+required_wiring:
+  - "specs/pipeline/steps/index.js::bl810HostQueuePollClearAllTtlSteps::the acceptance contract this ticket is verified against must actually execute; an unregistered step module means runtime.js throws on scenario 01."
+  - "extension/src/tools/telegramCursorBridgeLive.ts::sweepExpiredQueuedPrompts::the 72h sweep must remain called from the poll loop, not merely defined."
+  - "extension/src/tools/telegramCursorBridgeLive.ts::clearAllOptionIndex::clear-all must stay a real poll option that dequeues without starting a run."
+  - "extension/src/tools/telegramCursorBridgeCore.ts::clearAllOptionIndex::the option index must survive persist/parse, or D1's guard cannot be evaluated at all."
+  - "extension/src/tools/telegramCursorBridgeCore.ts::originTopicId::a queued item must remember its origin topic so the TTL receipt lands where the question was asked."
+  - "extension/src/tools/telegramCursorBridgeLive.ts::poll_answer::the vote must keep arriving over the front desk's existing fan-out (telegramFrontDeskBotCore -> cursorBridgeInboundQueue -> here). A clear-all/expiry feature whose votes never reach the bridge is the dark-pair failure the intake explicitly asked us to avoid."
+
+out_of_scope: |
+  - New queue features beyond the hotfix scope (reordering, bulk run, new UI).
+  - Renaming Cursor Remote to Host (BL-725).
+  - Broader refactors of queue architecture unrelated to starvation.
+
+notes: |
+  This is a review ticket, not a rewrite ticket. If the swarm finds issues,
+  open follow-up BL tickets with minimal, targeted scope and link them back
+  here.
+
+  Suggested review execution:
+  - Run `npm run compile`
+  - Run `npx vitest run test/telegramCursorBridgeLive.test.js`
+  - Execute manual Telegram E2E for select-run, clear-all, TTL expiry receipt,
+    and fan-out vote delivery.
+
+  ## BL-810's disposition — ANSWERED by the human (2026-08-06)
+
+  The question raised via `role_ask` on 2026-08-05 has been answered:
+  **"Close BL-810 as satisfied by the hotfix; BL-811 is its verification
+  gate."** The alternatives — hold BL-810 paused until this ticket lands, or
+  revert the hotfix and rebuild it through the pipeline — were declined.
+
+  So BL-810 is closed (`status: done`, `closed_as: satisfied-by-hotfix`,
+  `closed_by_commit: 2b8d19d1`) and the coordinator moves it to
+  `backlog/done/M8/` as bookkeeping. It is never promoted; there is no parcel
+  for it and no merge to do.
+
+  **What that puts on THIS ticket.** BL-810's closure records only that the
+  code landed. Every check that would have run had it gone through the
+  pipeline now runs here, and nowhere else:
+
+  - The ten scenarios in the shared feature file have no step handlers. Until
+    this ticket writes them, the acceptance contract for BL-810's behaviour
+    has never executed — not once, in any form.
+  - D1 and D2 under `review_findings` are unreviewed defects in shipped,
+    live code.
+  - No coder, cleaner, architect, hardener, documenter or QA pass exists for
+    any of it.
+
+  This ticket is therefore the only quality gate the feature will ever get.
+  Treat a green run here as the real verdict, and a bounce here as a defect
+  already in production — not as pre-release rework.
+
+  ## E2E QA procedure (specifier, 2026-08-05)
+
+  BL-810's own procedure covers the happy paths and still applies in full;
+  run it. These are the additions this review needs on top of it.
+
+  1. **D1, the retraction wipe.** Post a queue selection poll, then hand-edit
+     the persisted `pendingPromptPoll` in the bridge state file to remove
+     `clearAllOptionIndex` — this is exactly the shape a poll left over from
+     the pre-hotfix build has. Retract the vote from the phone. Confirm the
+     queue SURVIVES. Before the fix this empties it; that difference is the
+     test.
+
+  2. **Starvation, in real flow (goal 1).** Queue three questions, let the
+     poll post, then queue two more while the poll is still outstanding.
+     Confirm the next idle transition posts a FRESH poll offering the new
+     head, and that the late arrivals are reachable without anyone typing
+     `/queue`. The old behaviour left them behind the stale poll.
+
+  3. **TTL receipt lands in the origin topic.** Queue one item from a
+     non-Host topic, back-date its `createdAtMs` past 72h, run the sweep.
+     Confirm the receipt arrives in the ORIGIN topic, and that an item with
+     no recorded origin still receipts to the Host topic.
+
+  4. **Fan-out (goal 3), last and not substituted by a unit test.** Vote from
+     the phone and confirm the bridge acts on it end to end: front desk to
+     `cursorBridgeInboundQueue` to the bridge.

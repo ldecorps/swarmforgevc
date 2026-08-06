@@ -1,5 +1,26 @@
 # Raw intake — Unit suite is red again; analyze what fails and why (do not dismiss)
 
+> **DRAINED 2026-08-05 by the specifier — 1:N split into three tickets.**
+> Decision 1 explicitly permitted the split. Which part went where:
+>
+> | part of this intake | ticket |
+> |---|---|
+> | Rows 3-4 of the failure table (the BL-487 `{}` assertion failures) — root-caused to a missing `mono_router_lib.bb` in the fixture copy list, plus the loud-degrade hardening | **BL-814** (`defect`, `severity: high`) |
+> | Rows 1-2 and 5-7 (the five `Test timed out in 20000ms` failures) — classification on a quiet host, then whatever fix tickets the evidence justifies | **BL-815** (`defect`, `severity: medium`) |
+> | Goal 4 and decision 5, the meta ask: parcels observing a red `npm test` and proceeding with "environmental, not bouncing" | **BL-816** (`chore`) |
+>
+> All four locked human decisions survive into the tickets; none was dropped
+> or reworded. Decision 4's severity posture is honoured — the confirmed
+> regression carries `high`; the unclassified five carry `medium` with an
+> invariant preventing "unclassified" from becoming a permanent resting place.
+> Decision 5's answer (enforcement gap in Article 4.4, not missing permission)
+> is argued in BL-816's `approval_context`.
+>
+> Two questions were left open for the human rather than assumed: whether
+> BL-815's quiet-host measurement may pause continuous shifts, and whether
+> BL-816 should also get a mechanical pre-QA check now or after BL-815's
+> baseline.
+
 Status: new intake, not minted. Capture only (human via Cursor 2026-08-05
 ~09:30 CEST). Human is concerned that the swarm repeatedly treats a red unit
 suite as non-concerning ("environmental" / load flake) and keeps shipping.
