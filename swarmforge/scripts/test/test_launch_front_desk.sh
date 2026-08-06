@@ -65,26 +65,36 @@ check "a missing compiled bridge entrypoint fails the real launch, not silently"
   '[[ "$rc" -ne 0 && "$OUT" == *"bridge entrypoint not found"* ]]'
 rm -rf "$F"
 
-# ── 4. missing Telegram env fails loudly before spawning anything ───────────
+# ── 4. BL-622: missing TELEGRAM_BOT_TOKEN/CHAT_ID no longer fails at this
+#      script's own gate - resolution (and any refusal) is delegated to
+#      front_desk_supervisor.bb itself (see test_front_desk_supervisor_
+#      bl622_refusal.sh for the supervisor-level refusal proof). A swarm
+#      with its own fleet creds file must still be able to launch from a
+#      shell with zero ambient Telegram env - e.g. swarm_ensure's stale-
+#      pid-file repair path, BL-622 scenario 06. Proven WITHOUT spawning the
+#      real supervisor (which would need an isolated fleet home and process
+#      cleanup): with the compiled bridge entrypoint deliberately missing,
+#      the OLD code would have died on "TELEGRAM_BOT_TOKEN is not set"
+#      before ever reaching the entrypoint check; this proves the new code
+#      reaches PAST the (now-removed) token gate and fails on the
+#      entrypoint instead - not just that the launch fails for SOME reason.
 # `env -u` guarantees these are actually absent regardless of the calling
 # shell's own exported vars (a dev box routinely has real TELEGRAM_BOT_TOKEN
-# etc. set globally) - without it this check silently passes THROUGH to a
-# real launch using real live credentials instead of exercising the
-# missing-env guard at all.
+# etc. set globally).
 F="$(make_fixture)"
-OUT="$(env -u TELEGRAM_BOT_TOKEN -u TELEGRAM_CHAT_ID -u TELEGRAM_PRINCIPAL_USER_ID bash "$LAUNCHER" "$F" 2>&1)" && rc=0 || rc=$?
-check "a missing TELEGRAM_BOT_TOKEN fails the real launch with a clear message" \
-  '[[ "$rc" -ne 0 && "$OUT" == *"TELEGRAM_BOT_TOKEN"* ]]'
-# Safety net: if the guard above ever regresses (or another leaked var masks
-# it again), do not leave a live supervisor running against a fixture dir
-# this test is about to rm -rf.
-if [[ -f "$F/.swarmforge/operator/front-desk-supervisor.pid" ]]; then
-  spawned_pid="$(< "$F/.swarmforge/operator/front-desk-supervisor.pid")"
-  if [[ "$spawned_pid" =~ ^[0-9]+$ ]]; then
-    spawned_pgid="$(ps -o pgid= -p "$spawned_pid" 2>/dev/null | tr -d ' ')"
-    [[ -n "$spawned_pgid" ]] && kill -- "-$spawned_pgid" 2>/dev/null || true
-  fi
-fi
+rm -f "$F/extension/out/tools/start-bridge-headless.js"
+OUT="$(env -u TELEGRAM_BOT_TOKEN -u TELEGRAM_CHAT_ID TELEGRAM_PRINCIPAL_USER_ID=1 bash "$LAUNCHER" "$F" 2>&1)" && rc=0 || rc=$?
+check "missing TELEGRAM_BOT_TOKEN/CHAT_ID reaches past the old gate (fails on the entrypoint, not the token)" \
+  '[[ "$rc" -ne 0 && "$OUT" == *"bridge entrypoint not found"* && "$OUT" != *"TELEGRAM_BOT_TOKEN is not set"* ]]'
+rm -rf "$F"
+
+# ── 4b. TELEGRAM_PRINCIPAL_USER_ID is still hard-required at this script's
+#       own gate (unrelated to BL-622 - the bot's own CLI needs it
+#       regardless of where the token came from) ───────────────────────────
+F="$(make_fixture)"
+OUT="$(env -u TELEGRAM_PRINCIPAL_USER_ID TELEGRAM_BOT_TOKEN=x TELEGRAM_CHAT_ID=y bash "$LAUNCHER" "$F" 2>&1)" && rc=0 || rc=$?
+check "a missing TELEGRAM_PRINCIPAL_USER_ID still fails the real launch with a clear message" \
+  '[[ "$rc" -ne 0 && "$OUT" == *"TELEGRAM_PRINCIPAL_USER_ID"* ]]'
 rm -rf "$F"
 
 # ── 5. BL-404: front-desk-PARKED.md refuses the launch, even with zero env ──

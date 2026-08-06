@@ -1,0 +1,122 @@
+id: BL-821
+title: "Daily briefing emails for past days keep arriving: the sent-marker is written to the working tree only and never committed, and the send path has no date window, so any checkout matching main re-mails the whole archive"
+milestone: M8
+status: todo
+type: defect
+severity: medium
+epic: swarm-reliability
+priority: 20
+direction: human-requested
+human_approval: pending
+depends_on: []
+mutation_cost: low
+
+approval_context: >
+  Drained from `backlog/INTAKE-briefing-emails-past-days.md` (human via Cursor
+  2026-08-05 ~10:07 CEST), which the human flagged "small defect, real inbox
+  pain - drain soon; not Bubble polish".
+
+  One decision was explicitly delegated to the specifier and is worth the
+  human seeing: the send window. The intake offered "today UTC, or today and
+  yesterday - specifier picks". Picked: **today and yesterday, UTC**. A
+  briefing generated late in the day, or a sweep whose first tick lands after
+  00:00 UTC, would be permanently unmailable under a today-only gate - the
+  briefing would be silently lost rather than merely late, which trades an
+  inbox-noise defect for a data-loss one. Two days tolerates that boundary
+  and is still nowhere near an archive dump.
+
+  Severity kept at the intake's default `medium` rather than raised. Measured
+  2026-08-06: the immediate mitigation held - `main`'s marker is caught up
+  through `2026-08-05.md` - so the flood is not currently raging. The
+  mechanism is nonetheless fully live (see source), which is why this is a
+  defect and not a nice-to-have.
+
+source: |
+  Raw intake `backlog/INTAKE-briefing-emails-past-days.md`, drained by the
+  specifier 2026-08-06.
+
+  ## Both legs re-verified in live code at 02d17ccc
+
+  `swarmforge/scripts/briefing_email_lib.bb`, called every tick by handoffd's
+  briefing sweep (`handoffd.bb:1886` -> `send-unsent-briefings!`):
+
+  - **Leg A - the marker is working-tree-only.**
+    `record-briefing-sent!` (`:31-34`) does a plain `spit` of `.sent.json`.
+    Nothing commits it. The marker is therefore local state that any pull,
+    second host, or fresh worktree does not have.
+  - **Leg B - the send path has no date gate at all.**
+    `find-unsent-briefings` (`:37-46`) lists every `*.md` under the briefings
+    dir, removes the sent set, sorts oldest-first and returns all of it. A
+    stale marker means the entire archive is queued for mailing.
+
+  ## The drift is recurring, not historical
+
+  Measured 2026-08-06 on `main`: the committed marker lists through
+  `2026-08-05.md`, while the working tree's marker already lists
+  `2026-08-06.md` and that update is UNCOMMITTED. So today's briefing has
+  been sent and recorded locally only - precisely the state the intake
+  described on 2026-08-05, recurring one day later. Any checkout matching
+  `main` would mail `2026-08-06.md` again. The 2026-08-05 mitigation caught
+  the marker up but, as the intake predicted, "does not close the defect".
+
+description: |
+  ## Shape
+
+  Two independent fixes, both required. Either alone leaves a live failure
+  mode:
+
+  1. **Leg A - make the sent-marker durable.** A successful send must persist
+     `.sent.json` to the shared store the sweep reads, not just the local
+     working tree. A scoped git commit of the marker file is the obvious fit
+     and the same family as other durable operator bookkeeping. Only the
+     marker is committed - a send must never sweep unrelated working-tree
+     changes into its commit (the BL-506 rule applies to machine-authored
+     commits exactly as it does to agent ones).
+  2. **Leg B - bound the send window.** Emails go out only for briefings
+     whose date label is today or yesterday (UTC). A briefing older than that
+     is never mailed by the ordinary sweep, no matter what the marker says.
+     Unbounded historical catch-up remains possible only through an explicit
+     one-shot operator action, never as a side effect of a stale marker.
+
+  ## Why both legs
+
+  Leg A stops the marker from drifting; leg B stops a drifted marker from
+  being catastrophic. The human asked for defence in depth explicitly, and
+  the two legs fail in different directions: leg A can still be defeated by a
+  host that cannot push, and leg B alone would silently stop mailing a
+  briefing that legitimately lagged.
+
+  ## Bounded, not silent
+
+  A briefing suppressed by the window is not dropped quietly - the sweep says
+  so, so a human reading the log can tell "not mailed because outside the
+  window" from "not mailed because nothing was generated". A silent bound
+  would turn an inbox-noise defect into an invisible-briefing defect.
+
+acceptance: specs/features/BL-821-briefing-emails-for-past-days-keep-arriving.feature.draft
+
+# BL-633. Two properties the scenarios cannot express.
+invariants:
+  - "A given briefing file is emailed at most once across every host and checkout, under any interleaving of sweep ticks, pulls, and marker writes."
+  - "No ordinary sweep path ever emails a briefing dated outside the allowed window, whatever the marker contains; only an explicit one-shot operator action can."
+
+out_of_scope: |
+  - Briefing content quality, and the lean closing ceremony. Separate
+    intakes; the ceremony is now BL-820 (intake out-of-scope, verbatim).
+  - Retiring the evening/pilot `.md` siblings in `docs/briefings/` — unless
+    they also false-trigger under the new window policy, in which case say so
+    rather than fixing it here (intake out-of-scope, verbatim). Noted as
+    relevant: `main`'s marker does carry a `2026-07-30-evening.md` entry, so
+    non-`YYYY-MM-DD.md` names do reach this path and the window predicate
+    must decide them deliberately rather than crash or silently pass them.
+  - The one-shot operator catch-up action itself. Leg B only has to refuse
+    unbounded catch-up; building the explicit operator escape hatch is a
+    separate slice if the human ever wants it.
+
+notes: |
+  Second of the two non-Bubble intakes the human flagged for priority over
+  the Bubble batch; drained in the same pass as BL-818/819/820.
+
+  The specifier's pick of a two-day window is recorded in approval_context
+  rather than buried here, because the human offered the choice explicitly
+  and should see which way it went.
