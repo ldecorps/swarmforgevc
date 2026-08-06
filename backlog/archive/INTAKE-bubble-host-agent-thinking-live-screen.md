@@ -134,3 +134,91 @@ Resume point: once the Android-seam policy is settled (where device behavior
 is verified, given it cannot ride the Node acceptance runner), spec these
 against it. The behavior captured above is clear and needs no further
 questions — only a place to put its contract.
+
+---
+
+## Specifier disposition 2026-08-06 — BL-769 blocker CLEARED; held on one cross-epic contradiction
+
+The BL-769 blocker every prior disposition on this file names is GONE. BL-769
+and BL-761 are in `backlog/done/M8/`, the Android testability policy is in the
+constitution, and the gradle JVM seam runs. This intake is no longer blocked on
+where an Android acceptance contract can live.
+
+It is held on something new, found by reading the four screen intakes as one
+cluster (BL-680 consolidation pass) instead of one at a time.
+
+**The contradiction.** Two epics give opposite answers to how a Bubble screen
+is built:
+
+- **BL-774** (Bubble Live Screen epic, 2026-08-01) — "*Native UI only, or a
+  staged WebView-backed migration?* — **Native**, from slice A. A WebView would
+  carry the webview constraints this migration exists to escape." Its slice A,
+  BL-775, is specced native and is already `human_approval: approved`.
+- **BL-824** (Bubble thin shell + remote UI, 2026-08-06, human-approved) —
+  the human's own locked decision of 2026-07-31: auto-update for most of the
+  app, a thin native shell, and **APK only when the shell itself changes**.
+  A new native screen changes the APK, which that decision forbids.
+
+BL-774's "native" was a specifier default, explicitly labelled as such under
+"the defaults taken". BL-824's is a human ruling. That asymmetry suggests the
+answer, but reversing the technology of an already-approved ticket (BL-775) is
+the human's call, not a specifier's — so it was asked rather than assumed.
+
+**Asked of the human 2026-08-06** via `role_ask.bb`, with three options: remote
+HTML for all screens (respec BL-775, screens sequence behind BL-825); native for
+all screens (thin shell stops short of screens); or BL-775 stays native and only
+new screens are remote.
+
+**Why the whole cluster waits on it.** The answer decides each screen's
+technology, its testability story (a bridge-served HTML bundle is Node-testable
+today; a native page needs the JVM seam and a manual device procedure), its
+`depends_on` (BL-825 or nothing), and whether these are slices of BL-774 /
+BL-824 or their own epic. Speccing four screens before it lands would mean
+rewriting four tickets afterwards.
+
+**Nothing else on this intake is unclear.** Its human-locked decisions are sound
+and are carried forward verbatim at mint. The remaining open questions the human
+listed (page titles, pager order, window defaults, blurb source, chart-vs-number
+layout) are specifier calls and will be decided at mint, not re-asked.
+
+---
+
+## Specifier disposition 2026-08-06 — DRAINED into BL-833 + BL-834 (1:N split).
+
+Unblocked by the human's ruling of 2026-08-06:
+
+> Remote HTML for all 4, and flip BL-775 to remote
+
+Split as this intake's own mint hint asked ("Likely epic + thin slice A (shell +
+one live source) rather than one fat ticket"):
+
+- **BL-833** — the host-agent activity feed on the bridge (this intake's
+  host/bridge requirements 7-9).
+- **BL-834** — the Bubble Host page rendering it (requested outcomes 1-6), a
+  remote HTML page. Epic BL-830.
+
+**Open questions answered from the code, measured 2026-08-06.**
+
+1. *Source of truth?* The **existing SDK progress lines**.
+   `summarizeSdkProgressLine` already summarizes host events, and
+   `createThrottledProgressReporter` already throttles them — but their only
+   consumer in the whole tree is `telegramCursorBridgeLive.ts`, which sends them
+   to Telegram. Nothing persists or serves them. No new channel and no
+   transcript walker is needed; a tee and a read route are.
+2. *Let's Talk turns only, or any Cursor session?* Any host session — the feed is
+   keyed by session regardless of what started it, so restricting it would be
+   extra work that removes capability.
+3. *Native list vs WebView?* Settled by the human's ruling: remote HTML.
+4. *Barge-in on this screen in slice 1?* No — the page is a window, not a
+   cockpit, and BL-834's `approval_context` argues the case both ways for the
+   human.
+
+**Requirement 6 is met rather than deferred:** the pager swipe already returns to
+Talk, and BL-834 re-seeds and re-attaches on return, so no separate affordance is
+built.
+
+**Redaction (requirement 9) is deliberately absent, and BL-833 says so plainly:**
+verified 2026-08-06, no redaction helper exists in `extension/src` to inherit a
+posture from. The feed changes no exposure class — every line is already going to
+the operator's Telegram topic under the same principal — so a real redaction pass
+belongs in its own ticket covering every surface at once, Telegram included.

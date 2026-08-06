@@ -139,3 +139,29 @@ Asked of the human 2026-08-06 via `role_ask.bb`. Resume here with the answer;
 no other question is open on this intake, and the rest of its verbs (drag
 unchanged, long-press pause/resume unchanged, permission prompt as today) are
 clear and need no further input.
+
+---
+
+## DRAINED 2026-08-06 -> BL-828
+
+Human answered the 2026-08-06 conflict question:
+
+> Delay the idle tap ~300ms so double-tap can expand (mic starts slightly late)
+
+Specced as `backlog/paused/BL-828-bubble-collapsed-gesture-model.yaml`, with
+`specs/features/BL-828-bubble-collapsed-gesture-model.feature` as its acceptance
+contract (lint-clean, IR-DRY 0 findings), bound to the BL-769 gradle JVM unit
+seam. `human_approval: pending`.
+
+Consolidation (BL-680): drained 1:1, NOT merged with any sibling Bubble intake.
+The four screen intakes are remote UI under the BL-824 thin-shell epic and share
+no code with the native overlay touch path; the hey-bubble wake intake is new
+voice capability whose gestures must be arbitrated against this decider after it
+exists rather than designed blind alongside it.
+
+Every requested outcome (1-8) is carried into BL-828. Two consequences of the
+human's ruling that the intake did not state are decided in the ticket and
+flagged in its `approval_context` for the human's eye: the deferral applies to
+the IDLE tap only (so a double-tap while recording sends AND expands), and the
+whole gesture state machine is extracted to a pure-logic decider so acceptance
+item 5 (dragging is never a tap) has a runnable contract.

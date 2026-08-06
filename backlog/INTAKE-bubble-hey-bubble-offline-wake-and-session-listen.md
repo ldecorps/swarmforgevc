@@ -180,3 +180,31 @@ extension host, or `.swarmforge/` state — data, endpoints, or projections the
 phone merely renders — that slice is testable in the Node runner today and is
 NOT blocked. Split it out and spec it rather than holding the whole intake
 behind BL-769.
+
+---
+
+## Specifier disposition 2026-08-06 — both prior blockers CLEARED; still at root, next in line
+
+Every earlier disposition on this file holds it behind the Android
+acceptance-seam blocker. **That blocker is gone** (BL-769 and BL-761 are in
+`backlog/done/M8/`; the Testability Boundary — Bubble policy is in the
+constitution; the gradle JVM seam runs).
+
+The second blocker — how a Bubble screen is built — is also gone. The human
+ruled 2026-08-06:
+
+> Remote HTML for all 4, and flip BL-775 to remote
+
+so a Bubble SCREEN is a remote HTML page in the UI bundle (BL-825 resolves it,
+BL-829 renders it), and no screen changes the APK.
+
+This intake was NOT in that four-screen cluster and is not drained yet. It is
+next in line, and whoever drains it must place it against BL-824's thin-shell
+boundary rather than assume the screens ruling covers all of it: the
+collapsed-bubble gestures, the overlay window, the mic/talk engine and the wake
+word are **native shell** by BL-824's locked decision 2, while pages and sheets
+are candidates for remote HTML. An intake that straddles that line splits along
+it. BL-824's slice E tracks the remaining placement work.
+
+**No question is pending on this file.** Nothing here needs the human before it
+can be drained.

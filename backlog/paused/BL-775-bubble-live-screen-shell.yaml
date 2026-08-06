@@ -1,5 +1,5 @@
 id: BL-775
-title: "Bubble Live Screen shell — a native, read-only Live Screen fed by the existing /resident-pane snapshot"
+title: "Bubble Live Screen — the coordinator + resident pane view ships as a remote HTML page in the Bubble UI bundle, read-only, built from the Live Screen the bridge already serves"
 milestone: M8
 type: feature
 status: todo
@@ -8,91 +8,161 @@ human_approval: approved
 assigned_to: none
 priority: 87
 direction: human-requested
-depends_on: [BL-769]
+depends_on: [BL-829]
 mutation_cost: medium
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-775-bubble-live-screen-shell.feature
 
 invariants:
-  - "Both surfaces render the same snapshot: Bubble's Live Screen reads /resident-pane and derives nothing the Mini App does not derive from the same payload, so parity cannot silently drift."
-  - "This slice is read-only: no code path from the Live Screen reaches a bridge endpoint that mutates swarm state."
-  - "Whenever the bridge supplies a failure reason, the Live Screen displays that reason; a bare status code is never the whole message."
+  - "One renderer, never two: the Bubble Live page and the Mini App Live Screen are produced from the same bridge-side Live Screen source, so a change to what Live shows cannot land on one surface and miss the other."
+  - "This slice is read-only: no code path from the Live page reaches a bridge endpoint that mutates swarm state."
+  - "The rendered state is never more confident than the evidence: whenever a pane capture or the bridge supplies a failure reason, the page displays that reason, and a bare status code is never the whole message."
 
 required_wiring:
-  - "android/app/src/main/java/com/swarmforge/floatcompanion/BridgeClient.kt::resident-pane::Bubble fetches the live pane snapshot from the existing bridge endpoint; a screen with no fetch renders nothing"
-  - "android/app/src/main/java/com/swarmforge/floatcompanion/MainActivity.kt::LiveScreen::a navigation entry actually opens the Live Screen; an Activity nothing launches is unreachable (the BL-419 shape)"
+  - "extension/src/bridge/letsTalkRoutes.ts::bubbleLivePage::the Live page must be registered in the served UI bundle manifest; a page the manifest does not name can never be opened from the pager (the BL-419 shape)"
+  - "extension/src/bridge/residentSpyUiHtml.ts::renderLiveScreenBody::the Bubble page must be built from the existing Live Screen renderer, not a second copy of it, or the two surfaces drift on the first change"
 
 description: |
   ## What
 
-  Give Bubble a native Live Screen: a navigation entry from the main screen, a
-  screen that fetches `/resident-pane` through `BridgeClient` using the existing
-  paired token, and a read-only render of the roles the bridge reports, in the
-  canonical Live Screen order.
+  Give Bubble a Live page in its remote UI bundle: an overview showing the
+  **coordinator** and the **resident**, tap either for a full-screen pane view,
+  with the ticket/role/model/claim-age strip the Live Screen already renders,
+  refreshing on the cadence it already uses. Read-only.
 
-  Bubble's `BridgeClient` today speaks only `/lets-talk/*`. This slice adds one
-  authenticated GET alongside those — it does not change the bridge, the
-  endpoint, or its payload.
+  ## Why this ticket was rewritten on 2026-08-06
 
-  ## Why read-only, and why the Mini App is untouched
+  This slice was specced native Kotlin. The human ruled on 2026-08-06:
 
-  The migration is parity-first. Actions are slice C and deprecation is slice D;
-  attempting them together would mean cutting over before parity is
-  demonstrable. Slice A is purely additive, so the worst case if it is wrong is
-  a screen nobody opens — not a broken operator path.
+  > Remote HTML for all 4, and flip BL-775 to remote
+
+  — resolving a live contradiction between this epic's specifier-default
+  ("*Native UI only, or a staged WebView-backed migration?* — **Native**, from
+  slice A") and BL-824's human-locked decision that the APK changes only when
+  the thin shell itself changes. A new native screen changes the APK; the human's
+  own ruling wins, and BL-774's question 1 has been corrected to match.
+
+  ## What that ruling buys, measured rather than assumed
+
+  The native framing had Bubble re-implementing the Live Screen in Kotlin. Remote
+  HTML means the work is mostly **already done on the bridge**, verified against
+  the code on 2026-08-06:
+
+  - `residentSpyUiHtml.ts` (789 lines) already renders the pane grid, the
+    `ticket-strip` (ticket id, ticket title, role label, model label,
+    claim-entered age), and refreshes at `setInterval(refresh, 1500)` — which is
+    exactly the 1500 ms cadence the intake locked.
+  - `residentPaneLive.ts` already exposes `captureMonoRouterLiveScreen`, whose
+    snapshot is precisely the coordinator + resident cast the intake asked for,
+    plus `LIVE_SCREEN_ROLE_ORDER` as the canonical order.
+  - `/resident-pane` already serves that snapshot under the bridge's read auth.
+
+  So slice A is **not a rewrite**. It is: publish the existing Live Screen
+  renderer as a page in the UI bundle, sized and navigable for a phone, and let
+  the shell render it. The parity invariant stops being something to police and
+  becomes structural — there is only one renderer to drift from.
 
   ## Approach
 
-  1. Add an authenticated `/resident-pane` fetch to `BridgeClient`, reusing the
-     existing auth header and the existing friendly-failure mapping.
-  2. Add the Live Screen surface plus its navigation entry from `MainActivity`.
-  3. Order roles with the same canonical order the server already publishes —
-     read it from the snapshot, do not re-declare a role list in Kotlin, or the
-     two orders will drift the first time the pipeline changes.
-  4. Put the parsing and ordering logic on the pure-logic side of BL-769's JVM
-     seam, so scenarios 02 and 03 are covered by real unit tests rather than a
-     manual procedure. This is the whole reason this ticket depends on BL-769.
+  1. Extract the Live Screen body from `residentSpyUiHtml.ts` behind a named
+     renderer both the existing Mini App route and the new bundle page call. Do
+     not fork the HTML; a copy is the one thing this ticket's first invariant
+     forbids.
+  2. Register the page in the UI bundle manifest BL-825 defines, so BL-829's
+     pager can open it.
+  3. Phone layout: the overview shows coordinator and resident as two cards;
+     tapping one opens that pane full-screen; a back affordance returns. The
+     ticket strip stays visible in the full-screen view — this is a hard
+     constraint carried from BL-569 and it binds here too.
+  4. Keep the read path exactly as it is. This page adds no bridge contract.
 
-  ## Out of scope
+  ## The locked human decisions this page must honour
 
-  - Any control, keystroke, or write action from the Live Screen (slice C; see
-    also BL-569, which the epic notes recommend folding in there).
-  - Deprecating, redirecting or flagging off the Mini App Live Screen (slice D).
+  Carried verbatim in substance from
+  `INTAKE-bubble-live-screen-coordinator-resident.md` (human via Let's Talk /
+  Cursor, 2026-07-31), read-only half:
+
+  1. **Navigation.** Live is another expanded-Bubble pager page (same family as
+     Notes / Control). Default expand still Let's Talk unless later changed.
+  2. **Cast.** Overview shows coordinator and resident (mono-router shape). Tap
+     either → full-screen pane view.
+  3. **Refresh.** Keep the current Mini App poll period — 1500 ms. Do not invent
+     a true continuous stream in version one.
+  4. **Metadata.** Ticket id, ticket title, role label, model label,
+     claim-entered age, visible in overview and full screen.
+  6. **Accepted in spirit.** Clear idle / sleeping empty state; stale mark if the
+     tunnel lags; do not pack approvals or Control verbs onto this page.
+  7. **Out of version one.** True continuous tmux stream / websocket pipe;
+     host-agent thinking screen (BL-834/BL-835); the full classic eight-pane grid
+     unless mono later expands.
+
+  Decision 5 — the steer text box — is NOT dropped. It is a write path and it
+  already has a fully-specced, human-approved home in **BL-569**, which this
+  ticket does not duplicate. See `notes:`.
+
+out_of_scope: |
+  - Any control, keystroke, or write action from the Live page. That is BL-569,
+    now recorded as this epic's slice C.
+  - Deprecating, redirecting or flagging off the Mini App Live Screen. Slice D.
+    Dual-run is fine and the human explicitly said cutover can wait.
   - Changing `/resident-pane` or any other bridge contract.
-  - Refresh cadence tuning and offline caching beyond what is needed to render.
+  - The full classic multi-pane grid. Coordinator + resident is the cast.
+  - Building the pager's remote-page host. That is BL-829, which this depends on.
 
 approval_context: >
-  Defaults I picked, all amendable:
+  Already approved as a native screen; re-approved in substance by the human's
+  2026-08-06 "flip BL-775 to remote" directive, which is what this rewrite
+  implements. Kept at `approved` on that basis rather than re-asking.
 
-  (1) **Native Kotlin, not a WebView-backed staged migration.** A WebView would
-  carry the very webview constraints this migration exists to escape, and Bubble
-  already talks to the bridge natively.
-
-  (2) **Read-only first, Mini App untouched.** Nothing is deprecated in this
-  slice, so there is no cutover risk to weigh; the dual-run gate is slice D.
-
-  (3) **Depends on BL-769.** Without the JVM unit seam this ticket's acceptance
-  contract would run zero scenarios, which has already happened on five shipped
-  Android tickets. That means it will not start until BL-769 lands. If you want
-  Live Screen in Bubble sooner than that, the honest options are to expedite
-  BL-769 or to accept a manual-procedure-only contract for this slice — tell me
-  which and I will amend.
-
-  The judgement worth your eye: **BL-569** builds a principal-gated remote
-  keyboard into the Mini App Live Screen. That is this epic's slice C on the
-  surface we are retiring. I have not touched BL-569 — but if you agree, it
-  should be folded into this epic rather than built twice.
+  Two specifier calls inside the rewrite, both amendable: (1) the Live Screen
+  HTML is EXTRACTED into a shared renderer rather than copied, which touches the
+  live Mini App route and so carries a small regression risk to a surface that
+  works today — the alternative, a copy, was rejected because it guarantees
+  drift; (2) tap-to-fullscreen and its back affordance are specified here, and
+  BL-569 records that today's tap-to-restore gesture collides with its
+  tap-to-arm, so whoever builds BL-569 must resolve that gesture design against
+  this page rather than against the Mini App alone.
 
 source: |
-  backlog/INTAKE-migrate-live-screen-from-mini-app-to-bubble.md, slice A.
+  `backlog/INTAKE-migrate-live-screen-from-mini-app-to-bubble.md`, slice A.
   Human disposition 2026-08-01 via Let's Talk: "Mint epic + slice A for each,
   human_approval pending (I pick defaults, you amend)."
 
+  Consolidated 2026-08-06 (BL-680) with
+  `backlog/INTAKE-bubble-live-screen-coordinator-resident.md` (human via Let's
+  Talk / Cursor, 2026-07-31), which is the same surface with the UX detail
+  filled in. That intake's seven locked decisions are carried above; its
+  decision 5 (steer) went to BL-569 rather than here, and its remaining open
+  questions were specifier calls, decided at mint.
+
+  Technology flipped from native Kotlin to remote HTML by human directive
+  2026-08-06: "Remote HTML for all 4, and flip BL-775 to remote".
+
 notes: |
+  ## Why there is no new steer ticket (BL-680 consolidation record)
+
+  The intake locks a steer text box on the full-screen pane. **BL-569**
+  (`live screen interactive pane input`, human-approved, priority 96,
+  `status: needs_design`) already specs exactly that, down to the security bar
+  — Telegram initData HMAC against the principal, a default-OFF conf flag, an
+  append-only injection audit log, rate/size limits, an explicit ARMED state so
+  a pocket tap cannot type into a pane, and the hard human constraint that the
+  pane header stays visible behind the keyboard strip.
+
+  BL-774's notes flagged BL-569 as at risk of being paid for twice, because it
+  builds on the Mini App Live Screen while Live migrates to Bubble. **The
+  human's remote-HTML ruling dissolves that risk**: both surfaces now render the
+  same bridge-side Live Screen, so BL-569 lands on both at once. It is recorded
+  as this epic's slice C and amended for the Bubble principal rather than
+  duplicated here.
+
   ## e2e procedure for QA
 
-  With a live swarm and a paired Bubble build: open Live Screen from the main
-  navigation and confirm the role list matches what the Mini App Live Screen
-  shows for the same swarm at the same moment. Then stop the swarm and confirm
-  the screen states the reason rather than a bare code; then point Bubble at a
-  bad token and confirm the same. Confirm no control affordance is present.
+  With a live swarm and a paired Bubble build: open Live from the Bubble pager
+  and confirm the coordinator and resident cards match what the Mini App Live
+  Screen shows for the same swarm at the same moment. Tap the resident, confirm
+  the full-screen pane updates on the ~1.5 s cadence and that ticket id, title,
+  role, model and claim age are all visible. Stop the swarm and confirm the page
+  states the reason rather than a bare code; point Bubble at a bad token and
+  confirm the same. Confirm no control affordance is present anywhere on the
+  page.

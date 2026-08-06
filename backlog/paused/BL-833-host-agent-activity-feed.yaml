@@ -1,0 +1,161 @@
+id: BL-833
+title: "Host-agent activity feed — tee the progress lines the host agent already emits into a bounded per-session feed the bridge serves, so a client other than Telegram can watch a turn happen"
+milestone: M8
+type: feature
+status: todo
+epic: bubble-screens
+human_approval: approved
+assigned_to: none
+priority: 84
+direction: human-requested
+depends_on: []
+mutation_cost: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-833-host-agent-activity-feed.feature
+
+invariants:
+  - "The feed contains only lines the host agent actually emitted: no synthesized step, no inferred progress, and no reconstructed transcript ever enters it."
+  - "The feed is bounded: a long-running session cannot grow its stored activity without limit."
+  - "Observing a turn never damages it: teeing into the feed is best-effort, and no failure of the feed can delay, drop or fail the host agent's own turn or its reply."
+
+required_wiring:
+  - "extension/src/tools/telegramCursorBridgeLive.ts::recordHostActivity::the progress reporter must actually tee into the feed; a feed nothing writes to stays dark however green its unit tests are (the BL-419 shape)"
+  - "extension/src/bridge/bridgeServer.ts::host-activity::the feed's read route must actually be served, not merely implemented"
+
+description: |
+  ## What
+
+  Make the host agent's activity readable by something other than Telegram: a
+  bounded, per-session feed of the progress lines the host already produces,
+  served by the bridge under its existing auth, and pushed live over the SSE
+  channel the bridge already runs.
+
+  This is the data half of the "watch the host agent think" intake. The screen
+  is BL-834 and depends on this.
+
+  ## What exists today, measured 2026-08-06
+
+  The summarization is already built and already good:
+
+  - `summarizeSdkProgressLine` (`extension/src/bridge/cursorBridgeProgress.ts`)
+    turns a host SDK event into a one-line human-readable summary.
+  - `createThrottledProgressReporter` throttles those lines for a consumer.
+  - `/events` on the bridge is already an authenticated `text/event-stream` with
+    a live client set.
+
+  What does **not** exist is any way to read them. The only consumer of
+  `createThrottledProgressReporter` in the entire tree is
+  `extension/src/tools/telegramCursorBridgeLive.ts`, which sends the lines to
+  Telegram. Nothing persists them, nothing serves them, and no second consumer
+  can attach. That is the whole gap this ticket closes — and it is why the
+  intake's open question 1 ("source of truth: Cursor agent SDK events, bridge
+  progress, transcript walker, or a new host 'thinking' channel?") is answered
+  **the existing SDK progress lines**, not a new channel and certainly not a
+  transcript walker.
+
+  ## Scope
+
+  - **Tee, do not re-route.** The Telegram path keeps its own reporter and its
+    own throttle unchanged. The feed subscribes alongside it. A shared reporter
+    would drag the feed down to Telegram's message-rate throttle, which exists to
+    avoid chat spam and has nothing to do with what a screen can render.
+  - **Per-session, bounded.** Lines are keyed by the host agent session they
+    belong to and held in a bounded buffer, oldest evicted. A session that runs
+    for hours must not grow the store without limit.
+  - **Served two ways, one source.** A read route returns the current session's
+    buffered lines so a client that opens late can catch up; new lines are pushed
+    over the existing `/events` stream so a client that is already attached sees
+    them without polling. Both read the same buffer — the catch-up and the live
+    push are never two different records of the same turn.
+  - **Quiet is a state, not an absence.** When no host agent session is active
+    the feed reports that plainly, so a client can distinguish "the host is
+    quiet" from "the feed is broken". The intake is explicit about this: "not a
+    spinner forever, not a tunnel-error lookalike."
+
+  ## Redaction, stated rather than implied
+
+  The intake asks for "the same redaction posture as other operator surfaces if
+  one already exists". Verified 2026-08-06: **no redaction helper exists** in
+  `extension/src` — no `redact`, no secret-scrubbing pass, nothing to inherit.
+
+  This slice therefore adds none, and the reason it is defensible rather than
+  negligent is that it changes no exposure class: every line it records is a line
+  already being sent to the operator's Telegram topic today, and the feed is
+  served under the same bridge auth to the same principal. Nothing becomes
+  visible to anyone who could not already see it.
+
+  A real redaction pass over host-agent output is worth doing and should be its
+  own ticket covering every surface at once — Telegram included — rather than
+  being invented here for one consumer.
+
+out_of_scope: |
+  - The screen that renders this feed. BL-834.
+  - Redaction or secret-scrubbing. None exists to inherit; see above. Its own
+    ticket, covering every surface including the existing Telegram path.
+  - Streaming raw model tokens. The intake asks for "reasoning / status / tool or
+    hat steps — whatever the host can stream without inventing a fake
+    transcript", and the summarized progress line is exactly that. Raw token
+    streaming is a different and larger contract.
+  - Feeds for swarm roles (coder, specifier, ...). The intake is explicit: host
+    agent only. Swarm panes are the Live Screen's job (BL-775).
+  - Barge-in, stop, or any steer action against the host agent from the feed.
+  - Changing the Telegram progress path's behaviour, throttle or formatting.
+
+approval_context: >
+  Two things worth the human's eye.
+
+  (1) **Redaction is deliberately absent**, with the reasoning above: nothing
+  exists to inherit, and the feed exposes no line that is not already going to
+  Telegram under the same principal. If the human would rather have a redaction
+  pass before any second consumer reads host output, say so and it becomes a
+  prerequisite ticket rather than a follow-up.
+
+  (2) **The feed is not throttled to Telegram's cadence.** The existing throttle
+  exists to avoid chat spam; a screen can render far denser updates, and the
+  intake asks for "as near real-time as practical". So the feed records every
+  summarized line the host emits. That is more records than Telegram sees, which
+  is the point, but it is worth stating rather than discovering.
+
+source: |
+  Drained 2026-08-06 from
+  `backlog/INTAKE-bubble-host-agent-thinking-live-screen.md` (human via Let's
+  Talk / Cursor, 2026-07-30). 1:N split with BL-834, taken at the intake's own
+  suggestion: "Likely epic + thin slice A (shell + one live source) rather than
+  one fat ticket."
+
+  The intake's host/bridge requirements are this ticket:
+
+  > 7. Bridge (or host agent adapter) exposes a stream or event feed of
+  >    host-agent activity suitable for the phone UI.
+  > 8. Do not require the human to keep a laptop tmux pane open for the same
+  >    visibility.
+  > 9. Privacy / noise: do not spam secrets; prefer the same redaction posture as
+  >    other operator surfaces if one already exists.
+
+  Its requested outcomes 1-6 (the screen itself) are BL-834.
+
+verification: |
+  ## Runnable gate
+
+  This ticket is entirely TypeScript on the bridge and the host tools, so
+  `specs/features/BL-833-host-agent-activity-feed.feature` runs in the Node
+  acceptance runner and the parcel sits in normal Stryker/jscpd/CRAP scope. The
+  coder writes its step handlers in THIS parcel (BL-233).
+
+  The third invariant needs a real test, not an assertion of intent: a scenario
+  drives a turn with the feed's write path failing and asserts the turn still
+  completes and still replies.
+
+notes: |
+  ## e2e procedure for QA
+
+  With a live bridge and a host agent bound: start a Let's Talk turn and, from a
+  second authenticated client, read the feed route — activity must appear while
+  the turn is still running, not only after the reply. Attach to the event
+  stream and confirm new lines arrive without polling. Compare the feed's lines
+  against what the Telegram topic showed for the same turn: the feed may hold
+  more lines (it is not throttled to chat cadence) but must hold no line Telegram
+  did not derive from the same host events. Then end the session and confirm the
+  feed reports the host as quiet rather than stalling. Finally, run a turn long
+  enough to exceed the buffer bound and confirm the oldest lines are evicted and
+  the process's memory does not grow with the session.

@@ -1,0 +1,137 @@
+id: BL-830
+title: "EPIC — Bubble remote screen pages: the Pipeline board, the Health/Trends view and the host-agent thinking feed ship as pages in the UI bundle; do not promote directly; tracks children"
+milestone: M8
+status: todo
+type: epic
+epic: bubble-screens
+priority: 85
+direction: human-requested
+depends_on: [BL-829]
+mutation_cost: high
+decomposes_into: [BL-831, BL-832, BL-833, BL-834]
+human_approval: approved
+approval_context: >
+  The technology question this epic used to be blocked on is already answered by
+  the human, so nothing here re-opens it: "Remote HTML for all 4, and flip BL-775
+  to remote" (2026-08-06). Every page in this epic is remote HTML in the UI
+  bundle.
+
+  What is worth the human's eye is the split, not the technology. Two of these
+  screens (Pipeline, Health) render read models the bridge already computes and
+  are close to packaging work. The third (Host thinking) is not: the host agent's
+  progress lines exist but reach only Telegram today, so it needs a real bridge
+  feed built first. It is split into BL-833 (the feed) and BL-834 (the page)
+  rather than pretending it is the same size as its siblings.
+
+  The one thing deliberately NOT specced here: a redaction pass over the
+  host-agent feed. The intake asks for "the same redaction posture as other
+  operator surfaces if one already exists" — verified 2026-08-06, no redaction
+  helper exists in `extension/src`. BL-833 states that plainly rather than
+  claiming a posture it would be inheriting from nothing.
+
+description: |
+  ## Why this epic exists
+
+  Three of the four Bubble screen intakes the human drained on 2026-08-06 are
+  not Live Screen (BL-774) and not the shell architecture (BL-824). They are new
+  pages: the in-flight Pipeline board, a swarm Health/Trends view over a
+  fortnight, and a live view of the host agent thinking. This epic tracks them
+  as one family because they share a shape, a dependency and a discipline.
+
+  **The shape.** Each is a page in the UI bundle BL-825 resolves and BL-829
+  renders. None of them is native, and none of them changes the APK — which is
+  the whole point of the human's 2026-08-06 ruling and of BL-824's locked
+  decision that the APK changes only when the thin shell does.
+
+  **The dependency.** All three depend on BL-829, the remote page host. Named
+  explicitly, not assumed: a page in a bundle that nothing renders is a feature
+  that ships green and stays dark.
+
+  **The discipline.** Every figure and every cell these pages show is read from
+  a computation the bridge already performs. None of these pages may grow a
+  second metrics engine, a second board read model, or a second definition of
+  what a stage is. Where the existing computation is missing something the page
+  needs, the fix is to extend that computation once — never to derive a rival
+  number in a page.
+
+  ## Why these are Node-testable, and why that matters
+
+  Because the human chose remote HTML, these pages are TypeScript and HTML on
+  the bridge, not Kotlin on a device. Their acceptance contracts run in the Node
+  acceptance runner today and sit in normal Stryker/jscpd/CRAP scope. That is a
+  direct consequence of the ruling and it is worth stating: the same three
+  screens specced native would have carried the degraded unit-test-gap fallback
+  and a manual device procedure as their only real gate.
+
+  What remains device surface is only the WebView render itself, which BL-829
+  owns and verifies by recorded manual procedure. No page in this epic re-runs
+  that verification.
+
+  ## Local engineering rule 5
+
+  Every page here is the LIVE surface: authenticated bridge endpoints, live
+  swarm state. No page in this epic routes its data through the static
+  `pwa/` projection.
+
+remaining_slices:
+  - "Slice E — Mini App overlap retirement: once Pipeline lands on Bubble, decide and execute what happens to the Mini App /pipeline-board route (redirect, deprecate, or remove behind a flag). The human said cutover can wait and dual-run is fine, so this is deliberately last."
+  - "Slice F — window and layout controls: making the Health page's window user-selectable, and any per-page density or ordering preference the human asks for after living with the defaults."
+  - "Slice G — Canary pass rate as a Health readout, once the Workflow Canary epic lands a pass-rate signal worth trending."
+
+invariants:
+  - "No page in this epic derives a number, a cell or a stage placement the bridge does not already compute: there is one computation per figure, and the page reads it."
+  - "Every page degrades to an honest empty or unavailable state that names its reason; no page presents fabricated zeros, a stale view as current, or a perpetual spinner."
+
+out_of_scope: |
+  - The Live Screen page. That is BL-774 / BL-775, a separate epic with its own
+    migration story.
+  - The remote page host, the bundle resolver and the APK update path. BL-824's
+    slices; this epic depends on them and must not re-open them.
+  - Building a metrics warehouse or a long-term analytics store. The human
+    explicitly put this out of scope on the Health intake.
+  - Editing tickets, approving work, or driving Control verbs from any page in
+    this epic. Those surfaces exist elsewhere and the intakes explicitly refuse
+    to have them packed onto these pages.
+  - Immediate deletion of any Mini App surface. Slice E, later, dual-run first.
+
+source: |
+  Drained 2026-08-06 (BL-680 consolidation pass) from three root intakes, each
+  captured by the human via Let's Talk / Cursor:
+
+  - `backlog/INTAKE-bubble-pipeline-board.md` (2026-07-31) -> BL-831
+  - `backlog/INTAKE-bubble-swarm-health-trends-screen.md` (2026-07-31) -> BL-832
+  - `backlog/INTAKE-bubble-host-agent-thinking-live-screen.md` (2026-07-30) ->
+    BL-833 + BL-834
+
+  All three were held from 2026-07-31 to 2026-08-06 behind, first, the Android
+  acceptance-seam blocker (cleared by BL-769/BL-761) and then a cross-epic
+  contradiction between BL-774's native default and BL-824's human-locked
+  thin-shell decision. The human resolved it 2026-08-06:
+
+  > Remote HTML for all 4, and flip BL-775 to remote
+
+notes: |
+  ## Consolidation record (BL-680)
+
+  Three intakes in, four tickets out. One 1:1 (Pipeline -> BL-831), one 1:1
+  (Health -> BL-832), and one 1:N split (Host thinking -> BL-833 feed + BL-834
+  page) because the intake's own mint hint asked for it: "Likely epic + thin
+  slice A (shell + one live source) rather than one fat ticket."
+
+  Every operator directive quoted in the three source intakes survives verbatim
+  in substance into the ticket that inherited it — the Pipeline intake's six
+  locked decisions into BL-831, the Health intake's six into BL-832, and the
+  Host-thinking intake's requested outcomes into BL-833/BL-834. No human
+  sentence was dropped to make a merge fit.
+
+  The fourth screen intake in that cluster,
+  `INTAKE-bubble-live-screen-coordinator-resident.md`, is NOT in this epic: it
+  is the same surface as BL-775 and was consolidated into it, with its steer
+  directive routed to BL-569. Recording that here so the cluster's four-in /
+  four-out arithmetic is walkable from either end.
+
+  ## Priority
+
+  85, below BL-824 (88) and BL-774 (86) deliberately. The architecture that
+  determines how a screen ships, and the migration already in flight, both
+  outrank new pages.
