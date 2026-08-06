@@ -1,17 +1,11 @@
 Feature: the flow watchdog measures each hop against that hop's own history
 
-  One flat 15-minute warn is wrong in both directions. Under a rotation pack a
-  15-minute wait in a dormant role's inbox is a nominal rotation turn rather
-  than a stall, and a hop whose own history says minutes should not have to
-  wait out fifteen. Calibrating warn and escalate per route — from the mailbox
-  residence that route has actually shown — makes the same alarm mean the same
-  thing on every hop.
-
-  A route only earns a stricter-than-global threshold when its raw percentile
-  itself clears min-warn-ms. A sub-minute route (a QA-to-coordinator note that
-  completes in seconds) is not calibrated at all and keeps the global pair:
-  min-warn-ms is a reject gate, never a floor that publishes a threshold the
-  history never showed (BL-835).
+  One flat 15-minute warn is wrong in both directions. A QA-to-coordinator note
+  that normally completes in seconds is not worth alarming about at 14 minutes,
+  and under a rotation pack a 15-minute wait in a dormant role's inbox is a
+  nominal rotation turn rather than a stall. Calibrating warn and escalate per
+  route — from the mailbox residence that route has actually shown — makes the
+  same alarm mean the same thing on every hop.
 
   Threshold resolution happens outside decide-tier, so the structural guarantee
   that decide-tier never grows a role, type or dormancy branch is preserved:
@@ -23,7 +17,7 @@ Feature: the flow watchdog measures each hop against that hop's own history
 
   # BL-827 flow-watchdog-spec-dependent-thresholds-01
   Scenario: a hop with enough history is measured against its own percentiles
-    Given a route whose completed handoffs show a mailbox residence below the global warn and above min-warn-ms
+    Given a route whose completed handoffs show a mailbox residence far below the global warn
     And that route has at least the minimum number of samples
     When the flow watchdog sweep runs over a parcel on that route
     Then the parcel is measured against the calibrated warn for that route

@@ -1,24 +1,6 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 6, 2026 (BL-835: `thresholds-from-samples` in
-`flow_watchdog_lib.bb` clamped a sub-60s raw warn percentile *up* to the
-60000ms `min-warn-ms` floor and wrote it into the calibrated table as if
-earned, so fast healthy hops (`QA→coordinator|git_handoff`, whose real p67
-was a few seconds) WARNed on parcels sitting a normal ~1 minute in
-`in_process` — live Telegram spam the same night the spec-dependent
-percentile table (BL-827's adopt, landed via this ticket since it does not
-exist on `main` on its own — see the ticket's "Substrate" note)
-first came up. `min-warn-ms` is now a reject gate, not a floor:
-`thresholds-from-samples` returns `nil` for a key whose raw percentile does
-not clear it, so `build-threshold-table` never emits an entry for that key
-and resolution falls through the same `*->to|type` → global chain used for
-any under-sampled key; a route whose p67 genuinely clears the gate (the
-architect→hardener/hardener→documenter hops in the live log) still
-calibrates and still WARNs correctly. Hardened against two mutants the
-initial suite missed (`threshold-table-stale?` collapsing to always-false
-after first calibration, and threshold-table JSON key normalisation being
-dropped on read). See the updated "Configuration" bullets under "Flow
-Watchdog (BL-577)" below); August 6, 2026 (BL-823: two of the intervals during which
+**Last Updated:** August 6, 2026 (BL-823: two of the intervals during which
 the swarm cannot process work had no durable record — a control/cooldown
 pause is a current-state marker that resume overwrites, and a stop writes
 nothing at all. A new append-only ledger
@@ -1158,19 +1140,17 @@ Flow watchdog alarms are **unsuppressable by design** — they go to Telegram (t
 Configure the flow watchdog in `swarmforge.conf`:
 
 ```
-config flow_watchdog_warn_ms 900000           # global fallback warn at 15 minutes (default)
-config flow_watchdog_escalate_ms 3600000      # global fallback escalate at 1 hour (default)
+config flow_watchdog_warn_ms 900000           # alarm at 15 minutes (default)
+config flow_watchdog_escalate_ms 3600000      # escalate at 1 hour (default)
 ```
 
-These are the **global fallback thresholds**. Per-spec thresholds are resolved outside `decide-tier` from a calibrated percentile table (`.swarmforge/daemon/flow-watchdog-thresholds.json`), keyed by the alarm's own `(from→to, type)` identity:
+These are the **thresholds for alarm tiers**, not disables:
 
-- **Warn tier (≈ p67):** fires when age exceeds the 67th percentile of historical mailbox residence for that spec — roughly the slowest third of cases
-- **Escalate tier (≈ p97):** fires when age exceeds the 97th percentile — roughly the slowest 3%
-- **Fallback chain:** exact `from->to|type` → `*->to|type` → the global conf pair above (when a key lacks ≥8 samples). A coarser `*->*|type` row is recorded for observability but not consulted — mixing unrelated routes under one type would mis-calibrate dormant pipeline roles.
-- **60s is a reject gate, not a floor (BL-835):** a route whose raw warn percentile falls below 60s has not earned a calibrated threshold — no exact/to-type entry is written for that key, and resolution falls through the chain above instead. Earlier behavior clamped a sub-60s raw percentile *up to* 60000ms and wrote it as if calibrated, which false-alarmed WARN on parcels sitting a healthy ~1 minute on fast hops (e.g. `QA→coordinator`); the gate rejects those keys outright rather than inventing a number the history never showed.
-- **No suppression:** once a parcel reaches its resolved warn-tier age, one alarm fires; once it reaches escalate-tier age, one escalation fires. The same parcel never re-alarms between tiers, and dormancy of the holding role is never a reason to silence the alarm. Spec dependence changes which numbers are fed into `decide-tier`, never whether the alarm may speak.
+- **Warn tier:** first alarm when age exceeds `flow_watchdog_warn_ms`
+- **Escalate tier:** escalate to a higher-priority message when age exceeds `flow_watchdog_escalate_ms`
+- **No suppression:** once a parcel reaches warn-tier age, one alarm fires; once it reaches escalate-tier age, one escalation fires. The same parcel never re-alarms between tiers, and dormancy of the holding role is never a reason to silence the alarm.
 
-Malformed or absent config values fall back to the defaults above — the watchdog never disables itself. The percentile table is refreshed at most every 6 hours from each role's `completed/` and `abandoned/` audits.
+Malformed or absent config values fall back to the defaults above — the watchdog never disables itself.
 
 ### Durable state and dedup
 
