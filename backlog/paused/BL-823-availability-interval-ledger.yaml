@@ -1,4 +1,4 @@
-id: BL-822
+id: BL-823
 title: "Pause and stop intervals leave no durable record: control-pause.json is a current-state marker that resume overwrites, and a stop writes nothing at all — so effective-time arithmetic has nothing to read"
 milestone: M8
 type: feature
@@ -60,7 +60,7 @@ source: |
   Left unfixed, BL-650's fallback rule ("an unproven gap counts AGAINST the
   swarm") applied to unreconstructable pause intervals REPRODUCES the very bug
   BL-650 exists to fix. The human ruled the ledger ships first as its own
-  ticket; BL-650 now `depends_on: [BL-822]`.
+  ticket; BL-650 now `depends_on: [BL-823]`.
 
   ## The choke points are already narrow — this ticket adds no new ones
 
@@ -130,7 +130,7 @@ description: |
   scoped this way because BL-650 is already ten scenarios and the human's
   ruling was explicit that this ships as the *small* prerequisite.
 
-acceptance: specs/features/BL-822-availability-interval-ledger.feature
+acceptance: specs/features/BL-823-availability-interval-ledger.feature
 
 # BL-633. Three properties no enumeration of the eight scenarios can express.
 invariants:
@@ -163,7 +163,7 @@ out_of_scope: |
 
 notes: |
   Sequencing: this ticket must land before BL-650, which now carries
-  `depends_on: [BL-822]`. BL-650 was moved out of `backlog/hold/` back to
+  `depends_on: [BL-823]`. BL-650 was moved out of `backlog/hold/` back to
   `backlog/paused/` when this ticket was written — the question that held it
   is answered, and the dependency now enforces the order.
 

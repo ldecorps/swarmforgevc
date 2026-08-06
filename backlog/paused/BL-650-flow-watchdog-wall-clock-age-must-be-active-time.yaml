@@ -8,7 +8,7 @@ human_approval: approved
 severity: high
 priority: 54
 direction: human-requested
-depends_on: [BL-822]
+depends_on: [BL-823]
 assigned_to: specifier
 mutation_cost: medium
 required_stages: [coder, architect, qa]
@@ -118,10 +118,10 @@ description: |
      written at each pause/stop transition ships first, BL-650 depends_on it
      (my recommendation — reliable, and BL-650 is already 10 scenarios)."
 
-     So: the ledger is **BL-822**, this ticket now carries
-     `depends_on: [BL-822]`, and the scraper option is rejected. Implementation
-     of THIS ticket starts once BL-822 has landed and the ledger it writes is
-     available to read. BL-822 records and exposes the intervals with explicit
+     So: the ledger is **BL-823**, this ticket now carries
+     `depends_on: [BL-823]`, and the scraper option is rejected. Implementation
+     of THIS ticket starts once BL-823 has landed and the ledger it writes is
+     available to read. BL-823 records and exposes the intervals with explicit
      `proven | inferred` provenance; this ticket does all the subtraction and
      is still the only place any threshold or alarm changes.
 

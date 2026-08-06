@@ -11,7 +11,7 @@ Feature: Append-only swarm availability interval ledger
   Background:
     Given a project root whose availability ledger is empty
 
-  # BL-822 availability-interval-ledger-01
+  # BL-823 availability-interval-ledger-01
   Scenario Outline: Every pause writer twin appends its transition
     When the <writer> pause writer sets active to <active>
     Then the ledger's last record has event "<event>" and class "control-pause"
@@ -24,14 +24,14 @@ Feature: Append-only swarm availability interval ledger
       | operator | true   | pause-start |
       | operator | false  | pause-end   |
 
-  # BL-822 availability-interval-ledger-02
+  # BL-823 availability-interval-ledger-02
   Scenario: A graceful stop and the next start fold into one proven interval
     Given a "stop" record at "2026-08-06T01:00:00Z"
     And a "start" record at "2026-08-06T02:00:00Z"
     When the ledger is folded into intervals
     Then there is one "swarm-stop" interval of 60 minutes with provenance "proven"
 
-  # BL-822 availability-interval-ledger-03
+  # BL-823 availability-interval-ledger-03
   Scenario: An ungraceful stop is closed at the daemon's last heartbeat
     Given a "start" record at "2026-08-06T00:00:00Z"
     And no "stop" record was written
@@ -40,7 +40,7 @@ Feature: Append-only swarm availability interval ledger
     Then a synthetic "stop" record is appended at "2026-08-06T01:00:00Z"
     And there is one "swarm-stop" interval of 60 minutes with provenance "inferred"
 
-  # BL-822 availability-interval-ledger-04
+  # BL-823 availability-interval-ledger-04
   Scenario: An ungraceful stop with no heartbeat evidence emits no interval
     Given a "start" record at "2026-08-06T00:00:00Z"
     And no "stop" record was written
@@ -48,7 +48,7 @@ Feature: Append-only swarm availability interval ledger
     When the swarm starts at "2026-08-06T02:00:00Z"
     Then no "swarm-stop" interval is emitted for that gap
 
-  # BL-822 availability-interval-ledger-05
+  # BL-823 availability-interval-ledger-05
   Scenario Outline: A ledger write failure never blocks the operation it observes
     Given the ledger file cannot be written
     When a <operation> runs
@@ -61,7 +61,7 @@ Feature: Append-only swarm availability interval ledger
       | swarm stop     |
       | swarm start    |
 
-  # BL-822 availability-interval-ledger-06
+  # BL-823 availability-interval-ledger-06
   Scenario: A corrupt ledger line is skipped without discarding its neighbours
     Given a "stop" record at "2026-08-06T01:00:00Z"
     And a corrupt line
@@ -69,7 +69,7 @@ Feature: Append-only swarm availability interval ledger
     When the ledger is folded into intervals
     Then there is one "swarm-stop" interval of 60 minutes with provenance "proven"
 
-  # BL-822 availability-interval-ledger-07
+  # BL-823 availability-interval-ledger-07
   Scenario: A pause with no matching resume is emitted as an open interval
     Given a "pause-start" record at "2026-08-06T01:00:00Z"
     And no matching "pause-end" record
@@ -77,7 +77,7 @@ Feature: Append-only swarm availability interval ledger
     Then there is one open "control-pause" interval starting at "2026-08-06T01:00:00Z"
     And it has no end timestamp
 
-  # BL-822 availability-interval-ledger-08
+  # BL-823 availability-interval-ledger-08
   Scenario: An interval spanning a month boundary folds across both ledger files
     Given a "stop" record at "2026-08-31T23:00:00Z" in the "2026-08" ledger
     And a "start" record at "2026-09-01T01:00:00Z" in the "2026-09" ledger
