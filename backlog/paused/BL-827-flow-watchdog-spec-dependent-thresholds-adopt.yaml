@@ -8,7 +8,7 @@ human_approval: approved
 priority: 52
 direction: normal
 assigned_to: none
-depends_on: []
+depends_on: [BL-835]
 mutation_cost: medium
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 
@@ -52,7 +52,12 @@ source: |
   ticket the percentile-threshold work."
 
 description: |
-  ## What is already in the working tree
+  ## What is already in the working tree — and, after BL-835, on `main`
+
+  **Amended 2026-08-06.** This section describes the adopt as captured. BL-835
+  now lands that adopt (plus its reject-gate fix); read it as a description of
+  the code this ticket REVIEWS AND FINISHES, not of code it still has to
+  introduce. See notes and out_of_scope.
 
   Measured, not assumed — I read the diff and ran the suite
   (`bb swarmforge/scripts/test/flow_watchdog_test_runner.bb` →
@@ -67,8 +72,17 @@ description: |
     a warn/escalate pair per key at p67/p97 via a ceil-rank `percentile-ms`
     matching `extension/src/metrics/stageDwell.ts`.
   - **Gates on the calibration.** `min-samples-for-calibration` 8, a
-    `min-warn-ms` floor of 60 s, and escalate forced strictly above warn so a
+    `min-warn-ms` of 60 s, and escalate forced strictly above warn so a
     flat sample cannot collapse the tiers.
+
+    **Amended 2026-08-06 (BL-835).** As first written, `min-warn-ms` was a
+    FLOOR — `(max min-warn-ms warn-raw)` — so a route whose raw p67 was a few
+    seconds published a "calibrated" 60 s warn the history never showed, and
+    the live daemon WARNed healthy in-flight work at ~1 minute. BL-835 makes
+    it a REJECT GATE: below it, the key is not emitted at all and resolution
+    falls through. That fix lands first (BL-835 is active); this adopt starts
+    from the tree that already contains it. **Do not reintroduce floor-clamp**
+    — see `depends_on` and out_of_scope below.
   - **Durability.** The table is written to
     `.swarmforge/daemon/flow-watchdog-thresholds.json`, re-read per sweep, and
     recalibrated at most every 6 h (`threshold-recalibration-ms`). Absent or
@@ -87,11 +101,20 @@ description: |
 
   ## Why it is worth keeping
 
-  One flat 15-minute warn cannot be right for every hop. It is far too patient
-  for a QA→coordinator note that normally completes in seconds, and far too
+  One flat 15-minute warn cannot be right for every hop. It is far too
   impatient under a rotation pack where a parcel legitimately waits its turn in
-  a dormant role's inbox. Calibrating per route makes one alarm mean one thing
-  everywhere, which is the property that lets an operator trust it at 3am.
+  a dormant role's inbox, and too patient for a hop whose own history says
+  minutes. Calibrating per route makes one alarm mean one thing everywhere,
+  which is the property that lets an operator trust it at 3am.
+
+  **What calibration deliberately does NOT buy (amended 2026-08-06, BL-835).**
+  A route that normally completes in *seconds* — a QA→coordinator note — does
+  not get a seconds-scale alarm out of this. Its raw p67 is below `min-warn-ms`,
+  the gate rejects it, and it keeps the global pair. That is correct: a
+  sub-minute residence carries no signal worth waking an operator for, and the
+  attempt to alarm on it is exactly what produced the BL-835 false alarms.
+  Calibration earns a stricter-than-global threshold only when the raw
+  percentile itself clears the gate — never when a floor invented the number.
 
   ## The three gaps this ticket must close
 
@@ -120,8 +143,9 @@ description: |
   taking 40 minutes for two weeks because something is wrong, calibration
   concludes 40 minutes is that hop's p67 and stops warning about it. The
   watchdog then reports healthy precisely because the fault persisted long
-  enough to become the baseline. The 60 s `min-warn-ms` floor bounds only the
-  fast direction; there is no ceiling.
+  enough to become the baseline. The 60 s `min-warn-ms` gate bounds only the
+  fast direction — and after BL-835 it does not even clamp there, it simply
+  refuses to calibrate a sub-minute route at all. There is no ceiling.
 
   This is not hypothetical for this project: Article 3.5's circuit breaker
   already treats "signals rising above their trend baseline" as the throttle
@@ -192,9 +216,14 @@ verification: |
   ## e2e QA procedure
 
   1. Run a sweep against a fixture tree with a route seeded well past the
-     minimum samples at a residence far below the global warn. Confirm a parcel
-     on that route alarms early, and that the alarm text names the calibrated
-     threshold and its source.
+     minimum samples at a residence below the global warn but **above
+     `min-warn-ms`** (BL-835: a sub-gate residence must not calibrate at all).
+     Confirm a parcel on that route alarms early, and that the alarm text names
+     the calibrated threshold and its source.
+  1b. Seed a second route whose residences are entirely below `min-warn-ms`.
+     Confirm no entry is written for it and a ~90 s parcel on it stays silent
+     under the global pair (BL-835 regression — this must still hold after the
+     adopt).
   2. Delete `.swarmforge/daemon/flow-watchdog-thresholds.json` and sweep again.
      Confirm the table is rebuilt and no alarm is lost in the meantime.
   3. Corrupt that file to invalid JSON and sweep. Confirm the sweep completes,
@@ -215,6 +244,16 @@ out_of_scope: |
     speaks, never whether it may (flow_watchdog_lib.bb:278). `snoozed?` stays
     the only mute.
   - Applying percentile calibration to any other alarm or sweep.
+  - **Re-adding the `min-warn-ms` floor-clamp in any form** (amended
+    2026-08-06, BL-835). The gate rejects a sub-gate key; it never publishes a
+    clamped warn. A parcel that reintroduces `(max min-warn-ms warn-raw)` is
+    bounced on sight.
+  - **Landing the raw adopt.** BL-835 lands the five adopt files (the patch
+    plus the reject-gate fix). By the time this ticket is promoted, that code
+    is on `main` — start from `main`, not from
+    `backlog/evidence/BL-827-adopt-working-tree.patch`, and confirm before
+    applying anything. What remains here is the three gaps below plus the
+    human's (a)/(b)/(c) ceiling ruling.
 
 notes: |
   Adopt posture, restated so no reviewer reverts it by reflex: the five
@@ -240,14 +279,21 @@ notes: |
   with `git apply --check --reverse` against the working tree at capture, so it
   is known to reproduce it exactly).
 
-  The coder starts by applying it in its own worktree:
+  **Amended 2026-08-06 (BL-835): the coder no longer applies that patch.**
+  BL-835 — the ambulance fixing the floored-percentile false alarms — cannot
+  patch `thresholds-from-samples` on `main`, because the function is not there;
+  so BL-835 applies this patch itself, adds the reject gate on top, and lands
+  all five files. By the time this ticket is promoted (`depends_on: [BL-835]`)
+  the adopt is ordinary tracked code on `main`.
+
+  Confirm that before starting:
 
   ```sh
-  git apply backlog/evidence/BL-827-adopt-working-tree.patch
+  git show main:swarmforge/scripts/flow_watchdog_lib.bb | grep -c thresholds-from-samples
   ```
 
-  If it does not apply cleanly, `main` has moved under it — reconcile
-  deliberately and say so in the parcel; do not force it.
+  Non-zero → start from `main` and do NOT apply the patch. Zero → BL-835 has
+  not landed after all; stop and say so rather than adopting around it.
 
   The master working tree copy is left in place and unstaged (BL-506: surfaced,
   not swept). Once this parcel lands on `main`, that copy becomes redundant and

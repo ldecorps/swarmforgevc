@@ -67,8 +67,57 @@ description: |
   says sparse specs fall through `*->*|type`; `resolve-thresholds` correctly
   does not consult that row (docs/Specification already match the code).
 
+  ## Substrate — read this before touching code (specifier amendment
+  2026-08-06, after the ticket was minted)
+
+  The ticket as minted said "the coder patches `thresholds-from-samples` in
+  place" in the hot-synced tree. **That function does not exist on `main`.**
+  Verified this turn:
+
+  - `git show main:swarmforge/scripts/flow_watchdog_lib.bb | grep -c
+    'thresholds-from-samples\|min-warn-ms'` → **0**
+  - the same grep on the master working tree → **4**
+
+  The whole percentile adopt is uncommitted master-tree work, captured as
+  `backlog/evidence/BL-827-adopt-working-tree.patch` (committed on `main` at
+  `0e4981eb`). The coder works in `.worktrees/coder`, which checks out `main`
+  and therefore has no percentile code to patch. What it WILL find on disk is
+  a hot-synced copy (BL-373) — untracked-content overwrite, not tracked
+  history. Editing that and committing would silently land 512 lines of
+  unreviewed adopt under a defect ticket (BL-506), and would bury BL-827's
+  pending human ruling on the adaptation-hazard ceiling.
+
+  **So this parcel carries the adopt deliberately and says so.** That is not
+  scope creep for BL-506 purposes — it is named scope here, reviewable as
+  ordinary parcel content. It also honours the human's "do not wait for the
+  full BL-827 adopt parcel": this is not waiting for BL-827, it is carrying
+  the minimum code the fix cannot exist without.
+
+  Deterministic start, regardless of what hot-sync left on disk:
+
+  ```sh
+  git restore --source=HEAD --staged --worktree -- \
+    swarmforge/scripts/flow_watchdog_lib.bb \
+    swarmforge/scripts/test/flow_watchdog_test_runner.bb \
+    swarmforge/scripts/handoffd.bb \
+    swarmforge/swarmforge.conf \
+    docs/reference/Specification.MD
+  git apply backlog/evidence/BL-827-adopt-working-tree.patch
+  ```
+
+  Then apply the Fix below on top. If the patch does not apply cleanly, `main`
+  has moved under it — reconcile deliberately and say so in the parcel; do not
+  force it.
+
+  What stays with BL-827 (re-scoped in the same pass, it is paused and not
+  started): the alarm text naming its threshold and source, the dead
+  `*->*|type` row decision, the acceptance contract for the calibration
+  behaviour as a whole, and the human's (a)/(b)/(c) ceiling ruling. Those are
+  reviews and a judgement call, not this ambulance.
+
   ## Fix
 
+  0. Establish the substrate above (patch applied), then:
   1. When raw warn percentile `< min-warn-ms`, do **not** emit a specs entry
      for that key. Fall through exact → `*->to|type` → global as today.
      Escalate-strictly-above-warn stays. Global fallback stays.
@@ -81,6 +130,13 @@ description: |
      itself clears the gate — not when a floor invented the number. Amend
      BL-827 in the same parcel if it has not started; otherwise file the
      amend as a follow-up note the specifier owns.
+     **DONE by the specifier this turn, 2026-08-06** — BL-827 had not started
+     (`assigned_to: none`, paused). Its feature intro and scenario 01 now say
+     the raw percentile must clear the gate; its gate description, adaptation-
+     hazard paragraph and e2e step 1 are corrected; a sub-floor regression step
+     1b was added; and it now carries `depends_on: [BL-835]` plus an explicit
+     "do not reintroduce floor-clamp" in out_of_scope. Nothing further is owed
+     on item 4.
 
   ## Relationship to BL-827
 
@@ -130,6 +186,15 @@ notes: |
   Queue-jumped by human request 2026-08-06. Ambulance engaged at mint so
   BL-823 (active interval ledger) parcels hold until this clears.
 
-  The hot-synced working tree already carries the percentile adopt; the
-  coder patches `thresholds-from-samples` (and the stale comment) in place.
-  Do not revert the adopt to "fix" this — reject-gate is the fix.
+  **Superseded by the "Substrate" section above (specifier, 2026-08-06):** the
+  hot-synced working tree carries the percentile adopt, but `main` does not, so
+  the coder cannot patch `thresholds-from-samples` "in place" in its own
+  worktree. It applies `backlog/evidence/BL-827-adopt-working-tree.patch` first
+  and this parcel lands both. Do not revert the adopt to "fix" this —
+  reject-gate is the fix.
+
+  Scope note for the review stages: the parcel diff intentionally contains the
+  five adopt files (flow_watchdog_lib.bb, its test runner, handoffd.bb,
+  swarmforge.conf, Specification.MD). That is named scope, not BL-506
+  ticket-less content — the ticket declares it above and the fix cannot exist
+  without it.
