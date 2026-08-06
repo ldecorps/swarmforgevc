@@ -9,7 +9,7 @@ severity: high
 priority: 54
 direction: human-requested
 depends_on: [BL-823]
-assigned_to: specifier
+assigned_to: coder
 mutation_cost: medium
 required_stages: [coder, architect, qa]
 stage_skip_reasons: { cleaner: "bounded single-lib bb change (flow_watchdog_lib + config resolution)", hardender: "bb code sits outside the Stryker mutate scope; the clock property tests run in the unit gate", documenter: "alarm-text change is specified in-ticket; no runbook surface" }
