@@ -45,22 +45,41 @@ resolves, BL-436). This is what makes the separation proof possible even
 when a shell has the primary's `TELEGRAM_BOT_TOKEN` exported: fleet creds
 take priority over the environment fallback for a swarm with its own file.
 
+**Provision that creds file BEFORE launching** (BL-622: a swarm that is
+neither the recorded primary root nor holds its own creds file keeps its
+front desk down with a loud refusal — never a launch that silently
+inherits whatever the shell happens to export):
+
+```sh
+node extension/out/tools/provision-onboarding-telegram-channel.js \
+  <fes-repo-path> <fes-bot-token> <fes-bot-username> <host-secrets-file-path> fes [bridge-port]
+```
+
+See `docs/tutorials/Onboarding-New-Project.md` for the full one-bot-per-
+target rationale and prerequisites (BotFather, a Topics-enabled group, and
+adding the bot as an admin).
+
 To check what creds a given checkout would actually resolve to, without
 launching anything:
 
 ```sh
 swarmforge/scripts/fleet_telegram_creds_cli.bb <project-root>
-# {"swarmName":"fes","botToken":"...","chatId":"...","bridgePort":...}
+# {"swarmName":"fes","botToken":"...","chatId":"...","bridgePort":...,"refused":false,"reason":null}
 ```
 
 ## 3. E2E verification procedure (QA runs this against a live bring-up)
 
 1. Follow steps 1–2 above to launch FES as a `mono-rotate` swarm from the
-   Windows-side checkout.
-2. From a shell that still has the **primary's** `TELEGRAM_BOT_TOKEN`
-   exported, confirm the FES front desk resolves and uses its own bot token
-   from its fleet creds file (FES's log shows no `409 Conflict` — the
-   signature of two pollers sharing one bot token).
+   Windows-side checkout — with its own fleet creds file already provisioned
+   via `provision-onboarding-telegram-channel.js` (step 2 above), never by
+   exporting the primary's `TELEGRAM_BOT_TOKEN` into the launching shell
+   (BL-622: a swarm without its own creds keeps its front desk down with a
+   loud refusal instead of silently inheriting the primary's token).
+2. Confirm the FES front desk resolves and uses its own bot token from its
+   fleet creds file, even from a shell that still happens to carry the
+   primary's `TELEGRAM_BOT_TOKEN` (FES's log shows no `409 Conflict` — the
+   signature of two pollers sharing one bot token, and no BL-622 refusal
+   line either — a provisioned creds file always wins wholesale).
 3. Send a message to each bot and confirm only the owning swarm consumes it
    — neither swarm's inbound is stolen by the other.
 4. Open the fleet console (`extension/src/tools/fleet-console.ts`, reading

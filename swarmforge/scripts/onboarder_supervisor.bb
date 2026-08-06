@@ -95,14 +95,22 @@
 ;; BL-436: this swarm's Telegram identity is a property of the SWARM, not of
 ;; whatever shell launched this supervisor - same rule front_desk_supervisor.bb
 ;; already follows, reused here rather than a second resolution path.
+;; BL-622: the Onboarding topic is only ever meant to live in the PRIMARY
+;; swarm's own group (see this file's own header comment), so refusal here
+;; is a defense-in-depth backstop, not the expected path - but this
+;; supervisor still calls the Telegram Bot API (createForumTopic) with
+;; whatever token it resolves, so an unentitled token must never be used
+;; silently, same as front_desk_supervisor.bb.
 (def swarm-name (swarm-identity-lib/own-swarm-name swarm-repo-root))
 (def fleet-home-dir (or (System/getenv "SWARMFORGE_FLEET_HOME") (System/getProperty "user.home")))
+(fleet-telegram-creds-lib/ensure-primary-root-recorded! fleet-home-dir swarm-repo-root swarm-name)
 (def resolved-telegram-creds
   (fleet-telegram-creds-lib/resolve-telegram-creds
-   fleet-home-dir swarm-name
+   fleet-home-dir swarm-repo-root swarm-name
    {"TELEGRAM_BOT_TOKEN" (System/getenv "TELEGRAM_BOT_TOKEN")
     "TELEGRAM_CHAT_ID" (System/getenv "TELEGRAM_CHAT_ID")}
    (env-long "BRIDGE_PORT" 8765)))
+(def launch-refusal-reason (:reason resolved-telegram-creds))
 
 (defn now-ms [] (System/currentTimeMillis))
 (defn now-iso []
@@ -181,18 +189,26 @@
 
 (defn -main []
   (fs/create-dirs op-dir)
-  (if check-once?
-    (println (json/generate-string (tick!)))
+  ;; BL-622: see fleet-home-dir/resolved-telegram-creds above - a refused
+  ;; resolution never spawns the reconcile loop and never claims the pid
+  ;; file, loud line in both the log and stderr.
+  (if launch-refusal-reason
     (do
-      (atomic-spit! pid-file (str (.pid (java.lang.ProcessHandle/current))))
-      (log! "onboarder-supervisor started" (str "interval-ms=" interval-ms) "swarm-repo=" swarm-repo-root)
-      (try
-        (while (not (fs/exists? stop-file))
-          (try (tick!) (catch Exception e (log! "tick-error" (.getMessage e))))
-          (Thread/sleep interval-ms))
-        (finally
-          (stop-all!)
-          (fs/delete-if-exists pid-file)
-          (log! "onboarder-supervisor stopped"))))))
+      (log! "refused" launch-refusal-reason)
+      (binding [*out* *err*] (println launch-refusal-reason))
+      (System/exit 1))
+    (if check-once?
+      (println (json/generate-string (tick!)))
+      (do
+        (atomic-spit! pid-file (str (.pid (java.lang.ProcessHandle/current))))
+        (log! "onboarder-supervisor started" (str "interval-ms=" interval-ms) "swarm-repo=" swarm-repo-root)
+        (try
+          (while (not (fs/exists? stop-file))
+            (try (tick!) (catch Exception e (log! "tick-error" (.getMessage e))))
+            (Thread/sleep interval-ms))
+          (finally
+            (stop-all!)
+            (fs/delete-if-exists pid-file)
+            (log! "onboarder-supervisor stopped")))))))
 
 (-main)

@@ -380,7 +380,8 @@ const DOMAINS = [
   require('./bl807BabysitterStuckInProcessOwnerLivenessSteps'),
   require('./bl810HostQueuePollClearAllTtlSteps'),
   require('./bl814LiveRoleHeldLoudDegradeSteps'),
-  require('./bl808BacklogDepthWarningCountsNonTicketEntriesSteps')
+  require('./bl808BacklogDepthWarningCountsNonTicketEntriesSteps'),
+  require('./bl622OnboardingTelegramTokenSeparationSteps')
 ];
 
 function registerSteps(registry) {

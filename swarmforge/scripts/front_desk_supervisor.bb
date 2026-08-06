@@ -67,11 +67,14 @@
 ;;   BRIDGE_TOKEN                  shared bridge token - provisioned by
 ;;                                 launch_front_desk.sh, never generated here
 ;;   TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID
-;;                                 fallback ONLY for the primary swarm, when no
-;;                                 fleet creds file exists for its swarm_name
-;;                                 (BL-436: ~/.swarmforge/fleet/<swarm_name>/
-;;                                 telegram.json wins wholesale when present -
-;;                                 see fleet_telegram_creds_lib.bb)
+;;                                 fallback ONLY for the recorded primary root,
+;;                                 when no fleet creds file exists for its
+;;                                 swarm_name (BL-436: ~/.swarmforge/fleet/
+;;                                 <swarm_name>/telegram.json wins wholesale
+;;                                 when present - see fleet_telegram_creds_lib.bb.
+;;                                 BL-622: every OTHER swarm gets a loud refusal
+;;                                 instead of silently inheriting this env -
+;;                                 see resolve-telegram-creds/env-fallback-allowed?)
 ;;   TELEGRAM_PRINCIPAL_USER_ID    required for the bot (validated by the
 ;;                                 bot's own CLI, not re-validated here)
 ;;   SWARMFORGE_FLEET_HOME         overrides the fleet creds root (default the
@@ -148,13 +151,31 @@
 ;; fleet-console purposes).
 (def swarm-name (swarm-identity-lib/own-swarm-name project-root))
 (def fleet-home-dir (or (System/getenv "SWARMFORGE_FLEET_HOME") (System/getProperty "user.home")))
+;; BL-622: bootstraps the durable primary-root record on this swarm's first
+;; primary launch (a no-op once a record exists, or for a non-primary
+;; swarm-name) - must run BEFORE resolve-telegram-creds below so the very
+;; first primary launch ever still resolves via env fallback in the same
+;; tick it records itself as primary.
+(fleet-telegram-creds-lib/ensure-primary-root-recorded! fleet-home-dir project-root swarm-name)
 (def resolved-telegram-creds
   (fleet-telegram-creds-lib/resolve-telegram-creds
-   fleet-home-dir swarm-name
+   fleet-home-dir project-root swarm-name
    {"TELEGRAM_BOT_TOKEN" (System/getenv "TELEGRAM_BOT_TOKEN")
     "TELEGRAM_CHAT_ID" (System/getenv "TELEGRAM_CHAT_ID")}
    (env-long "BRIDGE_PORT" 8765)))
 (def bridge-port (:bridge-port resolved-telegram-creds))
+;; BL-622 scenario 05: a second, independent hazard - THIS swarm's resolved
+;; token (however it got resolved) already belongs to another fleet swarm's
+;; own creds file. Computed only when resolution itself did not already
+;; refuse (a nil token never conflicts with anything).
+(def conflicting-fleet-swarm
+  (when-not (:refused? resolved-telegram-creds)
+    (fleet-telegram-creds-lib/conflicting-swarm fleet-home-dir swarm-name (:bot-token resolved-telegram-creds))))
+(def launch-refusal-reason
+  (cond
+    (:refused? resolved-telegram-creds) (:reason resolved-telegram-creds)
+    conflicting-fleet-swarm (fleet-telegram-creds-lib/duplicate-token-message swarm-name conflicting-fleet-swarm)
+    :else nil))
 
 ;; BL-370: how long the bot's poll heartbeat can go quiet before it is
 ;; treated as stalled. Default 90s - a healthy long-poll (25s timeout,
@@ -475,18 +496,29 @@
 
 (defn -main []
   (fs/create-dirs op-dir)
-  (if check-once?
-    (println (json/generate-string (tick!)))
+  ;; BL-622: the launch gate - a refused resolution (no per-swarm creds and
+  ;; not the recorded primary root) or a duplicate-token conflict means the
+  ;; front desk never starts at all: no pid file claimed (so
+  ;; launch_front_desk.sh's own wait loop reports the failed launch), no
+  ;; bridge/bot spawned, one loud line in both the log and stderr (captured
+  ;; by launch_front_desk.sh's nohup redirect into front-desk-supervisor.log).
+  (if launch-refusal-reason
     (do
-      (atomic-spit! pid-file (str (.pid (java.lang.ProcessHandle/current))))
-      (log! "front-desk-supervisor started" (str "interval-ms=" interval-ms))
-      (try
-        (while (not (fs/exists? stop-file))
-          (try (tick!) (catch Exception e (log! "tick-error" (.getMessage e))))
-          (Thread/sleep interval-ms))
-        (finally
-          (stop-all!)
-          (fs/delete-if-exists pid-file)
-          (log! "front-desk-supervisor stopped"))))))
+      (log! "refused" launch-refusal-reason)
+      (binding [*out* *err*] (println launch-refusal-reason))
+      (System/exit 1))
+    (if check-once?
+      (println (json/generate-string (tick!)))
+      (do
+        (atomic-spit! pid-file (str (.pid (java.lang.ProcessHandle/current))))
+        (log! "front-desk-supervisor started" (str "interval-ms=" interval-ms))
+        (try
+          (while (not (fs/exists? stop-file))
+            (try (tick!) (catch Exception e (log! "tick-error" (.getMessage e))))
+            (Thread/sleep interval-ms))
+          (finally
+            (stop-all!)
+            (fs/delete-if-exists pid-file)
+            (log! "front-desk-supervisor stopped")))))))
 
 (-main)
