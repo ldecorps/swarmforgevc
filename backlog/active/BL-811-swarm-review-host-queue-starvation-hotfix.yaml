@@ -9,7 +9,7 @@ severity: high
 priority: 10
 direction: human-requested
 depends_on: []
-assigned_to: none
+assigned_to: coder
 mutation_cost: medium
 invariants:
   - "No queued Host question can wait indefinitely behind stale queue state, stale poll state, or expired items."
