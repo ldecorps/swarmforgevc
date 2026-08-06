@@ -48,11 +48,14 @@ healthy.
 ## Liveness cue
 
 The Cursor Remote topic carries a standing, edit-in-place status line —
-`Bridge: busy` / `Bridge: idle · N waiting` — so a stuck queue is visible
+`Bridge: busy · N waiting` / `Bridge: idle` — so a stuck queue is visible
 without checking logs (`syncCursorBridgeLivenessStatus`,
 `extension/src/tools/telegramCursorBridgeLiveness.ts`). It edits the same
 message in place rather than posting a new one per turn, and is
-change-gated: an unchanged status does not touch Telegram.
+change-gated: an unchanged status does not touch Telegram. The idle line
+dropped its own `· N waiting` count (BL-811): once idle, a queued question's
+actionable surface is the [queue selection poll](BL-810-host-queue-selection-poll-clear-all-and-ttl.md),
+not a second ambient counter.
 
 ## `--help`
 
