@@ -1,0 +1,3186 @@
+{
+  "schemaVersion": 1,
+  "dateIso": "2026-08-06",
+  "agents": [
+    {
+      "role": "coder",
+      "tokens": {
+        "value": 202529,
+        "trend": {
+          "series": [
+            {
+              "periodStart": "2026-07-06T00:00:00.000Z",
+              "value": 246917
+            },
+            {
+              "periodStart": "2026-07-07T00:00:00.000Z",
+              "value": 243833
+            },
+            {
+              "periodStart": "2026-07-19T00:00:00.000Z",
+              "value": 0
+            },
+            {
+              "periodStart": "2026-08-01T00:00:00.000Z",
+              "value": 100909
+            },
+            {
+              "periodStart": "2026-08-02T00:00:00.000Z",
+              "value": 319775
+            },
+            {
+              "periodStart": "2026-08-03T00:00:00.000Z",
+              "value": 979096
+            },
+            {
+              "periodStart": "2026-08-04T00:00:00.000Z",
+              "value": 1239454
+            },
+            {
+              "periodStart": "2026-08-05T00:00:00.000Z",
+              "value": 1139508
+            },
+            {
+              "periodStart": "2026-08-06T00:00:00.000Z",
+              "value": 202529
+            }
+          ],
+          "currentValue": 202529,
+          "priorValue": 1139508,
+          "delta": -936979,
+          "direction": "down"
+        }
+      },
+      "costUsd": {
+        "value": 23.842202399999998,
+        "trend": {
+          "series": [
+            {
+              "periodStart": "2026-07-06T00:00:00.000Z",
+              "value": 41.81730914999997
+            },
+            {
+              "periodStart": "2026-07-07T00:00:00.000Z",
+              "value": 28.747475850000008
+            },
+            {
+              "periodStart": "2026-07-19T00:00:00.000Z",
+              "value": 0
+            },
+            {
+              "periodStart": "2026-08-01T00:00:00.000Z",
+              "value": 8.718862649999998
+            },
+            {
+              "periodStart": "2026-08-02T00:00:00.000Z",
+              "value": 45.67682594999997
+            },
+            {
+              "periodStart": "2026-08-03T00:00:00.000Z",
+              "value": 110.94366809999994
+            },
+            {
+              "periodStart": "2026-08-04T00:00:00.000Z",
+              "value": 130.72920450000004
+            },
+            {
+              "periodStart": "2026-08-05T00:00:00.000Z",
+              "value": 120.60533384999997
+            },
+            {
+              "periodStart": "2026-08-06T00:00:00.000Z",
+              "value": 23.842202399999998
+            }
+          ],
+          "currentValue": 23.842202399999998,
+          "priorValue": 120.60533384999997,
+          "delta": -96.76313144999997,
+          "direction": "down"
+        }
+      }
+    },
+    {
+      "role": "coordinator+specifier",
+      "tokens": {
+        "value": 82349,
+        "trend": {
+          "series": [
+            {
+              "periodStart": "2026-07-06T00:00:00.000Z",
+              "value": 189847
+            },
+            {
+              "periodStart": "2026-07-07T00:00:00.000Z",
+              "value": 433343
+            },
+            {
+              "periodStart": "2026-07-08T00:00:00.000Z",
+              "value": 13814
+            },
+            {
+              "periodStart": "2026-07-09T00:00:00.000Z",
+              "value": 37354
+            },
+            {
+              "periodStart": "2026-07-19T00:00:00.000Z",
+              "value": 0
+            },
+            {
+              "periodStart": "2026-08-01T00:00:00.000Z",
+              "value": 19675
+            },
+            {
+              "periodStart": "2026-08-02T00:00:00.000Z",
+              "value": 327097
+            },
+            {
+              "periodStart": "2026-08-03T00:00:00.000Z",
+              "value": 654991
+            },
+            {
+              "periodStart": "2026-08-04T00:00:00.000Z",
+              "value": 783379
+            },
+            {
+              "periodStart": "2026-08-05T00:00:00.000Z",
+              "value": 769734
+            },
+            {
+              "periodStart": "2026-08-06T00:00:00.000Z",
+              "value": 82349
+            }
+          ],
+          "currentValue": 82349,
+          "priorValue": 769734,
+          "delta": -687385,
+          "direction": "down"
+        }
+      },
+      "costUsd": {
+        "value": 11.775613150000002,
+        "trend": {
+          "series": [
+            {
+              "periodStart": "2026-07-06T00:00:00.000Z",
+              "value": 25.32548009999999
+            },
+            {
+              "periodStart": "2026-07-07T00:00:00.000Z",
+              "value": 34.888636
+            },
+            {
+              "periodStart": "2026-07-08T00:00:00.000Z",
+              "value": 0.3512612
+            },
+            {
+              "periodStart": "2026-07-09T00:00:00.000Z",
+              "value": 0.9657418500000001
+            },
+            {
+              "periodStart": "2026-07-19T00:00:00.000Z",
+              "value": 0
+            },
+            {
+              "periodStart": "2026-08-01T00:00:00.000Z",
+              "value": 2.3538201499999993
+            },
+            {
+              "periodStart": "2026-08-02T00:00:00.000Z",
+              "value": 55.13685235000005
+            },
+            {
+              "periodStart": "2026-08-03T00:00:00.000Z",
+              "value": 107.62002209999999
+            },
+            {
+              "periodStart": "2026-08-04T00:00:00.000Z",
+              "value": 154.85665070000007
+            },
+            {
+              "periodStart": "2026-08-05T00:00:00.000Z",
+              "value": 121.35213854999998
+            },
+            {
+              "periodStart": "2026-08-06T00:00:00.000Z",
+              "value": 11.775613150000002
+            }
+          ],
+          "currentValue": 11.775613150000002,
+          "priorValue": 121.35213854999998,
+          "delta": -109.57652539999998,
+          "direction": "down"
+        }
+      }
+    },
+    {
+      "role": "cleaner",
+      "tokens": {
+        "value": 18730,
+        "trend": {
+          "series": [
+            {
+              "periodStart": "2026-07-06T00:00:00.000Z",
+              "value": 26325
+            },
+            {
+              "periodStart": "2026-07-07T00:00:00.000Z",
+              "value": 122861
+            },
+            {
+              "periodStart": "2026-07-08T00:00:00.000Z",
+              "value": 7753
+            },
+            {
+              "periodStart": "2026-08-02T00:00:00.000Z",
+              "value": 43208
+            },
+            {
+              "periodStart": "2026-08-03T00:00:00.000Z",
+              "value": 64211
+            },
+            {
+              "periodStart": "2026-08-04T00:00:00.000Z",
+              "value": 98671
+            },
+            {
+              "periodStart": "2026-08-05T00:00:00.000Z",
+              "value": 67621
+            },
+            {
+              "periodStart": "2026-08-06T00:00:00.000Z",
+              "value": 18730
+            }
+          ],
+          "currentValue": 18730,
+          "priorValue": 67621,
+          "delta": -48891,
+          "direction": "down"
+        }
+      },
+      "costUsd": {
+        "value": 4.91969535,
+        "trend": {
+          "series": [
+            {
+              "periodStart": "2026-07-06T00:00:00.000Z",
+              "value": 1.2446761000000004
+            },
+            {
+              "periodStart": "2026-07-07T00:00:00.000Z",
+              "value": 5.216588650000009
+            },
+            {
+              "periodStart": "2026-07-08T00:00:00.000Z",
+              "value": 0.36276675
+            },
+            {
+              "periodStart": "2026-08-02T00:00:00.000Z",
+              "value": 7.061999400000004
+            },
+            {
+              "periodStart": "2026-08-03T00:00:00.000Z",
+              "value": 12.805940700000003
+            },
+            {
+              "periodStart": "2026-08-04T00:00:00.000Z",
+              "value": 18.6704139
+            },
+            {
+              "periodStart": "2026-08-05T00:00:00.000Z",
+              "value": 17.692886549999994
+            },
+            {
+              "periodStart": "2026-08-06T00:00:00.000Z",
+              "value": 4.91969535
+            }
+          ],
+          "currentValue": 4.91969535,
+          "priorValue": 17.692886549999994,
+          "delta": -12.773191199999994,
+          "direction": "down"
+        }
+      }
+    },
+    {
+      "role": "architect",
+      "tokens": {
+        "value": 39842,
+        "trend": {
+          "series": [
+            {
+              "periodStart": "2026-07-06T00:00:00.000Z",
+              "value": 28608
+            },
+            {
+              "periodStart": "2026-07-07T00:00:00.000Z",
+              "value": 122071
+            },
+            {
+              "periodStart": "2026-08-02T00:00:00.000Z",
+              "value": 82448
+            },
+            {
+              "periodStart": "2026-08-03T00:00:00.000Z",
+              "value": 183165
+            },
+            {
+              "periodStart": "2026-08-04T00:00:00.000Z",
+              "value": 205959
+            },
+            {
+              "periodStart": "2026-08-05T00:00:00.000Z",
+              "value": 167517
+            },
+            {
+              "periodStart": "2026-08-06T00:00:00.000Z",
+              "value": 39842
+            }
+          ],
+          "currentValue": 39842,
+          "priorValue": 167517,
+          "delta": -127675,
+          "direction": "down"
+        }
+      },
+      "costUsd": {
+        "value": 5.8557288,
+        "trend": {
+          "series": [
+            {
+              "periodStart": "2026-07-06T00:00:00.000Z",
+              "value": 5.943168700000003
+            },
+            {
+              "periodStart": "2026-07-07T00:00:00.000Z",
+              "value": 13.207817400000001
+            },
+            {
+              "periodStart": "2026-08-02T00:00:00.000Z",
+              "value": 8.4407034
+            },
+            {
+              "periodStart": "2026-08-03T00:00:00.000Z",
+              "value": 19.326901349999996
+            },
+            {
+              "periodStart": "2026-08-04T00:00:00.000Z",
+              "value": 27.43790580000001
+            },
+            {
+              "periodStart": "2026-08-05T00:00:00.000Z",
+              "value": 26.687347200000037
+            },
+            {
+              "periodStart": "2026-08-06T00:00:00.000Z",
+              "value": 5.8557288
+            }
+          ],
+          "currentValue": 5.8557288,
+          "priorValue": 26.687347200000037,
+          "delta": -20.83161840000004,
+          "direction": "down"
+        }
+      }
+    },
+    {
+      "role": "hardender",
+      "tokens": {
+        "value": 59636,
+        "trend": {
+          "series": [
+            {
+              "periodStart": "2026-07-06T00:00:00.000Z",
+              "value": 45260
+            },
+            {
+              "periodStart": "2026-07-07T00:00:00.000Z",
+              "value": 113547
+            },
+            {
+              "periodStart": "2026-08-02T00:00:00.000Z",
+              "value": 36351
+            },
+            {
+              "periodStart": "2026-08-03T00:00:00.000Z",
+              "value": 229025
+            },
+            {
+              "periodStart": "2026-08-04T00:00:00.000Z",
+              "value": 247510
+            },
+            {
+              "periodStart": "2026-08-05T00:00:00.000Z",
+              "value": 160072
+            },
+            {
+              "periodStart": "2026-08-06T00:00:00.000Z",
+              "value": 59636
+            }
+          ],
+          "currentValue": 59636,
+          "priorValue": 160072,
+          "delta": -100436,
+          "direction": "down"
+        }
+      },
+      "costUsd": {
+        "value": 8.313338100000001,
+        "trend": {
+          "series": [
+            {
+              "periodStart": "2026-07-06T00:00:00.000Z",
+              "value": 9.915185899999997
+            },
+            {
+              "periodStart": "2026-07-07T00:00:00.000Z",
+              "value": 13.241353100000003
+            },
+            {
+              "periodStart": "2026-08-02T00:00:00.000Z",
+              "value": 4.86176385
+            },
+            {
+              "periodStart": "2026-08-03T00:00:00.000Z",
+              "value": 30.86638350000003
+            },
+            {
+              "periodStart": "2026-08-04T00:00:00.000Z",
+              "value": 34.45426575000002
+            },
+            {
+              "periodStart": "2026-08-05T00:00:00.000Z",
+              "value": 27.77635455000001
+            },
+            {
+              "periodStart": "2026-08-06T00:00:00.000Z",
+              "value": 8.313338100000001
+            }
+          ],
+          "currentValue": 8.313338100000001,
+          "priorValue": 27.77635455000001,
+          "delta": -19.463016450000012,
+          "direction": "down"
+        }
+      }
+    },
+    {
+      "role": "documenter",
+      "tokens": {
+        "value": 30577,
+        "trend": {
+          "series": [
+            {
+              "periodStart": "2026-07-06T00:00:00.000Z",
+              "value": 29197
+            },
+            {
+              "periodStart": "2026-07-07T00:00:00.000Z",
+              "value": 118313
+            },
+            {
+              "periodStart": "2026-08-02T00:00:00.000Z",
+              "value": 12217
+            },
+            {
+              "periodStart": "2026-08-03T00:00:00.000Z",
+              "value": 60241
+            },
+            {
+              "periodStart": "2026-08-04T00:00:00.000Z",
+              "value": 184193
+            },
+            {
+              "periodStart": "2026-08-05T00:00:00.000Z",
+              "value": 87690
+            },
+            {
+              "periodStart": "2026-08-06T00:00:00.000Z",
+              "value": 30577
+            }
+          ],
+          "currentValue": 30577,
+          "priorValue": 87690,
+          "delta": -57113,
+          "direction": "down"
+        }
+      },
+      "costUsd": {
+        "value": 4.9201434,
+        "trend": {
+          "series": [
+            {
+              "periodStart": "2026-07-06T00:00:00.000Z",
+              "value": 1.15906085
+            },
+            {
+              "periodStart": "2026-07-07T00:00:00.000Z",
+              "value": 4.547738750000002
+            },
+            {
+              "periodStart": "2026-08-02T00:00:00.000Z",
+              "value": 1.5171285
+            },
+            {
+              "periodStart": "2026-08-03T00:00:00.000Z",
+              "value": 8.88565545
+            },
+            {
+              "periodStart": "2026-08-04T00:00:00.000Z",
+              "value": 26.733534300000006
+            },
+            {
+              "periodStart": "2026-08-05T00:00:00.000Z",
+              "value": 16.83452669999999
+            },
+            {
+              "periodStart": "2026-08-06T00:00:00.000Z",
+              "value": 4.9201434
+            }
+          ],
+          "currentValue": 4.9201434,
+          "priorValue": 16.83452669999999,
+          "delta": -11.91438329999999,
+          "direction": "down"
+        }
+      }
+    },
+    {
+      "role": "QA",
+      "tokens": {
+        "value": 46686,
+        "trend": {
+          "series": [
+            {
+              "periodStart": "2026-07-06T00:00:00.000Z",
+              "value": 35325
+            },
+            {
+              "periodStart": "2026-07-07T00:00:00.000Z",
+              "value": 132472
+            },
+            {
+              "periodStart": "2026-08-02T00:00:00.000Z",
+              "value": 50435
+            },
+            {
+              "periodStart": "2026-08-03T00:00:00.000Z",
+              "value": 158656
+            },
+            {
+              "periodStart": "2026-08-04T00:00:00.000Z",
+              "value": 445280
+            },
+            {
+              "periodStart": "2026-08-05T00:00:00.000Z",
+              "value": 274853
+            },
+            {
+              "periodStart": "2026-08-06T00:00:00.000Z",
+              "value": 46686
+            }
+          ],
+          "currentValue": 46686,
+          "priorValue": 274853,
+          "delta": -228167,
+          "direction": "down"
+        }
+      },
+      "costUsd": {
+        "value": 6.3866356500000006,
+        "trend": {
+          "series": [
+            {
+              "periodStart": "2026-07-06T00:00:00.000Z",
+              "value": 1.6311706999999998
+            },
+            {
+              "periodStart": "2026-07-07T00:00:00.000Z",
+              "value": 5.5810989000000015
+            },
+            {
+              "periodStart": "2026-08-02T00:00:00.000Z",
+              "value": 8.515532250000001
+            },
+            {
+              "periodStart": "2026-08-03T00:00:00.000Z",
+              "value": 20.24255099999998
+            },
+            {
+              "periodStart": "2026-08-04T00:00:00.000Z",
+              "value": 63.8338287
+            },
+            {
+              "periodStart": "2026-08-05T00:00:00.000Z",
+              "value": 46.812713099999975
+            },
+            {
+              "periodStart": "2026-08-06T00:00:00.000Z",
+              "value": 6.3866356500000006
+            }
+          ],
+          "currentValue": 6.3866356500000006,
+          "priorValue": 46.812713099999975,
+          "delta": -40.42607744999997,
+          "direction": "down"
+        }
+      }
+    }
+  ],
+  "topExpensiveTickets": [
+    {
+      "ticketId": "BL-761",
+      "costUsd": 33.300332100000006
+    },
+    {
+      "ticketId": "BL-805",
+      "costUsd": 27.55594515
+    },
+    {
+      "ticketId": "BL-611",
+      "costUsd": 27.130275449999996
+    },
+    {
+      "ticketId": "BL-766",
+      "costUsd": 21.955105350000004
+    },
+    {
+      "ticketId": "BL-638",
+      "costUsd": 18.141824250000006
+    }
+  ],
+  "flowBalance": {
+    "speccedPerDay": {
+      "value": 0,
+      "trend": {
+        "series": [
+          {
+            "periodStart": "2026-06-29T00:00:00.000Z",
+            "value": 19
+          },
+          {
+            "periodStart": "2026-06-30T00:00:00.000Z",
+            "value": 19
+          },
+          {
+            "periodStart": "2026-07-01T00:00:00.000Z",
+            "value": 28
+          },
+          {
+            "periodStart": "2026-07-02T00:00:00.000Z",
+            "value": 19
+          },
+          {
+            "periodStart": "2026-07-03T00:00:00.000Z",
+            "value": 2
+          },
+          {
+            "periodStart": "2026-07-04T00:00:00.000Z",
+            "value": 17
+          },
+          {
+            "periodStart": "2026-07-05T00:00:00.000Z",
+            "value": 26
+          },
+          {
+            "periodStart": "2026-07-06T00:00:00.000Z",
+            "value": 20
+          },
+          {
+            "periodStart": "2026-07-07T00:00:00.000Z",
+            "value": 5
+          },
+          {
+            "periodStart": "2026-07-08T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-09T00:00:00.000Z",
+            "value": 23
+          },
+          {
+            "periodStart": "2026-07-10T00:00:00.000Z",
+            "value": 41
+          },
+          {
+            "periodStart": "2026-07-11T00:00:00.000Z",
+            "value": 36
+          },
+          {
+            "periodStart": "2026-07-12T00:00:00.000Z",
+            "value": 22
+          },
+          {
+            "periodStart": "2026-07-13T00:00:00.000Z",
+            "value": 33
+          },
+          {
+            "periodStart": "2026-07-14T00:00:00.000Z",
+            "value": 35
+          },
+          {
+            "periodStart": "2026-07-15T00:00:00.000Z",
+            "value": 43
+          },
+          {
+            "periodStart": "2026-07-16T00:00:00.000Z",
+            "value": 28
+          },
+          {
+            "periodStart": "2026-07-17T00:00:00.000Z",
+            "value": 40
+          },
+          {
+            "periodStart": "2026-07-18T00:00:00.000Z",
+            "value": 8
+          },
+          {
+            "periodStart": "2026-07-19T00:00:00.000Z",
+            "value": 16
+          },
+          {
+            "periodStart": "2026-07-20T00:00:00.000Z",
+            "value": 1
+          },
+          {
+            "periodStart": "2026-07-21T00:00:00.000Z",
+            "value": 4
+          },
+          {
+            "periodStart": "2026-07-22T00:00:00.000Z",
+            "value": 14
+          },
+          {
+            "periodStart": "2026-07-23T00:00:00.000Z",
+            "value": 48
+          },
+          {
+            "periodStart": "2026-07-24T00:00:00.000Z",
+            "value": 10
+          },
+          {
+            "periodStart": "2026-07-25T00:00:00.000Z",
+            "value": 38
+          },
+          {
+            "periodStart": "2026-07-26T00:00:00.000Z",
+            "value": 30
+          },
+          {
+            "periodStart": "2026-07-27T00:00:00.000Z",
+            "value": 13
+          },
+          {
+            "periodStart": "2026-07-28T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-29T00:00:00.000Z",
+            "value": 11
+          },
+          {
+            "periodStart": "2026-07-30T00:00:00.000Z",
+            "value": 49
+          },
+          {
+            "periodStart": "2026-07-31T00:00:00.000Z",
+            "value": 11
+          },
+          {
+            "periodStart": "2026-08-01T00:00:00.000Z",
+            "value": 20
+          },
+          {
+            "periodStart": "2026-08-02T00:00:00.000Z",
+            "value": 3
+          },
+          {
+            "periodStart": "2026-08-03T00:00:00.000Z",
+            "value": 9
+          },
+          {
+            "periodStart": "2026-08-04T00:00:00.000Z",
+            "value": 7
+          },
+          {
+            "periodStart": "2026-08-05T00:00:00.000Z",
+            "value": 11
+          },
+          {
+            "periodStart": "2026-08-06T00:00:00.000Z",
+            "value": 0
+          }
+        ],
+        "currentValue": 0,
+        "priorValue": 11,
+        "delta": -11,
+        "direction": "down"
+      }
+    },
+    "closedPerDay": {
+      "value": 2,
+      "trend": {
+        "series": [
+          {
+            "periodStart": "2026-06-29T00:00:00.000Z",
+            "value": 16
+          },
+          {
+            "periodStart": "2026-06-30T00:00:00.000Z",
+            "value": 15
+          },
+          {
+            "periodStart": "2026-07-01T00:00:00.000Z",
+            "value": 22
+          },
+          {
+            "periodStart": "2026-07-02T00:00:00.000Z",
+            "value": 24
+          },
+          {
+            "periodStart": "2026-07-03T00:00:00.000Z",
+            "value": 5
+          },
+          {
+            "periodStart": "2026-07-04T00:00:00.000Z",
+            "value": 7
+          },
+          {
+            "periodStart": "2026-07-05T00:00:00.000Z",
+            "value": 8
+          },
+          {
+            "periodStart": "2026-07-06T00:00:00.000Z",
+            "value": 23
+          },
+          {
+            "periodStart": "2026-07-07T00:00:00.000Z",
+            "value": 4
+          },
+          {
+            "periodStart": "2026-07-08T00:00:00.000Z",
+            "value": 2
+          },
+          {
+            "periodStart": "2026-07-09T00:00:00.000Z",
+            "value": 32
+          },
+          {
+            "periodStart": "2026-07-10T00:00:00.000Z",
+            "value": 54
+          },
+          {
+            "periodStart": "2026-07-11T00:00:00.000Z",
+            "value": 42
+          },
+          {
+            "periodStart": "2026-07-12T00:00:00.000Z",
+            "value": 18
+          },
+          {
+            "periodStart": "2026-07-13T00:00:00.000Z",
+            "value": 23
+          },
+          {
+            "periodStart": "2026-07-14T00:00:00.000Z",
+            "value": 36
+          },
+          {
+            "periodStart": "2026-07-15T00:00:00.000Z",
+            "value": 25
+          },
+          {
+            "periodStart": "2026-07-16T00:00:00.000Z",
+            "value": 42
+          },
+          {
+            "periodStart": "2026-07-17T00:00:00.000Z",
+            "value": 50
+          },
+          {
+            "periodStart": "2026-07-18T00:00:00.000Z",
+            "value": 4
+          },
+          {
+            "periodStart": "2026-07-19T00:00:00.000Z",
+            "value": 7
+          },
+          {
+            "periodStart": "2026-07-20T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-21T00:00:00.000Z",
+            "value": 1
+          },
+          {
+            "periodStart": "2026-07-22T00:00:00.000Z",
+            "value": 7
+          },
+          {
+            "periodStart": "2026-07-23T00:00:00.000Z",
+            "value": 8
+          },
+          {
+            "periodStart": "2026-07-24T00:00:00.000Z",
+            "value": 12
+          },
+          {
+            "periodStart": "2026-07-25T00:00:00.000Z",
+            "value": 6
+          },
+          {
+            "periodStart": "2026-07-26T00:00:00.000Z",
+            "value": 9
+          },
+          {
+            "periodStart": "2026-07-27T00:00:00.000Z",
+            "value": 5
+          },
+          {
+            "periodStart": "2026-07-28T00:00:00.000Z",
+            "value": 2
+          },
+          {
+            "periodStart": "2026-07-29T00:00:00.000Z",
+            "value": 11
+          },
+          {
+            "periodStart": "2026-07-30T00:00:00.000Z",
+            "value": 17
+          },
+          {
+            "periodStart": "2026-07-31T00:00:00.000Z",
+            "value": 1
+          },
+          {
+            "periodStart": "2026-08-01T00:00:00.000Z",
+            "value": 10
+          },
+          {
+            "periodStart": "2026-08-02T00:00:00.000Z",
+            "value": 1
+          },
+          {
+            "periodStart": "2026-08-03T00:00:00.000Z",
+            "value": 3
+          },
+          {
+            "periodStart": "2026-08-04T00:00:00.000Z",
+            "value": 7
+          },
+          {
+            "periodStart": "2026-08-05T00:00:00.000Z",
+            "value": 9
+          },
+          {
+            "periodStart": "2026-08-06T00:00:00.000Z",
+            "value": 2
+          }
+        ],
+        "currentValue": 2,
+        "priorValue": 9,
+        "delta": -7,
+        "direction": "down"
+      }
+    },
+    "rework": {
+      "roundsPerClose": {
+        "QA": {
+          "value": 0.06,
+          "trend": {
+            "series": [
+              {
+                "periodStart": "2026-07-23",
+                "value": 0
+              },
+              {
+                "periodStart": "2026-07-30",
+                "value": 0.06
+              }
+            ],
+            "currentValue": 0.06,
+            "priorValue": 0,
+            "delta": 0.06,
+            "direction": "up"
+          }
+        },
+        "architect": {
+          "value": 0.04,
+          "trend": {
+            "series": [
+              {
+                "periodStart": "2026-07-23",
+                "value": 0
+              },
+              {
+                "periodStart": "2026-07-30",
+                "value": 0.04
+              }
+            ],
+            "currentValue": 0.04,
+            "priorValue": 0,
+            "delta": 0.04,
+            "direction": "up"
+          }
+        },
+        "hardender": {
+          "value": 0.02,
+          "trend": {
+            "series": [
+              {
+                "periodStart": "2026-07-23",
+                "value": 0
+              },
+              {
+                "periodStart": "2026-07-30",
+                "value": 0.02
+              }
+            ],
+            "currentValue": 0.02,
+            "priorValue": 0,
+            "delta": 0.02,
+            "direction": "up"
+          }
+        }
+      },
+      "bouncesPerDay": {
+        "QA": [
+          {
+            "periodStart": "2026-07-31",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-01",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-02",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-03",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-04",
+            "value": 3
+          },
+          {
+            "periodStart": "2026-08-05",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-06",
+            "value": 0
+          }
+        ],
+        "architect": [
+          {
+            "periodStart": "2026-07-31",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-01",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-02",
+            "value": 1
+          },
+          {
+            "periodStart": "2026-08-03",
+            "value": 1
+          },
+          {
+            "periodStart": "2026-08-04",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-05",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-06",
+            "value": 0
+          }
+        ],
+        "hardender": [
+          {
+            "periodStart": "2026-07-31",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-01",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-02",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-03",
+            "value": 1
+          },
+          {
+            "periodStart": "2026-08-04",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-05",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-06",
+            "value": 0
+          }
+        ]
+      },
+      "maxRounds": {
+        "ticket": "BL-766",
+        "rounds": 1,
+        "by": "architect"
+      }
+    }
+  },
+  "reliability": {
+    "chases": {
+      "value": 18,
+      "trend": {
+        "series": [
+          {
+            "periodStart": "2026-07-19T00:00:00.000Z",
+            "value": 353
+          },
+          {
+            "periodStart": "2026-07-20T00:00:00.000Z",
+            "value": 1374
+          },
+          {
+            "periodStart": "2026-07-21T00:00:00.000Z",
+            "value": 177
+          },
+          {
+            "periodStart": "2026-07-22T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-23T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-24T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-25T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-26T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-27T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-28T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-29T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-30T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-31T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-01T00:00:00.000Z",
+            "value": 3
+          },
+          {
+            "periodStart": "2026-08-02T00:00:00.000Z",
+            "value": 8
+          },
+          {
+            "periodStart": "2026-08-03T00:00:00.000Z",
+            "value": 28
+          },
+          {
+            "periodStart": "2026-08-04T00:00:00.000Z",
+            "value": 72
+          },
+          {
+            "periodStart": "2026-08-05T00:00:00.000Z",
+            "value": 87
+          },
+          {
+            "periodStart": "2026-08-06T00:00:00.000Z",
+            "value": 18
+          }
+        ],
+        "currentValue": 18,
+        "priorValue": 87,
+        "delta": -69,
+        "direction": "down"
+      }
+    },
+    "nudges": {
+      "value": 12,
+      "trend": {
+        "series": [
+          {
+            "periodStart": "2026-07-19T00:00:00.000Z",
+            "value": 27
+          },
+          {
+            "periodStart": "2026-07-20T00:00:00.000Z",
+            "value": 378
+          },
+          {
+            "periodStart": "2026-07-21T00:00:00.000Z",
+            "value": 1081
+          },
+          {
+            "periodStart": "2026-07-22T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-23T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-24T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-25T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-26T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-27T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-28T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-29T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-30T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-31T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-01T00:00:00.000Z",
+            "value": 1
+          },
+          {
+            "periodStart": "2026-08-02T00:00:00.000Z",
+            "value": 13
+          },
+          {
+            "periodStart": "2026-08-03T00:00:00.000Z",
+            "value": 65
+          },
+          {
+            "periodStart": "2026-08-04T00:00:00.000Z",
+            "value": 100
+          },
+          {
+            "periodStart": "2026-08-05T00:00:00.000Z",
+            "value": 65
+          },
+          {
+            "periodStart": "2026-08-06T00:00:00.000Z",
+            "value": 12
+          }
+        ],
+        "currentValue": 12,
+        "priorValue": 65,
+        "delta": -53,
+        "direction": "down"
+      }
+    },
+    "respawns": {
+      "value": 2,
+      "trend": {
+        "series": [
+          {
+            "periodStart": "2026-07-19T00:00:00.000Z",
+            "value": 28
+          },
+          {
+            "periodStart": "2026-07-20T00:00:00.000Z",
+            "value": 84
+          },
+          {
+            "periodStart": "2026-07-21T00:00:00.000Z",
+            "value": 13
+          },
+          {
+            "periodStart": "2026-07-22T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-23T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-24T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-25T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-26T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-27T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-28T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-29T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-30T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-07-31T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-01T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-02T00:00:00.000Z",
+            "value": 0
+          },
+          {
+            "periodStart": "2026-08-03T00:00:00.000Z",
+            "value": 16
+          },
+          {
+            "periodStart": "2026-08-04T00:00:00.000Z",
+            "value": 18
+          },
+          {
+            "periodStart": "2026-08-05T00:00:00.000Z",
+            "value": 80
+          },
+          {
+            "periodStart": "2026-08-06T00:00:00.000Z",
+            "value": 2
+          }
+        ],
+        "currentValue": 2,
+        "priorValue": 80,
+        "delta": -78,
+        "direction": "down"
+      }
+    },
+    "failedDeliveries": {
+      "value": 0,
+      "trend": {
+        "series": [
+          {
+            "periodStart": "2026-08-06T00:00:00.000Z",
+            "value": 0
+          }
+        ],
+        "currentValue": 0,
+        "priorValue": null,
+        "delta": null,
+        "direction": "unknown"
+      }
+    },
+    "daemonRestarts": {
+      "value": 0,
+      "trend": {
+        "series": [],
+        "currentValue": null,
+        "priorValue": null,
+        "delta": null,
+        "direction": "unknown"
+      }
+    }
+  },
+  "resourceAnomalies": [],
+  "resourceSamplesObserved": true,
+  "suiteDurationTrend": {
+    "hasLocalData": true,
+    "dailySeries": [
+      {
+        "periodStart": "2026-07-05T00:00:00.000Z",
+        "value": 109595.28571428571
+      },
+      {
+        "periodStart": "2026-07-06T00:00:00.000Z",
+        "value": 346265.5833333333
+      },
+      {
+        "periodStart": "2026-07-07T00:00:00.000Z",
+        "value": 84620.69230769231
+      },
+      {
+        "periodStart": "2026-07-08T00:00:00.000Z",
+        "value": 74131
+      },
+      {
+        "periodStart": "2026-07-09T00:00:00.000Z",
+        "value": 49406.72727272727
+      },
+      {
+        "periodStart": "2026-08-02T00:00:00.000Z",
+        "value": 179514.5
+      },
+      {
+        "periodStart": "2026-08-03T00:00:00.000Z",
+        "value": 328258.7727272727
+      },
+      {
+        "periodStart": "2026-08-04T00:00:00.000Z",
+        "value": 315580.6666666667
+      },
+      {
+        "periodStart": "2026-08-05T00:00:00.000Z",
+        "value": 532294.75
+      },
+      {
+        "periodStart": "2026-08-06T00:00:00.000Z",
+        "value": 414654
+      }
+    ],
+    "trend": {
+      "series": [
+        {
+          "periodStart": "2026-07-05T00:00:00.000Z",
+          "value": 109595.28571428571
+        },
+        {
+          "periodStart": "2026-07-06T00:00:00.000Z",
+          "value": 346265.5833333333
+        },
+        {
+          "periodStart": "2026-07-07T00:00:00.000Z",
+          "value": 84620.69230769231
+        },
+        {
+          "periodStart": "2026-07-08T00:00:00.000Z",
+          "value": 74131
+        },
+        {
+          "periodStart": "2026-07-09T00:00:00.000Z",
+          "value": 49406.72727272727
+        },
+        {
+          "periodStart": "2026-08-02T00:00:00.000Z",
+          "value": 179514.5
+        },
+        {
+          "periodStart": "2026-08-03T00:00:00.000Z",
+          "value": 328258.7727272727
+        },
+        {
+          "periodStart": "2026-08-04T00:00:00.000Z",
+          "value": 315580.6666666667
+        },
+        {
+          "periodStart": "2026-08-05T00:00:00.000Z",
+          "value": 532294.75
+        },
+        {
+          "periodStart": "2026-08-06T00:00:00.000Z",
+          "value": 414654
+        }
+      ],
+      "currentValue": 414654,
+      "priorValue": 532294.75,
+      "delta": -117640.75,
+      "direction": "down"
+    },
+    "warn": true
+  },
+  "costPerTicket": {
+    "average": {
+      "value": 6.736373175,
+      "trend": {
+        "series": [
+          {
+            "periodStart": "2026-07-02T00:00:00.000Z",
+            "value": 0.7988989
+          },
+          {
+            "periodStart": "2026-07-30T00:00:00.000Z",
+            "value": 15.370106152500004
+          },
+          {
+            "periodStart": "2026-08-06T00:00:00.000Z",
+            "value": 6.736373175
+          }
+        ],
+        "currentValue": 6.736373175,
+        "priorValue": 15.370106152500004,
+        "delta": -8.633732977500003,
+        "direction": "down"
+      }
+    },
+    "sampleCount": 30,
+    "excludedCount": 540,
+    "series": [
+      {
+        "periodStart": "2026-07-02T00:00:00.000Z",
+        "value": 0.7988989
+      },
+      {
+        "periodStart": "2026-07-30T00:00:00.000Z",
+        "value": 15.370106152500004
+      },
+      {
+        "periodStart": "2026-08-06T00:00:00.000Z",
+        "value": 6.736373175
+      }
+    ],
+    "basis": "Average of each DELIVERED ticket's total cost, summed across every role that held it (BL-312's non-double-counted totals). Includes rework: every bounce/re-hold's usage counts toward the ticket, not just its first pass. Excludes usage outside any recorded holding window ('unattributed') and tickets with no priced model available for any of their usage - those are counted separately (see excluded count), never as $0."
+  },
+  "topExpensiveOriginsByHorizon": {
+    "3h": [
+      {
+        "key": {
+          "role": "coder",
+          "trigger": "handoff"
+        },
+        "costUsd": 0,
+        "invocationCount": 1,
+        "unknownCostCount": 1
+      },
+      {
+        "key": {
+          "role": "cleaner",
+          "trigger": "handoff"
+        },
+        "costUsd": 0,
+        "invocationCount": 1,
+        "unknownCostCount": 1
+      },
+      {
+        "key": {
+          "role": "architect",
+          "trigger": "handoff"
+        },
+        "costUsd": 0,
+        "invocationCount": 1,
+        "unknownCostCount": 1
+      },
+      {
+        "key": {
+          "role": "hardender",
+          "trigger": "handoff"
+        },
+        "costUsd": 0,
+        "invocationCount": 1,
+        "unknownCostCount": 1
+      },
+      {
+        "key": {
+          "role": "documenter",
+          "trigger": "handoff"
+        },
+        "costUsd": 0,
+        "invocationCount": 1,
+        "unknownCostCount": 1
+      }
+    ],
+    "24h": [
+      {
+        "key": {
+          "role": "front-desk-operator",
+          "trigger": "reap"
+        },
+        "costUsd": 0.0260301,
+        "invocationCount": 1,
+        "unknownCostCount": 0
+      },
+      {
+        "key": {
+          "role": "specifier",
+          "trigger": "handoff"
+        },
+        "costUsd": 0,
+        "invocationCount": 3,
+        "unknownCostCount": 3
+      },
+      {
+        "key": {
+          "role": "coordinator",
+          "trigger": "handoff"
+        },
+        "costUsd": 0,
+        "invocationCount": 11,
+        "unknownCostCount": 11
+      },
+      {
+        "key": {
+          "role": "architect",
+          "trigger": "handoff"
+        },
+        "costUsd": 0,
+        "invocationCount": 8,
+        "unknownCostCount": 8
+      },
+      {
+        "key": {
+          "role": "QA",
+          "trigger": "handoff"
+        },
+        "costUsd": 0,
+        "invocationCount": 2,
+        "unknownCostCount": 2
+      }
+    ],
+    "7d": [
+      {
+        "key": {
+          "role": "front-desk-operator",
+          "trigger": "reap"
+        },
+        "costUsd": 0.22207030000000003,
+        "invocationCount": 11,
+        "unknownCostCount": 0
+      },
+      {
+        "key": {
+          "role": "coder",
+          "trigger": "handoff"
+        },
+        "costUsd": 0,
+        "invocationCount": 17,
+        "unknownCostCount": 17
+      },
+      {
+        "key": {
+          "role": "cleaner",
+          "trigger": "handoff"
+        },
+        "costUsd": 0,
+        "invocationCount": 14,
+        "unknownCostCount": 14
+      },
+      {
+        "key": {
+          "role": "coordinator",
+          "trigger": "handoff"
+        },
+        "costUsd": 0,
+        "invocationCount": 35,
+        "unknownCostCount": 35
+      },
+      {
+        "key": {
+          "role": "documenter",
+          "trigger": "handoff"
+        },
+        "costUsd": 0,
+        "invocationCount": 17,
+        "unknownCostCount": 17
+      }
+    ]
+  },
+  "originCostTrendSeries": [
+    {
+      "key": {
+        "role": "front-desk-operator",
+        "trigger": "reap",
+        "script": "launch_front_desk_operator.sh"
+      },
+      "buckets": [
+        {
+          "bucketStartMs": 1785385819916,
+          "bucketEndMs": 1785407419916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785407419916,
+          "bucketEndMs": 1785429019916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785429019916,
+          "bucketEndMs": 1785450619916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785450619916,
+          "bucketEndMs": 1785472219916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785472219916,
+          "bucketEndMs": 1785493819916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785493819916,
+          "bucketEndMs": 1785515419916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785515419916,
+          "bucketEndMs": 1785537019916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785537019916,
+          "bucketEndMs": 1785558619916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785558619916,
+          "bucketEndMs": 1785580219916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785580219916,
+          "bucketEndMs": 1785601819916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785601819916,
+          "bucketEndMs": 1785623419916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785623419916,
+          "bucketEndMs": 1785645019916,
+          "costUsd": 0.0816342
+        },
+        {
+          "bucketStartMs": 1785645019916,
+          "bucketEndMs": 1785666619916,
+          "costUsd": 0.023438999999999998
+        },
+        {
+          "bucketStartMs": 1785666619916,
+          "bucketEndMs": 1785688219916,
+          "costUsd": 0.022466
+        },
+        {
+          "bucketStartMs": 1785688219916,
+          "bucketEndMs": 1785709819916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785709819916,
+          "bucketEndMs": 1785731419916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785731419916,
+          "bucketEndMs": 1785753019916,
+          "costUsd": 0.03345
+        },
+        {
+          "bucketStartMs": 1785753019916,
+          "bucketEndMs": 1785774619916,
+          "costUsd": 0.035051
+        },
+        {
+          "bucketStartMs": 1785774619916,
+          "bucketEndMs": 1785796219916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785796219916,
+          "bucketEndMs": 1785817819916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785817819916,
+          "bucketEndMs": 1785839419916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785839419916,
+          "bucketEndMs": 1785861019916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785861019916,
+          "bucketEndMs": 1785882619916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785882619916,
+          "bucketEndMs": 1785904219916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785904219916,
+          "bucketEndMs": 1785907819916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785907819916,
+          "bucketEndMs": 1785911419916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785911419916,
+          "bucketEndMs": 1785915019916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785915019916,
+          "bucketEndMs": 1785918619916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785918619916,
+          "bucketEndMs": 1785922219916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785922219916,
+          "bucketEndMs": 1785925819916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785925819916,
+          "bucketEndMs": 1785929419916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785929419916,
+          "bucketEndMs": 1785933019916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785933019916,
+          "bucketEndMs": 1785936619916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785936619916,
+          "bucketEndMs": 1785940219916,
+          "costUsd": 0.0260301
+        },
+        {
+          "bucketStartMs": 1785940219916,
+          "bucketEndMs": 1785943819916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785943819916,
+          "bucketEndMs": 1785947419916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785947419916,
+          "bucketEndMs": 1785951019916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785951019916,
+          "bucketEndMs": 1785954619916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785954619916,
+          "bucketEndMs": 1785958219916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785958219916,
+          "bucketEndMs": 1785961819916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785961819916,
+          "bucketEndMs": 1785965419916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785965419916,
+          "bucketEndMs": 1785969019916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785969019916,
+          "bucketEndMs": 1785972619916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785972619916,
+          "bucketEndMs": 1785976219916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785976219916,
+          "bucketEndMs": 1785979819916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785979819916,
+          "bucketEndMs": 1785980719916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785980719916,
+          "bucketEndMs": 1785981619916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785981619916,
+          "bucketEndMs": 1785982519916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785982519916,
+          "bucketEndMs": 1785983419916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785983419916,
+          "bucketEndMs": 1785984319916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785984319916,
+          "bucketEndMs": 1785985219916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785985219916,
+          "bucketEndMs": 1785986119916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785986119916,
+          "bucketEndMs": 1785987019916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785987019916,
+          "bucketEndMs": 1785987919916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785987919916,
+          "bucketEndMs": 1785988819916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785988819916,
+          "bucketEndMs": 1785989719916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785989719916,
+          "bucketEndMs": 1785990619916,
+          "costUsd": 0
+        }
+      ]
+    },
+    {
+      "key": {
+        "role": "coder",
+        "trigger": "handoff",
+        "script": null
+      },
+      "buckets": [
+        {
+          "bucketStartMs": 1785385819916,
+          "bucketEndMs": 1785407419916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785407419916,
+          "bucketEndMs": 1785429019916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785429019916,
+          "bucketEndMs": 1785450619916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785450619916,
+          "bucketEndMs": 1785472219916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785472219916,
+          "bucketEndMs": 1785493819916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785493819916,
+          "bucketEndMs": 1785515419916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785515419916,
+          "bucketEndMs": 1785537019916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785537019916,
+          "bucketEndMs": 1785558619916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785558619916,
+          "bucketEndMs": 1785580219916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785580219916,
+          "bucketEndMs": 1785601819916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785601819916,
+          "bucketEndMs": 1785623419916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785623419916,
+          "bucketEndMs": 1785645019916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785645019916,
+          "bucketEndMs": 1785666619916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785666619916,
+          "bucketEndMs": 1785688219916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785688219916,
+          "bucketEndMs": 1785709819916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785709819916,
+          "bucketEndMs": 1785731419916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785731419916,
+          "bucketEndMs": 1785753019916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785753019916,
+          "bucketEndMs": 1785774619916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785774619916,
+          "bucketEndMs": 1785796219916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785796219916,
+          "bucketEndMs": 1785817819916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785817819916,
+          "bucketEndMs": 1785839419916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785839419916,
+          "bucketEndMs": 1785861019916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785861019916,
+          "bucketEndMs": 1785882619916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785882619916,
+          "bucketEndMs": 1785904219916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785904219916,
+          "bucketEndMs": 1785907819916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785907819916,
+          "bucketEndMs": 1785911419916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785911419916,
+          "bucketEndMs": 1785915019916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785915019916,
+          "bucketEndMs": 1785918619916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785918619916,
+          "bucketEndMs": 1785922219916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785922219916,
+          "bucketEndMs": 1785925819916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785925819916,
+          "bucketEndMs": 1785929419916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785929419916,
+          "bucketEndMs": 1785933019916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785933019916,
+          "bucketEndMs": 1785936619916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785936619916,
+          "bucketEndMs": 1785940219916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785940219916,
+          "bucketEndMs": 1785943819916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785943819916,
+          "bucketEndMs": 1785947419916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785947419916,
+          "bucketEndMs": 1785951019916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785951019916,
+          "bucketEndMs": 1785954619916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785954619916,
+          "bucketEndMs": 1785958219916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785958219916,
+          "bucketEndMs": 1785961819916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785961819916,
+          "bucketEndMs": 1785965419916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785965419916,
+          "bucketEndMs": 1785969019916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785969019916,
+          "bucketEndMs": 1785972619916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785972619916,
+          "bucketEndMs": 1785976219916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785976219916,
+          "bucketEndMs": 1785979819916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785979819916,
+          "bucketEndMs": 1785980719916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785980719916,
+          "bucketEndMs": 1785981619916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785981619916,
+          "bucketEndMs": 1785982519916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785982519916,
+          "bucketEndMs": 1785983419916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785983419916,
+          "bucketEndMs": 1785984319916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785984319916,
+          "bucketEndMs": 1785985219916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785985219916,
+          "bucketEndMs": 1785986119916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785986119916,
+          "bucketEndMs": 1785987019916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785987019916,
+          "bucketEndMs": 1785987919916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785987919916,
+          "bucketEndMs": 1785988819916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785988819916,
+          "bucketEndMs": 1785989719916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785989719916,
+          "bucketEndMs": 1785990619916,
+          "costUsd": 0
+        }
+      ]
+    },
+    {
+      "key": {
+        "role": "cleaner",
+        "trigger": "handoff",
+        "script": null
+      },
+      "buckets": [
+        {
+          "bucketStartMs": 1785385819916,
+          "bucketEndMs": 1785407419916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785407419916,
+          "bucketEndMs": 1785429019916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785429019916,
+          "bucketEndMs": 1785450619916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785450619916,
+          "bucketEndMs": 1785472219916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785472219916,
+          "bucketEndMs": 1785493819916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785493819916,
+          "bucketEndMs": 1785515419916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785515419916,
+          "bucketEndMs": 1785537019916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785537019916,
+          "bucketEndMs": 1785558619916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785558619916,
+          "bucketEndMs": 1785580219916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785580219916,
+          "bucketEndMs": 1785601819916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785601819916,
+          "bucketEndMs": 1785623419916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785623419916,
+          "bucketEndMs": 1785645019916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785645019916,
+          "bucketEndMs": 1785666619916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785666619916,
+          "bucketEndMs": 1785688219916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785688219916,
+          "bucketEndMs": 1785709819916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785709819916,
+          "bucketEndMs": 1785731419916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785731419916,
+          "bucketEndMs": 1785753019916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785753019916,
+          "bucketEndMs": 1785774619916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785774619916,
+          "bucketEndMs": 1785796219916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785796219916,
+          "bucketEndMs": 1785817819916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785817819916,
+          "bucketEndMs": 1785839419916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785839419916,
+          "bucketEndMs": 1785861019916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785861019916,
+          "bucketEndMs": 1785882619916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785882619916,
+          "bucketEndMs": 1785904219916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785904219916,
+          "bucketEndMs": 1785907819916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785907819916,
+          "bucketEndMs": 1785911419916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785911419916,
+          "bucketEndMs": 1785915019916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785915019916,
+          "bucketEndMs": 1785918619916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785918619916,
+          "bucketEndMs": 1785922219916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785922219916,
+          "bucketEndMs": 1785925819916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785925819916,
+          "bucketEndMs": 1785929419916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785929419916,
+          "bucketEndMs": 1785933019916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785933019916,
+          "bucketEndMs": 1785936619916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785936619916,
+          "bucketEndMs": 1785940219916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785940219916,
+          "bucketEndMs": 1785943819916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785943819916,
+          "bucketEndMs": 1785947419916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785947419916,
+          "bucketEndMs": 1785951019916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785951019916,
+          "bucketEndMs": 1785954619916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785954619916,
+          "bucketEndMs": 1785958219916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785958219916,
+          "bucketEndMs": 1785961819916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785961819916,
+          "bucketEndMs": 1785965419916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785965419916,
+          "bucketEndMs": 1785969019916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785969019916,
+          "bucketEndMs": 1785972619916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785972619916,
+          "bucketEndMs": 1785976219916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785976219916,
+          "bucketEndMs": 1785979819916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785979819916,
+          "bucketEndMs": 1785980719916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785980719916,
+          "bucketEndMs": 1785981619916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785981619916,
+          "bucketEndMs": 1785982519916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785982519916,
+          "bucketEndMs": 1785983419916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785983419916,
+          "bucketEndMs": 1785984319916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785984319916,
+          "bucketEndMs": 1785985219916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785985219916,
+          "bucketEndMs": 1785986119916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785986119916,
+          "bucketEndMs": 1785987019916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785987019916,
+          "bucketEndMs": 1785987919916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785987919916,
+          "bucketEndMs": 1785988819916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785988819916,
+          "bucketEndMs": 1785989719916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785989719916,
+          "bucketEndMs": 1785990619916,
+          "costUsd": 0
+        }
+      ]
+    },
+    {
+      "key": {
+        "role": "coordinator",
+        "trigger": "handoff",
+        "script": null
+      },
+      "buckets": [
+        {
+          "bucketStartMs": 1785385819916,
+          "bucketEndMs": 1785407419916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785407419916,
+          "bucketEndMs": 1785429019916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785429019916,
+          "bucketEndMs": 1785450619916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785450619916,
+          "bucketEndMs": 1785472219916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785472219916,
+          "bucketEndMs": 1785493819916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785493819916,
+          "bucketEndMs": 1785515419916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785515419916,
+          "bucketEndMs": 1785537019916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785537019916,
+          "bucketEndMs": 1785558619916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785558619916,
+          "bucketEndMs": 1785580219916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785580219916,
+          "bucketEndMs": 1785601819916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785601819916,
+          "bucketEndMs": 1785623419916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785623419916,
+          "bucketEndMs": 1785645019916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785645019916,
+          "bucketEndMs": 1785666619916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785666619916,
+          "bucketEndMs": 1785688219916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785688219916,
+          "bucketEndMs": 1785709819916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785709819916,
+          "bucketEndMs": 1785731419916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785731419916,
+          "bucketEndMs": 1785753019916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785753019916,
+          "bucketEndMs": 1785774619916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785774619916,
+          "bucketEndMs": 1785796219916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785796219916,
+          "bucketEndMs": 1785817819916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785817819916,
+          "bucketEndMs": 1785839419916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785839419916,
+          "bucketEndMs": 1785861019916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785861019916,
+          "bucketEndMs": 1785882619916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785882619916,
+          "bucketEndMs": 1785904219916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785904219916,
+          "bucketEndMs": 1785907819916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785907819916,
+          "bucketEndMs": 1785911419916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785911419916,
+          "bucketEndMs": 1785915019916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785915019916,
+          "bucketEndMs": 1785918619916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785918619916,
+          "bucketEndMs": 1785922219916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785922219916,
+          "bucketEndMs": 1785925819916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785925819916,
+          "bucketEndMs": 1785929419916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785929419916,
+          "bucketEndMs": 1785933019916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785933019916,
+          "bucketEndMs": 1785936619916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785936619916,
+          "bucketEndMs": 1785940219916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785940219916,
+          "bucketEndMs": 1785943819916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785943819916,
+          "bucketEndMs": 1785947419916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785947419916,
+          "bucketEndMs": 1785951019916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785951019916,
+          "bucketEndMs": 1785954619916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785954619916,
+          "bucketEndMs": 1785958219916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785958219916,
+          "bucketEndMs": 1785961819916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785961819916,
+          "bucketEndMs": 1785965419916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785965419916,
+          "bucketEndMs": 1785969019916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785969019916,
+          "bucketEndMs": 1785972619916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785972619916,
+          "bucketEndMs": 1785976219916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785976219916,
+          "bucketEndMs": 1785979819916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785979819916,
+          "bucketEndMs": 1785980719916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785980719916,
+          "bucketEndMs": 1785981619916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785981619916,
+          "bucketEndMs": 1785982519916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785982519916,
+          "bucketEndMs": 1785983419916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785983419916,
+          "bucketEndMs": 1785984319916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785984319916,
+          "bucketEndMs": 1785985219916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785985219916,
+          "bucketEndMs": 1785986119916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785986119916,
+          "bucketEndMs": 1785987019916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785987019916,
+          "bucketEndMs": 1785987919916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785987919916,
+          "bucketEndMs": 1785988819916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785988819916,
+          "bucketEndMs": 1785989719916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785989719916,
+          "bucketEndMs": 1785990619916,
+          "costUsd": 0
+        }
+      ]
+    },
+    {
+      "key": {
+        "role": "documenter",
+        "trigger": "handoff",
+        "script": null
+      },
+      "buckets": [
+        {
+          "bucketStartMs": 1785385819916,
+          "bucketEndMs": 1785407419916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785407419916,
+          "bucketEndMs": 1785429019916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785429019916,
+          "bucketEndMs": 1785450619916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785450619916,
+          "bucketEndMs": 1785472219916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785472219916,
+          "bucketEndMs": 1785493819916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785493819916,
+          "bucketEndMs": 1785515419916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785515419916,
+          "bucketEndMs": 1785537019916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785537019916,
+          "bucketEndMs": 1785558619916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785558619916,
+          "bucketEndMs": 1785580219916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785580219916,
+          "bucketEndMs": 1785601819916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785601819916,
+          "bucketEndMs": 1785623419916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785623419916,
+          "bucketEndMs": 1785645019916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785645019916,
+          "bucketEndMs": 1785666619916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785666619916,
+          "bucketEndMs": 1785688219916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785688219916,
+          "bucketEndMs": 1785709819916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785709819916,
+          "bucketEndMs": 1785731419916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785731419916,
+          "bucketEndMs": 1785753019916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785753019916,
+          "bucketEndMs": 1785774619916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785774619916,
+          "bucketEndMs": 1785796219916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785796219916,
+          "bucketEndMs": 1785817819916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785817819916,
+          "bucketEndMs": 1785839419916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785839419916,
+          "bucketEndMs": 1785861019916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785861019916,
+          "bucketEndMs": 1785882619916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785882619916,
+          "bucketEndMs": 1785904219916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785904219916,
+          "bucketEndMs": 1785907819916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785907819916,
+          "bucketEndMs": 1785911419916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785911419916,
+          "bucketEndMs": 1785915019916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785915019916,
+          "bucketEndMs": 1785918619916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785918619916,
+          "bucketEndMs": 1785922219916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785922219916,
+          "bucketEndMs": 1785925819916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785925819916,
+          "bucketEndMs": 1785929419916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785929419916,
+          "bucketEndMs": 1785933019916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785933019916,
+          "bucketEndMs": 1785936619916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785936619916,
+          "bucketEndMs": 1785940219916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785940219916,
+          "bucketEndMs": 1785943819916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785943819916,
+          "bucketEndMs": 1785947419916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785947419916,
+          "bucketEndMs": 1785951019916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785951019916,
+          "bucketEndMs": 1785954619916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785954619916,
+          "bucketEndMs": 1785958219916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785958219916,
+          "bucketEndMs": 1785961819916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785961819916,
+          "bucketEndMs": 1785965419916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785965419916,
+          "bucketEndMs": 1785969019916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785969019916,
+          "bucketEndMs": 1785972619916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785972619916,
+          "bucketEndMs": 1785976219916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785976219916,
+          "bucketEndMs": 1785979819916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785979819916,
+          "bucketEndMs": 1785980719916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785980719916,
+          "bucketEndMs": 1785981619916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785981619916,
+          "bucketEndMs": 1785982519916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785982519916,
+          "bucketEndMs": 1785983419916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785983419916,
+          "bucketEndMs": 1785984319916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785984319916,
+          "bucketEndMs": 1785985219916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785985219916,
+          "bucketEndMs": 1785986119916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785986119916,
+          "bucketEndMs": 1785987019916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785987019916,
+          "bucketEndMs": 1785987919916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785987919916,
+          "bucketEndMs": 1785988819916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785988819916,
+          "bucketEndMs": 1785989719916,
+          "costUsd": 0
+        },
+        {
+          "bucketStartMs": 1785989719916,
+          "bucketEndMs": 1785990619916,
+          "costUsd": 0
+        }
+      ]
+    }
+  ]
+}
