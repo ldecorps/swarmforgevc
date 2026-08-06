@@ -1,0 +1,143 @@
+id: BL-837
+title: "The collapsed Bubble pulses an attention colour while a clarification is genuinely waiting, and stops the moment it is not"
+milestone: M8
+type: feature
+status: todo
+epic: question-attention-path
+human_approval: approved
+assigned_to: none
+priority: 80
+direction: human-requested
+depends_on: [BL-836]
+mutation_cost: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-837-collapsed-bubble-pulses-while-a-clarification-waits.feature
+
+approval_context: >
+  The human locked the shape of this (blink amber while waiting, stop when
+  answered/cancelled/superseded, no zombie blink) and left the tuning to me.
+  Three of my calls are worth a look.
+
+  (1) A live talk turn keeps its own colour. While the bubble is recording,
+  thinking or speaking, that phase colour wins and the pulse waits; it resumes
+  when the bubble goes idle. Losing the recording-red feedback mid-sentence to
+  an attention pulse would be worse than a slightly later nudge. Cost: if the
+  human is mid-conversation, they learn about the question a few seconds late.
+
+  (2) The pulse follows the last state actually OBSERVED. A failed poll changes
+  nothing — it neither starts nor stops the pulse. This is the honest reading of
+  "no zombie blink": the pulse can only be wrong while the bridge is unreachable,
+  and the first successful poll corrects it. The alternative — stopping on any
+  failed poll — would hide a real question every time the tunnel hiccups.
+
+  (3) Reduce-motion drops the MOTION, never the attention: with animations
+  disabled the bubble goes steady amber rather than still.
+
+  The colour resource name is mine and is fixed by this ticket so the wiring gate
+  can check it: `sf_bubble_needs_answer`, alongside the existing `sf_bubble_*`
+  family. The exact hue is the coder's within "clearly amber, clearly distinct
+  from recording red, thinking, speaking and ready".
+
+invariants:
+  - "The pulse is on if and only if the last SUCCESSFULLY observed pending state said a question is waiting: a failed poll never starts it and never stops it."
+  - "A live talk turn's own phase colour is never masked by the attention pulse."
+  - "An unpaired or never-configured Bubble never pulses and never polls: attention is only ever claimed on evidence."
+
+required_wiring:
+  - "android/app/src/main/java/com/swarmforge/floatcompanion/OverlayService.kt::sf_bubble_needs_answer::the attention colour must reach the collapsed bubble's real appearance path; a resolver nothing renders changes no pixel (the BL-419 shape)"
+  - "android/app/src/main/java/com/swarmforge/floatcompanion/BridgeClient.kt::pending-question::the shell must actually call the bridge's pending-clarification route; a poller with no HTTP call site learns nothing (the BL-419 shape)"
+
+description: |
+  ## What
+
+  Give the collapsed overlay circle an attention state. While a clarifying
+  question is genuinely outstanding, it pulses an amber attention colour; when
+  the question is answered, cancelled or superseded, it stops and returns to its
+  ordinary idle appearance.
+
+  This is the piece the human asked for first — "collapsed Bubble does not shout
+  'something needs your pick'" — and the piece they warned about: prior attempts
+  at this class of cross-channel attention have not stuck, so the behaviour under
+  test is the reliability of *pulses only while waiting is real*, not the
+  animation.
+
+  ## Why this slice is native
+
+  The collapsed bubble and the overlay window are thin-shell native by BL-824's
+  locked decision 2, and BL-824's own out-of-scope list forbids migrating them to
+  remote UI. So the pulse is Kotlin in the shell even though its sheet (BL-838)
+  is a remote page. This ticket is the native half of that split, and BL-824
+  slice E's placement question for this intake is answered by exactly this line.
+
+  ## Where it lands on the testability boundary (BL-769)
+
+  - **Pure logic, JVM unit suite.** The attention-state resolver: given the last
+    observed pending state, the current talk phase, and whether motion is
+    enabled, decide pulse / steady / off and which colour. No `android.*` type in
+    its own signature, so it runs under `./gradlew :app:testDebugUnitTest` with
+    no emulator, and is bindable in the Node runner through the existing
+    `specs/pipeline/steps/lib/androidGradle.js` seam.
+  - **Device surface, recorded manual procedure.** The animation itself, the
+    reduce-motion rendering, and a real poll over a live tunnel. The ticket
+    carries the procedure QA runs; no scenario here is left with no runnable
+    binding.
+
+  Push the framework types to the thin edge: `OverlayService` converts its
+  `TalkEngine.Phase` and the poll result into the resolver's own plain types
+  before calling it, the same way the article's other examples do.
+
+  ## Polling
+
+  The shell has no polling surface today — `BridgeClient.kt` is
+  `submitTextTurn` / `submitAudioTurn` / `newSession` and nothing else. This
+  slice adds a bounded poll of BL-836's read route while the overlay is showing,
+  at a fixed interval constant in the shell. Moving that interval into
+  bridge-served config is deliberately OUT of scope: BL-824 established that
+  Bubble does not fetch `bubble-config.json` today, and this slice must not
+  depend on work that has not landed.
+
+  ## Degrading
+
+  An unreachable bridge changes nothing about the pulse — see invariant 1. An
+  unpaired Bubble neither polls nor pulses. Neither state may ever leave the
+  overlay unusable: the native Talk surface stays reachable throughout, per
+  BL-824's standing invariant.
+
+source: |
+  Drained from `backlog/INTAKE-bubble-clarification-blink-answer-sheet.md`
+  (human via Let's Talk / Cursor 2026-07-31). That intake is split 1:3 (BL-680
+  consolidation authority): BL-836 is the bridge half, this ticket is the
+  collapsed bubble's attention pulse, BL-838 is the question sheet. The operator
+  directives this ticket carries verbatim in substance are locked decision 1
+  ("while a clarification is truly waiting, the overlay circle blinks / pulses an
+  attention color, default proposal amber, distinct from recording red and Let's
+  Talk green; specifier may tune hue"), locked decision 2 ("blink stops when the
+  question is answered, cancelled, or superseded — no zombie blink") and locked
+  decision 6 ("reliability over chrome").
+
+notes: |
+  ## Verified against `main` before speccing (2026-08-06)
+
+  `OverlayService.applyBubbleAppearance(phase, paused)` is the single place the
+  collapsed circle's colour is decided, mapping `TalkEngine.Phase` onto the
+  `sf_bubble*` colour resources; there is no animation of any kind on that view
+  today, so the pulse is new work rather than a mode of something existing.
+  `BridgeClient.kt` has no polling call site.
+
+  ## Open intake questions answered here
+
+  - *Pulse cadence and accessibility* — a slow pulse, and steady colour when the
+    device has animations disabled. Both stated as scenarios.
+  - *Voice nudge in addition to the blink* — OUT of v1. It stays available to the
+    epic as its own slice rather than riding this one.
+  - *Expand gesture vs a dedicated tap target* — not decided here. BL-828 owns
+    the collapsed-bubble gesture model; this slice changes the bubble's
+    APPEARANCE only and adds no gesture, so the two do not collide.
+
+  ## e2e procedure QA will run
+
+  On a paired phone with the swarm live: raise a real ask with `role_ask.bb
+  --role specifier`; confirm the collapsed bubble begins pulsing amber within one
+  poll interval, that starting a talk turn shows the recording colour instead and
+  the pulse resumes on idle, that answering on Telegram stops the pulse, and that
+  killing the tunnel mid-pulse leaves the pulse as it was rather than clearing it.

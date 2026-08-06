@@ -1,0 +1,135 @@
+id: BL-838
+title: "The Bubble question sheet: answer the waiting clarification on the phone, or open Let's Talk to discuss it further"
+milestone: M8
+type: feature
+status: todo
+epic: question-attention-path
+human_approval: approved
+assigned_to: none
+priority: 89
+direction: human-requested
+depends_on: [BL-836, BL-829]
+mutation_cost: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-838-bubble-question-sheet-answer-or-discuss-further.feature
+
+approval_context: >
+  One decision needs the human's eye, because it places this intake on the other
+  side of a line the human drew for a different cluster.
+
+  The sheet is a REMOTE HTML PAGE in the UI bundle, not a native sheet. The
+  intake left "native sheet vs WebView" open. On 2026-08-06 the human ruled
+  "Remote HTML for all 4, and flip BL-775 to remote" — but that ruling was about
+  the four Bubble SCREEN intakes, and this intake was explicitly not in that
+  cluster. I am extending the ruling to this sheet because BL-824's boundary puts
+  pages and sheets on the remote side while keeping the collapsed bubble, the
+  overlay and the mic pipeline native, and because a sheet that ships at
+  bridge-redeploy cost can be iterated after the first time it reads wrong on a
+  phone. If the human would rather this one be native, that is a cheap change
+  NOW and an expensive one after the coder starts.
+
+  Second, smaller: "discuss it further" does NOT submit an answer, and the pulse
+  keeps running until a real answer arrives. The intake proposed this and left it
+  to me; I am adopting it, because a question the human is still talking through
+  is still unanswered.
+
+  The page id is mine and fixed by this ticket so the wiring gate can check it:
+  `questions`.
+
+invariants:
+  - "Discuss it further never answers: the question stays pending and the attention pulse stays on until a real answer is submitted."
+  - "A question that changed under the human is never answered by mistake: a refused submission is reported as refused with its reason and never as accepted."
+  - "The page always says what is going on: no state — nothing pending, bridge unreachable, submission refused — is ever rendered as a blank page."
+
+required_wiring:
+  - "extension/src/bridge/letsTalkRoutes.ts::questions::the UI bundle manifest must actually name the questions page, or the pager can never open it (the BL-419 shape)"
+
+description: |
+  ## What
+
+  The page the human lands on when BL-837's pulse gets their attention. It shows
+  who asked, what they asked, the asker's own options as taps, a free-text reply,
+  and one extra choice the asker did not offer: **discuss it further**.
+
+  - Tapping a listed option, or sending free text, answers through BL-836's route
+    — which means through the same canonical channel a Telegram tap uses. The
+    question clears and the pulse stops.
+  - **Discuss it further** does not answer. It opens the native Let's Talk
+    surface with the question in context so the human can talk it through, and
+    the question stays outstanding — pulse and all — until a real answer is
+    submitted.
+
+  ## Why the free-text path is not optional
+
+  `role_ask.bb`'s contract is that the human can always type a reply instead of
+  tapping a button, and that fallback is never dropped. A sheet that offers only
+  the asker's options would silently narrow every question the swarm can ask.
+
+  ## Why this slice is remote HTML
+
+  BL-824 splits the phone into a thin native shell and remote pages: the overlay,
+  the collapsed bubble, the gestures and the mic pipeline stay native, and pages
+  ship over the bridge. A sheet is a page. Building it remote means it changes at
+  bridge-redeploy cost instead of APK-reinstall cost — which matters here more
+  than most places, because the human told us prior attempts at this feature did
+  not stick, and a surface that cannot be iterated cannot be fixed.
+
+  It rides BL-829's pager: the bundle manifest names a `questions` page, the
+  shell hosts it beside the native Talk page, and BL-829's own invariants already
+  cover "only manifest-named pages load" and "an unrenderable page says why".
+  This ticket adds no second page-hosting mechanism.
+
+  ## The stale-tap case
+
+  The phone renders a question and then goes in a pocket. When the human finally
+  taps, the ask may have been answered on Telegram, cancelled, or superseded.
+  BL-836 refuses that submission; this slice's job is to say so plainly and
+  re-render the question that is pending now — never to report success, and never
+  to quietly answer whatever happens to be pending instead.
+
+  ## Where it lands on the testability boundary (BL-769)
+
+  The page is HTML/CSS/JS served by the bridge, so its rendering and its calls
+  are testable in the Node acceptance runner without a device. The WebView
+  render itself and the hand-off into native Let's Talk are device surface,
+  verified by the recorded manual procedure below.
+
+source: |
+  Drained from `backlog/INTAKE-bubble-clarification-blink-answer-sheet.md`
+  (human via Let's Talk / Cursor 2026-07-31). That intake is split 1:3 (BL-680
+  consolidation authority): BL-836 is the bridge half, BL-837 is the collapsed
+  bubble's attention pulse, this ticket is the question sheet. The operator
+  directives it carries verbatim in substance are locked decision 3 ("tap /
+  expand surfaces the pending question: who asked, question text, the given
+  choices, plus one extra choice: discuss it further"), locked decision 4
+  ("tapping a listed choice submits the answer on the existing canonical answer
+  channel — no second decision system"), locked decision 5 ("discuss further does
+  not fake an option pick; it opens Let's Talk with the pending question in
+  context") and locked decision 7's exclusions (no multi-question inbox UI, no
+  new ask protocol, no replacing Telegram).
+
+notes: |
+  ## Sequencing
+
+  Depends on BL-836 for the read/answer routes and on BL-829 for the pager that
+  hosts remote pages. Its priority is deliberately set behind BL-829's rather
+  than ahead of it, so the ordering reads the same way the dependency does.
+
+  ## Open intake questions answered here
+
+  - *Native sheet vs WebView* — remote HTML page, see `approval_context`.
+  - *Whether discuss-further keeps the blink* — yes, until a real answer exists.
+    Adopting the intake's own proposal.
+  - *Multi-question inbox UI* — out, by locked decision 7. The page shows the one
+    question BL-836 offers.
+
+  ## e2e procedure QA will run
+
+  On a paired phone with the swarm live: raise a real ask with `role_ask.bb
+  --role specifier`; open the questions page from the pager; confirm it shows the
+  asker, the text and the options; tap an option and confirm the specifier gets
+  the answer and the pulse stops; raise a second ask, open the page, answer that
+  one on Telegram first, then tap an option on the phone and confirm the page
+  reports the refusal and re-renders; finally choose discuss it further and
+  confirm Let's Talk opens with the question in context and the question is still
+  pending.
