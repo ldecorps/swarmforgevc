@@ -16,8 +16,21 @@ ticket, none of its ten scenarios had ever executed. BL-810 itself closed as
 satisfied-by-hotfix per human ruling; this ticket is its only quality gate.
 See the new [Host queue how-to](../how-to/BL-810-host-queue-selection-poll-clear-all-and-ttl.md)
 and the updated liveness-line note in
-`docs/how-to/BL-764-front-desk-shared-token-bridge-fanout.md`); August 5,
-2026 (BL-813: handoffd died live with a
+`docs/how-to/BL-764-front-desk-shared-token-bridge-fanout.md`); August 6, 2026
+(BL-814: `readLiveRoleHeldTickets` (`telegram-front-desk-bot.ts`) no longer
+swallows a failed `pipeline_stage_cli.bb report` subprocess into a
+passing-shaped `{}` — indistinguishable from the legitimate "no role holds a
+ticket" answer, and the exact silent-degrade shape this fixture's copy list
+has now missed twice (BL-655, BL-805, each adding a new `handoff_lib.bb`
+load-file dependency the fixture's copy list never followed). It now throws
+a new `RoleHeldTicketsComputationFailedError`; the sole production caller,
+`conciergeTick.ts`'s `syncBoardIfWired`, catches it, logs the failure to
+stderr, and keeps the prior tick's board state rather than blanking it. The
+fixture's copy list also gained the missing `mono_router_lib.bb` (BL-805's
+dependency), so the two BL-487 regression tests pass again. No new
+human-facing command; the existing Pipeline Board Telegram topic now holds
+its last-good state through a transient `bb` failure instead of rendering
+confidently empty); August 5, 2026 (BL-813: handoffd died live with a
 `FileNotFoundException` inside `ambulance_lib.bb`'s `ticket-has-file?` — it
 globs `backlog/**.yaml` and then slurps each match, and a ticket promoted
 `active/` → `done/` between those two steps (BL-812 closing while this check
