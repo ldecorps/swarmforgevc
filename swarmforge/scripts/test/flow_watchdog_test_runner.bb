@@ -699,7 +699,7 @@
             :resolved-via "global"}
            (flow-watchdog-lib/resolve-thresholds
             {:from "coder" :to "cleaner" :type "note"} (:specs table) global))
-  (assert= "BL-835: a ~90s parcel on that sub-floor route does not WARN under the global pair"
+  (assert= "BL-835: sub-floor samples do not WARN a 90s parcel under global 15m"
            :none
            (flow-watchdog-lib/decide-tier
             {:age-ms 90000
