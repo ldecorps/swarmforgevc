@@ -124,4 +124,6 @@ notes: |
   3. Copy a stale supervisor pid file into the scratch swarm; run ensure —
      desk still refuses, same loud line.
   4. Primary root: normal launch still comes up on env creds unchanged.
-
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-06, by: QA, blamed: coder, class: unit, commit: 659cf4c5, evidence: backlog/evidence/BL-622-onboarding-telegram-token-separation-bounce-20260806.md }
