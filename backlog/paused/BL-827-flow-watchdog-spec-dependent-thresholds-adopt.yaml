@@ -1,0 +1,258 @@
+id: BL-827
+title: "Adopt the spec-dependent flow-watchdog thresholds sitting ticket-less in the master tree — warn/escalate calibrated per from→to|type from historical mailbox residence, instead of one flat 15-minute pair for every hop"
+milestone: M8
+type: feature
+status: todo
+epic: swarm-reliability
+human_approval: pending
+priority: 52
+direction: normal
+assigned_to: none
+depends_on: []
+mutation_cost: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+approval_context: >
+  Retro-ticket for functional work already sitting uncommitted in the master
+  working tree (ticket-less, BL-506), surfaced by the 2026-08-06 master-diff
+  review and ruled KEEP by the coordinator the same day. Same adopt posture
+  the human already approved on BL-763, BL-765 and BL-788 — the coder starts
+  from the working tree, the pipeline reviews it as ordinary parcel content,
+  and nothing is reverted before review.
+
+  What needs sign-off is not whether to keep it — that is ruled — but one
+  design property the working tree does not address, and that a human should
+  decide rather than an architect: **calibrating an alarm from a route's own
+  history means the watchdog learns to tolerate whatever that route has been
+  doing.** A hop that has been chronically slow for two weeks teaches the
+  table that slow is normal, and the alarm quietly stops firing on it. The
+  60-second warn floor bounds the fast direction only. Options are in the
+  description under "The adaptation hazard"; the human's call is which one
+  ships.
+
+source: |
+  Found uncommitted on `main` during the BL-650 specifier pass, 2026-08-06.
+  Five files written in a single pass at 2026-08-06T12:18:59Z:
+
+  ```
+   M swarmforge/scripts/flow_watchdog_lib.bb              +249
+   M swarmforge/scripts/test/flow_watchdog_test_runner.bb +114
+   M swarmforge/scripts/handoffd.bb                       +4
+   M swarmforge/swarmforge.conf                           +16
+   M docs/reference/Specification.MD                      +15
+  ```
+
+  Reported to the coordinator with the evidence brief
+  `backlog/evidence/BL-650-blocked-20260806.md` (item D2), which asked for a
+  keep-or-drop ruling because the code is loaded by the running daemon and
+  `swarmforge/scripts/` is hot-synced into every worktree on launch (BL-373) —
+  so leaving it uncommitted meant it would be silently overwritten.
+
+  **Coordinator ruling, 2026-08-06 11:39Z:** "D2 ruling: keep, retroactively
+  ticket the percentile-threshold work."
+
+description: |
+  ## What is already in the working tree
+
+  Measured, not assumed — I read the diff and ran the suite
+  (`bb swarmforge/scripts/test/flow_watchdog_test_runner.bb` →
+  `ALL PASS: flow_watchdog_lib.bb`). It is coherent, tested work, not a
+  scratch experiment:
+
+  - **Calibration.** `dwell-record-from-headers` turns each completed/abandoned
+    handoff into `{:from :to :type :duration-ms}`, preferring
+    `completed_at − enqueued_at` (full mailbox residence) and falling back to
+    `dequeued_at − enqueued_at`. `build-threshold-table` groups those records
+    under three keys — `from->to|type`, `*->to|type`, `*->*|type` — and emits
+    a warn/escalate pair per key at p67/p97 via a ceil-rank `percentile-ms`
+    matching `extension/src/metrics/stageDwell.ts`.
+  - **Gates on the calibration.** `min-samples-for-calibration` 8, a
+    `min-warn-ms` floor of 60 s, and escalate forced strictly above warn so a
+    flat sample cannot collapse the tiers.
+  - **Durability.** The table is written to
+    `.swarmforge/daemon/flow-watchdog-thresholds.json`, re-read per sweep, and
+    recalibrated at most every 6 h (`threshold-recalibration-ms`). Absent or
+    malformed reads degrade to `{}`; a calibration failure leaves the prior
+    table in place rather than disabling the watchdog.
+  - **Resolution outside `decide-tier`.** `resolve-thresholds` picks
+    `from->to|type` → `*->to|type` → the global conf pair, and only then hands
+    a plain `age + threshold pair` to `decide-tier`. The structural guarantee
+    that `decide-tier` never grows a role/type/dormancy branch is intact, and
+    the docstrings say so explicitly.
+  - **Wiring.** `handoffd.bb` now passes each role's `completed/` and
+    `abandoned/` dirs into the sweep so calibration has audits to read.
+  - **Docs.** `swarmforge.conf` comments and `Specification.MD` both describe
+    the new behaviour and reframe the two config values as the global fallback
+    pair.
+
+  ## Why it is worth keeping
+
+  One flat 15-minute warn cannot be right for every hop. It is far too patient
+  for a QA→coordinator note that normally completes in seconds, and far too
+  impatient under a rotation pack where a parcel legitimately waits its turn in
+  a dormant role's inbox. Calibrating per route makes one alarm mean one thing
+  everywhere, which is the property that lets an operator trust it at 3am.
+
+  ## The three gaps this ticket must close
+
+  The working tree is good but not finished. None of these is a reason to drop
+  it; all three are in scope here.
+
+  1. **The alarm does not say which threshold it fired against.**
+     `resolve-thresholds` computes `:resolved-via` (the matched key, or
+     `"global"`) and nothing ever reads it — `format-alarm-text` still emits
+     only id, route, type, age, mailbox and verb. So an operator seeing
+     `⚠️ WARN flow-stall … aged 3m` cannot tell whether 3 minutes is a
+     calibrated p67 for that route or a bug. An alarm whose threshold is now
+     invisible and variable MUST state it. Feature scenario 04.
+  2. **The `*->*|type` row is written but never consulted.** The docstring
+     explains why it is not used (mixing unrelated routes under one type would
+     mis-calibrate dormant roles) and calls it "for observability". Dead data
+     with a justification is still dead data: either something reads it, or it
+     comes out. Decide and act — do not leave it half-wired.
+  3. **No acceptance contract exists.** The `.bb` unit suite covers the pure
+     functions; there was no feature file. This ticket adds one.
+
+  ## The adaptation hazard — the reason this ticket wants a human
+
+  Thresholds derived from a route's own history make the alarm adaptive, and
+  adaptive alarms drift toward whatever is already happening. If a hop has been
+  taking 40 minutes for two weeks because something is wrong, calibration
+  concludes 40 minutes is that hop's p67 and stops warning about it. The
+  watchdog then reports healthy precisely because the fault persisted long
+  enough to become the baseline. The 60 s `min-warn-ms` floor bounds only the
+  fast direction; there is no ceiling.
+
+  This is not hypothetical for this project: Article 3.5's circuit breaker
+  already treats "signals rising above their trend baseline" as the throttle
+  input, so a self-lowering baseline degrades that too.
+
+  Three ways to close it, for the human to pick:
+
+  - **(a) A hard ceiling.** Calibrated warn may never exceed the global
+    `flow_watchdog_warn_ms` — calibration may only make a route *stricter*,
+    never more tolerant. Simplest, and preserves today's guarantee exactly.
+  - **(b) A ceiling multiple.** Calibrated warn may exceed the global pair by
+    at most a fixed factor, so a genuinely slow-but-healthy hop (a rotation
+    wait) can calibrate above 15 minutes while a runaway cannot.
+  - **(c) Freshness-weighted samples.** Calibrate from a recent window only, so
+    a two-week-old regime stops dominating. Best behaviour, most work, and it
+    still adapts to a fault that outlives the window.
+
+  My recommendation is **(b)** with the factor written in `swarmforge.conf`
+  next to the global pair: it is the only one that serves the rotation-pack
+  case the calibration was built for, while keeping a bound. But this is a
+  judgement about how much the human wants the alarm to trust its own history,
+  so it is theirs.
+
+  ## Relationship to BL-650 — overlapping, and this one does NOT subsume it
+
+  BL-650 shape item 2 asks for rotation-pack-aware threshold resolution
+  (its scenario 06, `rotation-pack-threshold-vs-parallel-pack-06`). This work
+  reaches a similar end by a different route: instead of branching on the pack,
+  it learns what each hop actually costs, which under a rotation pack *is* the
+  rotation wait. Both keep resolution outside `decide-tier`.
+
+  They are not the same ticket and neither replaces the other. BL-650's subject
+  is the active-time CLOCK — subtracting swarm-stop, cooldown and provider-outage
+  intervals from a parcel's age — and this work implements none of it. What is
+  true is that if this lands first, BL-650's scenario 06 may be satisfied by it,
+  and BL-650 should then be re-read rather than re-implemented. Flagged for the
+  specifier at that point; **BL-650 is not amended by this ticket** (it is
+  paused, and rewriting a ticket that is not in your hand is how BL-317/BL-325
+  happened).
+
+acceptance: specs/features/BL-827-flow-watchdog-spec-dependent-thresholds-adopt.feature
+
+invariants:
+  - "The watchdog is never disabled by its own calibration: absent, stale, malformed or unwritable threshold data always resolves to a usable warn/escalate pair, and every parcel is still evaluated."
+  - "decide-tier's input is only an age and a threshold pair — no route identity, type or dormancy signal reaches it by any path, however thresholds were resolved."
+  - "Escalate is strictly greater than warn for every resolved pair, from every source, including flat, sparse and adversarial sample sets."
+
+required_wiring:
+  - "swarmforge/scripts/handoffd.bb::completed-dir::the sweep must actually receive the completed/abandoned dirs, or calibration silently has no samples and every route resolves global"
+  - "swarmforge/scripts/flow_watchdog_lib.bb::resolved-via::the resolved threshold and its source must reach format-alarm-text, not just be computed"
+
+verification: |
+  ## Gate
+
+  `.bb` swarm scripts are covered by `swarmforge/scripts/test/` only — no
+  mutation, CRAP or DRY tooling is pinned for Babashka (constitution, Startup
+  Tools; BL-472 tracks wiring it). The hardener runs the degraded
+  unit-test-gap fallback on this parcel and must record that it did. The
+  existing `flow_watchdog_test_runner.bb` already passes against the working
+  tree; extend it, do not restart it.
+
+  The acceptance feature file needs a step-handler file written in THIS parcel
+  (BL-233), following `specs/pipeline/steps/bl577FlowWatchdogParcelAgeInvariantSteps.js`
+  — the same lib, the same fixture posture. Pin fixture clocks; the suite must
+  not sleep waiting for the 6 h recalibration interval, so that interval must
+  be injectable rather than read from a constant at the call site.
+
+  ## e2e QA procedure
+
+  1. Run a sweep against a fixture tree with a route seeded well past the
+     minimum samples at a residence far below the global warn. Confirm a parcel
+     on that route alarms early, and that the alarm text names the calibrated
+     threshold and its source.
+  2. Delete `.swarmforge/daemon/flow-watchdog-thresholds.json` and sweep again.
+     Confirm the table is rebuilt and no alarm is lost in the meantime.
+  3. Corrupt that file to invalid JSON and sweep. Confirm the sweep completes,
+     every parcel is still evaluated, and nothing throws.
+  4. Sweep twice inside the recalibration interval. Confirm the audits are read
+     once, not twice.
+  5. Confirm a parcel on a never-before-seen route resolves to the global pair
+     and says so in its alarm text.
+
+out_of_scope: |
+  - BL-650's active-time clock. Different subject, its own ticket, and this
+    work implements none of it.
+  - Amending BL-650. If this lands first, flag its scenario 06 for a specifier
+    re-read; do not edit that ticket from this parcel.
+  - Retiring the global `flow_watchdog_warn_ms` / `flow_watchdog_escalate_ms`
+    config pair. They remain the fallback and the ceiling reference.
+  - Changing the unsuppressable posture. Thresholds decide when the alarm
+    speaks, never whether it may (flow_watchdog_lib.bb:278). `snoozed?` stays
+    the only mute.
+  - Applying percentile calibration to any other alarm or sweep.
+
+notes: |
+  Adopt posture, restated so no reviewer reverts it by reflex: the five
+  modified files are ALREADY in the master working tree and are the starting
+  point of the parcel, not contraband. The coder commits them onto its own
+  branch as parcel content, then does the three gap-closures above on top. This
+  is the same path BL-763, BL-765 and BL-788 took.
+
+  ## How the coder actually gets the code — read this before starting
+
+  This adopt is more fragile than BL-765's and BL-788's, and the difference is
+  not cosmetic. Those touched `android/` and `extension/`, which persist in the
+  master working tree untouched. This one touches `swarmforge/scripts/`, which
+  is **hot-synced from `main` on every swarm launch (BL-373)** — so the
+  uncommitted master working tree copy is one relaunch away from being
+  overwritten with `main`'s version and lost. On top of that, the coder works
+  in `.worktrees/coder`, a separate checkout that cannot see master's
+  uncommitted working tree at all.
+
+  So the working tree is NOT the source of truth for this parcel. The diff was
+  captured at spec time and committed as
+  **`backlog/evidence/BL-827-adopt-working-tree.patch`** (512 lines, verified
+  with `git apply --check --reverse` against the working tree at capture, so it
+  is known to reproduce it exactly).
+
+  The coder starts by applying it in its own worktree:
+
+  ```sh
+  git apply backlog/evidence/BL-827-adopt-working-tree.patch
+  ```
+
+  If it does not apply cleanly, `main` has moved under it — reconcile
+  deliberately and say so in the parcel; do not force it.
+
+  The master working tree copy is left in place and unstaged (BL-506: surfaced,
+  not swept). Once this parcel lands on `main`, that copy becomes redundant and
+  the next hot-sync reconciles it harmlessly.
+
+  Priority 52 sits just below BL-823 (53, active) and BL-650 (54) so the
+  interval-ledger work lands first and the eventual BL-650 re-read has both
+  pieces of context in front of it.
