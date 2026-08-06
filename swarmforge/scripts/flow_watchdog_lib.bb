@@ -40,6 +40,10 @@
 
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "handoff_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "backlog_depth_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "swarm_identity_lib.bb")))
+;; BL-650: the ledger's own sole reader (BL-823) - this lib subtracts what
+;; it folds, never re-parses the JSONL itself.
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "availability_ledger_lib.bb")))
 
 ;; ── config (BL-216/BL-313 conf-file-path pattern) ───────────────────────────
 
@@ -83,6 +87,51 @@
                        (catch Exception _ nil))]
     {:warn-ms (parse-warn-ms conf-text)
      :escalate-ms (parse-escalate-ms conf-text)}))
+
+;; ── BL-650: pack-aware GLOBAL fallback (rotation-aware thresholds) ─────────
+;; Item 2 of the ticket's shape: under a `rotation router` pack a broadcast
+;; parcel waiting its rotation turn in a dormant role's inbox is a NOMINAL
+;; wait, not a stall - decide-tier itself stays untouched (no role/type/
+;; dormancy branch, acceptance-05); only the GLOBAL warn/escalate pair fed
+;; into resolve-thresholds changes, exactly the same "config in, decide-tier
+;; untouched" shape as the spec-dependent percentile resolution above.
+
+(def default-router-warn-ms
+  "30 minutes - a rotation-router pack serialises every role through one
+   resident, so a broadcast parcel waiting its turn in a dormant role's
+   inbox is a nominal rotation wait. Generous relative to
+   default-warn-ms (15m), which is calibrated for a parallel/all-resident
+   pack where 15m in inbox/new means dispatch is broken (BL-650 scenario 06)."
+  1800000)
+
+(def default-router-escalate-ms
+  "3 hours - proportionally generous with default-router-warn-ms, same
+   rotation-wait rationale."
+  10800000)
+
+(defn parse-router-warn-ms [conf-text]
+  (parse-ms-config conf-text "flow_watchdog_router_warn_ms" default-router-warn-ms))
+
+(defn parse-router-escalate-ms [conf-text]
+  (parse-ms-config conf-text "flow_watchdog_router_escalate_ms" default-router-escalate-ms))
+
+(defn read-pack-aware-global-thresholds
+  "The GLOBAL fallback pair, pack-aware. Under `config rotation router`
+   (swarm-identity-lib/conf-rotation-mode on the EFFECTIVE conf, same
+   BL-313 resolution read-thresholds already uses) the router-specific
+   pair applies; every other pack (sequential, or no rotation directive at
+   all - a parallel/all-resident pack) keeps the plain
+   flow_watchdog_warn_ms/escalate_ms pair, byte-for-byte what
+   read-thresholds already returns. An absent/unreadable config degrades to
+   defaults exactly like read-thresholds - never a crash, never a disabled
+   watchdog."
+  [project-root]
+  (let [conf-path (backlog-depth-lib/conf-file-path project-root)
+        conf-text (try (slurp (str conf-path)) (catch Exception _ nil))
+        router? (= "router" (swarm-identity-lib/conf-rotation-mode conf-path))]
+    (if router?
+      {:warn-ms (parse-router-warn-ms conf-text) :escalate-ms (parse-router-escalate-ms conf-text)}
+      {:warn-ms (parse-warn-ms conf-text) :escalate-ms (parse-escalate-ms conf-text)})))
 
 ;; ── spec-dependent percentile thresholds (warn ≈ p67 / top 33%, escalate ≈ p97 / top 3%) ─
 ;; Spec identity is the alarm's own (from→to, type) key. Threshold RESOLUTION
@@ -240,6 +289,15 @@
 
 ;; ── age (mirrors mono_router_lib's note-aged? precedence exactly) ──────────
 
+(defn- age-source-instant-ms
+  "The shared age-SOURCE resolver behind both parcel-age-ms (wall clock) and
+   evaluate-effective-age (BL-650 active-time clock): the first PARSEABLE of
+   enqueued_at, then created_at - enqueued_at leads because it answers 'how
+   long has this sat in THIS mailbox' (a redelivered parcel is fresh here
+   even when created long ago). nil when neither header parses."
+  [{:keys [enqueued-at created-at]}]
+  (or (parse-instant-ms enqueued-at) (parse-instant-ms created-at)))
+
 (defn parcel-age-ms
   "Age source is the first PARSEABLE of enqueued_at, then created_at -
    enqueued_at leads because it answers 'how long has this sat in THIS
@@ -249,8 +307,144 @@
    fails closed: the caller (decide-tier) treats nil age as never-alarming
    rather than guessing."
   [{:keys [enqueued-at created-at now-ms]}]
-  (when-let [age-source (or (parse-instant-ms enqueued-at) (parse-instant-ms created-at))]
+  (when-let [age-source (age-source-instant-ms {:enqueued-at enqueued-at :created-at created-at})]
     (- now-ms age-source)))
+
+;; ── BL-650: active-time clock (effective age) ───────────────────────────────
+;; Item 1 of the ticket's shape: effective age = wall age minus every
+;; interval the swarm could not process, evidenced only by durable records -
+;; never a guess (invariant 2). decide-tier itself is never touched; it is
+;; simply handed effective-age-ms instead of wall age-ms, so the structural
+;; no-suppression guarantee (acceptance-05) is untouched by construction.
+
+(defn- clip-interval-ms
+  "Pure: overlap length in ms between {:start-ms :end-ms} (end-ms nil is
+   treated as open, clipped to span-end) and [span-start span-end]. Zero for
+   no overlap, an out-of-order/corrupt start>end, or an interval entirely
+   outside the span - never negative, never throws."
+  [{:keys [start-ms end-ms]} span-start span-end]
+  (let [s (max (long start-ms) (long span-start))
+        e (min (long (or end-ms span-end)) (long span-end))]
+    (max 0 (- e s))))
+
+(defn merge-and-sum-ms
+  "Pure: total ms covered by the UNION of `intervals` (each {:start-ms
+   :end-ms}, end-ms already resolved - never nil here) once clipped to
+   [span-start span-end]. Overlapping, nested, zero-length and out-of-order
+   intervals are merged into non-overlapping runs before summing, so no
+   span is ever counted twice regardless of how the inputs overlap
+   (BL-650 invariant 1). Public (not `defn-`) so property tests can drive
+   it directly against an independent oracle."
+  [intervals span-start span-end]
+  (let [clipped (->> intervals
+                      (map (fn [{:keys [start-ms end-ms]}]
+                             [(max (long start-ms) (long span-start))
+                              (min (long end-ms) (long span-end))]))
+                      (filter (fn [[s e]] (< s e)))
+                      (sort-by first))]
+    (loop [remaining clipped
+           cur-start nil
+           cur-end nil
+           total 0]
+      (if-let [[s e] (first remaining)]
+        (cond
+          (nil? cur-start) (recur (rest remaining) s e total)
+          (<= s cur-end) (recur (rest remaining) cur-start (max cur-end e) total)
+          :else (recur (rest remaining) s e (+ total (- cur-end cur-start))))
+        (+ total (if cur-start (- cur-end cur-start) 0))))))
+
+(defn- resolve-open-ledger-interval
+  "Applies BL-650's ruling on BL-823's `open` provenance to one ledger
+   interval:
+   - control-pause, open (end-ms nil): a pause with no end record is
+     happening RIGHT NOW - a currently-true fact, not a guess - so it
+     resolves to now-ms (subtracted up to the sweep's own now).
+   - swarm-stop, open: if the swarm were genuinely stopped this sweep would
+     not be running, so an open stop observed at sweep time is a stale
+     record from an ungraceful exit - it is DROPPED (contributes no
+     subtraction) and the caller flags it unreconstructable instead
+     (fail-toward-wall-clock, invariant 2).
+   - already closed (proven/inferred), either class: end-ms is already a
+     real record - passed through unchanged."
+  [{:keys [end-ms class] :as interval} now-ms]
+  (cond
+    (some? end-ms) interval
+    (= class "control-pause") (assoc interval :end-ms now-ms)
+    :else nil))
+
+(def default-provider-outage-max-gap-ms
+  "10 minutes - see provider-outage-intervals."
+  600000)
+
+(defn provider-outage-intervals
+  "Pure: a seq of {:ts-ms :provider :text} SIGNATURE-BACKED evidence lines
+   (already scanned and classified by the caller - reading a live pane or
+   role transcript is environmental/impure and stays outside this lib, per
+   this project's testability-boundary convention) -> a vector of
+   {:start-ms :end-ms :provider} intervals, one per contiguous same-provider
+   burst. Consecutive same-provider lines closer together than max-gap-ms
+   join one interval; a larger gap starts a new one, so two unrelated
+   retries far apart are never merged into one enormous subtraction
+   (BL-650 scenario 08). No evidence for a provider yields no interval for
+   it - the caller's span then falls back to wall clock for that stretch,
+   unchanged (invariant 2)."
+  ([lines] (provider-outage-intervals lines default-provider-outage-max-gap-ms))
+  ([lines max-gap-ms]
+   (vec
+    (mapcat
+     (fn [[provider provider-lines]]
+       (let [sorted (sort-by :ts-ms provider-lines)]
+         (reduce
+          (fn [intervals {:keys [ts-ms]}]
+            (if-let [last-interval (peek intervals)]
+              (if (<= (- ts-ms (:end-ms last-interval)) max-gap-ms)
+                (conj (pop intervals) (assoc last-interval :end-ms ts-ms))
+                (conj intervals {:start-ms ts-ms :end-ms ts-ms :provider provider}))
+              (conj intervals {:start-ms ts-ms :end-ms ts-ms :provider provider})))
+          []
+          sorted)))
+     (group-by :provider lines)))))
+
+(defn evaluate-effective-age
+  "Pure: BL-650's active-time clock for one parcel. Mirrors parcel-age-ms's
+   own enqueued_at/created_at precedence for the age SOURCE (never mtime),
+   then subtracts every ledger (BL-823) and provider-outage interval that
+   overlaps [age-source now-ms] - ledger and provider-outage intervals are
+   merged into ONE union before summing, so an interval from either class
+   overlapping another is never double-subtracted (invariant 1). Clamped
+   to [0, wall-age-ms] so effective age is never negative and never exceeds
+   wall age, for ANY interval shape - overlapping, nested, zero-length,
+   out-of-order, or still-open (invariant 1). nil enqueued-at/created-at
+   (age source unparseable) yields all-nil age fields - fails closed
+   exactly like parcel-age-ms, never a guess.
+   ledger-intervals: BL-823's availability-ledger-lib/fold output, any
+     order - {:start-ms :end-ms :class :provenance}.
+   provider-evidence: seq of {:ts-ms :provider :text}, see
+     provider-outage-intervals.
+   Returns {:effective-age-ms :wall-age-ms :outage-intervals
+            :unreconstructable?} - effective-age-ms is what decide-tier
+   must be given; the rest is for format-alarm-text only."
+  [{:keys [enqueued-at created-at now-ms ledger-intervals provider-evidence]}]
+  (if-let [age-source (age-source-instant-ms {:enqueued-at enqueued-at :created-at created-at})]
+    (let [span-start age-source
+          span-end now-ms
+          wall-age-ms (max 0 (- now-ms age-source))
+          resolved-ledger (keep #(resolve-open-ledger-interval % now-ms) ledger-intervals)
+          unreconstructable?
+          (boolean
+           (some (fn [{:keys [end-ms class] :as iv}]
+                   (and (nil? end-ms) (= class "swarm-stop")
+                        (pos? (clip-interval-ms iv span-start span-end))))
+                 ledger-intervals))
+          outages (provider-outage-intervals (or provider-evidence []))
+          overlapping-outages (filterv #(pos? (clip-interval-ms % span-start span-end)) outages)
+          total-subtracted-ms (merge-and-sum-ms (concat resolved-ledger outages) span-start span-end)
+          effective-ms (max 0 (min wall-age-ms (- wall-age-ms total-subtracted-ms)))]
+      {:effective-age-ms effective-ms
+       :wall-age-ms wall-age-ms
+       :outage-intervals overlapping-outages
+       :unreconstructable? unreconstructable?})
+    {:effective-age-ms nil :wall-age-ms nil :outage-intervals [] :unreconstructable? false}))
 
 ;; ── structurally suppression-free tier decision ─────────────────────────────
 
@@ -464,12 +658,34 @@
 (defn format-alarm-text
   "Payload: parcel id, from->to, type, humanized age, holding mailbox (role +
    new|in_process), and the prescribed unblock verb - so the human or
-   operator can act without archaeology, per the ticket."
-  [{:keys [id from to type age-ms role mailbox verb tier]}]
+   operator can act without archaeology, per the ticket.
+   age-ms is the clock decide-tier actually used (effective age under
+   BL-650; unchanged callers still pass wall age, and the text is
+   byte-for-byte what it always was). Three keys are BL-650 additions, all
+   optional and all no-ops when absent, so every pre-existing caller/test
+   is unaffected:
+   - wall-age-ms: when present and different from age-ms, appends the
+     active-vs-wall reading (BL-650 scenario 07).
+   - outage-intervals: when non-empty, names each subtracted
+     provider-outage interval (scenario 07/08).
+   - unreconstructable?: when true, flags that a pause/stop interval could
+     not be reconstructed and fell back to wall clock (scenario 05)."
+  [{:keys [id from to type age-ms wall-age-ms role mailbox verb tier
+           outage-intervals unreconstructable?]}]
   (str (if (= tier :escalate) "🚨 ESCALATE" "⚠️ WARN")
        " flow-stall: parcel " id " (" from "->" to ", " type ") aged "
        (humanize-age-ms age-ms) " in " role " " (name mailbox)
-       " - " (name verb) "."))
+       " - " (name verb) "."
+       (when (and wall-age-ms (not= (long wall-age-ms) (long (or age-ms 0))))
+         (str " (active " (humanize-age-ms age-ms) " of " (humanize-age-ms wall-age-ms) " wall)"))
+       (when (seq outage-intervals)
+         (str " Subtracted provider outage: "
+              (str/join ", " (map (fn [{:keys [provider start-ms end-ms]}]
+                                     (str provider " " (humanize-age-ms (max 0 (- end-ms start-ms)))))
+                                   outage-intervals))
+              "."))
+       (when unreconstructable?
+         " A pause/stop interval could not be reconstructed - fell back to wall clock for that span.")))
 
 ;; ── per-parcel evaluation (bridges a scanned parcel + state into decide-tier) ─
 
@@ -493,13 +709,23 @@
 
 (defn run-sweep!
   "role-inboxes: seq of {:role :new-dir :in-process-dir optional :completed-dir
-   :abandoned-dir}. Reads the effective GLOBAL config thresholds as fallback,
-   refreshes the per-spec percentile table when stale (warn≈p67 / escalate≈p97
-   of historical mailbox residence per from→to|type), resolves warn/escalate
-   PER PARCEL outside decide-tier, scans every role's new/in_process
-   mailboxes, alarms (via adapters' :emit-alarm!) on every parcel whose tier
-   just changed, and persists the updated durable state - including pruning
-   entries for parcels that have progressed out of new/in_process entirely.
+   :abandoned-dir}. Reads the effective GLOBAL config thresholds as fallback
+   (BL-650: pack-aware - the router-specific pair under `config rotation
+   router`), refreshes the per-spec percentile table when stale (warn≈p67 /
+   escalate≈p97 of historical mailbox residence per from→to|type), resolves
+   warn/escalate PER PARCEL outside decide-tier, scans every role's
+   new/in_process mailboxes, computes each parcel's BL-650 ACTIVE-TIME age
+   (wall age minus BL-823 ledger + provider-outage intervals - see
+   evaluate-effective-age), alarms (via adapters' :emit-alarm!) on every
+   parcel whose tier just changed, and persists the updated durable state -
+   including pruning entries for parcels that have progressed out of
+   new/in_process entirely.
+
+   adapters' BL-650 addition: :provider-outage-evidence-for (fn [role] -> seq
+   of {:ts-ms :provider :text}), optional - defaults to no evidence, so an
+   omitted adapter (every pre-BL-650 caller) subtracts no provider-outage
+   time and behaves exactly as before wherever the ledger itself is also
+   empty.
 
    Alarm-recorded-on-CONFIRMED-write only (BL-577 bounce fix): a parcel's
    tier/alarmedAt is written to durable state ONLY when :emit-alarm! itself
@@ -509,13 +735,22 @@
    highest-tier-alarmed and re-attempts the alarm instead of silently
    treating an unconfirmed attempt as sent. Recording on attempt rather than
    confirmation would let one failed write permanently suppress a real
-   flow-stall, defeating the ticket's unsuppressable-by-design invariant."
+   flow-stall, defeating the ticket's unsuppressable-by-design invariant.
+   This same gate is what makes BL-650 invariant 3 hold for free: decide-tier
+   only ever WRITES a tier forward (nil->:warn, or ->:escalate when not
+   already :escalate - see decide-tier), and a :none verdict never touches
+   state at all, so no later sweep - however effective age fluctuates as
+   fresher interval evidence lands - can ever downgrade an already-recorded
+   tier."
   [role-inboxes now-ms project-root daemon-dir adapters]
-  (let [global (read-thresholds project-root)
+  (let [global (read-pack-aware-global-thresholds project-root)
         calib-dirs (mapcat (fn [row] [(:completed-dir row) (:abandoned-dir row)]) role-inboxes)
         table (ensure-threshold-table! daemon-dir calib-dirs now-ms)
         specs (:specs table {})
         state (read-state daemon-dir)
+        state-dir (fs/parent daemon-dir)
+        ledger-intervals (try (availability-ledger-lib/fold state-dir) (catch Exception _ []))
+        provider-evidence-for (or (:provider-outage-evidence-for adapters) (constantly []))
         parcels (vec (mapcat
                       (fn [{:keys [role new-dir in-process-dir]}]
                         (concat
@@ -529,16 +764,24 @@
          (fn [acc-state parcel]
            (if (str/blank? (:id parcel))
              acc-state
-             (let [age-ms (parcel-age-ms {:enqueued-at (:enqueued-at parcel)
-                                           :created-at (:created-at parcel)
-                                           :now-ms now-ms})
+             (let [eff (evaluate-effective-age
+                        {:enqueued-at (:enqueued-at parcel)
+                         :created-at (:created-at parcel)
+                         :now-ms now-ms
+                         :ledger-intervals ledger-intervals
+                         :provider-evidence (provider-evidence-for (:role parcel))})
+                   age-ms (:effective-age-ms eff)
                    {:keys [warn-ms escalate-ms]} (resolve-thresholds parcel specs global)
                    tier (evaluate-parcel-tier age-ms warn-ms escalate-ms acc-state (:id parcel))]
                (if (= tier :none)
                  acc-state
                  (let [live? (boolean ((:live-session? adapters) (:role parcel)))
                        verb (decide-verb {:mailbox (:mailbox parcel) :live-session? live?})
-                       text (format-alarm-text (assoc parcel :age-ms age-ms :verb verb :tier tier))
+                       text (format-alarm-text
+                             (assoc parcel :age-ms age-ms :wall-age-ms (:wall-age-ms eff)
+                                    :outage-intervals (:outage-intervals eff)
+                                    :unreconstructable? (:unreconstructable? eff)
+                                    :verb verb :tier tier))
                        confirmed? (try
                                     (boolean ((:emit-alarm! adapters) text))
                                     (catch Exception _ false))]

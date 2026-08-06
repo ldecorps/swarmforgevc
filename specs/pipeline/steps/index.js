@@ -383,7 +383,8 @@ const DOMAINS = [
   require('./bl808BacklogDepthWarningCountsNonTicketEntriesSteps'),
   require('./bl622OnboardingTelegramTokenSeparationSteps'),
   require('./bl823AvailabilityIntervalLedgerSteps'),
-  require('./bl835FlowWatchdogFlooredPercentileFalseAlarmsSteps')
+  require('./bl835FlowWatchdogFlooredPercentileFalseAlarmsSteps'),
+  require('./bl650FlowWatchdogActiveTimeClockSteps')
 ];
 
 function registerSteps(registry) {
