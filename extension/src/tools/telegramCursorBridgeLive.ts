@@ -26,6 +26,7 @@ import {
   decideEnsureBubbleTopicAction,
   decideInboundAction,
   decidePollBackoffMs,
+  decideQueuedPollAnswerAction,
   formatHelpMessage,
   formatStatusMessage,
   gateBusy,
@@ -408,7 +409,7 @@ async function sweepExpiredQueuedPrompts(
   }
 }
 
-function clearQueuedPollIfStale(state: CursorBridgePersistedState): CursorBridgePersistedState {
+export function clearQueuedPollIfStale(state: CursorBridgePersistedState): CursorBridgePersistedState {
   const poll = state.pendingPromptPoll;
   if (!poll) {
     return state;
@@ -1478,26 +1479,27 @@ async function processQueuedPollAnswer(
     return;
   }
   const selectedIndex = pollAnswer.option_ids?.[0];
-  if (typeof selectedIndex !== 'number' || selectedIndex < 0 || selectedIndex >= pendingPoll.itemIds.length) {
-    if (selectedIndex === pendingPoll.clearAllOptionIndex) {
-      const pending = holder.state.pendingPrompts ?? [];
-      holder.state = { ...holder.state, pendingPrompts: [], pendingPromptPoll: undefined };
-      writeJsonFile(deps.statePath, holder.state);
-      if (pending.length > 0 && holder.state.cursorTopicId !== undefined) {
-        await handlerCtx.post(
-          deps.botToken,
-          deps.chatId,
-          holder.state.cursorTopicId,
-          `Cleared ${pending.length} queued question${pending.length === 1 ? '' : 's'}.`,
-          undefined
-        );
-      }
+  const decided = decideQueuedPollAnswerAction(pendingPoll, selectedIndex);
+  if (decided.kind === 'ignore') {
+    return;
+  }
+  if (decided.kind === 'clear-all') {
+    const pending = holder.state.pendingPrompts ?? [];
+    holder.state = { ...holder.state, pendingPrompts: [], pendingPromptPoll: undefined };
+    writeJsonFile(deps.statePath, holder.state);
+    if (pending.length > 0 && holder.state.cursorTopicId !== undefined) {
+      await handlerCtx.post(
+        deps.botToken,
+        deps.chatId,
+        holder.state.cursorTopicId,
+        `Cleared ${pending.length} queued question${pending.length === 1 ? '' : 's'}.`,
+        undefined
+      );
     }
     return;
   }
-  const selectedId = pendingPoll.itemIds[selectedIndex];
   const pending = holder.state.pendingPrompts ?? [];
-  const selected = pending.find((item) => item.id === selectedId);
+  const selected = pending.find((item) => item.id === decided.itemId);
   holder.state = { ...holder.state, pendingPromptPoll: undefined };
   if (!selected) {
     writeJsonFile(deps.statePath, holder.state);

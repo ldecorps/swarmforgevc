@@ -40,6 +40,31 @@ export interface CursorBridgeQueuedPromptPoll {
   clearAllOptionIndex?: number;
 }
 
+export type QueuedPollAnswerAction =
+  | { kind: 'ignore' }
+  | { kind: 'clear-all' }
+  | { kind: 'select'; itemId: string };
+
+/**
+ * BL-811 D1: a vote retraction sends option_ids: [], so selectedIndex is
+ * undefined. A poll persisted by a pre-hotfix build has no
+ * clearAllOptionIndex field either (also undefined) - clearAllOptionIndex
+ * must be a real number match, never an undefined === undefined coincidence,
+ * or a retraction against a legacy poll silently wipes the whole queue.
+ */
+export function decideQueuedPollAnswerAction(
+  pendingPoll: CursorBridgeQueuedPromptPoll,
+  selectedIndex: number | undefined
+): QueuedPollAnswerAction {
+  if (typeof selectedIndex === 'number' && selectedIndex >= 0 && selectedIndex < pendingPoll.itemIds.length) {
+    return { kind: 'select', itemId: pendingPoll.itemIds[selectedIndex] };
+  }
+  if (typeof pendingPoll.clearAllOptionIndex === 'number' && selectedIndex === pendingPoll.clearAllOptionIndex) {
+    return { kind: 'clear-all' };
+  }
+  return { kind: 'ignore' };
+}
+
 export interface CursorBridgeChoicePoll {
   pollId: string;
   question: string;
