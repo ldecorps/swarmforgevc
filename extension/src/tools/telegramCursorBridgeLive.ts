@@ -26,6 +26,7 @@ import {
   decideEnsureBubbleTopicAction,
   decideInboundAction,
   decidePollBackoffMs,
+  decideQueuedPollAnswerAction,
   formatHelpMessage,
   formatStatusMessage,
   gateBusy,
@@ -141,6 +142,7 @@ export const TOPIC_MAP_FILE_NAME = 'cursor-bridge-topic-map.json';
 export const HEARTBEAT_FILE_NAME = 'cursor-bridge-heartbeat.json';
 export const MAX_QUEUED_PROMPTS = 50;
 export const QUEUE_POLL_MAX_OPTIONS = 8;
+export const QUEUED_PROMPT_TTL_MS = 72 * 60 * 60 * 1000;
 export const BRIDGE_READY_MESSAGE = 'Bridge ready — accepting prompts.';
 
 export function writePollHeartbeat(opDir: string, nowMs = Date.now()): void {
@@ -335,6 +337,7 @@ function pushQueuedPrompt(
   text: string,
   photoFileIds: string[] | undefined,
   replyToMessageId: number | undefined,
+  originTopicId: number | undefined,
   nowMs: number
 ): CursorBridgePersistedState {
   const previous = state.pendingPrompts ?? [];
@@ -345,19 +348,87 @@ function pushQueuedPrompt(
     createdAtMs: nowMs,
     ...(photoFileIds && photoFileIds.length > 0 ? { photoFileIds } : {}),
     ...(typeof replyToMessageId === 'number' ? { replyToMessageId } : {}),
+    ...(typeof originTopicId === 'number' ? { originTopicId } : {}),
   };
   const next = [...previous, nextItem].slice(-MAX_QUEUED_PROMPTS);
   return { ...state, pendingPrompts: next };
 }
 
-function clearQueuedPollIfStale(state: CursorBridgePersistedState): CursorBridgePersistedState {
+function ageHours(nowMs: number, createdAtMs: number): number {
+  return Math.max(0, (nowMs - createdAtMs) / (60 * 60 * 1000));
+}
+
+function formatDroppedPromptReceipt(dropped: CursorBridgeQueuedPrompt[], nowMs: number): string {
+  const ages = dropped.map((item) => ageHours(nowMs, item.createdAtMs));
+  const minAge = Math.floor(Math.min(...ages));
+  const maxAge = Math.floor(Math.max(...ages));
+  const summary = `Dropped ${dropped.length} queued question${dropped.length === 1 ? '' : 's'} older than 72h (age ${minAge}-${maxAge}h).`;
+  if (dropped.length > 3) {
+    return summary;
+  }
+  const lines = dropped.map((item, idx) => `- ${idx + 1}. ${item.text}`);
+  return [summary, ...lines].join('\n');
+}
+
+async function sweepExpiredQueuedPrompts(
+  deps: CursorBridgeLoopDeps,
+  holder: { state: CursorBridgePersistedState },
+  post: PostChunksFn,
+  nowMs = Date.now()
+): Promise<void> {
+  const pending = holder.state.pendingPrompts ?? [];
+  if (pending.length === 0) {
+    return;
+  }
+  const kept = pending.filter((item) => nowMs - item.createdAtMs < QUEUED_PROMPT_TTL_MS);
+  const dropped = pending.filter((item) => nowMs - item.createdAtMs >= QUEUED_PROMPT_TTL_MS);
+  if (dropped.length === 0) {
+    return;
+  }
+  holder.state = clearQueuedPollIfStale({
+    ...holder.state,
+    pendingPrompts: kept,
+  });
+  writeJsonFile(deps.statePath, holder.state);
+  const receipt = formatDroppedPromptReceipt(dropped, nowMs);
+  const receiptsByTopic = new Map<number, CursorBridgeQueuedPrompt[]>();
+  for (const item of dropped) {
+    const topicId = item.originTopicId ?? holder.state.cursorTopicId;
+    if (topicId === undefined) {
+      continue;
+    }
+    const list = receiptsByTopic.get(topicId) ?? [];
+    list.push(item);
+    receiptsByTopic.set(topicId, list);
+  }
+  for (const [topicId, topicDropped] of receiptsByTopic.entries()) {
+    await post(deps.botToken, deps.chatId, topicId, formatDroppedPromptReceipt(topicDropped, nowMs));
+  }
+  if (receiptsByTopic.size === 0 && holder.state.cursorTopicId !== undefined) {
+    await post(deps.botToken, deps.chatId, holder.state.cursorTopicId, receipt);
+  }
+}
+
+export function clearQueuedPollIfStale(state: CursorBridgePersistedState): CursorBridgePersistedState {
   const poll = state.pendingPromptPoll;
   if (!poll) {
     return state;
   }
-  const known = new Set((state.pendingPrompts ?? []).map((item) => item.id));
-  const anyAlive = poll.itemIds.some((id) => known.has(id));
-  if (anyAlive) {
+  const pendingIds = (state.pendingPrompts ?? []).map((item) => item.id);
+  if (pendingIds.length === 0) {
+    return { ...state, pendingPromptPoll: undefined };
+  }
+  // Offer the same head the next poll would — if the queue grew/shrunk/reordered
+  // relative to the outstanding poll, drop it so idle can post a fresh one.
+  // (A poll that still lists a subset while newer items wait is queue starvation.)
+  const offeredIds = pendingIds.slice(0, QUEUE_POLL_MAX_OPTIONS);
+  const sameIds =
+    offeredIds.length === poll.itemIds.length &&
+    offeredIds.every((id, idx) => id === poll.itemIds[idx]);
+  const expectedClearAll = offeredIds.length;
+  const clearAllOk =
+    poll.clearAllOptionIndex === undefined || poll.clearAllOptionIndex === expectedClearAll;
+  if (sameIds && clearAllOk) {
     return state;
   }
   return { ...state, pendingPromptPoll: undefined };
@@ -648,15 +719,29 @@ async function handlePromptInboundAction(
       await postInboundReply(ctx, topicId, `Error: ${detail}`, replyToMessageId);
     } finally {
       endActiveRun();
+      await continueOperatorBatchAfterPrompt(ctx, topicId, resetAgent);
+      // Reload queue from disk and present the selection poll immediately on
+      // idle — do not wait for the next inbound update, and do not trust
+      // ctx.state alone (prompts queued during this run were written via the
+      // poll-loop holder onto disk).
+      await presentQueueSelectionPollAfterIdle(ctx);
       await syncCursorBridgeLivenessStatus({
         botToken: ctx.botToken,
         chatId: ctx.chatId,
         state: ctx.state,
-        busy: false,
-        persistState: ctx.persistState,
+        busy: isActiveRunInFlight(),
+        persistState: () => {
+          const statePath = path.join(ctx.opDir, STATE_FILE_NAME);
+          const disk = parseCursorBridgeState(loadJsonFile(statePath));
+          writeJsonFile(statePath, {
+            ...disk,
+            livenessStatus: ctx.state.livenessStatus,
+            pendingPrompts: disk.pendingPrompts ?? ctx.state.pendingPrompts,
+            pendingPromptPoll: disk.pendingPromptPoll ?? ctx.state.pendingPromptPoll,
+          });
+        },
         telegramPostFn: ctx.telegramPostFn,
       });
-      await continueOperatorBatchAfterPrompt(ctx, topicId, resetAgent);
     }
   })();
   await syncCursorBridgeLivenessStatus({
@@ -1306,10 +1391,11 @@ function hasQueueablePromptDecision(decision: InboundDecision): decision is Extr
 }
 
 async function postQueueSelectionPoll(
-  deps: CursorBridgeLoopDeps,
+  deps: Pick<CursorBridgeLoopDeps, 'botToken' | 'chatId' | 'statePath'>,
   holder: { state: CursorBridgePersistedState },
   post: PostChunksFn
 ): Promise<void> {
+  holder.state = clearQueuedPollIfStale(holder.state);
   const topicId = holder.state.cursorTopicId;
   const pending = holder.state.pendingPrompts ?? [];
   if (topicId === undefined || pending.length === 0 || holder.state.pendingPromptPoll) {
@@ -1320,7 +1406,8 @@ async function postQueueSelectionPoll(
     pending.length > QUEUE_POLL_MAX_OPTIONS
       ? `Bridge ready: choose next queued question (${pending.length} total, showing first ${QUEUE_POLL_MAX_OPTIONS})`
       : `Bridge ready: choose next queued question (${pending.length} queued)`;
-  const options = items.map((item, idx) => queuePromptOptionLabel(item, idx));
+  const options = [...items.map((item, idx) => queuePromptOptionLabel(item, idx)), 'Clear all queued questions'];
+  const clearAllOptionIndex = options.length - 1;
   const sent = await sendTelegramPoll(deps.botToken, deps.chatId, question, options, topicId);
   if (!sent.success || !sent.pollId) {
     await post(deps.botToken, deps.chatId, topicId, `Queue pending (${pending.length}) but poll failed.\n${queuePromptSummary(holder.state)}`);
@@ -1331,9 +1418,51 @@ async function postQueueSelectionPoll(
     pendingPromptPoll: {
       pollId: sent.pollId,
       itemIds: items.map((item) => item.id),
+      clearAllOptionIndex,
     },
   };
   writeJsonFile(deps.statePath, holder.state);
+}
+
+/** Idle-transition path: reload queue from disk, then post the selection poll if needed. */
+async function presentQueueSelectionPollAfterIdle(ctx: CursorBridgeHandlerContext): Promise<void> {
+  if (isActiveRunInFlight()) {
+    return;
+  }
+  const statePath = path.join(ctx.opDir, STATE_FILE_NAME);
+  if (!fs.existsSync(statePath)) {
+    return;
+  }
+  const onDisk = parseCursorBridgeState(loadJsonFile(statePath));
+  const holder = {
+    state: {
+      ...onDisk,
+      pendingPrompts: onDisk.pendingPrompts ?? ctx.state.pendingPrompts,
+      pendingPromptPoll: onDisk.pendingPromptPoll,
+      cursorTopicId: onDisk.cursorTopicId ?? ctx.state.cursorTopicId,
+      livenessStatus: ctx.state.livenessStatus ?? onDisk.livenessStatus,
+    },
+  };
+  await postQueueSelectionPoll(
+    { botToken: ctx.botToken, chatId: ctx.chatId, statePath },
+    holder,
+    ctx.post
+  );
+  // Keep handler ctx aligned for the following liveness sync; persist via
+  // writeJsonFile only (ctx.persistState may still point at a stale loop holder).
+  ctx.state.pendingPrompts = holder.state.pendingPrompts;
+  ctx.state.pendingPromptPoll = holder.state.pendingPromptPoll;
+  if (holder.state.cursorTopicId !== undefined) {
+    ctx.state.cursorTopicId = holder.state.cursorTopicId;
+  }
+  if (!fs.existsSync(statePath)) {
+    return;
+  }
+  writeJsonFile(statePath, {
+    ...parseCursorBridgeState(loadJsonFile(statePath)),
+    pendingPrompts: holder.state.pendingPrompts,
+    pendingPromptPoll: holder.state.pendingPromptPoll,
+  });
 }
 
 async function processQueuedPollAnswer(
@@ -1350,12 +1479,27 @@ async function processQueuedPollAnswer(
     return;
   }
   const selectedIndex = pollAnswer.option_ids?.[0];
-  if (typeof selectedIndex !== 'number' || selectedIndex < 0 || selectedIndex >= pendingPoll.itemIds.length) {
+  const decided = decideQueuedPollAnswerAction(pendingPoll, selectedIndex);
+  if (decided.kind === 'ignore') {
     return;
   }
-  const selectedId = pendingPoll.itemIds[selectedIndex];
+  if (decided.kind === 'clear-all') {
+    const pending = holder.state.pendingPrompts ?? [];
+    holder.state = { ...holder.state, pendingPrompts: [], pendingPromptPoll: undefined };
+    writeJsonFile(deps.statePath, holder.state);
+    if (pending.length > 0 && holder.state.cursorTopicId !== undefined) {
+      await handlerCtx.post(
+        deps.botToken,
+        deps.chatId,
+        holder.state.cursorTopicId,
+        `Cleared ${pending.length} queued question${pending.length === 1 ? '' : 's'}.`,
+        undefined
+      );
+    }
+    return;
+  }
   const pending = holder.state.pendingPrompts ?? [];
-  const selected = pending.find((item) => item.id === selectedId);
+  const selected = pending.find((item) => item.id === decided.itemId);
   holder.state = { ...holder.state, pendingPromptPoll: undefined };
   if (!selected) {
     writeJsonFile(deps.statePath, holder.state);
@@ -1386,7 +1530,8 @@ async function processQueuedPollAnswer(
       telegramPostFn: deps.telegramPostFn,
     },
     selected.replyToMessageId,
-    handlerCtx.resetAgent
+    handlerCtx.resetAgent,
+    selected.originTopicId ?? holder.state.cursorTopicId
   );
 }
 
@@ -1424,7 +1569,7 @@ async function processChoicePollAnswer(
   writeJsonFile(deps.statePath, holder.state);
   if (holder.busy || isActiveRunInFlight()) {
     holder.state = clearQueuedPollIfStale(
-      pushQueuedPrompt(holder.state, choicePromptFromPoll(poll, selectedIndex), undefined, undefined, Date.now())
+      pushQueuedPrompt(holder.state, choicePromptFromPoll(poll, selectedIndex), undefined, undefined, undefined, Date.now())
     );
     writeJsonFile(deps.statePath, holder.state);
     return;
@@ -1483,7 +1628,7 @@ async function processInboundUpdates(
     const bridgeBusy = holder.busy || isActiveRunInFlight();
     if (bridgeBusy && hasQueueablePromptDecision(rawDecision)) {
       holder.state = clearQueuedPollIfStale(
-        pushQueuedPrompt(holder.state, rawDecision.text, rawDecision.photoFileIds, inbound.messageId, Date.now())
+        pushQueuedPrompt(holder.state, rawDecision.text, rawDecision.photoFileIds, inbound.messageId, inbound.topicId, Date.now())
       );
       writeJsonFile(deps.statePath, holder.state);
       const queueAckTopicId = inbound.topicId ?? holder.state.cursorTopicId;
@@ -1529,6 +1674,7 @@ async function processInboundUpdates(
       inbound.topicId
     );
   }
+  await sweepExpiredQueuedPrompts(deps, holder, handlerCtx.post);
   holder.state = clearQueuedPollIfStale(holder.state);
   if (!holder.busy && !isActiveRunInFlight()) {
     await postQueueSelectionPoll(deps, holder, handlerCtx.post);
@@ -1577,10 +1723,21 @@ export async function runCursorBridgePollOnce(
   }
 
   const freshest = parseCursorBridgeState(loadJsonFile(deps.statePath));
+  // Prefer disk queue/poll only when disk actually carries queue fields — a bare
+  // bootstrap write must not wipe an in-memory outstanding poll (clear-all /
+  // select tests seed poll on the in-memory state only).
+  const diskHasQueue =
+    Array.isArray(freshest.pendingPrompts) || freshest.pendingPromptPoll !== undefined;
   const holder = {
     state: {
       ...state,
       ...(freshest.pendingChoicePolls ? { pendingChoicePolls: freshest.pendingChoicePolls } : {}),
+      ...(diskHasQueue
+        ? {
+            pendingPrompts: freshest.pendingPrompts ?? state.pendingPrompts,
+            pendingPromptPoll: freshest.pendingPromptPoll,
+          }
+        : {}),
       updateOffset: nextOffset,
     },
     busy,

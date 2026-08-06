@@ -408,6 +408,28 @@ You are the hardender.
   that outlives your turn reparents to the OS and pins cores for hours
   (observed: a single hung test alive 4h+). Handing off with live test
   processes is a defect.
+- **That `pgrep` pattern is not the whole check — leaked fixture tmux servers
+  do not match it.** Acceptance step handlers start REAL tmux servers as
+  fixtures, and a Gherkin-mutation pass kills mutants early: the mutant throws
+  before the handler's terminal-step `cleanup()` ever runs, so the server
+  outlives your turn (BL-807 pass: 22 mutations, 5 leaked servers; 2 still
+  alive hours later). After any mutation or acceptance run, also run
+  `pgrep -afl tmux` and reap the strays.
+  - **Discriminate by SOCKET PATH, never by session name.** These fixtures
+    name their sessions `swarmforge-coder` — identical to the live swarm's, so
+    the name tells you nothing. A leaked fixture server's `-S` socket sits
+    under the OS temp dir (`$TMPDIR`, `/var/folders/…`); every REAL server's
+    socket sits under a repo `.swarmforge/` path (`.swarmforge/tmux/*.sock`,
+    `.swarmforge/operator/operator-tmux.sock`). Kill only the temp-dir ones,
+    each by `tmux -S <that socket> kill-server`.
+  - **Never `pkill tmux`, never a bare `tmux kill-server`.** The swarm you are
+    running inside IS tmux: an unscoped kill takes down every role's session
+    and the operator with them.
+  - This is a stopgap you perform by hand. The durable fix is the step
+    handlers adopting `specs/pipeline/steps/lib/fixtureReaper.js` (BL-458's
+    shared primitive, which already kills a fixture's tmux server on
+    exit/SIGINT/SIGTERM) instead of hand-rolled terminal-step cleanup —
+    tracked as BL-817. Drop this bullet once that lands.
 - Send `git_handoff` to `documenter` with priority `00` — hardened, ready for
   documentation. Use the same task name and forward your commit.
 - If YOUR hardening pass itself added nothing (nothing to mutation-test, e.g. a
