@@ -1,0 +1,91 @@
+Feature: Closing-ceremony lean pass
+
+  # BL-820 (slice 2 of BL-818). At shift close a named lean step runs: the
+  # coordinator brings a shift-scoped packet folded from BL-819's lifecycle
+  # ledger, may act within powers it already holds, and hands the packet to the
+  # specifier — who turns it into a process ticket, a spec/gate tweak, or an
+  # explicit reasoned no-change. The human's words: "a silent ceremony is a
+  # failed ceremony." The packet reaches the specifier, not only the briefing.
+  #
+  # PARKED AS .feature.draft per BL-233: this slice is not built and is
+  # additionally blocked on a shift-close hook that does not exist yet
+  # (depends_on BL-762). A live *.feature here would have no step handlers and
+  # would hard-fail the acceptance runner for every other ticket. The coder
+  # renames this to .feature and lands its step handlers in the same parcel.
+
+  Background:
+    Given a shift with a lifecycle ledger holding that shift's tickets
+
+  # BL-820 ceremony-actually-invoked-at-shift-close-01
+  Scenario: the shift-close path invokes the lean pass as a named step
+    When the shift-close path reaches its lean step
+    Then the coordinator+specifier lean pass is invoked
+    And the pass runs before the shift fully winds down
+
+  # BL-820 packet-is-shift-scoped-evidence-not-a-log-dump-02
+  Scenario: the packet carries shift-scoped findings, never raw logs
+    When the coordinator builds the closing packet
+    Then it names the path taken, dwell hotspots, bounce classes, skip reasons, and stalls for that shift
+    And it carries between one and three concrete process hypotheses
+    And it contains no raw log transcript
+
+  # BL-820 packet-covers-only-its-own-shift-03
+  Scenario: the packet excludes tickets from other shifts
+    Given the ledger also holds entries from the previous shift
+    When the coordinator builds the closing packet
+    Then only the current shift's lifecycle entries are summarised
+
+  # BL-820 specifier-produces-an-outcome-04
+  Scenario Outline: the specifier turns the packet into a recorded outcome
+    Given the specifier receives the closing packet
+    When it completes the lean pass with <outcome>
+    Then that outcome is recorded against the ceremony run
+    And the ceremony run counts as complete
+
+    Examples:
+      | outcome                  |
+      | a new process ticket     |
+      | a spec or gate tweak     |
+      | an explicit no-change    |
+
+  # BL-820 silent-ceremony-is-a-failure-05
+  Scenario: a ceremony that produces nothing is recorded as failed
+    Given the specifier receives the closing packet
+    When the lean pass ends without any recorded outcome
+    Then the ceremony run is recorded as failed
+    And that failure is surfaced rather than passed over silently
+
+  # BL-820 packet-reaches-specifier-not-only-briefing-06
+  Scenario: the packet reaches the specifier's work loop
+    When the coordinator builds the closing packet
+    Then the packet is delivered to the specifier
+    And delivery does not depend on the human reading the briefing
+
+  # BL-820 coordinator-within-power-adjustments-recorded-07
+  Scenario: within-power adjustments are recorded, and nothing beyond them is taken
+    Given the packet shows a dwell hotspot the coordinator can act on
+    When the coordinator makes a within-power adjustment
+    Then the adjustment is limited to promotion order or throttle posture
+    And the adjustment is recorded against the ceremony run
+    And no domain spec is authored and no constitution article is edited
+
+  # BL-820 tentative-adjustments-are-reversible-08
+  Scenario: a tentative adjustment is ticketed or noted, never a silent edit
+    Given the lean pass proposes a process adjustment
+    When that adjustment is applied
+    Then it is either ticketed or recorded as a note
+    And it is reversible from that record alone
+
+  # BL-820 mid-shift-digest-does-not-replace-the-pass-09
+  Scenario: a mid-shift digest does not satisfy the end-of-shift pass
+    Given a mid-shift bounce digest already reached the specifier
+    When the shift-close path reaches its lean step
+    Then the closing lean pass still runs
+    And the mid-shift digest is not accepted in its place
+
+  # BL-820 empty-shift-still-produces-an-explicit-no-change-10
+  Scenario: a shift with no lifecycle activity still ends in an explicit outcome
+    Given a shift whose ledger holds no ticket lifecycle entries
+    When the closing lean pass runs
+    Then it records an explicit no-change outcome
+    And the ceremony run counts as complete

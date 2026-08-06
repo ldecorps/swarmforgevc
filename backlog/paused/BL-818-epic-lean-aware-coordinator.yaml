@@ -1,0 +1,125 @@
+id: BL-818
+title: "EPIC — Lean-aware coordinator: a durable per-ticket lifecycle ledger, fed to the specifier at shift close, so forge process is optimized from evidence instead of impressions; do not promote directly; tracks children"
+milestone: M8
+status: todo
+type: epic
+epic: lean-aware-coordinator
+priority: 1
+direction: human-requested
+depends_on: []
+decomposes_into: [BL-819, BL-820]
+source: |
+  Raw intake `backlog/INTAKE-lean-aware-coordinator.md` (human via Cursor
+  2026-08-05 ~09:55 CEST, amended ~09:58 for the shift-closing ceremony),
+  drained by the specifier 2026-08-06. Marked **URGENT** by the human, with
+  an explicit instruction to drain it ahead of the ten Bubble/console intakes
+  also sitting at backlog root. UMBRELLA/tracking item — not directly
+  promotable; children are promoted individually.
+
+notes: |
+  UMBRELLA / tracking item (type: epic), NOT directly promotable — the
+  coordinator promotes CHILD slices, never this. Children carry
+  `epic: lean-aware-coordinator` and are listed in `decomposes_into`.
+
+  ## Vision
+
+  Close the lean loop. Today a ticket's fate is scattered across topic JSON,
+  bounce evidence markdown, handoff files, briefings and mailboxes, and the
+  coordinator's Swarm Optimizer notes go to the HUMAN briefing rather than
+  into the specifier's work loop — so process debt (false-positive QA
+  bounces, missing review commits, flaky gates, repeated stage skips) keeps
+  being rediscovered as one-off incidents instead of becoming better specs.
+  This epic gives the coordinator one durable lifecycle ledger it owns, and
+  hands recent results to the specifier — who owns process altitude — on a
+  reliable cadence.
+
+  ## Human decisions locked 2026-08-05 (quoted; do not silently drop)
+
+  These are the human's own words from the intake. A later slice may refine
+  them only by asking, never by quiet omission.
+
+  1. "**New rôle for the coordinator**" — meaning a first-class **duty /
+     mode** of the existing coordinator (prompt + machinery), **not** a ninth
+     standing pipeline agent unless the specifier can prove a separate seat
+     is required. Default: extend coordinator + durable store + handoff to
+     specifier.
+  2. "**Lifecycle record is durable and queryable**" — machine-local under
+     `.swarmforge/` is fine for live state; anything the specifier must act
+     on across hosts should be committed or otherwise durable per existing
+     live-data rules. Specifier pins the schema.
+  3. "**Shift closing ceremony is the main optimisation window (locked
+     2026-08-05 ~09:58).**" Coordinator and specifier use the shift's
+     accumulated lifecycle / lean data to make **tentative adjustments**
+     before the shift fully winds down. "Mid-shift close/bounce digests may
+     still exist as secondary signals; they do not replace the end-of-shift
+     pass."
+  4. "**Both roles act in the ceremony.**" Coordinator brings the ledger /
+     numbers and any within-power adjustments (promotion order, throttle
+     posture). Specifier turns evidence into process tickets, spec/gate
+     tweaks, or explicit "no change" — "**a silent ceremony is a failed
+     ceremony**."
+  5. "**Feed the specifier, not only the briefing.**" Closing-ceremony packet
+     is mandatory; optional extras: short `note` after a harsh bounce wave,
+     and human-visible summary in the briefing.
+  6. "**Content of the feed**" — shift-scoped lifecycle results: path taken,
+     dwell hotspots, bounce classes, skip reasons, stalls, and 1-3 concrete
+     process hypotheses / tentative adjustments — "never a dump of raw logs."
+  7. "**Lean scope**" — optimize the **forge process** (how work is
+     specified, gated, routed, evidenced). Out of band: changing product
+     features of the domain under build except when the domain *is* the forge
+     (dogfood) and the evidence demands a process ticket. "'Tentative' means
+     reversible / ticketed / noted — not silent constitution edits."
+  8. "**Reuse before invent.**" Prefer composing existing metrics/bounce/dwell
+     sources into one lifecycle view over a parallel telemetry stack.
+  9. "**Urgency.**" Specifier drains this before non-urgent Bubble/console
+     intakes still sitting at backlog root; coordinator should treat the
+     minted ticket as high promotion priority once approved.
+
+  ## Boundary vs the existing Swarm Optimizer duty
+
+  The coordinator already has a first-class "Swarm Optimizer" duty
+  (`swarmforge/roles/coordinator.prompt:115`) that observes stage-dwell and
+  chase/cost and recommends **to the human via the briefing**. This epic is
+  NOT a duplicate: it adds a lean loop aimed at the **specifier**, fed by a
+  durable per-ticket lifecycle record, so process specs and pipeline rules
+  can be optimized from recent evidence. The coordinator stays at meta
+  altitude throughout — it **records and reports**; it does not author domain
+  specs or silently change the constitution. Model-steward is a different
+  altitude (model lifecycle knowledge) and is deliberately not conflated.
+
+  ## Slice plan
+
+  - **Slice 1 — BL-819: the lifecycle ledger.** Durable, append-only,
+    idempotent per-ticket lifecycle record written at the handoff/close
+    points that already exist, composed from instruments that already ship
+    (stage-dwell-report, record-bounce/`bounce_history`, handoff audit
+    headers, topic JSON). Buildable today with no unmet dependency, and it
+    is the foundation every later slice reads. SPECCED.
+  - **Slice 2 — BL-820: the closing-ceremony lean pass.** The named
+    coordinator+specifier optimisation step at shift close, consuming slice
+    1's ledger. SPECCED, but genuinely BLOCKED — see the dependency finding
+    below.
+
+  ## Dependency finding (specifier, 2026-08-06) — the ceremony hook does not exist yet
+
+  The intake's primary cadence is the shift closing ceremony, and its default
+  was "whatever already runs at shift close; add one lean step there — do not
+  invent a fourth stop verb." Measured at 62821c8d, **nothing runs at shift
+  close.** There is no `finish-shift`, closing-ceremony, shift-close or
+  bedtime code path anywhere in `swarmforge/scripts` or `extension/src`; the
+  only hits for shift vocabulary are two operator state files
+  (`continuous-shifts.json`, `concierge-tick-state.json`). All three tickets
+  the intake names as the ceremony's possible home are still unbuilt in
+  `backlog/paused/`: BL-762 (finish-shift bedtime verb), BL-658 (briefing
+  trigger derived from closure schedule), BL-660 (three-shift packs).
+  Furthermore `continuous-shifts.json` has been armed since 2026-08-04 with
+  `scheduledStop: false`, so there is currently no scheduled shift boundary
+  at all.
+
+  This is why the epic splits the way it does rather than as one ticket: the
+  ledger is unblocked and valuable on its own, while the ceremony pass has to
+  wait for a hook to attach to. Honouring the human's "do not invent a fourth
+  stop verb" means BL-820 depends on BL-762 rather than growing its own shift
+  verb. If the human would rather have the lean pass sooner on a cadence that
+  exists today (e.g. the daily briefing sweep, which does run), that is a
+  one-line change to BL-820's trigger and worth asking before promoting it.

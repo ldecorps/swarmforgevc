@@ -1,0 +1,121 @@
+id: BL-820
+title: "Closing-ceremony lean pass: coordinator brings the shift's lifecycle packet, specifier turns it into process tickets or an explicit no-change — a named ceremony step, never a briefing-only note"
+milestone: M8
+status: todo
+type: feature
+epic: lean-aware-coordinator
+priority: 1
+direction: human-requested
+human_approval: pending
+severity: n/a
+depends_on: [BL-819, BL-762]
+mutation_cost: medium
+
+approval_context: >
+  Slice 2 of BL-818, drained from the human's URGENT intake
+  `backlog/INTAKE-lean-aware-coordinator.md` (Cursor 2026-08-05 ~09:55 CEST,
+  amended ~09:58 to lock the shift-closing ceremony as the main window).
+
+  One thing genuinely needs the human's call before this is promoted, and it
+  is the reason this slice is separate from BL-819 rather than folded in.
+  The human's locked decision 3 makes the shift closing ceremony the primary
+  cadence, and the intake's default was "whatever already runs at shift
+  close; add one lean step there — do not invent a fourth stop verb."
+  Measured 2026-08-06: nothing runs at shift close. There is no finish-shift,
+  closing-ceremony, shift-close or bedtime code path anywhere in
+  `swarmforge/scripts` or `extension/src`, all three candidate hosts (BL-762,
+  BL-658, BL-660) are still unbuilt in `backlog/paused/`, and
+  `continuous-shifts.json` has had `scheduledStop: false` since 2026-08-04 so
+  there is no scheduled shift boundary at all.
+
+  So this slice as written waits on BL-762 (the finish-shift verb), which
+  honours "do not invent a fourth stop verb" but delays a lean loop the human
+  called urgent. The alternative is to attach the pass to a cadence that DOES
+  run today — the daily briefing sweep in handoffd — which would ship it now
+  at the cost of "end of shift" becoming "once a day". That is a one-line
+  change to this ticket's trigger and it is the human's call, not the
+  specifier's, because it trades the human's own locked decision 3 against
+  their own stated urgency.
+
+source: |
+  Raw intake `backlog/INTAKE-lean-aware-coordinator.md` (human via Cursor
+  2026-08-05 ~09:55 CEST, amended ~09:58 for the shift-closing ceremony),
+  drained by the specifier 2026-08-06 into BL-818 (epic) + BL-819 (ledger) +
+  BL-820 (this slice). This slice carries requested outcome 1's second and
+  third clauses — "recent results delivered to specifier" and
+  "**closing-ceremony lean pass** for coordinator + specifier is wired and
+  acceptance-backed".
+
+description: |
+  ## Shape
+
+  At shift close, a named lean step runs before the shift fully winds down:
+
+  1. **The coordinator brings the packet.** Shift-scoped lifecycle results
+     read from BL-819's ledger: path taken, dwell hotspots, bounce classes,
+     skip reasons, stalls, plus 1-3 concrete process hypotheses. The human was
+     explicit that this is "never a dump of raw logs" (decision 6).
+  2. **The coordinator may act within powers it already holds** — promotion
+     order and throttle posture — and records that it did.
+  3. **The specifier turns the evidence into an outcome**: a process ticket, a
+     spec/gate tweak, or an explicit "no change". Per the human's decision 4,
+     "a silent ceremony is a failed ceremony" — so producing nothing is a
+     failure, while recording a reasoned no-change is a success.
+  4. **The packet reaches the specifier, not only the briefing** (decision 5).
+     The closing-ceremony packet is mandatory. Optional extras the human
+     allowed: a short `note` after a harsh bounce wave, and a human-visible
+     summary in the briefing.
+
+  ## Tentative means reversible (human decision 7)
+
+  Adjustments made in the ceremony are "reversible / ticketed / noted — not
+  silent constitution edits". The specifier may write process tickets and may
+  amend prompts through the normal Article 5 route; the ceremony itself never
+  edits a constitution article as a side effect of running.
+
+  ## Lean scope stays on the forge (human decision 7)
+
+  The pass optimizes how work is specified, gated, routed and evidenced. It
+  does not change product features of the domain under build — except where
+  the domain IS the forge (this repo is its own dogfood) and the evidence
+  demands a process ticket.
+
+  ## Why this is blocked, and on what
+
+  See approval_context. The ceremony hook this slice attaches to does not
+  exist yet, so `depends_on` names BL-762 (finish-shift verb) alongside
+  BL-819 (the ledger it reads). If the human redirects the trigger to the
+  daily briefing sweep, BL-762 drops out of `depends_on` and this slice
+  unblocks immediately.
+
+acceptance: specs/features/BL-820-closing-ceremony-lean-pass.feature.draft
+
+# BL-633. One property the scenarios cannot express.
+invariants:
+  - "Every ceremony run terminates in a recorded outcome — a process ticket, a spec/gate change, or an explicit reasoned no-change — and never in silence; a run that produced nothing is indistinguishable from a ceremony that did not happen, which is the failure this slice exists to prevent."
+
+out_of_scope: |
+  - Writing the lifecycle ledger. That is BL-819; this slice only reads it.
+  - Inventing a new shift-close or stop verb. The human's default was
+    explicit: "do not invent a fourth stop verb." This slice attaches to an
+    existing hook or waits for BL-762.
+  - Replacing the coordinator's Swarm Optimizer duty or its human briefing
+    notes. Both continue unchanged; this pass is an additional consumer,
+    aimed at the specifier.
+  - Mid-shift digests as a REPLACEMENT for the end-of-shift pass. The human
+    allowed them as secondary signals only: "they do not replace the
+    end-of-shift pass."
+  - Replacing QA, hardener, or babysitterd (intake out-of-scope, verbatim).
+  - Auto-amending the constitution without human/specifier (intake
+    out-of-scope, verbatim).
+
+notes: |
+  Kept separate from BL-819 because the two have different readiness, not
+  because the work is unrelated: the ledger is buildable today and this is
+  not. Folding them would have parked a valuable, unblocked slice behind an
+  unbuilt shift verb.
+
+  The intake also asked that the coordinator and specifier prompts document
+  the lean-aware duty and its boundary vs Swarm Optimizer / the human
+  briefing. The ledger half of that lands with BL-819; the ceremony half
+  lands here, in this slice's own documenter pass.

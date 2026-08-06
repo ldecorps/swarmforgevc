@@ -1,0 +1,118 @@
+id: BL-819
+title: "Coordinator-owned ticket lifecycle ledger: one durable, idempotent, append-only record per ticket (stages, dwell, bounces, skips, stalls, close outcome) composed from instruments that already ship"
+milestone: M8
+status: todo
+type: feature
+epic: lean-aware-coordinator
+priority: 1
+direction: human-requested
+human_approval: pending
+severity: n/a
+depends_on: []
+mutation_cost: medium
+
+approval_context: >
+  Slice 1 of BL-818, drained from the human's URGENT intake
+  `backlog/INTAKE-lean-aware-coordinator.md` (Cursor 2026-08-05 ~09:55 CEST).
+  The human asked for same-shift approval, so this is flagged pending rather
+  than held.
+
+  What needs sign-off is the SCHEMA and the write points, since the human's
+  locked decision 2 says "Specifier pins the schema": one JSONL append-only
+  ledger per shift under `.swarmforge/lean/`, plus a per-ticket latest
+  snapshot, written at the handoff and close points that already exist. The
+  intake's own default was "JSONL append + per-ticket latest snapshot if both
+  are cheap; specifier picks one if dual-write is waste" — measured, both are
+  cheap here because the snapshot is a fold of the JSONL rather than a second
+  source of truth, so both ship and the JSONL stays the only writer.
+
+  Also firm, and worth the human seeing before build: the ledger records only
+  facts already recorded elsewhere. Per the intake's default it is "thick
+  enough that a close always appends a lifecycle summary without the LLM
+  inventing the numbers" — narration is a later slice's job, on top of
+  recorded facts.
+
+source: |
+  Raw intake `backlog/INTAKE-lean-aware-coordinator.md` (human via Cursor
+  2026-08-05 ~09:55 CEST, amended ~09:58), drained by the specifier
+  2026-08-06 into BL-818 (epic) + BL-819 (this slice) + BL-820 (ceremony
+  pass). This slice carries requested outcome 1's first clause —
+  "lifecycle record written/updated across ticket life" — and nothing else.
+
+description: |
+  ## Shape
+
+  The coordinator gains a durable lifecycle ledger it OWNS. One append-only
+  JSONL per shift under `.swarmforge/lean/`, plus a per-ticket latest
+  snapshot folded from it, recording for each ticket: stages entered and
+  left, dwell per stage, bounces (who / blamed / class / evidence path),
+  stage skips and their declared reasons, stalls and chases, and the close
+  outcome — with enough ids and timestamps to reconstruct the path without
+  scraping chat.
+
+  ## Reuse before invent (human decision 8)
+
+  Every field comes from an instrument that already ships. This slice is a
+  COMPOSITION, not a parallel telemetry stack:
+  - stage transitions and dwell — the handoff audit headers already stamped
+    on every parcel (`enqueued_at`, `dequeued_at`, `completed_at`) and
+    `stage-dwell-report` (`extension/src/tools/stage-dwell-report.ts`, built
+    at `extension/out/tools/stage-dwell-report.js`);
+  - bounces — `bounce_count` / `bounce_history` on the ticket YAML, written
+    by `record-bounce` (`extension/src/tools/record-bounce.ts`);
+  - stage skips and reasons — the ticket's own `required_stages` and
+    `stage_skip_reasons`;
+  - stalls and chases — handoffd's chase/nudge telemetry;
+  - close outcome — the backlog folder transition and `backlog/topics/*.json`.
+
+  If a field cannot be sourced from one of those, it does not go in the
+  ledger this slice: adding a NEW producer is out of scope here (see
+  out_of_scope) precisely so "reuse before invent" is enforced by the slice
+  boundary rather than by good intentions.
+
+  ## Coordinator stays at meta altitude (human decision 1 and 4)
+
+  This is a first-class DUTY of the existing coordinator, not a ninth
+  standing agent. The coordinator records and reports; it does not author
+  domain specs and does not edit the constitution. Nothing in this slice
+  gives it a new power over promotion or gating — it already has those under
+  Swarm Optimizer and they are unchanged.
+
+  ## What this slice deliberately does NOT do
+
+  It does not deliver the feed or the ceremony. Writing the ledger is
+  separable from consuming it, and the consumer is blocked on a shift-close
+  hook that does not exist yet (BL-820, and BL-818's dependency finding).
+  This slice is valuable standing alone: the ledger accumulates real shift
+  data from the moment it lands, so whenever the ceremony does arrive it has
+  history to read rather than starting empty.
+
+acceptance: specs/features/BL-819-ticket-lifecycle-ledger.feature.draft
+
+# BL-633. Two properties the scenarios cannot express.
+invariants:
+  - "Appending the same (ticket, event) twice — hook re-run, parcel redelivery, daemon restart mid-write — leaves the ledger byte-identical to appending it once; the per-ticket snapshot is always a pure fold of the JSONL and never an independent writer."
+  - "Every ledger field is traceable to an instrument that already records it; no field is computed, inferred, or narrated by an LLM."
+
+out_of_scope: |
+  - The specifier feed and the closing-ceremony lean pass. That is BL-820,
+    and it is blocked on a shift-close hook that does not exist — see
+    BL-818's dependency finding.
+  - Adding any NEW telemetry producer. Human decision 8 is "reuse before
+    invent"; a field with no existing source is dropped from this slice
+    rather than given a new writer here.
+  - Changing the coordinator's Swarm Optimizer duty, its promotion order
+    powers, or its throttle posture. Explicitly unchanged (human decision 7).
+  - Replacing QA, hardener, or babysitterd (intake out-of-scope, verbatim).
+  - Auto-amending the constitution without human/specifier (intake
+    out-of-scope, verbatim).
+
+notes: |
+  Drained from the URGENT intake ahead of the ten Bubble/console intakes at
+  backlog root, per the human's explicit ordering instruction (decision 9).
+
+  The intake asked for prompt documentation of the lean-aware duty and its
+  boundary vs Swarm Optimizer / the human briefing. That is folded into this
+  slice's own documenter pass rather than split into a third orphan docs
+  ticket — the duty is not documentable until the ledger it describes exists.
+  The specifier writes the coordinator.prompt half itself, per Article 1.2.
