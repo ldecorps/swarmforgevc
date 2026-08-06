@@ -1140,17 +1140,18 @@ Flow watchdog alarms are **unsuppressable by design** — they go to Telegram (t
 Configure the flow watchdog in `swarmforge.conf`:
 
 ```
-config flow_watchdog_warn_ms 900000           # alarm at 15 minutes (default)
-config flow_watchdog_escalate_ms 3600000      # escalate at 1 hour (default)
+config flow_watchdog_warn_ms 900000           # global fallback warn at 15 minutes (default)
+config flow_watchdog_escalate_ms 3600000      # global fallback escalate at 1 hour (default)
 ```
 
-These are the **thresholds for alarm tiers**, not disables:
+These are the **global fallback thresholds**. Per-spec thresholds are resolved outside `decide-tier` from a calibrated percentile table (`.swarmforge/daemon/flow-watchdog-thresholds.json`), keyed by the alarm's own `(from→to, type)` identity:
 
-- **Warn tier:** first alarm when age exceeds `flow_watchdog_warn_ms`
-- **Escalate tier:** escalate to a higher-priority message when age exceeds `flow_watchdog_escalate_ms`
-- **No suppression:** once a parcel reaches warn-tier age, one alarm fires; once it reaches escalate-tier age, one escalation fires. The same parcel never re-alarms between tiers, and dormancy of the holding role is never a reason to silence the alarm.
+- **Warn tier (≈ p67):** fires when age exceeds the 67th percentile of historical mailbox residence for that spec — roughly the slowest third of cases
+- **Escalate tier (≈ p97):** fires when age exceeds the 97th percentile — roughly the slowest 3%
+- **Fallback chain:** exact `from->to|type` → `*->to|type` → the global conf pair above (when a key lacks ≥8 samples). A coarser `*->*|type` row is recorded for observability but not consulted — mixing unrelated routes under one type would mis-calibrate dormant pipeline roles.
+- **No suppression:** once a parcel reaches its resolved warn-tier age, one alarm fires; once it reaches escalate-tier age, one escalation fires. The same parcel never re-alarms between tiers, and dormancy of the holding role is never a reason to silence the alarm. Spec dependence changes which numbers are fed into `decide-tier`, never whether the alarm may speak.
 
-Malformed or absent config values fall back to the defaults above — the watchdog never disables itself.
+Malformed or absent config values fall back to the defaults above — the watchdog never disables itself. The percentile table is refreshed at most every 6 hours from each role's `completed/` and `abandoned/` audits.
 
 ### Durable state and dedup
 
