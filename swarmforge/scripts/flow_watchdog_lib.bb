@@ -164,23 +164,18 @@
    exact / to-type / type fallback strings. Only keys that clear the
    min-sample gate are emitted."
   [dwell-records]
-  (let [by-exact (group-by spec-key dwell-records)
-        by-to-type (group-by to-type-key dwell-records)
-        by-type (group-by type-key dwell-records)
-        entry (fn [source samples]
+  (let [entry (fn [source samples]
                 (when-let [t (thresholds-from-samples (map :duration-ms samples))]
-                  (assoc t :source source)))]
+                  (assoc t :source source)))
+        fallback-levels [[spec-key "exact"]
+                          [to-type-key "to-type"]
+                          [type-key "type"]]]
     (into {}
-          (concat
-           (keep (fn [[k samples]]
-                   (when-let [e (entry "exact" samples)] [k e]))
-                 by-exact)
-           (keep (fn [[k samples]]
-                   (when-let [e (entry "to-type" samples)] [k e]))
-                 by-to-type)
-           (keep (fn [[k samples]]
-                   (when-let [e (entry "type" samples)] [k e]))
-                 by-type)))))
+          (mapcat (fn [[key-fn source]]
+                    (keep (fn [[k samples]]
+                            (when-let [e (entry source samples)] [k e]))
+                          (group-by key-fn dwell-records)))
+                  fallback-levels))))
 
 (defn resolve-thresholds
   "Pure: pick warn/escalate for one parcel. Prefers exact spec, then
