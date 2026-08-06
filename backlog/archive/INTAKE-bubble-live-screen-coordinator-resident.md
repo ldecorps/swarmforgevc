@@ -196,3 +196,38 @@ rewriting four tickets afterwards.
 and are carried forward verbatim at mint. The remaining open questions the human
 listed (page titles, pager order, window defaults, blurb source, chart-vs-number
 layout) are specifier calls and will be decided at mint, not re-asked.
+
+---
+
+## Specifier disposition 2026-08-06 — DRAINED. Consolidated into BL-775 + BL-569.
+
+The contradiction that held this intake was resolved by the human on 2026-08-06:
+
+> Remote HTML for all 4, and flip BL-775 to remote
+
+This intake is the **same surface** as BL-775 (Live Screen), with the UX detail
+filled in, so it was consolidated into it (BL-680 N:1 merge) rather than minted
+as a twin.
+
+**Where each locked decision went.**
+
+- Decisions 1, 2, 3, 4, 6, 7 (navigation, coordinator+resident cast, 1500 ms
+  refresh, the ticket/role/model/claim-age metadata, idle+stale states, and what
+  is out of version one) → **BL-775**, quoted in its `description:`.
+- Decision 5 (the steer text box) → **BL-569**, which already specs exactly that
+  capability with its full security bar, and which the remote-HTML ruling turned
+  from duplicate work into BL-774's slice C. BL-775 stays read-only.
+
+**The open questions this intake asked the specifier to weigh in on**, all
+decided at mint: pager order (Talk, Live, Pipeline, Health, Host); steer as
+arm-then-send rather than confirm-dialog or bare send (BL-569's existing ARMED
+design, kept because a pocket tap must not type into a running pane); native vs
+WebView (settled by the human's ruling); Mini App retirement (BL-774 slice D,
+dual-run first as the human asked); coordinator ticket strip shown when it holds
+work.
+
+**One finding worth recording.** Measured against the code 2026-08-06: the
+bridge already renders this screen. `residentSpyUiHtml.ts` carries the pane grid,
+the ticket strip and a 1500 ms refresh; `captureMonoRouterLiveScreen` already
+returns exactly the coordinator + resident cast. Under the remote-HTML ruling the
+port is therefore packaging, not a rewrite.

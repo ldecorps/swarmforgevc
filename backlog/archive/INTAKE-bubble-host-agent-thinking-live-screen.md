@@ -180,3 +180,45 @@ rewriting four tickets afterwards.
 and are carried forward verbatim at mint. The remaining open questions the human
 listed (page titles, pager order, window defaults, blurb source, chart-vs-number
 layout) are specifier calls and will be decided at mint, not re-asked.
+
+---
+
+## Specifier disposition 2026-08-06 — DRAINED into BL-833 + BL-834 (1:N split).
+
+Unblocked by the human's ruling of 2026-08-06:
+
+> Remote HTML for all 4, and flip BL-775 to remote
+
+Split as this intake's own mint hint asked ("Likely epic + thin slice A (shell +
+one live source) rather than one fat ticket"):
+
+- **BL-833** — the host-agent activity feed on the bridge (this intake's
+  host/bridge requirements 7-9).
+- **BL-834** — the Bubble Host page rendering it (requested outcomes 1-6), a
+  remote HTML page. Epic BL-830.
+
+**Open questions answered from the code, measured 2026-08-06.**
+
+1. *Source of truth?* The **existing SDK progress lines**.
+   `summarizeSdkProgressLine` already summarizes host events, and
+   `createThrottledProgressReporter` already throttles them — but their only
+   consumer in the whole tree is `telegramCursorBridgeLive.ts`, which sends them
+   to Telegram. Nothing persists or serves them. No new channel and no
+   transcript walker is needed; a tee and a read route are.
+2. *Let's Talk turns only, or any Cursor session?* Any host session — the feed is
+   keyed by session regardless of what started it, so restricting it would be
+   extra work that removes capability.
+3. *Native list vs WebView?* Settled by the human's ruling: remote HTML.
+4. *Barge-in on this screen in slice 1?* No — the page is a window, not a
+   cockpit, and BL-834's `approval_context` argues the case both ways for the
+   human.
+
+**Requirement 6 is met rather than deferred:** the pager swipe already returns to
+Talk, and BL-834 re-seeds and re-attaches on return, so no separate affordance is
+built.
+
+**Redaction (requirement 9) is deliberately absent, and BL-833 says so plainly:**
+verified 2026-08-06, no redaction helper exists in `extension/src` to inherit a
+posture from. The feed changes no exposure class — every line is already going to
+the operator's Telegram topic under the same principal — so a real redaction pass
+belongs in its own ticket covering every surface at once, Telegram included.

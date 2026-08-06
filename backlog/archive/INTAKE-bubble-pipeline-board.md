@@ -188,3 +188,28 @@ rewriting four tickets afterwards.
 and are carried forward verbatim at mint. The remaining open questions the human
 listed (page titles, pager order, window defaults, blurb source, chart-vs-number
 layout) are specifier calls and will be decided at mint, not re-asked.
+
+---
+
+## Specifier disposition 2026-08-06 — DRAINED into BL-831 (1:1).
+
+Unblocked by the human's ruling of 2026-08-06:
+
+> Remote HTML for all 4, and flip BL-775 to remote
+
+Minted as **BL-831** (`backlog/paused/BL-831-bubble-pipeline-board-page.yaml`),
+epic BL-830, a remote HTML page in the Bubble UI bundle. All six locked
+decisions are carried verbatim in substance into its `description:`.
+
+**Open questions decided at mint:** blurb = first sentence of the ticket's
+`description:`, falling back to its title (a dedicated `summary:` schema field
+was considered and rejected); detail sheet = the ticket's spec sections plus its
+feature file's text; the grid scrolls horizontally on phone width; pager order
+Talk, Live, **Pipeline**, Health, Host; Mini App `/pipeline-board` retirement
+deferred to BL-830 slice E exactly as the human asked ("dealt with later", dual-
+run OK).
+
+**Measured 2026-08-06:** the bridge already serves `/pipeline-board` and renders
+`pipelineGridUiHtml.ts` from `capturePipelineGridLive`, so "reuse the same read
+model, not invent a second board" is satisfied by construction. What genuinely
+does not exist, and is the real work: the per-ticket blurb and the detail sheet.

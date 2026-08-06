@@ -249,3 +249,32 @@ rewriting four tickets afterwards.
 and are carried forward verbatim at mint. The remaining open questions the human
 listed (page titles, pager order, window defaults, blurb source, chart-vs-number
 layout) are specifier calls and will be decided at mint, not re-asked.
+
+---
+
+## Specifier disposition 2026-08-06 — DRAINED into BL-832 (1:1).
+
+Unblocked by the human's ruling of 2026-08-06:
+
+> Remote HTML for all 4, and flip BL-775 to remote
+
+Minted as **BL-832** (`backlog/paused/BL-832-bubble-health-trends-page.yaml`),
+epic BL-830, a remote HTML page. All six locked decisions carried verbatim in
+substance. The 2026-08-01 disposition's promise — that decision 6 would become
+an explicit ticket invariant — is discharged: it is BL-832's first invariant.
+
+**Open questions decided at mint:** title **Health**; four readouts (traverse
+time, rework split by bouncing role, bottleneck stage, velocity), each chosen
+for having an action behind it; number-first layout, no charts in v1; bounce and
+traverse time as two adjacent readouts with the rework verdict as the bounce
+readout's direction line; window not user-selectable in v1 (BL-830 slice F);
+pager order Talk, Live, Pipeline, **Health**, Host.
+
+**The window, flagged for the human rather than quietly resolved.** The ask was
+"about two weeks". Measured 2026-08-06, the existing computations do not window
+uniformly — `computeVelocity` rolls over 7 days,
+`DEFAULT_CYCLE_TIME_RECENT_WINDOW` is a count of 20 tickets, not a span. BL-832
+therefore labels each readout with the window its own computation actually uses,
+because forcing a uniform fortnight would make the phone's number disagree with
+the bridge's and the CLI's for the same metric. BL-832's `approval_context` puts
+that trade in front of the human.

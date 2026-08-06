@@ -1,0 +1,153 @@
+id: BL-829
+title: "Bubble thin shell, slice B — the pager renders remote pages: the bundle names its pages, the shell hosts them beside the native Talk page, and an unrenderable page never becomes a blank screen"
+milestone: M8
+type: feature
+status: todo
+epic: bubble-thin-shell
+human_approval: approved
+assigned_to: none
+priority: 88
+direction: human-requested
+depends_on: [BL-825]
+mutation_cost: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-829-bubble-remote-page-pager.feature
+
+invariants:
+  - "Talk stays native and reachable from every pager state: no remote page, and no failure of every remote page at once, can leave the human without the native Talk surface."
+  - "Only pages the resolved bundle manifest names are ever loaded: the shell's WebView never navigates to a path or origin the manifest did not authorize."
+  - "A page that cannot render says why: the shell shows the reason it has, and a blank WebView is never an acceptable rendering of a failure."
+
+required_wiring:
+  - "android/app/src/main/java/com/swarmforge/floatcompanion/MainActivity.kt::RemotePageHost::the pager must actually instantiate the remote page host; a host nothing adds to the pager is unreachable (the BL-419 shape)"
+  - "extension/src/bridge/letsTalkRoutes.ts::pages::the manifest route must actually serve the page list, not merely model it"
+
+description: |
+  ## What
+
+  BL-825 decides *which bundle* Bubble renders. This slice is what renders *from*
+  it: the bundle manifest gains a list of pages, the shell turns that list into
+  pager entries beside the native Talk page, and opening one shows that page in
+  the shell's WebView.
+
+  This is the slice every Bubble screen ticket is waiting on. BL-775 (Live),
+  BL-831 (Pipeline), BL-832 (Health) and BL-834 (Host thinking) are all pages in
+  that bundle; without a host that renders bundle pages they are four features
+  nothing can open. It is named as their explicit dependency rather than assumed,
+  because "a sibling slice will render it" is exactly how a consumer ships fully
+  green over fakes while the end-to-end path stays dark.
+
+  ## Scope
+
+  - **Bridge.** The UI bundle manifest BL-825 serves gains a `pages` list: for
+    each page an id, a human title, its entry path within the bundle, and its
+    order in the pager. Same versioning, validation and rollback posture as the
+    rest of the manifest — a manifest with a malformed page list is rejected
+    whole, exactly as BL-825 already rejects a malformed bundle.
+  - **Android (pure logic, JVM unit suite).** Turning a resolved bundle into the
+    pager's page list: ordering, dropping entries the shell cannot honour,
+    deciding what the pager shows when the resolver returned `bare`, `stale` or
+    `cached`. No `android.*` type in this function's own signature.
+  - **Android (thin device edge).** The pager gains a remote page host that
+    loads a named page from the resolved bundle, and renders the resolver's
+    degraded state honestly rather than as a blank view.
+
+  ## What stays native, and is not negotiable
+
+  Per BL-824's locked decision 2 and its recorded WebView trade-off: the
+  collapsed-bubble gestures, the overlay window, the mic/talk engine and the
+  Talk surface stay in the shell. This slice adds remote pages **beside** Talk;
+  it never migrates Talk itself, and the pager must still open on Talk.
+
+  ## Why the manifest authorizes the pages
+
+  A WebView that will load whatever path it is handed is a remote-code surface
+  on a phone that holds the operator's swarm control. The page list is an
+  allowlist: the host resolves a page id to an entry the manifest named, and
+  refuses anything else. This is why the page list belongs in the validated
+  manifest rather than being passed around as a URL.
+
+  ## Degraded states, inherited not re-invented
+
+  BL-825 already classifies `fresh`, `cached`, `stale`, `bare` and the
+  shell-behind refusal. This slice consumes those outcomes; it does not add a
+  fifth. `bare` means the pager shows Talk alone with a plain statement that
+  screens are unavailable — that statement is the whole of the honest empty
+  state, and it must not be dressed up as a loading spinner.
+
+out_of_scope: |
+  - The bundle resolver itself, its versioning, caching and validation. BL-825.
+  - The APK update prompt and how the shell binary is distributed. Slice C.
+  - The content of any individual page. Each screen ticket owns its own page;
+    this slice must ship with at least one page rendering end to end, but it
+    does not spec what that page shows.
+  - Migrating Talk, the mic pipeline, the overlay window or the collapsed-bubble
+    gestures to remote UI.
+  - Offline authoring or editing of bundles.
+
+approval_context: >
+  This slice exists because the human's 2026-08-06 ruling — "Remote HTML for all
+  4, and flip BL-775 to remote" — makes remote page hosting the critical path for
+  four screen tickets plus BL-775. It was not in BL-824's original decomposition
+  as a ticket, only as a line in `remaining_slices`; it is minted now so those
+  five tickets depend on something real.
+
+  The specifier call worth a look: the page list is an **allowlist inside the
+  validated manifest**, so adding a screen means redeploying the bridge with a
+  new manifest, not just dropping a file. That is deliberately less flexible than
+  letting the shell load any bundle path, and the reason is that the alternative
+  is a WebView on the operator's phone that will render whatever it is pointed
+  at.
+
+source: |
+  Slice B of BL-824, whose `remaining_slices` names it: "remote screen hosting:
+  the bridge serves a versioned UI bundle containing the actual pager screens,
+  and the pager renders remote pages alongside the native Talk page, with
+  per-screen native/remote placement recorded."
+
+  Promoted from a slice line to a ticket on 2026-08-06 by the human's directive
+  "Remote HTML for all 4, and flip BL-775 to remote", which made it the shared
+  dependency of every Bubble screen.
+
+verification: |
+  ## Runnable gates
+
+  The bridge half — the manifest `pages` list, its validation and its
+  whole-manifest rejection — is TypeScript and runs in the Node acceptance
+  runner and normal Stryker/jscpd/CRAP scope.
+
+  The Android pure-logic half — bundle-to-pager-list resolution and degraded
+  state selection — binds to the gradle JVM unit suite through the BL-769 seam
+  (`specs/pipeline/steps/lib/androidGradle.js`). The coder writes the
+  step-handler file in THIS parcel with an explicit KNOWN_VALUES map from each
+  named decision to the real test class and test-name substring that covers it —
+  no passthrough check (BL-233).
+
+  Hardener note, per the constitution's Startup Tools table: no Kotlin
+  mutation/CRAP/DRY tool is pinned in this project. The `.kt` half runs the
+  degraded unit-test-gap fallback and must record that it did; the TypeScript
+  bridge half is in normal mutation scope and is not exempt.
+
+  ## Recorded manual procedure (device surface)
+
+  The WebView render and the pager gesture are device surface per the
+  constitution's Testability Boundary — Bubble. QA runs this against a paired
+  phone and records the result in the ticket:
+
+  1. With a bundle serving at least one page, expand Bubble. **Expect:** it
+     opens on Talk, and the remote page is reachable by swipe.
+  2. Open the remote page. **Expect:** it renders; Talk is still reachable by
+     swiping back.
+  3. Serve a manifest whose page entry points at a path that does not exist.
+     Reopen. **Expect:** a stated reason on that page, never a blank view, and
+     Talk unaffected.
+  4. Stop the bridge and reopen. **Expect:** the cached bundle's pages, marked
+     stale, with Talk working.
+  5. Clear app data with the bridge down and open Bubble. **Expect:** Talk
+     alone, with a plain statement that screens are unavailable.
+
+notes: |
+  Consolidation record (BL-680): this ticket drains no intake. It is a slice
+  promoted out of BL-824's `remaining_slices` because four newly-drained screen
+  intakes and BL-775 all depend on it. BL-824's `decomposes_into` and
+  `remaining_slices` are updated in the same pass so slice B is not listed twice.
