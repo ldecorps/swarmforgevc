@@ -1763,6 +1763,64 @@ test('runCursorBridgePollOnce clear-all poll option empties queue without starti
   assert.ok(posts.some((text) => text.includes('Cleared 2 queued questions')));
 });
 
+// BL-811 D1 regression, at the integration level (not just the pure
+// decideQueuedPollAnswerAction unit/property coverage): a poll persisted by
+// a pre-hotfix build has no clearAllOptionIndex field. Telegram sends
+// option_ids: [] on a vote retraction, so selectedIndex is undefined too —
+// before the fix, undefined === undefined cleared the whole queue. This
+// drives the full runCursorBridgePollOnce -> processQueuedPollAnswer path
+// with a real persisted "legacy" poll shape and asserts the queue and poll
+// both survive untouched, and no "Cleared" receipt is posted.
+test('runCursorBridgePollOnce ignores a vote retraction against a legacy poll with no clearAllOptionIndex field, leaving the queue and poll untouched', async () => {
+  const root = mkRoot();
+  const deps = mkPollDeps(root);
+  const posts = [];
+  let prompted = false;
+  deps.agentSession.promptAgent = async () => {
+    prompted = true;
+    return { replyText: 'should not run', agentId: deps.agentSession.readAgentId() };
+  };
+  const legacyPoll = { pollId: 'poll-legacy-1', itemIds: ['qp-1'] }; // no clearAllOptionIndex — pre-hotfix shape
+  const initialState = {
+    updateOffset: 80,
+    cursorTopicId: 55,
+    pendingPrompts: [{ id: 'qp-1', text: 'queued first', createdAtMs: Date.now() }],
+    pendingPromptPoll: legacyPoll,
+  };
+  writeJsonFile(deps.statePath, initialState);
+  const next = await runCursorBridgePollOnce(
+    {
+      ...deps,
+      post: async (_t, _c, _topic, text) => {
+        posts.push(text);
+      },
+      getUpdates: async () => ({
+        success: true,
+        updates: [
+          {
+            update_id: 81,
+            poll_answer: {
+              poll_id: 'poll-legacy-1',
+              option_ids: [], // retraction
+              user: { id: 42 },
+            },
+          },
+        ],
+      }),
+    },
+    initialState,
+    false,
+    0
+  );
+  assert.equal(next.busy, false);
+  const persisted = loadJsonFile(deps.statePath);
+  assert.equal((persisted.pendingPrompts ?? []).length, 1, 'the retraction must not wipe the queue');
+  assert.equal(persisted.pendingPrompts[0].id, 'qp-1');
+  assert.deepEqual(persisted.pendingPromptPoll, legacyPoll, 'the poll itself is untouched by an ignored vote');
+  assert.equal(prompted, false);
+  assert.ok(!posts.some((text) => text.includes('Cleared')), 'no clear-all receipt for an ignored retraction');
+});
+
 test('runCursorBridgePollOnce reposts selection poll when outstanding poll is missing newer queued items', async () => {
   const root = mkRoot();
   const deps = mkPollDeps(root);

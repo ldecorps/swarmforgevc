@@ -1,6 +1,23 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 5, 2026 (BL-813: handoffd died live with a
+**Last Updated:** August 6, 2026 (BL-811: high-severity swarm review of the
+Host queue starvation hotfix (BL-810, landed direct to `main` as an operator
+fix under BL-506). Confirmed and fixed D1 — a vote retraction (Telegram
+sends `option_ids: []`) against a poll persisted by a pre-hotfix build (no
+`clearAllOptionIndex` field) compared `undefined === undefined` and wiped
+the whole queue; the decision is now a pure, property-tested function,
+`decideQueuedPollAnswerAction` (`extension/src/tools/telegramCursorBridgeCore.ts`),
+requiring a real numeric match before treating a vote as clear-all. D2 (new
+`/pause`/`/resume` help text and dropped "· N waiting" on the idle liveness
+line) confirmed as intended, no follow-up. Wrote the acceptance step
+handlers BL-810's own feature file had never had
+(`specs/pipeline/steps/bl810HostQueuePollClearAllTtlSteps.js`) — until this
+ticket, none of its ten scenarios had ever executed. BL-810 itself closed as
+satisfied-by-hotfix per human ruling; this ticket is its only quality gate.
+See the new [Host queue how-to](../how-to/BL-810-host-queue-selection-poll-clear-all-and-ttl.md)
+and the updated liveness-line note in
+`docs/how-to/BL-764-front-desk-shared-token-bridge-fanout.md`); August 5,
+2026 (BL-813: handoffd died live with a
 `FileNotFoundException` inside `ambulance_lib.bb`'s `ticket-has-file?` — it
 globs `backlog/**.yaml` and then slurps each match, and a ticket promoted
 `active/` → `done/` between those two steps (BL-812 closing while this check
