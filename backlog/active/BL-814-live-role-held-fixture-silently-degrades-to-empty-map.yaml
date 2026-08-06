@@ -9,7 +9,7 @@ severity: high
 priority: 10
 direction: human-requested
 depends_on: []
-assigned_to: none
+assigned_to: coder
 mutation_cost: low
 invariants:
   - "A copy-real-scripts fixture whose dependency set is incomplete fails loudly; it never reports a passing-shaped empty result."
