@@ -191,6 +191,20 @@
   (assert= "BL-622: a nil token never conflicts with anything"
            nil (fleet-telegram-creds-lib/conflicting-swarm home "fes2" nil)))
 
+;; ── BL-622: a swarm never conflicts with ITSELF. The only fleet swarm on
+;;    disk is "fes" and its own bot-token is compared against its own
+;;    creds file - the self-exclusion guard (not= other-name swarm-name)
+;;    must exclude the sole candidate and return nil, never "fes". This is
+;;    deliberately the ONLY entry in the fleet dir, so a passing result
+;;    cannot be masked by fs/list-dir enumeration order finding some OTHER
+;;    swarm first (as the duplicate-token-refused-05 case above would if
+;;    the self-exclusion guard were silently dropped: "fes" still sorts
+;;    before "fes2" there, so removing the guard did not fail that check).
+(let [home (mk-tmp-dir)]
+  (write-creds-file! home "fes" {:botToken "fes-own-token" :chatId "fes-chat" :bridgePort 9001})
+  (assert= "BL-622: a swarm's own creds file never conflicts with itself"
+           nil (fleet-telegram-creds-lib/conflicting-swarm home "fes" "fes-own-token")))
+
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (empty? @failures)
   (println "fleet_telegram_creds_lib (BL-436): ALL TESTS PASSED")
