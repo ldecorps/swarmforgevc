@@ -1,0 +1,119 @@
+id: BL-843
+title: "Bubble Control, slice B — the Control page: a remote HTML pager page with the status line, the three stop/start verbs behind confirm taps, the holiday switch and the Day/Evening/Night picks"
+milestone: M8
+type: feature
+status: todo
+epic: bubble-control
+human_approval: pending
+assigned_to: none
+priority: 80
+direction: human-requested
+depends_on: [BL-829, BL-842]
+mutation_cost: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-843-bubble-control-page.feature
+
+approval_context: >
+  Two calls are mine.
+
+  1. PAGE ORDER. Talk (native, first), then the read-only pages BL-830 already
+  ordered — Live, Pipeline, Health, Host thinking — then Notes, and **Control
+  last**. Control is the only page that can end a swarm, and it should be the
+  furthest thing from a pocket swipe. The intake left the Notes-vs-Control order
+  open and this is the answer to it.
+
+  2. START IS MUTED BUT NOT MUTE. The mock showed Start greyed while the swarm
+  runs, and it stays visually muted — but tapping it shows the reason the bridge
+  gave instead of doing nothing. A control that refuses in silence is exactly the
+  defect the constitution's console-reason guardrail names; a greyed control that
+  explains itself is not.
+
+invariants:
+  - "The page states, it never guesses: every status line, selected shift and enabled control comes from what the bridge last reported, and the page derives no swarm state of its own."
+  - "One tap is never enough to tear the swarm down: a first tap on a stop verb sends no control request at all, only a confirmation prompt."
+  - "No blank page and no perpetual spinner: an unreachable or refusing bridge is rendered as an unavailable state naming its reason, with no verb offered as tappable."
+
+required_wiring:
+  - "extension/src/bridge/letsTalkRoutes.ts::bubbleControlPage::the Control page must be registered in the served UI bundle manifest, or the pager can never open it (the BL-419 shape)"
+
+description: |
+  ## What
+
+  The Control page from the human's mock, as a remote HTML page in the UI bundle
+  — no APK change, per BL-824's thin-shell boundary and the human's 2026-08-06
+  ruling that Bubble screens are remote HTML.
+
+  Layout follows the mock the human reviewed
+  (`docs/design/bubble-control-screen-mock.png`): status line, then Start /
+  Drain & stop / Emergency stop, then the Holiday switch, then the Day / Evening
+  / Night segmented picks, with pager dots.
+
+  ## Behaviour
+
+  - **Status line.** Reads what BL-842's control status reports — "Swarm running
+    · Day shift", "Holiday quiet", "Swarm stopped" — and follows the result of
+    every successful action. It is never composed from what the page believes it
+    just did.
+  - **Start.** Muted while the swarm is running. Tapping it shows the reason the
+    bridge gave ("the swarm is already running"), rather than doing nothing.
+  - **Drain & stop / Emergency stop.** First tap sends no control request and
+    asks for confirmation. Confirming submits the verb with BL-842's
+    confirmation. Both stop verbs confirm — the human's decision 4 covers
+    anything that tears the swarm down, and a drain-and-stop does.
+  - **Holiday.** A switch. While it is on, the shift picks are shown as
+    unavailable, matching the human's "holiday on greys or ignores the shift
+    picks until holiday is off". Turning holiday off restores whichever shift was
+    staffed.
+  - **Shifts.** Exactly one of Day / Evening / Night shown selected whenever
+    holiday quiet is off. There is no "none" option — the human rejected
+    untick-all as a second quiet control.
+  - **Bridge unreachable or refusing.** The page renders an unavailable state
+    naming its reason and offers no tappable verb. Not a blank page, not a
+    spinner — the same rule BL-830's pages already carry.
+
+  ## Where this page lives in the pager
+
+  Talk (native, first), then Live, Pipeline, Health, Host thinking, then Notes,
+  then **Control**. Control is last on purpose: see `approval_context`.
+
+  ## Testability
+
+  The page is remote HTML served by the bridge, so it is a Node surface and
+  testable in the acceptance runner today. Nothing in this slice changes the APK,
+  and no scenario in its feature file needs a device: the shell that hosts the
+  page is BL-829's, already specced and verified there.
+
+  The one device-surface fact this slice depends on — that a swipe reaches the
+  page at all — is BL-829's contract, not re-verified here.
+
+  ## E2E procedure QA will run
+
+  1. Open the Control page on a phone with the swarm running; confirm the status
+     line matches what `formatShiftStatus` reports on the Telegram side.
+  2. Tap Start; confirm the reason appears and nothing starts.
+  3. Tap Drain & stop once; confirm no request reached the bridge (check the
+     bridge log) and a confirmation prompt appeared. Dismiss it; confirm still
+     nothing was sent.
+  4. Tap Emergency stop, confirm; confirm the swarm stops and the status line
+     follows.
+  5. Turn Holiday on; confirm the shift picks render unavailable and the status
+     line reads holiday quiet. Turn it off; confirm the prior shift is selected
+     again.
+  6. Stop the bridge and reload the page; confirm the unavailable state names its
+     reason and no verb is tappable.
+
+  ## Out of scope
+
+  - The control endpoints themselves. BL-842.
+  - The Notes page. Separate intake, named in BL-841's remaining slices only
+    because the page order depends on where it sits.
+  - Pause timers, per-service bounce, model switches. Out of version one.
+  - Any change to the collapsed bubble, the overlay window or the mic pipeline.
+    Those are native shell by BL-824's locked decision 2 and this slice does not
+    touch them.
+
+source: |
+  `backlog/INTAKE-bubble-control-shifts-holiday.md` (human via Let's Talk /
+  Cursor, 2026-07-31), drained 2026-08-07 as slice B of a 1:2 split under the
+  new BL-841 epic. The intake's locked decisions, including the mock's layout
+  direction, are quoted verbatim in BL-841.

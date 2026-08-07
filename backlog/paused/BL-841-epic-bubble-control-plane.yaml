@@ -1,0 +1,148 @@
+id: BL-841
+title: "EPIC — Bubble Control: the phone drives the swarm (start, drain-stop, emergency-stop, holiday quiet, shift) through the one control plane that already exists; do not promote directly; tracks children"
+milestone: M8
+type: epic
+status: todo
+epic: bubble-control
+human_approval: pending
+assigned_to: none
+priority: 82
+direction: human-requested
+depends_on: [BL-829]
+mutation_cost: medium
+decomposes_into: [BL-842, BL-843]
+
+approval_context: >
+  This is a NEW epic rather than a slice of BL-830 (Bubble remote screen pages),
+  and that placement is the decision worth a look.
+
+  BL-830 explicitly puts "driving Control verbs from any page in this epic" out
+  of scope: its pages are read-only projections. Control is the write path — it
+  tears the swarm down — and it carries a confirm discipline, a refusal
+  vocabulary and a different risk class from a page that renders a grid. Keeping
+  it under its own tracker keeps that boundary visible instead of quietly
+  eroding BL-830's own stated limit.
+
+  It still depends on BL-829: a Control page is a remote page like any other, and
+  the pager that hosts it is BL-824/BL-829's, not this epic's.
+
+invariants:
+  - "One control plane: every verb this epic exposes executes through the same extension-host function the Telegram Control topic already calls, and this epic adds no second implementation of start, stop, holiday or shift."
+  - "Nothing tears the swarm down on one tap: a destructive verb that arrives without a valid, unspent confirmation changes nothing, and says why."
+  - "No silent refusal: any request this epic declines is answered with a reason a human can read, never a bare status code and never a control that is merely greyed out."
+
+description: |
+  ## What
+
+  When the human expands the Bubble they land on Let's Talk. A horizontal swipe
+  reaches a **Control** page where they can drive the swarm: start it, drain and
+  stop it, emergency-stop it, put it on holiday quiet, and pick which shift is
+  staffed — Day, Evening or Night.
+
+  Two slices, split along the line that actually matters here — the phone cannot
+  call a verb that has no endpoint, and an endpoint with no page helps nobody:
+
+  - **BL-842 — the control endpoints.** The bridge exposes the verbs and a live
+    control status, driving the functions the extension host already has. Pure
+    Node surface, testable in the acceptance runner today, no APK involvement.
+  - **BL-843 — the Control page.** A remote HTML page in the UI bundle that
+    renders that status and drives those verbs, with the confirm taps.
+
+  ## What already exists, measured 2026-08-07
+
+  The verbs are not new. `extension/src/tools/telegramCursorOperatorExec.ts`
+  already implements `executeStopMode(repoRoot, 'drain' | 'emergency')`, the
+  start path (bounce sentinel), pause/resume, shift start/end, and holiday
+  add/clear; `telegramCursorOperatorPolicy.ts` owns the durable shift/holiday
+  state (BL-704) with `isHolidayQuietToday`, `formatHolidayRefuse` and
+  `formatShiftStatus` already written. What is missing is only that none of it is
+  reachable over HTTP.
+
+  That is why the human's constraint — "Bubble should drive the same class of
+  verbs, not invent a second control plane" — is satisfiable by construction
+  here, and why inventing a parallel implementation would be a defect rather than
+  a design choice.
+
+  ## The calls the human left to the specifier
+
+  The intake listed six open questions. Rulings, all amendable:
+
+  - **Page order: Talk → Notes → Control.** Control sits furthest from the
+    landing page because it is the only page that can end a swarm, and a pocket
+    swipe should not land on it. This also fits the order BL-831/BL-832/BL-834
+    already established for the read-only pages, with Control last.
+  - **Drain & stop requires a confirm too.** The human's own decision 4 says
+    anything that tears the swarm down needs a confirm tap; a drain-and-stop
+    tears it down, just politely.
+  - **Command path: the bridge, calling the existing exec functions directly.**
+    Not the front desk bot (a chat relay), not a second cursor-operator path.
+    One control plane means one implementation, reached two ways.
+  - **Start when already running: muted, but it still answers.** The mock showed
+    it muted and that is kept — but tapping it states the reason rather than
+    doing nothing. A control that refuses in silence is the defect the
+    constitution's own console-reason guardrail names.
+  - **Naming: "Control".** Same word the Telegram Control topic uses, so the
+    human's vocabulary is one word across both surfaces.
+  - **Folds with an existing ticket: no.** BL-423 / the Telegram Control topic is
+    the chat side of the same functions; nothing today owns an HTTP control
+    surface.
+
+  ## The locked human decisions these slices must honour
+
+  From the intake, 2026-07-31, verbatim:
+
+  > **Navigation.** Same expanded-Bubble horizontal pager as Notes. Default /
+  > welcome page stays Let's Talk. Control is another swipe page (order vs
+  > Notes is open — see open questions).
+
+  > **Version-one verbs.**
+  > - Start swarm
+  > - Drain and stop
+  > - Emergency stop (confirm tap required)
+  > - Holiday on / off (wake)
+  > - Shift pick: Day, Evening, Night — one active shift at a time
+
+  > **Out of version one.** Pause timers, bounce individual services, model
+  > switches, and other fiddly controls.
+
+  > **Confirm.** Anything that tears the swarm down needs a confirm tap,
+  > same spirit as Telegram Control.
+
+  > **Holiday vs shifts (UX).** Holiday is the quiet switch. Day / Evening /
+  > Night stay as which shift is staffed when not on holiday. Holiday on
+  > greys or ignores the shift picks until holiday is off. Do not treat
+  > "untick all shifts" as a second quiet control in v1 — that felt
+  > redundant to the human once they saw the mock.
+
+  > **Mock.** Human reviewed a picture mock (emailed); layout direction:
+  > status line, Start / Drain & stop / Emergency stop, Holiday switch,
+  > then Day / Evening / Night segmented picks, pager dots.
+
+  The mock is in the repo at `docs/design/bubble-control-screen-mock.png`.
+
+remaining_slices:
+  - "Slice C — the Notes page. A sibling pager page from `backlog/INTAKE-bubble-send-notes-swipe-screen.md`, still at intake. Named here only because the page order ruling above depends on where it sits; it is not this epic's work unless the human says so."
+  - "Slice D — shift-name reconciliation with schedule packs. The intake notes that when schedule packs land, Bubble and the operator policy should read the same shift names. Day/Evening/Night are this epic's vocabulary; reconciling them is that epic's job, not a blocker here."
+
+out_of_scope: |
+  - Pause timers, per-service bounce, and model switches. The human put these out
+    of version one explicitly.
+  - The Live Screen and the read-only projection pages. BL-774/BL-775 and BL-830
+    respectively.
+  - The remote page host, the bundle resolver and the APK update path. BL-824's
+    slices; this epic depends on them and must not re-open them.
+  - Treating "untick all shifts" as a second quiet control. The human rejected
+    that after seeing the mock.
+  - Changing what the Telegram Control topic does. This epic adds a second way to
+    reach the same functions; it does not alter the first.
+
+source: |
+  Drained 2026-08-07 from `backlog/INTAKE-bubble-control-shifts-holiday.md`
+  (human via Let's Talk / Cursor, 2026-07-31), a 1:2 split under this new epic:
+  the bridge verbs (BL-842) and the page that drives them (BL-843).
+
+  Held from 2026-07-31 to 2026-08-06 behind the Android acceptance-seam blocker
+  (cleared by BL-769/BL-761) and then behind the native-vs-remote question
+  (resolved by the human 2026-08-06: "Remote HTML for all 4, and flip BL-775 to
+  remote"). Its own disposition footer of 2026-08-06 recorded no pending
+  question.

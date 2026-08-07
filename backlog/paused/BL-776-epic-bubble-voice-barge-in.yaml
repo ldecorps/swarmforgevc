@@ -1,5 +1,5 @@
 id: BL-776
-title: "EPIC — Bubble voice barge-in: interrupt Bubble mid-speech and re-steer by voice; do not promote directly; tracks children"
+title: "EPIC — Bubble hands-free voice: the wake-to-quiet conversation loop and interrupting Bubble mid-speech to re-steer by voice; do not promote directly; tracks children"
 milestone: M8
 status: todo
 type: epic
@@ -7,7 +7,7 @@ epic: bubble-voice-barge-in
 priority: 83
 depends_on: [BL-769]
 mutation_cost: high
-decomposes_into: [BL-777]
+decomposes_into: [BL-777, BL-826, BL-844, BL-845]
 remaining_slices:
   - "Slice B — mic state handoff and rapid re-listen: after an abort, the mic returns to listening fast enough to catch the instruction that caused the barge-in, with no stuck or doubled session."
   - "Slice C — hands-free listening DURING agent execution, so the human can re-steer before the original response returns. Includes whether that window is always-on or bounded."
@@ -74,6 +74,23 @@ source: |
   each, human_approval pending (I pick defaults, you amend)."
 
 notes: |
+  ## Scope widened 2026-08-07 (specifier, BL-680 consolidation authority)
+
+  This tracker was minted for barge-in alone. Two things had already stretched it
+  past that before today: BL-826, the hands-free echo-loop defect, is a session
+  LIFECYCLE fault rather than a barge-in one, and it has sat here since it was
+  minted. And draining
+  `backlog/INTAKE-bubble-hey-bubble-offline-wake-and-session-listen.md` produced
+  BL-844 (the wake-to-quiet session state machine) and BL-845 (the offline wake
+  spotter), which are the loop barge-in interrupts.
+
+  Rather than mint a fourth Bubble epic beside `bubble-thin-shell`,
+  `bubble-screens` and `bubble-control` and split one conversation loop across
+  two trackers, the epic is renamed to what it actually tracks: the hands-free
+  voice loop, of which barge-in is one transition. `epic: bubble-voice-barge-in`
+  is unchanged as the id — renaming a live epic id would orphan every child that
+  already carries it, for no gain.
+
   ## Why the epic depends on BL-769
 
   Every slice is Android — `TalkEngine.kt`, `ReplyAudioPlayer.kt`,
@@ -82,3 +99,7 @@ notes: |
   that way. For this epic that is worse than usual: the defects it must prevent
   are races, which are exactly what a manual procedure is worst at catching.
   Children must not be promoted before BL-769.
+
+  **BL-769 has since landed** (`backlog/done/M8/`, 2026-08-06) and the gradle
+  JVM seam runs, so this gate is satisfied — recorded here so nobody re-holds a
+  child on it. BL-826 was already promoted under it.
