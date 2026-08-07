@@ -5,7 +5,7 @@ type: feature
 status: todo
 epic: question-attention-path
 human_approval: approved
-assigned_to: specifier
+assigned_to: coder
 priority: 111
 direction: human-requested
 depends_on: []
