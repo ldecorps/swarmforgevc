@@ -1,0 +1,138 @@
+id: BL-847
+title: "resource sampler measures the pane's root shell, not the agent: every RSS/CPU figure and every anomaly ever emitted is shell noise"
+milestone: M8
+type: defect
+status: todo
+epic: swarm-reliability
+human_approval: approved
+severity: high
+priority: 40
+direction: agent-surfaced
+depends_on: []
+assigned_to: null
+mutation_cost: medium
+
+invariants:
+  - "A role's recorded rssBytes/cpuPercent describe the process actually doing that role's work, not an ancestor shell that merely hosts it."
+  - "A role whose agent process cannot be identified records no sample at all rather than a sample of the wrong process — resourceSamplesObserved must keep meaning 'we measured the agent'."
+
+approval_context: >
+  Surfaced by the specifier while speccing BL-822 (2026-08-07), by probing the
+  live telemetry rather than trusting the ticket's reported figures. Needs a
+  human ruling on ONE thing: whether "the agent process" is resolved by
+  descending the pane_pid's process tree (pick the largest-RSS descendant, or
+  the first matching a configured command name), or by having the launch
+  scripts record each role's agent pid into .swarmforge/ at spawn time. The
+  first needs no launch-path change; the second is exact but touches every
+  role's launch wrapper. Specifier leans toward the first, gated on a
+  configured command name, but this is a real fork worth a human call.
+
+  RESOLVED 2026-08-07: human approved without overriding the lean, so the
+  fork settles to option one — descend the pane_pid's process tree and
+  select by a configured command name. The coder is not waiting on a
+  further ruling. If that resolution turns out not to survive contact with
+  a pack whose agent is not a direct descendant, that is a spec-gap note
+  back to the specifier, not a silent switch to the launch-pid approach.
+
+source: |
+  Probed live on 2026-08-07 while speccing BL-822.
+
+  Resolution chain: resourceSamplerActivation.ts `resolvePanePid` ->
+  tmuxClient.ts `getPanePid`, which asks tmux for `#{pane_pid}`. That is the
+  pane's ROOT SHELL, not the agent running inside it.
+
+  Recorded samples, .swarmforge/telemetry/chaser-2026-08.jsonl:
+  - coordinator: rssBytes 131072 (128 KB), constant across every sample
+  - coder: rssBytes 840K-1.4 MB, oscillating
+  - cpuPercent: 0 on every sample of every role
+
+  Live processes at the same moment:
+  - `claude` pid 12015: RSS 400,636 KB (~391 MB), 7.8% CPU
+  - its descendant `/bin/bash` pid 38473: RSS 3,748 KB, and pid 39279: 892 KB
+
+  So the sampler is recording a ~128 KB idle shell for a role whose agent is
+  using ~391 MB.
+
+  Every anomaly the cost-health sidecar has ever emitted is therefore shell
+  noise, not agent behaviour:
+  - 2026-08-01: specifier 2692 KB / 0%, documenter 3780 KB / 0%, QA 2556 KB / 0%
+  - 2026-08-04: coder 1364 KB / 0%, coordinator 804 KB / 0%
+  - 2026-08-06: coder 840 KB / 0%, RSS trending DOWN
+
+  A 10% hour-over-hour move on a sub-4 MB idle shell is meaningless, and it is
+  what the briefing has been reporting as this swarm's resource health.
+
+description: |
+  ## The defect
+
+  `resolvePanePid` (extension/src/swarm/resourceSamplerActivation.ts) resolves a
+  role's pid via `getPanePid`, i.e. tmux `#{pane_pid}`. tmux reports the pane's
+  root shell there — the process tmux itself forked — not whatever that shell
+  went on to exec or spawn. Under every current pack the agent (`claude`) runs
+  as a descendant, so `sampleProcessStats` runs `ps -o rss=,%cpu=` against the
+  wrong pid.
+
+  Consequences, all confirmed against live data (see source):
+  1. Every `rssBytes` in the sidecar is off by roughly three orders of magnitude.
+  2. Every `cpuPercent` is 0, because an idle shell is idle.
+  3. Every anomaly `computeResourceAnomalies` has ever emitted fired on shell
+     jitter — the 10% relative threshold is trivially crossed by a 128 KB
+     process, and just as trivially missed by a 391 MB agent whose real growth
+     never reaches the detector at all.
+
+  So the per-role half of the cost-health resource section is not merely
+  insensitive — it is measuring a different process than the one it names.
+
+  ## Relationship to BL-822 and BL-350
+
+  Orthogonal to both, deliberately not merged:
+  - BL-350 fixed "nothing samples headless". Sampling does run; that fix held.
+  - BL-822 fixes "the detector never looks at host load". That is the detector's
+    blind spot, and its fix is additive host-load coverage.
+  - THIS ticket fixes "the per-role sampler measures the wrong process". BL-822
+    explicitly keeps per-role RSS/CPU unchanged and additive, which means BL-822
+    preserves this defect intact by design. It needs its own fix.
+
+  ## Fix direction
+
+  1. Resolve the role's AGENT pid rather than the pane's root shell, by
+     walking the pane_pid's descendants and selecting by a configured command
+     name (see approval_context: the human-approved resolution of that fork;
+     recording the agent pid at launch was the rejected alternative).
+  2. When no agent process can be identified for a role, record NO sample for
+     it — the existing "skip a role whose pid or stats will not resolve" path
+     already has the right shape. Never fall back to the shell, which is how a
+     wrong number gets in wearing a right number's clothes.
+  3. Historical samples in the telemetry file are shell measurements and will
+     sit in the trend series alongside corrected ones. Decide explicitly
+     whether to leave them (and accept one discontinuity in the trend) or mark
+     the changeover; do not silently mix.
+
+acceptance: specs/features/BL-847-resource-sampler-measures-pane-shell-not-agent-process.feature.draft
+
+out_of_scope: |
+  - Host-load coverage — that is BL-822, in flight, and additive to this.
+  - The 10% relative anomaly threshold itself. Once the sampler measures the
+    right process the threshold may well need retuning, but that is a separate
+    judgement made against real agent data, not part of this fix.
+  - Any other consumer of getPanePid (PaneTailer's respawn detection is a
+    correct use of pane_pid and must stay unchanged — the pane's shell pid IS
+    the right identity for "did this pane get respawned").
+
+notes: |
+  2026-08-07 specifier: minted while speccing BL-822, from probing live
+  telemetry rather than accepting the reported figures. BL-822's source field
+  claimed 2026-08-06 had `resourceAnomalies: []`; it actually had one entry
+  (coder, 840 KB, 0.0% cpu, trending down) — chasing that discrepancy is what
+  exposed this.
+
+  Related, do not merge: BL-822 (host-load coverage), BL-350 (headless
+  sampling, landed and holding).
+
+  E2E QA sketch:
+  1. With a swarm running, run the headless sampler and compare the newly
+     recorded rssBytes for a role against `ps` on the live agent process for
+     that role's pane — they should agree, and both should be in the hundreds
+     of MB, not the hundreds of KB.
+  2. Kill/absent the agent for one role: that role records no sample rather
+     than a shell-sized one.

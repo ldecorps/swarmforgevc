@@ -2,7 +2,7 @@ id: BL-535
 title: "Provider-compat invariant: pack API base must force key remap (Perplexity/Cerebras)"
 milestone: M8
 type: defect
-status: hold
+status: todo
 epic: swarm-reliability
 assigned_to:
 priority: 6
@@ -12,6 +12,12 @@ depends_on: []
 source: "SRE incident 2026-07-19 — backlog/evidence/incident-20260719-perplexity-openai-key-mismatch.md. Framework reliability takes precedence over feature velocity."
 
 notes: |
+  2026-08-07 human: CLOSE — do not reinstate. Core first slice already
+  landed (provider_compat_lib + launch/ensure remap). Remaining slices
+  (auth observe→respawn, refuse-start, launch-script regen) are not
+  pursued under this ticket; BL-536 covers auth auto-respawn separately
+  if still needed. Moved hold → paused briefly then closed to done/M8/.
+
   WHAT / WHY: perplexity-mono-router window lines can declare
   --openai-api-base https://api.perplexity.ai while panes keep host
   OPENAI_API_KEY=sk-* when SWARMFORGE_USE_PERPLEXITY was unset at write/launch
@@ -47,4 +53,4 @@ acceptance: |
       When provider-respawn-env-args runs for that role
       Then the pane -e set includes OPENAI_API_KEY from PERPLEXITY_API_KEY
 
-# Human hold 2026-07-19: "can 535 be put in hold" via Telegram SUP-2. Sits in backlog/hold/ until human resumes.
+# Human hold 2026-07-19; closed 2026-08-07 (human: close, not reinstate).

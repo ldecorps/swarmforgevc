@@ -56,6 +56,7 @@ here.
 - [Running Bubble's JVM unit suite](how-to/BL-769-android-jvm-unit-suite.md) — which Kotlin logic is testable on the host JVM, and where the pure-logic/device-surface line falls.
 - [babysitterd — the deterministic health-sweep daemon](how-to/BL-611-babysitterd-runbook.md) — what it checks, what a nudge looks like, start/stop/ensure, state layout, and the flipped env skip.
 - [Provider auth-error auto-respawn: healing a wedged standing role](how-to/BL-536-provider-auth-error-auto-respawn.md) — how the chase sweep detects and heals an `AuthenticationError`-wedged role, the `auth_respawn_max_attempts` cap, and the operator alert.
+- [The coordinator raises a clarifying question through `role_ask.bb`](how-to/BL-773-coordinator-role-ask-clarifying-question.md) — wiring the coordinator into the same per-role ask path the specifier already uses, so its questions reach Telegram instead of blocking on an unwatched surface.
 
 ## Reference
 
