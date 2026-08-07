@@ -15,9 +15,23 @@
          true
          (orphan-janitor-lib/tmp-project-root? "/tmp/tmp.Y1XWgEKksC"))
 
+(assert= "Darwin TMPDIR tmp. checkout is a disposable root"
+         true
+         (orphan-janitor-lib/tmp-project-root?
+          "/var/folders/ks/zpyf9vpn15s2vjwzq52p958c0000gn/T/tmp.HPODI2kV"))
+
+(assert= "Darwin TMPDIR bl622 launch sandbox is a disposable root"
+         true
+         (orphan-janitor-lib/tmp-project-root?
+          "/var/folders/ks/zpyf9vpn15s2vjwzq52p958c0000gn/T/bl622-primary-launch-fblFqQ"))
+
 (assert= "host repo is never a disposable root"
          false
          (orphan-janitor-lib/tmp-project-root? "/home/carillon/swarmforgevc"))
+
+(assert= "Darwin host repo under /Users is never a disposable root"
+         false
+         (orphan-janitor-lib/tmp-project-root? "/Users/ldecorps/projects/swarmforgevc"))
 
 (assert= "operator_runtime cmdline detected"
          true
@@ -103,10 +117,55 @@
          (orphan-janitor-lib/extract-disposable-root
           "tmux -S /tmp/tmp.jIAp73PXra/.swarmforge/babysitter/babysitter-tmux.sock new-session"))
 
+(assert= "extract Darwin TMPDIR disposable root from front-desk bot cmdline"
+         "/var/folders/ks/zpyf9vpn15s2vjwzq52p958c0000gn/T/tmp.HPODI2kV"
+         (orphan-janitor-lib/extract-disposable-root
+          "node /var/folders/ks/zpyf9vpn15s2vjwzq52p958c0000gn/T/tmp.HPODI2kV/extension/out/tools/telegram-front-desk-bot.js http://127.0.0.1:8765 /var/folders/ks/zpyf9vpn15s2vjwzq52p958c0000gn/T/tmp.HPODI2kV"))
+
+(assert= "extract Darwin bl622 launch root"
+         "/var/folders/ks/zpyf9vpn15s2vjwzq52p958c0000gn/T/bl622-primary-launch-fblFqQ"
+         (orphan-janitor-lib/extract-disposable-root
+          "node /var/folders/ks/zpyf9vpn15s2vjwzq52p958c0000gn/T/bl622-primary-launch-fblFqQ/extension/out/tools/start-bridge-headless.js /var/folders/ks/zpyf9vpn15s2vjwzq52p958c0000gn/T/bl622-primary-launch-fblFqQ 8765"))
+
 (assert= "tmp babysitter tmux detected"
          true
          (orphan-janitor-lib/tmp-ancillary-cmdline?
           "tmux -S /tmp/tmp.jIAp73PXra/.swarmforge/babysitter/babysitter-tmux.sock new-session -d -s babysitter"))
+
+(assert= "Darwin TMPDIR telegram bot detected"
+         true
+         (orphan-janitor-lib/tmp-ancillary-cmdline?
+          "node /var/folders/ks/zpyf9vpn15s2vjwzq52p958c0000gn/T/tmp.HPODI2kV/extension/out/tools/telegram-front-desk-bot.js http://127.0.0.1:8765 /var/folders/ks/zpyf9vpn15s2vjwzq52p958c0000gn/T/tmp.HPODI2kV"))
+
+(assert= "Darwin bl622 bridge-headless detected"
+         true
+         (orphan-janitor-lib/tmp-ancillary-cmdline?
+          "node /var/folders/ks/zpyf9vpn15s2vjwzq52p958c0000gn/T/bl622-primary-launch-fblFqQ/extension/out/tools/start-bridge-headless.js /var/folders/ks/zpyf9vpn15s2vjwzq52p958c0000gn/T/bl622-primary-launch-fblFqQ 8765"))
+
+(assert= "worktree babysitterd.sh aimed at Darwin tmp root detected"
+         true
+         (orphan-janitor-lib/tmp-ancillary-cmdline?
+          "bash /Users/ldecorps/projects/swarmforgevc/.worktrees/coder/swarmforge/scripts/babysitterd.sh /var/folders/ks/zpyf9vpn15s2vjwzq52p958c0000gn/T/tmp.QnO5pbBA"))
+
+(assert= "Darwin tmp bl647 tmux detected"
+         true
+         (orphan-janitor-lib/tmp-ancillary-cmdline?
+          "tmux -S /var/folders/ks/zpyf9vpn15s2vjwzq52p958c0000gn/T/tmp.NvLjaRF9/bl647.sock new-session -d -s swarmforge-coder -n agent"))
+
+(assert= "Darwin tmp bl647 tmux with absolute binary path detected"
+         true
+         (orphan-janitor-lib/tmp-ancillary-cmdline?
+          "/usr/local/bin/tmux -S /var/folders/ks/zpyf9vpn15s2vjwzq52p958c0000gn/T/tmp.yVt4bNQR/bl647.sock new-session -d -s swarmforge-coder -n agent"))
+
+(assert= "host babysitterd.sh never detected as tmp ancillary"
+         false
+         (orphan-janitor-lib/tmp-ancillary-cmdline?
+          "bash /Users/ldecorps/projects/swarmforgevc/swarmforge/scripts/babysitterd.sh /Users/ldecorps/projects/swarmforgevc"))
+
+(assert= "host .swarmforge/tmux swarmforge-coder never detected as tmp ancillary"
+         false
+         (orphan-janitor-lib/tmp-ancillary-cmdline?
+          "tmux -S /Users/ldecorps/projects/swarmforgevc/.swarmforge/tmux/3752320954.sock new-session -d -s swarmforge-coder -n swarm"))
 
 (assert= "tmp babysitter launch.sh detected"
          true

@@ -5,7 +5,7 @@ type: defect
 severity: high
 status: todo
 epic: question-attention-path
-human_approval: pending
+human_approval: approved
 assigned_to: none
 priority: 109
 direction: swarm-found

@@ -1,0 +1,146 @@
+id: BL-849
+title: "Swarm stamp-off: Darwin orphan-janitor was a silent no-op; verify the human-landed process-table fix"
+milestone: M8
+type: defect
+status: todo
+epic: swarm-reliability
+human_approval: pending
+severity: high
+priority: 20
+direction: human-requested
+depends_on: []
+assigned_to: null
+mutation_cost: medium
+
+invariants:
+  - "A reaper that cannot enumerate processes on its host reports that it cannot, and never reports zero candidates as a clean sweep."
+  - "No ancillary kill ever matches a host-repo path: the disposable-root extract stays mandatory on every reap decision."
+
+approval_context: >
+  The human landed this fix by hand on 2026-08-07 and asked for a swarm
+  stamp-off rather than a rewrite (BL-811 posture). What needs sign-off here
+  is only the DISPOSITION — that reviewing the landed diff, rather than
+  re-implementing it, is the right call, and that `high` is the right
+  severity for a reaper that was silently dead on the production Mac host.
+  The technical decisions in the intake are locked and are not being reopened.
+
+source: |
+  backlog/INTAKE-darwin-orphan-janitor-swarm-stamp.md (human via Cursor
+  2026-08-07 ~18:00 CEST), archived to this ticket on mint by the specifier
+  2026-08-07 while speccing BL-848.
+
+  Hotfix under review: commit f9cf29c2 on main, "Land Darwin orphan-janitor
+  fix and file swarm stamp-off intake". This is ledger entry 1 of BL-848's
+  `backlog/hotfix-ledger.yaml`.
+
+description: |
+  ## What
+
+  An operator hotfix is live on main and has never been through a gate. This
+  ticket is that gate. It is a REVIEW ticket, not a rewrite ticket — confirm
+  or refute, and open narrow follow-ups for anything found.
+
+  ## The failure it fixed
+
+  `operator_runtime` was alive and ticking `orphan-janitor-sweep swept 0
+  candidate(s), reaped 0` every cycle while the process table held roughly
+  thirty temp `telegram-front-desk-bot.js` + matching
+  `start-bridge-headless.js` processes under `/var/folders/.../T/tmp.*`, plus
+  worktree `babysitterd.sh` and stale `bl647.sock` tmux sessions. Three
+  causes, all Linux assumptions:
+
+  1. candidate scans read `/proc` only — absent on Darwin, so the candidate
+     set was empty every tick;
+  2. disposable-root matching was `/tmp/tmp.|aps-|sfvc-` only, so Darwin
+     `$TMPDIR` never counted as disposable;
+  3. ancillary patterns missed `babysitterd.sh`, and `(?:^|\s)tmux` failed to
+     match an absolute `/usr/local/bin/tmux`.
+
+  A reaper reporting `swept 0` looks identical to a clean host. That is why
+  invariant 1 is stated as a property rather than left to the scenarios:
+  every enumeration path must distinguish "nothing to reap" from "I cannot
+  see the process table."
+
+  ## What landed (files to review)
+
+  - `swarmforge/scripts/process_table_lib.bb` (new) — `/proc` on Linux,
+    `ProcessHandle` (+ `lsof` for cwd) on Darwin.
+  - `swarmforge/scripts/orphan_janitor_lib.bb` — Darwin disposable roots;
+    `babysitterd.sh` and path-tolerant `tmux` under those roots.
+  - `swarmforge/scripts/orphan_janitor_sweep_lib.bb` — enumerate via
+    `process_table_lib`.
+  - `swarmforge/scripts/orphan_agent_reaper_sweep_lib.bb` — same seam for
+    cmdline/scan/age/cwd.
+  - Tests: `orphan_janitor_lib_test_runner.bb`,
+    `process_table_lib_test_runner.bb`.
+
+  ## Review goals
+
+  1. Confirm the Darwin enumeration path is correct and that a failed
+     enumeration is reported, not silently counted as zero (invariant 1).
+  2. Confirm the decapitation guards hold: no host-repo path can ever match,
+     and the disposable-root extract is mandatory on every reap decision
+     (invariant 2). This is the highest-risk surface in the diff — a
+     too-broad pattern here kills the human's live Cursor/Telegram session.
+  3. Confirm `lsof`-based cwd resolution degrades safely when `lsof` is
+     missing, slow, or denied.
+  4. Open narrow follow-up tickets for anything found; do not widen here.
+
+  ## Live verification the human already performed
+
+  Recorded as context, NOT as a substitute for the swarm's own pass: one
+  post-fix sweep reaped 58 disposable front-desk/headless ancillaries with
+  the host bot/bridge/runtime untouched; a follow-up pattern extension reaped
+  4 worktree `babysitterd` and 2 `bl647` tmux, leaving host `babysitterd` and
+  host `.swarmforge/tmux/...` alone. `operator_runtime` restarted on the new
+  code and its ticks are no longer stuck at `swept 0`.
+
+acceptance: specs/features/BL-849-swarm-stamp-darwin-orphan-janitor-hotfix.feature.draft
+
+out_of_scope: |
+  - Re-implementing the janitor from scratch; this stamps the landed diff.
+  - fixture_reaper `/tmp` allowlist redesign, and Darwin `/var/folders`
+    sandbox directory sweeps (follow-up only if the review requires them).
+  - VS Code extensionDevelopmentPath reaping.
+  - Raising `active_backlog_max_depth` (separate operator knob, already set).
+  - Killing the human's interactive Cursor / Telegram bridge sessions.
+  - BL-817 (fixture tmux leak past terminal cleanup) — sibling shape,
+    different allowlist. Do not fold unless the review says so.
+
+notes: |
+  Related, do not conflate: BL-486 (done, `/proc` orphan agent reaper — this
+  extends its process-table half), BL-458 / BL-413 (done, fixture/sandbox
+  sweeps, still `/proc`- and `/tmp`-centric), BL-611 (done, babysitterd
+  lifecycle — host daemon stop stays `stop_ancillary_services.sh`; this
+  covers LEFTOVER worktree babysitterd/tmux only).
+
+  Locked human decisions, carried verbatim from the intake:
+  1. Treat this as swarm-review stamp-off of a landed hotfix, not a
+     greenfield implement ticket (same posture as BL-811).
+  2. Severity high — silent no-op reaper on the production Mac host.
+  3. Decapitation guards stay: never match host-repo paths; disposable-root
+     extract remains mandatory for ancillary kills.
+
+  ## Acceptance is parked as a draft, deliberately
+
+  `acceptance:` points at a `.feature.draft`. The scenarios for a reaper
+  running against a real Darwin process table need step handlers that do not
+  exist, and shipping a live `.feature` without them hard-fails
+  `specs/pipeline/runtime.js` on the first unmatched step (BL-233). The coder
+  promotes the draft to a live `.feature` in the same parcel as its handlers.
+
+  ## E2E QA procedure (specifier, 2026-08-07)
+
+  1. **The no-op is really gone.** On this Darwin host, run a one-shot sweep
+     with disposable ancillaries present and confirm a non-zero candidate
+     count. `swept 0` here means the fix did not take.
+  2. **A blind reaper says so.** Force the enumeration to fail (make the
+     process-table read error) and confirm the sweep reports the check
+     unavailable rather than logging `swept 0, reaped 0` — the exact shape
+     BL-802 already established for a failed `ps` gather in babysitterd.
+  3. **Decapitation guard.** With the host bot, bridge, runtime, host
+     `babysitterd` and host tmux socket all live, run a sweep and confirm
+     every one survives. Run this before trusting any reap count.
+  4. **Linux is not regressed.** The `/proc` path must still enumerate; if no
+     Linux host is available, say so explicitly in the QA evidence rather
+     than recording it as passed.

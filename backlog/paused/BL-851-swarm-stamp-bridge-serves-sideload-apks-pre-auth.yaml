@@ -1,0 +1,164 @@
+id: BL-851
+title: "Swarm stamp-off: the bridge now serves sideload APKs pre-auth on the public tunnel; verify the guard before it stays"
+milestone: M8
+type: defect
+status: todo
+epic: swarmforge-console
+human_approval: pending
+severity: high
+priority: 15
+direction: swarm-found
+depends_on: []
+assigned_to: null
+mutation_cost: medium
+
+invariants:
+  - "The pre-auth branch serves only regular files resolving inside the sideload public directory; no request shape reaches any other path, and none reaches a directory or symlink target outside it."
+  - "Adding a pre-auth route never widens what the authenticated routes below it can reach: every other endpoint still requires the bearer."
+
+approval_context: >
+  This one was NOT filed by the human — the specifier found it uncommitted in
+  the master checkout on 2026-08-07 while speccing BL-848, with no intake and
+  no ticket. Two things need a ruling.
+
+  (1) IS IT INTENDED? A deliberately unauthenticated route on a
+  publicly-tunnelled bridge is a real security decision, and this one is
+  reasonable on its face (a phone opening a download link cannot set an
+  `Authorization` header). Confirm the trade was intended, and that serving
+  APKs to anyone who guesses a versioned filename is acceptable.
+
+  (2) SEVERITY. Minted `high` because it is an auth-bypass-by-design branch
+  placed ahead of the 401 gate on a public surface — not because a defect is
+  known. Lower it if that reads as alarmist.
+
+  This ticket is the demonstration of BL-848's premise, found the same hour
+  the human asked for it: a functional, security-relevant change was live in
+  the executing checkout with nothing tracking it.
+
+source: |
+  Found by the specifier 2026-08-07 while speccing BL-848 (hotfix
+  certification). Uncommitted in the master checkout at mint time, alongside
+  the Bubble volume fix (BL-850) and an `active_backlog_max_depth 1 -> -1`
+  knob change in `swarmforge/packs/mono-router.conf`.
+
+  Intended as ledger entry 3 of BL-848's `backlog/hotfix-ledger.yaml`.
+
+description: |
+  ## What
+
+  An unreviewed change adds a pre-authentication file-serving route to the
+  bridge. This ticket is its gate. REVIEW, not rewrite.
+
+  ## What it does
+
+  `extension/src/bridge/bridgeServer.ts` gains `tryServeSideloadApk`, called
+  from `startBridge`'s request handler **ahead of the 401 gate**, with the
+  comment "must stay ahead of the 401 gate". It matches
+  `^/swarmforge-float-companion-[A-Za-z0-9._-]+\.apk$`, resolves the basename
+  under `<target>/.swarmforge/operator/public/`, and streams the file with
+  `application/vnd.android.package-archive`.
+
+  The motivation is sound and should not be second-guessed: a phone opening
+  `https://bubble.musicalsifu.com/<versioned>.apk` cannot set an
+  `Authorization` header, so sideload distribution cannot ride the
+  authenticated routes.
+
+  ## Why this is `high` and not routine
+
+  `bubble.musicalsifu.com` terminates on this bridge, so the branch is
+  reachable from the public internet, and it runs BEFORE the bearer check.
+  The blast radius of a mistake here is not a broken feature, it is an
+  unauthenticated read primitive on the host. The author put real guards in
+  — the regex excludes `/`, the resolved path is prefix-checked against the
+  public root, non-files are 404'd — and two tests cover the happy path and a
+  traversal-looking name. None of it has been reviewed by anyone.
+
+  Invariant 1 is stated as a property precisely because a fixed list of
+  example inputs is the wrong shape for this check: the question is whether
+  ANY request can escape the directory, which is what a property test over
+  generated path segments answers and what four hand-written cases do not.
+
+  ## Review goals
+
+  1. Confirm the containment property holds against the whole input space,
+     not the two tested strings: percent-encoded separators (`%2f`, `%252f`),
+     backslashes, unicode normalisation, absolute-looking names, and a
+     SYMLINK inside the public directory pointing outside it. The prefix
+     check runs on the resolved path, so a symlink is the case most likely
+     to slip through — `fs.statSync` follows it.
+  2. Confirm ordering: the pre-auth branch must return `false` for every
+     non-matching request so authenticated routing below is untouched
+     (invariant 2). Confirm no other route was displaced by the insertion.
+  3. Confirm the traversal test asserts the right thing. It asserts `401`,
+     which passes both because the guard rejected the name AND because the
+     branch simply never matched and the bearer gate caught it. Those are
+     different outcomes and the test cannot tell them apart — a guard
+     deleted entirely may still leave it green.
+  4. Confirm what is EXPOSED by directory listing behaviour: anything else
+     that lands in `.swarmforge/operator/public/` and happens to match the
+     filename pattern is served to the world. Confirm that directory's
+     contents are all intended to be public.
+  5. Confirm `content-length` from `statSync` cannot disagree with the
+     streamed body if the file is replaced mid-request (publish-apk.sh
+     overwrites the fixed-name copy in place).
+
+  ## Files under review
+
+  - `extension/src/bridge/bridgeServer.ts` — `SIDELOAD_APK_PATH`,
+    `sideloadApkPublicDir`, `tryServeSideloadApk`, and the call site in
+    `startBridge`.
+  - `extension/test/bridgeServer.test.js` — the two added tests.
+
+  ## Landing it
+
+  Uncommitted at mint time. Same posture as BL-850: land it FIRST so it is
+  reviewable and cannot be lost to a hot-sync phantom revert (BL-373/BL-839),
+  staging ONLY the two files above (BL-506), with the trailer
+  `Hotfix-Certification: pending` and BL-851 named in the message. Then
+  review the committed diff and record the 10-hex commit in the ledger.
+
+acceptance: specs/features/BL-851-swarm-stamp-bridge-serves-sideload-apks-pre-auth.feature.draft
+
+out_of_scope: |
+  - Redesigning sideload distribution (signed URLs, a separate static host,
+    short-lived tokens). If the review concludes the pre-auth route should
+    not exist, open a narrow follow-up rather than rebuilding it here.
+  - The APK build/publish pipeline itself (`android/scripts/publish-apk.sh`
+    is reviewed under BL-850).
+  - Broader bridge auth rework.
+
+notes: |
+  Also uncommitted in the same working tree, surfaced but NOT ticketed:
+  `swarmforge/packs/mono-router.conf` sets `active_backlog_max_depth` from
+  `1` to `-1` with a dated operator comment. That is a documented operator
+  knob deliberately set, not code — it belongs in the BL-848 ledger as a
+  `waived` candidate for the human to confirm, not as a stamp ticket.
+
+  ## Acceptance is parked as a draft, deliberately
+
+  `acceptance:` points at a `.feature.draft`; a live `.feature` with no step
+  handlers hard-fails `specs/pipeline/runtime.js` (BL-233). The coder
+  promotes it in the same parcel as its handlers.
+
+  Review goal 1 is a strong candidate for a property test rather than more
+  example scenarios — see invariant 1.
+
+  ## E2E QA procedure (specifier, 2026-08-07)
+
+  1. **It works at all.** From a phone on the public tunnel, open a published
+     versioned APK URL with no credentials and confirm the download starts.
+     That is the behaviour the change exists for.
+  2. **Escape attempts fail, and fail for the right reason.** Against a
+     running bridge, request encoded-traversal variants
+     (`%2e%2e%2f`, `%252e%252e%252f`, backslash forms) and confirm none
+     returns file content from outside the public directory. Distinguish
+     "guard rejected" from "never matched, bearer gate caught it" — goal 3
+     says the existing test cannot.
+  3. **Symlink containment.** Place a symlink inside
+     `.swarmforge/operator/public/` named to match the pattern but pointing
+     at a file outside it. Request it. It must NOT be served. This is the
+     case the prefix check does not obviously cover and the one most worth
+     running by hand.
+  4. **Everything else still needs the token.** Re-run an existing
+     authenticated endpoint without a bearer and confirm it still 401s.
+     Confirm the holistic UI and Let's Talk routes are unaffected.

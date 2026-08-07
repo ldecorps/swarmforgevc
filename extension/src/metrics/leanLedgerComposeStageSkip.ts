@@ -11,16 +11,24 @@ interface RoutingSkipLogEntry {
   createdAt: string;
 }
 
+function isValidRoutingSkipShape(parsed: any): boolean {
+  return typeof parsed['ticket-id'] === 'string' && Array.isArray(parsed.skipped) && typeof parsed.created_at === 'string';
+}
+
+function routingSkipReasons(parsed: any): Record<string, string> {
+  return typeof parsed.reasons === 'object' && parsed.reasons !== null ? parsed.reasons : {};
+}
+
 function parseRoutingSkipLine(line: string): RoutingSkipLogEntry | null {
   try {
     const parsed = JSON.parse(line);
-    if (typeof parsed['ticket-id'] !== 'string' || !Array.isArray(parsed.skipped) || typeof parsed.created_at !== 'string') {
+    if (!isValidRoutingSkipShape(parsed)) {
       return null;
     }
     return {
       ticketId: parsed['ticket-id'],
       skipped: parsed.skipped.filter((s: unknown): s is string => typeof s === 'string'),
-      reasons: typeof parsed.reasons === 'object' && parsed.reasons !== null ? parsed.reasons : {},
+      reasons: routingSkipReasons(parsed),
       createdAt: parsed.created_at,
     };
   } catch {
@@ -42,10 +50,25 @@ function readRoutingSkipLogEntries(worktreePath: string): RoutingSkipLogEntry[] 
     .filter((e): e is RoutingSkipLogEntry => e !== null);
 }
 
-// Each routing-skips.jsonl entry names potentially several skipped roles in
+// One routing-skips.jsonl entry names potentially several skipped roles in
 // one decision - expanded to one LeanLedgerEvent per skipped role so the
 // per-ticket snapshot's `skips` list reads one line per role, matching how
-// stage_skip is folded (leanLedger.ts's foldStageSkip).
+// stage_skip is folded (leanLedger.ts's foldStageSkip). Empty (not this
+// ticket) rather than a guessed match.
+function eventsForSkipEntry(skipEntry: RoutingSkipLogEntry, ticket: string): LeanLedgerEvent[] {
+  if (skipEntry.ticketId !== ticket) {
+    return [];
+  }
+  return skipEntry.skipped.map((skippedRole) => ({
+    ticket,
+    type: 'stage_skip' as const,
+    source: 'routing-skip-log' as const,
+    at: skipEntry.createdAt,
+    role: skippedRole,
+    data: { reason: skipEntry.reasons[skippedRole] ?? '' },
+  }));
+}
+
 export function composeStageSkipEvents(roles: MinimalRoleEntry[], ticket: string): LeanLedgerEvent[] {
   const events: LeanLedgerEvent[] = [];
   const seenWorktrees = new Set<string>();
@@ -59,19 +82,7 @@ export function composeStageSkipEvents(roles: MinimalRoleEntry[], ticket: string
     }
     seenWorktrees.add(entry.worktreePath);
     for (const skipEntry of readRoutingSkipLogEntries(entry.worktreePath)) {
-      if (skipEntry.ticketId !== ticket) {
-        continue;
-      }
-      for (const skippedRole of skipEntry.skipped) {
-        events.push({
-          ticket,
-          type: 'stage_skip',
-          source: 'routing-skip-log',
-          at: skipEntry.createdAt,
-          role: skippedRole,
-          data: { reason: skipEntry.reasons[skippedRole] ?? '' },
-        });
-      }
+      events.push(...eventsForSkipEntry(skipEntry, ticket));
     }
   }
   return events;

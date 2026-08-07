@@ -125,9 +125,10 @@ test('recording a resource sample leaves existing telemetry in the same file int
   try {
     runCli(root);
     const lines = readTelemetryLines(root);
-    assert.equal(lines.length, 2);
+    assert.equal(lines.length, 3);
     assert.ok(lines.some((l) => l.type === 'chase'));
     assert.ok(lines.some((l) => l.type === 'resource_sample'));
+    assert.ok(lines.some((l) => l.type === 'host_load_sample'));
   } finally {
     fake.restore();
     child.kill();
@@ -169,9 +170,12 @@ test('main() records a resource sample in-process with no editor attached', () =
     assert.match(output, /^SAMPLED 1 role\(s\)/);
 
     const lines = readTelemetryLines(root);
-    assert.equal(lines.length, 1);
-    assert.equal(lines[0].type, 'resource_sample');
-    assert.equal(lines[0].role, 'coder');
+    assert.equal(lines.length, 2);
+    assert.ok(lines.some((l) => l.type === 'resource_sample' && l.role === 'coder'));
+    // BL-822 required_wiring: sample-resources.ts is the only caller with no
+    // editor attached (BL-350) - a host-load sampler it never invokes
+    // records nothing, so this same headless tick must also reach it.
+    assert.ok(lines.some((l) => l.type === 'host_load_sample'));
   } finally {
     fake.restore();
     child.kill();
@@ -231,10 +235,12 @@ test('the compiled CLI runs standalone as a subprocess and produces the same res
     assert.match(output, /^SAMPLED 1 role\(s\)/);
 
     const lines = readTelemetryLines(root);
-    assert.equal(lines.length, 1);
-    assert.equal(lines[0].type, 'resource_sample');
-    assert.equal(lines[0].role, 'coder');
-    assert.ok(lines[0].rssBytes > 0);
+    assert.equal(lines.length, 2);
+    const resourceLine = lines.find((l) => l.type === 'resource_sample');
+    assert.ok(resourceLine);
+    assert.equal(resourceLine.role, 'coder');
+    assert.ok(resourceLine.rssBytes > 0);
+    assert.ok(lines.some((l) => l.type === 'host_load_sample'));
   } finally {
     fake.restore();
     child.kill();
