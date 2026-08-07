@@ -102,3 +102,64 @@ previously-smoke-only cross-platform lib's first test), 26 new checks total,
 all passing. Forwarding to documenter.
 
 By hardener.
+
+---
+
+## Re-pass, same date — after QA bounce fix + architect re-review
+
+`git_handoff` from architect (`merge_and_process architect 1e62fbdc3d`),
+carrying QA's bounce (`backlog/evidence/BL-848-qa-bounce-20260808.md`, D1:
+blank `detected_at` on sweep-appended ledger entries), the coder's fix
+(`4eaa77594b`: `git-log-main` now captures the commit date via
+`--date=format:%Y-%m-%d`/`%cd`, threaded through `resolve-main-commits` with
+a now-ms fallback), and the architect's clean re-review (`1e62fbdc3d`).
+Merged cleanly into `swarmforge-hardender`.
+
+### Re-verification
+
+1. `swarmforge/scripts/test/test_operator_runtime_hotfix_certification_sweep.sh`
+   — 13/13 pass (12 from the original pass + the coder's new non-vacuous
+   regression check: sweep-appended `detected_at` is a real `YYYY-MM-DD`,
+   never blank — the exact bounce).
+2. `hotfix_ledger_update_test_runner.sh` — 20/20 pass (unaffected by this
+   delta; re-run for regression).
+3. `hotfix_certification_lib_test_runner.bb`,
+   `bl848_hotfix_certification_property_runner.bb` — pass (unaffected;
+   re-run for regression).
+4. `run_acceptance.sh specs/features/BL-848-....feature` — 10/10 scenarios
+   pass.
+5. **Gherkin mutation (BL-113), soft — gap closed this pass.** The feature
+   has two `Scenario Outline`s and had never been run through
+   `run_gherkin_mutation.sh` (no manifest present in the file before this
+   pass — my first pass above hardened the CLI/lib coverage gaps but did not
+   yet reach this gate). Ran it: 6/6 mutants killed (both Outlines' every
+   example value), 0 survived, 0 errors. Manifest now embedded in the
+   feature file (committed alongside this evidence).
+
+### Gap assessed and not pursued
+
+`resolve-main-commits`' `(or % (ms->ymd now))` fallback (only exercised if
+`git-log-main`'s own date capture ever comes back blank — the branch is
+explicitly commented "should-never-happen") has no direct unit-level test.
+`operator_runtime.bb` calls `(-main)` unconditionally at file scope with no
+test-mode guard, so — consistent with every other private helper in this
+2100+-line file — it is reachable only through the wiring-level
+`--tick-once` harness, never a `load-file`d unit test. Extracting it into a
+loadable lib for this one defensive fallback would be a structural change
+beyond a hardening pass's remit; the actual bug this ticket exists to catch
+(a genuinely blank date reaching the ledger) is now covered non-vacuously by
+check 1 above.
+
+### Cleanup
+
+No leaked fixture tmux servers this pass (checked by socket path, BL-807
+lesson); the live swarm's own `swarmforge-coder` session (repo-rooted
+socket) is the only tmux server present. No orphaned `node --test`/`stryker`
+processes. Untracked `swarmforge/scripts/operator_path_lib.sh` (paused
+BL-796) left untouched, not staged.
+
+### Verdict
+
+No defects. Forwarding to documenter.
+
+By hardener.
