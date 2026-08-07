@@ -1,7 +1,8 @@
 #!/usr/bin/env bb
 ;; BL-486: the impure wiring half of the orphaned SwarmForge agent-process
-;; reaper - real /proc scan (candidate scope + per-pid cwd/cmdline/age
-;; reads), real tmux window-set enumeration (the SAME tracked-socket +
+;; reaper - process-table scan (candidate scope + per-pid cwd/cmdline/age
+;; reads via process_table_lib: /proc on Linux, ProcessHandle+lsof on Darwin),
+;; real tmux window-set enumeration (the SAME tracked-socket +
 ;; recursive pgrep -P technique kill_all_swarm.sh's own
 ;; snapshot_pane_descendants/collect_descendant_pids already use), and real
 ;; process kill. Loaded by BOTH operator_runtime.bb (the always-alive
@@ -13,7 +14,7 @@
 ;; Every real read/action goes through an injectable adapter, the SAME
 ;; "thin wiring slice" posture as fixture_reaper_sweep_lib.bb, so a wiring
 ;; test can supply pids it spawned itself along with their metadata - and
-;; NEVER scans the tester's real /proc for SwarmForge-* candidates, which
+;; NEVER scans the tester's real process table for SwarmForge-* candidates, which
 ;; could enumerate (and evaluate) a genuinely live agent (engineering.prompt
 ;; "the process table is a shared global").
 
@@ -23,11 +24,9 @@
             [clojure.string :as str]))
 
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "orphan_agent_reaper_lib.bb")))
-;; BL-413/BL-458: shared /proc cwd+fd scan - the same technique
-;; fixture_reaper_sweep_lib.bb's own sweep! uses to detect a live process;
-;; here it is read for a SPECIFIC candidate pid, never to scan the whole
-;; table for liveness. ONE real implementation, loaded by whichever of this
-;; file's own callers gets there first in a given process.
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "process_table_lib.bb")))
+;; BL-413/BL-458: shared /proc cwd+fd scan retained for Linux callers that
+;; already hold a pid-dir path; Darwin cwd goes through process-table-lib.
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "proc_fd_scan_lib.bb")))
 
 ;; A tighter default matches the motivating incident (a 6h43m-old orphan)
@@ -101,25 +100,21 @@
   (boolean (re-find #"--remote-control\s+SwarmForge-" (or cmdline ""))))
 
 (defn- proc-cmdline! [pid]
-  (try
-    (str/replace (slurp (str (fs/path "/proc" (str pid) "cmdline"))) "\u0000" " ")
-    (catch Exception _ "")))
+  (process-table-lib/cmdline! pid))
 
 ;; Candidate SCOPE: only SwarmForge-* remote-control claude processes are
 ;; ever surfaced - never a bare `pgrep claude` pattern-to-kill (BL-367's own
-;; forbidden shape). A real /proc-wide scan, bounded by the host's own
-;; process count, the same cost fixture_reaper_sweep_lib.bb's own
-;; live-process-paths! already pays every sweep.
+;; forbidden shape). Enumerates via process_table_lib (/proc or ProcessHandle).
 (defn- scan-candidate-pids! []
   (try
-    (->> (fs/list-dir "/proc")
-         (keep (fn [p] (try (Long/parseLong (fs/file-name p)) (catch Exception _ nil))))
-         (filter #(remote-control-cmdline? (proc-cmdline! %)))
+    (->> (process-table-lib/list-processes!)
+         (filter (fn [{:keys [cmdline]}] (remote-control-cmdline? cmdline)))
+         (map :pid)
          vec)
     (catch Exception _ [])))
 
 ;; Test-only override: a wiring test supplies the EXACT pids it spawned
-;; itself, never triggering the real /proc-wide scan above (which could
+;; itself, never triggering the real process-table scan above (which could
 ;; enumerate, and evaluate, a genuinely live agent on the tester's own
 ;; host). Comma-separated, matching the shell-friendly convention every
 ;; other SwarmForge env seam here uses.
@@ -130,18 +125,13 @@
     (scan-candidate-pids!)))
 
 (defn cwd! [pid]
-  (proc-fd-scan-lib/process-cwd-path (fs/path "/proc" (str pid))))
+  (process-table-lib/cwd! pid))
 
 (defn has-children?! [pid]
   (boolean (seq (child-pids! pid))))
 
-;; Same technique fixture_reaper_sweep_lib.bb's own entry-age-ms! uses for a
-;; /tmp entry, pointed at /proc/<pid> instead: a process's procfs directory
-;; is created at process start and its mtime is a stable, filesystem-level
-;; proxy for process age, with no external tool dependency.
 (defn age-ms! [pid]
-  (try (- (System/currentTimeMillis) (.toMillis (fs/last-modified-time (fs/path "/proc" (str pid)))))
-       (catch Exception _ 0)))
+  (process-table-lib/age-ms! pid))
 
 (defn- kill-pid! [pid]
   (try (some-> (java.lang.ProcessHandle/of (long pid)) (.orElse nil) (.destroyForcibly))

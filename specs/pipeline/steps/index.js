@@ -389,7 +389,8 @@ const DOMAINS = [
   require('./bl819TicketLifecycleLedgerSteps'),
   require('./bl773CoordinatorRoleAskSteps'),
   require('./bl839MasterCheckoutDriftSteps'),
-  require('./bl822HostLoadAnomalySteps')
+  require('./bl822HostLoadAnomalySteps'),
+  require('./bl848HotfixCertificationSteps')
 ];
 
 function registerSteps(registry) {
