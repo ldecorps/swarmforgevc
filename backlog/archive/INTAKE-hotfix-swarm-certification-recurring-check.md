@@ -1,6 +1,8 @@
 # Raw intake — Every operator hotfix must be swarm-certified; add a recurrent check (ask the human before the official deal)
 
-Status: **URGENT** — new intake, not minted. Capture only (human via Cursor
+Status: **ARCHIVED** — minted as **BL-848** (`backlog/active/BL-848-hotfix-swarm-certification-recurring-check.yaml` after promote). Queue-jump 2026-08-07 ~22:58 CEST.
+
+Was: **URGENT** — new intake, not minted. Capture only (human via Cursor
 2026-08-07 ~22:05 CEST). Human: "Assures toi que tous les hotfix sont
 certifiés par la swarm. Il faudrait avoir un check récurrent qui a assure
 de cela, quitte à faire une demande à l'humain avant le deal officiel de

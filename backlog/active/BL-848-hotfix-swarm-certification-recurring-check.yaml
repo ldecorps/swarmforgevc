@@ -1,0 +1,80 @@
+id: BL-848
+title: "Every operator / hand hotfix must be swarm-certified; recurrent check asks the human before the official deal"
+milestone: M8
+type: feature
+status: todo
+epic: swarm-reliability
+human_approval: approved
+severity: high
+priority: 0
+direction: human-requested
+depends_on: []
+assigned_to: specifier
+mutation_cost: medium
+required_stages: [specifier, coder, cleaner, architect, hardender, documenter, qa]
+
+invariants:
+  - "No operator/hand hotfix that is live in the tree counts as an official swarm deal until a stamp-off review has completed and the human has been asked."
+  - "A recurrent check (existing loop only — coordinator lean/closing ceremony, babysitterd, or operator_runtime) surfaces uncertified hotfixes until resolved; one audit pass is not enough."
+  - "Marking certified / closed_as: satisfied-by-hotfix (or equivalent durable blessing) never auto-fires on green tests alone — human ask first."
+
+approval_context: >
+  Human via Cursor 2026-08-07 ~22:05 CEST, repeated ~22:58 CEST when the
+  root intake had not yet been minted: "Assures toi que tous les hotfix
+  sont certifiés par la swarm. Il faudrait avoir un check récurrent qui
+  assure de cela, quitte à faire une demande à l'humain avant le deal
+  officiel de la swarm." Queue-jump mint: priority 0, approved by human
+  order. Specifier may amend ledger shape and where the check rides, but
+  not drop the recurrent check or the human-ask-before-official-deal rule.
+
+source: |
+  backlog/INTAKE-hotfix-swarm-certification-recurring-check.md (archived to
+  this ticket on mint). Pattern seed: BL-811 stamp-off of the BL-810 Host
+  queue hotfix. Open stamp debt at mint time (update if drained earlier):
+  backlog/INTAKE-darwin-orphan-janitor-swarm-stamp.md,
+  backlog/INTAKE-bubble-reply-volume-follows-phone.md.
+
+description: |
+  ## What
+
+  Operator / Cursor / adopt-from-working-tree hotfixes land outside the
+  normal pipeline and today may stay "live but uncertified." BL-810/811
+  showed the right posture (review ticket + human ruling before
+  satisfied-by-hotfix); other hotfixes still sit as root intakes with no
+  detector if minting stalls.
+
+  This ticket delivers:
+  1. A durable, greppable **hotfix certification ledger** (specifier picks
+     shape: ticket field, evidence convention, or small registry under
+     `.swarmforge/` — not "remembered in chat").
+  2. A **recurrent check** on an existing loop that finds hotfixes in the
+     tree / on main without completed stamp-off (or without human ask for
+     the official deal) and surfaces them until resolved.
+  3. A **human-ask gate** before official deal (`satisfied-by-hotfix` /
+     archive of stamp ticket as lasting blessing). Transient "hotfix is
+     live for ops" may remain; official swarm deal may not auto-fire.
+  4. First debt: drain or link the open stamp intakes (Darwin orphan
+     janitor; Bubble reply-volume) as BL-811-shaped review tickets the
+     check must see.
+
+  ## Specifier owns
+
+  - Where the check lives (prefer coordinator lean/closing if that epic is
+    live; else babysitterd WARN; else operator_runtime nudge).
+  - How hotfixes are declared (one primary signal, documented).
+  - What "uncertified" means operationally.
+  - Optional Concierge/Approvals ask template for "certify hotfix X?"
+
+acceptance: specs/features/BL-848-hotfix-swarm-certification-recurring-check.feature
+
+out_of_scope: |
+  - Re-implementing each hotfix from scratch (stamp-off adopts/verifies).
+  - Forbidding emergency patches (hotfixes may still land; certification
+    must catch up).
+  - Model Steward "certify" (model registry, not code hotfix stamp).
+  - New fourth daemon for the check alone.
+
+notes: |
+  Queue-jump 2026-08-07: human repeated the ask while the URGENT intake sat
+  unminted beside four unrelated actives. Mint + promote to specifier same
+  shift. Do not re-triage priority without asking the human.
