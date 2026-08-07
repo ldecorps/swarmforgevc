@@ -113,6 +113,22 @@ notes: |
   Specifier may close/reshape either ticket and mint a third if a combined
   design is cleaner than shipping both as written.
 
+  ## Specifier triage outcome, 2026-08-07 — unchanged, and deliberately not combined
+
+  This ticket is kept exactly as written. A combined BL-773/BL-819 design was
+  considered and rejected: a human-attention channel and a durable telemetry
+  ledger are orthogonal concerns with no shared surface, and merging them
+  would mint an oversized incoherent ticket (BL-634 envelope discipline).
+
+  The mid-verification note-delivery incident the human's note points at is
+  neither ticket's: it was root-caused to role→pane resolution and specced as
+  **BL-846** (`type: defect`, `severity: high`, `backlog/paused/`). Nothing in
+  this ledger slice changes as a result — but BL-846's shape is a useful
+  precedent for invariant 2 here, since it is the same "compose instruments
+  that already ship, add no new producer" posture.
+
+  Ready to route to coder as written; no re-spec needed.
+
   Drained from the URGENT intake ahead of the ten Bubble/console intakes at
   backlog root, per the human's explicit ordering instruction (decision 9).
 
