@@ -1,9 +1,9 @@
 const assert = require('node:assert/strict');
 const fc = require('fast-check');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
+const { mkTmpDir } = require('./helpers/tmpDir');
 
 const REPO_ROOT = path.join(__dirname, '..', '..');
 const ROLE_ASK_CLI = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'role_ask.bb');
@@ -36,7 +36,7 @@ const ROLE_ASK_CLI = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'role_ask.bb'
 // restoring the guard made it pass again.
 
 function mkTmp() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-bl773-guard-'));
+  return mkTmpDir('sfvc-bl773-guard-');
 }
 
 function runRoleAsk(root, role, question) {
