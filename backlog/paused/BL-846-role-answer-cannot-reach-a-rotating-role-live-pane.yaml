@@ -1,0 +1,204 @@
+id: BL-846
+title: "An answer can never reach a rotating role's live pane: role→pane resolution reads a session mono-router never creates, so a role blocked mid-parcel is structurally unreachable"
+milestone: M8
+type: defect
+severity: high
+status: todo
+epic: question-attention-path
+human_approval: pending
+assigned_to: none
+priority: 109
+direction: swarm-found
+depends_on: []
+mutation_cost: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-846-role-answer-reaches-the-active-resident-pane.feature.draft
+
+required_wiring:
+  - "extension/src/tools/telegram-front-desk-bot.ts::readMonoRouterActiveRole::the resolution site itself must consult the durable resident-identity marker; a helper that resolves correctly but is never called from resolveRolePaneTarget leaves the deadlock exactly where it is (the BL-419 shape). The intended shape is importing the already-exported reader from extension/src/concierge/residentPaneSpy.ts rather than adding a second reader."
+
+# BL-633. Two properties the scenarios cannot express.
+invariants:
+  - "An answer is never injected into a pane running a different role than the one it is addressed to: the resident pane is resolved for role R only while the durable resident-identity marker names R, and for no other role or marker state."
+  - "No answer becomes less deliverable than it is today: whenever the live-pane leg does not deliver, the queued-note leg still runs, and the per-role pending marker clears only when one of the two actually captured the answer."
+
+description: |
+  ## The defect
+
+  `resolveRolePaneTarget` (`extension/src/tools/telegram-front-desk-bot.ts`)
+  resolves role R's live pane from the `session` column of
+  `.swarmforge/roles.tsv` — `swarmforge-QA` for QA, `swarmforge-cleaner` for
+  cleaner, and so on for all seven pipeline roles.
+
+  Under mono-router only TWO tmux sessions exist: the resident pane
+  (`swarmforge-coder`) and `swarmforge-coordinator`. Verified live while
+  writing this ticket: `tmux list-sessions` returns exactly those two, while
+  `roles.tsv` names eight.
+
+  So for every rotating role, the live-pane delivery leg
+  (`redirectToRole` → `sendInstructionVerified`) can never deliver — **even
+  when that role IS the resident currently running in the resident pane**.
+  Delivery always falls through to leg 2, `enqueueRoleAnswerNote`, which
+  queues a `type: note` into the role's own inbox.
+
+  ## Why that becomes a deadlock rather than a delay
+
+  Leg 2 is correct and sufficient for a DORMANT role: the note is picked up on
+  its next rotation, which is how the specifier's own proven round trip
+  (BL-772's notes, 2026-07-30 → 2026-08-01) worked.
+
+  It is a deadlock in exactly one case: the role is the ACTIVE resident AND is
+  holding in-process work. `ready_for_next.sh` then tells it, verbatim, "This
+  parcel is already in_process. Do NOT run ready_for_next.sh again until you
+  finish it." Its mailbox is the one place the answer was put, and its own
+  harness forbids reading it. The role is blocked on an answer that has
+  already arrived, sitting unreachable a few directories away.
+
+  That case is not hypothetical — it is what happened on 2026-08-07 (see
+  `notes`).
+
+  ## The fix: resolution only
+
+  Rotation already records who the resident is running as. Every piece needed
+  ships today:
+
+  - `.swarmforge/mono-router-active-role`, written by
+    `write-mono-router-active-role!` on every successful rotation
+    (`swarmforge/scripts/handoff_lib.bb`), whose own docstring is "Durable
+    identity of whoever the resident pane is currently running as";
+  - `readMonoRouterActiveRole(targetPath)`, already exported from
+    `extension/src/concierge/residentPaneSpy.ts` and already read on the TS
+    side by `extension/src/bridge/residentPaneLive.ts`;
+  - the resident pane itself, resolvable as the first non-coordinator
+    `roles.tsv` session (`mono-router-resident-session`).
+
+  `resolveRolePaneTarget` must consult that marker: when the requested role is
+  the role the marker names, resolve the RESIDENT pane instead of the role's
+  own never-created session. Every other role, and every missing/blank marker,
+  resolves exactly as it does today.
+
+  This is a composition of shipped instruments, not a new mechanism. No new
+  state, no new timer, no second delivery path, no change to the in-process
+  guard, and no change to answer-capture or marker-clearing semantics.
+
+  ## Wider than answers, and deliberately so
+
+  `resolveRolePaneTarget` is the single resolution site behind BL-425's
+  topic-scoped steering redirects as well as role answers. Both are broken for
+  rotating roles today for the same one reason, and both are fixed by the same
+  one change — it is one behavior ("resolve role R's live pane"), not two.
+
+  ## Why this was not visible until now
+
+  Nothing in the swarm exercised the one broken case. The specifier's asks are
+  answered while it is dormant (leg 2, works). The coordinator has a standing
+  session, so leg 1 resolves for it correctly and BL-773's own ask path is
+  unaffected. Only a rotating role blocked mid-parcel hits it, and QA blocking
+  on a human-only manual procedure was the first time that happened.
+
+approval_context: >
+  This is a verified root cause with one real design fork, and it is worth
+  thirty seconds of your judgement because the two options land in different
+  places.
+
+  (1) **Fix the delivery leg** — what this ticket specs. Pane resolution
+  consults the resident-identity marker rotation already writes, so the answer
+  arrives as an interrupting pane nudge. That is precisely what the manual
+  unstick did on 2026-08-07 (`tmux send-keys` into the live pane) and it
+  worked immediately — leg 1 was always meant to do this and failed only on a
+  session-name mismatch. No prompt changes, no polling, ~one resolution
+  function, and BL-425 steering to rotating roles gets fixed with it.
+
+  (2) **Punch an exception in the in-process guard** so a blocked role may
+  re-check its mailbox for its own answer. Rejected, and I want you to know I
+  considered it: it is a poll, which the role prompts forbid and the
+  endless-loop circuit breaker halts the swarm over; it needs a new rule in
+  all seven role prompts; and it depends on the role correctly knowing it is
+  blocked, which is judgement rather than mechanism.
+
+  I recommend (1) firmly and specced it that way. Say the word if you want
+  (2), or both.
+
+  One honest limit either way: this fixes the ANSWER a role is blocked on. An
+  unrelated note to a role holding in-process work still waits for that
+  parcel to finish — correctly, since it is not what the role is waiting on.
+  The 2026-08-07 incident stranded one of each; only the answer was load
+  bearing.
+
+out_of_scope: |
+  - Any change to the in-process guard, to `ready_for_next.sh`, or to any role
+    prompt. The fix is one resolution function; see approval_context (2) for
+    the alternative deliberately not taken.
+  - Delivering arbitrary notes to a role that holds in-process work. A note
+    that is not the answer the role is blocked on correctly waits for the
+    parcel.
+  - Answer capture and pending-marker lifecycle (`captureRoleAnswer`,
+    `clearRoleAwaitingAnswer`), unchanged and protected by invariant 2.
+  - The ask/outbound leg. An undeliverable QUESTION wedging the marker is
+    GH-26, already specced and separate.
+  - Escalating or reminding about an unanswered question — BL-772 slice E,
+    which extends BL-584 rather than adding a timer.
+
+source: |
+  Found by the specifier on 2026-08-07 while triaging BL-773 and BL-819 under
+  the human's standing authorization on both tickets ("specifier may
+  close/reshape either and mint a third ticket if a combined design better
+  covers the mid-verification note-delivery incident").
+
+notes: |
+  ## The incident this came from, and the premise it falsifies
+
+  2026-08-07 ~04:19Z–08:43Z. QA reached BL-826's final gate — a human-only
+  paired-phone device procedure — so the coordinator raised the ask on QA's
+  behalf via `role_ask.bb --role QA`. The question reached Telegram fine. When
+  the human replied, the answer was queued as a note into QA's inbox, where it
+  sat unreachable for ~90 minutes because QA was in-process. A coordinator
+  note stranded alongside it. The flow-watchdog ESCALATEd at 4h6m aged. The
+  coordinator eventually broke it with a direct `tmux send-keys` into the live
+  pane.
+
+  Both the 2026-08-07 briefing and BL-773 itself record that **BL-773** is
+  what "would formalize this." Measured against the code, that is false, and
+  BL-773 has been amended to say so:
+
+  - the ASK leg already worked in the incident — nothing about it failed;
+  - BL-773 changes only `swarmforge/roles/coordinator.prompt`, so it cannot
+    touch delivery;
+  - the coordinator has a standing session, so leg 1 already resolves for it.
+
+  Ship BL-773 verbatim and this deadlock recurs unchanged on the next
+  mid-parcel human ask. BL-773 is still worth shipping on its own merits (the
+  coordinator borrowing `--role QA` consumes QA's one-pending slot and files
+  the answer under QA's identity) — it is simply a different defect's fix.
+
+  BL-836 (bridge read/answer routes) rides this same delivery path and would
+  inherit the defect; it is not blocked by this ticket, but it is worth more
+  once this lands.
+
+  ## Spec hygiene
+
+  Gherkin lint: clean. IR-DRY: 12 findings on first draft, 7 of which were
+  real drift and were normalized (three resolution scenarios merged into one
+  outline; an overloaded Given split into two shared steps). The 5 remaining
+  are reviewed and deliberately kept: two are the same step with different
+  arguments, one pair is a deliberate antonym (the two legs are mutually
+  exclusive — that is the assertion), and one pair is setup-vs-assertion on
+  the same object.
+
+  ## e2e procedure for QA
+
+  With a live mono-router swarm, while the resident is rotated to a non-home
+  role holding an in-process parcel:
+
+  1. Confirm `.swarmforge/mono-router-active-role` names that role and that
+     `tmux list-sessions` shows no `swarmforge-<role>` session for it.
+  2. Raise a question as that role:
+     `bb swarmforge/scripts/role_ask.bb "$(pwd)" --role <role> --question ...
+     --options '["a","b"]'`.
+  3. Tap an option in Telegram.
+  4. Confirm the answer appears in the resident pane as an interrupting nudge,
+     WITHOUT the role running `ready_for_next.sh`.
+  5. Confirm no answer note was queued into that role's `inbox/new/`, and that
+     `.swarmforge/operator/role-awaiting/<role>.json` is gone.
+  6. Rotate the resident elsewhere, repeat steps 2–3 for the now-dormant role,
+     and confirm the queued-note leg still fires unchanged.
