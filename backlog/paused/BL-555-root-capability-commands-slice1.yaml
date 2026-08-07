@@ -6,7 +6,7 @@ status: needs_design
 epic: root-capability-commands
 human_approval: approved
 severity: low
-priority: 129
+priority: 175
 direction: human-requested
 depends_on: [BL-554]
 assigned_to: specifier

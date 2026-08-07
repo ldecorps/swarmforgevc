@@ -5,7 +5,7 @@ type: defect
 severity: medium
 status: todo
 epic: swarm-reliability
-priority: 94
+priority: 141
 direction: normal
 depends_on: []
 assigned_to:

@@ -6,7 +6,7 @@ status: todo
 epic: quota-budget-manager
 human_approval: approved
 severity: medium
-priority: 19
+priority: 43
 direction: human-requested
 depends_on: []
 assigned_to: coder

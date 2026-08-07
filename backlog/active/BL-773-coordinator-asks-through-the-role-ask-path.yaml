@@ -5,8 +5,8 @@ type: feature
 status: todo
 epic: question-attention-path
 human_approval: approved
-assigned_to: none
-priority: 78
+assigned_to: coder
+priority: 111
 direction: human-requested
 depends_on: []
 mutation_cost: medium
@@ -39,9 +39,28 @@ description: |
   swarmforge/roles/*.prompt`). Nothing about the coordinator is special; it was
   simply never given the instruction.
 
-  This is deliberately the smallest slice of BL-772 that removes the reported
-  harm. Bubble's spoken nudge (slice C) and the escalation ladder (slice E) sit
-  on top of it and are not in this parcel.
+  This is deliberately the smallest slice of BL-772 that removes the harm
+  reported in the ORIGINAL intake — a coordinator question with no ask path of
+  its own, surfacing only on whichever remote-control surface happened to be
+  attached. Bubble's spoken nudge (slice C) and the escalation ladder (slice E)
+  sit on top of it and are not in this parcel.
+
+  ## What this slice does NOT fix (correction, 2026-08-07)
+
+  It does not fix the 2026-08-07 stuck-QA deadlock, despite that shift's
+  briefing and this ticket's own earlier `notes` recording that it would
+  "formalize" it. Measured against the code: in that incident the ASK leg
+  already worked — the coordinator ran `role_ask.bb --role QA` and the question
+  reached Telegram. What failed was DELIVERY of the answer back to a role
+  holding in-process work. This slice touches only
+  `swarmforge/roles/coordinator.prompt`, so it cannot reach that path, and the
+  coordinator has a standing tmux session, so the broken leg never bites the
+  coordinator's own asks at all.
+
+  **BL-846** is that incident's actual fix. This ticket keeps its own
+  independent merit: the coordinator borrowing another role's `--role` (as it
+  had to in the incident) consumes that role's one-pending slot, files the
+  answer under that role's identity, and wakes that role instead of the asker.
 
   ## Approach
 
@@ -98,6 +117,49 @@ source: |
   for each, human_approval pending (I pick defaults, you amend)."
 
 notes: |
+  2026-08-07 human: PROMOTE alongside BL-819 for the specifier. Both are
+  in active/; specifier may close/reshape either and mint a third ticket if a
+  combined design better covers the mid-verification note-delivery incident
+  (briefing 2026-08-07) plus the lean ledger (BL-818/819).
+
+  ## Specifier triage outcome, 2026-08-07
+
+  Kept as written, plus the correction now in `description`. Neither this
+  ticket nor BL-819 was reshaped or closed, and they were NOT combined: a
+  human-attention channel and a durable telemetry ledger are orthogonal
+  concerns, and merging them would mint an oversized incoherent ticket
+  (BL-634). The third ticket the human authorized was minted instead:
+
+  - **BL-846** (`type: defect`, `severity: high`, `backlog/paused/`) — the
+    actual mid-verification delivery defect. `resolveRolePaneTarget` resolves
+    a rotating role's live pane from a `roles.tsv` session mono-router never
+    creates, so answer delivery always falls to the queued-note leg, which a
+    role holding in-process work is forbidden to read.
+
+  Do not treat this ticket as closing the 2026-08-07 incident when it lands;
+  BL-846 is what closes it.
+
+  ## Approach steps re-measured against `main`, 2026-08-07 — what is left
+
+  - **Step 1 (coordinator.prompt ask section) — DONE by the specifier in this
+    parcel.** A role prompt is specifier-owned (Article 1.2, "sole writer of
+    the constitution and prompt files"), so the coder must not rewrite it;
+    review it like any other received content and bounce it to the specifier
+    if it is wrong. It satisfies this ticket's own `required_wiring`.
+  - **Step 2 (coordinator topic resolves) — ALREADY SATISFIED, no change
+    needed.** Verified live: `.swarmforge/operator/role-topic-map.json` already
+    carries `"coordinator":3901`. Do not add an entry, and do not introduce a
+    fallback to a shared or standing topic — the spec forbids it and the map
+    needs nothing.
+  - **Step 3 (the answer reaches the coordinator) — coder's, plus the step
+    handlers.** The four scenarios in the live `.feature` have no handlers yet
+    (`grep` over `specs/pipeline/steps/` finds none); they land in this parcel
+    per BL-233. Note the coordinator has a standing tmux session, so its answer
+    resolves through the live-pane leg and is NOT affected by BL-846.
+
+  So the remaining code work is the step handlers plus verification, not the
+  prompt and not the topic map.
+
   ## e2e procedure for QA
 
   With a live swarm, drive the coordinator to raise an optioned question

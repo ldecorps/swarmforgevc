@@ -1,0 +1,162 @@
+id: BL-845
+title: "\"hey bubble\" spotted entirely on the device — passive listening makes no bridge turn and no cloud speech call, and the bubble goes soft teal to show it is armed without looking like a hot mic"
+milestone: M8
+type: feature
+status: todo
+epic: bubble-voice-barge-in
+human_approval: approved
+assigned_to: none
+priority: 106
+direction: human-requested
+depends_on: [BL-844]
+mutation_cost: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-845-offline-hey-bubble-wake.feature
+
+approval_context: >
+  Four of the intake's open design questions are answered here rather than asked.
+  All are cheap to change now.
+
+  1. WAKE VARIANTS: "hey bubble" only in v1. The human named that phrase; adding
+  "hi bubble" and accent-robustness tuning is a tuning pass once there is a real
+  spotter to tune, not a first-slice decision.
+
+  2. SAME-UTTERANCE WAKE + COMMAND: supported, not a beep-then-listen gate. The
+  intake's own acceptance shape says "hey bubble ..." then a request produces ONE
+  turn, which only holds if the phrase and the command can arrive together. The
+  phrase is stripped either way.
+
+  3. LOCAL ACK BEFORE THE BRIDGE IS CONFIRMED: yes. The intake requires that with
+  the network off, saying the phrase still wakes locally — so the acknowledgement
+  cannot wait on a bridge check.
+
+  4. FOREGROUND-SERVICE POLICY ON ANDROID 14+: the spotter rides the overlay's
+  EXISTING foreground service (`OverlayService.kt`) rather than starting a second
+  one. Two always-on services for one always-on feature is a battery and
+  permissions cost with nothing to show for it.
+
+  The one thing I have deliberately NOT chosen is the spotter engine itself.
+  Porcupine is named in the intake as "Porcupine-class"; picking a specific
+  engine brings a licence and a model file into the APK, and that is a call worth
+  the human seeing before it is made.
+
+invariants:
+  - "Passive listening is silent to the world: while the session is passive, no bridge request and no cloud speech service call is made, whatever the phone hears."
+  - "The wake phrase is never part of the request: no text submitted as a turn contains the phrase that woke the session."
+  - "Colour tells the truth about the mic: red is shown only while audio is being captured for the model, and passive listening is never red."
+
+required_wiring:
+  - "android/app/src/main/java/com/swarmforge/floatcompanion/OverlayService.kt::WakeSpotter::the spotter must run inside the existing overlay foreground service, not merely exist as a class"
+
+description: |
+  ## What
+
+  On-device keyword spotting for the phrase **"hey bubble"**, so the phone can
+  listen all day without talking to anything.
+
+  - **Passive is offline and local.** The wake decision runs on the phone's own
+    CPU/NPU. No LLM, no Let's Talk bridge, no cloud STT for the trigger. With the
+    network off, the phrase still wakes Bubble; only the follow-on model turn
+    fails, and it fails loudly with its reason.
+  - **Android's stock `SpeechRecognizer` is not acceptable for this path.** It is
+    frequently cloud-backed, which would make "passive listening" mean "streaming
+    the room to a server". The passive path uses a true on-device spotter.
+  - **The phrase does not travel.** Whatever the human said after it is what gets
+    submitted as the turn; the wake phrase is stripped. A wake with nothing after
+    it submits nothing and simply opens the session.
+  - **The bubble goes soft teal while armed.** `#2A9D8F`, already reserved as
+    `sf_bubble_passive` in `themes.xml`. Red stays reserved for active listening
+    — a hot mic to the model — per the human's explicit constraint.
+
+  ## The colour table, as the human confirmed it
+
+  | State | Colour |
+  |---|---|
+  | Ready / idle | Green `#238636` |
+  | Passive wake listening | **Soft teal `#2A9D8F`** |
+  | Active listening (recording) | Red `#DA3633` |
+  | Thinking | Amber `#D29922` |
+  | Speaking | Blue `#1F6FEB` |
+  | Error | Red `#DA3633` |
+  | Paused | Gray `#6E7681` |
+
+  ## Testability — which half is verified how
+
+  This slice straddles the Bubble testability boundary and the split is stated
+  rather than assumed:
+
+  **JVM unit suite** (`android/app/src/test/`, `./gradlew
+  :app:testDebugUnitTest`) — everything in the acceptance feature file:
+  wake-phrase stripping, the passive-mode gate that refuses to produce a bridge
+  call, the local-ack-before-bridge decision, and the state-to-colour mapping.
+  These are pure functions with no `android.*` type in their own signatures; the
+  spotter is injected as a signal source, exactly as BL-844 injects its clock.
+
+  **Recorded manual procedure** (device surface, no scenario written for it):
+  that a real spotter actually hears the phrase, offline, from across a room,
+  without draining the battery. The acceptance runner cannot execute this and
+  will not be given a scenario that pretends otherwise.
+
+  Per this project's Startup Tools table, `.kt` has no mutation/CRAP/DRY
+  toolchain wired: the hardening pass runs the degraded unit-test-gap fallback
+  and must record that it did.
+
+  ## E2E procedure QA will run
+
+  On a real device, recorded in the ticket:
+
+  1. Put the phone in airplane mode. Say "hey bubble" — confirm the bubble
+     acknowledges locally and turns red, and that the follow-on turn reports the
+     bridge as unreachable with a readable reason rather than failing silently.
+  2. Back online, say "hey bubble what is the pipeline doing" as one utterance —
+     confirm exactly one turn is submitted and its text does not contain the wake
+     phrase.
+  3. Leave the phone passive for 30 minutes with the bridge log open — confirm
+     zero requests arrived.
+  4. Confirm the bubble is soft teal while passive and only red while capturing
+     for the model.
+  5. Note the battery drain over that 30 idle minutes in the ticket, as the
+     baseline for any later tuning.
+
+  ## Out of scope
+
+  - The session lifecycle after wake. BL-844, which this depends on.
+  - Barge-in detection. BL-777.
+  - Server-side or LLM-based wake detection. The human ruled the wake path is
+    on-device, full stop.
+  - Wake-phrase variants, locale and accent tuning. A later pass with a real
+    spotter to tune.
+  - Making the wake phrase configurable.
+
+notes: |
+  The overlay was already resized for this family of work: `96dp` -> `72dp`,
+  icon `52dp` -> `39dp` in `overlay_bubble.xml` (human asked for ~25% smaller,
+  applied 2026-07-30). No further sizing work here.
+
+  `sf_bubble_passive` already exists in `themes.xml` as a reserved colour with
+  nothing wired to it — this is the slice that wires it, per the intake's own
+  "keep current green for non-wake idle until wake ships; then wire teal on
+  PassiveWake".
+
+source: |
+  `backlog/INTAKE-bubble-hey-bubble-offline-wake-and-session-listen.md` (human
+  via Let's Talk, 2026-07-30), drained 2026-08-07 as a 1:2 split: BL-844 owns the
+  session lifecycle, this slice owns the offline wake.
+
+  The intake's words on the passive path, kept verbatim because they are the
+  constraint:
+
+  > **Passive (offline):** always listen only for the wake phrase **"hey bubble"**,
+  > entirely on-device in the app — no LLM, no bridge turn, no cloud STT for that
+  > trigger.
+
+  > Caveat: Android's stock `SpeechRecognizer` is often cloud-backed — **not**
+  > acceptable for the passive path. Passive must use a true on-device spotter
+  > (e.g. Porcupine-class or equivalent open on-device model), not "always-on
+  > cloud dictation."
+
+  > Human constraint: **red stays active listening** (hot mic to the model).
+  > Passive wake listening must not be red.
+
+  > **Agreed passive (wake-only) color: soft teal** `#2A9D8F`
+  > (`sf_bubble_passive` in themes.xml) — human confirmed 2026-07-30.
