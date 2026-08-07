@@ -6,10 +6,10 @@ status: todo
 epic: swarm-reliability
 human_approval: approved
 severity: high
-priority: 67
+priority: 97
 direction: human-requested
 depends_on: []
-assigned_to:
+assigned_to: coder
 mutation_cost: low
 invariants:
   - "No undeliverable role question leaves its role wedged: after any drop, the awaiting-marker state permits asking again immediately, and the drop is surfaced in status.json."

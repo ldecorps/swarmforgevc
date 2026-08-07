@@ -1,0 +1,143 @@
+id: BL-842
+title: "Bubble Control, slice A — the bridge exposes the swarm control verbs and a live control status, driving the extension host functions Telegram Control already calls"
+milestone: M8
+type: feature
+status: todo
+epic: bubble-control
+human_approval: approved
+assigned_to: none
+priority: 120
+direction: human-requested
+depends_on: []
+mutation_cost: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-842-bridge-swarm-control-verbs.feature
+
+approval_context: >
+  The confirm discipline is mine and is the piece worth a look before the coder
+  starts.
+
+  A destructive verb needs a confirmation that is issued for ONE verb and spent
+  ONCE. That is stricter than a boolean `confirm: true` flag, and deliberately
+  so: a flag can be replayed by a retry, a stale tab or a double-tap the network
+  duplicated, and the thing being replayed here is an emergency stop. Issue,
+  bind, spend.
+
+  Second: holiday quiet REFUSES a shift pick with a reason rather than silently
+  swallowing it. The intake said holiday "greys or ignores" the shift picks; the
+  greying is the page's job (BL-843) and the ignoring would be a silent refusal,
+  which the constitution's console-reason guardrail forbids.
+
+invariants:
+  - "One control plane: every verb executes through the extension host function Telegram Control already calls; this slice adds no second implementation of start, stop, holiday or shift."
+  - "A destructive verb without a valid, unspent, verb-bound confirmation changes nothing — no process is signalled, no state is written — and the refusal says why."
+  - "Exactly one shift is staffed at a time: any accepted shift pick leaves precisely one active shift, and holiday quiet never silently clears the shift that was picked before it."
+
+required_wiring:
+  - "extension/src/bridge/bridgeServer.ts::ControlRoutes::the control routes must be mounted on the running bridge, or the phone can never reach a verb (the BL-419 shape)"
+  - "extension/src/bridge/controlRoutes.ts::executeStopMode::the stop verbs must call the existing exec function, not a reimplementation of it"
+
+description: |
+  ## What
+
+  Bridge endpoints for the version-one control verbs, plus a control status the
+  phone can read:
+
+  - **status** — is the swarm running, is holiday quiet on, which shift is
+    staffed.
+  - **start**
+  - **drain-and-stop**
+  - **emergency-stop**
+  - **holiday on / off**
+  - **shift pick** — Day, Evening or Night.
+
+  ## What already exists, measured 2026-08-07
+
+  None of the verbs are new. In `extension/src/tools/`:
+
+  - `telegramCursorOperatorExec.ts` — `executeStopMode(repoRoot, 'drain' |
+    'emergency')`, the start path (bounce sentinel), pause/resume, shift
+    start/end, holiday add/clear.
+  - `telegramCursorOperatorPolicy.ts` — the durable BL-704 policy state
+    (`shift?: { name, startedAtMs, until? }`, `holidays: HolidayRange[]`) with
+    `isHolidayQuietToday`, `formatHolidayRefuse`, `formatShiftStatus`,
+    `applyHolidayAdd`, `applyHolidayClear` already written and tested.
+
+  This slice is therefore a routing and confirm-discipline job over existing
+  behaviour. **Calling those functions is the requirement, not an
+  implementation hint** — a second start/stop/holiday implementation behind an
+  HTTP handler is the defect this slice exists to avoid, and is what
+  `required_wiring` checks for.
+
+  ## The confirm discipline
+
+  A destructive verb (`drain-and-stop`, `emergency-stop`) is a two-step:
+
+  1. The caller asks to perform the verb. The bridge issues a confirmation bound
+     to that one verb, and performs nothing.
+  2. The caller submits the verb again carrying that confirmation. The bridge
+     spends it and executes.
+
+  A confirmation is valid for the verb it was issued for and for one use. A
+  confirmation presented for a different verb, or presented again after being
+  spent, is refused with its reason and changes nothing. Expiry is left to the
+  implementer's judgement as a bounded lifetime; the acceptance contract does not
+  pin a number.
+
+  `start`, `holiday on/off` and a shift pick need no confirmation: none of them
+  tears the swarm down.
+
+  ## Refusals speak
+
+  Every refusal carries a reason a human can read — "the swarm is already
+  running", "holiday quiet is on until 2026-08-09", "that confirmation was
+  already used". This is the constitution's own guardrail: a console screen must
+  display the server's failure reason whenever one is sent, and a bare status
+  code is not a reason. `formatHolidayRefuse` already produces exactly this kind
+  of text for the Telegram side and should be reused rather than paraphrased.
+
+  ## Holiday and shifts
+
+  Holiday quiet is the quiet switch. Day / Evening / Night are which shift is
+  staffed when not on holiday. While holiday quiet is on, a shift pick is refused
+  with its reason — and the shift that was staffed before holiday went on is
+  still staffed when holiday comes off. Holiday suppresses; it does not erase.
+
+  Per the human's ruling, "untick all shifts" is NOT a second quiet control: there
+  is no verb to clear the shift without picking another one.
+
+  ## Testability
+
+  Entirely inside this project's testable boundary: Node modules reachable
+  without VS Code, driven from the acceptance runner exactly as the other bridge
+  route slices are. Nothing here touches the Android surface.
+
+  ## E2E procedure QA will run
+
+  1. With the swarm running, read the control status over the bridge; confirm it
+     reports running, no holiday, and whatever shift the operator policy file
+     actually holds.
+  2. Submit `emergency-stop` with no confirmation; confirm the swarm is still
+     running and the response carries a readable reason.
+  3. Submit it again with the issued confirmation; confirm the swarm stops and
+     that it stopped the same way `/stop emergency` stops it from Telegram.
+  4. Replay the same confirmation; confirm refusal with a reason.
+  5. Turn holiday quiet on, attempt a shift pick, confirm the refusal names the
+     holiday; turn holiday off and confirm the previously staffed shift is still
+     staffed.
+  6. Confirm `formatShiftStatus` in Telegram and the bridge status agree — one
+     state, two readers.
+
+  ## Out of scope
+
+  - The Control page itself. BL-843.
+  - Pause timers, per-service bounce, model switches. Out of version one.
+  - Any change to how Telegram Control behaves.
+  - Authentication design. The bridge's existing auth applies unchanged; this
+    slice adds no new credential path.
+
+source: |
+  `backlog/INTAKE-bubble-control-shifts-holiday.md` (human via Let's Talk /
+  Cursor, 2026-07-31), drained 2026-08-07 as slice A of a 1:2 split under the
+  new BL-841 epic. The intake's verbs, confirm rule and holiday/shift UX ruling
+  are quoted verbatim in BL-841.

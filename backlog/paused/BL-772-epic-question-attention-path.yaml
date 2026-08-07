@@ -4,10 +4,10 @@ milestone: M8
 status: todo
 type: epic
 epic: question-attention-path
-priority: 77
+priority: 110
 depends_on: []
 mutation_cost: medium
-decomposes_into: [BL-773, BL-836, BL-837, BL-838]
+decomposes_into: [BL-773, BL-836, BL-837, BL-838, BL-846]
 remaining_slices:
   - "Slice B — Telegram answer controls and canonical relay for coordinator asks: confirm the tap/free-text paths behave for the coordinator exactly as they do for the specifier, and that a superseded ask's buttons stop being live."
   - "Slice C — RETIRED as written, 2026-08-06. It read 'Bubble announces a waiting question and speaks a nudge to answer in Telegram', which is strictly less than what the human then asked for on 2026-07-31: answer ON Bubble, not only be nudged to Telegram. Superseded by BL-836 (bridge read/answer routes), BL-837 (collapsed-bubble attention pulse) and BL-838 (question sheet). The one part of slice C those three do NOT cover is the SPOKEN nudge, kept as slice F below rather than folded in."
@@ -39,6 +39,18 @@ description: |
   `.swarmforge/operator/role-answers/<role>.json` and is delivered to the role
   as a `note`. Every slice here EXTENDS that path. None of them invents a
   parallel one.
+
+  **Correction, 2026-08-07:** "delivered to the role as a `note`" is the
+  DORMANT-role leg only, and reading it as the whole delivery story is what let
+  a real deadlock hide inside this epic's own premise. There are TWO legs — a
+  live-pane inject, then a queued note as fallback — and for a rotating role
+  the live leg can never fire, because pane resolution reads a `roles.tsv`
+  session mono-router never creates. A role that is BOTH the active resident
+  AND holding in-process work is forbidden by its own harness to read its
+  mailbox, so the queued note is unreachable and the answer strands. That is
+  **BL-846**, and it is what makes this epic's central claim ("answerable where
+  the human already watches") hold for every role rather than only for dormant
+  ones.
 
   ## Open design questions and the defaults taken
 
