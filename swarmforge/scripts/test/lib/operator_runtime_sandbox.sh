@@ -40,8 +40,36 @@ copy_operator_runtime_sandbox() {
     orphan_agent_reaper_lib.bb
     orphan_janitor_sweep_lib.bb
     orphan_janitor_lib.bb
+    # BL-849 (Darwin orphan-janitor) added this dependency to orphan_agent_
+    # reaper_sweep_lib.bb/orphan_janitor_lib.bb without updating this shared
+    # list - every sandboxed operator_runtime test was failing to load
+    # before this fix, unrelated to whatever that test is actually about.
+    process_table_lib.bb
     operator_ask.bb
     ambulance_lib.bb
+    hotfix_certification_lib.bb
+    # BL-848: hotfix-certification-sweep! shells to swarm_handoff.bb (never
+    # hand-writes an inbox file, per the coordinator-nudge constraint) - its
+    # full load-file transitive closure, so a sandboxed --tick-once can
+    # exercise that real send path end to end.
+    swarm_handoff.bb
+    handoff_inject_lib.bb
+    agent_runtime_lib.bb
+    agent_runtime_inject.bb
+    prompt_engine_lib.bb
+    chase_sweep_lib.bb
+    claim_progress_lib.bb
+    backlog_depth_lib.bb
+    pipeline_stage_lib.bb
+    salvage_lib.bb
+    duplicate_chain_guard_lib.bb
+    pre_qa_gate_lib.bb
+    acceptance_contract_gate_lib.bb
+    pre_qa_gate_gather_lib.bb
+    coordinator_config_lib.bb
+    required_stages_lib.bb
+    ticket_close_guard_lib.bb
+    mono_router_lib.bb
   )
 
   local f
