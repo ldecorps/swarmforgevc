@@ -137,6 +137,121 @@ class HandsFreeReArmGatePropertyTest {
         )
     }
 
+    /**
+     * BL-826 bounce (2026-08-07) regression property: the original sweep
+     * above starts its simulated `now` at `waitStartedAt` itself, modeling a
+     * UNIFORM poll cadence. Production's real scheduler
+     * (TalkEngine.scheduleHandsFreeListen) is two-tier: the first tick fires
+     * at [HandsFreeReArmGate.firstPollDelayMs], every later one at decide()'s
+     * own recheckAtMs. This sweep mirrors that real schedule and checks the
+     * property the bounce found broken: the true silence duration at the
+     * moment the gate arms (armTime - audioEndsAt, where audioEndsAt is when
+     * real playback actually, permanently stopped) must never fall short of
+     * the declared quiet tail by more than one poll step. A discrete sampler
+     * can't do better than that — but it must not do worse.
+     */
+    @Test
+    fun `first poll tick samples at the steady cadence, closing the two-tier blind window`() {
+        val rng = Random(20260807826L)
+        repeat(500) {
+            val waitStartedAt = rng.nextLong(0L, 10_000_000L)
+            val quietTailMs = rng.nextLong(1L, 2_000L)
+            val ceilingMs = rng.nextLong(quietTailMs, 8_000L)
+            val pollIntervalMs = rng.nextLong(20L, 500L)
+            // A cooldown wider than the poll interval, like the real
+            // HANDS_FREE_POST_SPEECH_MS (400ms) vs DEFAULT_POLL_INTERVAL_MS
+            // (150ms) -- the exact shape that created the bounce's blind spot.
+            val cooldownMs = rng.nextLong(pollIntervalMs, 2_000L)
+            // When real, continuous playback actually stops -- anywhere from
+            // immediately to past the ceiling.
+            val audioEndsAt = waitStartedAt + rng.nextLong(0L, ceilingMs + pollIntervalMs)
+
+            val armAt = simulateTwoTierPoll(
+                waitStartedAt, audioEndsAt, quietTailMs, ceilingMs, pollIntervalMs,
+                firstPollDelayMs = HandsFreeReArmGate.firstPollDelayMs(cooldownMs, followsPlayback = true, pollIntervalMs)
+            )
+
+            val ceilingAt = waitStartedAt + ceilingMs
+            if (armAt < ceilingAt) {
+                // Not a defensive ceiling arm -- the gate believes it saw a
+                // genuine quiet tail. Fails pre-fix: see the non-vacuity
+                // test below.
+                assertTrue(
+                    "armed at $armAt believing a ${quietTailMs}ms quiet tail elapsed, but real audio " +
+                        "didn't stop until $audioEndsAt (only ${armAt - audioEndsAt}ms of true silence) -- " +
+                        "waitStartedAt=$waitStartedAt pollIntervalMs=$pollIntervalMs cooldownMs=$cooldownMs",
+                    armAt - audioEndsAt >= quietTailMs - pollIntervalMs
+                )
+            }
+        }
+    }
+
+    // Non-vacuity: sampling the first tick at the caller's wider cooldown
+    // (production's behavior before the BL-826 bounce fix) fails the
+    // property above, using the exact scenario from the bounce evidence --
+    // proves the property exercises the fix, not passing by construction.
+    @Test
+    fun `sampling the first tick at the caller cooldown instead of the poll interval fails the property`() {
+        val waitStartedAt = 0L
+        val quietTailMs = 400L
+        val ceilingMs = 4_000L
+        val pollIntervalMs = 150L
+        val cooldownMs = 400L
+        // Real reply audio plays continuously almost all the way to the
+        // pre-fix first sample at cooldownMs (400ms), then stops.
+        val audioEndsAt = 390L
+
+        val armAt = simulateTwoTierPoll(
+            waitStartedAt, audioEndsAt, quietTailMs, ceilingMs, pollIntervalMs,
+            firstPollDelayMs = cooldownMs // the pre-fix behavior
+        )
+
+        assertTrue(
+            "expected the pre-fix schedule to arm having witnessed far less than the declared " +
+                "quiet tail (armed at $armAt, audio actually stopped at $audioEndsAt)",
+            armAt - audioEndsAt < quietTailMs - pollIntervalMs
+        )
+    }
+
+    /** Mirrors TalkEngine.HandsFreeListenPoll.run(): first tick at
+     *  [firstPollDelayMs], every later tick at decide()'s own recheckAtMs;
+     *  playback is modeled as continuously active until [audioEndsAt], then
+     *  permanently silent. Returns the `now` at which the gate arms. */
+    private fun simulateTwoTierPoll(
+        waitStartedAt: Long,
+        audioEndsAt: Long,
+        quietTailMs: Long,
+        ceilingMs: Long,
+        pollIntervalMs: Long,
+        firstPollDelayMs: Long
+    ): Long {
+        var now = waitStartedAt + firstPollDelayMs
+        var lastAudioActivityAt = waitStartedAt
+        var steps = 0
+        while (steps < 5_000) {
+            steps++
+            val playbackActive = now < audioEndsAt
+            if (playbackActive) lastAudioActivityAt = now
+            val decision = HandsFreeReArmGate.decide(
+                HandsFreeReArmGate.Input(
+                    nowMs = now,
+                    waitStartedAt = waitStartedAt,
+                    hasPlaybackToAwait = true,
+                    playbackActive = playbackActive,
+                    lastAudioActivityAt = lastAudioActivityAt,
+                    quietTailMs = quietTailMs,
+                    ceilingMs = ceilingMs,
+                    pollIntervalMs = pollIntervalMs
+                )
+            )
+            when (decision) {
+                is HandsFreeReArmGate.Decision.Arm -> return now
+                is HandsFreeReArmGate.Decision.NotYet -> now = decision.recheckAtMs
+            }
+        }
+        throw IllegalStateException("gate never resolved within $steps polls")
+    }
+
     @Test
     fun `a turn with no playback to await always arms immediately regardless of other inputs`() {
         val rng = Random(1)

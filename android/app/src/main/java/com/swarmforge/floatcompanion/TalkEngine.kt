@@ -445,14 +445,18 @@ class TalkEngine(private val appContext: Context) {
         clearAutoListen()
         if (!alive.get() || pausedAll || !handsFree) return
         // The tail clock starts now (the playback-done moment), not after
-        // delayMs — the existing delay doubles as the first quiet-tail
-        // sample, so a fast voice with no lingering audio still arms at the
-        // same ~delayMs mark as before; a slow one extends past it.
+        // delayMs. When there is no tail to await, the first (and often
+        // only) tick still fires at delayMs, preserving today's cooldown
+        // timing for those paths. When a tail IS being awaited
+        // (followsPlayback), the first sample must land at the same cadence
+        // as every later one (BL-826 bounce) — sampling at the wider delayMs
+        // instead leaves a blind window in which continuous audio ending
+        // shortly before that first sample goes completely unobserved.
         val waitStartedAt = System.currentTimeMillis()
         val poll = HandsFreeListenPoll(waitStartedAt, followsPlayback)
         val r = Runnable { poll.run() }
         autoListenRunnable = r
-        mainHandler.postDelayed(r, delayMs)
+        mainHandler.postDelayed(r, HandsFreeReArmGate.firstPollDelayMs(delayMs, followsPlayback))
     }
 
     /** Mutable poll state for one hands-free re-arm wait; see

@@ -78,4 +78,24 @@ object HandsFreeReArmGate {
 
     fun isWithinSettleWindow(armedAtMs: Long, nowMs: Long, settleMs: Long = POST_ARM_SETTLE_MS): Boolean =
         nowMs - armedAtMs < settleMs
+
+    /**
+     * BL-826 bounce (2026-08-07): delay before [TalkEngine.scheduleHandsFreeListen]'s
+     * FIRST poll tick. When a quiet tail is being awaited ([followsPlayback]),
+     * this must equal [pollIntervalMs] — the same cadence every later tick
+     * uses — not the caller's [cooldownMs]. [lastAudioActivityAt] only ever
+     * advances on a tick that observes playback active; sampling the first
+     * tick at the wider [cooldownMs] instead leaves a blind window of that
+     * width in which continuous audio ending shortly before the sample is
+     * never observed, so [decide] can later credit a full [quietTailMs] of
+     * silence that never actually elapsed. Using [pollIntervalMs] shrinks
+     * that unavoidable (any discrete sampler has one) blind window from
+     * [cooldownMs] down to the size of a single poll step. When there is no
+     * tail to await, the caller's own cooldown governs, unchanged.
+     */
+    fun firstPollDelayMs(
+        cooldownMs: Long,
+        followsPlayback: Boolean,
+        pollIntervalMs: Long = DEFAULT_POLL_INTERVAL_MS
+    ): Long = if (followsPlayback) pollIntervalMs else cooldownMs
 }
