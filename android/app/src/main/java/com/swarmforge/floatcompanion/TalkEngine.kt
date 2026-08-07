@@ -400,8 +400,13 @@ class TalkEngine(private val appContext: Context) {
     private fun onPlaybackDone() {
         if (!alive.get()) return
         if (phase == Phase.SPEAKING || phase == Phase.THINKING) {
+            // BL-826: onPlaybackDone can fire from THINKING (a stale signal
+            // from a player callback queued before a new turn started) —
+            // that path never actually played audio, so it must not wait
+            // out a quiet tail that has nothing to be quiet after.
+            val realPlaybackOccurred = phase == Phase.SPEAKING
             setPhase(Phase.READY)
-            scheduleHandsFreeListen(AudioTurnRecorder.HANDS_FREE_POST_SPEECH_MS)
+            scheduleHandsFreeListen(AudioTurnRecorder.HANDS_FREE_POST_SPEECH_MS, followsPlayback = realPlaybackOccurred)
         }
     }
 
@@ -427,18 +432,66 @@ class TalkEngine(private val appContext: Context) {
         }
     }
 
-    private fun scheduleHandsFreeListen(delayMs: Long) {
+    /**
+     * BL-826: the single funnel every hands-free re-arm route passes
+     * through — post-speech, error, THINKING, and recovery alike — so no
+     * route to the mic can bypass [HandsFreeReArmGate]. [followsPlayback]
+     * is true only when real playback just occurred (onPlaybackDone from
+     * SPEAKING); every other caller has no tail to wait out and the gate
+     * arms as soon as the existing [delayMs] cooldown elapses, preserving
+     * today's timing for those paths.
+     */
+    private fun scheduleHandsFreeListen(delayMs: Long, followsPlayback: Boolean = false) {
         clearAutoListen()
         if (!alive.get() || pausedAll || !handsFree) return
-        val r = Runnable {
-            // BL-716: ERROR now included — a connection failure lands there (not READY),
-            // and hands-free must still resume the listen loop once it clears.
-            if (alive.get() && !pausedAll && handsFree && (phase == Phase.READY || phase == Phase.ERROR)) {
-                startRecording(auto = true)
-            }
-        }
+        // The tail clock starts now (the playback-done moment), not after
+        // delayMs — the existing delay doubles as the first quiet-tail
+        // sample, so a fast voice with no lingering audio still arms at the
+        // same ~delayMs mark as before; a slow one extends past it.
+        val waitStartedAt = System.currentTimeMillis()
+        val poll = HandsFreeListenPoll(waitStartedAt, followsPlayback)
+        val r = Runnable { poll.run() }
         autoListenRunnable = r
         mainHandler.postDelayed(r, delayMs)
+    }
+
+    /** Mutable poll state for one hands-free re-arm wait; see
+     *  [scheduleHandsFreeListen]. Lives only for the duration of that wait —
+     *  a new call to [scheduleHandsFreeListen] (via [clearAutoListen])
+     *  discards it. */
+    private inner class HandsFreeListenPoll(
+        private val waitStartedAt: Long,
+        private val followsPlayback: Boolean
+    ) {
+        private var lastAudioActivityAt = waitStartedAt
+
+        fun run() {
+            // BL-716: ERROR included — a connection failure lands there (not
+            // READY), and hands-free must still resume the listen loop once
+            // it clears.
+            if (!alive.get() || pausedAll || !handsFree) return
+            if (phase != Phase.READY && phase != Phase.ERROR) return
+            val now = System.currentTimeMillis()
+            val playbackActive = followsPlayback && replyPlayer?.isAudioActive() == true
+            if (playbackActive) lastAudioActivityAt = now
+            val decision = HandsFreeReArmGate.decide(
+                HandsFreeReArmGate.Input(
+                    nowMs = now,
+                    waitStartedAt = waitStartedAt,
+                    hasPlaybackToAwait = followsPlayback,
+                    playbackActive = playbackActive,
+                    lastAudioActivityAt = lastAudioActivityAt
+                )
+            )
+            when (decision) {
+                is HandsFreeReArmGate.Decision.Arm -> startRecording(auto = true)
+                is HandsFreeReArmGate.Decision.NotYet -> {
+                    val r = Runnable { run() }
+                    autoListenRunnable = r
+                    mainHandler.postDelayed(r, (decision.recheckAtMs - now).coerceAtLeast(1L))
+                }
+            }
+        }
     }
 
     private fun clearAutoListen() {
