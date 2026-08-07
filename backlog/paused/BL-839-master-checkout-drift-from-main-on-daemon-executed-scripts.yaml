@@ -128,3 +128,6 @@ notes: |
   during BL-835's run collaterally undid BL-823's already-landed close-to-done
   commit (fixed in 712723f4). That one was caught by a human reading the log;
   this ticket is about the case nobody happens to read.
+
+notes: |
+  Parked 2026-08-07 for BL-848 ambulance/queue-jump (swarm-reliability orthogonality). Restore after BL-848 leaves active or human says otherwise.
