@@ -1331,20 +1331,23 @@
 
 (defn- git-log-main [limit]
   (try
-    (let [fmt "%H%x1f%s%x1f%b%x1e"
+    (let [fmt "%H%x1f%s%x1f%cd%x1f%b%x1e"
           {:keys [exit out]} (process/sh {:continue true :dir (str project-root)}
-                                          "git" "log" "main" "-n" (str limit) (str "--format=" fmt))]
+                                          "git" "log" "main" "-n" (str limit)
+                                          "--date=format:%Y-%m-%d" (str "--format=" fmt))]
       (if (zero? exit)
         (->> (str/split (str out) #"")
              (map str/trim)
              (remove str/blank?)
              (keep (fn [rec]
-                     (let [parts (str/split rec #"" 3)
-                           sha (nth parts 0 nil)]
+                     (let [parts (str/split rec #"" 4)
+                           sha (nth parts 0 nil)
+                           detected-at (str/trim (nth parts 2 ""))]
                        (when-not (str/blank? sha)
                          {:commit (subs sha 0 (min 10 (count sha)))
                           :subject (str/trim (nth parts 1 ""))
-                          :message (str (str/trim (nth parts 1 "")) "\n\n" (str/trim (nth parts 2 "")))})))))
+                          :detected-at (when-not (str/blank? detected-at) detected-at)
+                          :message (str (str/trim (nth parts 1 "")) "\n\n" (str/trim (nth parts 3 "")))})))))
         []))
     (catch Exception _ [])))
 
@@ -1359,20 +1362,31 @@
   (boolean (some (fn [id] (= "done" (ticket-status-lib/current-status project-root id)))
                  (hotfix-certification-lib/cited-ticket-ids message))))
 
+(defn- ms->ymd
+  "epoch-ms -> YYYY-MM-DD in the local zone, matching hotfix_ledger_update.bb's
+   own `today` convention (java.time.LocalDate/now, str-formatted)."
+  [ms]
+  (str (.toLocalDate (.atZone (java.time.Instant/ofEpochMilli (long ms))
+                               (java.time.ZoneId/systemDefault)))))
+
 (defn- resolve-main-commits
   "Recent `main` commits, enriched for hotfix_certification_lib.bb's
    assemble-report. Commits already in the ledger skip the expensive
    per-commit git-changed-files/cited-ticket lookups entirely - assemble-
    report's own known-commits check already excludes them from both the
-   new-entry and unaccounted outputs regardless of these flags' values."
-  [known-commits]
-  (vec (for [c (git-log-main hotfix-cert-scan-limit)]
-         (if (contains? known-commits (:commit c))
-           (assoc c :functional? false :hotfix-declared? false :cited-ticket-done? false)
-           (assoc c
-                  :functional? (hotfix-certification-lib/functional-commit? (git-changed-files (:commit c)))
-                  :hotfix-declared? (hotfix-certification-lib/hotfix-declared? (:message c))
-                  :cited-ticket-done? (cited-ticket-reached-done? (:message c)))))))
+   new-entry and unaccounted outputs regardless of these flags' values.
+   :detected-at comes from git-log-main's own commit-date capture; `now` is
+   only a fallback for the (should-never-happen) case git's date field comes
+   back blank, so a ledger entry is never left with no detection date."
+  [known-commits now]
+  (vec (for [c0 (git-log-main hotfix-cert-scan-limit)]
+         (let [c (update c0 :detected-at #(or % (ms->ymd now)))]
+           (if (contains? known-commits (:commit c))
+             (assoc c :functional? false :hotfix-declared? false :cited-ticket-done? false)
+             (assoc c
+                    :functional? (hotfix-certification-lib/functional-commit? (git-changed-files (:commit c)))
+                    :hotfix-declared? (hotfix-certification-lib/hotfix-declared? (:message c))
+                    :cited-ticket-done? (cited-ticket-reached-done? (:message c))))))))
 
 (defn- send-hotfix-cert-mint-nudge! [entry]
   (let [draft-dir (fs/path op-dir "hotfix-cert-drafts")
@@ -1398,7 +1412,7 @@
     (try
       (let [raw-entries (read-hotfix-ledger-entries)
             known-commits (set (map :commit raw-entries))
-            main-commits (resolve-main-commits known-commits)
+            main-commits (resolve-main-commits known-commits now)
             enriched-entries (mapv (fn [e] (merge e (resolve-stamp-ticket-facts (:stamp-ticket e)))) raw-entries)
             cert-state (read-hotfix-cert-state)
             report (hotfix-certification-lib/assemble-report
