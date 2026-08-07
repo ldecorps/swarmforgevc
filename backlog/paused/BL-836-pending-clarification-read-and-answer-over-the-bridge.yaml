@@ -1,0 +1,138 @@
+id: BL-836
+title: "A waiting clarification is readable and answerable over the bridge, through the same delivery a Telegram tap already uses"
+milestone: M8
+type: feature
+status: todo
+epic: question-attention-path
+human_approval: approved
+assigned_to: none
+priority: 79
+direction: human-requested
+depends_on: []
+mutation_cost: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-836-pending-clarification-read-and-answer-over-the-bridge.feature
+
+approval_context: >
+  Two decisions of mine are worth a look before a coder starts, both answering
+  open questions the intake explicitly left to the specifier.
+
+  (1) When more than one role is waiting, v1 offers the LONGEST-WAITING one, not
+  a queue. The intake asked "if two roles ask, v1 show one (which?) or a short
+  queue" and left it open. Oldest-first is deterministic, needs no new UI, and
+  surfaces the question that has blocked a role longest. The cost: a second
+  waiting role stays invisible until the first is answered. A queue is a later
+  slice if that bites.
+
+  (2) A stale answer is REFUSED, not applied. If the question changed between
+  read and submit, the bridge rejects with a reason rather than delivering the
+  answer to whatever is pending now. This is the "stale / already-answered
+  question never re-arms" requirement taken literally, and it is the decision
+  that is expensive to reverse once Bubble is built against it.
+
+  The route names are mine and are fixed by this ticket so the wiring gate can
+  check them: GET /lets-talk/pending-question and POST
+  /lets-talk/pending-question/answer.
+
+invariants:
+  - "An answer is applied through exactly one path: the same pending record and the same delivery legs the Telegram tap uses. No second pending-question or answer store is ever written."
+  - "An answer that does not match the currently pending ask is never delivered: a stale submission is refused with its reason, and the role receives nothing."
+
+required_wiring:
+  - "extension/src/bridge/bridgeServer.ts::pending-question::the bridge server must dispatch to both pending-clarification routes; a route module the server never registers is unreachable (the BL-419 shape)"
+
+description: |
+  ## What
+
+  Add two bridge routes so a surface other than Telegram can see a waiting
+  clarifying question and answer it:
+
+  - `GET /lets-talk/pending-question` — the longest-waiting outstanding role ask,
+    as asking role, question text, and the asker's own options when it has any;
+    an explicit "nothing pending" otherwise.
+  - `POST /lets-talk/pending-question/answer` — submits an answer (a listed
+    option or free text) for a named role's currently pending ask.
+
+  Both live in the `/lets-talk` family Bubble is already paired and authorized
+  against, so this adds no second auth surface.
+
+  ## Why this is wiring, not a new mechanism
+
+  The mechanism is already whole. `role_ask.bb` writes the per-role pending
+  record at `.swarmforge/operator/role-awaiting/<role>.json`; the Telegram front
+  desk reads it (`readRoleAwaitingAnswer`), delivers an answer on one of two legs
+  — a live pane inject, or a queued `note` for a dormant role
+  (`enqueueRoleAnswerNote`) — and then clears the record
+  (`clearRoleAwaitingAnswer`). Verified against `main` before speccing: those
+  three exported functions are in `extension/src/tools/telegram-front-desk-bot.ts`
+  and are the only writers of that lifecycle.
+
+  What is missing is purely reach: `grep` for route registrations in
+  `extension/src/bridge/bridgeServer.ts` returns 27 paths and none of them is a
+  role-ask surface, and `BridgeClient.kt`'s entire network surface is
+  `/lets-talk/new-session` and `/lets-talk/turn`. So the phone cannot see or
+  answer a question for one reason only: nothing serves it.
+
+  This slice therefore REUSES those three functions. If their import direction is
+  wrong for the bridge, extract them to a shared module — but never duplicate the
+  lifecycle. A second copy of "clear the pending record" is a second decision
+  system, which this epic's own constraint forbids.
+
+  ## The two behaviours that carry the risk
+
+  **Which question, when several wait.** `role_ask.bb`'s one-pending guard is per
+  role, so several roles can each be waiting at once. v1 offers the longest
+  waiting by ask time. Deterministic and needs no new UI.
+
+  **What happens to a stale answer.** The human's phone will render a question and
+  then be put in a pocket. By the time they tap, that ask may have been answered
+  on Telegram, cancelled, or superseded by a newer one from the same role. An
+  answer whose target is no longer the pending ask is refused with a stated
+  reason and delivered nowhere. Silently applying it would put an answer to a
+  question the human never read in front of a role — the worst failure this
+  surface can have.
+
+  ## Scope
+
+  Bridge side only. No Android work, no UI. The read model and the answer path
+  are pure logic plus file I/O, testable in the Node acceptance runner today,
+  which is why this slice is unblocked while its two consumers are not.
+
+source: |
+  Drained from `backlog/INTAKE-bubble-clarification-blink-answer-sheet.md`
+  (human via Let's Talk / Cursor 2026-07-31, "capture only — specifier should
+  weigh in"). That intake is split 1:3 (BL-680 consolidation authority): this
+  ticket is the bridge half that both phone halves need, BL-837 is the collapsed
+  bubble's attention pulse, BL-838 is the question sheet. Every operator
+  directive in the intake survives verbatim in substance across the three; the
+  ones this ticket carries are locked decision 4 ("tapping a listed choice
+  submits the answer on the existing canonical answer channel — no second
+  decision system") and locked decision 2's clear-when-done requirement, whose
+  server half is the cleared pending record.
+
+notes: |
+  ## Verified against `main` before speccing (2026-08-06)
+
+  - `role_ask.bb` writes only `.swarmforge/operator/role-awaiting/<role>.json`;
+    `grep -rln 'role-awaiting\|role-answers'` over `.bb`/`.ts`/`.js`/`.sh`/`.kt`
+    returns five files, of which the front-desk bot is the only non-test consumer.
+  - `bridgeServer.ts` serves 27 routes; none is a role-ask surface.
+  - `BridgeClient.kt` exposes `submitTextTurn`, `submitAudioTurn`, `newSession`
+    and nothing else — confirming the phone has no path to build on yet.
+
+  ## IR-DRY
+
+  Feature file parses clean and was IR-DRY checked. The remaining findings are
+  all parameterized-step families ("the specifier has an <question-kind>
+  clarifying question pending" against its concrete instances) or deliberate
+  polarity pairs; the one genuinely distinct submit step — an answer aimed at the
+  EARLIER question — is kept distinct on purpose, since it is the stale case.
+
+  ## e2e procedure QA will run
+
+  With the swarm live: raise a real ask with `role_ask.bb --role specifier`,
+  confirm `GET /lets-talk/pending-question` returns it; submit an option through
+  `POST /lets-talk/pending-question/answer`; confirm the specifier receives the
+  answer (pane inject if live, `ready_for_next.sh` note if dormant), that
+  `.swarmforge/operator/role-awaiting/specifier.json` is gone, and that
+  re-submitting the same answer is refused rather than delivered twice.
