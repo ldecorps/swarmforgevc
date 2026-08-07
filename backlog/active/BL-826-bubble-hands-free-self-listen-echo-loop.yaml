@@ -216,3 +216,6 @@ notes: |
   feature would delay a live fault, and the merged ticket would breach the
   BL-634 envelope. They do share the human-vs-playback discriminator, which is
   why both sit in the `bubble-voice-barge-in` epic's orbit.
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-07, by: architect, blamed: coder, class: behavior, commit: 30ad2f4add, evidence: backlog/evidence/BL-826-bounce-20260807.md }
