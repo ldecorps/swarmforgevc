@@ -140,4 +140,33 @@ class HandsFreeReArmGateTest {
         assertTrue(decision is HandsFreeReArmGate.Decision.NotYet)
         assertTrue((decision as HandsFreeReArmGate.Decision.NotYet).recheckAtMs <= 4_000L)
     }
+
+    // BL-826 bounce (2026-08-07) fix, direct coverage. The property test's
+    // "steady cadence" sweep exercises firstPollDelayMs only inside a full
+    // two-tier simulation; this asserts the function's own contract in
+    // isolation, matching how TalkEngine.scheduleHandsFreeListen actually
+    // calls it (once, per re-arm schedule).
+    @Test
+    fun `first poll delay is the steady poll cadence when a quiet tail is being awaited`() {
+        assertEquals(
+            HandsFreeReArmGate.DEFAULT_POLL_INTERVAL_MS,
+            HandsFreeReArmGate.firstPollDelayMs(cooldownMs = 400L, followsPlayback = true)
+        )
+        assertEquals(
+            75L,
+            HandsFreeReArmGate.firstPollDelayMs(cooldownMs = 400L, followsPlayback = true, pollIntervalMs = 75L)
+        )
+    }
+
+    @Test
+    fun `first poll delay is the caller's cooldown when there is no tail to await`() {
+        assertEquals(
+            400L,
+            HandsFreeReArmGate.firstPollDelayMs(cooldownMs = 400L, followsPlayback = false)
+        )
+        assertEquals(
+            2_500L,
+            HandsFreeReArmGate.firstPollDelayMs(cooldownMs = 2_500L, followsPlayback = false, pollIntervalMs = 75L)
+        )
+    }
 }
