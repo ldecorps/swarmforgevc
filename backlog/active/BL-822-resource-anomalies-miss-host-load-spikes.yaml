@@ -9,7 +9,7 @@ severity: medium
 priority: 48
 direction: human-requested
 depends_on: []
-assigned_to: none
+assigned_to: specifier
 mutation_cost: medium
 invariants:
   - "A day with sustained host load well above core count is distinguishable in the cost-health sidecar from a quiet day — not rendered as 'none found' while suiteDurationTrend.warn is true from the same contention."
