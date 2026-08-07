@@ -4,7 +4,7 @@ milestone: M8
 type: defect
 status: todo
 epic: swarm-reliability
-human_approval: pending
+human_approval: approved
 severity: high
 priority: 40
 direction: agent-surfaced
@@ -26,6 +26,13 @@ approval_context: >
   first needs no launch-path change; the second is exact but touches every
   role's launch wrapper. Specifier leans toward the first, gated on a
   configured command name, but this is a real fork worth a human call.
+
+  RESOLVED 2026-08-07: human approved without overriding the lean, so the
+  fork settles to option one — descend the pane_pid's process tree and
+  select by a configured command name. The coder is not waiting on a
+  further ruling. If that resolution turns out not to survive contact with
+  a pack whose agent is not a direct descendant, that is a spec-gap note
+  back to the specifier, not a silent switch to the launch-pid approach.
 
 source: |
   Probed live on 2026-08-07 while speccing BL-822.
@@ -88,10 +95,10 @@ description: |
 
   ## Fix direction
 
-  1. Resolve the role's AGENT pid rather than the pane's root shell — either by
+  1. Resolve the role's AGENT pid rather than the pane's root shell, by
      walking the pane_pid's descendants and selecting by a configured command
-     name (and/or largest RSS), or by recording the agent pid at launch into
-     `.swarmforge/`. See approval_context: this fork wants a human ruling.
+     name (see approval_context: the human-approved resolution of that fork;
+     recording the agent pid at launch was the rejected alternative).
   2. When no agent process can be identified for a role, record NO sample for
      it — the existing "skip a role whose pid or stats will not resolve" path
      already has the right shape. Never fall back to the shell, which is how a
