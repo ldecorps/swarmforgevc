@@ -9,10 +9,9 @@ Feature: Coordinator-owned ticket lifecycle ledger
   # backlog folder transition. The coordinator records and reports only; it
   # gains no new power over promotion or gating.
   #
-  # PARKED AS .feature.draft per BL-233: this slice is not built, so a live
-  # *.feature here would have no step handlers and would hard-fail the
-  # acceptance runner for every other ticket. The coder renames this to
-  # .feature and lands its step handlers in the same parcel.
+  # Step handlers: specs/pipeline/steps/bl819TicketLifecycleLedgerSteps.js,
+  # driving the real compiled lean-ledger-record.js CLI and
+  # leanLedgerStore.ts/leanLedgerCompose.ts against fixture repos.
 
   Background:
     Given a coordinator with a lean ledger enabled for the current shift

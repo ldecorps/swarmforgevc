@@ -5,7 +5,7 @@ type: defect
 severity: high
 status: todo
 epic: swarm-reliability
-priority: 66
+priority: 96
 direction: normal
 mutation_cost: low
 acceptance: specs/features/BL-801-tmp-cleanup-registry-survives-subshell.feature.draft

@@ -4,9 +4,10 @@ milestone: M8
 status: todo
 type: feature
 epic: lean-aware-coordinator
-priority: 1
+priority: 3
 direction: human-requested
 human_approval: approved
+assigned_to: coder
 severity: n/a
 depends_on: []
 mutation_cost: medium
@@ -108,6 +109,26 @@ out_of_scope: |
     out-of-scope, verbatim).
 
 notes: |
+  2026-08-07 human: stays in active/ with BL-773 for specifier triage.
+  Specifier may close/reshape either ticket and mint a third if a combined
+  design is cleaner than shipping both as written.
+
+  ## Specifier triage outcome, 2026-08-07 — unchanged, and deliberately not combined
+
+  This ticket is kept exactly as written. A combined BL-773/BL-819 design was
+  considered and rejected: a human-attention channel and a durable telemetry
+  ledger are orthogonal concerns with no shared surface, and merging them
+  would mint an oversized incoherent ticket (BL-634 envelope discipline).
+
+  The mid-verification note-delivery incident the human's note points at is
+  neither ticket's: it was root-caused to role→pane resolution and specced as
+  **BL-846** (`type: defect`, `severity: high`, `backlog/paused/`). Nothing in
+  this ledger slice changes as a result — but BL-846's shape is a useful
+  precedent for invariant 2 here, since it is the same "compose instruments
+  that already ship, add no new producer" posture.
+
+  Ready to route to coder as written; no re-spec needed.
+
   Drained from the URGENT intake ahead of the ten Bubble/console intakes at
   backlog root, per the human's explicit ordering instruction (decision 9).
 
@@ -116,3 +137,6 @@ notes: |
   slice's own documenter pass rather than split into a third orphan docs
   ticket — the duty is not documentable until the ledger it describes exists.
   The specifier writes the coordinator.prompt half itself, per Article 1.2.
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-07, by: architect, blamed: coder, class: behavior, commit: a6f61c2895, evidence: backlog/evidence/BL-819-architect-bounce-20260807.md }

@@ -5,7 +5,7 @@ type: defect
 status: hold
 epic: swarm-reliability
 assigned_to:
-priority: 2
+priority: 6
 mutation_cost: medium
 direction: swarm-surfaced
 depends_on: []
