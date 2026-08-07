@@ -385,15 +385,7 @@ export function buildCostHealthSidecar(
   if (suiteDurationTrend) {
     sidecar.suiteDurationTrend = suiteDurationTrend;
   }
-  if (costPerTicketSeries) {
-    sidecar.costPerTicket = {
-      average: costPerTicketSeries.series.length > 0 ? trendedFromSeries(costPerTicketSeries.series) : null,
-      sampleCount: costPerTicketSeries.sampleCount,
-      excludedCount: costPerTicketSeries.excludedCount,
-      series: costPerTicketSeries.series,
-      basis: COST_PER_TICKET_BASIS,
-    };
-  }
+  attachCostPerTicket(sidecar, costPerTicketSeries);
   if (topExpensiveOriginsByHorizon) {
     sidecar.topExpensiveOriginsByHorizon = topExpensiveOriginsByHorizon;
   }
@@ -405,6 +397,22 @@ export function buildCostHealthSidecar(
   }
   attachFlowBalanceRework(sidecar.flowBalance, reworkInputs);
   return sidecar;
+}
+
+// BL-635-style split: kept buildCostHealthSidecar's optional-field attach a
+// single non-branching call, same reason attachFlowBalanceRework already
+// exists as its own function (mirrors that pattern for this section).
+function attachCostPerTicket(sidecar: CostHealthSidecar, costPerTicketSeries?: CostPerTicketSeriesResult): void {
+  if (!costPerTicketSeries) {
+    return;
+  }
+  sidecar.costPerTicket = {
+    average: costPerTicketSeries.series.length > 0 ? trendedFromSeries(costPerTicketSeries.series) : null,
+    sampleCount: costPerTicketSeries.sampleCount,
+    excludedCount: costPerTicketSeries.excludedCount,
+    series: costPerTicketSeries.series,
+    basis: COST_PER_TICKET_BASIS,
+  };
 }
 
 // ── markdown renderer (pure, cost-05b/05c) ──────────────────────────────
@@ -469,22 +477,26 @@ function renderCostPerTicketLines(costPerTicket: CostPerTicketSummary | undefine
 // listing its rolled-up groups (already summed-cost descending from
 // rollupLlmInvocationsByOrigin) with unknown-cost origins noted rather than
 // silently folded into the total.
+function renderOriginGroupLine(group: LlmCostRollupGroup): string {
+  const label = originLabel(group.key);
+  const unknownNote = group.unknownCostCount > 0 ? ` (${group.unknownCostCount} unpriced)` : '';
+  return `  - ${label}: $${group.costUsd.toFixed(2)}${unknownNote}`;
+}
+
+function renderHorizonOriginLines(horizon: LlmCostHorizon, groups: LlmCostRollupGroup[] | undefined): string[] {
+  if (!groups || groups.length === 0) {
+    return [];
+  }
+  return [`- ${horizon}:`, ...groups.map(renderOriginGroupLine)];
+}
+
 function renderTopExpensiveOriginsLines(byHorizon: Record<LlmCostHorizon, LlmCostRollupGroup[]> | undefined): string[] {
   if (!byHorizon) {
     return [];
   }
   const lines: string[] = ['', '**Top expensive origins:**'];
   for (const horizon of Object.keys(LLM_COST_HORIZONS_MS) as LlmCostHorizon[]) {
-    const groups = byHorizon[horizon];
-    if (!groups || groups.length === 0) {
-      continue;
-    }
-    lines.push(`- ${horizon}:`);
-    for (const group of groups) {
-      const label = originLabel(group.key);
-      const unknownNote = group.unknownCostCount > 0 ? ` (${group.unknownCostCount} unpriced)` : '';
-      lines.push(`  - ${label}: $${group.costUsd.toFixed(2)}${unknownNote}`);
-    }
+    lines.push(...renderHorizonOriginLines(horizon, byHorizon[horizon]));
   }
   return lines.length > 2 ? lines : [];
 }

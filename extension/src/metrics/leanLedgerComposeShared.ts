@@ -23,6 +23,10 @@ export function definedData(fields: Record<string, LeanLedgerDataValue | undefin
   return data;
 }
 
+function isTicketYamlEntry(entry: fs.Dirent, ticket: string): boolean {
+  return entry.isFile() && entry.name.startsWith(`${ticket}-`) && entry.name.endsWith('.yaml');
+}
+
 // Recursive: a ticket may sit flat under backlog/active/ or nested under
 // backlog/done/<milestone>/ (this project's own close-into-done/<milestone>
 // convention) by the time its lifecycle is recorded.
@@ -41,7 +45,7 @@ function findTicketYamlPathUnder(dir: string, ticket: string): string | null {
         return found;
       }
     }
-    if (entry.isFile() && entry.name.startsWith(`${ticket}-`) && entry.name.endsWith('.yaml')) {
+    if (isTicketYamlEntry(entry, ticket)) {
       return full;
     }
   }

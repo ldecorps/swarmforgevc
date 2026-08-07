@@ -154,6 +154,37 @@ test('composeStageSkipEvents ignores a missing routing-skips.jsonl and a malform
   assert.deepEqual(composeStageSkipEvents(roles, 'BL-819'), []);
 });
 
+test('composeStageSkipEvents ignores a syntactically valid JSON line missing a required field (not just invalid JSON)', () => {
+  const wt = mkTmp();
+  fs.mkdirSync(path.join(wt, '.swarmforge'), { recursive: true });
+  // valid JSON, but no `created_at` - a distinct rejection path from the
+  // "not json" case above (JSON.parse succeeds, the shape check fails).
+  const shapeInvalid = { 'ticket-id': 'BL-819', from: 'coder', to: 'QA', skipped: ['documenter'], reasons: {} };
+  fs.writeFileSync(path.join(wt, '.swarmforge', 'routing-skips.jsonl'), JSON.stringify(shapeInvalid) + '\n');
+  const roles = [{ role: 'coder', worktreeName: 'coder', worktreePath: wt }];
+  assert.deepEqual(composeStageSkipEvents(roles, 'BL-819'), []);
+});
+
+test('composeStageSkipEvents excludes another ticket\'s routing-skip entries', () => {
+  const wt = mkTmp();
+  fs.mkdirSync(path.join(wt, '.swarmforge'), { recursive: true });
+  const otherTicket = { 'ticket-id': 'BL-820', from: 'coder', to: 'QA', skipped: ['documenter'], reasons: {}, created_at: '2026-08-07T09:00:00.000Z' };
+  fs.writeFileSync(path.join(wt, '.swarmforge', 'routing-skips.jsonl'), JSON.stringify(otherTicket) + '\n');
+  const roles = [{ role: 'coder', worktreeName: 'coder', worktreePath: wt }];
+  assert.deepEqual(composeStageSkipEvents(roles, 'BL-819'), []);
+});
+
+test('composeStageSkipEvents defaults reasons to {} when the field is absent, rather than throwing or fabricating text', () => {
+  const wt = mkTmp();
+  fs.mkdirSync(path.join(wt, '.swarmforge'), { recursive: true });
+  const noReasons = { 'ticket-id': 'BL-819', from: 'coder', to: 'QA', skipped: ['documenter'], created_at: '2026-08-07T09:00:00.000Z' };
+  fs.writeFileSync(path.join(wt, '.swarmforge', 'routing-skips.jsonl'), JSON.stringify(noReasons) + '\n');
+  const roles = [{ role: 'coder', worktreeName: 'coder', worktreePath: wt }];
+  const events = composeStageSkipEvents(roles, 'BL-819');
+  assert.equal(events.length, 1);
+  assert.equal(events[0].data.reason, '');
+});
+
 // ── composeStallEvents (chaser-telemetry, time-window correlated) ──────
 
 function writeChaserTelemetry(mainWorktreePath, monthKey, lines) {
@@ -190,6 +221,37 @@ test('composeStallEvents skips (never guesses) a chase event whose timestamp fal
   writeHandoff(completedDir(main), '00_b.handoff', { task: 'BL-820-y', enqueued_at: '2026-08-07T08:05:00Z', dequeued_at: '2026-08-07T08:25:00Z', completed_at: '2026-08-07T08:50:00Z' });
   writeChaserTelemetry(main, '2026-08', [{ type: 'chase', role: 'cleaner', at: '2026-08-07T08:15:00.000Z', count: 1 }]);
   const roles = [{ role: 'cleaner', worktreeName: 'cleaner', worktreePath: main }];
+  assert.deepEqual(composeStallEvents(main, roles, 'BL-819'), []);
+});
+
+test('composeStallEvents reports count as null (never fabricated) when the chaser telemetry record carries no count field', () => {
+  const main = mkTmp();
+  writeHandoff(completedDir(main), '00_a.handoff', { task: 'BL-819-x', enqueued_at: '2026-08-07T08:00:00Z', dequeued_at: '2026-08-07T08:20:00Z', completed_at: '2026-08-07T08:30:00Z' });
+  writeChaserTelemetry(main, '2026-08', [{ type: 'respawn', role: 'coder', at: '2026-08-07T08:10:00.000Z' }]);
+  const roles = [{ role: 'coder', worktreeName: 'coder', worktreePath: main }];
+  const events = composeStallEvents(main, roles, 'BL-819');
+  assert.equal(events.length, 1);
+  assert.equal(events[0].data.eventType, 'respawn');
+  assert.equal(events[0].data.count, null);
+});
+
+test('composeStallEvents excludes an unambiguous single-window match that belongs to a different ticket than the one requested', () => {
+  const main = mkTmp();
+  // Exactly one role window contains the event, and it is BL-820's, not
+  // BL-819's - distinct from the "outside every window" (zero candidates)
+  // and "two overlapping windows" (two candidates) cases already covered:
+  // this is one clean, unambiguous match for the WRONG ticket.
+  writeHandoff(completedDir(main), '00_a.handoff', { task: 'BL-820-y', enqueued_at: '2026-08-07T08:00:00Z', dequeued_at: '2026-08-07T08:20:00Z', completed_at: '2026-08-07T09:00:00Z' });
+  writeChaserTelemetry(main, '2026-08', [{ type: 'chase', role: 'coder', at: '2026-08-07T08:30:00.000Z', count: 1 }]);
+  const roles = [{ role: 'coder', worktreeName: 'coder', worktreePath: main }];
+  assert.deepEqual(composeStallEvents(main, roles, 'BL-819'), []);
+});
+
+test('composeStallEvents drops a chaser telemetry record whose own timestamp is unparseable', () => {
+  const main = mkTmp();
+  writeHandoff(completedDir(main), '00_a.handoff', { task: 'BL-819-x', enqueued_at: '2026-08-07T08:00:00Z', dequeued_at: '2026-08-07T08:20:00Z', completed_at: '2026-08-07T08:30:00Z' });
+  writeChaserTelemetry(main, '2026-08', [{ type: 'chase', role: 'coder', at: 'not-a-timestamp', count: 1 }]);
+  const roles = [{ role: 'coder', worktreeName: 'coder', worktreePath: main }];
   assert.deepEqual(composeStallEvents(main, roles, 'BL-819'), []);
 });
 

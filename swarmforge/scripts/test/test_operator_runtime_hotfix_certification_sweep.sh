@@ -113,6 +113,8 @@ check "01: the newly-declared hotfix commit was appended to the ledger" \
   "[[ \"\$(ledger_text \"$ROOT\")\" == *\"commit: $DECLARED_SHA\"* ]]"
 check "01: the new entry starts pending, not certified" \
   "grep -A3 \"commit: $DECLARED_SHA\" \"$ROOT/backlog/hotfix-ledger.yaml\" | grep -q 'state: pending'"
+check "01: the new entry's detected_at is a real YYYY-MM-DD date, never blank (BL-848 QA bounce)" \
+  "grep -A3 \"commit: $DECLARED_SHA\" \"$ROOT/backlog/hotfix-ledger.yaml\" | grep -qE 'detected_at: [0-9]{4}-[0-9]{2}-[0-9]{2}$'"
 check "01: the plain functional commit citing no ticket is reported unaccounted" \
   "[[ \"\$(runtime_log \"$ROOT\")\" == *\"hotfix-certification-unaccounted\"*\"$UNACCOUNTED_SHA\"* ]]"
 check "01: the doc-only commit is never reported unaccounted" \

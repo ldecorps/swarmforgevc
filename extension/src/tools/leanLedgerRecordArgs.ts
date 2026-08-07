@@ -4,6 +4,8 @@
 // in-process against a fixture directory without needing a real git repo -
 // resolveProjectRoot requires `git rev-parse`, which a plain fixture dir
 // does not have.
+import { parseFlagPairs } from './bounceArgsCore';
+
 export interface LeanLedgerRecordArgs {
   ticket: string;
   target?: string;
@@ -14,21 +16,8 @@ const TICKET_PATTERN = /^(BL|GH)-\d+$/i;
 const FLAG_NAMES = ['--ticket', '--target'] as const;
 type FlagName = (typeof FLAG_NAMES)[number];
 
-function parseFlags(argv: string[]): Partial<Record<FlagName, string>> | null {
-  const flags: Partial<Record<FlagName, string>> = {};
-  for (let i = 0; i < argv.length; i += 2) {
-    const flag = argv[i];
-    const value = argv[i + 1];
-    if (!FLAG_NAMES.includes(flag as FlagName) || value === undefined) {
-      return null;
-    }
-    flags[flag as FlagName] = value;
-  }
-  return flags;
-}
-
 export function parseArgs(argv: string[]): LeanLedgerRecordArgs | null {
-  const flags = parseFlags(argv);
+  const flags = parseFlagPairs(argv, FLAG_NAMES);
   if (!flags) {
     return null;
   }
