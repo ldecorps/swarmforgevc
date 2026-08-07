@@ -93,6 +93,10 @@ out_of_scope: |
     BL-797-class path): reuse if clean, do not redesign those gates here.
 
 notes: |
+  2026-08-07 human: PROMOTE — second independent data point (BL-826 QA
+  vitest onTaskUpdate timeouts under load; suiteDurationTrend.warn still
+  true). Briefing flagged item; keep additive host-load coverage as written.
+
   Related same-shift context, do not merge: BL-815 (classify timeout fails
   on a quiet host) and BL-816 (record a disposition when waving a red suite
   through). Those address how roles behave under load; this one addresses
