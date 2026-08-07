@@ -200,3 +200,6 @@ notes: |
      sampling having run.
   5. Re-run the existing BL-350 and BL-100 acceptance scenarios unchanged;
      they must stay green (invariant 2).
+
+notes: |
+  Parked 2026-08-07 for BL-848 ambulance/queue-jump (swarm-reliability orthogonality). Restore after BL-848 leaves active or human says otherwise.
