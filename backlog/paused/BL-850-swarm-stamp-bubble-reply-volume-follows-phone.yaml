@@ -1,0 +1,170 @@
+id: BL-850
+title: "Swarm stamp-off: Bubble reply voice was gated by the hold-music slider; verify the human-landed volume split"
+milestone: M8
+type: defect
+status: todo
+epic: swarmforge-console
+human_approval: pending
+severity: medium
+priority: 30
+direction: human-requested
+depends_on: []
+assigned_to: null
+mutation_cost: low
+
+invariants:
+  - "The in-app slider scales hold music only; reply loudness is owned by the phone's system volume and is never attenuated by an app-level default."
+
+approval_context: >
+  Two things need the human's sign-off, and neither is the code.
+
+  (1) DISPOSITION. The intake offers a fork the specifier deliberately did
+  not settle alone: attach this as a BL-765 acceptance slice, or keep it as
+  the separate sibling defect it is minted as here. Minted separate because
+  BL-765 is a broad paused ticket (remote bubble config + chiptune catalog)
+  and folding a landed hotfix into it would block certification of the
+  hotfix on unrelated unbuilt work. Say if you would rather it close under
+  BL-765.
+
+  (2) STANDING HOLD. `project_deprioritize_bubble_speech_2026_08_07` puts
+  Bubble speech/voice work on hold until device testing finishes. This
+  ticket is voice-adjacent, so it is minted PAUSED and is not promoted until
+  the human lifts the hold or exempts it. It is filed now because the fix is
+  already live and uncertified — filing it is not promoting it.
+
+source: |
+  backlog/INTAKE-bubble-reply-volume-follows-phone.md (human via Cursor
+  "Let's Talk" 2026-08-07 ~18:07 CEST), archived to this ticket on mint by
+  the specifier 2026-08-07 while speccing BL-848.
+
+  Hotfix under review: UNCOMMITTED in the master checkout at mint time — see
+  "The diff must be landed before it can be reviewed" below. Intended as
+  ledger entry 2 of BL-848's `backlog/hotfix-ledger.yaml`.
+
+description: |
+  ## What
+
+  A human-landed fix is live in the master checkout and has never been
+  through a gate. This ticket is that gate. REVIEW, not rewrite.
+
+  ## The failure it fixed
+
+  On Bubble "Let's Talk" the human heard replies very weakly. One shared gain
+  path was scaling both surfaces:
+
+  - `TalkEngine` init and `setVolumePercent` applied the same
+    `volumePercent / 100f` gain to BOTH `holdMusic` and `replyPlayer`.
+  - `ReplyAudioPlayer` defaulted `volumeGain` to `0.55f` and passed it into
+    MediaPlayer and TTS `KEY_PARAM_VOLUME`, so even full phone volume was
+    attenuated by the app default.
+
+  BL-765 had already CONTRACTED the opposite behaviour — "the setting governs
+  music only and the reply voice follows the phone's media volume" — so this
+  is a regression against a written contract, not a new preference. The same
+  shared gain also explains the earlier report of an inaudible hold-music
+  tick cue at low slider settings.
+
+  ## The diff must be landed before it can be reviewed
+
+  At mint time this fix is UNCOMMITTED in the master checkout. That is the
+  BL-811 situation exactly: leaving it uncommitted blocks build-sync and puts
+  a live human fix one hot-sync away from a phantom revert (BL-373), and
+  BL-839 exists because the master checkout is what actually executes.
+
+  So the first action on this ticket is to LAND it, not to review it:
+
+  - commit ONLY the Bubble paths listed below — `git add` them by name.
+    Other unrelated ticket-less changes are in the same working tree and
+    must not ride along (BL-506);
+  - carry the trailer `Hotfix-Certification: pending` (BL-848's primary
+    signal — this ticket is its first real dogfood);
+  - name BL-850 in the message.
+
+  Then review the committed diff, and record the resulting 10-hex commit in
+  `backlog/hotfix-ledger.yaml`.
+
+  ## What landed (files to review)
+
+  - `android/app/src/main/java/com/swarmforge/floatcompanion/TalkEngine.kt`
+    — reply player pinned at gain `1f`; slider updates hold music only.
+  - `android/app/src/main/java/com/swarmforge/floatcompanion/ReplyAudioPlayer.kt`
+    — default `volumeGain` `0.55f` -> `1f`.
+  - `android/app/src/main/res/values/strings.xml` — "Volume" -> "Hold music
+    volume".
+  - `android/app/build.gradle.kts` — versionCode 24 -> 28, versionName
+    `0.3.8-home-handsfree` -> `0.3.12-reply-phone-volume`.
+  - `android/scripts/publish-apk.sh` — publishes the versioned APK alongside
+    the fixed name.
+  - `docs/how-to/BL-707-android-floating-overlay-companion.md`,
+    `docs/how-to/BL-705-lets-talk-more-chiptunes.md` — wording now describes
+    the split.
+
+  ## Review goals
+
+  1. Confirm the split matches BL-765's stated contract on both paths —
+     MediaPlayer reply audio AND the TTS `KEY_PARAM_VOLUME` leg. A fix that
+     only corrects one leaves the regression alive for the other.
+  2. Confirm nothing else still applies the slider gain to the reply player;
+     `setVolume` remains on `ReplyAudioPlayer` and a future caller could
+     re-introduce the coupling. Invariant 1 is the property to check, not
+     just the two call sites the diff touched.
+  3. Confirm mute / pause-all semantics are unchanged.
+  4. Confirm no remaining surface still claims a shared music+voice control
+     (the documenter's sweep — the two how-tos are patched; check the rest).
+  5. Confirm the version bump and publish script are intended and not
+     collateral.
+
+  ## Testability
+
+  Per the local article's "Testability Boundary — Bubble": the gain
+  arithmetic and the slider->hold-music-only routing are pure logic and
+  belong in the JVM unit suite (`android/gradlew :app:testDebugUnitTest`).
+  Actual loudness on a device is device-surface behaviour and is verified by
+  the recorded manual procedure below, never by a test. Kotlin has no
+  mutation/CRAP/DRY tooling wired — the hardener applies the documented
+  unit-test-gap fallback and must record that it did.
+
+acceptance: specs/features/BL-850-swarm-stamp-bubble-reply-volume-follows-phone.feature.draft
+
+out_of_scope: |
+  - Re-implementing the volume split; this stamps the landed diff.
+  - The rest of BL-765 (remote bubble config, chiptune catalog shipping).
+  - Mini App Web Audio volume behaviour — unless the review finds the same
+    shared-gain bug there, in which case open a narrow follow-up.
+  - Changing mute / pause-all semantics.
+
+notes: |
+  Related, do not conflate: BL-765 (paused — already contracted the
+  music/reply split; this is the observable regression against it), BL-707
+  (done — floating overlay companion, settings/volume UX lives there),
+  BL-705 (done — chiptune catalog).
+
+  Rebuild already shipped for sideload: debug `0.3.12-reply-phone-volume`
+  (versionCode 28) published to operator public.
+
+  ## Acceptance is parked as a draft, deliberately
+
+  `acceptance:` points at a `.feature.draft`. The Node acceptance runner
+  cannot execute Kotlin, and a live `.feature` with no step handlers
+  hard-fails `specs/pipeline/runtime.js` (BL-233). The coder either binds the
+  scenarios to handlers that drive the gradle unit suite (as BL-769's do) and
+  promotes the draft, or records the manual procedure as the verification —
+  never ships an unrunnable live feature file.
+
+  ## E2E QA procedure (specifier, 2026-08-07)
+
+  Device procedure, on a phone, after sideloading the rebuilt APK:
+
+  1. **The reported failure is gone.** Phone volume HIGH, in-app slider LOW
+     (or at the old 55% default). Trigger a reply. The voice must be LOUD.
+     This is the exact configuration the human reported as inaudible.
+  2. **The slider still does its own job.** From the same state, raise the
+     slider. Hold music must get louder and the reply voice must NOT change.
+     Both halves are the test — a fix that deadened the slider is also wrong.
+  3. **Phone volume owns the voice.** Lower the phone volume mid-reply; the
+     voice must follow it down.
+  4. **Both reply legs.** Run 1-3 for a TTS reply AND for a MediaPlayer audio
+     reply. The `KEY_PARAM_VOLUME` leg is a separate code path and a
+     one-legged fix passes a one-legged test.
+  5. **The tick cue returns.** At a low slider setting confirm the hold-music
+     tick is audible, the secondary symptom of the shared gain path.
