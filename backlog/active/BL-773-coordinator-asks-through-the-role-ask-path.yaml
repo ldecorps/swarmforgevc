@@ -139,6 +139,27 @@ notes: |
   Do not treat this ticket as closing the 2026-08-07 incident when it lands;
   BL-846 is what closes it.
 
+  ## Approach steps re-measured against `main`, 2026-08-07 — what is left
+
+  - **Step 1 (coordinator.prompt ask section) — DONE by the specifier in this
+    parcel.** A role prompt is specifier-owned (Article 1.2, "sole writer of
+    the constitution and prompt files"), so the coder must not rewrite it;
+    review it like any other received content and bounce it to the specifier
+    if it is wrong. It satisfies this ticket's own `required_wiring`.
+  - **Step 2 (coordinator topic resolves) — ALREADY SATISFIED, no change
+    needed.** Verified live: `.swarmforge/operator/role-topic-map.json` already
+    carries `"coordinator":3901`. Do not add an entry, and do not introduce a
+    fallback to a shared or standing topic — the spec forbids it and the map
+    needs nothing.
+  - **Step 3 (the answer reaches the coordinator) — coder's, plus the step
+    handlers.** The four scenarios in the live `.feature` have no handlers yet
+    (`grep` over `specs/pipeline/steps/` finds none); they land in this parcel
+    per BL-233. Note the coordinator has a standing tmux session, so its answer
+    resolves through the live-pane leg and is NOT affected by BL-846.
+
+  So the remaining code work is the step handlers plus verification, not the
+  prompt and not the topic map.
+
   ## e2e procedure for QA
 
   With a live swarm, drive the coordinator to raise an optioned question
