@@ -118,6 +118,25 @@ digging or retyping:
 A stable named Cloudflare tunnel (so the hostname stops rotating at all) is
 the longer-term direction; until then, use the deep link.
 
+## Hands-free no longer answers itself (BL-826)
+
+Hands-free used to re-open the mic a fixed 400 ms after Bubble's reply
+finished, regardless of whether audio was still coming out of the speaker.
+On a slower voice or louder playback, the mic could hear the tail of
+Bubble's own reply, treat it as your next turn, and answer itself — a loop
+that kept going until you turned hands-free off.
+
+The mic now waits for an actual quiet stretch after playback ends before it
+re-arms, not a fixed delay — a slow reply gets a longer wait, a fast one
+doesn't pay for it. That wait always resolves one way or another (it arms,
+or arms anyway once a short ceiling passes), so hands-free can't end up
+looking like it silently stopped listening. Echo cancellation and noise
+suppression are also attached to the mic capture on devices that support
+them, hardening the existing echo-cancelled capture path.
+
+Nothing about how you use hands-free changes — this is a fix for the
+self-answer loop, not a new control.
+
 ## Stop
 
 Use **Stop** on the mini panel, **Stop bubble** on the pairing screen, or
