@@ -4,9 +4,10 @@ milestone: M8
 status: todo
 type: feature
 epic: lean-aware-coordinator
-priority: 1
+priority: 3
 direction: human-requested
 human_approval: approved
+assigned_to: coder
 severity: n/a
 depends_on: []
 mutation_cost: medium

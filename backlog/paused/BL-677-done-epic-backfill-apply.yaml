@@ -5,7 +5,7 @@ type: feature
 status: todo
 epic: swarmforge-console
 human_approval: approved
-priority: 111
+priority: 157
 direction: human-requested
 depends_on: [BL-676]
 assigned_to: coder

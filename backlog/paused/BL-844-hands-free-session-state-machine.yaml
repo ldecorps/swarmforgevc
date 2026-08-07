@@ -1,0 +1,132 @@
+id: BL-844
+title: "Hands-free session state machine — PassiveWake to ActiveListen to Thinking to Speaking, with a 10s silence close so a polite \"thank you\" does not leave the mic hot forever"
+milestone: M8
+type: feature
+status: todo
+epic: bubble-voice-barge-in
+human_approval: approved
+assigned_to: none
+priority: 109
+direction: human-requested
+depends_on: [BL-826]
+mutation_cost: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-844-hands-free-session-state-machine.feature
+
+approval_context: >
+  One question in the intake was left explicitly to the human and I am adopting
+  its own default rather than holding the ticket for it.
+
+  Open question 5 — "one short local reprompt before session end, or silent close
+  only" — ships as SILENT CLOSE. That is the intake's own stated v1, and it is
+  the choice a domestic assistant makes: a reprompt after the human has stopped
+  talking is one more thing to interrupt. Easy to add later; hard to un-annoy.
+
+  Second, smaller: this slice sits under the `bubble-voice-barge-in` epic rather
+  than a new one. That epic already carries BL-826, an echo-loop defect that is
+  really about hands-free session lifecycle rather than barge-in proper, so the
+  orbit is already this. BL-776's tracker has been widened to say so.
+
+invariants:
+  - "Nothing reaches the model unwoken: while the session is passive, no utterance is ever submitted as a turn, whatever it contains."
+  - "A session always has a way out: from any state, either a hard end phrase or the silence window returns it to passive — no input sequence leaves the mic open indefinitely."
+  - "Push-to-talk is untouched by this policy: with hands-free off, no elapsed silence ever changes the session state."
+
+description: |
+  ## What
+
+  The state machine around the hands-free conversation:
+  **PassiveWake -> ActiveListen -> Thinking -> Speaking**, and back.
+
+  - While **passive**, speech reaches no model. Only a wake signal, or an
+    explicit gesture (push-to-talk, the UI), opens a session.
+  - While **active**, follow-ups need no wake phrase. The conversation just
+    continues.
+  - After Bubble finishes speaking an answer, a **silence window** starts —
+    default **10 seconds**. Speech inside it is handled as a normal turn and
+    restarts the window. Silence through it returns the session to passive.
+  - A **soft closer** ("thank you", "thanks") is acknowledged or lightly ignored
+    as a non-task, and does NOT hold the session open by itself: the window runs
+    and silence wins.
+  - A **hard end phrase** ("stop", "I'm done", "goodbye") drops to passive at
+    once, without waiting the window out.
+  - A **barge-in** while speaking returns the session to ActiveListen. This slice
+    owns that transition; detecting the barge-in and aborting playback is
+    BL-777's.
+  - With hands-free **off**, none of the silence policy applies. Push-to-talk
+    stays manual, exactly as it is today.
+
+  ## Why 10 seconds
+
+  The human's own research, quoted in the intake: Alexa ~8s, Google ~8-10s,
+  Gemini Live ~15s — "not 20-60s". Ship 10s as a constant; making it
+  configurable is deliberately later, per the intake's own scope note.
+
+  ## Testability
+
+  This is pure logic and lands squarely on the JVM side of the Bubble testability
+  boundary: a function of (current state, event, elapsed) with an injected clock,
+  no `android.*` type in its own signature. It is covered by the plain-JUnit
+  suite under `android/app/src/test/`, run with
+  `./gradlew :app:testDebugUnitTest` — no emulator, no connected device, and no
+  new test dependency. The acceptance scenarios bind to step handlers that drive
+  that gradle suite, the shape BL-769 established.
+
+  **No real timers.** The silence window is an injected clock reading, never a
+  `sleep` or a wall-clock poll — the project's test-speed rule applies here as
+  everywhere.
+
+  Per this project's Startup Tools table, `.kt` has no mutation/CRAP/DRY
+  toolchain wired: the hardening pass on this parcel runs the degraded
+  unit-test-gap fallback and must record that it did.
+
+  ## Why it depends on BL-826
+
+  BL-826 is in flight and rewrites the hands-free listen gate in
+  `TalkEngine.kt` (`scheduleHandsFreeListen`) and the capture session in
+  `AudioTurnRecorder.kt` — the same surface this state machine sits on. Building
+  both at once would collide in one file. This slice starts after BL-826 lands,
+  and builds on the gate it leaves behind rather than around it.
+
+  ## E2E procedure QA will run
+
+  The state machine itself is verified by the gradle unit suite. On a device, as
+  a recorded manual pass once BL-845's spotter exists:
+
+  1. Wake, ask a question, let Bubble answer, say nothing — confirm the bubble
+     returns to passive about 10 seconds after the answer ends.
+  2. Wake, ask, let it answer, say "thank you", then nothing — confirm it returns
+     to passive rather than staying hot.
+  3. Wake, ask, let it answer, ask a follow-up within the window — confirm no
+     wake phrase was needed and the window restarted.
+  4. Wake, ask, and say "stop" while it is answering — confirm it goes quiet
+     immediately.
+  5. Turn hands-free off and repeat step 1 — confirm nothing auto-returns to
+     passive.
+
+  ## Out of scope
+
+  - The wake spotter itself. BL-845.
+  - Barge-in detection and playback abort. BL-777.
+  - The echo-loop gate. BL-826, which this depends on.
+  - Making the silence window configurable. The intake put that later.
+  - Any bridge or server-side change. This slice is entirely on the phone.
+
+source: |
+  `backlog/INTAKE-bubble-hey-bubble-offline-wake-and-session-listen.md` (human
+  via Let's Talk, 2026-07-30), drained 2026-08-07 as a 1:2 split: this slice owns
+  the session lifecycle, BL-845 owns the offline wake spotter.
+
+  The intake's own words on the session end, kept verbatim because they are the
+  contract:
+
+  > After Bubble's spoken answer completes: start a **silence timer** (default
+  > **10 seconds**, from Alexa ~8s / Google ~8-10s / Gemini Live ~15s research;
+  > not 20-60s).
+
+  > Soft closers ("thank you", "thanks") should not keep the session alive by
+  > themselves: after they are acknowledged (or lightly ignored as non-tasks),
+  > silence wins and passive resumes.
+
+  > Push-to-talk remains an alternate mode; this silence / closer policy is the
+  > hands-free default only when hands-free is on.

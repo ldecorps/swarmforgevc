@@ -4,7 +4,7 @@ milestone: M8
 status: todo
 type: epic
 epic: bubble-screens
-priority: 85
+priority: 127
 direction: human-requested
 depends_on: [BL-829]
 mutation_cost: high
