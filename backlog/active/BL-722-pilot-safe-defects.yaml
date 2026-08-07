@@ -10,7 +10,7 @@ direction: queue-jump
 depends_on: []
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
-assigned_to: none
+assigned_to: coder
 
 invariants:
   - "A /pilot safe start never selects a ticket that fails the safe filter (type defect, real .feature, not needs_design, human_approval approved, mutation_cost low, paused by default)."
