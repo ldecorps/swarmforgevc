@@ -5,7 +5,7 @@ type: feature
 status: todo
 epic: pipeline-board
 human_approval: approved
-priority: 132
+priority: 178
 direction: human-requested
 depends_on: [BL-559]
 mutation_cost: medium

@@ -4,9 +4,9 @@ milestone: M8
 type: epic
 status: todo
 epic: bubble-control
-human_approval: pending
+human_approval: approved
 assigned_to: none
-priority: 82
+priority: 119
 direction: human-requested
 depends_on: [BL-829]
 mutation_cost: medium

@@ -7,7 +7,7 @@ status: todo
 epic: code-quality-gates
 human_approval: pending
 assigned_to: none
-priority: 143
+priority: 189
 direction: swarm-proposed
 depends_on: []
 mutation_cost: low

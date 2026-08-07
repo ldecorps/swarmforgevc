@@ -4,7 +4,7 @@ milestone: M8
 status: todo
 type: epic
 epic: lean-aware-coordinator
-priority: 1
+priority: 120
 direction: human-requested
 depends_on: []
 decomposes_into: [BL-819, BL-820]
@@ -17,6 +17,8 @@ source: |
   promotable; children are promoted individually.
 
 notes: |
+  2026-08-07 human: ATTACK — promote/build children now (start with approved BL-819 ledger). BL-820 stays blocked on ceremony hook / BL-762 unless human says otherwise. Deprioritize Bubble speech/gesture WIP (BL-828 paused).
+
   UMBRELLA / tracking item (type: epic), NOT directly promotable — the
   coordinator promotes CHILD slices, never this. Children carry
   `epic: lean-aware-coordinator` and are listed in `decomposes_into`.
