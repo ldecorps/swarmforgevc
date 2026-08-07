@@ -65,6 +65,33 @@ class ReplyAudioPlayer(
         }
     }
 
+    /**
+     * BL-826: true if the player still reports audio in flight. A defensive
+     * re-check beyond [onDone] for the quiet-tail gate, since [onDone] can
+     * fire slightly ahead of the last audible buffer (MediaPlayer's
+     * onCompletion, or an OEM TTS engine's isSpeaking flag lagging the
+     * actual speaker output).
+     */
+    fun isAudioActive(): Boolean {
+        val mp = mediaPlayer
+        if (mp != null) {
+            return try {
+                mp.isPlaying
+            } catch (_: Exception) {
+                false
+            }
+        }
+        val engine = tts
+        if (engine != null && ttsReady.get()) {
+            return try {
+                engine.isSpeaking
+            } catch (_: Exception) {
+                false
+            }
+        }
+        return false
+    }
+
     fun stopNow() {
         clearWatchdogs()
         finished.set(true)
