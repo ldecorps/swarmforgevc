@@ -3,15 +3,18 @@
 ;;   - tmp operator_runtime.bb
 ;;   - hung acceptance `node …generated.test.js`
 ;;   - disposable-root ancillaries (babysitter tmux/launch, bridge/bot,
-;;     claude -n Babysitter under /tmp/tmp.|aps-|sfvc-)
+;;     claude -n Babysitter under /tmp/tmp.|aps-|sfvc- or Darwin $TMPDIR)
 ;; Wired into operator_runtime.bb's tick (best-effort). Injectable adapters
 ;; so tests never scan the real process table for kill decisions.
+;; Process enumeration uses process_table_lib ( /proc on Linux, ProcessHandle
+;; on Darwin) — a /proc-only scan reaps nothing on macOS.
 
 (ns orphan-janitor-sweep-lib
   (:require [babashka.fs :as fs]
             [clojure.string :as str]))
 
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "orphan_janitor_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "process_table_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "orphan_agent_reaper_sweep_lib.bb")))
 
 ;; Tighter than the 6h agent/fixture defaults: a /tmp operator_runtime or a
@@ -38,19 +41,16 @@
   (str (fs/path project-root ".swarmforge" "daemon" "orphan-janitor-audit.log")))
 
 (defn- proc-cmdline! [pid]
-  (try
-    (str/replace (slurp (str (fs/path "/proc" (str pid) "cmdline"))) "\u0000" " ")
-    (catch Exception _ "")))
+  (process-table-lib/cmdline! pid))
 
 (defn- scan-candidate-pids! []
   (try
-    (->> (fs/list-dir "/proc")
-         (keep (fn [p] (try (Long/parseLong (fs/file-name p)) (catch Exception _ nil))))
-         (filter (fn [pid]
-                   (let [cmd (proc-cmdline! pid)]
-                     (or (orphan-janitor-lib/operator-runtime-cmdline? cmd)
-                         (orphan-janitor-lib/hung-acceptance-cmdline? cmd)
-                         (orphan-janitor-lib/tmp-ancillary-cmdline? cmd)))))
+    (->> (process-table-lib/list-processes!)
+         (filter (fn [{:keys [cmdline]}]
+                   (or (orphan-janitor-lib/operator-runtime-cmdline? cmdline)
+                       (orphan-janitor-lib/hung-acceptance-cmdline? cmdline)
+                       (orphan-janitor-lib/tmp-ancillary-cmdline? cmdline))))
+         (map :pid)
          vec)
     (catch Exception _ [])))
 
@@ -75,17 +75,8 @@
         (catch Exception _ nil)))))
 
 (defn- age-ms!
-  "Process age via ProcessHandle startInstant — /proc/<pid> mtime is not
-   stable on WSL (reads refresh it), so the fixture/agent reaper's mtime
-   proxy under-ages long-lived orphans here."
   [pid]
-  (try
-    (if-let [ph (some-> (java.lang.ProcessHandle/of (long pid)) (.orElse nil))]
-      (if-let [start (some-> (.info ph) .startInstant (.orElse nil))]
-        (- (System/currentTimeMillis) (.toEpochMilli start))
-        0)
-      0)
-    (catch Exception _ 0)))
+  (process-table-lib/age-ms! pid))
 
 (defn- kill-pid! [pid]
   (try (some-> (java.lang.ProcessHandle/of (long pid)) (.orElse nil) (.destroyForcibly))

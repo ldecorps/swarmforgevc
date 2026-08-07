@@ -6,31 +6,38 @@
 ;;   2. hung `node --test …*.generated.test.js` acceptance runners left
 ;;      parented by WSL /init for many hours,
 ;;   3. disposable-root ancillaries fixture_reaper never sees (name is
-;;      `tmp.*`, not aps-/sfvc-/bl404-): babysitter tmux/launch, front-desk
-;;      bridge/bot, and stray `claude -n Babysitter` under /tmp/tmp.*.
+;;      `tmp.*`, not aps-/sfvc-/bl404-): babysitter tmux/launch, babysitterd.sh
+;;      pointed at a disposable root, any tmux -S under that root (e.g. BL-647
+;;      fixture socks), front-desk bridge/bot, and stray `claude -n Babysitter`.
 ;;
-;; See orphan_janitor_sweep_lib.bb for /proc scan + kill wiring. Loaded by
+;; See orphan_janitor_sweep_lib.bb for process-table scan + kill wiring
+;; (/proc on Linux, ProcessHandle on Darwin). Loaded by
 ;; operator_runtime.bb's always-alive tick (best-effort side action).
 ;;
 ;; GUARDRAILS: live-window / live-runtime-pid checked FIRST (decapitation);
 ;; never kill the host project's own operator_runtime or host ancillaries
-;; (path must be under /tmp/tmp.|aps-|sfvc-).
+;; (path must be a disposable root under /tmp/… or Darwin $TMPDIR
+;; /var/folders/…/T/…).
 
 (ns orphan-janitor-lib
   (:require [clojure.string :as str]))
 
+;; Linux mktemp under /tmp, plus Darwin $TMPDIR (/var/folders/…/T/) checkouts
+;; left by acceptance / BL-622 primary-launch sandboxes.
+(def disposable-root-re
+  #"(?:/tmp/(?:tmp\.[^/\s]+|aps-[^/\s]+|sfvc-[^/\s]+)|/var/folders/[^/\s]+/[^/\s]+/T/(?:tmp\.[^/\s]+|aps-[^/\s]+|sfvc-[^/\s]+|bl\d+-[^/\s]+))")
+
 (defn tmp-project-root?
-  "True when a path is a disposable /tmp mktemp checkout — never the host repo."
+  "True when a path is a disposable mktemp/sandbox checkout — never the host repo."
   [project-root-arg]
   (let [p (str/trim (or project-root-arg ""))]
-    (boolean (or (str/starts-with? p "/tmp/tmp.")
-                 (str/starts-with? p "/tmp/aps-")
-                 (str/starts-with? p "/tmp/sfvc-")))))
+    (boolean (re-matches disposable-root-re p))))
 
 (defn extract-disposable-root
-  "First /tmp/tmp.|aps-|sfvc- prefix found in a cmdline or path, else nil."
+  "First disposable root found in a cmdline or path, else nil.
+   Covers /tmp/tmp.|aps-|sfvc- and Darwin /var/folders/…/T/tmp.|aps-|sfvc-|bl*-."
   [s]
-  (re-find #"/tmp/(?:tmp\.[^/\s]+|aps-[^/\s]+|sfvc-[^/\s]+)" (or s "")))
+  (re-find disposable-root-re (or s "")))
 
 (defn operator-runtime-cmdline?
   [cmdline]
@@ -47,14 +54,18 @@
 
 (defn tmp-ancillary-cmdline?
   "Front-desk / babysitter leftovers under a disposable checkout. Requires
-   an extractable /tmp disposable root so host bridge/bot/babysitter never
-   match."
+   an extractable disposable root so host bridge/bot/babysitterd never match.
+   Also covers worktree babysitterd.sh aimed at a temp root, and any tmux
+   whose -S socket path sits under that root (BL-647 / swarmforge-coder
+   fixture leftovers)."
   [cmdline]
   (let [c (or cmdline "")]
     (boolean
      (and (extract-disposable-root c)
           (or (re-find #"babysitter-tmux\.sock" c)
               (re-find #"/\.swarmforge/babysitter/launch\.sh(?:\s|$)" c)
+              (re-find #"babysitterd\.sh(?:\s|$)" c)
+              (re-find #"(?:^|[\s/])tmux(?:\s|$)" c)
               (re-find #"/extension/out/tools/start-bridge-headless\.js" c)
               (re-find #"/extension/out/tools/telegram-front-desk-bot\.js" c)
               (and (re-find #"(?:^|\s)claude(?:\s|$)" c)
