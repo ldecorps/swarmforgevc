@@ -12,6 +12,14 @@ interface RoleTicketWindow {
   endMs: number;
 }
 
+function parseWindowTimestamp(iso: string | undefined): number {
+  return iso ? Date.parse(iso) : NaN;
+}
+
+function isValidWindow(ticketId: string | null, startMs: number, endMs: number): ticketId is string {
+  return Boolean(ticketId) && !Number.isNaN(startMs) && !Number.isNaN(endMs) && endMs >= startMs;
+}
+
 // A ticket's [enqueued_at, completed_at] window in one role's completed
 // handoffs - both ends must parse, or the record contributes no window
 // (never a guessed bound). Read across ALL roles/tickets (not just the one
@@ -23,9 +31,9 @@ function readAllRoleTicketWindows(roles: MinimalRoleEntry[]): RoleTicketWindow[]
     const headers = readHandoffHeaderRecordsWithBatches(mailboxDir(entry, 'inbox', 'completed'));
     for (const h of headers) {
       const ticketId = h.task ? extractTicketId(h.task) : null;
-      const startMs = h.enqueued_at ? Date.parse(h.enqueued_at) : NaN;
-      const endMs = h.completed_at ? Date.parse(h.completed_at) : NaN;
-      if (ticketId && !Number.isNaN(startMs) && !Number.isNaN(endMs) && endMs >= startMs) {
+      const startMs = parseWindowTimestamp(h.enqueued_at);
+      const endMs = parseWindowTimestamp(h.completed_at);
+      if (isValidWindow(ticketId, startMs, endMs)) {
         windows.push({ role: entry.role, ticketId, startMs, endMs });
       }
     }

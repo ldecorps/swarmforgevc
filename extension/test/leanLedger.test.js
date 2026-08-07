@@ -91,6 +91,17 @@ test('events differing only in data values get different natural keys', () => {
   assert.notEqual(leanLedgerEventNaturalKey(a), leanLedgerEventNaturalKey(b));
 });
 
+test('events identical except for role get different natural keys (two roles hit the same instant with the same data)', () => {
+  const a = dwellEvent({ role: 'coder' });
+  const b = dwellEvent({ role: 'cleaner' });
+  assert.notEqual(leanLedgerEventNaturalKey(a), leanLedgerEventNaturalKey(b));
+  // hasLeanLedgerEvent must not drop role B's event as a "duplicate" of
+  // role A's - two different roles legitimately produce identical
+  // ticket/type/source/at/data (e.g. two roles chased at the same nudge
+  // count in the same tick); collapsing on role would silently lose one.
+  assert.equal(hasLeanLedgerEvent([a], b), false);
+});
+
 test('key order inside data does not change the natural key (stable ordering)', () => {
   const a = { ...dwellEvent(), data: { queueWaitMs: 1000, processingMs: 5000 } };
   const b = { ...dwellEvent(), data: { processingMs: 5000, queueWaitMs: 1000 } };
