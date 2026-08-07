@@ -388,7 +388,8 @@ const DOMAINS = [
   require('./bl826BubbleHandsFreeSelfListenEchoLoopSteps'),
   require('./bl819TicketLifecycleLedgerSteps'),
   require('./bl773CoordinatorRoleAskSteps'),
-  require('./bl839MasterCheckoutDriftSteps')
+  require('./bl839MasterCheckoutDriftSteps'),
+  require('./bl822HostLoadAnomalySteps')
 ];
 
 function registerSteps(registry) {
