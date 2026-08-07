@@ -380,6 +380,28 @@ thing the coordinator does is physically move the backlog tickets"). Keep the
   eligible item and nothing lighter is orthogonally promotable, promote it
   anyway; the hardener's targeted-test fallback keeps the pipeline moving.
 
+## Bubble Speech Deprioritized While Device Testing Runs (operator policy, 2026-08-07, REVOCABLE)
+- Device testing for Bubble speech / voice / hands-free takes a long time and
+  must not block the swarm. Until the human says it is finished:
+  - Keep **BL-826** out of `backlog/active/` (it is in `paused/`); do not
+    promote it.
+  - Do not promote new Bubble **speech / voice / TTS / hands-free** tickets —
+    BL-844 and BL-845 today, and any sibling minted later.
+  - Promote **non-Bubble-speech** work instead: pipeline reliability, cost,
+    docs, non-voice defects.
+  - Non-speech Bubble UX (Control, remote pages) stays eligible when it is
+    orthogonal to in-flight work.
+- **Ordering only, and revocable.** Like mutation-heavy scheduling above, this
+  reorders the queue; it never creates or removes an active slot, never
+  overrides orthogonality, and never bypasses the circuit breaker. It is a
+  dated human hold, not a permanent rule: when the human reports device testing
+  done, this section is removed rather than reinterpreted, and the held tickets
+  become ordinarily eligible again.
+- Recorded here because a hold that lives only in chat is lost at the next
+  context clear, which is exactly when a held ticket gets promoted by accident.
+  Source: `backlog/INTAKE-deprioritize-bubble-speech-device-testing.md` (human,
+  2026-08-07; steered to coordinator, coder and OPERATOR the same day).
+
 ## Never Exit Your Session (BL-107)
 - You are the swarm-forge cleanup owner (`CLEANUP_OWNER_INDEX=1`): your pane
   exiting runs `swarm-cleanup.sh`, which tears down the ENTIRE swarm —
