@@ -250,3 +250,5 @@ notes: |
   `OverlayService.kt`. The file overlap is small but real, and BL-826 is a
   high-severity live defect that should not be made to rebase around a UX
   change.
+  2026-08-07 human: keep paused — do not promote; swarm is attacking BL-818 (lean-aware coordinator) instead of Bubble gesture/speech WIP.
+

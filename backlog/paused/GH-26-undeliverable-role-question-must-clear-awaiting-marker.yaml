@@ -1,0 +1,80 @@
+id: GH-26
+title: "deliverRoleQuestion's undeliverable drop leaves the role-awaiting marker in place: the asking role wedges in already-pending forever and silently stops asking"
+milestone: M8
+type: defect
+status: todo
+epic: swarm-reliability
+human_approval: approved
+severity: high
+priority: 97
+direction: human-requested
+depends_on: []
+assigned_to: coder
+mutation_cost: low
+invariants:
+  - "No undeliverable role question leaves its role wedged: after any drop, the awaiting-marker state permits asking again immediately, and the drop is surfaced in status.json."
+
+approval_context: >
+  Your GH issue #26, specced faithfully. Firm: no silent drop that wedges
+  the ask guard; surface in status.json like tunnel.state auth_lost. My
+  choices needing sign-off: (1) the marker is REWRITTEN with state
+  "undeliverable" rather than deleted — it preserves the evidence that
+  status.json surfaces, matching your tunnel.state pattern; (2) role_ask.bb's
+  already-pending guard treats an undeliverable-state marker as NOT pending,
+  so the role can ask again immediately; (3) the intake named
+  extension/src/bridge/telegramFrontDeskBotCore.ts but the live file is
+  extension/src/tools/telegramFrontDeskBotCore.ts — spec scoped to the
+  verified live path.
+
+source: |
+  GitHub issue https://github.com/ldecorps/swarmforgevc/issues/26, seeded as
+  backlog root intake GH-26, drained by the specifier 2026-07-25. Observed
+  symptom named by the human: the specifier no longer requests ticket
+  clarification; that day's QA bounces were the downstream symptom.
+
+description: |
+  ## Defect (verified live 2026-07-25)
+
+  `deliverRoleQuestion` (extension/src/tools/telegramFrontDeskBotCore.ts:2730)
+  returns silently when `roleTopicIdFor` yields undefined — the role is
+  absent from role-topic-map.json or the map is unreadable. `relayOneRecord`
+  still acks the record (correct per BL-320: an undeliverable must never
+  replay forever), but nothing clears the asking role's
+  `.swarmforge/operator/role-awaiting/<role>.json` marker written by
+  `swarmforge/scripts/role_ask.bb`. That marker is role_ask's single-pending
+  guard, so the role is wedged in "already-pending" forever and silently
+  stops asking clarifying questions — the guard becomes the outage.
+
+  ## Fix shape
+
+  On the undeliverable path, rewrite the awaiting marker with
+  `state: undeliverable` (keeping the original question fields for
+  forensics) AND surface the undeliverable question in status.json, the
+  same pattern as tunnel.state auth_lost. role_ask.bb's already-pending
+  check must treat a marker in state undeliverable as NOT pending, so the
+  next ask proceeds (and overwrites the marker). Never a silent drop that
+  wedges the guard. The deliverable path is unchanged: marker stays pending
+  until the answer relay clears it.
+
+out_of_scope: |
+  - Escalation of long-pending ANSWERABLE questions — that is sibling
+    feature GH-25 (the safety net above this fix; this defect is why the
+    net must not be the only defense).
+  - BL-320 ack semantics: the undeliverable record is still acked exactly
+    once; this ticket adds marker + status handling, not replay changes.
+  - Auto-creating missing role topics in role-topic-map.json.
+
+acceptance: specs/features/GH-26-undeliverable-role-question-clears-marker.feature.draft
+
+notes: |
+  QA e2e procedure: with the front-desk bot live, remove a test role's
+  entry from role-topic-map.json, run role_ask.bb for that role; confirm
+  the marker flips to state undeliverable, status.json reports it, and an
+  immediate second role_ask.bb for the same role is ACCEPTED (not
+  already-pending). Restore the map entry and confirm a normal ask still
+  posts to the role topic and stays pending until answered.
+  The wedge is latent, not currently live: .swarmforge/operator/
+  role-awaiting/ does not exist right now, but the next undeliverable ask
+  re-creates the wedge; severity high because the failure silently disables
+  the specifier's clarifying-question guard (QA bounces are the downstream
+  symptom the human observed).
