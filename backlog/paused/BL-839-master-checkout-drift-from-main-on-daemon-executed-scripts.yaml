@@ -5,9 +5,9 @@ type: defect
 severity: high
 status: todo
 epic: swarm-reliability
-human_approval: pending
+human_approval: approved
 assigned_to: none
-priority: 40
+priority: 70
 direction: agent-found
 depends_on: []
 mutation_cost: medium

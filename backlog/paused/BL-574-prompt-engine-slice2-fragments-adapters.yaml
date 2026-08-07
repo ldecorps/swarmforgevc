@@ -6,7 +6,7 @@ status: todo
 epic: swarm-intelligence-layer
 human_approval: approved
 severity: medium
-priority: 2
+priority: 12
 direction: swarm-surfaced
 depends_on: [BL-546]
 assigned_to: specifier

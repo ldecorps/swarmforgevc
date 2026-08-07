@@ -6,7 +6,7 @@ severity: medium
 status: todo
 epic: swarm-reliability
 human_approval: pending
-priority: 3
+priority: 25
 direction: queue-jump
 depends_on: []
 mutation_cost: low

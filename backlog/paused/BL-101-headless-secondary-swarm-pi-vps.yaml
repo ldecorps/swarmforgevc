@@ -26,7 +26,7 @@ blocked_notes: |
   real hardware, then move this ticket to done/ (no further pipeline routing
   needed — do not re-promote/re-route through coder/cleaner/etc., there
   is nothing left for any role to do on it).
-priority: 14
+priority: 38
 direction: non-aligned
 source: operator request 2026-07-04 (Pi feasibility confirmed; operator also has an idle VPS)
 depends_on: BL-090, BL-091, BL-092 (mode + assignment, remote bring-up learnings, wake-up bridge)

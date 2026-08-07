@@ -4,9 +4,9 @@ milestone: M8
 type: defect
 status: todo
 epic: swarm-reliability
-human_approval: pending
+human_approval: approved
 severity: high
-priority: 60
+priority: 91
 direction: agent-proposed
 assigned_to: none
 mutation_cost: medium

@@ -4,9 +4,9 @@ milestone: M8
 type: feature
 status: todo
 epic: bubble-voice-barge-in
-human_approval: pending
+human_approval: approved
 assigned_to: none
-priority: 74
+priority: 106
 direction: human-requested
 depends_on: [BL-844]
 mutation_cost: medium
