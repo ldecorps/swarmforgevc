@@ -1,0 +1,204 @@
+id: BL-840
+title: "Provider-outage subtraction has never fired: BL-650 built the clock's third interval class and left its adapter unwired in handoffd, and the 529 text that prompted the ruling does not even classify as unavailable"
+milestone: M8
+type: defect
+status: todo
+epic: swarm-reliability
+human_approval: pending
+severity: high
+priority: 60
+direction: agent-proposed
+assigned_to: none
+mutation_cost: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-840-provider-outage-evidence-reaches-flow-watchdog.feature
+
+approval_context: >
+  Three choices are mine, not the human's earlier ruling, and are cheap to change
+  now and expensive after the coder starts.
+
+  1. EVIDENCE SOURCE. I picked the pane observation the daemon ALREADY performs
+  (observe-standing-role-auth!'s 20-line capture, every chase sweep) rather than
+  building a second detector. It costs no extra tmux capture and it produces
+  exactly the {ts-ms, provider, text} evidence lines BL-650's
+  provider-outage-intervals was built to consume. The alternative — durable
+  edge-transition records from operator_runtime.bb's PROVIDER_LIMIT_REACHED /
+  PROVIDER_AVAILABLE — would give truer interval ENDS but lives in a different
+  process, covers only the usage-limit class, and does not fit the shape BL-650
+  already ships. If the human wants that instead, say so now.
+
+  2. ATTRIBUTION BY PROVIDER, NOT BY PANE. An outage seen on one role's pane is
+  applied to every role configured with that same provider. Under mono-router
+  this is the load-bearing case: only the resident has a standing pane, so
+  attributing evidence to the observed role alone would leave every dormant
+  role's parcel unsubtracted — the exact class of parcel BL-650 exists for.
+
+  3. THROTTLE DEFAULT. One evidence line per role per 60s while a banner stands,
+  so a 3-hour outage costs ~180 lines per role rather than one line per sweep.
+  60s is well under BL-650's 10-minute gap-grouping window, so a throttled
+  observation stream still reconstructs one contiguous interval.
+
+  The producer entry point name `record-provider-outage!` is mine and fixed by
+  this ticket only so the required_wiring gate can check for it.
+
+invariants:
+  - "Absent, empty, unreadable or corrupt provider-outage evidence subtracts nothing: effective age is exactly BL-650's ledger-only result, and the sweep completes without error."
+  - "Evidence growth is bounded by the configured observation interval, never by sweep frequency: however many sweeps observe the same standing banner, at most one line per role per interval is written."
+  - "An outage is attributed to the PROVIDER, not to the pane it was observed on: it applies to every role configured with that provider and to no role configured with a different one."
+
+required_wiring:
+  - "swarmforge/scripts/handoffd.bb::provider-outage-evidence-for::the adapter BL-650 built must be supplied by the real production caller (flow-watchdog-sweep!), or the subtraction stays as dark as it is today"
+  - "swarmforge/scripts/handoffd.bb::record-provider-outage!::the producer must run inside the daemon's live pane-observation tick, not merely exist as a lib function"
+
+description: |
+  ## What
+
+  BL-650 shipped the active-time clock with THREE interval classes and only two
+  of them wired. `evaluate-effective-age` subtracts BL-823 ledger intervals
+  (control-pause, swarm-stop) AND provider-outage intervals; `run-sweep!` reads
+  the latter through an optional `:provider-outage-evidence-for` adapter. The
+  only production caller — `flow-watchdog-sweep!` in `handoffd.bb` — never
+  supplies that adapter, so it defaults to `(constantly [])` and no parcel has
+  ever had a millisecond of provider outage subtracted.
+
+  This ticket supplies the evidence and wires the adapter.
+
+  ## Why it is a defect and not a feature
+
+  The provider-outage class is not an idea someone had; it is a standing human
+  ruling BL-650 quotes verbatim, made after a 529 storm hit the architect
+  mid-review (2026-07-26):
+
+      il faut tenir compte des outages indépendants de la swarm dans les
+      calculs de temps effectifs
+
+  BL-650 satisfied that ruling at the pure-function level and left production
+  unchanged. The residue is a live false-alarm source: during a provider outage
+  every waiting parcel keeps accruing wall-clock age, so the WARN/ESCALATE
+  flow-stall alarms that reach the human's phone are exactly the ones BL-650 was
+  filed to stop. Severity `high`: a live fault degrading a safety/health signal,
+  not swarm-down.
+
+  ## Measured, not assumed
+
+  Verified against `main` at BL-650's landed tip before writing this:
+
+  - `handoffd.bb` contains no occurrence of `:provider-outage-evidence-for`; its
+    `flow-watchdog-sweep!` passes `:live-session?` and `:emit-alarm!` only.
+  - No durable, queryable, timestamped provider-outage store exists anywhere.
+    `operator_runtime.bb`'s `PROVIDER_LIMIT_REACHED` / `PROVIDER_AVAILABLE` go
+    onto a DRAINED event queue, and the cooldown record is current-state that
+    `clear-cooldown!` erases on recovery — the same shape defect BL-650's own
+    correction found in `control-pause.json`.
+  - **The classifier misses the motivating text.** Run against the real
+    `classify-provider-error`:
+
+        "API Error: 529 {\"type\":\"error\",\"error\":{\"type\":\"overloaded_error\"}}"
+          -> :unknown
+
+    `529` is absent from the `:unavailable` pattern, and `\boverloaded\b` does
+    not match `overloaded_error` because `_` is a word character. So wiring the
+    existing classifier alone would still not have caught the incident the
+    operator's ruling came from. Extending the pattern is part of this ticket,
+    not a follow-up.
+
+  ## Shape
+
+  1. **Recognise 529 / `overloaded_error`.** Extend the `:unavailable` pattern in
+     `swarmforge/scripts/agent_runtime_lib.bb` and its cross-language twin
+     `extension/src/swarm/providerErrorTaxonomy.ts` — the two are asserted for
+     parity through `swarmforge/scripts/test/classify_provider_error_harness.bb`
+     and must stay in parity. Additive only: these texts classify `:unknown`
+     today and nothing in production branches on `:unavailable`, so no existing
+     behaviour changes.
+
+  2. **A producer on the observation the daemon already makes.**
+     `observe-standing-role-auth!` already captures 20 lines of every live role's
+     pane on every chase sweep and feeds them to the auth observer. Feed the SAME
+     snapshot — do not take a second capture — to a provider-outage observer that
+     records a line when the text classifies `:unavailable`.
+
+  3. **A durable store, owned by one lib.** Mirror BL-823's
+     `availability_ledger_lib.bb` exactly: one new lib is the sole writer and
+     sole reader of `.swarmforge/telemetry/provider-outage-YYYY-MM.jsonl`,
+     `handoffd.bb` is a thin caller, and nothing else parses that file. Each line
+     records the observation timestamp, the provider, the role whose pane it came
+     from, and the observed text. The producer entry point is named
+     `record-provider-outage!` (fixed by `required_wiring`).
+
+  4. **Throttled append.** At most one line per role per
+     `provider_outage_observe_min_interval_ms` (new `swarmforge.conf` knob,
+     default `60000`). A standing banner across a 3-hour outage must not write
+     one line per sweep. 60s sits well inside BL-650's
+     `default-provider-outage-max-gap-ms` (600000), so the throttled stream still
+     gap-groups into one contiguous interval.
+
+  5. **Wire the adapter.** `flow-watchdog-sweep!` supplies
+     `:provider-outage-evidence-for`, returning for role R every recorded line
+     whose provider equals R's configured provider — `(:agent (get roles R))`,
+     the same BL-208 lookup the telemetry adapter beside it already uses — and
+     never filtering by the role whose pane the line came from.
+
+  6. **Fail closed.** Missing file, empty file, unparseable line: return no
+     evidence, subtract nothing, never throw. Identical posture to
+     `run-sweep!`'s existing `(try (availability-ledger-lib/fold ...) (catch ...
+     []))`.
+
+  ## Constraints
+
+  - Do not change `decide-tier`, `evaluate-effective-age`, `merge-and-sum-ms`,
+    `clip-interval-ms` or `provider-outage-intervals`. BL-650 built and hardened
+    that arithmetic against an independent oracle; this ticket only feeds it.
+  - Do not add provider outages to BL-823's availability ledger. BL-650 ruled
+    that class stays separate: the ledger's `:class` is `control-pause` or
+    `swarm-stop`, those two only.
+  - The producer must not add a tmux capture. It rides the existing snapshot.
+  - No retention or pruning policy in this ticket — monthly files, same as the
+    availability ledger.
+
+  ## E2E procedure QA will run
+
+  1. With the swarm running, confirm `.swarmforge/telemetry/provider-outage-*.jsonl`
+     does not yet exist (or note its current line count).
+  2. Inject an unavailability banner into a live role's pane
+     (`tmux -S <socket> send-keys -t <session> 'echo "API Error: 529
+     overloaded_error"' Enter`) and wait for one chase sweep.
+  3. Confirm exactly ONE line was appended, carrying that role's configured
+     provider — not the role name — as `provider`.
+  4. Leave the banner on screen across several further sweeps; confirm no more
+     than one additional line per 60s.
+  5. Confirm a flow-watchdog alarm raised for a parcel spanning that window
+     reports an effective age BELOW its wall age, and that
+     `handoffd`'s log shows no `flow-watchdog-sweep-error`.
+  6. Move the evidence file aside and truncate a copy to a half-written line;
+     confirm the next sweep still runs and reports wall-clock effective age.
+
+  ## Out of scope
+
+  - Retention, rotation or pruning of the evidence store.
+  - Reading `operator_runtime.bb`'s cooldown/usage-limit records as a second
+    evidence source (see approval_context choice 1).
+  - Any change to what the alarm text says beyond the fields BL-650 already
+    added.
+  - Muting alarms during an outage. Subtraction is the whole mechanism; there is
+    no suppression path, by BL-650's own design.
+
+notes: |
+  Raised by the architect as a spec gap on BL-650, not a bounce — the parcel
+  satisfied every scenario BL-650's feature file asserts, and BL-650 has since
+  closed to `backlog/done/`. Evidence:
+  `backlog/evidence/BL-650-architect-pass-20260807.md`, item 6.
+
+  The architect stopped at "only the specifier/human can rule whether a live
+  evidence source was in BL-650's scope". It was not — BL-650's own
+  `stage_skip_reasons` call it a "bounded single-lib bb change", and the coder's
+  docstring puts pane reading outside that lib on testability-boundary grounds.
+  So this is the follow-up slice, in the same shape as the BL-823/BL-650 split
+  that preceded it.
+
+  The classifier finding (529 -> `:unknown`) is mine, found while probing before
+  speccing; the architect's note did not have it.
+
+source: |
+  architect `note` (priority 00), 2026-08-06T23:01Z:
+  "BL-650 spec gap: provider-outage evidence unwired in handoffd.bb prod"
