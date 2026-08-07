@@ -109,6 +109,10 @@ out_of_scope: |
     out-of-scope, verbatim).
 
 notes: |
+  2026-08-07 human: stays in active/ with BL-773 for specifier triage.
+  Specifier may close/reshape either ticket and mint a third if a combined
+  design is cleaner than shipping both as written.
+
   Drained from the URGENT intake ahead of the ten Bubble/console intakes at
   backlog root, per the human's explicit ordering instruction (decision 9).
 
