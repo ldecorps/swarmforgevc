@@ -1,6 +1,28 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 8, 2026 (BL-855: the push sweep now refuses a merge
+**Last Updated:** August 8, 2026 (BL-762: a new bedtime verb, `./finish-shift`,
+stops the token-burning pipeline agents, `handoffd`, babysitterd, the
+operator runtime, and the onboarder while leaving the Telegram front desk
+and remote tunnels up — the phone path — so an ordinary end of day no longer
+takes Bubble's origin down with it (Cloudflare 530 / Error 1033 reading as
+"the app is broken"); `./stop-swarm.sh` remains the true lights-out verb,
+unchanged, for when the phone path should stop too. Both verbs read the
+same keep-vs-kill table (`swarmforge/scripts/lifecycle_matrix.sh`); see
+`docs/how-to/BL-762-finish-shift-bedtime-vs-lights-out.md` and the updated
+"Which stop do I want?" table in `docs/how-to/BL-637-lifecycle-script-scope.md`.
+BL-681: the no-dropped-human-sentence consolidation invariant referenced
+below is now ratified constitutional law, Article 5.3
+(`swarmforge/constitution/articles/05_amendments.md`); see the updated
+Governance section below. BL-574: PromptEngine (BL-546)'s Slice 2 adds a
+named fragment registry (`constitution`/`pipeline`/`role`/`pack-overlay`/
+`tool-instructions`, composed by reference so editing a fragment changes
+the next composed prompt with no compose-logic edit), a content-hash
+fragment cache (an unchanged fragment is not re-read across repeat
+composes against the same cache), and a registry-driven per-provider
+adapter lookup (`register-adapter!` — no `case`/`cond` branch on provider
+name in the compose path). Internal to
+`swarmforge/scripts/prompt_engine_lib.bb`; no new operator-facing surface
+in this slice. BL-855: the push sweep now refuses a merge
 that recorded correct ancestry but took none of what it merged — the exact
 shape that let BL-848's 108 approved files silently fail to land on `main`
 while every audit trail said they had; see the new push-sweep entry appended
@@ -1551,7 +1573,7 @@ The specifier decides which bucket a rule belongs in — a genuinely generic les
 
 **Auditability:** because proposals are messages and acceptances are commits, every rule has a trail — who proposed it, why, the specifier's decision, and the resulting diff — visible in the message view and in git history. Ties into the prompt-versioning gap: a PR can be traced to the exact governance text in force when it was produced.
 
-**Consolidation authority: the specifier may merge or split intakes instead of draining 1:1 (BL-680).** The intake-drain contract (BL-311, above) defaults to one intake becoming one ticket, but that mapping isn't the only one available. The specifier may **merge** several intakes that name overlapping work into one ticket (the resulting ticket lists every source intake; each source intake archives with a pointer to that ticket), or **split** one intake that proposes more than one separable piece of work into several tickets (BL-634's envelope discipline applied at intake time rather than after the first oversized parcel bounces — the intake archives once, pointing at every resulting ticket and stating which part went where, and each resulting ticket in turn records which intake it came from, so it's traceable standing alone). When an epic is promoted to top priority, the specifier also sweeps every open intake and paused ticket in that epic's orbit in one pass — merging overlaps, splitting oversized slices, retiring superseded ones, and correcting any `depends_on` the cluster contradicts — recording the consolidation on the epic. One constraint binds every form of consolidation: **no consolidation may ever drop a human sentence** — every operator directive quoted in a source intake must survive verbatim into at least one resulting ticket, or the merge/split is refused rather than trimmed (`extension/src/tools/intakeConsolidationCore.ts`; the invariant is being ratified separately as constitutional law under BL-681, since it has to bind every future consolidator, not just this prompt). Consolidation happens at spec time only — a ticket already in `backlog/active/` is never rewritten by a consolidation pass, the same worktree-staleness boundary BL-317/BL-325 exist to protect.
+**Consolidation authority: the specifier may merge or split intakes instead of draining 1:1 (BL-680).** The intake-drain contract (BL-311, above) defaults to one intake becoming one ticket, but that mapping isn't the only one available. The specifier may **merge** several intakes that name overlapping work into one ticket (the resulting ticket lists every source intake; each source intake archives with a pointer to that ticket), or **split** one intake that proposes more than one separable piece of work into several tickets (BL-634's envelope discipline applied at intake time rather than after the first oversized parcel bounces — the intake archives once, pointing at every resulting ticket and stating which part went where, and each resulting ticket in turn records which intake it came from, so it's traceable standing alone). When an epic is promoted to top priority, the specifier also sweeps every open intake and paused ticket in that epic's orbit in one pass — merging overlaps, splitting oversized slices, retiring superseded ones, and correcting any `depends_on` the cluster contradicts — recording the consolidation on the epic. One constraint binds every form of consolidation: **no consolidation may ever drop a human sentence** — every operator directive quoted in a source intake must survive verbatim into at least one resulting ticket, or the merge/split is refused rather than trimmed (`extension/src/tools/intakeConsolidationCore.ts`; the invariant is ratified as constitutional law in Article 5.3 (`swarmforge/constitution/articles/05_amendments.md`, BL-681), since it has to bind every future consolidator, not just this prompt). Consolidation happens at spec time only — a ticket already in `backlog/active/` is never rewritten by a consolidation pass, the same worktree-staleness boundary BL-317/BL-325 exist to protect.
 
 ### How it ties to inter-agent comms
 
