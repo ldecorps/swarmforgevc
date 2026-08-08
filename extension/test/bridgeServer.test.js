@@ -218,6 +218,30 @@ test('rejects path-traversal looking APK names', async () => {
   });
 });
 
+// BL-851 review goal 1: the prefix check runs on the resolved path, which is
+// computed lexically (path.resolve never touches the filesystem). A symlink
+// whose OWN name lives inside the public dir and matches the naming pattern
+// passes that check trivially - fs.statSync/createReadStream then follow it
+// to whatever it points at. This is the case the four hand-written traversal
+// cases (all rejected by the naming regex before any fs call) cannot catch,
+// and it is also the goal-3 case: the regex DOES match here, so a request
+// only reaches a 404 because the guard actively rejected a symlink, not
+// because the route never matched.
+test('does not follow a symlink inside the public dir that resolves outside it', async () => {
+  const target = mkTmp();
+  const publicDir = path.join(target, '.swarmforge', 'operator', 'public');
+  mkdirp(publicDir);
+  const secretDir = mkTmp();
+  const secretPath = path.join(secretDir, 'host-secret.txt');
+  fs.writeFileSync(secretPath, 'super-secret-host-contents');
+  const name = 'swarmforge-float-companion-escape.apk';
+  fs.symlinkSync(secretPath, path.join(publicDir, name));
+  await withBridge(target, {}, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/${name}`);
+    assert.equal(res.status, 404);
+  });
+});
+
 // BL-102: /stage-dwell is token-gated like every other route, and degrades
 // to an empty stages list rather than erroring for a target with no roles.
 test('rejects an unauthorized request to the stage-dwell endpoint', async () => {
