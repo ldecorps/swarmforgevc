@@ -4,9 +4,9 @@ milestone: M8
 type: defect
 status: todo
 epic: swarm-reliability
-human_approval: pending
+human_approval: approved
 severity: medium
-priority: 5
+priority: 7
 direction: pipeline-reported
 depends_on: [BL-858]
 assigned_to: coder
