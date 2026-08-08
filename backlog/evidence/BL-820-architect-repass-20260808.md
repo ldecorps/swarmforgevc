@@ -1,7 +1,12 @@
 # BL-820 closing-ceremony-lean-pass — architect re-pass — 20260808
 
 Commit reviewed: `649a28d446` (cleaner's forward), received as
-`merge_and_process cleaner 649a28d446`.
+`merge_and_process cleaner 649a28d446`, merged into this branch as
+`7d174809` before any check below was run (a first draft of this file was
+written and committed, `c9181704`, before the merge — corrected here after
+actually merging and re-running every check against the real merged tree;
+none of the merge changed a verdict, but the raw numbers below are the
+merged-tree ones, not the pre-merge ones).
 
 ## Why this is a fresh pass, not a duplicate of `BL-820-architect-pass-20260808.md`
 
@@ -23,9 +28,20 @@ material code that changed since my last look).
   `metrics/closingCeremonyRun.ts` / `metrics/closingCeremonyStore.ts`
   unchanged since my prior pass). Result: **PASSED, no forbidden edges.**
 - **Co-change / logical coupling (BL-255):** `node
-  extension/out/tools/co-change-report.js` against the same 9 files. Every
-  reported pairing is frequency 1 — below the suspected-coupling threshold
-  (3). No action needed.
+  extension/out/tools/co-change-report.js` against the same 9 files. 8 of
+  the 9 report only frequency-1 pairings. The 9th,
+  `extension/src/tools/swarm-metrics.ts`, reports SUSPECTED COUPLING (>= 3)
+  against `metrics/swarmMetrics.ts` (8), `bridge/bridgeServer.ts` (4),
+  `bridge/bridgeState.ts` (3), and others — but isolating the report to that
+  file alone shows `quality/closingCeremony.ts` at frequency 1, and its
+  history (`git log -- extension/src/tools/swarm-metrics.ts`, 16 commits
+  back to BL-071) confirms the coupling is pre-existing (swarm-metrics.ts is
+  a long-lived shared CLI-helper hub touching the metrics panel, bridge, and
+  i18n surfaces) and unrelated to this ticket — BL-820's only edit to it is
+  the 16-line `resolveTargetAndNow()` addition, reused solely by the three
+  closing-ceremony CLI wrappers. Not a defect this ticket introduced; not
+  bounced. Worth a future rule_proposal about swarm-metrics.ts's breadth if
+  it keeps growing, but out of this ticket's scope.
 - **Hardener's refactor, read for behavior preservation:**
   `buildHypotheses` split into `primaryHypotheses`/`fallbackHypotheses` —
   the new `primary.length > 0 ? primary : fallbackHypotheses(parts)` gate
@@ -62,9 +78,10 @@ material code that changed since my last look).
   vocabularies, not round-trip/idempotence/ordering-shaped — already
   covered by targeted example-based unit tests. No new property-shaped
   module introduced; no property test added.
-- **Unit tests:** `npx vitest run closingCeremony`: **67/67 passed** —
-  unchanged count from my prior pass, confirming the refactor is behavior-
-  preserving.
+- **Unit tests:** `npx vitest run closingCeremony`: **76/76 passed** across
+  7 test files (up from 67 in my prior pass — hardener and documenter added
+  9 new cases, including a new `closingCeremonyRunCli.test.js`), all green
+  against the merged tree.
 - **Cleaner's remediation:** read `BL-820-cleaner-pass-20260808.md` — real
   review against the post-hardener tree, explicit NONE, checks listed
   (jscpd 0 clones, compile clean, 40/40 targeted tests). Satisfies QA's D1
