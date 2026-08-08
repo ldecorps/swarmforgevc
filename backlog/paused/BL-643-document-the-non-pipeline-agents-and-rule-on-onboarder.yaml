@@ -6,7 +6,7 @@ status: todo
 epic: swarm-intelligence-layer
 human_approval: approved
 severity: medium
-priority: 14
+priority: 15
 direction: human-requested
 depends_on: [BL-684]
 assigned_to: coder

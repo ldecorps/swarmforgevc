@@ -4,7 +4,7 @@ milestone: M8
 type: epic
 status: todo
 epic: swarm-intelligence-layer
-priority: 75
+priority: 76
 direction: human-requested
 depends_on: [BL-545]
 decomposes_into: [BL-713]
