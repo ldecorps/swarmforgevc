@@ -1866,6 +1866,29 @@
       (when (zero? exit) (str/trim out)))
     (catch Exception _ nil)))
 
+;; BL-619: shells to the compiled token-burn-section.js CLI, same shell-out
+;; pattern as the *-briefing-line fns above, but the CLI's stdout is JSON
+;; (kind/leadingText/appendedText/subjectMarker/warning) rather than a
+;; single text line - it composes both the leading warning AND the appended
+;; ok/no-anchor/malformed one-liner, only one of which is ever populated per
+;; call, so this needs the full shape rather than a trimmed string. Any
+;; failure (CLI not yet compiled, non-zero exit) degrades to nil, same as
+;; every sibling CLI here - never crashes the sweep, never fabricates a
+;; percentage. A malformed reset config (malformed-reset-config-08) carries
+;; a non-nil :warning, logged loudly here in addition to the CLI's own
+;; stderr write - the daemon's own persisted log is the actually-monitored
+;; surface, not an interactive terminal.
+(defn token-burn-briefing-section []
+  (try
+    (let [cli-path (str (fs/path project-root "extension" "out" "tools" "token-burn-section.js"))
+          {:keys [exit out]} (process/sh ["node" cli-path] {:dir (str project-root)})]
+      (when (zero? exit)
+        (let [{:keys [leadingText appendedText subjectMarker warning]} (json/parse-string out true)]
+          (when warning
+            (log! "token-burn-section-malformed-config" warning))
+          {:leading-text leadingText :appended-text appendedText :subject-marker? subjectMarker})))
+    (catch Exception _ nil)))
+
 (defn standing-rule-violations-briefing-line []
   (try
     (let [files (for [f (standing-rule-violations-files/rule-source-files project-root)]
@@ -1916,6 +1939,7 @@
     :suboptimality-verdict-line suboptimality-verdict-briefing-line
     :qa-bounce-line qa-bounce-briefing-line
     :telegram-bridge-cost-line telegram-bridge-cost-briefing-line
+    :token-burn-section token-burn-briefing-section
     :log! (fn [& parts] (apply log! parts))}))
 
 ;; BL-353: shells to the compiled notify-dead-letters.js CLI, same posture
@@ -2128,6 +2152,58 @@
       (log! "push-sweep-qa-gate-error" (.getMessage e))
       {:facts-complete? false})))
 
+;; BL-855: the real git/CLI-specific wiring for push_sweep_lib.bb's own
+;; noop-merge-decision - pure decision logic stays there, this is only the
+;; git-shelling adapter (mirrors push-sweep-qa-gate-facts! above). Unlike
+;; that gate, this one has NO tip-is-ancestor fast path and always
+;; enumerates the ahead range: a no-op landing merge can itself be a
+;; swarmforge-QA ancestor (its second parent IS genuinely approved) while
+;; having taken none of that parent's content, so skipping ahead-commit
+;; enumeration whenever the tip already reads as approved would leave
+;; f28a84ad's exact path open again.
+(defn- git-diff-name-only [rev-a rev-b]
+  (let [{:keys [exit out]} (process/sh ["git" "diff" "--name-only" rev-a rev-b] {:dir (str project-root)})]
+    (when (zero? exit)
+      (->> (str/split-lines (str/trim out)) (remove str/blank?)))))
+
+;; Both revs are explicit git refs (never omitted), so this is a tree-to-
+;; tree diff purely against git objects - the shared, chronically-dirty,
+;; hot-synced master checkout's working tree is never consulted (BL-855
+;; invariant 3).
+(defn- noop-merge-commit-facts [sha]
+  (if (git-merge-commit? sha)
+    (let [parent1 (str sha "^1")
+          parent2 (str sha "^2")
+          offered (git-diff-name-only parent1 parent2)
+          tree-diff (git-diff-name-only parent1 sha)
+          second-parent (git-rev-parse parent2)]
+      {:sha sha :ok? (and (some? offered) (some? tree-diff) (some? second-parent))
+       :merge? true
+       :second-parent-sha second-parent
+       :offered-paths (or offered [])
+       ;; = [], not (empty? tree-diff): a git failure (tree-diff nil) must
+       ;; read as "not known equal", never as an empty-seq false positive -
+       ;; :ok? above already fails the whole gather closed in that case,
+       ;; this is belt-and-suspenders against a future consumer that reads
+       ;; this field without checking :ok? first.
+       :tree-equals-parent1? (= tree-diff [])})
+    {:sha sha :ok? true :merge? false}))
+
+(defn push-sweep-noop-merge-gate-facts! []
+  (try
+    (let [shas (git-ahead-shas)]
+      (if (nil? shas)
+        {:facts-complete? false}
+        (let [commit-facts (mapv noop-merge-commit-facts shas)]
+          (if (some (complement :ok?) commit-facts)
+            {:facts-complete? false}
+            {:facts-complete? true
+             :ahead-commits (mapv #(select-keys % [:sha :merge? :second-parent-sha :offered-paths :tree-equals-parent1?])
+                                   commit-facts)}))))
+    (catch Exception e
+      (log! "push-sweep-noop-merge-gate-error" (.getMessage e))
+      {:facts-complete? false})))
+
 (defn push-sweep! []
   (try
     (push-sweep-lib/sweep!
@@ -2135,6 +2211,7 @@
      {:rev-counts! push-sweep-rev-counts!
       :push! push-sweep-push!
       :qa-gate-facts! push-sweep-qa-gate-facts!
+      :noop-merge-gate-facts! push-sweep-noop-merge-gate-facts!
       :send-push-alarm!
       (fn [attempts]
         (send-push-alarm-email!

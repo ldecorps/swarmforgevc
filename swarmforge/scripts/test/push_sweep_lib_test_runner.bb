@@ -127,6 +127,73 @@
            :ahead-commits [{:sha "merge1234" :merge? true :qa-ancestor? false
                             :changed-paths ["backlog/active/BL-1.yaml"]}]}))
 
+;; ── BL-855: noop-landing-merge? / noop-merge-decision ──────────────────────
+;; Gherkin BL-855 noop-landing-merge-drops-approved-work-01 (Scenario Outline)
+
+(assert-true "noop-landing-merge?: 108 offered, tree identical to parent1 -> refused shape"
+             (push-sweep-lib/noop-landing-merge?
+              {:merge? true :tree-equals-parent1? true :offered-paths (repeat 108 "x")}))
+(assert-false "noop-landing-merge?: 0 offered, tree identical to parent1 -> harmless (nothing to take)"
+              (push-sweep-lib/noop-landing-merge?
+               {:merge? true :tree-equals-parent1? true :offered-paths []}))
+(assert-false "noop-landing-merge?: 108 offered, tree differs from parent1 -> the merge took something"
+              (push-sweep-lib/noop-landing-merge?
+               {:merge? true :tree-equals-parent1? false :offered-paths (repeat 108 "x")}))
+(assert-false "noop-landing-merge?: a non-merge commit is never flagged, regardless of other facts"
+              (push-sweep-lib/noop-landing-merge?
+               {:merge? false :tree-equals-parent1? true :offered-paths (repeat 108 "x")}))
+
+;; Gherkin BL-855 -02: the refusal states its reason, not a bare status.
+
+(assert= "noop-merge-decision: names the offending sha, its second parent, and the dropped count"
+         {:refuse? true :reason :noop-landing-merge
+          :offending [{:sha "f28a84ad01" :second-parent-sha "11ae7ac301" :dropped-count 108}]}
+         (push-sweep-lib/noop-merge-decision
+          {:facts-complete? true
+           :ahead-commits [{:sha "f28a84ad01" :merge? true :second-parent-sha "11ae7ac301"
+                             :tree-equals-parent1? true :offered-paths (vec (repeat 108 "x"))}]}))
+
+;; Gherkin BL-855 -03: being genuinely QA-approved does not excuse a merge
+;; that took nothing - noop-merge-decision never consults :qa-ancestor? at
+;; all, so this holds regardless of whether the ahead-commit fact even
+;; carries that key.
+
+(assert-true "noop-merge-decision: refuses a no-op merge even when its second parent is genuinely QA-approved"
+             (:refuse?
+              (push-sweep-lib/noop-merge-decision
+               {:facts-complete? true
+                :ahead-commits [{:sha "f28a84ad01" :merge? true :second-parent-sha "11ae7ac301"
+                                  :qa-ancestor? true
+                                  :tree-equals-parent1? true :offered-paths (vec (repeat 108 "x"))}]})))
+
+;; Gherkin BL-855 -05: a non-merge commit is not subject to the check.
+
+(assert= "noop-merge-decision: a lone non-merge ahead-commit is never refused"
+         {:refuse? false :reason nil :offending []}
+         (push-sweep-lib/noop-merge-decision
+          {:facts-complete? true
+           :ahead-commits [{:sha "abc1234567" :merge? false}]}))
+
+;; facts-complete? false fails closed, mirroring qa-gate-decision's own posture.
+
+(assert= "noop-merge-decision: facts-complete? false fails closed regardless of ahead-commits"
+         {:refuse? true :reason :gather-failed :offending []}
+         (push-sweep-lib/noop-merge-decision {:facts-complete? false :ahead-commits []}))
+
+;; A merge whose second parent is ALREADY an ancestor of the first parent
+;; (nothing new offered) is never flagged - the harmless tree-equal shape
+;; measured twice in the real 400-merge sample (e126f28d, 229ae7c2).
+
+(assert= "noop-merge-decision: a merge with nothing to take (0 offered paths) never refuses, even alongside a genuine no-op merge"
+         {:refuse? true :reason :noop-landing-merge
+          :offending [{:sha "bad0000001" :second-parent-sha "p2bad00001" :dropped-count 28}]}
+         (push-sweep-lib/noop-merge-decision
+          {:facts-complete? true
+           :ahead-commits [{:sha "harmless001" :merge? true :second-parent-sha "p2harmless1"
+                             :tree-equals-parent1? true :offered-paths []}
+                            {:sha "bad0000001" :merge? true :second-parent-sha "p2bad00001"
+                             :tree-equals-parent1? true :offered-paths (vec (repeat 28 "y"))}]}))
+
 ;; ── due? ──────────────────────────────────────────────────────────────────
 
 (assert-true "due?: never attempted is always due"
@@ -193,7 +260,14 @@
 ;; ITSELF pass their own :qa-gate-facts.
 (def approved-qa-gate-facts {:qa-ref-exists? true :tip-is-qa-ancestor? true})
 
-(defn fake-adapters [{:keys [counts push-results alarm-results divergence-results qa-gate-facts]}]
+;; BL-855: every pre-existing sweep! test below predates the no-op-merge
+;; gate too and expects an unconditional publish once :should-push is
+;; reached - default noop-merge-gate-facts here is "no ahead commits offer
+;; anything", the harmless case, so none of them have to know the gate
+;; exists. Tests of the gate ITSELF pass their own :noop-merge-gate-facts.
+(def harmless-noop-merge-gate-facts {:facts-complete? true :ahead-commits []})
+
+(defn fake-adapters [{:keys [counts push-results alarm-results divergence-results qa-gate-facts noop-merge-gate-facts]}]
   (let [counts-atom (atom counts)
         push-calls (atom 0)
         alarm-calls (atom 0)
@@ -219,6 +293,7 @@
                                  (let [r (nth divergence-results (dec @divergence-calls) (last divergence-results))]
                                    r))
       :qa-gate-facts! (fn [] (or qa-gate-facts approved-qa-gate-facts))
+      :noop-merge-gate-facts! (fn [] (or noop-merge-gate-facts harmless-noop-merge-gate-facts))
       :log! (fn [& parts] (swap! logs conj (clojure.string/join " " parts)))}}))
 
 ;; BL-356 swarm-pushes-main-to-origin-01: committed work reaches origin
@@ -414,6 +489,61 @@
                (some #(clojure.string/includes? % "behind-only") @(:logs calls)))
   (assert-false "BL-630 05: the behind-only tick is never logged as plain up-to-date"
                 (some #(= % "push-sweep up-to-date") @(:logs calls))))
+
+;; ── BL-855: sweep! -level wiring - the noop-merge gate runs BEFORE
+;;    qa-gate-decision and refuses regardless of QA-approval facts ─────────
+
+;; Gherkin BL-855 -03 replayed at the sweep! level: a genuinely QA-approved
+;; tip (the qa-gate fast path) is still refused when it is itself a no-op
+;; landing merge.
+(let [dir (mk-fixture-dir)
+      {:keys [calls adapters]}
+      (fake-adapters {:counts {:ahead 1 :behind 0}
+                      :qa-gate-facts {:qa-ref-exists? true :tip-is-qa-ancestor? true}
+                      :noop-merge-gate-facts
+                      {:facts-complete? true
+                       :ahead-commits [{:sha "f28a84ad01" :merge? true :second-parent-sha "11ae7ac301"
+                                         :tree-equals-parent1? true :offered-paths (vec (repeat 108 "x"))}]}})]
+  (push-sweep-lib/sweep! 100000 dir retry-cfg adapters)
+  (assert= "BL-855 sweep!: a no-op landing merge is never pushed, even when its second parent is a QA-ancestor tip"
+           0 @(:push calls))
+  (assert-true "BL-855 sweep!: the refusal is logged naming the offending sha, its second parent, and the dropped count"
+               (some #(and (clojure.string/includes? % "f28a84ad01")
+                            (clojure.string/includes? % "11ae7ac301")
+                            (clojure.string/includes? % "108"))
+                     @(:logs calls))))
+
+;; Gherkin BL-855 -02 replayed at the sweep! level: the refusal is its own
+;; distinct outcome, tagged noop-merge-refused, and none of the QA-gate or
+;; push-retry/alarm machinery engages.
+(let [dir (mk-fixture-dir)
+      {:keys [calls adapters]}
+      (fake-adapters {:counts {:ahead 1 :behind 0}
+                      :noop-merge-gate-facts
+                      {:facts-complete? true
+                       :ahead-commits [{:sha "f28a84ad02" :merge? true :second-parent-sha "11ae7ac302"
+                                         :tree-equals-parent1? true :offered-paths (vec (repeat 108 "x"))}]}})]
+  (push-sweep-lib/sweep! 100000 dir retry-cfg adapters)
+  (assert-true "BL-855 sweep!: the refusal entry is distinguishable (tagged noop-merge-refused)"
+               (some #(clojure.string/includes? % "noop-merge-refused") @(:logs calls)))
+  (assert= "BL-855 sweep!: no push-failure/push-backoff state is recorded"
+           nil (:push (push-sweep-lib/read-state dir)))
+  (assert= "BL-855 sweep!: the existing push-failure retry/backoff never engaged" 0 @(:push calls))
+  (assert= "BL-855 sweep!: the existing divergence alarm never fires" 0 @(:divergence calls))
+  (assert= "BL-855 sweep!: no push-failure alarm is sent" 0 @(:alarm calls)))
+
+;; A merge that genuinely had nothing to take still publishes (the harmless
+;; tree-equal shape) - this must not regress once the gate exists.
+(let [dir (mk-fixture-dir)
+      {:keys [calls adapters]}
+      (fake-adapters {:counts {:ahead 1 :behind 0}
+                      :push-results [{:success true}]
+                      :noop-merge-gate-facts
+                      {:facts-complete? true
+                       :ahead-commits [{:sha "harmless002" :merge? true :second-parent-sha "p2harmless2"
+                                         :tree-equals-parent1? true :offered-paths []}]}})]
+  (push-sweep-lib/sweep! 100000 dir retry-cfg adapters)
+  (assert= "BL-855 sweep!: a merge with nothing to take still publishes" 1 @(:push calls)))
 
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (empty? @failures)
