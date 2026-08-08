@@ -56,7 +56,15 @@ below. BL-819: the coordinator gains a durable, coordinator-owned ticket
 lifecycle ledger — composed entirely from instruments that already ship
 [handoff audit headers, ticket-YAML bounce history, routing-skip reasons,
 chase telemetry, the backlog close transition], never a new telemetry
-producer; see the new reference doc `docs/reference/BL-819-ticket-lifecycle-ledger.md`);
+producer; see the new reference doc `docs/reference/BL-819-ticket-lifecycle-ledger.md`).
+BL-820: `./finish-shift` now runs a closing-ceremony lean pass before it
+stops the pipeline — folding BL-819's ledger into a shift packet and
+delivering it to the specifier, who must end the pass in a recorded outcome
+(a process ticket, a spec/gate tweak, or an explicit no-change); the
+coordinator records any promotion-order/throttle-posture adjustment it made
+within its existing powers against the same run. A missing compile or a
+non-zero exit is a loud skip, never a bedtime failure. See the new reference
+doc `docs/reference/BL-820-closing-ceremony-lean-pass.md`;
 August 6, 2026 (BL-835: `thresholds-from-samples` in
 `flow_watchdog_lib.bb` clamped a sub-60s raw warn percentile *up* to the
 60000ms `min-warn-ms` floor and wrote it into the calibrated table as if

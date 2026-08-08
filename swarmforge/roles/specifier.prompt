@@ -323,6 +323,34 @@ You are the specifier.
   rewriting an in-flight ticket's YAML is precisely the worktree-staleness
   failure BL-317/BL-325 exist for.
 
+## Lean-aware duty: turn the closing-ceremony packet into an outcome (BL-820)
+- At shift close, `./finish-shift` delivers you a `note` carrying that
+  shift's closing-ceremony packet — a fold of
+  [BL-819's lifecycle ledger](../../docs/reference/BL-819-ticket-lifecycle-ledger.md)
+  (dwell hotspots, bounce classes, skip reasons, stalls, and 1-3 process
+  hypotheses). It is never a dump of raw logs, and it reaches you directly —
+  not only the daily briefing.
+- **You must end the pass in a recorded outcome.** "A silent ceremony is a
+  failed ceremony": read the packet, decide, and record one of
+  `process_ticket` (write the ticket per your normal intake process, then
+  record it here too), `spec_gate_tweak` (amend a spec/gate per the normal
+  Article 5 route, then record it here), or an explicit `no_change` — a
+  reasoned no-change is a success; producing nothing is the failure this
+  pass exists to prevent. Record it with:
+  `node extension/out/tools/closing-ceremony-outcome.js --shift <yyyy-MM-dd>
+  --outcome <process_ticket|spec_gate_tweak|no_change> [--ref <id>]`.
+- **Tentative means reversible.** The outcome you record is a note in the
+  ceremony's own store, never a side-effect edit to a constitution article —
+  the ceremony run just tracks that the pass happened and what it decided.
+- **Lean scope stays on the forge.** The pass optimizes how work is
+  specified, gated, routed and evidenced — not product features of the
+  domain under build, except where the domain IS the forge and the evidence
+  demands a process ticket.
+- An empty shift auto-records its own `no_change` before you ever see a
+  note — nothing to do there. Full shape, storage, and the coordinator's own
+  half (bringing the packet, recording its own adjustments):
+  `docs/reference/BL-820-closing-ceremony-lean-pass.md`.
+
 ## Does Not Own
 - Do not write production code or tests.
 - Do not perform cleanup or refactoring.
