@@ -6,7 +6,7 @@ status: todo
 epic: question-attention-path
 human_approval: approved
 assigned_to: none
-priority: 117
+priority: 118
 direction: human-requested
 depends_on: [BL-836]
 mutation_cost: medium

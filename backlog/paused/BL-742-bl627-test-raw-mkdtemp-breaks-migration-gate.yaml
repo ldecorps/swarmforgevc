@@ -6,7 +6,7 @@ severity: medium
 status: todo
 epic: cost-intelligence
 assigned_to: specifier
-priority: 59
+priority: 60
 direction: normal
 depends_on: []
 mutation_cost: low

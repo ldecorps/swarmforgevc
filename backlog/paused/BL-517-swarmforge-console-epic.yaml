@@ -4,7 +4,7 @@ milestone: M8
 status: todo
 type: epic
 epic: swarmforge-console
-priority: 8
+priority: 9
 depends_on: []
 decomposes_into: [BL-516, BL-526, BL-538, BL-696, BL-697, BL-698, BL-702, BL-703, BL-704, BL-705, BL-706, BL-707]
 source: "Human directive in-session 2026-07-18: upload 'Spec brief — Operator Telegram console (status slice)' labelled 'epic: swarmforge console', then 'you've got to create a console epic for that'. UMBRELLA/tracking item — not directly promotable; children are promoted individually."

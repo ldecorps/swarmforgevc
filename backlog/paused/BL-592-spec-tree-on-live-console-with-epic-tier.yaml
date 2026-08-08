@@ -6,7 +6,7 @@ status: todo
 epic: swarmforge-console
 human_approval: approved
 severity: medium
-priority: 104
+priority: 105
 direction: human-requested
 depends_on: []
 assigned_to: specifier

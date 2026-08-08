@@ -5,7 +5,7 @@ type: feature
 status: todo
 epic: quota-budget-manager
 severity: medium
-priority: 107
+priority: 108
 direction: human-requested
 depends_on: [BL-660, BL-664]
 assigned_to: specifier

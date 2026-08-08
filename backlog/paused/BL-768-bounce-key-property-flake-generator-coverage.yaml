@@ -6,7 +6,7 @@ severity: medium
 status: todo
 epic: swarm-reliability
 assigned_to: none
-priority: 37
+priority: 38
 direction: normal
 depends_on: []
 mutation_cost: low
