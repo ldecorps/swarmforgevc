@@ -1866,6 +1866,29 @@
       (when (zero? exit) (str/trim out)))
     (catch Exception _ nil)))
 
+;; BL-619: shells to the compiled token-burn-section.js CLI, same shell-out
+;; pattern as the *-briefing-line fns above, but the CLI's stdout is JSON
+;; (kind/leadingText/appendedText/subjectMarker/warning) rather than a
+;; single text line - it composes both the leading warning AND the appended
+;; ok/no-anchor/malformed one-liner, only one of which is ever populated per
+;; call, so this needs the full shape rather than a trimmed string. Any
+;; failure (CLI not yet compiled, non-zero exit) degrades to nil, same as
+;; every sibling CLI here - never crashes the sweep, never fabricates a
+;; percentage. A malformed reset config (malformed-reset-config-08) carries
+;; a non-nil :warning, logged loudly here in addition to the CLI's own
+;; stderr write - the daemon's own persisted log is the actually-monitored
+;; surface, not an interactive terminal.
+(defn token-burn-briefing-section []
+  (try
+    (let [cli-path (str (fs/path project-root "extension" "out" "tools" "token-burn-section.js"))
+          {:keys [exit out]} (process/sh ["node" cli-path] {:dir (str project-root)})]
+      (when (zero? exit)
+        (let [{:keys [leadingText appendedText subjectMarker warning]} (json/parse-string out true)]
+          (when warning
+            (log! "token-burn-section-malformed-config" warning))
+          {:leading-text leadingText :appended-text appendedText :subject-marker? subjectMarker})))
+    (catch Exception _ nil)))
+
 (defn standing-rule-violations-briefing-line []
   (try
     (let [files (for [f (standing-rule-violations-files/rule-source-files project-root)]
@@ -1916,6 +1939,7 @@
     :suboptimality-verdict-line suboptimality-verdict-briefing-line
     :qa-bounce-line qa-bounce-briefing-line
     :telegram-bridge-cost-line telegram-bridge-cost-briefing-line
+    :token-burn-section token-burn-briefing-section
     :log! (fn [& parts] (apply log! parts))}))
 
 ;; BL-353: shells to the compiled notify-dead-letters.js CLI, same posture
