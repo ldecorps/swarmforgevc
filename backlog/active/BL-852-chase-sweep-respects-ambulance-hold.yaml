@@ -226,7 +226,7 @@ notes: |
      held parcel is chased and its count is exactly one higher than the frozen
      value.
 
-acceptance: specs/features/BL-852-chase-sweep-respects-ambulance-hold.feature.draft
+acceptance: specs/features/BL-852-chase-sweep-respects-ambulance-hold.feature
 
 out_of_scope: |
   - **The `in_process` nudge stays live, unchanged** (asserted by scenario
