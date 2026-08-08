@@ -55,6 +55,12 @@ notes: |
   literal it substitutes to, one pairs scenario 04's Given against the same
   action's When, and one pairs a Given against a When inside one outline.
 
+  Specifier 2026-08-08: re-run after withdrawing scenario 06 (see the
+  description's "Not in this ticket: the scheduled path"). Three findings
+  remain, all the same reviewed-and-kept classes; the fourth was internal to
+  the withdrawn outline. Feature file re-linted clean, and the parked
+  companion draft parses clean too.
+
 description: |
   ## What
 
@@ -81,8 +87,8 @@ description: |
   bedtime would grow a leak; defaulting to "stop" is how it would grow this bug
   back.
 
-  The scheduled end of day calls finish-shift by default, and lights-out only
-  when configuration says so.
+  Bedtime is an OPERATOR-INVOKED verb. It is deliberately not wired to any
+  timer — see "Not in this ticket: the scheduled path" below.
 
   ## Constraints
 
@@ -101,8 +107,11 @@ description: |
   ## Scope
 
   - The bedtime verb and the shared keep-vs-kill table both verbs read.
+    `stop-swarm.sh` and `swarm-kill` live at the REPO ROOT, not in
+    `swarmforge/scripts/`; the helpers they compose from
+    (`stop_ancillary_services.sh`, `kill_pipeline_swarm.sh`,
+    `stack_survivor_scan.sh`) are in `swarmforge/scripts/`.
   - `stop_ancillary_services.sh` — the misleading always-on comment at its head.
-  - The scheduled day-shift-end path — call bedtime unless configured otherwise.
   - `swarmforge/scripts/test/` — unit runner for the matrix decision.
   - `specs/pipeline/steps/` — this feature file's handlers, in this parcel.
   - One short how-to: bedtime vs lights-out, what stays up, how to fully stop.
@@ -117,6 +126,36 @@ description: |
     and it is complementary to BL-716 — that is a design decision of its own and
     does not belong inside a teardown verb.
   - Renaming or restructuring `stop-swarm.sh` / `swarm-kill`.
+
+  ## Not in this ticket: the scheduled path (specifier amendment 2026-08-08)
+
+  The original spec scoped "the scheduled day-shift-end path — call bedtime
+  unless configured otherwise", with scenario 06 covering it. Both are WITHDRAWN
+  from this parcel, for two independent reasons:
+
+  1. **There is nothing to wire.** No scheduled day-shift-end exists — not in
+     the repo, not in the live crontab (whose only swarmforge entry is the
+     BL-675 freshness check). The Telegram operator's `/shift end`
+     (`applyShiftEnd`, `extension/src/tools/telegramCursorOperatorPolicy.ts`)
+     only clears a policy flag; it stops no component. Scenario 06 asked the
+     coder to wire a verb into a caller that does not exist.
+  2. **Creating one is vetoed.** `.swarmforge/operator/continuous-shifts.json`
+     is armed with `scheduledStop: false` and the note "Do not restore
+     night-stop / day-shift-end / cooldown 17:00-09:00 until the human
+     revokes" — first armed 2026-07-31, reaffirmed 2026-08-03 and 2026-08-04.
+     `backlog/STEERING.md` records the same directive as an explicit veto on
+     this class of work. Shipping scenario 06 would restore exactly the timer
+     the human has now vetoed three times.
+
+  Scenario 06 is parked verbatim, with its unparking condition, in
+  `specs/features/BL-762-scheduled-end-of-day-verb.feature.draft` (BL-233), so
+  the design survives without the acceptance runner demanding vetoed code.
+
+  This narrows the parcel; it does not weaken it. The deliverable — one
+  explicit keep-vs-kill table both verbs read, and a bedtime verb that leaves
+  the phone path up — is untouched, and both declared invariants remain covered
+  (scenario 01 for the first, scenario 03 for the second). The verb needs no
+  change to be driven by a scheduler later, so unparking costs nothing now.
 
   ## e2e procedure for QA
 
