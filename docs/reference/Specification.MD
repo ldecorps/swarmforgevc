@@ -1,6 +1,23 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 8, 2026 (BL-762: a new bedtime verb, `./finish-shift`,
+**Last Updated:** August 8, 2026 (BL-856: `commit_integrity_lib.bb`'s
+`commit-with-integrity!` no longer leaves a caller's paths staged after a
+failed commit — it snapshots the caller's own index entries before staging
+and restores exactly that snapshot on every failure return after staging
+(`:add-failed`, `:commit-failed`, `:verify-mismatch`), scoped to the caller's
+own pathspec so a concurrent writer's staged path is never touched (a
+pre-staged rename, e.g. the coordinator's own `git mv` promotion, survives a
+failure untouched rather than being blanket-unstaged). The `:verify-mismatch`
+path restores to the index state right after the already-real, already-landed
+commit rather than the pre-call snapshot, avoiding a spurious index/HEAD/
+worktree three-way mismatch a mocked-seam unit test alone had missed but the
+acceptance suite's real-git fixture caught. A restore that cannot itself
+complete now surfaces as a new `:index-left-dirty` result field instead of
+being swallowed, and `commit_integrity_cli.bb` reports it in its failure
+message. Closes the gap that let one writer's abandoned staged edit ride
+along into an unrelated writer's next bare `git commit` — the same shared-
+checkout hazard BL-419 hardened the happy path against, now closed on the
+failure path too. BL-762: a new bedtime verb, `./finish-shift`,
 stops the token-burning pipeline agents, `handoffd`, babysitterd, the
 operator runtime, and the onboarder while leaving the Telegram front desk
 and remote tunnels up — the phone path — so an ordinary end of day no longer

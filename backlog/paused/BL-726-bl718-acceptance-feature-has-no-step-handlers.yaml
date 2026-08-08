@@ -6,7 +6,7 @@ severity: medium
 status: todo
 epic: swarmforge-console
 assigned_to: specifier
-priority: 53
+priority: 54
 direction: normal
 depends_on: []
 mutation_cost: low
