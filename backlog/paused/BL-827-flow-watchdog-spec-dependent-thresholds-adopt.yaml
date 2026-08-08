@@ -5,7 +5,7 @@ type: feature
 status: todo
 epic: swarm-reliability
 human_approval: approved
-priority: 86
+priority: 87
 direction: normal
 assigned_to: none
 depends_on: [BL-835]

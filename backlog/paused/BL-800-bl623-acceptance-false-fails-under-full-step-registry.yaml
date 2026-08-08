@@ -5,7 +5,7 @@ type: defect
 severity: high
 status: todo
 epic: swarm-reliability
-priority: 97
+priority: 98
 direction: normal
 mutation_cost: low
 human_approval: approved

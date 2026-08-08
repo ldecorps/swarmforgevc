@@ -6,7 +6,7 @@ severity: high
 status: todo
 epic: swarm-reliability
 human_approval: approved
-priority: 5
+priority: 7
 direction: agent-surfaced
 depends_on:
   - BL-853

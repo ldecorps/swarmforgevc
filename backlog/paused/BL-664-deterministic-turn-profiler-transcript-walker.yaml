@@ -5,7 +5,7 @@ type: feature
 status: todo
 epic: swarm-behaviour-trends
 severity: medium
-priority: 16
+priority: 17
 direction: human-requested
 depends_on: []
 assigned_to: specifier
