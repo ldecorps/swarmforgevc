@@ -108,7 +108,7 @@ description: |
      whether to leave them (and accept one discontinuity in the trend) or mark
      the changeover; do not silently mix.
 
-acceptance: specs/features/BL-847-resource-sampler-measures-pane-shell-not-agent-process.feature.draft
+acceptance: specs/features/BL-847-resource-sampler-measures-pane-shell-not-agent-process.feature
 
 out_of_scope: |
   - Host-load coverage — that is BL-822, in flight, and additive to this.
