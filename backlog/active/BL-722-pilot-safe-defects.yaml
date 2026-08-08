@@ -10,7 +10,7 @@ direction: queue-jump
 depends_on: []
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
-assigned_to: none
+assigned_to: coder
 
 invariants:
   - "A /pilot safe start never selects a ticket that fails the safe filter (type defect, real .feature, not needs_design, human_approval approved, mutation_cost low, paused by default)."
@@ -43,3 +43,6 @@ source: |
   Human via Let's Talk / Cursor 2026-07-30. Drained from
   `backlog/INTAKE-pilot-safe-defects.md`. Queue-jump + implement now so the
   safe pool can be piloted.
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-08, by: documenter, blamed: coder, class: invariant-unencoded, commit: 70ed222213, evidence: backlog/evidence/BL-722-bounce-20260808.md }

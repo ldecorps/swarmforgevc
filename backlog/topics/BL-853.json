@@ -1,0 +1,1 @@
+{"id":"BL-853","messages":[{"seq":0,"ts":1786152389643,"author":"swarm","type":"outbound","text":"BL-853 🎵 in progress — The promotion path never asks whether the depth cap is unlimited: a configured -1 resolves to 5, and with 5 tickets active every promotion is refused — the coordinator had to un-promote a ticket by hand to make room for an expedited defect"}]}

@@ -6,7 +6,7 @@
 import { topicForSubject } from './telegramTopicDecisions';
 import { buildPhotoPromptText } from '../bridge/cursorBridgeTelegramMedia';
 import { parseExpediteTicket, parseReexpediteTicket } from './telegramCursorBridgeExpedite';
-import { parsePilotTicket } from './telegramCursorBridgePilot';
+import { parsePilotTicket, parsePilotSafeCommand } from './telegramCursorBridgePilot';
 import { parseRedeployCommand } from './telegramCursorBridgeRedeploy';
 import { parseMiniAppRedeployCommand } from './telegramCursorBridgeMiniAppRedeploy';
 import { parseLogCommand, type LogTarget } from './telegramCursorBridgeLogs';
@@ -115,6 +115,8 @@ export type CursorBridgeDecision =
   | { action: 'expedite'; ticket: string }
   | { action: 'reexpedite'; ticket: string }
   | { action: 'pilot'; ticket: string }
+  | { action: 'pilot-safe-start' }
+  | { action: 'pilot-safe-list' }
   | { action: 'redeploy' }
   | { action: 'redeploy-miniapp' }
   | { action: 'log'; target: LogTarget }
@@ -316,11 +318,21 @@ function parseDequeuePosition(text: string): number | undefined {
   return Number.isFinite(position) && position > 0 ? position : undefined;
 }
 
+// BL-722 CRAP split: isolates the pilot-safe kind->action mapping so
+// decideOperatorCommand's own branch count stays at the CRAP <= 6 gate.
+function pilotSafeDecision(pilotSafe: NonNullable<ReturnType<typeof parsePilotSafeCommand>>): CursorBridgeDecision {
+  return { action: pilotSafe.kind === 'list' ? 'pilot-safe-list' : 'pilot-safe-start' };
+}
+
 function decideOperatorCommand(text: string): CursorBridgeDecision | undefined {
   // BL-702: /redeploy is gated via operator soft confirm (not fire-and-forget).
   const logTarget = parseLogCommand(text);
   if (logTarget) {
     return { action: 'log', target: logTarget };
+  }
+  const pilotSafe = parsePilotSafeCommand(text);
+  if (pilotSafe) {
+    return pilotSafeDecision(pilotSafe);
   }
   const pilotTicket = parsePilotTicket(text);
   if (pilotTicket) {
@@ -490,7 +502,7 @@ export function gateBusy(decision: CursorBridgeDecision, busy: boolean): CursorB
   if (!busy) {
     return decision;
   }
-  if (['prompt', 'expedite', 'reexpedite', 'pilot'].includes(decision.action)) {
+  if (['prompt', 'expedite', 'reexpedite', 'pilot', 'pilot-safe-start'].includes(decision.action)) {
     return { action: 'busy' };
   }
   if (decision.action === 'execute-operator') {
@@ -753,6 +765,7 @@ export function formatHelpMessage(): string {
     '/dequeue N — remove queued question #N',
     '/update — short summary of agent / expedite / swarm activity (works while busy)',
     '/pilot [BL-xxx] — Cursor agent staffs an offline expedition (default BL-696)',
+    '/pilot safe [--list] — auto-pick (or list) the safe pilot pool: approved, low-mutation, specced defects',
     '/expedite [BL-xxx] — run automated offline expeditor with stage updates (default BL-696)',
     '/reexpedite [BL-xxx] — checkpoint main WIP and restart a divergent expedite',
     '/redeploy — soft confirm, then compile and restart this bridge (reloads swarm.env)',

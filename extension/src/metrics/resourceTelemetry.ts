@@ -11,6 +11,13 @@ import { readConfigValue } from '../util/swarmforgeConfig';
 // BL-098 chaser-*.jsonl monthly telemetry family (its reader already
 // tolerates unknown `type` values) rather than inventing a second file
 // convention.
+//
+// BL-847 decision: samples recorded before that fix measured the pane's
+// root shell, not the agent (~3 orders of magnitude off) - existing
+// chaser-*.jsonl history is left as-is rather than tagged, so a trend
+// series that spans the fix will show one discontinuity at the deploy
+// point. Deliberate: retroactively tagging old samples would require
+// guessing at a cutover time from outside the data itself.
 
 export interface ResourceSampleEvent {
   role: string;

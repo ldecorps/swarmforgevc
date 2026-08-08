@@ -2630,6 +2630,93 @@ test('handleInboundDecision /pilot refuses while automated expedite is running',
   assert.ok(posts.some((p) => p.includes('Cannot pilot BL-700')));
 });
 
+// BL-722: writes a paused defect ticket matching (or, via overrides, failing)
+// the safe pilot filter used by pilotSafeDefects.ts.
+function writeSafePilotTicket(root, id, overrides = {}) {
+  const dir = path.join(root, 'backlog', 'paused');
+  fs.mkdirSync(dir, { recursive: true });
+  const fields = {
+    title: id,
+    type: 'defect',
+    status: 'todo',
+    severity: 'high',
+    priority: 1,
+    human_approval: 'approved',
+    mutation_cost: 'low',
+    ...overrides,
+  };
+  const body = [
+    `id: ${id}`,
+    `title: "${fields.title}"`,
+    `type: ${fields.type}`,
+    `status: ${fields.status}`,
+    `severity: ${fields.severity}`,
+    `priority: ${fields.priority}`,
+    `human_approval: ${fields.human_approval}`,
+    `mutation_cost: ${fields.mutation_cost}`,
+    `acceptance: specs/features/${id}-x.feature`,
+    '',
+  ].join('\n');
+  fs.writeFileSync(path.join(dir, `${id}.yaml`), body);
+  const featDir = path.join(root, 'specs', 'features');
+  fs.mkdirSync(featDir, { recursive: true });
+  fs.writeFileSync(path.join(featDir, `${id}-x.feature`), `Feature: ${id}\n`);
+}
+
+test('handleInboundDecision /pilot safe --list posts the ranked safe pool', async () => {
+  const root = mkRoot();
+  writeSafePilotTicket(root, 'BL-910', { severity: 'high', priority: 1 });
+  writeSafePilotTicket(root, 'BL-911', { severity: 'low', priority: 1 });
+  const posts = [];
+  const ctx = mkCtx({ root, posts });
+  const busy = await handleInboundDecision({ action: 'pilot-safe-list' }, ctx, 15, async () => {});
+  assert.equal(busy, false);
+  assert.ok(posts.some((p) => p.includes('BL-910') && p.includes('BL-911')));
+});
+
+test('handleInboundDecision /pilot safe --list on an empty pool says so without starting a pilot', async () => {
+  const root = mkRoot();
+  const posts = [];
+  const ctx = mkCtx({ root, posts });
+  const busy = await handleInboundDecision({ action: 'pilot-safe-list' }, ctx, 15, async () => {});
+  assert.equal(busy, false);
+  assert.ok(posts.some((p) => /Safe pilot pool empty/.test(p)));
+});
+
+test('handleInboundDecision /pilot safe picks and starts the top-ranked ticket', async () => {
+  const root = mkRoot();
+  writeSafePilotTicket(root, 'BL-910', { severity: 'low', priority: 1 });
+  writeSafePilotTicket(root, 'BL-911', { severity: 'high', priority: 1 });
+  const posts = [];
+  const ctx = mkCtx({ root, posts });
+  let captured;
+  ctx.agentSession.promptAgent = async (prompt) => {
+    captured = prompt;
+    return { replyText: 'piloting', agentId: ctx.agentSession.readAgentId() };
+  };
+  const busy = await handleInboundDecision({ action: 'pilot-safe-start' }, ctx, 15, async () => {});
+  assert.equal(busy, true);
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  assert.ok(posts.some((p) => /Safe filter matched 2/.test(p) && p.includes('BL-911')));
+  assert.ok(posts.some((p) => p.includes('Pilot BL-911 started')));
+  assert.match(String(captured), /OFFLINE EXPEDITION for BL-911/);
+});
+
+test('handleInboundDecision /pilot safe on an empty pool does not start a pilot', async () => {
+  const root = mkRoot();
+  const posts = [];
+  const ctx = mkCtx({ root, posts });
+  let prompted = false;
+  ctx.agentSession.promptAgent = async () => {
+    prompted = true;
+    return { replyText: 'nope', agentId: ctx.agentSession.readAgentId() };
+  };
+  const busy = await handleInboundDecision({ action: 'pilot-safe-start' }, ctx, 15, async () => {});
+  assert.equal(busy, false);
+  assert.equal(prompted, false);
+  assert.ok(posts.some((p) => /Safe pilot pool empty/.test(p)));
+});
+
 test('handleInboundDecision /update posts an operational summary', async () => {
   const root = mkRoot();
   const progressDir = path.join(root, '.swarmforge', 'expedite', 'BL-696');

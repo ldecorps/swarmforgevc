@@ -1,0 +1,247 @@
+id: BL-854
+title: "The orthogonality gate reads the epic tag as a file scope, so one active defect blocks its whole theme: 112 of 204 paused tickets are unpromotable today, and the coordinator overrides the gate by hand every time it fires"
+milestone: M8
+type: defect
+severity: high
+status: todo
+epic: swarm-reliability
+human_approval: approved
+priority: 4
+direction: agent-surfaced
+depends_on:
+  - BL-853
+assigned_to: coder
+mutation_cost: low
+
+invariants:
+  - "Orthogonality never refuses a promotion: for every candidate the gate contributes allow, with or without an advisory."
+  - "An advisory is evidence-bearing — whenever it fires it names each active ticket it fired on, so the coordinator can check real file overlap without re-deriving it."
+  - "No other verdict changes: human_approval, depth, hold, and Article 3.2.4 ranking stay byte-identical to today."
+
+required_wiring:
+  - "swarmforge/scripts/promotion_gates_cli.bb::ADVISORY::the CLI must surface the advisory to its shell caller, or a non-blocking verdict is indistinguishable from no signal at all"
+  - "swarmforge/scripts/promote_and_route_next.sh::ADVISORY::the promotion path must print the advisory for the ticket it actually promotes, or the signal stays dark exactly where the file-overlap judgement is made"
+
+source: |
+  Coordinator note 000176, 2026-08-07 23:28Z: "orthogonality epic-tag
+  false-positive + depth -1 fallback bug - spec fix". The depth half is
+  BL-853. Probed against the live backlog 2026-08-08 01:20Z.
+
+  ## The coordinator has already written the bug report
+
+  Commit `3fbe05e9`, promoting BL-852 **over the gate's refusal**:
+
+    > gate keys off shared epic:swarm-reliability tag with active BL-848, but
+    > BL-852 touches only swarmforge/scripts/chase_sweep_lib.bb while BL-848's
+    > required_wiring touches operator_runtime.bb / backlog/hotfix-ledger.yaml
+    > / docs only - zero real file overlap. ... Flagging the epic-tag
+    > orthogonality heuristic as a false-positive for specifier review.
+
+  Note what the coordinator actually compared to reach that verdict: the
+  tickets' **declared file paths**. The gate compared their theme.
+
+  ## The proxy and why it cannot work
+
+  `promotion_gates_lib.bb`'s own comment states the design honestly: "No
+  ticket field declares file/module scope, so this uses `epic:` ... as the
+  scope proxy: two tickets sharing an epic are the concrete 'tightly coupled
+  area' the Concurrent Work Orthogonality workflow rule means."
+
+  It is not. `epic:` is a mandatory theme bucket, and the buckets are large.
+  Measured across `backlog/paused/` (204 tickets):
+
+      76  epic: swarm-reliability
+      29  epic: swarmforge-console
+      20  epic: code-quality-gates
+      15  epic: swarm-behaviour-trends
+      11  epic: swarm-intelligence-layer
+       5  epic: question-attention-path
+       ... 20 further epics with 1-5 each
+
+  Against today's five active tickets (epics `swarmforge-console`,
+  `question-attention-path`, `lean-aware-coordinator`, `swarm-reliability`
+  x2), **112 of 204 paused tickets — 55% of the backlog — are refused by this
+  gate alone**, 76 of them behind a single active defect. Reproduced:
+
+      $ bb swarmforge/scripts/promotion_gates_cli.bb evaluate "$(pwd)" \
+          backlog/paused/BL-539-epic-swarm-reliability.yaml false 99
+      REFUSE|orthogonality|epic swarm-reliability already has an active ticket in flight
+
+  ## The gate is already being routed around, not obeyed
+
+  `backlog/active/` holds BL-847 and BL-852 **both tagged
+  `epic: swarm-reliability`** right now. A gate whose only observed effect is
+  a documented manual override is not protection; it is a toll. And each
+  override is a coordinator turn spent re-deriving, by hand, the file
+  comparison the gate was supposed to make.
+
+  ## Why a blocking verdict is the wrong shape here
+
+  The constitution's Concurrent Work Orthogonality rule tells the
+  **coordinator** to "compare its scope against every item already active or
+  in flight" and to "skip to the next orthogonal candidate". Nothing in the
+  backlog schema records a scope for the gate to compare, so the automated
+  layer can raise the question but cannot answer it. Refusing on the strength
+  of an answer it does not have is what produced the 112.
+
+description: |
+  Demote the orthogonality gate from a **refusal** to a non-blocking,
+  evidence-bearing **advisory**, and leave the file-overlap judgement where
+  the constitution puts it — with the coordinator, which already performs it
+  correctly (`3fbe05e9`).
+
+  ### The verdict contract
+
+  `promotion_gates_cli.bb evaluate` keeps its stdout contract exactly as it
+  is — `ALLOW` / `REFUSE|<gate>|<reason>`, same exit codes — so no existing
+  caller changes behaviour. When epic overlap is detected the CLI
+  additionally writes one line to **stderr**:
+
+      ADVISORY|orthogonality|epic <epic> is also active on <BL-id>[, <BL-id>...]
+
+  stdout is the machine contract; stderr is the human signal. That split is
+  what lets this land without touching any caller's parsing.
+
+  `promotion_gates_lib.bb`'s `evaluate` returns the advisory alongside
+  `{:ok true}` rather than in place of it; `orthogonality-refusal` becomes an
+  advisory producer. `select` mode's ranking is untouched — an advisory drops
+  nothing from the candidate set, so Article 3.2.4 ordering is unchanged by
+  construction.
+
+  ### The advisory must name the tickets, not just the epic
+
+  Invariant 2 is the load-bearing constraint, and it is the one thing today's
+  refusal reason gets wrong even as a message: "epic X already has an active
+  ticket in flight" does not say **which** ticket, so the coordinator must go
+  find it before it can compare anything. The advisory names every active
+  ticket sharing the epic. That means `active-epics` must become a
+  ticket-aware reader (epic -> ids) rather than a bare set of epic strings.
+
+  ### The promotion path must actually print it
+
+  A non-blocking verdict nobody sees is worse than no gate at all — it reads
+  as a clean promotion. `promote_and_route_next.sh` prints the advisory for
+  the ticket it actually promotes, once. In auto-pick mode that is the
+  winner's advisory only: echoing one per rejected candidate would bury the
+  signal it exists to raise.
+
+  ### Amend BL-663's feature file in the same parcel
+
+  `specs/features/BL-663-promote-and-route-enforces-every-promotion-gate.feature`
+  scenario 04 ("depth, orthogonality, and hold markers are enforced through
+  the same chokepoint") carries an `orthogonality` row in its Examples table
+  asserting a refusal. That row is removed and its step handler
+  (`specs/pipeline/steps/bl663PromotionGatesSteps.js`) updated in **this**
+  parcel — the remaining `active_backlog_max_depth` and `hold marker` rows
+  stay, unchanged. Leaving it would hard-fail the acceptance run. Its
+  mutation manifest stamp will need regenerating; do not hand-edit it
+  (engineering.prompt guardrail).
+
+notes: |
+  ### Why not a real scope field — the alternative this ticket did not take
+
+  The obvious "correct" fix is a declared file scope (a new `touches:` list,
+  or repurposing `required_wiring:` paths) compared for intersection. It was
+  rejected as the first move, not forever:
+
+  - No ticket carries one today. The gate would be inert across all 204
+    paused tickets until they are backfilled, so it buys nothing now.
+  - Backfilling 204 tickets with accurate file scopes is guesswork at spec
+    time; a wrong scope re-creates exactly this false positive with less
+    visibility.
+  - `required_wiring:` means "this call site must exist", not "this ticket
+    touches this file". A ticket routinely edits files it declares no wiring
+    for. Repurposing it would make both fields lie.
+
+  If a scope field is wanted later, this advisory is the natural place to
+  hang it: the gate already fires at the right moment with the right
+  evidence, and gains a refusal branch only once real scope data exists.
+  That is a separate ticket with a separate schema change — not this one.
+
+  ### Landing order
+
+  `depends_on: [BL-853]`. Both edit `promotion_gates_lib.bb`; they are
+  genuinely non-orthogonal and must not run concurrently. BL-853 also has to
+  land first for the symptom to be visible at all — until the depth cap stops
+  refusing, no candidate reaches the orthogonality gate.
+
+  ### Existing suites to keep green
+
+  `swarmforge/scripts/test/promotion_gates_lib_test_runner.bb`,
+  `promotion_gates_lib_property_runner.bb`,
+  `promotion_gates_cli_test_runner.bb`,
+  `test_promote_and_route_next_priority.sh`,
+  and the BL-663 acceptance feature amended above.
+
+  ### Test seam
+
+  Drive the real `promotion_gates_cli.bb` against a fixture project root with
+  seeded `backlog/active/` and `backlog/paused/` yaml — never a JS
+  re-implementation of the epic comparison. Assert stdout and stderr
+  **separately**: the whole point of the contract is that stdout did not
+  change, and a test that merges the two streams cannot see that. Per
+  stock-bash 3.2 discipline, guard empty-array expansion in new shell helpers
+  as `${arr[@]+"${arr[@]}"}` (BL-801).
+
+  ### Gherkin
+
+  Parked as `.feature.draft` per BL-233; the coder promotes it to `.feature`
+  and wires handlers in the same commit. Lint gate clean. IR-DRY: five
+  medium/low near-duplicate findings, all reviewed and deliberately kept —
+  do not "normalise" them:
+  - `the advisory names BL-900` vs `... BL-900 and BL-901`: one-ticket vs
+    multi-ticket advisory. Collapsing them loses the whole point of
+    invariant 2.
+  - Background's `an active ticket BL-900 ...` vs scenario 02's `BL-901`: the
+    second is an ADDITIONAL active ticket layered on the Background, not a
+    restatement of it.
+  - `an orthogonality advisory is raised` vs `no ... is raised`: an assertion
+    and its negation; distinct handlers by construction.
+  - `a paused candidate in epic bubble-control` vs `a lower-laned paused
+    candidate ...`: the laning qualifier is what makes scenario 04's
+    selection assertion meaningful.
+  - `a paused candidate in epic swarm-reliability` vs `the swarm-reliability
+    candidate is selected`: a Given and a Then. Checker false positive.
+
+  ### E2E procedure for QA
+
+  1. `bb swarmforge/scripts/promotion_gates_cli.bb evaluate "$(pwd)" <a paused
+     yaml whose epic matches an active ticket> false 99` prints `ALLOW` on
+     stdout, exits 0, and prints one `ADVISORY|orthogonality|...` line on
+     stderr naming the active ticket ids.
+  2. The same command for a paused ticket whose epic is not active prints
+     `ALLOW` and **no** advisory line.
+  3. `promote_and_route_next.sh` promotes a same-epic candidate and prints the
+     advisory once, for the promoted ticket only.
+  4. Confirm a `human_approval: pending` ticket and a `backlog/hold/` ticket
+     still refuse with their unchanged named reasons.
+  5. Count paused tickets refused on the orthogonality gate: expect 0.
+
+acceptance: specs/features/BL-854-orthogonality-advises-instead-of-blocking.feature.draft
+
+approval_context: >
+  One decision, and it is a policy call rather than a bug fix, which is why
+  this is `pending` while its sibling BL-853 is not. The gate is measurably
+  wrong (112 of 204 paused tickets blocked, and the coordinator already
+  overrides it by hand), but there are two ways to fix it and they differ in
+  what the swarm keeps. SPECCED HERE: demote epic-overlap to a non-blocking
+  advisory naming the overlapping tickets, leaving the file-overlap ruling
+  with the coordinator where the constitution puts it — small, immediate, and
+  loses no protection that actually exists today. THE ALTERNATIVE (Amend):
+  add a declared file-scope field to the ticket schema and refuse only on a
+  real path intersection — stronger, but inert until 204 paused tickets are
+  backfilled, and a wrong backfilled scope reproduces this same false
+  positive less visibly. Tap Approve for the advisory; Amend if you want the
+  scope field built first and the gate left blocking in the meantime.
+
+out_of_scope: |
+  - The depth `-1` sentinel — BL-853, and it must land first.
+  - Adding a `touches:`/scope field to backlog-schema.md, and any backfill of
+    existing tickets. Deliberately deferred (see notes); ticket it separately
+    if the human amends toward it.
+  - Any change to Article 3.2.4 expedite ranking, the depth cap, the hold
+    marker, or `human_approval` — all three invariants exist to keep those
+    byte-identical.
+  - Changing the constitution's Concurrent Work Orthogonality rule itself.
+    This ticket makes the code match the rule as written; the rule already
+    assigns the judgement to the coordinator.

@@ -298,6 +298,73 @@
                  " priority/id within its own bucket - " (:file loser) " (key " (pr-str (candidate-tie-key loser)) ") ranks ahead of it")
             true))))))
 
+;; ── P5/P6 (BL-853 coder pass, declared invariants) ──────────────────────
+;; BL-853: depth-refusal used to be a bare (>= active-count max-depth) with
+;; no no-limit branch, so even a correctly-resolved -1 (backlog-depth-lib's
+;; documented no-limit sentinel) refused at any active count. P5 quantifies
+;; invariant 1 ("with a negative configured or effective cap, the depth
+;; gate allows at every active count") over a wide active-count range. P6
+;; quantifies invariant 3 ("with a finite cap, every promotion decision is
+;; byte-identical to today's") by restating the PRE-FIX formula as an
+;; independent oracle here - never by calling depth-refusal back into
+;; itself - so a regression that reintroduces a divergent finite-cap
+;; formula (not just a missing no-limit branch) would also be caught.
+;; Invariant 2 ("every cap comes from the shared depth library - the
+;; promotion path parses no config and declares no depth default of its
+;; own") is a structural fact about promote_and_route_next.sh's shell
+;; script (which literal, if any, it hardcodes), not an input/output
+;; relationship of a pure function this generator can quantify over; it is
+;; recorded as a stated reason in this ticket's commit rather than forced
+;; into a property here, per the coder role's own carve-out for a
+;; declared invariant that "quantifies over prose or process rather than a
+;; pure, testable module."
+;;
+;; Non-vacuity proven by hand at authoring time: P5 was run against the
+;; PRE-FIX depth-refusal (bare (>= active-count max-depth), no no-limit
+;; branch) and failed on every negative-max-depth case, as expected -
+;; restored before commit.
+
+(defn gen-depth-case [s]
+  (let [[negative? s0] (gen-bool s)
+        [magnitude s1] (gen-int s0 6)
+        [active-count s2] (gen-int s1 6)]
+    (if negative?
+      [{:active-count active-count :max-depth (- (inc magnitude))} s2]
+      [{:active-count active-count :max-depth magnitude} s2])))
+
+(check-all "P5 depth-refusal: a negative max-depth (no-limit) never refuses, at any active count"
+  gen-depth-case
+  (fn [{:keys [active-count max-depth]}]
+    (if (neg? max-depth)
+      (let [result (promotion-gates-lib/depth-refusal active-count max-depth)]
+        (if (nil? result)
+          true
+          (str "no-limit max-depth " max-depth " with active-count " active-count " still refused: " (pr-str result))))
+      true)))
+
+(check-all "P6 depth-refusal: a non-negative max-depth is byte-identical to the pre-fix (>= active-count max-depth) formula"
+  gen-depth-case
+  (fn [{:keys [active-count max-depth]}]
+    (if (neg? max-depth)
+      true
+      (let [result (promotion-gates-lib/depth-refusal active-count max-depth)
+            expected-refuse? (>= active-count max-depth)
+            expected-reason (format "active count %d >= cap %d - no open slot" active-count max-depth)]
+        (cond
+          (and expected-refuse? (nil? result))
+          (str "expected a refusal for active-count " active-count " >= max-depth " max-depth " but got nil")
+
+          (and (not expected-refuse?) (some? result))
+          (str "expected no refusal for active-count " active-count " < max-depth " max-depth " but got " (pr-str result))
+
+          (and expected-refuse? (not= "active_backlog_max_depth" (:gate result)))
+          (str "wrong gate name: " (:gate result))
+
+          (and expected-refuse? (not= expected-reason (:reason result)))
+          (str "reason string diverged from the pre-fix formula: got " (pr-str (:reason result)) ", expected " (pr-str expected-reason))
+
+          :else true)))))
+
 ;; ── generator coverage, asserted rather than assumed ─────────────────────
 
 (let [[refused ok] (loop [i 0 s 7 r 0 o 0]

@@ -1,8 +1,3 @@
-# mutation-stamp: sha256=88710e8ceb3ba7ca210b6f52c9afcbb2d8bda6a9d73711e0aa9de1ebf5aef002
-# acceptance-mutation-manifest-begin
-# {"version":1,"tested_at":"2026-08-07T02:30:57.271967Z","feature_name":"Bubble does not open the mic onto its own voice","feature_path":"/Users/ldecorps/projects/swarmforgevc/.worktrees/hardender/specs/features/BL-826-bubble-hands-free-self-listen-echo-loop.feature","background_hash":"c23bd1348caf861a59da975037237b60841e59bddd56bf51d813886c8fc1feae","implementation_hash":"unknown","scenarios":[{"index":0,"name":"the re-arm gate's decision is covered by the JVM unit suite","scenario_hash":"aeafe040f09e64b5b72b86cb4f14a0c6a501cfe12a7ad93d6326ace57b90438f","mutation_count":6,"result":{"Total":6,"Killed":6,"Survived":0,"Errors":0},"tested_at":"2026-08-07T02:30:57.271967Z"}]}
-# acceptance-mutation-manifest-end
-
 Feature: Bubble does not open the mic onto its own voice
 
   In hands-free mode Bubble arms the mic a fixed 400 ms after the playback-done

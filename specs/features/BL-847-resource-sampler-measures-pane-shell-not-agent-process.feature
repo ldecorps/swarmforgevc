@@ -1,12 +1,9 @@
 Feature: the resource sampler measures each role's agent process
 
-  # BL-847 — DRAFT. Not a live .feature until the ticket is promoted and built
-  # (BL-233: a live .feature with no step handlers hard-fails the runner).
+  # BL-847 — step handlers: specs/pipeline/steps/bl847ResourceSamplerMeasuresAgentSteps.js
   #
-  # The pid resolution question in approval_context is unsettled, so the
-  # scenarios below are written against the OBSERVABLE outcome (the recorded
-  # sample describes the agent) rather than the resolution mechanism, and
-  # should survive either ruling.
+  # Written against the OBSERVABLE outcome (the recorded sample describes the
+  # agent) rather than the resolution mechanism itself.
 
   Background:
     Given a swarm role is running an agent process inside its tmux pane

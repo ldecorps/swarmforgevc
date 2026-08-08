@@ -4,7 +4,12 @@
 ;; adapters that log every call to a file instead of touching tmux - no live
 ;; tmux, no real timers, matching the sweep-decision non-behavioral gate.
 ;;
-;; Usage: chase_sweep_test_runner.bb <fixture-root> <now-ms> <liveness> <last-activity-ms>
+;; Usage: chase_sweep_test_runner.bb <fixture-root> <now-ms> <liveness> <last-activity-ms> [role]
+;;
+;; role defaults to "coder" (every pre-BL-852 caller's fixed value,
+;; unchanged) - BL-852's ambulance-hold scenarios pass "documenter" so its
+;; feature's wake-up/respawn/dead-letter assertions name the same role the
+;; Gherkin text does.
 ;;
 ;; Config tunables via env (all optional, sensible test defaults):
 ;;   CHASE_TIMEOUT_SECONDS, MAX_CHASES, STUCK_TIMEOUT_SECONDS,
@@ -26,7 +31,15 @@
 (def liveness (nth *command-line-args* 2))
 (def last-activity-ms (parse-long (nth *command-line-args* 3)))
 
-(def role "coder")
+;; BL-852: without this, handoff-lib/target-root falls back to `git
+;; rev-parse --git-common-dir` from this PROCESS's cwd - the real repo, not
+;; this fixture - so the sweep's new ambulance-held check would read the
+;; REAL swarm's live marker instead of the isolated fixture (the exact
+;; "diff shared globals" hazard the project's engineering rules forbid).
+;; Mirrors handoffd.bb's own startup call with its argv project-root.
+(handoff-lib/set-project-root! fixture-root)
+
+(def role (nth *command-line-args* 4 "coder"))
 (def inbox-new-dir (str (fs/path fixture-root "inbox" "new")))
 (def in-process-dir (str (fs/path fixture-root "inbox" "in_process")))
 ;; BL-499: completed/abandoned - the terminal-basename dirs run-sweep! now
