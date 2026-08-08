@@ -318,6 +318,12 @@ function parseDequeuePosition(text: string): number | undefined {
   return Number.isFinite(position) && position > 0 ? position : undefined;
 }
 
+// BL-722 CRAP split: isolates the pilot-safe kind->action mapping so
+// decideOperatorCommand's own branch count stays at the CRAP <= 6 gate.
+function pilotSafeDecision(pilotSafe: NonNullable<ReturnType<typeof parsePilotSafeCommand>>): CursorBridgeDecision {
+  return { action: pilotSafe.kind === 'list' ? 'pilot-safe-list' : 'pilot-safe-start' };
+}
+
 function decideOperatorCommand(text: string): CursorBridgeDecision | undefined {
   // BL-702: /redeploy is gated via operator soft confirm (not fire-and-forget).
   const logTarget = parseLogCommand(text);
@@ -326,7 +332,7 @@ function decideOperatorCommand(text: string): CursorBridgeDecision | undefined {
   }
   const pilotSafe = parsePilotSafeCommand(text);
   if (pilotSafe) {
-    return { action: pilotSafe.kind === 'list' ? 'pilot-safe-list' : 'pilot-safe-start' };
+    return pilotSafeDecision(pilotSafe);
   }
   const pilotTicket = parsePilotTicket(text);
   if (pilotTicket) {
