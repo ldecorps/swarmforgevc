@@ -15,7 +15,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { execFileSync } from 'child_process';
-import { resolveProjectRoot, printJsonToStdout, makeArgsGuardedMain, runCliMain } from './swarm-metrics';
+import { printJsonToStdout, makeArgsGuardedMain, runCliMain, resolveTargetAndNow } from './swarm-metrics';
 import { runClosingCeremony, ClosingCeremonyRunDeps } from '../metrics/closingCeremonyRun';
 import { parseArgs, USAGE, ClosingCeremonyRunArgs } from './closingCeremonyRunArgs';
 
@@ -44,8 +44,7 @@ export function sendNoteViaHandoff(targetPath: string, draft: string): void {
 export const REAL_DEPS: ClosingCeremonyRunDeps = { sendNote: sendNoteViaHandoff };
 
 export const main = makeArgsGuardedMain(parseArgs, USAGE, async (args) => {
-  const targetPath = args.target ?? resolveProjectRoot(process.cwd());
-  const nowIso = args.at ?? new Date().toISOString();
+  const { targetPath, nowIso } = resolveTargetAndNow(args);
   const result = runClosingCeremony(targetPath, nowIso, REAL_DEPS);
   printJsonToStdout(result);
 });

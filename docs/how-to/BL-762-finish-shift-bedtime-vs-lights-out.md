@@ -33,6 +33,12 @@ left running, it would relaunch the very agent seats bedtime just stopped
 (the ticket's second invariant: nothing bedtime leaves running can revive a
 stopped seat).
 
+Before it stops anything, `./finish-shift` also runs the
+[closing-ceremony lean pass](../reference/BL-820-closing-ceremony-lean-pass.md)
+(BL-820) while the pipeline is still up — folding the shift's lifecycle
+ledger into a packet for the specifier. A missing compile or a non-zero exit
+there is a loud skip, logged and continued past — it never blocks bedtime.
+
 ## Usage
 
 ```sh

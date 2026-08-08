@@ -51,6 +51,18 @@ test('parseArgs rejects an unknown form', () => {
   assert.equal(parseArgs(['--shift', '2026-08-08', '--kind', 'throttle_posture', '--detail', 'x', '--form', 'email', '--ref', 'n']), null);
 });
 
+test('parseArgs rejects an unrecognized flag', () => {
+  assert.equal(parseArgs(['--bogus', 'x', '--shift', '2026-08-08', '--kind', 'throttle_posture', '--detail', 'x', '--form', 'note', '--ref', 'n']), null);
+});
+
+test('parseArgs rejects a malformed shift key', () => {
+  assert.equal(parseArgs(['--shift', 'today', '--kind', 'throttle_posture', '--detail', 'x', '--form', 'note', '--ref', 'n']), null);
+});
+
+test('parseArgs rejects a missing detail', () => {
+  assert.equal(parseArgs(['--shift', '2026-08-08', '--kind', 'throttle_posture', '--form', 'note', '--ref', 'n']), null);
+});
+
 test('USAGE mentions both adjustment kinds', () => {
   assert.ok(USAGE.includes('promotion_order') && USAGE.includes('throttle_posture'));
 });

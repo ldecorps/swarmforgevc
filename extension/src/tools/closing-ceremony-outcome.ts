@@ -10,15 +10,14 @@
  *   --outcome <process_ticket|spec_gate_tweak|no_change> [--ref <id>]
  *   [--target <path>] [--at <iso-timestamp>]
  */
-import { resolveProjectRoot, printJsonToStdout, makeArgsGuardedMain, runCliMain } from './swarm-metrics';
+import { printJsonToStdout, makeArgsGuardedMain, runCliMain, resolveTargetAndNow } from './swarm-metrics';
 import { recordCeremonyOutcome } from '../metrics/closingCeremonyStore';
 import { parseArgs, USAGE, ClosingCeremonyOutcomeArgs } from './closingCeremonyOutcomeArgs';
 
 export { parseArgs, ClosingCeremonyOutcomeArgs };
 
 export const main = makeArgsGuardedMain(parseArgs, USAGE, async (args) => {
-  const targetPath = args.target ?? resolveProjectRoot(process.cwd());
-  const nowIso = args.at ?? new Date().toISOString();
+  const { targetPath, nowIso } = resolveTargetAndNow(args);
   const run = recordCeremonyOutcome(targetPath, args.shift, {
     type: args.outcomeType,
     ref: args.ref ?? null,
