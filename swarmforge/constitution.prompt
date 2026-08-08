@@ -11,7 +11,7 @@ also carries unnumbered project-wide prompt articles (`engineering.prompt`,
 `workflow.prompt`, `local-engineering.prompt`, `project.prompt`). Long-form
 incident-backed elaborations live under `.../articles/reference/` (e.g.
 `engineering-detailed.prompt`) — **not** inlined at boot, read on demand. See
-**reference/constitution-prompt-detailed.md** for this section's pre-trim wording.
+**constitution-prompt-detailed.md** for this section's pre-trim wording.
 
 ## Key Rules
 The four load-bearing rules below are stated in full in their own articles
@@ -21,7 +21,7 @@ cleaner → architect → hardender → documenter → QA (integrate) → coordi
 (bookkeep)` chain — `PIPELINE.md`), **Worktrees** (per-role in `01_roles.md`,
 the full table in `PIPELINE.md`), **Handoffs** (Article 2.3, `02_handoffs.md`),
 and the **No-Op Rule** (Article 1.9 / 2.3.2). See
-**reference/constitution-prompt-detailed.md** for this section's pre-trim wording.
+**constitution-prompt-detailed.md** for this section's pre-trim wording.
 
 ## Amendments
 To propose a change to the constitution, see Article 5 (`05_amendments.md`)

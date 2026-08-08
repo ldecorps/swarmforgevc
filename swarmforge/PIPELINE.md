@@ -33,7 +33,7 @@ merge, close tickets, or promote backlog items.
 
 - The specifier works on **master** but only for spec/prompt files — not
   integration merges; every other role works only in its own
-  `.worktrees/<role>` branch. See **reference/pipeline-detailed.md** for the
+  `.worktrees/<role>` branch. See **pipeline-detailed.md** for the
   full pre-trim wording.
 
 ## How a parcel moves
@@ -47,7 +47,7 @@ merge, close tickets, or promote backlog items.
    (priority `00`) to the next role, preserving the stable task name.
 4. Cleaner → architect (architecture review) → hardender (mutation
    hardening) → documenter (docs) → QA (final gate). See
-   **reference/pipeline-detailed.md** for steps 1-4's full pre-trim wording.
+   **pipeline-detailed.md** for steps 1-4's full pre-trim wording.
 5. **QA** is the last quality gate. On pass it broadcasts a merge-up `note` to
    every worktree role, **lands the approved commit on `main`** itself
    (pushes origin, closes a `GH-`-seeded issue; BL-247), then sends the
@@ -78,7 +78,7 @@ separate always-on pane. On `NO_TASK`: STOP (no re-poll/`/loop`); rotate to
 **specifier** if root intakes exist; else if a slot is open and paused work
 exists, send **one** `note` asking the coordinator to promote+route, then
 idle for a wake — promotion stays coordinator-owned. See
-**reference/pipeline-detailed.md** for the full pre-trim wording.
+**pipeline-detailed.md** for the full pre-trim wording.
 
 ### Aged-note rotation (BL-576), `rule_proposal` actionability (BL-795), and non-home stranding after QA merge-up (BL-550)
 
@@ -88,7 +88,7 @@ thrash on a five-role merge-up — a directed `rule_proposal` is different, it
 is actionable immediately. A non-home role must `rotate_to_role.sh <home>`
 proactively once its inbox is empty after a merge-up note, or it strands
 (tool backstop: `ROTATE_HOME`, not `NO_TASK`). Full mechanics for all three:
-**reference/pipeline-detailed.md**, `swarmforge/handoff-protocol.md`,
+**pipeline-detailed.md**, `swarmforge/handoff-protocol.md`,
 `docs/how-to/BL-576-aged-note-actionability-mono-router.md`.
 
 
@@ -108,6 +108,6 @@ the pipeline it is repairing. `swarmforge/scripts/expedite.sh <BL-id>` walks
 ONE ticket through the same role hats and gates with the stack stopped,
 reading only durable git data. It parks active work to `backlog/hold/` first
 (never `paused/`) and a failed restart never retracts a QA-stamped verdict.
-Full mechanics: **reference/pipeline-detailed.md**,
+Full mechanics: **pipeline-detailed.md**,
 `docs/how-to/BL-567-expedite-one-ticket-with-the-swarm-stopped.md`,
 `docs/explanation/BL-567-why-the-expeditor-commands-the-stack-but-never-depends-on-it.md`.

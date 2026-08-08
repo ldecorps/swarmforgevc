@@ -50,8 +50,10 @@ shared article remains in force.
    NO auth, NO write path; and (b) the LIVE holistic UI (token auth, live
    endpoints, control actions). Only git-SHA-derivable data rides the static
    PWA; route any live/machine-local/write-path need to the LIVE holistic UI
-   instead — confirm which surface a request means before speccing. See
-   **local-engineering-detailed.prompt** for the full pre-trim wording.
+   instead — confirm which surface a request means before speccing.
+   (Recurred 3x in 2026-07-10: BL-252 suite-duration trend, BL-265
+   gate-answer view, BL-257 slices 3-4 changed-since-visit + live trends.)
+   See **local-engineering-detailed.prompt** for the full pre-trim wording.
 6. Epics have icons representing musical forms, on TWO distinct surfaces —
    never one implementation assumed to cover both: PWA/fleet-console/
    bot-avatar carry the owned orchestra FORM marks (`docs/branding/icon-system.md`

@@ -19,5 +19,5 @@
   trimmed.
 - The clause binds the ACT of consolidating, not any one office — it reaches
   whoever consolidates next. Ratified by explicit human decision 2026-07-26
-  under 5.1 (BL-681). See **reference/05-amendments-detailed.md** for the
+  under 5.1 (BL-681). See **05-amendments-detailed.md** for the
   full rationale and provenance.
