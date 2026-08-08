@@ -6,7 +6,7 @@ status: todo
 epic: fleet-topology
 human_approval: approved
 severity: medium
-priority: 84
+priority: 85
 direction: human-requested
 depends_on: [BL-622]
 # ^ Promoted from prose to data at speccing, 2026-07-27. `out_of_scope` already

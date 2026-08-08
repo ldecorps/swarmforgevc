@@ -6,7 +6,7 @@ status: todo
 epic: swarmforge-console
 human_approval: approved
 severity: high
-priority: 16
+priority: 18
 direction: swarm-found
 depends_on: []
 assigned_to: null
