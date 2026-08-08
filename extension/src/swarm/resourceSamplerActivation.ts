@@ -64,6 +64,20 @@ export function listProcessTree(): ProcessTreeEntry[] {
 
 export const DEFAULT_AGENT_COMMAND_NAME = 'claude';
 
+// Pure: indexes a flat process table by ppid, once, so selectAgentDescendant
+// below can walk children in-memory without re-scanning processTree per
+// node. Split out from selectAgentDescendant to keep that function's own
+// CRAP within the project's <= 6 gate (BL-847 hardener pass).
+function buildChildrenByPpid(processTree: ProcessTreeEntry[]): Map<number, ProcessTreeEntry[]> {
+  const childrenByPpid = new Map<number, ProcessTreeEntry[]>();
+  for (const entry of processTree) {
+    const siblings = childrenByPpid.get(entry.ppid) ?? [];
+    siblings.push(entry);
+    childrenByPpid.set(entry.ppid, siblings);
+  }
+  return childrenByPpid;
+}
+
 // Pure: BFS from rootPid (excluded - only its descendants are candidates)
 // over an already-resolved process table, returning the first descendant,
 // nearest generation first, whose command matches agentCommandName. null
@@ -75,12 +89,7 @@ export function selectAgentDescendant(
   rootPid: number,
   agentCommandName: string
 ): number | null {
-  const childrenByPpid = new Map<number, ProcessTreeEntry[]>();
-  for (const entry of processTree) {
-    const siblings = childrenByPpid.get(entry.ppid) ?? [];
-    siblings.push(entry);
-    childrenByPpid.set(entry.ppid, siblings);
-  }
+  const childrenByPpid = buildChildrenByPpid(processTree);
   const queue: ProcessTreeEntry[] = [...(childrenByPpid.get(rootPid) ?? [])];
   while (queue.length > 0) {
     const candidate = queue.shift()!;
