@@ -138,6 +138,116 @@
          "Headline\n"
          (briefing-email-lib/append-content-block "Headline\n" "   "))
 
+;; ── prepend-content-block / maybe-mark-subject (pure, BL-619) ────────────
+
+(assert= "a non-blank block is prepended before the existing content"
+         "TOKEN BURN WARNING: run out Thursday\n\nHeadline\n"
+         (briefing-email-lib/prepend-content-block "Headline\n" "TOKEN BURN WARNING: run out Thursday"))
+
+(assert= "a nil block leaves the content untouched (prepend)"
+         "Headline\n"
+         (briefing-email-lib/prepend-content-block "Headline\n" nil))
+
+(assert= "a blank block leaves the content untouched (prepend)"
+         "Headline\n"
+         (briefing-email-lib/prepend-content-block "Headline\n" "   "))
+
+(assert= "maybe-mark-subject prefixes the fixed marker when true"
+         "[TOKEN BURN WARNING] SwarmForge briefing 2026-07-09 - Shipped BL-215"
+         (briefing-email-lib/maybe-mark-subject "SwarmForge briefing 2026-07-09 - Shipped BL-215" true))
+
+(assert= "maybe-mark-subject leaves the subject unchanged when false"
+         "SwarmForge briefing 2026-07-09 - Shipped BL-215"
+         (briefing-email-lib/maybe-mark-subject "SwarmForge briefing 2026-07-09 - Shipped BL-215" false))
+
+(assert= "maybe-mark-subject leaves the subject unchanged when nil"
+         "SwarmForge briefing 2026-07-09 - Shipped BL-215"
+         (briefing-email-lib/maybe-mark-subject "SwarmForge briefing 2026-07-09 - Shipped BL-215" nil))
+
+;; ── send-unsent-briefings! + :token-burn-section adapter (BL-619) ────────
+
+;; warning-leads-briefing-01: a leading warning is prepended ABOVE the
+;; coordinator body, the subject carries the fixed marker, and the subject's
+;; own headline still names the real body content, not the warning.
+(let [dir (mk-tmp)
+      sent-texts (atom [])
+      sent-subjects (atom [])]
+  (spit (str (fs/path dir "2026-07-09.md")) "Shipped BL-215\n\nDetails...\n")
+  (briefing-email-lib/send-unsent-briefings!
+   dir
+   {:read-briefing-content (fn [f] (slurp (str (fs/path dir f))))
+    :send-email! (fn [subject text & _] (swap! sent-subjects conj subject) (swap! sent-texts conj text) {:success true})
+    :token-burn-section (fn [] {:leading-text "TOKEN BURN WARNING: run out Thursday" :subject-marker? true})
+    :log! (fn [& _] nil)})
+  (assert= "warning-leads-briefing-01: the leading warning is the very first thing in the sent content"
+           true
+           (str/starts-with? (first @sent-texts) "TOKEN BURN WARNING: run out Thursday"))
+  (assert= "warning-leads-briefing-01: the coordinator body still follows, unaltered"
+           true
+           (str/includes? (first @sent-texts) "Shipped BL-215"))
+  (assert= "warning-leads-briefing-01: the subject carries the fixed token-burn marker"
+           true
+           (str/starts-with? (first @sent-subjects) "[TOKEN BURN WARNING] "))
+  (assert= "warning-leads-briefing-01: the subject's own headline still names the real body, not the warning"
+           "[TOKEN BURN WARNING] SwarmForge briefing 2026-07-09 - Shipped BL-215"
+           (first @sent-subjects)))
+
+;; ok-path-one-line-status-03: the ok/no-anchor/malformed one-liner joins the
+;; appended sections instead - no leading text, no subject marker.
+(let [dir (mk-tmp)
+      sent-texts (atom [])
+      sent-subjects (atom [])]
+  (spit (str (fs/path dir "2026-07-09.md")) "Headline\n")
+  (briefing-email-lib/send-unsent-briefings!
+   dir
+   {:read-briefing-content (fn [f] (slurp (str (fs/path dir f))))
+    :send-email! (fn [subject text & _] (swap! sent-subjects conj subject) (swap! sent-texts conj text) {:success true})
+    :token-burn-section (fn [] {:appended-text "Token burn: on track (~4.8%/day)" :subject-marker? false})
+    :log! (fn [& _] nil)})
+  (assert= "ok-path-one-line-status-03: the status line is appended, not prepended"
+           true
+           (str/starts-with? (first @sent-texts) "Headline"))
+  (assert= "ok-path-one-line-status-03: the status line reaches the sent content"
+           true
+           (str/includes? (first @sent-texts) "Token burn: on track (~4.8%/day)"))
+  (assert= "ok-path-one-line-status-03: no subject marker is added"
+           "SwarmForge briefing 2026-07-09 - Headline"
+           (first @sent-subjects)))
+
+;; A nil-returning (or absent) :token-burn-section adapter degrades to the
+;; original content unchanged - same graceful-degrade contract as every
+;; other optional section.
+(let [dir (mk-tmp)
+      sent-texts (atom [])]
+  (spit (str (fs/path dir "2026-07-09.md")) "Headline\n")
+  (briefing-email-lib/send-unsent-briefings!
+   dir
+   {:read-briefing-content (fn [f] (slurp (str (fs/path dir f))))
+    :send-email! (fn [_subject text & _] (swap! sent-texts conj text) {:success true})
+    :token-burn-section (fn [] nil)
+    :log! (fn [& _] nil)})
+  (assert= "BL-619: a nil-returning :token-burn-section adapter leaves content unchanged"
+           "Headline\n"
+           (first @sent-texts)))
+
+(let [dir (mk-tmp)
+      sent-texts (atom [])]
+  (spit (str (fs/path dir "2026-07-09.md")) "Headline\n")
+  (briefing-email-lib/send-unsent-briefings!
+   dir
+   {:read-briefing-content (fn [f] (slurp (str (fs/path dir f))))
+    :send-email! (fn [_subject text & _] (swap! sent-texts conj text) {:success true})
+    :log! (fn [& _] nil)})
+  (assert= "BL-619: no :token-burn-section adapter at all -> content is unchanged (backward compatible)"
+           "Headline\n"
+           (first @sent-texts)))
+
+;; section-failure-never-blocks-send-09: the adapter contract is the SAME
+;; try/catch-at-the-caller posture every *-briefing-section fn in
+;; handoffd.bb already uses (a throw there degrades to nil before it ever
+;; reaches this library) - proven here by the "absent adapter" case above,
+;; the exact shape a failed CLI shell-out degrades to.
+
 ;; ── load-sent-briefings / record-briefing-sent! / find-unsent-briefings ──
 
 (let [dir (mk-tmp)]
