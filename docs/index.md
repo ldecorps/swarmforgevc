@@ -58,6 +58,7 @@ here.
 - [Provider auth-error auto-respawn: healing a wedged standing role](how-to/BL-536-provider-auth-error-auto-respawn.md) — how the chase sweep detects and heals an `AuthenticationError`-wedged role, the `auth_respawn_max_attempts` cap, and the operator alert.
 - [The coordinator raises a clarifying question through `role_ask.bb`](how-to/BL-773-coordinator-role-ask-clarifying-question.md) — wiring the coordinator into the same per-role ask path the specifier already uses, so its questions reach Telegram instead of blocking on an unwatched surface.
 - [Certifying an operator hotfix](how-to/BL-848-certify-an-operator-hotfix.md) — declaring a hand-landed hotfix with the `Hotfix-Certification: pending` trailer, the ledger state machine, and why no hotfix becomes an official swarm deal on green tests alone.
+- [Master-Checkout Drift Alarm — Understanding the Alert](how-to/BL-839-master-checkout-drift-alarm.md) — what to do when the master checkout's daemon-executed scripts no longer match `main`.
 
 ## Reference
 
@@ -77,6 +78,7 @@ here.
 - [M2 Specification — Reliability Layer](reference/specs/m2-spec.md)
 - [Expeditor — complete reference](reference/BL-567-expeditor-manual.md) — every flag, exit code, artifact, verdict and refusal of the stack-stopped driver.
 - [Build Freshness QA Approval Gate (BL-629)](reference/BL-629-build-freshness-qa-approval-gate.md) — the deploy-time gate preventing sync of pre-QA code to daemons.
+- [Ticket Lifecycle Ledger (BL-819)](reference/BL-819-ticket-lifecycle-ledger.md) — the coordinator-owned, append-only per-ticket lifecycle record: event/snapshot schema, storage, idempotency, write points, and its boundary vs the coordinator's other duties.
 - Architecture and swarm-flow diagrams: [architecture.mmd](diagrams/architecture.mmd), [swarm-flow.mmd](diagrams/swarm-flow.mmd) (Mermaid sources)
 
 ## Explanation
