@@ -11,10 +11,7 @@ Feature: a role's answer reaches the pane that role is actually running in
   # consult the durable resident-identity marker that rotation already writes,
   # and resolve the resident pane for the role it names.
   #
-  # PARKED AS .feature.draft per BL-233: this slice is not built, so a live
-  # *.feature here would have no step handlers and would hard-fail the
-  # acceptance runner for every other ticket. The coder renames this to
-  # .feature and lands its step handlers in the same parcel.
+  # Step handlers: bl846ResidentPaneAnswerResolutionSteps.js.
 
   Background:
     Given a mono-router swarm whose only live panes are the resident pane and the coordinator pane
