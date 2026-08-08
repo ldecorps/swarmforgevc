@@ -5,8 +5,15 @@
 | Goal | Entry point | Scope |
 |---|---|---|
 | Park the pipeline, keep Telegram / operator visibility | `./swarm-kill` or `kill_pipeline_swarm.sh` | **pipeline-only** |
-| Tear everything down for offline work | `./stop-swarm.sh` | **full stack** |
+| End of day: stop the token burn, keep the phone reachable (bedtime) | `./finish-shift` | pipeline + babysitterd + operator runtime + onboarder — **Telegram front desk and remote tunnels kept up** |
+| Tear everything down for offline work | `./stop-swarm.sh` | **full stack** (including the phone path) |
 | Bring everything back | `./start-swarm.sh` | **full stack** |
+
+`./finish-shift` (BL-762) is the bedtime verb: unlike `stop-swarm.sh`, it
+deliberately leaves the Telegram front desk and remote tunnels running, so
+Bubble does not lose its origin and read as dead overnight. See
+[Bedtime vs. lights-out](BL-762-finish-shift-bedtime-vs-lights-out.md) for
+the full keep-vs-kill table.
 
 `kill_all_swarm.sh` is a **legacy alias** for `kill_pipeline_swarm.sh`. It prints a
 one-line pointer and does **not** mean “kill all of SwarmForge”.
