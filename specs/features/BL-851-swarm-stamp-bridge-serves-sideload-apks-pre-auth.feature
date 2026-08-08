@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=53682c1dcc89d0b1249d08bc8293718e2d3d1455dac59bc5bbcf93b85747f2ab
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-08T23:21:19.544668Z","feature_name":"The one route that skips the bearer check serves published APKs and nothing else","feature_path":"/Users/ldecorps/projects/swarmforgevc/.worktrees/hardender/specs/features/BL-851-swarm-stamp-bridge-serves-sideload-apks-pre-auth.feature","background_hash":"05893dd39ecd9b38effbbff348f28f9fd6604c0781041158faa4111bd37a1597","implementation_hash":"unknown","scenarios":[{"index":2,"name":"nothing outside the public directory is ever served","scenario_hash":"f1314f7ebab4fb23342d6ebd0fc860330fa9e832ed1ecc16dc6c9e3f69715454","mutation_count":4,"result":{"Total":4,"Killed":4,"Survived":0,"Errors":0},"tested_at":"2026-08-08T23:21:13.152195Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: The one route that skips the bearer check serves published APKs and nothing else
   DRAFT — parked per BL-233. Promote to a live `.feature` only in the same
   parcel as its step handlers.
