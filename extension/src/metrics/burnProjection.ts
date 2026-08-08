@@ -52,17 +52,29 @@ export function parseWeekday(value: string | undefined): number | null {
   return idx === -1 ? null : idx;
 }
 
+function resolveResetDay(dayRaw: string | undefined): number | null {
+  return dayRaw === undefined ? DEFAULT_RESET_DAY : parseWeekday(dayRaw);
+}
+
+function resolveResetLocal(localRaw: string | undefined): LocalTime | null {
+  return localRaw === undefined ? DEFAULT_RESET_LOCAL : parseLocalTime(localRaw);
+}
+
+function formatConfigRawLabel(raw: string | undefined): string {
+  return raw ?? '(default)';
+}
+
 export function parseWeekResetConfig(confContent: string): ParsedWeekResetConfig {
   const dayRaw = parseConfigValue(confContent, 'usage_week_reset_day');
   const localRaw = parseConfigValue(confContent, 'usage_week_reset_local');
-  const resetDay = dayRaw === undefined ? DEFAULT_RESET_DAY : parseWeekday(dayRaw);
-  const resetLocal = localRaw === undefined ? DEFAULT_RESET_LOCAL : parseLocalTime(localRaw);
+  const resetDay = resolveResetDay(dayRaw);
+  const resetLocal = resolveResetLocal(localRaw);
 
   if (resetDay === null || !resetLocal) {
     return {
       config: null,
       malformed: true,
-      warning: `malformed usage week reset config: day=${dayRaw ?? '(default)'} local=${localRaw ?? '(default)'}`,
+      warning: `malformed usage week reset config: day=${formatConfigRawLabel(dayRaw)} local=${formatConfigRawLabel(localRaw)}`,
     };
   }
   return { config: { resetDay, resetLocal }, malformed: false };
