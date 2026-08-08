@@ -1,0 +1,180 @@
+id: BL-855
+title: "A landing merge that takes NONE of what it merges is pushed as a success: BL-848's 108 approved files never reached main while the commit message, the closed ticket and every evidence file said they had"
+milestone: M8
+type: defect
+severity: high
+status: todo
+epic: swarm-reliability
+human_approval: approved
+priority: 2
+direction: agent-surfaced
+depends_on: []
+assigned_to: coder
+mutation_cost: medium
+
+invariants:
+  - "A merge commit that took NONE of what its second parent offered is never pushed silently: it is refused and surfaced with its reason, however well-formed its message and however genuinely QA-approved its second parent. Authorization is not effect."
+  - "A merge that legitimately had nothing to take — second parent already an ancestor, or zero differing paths — is never flagged. Measured: 2 of the 4 tree-equal merges in the last 400 were exactly this harmless shape, and a gate that cries wolf on them gets switched off."
+  - "The verdict is computed from git objects alone (commit, its parents, their trees) and never from the working tree, so the shared, chronically-dirty, hot-synced master checkout cannot change the answer."
+
+required_wiring:
+  - "swarmforge/scripts/push_sweep_lib.bb::qa-gate-decision::the sweep's per-commit decision path is the ONLY live chokepoint between a landed merge and origin. A no-op-merge predicate that is fully unit-tested but never consulted here leaves f28a84ad's exact path open, and the ticket's value at zero."
+
+approval_context: >
+  No human ruling needed; written `approved` on the BL-847/BL-852 precedent
+  (agent-surfaced defect, nothing to decide). The damage is measured and
+  already cost an operator-directed manual reconstruction of 108 files.
+
+  QA raised this in `backlog/evidence/BL-848-merge-incident-and-BL-826-exclusion-20260808.md`
+  and recommended it as a ticket; the coordinator routed it here 2026-08-08.
+  The one judgement call I made rather than ask about is the predicate — QA
+  proposed "assert the merge's tree differs from its first parent's". Measured
+  against the last 400 merges that over-flags by 2x (see description); the
+  ticket specs the sharpened predicate instead. Everything else follows QA's
+  own recommendation.
+
+source: |
+  QA `note` 000073 to coordinator 2026-08-08T04:55:13Z ("Ticket-worthy: BL-848
+  landing was a silent no-op merge; see evidence"), routed to the specifier as
+  coordinator `note` 000180 2026-08-08T04:59:12Z. Incident write-up:
+  `backlog/evidence/BL-848-merge-incident-and-BL-826-exclusion-20260808.md`
+  (QA, commit 5178a539). Specifier re-probed the claim independently before
+  speccing and found it materially broader than reported — see description.
+
+description: |
+  ## What happened
+
+  `f28a84ad` — "Merge QA-approved BL-848 (round 2) commit 11ae7ac3 into main",
+  authored by QA at its own documented landing step, pushed to origin — is a
+  merge commit whose tree is byte-identical to its own first parent's:
+
+      f28a84ad tree      4b23b5ff...
+      parent1  6af2fd5a  tree 4b23b5ff...   <- identical
+      parent2  11ae7ac3  tree ec46b720...   <- 108 files main did not have
+
+  So the merge recorded correct ancestry and took none of the content. BL-848's
+  work — 19 files under `swarmforge/scripts/`, 15 under `extension/src/`, 10
+  under `extension/test/`, 6 under `android/app/`, its feature files, its
+  pipeline steps — never reached `main`. `git cat-file -e
+  f28a84ad:swarmforge/scripts/hotfix_certification_lib.bb` fails; the same path
+  at `f28a84ad^2` resolves fine.
+
+  Every audit trail said it worked: the commit message names the approved
+  commit, the ticket closed to `backlog/done/` (`7a468b4a`), QA's own final
+  pass evidence records APPROVE and "Landing on `main`", and the push sweep
+  pushed it. The fault was found days later only because a human-directed
+  reconciliation happened to diff the trees, and cost a hand-built
+  108-file recovery (`4858d75c`).
+
+  Root cause is unconfirmed but the shape is unambiguous — `git merge -s ours`,
+  or a conflict resolution that took `main`'s side on every path. The point of
+  this ticket is not to forbid that command; it is that NOTHING in the pipeline
+  distinguishes "merged and landed 108 files" from "merged and landed nothing".
+
+  ## Why this is a whole class, not one bad command
+
+  A merge is authorized by WHO approved its second parent and validated by
+  WHETHER its ancestry is right. Both were correct here. No check anywhere
+  asks the third question — did the merge actually TAKE anything. The existing
+  neighbours all miss it by construction:
+
+  - `push_sweep_lib.bb`'s `qa-gate-decision` (BL-630) refuses commits on `main`
+    that are not QA-approved. `f28a84ad` WAS QA-approved, so it passed. The gate
+    checks authorization, not effect.
+  - The lineage rule (`git merge-base --is-ancestor`) is satisfied by a no-op
+    merge — both parents are genuinely present. That is exactly what made the
+    graph keep resolving `merge-base` to `11ae7ac3` afterwards and threaten to
+    re-drop the same content on every later merge (see QA's Finding 1).
+  - BL-839's drift detector compares the master checkout's DISK against `main`.
+    This fault is inside `main`'s own history; disk and `main` agreed.
+
+  ## Measured: it has happened twice, and the obvious predicate over-flags
+
+  Scanning the last 400 merge commits reachable from `main` for tree(merge) ==
+  tree(parent1) returns 4. That is QA's proposed predicate, and 2 of the 4 are
+  harmless:
+
+  | commit | differing paths p1..p2 | verdict |
+  |---|---|---|
+  | `f28a84ad` (BL-848 landing on main) | 108 | real: production code dropped |
+  | `aa1ddd46` (BL-714 hardener merge) | 28 | real: feature files, `handoff-protocol.md`, docs, backlog state dropped |
+  | `e126f28d` (BL-797 merge-up) | 0 | harmless `--no-ff`, nothing to take |
+  | `229ae7c2` (BL-651 merge-up) | 0 | harmless `--no-ff`, nothing to take |
+
+  Two findings follow, and both are load-bearing for the build:
+
+  1. **This is not unique to `main` landings.** `aa1ddd46` was a hardener merge
+     into a role branch on 2026-07-30 and was never reported by anyone. Its
+     content did self-heal by a later route (the three spot-checked paths are on
+     `main` today), so the impact was recoverable — but it is the same command
+     mistake at a different hop, which is why the check is specified over merge
+     commits generally rather than over landings only.
+  2. **The predicate must be sharpened or the gate gets disabled.** A merge is a
+     content-dropping no-op when its second parent offered something AND it took
+     none of it: `git diff --name-only <p1> <p2>` non-empty AND tree(merge) ==
+     tree(p1). On the same 400 merges that yields exactly the 2 real hits and
+     neither false positive.
+
+  Deliberately NOT in the predicate: a PARTIAL drop (took some paths, dropped
+  others). It is a real risk, it is much harder to judge — a legitimate conflict
+  resolution drops paths on purpose — and neither incident was that shape. Total
+  drop is the measured failure and the whole slice.
+
+  ## Shape of the fix
+
+  A predicate over one merge commit, consulted at the live chokepoint before
+  content becomes origin history: the `push_sweep_lib.bb` per-commit decision
+  path, which already inspects every unpushed commit on `main` and already knows
+  how to refuse and alarm (BL-630's `qa-gate-decision` is its sibling). Refusing
+  the push does not repair the dropped content, and is not meant to: it converts
+  a silent success into a loud, immediate, pre-origin failure — which is the
+  single thing that was missing while every other signal lied.
+
+  The refusal must state the reason, not a bare status: the offending commit,
+  its second parent, and how many paths were dropped. A refusal that says only
+  "push held" sends the next reader down the same days-long path this incident
+  took.
+
+acceptance: specs/features/BL-855-noop-landing-merge-drops-approved-work.feature.draft
+
+out_of_scope: |
+  - Partial-drop detection (a merge that took some of its second parent's paths
+    and dropped others). Deliberate, per the description: it is not the measured
+    failure and it cannot be judged without a conflict-resolution policy.
+  - Repairing or re-landing dropped content. This slice makes the fault loud
+    before it reaches origin; recovery stays a human/QA decision, because the
+    right repair (re-merge, cherry-pick, hand reconstruction) depends on what
+    else has landed since — as `4858d75c` showed.
+  - Retro-auditing history for older no-op merges. The two known instances are
+    both already resolved on `main`; a history sweep is a separate, cheap ticket
+    if the human wants one, and it must not gate this fix.
+  - Forbidding `git merge -s ours` or otherwise policing QA's merge command.
+    Root cause is unconfirmed and the check is command-agnostic on purpose — it
+    tests the RESULT, so it holds however the bad tree was produced.
+  - Changing QA's landing duty, the push sweep's QA-approval gate (BL-630), or
+    BL-839's disk-vs-main drift detector. This is a new sibling check, and all
+    three keep their current behaviour unchanged.
+
+notes: |
+  ## Specifier follow-up owed after the CLI lands
+
+  `swarmforge/roles/QA.prompt`'s landing step ("Land it on `main` yourself")
+  should name this check once it exists, so QA can run it at merge time rather
+  than meeting it as a push refusal minutes later. That is a prompt file, so it
+  is the specifier's to write (Article 1.2) and is NOT a deliverable of this
+  ticket — do not bounce the parcel for its absence. Filed here rather than
+  left implicit because BL-819 cost a spec-gap round trip for exactly this
+  omission (`backlog/evidence/BL-819-qa-pass-20260808.md`, D3).
+
+  ## Probe record (2026-08-08, specifier)
+
+  Every number in the description was re-derived independently before speccing,
+  not taken from the incident report: the tree/parent hashes and the missing
+  `hotfix_certification_lib.bb` by `git rev-parse`/`git cat-file`; the 400-merge
+  scan and its 4 hits by walking `git rev-list --merges main -n 400`; the
+  harmless-vs-real split by `git diff --name-only <p1> <p2>` per hit; the
+  per-directory breakdown of the 108 and 28 dropped paths; and `aa1ddd46`'s
+  self-healing by spot-checking three of its paths against `main`. The
+  second instance and the predicate over-flag are both new findings — neither
+  appears in QA's write-up, which reported one incident and a predicate that
+  would have produced two false positives.
