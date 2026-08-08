@@ -176,7 +176,14 @@ USE YOUR TOOLS NOW. Re-printing the task or chatting without edits is failure.")
   (prompt-engine-lib/aider-bootstrap-text role draft coord-note))
 
 (defn generic-bootstrap-text [role draft two-pack? overlay? overlay-prompt]
-  (prompt-engine-lib/generic-bootstrap-text role draft two-pack? overlay? overlay-prompt))
+  ;; BL-574: PromptEngine's generic-bootstrap-text now takes a fragment-cache
+  ;; atom + content-fn (Slice 2's content-hash cache). This pre-BL-546 thin
+  ;; delegate keeps its own 5-arg signature for any caller still on it,
+  ;; supplying a fresh cache and the real (uncached) reader each call - the
+  ;; exact behavior this wrapper always had.
+  (prompt-engine-lib/generic-bootstrap-text role draft two-pack? overlay? overlay-prompt
+                                             (atom (prompt-engine-lib/empty-fragment-cache))
+                                             prompt-engine-lib/fragment-content-uncached))
 
 (defn bootstrap-text
   "Pre-BL-546 entry point, now a thin delegate: PromptEngine compose owns

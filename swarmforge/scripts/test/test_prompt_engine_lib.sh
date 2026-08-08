@@ -91,4 +91,15 @@ MD_NO_MODEL="$(bb "$ROOT/swarmforge/scripts/prompt_engine_cli.bb" compose-metada
 
 pass "09: CLI compose-metadata :model is null when --model is not passed"
 
+# ── 10: BL-574 Slice 2 — compose-metadata carries the selected adapter id ───
+MD_CLAUDE="$(bb "$ROOT/swarmforge/scripts/prompt_engine_cli.bb" compose-metadata claude coder 0 "")"
+[[ "$MD_CLAUDE" == *'"adapter-id":"generic"'* ]] \
+  || fail "10a: expected claude's adapter-id \"generic\", got: $MD_CLAUDE"
+
+MD_AIDER="$(bb "$ROOT/swarmforge/scripts/prompt_engine_cli.bb" compose-metadata aider coordinator 1 "")"
+[[ "$MD_AIDER" == *'"adapter-id":"aider-editor"'* ]] \
+  || fail "10b: expected aider's adapter-id \"aider-editor\", got: $MD_AIDER"
+
+pass "10: CLI compose-metadata carries the selected adapter id"
+
 echo "ALL PASS"

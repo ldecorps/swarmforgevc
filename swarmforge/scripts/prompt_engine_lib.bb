@@ -14,7 +14,8 @@
 ;; and referred to as prompt-engine-lib/foo.
 (ns prompt-engine-lib
   (:require [babashka.fs :as fs]
-            [clojure.string :as str]))
+            [clojure.string :as str])
+  (:import [java.security MessageDigest]))
 
 ;; ── repo-relative file resolution ──────────────────────────────────────────
 ;; Resolved from this file's own location (never cwd) so compose works the
@@ -144,6 +145,118 @@
 (defn pipeline-text []
   (inline-repo-file-or-note "swarmforge/PIPELINE.md"))
 
+;; ── BL-574 Slice 2: named fragment registry + content-hash cache ───────────
+;; Fragments are composed BY REFERENCE: editing a fragment file changes the
+;; composed prompt with no edit to compose logic. "constitution"/"pipeline"
+;; are request-independent aggregates (constitution-text/pipeline-text
+;; above); "role"/"pack-overlay" are single files resolved per request;
+;; "tool-instructions" is registered as a known name with no content source
+;; yet (Slice 3 / not part of today's compose output).
+(def fragment-names
+  #{"constitution" "pipeline" "role" "pack-overlay" "tool-instructions"})
+
+(defn fragment-source-path
+  "Repo-relative source path for a per-request fragment, or nil when the
+   fragment has no applicable source for THIS request (e.g. \"pack-overlay\"
+   with no overlay set). \"constitution\"/\"pipeline\" have no single path -
+   see fragment-content-uncached, which produces their content directly."
+  [fragment-name {:keys [role overlay-prompt]}]
+  (case fragment-name
+    "role" (when-not (str/blank? role) (str "swarmforge/roles/" role ".prompt"))
+    "pack-overlay" (when-not (str/blank? overlay-prompt) overlay-prompt)
+    nil))
+
+(defn fragment-content-uncached
+  "The one place that knows how to PRODUCE each named fragment's content,
+   always reading from disk with no cache involvement - the default
+   content-fn every cache miss falls back to. request carries whatever the
+   fragment needs to resolve (:role, :overlay-prompt)."
+  [fragment-name request]
+  (case fragment-name
+    "constitution" (constitution-text)
+    "pipeline" (pipeline-text)
+    "tool-instructions" nil
+    (some-> (fragment-source-path fragment-name request) inline-repo-file-or-note)))
+
+(defn empty-fragment-cache [] {})
+
+(defn sha256-hex [s]
+  (let [digest (-> (MessageDigest/getInstance "SHA-256")
+                    (.digest (.getBytes (or s "") "UTF-8")))]
+    (apply str (map #(format "%02x" %) digest))))
+
+(defn read-fragment
+  "Pure cache lookup+populate: returns [content cache' read?]. content-fn is
+   the injectable IO seam (default fragment-content-uncached) - a test
+   passes a call-counting stub with no real filesystem involved, per this
+   project's \"decision logic pure and unit-testable with no filesystem\"
+   rule; the CLI/compose caller is the edge that supplies the real one.
+   Cache is a plain {fragment-name -> {:hash :content}} map threaded
+   explicitly by the caller across composes - no hidden global mutable
+   state. A cache hit never calls content-fn at all (the literal meaning of
+   \"not re-read\"); on a miss the freshly produced content is hashed and
+   stored under fragment-name so the NEXT lookup with this same cache value
+   hits without re-reading."
+  [cache fragment-name request & {:keys [content-fn] :or {content-fn fragment-content-uncached}}]
+  (if-let [cached (get cache fragment-name)]
+    [(:content cached) cache false]
+    (let [content (content-fn fragment-name request)
+          hash (sha256-hex (or content ""))]
+      [content (assoc cache fragment-name {:hash hash :content content}) true])))
+
+(defn read-fragment!
+  "Impure convenience over read-fragment for a single-threaded caller
+   (compose): mutates cache-atom in place, returns just the content."
+  [cache-atom fragment-name request & {:keys [content-fn] :or {content-fn fragment-content-uncached}}]
+  (let [[content cache' _read?] (read-fragment @cache-atom fragment-name request :content-fn content-fn)]
+    (reset! cache-atom cache')
+    content))
+
+(defn invalidate-fragment
+  "Explicit eviction - the caller's signal that a fragment's source changed
+   on disk. Content-hash caching here has no automatic invalidation: mtime
+   is unusable as any part of the decision (BL-373's worktree hot-sync
+   touches mtime independent of content, which would make a mtime-gated
+   cache miss on every compose in this environment - the opposite of the
+   goal). A fragment stays cached until something that knows it changed
+   says so."
+  [cache fragment-name]
+  (dissoc cache fragment-name))
+
+;; ── BL-574 Slice 2: per-model/provider adapter registry ────────────────────
+;; Registry-driven (BL-206): adding a provider's adapter is one
+;; register-adapter! call: compose's own dispatch (below) never branches on
+;; provider name to select an adapter id. Distinct from provider-
+;; capabilities/:bootstrap-text-style above (Slice 1's wake/bootstrap
+;; mechanics, a fixed 3-value enum every provider maps into) - this registry
+;; is Model Steward's (BL-547) forward-looking home for adapter metadata
+;; PromptEngine loads by key; today it only feeds compose's :adapter-id
+;; metadata, not yet distinct wording (Slice 3 territory).
+(def default-adapter-registry
+  {"claude" "generic"
+   "codex" "generic"
+   "copilot" "generic"
+   "grok" "generic"
+   "vibe" "generic"
+   "gemini" "generic"
+   "mock" "generic"
+   "aider" "aider-editor"})
+
+(defonce ^:private adapter-registry-atom (atom default-adapter-registry))
+
+(defn register-adapter!
+  "Registers (or overrides) the adapter id for a provider."
+  [provider adapter-id]
+  (swap! adapter-registry-atom assoc provider adapter-id))
+
+(defn select-adapter
+  "Adapter id for a provider, defaulting to \"generic\" for a provider with
+   no registered adapter. model is accepted for a future per-model override
+   (Slice 2 keys off provider only) so this function's callers do not need
+   to change when that lands."
+  [provider & {:keys [model]}]
+  (get @adapter-registry-atom provider "generic"))
+
 (defn stable-prefix-text
   "The cacheable, stable-shared chunk: constitution (recursively expanded)
    then PIPELINE, in that order, ahead of any role-specific content."
@@ -187,9 +300,16 @@
          "Then run `" ready-script-rel-path "` once and wait for work. "
          "Do not self-schedule polling (/loop, cron, or \"check again in N minutes\").")))
 
-(defn generic-bootstrap-text [role draft two-pack? overlay? overlay-prompt]
+(defn generic-bootstrap-text
+  "fragment-cache-atom/content-fn (BL-574 Slice 2): the role and pack-overlay
+   fragments - the two per-request single-file reads - go through the
+   content-hash cache instead of a direct slurp, so a caller composing
+   repeatedly against the SAME cache-atom does not re-read an unchanged
+   fragment. constitution/pipeline stay on stable-bootstrap-prefix's direct
+   path (already one aggregated, request-independent read)."
+  [role draft two-pack? overlay? overlay-prompt fragment-cache-atom content-fn]
   (str (stable-bootstrap-prefix)
-       (inline-repo-file-or-note (str "swarmforge/roles/" role ".prompt"))
+       (read-fragment! fragment-cache-atom "role" {:role role} :content-fn content-fn)
        "\n"
        (when two-pack?
          (str "\nThe following swarm-pack overlay applies to your role. Follow it for this pack.\n\n"
@@ -198,7 +318,7 @@
               "Handoff drafts: write to " draft " then run swarmforge/scripts/swarm_handoff.sh on that file. Never use repo-root tmp/ for drafts (gitignored).\n"))
        (when overlay?
          (str "\nThe following swarm-profile overlay applies to your role. Follow it for this swarm profile.\n\n"
-              (inline-repo-file-or-note overlay-prompt)
+              (read-fragment! fragment-cache-atom "pack-overlay" {:overlay-prompt overlay-prompt} :content-fn content-fn)
               "\n"
               (when (not two-pack?)
                 (str "Handoff drafts: write to " draft " then run swarmforge/scripts/swarm_handoff.sh on that file. Never use repo-root tmp/ for drafts (gitignored).\n"))))
@@ -213,8 +333,10 @@
 ;; context keys (all optional unless noted):
 ;;   :agent            provider key (default "claude"; normalized via
 ;;                     normalize-agent, unknown -> claude)
-;;   :model            model id - metadata only in Slice 1 (adapters are
-;;                     Slice 2); echoed so callers/inspectors can see it
+;;   :model            model id - metadata only in Slice 1; Slice 2 also
+;;                     accepts it in select-adapter's signature (unused for
+;;                     selection today - adapters key off provider - so
+;;                     compose's :adapter-id metadata is stable either way)
 ;;   :two-pack?        include the two-pack swarm-pack overlay
 ;;   :overlay-prompt   repo-relative path to a swarm-profile overlay prompt
 ;;   :task-injection   optional task text appended AFTER all role/overlay
@@ -226,24 +348,37 @@
 ;;                     composed text). Slice 1's composition is already
 ;;                     volatile-free, so this documents and pins the
 ;;                     property rather than changing behavior.
+;;   :fragment-cache   (BL-574 Slice 2) an atom holding a fragment cache
+;;                     value (empty-fragment-cache shape) threaded across
+;;                     repeat compose calls by a caller that wants the
+;;                     content-hash cache's benefit. Defaults to a fresh
+;;                     atom per call, which behaves exactly like no caching
+;;                     at all - existing callers are unaffected.
+;;   :fragment-content-fn   (BL-574 Slice 2) injectable IO seam for cache
+;;                     misses, default fragment-content-uncached (real
+;;                     file reads). Tests inject a call-counting stub.
 ;; The BL-519 stable prefix is returned as :stable-prefix so callers (cache
 ;; warm, byte-identity checks) never re-derive it by string surgery.
 (defn compose
   [role {:keys [agent model two-pack? overlay-prompt task-injection
-                coordinator-two-pack-note deterministic?]
-         :or {agent "claude" overlay-prompt ""}}]
+                coordinator-two-pack-note deterministic?
+                fragment-cache fragment-content-fn]
+         :or {agent "claude" overlay-prompt "" fragment-content-fn fragment-content-uncached}}]
   (let [normalized (normalize-agent agent)
         style (:bootstrap-text-style (capabilities normalized))
         draft (handoff-draft-path normalized)
         two-pack? (boolean two-pack?)
         overlay? (not (str/blank? overlay-prompt))
+        fragment-cache-atom (or fragment-cache (atom (empty-fragment-cache)))
+        adapter-id (select-adapter normalized :model model)
         coord-note (or coordinator-two-pack-note
                        (when two-pack?
                          " This pack has no specifier: promote items from backlog/paused into backlog/active (respect active_backlog_max_depth), then send task handoffs directly to coder."))
         body (case style
                :aider (aider-bootstrap-text role draft coord-note)
                :mock (mock-bootstrap-text role)
-               (generic-bootstrap-text role draft two-pack? overlay? overlay-prompt))
+               (generic-bootstrap-text role draft two-pack? overlay? overlay-prompt
+                                       fragment-cache-atom fragment-content-fn))
         system-prompt (if (str/blank? task-injection)
                         body
                         (str body "\n" task-injection "\n"))]
@@ -255,4 +390,5 @@
                 :two-pack? two-pack?
                 :overlay-prompt overlay-prompt
                 :deterministic? (boolean deterministic?)
-                :bootstrap-text-style style}}))
+                :bootstrap-text-style style
+                :adapter-id adapter-id}}))
