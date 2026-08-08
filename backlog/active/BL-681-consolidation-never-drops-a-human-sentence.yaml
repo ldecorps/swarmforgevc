@@ -81,7 +81,7 @@ description: |
   the clause and its home are settled, and this ticket is ordinary pipeline
   work from here.
 
-acceptance: specs/features/BL-681-consolidation-never-drops-a-human-sentence.feature.draft
+acceptance: specs/features/BL-681-consolidation-never-drops-a-human-sentence.feature
 
 out_of_scope: |
   - The consolidation mechanics themselves (N:1, 1:N, the epic-top-priority
@@ -99,6 +99,7 @@ notes: |
 
   Gherkin parked as `.feature.draft` per BL-233; the coder promotes it and
   wires handlers in the same commit.
-bounce_count: 1
+bounce_count: 2
 bounce_history:
   - { at: 2026-08-08, by: documenter, blamed: coder, class: acceptance, commit: 2f76114c41, evidence: backlog/evidence/BL-681-bounce-20260808.md }
+  - { at: 2026-08-08, by: QA, blamed: coder, class: acceptance, commit: b37451751c, evidence: backlog/evidence/BL-681-BL-762-qa-bounce-20260808.md }
