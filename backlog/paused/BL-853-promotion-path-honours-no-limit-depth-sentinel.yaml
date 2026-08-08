@@ -1,0 +1,228 @@
+id: BL-853
+title: "The promotion path never asks whether the depth cap is unlimited: a configured -1 resolves to 5, and with 5 tickets active every promotion is refused — the coordinator had to un-promote a ticket by hand to make room for an expedited defect"
+milestone: M8
+type: defect
+severity: high
+status: todo
+epic: swarm-reliability
+human_approval: approved
+priority: 2
+direction: agent-surfaced
+depends_on: []
+assigned_to: coder
+mutation_cost: low
+
+invariants:
+  - "No promotion path treats a negative cap as a ceiling: with a negative configured or effective cap, the depth gate allows at every active count."
+  - "Every cap the promotion path uses comes from the shared depth library — the promotion path parses no config and declares no depth default of its own."
+  - "With a finite cap, every promotion decision is byte-identical to today's."
+
+required_wiring:
+  - "swarmforge/scripts/promotion_gates_lib.bb::no-limit?::the depth gate must consult the shared no-limit predicate at its decision point, or a -1 cap keeps refusing here exactly as it does today"
+  - "swarmforge/scripts/promote_and_route_next.sh::CONF::the shell must resolve a CONFIG FILE path and pass THAT to backlog_depth_cli.bb (the argument that CLI documents) — today it passes $ROOT, so the CLI's slurp throws and it silently returns the library default"
+
+source: |
+  Coordinator note 000176, 2026-08-07 23:28Z: "orthogonality epic-tag
+  false-positive + depth -1 fallback bug - spec fix". The orthogonality half
+  is split out as BL-854 (different site, different verdict, and it carries a
+  policy question this one does not). Probed against the live swarm
+  2026-08-08 01:20Z.
+
+  ## What the coordinator already reported
+
+  `9c43f00e` — "Un-promote BL-574 to free a slot for expedited defect BL-852
+  ...; promote_and_route_next.sh's cap fallback misreads effective depth -1
+  (unlimited) as invalid and falls back to the raw configured cap 5, blocking
+  the expedited pick". The diagnosis is right about the symptom. The probe
+  below refines the mechanism: **5 is not "the raw configured cap"** — no
+  config anywhere declares 5. It is `backlog-depth-lib/default-max-depth`,
+  reached because the fallback CLI is handed an argument of the wrong kind.
+
+  ## Measured, 2026-08-08 01:20Z
+
+      $ grep active_backlog_max_depth swarmforge/packs/mono-router.conf
+      config active_backlog_max_depth -1
+      $ bb swarmforge/scripts/effective_backlog_depth_cli.bb "$(pwd)"
+      -1
+      $ bb swarmforge/scripts/backlog_depth_cli.bb "$(pwd)"          # what the shell passes
+      5
+      $ bb swarmforge/scripts/backlog_depth_cli.bb swarmforge/packs/mono-router.conf
+      -1
+      $ ls backlog/active/*.yaml | wc -l
+      5
+
+  Resolved CAP therefore = 5, ACTIVE_COUNT = 5, and
+  `promote_and_route_next.sh:93` exits 2: "active count 5 >= cap 5 — no open
+  slot". **Every promotion through the sanctioned path is refused right now.**
+  That 5 == 5 collision is coincidence — the library default happens to equal
+  today's active count — which is exactly why the coordinator read it as a
+  configured cap.
+
+  ## Four separate faults in one resolution chain
+
+  `promote_and_route_next.sh:80-90`:
+
+  1. **Unsigned validation.** `[[ ! "$CAP" =~ ^[0-9]+$ ]]` rejects `-1`. The
+     documented sentinel is discarded as malformed by the very check meant to
+     guard against malformed input. This is BL-216's `#"\d+"` bug — fixed
+     inside the library then — reproduced one layer up in shell.
+  2. **Wrong argument kind.** The fallback runs
+     `bb backlog_depth_cli.bb "$ROOT"`, but that CLI's own usage line reads
+     `backlog_depth_cli.bb <conf-path>`. `slurp` on a directory throws, the
+     `catch` returns nil, and `parse-max-depth` degrades to
+     `default-max-depth` — a value no operator ever chose. Note
+     `swarmforge.sh:746` calls the same CLI correctly, with `$CONFIG_FILE`;
+     only this caller passes a root.
+  3. **A second, tighter default.** If both readers fail, `CAP=1` — the
+     library's own documented degrade is 5. Two defaults for one value, and
+     the shell's is the tightest cap possible.
+  4. **No no-limit branch in the gate itself.** `promotion_gates_lib.bb`'s
+     `depth-refusal` is a bare `(>= active-count max-depth)`. Even handed a
+     correctly-resolved `-1` it refuses at any count:
+
+         $ bb swarmforge/scripts/promotion_gates_cli.bb evaluate "$(pwd)" <paused>.yaml false -1
+         REFUSE|active_backlog_max_depth|active count 5 >= cap -1 - no open slot
+
+     So fixing the shell alone leaves the defect reproducible at the
+     chokepoint, and fixing the library alone leaves it reproducible in the
+     shell. Both sites, one parcel.
+
+  ## Why it matters more than a stuck queue
+
+  The swarm runs unattended shifts. A refused promotion is silent — the
+  resident lands on `NO_TASK`, and per PIPELINE.md's endless-loop hard stop a
+  `ready_for_next` -> `NO_TASK` spin observed three times halts the entire
+  swarm. The one time a human was watching, the workaround was to
+  **un-promote work already in flight** (`9c43f00e`) to buy a slot that the
+  configuration says should never have been scarce.
+
+description: |
+  Make the promotion path ask the question the depth library has answered
+  since BL-216: *is this cap a no-limit sentinel?* Reuse
+  `backlog-depth-lib/no-limit?` at the gate rather than deriving a second
+  notion of unlimited — the library is already `load-file`-reachable and is
+  the one place the sentinel is defined.
+
+  ### One reader, one default
+
+  The promotion path must contribute no parsing and no default of its own.
+  `effective_backlog_depth_cli.bb` already degrades internally and never
+  crashes (`read-effective-max-depth` -> `read-max-depth` ->
+  `default-max-depth`), so the shell's job is to accept the **signed**
+  integer it prints. Whatever remains of the fallback chain must call
+  `backlog_depth_cli.bb` with a **config file path** — the argument it
+  documents — and any last-resort default must be the library's, not a
+  literal in shell. Two defaults for one value is the divergence BL-216
+  consolidated away; do not leave a third.
+
+  ### The gate is the other half
+
+  `depth-refusal` gains the no-limit branch. Its named-reason contract is
+  unchanged for a real finite ceiling (BL-663 acceptance scenario 04 asserts
+  on that string), and `evaluate`'s fixed gate ordering is unchanged.
+
+  ### Keep the finite path byte-identical
+
+  Invariant 3 is the load-bearing constraint. A fix that also relaxes finite
+  caps would be strictly worse than the defect: the cap is Article 3.5's
+  circuit breaker, and its `1`/`0` throttle settings must keep refusing
+  exactly as they do today (scenario 03's finite rows, and the `1`/`0` cases
+  the throttle relies on).
+
+notes: |
+  ### Relationship to BL-854 — same note, deliberately not folded
+
+  Coordinator note 000176 named two faults. They are split because they fail
+  differently and decide differently: this one is an unambiguous defect with
+  live damage and nothing to rule on (`human_approval: approved` on the
+  BL-847/BL-852 agent-surfaced precedent), while BL-854 changes a gate's
+  verdict from blocking to advisory and needs a human tap. Folding them would
+  park this fix behind that ruling while the promotion path stays shut.
+
+  Both touch `promotion_gates_lib.bb`, so they are genuinely non-orthogonal:
+  **do not run them concurrently.** BL-854 declares `depends_on: [BL-853]` to
+  make the ordering explicit rather than leaving it to the (currently broken)
+  orthogonality gate to notice.
+
+  ### Order of landing matters for the symptom
+
+  Landing this alone moves the blocker rather than removing it: with the cap
+  correctly unlimited, the depth gate stops refusing and the *orthogonality*
+  gate becomes the sole blocker on 112 of 204 paused tickets (BL-854's own
+  measurement). Expect promotion to still need coordinator overrides until
+  BL-854 lands. That is not a reason to fold them — it is the reason BL-854
+  is also severity `high`.
+
+  ### Existing suites to keep green
+
+  `swarmforge/scripts/test/backlog_depth_test_runner.bb`,
+  `test_backlog_depth_cli.sh`, `test_backlog_depth_conf.sh`,
+  `test_backlog_depth_pack_override.sh`, `test_effective_backlog_depth_cli.sh`,
+  `test_promote_and_route_next_priority.sh`,
+  `promotion_gates_lib_test_runner.bb`,
+  `promotion_gates_lib_property_runner.bb`,
+  `promotion_gates_cli_test_runner.bb`, `test_ready_for_next_no_promotion.sh`.
+
+  `swarm_handoff.bb`'s `depth-exceeded?` warning and `ready_for_next.bb`'s
+  `under-depth-cap?` auto-promote gate already consult `no-limit?` correctly
+  and are **not** in scope — they are the working precedent this fix copies.
+
+  ### Test seam
+
+  The whole chain is shell-callable and deterministic: a fixture project root
+  with its own `swarmforge.conf` / `.swarmforge/swarm-identity` and a seeded
+  `backlog/active/` exercises it end to end with no swarm running. Drive the
+  real `promote_and_route_next.sh` and the real `promotion_gates_cli.bb` —
+  never a JS re-implementation of the cap arithmetic (the bug is precisely
+  that a second implementation disagreed with the library). Per stock-bash
+  3.2 discipline, guard any empty-array expansion in new shell test helpers
+  as `${arr[@]+"${arr[@]}"}` (BL-801).
+
+  Scenario 04's fixture must have **no** readable config at all (no
+  `swarmforge.conf`, no persisted identity path) so the degrade is the one
+  under test rather than an accidental parse.
+
+  ### Gherkin
+
+  Parked as `.feature.draft` per BL-233 — the acceptance runner throws on
+  scenarios with no step handler; the coder promotes it to `.feature` and
+  wires handlers in the same commit. New file, not an append to
+  `BL-216-...feature` or `BL-663-...feature`, both of which stay live and
+  unchanged: this adds to the contract rather than amending it.
+
+  Lint gate clean (`gherkin_lint_gate.sh`). IR-DRY: no duplicate-step
+  findings.
+
+  ### E2E procedure for QA
+
+  With the fix landed and the live config still declaring `-1`:
+
+  1. `bb swarmforge/scripts/effective_backlog_depth_cli.bb "$(pwd)"` prints `-1`.
+  2. `bb swarmforge/scripts/promotion_gates_cli.bb evaluate "$(pwd)" <a paused
+     yaml> false -1` does **not** print `REFUSE|active_backlog_max_depth|...`
+     (it may legitimately refuse on another gate — check the gate name).
+  3. With `backlog/active/` holding more tickets than the library default,
+     `promote_and_route_next.sh` does not exit 2 with "no open slot".
+  4. Temporarily set the pack conf to `config active_backlog_max_depth 1`,
+     confirm a promotion attempt with 1 ticket active still refuses with the
+     unchanged named reason, then restore `-1`.
+
+acceptance: specs/features/BL-853-promotion-path-honours-no-limit-depth-sentinel.feature.draft
+
+approval_context: >
+  No human ruling needed. Written `approved` on the BL-847/BL-852
+  agent-surfaced-defect precedent: the sentinel's meaning is already
+  documented in swarmforge.conf and already honoured by two other call sites,
+  so this only makes the promotion path obey a decision that was made long
+  ago. The damage is live and measured, and the workaround so far has been to
+  un-promote in-flight work by hand. Flip this to `pending` if the finite-cap
+  regression guard (invariant 3) is judged to need sign-off.
+
+out_of_scope: |
+  - The orthogonality gate — BL-854, and it will still block after this lands.
+  - `swarm_handoff.bb` / `ready_for_next.bb` depth call sites: already correct.
+  - Article 3.5's auto-throttle arithmetic (`effective-max-depth`): its
+    no-limit handling is already correct and explicitly tested; this ticket
+    changes nothing about how a *recommendation* folds into the cap.
+  - Any change to what `active_backlog_max_depth` is configured to. The value
+    is the operator's; this ticket only makes the code honour it.
