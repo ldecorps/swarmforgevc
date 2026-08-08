@@ -117,7 +117,7 @@ description: |
   `Hotfix-Certification: pending` and BL-851 named in the message. Then
   review the committed diff and record the 10-hex commit in the ledger.
 
-acceptance: specs/features/BL-851-swarm-stamp-bridge-serves-sideload-apks-pre-auth.feature.draft
+acceptance: specs/features/BL-851-swarm-stamp-bridge-serves-sideload-apks-pre-auth.feature
 
 out_of_scope: |
   - Redesigning sideload distribution (signed URLs, a separate static host,
