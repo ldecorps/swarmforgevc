@@ -4,8 +4,8 @@ milestone: M8
 type: chore
 status: todo
 epic: swarm-reliability
-human_approval: pending
-priority: 22
+human_approval: approved
+priority: 23
 direction: pipeline-reported
 depends_on: []
 assigned_to: null
