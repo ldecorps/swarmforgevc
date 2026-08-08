@@ -25,11 +25,7 @@ export type ParsedArgs = { command: 'record'; pct: number; scope: string; nowMs:
 
 const USAGE = 'usage: usage-anchor.js record <pct> [scope] [--now <epoch-ms>]';
 
-export function parseArgs(argv: string[], defaultNowMs: number): ParsedArgs {
-  const [command, ...rest] = argv;
-  if (command !== 'record') {
-    return { error: `unknown command "${command ?? ''}" - ${USAGE}` };
-  }
+function extractNowFlag(rest: string[], defaultNowMs: number): { nowMs: number; positional: string[] } {
   const positional: string[] = [];
   let nowMs = defaultNowMs;
   for (let i = 0; i < rest.length; i++) {
@@ -40,12 +36,29 @@ export function parseArgs(argv: string[], defaultNowMs: number): ParsedArgs {
       positional.push(rest[i]);
     }
   }
+  return { nowMs, positional };
+}
+
+function parsePctAndScope(positional: string[]): { pct: number; scope: string } | { error: string } {
   const [pctRaw, scopeRaw] = positional;
   const pct = Number(pctRaw);
   if (pctRaw === undefined || Number.isNaN(pct)) {
     return { error: `pct must be a number - ${USAGE}` };
   }
-  return { command: 'record', pct, scope: scopeRaw ?? DEFAULT_ANCHOR_SCOPE, nowMs };
+  return { pct, scope: scopeRaw ?? DEFAULT_ANCHOR_SCOPE };
+}
+
+export function parseArgs(argv: string[], defaultNowMs: number): ParsedArgs {
+  const [command, ...rest] = argv;
+  if (command !== 'record') {
+    return { error: `unknown command "${command ?? ''}" - ${USAGE}` };
+  }
+  const { nowMs, positional } = extractNowFlag(rest, defaultNowMs);
+  const parsedPctScope = parsePctAndScope(positional);
+  if ('error' in parsedPctScope) {
+    return parsedPctScope;
+  }
+  return { command: 'record', pct: parsedPctScope.pct, scope: parsedPctScope.scope, nowMs };
 }
 
 export function main(): void {
