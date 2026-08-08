@@ -329,4 +329,53 @@ REMOTE_HEAD_AFTER_OCTOPUS="$(git -C "$REMOTE" rev-parse main)"
   || fail "expected origin/main to stay at the last QA-approved tip $TRIVIAL_OCTOPUS_SHA, got $REMOTE_HEAD_AFTER_OCTOPUS"
 pass "origin/main stays at the last QA-approved tip, never advancing to the unreviewed content-bearing octopus merge"
 
+# ── BL-855: a real no-op landing merge (`git merge -s ours`) - the exact
+#    incident shape (f28a84ad): correct ancestry, an accurate-sounding
+#    message, a genuinely swarmforge-QA-approved second parent, but the
+#    merge's own tree takes NONE of that parent's content. Must be refused
+#    before it ever reaches origin - and BL-630's own qa-gate-decision
+#    would wave this exact shape through (its second parent IS approved),
+#    which is the gap this ticket closes.
+git -C "$ROOT" checkout -q main
+git -C "$ROOT" reset --hard -q "$TRIVIAL_OCTOPUS_SHA"
+
+git -C "$ROOT" checkout -qb noop-feature-test "$TRIVIAL_OCTOPUS_SHA"
+mkdir -p "$ROOT/swarmforge/scripts"
+echo "noop-feature-content" > "$ROOT/swarmforge/scripts/noop_test.bb"
+git -C "$ROOT" add swarmforge/scripts/noop_test.bb
+git -C "$ROOT" commit -q -m "real feature work, QA-approved (BL-855 no-op fixture)"
+NOOP_FEATURE_SHA="$(git -C "$ROOT" rev-parse HEAD)"
+git -C "$ROOT" branch -f swarmforge-QA noop-feature-test
+
+git -C "$ROOT" checkout -q main
+git -C "$ROOT" merge -s ours -q noop-feature-test -m "QA merge noop-feature-test into main (BL-855 no-op fixture)"
+NOOP_MERGE_SHA="$(git -C "$ROOT" rev-parse HEAD)"
+
+# Sanity: this really is the f28a84ad shape - correct ancestry (the feature
+# commit IS a parent) but none of its content landed on disk.
+git -C "$ROOT" merge-base --is-ancestor "$NOOP_FEATURE_SHA" "$NOOP_MERGE_SHA" \
+  || fail "expected the no-op merge to still record the feature commit as an ancestor"
+[[ -f "$ROOT/swarmforge/scripts/noop_test.bb" ]] \
+  && fail "fixture bug: expected 'git merge -s ours' to take none of the feature branch's content, but noop_test.bb is present on disk"
+
+wait_for_log "noop-merge-refused" 15 \
+  || fail "expected the no-op landing merge $NOOP_MERGE_SHA to be refused within 15s; log: $(cat "$LOG_FILE" 2>/dev/null)"
+grep -q "noop-merge-refused noop-landing-merge $NOOP_MERGE_SHA<-$NOOP_FEATURE_SHA" "$LOG_FILE" \
+  || fail "expected the refusal to name the merge $NOOP_MERGE_SHA and its second parent $NOOP_FEATURE_SHA, got: $(cat "$LOG_FILE")"
+pass "push-sweep! refuses a real 'git merge -s ours' no-op landing merge, naming the merge and its second parent"
+
+REMOTE_HEAD_AFTER_NOOP="$(git -C "$REMOTE" rev-parse main)"
+[[ "$REMOTE_HEAD_AFTER_NOOP" != "$NOOP_MERGE_SHA" ]] \
+  || fail "the no-op landing merge must never reach origin, but origin/main is now $REMOTE_HEAD_AFTER_NOOP"
+[[ "$REMOTE_HEAD_AFTER_NOOP" == "$TRIVIAL_OCTOPUS_SHA" ]] \
+  || fail "expected origin/main to stay at the last good tip $TRIVIAL_OCTOPUS_SHA, got $REMOTE_HEAD_AFTER_NOOP"
+pass "origin/main stays at the last good tip, never advancing to the no-op landing merge"
+
+# Being genuinely QA-approved does not excuse it (BL-855 invariant 1): the
+# underlying feature commit itself is a real swarmforge-QA ancestor and
+# must never be independently flagged - only the merge that dropped it.
+grep -q "qa-refused non-qa-ancestor $NOOP_FEATURE_SHA" "$LOG_FILE" \
+  && fail "the underlying feature commit $NOOP_FEATURE_SHA is a genuine swarmforge-QA ancestor and must never itself be refused, but it was: $(cat "$LOG_FILE")"
+pass "the underlying QA-approved feature commit is never itself flagged - only the no-op merge that discarded it"
+
 echo "ALL PASS"
