@@ -53,6 +53,10 @@ test('parseArgs rejects an unknown outcome type', () => {
   assert.equal(parseArgs(['--shift', '2026-08-08', '--outcome', 'shrug']), null);
 });
 
+test('parseArgs rejects an unrecognized flag', () => {
+  assert.equal(parseArgs(['--bogus', 'x', '--shift', '2026-08-08', '--outcome', 'no_change']), null);
+});
+
 test('USAGE mentions all three outcome types', () => {
   assert.ok(USAGE.includes('process_ticket') && USAGE.includes('spec_gate_tweak') && USAGE.includes('no_change'));
 });

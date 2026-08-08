@@ -67,6 +67,27 @@ test('a malformed run file is read as null, never a crash', () => {
   assert.equal(readCeremonyRun(target, '2026-08-08'), null);
 });
 
+test('valid JSON that is not an object is read as null, never a crash', () => {
+  const target = mkTmp();
+  fs.mkdirSync(ceremonyDir(target), { recursive: true });
+  fs.writeFileSync(ceremonyRunFilePath(target, '2026-08-08'), JSON.stringify(42));
+  assert.equal(readCeremonyRun(target, '2026-08-08'), null);
+});
+
+test('a JSON null run file is read as null, never a crash', () => {
+  const target = mkTmp();
+  fs.mkdirSync(ceremonyDir(target), { recursive: true });
+  fs.writeFileSync(ceremonyRunFilePath(target, '2026-08-08'), JSON.stringify(null));
+  assert.equal(readCeremonyRun(target, '2026-08-08'), null);
+});
+
+test('valid JSON object missing required run fields is read as null', () => {
+  const target = mkTmp();
+  fs.mkdirSync(ceremonyDir(target), { recursive: true });
+  fs.writeFileSync(ceremonyRunFilePath(target, '2026-08-08'), JSON.stringify({ shiftKey: '2026-08-08' }));
+  assert.equal(readCeremonyRun(target, '2026-08-08'), null);
+});
+
 // ── listCeremonyRuns / findOpenCeremonyRunsBefore ───────────────────────
 
 test('listCeremonyRuns returns every stored run, sorted by shift key', () => {

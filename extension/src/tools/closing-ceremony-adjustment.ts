@@ -10,15 +10,14 @@
  *   --kind <promotion_order|throttle_posture> --detail <text>
  *   --form <ticket|note> --ref <id> [--target <path>] [--at <iso-timestamp>]
  */
-import { resolveProjectRoot, printJsonToStdout, makeArgsGuardedMain, runCliMain } from './swarm-metrics';
+import { printJsonToStdout, makeArgsGuardedMain, runCliMain, resolveTargetAndNow } from './swarm-metrics';
 import { recordCeremonyAdjustment } from '../metrics/closingCeremonyStore';
 import { parseArgs, USAGE, ClosingCeremonyAdjustmentArgs } from './closingCeremonyAdjustmentArgs';
 
 export { parseArgs, ClosingCeremonyAdjustmentArgs };
 
 export const main = makeArgsGuardedMain(parseArgs, USAGE, async (args) => {
-  const targetPath = args.target ?? resolveProjectRoot(process.cwd());
-  const nowIso = args.at ?? new Date().toISOString();
+  const { targetPath, nowIso } = resolveTargetAndNow(args);
   const run = recordCeremonyAdjustment(targetPath, args.shift, {
     kind: args.kind,
     detail: args.detail,

@@ -22,6 +22,15 @@ export type CeremonyAdjustmentKind = (typeof KNOWN_CEREMONY_ADJUSTMENT_KINDS)[nu
 export const KNOWN_CEREMONY_RECORD_FORMS = ['ticket', 'note'] as const;
 export type CeremonyRecordForm = (typeof KNOWN_CEREMONY_RECORD_FORMS)[number];
 
+// Shared by closingCeremonyAdjustmentArgs.ts and closingCeremonyOutcomeArgs.ts
+// (both validate a `--shift yyyy-MM-dd` flag) so the pattern and its check
+// live in exactly one place.
+const SHIFT_KEY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+export function isValidShiftKey(value: string | undefined): value is string {
+  return !!value && SHIFT_KEY_PATTERN.test(value);
+}
+
 export interface CeremonyReversibleRecord {
   form: CeremonyRecordForm;
   ref: string;
@@ -94,7 +103,9 @@ function firstSeenOrder(values: string[]): string[] {
   return seen;
 }
 
-function buildHypotheses(parts: Pick<CeremonyPacket, 'pathTaken' | 'dwellHotspots' | 'bounceClasses' | 'skipReasons' | 'stalls'>): string[] {
+type HypothesisParts = Pick<CeremonyPacket, 'pathTaken' | 'dwellHotspots' | 'bounceClasses' | 'skipReasons' | 'stalls'>;
+
+function primaryHypotheses(parts: HypothesisParts): string[] {
   const hyps: string[] = [];
   if (parts.dwellHotspots.length > 0) {
     const top = parts.dwellHotspots[0];
@@ -108,41 +119,57 @@ function buildHypotheses(parts: Pick<CeremonyPacket, 'pathTaken' | 'dwellHotspot
     const top = [...parts.stalls].sort((a, b) => b.count - a.count)[0];
     hyps.push(`${top.count} ${top.eventType}(s) in ${top.role} this shift — chase pattern.`);
   }
-  // Fallbacks so ANY non-empty shift still carries at least one hypothesis
-  // (scenario "between one and three concrete process hypotheses") even
-  // when the only signal is skips or plain stage traversal.
-  if (hyps.length === 0 && parts.skipReasons.length > 0) {
-    hyps.push(`${parts.skipReasons.length} distinct stage-skip reason(s) recorded this shift.`);
+  return hyps;
+}
+
+// Fallback so ANY non-empty shift still carries at least one hypothesis
+// (scenario "between one and three concrete process hypotheses") even
+// when the only signal is skips or plain stage traversal.
+function fallbackHypotheses(parts: HypothesisParts): string[] {
+  if (parts.skipReasons.length > 0) {
+    return [`${parts.skipReasons.length} distinct stage-skip reason(s) recorded this shift.`];
   }
-  if (hyps.length === 0 && parts.pathTaken.length > 0) {
-    hyps.push(`${parts.pathTaken.length} stage(s) traversed this shift with no bounces or stalls recorded.`);
+  if (parts.pathTaken.length > 0) {
+    return [`${parts.pathTaken.length} stage(s) traversed this shift with no bounces or stalls recorded.`];
   }
+  return [];
+}
+
+function buildHypotheses(parts: HypothesisParts): string[] {
+  const primary = primaryHypotheses(parts);
+  const hyps = primary.length > 0 ? primary : fallbackHypotheses(parts);
   return hyps.slice(0, 3);
 }
 
-export function buildClosingCeremonyPacket(shiftKey: string, allEvents: LeanLedgerEvent[]): CeremonyPacket {
-  const events = eventsForShiftKey(allEvents, shiftKey);
+function computePathTaken(events: LeanLedgerEvent[]): string[] {
+  return firstSeenOrder(events.filter((e) => e.type === 'stage_transition' && e.role).map((e) => e.role as string));
+}
 
-  const pathTaken = firstSeenOrder(events.filter((e) => e.type === 'stage_transition' && e.role).map((e) => e.role as string));
-
+function computeDwellHotspots(events: LeanLedgerEvent[]): CeremonyDwellHotspot[] {
   const dwellByRole = new Map<string, number>();
   for (const e of events) {
     if (e.type === 'stage_transition' && e.role && typeof e.data.processingMs === 'number') {
       dwellByRole.set(e.role, (dwellByRole.get(e.role) ?? 0) + e.data.processingMs);
     }
   }
-  const dwellHotspots = [...dwellByRole.entries()].map(([role, totalMs]) => ({ role, totalMs })).sort((a, b) => b.totalMs - a.totalMs);
+  return [...dwellByRole.entries()].map(([role, totalMs]) => ({ role, totalMs })).sort((a, b) => b.totalMs - a.totalMs);
+}
 
+function computeBounceClasses(events: LeanLedgerEvent[]): CeremonyBounceClass[] {
   const bounceCounts = new Map<string, number>();
   for (const e of events) {
     if (e.type === 'bounce' && typeof e.data.failureClass === 'string') {
       bounceCounts.set(e.data.failureClass, (bounceCounts.get(e.data.failureClass) ?? 0) + 1);
     }
   }
-  const bounceClasses = [...bounceCounts.entries()].map(([failureClass, count]) => ({ failureClass, count })).sort((a, b) => b.count - a.count);
+  return [...bounceCounts.entries()].map(([failureClass, count]) => ({ failureClass, count })).sort((a, b) => b.count - a.count);
+}
 
-  const skipReasons = firstSeenOrder(events.filter((e) => e.type === 'stage_skip' && typeof e.data.reason === 'string').map((e) => e.data.reason as string));
+function computeSkipReasons(events: LeanLedgerEvent[]): string[] {
+  return firstSeenOrder(events.filter((e) => e.type === 'stage_skip' && typeof e.data.reason === 'string').map((e) => e.data.reason as string));
+}
 
+function computeStalls(events: LeanLedgerEvent[]): CeremonyStallSummary[] {
   const stallCounts = new Map<string, CeremonyStallSummary>();
   for (const e of events) {
     if (e.type === 'stall' && e.role && typeof e.data.eventType === 'string') {
@@ -151,8 +178,17 @@ export function buildClosingCeremonyPacket(shiftKey: string, allEvents: LeanLedg
       stallCounts.set(key, { role: e.role, eventType: e.data.eventType, count: (existing?.count ?? 0) + 1 });
     }
   }
-  const stalls = [...stallCounts.values()];
+  return [...stallCounts.values()];
+}
 
+export function buildClosingCeremonyPacket(shiftKey: string, allEvents: LeanLedgerEvent[]): CeremonyPacket {
+  const events = eventsForShiftKey(allEvents, shiftKey);
+
+  const pathTaken = computePathTaken(events);
+  const dwellHotspots = computeDwellHotspots(events);
+  const bounceClasses = computeBounceClasses(events);
+  const skipReasons = computeSkipReasons(events);
+  const stalls = computeStalls(events);
   const hypotheses = buildHypotheses({ pathTaken, dwellHotspots, bounceClasses, skipReasons, stalls });
 
   return { shiftKey, pathTaken, dwellHotspots, bounceClasses, skipReasons, stalls, hypotheses };
@@ -186,11 +222,18 @@ export function isKnownCeremonyRecordForm(value: string): value is CeremonyRecor
   return isKnownValue(KNOWN_CEREMONY_RECORD_FORMS, value);
 }
 
+// process_ticket/spec_gate_tweak must carry a non-empty ref; no_change
+// carries none because there is nothing to reverse - "a reasoned no-change
+// is a success" (human decision 4), not a change that needs undoing.
+function isValidOutcomeRef(outcomeType: CeremonyOutcomeType, ref: unknown): boolean {
+  if (outcomeType === 'no_change') {
+    return ref === null || ref === undefined;
+  }
+  return typeof ref === 'string' && ref.length > 0;
+}
+
 // A recorded outcome is reversible-from-the-record-alone (human decision 7)
-// whenever it names a concrete change: process_ticket/spec_gate_tweak must
-// carry a non-empty ref; no_change carries none because there is nothing to
-// reverse - "a reasoned no-change is a success" (human decision 4), not a
-// change that needs undoing.
+// whenever it names a concrete change.
 export function isValidCeremonyOutcome(candidate: Partial<CeremonyOutcome>): candidate is CeremonyOutcome {
   if (typeof candidate.type !== 'string' || !isKnownCeremonyOutcomeType(candidate.type)) {
     return false;
@@ -198,14 +241,26 @@ export function isValidCeremonyOutcome(candidate: Partial<CeremonyOutcome>): can
   if (typeof candidate.recordedAt !== 'string' || !candidate.recordedAt) {
     return false;
   }
-  if (candidate.type === 'no_change') {
-    return candidate.ref === null || candidate.ref === undefined;
+  return isValidOutcomeRef(candidate.type, candidate.ref);
+}
+
+function isValidReversibleRecord(record: unknown): record is CeremonyReversibleRecord {
+  if (!record || typeof record !== 'object') {
+    return false;
   }
-  return typeof candidate.ref === 'string' && candidate.ref.length > 0;
+  const r = record as Partial<CeremonyReversibleRecord>;
+  if (typeof r.form !== 'string' || !isKnownCeremonyRecordForm(r.form)) {
+    return false;
+  }
+  return typeof r.ref === 'string' && r.ref.length > 0;
+}
+
+function isValidAdjustmentKind(kind: unknown): boolean {
+  return typeof kind === 'string' && isKnownCeremonyAdjustmentKind(kind);
 }
 
 export function isValidCeremonyAdjustment(candidate: Partial<CeremonyAdjustment>): candidate is CeremonyAdjustment {
-  if (typeof candidate.kind !== 'string' || !isKnownCeremonyAdjustmentKind(candidate.kind)) {
+  if (!isValidAdjustmentKind(candidate.kind)) {
     return false;
   }
   if (typeof candidate.detail !== 'string' || !candidate.detail) {
@@ -214,14 +269,7 @@ export function isValidCeremonyAdjustment(candidate: Partial<CeremonyAdjustment>
   if (typeof candidate.recordedAt !== 'string' || !candidate.recordedAt) {
     return false;
   }
-  const record = candidate.record;
-  if (!record || typeof record !== 'object') {
-    return false;
-  }
-  if (typeof record.form !== 'string' || !isKnownCeremonyRecordForm(record.form)) {
-    return false;
-  }
-  return typeof record.ref === 'string' && record.ref.length > 0;
+  return isValidReversibleRecord(candidate.record);
 }
 
 // ── run state: pending until an outcome lands, or finalized as failed ─────

@@ -5,7 +5,7 @@
 // change (human decision 7: reversible from the record alone); `no_change`
 // takes none because there is nothing to reverse.
 import { parseFlagPairs } from './bounceArgsCore';
-import { isKnownCeremonyOutcomeType, CeremonyOutcomeType } from '../quality/closingCeremony';
+import { isKnownCeremonyOutcomeType, isValidShiftKey, CeremonyOutcomeType } from '../quality/closingCeremony';
 
 export interface ClosingCeremonyOutcomeArgs {
   shift: string;
@@ -15,8 +15,17 @@ export interface ClosingCeremonyOutcomeArgs {
   at?: string;
 }
 
-const SHIFT_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const FLAG_NAMES = ['--shift', '--outcome', '--ref', '--target', '--at'] as const;
+
+function isValidShiftOutcomeRef(shift: string | undefined, outcome: string | undefined, ref: string | undefined): boolean {
+  if (!isValidShiftKey(shift)) {
+    return false;
+  }
+  if (!outcome || !isKnownCeremonyOutcomeType(outcome)) {
+    return false;
+  }
+  return outcome === 'no_change' || !!ref;
+}
 
 export function parseArgs(argv: string[]): ClosingCeremonyOutcomeArgs | null {
   const flags = parseFlagPairs(argv, FLAG_NAMES);
@@ -24,16 +33,10 @@ export function parseArgs(argv: string[]): ClosingCeremonyOutcomeArgs | null {
     return null;
   }
   const { '--shift': shift, '--outcome': outcome, '--ref': ref, '--target': target, '--at': at } = flags;
-  if (!shift || !SHIFT_PATTERN.test(shift)) {
+  if (!isValidShiftOutcomeRef(shift, outcome, ref)) {
     return null;
   }
-  if (!outcome || !isKnownCeremonyOutcomeType(outcome)) {
-    return null;
-  }
-  if (outcome !== 'no_change' && !ref) {
-    return null;
-  }
-  const args: ClosingCeremonyOutcomeArgs = { shift, outcomeType: outcome };
+  const args: ClosingCeremonyOutcomeArgs = { shift: shift as string, outcomeType: outcome as CeremonyOutcomeType };
   if (ref !== undefined) {
     args.ref = ref;
   }
