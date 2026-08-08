@@ -399,7 +399,8 @@ const DOMAINS = [
   require('./bl848HotfixCertificationSteps'),
   require('./bl619TokenBurnWarningSteps'),
   require('./bl820ClosingCeremonyLeanPassSteps'),
-  require('./bl856FailedCommitMustNotLeaveWorkStagedSteps')
+  require('./bl856FailedCommitMustNotLeaveWorkStagedSteps'),
+  require('./bl851SideloadApkPreauthSteps')
 ];
 
 function registerSteps(registry) {
