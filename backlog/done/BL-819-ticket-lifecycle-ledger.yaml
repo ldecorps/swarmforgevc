@@ -137,3 +137,6 @@ notes: |
   slice's own documenter pass rather than split into a third orphan docs
   ticket — the duty is not documentable until the ledger it describes exists.
   The specifier writes the coordinator.prompt half itself, per Article 1.2.
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-07, by: architect, blamed: coder, class: behavior, commit: a6f61c2895, evidence: backlog/evidence/BL-819-architect-bounce-20260807.md }

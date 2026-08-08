@@ -29,7 +29,7 @@ approval_context: |
   pending, per role rule — my own draft is not automatically authoritative).
 
 severity: medium
-priority: 98
+priority: 100
 direction: human-requested
 depends_on:
   - BL-547

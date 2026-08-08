@@ -169,3 +169,6 @@ notes: |
   `.swarmforge/operator/role-answers/coordinator.json` holds the tapped label
   and that the coordinator's next `ready_for_next.sh` returns the answer note.
   Confirm the coordinator session never exited during the wait.
+bounce_count: 1
+bounce_history:
+  - { at: 2026-08-07, by: QA, blamed: coder, class: unit, commit: 8ac82a0e, evidence: backlog/evidence/BL-773-qa-bounce-20260807.md }

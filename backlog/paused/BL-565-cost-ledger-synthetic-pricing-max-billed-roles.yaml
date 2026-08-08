@@ -6,7 +6,7 @@ status: todo
 epic: cost-intelligence
 human_approval: approved
 severity: low
-priority: 90
+priority: 92
 direction: human-requested
 depends_on: [BL-551]
 assigned_to: specifier

@@ -6,7 +6,7 @@ status: todo
 epic: swarm-reliability
 human_approval: approved
 severity: high
-priority: 91
+priority: 93
 direction: agent-proposed
 assigned_to: none
 mutation_cost: medium
