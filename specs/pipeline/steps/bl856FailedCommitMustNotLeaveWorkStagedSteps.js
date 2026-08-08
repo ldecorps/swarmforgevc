@@ -23,6 +23,13 @@ const REASON_TEXT_TO_FLAG = {
   'a lock timeout': 'lock-timeout',
 };
 
+// This ticket's own Constraints section requires step text as generic as
+// "the call reports failure" to be registered scoped (BL-425), so a future
+// feature reusing that phrase for different behavior can never collide with
+// this one - registered via defineScoped, pinned to this exact Feature:
+// title.
+const FEATURE_NAME = 'a failed integrity commit leaves the index exactly as it found it';
+
 function git(dir, args) {
   return execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8' });
 }
@@ -87,14 +94,18 @@ function registerSteps(registry) {
     ctx.result = runScenariosCli(ctx.dir, { message: 'm', paths: ctx.paths, reason: ctx.reasonFlag, restoreFails: ctx.restoreFails });
   });
 
-  registry.define(/^the call reports failure$/, (ctx) => {
-    if (ctx.result.parsed.success !== false) {
-      throw new Error(`expected the call to report failure, got: ${JSON.stringify(ctx.result.parsed)}`);
-    }
-    if (!ctx.result.processFailed) {
-      throw new Error('expected the CLI subprocess to exit non-zero on a failed call, mirroring the production CLI');
-    }
-  });
+  registry.defineScoped(
+    /^the call reports failure$/,
+    (ctx) => {
+      if (ctx.result.parsed.success !== false) {
+        throw new Error(`expected the call to report failure, got: ${JSON.stringify(ctx.result.parsed)}`);
+      }
+      if (!ctx.result.processFailed) {
+        throw new Error('expected the CLI subprocess to exit non-zero on a failed call, mirroring the production CLI');
+      }
+    },
+    FEATURE_NAME
+  );
 
   registry.define(/^the caller's paths are unstaged again$/, (ctx) => {
     const status = gitStatusPorcelain(ctx.dir, [ctx.callerPath]);
