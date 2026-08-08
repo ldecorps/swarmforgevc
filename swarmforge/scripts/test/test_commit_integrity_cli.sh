@@ -73,4 +73,31 @@ set -e
 [[ "$OUT4" == *'Usage:'* ]] || fail "expected a usage message, got: $OUT4"
 pass "commit_integrity_cli refuses to run with no --path given"
 
+# ── BL-856: a close-guard rejection leaves no residue - it exits before
+#    commit-with-integrity! (and therefore any staging) ever runs, so the
+#    snapshot/restore guarantee holds trivially: nothing changed, so there
+#    is nothing to restore. ──────────────────────────────────────────────
+ROOT5="$(git_repo)"
+trap 'rm -rf "$ROOT5"' EXIT
+
+mkdir -p "$ROOT5/backlog/active" "$ROOT5/backlog/done"
+printf 'id: BL-777\n' > "$ROOT5/backlog/active/BL-777-x.yaml"
+git -C "$ROOT5" add -- backlog/active/BL-777-x.yaml
+git -C "$ROOT5" commit -q -m "seed BL-777"
+git -C "$ROOT5" mv backlog/active/BL-777-x.yaml backlog/done/BL-777-x.yaml
+BEFORE5="$(git -C "$ROOT5" status --porcelain -- backlog/active/BL-777-x.yaml backlog/done/BL-777-x.yaml)"
+
+set +e
+OUT5="$(bb "$CLI" "$ROOT5" --message "Close BL-777" --path backlog/active/BL-777-x.yaml --path backlog/done/BL-777-x.yaml 2>&1)"
+CODE5=$?
+set -e
+AFTER5="$(git -C "$ROOT5" status --porcelain -- backlog/active/BL-777-x.yaml backlog/done/BL-777-x.yaml)"
+
+[[ "$CODE5" -ne 0 ]] || fail "expected non-zero exit for a close-guard rejection (no QA approval evidence), got 0: $OUT5"
+[[ "$OUT5" == *'CLOSE BLOCKED'* ]] || fail "expected a CLOSE BLOCKED message, got: $OUT5"
+[[ "$BEFORE5" == "$AFTER5" ]] || fail "expected the close-guard rejection to leave the index exactly as found (before: '$BEFORE5', after: '$AFTER5')"
+pass "commit_integrity_cli: a close-guard rejection leaves the caller's pre-staged rename exactly as it found it"
+rm -rf "$ROOT5"
+trap - EXIT
+
 echo "ALL PASS"

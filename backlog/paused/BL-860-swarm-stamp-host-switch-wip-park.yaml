@@ -1,0 +1,139 @@
+id: BL-860
+title: "Swarm stamp-off: certify the host-switch WIP park commit f175bc56d1 — 4052 lines landed on main outside the pipeline"
+milestone: M8
+type: chore
+status: todo
+epic: swarm-reliability
+human_approval: pending
+priority: 22
+direction: pipeline-reported
+depends_on: []
+assigned_to: null
+mutation_cost: low
+required_stages: [architect, qa]
+stage_skip_reasons:
+  coder: "nothing is implemented — the deliverable is a verdict on already-landed code plus its evidence file"
+  cleaner: "no code authored to refactor"
+  hardender: "no executable logic authored; the audit assertions are the whole verification surface"
+  documenter: "the evidence file IS the document; the how-to for this workflow already exists at docs/how-to/BL-848-certify-an-operator-hotfix.md"
+
+invariants:
+  - "Every functional path in the park commit ends this ticket with a recorded owner — a ticket id or an explicit disposition — and none is left unexamined."
+
+approval_context: >
+  This is the BL-848 ledger's stamp ticket for entry f175bc56d1, minted
+  because the sweep nudged the coordinator that the entry had none. It is
+  BL-849-shaped: confirm or refute the landed diff, do not rewrite it.
+
+  What needs your decision is the CERTIFICATION, once the review confirms it.
+  The specifier's finding is that this commit is benign and should be
+  CERTIFIED, not waived and not reverted: every functional path in it is
+  already owned by a ticket or already superseded (evidence in the
+  description). The one genuinely open question the 2026-07-31 master-diff
+  review left — track `.cursor/rules/` or gitignore it — was answered de
+  facto when this commit tracked the file; confirming that is your call, and
+  it is the only live decision in the commit.
+
+  If you would rather waive the entry outright rather than spend an architect
+  pass confirming the inventory below, say so and this ticket is withdrawn —
+  the evidence in the description is already the audit.
+
+source: |
+  Coordinator note (priority 20, 2026-08-08 17:29Z): "hotfix-cert: f175bc56d1
+  (host-switch WIP park) needs a stamp ticket". BL-848's ledger carries the
+  entry as `state: pending`, `stamp_ticket: null`, detected 2026-08-07; per
+  docs/how-to/BL-848-certify-an-operator-hotfix.md the sweep keeps nudging
+  the coordinator until an entry has a stamp ticket.
+
+description: |
+  ## What landed
+
+  `f175bc56d1` (2026-08-01, swarm-intake[bot], Cursor co-author) — "Park local
+  WIP for host switch: drain router depth, Bubble chiptunes, pilot-safe
+  defects, answer archive." 4052 insertions, 1 deletion, 11 files, committed
+  straight to `main` outside the pipeline.
+
+  ## Disposition of every path (specifier audit, 2026-08-08)
+
+  1. `extension/src/tools/pilotSafeDefects.ts` (155) and
+     `extension/test/pilotSafeDefects.test.js` (98) — owned by **BL-722**,
+     which is in `backlog/done/`. Authorized work; it simply travelled in
+     this commit. NO ACTION.
+
+  2. `extension/src/bridge/letsTalkBubbleConfig.ts` (120),
+     `letsTalkChiptunes.ts` (36), `letsTalkChiptunes.json` (3565) — owned by
+     **BL-765** (`backlog/paused/`, `human_approval: approved`). BL-765's own
+     `notes:` already names these exact three files as "Adopt candidates
+     already in the dirty master tree ... Coder adopts, does not re-derive",
+     and its `required_wiring:` already declares the two GET routes they are
+     missing. The park commit only committed what BL-765 had already planned
+     to adopt. NO ACTION beyond promoting BL-765 in the normal course.
+
+     Worth stating plainly so it is not re-reported as a defect: these
+     modules currently have ZERO callers (`grep` for both symbols outside
+     their own files returns nothing) and no evidence file, and none of
+     BL-765's six `required_stages` has run. That is expected for an adopt
+     candidate and is exactly what BL-765's `required_wiring` exists to
+     close — it is not a separate finding.
+
+  3. `swarmforge/packs/mono-router.conf` — the commit's one deletion:
+     `active_backlog_max_depth 1` -> `0`, the "drain router depth" of the
+     subject line. `0` is Article 3.5's SEVERE circuit-breaker value (freeze
+     promotion entirely), committed here as a pack default for the host
+     switch. **Verified superseded**: the file now reads `3`. No live effect.
+     NO ACTION.
+
+  4. `.cursor/rules/bugfix-process-tdd.mdc` (45) — Cursor host-agent process
+     config (`alwaysApply: true`), restating the constitution's root-cause /
+     TDD / CRAP-6 posture for the third writer on master. No ticket names it.
+     The 2026-07-31 master-diff review
+     (`backlog/evidence/master-diff-review-20260731.md`) examined it and left
+     it explicitly undecided: "Either track it (it governs the third writer,
+     so making it explicit has value) or gitignore `.cursor/`. Left in place;
+     not the specifier's call." This commit tracked it, which answers that
+     question de facto. THE ONE LIVE DECISION in the commit — confirm the
+     tracking or gitignore `.cursor/`.
+
+  5. `backlog/answers-archive/ANSWER-BL-764|765|766|768-*.md` (4 files, 32
+     lines) — human answer archive, bookkeeping. NO ACTION.
+
+  ## What this ticket asks the reviewer to do
+
+  Re-derive the five dispositions above independently against the repo as it
+  stands — this is a confirm-or-refute pass, not a re-implementation — and
+  commit the result as
+  `backlog/evidence/BL-860-architect-pass-<YYYYMMDD>.md` per Article 4.4.
+  Refuting any one of them is a real finding; confirming all five is the
+  expected outcome and is recorded as an explicit NONE.
+
+acceptance: specs/features/BL-860-swarm-stamp-host-switch-wip-park.feature.draft
+
+notes: |
+  Ledger mechanics (docs/how-to/BL-848-certify-an-operator-hotfix.md): the
+  specifier ran `hotfix_ledger_update.bb --link f175bc56d1 BL-860` when
+  minting this ticket, moving the entry `pending` -> `stamp-open` so the
+  sweep stops nudging the coordinator. When this ticket reaches
+  `backlog/done/` the entry becomes `awaiting-human`, and the human's
+  decision is recorded with
+  `bb swarmforge/scripts/hotfix_ledger_update.bb . --decide f175bc56d1
+  approved|waived`. Reaching `done` is NOT itself certification — the ledger
+  decision is the durable fact, and the sweep logs an anomaly if a stamp
+  ticket lands `done` with no decision recorded.
+
+  The acceptance file ships as `.feature.draft` because it has no step
+  handlers yet; materialize it to a live `.feature` in the same parcel that
+  lands them (BL-233).
+
+  e2e QA procedure: confirm the ledger entry for f175bc56d1 reads
+  `stamp_ticket: BL-860`; confirm the architect evidence file exists and
+  dispositions all five items; confirm `swarmforge/packs/mono-router.conf`
+  still does not read `active_backlog_max_depth 0`.
+
+out_of_scope: |
+  - Implementing, reverting, or re-deriving any code in the park commit.
+    BL-765 and BL-722 own their own contents.
+  - Promoting BL-765 — that is the coordinator's ordinary promotion call,
+    not this ticket's.
+  - Recording the human's ledger decision. Only a human/operator writes
+    `human_decision`, and only after this ticket reaches done.
+  - The other open ledger entry f9cf29c29b (stamp ticket BL-849).

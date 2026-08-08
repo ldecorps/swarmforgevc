@@ -177,3 +177,34 @@ notes: |
   opposite outcome, "the integrity commit succeeds", which is not a duplicate
   at all), and one pairs scenario 06's Given against the same action's When.
   Same classes the BL-762 review kept.
+
+  Coder 2026-08-08, on the coder.prompt Invariants section's property-test
+  obligation (BL-654): this ticket is pure `.bb` (commit_integrity_lib.bb/
+  commit_integrity_cli.bb) with no TypeScript surface at all, and the
+  property-test harness `*.property.test.js` / `npm run test:properties` is
+  TS/fast-check/vitest infrastructure - engineering.prompt's own documented
+  Babashka gap ("mutation/CRAP/DRY tooling is NOT currently wired... treat
+  [the unit-test suite] as the actual gate for swarm scripts") extends the
+  same way to property tests: there is no bb-side generative-testing harness
+  to author into. Each declared invariant is instead covered by targeted,
+  real-git unit tests in `commit_integrity_lib_test_runner.bb` (never a
+  mocked seam alone for the restore path - the mocked-seam version of the
+  verify-mismatch test passed while the real-git one caught a genuine bug,
+  see that file's own regression-test comment):
+    1. "leaves the index... exactly as it found it" - the four
+       no-staged-residue-on-failure cases plus the real-pre-commit-hook
+       repro ("before the call the edit is unstaged" / "after a FAILED call
+       the edit is unstaged again") and the real-verify-mismatch regression.
+    2. "never unstaged" (pathspec-scoped) - "a concurrent writer's own
+       staged path is untouched by a restore scoped to someone else's
+       paths", plus the git-mv pre-staged-rename survival test.
+    3. "a restore that cannot complete is itself a loud failure" - the
+       injected `:restore-index-fn!` failure test asserting
+       `:index-left-dirty`, paired with a same-shaped real-restore-succeeds
+       test proving the field is never a false positive.
+  Non-vacuity of the fix itself (not just the tests) was checked by hand:
+  reverting the two-snapshot design to a single pre-loop snapshot reproduced
+  a real bug the acceptance suite's real-git fixture caught (a spurious "MM"
+  index/HEAD/worktree mismatch on a real, successful-but-verify-rejected
+  commit) - restoring the fix made both the unit and acceptance suites green
+  again.

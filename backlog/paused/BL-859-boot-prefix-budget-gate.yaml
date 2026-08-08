@@ -1,0 +1,134 @@
+id: BL-859
+title: "Nothing checks the boot-prefix cap when an amendment is authored: the specifier commits article growth straight to main and an unrelated parcel discovers the over-cap RED weeks later"
+milestone: M8
+type: defect
+status: todo
+epic: swarm-reliability
+human_approval: pending
+severity: medium
+priority: 5
+direction: pipeline-reported
+depends_on: [BL-858]
+assigned_to: coder
+mutation_cost: medium
+required_stages: [coder, hardender, documenter, qa]
+stage_skip_reasons:
+  cleaner: "single small gate script plus a prompt rule; nothing to refactor at this size"
+  architect: "follows the established role-run gate pattern already in swarmforge/scripts (specifier_backlog_hygiene_gate.sh, gherkin_lint_gate.sh) — no new architecture"
+
+invariants:
+  - "The size the gate reports is the same stable prefix text prompt_engine_lib composes at boot — measured through that composer, never re-derived by a second implementation that can drift from it."
+  - "The gate is testable against a synthetic constitution tree without mutating the real one, via an injected tree root — no *_FORCE_RESULT env bypass and no process.chdir."
+
+required_wiring:
+  - "swarmforge/roles/specifier.prompt::boot prefix budget gate::a gate the specifier is never instructed to run is never run — this is the BL-419 shape the ticket exists to avoid"
+
+approval_context: >
+  Sign-off wanted on making the budget a HARD failure rather than a warning.
+  A warning reproduces today's situation (the bb runner already reports the
+  number and is simply not run at authoring time). A hard failure means that
+  once the prefix reaches the budget, the specifier cannot add a rule without
+  moving equivalent prose out to reference/ in the same commit — deliberately
+  a forcing function, and the point of the ticket. The cost is that an urgent
+  amendment authored at budget carries a trim with it.
+
+  Also confirm the two-threshold split is what you want: 44000 budget (the
+  specifier's gate, fails at authoring time) under the unchanged 51200 cap
+  (the suite's gate, fails at verification). The band between them absorbs
+  amendments that land between gate runs.
+
+source: |
+  Specifier analysis while speccing BL-858, 2026-08-08. The 51200 cap is
+  enforced only by swarmforge/scripts/test/prompt_engine_test_runner.bb.
+  Nothing runs it at the moment growth is authored: `git log 4c00179b..main`
+  over the boot-inlined files shows 15 amendment commits landing +14229
+  chars directly on main with no cap check.
+
+description: |
+  ## Problem
+
+  The boot-prefix cap is real (51200 chars, paid in tokens on every agent
+  boot) but it is checked in the wrong place and at the wrong time. It lives
+  in the bb script test suite, which runs during a parcel's verification —
+  so the party who causes the overage (the specifier, committing a
+  constitution amendment straight to main) never sees it, and the party who
+  sees it (an unrelated parcel's reviewer, weeks later) did not cause it and
+  cannot fix it inside their own ticket.
+
+  The observed consequence is worse than a late signal: it manufactures
+  normalized red. BL-618's own ticket had to instruct reviewers that "while
+  this test is red, ANY parcel gating on the bb suite sees a pre-existing
+  failure ... reviewers must recognise exactly this one named failure as
+  pre-existing known-red". Telling reviewers to ignore a named red is
+  precisely the condition under which a real red gets waved through.
+
+  This has now happened twice — BL-618 (53408 chars) and BL-858 (65138).
+  Twice is a pattern, and the second bust was 6x the first, so the interval
+  is not lengthening.
+
+  ## Behavior wanted
+
+  A gate the specifier runs before committing any change to a boot-inlined
+  constitution/article file, which:
+
+  - measures the boot prefix THROUGH prompt_engine_lib's stable-prefix
+    composer, so it cannot report a number that differs from what boot
+    actually pays;
+  - exits non-zero above a 44000-char budget, zero at or under it;
+  - on failure prints the measured size, the budget, and how many characters
+    must move — an actionable remedy, not a bare number.
+
+  The 44000 budget sits under the unchanged 51200 cap on purpose: the gate
+  catches the author, the cap still catches anything that slips past, and the
+  7200-char band absorbs amendments landing between gate runs.
+
+  ## Wiring is the deliverable, not the script
+
+  A gate script nobody is told to run is BL-419's exact failure shape: built,
+  unit-tested, green, wired into zero of the places it was filed to fix. The
+  parcel is not done until `swarmforge/roles/specifier.prompt` names this
+  gate as a required step before committing a boot-inlined article change —
+  the same way it already mandates `specifier_backlog_hygiene_gate.sh` for
+  paused-ticket YAML. `required_wiring` above arms the pre-QA gate on it.
+
+  ## Construction constraints
+
+  Per the shared engineering rules: a thin CLI wrapper over an exported,
+  testable helper that takes the constitution tree root as a parameter, so
+  the scenarios can drive a synthetic tree. Inject the tree root; do not add
+  a `*_FORCE_RESULT` env bypass and do not `process.chdir`. Boundary values
+  (43999 / 44000 / 44001) are in the acceptance table because that comparison
+  is exactly where the hardener's mutants will live.
+
+  The acceptance file ships as `.feature.draft` because it has no handlers
+  yet. Materialize it to a live `.feature` in the SAME parcel that lands the
+  handlers, and point this ticket's `acceptance:` at the live path (BL-233).
+
+acceptance: specs/features/BL-859-boot-prefix-budget-gate.feature.draft
+
+notes: |
+  E2E QA procedure: with the real tree at or under budget, run the gate and
+  confirm exit 0 and a reported size equal to the "stable-prefix chars:"
+  value `bb swarmforge/scripts/test/prompt_engine_test_runner.bb` prints —
+  the two numbers must match exactly, which is the parity invariant; then
+  append a throwaway 25K file under swarmforge/constitution/articles/,
+  re-run, and confirm exit non-zero with the overage and the
+  characters-to-move figure, then delete it; finally grep
+  swarmforge/roles/specifier.prompt and confirm the gate is named as a
+  required pre-commit step.
+
+  Sequencing: depends_on BL-858 only so the gate does not land red against a
+  tree that is still 21K over budget. If the coordinator prefers, BL-859 can
+  land first with the budget check reporting non-zero as its correct verdict
+  — but then the bb suite and this gate are both red until BL-858 lands, so
+  BL-858 first is the cleaner order.
+
+out_of_scope: |
+  - Raising, lowering, or removing the 51200 cap.
+  - Doing the trim itself — that is BL-858.
+  - Git hooks or CI enforcement (this repo has no hooks installed and no
+    hooksPath configured; the established local pattern is a role-run gate
+    script named in that role's prompt). A hook is a reasonable later
+    hardening, ticketed separately if wanted.
+  - Any change to what prompt_engine_lib composes — this ticket only
+    measures it.

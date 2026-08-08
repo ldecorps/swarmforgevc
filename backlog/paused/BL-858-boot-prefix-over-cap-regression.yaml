@@ -1,0 +1,173 @@
+id: BL-858
+title: "Boot stable prefix over cap again: 65138 chars > 51200 — second bust since BL-618, both the bb suite and BL-618's own acceptance feature are RED on main"
+milestone: M8
+type: defect
+status: todo
+epic: swarm-reliability
+human_approval: pending
+severity: high
+priority: 1
+direction: pipeline-reported
+depends_on: []
+assigned_to: coder
+mutation_cost: low
+required_stages: [coder, qa]
+stage_skip_reasons:
+  cleaner: "prose-move-only change; no code to refactor"
+  architect: "no new architecture — this is the BL-433 split mechanism BL-618 already ran, applied at larger scale under the same acceptance contract"
+  hardender: "no executable logic changes; the char-count gate and verbatim-move scenarios are the whole verification surface"
+  documenter: "the change IS documentation restructuring; pointers to absorbed prose are acceptance-gated in the parcel itself"
+
+invariants:
+  - "No normative rule text is lost: every passage removed from a boot-inlined article appears verbatim in exactly one reference file, and its slim article retains a pointer naming that file."
+  - "Headroom is bought by moving prose, never by weakening the gate: the 51200 cap value is unchanged and no reference/ file body enters the boot prefix."
+
+approval_context: >
+  Sign-off wanted on the SCALE, not the mechanism. BL-618's approved approach
+  (move elaboration prose into articles/reference/, never raise the cap) is
+  carried over unchanged and is assumed firm. What is new is the size of the
+  move: BL-618 shed ~2.2K chars; this parcel must shed ~21K, roughly a third
+  of the current boot prefix. Prose that leaves the boot prefix becomes
+  read-on-demand, which in practice means often not read at all — so this is
+  a judgement about which guidance every agent is guaranteed to see at boot,
+  not just a size exercise.
+
+  The specifier's recommendation is to proceed on the BL-618 precedent: the
+  ~21K is available as genuine elaboration (PIPELINE.md's mono-router and
+  rotation sections ~6K, local-engineering ~4K, 04_quality_gates ~3K,
+  03_backlog ~2K, engineering ~2K, workflow ~3K), so no normative rule
+  sentence need leave the boot prefix — only its narrative and incident
+  backing, each replaced by a pointer. The reference/ corpus is already 102K,
+  so this is the established shape at a larger scale.
+
+  If instead you want the boot prefix restructured (rules-only digest at boot,
+  ALL narrative in reference/) or the 51200 cap revisited given that the
+  constitution has grown ~28% in two weeks, say so and this ticket is
+  respecced — those are materially different parcels.
+
+source: |
+  Coordinator note (priority 20, 2026-08-08 12:49Z, relayed from coder):
+  "BL-618 stable-prefix cap regressed to 65138 chars (cap 51200)".
+
+  Verified by the specifier the same turn:
+  `bb swarmforge/scripts/test/prompt_engine_test_runner.bb` prints
+  "stable-prefix chars: 65138" then
+  "FAIL: stable prefix under 50KB after article splits (< 51200 chars)",
+  1 FAILURES.
+
+description: |
+  ## Problem
+
+  The boot stable prefix (constitution + articles + PIPELINE, inlined into
+  every agent launch via --append-system-prompt-file) is 65138 chars against
+  the deliberate 51200-char cap — 13938 over, 27% past the gate. The cap
+  exists because this text is paid in tokens on EVERY agent boot and respawn.
+
+  TWO gates are red on main, not one:
+  - `swarmforge/scripts/test/prompt_engine_test_runner.bb` — measured red
+    this turn (above).
+  - `specs/features/BL-618-stable-prefix-cap-regression.feature` scenario
+    `BL-618 gate-green-01`, whose step "the stable prefix length is under
+    51200 characters" compares live runner output against 51200 and so must
+    now throw. Derived from measurement, not assumed: the handler at
+    `specs/pipeline/steps/bl618StablePrefixCapSteps.js:178` parses
+    "stable-prefix chars: <n>" from the runner output measured above and
+    throws unless `n < 51200`.
+
+  ## Why it regressed — the part a re-trim alone does not fix
+
+  BL-618 landed the prefix at ~50909 chars: 291 chars of headroom, against
+  its own ticket's instruction to "target comfortable headroom under 51200,
+  not 51199". Fifteen amendment commits between 4c00179b and main added
+  14229 chars — every one a legitimate rule, none checked against the cap,
+  because the specifier commits constitution amendments directly to main and
+  nothing on that path measures the prefix.
+
+  Per-file growth since BL-618 (`git show 4c00179b:<f>` vs main):
+
+      04_quality_gates.md      660 -> 4545   (+3885)
+      local-engineering.prompt 5727 -> 8765  (+3038)
+      PIPELINE.md              8955 -> 11192 (+2237)
+      03_backlog.md            2087 -> 3942  (+1855)
+      engineering.prompt       7586 -> 9082  (+1496)
+      05_amendments.md         537 -> 1454   (+917)
+      workflow.prompt          11630 -> 12431 (+801)
+
+  This ticket is the trim. The missing gate is BL-859, specced alongside;
+  landing this one without that one buys roughly a week at the observed
+  growth rate (~950 chars/day) before a third bust.
+
+  ## Fix mechanism (established, not novel)
+
+  The BL-433 split mechanism, exactly as BL-618 used it: move incident-backed
+  elaboration prose out of the boot-inlined articles into
+  `swarmforge/constitution/articles/reference/` (read on demand, never
+  inlined), leaving each slim article's normative rules intact plus a
+  one-line pointer to the absorbing reference file. The bb runner already
+  asserts reference bodies stay OUT of the prefix and slim articles stay IN.
+
+  ## Headroom budget: land at or under 44000 chars
+
+  Not an arbitrary number. 44000 is 86% of the cap, leaving 7200 chars of
+  headroom — about 25x what BL-618 left, and roughly 7-8 amendments at the
+  observed rate. It is deliberately NOT chosen to buy months: at ~950
+  chars/day no static headroom does, which is precisely why BL-859 exists.
+  Headroom's job here is only to stop an immediate re-bust while the gate
+  lands.
+
+  ## Step handlers — do not repurpose BL-618's
+
+  `specs/pipeline/steps/bl618StablePrefixCapSteps.js` hardcodes
+  `FIX_COMMIT = '624ad2bc2'` (BL-618's trim commit) and diffs against it.
+  Three of its handlers are commit-agnostic and SHOULD be reused as-is by
+  binding to their exact step text — "the prompt engine test runner
+  executes", "the stable prefix length is under 51200 characters", "the
+  runner reports ALL PASS". The diff-based handlers are not reusable: they
+  would diff this parcel's tree against BL-618's commit. Add this parcel's
+  own steps file scoped to its own fix commit. Do NOT edit BL-618's
+  `FIX_COMMIT` constant — that silently rewrites a landed ticket's acceptance
+  contract to assert something it never asserted.
+
+  Scenario `headroom-budget-02` and `cap-value-unchanged-06` need new
+  handlers either way; per BL-233 they must land in this same parcel or the
+  acceptance runner hard-fails on unhandled scenarios.
+
+  The acceptance file ships as `.feature.draft` because it has no handlers
+  yet. Materialize it to a live `.feature` in the SAME parcel that lands the
+  handlers, and point this ticket's `acceptance:` at the live path — exactly
+  as BL-618 did (cbfec354). Landing handlers without materializing leaves the
+  contract unexecuted; materializing without handlers is the QA bounce BL-618
+  already took (ad7074f9).
+
+acceptance: specs/features/BL-858-boot-prefix-back-under-cap.feature.draft
+
+notes: |
+  E2E QA procedure: on the fix commit run
+  `bb swarmforge/scripts/test/prompt_engine_test_runner.bb` — expect
+  "ALL PASS" and a printed "stable-prefix chars:" value at or under 44000;
+  run the acceptance suite and confirm BOTH this ticket's feature and
+  BL-618's existing feature are green (BL-618's scenario 01 un-reds as a
+  side effect of the trim, which is the correct outcome — it is a live cap
+  assertion, not a historical one); sample two moved passages and confirm
+  each is findable verbatim under `articles/reference/` with its slim
+  article still pointing there; boot one role via its launch script and
+  confirm the slim articles still arrive in the system prefix.
+
+  Adjacent, deliberately not merged: BL-640 (paused) covers reference/
+  amendments not reaching roles' stale worktrees. This parcel moves MORE
+  prose into reference/, which widens BL-640's blast radius but does not
+  cause or fix it. Worth the coordinator sequencing BL-640 soon after.
+
+  The constitution/prompt files are specifier-owned surface: the specifier
+  reviews this parcel's choice of moved passages at the QA-evidence stage if
+  disputed, but the mechanical move rides the normal pipeline under the
+  acceptance contract (no rule text lost, pointers retained).
+
+out_of_scope: |
+  - Raising or removing the 51200 cap.
+  - Rewriting any rule's meaning — this parcel moves prose, it does not edit
+    policy.
+  - Building the amendment-time budget gate — that is BL-859.
+  - Fixing reference/ staleness in role worktrees — that is BL-640.
+  - Trimming role prompts or pack overlays (only the boot-inlined
+    constitution/article surface the gate measures).
