@@ -282,6 +282,191 @@
     (let [dirty (:out (process/sh ["git" "-C" dir "status" "--porcelain" "--" other-path]))]
       (assert-false "the unrelated concurrently-staged path is untouched, still staged" (str/blank? (str/trim dirty))))))
 
+;; ── BL-856: no failure path leaves the caller's paths staged ───────────
+
+;; the exact reproduction from the ticket: a pre-commit hook fails the
+;; commit AFTER staging has already happened. Before this fix, git status
+;; went from " M" (unstaged) to "M " (staged) across the failed call; the
+;; invariant is that it stays " M".
+(let [dir (real-git-repo)
+      path "f.txt"
+      abs (str (fs/path dir path))]
+  (spit abs "v1\n")
+  (sh! dir "add" "--" path)
+  (sh! dir "commit" "-q" "-m" "seed")
+  (spit abs "v2\n")
+  (fs/create-dirs (fs/path dir ".git" "hooks"))
+  (spit (str (fs/path dir ".git" "hooks" "pre-commit")) "#!/bin/sh\nexit 1\n")
+  (fs/set-posix-file-permissions (fs/path dir ".git" "hooks" "pre-commit") "rwxr-xr-x")
+  (let [before (str/trimr (:out (process/sh ["git" "-C" dir "status" "--porcelain" "--" path])))
+        result (commit-integrity-lib/commit-with-integrity!
+                {:project-root dir :paths [path] :message "m"})
+        after (str/trimr (:out (process/sh ["git" "-C" dir "status" "--porcelain" "--" path])))]
+    (assert= "before the call the edit is unstaged" " M f.txt" before)
+    (assert-false "a failing pre-commit hook is reported as a failure" (:success result))
+    (assert= "the reason is :commit-failed (staging succeeded, the hook rejected the commit)" :commit-failed (:reason result))
+    (assert= "after a FAILED call the edit is unstaged again - exactly as found, never left staged" " M f.txt" after)))
+
+;; :add-failed also restores - simulated via an injected add-fn! so no real
+;; git add failure mode needs reproducing.
+(let [dir (real-git-repo)
+      path "g.txt"
+      abs (str (fs/path dir path))]
+  (spit abs "v1\n")
+  (sh! dir "add" "--" path)
+  (let [result (commit-integrity-lib/commit-with-integrity!
+                {:project-root dir :paths [path] :message "m"
+                 :add-fn! (fn [& _] {:exit 1})})
+        staged? (str/starts-with? (:out (process/sh ["git" "-C" dir "status" "--porcelain" "--" path])) "M")]
+    (assert= "an add failure is still reported as :add-failed" :add-failed (:reason result))
+    (assert-false "the path is not left staged after an :add-failed restore" staged?)))
+
+;; :verify-mismatch, retries exhausted, also restores - the index is left
+;; matching the just-created (verify-rejected) commit's own HEAD, since a
+;; real commit already landed and synced it; restore-index! is a genuine
+;; no-op here rather than dragging the index backward to a stale blob.
+(let [dir (real-git-repo)
+      path "h.txt"
+      abs (str (fs/path dir path))]
+  (spit abs "v1\n")
+  (let [result (commit-integrity-lib/commit-with-integrity!
+                {:project-root dir :paths [path] :message "m" :max-retries 0
+                 :add-fn! (fn [& _] {:exit 0})
+                 :commit-fn! (fn [& _] {:exit 0})
+                 :rev-parse-fn (fn [_] "sha-1")
+                 :read-fn (fn [_ _] "approved")
+                 :show-fn (fn [_ _ _] "wrong")})
+        staged? (str/starts-with? (:out (process/sh ["git" "-C" dir "status" "--porcelain" "--" path])) "M")]
+    (assert= "exhausted retries still reports :verify-mismatch" :verify-mismatch (:reason result))
+    (assert-false "the path is not left staged after a :verify-mismatch restore" staged?)))
+
+;; Regression (BL-856): the SAME scenario but with the REAL default
+;; add-fn!/commit-fn! (a genuine `git commit` really lands, only `show-fn`
+;; lies about content) - the case the acceptance suite's real-git fixture
+;; caught that the fake-seam test above could not, because faked add/commit
+;; never touch the real index at all. Restoring to a snapshot taken BEFORE
+;; this call ever staged anything would drag the index back to the OLD
+;; pre-commit blob while HEAD has already moved to the new commit,
+;; producing a spurious "MM" (index differs from HEAD AND worktree) status
+;; instead of a clean one.
+(let [dir (real-git-repo)
+      path "h2.txt"
+      abs (str (fs/path dir path))]
+  (spit abs "v1\n")
+  (sh! dir "add" "--" path)
+  (sh! dir "commit" "-q" "-m" "seed h2")
+  (spit abs "v2 - real edit\n")
+  (let [result (commit-integrity-lib/commit-with-integrity!
+                {:project-root dir :paths [path] :message "m" :max-retries 0
+                 :show-fn (fn [& _] "definitely-not-what-was-staged")})
+        status (:out (process/sh ["git" "-C" dir "status" "--porcelain" "--" path]))]
+    (assert= "a real commit that fails verify is still reported as :verify-mismatch" :verify-mismatch (:reason result))
+    (assert= "the index is left CLEAN (synced to the real, just-created HEAD) - never a spurious index/HEAD/worktree mismatch"
+             "" (str/trim status))))
+
+;; the pre-staging short-circuits (:no-git-dir, :lock-timeout) never call
+;; restore at all - nothing was staged, so there is nothing to touch.
+(let [dir (real-git-repo)
+      restore-called? (atom false)
+      result (commit-integrity-lib/commit-with-integrity!
+              {:project-root dir :paths ["notes.txt"] :message "m"
+               :lock-fn! (fn [_] false)
+               :restore-index-fn! (fn [& _] (reset! restore-called? true) true)})]
+  (assert= "a lock-timeout is unchanged" :lock-timeout (:reason result))
+  (assert-false "restore is never called when nothing was ever staged (lock never acquired)" @restore-called?))
+
+;; ── BL-856 restore-is-pathspec-scoped ────────────────────────────────────
+
+(let [dir (real-git-repo)
+      writer-path "writer.yaml"
+      other-path "other.yaml"]
+  (spit (str (fs/path dir writer-path)) "v1\n")
+  (spit (str (fs/path dir other-path)) "unrelated\n")
+  (sh! dir "add" "--" other-path)
+  (let [result (commit-integrity-lib/commit-with-integrity!
+                {:project-root dir :paths [writer-path] :message "m"
+                 :add-fn! (fn [& _] {:exit 0})
+                 :commit-fn! (fn [& _] {:exit 1})})
+        writer-staged? (str/starts-with? (:out (process/sh ["git" "-C" dir "status" "--porcelain" "--" writer-path])) "M")
+        other-staged? (str/starts-with? (:out (process/sh ["git" "-C" dir "status" "--porcelain" "--" other-path])) "A")]
+    (assert-false "the failing caller's own path is unstaged by the restore" writer-staged?)
+    (assert-true "a concurrent writer's own staged path is untouched by a restore scoped to someone else's paths" other-staged?)))
+
+;; ── BL-856 caller-prestaged state (git mv) survives a failure ──────────
+
+(let [dir (real-git-repo)
+      old-path "backlog/active/BL-999.yaml"
+      new-path "backlog/done/BL-999.yaml"]
+  (fs/create-dirs (fs/path dir "backlog" "active"))
+  (fs/create-dirs (fs/path dir "backlog" "done"))
+  (spit (str (fs/path dir old-path)) "id: BL-999\n")
+  (sh! dir "add" "--" old-path)
+  (sh! dir "commit" "-q" "-m" "seed BL-999")
+  (sh! dir "mv" old-path new-path)
+  (let [result (commit-integrity-lib/commit-with-integrity!
+                {:project-root dir :paths [old-path new-path] :message "m"
+                 :commit-fn! (fn [& _] {:exit 1})})
+        status (:out (process/sh ["git" "-C" dir "status" "--porcelain" "--" old-path new-path]))]
+    (assert-false "the failed close attempt is reported as failure" (:success result))
+    (assert-true "the caller's own pre-staged rename is STILL staged after the restore, not undone"
+                 (str/includes? status (str "R  " old-path " -> " new-path)))))
+
+;; ── BL-856 a restore that cannot complete is loud, never swallowed ─────
+
+(let [dir (real-git-repo)
+      path "k.txt"]
+  (spit (str (fs/path dir path)) "v1\n")
+  (let [result (commit-integrity-lib/commit-with-integrity!
+                {:project-root dir :paths [path] :message "m"
+                 :add-fn! (fn [& _] {:exit 0})
+                 :commit-fn! (fn [& _] {:exit 1})
+                 :restore-index-fn! (fn [& _] false)})]
+    (assert-false "the call still reports failure" (:success result))
+    (assert-true "a restore that cannot complete is named in the result, never silently swallowed"
+                 (:index-left-dirty result))))
+
+(let [dir (real-git-repo)
+      path "k2.txt"]
+  (spit (str (fs/path dir path)) "v1\n")
+  (let [result (commit-integrity-lib/commit-with-integrity!
+                {:project-root dir :paths [path] :message "m"
+                 :add-fn! (fn [& _] {:exit 0})
+                 :commit-fn! (fn [& _] {:exit 1})})]
+    (assert-false "the real default restore succeeds so :index-left-dirty is absent, not a false positive"
+                  (boolean (:index-left-dirty result)))))
+
+;; ── BL-856 the success path is unchanged ────────────────────────────────
+
+(let [dir (real-git-repo)
+      path "l.txt"]
+  (spit (str (fs/path dir path)) "v1\n")
+  (let [result (commit-integrity-lib/commit-with-integrity!
+                {:project-root dir :paths [path] :message "m"})]
+    (assert-true "a successful call still succeeds" (:success result))
+    (assert-false ":index-left-dirty is absent on a successful call" (boolean (:index-left-dirty result)))))
+
+;; ── BL-856 unrelated-commit-carries-nothing: the full end-to-end harm ───
+
+(let [dir (real-git-repo)
+      caller-path "caller.yaml"
+      caller-abs (str (fs/path dir caller-path))]
+  (spit caller-abs "v1\n")
+  (sh! dir "add" "--" caller-path)
+  (sh! dir "commit" "-q" "-m" "seed caller.yaml")
+  (spit caller-abs "v2 - abandoned edit\n")
+  (fs/create-dirs (fs/path dir ".git" "hooks"))
+  (spit (str (fs/path dir ".git" "hooks" "pre-commit")) "#!/bin/sh\nexit 1\n")
+  (fs/set-posix-file-permissions (fs/path dir ".git" "hooks" "pre-commit") "rwxr-xr-x")
+  (commit-integrity-lib/commit-with-integrity! {:project-root dir :paths [caller-path] :message "m"})
+  (fs/delete (fs/path dir ".git" "hooks" "pre-commit"))
+  (let [other-path "other.yaml"]
+    (spit (str (fs/path dir other-path)) "other\n")
+    (sh! dir "add" "--" other-path)
+    (sh! dir "commit" "-q" "-m" "unrelated writer: add other.yaml")
+    (let [stat (:out (process/sh ["git" "-C" dir "show" "--stat" "--format=" "HEAD"]))]
+      (assert-true "the unrelated writer's own commit carries its own file" (str/includes? stat other-path))
+      (assert-false "the unrelated writer's commit carries NONE of the caller's abandoned edit" (str/includes? stat caller-path)))))
+
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (empty? @failures)
   (println "commit_integrity_lib (BL-419): ALL TESTS PASSED")

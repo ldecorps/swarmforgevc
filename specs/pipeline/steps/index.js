@@ -398,7 +398,8 @@ const DOMAINS = [
   require('./bl822HostLoadAnomalySteps'),
   require('./bl848HotfixCertificationSteps'),
   require('./bl619TokenBurnWarningSteps'),
-  require('./bl820ClosingCeremonyLeanPassSteps')
+  require('./bl820ClosingCeremonyLeanPassSteps'),
+  require('./bl856FailedCommitMustNotLeaveWorkStagedSteps')
 ];
 
 function registerSteps(registry) {
