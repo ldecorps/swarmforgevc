@@ -34,26 +34,18 @@ Two guards apply, in this order:
 | `⚠ <role> has no live pane - not delivered` | No tmux pane exists for that role | See below — usually expected |
 | `⚠ not delivered to <role>: <reason>` | A pane exists but the verified send did not land | Real fault; check the pane and the bot's stderr |
 
-The middle case is expected on a **mono-router pack**, where only
-`swarmforge-coordinator` and `swarmforge-coder` are real tmux sessions;
-specifier, cleaner, architect, hardender, documenter and QA are dormant
-rotation targets with a mailbox and no session of their own in
-`.swarmforge/roles.tsv`.
+The middle case is deliberately worded differently from the third, because on a
+**mono-router pack it is the normal state for six of the eight roles**. Only
+`swarmforge-coordinator` and `swarmforge-coder` hold live panes; specifier,
+cleaner, architect, hardender, documenter and QA are dormant rotation targets
+with a mailbox but no process. Steering one of those cannot work until the
+router rotates the single resident into that role.
 
-That no longer means those six can't be steered, though. Since BL-846, pane
-resolution also consults the durable resident-identity marker
-(`.swarmforge/mono-router-active-role`) that rotation writes on every hop: if
-the role you're steering is the one the resident is *currently rotated into*,
-the nudge is delivered into the resident pane exactly as if that role had its
-own session. Only a role the resident is **not** currently running as still
-resolves to "no live pane" and needs the mailbox instead. Check the Swarm
-Live Screen (or the marker) if you're unsure which role the resident
-currently is — that is the one role, among the six dormant ones, that is
-steerable right now.
-
-`coordinator` (1602) is always steerable (standing session), and `coder`
-(1596) is steerable whenever the resident is at home — the same as before
-BL-846.
+So on a mono-router, the two topics worth steering are **coordinator (1602)**
+and **coder (1596)** — and even coder is only live while the resident happens
+to be sitting in its home role rather than rotated into cleaner or another
+persona. Check the Swarm Live Screen if you are unsure which role the resident
+currently is.
 
 To reach a dormant role instead, use its mailbox: a `type: note` handoff is
 picked up whenever the resident next rotates into that role, rather than

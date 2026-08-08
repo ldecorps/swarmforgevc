@@ -43,6 +43,7 @@ const READ_VERBS = new Set([
   '/log',
   '/doctor',
   '/tunnel',
+  '/conf',
   '/help',
   '/confirm-off',
 ]);

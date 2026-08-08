@@ -12,7 +12,7 @@ direction: swarm-found
 depends_on: []
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
-acceptance: specs/features/BL-846-role-answer-reaches-the-active-resident-pane.feature
+acceptance: specs/features/BL-846-role-answer-reaches-the-active-resident-pane.feature.draft
 
 required_wiring:
   - "extension/src/tools/telegram-front-desk-bot.ts::readMonoRouterActiveRole::the resolution site itself must consult the durable resident-identity marker; a helper that resolves correctly but is never called from resolveRolePaneTarget leaves the deadlock exactly where it is (the BL-419 shape). The intended shape is importing the already-exported reader from extension/src/concierge/residentPaneSpy.ts rather than adding a second reader."

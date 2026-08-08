@@ -385,6 +385,11 @@ test('BL-702: syncenv and doctor execute as read/soft appropriately', () => {
     verb: '/doctor',
     args: undefined,
   });
+  assert.deepEqual(decideInboundAction(event('/conf'), PRINCIPAL_ID, CHAT_ID, CURSOR_TOPIC_ID), {
+    action: 'execute-operator',
+    verb: '/conf',
+    args: undefined,
+  });
   assert.deepEqual(decideInboundAction(event('/syncenv'), PRINCIPAL_ID, CHAT_ID, CURSOR_TOPIC_ID), {
     action: 'prompt-operator-confirm',
     tier: 'soft',
@@ -859,7 +864,7 @@ test('cursor bridge: formatHelpMessage mentions all operator commands', () => {
       '/resume — soft confirm; allow promotion again',
       '/syncenv /compile /pull — soft confirm (one Confirm tap)',
       '/stop /start /restart /bounce [swarm|extension|bridge|all] /ensure — hard confirm',
-      '/doctor /tunnel — read-only checks',
+      '/doctor /tunnel /conf — read-only checks',
       '/confirm-off — clear a pending Confirm',
       '/log [expedite|redeploy|bridge] — tail the active or named operator log',
       '/help — this message',

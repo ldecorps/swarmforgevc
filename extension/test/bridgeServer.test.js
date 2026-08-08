@@ -192,6 +192,32 @@ test('serves the holistic endpoint with assignments/swarms/doneByMilestone/recen
   });
 });
 
+// Sideload APKs under .swarmforge/operator/public are public (no bearer) so a
+// phone can open https://bubble.musicalsifu.com/<versioned>.apk directly.
+test('serves a published float-companion APK without authorization', async () => {
+  const target = mkTmp();
+  const publicDir = path.join(target, '.swarmforge', 'operator', 'public');
+  mkdirp(publicDir);
+  const name = 'swarmforge-float-companion-0.3.12-install-fix.apk';
+  const bytes = Buffer.from('PK-fake-apk-bytes');
+  fs.writeFileSync(path.join(publicDir, name), bytes);
+  await withBridge(target, {}, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/${name}`);
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get('content-type'), 'application/vnd.android.package-archive');
+    assert.equal(Number(res.headers.get('content-length')), bytes.length);
+    assert.equal(Buffer.compare(Buffer.from(await res.arrayBuffer()), bytes), 0);
+  });
+});
+
+test('rejects path-traversal looking APK names', async () => {
+  const target = mkTmp();
+  await withBridge(target, {}, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/swarmforge-float-companion-../secret.apk`);
+    assert.equal(res.status, 401);
+  });
+});
+
 // BL-102: /stage-dwell is token-gated like every other route, and degrades
 // to an empty stages list rather than erroring for a target with no roles.
 test('rejects an unauthorized request to the stage-dwell endpoint', async () => {

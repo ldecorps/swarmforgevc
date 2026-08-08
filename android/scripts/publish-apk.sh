@@ -23,4 +23,6 @@ cp -f "$SRC" "$PUBLIC/swarmforge-float-companion-debug.apk"
 cp -f "$SRC" "$PUBLIC/swarmforge-float-companion-${SAFE_VER}.apk"
 echo "Published $VER →"
 ls -lh "$PUBLIC"/swarmforge-float-companion*.apk
-echo "Prefer versioned URL path: /swarmforge-float-companion-${SAFE_VER}.apk (avoids CDN/browser 304 stale installs)"
+echo "Prefer versioned URL:"
+echo "  https://bubble.musicalsifu.com/swarmforge-float-companion-${SAFE_VER}.apk"
+echo "(avoids CDN/browser 304 stale installs; bridge serves .swarmforge/operator/public/)"

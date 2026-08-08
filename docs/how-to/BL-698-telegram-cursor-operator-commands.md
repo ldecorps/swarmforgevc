@@ -9,7 +9,7 @@ Confirm + env-reload note: [BL-702 how-to](BL-702-operator-confirm-env-reload.md
 
 | Tier | Gate | Examples |
 |------|------|----------|
-| Read | none | `/status` `/doctor` `/autopilot dry` `/land dry` `/shift status` `/holiday list` |
+| Read | none | `/status` `/doctor` `/tunnel` `/conf` `/autopilot dry` `/land dry` `/shift status` `/holiday list` |
 | Soft | one Confirm tap | `/compile` `/pull` `/syncenv` `/redeploy` `/shift start` `/holiday add` `/hold` `/reinstate` |
 | Hard | two-step confirm | `/restart` `/bounce` `/hydrate` `/mint` `/autopilot` `/land` `/ensure` `/stop` `/kill-all` `/drain-agents` `/drain-swarm` `/ambulance` |
 

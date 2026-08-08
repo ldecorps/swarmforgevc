@@ -33,7 +33,7 @@
     <string name="playlist_playing">Playing: %1$s</string>
     <string name="playlist_stop">Stop music</string>
     <string name="mute">Mute</string>
-    <string name="volume">Volume</string>
+    <string name="volume">Hold music volume</string>
     <string name="pause_all">Pause all</string>
     <string name="resume_all">Resume</string>
     <string name="bubble_paused">Paused — long-press to resume</string>
@@ -46,6 +46,7 @@
     <string name="phase_error">error</string>
     <string name="need_mic_permission">Microphone permission is required to record.</string>
     <string name="keep_recording">Keep recording a bit longer.</string>
+    <string name="record_max_reached">Recording capped at 30s — sending what was captured.</string>
     <string name="no_speech">No speech detected.</string>
     <string name="no_audio">No audio captured.</string>
     <string name="connection_error_hint">Check pairing in Settings → Edit pairing.</string>
