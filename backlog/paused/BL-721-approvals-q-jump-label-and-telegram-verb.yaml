@@ -5,7 +5,7 @@ type: chore
 status: todo
 epic: swarmforge-console
 human_approval: approved
-priority: 20
+priority: 21
 direction: normal
 depends_on: []
 mutation_cost: low

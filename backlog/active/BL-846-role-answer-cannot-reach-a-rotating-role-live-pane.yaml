@@ -6,8 +6,8 @@ severity: high
 status: todo
 epic: question-attention-path
 human_approval: approved
-assigned_to: none
-priority: 109
+assigned_to: coder
+priority: 112
 direction: swarm-found
 depends_on: []
 mutation_cost: low
