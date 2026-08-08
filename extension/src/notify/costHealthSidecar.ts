@@ -3,16 +3,7 @@ import { atomicWrite } from '../util/atomicWrite';
 import { commitScopedFile } from '../util/gitCommitScopedFile';
 import { computeTrend, TrendResult, TrendSeriesPoint } from '../metrics/trend';
 import { computeCostTelemetry, RoleCostTelemetry } from '../metrics/costTelemetry';
-import {
-  readResourceSampleEvents,
-  computeResourceTrends,
-  RoleResourceTrend,
-  readHostLoadSampleEvents,
-  computeHostLoadVerdict,
-  hostLoadSevereRatioThreshold,
-  hostLoadSustainedMs,
-  HostLoadVerdict,
-} from '../metrics/resourceTelemetry';
+import { readResourceSampleEvents, computeResourceTrends, RoleResourceTrend } from '../metrics/resourceTelemetry';
 import { RoleWorktree, readChaserTelemetryEvents, ChaserTelemetryEvent } from '../metrics/swarmMetrics';
 import { runGitLog, deriveTicketLifecycles, TicketLifecycleEvent } from '../metrics/gitHistoryAdapter';
 import { computeSuiteDurationTrend, SuiteDurationTrendResult } from '../metrics/deliveryMetrics';
@@ -141,13 +132,6 @@ export interface CostHealthSidecar {
   // ticket (schemaVersion unchanged, purely additive) reads as absent/falsy
   // - same "no anomaly section rendered" behavior it always had.
   resourceSamplesObserved?: boolean;
-  // BL-822: additive, optional - host load average is a distinct signal
-  // from per-role RSS/CPU, never folded into resourceAnomalies (a
-  // ResourceAnomaly always carries {role, rssBytes}; a host-wide
-  // measurement has neither, and pwa/app.js iterates that array reading
-  // both fields unconditionally). See renderAnomalyLines: a severe day
-  // must not render "none found" even when resourceAnomalies is empty.
-  hostLoad?: HostLoadVerdict;
   // BL-290: additive, optional - suite-test duration is machine-local/
   // gitignored (deliveryMetrics.ts's own computeSuiteDurationTrend reads
   // it live), so this committed snapshot is the ONLY way it can ever reach
@@ -360,8 +344,7 @@ export function buildCostHealthSidecar(
   costPerTicketSeries?: CostPerTicketSeriesResult,
   topExpensiveOriginsByHorizon?: Record<LlmCostHorizon, LlmCostRollupGroup[]>,
   originCostTrendSeries?: OriginCostTrendSeries[],
-  reworkInputs?: { bounceRecords: BounceRecord[]; closedDateIsos: string[]; nowMs: number },
-  hostLoadVerdict?: HostLoadVerdict
+  reworkInputs?: { bounceRecords: BounceRecord[]; closedDateIsos: string[]; nowMs: number }
 ): CostHealthSidecar {
   const sidecar: CostHealthSidecar = {
     schemaVersion: COST_HEALTH_SIDECAR_SCHEMA_VERSION,
@@ -385,34 +368,23 @@ export function buildCostHealthSidecar(
   if (suiteDurationTrend) {
     sidecar.suiteDurationTrend = suiteDurationTrend;
   }
-  attachCostPerTicket(sidecar, costPerTicketSeries);
+  if (costPerTicketSeries) {
+    sidecar.costPerTicket = {
+      average: costPerTicketSeries.series.length > 0 ? trendedFromSeries(costPerTicketSeries.series) : null,
+      sampleCount: costPerTicketSeries.sampleCount,
+      excludedCount: costPerTicketSeries.excludedCount,
+      series: costPerTicketSeries.series,
+      basis: COST_PER_TICKET_BASIS,
+    };
+  }
   if (topExpensiveOriginsByHorizon) {
     sidecar.topExpensiveOriginsByHorizon = topExpensiveOriginsByHorizon;
   }
   if (originCostTrendSeries) {
     sidecar.originCostTrendSeries = originCostTrendSeries;
   }
-  if (hostLoadVerdict) {
-    sidecar.hostLoad = hostLoadVerdict;
-  }
   attachFlowBalanceRework(sidecar.flowBalance, reworkInputs);
   return sidecar;
-}
-
-// BL-635-style split: kept buildCostHealthSidecar's optional-field attach a
-// single non-branching call, same reason attachFlowBalanceRework already
-// exists as its own function (mirrors that pattern for this section).
-function attachCostPerTicket(sidecar: CostHealthSidecar, costPerTicketSeries?: CostPerTicketSeriesResult): void {
-  if (!costPerTicketSeries) {
-    return;
-  }
-  sidecar.costPerTicket = {
-    average: costPerTicketSeries.series.length > 0 ? trendedFromSeries(costPerTicketSeries.series) : null,
-    sampleCount: costPerTicketSeries.sampleCount,
-    excludedCount: costPerTicketSeries.excludedCount,
-    series: costPerTicketSeries.series,
-    basis: COST_PER_TICKET_BASIS,
-  };
 }
 
 // ── markdown renderer (pure, cost-05b/05c) ──────────────────────────────
@@ -477,26 +449,22 @@ function renderCostPerTicketLines(costPerTicket: CostPerTicketSummary | undefine
 // listing its rolled-up groups (already summed-cost descending from
 // rollupLlmInvocationsByOrigin) with unknown-cost origins noted rather than
 // silently folded into the total.
-function renderOriginGroupLine(group: LlmCostRollupGroup): string {
-  const label = originLabel(group.key);
-  const unknownNote = group.unknownCostCount > 0 ? ` (${group.unknownCostCount} unpriced)` : '';
-  return `  - ${label}: $${group.costUsd.toFixed(2)}${unknownNote}`;
-}
-
-function renderHorizonOriginLines(horizon: LlmCostHorizon, groups: LlmCostRollupGroup[] | undefined): string[] {
-  if (!groups || groups.length === 0) {
-    return [];
-  }
-  return [`- ${horizon}:`, ...groups.map(renderOriginGroupLine)];
-}
-
 function renderTopExpensiveOriginsLines(byHorizon: Record<LlmCostHorizon, LlmCostRollupGroup[]> | undefined): string[] {
   if (!byHorizon) {
     return [];
   }
   const lines: string[] = ['', '**Top expensive origins:**'];
   for (const horizon of Object.keys(LLM_COST_HORIZONS_MS) as LlmCostHorizon[]) {
-    lines.push(...renderHorizonOriginLines(horizon, byHorizon[horizon]));
+    const groups = byHorizon[horizon];
+    if (!groups || groups.length === 0) {
+      continue;
+    }
+    lines.push(`- ${horizon}:`);
+    for (const group of groups) {
+      const label = originLabel(group.key);
+      const unknownNote = group.unknownCostCount > 0 ? ` (${group.unknownCostCount} unpriced)` : '';
+      lines.push(`  - ${label}: $${group.costUsd.toFixed(2)}${unknownNote}`);
+    }
   }
   return lines.length > 2 ? lines : [];
 }
@@ -605,41 +573,26 @@ function renderReliabilityLine(rel: ReliabilityCounts): string {
   );
 }
 
-function renderHostLoadLine(hostLoad: HostLoadVerdict): string {
-  const ratioText = hostLoad.ratio !== null ? `${hostLoad.ratio.toFixed(1)}x` : 'severe';
-  return `- host load: ${ratioText} core count, sustained ${Math.round(hostLoad.sustainedMinutes)} min`;
-}
-
 // BL-350: a quiet day (samplesObserved true, no anomalies) now renders an
 // explicit "none found" line instead of the same silent omission a broken,
 // never-sampled sampler produces (samplesObserved false/absent) - that
 // distinction is the entire point of the ticket (see resourceSamplesObserved
 // above).
-//
-// BL-822: this is the load-bearing half of that ticket. A severe host load
-// must never fall through to "none found", whether or not any per-role
-// anomaly is ALSO present (invariant 1) - and a per-role anomaly present at
-// the same time must not mask the host-load line either (BL-822 scenario
-// 02's anti-vacuity check).
-function renderAnomalyLines(anomalies: ResourceAnomaly[], samplesObserved: boolean, hostLoad?: HostLoadVerdict): string[] {
-  const severe = hostLoad?.severe === true;
-  if (anomalies.length === 0 && !severe) {
-    if (samplesObserved) {
-      return ['', '**Resource anomalies:** none found.'];
-    }
-    return [];
+function renderAnomalyLines(anomalies: ResourceAnomaly[], samplesObserved: boolean): string[] {
+  if (anomalies.length > 0) {
+    return [
+      '',
+      '**Resource anomalies:**',
+      ...anomalies.map((a) => {
+        const mb = Math.round(a.rssBytes / (1024 * 1024));
+        return `- ${a.role}: ${mb}MB ${trendArrow(a.rssTrend)}, ${a.cpuPercent.toFixed(1)}% cpu ${trendArrow(a.cpuTrend)}`;
+      }),
+    ];
   }
-  const lines = ['', '**Resource anomalies:**'];
-  if (severe && hostLoad) {
-    lines.push(renderHostLoadLine(hostLoad));
+  if (samplesObserved) {
+    return ['', '**Resource anomalies:** none found.'];
   }
-  return [
-    ...lines,
-    ...anomalies.map((a) => {
-      const mb = Math.round(a.rssBytes / (1024 * 1024));
-      return `- ${a.role}: ${mb}MB ${trendArrow(a.rssTrend)}, ${a.cpuPercent.toFixed(1)}% cpu ${trendArrow(a.cpuTrend)}`;
-    }),
-  ];
+  return [];
 }
 
 // Pure: renders the briefing's "Cost & Health" section directly from the
@@ -663,7 +616,7 @@ export function renderCostHealthSection(sidecar: CostHealthSidecar | null): stri
     renderFlowBalanceLine(sidecar.flowBalance),
     '',
     renderReliabilityLine(sidecar.reliability),
-    ...renderAnomalyLines(sidecar.resourceAnomalies, sidecar.resourceSamplesObserved === true, sidecar.hostLoad),
+    ...renderAnomalyLines(sidecar.resourceAnomalies, sidecar.resourceSamplesObserved === true),
   ];
   return lines.join('\n');
 }
@@ -718,11 +671,6 @@ export function computeCostHealthSidecar(
   const originCostTrendSeries = computeOriginCostTrendSeries(targetPath, nowMs);
   const bounceRecords = readBounceRecords(targetPath);
   const closedDateIsos = lifecycles.map((l) => l.closeDateIso).filter((d): d is string => d !== null);
-  const hostLoadVerdict = computeHostLoadVerdict(
-    readHostLoadSampleEvents(targetPath),
-    hostLoadSevereRatioThreshold(targetPath),
-    hostLoadSustainedMs(targetPath)
-  );
 
   return buildCostHealthSidecar(
     dateIso,
@@ -736,8 +684,7 @@ export function computeCostHealthSidecar(
     costPerTicketSeries,
     topExpensiveOriginsByHorizon,
     originCostTrendSeries,
-    { bounceRecords, closedDateIsos, nowMs },
-    hostLoadVerdict
+    { bounceRecords, closedDateIsos, nowMs }
   );
 }
 

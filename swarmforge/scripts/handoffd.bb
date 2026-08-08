@@ -30,7 +30,6 @@
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "loop_detect_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "push_sweep_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "flow_watchdog_lib.bb")))
-(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "master_checkout_drift_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "provider_compat_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "provider_respawn_env_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "provider_auth_observe_lib.bb")))
@@ -1687,21 +1686,6 @@
     :emit-alarm! flow-watchdog-emit-alarm!}))
 
 
-;; ── BL-839: master-checkout-vs-main drift sweep - report only ──────────────
-;; The daemon executes THIS checkout's working tree, not a committed ref
-;; (see master_checkout_drift_lib.bb's own header for the incident this
-;; guards against). Reuses flow-watchdog-emit-alarm! - the same durable
-;; Telegram OPERATOR-topic outbox every other unsuppressable alarm in this
-;; sweep block writes to - so this needs no new alerting channel. Report
-;; only: never repairs the drift (see the ticket's approval_context for why
-;; auto-restore would itself be a "surfaced, not swept" violation).
-
-(defn master-checkout-drift-sweep! []
-  (master-checkout-drift-lib/check-master-checkout-drift!
-   {:project-root (str project-root)
-    :emit-alarm! flow-watchdog-emit-alarm!}))
-
-
 ;; ── BL-214: briefing-email sweep - the daemon's fourth duty ─────────────────
 ;; Runs on the SAME cadence as chase-sweep!/dispatch-gap-sweep! above (no
 ;; separate timeout) since this daemon already runs unattended regardless of
@@ -2580,15 +2564,6 @@
                       (flow-watchdog-sweep! (load-roles) socket)
                       (catch Exception e
                         (log! "flow-watchdog-sweep-error" (.getMessage e))))
-                    ;; BL-839: master-checkout-drift sweep shares the same
-                    ;; cadence, runs UNCONDITIONALLY for the same reason
-                    ;; flow-watchdog-sweep! above does - a read-only alarm
-                    ;; must fire regardless of any pause/wake-suppression
-                    ;; state, not go quiet alongside it.
-                    (try
-                      (master-checkout-drift-sweep!)
-                      (catch Exception e
-                        (log! "master-checkout-drift-sweep-error" (.getMessage e))))
                     ;; BL-214: briefing-email sweep shares the same cadence -
                     ;; no separate timeout, same rationale as BL-222 above.
                     (try

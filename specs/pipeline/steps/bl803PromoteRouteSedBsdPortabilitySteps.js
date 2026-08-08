@@ -26,6 +26,11 @@ const SCRIPTS_DIR = path.join(REPO_ROOT, 'swarmforge', 'scripts');
 const PROMOTE_SCRIPT_SRC = path.join(SCRIPTS_DIR, 'promote_and_route_next.sh');
 const GATES_CLI_SRC = path.join(SCRIPTS_DIR, 'promotion_gates_cli.bb');
 const GATES_LIB_SRC = path.join(SCRIPTS_DIR, 'promotion_gates_lib.bb');
+// BL-853: promotion_gates_lib.bb's depth-refusal now load-files
+// backlog_depth_lib.bb (shared no-limit? sentinel predicate), which in turn
+// load-files swarm_identity_lib.bb - both must travel with the copy below.
+const BACKLOG_DEPTH_LIB_SRC = path.join(SCRIPTS_DIR, 'backlog_depth_lib.bb');
+const SWARM_IDENTITY_LIB_SRC = path.join(SCRIPTS_DIR, 'swarm_identity_lib.bb');
 
 const FEATURE_NAME = 'promote-and-route survives BSD sed hosts';
 const TICKET_ID = 'BL-9803';
@@ -120,6 +125,8 @@ function initFixture(ctx) {
   // shells out to for every gate decision — must travel with the copy.
   fs.copyFileSync(GATES_CLI_SRC, path.join(ctx.root, 'swarmforge', 'scripts', 'promotion_gates_cli.bb'));
   fs.copyFileSync(GATES_LIB_SRC, path.join(ctx.root, 'swarmforge', 'scripts', 'promotion_gates_lib.bb'));
+  fs.copyFileSync(BACKLOG_DEPTH_LIB_SRC, path.join(ctx.root, 'swarmforge', 'scripts', 'backlog_depth_lib.bb'));
+  fs.copyFileSync(SWARM_IDENTITY_LIB_SRC, path.join(ctx.root, 'swarmforge', 'scripts', 'swarm_identity_lib.bb'));
 
   const routeStub = path.join(ctx.root, 'swarmforge', 'scripts', 'route_backlog_to_coder.sh');
   fs.writeFileSync(

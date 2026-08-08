@@ -1,8 +1,3 @@
-# mutation-stamp: sha256=bdbe55ab9396506c74ccde9be03bfb7b4c37638dc34f7b6490ab2ff0d8c7ca49
-# acceptance-mutation-manifest-begin
-# {"version":1,"tested_at":"2026-08-07T12:19:22.921433Z","feature_name":"The coordinator raises a clarifying question through the shared role-ask path","feature_path":"/Users/ldecorps/projects/swarmforgevc/.worktrees/hardender/specs/features/BL-773-coordinator-asks-through-the-role-ask-path.feature","background_hash":"32805050e34b4d211f34b034d10e28a6c969a6aa53a55f00fa3f7533df6fe111","implementation_hash":"unknown","scenarios":[{"index":0,"name":"a coordinator question is published to the coordinator's own topic","scenario_hash":"73be7e1d958573dc8fd90a5b59237272d41517e3cb38ac86a06cbcd5a8000c4d","mutation_count":4,"result":{"Total":4,"Killed":4,"Survived":0,"Errors":0},"tested_at":"2026-08-07T12:19:22.921433Z"},{"index":3,"name":"the one-pending guard is per role, not global","scenario_hash":"e852534f2f9ba86f585a763cf5fd8629f126bdc3d92b4eff12e330b22911b551","mutation_count":4,"result":{"Total":4,"Killed":4,"Survived":0,"Errors":0},"tested_at":"2026-08-07T12:19:22.921433Z"}]}
-# acceptance-mutation-manifest-end
-
 Feature: The coordinator raises a clarifying question through the shared role-ask path
   role_ask.bb is role-generic by construction but is wired into one role prompt
   only, the specifier's. The coordinator has no ask path, so when it needs an

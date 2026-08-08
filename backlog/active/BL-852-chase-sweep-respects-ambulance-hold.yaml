@@ -1,0 +1,254 @@
+id: BL-852
+title: "The chase sweep never read the ambulance marker: held parcels are chased, force-respawned, and one quiet window from being dead-lettered — 104 respawns in four hours on the live BL-848 ride"
+milestone: M8
+type: defect
+severity: high
+status: todo
+epic: swarm-reliability
+human_approval: approved
+priority: 2
+direction: agent-surfaced
+depends_on: []
+assigned_to: null
+mutation_cost: medium
+
+invariants:
+  - "While ambulance mode is engaged, one chase sweep performs no write and no wake against a held parcel — not the parcel, not its sidecars, not a respawn, not a dead-letter — so a held parcel's entire on-disk footprint is byte-identical after any number of sweeps."
+  - "The fix mutes only what the human held: with the mode off, and for the patient's own parcels with it on, every chase/nudge/respawn/dead-letter/reap decision is byte-identical to today's."
+  - "This site consults the one shared ambulance predicate; no second notion of held is derived here."
+
+required_wiring:
+  - "swarmforge/scripts/chase_sweep_lib.bb::ambulance::the inbox sweep must consult the hold predicate at the decision point, or the marker stays dark at this site exactly as it is today"
+
+approval_context: >
+  No human ruling is needed. The ambulance contract itself is already
+  human-approved (BL-655/BL-679); this ticket only makes a fifth site obey a
+  decision the human already made, and the damage is live and measured.
+  Written `approved` on the BL-847 precedent (agent-surfaced defect, nothing
+  to decide). The two judgement calls I made rather than ask about are
+  recorded in `out_of_scope` — the in_process nudge stays live, and the
+  dispatch-gap/unassigned-active duties are left alone. Flip this to
+  `pending` if either reading is wrong.
+
+source: |
+  Coordinator note 000173, 2026-08-07 22:05Z: "chase-sweep nudges
+  ambulance-held parcels causing false wakes - spec fix". Probed against the
+  live swarm at 23:14Z with the BL-848 ambulance still engaged (marker
+  written 20:59:10Z).
+
+  ## The gap
+
+  BL-655 shipped `ambulance-lib/parcel-held?` and wired it into three
+  decision points — daemon delivery, dequeue, mono-router rotation
+  actionability. BL-691 found a fourth mover it missed (the synchronous
+  inject path in `handoff_inject_lib.bb`). This is a fifth:
+  `swarmforge/scripts/chase_sweep_lib.bb` contains **zero occurrences of
+  `ambulance`** (verified by grep across `swarmforge/scripts/*.bb`; only
+  `ambulance_lib.bb`, `handoff_lib.bb`, `ambulance_cli.bb` reference it).
+
+  The collision is structural, not incidental. BL-655 parks held parcels in
+  `inbox/new/` deliberately, indefinitely, and that is exactly the directory
+  `sweep-role-inbox!` watches for stalls. Every held parcel therefore looks
+  to the sweep like mail nobody is claiming — which is precisely what it is,
+  and precisely what a human just asked for.
+
+  ## What the sweep then does, in escalating order
+
+  `decide-item-action` ages the parcel past `chaseTimeoutSeconds` (30) and
+  hands it to `decide-stale-item-action`, which with `maxChases` = 3:
+
+  1. **chases** — `((:send-wake-up! adapters) role)`. The role wakes, runs
+     `ready_for_next.sh`, which prints `SKIPPED ambulance-hold:` and returns
+     `NO_TASK`. A whole turn, and a whole agent invocation, for nothing.
+  2. **respawns** — once the count passes max and liveness reads
+     dead/unknown/stuck, `((:trigger-respawn! adapters) role)` fires. Note
+     this branch has no delivery guard: unlike `"chased"`, which only counts
+     when the wake actually landed, respawn fires and logs unconditionally
+     every single sweep.
+  3. **dead-letters** — same branch, when liveness reads alive or idle:
+     `fs/move` to `<parcel>.dead`. This is a **quarantine of a parcel a human
+     explicitly asked to be left alone**, and it directly contradicts BL-655's
+     own words: "never delivered, dropped, quarantined, abandoned or
+     rewritten".
+
+  ## Measured on the live swarm (all four hours of the BL-848 ride)
+
+  Counted from `.swarmforge/telemetry/chaser-2026-08.jsonl`, events at or
+  after 2026-08-07T20:59:10Z:
+
+  - **104 `respawn` events against documenter** — 26 sweeps x 4 held parcels
+    (`BL-839`, `BL-773`, `BL-819`, `BL-822`, all queued 16:12Z, none of them
+    BL-848). Most recent at 23:11:11Z, ~3 minutes before this probe.
+  - **chase sidecar `chaseCount` reached 184** on
+    `00_20260807T161206Z_000038_from_hardender_to_documenter_...` (BL-839).
+  - **5 `chase` events against coder** for
+    `10_20260807T211635Z_000171_from_coordinator_to_coder...`, a `note`
+    reading "Work BL-722-pilot-safe-defects" — held (BL-722 != BL-848), yet
+    chased to `chaseCount` **5 against a maximum of 3**. It has not been
+    dead-lettered only because the resident's pane keeps reading active. The
+    first window where the resident goes quiet past
+    `stuckInProcessTimeoutSeconds` moves the human's held parcel to `.dead`.
+  - The one parcel legitimately moving — the cleaner's
+    `BL-848-hotfix-swarm-certification-recurring-check` handoff — is
+    correctly not held. The predicate itself is fine; only this site never
+    asks it.
+
+  ## Why it is worse than noise
+
+  Each false wake is one resident turn ending in `NO_TASK`. Per PIPELINE.md's
+  endless-loop hard stop, **three consecutive chase observations of a
+  `ready_for_next` -> `NO_TASK` spin halt the entire swarm** — alert, then
+  `kill_all_swarm.sh` (`handoffd.bb`'s `halt-for-endless-loop!`). So the mode
+  a human engages to protect one urgent ticket can, unaided, take the swarm
+  down and quarantine the very parcels it promised to preserve.
+
+  This is the same shape BL-691 already named as the generalisable bit: a
+  predicate wired into the sites its author was looking at, while another
+  site went on deciding without it.
+
+description: |
+  Make the chase sweep read the same marker every other decision point reads,
+  and treat a held parcel as **invisible**: no wake-up, no chase-count write,
+  no respawn, no dead-letter, no write of any kind — the parcel and its
+  sidecars byte-identical across any number of sweeps. Reuse
+  `handoff-lib/default-ambulance-held?` (`chase_sweep_lib.bb` already
+  `load-file`s `handoff_lib.bb`, so the predicate is in scope with no new
+  adapter wiring). Do not derive a second notion of held; that is what
+  invariant 3 guards, and it is BL-691's invariant 1 applied to this site.
+
+  ### Freeze the counter, do not reset it
+
+  While held, the `.chase.json` sidecar is not written at all. It is
+  deliberately **not** reset either: resetting is still a write, and it would
+  erase genuine pre-hold chase history. Once this fix lands, a hold can no
+  longer inflate the counter, so freezing is sufficient — on release the
+  parcel resumes its normal ladder from the count it genuinely reached
+  (scenario 04). The mtime is likewise untouched, so a released parcel is
+  immediately past `chaseTimeoutSeconds` and gets chased on the next sweep,
+  which is the correct behaviour: it really has been waiting.
+
+  ### Terminal-reap outranks the hold — deliberately
+
+  A held parcel whose basename is already in `completed/`/`abandoned/`
+  (BL-499's `already-terminal?`) is still **reaped**, not held (scenario 05).
+  This matches the ordering the dequeue path already commits to:
+  `resolve-dequeueable-candidates` runs `dedup-new-candidates` *before*
+  `partition-ambulance-held`. Provably-finished residue is not work being
+  protected, and holding it would leave the ambulance guarding litter. Stated
+  explicitly because it is the one edge a reasonable implementer would guess
+  the other way.
+
+  ### The mute must be narrow
+
+  Invariant 2 is the load-bearing constraint. A fix that quiets the sweep
+  generally would be strictly worse than the defect — the patient's own
+  stalled parcel is the single thing a human most needs to hear about
+  (scenario 03), and with the mode off nothing changes at all (scenario 07).
+
+notes: |
+  ### Relationship to the two adjacent ambulance tickets — do not fold
+
+  - **BL-691** (paused, `medium`, human-directed *do not expedite*) closes
+    three different gaps: the sync inject path, the busy-resident rotation
+    gate, and engage-on-a-non-active-ticket. Its invariant 1 covers *movers*;
+    this ticket's site both moves (dead-letter) and **wakes**, a category no
+    existing invariant reaches. Kept separate on purpose: folding a live
+    high-severity defect into BL-691 would either drag this fix down behind
+    that ticket's non-expedited ordering or override the operator's explicit
+    do-not-expedite directive. Neither is acceptable.
+  - **BL-679** (paused, `medium`) is the *perimeter*: flow-watchdog quiet,
+    promotion freeze, auto-exit. Its `.feature.draft` narrative even
+    concedes "a held parcel keeps aging on the flow-watchdog's wall clock" as
+    a known cost — but that is the watchdog *alarming*, which is noise. This
+    is the chase sweep *acting*, which destroys. Different file, different
+    severity, different urgency.
+
+  Both are paused; this one is expedited by Article 3.2.4. **Orthogonality
+  note for the coordinator:** BL-691 and BL-679 each touch `handoffd.bb`
+  (rotation gate / open-slot nudge respectively) while this one is expected
+  to land almost entirely in `chase_sweep_lib.bb`. If a `handoffd.bb` seam
+  does turn out to be needed here, do not run this concurrently with either.
+
+  ### Test seam — drive the real decision, never a re-implementation
+
+  BL-655's step handlers set the bar (`bl655AmbulanceModeHoldSteps.js`): every
+  "is this held" answer comes from a real `bb` invocation, never a hand-built
+  row in JS. That file's own header records why — bypassing `role-mail-row`
+  let a BL-576 regression stay green, and the hardener caught it. There is
+  today no one-shot flag that runs a single deterministic chase pass
+  (`handoffd.bb` has `--poll-once`, `--startup-notify-only`,
+  `--print-preferred-rotate-target`, and no chase equivalent). If acceptance
+  needs one, add it in this parcel exactly the way BL-655 added
+  `--print-preferred-rotate-target` for precisely this reason — a real flag on
+  the real daemon, not a fixture that recomputes the decision.
+
+  Existing suites to keep green: `swarmforge/scripts/test/chase_sweep_test_runner.bb`,
+  `test_chase_sweep.sh`, `test_handoffd_chase_sweep_wiring.sh`,
+  `ambulance_lib_test_runner.bb`, `ambulance_wiring_property_runner.bb`,
+  `test_handoffd_ambulance_wiring.sh`.
+
+  ### Gherkin
+
+  Parked as `.feature.draft` per BL-233 (the acceptance runner throws on
+  scenarios with no step handler); the coder promotes it to `.feature` and
+  wires handlers in the same commit. New file, not an append to
+  `specs/features/BL-655-ambulance-mode-hold.feature`, which stays live and
+  unchanged — this adds to the contract rather than amending it.
+
+  Lint gate clean. IR-DRY: five medium findings, all reviewed and
+  deliberately kept — do not "normalise" them:
+  - `a wake-up is sent to <role>` vs `no wake-up is sent to <role>`: an
+    assertion and its negation, which is the entire axis under test.
+  - the two `has waited in the <role> inbox` Givens, and the coder/documenter
+    wake Thens: patient-vs-held is deliberately exercised on *different
+    roles*, proving the filter is per-parcel and not per-role. One
+    placeholder-parameterised handler already serves every use.
+  - `one higher than before the sweep` vs `one higher than it was when the
+    ambulance was engaged`: two genuinely different baselines, and that
+    difference is the whole point of scenario 04.
+
+  ### e2e QA procedure
+
+  On the live swarm, with a non-patient parcel waiting in some role's
+  `inbox/new/`:
+
+  1. `bb swarmforge/scripts/ambulance_cli.bb "$PWD" engage <patient-BL-id>`
+  2. Record the held parcel's `sha256` and that of its `.chase.json`, plus
+     the current tail of `.swarmforge/telemetry/chaser-<month>.jsonl`.
+  3. Wait out at least three chase sweeps (`.swarmforge/daemon/handoffd-duties.json`
+     shows `chase.last_sweep_at` advancing).
+  4. Confirm: no new `chase`/`respawn`/`dead-letter` telemetry naming that
+     `handoffId`; both hashes unchanged; no `<parcel>.dead` created; the
+     parcel still in `inbox/new/`.
+  5. Confirm the patient's own parcel, aged past the chase timeout, still
+     draws a `chase` event.
+  6. `ambulance_cli.bb "$PWD" release`, wait one sweep, confirm the formerly
+     held parcel is chased and its count is exactly one higher than the frozen
+     value.
+
+acceptance: specs/features/BL-852-chase-sweep-respects-ambulance-hold.feature.draft
+
+out_of_scope: |
+  - **The `in_process` nudge stays live, unchanged** (asserted by scenario
+    06, so it cannot be silently widened). `sweep-in-process!` nudges per
+    ROLE, not per parcel, and BL-655's own how-to is explicit: "Work already
+    claimed into a role's `in_process/` before the mode engaged is **not**
+    retracted — a mid-turn claim always finishes." That work is authorised to
+    complete, so nudging it is correct. A dormant mono-router role stranded
+    holding `in_process` mail is real, but it is pre-existing dormancy
+    behaviour and not an ambulance defect.
+  - **The dispatch-gap and unassigned-active sweeps** (`handoffd.bb`'s
+    `dispatch-gap-sweep!` / `unassigned-active-items`). These are separate
+    daemon duties that *create* a routing handoff rather than move an existing
+    one; whatever they create is then correctly held by BL-655's delivery
+    filter, so the net effect is a held parcel plus log noise, not a
+    correctness break. Named here rather than left unstated. The intake side
+    belongs to BL-679's promotion freeze.
+  - `reap-orphaned-sidecars!` — an orphaned sidecar has no parent handoff, so
+    there is no held parcel to protect.
+  - Everything in BL-655 (marker, lib, CLI, Telegram verbs, the three original
+    read sites). This slice consumes that predicate; it does not restate it.
+  - BL-691's three gaps and BL-679's perimeter. See `notes:`.
+  - Reworking the flow-watchdog's wall-clock age (BL-650), and the endless-loop
+    breaker's own thresholds. This ticket removes a cause of the spin, not the
+    breaker.

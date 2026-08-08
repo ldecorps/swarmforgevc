@@ -1,0 +1,223 @@
+id: BL-826
+title: "DEFECT — hands-free Bubble opens the mic 400ms after the playback-done signal, hears its own reply tail, submits it as a human turn, and answers itself in a loop the human can only stop by turning hands-free off"
+milestone: M8
+type: defect
+status: todo
+epic: bubble-voice-barge-in
+human_approval: approved
+severity: high
+priority: 85
+direction: human-requested
+assigned_to: coder
+depends_on: [BL-769]
+mutation_cost: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+approval_context: >
+  The behaviour is not in question — the human reported it, and I measured it
+  in the source (see the "Measured" block below; the intake's account is
+  accurate and the code is worse than it reads).
+
+  What needs the human's eye is which guardrails ship in THIS fix. The intake
+  offered six and asked the specifier to pick. I am taking 1–4 (adaptive
+  re-arm, quiet-tail gate, post-arm settle window, acoustic echo hardening)
+  and deferring 5 (reject a transcript that matches the just-spoken reply) and
+  6 (speaker identification), on the reasoning that 1–4 stop the loop at its
+  source while 5 is a backstop for a loop that should no longer form and 6 is
+  the heavy option the human themself called optional. If the human would
+  rather have the transcript backstop in the same parcel, say so and it moves
+  in — it is cheap and it is pure logic.
+
+severity_rationale: >
+  high, not critical. It does not lose data and does not take the swarm down,
+  so it is not critical. It is above medium because it is a live fault in
+  shipped behaviour that (a) makes hands-free unusable once it latches, (b)
+  self-feeds — every loop iteration is a real model turn billed against the
+  human's budget with no human input, and (c) is degrading the operator's own
+  escalation surface, the phone, which is precisely where they are when they
+  cannot reach a desk.
+
+source: |
+  Drained from `backlog/INTAKE-bubble-hands-free-self-listen-echo-loop.md`
+  (human via Let's Talk, 2026-07-31).
+
+  The human's own account:
+
+  > Human observes mic re-arming too early while Bubble is still talking.
+  > Different TTS speeds make a fixed delay fail. Bubble hears itself, thinks
+  > it is the human, and restarts — self-feeding. Human wonders about
+  > recognizing their own voice; open to other fixes that stop non-human audio
+  > counting as input.
+
+  And the requested outcome, verbatim in substance:
+
+  > While Bubble is still audibly speaking, mic must not treat that audio as a
+  > human turn. After real speech end, wait long enough for speaker / room tail
+  > before listening. Prefer cheap, reliable guards over full speaker
+  > identification first. Optional later: reject turns whose transcript closely
+  > matches the just-spoken reply. Do not require the human to disable
+  > hands-free to recover.
+
+  ## Why it sat undrained
+
+  The intake's 2026-07-31 specifier disposition blocked it — with BL-707 running
+  0 of 6 scenarios, BL-718 0 of 6 and BL-696 3 of 8, another Bubble ticket would
+  have shipped one more inert acceptance contract. It named its resume point:
+  "once the Android-seam policy is settled … spec these against it. The
+  behavior captured above is clear and needs no further questions — only a
+  place to put its contract." BL-769 and BL-761 are now in `backlog/done/M8/`
+  and the policy is in the constitution. That place now exists.
+
+description: |
+  ## Measured, at `android/app/src/main/java/com/swarmforge/floatcompanion/`
+
+  The intake's description is accurate, and the source adds three details that
+  matter to the fix:
+
+  - `TalkEngine.onPlaybackDone()` sets `Phase.READY` and calls
+    `scheduleHandsFreeListen(AudioTurnRecorder.HANDS_FREE_POST_SPEECH_MS)`.
+    `HANDS_FREE_POST_SPEECH_MS = 400L` — a fixed 400 ms, with no observation of
+    whether audio is actually still leaving the speaker.
+  - The auto-submit rule is
+    `recordingMs >= MIN_RECORD_MS && now - lastSoundAt >= HANDS_FREE_SILENCE_MS`
+    with `MIN_RECORD_MS = 400L` and `HANDS_FREE_SILENCE_MS = 2500L`. So Bubble's
+    own reply tail only has to keep the mic busy for 400 ms, and then go quiet
+    for 2.5 s, to be submitted as a complete human turn. A speaker tail longer
+    than 400 ms is enough — which is most of them on a slow TTS voice.
+  - `onPlaybackDone()` also fires from `Phase.THINKING`, so a re-arm can be
+    scheduled on a path where no playback ever started. Whatever gate this
+    ticket adds must cover that path too, not only the SPEAKING one.
+
+  One guardrail is already partly present and should be credited rather than
+  rebuilt: `AudioTurnRecorder` already records from
+  `MediaRecorder.AudioSource.VOICE_COMMUNICATION`, which asks the platform for
+  echo-cancelled capture. What is missing is any explicit
+  `AcousticEchoCanceler` / `NoiseSuppressor` attachment for devices where the
+  source alone does not deliver it.
+
+  ## What changes
+
+  **One gate in front of every re-arm.** Playback is not finished when the
+  player says it is; it is finished when the player says so AND a measured
+  quiet tail has followed with no further audio. Every path that currently
+  calls `scheduleHandsFreeListen` goes through that gate — the normal
+  post-speech path, the error path, the THINKING path, and any recovery path —
+  so no route to the mic bypasses it.
+
+  Concretely, the four guardrails taken from the intake's list:
+
+  1. **Adaptive re-arm, not a fixed 400 ms.** The wait is however long the
+     quiet tail actually takes, within a bounded ceiling. A slow TTS voice
+     waits longer; a fast one does not pay for it.
+  2. **Quiet tail required.** The playback-done signal starts the tail
+     measurement; it does not end the turn. Audio resuming before the tail
+     completes restarts it.
+  3. **Post-arm settle window.** Audio captured in a brief window immediately
+     after the mic arms is discarded rather than counted as the start of a
+     human turn, so a late buffer flush cannot seed one.
+  4. **Acoustic echo hardening.** Attach `AcousticEchoCanceler` and
+     `NoiseSuppressor` to the capture session where the device reports them
+     available, keeping `VOICE_COMMUNICATION` as-is. Absence must degrade
+     silently — an OEM without the effect still gets the timing guards.
+
+  ## The one regression this fix must not cause
+
+  The obvious wrong fix is to make the mic cautious enough that it stops
+  arming. That is worse than the bug: hands-free that silently stops listening
+  looks identical to a crashed app, and the human is holding a phone with no
+  way to tell. The gate must always resolve — arm, or report why it will not —
+  and the bounded ceiling on the adaptive wait exists for exactly this reason.
+  This is stated as an invariant below because no finite set of scenarios can
+  express it.
+
+  ## Sequencing against barge-in (BL-776 / BL-777)
+
+  The intake's own conflict note is the reason this ticket outranks BL-777:
+
+  > Existing intake wants barge-in while Bubble speaks. That must not
+  > reintroduce self-listen. Barge-in, if built, needs a human-vs-playback
+  > discriminator; pure "mic always open during SPEAKING" is unsafe.
+
+  BL-777 opens the mic *during* playback by design. Landing it before this gate
+  exists would build the echo loop into the feature rather than fixing it, so
+  this ticket is priority 85 against BL-777's slot under the 83-priority epic.
+  The discriminator this ticket establishes is the thing BL-777 then builds on.
+
+acceptance: specs/features/BL-826-bubble-hands-free-self-listen-echo-loop.feature
+
+invariants:
+  - "No path arms the microphone while Bubble's own audio can still reach it: every re-arm route — post-speech, error, THINKING, timeout and recovery — passes the same quiet-tail gate, with no bypass."
+  - "The gate always resolves: for every input it either arms the mic or records why it will not, within a bounded ceiling, so hands-free can never latch silently off."
+
+required_wiring:
+  - "android/app/src/main/java/com/swarmforge/floatcompanion/TalkEngine.kt::scheduleHandsFreeListen::every existing call site must route through the new gate, not only the post-speech one"
+  - "android/app/src/main/java/com/swarmforge/floatcompanion/AudioTurnRecorder.kt::AcousticEchoCanceler::the effect must actually be attached to the live capture session, not merely available as a helper"
+
+verification: |
+  ## Runnable gate (pure logic)
+
+  `specs/features/BL-826-bubble-hands-free-self-listen-echo-loop.feature` binds
+  to the gradle JVM unit suite through the BL-769 seam
+  (`specs/pipeline/steps/lib/androidGradle.js`). Its Scenario Outline names six
+  gate decisions; the coder writes the step-handler file in THIS parcel with an
+  explicit KNOWN_VALUES map from each decision to the real test class and
+  test-name substring covering it — no passthrough check (BL-233).
+
+  The gate must be extracted so its decision takes plain values (a
+  playback-done timestamp, an observed last-sound timestamp, the current phase,
+  a clock) and returns a decision — no `android.*` type in its own signature,
+  no real `Handler` and no real time. Fixture clocks are pinned; the unit suite
+  must not sleep (constitution: Test Speed And Isolation).
+
+  Hardener note: no Kotlin mutation/CRAP/DRY tool is pinned in this project
+  (constitution, Startup Tools). This parcel is `.kt`-only, so it runs the
+  degraded unit-test-gap fallback and must record that it did.
+
+  ## Recorded manual procedure (device surface)
+
+  The mic, the speaker path and echo cancellation are device surface. QA
+  verifies them on a paired phone and records the result in the ticket:
+
+  1. Hands-free on. Ask something that produces a long reply on the slowest TTS
+     voice available. **Expect:** no follow-up turn submits from Bubble's own
+     audio; exactly one reply.
+  2. Same, at the loudest comfortable speaker volume. **Expect:** unchanged.
+  3. After a normal reply, stay silent for 30 s. **Expect:** the mic arms, no
+     turn is submitted, and no self-answer loop starts.
+  4. After a normal reply, speak a follow-up once Bubble has finished.
+     **Expect:** it starts a turn as it does today — the fix must not have made
+     the mic deaf.
+  5. Trigger a failed turn (bridge down). **Expect:** hands-free recovers and
+     arms the mic; it does not latch off.
+  6. Latch attempt: repeat step 1 five times in a row. **Expect:** no run
+     produces an unrequested turn.
+  7. With a loop somehow in progress, use pause-all. **Expect:** it stops
+     immediately (intake acceptance item 5).
+
+out_of_scope: |
+  - Rejecting a turn whose transcript closely matches the just-spoken reply.
+    The intake calls it "optional later"; it is a backstop for a loop this
+    ticket removes at source. Worth having — ticket it as a follow-up if the
+    architect or the human wants belt-and-braces.
+  - Speaker identification / "only my voice". The intake calls it optional and
+    heavier than the loop fix; the human agreed.
+  - Barge-in itself. BL-777 opens the mic during playback deliberately; this
+    ticket is its prerequisite, not its implementation.
+  - Changing HANDS_FREE_SILENCE_MS (2.5 s auto-submit) or MIN_RECORD_MS. They
+    are inputs to the failure, not causes of it, and changing them would alter
+    turn-taking feel for every user of hands-free.
+
+notes: |
+  Consolidation record (BL-680). Drains ONE root intake 1:1. Deliberately NOT
+  merged with `INTAKE-bubble-hey-bubble-offline-wake-and-session-listen.md`,
+  the other voice intake still at the root: that one is new capability (an
+  offline wake phrase and a wake -> active -> session-end state machine), this
+  one is a defect in shipped behaviour. Merging a defect fix behind an unbuilt
+  feature would delay a live fault, and the merged ticket would breach the
+  BL-634 envelope. They do share the human-vs-playback discriminator, which is
+  why both sit in the `bubble-voice-barge-in` epic's orbit.
+
+  2026-08-07 human: paused out of active WIP — device testing for Bubble
+  speech/hands-free (and related tunnel/TTS flakiness) will take a long time;
+  swarm should pull non-Bubble-speech work instead. Remains approved; re-promote
+  when the human is ready to finish validation.

@@ -1,7 +1,3 @@
-# acceptance-mutation-manifest-begin
-# {"version":1,"tested_at":"2026-08-07T15:56:00.922096Z","feature_name":"resource health reports host load, not only per-role RSS/CPU trends","feature_path":"/Users/ldecorps/projects/swarmforgevc/.worktrees/hardender/specs/features/BL-822-resource-anomalies-miss-host-load-spikes.feature","background_hash":"de173330278d1b8372b8709196c2bce362583dfa71b3504b6d757d3e0ebae7dc","implementation_hash":"unknown","scenarios":[]}
-# acceptance-mutation-manifest-end
-
 Feature: resource health reports host load, not only per-role RSS/CPU trends
 
   # BL-822. The cost-health sidecar's resource section is derived entirely from

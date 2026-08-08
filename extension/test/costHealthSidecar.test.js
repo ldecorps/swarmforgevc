@@ -17,7 +17,6 @@ const {
   computeCostHealthSidecar,
 } = require('../out/notify/costHealthSidecar');
 const { llmCostTelemetryDir } = require('../out/metrics/llmCostLedgerStore');
-const { appendHostLoadSample } = require('../out/metrics/resourceTelemetry');
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -374,58 +373,6 @@ test('resourceSamplesObserved is false when no role has any recorded sample (the
   assert.equal(sidecar.resourceSamplesObserved, false);
 });
 
-// ── BL-822: hostLoad (additive, optional, never inside resourceAnomalies) ──
-
-function buildWithHostLoad(hostLoadVerdict, resourceTrendsByRole = {}) {
-  return buildCostHealthSidecar(
-    '2026-08-06',
-    {},
-    resourceTrendsByRole,
-    emptyReliabilitySeries('2026-08-06T00:00:00Z'),
-    [],
-    [],
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    hostLoadVerdict
-  );
-}
-
-test('buildCostHealthSidecar carries the given hostLoad verdict verbatim', () => {
-  const verdict = { severe: true, ratio: 20, sustainedMinutes: 240 };
-  const sidecar = buildWithHostLoad(verdict);
-  assert.deepEqual(sidecar.hostLoad, verdict);
-});
-
-test('hostLoad is omitted entirely (not null/undefined-keyed) when none is given, matching the sidecar\'s own additive-optional convention', () => {
-  const sidecar = buildCostHealthSidecar('2026-08-06', {}, {}, emptyReliabilitySeries('2026-08-06T00:00:00Z'), [], []);
-  assert.equal(Object.prototype.hasOwnProperty.call(sidecar, 'hostLoad'), false);
-});
-
-test('hostLoad never changes resourceAnomalies - per-role detection is unaffected (invariant 2)', () => {
-  const resourceTrendsByRole = {
-    coder: {
-      currentRssBytes: 220_000_000, currentCpuPercent: 5,
-      rssTrend: { direction: 'up', delta: 20_000_000, priorValue: 200_000_000, currentValue: 220_000_000, series: [] },
-      cpuTrend: { direction: 'flat', delta: 0, priorValue: 5, currentValue: 5, series: [] },
-    },
-  };
-  const withoutHostLoad = buildWithHostLoad(undefined, resourceTrendsByRole);
-  const withSevereHostLoad = buildWithHostLoad({ severe: true, ratio: 20, sustainedMinutes: 240 }, resourceTrendsByRole);
-  assert.deepEqual(withSevereHostLoad.resourceAnomalies, withoutHostLoad.resourceAnomalies);
-  assert.deepEqual(withSevereHostLoad.resourceAnomalies.map((a) => a.role), ['coder']);
-});
-
-test('hostLoad never sets resourceSamplesObserved - a host-load sample never stands in for per-role sampling (invariant 3)', () => {
-  const withoutHostLoad = buildWithHostLoad(undefined, {});
-  const withSevereHostLoad = buildWithHostLoad({ severe: true, ratio: 20, sustainedMinutes: 240 }, {});
-  assert.equal(withoutHostLoad.resourceSamplesObserved, false);
-  assert.equal(withSevereHostLoad.resourceSamplesObserved, false);
-});
-
 // ── renderCostHealthSection (pure markdown renderer, cost-05b/05c) ──────
 
 test('a null sidecar renders an empty section (cost-05c)', () => {
@@ -605,81 +552,6 @@ test('an actual anomaly renders its role, rss in MB, and cpu percent with trend 
   assert.match(text, /\*\*Resource anomalies:\*\*/);
   assert.match(text, /- coder: 210MB ↑, 7\.5% cpu ↓/);
   assert.doesNotMatch(text, /none found/);
-});
-
-// ── BL-822: host load must be consulted by the "none found" verdict, both
-//    the JSON field and the rendered prose (invariant 1 - the load-bearing
-//    half of the ticket) ──────────────────────────────────────────────────
-
-const QUIET_TREND = { direction: 'flat', delta: 0, priorValue: 5, currentValue: 5, series: [] };
-function quietRoleTrends() {
-  return { coder: { currentRssBytes: 100_000_000, currentCpuPercent: 5, rssTrend: { ...QUIET_TREND, priorValue: 100_000_000, currentValue: 100_000_000 }, cpuTrend: QUIET_TREND } };
-}
-function anomalousRoleTrends() {
-  return {
-    coder: {
-      currentRssBytes: 220_000_000, currentCpuPercent: 5,
-      rssTrend: { direction: 'up', delta: 20_000_000, priorValue: 200_000_000, currentValue: 220_000_000, series: [] },
-      cpuTrend: QUIET_TREND,
-    },
-  };
-}
-
-// BL-822 severe-host-load-is-reported-01
-test('a sustained severe host load is reported even when every role trend is quiet', () => {
-  const sidecar = buildWithHostLoad({ severe: true, ratio: 20, sustainedMinutes: 240 }, quietRoleTrends());
-  assert.equal(sidecar.hostLoad.severe, true);
-  const text = renderCostHealthSection(sidecar);
-  assert.doesNotMatch(text, /none found/);
-  assert.match(text, /\*\*Resource anomalies:\*\*/);
-  assert.match(text, /host load/);
-});
-
-// BL-822 role-anomaly-does-not-mask-host-load-02: the anti-vacuity check -
-// a role anomaly is ALSO present, so an assertion that only checks "none
-// found is absent" would pass for the wrong reason; this also asserts the
-// host-load line and the anomaly line both appear.
-test('a per-role anomaly present at the same time as severe host load does not mask either signal', () => {
-  const sidecar = buildWithHostLoad({ severe: true, ratio: 20, sustainedMinutes: 240 }, anomalousRoleTrends());
-  assert.equal(sidecar.hostLoad.severe, true);
-  assert.deepEqual(sidecar.resourceAnomalies.map((a) => a.role), ['coder']);
-  const text = renderCostHealthSection(sidecar);
-  assert.doesNotMatch(text, /none found/);
-  assert.match(text, /host load/);
-  assert.match(text, /- coder:/);
-});
-
-// BL-822 quiet-host-still-reports-none-found-03
-test('a genuinely quiet host still reports none found', () => {
-  const sidecar = buildWithHostLoad({ severe: false, ratio: 1.5, sustainedMinutes: 240 }, quietRoleTrends());
-  assert.equal(sidecar.hostLoad.severe, false);
-  const text = renderCostHealthSection(sidecar);
-  assert.match(text, /Resource anomalies:.*none found/);
-});
-
-// BL-822 role-anomalies-remain-additive-04
-test('a per-role anomaly still surfaces on its own when the host was quiet', () => {
-  const sidecar = buildWithHostLoad({ severe: false, ratio: 1.5, sustainedMinutes: 240 }, anomalousRoleTrends());
-  assert.deepEqual(sidecar.resourceAnomalies.map((a) => a.role), ['coder']);
-  assert.equal(sidecar.hostLoad.severe, false);
-  const text = renderCostHealthSection(sidecar);
-  assert.match(text, /- coder:/);
-  assert.doesNotMatch(text, /host load/);
-});
-
-// BL-822 host-load-does-not-imply-role-sampling-06
-test('a recorded severe host load never stands in for per-role sampling having run', () => {
-  const sidecar = buildWithHostLoad({ severe: true, ratio: 20, sustainedMinutes: 240 }, {});
-  assert.equal(sidecar.resourceSamplesObserved, false);
-  assert.equal(sidecar.hostLoad.severe, true);
-});
-
-test('computeCostHealthSidecar folds in a real host-load verdict without throwing on an empty target, and reflects an injected severe sample', () => {
-  const targetPath = mkTmpDir('sfvc-costhealth-hostload-');
-  appendHostLoadSample(targetPath, 20, Date.now());
-  const sidecar = computeCostHealthSidecar(targetPath, [{ role: 'coder', worktreePath: targetPath }]);
-  assert.ok(sidecar.hostLoad);
-  assert.equal(typeof sidecar.hostLoad.severe, 'boolean');
 });
 
 // ── writeCostHealthSidecar / commitCostHealthSidecar / sidecarPath ──────

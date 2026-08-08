@@ -3,9 +3,10 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { execFileSync, spawn } = require('node:child_process');
+const { execFileSync } = require('node:child_process');
 const { formatSampleResult, main } = require('../out/tools/sample-resources');
 const { installFakeTmux, installInProcessTmux } = require('./helpers/fakeTmux');
+const { spawnFakeAgentTree } = require('./helpers/fakeAgentTree');
 
 // ── formatSampleResult (pure) ────────────────────────────────────────────
 
@@ -112,7 +113,10 @@ test('recording a resource sample leaves existing telemetry in the same file int
   fs.mkdirSync(path.dirname(telemetryPath(root)), { recursive: true });
   fs.writeFileSync(telemetryPath(root), JSON.stringify({ type: 'chase', role: 'coder', at: new Date().toISOString() }) + '\n');
 
-  const child = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30000)']);
+  // BL-847: buildSampledRoles now resolves the AGENT (a "claude"-named
+  // descendant of the pane's shell), not the pane pid itself - the fake
+  // tmux pid must be a real shell with a real claude-named child.
+  const agentTree = spawnFakeAgentTree();
   // BL-377: runCli() below calls main() IN-PROCESS (never a subprocess), so
   // the in-process double is the right one here - see the subprocess test
   // near the bottom of this file (runCliSubprocess) for the ONE case in
@@ -120,18 +124,17 @@ test('recording a resource sample leaves existing telemetry in the same file int
   const fake = installInProcessTmux([
     { subcommand: 'show-window-options', exitCode: 0, stdout: '1\n' },
     { subcommand: 'list-windows', exitCode: 0, stdout: '0\n' },
-    { subcommand: 'display-message', exitCode: 0, stdout: `${child.pid}\n` },
+    { subcommand: 'display-message', exitCode: 0, stdout: `${agentTree.shellPid}\n` },
   ]);
   try {
     runCli(root);
     const lines = readTelemetryLines(root);
-    assert.equal(lines.length, 3);
+    assert.equal(lines.length, 2);
     assert.ok(lines.some((l) => l.type === 'chase'));
     assert.ok(lines.some((l) => l.type === 'resource_sample'));
-    assert.ok(lines.some((l) => l.type === 'host_load_sample'));
   } finally {
     fake.restore();
-    child.kill();
+    agentTree.kill();
   }
 });
 
@@ -158,27 +161,27 @@ test('the CLI skips sampling when a sample was already recorded within the inter
 test('main() records a resource sample in-process with no editor attached', () => {
   const root = initFixture();
   writeSessions(root);
-  const child = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30000)']);
+  // BL-847: the fake tmux pid must be a real shell with a real
+  // claude-named child - buildSampledRoles resolves the agent descendant,
+  // never the pane pid directly.
+  const agentTree = spawnFakeAgentTree();
   // BL-377: in-process double - runCli() calls main() in THIS process.
   const fake = installInProcessTmux([
     { subcommand: 'show-window-options', exitCode: 0, stdout: '1\n' },
     { subcommand: 'list-windows', exitCode: 0, stdout: '0\n' },
-    { subcommand: 'display-message', exitCode: 0, stdout: `${child.pid}\n` },
+    { subcommand: 'display-message', exitCode: 0, stdout: `${agentTree.shellPid}\n` },
   ]);
   try {
     const output = runCli(root);
     assert.match(output, /^SAMPLED 1 role\(s\)/);
 
     const lines = readTelemetryLines(root);
-    assert.equal(lines.length, 2);
-    assert.ok(lines.some((l) => l.type === 'resource_sample' && l.role === 'coder'));
-    // BL-822 required_wiring: sample-resources.ts is the only caller with no
-    // editor attached (BL-350) - a host-load sampler it never invokes
-    // records nothing, so this same headless tick must also reach it.
-    assert.ok(lines.some((l) => l.type === 'host_load_sample'));
+    assert.equal(lines.length, 1);
+    assert.equal(lines[0].type, 'resource_sample');
+    assert.equal(lines[0].role, 'coder');
   } finally {
     fake.restore();
-    child.kill();
+    agentTree.kill();
   }
 });
 
@@ -220,7 +223,10 @@ test('a missing .swarmforge/roles.tsv (no resolvable project root) exits non-zer
 test('the compiled CLI runs standalone as a subprocess and produces the same result', () => {
   const root = initFixture();
   writeSessions(root);
-  const child = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30000)']);
+  // BL-847: buildSampledRoles now resolves the AGENT (a "claude"-named
+  // descendant of the pane's shell) - real, visible to the subprocess CLI's
+  // own `ps` call the same as to this process.
+  const agentTree = spawnFakeAgentTree();
   // BL-377: this ONE test genuinely needs the PATH-executable fake - the
   // CLI runs as its OWN separate OS process (runCliSubprocess, below),
   // resolving `tmux` from PATH inside itself. An in-process double in
@@ -228,21 +234,19 @@ test('the compiled CLI runs standalone as a subprocess and produces the same res
   const fake = installFakeTmux([
     { subcommand: 'show-window-options', exitCode: 0, stdout: '1\n' },
     { subcommand: 'list-windows', exitCode: 0, stdout: '0\n' },
-    { subcommand: 'display-message', exitCode: 0, stdout: `${child.pid}\n` },
+    { subcommand: 'display-message', exitCode: 0, stdout: `${agentTree.shellPid}\n` },
   ]);
   try {
     const output = runCliSubprocess(root);
     assert.match(output, /^SAMPLED 1 role\(s\)/);
 
     const lines = readTelemetryLines(root);
-    assert.equal(lines.length, 2);
-    const resourceLine = lines.find((l) => l.type === 'resource_sample');
-    assert.ok(resourceLine);
-    assert.equal(resourceLine.role, 'coder');
-    assert.ok(resourceLine.rssBytes > 0);
-    assert.ok(lines.some((l) => l.type === 'host_load_sample'));
+    assert.equal(lines.length, 1);
+    assert.equal(lines[0].type, 'resource_sample');
+    assert.equal(lines[0].role, 'coder');
+    assert.ok(lines[0].rssBytes > 0);
   } finally {
     fake.restore();
-    child.kill();
+    agentTree.kill();
   }
 });
