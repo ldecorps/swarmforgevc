@@ -1247,10 +1247,43 @@ function requestPath(req: http.IncomingMessage): string {
 // `.swarmforge/operator/public/`. bubble.musicalsifu.com terminates on this
 // bridge, so those files must be served here (pre-auth — phones cannot set
 // Authorization when opening a download link). Basename-only, fixed prefix.
-const SIDELOAD_APK_PATH = /^\/swarmforge-float-companion-[A-Za-z0-9._-]+\.apk$/;
+export const SIDELOAD_APK_PATH = /^\/swarmforge-float-companion-[A-Za-z0-9._-]+\.apk$/;
 
 function sideloadApkPublicDir(targetPath: string): string {
   return path.join(targetPath, '.swarmforge', 'operator', 'public');
+}
+
+// BL-851 review goal 1: path.resolve is lexical only - it never touches the
+// filesystem. A symlink whose own name lives inside publicRoot and matches
+// SIDELOAD_APK_PATH resolves (lexically) to a path under publicRoot even
+// when its target does not, so the prefix check alone cannot catch it.
+// fs.statSync/createReadStream both follow symlinks, so without the
+// lstat/isSymbolicLink check below, planting such a symlink under
+// .swarmforge/operator/public/ would serve any file on the host,
+// unauthenticated. Returns the resolved path only for a REGULAR file that
+// is itself not a symlink and resolves under publicRoot; null means "do not
+// serve" (caller decides whether that means fall-through or 404).
+export function resolveSideloadApkFile(pathname: string, publicRoot: string): string | null {
+  if (!SIDELOAD_APK_PATH.test(pathname)) {
+    return null;
+  }
+  const fileName = path.basename(pathname);
+  const resolvedRoot = path.resolve(publicRoot);
+  const resolved = path.resolve(path.join(resolvedRoot, fileName));
+  const rootPrefix = resolvedRoot.endsWith(path.sep) ? resolvedRoot : resolvedRoot + path.sep;
+  if (!resolved.startsWith(rootPrefix)) {
+    return null;
+  }
+  let lstat: fs.Stats;
+  try {
+    lstat = fs.lstatSync(resolved);
+  } catch {
+    return null;
+  }
+  if (lstat.isSymbolicLink() || !lstat.isFile()) {
+    return null;
+  }
+  return resolved;
 }
 
 function tryServeSideloadApk(
@@ -1266,28 +1299,14 @@ function tryServeSideloadApk(
   if (!SIDELOAD_APK_PATH.test(pathname)) {
     return false;
   }
-  const fileName = path.basename(pathname);
-  const publicRoot = path.resolve(sideloadApkPublicDir(targetPath));
-  const resolved = path.resolve(path.join(publicRoot, fileName));
-  const rootPrefix = publicRoot.endsWith(path.sep) ? publicRoot : publicRoot + path.sep;
-  if (!resolved.startsWith(rootPrefix)) {
+  const resolved = resolveSideloadApkFile(pathname, sideloadApkPublicDir(targetPath));
+  if (!resolved) {
     res.writeHead(404, { 'content-type': 'application/json' });
     res.end(JSON.stringify({ error: 'not_found' }));
     return true;
   }
-  let stat: fs.Stats;
-  try {
-    stat = fs.statSync(resolved);
-  } catch {
-    res.writeHead(404, { 'content-type': 'application/json' });
-    res.end(JSON.stringify({ error: 'not_found' }));
-    return true;
-  }
-  if (!stat.isFile()) {
-    res.writeHead(404, { 'content-type': 'application/json' });
-    res.end(JSON.stringify({ error: 'not_found' }));
-    return true;
-  }
+  const fileName = path.basename(resolved);
+  const stat = fs.statSync(resolved);
   res.writeHead(200, {
     'content-type': 'application/vnd.android.package-archive',
     'content-length': stat.size,
