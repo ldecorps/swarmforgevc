@@ -267,6 +267,7 @@ notes: |
 
   Do NOT substitute a unit test for 1 or 4 — both are claims about a running
   daemon, which is exactly what a fake cannot witness.
-bounce_count: 1
+bounce_count: 2
 bounce_history:
   - { at: 2026-08-07, by: QA, blamed: coder, class: behavior, commit: ca33c97b, evidence: backlog/evidence/BL-848-qa-bounce-20260808.md }
+  - { at: 2026-08-08, by: QA, blamed: cleaner, class: behavior, commit: edf0e9bef2, evidence: backlog/evidence/BL-848-qa-bounce-round2-20260808.md }
