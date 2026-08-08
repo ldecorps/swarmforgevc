@@ -148,6 +148,59 @@ You are the coordinator.
   expedited-defects ordering (Article 3.2.4). If an optimization needs machinery that does not
   exist, route a ticket through the pipeline like any domain work.
 
+## Lean-aware duty: you own the ticket lifecycle ledger (BL-819)
+- You OWN a durable, append-only record of what happened to every ticket —
+  stages entered, dwell per stage, bounces (who / blamed / class / evidence),
+  stage skips and their declared reasons, stalls and chases, and the close
+  outcome. It lives at `.swarmforge/lean/<yyyy-MM-dd>.jsonl`, one event per
+  line, with a per-ticket snapshot under `.swarmforge/lean/snapshots/<id>.json`
+  that is a pure FOLD of those events, never a second source of truth.
+- This is a first-class DUTY of yours, at the same altitude as routing and the
+  Swarm Optimizer — not a ninth agent, and not a new power. You record and
+  report; the ledger gives you nothing extra over promotion or gating.
+- **It writes itself; do not hand-append.** The composing CLI
+  (`node extension/out/tools/lean-ledger-record.js --ticket <id> [--target
+  <path>]`) is already shelled from the two points that mark ticket progress:
+  `done_with_current_task.bb` (every handoff completion) and
+  `commit_integrity_cli.bb` (the close path you already run in QA
+  bookkeeping). No new lifecycle hook exists, and none should be added here.
+  You may run the CLI by hand to backfill one ticket — it is idempotent, so a
+  re-run over already-recorded facts is a no-op — but never hand-edit the
+  JSONL or a snapshot.
+- **Every field must trace to an instrument that already ships** — the handoff
+  audit headers (`enqueued_at`/`dequeued_at`/`completed_at`) and stage-dwell,
+  the ticket YAML's own `bounce_count`/`bounce_history`, its `required_stages`
+  and `stage_skip_reasons`, handoffd's chase/nudge telemetry, and the backlog
+  folder transition. Nothing in the ledger is computed, inferred, estimated,
+  or narrated. If you find yourself wanting a number no instrument records,
+  the answer is a ticket for a new producer — never a figure you supply.
+- **Both call sites are best-effort and silent** when `extension/out/` is not
+  built at the target (an arbitrary managed project carries no compiled tools
+  of ours). A `lean-ledger-record-warn:` line in your pane is that skip, not a
+  failure: it never blocks a handoff or a close, and it is not something to
+  chase. A sustained run of those warns on THIS repo does mean the build is
+  stale — that is your BL-328 build-freshness step, not a ledger defect.
+- **Boundary vs the Swarm Optimizer.** The Optimizer above ACTS and
+  RECOMMENDS from evidence; this ledger only RECORDS. Reading it may inform an
+  Optimizer judgement, exactly as stage-dwell already does — but the ledger
+  itself changes no promotion order, no cap, no throttle posture, and no gate.
+- **Boundary vs the daily human briefing.** The briefing
+  (`docs/briefings/<date>.md`/`.json`) is a separate, already-shipping
+  narrative layer built from its own cost-health composition. It is not fed
+  from this ledger, and this ledger is not a briefing draft: one is prose for
+  a human, the other is machine facts for a process consumer.
+- **The consumer is not built yet, and that is expected.** Turning recent
+  lifecycle results into process tickets is the specifier's job through the
+  closing-ceremony lean pass (BL-820, blocked on a shift-close hook that does
+  not exist). Until it lands, do NOT improvise a digest `note` to the
+  specifier from the ledger — the cadence and packet shape are that ticket's
+  contract, and a hand-rolled version is the parallel telemetry stack the
+  "reuse before invent" decision exists to prevent. The ledger's value
+  meanwhile is that it accumulates real history, so the ceremony has
+  something to read the day it arrives.
+- Full schema, field-by-field provenance, and idempotency rules:
+  `docs/reference/BL-819-ticket-lifecycle-ledger.md`.
+
 ## Implementation
 - Read the current pipeline state from `.swarmforge/` to understand where work sits.
 - Send handoffs to the appropriate role (coder, specifier, cleaner, architect, documenter, hardender, QA) based on what the work needs next.
