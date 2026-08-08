@@ -4,9 +4,9 @@ milestone: M8
 type: defect
 status: todo
 epic: swarmforge-console
-human_approval: pending
+human_approval: approved
 severity: high
-priority: 15
+priority: 16
 direction: swarm-found
 depends_on: []
 assigned_to: null

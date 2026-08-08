@@ -4,7 +4,7 @@ milestone: M8
 status: todo
 type: epic
 epic: lean-aware-coordinator
-priority: 120
+priority: 1
 direction: human-requested
 depends_on: []
 decomposes_into: [BL-819, BL-820]
@@ -125,3 +125,4 @@ notes: |
   verb. If the human would rather have the lean pass sooner on a cadence that
   exists today (e.g. the daily briefing sweep, which does run), that is a
   one-line change to BL-820's trigger and worth asking before promoting it.
+mutation_cost: high

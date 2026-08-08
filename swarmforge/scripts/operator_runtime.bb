@@ -107,6 +107,9 @@
 ;; /tmp operator_runtime.bb, hung generated acceptance tests, and
 ;; disposable-root babysitter/bridge/bot (name is tmp.*, not aps-/sfvc-).
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "orphan_janitor_sweep_lib.bb")))
+;; BL-848: pure decision core for the hotfix certification ledger + its
+;; recurrent check, wired below by hotfix-certification-sweep!.
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "hotfix_certification_lib.bb")))
 
 (defn usage []
   (binding [*out* *err*]
@@ -142,6 +145,14 @@
 (def inflight-file (fs/path op-dir "events.inflight.jsonl"))
 (def cooldown-file (fs/path op-dir "cooldown.json"))
 (def last-check-file (fs/path op-dir "last-swarm-check"))
+;; BL-848: last-hotfix-cert-file mirrors last-check-file's own tiny-epoch-ms
+;; file convention; hotfix-cert-state-file is the gitignored RUNTIME view
+;; (per-entry resurfacing cooldown) - losing it costs one recomputation,
+;; never a fact (R2). The committed ledger itself lives under backlog/, not
+;; .swarmforge/, since it must travel with the repo across hosts.
+(def last-hotfix-cert-file (fs/path op-dir "last-hotfix-cert"))
+(def hotfix-cert-state-file (fs/path op-dir "hotfix-certification-state.json"))
+(def hotfix-ledger-file (fs/path project-root "backlog" "hotfix-ledger.yaml"))
 (def pid-file (fs/path op-dir "runtime.pid"))
 (def operator-pid-file (fs/path op-dir "operator.pid"))
 (def stop-file (fs/path op-dir "stop"))
@@ -264,6 +275,12 @@
 (def miniapp-watchdog-port (or (some-> (System/getenv "BRIDGE_HEADLESS_PORT") parse-long) 8765))
 (def miniapp-watchdog-threshold (env-ms "OPERATOR_MINIAPP_FAILURE_THRESHOLD" 3))
 (def miniapp-watchdog-cooldown-ms (env-ms "OPERATOR_MINIAPP_BOUNCE_COOLDOWN_MS" 120000))
+;; BL-848: hotfix certification recurrent check - own cadence (R3), never the
+;; every-30s tick default, plus a per-entry resurfacing cooldown so an open
+;; entry keeps coming back without spamming every due tick (invariant 2).
+(def hotfix-cert-interval-ms (env-ms "HOTFIX_CERT_INTERVAL_MS" 3600000))
+(def hotfix-cert-resurface-ms (env-ms "HOTFIX_CERT_RESURFACE_MS" 21600000))
+(def hotfix-cert-scan-limit (env-ms "HOTFIX_CERT_SCAN_LIMIT" 200))
 
 (defn now-ms [] (System/currentTimeMillis))
 (defn now-iso []
@@ -1261,6 +1278,175 @@
 
 (defn record-swarm-check! [ms] (atomic-spit! last-check-file (str ms)))
 
+(defn last-hotfix-cert-ms []
+  (read-pid last-hotfix-cert-file)) ; reuse: file just holds an epoch-ms integer
+
+(defn record-hotfix-cert! [ms] (atomic-spit! last-hotfix-cert-file (str ms)))
+
+;; ── BL-848: hotfix certification ledger + recurrent check ───────────────────
+;; Impure wiring only - every decision (state machine, resurfacing, the
+;; unaccounted-commit review queue) lives in hotfix_certification_lib.bb's
+;; pure assemble-report. This function: reads the committed ledger, scans
+;; `main` for declared-hotfix/unaccounted commits, resolves each entry's
+;; stamp ticket status/human_approval, persists the derived `state` snapshot
+;; + newly-detected entries back to the ledger (NEVER stamp_ticket/human_
+;; decision/decided_at - those are hotfix_ledger_update.bb's job, run by a
+;; human), logs every due entry, and nudges the coordinator for entries with
+;; no stamp ticket yet.
+
+(defn- read-hotfix-ledger-entries []
+  (if (fs/exists? hotfix-ledger-file)
+    (hotfix-certification-lib/parse-ledger (slurp (str hotfix-ledger-file)))
+    []))
+
+(defn- write-hotfix-ledger-entries! [entries]
+  (atomic-spit! hotfix-ledger-file (hotfix-certification-lib/render-ledger entries)))
+
+(defn- read-hotfix-cert-state []
+  (if (fs/exists? hotfix-cert-state-file)
+    (try (json/parse-string (slurp (str hotfix-cert-state-file)) true) (catch Exception _ {}))
+    {}))
+
+(defn- write-hotfix-cert-state! [state]
+  (atomic-spit! hotfix-cert-state-file (json/generate-string state)))
+
+;; Duplicated from ticket_status_lib.bb's own private ticket-id-of/glob scan
+;; (same small live-glue duplication rationale as read-yaml-field above) -
+;; ticket_status_lib exposes only a boolean current-status, and this sweep
+;; also needs the ticket's own human_approval field.
+(defn- find-ticket-file [ticket-id]
+  (some (fn [status]
+          (let [dir (fs/path project-root "backlog" status)]
+            (when (fs/exists? dir)
+              (some (fn [f] (when (= ticket-id (read-yaml-field (slurp (str f)) "id")) f))
+                    (fs/glob dir "**.yaml")))))
+        ["active" "paused" "done"]))
+
+(defn- resolve-stamp-ticket-facts [ticket-id]
+  (if (str/blank? (str ticket-id))
+    {:stamp-ticket-status nil :stamp-ticket-human-approval nil}
+    {:stamp-ticket-status (ticket-status-lib/current-status project-root ticket-id)
+     :stamp-ticket-human-approval (when-let [f (find-ticket-file ticket-id)]
+                                     (read-yaml-field (slurp (str f)) "human_approval"))}))
+
+(defn- git-log-main [limit]
+  (try
+    (let [fmt "%H%x1f%s%x1f%cd%x1f%b%x1e"
+          {:keys [exit out]} (process/sh {:continue true :dir (str project-root)}
+                                          "git" "log" "main" "-n" (str limit)
+                                          "--date=format:%Y-%m-%d" (str "--format=" fmt))]
+      (if (zero? exit)
+        (->> (str/split (str out) #"")
+             (map str/trim)
+             (remove str/blank?)
+             (keep (fn [rec]
+                     (let [parts (str/split rec #"" 4)
+                           sha (nth parts 0 nil)
+                           detected-at (str/trim (nth parts 2 ""))]
+                       (when-not (str/blank? sha)
+                         {:commit (subs sha 0 (min 10 (count sha)))
+                          :subject (str/trim (nth parts 1 ""))
+                          :detected-at (when-not (str/blank? detected-at) detected-at)
+                          :message (str (str/trim (nth parts 1 "")) "\n\n" (str/trim (nth parts 3 "")))})))))
+        []))
+    (catch Exception _ [])))
+
+(defn- git-changed-files [full-or-short-sha]
+  (try
+    (let [{:keys [exit out]} (process/sh {:continue true :dir (str project-root)}
+                                          "git" "diff-tree" "--no-commit-id" "--name-only" "-r" full-or-short-sha)]
+      (if (zero? exit) (remove str/blank? (str/split-lines out)) []))
+    (catch Exception _ [])))
+
+(defn- cited-ticket-reached-done? [message]
+  (boolean (some (fn [id] (= "done" (ticket-status-lib/current-status project-root id)))
+                 (hotfix-certification-lib/cited-ticket-ids message))))
+
+(defn- ms->ymd
+  "epoch-ms -> YYYY-MM-DD in the local zone, matching hotfix_ledger_update.bb's
+   own `today` convention (java.time.LocalDate/now, str-formatted)."
+  [ms]
+  (str (.toLocalDate (.atZone (java.time.Instant/ofEpochMilli (long ms))
+                               (java.time.ZoneId/systemDefault)))))
+
+(defn- resolve-main-commits
+  "Recent `main` commits, enriched for hotfix_certification_lib.bb's
+   assemble-report. Commits already in the ledger skip the expensive
+   per-commit git-changed-files/cited-ticket lookups entirely - assemble-
+   report's own known-commits check already excludes them from both the
+   new-entry and unaccounted outputs regardless of these flags' values.
+   :detected-at comes from git-log-main's own commit-date capture; `now` is
+   only a fallback for the (should-never-happen) case git's date field comes
+   back blank, so a ledger entry is never left with no detection date."
+  [known-commits now]
+  (vec (for [c0 (git-log-main hotfix-cert-scan-limit)]
+         (let [c (update c0 :detected-at #(or % (ms->ymd now)))]
+           (if (contains? known-commits (:commit c))
+             (assoc c :functional? false :hotfix-declared? false :cited-ticket-done? false)
+             (assoc c
+                    :functional? (hotfix-certification-lib/functional-commit? (git-changed-files (:commit c)))
+                    :hotfix-declared? (hotfix-certification-lib/hotfix-declared? (:message c))
+                    :cited-ticket-done? (cited-ticket-reached-done? (:message c))))))))
+
+(defn- send-hotfix-cert-mint-nudge! [entry]
+  (let [draft-dir (fs/path op-dir "hotfix-cert-drafts")
+        _ (fs/create-dirs draft-dir)
+        draft (fs/path draft-dir (str "draft-" (System/nanoTime) ".txt"))
+        lines ["type: note" "to: coordinator" "priority: 00"
+               (str "message: " (hotfix-certification-lib/mint-nudge-message entry))]
+        env (merge (into {} (System/getenv)) {"SWARMFORGE_ROLE" "coordinator"})]
+    (spit (str draft) (str (str/join "\n" lines) "\n"))
+    (let [result (process/sh ["bb" (str (fs/path script-dir "swarm_handoff.bb")) (str draft)]
+                              {:dir (str project-root) :env env})]
+      (if (zero? (:exit result))
+        (log! "hotfix-certification-nudge" (:commit entry))
+        (log! "hotfix-certification-nudge-error" (:commit entry) (str (:err result)))))))
+
+(defn hotfix-certification-sweep!
+  "Best-effort side action, gated by its OWN cadence (hotfix-cert-interval-
+   ms, default 1h) via the SAME timer-due? gate SWARM_CHECK_TIMER uses - an
+   hourly git scan must not run on every 30s tick (required_wiring)."
+  [now]
+  (when (operator-lib/timer-due? (last-hotfix-cert-ms) now hotfix-cert-interval-ms)
+    (record-hotfix-cert! now)
+    (try
+      (let [raw-entries (read-hotfix-ledger-entries)
+            known-commits (set (map :commit raw-entries))
+            main-commits (resolve-main-commits known-commits now)
+            enriched-entries (mapv (fn [e] (merge e (resolve-stamp-ticket-facts (:stamp-ticket e)))) raw-entries)
+            cert-state (read-hotfix-cert-state)
+            report (hotfix-certification-lib/assemble-report
+                    {:entries enriched-entries :now-ms now
+                     :last-surfaced-ms-by-commit (or (:last-surfaced-ms-by-commit cert-state) {})
+                     :resurface-cooldown-ms hotfix-cert-resurface-ms
+                     :main-commits main-commits})
+            decided-state-by-commit (into {} (map (juxt :commit :state) (:decided report)))
+            ;; Refresh ONLY the derived :state snapshot on existing entries,
+            ;; append newly-detected ones - stamp-ticket/human-decision/
+            ;; decided-at are never touched here (scenario 06/hotfix_ledger_
+            ;; update.bb owns those).
+            refreshed (mapv (fn [e] (if-let [s (get decided-state-by-commit (:commit e))] (assoc e :state s) e))
+                             raw-entries)
+            final-entries (into refreshed (:new-ledger-entries report))]
+        (when (not= raw-entries final-entries)
+          (write-hotfix-ledger-entries! final-entries))
+        (write-hotfix-cert-state! {:last-surfaced-ms-by-commit (:new-dedup-state report)})
+        (doseq [e (:due-for-surfacing report)]
+          (log! "hotfix-certification" (hotfix-certification-lib/surfaced-log-line e)))
+        (doseq [e (:mint-requests report)] (send-hotfix-cert-mint-nudge! e))
+        (doseq [a (:anomalies report)]
+          (log! "hotfix-certification-anomaly" (hotfix-certification-lib/anomaly-log-line a)))
+        (when (seq (:unaccounted report))
+          (log! "hotfix-certification-unaccounted"
+                (str (count (:unaccounted report)) " commit(s): "
+                     (str/join "; " (map hotfix-certification-lib/unaccounted-report-line (:unaccounted report))))))
+        {:due (count (:due-for-surfacing report))
+         :new-entries (count (:new-ledger-entries report))
+         :unaccounted (count (:unaccounted report))})
+      (catch Exception e
+        (log! "hotfix-certification-error" (.getMessage e))
+        nil))))
+
 ;; ── filesystem signals ────────────────────────────────────────────────────────
 
 (defn file-age-ms [path]
@@ -1813,6 +1999,12 @@
     ;; build-agent tmux sessions are parked, never handoffd/the runtime
     ;; itself/the front-desk bot).
     (closing-pass-sweep! now)
+
+    ;; BL-848: hotfix certification recurrent check - gated by its OWN
+    ;; hourly-default cadence internally (timer-due?), never the every-30s
+    ;; tick default; never gates the LLM launch decision below, same
+    ;; best-effort posture as the sweeps above.
+    (hotfix-certification-sweep! now)
 
     (reap-finished-operator!)
     (reap-finished-front-desk-operator!)

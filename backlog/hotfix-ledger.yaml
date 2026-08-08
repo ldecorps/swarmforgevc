@@ -1,0 +1,22 @@
+# backlog/hotfix-ledger.yaml — BL-848 hotfix certification ledger.
+# One entry per commit that DECLARES itself a hotfix (Hotfix-Certification:
+# trailer) or that a human has recorded a certification decision for.
+# `state` is a derived snapshot, refreshed by operator_runtime's recurrent
+# check; `stamp_ticket`/`human_decision`/`decided_at` are durable facts set
+# only by a human/operator (see hotfix_ledger_update.bb, never by the sweep).
+# docs/how-to/BL-848-certify-an-operator-hotfix.md documents the workflow.
+
+- commit: f9cf29c29b
+  subject: "Land Darwin orphan-janitor fix and file swarm stamp-off intake."
+  detected_at: 2026-08-07
+  state: stamp-open
+  stamp_ticket: BL-849
+  human_decision: null
+  decided_at: null
+- commit: f175bc56d1
+  subject: "Park local WIP for host switch: drain router depth, Bubble chiptunes, pilot-safe defects, answer archive."
+  detected_at: 2026-08-07
+  state: pending
+  stamp_ticket: null
+  human_decision: null
+  decided_at: null

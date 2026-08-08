@@ -171,6 +171,7 @@ import { appendAvailabilityRecord } from '../metrics/availabilityLedgerStore';
 import { parseRolesTsv, invertTicketStageToRoleHeldTickets } from '../swarm/swarmState';
 import { wrapPipelineBoardHtml } from '../concierge/pipelineBoard';
 import { readTmuxSocket, readSwarmRoles, paneTarget, getPaneBaseIndex, capturePane, sendKeys } from '../swarm/tmuxClient';
+import { readMonoRouterActiveRole } from '../concierge/residentPaneSpy';
 import { sendInstructionVerified } from '../swarm/verifiedInject';
 import { sleepSync } from '../swarm/sleepSync';
 import { runCliMain } from './swarm-metrics';
@@ -1292,6 +1293,36 @@ export async function ensureRoleTopics(
   }
 }
 
+// BL-846: under mono-router a rotating role has no session of its own in
+// live tmux - only the resident pane (plus coordinator) actually exists -
+// so role R's live pane is the RESIDENT pane exactly while the durable
+// resident-identity marker (.swarmforge/mono-router-active-role, written by
+// rotation on every hop) names R, and R's own (never-created) sessions.tsv
+// entry every other time. The resident's own entry is the first
+// non-coordinator sessions.tsv row - mirrors mono-router-resident-session in
+// handoff_lib.bb (Babashka side), reusing readMonoRouterActiveRole
+// (residentPaneSpy.ts) rather than adding a second marker reader. A missing
+// resident entry (or a missing/blank marker) falls through to the
+// unmodified pre-BL-846 resolution, so a full (non-mono-router) pack, whose
+// marker file never exists, is completely unaffected. `role !== 'coordinator'`
+// guards a case that never happens in practice (the marker is only ever
+// written for a rotating pipeline role, never 'coordinator', which always
+// has its own standing session) but keeps the invariant ("no OTHER role is
+// ever redirected") true even if it somehow did.
+function resolveMonoRouterAwareRoleEntry(
+  targetPath: string,
+  role: string,
+  roles: ReturnType<typeof readSwarmRoles>
+): ReturnType<typeof readSwarmRoles>[number] | undefined {
+  if (role !== 'coordinator' && readMonoRouterActiveRole(targetPath) === role) {
+    const resident = roles.find((r) => r.role !== 'coordinator');
+    if (resident) {
+      return resident;
+    }
+  }
+  return roles.find((r) => r.role === role);
+}
+
 // BL-425 slice 1: resolves role R's live tmux pane target on the SWARM's own
 // socket (.swarmforge/tmux-socket) - never the restricted front-desk
 // operator's own socket (BL-334) - mirroring extension.ts's own inline
@@ -1305,7 +1336,7 @@ export function resolveRolePaneTarget(targetPath: string, role: string): { socke
   if (!socketPath) {
     return undefined;
   }
-  const roleEntry = readSwarmRoles(targetPath).find((r) => r.role === role);
+  const roleEntry = resolveMonoRouterAwareRoleEntry(targetPath, role, readSwarmRoles(targetPath));
   if (!roleEntry) {
     return undefined;
   }
