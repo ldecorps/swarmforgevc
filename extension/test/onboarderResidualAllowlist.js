@@ -25,6 +25,7 @@ const ALLOWED_EXACT_PATHS = new Set([
   'specs/pipeline/steps/bl714HardeningGatesBlockedSteps.js',
   'swarmforge/scripts/launch_onboarder.sh',
   'swarmforge/scripts/stop_ancillary_services.sh',
+  'swarmforge/scripts/finish_shift_lib.sh',
   'extension/test/onboarderEvidenceByteIdentical.property.test.js',
   'extension/test/onboarderLauncherPidGuard.property.test.js',
   'extension/test/onboarderRenameNoResidualFacilitator.test.js',
