@@ -30,6 +30,17 @@
 ;;                                 [...]}]} (required whenever ahead>0 and
 ;;                                the sweep actually reaches :should-push
 ;;                                this call)
+;;   PUSH_SWEEP_NOOP_MERGE_GATE_FACTS  BL-855. JSON noop-merge-decision
+;;                                facts, e.g. {"facts-complete?": true,
+;;                                "ahead-commits": []} or
+;;                                {"facts-complete?": true,
+;;                                 "ahead-commits": [{"sha": "...",
+;;                                 "merge?": true, "second-parent-sha":
+;;                                 "...", "tree-equals-parent1?": true,
+;;                                 "offered-paths": ["..."]}]} (required
+;;                                whenever ahead>0 and the sweep actually
+;;                                reaches :should-push this call - consulted
+;;                                BEFORE PUSH_SWEEP_QA_GATE_FACTS)
 ;;   PUSH_TEST_MAX_PUSH_ATTEMPTS / _MAX_ALARM_ATTEMPTS / _BACKOFF_BASE_MS /
 ;;   _BACKOFF_MAX_MS              override the retry-config (test-friendly
 ;;                                small defaults)
@@ -97,6 +108,10 @@
   (or (env-json "PUSH_SWEEP_QA_GATE_FACTS")
       (throw (ex-info "PUSH_SWEEP_QA_GATE_FACTS not set - no real git process is ever allowed here" {}))))
 
+(defn noop-merge-gate-facts! []
+  (or (env-json "PUSH_SWEEP_NOOP_MERGE_GATE_FACTS")
+      (throw (ex-info "PUSH_SWEEP_NOOP_MERGE_GATE_FACTS not set - no real git process is ever allowed here" {}))))
+
 (fs/create-dirs daemon-dir)
 (push-sweep-lib/sweep!
  now-ms daemon-dir retry-config
@@ -105,6 +120,7 @@
   :send-push-alarm! send-push-alarm!
   :send-divergence-alarm! send-divergence-alarm!
   :qa-gate-facts! qa-gate-facts!
+  :noop-merge-gate-facts! noop-merge-gate-facts!
   :log! (fn [& parts] (swap! log-lines conj (str/join " " parts)))})
 
 (println
