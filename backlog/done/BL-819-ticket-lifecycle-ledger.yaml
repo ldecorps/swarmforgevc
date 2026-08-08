@@ -137,6 +137,22 @@ notes: |
   slice's own documenter pass rather than split into a third orphan docs
   ticket — the duty is not documentable until the ledger it describes exists.
   The specifier writes the coordinator.prompt half itself, per Article 1.2.
+
+  ## Specifier half delivered, 2026-08-08 (closes QA's D3 remainder)
+
+  QA's final pass (`backlog/evidence/BL-819-qa-pass-20260808.md`) approved the
+  ticket with D3 partially cleared: the reference doc shipped, the
+  coordinator.prompt section had not, and QA routed that remainder to the
+  specifier as a `spec-gap` note rather than a bounce (Article 4.4). That
+  section is now written — `swarmforge/roles/coordinator.prompt`, "Lean-aware
+  duty: you own the ticket lifecycle ledger (BL-819)", placed directly after
+  Swarm Optimizer because the boundary between the two is its main point. It
+  documents the duty, the two existing write points, the reuse-before-invent
+  constraint, the best-effort warn line, both boundaries the intake asked for
+  (Swarm Optimizer, daily human briefing), and an explicit instruction not to
+  improvise the BL-820 specifier feed before that slice lands. Requested
+  outcome 1's third clause is satisfied; no rebuild was needed since the
+  ticket was already closed.
 bounce_count: 1
 bounce_history:
   - { at: 2026-08-07, by: architect, blamed: coder, class: behavior, commit: a6f61c2895, evidence: backlog/evidence/BL-819-architect-bounce-20260807.md }
