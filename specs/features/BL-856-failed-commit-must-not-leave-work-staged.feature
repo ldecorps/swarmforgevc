@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=709767512f6ce02df813588db05199d282ff01621c6adae42cbfdc42303264fd
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-08-08T20:33:53.304090Z","feature_name":"a failed integrity commit leaves the index exactly as it found it","feature_path":"/Users/ldecorps/projects/swarmforgevc/.worktrees/hardender/specs/features/BL-856-failed-commit-must-not-leave-work-staged.feature","background_hash":"d1837a51ffd2fa483bb1eda9a3665ecb7b141a9ce8d27fc6cbe2d445390a9e87","implementation_hash":"unknown","scenarios":[{"index":0,"name":"a failed commit leaves nothing of the caller's staged","scenario_hash":"3af155ebfa249fb38a08a89dabc246d1ba3de65240be63f64d88a26b2a63430e","mutation_count":4,"result":{"Total":4,"Killed":4,"Survived":0,"Errors":0},"tested_at":"2026-08-08T20:33:53.304090Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: a failed integrity commit leaves the index exactly as it found it
 
   commit_integrity_lib.bb stages the caller's paths, commits them, and verifies
