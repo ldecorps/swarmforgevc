@@ -7,7 +7,7 @@ status: todo
 epic: question-attention-path
 human_approval: approved
 assigned_to: none
-priority: 110
+priority: 112
 direction: swarm-found
 depends_on: []
 mutation_cost: low

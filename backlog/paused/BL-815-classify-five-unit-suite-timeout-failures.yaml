@@ -6,7 +6,7 @@ status: todo
 epic: swarm-reliability
 human_approval: approved
 severity: medium
-priority: 46
+priority: 47
 direction: human-requested
 depends_on: []
 assigned_to: none

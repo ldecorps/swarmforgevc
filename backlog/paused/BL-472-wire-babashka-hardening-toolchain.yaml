@@ -5,7 +5,7 @@ type: chore
 severity: low
 status: todo
 epic: code-quality-gates
-priority: 41
+priority: 42
 direction: swarm-proposed
 depends_on: []
 source: "hardener rule_proposal (scope engineering, 2026-07-16, id 20260716T231815Z_000346) raised during BL-433 hardening: swarmforge.lock.json has NO Babashka tool pins, so every .bb hardening pass silently runs the degraded no-tooling fallback while the tool table implied real coverage. Specifier disposition 2026-07-16 (human ldecorps chose 'document as not-wired' over 'pin+install'): correct engineering.prompt to state the gap plainly NOW (done, same pass), and FILE this deferred tracker so 'tracked future item' is a real reference, not a dangling claim."

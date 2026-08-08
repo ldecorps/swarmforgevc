@@ -6,7 +6,7 @@ status: todo
 epic: bubble-voice-barge-in
 human_approval: approved
 severity: high
-priority: 86
+priority: 87
 direction: human-requested
 assigned_to: coder
 depends_on: [BL-769]

@@ -5,7 +5,7 @@ status: todo
 type: epic
 epic: workflow-canary
 human_approval: approved
-priority: 23
+priority: 24
 depends_on: []
 decomposes_into: []
 mutation_cost: medium

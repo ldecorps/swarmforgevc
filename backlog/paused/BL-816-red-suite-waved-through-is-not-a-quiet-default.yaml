@@ -5,7 +5,7 @@ type: chore
 status: todo
 epic: code-quality-gates
 human_approval: approved
-priority: 60
+priority: 61
 direction: human-requested
 depends_on: []
 assigned_to: none

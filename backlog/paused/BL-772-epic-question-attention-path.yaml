@@ -4,7 +4,7 @@ milestone: M8
 status: todo
 type: epic
 epic: question-attention-path
-priority: 112
+priority: 113
 depends_on: []
 mutation_cost: medium
 decomposes_into: [BL-773, BL-836, BL-837, BL-838, BL-846]

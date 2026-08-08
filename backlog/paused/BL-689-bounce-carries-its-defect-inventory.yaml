@@ -5,7 +5,7 @@ type: feature
 status: todo
 epic: code-quality-gates
 human_approval: approved
-priority: 51
+priority: 52
 direction: human-requested
 mutation_cost: medium
 depends_on: [BL-688]

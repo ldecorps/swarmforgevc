@@ -6,7 +6,7 @@ status: todo
 epic: bubble-control
 human_approval: approved
 assigned_to: none
-priority: 117
+priority: 118
 direction: human-requested
 depends_on: [BL-829, BL-842]
 mutation_cost: medium
