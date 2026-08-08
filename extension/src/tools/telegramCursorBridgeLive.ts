@@ -852,7 +852,6 @@ const INBOUND_ACTION_HANDLERS: Partial<Record<InboundDecision['action'], Inbound
     await postInboundReply(ctx, topicId, text, replyTo);
     return false;
   },
-  // BL-722: pilot safe list/start handlers.
   'pilot-safe-list': (ctx, topicId, replyTo) =>
     handleSimpleInboundAction(ctx, topicId, formatSafePilotListMessage(listSafePilotDefects(ctx.repoRoot)), replyTo),
   'pilot-safe-start': async (ctx, topicId, replyTo, resetAgent) => {

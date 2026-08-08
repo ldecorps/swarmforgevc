@@ -1,0 +1,179 @@
+id: BL-856
+title: "A failed integrity commit leaves the caller's paths staged, and the next bare commit sweeps them into an unrelated ticket"
+milestone: M8
+type: defect
+severity: high
+status: todo
+epic: swarm-reliability
+human_approval: approved
+priority: 2
+direction: swarm-surfaced
+depends_on: []
+assigned_to: coder
+mutation_cost: low
+
+acceptance: specs/features/BL-856-failed-commit-must-not-leave-work-staged.feature
+
+invariants:
+  - "A call that returns :success false leaves the index, for the caller's paths, exactly as it found it — no failure path is exempt."
+  - "Restoration touches only the caller's own pathspec; staged state belonging to another writer is never unstaged."
+  - "A restore that cannot complete is itself a loud failure, never a silent partial cleanup."
+
+source: |
+  Coordinator note to specifier, 2026-08-08: "commit_integrity_cli can leave a
+  promotion staged-uncommitted on failure - fix". Raised after the specifier
+  reported finding BL-681's promotion (`backlog/paused/BL-681…` ->
+  `backlog/active/BL-681…`) staged but uncommitted in the shared master
+  checkout, where it would have stranded the parcel: the coder's worktree
+  merges `main`, and an uncommitted rename is not on `main`, so the ticket
+  would have appeared to be still in `paused/` (the BL-314 shape).
+
+description: |
+  ## The defect, as measured
+
+  `commit_integrity_lib.bb`'s `commit-with-integrity!` stages the caller's
+  paths (`default-add!`), commits them, then verifies. Every failure path AFTER
+  the staging step returns `{:success false …}` and leaves those paths staged,
+  with nothing in the returned map or on stderr saying so.
+
+  Reproduced in a throwaway fixture on 2026-08-08, against the real default
+  git-backed path (a `pre-commit` hook exiting 1 to fail the commit):
+
+      before the call:  " M f.txt"    (modified, UNSTAGED)
+      returned:         {:success false, :reason :commit-failed, :attempts 1}
+      after the call:   "M  f.txt"    (STAGED, uncommitted)
+
+  ## Why it is severity high, not cosmetic
+
+  Staged state on a shared checkout is global, so the residue does not sit
+  still. Continuing the same fixture — hook removed, an unrelated writer
+  commits its own file with a bare `git commit -m`:
+
+      commit "unrelated writer: add other.txt"
+       f.txt     | 2 +-      <-- the abandoned edit rode along
+       other.txt | 1 +
+
+  That is two distinct harms from one leak:
+
+  1. **The caller's work silently does not land.** The BL-681 promotion above:
+     `:success false` is returned, but a caller that treats the move as done —
+     or a human reading `backlog/active/` on disk — sees the ticket as
+     promoted while `main` says otherwise.
+  2. **Un-authorized content becomes an ancestor of someone else's commit.**
+     This is exactly the failure "An Approval Authorizes Only Its Ticket's
+     Work" (BL-506) exists to prevent, arriving through a path no reviewer
+     looks at: the leaking writer is not the one who commits the leak.
+
+  The irony is worth stating in the fix, because it is what makes the bug easy
+  to miss. This helper's own header explains that it exists so a concurrent
+  writer's edit cannot be "swept into an unrelated commit", and it protects
+  every other writer by pathspec-scoping its own `add`/`commit`. It then
+  manufactures precisely the leftover staged state that poisons any writer who
+  does not pathspec-scope.
+
+  ## The fix
+
+  Snapshot the index entries for the caller's paths at entry, and on ANY
+  failure return restore exactly that snapshot before returning. Snapshot-and-
+  restore, not blanket-unstage: a caller that deliberately pre-staged a rename
+  (`git mv paused/X active/X`, the coordinator's promotion — the case
+  `default-add!`'s own comment already describes) must find that rename still
+  staged afterwards. "Exactly as it found it" is the whole rule, and it makes
+  the pre-staged case fall out for free rather than needing a carve-out.
+
+  Restoration is scoped to the caller's pathspec so a concurrent writer's
+  staged path is never unstaged, and a restore that cannot complete is
+  reported in the result rather than swallowed — a silent partial cleanup
+  would be the same class of bug one level down.
+
+  ## Constraints
+
+  - Fix in `commit_integrity_lib.bb`, so every caller inherits it; the CLI
+    surfaces the new result field. Do not fix it in the coordinator's
+    bookkeeping alone — the leak belongs to the helper, and other callers
+    have it too.
+  - Keep the decision logic pure and injectable behind the seams the helper
+    already exposes (`:add-fn!`, `:commit-fn!`, …); add a restore seam in the
+    same shape rather than reaching for git directly from the decision path.
+  - The `:no-git-dir` and `:lock-timeout` returns happen before anything is
+    staged, so they satisfy the first invariant already. Cover them in the
+    outline anyway — the invariant says no failure path is exempt, and a
+    later edit that moves work above the lock must break a test, not slip
+    through.
+  - Register step handlers scoped to this feature; text like "the call
+    reports failure" must not be registered unscoped (BL-425).
+
+  ## Scope
+
+  - `swarmforge/scripts/commit_integrity_lib.bb` — snapshot + restore.
+  - `swarmforge/scripts/commit_integrity_cli.bb` — surface a left-dirty result.
+  - `swarmforge/scripts/test/` — unit coverage for each failure path.
+  - `specs/pipeline/steps/` — this feature file's handlers, in this parcel.
+
+  ## Out of scope
+
+  - Auditing or repairing staged residue already sitting in the live master
+    checkout. That is operator cleanup, not a code change.
+  - Making the helper refuse to run when it finds a dirty index it did not
+    create. Defensible, but it is a policy change with its own blast radius
+    and belongs in its own ticket.
+  - Routing more writers through the helper. Real, and separate.
+
+qa_e2e_procedure: |
+  1. `bash specs/pipeline/scripts/run_acceptance.sh specs/features/BL-856-failed-commit-must-not-leave-work-staged.feature`
+     — all scenarios green.
+  2. Unit runner for `commit_integrity_lib` green, including a case per
+     failure reason.
+  3. Reproduce the original by hand in a throwaway repo: init, commit a file,
+     install a `pre-commit` hook that exits 1, edit the file, call
+     `commit-with-integrity!`. Confirm it returns `:success false` AND that
+     `git status --porcelain` shows the path unstaged (" M"), not staged
+     ("M ") as it does today.
+  4. With that residue absent, remove the hook and have an unrelated writer
+     run a bare `git commit -m`. Confirm the resulting commit carries only the
+     unrelated writer's own file.
+  5. Pre-stage a rename with `git mv`, force a commit failure, and confirm the
+     rename is STILL staged afterwards — restore is to the pre-call snapshot,
+     not a blanket unstage.
+  6. Confirm the success path is unchanged: a normal call still commits, and
+     `git show <sha>:<path>` matches what the caller wrote.
+
+approval_context: >
+  One decision worth a tap: what a FAILED integrity commit should do with the
+  work it staged.
+
+  I chose **restore the index to its pre-call snapshot** — the caller's paths
+  go back to unstaged, and anything the caller had deliberately pre-staged
+  (a `git mv` promotion) stays staged. The rejected alternative was to leave
+  everything staged and merely report it loudly: simpler, and it never
+  destroys caller intent, but it leaves the poison in a shared index where
+  the measured harm actually happens — the next writer's bare commit carries
+  it, and that writer is not the one who can tell it is wrong.
+
+  Firm, not up for debate here: that the leak is real. Both halves were
+  measured in a fixture on 2026-08-08 and the reproduction is in the e2e
+  procedure — this is not a reading of the code.
+
+notes: |
+  Both halves of the harm were measured, not inferred; the fixture commands
+  are in `qa_e2e_procedure` steps 3-4 so QA re-runs the same reproduction
+  rather than a paraphrase of it.
+
+  The exact failure path that left BL-681's promotion staged was not captured
+  at the time — the residue was found, not observed being created. The
+  mechanism above is proven independently of that instance, and the fix covers
+  every failure return, so identifying which one fired is not a prerequisite.
+
+  Note the CLI has one more exit that leaves the caller's own pre-staged state
+  behind: `ticket_close_guard_lib/validate-close-allowed` rejecting a close
+  exits before `commit-with-integrity!` runs at all. Under the snapshot rule
+  that path is already correct — it changed nothing, so there is nothing to
+  restore — but it is worth a test so the guarantee is stated for the whole
+  CLI, not just the helper.
+
+  Specifier 2026-08-08: feature file lints clean. IR-DRY reports three
+  medium-confidence findings, all reviewed and kept: two pair the `<reason>`
+  placeholder against a literal it substitutes to (one of them against the
+  opposite outcome, "the integrity commit succeeds", which is not a duplicate
+  at all), and one pairs scenario 06's Given against the same action's When.
+  Same classes the BL-762 review kept.

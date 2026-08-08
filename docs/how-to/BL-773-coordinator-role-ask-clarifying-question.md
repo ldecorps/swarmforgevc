@@ -64,12 +64,8 @@ parked.
 
 ## What this does not fix
 
-This wiring makes the coordinator's own questions askable and answerable — it
-does not, by itself, do anything about pane resolution for rotating roles.
-That was a separate gap, tracked as BL-846: an answer for a *rotating*
-pipeline role could not reach it while that role was mid-turn with in-process
-work, because pane resolution didn't know the resident pane was currently
-running as that role. BL-846 has since fixed that resolution (see
-`docs/how-to/BL-846-role-answer-reaches-the-rotating-residents-pane.md`); the
-coordinator's own standing session was never subject to the gap, since its
-pane never goes dormant.
+This wiring makes the coordinator's own questions askable and answerable —
+it does not, by itself, guarantee an answer can reach every *rotating*
+pipeline role while that role is mid-turn with in-process work; that gap is
+tracked separately as BL-846. The coordinator's own standing session is not
+subject to that gap, since its pane never goes dormant.

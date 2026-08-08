@@ -3,6 +3,8 @@ package com.swarmforge.floatcompanion
 import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.MediaRecorder
+import android.media.audiofx.AcousticEchoCanceler
+import android.media.audiofx.NoiseSuppressor
 import android.util.Base64
 import android.util.Log
 import java.io.ByteArrayOutputStream
@@ -28,6 +30,8 @@ class AudioTurnRecorder(
 
     private var recordThread: Thread? = null
     private var audioRecord: AudioRecord? = null
+    private var echoCanceler: AcousticEchoCanceler? = null
+    private var noiseSuppressor: NoiseSuppressor? = null
     private val recording = AtomicBoolean(false)
     /** Latches once so silence/no-speech only fires onAutoStop once; stop() still owns teardown. */
     private val autoStopFired = AtomicBoolean(false)
@@ -68,21 +72,61 @@ class AudioTurnRecorder(
         lastSoundAt = startedAt
         audioRecord = ar
         recording.set(true)
+        attachEchoHardening(ar.audioSessionId)
         ar.startRecording()
+        val armedAt = startedAt
         recordThread = Thread({
             val buf = ShortArray(bufSize / 2)
             while (recording.get()) {
                 val n = ar.read(buf, 0, buf.size)
                 if (n <= 0) continue
+                // BL-826: a hands-free arm can catch the tail of a late OS
+                // buffer flush right as the mic opens — discard audio inside
+                // the settle window rather than let it seed a human turn.
+                if (handsFree && HandsFreeReArmGate.isWithinSettleWindow(armedAt, System.currentTimeMillis())) {
+                    continue
+                }
                 val bytes = ByteBuffer.allocate(n * 2).order(ByteOrder.LITTLE_ENDIAN)
                 for (i in 0 until n) bytes.putShort(buf[i])
                 synchronized(pcm) { pcm.write(bytes.array()) }
-                if (handsFree) {
-                    checkSilence(buf, n)
-                }
+                checkLimits(buf, n, handsFree)
             }
         }, "sf-mic").also { it.start() }
         return true
+    }
+
+    /** BL-826: harden capture against Bubble's own reply tail leaking back
+     *  through the mic, on devices where VOICE_COMMUNICATION alone doesn't
+     *  deliver it. Absence must degrade silently — an OEM without the
+     *  effect still gets the timing guards in [HandsFreeReArmGate]. */
+    private fun attachEchoHardening(sessionId: Int) {
+        try {
+            if (AcousticEchoCanceler.isAvailable()) {
+                echoCanceler = AcousticEchoCanceler.create(sessionId)?.also { it.setEnabled(true) }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "AcousticEchoCanceler unavailable", e)
+        }
+        try {
+            if (NoiseSuppressor.isAvailable()) {
+                noiseSuppressor = NoiseSuppressor.create(sessionId)?.also { it.setEnabled(true) }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "NoiseSuppressor unavailable", e)
+        }
+    }
+
+    private fun releaseEchoHardening() {
+        try {
+            echoCanceler?.release()
+        } catch (_: Exception) {
+        }
+        try {
+            noiseSuppressor?.release()
+        } catch (_: Exception) {
+        }
+        echoCanceler = null
+        noiseSuppressor = null
     }
 
     fun stop(): Capture? {
@@ -104,6 +148,7 @@ class AudioTurnRecorder(
         } catch (_: Exception) {
         }
         audioRecord = null
+        releaseEchoHardening()
 
         val pcmBytes = synchronized(pcm) { pcm.toByteArray() }
         pcm.reset()
@@ -135,10 +180,11 @@ class AudioTurnRecorder(
         } catch (_: Exception) {
         }
         audioRecord = null
+        releaseEchoHardening()
         pcm.reset()
     }
 
-    private fun checkSilence(buf: ShortArray, n: Int) {
+    private fun checkLimits(buf: ShortArray, n: Int, handsFree: Boolean) {
         if (autoStopFired.get()) return
         var sum = 0.0
         for (i in 0 until n) {
@@ -152,14 +198,19 @@ class AudioTurnRecorder(
             speechDetected = true
             lastSoundAt = now
         }
-        if (!speechDetected && recordingMs >= HANDS_FREE_MAX_LISTEN_MS) {
-            // Leave recording=true so stop() can collect (or return no-speech).
+        // Cap both hands-free and push-to-talk. Unbounded PTT WAVs blow past
+        // the bridge read timeout and surface as "timeout, no reply".
+        if (recordingMs >= MAX_LISTEN_MS) {
             if (autoStopFired.compareAndSet(false, true)) {
-                autoStopReason = "no-speech"
+                autoStopReason = when {
+                    handsFree && !speechDetected -> "no-speech"
+                    else -> "max-listen"
+                }
                 onAutoStop()
             }
             return
         }
+        if (!handsFree) return
         if (
             speechDetected &&
             recordingMs >= MIN_RECORD_MS &&
@@ -214,7 +265,10 @@ class AudioTurnRecorder(
         const val HANDS_FREE_SILENCE_MS = 2500L
         const val HANDS_FREE_POST_SPEECH_MS = 400L
         const val HANDS_FREE_AFTER_ERROR_MS = 2500L
-        const val HANDS_FREE_MAX_LISTEN_MS = 30_000L
+        /** Shared cap for hands-free and push-to-talk captures. */
+        const val MAX_LISTEN_MS = 30_000L
+        /** @deprecated use [MAX_LISTEN_MS] */
+        const val HANDS_FREE_MAX_LISTEN_MS = MAX_LISTEN_MS
         const val SPEECH_LEVEL_THRESHOLD = 0.02
         const val STT_RETRY_BUDGET = 3
     }

@@ -34,7 +34,7 @@
 
 | Tier | Verbs | Gate |
 |------|-------|------|
-| Read | `/status` `/update` `/log` `/doctor` `/tunnel` `/help` `/shift status` `/holiday list` | none |
+| Read | `/status` `/update` `/log` `/doctor` `/tunnel` `/conf` `/help` `/shift status` `/holiday list` | none |
 | Soft | `/pause` `/resume` `/hold` `/reinstate` `/syncenv` `/compile` `/pull` `/quiet` | **light confirm** (one Confirm tap; Q1 pin) |
 | Hard | `/stop` `/start` `/restart` `/bounce` `/drain-agents` `/drain-swarm` `/ensure` `/ambulance` `/kill-all` `/hydrate` `/mint` `/autopilot` `/land` | two-step confirm |
 
@@ -121,6 +121,7 @@ Ordered by stage urgency (furthest downstream first — closest to done lands fi
 | `/pause` `/resume` | intake freeze / unfreeze (BL-423 semantics) |
 | `/doctor` | one-shot: tmux, handoffd, bridge, tunnel, env keys, dirty git |
 | `/tunnel` | tunnel URL/state |
+| `/conf` | print effective swarmforge.conf (path + body; pack override from swarm-identity) |
 
 ### Ticket / backlog
 

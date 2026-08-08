@@ -26,9 +26,10 @@ class ReplyAudioPlayer(
     private val mainHandler = Handler(Looper.getMainLooper())
     private var watchdog: Runnable? = null
     private var speakPoll: Runnable? = null
-    @Volatile private var volumeGain = 0.55f
+    // Full gain by default: phone media/assistant volume is the user control.
+    @Volatile private var volumeGain = 1f
 
-    /** 0..1 linear gain for MediaPlayer + TTS. */
+    /** 0..1 linear gain for MediaPlayer + TTS (kept at 1 for normal talk). */
     fun setVolume(gain: Float) {
         volumeGain = gain.coerceIn(0f, 1f)
         try {
@@ -63,6 +64,53 @@ class ReplyAudioPlayer(
         } else {
             complete()
         }
+    }
+
+    /**
+     * BL-826: true if the player still reports audio in flight. A defensive
+     * re-check beyond [onDone] for the quiet-tail gate, since [onDone] can
+     * fire slightly ahead of the last audible buffer (MediaPlayer's
+     * onCompletion, or an OEM TTS engine's isSpeaking flag lagging the
+     * actual speaker output).
+     */
+    fun isAudioActive(): Boolean {
+        if (!finished.get()) {
+            val mp = mediaPlayer
+            if (mp != null) {
+                return try {
+                    mp.isPlaying
+                } catch (_: Exception) {
+                    true
+                }
+            }
+            val engine = tts
+            if (engine != null && ttsReady.get()) {
+                return try {
+                    engine.isSpeaking
+                } catch (_: Exception) {
+                    true
+                }
+            }
+            // speak()/playBase64 started but engine has not reported yet
+            return true
+        }
+        val mp = mediaPlayer
+        if (mp != null) {
+            return try {
+                mp.isPlaying
+            } catch (_: Exception) {
+                false
+            }
+        }
+        val engine = tts
+        if (engine != null && ttsReady.get()) {
+            return try {
+                engine.isSpeaking
+            } catch (_: Exception) {
+                false
+            }
+        }
+        return false
     }
 
     fun stopNow() {
@@ -123,6 +171,24 @@ class ReplyAudioPlayer(
 
     private fun armWatchdog(ms: Long) {
         val r = Runnable {
+            // Slow OEM voices (voix lente) routinely outlive a ~180wpm estimate.
+            // Never complete() while TTS is still speaking — that opens the mic
+            // onto Bubble's own reply and seeds the self-listen loop.
+            val stillSpeaking = try {
+                tts?.isSpeaking == true
+            } catch (_: Exception) {
+                false
+            }
+            val mpPlaying = try {
+                mediaPlayer?.isPlaying == true
+            } catch (_: Exception) {
+                false
+            }
+            if (stillSpeaking || mpPlaying) {
+                Log.w(TAG, "playback watchdog deferred — audio still active after ${ms}ms")
+                armWatchdog(8_000L)
+                return@Runnable
+            }
             Log.w(TAG, "playback watchdog fired after ${ms}ms")
             complete()
         }
@@ -195,8 +261,8 @@ class ReplyAudioPlayer(
             }
         })
         val words = text.split(Regex("\\s+")).size.coerceAtLeast(1)
-        // ~180 wpm + buffer; never leave the panel stuck on "speaking"
-        armWatchdog((words * 400L + 3_000L).coerceIn(4_000L, 45_000L))
+        // Slow system voices (~80–100 wpm) need more headroom than ~180 wpm.
+        armWatchdog((words * 750L + 5_000L).coerceIn(8_000L, 90_000L))
 
         val params = Bundle()
         params.putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, volumeGain)
@@ -207,6 +273,8 @@ class ReplyAudioPlayer(
             return
         }
         // OEM engines sometimes skip onDone — poll isSpeaking.
+        // Require a long quiet streak so mid-utterance pauses on a slow voice
+        // do not false-complete and re-arm the mic onto live TTS.
         val poll = object : Runnable {
             private var sawSpeaking = false
             private var quietTicks = 0
@@ -222,7 +290,7 @@ class ReplyAudioPlayer(
                     quietTicks = 0
                 } else if (sawSpeaking) {
                     quietTicks++
-                    if (quietTicks >= 2) {
+                    if (quietTicks >= 8) { // 8 × 250ms ≈ 2s quiet
                         complete()
                         return
                     }

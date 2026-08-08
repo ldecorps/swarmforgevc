@@ -397,7 +397,6 @@ const DOMAINS = [
   require('./bl839MasterCheckoutDriftSteps'),
   require('./bl822HostLoadAnomalySteps'),
   require('./bl848HotfixCertificationSteps'),
-  require('./bl846ResidentPaneAnswerResolutionSteps'),
   require('./bl619TokenBurnWarningSteps')
 ];
 
