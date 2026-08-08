@@ -160,6 +160,80 @@
                (< stable-len 51200))
   (println (str "stable-prefix chars: " stable-len)))
 
+;; ── BL-574 Slice 2: named fragment registry ──────────────────────────────────
+(assert= "fragment-source-path resolves role to the role prompt file"
+         "swarmforge/roles/coder.prompt"
+         (prompt-engine-lib/fragment-source-path "role" {:role "coder"}))
+
+(assert= "fragment-source-path resolves pack-overlay to the given overlay path"
+         "swarmforge/packs/mono-router.prompt"
+         (prompt-engine-lib/fragment-source-path "pack-overlay" {:overlay-prompt "swarmforge/packs/mono-router.prompt"}))
+
+(assert= "fragment-source-path returns nil for pack-overlay with no overlay set"
+         nil
+         (prompt-engine-lib/fragment-source-path "pack-overlay" {:overlay-prompt ""}))
+
+(assert-true "fragment-content-uncached produces constitution content"
+             (str/includes? (prompt-engine-lib/fragment-content-uncached "constitution" {})
+                            "# SwarmForge Constitution"))
+
+(assert-true "fragment-content-uncached produces role content for the coder"
+             (str/includes? (prompt-engine-lib/fragment-content-uncached "role" {:role "coder"})
+                            "You are the coder."))
+
+;; ── BL-574 Slice 2: content-hash fragment cache — hit avoids re-read ────────
+(let [read-count (atom 0)
+      spy-content-fn (fn [_name _req] (swap! read-count inc) "FRAGMENT_CONTENT_V1")
+      cache (atom (prompt-engine-lib/empty-fragment-cache))
+      first-read (prompt-engine-lib/read-fragment! cache "role" {:role "coder"} :content-fn spy-content-fn)
+      second-read (prompt-engine-lib/read-fragment! cache "role" {:role "coder"} :content-fn spy-content-fn)]
+  (assert= "cache miss then hit: content-fn called exactly once across two reads" 1 @read-count)
+  (assert= "cache hit returns the same content as the original read" first-read second-read))
+
+;; ── BL-574 Slice 2: explicit invalidation forces a re-read with new content ──
+(let [read-count (atom 0)
+      versions (atom ["FRAGMENT_CONTENT_V1" "FRAGMENT_CONTENT_V2"])
+      spy-content-fn (fn [_name _req]
+                       (swap! read-count inc)
+                       (let [v (first @versions)]
+                         (swap! versions rest)
+                         v))
+      cache (atom (prompt-engine-lib/empty-fragment-cache))
+      warm (prompt-engine-lib/read-fragment! cache "role" {:role "coder"} :content-fn spy-content-fn)
+      _ (prompt-engine-lib/read-fragment! cache "role" {:role "coder"} :content-fn spy-content-fn) ;; cache hit, no read
+      _ (reset! cache (prompt-engine-lib/invalidate-fragment @cache "role"))
+      invalidated (prompt-engine-lib/read-fragment! cache "role" {:role "coder"} :content-fn spy-content-fn)]
+  (assert= "warm read is V1" "FRAGMENT_CONTENT_V1" warm)
+  (assert= "post-invalidation read is re-read as V2, not the stale cached V1" "FRAGMENT_CONTENT_V2" invalidated)
+  (assert= "exactly 2 reads occurred: initial miss + post-invalidation miss (the intervening hit read nothing)" 2 @read-count))
+
+;; ── BL-574 Slice 2: cache-cold/warm/invalidated compose output is byte-identical
+;;    (the ticket's declared invariant, spot-checked here; full generated
+;;    coverage lives in prompt_engine_fragment_cache_property_runner.bb) ──────
+(let [cache (atom (prompt-engine-lib/empty-fragment-cache))
+      cold (:system-prompt (prompt-engine-lib/compose "coder" (assoc claude-ctx :fragment-cache cache)))
+      warm (:system-prompt (prompt-engine-lib/compose "coder" (assoc claude-ctx :fragment-cache cache)))
+      _ (swap! cache prompt-engine-lib/invalidate-fragment "role")
+      invalidated (:system-prompt (prompt-engine-lib/compose "coder" (assoc claude-ctx :fragment-cache cache)))]
+  (assert= "composed output is byte-identical cold vs warm" cold warm)
+  (assert= "composed output is byte-identical warm vs post-invalidation re-read" warm invalidated))
+
+;; ── BL-574 Slice 2: per-model/provider adapter registry ──────────────────────
+(assert= "claude has the default generic adapter" "generic" (prompt-engine-lib/select-adapter "claude"))
+(assert= "aider has the default aider-editor adapter" "aider-editor" (prompt-engine-lib/select-adapter "aider"))
+(assert= "an unregistered provider falls back to generic" "generic" (prompt-engine-lib/select-adapter "totally-unknown-provider"))
+
+(prompt-engine-lib/register-adapter! "bl574-test-provider" "bl574-test-adapter")
+(assert= "register-adapter! makes a new provider's adapter selectable" "bl574-test-adapter"
+         (prompt-engine-lib/select-adapter "bl574-test-provider"))
+
+(assert= "compose metadata carries the selected adapter id"
+         "generic"
+         (:adapter-id (:metadata (prompt-engine-lib/compose "coder" claude-ctx))))
+(assert= "compose metadata carries aider's adapter id for the aider provider"
+         "aider-editor"
+         (:adapter-id (:metadata (prompt-engine-lib/compose "coordinator" {:agent "aider" :two-pack? true}))))
+
 ;; ── report ──────────────────────────────────────────────────────────────────
 (if (empty? @failures)
   (println "ALL PASS")
