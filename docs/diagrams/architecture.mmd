@@ -19,7 +19,10 @@
 %% cadence (report-only, same alarm channel as the flow watchdog). BL-819
 %% added a coordinator-owned ticket lifecycle ledger (.swarmforge/lean/),
 %% shelled from the pane at the two points a parcel already changes hands:
-%% handoff completion and the close-commit path.
+%% handoff completion and the close-commit path. BL-855 added a sibling
+%% per-commit check to the same push-sweep chokepoint: a merge commit whose
+%% tree took none of its second parent's differing content is refused before
+%% it reaches origin, however correct its ancestry and message look.
 flowchart TB
   subgraph HOST["Extension Host (Node.js, VS Code Extension API)"]
     EXT["extension.ts\n(command registration)"]
@@ -109,7 +112,7 @@ flowchart TB
   PANES -->|handoffd.bb: polls outbox,\nperforms chase sweeps,\ncanary sweep, push sweep,\nmaster-checkout drift sweep (BL-839),\nnotifies via tmux send-keys| SOCKET
   PANES -->|git commit/merge| TARGETREPO
   PANES -->|lean-ledger-record.js at handoff\ncompletion + close-commit (BL-819)| LEANDIR
-  DAEMONDIR -->|handoffd.bb push-sweep!:\ngit push main\n(bounded retry, no force-push;\nBL-630 refuses a non-QA-approved tip)| TARGETREPO
+  DAEMONDIR -->|handoffd.bb push-sweep!:\ngit push main\n(bounded retry, no force-push;\nBL-630 refuses a non-QA-approved tip;\nBL-855 refuses a no-op landing merge)| TARGETREPO
 
   PANEL -->|postMessage: output, stage,\nbadgeUpdate, backlogUpdate, ...| TILES
   TILES -->|postMessage: keystroke,\nclick, command| PANEL

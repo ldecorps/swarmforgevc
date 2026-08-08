@@ -94,6 +94,18 @@
         headline (some-> raw-headline strip-markdown-emphasis str/trim bound-headline)]
     (str "SwarmForge briefing " date-label (when-not (str/blank? headline) (str " - " headline)))))
 
+;; BL-619: unlike build-briefing-subject above (whose headline is DERIVED
+;; from the content), a warning marker is a fixed, always-identical prefix -
+;; "leads with" per the directive means a human scanning an inbox list sees
+;; it before opening the email, so it goes first, ahead of the date-derived
+;; headline rather than folded into it.
+(def token-burn-warning-subject-marker "[TOKEN BURN WARNING] ")
+
+(defn maybe-mark-subject [subject subject-marker?]
+  (if subject-marker?
+    (str token-burn-warning-subject-marker subject)
+    subject))
+
 ;; BL-252 (generalized for BL-251): appends a computed content block - the
 ;; suite-duration trend + BL-078 regression flag (BL-252), the
 ;; needs-approval section (BL-251), or any future one - to the outgoing
@@ -107,6 +119,17 @@
   (if (str/blank? block)
     content
     (str (str/trim-newline (or content "")) "\n\n" block "\n")))
+
+;; BL-619 warning-leads-briefing-01: the mirror image of append-content-block
+;; above - puts `block` ABOVE the existing content instead of below it, for
+;; the one section (the token-burn warning) the directive says must LEAD the
+;; briefing rather than be appended among the others. A blank/nil block
+;; leaves content untouched, same degrade-gracefully contract as every
+;; append-content-block caller.
+(defn prepend-content-block [content block]
+  (if (str/blank? block)
+    content
+    (str block "\n\n" (str/trim-newline (or content "")) "\n")))
 
 ;; Threads content through every optional section adapter present in
 ;; `adapters`, in order - each key independently appends its own block (or
@@ -230,7 +253,20 @@
    rather than replacing it. A diagram section with :attachments (available
    diagrams, not the renderer-unavailable/no-diagrams branch) is passed as
    a 4th arg alongside :html; every other case - including no
-   :diagram-section adapter at all - keeps the 3-arg call, html and all."
+   :diagram-section adapter at all - keeps the 3-arg call, html and all.
+
+   BL-619: an optional :token-burn-section adapter (zero-arg fn returning
+   {:appended-text :leading-text :subject-marker?}, any key possibly nil/
+   false) is unlike every section above - it is the ONE section the
+   directive says must LEAD the briefing, not join the appended list. Its
+   :appended-text (the ok/no-anchor/malformed one-liner) joins the other
+   appended sections exactly like :suite-duration-line etc; its
+   :leading-text (the active warning) is PREPENDED above everything else -
+   applied last, after the subject is already derived, so the subject's own
+   headline still reflects the coordinator-authored body, never the warning
+   text. :subject-marker? true additionally prefixes the subject with a
+   fixed token-burn marker (maybe-mark-subject) - the ticket's own \"email
+   subject gains a token-burn warning marker\" contract."
   [briefings-dir adapters]
   (let [sent-now (atom [])]
     (doseq [file-name (find-unsent-briefings briefings-dir)]
@@ -240,8 +276,15 @@
             content (if diagram-section
                       (append-content-block content (:note-line diagram-section))
                       content)
+            token-burn-section (when-let [f (:token-burn-section adapters)] (f))
+            content (if (:appended-text token-burn-section)
+                      (append-content-block content (:appended-text token-burn-section))
+                      content)
             date-label (str/replace file-name #"\.md$" "")
-            subject (build-briefing-subject date-label content)
+            subject (maybe-mark-subject (build-briefing-subject date-label content) (:subject-marker? token-burn-section))
+            content (if (:leading-text token-burn-section)
+                      (prepend-content-block content (:leading-text token-burn-section))
+                      content)
             html (merge-diagram-html (markdown-to-html-lib/render-markdown-to-html content) (:html diagram-section))
             result (if (seq (:attachments diagram-section))
                      ((:send-email! adapters) subject content html (:attachments diagram-section))
