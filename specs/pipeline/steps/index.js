@@ -384,7 +384,12 @@ const DOMAINS = [
   require('./bl622OnboardingTelegramTokenSeparationSteps'),
   require('./bl823AvailabilityIntervalLedgerSteps'),
   require('./bl835FlowWatchdogFlooredPercentileFalseAlarmsSteps'),
-  require('./bl650FlowWatchdogActiveTimeClockSteps')
+  require('./bl650FlowWatchdogActiveTimeClockSteps'),
+  require('./bl819TicketLifecycleLedgerSteps'),
+  require('./bl773CoordinatorRoleAskSteps'),
+  require('./bl839MasterCheckoutDriftSteps'),
+  require('./bl822HostLoadAnomalySteps'),
+  require('./bl848HotfixCertificationSteps')
 ];
 
 function registerSteps(registry) {

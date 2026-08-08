@@ -1,0 +1,273 @@
+id: BL-848
+title: "Every operator / hand hotfix must be swarm-certified; recurrent check asks the human before the official deal"
+milestone: M8
+type: feature
+status: todo
+epic: swarm-reliability
+human_approval: approved
+severity: high
+priority: 0
+direction: human-requested
+depends_on: []
+assigned_to: coder
+mutation_cost: medium
+required_stages: [specifier, coder, cleaner, architect, hardender, documenter, qa]
+
+invariants:
+  - "No operator/hand hotfix that is live in the tree counts as an official swarm deal until a stamp-off review has completed and the human has been asked."
+  - "A recurrent check (existing loop only — coordinator lean/closing ceremony, babysitterd, or operator_runtime) surfaces uncertified hotfixes until resolved; one audit pass is not enough."
+  - "Marking certified / closed_as: satisfied-by-hotfix (or equivalent durable blessing) never auto-fires on green tests alone — human ask first."
+
+approval_context: >
+  Human via Cursor 2026-08-07 ~22:05 CEST, repeated ~22:58 CEST when the
+  root intake had not yet been minted: "Assures toi que tous les hotfix
+  sont certifiés par la swarm. Il faudrait avoir un check récurrent qui
+  assure de cela, quitte à faire une demande à l'humain avant le deal
+  officiel de la swarm." Queue-jump mint: priority 0, approved by human
+  order. Specifier may amend ledger shape and where the check rides, but
+  not drop the recurrent check or the human-ask-before-official-deal rule.
+
+source: |
+  backlog/INTAKE-hotfix-swarm-certification-recurring-check.md (archived to
+  this ticket on mint). Pattern seed: BL-811 stamp-off of the BL-810 Host
+  queue hotfix. Open stamp debt at mint time (update if drained earlier):
+  backlog/INTAKE-darwin-orphan-janitor-swarm-stamp.md,
+  backlog/INTAKE-bubble-reply-volume-follows-phone.md.
+
+description: |
+  ## What
+
+  Operator / Cursor / adopt-from-working-tree hotfixes land outside the
+  normal pipeline and today may stay "live but uncertified." BL-810/811
+  showed the right posture (review ticket + human ruling before
+  satisfied-by-hotfix); other hotfixes still sit as root intakes with no
+  detector if minting stalls.
+
+  This ticket delivers:
+  1. A durable, greppable **hotfix certification ledger** (specifier picks
+     shape: ticket field, evidence convention, or small registry under
+     `.swarmforge/` — not "remembered in chat").
+  2. A **recurrent check** on an existing loop that finds hotfixes in the
+     tree / on main without completed stamp-off (or without human ask for
+     the official deal) and surfaces them until resolved.
+  3. A **human-ask gate** before official deal (`satisfied-by-hotfix` /
+     archive of stamp ticket as lasting blessing). Transient "hotfix is
+     live for ops" may remain; official swarm deal may not auto-fire.
+  4. First debt: drain or link the open stamp intakes (Darwin orphan
+     janitor; Bubble reply-volume) as BL-811-shaped review tickets the
+     check must see.
+
+  ## Specifier rulings (2026-08-07) — the four delegated choices, settled
+
+  The human delegated ledger shape and where the check rides, and forbade
+  dropping the recurrent check or the human-ask gate. All four open choices
+  are settled below. Nothing here widens the ask.
+
+  ### R1 — Detection is DECLARED. No derived signal works. (measured)
+
+  This is the load-bearing ruling and it reverses the obvious approach, so
+  the evidence is recorded rather than asserted. The specifier ran every
+  candidate derived predicate over the last 600 non-merge commits of `main`
+  (62 of which touch functional paths), scored against the two known real
+  hotfixes — `2b8d19d1` (BL-810 Host queue starvation, certified by BL-811)
+  and `f9cf29c2` (Darwin orphan-janitor, still open debt):
+
+  | predicate                                   | result                                    |
+  |---------------------------------------------|-------------------------------------------|
+  | no `By <role>.` byline + functional paths    | 3 hits / 600. **MISSES `2b8d19d1`** — the specifier committed that hotfix on the human's behalf, so it carries `By specifier.` |
+  | names no `BL-nnn`/`GH-n` in the message      | 1 hit / 600. **MISSES BOTH** — each names a ticket id |
+  | names a ticket id that reached `done`        | 1 hit / 600. **FALSELY CERTIFIES `f9cf29c2`**, whose body cites BL-811 only as a *posture* reference ("ask the swarm to review-stamp via INTAKE (BL-811 posture)") |
+
+  A hotfix is metadata-indistinguishable from pipeline work. `2b8d19d1` has a
+  byline, names its ticket, and is well-formed; the only thing marking it is
+  the human prose "NOT reviewed by the pipeline." So:
+
+  **Primary signal: a `Hotfix-Certification: pending` git trailer** on any
+  hand/operator/Cursor landing of functional code. One signal, documented in
+  the how-to, taught at the point where hotfixes are landed. The ledger is
+  keyed on it.
+
+  The derived sweep still ships (scenario 07) but is scoped honestly: it is a
+  **review queue with known false negatives**, never a certification verdict.
+  It must say so in its own output. Do not let a later pass quietly promote
+  it to truth — `2b8d19d1` is the standing counter-example.
+
+  ### R2 — Ledger shape: durable link + waiver committed; live view runtime
+
+  Split by BL-818 decision 2 ("machine-local under `.swarmforge/` is fine for
+  live state; anything the specifier must act on across hosts should be
+  committed"). Almost everything IS derivable — the commit is in git, the
+  stamp ticket's `human_approval` is in its YAML. Exactly two facts are not:
+  the commit->stamp-ticket LINK, and a WAIVER. Those, and only those, are
+  durable.
+
+  - **`backlog/hotfix-ledger.yaml`** (committed, greppable, diffable) — a
+    list of entries:
+
+    ```yaml
+    - commit: f9cf29c2ab          # 10-hex, the landing on main
+      subject: "Land Darwin orphan-janitor fix..."
+      detected_at: 2026-08-07
+      state: stamp-open           # pending|stamp-open|awaiting-human|certified|waived
+      stamp_ticket: BL-849        # BL-811-shaped review ticket, or null
+      human_decision: null        # null | approved | waived
+      decided_at: null
+    ```
+
+  - **`.swarmforge/operator/hotfix-certification.json`** (runtime, gitignored)
+    — the sweep's computed view and its per-entry resurfacing cooldown. Losing
+    it costs one recomputation, never a fact.
+
+  State machine — `pending` (no stamp ticket) -> `stamp-open` (ticket in
+  flight) -> `awaiting-human` (ticket passed QA, no human decision yet) ->
+  `certified` | `waived`. `awaiting-human` is where the gate bites.
+
+  ### R3 — The check rides operator_runtime's existing tick bundle
+
+  The ticket's preference order is coordinator lean/closing, else babysitterd
+  WARN, else operator_runtime. **The closing ceremony is not live** — BL-820
+  is blocked on BL-762 and BL-819's ledger is still in flight — so that
+  option does not exist yet. babysitterd is rejected on fit: every one of its
+  checks is swarm liveness (panes, processes, mailboxes) and its findings go
+  to a dedup'd CRIT/WARN alert channel, which is a health surface, not a
+  work-routing one.
+
+  operator_runtime is the right home and needs no new daemon (explicitly out
+  of scope):
+  - it already runs backlog-aware sweeps (`closing-pass-sweep!` reads
+    `active-backlog-count` / `paused-backlog-items`; `bl-topic-approval-sweep!`);
+  - it already has the cadence gate this needs — `operator-lib/timer-due?`,
+    as used by the `SWARM_CHECK_TIMER` health sweep — so an hourly git scan
+    does not run on every 30s tick;
+  - it is the host-level daemon that **survives hibernation**. `closing-pass-sweep!`
+    parks the swarm when the backlog drains; an uncertified hotfix is most
+    likely to be forgotten precisely then. babysitterd and the coordinator
+    are both asleep in that window. operator_runtime is not.
+
+  Shape: a pure `swarmforge/scripts/hotfix_certification_lib.bb` (snapshot in,
+  findings out — no git, no fs, no clock, exactly the
+  `babysitterd_sweep_lib.bb` posture) plus a thin `hotfix-certification-sweep!`
+  wiring in `operator_runtime.bb`. Cadence `HOTFIX_CERT_INTERVAL_MS`
+  (default 3600000); per-entry resurfacing cooldown
+  `HOTFIX_CERT_RESURFACE_MS` (default 21600000).
+
+  ### R4 — The human ask reuses the Approvals path; no new channel
+
+  No new ask template is needed and none should be built. The stamp ticket
+  carries `human_approval: pending` + `approval_context`, which the
+  Concierge's ApprovalRequested detector already routes to the human's
+  Approvals topic with Approve/Amend/Reject buttons. So:
+
+  - `pending` entries surface as a **note to the coordinator** ("hotfix
+    `<commit>` has no stamp ticket") over the same
+    `SWARMFORGE_ROLE=coordinator` -> `swarm_handoff.bb` path handoffd's
+    `nudge-coordinator-unassigned!` already uses. Never hand-write an inbox file.
+  - `awaiting-human` entries are already surfaced by the Approvals topic. The
+    sweep's duty is only to verify the stamp ticket actually carries
+    `human_approval: pending` and to report it if not.
+  - `certified` / `waived` are written by a human decision reaching the
+    ledger. **The sweep never writes either state** (scenario 06). Green QA
+    moves an entry to `awaiting-human` and no further — that is invariant 3,
+    mechanically.
+
+  "Surfaces until resolved" means the cooldown throttles repetition but never
+  mutes: no entry is ever permanently silenced by dedup. Only certification
+  or a waiver removes it (scenario 02).
+
+  ## First debt — split out, not carried here
+
+  Deliverable 4 of the original ask (drain the two open stamp intakes) is
+  spec work, not pipeline work, so the specifier did it in this same pass
+  rather than loading it onto this parcel (BL-634 envelope discipline):
+
+  - **BL-849** — Darwin orphan-janitor stamp-off (`f9cf29c2`, on main), from
+    `backlog/INTAKE-darwin-orphan-janitor-swarm-stamp.md`.
+  - **BL-850** — Bubble reply-volume stamp-off (uncommitted at mint), from
+    `backlog/INTAKE-bubble-reply-volume-follows-phone.md`.
+  - **BL-851** — the bridge's pre-auth sideload-APK route. **No intake, no
+    ticket, nobody asked for it.** The specifier found it uncommitted in the
+    master checkout while writing this spec: a functional, security-relevant
+    change on a publicly-tunnelled surface, live in the executing checkout,
+    tracked by nothing. It is the sharpest possible argument for this ticket
+    and it appeared the same hour the human asked for it.
+
+  All three are BL-811-shaped review tickets in `backlog/paused/`. They are
+  the ledger's first entries and the reason the seed file is not empty. This
+  ticket must ship `backlog/hotfix-ledger.yaml` seeded with them plus
+  `f175bc56` (the one genuine `unaccounted` finding from the 600-commit scan)
+  so the recurrent check has live debt to drive on its very first tick.
+
+  Two of the three were UNCOMMITTED when found, which sharpens R1: a hotfix
+  is not only invisible to commit-metadata heuristics, it may not be a commit
+  at all yet. Landing a hotfix as a declared commit is therefore the first
+  step of certifying it (BL-850/BL-851 both spec that), and BL-839's
+  master-checkout drift detector is this ticket's sibling guard for the
+  window before that happens. This ticket does not extend the check to the
+  dirty working tree — that is BL-839's surface, and duplicating it here
+  would put two detectors on one signal.
+
+  Also surfaced, deliberately NOT ticketed: `swarmforge/packs/mono-router.conf`
+  sets `active_backlog_max_depth` `1` -> `-1` with a dated operator comment.
+  A documented operator knob is not code; it seeds the ledger as a `waived`
+  candidate for the human to confirm.
+
+acceptance: specs/features/BL-848-hotfix-swarm-certification-recurring-check.feature
+
+required_wiring:
+  - "swarmforge/scripts/operator_runtime.bb::hotfix-certification-sweep::the check must be CALLED from the per-tick bundle, not merely defined. A certification lib nobody runs is the BL-419 shape this ticket exists to prevent."
+  - "swarmforge/scripts/operator_runtime.bb::timer-due?::the sweep must ride the existing cadence gate; an hourly git scan on every 30s tick is not acceptable and a missing gate means it does."
+  - "backlog/hotfix-ledger.yaml::stamp_ticket::the durable ledger must exist and be seeded with the open debt, or the recurrent check drives nothing on its first tick."
+  - "docs/how-to/BL-848-certify-an-operator-hotfix.md::Hotfix-Certification::the primary signal is DECLARED, so it only works if the place hotfixes get landed teaches the trailer. An undocumented trailer is an unused one."
+
+out_of_scope: |
+  - Re-implementing each hotfix from scratch (stamp-off adopts/verifies).
+  - Forbidding emergency patches (hotfixes may still land; certification
+    must catch up).
+  - Model Steward "certify" (model registry, not code hotfix stamp).
+  - New fourth daemon for the check alone.
+
+notes: |
+  Queue-jump 2026-08-07: human repeated the ask while the URGENT intake sat
+  unminted beside four unrelated actives. Mint + promote to specifier same
+  shift. Do not re-triage priority without asking the human.
+
+  ## E2E QA procedure (specifier, 2026-08-07)
+
+  The unit suite covers the pure lib. These four prove the wiring is live,
+  and each targets a specific way this ticket could ship green-but-dark.
+
+  1. **The check actually runs on the loop.** Set `HOTFIX_CERT_INTERVAL_MS=60000`
+     and watch `.swarmforge/operator/operator.log` across two intervals.
+     Expect a `hotfix-certification` log line per due tick and NONE on the
+     intervening 30s ticks. Both halves matter: no line at all means the sweep
+     was defined but never wired (the `required_wiring` failure mode); a line
+     on every tick means the cadence gate is missing.
+
+  2. **An open entry keeps coming back.** With the seeded ledger, let the
+     check run, confirm a coordinator note lands for the `pending` entry, then
+     let it run again past `HOTFIX_CERT_RESURFACE_MS`. The entry must surface
+     AGAIN. This is the whole point of invariant 2 — one audit pass is not
+     enough — and it is the behaviour most likely to be quietly lost to an
+     over-eager dedup.
+
+  3. **Green QA does not certify (the gate).** Take a ledger entry whose
+     stamp ticket has passed QA and carries `human_approval: pending`. Run
+     the check. The entry must sit at `awaiting-human` and must NOT reach
+     `certified`. Then flip the ticket to `human_approval: approved` and run
+     again — only now does it certify. That difference IS invariant 3; if
+     step one already certifies, the ticket has failed regardless of test
+     colour.
+
+  4. **The sweep survives hibernation.** Drain the backlog so
+     `closing-pass-sweep!` hibernates the swarm, then confirm the
+     certification check still logs on its next due tick with the swarm
+     parked. This is the reason operator_runtime was chosen over babysitterd
+     (R3); if it does not hold, the choice was wrong and QA should bounce it
+     rather than accept it.
+
+  Do NOT substitute a unit test for 1 or 4 — both are claims about a running
+  daemon, which is exactly what a fake cannot witness.
+bounce_count: 2
+bounce_history:
+  - { at: 2026-08-07, by: QA, blamed: coder, class: behavior, commit: ca33c97b, evidence: backlog/evidence/BL-848-qa-bounce-20260808.md }
+  - { at: 2026-08-08, by: QA, blamed: cleaner, class: behavior, commit: edf0e9bef2, evidence: backlog/evidence/BL-848-qa-bounce-round2-20260808.md }

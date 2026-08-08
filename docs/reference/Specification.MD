@@ -1,6 +1,23 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** August 6, 2026 (BL-835: `thresholds-from-samples` in
+**Last Updated:** August 8, 2026 (BL-839: a drift check compares the master
+checkout's on-disk daemon-executed scripts against `main` — `handoffd.bb`
+executes whatever bytes are on disk in the master checkout, not a committed
+ref, so an uncommitted or staged reversion there can silently un-land a
+QA-approved fix while its ticket sits closed in `backlog/done/`. Report-only,
+alarms into the same Telegram Operator outbox the flow watchdog uses; see the
+new "Master-Checkout Drift Alarm" entry in the "Flow Watchdog" section below
+and the new runbook `docs/how-to/BL-839-master-checkout-drift-alarm.md`.
+BL-822: the cost-health sidecar's resource-anomaly signal now also reports
+host-wide load, not only per-role RSS/CPU — a host thrashing under overall
+load can degrade every role at once without any single role's own trend
+crossing its threshold; see the updated "Cost & Resource Telemetry" section
+below. BL-819: the coordinator gains a durable, coordinator-owned ticket
+lifecycle ledger — composed entirely from instruments that already ship
+[handoff audit headers, ticket-YAML bounce history, routing-skip reasons,
+chase telemetry, the backlog close transition], never a new telemetry
+producer; see the new reference doc `docs/reference/BL-819-ticket-lifecycle-ledger.md`);
+August 6, 2026 (BL-835: `thresholds-from-samples` in
 `flow_watchdog_lib.bb` clamped a sub-60s raw warn percentile *up* to the
 60000ms `min-warn-ms` floor and wrote it into the calibrated table as if
 earned, so fast healthy hops (`QA→coordinator|git_handoff`, whose real p67
@@ -449,6 +466,8 @@ A third telemetry layer tracks token spend and per-role resource usage:
 Both are available via the `GET /cost-telemetry` bridge endpoint and the CLI (below). Two scenarios from the ticket's own scope — a rolled-up cost briefing paragraph, and surfacing cost telemetry through the phone/Action bridge — are deferred pending infrastructure (BL-099/BL-097) that doesn't exist yet. **The resource-usage sampler is wired into the real swarm lifecycle (BL-264):** `extension/src/swarm/resourceSamplerActivation.ts`'s `resolvePanePid` composes the existing tmux discovery chain (`readTmuxSocket` → `getPaneBaseIndex` → `resolveAgentPaneTarget` → `getPanePid`, the same chain `PaneTailer` already uses — no second discovery mechanism) to resolve each role's pid fresh on every sampler tick (never cached, so a respawned pane's new pid is picked up automatically), and `buildSampledRoles` maps each discovered role into the `SampledRole` shape `startResourceSampler` expects. `extension.ts` starts the sampler (holding its interval handle in the same module-level-state convention as `currentChaserMonitor`) after every launch-success/reattach call site, and stops it in `stopSwarm`/`stopSwarmCompletely`/`deactivate()` alongside the existing chaser-monitor stop — no leaked interval past teardown. This is wiring only: the sampler module, its telemetry format, and every reader (cost sidecar, bridge, CLI) are unchanged — a live swarm's "Resource usage" line now shows real RSS/CPU samples instead of no-samples-yet.
 
 **Resource sampling also runs headless, so `resourceAnomalies` stops being permanently empty (BL-350, BL-336 finding H1).** BL-264's wiring above only ever starts the sampler from `extension.ts`'s `vscode.*`-activation-gated call site, so a swarm running with no editor attached never recorded a single resource sample — the cost-health sidecar's `resourceAnomalies` field was present in the schema and emitted daily, but always empty, with nothing about the sidecar's own existence signalling the gap. `extension/src/tools/sample-resources.ts` is a headless CLI entrypoint that reuses the same tmux-discovery pid resolution and telemetry writer unchanged (`buildSampledRoles`, `sampleRolesOnce`), shelled from `handoffd.bb`'s existing sweep cadence (`resource-sample-sweep!`, the same posture as `recert-notify-sweep!`/`dead-letter-notify-sweep!` — no new scheduling mechanism invented). A new `shouldSampleThisInterval` check compares against the shared telemetry file's own latest sample, so the headless sweep and an attached editor's host-side sampler never double-count the same interval. This also closes the "quiet day looks identical to a broken sampler" gap: the sidecar now carries a `resourceSamplesObserved` flag, and the briefing's Cost & Health section renders an explicit "none found" anomalies line for a genuinely quiet sampled period, distinct from the silent omission a never-sampled sidecar still produces.
+
+**Resource health also reports host load, not only per-role RSS/CPU (BL-822).** A host thrashing under overall load can degrade every role at once without any single role's own RSS/CPU trend crossing its per-role threshold — the per-role signal above is blind to that shape entirely. `sampleRolesOnce` now also samples `os.loadavg()[0] / os.cpus().length` on the same tick, independently of whether any role's pid resolved (the day a host is on fire but every role pid happens to be unresolvable is exactly the day this signal must not go silent), and records it as a distinct `host_load_sample` event in the same `chaser-*.jsonl` telemetry family `resource_sample` events already use. `computeHostLoadVerdict` marks a day **severe** only when the ratio clears a configurable threshold (`host_load_severe_ratio`, default 4x cores — deliberately above `mutation_cooldown_lib.bb`'s `mutation_busy_load_multiplier` default of 2, since "too busy to start mutation testing" is a lower bar than "this day was resource-abnormal" and the two dials must not drift into contradiction) **and** that ratio has held for a configurable sustained window (`host_load_sustained_minutes`, default 15 minutes) — a single spike or a long ordinary-load stretch alone does not qualify. The cost-health sidecar's `hostLoad` field carries this verdict, additive and optional (never folded into `resourceAnomalies` — a `ResourceAnomaly` always carries `{role, rssBytes}` and the static PWA renders those fields unconditionally, while a host-wide measurement has neither): a severe day's "none found" anomalies rendering is overridden regardless of whether a per-role anomaly is also present, while per-role RSS/CPU detection and `resourceSamplesObserved` (BL-350, above) stay untouched and independent of this signal.
 
 #### Agent CLI
 
@@ -1224,6 +1243,7 @@ The flow watchdog is a pure decision core (`swarmforge/scripts/flow_watchdog_lib
 - **BL-537** — Session heal: auto-recovery for hung sessions (one class of flow-stall cause)
 - **BL-576** — Aged-Note Actionability: fixing a specific flow-stall root cause (prescriptive actions for old notes)
 - **BL-823** — Swarm Availability Ledger: records pause and stop-to-start intervals this watchdog still measures in raw wall-clock time; BL-650 (not yet built) will subtract them here
+- **BL-839** — Master-Checkout Drift Alarm: a different sweep in the same `handoffd.bb` cadence, reusing this same Telegram Operator outbox, but alarming on a different question (does the master checkout's own working tree still match `main`, not parcel age) — see [the runbook](../how-to/BL-839-master-checkout-drift-alarm.md)
 
 ## Per-Agent Lifecycle Control
 

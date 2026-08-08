@@ -1,8 +1,10 @@
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import { execFileSync } from 'child_process';
 import { chaserTelemetryDir, readChaserTelemetryEvents, ChaserTelemetryEvent } from './swarmMetrics';
 import { computeTrend, TrendResult, TrendSeriesPoint } from './trend';
+import { readConfigValue } from '../util/swarmforgeConfig';
 
 // BL-100 cost-04: CPU/RAM per role, sampled on a slow timer and folded into
 // the BL-096 trend framework. resource_sample events join the existing
@@ -186,12 +188,24 @@ export const DEFAULT_SAMPLER_INTERVAL_MS = 5 * 60 * 1000;
 // on demand. Returns the count of roles actually sampled (a role whose pid
 // or stats could not be resolved is skipped, not counted) so a caller can
 // report what happened without re-deriving it.
+//
+// BL-822: also records a host-load sample on this SAME tick, independently
+// of whether any role's pid resolved - the day a host is on fire but every
+// role pid happens to be unresolvable is exactly the day this signal must
+// not go silent (implementation shape 2). Both callers of this function
+// (the host-side setInterval sampler and the headless CLI) get host-load
+// coverage for free from this one shared tick, same as role sampling does.
 export function sampleRolesOnce(
   targetPath: string,
   roles: SampledRole[],
   getStats: (pid: number) => { rssBytes: number; cpuPercent: number } | null = sampleProcessStats,
-  nowMs: number = Date.now()
+  nowMs: number = Date.now(),
+  getHostLoadRatio: () => number | null = sampleHostLoadRatio
 ): number {
+  const hostLoadRatio = getHostLoadRatio();
+  if (hostLoadRatio !== null) {
+    appendHostLoadSample(targetPath, hostLoadRatio, nowMs);
+  }
   let sampledCount = 0;
   for (const { role, getPid } of roles) {
     const pid = getPid();
@@ -252,4 +266,145 @@ export function stopResourceSampler(intervalId: NodeJS.Timeout | null, clearTick
   if (intervalId) {
     clearTick(intervalId);
   }
+}
+
+// ── host load (BL-822) ───────────────────────────────────────────────────
+//
+// Additive alongside per-role resource samples: host load average is a
+// distinct signal, never folded into resourceAnomalies (see
+// costHealthSidecar.ts's CostHealthSidecar.hostLoad for why - a
+// ResourceAnomaly always carries {role, rssBytes}, and the static PWA
+// renders those fields unconditionally; a role-less host measurement has
+// neither).
+
+export interface HostLoadSampleEvent {
+  ratio: number;
+  atMs: number;
+}
+
+// host_load_sample rows join the SAME chaser-*.jsonl family resource_sample
+// rows already use (readChaserTelemetryEvents's reader already tolerates
+// unknown `type` values). That reader's line parser still requires every
+// row to carry a `role: string`, and a host-wide measurement has none -
+// this sentinel satisfies the shared shape without claiming to BE a role.
+// Safe: every consumer of readChaserTelemetryEvents switches on `type`
+// first (chaserCountField/RELIABILITY_EVENT_TYPE_TO_FIELD), so an
+// unrecognized type's sentinel role never reaches a real role's counts.
+const HOST_LOAD_EVENT_ROLE = 'host';
+
+export function filterHostLoadSampleEvents(rawEvents: ChaserTelemetryEvent[]): HostLoadSampleEvent[] {
+  const events: HostLoadSampleEvent[] = [];
+  for (const raw of rawEvents) {
+    if (raw.type !== 'host_load_sample') {
+      continue;
+    }
+    const unknownRaw = raw as unknown as Record<string, unknown>;
+    const ratio = Number(unknownRaw.ratio);
+    const atMs = Date.parse(raw.at);
+    if (!Number.isFinite(ratio) || Number.isNaN(atMs)) {
+      continue;
+    }
+    events.push({ ratio, atMs });
+  }
+  return events;
+}
+
+export function readHostLoadSampleEvents(targetPath: string): HostLoadSampleEvent[] {
+  return filterHostLoadSampleEvents(readChaserTelemetryEvents(targetPath));
+}
+
+// Never throws - same "recording never breaks the caller" posture as
+// appendResourceSample above. Must NOT touch resourceSamplesObserved (BL-822
+// invariant 3): this writes a host_load_sample row, never a resource_sample
+// one, so filterResourceSampleEvents (which only matches 'resource_sample')
+// never sees it.
+export function appendHostLoadSample(targetPath: string, ratio: number, atMs: number = Date.now()): void {
+  try {
+    const filePath = monthlyTelemetryFile(targetPath, atMs);
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    const line = JSON.stringify({ type: 'host_load_sample', role: HOST_LOAD_EVENT_ROLE, ratio, at: new Date(atMs).toISOString() });
+    fs.appendFileSync(filePath, line + '\n');
+  } catch {
+    // swallow - telemetry recording must never break the caller
+  }
+}
+
+// Thin OS adapter, injectable (loadavg1m/cpuCount) so the ratio computation
+// is testable without a real host - same posture as sampleProcessStats
+// above. Returns null when either reading is unusable (e.g. zero reported
+// cores) rather than a fabricated ratio.
+export function sampleHostLoadRatio(loadavg1m: () => number = () => os.loadavg()[0], cpuCount: () => number = () => os.cpus().length): number | null {
+  try {
+    const load1 = loadavg1m();
+    const cores = cpuCount();
+    if (!Number.isFinite(load1) || !Number.isFinite(cores) || cores <= 0) {
+      return null;
+    }
+    return load1 / cores;
+  } catch {
+    return null;
+  }
+}
+
+// BL-822 ruling 2: deliberately above mutation_cooldown_lib.bb's
+// mutation_busy_load_multiplier default of 2 - "too busy to START mutation
+// testing" is a lower bar than "this day was resource abnormal", and the
+// two dials must not drift into contradiction.
+export const DEFAULT_HOST_LOAD_SEVERE_RATIO = 4;
+export const DEFAULT_HOST_LOAD_SUSTAINED_MINUTES = 15;
+
+function parsePositiveNumber(raw: string | undefined): number | null {
+  if (raw === undefined) {
+    return null;
+  }
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+// Read fresh at decision time (never cached) - same `config <key> <value>,
+// read fresh` posture as mutation_busy_load_multiplier. Absent/malformed
+// degrades to the code default rather than throwing.
+export function hostLoadSevereRatioThreshold(targetPath: string): number {
+  return parsePositiveNumber(readConfigValue(targetPath, 'host_load_severe_ratio')) ?? DEFAULT_HOST_LOAD_SEVERE_RATIO;
+}
+
+export function hostLoadSustainedMs(targetPath: string): number {
+  const minutes = parsePositiveNumber(readConfigValue(targetPath, 'host_load_sustained_minutes')) ?? DEFAULT_HOST_LOAD_SUSTAINED_MINUTES;
+  return minutes * 60_000;
+}
+
+export interface HostLoadVerdict {
+  severe: boolean;
+  ratio: number | null;
+  sustainedMinutes: number;
+}
+
+// Pure: "severe" requires BOTH a ratio past the threshold AND that ratio
+// having held for the sustained window (BL-822 ruling 2) - a single spike
+// clears the ratio dial but not the duration one, and a long ordinary-load
+// stretch clears duration but not ratio. matchingSampleCount walks backward
+// from the most recent sample so a stale spike earlier in the log cannot
+// retroactively mark the CURRENT state severe once load has come back down;
+// expressed as matchingSampleCount * samplingIntervalMs against the
+// sustained-window dial (not a hardcoded sample count) so the dial keeps
+// its meaning if DEFAULT_SAMPLER_INTERVAL_MS ever changes.
+export function computeHostLoadVerdict(
+  events: HostLoadSampleEvent[],
+  severeRatioThreshold: number = DEFAULT_HOST_LOAD_SEVERE_RATIO,
+  sustainedMs: number = DEFAULT_HOST_LOAD_SUSTAINED_MINUTES * 60_000,
+  samplingIntervalMs: number = DEFAULT_SAMPLER_INTERVAL_MS
+): HostLoadVerdict {
+  const sorted = [...events].sort((a, b) => a.atMs - b.atMs);
+  let matchingSampleCount = 0;
+  for (let i = sorted.length - 1; i >= 0; i--) {
+    if (sorted[i].ratio < severeRatioThreshold) {
+      break;
+    }
+    matchingSampleCount++;
+  }
+  return {
+    severe: matchingSampleCount > 0 && matchingSampleCount * samplingIntervalMs >= sustainedMs,
+    ratio: sorted.length > 0 ? sorted[sorted.length - 1].ratio : null,
+    sustainedMinutes: (matchingSampleCount * samplingIntervalMs) / 60_000,
+  };
 }
