@@ -29,19 +29,24 @@ export function isValidAnchorPct(pct: number): boolean {
   return typeof pct === 'number' && Number.isFinite(pct) && pct >= 0 && pct <= 100;
 }
 
+function hasValidAtMs(candidate: Partial<UsageAnchor>): boolean {
+  return typeof candidate.atMs === 'number' && Number.isFinite(candidate.atMs);
+}
+
+function hasValidPct(candidate: Partial<UsageAnchor>): boolean {
+  return typeof candidate.pct === 'number' && isValidAnchorPct(candidate.pct);
+}
+
+function hasValidScope(candidate: Partial<UsageAnchor>): boolean {
+  return typeof candidate.scope === 'string' && candidate.scope.length > 0;
+}
+
 function isUsageAnchor(value: unknown): value is UsageAnchor {
   if (!value || typeof value !== 'object') {
     return false;
   }
   const candidate = value as Partial<UsageAnchor>;
-  return (
-    typeof candidate.atMs === 'number' &&
-    Number.isFinite(candidate.atMs) &&
-    typeof candidate.pct === 'number' &&
-    isValidAnchorPct(candidate.pct) &&
-    typeof candidate.scope === 'string' &&
-    candidate.scope.length > 0
-  );
+  return hasValidAtMs(candidate) && hasValidPct(candidate) && hasValidScope(candidate);
 }
 
 // A malformed or unrecognized line is skipped, never a crash - same

@@ -76,3 +76,25 @@ test('a malformed line in the anchors file is skipped, never a crash', () => {
   fs.appendFileSync(usageAnchorsFilePath(target), JSON.stringify({ atMs: 200, pct: 999, scope: 'all-models' }) + '\n');
   assert.deepEqual(readUsageAnchors(target), [{ atMs: 100, pct: 10, scope: 'all-models' }]);
 });
+
+// A record that is well-formed JSON but not a well-formed anchor - each
+// field individually malformed, not just missing - must be rejected the
+// same as an unparseable line, never crash and never partially accepted.
+test('a present-but-malformed anchor record is rejected field by field', () => {
+  const target = mkTmp();
+  appendUsageAnchor(target, 100, 10, 'all-models');
+  const malformedRecords = [
+    null,
+    'a string, not an object',
+    { atMs: 'not-a-number', pct: 10, scope: 'all-models' },
+    { atMs: Infinity, pct: 10, scope: 'all-models' },
+    { atMs: 200, pct: 'not-a-number', scope: 'all-models' },
+    { atMs: 200, pct: 10, scope: 42 },
+    { atMs: 200, pct: 10, scope: '' },
+    { atMs: 200 },
+  ];
+  for (const record of malformedRecords) {
+    fs.appendFileSync(usageAnchorsFilePath(target), JSON.stringify(record) + '\n');
+  }
+  assert.deepEqual(readUsageAnchors(target), [{ atMs: 100, pct: 10, scope: 'all-models' }]);
+});
