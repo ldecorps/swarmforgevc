@@ -6,7 +6,7 @@ severity: low
 status: todo
 epic: code-quality-gates
 assigned_to: specifier
-priority: 74
+priority: 76
 direction: normal
 depends_on: []
 mutation_cost: low

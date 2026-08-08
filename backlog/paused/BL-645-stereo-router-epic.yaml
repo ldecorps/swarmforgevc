@@ -6,7 +6,7 @@ status: todo
 epic: stereo-router
 human_approval: approved
 severity: medium
-priority: 126
+priority: 127
 direction: human-requested
 depends_on: []
 assigned_to: specifier

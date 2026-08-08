@@ -78,4 +78,80 @@ grep -q "^BL-999$" "$ROOT/route.log" \
   || fail "expected route helper to receive BL-999; got: $(cat "$ROOT/route.log")"
 pass "a -1 (no-limit) cap promotes past 5 active tickets, the exact live-incident shape"
 
+# BL-853 hardener addendum: the test above resolves CAP via the PRIMARY
+# effective_backlog_depth_cli.bb path (it succeeds even with no compiled
+# extension/out/, degrading its throttle-recommendation refresh and still
+# printing the configured -1) - it never actually exercises the FALLBACK
+# branch this ticket's diff rewrote (backlog_depth_conf_path_cli.bb ->
+# backlog_depth_cli.bb). That fallback branch is precisely where the live
+# incident's root cause lived: the pre-fix code passed backlog_depth_cli.bb
+# the project ROOT where it expects a CONF-PATH, so slurping it as a file
+# failed and silently degraded to the library default (5). Force the
+# fallback by omitting effective_backlog_depth_cli.bb entirely (the script's
+# own `[[ -f ... ]]` guard treats that identically to "cannot be run at
+# all"), and prove it independently against the pre-BL-853
+# promote_and_route_next.sh to confirm this is non-vacuous (that old script
+# reproduces the exact live incident: exit 2, "active count 5 >= cap 5").
+
+ROOT2="$(cd "$(mktemp -d)" && pwd -P)"
+trap 'rm -rf "$ROOT" "$ROOT2"' EXIT
+
+git -C "$ROOT2" init -q
+git -C "$ROOT2" -c user.email=test@test -c user.name=test commit -q --allow-empty -m init
+
+mkdir -p "$ROOT2/backlog/paused" "$ROOT2/backlog/active" "$ROOT2/specs/features" "$ROOT2/swarmforge/scripts"
+
+cp "$HELPER" "$ROOT2/swarmforge/scripts/promote_and_route_next.sh"
+chmod +x "$ROOT2/swarmforge/scripts/promote_and_route_next.sh"
+cp "$SCRIPTS/promotion_gates_cli.bb" "$ROOT2/swarmforge/scripts/promotion_gates_cli.bb"
+cp "$SCRIPTS/promotion_gates_lib.bb" "$ROOT2/swarmforge/scripts/promotion_gates_lib.bb"
+cp "$SCRIPTS/backlog_depth_lib.bb" "$ROOT2/swarmforge/scripts/backlog_depth_lib.bb"
+cp "$SCRIPTS/swarm_identity_lib.bb" "$ROOT2/swarmforge/scripts/swarm_identity_lib.bb"
+cp "$SCRIPTS/backlog_depth_cli.bb" "$ROOT2/swarmforge/scripts/backlog_depth_cli.bb"
+cp "$SCRIPTS/backlog_depth_conf_path_cli.bb" "$ROOT2/swarmforge/scripts/backlog_depth_conf_path_cli.bb"
+# Deliberately NOT copying effective_backlog_depth_cli.bb: the primary
+# `[[ -f "$SCRIPT_DIR/effective_backlog_depth_cli.bb" ]]` check then fails,
+# forcing the script straight into the fallback branch under test.
+
+cat > "$ROOT2/swarmforge/scripts/route_backlog_to_coder.sh" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$1" > "${ROUTE_LOG:?missing ROUTE_LOG}"
+EOF
+chmod +x "$ROOT2/swarmforge/scripts/route_backlog_to_coder.sh"
+
+printf 'config active_backlog_max_depth -1\n' > "$ROOT2/swarmforge/swarmforge.conf"
+
+for n in 1 2 3 4 5; do
+  printf 'id: BL-90%s\ntitle: "active filler"\nstatus: active\npriority: 5\nassigned_to: coder\n' "$n" \
+    > "$ROOT2/backlog/active/BL-90$n-active.yaml"
+done
+
+printf 'id: BL-999\ntitle: "candidate"\nstatus: paused\npriority: 5\nassigned_to:\n' \
+  > "$ROOT2/backlog/paused/BL-999-candidate.yaml"
+: > "$ROOT2/specs/features/BL-999-candidate.feature"
+
+git -C "$ROOT2" add backlog specs swarmforge
+git -C "$ROOT2" -c user.email=test@test -c user.name=test commit -q -m "fixture: -1 cap via fallback path, 5 active, 1 paused"
+git -C "$ROOT2" config user.email test@test
+git -C "$ROOT2" config user.name test
+
+OUT2="$(
+  cd "$ROOT2"
+  ROUTE_LOG="$ROOT2/route.log" \
+    SWARMFORGE_SKIP_DAEMON=1 \
+    SWARMFORGE_ROLE=coordinator \
+    bash "$ROOT2/swarmforge/scripts/promote_and_route_next.sh" 2>&1
+)"
+
+grep -q "no open slot" <<< "$OUT2" \
+  && fail "fallback path: expected a -1 (no-limit) cap to allow promotion past 5 active tickets; got: $OUT2"
+grep -q "Promoted BL-999-candidate.yaml" <<< "$OUT2" \
+  || fail "fallback path: expected BL-999 to be promoted; got: $OUT2"
+[[ -f "$ROOT2/backlog/active/BL-999-candidate.yaml" ]] \
+  || fail "fallback path: BL-999 did not move into backlog/active/"
+grep -q "^BL-999$" "$ROOT2/route.log" \
+  || fail "fallback path: expected route helper to receive BL-999; got: $(cat "$ROOT2/route.log")"
+pass "fallback path (effective_backlog_depth_cli.bb unavailable): a -1 cap still resolves via backlog_depth_conf_path_cli.bb -> backlog_depth_cli.bb and promotes past 5 active tickets"
+
 echo "ALL PASS"

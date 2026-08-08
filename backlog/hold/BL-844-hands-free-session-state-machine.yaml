@@ -6,7 +6,7 @@ status: todo
 epic: bubble-voice-barge-in
 human_approval: approved
 assigned_to: none
-priority: 109
+priority: 111
 direction: human-requested
 depends_on: [BL-826]
 mutation_cost: medium
