@@ -142,10 +142,21 @@
 ;; active (chaseCount hit 12+ in one live session), or false-alarm
 ;; dead-lettered once the recipient goes idle - neither of which reflects
 ;; a real stall.
+;; BL-852: held? is checked AFTER already-terminal? (a provably-finished
+;; duplicate is reaped regardless - see the how-to's "Terminal-reap outranks
+;; the hold" note) but BEFORE every age/liveness branch below, so a held
+;; parcel never reaches "chased"/"respawned"/"dead-lettered" no matter how
+;; stale it looks. "held" is a distinct outcome from "skipped" (too-young-
+;; to-chase-yet) even though both currently no-op in
+;; apply-inbox-item-action! - the mtime/chaseCount/lastChasedAtMs inputs are
+;; never touched either way, so releasing the hold resumes the normal ladder
+;; from exactly the frozen values (see the ticket's freeze-the-counter note).
 (defn decide-item-action
-  [item-mtime-ms chase-count now-ms config liveness last-activity-ms last-chased-at-ms already-terminal?]
-  (if already-terminal?
-    "reaped"
+  [item-mtime-ms chase-count now-ms config liveness last-activity-ms last-chased-at-ms already-terminal? held?]
+  (cond
+    already-terminal? "reaped"
+    held? "held"
+    :else
     (let [age-seconds (/ (- now-ms item-mtime-ms) 1000.0)]
       (if (< age-seconds (:chaseTimeoutSeconds config))
         "skipped"
@@ -462,6 +473,19 @@
       (doseq [orphan (orphaned-sidecar-filenames filenames)]
         (fs/delete (fs/path inbox-new-dir orphan))))))
 
+;; BL-852: reuses handoff-lib/default-ambulance-held? (already in scope via
+;; this file's own load-file of handoff_lib.bb, per the ticket's "no new
+;; adapter wiring" note) - the SAME predicate the delivery/dequeue/rotation
+;; sites already consult, never a second notion of held (invariant 3).
+;; try/catch mirrors ambulance-lib's own BL-813 fix: a parcel that vanishes
+;; or is mid-write between the scan and this read must not crash the sweep -
+;; it just isn't provably held, so it falls through to the normal ladder
+;; (fail OPEN, same posture as parcel-held?'s own empty-attribution case).
+(defn item-ambulance-held? [file-path]
+  (try
+    (handoff-lib/default-ambulance-held? (slurp file-path))
+    (catch Exception _ false)))
+
 (defn sweep-role-inbox! [role inbox-new-dir completed-dir abandoned-dir now-ms config adapters]
   (reap-orphaned-sidecars! inbox-new-dir)
   (let [items (scan-inbox-new inbox-new-dir)
@@ -480,8 +504,12 @@
     (doseq [item items]
       (let [already-terminal? (handoff-lib/already-terminal?
                                 (fs/file-name (:filePath item)) completed-basenames abandoned-basenames)
+            ;; Only worth reading the file (and consulting the marker) when
+            ;; it isn't already reaped outright - already-terminal? outranks
+            ;; the hold, so there's nothing to protect either way.
+            held? (and (not already-terminal?) (item-ambulance-held? (:filePath item)))
             decided (decide-item-action (:mtimeMs item) (:chaseCount item) now-ms config
-                                         liveness last-activity-ms (:lastChasedAtMs item) already-terminal?)
+                                         liveness last-activity-ms (:lastChasedAtMs item) already-terminal? held?)
             action (if (and (= decided "respawned") (is-cooling-down? respawn-cooldown-until-ms now-ms))
                      "chased"
                      decided)]
