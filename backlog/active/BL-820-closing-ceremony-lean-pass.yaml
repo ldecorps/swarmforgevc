@@ -119,3 +119,5 @@ notes: |
   the lean-aware duty and its boundary vs Swarm Optimizer / the human
   briefing. The ledger half of that lands with BL-819; the ceremony half
   lands here, in this slice's own documenter pass.
+
+assigned_to: coder
